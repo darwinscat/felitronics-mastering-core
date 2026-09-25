@@ -42,9 +42,10 @@
 //
 // MEASURED, v0.1.0 on felitronics-core v0.52.0: all twelve INVARIANT — 246 cut rows, every fixture exercised, every
 // control caught — on Apple clang 21 arm64, gcc 14.2 x86-64, MSVC 19.44 x64 and wasm32 (emsdk 6.0.9). The table at
-// the end of the run is the record. Two contract edges found beside it, pinned below as KNOWN FINDINGS (measured,
-// not asserted, not fixed): BandCrest refuses a clock-only call whose plane array is null (law 11a allows it), and
-// StereoBandBursts and PeakExcursions latch their width on an EMPTY call (law 11d: n == 0 moves nothing).
+// the end of the run is the record. Two contract edges found beside it were first pinned as known findings and are
+// fixed and ASSERTED now (the last two groups): BandCrest accepts a clock-only call whose plane array is null (law
+// 11a allows it), and StereoBandBursts and PeakExcursions no longer latch their width on an EMPTY call (law 11d: n == 0
+// moves nothing). Neither fix moves a number — every cut row above is unchanged.
 
 #include <felitronics/analysis/BandBursts.h>
 #include <felitronics/analysis/BandCrest.h>
@@ -1048,52 +1049,61 @@ Programme framesFixture()
 //==============================================================================
 // THE GAP WITHOUT PLANES. Law 11a: at `nch == 0` the plane array "may be null" — a clock-only call carries no audio
 // and a caller has no plane to point at. Every class above that takes a zero-width call is asked for 480 samples of
-// it with `in == nullptr`. KNOWN FINDING, measured and NOT asserted: BandCrest refuses it (its null check sits after
-// the `n == 0` exit and before any width test), so a caller spending a gap on it must pass a dummy array — which is
-// what the rows above do. The fix is one condition (`numChannels > 0 && in == nullptr`, LowEnd's spelling); it moves
-// no number, but it is a contract change and is left for its own review.
+// it with `in == nullptr`. BandCrest used to refuse it — its null check sat after the `n == 0` exit and before any
+// width test, so a caller spending a gap on it had to pass a dummy array (which the rows above still do, and which
+// stays legal). It refuses a null array only at `numChannels > 0` now, LowEnd's spelling. For the classes that
+// check a null array at all (`checksNull`) the negative half is asserted too: where a plane WILL be read, a null array
+// is still a refusal — so the fix narrowed nothing but the gap. (The others take a non-null array at a live width as
+// the caller's precondition; that is their contract and not this test's to change.)
 template <class T, class Prep>
-void nullGap (const char* name, Prep prep, bool knownRefusal)
+void nullGap (const char* name, Prep prep, bool checksNull)
 {
     T t;
     const bool prepared = prep (t);
-    const bool accepted = prepared && t.process (nullptr, 0, 480);
-    if (knownRefusal)
-    {
-        felitronics::test::ok (prepared, std::string (name) + ": prepared for the null-plane gap");
-        std::printf ("    KNOWN FINDING — %s: process (nullptr, 0, 480) is %s (law 11a: the array may be null at nch == 0)\n",
-                     name, accepted ? "accepted — the finding is gone, retire this note" : "REFUSED");
-    }
-    else felitronics::test::ok (accepted, std::string (name) + ": a clock-only call with a null plane array is accepted");
+    felitronics::test::ok (prepared && t.process (nullptr, 0, 480),
+                           std::string (name) + ": a clock-only call with a null plane array is accepted");
+    if (checksNull)
+        felitronics::test::ok (prepared && ! t.process (nullptr, 1, 480),
+                               std::string (name) + ": a null plane array at width 1 is still refused");
 }
 
-// THE EMPTY CALL THAT IS NOT A NO-OP. Law 11d: `n == 0` is the one true no-op — no time, no edge, nothing. KNOWN
-// FINDING, measured and NOT asserted: StereoBandBursts and PeakExcursions latch their width on the first call BEFORE
-// they look at `n` (`if (ranNc_ == 0) ranNc_ = numChannels;` ahead of the `n == 0` exit), so an empty call at width 1
-// before the audio makes the stereo programme after it a refused width change. A caller that only ever calls at the
-// programme's width — which the cut rows above do, empty calls included — never meets it. The fix is to move the
-// latch below the `n == 0` exit; it moves no number, and it is left for its own review.
+// THE EMPTY CALL IS A NO-OP. Law 11d: `n == 0` is the one true no-op — no time, no edge, nothing. StereoBandBursts
+// and PeakExcursions used to latch their width on the first call BEFORE they looked at `n`, so an empty call at width
+// 1 before the audio made the stereo programme after it a refused width change. The latch sits below the `n == 0`
+// exit now, and below the plane check, so neither an empty call nor a refused one latches anything. What the latch is
+// FOR still holds and is asserted beside it: once audio has fixed the width, a different one is refused — an empty
+// call included, because the width check comes before the `n == 0` exit (law 11's order).
 template <class T, class Prep>
 void emptyLatch (const char* name, Prep prep)
 {
-    T t;
-    const bool prepared = prep (t);
     const float z[4] {};
     const float* planes[2] { z, z };
-    const bool empty = prepared && t.process (planes, 1, 0);
-    const bool after = empty && t.process (planes, 2, 4);
-    felitronics::test::ok (prepared && empty, std::string (name) + ": prepared, and an empty call at width 1 is accepted");
-    std::printf ("    KNOWN FINDING — %s: after process (planes, 1, 0), a stereo call is %s (law 11d: n == 0 moves nothing)\n",
-                 name, after ? "accepted — the finding is gone, retire this note" : "REFUSED");
+    {
+        T t;
+        const bool prepared = prep (t);
+        const bool empty = prepared && t.process (planes, 1, 0);
+        felitronics::test::ok (empty, std::string (name) + ": prepared, and an empty call at width 1 is accepted");
+        felitronics::test::ok (empty && t.process (planes, 2, 4),
+                               std::string (name) + ": after process (planes, 1, 0), a stereo call is accepted");
+        felitronics::test::ok (! t.process (planes, 1, 4), std::string (name) + ": then a mono call is a refused width change");
+        felitronics::test::ok (! t.process (planes, 1, 0), std::string (name) + ": ...an empty one included");
+    }
+    {
+        T t;
+        const bool prepared = prep (t);
+        const float* holed[2] { z, nullptr };
+        felitronics::test::ok (prepared && ! t.process (holed, 2, 4), std::string (name) + ": a null plane is refused");
+        felitronics::test::ok (t.process (planes, 1, 4), std::string (name) + ": ...and latched nothing: mono audio after it is accepted");
+    }
 }
 
 void nullGapRows()
 {
     felitronics::test::group ("the gap without planes — process (nullptr, 0, n), law 11a");
-    nullGap<analysis::ProgrammeReport> ("ProgrammeReport", [] (auto& x) { return x.prepare (48000.0, 512, 2); }, false);
+    nullGap<analysis::ProgrammeReport> ("ProgrammeReport", [] (auto& x) { return x.prepare (48000.0, 512, 2); }, true);
     nullGap<analysis::SourceForensics> ("SourceForensics", [] (auto& x) { return x.prepare (48000.0, 512, 2); }, false);
     nullGap<analysis::HumDetector>     ("HumDetector",     [] (auto& x) { return x.prepare (48000.0, 512, 2); }, false);
-    nullGap<analysis::LowEnd>          ("LowEnd",          [] (auto& x) { return x.prepare (48000.0, 512, 2); }, false);
+    nullGap<analysis::LowEnd>          ("LowEnd",          [] (auto& x) { return x.prepare (48000.0, 512, 2); }, true);
     nullGap<analysis::BandBursts>      ("BandBursts",      [] (auto& x) { return x.prepare (48000.0, 512, 2); }, false);
     nullGap<analysis::ClipDetector>    ("ClipDetector",    [] (auto& x) { return x.prepare (48000.0, 512, 2); }, false);
     nullGap<analysis::BandCrest>       ("BandCrest",       [] (auto& x) { return x.prepare (48000.0, 2, 480000); }, true);
