@@ -100,6 +100,16 @@ if(FELITRONICS_BUILD_TESTS)
     target_compile_features(felitronics_mastering_progress_tests PRIVATE cxx_std_20)
     add_test(NAME felitronics_mastering_progress_tests COMMAND felitronics_mastering_progress_tests)
 
+    # Split invariance through the harness the offline analyzers are measured with (tests/split_invariance.h): the
+    # chain streamed in place with every TAP stream and statistic, tapped and untapped, and a finish on a prefix; the
+    # renderer at eight blockings (in place included) and ten short lengths against that stream; and the solver's
+    # meter pair on a rendered master, tied to the solver's own measureInputLoudnessRange().
+    add_executable(felitronics_mastering_split_invariance_tests tests/SplitInvarianceTests.cpp)
+    target_link_libraries(felitronics_mastering_split_invariance_tests PRIVATE felitronics::mastering felitronics::test_support)
+    target_include_directories(felitronics_mastering_split_invariance_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../tests)   # split_invariance.h
+    target_compile_features(felitronics_mastering_split_invariance_tests PRIVATE cxx_std_20)
+    add_test(NAME felitronics_mastering_split_invariance_tests COMMAND felitronics_mastering_split_invariance_tests)
+
     # Law 11b for OfflineRenderer and the chain, through core's shared harness (test_support's
     # law11_call_contract.h) — the named case core's CallContractTests carried while this module lived there.
     add_executable(felitronics_mastering_call_contract_tests tests/MasteringCallContractTests.cpp)
