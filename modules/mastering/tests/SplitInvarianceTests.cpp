@@ -17,7 +17,9 @@
 //      0.6 — every statistic the chain counts (air, peak clip, non-finite input) is compared with the audio. Each
 //      topology also runs WITHOUT taps, the other path through process(), and must emit the same audio and
 //      statistics as the tapped run cut differently. The chain's width is EXACT, so a zero-width or a narrower call
-//      is refused by contract and there are no timeline rows.
+//      is refused by contract and there are no width timelines. What it has instead is the AUTOMATION timeline:
+//      both topologies again with every glidable parameter and every bypass moved at fixed stream positions (see
+//      `automation()`), which is where a glide clocked by the call instead of the sample would show.
 //   2. THE RENDERER against that stream: `OfflineRenderer::render` at blocks of 1, 64, 480, 4096, a prime, the whole
 //      programme in one block, under a ProgressClock (the path every progress callback takes) and IN PLACE — every
 //      one the same bits, taps included, as the chain streamed in one call; the output buffer is pre-filled with a
@@ -269,12 +271,54 @@ std::string renderFacts (const std::vector<std::vector<float>>& planes, std::int
 }
 
 //==============================================================================
+// THE AUTOMATION TIMELINE — the parameter moves a live preview makes, as EVENTS at fixed stream positions. Law 8a
+// promises nothing about events that arrive per call, so every run delivers these at the same samples and only the
+// cutting around them moves: the adapter splits a call at an event and calls `setParams()` between the pieces, which
+// is what a host does when a knob moves between two callbacks. The chain defers each one to its next quantum
+// boundary, and from there every glide it starts — the gain nodes, the compressor mix and makeup, the clipper's
+// drive, mono-bass's crossover, the air shelf, a dynamic point switched off while it ducks, and the bypass
+// crossfades — runs on the samples of the quanta, never on the caller's calls. That is the claim this timeline
+// holds every glide to: THE SAME BITS UNDER EVERY CUT, taps and statistics included. The positions are deliberately
+// on no grid (not K, not 64), and the moves are large, so each glide is still running when the next cut lands in it.
+struct AutoEvent { std::int64_t at; mastering::MasteringChainParams p; };
+
+std::vector<AutoEvent> automation (int topology, std::int64_t n)
+{
+    std::vector<AutoEvent> ev;
+    mastering::MasteringChainParams p = chainParams (topology);
+    auto at = [&] (std::int64_t pos) { ev.push_back ({ pos, p }); };
+    // the gain nodes and the parallel mix
+    p.inputGainDb = 5.0; p.preLimiterGainDb = -2.0; p.compressorMix = 0.45;          at (n / 9 + 37);
+    // the stages' own continuous parameters
+    p.clipper.driveDb = 9.0f; p.clipper.mix = 0.7f; p.clipper.outputDb = -2.0f;
+    p.compressor.makeupDb = 4.0; p.compressor.autoMakeup = true;
+    if (topology == 0) { p.monoBass.frequencyHz = 240.0f; p.monoBass.lowWidth = 0.6f; }
+    else               { p.stereoAir.frequencyHz = 9000.0f; p.stereoAir.gainDb = 5.0f; }
+    at (n / 5 + 1001);
+    // a dynamic point switched off while it works, and the ceiling moved
+    p.eqBands[2].dyn.on = false; p.limiter.ceilingDbTp = -4.0;                        at (n / 3 + 17);
+    // the bypasses in, and out again
+    p.bypassClipper = true; p.bypassLimiter = true; p.bypassMonoBass = true; p.bypassCompressor = true;
+    at (n / 2 + 555);
+    p.bypassClipper = false; p.bypassLimiter = false; p.bypassMonoBass = false; p.bypassCompressor = false;
+    if (topology == 0) p.monoBass.enabled = false; else p.stereoAir.enabled = false;
+    at (n * 3 / 5 + 123);
+    if (topology == 0) p.monoBass.enabled = true; else p.stereoAir.enabled = true;
+    p.inputGainDb = 1.5; p.compressorMix = 0.9; p.eqBands[2].dyn.on = true; p.compressor.autoMakeup = false;
+    at (n * 3 / 4 + 77);
+    return ev;
+}
+
+//==============================================================================
 // 1. THE CHAIN, streamed in place and drained — the adapter the harness cuts. `Taps == false` is the plain
-// three-argument call: no trace requested, which is a different path through process() (`wantTaps`).
-template <int Topology, bool Taps = true>
+// three-argument call: no trace requested, which is a different path through process() (`wantTaps`). `Auto` plays the
+// automation timeline above into it.
+template <int Topology, bool Taps = true, bool Auto = false>
 struct ChainA
 {
-    static constexpr const char* kName = Topology == 0 ? (Taps ? "MasteringChain (full voicing, K 256)" : "MasteringChain (full voicing, K 256, no taps)")
+    static constexpr const char* kName = Auto ? (Topology == 0 ? "MasteringChain (full voicing, K 256, AUTOMATED)"
+                                                               : "MasteringChain (air + peak clip + mix, K 96, 2x, AUTOMATED)")
+                                       : Topology == 0 ? (Taps ? "MasteringChain (full voicing, K 256)" : "MasteringChain (full voicing, K 256, no taps)")
                                                        : (Taps ? "MasteringChain (air + peak clip + mix 0.6, K 96, 2x)" : "MasteringChain (air + peak clip, K 96, no taps)");
     static constexpr bool kClockOnly = false;   // the width is EXACT (law 11c): a zero-width call is a refusal
     static constexpr bool kNarrow    = false;   // …and so is a narrower one
@@ -286,10 +330,13 @@ struct ChainA
     bool drained = false;
     TapBuffers tb;
     TapStreams got;
+    std::vector<AutoEvent> events;
+    std::size_t applied = 0;
 
     bool prepare (const Programme& p, int)
     {
         nch = p.channels();
+        if (Auto) events = automation (Topology, p.declared);
         if (! chain.prepare (p.fs, nch, chainConfig (Topology))) return false;
         chain.setParams (chainParams (Topology));
         chain.reset();                          // exactly what OfflineRenderer::render does first
@@ -307,17 +354,36 @@ struct ChainA
         got.take (tb.taps, nch);
         return true;
     }
-    bool process (const float* const* in, int width, int n)
+    bool feed (const float* const* in, int width, int n, int off)
     {
         std::vector<float*> io ((std::size_t) nch);
         for (int c = 0; c < nch; ++c)
         {
             float* dst = y[(std::size_t) c].data() + pos;
-            if (c < width) std::copy (in[c], in[c] + n, dst);
+            if (c < width) std::copy (in[c] + off, in[c] + off + n, dst);
             io[(std::size_t) c] = dst;
         }
         if (! call (io.data(), width, n)) return false;
         pos += n;
+        return true;
+    }
+    void applyDue()
+    {
+        while (applied < events.size() && events[applied].at <= pos) chain.setParams (events[applied++].p);
+    }
+    bool process (const float* const* in, int width, int n)
+    {
+        if (! Auto) return feed (in, width, n, 0);
+        applyDue();
+        if (n == 0) return feed (in, width, 0, 0);
+        for (int off = 0; off < n; )
+        {
+            applyDue();
+            std::int64_t m = n - off;
+            if (applied < events.size()) m = std::min<std::int64_t> (m, events[applied].at - pos);
+            if (! feed (in, width, (int) m, off)) return false;
+            off += (int) m;
+        }
         return true;
     }
     // THE DRAIN IS THE RENDERER'S: the chain is fed D zeros, and the output is the stream read D samples late.
@@ -346,6 +412,11 @@ struct ChainA
             f += ", air judged " + std::to_string (chain.airJudgedSamples()) + " samples, " + std::to_string (chain.peakClipRuns())
                + " peak-clip runs";
             ok = ok && chain.airJudgedSamples() > 0 && chain.peakClipRuns() > 0;
+        }
+        if (Auto)
+        {
+            f += ", " + std::to_string (applied) + " of " + std::to_string (events.size()) + " automation events played";
+            ok = ok && applied == events.size() && ! events.empty();
         }
         return ok;
     }
@@ -628,6 +699,8 @@ int main()
     suite<ChainA<1>> (prog);
     suite<ChainA<0, false>> (prog);
     suite<ChainA<1, false>> (prog);
+    suite<ChainA<0, true, true>> (prog);
+    suite<ChainA<1, true, true>> (prog);
     tapsAreNotTheStream<0> (prog);
     tapsAreNotTheStream<1> (prog);
     rendererRows<0> (prog);

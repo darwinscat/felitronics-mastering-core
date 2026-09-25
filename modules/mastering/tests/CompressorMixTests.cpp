@@ -542,6 +542,9 @@ static void testDryPathStaysWarm()
     const auto cfg = compOnly (K, 5.0);
     const Buf x = programme (nch, n, 2024u);
     const int P = 40 * K;                                   // a quantum boundary, so the change applies at P
+    int L = 0;
+    { mastering::MasteringChain probe; ok (probe.prepare (48000.0, nch, cfg), "PRECONDITION: probe"); L = probe.paramRampSamples(); }
+    ok (L == 1440, "PRECONDITION: the glide is 30 ms at 48 kHz (" + std::to_string (L) + " samples)");
 
     struct Case { const char* name; mastering::MasteringChainParams before, after; };
     auto bypassed = heavy (0.0);
@@ -558,12 +561,86 @@ static void testDryPathStaysWarm()
         const Render changed = render (cfg, cs.before, x, fixedPart (1000), { { P, cs.after } });
         const Render always  = render (cfg, cs.after,  x, fixedPart (1000));
         ok (changed.ok && always.ok, std::string ("PRECONDITION: renders — ") + cs.name);
-        // The quantum holding input [P, P+K) leaves the FIFO at output [P+K, P+2K).
-        const long long after = countBitDiffs (changed.y, always.y, P + K);
-        ok (after == 0, std::string ("from the first changed quantum on, identical to a chain that always had it — ")
+        // The quantum holding input [P, P+K) leaves the FIFO at output [P+K, P+2K), and a mix change GLIDES from
+        // there for `paramRampSamples()` samples (testMixGlides pins the glide itself). Past it, the chain is a
+        // chain that had the new value all along — which is what "the ring kept running" means.
+        const long long after = countBitDiffs (changed.y, always.y, P + K + L);
+        ok (after == 0, std::string ("from the end of the glide on, identical to a chain that always had it — ")
                         + cs.name + " (" + std::to_string (after) + " differ)");
         ok (countBitDiffs (changed.y, always.y) > 0 || std::string (cs.name) == "bypassed -> mix 0",
             std::string ("PRECONDITION: and different before it — ") + cs.name);
+    }
+}
+
+
+//==============================================================================
+// THE MIX GLIDES. A mix change used to land at the quantum boundary as a step — measured on a -12 dBFS sine,
+// 1 -> 0.5 put max|Δ²y| at -34.4 dBFS where the steady tone reads -76.8. It is a linear ramp now, and this pins it
+// EXACTLY, not by a tolerance: the ramp's values are replayed here from the rule stated at `MasteringChain::Ramp`
+// (float step (b - a) / L, accumulated, the last step landing on b itself), and every sample of the glide must be
+// the stated double blend of the two ENDS at that value — the mix-0 render is the aligned dry, the mix-1 render the
+// compressor, and neither depends on the mix. Before the change it is the old chain, after the glide the new one.
+static void testMixGlides()
+{
+    group ("the mix glides — per sample, from the changed quantum, exact at every sample, landing on the target");
+
+    const int nch = 2, n = 30000, K = 256;
+    const auto cfg = compOnly (K, 5.0);
+    const Buf x = programme (nch, n, 777u);
+    const int P = 20 * K;
+    mastering::MasteringChain probe;
+    ok (probe.prepare (48000.0, nch, cfg), "PRECONDITION: probe");
+    const int L = probe.paramRampSamples();
+    const Render dry = render (cfg, heavy (0.0), x, fixedPart (1000));
+    const Render wet = render (cfg, heavy (1.0), x, fixedPart (1000));
+    ok (dry.ok && wet.ok && countBitDiffs (dry.y, wet.y) > 0, "PRECONDITION: the two ends render and differ");
+
+    struct Case { double a, b; };
+    for (const Case cs : { Case { 1.0, 0.5 }, Case { 1.0, 0.0 }, Case { 0.0, 1.0 }, Case { 0.2, 0.8 }, Case { 0.8, 0.35 } })
+    {
+        const std::string name = "mix " + std::to_string (cs.a).substr (0, 4) + " -> " + std::to_string (cs.b).substr (0, 4);
+        const Render changed = render (cfg, heavy (cs.a), x, primesPart(), { { P, heavy (cs.b) } });
+        const Render before  = render (cfg, heavy (cs.a), x, fixedPart (1000));
+        const Render after   = render (cfg, heavy (cs.b), x, fixedPart (1000));
+        ok (changed.ok && before.ok && after.ok, "PRECONDITION: renders — " + name);
+        long long pre = 0;
+        for (int c = 0; c < nch; ++c)
+            for (int i = 0; i < P + K; ++i) pre += bits (changed.y[(std::size_t) c][(std::size_t) i]) != bits (before.y[(std::size_t) c][(std::size_t) i]);
+        ok (pre == 0, "before the changed quantum leaves the FIFO, the old chain — " + name);
+
+        // The replayed ramp: the rule at `Ramp`, in the chain's own float arithmetic.
+        long long glide = 0, moved = 0;
+        for (int c = 0; c < nch; ++c)
+        {
+            float cur = (float) cs.a;
+            const float tgt = (float) cs.b, step = (tgt - cur) / (float) L;
+            int left = L;
+            for (int i = P + K; i < P + K + L; ++i)
+            {
+                --left;
+                cur = left > 0 ? cur + step : tgt;
+                const double d = (double) dry.y[(std::size_t) c][(std::size_t) i], w = (double) wet.y[(std::size_t) c][(std::size_t) i];
+                const float want = (float) ((1.0 - (double) cur) * d + (double) cur * w);
+                glide += bits (want) != bits (changed.y[(std::size_t) c][(std::size_t) i]);
+                moved += bits (changed.y[(std::size_t) c][(std::size_t) i]) != bits (before.y[(std::size_t) c][(std::size_t) i])
+                      && bits (changed.y[(std::size_t) c][(std::size_t) i]) != bits (after.y[(std::size_t) c][(std::size_t) i]);
+            }
+        }
+        ok (glide == 0, "every sample of the glide is the stated blend at the replayed ramp value — " + name
+                        + " (" + std::to_string (glide) + " differ)");
+        ok (moved > L / 2, "PRECONDITION: the glide is neither end for most of its length — " + name);
+        ok (countBitDiffs (changed.y, after.y, P + K + L) == 0, "from the end of the glide on, the new chain — " + name);
+    }
+
+    // A WRITE THAT CHANGES NOTHING RESTARTS NOTHING: the same target written again mid-glide, every call, leaves the
+    // render exactly as a single write did. And a NEW target mid-glide starts from where the glide stands, so the
+    // mix never jumps: the largest per-sample move of the blend weight is one step of either ramp.
+    {
+        std::vector<Change> repeats { { P, heavy (0.3) } };
+        for (int k = 1; k < 12; ++k) repeats.push_back ({ P + 97 * k, heavy (0.3) });
+        const Render once = render (cfg, heavy (1.0), x, fixedPart (1000), { { P, heavy (0.3) } });
+        const Render many = render (cfg, heavy (1.0), x, fixedPart (1000), repeats);
+        ok (once.ok && many.ok && countBitDiffs (once.y, many.y) == 0, "re-writing the target mid-glide changes nothing");
     }
 }
 
@@ -727,6 +804,7 @@ int main()
     testMixBetween();
     testBypassAndMix();
     testDryPathStaysWarm();
+    testMixGlides();
     testBlockInvariance();
     testClampAndNonFinite();
     testResetPrepareAndOrder();
