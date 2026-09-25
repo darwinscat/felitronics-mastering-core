@@ -555,6 +555,79 @@ jobs:
           done
           echo "bit-identical: $n native-vs-wasm comparisons across the offline analyzers, two rates, two modules"
 
+      - name: NULL test — the tempo detector, native vs wasm, bit-exact
+        # The page's BPM tool reads its tempo from fc_probe_tempo_*, so this is the proof that the module the page
+        # loads and the native road answer the same bits: both headlines, the anchor, the range, the candidates and
+        # every curve point, each double as a bit pattern (a NaN — the spec's `null` — as `nan`).
+        # THE FIXTURES HAVE A BEAT, AND IT CHANGES. make-fixture.mjs has none: a diff of two curves of gaps would
+        # say nothing, so make-tempo-fixture.mjs writes clicks at one tempo and then another over integer-code noise,
+        # at three rates and three widths, and the step asserts below that the comparison saw a determined tempo, a
+        # curve and `varies` rather than two agreeing empties. --chunk is the law-8a handle, as in the clips step: the
+        # native tool feeds the programme in pieces, the module in one call.
+        run: |
+          set -euo pipefail
+          node tools/wasm/make-tempo-fixture.mjs tempo48.f32  48000 2 24
+          node tools/wasm/make-tempo-fixture.mjs tempo441.f32 44100 1 20 128 96
+          node tools/wasm/make-tempo-fixture.mjs tempo6.f32   22050 6 16 90 140
+          sha256sum -c - <<'SUMS'
+          64f00408f9122c39b3a63606dda66bff0903190713606854dc661cf4eff71933  tempo48.f32
+          c9de28661710acf2cc0a9c22d4bbce2810ca5c9b445c722d193cf2f222a1944d  tempo441.f32
+          d88efac8f4352b658c404b6bf1d528a20f39915ede4e169dac7d40bc9cb51b6c  tempo6.f32
+          SUMS
+          M=./build-native/tools/fcore_measure
+          n=0
+          check() { f=$1; sr=$2; ch=$3; shift 3
+            $M tempo "$sr" "$ch" "$f" "$@" > tempo-native.txt
+            test -s tempo-native.txt
+            for mod in fcprobe.node.js fcprobe.debug.js; do
+              node tools/wasm/tempo-parity.mjs "tools/wasm/build/$mod" "$sr" "$ch" "$f" "$@" > tempo-wasm.txt
+              diff tempo-native.txt tempo-wasm.txt || { echo "DIFFER: tempo $sr $ch $f $* ($mod)"; exit 1; }
+              n=$((n+1))
+            done; }
+          refuse() { f=$1; sr=$2; ch=$3; shift 3
+            if $M tempo "$sr" "$ch" "$f" "$@" > r-native.txt 2>/dev/null; then
+              echo "NATIVE ACCEPTED what it should refuse: tempo $sr $ch $f $*"; exit 1; fi
+            test ! -s r-native.txt || { echo "NATIVE printed a report and then failed: $*"; exit 1; }
+            for mod in fcprobe.node.js fcprobe.debug.js; do
+              if node tools/wasm/tempo-parity.mjs "tools/wasm/build/$mod" "$sr" "$ch" "$f" "$@" > r-wasm.txt 2>/dev/null; then
+                echo "WASM ACCEPTED what native refuses: tempo $sr $ch $f $* ($mod)"; exit 1; fi
+              test ! -s r-wasm.txt || { echo "WASM printed a report and then failed: $* ($mod)"; exit 1; }
+              n=$((n+1))
+            done; }
+          check tempo48.f32 48000 2
+          # the comparison is of something: a determined tempo that varies, a range, and a curve
+          grep -q '^head 1 ' tempo-native.txt || { echo "tempo48 is undetermined — the gate is comparing nothing"; exit 1; }
+          grep -q '^range 1 1 ' tempo-native.txt || { echo "tempo48 does not vary — the change is untested"; exit 1; }
+          [ "$(grep -c '^p ' tempo-native.txt)" -ge 10 ] || { echo "tempo48 has too few curve points"; exit 1; }
+          for k in 1 511 512 513 1023 8191 100000; do check tempo48.f32 48000 2 --chunk "$k"; done
+          check tempo441.f32 44100 1
+          check tempo6.f32   22050 6
+          check tempo48.f32 48000 2 --min-bpm 40 --max-bpm 300 --win-sec 4 --hop-sec 1
+          check tempo48.f32 48000 2 --min-bpm 90 --max-bpm 90      # a range with no lag inside it: undetermined
+          check tempo48.f32 48000 2 --win-sec 30                    # a window longer than the programme: no curve
+          check fixture.f32 48000 2                                 # the loudness fixture: a steady answer
+          : > tempo-empty.f32 && check tempo-empty.f32 48000 2      # an empty programme is a measurement
+          grep -q '^head 0 nan ' tempo-native.txt || { echo "the empty programme is not undetermined"; exit 1; }
+          head -c 12 tempo48.f32 > tempo-odd.f32                    # three floats: not whole stereo frames
+          refuse tempo48.f32 48000 2 --min-bpm 120 --max-bpm 90
+          refuse tempo48.f32 48000 2 --min-bpm 0.5
+          refuse tempo48.f32 48000 2 --max-bpm 1001
+          refuse tempo48.f32 48000 2 --win-sec 0
+          refuse tempo48.f32 48000 2 --hop-sec -1
+          refuse tempo48.f32 48000 2 --win-sec nan
+          refuse tempo48.f32 48000 2 --win-sec 6 --win-sec 7
+          refuse tempo48.f32 48000 2 --chunk 0
+          refuse tempo48.f32 48000 2 --chunk 2147483648
+          refuse tempo48.f32 48000 2 --bogus 1
+          refuse tempo48.f32 48000 2 --min-bpm
+          refuse tempo48.f32 7999 2
+          refuse tempo48.f32 44.1 2
+          refuse tempo48.f32 768001 2
+          refuse tempo48.f32 48000 0
+          refuse tempo48.f32 48000 17
+          refuse tempo-odd.f32 48000 2
+          echo "bit-identical: $n native-vs-wasm comparisons of the tempo detector, refusals included"
+
       - name: the price of a measurement — the same demand on both tiers
         # `fc_probe_<mode>_storage_bytes` publishes what each analyzer's storageFor() is about to ask the
         # heap for, so a page can decide BEFORE the allocation that -fno-exceptions turns into an abort.

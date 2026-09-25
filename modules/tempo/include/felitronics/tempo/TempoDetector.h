@@ -117,7 +117,9 @@ struct TempoPoint
 //   same bit reversal and the same twiddle recurrence.
 //   What the page reports is rounded (bpm and t to 0.1, confidence to 0.01), so an ulp reaches it only where a
 //   value lands on a rounding tie or two autocorrelation peaks tie; the cross-language comparison on real
-//   programmes is out of tree, and its numbers are in the changelog entry that introduced this class.
+//   programmes is out of tree, and its numbers are in the changelog entry that introduced this class. The
+//   native-vs-wasm comparison is in tree and gated: `fcore_measure tempo` against tools/wasm/tempo-parity.mjs,
+//   byte for byte, in CI's wasm job.
 //
 // THE SPEC'S OWN EDGES, KEPT, not fixed:
 //   * A LONE ONSET HAS A TEMPO AND NO CONFIDENCE. When every autocorrelation lag in range is exactly zero (one

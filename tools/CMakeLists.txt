@@ -11,7 +11,7 @@
 set(FCORE_NO_FP_CONTRACT $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-ffp-contract=off>)
 
 add_executable(fcore_measure fcore_measure.cpp)
-target_link_libraries(fcore_measure PRIVATE felitronics::analysis_offline felitronics::oversampling)
+target_link_libraries(fcore_measure PRIVATE felitronics::analysis_offline felitronics::tempo felitronics::oversampling)
 # The OFFLINE analyzer modes compose over eq::Crossover2 / stereo::MidSide; felitronics::analysis_offline
 # carries both (modules/analysis_offline/CMakeLists.txt).
 target_compile_features(fcore_measure PRIVATE cxx_std_20)
