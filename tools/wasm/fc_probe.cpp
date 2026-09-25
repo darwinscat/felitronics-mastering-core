@@ -19,6 +19,7 @@
 // true peak is routed through log10. The surface is fc_probe_block_energies() (pre-gate, continuous) plus
 // fc_probe_tp_linear(). See tools/fcore_probe.h for why.
 
+#include "fc_probe_abi.h"
 #include "fcore_clips.h"
 #include "fcore_probe.h"
 #include "fcore_stream.h"
@@ -637,6 +638,10 @@ FC_EXPORT int fc_stream_destroy (std::uint32_t h)
 }
 
 // Build identity, so a mismatched artifact is obvious in a report rather than a mystery.
+// WHICH SURFACE THIS MODULE SPEAKS (tools/fc_probe_abi.h, where the append-only rule that moves it is written). A
+// page's loader asks this first and refuses a module older than the page, instead of meeting a missing export as a
+// TypeError halfway through a measurement. Reads no measurement, cannot fail.
+FC_EXPORT std::uint32_t fc_probe_abi_version     (void) { return FC_PROBE_ABI_VERSION; }
 FC_EXPORT std::uint32_t fc_probe_os_factor       (void) { return (std::uint32_t) fcore::Probe::kOsFactor; }
 FC_EXPORT std::uint32_t fc_probe_os_taps         (void) { return (std::uint32_t) fcore::Probe::kOsTapsPerPhase; }
 FC_EXPORT std::uint32_t fc_probe_chunk           (void) { return (std::uint32_t) fcore::Probe::kChunk; }

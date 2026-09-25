@@ -64,7 +64,8 @@ as `fc_probe_tempo_*`.
 ## The C ABIs — `tools/`
 
 `fc_master` (`tools/fc_master_abi.h`, `tools/wasm/fc_master.cpp`) over the chain and `fc_probe`
-(`tools/wasm/fc_probe.cpp`) over the analyzers, with their native CLIs (`fcore_master`, `fcore_measure`) and
+(`tools/fc_probe_abi.h`, `tools/wasm/fc_probe.cpp`) over the analyzers — each with its ABI version and the
+append-only rule that moves it in its header — with their native CLIs (`fcore_master`, `fcore_measure`) and
 suites. `tools/wasm/build.sh` builds the wasm modules against a felitronics-core checkout
 (`FELITRONICS_CORE_DIR`, or the sibling `../felitronics-core`) and records both versions in `BUILD-INFO` beside
 them. How the two roads are compared, and to which criterion: `WASM-PARITY.md`. Law 11d as it applies to the
