@@ -1,0 +1,46 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": { "major": 3, "minor": 22, "patch": 0 },
+    "configurePresets": [
+        {
+            "name": "desktop",
+            "displayName": "desktop — Release + self-tests",
+            "description": "The developer default. Release, as in core: several suites here are exhaustive sweeps that an unoptimised build turns into minutes.",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "FELITRONICS_MASTERING_BUILD_TESTS": "ON"
+            }
+        },
+        {
+            "name": "wasm-audio",
+            "displayName": "wasm-audio — the Emscripten tier (felitronics-core DSP-ARCHITECTURE.md §2)",
+            "description": "core's wasm-audio preset for this repository: exceptions and RTTI OFF, no pthreads, tests run in node. Needs emsdk on PATH ($EMSDK set by emsdk_env.sh). The tier's link-time physics comes from core's cmake/FelitronicsPolicy.cmake; this preset carries the POLICY, the same flags as core's.",
+            "binaryDir": "${sourceDir}/build-wasm-audio",
+            "toolchainFile": "$env{EMSDK}/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "FELITRONICS_MASTERING_BUILD_TESTS": "ON",
+                "CMAKE_CXX_FLAGS": "-fno-exceptions -fno-rtti -ffp-contract=off -msimd128"
+            }
+        }
+    ],
+    "buildPresets": [
+        { "name": "desktop",    "configurePreset": "desktop",    "jobs": 0, "configuration": "Release" },
+        { "name": "wasm-audio", "configurePreset": "wasm-audio", "jobs": 0 }
+    ],
+    "testPresets": [
+        {
+            "name": "desktop",
+            "configurePreset": "desktop",
+            "configuration": "Release",
+            "output": { "outputOnFailure": true }
+        },
+        {
+            "name": "wasm-audio",
+            "configurePreset": "wasm-audio",
+            "description": "ctest drives each test .js through node — the Emscripten toolchain sets CMAKE_CROSSCOMPILING_EMULATOR.",
+            "output": { "outputOnFailure": true }
+        }
+    ]
+}

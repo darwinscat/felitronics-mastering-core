@@ -1,0 +1,43 @@
+# THE DETERMINISTIC ZONE of felitronics-mastering-core, and its parity entry points. Read by
+# felitronics-core's tools/lint/check-det-math.mjs, run from THIS repository's root with --satellite; read that
+# file for what the zone is, what the four rules are, and why the zone is a written list and the #include
+# closure only a discovery net. Core's own zone (the reference true-peak meter, OfflineFft and the two
+# oversamplers these analyzers stand on) is core's, and the same run lints it.
+#
+# Format (one per line; the reason is required):
+#   entry      <path>                  <why>
+#   zone       <path>                  <why>
+#   exception  <path>  <fn>*<count>    <why>
+
+# --- parity entry points: rule 4's net starts here ---
+entry  tools/wasm/fc_probe.cpp   the wasm probe; CI diffs its stdout against the native CLI's
+entry  tools/wasm/fc_master.cpp  the mastering ABI
+entry  tools/fcore_measure.cpp   the native CLI, the other side of every one of those diffs
+
+# --- the analyzers whose output is diffed, one per parity harness ---
+zone  modules/analysis_offline/include/felitronics/analysis/ProgrammeReport.h  the programme report, diffed native vs wasm by report-parity.mjs
+zone  modules/analysis_offline/include/felitronics/analysis/SourceForensics.h  the spectral wall and sample grid, diffed by forensics-parity.mjs
+zone  modules/analysis_offline/include/felitronics/analysis/HumDetector.h      mains hum, diffed by hum-parity.mjs
+zone  modules/analysis_offline/include/felitronics/analysis/LowEnd.h           wide bass and the dominant low note, diffed by lowend-parity.mjs
+zone  modules/analysis_offline/include/felitronics/analysis/BandBursts.h       band bursts, diffed by bursts-parity.mjs
+zone  modules/analysis_offline/include/felitronics/analysis/ClipDetector.h     the clipped runs, diffed by clips-parity.mjs and the streaming step
+zone  modules/analysis_offline/include/felitronics/analysis/WaveformPeaks.h    the waveform bars, diffed by shapes-parity.mjs
+zone  modules/analysis_offline/include/felitronics/analysis/StereoColumns.h    the stereo band and needle, diffed by shapes-parity.mjs
+zone  modules/analysis_offline/include/felitronics/analysis/SpectrumFrames.h   the shared frame producer the spectral analyzers stand on
+# Byte-diffed by the same step, and outside the zone until the move: their output was compared, a new system call
+# in them would have been a manifest line instead of a red build.
+zone  modules/analysis_offline/include/felitronics/analysis/StereoBandBursts.h  band bursts on Mid and Side, diffed by stereobursts-parity.mjs
+zone  modules/analysis_offline/include/felitronics/analysis/PeakExcursions.h    runs over a ceiling, diffed by excursions-parity.mjs
+zone  modules/analysis_offline/include/felitronics/analysis/BandCrest.h         crest per block and band, and the paired loss, diffed by crest-parity.mjs
+
+# --- and the tools that PRINT the diffed text. The long-double lint deliberately skips tools/; for this lint
+# --- that would be a hole exactly on the surface being defended.
+zone  tools/fcore_probe.h  computes the dBTP that `diff native.txt wasm.txt` compares, with its own floor and, until the libm audit, its own std::log10
+zone  tools/fcore_clips.h  the clips exposure the clips parity step diffs
+zone  tools/fcore_stream.h  the streaming surface the stream parity step diffs after every piece
+# The wasm entry point itself. It PRINTS the numbers CI diffs (parity.mjs renders its lufs/dbtp as text and the
+# step runs a plain `diff`), and until the libm audit it computed one of them with a constant `20.0 * std::log10 (1e-9)`.
+# What CI byte-diffs from this binary is its STDOUT — the block energies and the true peak as a LINEAR bit
+# pattern; `dbtp` is printed only under --debug and only to stderr. It is in the zone because the numbers it
+# prints on the diffed path come from here, not because every getter it exposes is diffed.
+zone  tools/wasm/fc_probe.cpp  prints the numbers the probe parity steps diff
