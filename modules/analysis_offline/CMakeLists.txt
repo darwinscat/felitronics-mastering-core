@@ -82,4 +82,13 @@ if(FELITRONICS_BUILD_TESTS)
     target_link_libraries(felitronics_source_forensics_tests PRIVATE felitronics::analysis_offline felitronics::test_support)
     target_compile_features(felitronics_source_forensics_tests PRIVATE cxx_std_20)
     add_test(NAME felitronics_source_forensics_tests COMMAND felitronics_source_forensics_tests)
+    # Split invariance across ALL of the above through ONE harness (tests/split_invariance.h, shared with the
+    # mastering module's suite): one call against fixed blocks and ragged cuts with zero-length calls, a clock-only
+    # gap where the contract has one, a second maxBlock, and a finish on a prefix — every published output compared
+    # as bits, each divergence named by output, size and cut, and a planted one-ulp control it must catch.
+    add_executable(felitronics_analyzer_split_invariance_tests tests/SplitInvarianceTests.cpp)
+    target_link_libraries(felitronics_analyzer_split_invariance_tests PRIVATE felitronics::analysis_offline felitronics::test_support)
+    target_include_directories(felitronics_analyzer_split_invariance_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../../tests)   # split_invariance.h
+    target_compile_features(felitronics_analyzer_split_invariance_tests PRIVATE cxx_std_20)
+    add_test(NAME felitronics_analyzer_split_invariance_tests COMMAND felitronics_analyzer_split_invariance_tests)
 endif()
