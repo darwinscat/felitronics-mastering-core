@@ -1163,6 +1163,118 @@ static void testParamsWrittenBeforePrepare()
     approx (c4.sampleRate(), 44100.0, 0.0, "re-prepare reports the new rate");
 }
 
+
+//==============================================================================
+// THE GAIN NODES GLIDE, AND A STREAM'S FIRST WRITE SNAPS. Measured before the ramp on a -12 dBFS sine: inputGainDb
+// 0 -> +3 put max|Δ²y| at -20.1 dBFS and preLimiterGainDb 0 -> +3 at -22.3, where the steady tone reads -73.1 — a
+// click each. Pinned EXACTLY here on a gains-only chain fed a constant, where the output IS the gain: the glide's
+// values are replayed from the rule at `MasteringChain::Ramp` and must match bit for bit, sample for sample.
+static void testParameterRamps()
+{
+    group ("the gain nodes glide per sample from the changed quantum, and the first write of a stream snaps");
+
+    auto cfg = fullConfig();
+    cfg.eq = false; cfg.monoBass = false; cfg.compressor = false; cfg.clipper = false;
+    cfg.limiter = false; cfg.dither = false;               // gain nodes only: output = 0.1 * inGain * preGain
+    const int nch = 2, K = cfg.internalBlock, n = 40 * K;
+    const float x0 = 0.1f;
+    const auto dbGain = [] (double db) { return (float) core::dbToGain (db); };
+
+    auto run = [&] (mastering::MasteringChain& c, Buf& y, const std::vector<std::pair<int, mastering::MasteringChainParams>>& ev,
+                    int call)
+    {
+        std::size_t e = 0;
+        for (int off = 0; off < n; )
+        {
+            while (e < ev.size() && ev[e].first == off) c.setParams (ev[e++].second);
+            int m = std::min (call, n - off);
+            if (e < ev.size()) m = std::min (m, ev[e].first - off);
+            auto p = planes (y, off);
+            if (! c.process (p.data(), nch, m)) return false;
+            off += m;
+        }
+        return true;
+    };
+
+    for (const bool pre : { false, true })
+    {
+        const char* node = pre ? "preLimiterGainDb" : "inputGainDb";
+        mastering::MasteringChainParams a, b, c2;
+        (pre ? a.preLimiterGainDb : a.inputGainDb) = 0.0;
+        (pre ? b.preLimiterGainDb : b.inputGainDb) = 6.0;
+        (pre ? c2.preLimiterGainDb : c2.inputGainDb) = -9.0;
+        mastering::MasteringChain ch;
+        ch.setParams (a);
+        ok (ch.prepare (48000.0, nch, cfg), "PRECONDITION: prepare");
+        const int L = ch.paramRampSamples();
+        ok (L == 1440, std::string ("the glide is kParamRampMs = 30 ms, 1440 samples at 48 kHz — ") + node);
+        // b at 5K + 17 (mid-quantum: it lands at 6K); c2 at 9K + 3, while b is still gliding (lands at 10K).
+        const int Pb = 5 * K + 17, Pc = 9 * K + 3;
+        Buf y ((std::size_t) nch, std::vector<float> ((std::size_t) n, x0));
+        ok (run (ch, y, { { Pb, b }, { Pc, c2 } }, 97), std::string ("PRECONDITION: the automated render — ") + node);
+
+        // The expected output: the FIFO's K zeros, then x0 * the replayed gain per sample. A write lands on the
+        // quantum it arrives in — that quantum runs when its LAST sample is handed over, after the write — so b,
+        // written at 5K + 17, applies from input 5K (output 6K) and c2, written at 9K + 3, from input 9K (output
+        // 10K): 1024 samples into the 1440-sample glide toward b, so it restarts from where that glide stands.
+        std::vector<float> g ((std::size_t) n, 1.0f);
+        {
+            float cur = 1.0f, tgt = 1.0f, step = 0.0f; int left = 0;
+            auto setT = [&] (float v) { if (v == tgt) return; tgt = v; left = L; step = (tgt - cur) / (float) L; };
+            for (int i = 0; i < n; ++i)
+            {
+                const int q = i - K;                               // the quantum-stream index of output i
+                if (q == 5 * K) setT (dbGain (6.0));
+                if (q == 9 * K) setT (dbGain (-9.0));
+                if (left > 0) { --left; cur = left > 0 ? cur + step : tgt; }
+                g[(std::size_t) i] = cur;
+            }
+        }
+        long long bad = 0;
+        for (int c = 0; c < nch; ++c)
+            for (int i = 0; i < n; ++i)
+            {
+                const float want = i < K ? 0.0f : (g[(std::size_t) i] == 1.0f ? x0 : x0 * g[(std::size_t) i]);
+                bad += bits (want) != bits (y[(std::size_t) c][(std::size_t) i]);
+            }
+        ok (bad == 0, std::string ("every sample is x * the replayed glide, both channels, a retarget included — ") + node
+                      + " (" + std::to_string (bad) + " differ)");
+        ok (bits (y[0][(std::size_t) (6 * K)]) != bits (x0) && bits (y[0][(std::size_t) (6 * K)]) != bits (x0 * dbGain (6.0))
+            && bits (y[0][(std::size_t) (6 * K - 1)]) == bits (x0),
+            std::string ("the glide starts on the changed quantum's first sample — ") + node);
+        ok (bits (y[0][(std::size_t) (10 * K - 1)]) != bits (x0 * dbGain (6.0))
+            && bits (y[1][(std::size_t) (10 * K + L - 1)]) == bits (x0 * dbGain (-9.0)),
+            std::string ("the retarget starts mid-glide, from where it stands, and lands on the new target by its last sample — ") + node);
+
+        // A write BEFORE THE FIRST QUANTUM snaps: prepare -> setParams(b) -> process renders b from the first sample.
+        mastering::MasteringChain s1;
+        ok (s1.prepare (48000.0, nch, cfg), "PRECONDITION: prepare");
+        s1.setParams (b);
+        Buf z ((std::size_t) nch, std::vector<float> ((std::size_t) (4 * K), x0));
+        { auto p = planes (z); felitronics::test::run (s1.process (p.data(), nch, 4 * K)); }
+        ok (bits (z[0][(std::size_t) K]) == bits (x0 * dbGain (6.0)) && bits (z[1][(std::size_t) (4 * K - 1)]) == bits (x0 * dbGain (6.0)),
+            std::string ("the first write after prepare() snaps — ") + node);
+
+        // …and so does the first write after a reset() that interrupts a glide: no glide resumes.
+        mastering::MasteringChain s2;
+        s2.setParams (a);
+        ok (s2.prepare (48000.0, nch, cfg), "PRECONDITION: prepare");
+        Buf w ((std::size_t) nch, std::vector<float> ((std::size_t) (12 * K), x0));
+        { auto p = planes (w); felitronics::test::run (s2.process (p.data(), nch, 2 * K)); }
+        s2.setParams (b);
+        { auto p = planes (w, 2 * K); felitronics::test::run (s2.process (p.data(), nch, 3 * K)); }   // a glide in flight
+        ok (bits (w[0][(std::size_t) (4 * K + 5)]) != bits (x0) && bits (w[0][(std::size_t) (4 * K + 5)]) != bits (x0 * dbGain (6.0)),
+            std::string ("PRECONDITION: a glide was in flight at the reset — ") + node);
+        s2.reset();
+        s2.setParams (c2);
+        { auto p = planes (w, 5 * K); felitronics::test::run (s2.process (p.data(), nch, 7 * K)); }
+        long long snapBad = 0;
+        for (int c = 0; c < nch; ++c)
+            for (int i = 6 * K; i < 12 * K; ++i) snapBad += bits (w[(std::size_t) c][(std::size_t) i]) != bits (x0 * dbGain (-9.0));
+        ok (snapBad == 0, std::string ("after reset() the next write snaps, and nothing of the interrupted glide resumes — ") + node);
+    }
+}
+
 //==============================================================================
 static void testMonoBassParams()
 {
@@ -1835,6 +1947,7 @@ int main()
     testRtSafety();
     testResolvedReadback();
     testParamsWrittenBeforePrepare();
+    testParameterRamps();
     testMonoBassParams();
     testGateCountsItsSubstitutions();
     testDemand();

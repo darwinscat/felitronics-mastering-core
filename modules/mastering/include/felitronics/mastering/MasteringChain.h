@@ -77,7 +77,10 @@ struct MasteringChainConfig
     double sidechainHpfHz = 0.0;
 };
 
-// PER-BLOCK parameters. Nothing here moves latencySamples(). Each stage's own parameter type appears
+// PER-BLOCK parameters. Nothing here moves latencySamples(). A write lands on the next quantum and the continuous
+// ones GLIDE from there, each by its own stage's rule (the chain's own three — the two gain nodes and the mix — by
+// `kParamRampMs`); the first write of a stream, after `prepare()` or `reset()`, SNAPS, which is what keeps every
+// offline render bit-identical to one with no glides at all. Each stage's own parameter type appears
 // verbatim — no field is re-declared, so nothing can fall out of step when a stage grows one. That is
 // the same rule `CompressorParams : GainReductionParams : DetectorParams` follows; inheritance is not
 // available at this level (seven bases, and `releaseMs` exists in both the compressor's and the
@@ -104,7 +107,7 @@ struct MasteringChainParams
     // compressor alone and bit-identical to a chain without this field; 0 is the delayed input alone.
     // Clamped to [0, 1]; a non-finite value is 1. It keeps applying while `bypassCompressor` is set — see
     // runQuantum() for why that is the only answer without a level drop, and why it costs a steady
-    // bypass nothing. Makeup and
+    // bypass nothing. A change mid-stream glides over `kParamRampMs`, like the two gain nodes. Makeup and
     // auto-makeup ride the compressed path only, which is the parallel topology and not an oversight. It
     // is the CHAIN's field, not the compressor's: `dynamics::Compressor` keeps dry/wet out on purpose, and
     // an aligned dry path is exactly the kind of composition this class exists for. See runQuantum().
@@ -297,7 +300,9 @@ struct MasteringChainResolved
 // deferred to the next quantum boundary, so a change made at stream position p always takes effect at
 // the same place regardless of blocking — but a caller that pushes params at different stream
 // positions is asking for different renders, which is not this module's to hide. Set them once before
-// the render and the question does not arise.
+// the render and the question does not arise. What a change does once it has landed — the glides — is
+// clocked by the samples of the quanta, never by the calls, so a timeline of changes at fixed stream
+// positions renders the same bits under any cut (the AUTOMATED rows of the split-invariance suite).
 //
 // ====================================================================================
 // BYPASS, and why "just don't call it" is the wrong default
@@ -364,6 +369,10 @@ public:
     static constexpr double kMinSampleRate    = core::kMinSampleRate;
     static constexpr double kMaxSampleRate    = 3.0e6;
     static constexpr double kMaxGainDb        = 60.0;    // both gain nodes; beyond this is not a trim
+    // THE CHAIN'S OWN PARAMETER GLIDE: `inputGainDb`, `preLimiterGainDb` and `compressorMix` move to a new value
+    // over this long, linearly, per sample, from the quantum boundary the change lands on — and SNAP on the first
+    // quantum after `reset()`/`prepare()`. The measured reason is at `Ramp` below.
+    static constexpr double kParamRampMs      = 30.0;
 
     //==========================================================================================================
     // THE GEOMETRY, DECIDED WITHOUT BUILDING IT (law 11d)
@@ -649,6 +658,7 @@ public:
         fs_  = sampleRate;
         nch_ = numChannels;
         K_   = config.internalBlock;
+        rampLen_ = (int) std::lround (kRampMs * 0.001 * fs_);   // >= 240 at the 8 kHz floor
 
         // One buffer, not two: process() SWAPS the caller's samples with the quantum buffer, so the
         // slot a sample is read from is the slot the next input goes into. Latency is exactly K.
@@ -804,6 +814,9 @@ public:
         // seen as a first write) is gone with the defect it was hiding.
         paramsDirty_ = true;
         bypassKnown_ = false;
+        // A STREAM RESTART LANDS EVERY RAMP, and the next parameter write snaps: see `Ramp`.
+        inGain_.snap (inGain_.target); preGain_.snap (preGain_.target); mix_.snap (mix_.target);
+        fresh_ = true;
     }
 
     // Takes effect at the next internal quantum boundary, which is what keeps a parameter change from
@@ -818,6 +831,8 @@ public:
     const MasteringChainParams& params() const noexcept { return params_; }
 
     int  latencySamples() const noexcept { return prepared_ ? latency_ : 0; }
+    // kParamRampMs at the prepared rate, in samples — how long a gain or mix change takes to land. 0 unprepared.
+    int  paramRampSamples() const noexcept { return prepared_ ? rampLen_ : 0; }
     int  numChannels()    const noexcept { return prepared_ ? nch_ : 0; }
     // The rate this chain was prepared at. A consumer that builds meters of its own has to agree with
     // it, and "the caller passed the same number to both" is not a check — it is the assumption that
@@ -871,7 +886,7 @@ public:
         r.limiterCeilingDbTp  = cfg_.limiter ? lim_.effectiveCeilingDbTp() : 0.0;
         r.limiterReleaseMs    = cfg_.limiter ? lim_.effectiveReleaseMs() : 0.0;
         r.monoBass            = cfg_.monoBass ? monoBass_.params() : stereo::MonoBassParams { false, 0.0f, 0.0f };
-        r.compressorMix       = cfg_.compressor ? (double) compMix_ : 0.0;
+        r.compressorMix       = cfg_.compressor ? (double) mix_.target : 0.0;
         r.limiterSlowReleaseMs = cfg_.limiter ? lim_.effectiveSlowReleaseMs() : 0.0;
         r.peakClipperThresholdDbTp = cfg_.limiter ? lim_.clipThresholdDbTp() : 0.0;
         // What the air shelf ACTUALLY got, after the corner's rate clamp and the plateau's range clamp.
@@ -963,6 +978,57 @@ public:
     }
 
 private:
+    // A FIXED-LENGTH LINEAR RAMP, clocked by the samples of the quantum it runs in — so it inherits the
+    // quantum's block invariance for free: the chain calls every stage with exactly K samples whatever the
+    // caller does, and a ramp that advances one step per sample of that quantum lands on the same absolute
+    // sample under any cut (law 8a; pinned by the split-invariance suite).
+    //
+    // LINEAR, AND IT ARRIVES. A new target restarts a `len`-sample ramp from the value the ramp holds NOW,
+    // and the last step assigns the target itself, so the value at rest is the exact resolved number and the
+    // rest path is bit-identical to a chain that never ramped. `cur + step` is an addition and `x * next()` a
+    // multiplication, so no contraction can fuse either into an FMA (law 10): every row computes the same
+    // gain sequence. The comparison is EXACT (not JUCE's approximate one) — a write that changes the
+    // resolved value by an ulp is a new target like any other.
+    //
+    // SNAPPED, NEVER RAMPED, BEFORE THE FIRST QUANTUM OF A STREAM. `reset()` (and so `prepare()`) arms
+    // `fresh_`, and the parameter set the first quantum applies lands at once. That is what keeps every
+    // offline render — `setParams -> reset -> process`, OfflineRenderer and the solver alike — the same bits
+    // it was before the ramps existed.
+    struct Ramp
+    {
+        float cur = 1.0f, target = 1.0f, step = 0.0f;
+        int   left = 0;
+
+        bool moving() const noexcept { return left > 0; }
+        void snap (float v) noexcept { cur = target = v; step = 0.0f; left = 0; }
+        void setTarget (float v, int len) noexcept
+        {
+            if (core::exactlyEqual (v, target)) return;       // a write that changes nothing restarts nothing
+            if (len <= 0) { snap (v); return; }
+            target = v;
+            left   = len;
+            step   = (target - cur) / (float) len;
+        }
+        float next() noexcept
+        {
+            if (left <= 0) return target;
+            --left;
+            cur = left > 0 ? cur + step : target;
+            return cur;
+        }
+    };
+
+    // THE RAMP LENGTH, and the numbers it was chosen by. Measured on a -12 dBFS 227 Hz sine at K = 128,
+    // max|Δ²y| in the window where the change first reaches the output, the steady tone reading -73.1 dBFS
+    // (-76.8 through the compressor at 4:1). As STEPS: inputGainDb 0 -> +3 was -20.1 dBFS, preLimiterGainDb
+    // 0 -> +3 -22.3, compressorMix 1 -> 0.5 -34.4 and 1 -> 0 -28.4 — each a click. Ramped, at 5 / 10 / 20 /
+    // 30 / 50 ms: a +3 dB step is clean at every length (-69.9 ... -70.1); what separates them is the big
+    // move — 0 -> +12 dB reads -51.2 / -58.0 / -57.2 / -60.8 / -60.2, where the LOUDER tone's own floor is
+    // -61.1, and 0 -> -20 dB -60.0 / -64.4 / -67.8 / -69.3 / -70.7. 30 ms is the shortest length at which a
+    // +12 dB jump sits on the tone's own floor, and it is the time constant the EQ's smoothers already use.
+    // The mix: 1 -> 0.5 -74.7 and 1 -> 0 -73.1 from 20 ms on.
+    static constexpr double kRampMs = kParamRampMs;
+
     // One quantum: exactly K_ samples, every stage, always. This is the only place a stage is called.
     // LAW 11: every stage's verdict is checked here rather than discarded. None of them CAN refuse — the
     // chain prepares each for exactly (nch_, >= K_) and hands it exactly that — so a refusal would mean
@@ -974,6 +1040,7 @@ private:
         for (int c = 0; c < nch_; ++c) ch[c] = fifo_.data() + (std::size_t) c * (std::size_t) K_;
 
         if (paramsDirty_) { applyParams(); paramsDirty_ = false; }
+        fresh_ = false;                              // from here on a parameter write is a glide, not a snap
 
         // --- the gate, ahead of everything (see the header note) -------------------------------
         // The substitution is COUNTED, and the count is the whole point: a gate that silently replaces
@@ -1007,7 +1074,7 @@ private:
             nonFiniteIn_ += bad;
         }
 
-        applyGain (ch, inputGain_);
+        applyGain (ch, inGain_);
 
         // --- EQ (zero latency: bypass is simply not calling it) --------------------------------
         // Every band is driven through its own `dynamiceq::LaneDynamics`, which is `eq::EqEngine::process`'s
@@ -1130,7 +1197,7 @@ private:
             for (int c = 0; c < nch_; ++c)
                 std::copy_n (ch[c], K_, tap_->preLimiter[c] + (std::size_t) tap_->framesWritten);
 
-        applyGain (ch, preLimGain_);
+        applyGain (ch, preGain_);
 
         // --- true-peak limiter: the one stage with no bypass of its own -------------------------
         if (cfg_.limiter)
@@ -1171,11 +1238,28 @@ private:
         bypassChanged_ = {};
     }
 
-    void applyGain (float* const* ch, float g) noexcept
+    // THE TWO GAIN NODES. At rest this is the constant multiply it always was — bit for bit, 0 dB included
+    // (a branch, not a multiply by one) — so a chain whose gains were set before its first sample renders the
+    // bits it rendered before the ramp existed. While a ramp runs, the gain moves PER SAMPLE on the quantum's
+    // own clock; see `Ramp`. Every channel replays the same ramp from the same state, so they get the same
+    // gain on the same sample; the state is committed once, after the last channel.
+    void applyGain (float* const* ch, Ramp& r) noexcept
     {
-        if (core::exactlyEqual (g, 1.0f)) return;              // 0 dB is a bit-exact no-op, not a multiply
+        if (! r.moving())
+        {
+            const float g = r.target;
+            if (core::exactlyEqual (g, 1.0f)) return;          // 0 dB is a bit-exact no-op, not a multiply
+            for (int c = 0; c < nch_; ++c)
+                for (int i = 0; i < K_; ++i) ch[c][i] *= g;
+            return;
+        }
+        Ramp s = r;
         for (int c = 0; c < nch_; ++c)
-            for (int i = 0; i < K_; ++i) ch[c][i] *= g;
+        {
+            s = r;
+            for (int i = 0; i < K_; ++i) ch[c][i] *= s.next();
+        }
+        r = s;
     }
 
     // PARALLEL COMPRESSION, on the compressor's output `ch` and the aligned input `alignComp_` staged.
@@ -1208,13 +1292,35 @@ private:
     // within one float ulp of it. The compressor feeding it is its own question: its gain curve runs
     // through libm (GainReductionPath.h).
     //
-    // A STEP, NOT A RAMP, when the value moves: it lands at the quantum boundary, exactly like the two
-    // gain nodes, so it is block-invariant for the same reason they are and it clicks for the same reason
-    // they do — a hard `Δm * (wet - dry)` edge, where a bypass toggle glides on the compressor's own ballistics.
-    // Set it before the render and neither question arises.
+    // A RAMP, NOT A STEP, when the value moves — the same `Ramp` as the two gain nodes, per sample on the
+    // quantum's clock. It used to land at the quantum boundary as a hard `Δm * (wet - dry)` edge: measured
+    // on a -12 dBFS sine at 4:1 and a -18 dB threshold, 1 -> 0.5 put max|Δ²y| at -34.4 dBFS where the steady
+    // tone reads -76.8. The mix read on each sample is a float, so each sample's blend is EXACTLY the
+    // double form above for that `m`, and the two ends are exact too: `m == 1` returns `wet` and `m == 0`
+    // returns `dry`, zeros signed as they were, so a ramp that lands on either end mid-quantum joins the
+    // branch it lands on without a seam. At rest the branches and the constant-`m` loop run as before.
     void mixCompressorDry (float* const* ch) noexcept
     {
-        const float m = compMix_;
+        if (mix_.moving())
+        {
+            Ramp s = mix_;
+            for (int c = 0; c < nch_; ++c)
+            {
+                s = mix_;
+                const float* dry = alignComp_.delayed (c);
+                float*       wet = ch[c];
+                for (int i = 0; i < K_; ++i)
+                {
+                    const float  m  = s.next();
+                    const double pd = (1.0 - (double) m) * (double) dry[i];
+                    const double pw = (double) m * (double) wet[i];
+                    wet[i] = (float) (pd + pw);
+                }
+            }
+            mix_ = s;
+            return;
+        }
+        const float m = mix_.target;
         if (core::exactlyEqual (m, 1.0f)) return;
         if (core::exactlyEqual (m, 0.0f))
         {
@@ -1245,6 +1351,12 @@ private:
         return mix > 0.0 ? (float) std::min (mix, 1.0) : 0.0f;
     }
 
+    void setRamp (Ramp& r, float v) noexcept
+    {
+        if (fresh_) r.snap (v);
+        else        r.setTarget (v, rampLen_);
+    }
+
     struct BypassFlags { bool eq = false, monoBass = false, compressor = false, clipper = false, limiter = false, dither = false; };
 
     void applyParams() noexcept
@@ -1267,8 +1379,8 @@ private:
         }
         params_ = p;
 
-        inputGain_  = gainOf (p.inputGainDb);
-        preLimGain_ = gainOf (p.preLimiterGainDb);
+        setRamp (inGain_,  gainOf (p.inputGainDb));
+        setRamp (preGain_, gainOf (p.preLimiterGainDb));
 
         if (eq_)
             for (int i = 0; i < eq::EqEngine::kMaxBands; ++i) eq_->setBand (i, p.eqBands[i]);
@@ -1309,7 +1421,7 @@ private:
             }
             comp_.setParams (cp);
         }
-        compMix_ = mixOf (p.compressorMix);
+        setRamp (mix_, mixOf (p.compressorMix));
 
         if (cfg_.clipper) sat_.setParams (p.clipper);
         if (cfg_.limiter) lim_.setParams (p.limiter);
@@ -1338,7 +1450,11 @@ private:
     MasteringChainParams params_ {}, pendingParams_ {};
     BypassFlags          bypassChanged_ {};
 
-    float inputGain_ = 1.0f, preLimGain_ = 1.0f, compMix_ = 1.0f;
+    // The two gain nodes and the parallel-compression mix, each on its own `Ramp` (see there). `target` is
+    // what `applyParams()` last resolved — what `resolved()` reports — and `rampLen_` is kRampMs at this rate.
+    Ramp  inGain_, preGain_, mix_;
+    int   rampLen_ = 0;
+    bool  fresh_ = true;                     // no quantum has run since reset(): a parameter write SNAPS
 
     std::vector<float> fifo_, keyBuf_;
 
