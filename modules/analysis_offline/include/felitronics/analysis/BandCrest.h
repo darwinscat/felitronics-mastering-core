@@ -372,7 +372,10 @@ public:
         if (! prepared_ || finished_) return false;
         if (numChannels < 0 || numChannels > channels_ || n < 0) return false;
         if (n == 0) return true;
-        if (in == nullptr) return false;
+        // LAW 11a: at `nch == 0` the plane array may be null — a clock-only call carries no audio and a caller
+        // has no plane to point at. Refused only where a plane will be READ, which is LowEnd's spelling; it
+        // used to refuse every null array, so a caller spending a gap here had to invent a dummy one.
+        if (numChannels > 0 && in == nullptr) return false;
         for (int c = 0; c < numChannels; ++c) if (in[c] == nullptr) return false;
         if (numChannels > widest_) widest_ = numChannels;
         if (numChannels < widest_) narrowed_ += n;

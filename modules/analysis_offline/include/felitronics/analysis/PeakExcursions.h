@@ -309,10 +309,13 @@ public:
         if (! prepared_ || finished_ || in == nullptr) return false;
         if (numChannels < 1 || numChannels > maxChannels_) return false;
         if (numSamples < 0) return false;
-        if (ranNc_ == 0) ranNc_ = numChannels;
-        else if (numChannels != ranNc_) return false;
+        if (ranNc_ != 0 && numChannels != ranNc_) return false;
         for (int c = 0; c < numChannels; ++c) if (in[c] == nullptr) return false;
         if (numSamples == 0) return true;
+        // THE WIDTH IS LATCHED BY THE FIRST CALL THAT CARRIES AUDIO, not by the first call: `n == 0` moves
+        // nothing (law 11d), and latching ahead of that exit made an empty width-1 call before the programme
+        // turn every stereo call after it into a refused width change. A refused call latches nothing either.
+        if (ranNc_ == 0) ranNc_ = numChannels;
 
         for (int off = 0; off < numSamples; off += kChunk)
         {
