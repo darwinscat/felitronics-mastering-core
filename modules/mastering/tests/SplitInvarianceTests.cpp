@@ -371,10 +371,12 @@ struct ChainA
     {
         while (applied < events.size() && events[applied].at <= pos) chain.setParams (events[applied++].p);
     }
+    // AN EVENT IS DELIVERED JUST BEFORE THE SAMPLE AT ITS POSITION IS FED — never by a zero-length call. The
+    // first spelling also delivered it on an empty call standing at that position, so a prefix ending exactly on
+    // an event rendered differently with and without a trailing empty call (found by the code-review round).
     bool process (const float* const* in, int width, int n)
     {
         if (! Auto) return feed (in, width, n, 0);
-        applyDue();
         if (n == 0) return feed (in, width, 0, 0);
         for (int off = 0; off < n; )
         {
