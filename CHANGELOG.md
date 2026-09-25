@@ -2,7 +2,7 @@
 
 # Changelog
 
-## Unreleased
+## v0.1.0 — 2026-09-25
 
 ### mastering · analysis_offline · the C ABIs — split out of felitronics-core
 
