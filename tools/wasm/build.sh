@@ -54,6 +54,7 @@ echo "felitronics-core: $CORE"
 
 INC=(-I"$ROOT/tools"
      -I"$ROOT/modules/analysis_offline/include"
+     -I"$ROOT/modules/tempo/include"
      -I"$CORE/modules/core/include"
      -I"$CORE/modules/analysis/include"
      -I"$CORE/modules/oversampling/include"

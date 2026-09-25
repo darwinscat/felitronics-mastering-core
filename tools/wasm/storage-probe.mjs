@@ -96,6 +96,29 @@ const ok = (cond, what) => { ++checks; if (!cond) { ++bad; console.error(`FAIL: 
        'crest: a width the core does not have is priced at zero');
 }
 
+// The tempo price and its entry points, on the artifact. Like crest's, its geometry includes the programme LENGTH
+// (the onset curve is one double per 512 samples), so it takes a third argument and is not a row of the table.
+{
+    const q = M._fc_probe_tempo_storage_bytes, qw = M._fc_probe_tempo_storage_bytes_with;
+    if (typeof q !== 'function')
+        refuse(`_fc_probe_tempo_storage_bytes is ${typeof q} on this module — it did not reach the artifact`);
+    if (typeof qw !== 'function')
+        refuse(`_fc_probe_tempo_storage_bytes_with is ${typeof qw} on this module`);
+    for (const n of ['_fc_probe_tempo_run', '_fc_probe_tempo_run_with', '_fc_probe_tempo_scalars', '_fc_probe_tempo_candidates',
+                     '_fc_probe_tempo_curve', '_fc_probe_tempo_scalars_len', '_fc_probe_tempo_cand_stride',
+                     '_fc_probe_tempo_point_stride'])
+        if (typeof M[n] !== 'function') refuse(`${n} is ${typeof M[n]} on this module`);
+    const oneMin = q(2, 48000, 48000 * 60);
+    ok(oneMin > 0, 'tempo: a minute of stereo at 48 kHz is priced above zero');
+    ok(q(2, 48000, 48000 * 600) > oneMin, 'tempo: ten times the programme costs more — the onset buffers are per hop');
+    ok(qw(2, 48000, 48000 * 60, 60, 180, 6, 1.5) === oneMin,
+       'tempo: the parameterised price at the documented defaults is the default price');
+    ok(qw(2, 48000, 48000 * 60, 120, 90, 6, 1.5) === 0 && q(0, 48000, 48000) === 0 && q(2, 7999, 48000) === 0,
+       'tempo: an inverted range, a width of 0 and a rate under the floor are priced at the canonical zero');
+    ok(M._fc_probe_tempo_scalars_len() === 35 && M._fc_probe_tempo_cand_stride() === 2 && M._fc_probe_tempo_point_stride() === 5,
+       'tempo: 35 scalars, 2 per candidate, 5 per point');
+}
+
 // The PARAMETERISED bursts price, which has a different arity and so cannot be a row of the table
 // above. It still needs a gate on the artifact: the failure that matters is the name not reaching the
 // module at all, and after that, the two claims the native suite makes about it. Same shape as the rest
