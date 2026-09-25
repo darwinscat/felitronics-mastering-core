@@ -612,15 +612,20 @@ static void testMixGlides()
         long long glide = 0, moved = 0;
         for (int c = 0; c < nch; ++c)
         {
-            float cur = (float) cs.a;
-            const float tgt = (float) cs.b, step = (tgt - cur) / (float) L;
+            double cur = (double) (float) cs.a;
+            const float tgt = (float) cs.b;
+            const double step = ((double) tgt - cur) / (double) L;
             int left = L;
             for (int i = P + K; i < P + K + L; ++i)
             {
                 --left;
-                cur = left > 0 ? cur + step : tgt;
+                cur = left > 0 ? cur + step : (double) tgt;
+                const float m = (float) cur;
                 const double d = (double) dry.y[(std::size_t) c][(std::size_t) i], w = (double) wet.y[(std::size_t) c][(std::size_t) i];
-                const float want = (float) ((1.0 - (double) cur) * d + (double) cur * w);
+                // Spelled as the chain spells it — two statements, so no contraction mode fuses the products (law 10).
+                const double pd = (1.0 - (double) m) * d;
+                const double pw = (double) m * w;
+                const float want = (float) (pd + pw);
                 glide += bits (want) != bits (changed.y[(std::size_t) c][(std::size_t) i]);
                 moved += bits (changed.y[(std::size_t) c][(std::size_t) i]) != bits (before.y[(std::size_t) c][(std::size_t) i])
                       && bits (changed.y[(std::size_t) c][(std::size_t) i]) != bits (after.y[(std::size_t) c][(std::size_t) i]);
@@ -633,8 +638,8 @@ static void testMixGlides()
     }
 
     // A WRITE THAT CHANGES NOTHING RESTARTS NOTHING: the same target written again mid-glide, every call, leaves the
-    // render exactly as a single write did. And a NEW target mid-glide starts from where the glide stands, so the
-    // mix never jumps: the largest per-sample move of the blend weight is one step of either ramp.
+    // render exactly as a single write did. (A NEW target mid-glide restarts from where the glide stands — the ramp is
+    // shared with the gain nodes, and MasteringChainTests replays a retarget sample for sample.)
     {
         std::vector<Change> repeats { { P, heavy (0.3) } };
         for (int k = 1; k < 12; ++k) repeats.push_back ({ P + 97 * k, heavy (0.3) });

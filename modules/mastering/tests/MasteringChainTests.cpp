@@ -1219,15 +1219,15 @@ static void testParameterRamps()
         // 10K): 1024 samples into the 1440-sample glide toward b, so it restarts from where that glide stands.
         std::vector<float> g ((std::size_t) n, 1.0f);
         {
-            float cur = 1.0f, tgt = 1.0f, step = 0.0f; int left = 0;
-            auto setT = [&] (float v) { if (v == tgt) return; tgt = v; left = L; step = (tgt - cur) / (float) L; };
+            double cur = 1.0, step = 0.0; float tgt = 1.0f; int left = 0;
+            auto setT = [&] (float v) { if (v == tgt) return; tgt = v; left = L; step = ((double) tgt - cur) / (double) L; };
             for (int i = 0; i < n; ++i)
             {
                 const int q = i - K;                               // the quantum-stream index of output i
                 if (q == 5 * K) setT (dbGain (6.0));
                 if (q == 9 * K) setT (dbGain (-9.0));
-                if (left > 0) { --left; cur = left > 0 ? cur + step : tgt; }
-                g[(std::size_t) i] = cur;
+                if (left > 0) { --left; cur = left > 0 ? cur + step : (double) tgt; }
+                g[(std::size_t) i] = (float) cur;
             }
         }
         long long bad = 0;
@@ -1272,6 +1272,30 @@ static void testParameterRamps()
         for (int c = 0; c < nch; ++c)
             for (int i = 6 * K; i < 12 * K; ++i) snapBad += bits (w[(std::size_t) c][(std::size_t) i]) != bits (x0 * dbGain (-9.0));
         ok (snapBad == 0, std::string ("after reset() the next write snaps, and nothing of the interrupted glide resumes — ") + node);
+    }
+
+    // AT THE TOP OF THE RATE RANGE THE GLIDE STAYS MONOTONIC AND NEVER CROSSES ZERO. The code-review round found the
+    // first spelling — a float accumulator — drifting by ~len·ulp/2: at 352.8 kHz a +59.5 -> -60 dB move drove the gain
+    // through zero to -0.0535 before the last step landed it. The accumulator is double now; this is that move, and the
+    // same at 768 kHz and at the 3 MHz ceiling, with a constant input so the output IS the gain.
+    for (const double fs : { 352800.0, 768000.0, 3.0e6 })
+    {
+        mastering::MasteringChain hc;
+        mastering::MasteringChainParams hi, lo;
+        hi.inputGainDb = 59.513; lo.inputGainDb = -60.0;
+        hc.setParams (hi);
+        ok (hc.prepare (fs, 1, cfg), "PRECONDITION: prepare at " + std::to_string ((int) fs));
+        const int L = hc.paramRampSamples(), total = L + 4 * K;
+        Buf h (1, std::vector<float> ((std::size_t) (2 * K), 1.0f));
+        { auto p = planes (h); felitronics::test::run (hc.process (p.data(), 1, 2 * K)); }
+        hc.setParams (lo);
+        Buf v (1, std::vector<float> ((std::size_t) total, 1.0f));
+        { auto p = planes (v); felitronics::test::run (hc.process (p.data(), 1, total)); }
+        bool monotone = true, positive = true;
+        for (int i = 1; i < total; ++i) monotone = monotone && v[0][(std::size_t) i] <= v[0][(std::size_t) i - 1];
+        for (float x : v[0]) positive = positive && x > 0.0f;
+        ok (monotone && positive && bits (v[0][(std::size_t) (total - 1)]) == bits (dbGain (-60.0)),
+            "a +59.5 -> -60 dB glide at " + std::to_string ((int) fs) + " Hz is monotonic, never crosses zero and lands exactly");
     }
 }
 

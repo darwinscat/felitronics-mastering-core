@@ -985,10 +985,14 @@ private:
     //
     // LINEAR, AND IT ARRIVES. A new target restarts a `len`-sample ramp from the value the ramp holds NOW,
     // and the last step assigns the target itself, so the value at rest is the exact resolved number and the
-    // rest path is bit-identical to a chain that never ramped. `cur + step` is an addition and `x * next()` a
-    // multiplication, so no contraction can fuse either into an FMA (law 10): every row computes the same
-    // gain sequence. The comparison is EXACT (not JUCE's approximate one) — a write that changes the
-    // resolved value by an ulp is a new target like any other.
+    // rest path is bit-identical to a chain that never ramped. The ramp ACCUMULATES IN DOUBLE and hands out
+    // its float: a float accumulator drifts by about len·ulp/2, which relative to one step grows like len²,
+    // and the code-review round measured what that costs at the top of the rate range — at 352.8 kHz an
+    // inputGainDb move from +59.5 to -60 dB drove the gain through zero, to -0.0535, before the last step
+    // landed it (49 of 400 start values), and at 768 kHz 42 of 400. In double the drift is ~1e-9 of a step at
+    // 3 MHz. `cur + step` is an addition and `x * next()` a multiplication, so no contraction can fuse either
+    // into an FMA (law 10): every row computes the same gain sequence. The comparison is EXACT (not JUCE's
+    // approximate one) — a write that changes the resolved value by an ulp is a new target like any other.
     //
     // SNAPPED, NEVER RAMPED, BEFORE THE FIRST QUANTUM OF A STREAM. `reset()` (and so `prepare()`) arms
     // `fresh_`, and the parameter set the first quantum applies lands at once. That is what keeps every
@@ -996,25 +1000,26 @@ private:
     // it was before the ramps existed.
     struct Ramp
     {
-        float cur = 1.0f, target = 1.0f, step = 0.0f;
-        int   left = 0;
+        double cur = 1.0, step = 0.0;
+        float  target = 1.0f;
+        int    left = 0;
 
         bool moving() const noexcept { return left > 0; }
-        void snap (float v) noexcept { cur = target = v; step = 0.0f; left = 0; }
+        void snap (float v) noexcept { cur = (double) v; target = v; step = 0.0; left = 0; }
         void setTarget (float v, int len) noexcept
         {
             if (core::exactlyEqual (v, target)) return;       // a write that changes nothing restarts nothing
             if (len <= 0) { snap (v); return; }
             target = v;
             left   = len;
-            step   = (target - cur) / (float) len;
+            step   = ((double) target - cur) / (double) len;
         }
         float next() noexcept
         {
             if (left <= 0) return target;
             --left;
-            cur = left > 0 ? cur + step : target;
-            return cur;
+            cur = left > 0 ? cur + step : (double) target;
+            return (float) cur;
         }
     };
 
