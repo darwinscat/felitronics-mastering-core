@@ -46,6 +46,21 @@ by `AnalyzerMathPolicyTests`, so their reports are byte-identical native and in 
 | `StereoColumns` / `StereoSums` | the stereo band: width, uncentred phase correlation, RMS per column + the playhead needle — a port of `stereo-meter.js` |
 | `SpectrumFrames` | the shared frame producer the spectral analyzers stand on |
 
+## The tempo detector — `felitronics::tempo`
+
+`<felitronics/tempo/TempoDetector.h>` is a port of the site's BPM tool (`dsp/tempo.js`, `tempoCurve` and its
+whole-track half `detectTempo`): spectral-flux onsets from 1024-sample Hann frames every 512 samples, detrended,
+autocorrelated over the lags of the BPM range, the peak chosen under a log-normal preference around 120 BPM and
+refined parabolically, then 6 s windows every 1.5 s anchored to that tempo for the curve, median-smoothed, with the
+headline, its 10–90 % range and `varies` taken from the curve — over the mono mix the page makes, and with the
+spec's own edges kept (a lone onset reads a tempo with a NaN confidence). The transform is core's offline double
+FFT (the same radix-2 as the page's `fft.js`, unnormalised; only its twiddle seeds are `core::det`'s), the window
+and the octave weights are on `core::det`, and `Math.hypot` / `Math.round` / `Math.min` / `Math.max` are
+reproduced exactly (`<felitronics/tempo/JsNumerics.h>`). Against the JavaScript on real programmes every
+reported number is identical; the onset curve differs by the Hann window's cos alone, at ~1e-15 relative. It
+streams (any split gives the bits of one call), publishes its demand (`storageFor`), and crosses the probe ABI
+as `fc_probe_tempo_*`.
+
 ## The C ABIs — `tools/`
 
 `fc_master` (`tools/fc_master_abi.h`, `tools/wasm/fc_master.cpp`) over the chain and `fc_probe`

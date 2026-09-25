@@ -26,5 +26,7 @@
 #include <felitronics/mastering/OfflineRenderer.h>
 #include <felitronics/mastering/Planes.h>
 #include <felitronics/mastering/Progress.h>
+#include <felitronics/tempo/JsNumerics.h>
+#include <felitronics/tempo/TempoDetector.h>
 
 int main() { return 0; }
