@@ -32,6 +32,15 @@ programme's length. NaN is the spec's `null`, each beside a field that says whet
 programme is a measurement (undetermined), not a refusal. Suites: `felitronics_tempo_tests`,
 `felitronics_tempo_numerics_tests`, `felitronics_tempo_abi_tests`; both headers are in the det-math zone.
 
+### fc_probe — an ABI version
+
+`fc_probe_abi_version()` answers `FC_PROBE_ABI_VERSION`, declared in the new `tools/fc_probe_abi.h` beside
+`fc_master_abi.h`, with the append-only rule that moves it: one number for the probe's whole surface, bumped by one
+when an entry point is added or a published block or row grows at its end; nothing existing is renamed, reordered,
+re-typed or removed. It starts at 1 — the surface above, the tempo entry points and itself included. Pinned natively
+(`felitronics_abi_tests`, a literal as well as the constant) and on the artifact (`storage-probe.mjs check` reads
+the constant out of the header and asks the module).
+
 ## v0.1.0 — 2026-09-25
 
 ### mastering · analysis_offline · the C ABIs — split out of felitronics-core

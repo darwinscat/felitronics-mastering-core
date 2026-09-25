@@ -27,6 +27,7 @@
 // and `.set()` throws TypeError. That is why every view here is taken AFTER the call and copied out with
 // `.slice()` before the next one.
 
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 
@@ -94,6 +95,18 @@ const ok = (cond, what) => { ++checks; if (!cond) { ++bad; console.error(`FAIL: 
        'crest: edges that do not rise are priced at the canonical zero');
     ok(q(0, 48000, 48000) === 0 && q(99, 48000, 48000) === 0,
        'crest: a width the core does not have is priced at zero');
+}
+
+// The ABI version, on the artifact, against the header that declares it — read from tools/fc_probe_abi.h rather than
+// written here a second time, so the module and the header cannot disagree unnoticed.
+{
+    const hdr = readFileSync(new URL('../fc_probe_abi.h', import.meta.url), 'utf8');
+    const m = /^#define FC_PROBE_ABI_VERSION ([0-9]+)u$/m.exec(hdr);
+    if (!m) refuse('no FC_PROBE_ABI_VERSION in tools/fc_probe_abi.h');
+    if (typeof M._fc_probe_abi_version !== 'function')
+        refuse(`_fc_probe_abi_version is ${typeof M._fc_probe_abi_version} on this module — it did not reach the artifact`);
+    ok(M._fc_probe_abi_version() === Number(m[1]),
+       `the module speaks ABI version ${M._fc_probe_abi_version()}, the header declares ${m[1]}`);
 }
 
 // The tempo price and its entry points, on the artifact. Like crest's, its geometry includes the programme LENGTH
