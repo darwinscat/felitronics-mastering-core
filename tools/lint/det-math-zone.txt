@@ -29,11 +29,10 @@ zone  modules/analysis_offline/include/felitronics/analysis/SpectrumFrames.h   t
 zone  modules/analysis_offline/include/felitronics/analysis/StereoBandBursts.h  band bursts on Mid and Side, diffed by stereobursts-parity.mjs
 zone  modules/analysis_offline/include/felitronics/analysis/PeakExcursions.h    runs over a ceiling, diffed by excursions-parity.mjs
 zone  modules/analysis_offline/include/felitronics/analysis/BandCrest.h         crest per block and band, and the paired loss, diffed by crest-parity.mjs
-# The tempo detector behind fc_probe_tempo_*. No parity harness diffs it yet; it is in the zone for the reason core
-# gives CascadeOversampler its entry: its promise is the same bits natively and in the module (every elementary
-# function it calls is core::det's, and Math.hypot is reproduced from IEEE-exact operations), and a system libm call
-# in it would break that silently. Here it is red.
-zone  modules/tempo/include/felitronics/tempo/TempoDetector.h  the tempo detector, published by fc_probe_tempo_*
+# The tempo detector behind fc_probe_tempo_* and the page's BPM tool: every elementary function it calls is core::det's
+# and Math.hypot is reproduced from IEEE-exact operations, so the module and the native road answer the same bits — and
+# a system libm call in it would break that silently. Here it is red.
+zone  modules/tempo/include/felitronics/tempo/TempoDetector.h  the tempo detector, diffed by tempo-parity.mjs
 zone  modules/tempo/include/felitronics/tempo/JsNumerics.h     the JavaScript arithmetic the tempo detector reproduces (hypot, round, min, max, exp)
 
 # --- and the tools that PRINT the diffed text. The long-double lint deliberately skips tools/; for this lint

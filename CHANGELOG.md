@@ -32,6 +32,18 @@ programme's length. NaN is the spec's `null`, each beside a field that says whet
 programme is a measurement (undetermined), not a refusal. Suites: `felitronics_tempo_tests`,
 `felitronics_tempo_numerics_tests`, `felitronics_tempo_abi_tests`; both headers are in the det-math zone.
 
+### tempo — native against wasm, gated
+
+`fcore_measure tempo` prints the detector's whole surface — both headlines, the anchor, the range, the five
+candidates and every curve point, doubles as bit patterns and the spec's `null` as `nan` — and
+`tools/wasm/tempo-parity.mjs` prints the same bytes from the module (`tempo-format.mjs` is the shared half). CI's wasm
+job diffs the two on three generated programmes with a beat that changes (`make-tempo-fixture.mjs`: clicks at one
+tempo then another over integer-code noise, no transcendental, bytes pinned) at 48, 44.1 and 22.05 kHz and one, two
+and six channels, under seven re-slicings (`--chunk`, honoured natively, the module measures in one call), four
+parameter sets, the loudness fixture and an empty programme, release and checked modules; it asserts the comparison
+saw a determined tempo that varies and a curve, and that both roads refuse the same seventeen command lines. Measured
+locally: 64 comparisons, every one identical.
+
 ### fc_probe — an ABI version
 
 `fc_probe_abi_version()` answers `FC_PROBE_ABI_VERSION`, declared in the new `tools/fc_probe_abi.h` beside
