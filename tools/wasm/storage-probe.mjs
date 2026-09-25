@@ -95,6 +95,8 @@ const ok = (cond, what) => { ++checks; if (!cond) { ++bad; console.error(`FAIL: 
        'crest: edges that do not rise are priced at the canonical zero');
     ok(q(0, 48000, 48000) === 0 && q(99, 48000, 48000) === 0,
        'crest: a width the core does not have is priced at zero');
+    ok(q(1, 48000, 0x3FFFFFFF) > 0 && q(1, 48000, 0x40000000) === 0 && q(16, 48000, 0x3FFFFFF) > 0 && q(16, 48000, 0x4000000) === 0,
+       'crest: priced where the planes fit 4 GiB and at zero where they do not — the span the run refuses');
 }
 
 // The ABI version, on the artifact, against the header that declares it — read from tools/fc_probe_abi.h rather than
@@ -128,6 +130,8 @@ const ok = (cond, what) => { ++checks; if (!cond) { ++bad; console.error(`FAIL: 
        'tempo: the parameterised price at the documented defaults is the default price');
     ok(qw(2, 48000, 48000 * 60, 120, 90, 6, 1.5) === 0 && q(0, 48000, 48000) === 0 && q(2, 7999, 48000) === 0,
        'tempo: an inverted range, a width of 0 and a rate under the floor are priced at the canonical zero');
+    ok(q(1, 48000, 0x3FFFFFFF) > 0 && q(1, 48000, 0x40000000) === 0 && q(16, 48000, 0x3FFFFFF) > 0 && q(16, 48000, 0x4000000) === 0,
+       'tempo: priced where the planes fit 4 GiB and at zero where they do not — the span the run refuses');
     ok(M._fc_probe_tempo_scalars_len() === 35 && M._fc_probe_tempo_cand_stride() === 2 && M._fc_probe_tempo_point_stride() === 5,
        'tempo: 35 scalars, 2 per candidate, 5 per point');
 }

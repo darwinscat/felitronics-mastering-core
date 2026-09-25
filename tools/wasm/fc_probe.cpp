@@ -1755,9 +1755,12 @@ FC_EXPORT std::uint32_t fc_probe_crest_loss (std::int32_t band, double* out, std
     return i;
 }
 
+// THE PRICE KNOWS THE LENGTH, SO IT REFUSES THE SPANS THE RUN REFUSES — the tempo price's rule, with the same shared
+// predicate: a programme whose planes cannot fit a 32-bit address space is priced at zero, where this used to quote a
+// positive price for a run that could only answer 0. Only the pointer is left for the run to refuse on its own.
 FC_EXPORT double fc_probe_crest_storage_bytes (std::uint32_t channels, double sampleRate, std::uint32_t frames)
 {
-    if (! geometry (channels)) return 0.0;
+    if (! geometry (channels) || ! spanFits (frames, channels)) return 0.0;
     const auto st = felitronics::analysis::BandCrest::storageFor (sampleRate, (int) channels, (long long) frames,
                                                                   felitronics::analysis::BandCrestParams {});
     return st.ok ? (double) st.bytes() : 0.0;
@@ -1768,7 +1771,7 @@ FC_EXPORT double fc_probe_crest_storage_bytes_with (std::uint32_t channels, doub
                                                     double hopMs, std::int32_t blockHops,
                                                     double programmeFloorDb, double bandShareFloorDb)
 {
-    if (! geometry (channels)) return 0.0;
+    if (! geometry (channels) || ! spanFits (frames, channels)) return 0.0;
     felitronics::analysis::BandCrestParams p;
     p.bandEdgeHz[0] = edge0Hz; p.bandEdgeHz[1] = edge1Hz; p.bandEdgeHz[2] = edge2Hz;
     p.hopMs = hopMs; p.blockHops = (int) blockHops;
