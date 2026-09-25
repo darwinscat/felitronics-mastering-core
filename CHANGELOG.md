@@ -44,6 +44,15 @@ parameter sets, the loudness fixture and an empty programme, release and checked
 saw a determined tempo that varies and a curve, and that both roads refuse the same seventeen command lines. Measured
 locally: 64 comparisons, every one identical.
 
+### fc_probe_crest_storage_bytes — no price for a span the run refuses
+
+The crest price takes the programme's length and quoted a positive number for programmes whose planes cannot fit a
+32-bit address space (mono at 2^30 frames and up; sixteen channels at 2^26) — exactly the spans
+`fc_probe_crest_run` refuses before reading a sample, so a page that asked first was promised a measurement it
+could not have. Both crest prices now refuse them, through the same predicate the run and the tempo price use.
+Pinned natively in `felitronics_analysis_abi_tests` (both sides of the bound, mono and sixteen wide, the
+parameterised price, and the run on the same spans) and on the artifact by `storage-probe.mjs check`.
+
 ### fc_probe — an ABI version
 
 `fc_probe_abi_version()` answers `FC_PROBE_ABI_VERSION`, declared in the new `tools/fc_probe_abi.h` beside
