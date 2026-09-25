@@ -6,6 +6,7 @@
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](#)
 [![core: felitronics-core](https://img.shields.io/badge/core-felitronics--core-brightgreen.svg)](https://github.com/darwinscat/felitronics-core)
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)](LICENSE)
+[![Latest release](https://img.shields.io/github/v/tag/darwinscat/felitronics-mastering-core)](https://github.com/darwinscat/felitronics-mastering-core/tags)
 
 The mastering chain and the offline programme analyzers of the Darwin's Cat products, on top of [felitronics-core](https://github.com/darwinscat/felitronics-core).
 
