@@ -20,6 +20,7 @@
 // fc_probe_tp_linear(). See tools/fcore_probe.h for why.
 
 #include "fc_probe_abi.h"
+#include "fc_abi_guards.h"
 #include "fcore_clips.h"
 #include "fcore_probe.h"
 #include "fcore_stream.h"
@@ -32,21 +33,12 @@
 #include <felitronics/analysis/SourceForensics.h>
 #include <felitronics/analysis/StereoBandBursts.h>
 #include <felitronics/analysis/ProgrammeReport.h>
-#include <felitronics/tempo/TempoDetector.h>
 
 #include <cstdint>
 #include <cstring>
 #include <limits>
 #include <new>
 #include <vector>
-
-#if defined(__EMSCRIPTEN__)
-  #include <emscripten/emscripten.h>
-  #include <emscripten/heap.h>              // emscripten_get_heap_size — NOT declared by emscripten.h
-  #define FC_EXPORT extern "C" EMSCRIPTEN_KEEPALIVE
-#else
-  #define FC_EXPORT extern "C"
-#endif
 
 namespace
 {
@@ -58,71 +50,6 @@ namespace
         return p;
     }
 
-    // Does [p, p+bytes) lie inside the wasm linear memory? A pointer can be aligned, and its length can fit a
-    // 32-bit address space, and the span can still run off the end of the heap — an aligned pointer four
-    // bytes below the top with frames=2 passes every other check here and then traps with "memory access out
-    // of bounds". This cannot prove the caller actually owns the span (no ABI of this shape can), but it does
-    // turn "the module dies" into "the call is refused".
-    bool inHeap (const void* p, std::uint64_t bytes)
-    {
-#if defined(__EMSCRIPTEN__)
-        const std::uint64_t base = (std::uint64_t) reinterpret_cast<std::uintptr_t> (p);
-        if (base == 0) return false;
-        const std::uint64_t end = base + bytes;
-        if (end < base) return false;                                     // wrapped
-        return end <= (std::uint64_t) emscripten_get_heap_size();
-#else
-        (void) p; (void) bytes;
-        return true;                                                      // native: no linear memory to bound
-#endif
-    }
-
-    // THE ONE CHANNEL PREDICATE IN THIS FILE, read by the input checks below and by the five
-    // fc_probe_<mode>_storage_bytes queries at the foot of it. A second copy would be a seam the two
-    // roads could drift apart along, which is the whole class this ABI keeps closing. The range is tested
-    // BEFORE the narrowing to the analyzers' `int`: the conversion of a uint32 above INT_MAX is well defined
-    // in C++20 and would land outside [1, kMaxChannels] anyway, but a width is refused here because it IS
-    // out of range, not because a cast happened to carry it back out of range.
-    bool geometry (std::uint32_t channels)
-    {
-        return channels >= 1 && channels <= (std::uint32_t) felitronics::core::kMaxChannels;
-    }
-
-    // Whether `frames` x `channels` float32 planes fit one 32-bit address space — the span a wasm32 caller can
-    // have malloc'd at all. A function of the geometry alone, so a price that takes the programme's LENGTH (tempo's)
-    // can refuse the same spans the run refuses, with this one predicate rather than a copy of it.
-    bool spanFits (std::uint32_t frames, std::uint32_t channels)
-    {
-        return (std::uint64_t) frames * (std::uint64_t) channels * sizeof (float) <= (std::uint64_t) 0xFFFFFFFFu;
-    }
-
-    // The planar input span: non-null, non-empty, a width the core has, 4-byte aligned, and inside the heap.
-    bool planarSpan (const float* planar, std::uint32_t frames, std::uint32_t channels)
-    {
-        if (planar == nullptr || frames == 0) return false;
-        if (! geometry (channels)) return false;
-        if ((reinterpret_cast<std::uintptr_t> (planar) & 0x3u) != 0) return false;   // a misaligned float* reads
-                                                                                     // garbage in a release build
-                                                                                     // and only traps under SAFE_HEAP
-        // frames*channels must address real memory: on wasm32 the product is what a caller malloc'd, so a
-        // wrapped one would hand us a window onto someone else's heap.
-        if (! spanFits (frames, channels)) return false;
-        return inHeap (planar, (std::uint64_t) frames * (std::uint64_t) channels * sizeof (float));
-    }
-
-    // FOUR of the five offline analyzers accept an EMPTY programme and report on it — lowend does
-    // NOT, because `fcore_measure lowend` refuses it too and the two roads must refuse the same set. — `fcore_measure report`
-    // on /dev/null prints 2109 bytes of a perfectly good empty report. planarSpan() refuses frames == 0,
-    // and rightly so for `clips`, whose emptiness is a FILE that was probably truncated; but here the
-    // caller hands over a buffer, and "no audio" is a measurement, not a truncation. Refusing it in the
-    // module while the CLI answers it is a byte-parity break, so these runs take this check instead.
-    bool planarSpanOrEmpty (const float* planar, std::uint32_t frames, std::uint32_t channels)
-    {
-        if (! geometry (channels)) return false;
-        if (frames == 0) return true;                                  // nothing to address, nothing to bound
-        return planarSpan (planar, frames, channels);
-    }
-
     // Ptr/size validation the core cannot do for us: everything below arrives from JS.
     bool viable (const float* planar, std::uint32_t frames, std::uint32_t channels, double sampleRate)
     {
@@ -131,24 +58,6 @@ namespace
         // ones above 768 kHz (see Probe::kMinSampleRate)
         return probe().prepare (sampleRate, (int) channels);
     }
-
-    // An output span of `count` elements of `align` bytes each: non-null, aligned, inside the heap.
-    bool outSpan (const void* out, std::uint32_t count, std::uint32_t align)
-    {
-        if (out == nullptr) return false;
-        if ((reinterpret_cast<std::uintptr_t> (out) & (align - 1u)) != 0) return false;
-        return inHeap (out, (std::uint64_t) count * align);
-    }
-
-    // `st.ok`, ALWAYS — never a bare `st.bytes()`. A REFUSED Storage IS NOT AN EMPTY ONE:
-    // ProgrammeReport::Storage carries a DeterministicLoudnessMeter::Storage, whose bytes() has a constant
-    // ring term (LoudnessMeter.h, `kSubRing`), so a default-constructed one reports 2400 bytes. A query that
-    // forwarded that would quote a price for a measurement that cannot happen — and only for `report`, so a
-    // test that probed the other four would not see it. (Measured on a9816e2; it is also why
-    // ProgrammeReport.h's own "all zeros where prepare() refuses" note is true of the members and not of the
-    // total.)
-    template <typename Storage>
-    double demand (const Storage& st) { return st.ok ? (double) st.bytes() : 0.0; }
 
     // Whether the getters have a result to report. Without this the contract would be an accident of where
     // Probe::prepare() happens to return: a bad sample rate is caught before the meter is touched, so the
@@ -2214,174 +2123,12 @@ FC_EXPORT double fc_probe_stereobursts_storage_bytes_with (std::uint32_t channel
 }
 
 //==================================================================================================
-// tempo::TempoDetector through the ABI — the page's BPM tool (dsp/tempo.js, tempoCurve) as a measurement.
+// tempo::TempoDetector through the ABI — the ten fc_probe_tempo_* entry points. Their text is
+// tools/wasm/fc_tempo_entry.h, because a second module publishes them too: fctempo (tools/wasm/fc_tempo.cpp), the
+// tempo detector alone, for a page that needs nothing else. One body compiled twice, so the two modules answer the
+// same names with the same bits and cannot drift.
 //
-// THE MIX IS THE DETECTOR'S, NOT THIS FILE'S: the planes cross as they are, and TempoDetector mixes them the way
-// the page's toMono does (float32, channel by channel, divided by the count). A page that already holds its mono
-// mix passes it as one channel and gets the same bits.
-//
-// NaN IS THE SPEC'S `null`, in every field that can be null — the bpm of an undetermined programme, a confidence
-// the spec itself computes as 0/0 (a lone onset), the beat period and offset, a range bound, an absent alternative,
-// a gap in the curve — and a field beside each says whether it is there, so a reader never has to decide what a
-// NaN means. (An undetermined programme's confidence is 0, not NaN: the spec says 0 there.) AN EMPTY PROGRAMME IS A
-// MEASUREMENT: the spec answers it (undetermined), so the run does too.
-namespace
-{
-    felitronics::tempo::TempoDetector& tempoDetector()
-    {
-        static felitronics::tempo::TempoDetector d;
-        return d;
-    }
-    bool haveTempo = false;
-
-    // One definition, two roads — the run and the price read the same constant.
-    constexpr felitronics::tempo::TempoParams kTempoParams {};
-
-    constexpr std::uint32_t kTempoScalars     = 35;
-    constexpr std::uint32_t kTempoCandStride  = 2;    // bpm (0.1), score
-    constexpr std::uint32_t kTempoPointStride = 5;    // t (0.1 s), hasBpm, bpm (0.1, NaN in a gap), conf (0.01), raw bpm
-
-    double tempoAlt (const felitronics::tempo::TempoHeadline& h, int i)
-    {
-        return i < h.altCount ? h.alts[i] : std::numeric_limits<double>::quiet_NaN();
-    }
-}
-
-static int tempoRunWith (const float* planar, std::uint32_t frames, std::uint32_t channels, double sampleRate,
-                         const felitronics::tempo::TempoParams& p)
-{
-    haveTempo = false;
-    if (! planarSpanOrEmpty (planar, frames, channels)) return 0;
-    auto& d = tempoDetector();
-    d.setParams (p);
-    // The detector validates the rate, the width and every parameter itself (storageFor refuses exactly what
-    // prepare refuses); a second opinion here would be a second definition.
-    if (! d.prepare (sampleRate, (int) channels, (std::uint64_t) frames)) return 0;
-    const float* view[felitronics::core::kMaxChannels] {};
-    if (frames != 0)
-        for (std::uint32_t k = 0; k < channels; ++k) view[k] = planar + (std::size_t) k * (std::size_t) frames;
-    if (frames != 0 && ! d.process (view, (int) channels, (int) frames)) return 0;
-    if (! d.finish()) return 0;
-    haveTempo = true;
-    return 1;
-}
-
-FC_EXPORT int fc_probe_tempo_run (const float* planar, std::uint32_t frames, std::uint32_t channels, double sampleRate)
-{
-    return tempoRunWith (planar, frames, channels, sampleRate, kTempoParams);
-}
-
-// The spec's `opts`: the BPM search range and the curve's window and hop, in seconds.
-FC_EXPORT int fc_probe_tempo_run_with (const float* planar, std::uint32_t frames, std::uint32_t channels,
-                                       double sampleRate, double minBpm, double maxBpm, double winSec, double hopSec)
-{
-    return tempoRunWith (planar, frames, channels, sampleRate,
-                         felitronics::tempo::TempoParams { minBpm, maxBpm, winSec, hopSec });
-}
-
-FC_EXPORT std::uint32_t fc_probe_tempo_scalars_len  (void) { return kTempoScalars; }
-FC_EXPORT std::uint32_t fc_probe_tempo_cand_stride  (void) { return kTempoCandStride; }
-FC_EXPORT std::uint32_t fc_probe_tempo_point_stride (void) { return kTempoPointStride; }
-
-// The scalars. The ORDER IS THE CONTRACT:
-//   0 sampleRate  1 channels  2 samples  3 odfSr  4 onset frames
-//   5 minBpm  6 maxBpm  7 winSec  8 hopSec  9 window frames  10 hop frames            (what the RUN installed;
-//                                                                                       9/10 as the spec forms them)
-//   11 determined  12 bpm  13 confidence  14 label (0 undetermined, 1 low, 2 medium, 3 high)
-//   15 alt count  16 alt 0  17 alt 1  18 beatPeriodSec  19 beatOffsetSec              (tempoCurve's headline)
-//   20 varies  21 hasRange  22 range low  23 range high  24 candidates  25 points
-//   26 bpm  27 alt count  28 alt 0  29 alt 1  30 beatPeriodSec                          (detectTempo's — the rest
-//                                                                                       of its fields are 13, 14, 19)
-//   31 anchor bpm  32 anchor confidence  33 anchor lag  34 non-finite samples          (unrounded, for inspection)
-FC_EXPORT std::uint32_t fc_probe_tempo_scalars (double* out, std::uint32_t cap)
-{
-    if (! haveTempo || out == nullptr || cap < kTempoScalars || ! outSpan (out, cap, 8)) return 0u;
-    const auto& d = tempoDetector();
-    const auto& p = d.params();
-    const auto& h = d.headline();
-    const auto& w = d.wholeTrack();
-    std::uint32_t i = 0;
-    out[i++] = d.sampleRate();                 out[i++] = (double) d.channels();
-    out[i++] = (double) d.framesSeen();        out[i++] = d.odfSampleRate();
-    out[i++] = (double) d.onsetFrames();
-    out[i++] = p.minBpm;                       out[i++] = p.maxBpm;
-    out[i++] = p.winSec;                       out[i++] = p.hopSec;
-    out[i++] = d.windowFrames();               out[i++] = d.hopFrames();
-    out[i++] = h.determined ? 1.0 : 0.0;       out[i++] = h.bpm;
-    out[i++] = h.confidence;                   out[i++] = (double) (int) h.label;
-    out[i++] = (double) h.altCount;            out[i++] = tempoAlt (h, 0);
-    out[i++] = tempoAlt (h, 1);                out[i++] = h.beatPeriodSec;
-    out[i++] = h.beatOffsetSec;
-    out[i++] = d.varies() ? 1.0 : 0.0;         out[i++] = d.hasRange() ? 1.0 : 0.0;
-    out[i++] = d.rangeLow();                   out[i++] = d.rangeHigh();
-    out[i++] = (double) d.candidateCount();    out[i++] = (double) d.pointCount();
-    out[i++] = w.bpm;                          out[i++] = (double) w.altCount;
-    out[i++] = tempoAlt (w, 0);                out[i++] = tempoAlt (w, 1);
-    out[i++] = w.beatPeriodSec;
-    out[i++] = d.anchorBpm();                  out[i++] = d.anchorConfidence();
-    out[i++] = d.anchorLag();                  out[i++] = (double) d.nonFiniteSamples();
-    return i;
-}
-
-// One row per candidate (at most five): bpm rounded to 0.1, the raw score. Rows that fit the capacity; the
-// capacity is in ELEMENTS, as every copier in this ABI takes it.
-FC_EXPORT std::uint32_t fc_probe_tempo_candidates (double* out, std::uint32_t cap)
-{
-    if (! haveTempo || out == nullptr || ! outSpan (out, cap, 8)) return 0u;
-    const auto& d = tempoDetector();
-    const std::uint32_t room = cap / kTempoCandStride;
-    std::uint32_t at = 0;
-    for (int k = 0; k < d.candidateCount() && at < room; ++k, ++at)
-    {
-        const auto c = d.candidate (k);
-        out[(std::size_t) at * kTempoCandStride + 0] = c.bpm;
-        out[(std::size_t) at * kTempoCandStride + 1] = c.score;
-    }
-    return at;
-}
-
-// One row per point of the curve: t, hasBpm, bpm (NaN in a gap), conf, and the window's own bpm BEFORE the
-// median (NaN where that window was a gap) — the one column that is not the spec's, so a reader can tell a
-// smoothed-away spike from a gap.
-FC_EXPORT std::uint32_t fc_probe_tempo_curve (double* out, std::uint32_t cap)
-{
-    if (! haveTempo || out == nullptr || ! outSpan (out, cap, 8)) return 0u;
-    const auto& d = tempoDetector();
-    const std::uint32_t room = cap / kTempoPointStride;
-    std::uint32_t at = 0;
-    for (std::int64_t k = 0; k < d.pointCount() && at < room; ++k, ++at)
-    {
-        const auto q = d.point (k);
-        const auto r = d.rawPoint (k);
-        double* row = out + (std::size_t) at * kTempoPointStride;
-        row[0] = q.t;
-        row[1] = q.hasBpm ? 1.0 : 0.0;
-        row[2] = q.hasBpm ? q.bpm : std::numeric_limits<double>::quiet_NaN();
-        row[3] = q.conf;
-        row[4] = r.hasBpm ? r.bpm : std::numeric_limits<double>::quiet_NaN();
-    }
-    return at;
-}
-
-// THE PRICE TAKES THE PROGRAMME'S LENGTH, because every onset buffer is one double per 512 samples of it — the
-// crest price's shape, for the same reason.
-//
-// AND BECAUSE IT KNOWS THE LENGTH, IT REFUSES THE SPANS THE RUN REFUSES: a programme whose planes cannot fit a 32-bit
-// address space is priced at zero here, where the length-free prices of the other modes cannot see it. Only what
-// the price cannot know — the pointer — is left for the run to refuse on its own.
-FC_EXPORT double fc_probe_tempo_storage_bytes (std::uint32_t channels, double sampleRate, std::uint32_t frames)
-{
-    if (! geometry (channels) || ! spanFits (frames, channels)) return 0.0;
-    return demand (felitronics::tempo::TempoDetector::storageFor (sampleRate, (int) channels, (std::uint64_t) frames,
-                                                                  kTempoParams));
-}
-
-// ...and law 11d: a caller about to run `_run_with` must be able to ask the price of THOSE parameters.
-FC_EXPORT double fc_probe_tempo_storage_bytes_with (std::uint32_t channels, double sampleRate, std::uint32_t frames,
-                                                    double minBpm, double maxBpm, double winSec, double hopSec)
-{
-    if (! geometry (channels) || ! spanFits (frames, channels)) return 0.0;
-    return demand (felitronics::tempo::TempoDetector::storageFor (
-                       sampleRate, (int) channels, (std::uint64_t) frames,
-                       felitronics::tempo::TempoParams { minBpm, maxBpm, winSec, hopSec }));
-}
+// INCLUDED HERE, AT THE FOOT, where the section stood before it moved: the module's functions keep their order, and
+// the fcprobe .wasm this file builds stayed BYTE-IDENTICAL across the move — which is how the move was shown to be
+// a move and not a change.
+#include "fc_tempo_entry.h"

@@ -3,7 +3,7 @@ name: ci
 
 # The rows felitronics-core carried for these modules, plus the gates that only exist here: the lints run from
 # this repository's root with their planted-violation controls, the wasm-audio tier for this suite, and every
-# native-vs-wasm comparison of the two C ABIs. felitronics-core is fetched at FELITRONICS_MASTERING_FCORE_TAG
+# native-vs-wasm comparison of the C ABIs. felitronics-core is fetched at FELITRONICS_MASTERING_FCORE_TAG
 # (CMakeLists.txt): CI checks out this repository alone, so a green run proves the PIN — and it cannot be green
 # before that core tag exists.
 on:
@@ -221,7 +221,7 @@ jobs:
           echo "control 5a ok: the alloc-counter lint reaches this repository's ABI suites"
 
   # The wasm-audio tier for THIS repository's suite (core's preset flags and toolchain pin), its artifact
-  # gates, and every native-vs-wasm comparison of the two C ABIs. ubuntu, NOT macos, and for the comparisons
+  # gates, and every native-vs-wasm comparison of the C ABIs. ubuntu, NOT macos, and for the comparisons
   # that is load-bearing: Apple's libm and musl (what emscripten compiles in) return different doubles from
   # tan() at 88.2 and 192 kHz, so an arm64-macOS reference would diverge from wasm for a reason that is not a
   # regression. glibc agrees with musl at every rate measured. docs/WASM-SPIKE.md has the numbers.
@@ -555,10 +555,13 @@ jobs:
           done
           echo "bit-identical: $n native-vs-wasm comparisons across the offline analyzers, two rates, two modules"
 
-      - name: NULL test — the tempo detector, native vs wasm, bit-exact
+      - name: NULL test — the tempo detector, native vs wasm, bit-exact, on BOTH modules that carry it
         # The page's BPM tool reads its tempo from fc_probe_tempo_*, so this is the proof that the module the page
         # loads and the native road answer the same bits: both headlines, the anchor, the range, the candidates and
         # every curve point, each double as a bit pattern (a NaN — the spec's `null` — as `nan`).
+        # TWO MODULES PUBLISH THOSE NAMES — fcprobe, and fctempo, the tempo detector alone (tools/wasm/fc_tempo.cpp),
+        # from one text — and a page may load either, so every row below runs on both (and on fcprobe's checked build):
+        # one harness, the module path is the switch, and it refuses a module that is neither.
         # THE FIXTURES HAVE A BEAT, AND IT CHANGES. make-fixture.mjs has none: a diff of two curves of gaps would
         # say nothing, so make-tempo-fixture.mjs writes clicks at one tempo and then another over integer-code noise,
         # at three rates and three widths, and the step asserts below that the comparison saw a determined tempo, a
@@ -579,18 +582,20 @@ jobs:
           check() { f=$1; sr=$2; ch=$3; shift 3
             $M tempo "$sr" "$ch" "$f" "$@" > tempo-native.txt
             test -s tempo-native.txt
-            for mod in fcprobe.node.js fcprobe.debug.js; do
+            for mod in fcprobe.node.js fcprobe.debug.js fctempo.node.js; do
               node tools/wasm/tempo-parity.mjs "tools/wasm/build/$mod" "$sr" "$ch" "$f" "$@" > tempo-wasm.txt
               diff tempo-native.txt tempo-wasm.txt || { echo "DIFFER: tempo $sr $ch $f $* ($mod)"; exit 1; }
               n=$((n+1))
             done; }
+          # A REFUSAL IS EXIT 2 on both roads, not "any failure": tempo-parity.mjs exits 3 when it cannot trust the
+          # module (the wrong one, the wrong version) and a crash is anything else, and neither is a refusal.
           refuse() { f=$1; sr=$2; ch=$3; shift 3
-            if $M tempo "$sr" "$ch" "$f" "$@" > r-native.txt 2>/dev/null; then
-              echo "NATIVE ACCEPTED what it should refuse: tempo $sr $ch $f $*"; exit 1; fi
+            rc=0; $M tempo "$sr" "$ch" "$f" "$@" > r-native.txt 2>/dev/null || rc=$?
+            [ "$rc" -eq 2 ] || { echo "NATIVE did not refuse (exit $rc, a refusal is 2): tempo $sr $ch $f $*"; exit 1; }
             test ! -s r-native.txt || { echo "NATIVE printed a report and then failed: $*"; exit 1; }
-            for mod in fcprobe.node.js fcprobe.debug.js; do
-              if node tools/wasm/tempo-parity.mjs "tools/wasm/build/$mod" "$sr" "$ch" "$f" "$@" > r-wasm.txt 2>/dev/null; then
-                echo "WASM ACCEPTED what native refuses: tempo $sr $ch $f $* ($mod)"; exit 1; fi
+            for mod in fcprobe.node.js fcprobe.debug.js fctempo.node.js; do
+              rc=0; node tools/wasm/tempo-parity.mjs "tools/wasm/build/$mod" "$sr" "$ch" "$f" "$@" > r-wasm.txt 2>/dev/null || rc=$?
+              [ "$rc" -eq 2 ] || { echo "WASM did not refuse (exit $rc, a refusal is 2): tempo $sr $ch $f $* ($mod)"; exit 1; }
               test ! -s r-wasm.txt || { echo "WASM printed a report and then failed: $* ($mod)"; exit 1; }
               n=$((n+1))
             done; }
@@ -626,7 +631,12 @@ jobs:
           refuse tempo48.f32 48000 0
           refuse tempo48.f32 48000 17
           refuse tempo-odd.f32 48000 2
-          echo "bit-identical: $n native-vs-wasm comparisons of the tempo detector, refusals included"
+          # The module path is the switch, so a swapped artifact must be refused, not measured: fcprobe under
+          # fctempo's name answers the same tempo rows, and would pass every diff above.
+          mkdir -p swapped && cp tools/wasm/build/fcprobe.node.js swapped/fctempo.node.js && cp tools/wasm/build/fcprobe.node.wasm swapped/
+          rc=0; node tools/wasm/tempo-parity.mjs swapped/fctempo.node.js 48000 2 tempo48.f32 > /dev/null 2>&1 || rc=$?
+          [ "$rc" -eq 3 ] || { echo "fcprobe under fctempo's name was not refused as the wrong module (exit $rc)"; exit 1; }
+          echo "bit-identical: $n native-vs-wasm comparisons of the tempo detector, refusals included, fcprobe and fctempo"
 
       - name: the price of a measurement — the same demand on both tiers
         # `fc_probe_<mode>_storage_bytes` publishes what each analyzer's storageFor() is about to ask the
@@ -660,6 +670,23 @@ jobs:
             node tools/wasm/storage-probe.mjs "tools/wasm/build/$mod" check
           done
           echo "identical on both tiers: $(wc -l < storage-native.txt) rows of published demand, release and checked"
+          # fctempo: its own check (its version, its tempo price, and that it exports its surface and NOTHING else),
+          # and the tempo price quoted by both modules over one grid, byte for byte — a page that moves between them
+          # must be quoted the same demand, not only handed the same rows. Floors, as above: 3600 rows today, 784
+          # of them priced.
+          node tools/wasm/storage-probe.mjs tools/wasm/build/fctempo.node.js check
+          # ...and it is checked AS fctempo: fcprobe under its name is refused, not run through the probe's checks.
+          mkdir -p swapped && cp tools/wasm/build/fcprobe.node.js swapped/fctempo.node.js && cp tools/wasm/build/fcprobe.node.wasm swapped/
+          if node tools/wasm/storage-probe.mjs swapped/fctempo.node.js check > /dev/null 2>&1; then
+            echo "fcprobe under fctempo's name passed storage-probe check"; exit 1; fi
+          node tools/wasm/storage-probe.mjs tools/wasm/build/fcprobe.node.js tempo-table > tempo-price-probe.txt
+          [ "$(wc -l < tempo-price-probe.txt)" -ge 3600 ] || { echo "the tempo price table lost rows"; exit 1; }
+          [ "$(grep -cv ' 0$' tempo-price-probe.txt)" -ge 784 ] || { echo "the tempo price table is mostly refusals"; exit 1; }
+          for mod in fcprobe.debug.js fctempo.node.js; do
+            node tools/wasm/storage-probe.mjs "tools/wasm/build/$mod" tempo-table > tempo-price-wasm.txt
+            cmp tempo-price-probe.txt tempo-price-wasm.txt || { echo "the tempo price differs: fcprobe.node.js vs $mod"; exit 1; }
+          done
+          echo "identical: $(wc -l < tempo-price-probe.txt) tempo price quotes, fcprobe (release and checked) and fctempo"
 
       - name: the mastering ABI — native vs wasm, within its stated tolerance
         # NOT byte for byte, and that is the contract rather than a concession: fcore_master is the reference
