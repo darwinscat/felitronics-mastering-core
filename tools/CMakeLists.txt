@@ -1,5 +1,5 @@
-# felitronics-mastering-core tools (built only when this is the top-level project): the two C ABIs, their native
-# CLIs and suites. Used to validate the DSP against reference implementations (ffmpeg) on real audio, and as the
+# felitronics-mastering-core tools (built only when this is the top-level project): the C ABIs (fc_master, fc_probe and
+# fc_tempo, the probe's tempo surface alone), their native CLIs and suites. Used to validate the DSP against reference implementations (ffmpeg) on real audio, and as the
 # native side of every native-vs-wasm comparison.
 # The FP-contraction contract for everything that goes through fcore_probe.h. Baseline wasm has NO scalar FMA
 # instruction, so emscripten cannot contract a*b+c; a contracting native build therefore disagrees with wasm —

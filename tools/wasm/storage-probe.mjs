@@ -26,11 +26,12 @@
 //           The two modules compile one tempo text, so CI `cmp`s fcprobe's table with fctempo's: a page that moves
 //           between them must be quoted the same price, not only handed the same rows.
 //
-// TWO MODULES, AND WHICH ONE IS ASKED OF THE MODULE. fcprobe carries every analyzer; fctempo (tools/wasm/fc_tempo.cpp)
-// the tempo detector alone, under the probe's own tempo names. Each answers exactly one version entry point —
-// fc_probe_abi_version or fc_tempo_abi_version — and that is how this file tells them apart; a module that answers
-// both or neither is refused. On fctempo `table` is refused (none of its modes are there) and `check` runs the tempo
-// half, plus the one claim that module exists to keep: it exports its surface and NOTHING ELSE.
+// TWO MODULES, AND WHICH ONE IS NAMED BY THE PATH. fcprobe carries every analyzer; fctempo (tools/wasm/fc_tempo.cpp)
+// the tempo detector alone, under the probe's own tempo names. The file name says which one is expected and
+// module-identity.mjs holds the artifact to it — its version entry point, not the other's, at its header's number —
+// so fcprobe handed over under fctempo's name is refused instead of passing the probe's checks. On fctempo `table` is
+// refused (none of its modes are there) and `check` runs the tempo half, plus the one claim that module exists to
+// keep: it exports its surface and NOTHING ELSE.
 //
 // No HEAP view is held across a call into the module. An accepted `_run` may allocate, and `memory.grow`
 // inside it DETACHES the ArrayBuffer every existing view was made on. A detached view is not a view onto
@@ -41,6 +42,7 @@
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
+import { identifyModule } from './module-identity.mjs';
 
 const [, , modPath, cmdArg] = process.argv;
 const cmd = cmdArg ?? 'table';
@@ -48,15 +50,19 @@ const refuse = m => { console.error(m); process.exit(2); };
 if (!modPath || !['table', 'check', 'tempo-table'].includes(cmd))
     refuse('usage: node storage-probe.mjs <module.js> [table|check|tempo-table]');
 
+// A table is written, and only THEN does the process exit. Into a pipe stdout is asynchronous, and a
+// `process.exit()` straight after `write()` cut a 3600-row table at 1715 rows with exit status 0 (measured) —
+// a shorter table that a reader downstream would take as the whole one. Into a file (what CI does) the write is
+// synchronous and nothing was lost, but the harness should not depend on where its output goes.
+const flushed = text => new Promise((res, rej) => process.stdout.write(text, e => (e ? rej(e) : res())));
+
 const require = createRequire(import.meta.url);
 const M = await require(resolve(modPath))();
 
-// Which module: the one version entry point it answers.
-const speaksProbe = typeof M._fc_probe_abi_version === 'function';
-const speaksTempo = typeof M._fc_tempo_abi_version === 'function';
-if (speaksProbe === speaksTempo)
-    refuse(`${modPath} answers ${speaksProbe ? 'both' : 'neither'} of fc_probe_abi_version / fc_tempo_abi_version — which module is this?`);
-const TEMPO_ONLY = speaksTempo;
+// Which module: the one its name says, checked against the artifact.
+let identity;
+try { identity = identifyModule(M, modPath); } catch (e) { refuse(e.message); }
+const TEMPO_ONLY = identity.name === 'fctempo';
 
 // THE fctempo SURFACE, per version — what the module exports, EXACTLY, besides the heap's _malloc/_free. A bump of
 // FC_TEMPO_ABI_VERSION appends its line here on purpose (tools/fc_tempo_abi.h, rule 4); an entry point added
@@ -86,7 +92,7 @@ if (cmd === 'tempo-table') {
                 for (const [lo, hi, win, hop] of PARAMS)
                     out += `tempo_with ${ch} ${sr} ${n} ${lo} ${hi} ${win} ${hop} ${qw(ch, sr, n, lo, hi, win, hop)}\n`;
             }
-    process.stdout.write(out);
+    await flushed(out);
     process.exit(0);
 }
 if (TEMPO_ONLY && cmd === 'table')
@@ -119,7 +125,7 @@ if (cmd === 'table') {
         for (const ch of TABLE_WIDTHS)
             for (const sr of TABLE_RATES)
                 out += `${m} ${ch} ${sr} ${query[m](ch, sr)}\n`;
-    process.stdout.write(out);
+    await flushed(out);
     process.exit(0);
 }
 
@@ -129,17 +135,13 @@ const ok = (cond, what) => { ++checks; if (!cond) { ++bad; console.error(`FAIL: 
 
 // fctempo: the version its header declares, and the exact surface of that version — nothing more, nothing less.
 if (TEMPO_ONLY) {
-    const hdr = readFileSync(new URL('../fc_tempo_abi.h', import.meta.url), 'utf8');
-    const m = /^#define FC_TEMPO_ABI_VERSION ([0-9]+)u$/m.exec(hdr);
-    if (!m) refuse('no FC_TEMPO_ABI_VERSION in tools/fc_tempo_abi.h');
-    ok(M._fc_tempo_abi_version() === Number(m[1]),
-       `fctempo speaks ABI version ${M._fc_tempo_abi_version()}, the header declares ${m[1]}`);
-    const surface = FC_TEMPO_SURFACE[Number(m[1])];
-    if (!surface) refuse(`FC_TEMPO_ABI_VERSION is ${m[1]} and this file lists no surface for it — append one on purpose`);
+    const v = identity.version;   // already held to tools/fc_tempo_abi.h by identifyModule
+    const surface = FC_TEMPO_SURFACE[v];
+    if (!surface) refuse(`FC_TEMPO_ABI_VERSION is ${v} and this file lists no surface for it — append one on purpose`);
     const exported = Object.keys(M).filter(k => k.startsWith('_fc_')).sort();
     const want = [...surface].sort();
     ok(exported.join(' ') === want.join(' '),
-       `fctempo exports exactly the v${m[1]} surface — extra: [${exported.filter(k => !want.includes(k)).join(' ')}],`
+       `fctempo exports exactly the v${v} surface — extra: [${exported.filter(k => !want.includes(k)).join(' ')}],`
        + ` missing: [${want.filter(k => !exported.includes(k)).join(' ')}]`);
     ok(typeof M._malloc === 'function' && typeof M._free === 'function', 'fctempo: _malloc and _free reached the artifact');
 }
