@@ -1,0 +1,30 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# felitronics::toml — an owned TOML subset; no dependencies, including no felitronics-core link.
+add_library(felitronics_toml INTERFACE)
+add_library(felitronics::toml ALIAS felitronics_toml)
+target_include_directories(felitronics_toml INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_compile_features(felitronics_toml INTERFACE cxx_std_20)
+
+if(FELITRONICS_BUILD_TESTS)
+    foreach(suite IN ITEMS Grammar Decimal Properties)
+        string(TOLOWER "${suite}" suite_lower)
+        add_executable(felitronics_toml_${suite_lower}_tests tests/${suite}Tests.cpp)
+        target_link_libraries(felitronics_toml_${suite_lower}_tests PRIVATE felitronics::toml felitronics::test_support)
+        if(NOT MSVC)
+            target_compile_options(felitronics_toml_${suite_lower}_tests PRIVATE -ffp-contract=off)
+        endif()
+        add_test(NAME felitronics_toml_${suite_lower}_tests COMMAND felitronics_toml_${suite_lower}_tests)
+    endforeach()
+endif()
+
+option(FELITRONICS_TOML_BUILD_FUZZER "Build the TOML libFuzzer + ASan + UBSan target (Clang)" OFF)
+if(FELITRONICS_TOML_BUILD_FUZZER)
+    if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang" OR EMSCRIPTEN)
+        message(FATAL_ERROR "The TOML fuzzer requires a native Clang with libFuzzer support")
+    endif()
+    add_executable(felitronics_toml_fuzz ../../tools/toml/fuzz_parse.cpp)
+    target_link_libraries(felitronics_toml_fuzz PRIVATE felitronics::toml)
+    target_compile_options(felitronics_toml_fuzz PRIVATE -fsanitize=fuzzer,address,undefined
+        -fno-sanitize-recover=all -fno-omit-frame-pointer -fno-exceptions -fno-rtti -ffp-contract=off)
+    target_link_options(felitronics_toml_fuzz PRIVATE -fsanitize=fuzzer,address,undefined)
+endif()

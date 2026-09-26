@@ -15,6 +15,7 @@ The mastering chain and the offline programme analyzers of the Darwin's Cat prod
 | `mastering` | the chain — gain, EQ with dynamic points, mono-bass, compressor, clipper, true-peak limiter, dither — block-independent, with an offline renderer, a target-loudness solver and delivery at another rate |
 | `analysis_offline` | whole-programme analyzers: programme report, source forensics, hum, low end, band bursts, band crest, peak excursions, clipped runs, waveform peaks and the stereo band |
 | `tempo` | the tempo of a programme — whole-track BPM, confidence, octave alternatives — and the tempo over time; a port of the site's BPM detector |
+| `toml` | strict project-file TOML subset: exact decimals, insertion-ordered tables and canonical writing, with no dependencies |
 
 `tools/` holds the two C ABIs over them (`fc_master`, `fc_probe`), their native CLIs, and the wasm build.
 

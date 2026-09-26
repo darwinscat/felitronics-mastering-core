@@ -29,4 +29,6 @@
 #include <felitronics/tempo/JsNumerics.h>
 #include <felitronics/tempo/TempoDetector.h>
 
+#include <felitronics/toml/Toml.h>
+
 int main() { return 0; }

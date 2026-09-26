@@ -17,6 +17,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 #                                                     felitronics::analysis, headers <felitronics/analysis/...>)
 #   tempo             felitronics::tempo              the tempo of a programme and the tempo over time     core
 #                                                     (a port of the site's dsp/tempo.js)
+#   toml              felitronics::toml               strict project-file TOML subset                       none
 #
 # tools/ (top-level builds only): the C ABIs of both (fc_master, fc_probe), their native CLIs
 # (fcore_master, fcore_measure) and suites, and tools/wasm/build.sh, which builds the wasm modules.
@@ -100,6 +101,7 @@ endif()
 add_subdirectory(modules/analysis_offline)   # the offline analyzers; analysis + eq + stereo
 add_subdirectory(modules/mastering)          # the chain; every core stage it composes + analysis
 add_subdirectory(modules/tempo)              # the tempo detector; core alone
+add_subdirectory(modules/toml)               # strict project-file TOML subset; no dependencies
 
 # The C ABIs, their CLIs and the wasm plumbing — top-level builds only, as in core.
 if(PROJECT_IS_TOP_LEVEL)
