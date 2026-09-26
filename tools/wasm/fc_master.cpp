@@ -1284,6 +1284,25 @@ FC_EXPORT fc_status fc_master_configure (fc_master h, const fc_master_params* pa
     return FC_OK;
 }
 
+// v14 — see the note at the declaration. The order of the checks is the contract's: poison, handle, the handle's state
+// (the same two refusals `fc_master_process` makes), then the struct, then its values — and nothing moves before the
+// last of them. The core call is the whole of the effect.
+FC_EXPORT fc_status fc_master_set_params (fc_master h, const fc_master_params* params)
+{
+    FC_GUARD;
+    Slot* s = lookup (h, Kind::Master);
+    if (s == nullptr) return FC_ERR_HANDLE;
+    auto& m = *s->master;
+    if (m.delivering) return FC_ERR_STATE;  // as process(): a delivering handle has no stream to write into
+    if (m.solverRan) return FC_ERR_STATE;   // as process(): only configure puts a known set back after a solve
+    std::uint32_t prmBytes = 0;
+    if (const fc_status st = checkHeader (params, prmBytes); st != FC_OK) return st;
+    MasteringChainParams cp {};
+    if (const fc_status st = toCore (loadIn (params, prmBytes), cp); st != FC_OK) return st;
+    m.chain.setParams (cp);
+    return FC_OK;
+}
+
 FC_EXPORT fc_status fc_master_resolved_get (fc_master h, fc_master_resolved* out)
 {
     FC_GUARD;

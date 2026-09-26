@@ -201,10 +201,14 @@ public:
     {
         if (! prepared_ || finished_ || in == nullptr) return false;
         if (numChannels < 1 || numChannels > maxChannels_ || n < 0) return false;
-        if (ranNc_ == 0) ranNc_ = numChannels;
-        else if (numChannels != ranNc_) return false;
+        if (ranNc_ != 0 && numChannels != ranNc_) return false;
         for (int c = 0; c < numChannels; ++c) if (in[c] == nullptr) return false;
         if (n == 0) return true;
+        // THE WIDTH IS LATCHED BY THE FIRST CALL THAT CARRIES AUDIO, not by the first call. `n == 0` is the one
+        // true no-op (law 11d) — no time, no edge, nothing — and it used to latch here before the exit, so an
+        // empty call at width 1 ahead of the programme made every stereo call after it a refused width change.
+        // Below the plane check too: a refused call latches nothing either.
+        if (ranNc_ == 0) ranNc_ = numChannels;
 
         for (int i = 0; i < n; ++i)
         {

@@ -100,6 +100,7 @@ extern "C" {
 // v8: the gain-reduction PERCENTILE — the `q` each limit binds at the end of `fc_loudness_request` (one row) and
 // `fc_solution_gr_quantile`, the general read-back that replaces a fixed field per fraction.
 // v9: `fc_master_eq_dyn_times` — one entry point, no struct, and therefore no row, exactly as v7.
+// v14: `fc_master_set_params` — one entry point, no struct, and therefore no row, as v7 and v9.
 // v10: the limiter's ACTIVE-WINDOW gain-reduction statistics — `fc_gr_active_stats` and
 // `fc_solution_gr_active_stats`, plus the gate itself at the end of `fc_loudness_request`: a new struct with
 // its own id, one entry point and one row. NOTHING existing moved: `fc_gr_stats` is nested by value and
@@ -178,7 +179,7 @@ extern "C" {
 // TRANSITION. The rule makes v3 cheap for a page written against v2; it cannot reach back into a page already
 // shipped against v1, whose loader requires `version === 1` and fails on a v2 module before its first call.
 // The move from v1 to v2 on the site is therefore a coordinated release of the worker and the module together.
-#define FC_MASTER_ABI_VERSION 13u
+#define FC_MASTER_ABI_VERSION 14u
 
 typedef struct fc_header
 {
@@ -1047,6 +1048,28 @@ fc_status fc_master_create (const fc_master_config* cfg, fc_master* out);
 // re-preparing would silently discard the stream. `fc_master_reset` is how a caller gets back to the
 // head of one.
 fc_status fc_master_configure (fc_master h, const fc_master_params* params, fc_master_resolved* resolved);
+
+// v14 — WRITE A PARAMETER SET WHILE THE STREAM RUNS: a live preview's knob. `fc_master_configure` re-prepares and is
+// refused once audio has been seen (above); this one is the other half — it hands the set to
+// `MasteringChain::setParams()` and nothing else. No preparation, no reset, no allocation; allowed before, during and
+// between streams.
+//
+// WHAT HAPPENS TO THE SET IS THE CHAIN'S, not this file's: it lands at the chain's next internal quantum boundary —
+// wherever the caller cut the stream — and from there every continuous parameter GLIDES by its own stage's rule (the
+// two gain nodes and the compressor mix over `MasteringChain::kParamRampMs`, the stages' own glides, the bypass
+// fades), so a knob turned between two process calls does not click. Several calls before that boundary are the LAST
+// one alone. The FIRST quantum of a stream — after create, configure or reset — SNAPS instead of gliding, so a set
+// written before the first frame renders exactly what `fc_master_configure` with the same set renders.
+//
+// `fc_master_resolved_get` LAGS ONE QUANTUM behind this call: it reads what the chain APPLIED, and a set written here
+// is applied at the next boundary. A page that shows resolved values reads them after its next process call has
+// crossed a quantum (`internalBlock` frames), or uses `fc_master_configure` between streams, which reads back exactly.
+//
+// THE TOPOLOGY IS NOT A PARAMETER: stages, latency, the quantum and the oversampling are the create's `fc_master_config`
+// and nothing here moves them. Refused, with the stream untouched, wherever `fc_master_process` is refused — a
+// delivering handle and a handle that has solved answer FC_ERR_STATE — and for the struct and value reasons
+// `fc_master_configure` has (header, version and size; FC_ERR_ENUM; FC_ERR_NON_FINITE).
+fc_status fc_master_set_params (fc_master h, const fc_master_params* params);
 
 // Read back the resolved geometry without changing anything.
 fc_status fc_master_resolved_get (fc_master h, fc_master_resolved* out);
