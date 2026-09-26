@@ -87,11 +87,15 @@ What holds the flags:
    `/fp:fast`), placed **ahead** of the target's options, and must answer IEEE-754 anyway — while the same probes compiled
    with the licence alone must change on that row, so the licence is live. A row with a fused multiply-add (every arm64
    row) requires the contraction controls to fuse; a row without one (baseline x86-64) says the check cannot fail there.
+   MSVC has no way back from `/fp:contract` — a later `/fp:precise` selects the model and leaves contraction on — so on
+   MSVC a `/fp:contract` ahead of the library's options is refused by the guard instead, and a test requires that.
 4. **The build controls** (`modules/session/tests/controls/`): each forbidden construct — `try`, `throw`, `typeid`,
    `dynamic_cast` — compiled with the library's own compile options, clean in every build and planted in a build ctest
    requires to fail with that construct's diagnostic; and `src/BuildContract.cpp` compiled with `-ffast-math`,
    `-fexceptions` or `-frtti` (MSVC `/fp:fast`, `/EHsc`, `/GR`) appended after the library's options, which must fail on
-   the guard's own message. **On the wasm tier** the preset compiles everything with `-fno-exceptions -fno-rtti`, so the
+   the guard's own message. One measured exception: with MSVC's Visual Studio generator an appended `/EHsc` becomes the
+   project's exception-handling property, and the library's `/EHs-c- /EHa-` are placed after every property on the
+   command line — the library's flags win, so that control requires the build to succeed with exceptions off. **On the wasm tier** the preset compiles everything with `-fno-exceptions -fno-rtti`, so the
    planted constructs fail there whatever the library's options say: that tier proves the preset, and the native rows
    prove the library.
 

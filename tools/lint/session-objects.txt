@@ -37,6 +37,9 @@ undefined  coff    ^(_fltused|__security_check_cookie|__security_cookie|__GSHand
 undefined  coff    ^_RTC_                           MSVC's run-time checks in a debug build
 undefined  wasm    ^(__stack_pointer|__memory_base|__table_base|__indirect_function_table)$    the linear memory's own registers
 
+# --- MSVC's standard library defines one writable variable in every translation unit that includes its headers
+writable   coff    ^_Avx2WmemEnabledWeakValue$      the STL's own dispatch flag for its vectorised wmem* (an `extern "C" inline` in its headers): the session neither reads nor writes it
+
 # --- the sanitizer row: the instrumentation's runtime and the metadata it plants
 undefined  san     ^_*(asan|ubsan|lsan|sanitizer)_  ASan / UBSan / LSan runtime entry points
 writable   san     ^_*(asan|ubsan|lsan|sanitizer)   ASan's registration flag and metadata

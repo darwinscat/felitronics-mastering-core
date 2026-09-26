@@ -41,10 +41,10 @@ int main()
     felitronics::test::group ("the licences are live here, and the library's flags override them");
     ok (probes::dividesByReciprocal(), "CONTROL: under the licence alone x / 3 becomes x * (1/3) on this row");
     ok (probes::reassociatesSums(), "CONTROL: under the licence alone (a + 1) + 1 becomes a + 2 on this row");
-    ok (probes::dropsSignedZeros(), "CONTROL: under the licence alone -0 + 0 keeps its sign on this row");
+    ok (probes::dropsSignedZeros(), "CONTROL: under the licence alone -(x - y) at x == y loses its sign on this row");
     ok (! lib.dividesByReciprocal, "the library divides");
     ok (! lib.reassociatesSums, "the library adds in the order written");
-    ok (! lib.dropsSignedZeros, "the library keeps -0 + 0 = +0");
+    ok (! lib.dropsSignedZeros, "the library keeps -(x - y) = -0");
 #else
     #error "build HostileFlagsTests.cpp with one FELITRONICS_SESSION_HOSTILE_LICENCE_* defined"
 #endif

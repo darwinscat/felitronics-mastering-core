@@ -107,7 +107,20 @@ if(FELITRONICS_BUILD_TESTS)
     set(FELITRONICS_SESSION_HOSTILE_contract ${FELITRONICS_SESSION_CONTRACT_FAST})
     set(FELITRONICS_SESSION_HOSTILE_fastmath
         $<IF:$<CXX_COMPILER_ID:MSVC>,/fp:fast,-freciprocal-math;-fassociative-math;-fno-signed-zeros;-fno-trapping-math>)
+    # MSVC HAS NO WAY BACK FROM /fp:contract: a later /fp:precise selects the model and leaves contraction on, and there
+    # is no /fp:contract- to state. So on MSVC a consumer's /fp:contract ahead of the library's options is not
+    # overridden — it is REFUSED: src/BuildGuards.h sees _M_FP_CONTRACT, and that build must fail on the guard's message.
     foreach(licence contract fastmath)
+        if(MSVC AND licence STREQUAL "contract")
+            add_library(fs_hostile_contract OBJECT EXCLUDE_FROM_ALL ${FELITRONICS_SESSION_SOURCES})
+            target_include_directories(fs_hostile_contract PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+            target_compile_features(fs_hostile_contract PRIVATE cxx_std_20)
+            target_compile_definitions(fs_hostile_contract PRIVATE ${FELITRONICS_SESSION_VERSION_DEFINITIONS})
+            target_compile_options(fs_hostile_contract PRIVATE /fp:contract $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
+            felitronics_session_must_fail(felitronics_session_hostile_contract_refused fs_hostile_contract
+                                          "must be compiled without /fp:contract")
+            continue()
+        endif()
         add_library(felitronics_session_hostile_${licence} OBJECT ${FELITRONICS_SESSION_SOURCES})
         target_include_directories(felitronics_session_hostile_${licence} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
         target_compile_features(felitronics_session_hostile_${licence} PRIVATE cxx_std_20)
@@ -160,7 +173,7 @@ if(FELITRONICS_BUILD_TESTS)
     endif()
     foreach(ctl IN LISTS FELITRONICS_SESSION_CONTROLS)
         foreach(variant clean planted)
-            set(tgt felitronics_session_control_${ctl}_${variant})
+            set(tgt fs_ctl_${ctl}_${variant})
             if(variant STREQUAL "clean")
                 add_library(${tgt} OBJECT tests/controls/${ctl}.cpp)
             else()
@@ -170,7 +183,7 @@ if(FELITRONICS_BUILD_TESTS)
             target_compile_features(${tgt} PRIVATE cxx_std_20)
             target_compile_options(${tgt} PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
         endforeach()
-        felitronics_session_must_fail(felitronics_session_control_${ctl} felitronics_session_control_${ctl}_planted
+        felitronics_session_must_fail(felitronics_session_control_${ctl} fs_ctl_${ctl}_planted
                                       "${FELITRONICS_SESSION_CONTROL_EXPECT_${ctl}}")
     endforeach()
 
@@ -188,14 +201,24 @@ if(FELITRONICS_BUILD_TESTS)
     set(FELITRONICS_SESSION_APPEND_EXPECT_exceptions "must be compiled without exceptions")
     set(FELITRONICS_SESSION_APPEND_EXPECT_rtti       "must be compiled without RTTI")
     foreach(licence fastmath exceptions rtti)
-        set(tgt felitronics_session_control_append_${licence})
+        set(tgt fs_append_${licence})
         add_library(${tgt} OBJECT EXCLUDE_FROM_ALL src/BuildContract.cpp)
         target_include_directories(${tgt} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
         target_compile_features(${tgt} PRIVATE cxx_std_20)
         target_compile_definitions(${tgt} PRIVATE ${FELITRONICS_SESSION_VERSION_DEFINITIONS})
         target_compile_options(${tgt} PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>
                                               ${FELITRONICS_SESSION_APPEND_${licence}})
-        felitronics_session_must_fail(${tgt} ${tgt} "${FELITRONICS_SESSION_APPEND_EXPECT_${licence}}")
+        if(licence STREQUAL "exceptions" AND CMAKE_GENERATOR MATCHES "Visual Studio")
+            # MEASURED (MSVC 19.44, the Visual Studio generator): /EHsc becomes the project's ExceptionHandling property
+            # and the library's /EHs-c- /EHa- stay in AdditionalOptions, which MSBuild places AFTER every property on the
+            # command line — so an appended /EHsc cannot turn exceptions back on, and the build stays guarded-clean. That
+            # is the property asserted here; with a generator that keeps the order (Ninja + cl), the appended flag wins
+            # and the guard must fire, as on every other row.
+            felitronics_session_must_build(felitronics_session_control_append_${licence} ${tgt})
+        else()
+            felitronics_session_must_fail(felitronics_session_control_append_${licence} ${tgt}
+                                          "${FELITRONICS_SESSION_APPEND_EXPECT_${licence}}")
+        endif()
     endforeach()
 
     # THE OBJECT-FILE GATES' CONTROLS. The gate itself — over the library's objects and the C boundary's — is in
@@ -223,7 +246,7 @@ if(FELITRONICS_BUILD_TESTS)
         string(SUBSTRING "${entry}" 0 ${bar} ctl)
         math(EXPR bar "${bar} + 1")
         string(SUBSTRING "${entry}" ${bar} -1 expect)
-        set(tgt felitronics_session_object_control_${ctl})
+        set(tgt fs_objctl_${ctl})   # short: MSBuild writes a target's name twice into one log path, under 260 characters
         add_library(${tgt} OBJECT tests/object-controls/${ctl}.cpp)
         target_compile_features(${tgt} PRIVATE cxx_std_20)
         target_compile_options(${tgt} PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
