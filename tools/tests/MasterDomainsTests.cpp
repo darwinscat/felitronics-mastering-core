@@ -155,19 +155,30 @@ bool statusNamed (const std::string& name, fc_status& out)
         { "FC_ERR_RANGE", FC_ERR_RANGE }, { "FC_ERR_CAPACITY", FC_ERR_CAPACITY }, { "FC_ERR_STATE", FC_ERR_STATE },
         { "FC_ERR_NON_FINITE", FC_ERR_NON_FINITE }, { "FC_ERR_REFUSED_BY_CORE", FC_ERR_REFUSED_BY_CORE },
         { "FC_ERR_EXHAUSTED", FC_ERR_EXHAUSTED }, { "FC_ERR_POISONED", FC_ERR_POISONED },
-        { "FC_ERR_CANCELLED", FC_ERR_CANCELLED },
+        { "FC_ERR_CANCELLED", FC_ERR_CANCELLED }, { "FC_ERR_BAND_NOT_DYNAMIC", FC_ERR_BAND_NOT_DYNAMIC },
+        { "FC_ERR_BAND_INERT", FC_ERR_BAND_INERT }, { "FC_ERR_LANE_OFF", FC_ERR_LANE_OFF },
     };
     for (const auto& e : kMap) if (name == e.n) { out = e.s; return true; }
     return false;
 }
 
+// A switch with no `default`, not an array with a bound: the bound was the last code when it was written, so the
+// v13 three printed as "FC_STATUS(?)" with nothing to say so. A code missing here is a -Wswitch warning instead.
 const char* statusName (fc_status s)
 {
-    static const char* n[] = { "FC_OK", "FC_ERR_HANDLE", "FC_ERR_ABI_VERSION", "FC_ERR_STRUCT_SIZE", "FC_ERR_NULL",
-                               "FC_ERR_ALIGNMENT", "FC_ERR_SPAN", "FC_ERR_ENUM", "FC_ERR_RANGE", "FC_ERR_CAPACITY",
-                               "FC_ERR_STATE", "FC_ERR_NON_FINITE", "FC_ERR_REFUSED_BY_CORE", "FC_ERR_EXHAUSTED",
-                               "FC_ERR_POISONED", "FC_ERR_CANCELLED" };
-    return (s >= 0 && s <= FC_ERR_CANCELLED) ? n[(int) s] : "FC_STATUS(?)";
+    switch (s)
+    {
+#define FC_STATUS_CASE(code) case code: return #code;
+        FC_STATUS_CASE (FC_OK)              FC_STATUS_CASE (FC_ERR_HANDLE)    FC_STATUS_CASE (FC_ERR_ABI_VERSION)
+        FC_STATUS_CASE (FC_ERR_STRUCT_SIZE) FC_STATUS_CASE (FC_ERR_NULL)      FC_STATUS_CASE (FC_ERR_ALIGNMENT)
+        FC_STATUS_CASE (FC_ERR_SPAN)        FC_STATUS_CASE (FC_ERR_ENUM)      FC_STATUS_CASE (FC_ERR_RANGE)
+        FC_STATUS_CASE (FC_ERR_CAPACITY)    FC_STATUS_CASE (FC_ERR_STATE)     FC_STATUS_CASE (FC_ERR_NON_FINITE)
+        FC_STATUS_CASE (FC_ERR_REFUSED_BY_CORE)   FC_STATUS_CASE (FC_ERR_EXHAUSTED)   FC_STATUS_CASE (FC_ERR_POISONED)
+        FC_STATUS_CASE (FC_ERR_CANCELLED)         FC_STATUS_CASE (FC_ERR_BAND_NOT_DYNAMIC)
+        FC_STATUS_CASE (FC_ERR_BAND_INERT)        FC_STATUS_CASE (FC_ERR_LANE_OFF)
+#undef FC_STATUS_CASE
+    }
+    return "FC_STATUS(?)";
 }
 
 //==============================================================================

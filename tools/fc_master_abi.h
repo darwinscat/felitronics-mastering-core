@@ -170,10 +170,11 @@ extern "C" {
 //     the entry-point declarations if any;
 //   * tools/wasm/fc_master.cpp: the layout pins (sizeof / offsetof / arity), `toCore`/`fromCore`, the defaults
 //     writer, and the entry points — and, for a NEW struct with a header, its `AbiId` specialisation;
-//   * tools/wasm/fc-master-layout.mjs: the fields in STRUCTS and FC_MASTER_ABI_VERSION — and the copy of that
-//     file the site ships (see TRANSITION below);
+//   * tools/wasm/fc-master-layout.mjs: the fields in STRUCTS and FC_MASTER_ABI_VERSION, a new fc_status code in
+//     FC_STATUS — and the copy of that file the site ships (see TRANSITION below);
 //   * tools/fcore_master.cpp: the hand mirror in `directRender`, the key=value parser, the offset table behind
-//     `fcore_master layout`, and the selftest fixture (every new field moved off its default);
+//     `fcore_master layout`, a new fc_status code in FC_STATUS_NAMES, and the selftest fixture (every new field
+//     moved off its default);
 //   * tools/tests/MasterAbiTests.cpp: the version matrix.
 //
 // TRANSITION. The rule makes v3 cheap for a page written against v2; it cannot reach back into a page already
