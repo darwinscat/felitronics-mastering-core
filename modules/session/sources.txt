@@ -3,3 +3,4 @@
 # on it), and tools/lint/check-session-laws.mjs scans from it (and cross-checks it against compile_commands.json).
 src/Session.cpp
 src/BuildContract.cpp
+src/Config.cpp
