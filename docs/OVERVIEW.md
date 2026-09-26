@@ -59,14 +59,18 @@ and the octave weights are on `core::det`, and `Math.hypot` / `Math.round` / `Ma
 reproduced exactly (`<felitronics/tempo/JsNumerics.h>`). Against the JavaScript on real programmes every
 reported number is identical; the onset curve differs by the Hann window's cos alone, at ~1e-15 relative. It
 streams (any split gives the bits of one call), publishes its demand (`storageFor`), and crosses the probe ABI
-as `fc_probe_tempo_*`.
+as `fc_probe_tempo_*` — in `fcprobe`, and alone in `fctempo`, a module of its own for a page that measures a tempo
+and nothing else (37 KB of wasm, 15 KB brotli, against the probe's 275 / 77). Both compile one text,
+`tools/wasm/fc_tempo_entry.h`, so the names, rows and bits are the same in either.
 
 ## The C ABIs — `tools/`
 
-`fc_master` (`tools/fc_master_abi.h`, `tools/wasm/fc_master.cpp`) over the chain and `fc_probe`
-(`tools/fc_probe_abi.h`, `tools/wasm/fc_probe.cpp`) over the analyzers — each with its ABI version and the
-append-only rule that moves it in its header — with their native CLIs (`fcore_master`, `fcore_measure`) and
-suites. `tools/wasm/build.sh` builds the wasm modules against a felitronics-core checkout
+`fc_master` (`tools/fc_master_abi.h`, `tools/wasm/fc_master.cpp`) over the chain, `fc_probe`
+(`tools/fc_probe_abi.h`, `tools/wasm/fc_probe.cpp`) over the analyzers, and `fc_tempo` (`tools/fc_tempo_abi.h`,
+`tools/wasm/fc_tempo.cpp`) over the tempo detector alone — fc_probe's `fc_probe_tempo_*` entry points under the
+same names, with a version of its own, because a version is a promise about a whole surface — each with its ABI
+version and the append-only rule that moves it in its header — with their native CLIs (`fcore_master`,
+`fcore_measure`) and suites. `tools/wasm/build.sh` builds the wasm modules against a felitronics-core checkout
 (`FELITRONICS_CORE_DIR`, or the sibling `../felitronics-core`) and records both versions in `BUILD-INFO` beside
 them. How the two roads are compared, and to which criterion: `WASM-PARITY.md`. Law 11d as it applies to the
 chain and its ABI: `LAW11D-MASTERING.md`.

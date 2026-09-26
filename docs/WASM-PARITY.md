@@ -4,10 +4,10 @@
 # Native vs wasm — the comparisons, and why each one can exist
 
 felitronics-core's [`WASM-AUDIO-TIER.md`](https://github.com/darwinscat/felitronics-core/blob/main/docs/WASM-AUDIO-TIER.md) is the tier itself: every module built
-for wasm32 with exceptions and RTTI off and no pthreads, the suite run in node, the artifacts audited. The two C
-ABIs built on that tier live here — the measurement probe (`tools/wasm/fc_probe.cpp`) and the mastering chain
-(`tools/wasm/fc_master.cpp`) — and so do the comparisons that prove the wasm modules compute what the native
-tools compute. This repository's CI runs the tier for its own suite and then every step below
+for wasm32 with exceptions and RTTI off and no pthreads, the suite run in node, the artifacts audited. The C
+ABIs built on that tier live here — the measurement probe (`tools/wasm/fc_probe.cpp`), the tempo detector alone
+(`tools/wasm/fc_tempo.cpp`, the `fctempo` module) and the mastering chain (`tools/wasm/fc_master.cpp`) — and so do
+the comparisons that prove the wasm modules compute what the native tools compute. This repository's CI runs the tier for its own suite and then every step below
 (`.github/workflows/ci.yml`, job `wasm`). The text is as it stood in core's tier document, where these were
 steps 5 and 6 of the tier's job.
 
@@ -16,7 +16,10 @@ Three criteria, and they are not interchangeable:
 - **the probe, native vs wasm — BYTE FOR BYTE.** The offline analyzers behind `fc_probe` are on core's
   deterministic floor (`core::det`), so their printed text is identical on both roads; the spike's block-energy path
   still uses the system meter and is identical where glibc and musl agree — every rate CI runs it at, on
-  Linux (below). `diff` is the acceptance.
+  Linux (below). `diff` is the acceptance. **`fctempo` is held to the same criterion**: it compiles the probe's
+  tempo entry points from the same text (`tools/wasm/fc_tempo_entry.h`), and the tempo step diffs every row —
+  refusals included — through `fcprobe`, its checked build and `fctempo` against one native answer. The price
+  step compares the two modules' tempo prices over 3600 quotes, and holds `fctempo` to its exact export set.
 - **the mastering chain, native vs wasm — WITHIN A STATED TOLERANCE** (`tools/wasm/master-parity.mjs`: 1e-5 in
   sample value, 1e-3 dB on the reported loudness, integers exact). `fcore_master` is the reference for the C++
   API a desktop build links and takes the tree's `-ffp-contract=on`; baseline wasm has no scalar FMA to contract
@@ -80,6 +83,16 @@ node tools/wasm/make-fixture.mjs fixture.f32 48000 2 10
 ./build/tools/fcore_measure blocks 48000 2 fixture.f32                        > native.txt
 node tools/wasm/parity.mjs tools/wasm/build/fcprobe.node.js 48000 2 fixture.f32 > wasm.txt
 diff native.txt wasm.txt          # empty output IS the acceptance criterion
+```
+
+The tempo detector, on both modules that carry it — the same text, the same bits:
+
+```sh
+node tools/wasm/make-tempo-fixture.mjs tempo48.f32 48000 2 24
+./build/tools/fcore_measure tempo 48000 2 tempo48.f32                              > native.txt
+node tools/wasm/tempo-parity.mjs tools/wasm/build/fcprobe.node.js 48000 2 tempo48.f32 > probe.txt
+node tools/wasm/tempo-parity.mjs tools/wasm/build/fctempo.node.js 48000 2 tempo48.f32 > tempo.txt
+diff native.txt probe.txt && diff native.txt tempo.txt
 ```
 
 On an Apple host the probe's comparison is expected to differ at 88.2 and 192 kHz for the libm reason above; CI

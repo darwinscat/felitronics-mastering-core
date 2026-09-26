@@ -16,7 +16,8 @@ The mastering chain and the offline programme analyzers of the Darwin's Cat prod
 | `analysis_offline` | whole-programme analyzers: programme report, source forensics, hum, low end, band bursts, band crest, peak excursions, clipped runs, waveform peaks and the stereo band |
 | `tempo` | the tempo of a programme — whole-track BPM, confidence, octave alternatives — and the tempo over time; a port of the site's BPM detector |
 
-`tools/` holds the two C ABIs over them (`fc_master`, `fc_probe`), their native CLIs, and the wasm build.
+`tools/` holds the C ABIs over them (`fc_master`, `fc_probe`, and `fc_tempo` — the tempo detector alone, a small
+wasm module for a page that needs nothing else), their native CLIs, and the wasm build.
 
 ## Build
 
