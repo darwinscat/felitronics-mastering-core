@@ -1,5 +1,5 @@
-# felitronics-mastering-core tools (built only when this is the top-level project): the two C ABIs, their native
-# CLIs and suites. Used to validate the DSP against reference implementations (ffmpeg) on real audio, and as the
+# felitronics-mastering-core tools (built only when this is the top-level project): the C ABIs (fc_master, fc_probe and
+# fc_tempo, the probe's tempo surface alone), their native CLIs and suites. Used to validate the DSP against reference implementations (ffmpeg) on real audio, and as the
 # native side of every native-vs-wasm comparison.
 # The FP-contraction contract for everything that goes through fcore_probe.h. Baseline wasm has NO scalar FMA
 # instruction, so emscripten cannot contract a*b+c; a contracting native build therefore disagrees with wasm —
@@ -91,6 +91,20 @@ if(FELITRONICS_BUILD_TESTS)
     target_compile_options(felitronics_tempo_abi_tests PRIVATE ${FCORE_NO_FP_CONTRACT}
         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fno-fast-math>)
     add_test(NAME felitronics_tempo_abi_tests COMMAND felitronics_tempo_abi_tests)
+
+    # THE SAME SUITE AGAINST THE fctempo MODULE's translation unit (tools/wasm/fc_tempo.cpp: the tempo detector alone,
+    # the ten fc_probe_tempo_* entry points from the one text both modules compile, and fc_tempo_abi_version). The
+    # suite is the probe's, unchanged, so every claim it makes of the probe it makes of this module; FC_TEMPO_MODULE
+    # adds the version. On the wasm tier this is also the module's checked build — SAFE_HEAP and ASSERTIONS=2 in CI —
+    # which is why build.sh builds no debug variant of fctempo. Same flags as the target above, for its reasons.
+    add_executable(felitronics_fctempo_abi_tests tests/TempoAbiTests.cpp wasm/fc_tempo.cpp)
+    target_link_libraries(felitronics_fctempo_abi_tests PRIVATE felitronics::tempo felitronics::test_support)
+    target_include_directories(felitronics_fctempo_abi_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_features(felitronics_fctempo_abi_tests PRIVATE cxx_std_20)
+    target_compile_definitions(felitronics_fctempo_abi_tests PRIVATE FC_TEMPO_MODULE=1)
+    target_compile_options(felitronics_fctempo_abi_tests PRIVATE ${FCORE_NO_FP_CONTRACT}
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fno-fast-math>)
+    add_test(NAME felitronics_fctempo_abi_tests COMMAND felitronics_fctempo_abi_tests)
 
     # The mastering C ABI. Same arrangement as felitronics_abi_tests one block up — the shim compiles
     # natively, so its validation, ownership and mapping layer runs under ctest, ASan and UBSan. NOT

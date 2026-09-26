@@ -13,9 +13,18 @@
 //     FIRST run of this process asks the heap for, to the byte; asking costs nothing; a refused geometry quotes +0.0;
 //     and the price is above zero exactly where the run is accepted.
 //   * THE REFUSALS: a refused run leaves every getter silent, never the previous programme's numbers.
+//
+// TWO BINARIES RUN THIS FILE, one per module that publishes these entry points: felitronics_tempo_abi_tests links it
+// against tools/wasm/fc_probe.cpp, felitronics_fctempo_abi_tests against tools/wasm/fc_tempo.cpp (the tempo detector
+// alone), with FC_TEMPO_MODULE defined — which adds the one thing that module has and the probe has not: its version.
+// Both compile the same text (tools/wasm/fc_tempo_entry.h), and this is the suite that says so, on both.
 
 #include <felitronics_test.h>
 #include <alloc_counter.h>   // installs the allocation counter: EVERY form of `new`, over-aligned included
+
+#if defined(FC_TEMPO_MODULE)
+  #include "fc_tempo_abi.h"
+#endif
 
 #include <felitronics/core/Config.h>
 #include <felitronics/tempo/TempoDetector.h>
@@ -364,11 +373,27 @@ void theRefusals()
             }
     ok (disagreed == 0, "the price and the run agree on every one of " + std::to_string (rows) + " rows");
 }
+#if defined(FC_TEMPO_MODULE)
+// The version is a LITERAL here as well as the header's constant, as AbiTests.cpp holds fc_probe's: a bump is made on
+// purpose, in both places.
+void theModuleSpeaksItsVersion()
+{
+    felitronics::test::group ("fctempo: the module answers its own version, not fc_probe's");
+    static_assert (FC_TEMPO_ABI_VERSION == 1u, "fc_tempo starts at ABI version 1; a bump edits this line on purpose");
+    ok (fc_tempo_abi_version() == FC_TEMPO_ABI_VERSION && fc_tempo_abi_version() == 1u,
+        "fc_tempo_abi_version() answers FC_TEMPO_ABI_VERSION, 1");
+}
+#endif
 } // namespace
 
 int main()
 {
-    std::printf ("felitronics fc_probe_tempo_* ABI tests\n");
+#if defined(FC_TEMPO_MODULE)
+    std::printf ("felitronics fc_probe_tempo_* ABI tests — the fctempo module (tools/wasm/fc_tempo.cpp)\n");
+    theModuleSpeaksItsVersion();           // allocates nothing: the first-run oracle below is still the first run
+#else
+    std::printf ("felitronics fc_probe_tempo_* ABI tests — the fcprobe module (tools/wasm/fc_probe.cpp)\n");
+#endif
     beforeAnyRun();
     thePriceIsTheCoresBudget();
     theFirstRunAsksExactlyThePrice();      // the first tempo run of this process — see its note

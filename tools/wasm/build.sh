@@ -2,9 +2,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 #
-# Builds the wasm artifacts of this repo's two C ABIs:
+# Builds the wasm artifacts of this repo's C ABIs:
 #
-#   fcprobe.*   — the wasm measurement spike (tools/wasm/fc_probe.cpp)
+#   fcprobe.*   — the wasm measurement spike (tools/wasm/fc_probe.cpp): every offline analyzer
+#   fctempo.*   — the tempo detector ALONE (tools/fc_tempo_abi.h + tools/wasm/fc_tempo.cpp), for a page that needs
+#                 nothing else: fc_probe's ten tempo entry points under the same names — one text,
+#                 tools/wasm/fc_tempo_entry.h, compiled into both — at an eighth of the probe's size. See the
+#                 fc_tempo section below.
 #   fcmaster.*  — the mastering ABI (tools/fc_master_abi.h + tools/wasm/fc_master.cpp), which is what a
 #                 browser worker links to render and to run the loudness search. Same flags, same numeric
 #                 contract, same no-threads and byte-identity checks — see the fc_master section below.
@@ -115,23 +119,55 @@ SRC="$HERE/fc_probe.cpp"
 # `(` also settles `FC_EXPORT fc_status fc_render (…)`, where the return type itself begins with `fc_`.
 # Leading whitespace is allowed: an INDENTED declaration used to be invisible to all three scanners at
 # once — uncounted, unextracted and untype-checked — while KEEPALIVE published it anyway.
-export_names() { sed -nE 's/^[[:space:]]*FC_EXPORT[[:space:]]+[^(]*[^A-Za-z0-9_]([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*\(.*/_\1/p' "$1" \
+export_names() { [ "$#" -gt 0 ] || { echo "*** export_names: no file to read" >&2; exit 1; }   # never sed's stdin
+                 sed -nE 's/^[[:space:]]*FC_EXPORT[[:space:]]+[^(]*[^A-Za-z0-9_]([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*\(.*/_\1/p' "$@" \
                  | LC_ALL=C sort -u; }
+
+# THE FILES A MODULE'S ABI IS DECLARED IN: its translation unit and every header of its #include closure that
+# declares an entry point, one per line. Every gate below used to read the .cpp alone, and that stopped being the
+# whole ABI when the tempo entry points became ONE text compiled into two modules (tools/wasm/fc_tempo_entry.h):
+# a grep of fc_probe.cpp would have missed ten names, every count would still have agreed, and — KEEPALIVE being
+# what it is (see above) — the artifact would have exported them anyway, so nothing would have gone red while the
+# list stopped being a statement of the ABI.
+# THE CLOSURE IS THE COMPILER'S (-MM), not a second parser of #include lines, and it is taken with the module's own
+# FRONT-END FLAGS — the same array its compile line starts with, -msimd128 and -fno-exceptions included. With fewer
+# flags a header included under `#if defined(__wasm_simd128__)` would be compiled into the module and missing from
+# the list, and every count would still agree (found by the review round, reproduced with the SDK compiler). System
+# headers are not in it and declare no entry point.
+# The dependency list is MAKE's format, so it is read as such: `\ ` is a space inside a path, `\#` a `#`, `$$` a `$`,
+# a line ending in `\` continues. node reads it (build.sh needs node anyway, for the thread audit); splitting it on
+# whitespace in the shell cut a checkout path with a space in it into pieces.
+# Called as `LIST=$(abi_files ...)` and never inside a process substitution: there a failed -MM would hand the loop an
+# empty list and the build would go on, where in a command substitution `set -e` stops it on the spot.
+abi_files() { src="$1"; shift
+    deps=$(em++ "$@" -MM -MT fc_abi_closure "$src") \
+        || { echo "*** could not list the #include closure of $src" >&2; exit 1; }
+    # grep's 1 is "no entry point here"; anything else is a file of the closure this could not read, and dropping it
+    # would shorten the list while every count still agreed — so that stops the build instead.
+    printf '%s\n' "$deps" | node -e '
+        const s = require("fs").readFileSync(0, "utf8").replace(/\\\r?\n/g, " ");
+        if (!s.startsWith("fc_abi_closure:")) { console.error("*** -MM printed no rule for fc_abi_closure"); process.exit(1); }
+        for (const t of s.slice("fc_abi_closure:".length).match(/(?:\\.|\$\$|[^\s\\$])+/g) ?? [])
+            console.log(t.replace(/\$\$/g, "$").replace(/\\(.)/g, "$1"));' \
+        | while IFS= read -r f; do
+              if grep -qE '^[[:space:]]*FC_EXPORT' "$f"; then echo "$f"
+              elif [ $? -ne 1 ]; then echo "*** cannot read $f, a file of the #include closure of $src" >&2; exit 1; fi
+          done; }
 
 # ONE DECLARATION PER LINE, because `sed` takes one match per line and the count below is of LINES. Two on
 # one line — `FC_EXPORT int fc_a (void) { … } FC_EXPORT std::uint64_t fc_b (void) { … }` — used to drop the
 # SECOND from the list while the counts still agreed and the type check read only the first one's return
 # type. Both gates passed; the ABI was one name short. (All three of these bypasses were found by the
 # review round and reproduced against the gate functions before this was written.)
-check_one_per_line() { src="$1"
-    doubled=$(awk '{ if (gsub(/FC_EXPORT/, "") > 1) print FILENAME ":" NR ": " $0 }' "$src")
+check_one_per_line() {
+    doubled=$(awk '{ if (gsub(/FC_EXPORT/, "") > 1) print FILENAME ":" FNR ": " $0 }' "$@")
     [ -z "$doubled" ] || { echo "*** two entry points on one line — the extractor sees only the first:"; \
                            printf '%s\n' "$doubled"; exit 1; }
     # ...and ONE DECLARATOR per FC_EXPORT. `FC_EXPORT int fc_a (void), fc_b (void);` is one token, one
     # line and one extracted name, so every count above agrees while `_fc_b` is simply absent from the
     # list. The rule is the shape of a declarator: what follows a closed parameter list is a body or a
     # semicolon, never a comma. (Wrapped argument lists are untouched — their line has no `)` at all.)
-    comma=$(grep -nE '^[[:space:]]*FC_EXPORT[^()]*\([^()]*\)[[:space:]]*,' "$src" || true)
+    comma=$(grep -nE '^[[:space:]]*FC_EXPORT[^()]*\([^()]*\)[[:space:]]*,' "$@" || true)
     [ -z "$comma" ] || { echo "*** a comma declarator — every name after the first is not exported:"; \
                          printf '%s\n' "$comma"; exit 1; }; }
 
@@ -141,12 +177,13 @@ check_one_per_line() { src="$1"
 # `grep -c .` and NOT `wc -l` to count the names: `printf '%s\n' "$EMPTY" | wc -l` is 1, not 0, so a source
 # whose single declaration the extractor could not parse would have compared 1 against 1 and passed with an
 # EMPTY list. That is why the count is taken of NON-EMPTY LINES.
-check_exports() { src="$1"; found="$2"
-    check_one_per_line "$src"
-    declared=$(grep -cE '^[[:space:]]*FC_EXPORT' "$src")
-    [ "$declared" -gt 0 ] || { echo "*** no FC_EXPORT declarations in $src — refusing to link a module with no ABI"; exit 1; }
+check_exports() { found="$1"; shift
+    [ "$#" -gt 0 ] || { echo "*** no file of this module declares an entry point — refusing to link a module with no ABI"; exit 1; }
+    check_one_per_line "$@"
+    declared=$(cat "$@" | grep -cE '^[[:space:]]*FC_EXPORT')
+    [ "$declared" -gt 0 ] || { echo "*** no FC_EXPORT declarations in $* — refusing to link a module with no ABI"; exit 1; }
     [ "$found" -eq "$declared" ] \
-        || { echo "*** $src declares $declared entry points and the extractor found $found —"; \
+        || { echo "*** $* declare $declared entry points and the extractor found $found —"; \
              echo "    a declaration it cannot parse would silently shorten the ABI"; exit 1; }; }
 
 # THE SECOND GATE, and the reason it is not the first. Making the extraction type-independent means a
@@ -156,19 +193,25 @@ check_exports() { src="$1"; found="$2"
 # this ABI returns: `bigint + number` throws TypeError and JSON.stringify refuses it outright. So the set
 # of return types each ABI carries is written down and a new one has to be added here on purpose, with
 # somebody having thought about what it looks like on the page. This gate FAILS; it does not omit.
-check_return_types() { src="$1"; allowed="$2"
-    offenders=$(grep -E '^[[:space:]]*FC_EXPORT' "$src" \
+check_return_types() { allowed="$1"; shift
+    offenders=$(cat "$@" | grep -E '^[[:space:]]*FC_EXPORT' \
                 | grep -vE "^[[:space:]]*FC_EXPORT[[:space:]]+($allowed)[[:space:]]+fc_" || true)
-    [ -z "$offenders" ] || { echo "*** $src declares an entry point whose return type this boundary does not carry:"; \
+    [ -z "$offenders" ] || { echo "*** $* declare an entry point whose return type this boundary does not carry:"; \
                              printf '%s\n' "$offenders"; \
                              echo "    add it to check_return_types once you know what it looks like in JavaScript"; exit 1; }; }
 
-PNAMES=$(export_names "$SRC")
+# The front end of every probe-family compile line (fcprobe, fctempo) — and of the #include closure read above, so
+# the list is taken under exactly the preprocessor the module is compiled under. -O3 is the release lines' level;
+# the debug line's -O1 defines the same __OPTIMIZE__.
+FRONT=(-std=c++20 -fno-exceptions -fno-rtti "${NUMERIC[@]}" "${INC[@]}" -msimd128)
+PLIST=$(abi_files "$SRC" "${FRONT[@]}" -O3)
+PFILES=(); while IFS= read -r f; do [ -z "$f" ] || PFILES+=("$f"); done <<< "$PLIST"
+PNAMES=$(export_names "${PFILES[@]}")
 PFOUND=$(printf '%s\n' "$PNAMES" | grep -c . || true)
-check_exports "$SRC" "$PFOUND"
-check_return_types "$SRC" 'int|double|std::uint32_t'
+check_exports "$PFOUND" "${PFILES[@]}"
+check_return_types 'int|double|std::uint32_t' "${PFILES[@]}"
 PEXPORTS="$(printf '%s\n' "$PNAMES" | paste -sd, -),_malloc,_free"
-echo "--- fc_probe exports: $PFOUND entry points (+ _malloc/_free), matching $PFOUND declarations"
+echo "--- fc_probe exports: $PFOUND entry points (+ _malloc/_free), matching $PFOUND declarations in: ${PFILES[*]##*/}"
 
 # -msimd128: `core::firDot`'s wasm kernel is behind `__wasm_simd128__`, so without it this module
 # silently takes the scalar one. Verified against THIS target's own acceptance, which is stricter than
@@ -177,8 +220,7 @@ echo "--- fc_probe exports: $PFOUND entry points (+ _malloc/_free), matching $PF
 # 96k/2ch and 44.1k/2ch fixtures, plus a 5:21 stereo programme) in both the release and the checked
 # debug build, before AND after the flag. Native runs the NEON kernel, this runs SIMD128: two different
 # hand-written kernels, identical bits. On the hot path, 865 -> 435 ms on that programme.
-COMMON=(-std=c++20 -fno-exceptions -fno-rtti "${NUMERIC[@]}" "${INC[@]}"
-        -msimd128
+COMMON=("${FRONT[@]}"
         --no-entry
         -sMODULARIZE=1
         -sEXPORT_NAME=createFcProbe
@@ -195,11 +237,12 @@ COMMON=(-std=c++20 -fno-exceptions -fno-rtti "${NUMERIC[@]}" "${INC[@]}"
 echo "--- node (same wasm, node glue — for the parity harness)"
 em++ "${COMMON[@]}" -O3 -sENVIRONMENT=node "$SRC" -o "$OUT/fcprobe.node.js"
 
+# same_as_node <module> <glue just built> — the module's web .wasm against its node .wasm.
 same_as_node () {
-    echo "=== fcprobe.web.wasm from $1 must be byte-identical to node's (ENVIRONMENT/EXPORT_ES6 shape glue, not code)"
+    echo "=== $1.web.wasm from $2 must be byte-identical to node's (ENVIRONMENT/EXPORT_ES6 shape glue, not code)"
     local a b
-    a=$(shasum -a 256 "$OUT/fcprobe.web.wasm"  | cut -d' ' -f1)
-    b=$(shasum -a 256 "$OUT/fcprobe.node.wasm" | cut -d' ' -f1)
+    a=$(shasum -a 256 "$OUT/$1.web.wasm"  | cut -d' ' -f1)
+    b=$(shasum -a 256 "$OUT/$1.node.wasm" | cut -d' ' -f1)
     echo "  web  $a"
     echo "  node $b"
     [ "$a" = "$b" ] && echo "  IDENTICAL" || { echo "  *** DIFFER — a parity result on one does not transfer to the other"; exit 1; }
@@ -207,11 +250,11 @@ same_as_node () {
 
 echo "--- web (the spike's artifact, classic glue for probe.html)"
 em++ "${COMMON[@]}" -O3 -sENVIRONMENT=web,worker "$SRC" -o "$OUT/fcprobe.web.js"
-same_as_node fcprobe.web.js
+same_as_node fcprobe fcprobe.web.js
 
 echo "--- web ES module (for a module worker)"
 em++ "${COMMON[@]}" -O3 -sENVIRONMENT=web,worker -sEXPORT_ES6=1 "$SRC" -o "$OUT/fcprobe.web.mjs"
-same_as_node fcprobe.web.mjs
+same_as_node fcprobe fcprobe.web.mjs
 
 echo "--- debug (SAFE_HEAP + assertions + stack checks)"
 em++ "${COMMON[@]}" -O1 -g -sASSERTIONS=2 -sSAFE_HEAP=1 -sSTACK_OVERFLOW_CHECK=2 \
@@ -224,15 +267,73 @@ echo "=== no threads, proven from the artifact rather than from the page loading
 node "$CORE/tools/wasm/check-no-threads.mjs" "$OUT/fcprobe.web.wasm" "$OUT/fcprobe.web.js"
 node "$CORE/tools/wasm/check-no-threads.mjs" "$OUT/fcprobe.web.wasm" "$OUT/fcprobe.web.mjs"
 
+# sizes <file>... — raw, gzip -9 and brotli -q 11, what a page actually downloads.
+sizes () {
+    printf "  %-22s %10s %10s %10s\n" file raw gzip brotli
+    local f raw gz br
+    for f in "$@"; do
+        raw=$(wc -c < "$OUT/$f")
+        gz=$(gzip -9 -c "$OUT/$f" | wc -c)
+        # Without brotli installed the old `brotli | wc -c || echo n/a` printed "0" AND "n/a" (pipefail): ask first.
+        if command -v brotli > /dev/null; then br=$(brotli -q 11 -c "$OUT/$f" | wc -c); else br="n/a"; fi
+        printf "  %-22s %10s %10s %10s\n" "$f" "$raw" "$gz" "$br"
+    done
+}
+
 echo
 echo "=== size (acceptance criterion 2)"
-printf "  %-22s %10s %10s %10s\n" file raw gzip brotli
-for f in fcprobe.web.wasm fcprobe.web.js fcprobe.web.mjs; do
-    raw=$(wc -c < "$OUT/$f")
-    gz=$(gzip -9 -c "$OUT/$f" | wc -c)
-    br=$(brotli -q 11 -c "$OUT/$f" 2>/dev/null | wc -c || echo "n/a")
-    printf "  %-22s %10s %10s %10s\n" "$f" "$raw" "$gz" "$br"
-done
+sizes fcprobe.web.wasm fcprobe.web.js fcprobe.web.mjs
+
+#==================================================================================================
+# fc_tempo — the TEMPO DETECTOR ALONE (tools/fc_tempo_abi.h, tools/wasm/fc_tempo.cpp)
+#
+# The page's BPM tool needs one analyzer of the probe's twelve and used to download all of them. This module is the
+# one: fc_probe's ten tempo entry points under the same names — the same text, tools/wasm/fc_tempo_entry.h, compiled
+# here too — plus fc_tempo_abi_version. Built on the probe's line and for the probe's reasons (numeric contract,
+# -msimd128, emmalloc, no filesystem, growable memory, the HEAP views); what differs, and why:
+#
+#  1. -sEXPORT_NAME=createFcTempo, so a page that loads it beside another module gets its own factory.
+#  2. TWO artifacts, not four: the ES-module web glue a module worker imports, and node's for the parity harness.
+#     No classic .js (that one exists for probe.html alone). No debug variant — the checked configuration of this
+#     TU already exists and is stronger: felitronics_fctempo_abi_tests runs fc_tempo.cpp natively under ASan and
+#     UBSan, and on the wasm tier's checked build (SAFE_HEAP, ASSERTIONS=2, stack checks), in CI.
+#  3. The export list is this TU's include closure, like the others — fc_tempo.cpp declares one name, and the ten
+#     it publishes besides are declared in fc_tempo_entry.h, which is exactly the case the closure exists for.
+#==================================================================================================
+TSRC="$HERE/fc_tempo.cpp"
+TLIST=$(abi_files "$TSRC" "${FRONT[@]}" -O3)
+TFILES=(); while IFS= read -r f; do [ -z "$f" ] || TFILES+=("$f"); done <<< "$TLIST"
+TNAMES=$(export_names "${TFILES[@]}")
+TFOUND=$(printf '%s\n' "$TNAMES" | grep -c . || true)
+check_exports "$TFOUND" "${TFILES[@]}"
+check_return_types 'int|double|std::uint32_t' "${TFILES[@]}"
+TEXPORTS="$(printf '%s\n' "$TNAMES" | paste -sd, -),_malloc,_free"
+echo
+echo "--- fc_tempo exports: $TFOUND entry points (+ _malloc/_free), matching $TFOUND declarations in: ${TFILES[*]##*/}"
+
+TCOMMON=("${FRONT[@]}"
+         --no-entry
+         -sMODULARIZE=1
+         -sEXPORT_NAME=createFcTempo
+         -sALLOW_MEMORY_GROWTH=1
+         -sFILESYSTEM=0
+         -sMALLOC=emmalloc
+         "-sEXPORTED_FUNCTIONS=[$TEXPORTS]"
+         "-sEXPORTED_RUNTIME_METHODS=['HEAPF32','HEAPF64']")
+
+echo "--- fc_tempo node (for the parity harness)"
+em++ "${TCOMMON[@]}" -O3 -sENVIRONMENT=node "$TSRC" -o "$OUT/fctempo.node.js"
+echo "--- fc_tempo web ES module (for a module worker)"
+em++ "${TCOMMON[@]}" -O3 -sENVIRONMENT=web,worker -sEXPORT_ES6=1 "$TSRC" -o "$OUT/fctempo.web.mjs"
+same_as_node fctempo fctempo.web.mjs
+
+echo
+echo "=== no threads (fc_tempo)"
+node "$CORE/tools/wasm/check-no-threads.mjs" "$OUT/fctempo.web.wasm" "$OUT/fctempo.web.mjs"
+
+echo
+echo "=== size (fc_tempo, and what it saves a page that wants only a tempo)"
+sizes fctempo.web.wasm fctempo.web.mjs fcprobe.web.wasm
 
 #==================================================================================================
 # fc_master — the MASTERING ABI (tools/fc_master_abi.h, implemented by tools/wasm/fc_master.cpp)
@@ -275,20 +376,22 @@ done
 #==================================================================================================
 MSRC="$HERE/fc_master.cpp"
 
-# The whitelist, read from the source, by the same extractor as the probe's. The old grep here had the
+# The whitelist, read from the source — the TU's #include closure, as the probe's — by the same extractor. The old grep here had the
 # probe's defect twice over: a return-type whitelist, and `fc_[a-z_]+` for the NAME, which excludes digits
 # — an entry point carrying a version number would not have left the list, it would have been TRUNCATED
 # into it: `fc_render_v2` becomes `fc_render_v`, and the link then fails on a symbol nobody declared.
 # _malloc/_free are the page's own, and are opt-in in emscripten 6.x.
-MNAMES=$(export_names "$MSRC")
+MFRONT=(-std=c++20 -fno-exceptions -fno-rtti "${NUMERIC[@]}" "${MASTER_INC[@]}" -msimd128)
+MLIST=$(abi_files "$MSRC" "${MFRONT[@]}" -O3)
+MFILES=(); while IFS= read -r f; do [ -z "$f" ] || MFILES+=("$f"); done <<< "$MLIST"
+MNAMES=$(export_names "${MFILES[@]}")
 MFOUND=$(printf '%s\n' "$MNAMES" | grep -c . || true)
-check_exports "$MSRC" "$MFOUND"
-check_return_types "$MSRC" 'void|std::uint32_t|uint32_t|fc_status'
+check_exports "$MFOUND" "${MFILES[@]}"
+check_return_types 'void|std::uint32_t|uint32_t|fc_status' "${MFILES[@]}"
 MEXPORTS="$(printf '%s\n' "$MNAMES" | paste -sd, -),_malloc,_free"
-echo "--- fc_master exports: $MFOUND entry points (+ _malloc/_free), matching $MFOUND declarations"
+echo "--- fc_master exports: $MFOUND entry points (+ _malloc/_free), matching $MFOUND declarations in: ${MFILES[*]##*/}"
 
-MCOMMON=(-std=c++20 -fno-exceptions -fno-rtti "${NUMERIC[@]}" "${MASTER_INC[@]}"
-         -msimd128
+MCOMMON=("${MFRONT[@]}"
          --no-entry
          -sMODULARIZE=1
          -sEXPORT_NAME=createFcMaster
@@ -323,13 +426,7 @@ node "$CORE/tools/wasm/check-no-threads.mjs" "$OUT/fcmaster.web.wasm" "$OUT/fcma
 
 echo
 echo "=== size"
-printf "  %-22s %10s %10s %10s\n" file raw gzip brotli
-for f in fcmaster.web.wasm fcmaster.web.mjs; do
-    raw=$(wc -c < "$OUT/$f")
-    gz=$(gzip -9 -c "$OUT/$f" | wc -c)
-    br=$(brotli -q 11 -c "$OUT/$f" 2>/dev/null | wc -c || echo "n/a")
-    printf "  %-22s %10s %10s %10s\n" "$f" "$raw" "$gz" "$br"
-done
+sizes fcmaster.web.wasm fcmaster.web.mjs
 
 # WHAT THIS WAS BUILT FROM, beside what it built. A consumer that installs these modules records which engine
 # it ships, and a checkout's own `git describe` cannot say which core the modules were compiled against: the
