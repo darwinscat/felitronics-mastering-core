@@ -23,6 +23,9 @@
 //
 // Every operand is `volatile`, so nothing is folded at compile time — where the flags under test would not apply.
 
+#include <cstdint>
+#include <cstring>
+
 namespace felitronics::session::probes
 {
 namespace
@@ -56,12 +59,19 @@ namespace
         return r > 0x1p53;
     }
 
-    // -0 + +0 is +0 in round-to-nearest. A compiler that may ignore signed zeros folds x + 0 to x, which keeps the -0.
+    // -(x - y) at x == y is -0: the difference is +0, and negating it sets the sign. A compiler that may ignore signed
+    // zeros rewrites -(x - y) as y - x, which is +0. The sign is read from the BITS — a floating-point test of it
+    // (1/r < 0, signbit) is itself something the licence may fold. (The obvious probe, -0 + 0 folded to -0, is not
+    // taken by gcc 14 on aarch64; this one changed under the licence on every row measured: gcc 14 x86-64 and aarch64,
+    // Apple clang 14 x86-64 and 21 arm64, emscripten 6.0.9.)
     inline bool dropsSignedZeros() noexcept
     {
-        volatile double z = -0.0;
-        const double r = z + 0.0;
-        return 1.0 / r < 0.0;
+        volatile double x = 1.0;
+        volatile double y = 1.0;
+        const double r = -(x - y);
+        std::uint64_t bits = 0;
+        std::memcpy (&bits, &r, sizeof bits);
+        return (bits >> 63) == 0u;
     }
 
     // FLUSH-TO-ZERO: the smallest normal, halved, is a subnormal result; a flushing thread returns 0. Asked of double and

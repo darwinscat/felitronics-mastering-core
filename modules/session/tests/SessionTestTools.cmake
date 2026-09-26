@@ -14,6 +14,14 @@ function(felitronics_session_must_fail name target expect)
     set_tests_properties(${name} PROPERTIES RESOURCE_LOCK felitronics_build_tree)
 endfunction()
 
+# A BUILD THAT MUST SUCCEED: builds <target> (excluded from the default build) from inside ctest and requires it to build —
+# for the one control whose licence the library's own options are measured to win against.
+function(felitronics_session_must_build name target)
+    add_test(NAME ${name}
+             COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target ${target} --config $<CONFIG>)
+    set_tests_properties(${name} PROPERTIES RESOURCE_LOCK felitronics_build_tree)
+endfunction()
+
 # THE OBJECT-FILE GATE (tests/object-gates.cmake) — the question the object file answers exactly, asked of compiled
 # objects: which symbols live in writable memory, and which symbols are called that nothing in the set defines. The
 # tool that reads the symbol table is this row's own:
