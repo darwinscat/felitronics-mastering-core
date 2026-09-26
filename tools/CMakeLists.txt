@@ -185,12 +185,20 @@ target_link_libraries(fcore_master PRIVATE felitronics::mastering felitronics::a
 target_include_directories(fcore_master PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(fcore_master PRIVATE cxx_std_20)
 
+# THE C BOUNDARY'S TRANSLATION UNIT, built once as an object library with the session library's OWN compile options (read
+# off the target, not restated): no exceptions, no RTTI, no contraction, no fast-math — so the facade is held to the
+# brain's flags on every native row as it is in the wasm module (tools/wasm/build.sh). fcore_session and the ABI suite
+# link this object rather than compiling the source again.
+add_library(felitronics_session_facade OBJECT wasm/fc_session.cpp)
+target_link_libraries(felitronics_session_facade PRIVATE felitronics::session)
+target_include_directories(felitronics_session_facade PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_features(felitronics_session_facade PRIVATE cxx_std_20)
+target_compile_options(felitronics_session_facade PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
+
 # fcore_session — the native CLI over `felitronics::session` (tools/fcore_session.cpp): the library linked AS C++, the
-# way a desktop application links it, plus the fc_session ABI's translation unit beside it, so the ABI version it
-# prints is the facade's own answer. The two are separate TUs for fcore_master's reason: the facade stays a facade.
-# No flag of the brain's is restated here — they are the library's PRIVATE options (modules/session/CMakeLists.txt),
-# and this target inherits none of them and needs none: it decides nothing.
-add_executable(fcore_session fcore_session.cpp wasm/fc_session.cpp)
+# way a desktop application links it, plus the fc_session ABI's object beside it, so the ABI version it prints is the
+# facade's own answer. The two are separate translation units for fcore_master's reason: the facade stays a facade.
+add_executable(fcore_session fcore_session.cpp $<TARGET_OBJECTS:felitronics_session_facade>)
 target_link_libraries(fcore_session PRIVATE felitronics::session)
 target_include_directories(fcore_session PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(fcore_session PRIVATE cxx_std_20)
@@ -199,7 +207,7 @@ if(FELITRONICS_BUILD_TESTS)
     # fc_session, draft version 0 (tools/fc_session_abi.h): the out-pointer's checks, the handles and their generations, the table's
     # capacity, what a create allocates against the session's declared demand, and the poison — natively, under ctest,
     # ASan and UBSan, and on the wasm tier. One binary: the poison is its last group, because it is for good.
-    add_executable(felitronics_session_abi_tests tests/SessionAbiTests.cpp wasm/fc_session.cpp)
+    add_executable(felitronics_session_abi_tests tests/SessionAbiTests.cpp $<TARGET_OBJECTS:felitronics_session_facade>)
     target_link_libraries(felitronics_session_abi_tests PRIVATE felitronics::session felitronics::test_support)
     target_include_directories(felitronics_session_abi_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_features(felitronics_session_abi_tests PRIVATE cxx_std_20)

@@ -11,11 +11,18 @@
 //   * destroy: 0, a fabricated handle, a destroyed one and a stale generation are all refused;
 //   * the table: FC_SESSION_MAX_HANDLES live sessions and not one more, and a slot freed is a slot reused under a new
 //     handle;
+//   * the session's own refusal passed through: a thread that rounds other than to nearest gets
+//     FC_SESSION_ERR_FP_ENVIRONMENT, `*out` untouched and the slot still free;
+//   * THE WRAP BOUNDARY, at the shipped width: one slot driven through all FC_SESSION_SLOT_GENERATIONS of its
+//     generations — 16.7 million create/destroy cycles, the reproduction of a stale handle destroying a new session —
+//     retires instead of wrapping, and every handle it issued stays refused;
 //   * THE POISON, LAST, because it is for good: an entry point re-entered from inside an allocation the module made
 //     answers POISONED, and from then on every status call does, though every call returned.
 
 #include <felitronics_test.h>
 #include <alloc_counter.h>   // installs the allocation counter: EVERY form of `new`, over-aligned included
+
+#include "../../modules/session/tests/FpEnvironmentControl.h"
 
 #include "fc_session_abi.h"
 
@@ -116,6 +123,59 @@ void theTableHoldsItsCapacity()
     ok (allDestroyed, "every live handle destroys");
 }
 
+void theSessionsRefusalPassesThrough()
+{
+    felitronics::test::group ("the session's own refusal passes through: the floating-point environment");
+    namespace fpenv = felitronics::session::testing;
+    const auto saved = fpenv::saveFpEnvironment();
+    if (! fpenv::setRounding (fpenv::kRoundUpward))
+    {
+        fpenv::restoreFpEnvironment (saved);
+        std::printf ("    this row cannot round upward — not reachable here\n");
+        return;
+    }
+    fc_session h = 4242u;
+    const long long r0 = requestsNow();
+    const fc_session_status st = fc_session_create (&h);
+    const long long spent = requestsNow() - r0;
+    fpenv::restoreFpEnvironment (saved);
+    if (st == FC_SESSION_OK) fc_session_destroy (h);   // keep the table as the tests after this one expect it
+    ok (st == FC_SESSION_ERR_FP_ENVIRONMENT, "a create on a thread rounding upward answers FC_SESSION_ERR_FP_ENVIRONMENT");
+    ok (h == 4242u && spent == 0, "and writes nothing and allocates nothing");
+    fc_session again = 0;
+    ok (fc_session_create (&again) == FC_SESSION_OK && fc_session_destroy (again) == FC_SESSION_OK,
+        "restored, a create succeeds: the refusal took no slot");
+}
+
+void theGenerationRetiresInsteadOfWrapping()
+{
+    felitronics::test::group ("a slot retires at its last generation instead of wrapping — at the shipped width");
+    // Every slot is free here, so each create takes slot 0 (handle & 0xFF == 1) until it retires.
+    fc_session first = 0;
+    ok (fc_session_create (&first) == FC_SESSION_OK && (first & 0xFFu) == 1u, "PRECONDITION: slot 0 is the free one");
+    ok (fc_session_destroy (first) == FC_SESSION_OK, "PRECONDITION: and destroys");
+    const fc_session wrappedTwin = (1u << 8) | 1u;   // generation 1 of slot 0 — what a wrap would issue again
+    bool allOk = true;
+    fc_session h = 0, last = 0;
+    std::uint32_t cycles = 0;
+    for (;;)
+    {
+        if (fc_session_create (&h) != FC_SESSION_OK) { allOk = false; break; }
+        if ((h & 0xFFu) != 1u) break;                     // slot 0 has retired: this is slot 1
+        last = h;
+        if (fc_session_destroy (h) != FC_SESSION_OK) { allOk = false; break; }
+        ++cycles;
+    }
+    ok (allOk, "every create and destroy on the way succeeded (" + std::to_string (cycles) + " cycles)");
+    ok ((last >> 8) == FC_SESSION_SLOT_GENERATIONS, "slot 0's last handle carries its last generation, "
+                                                   + std::to_string (FC_SESSION_SLOT_GENERATIONS));
+    ok ((h & 0xFFu) == 2u, "and the next create went to slot 1: slot 0 retired, it did not wrap");
+    ok (fc_session_destroy (wrappedTwin) == FC_SESSION_ERR_HANDLE && fc_session_destroy (first) == FC_SESSION_ERR_HANDLE
+            && fc_session_destroy (last) == FC_SESSION_ERR_HANDLE,
+        "slot 0's handles stay refused — the first, the last, and the number a wrap would have issued again");
+    ok (fc_session_destroy (h) == FC_SESSION_OK, "slot 1's session destroys");
+}
+
 // THE POISON. Re-entry from INSIDE an allocation the module made, through the shared counter's one-shot hook — the
 // position a native new_handler has. The inner call cannot be told apart from the first call after an abandoned one,
 // so it must answer POISONED; the outer call returns normally, since it cannot know; and from then on every status
@@ -160,6 +220,8 @@ int main()
     createChecksItsOutPointer();
     createAndDestroy();
     theTableHoldsItsCapacity();
+    theSessionsRefusalPassesThrough();
+    theGenerationRetiresInsteadOfWrapping();
     thePoisonIsForGood();   // LAST: the poison is for good, and nothing after it could run
     return felitronics::test::report();
 }
