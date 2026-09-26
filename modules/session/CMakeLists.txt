@@ -18,7 +18,8 @@ target_compile_features(felitronics_session PUBLIC cxx_std_20)
 
 # THE CONFIG — config/targets.toml and config/engine.toml, compiled into the library as constexpr data by felitronics-toml's
 # felitronics_toml_embed: nothing reads a file at run time. A document that does not parse stops the build at its line and
-# column here. The generated headers and felitronics::toml are PRIVATE to the library.
+# column here; one that parses but breaks the schema stops it at the check below (felitronics_session_config_check). The
+# generated headers and felitronics::toml are PRIVATE: Config.h, the public face, speaks typed structs only.
 felitronics_toml_embed(felitronics_session INPUT config/targets.toml
                        NAMESPACE felitronics::session::config::embedded NAME targets HEADER embedded/targets.h)
 felitronics_toml_embed(felitronics_session INPUT config/engine.toml
@@ -157,6 +158,70 @@ if(FELITRONICS_BUILD_TESTS)
                                ${FELITRONICS_SESSION_OPTIMISED})
         add_test(NAME felitronics_session_hostile_${licence}_tests COMMAND felitronics_session_hostile_${licence}_tests)
     endforeach()
+
+    # THE CONFIG'S SCHEMA, A STEP OF THE BUILD. The check reads the config embedded in the library by schema right after
+    # it is linked, and a problem stops the build as `<file>:<line>:<column>: error: <fault> <key path>` — a typo in a
+    # document is a red build at its line, not a silently ignored setting. It runs where the build runs its tests (the
+    # emulator on the wasm tier). Its --files and --expect modes serve the controls below and fcore_session's contract.
+    set(FELITRONICS_SESSION_CONFIG ${CMAKE_CURRENT_SOURCE_DIR}/config)
+    add_executable(felitronics_session_config_check tests/ConfigCheck.cpp)
+    target_link_libraries(felitronics_session_config_check PRIVATE felitronics::session felitronics::toml)
+    target_compile_features(felitronics_session_config_check PRIVATE cxx_std_20)
+    if(EMSCRIPTEN)
+        target_link_options(felitronics_session_config_check PRIVATE -sNODERAWFS=1)   # the host's files, through node
+    endif()
+    add_custom_command(TARGET felitronics_session_config_check POST_BUILD
+        COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:felitronics_session_config_check>
+                ${FELITRONICS_SESSION_CONFIG}/targets.toml ${FELITRONICS_SESSION_CONFIG}/engine.toml
+        COMMENT "felitronics::session: the embedded config, read by schema"
+        VERBATIM)
+
+    # The config: bound with no problem and equal to its sources, the decisions it carries, the schema's controls
+    # in-process (every kind of problem, at its line and column), and the version moved by every single value.
+    add_executable(felitronics_session_config_tests tests/ConfigTests.cpp)
+    target_link_libraries(felitronics_session_config_tests PRIVATE
+        felitronics::session felitronics::toml felitronics::test_support)
+    target_compile_features(felitronics_session_config_tests PRIVATE cxx_std_20)
+    if(EMSCRIPTEN)
+        target_link_options(felitronics_session_config_tests PRIVATE -sNODERAWFS=1)
+    endif()
+    # The suite hashes the embedded data itself, changed node by node: it embeds its own copy of the documents (by the same
+    # tool, from the same files) and reads src/ConfigVersion.h, the walk config::version() is.
+    felitronics_toml_embed(felitronics_session_config_tests INPUT config/targets.toml
+                           NAMESPACE felitronics::session::config::testcopy NAME targets HEADER testcopy/targets.h)
+    felitronics_toml_embed(felitronics_session_config_tests INPUT config/engine.toml
+                           NAMESPACE felitronics::session::config::testcopy NAME engine HEADER testcopy/engine.h)
+    target_include_directories(felitronics_session_config_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    add_test(NAME felitronics_session_config_tests
+             COMMAND felitronics_session_config_tests ${FELITRONICS_SESSION_CONFIG}/targets.toml
+                                                      ${FELITRONICS_SESSION_CONFIG}/engine.toml)
+
+    # THE CHECK ITSELF, PROVEN ABLE TO FAIL: a copy of the documents with one mistake planted must turn the check red
+    # with that mistake's line, column, fault and key path, and the same copy without the plant must pass
+    # (tests/config-must-fail.cmake). Not on the wasm tier: the in-process controls above run there.
+    #   name | document | planted: from | to | the problem points at | the line the check must print
+    if(NOT EMSCRIPTEN)
+        set(FELITRONICS_SESSION_CONFIG_CONTROLS
+            "unknown_key|engine|releaseMs = 50|releseMs = 50|releseMs|UnknownKey limiter.releseMs"
+            "out_of_range|engine|hzMax = 50|hzMax = 500|500|OutOfRange hpf.hzMax"
+            "wrong_type|targets|default = \"allStreaming\"|default = 14|14|WrongType default")
+        foreach(ctl IN LISTS FELITRONICS_SESSION_CONFIG_CONTROLS)
+            string(REPLACE "|" ";" f "${ctl}")
+            list(GET f 0 name)
+            list(GET f 1 doc)
+            list(GET f 2 from)
+            list(GET f 3 to)
+            list(GET f 4 at)
+            list(GET f 5 expect)
+            add_test(NAME felitronics_session_config_control_${name}
+                     COMMAND ${CMAKE_COMMAND}
+                             -DCHECK=$<TARGET_FILE:felitronics_session_config_check>
+                             -DCONFIG=${FELITRONICS_SESSION_CONFIG}
+                             -DWORK=${CMAKE_CURRENT_BINARY_DIR}/config-controls/${name}
+                             -DDOC=${doc} "-DFROM=${from}" "-DTO=${to}" "-DAT=${at}" "-DEXPECT=${expect}"
+                             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/config-must-fail.cmake)
+        endforeach()
+    endif()
 
     # THE BUILD CONTROLS — each forbidden construct, and each forbidden licence, proven to fail the build.
     #  1. Constructs (tests/controls/): one source compiled with the library's OWN compile options (read off the target),
