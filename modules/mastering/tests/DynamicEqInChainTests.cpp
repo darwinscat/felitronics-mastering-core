@@ -700,7 +700,8 @@ void testSwitchOffReleases()
             for (int c = 0; c < kNch; ++c) p[c] = buf.data() + (std::size_t) c * (std::size_t) frames + (std::size_t) off0;
             mastering::MasteringChainTaps tt = t; tt.bandDeltaDb = band.data() + (std::size_t) quanta * mastering::kBandGrStride;
             tt.bandQuantaCapacity = t.bandQuantaCapacity - quanta;
-            if (! chain->process (p, kNch, 256, tt)) return std::vector<float> {};
+            // The last call is SHORT — `frames` is not a multiple of 256 (the code-review round caught the overrun).
+            if (! chain->process (p, kNch, std::min (256, frames - off0), tt)) return std::vector<float> {};
             quanta += tt.bandQuantaWritten;
         }
         bandTrace.clear();
