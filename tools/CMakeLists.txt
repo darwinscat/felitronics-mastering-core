@@ -1,5 +1,5 @@
-# felitronics-mastering-core tools (built only when this is the top-level project): the C ABIs (fc_master, fc_probe and
-# fc_tempo, the probe's tempo surface alone), their native CLIs and suites. Used to validate the DSP against reference implementations (ffmpeg) on real audio, and as the
+# felitronics-mastering-core tools (built only when this is the top-level project): the C ABIs (fc_master, fc_probe,
+# fc_tempo — the probe's tempo surface alone — and fc_session, over the mastering session), their native CLIs and suites. Used to validate the DSP against reference implementations (ffmpeg) on real audio, and as the
 # native side of every native-vs-wasm comparison.
 # The FP-contraction contract for everything that goes through fcore_probe.h. Baseline wasm has NO scalar FMA
 # instruction, so emscripten cannot contract a*b+c; a contracting native build therefore disagrees with wasm —
@@ -184,3 +184,80 @@ add_executable(fcore_master fcore_master.cpp wasm/fc_master.cpp)
 target_link_libraries(fcore_master PRIVATE felitronics::mastering felitronics::analysis)
 target_include_directories(fcore_master PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(fcore_master PRIVATE cxx_std_20)
+
+# fcore_session — the native CLI over `felitronics::session` (tools/fcore_session.cpp): the library linked AS C++, the
+# way a desktop application links it, plus the fc_session ABI's translation unit beside it, so the ABI version it
+# prints is the facade's own answer. The two are separate TUs for fcore_master's reason: the facade stays a facade.
+# No flag of the brain's is restated here — they are the library's PRIVATE options (modules/session/CMakeLists.txt),
+# and this target inherits none of them and needs none: it decides nothing.
+add_executable(fcore_session fcore_session.cpp wasm/fc_session.cpp)
+target_link_libraries(fcore_session PRIVATE felitronics::session)
+target_include_directories(fcore_session PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_features(fcore_session PRIVATE cxx_std_20)
+
+if(FELITRONICS_BUILD_TESTS)
+    # fc_session v1 (tools/fc_session_abi.h): the out-pointer's checks, the handles and their generations, the table's
+    # capacity, what a create allocates against the session's declared demand, and the poison — natively, under ctest,
+    # ASan and UBSan, and on the wasm tier. One binary: the poison is its last group, because it is for good.
+    add_executable(felitronics_session_abi_tests tests/SessionAbiTests.cpp wasm/fc_session.cpp)
+    target_link_libraries(felitronics_session_abi_tests PRIVATE felitronics::session felitronics::test_support)
+    target_include_directories(felitronics_session_abi_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_features(felitronics_session_abi_tests PRIVATE cxx_std_20)
+    add_test(NAME felitronics_session_abi_tests COMMAND felitronics_session_abi_tests)
+
+    # THE CLI'S CONTRACT, byte for byte on stdout and by exit status (tools/tests/cli-expect.cmake): the versions it
+    # prints are the ones this build was configured with; an empty script and a script of comments are accepted with
+    # `done 0`, from a file and from stdin; a script with a command in it, a script that is not there and a malformed
+    # command line are refused with 2 and nothing on stdout.
+    # NOT ON THE WASM TIER: the CLI reads its script from the host's filesystem, which the node runner the emscripten
+    # tests go through does not have. The wasm road into the session is the fcsession module, and CI checks that.
+    if(NOT EMSCRIPTEN)
+        file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/fc_session_abi.h FCORE_SESSION_ABI_LINE
+             REGEX "^#define FC_SESSION_ABI_VERSION [0-9]+u$")
+        if(NOT FCORE_SESSION_ABI_LINE MATCHES "^#define FC_SESSION_ABI_VERSION ([0-9]+)u$")
+            message(FATAL_ERROR "tools/fc_session_abi.h: no FC_SESSION_ABI_VERSION line")
+        endif()
+        set(FCORE_SESSION_EXPECT ${CMAKE_CURRENT_BINARY_DIR}/fcore_session-expect)
+        file(WRITE ${FCORE_SESSION_EXPECT}/version.txt
+             "felitronics-mastering-core ${felitronics_mastering_core_VERSION}\n"
+             "felitronics-core ${FELITRONICS_MASTERING_FCORE_VERSION}\n"
+             "fc_session_abi ${CMAKE_MATCH_1}\n")
+        file(WRITE ${FCORE_SESSION_EXPECT}/done0.txt "done 0\n")
+        file(WRITE ${FCORE_SESSION_EXPECT}/nothing.txt "")
+        set(FCORE_SESSION_SCRIPTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/session-scripts)
+        # name | expected exit | expected stdout | stdin file ("-" none) | arguments...
+        set(FCORE_SESSION_CASES
+            "version|0|version.txt|-|version"
+            "empty|0|done0.txt|-|run|${FCORE_SESSION_SCRIPTS}/empty.txt"
+            "comments|0|done0.txt|-|run|${FCORE_SESSION_SCRIPTS}/comments.txt"
+            "stdin|0|done0.txt|${FCORE_SESSION_SCRIPTS}/comments.txt|run|-"
+            "command|2|nothing.txt|-|run|${FCORE_SESSION_SCRIPTS}/command.txt"
+            "missing|2|nothing.txt|-|run|${FCORE_SESSION_SCRIPTS}/no-such-script.txt"
+            "noargs|2|nothing.txt|-"
+            "bogus|2|nothing.txt|-|bogus"
+            "extra|2|nothing.txt|-|version|extra")
+        foreach(case IN LISTS FCORE_SESSION_CASES)
+            string(REPLACE "|" ";" f "${case}")
+            list(GET f 0 name)
+            list(GET f 1 rc)
+            list(GET f 2 out)
+            list(GET f 3 in)
+            set(cliArgs "")
+            list(LENGTH f nFields)
+            if(nFields GREATER 4)
+                list(SUBLIST f 4 -1 cliArgs)
+            endif()
+            list(LENGTH cliArgs nArgs)
+            set(argDefs "")
+            set(i 0)
+            foreach(a IN LISTS cliArgs)
+                list(APPEND argDefs "-DARG${i}=${a}")
+                math(EXPR i "${i} + 1")
+            endforeach()
+            add_test(NAME fcore_session_${name}
+                     COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:fcore_session> -DNARGS=${nArgs} ${argDefs}
+                             -DEXPECT_RC=${rc} -DEXPECT_STDOUT=${FCORE_SESSION_EXPECT}/${out} -DSTDIN=${in}
+                             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli-expect.cmake)
+        endforeach()
+    endif()
+endif()

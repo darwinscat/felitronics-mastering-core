@@ -12,6 +12,9 @@
 #   fcmaster.*  — the mastering ABI (tools/fc_master_abi.h + tools/wasm/fc_master.cpp), which is what a
 #                 browser worker links to render and to run the loudness search. Same flags, same numeric
 #                 contract, same no-threads and byte-identity checks — see the fc_master section below.
+#   fcsession.* — the session ABI (tools/fc_session_abi.h + tools/wasm/fc_session.cpp) over felitronics::session, the
+#                 first module with a COMPILED library behind it: modules/session/src is compiled into it with the
+#                 library's own flags and releases. See the fc_session section below.
 #   tierup/     — never shipped: fctempo and fcprobe linked again with their function names, which is how the build
 #                 proves the tempo detector's hot loops survived the optimiser (tools/wasm/tierup-check.mjs).
 #
@@ -482,6 +485,78 @@ node "$CORE/tools/wasm/check-no-threads.mjs" "$OUT/fcmaster.web.wasm" "$OUT/fcma
 echo
 echo "=== size"
 sizes fcmaster.web.wasm fcmaster.web.mjs
+
+#==================================================================================================
+# fc_session — THE SESSION ABI (tools/fc_session_abi.h, tools/wasm/fc_session.cpp) over felitronics::session
+#
+# The first module with a COMPILED library behind it. Natively felitronics::session is a static library built by
+# modules/session/CMakeLists.txt; here its sources go into the module's one em++ line beside the facade, and what that
+# brings is the difference from the modules above:
+#  1. THE LIBRARY'S FLAGS, IN THE LIBRARY'S ORDER — -fno-fast-math -ffp-contract=off -fno-exceptions -fno-rtti, as its
+#     target states them (and why in that order: a -ffp-contract=fast before -fno-fast-math survives it, so the
+#     contraction switch comes last). One em++ line gives every TU the same flags, the facade's included, which is more
+#     than the facade needs and costs it nothing.
+#  2. THE TWO RELEASES THE LIBRARY REPORTS (Session::version, Session::coreVersion), read from the project() lines of
+#     this repository and of the core it is built against — the same two lines the CMake build reads, so the module
+#     answers the build's numbers and not ones typed here. The library refuses to compile without them.
+#  3. EVERY SOURCE OF modules/session/src, by directory rather than by list, so a source added to the library cannot be
+#     left out of the module.
+#  4. -sEXPORT_NAME=createFcSession; two artifacts, as fctempo: the ES-module web glue a module worker imports, and node's
+#     for tools/wasm/session-check.mjs, which holds the module to its exact export set and runs its surface. No debug
+#     variant: felitronics_session_abi_tests runs this TU natively under ASan and UBSan, and on the wasm tier's checked
+#     build (SAFE_HEAP, ASSERTIONS=2) in CI.
+#==================================================================================================
+# project_version <CMakeLists.txt> <project name> — "MAJOR MINOR PATCH" of that project() line, or nothing.
+project_version () { sed -nE "s/^project\\($2 VERSION ([0-9]+)\\.([0-9]+)\\.([0-9]+)[ )].*/\\1 \\2 \\3/p" "$1" | head -1; }
+read -r SV_MAJOR SV_MINOR SV_PATCH <<< "$(project_version "$ROOT/CMakeLists.txt" felitronics_mastering_core)" || true
+read -r CV_MAJOR CV_MINOR CV_PATCH <<< "$(project_version "$CORE/CMakeLists.txt" felitronics_core)" || true
+[ -n "${SV_PATCH:-}" ] || { echo "*** no project(felitronics_mastering_core VERSION x.y.z ...) line in $ROOT/CMakeLists.txt"; exit 1; }
+[ -n "${CV_PATCH:-}" ] || { echo "*** no project(felitronics_core VERSION x.y.z ...) line in $CORE/CMakeLists.txt"; exit 1; }
+echo
+echo "--- fc_session: felitronics-mastering-core $SV_MAJOR.$SV_MINOR.$SV_PATCH over felitronics-core $CV_MAJOR.$CV_MINOR.$CV_PATCH"
+
+SSRC="$HERE/fc_session.cpp"
+SESSION_SRCS=("$ROOT"/modules/session/src/*.cpp)
+[ -f "${SESSION_SRCS[0]}" ] || { echo "*** no source in $ROOT/modules/session/src"; exit 1; }
+SFRONT=(-std=c++20 -fno-fast-math -ffp-contract=off -fno-exceptions -fno-rtti
+        -I"$ROOT/tools" -I"$ROOT/modules/session/include" -msimd128
+        -DFELITRONICS_SESSION_VERSION_MAJOR="$SV_MAJOR" -DFELITRONICS_SESSION_VERSION_MINOR="$SV_MINOR"
+        -DFELITRONICS_SESSION_VERSION_PATCH="$SV_PATCH"
+        -DFELITRONICS_SESSION_CORE_VERSION_MAJOR="$CV_MAJOR" -DFELITRONICS_SESSION_CORE_VERSION_MINOR="$CV_MINOR"
+        -DFELITRONICS_SESSION_CORE_VERSION_PATCH="$CV_PATCH")
+SLIST=$(abi_files "$SSRC" "${SFRONT[@]}" -O3)
+SFILES=(); while IFS= read -r f; do [ -z "$f" ] || SFILES+=("$f"); done <<< "$SLIST"
+SNAMES=$(export_names "${SFILES[@]}")
+SFOUND=$(printf '%s\n' "$SNAMES" | grep -c . || true)
+check_exports "$SFOUND" "${SFILES[@]}"
+check_return_types 'std::uint32_t|fc_session_status' "${SFILES[@]}"
+SEXPORTS="$(printf '%s\n' "$SNAMES" | paste -sd, -),_malloc,_free"
+echo "--- fc_session exports: $SFOUND entry points (+ _malloc/_free), matching $SFOUND declarations in: ${SFILES[*]##*/}"
+echo "    library sources: ${SESSION_SRCS[*]##*/}"
+
+SCOMMON=("${SFRONT[@]}"
+         --no-entry
+         -sMODULARIZE=1
+         -sEXPORT_NAME=createFcSession
+         -sALLOW_MEMORY_GROWTH=1
+         -sFILESYSTEM=0
+         -sMALLOC=emmalloc
+         "-sEXPORTED_FUNCTIONS=[$SEXPORTS]"
+         "-sEXPORTED_RUNTIME_METHODS=['HEAPU32']")
+
+echo "--- fc_session node (for session-check.mjs)"
+em++ "${SCOMMON[@]}" -O3 -sENVIRONMENT=node "$SSRC" "${SESSION_SRCS[@]}" -o "$OUT/fcsession.node.js"
+echo "--- fc_session web ES module (for a module worker)"
+em++ "${SCOMMON[@]}" -O3 -sENVIRONMENT=web,worker -sEXPORT_ES6=1 "$SSRC" "${SESSION_SRCS[@]}" -o "$OUT/fcsession.web.mjs"
+same_as_node fcsession fcsession.web.mjs
+
+echo
+echo "=== no threads (fc_session)"
+node "$CORE/tools/wasm/check-no-threads.mjs" "$OUT/fcsession.web.wasm" "$OUT/fcsession.web.mjs"
+
+echo
+echo "=== size (fc_session)"
+sizes fcsession.web.wasm fcsession.web.mjs
 
 # WHAT THIS WAS BUILT FROM, beside what it built. A consumer that installs these modules records which engine
 # it ships, and a checkout's own `git describe` cannot say which core the modules were compiled against: the

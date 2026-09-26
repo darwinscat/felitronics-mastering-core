@@ -56,7 +56,11 @@ zone  tools/wasm/fc_tempo.cpp      the fctempo module's own TU; its tempo rows a
 # --- felitronics::session — the mastering session, which DECIDES: its decisions are thresholds, and a threshold computed
 # --- through the system libm is a different decision on another row (log10 alone disagrees between Apple's libm and
 # --- glibc at 2 % of the points this tree measured). So the whole module is in the zone, and the zone is extended FILE
-# --- BY FILE as the module grows.
+# --- BY FILE as the module grows: the session-laws lint (tools/lint/check-session-laws.mjs, rule ZONE) refuses a file
+# --- of modules/session that has no line here, so the list cannot fall behind the module.
 zone  modules/session/include/felitronics/session/Session.h  the session's public surface
 zone  modules/session/src/Session.cpp                        the session
 zone  modules/session/src/BuildContract.cpp                  the library's build contract, asserted from inside it
+# Its two roads in: the wasm module a page loads and the native CLI; what either includes is rule 4's net.
+entry  tools/wasm/fc_session.cpp  the session ABI, the translation unit of the fcsession module
+entry  tools/fcore_session.cpp    the native CLI over the session, the native road into the same library
