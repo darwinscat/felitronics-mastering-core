@@ -2,9 +2,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 #
-# Builds the wasm artifacts of this repo's two C ABIs:
+# Builds the wasm artifacts of this repo's C ABIs:
 #
-#   fcprobe.*   — the wasm measurement spike (tools/wasm/fc_probe.cpp)
+#   fcprobe.*   — the wasm measurement spike (tools/wasm/fc_probe.cpp): every offline analyzer
+#   fctempo.*   — the tempo detector ALONE (tools/fc_tempo_abi.h + tools/wasm/fc_tempo.cpp), for a page that needs
+#                 nothing else: fc_probe's ten tempo entry points under the same names — one text,
+#                 tools/wasm/fc_tempo_entry.h, compiled into both — at an eighth of the probe's size. See the
+#                 fc_tempo section below.
 #   fcmaster.*  — the mastering ABI (tools/fc_master_abi.h + tools/wasm/fc_master.cpp), which is what a
 #                 browser worker links to render and to run the loudness search. Same flags, same numeric
 #                 contract, same no-threads and byte-identity checks — see the fc_master section below.
@@ -115,23 +119,37 @@ SRC="$HERE/fc_probe.cpp"
 # `(` also settles `FC_EXPORT fc_status fc_render (…)`, where the return type itself begins with `fc_`.
 # Leading whitespace is allowed: an INDENTED declaration used to be invisible to all three scanners at
 # once — uncounted, unextracted and untype-checked — while KEEPALIVE published it anyway.
-export_names() { sed -nE 's/^[[:space:]]*FC_EXPORT[[:space:]]+[^(]*[^A-Za-z0-9_]([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*\(.*/_\1/p' "$1" \
+export_names() { sed -nE 's/^[[:space:]]*FC_EXPORT[[:space:]]+[^(]*[^A-Za-z0-9_]([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*\(.*/_\1/p' "$@" \
                  | LC_ALL=C sort -u; }
+
+# THE FILES A MODULE'S ABI IS DECLARED IN: its translation unit and every header of its #include closure that
+# declares an entry point, one per line. Every gate below used to read the .cpp alone, and that stopped being the
+# whole ABI when the tempo entry points became ONE text compiled into two modules (tools/wasm/fc_tempo_entry.h):
+# a grep of fc_probe.cpp would have missed ten names, every count would still have agreed, and — KEEPALIVE being
+# what it is (see above) — the artifact would have exported them anyway, so nothing would have gone red while the
+# list stopped being a statement of the ABI.
+# THE CLOSURE IS THE COMPILER'S (-MM, with the module's own include roots), not a second parser of #include lines:
+# it follows exactly the includes the compile follows, conditionals included. System headers are not in it and
+# declare no entry point.
+abi_files() { src="$1"; shift
+    deps=$(em++ -std=c++20 "$@" -MM "$src") || { echo "*** could not list the #include closure of $src"; exit 1; }
+    printf '%s\n' "$deps" | sed -e 's/^[^:]*://' -e 's/\\$//' | tr -s ' \t' '\n' | grep . \
+        | while IFS= read -r f; do if grep -qE '^[[:space:]]*FC_EXPORT' "$f"; then echo "$f"; fi; done; }
 
 # ONE DECLARATION PER LINE, because `sed` takes one match per line and the count below is of LINES. Two on
 # one line — `FC_EXPORT int fc_a (void) { … } FC_EXPORT std::uint64_t fc_b (void) { … }` — used to drop the
 # SECOND from the list while the counts still agreed and the type check read only the first one's return
 # type. Both gates passed; the ABI was one name short. (All three of these bypasses were found by the
 # review round and reproduced against the gate functions before this was written.)
-check_one_per_line() { src="$1"
-    doubled=$(awk '{ if (gsub(/FC_EXPORT/, "") > 1) print FILENAME ":" NR ": " $0 }' "$src")
+check_one_per_line() {
+    doubled=$(awk '{ if (gsub(/FC_EXPORT/, "") > 1) print FILENAME ":" FNR ": " $0 }' "$@")
     [ -z "$doubled" ] || { echo "*** two entry points on one line — the extractor sees only the first:"; \
                            printf '%s\n' "$doubled"; exit 1; }
     # ...and ONE DECLARATOR per FC_EXPORT. `FC_EXPORT int fc_a (void), fc_b (void);` is one token, one
     # line and one extracted name, so every count above agrees while `_fc_b` is simply absent from the
     # list. The rule is the shape of a declarator: what follows a closed parameter list is a body or a
     # semicolon, never a comma. (Wrapped argument lists are untouched — their line has no `)` at all.)
-    comma=$(grep -nE '^[[:space:]]*FC_EXPORT[^()]*\([^()]*\)[[:space:]]*,' "$src" || true)
+    comma=$(grep -nE '^[[:space:]]*FC_EXPORT[^()]*\([^()]*\)[[:space:]]*,' "$@" || true)
     [ -z "$comma" ] || { echo "*** a comma declarator — every name after the first is not exported:"; \
                          printf '%s\n' "$comma"; exit 1; }; }
 
@@ -141,12 +159,13 @@ check_one_per_line() { src="$1"
 # `grep -c .` and NOT `wc -l` to count the names: `printf '%s\n' "$EMPTY" | wc -l` is 1, not 0, so a source
 # whose single declaration the extractor could not parse would have compared 1 against 1 and passed with an
 # EMPTY list. That is why the count is taken of NON-EMPTY LINES.
-check_exports() { src="$1"; found="$2"
-    check_one_per_line "$src"
-    declared=$(grep -cE '^[[:space:]]*FC_EXPORT' "$src")
-    [ "$declared" -gt 0 ] || { echo "*** no FC_EXPORT declarations in $src — refusing to link a module with no ABI"; exit 1; }
+check_exports() { found="$1"; shift
+    [ "$#" -gt 0 ] || { echo "*** no file of this module declares an entry point — refusing to link a module with no ABI"; exit 1; }
+    check_one_per_line "$@"
+    declared=$(cat "$@" | grep -cE '^[[:space:]]*FC_EXPORT')
+    [ "$declared" -gt 0 ] || { echo "*** no FC_EXPORT declarations in $* — refusing to link a module with no ABI"; exit 1; }
     [ "$found" -eq "$declared" ] \
-        || { echo "*** $src declares $declared entry points and the extractor found $found —"; \
+        || { echo "*** $* declare $declared entry points and the extractor found $found —"; \
              echo "    a declaration it cannot parse would silently shorten the ABI"; exit 1; }; }
 
 # THE SECOND GATE, and the reason it is not the first. Making the extraction type-independent means a
@@ -156,19 +175,20 @@ check_exports() { src="$1"; found="$2"
 # this ABI returns: `bigint + number` throws TypeError and JSON.stringify refuses it outright. So the set
 # of return types each ABI carries is written down and a new one has to be added here on purpose, with
 # somebody having thought about what it looks like on the page. This gate FAILS; it does not omit.
-check_return_types() { src="$1"; allowed="$2"
-    offenders=$(grep -E '^[[:space:]]*FC_EXPORT' "$src" \
+check_return_types() { allowed="$1"; shift
+    offenders=$(cat "$@" | grep -E '^[[:space:]]*FC_EXPORT' \
                 | grep -vE "^[[:space:]]*FC_EXPORT[[:space:]]+($allowed)[[:space:]]+fc_" || true)
-    [ -z "$offenders" ] || { echo "*** $src declares an entry point whose return type this boundary does not carry:"; \
+    [ -z "$offenders" ] || { echo "*** $* declare an entry point whose return type this boundary does not carry:"; \
                              printf '%s\n' "$offenders"; \
                              echo "    add it to check_return_types once you know what it looks like in JavaScript"; exit 1; }; }
 
-PNAMES=$(export_names "$SRC")
+PFILES=(); while IFS= read -r f; do PFILES+=("$f"); done < <(abi_files "$SRC" "${INC[@]}")
+PNAMES=$(export_names "${PFILES[@]}")
 PFOUND=$(printf '%s\n' "$PNAMES" | grep -c . || true)
-check_exports "$SRC" "$PFOUND"
-check_return_types "$SRC" 'int|double|std::uint32_t'
+check_exports "$PFOUND" "${PFILES[@]}"
+check_return_types 'int|double|std::uint32_t' "${PFILES[@]}"
 PEXPORTS="$(printf '%s\n' "$PNAMES" | paste -sd, -),_malloc,_free"
-echo "--- fc_probe exports: $PFOUND entry points (+ _malloc/_free), matching $PFOUND declarations"
+echo "--- fc_probe exports: $PFOUND entry points (+ _malloc/_free), matching $PFOUND declarations in: ${PFILES[*]##*/}"
 
 # -msimd128: `core::firDot`'s wasm kernel is behind `__wasm_simd128__`, so without it this module
 # silently takes the scalar one. Verified against THIS target's own acceptance, which is stricter than
@@ -275,17 +295,18 @@ done
 #==================================================================================================
 MSRC="$HERE/fc_master.cpp"
 
-# The whitelist, read from the source, by the same extractor as the probe's. The old grep here had the
+# The whitelist, read from the source — the TU's #include closure, as the probe's — by the same extractor. The old grep here had the
 # probe's defect twice over: a return-type whitelist, and `fc_[a-z_]+` for the NAME, which excludes digits
 # — an entry point carrying a version number would not have left the list, it would have been TRUNCATED
 # into it: `fc_render_v2` becomes `fc_render_v`, and the link then fails on a symbol nobody declared.
 # _malloc/_free are the page's own, and are opt-in in emscripten 6.x.
-MNAMES=$(export_names "$MSRC")
+MFILES=(); while IFS= read -r f; do MFILES+=("$f"); done < <(abi_files "$MSRC" "${MASTER_INC[@]}")
+MNAMES=$(export_names "${MFILES[@]}")
 MFOUND=$(printf '%s\n' "$MNAMES" | grep -c . || true)
-check_exports "$MSRC" "$MFOUND"
-check_return_types "$MSRC" 'void|std::uint32_t|uint32_t|fc_status'
+check_exports "$MFOUND" "${MFILES[@]}"
+check_return_types 'void|std::uint32_t|uint32_t|fc_status' "${MFILES[@]}"
 MEXPORTS="$(printf '%s\n' "$MNAMES" | paste -sd, -),_malloc,_free"
-echo "--- fc_master exports: $MFOUND entry points (+ _malloc/_free), matching $MFOUND declarations"
+echo "--- fc_master exports: $MFOUND entry points (+ _malloc/_free), matching $MFOUND declarations in: ${MFILES[*]##*/}"
 
 MCOMMON=(-std=c++20 -fno-exceptions -fno-rtti "${NUMERIC[@]}" "${MASTER_INC[@]}"
          -msimd128
