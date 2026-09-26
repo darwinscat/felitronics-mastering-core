@@ -11,6 +11,11 @@
 //                                   felitronics-core <MAJOR.MINOR.PATCH>             (Session::coreVersion)
 //                                   fc_session_abi <N>                               (fc_session_abi_version)
 //   fcore_session run <script>    reads the script (`-` is stdin) into a fresh session and prints `done <commands>`.
+//   fcore_session config targets  the config the library was built with, one document at a time, spelled by
+//   fcore_session config engine   felitronics-toml's canonical writer (session::config::text): the numbers of
+//                                 modules/session/config/*.toml without their comments, to open and read.
+//   fcore_session config version  the config version (session::config::version) in 16 hexadecimal digits — what a
+//                                 recipe will record.
 //
 // THE SCRIPT. One command per line; `#` starts a comment that runs to the end of the line; a line that is empty or
 // blank after that is not a command. There are no commands yet, so the only script this accepts is one with none in
@@ -24,19 +29,23 @@
 
 #include "fc_session_abi.h"
 
+#include <felitronics/session/Config.h>
 #include <felitronics/session/Session.h>
 
+#include <cinttypes>
 #include <cstdio>
 #include <cstring>
 #include <string>
 
 using felitronics::session::Session;
+namespace config = felitronics::session::config;
 
 namespace
 {
 int usage (const char* argv0)
 {
-    std::fprintf (stderr, "usage: %s version\n       %s run <script|->\n", argv0, argv0);
+    std::fprintf (stderr, "usage: %s version\n       %s run <script|->\n       %s config targets|engine|version\n",
+                  argv0, argv0, argv0);
     return 2;
 }
 
@@ -108,6 +117,21 @@ int main (int argc, char** argv)
         created.session.reset();
         std::printf ("done %ld\n", commands);
         return 0;
+    }
+    if (argc == 3 && std::strcmp (argv[1], "config") == 0)
+    {
+        if (std::strcmp (argv[2], "version") == 0)
+        {
+            std::printf ("%016" PRIx64 "\n", config::version());
+            return 0;
+        }
+        const bool targets = std::strcmp (argv[2], "targets") == 0;
+        if (targets || std::strcmp (argv[2], "engine") == 0)
+        {
+            const std::string text = config::text (targets ? config::Document::Targets : config::Document::Engine);
+            std::fwrite (text.data(), 1, text.size(), stdout);
+            return 0;
+        }
     }
     return usage (argc > 0 ? argv[0] : "fcore_session");
 }
