@@ -713,6 +713,40 @@ void anySplitGivesTheSameBits()
         ok (sameReport (runSplit ({ x }, sr, {}, split), whole), "split starting " + std::to_string (split[0]) + " matches the whole call");
 }
 
+// process() walks a call in stretches, each ending on the sample that completes a frame (the stretches are what keep
+// the loops in functions called once per frame — TempoDetector.h, WHERE THE TIME IS SPENT). The contract it keeps:
+// after ANY call, exactly the frames its samples completed have been transformed — none waits for the next call,
+// none runs early — whether a call ends one sample short of a frame, on it, or one past it, and in two channels.
+void aFrameIsTransformedOnTheSampleThatCompletesIt()
+{
+    felitronics::test::group ("a frame is transformed on the sample that completes it, whatever call brings that sample");
+    const double sr = 44100.0;
+    const Plane l = concat (clickTrain (97.0, 6.0, sr), jsLcgNoise (44100 * 2));
+    Plane r (l.size());
+    for (std::size_t i = 0; i < l.size(); ++i) r[i] = 0.5f * l[(i * 7u) % l.size()];
+    const Report whole = runSplit ({ l, r }, sr, {}, { 1 << 30 });
+    ok (whole.ok && whole.head.determined && whole.odf.size() > 600, "the whole-call reference ran and read a tempo");
+    for (const std::vector<int>& split : std::vector<std::vector<int>> { { 1023, 1, 1 }, { 1024, 511, 1, 512 }, { 1025 },
+                                                                         { 1535, 2, 510 }, { 3 }, { 4097 } })
+    {
+        TempoDetector d;
+        const auto frames = (std::uint64_t) l.size();
+        bool prepared = d.prepare (sr, 2, frames), counted = true;
+        std::uint64_t at = 0; std::size_t k = 0;
+        while (prepared && at < frames)
+        {
+            const int n = (int) std::min<std::uint64_t> ((std::uint64_t) split[k++ % split.size()], frames - at);
+            const float* v[2] = { l.data() + at, r.data() + at };
+            prepared = d.process (v, 2, n);
+            at += (std::uint64_t) n;
+            counted = counted && d.onsetFrames() == TempoDetector::onsetFramesFor (d.framesSeen());
+        }
+        ok (prepared && counted, "split starting " + std::to_string (split[0])
+                                 + ": after every call, the frames are exactly those its samples completed");
+        ok (prepared && d.finish() && sameReport (capture (d), whole), "... and the report is the whole call's, bit for bit");
+    }
+}
+
 void thePrefixAndTheReset()
 {
     felitronics::test::group ("finish() on a prefix is the analysis of that prefix; reset() starts the programme over");
@@ -901,6 +935,7 @@ int main()
     theTransformIsTheDft();
     theMixIsThePagesToMono();
     anySplitGivesTheSameBits();
+    aFrameIsTransformedOnTheSampleThatCompletesIt();
     thePrefixAndTheReset();
     theCallContract();
     theDemandIsTheAllocation();
