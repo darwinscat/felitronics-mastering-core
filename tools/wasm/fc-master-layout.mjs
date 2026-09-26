@@ -380,14 +380,17 @@ export class Struct {
     }
 }
 
-export const FC_MASTER_ABI_VERSION = 13;
+export const FC_MASTER_ABI_VERSION = 14;   // v14: fc_master_set_params — an entry point, no struct grew
 
-// The status codes, in the order fc_master_abi.h declares them — so a refusal reaches a human as a name.
+// The status codes, in the order fc_master_abi.h declares them — so a refusal reaches a human as a name. The v13
+// three (a dynamic band with no statistic) were missing here until v14; layout-check.mjs now holds this list against
+// the header's own enum, so the next code cannot be missed the same way.
 export const FC_STATUS = [
     'FC_OK', 'FC_ERR_HANDLE', 'FC_ERR_ABI_VERSION', 'FC_ERR_STRUCT_SIZE', 'FC_ERR_NULL',
     'FC_ERR_ALIGNMENT', 'FC_ERR_SPAN', 'FC_ERR_ENUM', 'FC_ERR_RANGE', 'FC_ERR_CAPACITY',
     'FC_ERR_STATE', 'FC_ERR_NON_FINITE', 'FC_ERR_REFUSED_BY_CORE', 'FC_ERR_EXHAUSTED',
     'FC_ERR_POISONED', 'FC_ERR_CANCELLED',
+    'FC_ERR_BAND_NOT_DYNAMIC', 'FC_ERR_BAND_INERT', 'FC_ERR_LANE_OFF',                        // v13
 ];
 export const statusName = s => FC_STATUS[s] ?? `FC_STATUS(${s})`;
 
