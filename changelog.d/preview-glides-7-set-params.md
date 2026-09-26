@@ -16,3 +16,9 @@ header's `fc_status` (count, order, value, name), so the next code cannot go mis
 ABI stream with a live write held bit for bit against the C++ chain driven the same way, the resolved lag, the snap
 before the first frame, every refusal and that it moves nothing, no allocation, the poison list. The wasm modules and
 the parity scripts (master-parity on both generated programmes, the probe NULL) pass against a build of this tree.
+The review round (codex astra) found no defect in the entry point and three gaps in its tests, all closed: every
+accepted write went through `goodParams()`, the frozen v1 writer, so no field past v1 — `compressorMix`, the one that
+glides, dual release, the peak clipper, the air shelf — ever crossed this call (a setter that forced the mix to 1
+passed); now a current-version set with each of them moved is held bit for bit against the C++ chain too. Refused
+writes after a valid one are shown to leave it pending as it was (a refusal that applied its half-mapped set is
+caught), and a malformed call on a delivering or a solved handle answers FC_ERR_STATE — the handle's state first.

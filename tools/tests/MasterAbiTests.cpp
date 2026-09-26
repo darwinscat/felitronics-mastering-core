@@ -4400,6 +4400,99 @@ int main()
                                      + std::to_string (d) + " differ; the write moved " + std::to_string (moved) + ")");
         fc_master_destroy (h);
 
+        // A CURRENT-VERSION set with every field past v1 moved. goodParams() is the frozen v1 writer, so the case above
+        // reaches none of them — not `compressorMix`, the one that glides, nor dual release, the peak clipper or the air
+        // shelf. And the same stream again with refused writes after the valid one: a refusal must leave the write
+        // already pending exactly where it was.
+        {
+            fc_master_config vc {}; FC_INIT (vc);
+            ok (fc_master_config_defaults (&vc) == FC_OK, "PRECONDITION: current-version config defaults");
+            vc.sampleRate = kFs; vc.channels = kNch; vc.monoBass = 1; vc.clipper = 1; vc.stereoAir = 1;
+            fc_master_params q0 {}; FC_INIT (q0);
+            ok (fc_master_params_defaults (&q0) == FC_OK, "PRECONDITION: current-version params defaults");
+            fc_master_params q1 = q0;
+            q1.inputGainDb = -2.0; q1.compressorMix = 0.4; q1.compressor.makeupDb = 3.0; q1.limiter.ceilingDbTp = -3.0;
+            q1.limiterDualRelease = 1; q1.limiterSlowReleaseMs = 400.0;
+            q1.peakClipper = 1; q1.peakClipperOverCeilingDb = 0.5; q1.peakClipperKneeDb = 0.5;
+            q1.stereoAir = 1; q1.stereoAirHz = 5000.0; q1.stereoAirDb = 3.0;
+
+            int refusalsRight = 0;
+            auto abiStream = [&] (bool withRefusals) {
+                std::vector<float> out;
+                fc_master hq = 0;
+                fc_master_resolved rq {}; FC_INIT (rq);
+                if (fc_master_create (&vc, &hq) != FC_OK || fc_master_configure (hq, &q0, &rq) != FC_OK) return out;
+                std::vector<float> sa ((std::size_t) P * kNch), sb ((std::size_t) (N - P) * kNch);
+                for (int c = 0; c < kNch; ++c)
+                {
+                    std::copy_n (in.data() + (std::size_t) c * N, P, sa.data() + (std::size_t) c * P);
+                    std::copy_n (in.data() + (std::size_t) c * N + P, N - P, sb.data() + (std::size_t) c * (N - P));
+                }
+                if (fc_master_process (hq, sa.data(), sa.data(), P) != FC_OK || fc_master_set_params (hq, &q1) != FC_OK)
+                    return out;
+                if (withRefusals)
+                {
+                    fc_master_params bad = q1; bad.compressorMix = std::numeric_limits<double>::quiet_NaN();
+                    refusalsRight += fc_master_set_params (hq, &bad) == FC_ERR_NON_FINITE;
+                    bad = q1; bad.stereoAirHz = std::numeric_limits<double>::infinity();
+                    refusalsRight += fc_master_set_params (hq, &bad) == FC_ERR_NON_FINITE;
+                    bad = q1; bad.clipper.shape = 99;
+                    refusalsRight += fc_master_set_params (hq, &bad) == FC_ERR_ENUM;
+                    bad = q1; bad.header.structSize -= 8u;
+                    refusalsRight += fc_master_set_params (hq, &bad) == FC_ERR_STRUCT_SIZE;
+                }
+                if (fc_master_process (hq, sb.data(), sb.data(), N - P) != FC_OK) return out;
+                out.resize ((std::size_t) N * kNch);
+                for (int c = 0; c < kNch; ++c)
+                {
+                    std::copy_n (sa.data() + (std::size_t) c * P, P, out.data() + (std::size_t) c * N);
+                    std::copy_n (sb.data() + (std::size_t) c * (N - P), N - P, out.data() + (std::size_t) c * N + P);
+                }
+                fc_master_destroy (hq);
+                return out;
+            };
+            const auto sv = abiStream (false);
+            const auto sr = abiStream (true);
+            ok (sv.size() == in.size() && sr.size() == in.size() && refusalsRight == 4,
+                "PRECONDITION: both streams ran, and the four bad writes were refused with their codes");
+
+            felitronics::mastering::MasteringChainConfig vcc; vcc.monoBass = true; vcc.clipper = true; vcc.stereoAir = true;
+            felitronics::mastering::MasteringChainParams v0, v1;
+            v1.inputGainDb = -2.0; v1.compressorMix = 0.4; v1.compressor.makeupDb = 3.0; v1.limiter.ceilingDbTp = -3.0;
+            v1.limiter.dualRelease = true; v1.limiter.slowReleaseMs = 400.0;
+            v1.limiter.peakClip = true; v1.limiter.overCeilingDb = 0.5; v1.limiter.kneeDb = 0.5;
+            v1.stereoAir.enabled = true; v1.stereoAir.frequencyHz = 5000.0f; v1.stereoAir.gainDb = 3.0f;
+            felitronics::mastering::MasteringChain vch;
+            vch.setParams (v0);
+            ok (vch.prepare (kFs, kNch, vcc), "PRECONDITION: the C++ chain with the air shelf");
+            std::vector<float> vb = in;
+            float* vp1[2] { vb.data(), vb.data() + N };
+            float* vp2[2] { vb.data() + P, vb.data() + N + P };
+            ok (vch.process (vp1, kNch, (int) P), "PRECONDITION: C++ first part");
+            vch.setParams (v1);
+            ok (vch.process (vp2, kNch, (int) (N - P)), "PRECONDITION: C++ second part");
+            felitronics::mastering::MasteringChain vst;
+            vst.setParams (v0);
+            ok (vst.prepare (kFs, kNch, vcc), "PRECONDITION: the unchanged chain with the air shelf");
+            std::vector<float> vu = in;
+            float* vpu[2] { vu.data(), vu.data() + N };
+            ok (vst.process (vpu, kNch, (int) N), "PRECONDITION: its render");
+            long long dv = 0, dr = 0, mv = 0;
+            if (sv.size() == vb.size() && sr.size() == vb.size())
+                for (std::size_t i = 0; i < vb.size(); ++i)
+                {
+                    dv += std::memcmp (&sv[i], &vb[i], sizeof (float)) != 0;
+                    dr += std::memcmp (&sr[i], &sv[i], sizeof (float)) != 0;
+                    mv += std::memcmp (&vu[i], &vb[i], sizeof (float)) != 0;
+                }
+            ok (sv.size() == vb.size() && dv == 0 && mv > 10000,
+                "a current-version set, every tail field moved: the ABI stream is the C++ chain's, bit for bit ("
+                + std::to_string (dv) + " differ; the write moved " + std::to_string (mv) + ")");
+            ok (sr.size() == sv.size() && dr == 0,
+                "refused writes after a valid one leave it pending as it was — the stream is the one without them ("
+                + std::to_string (dr) + " differ)");
+        }
+
         // Before the first frame it IS configure: the first quantum snaps.
         fc_master h1 = make(), h2 = make();
         ok (fc_master_set_params (h1, &p1) == FC_OK && fc_master_configure (h2, &p1, &r) == FC_OK, "PRECONDITION: both written");
@@ -4439,6 +4532,9 @@ int main()
         fc_master hd = 0;
         ok (fc_master_create (&dc, &hd) == FC_OK, "PRECONDITION: a delivering handle");
         ok (fc_master_set_params (hd, &p1) == FC_ERR_STATE, "a delivering handle: FC_ERR_STATE, as process");
+        { fc_master_params bad = p1; bad.header.abiVersion = FC_MASTER_ABI_VERSION + 1u;
+          ok (fc_master_set_params (hd, nullptr) == FC_ERR_STATE && fc_master_set_params (hd, &bad) == FC_ERR_STATE,
+              "…and a malformed call on it answers STATE too: the handle's state is checked before the struct"); }
         fc_master_destroy (hd);
         fc_master hs = make();
         ok (fc_master_configure (hs, &p0, &r) == FC_OK, "PRECONDITION: configure");
@@ -4448,6 +4544,9 @@ int main()
         fc_solution sol = 0;
         ok (fc_master_solve (hs, &p0, &req, in.data(), so.data(), N, &sol) == FC_OK, "PRECONDITION: a solve that ran");
         ok (fc_master_set_params (hs, &p1) == FC_ERR_STATE, "a handle that has solved: FC_ERR_STATE, as process");
+        { fc_master_params bad = p1; bad.inputGainDb = std::numeric_limits<double>::quiet_NaN();
+          ok (fc_master_set_params (hs, nullptr) == FC_ERR_STATE && fc_master_set_params (hs, &bad) == FC_ERR_STATE,
+              "…and a malformed call on it answers STATE too"); }
         ok (fc_master_configure (hs, &p0, &r) == FC_OK && fc_master_set_params (hs, &p1) == FC_OK, "configure lifts it, as for process");
         fc_solution_destroy (sol);
         fc_master_destroy (hs);
