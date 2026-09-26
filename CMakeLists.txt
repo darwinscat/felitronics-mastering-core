@@ -21,8 +21,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 #   session           felitronics::session            the mastering session, the object a shell talks to;  —
 #                                                     where the voicing and the project belong. COMPILED
 #
-# tools/ (top-level builds only): the C ABIs of both (fc_master, fc_probe), their native CLIs
-# (fcore_master, fcore_measure) and suites, and tools/wasm/build.sh, which builds the wasm modules.
+# tools/ (top-level builds only): the C ABIs (fc_master, fc_probe, fc_tempo, fc_session), their native CLIs
+# (fcore_master, fcore_measure, fcore_session) and suites, and tools/wasm/build.sh, which builds the wasm modules.
 #
 # Consume — felitronics-core FIRST, then this; ONE core is resolved by the product that owns the graph:
 #   FetchContent_Declare(felitronics_core GIT_REPOSITORY <url> GIT_TAG <tag>)
@@ -94,7 +94,8 @@ set(FELITRONICS_MASTERING_CORE_SOURCE_DIR "${felitronics_core_SOURCE_DIR}" CACHE
     "the felitronics-core checkout this build resolved")
 
 # ...and which RELEASE it is, as core's own project() line states it — read from the directory that ran that line, so
-# it is the core the graph resolved, whoever resolved it. felitronics::session reports it (Session::coreVersion). No fallback: a build that cannot say which core it compiled against must not pretend to.
+# it is the core the graph resolved, whoever resolved it. felitronics::session reports it (Session::coreVersion) and
+# fcore_session prints it. No fallback: a build that cannot say which core it compiled against must not pretend to.
 get_directory_property(FELITRONICS_MASTERING_FCORE_VERSION DIRECTORY "${felitronics_core_SOURCE_DIR}"
                        DEFINITION felitronics_core_VERSION)
 if(NOT FELITRONICS_MASTERING_FCORE_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
