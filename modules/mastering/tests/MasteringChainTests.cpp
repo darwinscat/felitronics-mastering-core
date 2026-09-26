@@ -844,13 +844,17 @@ static void testMutationGaps()
         ok (longestZeroRun < 16, "a bypass toggle punches no hole: longest run of exact zeros across the "
                                  "transition is " + std::to_string (longestZeroRun) + " samples");
 
-        // (b) AND ONCE THE PRE-TOGGLE CONTENT HAS DRAINED, the bypassed chain is a pure delay again.
+        // (b) AND ONCE THE PRE-TOGGLE CONTENT HAS DRAINED, the bypassed chain is a pure delay again — once the
+        //     bypass FADE has run, too: each stage fades to its aligned dry over bypassFadeSamples() from the quantum
+        //     the toggle lands on, and the limiter's aligned dry still carries the clipper's fade for its own latency
+        //     after that, so the pure delay starts a fade later than it used to.
+        const int from = T + D + chain.bypassFadeSamples();
         long long bad = 0;
         int firstBad = -1;
         for (int c = 0; c < nch; ++c)
-            for (int i = T + D; i < n; ++i)
+            for (int i = from; i < n; ++i)
                 if (bits (x[(std::size_t) c][(std::size_t) i]) != bits (src[(std::size_t) c][(std::size_t) (i - D)]))
-                { ++bad; if (firstBad < 0) firstBad = i - (T + D); }
+                { ++bad; if (firstBad < 0) firstBad = i - from; }
         ok (bad == 0, "after the transition the bypassed chain is exactly the input delayed by D ("
                       + std::to_string (bad) + " differ, first at +" + std::to_string (firstBad) + ")");
     }
@@ -1161,6 +1165,305 @@ static void testParamsWrittenBeforePrepare()
     ok (c4.prepare (44100.0, nch, cfg), "re-prepare: at a new rate, with a write still pending");
     approx (c4.params().inputGainDb, -6.0, 0.0, "re-prepare KEEPS the pending write, not the applied one");
     approx (c4.sampleRate(), 44100.0, 0.0, "re-prepare reports the new rate");
+}
+
+
+//==============================================================================
+// THE GAIN NODES GLIDE, AND A STREAM'S FIRST WRITE SNAPS. Measured before the ramp on a -12 dBFS sine: inputGainDb
+// 0 -> +3 put max|Δ²y| at -20.1 dBFS and preLimiterGainDb 0 -> +3 at -22.3, where the steady tone reads -73.1 — a
+// click each. Pinned EXACTLY here on a gains-only chain fed a constant, where the output IS the gain: the glide's
+// values are replayed from the rule at `MasteringChain::Ramp` and must match bit for bit, sample for sample.
+static void testParameterRamps()
+{
+    group ("the gain nodes glide per sample from the changed quantum, and the first write of a stream snaps");
+
+    auto cfg = fullConfig();
+    cfg.eq = false; cfg.monoBass = false; cfg.compressor = false; cfg.clipper = false;
+    cfg.limiter = false; cfg.dither = false;               // gain nodes only: output = 0.1 * inGain * preGain
+    const int nch = 2, K = cfg.internalBlock, n = 40 * K;
+    const float x0 = 0.1f;
+    const auto dbGain = [] (double db) { return (float) core::dbToGain (db); };
+
+    auto run = [&] (mastering::MasteringChain& c, Buf& y, const std::vector<std::pair<int, mastering::MasteringChainParams>>& ev,
+                    int call)
+    {
+        std::size_t e = 0;
+        for (int off = 0; off < n; )
+        {
+            while (e < ev.size() && ev[e].first == off) c.setParams (ev[e++].second);
+            int m = std::min (call, n - off);
+            if (e < ev.size()) m = std::min (m, ev[e].first - off);
+            auto p = planes (y, off);
+            if (! c.process (p.data(), nch, m)) return false;
+            off += m;
+        }
+        return true;
+    };
+
+    for (const bool pre : { false, true })
+    {
+        const char* node = pre ? "preLimiterGainDb" : "inputGainDb";
+        mastering::MasteringChainParams a, b, c2;
+        (pre ? a.preLimiterGainDb : a.inputGainDb) = 0.0;
+        (pre ? b.preLimiterGainDb : b.inputGainDb) = 6.0;
+        (pre ? c2.preLimiterGainDb : c2.inputGainDb) = -9.0;
+        mastering::MasteringChain ch;
+        ch.setParams (a);
+        ok (ch.prepare (48000.0, nch, cfg), "PRECONDITION: prepare");
+        const int L = ch.paramRampSamples();
+        ok (L == 1440, std::string ("the glide is kParamRampMs = 30 ms, 1440 samples at 48 kHz — ") + node);
+        // b at 5K + 17 (mid-quantum: it lands at 6K); c2 at 9K + 3, while b is still gliding (lands at 10K).
+        const int Pb = 5 * K + 17, Pc = 9 * K + 3;
+        Buf y ((std::size_t) nch, std::vector<float> ((std::size_t) n, x0));
+        ok (run (ch, y, { { Pb, b }, { Pc, c2 } }, 97), std::string ("PRECONDITION: the automated render — ") + node);
+
+        // The expected output: the FIFO's K zeros, then x0 * the replayed gain per sample. A write lands on the
+        // quantum it arrives in — that quantum runs when its LAST sample is handed over, after the write — so b,
+        // written at 5K + 17, applies from input 5K (output 6K) and c2, written at 9K + 3, from input 9K (output
+        // 10K): 1024 samples into the 1440-sample glide toward b, so it restarts from where that glide stands.
+        std::vector<float> g ((std::size_t) n, 1.0f);
+        {
+            double cur = 1.0, step = 0.0; float tgt = 1.0f; int left = 0;
+            auto setT = [&] (float v) { if (v == tgt) return; tgt = v; left = L; step = ((double) tgt - cur) / (double) L; };
+            for (int i = 0; i < n; ++i)
+            {
+                const int q = i - K;                               // the quantum-stream index of output i
+                if (q == 5 * K) setT (dbGain (6.0));
+                if (q == 9 * K) setT (dbGain (-9.0));
+                if (left > 0) { --left; cur = left > 0 ? cur + step : (double) tgt; }
+                g[(std::size_t) i] = (float) cur;
+            }
+        }
+        long long bad = 0;
+        for (int c = 0; c < nch; ++c)
+            for (int i = 0; i < n; ++i)
+            {
+                const float want = i < K ? 0.0f : (g[(std::size_t) i] == 1.0f ? x0 : x0 * g[(std::size_t) i]);
+                bad += bits (want) != bits (y[(std::size_t) c][(std::size_t) i]);
+            }
+        ok (bad == 0, std::string ("every sample is x * the replayed glide, both channels, a retarget included — ") + node
+                      + " (" + std::to_string (bad) + " differ)");
+        ok (bits (y[0][(std::size_t) (6 * K)]) != bits (x0) && bits (y[0][(std::size_t) (6 * K)]) != bits (x0 * dbGain (6.0))
+            && bits (y[0][(std::size_t) (6 * K - 1)]) == bits (x0),
+            std::string ("the glide starts on the changed quantum's first sample — ") + node);
+        ok (bits (y[0][(std::size_t) (10 * K - 1)]) != bits (x0 * dbGain (6.0))
+            && bits (y[1][(std::size_t) (10 * K + L - 1)]) == bits (x0 * dbGain (-9.0)),
+            std::string ("the retarget starts mid-glide, from where it stands, and lands on the new target by its last sample — ") + node);
+
+        // A write BEFORE THE FIRST QUANTUM snaps: prepare -> setParams(b) -> process renders b from the first sample.
+        mastering::MasteringChain s1;
+        ok (s1.prepare (48000.0, nch, cfg), "PRECONDITION: prepare");
+        s1.setParams (b);
+        Buf z ((std::size_t) nch, std::vector<float> ((std::size_t) (4 * K), x0));
+        { auto p = planes (z); felitronics::test::run (s1.process (p.data(), nch, 4 * K)); }
+        ok (bits (z[0][(std::size_t) K]) == bits (x0 * dbGain (6.0)) && bits (z[1][(std::size_t) (4 * K - 1)]) == bits (x0 * dbGain (6.0)),
+            std::string ("the first write after prepare() snaps — ") + node);
+
+        // …and so does the first write after a reset() that interrupts a glide: no glide resumes.
+        mastering::MasteringChain s2;
+        s2.setParams (a);
+        ok (s2.prepare (48000.0, nch, cfg), "PRECONDITION: prepare");
+        Buf w ((std::size_t) nch, std::vector<float> ((std::size_t) (12 * K), x0));
+        { auto p = planes (w); felitronics::test::run (s2.process (p.data(), nch, 2 * K)); }
+        s2.setParams (b);
+        { auto p = planes (w, 2 * K); felitronics::test::run (s2.process (p.data(), nch, 3 * K)); }   // a glide in flight
+        ok (bits (w[0][(std::size_t) (4 * K + 5)]) != bits (x0) && bits (w[0][(std::size_t) (4 * K + 5)]) != bits (x0 * dbGain (6.0)),
+            std::string ("PRECONDITION: a glide was in flight at the reset — ") + node);
+        s2.reset();
+        s2.setParams (c2);
+        { auto p = planes (w, 5 * K); felitronics::test::run (s2.process (p.data(), nch, 7 * K)); }
+        long long snapBad = 0;
+        for (int c = 0; c < nch; ++c)
+            for (int i = 6 * K; i < 12 * K; ++i) snapBad += bits (w[(std::size_t) c][(std::size_t) i]) != bits (x0 * dbGain (-9.0));
+        ok (snapBad == 0, std::string ("after reset() the next write snaps, and nothing of the interrupted glide resumes — ") + node);
+    }
+
+    // AT THE TOP OF THE RATE RANGE THE GLIDE STAYS MONOTONIC AND NEVER CROSSES ZERO. The code-review round found the
+    // first spelling — a float accumulator — drifting by ~len·ulp/2: at 352.8 kHz a +59.5 -> -60 dB move drove the gain
+    // through zero to -0.0535 before the last step landed it. The accumulator is double now; this is that move, and the
+    // same at 768 kHz and at the 3 MHz ceiling, with a constant input so the output IS the gain.
+    for (const double fs : { 352800.0, 768000.0, 3.0e6 })
+    {
+        mastering::MasteringChain hc;
+        mastering::MasteringChainParams hi, lo;
+        hi.inputGainDb = 59.513; lo.inputGainDb = -60.0;
+        hc.setParams (hi);
+        ok (hc.prepare (fs, 1, cfg), "PRECONDITION: prepare at " + std::to_string ((int) fs));
+        const int L = hc.paramRampSamples(), total = L + 4 * K;
+        Buf h (1, std::vector<float> ((std::size_t) (2 * K), 1.0f));
+        { auto p = planes (h); felitronics::test::run (hc.process (p.data(), 1, 2 * K)); }
+        hc.setParams (lo);
+        Buf v (1, std::vector<float> ((std::size_t) total, 1.0f));
+        { auto p = planes (v); felitronics::test::run (hc.process (p.data(), 1, total)); }
+        bool monotone = true, positive = true;
+        for (int i = 1; i < total; ++i) monotone = monotone && v[0][(std::size_t) i] <= v[0][(std::size_t) i - 1];
+        for (float x : v[0]) positive = positive && x > 0.0f;
+        ok (monotone && positive && bits (v[0][(std::size_t) (total - 1)]) == bits (dbGain (-60.0)),
+            "a +59.5 -> -60 dB glide at " + std::to_string ((int) fs) + " Hz is monotonic, never crosses zero and lands exactly");
+    }
+}
+
+
+//==============================================================================
+// THE BYPASS FADES (MasteringChain::Fader, kBypassFadeMs; mono-bass through its own fades). What each case pins:
+//   * NO HOLE AND NO CLICK across a bypass round trip of the clipper and the limiter, a reversal mid-fade included:
+//     the longest run of exact zeros stays short and the second difference stays under -60 dBFS on a -6 dBFS tone
+//     (the skip-and-reset read -9.2 with a 63-sample dropout for the clipper, -12.5 with a 111-sample hole for the
+//     limiter).
+//   * THE RETURN IS EXACT: once the warm-up and the fade have run, a chain whose clipper (a symmetric curve, no DC
+//     blocker) and limiter (not limiting, so no release state) were bypassed and restored is bit for bit the chain that
+//     never was — the warm-up length is the stages' whole finite memory, not an approximation of it.
+//   * A STEADY BYPASS IS WHAT IT WAS: after the fade the output is the input delayed by D, bit for bit — for mono-bass
+//     too, whose bypass now rides the island's own fades.
+static void testBypassFades()
+{
+    group ("the bypass fades — no hole, no click, an exact return, and a steady bypass that is a pure delay");
+    // K = 64: a parameter write lands on the quantum it arrives in, so two writes inside one quantum are ONE write. The
+    // reversal and the return-during-warm-up cases need their second write in a LATER quantum while the first is still
+    // fading or warming — the code-review round found both coalescing at K = 256, where the 175-sample warm-up ends
+    // before the next boundary.
+    const int nch = 2, K = 64;
+    auto tone = [&] (int n, double amp)
+    {
+        Buf x = silence (nch, n);
+        for (int i = 0; i < n; ++i)
+            for (int c = 0; c < nch; ++c)
+                x[(std::size_t) c][(std::size_t) i] = (float) (amp * std::sin (2.0 * kPi * 227.3 * (double) i / 48000.0 + 0.9 * c));
+        return x;
+    };
+    auto run = [&] (const mastering::MasteringChainConfig& cfg, mastering::MasteringChainParams p0,
+                    const std::vector<std::pair<int, mastering::MasteringChainParams>>& ev, Buf x)
+    {
+        mastering::MasteringChain c;
+        c.setParams (p0);
+        if (! c.prepare (48000.0, nch, cfg)) return Buf {};
+        std::size_t e = 0;
+        const int n = (int) x[0].size();
+        for (int off = 0; off < n; )
+        {
+            while (e < ev.size() && ev[e].first <= off) c.setParams (ev[e++].second);
+            int m = std::min (128, n - off);
+            if (e < ev.size()) m = std::min (m, ev[e].first - off);
+            auto pl = planes (x, off);
+            if (! c.process (pl.data(), nch, m)) return Buf {};
+            off += m;
+        }
+        return x;
+    };
+    auto maxD2 = [&] (const Buf& y, int a, int b)
+    {
+        double m = 0.0;
+        for (const auto& v : y)
+            for (int i = std::max (a, 2); i < b; ++i)
+                m = std::max (m, std::fabs ((double) v[(std::size_t) i] - 2.0 * v[(std::size_t) i - 1] + v[(std::size_t) i - 2]));
+        return m;
+    };
+    auto longestZeros = [&] (const Buf& y, int a, int b)
+    {
+        int best = 0;
+        for (const auto& v : y) { int run2 = 0; for (int i = a; i < b; ++i) { run2 = v[(std::size_t) i] == 0.0f ? run2 + 1 : 0; best = std::max (best, run2); } }
+        return best;
+    };
+
+    mastering::MasteringChainConfig cfg;
+    cfg.internalBlock = K;
+    cfg.eq = cfg.monoBass = cfg.compressor = cfg.dither = false;
+    cfg.clipper = cfg.limiter = true;
+    mastering::MasteringChainParams p;
+    p.clipper.driveDb = 9.0f;
+    p.limiter.ceilingDbTp = -12.0;                            // the -6 dBFS tone is limited by ~6 dB
+    const int n = 160 * K;
+    const Buf x = tone (n, 0.5);
+
+    // Round trips of each stage, and a reversal mid-fade, on a tone both stages work on.
+    // `aborted`: a return bypassed again DURING ITS WARM-UP never reaches the output — the stage had not contributed —
+    // so that render must equal the one that went to bypass and stayed, bit for bit.
+    // `reversal`: a toggle that turns a fade around mid-way has a KINK in its weight — the slope flips sign — and the kink
+    // costs about 2·|wet − dry|/F per sample. With BOTH stages reversing on one sample, the clipper at drive 9 and the
+    // limiter holding 6 dB of a -6 dBFS tone, that measured -57.1 dBFS: over the -60 of every single transition here and
+    // well under the -40 of a click. Held to -54 and stated rather than hidden (a 20 ms fade would halve it — the brief
+    // asked for 5–10 ms, and every single transition is clean at 10).
+    struct Case { const char* name; std::vector<std::pair<int, mastering::MasteringChainParams>> ev; bool aborted; bool reversal = false; };
+    auto with = [&] (bool clip, bool lim) { auto q = p; q.bypassClipper = clip; q.bypassLimiter = lim; return q; };
+    const Case cases[] = {
+        { "clipper out and back", { { 40 * K + 37, with (true, false) }, { 60 * K + 11, with (false, false) } }, false },
+        { "limiter out and back", { { 40 * K + 37, with (false, true) }, { 60 * K + 11, with (false, false) } }, false },
+        { "both, reversed mid-fade", { { 40 * K + 37, with (true, true) }, { 43 * K + 5, with (false, false) } }, false, true },
+        { "reversed back mid-fade-in", { { 40 * K, with (true, true) }, { 60 * K, with (false, false) }, { 65 * K + 9, with (true, true) } }, false, true },
+        { "bypassed again during the warm-up", { { 40 * K, with (true, true) }, { 60 * K, with (false, false) }, { 61 * K + 3, with (true, true) } }, true },
+    };
+    const Buf steady = run (cfg, p, {}, x);
+    const double base = maxD2 (steady, 20 * K, 38 * K);
+    for (const Case& cs : cases)
+    {
+        const Buf y = run (cfg, p, cs.ev, x);
+        ok (! y.empty(), std::string ("PRECONDITION: renders — ") + cs.name);
+        // Not coalesced into nothing: the render differs from the never-bypassed one, and from the one that went to
+        // bypass and stayed — the second write really landed mid-transition.
+        long long vsSteady = 0, vsLeft = 0;
+        const Buf left = run (cfg, p, { cs.ev.front() }, x);
+        for (int c = 0; c < nch; ++c) for (int i = 0; i < n; ++i)
+        {
+            vsSteady += bits (y[(std::size_t) c][(std::size_t) i]) != bits (steady[(std::size_t) c][(std::size_t) i]);
+            vsLeft   += bits (y[(std::size_t) c][(std::size_t) i]) != bits (left[(std::size_t) c][(std::size_t) i]);
+        }
+        if (cs.aborted) ok (vsSteady > 0 && vsLeft == 0, std::string ("a return aborted during its warm-up never reached the output — ") + cs.name);
+        else            ok (vsSteady > 0 && vsLeft > 0, std::string ("PRECONDITION: every write landed — ") + cs.name);
+        const double d2 = maxD2 (y, 38 * K, n);
+        ok (longestZeros (y, 38 * K, n) < 4, std::string ("no hole — ") + cs.name);
+        ok (d2 < (cs.reversal ? 2.0e-3 : 1.0e-3), std::string ("no click: max|Δ²y| under ") + (cs.reversal ? "-54" : "-60") + " dBFS (" + std::to_string (20.0 * std::log10 (d2)) + " dBFS, steady "
+                         + std::to_string (20.0 * std::log10 (base)) + ") — " + cs.name);
+    }
+
+    // The exact return: symmetric curve, a ceiling the tone does not reach — every stage memory is finite.
+    {
+        mastering::MasteringChainParams q = p; q.limiter.ceilingDbTp = 0.0;
+        auto qb = q; qb.bypassClipper = qb.bypassLimiter = true;
+        const Buf never = run (cfg, q, {}, x);
+        const Buf back  = run (cfg, q, { { 32 * K, qb }, { 80 * K, q } }, x);
+        mastering::MasteringChain probe;
+        ok (probe.prepare (48000.0, nch, cfg), "PRECONDITION: probe");
+        const int D = probe.latencySamples(), F = probe.bypassFadeSamples();
+        const int limO = probe.resolved().limiterLatency - probe.resolved().limiterLookahead, limA = probe.resolved().limiterLookahead;
+        const int W = std::max (2 * probe.resolved().clipperLatency + 1, 2 * limO + limA + 1);
+        const int from = 80 * K + D + W + F;
+        long long d = 0;
+        for (int c = 0; c < nch; ++c) for (int i = from; i < n; ++i) d += bits (never[(std::size_t) c][(std::size_t) i]) != bits (back[(std::size_t) c][(std::size_t) i]);
+        ok (from < n - 1000 && d == 0, "past the warm-up and the fade, a restored chain is bit for bit the one never bypassed (" + std::to_string (d) + " differ)");
+        // The return lands on the quantum at 20K, whose output leaves the FIFO K later; the limiter warms longest
+        // (2·O+A+1), and the clipper's own fade-in reaches the limiter's aligned dry only a limiter latency after the
+        // clipper's shorter warm-up, which is later still — so over the limiter's warm-up the output is the dry.
+        const int wLim = 2 * limO + limA + 1;
+        long long mid = 0;
+        for (int c = 0; c < nch; ++c) for (int i = 80 * K + K; i < 80 * K + K + wLim; ++i) mid += bits (back[(std::size_t) c][(std::size_t) i]) != bits (x[(std::size_t) c][(std::size_t) (i - D)]);
+        ok (mid == 0, "during the warm-up the output stays the aligned dry — the input delayed by D (" + std::to_string (mid) + " differ)");
+        long long moved = 0;
+        for (int c = 0; c < nch; ++c) for (int i = 80 * K + K + wLim; i < 80 * K + K + wLim + F; ++i) moved += bits (back[(std::size_t) c][(std::size_t) i]) != bits (x[(std::size_t) c][(std::size_t) (i - D)]);
+        ok (moved > F, "PRECONDITION: and after it the stages fade back in");
+    }
+
+    // A steady bypass of mono-bass is a pure delay once its fade has run.
+    {
+        mastering::MasteringChainConfig mcfg;
+        mcfg.internalBlock = K;
+        mcfg.eq = mcfg.compressor = mcfg.clipper = mcfg.limiter = mcfg.dither = false;
+        mcfg.monoBass = mcfg.stereoAir = true;
+        mastering::MasteringChainParams mp;
+        mp.monoBass = { true, 250.0f, 0.0f };
+        mp.stereoAir.enabled = true; mp.stereoAir.gainDb = 4.0f;
+        auto mb = mp; mb.bypassMonoBass = true;
+        const Buf y = run (mcfg, mp, { { 10 * K + 5, mb } }, x);
+        mastering::MasteringChain probe;
+        ok (probe.prepare (48000.0, nch, mcfg), "PRECONDITION: probe");
+        const int D = probe.latencySamples();
+        const int from = 10 * K + 5 + D + (int) std::lround (stereo::MonoBass::kSmoothingMs * 48.0) + K;
+        long long d = 0;
+        for (int c = 0; c < nch; ++c) for (int i = from; i < n; ++i) d += bits (y[(std::size_t) c][(std::size_t) i]) != bits (x[(std::size_t) c][(std::size_t) (i - D)]);
+        ok (d == 0, "a bypassed mono-bass island is the input delayed by D once its fades have run (" + std::to_string (d) + " differ)");
+        const double d2 = maxD2 (y, 9 * K, n);
+        ok (d2 < 1.0e-3, "…and it got there without a click (" + std::to_string (20.0 * std::log10 (d2)) + " dBFS)");
+        ok (probe.resolved().monoBass.enabled, "resolved() still reports the caller's mono-bass settings");
+    }
 }
 
 //==============================================================================
@@ -1835,6 +2138,8 @@ int main()
     testRtSafety();
     testResolvedReadback();
     testParamsWrittenBeforePrepare();
+    testParameterRamps();
+    testBypassFades();
     testMonoBassParams();
     testGateCountsItsSubstitutions();
     testDemand();

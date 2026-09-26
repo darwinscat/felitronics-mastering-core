@@ -77,7 +77,10 @@ struct MasteringChainConfig
     double sidechainHpfHz = 0.0;
 };
 
-// PER-BLOCK parameters. Nothing here moves latencySamples(). Each stage's own parameter type appears
+// PER-BLOCK parameters. Nothing here moves latencySamples(). A write lands on the next quantum and the continuous
+// ones GLIDE from there, each by its own stage's rule (the chain's own three — the two gain nodes and the mix — by
+// `kParamRampMs`); the first write of a stream, after `prepare()` or `reset()`, SNAPS, which is what keeps every
+// offline render bit-identical to one with no glides at all. Each stage's own parameter type appears
 // verbatim — no field is re-declared, so nothing can fall out of step when a stage grows one. That is
 // the same rule `CompressorParams : GainReductionParams : DetectorParams` follows; inheritance is not
 // available at this level (seven bases, and `releaseMs` exists in both the compressor's and the
@@ -104,7 +107,7 @@ struct MasteringChainParams
     // compressor alone and bit-identical to a chain without this field; 0 is the delayed input alone.
     // Clamped to [0, 1]; a non-finite value is 1. It keeps applying while `bypassCompressor` is set — see
     // runQuantum() for why that is the only answer without a level drop, and why it costs a steady
-    // bypass nothing. Makeup and
+    // bypass nothing. A change mid-stream glides over `kParamRampMs`, like the two gain nodes. Makeup and
     // auto-makeup ride the compressed path only, which is the parallel topology and not an oversight. It
     // is the CHAIN's field, not the compressor's: `dynamics::Compressor` keeps dry/wet out on purpose, and
     // an aligned dry path is exactly the kind of composition this class exists for. See runQuantum().
@@ -297,7 +300,9 @@ struct MasteringChainResolved
 // deferred to the next quantum boundary, so a change made at stream position p always takes effect at
 // the same place regardless of blocking — but a caller that pushes params at different stream
 // positions is asking for different renders, which is not this module's to hide. Set them once before
-// the render and the question does not arise.
+// the render and the question does not arise. What a change does once it has landed — the glides — is
+// clocked by the samples of the quanta, never by the calls, so a timeline of changes at fixed stream
+// positions renders the same bits under any cut (the AUTOMATED rows of the split-invariance suite).
 //
 // ====================================================================================
 // BYPASS, and why "just don't call it" is the wrong default
@@ -320,13 +325,19 @@ struct MasteringChainResolved
 //   * CLIPPER and LIMITER — skipped, with a `core::DryAligner` holding their PDC. The clipper does have
 //     a `mix = 0` bypass that is bit-exact for ordinary audio, but it normalises -0.0f to +0.0f
 //     (`dry + 0.0f * wet`), which a bit-exact null test would report, and it pays the whole oversampled
-//     wet path for nothing. The limiter has no bypass at all.
-//   * EQ, MONO-BASS, DITHER — zero latency, so bypass is simply not calling them. They are reset on the
-//     transition, which is exactly what `EqBand` and `MonoBass` do to themselves when they go idle.
-// A skipped stage is reset when the bypass flag changes, in either direction. Without that a stage
-// that sat out re-emits audio from before the gap — the defect class measured at +19.76 dB over the
-// ceiling in the limiter (#119), 0.75 out of digital silence in the compressor (#120), 0.93 in the
-// saturator and +7.39 dBFS in the EQ (both still open).
+//     wet path for nothing. The limiter has no bypass at all. A toggle is FADED (see `Fader`): entering
+//     bypass fades the stage to its aligned dry over kBypassFadeMs and then stops calling it; leaving it
+//     resets the stage, warms it up on the live input while the output stays on the aligned dry, and
+//     fades it back in. A steady bypass is the skip it always was, bit for bit.
+//   * EQ and DITHER — zero latency, so bypass is simply not calling them; the EQ is a hard step by design.
+//   * MONO-BASS — zero latency, and its bypass rides the island's OWN fades (`MonoBass::setBypass`), after
+//     which the island retires itself: a steady bypass returns before touching the buffer.
+// A skipped stage is reset when it comes back. Without that a stage that sat out re-emits audio from
+// before the gap — the defect class measured at +19.76 dB over the ceiling in the limiter (#119), 0.75
+// out of digital silence in the compressor (#120), 0.93 in the saturator and +7.39 dBFS in the EQ (both
+// still open). It used to be reset on BOTH edges and swapped in at once, which is what clicked: the
+// clipper's bypass round trip read -9.2 dBFS max|Δ²y| with a ~63-sample dropout, the limiter's -12.5
+// with a 111-sample hole of exact zeros.
 //
 // ====================================================================================
 // THE CHANNEL COUNT IS EXACT
@@ -364,6 +375,14 @@ public:
     static constexpr double kMinSampleRate    = core::kMinSampleRate;
     static constexpr double kMaxSampleRate    = 3.0e6;
     static constexpr double kMaxGainDb        = 60.0;    // both gain nodes; beyond this is not a trim
+    // THE CHAIN'S OWN PARAMETER GLIDE: `inputGainDb`, `preLimiterGainDb` and `compressorMix` move to a new value
+    // over this long, linearly, per sample, from the quantum boundary the change lands on — and SNAP on the first
+    // quantum after `reset()`/`prepare()`. The measured reason is at `Ramp` below.
+    static constexpr double kParamRampMs      = 30.0;
+    // THE BYPASS FADE of the clipper and the limiter (see `Fader`): entering bypass fades the stage out over this,
+    // leaving it warms the stage up on the live input and then fades it in over this. Mono-bass fades on its own
+    // clock (`stereo::MonoBass::kSmoothingMs`). The EQ bypass is a hard step by design and is not faded.
+    static constexpr double kBypassFadeMs     = 10.0;
 
     //==========================================================================================================
     // THE GEOMETRY, DECIDED WITHOUT BUILDING IT (law 11d)
@@ -649,6 +668,7 @@ public:
         fs_  = sampleRate;
         nch_ = numChannels;
         K_   = config.internalBlock;
+        rampLen_ = (int) std::lround (kRampMs * 0.001 * fs_);   // >= 240 at the 8 kHz floor
 
         // One buffer, not two: process() SWAPS the caller's samples with the quantum buffer, so the
         // slot a sample is read from is the slot the next input goes into. Latency is exactly K.
@@ -685,6 +705,12 @@ public:
             // defined to leave it exactly as a fresh one.
             dyn_.resize ((std::size_t) eq::EqEngine::kMaxBands);
             for (auto& d : dyn_) if (! d.prepare (fs_, nch_)) return false;
+            // A point whose dynamics are switched off mid-duck RELEASES through its own ballistics instead of
+            // snapping its gain back (see `dynamiceq::LaneDynamics`, RELEASE ON DISENGAGE): this chain writes a
+            // band only when a parameter moved and drives every producer from its own quanta, which is the
+            // pattern that option is safe under. Measured on a -12 dBFS sine ducked by a -9 dB range: the snap
+            // was -16.1 dBFS max|Δ²y| against -82.1 for the steady tone.
+            for (auto& d : dyn_) d.setReleaseOnDisengage (true);
         }
         else { eq_.reset(); dyn_ = {}; }
 
@@ -714,6 +740,8 @@ public:
             alignClip_.prepare (nch_, K_, clipLat + 2);        // capacity must EXCEED the delay it will hold
         }
 
+        fadeLen_ = std::max (1, (int) std::lround (kBypassFadeMs * 0.001 * fs_));
+        clipWarm_ = 2 * clipLat + 1;
         int limLat = 0;
         osFactor_  = 1;
         if (cfg_.limiter)
@@ -725,6 +753,9 @@ public:
             if (! lim_.prepare (fs_, K_, nch_, lc)) return false;
             limLat = lim_.latencySamples();
             osFactor_ = lim_.oversampleFactor();      // READ BACK: a requested 1 becomes 2 in the stage
+            // The limiter's finite memory: its oversampler's up and down legs (2·O) around the lookahead A the delay
+            // line and the peak window cover in parallel (the code-review round's count: 175 at 4x/64 taps, 1 ms).
+            limWarm_ = 2 * (limLat - lim_.lookaheadSamples()) + lim_.lookaheadSamples() + 1;
             alignLim_.prepare (nch_, K_, limLat + 2);
         }
 
@@ -804,6 +835,11 @@ public:
         // seen as a first write) is gone with the defect it was hiding.
         paramsDirty_ = true;
         bypassKnown_ = false;
+        // A STREAM RESTART LANDS EVERY RAMP, and the next parameter write snaps: see `Ramp`. The bypass faders are
+        // settled by the first quantum (bypassKnown_ is cleared above), from the flags as they stand then.
+        inGain_.snap (inGain_.target); preGain_.snap (preGain_.target); mix_.snap (mix_.target);
+        clipFade_ = {}; limFade_ = {};
+        fresh_ = true;
     }
 
     // Takes effect at the next internal quantum boundary, which is what keeps a parameter change from
@@ -818,6 +854,11 @@ public:
     const MasteringChainParams& params() const noexcept { return params_; }
 
     int  latencySamples() const noexcept { return prepared_ ? latency_ : 0; }
+    // kParamRampMs at the prepared rate, in samples — how long a gain or mix change takes to land. 0 unprepared.
+    int  paramRampSamples() const noexcept { return prepared_ ? rampLen_ : 0; }
+    // kBypassFadeMs at the prepared rate, in samples — how long the clipper's or the limiter's bypass takes to fade
+    // (a return also warms the stage up first; see `Fader`). 0 unprepared.
+    int  bypassFadeSamples() const noexcept { return prepared_ ? fadeLen_ : 0; }
     int  numChannels()    const noexcept { return prepared_ ? nch_ : 0; }
     // The rate this chain was prepared at. A consumer that builds meters of its own has to agree with
     // it, and "the caller passed the same number to both" is not a check — it is the assumption that
@@ -871,7 +912,7 @@ public:
         r.limiterCeilingDbTp  = cfg_.limiter ? lim_.effectiveCeilingDbTp() : 0.0;
         r.limiterReleaseMs    = cfg_.limiter ? lim_.effectiveReleaseMs() : 0.0;
         r.monoBass            = cfg_.monoBass ? monoBass_.params() : stereo::MonoBassParams { false, 0.0f, 0.0f };
-        r.compressorMix       = cfg_.compressor ? (double) compMix_ : 0.0;
+        r.compressorMix       = cfg_.compressor ? (double) mix_.target : 0.0;
         r.limiterSlowReleaseMs = cfg_.limiter ? lim_.effectiveSlowReleaseMs() : 0.0;
         r.peakClipperThresholdDbTp = cfg_.limiter ? lim_.clipThresholdDbTp() : 0.0;
         // What the air shelf ACTUALLY got, after the corner's rate clamp and the plateau's range clamp.
@@ -963,6 +1004,62 @@ public:
     }
 
 private:
+    // A FIXED-LENGTH LINEAR RAMP, clocked by the samples of the quantum it runs in — so it inherits the
+    // quantum's block invariance for free: the chain calls every stage with exactly K samples whatever the
+    // caller does, and a ramp that advances one step per sample of that quantum lands on the same absolute
+    // sample under any cut (law 8a; pinned by the split-invariance suite).
+    //
+    // LINEAR, AND IT ARRIVES. A new target restarts a `len`-sample ramp from the value the ramp holds NOW,
+    // and the last step assigns the target itself, so the value at rest is the exact resolved number and the
+    // rest path is bit-identical to a chain that never ramped. The ramp ACCUMULATES IN DOUBLE and hands out
+    // its float: a float accumulator drifts by about len·ulp/2, which relative to one step grows like len²,
+    // and the code-review round measured what that costs at the top of the rate range — at 352.8 kHz an
+    // inputGainDb move from +59.5 to -60 dB drove the gain through zero, to -0.0535, before the last step
+    // landed it (49 of 400 start values), and at 768 kHz 42 of 400. In double the drift is ~1e-9 of a step at
+    // 3 MHz. `cur + step` is an addition and `x * next()` a multiplication, so no contraction can fuse either
+    // into an FMA (law 10): every row computes the same gain sequence. The comparison is EXACT (not JUCE's
+    // approximate one) — a write that changes the resolved value by an ulp is a new target like any other.
+    //
+    // SNAPPED, NEVER RAMPED, BEFORE THE FIRST QUANTUM OF A STREAM. `reset()` (and so `prepare()`) arms
+    // `fresh_`, and the parameter set the first quantum applies lands at once. That is what keeps every
+    // offline render — `setParams -> reset -> process`, OfflineRenderer and the solver alike — the same bits
+    // it was before the ramps existed.
+    struct Ramp
+    {
+        double cur = 1.0, step = 0.0;
+        float  target = 1.0f;
+        int    left = 0;
+
+        bool moving() const noexcept { return left > 0; }
+        void snap (float v) noexcept { cur = (double) v; target = v; step = 0.0; left = 0; }
+        void setTarget (float v, int len) noexcept
+        {
+            if (core::exactlyEqual (v, target)) return;       // a write that changes nothing restarts nothing
+            if (len <= 0) { snap (v); return; }
+            target = v;
+            left   = len;
+            step   = ((double) target - cur) / (double) len;
+        }
+        float next() noexcept
+        {
+            if (left <= 0) return target;
+            --left;
+            cur = left > 0 ? cur + step : (double) target;
+            return (float) cur;
+        }
+    };
+
+    // THE RAMP LENGTH, and the numbers it was chosen by. Measured on a -12 dBFS 227 Hz sine at K = 128,
+    // max|Δ²y| in the window where the change first reaches the output, the steady tone reading -73.1 dBFS
+    // (-76.8 through the compressor at 4:1). As STEPS: inputGainDb 0 -> +3 was -20.1 dBFS, preLimiterGainDb
+    // 0 -> +3 -22.3, compressorMix 1 -> 0.5 -34.4 and 1 -> 0 -28.4 — each a click. Ramped, at 5 / 10 / 20 /
+    // 30 / 50 ms: a +3 dB step is clean at every length (-69.9 ... -70.1); what separates them is the big
+    // move — 0 -> +12 dB reads -51.2 / -58.0 / -57.2 / -60.8 / -60.2, where the LOUDER tone's own floor is
+    // -61.1, and 0 -> -20 dB -60.0 / -64.4 / -67.8 / -69.3 / -70.7. 30 ms is the shortest length at which a
+    // +12 dB jump sits on the tone's own floor, and it is the time constant the EQ's smoothers already use.
+    // The mix: 1 -> 0.5 -74.7 and 1 -> 0 -73.1 from 20 ms on.
+    static constexpr double kRampMs = kParamRampMs;
+
     // One quantum: exactly K_ samples, every stage, always. This is the only place a stage is called.
     // LAW 11: every stage's verdict is checked here rather than discarded. None of them CAN refuse — the
     // chain prepares each for exactly (nch_, >= K_) and hands it exactly that — so a refusal would mean
@@ -974,6 +1071,7 @@ private:
         for (int c = 0; c < nch_; ++c) ch[c] = fifo_.data() + (std::size_t) c * (std::size_t) K_;
 
         if (paramsDirty_) { applyParams(); paramsDirty_ = false; }
+        fresh_ = false;                              // from here on a parameter write is a glide, not a snap
 
         // --- the gate, ahead of everything (see the header note) -------------------------------
         // The substitution is COUNTED, and the count is the whole point: a gate that silently replaces
@@ -1007,7 +1105,7 @@ private:
             nonFiniteIn_ += bad;
         }
 
-        applyGain (ch, inputGain_);
+        applyGain (ch, inGain_);
 
         // --- EQ (zero latency: bypass is simply not calling it) --------------------------------
         // Every band is driven through its own `dynamiceq::LaneDynamics`, which is `eq::EqEngine::process`'s
@@ -1045,15 +1143,18 @@ private:
             {
                 eq_->clearAudioState();                 // a STOP, not a stream restart
                 for (auto& d : dyn_) d.reset();         // ...and the detectors that fed it stop with it
+                // A producer that was RELEASING held its band's dynamic seam open; the stop ends the release, so
+                // the band gets the caller's own parameters back (a write that changes nothing costs nothing).
+                for (int i = 0; i < eq::EqEngine::kMaxBands; ++i) eq_->setBand (i, params_.eqBands[i]);
             }
         }
 
         // --- M/S mono-bass (zero latency) ------------------------------------------------------
-        if (cfg_.monoBass || cfg_.stereoAir)
-        {
-            if (! params_.bypassMonoBass) stageRefused_ |= ! monoBass_.process (ch, nch_, K_);
-            else if (bypassChanged_.monoBass) monoBass_.reset();
-        }
+        // BYPASS RIDES THE ISLAND'S OWN FADES (`stereo::MonoBass::setBypass`, written in applyParams()): the bass's
+        // crossfade to dry and the air's plateau to 0 dB, after which the island retires itself — a bit-exact
+        // passthrough that returns before touching the buffer, so a steady bypass costs a call and nothing else. It
+        // used to be a hard switch with a reset on the edge: -21.5 dBFS max|Δ²y| into bypass, -48.7 out of it.
+        if (cfg_.monoBass || cfg_.stereoAir) stageRefused_ |= ! monoBass_.process (ch, nch_, K_);
 
         // --- compressor: WARM bypass through its own curve, so nothing has to be aligned --------
         if (cfg_.compressor)
@@ -1116,9 +1217,14 @@ private:
             // in as many words). ONE reset on any change of the flag, before the branch: skipping a
             // stage freezes its history, and a frozen oversampler replays pre-gap audio on re-entry.
             alignClip_.advance ((const float* const*) ch, nch_, K_, sat_.latencySamples());
-            if (bypassChanged_.clipper) sat_.reset();
-            if (! params_.bypassClipper) stageRefused_ |= ! sat_.process (ch, nch_, K_);
-            else for (int c = 0; c < nch_; ++c) std::copy_n (alignClip_.delayed (c), K_, ch[c]);
+            if (bypassChanged_.clipper) steer (clipFade_, params_.bypassClipper, [this] { sat_.reset(); });
+            if (clipFade_.mode == Fader::Dry)
+                for (int c = 0; c < nch_; ++c) std::copy_n (alignClip_.delayed (c), K_, ch[c]);
+            else
+            {
+                stageRefused_ |= ! sat_.process (ch, nch_, K_);
+                if (clipFade_.mode != Fader::Wet) blend (clipFade_, ch, alignClip_, clipWarm_);
+            }
         }
 
         // --- the pre-limiter tap, taken BEFORE the gain node -------------------------------------
@@ -1130,7 +1236,7 @@ private:
             for (int c = 0; c < nch_; ++c)
                 std::copy_n (ch[c], K_, tap_->preLimiter[c] + (std::size_t) tap_->framesWritten);
 
-        applyGain (ch, preLimGain_);
+        applyGain (ch, preGain_);
 
         // --- true-peak limiter: the one stage with no bypass of its own -------------------------
         if (cfg_.limiter)
@@ -1144,8 +1250,14 @@ private:
                 limTap.capacity = K_ * osFactor_;
             }
             alignLim_.advance ((const float* const*) ch, nch_, K_, lim_.latencySamples());
-            if (bypassChanged_.limiter) lim_.reset();
-            if (! params_.bypassLimiter) stageRefused_ |= ! lim_.process (ch, nch_, K_, limTap);
+            if (bypassChanged_.limiter) steer (limFade_, params_.bypassLimiter, [this] { lim_.reset(); });
+            if (limFade_.mode != Fader::Dry)
+            {
+                // The trace is the limiter's own whenever it RUNS — warming or fading included: it is what the
+                // stage decided, the same stage-work reading the compressor's trace has under compressorMix.
+                stageRefused_ |= ! lim_.process (ch, nch_, K_, limTap);
+                if (limFade_.mode != Fader::Wet) blend (limFade_, ch, alignLim_, limWarm_);
+            }
             else
             {
                 for (int c = 0; c < nch_; ++c) std::copy_n (alignLim_.delayed (c), K_, ch[c]);
@@ -1169,13 +1281,108 @@ private:
         if (tap_ != nullptr) { tap_->framesWritten += K_; tap_->osWritten += K_ * osFactor_;
                                ++tap_->bandQuantaWritten; }
         bypassChanged_ = {};
+        fadersSnap_    = false;
     }
 
-    void applyGain (float* const* ch, float g) noexcept
+    //==========================================================================================================
+    // THE BYPASS FADERS of the clipper and the limiter — the two stages whose bypass is a skip with the PDC held by
+    // an aligner. Five modes: Wet (the stage alone, exactly as before), Dry (the aligned dry alone and the stage not
+    // called, exactly as before), and three that run the stage on the whole quantum and blend per sample:
+    //   * ToDry — entering bypass: the wet fades to the aligned dry over kBypassFadeMs, then Dry.
+    //   * Warm  — leaving bypass: the stage was RESET (a skipped stage's history is from before the gap) and runs on
+    //             the live input while the output stays on the aligned dry, for as long as the stage's finite memory
+    //             takes to fill — the whole FIR support around its latency: 2L+1 samples for the clipper, 2·O+A+1
+    //             for the limiter (O its oversampler round trip, A its lookahead; the delay line and the peak window
+    //             run in parallel). Past that its output is what a never-reset stage fed the same input would give,
+    //             save the parts that are recursive — the Saturator's Asym DC blocker, the limiter's release
+    //             followers and its dual release's 90 ms of windows — which start fresh, as any reset starts them.
+    //   * ToWet — then the aligned dry fades to the wet over kBypassFadeMs, then Wet.
+    // A change mid-fade reverses from the weight it has reached; a bypass during Warm goes straight back to Dry (the
+    // stage never contributed). Every position counts SAMPLES of the quantum, so a toggle lands on the same sample
+    // under any cut. Nothing here moves latency: the aligned dry and the stage's output are both L samples late.
+    //
+    // Measured on a -12 dBFS 227 Hz sine at K = 128, max|Δ²y| where the change reaches the output: the clipper's
+    // bypass round trip (4800 samples) was -9.2 dBFS with a dropout of ~63 samples (the reset FIR emitted zeros), its
+    // on-edge -7.3; the limiter's round trip -12.5 with a 111-sample hole of exact zeros, entering bypass while it
+    // held 6 dB -18.2. See CHANGELOG for what the faders read.
+    struct Fader
     {
-        if (core::exactlyEqual (g, 1.0f)) return;              // 0 dB is a bit-exact no-op, not a multiply
+        enum Mode : std::uint8_t { Wet, ToDry, Dry, Warm, ToWet };
+        Mode mode = Wet;
+        int  pos  = 0;               // samples into the current fade or warm-up
+    };
+
+    // The bypass flag CHANGED at this quantum. The first quantum after reset()/prepare() SNAPS — Dry or Wet, the
+    // stage reset exactly as the skip always reset it there — so an offline render is the bits it always was.
+    template <class Reset>
+    void steer (Fader& f, bool bypass, Reset&& resetStage) noexcept
+    {
+        if (fadersSnap_) { resetStage(); f.mode = bypass ? Fader::Dry : Fader::Wet; f.pos = 0; return; }
+        if (bypass)
+        {
+            if      (f.mode == Fader::Wet)   { f.mode = Fader::ToDry; f.pos = 0; }
+            else if (f.mode == Fader::ToWet) { f.mode = Fader::ToDry; f.pos = fadeLen_ - f.pos; }
+            else if (f.mode == Fader::Warm)  { f.mode = Fader::Dry;   f.pos = 0; }
+        }
+        else
+        {
+            if      (f.mode == Fader::Dry)   { resetStage(); f.mode = Fader::Warm; f.pos = 0; }
+            else if (f.mode == Fader::ToDry) { f.mode = Fader::ToWet; f.pos = fadeLen_ - f.pos; }
+        }
+    }
+
+    // One quantum of a fader that is not at rest: `ch` holds the stage's output, `dry` the aligned input. The wet
+    // weight moves per SAMPLE and is shared by every channel; the two ends are BRANCHES (the wet as it is, the dry
+    // copied), so -0.0 survives and a fade that lands mid-quantum joins its steady state without a seam; between them
+    // the blend is two products in double, in separate statements (law 10 — the compressorMix form).
+    void blend (Fader& f, float* const* ch, const core::DryAligner& dry, int warm) noexcept
+    {
+        const double F = (double) fadeLen_;
+        for (int i = 0; i < K_; ++i)
+        {
+            double a = 1.0;
+            switch (f.mode)
+            {
+                case Fader::ToDry: ++f.pos; a = 1.0 - (double) f.pos / F; if (f.pos >= fadeLen_) { f.mode = Fader::Dry; f.pos = 0; a = 0.0; } break;
+                case Fader::Warm:  ++f.pos; a = 0.0; if (f.pos >= warm) { f.mode = Fader::ToWet; f.pos = 0; } break;
+                case Fader::ToWet: ++f.pos; a = (double) f.pos / F; if (f.pos >= fadeLen_) { f.mode = Fader::Wet; f.pos = 0; a = 1.0; } break;
+                case Fader::Dry:   a = 0.0; break;
+                case Fader::Wet:   a = 1.0; break;
+            }
+            if (a >= 1.0) continue;                                  // the wet, as the stage left it
+            for (int c = 0; c < nch_; ++c)
+            {
+                const float d = dry.delayed (c)[i];
+                if (a <= 0.0) { ch[c][i] = d; continue; }
+                const double pd = (1.0 - a) * (double) d;
+                const double pw = a * (double) ch[c][i];
+                ch[c][i] = (float) (pd + pw);
+            }
+        }
+    }
+
+    // THE TWO GAIN NODES. At rest this is the constant multiply it always was — bit for bit, 0 dB included
+    // (a branch, not a multiply by one) — so a chain whose gains were set before its first sample renders the
+    // bits it rendered before the ramp existed. While a ramp runs, the gain moves PER SAMPLE on the quantum's
+    // own clock; see `Ramp`. Every channel replays the same ramp from the same state, so they get the same
+    // gain on the same sample; the state is committed once, after the last channel.
+    void applyGain (float* const* ch, Ramp& r) noexcept
+    {
+        if (! r.moving())
+        {
+            const float g = r.target;
+            if (core::exactlyEqual (g, 1.0f)) return;          // 0 dB is a bit-exact no-op, not a multiply
+            for (int c = 0; c < nch_; ++c)
+                for (int i = 0; i < K_; ++i) ch[c][i] *= g;
+            return;
+        }
+        Ramp s = r;
         for (int c = 0; c < nch_; ++c)
-            for (int i = 0; i < K_; ++i) ch[c][i] *= g;
+        {
+            s = r;
+            for (int i = 0; i < K_; ++i) ch[c][i] *= s.next();
+        }
+        r = s;
     }
 
     // PARALLEL COMPRESSION, on the compressor's output `ch` and the aligned input `alignComp_` staged.
@@ -1208,13 +1415,35 @@ private:
     // within one float ulp of it. The compressor feeding it is its own question: its gain curve runs
     // through libm (GainReductionPath.h).
     //
-    // A STEP, NOT A RAMP, when the value moves: it lands at the quantum boundary, exactly like the two
-    // gain nodes, so it is block-invariant for the same reason they are and it clicks for the same reason
-    // they do — a hard `Δm * (wet - dry)` edge, where a bypass toggle glides on the compressor's own ballistics.
-    // Set it before the render and neither question arises.
+    // A RAMP, NOT A STEP, when the value moves — the same `Ramp` as the two gain nodes, per sample on the
+    // quantum's clock. It used to land at the quantum boundary as a hard `Δm * (wet - dry)` edge: measured
+    // on a -12 dBFS sine at 4:1 and a -18 dB threshold, 1 -> 0.5 put max|Δ²y| at -34.4 dBFS where the steady
+    // tone reads -76.8. The mix read on each sample is a float, so each sample's blend is EXACTLY the
+    // double form above for that `m`, and the two ends are exact too: `m == 1` returns `wet` and `m == 0`
+    // returns `dry`, zeros signed as they were, so a ramp that lands on either end mid-quantum joins the
+    // branch it lands on without a seam. At rest the branches and the constant-`m` loop run as before.
     void mixCompressorDry (float* const* ch) noexcept
     {
-        const float m = compMix_;
+        if (mix_.moving())
+        {
+            Ramp s = mix_;
+            for (int c = 0; c < nch_; ++c)
+            {
+                s = mix_;
+                const float* dry = alignComp_.delayed (c);
+                float*       wet = ch[c];
+                for (int i = 0; i < K_; ++i)
+                {
+                    const float  m  = s.next();
+                    const double pd = (1.0 - (double) m) * (double) dry[i];
+                    const double pw = (double) m * (double) wet[i];
+                    wet[i] = (float) (pd + pw);
+                }
+            }
+            mix_ = s;
+            return;
+        }
+        const float m = mix_.target;
         if (core::exactlyEqual (m, 1.0f)) return;
         if (core::exactlyEqual (m, 0.0f))
         {
@@ -1245,6 +1474,12 @@ private:
         return mix > 0.0 ? (float) std::min (mix, 1.0) : 0.0f;
     }
 
+    void setRamp (Ramp& r, float v) noexcept
+    {
+        if (fresh_) r.snap (v);
+        else        r.setTarget (v, rampLen_);
+    }
+
     struct BypassFlags { bool eq = false, monoBass = false, compressor = false, clipper = false, limiter = false, dither = false; };
 
     void applyParams() noexcept
@@ -1255,6 +1490,7 @@ private:
         {
             bypassChanged_ = { true, true, true, true, true, true };   // first quantum: settle everything
             bypassKnown_   = true;
+            fadersSnap_    = true;                                      // …and the bypass faders snap, not fade
         }
         else
         {
@@ -1267,8 +1503,8 @@ private:
         }
         params_ = p;
 
-        inputGain_  = gainOf (p.inputGainDb);
-        preLimGain_ = gainOf (p.preLimiterGainDb);
+        setRamp (inGain_,  gainOf (p.inputGainDb));
+        setRamp (preGain_, gainOf (p.preLimiterGainDb));
 
         if (eq_)
             for (int i = 0; i < eq::EqEngine::kMaxBands; ++i) eq_->setBand (i, p.eqBands[i]);
@@ -1290,6 +1526,7 @@ private:
         {
             monoBass_.setParams (cfg_.monoBass ? p.monoBass : stereo::MonoBassParams { false, 120.0f, 0.0f });
             monoBass_.setAir    (cfg_.stereoAir ? p.stereoAir : stereo::StereoAirParams {});
+            monoBass_.setBypass (p.bypassMonoBass);                     // rides the island's own fades
         }
 
         if (cfg_.compressor)
@@ -1309,7 +1546,7 @@ private:
             }
             comp_.setParams (cp);
         }
-        compMix_ = mixOf (p.compressorMix);
+        setRamp (mix_, mixOf (p.compressorMix));
 
         if (cfg_.clipper) sat_.setParams (p.clipper);
         if (cfg_.limiter) lim_.setParams (p.limiter);
@@ -1338,7 +1575,16 @@ private:
     MasteringChainParams params_ {}, pendingParams_ {};
     BypassFlags          bypassChanged_ {};
 
-    float inputGain_ = 1.0f, preLimGain_ = 1.0f, compMix_ = 1.0f;
+    // The two gain nodes and the parallel-compression mix, each on its own `Ramp` (see there). `target` is
+    // what `applyParams()` last resolved — what `resolved()` reports — and `rampLen_` is kRampMs at this rate.
+    Ramp  inGain_, preGain_, mix_;
+    int   rampLen_ = 0;
+    // The clipper's and the limiter's bypass faders (see Fader), the fade length at this rate, and each stage's
+    // warm-up: the FIR support around its latency.
+    Fader clipFade_, limFade_;
+    int   fadeLen_ = 0, clipWarm_ = 0, limWarm_ = 0;
+    bool  fadersSnap_ = true;
+    bool  fresh_ = true;                     // no quantum has run since reset(): a parameter write SNAPS
 
     std::vector<float> fifo_, keyBuf_;
 
