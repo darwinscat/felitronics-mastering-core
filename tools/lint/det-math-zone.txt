@@ -52,3 +52,11 @@ zone  tools/wasm/fc_probe.cpp  prints the numbers the probe parity steps diff
 zone  tools/wasm/fc_abi_guards.h   the argument checks of the analysis ABIs; decide which runs the parity steps see refused
 zone  tools/wasm/fc_tempo_entry.h  the tempo entry points, compiled into fcprobe and fctempo; writes the rows tempo-parity.mjs diffs
 zone  tools/wasm/fc_tempo.cpp      the fctempo module's own TU; its tempo rows are diffed against fcore_measure like the probe's
+
+# --- felitronics::session — the mastering session, which DECIDES: its decisions are thresholds, and a threshold computed
+# --- through the system libm is a different decision on another row (log10 alone disagrees between Apple's libm and
+# --- glibc at 2 % of the points this tree measured). So the whole module is in the zone, and the zone is extended FILE
+# --- BY FILE as the module grows.
+zone  modules/session/include/felitronics/session/Session.h  the session's public surface
+zone  modules/session/src/Session.cpp                        the session
+zone  modules/session/src/BuildContract.cpp                  the library's build contract, asserted from inside it
