@@ -18,15 +18,17 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 #                                                     felitronics::analysis, headers <felitronics/analysis/...>)
 #   tempo             felitronics::tempo              the tempo of a programme and the tempo over time     core
 #                                                     (a port of the site's dsp/tempo.js)
-#   session           felitronics::session            the mastering session, the object a shell talks to.  —
-#                                                     COMPILED, with its own flags
+#   session           felitronics::session            the mastering session, the object a shell talks to.  felitronics-toml
+#                                                     COMPILED, with its own flags                        (build time)
 #
 # tools/ (top-level builds only): the C ABIs (fc_master, fc_probe, fc_tempo, fc_session), their native CLIs
 # (fcore_master, fcore_measure, fcore_session) and suites, and tools/wasm/build.sh, which builds the wasm modules.
 #
-# Consume — felitronics-core FIRST, then this; ONE core is resolved by the product that owns the graph:
+# Consume — felitronics-core and felitronics-toml FIRST, then this; ONE of each is resolved by the product that owns
+# the graph:
 #   FetchContent_Declare(felitronics_core GIT_REPOSITORY <url> GIT_TAG <tag>)
-#   FetchContent_MakeAvailable(felitronics_core)
+#   FetchContent_Declare(felitronics_toml GIT_REPOSITORY <url> GIT_TAG <tag>)
+#   FetchContent_MakeAvailable(felitronics_core felitronics_toml)
 #   FetchContent_Declare(felitronics_mastering_core GIT_REPOSITORY <url> GIT_TAG <tag>)
 #   FetchContent_MakeAvailable(felitronics_mastering_core)
 #   target_link_libraries(app PRIVATE felitronics::mastering felitronics::analysis_offline felitronics::session)
@@ -58,6 +60,26 @@ if(PROJECT_IS_TOP_LEVEL)
     # so this does not rewrite a cache entry the developer set.
     set(FELITRONICS_BUILD_TESTS OFF)
     FetchContent_MakeAvailable(felitronics_core)
+
+    # felitronics-toml — the strict TOML subset felitronics::session reads its config with, and the tool that
+    # compiles a document into the library as constexpr data (felitronics_toml_embed). Resolved the same way and
+    # for the same reason as core: a sibling checkout when there is one, the pinned tag otherwise. Its suites and
+    # install rules stay off: both default to "top level only" there.
+    set(FELITRONICS_MASTERING_TOML_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-toml" CACHE PATH
+        "Local felitronics-toml checkout (used if present); else the pinned release is fetched")
+    set(FELITRONICS_MASTERING_TOML_TAG "v0.2.0" CACHE STRING
+        "felitronics-toml git tag to fetch when no local checkout is present")
+    if(FELITRONICS_MASTERING_TOML_DIR AND EXISTS "${FELITRONICS_MASTERING_TOML_DIR}/CMakeLists.txt")
+        message(STATUS "felitronics-toml: local checkout — ${FELITRONICS_MASTERING_TOML_DIR}")
+        FetchContent_Declare(felitronics_toml SOURCE_DIR "${FELITRONICS_MASTERING_TOML_DIR}")
+    else()
+        message(STATUS "felitronics-toml: fetching ${FELITRONICS_MASTERING_TOML_TAG} from GitHub")
+        FetchContent_Declare(felitronics_toml
+            GIT_REPOSITORY https://github.com/darwinscat/felitronics-toml.git
+            GIT_TAG        ${FELITRONICS_MASTERING_TOML_TAG}
+            GIT_SHALLOW    TRUE)
+    endif()
+    FetchContent_MakeAvailable(felitronics_toml)
 endif()
 
 # Consumed, not top-level: core must already be there. A nested fetch here is how a product ends up with
@@ -102,6 +124,32 @@ if(NOT FELITRONICS_MASTERING_FCORE_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
     message(FATAL_ERROR "cannot read felitronics-core's release from ${felitronics_core_SOURCE_DIR} "
                         "(its project() line gave '${FELITRONICS_MASTERING_FCORE_VERSION}')")
 endif()
+
+# felitronics-toml, by the same rule: made available before this repository by whoever owns the graph (above, when
+# that is this repository). v0.2.0 is the first release with inline tables, felitronics_toml_embed() and the schema
+# reader felitronics::session's config stands on. Its release is read from the directory that ran its project() line,
+# like core's; a package found by find_package states it in felitronics_toml_VERSION instead.
+if(NOT TARGET felitronics::toml OR NOT COMMAND felitronics_toml_embed)
+    message(FATAL_ERROR
+        "felitronics-mastering-core needs felitronics-toml v0.2.0 or later (felitronics::toml and "
+        "felitronics_toml_embed()), made available BEFORE this repository, so ONE copy is resolved by the product "
+        "that owns the graph.")
+endif()
+if(DEFINED felitronics_toml_SOURCE_DIR)
+    get_directory_property(FELITRONICS_MASTERING_TOML_VERSION DIRECTORY "${felitronics_toml_SOURCE_DIR}"
+                           DEFINITION felitronics_toml_VERSION)
+else()
+    set(FELITRONICS_MASTERING_TOML_VERSION "${felitronics_toml_VERSION}")
+endif()
+if(NOT FELITRONICS_MASTERING_TOML_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+   OR FELITRONICS_MASTERING_TOML_VERSION VERSION_LESS 0.2.0)
+    message(FATAL_ERROR "felitronics-mastering-core needs felitronics-toml v0.2.0 or later "
+                        "(this graph resolved '${FELITRONICS_MASTERING_TOML_VERSION}')")
+endif()
+# The checkout tools/wasm/build.sh must embed the config with — the same one this build compiled (CI reads it back with
+#   sed -n 's/^FELITRONICS_MASTERING_TOML_SOURCE_DIR:INTERNAL=//p' <build>/CMakeCache.txt ).
+set(FELITRONICS_MASTERING_TOML_SOURCE_DIR "${felitronics_toml_SOURCE_DIR}" CACHE INTERNAL
+    "the felitronics-toml checkout this build resolved")
 
 # modules/ and tools/ came from core verbatim and build their suites on FELITRONICS_BUILD_TESTS, the name
 # the switch has there. Set here as a NORMAL variable, after core is configured, so it never reaches core.
