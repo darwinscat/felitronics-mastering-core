@@ -7,7 +7,10 @@
 // this tier (an out-pointer past the end of the heap). And the wrap boundary, walked for real: one slot driven through
 // all of its generations — 16.7 million create/destroy cycles, a fraction of a second — must retire, not wrap.
 //
-//   node tools/wasm/session-check.mjs tools/wasm/build/fcsession.node.js
+//   node tools/wasm/session-check.mjs tools/wasm/build/fcsession.node.js [--config-version <16 hex digits>]
+//
+// --config-version: what the native `fcore_session config version` answers; the module must carry the same config (CI
+// passes it, so the two roads into the session are held to one config).
 //
 // WHICH MODULE, from the path and then from the artifact (the rule tools/wasm/module-identity.mjs keeps for the
 // analysis modules): the file must be named fcsession.*, must answer fc_session_abi_version with the number
@@ -25,8 +28,15 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { basename, resolve } from 'node:path';
 
-const [, , modPath] = process.argv;
-if (! modPath) { console.error('usage: node session-check.mjs <fcsession.node.js>'); process.exit(2); }
+const [, , modPath, ...options] = process.argv;
+const usage = () => { console.error('usage: node session-check.mjs <fcsession.node.js> [--config-version <16 hex digits>]'); process.exit(2); };
+if (! modPath) usage();
+let nativeConfigVersion = null;
+if (options.length)
+{
+    if (options.length !== 2 || options[0] !== '--config-version' || ! /^[0-9a-f]{16}$/.test(options[1])) usage();
+    nativeConfigVersion = options[1];
+}
 const distrust = m => { console.error(`session-check: ${m}`); process.exit(3); };
 
 const header = readFileSync(new URL('../fc_session_abi.h', import.meta.url), 'utf8');
@@ -47,7 +57,7 @@ for (const k of ['OK', 'ERR_POISONED', 'ERR_NULL', 'ERR_ALIGNMENT', 'ERR_SPAN', 
 // THE SURFACE of the version this module answers — its entry points, as the page sees them. Version 0 is the draft
 // (tools/fc_session_abi.h): no promise, so a change of the draft edits this line with the header.
 const SURFACE = {
-    0: ['_fc_session_abi_version', '_fc_session_create', '_fc_session_destroy'],
+    0: ['_fc_session_abi_version', '_fc_session_create', '_fc_session_destroy', '_fc_session_config_version'],
 };
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
@@ -140,6 +150,24 @@ ok(M._fc_session_destroy(first) === STATUS.ERR_HANDLE && M._fc_session_destroy(l
    "slot 0's handles stay refused — the first seen, the last, and the number a wrap would have issued again");
 ok(next !== undefined && M._fc_session_destroy(next) === STATUS.OK, "slot 1's session destroys");
 M._free(out);
+
+// the config version: two uint32 halves, low first, the module's own config
+const halves = M._malloc(8);
+const half = i => M.HEAPU32[(halves >>> 2) + i];
+M.HEAPU32[halves >>> 2] = SENTINEL; M.HEAPU32[(halves >>> 2) + 1] = SENTINEL;
+ok(M._fc_session_config_version(halves) === STATUS.OK, 'config_version answers');
+const configVersion = half(1).toString(16).padStart(8, '0') + half(0).toString(16).padStart(8, '0');
+ok(! (half(0) === SENTINEL && half(1) === SENTINEL), 'and writes its two halves');
+ok(M._fc_session_config_version(halves) === STATUS.OK
+   && configVersion === half(1).toString(16).padStart(8, '0') + half(0).toString(16).padStart(8, '0'), 'the same number twice');
+ok(M._fc_session_config_version(0) === STATUS.ERR_NULL, 'a null out-pointer is refused');
+ok(M._fc_session_config_version(halves + 2) === STATUS.ERR_ALIGNMENT, 'a misaligned one is refused');
+const end = M.HEAPU32.buffer.byteLength;
+ok(M._fc_session_config_version(end - 4) === STATUS.ERR_SPAN, 'one whose high half would leave the heap is refused as SPAN');
+if (nativeConfigVersion !== null)
+    ok(configVersion === nativeConfigVersion, `the module's config version ${configVersion} is the native CLI's ${nativeConfigVersion}`);
+M._free(halves);
+console.log(`session-check: config version ${configVersion}`);
 
 console.log(`session-check: fcsession v${version}${version === 0 ? ' (the draft)' : ''} — ${checks} checks, ${bad} failures`);
 process.exit(bad ? 1 : 0);

@@ -16,6 +16,8 @@
 //   * THE WRAP BOUNDARY, at the shipped width: one slot driven through all FC_SESSION_SLOT_GENERATIONS of its
 //     generations — 16.7 million create/destroy cycles, the reproduction of a stale handle destroying a new session —
 //     retires instead of wrapping, and every handle it issued stays refused;
+//   * the config version: the library's own, low half first, its out-pointer checked before anything is written, and
+//     nothing asked of the heap — so there is no demand to declare;
 //   * THE POISON, LAST, because it is for good: an entry point re-entered from inside an allocation the module made
 //     answers POISONED, and from then on every status call does, though every call returned.
 
@@ -26,6 +28,7 @@
 
 #include "fc_session_abi.h"
 
+#include <felitronics/session/Config.h>
 #include <felitronics/session/Session.h>
 
 #include <cstdint>
@@ -180,6 +183,29 @@ void theGenerationRetiresInsteadOfWrapping()
     ok (fc_session_destroy (h) == FC_SESSION_OK, "slot 1's session destroys");
 }
 
+void theConfigVersion()
+{
+    felitronics::test::group ("config_version: the library's config version, in two halves, allocating nothing");
+    std::uint32_t halves[2] = { 0xA5A5A5A5u, 0xA5A5A5A5u };
+    const long long r0 = requestsNow();
+    const fc_session_status answered = fc_session_config_version (halves);
+    const long long spent = requestsNow() - r0;
+    const std::uint64_t v = felitronics::session::config::version();
+    ok (answered == FC_SESSION_OK, "answered");
+    ok (halves[0] == (std::uint32_t) v && halves[1] == (std::uint32_t) (v >> 32),
+        "the low half first, then the high: felitronics::session::config::version()");
+    ok (spent == 0, "and the heap was asked for nothing: a call with no demand to declare");
+
+    alignas (8) unsigned char raw[16] {};
+    for (auto& b : raw) b = 0xA5;
+    ok (fc_session_config_version (nullptr) == FC_SESSION_ERR_NULL, "a null out-pointer is refused");
+    ok (fc_session_config_version (reinterpret_cast<std::uint32_t*> (raw + 1)) == FC_SESSION_ERR_ALIGNMENT,
+        "a misaligned out-pointer is refused");
+    bool untouched = true;
+    for (auto b : raw) untouched = untouched && b == 0xA5;
+    ok (untouched, "and nothing was written through it");
+}
+
 // THE POISON. Re-entry from INSIDE an allocation the module made, through the shared counter's one-shot hook — the
 // position a native new_handler has. The inner call cannot be told apart from the first call after an abandoned one,
 // so it must answer POISONED; the outer call returns normally, since it cannot know; and from then on every status
@@ -213,6 +239,9 @@ void thePoisonIsForGood()
     ok (fc_session_destroy (h) == FC_SESSION_ERR_POISONED && fc_session_destroy (h2) == FC_SESSION_ERR_POISONED,
         "and so is every destroy, of a handle that was live");
     ok (fc_session_destroy (0u) == FC_SESSION_ERR_POISONED, "ahead of the handle check");
+    std::uint32_t halves[2] = { 7u, 7u };
+    ok (fc_session_config_version (halves) == FC_SESSION_ERR_POISONED && halves[0] == 7u && halves[1] == 7u,
+        "the config version too, writing nothing");
     ok (fc_session_abi_version() == FC_SESSION_ABI_VERSION, "the version still answers: it reads no state");
 }
 } // namespace
@@ -226,6 +255,7 @@ int main()
     theTableHoldsItsCapacity();
     theSessionsRefusalPassesThrough();
     theGenerationRetiresInsteadOfWrapping();
+    theConfigVersion();
     thePoisonIsForGood();   // LAST: the poison is for good, and nothing after it could run
     return felitronics::test::report();
 }
