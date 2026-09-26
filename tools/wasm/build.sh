@@ -43,7 +43,7 @@ echo "emcc: $(emcc --version | head -1)"
 
 CORE="${FELITRONICS_CORE_DIR:-$ROOT/../felitronics-core}"
 [ -f "$CORE/modules/core/include/felitronics/core/DetMath.h" ] \
-    || { echo "no felitronics-core at $CORE — set FELITRONICS_CORE_DIR to a checkout (v0.52.0 or later)"; exit 1; }
+    || { echo "no felitronics-core at $CORE — set FELITRONICS_CORE_DIR to a checkout (v0.53.0 or later)"; exit 1; }
 CORE="$(cd "$CORE" && pwd)"
 # A core that still carries these modules would put a SECOND copy of every header here on the include path,
 # and which one a TU compiled would depend on the order of the -I flags below. The CMake refuses such a core
