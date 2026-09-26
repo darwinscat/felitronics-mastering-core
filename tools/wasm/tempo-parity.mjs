@@ -4,7 +4,12 @@
 // The wasm side of the tempo parity check:
 //   fcore_measure tempo 48000 2 a.f32 [flags]                        > native.txt
 //   node tempo-parity.mjs build/fcprobe.node.js 48000 2 a.f32 [flags] > wasm.txt
+//   node tempo-parity.mjs build/fctempo.node.js 48000 2 a.f32 [flags] > wasm.txt   # the tempo-only module
 //   diff native.txt wasm.txt
+// THE MODULE PATH IS THE SWITCH. fcprobe (every analyzer) and fctempo (tools/wasm/fc_tempo.cpp, the tempo detector
+// alone) publish these entry points under the same names from one text, so nothing below needs to know which one it
+// was handed — except that it was handed one of them: the module must answer exactly one of fc_probe_abi_version /
+// fc_tempo_abi_version, with the number its header declares, or the run is refused before a sample is read.
 // Flags, with the same names, domain and refusals on both roads: --min-bpm --max-bpm --win-sec --hop-sec (one
 // finite number each, at most once) and --chunk N (1..2^31-1, at most once). --chunk is the LAW-8a HANDLE: the native
 // tool feeds the programme in pieces of N frames, the module always measures in one call, so a row that carries it
@@ -57,6 +62,18 @@ const P = { '--min-bpm': 60, '--max-bpm': 180, '--win-sec': 6, '--hop-sec': 1.5 
 const require = createRequire(import.meta.url);
 const M = await require(resolve(modPath))();
 
+{
+    const ABIS = [['_fc_probe_abi_version', '../fc_probe_abi.h', 'FC_PROBE_ABI_VERSION'],
+                  ['_fc_tempo_abi_version', '../fc_tempo_abi.h', 'FC_TEMPO_ABI_VERSION']];
+    const spoken = ABIS.filter(([fn]) => typeof M[fn] === 'function');
+    if (spoken.length !== 1)
+        refuse(`${modPath} answers ${spoken.length} of fc_probe_abi_version / fc_tempo_abi_version — which module is this?`);
+    const [fn, hdr, macro] = spoken[0];
+    const m = new RegExp(`^#define ${macro} ([0-9]+)u$`, 'm').exec(readFileSync(new URL(hdr, import.meta.url), 'utf8'));
+    if (!m || M[fn]() !== Number(m[1]))
+        refuse(`${modPath}: ${fn.slice(1)}() answers ${M[fn]()}, ${hdr.slice(3)} declares ${m ? m[1] : 'no version'}`);
+}
+
 const raw = readFileSync(rawPath);
 if (raw.byteLength % (4 * ch) !== 0) refuse(`${rawPath} is not a whole number of ${ch}-channel float32 frames`);
 const inter = new Float32Array(raw.buffer.slice(raw.byteOffset, raw.byteOffset + raw.byteLength));
@@ -74,7 +91,7 @@ if (!ok) process.exit(2);
 
 if (M._fc_probe_tempo_scalars_len() !== TEMPO_SCALARS || M._fc_probe_tempo_cand_stride() !== TEMPO_CAND_STRIDE
     || M._fc_probe_tempo_point_stride() !== TEMPO_POINT_STRIDE)
-    refuse('the module publishes widths this format does not know — tempo-format.mjs and fc_probe.cpp moved apart');
+    refuse('the module publishes widths this format does not know — tempo-format.mjs and fc_tempo_entry.h moved apart');
 
 const pull = (fn, doubles) => {
     const p = M._malloc(Math.max(8, doubles * 8));

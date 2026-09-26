@@ -119,7 +119,8 @@ SRC="$HERE/fc_probe.cpp"
 # `(` also settles `FC_EXPORT fc_status fc_render (…)`, where the return type itself begins with `fc_`.
 # Leading whitespace is allowed: an INDENTED declaration used to be invisible to all three scanners at
 # once — uncounted, unextracted and untype-checked — while KEEPALIVE published it anyway.
-export_names() { sed -nE 's/^[[:space:]]*FC_EXPORT[[:space:]]+[^(]*[^A-Za-z0-9_]([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*\(.*/_\1/p' "$@" \
+export_names() { [ "$#" -gt 0 ] || { echo "*** export_names: no file to read" >&2; exit 1; }   # never sed's stdin
+                 sed -nE 's/^[[:space:]]*FC_EXPORT[[:space:]]+[^(]*[^A-Za-z0-9_]([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*\(.*/_\1/p' "$@" \
                  | LC_ALL=C sort -u; }
 
 # THE FILES A MODULE'S ABI IS DECLARED IN: its translation unit and every header of its #include closure that
@@ -131,8 +132,10 @@ export_names() { sed -nE 's/^[[:space:]]*FC_EXPORT[[:space:]]+[^(]*[^A-Za-z0-9_]
 # THE CLOSURE IS THE COMPILER'S (-MM, with the module's own include roots), not a second parser of #include lines:
 # it follows exactly the includes the compile follows, conditionals included. System headers are not in it and
 # declare no entry point.
+# Called as `LIST=$(abi_files ...)` and never inside a process substitution: there a failed -MM would hand the loop an
+# empty list and the build would go on, where in a command substitution `set -e` stops it on the spot.
 abi_files() { src="$1"; shift
-    deps=$(em++ -std=c++20 "$@" -MM "$src") || { echo "*** could not list the #include closure of $src"; exit 1; }
+    deps=$(em++ -std=c++20 "$@" -MM "$src") || { echo "*** could not list the #include closure of $src" >&2; exit 1; }
     printf '%s\n' "$deps" | sed -e 's/^[^:]*://' -e 's/\\$//' | tr -s ' \t' '\n' | grep . \
         | while IFS= read -r f; do if grep -qE '^[[:space:]]*FC_EXPORT' "$f"; then echo "$f"; fi; done; }
 
@@ -182,7 +185,8 @@ check_return_types() { allowed="$1"; shift
                              printf '%s\n' "$offenders"; \
                              echo "    add it to check_return_types once you know what it looks like in JavaScript"; exit 1; }; }
 
-PFILES=(); while IFS= read -r f; do PFILES+=("$f"); done < <(abi_files "$SRC" "${INC[@]}")
+PLIST=$(abi_files "$SRC" "${INC[@]}")
+PFILES=(); while IFS= read -r f; do [ -z "$f" ] || PFILES+=("$f"); done <<< "$PLIST"
 PNAMES=$(export_names "${PFILES[@]}")
 PFOUND=$(printf '%s\n' "$PNAMES" | grep -c . || true)
 check_exports "$PFOUND" "${PFILES[@]}"
@@ -278,7 +282,8 @@ sizes fcprobe.web.wasm fcprobe.web.js fcprobe.web.mjs
 #     it publishes besides are declared in fc_tempo_entry.h, which is exactly the case the closure exists for.
 #==================================================================================================
 TSRC="$HERE/fc_tempo.cpp"
-TFILES=(); while IFS= read -r f; do TFILES+=("$f"); done < <(abi_files "$TSRC" "${INC[@]}")
+TLIST=$(abi_files "$TSRC" "${INC[@]}")
+TFILES=(); while IFS= read -r f; do [ -z "$f" ] || TFILES+=("$f"); done <<< "$TLIST"
 TNAMES=$(export_names "${TFILES[@]}")
 TFOUND=$(printf '%s\n' "$TNAMES" | grep -c . || true)
 check_exports "$TFOUND" "${TFILES[@]}"
@@ -358,7 +363,8 @@ MSRC="$HERE/fc_master.cpp"
 # — an entry point carrying a version number would not have left the list, it would have been TRUNCATED
 # into it: `fc_render_v2` becomes `fc_render_v`, and the link then fails on a symbol nobody declared.
 # _malloc/_free are the page's own, and are opt-in in emscripten 6.x.
-MFILES=(); while IFS= read -r f; do MFILES+=("$f"); done < <(abi_files "$MSRC" "${MASTER_INC[@]}")
+MLIST=$(abi_files "$MSRC" "${MASTER_INC[@]}")
+MFILES=(); while IFS= read -r f; do [ -z "$f" ] || MFILES+=("$f"); done <<< "$MLIST"
 MNAMES=$(export_names "${MFILES[@]}")
 MFOUND=$(printf '%s\n' "$MNAMES" | grep -c . || true)
 check_exports "$MFOUND" "${MFILES[@]}"
