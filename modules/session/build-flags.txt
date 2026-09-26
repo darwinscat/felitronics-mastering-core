@@ -2,7 +2,8 @@
 # as ONE group and in THIS order. Read by CMakeLists.txt (as a single SHELL: group on the target, so CMake's option
 # de-duplication cannot remove a member of it) and by tools/wasm/build.sh, so the native library and the wasm module
 # are compiled with one definition of the flags and not two copies of it.
-#   -fno-fast-math      first: it does not undo an explicit -ffp-contract=fast given before it (measured, clang),
+#   -fno-fast-math      first: what it does to an -ffp-contract= given before it is not the same on every compiler
+#                       (measured: Apple clang 21 keeps an earlier `fast`, Apple clang 14 resets it to `on`),
 #   -ffp-contract=off   so the contraction switch comes after it, where nothing in this group can move it again;
 #   -fno-exceptions -fno-rtti
 # MSVC's spelling is in CMakeLists.txt; no MSVC build reads this file.

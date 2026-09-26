@@ -11,6 +11,10 @@
 # an asm label, and cannot know that <string> made printf visible. The object file answers them exactly:
 #   WRITABLE  every symbol in a writable section is state with static storage duration. The answer must be empty — the C
 #             boundary's objects may keep exactly the globals tools/lint/session-objects.txt names, each found once.
+#             RELOCATED CONSTANT DATA IS NOT WRITABLE STATE and is not refused: ELF .data.rel.ro / .data.rel.ro.local,
+#             Mach-O __DATA,__const and __DATA_CONST, COFF .rdata, wasm .rodata and .data.rel.ro — a constexpr table of
+#             pointers lives there, written by the loader and never by the code (tests/object-controls/
+#             constexpr_pointer_table.cpp must pass).
 #   CALLED    every undefined symbol is something the code reaches outside itself. It must be defined by another object of
 #             the set, or match an `undefined` line of the lists (operator new, memcpy, the stack protector ...).
 # What this cannot see: code that is never emitted (an inline function nobody called is in no object), and a facility
@@ -273,7 +277,7 @@ function(read_object obj)
                         list(LENGTH segs nsegs)
                         if(idx LESS nsegs)
                             list(GET segs ${idx} segname)
-                            if(segname MATCHES "^\\.(data|bss|tdata|tbss)(\\.|$)")
+                            if(segname MATCHES "^\\.(data|bss|tdata|tbss)(\\.|$)" AND NOT segname MATCHES "^\\.data\\.rel\\.ro(\\.|$)")
                                 list(APPEND w "${s_name}")
                                 list(APPEND wd "${s_dname}")
                                 list(APPEND ws "${segname}")

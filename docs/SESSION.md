@@ -61,7 +61,8 @@ de-duplication cannot remove a member of it: a parent that states `add_compile_o
 make CMake drop the library's own later `-ffp-contract=off`, leaving core's `-ffp-contract=on` last on the line.
 
 - gcc, clang, emscripten: `modules/session/build-flags.txt` — `-fno-fast-math -ffp-contract=off -fno-exceptions -fno-rtti`,
-  in that order (`-fno-fast-math` does not undo a `-ffp-contract=fast` given before it). `tools/wasm/build.sh` reads the
+  in that order: what `-fno-fast-math` does to an `-ffp-contract=` before it differs between compilers (Apple clang 21
+  keeps an earlier `fast`, Apple clang 14 resets it to `on`), so the contraction switch is stated after it. `tools/wasm/build.sh` reads the
   same file, so the library and the wasm module are compiled with one definition of the flags.
 - MSVC 2022 or later: `/fp:precise /EHs-c- /EHa- /GR- /we4530 /we4541` — the last two make a `try`, a `typeid` and a
   `dynamic_cast` errors. A bare `throw` compiles under `/EHs-c-`; the source lint refuses the token.
@@ -142,9 +143,11 @@ the session also uses, the session may run the application's copy — and the li
 questions the compiled object answers exactly, so they are asked of it (`modules/session/tests/object-gates.cmake`, on
 every native row and the wasm tier, with the row's own symbol-table reader — `objdump`, `dumpbin`, `llvm-readobj`):
 
-- **Writable memory.** Every symbol in a writable section — ELF `.data*` (not `.data.rel.ro`), `.bss*`, `.tdata*`,
-  `.tbss*`, COMMON; Mach-O `__DATA` `__data` / `__bss` / `__common` / `__thread_*`; COFF `.data`, `.bss`, `.tls$`; wasm
-  `.data` / `.bss` segments — is state with static storage duration. The library's objects may hold none; the C
+- **Writable memory.** Every symbol in a writable section — ELF `.data*`, `.bss*`, `.tdata*`, `.tbss*`, COMMON; Mach-O
+  `__DATA` `__data` / `__bss` / `__common` / `__thread_*`; COFF `.data`, `.bss`, `.tls$`; wasm `.data` / `.bss` segments —
+  is state with static storage duration. Relocated constant data is not, and passes: ELF `.data.rel.ro*`, Mach-O
+  `__DATA,__const` and `__DATA_CONST`, COFF `.rdata`, wasm `.rodata` and `.data.rel.ro` — a constexpr table of pointers
+  lives there (a control built position-independent requires the gate to accept one). The library's objects may hold none; the C
   boundary's may hold exactly its handle table and its poison flag, named in `tools/lint/session-objects.txt` and each
   required to be found once.
 - **What is called.** Every undefined symbol must be defined by another object of the set or match a line of
