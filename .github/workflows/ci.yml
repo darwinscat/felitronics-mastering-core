@@ -203,11 +203,21 @@ jobs:
           rm -f tools/_lint_control.inc; det_restore; echo "control 17 ok: a call in a file only the closure reaches is caught"
           # 18: felitronics::session is in the zone, file by file (the session-laws lint keeps the list whole), so a
           # system libm call in the brain is red here and not a manifest line.
-          printf '\nnamespace { inline double p80c (double x) { return std::cos (x); } }\n' >> "$SESS"
+          printf '\nnamespace { inline double sessionDetMathControl (double x) { return std::cos (x); } }\n' >> "$SESS"
           det_control 18 "a std::cos in felitronics::session" "$SESS"
+          # 19: every translation unit of the session is an ENTRY point, so this lint follows its #includes whatever
+          # the included file is called — an implementation file under an extension no directory walk takes (.tpp),
+          # included by Session.cpp, is reached and its std::cos refused.
+          printf 'inline double sessionDetMathControl (double x) { return std::cos (x); }\n' > modules/session/src/_det_control.tpp
+          printf '\n#include "_det_control.tpp"\n' >> "$SESS"
+          if node "$LINT" --satellite > /dev/null 2>&1; then
+            rm -f modules/session/src/_det_control.tpp; det_restore; echo "CONTROL FAILED (19): a std::cos in a .tpp the session includes passed"; exit 1; fi
+          node "$LINT" --satellite 2>&1 | grep -qF "_det_control.tpp" \
+            || { rm -f modules/session/src/_det_control.tpp; det_restore; echo "CONTROL FAILED (19): fired but did not name the .tpp"; exit 1; }
+          rm -f modules/session/src/_det_control.tpp; det_restore; echo "control 19 ok: a libm call in a file only a session unit includes is caught"
           node "$LINT" --satellite > /dev/null \
-            || { echo "CONTROL FAILED: the tree did not come back clean, so controls 5-18 proved nothing"; exit 1; }
-          echo "controls 5-18 ok: the libm audit fires on every rule, on both sides, and the tree is clean again"
+            || { echo "CONTROL FAILED: the tree did not come back clean, so controls 5-19 proved nothing"; exit 1; }
+          echo "controls 5-19 ok: the libm audit fires on every rule, on both sides, and the tree is clean again"
           # The other two lints reach this repository's files too.
           printf 'using Forbidden = long double;\n' > modules/mastering/include/felitronics/mastering/_lint_control.h
           if node "$CORE/tools/lint/check-no-long-double.mjs" > /dev/null 2>&1; then
@@ -225,17 +235,18 @@ jobs:
           node "$CORE/tools/lint/check-alloc-counter.mjs" modules tools tests > /dev/null
           echo "control 5a ok: the alloc-counter lint reaches this repository's ABI suites"
 
-      - name: The session laws — the lint, its self-test, and its controls planted in the tree
-        # tools/lint/check-session-laws.mjs holds the laws of felitronics::session that a lexer can hold
-        # (docs/SESSION.md): no mutable state outside an object — the C boundary's handle table and poison flag
-        # excepted, by name —, no operating system, file, console, locale, thread or clock, and the deterministic zone
-        # over every file of the module. It is this repository's own lint and needs no core. run.sh plants each rule's
-        # violation in the real tree (the fixtures in tools/lint/session-controls/, edits of the facade and of the
-        # lists) and requires the lint to fail on the planted file and line, then leaves the tree as it found it.
+      - name: The session laws in the source — the lint, its self-test, and its controls planted in the tree
+        # tools/lint/check-session-laws.mjs holds what leaves no symbol in any object (docs/SESSION.md): the include
+        # allowlist, pragmas, exception and RTTI tokens in every #if branch, conditional compilation, atomics, cycle
+        # counters and inline assembly, implementation-defined orders, function bodies in the public header, the build
+        # guards first in every unit, every file in the det-math zone. The scan starts from the target's sources and is
+        # cross-checked against this configure's compile_commands.json. What the OBJECT answers — writable state, calls
+        # to the operating system, the locale, the clock — is the object-file gate's, a ctest test on every row above.
+        # run.sh plants each rule's violation in the real tree and requires the lint to fail on the planted file and line.
         run: |
           node tools/lint/check-session-laws.mjs --self-test
-          node tools/lint/check-session-laws.mjs
-          tools/lint/session-controls/run.sh
+          node tools/lint/check-session-laws.mjs --build build
+          tools/lint/session-controls/run.sh build
 
   # The wasm-audio tier for THIS repository's suite (core's preset flags and toolchain pin), its artifact
   # gates, and every native-vs-wasm comparison of the C ABIs. ubuntu, NOT macos, and for the comparisons

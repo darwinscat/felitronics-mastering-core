@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 #
-# The gates felitronics::session's tests are built from, as functions.
+# The two kinds of gate felitronics::session's tests are built from, as functions — included by modules/session and by
+# tools/ (the C boundary's gate lives next to the boundary). Included once per directory that uses them.
 
 # A BUILD THAT MUST FAIL, for the named reason: builds <target> (excluded from the default build) from inside ctest and
 # requires it to fail with a diagnostic matching <expect> (tests/build-must-fail.cmake). One build of this tree at a
@@ -11,4 +12,72 @@ function(felitronics_session_must_fail name target expect)
              COMMAND ${CMAKE_COMMAND} -DBUILD_DIR=${CMAKE_BINARY_DIR} -DTARGET=${target} -DCONFIG=$<CONFIG>
                      "-DEXPECT=${expect}" -P ${PROJECT_SOURCE_DIR}/modules/session/tests/build-must-fail.cmake)
     set_tests_properties(${name} PROPERTIES RESOURCE_LOCK felitronics_build_tree)
+endfunction()
+
+# THE OBJECT-FILE GATE (tests/object-gates.cmake) — the question the object file answers exactly, asked of compiled
+# objects: which symbols live in writable memory, and which symbols are called that nothing in the set defines. The
+# tool that reads the symbol table is this row's own:
+#   ELF (Linux)      objdump -t         sections .data* (not .data.rel.ro*), .bss*, .tdata*, .tbss*, COMMON
+#   Mach-O (Apple)   objdump -t         __DATA,__data / __bss / __common / __thread_data / __thread_bss / __thread_vars
+#   COFF (MSVC)      dumpbin /symbols   .data, .bss, .tls$
+#   wasm             llvm-readobj       data segments .data.*, .bss.*, .tdata.*, .tbss.*
+# No tool, no gate: configuring the tests without one is an error, not a skipped check.
+if(EMSCRIPTEN)
+    set(FELITRONICS_SESSION_OBJECT_FORMAT wasm)
+    # The SDK's own LLVM, beside the compiler: <emsdk>/upstream/emscripten/em++ and <emsdk>/upstream/bin/llvm-readobj.
+    get_filename_component(_fs_ccdir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    find_program(FELITRONICS_SESSION_OBJECT_TOOL llvm-readobj
+                 HINTS "${EMSCRIPTEN_ROOT_PATH}/../bin" "${_fs_ccdir}/../bin" NO_DEFAULT_PATH)
+elseif(MSVC)
+    set(FELITRONICS_SESSION_OBJECT_FORMAT coff)
+    get_filename_component(_fs_tooldir "${CMAKE_LINKER}" DIRECTORY)
+    get_filename_component(_fs_ccdir "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    find_program(FELITRONICS_SESSION_OBJECT_TOOL dumpbin HINTS "${_fs_tooldir}" "${_fs_ccdir}")
+elseif(APPLE)
+    set(FELITRONICS_SESSION_OBJECT_FORMAT macho)
+    set(FELITRONICS_SESSION_OBJECT_TOOL "${CMAKE_OBJDUMP}")
+else()
+    set(FELITRONICS_SESSION_OBJECT_FORMAT elf)
+    set(FELITRONICS_SESSION_OBJECT_TOOL "${CMAKE_OBJDUMP}")
+endif()
+if(NOT FELITRONICS_SESSION_OBJECT_TOOL OR NOT EXISTS "${FELITRONICS_SESSION_OBJECT_TOOL}")
+    find_program(FELITRONICS_SESSION_OBJECT_TOOL_FALLBACK NAMES objdump llvm-objdump)
+    if(NOT FELITRONICS_SESSION_OBJECT_FORMAT MATCHES "coff|wasm" AND FELITRONICS_SESSION_OBJECT_TOOL_FALLBACK)
+        set(FELITRONICS_SESSION_OBJECT_TOOL "${FELITRONICS_SESSION_OBJECT_TOOL_FALLBACK}")
+    else()
+        message(FATAL_ERROR "felitronics::session's object-file gates need a symbol-table reader for "
+                            "${FELITRONICS_SESSION_OBJECT_FORMAT} objects on this row (objdump / dumpbin / llvm-readobj), "
+                            "and found none. The gates are tests of this repository; without the tool they cannot run, "
+                            "and a gate that does not run must not read as passed.")
+    endif()
+endif()
+
+# felitronics_session_object_gate(NAME <test> LIBRARY <object-bearing targets...> [FACADE <targets...>] [EXPECT <re>])
+#   LIBRARY  targets whose objects are held to the session's law: no writable data at all.
+#   FACADE   targets whose objects may keep exactly the globals tools/lint/session-objects.txt allows them by name.
+#   EXPECT   a control: the gate must REFUSE, and name each `&&&`-separated regex among the symbols it refuses.
+function(felitronics_session_object_gate)
+    cmake_parse_arguments(G "" "NAME;EXPECT" "LIBRARY;FACADE" ${ARGN})
+    set(content "")
+    foreach(role LIBRARY FACADE)
+        string(TOLOWER ${role} r)
+        foreach(t IN LISTS G_${role})
+            string(APPEND content "$<$<BOOL:$<TARGET_OBJECTS:${t}>>:${r}|$<JOIN:$<TARGET_OBJECTS:${t}>,\n${r}|>\n>")
+        endforeach()
+    endforeach()
+    set(list_file ${CMAKE_CURRENT_BINARY_DIR}/${G_NAME}-objects-$<CONFIG>.txt)
+    file(GENERATE OUTPUT ${list_file} CONTENT "${content}")
+    set(sanitizers OFF)
+    if(FELITRONICS_ENABLE_SANITIZERS)
+        set(sanitizers ON)
+    endif()
+    add_test(NAME ${G_NAME}
+             COMMAND ${CMAKE_COMMAND}
+                     -DFORMAT=${FELITRONICS_SESSION_OBJECT_FORMAT}
+                     -DTOOL=${FELITRONICS_SESSION_OBJECT_TOOL}
+                     -DOBJECTS_FILE=${list_file}
+                     -DLISTS=${PROJECT_SOURCE_DIR}/tools/lint/session-objects.txt
+                     -DSANITIZERS=${sanitizers}
+                     "-DEXPECT=${G_EXPECT}"
+                     -P ${PROJECT_SOURCE_DIR}/modules/session/tests/object-gates.cmake)
 endfunction()

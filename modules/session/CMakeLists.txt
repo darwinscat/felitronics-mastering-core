@@ -198,6 +198,39 @@ if(FELITRONICS_BUILD_TESTS)
         felitronics_session_must_fail(${tgt} ${tgt} "${FELITRONICS_SESSION_APPEND_EXPECT_${licence}}")
     endforeach()
 
+    # THE OBJECT-FILE GATES' CONTROLS. The gate itself — over the library's objects and the C boundary's — is in
+    # tools/CMakeLists.txt, next to the boundary. Here: sources that each break the law in one shape, compiled with the
+    # library's own options into objects nobody links, and each run through the gate, which must refuse it and name the
+    # symbol (tests/object-controls/ has one file per shape, and says which review found it).
+    # name | what the gate's refusal must name (regexes, `&&&` between several that must all appear)
+    set(FELITRONICS_SESSION_OBJECT_CONTROLS
+        "direct_init_global|directInitCounter"
+        "lambda_static|lambdaCounter"
+        "macro_global|g_macroCounter"
+        "class_static|journalEntries"
+        "function_local_static|rememberedPeak"
+        "pointer_array|kPhaseNames"
+        "thread_local|perThreadCount"
+        "const_dynamic_init|kStartupValue"
+        "forbidden_calls|printf&&&fopen&&&time&&&getenv&&&strtod&&&rand&&&isalpha|maskrune|RuneLocale|ctype"
+        "string_via_pointer|to_string|printf"
+        "stod_rand|stod|strtod&&&rand")
+    if(NOT MSVC)
+        list(APPEND FELITRONICS_SESSION_OBJECT_CONTROLS "asm_label|asmCounter")   # MSVC has no asm labels
+    endif()
+    foreach(entry IN LISTS FELITRONICS_SESSION_OBJECT_CONTROLS)
+        string(FIND "${entry}" "|" bar)
+        string(SUBSTRING "${entry}" 0 ${bar} ctl)
+        math(EXPR bar "${bar} + 1")
+        string(SUBSTRING "${entry}" ${bar} -1 expect)
+        set(tgt felitronics_session_object_control_${ctl})
+        add_library(${tgt} OBJECT tests/object-controls/${ctl}.cpp)
+        target_compile_features(${tgt} PRIVATE cxx_std_20)
+        target_compile_options(${tgt} PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
+        felitronics_session_object_gate(NAME felitronics_session_object_control_${ctl}
+                                        LIBRARY ${tgt} EXPECT "${expect}")
+    endforeach()
+
     # THE COMPILE LINE, READ BACK. What no preprocessor macro announces — contraction on clang and gcc — is read from
     # the compile commands this build and a consumer's build actually produce: for every source of the library, the last
     # -ffp-contract= is `off`, nothing after -fno-fast-math licenses fast math, and the last word on exceptions and RTTI
