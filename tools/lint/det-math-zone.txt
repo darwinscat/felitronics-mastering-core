@@ -12,6 +12,7 @@
 # --- parity entry points: rule 4's net starts here ---
 entry  tools/wasm/fc_probe.cpp   the wasm probe; CI diffs its stdout against the native CLI's
 entry  tools/wasm/fc_master.cpp  the mastering ABI
+entry  tools/wasm/fc_tempo.cpp   the tempo-only wasm module; CI diffs its stdout against the native CLI's, as the probe's
 entry  tools/fcore_measure.cpp   the native CLI, the other side of every one of those diffs
 
 # --- the analyzers whose output is diffed, one per parity harness ---
@@ -50,3 +51,4 @@ zone  tools/wasm/fc_probe.cpp  prints the numbers the probe parity steps diff
 # classification it had there: moving a line into a header must not move it out of the zone.
 zone  tools/wasm/fc_abi_guards.h   the argument checks of the analysis ABIs; decide which runs the parity steps see refused
 zone  tools/wasm/fc_tempo_entry.h  the tempo entry points, compiled into fcprobe and fctempo; writes the rows tempo-parity.mjs diffs
+zone  tools/wasm/fc_tempo.cpp      the fctempo module's own TU; its tempo rows are diffed against fcore_measure like the probe's

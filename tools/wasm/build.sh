@@ -215,11 +215,12 @@ COMMON=(-std=c++20 -fno-exceptions -fno-rtti "${NUMERIC[@]}" "${INC[@]}"
 echo "--- node (same wasm, node glue — for the parity harness)"
 em++ "${COMMON[@]}" -O3 -sENVIRONMENT=node "$SRC" -o "$OUT/fcprobe.node.js"
 
+# same_as_node <module> <glue just built> — the module's web .wasm against its node .wasm.
 same_as_node () {
-    echo "=== fcprobe.web.wasm from $1 must be byte-identical to node's (ENVIRONMENT/EXPORT_ES6 shape glue, not code)"
+    echo "=== $1.web.wasm from $2 must be byte-identical to node's (ENVIRONMENT/EXPORT_ES6 shape glue, not code)"
     local a b
-    a=$(shasum -a 256 "$OUT/fcprobe.web.wasm"  | cut -d' ' -f1)
-    b=$(shasum -a 256 "$OUT/fcprobe.node.wasm" | cut -d' ' -f1)
+    a=$(shasum -a 256 "$OUT/$1.web.wasm"  | cut -d' ' -f1)
+    b=$(shasum -a 256 "$OUT/$1.node.wasm" | cut -d' ' -f1)
     echo "  web  $a"
     echo "  node $b"
     [ "$a" = "$b" ] && echo "  IDENTICAL" || { echo "  *** DIFFER — a parity result on one does not transfer to the other"; exit 1; }
@@ -227,11 +228,11 @@ same_as_node () {
 
 echo "--- web (the spike's artifact, classic glue for probe.html)"
 em++ "${COMMON[@]}" -O3 -sENVIRONMENT=web,worker "$SRC" -o "$OUT/fcprobe.web.js"
-same_as_node fcprobe.web.js
+same_as_node fcprobe fcprobe.web.js
 
 echo "--- web ES module (for a module worker)"
 em++ "${COMMON[@]}" -O3 -sENVIRONMENT=web,worker -sEXPORT_ES6=1 "$SRC" -o "$OUT/fcprobe.web.mjs"
-same_as_node fcprobe.web.mjs
+same_as_node fcprobe fcprobe.web.mjs
 
 echo "--- debug (SAFE_HEAP + assertions + stack checks)"
 em++ "${COMMON[@]}" -O1 -g -sASSERTIONS=2 -sSAFE_HEAP=1 -sSTACK_OVERFLOW_CHECK=2 \
@@ -244,15 +245,72 @@ echo "=== no threads, proven from the artifact rather than from the page loading
 node "$CORE/tools/wasm/check-no-threads.mjs" "$OUT/fcprobe.web.wasm" "$OUT/fcprobe.web.js"
 node "$CORE/tools/wasm/check-no-threads.mjs" "$OUT/fcprobe.web.wasm" "$OUT/fcprobe.web.mjs"
 
+# sizes <file>... — raw, gzip -9 and brotli -q 11, what a page actually downloads.
+sizes () {
+    printf "  %-22s %10s %10s %10s\n" file raw gzip brotli
+    local f raw gz br
+    for f in "$@"; do
+        raw=$(wc -c < "$OUT/$f")
+        gz=$(gzip -9 -c "$OUT/$f" | wc -c)
+        br=$(brotli -q 11 -c "$OUT/$f" 2>/dev/null | wc -c || echo "n/a")
+        printf "  %-22s %10s %10s %10s\n" "$f" "$raw" "$gz" "$br"
+    done
+}
+
 echo
 echo "=== size (acceptance criterion 2)"
-printf "  %-22s %10s %10s %10s\n" file raw gzip brotli
-for f in fcprobe.web.wasm fcprobe.web.js fcprobe.web.mjs; do
-    raw=$(wc -c < "$OUT/$f")
-    gz=$(gzip -9 -c "$OUT/$f" | wc -c)
-    br=$(brotli -q 11 -c "$OUT/$f" 2>/dev/null | wc -c || echo "n/a")
-    printf "  %-22s %10s %10s %10s\n" "$f" "$raw" "$gz" "$br"
-done
+sizes fcprobe.web.wasm fcprobe.web.js fcprobe.web.mjs
+
+#==================================================================================================
+# fc_tempo — the TEMPO DETECTOR ALONE (tools/fc_tempo_abi.h, tools/wasm/fc_tempo.cpp)
+#
+# The page's BPM tool needs one analyzer of the probe's twelve and used to download all of them. This module is the
+# one: fc_probe's ten tempo entry points under the same names — the same text, tools/wasm/fc_tempo_entry.h, compiled
+# here too — plus fc_tempo_abi_version. Built on the probe's line and for the probe's reasons (numeric contract,
+# -msimd128, emmalloc, no filesystem, growable memory, the HEAP views); what differs, and why:
+#
+#  1. -sEXPORT_NAME=createFcTempo, so a page that loads it beside another module gets its own factory.
+#  2. TWO artifacts, not four: the ES-module web glue a module worker imports, and node's for the parity harness.
+#     No classic .js (that one exists for probe.html alone). No debug variant — the checked configuration of this
+#     TU already exists and is stronger: felitronics_fctempo_abi_tests runs fc_tempo.cpp natively under ASan and
+#     UBSan, and on the wasm tier's checked build (SAFE_HEAP, ASSERTIONS=2, stack checks), in CI.
+#  3. The export list is this TU's include closure, like the others — fc_tempo.cpp declares one name, and the ten
+#     it publishes besides are declared in fc_tempo_entry.h, which is exactly the case the closure exists for.
+#==================================================================================================
+TSRC="$HERE/fc_tempo.cpp"
+TFILES=(); while IFS= read -r f; do TFILES+=("$f"); done < <(abi_files "$TSRC" "${INC[@]}")
+TNAMES=$(export_names "${TFILES[@]}")
+TFOUND=$(printf '%s\n' "$TNAMES" | grep -c . || true)
+check_exports "$TFOUND" "${TFILES[@]}"
+check_return_types 'int|double|std::uint32_t' "${TFILES[@]}"
+TEXPORTS="$(printf '%s\n' "$TNAMES" | paste -sd, -),_malloc,_free"
+echo
+echo "--- fc_tempo exports: $TFOUND entry points (+ _malloc/_free), matching $TFOUND declarations in: ${TFILES[*]##*/}"
+
+TCOMMON=(-std=c++20 -fno-exceptions -fno-rtti "${NUMERIC[@]}" "${INC[@]}"
+         -msimd128
+         --no-entry
+         -sMODULARIZE=1
+         -sEXPORT_NAME=createFcTempo
+         -sALLOW_MEMORY_GROWTH=1
+         -sFILESYSTEM=0
+         -sMALLOC=emmalloc
+         "-sEXPORTED_FUNCTIONS=[$TEXPORTS]"
+         "-sEXPORTED_RUNTIME_METHODS=['HEAPF32','HEAPF64']")
+
+echo "--- fc_tempo node (for the parity harness)"
+em++ "${TCOMMON[@]}" -O3 -sENVIRONMENT=node "$TSRC" -o "$OUT/fctempo.node.js"
+echo "--- fc_tempo web ES module (for a module worker)"
+em++ "${TCOMMON[@]}" -O3 -sENVIRONMENT=web,worker -sEXPORT_ES6=1 "$TSRC" -o "$OUT/fctempo.web.mjs"
+same_as_node fctempo fctempo.web.mjs
+
+echo
+echo "=== no threads (fc_tempo)"
+node "$CORE/tools/wasm/check-no-threads.mjs" "$OUT/fctempo.web.wasm" "$OUT/fctempo.web.mjs"
+
+echo
+echo "=== size (fc_tempo, and what it saves a page that wants only a tempo)"
+sizes fctempo.web.wasm fctempo.web.mjs fcprobe.web.wasm
 
 #==================================================================================================
 # fc_master — the MASTERING ABI (tools/fc_master_abi.h, implemented by tools/wasm/fc_master.cpp)
@@ -344,13 +402,7 @@ node "$CORE/tools/wasm/check-no-threads.mjs" "$OUT/fcmaster.web.wasm" "$OUT/fcma
 
 echo
 echo "=== size"
-printf "  %-22s %10s %10s %10s\n" file raw gzip brotli
-for f in fcmaster.web.wasm fcmaster.web.mjs; do
-    raw=$(wc -c < "$OUT/$f")
-    gz=$(gzip -9 -c "$OUT/$f" | wc -c)
-    br=$(brotli -q 11 -c "$OUT/$f" 2>/dev/null | wc -c || echo "n/a")
-    printf "  %-22s %10s %10s %10s\n" "$f" "$raw" "$gz" "$br"
-done
+sizes fcmaster.web.wasm fcmaster.web.mjs
 
 # WHAT THIS WAS BUILT FROM, beside what it built. A consumer that installs these modules records which engine
 # it ships, and a checkout's own `git describe` cannot say which core the modules were compiled against: the
