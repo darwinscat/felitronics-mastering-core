@@ -11,7 +11,7 @@ The chain, analyzer and tempo rows moved from core's `CORE-OVERVIEW.md` with the
 
 | Module | What | Key types |
 |---|---|---|
-| `mastering` | **the chain itself**, streaming + block-independent, plus the offline render wrapper. The one module that composes many others on purpose — the composite is the unit under test; the VOICING (preset tables, targets) belongs to `session`, not to the chain | `MasteringChain` (fixed internal quantum → the same bits at any caller block size), `MasteringChainConfig`/`Params`/`Resolved`, `OfflineRenderer` (`out[n] = y[n+D]`, tail included), `TargetLoudnessSolver` (the search for a target loudness under a true-peak ceiling), `DeliveryConverter` / `DeliveredMastering` (render, solve and range at a delivery rate other than the source's) |
+| `mastering` | **the chain itself**, streaming + block-independent, plus the offline render wrapper. The one module that composes many others on purpose — the composite is the unit under test; the VOICING (preset tables, targets) stays in the product | `MasteringChain` (fixed internal quantum → the same bits at any caller block size), `MasteringChainConfig`/`Params`/`Resolved`, `OfflineRenderer` (`out[n] = y[n+D]`, tail included), `TargetLoudnessSolver` (the search for a target loudness under a true-peak ceiling), `DeliveryConverter` / `DeliveredMastering` (render, solve and range at a delivery rate other than the source's) |
 
 `gain → EQ (each point optionally DYNAMIC) → [M/S mono-bass] → compressor (optional internal sidechain HPF) →
 [soft clipper] → gain → true-peak limiter → dither`, as a single streaming object with a declared latency, a
@@ -22,9 +22,8 @@ quantum instead of a promise.
 
 Why a composite belongs in the shared layer at all (felitronics-core `DSP-ARCHITECTURE.md` §4): it is the unit
 under test, and it can be wrong on its own — latency arithmetic, block dependence, stale state across a bypass
-and a lost tail live in no stage and are reachable only by testing the composition. The VOICING (JAZZ/METAL,
-LIGHT/HEAVY: preset tables and targets) and the project do not belong to the chain either, and no longer to the
-product: they belong to `felitronics::session`, below. The product is a shell.
+and a lost tail live in no stage and are reachable only by testing the composition. What stays in the product is
+the VOICING (`mastering-config.json`: JAZZ/METAL, LIGHT/HEAVY).
 
 ## The offline programme analyzers — `felitronics::analysis_offline`
 
@@ -67,20 +66,20 @@ and nothing else (37 KB of wasm, 15 KB brotli, against the probe's 275 / 77). Bo
 
 ## The mastering session — `felitronics::session`
 
-`<felitronics/session/Session.h>`: the one object a shell talks to — the web worker through the `fcsession` wasm
-module, the desktop application by linking the library, `fcore_session` from a command script. It is the layer that
-decides: the voicing and the project belong here, beside the chain and the analyzers they drive; the product only
-shows, plays and stores files, and every decision it displays is the session's. Today it is an empty `Session` —
-created, destroyed, asked for its version — and what is fixed is the ground it stands on:
+`<felitronics/session/Session.h>`: the object a shell talks to — the web worker through the `fcsession` wasm module, a
+desktop application by linking the library, `fcore_session` from a command script. It is an empty `Session`: created,
+destroyed, asked for its version, and refusing a thread whose floating-point environment is not IEEE-754's default. It
+keeps no state. What is fixed is the ground it stands on:
 
-- **a compiled STATIC target**, the repository's first, whose sources are compiled with PRIVATE flags — no FP
-  contraction, no fast-math, no exceptions, no RTTI — so an application that links it cannot recompile it with its
-  own. The library asserts its own flags, measures its contraction from a contracting caller, and a build control per
-  forbidden construct requires the build to fail on it;
-- **its laws, each held by a check with a control**: no mutable state outside an object, no operating system, file,
-  locale, thread or clock (the session-laws lint, `tools/lint/check-session-laws.mjs`), the whole module in the
-  deterministic zone (felitronics-core's det-math lint), memory declared before the work (a declared-budget harness on
-  core's allocation counter). Which of core's laws apply, which do not, and what holds each: [`SESSION.md`](SESSION.md).
+- **a compiled STATIC target**, the repository's first, whose sources are compiled with PRIVATE flags in one `SHELL:`
+  group — no FP contraction, no fast-math, no exceptions, no RTTI — so an application that links it cannot recompile it
+  with its own. Every translation unit refuses to compile without them, the compile line is read back (this build's and
+  a consumer's), and the library answers IEEE-754 under hostile flags placed ahead of its own;
+- **its laws, each held by a check with a control**: an object-file gate over its objects (no writable data; nothing
+  called outside a short list — no OS, file, console, locale, clock or process state), a source lint for what leaves no
+  symbol (includes, pragmas, exception and RTTI tokens, atomics, implementation-defined orders, function bodies in the
+  public header), the whole module in the deterministic zone, memory declared before the work. Which of core's laws
+  apply, which do not, and what holds each: [`SESSION.md`](SESSION.md).
 
 ## The C ABIs — `tools/`
 
@@ -89,9 +88,9 @@ created, destroyed, asked for its version — and what is fixed is the ground it
 `tools/wasm/fc_tempo.cpp`) over the tempo detector alone — fc_probe's `fc_probe_tempo_*` entry points under the
 same names, with a version of its own, because a version is a promise about a whole surface — and `fc_session`
 (`tools/fc_session_abi.h`, `tools/wasm/fc_session.cpp`) over the session, the surface a shell that cannot link C++
-talks to the brain through (a DRAFT, version 0 — not a stable interface until v1: the version, a session created and
-destroyed through a handle, the poison; its wasm module `fcsession` is 2.5 KB) — each with its ABI version and the
-append-only rule that moves it in its header —
+talks to the library through (a DRAFT, version 0, with no promise: the version, a session created and destroyed
+through a handle, the session's refusals, the poison; its wasm module `fcsession` is 3.2 KB) — each with its ABI version
+and, for the first three, the append-only rule that moves it in its header —
 with their native CLIs (`fcore_master`, `fcore_measure`, `fcore_session`) and suites. `tools/wasm/build.sh` builds the wasm modules against a felitronics-core checkout
 (`FELITRONICS_CORE_DIR`, or the sibling `../felitronics-core`) and records both versions in `BUILD-INFO` beside
 them. How the two roads are compared, and to which criterion: `WASM-PARITY.md`. Law 11d as it applies to the

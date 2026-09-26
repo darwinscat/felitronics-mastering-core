@@ -18,8 +18,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 #                                                     felitronics::analysis, headers <felitronics/analysis/...>)
 #   tempo             felitronics::tempo              the tempo of a programme and the tempo over time     core
 #                                                     (a port of the site's dsp/tempo.js)
-#   session           felitronics::session            the mastering session, the object a shell talks to;  —
-#                                                     where the voicing and the project belong. COMPILED
+#   session           felitronics::session            the mastering session, the object a shell talks to.  —
+#                                                     COMPILED, with its own flags
 #
 # tools/ (top-level builds only): the C ABIs (fc_master, fc_probe, fc_tempo, fc_session), their native CLIs
 # (fcore_master, fcore_measure, fcore_session) and suites, and tools/wasm/build.sh, which builds the wasm modules.
@@ -113,7 +113,7 @@ endif()
 add_subdirectory(modules/analysis_offline)   # the offline analyzers; analysis + eq + stereo
 add_subdirectory(modules/mastering)          # the chain; every core stage it composes + analysis
 add_subdirectory(modules/tempo)              # the tempo detector; core alone
-add_subdirectory(modules/session)            # the mastering session — COMPILED, with its own flags; nothing else yet
+add_subdirectory(modules/session)            # the mastering session — COMPILED, with its own flags
 
 # The C ABIs, their CLIs and the wasm plumbing — top-level builds only, as in core.
 if(PROJECT_IS_TOP_LEVEL)
