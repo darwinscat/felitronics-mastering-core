@@ -1907,14 +1907,15 @@ int main()
     group ("the version rule — what is read, what is written, and nothing past the caller's size");
     {
         const std::uint32_t kCur = FC_MASTER_ABI_VERSION;
-        ok (kCur == 13u, "PRECONDITION: this group is written for v13 (v2: deliveryRate; v3: compressorMix; v4: the GR trace; "
+        ok (kCur == 14u, "PRECONDITION: this group is written for v14 (v2: deliveryRate; v3: compressorMix; v4: the GR trace; "
                          "v5: fc_master_set_progress, no struct grew; v6: the dual release — params, resolved and request grew; "
                          "v7: fc_master_eq_curve, no struct grew; v8: the request's two quantiles and "
                          "fc_solution_gr_quantile; v9: fc_master_eq_dyn_times, no struct grew; v10: the request's "
                          "limiter input gate, fc_gr_active_stats and fc_solution_gr_active_stats; v11: the peak "
                          "clipper inside the limiter, params/resolved/measurement grew; v12: the Side air "
                          "shelf: config, params, resolved and measurement grew; v13: three entry points for a "
-                         "dynamic band's gain reduction and three refusal codes, no struct grew)");
+                         "dynamic band's gain reduction and three refusal codes, no struct grew; v14: "
+                         "fc_master_set_params, no struct grew)");
 
         // THE TABLE (rule 5), every (struct, version) pair of today.
         ok (fc_master_sizeof (FC_STRUCT_CONFIG, 1) == 80u && fc_master_sizeof (FC_STRUCT_CONFIG, 2) == 88u
@@ -4338,8 +4339,132 @@ int main()
     }
 
     //==========================================================================
+    // v14 — fc_master_set_params: a parameter set written WHILE THE STREAM RUNS. The facade adds nothing to the core
+    // call, so the ABI stream is held bit for bit against the C++ chain driven the same way; the order of the checks
+    // is the contract's; a refused call moves nothing; resolved lags a quantum; before the first frame it is configure.
+    group ("v14: fc_master_set_params — live parameters, thin, refused where process is, resolved a quantum late");
+    {
+        const std::uint32_t N = 48000, P = 12345;             // P is on no quantum and no 64-sample grid
+        const auto in = tone (N, kNch);
+        fc_master_params p0 = goodParams();
+        fc_master_params p1 = p0;
+        p1.inputGainDb = 4.5; p1.limiter.ceilingDbTp = -6.0; p1.clipper.driveDb = 9.0f; p1.bypassMonoBass = 1;
+
+        // The ABI stream: configure p0, process up to P, set_params p1 (configure is refused there), process the rest.
+        fc_master h = make();
+        fc_master_resolved r {}; FC_INIT (r);
+        ok (fc_master_configure (h, &p0, &r) == FC_OK, "PRECONDITION: configure");
+        std::vector<float> a = in;
+        std::vector<float> ta ((std::size_t) P * kNch), tb ((std::size_t) (N - P) * kNch);
+        for (int c = 0; c < kNch; ++c)
+        {
+            std::copy_n (a.data() + (std::size_t) c * N, P, ta.data() + (std::size_t) c * P);
+            std::copy_n (a.data() + (std::size_t) c * N + P, N - P, tb.data() + (std::size_t) c * (N - P));
+        }
+        ok (fc_master_process (h, ta.data(), ta.data(), P) == FC_OK, "PRECONDITION: the stream is running");
+        ok (fc_master_configure (h, &p1, &r) == FC_ERR_STATE, "configure is refused mid-stream, as it always was");
+        ok (fc_master_set_params (h, &p1) == FC_OK, "set_params is accepted mid-stream");
+        ok (fc_master_resolved_get (h, &r) == FC_OK && r.limiterCeilingDbTp != -6.0,
+            "resolved lags: straight after the write it still reads the applied set (" + std::to_string (r.limiterCeilingDbTp) + " dBTP)");
+        ok (fc_master_process (h, tb.data(), tb.data(), N - P) == FC_OK, "the rest of the stream");
+        ok (fc_master_resolved_get (h, &r) == FC_OK && r.limiterCeilingDbTp == -6.0, "…and reads the new set once a quantum has run");
+
+        // The C++ chain, driven the same way: the same bits, or the facade grew arithmetic.
+        felitronics::mastering::MasteringChainConfig cc; cc.monoBass = true; cc.clipper = true;
+        felitronics::mastering::MasteringChainParams c0, c1;
+        c1.inputGainDb = 4.5; c1.limiter.ceilingDbTp = -6.0; c1.clipper.driveDb = 9.0f; c1.bypassMonoBass = true;
+        felitronics::mastering::MasteringChain chain;
+        chain.setParams (c0);
+        ok (chain.prepare (kFs, kNch, cc), "PRECONDITION: the C++ chain");
+        std::vector<float> b = in;
+        float* pl[2] { b.data(), b.data() + N };
+        ok (chain.process (pl, kNch, (int) P), "PRECONDITION: C++ first part");
+        chain.setParams (c1);
+        float* pl2[2] { b.data() + P, b.data() + N + P };
+        ok (chain.process (pl2, kNch, (int) (N - P)), "PRECONDITION: C++ second part");
+        long long d = 0, moved = 0;
+        for (int c = 0; c < kNch; ++c)
+            for (std::uint32_t i = 0; i < N; ++i)
+            {
+                const float abi = i < P ? ta[(std::size_t) c * P + i] : tb[(std::size_t) c * (N - P) + (i - P)];
+                d += std::memcmp (&abi, &b[(std::size_t) c * N + i], sizeof (float)) != 0;
+            }
+        felitronics::mastering::MasteringChain still;
+        still.setParams (c0);
+        ok (still.prepare (kFs, kNch, cc), "PRECONDITION: the unchanged chain");
+        std::vector<float> u = in;
+        float* pu[2] { u.data(), u.data() + N };
+        ok (still.process (pu, kNch, (int) N), "PRECONDITION: unchanged render");
+        for (std::size_t i = 0; i < u.size(); ++i) moved += std::memcmp (&u[i], &b[i], sizeof (float)) != 0;
+        ok (d == 0 && moved > 10000, "the ABI stream is the C++ chain's, bit for bit, the live write included ("
+                                     + std::to_string (d) + " differ; the write moved " + std::to_string (moved) + ")");
+        fc_master_destroy (h);
+
+        // Before the first frame it IS configure: the first quantum snaps.
+        fc_master h1 = make(), h2 = make();
+        ok (fc_master_set_params (h1, &p1) == FC_OK && fc_master_configure (h2, &p1, &r) == FC_OK, "PRECONDITION: both written");
+        std::vector<float> x1 = in, x2 = in;
+        ok (fc_master_process (h1, x1.data(), x1.data(), N) == FC_OK && fc_master_process (h2, x2.data(), x2.data(), N) == FC_OK,
+            "PRECONDITION: both render");
+        long long e = 0; for (std::size_t i = 0; i < x1.size(); ++i) e += std::memcmp (&x1[i], &x2[i], sizeof (float)) != 0;
+        ok (e == 0, "set_params before the first frame renders what configure with the same set renders (" + std::to_string (e) + " differ)");
+        fc_master_destroy (h1); fc_master_destroy (h2);
+
+        // Refusals, in the contract's order, and a refused call moves nothing.
+        fc_master hr = make();
+        ok (fc_master_configure (hr, &p0, &r) == FC_OK, "PRECONDITION: configure");
+        ok (fc_master_set_params (0, &p1) == FC_ERR_HANDLE, "a handle never issued: FC_ERR_HANDLE");
+        ok (fc_master_set_params (hr, nullptr) == FC_ERR_NULL, "no parameter set: FC_ERR_NULL");
+        { fc_master_params bad = p1; bad.header.abiVersion = FC_MASTER_ABI_VERSION + 1u;
+          ok (fc_master_set_params (hr, &bad) == FC_ERR_ABI_VERSION, "a version this build does not know: FC_ERR_ABI_VERSION"); }
+        { fc_master_params bad = p1; bad.header.structSize += 8u;
+          ok (fc_master_set_params (hr, &bad) == FC_ERR_STRUCT_SIZE, "a size its version does not have: FC_ERR_STRUCT_SIZE"); }
+        { fc_master_params bad = p1; bad.clipper.shape = 99;
+          ok (fc_master_set_params (hr, &bad) == FC_ERR_ENUM, "a shape that names nothing: FC_ERR_ENUM"); }
+        { fc_master_params bad = p1; bad.inputGainDb = std::numeric_limits<double>::quiet_NaN();
+          ok (fc_master_set_params (hr, &bad) == FC_ERR_NON_FINITE, "a NaN gain: FC_ERR_NON_FINITE"); }
+        std::vector<float> y = in;
+        ok (fc_master_process (hr, y.data(), y.data(), N) == FC_OK, "PRECONDITION: render after the refusals");
+        fc_master hc = make();
+        ok (fc_master_configure (hc, &p0, &r) == FC_OK, "PRECONDITION: a clean handle");
+        std::vector<float> yc = in;
+        ok (fc_master_process (hc, yc.data(), yc.data(), N) == FC_OK, "PRECONDITION: its render");
+        long long f = 0; for (std::size_t i = 0; i < y.size(); ++i) f += std::memcmp (&y[i], &yc[i], sizeof (float)) != 0;
+        ok (f == 0, "the refused calls moved nothing — the render is the clean handle's (" + std::to_string (f) + " differ)");
+        fc_master_destroy (hr); fc_master_destroy (hc);
+
+        // Refused where process is: a delivering handle, and a handle that has solved (until configure).
+        fc_master_config dc = goodConfig(); FC_INIT (dc); dc.sampleRate = kFs; dc.channels = kNch; dc.monoBass = 1; dc.clipper = 1;
+        dc.deliveryRate = 44100.0;
+        fc_master hd = 0;
+        ok (fc_master_create (&dc, &hd) == FC_OK, "PRECONDITION: a delivering handle");
+        ok (fc_master_set_params (hd, &p1) == FC_ERR_STATE, "a delivering handle: FC_ERR_STATE, as process");
+        fc_master_destroy (hd);
+        fc_master hs = make();
+        ok (fc_master_configure (hs, &p0, &r) == FC_OK, "PRECONDITION: configure");
+        fc_loudness_request req {}; fc_loudness_request_default (&req);
+        req.targetLufs = -16.0; req.maxTruePeakDbTp = -1.0; req.maxPasses = 1;
+        std::vector<float> so (in.size(), 0.0f);
+        fc_solution sol = 0;
+        ok (fc_master_solve (hs, &p0, &req, in.data(), so.data(), N, &sol) == FC_OK, "PRECONDITION: a solve that ran");
+        ok (fc_master_set_params (hs, &p1) == FC_ERR_STATE, "a handle that has solved: FC_ERR_STATE, as process");
+        ok (fc_master_configure (hs, &p0, &r) == FC_OK && fc_master_set_params (hs, &p1) == FC_OK, "configure lifts it, as for process");
+        fc_solution_destroy (sol);
+        fc_master_destroy (hs);
+
+        // RT: the call allocates nothing.
+        fc_master ha = make();
+        ok (fc_master_configure (ha, &p0, &r) == FC_OK, "PRECONDITION: configure");
+        const long long before = alloc::count.load();
+        for (int k = 0; k < 50; ++k) (void) fc_master_set_params (ha, (k & 1) ? &p1 : &p0);
+        felitronics::test::okNoAlloc (alloc::count.load() == before, "set_params allocates nothing");
+        fc_master_destroy (ha);
+    }
+
+    //==========================================================================
     // A CALL THAT NEVER RETURNED POISONS THE INSTANCE (law 11d). LAST in this file on purpose: the poison belongs to the
     // whole module and is permanent — that is the contract — so nothing may run after it in this binary.
+
 #if defined(__cpp_exceptions)
     group ("a call that never returned: every later status call answers POISONED and touches nothing");
     {
@@ -4424,6 +4549,7 @@ int main()
         const bool all = fc_master_process (0, a.data(), b.data(), 64)             == FC_ERR_POISONED
                       && fc_master_flush (0, b.data(), 64, &wrote)                  == FC_ERR_POISONED
                       && fc_master_configure (0, &p, &rr)                           == FC_ERR_POISONED
+                      && fc_master_set_params (0, &p)                               == FC_ERR_POISONED   // v14
                       && fc_master_resolved_get (0, &rr)                            == FC_ERR_POISONED
                       && fc_master_get_stats (0, &sst)                              == FC_ERR_POISONED
                       && fc_master_reset (0)                                        == FC_ERR_POISONED

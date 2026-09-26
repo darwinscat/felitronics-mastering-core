@@ -20,6 +20,8 @@
 // letters, in both directions. The word breaks are the JavaScript's own (`LowShelf` for `FC_FILTER_LOW_SHELF`),
 // so the comparison drops the underscores; nothing else about the spelling is free.
 //
+// AND THE STATUS NAMES, `FC_STATUS`, against `fc_status` the same way — full identifiers, order and value.
+//
 // AND IT HOLDS `FC_DOMAINS` AGAINST THE LAYOUTS — not the domain VALUES, which are behaviour and belong to
 // tools/tests/MasterDomainsTests.cpp, but that every row names a value field described here, that its bound
 // spellings parse, that an `enum:` unit names a list of FC_ENUMS and that `resolved` names a field of
@@ -29,7 +31,7 @@ import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { layoutOf, structNames, STRUCT_IDS, FC_MASTER_ABI_VERSION,
+import { layoutOf, structNames, STRUCT_IDS, FC_MASTER_ABI_VERSION, FC_STATUS,
          FC_ENUMS, FC_DOMAINS, domainBound, FC_CONSTRAINT, FC_CONSTRAINT_BITS } from './fc-master-layout.mjs';
 
 const [, , bin] = process.argv;
@@ -96,6 +98,24 @@ for (const [jsName, spec] of Object.entries(FC_ENUMS)) {
         check(spec.names[i] !== undefined && spec.names[i].toUpperCase() === c.suffix.replace(/_/g, ''),
               `${jsName}[${i}]: the header says ${spec.prefix}${c.suffix}, this file says ${spec.names[i]}`);
     });
+}
+
+// ── FC_STATUS against the header's fc_status ──────────────────────────────────────────────────────
+// The status names are full identifiers rather than a prefix and a word, so they are not an FC_ENUMS list — and that
+// is how the v13 three (codes 16–18) went missing from the JavaScript for a whole version: nothing compared them. The
+// same rule as above: found, same count, same order, value equal to the index, same letters.
+{
+    const block = /typedef\s+enum\s+fc_status\s*\{([^}]*)\}/.exec(header);
+    check(block !== null, 'fc_status: no such enum in tools/fc_master_abi.h');
+    if (block) {
+        const codes = [...block[1].matchAll(/\b(FC_[A-Z0-9_]+)\s*=\s*(\d+)/g)].map(m => ({ name: m[1], value: Number(m[2]) }));
+        check(codes.length === FC_STATUS.length, `fc_status: ${codes.length} codes in the header, ${FC_STATUS.length} names in FC_STATUS`);
+        codes.forEach((c, i) => {
+            ++codesCompared;
+            check(c.value === i, `${c.name}: declared at index ${i} in the header and numbered ${c.value}`);
+            check(FC_STATUS[i] === c.name, `FC_STATUS[${i}]: the header says ${c.name}, this file says ${FC_STATUS[i]}`);
+        });
+    }
 }
 
 // ── FC_DOMAINS against the struct layouts ─────────────────────────────────────────────────────────

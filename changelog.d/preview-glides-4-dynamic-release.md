@@ -1,7 +1,8 @@
 ### mastering — a dynamic point switched off mid-duck releases; the compressor's makeup and the stages' own glides
 
 On felitronics-core's preview-glides branch the stages glide on their own (the Saturator's drive, bias, mix and trim;
-MonoBass's corners, its `enabled` and the air's; the Compressor's makeup and auto-makeup), and each snaps on the
+MonoBass's corners, its `enabled` and the air's; the Compressor's makeup and auto-makeup; the limiter's ceiling, down
+over 2 ms), and each snaps on the
 first write after a restart, so this chain's offline renders stay bit-identical (checked by hash on six topologies).
 Two things are the chain's own: every `dynamiceq::LaneDynamics` producer is opted into RELEASE ON DISENGAGE, so a
 point whose `dyn.on` goes off — or whose range goes to 0 — mid-duck releases its delta through its own ballistics
