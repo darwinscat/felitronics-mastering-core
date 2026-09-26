@@ -844,13 +844,17 @@ static void testMutationGaps()
         ok (longestZeroRun < 16, "a bypass toggle punches no hole: longest run of exact zeros across the "
                                  "transition is " + std::to_string (longestZeroRun) + " samples");
 
-        // (b) AND ONCE THE PRE-TOGGLE CONTENT HAS DRAINED, the bypassed chain is a pure delay again.
+        // (b) AND ONCE THE PRE-TOGGLE CONTENT HAS DRAINED, the bypassed chain is a pure delay again — once the
+        //     bypass FADE has run, too: each stage fades to its aligned dry over bypassFadeSamples() from the quantum
+        //     the toggle lands on, and the limiter's aligned dry still carries the clipper's fade for its own latency
+        //     after that, so the pure delay starts a fade later than it used to.
+        const int from = T + D + chain.bypassFadeSamples();
         long long bad = 0;
         int firstBad = -1;
         for (int c = 0; c < nch; ++c)
-            for (int i = T + D; i < n; ++i)
+            for (int i = from; i < n; ++i)
                 if (bits (x[(std::size_t) c][(std::size_t) i]) != bits (src[(std::size_t) c][(std::size_t) (i - D)]))
-                { ++bad; if (firstBad < 0) firstBad = i - (T + D); }
+                { ++bad; if (firstBad < 0) firstBad = i - from; }
         ok (bad == 0, "after the transition the bypassed chain is exactly the input delayed by D ("
                       + std::to_string (bad) + " differ, first at +" + std::to_string (firstBad) + ")");
     }
@@ -1296,6 +1300,146 @@ static void testParameterRamps()
         for (float x : v[0]) positive = positive && x > 0.0f;
         ok (monotone && positive && bits (v[0][(std::size_t) (total - 1)]) == bits (dbGain (-60.0)),
             "a +59.5 -> -60 dB glide at " + std::to_string ((int) fs) + " Hz is monotonic, never crosses zero and lands exactly");
+    }
+}
+
+
+//==============================================================================
+// THE BYPASS FADES (MasteringChain::Fader, kBypassFadeMs; mono-bass through its own fades). What each case pins:
+//   * NO HOLE AND NO CLICK across a bypass round trip of the clipper and the limiter, a reversal mid-fade included:
+//     the longest run of exact zeros stays short and the second difference stays under -60 dBFS on a -6 dBFS tone
+//     (the skip-and-reset read -9.2 with a 63-sample dropout for the clipper, -12.5 with a 111-sample hole for the
+//     limiter).
+//   * THE RETURN IS EXACT: once the warm-up and the fade have run, a chain whose clipper (a symmetric curve, no DC
+//     blocker) and limiter (not limiting, so no release state) were bypassed and restored is bit for bit the chain that
+//     never was — the warm-up length is the stages' whole finite memory, not an approximation of it.
+//   * A STEADY BYPASS IS WHAT IT WAS: after the fade the output is the input delayed by D, bit for bit — for mono-bass
+//     too, whose bypass now rides the island's own fades.
+static void testBypassFades()
+{
+    group ("the bypass fades — no hole, no click, an exact return, and a steady bypass that is a pure delay");
+    const int nch = 2, K = 256;
+    auto tone = [&] (int n, double amp)
+    {
+        Buf x = silence (nch, n);
+        for (int i = 0; i < n; ++i)
+            for (int c = 0; c < nch; ++c)
+                x[(std::size_t) c][(std::size_t) i] = (float) (amp * std::sin (2.0 * kPi * 227.3 * (double) i / 48000.0 + 0.9 * c));
+        return x;
+    };
+    auto run = [&] (const mastering::MasteringChainConfig& cfg, mastering::MasteringChainParams p0,
+                    const std::vector<std::pair<int, mastering::MasteringChainParams>>& ev, Buf x)
+    {
+        mastering::MasteringChain c;
+        c.setParams (p0);
+        if (! c.prepare (48000.0, nch, cfg)) return Buf {};
+        std::size_t e = 0;
+        const int n = (int) x[0].size();
+        for (int off = 0; off < n; )
+        {
+            while (e < ev.size() && ev[e].first <= off) c.setParams (ev[e++].second);
+            int m = std::min (128, n - off);
+            if (e < ev.size()) m = std::min (m, ev[e].first - off);
+            auto pl = planes (x, off);
+            if (! c.process (pl.data(), nch, m)) return Buf {};
+            off += m;
+        }
+        return x;
+    };
+    auto maxD2 = [&] (const Buf& y, int a, int b)
+    {
+        double m = 0.0;
+        for (const auto& v : y)
+            for (int i = std::max (a, 2); i < b; ++i)
+                m = std::max (m, std::fabs ((double) v[(std::size_t) i] - 2.0 * v[(std::size_t) i - 1] + v[(std::size_t) i - 2]));
+        return m;
+    };
+    auto longestZeros = [&] (const Buf& y, int a, int b)
+    {
+        int best = 0;
+        for (const auto& v : y) { int run2 = 0; for (int i = a; i < b; ++i) { run2 = v[(std::size_t) i] == 0.0f ? run2 + 1 : 0; best = std::max (best, run2); } }
+        return best;
+    };
+
+    mastering::MasteringChainConfig cfg;
+    cfg.internalBlock = K;
+    cfg.eq = cfg.monoBass = cfg.compressor = cfg.dither = false;
+    cfg.clipper = cfg.limiter = true;
+    mastering::MasteringChainParams p;
+    p.clipper.driveDb = 9.0f;
+    p.limiter.ceilingDbTp = -12.0;                            // the -6 dBFS tone is limited by ~6 dB
+    const int n = 40 * K;
+    const Buf x = tone (n, 0.5);
+
+    // Round trips of each stage, and a reversal mid-fade, on a tone both stages work on.
+    struct Case { const char* name; std::vector<std::pair<int, mastering::MasteringChainParams>> ev; };
+    auto with = [&] (bool clip, bool lim) { auto q = p; q.bypassClipper = clip; q.bypassLimiter = lim; return q; };
+    const Case cases[] = {
+        { "clipper out and back", { { 10 * K + 37, with (true, false) }, { 22 * K + 11, with (false, false) } } },
+        { "limiter out and back", { { 10 * K + 37, with (false, true) }, { 22 * K + 11, with (false, false) } } },
+        { "both, reversed mid-fade", { { 10 * K + 37, with (true, true) }, { 10 * K + 37 + 200, with (false, false) } } },
+        { "back during the warm-up", { { 10 * K, with (true, true) }, { 16 * K, with (false, false) }, { 16 * K + 60, with (true, true) } } },
+    };
+    const Buf steady = run (cfg, p, {}, x);
+    const double base = maxD2 (steady, 4 * K, 9 * K);
+    for (const Case& cs : cases)
+    {
+        const Buf y = run (cfg, p, cs.ev, x);
+        ok (! y.empty(), std::string ("PRECONDITION: renders — ") + cs.name);
+        const double d2 = maxD2 (y, 9 * K, n);
+        ok (longestZeros (y, 9 * K, n) < 4, std::string ("no hole — ") + cs.name);
+        ok (d2 < 1.0e-3, std::string ("no click: max|Δ²y| under -60 dBFS (") + std::to_string (20.0 * std::log10 (d2)) + " dBFS, steady "
+                         + std::to_string (20.0 * std::log10 (base)) + ") — " + cs.name);
+    }
+
+    // The exact return: symmetric curve, a ceiling the tone does not reach — every stage memory is finite.
+    {
+        mastering::MasteringChainParams q = p; q.limiter.ceilingDbTp = 0.0;
+        auto qb = q; qb.bypassClipper = qb.bypassLimiter = true;
+        const Buf never = run (cfg, q, {}, x);
+        const Buf back  = run (cfg, q, { { 8 * K, qb }, { 20 * K, q } }, x);
+        mastering::MasteringChain probe;
+        ok (probe.prepare (48000.0, nch, cfg), "PRECONDITION: probe");
+        const int D = probe.latencySamples(), F = probe.bypassFadeSamples();
+        const int limO = probe.resolved().limiterLatency - probe.resolved().limiterLookahead, limA = probe.resolved().limiterLookahead;
+        const int W = std::max (2 * probe.resolved().clipperLatency + 1, 2 * limO + limA + 1);
+        const int from = 20 * K + D + W + F;
+        long long d = 0;
+        for (int c = 0; c < nch; ++c) for (int i = from; i < n; ++i) d += bits (never[(std::size_t) c][(std::size_t) i]) != bits (back[(std::size_t) c][(std::size_t) i]);
+        ok (from < n - 1000 && d == 0, "past the warm-up and the fade, a restored chain is bit for bit the one never bypassed (" + std::to_string (d) + " differ)");
+        // The return lands on the quantum at 20K, whose output leaves the FIFO K later; the limiter warms longest
+        // (2·O+A+1), and the clipper's own fade-in reaches the limiter's aligned dry only a limiter latency after the
+        // clipper's shorter warm-up, which is later still — so over the limiter's warm-up the output is the dry.
+        const int wLim = 2 * limO + limA + 1;
+        long long mid = 0;
+        for (int c = 0; c < nch; ++c) for (int i = 20 * K + K; i < 20 * K + K + wLim; ++i) mid += bits (back[(std::size_t) c][(std::size_t) i]) != bits (x[(std::size_t) c][(std::size_t) (i - D)]);
+        ok (mid == 0, "during the warm-up the output stays the aligned dry — the input delayed by D (" + std::to_string (mid) + " differ)");
+        long long moved = 0;
+        for (int c = 0; c < nch; ++c) for (int i = 20 * K + K + wLim; i < 20 * K + K + wLim + F; ++i) moved += bits (back[(std::size_t) c][(std::size_t) i]) != bits (x[(std::size_t) c][(std::size_t) (i - D)]);
+        ok (moved > F, "PRECONDITION: and after it the stages fade back in");
+    }
+
+    // A steady bypass of mono-bass is a pure delay once its fade has run.
+    {
+        mastering::MasteringChainConfig mcfg;
+        mcfg.internalBlock = K;
+        mcfg.eq = mcfg.compressor = mcfg.clipper = mcfg.limiter = mcfg.dither = false;
+        mcfg.monoBass = mcfg.stereoAir = true;
+        mastering::MasteringChainParams mp;
+        mp.monoBass = { true, 250.0f, 0.0f };
+        mp.stereoAir.enabled = true; mp.stereoAir.gainDb = 4.0f;
+        auto mb = mp; mb.bypassMonoBass = true;
+        const Buf y = run (mcfg, mp, { { 10 * K + 5, mb } }, x);
+        mastering::MasteringChain probe;
+        ok (probe.prepare (48000.0, nch, mcfg), "PRECONDITION: probe");
+        const int D = probe.latencySamples();
+        const int from = 10 * K + 5 + D + (int) std::lround (stereo::MonoBass::kSmoothingMs * 48.0) + K;
+        long long d = 0;
+        for (int c = 0; c < nch; ++c) for (int i = from; i < n; ++i) d += bits (y[(std::size_t) c][(std::size_t) i]) != bits (x[(std::size_t) c][(std::size_t) (i - D)]);
+        ok (d == 0, "a bypassed mono-bass island is the input delayed by D once its fades have run (" + std::to_string (d) + " differ)");
+        const double d2 = maxD2 (y, 9 * K, n);
+        ok (d2 < 1.0e-3, "…and it got there without a click (" + std::to_string (20.0 * std::log10 (d2)) + " dBFS)");
+        ok (probe.resolved().monoBass.enabled, "resolved() still reports the caller's mono-bass settings");
     }
 }
 
@@ -1972,6 +2116,7 @@ int main()
     testResolvedReadback();
     testParamsWrittenBeforePrepare();
     testParameterRamps();
+    testBypassFades();
     testMonoBassParams();
     testGateCountsItsSubstitutions();
     testDemand();
