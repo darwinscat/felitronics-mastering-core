@@ -225,8 +225,12 @@ if(FELITRONICS_BUILD_TESTS)
     # tools/CMakeLists.txt, next to the boundary. Here: sources that each break the law in one shape, compiled with the
     # library's own options into objects nobody links, and each run through the gate, which must refuse it and name the
     # symbol (tests/object-controls/ has one file per shape, and says which review found it).
-    # name | what the gate's refusal must name (regexes, `&&&` between several that must all appear)
+    # name | what the gate's refusal must name (regexes, `&&&` between several that must all appear) — or PASS, for the
+    # control the gate must ACCEPT: a constexpr table of pointers, relocated constant data, built position-independent
+    # so it lands in .data.rel.ro (ELF, wasm) and __DATA,__const (Mach-O), where pointer_array — the same table with
+    # mutable pointers — must be refused.
     set(FELITRONICS_SESSION_OBJECT_CONTROLS
+        "constexpr_pointer_table|PASS"
         "direct_init_global|directInitCounter"
         "lambda_static|lambdaCounter"
         "macro_global|g_macroCounter"
@@ -250,8 +254,13 @@ if(FELITRONICS_BUILD_TESTS)
         add_library(${tgt} OBJECT tests/object-controls/${ctl}.cpp)
         target_compile_features(${tgt} PRIVATE cxx_std_20)
         target_compile_options(${tgt} PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
-        felitronics_session_object_gate(NAME felitronics_session_object_control_${ctl}
-                                        LIBRARY ${tgt} EXPECT "${expect}")
+        if(expect STREQUAL "PASS")
+            set_target_properties(${tgt} PROPERTIES POSITION_INDEPENDENT_CODE ON)
+            felitronics_session_object_gate(NAME felitronics_session_object_control_${ctl} LIBRARY ${tgt})
+        else()
+            felitronics_session_object_gate(NAME felitronics_session_object_control_${ctl}
+                                            LIBRARY ${tgt} EXPECT "${expect}")
+        endif()
     endforeach()
 
     # THE COMPILE LINE, READ BACK. What no preprocessor macro announces — contraction on clang and gcc — is read from
