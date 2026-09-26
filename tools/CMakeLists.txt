@@ -247,8 +247,9 @@ if(FELITRONICS_BUILD_TESTS)
 
     # THE CLI'S CONTRACT, byte for byte on stdout and by exit status (tools/tests/cli-expect.cmake): the versions it
     # prints are the ones this build was configured with; an empty script and a script of comments are accepted with
-    # `done 0`, from a file and from stdin; a script with a command in it, a script that is not there and a malformed
-    # command line are refused with 2 and nothing on stdout.
+    # `done 0`, from a file and from stdin; the config it prints is its sources in canonical form, and its version
+    # theirs; a script with a command in it, a script that is not there and a malformed command line are refused with 2
+    # and nothing on stdout.
     # NOT ON THE WASM TIER: the CLI reads its script from the host's filesystem, which the node runner the emscripten
     # tests go through does not have. The wasm road into the session is the fcsession module, and CI checks that.
     if(NOT EMSCRIPTEN)
@@ -264,6 +265,23 @@ if(FELITRONICS_BUILD_TESTS)
              "fc_session_abi ${CMAKE_MATCH_1}\n")
         file(WRITE ${FCORE_SESSION_EXPECT}/done0.txt "done 0\n")
         file(WRITE ${FCORE_SESSION_EXPECT}/nothing.txt "")
+        # THE CONFIG IT PRINTS is the source documents in canonical form, and its version is theirs: the expected outputs
+        # are written at build time from modules/session/config by the session's own config check (--expect), so a
+        # library whose embedded config is not its sources fails here as well as in its own suite.
+        set(FCORE_SESSION_CONFIG ${PROJECT_SOURCE_DIR}/modules/session/config)
+        set(FCORE_SESSION_CONFIG_EXPECT ${FCORE_SESSION_EXPECT}/config)
+        file(MAKE_DIRECTORY ${FCORE_SESSION_CONFIG_EXPECT})
+        add_custom_command(
+            OUTPUT ${FCORE_SESSION_CONFIG_EXPECT}/targets.toml ${FCORE_SESSION_CONFIG_EXPECT}/engine.toml
+                   ${FCORE_SESSION_CONFIG_EXPECT}/version.txt
+            COMMAND felitronics_session_config_check --expect ${FCORE_SESSION_CONFIG}/targets.toml
+                    ${FCORE_SESSION_CONFIG}/engine.toml ${FCORE_SESSION_CONFIG_EXPECT}
+            DEPENDS felitronics_session_config_check ${FCORE_SESSION_CONFIG}/targets.toml ${FCORE_SESSION_CONFIG}/engine.toml
+            COMMENT "fcore_session: what `config` must print"
+            VERBATIM)
+        add_custom_target(fcore_session_config_expect ALL DEPENDS
+            ${FCORE_SESSION_CONFIG_EXPECT}/targets.toml ${FCORE_SESSION_CONFIG_EXPECT}/engine.toml
+            ${FCORE_SESSION_CONFIG_EXPECT}/version.txt)
         set(FCORE_SESSION_SCRIPTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/session-scripts)
         # name | expected exit | expected stdout | stdin file ("-" none) | arguments...
         set(FCORE_SESSION_CASES
@@ -275,7 +293,12 @@ if(FELITRONICS_BUILD_TESTS)
             "missing|2|nothing.txt|-|run|${FCORE_SESSION_SCRIPTS}/no-such-script.txt"
             "noargs|2|nothing.txt|-"
             "bogus|2|nothing.txt|-|bogus"
-            "extra|2|nothing.txt|-|version|extra")
+            "extra|2|nothing.txt|-|version|extra"
+            "config_targets|0|config/targets.toml|-|config|targets"
+            "config_engine|0|config/engine.toml|-|config|engine"
+            "config_version|0|config/version.txt|-|config|version"
+            "config_bogus|2|nothing.txt|-|config|bogus"
+            "config_bare|2|nothing.txt|-|config")
         foreach(case IN LISTS FCORE_SESSION_CASES)
             string(REPLACE "|" ";" f "${case}")
             list(GET f 0 name)
