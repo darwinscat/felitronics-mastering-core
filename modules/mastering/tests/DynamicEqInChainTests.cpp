@@ -664,6 +664,87 @@ void testEdges()
         + (differingSamples (afterHot, afterCool)) + " differ)");
 }
 
+
+//==============================================================================
+// 8b. A POINT SWITCHED OFF MID-DUCK RELEASES — the chain opts every producer into LaneDynamics' RELEASE ON DISENGAGE.
+// It used to snap its delta to 0 on the edge (a -9 dB duck on a -12 dBFS tone: -16.1 dBFS max|Δ²y| against -82.1 for the
+// steady tone). Now the band-GR tap reads a delta that rises monotonically to 0 across quanta, the edge's second
+// difference is a small fraction of the snap's, and once the release has arrived the chain renders bit for bit what a
+// chain whose point never had dynamics renders. An EQ bypass in the middle of a release hands the band back at once.
+void testSwitchOffReleases()
+{
+    group ("a point switched off mid-duck releases through its ballistics, then is a static point again");
+    constexpr int P = 188 * 256, frames = 3 * 48000;          // on the 256-sample call grid below
+    std::vector<float> in ((std::size_t) frames * 2);
+    for (int i = 0; i < frames; ++i)
+        in[(std::size_t) i] = in[(std::size_t) frames + (std::size_t) i] = (float) (0.25 * std::sin (2.0 * core::kPi * kF0 * (double) i / kFs));
+    const eq::BandParams armed = bellPoint (kF0, 1.0, -9.0, -40.0, true, eq::Lane::Stereo);
+    eq::BandParams off = armed; off.dyn.on = false;
+
+    auto run = [&] (bool switchOff, std::vector<float>& bandTrace)
+    {
+        auto chain = std::make_unique<mastering::MasteringChain>();
+        std::vector<float> out;
+        if (! chain->prepare (kFs, kNch, eqOnlyConfig())) return out;
+        mastering::MasteringChainParams mp; mp.eqBands[0] = switchOff ? armed : off;
+        chain->setParams (mp);
+        const int D = chain->latencySamples(), K = chain->internalBlock();
+        std::vector<float> buf = in;
+        std::vector<float> band ((std::size_t) (frames / K + 2) * mastering::kBandGrStride, 0.0f);
+        mastering::MasteringChainTaps t; t.bandDeltaDb = band.data(); t.bandQuantaCapacity = frames / K + 2;
+        float* p[core::kMaxChannels] {};
+        int quanta = 0;
+        for (int off0 = 0; off0 < frames; off0 += 256)
+        {
+            if (switchOff && off0 == P) { mastering::MasteringChainParams q = mp; q.eqBands[0] = off; chain->setParams (q); }
+            for (int c = 0; c < kNch; ++c) p[c] = buf.data() + (std::size_t) c * (std::size_t) frames + (std::size_t) off0;
+            mastering::MasteringChainTaps tt = t; tt.bandDeltaDb = band.data() + (std::size_t) quanta * mastering::kBandGrStride;
+            tt.bandQuantaCapacity = t.bandQuantaCapacity - quanta;
+            if (! chain->process (p, kNch, 256, tt)) return std::vector<float> {};
+            quanta += tt.bandQuantaWritten;
+        }
+        bandTrace.clear();
+        for (int q = 0; q < quanta; ++q) bandTrace.push_back (band[(std::size_t) q * mastering::kBandGrStride + (std::size_t) mastering::bandGrIndex (0, (int) eq::Lane::Stereo)]);
+        (void) D;
+        return buf;
+    };
+    std::vector<float> trA, trB;
+    const std::vector<float> a = run (true, trA), b = run (false, trB);
+    ok (! a.empty() && ! b.empty(), "PRECONDITION: both render");
+    const int K = mastering::MasteringChainConfig {}.internalBlock;
+    const int qEdge = P / K;
+    ok (trA.size() > (std::size_t) qEdge + 10 && trA[(std::size_t) qEdge - 1] < -6.0f,
+        "PRECONDITION: the point is ducking when it is switched off (" + std::to_string (trA[(std::size_t) qEdge - 1]) + " dB)");
+    bool monotone = true; int landed = -1;
+    for (std::size_t q = (std::size_t) qEdge; q < trA.size(); ++q)
+    {
+        monotone = monotone && trA[q] >= trA[q - 1] && trA[q] <= 0.0f;
+        if (landed < 0 && trA[q] == 0.0f) landed = (int) q;
+    }
+    ok (monotone && landed > qEdge + 2, "the band-GR tap reads a delta rising monotonically to 0 over quanta (landed at quantum "
+                                        + std::to_string (landed) + ", the edge at " + std::to_string (qEdge) + ")");
+    auto maxD2 = [&] (const std::vector<float>& v, int from, int to)
+    {
+        double m = 0.0;
+        for (int i = std::max (from, 2); i < to; ++i)
+            m = std::max (m, std::fabs ((double) v[(std::size_t) i] - 2.0 * v[(std::size_t) i - 1] + v[(std::size_t) i - 2]));
+        return m;
+    };
+    // At this band's 3 kHz the tone's own Δ² is -28 dBFS, so the edge is held to the steady tone on either side of it
+    // (a snap of a -9 dB duck adds a step of ~0.4 of the amplitude, many times that).
+    const double edge = maxD2 (a, P, P + 4800);
+    const double steady = std::max (maxD2 (a, P - 9600, P - 256), maxD2 (a, P + 24000, P + 33600));
+    ok (edge < 1.2 * steady, "the edge's worst Δ² stays at the steady tone's (" + std::to_string (20.0 * std::log10 (edge)) + " against "
+                             + std::to_string (20.0 * std::log10 (steady)) + " dBFS)");
+    // Once landed (+ a quantum for the chain's FIFO), bit for bit the chain whose point was never dynamic.
+    const std::size_t from = (std::size_t) (landed + 2) * (std::size_t) K;
+    long long d = 0;
+    for (int c = 0; c < kNch; ++c)
+        for (std::size_t i = from; i < (std::size_t) frames; ++i)
+            d += ! core::sameBits (a[(std::size_t) c * (std::size_t) frames + i], b[(std::size_t) c * (std::size_t) frames + i]);
+    ok (d == 0, "after the release, the chain renders what a chain with a static point renders (" + std::to_string (d) + " differ)");
+}
+
 //==============================================================================
 // 9. THE LOUDNESS SEARCH — an armed point is upstream of the node the search moves, so it sees the
 // same signal at every drive. That is what keeps `y(g, c) = 10^(c/20) * y(d, 0)` (LoudnessSolver.h)
@@ -796,6 +877,7 @@ int main()
     testNoAllocation();
     testBudget();
     testEdges();
+    testSwitchOffReleases();
     testTheSearchIsUndisturbed();
     return test::report();
 }

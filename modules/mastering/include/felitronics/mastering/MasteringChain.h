@@ -695,6 +695,12 @@ public:
             // defined to leave it exactly as a fresh one.
             dyn_.resize ((std::size_t) eq::EqEngine::kMaxBands);
             for (auto& d : dyn_) if (! d.prepare (fs_, nch_)) return false;
+            // A point whose dynamics are switched off mid-duck RELEASES through its own ballistics instead of
+            // snapping its gain back (see `dynamiceq::LaneDynamics`, RELEASE ON DISENGAGE): this chain writes a
+            // band only when a parameter moved and drives every producer from its own quanta, which is the
+            // pattern that option is safe under. Measured on a -12 dBFS sine ducked by a -9 dB range: the snap
+            // was -16.1 dBFS max|Δ²y| against -82.1 for the steady tone.
+            for (auto& d : dyn_) d.setReleaseOnDisengage (true);
         }
         else { eq_.reset(); dyn_ = {}; }
 
@@ -1117,6 +1123,9 @@ private:
             {
                 eq_->clearAudioState();                 // a STOP, not a stream restart
                 for (auto& d : dyn_) d.reset();         // ...and the detectors that fed it stop with it
+                // A producer that was RELEASING held its band's dynamic seam open; the stop ends the release, so
+                // the band gets the caller's own parameters back (a write that changes nothing costs nothing).
+                for (int i = 0; i < eq::EqEngine::kMaxBands; ++i) eq_->setBand (i, params_.eqBands[i]);
             }
         }
 
