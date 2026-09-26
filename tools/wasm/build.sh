@@ -12,6 +12,8 @@
 #   fcmaster.*  — the mastering ABI (tools/fc_master_abi.h + tools/wasm/fc_master.cpp), which is what a
 #                 browser worker links to render and to run the loudness search. Same flags, same numeric
 #                 contract, same no-threads and byte-identity checks — see the fc_master section below.
+#   tierup/     — never shipped: fctempo and fcprobe linked again with their function names, which is how the build
+#                 proves the tempo detector's hot loops survived the optimiser (tools/wasm/tierup-check.mjs).
 #
 # The probe part first. Three artifacts from one source:
 #
@@ -220,6 +222,22 @@ echo "--- fc_probe exports: $PFOUND entry points (+ _malloc/_free), matching $PF
 # 96k/2ch and 44.1k/2ch fixtures, plus a 5:21 stereo programme) in both the release and the checked
 # debug build, before AND after the flag. Native runs the NEON kernel, this runs SIMD128: two different
 # hand-written kernels, identical bits. On the hot path, 865 -> 435 ms on that programme.
+# THE PROBE FAMILY'S RELEASE LEVEL (fcprobe, fctempo): -O3, and binaryen told not to overrule LLVM's inlining. emcc
+# runs binaryen's wasm-opt -O3 after the link, and binaryen inlines EVERY function that has exactly one caller —
+# whatever LLVM decided, `noinline` included: LLVM's attribute does not reach it (measured on 6.0.9 / binaryen 132,
+# with --profiling-funcs: onsetFrame() marked noinline, present in the object file, gone from the module). That
+# folded the tempo detector's whole analysis into the one exported call, which V8 then ran unoptimised — it
+# optimises a wasm function for its NEXT call, and there is no next call inside one analysis. The first analysis of
+# a 6:15 programme took 1.11 s against 0.49 s for every later one (TempoDetector.h, "WHERE THE TIME IS SPENT").
+# --one-caller-inline-max-function-size=0 turns that one rule off and nothing else: binaryen still inlines what is
+# tiny, and LLVM's own -O3 inlining is untouched. It is an OPTION, not a pass, so it applies although emcc appends
+# the extra passes after its -O3 (a `--no-inline=<pattern>` pass placed there would run too late — checked).
+# Measured on both modules: fctempo's first tempo 1.11 s -> 0.48 s, fcprobe's 0.62 -> 0.47 s (its programme report
+# 1.52 -> 1.04 s, for the same reason), no analyzer slower, every output byte-identical, fcprobe 0.5 KB smaller and
+# fctempo 0.3 KB larger under brotli. The debug line keeps its -O1, where emcc runs no binaryen optimiser at all.
+# tierup-check.mjs, below, holds the modules to the boundaries this exists for.
+RELEASE=(-O3 -sBINARYEN_EXTRA_PASSES=--one-caller-inline-max-function-size=0)
+
 COMMON=("${FRONT[@]}"
         --no-entry
         -sMODULARIZE=1
@@ -235,7 +253,7 @@ COMMON=("${FRONT[@]}"
 # Node first: both web builds below write the SAME fcprobe.web.wasm, so each is compared against node's
 # the moment it lands — a check run once after both would only see the second.
 echo "--- node (same wasm, node glue — for the parity harness)"
-em++ "${COMMON[@]}" -O3 -sENVIRONMENT=node "$SRC" -o "$OUT/fcprobe.node.js"
+em++ "${COMMON[@]}" "${RELEASE[@]}" -sENVIRONMENT=node "$SRC" -o "$OUT/fcprobe.node.js"
 
 # same_as_node <module> <glue just built> — the module's web .wasm against its node .wasm.
 same_as_node () {
@@ -249,11 +267,11 @@ same_as_node () {
 }
 
 echo "--- web (the spike's artifact, classic glue for probe.html)"
-em++ "${COMMON[@]}" -O3 -sENVIRONMENT=web,worker "$SRC" -o "$OUT/fcprobe.web.js"
+em++ "${COMMON[@]}" "${RELEASE[@]}" -sENVIRONMENT=web,worker "$SRC" -o "$OUT/fcprobe.web.js"
 same_as_node fcprobe fcprobe.web.js
 
 echo "--- web ES module (for a module worker)"
-em++ "${COMMON[@]}" -O3 -sENVIRONMENT=web,worker -sEXPORT_ES6=1 "$SRC" -o "$OUT/fcprobe.web.mjs"
+em++ "${COMMON[@]}" "${RELEASE[@]}" -sENVIRONMENT=web,worker -sEXPORT_ES6=1 "$SRC" -o "$OUT/fcprobe.web.mjs"
 same_as_node fcprobe fcprobe.web.mjs
 
 echo "--- debug (SAFE_HEAP + assertions + stack checks)"
@@ -322,9 +340,9 @@ TCOMMON=("${FRONT[@]}"
          "-sEXPORTED_RUNTIME_METHODS=['HEAPF32','HEAPF64']")
 
 echo "--- fc_tempo node (for the parity harness)"
-em++ "${TCOMMON[@]}" -O3 -sENVIRONMENT=node "$TSRC" -o "$OUT/fctempo.node.js"
+em++ "${TCOMMON[@]}" "${RELEASE[@]}" -sENVIRONMENT=node "$TSRC" -o "$OUT/fctempo.node.js"
 echo "--- fc_tempo web ES module (for a module worker)"
-em++ "${TCOMMON[@]}" -O3 -sENVIRONMENT=web,worker -sEXPORT_ES6=1 "$TSRC" -o "$OUT/fctempo.web.mjs"
+em++ "${TCOMMON[@]}" "${RELEASE[@]}" -sENVIRONMENT=web,worker -sEXPORT_ES6=1 "$TSRC" -o "$OUT/fctempo.web.mjs"
 same_as_node fctempo fctempo.web.mjs
 
 echo
@@ -334,6 +352,43 @@ node "$CORE/tools/wasm/check-no-threads.mjs" "$OUT/fctempo.web.wasm" "$OUT/fctem
 echo
 echo "=== size (fc_tempo, and what it saves a page that wants only a tempo)"
 sizes fctempo.web.wasm fctempo.web.mjs fcprobe.web.wasm
+
+#==================================================================================================
+# THE FIRST ANALYSIS — the tempo detector's hot loops must be functions of their own in BOTH modules that carry it
+# (RELEASE above says why, TempoDetector.h "WHERE THE TIME IS SPENT" says which). Losing one changes no answer, only
+# how long the first one takes, so no parity diff can see it; this reads it from the artifact instead of timing it.
+# Each module gets a NAMED TWIN — its node line plus --profiling-funcs, into $OUT/tierup/ — and tierup-check.mjs
+# proves the twin has the shipped module's function bodies (the same count, sizes within a few bytes: the twin orders
+# its functions differently, so an index may take one more LEB128 byte) before it believes its names.
+#
+# AND THE CHECK IS SHOWN TO SEE WHAT IT GUARDS: the same twin linked WITHOUT the binaryen option must fail it,
+# naming the functions binaryen folded. If a toolchain bump makes that control pass, binaryen no longer inlines a
+# lone caller — re-measure the first call before deciding the option is dead weight; do not just delete the control.
+#==================================================================================================
+TIERUP="$OUT/tierup"
+mkdir -p "$TIERUP"
+HOT=('felitronics::tempo::TempoDetector::mixIn('        # the mix, once per frame
+     'felitronics::tempo::TempoDetector::onsetFrame('   # window, transform, magnitudes, flux: once per frame
+     'felitronics::tempo::TempoDetector::lagSum('       # the autocorrelation, once per lag
+     'felitronics::tempo::TempoDetector::analyzeWindow(')   # once per window of the curve
+echo
+echo "=== the first analysis: the tempo detector's hot loops are functions of their own"
+em++ "${TCOMMON[@]}" "${RELEASE[@]}" --profiling-funcs -sENVIRONMENT=node "$TSRC" -o "$TIERUP/fctempo.names.js"
+echo "  fctempo:"
+node "$HERE/tierup-check.mjs" "$OUT/fctempo.node.wasm" "$TIERUP/fctempo.names.wasm" "${HOT[@]}"
+em++ "${COMMON[@]}" "${RELEASE[@]}" --profiling-funcs -sENVIRONMENT=node "$SRC" -o "$TIERUP/fcprobe.names.js"
+echo "  fcprobe:"
+node "$HERE/tierup-check.mjs" "$OUT/fcprobe.node.wasm" "$TIERUP/fcprobe.names.wasm" "${HOT[@]}"
+echo "  control — fctempo linked at plain -O3, which the check must refuse:"
+em++ "${TCOMMON[@]}" -O3 --profiling-funcs -sENVIRONMENT=node "$TSRC" -o "$TIERUP/fctempo.control.js"
+if node "$HERE/tierup-check.mjs" "$TIERUP/fctempo.control.wasm" "$TIERUP/fctempo.control.wasm" "${HOT[@]}" \
+        > "$TIERUP/control.txt" 2>&1; then
+    cat "$TIERUP/control.txt"
+    echo "*** CONTROL: without --one-caller-inline-max-function-size=0 every boundary survived — read the note above"; exit 1
+fi
+grep -qF 'MISSING  felitronics::tempo::TempoDetector::onsetFrame(' "$TIERUP/control.txt" \
+    || { cat "$TIERUP/control.txt"; echo "*** CONTROL: the check failed, but not on the folded onsetFrame()"; exit 1; }
+echo "  control ok: $(grep -c MISSING "$TIERUP/control.txt") of ${#HOT[@]} boundaries folded without the option, and the check said so"
 
 #==================================================================================================
 # fc_master — the MASTERING ABI (tools/fc_master_abi.h, implemented by tools/wasm/fc_master.cpp)

@@ -17,6 +17,15 @@
 #include <limits>
 #include <vector>
 
+// A FUNCTION BOUNDARY THE OPTIMISER MUST KEEP — see "WHERE THE TIME IS SPENT" in the class comment for why this
+// file has any. Spelled per compiler because the attribute is not standard C++; undefined again at the end of the
+// file, because it is this header's own spelling and not part of its API.
+#if defined(_MSC_VER)
+    #define FELITRONICS_TEMPO_NOINLINE __declspec (noinline)
+#else
+    #define FELITRONICS_TEMPO_NOINLINE __attribute__ ((noinline))
+#endif
+
 namespace felitronics::tempo
 {
 
@@ -148,6 +157,22 @@ struct TempoPoint
 //
 // OFFLINE, RT-safe in its calls: prepare() is the only allocation; process() and finish() do no alloc / lock /
 // throw. finish() costs O(frames x lags) and is meant for a worker thread, never an audio callback.
+//
+// WHERE THE TIME IS SPENT, AND WHY EACH PLACE IS A FUNCTION OF ITS OWN. Nearly all of an analysis is the onset
+// curve — one 1024-point transform per 512 samples, 35 203 of them in a 6:15 programme at 48 kHz — and the rest is
+// the mix before it and the autocorrelation after it. The page runs this as wasm, and V8 gives a wasm function
+// optimised code only on its NEXT call: there is no on-stack replacement for wasm, so a loop inside a function that
+// one analysis enters once runs that entire analysis on the baseline compiler. v0.2.1 was exactly that — the
+// optimiser had folded the whole analysis into the one exported call — and the first analysis of that programme
+// took 1.11 s against 0.48 s for every later one (node 26; 1.13 s against 0.49 s in headless Chromium), which a
+// page could only hide with a warm-up run. So every loop that carries time runs in a function called many times per
+// analysis: mixIn() and onsetFrame() once per frame, lagSum() once per lag, analyzeWindow() once per window. Each is
+// FELITRONICS_TEMPO_NOINLINE, so the compiler keeps it; tools/wasm/build.sh keeps binaryen, emcc's post-link
+// optimiser, from inlining a function with one caller regardless (it does, noinline or not); and
+// tools/wasm/tierup-check.mjs fails the build when one of the four is missing from either module. What is left in
+// once-called code — the detrend, the beat phase, the median — is a few hundred thousand operations, not tens of
+// millions. The boundaries change no arithmetic: the same operations on the same operands in the same order, and
+// the output is byte-identical to v0.2.1's, native and wasm.
 class TempoDetector
 {
     struct Peak
@@ -348,19 +373,16 @@ public:
         for (int c = 0; c < channels_; ++c) if (in[c] == nullptr) return false;
         if ((std::uint64_t) n > total_ - seen_) return false;
 
-        for (int i = 0; i < n; ++i)
+        // One stretch per onset frame: the samples up to the one that completes the next frame, then that frame.
+        // The same samples in the same order as a loop over all of them — the stretches exist so that the loops
+        // run in functions called once per frame (WHERE THE TIME IS SPENT, above).
+        for (int i = 0; i < n;)
         {
-            // toMono: a Float32Array accumulated channel by channel, then divided by the count. Each step is a
-            // float operation here and a binary64 one rounded to float32 there, and for + and / those are the
-            // same number (binary64 has more than 2 x 24 + 2 bits, so the double rounding is innocuous).
-            float m = 0.0f;
-            for (int c = 0; c < channels_; ++c) m += in[c][i];
-            if (channels_ > 1) m /= (float) channels_;
-            if (! std::isfinite (m)) ++nonFinite_;
-            ring_[(std::size_t) (seen_ % (std::uint64_t) kFrame)] = m;
-            ++seen_;
-            if (seen_ >= (std::uint64_t) kFrame && (seen_ - (std::uint64_t) kFrame) % (std::uint64_t) kHop == 0u)
-                onsetFrame();
+            const std::uint64_t frameEnd = nextFrameEnd();
+            const int take = (int) std::min<std::uint64_t> ((std::uint64_t) (n - i), frameEnd - seen_);
+            mixIn (in, i, take);
+            i += take;
+            if (seen_ == frameEnd) onsetFrame();
         }
         return true;
     }
@@ -494,9 +516,35 @@ private:
         anchorConfidence_ = 0.0;
     }
 
+    // The value seen_ has when the next onset frame is complete: FRAME, then every HOP after it — the samples
+    // after which the per-sample loop this replaced called onsetFrame() (seen_ >= FRAME, (seen_ - FRAME) % HOP == 0).
+    std::uint64_t nextFrameEnd() const noexcept
+    {
+        constexpr auto frame = (std::uint64_t) kFrame, hop = (std::uint64_t) kHop;
+        return seen_ < frame ? frame : frame + ((seen_ - frame) / hop + 1u) * hop;
+    }
+
+    // toMono of `count` samples from index `from`, into the frame ring: a Float32Array accumulated channel by
+    // channel, then divided by the count. Each step is a float operation here and a binary64 one rounded to float32
+    // there, and for + and / those are the same number (binary64 has more than 2 x 24 + 2 bits, so the double
+    // rounding is innocuous). At most one frame's worth per call, called once per frame: see WHERE THE TIME IS SPENT.
+    FELITRONICS_TEMPO_NOINLINE void mixIn (const float* const* in, int from, int count) noexcept
+    {
+        for (int i = from; i < from + count; ++i)
+        {
+            float m = 0.0f;
+            for (int c = 0; c < channels_; ++c) m += in[c][i];
+            if (channels_ > 1) m /= (float) channels_;
+            if (! std::isfinite (m)) ++nonFinite_;
+            ring_[(std::size_t) (seen_ % (std::uint64_t) kFrame)] = m;
+            ++seen_;
+        }
+    }
+
     // One onset frame, on the sample that completes it: the window over the last FRAME samples, the magnitude
-    // spectrum, the positive flux against the previous frame's (onsetEnvelope's loop body).
-    void onsetFrame() noexcept
+    // spectrum, the positive flux against the previous frame's (onsetEnvelope's loop body). Called once per frame
+    // and kept a function of its own on purpose — it is where the analysis spends its time (WHERE THE TIME IS SPENT).
+    FELITRONICS_TEMPO_NOINLINE void onsetFrame() noexcept
     {
         const std::size_t start = (std::size_t) (seen_ % (std::uint64_t) kFrame);   // the oldest sample
         for (int i = 0; i < kFrame; ++i)
@@ -643,9 +691,20 @@ private:
         if (a != v) std::copy (a, a + count, v);
     }
 
+    // One lag of autocorr(): sum(odf[i] * odf[i - lag]) over i in [lag, n), the product pinned because JavaScript
+    // never fuses it. A function per LAG, not per window, because the whole track's window is entered once per
+    // analysis and is the longest one (WHERE THE TIME IS SPENT).
+    static FELITRONICS_TEMPO_NOINLINE double lagSum (const double* odf, std::int64_t n, std::int64_t lag) noexcept
+    {
+        double s = 0.0;
+        for (std::int64_t i = lag; i < n; ++i) s = core::det::mulAdd (odf[i], odf[i - lag], s);
+        return s;
+    }
+
     // The spec's analyzeWindow(): autocorrelate one stretch of the onset curve, pick a peak, refine it, rate it.
     // `peaks` is the list this call fills (the whole track's own, or the windows' shared one).
-    Window analyzeWindow (const double* odf, std::int64_t n, bool hasAnchor, double anchor, Peak* peaks) noexcept
+    FELITRONICS_TEMPO_NOINLINE Window analyzeWindow (const double* odf, std::int64_t n, bool hasAnchor, double anchor,
+                                                     Peak* peaks) noexcept
     {
         Window out;
         double energy = 0.0;
@@ -658,12 +717,7 @@ private:
         if (! (minLagD <= maxLagD)) return out;                        // an empty range has no peak
         const std::int64_t minLag = (std::int64_t) minLagD, maxLag = (std::int64_t) maxLagD;
         for (std::int64_t lag = minLag; lag <= maxLag; ++lag)
-        {
-            double s = 0.0;
-            // s += odf[i] * odf[i - lag] — the product pinned, because JavaScript never fuses it
-            for (std::int64_t i = lag; i < n; ++i) s = core::det::mulAdd (odf[i], odf[i - lag], s);
-            ac_[(std::size_t) lag] = s / (double) (n - lag);
-        }
+            ac_[(std::size_t) lag] = lagSum (odf, n, lag) / (double) (n - lag);
 
         // --- every local maximum strictly inside the range ---
         std::int64_t count = 0;
@@ -798,3 +852,5 @@ private:
 };
 
 } // namespace felitronics::tempo
+
+#undef FELITRONICS_TEMPO_NOINLINE
