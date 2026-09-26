@@ -4,8 +4,10 @@
 // The wasm side of `fc_probe_<mode>_storage_bytes` — the price of a measurement, asked before it is
 // paid.
 //
-//   node storage-probe.mjs build/fcprobe.node.js table    # the same 475 rows the native tier prints
-//   node storage-probe.mjs build/fcprobe.node.js check    # the assertions that only this tier can make
+//   node storage-probe.mjs build/fcprobe.node.js table        # the same rows the native tier prints
+//   node storage-probe.mjs build/fcprobe.node.js check        # the assertions that only this tier can make
+//   node storage-probe.mjs build/fctempo.node.js check        # ...made of the tempo-only module
+//   node storage-probe.mjs build/<either>.node.js tempo-table # the tempo price, for the two modules to be compared
 //
 // WHY A HARNESS OF ITS OWN, WHEN felitronics_analysis_abi_tests ALREADY HAMMERS THESE FUNCTIONS. That
 // suite compiles fc_probe.cpp NATIVELY. It cannot see whether a name survived the link into the module,
@@ -20,6 +22,15 @@
 //           the diff is of numbers rather than of two printf dialects.
 //   `check` asserts what only this tier can: that all five names are callable on the Module at all, and
 //           that in THIS tier too the price is positive exactly where `_run` is accepted.
+//   `tempo-table` prints the tempo price over a grid of widths, rates, lengths and parameters, on either module.
+//           The two modules compile one tempo text, so CI `cmp`s fcprobe's table with fctempo's: a page that moves
+//           between them must be quoted the same price, not only handed the same rows.
+//
+// TWO MODULES, AND WHICH ONE IS ASKED OF THE MODULE. fcprobe carries every analyzer; fctempo (tools/wasm/fc_tempo.cpp)
+// the tempo detector alone, under the probe's own tempo names. Each answers exactly one version entry point —
+// fc_probe_abi_version or fc_tempo_abi_version — and that is how this file tells them apart; a module that answers
+// both or neither is refused. On fctempo `table` is refused (none of its modes are there) and `check` runs the tempo
+// half, plus the one claim that module exists to keep: it exports its surface and NOTHING ELSE.
 //
 // No HEAP view is held across a call into the module. An accepted `_run` may allocate, and `memory.grow`
 // inside it DETACHES the ArrayBuffer every existing view was made on. A detached view is not a view onto
@@ -34,11 +45,52 @@ import { resolve } from 'node:path';
 const [, , modPath, cmdArg] = process.argv;
 const cmd = cmdArg ?? 'table';
 const refuse = m => { console.error(m); process.exit(2); };
-if (!modPath || (cmd !== 'table' && cmd !== 'check'))
-    refuse('usage: node storage-probe.mjs <module.js> [table|check]');
+if (!modPath || !['table', 'check', 'tempo-table'].includes(cmd))
+    refuse('usage: node storage-probe.mjs <module.js> [table|check|tempo-table]');
 
 const require = createRequire(import.meta.url);
 const M = await require(resolve(modPath))();
+
+// Which module: the one version entry point it answers.
+const speaksProbe = typeof M._fc_probe_abi_version === 'function';
+const speaksTempo = typeof M._fc_tempo_abi_version === 'function';
+if (speaksProbe === speaksTempo)
+    refuse(`${modPath} answers ${speaksProbe ? 'both' : 'neither'} of fc_probe_abi_version / fc_tempo_abi_version — which module is this?`);
+const TEMPO_ONLY = speaksTempo;
+
+// THE fctempo SURFACE, per version — what the module exports, EXACTLY, besides the heap's _malloc/_free. A bump of
+// FC_TEMPO_ABI_VERSION appends its line here on purpose (tools/fc_tempo_abi.h, rule 4); an entry point added
+// without one, or an analyzer's name that crept into the module, fails the exact-set check below.
+const FC_TEMPO_SURFACE = {
+    1: ['_fc_probe_tempo_run', '_fc_probe_tempo_run_with', '_fc_probe_tempo_scalars_len', '_fc_probe_tempo_cand_stride',
+        '_fc_probe_tempo_point_stride', '_fc_probe_tempo_scalars', '_fc_probe_tempo_candidates', '_fc_probe_tempo_curve',
+        '_fc_probe_tempo_storage_bytes', '_fc_probe_tempo_storage_bytes_with', '_fc_tempo_abi_version'],
+};
+
+// The tempo price over a grid, one line per quote. Integer rates only, for the table's reason (the header above);
+// the lengths straddle the 4 GiB span bound at the narrowest and the widest width.
+if (cmd === 'tempo-table') {
+    const q = M._fc_probe_tempo_storage_bytes, qw = M._fc_probe_tempo_storage_bytes_with;
+    if (typeof q !== 'function' || typeof qw !== 'function')
+        refuse(`the tempo price did not reach ${modPath}`);
+    const WIDTHS = [0, 1, 2, 6, 16, 17];
+    const RATES = [0, 7999, 8000, 22050, 44100, 48000, 96000, 192000, 768000, 768001];
+    const FRAMES = [0, 1, 1023, 1024, 48000 * 60, 0x3FFFFFF, 0x4000000, 0x3FFFFFFF, 0x40000000, 0xFFFFFFFF];
+    // the defaults, a wide range with a short window, a range with no lag in it, an inverted one, a zero hop
+    const PARAMS = [[60, 180, 6, 1.5], [40, 300, 4, 1], [90, 90, 6, 1.5], [120, 90, 6, 1.5], [60, 180, 6, 0]];
+    let out = '';
+    for (const ch of WIDTHS)
+        for (const sr of RATES)
+            for (const n of FRAMES) {
+                out += `tempo ${ch} ${sr} ${n} ${q(ch, sr, n)}\n`;
+                for (const [lo, hi, win, hop] of PARAMS)
+                    out += `tempo_with ${ch} ${sr} ${n} ${lo} ${hi} ${win} ${hop} ${qw(ch, sr, n, lo, hi, win, hop)}\n`;
+            }
+    process.stdout.write(out);
+    process.exit(0);
+}
+if (TEMPO_ONLY && cmd === 'table')
+    refuse(`${modPath} is fctempo: it carries none of the table's modes — ask it for tempo-table`);
 
 // `acceptsEmpty` is the one deliberate asymmetry between the price and the run: four of the five report
 // on an empty programme, and `lowend` refuses one because `fcore_measure lowend` refuses it too.
@@ -49,7 +101,7 @@ const ACCEPTS_EMPTY = { report: true, bursts: true, hum: true, forensics: true, 
 // THE FIRST ASSERTION, AND IT IS MADE IN BOTH MODES. A name that did not reach the artifact is `undefined`
 // here, and calling it would throw a TypeError three lines later with nothing to say about why.
 const query = {}, run = {};
-for (const m of MODES) {
+for (const m of TEMPO_ONLY ? [] : MODES) {
     const q = M[`_fc_probe_${m}_storage_bytes`], r = M[`_fc_probe_${m}_run`];
     if (typeof q !== 'function') refuse(`_fc_probe_${m}_storage_bytes is ${typeof q} on this module — it did not reach the artifact`);
     if (typeof r !== 'function') refuse(`_fc_probe_${m}_run is ${typeof r} on this module`);
@@ -75,9 +127,26 @@ if (cmd === 'table') {
 let checks = 0, bad = 0;
 const ok = (cond, what) => { ++checks; if (!cond) { ++bad; console.error(`FAIL: ${what}`); } };
 
+// fctempo: the version its header declares, and the exact surface of that version — nothing more, nothing less.
+if (TEMPO_ONLY) {
+    const hdr = readFileSync(new URL('../fc_tempo_abi.h', import.meta.url), 'utf8');
+    const m = /^#define FC_TEMPO_ABI_VERSION ([0-9]+)u$/m.exec(hdr);
+    if (!m) refuse('no FC_TEMPO_ABI_VERSION in tools/fc_tempo_abi.h');
+    ok(M._fc_tempo_abi_version() === Number(m[1]),
+       `fctempo speaks ABI version ${M._fc_tempo_abi_version()}, the header declares ${m[1]}`);
+    const surface = FC_TEMPO_SURFACE[Number(m[1])];
+    if (!surface) refuse(`FC_TEMPO_ABI_VERSION is ${m[1]} and this file lists no surface for it — append one on purpose`);
+    const exported = Object.keys(M).filter(k => k.startsWith('_fc_')).sort();
+    const want = [...surface].sort();
+    ok(exported.join(' ') === want.join(' '),
+       `fctempo exports exactly the v${m[1]} surface — extra: [${exported.filter(k => !want.includes(k)).join(' ')}],`
+       + ` missing: [${want.filter(k => !exported.includes(k)).join(' ')}]`);
+    ok(typeof M._malloc === 'function' && typeof M._free === 'function', 'fctempo: _malloc and _free reached the artifact');
+}
+
 // The crest price and its two entry points, on the artifact. Its geometry includes the programme LENGTH
 // (the cell store is per hop), which is why it takes a third argument and cannot be a row of the table above.
-{
+if (!TEMPO_ONLY) {
     const q = M._fc_probe_crest_storage_bytes, qw = M._fc_probe_crest_storage_bytes_with;
     if (typeof q !== 'function')
         refuse(`_fc_probe_crest_storage_bytes is ${typeof q} on this module — it did not reach the artifact`);
@@ -101,7 +170,7 @@ const ok = (cond, what) => { ++checks; if (!cond) { ++bad; console.error(`FAIL: 
 
 // The ABI version, on the artifact, against the header that declares it — read from tools/fc_probe_abi.h rather than
 // written here a second time, so the module and the header cannot disagree unnoticed.
-{
+if (!TEMPO_ONLY) {
     const hdr = readFileSync(new URL('../fc_probe_abi.h', import.meta.url), 'utf8');
     const m = /^#define FC_PROBE_ABI_VERSION ([0-9]+)u$/m.exec(hdr);
     if (!m) refuse('no FC_PROBE_ABI_VERSION in tools/fc_probe_abi.h');
@@ -113,6 +182,7 @@ const ok = (cond, what) => { ++checks; if (!cond) { ++bad; console.error(`FAIL: 
 
 // The tempo price and its entry points, on the artifact. Like crest's, its geometry includes the programme LENGTH
 // (the onset curve is one double per 512 samples), so it takes a third argument and is not a row of the table.
+// ON BOTH MODULES: the same block, the same names — which is the claim that a page can move between them.
 {
     const q = M._fc_probe_tempo_storage_bytes, qw = M._fc_probe_tempo_storage_bytes_with;
     if (typeof q !== 'function')
@@ -134,6 +204,12 @@ const ok = (cond, what) => { ++checks; if (!cond) { ++bad; console.error(`FAIL: 
        'tempo: priced where the planes fit 4 GiB and at zero where they do not — the span the run refuses');
     ok(M._fc_probe_tempo_scalars_len() === 35 && M._fc_probe_tempo_cand_stride() === 2 && M._fc_probe_tempo_point_stride() === 5,
        'tempo: 35 scalars, 2 per candidate, 5 per point');
+}
+
+// Everything below is about the analyzers fctempo does not carry.
+if (TEMPO_ONLY) {
+    console.log(`${checks} checks, ${bad} failures (fctempo)`);
+    process.exit(bad === 0 ? 0 : 1);
 }
 
 // The PARAMETERISED bursts price, which has a different arity and so cannot be a row of the table

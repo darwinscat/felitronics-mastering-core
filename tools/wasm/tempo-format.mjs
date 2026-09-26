@@ -7,8 +7,8 @@
 // `null`, its bits carry nothing, and wasm leaves the sign of a computed NaN to the engine.
 //
 // THE SCALAR AND ROW ORDERS ARE THE CONTRACT: `fc_probe_tempo_scalars` writes them in the order the indices below
-// name (tools/wasm/fc_probe.cpp has the same table), and a mismatch shows up as a diff rather than as a plausible
-// wrong number. A candidate row is 2 doubles, a curve row 5.
+// name (tools/wasm/fc_tempo_entry.h has the same table — one text, compiled into fcprobe and fctempo alike), and a
+// mismatch shows up as a diff rather than as a plausible wrong number. A candidate row is 2 doubles, a curve row 5.
 
 import { bitsOf } from './blocks-format.mjs';
 
