@@ -7,7 +7,7 @@ wasm module, a desktop application by linking the library, and `fcore_session`, 
 `Session`: it is created, destroyed and asked for its version, and it checks the floating-point environment of the
 thread that calls it. It keeps no state.
 
-What is fixed is the ground it stands on: how it is built, and the laws it keeps. Each law here is written down together
+Beside it is its config, every number it will decide with (below). What is fixed is the ground it stands on: how it is built, and the laws it keeps. Each law here is written down together
 with the check that holds it, and each check has a control that turns it red. A law no check holds is marked as held
 **only in words**.
 
@@ -131,6 +131,36 @@ build of the library does not get `-Werror`.
 
 The library reports the releases it was built from — `Session::version()` (this repository) and `Session::coreVersion()`
 (the felitronics-core it was compiled against) — answered by the compiled code, so they name the binary that runs.
+
+## The config — two documents, compiled in, read by schema
+
+Every number the session decides, measures, renders and reports with lives in two TOML documents of the module:
+`config/targets.toml`, the targets — the loudness and ceiling a person picks, the physics of the medium that come with
+them, the delivery format — and `config/engine.toml`, every other number: the input's reference and its quiet
+thresholds, the landing's series, the devices' travels and rules, the observations' thresholds, what a master's cost is
+measured with, the progress weights. What each number means and where it came from is written beside it, as a comment.
+
+- **Compiled in, never read.** felitronics-toml (v0.2.0, resolved like core: a sibling checkout, or the pinned tag)
+  compiles both documents into the library as constexpr data (`felitronics_toml_embed`); the session reads no file
+  (law 6). A document the parser refuses stops the build at its line and column. `tools/wasm/build.sh` embeds them the
+  same way for `fcsession`, with felitronics-toml's own tool run through node.
+- **Read by schema, and the build holds the schema.** `config::load()` (`<felitronics/session/Config.h>`) binds them to
+  typed structs: every key with its type and its range — a range another key states included (a target's loudness on
+  the edit travel, its mono-bass crossover on the knob's) — the checks across keys (a name that is no target, an EQ band
+  two devices share, a minimum above its maximum, the limiter switched off), and every key nobody read reported as
+  unknown. A problem is data: the document, the fault, the key path, the line and the column. In this repository's
+  builds `felitronics_session_config_check` runs the schema over the embedded config right after it is linked, and a
+  problem stops the build as `<file>:<line>:<column>: error: <fault> <key path>`. Three controls plant an unknown key, a
+  wrong type and a value out of range in a copy of the documents and require the check to go red at that spot, after
+  it passed the copy without the plant; the config suite plants twenty more, one of every kind of problem, in-process.
+- **Its version** (`config::version()`) is what a recipe will record: a 64-bit FNV-1a hash of both documents' data in
+  document order — keys, typed values, counts; positions, comments, spacing and inline-or-not are not data. It walks the
+  embedded data and allocates nothing, so the C ABI answers it (`fc_session_config_version`) with no demand to declare.
+  The suite changes every value of both documents, one at a time — through their text and through the embedded data —
+  and requires a version of its own each time; `fcore_session config version`, the source files and the wasm module
+  must all answer the same number (ctest, and CI's artifact check).
+- **Only in words, for now: the config's memory.** `load()` allocates and publishes no demand; nothing in the session
+  calls it yet. The `create` that takes the config, frozen with fc_session v1, declares it (law 11d).
 
 ## The floating-point environment
 
@@ -257,7 +287,8 @@ build's `compile_commands.json` to plant an unlisted unit and drop a listed one.
 
 `tools/fc_session_abi.h`, implemented by `tools/wasm/fc_session.cpp`. Its version is **0, a draft**: no promise — any
 entry point, argument, code or constant may change without a bump. It carries the ABI version, a session created and
-destroyed through a handle, the session's refusals passed through as status codes, and the poison. It follows
+destroyed through a handle, the config version, the session's refusals passed through as status codes, and the
+poison. It follows
 fc_master's law — the facade is thin: handles instead of pointers, a status per call, checks on the addresses a page
 computed, the poison, and nothing that decides. It is compiled with the session library's own options and definitions,
 natively and in the wasm module, includes `src/BuildGuards.h` first, and is under the source lint with the allowance
@@ -277,14 +308,16 @@ above.
 
 `fcsession` is its wasm module (`tools/wasm/build.sh`): the facade and the sources `modules/session/sources.txt` lists
 (the build refuses a `.cpp` under `modules/session/src`, at any depth, that is not listed), linked with
-`--wrap=pthread_create` — 2.9 KB of wasm, 1.4 KB brotli. `tools/wasm/session-check.mjs` compares every export of the
+`--wrap=pthread_create`, with its embedded config — 40 KB of wasm, 12 KB brotli, almost all of it the config's data. `tools/wasm/session-check.mjs` compares every export of the
 loaded module against the ABI's surface and the runtime's own, runs the surface, and walks the wrap boundary; `build.sh`
 builds a control copy with one undeclared export and requires the check to refuse it.
 
 ## The native CLI — `fcore_session`
 
-`fcore_session version` prints the two releases and the ABI version; `fcore_session run <script>` reads a command script
-(`-` is stdin) into a fresh session and prints `done <commands>`. There are no commands: a script with none in it —
+`fcore_session version` prints the two releases and the ABI version; `fcore_session config targets|engine` prints a
+document of the embedded config through felitronics-toml's canonical writer (its numbers, without the comments), and
+`fcore_session config version` its version; `fcore_session run <script>` reads a command script (`-` is stdin) into a
+fresh session and prints `done <commands>`. There are no commands: a script with none in it —
 empty, or comments and blank lines — answers `done 0`; a script with a command in it, and a session that refuses to be
 created, are refused with exit status 2 and nothing on stdout. It links the library as C++, the way a desktop
 application does.

@@ -71,6 +71,12 @@ desktop application by linking the library, `fcore_session` from a command scrip
 destroyed, asked for its version, and refusing a thread whose floating-point environment is not IEEE-754's default. It
 keeps no state. What is fixed is the ground it stands on:
 
+- **its config** (`<felitronics/session/Config.h>`): every number the session decides, measures and reports with, in
+  two TOML documents — `modules/session/config/targets.toml` (the targets) and `engine.toml` (everything else) —
+  compiled into the library at build time by felitronics-toml and read by schema into typed structs: an unknown key, a
+  wrong type or a value out of range stops the build at its line and column. Its version, a hash of the data, is what a
+  recipe will record. [`SESSION.md`](SESSION.md) has the details;
+
 - **a compiled STATIC target**, the repository's first, whose sources are compiled with PRIVATE flags in one `SHELL:`
   group — no FP contraction, no fast-math, no exceptions, no RTTI. Every translation unit refuses to compile without
   them, the compile line is read back (this build's and a consumer's), and the library answers IEEE-754 under hostile
@@ -93,9 +99,11 @@ keeps no state. What is fixed is the ground it stands on:
 same names, with a version of its own, because a version is a promise about a whole surface — and `fc_session`
 (`tools/fc_session_abi.h`, `tools/wasm/fc_session.cpp`) over the session, the surface a shell that cannot link C++
 talks to the library through (a DRAFT, version 0, with no promise: the version, a session created and destroyed
-through a handle, the session's refusals, the poison; its wasm module `fcsession` is 2.9 KB) — each with its ABI version
+through a handle, the config version, the session's refusals, the poison; its wasm module `fcsession`, which carries the
+config, is 40 KB, 12 KB brotli) — each with its ABI version
 and, for the first three, the append-only rule that moves it in its header —
 with their native CLIs (`fcore_master`, `fcore_measure`, `fcore_session`) and suites. `tools/wasm/build.sh` builds the wasm modules against a felitronics-core checkout
 (`FELITRONICS_CORE_DIR`, or the sibling `../felitronics-core`) and records both versions in `BUILD-INFO` beside
-them. How the two roads are compared, and to which criterion: `WASM-PARITY.md`. Law 11d as it applies to the
+them; `fcsession` embeds its config with a felitronics-toml checkout (`FELITRONICS_TOML_DIR`, or the sibling
+`../felitronics-toml`). How the two roads are compared, and to which criterion: `WASM-PARITY.md`. Law 11d as it applies to the
 chain and its ABI: `LAW11D-MASTERING.md`.
