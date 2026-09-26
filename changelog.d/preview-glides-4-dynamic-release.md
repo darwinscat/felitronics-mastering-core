@@ -1,6 +1,6 @@
 ### mastering — a dynamic point switched off mid-duck releases; the compressor's makeup and the stages' own glides
 
-On felitronics-core's preview-glides branch the stages glide on their own (the Saturator's drive, bias, mix and trim;
+From felitronics-core v0.53.0 the stages glide on their own (the Saturator's drive, bias, mix and trim;
 MonoBass's corners, its `enabled` and the air's; the Compressor's makeup and auto-makeup; the limiter's ceiling, down
 over 2 ms), and each snaps on the
 first write after a restart, so this chain's offline renders stay bit-identical (checked by hash on six topologies).
