@@ -11,7 +11,7 @@
 set(FCORE_NO_FP_CONTRACT $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-ffp-contract=off>)
 
 add_executable(fcore_measure fcore_measure.cpp)
-target_link_libraries(fcore_measure PRIVATE felitronics::analysis_offline felitronics::oversampling)
+target_link_libraries(fcore_measure PRIVATE felitronics::analysis_offline felitronics::tempo felitronics::oversampling)
 # The OFFLINE analyzer modes compose over eq::Crossover2 / stereo::MidSide; felitronics::analysis_offline
 # carries both (modules/analysis_offline/CMakeLists.txt).
 target_compile_features(fcore_measure PRIVATE cxx_std_20)
@@ -32,7 +32,7 @@ if(FELITRONICS_BUILD_TESTS)
     # guards are tested — natively, because fc_probe.cpp compiles anywhere (EMSCRIPTEN_KEEPALIVE degrades to a
     # plain extern "C"). That puts the validation and the planar addressing under ctest, ASan and UBSan.
     add_executable(felitronics_abi_tests tests/AbiTests.cpp wasm/fc_probe.cpp)
-    target_link_libraries(felitronics_abi_tests PRIVATE felitronics::analysis_offline felitronics::oversampling felitronics::test_support)
+    target_link_libraries(felitronics_abi_tests PRIVATE felitronics::analysis_offline felitronics::tempo felitronics::oversampling felitronics::test_support)
     target_include_directories(felitronics_abi_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_features(felitronics_abi_tests PRIVATE cxx_std_20)
     target_compile_options(felitronics_abi_tests PRIVATE ${FCORE_NO_FP_CONTRACT})
@@ -52,13 +52,13 @@ if(FELITRONICS_BUILD_TESTS)
     # The offline analyzers' ABI surface under adversarial arguments — natively, so ASan/UBSan see it. fc_probe.cpp
     # compiles anywhere; EMSCRIPTEN_KEEPALIVE degrades to nothing off the wasm tier.
     add_executable(felitronics_analysis_abi_tests tests/AnalysisAbiTests.cpp wasm/fc_probe.cpp)
-    target_link_libraries(felitronics_analysis_abi_tests PRIVATE felitronics::analysis_offline felitronics::oversampling felitronics::test_support)
+    target_link_libraries(felitronics_analysis_abi_tests PRIVATE felitronics::analysis_offline felitronics::tempo felitronics::oversampling felitronics::test_support)
     target_include_directories(felitronics_analysis_abi_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_features(felitronics_analysis_abi_tests PRIVATE cxx_std_20)
     add_test(NAME felitronics_analysis_abi_tests COMMAND felitronics_analysis_abi_tests)
 
     add_executable(felitronics_clips_exposure_tests tests/ClipsExposureTests.cpp wasm/fc_probe.cpp)
-    target_link_libraries(felitronics_clips_exposure_tests PRIVATE felitronics::analysis_offline felitronics::oversampling felitronics::test_support)
+    target_link_libraries(felitronics_clips_exposure_tests PRIVATE felitronics::analysis_offline felitronics::tempo felitronics::oversampling felitronics::test_support)
     target_include_directories(felitronics_clips_exposure_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_features(felitronics_clips_exposure_tests PRIVATE cxx_std_20)
     target_compile_options(felitronics_clips_exposure_tests PRIVATE ${FCORE_NO_FP_CONTRACT}
@@ -69,12 +69,28 @@ if(FELITRONICS_BUILD_TESTS)
     # against the same two instruments handed the whole buffer. Contract-off for the clips suite's reason — the
     # detector's smooth-crest bound decides whether a run exists, and both parity roads are built this way.
     add_executable(felitronics_stream_abi_tests tests/StreamAbiTests.cpp wasm/fc_probe.cpp)
-    target_link_libraries(felitronics_stream_abi_tests PRIVATE felitronics::analysis_offline felitronics::oversampling felitronics::test_support)
+    target_link_libraries(felitronics_stream_abi_tests PRIVATE felitronics::analysis_offline felitronics::tempo felitronics::oversampling felitronics::test_support)
     target_include_directories(felitronics_stream_abi_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_features(felitronics_stream_abi_tests PRIVATE cxx_std_20)
     target_compile_options(felitronics_stream_abi_tests PRIVATE ${FCORE_NO_FP_CONTRACT}
         $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fno-fast-math>)
     add_test(NAME felitronics_stream_abi_tests COMMAND felitronics_stream_abi_tests)
+
+    # The tempo surface of the same ABI (fc_probe_tempo_*): the ABI against a direct TempoDetector call, bit for
+    # bit; every getter under the canary fence; the price against the core's storageFor() and against what the
+    # FIRST run asks the heap for; the refusals the run and the price must agree on. Its own binary because each
+    # analyzer behind this ABI is a function-local static, and the allocation oracle needs a module whose tempo
+    # detector has never run.
+    add_executable(felitronics_tempo_abi_tests tests/TempoAbiTests.cpp wasm/fc_probe.cpp)
+    target_link_libraries(felitronics_tempo_abi_tests PRIVATE felitronics::analysis_offline felitronics::tempo felitronics::oversampling felitronics::test_support)
+    target_include_directories(felitronics_tempo_abi_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_features(felitronics_tempo_abi_tests PRIVATE cxx_std_20)
+    # Contract-off, as the wasm module it stands in for is built: the class and the ABI in this binary then compute
+    # at the parity roads' arithmetic. (Nothing on the tempo path contracts at `on` either — measured — so this is
+    # the convention, not a fix.)
+    target_compile_options(felitronics_tempo_abi_tests PRIVATE ${FCORE_NO_FP_CONTRACT}
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fno-fast-math>)
+    add_test(NAME felitronics_tempo_abi_tests COMMAND felitronics_tempo_abi_tests)
 
     # The mastering C ABI. Same arrangement as felitronics_abi_tests one block up — the shim compiles
     # natively, so its validation, ownership and mapping layer runs under ctest, ASan and UBSan. NOT

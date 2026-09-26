@@ -76,6 +76,8 @@ extern "C"
     std::uint32_t fc_probe_crest_blocks    (std::int32_t, double*, std::uint32_t);
     std::uint32_t fc_probe_crest_loss      (std::int32_t, double*, std::uint32_t);
     double        fc_probe_crest_storage_bytes (std::uint32_t, double, std::uint32_t);
+    double        fc_probe_crest_storage_bytes_with (std::uint32_t, double, std::uint32_t, double, double, double,
+                                                     double, std::int32_t, double, double);
 
     int           fc_probe_bursts_run      (const float*, std::uint32_t, std::uint32_t, double);
     int           fc_probe_bursts_run_with (const float*, std::uint32_t, std::uint32_t, double,
@@ -862,6 +864,28 @@ void k1TheTwoSlotsAndTheLoss (int ch)
     const double oneSec = fc_probe_crest_storage_bytes (nc, 48000.0, 48000u);
     ok (oneSec > 0.0 && fc_probe_crest_storage_bytes (nc, 48000.0, 480000u) > oneSec,
         "ten times the programme costs more than one second (" + std::to_string (oneSec) + " B)");
+
+    // AND THE LENGTH BOUNDS THE PRICE AS IT BOUNDS THE RUN. The run refuses a programme whose planes cannot fit a
+    // 32-bit address space before it reads a sample; the price used to quote a positive number for exactly those
+    // (mono at 2^30 frames: 4 GiB of samples), so a page that asked first was told a measurement it could not have.
+    // Both sides of the bound, mono and sixteen wide, the parameterised price too, and the run on the same spans.
+    {
+        std::vector<float> tiny (64, 0.0f);
+        ok (fc_probe_crest_storage_bytes (1u, 48000.0, 0x3FFFFFFFu) > 0.0
+                && fc_probe_crest_storage_bytes (1u, 48000.0, 0x40000000u) == 0.0
+                && fc_probe_crest_storage_bytes (16u, 48000.0, 0x3FFFFFFu) > 0.0
+                && fc_probe_crest_storage_bytes (16u, 48000.0, 0x4000000u) == 0.0
+                && fc_probe_crest_storage_bytes (2u, 48000.0, 0xFFFFFFFFu) == 0.0,
+            "crest price: mono 2^30 - 1 frames priced, 2^30 at zero; sixteen wide 2^26 - 1 priced, 2^26 at zero");
+        ok (fc_probe_crest_storage_bytes_with (1u, 48000.0, 0x3FFFFFFFu, 120.0, 2000.0, 6000.0, 100.0, 4, -70.0, -40.0) > 0.0
+                && fc_probe_crest_storage_bytes_with (1u, 48000.0, 0x40000000u, 120.0, 2000.0, 6000.0, 100.0, 4, -70.0, -40.0) == 0.0,
+            "... and the parameterised price draws the same line");
+        ok (fc_probe_crest_run (0, tiny.data(), 0x40000000u, 1u, 48000.0) == 0
+                && fc_probe_crest_run (0, tiny.data(), 0x4000000u, 16u, 48000.0) == 0,
+            "... where the run refuses, before reading a sample");
+        // the refusals above cleared slot 0; the blocks after this one expect a live measurement there
+        ok (fc_probe_crest_run (0, src.data(), n, nc, 48000.0) == 1, "slot 0 is measured again for what follows");
+    }
 }
 
 void printStorageTable()

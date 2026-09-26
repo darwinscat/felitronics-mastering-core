@@ -27,6 +27,7 @@
 // and `.set()` throws TypeError. That is why every view here is taken AFTER the call and copied out with
 // `.slice()` before the next one.
 
+import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 
@@ -94,6 +95,45 @@ const ok = (cond, what) => { ++checks; if (!cond) { ++bad; console.error(`FAIL: 
        'crest: edges that do not rise are priced at the canonical zero');
     ok(q(0, 48000, 48000) === 0 && q(99, 48000, 48000) === 0,
        'crest: a width the core does not have is priced at zero');
+    ok(q(1, 48000, 0x3FFFFFFF) > 0 && q(1, 48000, 0x40000000) === 0 && q(16, 48000, 0x3FFFFFF) > 0 && q(16, 48000, 0x4000000) === 0,
+       'crest: priced where the planes fit 4 GiB and at zero where they do not — the span the run refuses');
+}
+
+// The ABI version, on the artifact, against the header that declares it — read from tools/fc_probe_abi.h rather than
+// written here a second time, so the module and the header cannot disagree unnoticed.
+{
+    const hdr = readFileSync(new URL('../fc_probe_abi.h', import.meta.url), 'utf8');
+    const m = /^#define FC_PROBE_ABI_VERSION ([0-9]+)u$/m.exec(hdr);
+    if (!m) refuse('no FC_PROBE_ABI_VERSION in tools/fc_probe_abi.h');
+    if (typeof M._fc_probe_abi_version !== 'function')
+        refuse(`_fc_probe_abi_version is ${typeof M._fc_probe_abi_version} on this module — it did not reach the artifact`);
+    ok(M._fc_probe_abi_version() === Number(m[1]),
+       `the module speaks ABI version ${M._fc_probe_abi_version()}, the header declares ${m[1]}`);
+}
+
+// The tempo price and its entry points, on the artifact. Like crest's, its geometry includes the programme LENGTH
+// (the onset curve is one double per 512 samples), so it takes a third argument and is not a row of the table.
+{
+    const q = M._fc_probe_tempo_storage_bytes, qw = M._fc_probe_tempo_storage_bytes_with;
+    if (typeof q !== 'function')
+        refuse(`_fc_probe_tempo_storage_bytes is ${typeof q} on this module — it did not reach the artifact`);
+    if (typeof qw !== 'function')
+        refuse(`_fc_probe_tempo_storage_bytes_with is ${typeof qw} on this module`);
+    for (const n of ['_fc_probe_tempo_run', '_fc_probe_tempo_run_with', '_fc_probe_tempo_scalars', '_fc_probe_tempo_candidates',
+                     '_fc_probe_tempo_curve', '_fc_probe_tempo_scalars_len', '_fc_probe_tempo_cand_stride',
+                     '_fc_probe_tempo_point_stride'])
+        if (typeof M[n] !== 'function') refuse(`${n} is ${typeof M[n]} on this module`);
+    const oneMin = q(2, 48000, 48000 * 60);
+    ok(oneMin > 0, 'tempo: a minute of stereo at 48 kHz is priced above zero');
+    ok(q(2, 48000, 48000 * 600) > oneMin, 'tempo: ten times the programme costs more — the onset buffers are per hop');
+    ok(qw(2, 48000, 48000 * 60, 60, 180, 6, 1.5) === oneMin,
+       'tempo: the parameterised price at the documented defaults is the default price');
+    ok(qw(2, 48000, 48000 * 60, 120, 90, 6, 1.5) === 0 && q(0, 48000, 48000) === 0 && q(2, 7999, 48000) === 0,
+       'tempo: an inverted range, a width of 0 and a rate under the floor are priced at the canonical zero');
+    ok(q(1, 48000, 0x3FFFFFFF) > 0 && q(1, 48000, 0x40000000) === 0 && q(16, 48000, 0x3FFFFFF) > 0 && q(16, 48000, 0x4000000) === 0,
+       'tempo: priced where the planes fit 4 GiB and at zero where they do not — the span the run refuses');
+    ok(M._fc_probe_tempo_scalars_len() === 35 && M._fc_probe_tempo_cand_stride() === 2 && M._fc_probe_tempo_point_stride() === 5,
+       'tempo: 35 scalars, 2 per candidate, 5 per point');
 }
 
 // The PARAMETERISED bursts price, which has a different arity and so cannot be a row of the table

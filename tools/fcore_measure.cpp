@@ -48,6 +48,12 @@
 //                 An invalid note prints as `note INVALID reason N`, never as a note name. NOT `correlation`,
 //                 which is a whole-file phase number with no band split.
 //
+//   tempo       → the page's BPM tool (tempo::TempoDetector): the headline and the whole-track view, the anchor
+//                 the curve is folded toward, `varies` and the range, the five candidates and every point of the
+//                 curve — doubles as raw bit patterns, a NaN (the spec's `null`) as `nan`, counts in decimal; the
+//                 wasm module prints the same bytes (tools/wasm/tempo-parity.mjs). [--min-bpm X] [--max-bpm X]
+//                 [--win-sec X] [--hop-sec X] [--chunk N]
+//
 //   forensics   → what the file WAS (analysis::SourceForensics): the spectral wall per channel and for the
 // and forensics modes size the file before reading it (the first three because every boundary depends on the length,
 // forensics so that a short read cannot come out as a successful measurement of a shorter programme), so they need a
@@ -78,6 +84,7 @@
 #include <felitronics/analysis/BandBursts.h>
 #include <felitronics/analysis/StereoBandBursts.h>
 #include <felitronics/analysis/BandCrest.h>
+#include <felitronics/tempo/TempoDetector.h>
 
 #include <algorithm>
 #include <cmath>
@@ -228,10 +235,11 @@ int main (int argc, char** argv)
     if (argc < 5)
     {
         std::fprintf (stderr,
-            "usage: %s <lufs|truepeak|correlation|blocks|waveform|stereo|needle|clips|stream|report|hum|lowend|bursts|stereobursts|crest|excursions|forensics> <sampleRate> <channels> <raw.f32le>\n"
+            "usage: %s <lufs|truepeak|correlation|blocks|waveform|stereo|needle|clips|stream|report|hum|lowend|bursts|stereobursts|crest|excursions|forensics|tempo> <sampleRate> <channels> <raw.f32le>\n"
             "          [--precise] [--buckets N] [--mix avr|L|R|max] [--columns N] [--from A --to B]\n"
             "          [--max-runs N] [--chunk N]\n"
-            "          [--quiet-db X] [--order N]\n",
+            "          [--quiet-db X] [--order N]\n"
+            "          [--min-bpm X] [--max-bpm X] [--win-sec X] [--hop-sec X]\n",
             argv[0]);
         return 2;
     }
@@ -995,6 +1003,145 @@ int main (int argc, char** argv)
                              (unsigned long long) bits (L.peakShiftDb), (unsigned long long) bits (L.levelShiftDb),
                              (long long) L.outSilent, (long long) L.lagBlocks, L.valid ? 1 : 0);
             }
+        }
+        return 0;
+    }
+
+    if (mode == "tempo")
+    {
+        // tempo::TempoDetector — the page's BPM tool — as text for the native-vs-wasm diff (tempo-format.mjs is the
+        // other half). Every double as a raw bit pattern and every count as a decimal integer, EXCEPT a NaN, which
+        // prints as `nan`: in this surface a NaN is the spec's `null`, its bits carry nothing, and wasm leaves the
+        // sign of a computed NaN to the engine, so bits would make the diff about the machine rather than the answer.
+        // The whole programme is read first (the detector is prepared with the length) and then fed in pieces of
+        // --chunk frames — the LAW-8a HANDLE, honoured here and ignored by the module, which measures in one call, so
+        // a row that carries it compares a re-sliced native run with a whole-buffer wasm one.
+        std::uint64_t declaredFrames = 0;
+        if (! fileFrames (f, nc, declaredFrames))
+        {
+            std::fprintf (stderr, "cannot size the file, or it is not a whole number of %d-channel float32 frames\n", nc);
+            std::fclose (f);
+            return 2;
+        }
+        {
+            double sRate = 0.0; std::uint64_t sWidth = 0;
+            if (! parseRate (argv[2], sRate) || ! parseCount (argv[3], sWidth)
+                || sWidth < 1 || sWidth > (std::uint64_t) core::kMaxChannels)
+            {
+                std::fprintf (stderr, "bad sampleRate/channels\n");
+                std::fclose (f);
+                return 2;
+            }
+        }
+        tempo::TempoParams tp;
+        std::uint64_t chunk = (std::uint64_t) kChunk;
+        {
+            struct Flag { const char* name; double* into; bool seen; };
+            Flag flags[] = { { "--min-bpm", &tp.minBpm, false }, { "--max-bpm", &tp.maxBpm, false },
+                             { "--win-sec", &tp.winSec, false }, { "--hop-sec", &tp.hopSec, false } };
+            bool chunkSeen = false;
+            for (int i = 5; i < argc; ++i)
+            {
+                if (std::strcmp (argv[i], "--precise") == 0) continue;
+                Flag* hit = nullptr;
+                for (Flag& fl : flags) if (std::strcmp (argv[i], fl.name) == 0) { hit = &fl; break; }
+                if (hit != nullptr)
+                {
+                    // A FLAG TWICE IS A REFUSAL, not a last-one-wins: the node side must resolve every command line
+                    // exactly as this one does, and the only resolution both can be relied on for is none.
+                    if (hit->seen || i + 1 >= argc || ! parseFinite (argv[i + 1], *hit->into))
+                    { std::fprintf (stderr, "tempo: %s needs one finite number\n", hit->name); std::fclose (f); return 2; }
+                    hit->seen = true; ++i; continue;
+                }
+                if (std::strcmp (argv[i], "--chunk") == 0)
+                {
+                    if (chunkSeen || i + 1 >= argc || ! parseCount (argv[i + 1], chunk) || chunk < 1 || chunk > 0x7FFFFFFFull)
+                    { std::fprintf (stderr, "tempo: --chunk needs one count in 1..2^31-1\n"); std::fclose (f); return 2; }
+                    chunkSeen = true; ++i; continue;
+                }
+                std::fprintf (stderr, "tempo: unknown option %s (want --min-bpm --max-bpm --win-sec --hop-sec --chunk)\n", argv[i]);
+                std::fclose (f);
+                return 2;
+            }
+        }
+
+        tempo::TempoDetector det;
+        det.setParams (tp);
+        if (! det.prepare (fs, nc, declaredFrames))
+        {
+            std::fprintf (stderr, "tempo: refused — rate %g Hz (%g..%g), %d channels, %llu frames, bpm %g..%g (%g..%g), "
+                                  "window %g s, hop %g s (both finite and > 0)\n",
+                          fs, tempo::TempoDetector::kMinSampleRate, tempo::TempoDetector::kMaxSampleRate, nc,
+                          (unsigned long long) declaredFrames, tp.minBpm, tp.maxBpm,
+                          tempo::TempoDetector::kMinBpmLimit, tempo::TempoDetector::kMaxBpmLimit, tp.winSec, tp.hopSec);
+            std::fclose (f);
+            return 2;
+        }
+        std::vector<std::vector<float>> planes ((std::size_t) nc, std::vector<float> ((std::size_t) declaredFrames));
+        {
+            std::uint64_t at = 0;
+            streamPlanar (f, nc, [&] (const float* const* p, int n)
+            {
+                for (int c = 0; c < nc; ++c)
+                    std::copy (p[c], p[c] + n, planes[(std::size_t) c].begin() + (std::ptrdiff_t) at);
+                at += (std::uint64_t) n;
+            });
+            std::fclose (f);
+            if (at != declaredFrames)
+            {
+                std::fprintf (stderr, "read %llu of %llu frames — refusing to report a partial measurement\n",
+                              (unsigned long long) at, (unsigned long long) declaredFrames);
+                return 2;
+            }
+        }
+        std::vector<const float*> view ((std::size_t) nc);
+        for (std::uint64_t at = 0; at < declaredFrames; )
+        {
+            const std::uint64_t n = std::min (chunk, declaredFrames - at);
+            for (int c = 0; c < nc; ++c) view[(std::size_t) c] = planes[(std::size_t) c].data() + at;
+            if (! det.process (view.data(), nc, (int) n))
+            { std::fprintf (stderr, "tempo: a piece was refused at frame %llu\n", (unsigned long long) at); return 2; }
+            at += n;
+        }
+        if (! det.finish()) { std::fprintf (stderr, "tempo: finish refused\n"); return 2; }
+
+        const auto hx = [] (double v) -> std::string
+        {
+            if (std::isnan (v)) return "nan";
+            char b[24];
+            std::snprintf (b, sizeof b, "%016llx", (unsigned long long) bits (v));
+            return b;
+        };
+        const auto alt = [] (const tempo::TempoHeadline& h, int i)
+        { return i < h.altCount ? h.alts[i] : std::numeric_limits<double>::quiet_NaN(); };
+        const auto& p  = det.params();
+        const auto& h  = det.headline();
+        const auto& w  = det.wholeTrack();
+        std::printf ("# fcore tempo v1 sr=%s ch=%d min=%s max=%s win=%s hop=%s\n", hx (fs).c_str(), nc,
+                     hx (p.minBpm).c_str(), hx (p.maxBpm).c_str(), hx (p.winSec).c_str(), hx (p.hopSec).c_str());
+        std::printf ("samples %llu onsets %llu nonfinite %llu\n", (unsigned long long) det.framesSeen(),
+                     (unsigned long long) det.onsetFrames(), (unsigned long long) det.nonFiniteSamples());
+        std::printf ("geometry %s %s %s\n", hx (det.odfSampleRate()).c_str(), hx (det.windowFrames()).c_str(),
+                     hx (det.hopFrames()).c_str());
+        std::printf ("head %d %s %s %d %d %s %s %s %s\n", h.determined ? 1 : 0, hx (h.bpm).c_str(), hx (h.confidence).c_str(),
+                     (int) h.label, h.altCount, hx (alt (h, 0)).c_str(), hx (alt (h, 1)).c_str(),
+                     hx (h.beatPeriodSec).c_str(), hx (h.beatOffsetSec).c_str());
+        std::printf ("whole %s %d %s %s %s\n", hx (w.bpm).c_str(), w.altCount, hx (alt (w, 0)).c_str(),
+                     hx (alt (w, 1)).c_str(), hx (w.beatPeriodSec).c_str());
+        std::printf ("anchor %s %s %s\n", hx (det.anchorBpm()).c_str(), hx (det.anchorConfidence()).c_str(),
+                     hx (det.anchorLag()).c_str());
+        std::printf ("range %d %d %s %s\n", det.varies() ? 1 : 0, det.hasRange() ? 1 : 0, hx (det.rangeLow()).c_str(),
+                     hx (det.rangeHigh()).c_str());
+        std::printf ("candidates %d\n", det.candidateCount());
+        for (int k = 0; k < det.candidateCount(); ++k)
+            std::printf ("c %d %s %s\n", k, hx (det.candidate (k).bpm).c_str(), hx (det.candidate (k).score).c_str());
+        std::printf ("points %lld\n", (long long) det.pointCount());
+        for (std::int64_t k = 0; k < det.pointCount(); ++k)
+        {
+            const auto q = det.point (k), r = det.rawPoint (k);
+            std::printf ("p %lld %s %d %s %s %s\n", (long long) k, hx (q.t).c_str(), q.hasBpm ? 1 : 0,
+                         hx (q.hasBpm ? q.bpm : std::numeric_limits<double>::quiet_NaN()).c_str(), hx (q.conf).c_str(),
+                         hx (r.hasBpm ? r.bpm : std::numeric_limits<double>::quiet_NaN()).c_str());
         }
         return 0;
     }
