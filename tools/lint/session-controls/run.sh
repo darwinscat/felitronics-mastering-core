@@ -49,13 +49,13 @@ expect () {
         restore; echo "CONTROL FAILED ($n): the lint failed with $1 planted, but did not report '$2':"; echo "$out"; exit 1
     fi
     restore
-    echo "control $n ok: $1 — $(grep -F -- "$2" <<< "$out" | head -1 | cut -c1-150)"
+    echo "control $n ok: $1 — $(grep -m1 -F -- "$2" <<< "$out" | cut -c1-150)"
 }
 # plant <fixture> <destination> [whole-file] — and LINE becomes the line the fixture marks `// VIOLATION`. A fixture
 # whose violation is the whole file (the zone control) marks no line and says so.
 plant () {
     cp "$HERE/$1" "$2"; PLANTED+=("$2")
-    LINE=$( (grep -n '// VIOLATION' "$2" || true) | head -1 | cut -d: -f1)
+    LINE=$( (grep -m1 -n '// VIOLATION' "$2" || true) | cut -d: -f1)
     [ -n "$LINE" ] || [ "${3:-}" = whole-file ] || { restore; echo "CONTROL BROKEN: $1 marks no line // VIOLATION"; exit 1; }
 }
 

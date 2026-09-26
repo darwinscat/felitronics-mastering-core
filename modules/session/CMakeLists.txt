@@ -78,17 +78,19 @@ if(FELITRONICS_BUILD_TESTS)
     # construct, and dropping a flag from the library turns its control red.
     #   throw        clang and gcc only: MSVC compiles a throw under /EHs-c- (see the flags above)
     set(FELITRONICS_SESSION_CONTROLS try typeid dynamic_cast)
-    # The diagnostics, spelled per compiler (clang and em++ / gcc / MSVC) and matched literally: a looser pattern
+    # The diagnostics, spelled per compiler (clang and em++ / gcc / MSVC) and matched as phrases: a looser pattern
     # matched a control's own FILE NAME in the build log and a flag in its command line, and passed a build that had
-    # failed for any reason at all.
+    # failed for any reason at all. The quotes around a keyword are matched as "not a space", not as ': gcc quotes with
+    # ‘typeid’ in a UTF-8 locale and with 'typeid' in the C locale (measured on gcc 14.2, deb and the arm64 row), and
+    # CI's runners are UTF-8.
     set(FELITRONICS_SESSION_CONTROL_EXPECT_try
-        "cannot use 'try' with exceptions disabled|exception handling disabled, use|error C4530")
+        "cannot use [^ ]+try[^ ]+ with exceptions disabled|exception handling disabled, use|error C4530")
     set(FELITRONICS_SESSION_CONTROL_EXPECT_throw
-        "cannot use 'throw' with exceptions disabled|exception handling disabled, use")
+        "cannot use [^ ]+throw[^ ]+ with exceptions disabled|exception handling disabled, use")
     set(FELITRONICS_SESSION_CONTROL_EXPECT_typeid
-        "use of typeid requires -frtti|cannot use 'typeid' with|error C4541: 'typeid'")
+        "use of typeid requires -frtti|cannot use [^ ]+typeid[^ ]+ with|error C4541: [^ ]+typeid")
     set(FELITRONICS_SESSION_CONTROL_EXPECT_dynamic_cast
-        "use of dynamic_cast requires -frtti|'dynamic_cast' not permitted with|error C4541: 'dynamic_cast'")
+        "use of dynamic_cast requires -frtti|[^ ]+dynamic_cast[^ ]+ not permitted with|error C4541: [^ ]+dynamic_cast")
     if(NOT MSVC)
         list(APPEND FELITRONICS_SESSION_CONTROLS throw)
     endif()
