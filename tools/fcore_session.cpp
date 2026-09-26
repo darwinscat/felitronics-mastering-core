@@ -18,7 +18,8 @@
 // line named on stderr, nothing on stdout. A refusal is the whole run's, never a prefix of it: the script is read and
 // checked to the end before the session is created, so a refused script touched no session at all.
 //
-// EXIT STATUS: 0 done; 2 refused — a usage error, a file that cannot be read, or a script this build does not accept.
+// EXIT STATUS: 0 done; 2 refused — a usage error, a file that cannot be read, a script this build does not accept, or a
+// session that refused to be created (felitronics::session::Status, named on stderr).
 // stdout carries the result and nothing else; every diagnostic goes to stderr.
 
 #include "fc_session_abi.h"
@@ -96,9 +97,17 @@ int main (int argc, char** argv)
         if (! readAll (argv[2], script)) return 2;
         const long commands = countCommands (script);
         if (commands < 0) return 2;
-        auto session = Session::create();
+        auto created = Session::create();
+        if (created.status != felitronics::session::Status::Ok)
+        {
+            std::fprintf (stderr, "fcore_session: the session refused to be created (%s)\n",
+                          created.status == felitronics::session::Status::FloatingPointEnvironment
+                              ? "this thread's floating-point environment is not IEEE-754's default"
+                              : "a shared helper was kept in a copy compiled with FP contraction");
+            return 2;
+        }
         // The script held no command, so nothing runs against the session: it is created, and destroyed.
-        session.reset();
+        created.session.reset();
         std::printf ("done %ld\n", commands);
         return 0;
     }

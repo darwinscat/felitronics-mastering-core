@@ -1,31 +1,53 @@
-# felitronics::session — the mastering session, the one object a shell talks to (docs/SESSION.md). The repository's
-# first COMPILED target: every other module here is header-only and compiles under whatever flags its consumer
-# chooses; this one is a static library, so its sources are compiled once, with the flags below, and a desktop
-# application that links it directly cannot recompile the brain with its own.
-add_library(felitronics_session STATIC
-    src/Session.cpp
-    src/BuildContract.cpp)   # the target's flags, asserted from inside the target
+# felitronics::session — the mastering session, the object a shell talks to (docs/SESSION.md). The repository's first
+# COMPILED target: every other module here is header-only and compiles under whatever flags its consumer chooses; this
+# one is a static library, so its sources are compiled once, with the flags below, and a desktop application that links
+# it cannot recompile it with its own.
+
+# THE SOURCES — sources.txt, the one list (CMake compiles it, tools/wasm/build.sh compiles it into the fcsession module,
+# the session-laws lint scans from it).
+file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/sources.txt FELITRONICS_SESSION_SOURCES REGEX "^[^#]")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+             ${CMAKE_CURRENT_SOURCE_DIR}/sources.txt ${CMAKE_CURRENT_SOURCE_DIR}/build-flags.txt)
+add_library(felitronics_session STATIC ${FELITRONICS_SESSION_SOURCES})
 add_library(felitronics::session ALIAS felitronics_session)
 target_include_directories(felitronics_session PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(felitronics_session PUBLIC cxx_std_20)
 
-# THE BRAIN'S FLAGS — PRIVATE, so they are the library's and never its consumer's, and so a consumer's cannot reach
-# its sources. They come AFTER the directory's own options on the command line (core's cmake/FelitronicsPolicy.cmake
-# states -ffp-contract=on for this tree), and for gcc and clang the last spelling wins:
-#   -fno-fast-math -ffp-contract=off   in THAT order. -fno-fast-math does not undo an explicit -ffp-contract=fast
-#                   that came before it (measured, Apple clang 21: `-ffp-contract=fast -fno-fast-math` still emits
-#                   fmadd), so the contraction switch is stated last, where nothing after it can move it.
-#   -fno-exceptions -fno-rtti          a throw, a try, a typeid or a dynamic_cast in a session source is a compile
-#                   error.
-#   MSVC: /fp:precise (its default, stated), /EHs-c- /GR-, and /we4530 /we4541 to make a `try` and a typeid or
-#   dynamic_cast errors rather than warnings. A bare `throw` still compiles under /EHs-c- (measured, MSVC 19.44), so
-#   on that row the clang and gcc rows are what hold it. The consumer's default /EHsc and /GR come first and are
-#   overridden, which MSVC reports as D9025 — expected, and harmless.
-# src/BuildContract.cpp refuses to compile if these did not arrive, and tests/controls/ plants each forbidden
-# construct and requires the build to fail.
-target_compile_options(felitronics_session PRIVATE
-    $<$<CXX_COMPILER_ID:MSVC>:/fp:precise;/EHs-c-;/GR-;/we4530;/we4541>
-    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fno-fast-math;-ffp-contract=off;-fno-exceptions;-fno-rtti>)
+# THE BRAIN'S FLAGS — PRIVATE, so they are the library's and never its consumer's, and one SHELL: group, so CMake's
+# option de-duplication cannot take a member of it away. That is not a theoretical guard: a parent that states
+# `add_compile_options(-ffp-contract=off)` before this repository (an innocent thing to do) made CMake drop the
+# library's own later `-ffp-contract=off` as a duplicate, which left core's directory-level `-ffp-contract=on` last on
+# the line — contraction on. tests/consumer/ is that parent, and a test holds the compile line it produces.
+#   gcc, clang, emscripten: build-flags.txt, read here and by tools/wasm/build.sh — one definition, two readers.
+#   MSVC 2022+: /fp:precise, /EHs-c- /EHa- (no C++ and no asynchronous exceptions), /GR-, and /we4530 /we4541, which
+#     make a `try`, a typeid and a dynamic_cast errors. A bare `throw` compiles under /EHs-c-: the session-laws lint
+#     refuses the token in every source and every #if branch, so no row has to be the one that catches it. The consumer's
+#     default /EHsc and /GR come first and are overridden, which MSVC reports as D9025 — expected.
+# Any other compiler, or a compiler in MSVC-compatible mode (clang-cl, icx-cl), or Intel's icx (fast floating point by
+# default): refused here, loudly. Their spelling of these guarantees is unverified in this repository, and a library
+# built with the wrong spelling would compile, link and decide differently.
+if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
+    if(MSVC_VERSION LESS 1930)
+        message(FATAL_ERROR "felitronics::session needs MSVC 2022 (19.30) or later (this is ${MSVC_VERSION})")
+    endif()
+    set(FELITRONICS_SESSION_COMPILE_OPTIONS "SHELL:/fp:precise /EHs-c- /EHa- /GR- /we4530 /we4541")
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$"
+       AND NOT "${CMAKE_CXX_COMPILER_FRONTEND_VARIANT}" STREQUAL "MSVC")
+    file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/build-flags.txt FELITRONICS_SESSION_GNU_FLAGS REGEX "^-")
+    list(LENGTH FELITRONICS_SESSION_GNU_FLAGS FELITRONICS_SESSION_GNU_FLAGS_LINES)
+    if(NOT FELITRONICS_SESSION_GNU_FLAGS_LINES EQUAL 1)
+        message(FATAL_ERROR "modules/session/build-flags.txt must hold exactly one line of flags")
+    endif()
+    set(FELITRONICS_SESSION_COMPILE_OPTIONS "SHELL:${FELITRONICS_SESSION_GNU_FLAGS}")
+else()
+    message(FATAL_ERROR
+        "felitronics::session is not built with ${CMAKE_CXX_COMPILER_ID} (frontend "
+        "'${CMAKE_CXX_COMPILER_FRONTEND_VARIANT}'): its FP-contraction, fast-math, exception and RTTI switches are verified "
+        "for MSVC 2022+, and for gcc, clang, Apple clang and emscripten in their GNU spelling. clang-cl, icx-cl and icx "
+        "(fast floating point by default) are not — a library built with the wrong spelling would compile and decide "
+        "differently. Use a supported compiler for this repository.")
+endif()
+target_compile_options(felitronics_session PRIVATE ${FELITRONICS_SESSION_COMPILE_OPTIONS})
 
 # The hygiene warning set of this tree, -Werror included — in THIS repository's own builds only. A consumer builds the
 # library too, with whatever compiler it has, and a warning a newer compiler invents must not break its build.
@@ -34,8 +56,7 @@ if(FELITRONICS_BUILD_TESTS AND CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
 endif()
 
 # THE TWO RELEASES THE LIBRARY REPORTS (Session::version, Session::coreVersion): this repository's project() line, and
-# felitronics-core's, which the top-level CMakeLists.txt reads from the directory that defined it (whichever core the
-# graph resolved). No fallback: a library that cannot say which releases built it must not be built.
+# felitronics-core's, which the top-level CMakeLists.txt reads from the directory that defined it. No fallback.
 # tools/wasm/build.sh reads the same two project() lines for the wasm module.
 if(NOT "${FELITRONICS_MASTERING_FCORE_VERSION}" MATCHES "^([0-9]+)\\.([0-9]+)\\.([0-9]+)$")
     message(FATAL_ERROR "felitronics::session: no felitronics-core release (got '${FELITRONICS_MASTERING_FCORE_VERSION}')")
@@ -57,32 +78,74 @@ set(FELITRONICS_SESSION_VERSION_DEFINITIONS
 target_compile_definitions(felitronics_session PRIVATE ${FELITRONICS_SESSION_VERSION_DEFINITIONS})
 
 if(FELITRONICS_BUILD_TESTS)
-    # The session and its laws that a running program can check: the demand of create() against what create() asks
-    # the heap for (law 11d, through the one allocation counter), the harness proven able to fail, the two versions
-    # against the build's, and the contraction probe answered from inside the library while THIS translation unit is
-    # compiled with contraction forced on — a consumer with other flags, which the library's answer must not follow.
+    include(${CMAKE_CURRENT_SOURCE_DIR}/tests/SessionTestTools.cmake)
+
+    # The FMA-capable rows, where a contraction that was allowed happens and a missing -ffp-contract=off is observable:
+    # every arm64 row. (x86-64 has FMA only with -mfma / /arch:AVX2, which this tree does not set.) The suites below
+    # REQUIRE their positive controls to fuse on these rows, so a control that went quietly dead is red.
+    set(FELITRONICS_SESSION_CONTRACT_FAST $<IF:$<CXX_COMPILER_ID:MSVC>,/fp:contract,-ffp-contract=fast>)
+
+    # The session and its laws that a running program can check: the demand of create() against what create() asks the
+    # heap for (law 11d, through the one allocation counter), the harness proven able to fail, the two versions, the
+    # floating-point environment refused at create, and the library's build probes answered from inside it while THIS
+    # translation unit is compiled with contraction forced on.
     add_executable(felitronics_session_tests tests/SessionTests.cpp)
     target_link_libraries(felitronics_session_tests PRIVATE felitronics::session felitronics::test_support)
+    target_include_directories(felitronics_session_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_features(felitronics_session_tests PRIVATE cxx_std_20)
     target_compile_definitions(felitronics_session_tests PRIVATE ${FELITRONICS_SESSION_VERSION_DEFINITIONS})
-    target_compile_options(felitronics_session_tests PRIVATE
-        $<$<CXX_COMPILER_ID:MSVC>:/fp:contract>
-        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-ffp-contract=fast>)
+    target_compile_options(felitronics_session_tests PRIVATE ${FELITRONICS_SESSION_CONTRACT_FAST})
     add_test(NAME felitronics_session_tests COMMAND felitronics_session_tests)
 
-    # THE BUILD CONTROLS — the flags above, proven able to fail. Each control is one source compiled twice with the
-    # session library's OWN compile options (read off the target, not restated): clean, as part of every build, which
-    # proves the setup compiles; and with the forbidden construct planted (FELITRONICS_SESSION_PLANT), outside the
-    # default build, where the test below builds it and requires the build to FAIL with the compiler's diagnostic for
-    # that construct. So the only difference between the build that must pass and the one that must fail is the
-    # construct, and dropping a flag from the library turns its control red.
-    #   throw        clang and gcc only: MSVC compiles a throw under /EHs-c- (see the flags above)
-    set(FELITRONICS_SESSION_CONTROLS try typeid dynamic_cast)
-    # The diagnostics, spelled per compiler (clang and em++ / gcc / MSVC) and matched as phrases: a looser pattern
-    # matched a control's own FILE NAME in the build log and a flag in its command line, and passed a build that had
-    # failed for any reason at all. The quotes around a keyword are matched as "not a space", not as ': gcc quotes with
-    # ‘typeid’ in a UTF-8 locale and with 'typeid' in the C locale (measured on gcc 14.2, deb and the arm64 row), and
-    # CI's runners are UTF-8.
+    # HOSTILE FLAGS AHEAD OF THE LIBRARY'S. The library's sources compiled again, into test binaries, with a licence the
+    # session refuses PREPENDED to the target's own options — the position a consumer's CMAKE_CXX_FLAGS or directory
+    # options take. The library's options come after and must win: every build probe answers IEEE. Each binary also
+    # compiles the probes with the licence alone and requires them to change on its row — so the licence is live, and
+    # "the library's flags won" is a statement about something that would otherwise have happened.
+    #   contract   -ffp-contract=fast (/fp:contract) — live on gcc 13 too, whose `on` is `off`
+    #   fastmath   -freciprocal-math -fassociative-math -fno-signed-zeros -fno-trapping-math (/fp:fast)
+    set(FELITRONICS_SESSION_HOSTILE_contract ${FELITRONICS_SESSION_CONTRACT_FAST})
+    set(FELITRONICS_SESSION_HOSTILE_fastmath
+        $<IF:$<CXX_COMPILER_ID:MSVC>,/fp:fast,-freciprocal-math;-fassociative-math;-fno-signed-zeros;-fno-trapping-math>)
+    foreach(licence contract fastmath)
+        add_library(felitronics_session_hostile_${licence} OBJECT ${FELITRONICS_SESSION_SOURCES})
+        target_include_directories(felitronics_session_hostile_${licence} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        target_compile_features(felitronics_session_hostile_${licence} PRIVATE cxx_std_20)
+        target_compile_definitions(felitronics_session_hostile_${licence} PRIVATE ${FELITRONICS_SESSION_VERSION_DEFINITIONS})
+        target_compile_options(felitronics_session_hostile_${licence} PRIVATE
+            "${FELITRONICS_SESSION_HOSTILE_${licence}}" $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
+        add_executable(felitronics_session_hostile_${licence}_tests tests/HostileFlagsTests.cpp
+                       $<TARGET_OBJECTS:felitronics_session_hostile_${licence}>)
+        target_link_libraries(felitronics_session_hostile_${licence}_tests PRIVATE felitronics::test_support)
+        target_include_directories(felitronics_session_hostile_${licence}_tests PRIVATE
+            ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
+        target_compile_features(felitronics_session_hostile_${licence}_tests PRIVATE cxx_std_20)
+        target_compile_definitions(felitronics_session_hostile_${licence}_tests PRIVATE
+            FELITRONICS_SESSION_HOSTILE_LICENCE_${licence}=1)
+        target_compile_options(felitronics_session_hostile_${licence}_tests PRIVATE "${FELITRONICS_SESSION_HOSTILE_${licence}}")
+        add_test(NAME felitronics_session_hostile_${licence}_tests COMMAND felitronics_session_hostile_${licence}_tests)
+    endforeach()
+
+    # INLINE CODE AND THE LINKER. tests/ComdatForcedCopy.cpp compiles the contraction canary (src/ContractionCanary.h)
+    # with -ffp-contract=fast and is linked AHEAD of the library, so the linker keeps its copy; create() must then refuse
+    # with Status::ContractedHelper. The order of the sources is the order on the link line, and it is the test.
+    add_executable(felitronics_session_comdat_tests tests/ComdatForcedCopy.cpp tests/ComdatTests.cpp)
+    target_link_libraries(felitronics_session_comdat_tests PRIVATE felitronics::session felitronics::test_support)
+    target_include_directories(felitronics_session_comdat_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_features(felitronics_session_comdat_tests PRIVATE cxx_std_20)
+    set_source_files_properties(tests/ComdatForcedCopy.cpp PROPERTIES COMPILE_OPTIONS "${FELITRONICS_SESSION_CONTRACT_FAST}")
+    add_test(NAME felitronics_session_comdat_tests COMMAND felitronics_session_comdat_tests)
+
+    # THE BUILD CONTROLS — each forbidden construct, and each forbidden licence, proven to fail the build.
+    #  1. Constructs (tests/controls/): one source compiled with the library's OWN compile options (read off the target),
+    #     clean as part of every build and with the construct planted (FELITRONICS_SESSION_PLANT) in a build that must
+    #     fail with that construct's diagnostic. The diagnostics are matched as phrases, per compiler (clang and em++ /
+    #     gcc / MSVC); a keyword's quotes as "not a space", because gcc prints ‘typeid’ in a UTF-8 locale and 'typeid'
+    #     in the C locale.
+    #     THE WASM TIER: its preset compiles EVERYTHING with -fno-exceptions -fno-rtti, so these planted builds fail there
+    #     whatever the library's options say — on that tier they prove the preset, and the native rows prove the library.
+    #  2. Licences: src/BuildContract.cpp compiled with the library's options and then a flag APPENDED after them — the
+    #     position of a per-source override — which must fail on src/BuildGuards.h's own #error for it.
     set(FELITRONICS_SESSION_CONTROL_EXPECT_try
         "cannot use [^ ]+try[^ ]+ with exceptions disabled|exception handling disabled, use|error C4530")
     set(FELITRONICS_SESSION_CONTROL_EXPECT_throw
@@ -91,8 +154,9 @@ if(FELITRONICS_BUILD_TESTS)
         "use of typeid requires -frtti|cannot use [^ ]+typeid[^ ]+ with|error C4541: [^ ]+typeid")
     set(FELITRONICS_SESSION_CONTROL_EXPECT_dynamic_cast
         "use of dynamic_cast requires -frtti|[^ ]+dynamic_cast[^ ]+ not permitted with|error C4541: [^ ]+dynamic_cast")
+    set(FELITRONICS_SESSION_CONTROLS try typeid dynamic_cast)
     if(NOT MSVC)
-        list(APPEND FELITRONICS_SESSION_CONTROLS throw)
+        list(APPEND FELITRONICS_SESSION_CONTROLS throw)   # MSVC compiles a bare throw under /EHs-c- (the lint holds it)
     endif()
     foreach(ctl IN LISTS FELITRONICS_SESSION_CONTROLS)
         foreach(variant clean planted)
@@ -106,14 +170,57 @@ if(FELITRONICS_BUILD_TESTS)
             target_compile_features(${tgt} PRIVATE cxx_std_20)
             target_compile_options(${tgt} PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
         endforeach()
-        add_test(NAME felitronics_session_control_${ctl}
-                 COMMAND ${CMAKE_COMMAND}
-                         -DBUILD_DIR=${CMAKE_BINARY_DIR}
-                         -DTARGET=felitronics_session_control_${ctl}_planted
-                         -DCONFIG=$<CONFIG>
-                         "-DEXPECT=${FELITRONICS_SESSION_CONTROL_EXPECT_${ctl}}"
-                         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/build-must-fail.cmake)
-        # One build of this tree at a time: two build tools running in one build directory corrupt its state.
-        set_tests_properties(felitronics_session_control_${ctl} PROPERTIES RESOURCE_LOCK felitronics_build_tree)
+        felitronics_session_must_fail(felitronics_session_control_${ctl} felitronics_session_control_${ctl}_planted
+                                      "${FELITRONICS_SESSION_CONTROL_EXPECT_${ctl}}")
     endforeach()
+
+    if(MSVC)
+        set(FELITRONICS_SESSION_APPEND_fastmath   /fp:fast)
+        set(FELITRONICS_SESSION_APPEND_exceptions /EHsc)
+        set(FELITRONICS_SESSION_APPEND_rtti       /GR)
+        set(FELITRONICS_SESSION_APPEND_EXPECT_fastmath "must be compiled with /fp:precise on MSVC")
+    else()
+        set(FELITRONICS_SESSION_APPEND_fastmath   -ffast-math)
+        set(FELITRONICS_SESSION_APPEND_exceptions -fexceptions)
+        set(FELITRONICS_SESSION_APPEND_rtti       -frtti)
+        set(FELITRONICS_SESSION_APPEND_EXPECT_fastmath "must be compiled without fast-math")
+    endif()
+    set(FELITRONICS_SESSION_APPEND_EXPECT_exceptions "must be compiled without exceptions")
+    set(FELITRONICS_SESSION_APPEND_EXPECT_rtti       "must be compiled without RTTI")
+    foreach(licence fastmath exceptions rtti)
+        set(tgt felitronics_session_control_append_${licence})
+        add_library(${tgt} OBJECT EXCLUDE_FROM_ALL src/BuildContract.cpp)
+        target_include_directories(${tgt} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        target_compile_features(${tgt} PRIVATE cxx_std_20)
+        target_compile_definitions(${tgt} PRIVATE ${FELITRONICS_SESSION_VERSION_DEFINITIONS})
+        target_compile_options(${tgt} PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>
+                                              ${FELITRONICS_SESSION_APPEND_${licence}})
+        felitronics_session_must_fail(${tgt} ${tgt} "${FELITRONICS_SESSION_APPEND_EXPECT_${licence}}")
+    endforeach()
+
+    # THE COMPILE LINE, READ BACK. What no preprocessor macro announces — contraction on clang and gcc — is read from
+    # the compile commands this build and a consumer's build actually produce: for every source of the library, the last
+    # -ffp-contract= is `off`, nothing after -fno-fast-math licenses fast math, and the last word on exceptions and RTTI
+    # is `no`. A per-source override, or an option de-duplicated away, is red here. Needs compile_commands.json, which
+    # the Makefile and Ninja generators write (CMAKE_EXPORT_COMPILE_COMMANDS is on at the top level).
+    if(CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
+        add_test(NAME felitronics_session_compile_line
+                 COMMAND ${CMAKE_COMMAND} -DCOMPILE_COMMANDS=${CMAKE_BINARY_DIR}/compile_commands.json
+                         -DTARGET_DIR=felitronics_session.dir
+                         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile-line-gate.cmake)
+        # ...and in a CONSUMER's build: tests/consumer/ is a parent project that states `add_compile_options(-ffp-contract=off)`
+        # and then makes felitronics-core and this repository available. Configured, not built.
+        if(NOT EMSCRIPTEN AND NOT MSVC)
+            add_test(NAME felitronics_session_consumer_compile_line
+                     COMMAND ${CMAKE_COMMAND}
+                             -DGENERATOR=${CMAKE_GENERATOR}
+                             -DCXX=${CMAKE_CXX_COMPILER}
+                             -DCONSUMER=${CMAKE_CURRENT_SOURCE_DIR}/tests/consumer
+                             -DBUILD=${CMAKE_CURRENT_BINARY_DIR}/consumer
+                             -DCORE=${FELITRONICS_MASTERING_CORE_SOURCE_DIR}
+                             -DMASTERING=${PROJECT_SOURCE_DIR}
+                             -DGATE=${CMAKE_CURRENT_SOURCE_DIR}/tests/compile-line-gate.cmake
+                             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/consumer-compile-line.cmake)
+        endif()
+    endif()
 endif()

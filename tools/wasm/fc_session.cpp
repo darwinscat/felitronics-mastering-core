@@ -6,21 +6,24 @@
 // unpacking of it.
 //
 // NOTHING HERE DECIDES ANYTHING. Four jobs and no fifth: check what a page hands over, own the handles, refuse every
-// call once one has not returned (the poison), and forward to `felitronics::session`. It compiles natively too
-// (FC_EXPORT degrades to extern "C"), which is how felitronics_session_abi_tests runs it under ctest, ASan and UBSan,
-// and how fcore_session reports the ABI it speaks.
+// call once one has not returned (the poison), and forward to `felitronics::session` — including its refusals, mapped
+// to status codes. It compiles natively too (FC_EXPORT degrades to extern "C"), which is how
+// felitronics_session_abi_tests runs it under ctest, ASan and UBSan, and how fcore_session reports the ABI it speaks —
+// and everywhere it is compiled with the session library's own options (tools/CMakeLists.txt, tools/wasm/build.sh): no
+// exceptions, no RTTI, no contraction, no fast-math.
 //
 // TWO GLOBALS, AND THOSE TWO ARE THE ONLY ONES SESSION HAS ANYWHERE. `modules/session` holds no mutable state outside
 // its objects (docs/SESSION.md); a C boundary cannot work without some, because a handle must name something between
 // calls and the poison must outlive the call that never returned. So this file keeps the handle table and the poison
-// flag, and nothing else — tools/lint/session-laws.txt names both, and the session-laws lint refuses a third.
+// flag, and nothing else — the object-file gate reads this translation unit's object and refuses any writable symbol
+// but those two, named in tools/lint/session-objects.txt. Both are trivially destructible, so the module registers no
+// destructor to run at exit either.
 
 #include "fc_session_abi.h"
 
 #include <felitronics/session/Session.h>
 
 #include <cstdint>
-#include <exception>
 #include <memory>
 
 #if defined(__EMSCRIPTEN__)
@@ -32,6 +35,7 @@
 #endif
 
 using felitronics::session::Session;
+using felitronics::session::Status;
 
 static_assert (sizeof (fc_session) == 4, "a handle is 32 bits on every tier");
 static_assert (FC_SESSION_MAX_HANDLES >= 1u && FC_SESSION_MAX_HANDLES <= 255u,
@@ -44,12 +48,24 @@ namespace
 // THE HANDLE TABLE — fc_master's scheme (tools/wasm/fc_master.cpp, HANDLES), for fc_master's measured reason: under
 // emscripten a destroyed object's address came back for the next one 19 times out of 19, so a raw pointer handle is a
 // use-after-free that the shipping tier reproduces every time and a desktop machine never does. A handle is a slot and
-// that slot's generation: `(generation << 8) | (slot + 1)`, 24 bits of generation, so a destroyed handle is refused
-// until the same slot has been destroyed 16.7 million more times — a number no page meets.
+// that slot's generation: `(generation << 8) | (slot + 1)`, 24 bits of generation.
+//
+// AND A SLOT RETIRES BEFORE ITS GENERATION WRAPS. A generation that wrapped would give the slot's first handle back to a
+// later session, and the stale handle would then destroy it: reproduced on the wasm module — handle 257 created and
+// destroyed, 16 777 214 more create/destroy cycles (0.21 s), the next create answered 257 again, and destroy(257)
+// through the stale copy destroyed the new session. So a slot whose generation reaches kMaxGeneration is retired when
+// that session is destroyed: it issues no handle again, and every handle it ever issued stays refused. The price is a
+// lifetime budget — FC_SESSION_MAX_HANDLES x kMaxGeneration creates per module instance — after which a create
+// answers FC_SESSION_ERR_EXHAUSTED for good (fc_session_abi.h says so).
+constexpr std::uint32_t kMaxGeneration = FC_SESSION_SLOT_GENERATIONS;
+static_assert (kMaxGeneration == 0x00FFFFFFu, "a generation is the 24 bits of the handle above the slot byte");
+
 struct Slot
 {
-    std::uint32_t gen = 1;                 // from 1, so a zeroed handle is never valid
-    std::unique_ptr<Session> session;      // null: the slot is free
+    std::uint32_t gen = 1;           // from 1, so a zeroed handle is never valid
+    bool retired = false;            // its generations are spent: it issues no handle again
+    Session* session = nullptr;      // null: the slot is free. Owned — deleted by destroy — and a raw pointer so the
+                                     // table is trivially destructible (no exit-time destructor for a module to run)
 };
 
 Slot g_slots[FC_SESSION_MAX_HANDLES];
@@ -62,16 +78,15 @@ Slot g_slots[FC_SESSION_MAX_HANDLES];
 enum : std::uint8_t { kIdle = 0, kInCall = 1, kPoisoned = 2 };
 volatile std::uint8_t g_callState = kIdle;
 
-// Clears the in-call mark on a normal return — and only on one. Natively an exception escaping the call unwinds this
-// guard too, so it compares the count of exceptions in flight with the count on entry and leaves the mark standing
-// when they differ: an escaped exception is a call that did not return. A mark that became Poisoned during the call
-// (a re-entry) is not cleared either — the latch is the point.
+// Clears the in-call mark on a normal return. Nothing else can end a call: this translation unit and the library are
+// compiled without exceptions, so there is no unwinding to tell apart from a return — an allocation that cannot be
+// served ends the process natively and aborts the module in wasm, where the mark stays set and poisons what follows.
+// A mark that became Poisoned during the call (a re-entry) is not cleared — the latch is the point.
 struct CallGuard
 {
-    const int unwinding = std::uncaught_exceptions();
     ~CallGuard()
     {
-        if (std::uncaught_exceptions() == unwinding && g_callState == kInCall) g_callState = kIdle;
+        if (g_callState == kInCall) g_callState = kIdle;
     }
 };
 
@@ -84,7 +99,7 @@ struct CallGuard
 
 fc_session packHandle (std::uint32_t slot, std::uint32_t gen) noexcept
 {
-    return ((gen & 0x00FFFFFFu) << 8) | (slot + 1u);
+    return ((gen & kMaxGeneration) << 8) | (slot + 1u);
 }
 
 Slot* lookup (fc_session h) noexcept
@@ -94,7 +109,7 @@ Slot* lookup (fc_session h) noexcept
     if (slot >= FC_SESSION_MAX_HANDLES) return nullptr;
     Slot& s = g_slots[slot];
     if (s.session == nullptr) return nullptr;
-    if ((s.gen & 0x00FFFFFFu) != (h >> 8)) return nullptr;
+    if ((s.gen & kMaxGeneration) != (h >> 8)) return nullptr;
     return &s;
 }
 
@@ -136,12 +151,20 @@ FC_EXPORT fc_session_status fc_session_create (fc_session* out)
     FC_SESSION_GUARD;
     if (const fc_session_status st = checkHandleOut (out); st != FC_SESSION_OK) return st;
     std::uint32_t slot = 0;
-    while (slot < FC_SESSION_MAX_HANDLES && g_slots[slot].session != nullptr) ++slot;
+    while (slot < FC_SESSION_MAX_HANDLES && (g_slots[slot].session != nullptr || g_slots[slot].retired)) ++slot;
     if (slot == FC_SESSION_MAX_HANDLES) return FC_SESSION_ERR_EXHAUSTED;
-    // Session::create() allocates Session::createBytes() and nothing here allocates besides: the table is static, so a
-    // shell's budget for this call is the session's own demand (felitronics_session_abi_tests pins it). A heap that
-    // cannot serve it aborts inside, and the mark above stays set — the poison.
-    g_slots[slot].session = Session::create();
+    // Session::create() makes its own checks first and allocates Session::createBytes() only if they pass; nothing here
+    // allocates besides — the table is static — so a shell's budget for this call is the session's own demand
+    // (felitronics_session_abi_tests pins it). A heap that cannot serve it aborts inside, and the mark above stays set:
+    // the poison. A refusal comes back as the session's reason, with the slot still free and `*out` untouched.
+    auto created = Session::create();
+    switch (created.status)
+    {
+        case Status::Ok:                       break;
+        case Status::FloatingPointEnvironment: return FC_SESSION_ERR_FP_ENVIRONMENT;
+        case Status::ContractedHelper:         return FC_SESSION_ERR_CONTRACTED_HELPER;
+    }
+    g_slots[slot].session = created.session.release();
     *out = packHandle (slot, g_slots[slot].gen);
     return FC_SESSION_OK;
 }
@@ -151,11 +174,14 @@ FC_EXPORT fc_session_status fc_session_destroy (fc_session session)
     FC_SESSION_GUARD;
     Slot* s = lookup (session);
     if (s == nullptr) return FC_SESSION_ERR_HANDLE;
-    s->session.reset();
-    // The generation moves on, so the handle just destroyed can never address the next session in this slot. It WRAPS
-    // at 24 bits rather than retiring the slot (fc_master's reasoning: a retiring 8-bit generation became a lifetime
-    // budget a per-file loop met in an afternoon), and skips 0, so no handle is ever a small integer.
-    s->gen = (s->gen + 1u) & 0x00FFFFFFu;
-    if (s->gen == 0u) s->gen = 1u;
+    delete s->session;
+    s->session = nullptr;
+    // The generation moves on, so the handle just destroyed can never address the next session in this slot — and at
+    // the last generation the slot retires instead of wrapping (see HANDLES above). Generation 0 is never issued, so no
+    // handle is ever a small integer.
+    if (s->gen == kMaxGeneration)
+        s->retired = true;
+    else
+        ++s->gen;
     return FC_SESSION_OK;
 }

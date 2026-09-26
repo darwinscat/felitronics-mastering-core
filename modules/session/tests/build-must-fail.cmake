@@ -9,14 +9,23 @@
 # construct (EXPECT) — a build that fails for any other reason (a typo in the control, a missing include) would
 # otherwise read as a working gate. The clean twin of every control is part of the ordinary build, so the setup
 # itself is known to compile.
-foreach(var BUILD_DIR TARGET CONFIG EXPECT)
+foreach(var BUILD_DIR TARGET EXPECT)
     if(NOT DEFINED ${var} OR "${${var}}" STREQUAL "")
         message(FATAL_ERROR "build-must-fail.cmake: ${var} is not set")
     endif()
 endforeach()
+# CONFIG may be EMPTY, and that is a valid build: a single-configuration generator with no CMAKE_BUILD_TYPE has no
+# configuration to name, and `--config ""` would be a malformed command line rather than a build.
+if(NOT DEFINED CONFIG)
+    message(FATAL_ERROR "build-must-fail.cmake: CONFIG is not passed (it may be empty, but it must be passed)")
+endif()
+set(config_args "")
+if(NOT CONFIG STREQUAL "")
+    set(config_args --config "${CONFIG}")
+endif()
 
 execute_process(
-    COMMAND "${CMAKE_COMMAND}" --build "${BUILD_DIR}" --target "${TARGET}" --config "${CONFIG}"
+    COMMAND "${CMAKE_COMMAND}" --build "${BUILD_DIR}" --target "${TARGET}" ${config_args}
     RESULT_VARIABLE rc
     OUTPUT_VARIABLE out
     ERROR_VARIABLE  err)

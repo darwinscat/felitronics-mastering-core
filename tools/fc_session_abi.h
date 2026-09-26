@@ -19,47 +19,25 @@
 // state of the session's own: every answer is the session's, read out of it.
 //
 // ====================================================================================
-// VERSION 0 IS A DRAFT — NOT A STABLE INTERFACE
+// VERSION 0 IS A DRAFT
 // ====================================================================================
-// FC_SESSION_ABI_VERSION is 0, and 0 promises NOTHING: no append-only rule holds for it, and any entry point, argument,
-// status code, constant or struct here may change or go without a bump. What it carries is the version, a session
-// created and destroyed through a handle, and the poison — enough to build the module, check it and drive it.
-//
-// VERSION 1 is the first frozen surface, and it is frozen together with the two things v0 lacks and a stable create
-// cannot do without: `create` taking the shell's CAPABILITIES (its heap ceiling, the highest rate it accepts, the
-// devices it offers) and its config; and the create's DEMAND forwarded through the ABI, so a shell can compare it with
-// its heap before the call (law 11d, felitronics-core docs/DSP-ARCHITECTURE.md). Freezing today's argument-less
-// create would keep it for ever beside the real one.
-//
-// Until then no release of this repository presents fcsession as a stable interface, and a shell must not gate on
-// this version as one: the loader's gate for shells is `fc_session_abi_version() >= 1`, and a module answering 0 is a
-// draft. The rule below is the one v1 will be held to, written now so that v1 has nothing to invent.
-//
-// ====================================================================================
-// THE COMPATIBILITY RULE FROM v1 — APPEND-ONLY, as tools/fc_master_abi.h and tools/fc_probe_abi.h state it for theirs
-// ====================================================================================
-// 1. WHAT MOVES THE VERSION: the surface a caller may use grows — an entry point is ADDED, or a struct that crosses
-//    the boundary gains a field (appended at its END; a struct nested by value never grows). One logical addition per
-//    bump. A page's only protection against calling an export its module does not have (a TypeError, not a status)
-//    is its loader's "module version >= page version" gate, so an entry point that arrived without a bump would pass
-//    that gate and still be missing.
-// 2. WHAT NEVER CHANGES: an existing entry point's name, arguments, return type and meaning; an existing status code's
-//    value and meaning; the handle's encoding (0 is never a handle). Nothing is removed or reordered.
-// 3. A NEW STATUS CODE IS NOT A NEW VERSION: codes are only ever appended, so a caller built against an older header
-//    meets one it does not know exactly where it already handles "not FC_SESSION_OK".
-// 4. WHAT ONE BUMP TOUCHES: this file's FC_SESSION_ABI_VERSION and table, the entry points in
-//    tools/wasm/fc_session.cpp, the suite that pins them (felitronics_session_abi_tests), tools/wasm/session-check.mjs
-//    (which holds the module to its exact export set), and the release note that names the version.
+// No promise: any entry point, argument, status code, constant or struct in this file may change or go, without a
+// version bump. A shell built against it is built against this revision of the repository and no other.
 //
 //   fc_session   the surface
 //   ----------   ------------------------------------------------------------------------------------------------
 //   0 (draft)    fc_session_abi_version, fc_session_create, fc_session_destroy — plus the heap's _malloc / _free.
-//                No promise: see VERSION 0 IS A DRAFT above.
 #define FC_SESSION_ABI_VERSION 0u
 
-// HOW MANY SESSIONS ONE MODULE INSTANCE HOLDS AT ONCE. A create past it answers FC_SESSION_ERR_EXHAUSTED. Part of the
-// contract from v1, because a page decides from it whether a second session needs a second module instance.
+// HOW MANY SESSIONS ONE MODULE INSTANCE HOLDS AT ONCE (law 5: the capacity is stated, not discovered). A create past it
+// answers FC_SESSION_ERR_EXHAUSTED.
+//
+// AND HOW MANY IT ISSUES IN ITS LIFE. Each slot issues FC_SESSION_SLOT_GENERATIONS handles — one per create — and then
+// RETIRES rather than wrap its generation, which would hand an old handle's number to a new session and let the stale
+// handle destroy it. After FC_SESSION_MAX_HANDLES x FC_SESSION_SLOT_GENERATIONS creates in one module instance every
+// create answers FC_SESSION_ERR_EXHAUSTED, for good: the way on is a new module instance.
 #define FC_SESSION_MAX_HANDLES 8u
+#define FC_SESSION_SLOT_GENERATIONS 16777215u
 
 #include <stdint.h>
 
@@ -73,7 +51,7 @@ extern "C" {
 typedef uint32_t fc_session;
 
 // THE STATUS OF EVERY CALL THAT CAN FAIL. The values run in the order the checks do, so one malformed call has one
-// answer:   POISON -> out-parameter (null, alignment, in the heap) -> handle -> the table.
+// answer:   POISON -> out-parameter (null, alignment, in the heap) -> handle -> the table -> the session's own.
 typedef enum fc_session_status
 {
     FC_SESSION_OK            = 0,
@@ -83,7 +61,12 @@ typedef enum fc_session_status
     FC_SESSION_ERR_SPAN      = 4,   // an out-pointer whose object leaves the wasm heap (wasm only — natively there is
                                     // no linear memory to bound it by)
     FC_SESSION_ERR_HANDLE    = 5,   // 0, never issued, already destroyed, or from a previous generation of its slot
-    FC_SESSION_ERR_EXHAUSTED = 6    // FC_SESSION_MAX_HANDLES sessions are alive already
+    FC_SESSION_ERR_EXHAUSTED = 6,   // FC_SESSION_MAX_HANDLES sessions are alive already, or every free slot has retired
+    // The session's own refusals (felitronics::session::Status), passed through:
+    FC_SESSION_ERR_FP_ENVIRONMENT    = 7,   // the calling thread flushes to zero, reads subnormals as zero, or does not
+                                            // round to nearest — restore the environment (or call from another thread)
+    FC_SESSION_ERR_CONTRACTED_HELPER = 8    // a helper the session shares with the program was kept, by the linker, in a
+                                            // copy compiled with FP contraction across statements (docs/SESSION.md)
 } fc_session_status;
 
 // ====================================================================================
@@ -103,13 +86,13 @@ typedef enum fc_session_status
 // (from a new_handler, from anything the runtime runs inside an allocation) cannot be told apart from the first call
 // after an abandoned one, and is answered FC_SESSION_ERR_POISONED — for good.
 
-// The version this build speaks — FC_SESSION_ABI_VERSION; 0 is the draft (see above). Takes nothing, reads no state,
-// cannot fail.
+// The version this build speaks — FC_SESSION_ABI_VERSION, 0: the draft. Takes nothing, reads no state, cannot fail.
 uint32_t fc_session_abi_version (void);
 
 // Creates an empty session and writes its handle to `*out`. `*out` is written ONLY on FC_SESSION_OK: a refused call
 // leaves it as it was, so a variable that still holds a live handle is not overwritten by a create that failed.
-// Checks: poison, `out` (null, 4-byte alignment, in the heap), a free slot.
+// Checks: poison, `out` (null, 4-byte alignment, in the heap), a free slot, then the session's own (the floating-point
+// environment, the kept canary). A refused create allocated nothing.
 fc_session_status fc_session_create (fc_session* out);
 
 // Destroys the session `session` names; the handle is refused from then on. Checks: poison, the handle.
