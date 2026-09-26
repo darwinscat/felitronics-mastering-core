@@ -26,7 +26,8 @@
 //
 //   fc_session   the surface
 //   ----------   ------------------------------------------------------------------------------------------------
-//   0 (draft)    fc_session_abi_version, fc_session_create, fc_session_destroy — plus the heap's _malloc / _free.
+//   0 (draft)    fc_session_abi_version, fc_session_create, fc_session_destroy, fc_session_config_version — plus the
+//                heap's _malloc / _free.
 #define FC_SESSION_ABI_VERSION 0u
 
 // HOW MANY SESSIONS ONE MODULE INSTANCE HOLDS AT ONCE (law 5: the capacity is stated, not discovered). A create past it
@@ -95,6 +96,13 @@ fc_session_status fc_session_create (fc_session* out);
 
 // Destroys the session `session` names; the handle is refused from then on. Checks: poison, the handle.
 fc_session_status fc_session_destroy (fc_session session);
+
+// THE CONFIG VERSION of this module — felitronics::session::config::version(): a 64-bit hash of the config compiled into
+// it (modules/session/config/*.toml), what a recipe will record so that a master names the numbers it was made with, and
+// what a shell may show or compare with `fcore_session config version`. Written as two uint32 halves, `out[0]` the low
+// one, since a JavaScript Number holds no 64-bit integer; written ONLY on FC_SESSION_OK. It reads the data compiled in and
+// allocates nothing. Checks: poison, `out` (null, 4-byte alignment, both halves in the heap).
+fc_session_status fc_session_config_version (uint32_t* out);
 
 #ifdef __cplusplus
 }   // extern "C"

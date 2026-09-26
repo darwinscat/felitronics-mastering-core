@@ -332,11 +332,12 @@ jobs:
         # of the tag.
         run: |
           cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release -DFELITRONICS_MASTERING_BUILD_TESTS=OFF $CORE_TAG
-          cmake --build build-native -j "$(nproc)" --target fcore_measure fcore_master
+          cmake --build build-native -j "$(nproc)" --target fcore_measure fcore_master fcore_session
       - name: The wasm modules build (tools/wasm/build.sh)
         run: |
           export FELITRONICS_CORE_DIR="$(sed -n 's/^FELITRONICS_MASTERING_CORE_SOURCE_DIR:INTERNAL=//p' build-native/CMakeCache.txt)"
-          test -n "$FELITRONICS_CORE_DIR"
+          export FELITRONICS_TOML_DIR="$(sed -n 's/^FELITRONICS_MASTERING_TOML_SOURCE_DIR:INTERNAL=//p' build-native/CMakeCache.txt)"
+          test -n "$FELITRONICS_CORE_DIR" && test -n "$FELITRONICS_TOML_DIR"
           ./tools/wasm/build.sh
       - name: fc_session — the module a page loads, checked on the artifact
         # felitronics_session_abi_tests runs fc_session.cpp natively and on this tier; what they cannot see is the
@@ -344,10 +345,12 @@ jobs:
         # that nothing else did — every export of the Module against the ABI and the runtime's own —, the out-pointer
         # past the end of the heap, which only a linear memory has, and one slot walked to its last generation. The
         # check must refuse a module with one undeclared export (build.sh builds that control into build/controls/)
-        # and a module that is not fcsession, or a swapped artifact would pass it.
+        # and a module that is not fcsession, or a swapped artifact would pass it. The module's config version must be the
+        # native CLI's: the two roads into the session carry one config.
         run: |
           set -euo pipefail
-          node tools/wasm/session-check.mjs tools/wasm/build/fcsession.node.js
+          node tools/wasm/session-check.mjs tools/wasm/build/fcsession.node.js \
+               --config-version "$(build-native/tools/fcore_session config version)"
           rc=0; node tools/wasm/session-check.mjs tools/wasm/build/controls/fcsession.node.js > extra-export.txt 2>&1 || rc=$?
           [ "$rc" -eq 1 ] && grep -q debug_probe extra-export.txt \
             || { cat extra-export.txt; echo "an undeclared export was not refused by name (exit $rc)"; exit 1; }
