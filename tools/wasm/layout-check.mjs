@@ -20,7 +20,8 @@
 // letters, in both directions. The word breaks are the JavaScript's own (`LowShelf` for `FC_FILTER_LOW_SHELF`),
 // so the comparison drops the underscores; nothing else about the spelling is free.
 //
-// AND THE STATUS NAMES, `FC_STATUS`, against `fc_status` the same way — full identifiers, order and value.
+// AND THE STATUS NAMES, `FC_STATUS`, against `fc_status` the same way — full identifiers, order and value — and the
+// CLI's own names for them (`fcore_master layout` prints those too), so a refusal reaches a human by name either way.
 //
 // AND IT HOLDS `FC_DOMAINS` AGAINST THE LAYOUTS — not the domain VALUES, which are behaviour and belong to
 // tools/tests/MasterDomainsTests.cpp, but that every row names a value field described here, that its bound
@@ -43,13 +44,14 @@ const r = bin.endsWith('.js')
 if (r.status !== 0) { console.error(`fcore_master layout: exit ${r.status}\n${r.stderr}`); process.exit(1); }
 
 let version = -1;
-const sizes = new Map(), fields = new Map(), table = new Map();
+const sizes = new Map(), fields = new Map(), table = new Map(), cliStatus = [];
 for (const line of r.stdout.split('\n')) {
     const t = line.trim().split(/\s+/);
     if (t[0] === 'V') version = Number(t[1]);
     else if (t[0] === 'S') sizes.set(t[1], Number(t[2]));
     else if (t[0] === 'F') { if (!fields.has(t[1])) fields.set(t[1], new Map()); fields.get(t[1]).set(t[2], Number(t[3])); }
     else if (t[0] === 'T') table.set(t[1], { id: Number(t[2]), size: Number(t[3]) });
+    else if (t[0] === 'E') cliStatus.push({ value: Number(t[1]), id: t[2], name: t[3] });
 }
 
 let failures = 0;
@@ -83,7 +85,7 @@ for (const name of table.keys()) check(STRUCT_IDS[name] !== undefined, `${name}:
 // ── FC_ENUMS against the header's enums ───────────────────────────────────────────────────────────
 // Each block is REQUIRED to be found: a regex that matched nothing would compare an empty list and pass.
 const header = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'fc_master_abi.h'), 'utf8');
-let codesCompared = 0;
+let codesCompared = 0, cliNamesCompared = 0;
 for (const [jsName, spec] of Object.entries(FC_ENUMS)) {
     const block = new RegExp(`typedef\\s+enum\\s+${spec.enum}\\s*\\{([^}]*)\\}`).exec(header);
     check(block !== null, `${spec.enum}: no such enum in tools/fc_master_abi.h`);
@@ -115,6 +117,25 @@ for (const [jsName, spec] of Object.entries(FC_ENUMS)) {
             check(c.value === i, `${c.name}: declared at index ${i} in the header and numbered ${c.value}`);
             check(FC_STATUS[i] === c.name, `FC_STATUS[${i}]: the header says ${c.name}, this file says ${FC_STATUS[i]}`);
         });
+
+        // AND THE CLI'S OWN NAMES, the `E` lines — `fcore_master`'s FC_STATUS_NAMES, which its `statusName` switch
+        // reads. The v13 three were missing there too, and all that said so was a -Wswitch warning, which fails
+        // nothing and which only clang gives by default (gcc's needs -Wall, MSVC's C4062 is off). Both directions:
+        // every code the header declares is named, at its value, by the header's identifier without `FC_ERR_` /
+        // `FC_`; and the CLI names nothing the header lacks.
+        const cli = new Map(cliStatus.map(e => [e.id, e]));
+        check(cli.size === cliStatus.length,
+              `fcore_master: ${cliStatus.length} status lines, ${cli.size} distinct identifiers`);
+        for (const c of codes) {
+            ++cliNamesCompared;
+            const e = cli.get(c.name), want = c.name.replace(/^FC_(ERR_)?/, '');
+            check(e !== undefined, `${c.name}: in the header and not named by fcore_master`);
+            if (!e) continue;
+            check(e.value === c.value, `${c.name}: ${c.value} in the header, ${e.value} in fcore_master`);
+            check(e.name === want, `${c.name}: fcore_master names it ${e.name}, not ${want}`);
+        }
+        for (const e of cliStatus)
+            check(codes.some(c => c.name === e.id), `${e.id}: named by fcore_master and not in the header's fc_status`);
     }
 }
 
@@ -197,6 +218,7 @@ FC_CONSTRAINT_BITS.forEach((name, bit) =>
           `FC_CONSTRAINT_BITS[${bit}] is ${name}; code ${bit + 1} is ${FC_CONSTRAINT[bit + 1]}`));
 
 console.log(`layout-check: ${structNames().length} structs, ${compared} fields, `
-          + `${codesCompared} enum codes, ${FC_DOMAINS.length} domain rows over ${leaves} input fields, `
+          + `${codesCompared} enum codes, ${cliNamesCompared} CLI status names, `
+          + `${FC_DOMAINS.length} domain rows over ${leaves} input fields, `
           + `${failures} failure(s)`);
 process.exit(failures === 0 ? 0 : 1);
