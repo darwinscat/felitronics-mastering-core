@@ -129,15 +129,30 @@ export_names() { [ "$#" -gt 0 ] || { echo "*** export_names: no file to read" >&
 # a grep of fc_probe.cpp would have missed ten names, every count would still have agreed, and — KEEPALIVE being
 # what it is (see above) — the artifact would have exported them anyway, so nothing would have gone red while the
 # list stopped being a statement of the ABI.
-# THE CLOSURE IS THE COMPILER'S (-MM, with the module's own include roots), not a second parser of #include lines:
-# it follows exactly the includes the compile follows, conditionals included. System headers are not in it and
-# declare no entry point.
+# THE CLOSURE IS THE COMPILER'S (-MM), not a second parser of #include lines, and it is taken with the module's own
+# FRONT-END FLAGS — the same array its compile line starts with, -msimd128 and -fno-exceptions included. With fewer
+# flags a header included under `#if defined(__wasm_simd128__)` would be compiled into the module and missing from
+# the list, and every count would still agree (found by the review round, reproduced with the SDK compiler). System
+# headers are not in it and declare no entry point.
+# The dependency list is MAKE's format, so it is read as such: `\ ` is a space inside a path, `\#` a `#`, `$$` a `$`,
+# a line ending in `\` continues. node reads it (build.sh needs node anyway, for the thread audit); splitting it on
+# whitespace in the shell cut a checkout path with a space in it into pieces.
 # Called as `LIST=$(abi_files ...)` and never inside a process substitution: there a failed -MM would hand the loop an
 # empty list and the build would go on, where in a command substitution `set -e` stops it on the spot.
 abi_files() { src="$1"; shift
-    deps=$(em++ -std=c++20 "$@" -MM "$src") || { echo "*** could not list the #include closure of $src" >&2; exit 1; }
-    printf '%s\n' "$deps" | sed -e 's/^[^:]*://' -e 's/\\$//' | tr -s ' \t' '\n' | grep . \
-        | while IFS= read -r f; do if grep -qE '^[[:space:]]*FC_EXPORT' "$f"; then echo "$f"; fi; done; }
+    deps=$(em++ "$@" -MM -MT fc_abi_closure "$src") \
+        || { echo "*** could not list the #include closure of $src" >&2; exit 1; }
+    # grep's 1 is "no entry point here"; anything else is a file of the closure this could not read, and dropping it
+    # would shorten the list while every count still agreed — so that stops the build instead.
+    printf '%s\n' "$deps" | node -e '
+        const s = require("fs").readFileSync(0, "utf8").replace(/\\\r?\n/g, " ");
+        if (!s.startsWith("fc_abi_closure:")) { console.error("*** -MM printed no rule for fc_abi_closure"); process.exit(1); }
+        for (const t of s.slice("fc_abi_closure:".length).match(/(?:\\.|\$\$|[^\s\\$])+/g) ?? [])
+            console.log(t.replace(/\$\$/g, "$").replace(/\\(.)/g, "$1"));' \
+        | while IFS= read -r f; do
+              if grep -qE '^[[:space:]]*FC_EXPORT' "$f"; then echo "$f"
+              elif [ $? -ne 1 ]; then echo "*** cannot read $f, a file of the #include closure of $src" >&2; exit 1; fi
+          done; }
 
 # ONE DECLARATION PER LINE, because `sed` takes one match per line and the count below is of LINES. Two on
 # one line — `FC_EXPORT int fc_a (void) { … } FC_EXPORT std::uint64_t fc_b (void) { … }` — used to drop the
@@ -185,7 +200,11 @@ check_return_types() { allowed="$1"; shift
                              printf '%s\n' "$offenders"; \
                              echo "    add it to check_return_types once you know what it looks like in JavaScript"; exit 1; }; }
 
-PLIST=$(abi_files "$SRC" "${INC[@]}")
+# The front end of every probe-family compile line (fcprobe, fctempo) — and of the #include closure read above, so
+# the list is taken under exactly the preprocessor the module is compiled under. -O3 is the release lines' level;
+# the debug line's -O1 defines the same __OPTIMIZE__.
+FRONT=(-std=c++20 -fno-exceptions -fno-rtti "${NUMERIC[@]}" "${INC[@]}" -msimd128)
+PLIST=$(abi_files "$SRC" "${FRONT[@]}" -O3)
 PFILES=(); while IFS= read -r f; do [ -z "$f" ] || PFILES+=("$f"); done <<< "$PLIST"
 PNAMES=$(export_names "${PFILES[@]}")
 PFOUND=$(printf '%s\n' "$PNAMES" | grep -c . || true)
@@ -201,8 +220,7 @@ echo "--- fc_probe exports: $PFOUND entry points (+ _malloc/_free), matching $PF
 # 96k/2ch and 44.1k/2ch fixtures, plus a 5:21 stereo programme) in both the release and the checked
 # debug build, before AND after the flag. Native runs the NEON kernel, this runs SIMD128: two different
 # hand-written kernels, identical bits. On the hot path, 865 -> 435 ms on that programme.
-COMMON=(-std=c++20 -fno-exceptions -fno-rtti "${NUMERIC[@]}" "${INC[@]}"
-        -msimd128
+COMMON=("${FRONT[@]}"
         --no-entry
         -sMODULARIZE=1
         -sEXPORT_NAME=createFcProbe
@@ -282,7 +300,7 @@ sizes fcprobe.web.wasm fcprobe.web.js fcprobe.web.mjs
 #     it publishes besides are declared in fc_tempo_entry.h, which is exactly the case the closure exists for.
 #==================================================================================================
 TSRC="$HERE/fc_tempo.cpp"
-TLIST=$(abi_files "$TSRC" "${INC[@]}")
+TLIST=$(abi_files "$TSRC" "${FRONT[@]}" -O3)
 TFILES=(); while IFS= read -r f; do [ -z "$f" ] || TFILES+=("$f"); done <<< "$TLIST"
 TNAMES=$(export_names "${TFILES[@]}")
 TFOUND=$(printf '%s\n' "$TNAMES" | grep -c . || true)
@@ -292,8 +310,7 @@ TEXPORTS="$(printf '%s\n' "$TNAMES" | paste -sd, -),_malloc,_free"
 echo
 echo "--- fc_tempo exports: $TFOUND entry points (+ _malloc/_free), matching $TFOUND declarations in: ${TFILES[*]##*/}"
 
-TCOMMON=(-std=c++20 -fno-exceptions -fno-rtti "${NUMERIC[@]}" "${INC[@]}"
-         -msimd128
+TCOMMON=("${FRONT[@]}"
          --no-entry
          -sMODULARIZE=1
          -sEXPORT_NAME=createFcTempo
@@ -363,7 +380,8 @@ MSRC="$HERE/fc_master.cpp"
 # — an entry point carrying a version number would not have left the list, it would have been TRUNCATED
 # into it: `fc_render_v2` becomes `fc_render_v`, and the link then fails on a symbol nobody declared.
 # _malloc/_free are the page's own, and are opt-in in emscripten 6.x.
-MLIST=$(abi_files "$MSRC" "${MASTER_INC[@]}")
+MFRONT=(-std=c++20 -fno-exceptions -fno-rtti "${NUMERIC[@]}" "${MASTER_INC[@]}" -msimd128)
+MLIST=$(abi_files "$MSRC" "${MFRONT[@]}" -O3)
 MFILES=(); while IFS= read -r f; do [ -z "$f" ] || MFILES+=("$f"); done <<< "$MLIST"
 MNAMES=$(export_names "${MFILES[@]}")
 MFOUND=$(printf '%s\n' "$MNAMES" | grep -c . || true)
@@ -372,8 +390,7 @@ check_return_types 'void|std::uint32_t|uint32_t|fc_status' "${MFILES[@]}"
 MEXPORTS="$(printf '%s\n' "$MNAMES" | paste -sd, -),_malloc,_free"
 echo "--- fc_master exports: $MFOUND entry points (+ _malloc/_free), matching $MFOUND declarations in: ${MFILES[*]##*/}"
 
-MCOMMON=(-std=c++20 -fno-exceptions -fno-rtti "${NUMERIC[@]}" "${MASTER_INC[@]}"
-         -msimd128
+MCOMMON=("${MFRONT[@]}"
          --no-entry
          -sMODULARIZE=1
          -sEXPORT_NAME=createFcMaster

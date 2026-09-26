@@ -18,8 +18,10 @@ Three criteria, and they are not interchangeable:
   still uses the system meter and is identical where glibc and musl agree — every rate CI runs it at, on
   Linux (below). `diff` is the acceptance. **`fctempo` is held to the same criterion**: it compiles the probe's
   tempo entry points from the same text (`tools/wasm/fc_tempo_entry.h`), and the tempo step diffs every row —
-  refusals included — through `fcprobe`, its checked build and `fctempo` against one native answer. The price
-  step compares the two modules' tempo prices over 3600 quotes, and holds `fctempo` to its exact export set.
+  refusals included, each one exit status 2 on both roads — through `fcprobe`, its checked build and `fctempo`
+  against one native answer. The price step compares the two modules' tempo prices over 3600 quotes and holds
+  `fctempo` to its exact export set. Which module a harness holds is named by its path and checked against the
+  artifact (`tools/wasm/module-identity.mjs`): fcprobe handed over as fctempo is refused, and CI plants exactly that.
 - **the mastering chain, native vs wasm — WITHIN A STATED TOLERANCE** (`tools/wasm/master-parity.mjs`: 1e-5 in
   sample value, 1e-3 dB on the reported loudness, integers exact). `fcore_master` is the reference for the C++
   API a desktop build links and takes the tree's `-ffp-contract=on`; baseline wasm has no scalar FMA to contract

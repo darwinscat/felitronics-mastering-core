@@ -20,11 +20,16 @@ tempo call stays as it is.
 `fcprobe` does not change: the tempo entry points and the argument guards (`tools/wasm/fc_abi_guards.h`) moved out
 of `fc_probe.cpp` verbatim, and every fcprobe and fcmaster artifact is byte-identical to the build before the move
 (the checked `fcprobe.debug.wasm` once its DWARF is stripped). `build.sh` now reads a module's entry points from its
-`#include` closure (the compiler's `-MM`), not from the `.cpp` alone, so a name declared in a shared header is on
-every export list that compiles it, and the one-per-line, count and return-type gates run over the whole closure.
+`#include` closure, not from the `.cpp` alone, so a name declared in a shared header is on every export list that
+compiles it, and the one-per-line, count and return-type gates run over the whole closure. The closure is the
+compiler's (`-MM`, under the module's own front-end flags, so a header included only under `-msimd128` is in it),
+read as Make writes it (a path with a space survives), and a file of it that cannot be read stops the build.
 
 Proven the way the probe is: CI diffs `fcore_measure tempo` against `fcprobe`, its checked build and `fctempo`,
-every row, refusals included, byte for byte; `felitronics_fctempo_abi_tests` runs the tempo ABI suite against
-`fc_tempo.cpp` natively (ASan, UBSan) and on the wasm tier's checked build; `storage-probe.mjs` holds `fctempo` to
-its exact export set and compares the two modules' tempo prices over 3600 quotes. On three real mixes (4:10–8:39, 48
-kHz stereo) the two modules answer the same bits in the same time.
+every row byte for byte, and every refusal row now demands exit status 2 on both roads, where it took any failure —
+a module that did not load used to count as refusing. The harnesses take the module's identity from its file name
+and hold the artifact to it (`tools/wasm/module-identity.mjs`), so fcprobe handed over as fctempo is refused, not
+measured. `felitronics_fctempo_abi_tests` runs the tempo ABI suite against `fc_tempo.cpp` natively (ASan, UBSan) and
+on the wasm tier's checked build; `storage-probe.mjs` holds `fctempo` to its exact export set and compares the two
+modules' tempo prices over 3600 quotes; its tables leave the process only once written, into a pipe as into a file.
+On three real mixes (4:10–8:39, 48 kHz stereo) the two modules answer the same bits in the same time.
