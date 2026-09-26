@@ -8,7 +8,7 @@
 //   fcore_master solve    <sampleRate> <channels> <in.f32le> <out.f32le> target=<LUFS> tp=<dBTP> [key=value ...]
 //   fcore_master lra      <sampleRate> <channels> <in.f32le>
 //   fcore_master selftest [sampleRate] [channels]
-//   fcore_master layout                                  — the ABI's struct offsets as JSON, for layout-check.mjs
+//   fcore_master layout                                  — struct offsets and status names, for layout-check.mjs
 //
 // `delivery=<rate>` on render / solve / lra makes a DELIVERING handle (ABI v2): SRC first, and the output file
 // holds the DELIVERED length at <rate> — `fc_master_delivered_frames`, not the input's frame count.
@@ -74,26 +74,40 @@ using namespace felitronics::mastering;
 namespace
 {
 
+// THE CLI'S NAME FOR EVERY fc_status — the header's identifier without its `FC_ERR_` / `FC_` — as ONE list, read by
+// the switch below and printed by `fcore_master layout`. It has two guards and needs both. The switch has no
+// `default`, so a code the header adds and this list lacks is a -Wswitch warning here; that is how the v13 three
+// (16–18) were found, a version late, because a warning fails nothing — and only clang gives it by default (gcc's
+// needs -Wall, MSVC's C4062 is off). So `layout` also prints the list, and tools/wasm/layout-check.mjs holds it
+// against the header's own enum — identifier, value and name, in both directions — under ctest, on every row.
+#define FC_STATUS_NAMES(X)                                  \
+    X (FC_OK,                   "OK")                       \
+    X (FC_ERR_HANDLE,           "HANDLE")                   \
+    X (FC_ERR_ABI_VERSION,      "ABI_VERSION")              \
+    X (FC_ERR_STRUCT_SIZE,      "STRUCT_SIZE")              \
+    X (FC_ERR_NULL,             "NULL")                     \
+    X (FC_ERR_ALIGNMENT,        "ALIGNMENT")                \
+    X (FC_ERR_SPAN,             "SPAN")                     \
+    X (FC_ERR_ENUM,             "ENUM")                     \
+    X (FC_ERR_RANGE,            "RANGE")                    \
+    X (FC_ERR_CAPACITY,         "CAPACITY")                 \
+    X (FC_ERR_STATE,            "STATE")                    \
+    X (FC_ERR_NON_FINITE,       "NON_FINITE")               \
+    X (FC_ERR_REFUSED_BY_CORE,  "REFUSED_BY_CORE")          \
+    X (FC_ERR_EXHAUSTED,        "EXHAUSTED")                \
+    X (FC_ERR_POISONED,         "POISONED")                 \
+    X (FC_ERR_CANCELLED,        "CANCELLED")                \
+    X (FC_ERR_BAND_NOT_DYNAMIC, "BAND_NOT_DYNAMIC")         \
+    X (FC_ERR_BAND_INERT,       "BAND_INERT")               \
+    X (FC_ERR_LANE_OFF,         "LANE_OFF")
+
 const char* statusName (fc_status s)
 {
     switch (s)
     {
-        case FC_OK:                  return "OK";
-        case FC_ERR_HANDLE:          return "HANDLE";
-        case FC_ERR_ABI_VERSION:     return "ABI_VERSION";
-        case FC_ERR_STRUCT_SIZE:     return "STRUCT_SIZE";
-        case FC_ERR_NULL:            return "NULL";
-        case FC_ERR_ALIGNMENT:       return "ALIGNMENT";
-        case FC_ERR_SPAN:            return "SPAN";
-        case FC_ERR_ENUM:            return "ENUM";
-        case FC_ERR_RANGE:           return "RANGE";
-        case FC_ERR_CAPACITY:        return "CAPACITY";
-        case FC_ERR_STATE:           return "STATE";
-        case FC_ERR_NON_FINITE:      return "NON_FINITE";
-        case FC_ERR_REFUSED_BY_CORE: return "REFUSED_BY_CORE";
-        case FC_ERR_EXHAUSTED:       return "EXHAUSTED";
-        case FC_ERR_POISONED:        return "POISONED";
-        case FC_ERR_CANCELLED:       return "CANCELLED";
+#define FC_STATUS_CASE(code, name) case code: return name;
+        FC_STATUS_NAMES (FC_STATUS_CASE)
+#undef FC_STATUS_CASE
     }
     return "?";
 }
@@ -747,8 +761,9 @@ bool directRenderDelivered (const Args& a, const std::vector<float>& in, std::si
     X (fc_solution_summary, achievedAboveLufs) X (fc_solution_summary, gainBelowDb)                                \
     X (fc_solution_summary, gainAboveDb)
 
-// One line per fact: `V <abi version>`, `S <struct> <sizeof>`, `F <struct> <field> <offset>`, and for every struct
-// with a header `T <struct> <id> <fc_master_sizeof(id, current)>` — the published table, not this file's sizeof.
+// One line per fact: `V <abi version>`, `S <struct> <sizeof>`, `F <struct> <field> <offset>`, for every struct
+// with a header `T <struct> <id> <fc_master_sizeof(id, current)>` — the published table, not this file's sizeof —
+// and `E <value> <identifier> <name>` for every status this CLI names (FC_STATUS_NAMES, at `statusName`).
 int printLayout()
 {
     std::printf ("V %u\n", fc_master_abi_version());
@@ -766,6 +781,9 @@ int printLayout()
         { "fc_gr_active_stats", FC_STRUCT_GR_ACTIVE } };
     for (const auto& s : headered)
         std::printf ("T %s %d %u\n", s.name, s.id, fc_master_sizeof (s.id, fc_master_abi_version()));
+#define FC_PRINT_STATUS(code, name) std::printf ("E %d " #code " %s\n", (int) code, name);
+    FC_STATUS_NAMES (FC_PRINT_STATUS)
+#undef FC_PRINT_STATUS
     return 0;
 }
 
