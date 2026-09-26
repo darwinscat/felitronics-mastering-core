@@ -89,8 +89,9 @@ created, destroyed, asked for its version — and what is fixed is the ground it
 `tools/wasm/fc_tempo.cpp`) over the tempo detector alone — fc_probe's `fc_probe_tempo_*` entry points under the
 same names, with a version of its own, because a version is a promise about a whole surface — and `fc_session`
 (`tools/fc_session_abi.h`, `tools/wasm/fc_session.cpp`) over the session, the surface a shell that cannot link C++
-talks to the brain through (v1: the version, a session created and destroyed through a handle, the poison; its wasm
-module `fcsession` is 2.5 KB) — each with its ABI version and the append-only rule that moves it in its header —
+talks to the brain through (a DRAFT, version 0 — not a stable interface until v1: the version, a session created and
+destroyed through a handle, the poison; its wasm module `fcsession` is 2.5 KB) — each with its ABI version and the
+append-only rule that moves it in its header —
 with their native CLIs (`fcore_master`, `fcore_measure`, `fcore_session`) and suites. `tools/wasm/build.sh` builds the wasm modules against a felitronics-core checkout
 (`FELITRONICS_CORE_DIR`, or the sibling `../felitronics-core`) and records both versions in `BUILD-INFO` beside
 them. How the two roads are compared, and to which criterion: `WASM-PARITY.md`. Law 11d as it applies to the

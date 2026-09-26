@@ -39,8 +39,11 @@ for (const k of ['OK', 'ERR_POISONED', 'ERR_NULL', 'ERR_ALIGNMENT', 'ERR_SPAN', 
 
 // THE SURFACE, per version — what the module exports, EXACTLY, besides the heap's _malloc/_free. A bump of
 // FC_SESSION_ABI_VERSION appends its line here on purpose (tools/fc_session_abi.h, rule 4).
+// 0 IS THE DRAFT, and a module answering 0 is a valid module: this check holds it to the draft's surface exactly as it
+// will hold v1 to its own. It is not a stable interface (tools/fc_session_abi.h) — the gate a SHELL applies is
+// `>= 1`, and that is the shell's loader, not this check.
 const SURFACE = {
-    1: ['_fc_session_abi_version', '_fc_session_create', '_fc_session_destroy'],
+    0: ['_fc_session_abi_version', '_fc_session_create', '_fc_session_destroy'],
 };
 
 if (! basename(modPath).startsWith('fcsession.')) distrust(`${modPath}: this checks fcsession.* and nothing else`);
@@ -105,5 +108,5 @@ ok(M._fc_session_create(out) === STATUS.OK && ! live.includes(read()), 'a create
 ok(M._fc_session_destroy(read()) === STATUS.OK, 'and destroys');
 M._free(out);
 
-console.log(`session-check: fcsession v${version} — ${checks} checks, ${bad} failures`);
+console.log(`session-check: fcsession v${version}${version === 0 ? ' (the draft)' : ''} — ${checks} checks, ${bad} failures`);
 process.exit(bad ? 1 : 0);

@@ -196,7 +196,7 @@ target_include_directories(fcore_session PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(fcore_session PRIVATE cxx_std_20)
 
 if(FELITRONICS_BUILD_TESTS)
-    # fc_session v1 (tools/fc_session_abi.h): the out-pointer's checks, the handles and their generations, the table's
+    # fc_session, draft version 0 (tools/fc_session_abi.h): the out-pointer's checks, the handles and their generations, the table's
     # capacity, what a create allocates against the session's declared demand, and the poison — natively, under ctest,
     # ASan and UBSan, and on the wasm tier. One binary: the poison is its last group, because it is for good.
     add_executable(felitronics_session_abi_tests tests/SessionAbiTests.cpp wasm/fc_session.cpp)

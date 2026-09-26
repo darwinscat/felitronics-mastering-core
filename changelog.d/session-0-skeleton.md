@@ -27,11 +27,15 @@ rule in the real tree and requires the lint to fail on the planted file and line
 gain one in the session. Memory is declared before the work: a declared-budget harness on core's allocation counter
 holds `create()` to `createBytes()`, and is itself shown to fail on a sample that under-declares.
 
-**`fc_session` v1**, the C ABI over it (`tools/fc_session_abi.h`, `tools/wasm/fc_session.cpp`): `fc_session_abi_version`,
+**`fc_session`, a DRAFT — version 0**, the C ABI over it (`tools/fc_session_abi.h`, `tools/wasm/fc_session.cpp`).
+**It is not a stable interface, and this release does not present `fcsession` as one**: version 0 carries no
+append-only promise, any entry point may change, and a shell's loader gates on `fc_session_abi_version() >= 1`.
+Version 1 is frozen together with a `create` that takes the shell's capabilities (heap ceiling, highest rate, offered
+devices) and config, and with the create's demand forwarded through the ABI (law 11d). The draft: `fc_session_abi_version`,
 `fc_session_create`, `fc_session_destroy` — handles with generations, a status per call (`fc_session_status`, its
 own codes), the out-pointer checked before anything is written, at most `FC_SESSION_MAX_HANDLES` (8) live sessions per
 module instance, and the poison: a call that finds another still in progress answers `FC_SESSION_ERR_POISONED` for
-good. The append-only rule is in its header. The handle table and the poison flag are the only mutable globals session
+good. The append-only rule that v1 will be held to is already in its header. The handle table and the poison flag are the only mutable globals session
 has, and the lint names both. `tools/wasm/build.sh` builds a fifth module, `fcsession` (`createFcSession`; ES-module
 web glue and node glue, byte-identical wasm): 2.5 KB of wasm, 1.2 KB brotli. `tools/wasm/session-check.mjs` holds it
 to its exact export set and runs its surface on the artifact; `felitronics_session_abi_tests` runs the TU natively

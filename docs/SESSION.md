@@ -117,16 +117,22 @@ controls, and felitronics-core's det-math lint with a planted `std::cos` in the 
 
 ## The C boundary — `fc_session`
 
-`tools/fc_session_abi.h`, implemented by `tools/wasm/fc_session.cpp`: version 1 is the ABI version, a session created
-and destroyed through a handle, and the poison. It follows fc_master's law — the facade is thin: handles instead of
+`tools/fc_session_abi.h`, implemented by `tools/wasm/fc_session.cpp`. Its version is **0, a draft**: the ABI version,
+a session created and destroyed through a handle, and the poison — and no promise. Any entry point, argument, code or
+constant may change without a bump, and **no release of this repository presents `fcsession` as a stable
+interface**; a shell's loader gates on `fc_session_abi_version() >= 1`. Version 1 is the first frozen surface, frozen
+together with a `create` that takes the shell's capabilities (its heap ceiling, the highest rate it accepts, the
+devices it offers) and its config, and with the create's demand forwarded through the ABI (law 11d) — the two things
+a stable create cannot do without. It follows fc_master's law — the facade is thin: handles instead of
 pointers, a status per call, checks on the addresses a page computed, the poison, and nothing that decides.
 
 It keeps the **only mutable globals session has anywhere** — the handle table and the poison flag — because a handle
 must name a session between two calls and the poison must outlive the call that never returned.
 `tools/lint/session-laws.txt` names both, and the `globals` rule refuses a third.
 
-The surface grows **append-only**, by the rule written in its header: an entry point added, or a field appended to a
-struct that crosses the boundary, moves `FC_SESSION_ABI_VERSION`; nothing existing changes meaning, moves or goes.
+From v1 the surface grows **append-only**, by the rule already written in its header: an entry point added, or a field
+appended to a struct that crosses the boundary, moves `FC_SESSION_ABI_VERSION`; nothing existing changes meaning,
+moves or goes.
 
 `fcsession` is its wasm module (`tools/wasm/build.sh`): the facade and every source of `modules/session/src` in one
 link, with the library's flags and releases — 2.5 KB of wasm, 1.2 KB brotli. `tools/wasm/session-check.mjs` holds the

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
-// fc_session v1 — the C ABI over felitronics::session (tools/fc_session_abi.h), natively, so its guards run under
+// fc_session, draft version 0 — the C ABI over felitronics::session (tools/fc_session_abi.h), natively, so its guards run under
 // ctest, ASan and UBSan; the wasm tier builds and runs this suite too, and tools/wasm/session-check.mjs holds the
 // shipped module to the same surface. Pinned:
 //   * the version, and that it answers whatever state the module is in;
@@ -35,9 +35,11 @@ long long bytesNow()    { return felitronics::test::alloc::bytes.load(); }
 
 void theVersion()
 {
-    felitronics::test::group ("the version is the header's");
+    felitronics::test::group ("the version is the header's, and it is the draft");
     ok (fc_session_abi_version() == FC_SESSION_ABI_VERSION, "fc_session_abi_version() == FC_SESSION_ABI_VERSION");
-    ok (FC_SESSION_ABI_VERSION == 1u, "and that is v1 — a bump appends its row to the header's table and edits this line");
+    // 0 IS THE DRAFT: no append-only promise until v1, which freezes the surface together with a create that takes the
+    // shell's capabilities and forwards its demand (tools/fc_session_abi.h). Freezing it edits this line on purpose.
+    ok (FC_SESSION_ABI_VERSION == 0u, "and that is 0, the draft — no shell may gate on it as a stable interface");
 }
 
 void createChecksItsOutPointer()
