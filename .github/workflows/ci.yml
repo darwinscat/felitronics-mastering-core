@@ -325,11 +325,17 @@ jobs:
       - name: fc_session — the module a page loads, checked on the artifact
         # felitronics_session_abi_tests runs fc_session.cpp natively and on this tier; what they cannot see is the
         # MODULE: that the entry points reached fcsession.node.wasm (byte-identical to the web one, build.sh checks),
-        # that nothing else did, and the out-pointer past the end of the heap, which only a linear memory has. And the
-        # check must refuse a module that is not fcsession, or a swapped artifact would pass it.
+        # that nothing else did — every export of the Module against the ABI and the runtime's own —, the out-pointer
+        # past the end of the heap, which only a linear memory has, and one slot walked to its last generation. The
+        # check must refuse a module with one undeclared export (build.sh builds that control into build/controls/)
+        # and a module that is not fcsession, or a swapped artifact would pass it.
         run: |
           set -euo pipefail
           node tools/wasm/session-check.mjs tools/wasm/build/fcsession.node.js
+          rc=0; node tools/wasm/session-check.mjs tools/wasm/build/controls/fcsession.node.js > extra-export.txt 2>&1 || rc=$?
+          [ "$rc" -eq 1 ] && grep -q debug_probe extra-export.txt \
+            || { cat extra-export.txt; echo "an undeclared export was not refused by name (exit $rc)"; exit 1; }
+          echo "session-check refuses the module that exports debug_probe"
           mkdir -p swapped-session
           cp tools/wasm/build/fctempo.node.js swapped-session/fcsession.node.js
           cp tools/wasm/build/fctempo.node.wasm swapped-session/

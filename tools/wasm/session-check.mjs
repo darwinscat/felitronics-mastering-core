@@ -2,16 +2,22 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 //
 // THE fcsession MODULE, CHECKED ON THE ARTIFACT — what felitronics_session_abi_tests cannot see natively, because it
-// compiles fc_session.cpp into its own binary: that the entry points REACHED the module a page loads, that nothing
-// else did, and that they behave there as the header says, with wasm32's addresses and the one check that only exists
-// on this tier (an out-pointer past the end of the heap).
+// compiles fc_session.cpp into its own binary: that the entry points REACHED the module a page loads, that NOTHING ELSE
+// did, and that they behave there as the header says, with wasm32's addresses and the one check that only exists on
+// this tier (an out-pointer past the end of the heap). And the wrap boundary, walked for real: one slot driven through
+// all of its generations — 16.7 million create/destroy cycles, a fraction of a second — must retire, not wrap.
 //
 //   node tools/wasm/session-check.mjs tools/wasm/build/fcsession.node.js
 //
 // WHICH MODULE, from the path and then from the artifact (the rule tools/wasm/module-identity.mjs keeps for the
 // analysis modules): the file must be named fcsession.*, must answer fc_session_abi_version with the number
-// tools/fc_session_abi.h declares, and must answer no other module's version. Every status code and the table's
-// capacity are read from the header too, so this file restates no number of the contract.
+// tools/fc_session_abi.h declares, and must answer no other module's version. Every status code and constant is read
+// from the header too, so this file restates no number of the contract.
+//
+// THE EXPORTS ARE COMPARED WHOLE: every property of the loaded Module — not only the names that begin with `_fc_` —
+// against the ABI's surface for this version plus the runtime's own, listed below. A callable that reached the module
+// without being declared (EMSCRIPTEN_KEEPALIVE exports it whether or not the ABI's extractor saw it) is refused by name;
+// tools/wasm/build.sh builds exactly such a module as a control and requires this check to refuse it.
 //
 // Exit status: 0 every check passed; 1 a check failed; 3 the module cannot be trusted to be fcsession at all.
 
@@ -32,19 +38,20 @@ const macro = name =>
 };
 const VERSION = macro('FC_SESSION_ABI_VERSION');
 const MAX_HANDLES = macro('FC_SESSION_MAX_HANDLES');
+const SLOT_GENERATIONS = macro('FC_SESSION_SLOT_GENERATIONS');
 const STATUS = {};
 for (const m of header.matchAll(/^\s*FC_SESSION_(OK|ERR_[A-Z_]+)\s*=\s*([0-9]+)/gm)) STATUS[m[1]] = Number(m[2]);
 for (const k of ['OK', 'ERR_POISONED', 'ERR_NULL', 'ERR_ALIGNMENT', 'ERR_SPAN', 'ERR_HANDLE', 'ERR_EXHAUSTED'])
     if (STATUS[k] === undefined) distrust(`tools/fc_session_abi.h declares no FC_SESSION_${k}`);
 
-// THE SURFACE, per version — what the module exports, EXACTLY, besides the heap's _malloc/_free. A bump of
-// FC_SESSION_ABI_VERSION appends its line here on purpose (tools/fc_session_abi.h, rule 4).
-// 0 IS THE DRAFT, and a module answering 0 is a valid module: this check holds it to the draft's surface exactly as it
-// will hold v1 to its own. It is not a stable interface (tools/fc_session_abi.h) — the gate a SHELL applies is
-// `>= 1`, and that is the shell's loader, not this check.
+// THE SURFACE of the version this module answers — its entry points, as the page sees them. Version 0 is the draft
+// (tools/fc_session_abi.h): no promise, so a change of the draft edits this line with the header.
 const SURFACE = {
     0: ['_fc_session_abi_version', '_fc_session_create', '_fc_session_destroy'],
 };
+// ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
+// the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
+const RUNTIME = ['_malloc', '_free', 'HEAPU32'];
 
 if (! basename(modPath).startsWith('fcsession.')) distrust(`${modPath}: this checks fcsession.* and nothing else`);
 const require = createRequire(import.meta.url);
@@ -60,12 +67,13 @@ if (! surface) distrust(`FC_SESSION_ABI_VERSION is ${version} and this file list
 let checks = 0, bad = 0;
 const ok = (cond, what) => { ++checks; if (! cond) { ++bad; console.error(`FAIL: ${what}`); } };
 
-const exported = Object.keys(M).filter(k => k.startsWith('_fc_')).sort();
-const want = [...surface].sort();
+const exported = Object.keys(M).sort();
+const want = [...surface, ...RUNTIME].sort();
 ok(exported.join(' ') === want.join(' '),
-   `fcsession exports exactly the v${version} surface — extra: [${exported.filter(k => ! want.includes(k)).join(' ')}],`
+   `fcsession exports exactly the v${version} surface and the runtime's own — extra: [${exported.filter(k => ! want.includes(k)).join(' ')}],`
    + ` missing: [${want.filter(k => ! exported.includes(k)).join(' ')}]`);
-ok(typeof M._malloc === 'function' && typeof M._free === 'function', '_malloc and _free reached the artifact');
+ok(surface.every(k => typeof M[k] === 'function') && typeof M._malloc === 'function' && typeof M._free === 'function',
+   'every entry point, _malloc and _free are callable');
 
 // No HEAP view is held across a call: a create may grow the memory, and a grown memory detaches every view taken
 // before it. So each read takes M.HEAPU32 afresh.
@@ -106,6 +114,30 @@ ok(M._fc_session_create(out) === STATUS.ERR_EXHAUSTED && read() === SENTINEL,
 ok(live.every(x => M._fc_session_destroy(x) === STATUS.OK), 'every live handle destroys');
 ok(M._fc_session_create(out) === STATUS.OK && ! live.includes(read()), 'a create after that fits, under a handle never issued before');
 ok(M._fc_session_destroy(read()) === STATUS.OK, 'and destroys');
+
+// THE WRAP BOUNDARY, for real, at the shipped width. Every slot is free, so each create takes slot 0 (handle & 0xFF ==
+// 1) until slot 0 retires; then the next create is slot 1's. Reproduced before the fix: the create after 16 777 214
+// cycles answered the first handle again, and destroying it through a stale copy destroyed the new session.
+const seen = [];
+let first = 0, last = 0, cycles = 0, allOk = true;
+for (;;)
+{
+    if (M._fc_session_create(out) !== STATUS.OK) { allOk = false; break; }
+    const h = read();
+    if (first === 0) first = h;
+    if ((h & 0xFF) !== 1) { seen.push(h); break; }
+    last = h;
+    if (M._fc_session_destroy(h) !== STATUS.OK) { allOk = false; break; }
+    ++cycles;
+}
+const next = seen[0];
+ok(allOk, `every create and destroy on the way succeeded (${cycles} cycles)`);
+ok((last >>> 8) === SLOT_GENERATIONS, `slot 0's last handle carries its last generation (${last >>> 8} of ${SLOT_GENERATIONS})`);
+ok(next !== undefined && (next & 0xFF) === 2, 'the next create went to slot 1: slot 0 retired, it did not wrap');
+ok(M._fc_session_destroy(first) === STATUS.ERR_HANDLE && M._fc_session_destroy(last) === STATUS.ERR_HANDLE
+   && M._fc_session_destroy((1 << 8) | 1) === STATUS.ERR_HANDLE,
+   "slot 0's handles stay refused — the first seen, the last, and the number a wrap would have issued again");
+ok(next !== undefined && M._fc_session_destroy(next) === STATUS.OK, "slot 1's session destroys");
 M._free(out);
 
 console.log(`session-check: fcsession v${version}${version === 0 ? ' (the draft)' : ''} — ${checks} checks, ${bad} failures`);
