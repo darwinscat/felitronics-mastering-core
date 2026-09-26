@@ -11,6 +11,7 @@
 
 #include <felitronics_test.h>
 
+#include "fc_probe_abi.h"
 #include "fcore_probe.h"
 
 #include <cmath>
@@ -78,6 +79,12 @@ int main()
         test::ok (fc_probe_os_factor() == 4 && fc_probe_os_taps() == 32, "the reference true-peak config");
         test::ok (fc_probe_chunk() == (std::uint32_t) fcore::Probe::kChunk, "the streaming step");
         test::ok (fc_probe_sizeof_longdouble() == sizeof (long double), "sizeof(long double) for this target");
+        // The version is a LITERAL here as well as the header's constant: a bump must be made on purpose, in both
+        // places, and an entry point that answered some other number would pass a comparison with the constant alone
+        // only if the constant moved with it.
+        static_assert (FC_PROBE_ABI_VERSION == 1u, "fc_probe starts at ABI version 1; a bump edits this line on purpose");
+        test::ok (fc_probe_abi_version() == FC_PROBE_ABI_VERSION && fc_probe_abi_version() == 1u,
+                  "fc_probe_abi_version() answers FC_PROBE_ABI_VERSION, 1");
     }
 
     // --- The ABI must produce EXACTLY what the class produces. If the planar addressing or the channel loop
