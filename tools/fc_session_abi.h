@@ -19,13 +19,24 @@
 // state of the session's own: every answer is the session's, read out of it.
 //
 // ====================================================================================
-// v1 — AND WHAT IT IS FOR
+// VERSION 0 IS A DRAFT — NOT A STABLE INTERFACE
 // ====================================================================================
-// The version, a session created and destroyed through a handle, and the poison. Nothing is measured, mastered or
-// loaded yet; that surface arrives as entry points appended under the rule below, each with its bump.
+// FC_SESSION_ABI_VERSION is 0, and 0 promises NOTHING: no append-only rule holds for it, and any entry point, argument,
+// status code, constant or struct here may change or go without a bump. What it carries is the version, a session
+// created and destroyed through a handle, and the poison — enough to build the module, check it and drive it.
+//
+// VERSION 1 is the first frozen surface, and it is frozen together with the two things v0 lacks and a stable create
+// cannot do without: `create` taking the shell's CAPABILITIES (its heap ceiling, the highest rate it accepts, the
+// devices it offers) and its config; and the create's DEMAND forwarded through the ABI, so a shell can compare it with
+// its heap before the call (law 11d, felitronics-core docs/DSP-ARCHITECTURE.md). Freezing today's argument-less
+// create would keep it for ever beside the real one.
+//
+// Until then no release of this repository presents fcsession as a stable interface, and a shell must not gate on
+// this version as one: the loader's gate for shells is `fc_session_abi_version() >= 1`, and a module answering 0 is a
+// draft. The rule below is the one v1 will be held to, written now so that v1 has nothing to invent.
 //
 // ====================================================================================
-// THE COMPATIBILITY RULE — APPEND-ONLY, as tools/fc_master_abi.h and tools/fc_probe_abi.h state it for theirs
+// THE COMPATIBILITY RULE FROM v1 — APPEND-ONLY, as tools/fc_master_abi.h and tools/fc_probe_abi.h state it for theirs
 // ====================================================================================
 // 1. WHAT MOVES THE VERSION: the surface a caller may use grows — an entry point is ADDED, or a struct that crosses
 //    the boundary gains a field (appended at its END; a struct nested by value never grows). One logical addition per
@@ -42,11 +53,12 @@
 //
 //   fc_session   the surface
 //   ----------   ------------------------------------------------------------------------------------------------
-//   1            fc_session_abi_version, fc_session_create, fc_session_destroy — plus the heap's _malloc / _free.
-#define FC_SESSION_ABI_VERSION 1u
+//   0 (draft)    fc_session_abi_version, fc_session_create, fc_session_destroy — plus the heap's _malloc / _free.
+//                No promise: see VERSION 0 IS A DRAFT above.
+#define FC_SESSION_ABI_VERSION 0u
 
 // HOW MANY SESSIONS ONE MODULE INSTANCE HOLDS AT ONCE. A create past it answers FC_SESSION_ERR_EXHAUSTED. Part of the
-// contract, because a page decides from it whether a second session needs a second module instance.
+// contract from v1, because a page decides from it whether a second session needs a second module instance.
 #define FC_SESSION_MAX_HANDLES 8u
 
 #include <stdint.h>
@@ -91,7 +103,8 @@ typedef enum fc_session_status
 // (from a new_handler, from anything the runtime runs inside an allocation) cannot be told apart from the first call
 // after an abandoned one, and is answered FC_SESSION_ERR_POISONED — for good.
 
-// The version this build speaks — FC_SESSION_ABI_VERSION. Takes nothing, reads no state, cannot fail.
+// The version this build speaks — FC_SESSION_ABI_VERSION; 0 is the draft (see above). Takes nothing, reads no state,
+// cannot fail.
 uint32_t fc_session_abi_version (void);
 
 // Creates an empty session and writes its handle to `*out`. `*out` is written ONLY on FC_SESSION_OK: a refused call
