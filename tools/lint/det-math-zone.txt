@@ -46,3 +46,7 @@ zone  tools/fcore_stream.h  the streaming surface the stream parity step diffs a
 # pattern; `dbtp` is printed only under --debug and only to stderr. It is in the zone because the numbers it
 # prints on the diffed path come from here, not because every getter it exposes is diffed.
 zone  tools/wasm/fc_probe.cpp  prints the numbers the probe parity steps diff
+# The text that left fc_probe.cpp when a second module came to publish the tempo entry points keeps the
+# classification it had there: moving a line into a header must not move it out of the zone.
+zone  tools/wasm/fc_abi_guards.h   the argument checks of the analysis ABIs; decide which runs the parity steps see refused
+zone  tools/wasm/fc_tempo_entry.h  the tempo entry points, compiled into fcprobe and fctempo; writes the rows tempo-parity.mjs diffs
