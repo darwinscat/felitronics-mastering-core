@@ -1,103 +1,80 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 //
-// THE LAWS OF felitronics::session THAT A LEXER CAN HOLD (docs/SESSION.md has all of them and what holds each).
-// A law that is only written down is a wish; these three are red builds.
+// THE LAWS OF felitronics::session THAT ONLY THE SOURCE CAN SHOW (docs/SESSION.md has all of them and what holds each).
 //
-//   GLOBALS  NO MUTABLE STATE OUTSIDE AN OBJECT. A variable with static storage duration that the code can change —
-//            at namespace scope (named or anonymous namespace, `extern` included), a class's `static` data member, a
-//            function-local `static`, anything `thread_local` — is refused. `constexpr` and `const` data are allowed:
-//            a constant is not state. Why it matters here more than anywhere: a session is REPLAYED (the same
-//            commands into a new instance must give the same session), and two sessions live side by side in one
-//            module; a global is the one place their histories can meet. The C boundary is the one exception, and
-//            tools/lint/session-laws.txt names each of its globals — two, the handle table and the poison flag.
-//   OS       NO OPERATING SYSTEM, FILE, CONSOLE, LOCALE, THREAD OR CLOCK. The session is called synchronously by a
-//            shell, gets its input as arguments and gives its answers as values; what a file says, what time it is
-//            and which locale the user chose are the shell's business. A clock would make the sequence of events
-//            depend on the machine; a locale would make a number print differently for two users; a thread would
-//            make the order of work depend on the scheduler. Held on two levels: the HEADERS below are refused
-//            outright, and the few CALLS that reach the same things through headers that cannot be refused
-//            (<string>, <new>) are refused by name.
-//   ZONE     THE DETERMINISTIC ZONE COVERS THE WHOLE MODULE. The det-math lint (felitronics-core's
-//            tools/lint/check-det-math.mjs, run with --satellite) refuses a system libm call in every file that
-//            tools/lint/det-math-zone.txt lists as `zone` — and ONLY in those. So a new file of modules/session is
-//            outside the zone until someone remembers to list it, and a law that depends on remembering is not held.
-//            This rule is the remembering: every file of a scanned directory must have its `zone` line.
+// WHAT THIS IS NOT. "No mutable state outside an object" and "no operating system, file, console, locale, clock or
+// process state" are held by the OBJECT-FILE GATE (modules/session/tests/object-gates.cmake): the compiled object says
+// exactly which symbols live in writable memory and which are called, however the source spelled them — through a macro,
+// an asm label, a pointer, a header that made printf visible. A lexer answers those questions badly, and this one no
+// longer tries. What it holds is what leaves no symbol in any object:
 //
-// THE HEADER LIST, AND WHY EACH IS ON IT (the verdict prints the reason). Headers are refused, not audited, because a
-// header is the moment a facility enters a file; what it then does with it is not a lexer's to judge.
-//   files, the console   <fstream> <iostream> <istream> <ostream> <sstream> <spanstream> <strstream> <syncstream>
-//                        <streambuf> <ios> <iosfwd> <iomanip> <print> <cstdio> <stdio.h> <filesystem>
-//                        — the streams also format through the global locale, which is the next group's reason too.
-//   the locale           <locale> <clocale> <locale.h> <codecvt> <cctype> <ctype.h> <cwctype> <wctype.h> <cwchar>
-//                        <wchar.h> <regex> <format> <text_encoding>
-//                        — isalpha and friends answer by locale; <regex>'s traits read it; std::format's `L` option
-//                        does, and its only failure path is an exception. Numbers are formatted by the session's own
-//                        declared rules. <charconv> is NOT on the list: to_chars/from_chars are exact and
-//                        locale-free, which is what those rules stand on.
-//   threads              <thread> <mutex> <shared_mutex> <condition_variable> <future> <latch> <barrier> <semaphore>
-//                        <stop_token> <atomic> <stdatomic.h> <execution> <pthread.h> <threads.h> <rcu>
-//                        <hazard_pointer>
-//                        — <atomic> too, deliberately: an atomic exists to share a value with another thread, and the
-//                        session has none. A long job runs in steps the shell drives; cancelling it is a call between
-//                        two steps, not a flag another thread sets.
-//   the clock            <chrono> <ctime> <time.h>   (and <sys/time.h>, with every <sys/...>, below)
-//   randomness           <random> — std::random_device reads the operating system, and the standard distributions
-//                        are implementation-defined (libstdc++, libc++ and MSVC answer differently from one seed).
-//                        Anything random the session needs is its own declared generator.
-//   the OS, the process  <cstdlib> <stdlib.h> <csignal> <signal.h> <csetjmp> <setjmp.h> <stacktrace> <debugging>
-//                        <unistd.h> <fcntl.h> <dlfcn.h> <windows.h> <io.h> <direct.h>, and every <sys/...>,
-//                        <mach/...>, <linux/...>, <emscripten...>
-//                        — <cstdlib> is getenv, system, exit, a process-wide rand() and strtod, which reads the locale.
-//                        The runtime (emscripten) belongs to the shell and the facade, never to the session.
-//   process-wide state   <cerrno> <errno.h> <cfenv> <fenv.h> <memory_resource>
-//                        — errno is a global; the floating-point environment (rounding mode, exception flags) is
-//                        global state that changes what arithmetic returns; <memory_resource> carries the
-//                        process-wide default resource, set_default_resource.
-//   exceptions, RTTI     <exception> <stdexcept> <system_error> <typeinfo> <typeindex>
-//                        — the library is compiled without both (modules/session/CMakeLists.txt); these headers are
-//                        the only reason to reach for either.
-// THE CALLS, by name, qualified with std:: or not, never a member of the same name:
-//   to_string to_wstring stoi stol stoll stoul stoull stof stod stold   (<string>: the floating ones format and parse
-//                        through the locale, and every sto* reports a bad parse by throwing)
-//   set_new_handler set_terminate   (<new>, <exception>: process-wide handlers)
-//   getenv setlocale rand srand atexit at_quick_exit   (should one arrive through a header that includes another)
+//   INCLUDE      every #include is canonically spelled (no `./`, no `..`, no backslash, no capital) and on the allowlist
+//                below: a standard header the session may use, or a felitronics header that resolves in this repository
+//                or in felitronics-core, or a quoted header inside modules/session. Everything else — <chrono>,
+//                <thread>, <cstdio>, <./chrono>, <Memory> — is refused, with no list of what is forbidden to go stale.
+//   PRAGMA       no pragma but `#pragma once`, and no `_Pragma(`, `__pragma(`, [[gnu::optimize]], [[gnu::target]],
+//                __attribute__((optimize / target)). A local pragma changes floating-point semantics for the code after
+//                it (`#pragma clang fp contract(fast)` makes clang fuse under -ffp-contract=off — reproduced), and no
+//                flag of the library reaches past it.
+//   EXCEPTIONS   no throw, try, catch, typeid, dynamic_cast (nor MSVC's __try / __except / __finally / __leave), in any
+//                branch of any #if: MSVC compiles a bare `throw` under /EHs-c-, and a branch other rows preprocess away
+//                is still that row's code.
+//   CONDITIONAL  no #if / #ifdef / #ifndef / #elif / #else anywhere but src/BuildGuards.h and src/BuildContract.cpp: a
+//                branch is code one row compiles and another does not, and the session is one program on every row.
+//   NOSYMBOL     no facility that compiles to instructions and leaves no symbol: atomics (std::atomic and friends,
+//                __atomic_*, __sync_*, _Interlocked*), cycle counters and target intrinsics (__builtin_readcyclecounter,
+//                __rdtsc, __builtin_ia32_* / _arm_ / _aarch64_), inline assembly (asm, __asm__) — a clock read by
+//                `mrs cntvct_el0` is invisible to every object-file tool.
+//   ORDER        no std::unordered_* containers, std::hash, or std::sort / partial_sort / partial_sort_copy /
+//                nth_element: their order is implementation-defined (libstdc++, libc++ and MSVC answer differently
+//                from one input), the same reason <random> is not on the include list. std::stable_sort, or a total
+//                order, gives one answer everywhere.
+//   BODY         no function body in modules/session/include — only `= default` and `= delete`. A body in the public
+//                header is compiled under the CONSUMER's flags, and the library's flags say nothing about it.
+//   GUARD        every translation unit's first #include is "BuildGuards.h", which refuses a unit compiled with
+//                exceptions, RTTI or fast-math — so a per-source flag override cannot slip past the target's flags.
+//   ZONE         every file of modules/session has a `zone` line in tools/lint/det-math-zone.txt, and every translation
+//                unit an `entry` line too, so felitronics-core's det-math lint audits it and follows its #includes.
+//   FILES        the scan is driven by the target, and fails closed: sources.txt is the target's list (cross-checked
+//                against compile_commands.json with --build); every .cpp under the module is on it; every other file is
+//                reached by the #include closure of those units or is a public header; a file of unknown type is
+//                refused rather than skipped. Only modules/session/tests is outside the scan.
 //
-// WHAT THIS LINT CANNOT DO, said plainly:
-//   · It reads what the preprocessor has not expanded. A macro that expands to a global, an include or a call is
-//     invisible to it, and preprocessor lines are blanked before the GLOBALS rule parses (both branches of an #if
-//     are parsed; braces that only balance per branch are a [PARSE] error, which is red, not a pass).
-//   · It checks the DIRECT includes of a scanned file. A permitted header that includes a forbidden one internally
-//     (a standard library's <string> may pull in <iosfwd>) is not the session using it.
-//   · It cannot see through a const object with a `mutable` member, a const pointer to mutable state it did not
-//     declare, or state reached through a function of another module. The first two are the session's own code and
-//     review's business; the third is that module's law.
-//   · It decides "function declaration or variable?" lexically. `T name (x);` is read as a VARIABLE when the
-//     parenthesis holds a single name, a literal or an expression, and as a function when it holds a parameter — a
-//     type followed by a name, or a type keyword. An unnamed parameter of a user-defined type therefore reads as a
-//     direct initialiser and is refused: name the parameter. Refusing a harmless line is the failure this errs toward.
-//   · One declaration is judged by its first declarator: `const int* const a = p, *b = q;` passes as a whole. The
-//     session declares one name per statement.
+// WHAT IT CANNOT DO, said plainly: it reads the text the preprocessor has not expanded, so a macro could spell a token it
+// looks for out of pieces (`#define T thr ## ow`), and it cannot see what a flag or a source property in a CMake file
+// does to a unit (the compile-line gate over compile_commands.json and src/BuildGuards.h hold that).
 //
-// Usage: node tools/lint/check-session-laws.mjs [--self-test]        (from the repository root)
-//   --self-test  run the matcher's own cases — each rule's hits and its misses — and exit
-// Exit status: 0 clean, 1 violations (each printed as `file:line: [RULE] why`), 2 not run from a repository root.
+// Usage: node tools/lint/check-session-laws.mjs [--build <dir>] [--self-test]     (from the repository root)
+// Exit status: 0 clean · 1 violations (each `file:line: [RULE] why`) · 2 not run from a repository root.
 
 import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, dirname, normalize, relative, sep, posix } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-// Everything below the matcher runs ONLY when this file is invoked as a program, so a harness can import the
-// matcher without running the gate (the same arrangement as core's lints).
 const RUN_AS_PROGRAM = process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1];
 
-//==============================================================================
-// THE LEXER. The words this lint matches occur constantly in prose — docs/SESSION.md's own comments say "static" and
-// "<chrono>" while explaining why not — so comments are blanked before anything is matched, and for the GLOBALS and
-// call rules string and character literals too. Newlines are kept, so line numbers survive.
-function blank (s) { return s.replace(/[^\n]/g, ' '); }
+const MODULE = 'modules/session';
+const TESTS = `${MODULE}/tests`;
+const INCLUDE_ROOT = `${MODULE}/include`;
+const SOURCES_FILE = `${MODULE}/sources.txt`;
+const ZONE_FILE = 'tools/lint/det-math-zone.txt';
+const NOT_CODE = new Set([`${MODULE}/CMakeLists.txt`, SOURCES_FILE, `${MODULE}/build-flags.txt`]);
+const CODE_EXT = /\.(h|hh|hpp|hxx|inl|ipp|tpp|inc|cpp|cc|cxx)$/;
+const TU_EXT = /\.(cpp|cc|cxx)$/;
+const CONDITIONALS_ALLOWED = new Set([`${MODULE}/src/BuildGuards.h`, `${MODULE}/src/BuildContract.cpp`]);
 
-// keepStrings: blank comments only (an #include "x.h" is a string literal and must survive for the OS rule).
+// The standard headers the session may include. Not a list of what is forbidden — a list of what is allowed, so a header
+// nobody thought about is refused by default. None of these reaches the operating system, a file, the console, the
+// locale, a thread, the clock or process-wide state by including it; what they declare that does (std::to_string of a
+// double, std::stod) is a call, and a call is the object-file gate's.
+const STD_ALLOWED = new Set(['algorithm', 'array', 'bit', 'charconv', 'cfloat', 'climits', 'cmath', 'compare', 'concepts',
+    'cstddef', 'cstdint', 'cstring', 'initializer_list', 'iterator', 'limits', 'memory', 'new', 'numeric', 'optional',
+    'span', 'string', 'string_view', 'tuple', 'type_traits', 'utility', 'variant', 'vector']);
+
+//==============================================================================
+// THE LEXER. Comments blanked (and, for the token rules, string and character literals too), newlines kept.
+function blank (s) { return s.replace(/[^\n]/g, ' '); }
 export function strip (src, keepStrings)
 {
     let out = '';
@@ -113,9 +90,8 @@ export function strip (src, keepStrings)
             const end = e < 0 ? src.length : e + close.length;
             out += keepStrings ? src.slice(i, end) : blank(src.slice(i, end)); i = end; continue;
         }
-        // A ' BETWEEN DIGITS IS A SEPARATOR (1'000), not the start of a character literal that swallows the line.
         if (src[i] === '\'' && /[0-9a-fA-F]/.test(src[i - 1] || '') && /[0-9a-fA-F]/.test(src[i + 1] || ''))
-        { out += src[i]; i++; continue; }
+        { out += src[i]; i++; continue; }                     // a digit separator, not a character literal
         if (src[i] === '"' || src[i] === '\'')
         {
             const q = src[i]; let j = i + 1;
@@ -128,761 +104,257 @@ export function strip (src, keepStrings)
     return out;
 }
 
-// Preprocessor lines blanked, continuation lines with them. Run on text whose comments are already gone.
-function blankPreprocessor (code)
+function lineAt (text, idx) { let n = 1; for (let i = 0; i < idx; i++) if (text[i] === '\n') n++; return n; }
+
+// Preprocessor directives: { line, name, rest } — continuation lines joined, comments already gone.
+export function directives (code)
 {
+    const out = [];
     const lines = code.split('\n');
     for (let n = 0; n < lines.length; n++)
     {
-        if (! /^\s*#/.test(lines[n])) continue;
-        let k = n;
-        for (;;)
-        {
-            const cont = /\\\s*$/.test(lines[k]);
-            lines[k] = blank(lines[k]);
-            if (! cont || k + 1 >= lines.length) break;
-            k++;
-        }
-        n = k;
+        const m = /^\s*#\s*([A-Za-z_]*)(.*)$/.exec(lines[n]);
+        if (! m) continue;
+        let rest = m[2]; const at = n;
+        while (/\\\s*$/.test(rest) && n + 1 < lines.length) { rest = rest.replace(/\\\s*$/, ' ') + lines[++n]; }
+        out.push({ line: at + 1, name: m[1], rest: rest.trim() });
     }
-    return lines.join('\n');
-}
-
-class ParseError extends Error { constructor (line, msg) { super(msg); this.line = line; } }
-
-// Tokens: identifiers, numbers, and punctuation. `::`, `->` and `...` are one token each (a qualified name and a
-// trailing return type are read by them); every other operator is one character, which is all this reader needs —
-// it never evaluates an expression, and a `>>` that closes two template argument lists is two `>`.
-export function tokenize (code)
-{
-    const toks = [];
-    let line = 1;
-    for (let i = 0; i < code.length;)
-    {
-        const c = code[i];
-        if (c === '\n') { line++; i++; continue; }
-        if (c === ' ' || c === '\t' || c === '\r' || c === '\f' || c === '\v') { i++; continue; }
-        if (/[A-Za-z_$]/.test(c))
-        {
-            let j = i + 1; while (j < code.length && /[A-Za-z0-9_$]/.test(code[j])) j++;
-            toks.push({ t: code.slice(i, j), id: true, line }); i = j; continue;
-        }
-        if (/[0-9]/.test(c) || (c === '.' && /[0-9]/.test(code[i + 1] || '')))
-        {
-            let j = i + 1;
-            while (j < code.length && (/[A-Za-z0-9_.']/.test(code[j]) || (/[+-]/.test(code[j]) && /[eEpP]/.test(code[j - 1])))) j++;
-            toks.push({ t: code.slice(i, j), num: true, line }); i = j; continue;
-        }
-        const three = code.slice(i, i + 3), two = code.slice(i, i + 2);
-        if (three === '...') { toks.push({ t: three, line }); i += 3; continue; }
-        if (two === '::' || two === '->' || two === '==' || two === '!=') { toks.push({ t: two, line }); i += 2; continue; }
-        toks.push({ t: c, line }); i++;
-    }
-    return toks;
-}
-
-const OPEN = { '(': ')', '[': ']', '{': '}' };
-function matchClose (toks, i)
-{
-    const stack = [];
-    for (let j = i; j < toks.length; j++)
-    {
-        const t = toks[j].t;
-        if (OPEN[t]) stack.push(OPEN[t]);
-        else if (t === ')' || t === ']' || t === '}')
-        {
-            if (stack.pop() !== t) throw new ParseError(toks[j].line, `unbalanced '${t}' (opened at line ${toks[i].line})`);
-            if (stack.length === 0) return j;
-        }
-    }
-    throw new ParseError(toks[i].line, `'${toks[i].t}' is never closed`);
-}
-
-// toks[i] is `<` opening a template argument list: the index just past its `>`.
-function skipAngles (toks, i)
-{
-    let depth = 0;
-    for (let j = i; j < toks.length; j++)
-    {
-        const t = toks[j].t;
-        if (OPEN[t]) { j = matchClose(toks, j); continue; }
-        if (t === '<') depth++;
-        else if (t === '>') { if (--depth === 0) return j + 1; }
-        else if (t === ';' || t === '{' || t === '}') break;
-    }
-    throw new ParseError(toks[i].line, `a template argument list that does not close`);
+    return out;
 }
 
 //==============================================================================
-// THE GLOBALS RULE. A small reader of declarations: namespace scope, class scope and function bodies, told apart by
-// what opens them. It finds every declaration with static storage duration and asks one question of it: can the code
-// change it? It does not type-check; it reads shapes — and where a shape is ambiguous it refuses (see the header).
+// THE TOKEN RULES — over code with comments and literals blanked; preprocessor lines included, so a token inside an
+// #if branch is found whatever the branch.
+const TOKEN_RULES = [
+    { rule: 'EXCEPTIONS', re: /(?<![A-Za-z0-9_$])(throw|try|catch|typeid|dynamic_cast|__try|__except|__finally|__leave)(?![A-Za-z0-9_$])/g,
+      why: (t) => `\`${t}\` — felitronics::session is compiled without exceptions and RTTI, and a branch another row preprocesses away is still this row's code (MSVC compiles a bare throw under /EHs-c-)` },
+    { rule: 'NOSYMBOL', re: /(?<![A-Za-z0-9_$])(atomic|atomic_ref|atomic_flag|atomic_thread_fence|atomic_signal_fence|__atomic_[A-Za-z0-9_]+|__sync_[A-Za-z0-9_]+|_Interlocked[A-Za-z0-9_]*|__c11_atomic_[A-Za-z0-9_]+)(?![A-Za-z0-9_$])/g,
+      why: (t) => `\`${t}\` — an atomic exists to share a value with another thread, and the session has none; it compiles to instructions and leaves no symbol for the object-file gate` },
+    { rule: 'NOSYMBOL', re: /(?<![A-Za-z0-9_$])(__builtin_readcyclecounter|__builtin_readsteadycounter|__rdtsc|__rdtscp|_rdtsc|__builtin_ia32_[A-Za-z0-9_]+|__builtin_arm_[A-Za-z0-9_]+|__builtin_aarch64_[A-Za-z0-9_]+|__builtin_wasm_[A-Za-z0-9_]+|__builtin_frame_address|__builtin_return_address)(?![A-Za-z0-9_$])/g,
+      why: (t) => `\`${t}\` — a clock, an address or a target instruction read without a symbol: invisible to the object-file gate, and a different answer per run or per row` },
+    { rule: 'NOSYMBOL', re: /(?<![A-Za-z0-9_$])(asm|__asm|__asm__)(?![A-Za-z0-9_$])/g,
+      why: (t) => `\`${t}\` — inline assembly (or an asm label): code or names no flag and no object-file rule can judge` },
+    { rule: 'ORDER', re: /(?<![A-Za-z0-9_$])(unordered_map|unordered_set|unordered_multimap|unordered_multiset)(?![A-Za-z0-9_$])/g,
+      why: (t) => `\`${t}\` — its iteration order is implementation-defined (and std::hash with it): one input, three answers across libstdc++, libc++ and MSVC` },
+    { rule: 'ORDER', re: /(?<![A-Za-z0-9_$])std\s*::\s*(hash)(?![A-Za-z0-9_$])/g,
+      why: (t) => `\`std::${t}\` — its values are implementation-defined, and so is every order built on them` },
+    { rule: 'ORDER', re: /(?<![A-Za-z0-9_$.>]|->)(?:(?:::\s*)?std\s*::\s*(?:ranges\s*::\s*)?)?(sort|partial_sort|partial_sort_copy|nth_element)\s*[(<]/g,
+      why: (t) => `\`${t}\` — not stable: elements that compare equal come out in an implementation-defined order. Use std::stable_sort, or a comparator that is a total order` },
+    { rule: 'PRAGMA', re: /(?<![A-Za-z0-9_$])(_Pragma|__pragma)\s*\(/g,
+      why: (t) => `\`${t}(\` — a pragma in an expression: it changes code generation (floating-point contraction among it) for what follows, past every flag of the library` },
+    { rule: 'PRAGMA', re: /\[\[\s*((?:gnu|clang)\s*::\s*(?:optimize|target|optnone))\b/g,
+      why: (t) => `[[${t.replace(/\s+/g, '')}]] — a per-function change of optimisation or target, past every flag of the library` },
+    { rule: 'PRAGMA', re: /__attribute__\s*\(\s*\(\s*(optimize|target|optnone)\b/g,
+      why: (t) => `__attribute__((${t})) — a per-function change of optimisation or target, past every flag of the library` },
+];
 
-const CLASS_KEYS = new Set(['class', 'struct', 'union', 'enum']);
-const QUALIFIERS = new Set(['const', 'volatile', 'noexcept', 'override', 'final', 'mutable', '&', 'throw', 'requires']);
-const TYPE_WORDS = new Set(['void', 'bool', 'char', 'char8_t', 'char16_t', 'char32_t', 'wchar_t', 'short', 'int', 'long',
-    'float', 'double', 'signed', 'unsigned', 'auto', 'const', 'volatile', 'decltype', 'typename', 'struct', 'class', 'enum']);
-const SPECIFIERS = new Set(['static', 'extern', 'inline', 'constexpr', 'constinit', 'consteval', 'thread_local',
-    'virtual', 'explicit', 'friend', 'mutable', 'register']);
+// A public header may declare, not define: a body would be compiled with the consumer's flags. Braces that open a
+// namespace, a class, an enum or an initialiser are fine; a brace after a parameter list, after a constructor's
+// initialiser list or after a lambda introducer opens a body.
+const BODY_RE = [
+    /\)\s*(?:const\s*|volatile\s*|noexcept\s*(?:\([^()]*\)\s*)?|override\s*|final\s*|&&?\s*|->\s*[^;{}()]+?\s*|requires\s+[^;{}]+?)*\{/g,
+    /[=(,]\s*\[[^\]]*\]\s*(?:mutable\s*|constexpr\s*|noexcept\s*)*\{/g,
+    /\}\s*\{/g,
+];
 
-export function scanGlobals (text)
+function tokenViolations (code)
 {
-    const code = blankPreprocessor(strip(text, false));
-    const toks = tokenize(code);
-    const found = [];           // { line, name, what }
-    const report = (line, name, what) => found.push({ line, name, what });
-
-    // Inside a function body or an initializer every `static` begins a function-local static, and every
-    // `thread_local` is one whatever it begins. Nested braces are the same scope for this purpose.
-    function scanLocal (from, to)
+    const found = [];
+    for (const r of TOKEN_RULES)
     {
-        for (let j = from; j < to; j++)
-        {
-            const t = toks[j].t;
-            if (t !== 'static' && t !== 'thread_local') continue;
-            // the declaration runs to its `;` at this nesting level
-            let k = j, braceDepth = 0;
-            const head = [];
-            for (; k < to; k++)
-            {
-                const u = toks[k].t;
-                if (u === ';' && braceDepth === 0) break;
-                if (OPEN[u]) { const c = matchClose(toks, k); head.push({ group: u, from: k, to: c, line: toks[k].line }); k = c; continue; }
-                head.push(toks[k]);
-            }
-            const v = judge(head, true);
-            if (v.function) { j = k; continue; }
-            if (secondDeclarator(head) && ! allConstant(head)) report(toks[j].line, namesOf(head), SEVERAL);
-            else if (v.mutable) report(toks[j].line, v.name, t === 'thread_local' ? 'a thread_local variable' : 'a function-local static');
-            j = k;
-        }
+        r.re.lastIndex = 0;
+        for (const m of code.matchAll(r.re)) found.push({ line: lineAt(code, m.index), rule: r.rule, msg: r.why(m[1]) });
     }
-
-    // A parenthesis group's tokens, top level only (nested groups as single items).
-    function groupItems (g)
-    {
-        const items = [];
-        for (let k = g.from + 1; k < g.to; k++)
-        {
-            if (OPEN[toks[k].t]) { const c = matchClose(toks, k); items.push({ group: toks[k].t, from: k, to: c }); k = c; continue; }
-            items.push(toks[k]);
-        }
-        return items;
-    }
-
-    // Does this parenthesis group read as a PARAMETER LIST (a function declarator) rather than a direct initialiser?
-    function looksLikeParameters (g)
-    {
-        const items = groupItems(g);
-        if (items.length === 0) return true;
-        if (items.length === 1 && items[0].t === 'void') return true;
-        if (items.some(x => x.t === '...')) return true;
-        // the first parameter, up to a top-level comma
-        const first = [];
-        for (const x of items) { if (x.t === ',') break; first.push(x); }
-        if (first.length === 0) return false;
-        if (first[0].id && TYPE_WORDS.has(first[0].t)) return true;
-        // collapse qualified names and template argument lists into one NAME each; then a parameter is
-        // NAME [ptr-ops] NAME, or NAME followed by ptr-ops alone (an unnamed pointer or reference parameter)
-        const shape = [];
-        for (let k = 0; k < first.length; k++)
-        {
-            const x = first[k];
-            if (x.id && ! TYPE_WORDS.has(x.t))
-            {
-                while (first[k + 1] && first[k + 1].t === '::' && first[k + 2] && first[k + 2].id) k += 2;
-                if (first[k + 1] && first[k + 1].t === '<')
-                {
-                    let depth = 0;
-                    for (k = k + 1; k < first.length; k++)
-                    {
-                        if (first[k].t === '<') depth++;
-                        else if (first[k].t === '>' && --depth === 0) break;
-                    }
-                }
-                shape.push('N');
-            }
-            else if (x.t === '*' || x.t === '&') shape.push('P');
-            else if (x.id) shape.push('N');                     // const/volatile after a type
-            else shape.push('X');                               // a literal, an operator, a group: an expression
-        }
-        const s = shape.join('');
-        return /^N+P*N/.test(s) && ! /X/.test(s) || /^NP+$/.test(s);
-    }
-
-    // Is this simple declaration (no body) a function declaration? The first top-level parenthesis group that is not
-    // inside a template argument list and comes before any `=` decides.
-    function isFunctionDeclaration (head)
-    {
-        let angle = 0;
-        for (let k = 0; k < head.length; k++)
-        {
-            const x = head[k];
-            if (x.t === '=') return false;
-            if (x.t === 'operator') return true;                // operator==, operator(), operator new, operator T
-            if (x.t === '<') { angle++; continue; }
-            if (x.t === '>') { if (angle > 0) angle--; continue; }
-            if (x.group === '{') return false;
-            if (x.group === '(' && angle === 0)
-            {
-                const prev = head[k - 1];
-                if (! prev) return false;
-                const inner = groupItems(x);
-                // `T (*fp)(int)` / `T (&r)[3]`: a declarator in parentheses — a variable
-                if (inner.length && (inner[0].t === '*' || inner[0].t === '&' || inner[0].t === '::')) return false;
-                if (prev.t === 'operator' || (prev.id && ! SPECIFIERS.has(prev.t)) || prev.t === '>' || prev.group === '(')
-                    return prev.group === '(' ? true : looksLikeParameters(x);
-                return false;
-            }
-        }
-        return false;
-    }
-
-    // THE ONE QUESTION: can the code change what this declaration declares? `head` holds its tokens (groups folded)
-    // up to its `;`. For a declaration that is a function, or declares nothing, the answer is "not state".
-    function judge (head, local)
-    {
-        const words = head.filter(x => x.id).map(x => x.t);
-        if (! local && isFunctionDeclaration(head)) return { mutable: false, function: true };
-        // The declarator part: up to the first `=`, initializer group, direct-initializer, bit-field or comma.
-        const decl = [];
-        let angle = 0;
-        for (let k = 0; k < head.length; k++)
-        {
-            const x = head[k];
-            if (x.t === '<') angle++;
-            if (x.t === '>' && angle > 0) angle--;
-            if (angle === 0 && (x.t === '=' || x.group === '{' || x.t === ',' || x.t === ':')) break;
-            if (angle === 0 && x.group === '(' && decl.length && (decl[decl.length - 1].id || decl[decl.length - 1].t === '>')
-                && ! groupItems(x).some(y => y.t === '*' || y.t === '&')) break;
-            decl.push(x);
-        }
-        if (local && isFunctionDeclarationLocal(decl)) return { mutable: false, function: true };
-        // A parenthesised declarator — `(*callback)`, `(&row)` — is opened up: its name and its pointer are the
-        // declaration's. Any other group (a function pointer's parameter list, an array bound) is not.
-        const flat = [];
-        for (const x of decl)
-        {
-            if (x.group === '(')
-            {
-                const inner = groupItems(x);
-                if (inner.length && (inner[0].t === '*' || inner[0].t === '&')) { for (const y of inner) flat.push(y); }
-                continue;
-            }
-            flat.push(x);
-        }
-        const names = flat.filter(x => x.id && ! SPECIFIERS.has(x.t) && x.t !== 'const' && x.t !== 'volatile');
-        const name = names.length ? names[names.length - 1].t : '?';
-        if (words.includes('thread_local')) return { mutable: true, name };
-        if (words.includes('constexpr')) return { mutable: false, name };
-        // pointer and reference operators of the declarator itself: top level, outside template arguments
-        let lastPtr = -1, ptrKind = null, constBefore = false;
-        angle = 0;
-        for (let k = 0; k < flat.length; k++)
-        {
-            const x = flat[k];
-            if (x.t === '<') { angle++; continue; }
-            if (x.t === '>') { if (angle > 0) angle--; continue; }
-            if (angle > 0) continue;
-            if (x.t === 'const' && lastPtr < 0) constBefore = true;
-            if (x.t === '*' || x.t === '&') { lastPtr = k; ptrKind = x.t; }
-        }
-        if (lastPtr < 0) return { mutable: ! constBefore, name };
-        if (ptrKind === '*') return { mutable: ! (flat[lastPtr + 1] && flat[lastPtr + 1].t === 'const'), name };
-        return { mutable: ! constBefore, name };                // a reference: to const, or an alias of state
-    }
-
-    // In a function body `static int f (int);` declares a function too — rare, and read the same way.
-    function isFunctionDeclarationLocal (decl)
-    {
-        const last = decl[decl.length - 1];
-        return !! (last && last.group === '(' && decl.length >= 2 && decl[decl.length - 2].id && looksLikeParameters(last));
-    }
-
-    // ONE NAME PER DECLARATION, for anything with static storage duration. `volatile int allowed = 0, hidden = 0;`
-    // would otherwise be judged — and allowed — by its first name, and the second would pass under it. So a declaration
-    // of several such names is refused whatever they are: a line a reviewer splits in two, never a hole.
-    const SEVERAL = 'a declaration of several names with static storage duration (declare one per statement, so each is judged)';
-    function secondDeclarator (head)
-    {
-        let angle = 0, init = false;
-        for (const x of head)
-        {
-            if (! init && x.t === '<') angle++;
-            else if (! init && x.t === '>' && angle > 0) angle--;
-            else if (angle === 0 && x.t === '=') init = true;
-            else if (angle === 0 && x.group === '{') init = true;
-            else if (x.t === ',' && (init || angle === 0)) return true;
-        }
-        return false;
-    }
-    // The names a declaration declares: the last identifier of each declarator, before its initialiser.
-    function namesOf (head)
-    {
-        const names = [];
-        let angle = 0, init = false, last = null;
-        for (const x of head)
-        {
-            if (! init && x.t === '<') angle++;
-            else if (! init && x.t === '>' && angle > 0) angle--;
-            else if (angle === 0 && (x.t === '=' || x.group === '{') && ! init) { init = true; if (last) names.push(last); last = null; }
-            else if (x.t === ',' && (init || angle === 0)) { if (! init && last) names.push(last); init = false; last = null; }
-            else if (! init && angle === 0 && x.id && ! SPECIFIERS.has(x.t) && ! TYPE_WORDS.has(x.t)) last = x.t;
-            else if (! init && angle === 0 && x.group === '(')
-            {
-                const inner = groupItems(x).filter(y => y.id);
-                if (inner.length) last = inner[inner.length - 1].t;
-            }
-        }
-        if (! init && last) names.push(last);
-        return names.join(', ');
-    }
-    // Every declarator of this head is a constant: `constexpr` binds each of them, and a `const` in front binds each
-    // one that adds no pointer or reference of its own.
-    function allConstant (head)
-    {
-        if (head.some(x => x.t === 'constexpr')) return true;
-        let angle = 0, init = false, sawConst = false;
-        for (const x of head)
-        {
-            if (! init && x.t === '<') { angle++; continue; }
-            if (! init && x.t === '>') { if (angle > 0) angle--; continue; }
-            if (angle > 0) continue;
-            if (x.t === '=' || x.group === '{') { init = true; continue; }
-            if (x.t === ',') { init = false; continue; }
-            if (init) continue;
-            if (x.t === 'const') sawConst = true;
-            if (x.t === '*' || x.t === '&' || x.group === '(') return false;
-        }
-        return sawConst;
-    }
-
-    // Keywords that cannot occur inside a declaration: meeting one means the tokens before it were a macro invocation
-    // with no semicolon (`FELITRONICS_FIR_EXACT_BEGIN` before a namespace), and the keyword starts the next statement.
-    const STATEMENT_KEYWORDS = new Set(['namespace', 'using', 'typedef', 'static_assert', 'template']);
-
-    // One declaration at namespace or class scope, from toks[i]. Returns the index after it.
-    function declaration (i, end, scope)
-    {
-        const head = [];
-        let assign = false, sawParen = false, ctorInit = false, arrow = false, classBody = false;
-        const specifiers = new Set();
-        let classKeyAt = -1, opaque = false, angle = 0, operatorName = false;
-        for (let j = i; j < end; j++)
-        {
-            const tk = toks[j];
-            if (tk.t === ';')
-            {
-                finish(head, specifiers, scope, classKeyAt, classBody, opaque, tk.line);
-                return j + 1;
-            }
-            if (j > i && tk.id && STATEMENT_KEYWORDS.has(tk.t) && ! assign) return j;
-            if (j > i && scope === 'class' && (tk.t === 'public' || tk.t === 'private' || tk.t === 'protected')
-                && toks[j + 1] && toks[j + 1].t === ':') return j;
-            // Template argument lists in the head, so a parenthesis inside one (`void_t<decltype (…)>`) is not taken
-            // for a parameter list. `operator<`, `operator<<`: the tokens of an operator's name are not brackets.
-            if (tk.t === 'operator')
-            {
-                head.push(tk);
-                if (toks[j + 1] && toks[j + 1].t === '(' && toks[j + 2] && toks[j + 2].t === ')')   // operator()
-                { head.push({ group: '(', from: j + 1, to: j + 2, line: tk.line }); j += 2; continue; }
-                operatorName = true; continue;
-            }
-            if (operatorName && tk.t !== '(') { head.push(tk); continue; }
-            operatorName = false;
-            if (! assign && tk.t === '<') { angle++; head.push(tk); continue; }
-            if (! assign && tk.t === '>') { if (angle > 0) angle--; head.push(tk); continue; }
-            if (tk.t === '[' && toks[j + 1] && toks[j + 1].t === '[') { j = matchClose(toks, j); continue; }   // [[attr]]
-            if ((tk.t === 'alignas' || tk.t === '__attribute__' || tk.t === '__declspec') && toks[j + 1] && toks[j + 1].t === '(')
-            { j = matchClose(toks, j + 1); continue; }
-            if (tk.t === '(' || tk.t === '[')
-            {
-                const c = matchClose(toks, j);
-                const g = { group: tk.t, from: j, to: c, line: tk.line };
-                if (assign) scanLocal(j + 1, c);                // a lambda in an initializer's arguments
-                if (tk.t === '(' && ! assign && angle === 0) sawParen = true;
-                head.push(g); j = c; continue;
-            }
-            if (tk.t === '{')
-            {
-                const c = matchClose(toks, j);
-                const last = head[head.length - 1];
-                if (assign) { scanLocal(j + 1, c); head.push({ group: '{', from: j, to: c, line: tk.line }); j = c; continue; }
-                if (classKeyAt >= 0 && ! sawParen && ! classBody)
-                {
-                    if (head[classKeyAt].t !== 'enum') declSeq(j + 1, c, 'class');
-                    classBody = true; head.push({ group: 'body', from: j, to: c, line: tk.line }); j = c; continue;
-                }
-                const lastIsName = last && (last.id && ! QUALIFIERS.has(last.t)) || (last && last.t === '>');
-                if (sawParen && (arrow || ! lastIsName || (ctorInit && last.group)))
-                {
-                    if (ctorInit && lastIsName && ! arrow) { scanLocal(j + 1, c); head.push({ group: '{', from: j, to: c }); j = c; continue; }
-                    scanLocal(j + 1, c);                        // a function body
-                    return c + 1;
-                }
-                // a brace initialiser: `T x {…}`, or a mem-initialiser `a{…}` in a constructor's list
-                scanLocal(j + 1, c); head.push({ group: '{', from: j, to: c, line: tk.line }); j = c; continue;
-            }
-            if (tk.t === '=' && ! (head.length && head[head.length - 1].t === 'operator')) assign = true;
-            if (tk.t === '->' && sawParen && ! assign) arrow = true;
-            if (tk.t === ':' && sawParen && ! assign) ctorInit = true;
-            if (tk.id && SPECIFIERS.has(tk.t) && ! assign) specifiers.add(tk.t);
-            if (tk.id && CLASS_KEYS.has(tk.t) && classKeyAt < 0 && ! sawParen && ! assign)
-            {
-                classKeyAt = head.length;
-                // `class X;`, `struct X final;`, `enum class E : std::uint8_t;` — a declaration of a type, not a variable
-                let k = j + 1;
-                if (tk.t === 'enum' && toks[k] && (toks[k].t === 'class' || toks[k].t === 'struct')) k++;
-                while (toks[k] && toks[k].t === '[' && toks[k + 1] && toks[k + 1].t === '[') k = matchClose(toks, k) + 1;
-                // the tag: ONE (possibly qualified) name — a second name after it is a declarator (`struct X x;`)
-                if (toks[k] && toks[k].id) { k++; while (toks[k] && toks[k].t === '::' && toks[k + 1] && toks[k + 1].id) k += 2; }
-                if (toks[k] && toks[k].t === 'final') k++;
-                if (toks[k] && toks[k].t === ';') opaque = true;
-                // `enum class E : std::uint8_t;` — an enum base, and a `;` before any `{`
-                if (toks[k] && tk.t === 'enum' && toks[k].t === ':')
-                {
-                    let m = k + 1;
-                    while (m < end && toks[m].t !== ';' && toks[m].t !== '{') m++;
-                    if (m < end && toks[m].t === ';') opaque = true;
-                }
-            }
-            head.push(tk);
-        }
-        // Nothing but names up to the end of the scope: a macro invocation with no semicolon (a pragma wrapper closing
-        // a file), not a declaration. Anything else that runs off the end is a file this reader cannot follow.
-        if (head.every(x => x.id)) return end;
-        throw new ParseError(toks[i].line, `a declaration that never ends (no ';' before the end of its scope)`);
-    }
-
-    function finish (head, specifiers, scope, classKeyAt, classBody, opaque, line)
-    {
-        if (head.length === 0 || opaque) return;
-        const first = head[0];
-        if (first.t === 'friend' || specifiers.has('friend')) return;
-        let tail = head;
-        if (classBody)
-        {
-            // declarators after a class body: `struct { … } name;` — judged with the specifiers in front of the key
-            const b = head.findIndex(x => x.group === 'body');
-            tail = head.slice(0, classKeyAt).concat(head.slice(b + 1));
-            if (! head.slice(b + 1).some(x => x.id)) return;    // no declarator: a type definition
-        }
-        else if (classKeyAt >= 0)
-        {
-            // `struct X x;` — an elaborated type and a declarator; `struct X;` was handled as opaque
-            tail = head.slice(0, classKeyAt).concat(head.slice(classKeyAt + 1));
-        }
-        if (scope === 'class' && ! specifiers.has('static') && ! specifiers.has('thread_local')) return;   // instance state
-        // `NAME (args);` with nothing in front of the name declares nothing — a variable needs a type. It is a macro
-        // invocation (a layout check, a registration) or, at class scope, a constructor.
-        const firstGroup = tail.findIndex(x => x.group === '(');
-        if (firstGroup === 1 && tail[0].id && ! TYPE_WORDS.has(tail[0].t)
-            && ! groupItems(tail[1]).some((y, n) => n === 0 && (y.t === '*' || y.t === '&'))) return;
-        const v = judge(tail, false);
-        if (v.function) return;
-        if (secondDeclarator(tail) && ! allConstant(tail))
-        {
-            report(line, namesOf(tail), SEVERAL);
-            return;
-        }
-        if (! v.mutable) return;
-        const what = scope === 'class' ? 'a static data member'
-                   : specifiers.has('thread_local') ? 'a thread_local variable'
-                   : specifiers.has('extern') ? 'an extern variable (a mutable global declared here)'
-                   : 'a namespace-scope variable';
-        report(line, v.name, what);
-    }
-
-    function skipStatement (i, end)
-    {
-        for (let j = i; j < end; j++)
-        {
-            if (toks[j].t === ';') return j + 1;
-            if (OPEN[toks[j].t]) j = matchClose(toks, j);
-        }
-        throw new ParseError(toks[i].line, `a statement that never ends`);
-    }
-
-    function declSeq (i, end, scope)
-    {
-        while (i < end)
-        {
-            const t = toks[i].t;
-            if (t === ';') { i++; continue; }
-            if (t === '}' || t === ')' || t === ']') throw new ParseError(toks[i].line, `unbalanced '${t}'`);
-            if (scope === 'class' && (t === 'public' || t === 'private' || t === 'protected') && toks[i + 1] && toks[i + 1].t === ':')
-            { i += 2; continue; }
-            if (t === 'namespace' || (t === 'inline' && toks[i + 1] && toks[i + 1].t === 'namespace'))
-            {
-                let j = i + 1;
-                while (j < end && toks[j].t !== '{' && toks[j].t !== '=' && toks[j].t !== ';') j++;
-                if (j < end && toks[j].t === '{') { const c = matchClose(toks, j); declSeq(j + 1, c, 'namespace'); i = c + 1; continue; }
-                i = skipStatement(j, end); continue;
-            }
-            if (t === 'extern' && toks[i + 1] && toks[i + 1].t === '{')          // extern "C" { … } — the string is blanked
-            { const c = matchClose(toks, i + 1); declSeq(i + 2, c, 'namespace'); i = c + 1; continue; }
-            if (t === 'using' || t === 'typedef' || t === 'static_assert' || t === 'concept' || t === 'asm')
-            { i = skipStatement(i, end); continue; }
-            if (t === 'template')
-            {
-                let j = i + 1;
-                if (toks[j] && toks[j].t === '<') j = skipAngles(toks, j);
-                i = j; continue;                                  // the templated declaration follows
-            }
-            i = declaration(i, end, scope);
-        }
-    }
-
-    declSeq(0, toks.length, 'namespace');
     return found;
 }
 
-//==============================================================================
-// THE OS RULE — the header list and the call list, reasons attached (the header of this file argues each).
-const HEADER_REASONS = [
-    ['files and the console', ['fstream', 'iostream', 'istream', 'ostream', 'sstream', 'spanstream', 'strstream', 'syncstream',
-        'streambuf', 'ios', 'iosfwd', 'iomanip', 'print', 'cstdio', 'stdio.h', 'filesystem']],
-    ['the locale', ['locale', 'clocale', 'locale.h', 'codecvt', 'cctype', 'ctype.h', 'cwctype', 'wctype.h', 'cwchar',
-        'wchar.h', 'regex', 'format', 'text_encoding']],
-    ['threads', ['thread', 'mutex', 'shared_mutex', 'condition_variable', 'future', 'latch', 'barrier', 'semaphore',
-        'stop_token', 'atomic', 'stdatomic.h', 'execution', 'pthread.h', 'threads.h', 'rcu', 'hazard_pointer']],
-    ['the clock', ['chrono', 'ctime', 'time.h']],
-    ['randomness (random_device reads the OS; the standard distributions differ between libraries)', ['random']],
-    ['the operating system and the process', ['cstdlib', 'stdlib.h', 'csignal', 'signal.h', 'csetjmp', 'setjmp.h',
-        'stacktrace', 'debugging', 'unistd.h', 'fcntl.h', 'dlfcn.h', 'windows.h', 'io.h', 'direct.h']],
-    ['process-wide state (errno, the floating-point environment, the default memory resource)',
-        ['cerrno', 'errno.h', 'cfenv', 'fenv.h', 'memory_resource']],
-    ['exceptions and RTTI, which the library is compiled without', ['exception', 'stdexcept', 'system_error', 'typeinfo', 'typeindex']],
-];
-const HEADER_PREFIXES = [['sys/', 'the operating system'], ['mach/', 'the operating system'], ['linux/', 'the operating system'],
-    ['emscripten', 'the wasm runtime, which belongs to the shell and the facade']];
-const FORBIDDEN_HEADER = new Map();
-for (const [why, list] of HEADER_REASONS) for (const h of list) FORBIDDEN_HEADER.set(h, why);
-
-const CALL_REASONS = [
-    ['formats or parses through the locale, or reports a bad parse by throwing — numbers go through the session\'s own declared rules',
-        ['to_string', 'to_wstring', 'stoi', 'stol', 'stoll', 'stoul', 'stoull', 'stof', 'stod', 'stold']],
-    ['installs a process-wide handler', ['set_new_handler', 'set_terminate', 'atexit', 'at_quick_exit']],
-    ['reaches the environment, the locale or a process-wide generator', ['getenv', 'setlocale', 'rand', 'srand']],
-];
-const FORBIDDEN_CALL = new Map();
-for (const [why, list] of CALL_REASONS) for (const f of list) FORBIDDEN_CALL.set(f, why);
-const CALL_RE = new RegExp(`(?<![A-Za-z0-9_])(?:std::|(?<![.>:]))(${[...FORBIDDEN_CALL.keys()].join('|')})\\s*\\)?\\s*\\(`, 'g');
-
-function lineAt (text, idx) { let n = 1; for (let i = 0; i < idx; i++) if (text[i] === '\n') n++; return n; }
-
-export function scanOs (text)
+// The #include path as written, canonical or not: backslashes, `.`, `..`, empty segments and absolute paths are not.
+// (Case is checked where it can be decided: a standard header is spelled in lower case, as STD_ALLOWED is; a project
+// header must match the file's own name letter for letter — see existsExactCase.)
+export function canonicalInclude (path)
 {
-    const found = [];
-    const noComments = strip(text, true);
-    noComments.split('\n').forEach((l, n) =>
+    if (/\\/.test(path) || path.startsWith('/') || /^[A-Za-z]:/.test(path)) return false;
+    return path.split('/').every(seg => seg !== '' && seg !== '.' && seg !== '..');
+}
+
+// Does `p` exist with exactly this spelling? On a case-insensitive file system (macOS, Windows) `existsSync` says yes to
+// `session.h` for `Session.h`, and a build that works there fails on Linux — or picks a different file.
+function existsExactCase (p)
+{
+    if (! existsSync(p)) return false;
+    const parts = normalize(p).split(sep);
+    const absolute = parts[0] === '';
+    let dir = absolute ? sep : '.';
+    for (let i = absolute ? 1 : 0; i < parts.length; i++)
     {
-        const m = /^\s*#\s*include(?:_next)?\b\s*(.*)$/.exec(l);
-        if (! m) return;
-        const inc = /^([<"])([^>"]+)[>"]/.exec(m[1]);
-        if (! inc) { found.push({ line: n + 1, what: `an #include this lint cannot read (${m[1].trim() || 'empty'}) — a computed include is one nobody audits` }); return; }
-        const h = inc[2].trim();
-        const why = FORBIDDEN_HEADER.get(h) ?? (HEADER_PREFIXES.find(([p]) => h.startsWith(p)) || [])[1];
-        if (why) found.push({ line: n + 1, what: `#include ${inc[1]}${h}${inc[1] === '<' ? '>' : '"'} — ${why}` });
-    });
-    const code = strip(text, false);
-    for (const m of code.matchAll(CALL_RE))
-        found.push({ line: lineAt(code, m.index), what: `a call to ${m[1]}() — ${FORBIDDEN_CALL.get(m[1])}` });
-    return found.sort((a, b) => a.line - b.line);
+        const entries = readdirSync(dir);
+        if (! entries.includes(parts[i])) return false;
+        dir = join(dir, parts[i]);
+    }
+    return true;
 }
 
 //==============================================================================
-// THE LISTS — tools/lint/session-laws.txt.
-const LISTS_FILE = 'tools/lint/session-laws.txt';
-const ZONE_FILE = 'tools/lint/det-math-zone.txt';
-const RULES = new Set(['globals', 'os', 'zone']);
-
-export function parseLists (text)
-{
-    const lists = { scans: [], allows: [], errors: [] };
-    text.split('\n').forEach((raw, n) =>
-    {
-        const line = raw.trim();
-        if (! line || line.startsWith('#')) return;
-        let m;
-        if ((m = /^scan\s+(\S+)\s+(\S+)\s+(\S.*)$/.exec(line)))
-        {
-            const rules = m[2].split(',');
-            const bad = rules.filter(r => ! RULES.has(r));
-            if (bad.length) lists.errors.push({ line: n + 1, msg: `unknown rule(s) ${bad.join(', ')} — the rules are ${[...RULES].join(', ')}` });
-            else lists.scans.push({ path: m[1], rules: new Set(rules), line: n + 1 });
-        }
-        else if ((m = /^allow-global\s+(\S+)\s+([A-Za-z_][A-Za-z0-9_]*)\s+(\S.*)$/.exec(line)))
-            lists.allows.push({ file: m[1], name: m[2], line: n + 1, used: 0 });
-        else
-            lists.errors.push({ line: n + 1, msg: `unparseable line: ${line} — expected "scan <path> <rules> <why>" or "allow-global <file> <name> <why>", each with its reason` });
-    });
-    return lists;
-}
-
-const SOURCE = /\.(h|hh|hpp|hxx|inl|ipp|inc|c|cc|cpp|cxx|cppm|ixx|mpp)$/;
 function walk (dir, acc)
 {
     for (const e of readdirSync(dir).sort())
     {
         const p = dir + '/' + e;
-        if (statSync(p).isDirectory()) { if (e !== 'tests') walk(p, acc); }
-        else if (SOURCE.test(e)) acc.push(p);
+        if (p === TESTS) continue;
+        if (statSync(p).isDirectory()) walk(p, acc); else acc.push(p);
     }
     return acc;
+}
+
+function rel (p) { return relative(process.cwd(), p).split(sep).join('/'); }
+
+// The felitronics-core checkout this repository builds against: the one a --build tree resolved, or the sibling.
+function coreRoot (buildDir)
+{
+    if (buildDir && existsSync(join(buildDir, 'CMakeCache.txt')))
+    {
+        const m = /^FELITRONICS_MASTERING_CORE_SOURCE_DIR:INTERNAL=(.*)$/m.exec(readFileSync(join(buildDir, 'CMakeCache.txt'), 'utf8'));
+        if (m && existsSync(m[1])) return m[1];
+    }
+    const sibling = join(process.cwd(), '..', 'felitronics-core');
+    return existsSync(join(sibling, 'modules')) ? sibling : null;
+}
+
+// Resolve a felitronics include in this repository or in core: the first include root that has it.
+function resolveFelitronics (inc, core)
+{
+    const roots = [];
+    for (const base of [process.cwd(), core].filter(Boolean))
+    {
+        const modules = join(base, 'modules');
+        if (! existsSync(modules)) continue;
+        for (const m of readdirSync(modules)) roots.push(join(modules, m, 'include'));
+    }
+    for (const r of roots) { const p = join(r, inc); if (existsExactCase(p)) return p; }
+    return null;
+}
+
+//==============================================================================
+export function scanFile (path, text, opts)
+{
+    const found = [];
+    const V = (line, rule, msg) => found.push({ line, rule, msg });
+    const noComments = strip(text, true);
+    const dirs = directives(noComments);
+    // The token rules read every line of code, #if branches included — but not an #include's header name, which the
+    // INCLUDE rule judges (`<atomic>` is a header there, not a use).
+    const code = strip(text, false).split('\n').map(l => /^\s*#\s*(include|include_next|import)\b/.test(l) ? blank(l) : l).join('\n');
+    const includes = [];
+    for (const d of dirs)
+    {
+        if (d.name === 'include' || d.name === 'include_next' || d.name === 'import')
+        {
+            const m = /^([<"])([^>"]*)[>"]/.exec(d.rest);
+            if (! m) { V(d.line, 'INCLUDE', `#${d.name} ${d.rest} — a computed include is one nobody audits`); continue; }
+            includes.push({ line: d.line, kind: m[1], path: m[2] });
+            continue;
+        }
+        if (d.name === 'pragma')
+        {
+            if (d.rest.replace(/\s+/g, ' ') !== 'once')
+                V(d.line, 'PRAGMA', `#pragma ${d.rest} — the only pragma a session source may carry is \`#pragma once\`: a local pragma changes floating-point semantics or code generation past every flag of the library (\`#pragma clang fp contract(fast)\` fuses under -ffp-contract=off)`);
+            continue;
+        }
+        if (/^(if|ifdef|ifndef|elif|elifdef|elifndef|else)$/.test(d.name) && ! CONDITIONALS_ALLOWED.has(path))
+            V(d.line, 'CONDITIONAL', `#${d.name} ${d.rest} — conditional compilation outside src/BuildGuards.h and src/BuildContract.cpp: a branch is code one row compiles and another does not, and the session is one program on every row`);
+    }
+    for (const t of tokenViolations(code)) found.push(t);
+    if (path.startsWith(INCLUDE_ROOT + '/'))
+    {
+        for (const re of BODY_RE)
+        {
+            re.lastIndex = 0;
+            for (const m of code.matchAll(re))
+                V(lineAt(code, m.index + m[0].length - 1), 'BODY', `a function body in a public header — it is compiled under the consumer's flags, not the library's. Declare it here and define it in src/ (\`= default\` and \`= delete\` are not bodies)`);
+        }
+    }
+    // includes: canonical, allowed, resolvable — and the closure's next files
+    const next = [];
+    for (const inc of includes)
+    {
+        if (! canonicalInclude(inc.path))
+        { V(inc.line, 'INCLUDE', `#include ${inc.kind}${inc.path}${inc.kind === '<' ? '>' : '"'} — not canonically spelled (no \`./\`, no \`..\`, no backslash, no capital letter): a header must be named the one way the build and this lint both read it`); continue; }
+        if (inc.kind === '"')
+        {
+            const p = normalize(join(dirname(path), inc.path)).split(sep).join('/');
+            if (! p.startsWith(MODULE + '/') || ! existsExactCase(p))
+            { V(inc.line, 'INCLUDE', `#include "${inc.path}" — a quoted include must name a file inside ${MODULE}, spelled as the file is; this one resolves to ${p}${existsExactCase(p) ? '' : ', which does not exist with that spelling'}`); continue; }
+            next.push(p);
+            continue;
+        }
+        if (inc.path.startsWith('felitronics/'))
+        {
+            const p = resolveFelitronics(inc.path, opts.core);
+            if (! p) { V(inc.line, 'INCLUDE', `#include <${inc.path}> resolves in neither this repository nor felitronics-core${opts.core ? '' : ' (no core checkout found: pass --build <dir>)'} — a header this lint cannot find is one it cannot audit`); continue; }
+            const r = rel(p);
+            if (r.startsWith(MODULE + '/')) next.push(r);
+            continue;
+        }
+        if (! STD_ALLOWED.has(inc.path))
+            V(inc.line, 'INCLUDE', `#include <${inc.path}> — not on the session's include allowlist (tools/lint/check-session-laws.mjs, STD_ALLOWED). The allowlist is the standard headers that reach no operating system, file, console, locale, thread, clock or process-wide state by being included; a header nobody reviewed is refused by default`);
+    }
+    return { found, next, firstInclude: includes[0] || null };
 }
 
 //==============================================================================
 function selfTest ()
 {
-    // [source, the names the GLOBALS rule must report, in order]
-    const globals = [
-        // --- refused: state outside an object
-        ['int counter = 0;',                                              ['counter']],
-        ['int counter;',                                                  ['counter']],
-        ['static int counter = 0;',                                       ['counter']],
-        ['namespace { int hidden = 1; }',                                 ['hidden']],
-        ['namespace a::b { double gain {1.0}; }',                         ['gain']],
-        ['std::vector<int> table;',                                       ['table']],
-        ['std::array<int, 3> table { 1, 2, 3 };',                         ['table']],
-        ['int table[4];',                                                 ['table']],
-        ['const char* names[] = { "a", "b" };',                           ['names']],   // mutable pointers to const chars
-        ['static const char* name = "x";',                                ['name']],
-        ['int g (0);',                                                    ['g']],       // direct-initialised, not a function
-        ['Session s (cfg);',                                              ['s']],
-        ['extern int shared;',                                            ['shared']],
-        ['inline int shared = 0;',                                        ['shared']],
-        ['constinit int early = 3;',                                      ['early']],   // constant-initialised, still mutable
-        ['thread_local int perThread = 0;',                               ['perThread']],
-        ['volatile unsigned char flag = 0;',                              ['flag']],
-        ['int* const* p = nullptr;',                                      ['p']],       // the outer pointer is not const
-        ['int& alias = counter;',                                         ['alias']],
-        ['struct { int a; } anon;',                                       ['anon']],
-        ['enum E { A, B } current;',                                      ['current']],
-        ['struct X x;',                                                   ['x']],
-        ['int Session::instances = 0;',                                   ['instances']],
-        ['template <class T> T zero = T();',                              ['zero']],
-        ['void (*callback) (int) = nullptr;',                             ['callback']],
-        ['struct S { static int n; };',                                   ['n']],
-        ['struct S { static inline int n = 0; };',                        ['n']],
-        ['class C { public: inline static std::vector<int> cache; };',   ['cache']],
-        ['struct S { struct In { static int deep; }; };',                 ['deep']],
-        ['int f () { static int calls = 0; return ++calls; }',           ['calls']],
-        ['void f () { if (x) { static double last; } }',                  ['last']],
-        ['void f () { thread_local int t = 0; }',                         ['t']],
-        ['struct S { int m () { static int k = 1; return k; } };',        ['k']],
-        ['S::S () : a {1}, b (2) { static int made = 0; }',              ['made']],
-        ['auto f () -> int { static int n = 0; return n; }',              ['n']],
-        ['const auto l = [] { static int n = 0; return ++n; };',         ['n']],        // a lambda's local, in an initialiser
-        ['int x = f ([] { static int n; return n; } ());',               ['n', 'x']],
-        ['extern "C" { int cstate; }',                                    ['cstate']],
-        ["int a = (1'000 > 2) ? 3 : 4;",                                  ['a']],       // a digit separator is not a quote
-        // --- allowed: constants, functions, types, instance state
-        ['constexpr int kLimit = 8;',                                     []],
-        ['const int kLimit = 8;',                                         []],
-        ['int const kLimit = 8;',                                         []],
-        ['static constexpr double kPi = 3.14;',                           []],
-        ['const char* const names[] = { "a" };',                          []],
-        ['constexpr const char* name = "x";',                             []],
-        ['const std::array<int, 3> k { 1, 2, 3 };',                       []],
-        ['const std::vector<int*> ptrs {};',                              []],        // the * is inside the template
-        ['const int& ref = kLimit;',                                      []],
-        ['int f (int x);',                                                []],
-        ['int f (void);',                                                 []],
-        ['int f ();',                                                     []],
-        ['static int helper (const Session& s, std::size_t n);',         []],
-        ['std::unique_ptr<Session> make (Config cfg) noexcept;',          []],
-        ['int f (Session*);',                                             []],        // an unnamed pointer parameter
-        ['void g (int, ...);',                                            []],
-        ['int f (int x) { return x; }',                                   []],
-        ['std::uint64_t Session::createBytes () noexcept { return 1; }', []],
-        ['Session::~Session () = default;',                               []],
-        ['bool operator== (const A& a, const A& b);',                     []],
-        ['struct S { int member = 0; std::vector<int> v; };',             []],
-        ['struct S { static int f (); static constexpr int k = 1; static const int c = 2; };', []],
-        ['class C final : public B<int> { public: C () noexcept = default; ~C (); };', []],
-        ['struct S;',                                                     []],
-        ['enum class E : std::uint8_t;',                                  []],
-        ['enum class E : std::uint8_t { A = 0, B = 1 };',                 []],
-        ['enum : unsigned { kA = 1 };',                                   []],
-        ['using T = int; typedef long L; static_assert (sizeof (int) == 4, "x");', []],
-        ['namespace n = std;',                                            []],
-        ['template <class T> struct Box { T value; };',                   []],
-        ['template <class T> constexpr T pi = T(3.14);',                  []],
-        ['int f () { const int local = 1; static constexpr int k = 2; static const double c = 3.0; return local; }', []],
-        ['int f () { return static_cast<int> (x); }',                      []],
-        ['struct S { friend bool operator== (S, S) { return true; } };',   []],
-        ['// static int commented = 0;\n/* int alsoCommented; */',         []],
-        ['const char* s = "static int inAString = 0;";',                   ['s']],     // only the pointer, not the words
-        ['#define STATE static int hidden = 0;\n#if X\nint f ();\n#endif', []],        // preprocessor: not parsed
-        ['void f () noexcept (true) { int x = 0; (void) x; }',             []],
-        ['[[nodiscard]] int f ();\nalignas (16) const float k[4] {};',     []],
-        // --- one name per declaration with static storage, unless every name is a constant
-        ['volatile int allowed = 0, hidden = 0;',                          ['allowed, hidden']],
-        ['int f () { static int a = 0, b = 1; return a + b; }',            ['a, b']],
-        ['std::map<int, int> table;',                                      ['table']],   // a comma inside <> is not a second name
-        ['constexpr int kA = 1, kB = 2;',                                  []],
-        ['const double kLo = 1.0, kHi = 2.0;',                             []],
-        ['const int* a = nullptr, *b = nullptr;',                          ['a, b']],    // const binds the pointee, not the pointers
-        // --- macro invocations are not declarations
-        ['LAYOUT_CHECK (fc_config, pad);\nint after = 0;',                 ['after']],
-        ['PRAGMA_BEGIN\nnamespace n { int inside = 0; }\nPRAGMA_END',       ['inside']],
-        ['template <class C> struct Has<C, std::void_t<decltype (f (C ()))>> : std::true_type {};', []],
-        ['bool operator< (const A& a, const A& b) { return a.v < b.v; }\nint after;', ['after']],
-        ['struct S { bool operator() (int x) const { static int n; return x > n; } };', ['n']],
-        ['struct S { bool operator! () const { return false; } };',         []],
-    ];
-    const os = [
-        ['#include <chrono>',                      1],
-        ['#  include  <thread>',                   1],
-        ['#include<cstdio>',                       1],
-        ['#include <sys/time.h>',                  1],
-        ['#include <emscripten/heap.h>',           1],
-        ['#include <atomic>\n#include <random>',   2],
-        ['#include MACRO_HEADER',                  1],   // computed: refused, not skipped
-        ['#include <cstdint>\n#include <memory>\n#include <charconv>\n#include "local.h"', 0],
-        ['// #include <chrono>\n/* #include <thread> */', 0],
-        ['auto s = std::to_string (x);',           1],
-        ['auto d = stod (text);',                  1],
-        ['auto s = obj.to_string ();',             0],   // a member of the same name is not the call
-        ['auto s = mine::to_string (x);',          0],   // another namespace's
-        ['auto s = my_to_string (x);',             0],
-        ['const char* s = "std::to_string (x)";',  0],
-        ['std::set_new_handler (h);',              1],
-    ];
-    const lists = [
-        ['scan modules/session globals,os,zone the brain',   { scans: 1, errors: 0 }],
-        ['allow-global tools/x.cpp g_slots the table',       { allows: 1, errors: 0 }],
-        ['scan modules/session globals,clocks the brain',    { scans: 0, errors: 1 }],
-        ['scan modules/session globals',                     { scans: 0, errors: 1 }],   // no reason
-        ['allow-global tools/x.cpp g_slots',                 { allows: 0, errors: 1 }],
-        ['alow-global tools/x.cpp g the table',              { errors: 1 }],
-        ['# comment\n\n   ',                                 { errors: 0 }],
+    const cases = [
+        // [path, source, the rules that must fire, in order of line then rule]
+        [`${MODULE}/src/A.cpp`, '#include "BuildGuards.h"\n#include <cstdint>\n#include <memory>\n', []],
+        [`${MODULE}/src/A.cpp`, '#include <chrono>', ['INCLUDE']],
+        [`${MODULE}/src/A.cpp`, '#include <./chrono>', ['INCLUDE']],
+        [`${MODULE}/src/A.cpp`, '#include <./memory>', ['INCLUDE']],
+        [`${MODULE}/src/A.cpp`, '#include <Memory>', ['INCLUDE']],
+        [`${MODULE}/src/A.cpp`, '#include <cstdio>\n#include <atomic>', ['INCLUDE', 'INCLUDE']],
+        [`${MODULE}/src/A.cpp`, '#include MACRO', ['INCLUDE']],
+        [`${MODULE}/src/A.cpp`, '// #include <chrono>\n/* #include <thread> */', []],
+        [`${MODULE}/src/A.cpp`, '#pragma once', []],
+        [`${MODULE}/src/A.cpp`, '#if defined(__clang__)\n#pragma clang fp contract(fast)\n#endif', ['CONDITIONAL', 'PRAGMA']],
+        [`${MODULE}/src/A.cpp`, '#pragma STDC FP_CONTRACT ON', ['PRAGMA']],
+        [`${MODULE}/src/A.cpp`, 'double f () { _Pragma("clang fp contract(fast)") return 1.0; }', ['PRAGMA']],
+        [`${MODULE}/src/A.cpp`, '__pragma(fp_contract(on)) int x;', ['PRAGMA']],
+        [`${MODULE}/src/A.cpp`, '[[gnu::optimize("fast-math")]] double f ();', ['PRAGMA']],
+        [`${MODULE}/src/A.cpp`, '__attribute__((target("fma"))) double f ();', ['PRAGMA']],
+        [`${MODULE}/src/A.cpp`, 'void fail () {\n#if defined(_MSC_VER) && !defined(__clang__)\n    throw 1;\n#endif\n}', ['CONDITIONAL', 'EXCEPTIONS']],
+        [`${MODULE}/src/A.cpp`, '#ifdef A\nint a;\n#else\nint b;\n#endif', ['CONDITIONAL', 'CONDITIONAL']],
+        [`${MODULE}/src/A.cpp`, 'int f () noexcept { return 0; }', []],
+        [`${MODULE}/src/A.cpp`, 'int f (B& b) { return typeid (b) == typeid (B); }', ['EXCEPTIONS', 'EXCEPTIONS']],
+        [`${MODULE}/src/A.cpp`, 'const char* s = "throw try catch";', []],
+        [`${MODULE}/src/A.cpp`, 'std::atomic<int> n;', ['NOSYMBOL']],
+        [`${MODULE}/src/A.cpp`, 'auto t = __builtin_readcyclecounter ();', ['NOSYMBOL']],
+        [`${MODULE}/src/A.cpp`, 'int counter asm ("counter") = 0;', ['NOSYMBOL']],
+        [`${MODULE}/src/A.cpp`, 'std::unordered_map<int, int> m;', ['ORDER']],
+        [`${MODULE}/src/A.cpp`, 'std::sort (v.begin(), v.end());', ['ORDER']],
+        [`${MODULE}/src/A.cpp`, 'std :: ranges :: sort (v);', ['ORDER']],
+        [`${MODULE}/src/A.cpp`, 'std::stable_sort (v.begin(), v.end()); list.sort (); p->sort ();', []],
+        [`${MODULE}/src/A.cpp`, 'std::size_t h = std::hash<int>{} (3);', ['ORDER']],
+        [`${MODULE}/src/BuildContract.cpp`, '#if defined(X)\n#endif', []],
+        [`${MODULE}/src/BuildGuards.h`, '#if defined(X)\n#error "x"\n#endif', []],
+        [`${INCLUDE_ROOT}/felitronics/session/S.h`, 'class S { public: S () noexcept = default; ~S (); int f () const noexcept; };', []],
+        [`${INCLUDE_ROOT}/felitronics/session/S.h`, 'struct V { unsigned a = 0; int b {1}; };', []],
+        [`${INCLUDE_ROOT}/felitronics/session/S.h`, 'inline int twice (int x) { return 2 * x; }', ['BODY']],
+        [`${INCLUDE_ROOT}/felitronics/session/S.h`, 'class S { int f () const noexcept { return 1; } };', ['BODY']],
+        [`${INCLUDE_ROOT}/felitronics/session/S.h`, 'struct S { S () : a {1} {} int a; };', ['BODY']],
+        [`${INCLUDE_ROOT}/felitronics/session/S.h`, 'inline const auto k = [] { return 1; };', ['BODY']],
+        [`${INCLUDE_ROOT}/felitronics/session/S.h`, 'auto f () -> int { return 1; }', ['BODY']],
     ];
     let bad = 0;
-    for (const [src, want] of globals)
+    for (const [path, src, want] of cases)
     {
-        let got;
-        try { got = scanGlobals(src).map(f => f.name); } catch (e) { got = [`PARSE ERROR: ${e.message}`]; }
+        const got = scanFile(path, src, { core: null }).found.sort((a, b) => a.line - b.line).map(f => f.rule);
         if (got.join(',') !== want.join(','))
-        { console.error(`  SELF-TEST FAIL (globals): wanted [${want}], got [${got}] for: ${JSON.stringify(src)}`); bad++; }
+        { console.error(`  SELF-TEST FAIL: wanted [${want}], got [${got}] for ${path}: ${JSON.stringify(src)}`); bad++; }
     }
-    for (const [src, want] of os)
-    {
-        const got = scanOs(src).length;
-        if (got !== want) { console.error(`  SELF-TEST FAIL (os): wanted ${want}, got ${got} for: ${JSON.stringify(src)}`); bad++; }
-    }
-    for (const [src, want] of lists)
-    {
-        const got = parseLists(src);
-        for (const [k, n] of Object.entries(want))
-            if (got[k].length !== n) { console.error(`  SELF-TEST FAIL (lists): wanted ${n} ${k}, got ${got[k].length} for: ${JSON.stringify(src)}`); bad++; }
-    }
-    // A file whose braces do not balance is a violation, never a pass.
-    let threw = false;
-    try { scanGlobals('void f () { int x;'); } catch (e) { threw = e instanceof ParseError; }
-    if (! threw) { console.error('  SELF-TEST FAIL (parse): an unclosed brace did not raise a parse error'); bad++; }
-    const total = globals.length + os.length + lists.length + 1;
+    const canonical = [['cstdint', true], ['./cstdint', false], ['a/../b.h', false], ['a\\b.h', false], ['a//b.h', false], ['/usr/include/x.h', false], ['Session.h', true]];
+    for (const [p, want] of canonical)
+        if (canonicalInclude(p) !== want) { console.error(`  SELF-TEST FAIL (canonical): ${p} should be ${want}`); bad++; }
+    const total = cases.length + canonical.length;
     if (bad) { console.error(`session-laws lint self-test: ${bad} of ${total} cases wrong`); process.exit(1); }
     console.log(`session-laws lint self-test: ${total}/${total} cases correct`);
 }
@@ -892,76 +364,88 @@ if (RUN_AS_PROGRAM)
 {
     const args = process.argv.slice(2);
     if (args.includes('--self-test')) { selfTest(); process.exit(0); }
-    if (args.length) { console.error('usage: node tools/lint/check-session-laws.mjs [--self-test]'); process.exit(2); }
-    if (! existsSync(LISTS_FILE))
-    { console.error(`check-session-laws: no ${LISTS_FILE} here — run from the root of felitronics-mastering-core`); process.exit(2); }
+    let buildDir = null;
+    for (let i = 0; i < args.length; i++)
+    {
+        if (args[i] === '--build' && args[i + 1]) { buildDir = args[++i]; continue; }
+        console.error('usage: node tools/lint/check-session-laws.mjs [--build <dir>] [--self-test]'); process.exit(2);
+    }
+    if (! existsSync(SOURCES_FILE) || ! existsSync(ZONE_FILE))
+    { console.error(`check-session-laws: run from the root of felitronics-mastering-core (no ${SOURCES_FILE} here)`); process.exit(2); }
 
     const violations = [];
     const V = (f, line, rule, msg) => violations.push({ f, line, rule, msg });
-    const lists = parseLists(readFileSync(LISTS_FILE, 'utf8'));
-    for (const e of lists.errors) V(LISTS_FILE, e.line, 'LISTS', e.msg);
+    const core = coreRoot(buildDir);
 
-    // path -> set of rules
-    const scope = new Map();
-    for (const s of lists.scans)
+    // THE TARGET'S SOURCES — sources.txt, cross-checked against the compile commands a build wrote.
+    const sources = readFileSync(SOURCES_FILE, 'utf8').split('\n').map(l => l.trim()).filter(l => l && ! l.startsWith('#'))
+        .map(l => posix.join(MODULE, l));
+    for (const s of sources)
+        if (! existsSync(s) || ! TU_EXT.test(s) || ! s.startsWith(`${MODULE}/src/`))
+            V(SOURCES_FILE, 0, 'FILES', `${s}: a translation unit of the library must be an existing .cpp/.cc/.cxx under ${MODULE}/src`);
+    if (buildDir)
     {
-        if (! existsSync(s.path)) { V(LISTS_FILE, s.line, 'LISTS-ROT', `scan ${s.path}: no such file or directory — a scan of nothing reads as coverage`); continue; }
-        const files = statSync(s.path).isDirectory() ? walk(s.path, []) : [s.path];
-        if (files.length === 0) { V(LISTS_FILE, s.line, 'LISTS-ROT', `scan ${s.path}: no source file in it`); continue; }
-        for (const f of files)
+        const cc = join(buildDir, 'compile_commands.json');
+        if (! existsSync(cc)) V(cc, 0, 'FILES', `--build ${buildDir}: no compile_commands.json there to cross-check the target's sources with`);
+        else
         {
-            if (! scope.has(f)) scope.set(f, new Set());
-            for (const r of s.rules) scope.get(f).add(r);
+            const compiled = new Set(JSON.parse(readFileSync(cc, 'utf8'))
+                .filter(e => e.output && /(^|[\\/])felitronics_session\.dir[\\/]/.test(e.output))
+                .map(e => rel(normalize(e.file.startsWith('/') || /^[A-Za-z]:/.test(e.file) ? e.file : join(e.directory, e.file)))));
+            if (compiled.size === 0) V(cc, 0, 'FILES', `no entry of ${cc} builds felitronics_session — the cross-check would be of nothing`);
+            for (const s of sources) if (compiled.size && ! compiled.has(s)) V(SOURCES_FILE, 0, 'FILES', `${s} is on sources.txt but the build does not compile it into felitronics_session`);
+            for (const c of compiled) if (! sources.includes(c)) V(c, 0, 'FILES', `felitronics_session compiles ${c}, which sources.txt does not list — the lint would not scan it`);
         }
     }
-    for (const a of lists.allows)
-        if (! (scope.get(a.file) || new Set()).has('globals'))
-            V(LISTS_FILE, a.line, 'LISTS', `allow-global ${a.file} ${a.name}: that file is not scanned by the globals rule, so the allowance allows nothing`);
 
-    const zoned = new Set();
-    if (existsSync(ZONE_FILE))
-        for (const l of readFileSync(ZONE_FILE, 'utf8').split('\n'))
-        { const m = /^\s*zone\s+(\S+)\s+\S/.exec(l); if (m) zoned.add(m[1]); }
-
-    const counts = { globals: 0, os: 0, zone: 0 };
-    for (const [f, rules] of [...scope].sort((a, b) => a[0].localeCompare(b[0])))
+    // THE FILES OF THE MODULE — every one accounted for.
+    const all = walk(MODULE, []);
+    for (const f of all)
     {
-        const text = readFileSync(f, 'utf8');
-        if (rules.has('globals'))
-        {
-            counts.globals++;
-            let found = [];
-            try { found = scanGlobals(text); }
-            catch (e)
-            {
-                if (! (e instanceof ParseError)) throw e;
-                V(f, e.line, 'PARSE', `${e.message}. A file this lint cannot follow is a file it cannot vouch for, so it is red.`);
-            }
-            for (const g of found)
-            {
-                const allow = lists.allows.find(a => a.file === f && a.name === g.name);
-                if (allow) { allow.used++; continue; }
-                V(f, g.line, 'GLOBALS', `${g.what}, \`${g.name}\`, that the code can change. felitronics::session keeps no state outside its objects (docs/SESSION.md): a session is replayed and sessions live side by side, and a global is where their histories meet. Make it a member of the object that owns it, or constexpr/const if it is a constant.`);
-            }
-        }
-        if (rules.has('os'))
-        {
-            counts.os++;
-            for (const o of scanOs(text))
-                V(f, o.line, 'OS', `${o.what}. felitronics::session is called synchronously and reaches no operating system, file, console, locale, thread or clock (docs/SESSION.md); tools/lint/check-session-laws.mjs says why each of these is on the list.`);
-        }
-        if (rules.has('zone'))
-        {
-            counts.zone++;
-            if (! zoned.has(f))
-                V(f, 0, 'ZONE', `not in the deterministic zone: ${ZONE_FILE} has no \`zone ${f} <why>\` line, so the det-math lint would let a system libm call in this file through. Add the line.`);
-        }
+        if (NOT_CODE.has(f)) continue;
+        if (! CODE_EXT.test(f)) { V(f, 0, 'FILES', `a file of an unknown type in the module — refused rather than skipped: it is either code this lint cannot classify, or it does not belong here`); continue; }
+        if (TU_EXT.test(f) && ! sources.includes(f)) V(f, 0, 'FILES', `a translation unit that sources.txt does not list: the library does not compile it, and a file nothing compiles is not the session`);
     }
-    for (const a of lists.allows)
-        if ((scope.get(a.file) || new Set()).has('globals') && a.used !== 1)
-            V(LISTS_FILE, a.line, 'LISTS-ROT', a.used === 0
-                ? `allow-global ${a.file} ${a.name}: no mutable global of that name is declared there. An allowance for something that is gone is how a list stops meaning anything — remove it, or fix the name.`
-                : `allow-global ${a.file} ${a.name}: matches ${a.used} declarations. One allowance, one global.`);
+
+    // SCAN: the target's units and every file their #include closure reaches inside the module, whatever its name —
+    // then every public header, which consumers include.
+    const scanned = new Map();
+    const queue = [...sources.filter(existsSync)];
+    for (const f of all) if (f.startsWith(INCLUDE_ROOT + '/') && CODE_EXT.test(f)) queue.push(f);
+    while (queue.length)
+    {
+        const f = queue.shift();
+        if (scanned.has(f)) continue;
+        const res = scanFile(f, readFileSync(f, 'utf8'), { core });
+        scanned.set(f, res);
+        for (const v of res.found) V(f, v.line, v.rule, v.msg);
+        for (const n of res.next) if (! scanned.has(n)) queue.push(n);
+    }
+    for (const f of all)
+        if (! NOT_CODE.has(f) && CODE_EXT.test(f) && ! scanned.has(f))
+            V(f, 0, 'FILES', `nothing in the library compiles or includes this file, and it is not a public header — it is unscanned code, so it is refused`);
+
+    // GUARD
+    for (const s of sources)
+    {
+        const r = scanned.get(s);
+        if (! r) continue;
+        if (! r.firstInclude || r.firstInclude.path !== 'BuildGuards.h' || r.firstInclude.kind !== '"')
+            V(s, r.firstInclude ? r.firstInclude.line : 0, 'GUARD', `the first #include of every translation unit must be "BuildGuards.h" — it refuses a unit compiled with exceptions, RTTI or fast-math, which is how a per-source flag override is caught`);
+    }
+
+    // ZONE
+    const zone = new Set(), entry = new Set();
+    for (const l of readFileSync(ZONE_FILE, 'utf8').split('\n'))
+    {
+        const m = /^\s*(zone|entry)\s+(\S+)\s+\S/.exec(l);
+        if (m) (m[1] === 'zone' ? zone : entry).add(m[2]);
+    }
+    for (const f of scanned.keys())
+    {
+        if (! zone.has(f)) V(f, 0, 'ZONE', `not in the deterministic zone: ${ZONE_FILE} has no \`zone ${f} <why>\` line, so the det-math lint would let a system libm call in it through`);
+        if (sources.includes(f) && ! entry.has(f)) V(f, 0, 'ZONE', `a translation unit of the library that is not a det-math entry point: ${ZONE_FILE} has no \`entry ${f} <why>\` line, so the det-math lint does not follow its #includes`);
+    }
 
     if (violations.length)
     {
@@ -969,7 +453,6 @@ if (RUN_AS_PROGRAM)
         console.error(`\n^^ ${violations.length} violation(s) of the session laws.`);
         process.exit(1);
     }
-    const used = lists.allows.map(a => `${a.file.split('/').pop()}:${a.name}`).join(', ');
-    console.log(`session laws: clean — globals in ${counts.globals} files (${lists.allows.length} allowed: ${used || 'none'}), `
-              + `os in ${counts.os}, zone in ${counts.zone} (every one listed in ${ZONE_FILE}).`);
+    console.log(`session laws (source): clean — ${scanned.size} file(s) of ${MODULE} scanned from ${sources.length} translation unit(s)`
+              + `${buildDir ? ' (cross-checked against ' + join(buildDir, 'compile_commands.json') + ')' : ''}, each in the det-math zone.`);
 }

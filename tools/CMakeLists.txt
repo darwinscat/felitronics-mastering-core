@@ -187,8 +187,8 @@ target_compile_features(fcore_master PRIVATE cxx_std_20)
 
 # THE C BOUNDARY'S TRANSLATION UNIT, built once as an object library with the session library's OWN compile options (read
 # off the target, not restated): no exceptions, no RTTI, no contraction, no fast-math — so the facade is held to the
-# brain's flags on every native row as it is in the wasm module (tools/wasm/build.sh). fcore_session and the ABI suite
-# link this object rather than compiling the source again.
+# brain's flags on every native row as it is in the wasm module (tools/wasm/build.sh), and its object is the one the
+# object-file gate reads. fcore_session and the ABI suite link this object rather than compiling the source again.
 add_library(felitronics_session_facade OBJECT wasm/fc_session.cpp)
 target_link_libraries(felitronics_session_facade PRIVATE felitronics::session)
 target_include_directories(felitronics_session_facade PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -212,6 +212,16 @@ if(FELITRONICS_BUILD_TESTS)
     target_include_directories(felitronics_session_abi_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_features(felitronics_session_abi_tests PRIVATE cxx_std_20)
     add_test(NAME felitronics_session_abi_tests COMMAND felitronics_session_abi_tests)
+
+    # THE OBJECT-FILE GATE over felitronics::session and its C boundary (modules/session/tests/object-gates.cmake): every
+    # object of the library holds no writable data and calls nothing outside the list in tools/lint/session-objects.txt;
+    # the facade's object keeps exactly its handle table and its poison flag. Read with this row's own symbol-table reader
+    # — objdump on ELF and Mach-O, dumpbin on COFF, llvm-readobj on wasm — so every row of the matrix, the sanitizer row
+    # and the wasm tier included, asks the question of the objects it actually built. Its controls are in
+    # modules/session/CMakeLists.txt.
+    include(${PROJECT_SOURCE_DIR}/modules/session/tests/SessionTestTools.cmake)
+    felitronics_session_object_gate(NAME felitronics_session_object_gate
+                                    LIBRARY felitronics_session FACADE felitronics_session_facade)
 
     # THE CLI'S CONTRACT, byte for byte on stdout and by exit status (tools/tests/cli-expect.cmake): the versions it
     # prints are the ones this build was configured with; an empty script and a script of comments are accepted with
