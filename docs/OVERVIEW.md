@@ -61,6 +61,8 @@ reported number is identical; the onset curve differs by the Hann window's cos a
 streams (any split gives the bits of one call), publishes its demand (`storageFor`), and crosses the probe ABI
 as `fc_probe_tempo_*`.
 
+`felitronics::toml` — dependency-free project-file TOML subset, exact decimals and canonical writing: [grammar and API](TOML-SUBSET.md).
+
 ## The C ABIs — `tools/`
 
 `fc_master` (`tools/fc_master_abi.h`, `tools/wasm/fc_master.cpp`) over the chain and `fc_probe`
