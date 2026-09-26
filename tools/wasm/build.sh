@@ -274,7 +274,8 @@ sizes () {
     for f in "$@"; do
         raw=$(wc -c < "$OUT/$f")
         gz=$(gzip -9 -c "$OUT/$f" | wc -c)
-        br=$(brotli -q 11 -c "$OUT/$f" 2>/dev/null | wc -c || echo "n/a")
+        # Without brotli installed the old `brotli | wc -c || echo n/a` printed "0" AND "n/a" (pipefail): ask first.
+        if command -v brotli > /dev/null; then br=$(brotli -q 11 -c "$OUT/$f" | wc -c); else br="n/a"; fi
         printf "  %-22s %10s %10s %10s\n" "$f" "$raw" "$gz" "$br"
     done
 }
