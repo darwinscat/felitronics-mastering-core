@@ -16,6 +16,14 @@ add_library(felitronics::session ALIAS felitronics_session)
 target_include_directories(felitronics_session PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(felitronics_session PUBLIC cxx_std_20)
 
+# THE CONFIG — config/targets.toml and config/engine.toml, compiled into the library as constexpr data by felitronics-toml's
+# felitronics_toml_embed: nothing reads a file at run time. A document that does not parse stops the build at its line and
+# column here. The generated headers and felitronics::toml are PRIVATE to the library.
+felitronics_toml_embed(felitronics_session INPUT config/targets.toml
+                       NAMESPACE felitronics::session::config::embedded NAME targets HEADER embedded/targets.h)
+felitronics_toml_embed(felitronics_session INPUT config/engine.toml
+                       NAMESPACE felitronics::session::config::embedded NAME engine HEADER embedded/engine.h)
+
 # THE BRAIN'S FLAGS — PRIVATE, so they are the library's and never its consumer's, and one SHELL: group, so CMake's
 # option de-duplication cannot take a member of it away. That is not a theoretical guard: a parent that states
 # `add_compile_options(-ffp-contract=off)` before this repository (an innocent thing to do) made CMake drop the
