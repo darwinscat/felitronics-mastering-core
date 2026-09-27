@@ -919,6 +919,45 @@ void theRulesAreTheSchemas()
     ok (detail::readRules (r.targets, r.engine).complete, "and the two real documents are");
 }
 
+void theMachinePlacesWhatAPersonCouldSet()
+{
+    felitronics::test::group ("every value the machine places is one a person could set: on its knob's travel and step");
+    const detail::Rules r = detail::rules();
+    int placed = 0;
+    for (std::uint16_t row = 0; row < r.rows; ++row)
+        for (const std::uint32_t channels : { 1u, 2u })
+        {
+            Devices d {};
+            detail::placeMachine (r, row, channels, d);
+            const std::string where = std::string (r.row (row).key) + (channels == 1 ? " (mono)" : " (stereo)");
+            detail::eachDevice (d, [&] (Device device, const auto& layers)
+            {
+                using Fields = std::remove_cvref_t<decltype (layers.machine)>;
+                detail::DeviceOf<Fields>::each (r, [&] (std::uint8_t i, const detail::FieldRule& rule, const auto& v)
+                {
+                    using T = std::remove_cvref_t<decltype (v)>;
+                    bool good = true;
+                    if constexpr (std::is_same_v<T, double>)
+                    {
+                        const auto x = detail::decimalOf (v);
+                        good = x && detail::compare (*x, rule.knob.from) >= 0 && detail::compare (*x, rule.knob.to) <= 0
+                            && detail::onGrid (*x, rule.knob.from, rule.knob.step)
+                            && std::bit_cast<std::uint64_t> (v) != std::bit_cast<std::uint64_t> (-0.0);
+                    }
+                    else if constexpr (std::is_same_v<T, std::int32_t>)
+                        good = r.slope (v);
+                    else if constexpr (std::is_same_v<T, Needles>)
+                        good = std::uint8_t (v) <= std::uint8_t (Needles::Off);
+                    if (! good)
+                        ok (false, where + ": device " + std::to_string (int (device)) + " field " + std::to_string (i)
+                                   + " placed off its knob");
+                    ++placed;
+                }, layers.machine);
+            });
+        }
+    ok (placed > 0, std::to_string (placed) + " placed values, every one on its knob (+0, never -0)");
+}
+
 void everyFieldIsWalked()
 {
     felitronics::test::group ("the code walks every field of every device (src/Devices.h against Project.h)");
@@ -946,6 +985,7 @@ int main()
 {
     std::printf ("felitronics session states and commands tests\n");
     theRulesAreTheSchemas();
+    theMachinePlacesWhatAPersonCouldSet();
     everyFieldIsWalked();
     theDefaultsAtCreate();
     everyCellOfTheTable();
