@@ -67,9 +67,22 @@ and nothing else (37 KB of wasm, 15 KB brotli, against the probe's 275 / 77). Bo
 ## The mastering session — `felitronics::session`
 
 `<felitronics/session/Session.h>`: the object a shell talks to — the web worker through the `fcsession` wasm module, a
-desktop application by linking the library, `fcore_session` from a command script. It is an empty `Session`: created,
-destroyed, asked for its version, and refusing a thread whose floating-point environment is not IEEE-754's default. It
-keeps no state. What is fixed is the ground it stands on:
+desktop application by linking the library, `fcore_session` from a command script. A `Session` refuses a thread whose
+floating-point environment is not IEEE-754's default, and it holds:
+
+- **its states and commands** (`<felitronics/session/Commands.h>`): Empty, Loaded, Measured1, Measured2, and a master
+  being made as an overlay on the measured two. A shell asks by typed requests — `load`, `setTarget`, `editTarget`,
+  `editDevice`, `revertEdits`, `setManual`, `master`, `cancel`, `forget` — each answered whole: accepted with the
+  revision it made, or rejected with a code, having changed nothing. Who may do what, when, is one table in the code,
+  consulted by every command right after the floating-point entry check, and the checks after it run in one declared
+  order. Every command states what it
+  will ask the heap for before it runs;
+- **its project** (`<felitronics/session/Project.h>`): the target and a person's edits of its numbers, the manual mode,
+  and every device's parameters as typed fields written once and used in two layers — the machine's, complete, placed
+  from the config when the first measurement ends, and a person's, only what was touched, edited only after that and
+  checked on each knob's travel and step, exactly. [`SESSION.md`](SESSION.md), "The states and the commands".
+
+What is fixed is the ground it stands on:
 
 - **its config** (`<felitronics/session/Config.h>`): every number the session decides, measures and reports with, in
   two TOML documents — `modules/session/config/targets.toml` (the targets) and `engine.toml` (everything else) —
@@ -100,8 +113,8 @@ keeps no state. What is fixed is the ground it stands on:
 same names, with a version of its own, because a version is a promise about a whole surface — and `fc_session`
 (`tools/fc_session_abi.h`, `tools/wasm/fc_session.cpp`) over the session, the surface a shell that cannot link C++
 talks to the library through (a DRAFT, version 0, with no promise: the version, a session created and destroyed
-through a handle, the config version, the session's refusals, the poison; its wasm module `fcsession`, which carries the
-config, is 44 KB, 13 KB brotli) — each with its ABI version
+through a handle, the config version, the session's refusals of a create, the poison; its wasm module `fcsession`, which
+carries the config, is 58 KB, 17 KB brotli) — each with its ABI version
 and, for the first three, the append-only rule that moves it in its header —
 with their native CLIs (`fcore_master`, `fcore_measure`, `fcore_session`) and suites. `tools/wasm/build.sh` builds the wasm modules against a felitronics-core checkout
 (`FELITRONICS_CORE_DIR`, or the sibling `../felitronics-core`) and records both versions in `BUILD-INFO` beside

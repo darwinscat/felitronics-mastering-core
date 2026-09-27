@@ -3,12 +3,14 @@
 
 // THE CONFIG COMPILED INTO THE LIBRARY (Config.h). modules/session/CMakeLists.txt embeds modules/session/config/*.toml with
 // felitronics_toml_embed; this file hands those two documents to the schema (src/ConfigSchema.cpp), writes them back as
-// canonical text, and hashes them (src/ConfigVersion.h). Nothing here reads a file.
+// canonical text, hashes them (src/ConfigVersion.h), and hands them to the commands' reading in place (src/Rules.h).
+// Nothing here reads a file.
 
 #include "BuildGuards.h"
 
 #include "ConfigBind.h"
 #include "ConfigVersion.h"
+#include "Rules.h"
 #include "embedded/engine.h"    // generated at build time from modules/session/config/engine.toml
 #include "embedded/targets.h"   // ... and from modules/session/config/targets.toml
 
@@ -50,3 +52,11 @@ Versions Config::versions() noexcept
 }
 
 } // namespace felitronics::session::config
+
+namespace felitronics::session::detail
+{
+Rules rules() noexcept
+{
+    return readRules (config::embedded::targets.root(), config::embedded::engine.root());
+}
+} // namespace felitronics::session::detail

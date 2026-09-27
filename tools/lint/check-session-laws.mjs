@@ -122,6 +122,8 @@ const STD_ALLOWED = new Set(['algorithm', 'array', 'bit', 'charconv', 'cfloat', 
 const FELITRONICS_ALLOWED = new Set([
     'felitronics/session/Session.h',             // this module's own public headers, scanned here as every file of it is
     'felitronics/session/Config.h',
+    'felitronics/session/Commands.h',
+    'felitronics/session/Project.h',
     // felitronics-toml (resolved in the checkout the build uses): its parser and canonical writer, over <algorithm>,
     // <cfloat>, <cmath>, <cstddef>, <cstdint>, <limits>, <optional>, <string>, <string_view>, <utility>, <variant> and
     // <vector> — no file, locale, libc number conversion, exception or RTTI, by its own contract; the schema's Reader

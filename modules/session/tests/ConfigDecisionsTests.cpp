@@ -38,14 +38,15 @@ namespace
 std::string g_targetsText, g_engineText;
 
 // THE NAME OF THE DEFAULTS → THE VERSION OF THEIR SOUND. A new set of sound numbers is a new name in engine.toml
-// (`defaults`) and a new line here; an old line stays, for the projects that name it.
+// (`defaults`) and a new line here; the line of defaults a release carries stays, for the projects that name it (before
+// the first release that carries them, a line may be updated in place).
 struct Golden
 {
     std::string_view defaults;
     std::uint64_t sound;
 };
 constexpr Golden kGolden[] = {
-    { "2026-09", 0x0d00aba36313b765ull },
+    { "2026-09", 0x12b88e8dddd3f1b2ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -151,11 +152,12 @@ std::vector<std::string> departures (const config::Config& c)
     need (same (e.lowEnd.run.crossoverHz, 120.0), "the low end is measured at 120 Hz");
     need (e.compressor.thresholdFrom == config::ThresholdFrom::ShortTermP95, "the compressor's threshold is from the short-term P95");
     need (same (e.compressor.limitRelease.min, 50.0), "the compressor's release floor is 50 ms");
-    need (e.glue.byTarget.size() == 1 && e.glue.byTarget[0].target == "cd" && same (e.glue.byTarget[0].position, 0.7),
-          "the machine glues on cd alone, at 0.7");
+    need (e.glue.byTarget.size() == 1 && e.glue.byTarget[0].target == "cd" && same (e.glue.byTarget[0].upToDb, 2.6),
+          "the machine glues on cd alone, up to 2.6 dB");
     need (same (e.glue.knobMinDb, 0.0) && same (e.glue.knobMaxDb, 3.0) && same (e.glue.knobStepDb, 0.1),
           "the glue knob runs 0…3 dB in steps of 0.1");
-    need (same (e.glue.defaultPosition, 0.0), "no glue by default: a target without its own takes the compressor out");
+    need (same (e.glue.defaultUpToDb, 0.0), "no glue by default: a target without its own takes the compressor out");
+    need (same (e.glue.whenTickedUpToDb, 0.5), "ticked on untouched, the glue is up to 0.5 dB");
     const config::MonoBass& m = e.monoBass;
     need (same (m.lowWidth, 0.0), "mono bass is full mono below its crossover");
     need (same (m.lowWidthRange.min, 0.0) && same (m.lowWidthRange.max, 1.0) && same (m.lowWidthStep, 0.05),
@@ -222,6 +224,8 @@ void aDepartureIsNamed()
         { true, "sampleRate = 48000, bitDepth = 24 }\n# YouTube Music", "sampleRate = 22050, bitDepth = 24 }\n# YouTube Music",
           "targets.youtube.sampleRate" },
         { false, "default = 0\nwhenTicked", "default = 0.3\nwhenTicked", "no glue by default: a target without its own takes the compressor out" },
+        { false, "whenTicked = 0.5", "whenTicked = 0.6", "ticked on untouched, the glue is up to 0.5 dB" },
+        { false, "byTarget = { cd = 2.6 }", "byTarget = { cd = 2.5 }", "the machine glues on cd alone, up to 2.6 dB" },
         { false, "lowWidth = 0\n", "lowWidth = 0.2\n", "mono bass is full mono below its crossover" },
         { false, "hzMin = 15", "hzMin = 16", "the high-pass knob starts at 15 Hz" },
     };

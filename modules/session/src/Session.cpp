@@ -6,9 +6,12 @@
 #include <felitronics/session/Session.h>
 
 #include "FpProbes.h"
+#include "Rules.h"
 
 #include <cstdint>
 #include <memory>
+#include <span>
+#include <string_view>
 
 namespace felitronics::session
 {
@@ -29,16 +32,52 @@ Status Session::checkFloatingPointEnvironment() noexcept
 
 Created Session::create() noexcept
 {
-    // The check before the one allocation, so a refused create requested nothing (law 11).
+    // The checks before the one allocation, so a refused create requested nothing (law 11): the thread, then the config
+    // the commands will check against, read in place (src/Rules.h — reading it allocates nothing).
     Created c;
     if ((c.status = checkFloatingPointEnvironment()) != Status::Ok) return c;
+    const detail::Rules rules = detail::rules();
+    if (! rules.complete)
+    {
+        c.status = Status::Config;
+        return c;
+    }
     // `new`, not make_unique: the constructor is private, and a Session made anywhere but here would be one whose demand
-    // nobody published.
+    // nobody published. The arrays it owns start empty (null) and ask for nothing; the devices stay unplaced until the
+    // first measurement ends (src/Driver.h).
     c.session = std::unique_ptr<Session> (new Session);
+    c.session->project_.target = rules.defaultRow;
     return c;
 }
 
 Session::~Session() = default;
+
+State Session::state() const noexcept { return state_; }
+bool Session::placed() const noexcept { return state_ == State::Measured1 || state_ == State::Measured2; }
+bool Session::mastering() const noexcept { return mastering_; }
+std::uint64_t Session::revision() const noexcept { return revision_; }
+const Project& Session::project() const noexcept { return project_; }
+Source Session::source() const noexcept { return source_; }
+JobId Session::job() const noexcept { return job_; }
+const Recipe& Session::jobRecipe() const noexcept { return jobRecipe_; }
+std::span<const Kept> Session::masters() const noexcept { return { masters_.get(), masterCount_ }; }
+
+std::string_view Session::targetName() const noexcept
+{
+    return detail::rules().row (project_.target).key;
+}
+
+Column Session::column() const noexcept
+{
+    switch (state_)
+    {
+        case State::Empty:     return Column::Empty;
+        case State::Loaded:    return Column::Loaded;
+        case State::Measured1: return mastering_ ? Column::Mastering1 : Column::Measured1;
+        case State::Measured2: return mastering_ ? Column::Mastering2 : Column::Measured2;
+    }
+    return Column::Empty;
+}
 
 Version Session::version() noexcept
 {

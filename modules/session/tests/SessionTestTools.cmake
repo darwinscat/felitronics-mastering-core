@@ -85,6 +85,12 @@ function(felitronics_session_object_gate)
     if(FELITRONICS_ENABLE_SANITIZERS)
         set(sanitizers ON)
     endif()
+    # The `coff-debug` lines apply to an MSVC build in its Debug configuration alone (/MDd, the debug runtime).
+    if(MSVC)
+        set(msvc_debug $<IF:$<CONFIG:Debug>,ON,OFF>)
+    else()
+        set(msvc_debug OFF)
+    endif()
     add_test(NAME ${G_NAME}
              COMMAND ${CMAKE_COMMAND}
                      -DFORMAT=${FELITRONICS_SESSION_OBJECT_FORMAT}
@@ -92,6 +98,7 @@ function(felitronics_session_object_gate)
                      -DOBJECTS_FILE=${list_file}
                      -DLISTS=${PROJECT_SOURCE_DIR}/tools/lint/session-objects.txt
                      -DSANITIZERS=${sanitizers}
+                     -DMSVC_DEBUG=${msvc_debug}
                      "-DEXPECT=${G_EXPECT}"
                      -P ${PROJECT_SOURCE_DIR}/modules/session/tests/object-gates.cmake)
 endfunction()

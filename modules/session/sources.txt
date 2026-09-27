@@ -5,3 +5,6 @@ src/Session.cpp
 src/BuildContract.cpp
 src/ConfigSchema.cpp
 src/Config.cpp
+src/Rules.cpp
+src/Devices.cpp
+src/Commands.cpp

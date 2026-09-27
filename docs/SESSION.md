@@ -3,11 +3,12 @@
 # felitronics::session — its laws, and what holds each one
 
 `felitronics::session` is the mastering session: the object a shell talks to — the web worker through the `fcsession`
-wasm module, a desktop application by linking the library, and `fcore_session`, the native CLI. Today it is an empty
-`Session`: it is created, destroyed and asked for its version, and it checks the floating-point environment of the
-thread that calls it. It keeps no state.
+wasm module, a desktop application by linking the library, and `fcore_session`, the native CLI. A `Session` holds one
+project, one source and the masters made from it; it moves between its states only by the commands a shell asks and by
+its own transitions when a piece of work ends, and it answers every command whole (below, "The states and the
+commands"). It checks the floating-point environment of the thread that calls it.
 
-Beside it is its config, every number it will decide with (below). What is fixed is the ground it stands on: how it is built, and the laws it keeps. Each law here is written down together
+Beside it is its config, every number it decides with (below). What is fixed is the ground it stands on: how it is built, and the laws it keeps. Each law here is written down together
 with the check that holds it, and each check has a control that turns it red. A law no check holds is marked as held
 **only in words**.
 
@@ -40,15 +41,15 @@ The laws are felitronics-core's (`docs/DSP-ARCHITECTURE.md` §2), numbered as th
 | **1** no threads | yes | no threading header is on the source lint's include allowlist and `std::atomic` / `__atomic_*` / `__sync_*` are refused as tokens (an atomic leaves no symbol); a thread that is called is an undefined symbol the object-file gate refuses; on the wasm tier the suite and `fcsession` link with `--wrap=pthread_create` and pass core's no-threads audit of the artifact |
 | **2** no allocation in the audio path | **no** — allocation is allowed | the session is offline code, never on an audio thread. What holds its memory is law 11d |
 | **4** heavy dependencies behind a seam | yes | **only in words**: the session reaches no heavy primitive |
-| **5** configurable sizes, a reported footprint | the footprint: yes. Configurable sizes: **not provided** | the footprint of `create()` is reported (`Session::createBytes()`) and held to what `create()` asks for. The C boundary's sizes are fixed, stated and not configurable: its handle table has a capacity of **8** sessions at once (`FC_SESSION_MAX_HANDLES`), compiled in, and a slot issues `FC_SESSION_SLOT_GENERATIONS` handles; its suite pins both. A shell that needs another capacity needs another build — there is no switch for it, and none is promised |
+| **5** configurable sizes, a reported footprint | the footprint: yes. Configurable sizes: **not provided** | the footprint of `create()` is reported (`Session::createBytes()`) and held to what `create()` asks for; what each command adds to it is reported before it runs (`Session::check()`, law 11d below). The C boundary's sizes are fixed, stated and not configurable: its handle table has a capacity of **8** sessions at once (`FC_SESSION_MAX_HANDLES`), compiled in, and a slot issues `FC_SESSION_SLOT_GENERATIONS` handles; its suite pins both. A shell that needs another capacity needs another build — there is no switch for it, and none is promised |
 | **6** no exceptions, RTTI, OS, filesystem, locale; no global mutable state | yes | exceptions and RTTI: the target's flags, `src/BuildGuards.h` first in every unit, the build controls, and the source lint's token rule in every `#if` branch. OS, files, console, locale, clock, process state: the object-file gate (what the objects call) and the source lint's include allowlist. Global state: the object-file gate (what lives in writable memory) |
 | **7** a C++ subset every toolchain accepts | yes | the CI matrix compiles it — clang, gcc 13 and 14, MSVC, emscripten — and in this repository's own builds its sources compile under core's hygiene warning set with `-Werror` |
 | **8** software denormal handling in feedback kernels | **no** | the session has no feedback kernel. What it does about subnormals is a different guarantee: it refuses a thread that flushes them (the floating-point environment, below) |
 | **8a**, **11a** the sample clock | **no** | the session has no stream of samples and no clock |
 | **9** no `long double` | yes | core's long-double lint reads every `modules/*/include` and `modules/*/src`, this module's included, and the wasm tier's artifact gate reads every emitted object |
 | **10** FP contraction is stated | yes — **as `off`** | the target's own flags in one `SHELL:` group, the compile line read back (this build's and a consumer's), the hostile-flags tests, the library's probes asked from a contracting caller, and the source lint's pragma and attribute rules. Core states `on` for its tree; the session's numbers are compared across rows, native and wasm, and baseline wasm has no fused multiply-add, so a contracting native build would disagree with the module. The library's flags reach its own objects only: a program that links it compiles **every** translation unit with the same FP flags (below, "What the flags do not reach"). The sign and payload of a NaN, and the floating-point exception masks and flags, are outside every check here, as core's law 10 leaves them |
-| **11**, **11b** a request that cannot be honoured is refused whole; checks in a fixed order | yes | `create()` checks the floating-point environment, then allocates: a refused create requested nothing (`felitronics_session_tests`). The C boundary's checks run in its header's order and a refused call writes nothing and allocates nothing (`felitronics_session_abi_tests`). `fcore_session` reads and checks a whole script before it creates a session |
-| **11d** memory is declared before the work | yes | `Session::createBytes()` is the demand of `create()`, counted by the expression that sizes the request; the declared-budget harness (`modules/session/tests/DeclaredBudget.h`, on core's one allocation counter) holds every declared call to *declared ≥ requested*, and is itself shown to fail on a sample that under-declares. The demand is checked in C++; the draft C ABI does not forward it. The C boundary adds nothing to it (its table is static) and keeps the poison |
+| **11**, **11b** a request that cannot be honoured is refused whole; checks in a fixed order | yes | `create()` checks the floating-point environment and the config it reads, then allocates: a refused create requested nothing (`felitronics_session_tests`). Every command runs the checks `Commands.h` declares, in their order — the thread's floating-point environment, then the table — before it touches anything, and a rejected one changed nothing — the revision included. A `load` runs its checks, then disarms, then writes (check → disarm → write), so a rejected load, too, changed nothing: `felitronics_session_state_tests` compares the whole session before and after every rejection it produces, produces every rejection code, and holds the order with requests wrong in several ways. The C boundary's checks run in its header's order and a refused call writes nothing and allocates nothing (`felitronics_session_abi_tests`). `fcore_session` reads and checks a whole script before it creates a session |
+| **11d** memory is declared before the work | yes | `Session::createBytes()` is the demand of `create()`, counted by the expression that sizes the request, and `Session::check()` gives the demand of every command before it runs — computed by the same function `apply()` runs first; the declared-budget harness (`modules/session/tests/DeclaredBudget.h`, on core's one allocation counter) holds `create()` and every command to *declared ≥ requested* (exactly equal, where the request is one exact allocation), holds `check()`, every rejection and every transition to nothing requested, and is itself shown to fail on a sample that under-declares. The demand is checked in C++; the draft C ABI does not forward it. The C boundary adds nothing to it (its table is static) and keeps the poison |
 
 Not listed, and why: **3** (float in the hot path) — there is no hot path; **11c** (a pause is silence) — there are no
 clock-only calls; **11e** (a restart adopts an accepted publication) — the session publishes and adopts nothing.
@@ -149,9 +150,10 @@ every stage a device writes is named, the limiter's second release included.
 - **Read by schema: form and physics.** `Config::load()` (`<felitronics/session/Config.h>`) binds them to typed structs:
   every key with its type and its domain — where a number stops meaning what its document says: a share outside 0…1, a
   ramp whose ends would divide by zero, a series that shrinks, a value off its knob's grid (a whole number of steps from
-  where the travel starts, checked exactly on the decimals as written, across the two documents too) — a range another
+  where the travel starts, checked exactly on the decimals as written, across the two documents too; the high-pass's
+  travel, its default and every target's floor in whole hertz) — a range another
   key states included (a target's loudness on the edit travel, its crossover on the knob's); the checks across keys (a
-  name that is no target, a name given twice, an EQ band two devices share, "no DC" apart from the dcOffset finding's
+  name that is no target, a target under an empty key, a name given twice, an EQ band two devices share, "no DC" apart from the dcOffset finding's
   threshold, a ramp law outside its domain, the limiter switched off, a default written out); and every key nobody read
   reported as unknown. What an analyzer admits is the analyzer's to say: the blocks the config feeds one — the low end
   (both runs), the crest, the sibilance-band bursts — go to that analyzer's own `storageFor()` at the source rates the
@@ -169,8 +171,8 @@ every stage a device writes is named, the limiter's second release included.
   suite plants over sixty more in-process, every input a review found the schema accepting among them.
 - **The owner's decisions are held apart** (`tests/ConfigDecisionsTests.cpp`): every target row field by field and the
   engine's decided numbers — the landing's series, the high-pass knob's travel and slopes and comfort window, the
-  wide-bass warning, the quiet thresholds, the peak clipper's classes, the glue knob and its default of none, the
-  mono-bass block, the delivery rates, and the rest. The schema would admit another number where the physics allows;
+  wide-bass warning, the quiet thresholds, the peak clipper's classes, the glue knob ("up to N dB", 0…3 in steps
+  of 0.1) with its default of none, 0.5 dB when ticked and 2.6 dB on cd, the mono-bass block, the delivery rates, and the rest. The schema would admit another number where the physics allows;
   this suite says which number was decided, so changing one is a deliberate edit of it. Its controls plant departures
   the schema admits (a high-pass top of 51 or 60 Hz, a slope of 36, another series, another target number or rate, glue
   by default, a wider mono bass) and require them named.
@@ -190,12 +192,116 @@ every stage a device writes is named, the limiter's second release included.
   that can change a master; the decisions suite pins `sound` to the name of the defaults, so a sound number changed
   without new defaults is red. `fcore_session config version|sound-version`, the source files and the wasm module must
   answer the same numbers (ctest, and CI's artifact check).
-- **Only in words, for now: the config's memory.** `Config::load()` allocates and publishes no demand; nothing in the
-  session calls it yet. The `create` that takes the config, frozen with fc_session v1, declares it (law 11d).
-- **Only in words: the golden pin is append-only.** A new set of sound numbers is a new name in `defaults` and a new
-  line in the decisions suite's table, and the line of an old name is never rewritten — a project names its defaults,
-  and two sets of numbers under one name would reopen it as another master. The suite holds the current name to its
-  sound version; that an old line was not overwritten is held by review alone.
+- **Read in place by the commands.** What the session's commands check against — the knobs' travels and steps, the
+  targets' rows, the numbers a device starts from — is read straight from the embedded documents, as the decimals
+  written (`src/Rules.h`): no table is built and nothing is allocated, so reading the config adds nothing to a command's
+  demand. Every number read there is one the schema required and checked before the library was built;
+  `felitronics_session_state_tests` holds every one of them to the schema's binding of the same documents, row by row
+  and knob by knob, and reads documents with the keys missing to see the reading say it is incomplete — which
+  `create()` answers with `Status::Config`, not reachable in a library whose build ran the gate.
+- **Only in words, for now: the config's memory.** `Config::load()` allocates and publishes no demand; the session does
+  not call it.
+- **Only in words: the golden pin is append-only once released.** A new set of sound numbers is a new name in
+  `defaults` and a new line in the decisions suite's table, and the line of defaults that a release carries is never
+  rewritten — a project names its defaults, and two sets of numbers under one name would reopen it as another master.
+  Before the first release that carries a name, its line may be updated in place: no project can name defaults no
+  release shipped (no release tag carries `2026-09`). The suite holds the current name to its sound version; that a
+  released line was not overwritten is held by review alone.
+
+## The states and the commands
+
+`<felitronics/session/Commands.h>` and `<felitronics/session/Project.h>`. A session is in one of four states — **Empty**
+(nothing loaded), **Loaded** (a source, its first measurement running, the devices not placed), **Measured1** (the first
+measurement ended: the devices are placed, a master can be made), **Measured2** (the second ended too) — and a master
+being made is an overlay on the two measured ones. A shell asks by a `Request`, one struct per command with the shell's
+own id for it: `load`, `setTarget`, `editTarget`, `editDevice`, `revertEdits`, `setManual`, `master`, `cancel`, `forget`.
+`Session::apply()` answers it whole — accepted, with the revision it made, or rejected with a `Rejection` code, having
+changed nothing. Every accepted command and every transition moves the revision by one; a rejection leaves it.
+
+**Who may do what, when, is one table in code** (`Table` in `Commands.h`), and every command consults it right after
+the floating-point entry check, before anything else: in each column, `yes` where the command is taken, or the rejection it gets. Mastering1 and Mastering2
+are a master being made on Measured1 and on Measured2. The endings of the work are the session's own transitions, not
+commands: the work that measures and renders drives them (`src/Driver.h`, the library's internal seam, named the
+session's friend and not public), and they happen only where their row says so. `fcore_session table` prints both tables
+from the code, and ctest holds the text between the markers below to that output byte for byte.
+
+<!-- the table: begin -->
+| command | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 |
+|---|---|---|---|---|---|---|
+| load | yes | yes | yes | yes | yes | yes |
+| setTarget | yes | yes | yes | yes | yes | yes |
+| editTarget | yes | yes | yes | yes | yes | yes |
+| editDevice | NoSource | NotPlaced | yes | yes | yes | yes |
+| revertEdits | NoSource | NotPlaced | yes | yes | yes | yes |
+| setManual | yes | yes | yes | yes | yes | yes |
+| master | NoSource | NotMeasured | yes | yes | Busy | Busy |
+| cancel | NoJob | NoJob | NoJob | NoJob | yes | yes |
+| forget | NoSource | NoMaster | yes | yes | yes | yes |
+
+| the session's own transition | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 |
+|---|---|---|---|---|---|---|
+| the first measurement ends | no | yes | no | no | no | no |
+| the second measurement ends | no | no | yes | no | yes | no |
+| the master is done | no | no | no | no | yes | yes |
+<!-- the table: end -->
+
+**The checks run in one declared order, the same for every command**, and the first that fails is the answer:
+1. the calling thread's floating-point environment; 2. the table; 3. the manual mode, for the device panel's commands
+(`editDevice`, `revertEdits`); 4. what the command names — a target, a device offered for this target and source, an
+id left for a new job, the master being made, a master kept; 5. the fields — at least one touched, then each touched one in the order its struct
+writes them: finite, one of its values, on its travel, on its step; 6. a load's audio — one or two channels, a rate of
+at least felitronics-core's 8000 Hz, frames and data, a size the machine can address, every sample finite. A rejection
+on a field names it by its place in its struct. `Session::check()` runs exactly these and says what the command would
+answer; `apply()` runs `check()` first and does the work only when it passed, so a rejected command has changed nothing
+by construction — `check()` is `const`.
+
+**The project** (`Project.h`) is the target — a row of `[targets]` — with a person's edits of its two numbers (loudness
+and ceiling, on `[edit]`'s travels), the manual mode, and every device's parameters. **One parameter form per device**:
+a device's fields are written once, as a template over the form a field takes, and used as the machine's layer (every
+field a value), a person's layer (a field a value only where touched — a touched field is the person's even where its
+number is the machine's) and a revert's mask (a field yes or no). No string names a field anywhere: an edit is the
+device's struct, a variant whose alternative is the device. The devices are the high-pass, mono bass, the glue (its
+knob, "up to N dB", as the config writes every glue number),
+saturation, tilt, the limiter's needles, the dither and the low shelf; the low shelf is offered on a target that
+carries one, the dither where the target's bit depth is one it serves, mono bass except on a mono source.
+
+- **The machine's layer** is placed from the config for the target and the source — the ticks from `[stages]`, what
+  the target decides (the high-pass's slope and floor, the mono-bass crossover, no needles where the target has no peak
+  clipper, the dither at its bit depth, the low shelf's gain, the glue its row names) and each device's own section for
+  the rest; tilt starts flat. In this release it is the config's defaults for the target and the source, not a decision
+  taken from a measurement: mono bass, which `[stages]` leaves off, is off. The devices are placed when the first
+  measurement ends, and again on a change of target after that; before it they are unplaced — every field of the
+  machine's layer at its type's zero, and the state says so. A load unplaces them again.
+- **Every value the machine places is one a person could set**: on its knob's travel and step — which the schema holds
+  for every default the config gives, and `felitronics_session_state_tests` for every target and source.
+- **A person's edits** are taken only after that — before it, `NotPlaced` — and only with the manual mode on. Every
+  value is checked on its knob exactly: the double a shell sends is read as the decimal of nine places or fewer whose
+  correctly rounded double it is, and that decimal must lie on the travel and a whole number of steps from where the
+  travel starts — by the same code that holds the config's own numbers to their grids (`src/Grid.h`). A double that is
+  the decimal of no such number is off the step. A number is kept with −0 written as +0, so two projects that say one
+  value are one project, bit for bit, and so are their recipes.
+- **`setTarget(name, onEdits)`** replaces the target's numbers silently — a person's edits of them go with the old
+  target — and keeps or takes back a person's device edits as `onEdits` says; an edit of a device the new target does
+  not offer goes either way. The machine's layer is placed again for the new target.
+- **`setManual(false)`** takes back a person's device edits and nothing else: the machine's layer stays, and so does an
+  edit of the target's numbers.
+- **`load`** checks everything first, then DISARMS — whatever ran on the old source stops, and the old source, its
+  measurements and its masters go; the manual mode is switched off, and a person's device edits go with it (the mode
+  does not outlive the file: its edits were decisions about the old source); the old samples are freed before the new
+  are asked for — and then WRITES the new source: its samples, channel after channel, its name and its hash (64-bit
+  FNV-1a of its rate, channels, frames and every sample's bits). The target and its edited numbers stay.
+- **`master`** captures the recipe — the project as it is, the source's hash, the config's sound version — and starts a
+  job, numbered on from the last for the session's whole life, a load included: an id is never 0 and never issued twice,
+  and once the last is issued a master is rejected (`NoJobId`); the project may change meanwhile, and the master renders its recipe. When it is done the session keeps it under
+  its job's id; `cancel(job)` ends the overlay, `forget(master)` lets a kept master go.
+
+**Memory.** `check()` says, before the work, what a command will ask the heap for, by the expressions that size its
+requests: a load its samples and its name, a master room for one more master kept (so that the render's end asks for
+nothing), every other command nothing. `felitronics_session_state_tests` holds every command to it through the
+allocation counter — exactly, since each is one exact request.
+
+**No text.** A rejection is a `Rejection` code, and a field its place in its struct; the values are stable, and a new
+reason is a new value at the end. What a person reads is written from the code by a shell's catalogue.
 
 ## The floating-point environment
 
@@ -203,11 +309,12 @@ The flags decide what the compiler emits. The thread decides what the arithmetic
 or denormals-are-zero for its audio thread, or changed the rounding mode, and no flag reaches that.
 `Session::checkFloatingPointEnvironment()` reads it with ordinary arithmetic — no `<cfenv>` — and answers
 `Status::FloatingPointEnvironment` for a thread that flushes subnormal results, reads subnormal inputs as zero, or rounds
-other than to nearest. `create()` asks it first and refuses such a thread, having allocated nothing; the rule for every
-call that computes is to ask it on entry, and `create()` is the only such call today. Nothing in the library changes the
-environment: the caller restores it, or calls from another thread. `felitronics_session_tests` sets each condition the
-way a host would (MXCSR, FPCR, `fesetround`), confirms it took effect, and requires the refusal; a row with no such
-control (the wasm tier) says the check is not reachable there.
+other than to nearest. Every call that computes asks it on entry: `create()` refuses such a thread having allocated
+nothing, a command is rejected with `Rejection::FloatingPointEnvironment` before any other check, and a transition does
+not happen. Nothing in the library changes the environment: the caller restores it, or calls from another thread.
+`felitronics_session_tests` sets each condition the way a host would (MXCSR, FPCR, `fesetround`), confirms it took
+effect, and requires the refusal, and `felitronics_session_state_tests` requires it of a command and a transition; a row
+with no such control (the wasm tier) says the check is not reachable there.
 
 Outside the check: the **floating-point exception masks and flags** (a host that unmasks a trap gets its trap), and the
 **sign and payload of a NaN**, which differ between rows and which core's law 10 leaves unspecified — nothing in the
@@ -231,8 +338,8 @@ requirement is stated instead:
   it folds inline copies where nothing here looks.
 - **The wasm modules are not affected.** This repository builds each one whole — every translation unit, the C
   boundary's included, on one command line with the session's flags (`tools/wasm/build.sh`).
-- What keeps the exposure small: the session's arithmetic lives in its own translation units — its public header carries
-  no function body and defines no variable (the source lint's BODY and PUBLIC rules) — and the multiply-adds it shares
+- What keeps the exposure small: the session's arithmetic lives in its own translation units — its public headers carry
+  no function body and define no variable that is not constexpr (the source lint's BODY and PUBLIC rules) — and the multiply-adds it shares
   through felitronics-core are pinned (`core::det::mulAdd` and `mul` round through a volatile, which no copy's flags can
   fuse).
 
@@ -256,9 +363,11 @@ every native row and the wasm tier, with the row's own reader — `readelf` on E
   and each required to be found once — an allowance that names a symbol no longer there is refused as rot.
 - **What is called.** Every undefined symbol must be defined — with global or weak binding — by another object of the
   set, or match a line of `tools/lint/session-objects.txt`: operator new and delete, what the compiler emits for a copy,
-  the stack protector, the toolchain's own markers, and the sanitizer runtime on the sanitizer row. A **local**
-  definition answers no other object's call — the linker never resolves one with it — so a `static getpid` in one object
-  leaves another object's `getpid` call refused. `printf`, `fopen`, `time`, `getenv`, `strtod`, `isalpha`, `rand` — or
+  the stack protector, the toolchain's own markers, the sanitizer runtime on the sanitizer row, and — in an MSVC Debug
+  build (/MDd) alone, the `coff-debug` scope — the debug runtime's `_CrtDbgReport` and `_dtest` and the debug STL's
+  `std::_Lockit`, each by its exact decorated name (a lock around the STL's iterator bookkeeping, not a thread: the session
+  creates none). A **local** definition answers no other object's call — the linker never resolves one with it — so a
+  `static getpid` in one object leaves another object's `getpid` call refused. `printf`, `fopen`, `time`, `getenv`, `strtod`, `isalpha`, `rand` — or
   `std::to_string` taken by pointer — are refused whatever header declared them.
 
 Its controls (`modules/session/tests/object-controls/`) compile each shape the reviews found — a direct-initialised
@@ -271,7 +380,7 @@ planted beside its two, and with an allowed global renamed. Each must be refused
 symbol **whole** — its raw or demangled name, or the last identifier of it — not a fragment of some other name.
 
 What the gate cannot see: code that is never emitted — among it a variable only a consumer's translation unit emits,
-which is why the public header may define none — and facilities that leave no symbol — an atomic, a clock read by an
+which is why the public headers may define none — and facilities that leave no symbol — an atomic, a clock read by an
 intrinsic or by inline assembly, a pragma. Those are the source lint's.
 
 ## The source lint
@@ -292,7 +401,7 @@ and `u8'0'` is a character literal, not a digit separator. Its rules:
 - **includes** on an allowlist: canonically spelled standard headers that reach no OS, file, locale, thread, clock or
   process state; felitronics headers **by name** (`FELITRONICS_ALLOWED`: core's `FlushToZero.h` sets flush-to-zero with
   no symbol and several core headers pull in `<atomic>`, so each is a reviewed one-line addition — today the module's
-  own `Session.h` and `Config.h`, felitronics-toml's `Toml.h`, `Schema.h` and `Embedded.h`, and the three analyzers the
+  own `Session.h`, `Config.h`, `Commands.h` and `Project.h`, felitronics-toml's `Toml.h`, `Schema.h` and `Embedded.h`, and the three analyzers the
   config's schema asks what they admit, `LowEnd.h`, `BandCrest.h` and `StereoBandBursts.h`, which bring core's DSP and
   `FlushToZero.h` with it; the schema calls only their `storageFor()`); quoted headers inside the module, and in
   `src/Config.cpp` the two headers the build generates from the config, by name;
@@ -313,7 +422,7 @@ and `u8'0'` is a character literal, not a digit separator. Its rules:
   `_MM_GET_*` macro: rounding mode, exception mask and state, flush-to-zero, denormals-are-zero) — what an admitted
   header brings cannot be used;
 - no `std::unordered_*`, no `hash<` qualified or not, no unstable sort, no `using namespace`;
-- in the public header, no function body, no variable with static storage duration that is not `constexpr` (at
+- in the public headers, no function body, no variable with static storage duration that is not `constexpr` (at
   namespace scope or as a static member, `inline` or not), and no namespace-scope function declaration — at namespace
   scope `T name (x);` is a function or a variable depending on what `x` is, which no lexer can tell, so a free function is
   a static member or a friend;
@@ -330,8 +439,9 @@ build's `compile_commands.json` to plant an unlisted unit and drop a listed one.
 
 `tools/fc_session_abi.h`, implemented by `tools/wasm/fc_session.cpp`. Its version is **0, a draft**: no promise — any
 entry point, argument, code or constant may change without a bump. It carries the ABI version, a session created and
-destroyed through a handle, the config's version (`all`), the session's refusals passed through as status codes, and the
-poison. It follows
+destroyed through a handle, the config's version (`all`), the session's refusals of `create()` passed through as status
+codes (`FC_SESSION_ERR_FP_ENVIRONMENT`, `FC_SESSION_ERR_CONFIG`), and the poison. It carries no command: the states
+and the commands are the library's C++ surface. It follows
 fc_master's law — the facade is thin: handles instead of pointers, a status per call, checks on the addresses a page
 computed, the poison, and nothing that decides. It is compiled with the session library's own options and definitions,
 natively and in the wasm module, includes `src/BuildGuards.h` first, and is under the source lint with the allowance
@@ -351,7 +461,7 @@ above.
 
 `fcsession` is its wasm module (`tools/wasm/build.sh`): the facade and the sources `modules/session/sources.txt` lists
 (the build refuses a `.cpp` under `modules/session/src`, at any depth, that is not listed), linked with
-`--wrap=pthread_create`, with its embedded config — 44 KB of wasm, 13 KB brotli, almost all of it the config's data. `tools/wasm/session-check.mjs` compares every export of the
+`--wrap=pthread_create`, with its embedded config — 58 KB of wasm, 17 KB brotli: the config's data, and the states and the commands over it. `tools/wasm/session-check.mjs` compares every export of the
 loaded module against the ABI's surface and the runtime's own, runs the surface, and walks the wrap boundary; `build.sh`
 builds a control copy with one undeclared export and requires the check to refuse it.
 
@@ -359,8 +469,9 @@ builds a control copy with one undeclared export and requires the check to refus
 
 `fcore_session version` prints the two releases and the ABI version; `fcore_session config targets|engine` prints a
 document of the embedded config through felitronics-toml's canonical writer (its numbers, without the comments), and
-`fcore_session config version|sound-version` its versions; `fcore_session run <script>` reads a command script (`-` is stdin) into a
-fresh session and prints `done <commands>`. There are no commands: a script with none in it —
-empty, or comments and blank lines — answers `done 0`; a script with a command in it, and a session that refuses to be
-created, are refused with exit status 2 and nothing on stdout. It links the library as C++, the way a desktop
-application does.
+`fcore_session config version|sound-version` its versions; `fcore_session table` prints who may do what, when — the
+tables of `Commands.h`, as Markdown, which ctest holds to the block of this document; `fcore_session run <script>` reads
+a command script (`-` is stdin) into a fresh session and prints `done <commands>`. A script carries no command: one with
+none in it — empty, or comments and blank lines — answers `done 0`; a script with a command in it, and a session that
+refuses to be created, are refused with exit status 2 and nothing on stdout. It links the library as C++, the way a
+desktop application does.
