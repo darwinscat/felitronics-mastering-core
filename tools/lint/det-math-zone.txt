@@ -52,3 +52,24 @@ zone  tools/wasm/fc_probe.cpp  prints the numbers the probe parity steps diff
 zone  tools/wasm/fc_abi_guards.h   the argument checks of the analysis ABIs; decide which runs the parity steps see refused
 zone  tools/wasm/fc_tempo_entry.h  the tempo entry points, compiled into fcprobe and fctempo; writes the rows tempo-parity.mjs diffs
 zone  tools/wasm/fc_tempo.cpp      the fctempo module's own TU; its tempo rows are diffed against fcore_measure like the probe's
+
+# --- felitronics::session — the mastering session, which DECIDES: its decisions are thresholds, and a threshold computed
+# --- through the system libm is a different decision on another row (log10 alone disagrees between Apple's libm and
+# --- glibc at 2 % of the points this tree measured). So every file of the module is in the zone, and every translation
+# --- unit of the library is an entry point, so this lint follows each one's #includes — whatever the included file is
+# --- called. The session-laws lint (tools/lint/check-session-laws.mjs, rule ZONE) refuses a file of modules/session
+# --- without its `zone` line and a translation unit without its `entry` line, so this list cannot fall behind the module.
+entry  modules/session/src/Session.cpp                        a translation unit of felitronics::session
+entry  modules/session/src/BuildContract.cpp                  a translation unit of felitronics::session
+zone   modules/session/include/felitronics/session/Session.h  the session's public surface
+zone   modules/session/src/Session.cpp                        the session
+zone   modules/session/src/BuildContract.cpp                  the library's build contract, answered under its own flags
+zone   modules/session/src/BuildContract.h                    the build contract's private declarations
+zone   modules/session/src/BuildGuards.h                      the build guards every translation unit includes first
+zone   modules/session/src/FpProbes.h                         the floating-point probes: compiler licences and the thread's environment
+# The C boundary and the native CLI: the two roads into the library; what either includes is rule 4's net. The boundary
+# is compiled with the session's flags and scanned by the session-laws lint, which holds it in the zone as the module is.
+entry  tools/wasm/fc_session.cpp  the session ABI, the translation unit of the fcsession module
+entry  tools/fcore_session.cpp    the native CLI over the session, the native road into the same library
+zone   tools/wasm/fc_session.cpp  the session ABI: checks what a page hands over and forwards the session's answers
+zone   tools/fc_session_abi.h     the session ABI's declarations and constants, included by the boundary

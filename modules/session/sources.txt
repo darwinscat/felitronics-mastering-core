@@ -1,0 +1,5 @@
+# The translation units of felitronics::session, one per line, relative to this directory. The one list: CMakeLists.txt
+# compiles it, tools/wasm/build.sh compiles it into the fcsession module (and refuses a .cpp under src/ that is not
+# on it), and tools/lint/check-session-laws.mjs scans from it (and cross-checks it against compile_commands.json).
+src/Session.cpp
+src/BuildContract.cpp
