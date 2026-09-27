@@ -21,6 +21,7 @@ struct SnapshotView
     JobId job = 0, measurementJob = 0;
     Recipe jobRecipe {};
     std::span<const Kept> masters;
+    std::span<const MachineDifference> machineDifferences;
     Phase measurementProgress {}, masterProgress {};
     double sourceBytes = 0.0;
     double integratedLufs = 0.0;
@@ -48,6 +49,7 @@ private:
     SnapshotView view_ {};
     std::unique_ptr<char[]> text_;
     std::unique_ptr<Kept[]> masters_;
+    std::unique_ptr<MachineDifference[]> differences_;
     std::unique_ptr<ReadingPoint[]> points_;
     std::unique_ptr<ReadingRun[]> runs_;
 };

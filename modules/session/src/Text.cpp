@@ -456,6 +456,8 @@ std::optional<Fact> Text::rejected (const Answer& answer, const Request& request
     else if (const auto* revert = std::get_if<command::RevertEdits> (&request))
         field = detail::deviceFieldTerm ((Device) revert->fields.index(), answer.field);
     else if (std::holds_alternative<command::Load> (request)) field = Term::FieldAudio;
+    else if (std::holds_alternative<command::ImportProject> (request))
+        field = answer.device ? detail::deviceFieldTerm (*answer.device, answer.field) : detail::targetFieldTerm (answer.field);
     return field ? Fact::of (*id, Arg::term (*field)) : Fact::of (*id);
 }
 

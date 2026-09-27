@@ -217,6 +217,18 @@ if(FELITRONICS_BUILD_TESTS)
     target_compile_features(felitronics_session_abi_tests PRIVATE cxx_std_20)
     add_test(NAME felitronics_session_abi_tests COMMAND felitronics_session_abi_tests)
 
+    add_library(felitronics_session_replay_facade OBJECT tests/SessionReplayFacade.cpp)
+    target_link_libraries(felitronics_session_replay_facade PRIVATE felitronics::session)
+    target_include_directories(felitronics_session_replay_facade PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/modules/session/src)
+    target_compile_features(felitronics_session_replay_facade PRIVATE cxx_std_20)
+    target_compile_options(felitronics_session_replay_facade PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
+    target_compile_definitions(felitronics_session_replay_facade PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_DEFINITIONS>)
+    add_executable(felitronics_session_replay_tests tests/SessionReplayTests.cpp $<TARGET_OBJECTS:felitronics_session_replay_facade>)
+    target_link_libraries(felitronics_session_replay_tests PRIVATE felitronics::session felitronics::test_support)
+    target_include_directories(felitronics_session_replay_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_features(felitronics_session_replay_tests PRIVATE cxx_std_20)
+    add_test(NAME felitronics_session_replay_tests COMMAND felitronics_session_replay_tests)
+
     # THE OBJECT-FILE GATE over felitronics::session and its C boundary (modules/session/tests/object-gates.cmake): every
     # object of the library holds no writable data and calls nothing outside the list in tools/lint/session-objects.txt;
     # the facade's object keeps exactly its handle table and its poison flag. Read with this row's own symbol-table reader

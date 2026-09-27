@@ -11,7 +11,7 @@ The chain, analyzer and tempo rows moved from core's `CORE-OVERVIEW.md` with the
 
 | Module | What | Key types |
 |---|---|---|
-| `mastering` | **the chain itself**, streaming + block-independent, plus the offline render wrapper. The one module that composes many others on purpose — the composite is the unit under test; the VOICING (preset tables, targets) stays in the product | `MasteringChain` (fixed internal quantum → the same bits at any caller block size), `MasteringChainConfig`/`Params`/`Resolved`, `OfflineRenderer` (`out[n] = y[n+D]`, tail included), `TargetLoudnessSolver` (the search for a target loudness under a true-peak ceiling), `DeliveryConverter` / `DeliveredMastering` (render, solve and range at a delivery rate other than the source's) |
+| `mastering` | **the chain itself**, streaming + block-independent, plus the offline render wrapper. The one module that composes many others on purpose — the composite is the unit under test; the voicing and targets live in `session` | `MasteringChain` (fixed internal quantum → the same bits at any caller block size), `MasteringChainConfig`/`Params`/`Resolved`, `OfflineRenderer` (`out[n] = y[n+D]`, tail included), `TargetLoudnessSolver` (the search for a target loudness under a true-peak ceiling), `DeliveryConverter` / `DeliveredMastering` (render, solve and range at a delivery rate other than the source's) |
 
 `gain → EQ (each point optionally DYNAMIC) → [M/S mono-bass] → compressor (optional internal sidechain HPF) →
 [soft clipper] → gain → true-peak limiter → dither`, as a single streaming object with a declared latency, a
@@ -22,8 +22,7 @@ quantum instead of a promise.
 
 Why a composite belongs in the shared layer at all (felitronics-core `DSP-ARCHITECTURE.md` §4): it is the unit
 under test, and it can be wrong on its own — latency arithmetic, block dependence, stale state across a bypass
-and a lost tail live in no stage and are reachable only by testing the composition. What stays in the product is
-the VOICING (`mastering-config.json`: JAZZ/METAL, LIGHT/HEAVY).
+and a lost tail live in no stage and are reachable only by testing the composition. The `session` module owns voicing, target defaults and project persistence; products provide the shell.
 
 ## The offline programme analyzers — `felitronics::analysis_offline`
 
@@ -72,7 +71,7 @@ floating-point environment is not IEEE-754's default, and it holds:
 
 - **its states and commands** (`<felitronics/session/Commands.h>`): Empty, Loaded, Measured1, Measured2, and a master
   being made as an overlay on the measured two. A shell asks by typed requests — `load`, `setTarget`, `editTarget`,
-  `editDevice`, `revertEdits`, `setManual`, `master`, `cancel`, `forget` — each answered whole: accepted with the
+  `editDevice`, `revertEdits`, `setManual`, `master`, `cancel`, `forget`, `importProject` — each answered whole: accepted with the
   revision it made, or rejected with a code, having changed nothing. Who may do what, when, is one table in the code,
   consulted by every command right after the floating-point entry check, and the checks after it run in one declared
   order. Every command states what it
@@ -90,6 +89,13 @@ the measured state. Completion identities reject stale work.
 also generates `snapshot.d.ts` in the build output. The event suite pins sequences across runs and pump slicing, every
 command-table cell between steps, stale completions, snapshot ownership, codec round trips and allocation demands.
 
+`exportProject()` writes canonical TOML: defaults and core versions, target by name, manual mode, and only machine
+values that differ from defaults and touched human fields. `importProject()` uses felitronics-toml's schema reader,
+refuses unknown or invalid data with a position, and declares its size-based memory bound before parsing. Same-core
+machine differences are refusals; a foreign machine layer is preserved with its original stamp, a count fact and
+owned snapshot comparison rows. A fresh session plus the same source, measurement and project text restores the
+project after facade poison or heap compaction. Revisions, job ids and kept masters are outside the project.
+
 What is fixed is the ground it stands on:
 
 - **its config** (`<felitronics/session/Config.h>`): every number the session decides, measures and reports with, in
@@ -97,7 +103,7 @@ What is fixed is the ground it stands on:
   compiled into the library at build time by felitronics-toml and read by schema into typed structs: an unknown key, a
   wrong type or a value out of its domain stops every build of the library at its line and column. The owner's decisions
   in it are pinned by a suite of their own; its sound version, a hash of the normalised data that can change a master, is
-  what a recipe will record. [`SESSION.md`](SESSION.md) has the details;
+  what a recipe records. [`SESSION.md`](SESSION.md) has the details;
 - **its text** (`<felitronics/session/Text.h>`): the session states facts — an id and typed arguments — and never prints;
   `Text::text(fact, lang)` renders a fact from a catalog of whole messages (plural and select by CLDR categories, the
   declared languages checked complete by every build, no fallback to another language) and one formatting table of the

@@ -96,6 +96,8 @@ enum class FactId : std::uint16_t
     LoudestLowNote = 5,      // the loudest note of the low end: {note}
     WideBass = 6,            // the bass is wide (side {side}) — the warning of phase 1
     RateAboveLimit = 7,      // the file's rate {rate} is above what this platform takes, {limit} (select on platform)
+    MachineDifferences = 8,  // {count}: the saved machine layer is retained
+    DefaultsConverted = 9,   // {version}: the project was converted from older defaults
 
     // A command's rejection, by its code — what was refused and why. The four a field refuses name it: {field}.
     RejectedFloatingPointEnvironment = 101,
@@ -121,6 +123,15 @@ enum class FactId : std::uint16_t
     RejectedTooLong = 121,
     RejectedNoJobId = 122,
     RejectedInvalidUtf8 = 123,
+    RejectedProjectTooLarge = 124,
+    RejectedProjectSyntax = 125,
+    RejectedProjectMissing = 126,
+    RejectedProjectType = 127,
+    RejectedProjectUnknownKey = 128,
+    RejectedUnknownDefaults = 129,
+    RejectedProjectCore = 130,
+    RejectedMachineMismatch = 131,
+    RejectedNewerDefaults = 132,
 
     Measurement1 = 200,
     Measurement2 = 201,

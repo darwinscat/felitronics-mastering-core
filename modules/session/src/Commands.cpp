@@ -12,6 +12,7 @@
 #include "Driver.h"
 #include "Grid.h"
 #include "Rules.h"
+#include "ProjectIO.h"
 #include "Utf8.h"
 
 #include <felitronics/session/Commands.h>
@@ -179,6 +180,11 @@ Checked Session::check (const Request& request) const noexcept
     // The config, read in place: complete, or create() would have refused.
     const Rules rules = detail::rules();
 
+    if (const auto* imported = std::get_if<command::ImportProject> (&request))
+    {
+        if (imported->bytes.size() > kMaxProjectText) return rejected (Rejection::ProjectTooLarge);
+        return { Rejection::None, kNoField, detail::importBytes (imported->bytes.size()) };
+    }
     if (const auto* load = std::get_if<command::Load> (&request))
     {
         if (lastJob_ == std::numeric_limits<JobId>::max()) return rejected (Rejection::NoJobId);
@@ -267,10 +273,18 @@ Answer Session::apply (const Request& request) noexcept
     Answer answer;
     answer.command = idOf (request);
     const Checked checked = check (request);
-    if (checked.rejection != Rejection::None)
+    answer.rejection = checked.rejection;
+    answer.field = checked.field;
+    detail::ImportedProject imported;
+    if (checked.rejection == Rejection::None)
+        if (const auto* input = std::get_if<command::ImportProject> (&request))
+        {
+            imported = detail::readProject (input->bytes, source_.channels);
+            answer = imported.answer;
+            answer.command = input->id;
+        }
+    if (answer.rejection != Rejection::None)
     {
-        answer.rejection = checked.rejection;
-        answer.field = checked.field;
         answer.revision = revision_;
         Notification event;
         event.kind = EventKind::Rejected;
@@ -299,6 +313,8 @@ Answer Session::apply (const Request& request) noexcept
         masterCount_ = 0;
         masterRoom_ = 0;
         samples_.reset();
+        project_.core = version();
+        differenceCount_ = 0;
         project_.manual = false;
         project_.devices = {};                                      // unplaced: both layers, until the new source is measured
         // WRITE — one array of exactly the samples, then a copy into it.
@@ -328,6 +344,8 @@ Answer Session::apply (const Request& request) noexcept
     {
         const std::uint16_t row = *rules.find (set->target);
         project_.target = row;
+        project_.core = version();
+        differenceCount_ = 0;
         project_.targetEdit = {};                                   // the new target's numbers, silently
         if (set->onEdits == OnEdits::Reset) clearHands (project_.devices);
         else clearHandsNotOffered (rules, row, source_.channels, project_.devices);
@@ -403,6 +421,28 @@ Answer Session::apply (const Request& request) noexcept
         Kept* const it = std::find_if (first, last, [&] (const Kept& k) { return k.id == forget->master; });
         std::copy (it + 1, last, it);                               // the room stays
         --masterCount_;
+    }
+    else if (std::holds_alternative<command::ImportProject> (request))
+    {
+        project_ = imported.project;
+        differenceCount_ = imported.differenceCount;
+        std::copy_n (imported.differences, differenceCount_, differences_);
+        if (imported.convertedDefaults)
+        {
+            Notification event;
+            event.kind = EventKind::Fact;
+            (void) event.payload.fact.assign (text::Fact::of (text::FactId::DefaultsConverted,
+                text::Arg::text ({ imported.originalDefaults, sizeof (imported.originalDefaults) })));
+            emit (event);
+        }
+        if (imported.foreignCore)
+        {
+            Notification event;
+            event.kind = EventKind::Fact;
+            (void) event.payload.fact.assign (text::Fact::of (text::FactId::MachineDifferences,
+                text::Arg::count (std::int64_t (differenceCount_))));
+            emit (event);
+        }
     }
     answer.revision = ++revision_;
     return answer;

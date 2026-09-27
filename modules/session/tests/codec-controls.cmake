@@ -2,7 +2,7 @@
 # Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 # Shadow copies, never edits to the public headers. Each drift must fail compilation; the clean twin always builds.
-foreach(control clean added_field reordered_enum unknown_enum appended_State appended_Needles appended_PhaseName)
+foreach(control clean added_field reordered_enum unknown_enum appended_State appended_Needles appended_PhaseName appended_Device)
     set(dir ${CMAKE_CURRENT_BINARY_DIR}/codec-controls/${control})
     file(READ ${CMAKE_CURRENT_SOURCE_DIR}/include/felitronics/session/Snapshot.h snapshot)
     file(READ ${CMAKE_CURRENT_SOURCE_DIR}/include/felitronics/session/Commands.h commands)
@@ -24,6 +24,8 @@ foreach(control clean added_field reordered_enum unknown_enum appended_State app
             string(REPLACE "Measured1, Measured2 };" "Measured1, Measured2, CodecControlAdded };" commands "${commands}")
         elseif(enum STREQUAL "Needles")
             string(REPLACE "Auto, Manual, Off" "Auto, Manual, Off, CodecControlAdded" project "${project}")
+        elseif(enum STREQUAL "Device")
+            string(REPLACE "Dither, LowShelf };" "Dither, LowShelf, CodecControlAdded };" project "${project}")
         else()
             string(REPLACE "Stream, Report, Analyzers, Pass, Remeasure" "Stream, Report, Analyzers, Pass, Remeasure, CodecControlAdded" events "${events}")
         endif()

@@ -235,6 +235,12 @@ if(FELITRONICS_BUILD_TESTS)
     target_compile_features(felitronics_session_event_tests PRIVATE cxx_std_20)
     add_test(NAME felitronics_session_event_tests COMMAND felitronics_session_event_tests)
 
+    add_executable(felitronics_session_project_tests tests/ProjectTests.cpp)
+    target_link_libraries(felitronics_session_project_tests PRIVATE felitronics::session felitronics::toml felitronics::test_support)
+    target_include_directories(felitronics_session_project_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_features(felitronics_session_project_tests PRIVATE cxx_std_20)
+    add_test(NAME felitronics_session_project_tests COMMAND felitronics_session_project_tests)
+
     # HOSTILE FLAGS AHEAD OF THE LIBRARY'S. The library's sources compiled again, into test binaries, with a licence the
     # session refuses PREPENDED to the target's own options — the position a consumer's CMAKE_CXX_FLAGS or directory
     # options take. The library's options come after and must win: every build probe answers IEEE. Each binary also

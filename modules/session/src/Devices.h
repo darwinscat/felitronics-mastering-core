@@ -41,6 +41,8 @@ template <class Fields> struct DeviceOf;
 template <template <class> class F> struct DeviceOf<HpfFields<F>>
 {
     static constexpr Device device = Device::Hpf;
+    static constexpr std::string_view name = "hpf";
+    static constexpr std::string_view fields[] = { "on", "fq", "slope" };
     static auto& layers (Devices& d) noexcept { return d.hpf; }
     static const auto& layers (const Devices& d) noexcept { return d.hpf; }
     template <class V, class... S> static void each (const Rules& r, V&& v, S&&... s)
@@ -54,6 +56,8 @@ template <template <class> class F> struct DeviceOf<HpfFields<F>>
 template <template <class> class F> struct DeviceOf<MonoBassFields<F>>
 {
     static constexpr Device device = Device::MonoBass;
+    static constexpr std::string_view name = "monoBass";
+    static constexpr std::string_view fields[] = { "on", "fq", "width" };
     static auto& layers (Devices& d) noexcept { return d.monoBass; }
     static const auto& layers (const Devices& d) noexcept { return d.monoBass; }
     template <class V, class... S> static void each (const Rules& r, V&& v, S&&... s)
@@ -67,6 +71,8 @@ template <template <class> class F> struct DeviceOf<MonoBassFields<F>>
 template <template <class> class F> struct DeviceOf<GlueFields<F>>
 {
     static constexpr Device device = Device::Glue;
+    static constexpr std::string_view name = "glue";
+    static constexpr std::string_view fields[] = { "on", "upToDb" };
     static auto& layers (Devices& d) noexcept { return d.glue; }
     static const auto& layers (const Devices& d) noexcept { return d.glue; }
     template <class V, class... S> static void each (const Rules& r, V&& v, S&&... s)
@@ -79,6 +85,8 @@ template <template <class> class F> struct DeviceOf<GlueFields<F>>
 template <template <class> class F> struct DeviceOf<SaturationFields<F>>
 {
     static constexpr Device device = Device::Saturation;
+    static constexpr std::string_view name = "saturation";
+    static constexpr std::string_view fields[] = { "on", "drive", "mix", "output" };
     static auto& layers (Devices& d) noexcept { return d.saturation; }
     static const auto& layers (const Devices& d) noexcept { return d.saturation; }
     template <class V, class... S> static void each (const Rules& r, V&& v, S&&... s)
@@ -93,6 +101,8 @@ template <template <class> class F> struct DeviceOf<SaturationFields<F>>
 template <template <class> class F> struct DeviceOf<TiltFields<F>>
 {
     static constexpr Device device = Device::Tilt;
+    static constexpr std::string_view name = "tilt";
+    static constexpr std::string_view fields[] = { "on", "db" };
     static auto& layers (Devices& d) noexcept { return d.tilt; }
     static const auto& layers (const Devices& d) noexcept { return d.tilt; }
     template <class V, class... S> static void each (const Rules& r, V&& v, S&&... s)
@@ -105,6 +115,8 @@ template <template <class> class F> struct DeviceOf<TiltFields<F>>
 template <template <class> class F> struct DeviceOf<LimiterFields<F>>
 {
     static constexpr Device device = Device::Limiter;
+    static constexpr std::string_view name = "limiter";
+    static constexpr std::string_view fields[] = { "needles", "needlesDb" };
     static auto& layers (Devices& d) noexcept { return d.limiter; }
     static const auto& layers (const Devices& d) noexcept { return d.limiter; }
     template <class V, class... S> static void each (const Rules& r, V&& v, S&&... s)
@@ -117,6 +129,8 @@ template <template <class> class F> struct DeviceOf<LimiterFields<F>>
 template <template <class> class F> struct DeviceOf<DitherFields<F>>
 {
     static constexpr Device device = Device::Dither;
+    static constexpr std::string_view name = "dither";
+    static constexpr std::string_view fields[] = { "on" };
     static auto& layers (Devices& d) noexcept { return d.dither; }
     static const auto& layers (const Devices& d) noexcept { return d.dither; }
     template <class V, class... S> static void each (const Rules&, V&& v, S&&... s)
@@ -128,6 +142,8 @@ template <template <class> class F> struct DeviceOf<DitherFields<F>>
 template <template <class> class F> struct DeviceOf<LowShelfFields<F>>
 {
     static constexpr Device device = Device::LowShelf;
+    static constexpr std::string_view name = "lowShelf";
+    static constexpr std::string_view fields[] = { "on", "db" };
     static auto& layers (Devices& d) noexcept { return d.lowShelf; }
     static const auto& layers (const Devices& d) noexcept { return d.lowShelf; }
     template <class V, class... S> static void each (const Rules& r, V&& v, S&&... s)
@@ -158,6 +174,9 @@ template <class D, class V> void eachDevice (D& devices, V&& v)
 // measurement — no planner reads the measurements here, so mono bass, which [stages] leaves off, is off. The session
 // places the devices on these numbers when the first measurement ends, and a change of target after that places them
 // again.
+void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices) noexcept;
+
+// The current planner places defaults; file omissions are filled independently of planner decisions.
 void placeMachine (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices) noexcept;
 
 // Is `device` offered for the target in row `row` and a source of `channels` channels? The low shelf where the target

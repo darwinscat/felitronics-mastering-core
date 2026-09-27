@@ -18,7 +18,8 @@ const SnapshotView& Snapshot::view() const noexcept { return view_; }
 std::uint64_t Snapshot::storageFor (const SnapshotView& v) noexcept
 {
     return detail::snapshotStorage (v.target.size(), v.source.name.size(), v.masters.size_bytes(),
-                                    v.momentary.size_bytes(), v.shortTerm.size_bytes(), v.runs.size_bytes());
+                                    v.momentary.size_bytes(), v.shortTerm.size_bytes(), v.runs.size_bytes())
+         + std::uint64_t (v.machineDifferences.size_bytes());
 }
 Snapshot Snapshot::copy (const SnapshotView& v) noexcept
 {
@@ -41,6 +42,12 @@ Snapshot Snapshot::copy (const SnapshotView& v) noexcept
         out.masters_.reset (new Kept[v.masters.size()]);
         std::copy (v.masters.begin(), v.masters.end(), out.masters_.get());
         out.view_.masters = { out.masters_.get(), v.masters.size() };
+    }
+    if (! v.machineDifferences.empty())
+    {
+        out.differences_.reset (new MachineDifference[v.machineDifferences.size()]);
+        std::copy (v.machineDifferences.begin(), v.machineDifferences.end(), out.differences_.get());
+        out.view_.machineDifferences = { out.differences_.get(), v.machineDifferences.size() };
     }
     if (points != 0)
     {
@@ -79,6 +86,7 @@ SnapshotView Session::buildView() const noexcept
     v.measurementJob = measurementJob_;
     v.jobRecipe = jobRecipe_;
     v.masters = masters();
+    v.machineDifferences = { differences_, differenceCount_ };
     v.measurementProgress = measurementProgress_;
     v.masterProgress = masterProgress_;
     v.integratedLufs = std::numeric_limits<double>::quiet_NaN(); // the stub establishes no audio measurement

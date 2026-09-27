@@ -57,6 +57,8 @@ inline constexpr FactShape kFacts[] = {
     { FactId::RateAboveLimit, "rateAboveLimit",
       { { { "rate", ArgKind::Value, {} }, { "limit", ArgKind::Value, {} }, { "platform", ArgKind::Term, "platform" } } },
       3 },
+    { FactId::MachineDifferences, "machineDifferences", { { { "count", ArgKind::Count, {} } } }, 1 },
+    { FactId::DefaultsConverted, "defaultsConverted", { { { "version", ArgKind::UserText, {} } } }, 1 },
     // A command's rejection (Commands.h), one per code; the four a field refuses name it.
     { FactId::RejectedFloatingPointEnvironment, "rejectedFloatingPointEnvironment", {}, 0 },
     { FactId::RejectedNoSource, "rejectedNoSource", {}, 0 },
@@ -81,6 +83,15 @@ inline constexpr FactShape kFacts[] = {
     { FactId::RejectedTooLong, "rejectedTooLong", {}, 0 },
     { FactId::RejectedNoJobId, "rejectedNoJobId", {}, 0 },
     { FactId::RejectedInvalidUtf8, "rejectedInvalidUtf8", {}, 0 },
+    { FactId::RejectedProjectTooLarge, "rejectedProjectTooLarge", {}, 0 },
+    { FactId::RejectedProjectSyntax, "rejectedProjectSyntax", {}, 0 },
+    { FactId::RejectedProjectMissing, "rejectedProjectMissing", {}, 0 },
+    { FactId::RejectedProjectType, "rejectedProjectType", {}, 0 },
+    { FactId::RejectedProjectUnknownKey, "rejectedProjectUnknownKey", {}, 0 },
+    { FactId::RejectedUnknownDefaults, "rejectedUnknownDefaults", {}, 0 },
+    { FactId::RejectedProjectCore, "rejectedProjectCore", {}, 0 },
+    { FactId::RejectedMachineMismatch, "rejectedMachineMismatch", {}, 0 },
+    { FactId::RejectedNewerDefaults, "rejectedNewerDefaults", {}, 0 },
     { FactId::Measurement1, "measurement1", {}, 0 },
     { FactId::Measurement2, "measurement2", {}, 0 },
     { FactId::MasterPass, "masterPass", { { { "pass", ArgKind::Count, {} } } }, 1 },
@@ -195,6 +206,15 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Rejection::TooLong: return FactId::RejectedTooLong;
         case Rejection::NoJobId: return FactId::RejectedNoJobId;
         case Rejection::InvalidUtf8: return FactId::RejectedInvalidUtf8;
+        case Rejection::ProjectTooLarge: return FactId::RejectedProjectTooLarge;
+        case Rejection::ProjectSyntax: return FactId::RejectedProjectSyntax;
+        case Rejection::ProjectMissing: return FactId::RejectedProjectMissing;
+        case Rejection::ProjectType: return FactId::RejectedProjectType;
+        case Rejection::ProjectUnknownKey: return FactId::RejectedProjectUnknownKey;
+        case Rejection::UnknownDefaults: return FactId::RejectedUnknownDefaults;
+        case Rejection::ProjectCore: return FactId::RejectedProjectCore;
+        case Rejection::MachineMismatch: return FactId::RejectedMachineMismatch;
+        case Rejection::NewerDefaults: return FactId::RejectedNewerDefaults;
     }
     return std::nullopt;
 }
