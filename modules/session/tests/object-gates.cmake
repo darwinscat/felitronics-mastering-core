@@ -172,6 +172,11 @@ function(read_object obj)
             if(type STREQUAL "SECTION" OR type STREQUAL "FILE" OR ndx STREQUAL "ABS" OR name MATCHES "^\\.L")
                 continue()
             endif()
+            # A mapping symbol ($d, $x, $d.1 — where data and code begin in a section, on AArch64, ARM and RISC-V) names
+            # a position, not an object: local, untyped, and in every section that has data.
+            if(type STREQUAL "NOTYPE" AND bind STREQUAL "LOCAL" AND name MATCHES "^\\$[a-z](\\..*)?$")
+                continue()
+            endif()
             if(ndx STREQUAL "UND")
                 list(APPEND u "${name}")
                 list(APPEND ud "${dname}")
