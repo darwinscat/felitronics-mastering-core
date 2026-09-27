@@ -23,10 +23,10 @@
 // reasons are written beside the numbers in the documents and are not repeated here. A field is required unless it is
 // std::optional or its comment says otherwise.
 //
-// THE BUILD HOLDS THE SCHEMA. The repository's own builds run the schema over the embedded config right after the library
-// is built (modules/session/tests/ConfigCheck.cpp), and a problem stops the build as `<file>:<line>:<column>: error:`. So
-// for a library that was built, load() has no problems; it returns them anyway, because bind() — the same schema over
-// texts a caller hands in — can.
+// THE BUILD HOLDS THE SCHEMA. Every build of the library — a consumer's included — runs the schema over the two documents
+// before the library is built (felitronics_session_config_check, a host tool: modules/session/CMakeLists.txt), and a
+// problem stops the build as `<file>:<line>:<column>: error:`. So for a library that was built, load() has no problems;
+// it returns them anyway, because bind() — the same schema over texts a caller hands in — can.
 //
 // THE SCHEMA HOLDS FORM AND PHYSICS, NOT CHOICES: a key's type, the domain where its number means what its document says
 // (a share within 0…1, a band that ascends, a corner the analyzer admits), and the checks across keys. Which numbers the

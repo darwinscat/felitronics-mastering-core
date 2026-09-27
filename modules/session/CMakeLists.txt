@@ -18,12 +18,49 @@ target_compile_features(felitronics_session PUBLIC cxx_std_20)
 
 # THE CONFIG — config/targets.toml and config/engine.toml, compiled into the library as constexpr data by felitronics-toml's
 # felitronics_toml_embed: nothing reads a file at run time. A document that does not parse stops the build at its line and
-# column here; one that parses but breaks the schema stops it at the check below (felitronics_session_config_check). The
-# generated headers and felitronics::toml are PRIVATE: Config.h, the public face, speaks typed structs only.
+# column here; one that parses but breaks the schema stops it at the gate below. The generated headers and felitronics::toml
+# are PRIVATE: Config.h, the public face, speaks typed structs only.
+set(FELITRONICS_SESSION_CONFIG ${CMAKE_CURRENT_SOURCE_DIR}/config)
 felitronics_toml_embed(felitronics_session INPUT config/targets.toml
                        NAMESPACE felitronics::session::config::embedded NAME targets HEADER embedded/targets.h)
 felitronics_toml_embed(felitronics_session INPUT config/engine.toml
                        NAMESPACE felitronics::session::config::embedded NAME engine HEADER embedded/engine.h)
+
+# THE GATE — the config's schema over the two documents, run by EVERY build of the library before it is built, a
+# consumer's and a build without tests included: a typo in a document is a red build at `<file>:<line>:<column>`, never a
+# setting silently ignored. felitronics_session_config_check is a HOST tool compiled from tests/ConfigCheck.cpp and the
+# library's own src/ConfigSchema.cpp — one schema, one text — so it does not link the library it gates. Where the build
+# cross-compiles it runs under the build's emulator (node, on the wasm tier), as felitronics_toml2cpp does; a cross build
+# without one names a host build of it in FELITRONICS_SESSION_CONFIG_CHECK_EXECUTABLE. The step writes its stamp only
+# when the check passed, so a failed gate is run again by the next build, whichever generator runs it.
+add_executable(felitronics_session_config_check tests/ConfigCheck.cpp src/ConfigSchema.cpp)
+target_include_directories(felitronics_session_config_check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+                                                                    ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(felitronics_session_config_check PRIVATE felitronics::toml)
+target_compile_features(felitronics_session_config_check PRIVATE cxx_std_20)
+if(EMSCRIPTEN)
+    # Run through node at build time, on the host's files, with its exit status.
+    target_link_options(felitronics_session_config_check PRIVATE -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1)
+endif()
+if(FELITRONICS_SESSION_CONFIG_CHECK_EXECUTABLE)
+    set(FELITRONICS_SESSION_CONFIG_GATE "${FELITRONICS_SESSION_CONFIG_CHECK_EXECUTABLE}")
+    set(FELITRONICS_SESSION_CONFIG_GATE_DEPENDS "")
+elseif(CMAKE_CROSSCOMPILING AND NOT CMAKE_CROSSCOMPILING_EMULATOR)
+    message(FATAL_ERROR "felitronics::session: this cross build cannot run its config gate — build "
+                        "felitronics_session_config_check for the host and set FELITRONICS_SESSION_CONFIG_CHECK_EXECUTABLE")
+else()
+    set(FELITRONICS_SESSION_CONFIG_GATE felitronics_session_config_check)
+    set(FELITRONICS_SESSION_CONFIG_GATE_DEPENDS felitronics_session_config_check)
+endif()
+set(FELITRONICS_SESSION_CONFIG_STAMP ${CMAKE_CURRENT_BINARY_DIR}/felitronics_session_config.checked)
+add_custom_command(OUTPUT ${FELITRONICS_SESSION_CONFIG_STAMP}
+    COMMAND ${FELITRONICS_SESSION_CONFIG_GATE} ${FELITRONICS_SESSION_CONFIG}/targets.toml ${FELITRONICS_SESSION_CONFIG}/engine.toml
+    COMMAND ${CMAKE_COMMAND} -E touch ${FELITRONICS_SESSION_CONFIG_STAMP}
+    DEPENDS ${FELITRONICS_SESSION_CONFIG_GATE_DEPENDS}
+            ${FELITRONICS_SESSION_CONFIG}/targets.toml ${FELITRONICS_SESSION_CONFIG}/engine.toml
+    COMMENT "felitronics::session: the config, read by schema"
+    VERBATIM)
+target_sources(felitronics_session PRIVATE ${FELITRONICS_SESSION_CONFIG_STAMP})
 
 # THE BRAIN'S FLAGS — PRIVATE, so they are the library's and never its consumer's, and one SHELL: group, so CMake's
 # option de-duplication cannot take a member of it away. That is not a theoretical guard: a parent that states
@@ -159,25 +196,8 @@ if(FELITRONICS_BUILD_TESTS)
         add_test(NAME felitronics_session_hostile_${licence}_tests COMMAND felitronics_session_hostile_${licence}_tests)
     endforeach()
 
-    # THE CONFIG'S SCHEMA, A STEP OF THE BUILD. The check reads the config embedded in the library by schema right after
-    # it is linked, and a problem stops the build as `<file>:<line>:<column>: error: <fault> <key path>` — a typo in a
-    # document is a red build at its line, not a silently ignored setting. It runs where the build runs its tests (the
-    # emulator on the wasm tier). Its --files and --expect modes serve the controls below and fcore_session's contract.
-    set(FELITRONICS_SESSION_CONFIG ${CMAKE_CURRENT_SOURCE_DIR}/config)
-    add_executable(felitronics_session_config_check tests/ConfigCheck.cpp)
-    target_link_libraries(felitronics_session_config_check PRIVATE felitronics::session felitronics::toml)
-    target_compile_features(felitronics_session_config_check PRIVATE cxx_std_20)
-    if(EMSCRIPTEN)
-        target_link_options(felitronics_session_config_check PRIVATE -sNODERAWFS=1)   # the host's files, through node
-    endif()
-    add_custom_command(TARGET felitronics_session_config_check POST_BUILD
-        COMMAND ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:felitronics_session_config_check>
-                ${FELITRONICS_SESSION_CONFIG}/targets.toml ${FELITRONICS_SESSION_CONFIG}/engine.toml
-        COMMENT "felitronics::session: the embedded config, read by schema"
-        VERBATIM)
-
-    # The config: bound with no problem and equal to its sources, the decisions it carries, the schema's controls
-    # in-process (every kind of problem, at its line and column), and the version moved by every single value.
+    # The config: bound with no problem and equal to its sources, the schema's controls in-process (every kind of problem,
+    # at its line and column), and the version moved by every single value.
     add_executable(felitronics_session_config_tests tests/ConfigTests.cpp)
     target_link_libraries(felitronics_session_config_tests PRIVATE
         felitronics::session felitronics::toml felitronics::test_support)
