@@ -175,6 +175,13 @@ std::string_view Digits::fraction() const noexcept
     return { buffer.data() + integerDigits, fractionDigits };
 }
 
+bool Digits::zero() const noexcept
+{
+    for (std::size_t i = 0; i < integerDigits + fractionDigits; ++i)
+        if (buffer[i] != '0') return false;
+    return true;
+}
+
 bool gridDigits (double value, unsigned precision, Digits& out) noexcept
 {
     const std::uint64_t bits = bitsOf (value);
@@ -198,7 +205,7 @@ bool gridDigits (double value, unsigned precision, Digits& out) noexcept
     const std::size_t count = decimal (n, precision + 1, out.buffer);
     out.integerDigits = count - precision;
     out.fractionDigits = precision;
-    out.negative = (bits >> 63) != 0 && (bits & ~(std::uint64_t (1) << 63)) != 0;
+    out.negative = (bits >> 63) != 0 && ! out.zero();   // a value that rounds to zero prints unsigned: never "−0.0"
     return true;
 }
 

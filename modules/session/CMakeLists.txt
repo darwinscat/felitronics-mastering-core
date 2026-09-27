@@ -337,7 +337,9 @@ if(FELITRONICS_BUILD_TESTS)
             "lost_placeholder|catalog|en = \"Landing · pass {pass} of {passes}\"|en = \"Landing · pass of {passes}\"|\"Landing · pass of|Refused messages.landingPass.en.{pass} — LostPlaceholder"
             "missing_category|catalog|en.one = \"landing: converged after {passes} pass\"|# en.one removed|en.other = \"landing|Missing messages.landingConverged.en.one"
             "undeclared_language|catalog|en = \"Loudest bass note: {note}\"|en = \"Loudest bass note: {note}\"\nde = \"Tiefster Ton: {note}\"|de =|UnknownKey messages.loudestLowNote.de"
-            "unit_without_pattern|format|tr = \"{n} dBTP\"|# tr removed|[units.dbtp]|Missing units.dbtp.tr")
+            "unit_without_pattern|format|tr = \"{n}\\u00A0dBTP\"|# tr removed|[units.dbtp]|Missing units.dbtp.tr"
+            "breaking_space|format|en = \"{n}\\u00A0LUFS\"|en = \"{n} LUFS\"|\"{n} LUFS\"|Refused units.lufs.en — BreakingSpace"
+            "absent_digit|format|absent = \"—\"\nnotes = [\"C\", \"C♯\", \"D\", \"D♯\", \"E\", \"F\", \"F♯\", \"G\", \"G♯\", \"A\", \"A♯\", \"B\"]\n\n# ── units|absent = \"1\"\nnotes = [\"C\", \"C♯\", \"D\", \"D♯\", \"E\", \"F\", \"F♯\", \"G\", \"G♯\", \"A\", \"A♯\", \"B\"]\n\n# ── units|\"1\"|Refused numbers.tr.absent — NotASign")
         foreach(ctl IN LISTS FELITRONICS_SESSION_TEXT_CONTROLS)
             string(REPLACE "|" ";" f "${ctl}")
             list(GET f 0 name)

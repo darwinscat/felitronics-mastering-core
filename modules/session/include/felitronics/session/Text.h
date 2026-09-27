@@ -38,10 +38,11 @@
 //   * Rounding: the EXACT value of the double is rounded to the decimal grid of `precision` fraction digits — to the
 //     nearest multiple of 10^−precision, a value exactly halfway rounded away from zero. 0.125 → 0.13 and 2.5 → 3 are
 //     exact halves; 1.005 → 1.00 is not, because the double nearest 1.005 is 1.00499999999999989…
-//   * The sign follows the value, not its rounded digits: a negative value takes the minus (−0.04 at one digit is
-//     "−0.0"), a positive one takes the plus under Sign::Always, and a zero — either zero — takes neither. It is read
-//     from the double's bits, as the digits are computed in integers: no floating-point operation decides a rendering,
-//     so the calling thread's floating-point environment cannot change one.
+//   * The sign is the printed number's: a negative value takes the minus, a positive one the plus under Sign::Always —
+//     and a value whose digits print as zero takes neither, under every Sign: −0.04 at one digit is "0.0", never
+//     "−0.0", which a musician reads as a bug; either zero is "0". The sign is read from the double's bits, as the digits
+//     are computed in integers: no floating-point operation decides a rendering, so the calling thread's
+//     floating-point environment cannot change one.
 //   * Plural categories are CLDR's, selected on the number AS PRINTED: "1.0" is not "one" in English, "1" is. The
 //     formatter and the selector are one component.
 //   * A value that is not finite prints the language's absent sign ("—") alone: no sign, no bound, no unit.
@@ -63,6 +64,7 @@ enum class Unit : std::uint8_t { None, Percent, Db, DbTp, DbFs, Lufs, Lu, Hz, KH
 inline constexpr std::size_t kUnitCount = 12;
 
 // Which sign a number shows. Negative: the minus of a negative value. Always: the plus of a positive value too (a gain).
+// Under both, a number that prints as zero shows none.
 enum class Sign : std::uint8_t { Negative, Always };
 
 // Whether a number is a bound: Exact prints the number, AtLeast "≥ 6 %", AtMost "≤ 6 %".

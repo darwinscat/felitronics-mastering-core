@@ -111,7 +111,7 @@ void putValue (Sink& s, const Arg& a, Lang lang) noexcept
     if (a.bound == Bound::AtLeast) s.put (textOf (row.find ("atLeast")));
     else if (a.bound == Bound::AtMost) s.put (textOf (row.find ("atMost")));
     if (d.negative) s.put (textOf (row.find ("minus")));
-    else if (a.sign == Sign::Always && detail::signOf (a.number) > 0) s.put (textOf (row.find ("plus")));
+    else if (a.sign == Sign::Always && detail::signOf (a.number) > 0 && ! d.zero()) s.put (textOf (row.find ("plus")));
     const std::string_view pattern = a.unit == Unit::None
         ? std::string_view ("{n}")
         : textOf (detail::formatRoot().find ("units").find (detail::kUnitKeys[(std::size_t) a.unit])

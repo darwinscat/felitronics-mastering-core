@@ -19,10 +19,11 @@
 //             placeholders in every language. No key nothing reads: no message, term, group, language or field the
 //             tables do not know.
 //   format    [numbers.<code>] for each of the twelve: decimal and group (non-empty, no digit, no sign — ASCII's or the
-//             row's own minus and plus — and not equal),
-//             minimumGrouping (1 … 4), minus, plus, atLeast, atMost, absent (non-empty), notes (twelve non-empty names,
-//             from C). [units.<key>] for each unit but None: a pattern for each of the twelve with exactly one {n} and
-//             no other brace. No key nothing reads.
+//             row's own minus and plus — and not equal), minimumGrouping (1 … 4); the signs minus, plus, atLeast, atMost
+//             and absent (non-empty, no digit, not a separator), the fixed ones exactly as the law states them: minus
+//             U+2212, absent U+2014, atLeast and atMost "≥" and "≤" followed by a no-break space (U+00A0, or U+202F);
+//             notes (twelve non-empty names, from C). [units.<key>] for each unit but None: a pattern for each of the
+//             twelve with exactly one {n}, no other brace and no breaking space. No key nothing reads.
 
 #include <felitronics/session/Text.h>
 #include <felitronics/toml/Embedded.h>
