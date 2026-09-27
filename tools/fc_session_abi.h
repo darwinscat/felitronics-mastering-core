@@ -64,8 +64,10 @@ typedef enum fc_session_status
     FC_SESSION_ERR_HANDLE    = 5,   // 0, never issued, already destroyed, or from a previous generation of its slot
     FC_SESSION_ERR_EXHAUSTED = 6,   // FC_SESSION_MAX_HANDLES sessions are alive already, or every free slot has retired
     // The session's own refusals (felitronics::session::Status), passed through:
-    FC_SESSION_ERR_FP_ENVIRONMENT = 7   // the calling thread flushes to zero, reads subnormals as zero, or does not round
+    FC_SESSION_ERR_FP_ENVIRONMENT = 7,  // the calling thread flushes to zero, reads subnormals as zero, or does not round
                                         // to nearest — restore the environment (or call from another thread)
+    FC_SESSION_ERR_CONFIG = 8           // the config compiled into the module lacks a number the session's commands check
+                                        // against — not reachable in a module whose build ran the config's gate
 } fc_session_status;
 
 // ====================================================================================
@@ -91,7 +93,7 @@ uint32_t fc_session_abi_version (void);
 // Creates an empty session and writes its handle to `*out`. `*out` is written ONLY on FC_SESSION_OK: a refused call
 // leaves it as it was, so a variable that still holds a live handle is not overwritten by a create that failed.
 // Checks: poison, `out` (null, 4-byte alignment, in the heap), a free slot, then the session's own (the floating-point
-// environment). A refused create allocated nothing.
+// environment, then the config it reads). A refused create allocated nothing.
 fc_session_status fc_session_create (fc_session* out);
 
 // Destroys the session `session` names; the handle is refused from then on. Checks: poison, the handle.

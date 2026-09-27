@@ -52,6 +52,7 @@ undefined  coff    ^(\?_X(length_error|out_of_range)@std@@YAXPEBD@Z|__imp__invok
 undefined  coff    ^(\?\?_7type_info@@6B@|__ImageBase)$    ...and what a throw's metadata points at: type_info's vtable and the image base its offsets count from
 undefined  coff    ^__std_(find_trivial|max_element|min_element|minmax_element|max|min|minmax)_[1248][iu]?$    the STL's vectorised std::find and std::max_element family, compiled once in its own library (pure computation; the element width and signedness suffix differs between MSVC releases)
 undefined  coff    ^_dclass$                        the UCRT's fpclassify, behind std::isfinite and std::isnan: a classification, exact
+undefined  coff    ^(__imp_)?_dsign$                the UCRT's signbit, behind felitronics-toml's Decimal::fromDouble (a knob's value read as a decimal, src/Grid.h): a bit read, exact
 writable   coff    ^\?\?_R0\?AV(exception|bad_alloc|bad_array_new_length)@std@@@8$    the type descriptors of the exceptions MSVC's STL throws on a failed allocation: a throw's metadata, which MSVC keeps in writable .data$r (a type_info caches its name there); the session neither reads nor writes them
 
 # --- the sanitizer row: the instrumentation's runtime and the metadata it plants

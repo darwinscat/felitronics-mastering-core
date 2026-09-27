@@ -76,6 +76,17 @@ zone   modules/session/src/ConfigBind.h                       the schema's seam,
 zone   modules/session/src/ConfigSchema.cpp                   the config, read by schema
 zone   modules/session/src/ConfigVersion.h                    the config's versions, one walk over the embedded and the parsed data
 zone   modules/session/src/Grid.h                             a knob's grid, exactly: the one step rule of the config and the commands
+entry  modules/session/src/Rules.cpp                          a translation unit of felitronics::session
+entry  modules/session/src/Devices.cpp                        a translation unit of felitronics::session
+entry  modules/session/src/Commands.cpp                       a translation unit of felitronics::session
+zone   modules/session/include/felitronics/session/Commands.h  the states, the commands and the table of who may do what, when
+zone   modules/session/include/felitronics/session/Project.h   the project: the target, the manual mode, every device's two layers
+zone   modules/session/src/Rules.h                            the numbers the commands check against, read in place
+zone   modules/session/src/Rules.cpp                          ...and their reading
+zone   modules/session/src/Devices.h                          every device's fields for the code, and the rule each is checked by
+zone   modules/session/src/Devices.cpp                        the machine's layer, and which device is offered where
+zone   modules/session/src/Driver.h                           the session's own transitions, driven by the work that ends
+zone   modules/session/src/Commands.cpp                       the commands: the table consulted, the checks in order, the work
 # The C boundary and the native CLI: the two roads into the library; what either includes is rule 4's net. The boundary
 # is compiled with the session's flags and scanned by the session-laws lint, which holds it in the zone as the module is.
 entry  tools/wasm/fc_session.cpp  the session ABI, the translation unit of the fcsession module
