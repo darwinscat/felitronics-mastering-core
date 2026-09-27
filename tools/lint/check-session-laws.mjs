@@ -98,11 +98,13 @@ const GUARDS = `${MODULE}/src/BuildGuards.h`;
 const CONTRACT = `${MODULE}/src/BuildContract.cpp`;
 const FACADE_TU = 'tools/wasm/fc_session.cpp';
 const FACADE_ABI = 'tools/fc_session_abi.h';
-// Files of the module that are not code, by name: the build's lists, and the config's two documents — data the build
-// embeds (felitronics_toml_embed) and reads by schema before the library is built.
+// Files of the module that are not code, by name: the build's lists, the config's two documents and the text's two — data
+// the build embeds (felitronics_toml_embed) and checks before the library is built.
 const NOT_CODE = new Set([`${MODULE}/CMakeLists.txt`, SOURCES_FILE, `${MODULE}/build-flags.txt`,
-                          `${MODULE}/config/targets.toml`, `${MODULE}/config/engine.toml`]);
+                          `${MODULE}/config/targets.toml`, `${MODULE}/config/engine.toml`,
+                          `${MODULE}/text/catalog.toml`, `${MODULE}/text/format.toml`]);
 const CONFIG_TU = `${MODULE}/src/Config.cpp`;
+const TEXT_TU = `${MODULE}/src/Text.cpp`;
 const CODE_EXT = /\.(h|hh|hpp|hxx|inl|ipp|tpp|inc|cpp|cc|cxx)$/;
 const TU_EXT = /\.(cpp|cc|cxx)$/;
 // Where each translation unit's object lives in a CMake build tree (the `output`, or the -o, of its compile command).
@@ -124,6 +126,7 @@ const FELITRONICS_ALLOWED = new Set([
     'felitronics/session/Config.h',
     'felitronics/session/Commands.h',
     'felitronics/session/Project.h',
+    'felitronics/session/Text.h',
     // felitronics-toml (resolved in the checkout the build uses): its parser and canonical writer, over <algorithm>,
     // <cfloat>, <cmath>, <cstddef>, <cstdint>, <limits>, <optional>, <string>, <string_view>, <utility>, <variant> and
     // <vector> — no file, locale, libc number conversion, exception or RTTI, by its own contract; the schema's Reader
@@ -153,6 +156,8 @@ const ALLOWANCES = new Map([
     // types, admitted by name and not scanned: they live in the build tree, and what they compile to is read-only data
     // the object-file gate reads.
     [CONFIG_TU, { directives: [], generated: new Set(['embedded/engine.h', 'embedded/targets.h']) }],
+    // The text compiled in, the same way: the two headers the build generates from modules/session/text/*.toml.
+    [TEXT_TU, { directives: [], generated: new Set(['embedded/catalog.h', 'embedded/format.h']) }],
     // The C boundary: the export macro build.sh's export scanner reads, the emscripten headers and one platform branch
     // (natively there is no linear memory to bound an out-pointer by), and its two quoted includes, by name.
     [FACADE_TU, {
@@ -762,6 +767,9 @@ function selfTest ()
         [S, '#include "embedded/engine.h"', ['INCLUDE']],                       // generated headers: the config's unit only
         [CONFIG_TU, '#include "BuildGuards.h"\n#include "embedded/engine.h"\n#include "embedded/targets.h"', []],
         [CONFIG_TU, '#include "embedded/other.h"', ['INCLUDE']],
+        [CONFIG_TU, '#include "embedded/catalog.h"', ['INCLUDE']],             // each unit its own generated headers
+        [TEXT_TU, '#include "BuildGuards.h"\n#include "embedded/catalog.h"\n#include "embedded/format.h"', []],
+        [TEXT_TU, '#include "embedded/engine.h"', ['INCLUDE']],
         [S, '#pragma once', []],
         [S, '#if defined(__clang__)\n#pragma clang fp contract(fast)\n#endif', ['CONDITIONAL', 'PRAGMA']],
         [S, '#pragma STDC FP_CONTRACT ON', ['PRAGMA']],

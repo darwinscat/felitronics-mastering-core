@@ -31,6 +31,7 @@
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Project.h>
 #include <felitronics/session/Session.h>
+#include <felitronics/session/Text.h>
 #include <felitronics/tempo/JsNumerics.h>
 #include <felitronics/tempo/TempoDetector.h>
 

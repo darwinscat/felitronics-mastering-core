@@ -1,0 +1,87 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# THE TEXT CATALOG of felitronics::session — every message a fact renders as, in every language the catalog declares.
+# Compiled into the library at build time (felitronics_toml_embed) and checked by felitronics_session_text_check before
+# the library is built (src/TextSchema.h has the rules); <felitronics/session/Text.h> says how a fact is rendered.
+#
+# HOW A MESSAGE IS WRITTEN
+#   * [messages.<key>] — one per fact of src/TextFacts.h (the key is the fact's id where the catalog lacks a message).
+#     Every declared language gives the WHOLE message: a sentence is never assembled from pieces, so each language
+#     orders its words its own way.
+#   * {name} places an argument — the names are the fact's, listed in src/TextFacts.h. Every language places the same
+#     arguments; it may repeat one or put them in another order. No other brace may appear.
+#   * plural = "<argument>": the words depend on a number. Each language then gives one text per CLDR category it has
+#     (en: one, other; ru: one, few, many, other) — the category of the number as it is printed, so "1.0" is not "one".
+#   * select = "<argument>": the words depend on a term (a platform, say). Each language gives one text per term of the
+#     argument's group; the chosen term need not be printed, its text already says it.
+#   * [terms.<group>.<key>] — the words a term argument prints.
+#   * Numbers, units, signs and note names are the formatting table's (format.toml): a message never writes a unit or a
+#     separator of its own.
+#
+# HOW IT IS TRANSLATED — as the site's texts are: Russian first, then English, then the rest in order. Polite or neutral,
+# never familiar: a statement speaks impersonally or as "we"; a direct address takes the polite form (Russian: the
+# imperative plural and a capitalised pronoun). The glossary's Latin terms stay Latin (LUFS, dBTP, True Peak, EQ, …).
+#
+# The session's own facts — its phases, its commands' refusals, its errors — join this file with the facts they belong
+# to; the facts here are the first ones, and they exercise every kind of argument.
+
+languages = ["ru", "en"]
+
+# ── terms ──
+
+[terms.platform]
+web.ru = "веб-версия"
+web.en = "web version"
+desktop.ru = "десктоп-версия"
+desktop.en = "desktop version"
+
+# ── messages ──
+
+# A reading alone: the number with its unit, signs and bound, as the table writes it.
+[messages.value]
+ru = "{value}"
+en = "{value}"
+
+# The landing's progress: the pass being rendered, and how many the series has.
+[messages.landingPass]
+ru = "Посадка · проход {pass} из {passes}"
+en = "Landing · pass {pass} of {passes}"
+
+# The landing converged.
+[messages.landingConverged]
+plural = "passes"
+ru.one = "посадка: сошлось за {passes} проход"
+ru.few = "посадка: сошлось за {passes} прохода"
+ru.many = "посадка: сошлось за {passes} проходов"
+ru.other = "посадка: сошлось за {passes} прохода"
+en.one = "landing: converged after {passes} pass"
+en.other = "landing: converged after {passes} passes"
+
+# The blind test: how many repeated pairs were answered the same way, of how many — the noun agrees with the second
+# number, not the first.
+[messages.pairsConsistent]
+plural = "pairs"
+ru.one = "согласованность повторов: {agreed} из {pairs} пары"
+ru.few = "согласованность повторов: {agreed} из {pairs} пар"
+ru.many = "согласованность повторов: {agreed} из {pairs} пар"
+ru.other = "согласованность повторов: {agreed} из {pairs} пары"
+en.one = "repeat consistency: {agreed} of {pairs} pair"
+en.other = "repeat consistency: {agreed} of {pairs} pairs"
+
+# The loudest note of the low end, as a MIDI number the table names.
+[messages.loudestLowNote]
+ru = "Громчайшая нота низа: {note}"
+en = "Loudest bass note: {note}"
+
+# Phase 1's warning of a wide bass: its side share. The owner's wording.
+[messages.wideBass]
+ru = "бас широкий (бока {side}) — моно-бас соберёт его, на наушниках станет уже; если ширина нужна — выключите моно-бас в Настройках"
+en = "the bass is wide (side {side}) — mono-bass will gather it, and on headphones it will sound narrower; if you need the width, switch mono-bass off in Settings"
+
+# A file above the highest rate this platform takes. The web version sends it to the desktop version.
+[messages.rateAboveLimit]
+select = "platform"
+ru.web = "Файл — {rate}. Всё, что выше {limit}, — для десктоп-версии."
+ru.desktop = "Файл — {rate}. Всё, что выше {limit}, движок не принимает."
+en.web = "This file is {rate}. Above {limit} is for the desktop version."
+en.desktop = "This file is {rate}. The engine takes nothing above {limit}."

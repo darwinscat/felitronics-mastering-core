@@ -63,6 +63,8 @@ undefined  coff-debug  ^__imp__CrtDbgReport$                            the debu
 undefined  coff-debug  ^__imp__dtest$                                   the debug UCRT's out-of-line classification of a double (fpclassify), exact
 undefined  coff-debug  ^__imp_\?\?0_Lockit@std@@QEAA@H@Z$               std::_Lockit::_Lockit(int): the debug STL's lock around its iterator bookkeeping
 undefined  coff-debug  ^__imp_\?\?1_Lockit@std@@QEAA@XZ$                std::_Lockit::~_Lockit(): its release
+# --- the text (src/TextNumber.cpp) reads a typed number with std::from_chars
+undefined  wasm    ^__multi3$                       compiler-rt's 128-bit multiply, which libc++'s std::from_chars over a 64-bit integer calls on wasm32 to detect an overflow: integer arithmetic, no state
 
 # --- the sanitizer row: the instrumentation's runtime and the metadata it plants
 undefined  san     ^_*(asan|ubsan|lsan|sanitizer)_  ASan / UBSan / LSan runtime entry points

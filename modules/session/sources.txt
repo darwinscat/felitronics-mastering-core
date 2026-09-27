@@ -8,3 +8,6 @@ src/Config.cpp
 src/Rules.cpp
 src/Devices.cpp
 src/Commands.cpp
+src/TextNumber.cpp
+src/TextSchema.cpp
+src/Text.cpp
