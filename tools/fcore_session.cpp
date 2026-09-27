@@ -11,6 +11,9 @@
 //                                   felitronics-core <MAJOR.MINOR.PATCH>             (Session::coreVersion)
 //                                   fc_session_abi <N>                               (fc_session_abi_version)
 //   fcore_session run <script>    reads the script (`-` is stdin) into a fresh session and prints `done <commands>`.
+//   fcore_session table           who may do what, when: the command × state table and the session's own transitions
+//                                 (Commands.h, Table), as Markdown — the text docs/SESSION.md carries between its
+//                                 markers, which ctest holds byte for byte to this output.
 //   fcore_session config targets  the config the library was built with, one document at a time, spelled by
 //   fcore_session config engine   felitronics-toml's canonical writer (config::Config::text): the numbers of
 //                                 modules/session/config/*.toml without their comments, to open and read.
@@ -30,6 +33,7 @@
 
 #include "fc_session_abi.h"
 
+#include <felitronics/session/Commands.h>
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Session.h>
 
@@ -46,9 +50,102 @@ namespace
 {
 int usage (const char* argv0)
 {
-    std::fprintf (stderr, "usage: %s version\n       %s run <script|->\n       %s config targets|engine|version|sound-version\n",
-                  argv0, argv0, argv0);
+    std::fprintf (stderr, "usage: %s version\n       %s run <script|->\n       %s table\n"
+                          "       %s config targets|engine|version|sound-version\n",
+                  argv0, argv0, argv0, argv0);
     return 2;
+}
+
+// THE NAMES OF THE TABLE — the shell's words for the session's codes: the commands as the contract spells them, the
+// columns, the transitions and the rejections as Commands.h names them.
+const char* nameOf (felitronics::session::Command c)
+{
+    using felitronics::session::Command;
+    switch (c)
+    {
+        case Command::Load:        return "load";
+        case Command::SetTarget:   return "setTarget";
+        case Command::EditTarget:  return "editTarget";
+        case Command::EditDevice:  return "editDevice";
+        case Command::RevertEdits: return "revertEdits";
+        case Command::SetManual:   return "setManual";
+        case Command::Master:      return "master";
+        case Command::Cancel:      return "cancel";
+        case Command::Forget:      return "forget";
+    }
+    return "?";
+}
+
+const char* nameOf (felitronics::session::Event e)
+{
+    using felitronics::session::Event;
+    switch (e)
+    {
+        case Event::Measured1: return "the first measurement ends";
+        case Event::Measured2: return "the second measurement ends";
+        case Event::Mastered:  return "the master is done";
+    }
+    return "?";
+}
+
+const char* nameOf (felitronics::session::Rejection r)
+{
+    using felitronics::session::Rejection;
+    switch (r)
+    {
+        case Rejection::None:                     return "yes";
+        case Rejection::FloatingPointEnvironment: return "FloatingPointEnvironment";
+        case Rejection::NoSource:                 return "NoSource";
+        case Rejection::NotPlaced:                return "NotPlaced";
+        case Rejection::NotMeasured:              return "NotMeasured";
+        case Rejection::Busy:                     return "Busy";
+        case Rejection::NoJob:                    return "NoJob";
+        case Rejection::NoMaster:                 return "NoMaster";
+        case Rejection::ManualOff:                return "ManualOff";
+        case Rejection::UnknownTarget:            return "UnknownTarget";
+        case Rejection::NotOffered:               return "NotOffered";
+        case Rejection::UnknownJob:               return "UnknownJob";
+        case Rejection::UnknownMaster:            return "UnknownMaster";
+        case Rejection::NoFields:                 return "NoFields";
+        case Rejection::NotFinite:                return "NotFinite";
+        case Rejection::NotOneOf:                 return "NotOneOf";
+        case Rejection::OutOfTravel:              return "OutOfTravel";
+        case Rejection::OffStep:                  return "OffStep";
+        case Rejection::BadChannels:              return "BadChannels";
+        case Rejection::BadRate:                  return "BadRate";
+        case Rejection::NoAudio:                  return "NoAudio";
+        case Rejection::TooLong:                  return "TooLong";
+    }
+    return "?";
+}
+
+// The two tables as Markdown: a row per command (the cell is `yes` where it is taken, the rejection's name where not),
+// then a row per transition (`yes` where it happens, `no` where it does not). ASCII only: a Windows console would
+// read anything else in its own code page.
+void printHeader (const char* first)
+{
+    std::printf ("| %s | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 |\n"
+                 "|---|---|---|---|---|---|---|\n", first);
+}
+
+void printTable()
+{
+    using felitronics::session::Table;
+    printHeader ("command");
+    for (const auto& row : Table::commands)
+    {
+        std::printf ("| %s |", nameOf (row.command));
+        for (const auto cell : row.cell) std::printf (" %s |", nameOf (cell));
+        std::printf ("\n");
+    }
+    std::printf ("\n");
+    printHeader ("the session's own transition");
+    for (const auto& row : Table::events)
+    {
+        std::printf ("| %s |", nameOf (row.event));
+        for (const bool cell : row.cell) std::printf (" %s |", cell ? "yes" : "no");
+        std::printf ("\n");
+    }
 }
 
 // The whole script, or false with the reason on stderr.
@@ -118,6 +215,11 @@ int main (int argc, char** argv)
         // The script held no command, so nothing runs against the session: it is created, and destroyed.
         created.session.reset();
         std::printf ("done %ld\n", commands);
+        return 0;
+    }
+    if (argc == 2 && std::strcmp (argv[1], "table") == 0)
+    {
+        printTable();
         return 0;
     }
     if (argc == 3 && std::strcmp (argv[1], "config") == 0)
