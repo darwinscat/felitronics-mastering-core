@@ -39,11 +39,14 @@
 //     nearest multiple of 10^−precision, a value exactly halfway rounded away from zero. 0.125 → 0.13 and 2.5 → 3 are
 //     exact halves; 1.005 → 1.00 is not, because the double nearest 1.005 is 1.00499999999999989…
 //   * The sign follows the value, not its rounded digits: a negative value takes the minus (−0.04 at one digit is
-//     "−0.0"), a positive one takes the plus under Sign::Always, and a zero — either zero — takes neither.
+//     "−0.0"), a positive one takes the plus under Sign::Always, and a zero — either zero — takes neither. It is read
+//     from the double's bits, as the digits are computed in integers: no floating-point operation decides a rendering,
+//     so the calling thread's floating-point environment cannot change one.
 //   * Plural categories are CLDR's, selected on the number AS PRINTED: "1.0" is not "one" in English, "1" is. The
 //     formatter and the selector are one component.
 //   * A value that is not finite prints the language's absent sign ("—") alone: no sign, no bound, no unit.
-//   * Parsing (Text::parse) reads what a person typed with std::from_chars, never strtod: no locale reaches it.
+//   * Parsing (Text::parse) reads what a person typed with std::from_chars, never strtod: no locale reaches it. Its one
+//     division asks for IEEE-754's default environment first, as every call of the session that computes does.
 //
 // As Session.h: this header carries no function body. The rendering is compiled with the library's own flags
 // (docs/SESSION.md).
@@ -116,7 +119,8 @@ struct Arg
 
 // A fact: its id and its arguments, in the order src/TextFacts.h declares them for that id. A value: copying one
 // allocates nothing. A fact whose arguments do not match its declaration renders each mismatched placeholder as
-// `{name}`, visibly, rather than a guess.
+// `{name}`, visibly, rather than a guess — and renders its id when the mismatched argument is the one its plural or
+// select message chooses by, since then no variant can be chosen.
 struct Fact
 {
     static constexpr std::size_t kMaxArgs = 6;
@@ -143,7 +147,8 @@ struct Text
     [[nodiscard]] static std::string text (const Fact& fact, Lang lang);
 
     // THE DEMAND OF text(), before it is made (law 11d): the bytes it will request from the heap, at most — the result's
-    // length and its terminator, rounded up to the 16 bytes a standard library allocates a string's storage in.
+    // length and its terminator, rounded up to the 16 bytes a standard library allocates a string's storage in, and 64
+    // for what MSVC's STL asks beside them (the alignment of a block of 4 KiB or more; iterator debugging's proxy).
     [[nodiscard]] static std::uint64_t textBytes (const Fact& fact, Lang lang) noexcept;
 
     // The same rendering without the heap. size(): its length in bytes. write(): the bytes into `out`, and how many; a
@@ -156,12 +161,14 @@ struct Text
     [[nodiscard]] static Plural category (const Arg& number, Lang lang) noexcept;
 
     // WHAT A PERSON TYPED, read as a number: ASCII spaces around it ignored; an optional sign — "−" (U+2212), "-" or "+";
-    // decimal digits, with at most one decimal sign: the language's own, or "." (every keyboard has one). A grouping
-    // separator is refused rather than guessed ("1.234" is a thousand to a German reader, and nearly one to an English
-    // one). At least one digit, at most 9 after the sign, and the digits as one integer no larger than 2^53. The
-    // answer is that integer over 10^digits, one correctly rounded division: the double nearest the typed decimal, as a
-    // correctly rounded strtod would give — without strtod, which follows the process's locale. "−0" is −0.0. Anything
-    // else is nullopt.
+    // decimal digits, with at most one decimal sign: the language's own, or "." (every keyboard has one) — but not in a
+    // language whose grouping separator is ".". A grouping separator is refused rather than guessed ("1.234" is a
+    // thousand to a German reader, and nearly one to an English one), so a grouped number the table printed is never
+    // read back as another. At least one digit, at most 9 after the sign, and the digits as one integer no larger than
+    // 2^53. The answer is that integer over 10^digits, one correctly rounded division: the double nearest the typed
+    // decimal, as a correctly rounded strtod would give — without strtod, which follows the process's locale. "−0" is
+    // −0.0. Anything else is nullopt, and so is every input on a thread whose floating-point environment is not
+    // IEEE-754's default (Session::checkFloatingPointEnvironment), where the division would round otherwise.
     [[nodiscard]] static std::optional<double> parse (std::string_view typed, Lang lang) noexcept;
 
     // The language's code ("ru"), and the language of a code (nullopt for one that is not one of the twelve).

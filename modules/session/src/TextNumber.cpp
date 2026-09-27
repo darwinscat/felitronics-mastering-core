@@ -145,6 +145,16 @@ std::size_t decimal (Big& b, std::size_t minimum, std::array<char, Digits::kCapa
     return n;
 }
 
+// The bits of a double, through a volatile. Every test on them must stay an integer test: clang folded `(bits << 1) == 0`
+// back into `fcmp d0, #0.0` (measured, Apple clang 21, arm64), a floating-point comparison that a thread reading
+// subnormals as zero answers "zero" for −5e−324. A volatile read is opaque to the optimiser, as core's pinned roundings
+// are.
+[[nodiscard]] std::uint64_t bitsOf (double value) noexcept
+{
+    volatile std::uint64_t bits = std::bit_cast<std::uint64_t> (value);
+    return bits;
+}
+
 // The last `k` (≤ 6) integer digits as a number: i % 10^k.
 [[nodiscard]] std::uint32_t lastDigits (std::string_view integer, std::size_t k) noexcept
 {
@@ -167,7 +177,7 @@ std::string_view Digits::fraction() const noexcept
 
 bool gridDigits (double value, unsigned precision, Digits& out) noexcept
 {
-    const auto bits = std::bit_cast<std::uint64_t> (value);
+    const std::uint64_t bits = bitsOf (value);
     const auto exponent = (unsigned) ((bits >> 52) & 0x7FFu);
     if (exponent == 0x7FFu || precision > kMaxPrecision) return false;
     const std::uint64_t fraction = bits & ((std::uint64_t (1) << 52) - 1);
@@ -188,8 +198,15 @@ bool gridDigits (double value, unsigned precision, Digits& out) noexcept
     const std::size_t count = decimal (n, precision + 1, out.buffer);
     out.integerDigits = count - precision;
     out.fractionDigits = precision;
-    out.negative = value < 0.0;
+    out.negative = (bits >> 63) != 0 && (bits & ~(std::uint64_t (1) << 63)) != 0;
     return true;
+}
+
+int signOf (double value) noexcept
+{
+    const std::uint64_t bits = bitsOf (value);
+    if ((bits & ~(std::uint64_t (1) << 63)) == 0) return 0;
+    return (bits >> 63) != 0 ? -1 : 1;
 }
 
 void integerDigits (std::int64_t n, Digits& out) noexcept
@@ -246,8 +263,9 @@ Plural pluralOf (Lang lang, std::string_view i, std::string_view f) noexcept
     return Plural::Other;
 }
 
-std::optional<double> parseTyped (std::string_view typed, std::string_view decimalSign) noexcept
+std::optional<double> parseTyped (std::string_view typed, std::string_view decimalSign, std::string_view groupSeparator) noexcept
 {
+    const bool pointIsDecimal = groupSeparator != ".";   // "1.234" is a thousand where "." groups: refused, not guessed
     constexpr std::string_view kMinus = "\xE2\x88\x92";   // U+2212
     while (! typed.empty() && typed.front() == ' ') typed.remove_prefix (1);
     while (! typed.empty() && typed.back() == ' ') typed.remove_suffix (1);
@@ -274,7 +292,7 @@ std::optional<double> parseTyped (std::string_view typed, std::string_view decim
             continue;
         }
         const std::size_t sign = ! decimalSign.empty() && typed.starts_with (decimalSign) ? decimalSign.size()
-                               : c == '.' ? 1 : 0;
+                               : c == '.' && pointIsDecimal ? 1 : 0;
         if (sign == 0 || separated) return std::nullopt;
         separated = true;
         typed.remove_prefix (sign);
@@ -288,7 +306,8 @@ std::optional<double> parseTyped (std::string_view typed, std::string_view decim
         if (read.ec != decltype (read.ec) {} || read.ptr != digits.data() + count) return std::nullopt;
     }
     if (mantissa > (std::uint64_t (1) << 53)) return std::nullopt;
-    // Both operands are exact binary64 values, so the one IEEE division rounds the exact quotient correctly.
+    // Both operands are exact binary64 values, so the one IEEE division rounds the exact quotient correctly — under the
+    // default floating-point environment, which Text::parse asks for before it calls this.
     const double magnitude = (double) mantissa / (double) kPow10[scale];
     return negative ? -magnitude : magnitude;
 }

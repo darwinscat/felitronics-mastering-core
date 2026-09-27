@@ -95,10 +95,15 @@ bool braced (std::string_view s) noexcept
 // Which arguments a language's texts place.
 using Placed = std::array<bool, Fact::kMaxArgs>;
 
+// One text — a plain message, or one variant of a plural or select: its placeholders scanned, each naming an argument,
+// and every argument placed but the one a select chose by (`exempt`), whose variant already says it. A variant is read
+// on its own: ru's "one" is also 21 and 101, so a variant without the number would print "one pass" for 21. The
+// arguments it places are added to `placed`, the language's set.
 void scanMessage (Checker& c, const FactShape& shape, const std::string& text, const toml::Position& at,
-                  const std::string& path, Placed& placed)
+                  const std::string& path, int exempt, Placed& placed)
 {
     if (text.empty()) { c.report (Fault::Refused, at, path, "Empty"); return; }
+    Placed here {};
     for (std::size_t i = 0; i < text.size();)
     {
         const Piece p = pieceAt (text, i);
@@ -107,9 +112,15 @@ void scanMessage (Checker& c, const FactShape& shape, const std::string& text, c
         {
             const int a = argIndex (shape, p.text);
             if (a < 0) c.report (Fault::Refused, at, path + ".{" + std::string (p.text) + "}", "StrayPlaceholder");
-            else placed[(std::size_t) a] = true;
+            else here[(std::size_t) a] = true;
         }
         i += length (p);
+    }
+    for (std::size_t a = 0; a < shape.argCount; ++a)
+    {
+        if (! here[a] && (int) a != exempt)
+            c.report (Fault::Refused, at, path + ".{" + std::string (shape.args[a].name) + "}", "LostPlaceholder");
+        placed[a] = placed[a] || here[a];
     }
 }
 
@@ -186,19 +197,15 @@ void checkMessage (Checker& c, const FactShape& shape, const toml::Table& messag
                 const std::string* s = stringOf (&e.value);
                 if (s == nullptr && selector < 0) c.report (Fault::WrongType, e.value.position, join (langPath, e.key));
                 if (s == nullptr || (s->empty() && selector >= 0)) continue;
-                scanMessage (c, shape, *s, e.value.position, join (langPath, e.key), placed);
+                scanMessage (c, shape, *s, e.value.position, join (langPath, e.key), isSelect ? selector : -1, placed);
             }
         }
         else
         {
             const std::string* s = stringOf (v);
             if (s == nullptr) { c.report (Fault::WrongType, v->position, langPath); continue; }
-            scanMessage (c, shape, *s, v->position, langPath, placed);
+            scanMessage (c, shape, *s, v->position, langPath, -1, placed);
         }
-        // Every argument placed — but the one a select chose on, which its variant already says.
-        for (std::size_t a = 0; a < shape.argCount; ++a)
-            if (! placed[a] && ! (isSelect && (int) a == selector))
-                c.report (Fault::Refused, v->position, langPath + ".{" + std::string (shape.args[a].name) + "}", "LostPlaceholder");
         sets.emplace_back (lang, placed);
     }
     // The same placeholders in every language: repeated or reordered freely, never another set.
@@ -292,11 +299,14 @@ void checkCatalog (Checker& c, const toml::Table& root)
 
 constexpr std::array<std::string_view, 7> kSigns = { "decimal", "group", "minus", "plus", "atLeast", "atMost", "absent" };
 
-bool separatorShaped (std::string_view s) noexcept
+// A decimal sign or a grouping separator: no digit, and no sign — neither ASCII's nor the row's own minus and plus (the
+// Unicode minus is a sign the renderer prints, and the parser reads).
+bool separatorShaped (std::string_view s, const std::string* minus, const std::string* plus) noexcept
 {
     for (const char ch : s)
         if ((ch >= '0' && ch <= '9') || ch == '+' || ch == '-') return false;
-    return true;
+    if (minus != nullptr && s.find (*minus) != std::string_view::npos) return false;
+    return plus == nullptr || s.find (*plus) == std::string_view::npos;
 }
 
 void checkNumbers (Checker& c, const toml::Table& row, const std::string& path)
@@ -304,7 +314,7 @@ void checkNumbers (Checker& c, const toml::Table& row, const std::string& path)
     std::array<const std::string*, kSigns.size()> sign {};
     for (std::size_t i = 0; i < kSigns.size(); ++i) sign[i] = requireString (c, row, kSigns[i], path);
     for (std::size_t i = 0; i < 2; ++i)                  // decimal, group
-        if (sign[i] != nullptr && ! separatorShaped (*sign[i]))
+        if (sign[i] != nullptr && ! separatorShaped (*sign[i], sign[2], sign[3]))
             c.report (Fault::Refused, row.find (kSigns[i])->position, join (path, kSigns[i]), "NotASeparator");
     if (sign[0] != nullptr && sign[1] != nullptr && *sign[0] == *sign[1])
         c.report (Fault::Refused, row.find ("group")->position, join (path, "group"), "DecimalIsGroup");
