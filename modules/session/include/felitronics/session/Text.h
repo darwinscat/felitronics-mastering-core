@@ -84,8 +84,8 @@ enum class Plural : std::uint8_t { Zero, One, Two, Few, Many, Other };
 // has a range of its own:
 //     1 –  99   readings and the landing
 //   100 – 199   a command's rejection: 100 + its Rejection code (Commands.h), one fact per code
-//   200 – 299   the phases of the work          (reserved for the session's progress)
-//   300 – 399   the session's errors            (reserved)
+//   200 – 299   the phases of the work
+//   300 – 399   the session's errors
 // The arguments each fact takes, by name and kind, are src/TextFacts.h's, and the build holds the catalog to them.
 enum class FactId : std::uint16_t
 {
@@ -120,6 +120,20 @@ enum class FactId : std::uint16_t
     RejectedNoAudio = 120,
     RejectedTooLong = 121,
     RejectedNoJobId = 122,
+    RejectedInvalidUtf8 = 123,
+
+    Measurement1 = 200,
+    Measurement2 = 201,
+    MasterPass = 202,          // {pass}, without a pass budget
+    MasterReady = 203,
+    Cancelled = 204,
+
+    SessionTrap = 300,
+    SessionContract = 301,
+    SessionRefusal = 302,
+    SessionMemory = 303,
+    SessionPoisoned = 304,
+    SessionStale = 305,
 };
 
 // THE TERMS — words an argument of kind Term names: one value of a group of the catalog's [terms]. Printed as the

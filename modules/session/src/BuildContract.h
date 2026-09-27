@@ -19,4 +19,8 @@ struct BuildProbes
     bool dropsSignedZeros = false;      // a no-signed-zeros licence did
 };
 [[nodiscard]] BuildProbes buildProbes() noexcept;
+// Debug-only bounds trap, compiled under the library flags; no console or assertion handler.
+void debugBound (bool within) noexcept;
+// A snapshot allocation outside size_t is a contract failure in every configuration.
+[[noreturn]] void storageOverflow() noexcept;
 } // namespace felitronics::session::detail

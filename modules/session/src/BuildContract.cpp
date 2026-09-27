@@ -10,8 +10,36 @@
 #include "BuildContract.h"
 #include "FpProbes.h"
 
+#if defined (_MSC_VER)
+extern "C" void __debugbreak();
+#endif
+
 namespace felitronics::session::detail
 {
+
+[[noreturn]] void storageOverflow() noexcept
+{
+#if defined (_MSC_VER)
+    __debugbreak();
+    __assume (false);
+#else
+    __builtin_trap();
+#endif
+}
+
+void debugBound ([[maybe_unused]] bool within) noexcept
+{
+#if ! defined (NDEBUG)
+    if (! within)
+    {
+#if defined (_MSC_VER)
+        __debugbreak();
+#else
+        __builtin_trap();
+#endif
+    }
+#endif
+}
 
 BuildProbes buildProbes() noexcept
 {

@@ -116,6 +116,7 @@ const char* nameOf (felitronics::session::Rejection r)
         case Rejection::NoAudio:                  return "NoAudio";
         case Rejection::TooLong:                  return "TooLong";
         case Rejection::NoJobId:                  return "NoJobId";
+        case Rejection::InvalidUtf8:              return "InvalidUtf8";
     }
     return "?";
 }

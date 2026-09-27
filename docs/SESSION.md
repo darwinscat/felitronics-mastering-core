@@ -48,8 +48,8 @@ The laws are felitronics-core's (`docs/DSP-ARCHITECTURE.md` §2), numbered as th
 | **8a**, **11a** the sample clock | **no** | the session has no stream of samples and no clock |
 | **9** no `long double` | yes | core's long-double lint reads every `modules/*/include` and `modules/*/src`, this module's included, and the wasm tier's artifact gate reads every emitted object |
 | **10** FP contraction is stated | yes — **as `off`** | the target's own flags in one `SHELL:` group, the compile line read back (this build's and a consumer's), the hostile-flags tests, the library's probes asked from a contracting caller, and the source lint's pragma and attribute rules. Core states `on` for its tree; the session's numbers are compared across rows, native and wasm, and baseline wasm has no fused multiply-add, so a contracting native build would disagree with the module. The library's flags reach its own objects only: a program that links it compiles **every** translation unit with the same FP flags (below, "What the flags do not reach"). The sign and payload of a NaN, and the floating-point exception masks and flags, are outside every check here, as core's law 10 leaves them |
-| **11**, **11b** a request that cannot be honoured is refused whole; checks in a fixed order | yes | `create()` checks the floating-point environment and the config it reads, then allocates: a refused create requested nothing (`felitronics_session_tests`). Every command runs the checks `Commands.h` declares, in their order — the thread's floating-point environment, then the table — before it touches anything, and a rejected one changed nothing — the revision included. A `load` runs its checks, then disarms, then writes (check → disarm → write), so a rejected load, too, changed nothing: `felitronics_session_state_tests` compares the whole session before and after every rejection it produces, produces every rejection code, and holds the order with requests wrong in several ways. The C boundary's checks run in its header's order and a refused call writes nothing and allocates nothing (`felitronics_session_abi_tests`). `fcore_session` reads and checks a whole script before it creates a session |
-| **11d** memory is declared before the work | yes | `Session::createBytes()` is the demand of `create()`, counted by the expression that sizes the request, and `Session::check()` gives the demand of every command before it runs — computed by the same function `apply()` runs first; the declared-budget harness (`modules/session/tests/DeclaredBudget.h`, on core's one allocation counter) holds `create()` and every command to *declared ≥ requested* (exactly equal, where the request is one exact allocation), holds `check()`, every rejection and every transition to nothing requested, and is itself shown to fail on a sample that under-declares. The demand is checked in C++; the draft C ABI does not forward it. The C boundary adds nothing to it (its table is static) and keeps the poison |
+| **11**, **11b** a request that cannot be honoured is refused whole; checks in a fixed order | yes | `create()` checks the floating-point environment and the config it reads, then allocates: a refused create requested nothing (`felitronics_session_tests`). Every command runs the checks `Commands.h` declares, in their order — the thread's floating-point environment, then the table — before changing session state. A rejection publishes its event and advances `seq`; the session’s state and revision do not change. A `load` runs its checks, then disarms, then writes (check → disarm → write), so a rejected load, too, leaves state and revision unchanged while publishing its rejection: `felitronics_session_state_tests` compares the whole session before and after every rejection it produces, produces every rejection code, and holds the order with requests wrong in several ways. The C boundary's checks run in its header's order and a refused call writes nothing and allocates nothing (`felitronics_session_abi_tests`). `fcore_session` reads and checks a whole script before it creates a session |
+| **11d** memory is declared before the work | yes | `Session::createBytes()` is the demand of `create()`, counted by the expression that sizes the request, and `Session::check()` gives the demand of every command before it runs — computed by the same function `apply()` runs first; the declared-budget harness (`modules/session/tests/DeclaredBudget.h`, on core's one allocation counter) holds `create()` and every command to *declared ≥ requested* (exactly equal, where the request is one exact allocation), holds `check()`, every rejection and every transition to nothing requested, and is itself shown to fail on a sample that under-declares. The event suite also holds `stepBytes()`, `snapshotBytes()`, snapshot copy, and codec size queries and work to their declared demands (below). The demand is checked in C++; the draft C ABI does not forward it. The C boundary adds nothing to it (its table is static) and keeps the poison |
 
 Not listed, and why: **3** (float in the hot path) — there is no hot path; **11c** (a pause is silence) — there are no
 clock-only calls; **11e** (a restart adopts an accepted publication) — the session publishes and adopts nothing.
@@ -73,7 +73,7 @@ linker keeps of the header-inline code it shares with the program (below). The f
 de-duplication cannot remove a member of it: a parent that states `add_compile_options(-ffp-contract=off)` first used to
 make CMake drop the library's own later `-ffp-contract=off`, leaving core's `-ffp-contract=on` last on the line.
 
-- gcc, clang, emscripten: `modules/session/build-flags.txt` — `-fno-fast-math -ffp-contract=off -fno-exceptions -fno-rtti`,
+- gcc, clang, emscripten: `modules/session/build-flags.txt` — `-fno-fast-math -ffp-contract=off -fno-exceptions -fno-rtti -Werror=switch`,
   in that order: what `-fno-fast-math` does to an `-ffp-contract=` before it differs between compilers (Apple clang 21
   keeps an earlier `fast`, Apple clang 14 resets it to `on`), so the contraction switch is stated after it. `tools/wasm/build.sh` reads the
   same file, so the library and the wasm module are compiled with one definition of the flags.
@@ -211,12 +211,11 @@ every stage a device writes is named, the limiter's second release included.
 ## The states and the commands
 
 `<felitronics/session/Commands.h>` and `<felitronics/session/Project.h>`. A session is in one of four states — **Empty**
-(nothing loaded), **Loaded** (a source, its first measurement running, the devices not placed), **Measured1** (the first
+(nothing loaded), **Loaded** (a source, its first measurement not completed, the devices not placed), **Measured1** (the first
 measurement ended: the devices are placed, a master can be made), **Measured2** (the second ended too) — and a master
 being made is an overlay on the two measured ones. A shell asks by a `Request`, one struct per command with the shell's
 own id for it: `load`, `setTarget`, `editTarget`, `editDevice`, `revertEdits`, `setManual`, `master`, `cancel`, `forget`.
-`Session::apply()` answers it whole — accepted, with the revision it made, or rejected with a `Rejection` code, having
-changed nothing. Every accepted command and every transition moves the revision by one; a rejection leaves it.
+`Session::apply()` answers it whole — accepted, with the revision it made, or rejected with a `Rejection` code and no state change. A rejection publishes an event and advances `seq`. Every accepted command and every transition moves the revision by one; a rejection leaves it.
 
 **Who may do what, when, is one table in code** (`Table` in `Commands.h`), and every command consults it right after
 the floating-point entry check, before anything else: in each column, `yes` where the command is taken, or the rejection it gets. Mastering1 and Mastering2
@@ -235,7 +234,7 @@ from the code, and ctest holds the text between the markers below to that output
 | revertEdits | NoSource | NotPlaced | yes | yes | yes | yes |
 | setManual | yes | yes | yes | yes | yes | yes |
 | master | NoSource | NotMeasured | yes | yes | Busy | Busy |
-| cancel | NoJob | NoJob | NoJob | NoJob | yes | yes |
+| cancel | NoJob | yes | yes | NoJob | yes | yes |
 | forget | NoSource | NoMaster | yes | yes | yes | yes |
 
 | the session's own transition | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 |
@@ -248,11 +247,11 @@ from the code, and ctest holds the text between the markers below to that output
 **The checks run in one declared order, the same for every command**, and the first that fails is the answer:
 1. the calling thread's floating-point environment; 2. the table; 3. the manual mode, for the device panel's commands
 (`editDevice`, `revertEdits`); 4. what the command names — a target, a device offered for this target and source, an
-id left for a new job, the master being made, a master kept; 5. the fields — at least one touched, then each touched one in the order its struct
+id left for a new job (`load` and `master`), a load's valid UTF-8 name, the active job, a master kept; 5. the fields — at least one touched, then each touched one in the order its struct
 writes them: finite, one of its values, on its travel, on its step; 6. a load's audio — one or two channels, a rate of
 at least felitronics-core's 8000 Hz, frames and data, a size the machine can address, every sample finite. A rejection
 on a field names it by its place in its struct. `Session::check()` runs exactly these and says what the command would
-answer; `apply()` runs `check()` first and does the work only when it passed, so a rejected command has changed nothing
+answer; `apply()` runs `check()` first and does the work only when it passed, so a rejected command changes no state
 by construction — `check()` is `const`.
 
 **The project** (`Project.h`) is the target — a row of `[targets]` — with a person's edits of its two numbers (loudness
@@ -292,8 +291,8 @@ carries one, the dither where the target's bit depth is one it serves, mono bass
   FNV-1a of its rate, channels, frames and every sample's bits). The target and its edited numbers stay.
 - **`master`** captures the recipe — the project as it is, the source's hash, the config's sound version — and starts a
   job, numbered on from the last for the session's whole life, a load included: an id is never 0 and never issued twice,
-  and once the last is issued a master is rejected (`NoJobId`); the project may change meanwhile, and the master renders its recipe. When it is done the session keeps it under
-  its job's id; `cancel(job)` ends the overlay, `forget(master)` lets a kept master go.
+  and once the last is issued a load or master is rejected (`NoJobId`); the project may change meanwhile, and the master renders its recipe. When it is done the session keeps it under
+  its job's id; `cancel(job)` stops the named measurement or master, `forget(master)` lets a kept master go.
 
 **Memory.** `check()` says, before the work, what a command will ask the heap for, by the expressions that size its
 requests: a load its samples and its name, a master room for one more master kept (so that the render's end asks for
@@ -385,7 +384,7 @@ main thread.
   its caller keeps alive while it is rendered.
 
 The facts' ids are stable and fall in ranges (`Text.h`): 1–99 readings and the landing, 100–199 a command's rejection,
-200–299 the phases of the work and 300–399 the session's errors, reserved. Adding a fact is three edits: its id in
+200–299 the phases of the work and 300–399 the session's errors. Adding a fact is three edits: its id in
 `Text.h`, in its range, its row in `src/TextFacts.h`, in id order, and its message in every declared language — the
 build is red until the three agree.
 
@@ -405,6 +404,94 @@ with no such control (the wasm tier) says the check is not reachable there.
 Outside the check: the **floating-point exception masks and flags** (a host that unmasks a trap gets its trap), and the
 **sign and payload of a NaN**, which differ between rows and which core's law 10 leaves unspecified — nothing in the
 session compares or prints one.
+
+## Work units, event deltas, and snapshots
+
+`Session::step(budget)` runs deterministic stub work. The budget counts **work units**, never milliseconds. A call
+consumes at most `min(budget, 16)` units, reports the number consumed, and returns `More` while either job remains or
+`Done` when neither does. Zero units poll without progress. The shell measures its own speed and converts time to
+units. The library has no clock. Measurement phase one and phase two each take five units; a master takes the config's
+`progress.master.expectedPasses` pass units and one remeasurement unit. These establish stub facts and recipes, not
+measured audio or rendered PCM. A master takes priority over phase two, which resumes when the master finishes.
+
+Every completed unit publishes a phase. Measurement progress is the cumulative weight divided by the sum of
+`progress.analysis.weights`, in this order: loudness, report, lowEnd120, forensics, stereo, lowEndSweep, stereoBursts,
+crest, hum, tempo. Master passes use `passWeight` against `expectedPasses * passWeight + measureWeight`; remeasurement
+finishes at one. `weightsVersion` is the config's complete version, which includes progress weights. Fractions are
+estimates; the interface permits them to move backwards. The human pass label uses only `pass`; `totalPasses` belongs
+to the diagnostic journal. Completed and total work units are deterministic inputs for a shell's time estimate.
+
+`events()` views the latest `apply()` or `step()` batch. The caller copies or consumes it before the next such call;
+queries leave it intact. Each `Notification` is an independent value with `seq`, `jobId`, `kind`, and the payload
+selected by kind. Sequence numbers count publications across loads and cancellations. No callback runs inside the
+session. Event facts use `OwnedFact`: `assign(text::Fact)` copies up to 256 user-text bytes without allocation and
+refuses excess whole; `view()` returns a `text::Fact` whose user-text views belong to that event. Copying or moving a
+notification preserves its own bytes. Render with `text::Text::text(event.payload.fact.view(), lang)`. Rejected events
+remain `{commandId, code}`: render their answer and original request with `text::Text::rejected(...)`, fact `100 + code`.
+A step with no work returns `Done` without a publication or a `seq` change, even under a hostile FP environment.
+Restoring the FP environment allows a refused job to resume. The fixed batch has room for the maximum three events per unit, declared inside `createBytes()`.
+
+| kind | payload and publication |
+|---|---|
+| phase | phase name, weighted fraction, weights version, pass and work counters; every completed unit |
+| fact | `text::FactId` and `text::Arg` arguments; measurement completion, each master pass, master readiness, cancellation |
+| reading | owned momentary and short-term points and runs, with positions and lengths; shape only, the stub emits none |
+| done | the completed master's id, immediately after its recipe is kept |
+| rejected | command id and rejection code; the project, revision and work remain unchanged; `seq` advances |
+| error | trap/contract/refusal/memory/poisoned/stale code, fact and arguments, byte demand and none/replay/continue recovery; an FP refusal publishes `Error{Refusal, Continue}` and leaves the job resumable |
+
+An accepted load issues a measurement job id, shared by its two phases. Masters and loads use one monotonic id
+sequence; the load answer returns its id and `measurementJob()` exposes the active measurement. `job()` retains its
+meaning as the active master. Cancellation checks the named id after the state table. Cancelling phase one takes
+`Loaded` to `Empty` and drops the source; the shell loads the same audio again to restart. Cancelling phase two leaves
+`Measured1`; cancelling a master leaves the measured state and ends its overlay. The cancelled job's progress resets
+in every case. After phase-two cancellation, `cancel` in `Measured1` returns `NoJob` if no master runs. A first-phase
+result still suffices for a master. A failed Driver transition publishes `Error{Contract, None}` and drops that job.
+Every internal completion checks its captured job id, and measurement completions also check the captured source hash.
+A stale completion changes nothing, including when the same samples are loaded again or a newer master runs.
+
+`Snapshot` is a move-only immutable owned value. Its const view includes state, revision, both project layers, target
+name, source metadata and identity, both jobs, the captured master recipe, kept masters, progress and reading arrays.
+A retained snapshot survives later commands and destruction of its session. Calls, including snapshot acquisition,
+remain on one thread at a time; a completed value can be handed to a shell independently. Demand sums widen each
+term to `uint64_t` before addition. Copy traps before allocating, in every configuration, if combined text or
+reading-point storage exceeds `size_t`; it never allocates a wrapped size.
+
+`tools/session-codec-schema.json` is the one hand-edited codec description. `Codec` exchanges its named-field JSON.
+Object order is immaterial; missing,
+duplicate, unknown and ill-typed fields are refused. Rows are arrays. Optional edits use null; uint64 identities use
+decimal strings so JavaScript loses no bits; byte counts use whole double values strictly below 2^53. Non-finite doubles
+use the explicit strings `"-Infinity"`, `"Infinity"`, `"NaN"`. Finite doubles use exact decimal numbers, with bounded
+integer conversion and one ties-to-even rounding on decode; signed zero survives and NaN payloads are intentionally
+not represented. Numeric tokens are bounded to 1100 characters. This is a snapshot exchange codec, not a project file.
+
+The description generates the compiled field walk (`src/CodecSchema.h`) and `snapshot.d.ts` in the build's
+`modules/session/` directory. Every build verifies the checked-in walk against the description; the declaration test
+compares the generated TypeScript with that same description. Generated structured bindings hold every record's arity,
+field assertions hold its types, and each described enum value has its numeric assertion; an undescribed enum fails
+compilation. An exhaustive generated switch with no default catches appended members: the session always compiles
+with `-Werror=switch` on gcc/clang/emscripten and `/we4062` on MSVC, including consumer builds without tests. Offline Node
+checks actual encoded fixtures against `snapshot.d.ts`, covering every wire mapping, optional alternative and record.
+Compile controls add a field, reorder an enum, append to each described enum and request an undescribed enum; all must
+fail. `tools/wasm/build.sh` also emits `snapshot.d.ts` beside the modules. Regenerate the field walk with
+`cmake -DUPDATE=ON -P tools/session-codec.cmake`.
+
+| operation | demand before work | evidence |
+|---|---|---|
+| step, event/query access | `stepBytes() == 0`; fixed batch included in create | event suite allocation counter |
+| snapshot | `snapshotBytes() = Snapshot::storageFor(buildView())`; the same view passed to `Snapshot::copy` | event suite, retained value after session destruction |
+| snapshot copy | `Snapshot::storageFor(view)`; exact text, masters and rows | event suite, all array types |
+| encode | `Codec::encodedBytes(view)` caller buffer; zero heap demand | exact-size and short-buffer tests |
+| decode | `Codec::decodedBytes(json)`; complete validation before exact arrays | round trip, invalid-input refusal, allocation counter |
+
+`felitronics_session_event_tests` holds every command-table cell between actual pump calls, immediate fact publication,
+cancellation and continued use, stale completions, and complete event fingerprints across runs and work slicing. The
+fixture is the suite's four synthetic samples at 48 kHz (source hash `0ba6b096abb7c779`) and the embedded config; regenerate its fingerprints by running
+the suite and reviewing changes against those inputs. The pinned event hashes (`e2d3b1997699c4ac`, `74d299b0b8b47839`) include all active event payload fields and
+the weights version. The same executable and fixtures run native and wasm. The codec suite covers retained snapshots,
+both project layers, all reading arrays, silence, gaps, finite exponent extremes, signed zero, and deterministic
+binary64 samples. The object gate admits Apple's compiler-generated `__chkstk_darwin` stack probe for the bounded
+numeric scratch; no clock, locale or floating parser is admitted.
 
 ## What the flags do not reach — header-inline code
 
