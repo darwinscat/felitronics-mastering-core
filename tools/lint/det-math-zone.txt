@@ -75,6 +75,7 @@ zone   modules/session/src/Config.cpp                         the config compile
 zone   modules/session/src/ConfigBind.h                       the schema's seam, shared with the build's gate
 zone   modules/session/src/ConfigSchema.cpp                   the config, read by schema
 zone   modules/session/src/ConfigVersion.h                    the config's versions, one walk over the embedded and the parsed data
+zone   modules/session/src/Grid.h                             a knob's grid, exactly: the one step rule of the config and the commands
 # The C boundary and the native CLI: the two roads into the library; what either includes is rule 4's net. The boundary
 # is compiled with the session's flags and scanned by the session-laws lint, which holds it in the zone as the module is.
 entry  tools/wasm/fc_session.cpp  the session ABI, the translation unit of the fcsession module

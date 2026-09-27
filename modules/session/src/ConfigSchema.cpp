@@ -22,6 +22,7 @@
 
 #include "ConfigBind.h"
 #include "ConfigVersion.h"
+#include "Grid.h"
 
 #include <felitronics/analysis/BandCrest.h>
 #include <felitronics/analysis/LowEnd.h>
@@ -33,7 +34,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -114,32 +114,10 @@ std::string pathOf (const Reader& in, std::string_view key)
     return path;
 }
 
-// m · 10^by, or false when it leaves int64.
-bool scaleUp (std::int64_t m, int by, std::int64_t& out)
-{
-    constexpr std::int64_t limit = std::numeric_limits<std::int64_t>::max() / 10;
-    for (; by > 0; --by)
-    {
-        if (m > limit || m < -limit) return false;
-        m *= 10;
-    }
-    out = m;
-    return true;
-}
-
-// Is x on the grid that starts at `from` with `step` — is (x − from) a whole number of steps, exactly? All three are
-// decimals of the documents, brought to one scale: no floating point.
-bool onGrid (const toml::Decimal& x, const toml::Decimal& from, const toml::Decimal& step)
-{
-    const int scale = std::max ({ int (x.scale), int (from.scale), int (step.scale) });
-    std::int64_t a = 0, f = 0, b = 0;
-    if (! scaleUp (x.mantissa, scale - int (x.scale), a) || ! scaleUp (from.mantissa, scale - int (from.scale), f)
-        || ! scaleUp (step.mantissa, scale - int (step.scale), b))
-        return false;
-    constexpr std::int64_t half = std::numeric_limits<std::int64_t>::max() / 2;
-    if (a > half || a < -half || f > half || f < -half) return false;
-    return b != 0 && (a - f) % b == 0;
-}
+// Is x on the grid that starts at `from` with `step` — is (x − from) a whole number of steps, exactly, on the decimals
+// as written? The one rule for a knob's grid, which the session's commands hold a person's edits to as well
+// (src/Grid.h).
+using felitronics::session::detail::onGrid;
 
 // The decimal a key holds, and the decimal an array's item holds — the document's own digits, never a double's.
 std::optional<toml::Decimal> decimalAt (const Reader& in, std::string_view key)
