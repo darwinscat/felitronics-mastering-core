@@ -65,3 +65,11 @@ two uint32 halves, the out-pointer checked before anything is written, nothing a
 config — 43.8 KB of wasm, 13.4 KB brotli, from 2.9 / 1.4 — and `tools/wasm/session-check.mjs --config-version` requires
 its version to be the native CLI's. `tools/wasm/build.sh` embeds and gates the config with a felitronics-toml checkout:
 `FELITRONICS_TOML_DIR`, or the sibling `../felitronics-toml`.
+
+### build — felitronics-core v0.55.0 is the pin
+
+The session's translation units include felitronics-toml's headers, and every one of them is a det-math entry point,
+so the lint must resolve those headers to audit them: felitronics-core v0.55.0's `check-det-math.mjs --satellite` takes
+`--include-root <dir>`, and CI passes it felitronics-toml's include directory from the build's cache
+(`FELITRONICS_MASTERING_TOML_SOURCE_DIR`) on every satellite run. The pinned `FELITRONICS_MASTERING_FCORE_TAG` moves
+from v0.53.0 to v0.55.0, and the configure-time messages and `tools/wasm/build.sh` name v0.55.0 as the minimum.

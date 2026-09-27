@@ -44,7 +44,7 @@ if(PROJECT_IS_TOP_LEVEL)
     include(FetchContent)
     set(FELITRONICS_MASTERING_FCORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-core" CACHE PATH
         "Local felitronics-core checkout (used if present); else the pinned release is fetched")
-    set(FELITRONICS_MASTERING_FCORE_TAG "v0.53.0" CACHE STRING
+    set(FELITRONICS_MASTERING_FCORE_TAG "v0.55.0" CACHE STRING
         "felitronics-core git tag to fetch when no local checkout is present")
     if(FELITRONICS_MASTERING_FCORE_DIR AND EXISTS "${FELITRONICS_MASTERING_FCORE_DIR}/CMakeLists.txt")
         message(STATUS "felitronics-core: local checkout — ${FELITRONICS_MASTERING_FCORE_DIR}")
@@ -88,7 +88,7 @@ endif()
 if(NOT TARGET felitronics::core OR NOT TARGET felitronics::test_support
    OR NOT EXISTS "${felitronics_core_SOURCE_DIR}/cmake/FelitronicsPolicy.cmake")
     message(FATAL_ERROR
-        "felitronics-mastering-core needs felitronics-core v0.53.0 or later, made available BEFORE this "
+        "felitronics-mastering-core needs felitronics-core v0.55.0 or later, made available BEFORE this "
         "repository (FetchContent_MakeAvailable(felitronics_core) first), so ONE core is resolved by the "
         "product that owns the graph.")
 endif()
@@ -99,7 +99,7 @@ if(TARGET felitronics::mastering OR TARGET felitronics::analysis_offline)
     message(FATAL_ERROR
         "this felitronics-core (${felitronics_core_SOURCE_DIR}) still defines felitronics::mastering / "
         "felitronics::analysis_offline, which live here now: felitronics-mastering-core needs felitronics-core "
-        "v0.53.0 or later. Point FELITRONICS_MASTERING_FCORE_DIR at such a checkout, or remove the sibling "
+        "v0.55.0 or later. Point FELITRONICS_MASTERING_FCORE_DIR at such a checkout, or remove the sibling "
         "checkout to fetch FELITRONICS_MASTERING_FCORE_TAG.")
 endif()
 
