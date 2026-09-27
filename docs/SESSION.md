@@ -152,7 +152,7 @@ every stage a device writes is named, the limiter's second release included.
   ramp whose ends would divide by zero, a series that shrinks, a value off its knob's grid (a whole number of steps from
   where the travel starts, checked exactly on the decimals as written, across the two documents too) — a range another
   key states included (a target's loudness on the edit travel, its crossover on the knob's); the checks across keys (a
-  name that is no target, a name given twice, an EQ band two devices share, "no DC" apart from the dcOffset finding's
+  name that is no target, a target under an empty key, a name given twice, an EQ band two devices share, "no DC" apart from the dcOffset finding's
   threshold, a ramp law outside its domain, the limiter switched off, a default written out); and every key nobody read
   reported as unknown. What an analyzer admits is the analyzer's to say: the blocks the config feeds one — the low end
   (both runs), the crest, the sibilance-band bursts — go to that analyzer's own `storageFor()` at the source rates the
