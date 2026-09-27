@@ -275,7 +275,8 @@ carries one, the dither where the target's bit depth is one it serves, mono bass
   value is checked on its knob exactly: the double a shell sends is read as the decimal of nine places or fewer whose
   correctly rounded double it is, and that decimal must lie on the travel and a whole number of steps from where the
   travel starts — by the same code that holds the config's own numbers to their grids (`src/Grid.h`). A double that is
-  the decimal of no such number is off the step.
+  the decimal of no such number is off the step. A number is kept with −0 written as +0, so two projects that say one
+  value are one project, bit for bit, and so are their recipes.
 - **`setTarget(name, onEdits)`** replaces the target's numbers silently — a person's edits of them go with the old
   target — and keeps or takes back a person's device edits as `onEdits` says; an edit of a device the new target does
   not offer goes either way. The machine's layer is placed again for the new target.

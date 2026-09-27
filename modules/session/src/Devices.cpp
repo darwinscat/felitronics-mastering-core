@@ -36,27 +36,28 @@ bool offered (const Rules& rules, std::uint16_t row, std::uint32_t channels, Dev
 void placeMachine (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices) noexcept
 {
     const TargetRow target = rules.row (row);
+    const auto number = [] (const Decimal& d) { return kept (d.toDouble()); };   // −0 as +0, as every number kept
 
     auto& hpf = devices.hpf.machine;
     hpf.on = rules.eq;
     // hzDefault, never below the target's floor.
-    hpf.fq = (compare (rules.hpfDefault, target.hpfFloor) < 0 ? target.hpfFloor : rules.hpfDefault).toDouble();
+    hpf.fq = number (compare (rules.hpfDefault, target.hpfFloor) < 0 ? target.hpfFloor : rules.hpfDefault);
     hpf.slope = target.hpfSlope;
 
     auto& mono = devices.monoBass.machine;
     mono.on = rules.monoBass && offered (rules, row, channels, Device::MonoBass);
-    mono.fq = target.monoBass.toDouble();
-    mono.width = rules.monoBassWidthDefault.toDouble();
+    mono.fq = number (target.monoBass);
+    mono.width = number (rules.monoBassWidthDefault);
 
     auto& glue = devices.glue.machine;
     glue.on = rules.compressor;
-    glue.amount = (target.glue ? *target.glue : rules.glueDefault).toDouble();
+    glue.amount = number (target.glue ? *target.glue : rules.glueDefault);
 
     auto& sat = devices.saturation.machine;
     sat.on = rules.clipper;
-    sat.drive = rules.driveDefault.toDouble();
-    sat.mix = rules.mixDefault.toDouble();
-    sat.output = rules.outputDefault.toDouble();
+    sat.drive = number (rules.driveDefault);
+    sat.mix = number (rules.mixDefault);
+    sat.output = number (rules.outputDefault);
 
     auto& tilt = devices.tilt.machine;
     tilt.on = rules.eq;
@@ -64,13 +65,13 @@ void placeMachine (const Rules& rules, std::uint16_t row, std::uint32_t channels
 
     auto& limiter = devices.limiter.machine;
     limiter.needles = target.noClipper ? Needles::Off : Needles::Auto;
-    limiter.needlesDb = rules.needlesDefault.toDouble();
+    limiter.needlesDb = number (rules.needlesDefault);
 
     devices.dither.machine.on = rules.dither && offered (rules, row, channels, Device::Dither);
 
     auto& shelf = devices.lowShelf.machine;
     shelf.on = rules.eq && target.lowShelfDb.has_value();
-    shelf.db = target.lowShelfDb ? target.lowShelfDb->toDouble() : 0.0;
+    shelf.db = target.lowShelfDb ? number (*target.lowShelfDb) : 0.0;
 }
 
 } // namespace felitronics::session::detail
