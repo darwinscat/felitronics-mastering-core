@@ -45,7 +45,7 @@ compared before and after, the order of the checks, every knob's ends, step and 
 target with `keep` and `reset`, the manual mode switched off, a master's recipe, a load's disarm, the source hash pinned,
 and memory declared for every command.
 
-**`fcsession`** carries the states and the commands with its config: 61.0 KB of wasm, 17.8 KB brotli, from 43.8 / 13.4.
+**`fcsession`** carries the states and the commands with its config: 58.3 KB of wasm, 17.1 KB brotli, from 43.8 / 13.4.
 The draft C boundary carries none of the commands.
 
 **The glue is its knob, "up to N dB"** (an owner decision): the project's glue field (`upToDb`), a person's edits of it
