@@ -57,6 +57,8 @@ inline constexpr FactShape kFacts[] = {
     { FactId::RateAboveLimit, "rateAboveLimit",
       { { { "rate", ArgKind::Value, {} }, { "limit", ArgKind::Value, {} }, { "platform", ArgKind::Term, "platform" } } },
       3 },
+    { FactId::MachineDifferences, "machineDifferences", { { { "count", ArgKind::Count, {} } } }, 1 },
+    { FactId::DefaultsConverted, "defaultsConverted", { { { "version", ArgKind::UserText, {} } } }, 1 },
     // A command's rejection (Commands.h), one per code; the four a field refuses name it.
     { FactId::RejectedFloatingPointEnvironment, "rejectedFloatingPointEnvironment", {}, 0 },
     { FactId::RejectedNoSource, "rejectedNoSource", {}, 0 },
@@ -89,12 +91,12 @@ inline constexpr FactShape kFacts[] = {
     { FactId::RejectedUnknownDefaults, "rejectedUnknownDefaults", {}, 0 },
     { FactId::RejectedProjectCore, "rejectedProjectCore", {}, 0 },
     { FactId::RejectedMachineMismatch, "rejectedMachineMismatch", {}, 0 },
+    { FactId::RejectedNewerDefaults, "rejectedNewerDefaults", {}, 0 },
     { FactId::Measurement1, "measurement1", {}, 0 },
     { FactId::Measurement2, "measurement2", {}, 0 },
     { FactId::MasterPass, "masterPass", { { { "pass", ArgKind::Count, {} } } }, 1 },
     { FactId::MasterReady, "masterReady", {}, 0 },
     { FactId::Cancelled, "cancelled", {}, 0 },
-    { FactId::MachineDifferences, "machineDifferences", { { { "count", ArgKind::Count, {} } } }, 1 },
     { FactId::SessionTrap, "sessionTrap", {}, 0 },
     { FactId::SessionContract, "sessionContract", {}, 0 },
     { FactId::SessionRefusal, "sessionRefusal", {}, 0 },
@@ -212,6 +214,7 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Rejection::UnknownDefaults: return FactId::RejectedUnknownDefaults;
         case Rejection::ProjectCore: return FactId::RejectedProjectCore;
         case Rejection::MachineMismatch: return FactId::RejectedMachineMismatch;
+        case Rejection::NewerDefaults: return FactId::RejectedNewerDefaults;
     }
     return std::nullopt;
 }

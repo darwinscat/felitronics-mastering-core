@@ -108,6 +108,90 @@ void refused (Session& s, const std::string& input, Rejection code, std::string_
         ok (! rendered.empty() && rendered.find ('{') == std::string::npos, "import refusal renders in both catalog languages");
     }
 }
+void sparseSections()
+{
+    auto s = fresh();
+    const auto minimal = project (false);
+    ok (exported (*s) == minimal, "untouched defaults export only metadata and target");
+    std::string empty = minimal;
+    detail::eachDevice (s->project().devices, [&] (Device, const auto& layers)
+    {
+        using Of = detail::DeviceOf<std::remove_cvref_t<decltype (layers.machine)>>;
+        empty += "\n[" + std::string (Of::name) + "]\n";
+    });
+    ok (import (*s, empty).rejection == Rejection::None && exported (*s) == minimal,
+        "empty device sections remain accepted and canonicalize away");
+    ok (import (*s, minimal).rejection == Rejection::None && exported (*s) == minimal,
+        "absent sections round trip byte-identically");
+    const auto hand = project() + "\n[hpf]\nfq.hand = 32\n";
+    ok (import (*s, hand).rejection == Rejection::None && exported (*s) == hand,
+        "an equal touched hand alone retains exactly its device section");
+    const auto machine = project (false, "0.0.1") + "\n[hpf]\nfq.machine = 36\n";
+    ok (import (*s, machine).rejection == Rejection::None && exported (*s) == machine,
+        "a machine difference alone retains exactly its device section");
+}
+std::string withDefaults (std::string input, std::string_view label)
+{
+    input.replace (0, input.find ('\n'), "defaults = \"" + std::string (label) + "\"");
+    return input;
+}
+void defaultsVersions()
+{
+    const auto carried = detail::carriedDefaults();
+    ok (! carried.previous && *carried.current.engine.find ("defaults").string() == "2026-09",
+        "current defaults are compiled and the previous slot is empty until a second version exists");
+    auto s = fresh();
+    const auto current = project() + "\n[hpf]\nfq.hand = 36\n";
+    ok (import (*s, current).rejection == Rejection::None && s->events().empty(),
+        "the carried defaults version is accepted without conversion");
+    auto old = withDefaults (project (true, "0.0.1")
+        + "lufs.hand = -12.5\n\n[hpf]\nfq.machine = 37\nfq.hand = 40\n", "2025-12");
+    const auto before = s->revision();
+    const auto answer = import (*s, old);
+    ok (answer.rejection == Rejection::None && s->revision() == before + 1,
+        "older defaults convert and commit exactly once");
+    auto expected = fresh();
+    const auto today = withDefaults (old, *detail::rules().engine.find ("defaults").string());
+    ok (import (*expected, today).rejection == Rejection::None, "current-version comparison imports");
+    auto a = s->snapshot(), b = expected->snapshot();
+    SnapshotView av = a.view(), bv = b.view(); av.revision = bv.revision;
+    ok (json (av) == json (bv), "conversion retains written machine, hand and target numbers; all omissions use current defaults");
+    ok (s->events().size() == 2 && s->events()[0].kind == EventKind::Fact
+        && s->events()[0].payload.fact.view().id == text::FactId::DefaultsConverted,
+        "conversion emits its warning before the unchanged machine comparison fact");
+    if (answer.rejection == Rejection::None && s->events().size() == 2)
+    {
+        const auto warning = s->events()[0];
+        old.assign (old.size(), 'x');
+        const auto fact = warning.payload.fact.view();
+        ok (fact.argCount == 1 && fact.args[0].kind == text::ArgKind::UserText
+            && fact.args[0].userText == "2025-12", "warning owns the original defaults version after input destruction");
+        for (const auto lang : { text::Lang::Ru, text::Lang::En })
+        {
+            const auto rendered = text::Text::text (fact, lang);
+            ok (rendered.find ("2025-12") != std::string::npos && rendered.find ('{') == std::string::npos,
+                "conversion warning names the old version in both languages");
+        }
+        ok (s->events()[1].payload.fact.view().id == text::FactId::MachineDifferences
+            && s->events()[1].payload.fact.view().args[0].integer == 1,
+            "converted foreign machine keeps the ordinary difference count");
+    }
+    const auto saved = exported (*s);
+    ok (saved == exported (*expected) && saved.starts_with (header (true, "0.0.1")),
+        "converted export uses current defaults and preserves core provenance");
+    ok (import (*s, saved).rejection == Rejection::None && exported (*s) == saved
+        && s->events().size() == 1, "converted project round trips without another conversion warning");
+    ok (import (*s, withDefaults (current, "2026-08")).rejection == Rejection::None
+        && s->events().size() == 1 && s->events()[0].payload.fact.view().id == text::FactId::DefaultsConverted,
+        "an older month with the same core converts when the complete machine matches");
+    refused (*s, withDefaults (project() + "\n[hpf]\nfq.machine = 37\n", "2026-08"),
+        Rejection::MachineMismatch, "37");
+    for (const auto newer : { "2026-10", "2027-01", "9999-12" })
+        refused (*s, withDefaults (project(), newer), Rejection::NewerDefaults, std::string ("\"") + newer + '"');
+    for (const auto malformed : { "2026-00", "2026-13", "2026-9", "026-09", "20260-09", "2026/09", "2026-09x", " 2026-09", "2026-0a", "" })
+        refused (*s, withDefaults (project(), malformed), Rejection::UnknownDefaults,
+            std::string ("\"") + malformed + '"');
+}
 void roundTrip()
 {
     auto s = fresh();
@@ -356,6 +440,6 @@ void demandsAndOrder()
 }
 int main()
 {
-    roundTrip(); refusals(); foreignMachine(); numbers(); slicing(); demandsAndOrder();
+    sparseSections(); defaultsVersions(); roundTrip(); refusals(); foreignMachine(); numbers(); slicing(); demandsAndOrder();
     return felitronics::test::report();
 }

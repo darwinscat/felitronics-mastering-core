@@ -427,6 +427,14 @@ Answer Session::apply (const Request& request) noexcept
         project_ = imported.project;
         differenceCount_ = imported.differenceCount;
         std::copy_n (imported.differences, differenceCount_, differences_);
+        if (imported.convertedDefaults)
+        {
+            Notification event;
+            event.kind = EventKind::Fact;
+            (void) event.payload.fact.assign (text::Fact::of (text::FactId::DefaultsConverted,
+                text::Arg::text ({ imported.originalDefaults, sizeof (imported.originalDefaults) })));
+            emit (event);
+        }
         if (imported.foreignCore)
         {
             Notification event;
