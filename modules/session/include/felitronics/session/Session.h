@@ -54,8 +54,9 @@ struct Created
 // WHAT THE LIBRARY'S FLAGS DO NOT REACH. Inline code the session shares with the program — a template or inline function
 // from a header both include — is compiled once per translation unit that uses it, each copy under that unit's flags,
 // and the linker keeps one copy for the program. So a program that links felitronics::session compiles EVERY translation
-// unit with the session's FP flags: no contraction (-ffp-contract=off) and no fast-math. The wasm modules this repository
-// builds are built whole, with those flags, and are not affected. docs/SESSION.md, "Inline code and the linker".
+// unit with the session's FP flags — no contraction (-ffp-contract=off) and no fast-math — and does no partial linking.
+// The wasm modules this repository builds are built whole, with those flags, and are not affected. docs/SESSION.md,
+// "What the flags do not reach".
 //
 // ONE OWNER, ONE THREAD AT A TIME. A Session is created on the heap and owned by the caller's unique_ptr; destroying it
 // is the unique_ptr's reset. It is neither copied nor moved — a shell holds it by address (the C ABI's handle table
