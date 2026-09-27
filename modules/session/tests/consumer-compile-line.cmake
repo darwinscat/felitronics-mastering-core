@@ -7,7 +7,7 @@
 # `-ffp-contract=off`) into BUILD, then runs compile-line-gate.cmake on the compile commands it wrote. Configured only:
 # the compile line is the question, and it is fully decided at generation.
 cmake_minimum_required(VERSION 3.22)
-foreach(var GENERATOR CXX CONSUMER BUILD CORE MASTERING GATE)
+foreach(var GENERATOR CXX CONSUMER BUILD CORE MASTERING GATE FLAGS_FILE SOURCES)
     if(NOT DEFINED ${var} OR "${${var}}" STREQUAL "")
         message(FATAL_ERROR "consumer-compile-line.cmake: ${var} is not set")
     endif()
@@ -22,8 +22,8 @@ if(NOT rc EQUAL 0)
     message(FATAL_ERROR "the consumer project did not configure:\n${out}${err}")
 endif()
 execute_process(
-    COMMAND "${CMAKE_COMMAND}" -DCOMPILE_COMMANDS=${BUILD}/compile_commands.json -DTARGET_DIR=felitronics_session.dir
-            -P "${GATE}"
+    COMMAND "${CMAKE_COMMAND}" -DCOMPILE_COMMANDS=${BUILD}/compile_commands.json -DTARGETS=felitronics_session.dir
+            "-DFLAGS_FILE=${FLAGS_FILE}" "-DSOURCES=${SOURCES}" -P "${GATE}"
     RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err)
 if(NOT rc EQUAL 0)
     message(FATAL_ERROR "IN A CONSUMER'S BUILD (${BUILD}):\n${out}${err}")
