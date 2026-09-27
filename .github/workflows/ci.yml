@@ -143,7 +143,10 @@ jobs:
           SOLV=modules/mastering/include/felitronics/mastering/LoudnessSolver.h
           CORE_ZONEH="$CORE/modules/analysis/include/felitronics/analysis/ReferenceTruePeakMeter.h"
           PROBEH=tools/fcore_probe.h
-          FILES=("$ZONEH" "$MANH" "$MANIFEST" "$ZONEFILE" "$SOLV" "$CORE_ZONEH" "$PROBEH")
+          SESS=modules/session/src/Session.cpp
+          FACADE=tools/wasm/fc_session.cpp
+          SESSCLI=tools/fcore_session.cpp
+          FILES=("$ZONEH" "$MANH" "$MANIFEST" "$ZONEFILE" "$SOLV" "$CORE_ZONEH" "$PROBEH" "$SESS" "$FACADE" "$SESSCLI")
           BK="$(mktemp -d)"
           for i in "${!FILES[@]}"; do cp "${FILES[$i]}" "$BK/$i"; done
           det_restore () { for i in "${!FILES[@]}"; do cp "$BK/$i" "${FILES[$i]}"; done; }
@@ -200,9 +203,35 @@ jobs:
           node "$LINT" --satellite 2>&1 | grep -qF "_lint_control.inc" \
             || { rm -f tools/_lint_control.inc; det_restore; echo "CONTROL FAILED (17): fired but did not name the .inc"; exit 1; }
           rm -f tools/_lint_control.inc; det_restore; echo "control 17 ok: a call in a file only the closure reaches is caught"
+          # 18: felitronics::session is in the zone, file by file (the session-laws lint keeps the list whole), so a
+          # system libm call in the brain is red here and not a manifest line.
+          printf '\nnamespace { inline double sessionDetMathControl (double x) { return std::cos (x); } }\n' >> "$SESS"
+          det_control 18 "a std::cos in felitronics::session" "$SESS"
+          # 19: every translation unit of the session is an ENTRY point, so this lint follows its #includes whatever
+          # the included file is called — an implementation file under an extension no directory walk takes (.tpp),
+          # included by Session.cpp, is reached and its std::cos refused.
+          printf 'inline double sessionDetMathControl (double x) { return std::cos (x); }\n' > modules/session/src/_det_control.tpp
+          printf '\n#include "_det_control.tpp"\n' >> "$SESS"
+          if node "$LINT" --satellite > /dev/null 2>&1; then
+            rm -f modules/session/src/_det_control.tpp; det_restore; echo "CONTROL FAILED (19): a std::cos in a .tpp the session includes passed"; exit 1; fi
+          node "$LINT" --satellite 2>&1 | grep -qF "_det_control.tpp" \
+            || { rm -f modules/session/src/_det_control.tpp; det_restore; echo "CONTROL FAILED (19): fired but did not name the .tpp"; exit 1; }
+          rm -f modules/session/src/_det_control.tpp; det_restore; echo "control 19 ok: a libm call in a file only a session unit includes is caught"
+          # 20, 21: the two roads into the session — the C boundary and the native CLI — are entry points too, so a header
+          # either one includes is reached, whatever it is called, and its std::cos refused.
+          for road in "20|$FACADE|tools/wasm/_det_control_road.h" "21|$SESSCLI|tools/_det_control_road.h"; do
+            IFS='|' read -r num unit header <<< "$road"
+            printf 'inline double sessionRoadControl (double x) { return std::cos (x); }\n' > "$header"
+            printf '\n#include "_det_control_road.h"\n' >> "$unit"
+            if node "$LINT" --satellite > /dev/null 2>&1; then
+              rm -f "$header"; det_restore; echo "CONTROL FAILED ($num): a std::cos in a header $unit includes passed"; exit 1; fi
+            node "$LINT" --satellite 2>&1 | grep -qF "$header" \
+              || { rm -f "$header"; det_restore; echo "CONTROL FAILED ($num): fired but did not name $header"; exit 1; }
+            rm -f "$header"; det_restore; echo "control $num ok: a libm call in a header ${unit##*/} includes is caught"
+          done
           node "$LINT" --satellite > /dev/null \
-            || { echo "CONTROL FAILED: the tree did not come back clean, so controls 5-17 proved nothing"; exit 1; }
-          echo "controls 5-17 ok: the libm audit fires on every rule, on both sides, and the tree is clean again"
+            || { echo "CONTROL FAILED: the tree did not come back clean, so controls 5-21 proved nothing"; exit 1; }
+          echo "controls 5-21 ok: the libm audit fires on every rule, on both sides, and the tree is clean again"
           # The other two lints reach this repository's files too.
           printf 'using Forbidden = long double;\n' > modules/mastering/include/felitronics/mastering/_lint_control.h
           if node "$CORE/tools/lint/check-no-long-double.mjs" > /dev/null 2>&1; then
@@ -219,6 +248,21 @@ jobs:
           rm -f tools/tests/_lint_control.cpp
           node "$CORE/tools/lint/check-alloc-counter.mjs" modules tools tests > /dev/null
           echo "control 5a ok: the alloc-counter lint reaches this repository's ABI suites"
+
+      - name: The session laws in the source — the lint, its self-test, and its controls planted in the tree
+        # tools/lint/check-session-laws.mjs holds what leaves no symbol in any object (docs/SESSION.md): the include
+        # allowlists, directives, macros, pragmas, attributes, alternative tokens, exception and RTTI tokens in every #if
+        # branch, conditional compilation, atomics, cycle counters and inline assembly, implementation-defined orders,
+        # function bodies and variables in the public header, the build guards first in every unit, every file in the
+        # det-math zone — over modules/session and the C boundary compiled with its flags. The scan starts from the
+        # targets' sources and is cross-checked against this configure's compile_commands.json. What the OBJECT answers —
+        # writable state, calls to the operating system, the locale, the clock — is the object-file gate's, a ctest test on
+        # every row above. run.sh plants each rule's violation in the real tree and requires the lint to fail on the planted
+        # file and line.
+        run: |
+          node tools/lint/check-session-laws.mjs --self-test
+          node tools/lint/check-session-laws.mjs --build build
+          tools/lint/session-controls/run.sh build
 
   # The wasm-audio tier for THIS repository's suite (core's preset flags and toolchain pin), its artifact
   # gates, and every native-vs-wasm comparison of the C ABIs. ubuntu, NOT macos, and for the comparisons
@@ -294,6 +338,26 @@ jobs:
           export FELITRONICS_CORE_DIR="$(sed -n 's/^FELITRONICS_MASTERING_CORE_SOURCE_DIR:INTERNAL=//p' build-native/CMakeCache.txt)"
           test -n "$FELITRONICS_CORE_DIR"
           ./tools/wasm/build.sh
+      - name: fc_session — the module a page loads, checked on the artifact
+        # felitronics_session_abi_tests runs fc_session.cpp natively and on this tier; what they cannot see is the
+        # MODULE: that the entry points reached fcsession.node.wasm (byte-identical to the web one, build.sh checks),
+        # that nothing else did — every export of the Module against the ABI and the runtime's own —, the out-pointer
+        # past the end of the heap, which only a linear memory has, and one slot walked to its last generation. The
+        # check must refuse a module with one undeclared export (build.sh builds that control into build/controls/)
+        # and a module that is not fcsession, or a swapped artifact would pass it.
+        run: |
+          set -euo pipefail
+          node tools/wasm/session-check.mjs tools/wasm/build/fcsession.node.js
+          rc=0; node tools/wasm/session-check.mjs tools/wasm/build/controls/fcsession.node.js > extra-export.txt 2>&1 || rc=$?
+          [ "$rc" -eq 1 ] && grep -q debug_probe extra-export.txt \
+            || { cat extra-export.txt; echo "an undeclared export was not refused by name (exit $rc)"; exit 1; }
+          echo "session-check refuses the module that exports debug_probe"
+          mkdir -p swapped-session
+          cp tools/wasm/build/fctempo.node.js swapped-session/fcsession.node.js
+          cp tools/wasm/build/fctempo.node.wasm swapped-session/
+          rc=0; node tools/wasm/session-check.mjs swapped-session/fcsession.node.js > /dev/null 2>&1 || rc=$?
+          [ "$rc" -eq 3 ] || { echo "fctempo under fcsession's name was not refused as the wrong module (exit $rc)"; exit 1; }
+          echo "session-check refuses fctempo handed over as fcsession"
       - name: NULL test — native vs wasm, bit-exact, on a GENERATED fixture
         # No private audio in a public repo: the fixture is synthesised from an integer PRNG with no
         # transcendental in sight, so it is byte-identical on any engine. The comparison surface is the

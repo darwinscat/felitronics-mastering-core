@@ -1,5 +1,5 @@
-# felitronics-mastering-core tools (built only when this is the top-level project): the C ABIs (fc_master, fc_probe and
-# fc_tempo, the probe's tempo surface alone), their native CLIs and suites. Used to validate the DSP against reference implementations (ffmpeg) on real audio, and as the
+# felitronics-mastering-core tools (built only when this is the top-level project): the C ABIs (fc_master, fc_probe,
+# fc_tempo — the probe's tempo surface alone — and fc_session, over the mastering session), their native CLIs and suites. Used to validate the DSP against reference implementations (ffmpeg) on real audio, and as the
 # native side of every native-vs-wasm comparison.
 # The FP-contraction contract for everything that goes through fcore_probe.h. Baseline wasm has NO scalar FMA
 # instruction, so emscripten cannot contract a*b+c; a contracting native build therefore disagrees with wasm —
@@ -184,3 +184,120 @@ add_executable(fcore_master fcore_master.cpp wasm/fc_master.cpp)
 target_link_libraries(fcore_master PRIVATE felitronics::mastering felitronics::analysis)
 target_include_directories(fcore_master PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(fcore_master PRIVATE cxx_std_20)
+
+# THE C BOUNDARY'S TRANSLATION UNIT, built once as an object library with the session library's OWN compile options and
+# definitions (read off the target, not restated): no exceptions, no RTTI, no contraction, no fast-math — so the facade
+# is held to the brain's flags on every native row as it is in the wasm module (tools/wasm/build.sh), and its object is
+# the one the object-file gate reads. Its first include is the library's src/BuildGuards.h, as every unit of the library's
+# is, so a per-source flag the compile line does not show is refused by the preprocessor here too. fcore_session and the
+# ABI suite link this object rather than compiling the source again.
+add_library(felitronics_session_facade OBJECT wasm/fc_session.cpp)
+target_link_libraries(felitronics_session_facade PRIVATE felitronics::session)
+target_include_directories(felitronics_session_facade PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+                                                              ${PROJECT_SOURCE_DIR}/modules/session/src)
+target_compile_features(felitronics_session_facade PRIVATE cxx_std_20)
+target_compile_options(felitronics_session_facade PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
+target_compile_definitions(felitronics_session_facade PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_DEFINITIONS>)
+
+# fcore_session — the native CLI over `felitronics::session` (tools/fcore_session.cpp): the library linked AS C++, the
+# way a desktop application links it, plus the fc_session ABI's object beside it, so the ABI version it prints is the
+# facade's own answer. The two are separate translation units for fcore_master's reason: the facade stays a facade.
+add_executable(fcore_session fcore_session.cpp $<TARGET_OBJECTS:felitronics_session_facade>)
+target_link_libraries(fcore_session PRIVATE felitronics::session)
+target_include_directories(fcore_session PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_compile_features(fcore_session PRIVATE cxx_std_20)
+
+if(FELITRONICS_BUILD_TESTS)
+    # fc_session, draft version 0 (tools/fc_session_abi.h): the out-pointer's checks, the handles and their generations, the table's
+    # capacity, what a create allocates against the session's declared demand, and the poison — natively, under ctest,
+    # ASan and UBSan, and on the wasm tier. One binary: the poison is its last group, because it is for good.
+    add_executable(felitronics_session_abi_tests tests/SessionAbiTests.cpp $<TARGET_OBJECTS:felitronics_session_facade>)
+    target_link_libraries(felitronics_session_abi_tests PRIVATE felitronics::session felitronics::test_support)
+    target_include_directories(felitronics_session_abi_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_features(felitronics_session_abi_tests PRIVATE cxx_std_20)
+    add_test(NAME felitronics_session_abi_tests COMMAND felitronics_session_abi_tests)
+
+    # THE OBJECT-FILE GATE over felitronics::session and its C boundary (modules/session/tests/object-gates.cmake): every
+    # object of the library holds no writable data and calls nothing outside the list in tools/lint/session-objects.txt;
+    # the facade's object keeps exactly its handle table and its poison flag. Read with this row's own symbol-table reader
+    # — readelf on ELF, objdump on Mach-O, dumpbin on COFF, llvm-readobj on wasm — so every row of the matrix, the sanitizer row
+    # and the wasm tier included, asks the question of the objects it actually built. Its controls are in
+    # modules/session/CMakeLists.txt.
+    include(${PROJECT_SOURCE_DIR}/modules/session/tests/SessionTestTools.cmake)
+    felitronics_session_object_gate(NAME felitronics_session_object_gate
+                                    LIBRARY felitronics_session FACADE felitronics_session_facade)
+    # ...and the FACADE role's own controls: the boundary exactly as it ships, compiled as the facade is, with a third
+    # global planted (it must be refused while each allowed global is found once), and with an allowed global renamed
+    # (the allowance names a symbol that is not there — rot, refused as [ALLOWANCE]). Sources in
+    # modules/session/tests/object-controls/, beside the library's controls.
+    foreach(entry "facade_third_global|g_planted" "facade_renamed|g_callState")
+        string(REPLACE "|" ";" f "${entry}")
+        list(GET f 0 ctl)
+        list(GET f 1 expect)
+        add_library(fs_objctl_${ctl} OBJECT ${PROJECT_SOURCE_DIR}/modules/session/tests/object-controls/${ctl}.cpp)
+        target_link_libraries(fs_objctl_${ctl} PRIVATE felitronics::session)
+        target_include_directories(fs_objctl_${ctl} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/wasm
+                                                           ${PROJECT_SOURCE_DIR}/modules/session/src)
+        target_compile_features(fs_objctl_${ctl} PRIVATE cxx_std_20)
+        target_compile_options(fs_objctl_${ctl} PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
+        target_compile_definitions(fs_objctl_${ctl} PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_DEFINITIONS>)
+        felitronics_session_object_gate(NAME felitronics_session_object_control_${ctl}
+                                        LIBRARY felitronics_session FACADE fs_objctl_${ctl} EXPECT "${expect}")
+    endforeach()
+
+    # THE CLI'S CONTRACT, byte for byte on stdout and by exit status (tools/tests/cli-expect.cmake): the versions it
+    # prints are the ones this build was configured with; an empty script and a script of comments are accepted with
+    # `done 0`, from a file and from stdin; a script with a command in it, a script that is not there and a malformed
+    # command line are refused with 2 and nothing on stdout.
+    # NOT ON THE WASM TIER: the CLI reads its script from the host's filesystem, which the node runner the emscripten
+    # tests go through does not have. The wasm road into the session is the fcsession module, and CI checks that.
+    if(NOT EMSCRIPTEN)
+        file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/fc_session_abi.h FCORE_SESSION_ABI_LINE
+             REGEX "^#define FC_SESSION_ABI_VERSION [0-9]+u$")
+        if(NOT FCORE_SESSION_ABI_LINE MATCHES "^#define FC_SESSION_ABI_VERSION ([0-9]+)u$")
+            message(FATAL_ERROR "tools/fc_session_abi.h: no FC_SESSION_ABI_VERSION line")
+        endif()
+        set(FCORE_SESSION_EXPECT ${CMAKE_CURRENT_BINARY_DIR}/fcore_session-expect)
+        file(WRITE ${FCORE_SESSION_EXPECT}/version.txt
+             "felitronics-mastering-core ${felitronics_mastering_core_VERSION}\n"
+             "felitronics-core ${FELITRONICS_MASTERING_FCORE_VERSION}\n"
+             "fc_session_abi ${CMAKE_MATCH_1}\n")
+        file(WRITE ${FCORE_SESSION_EXPECT}/done0.txt "done 0\n")
+        file(WRITE ${FCORE_SESSION_EXPECT}/nothing.txt "")
+        set(FCORE_SESSION_SCRIPTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/session-scripts)
+        # name | expected exit | expected stdout | stdin file ("-" none) | arguments...
+        set(FCORE_SESSION_CASES
+            "version|0|version.txt|-|version"
+            "empty|0|done0.txt|-|run|${FCORE_SESSION_SCRIPTS}/empty.txt"
+            "comments|0|done0.txt|-|run|${FCORE_SESSION_SCRIPTS}/comments.txt"
+            "stdin|0|done0.txt|${FCORE_SESSION_SCRIPTS}/comments.txt|run|-"
+            "command|2|nothing.txt|-|run|${FCORE_SESSION_SCRIPTS}/command.txt"
+            "missing|2|nothing.txt|-|run|${FCORE_SESSION_SCRIPTS}/no-such-script.txt"
+            "noargs|2|nothing.txt|-"
+            "bogus|2|nothing.txt|-|bogus"
+            "extra|2|nothing.txt|-|version|extra")
+        foreach(case IN LISTS FCORE_SESSION_CASES)
+            string(REPLACE "|" ";" f "${case}")
+            list(GET f 0 name)
+            list(GET f 1 rc)
+            list(GET f 2 out)
+            list(GET f 3 in)
+            set(cliArgs "")
+            list(LENGTH f nFields)
+            if(nFields GREATER 4)
+                list(SUBLIST f 4 -1 cliArgs)
+            endif()
+            list(LENGTH cliArgs nArgs)
+            set(argDefs "")
+            set(i 0)
+            foreach(a IN LISTS cliArgs)
+                list(APPEND argDefs "-DARG${i}=${a}")
+                math(EXPR i "${i} + 1")
+            endforeach()
+            add_test(NAME fcore_session_${name}
+                     COMMAND ${CMAKE_COMMAND} -DEXE=$<TARGET_FILE:fcore_session> -DNARGS=${nArgs} ${argDefs}
+                             -DEXPECT_RC=${rc} -DEXPECT_STDOUT=${FCORE_SESSION_EXPECT}/${out} -DSTDIN=${in}
+                             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli-expect.cmake)
+        endforeach()
+    endif()
+endif()

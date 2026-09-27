@@ -1,0 +1,2 @@
+# One command, which this build does not know: the script is refused as a whole.
+no-such-command 1 2 3

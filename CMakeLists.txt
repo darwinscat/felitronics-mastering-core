@@ -7,9 +7,10 @@ project(felitronics_mastering_core VERSION 0.2.2 LANGUAGES CXX)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # ----------------------------------------------------------------------------------------------------
-# felitronics-mastering-core — the mastering chain and the offline programme analyzers of the Felitronics
-# family, over felitronics-core. JUCE-free C++20, header-only, under core's laws (felitronics-core
-# docs/DSP-ARCHITECTURE.md §2).
+# felitronics-mastering-core — the mastering chain, the offline programme analyzers and the mastering session of the
+# Felitronics family, over felitronics-core. JUCE-free C++20 under core's laws (felitronics-core
+# docs/DSP-ARCHITECTURE.md §2). Header-only, except `session`: a STATIC library compiled with its own PRIVATE flags,
+# under the laws of docs/SESSION.md.
 #
 # Module            Target                          What                                               Deps
 #   mastering         felitronics::mastering          the chain, the loudness solver, delivery, render   core stages + analysis
@@ -17,16 +18,18 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 #                                                     felitronics::analysis, headers <felitronics/analysis/...>)
 #   tempo             felitronics::tempo              the tempo of a programme and the tempo over time     core
 #                                                     (a port of the site's dsp/tempo.js)
+#   session           felitronics::session            the mastering session, the object a shell talks to.  —
+#                                                     COMPILED, with its own flags
 #
-# tools/ (top-level builds only): the C ABIs of both (fc_master, fc_probe), their native CLIs
-# (fcore_master, fcore_measure) and suites, and tools/wasm/build.sh, which builds the wasm modules.
+# tools/ (top-level builds only): the C ABIs (fc_master, fc_probe, fc_tempo, fc_session), their native CLIs
+# (fcore_master, fcore_measure, fcore_session) and suites, and tools/wasm/build.sh, which builds the wasm modules.
 #
 # Consume — felitronics-core FIRST, then this; ONE core is resolved by the product that owns the graph:
 #   FetchContent_Declare(felitronics_core GIT_REPOSITORY <url> GIT_TAG <tag>)
 #   FetchContent_MakeAvailable(felitronics_core)
 #   FetchContent_Declare(felitronics_mastering_core GIT_REPOSITORY <url> GIT_TAG <tag>)
 #   FetchContent_MakeAvailable(felitronics_mastering_core)
-#   target_link_libraries(app PRIVATE felitronics::mastering felitronics::analysis_offline)
+#   target_link_libraries(app PRIVATE felitronics::mastering felitronics::analysis_offline felitronics::session)
 # ----------------------------------------------------------------------------------------------------
 
 option(FELITRONICS_MASTERING_BUILD_TESTS "Build felitronics-mastering-core self-tests" "${PROJECT_IS_TOP_LEVEL}")
@@ -90,6 +93,16 @@ include(${felitronics_core_SOURCE_DIR}/cmake/FelitronicsPolicy.cmake)
 set(FELITRONICS_MASTERING_CORE_SOURCE_DIR "${felitronics_core_SOURCE_DIR}" CACHE INTERNAL
     "the felitronics-core checkout this build resolved")
 
+# ...and which RELEASE it is, as core's own project() line states it — read from the directory that ran that line, so
+# it is the core the graph resolved, whoever resolved it. felitronics::session reports it (Session::coreVersion) and
+# fcore_session prints it. No fallback: a build that cannot say which core it compiled against must not pretend to.
+get_directory_property(FELITRONICS_MASTERING_FCORE_VERSION DIRECTORY "${felitronics_core_SOURCE_DIR}"
+                       DEFINITION felitronics_core_VERSION)
+if(NOT FELITRONICS_MASTERING_FCORE_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
+    message(FATAL_ERROR "cannot read felitronics-core's release from ${felitronics_core_SOURCE_DIR} "
+                        "(its project() line gave '${FELITRONICS_MASTERING_FCORE_VERSION}')")
+endif()
+
 # modules/ and tools/ came from core verbatim and build their suites on FELITRONICS_BUILD_TESTS, the name
 # the switch has there. Set here as a NORMAL variable, after core is configured, so it never reaches core.
 set(FELITRONICS_BUILD_TESTS ${FELITRONICS_MASTERING_BUILD_TESTS})
@@ -100,6 +113,7 @@ endif()
 add_subdirectory(modules/analysis_offline)   # the offline analyzers; analysis + eq + stereo
 add_subdirectory(modules/mastering)          # the chain; every core stage it composes + analysis
 add_subdirectory(modules/tempo)              # the tempo detector; core alone
+add_subdirectory(modules/session)            # the mastering session — COMPILED, with its own flags
 
 # The C ABIs, their CLIs and the wasm plumbing — top-level builds only, as in core.
 if(PROJECT_IS_TOP_LEVEL)

@@ -15,9 +15,11 @@ The mastering chain and the offline programme analyzers of the Darwin's Cat prod
 | `mastering` | the chain — gain, EQ with dynamic points, mono-bass, compressor, clipper, true-peak limiter, dither — block-independent, with an offline renderer, a target-loudness solver and delivery at another rate |
 | `analysis_offline` | whole-programme analyzers: programme report, source forensics, hum, low end, band bursts, band crest, peak excursions, clipped runs, waveform peaks and the stereo band |
 | `tempo` | the tempo of a programme — whole-track BPM, confidence, octave alternatives — and the tempo over time; a port of the site's BPM detector |
+| `session` | the mastering session: the object a shell talks to — a compiled library with flags and laws of its own ([`docs/SESSION.md`](docs/SESSION.md)) |
 
-`tools/` holds the C ABIs over them (`fc_master`, `fc_probe`, and `fc_tempo` — the tempo detector alone, a small
-wasm module for a page that needs nothing else), their native CLIs, and the wasm build.
+`tools/` holds the C ABIs over them (`fc_master`, `fc_probe`, `fc_tempo` — the tempo detector alone, a small wasm
+module for a page that needs nothing else — and `fc_session`, a draft over the session), their native CLIs, and the wasm
+build.
 
 ## Build
 

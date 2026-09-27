@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# WHAT felitronics::session's OBJECT FILES MAY CONTAIN beyond code — read by modules/session/tests/object-gates.cmake,
+# which reads every object of the library and of the C boundary (tools/wasm/fc_session.cpp) with this row's own
+# symbol-table reader and asks two questions the object file answers exactly:
+#   1. which symbols live in WRITABLE memory — mutable state with static storage, however it was spelled (a direct
+#      initialiser, a static inside a lambda, a macro, an asm label, a const object that needs a constructor at start-up);
+#   2. which symbols are CALLED that nothing in the set defines — printf, fopen, time, getenv, strtod, isalpha, rand,
+#      whatever header they arrived through and however they were named, called or taken by pointer.
+# The answer to 1 must be nothing (the C boundary: exactly the globals named below). The answer to 2 must match a line
+# below. Every other symbol is refused, and the refusal names it.
+#
+# Format (one per line; the reason is required):
+#   global     <scope>  <name>     <why>   a writable symbol allowed BY NAME, matched against its demangled name; each must
+#                                           be found EXACTLY once in the objects of its scope, or the list has rotted
+#   writable   <scope>  <regex>    <why>   writable symbols allowed by pattern (instrumentation, a toolchain's own)
+#   undefined  <scope>  <regex>    <why>   called symbols allowed by pattern, matched against the symbol's name (Mach-O's
+#                                           leading underscore removed)
+# <scope>: all · elf · macho · coff · wasm · san (only when FELITRONICS_ENABLE_SANITIZERS is on) · facade (only the C
+# boundary's objects) · facade-<format>. Patterns are CMake regular expressions.
+
+# --- the C boundary keeps these two, and nothing else keeps anything
+global     facade  g_slots        the handle table: a handle must name a session between two calls
+global     facade  g_callState    the poison flag: it must outlive the call that never returned
+
+# --- what compiled C++ calls without the code asking for it
+undefined  all     ^_Zn[wa][jmy]                    operator new / new[] — the session allocates (law 2 does not apply; law 11d does)
+undefined  all     ^_Zd[la]Pv                       operator delete / delete[], every form
+undefined  coff    ^\?\?[23]@                       operator new / delete, MSVC's decoration
+undefined  coff    ^\?\?_[UV]@                      operator new[] / delete[], MSVC's decoration
+undefined  all     ^(memcpy|memmove|memset|memcmp|bzero)$    what the compiler emits for a copy or a clear
+undefined  elf     ^__(memcpy|memmove|memset)_chk$  the same under _FORTIFY_SOURCE, which distributions turn on by default
+undefined  all     ^__stack_chk_(fail|guard)$       the stack protector, which distributions turn on by default
+undefined  elf     ^__stack_chk_fail_local$         the stack protector, 32-bit
+undefined  elf     ^_GLOBAL_OFFSET_TABLE_$          a relocation base the linker defines, not code
+undefined  coff    ^(_fltused|__security_check_cookie|__security_cookie|__GSHandlerCheck|__chkstk)$    MSVC's floating-point marker, /GS and the stack probe
+undefined  coff    ^_RTC_                           MSVC's run-time checks in a debug build
+undefined  wasm    ^(__stack_pointer|__memory_base|__table_base|__indirect_function_table)$    the linear memory's own registers
+
+# --- MSVC's standard library defines one writable variable in every translation unit that includes its headers
+writable   coff    ^_Avx2WmemEnabledWeakValue$      the STL's own dispatch flag for its vectorised wmem* (an `extern "C" inline` in its headers): the session neither reads nor writes it
+
+# --- the sanitizer row: the instrumentation's runtime and the metadata it plants
+undefined  san     ^_*(asan|ubsan|lsan|sanitizer)_  ASan / UBSan / LSan runtime entry points
+undefined  san     ^__(start|stop)_asan_globals$    the bounds of ASan's globals section, defined by the linker (clang instruments ELF globals this way)
+writable   san     ^_*(asan|ubsan|lsan|sanitizer)   ASan's registration flag and metadata
+
+# --- the C boundary on the wasm tier bounds a page's pointers by the heap's size
+undefined  facade-wasm  ^emscripten_get_heap_size$  the out-pointer's span check (fc_session.cpp, inHeap)

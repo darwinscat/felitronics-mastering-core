@@ -2,9 +2,10 @@
 
 # felitronics-mastering-core — what's inside (quick map)
 
-JUCE-free, header-only C++20 over [felitronics-core](https://github.com/darwinscat/felitronics-core), under
-its laws (felitronics-core `docs/DSP-ARCHITECTURE.md` §2). The rows below moved from core's `CORE-OVERVIEW.md`
-with their modules.
+JUCE-free C++20 over [felitronics-core](https://github.com/darwinscat/felitronics-core), under its laws
+(felitronics-core `docs/DSP-ARCHITECTURE.md` §2). Header-only, with one exception: `felitronics::session`, the
+mastering session, is a compiled library with flags and laws of its own (below, and [`SESSION.md`](SESSION.md)).
+The chain, analyzer and tempo rows moved from core's `CORE-OVERVIEW.md` with their modules.
 
 ## The chain
 
@@ -63,14 +64,38 @@ as `fc_probe_tempo_*` — in `fcprobe`, and alone in `fctempo`, a module of its 
 and nothing else (37 KB of wasm, 15 KB brotli, against the probe's 275 / 77). Both compile one text,
 `tools/wasm/fc_tempo_entry.h`, so the names, rows and bits are the same in either.
 
+## The mastering session — `felitronics::session`
+
+`<felitronics/session/Session.h>`: the object a shell talks to — the web worker through the `fcsession` wasm module, a
+desktop application by linking the library, `fcore_session` from a command script. It is an empty `Session`: created,
+destroyed, asked for its version, and refusing a thread whose floating-point environment is not IEEE-754's default. It
+keeps no state. What is fixed is the ground it stands on:
+
+- **a compiled STATIC target**, the repository's first, whose sources are compiled with PRIVATE flags in one `SHELL:`
+  group — no FP contraction, no fast-math, no exceptions, no RTTI. Every translation unit refuses to compile without
+  them, the compile line is read back (this build's and a consumer's), and the library answers IEEE-754 under hostile
+  flags placed ahead of its own. The flags settle the library's own objects, not the header-inline code it shares with
+  the program, of which the linker keeps one copy: so a program that links it compiles **every** translation unit with
+  the same FP flags — no contraction, no fast-math. The wasm modules are built whole here and are not affected;
+- **its laws, each held by a check with a control**: an object-file gate over its objects and its C boundary's (no
+  writable data, read from what each object says of its sections; nothing called outside a short list — no OS, file,
+  console, locale, clock or process state), a source lint for what leaves no symbol (includes, directives and macros,
+  pragmas, attributes, exception and RTTI tokens, atomics, implementation-defined orders, function bodies and variables
+  in the public header) over the module and the C boundary, the whole module in the deterministic zone, memory declared
+  before the work. Which of core's laws apply, which do not, what holds each, and what the checks do not try to catch:
+  [`SESSION.md`](SESSION.md).
+
 ## The C ABIs — `tools/`
 
 `fc_master` (`tools/fc_master_abi.h`, `tools/wasm/fc_master.cpp`) over the chain, `fc_probe`
-(`tools/fc_probe_abi.h`, `tools/wasm/fc_probe.cpp`) over the analyzers, and `fc_tempo` (`tools/fc_tempo_abi.h`,
+(`tools/fc_probe_abi.h`, `tools/wasm/fc_probe.cpp`) over the analyzers, `fc_tempo` (`tools/fc_tempo_abi.h`,
 `tools/wasm/fc_tempo.cpp`) over the tempo detector alone — fc_probe's `fc_probe_tempo_*` entry points under the
-same names, with a version of its own, because a version is a promise about a whole surface — each with its ABI
-version and the append-only rule that moves it in its header — with their native CLIs (`fcore_master`,
-`fcore_measure`) and suites. `tools/wasm/build.sh` builds the wasm modules against a felitronics-core checkout
+same names, with a version of its own, because a version is a promise about a whole surface — and `fc_session`
+(`tools/fc_session_abi.h`, `tools/wasm/fc_session.cpp`) over the session, the surface a shell that cannot link C++
+talks to the library through (a DRAFT, version 0, with no promise: the version, a session created and destroyed
+through a handle, the session's refusals, the poison; its wasm module `fcsession` is 2.9 KB) — each with its ABI version
+and, for the first three, the append-only rule that moves it in its header —
+with their native CLIs (`fcore_master`, `fcore_measure`, `fcore_session`) and suites. `tools/wasm/build.sh` builds the wasm modules against a felitronics-core checkout
 (`FELITRONICS_CORE_DIR`, or the sibling `../felitronics-core`) and records both versions in `BUILD-INFO` beside
 them. How the two roads are compared, and to which criterion: `WASM-PARITY.md`. Law 11d as it applies to the
 chain and its ABI: `LAW11D-MASTERING.md`.

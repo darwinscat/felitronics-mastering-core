@@ -12,6 +12,9 @@
 #   fcmaster.*  — the mastering ABI (tools/fc_master_abi.h + tools/wasm/fc_master.cpp), which is what a
 #                 browser worker links to render and to run the loudness search. Same flags, same numeric
 #                 contract, same no-threads and byte-identity checks — see the fc_master section below.
+#   fcsession.* — the session ABI (tools/fc_session_abi.h + tools/wasm/fc_session.cpp) over felitronics::session, the
+#                 first module with a COMPILED library behind it: the sources modules/session/sources.txt lists, with the
+#                 flags modules/session/build-flags.txt states and the library's releases. See the fc_session section.
 #   tierup/     — never shipped: fctempo and fcprobe linked again with their function names, which is how the build
 #                 proves the tempo detector's hot loops survived the optimiser (tools/wasm/tierup-check.mjs).
 #
@@ -482,6 +485,129 @@ node "$CORE/tools/wasm/check-no-threads.mjs" "$OUT/fcmaster.web.wasm" "$OUT/fcma
 echo
 echo "=== size"
 sizes fcmaster.web.wasm fcmaster.web.mjs
+
+#==================================================================================================
+# fc_session — THE SESSION ABI (tools/fc_session_abi.h, tools/wasm/fc_session.cpp) over felitronics::session
+#
+# The first module with a COMPILED library behind it. Natively felitronics::session is a static library built by
+# modules/session/CMakeLists.txt; here its sources go into the module's one em++ line beside the facade, and what that
+# brings is the difference from the modules above:
+#  1. THE LIBRARY'S FLAGS, READ FROM THE FILE THE TARGET READS — modules/session/build-flags.txt, one line, one group:
+#     the native library and this module are compiled with one definition of the flags, not two copies of it. One em++
+#     line gives every translation unit those flags, the facade's included — as tools/CMakeLists.txt gives it natively —
+#     and the facade includes the library's src/BuildGuards.h first, as the library's own units do (-I modules/session/src).
+#  2. THE TWO RELEASES THE LIBRARY REPORTS (Session::version, Session::coreVersion), read from the project() lines of
+#     this repository and of the core it is built against — the same two lines the CMake build reads. The library
+#     refuses to compile without them.
+#  3. THE LIBRARY'S SOURCES FROM THE LIST THE TARGET COMPILES — modules/session/sources.txt — and a refusal if any .cpp
+#     under modules/session/src, in any subdirectory, is not on it: a source the module left out would be a library the
+#     page does not run. The check is shown to refuse such a tree before it is trusted.
+#  4. -Wl,--wrap=pthread_create, as felitronics-core's policy links every emscripten test of this tree: a thread on a
+#     live path is then a LINK error here too, not an ENOTSUP stub the no-threads audit cannot see.
+#  5. -sEXPORT_NAME=createFcSession; two artifacts, as fctempo: the ES-module web glue a module worker imports, and node's
+#     for tools/wasm/session-check.mjs, which holds the module to its EXACT export set — every export of the artifact
+#     against the ABI and the runtime's own — runs its surface, and walks one slot to its last generation. And a CONTROL
+#     copy with one callable the ABI does not declare (session-controls/extra_export.cpp), which the check must refuse.
+#     No debug variant: felitronics_session_abi_tests runs this translation unit natively under ASan and UBSan, and on
+#     the wasm tier's checked build (SAFE_HEAP, ASSERTIONS=2) in CI.
+#==================================================================================================
+# project_version <CMakeLists.txt> <project name> — "MAJOR MINOR PATCH" of that project() line, or nothing.
+project_version () { sed -nE "s/^project\\($2 VERSION ([0-9]+)\\.([0-9]+)\\.([0-9]+)[ )].*/\\1 \\2 \\3/p" "$1" | head -1; }
+read -r SV_MAJOR SV_MINOR SV_PATCH <<< "$(project_version "$ROOT/CMakeLists.txt" felitronics_mastering_core)" || true
+read -r CV_MAJOR CV_MINOR CV_PATCH <<< "$(project_version "$CORE/CMakeLists.txt" felitronics_core)" || true
+[ -n "${SV_PATCH:-}" ] || { echo "*** no project(felitronics_mastering_core VERSION x.y.z ...) line in $ROOT/CMakeLists.txt"; exit 1; }
+[ -n "${CV_PATCH:-}" ] || { echo "*** no project(felitronics_core VERSION x.y.z ...) line in $CORE/CMakeLists.txt"; exit 1; }
+echo
+echo "--- fc_session: felitronics-mastering-core $SV_MAJOR.$SV_MINOR.$SV_PATCH over felitronics-core $CV_MAJOR.$CV_MINOR.$CV_PATCH"
+
+# session_sources <module dir> — the translation units sources.txt lists, one absolute path per line; refuses (exit 1) if
+# a listed file is missing or if any .cpp/.cc/.cxx under <module>/src, at any depth, is not listed.
+session_sources () { mod="$1"
+    listed=$(sed -e 's/#.*//' -e 's/[[:space:]]*$//' "$mod/sources.txt" | grep -v '^$' | LC_ALL=C sort) \
+        || { echo "*** $mod/sources.txt lists no source" >&2; return 1; }
+    found=$(cd "$mod" && find src -type f \( -name '*.cpp' -o -name '*.cc' -o -name '*.cxx' \) | LC_ALL=C sort)
+    if [ "$listed" != "$found" ]; then
+        echo "*** $mod: the translation units under src/ and the ones sources.txt lists differ:" >&2
+        diff <(printf '%s\n' "$listed") <(printf '%s\n' "$found") >&2 || true
+        return 1
+    fi
+    printf '%s\n' "$listed" | sed "s|^|$mod/|"; }
+
+# ...and before it is trusted: a tree with one unlisted source in a SUBDIRECTORY of src/ must be refused.
+SCTL="$(mktemp -d)"
+mkdir -p "$SCTL/src/sub"
+cp "$ROOT/modules/session/sources.txt" "$SCTL/"
+while IFS= read -r f; do mkdir -p "$SCTL/$(dirname "$f")"; : > "$SCTL/$f"; done \
+    < <(sed -e 's/#.*//' -e 's/[[:space:]]*$//' "$ROOT/modules/session/sources.txt" | grep -v '^$')
+: > "$SCTL/src/sub/unlisted.cpp"
+if session_sources "$SCTL" > /dev/null 2>&1; then
+    rm -rf "$SCTL"; echo "*** CONTROL: a source in src/sub/ that sources.txt does not list was not refused"; exit 1
+fi
+rm -rf "$SCTL"
+echo "    control ok: an unlisted source in a subdirectory of src/ is refused"
+
+SESSION_SRCS=(); while IFS= read -r f; do SESSION_SRCS+=("$f"); done < <(session_sources "$ROOT/modules/session")
+[ "${#SESSION_SRCS[@]}" -gt 0 ] || { echo "*** no translation unit for felitronics::session"; exit 1; }
+SESSION_FLAGS_LINE=$(grep -E '^-' "$ROOT/modules/session/build-flags.txt")
+[ "$(printf '%s\n' "$SESSION_FLAGS_LINE" | grep -c .)" -eq 1 ] || { echo "*** modules/session/build-flags.txt must hold one line of flags"; exit 1; }
+read -r -a SESSION_FLAGS <<< "$SESSION_FLAGS_LINE"
+
+SSRC="$HERE/fc_session.cpp"
+SFRONT=(-std=c++20 "${SESSION_FLAGS[@]}"
+        -I"$ROOT/tools" -I"$ROOT/modules/session/include" -I"$ROOT/modules/session/src" -msimd128
+        -DFELITRONICS_SESSION_VERSION_MAJOR="$SV_MAJOR" -DFELITRONICS_SESSION_VERSION_MINOR="$SV_MINOR"
+        -DFELITRONICS_SESSION_VERSION_PATCH="$SV_PATCH"
+        -DFELITRONICS_SESSION_CORE_VERSION_MAJOR="$CV_MAJOR" -DFELITRONICS_SESSION_CORE_VERSION_MINOR="$CV_MINOR"
+        -DFELITRONICS_SESSION_CORE_VERSION_PATCH="$CV_PATCH")
+SLIST=$(abi_files "$SSRC" "${SFRONT[@]}" -O3)
+SFILES=(); while IFS= read -r f; do [ -z "$f" ] || SFILES+=("$f"); done <<< "$SLIST"
+SNAMES=$(export_names "${SFILES[@]}")
+SFOUND=$(printf '%s\n' "$SNAMES" | grep -c . || true)
+check_exports "$SFOUND" "${SFILES[@]}"
+check_return_types 'std::uint32_t|fc_session_status' "${SFILES[@]}"
+SEXPORTS="$(printf '%s\n' "$SNAMES" | paste -sd, -),_malloc,_free"
+echo "--- fc_session exports: $SFOUND entry points (+ _malloc/_free), matching $SFOUND declarations in: ${SFILES[*]##*/}"
+echo "    library flags (modules/session/build-flags.txt): ${SESSION_FLAGS[*]}"
+echo "    library sources (modules/session/sources.txt): ${SESSION_SRCS[*]##*/}"
+
+SCOMMON=("${SFRONT[@]}"
+         --no-entry
+         -sMODULARIZE=1
+         -sEXPORT_NAME=createFcSession
+         -sALLOW_MEMORY_GROWTH=1
+         -sFILESYSTEM=0
+         -sMALLOC=emmalloc
+         -Wl,--wrap=pthread_create
+         "-sEXPORTED_FUNCTIONS=[$SEXPORTS]"
+         "-sEXPORTED_RUNTIME_METHODS=['HEAPU32']")
+
+echo "--- fc_session node (for session-check.mjs)"
+em++ "${SCOMMON[@]}" -O3 -sENVIRONMENT=node "$SSRC" "${SESSION_SRCS[@]}" -o "$OUT/fcsession.node.js"
+echo "--- fc_session web ES module (for a module worker)"
+em++ "${SCOMMON[@]}" -O3 -sENVIRONMENT=web,worker -sEXPORT_ES6=1 "$SSRC" "${SESSION_SRCS[@]}" -o "$OUT/fcsession.web.mjs"
+same_as_node fcsession fcsession.web.mjs
+
+echo
+echo "=== no threads (fc_session)"
+node "$CORE/tools/wasm/check-no-threads.mjs" "$OUT/fcsession.web.wasm" "$OUT/fcsession.web.mjs"
+
+echo
+echo "=== the module on the artifact: its exact exports, its surface, its wrap boundary (session-check.mjs)"
+node "$HERE/session-check.mjs" "$OUT/fcsession.node.js"
+echo "  control — the same module with one callable the ABI does not declare, which the check must refuse:"
+mkdir -p "$OUT/controls"
+em++ "${SCOMMON[@]}" -O3 -sENVIRONMENT=node "$SSRC" "${SESSION_SRCS[@]}" "$HERE/session-controls/extra_export.cpp" \
+     -o "$OUT/controls/fcsession.node.js"
+if node "$HERE/session-check.mjs" "$OUT/controls/fcsession.node.js" > "$OUT/controls/session-check.txt" 2>&1; then
+    cat "$OUT/controls/session-check.txt"; echo "*** CONTROL: session-check passed a module that exports debug_probe"; exit 1
+fi
+grep -q 'debug_probe' "$OUT/controls/session-check.txt" \
+    || { cat "$OUT/controls/session-check.txt"; echo "*** CONTROL: session-check failed, but did not name debug_probe"; exit 1; }
+echo "  control ok: $(grep -m1 'debug_probe' "$OUT/controls/session-check.txt")"
+
+echo
+echo "=== size (fc_session)"
+sizes fcsession.web.wasm fcsession.web.mjs
 
 # WHAT THIS WAS BUILT FROM, beside what it built. A consumer that installs these modules records which engine
 # it ships, and a checkout's own `git describe` cannot say which core the modules were compiled against: the

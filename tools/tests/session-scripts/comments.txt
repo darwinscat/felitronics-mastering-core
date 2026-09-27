@@ -1,0 +1,4 @@
+# A script with no command in it: comments, and blank lines.
+
+   	
+# fcore_session accepts it and answers `done 0`.
