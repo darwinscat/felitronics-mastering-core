@@ -303,6 +303,92 @@ allocation counter — exactly, since each is one exact request.
 **No text.** A rejection is a `Rejection` code, and a field its place in its struct; the values are stable, and a new
 reason is a new value at the end. What a person reads is written from the code by a shell's catalogue.
 
+## The text — facts, one catalog, one formatting table
+
+Nothing in the session prints. It states a **fact** — a `FactId` and typed arguments: a number with its unit, precision,
+sign and bound; a count; a term the catalog names; a note as a MIDI number; a text of the user's, never translated
+(`<felitronics/session/Text.h>`). `Text::text(fact, lang)` renders it: a pure function over two documents compiled into
+the library — no state, no file, the same bytes on every row, native and wasm — so the pure kit can call it on a page's
+main thread.
+
+- **Two documents, compiled in.** `text/catalog.toml` holds whole messages — never assembled from fragments — with named
+  placeholders (`{passes}`) and, where the words depend on a number or a term, `plural` or `select` variants; it declares
+  its languages, today `ru` and `en`. `text/format.toml` is the one table of how each of the twelve site languages
+  writes a number: its decimal sign, its grouping separator and CLDR's minimum grouping, the Unicode minus, the plus, the
+  bounds (`≥`, `≤`), the absent sign (`—`), each unit's pattern (Turkish `%45`, French narrow no-break spaces), the names
+  of the notes (letters; the German system, where B natural is H; solfège). felitronics_toml_embed compiles both in
+  (`embedded/catalog.h` and `embedded/format.h`, admitted by name in `src/Text.cpp` alone), and the renderer walks them
+  in place: a lookup is a binary search over a table's keys, and nothing is parsed or allocated.
+- **The build holds the catalog.** `felitronics_session_text_check`, a host tool compiled from the library's own
+  `src/TextSchema.cpp`, checks both documents before the library is built — in every build, a consumer's and one without
+  tests included, through node on the wasm tier, and in `tools/wasm/build.sh`: every declared language has every message
+  and every term; a placeholder names an argument of its fact (`src/TextFacts.h` declares each fact's arguments by name
+  and kind), every text — each variant on its own, since Russian "one" is also 21 — places every argument (a `select`'s
+  own may be left out, its variant says it), and every language places the same set, repeated or reordered freely; a plural message has exactly its language's CLDR categories, a
+  select message exactly its group's terms; no brace is malformed; the table has every field — a separator with no digit
+  and no sign, the row's own minus included; signs with no digit that are no separator, the fixed ones exactly as the
+  law states them (minus U+2212, absent "—", "≥" and "≤" with a no-break space); a pattern for every unit with no
+  breaking space — in all twelve languages; and no key is one nothing reads. A problem is `<file>:<line>:<column>:
+  error: <fault> <key path> — <rule>`, and its stamp is written only on success. Eight controls
+  (`tests/text-must-fail.cmake`) plant a missing message, a stray placeholder, a lost one, a missing plural category, an
+  undeclared language, a unit without a pattern, a breaking space before a unit and an absent sign of "1" in a copy, and
+  require the gate to go red at the spot; the suite plants forty-six more in-process.
+- **No fallback, no guess.** A message the catalog does not have in a language — every message, in a language it does
+  not declare — renders as its id (`Text::key`), never in another language. An argument that does not match its fact's
+  declaration renders as `{name}`; a plural or a select whose own argument does not match cannot choose, and renders the
+  id.
+- **Numbers by rules of its own**, stated in `Text.h` and held by `felitronics_session_text_tests`: a double is read as
+  its shortest round-trip decimal — `std::to_chars`'s shortest form, which the standard specifies exactly, so every
+  standard library gives the same digits, with no locale — and that decimal is rounded to the grid of `precision`
+  digits, a half away from zero, in characters and integers (`src/TextNumber.cpp`: no libm, no printf, no floating-point
+  arithmetic). The number a person wrote rounds as they would round it: 1.005 → 1.01 and −14.05 → −14.1, though their
+  doubles lie just off the half (the owner's decision, 2026-09-27). Checked against an independent oracle over 24 000
+  decimals of up to 15 significant digits — each its own double's shortest form, since DBL_DIG is 15 — rounded in 64-bit
+  integers, and at the halves where the two readings disagree, across a carry into a new digit and at the extremes of
+  the double (1e300 prints a one and three hundred zeros); the sign is the printed number's — a value that prints as zero takes none,
+  under every `Sign` (−0.04 at one digit is "0.0", never "−0.0", which a musician reads as a bug; either zero is "0");
+  a value that is not finite prints the absent sign alone. Between a number and its unit is a no-break space (U+00A0;
+  French U+202F), so "−14" and "LUFS" never wrap apart. All twelve rows are pinned to CLDR 48 as ICU 78
+  writes it.
+- **No rendering depends on the thread's floating-point environment.** The digits come from `std::to_chars` (integer
+  arithmetic in every standard library) and the signs are read from the double's bits — through a volatile, since clang
+  folds an integer test on them back into a floating-point compare, which a thread that reads subnormals as zero answers
+  "zero" (measured). The suite renders subnormals, halves and zeros under flush-to-zero, denormals-are-zero and each
+  rounding mode, set the way a host sets them, and requires the bytes of the default environment — which a formatter
+  that multiplied or rounded in floating point would miss.
+- **Plural categories on the printed number.** CLDR 48's cardinal rules for the twelve languages, evaluated on the digits
+  as printed — "1.0" is not "one" in English — by the component that formats them; pinned against ICU 78's own answers on
+  39 numbers of every category in each language, each language's set reached exactly.
+- **What a person typed.** `Text::parse` reads a number with `std::from_chars` over its digits and one correctly rounded
+  division: the double a correctly rounded `strtod` gives, without the process's locale. The language's decimal sign, or
+  "." where "." does not group; no grouping separator, so a grouped number the table printed is never read back as
+  another ("12.345" is not twelve in German); at most nine fraction digits and 2^53. It is the text's one computing call,
+  and asks for the default floating-point environment on entry, as the rule is; a thread that rounds upward gets nullopt,
+  not 0.30000000000000004.
+- **Memory.** `size()` and `write()` allocate nothing; `text()` asks the heap for at most `textBytes()` — the result's
+  length and terminator, rounded up to the 16-byte step a standard library allocates a string's storage in, and 64 bytes
+  for what MSVC's STL asks beside them (47 to align a block of 4 KiB or more, a 16-byte proxy under iterator debugging).
+  The suite holds both through the allocation counter, and requires a declaration 80 bytes short to be caught.
+- **The same bytes on every row.** The suite renders a corpus — every fact in every language, 36 000 numbers from a fixed
+  generator across every unit, sign, bound and precision, every note — and pins one FNV-1a hash of it, which every native
+  row and the wasm tier must give.
+- **A command's rejection is a fact.** Every code of the state machine's `Rejection` (`Commands.h`) is the fact
+  100 + its code, a sentence in every declared language that says what was refused and why; the four a field refuses
+  (not finite, not one of its values, off its travel, off its step) name the field — a term for each field a check can
+  refuse: the target's two numbers, every device's knob and choice, a load's audio. `Text::rejected(answer, request)`
+  builds it from a refused answer, reading the field off the request. The mapping is a switch over every code with no
+  default, so a code the state machine adds and nobody maps is an error in this repository's builds (`-Wswitch`,
+  `-Werror`); the suite holds the table code by code, the field terms position by position against `src/Devices.h`'s
+  walk of the fields (a term exactly where a check can refuse), and renders the answers of a real session.
+- **Only in words:** the wording itself — the glossary's Latin terms and the polite form, which the site's guards hold
+  for its own catalogs and which join this catalog in a later step; and that a fact's user text is a view whose bytes
+  its caller keeps alive while it is rendered.
+
+The facts' ids are stable and fall in ranges (`Text.h`): 1–99 readings and the landing, 100–199 a command's rejection,
+200–299 the phases of the work and 300–399 the session's errors, reserved. Adding a fact is three edits: its id in
+`Text.h`, in its range, its row in `src/TextFacts.h`, in id order, and its message in every declared language — the
+build is red until the three agree.
+
 ## The floating-point environment
 
 The flags decide what the compiler emits. The thread decides what the arithmetic does: a host may have set flush-to-zero
@@ -390,7 +476,7 @@ against that build's `compile_commands.json`, with or without `output` fields). 
 from the target's list (`modules/session/sources.txt`, which CMake and `tools/wasm/build.sh` read too), the C boundary
 compiled with the session's flags (`tools/wasm/fc_session.cpp` and `tools/fc_session_abi.h`), and the `#include` closure
 of those units, whatever the files are called; it refuses a file of unknown type, a unit the list does not name, and a
-file nothing compiles or includes; the config's two documents are data, named as such. Only `modules/session/tests` is
+file nothing compiles or includes; the config's two documents and the text's two are data, named as such. Only `modules/session/tests` is
 outside it. `--build` also names the felitronics-core and felitronics-toml checkouts the lint resolves admitted headers in
 (or their sibling checkouts).
 
@@ -401,10 +487,11 @@ and `u8'0'` is a character literal, not a digit separator. Its rules:
 - **includes** on an allowlist: canonically spelled standard headers that reach no OS, file, locale, thread, clock or
   process state; felitronics headers **by name** (`FELITRONICS_ALLOWED`: core's `FlushToZero.h` sets flush-to-zero with
   no symbol and several core headers pull in `<atomic>`, so each is a reviewed one-line addition — today the module's
-  own `Session.h`, `Config.h`, `Commands.h` and `Project.h`, felitronics-toml's `Toml.h`, `Schema.h` and `Embedded.h`, and the three analyzers the
+  own `Session.h`, `Config.h`, `Commands.h`, `Project.h` and `Text.h`, felitronics-toml's `Toml.h`, `Schema.h` and `Embedded.h`, and the three analyzers the
   config's schema asks what they admit, `LowEnd.h`, `BandCrest.h` and `StereoBandBursts.h`, which bring core's DSP and
   `FlushToZero.h` with it; the schema calls only their `storageFor()`); quoted headers inside the module, and in
-  `src/Config.cpp` the two headers the build generates from the config, by name;
+  `src/Config.cpp` the two headers the build generates from the config, and in `src/Text.cpp` the two it generates from
+  the text, by name;
 - **no macros** — no `#define`, `#undef` or `##` — and **no directive** but `#include` and `#pragma once`;
   `src/BuildGuards.h` and `src/BuildContract.cpp` may carry `#if` / `#error` logic and nothing that defines a macro;
 - no pragma but `#pragma once`, no `_Pragma` / `__pragma`;

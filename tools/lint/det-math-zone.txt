@@ -87,6 +87,16 @@ zone   modules/session/src/Devices.h                          every device's fie
 zone   modules/session/src/Devices.cpp                        the machine's layer, and which device is offered where
 zone   modules/session/src/Driver.h                           the session's own transitions, driven by the work that ends
 zone   modules/session/src/Commands.cpp                       the commands: the table consulted, the checks in order, the work
+entry  modules/session/src/Text.cpp                           a translation unit of felitronics::session
+entry  modules/session/src/TextNumber.cpp                     a translation unit of felitronics::session
+entry  modules/session/src/TextSchema.cpp                     a translation unit of felitronics::session
+zone   modules/session/include/felitronics/session/Text.h     the text's facts and renderer
+zone   modules/session/src/Text.cpp                           the renderer: a fact's message, its arguments formatted by the table
+zone   modules/session/src/TextFacts.h                        the facts' and terms' shapes the catalog is held to
+zone   modules/session/src/TextNumber.h                       the digits of a number, its plural category, a typed number read
+zone   modules/session/src/TextNumber.cpp                     exact rounding on the decimal grid, by integer arithmetic
+zone   modules/session/src/TextSchema.h                       the text's gate and its seam
+zone   modules/session/src/TextSchema.cpp                     the text's gate, shared with the build's checker
 # The C boundary and the native CLI: the two roads into the library; what either includes is rule 4's net. The boundary
 # is compiled with the session's flags and scanned by the session-laws lint, which holds it in the zone as the module is.
 entry  tools/wasm/fc_session.cpp  the session ABI, the translation unit of the fcsession module

@@ -90,6 +90,10 @@ What is fixed is the ground it stands on:
   wrong type or a value out of its domain stops every build of the library at its line and column. The owner's decisions
   in it are pinned by a suite of their own; its sound version, a hash of the normalised data that can change a master, is
   what a recipe will record. [`SESSION.md`](SESSION.md) has the details;
+- **its text** (`<felitronics/session/Text.h>`): the session states facts — an id and typed arguments — and never prints;
+  `Text::text(fact, lang)` renders a fact from a catalog of whole messages (plural and select by CLDR categories, the
+  declared languages checked complete by every build, no fallback to another language) and one formatting table of the
+  twelve site languages, with rounding, plural selection and parsing of its own, the same bytes on every row;
 
 - **a compiled STATIC target**, the repository's first, whose sources are compiled with PRIVATE flags in one `SHELL:`
   group — no FP contraction, no fast-math, no exceptions, no RTTI. Every translation unit refuses to compile without

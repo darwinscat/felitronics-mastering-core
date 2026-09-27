@@ -520,6 +520,9 @@ sizes fcmaster.web.wasm fcmaster.web.mjs
 #     and column — and the session's own gate (modules/session/tests/ConfigCheck.cpp with src/ConfigSchema.cpp, the
 #     library's schema) reads both by schema before anything is linked: a typo stops the module's build at its line.
 #     session-check.mjs then compares the module's config version with the native CLI's.
+#  7. THE TEXT, the same way: modules/session/text/catalog.toml and format.toml become the two headers src/Text.cpp
+#     includes, and the text's gate (modules/session/tests/TextCheck.cpp with src/TextSchema.cpp) checks both before
+#     anything is linked: a message missing in a declared language, or a stray placeholder, stops the module's build.
 #==================================================================================================
 # project_version <CMakeLists.txt> <project name> — "MAJOR MINOR PATCH" of that project() line, or nothing.
 project_version () { sed -nE "s/^project\\($2 VERSION ([0-9]+)\\.([0-9]+)\\.([0-9]+)[ )].*/\\1 \\2 \\3/p" "$1" | head -1; }
@@ -580,6 +583,10 @@ for doc in targets engine; do
     node "$SGEN/toml2cpp.js" "$ROOT/modules/session/config/$doc.toml" "$SGEN/embedded/$doc.h" \
          felitronics::session::config::embedded "$doc"
 done
+for doc in catalog format; do
+    node "$SGEN/toml2cpp.js" "$ROOT/modules/session/text/$doc.toml" "$SGEN/embedded/$doc.h" \
+         felitronics::session::text::embedded "$doc"
+done
 # The analyzers' include roots too (INC): the schema asks them what they admit (their storageFor). The gate compiles the
 # library's schema with this front end as well — src/BuildGuards.h, its first include, refuses any other.
 SFRONT=(-std=c++20 "${SESSION_FLAGS[@]}"
@@ -593,6 +600,11 @@ em++ "${SFRONT[@]}" -O1 "$ROOT/modules/session/tests/ConfigCheck.cpp" "$ROOT/mod
 node "$SGEN/config_check.js" "$ROOT/modules/session/config/targets.toml" "$ROOT/modules/session/config/engine.toml" \
     || { echo "*** the session's config breaks its schema — see above"; exit 1; }
 echo "--- fc_session config: read by schema, no problem"
+em++ "${SFRONT[@]}" -O1 "$ROOT/modules/session/tests/TextCheck.cpp" "$ROOT/modules/session/src/TextSchema.cpp" \
+     -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -o "$SGEN/text_check.js"
+node "$SGEN/text_check.js" "$ROOT/modules/session/text/catalog.toml" "$ROOT/modules/session/text/format.toml" \
+    || { echo "*** the session's text catalog or formatting table breaks its gate — see above"; exit 1; }
+echo "--- fc_session text: the catalog and the formatting table checked, no problem"
 
 SSRC="$HERE/fc_session.cpp"
 SLIST=$(abi_files "$SSRC" "${SFRONT[@]}" -O3)
@@ -648,7 +660,7 @@ sizes fcsession.web.wasm fcsession.web.mjs
 # WHAT THIS WAS BUILT FROM, beside what it built. A consumer that installs these modules records which engine
 # it ships, and a checkout's own `git describe` cannot say which core the modules were compiled against: the
 # two repositories move separately, and a local build may use a sibling core that is not the pinned one.
-# felitronics-toml is recorded too: the config fcsession carries was embedded and gated with it.
+# felitronics-toml is recorded too: the config and the text fcsession carries were embedded and gated with it.
 describe() { git -C "$1" describe --tags --always --dirty 2>/dev/null || echo unknown; }
 TOML_DESCRIBED="$(describe "$TOML")"
 [ "$TOML_DESCRIBED" != unknown ] || TOML_DESCRIBED="v$TV_MAJOR.$TV_MINOR.$TV_PATCH (no git checkout)"
