@@ -96,14 +96,15 @@ struct Writer
 
 struct Storage
 {
-    std::size_t chars = 0, masters = 0, points = 0, runs = 0;
+    std::size_t chars = 0, masters = 0, points = 0, runs = 0, differences = 0;
     char* text = nullptr;
     Kept* kept = nullptr;
     ReadingPoint* point = nullptr;
     ReadingRun* run = nullptr;
+    MachineDifference* difference = nullptr;
     std::uint64_t bytes() const noexcept
     {
-        return chars + masters * sizeof (Kept) + points * sizeof (ReadingPoint) + runs * sizeof (ReadingRun);
+        return chars + masters * sizeof (Kept) + points * sizeof (ReadingPoint) + runs * sizeof (ReadingRun) + differences * sizeof (MachineDifference);
     }
 };
 
@@ -309,7 +310,8 @@ struct Reader
         std::size_t* count = nullptr; T* out = nullptr;
         if constexpr (std::is_same_v<T, Kept>) { count = &storage.masters; out = storage.kept; }
         else if constexpr (std::is_same_v<T, ReadingPoint>) { count = &storage.points; out = storage.point; }
-        else { count = &storage.runs; out = storage.run; }
+        else if constexpr (std::is_same_v<T, ReadingRun>) { count = &storage.runs; out = storage.run; }
+        else { count = &storage.differences; out = storage.difference; }
         const auto start = *count;
         expect ('[');
         if (! take (']'))
@@ -374,7 +376,8 @@ CodecStatus Codec::decode (std::string_view json, Snapshot& output) noexcept
     if (sizes.masters) out.masters_.reset (new Kept[sizes.masters]);
     if (sizes.points) out.points_.reset (new ReadingPoint[sizes.points]);
     if (sizes.runs) out.runs_.reset (new ReadingRun[sizes.runs]);
-    Storage storage { 0, 0, 0, 0, out.text_.get(), out.masters_.get(), out.points_.get(), out.runs_.get() };
+    if (sizes.differences) out.differences_.reset (new MachineDifference[sizes.differences]);
+    Storage storage { 0, 0, 0, 0, 0, out.text_.get(), out.masters_.get(), out.points_.get(), out.runs_.get(), out.differences_.get() };
     if (! read (json, storage, out.view_)) return CodecStatus::Invalid;
     output = std::move (out);
     return CodecStatus::Ok;

@@ -33,7 +33,7 @@ bool offered (const Rules& rules, std::uint16_t row, std::uint32_t channels, Dev
     return false;
 }
 
-void placeMachine (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices) noexcept
+void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices) noexcept
 {
     const TargetRow target = rules.row (row);
     const auto number = [] (const Decimal& d) { return kept (d.toDouble()); };   // −0 as +0, as every number kept
@@ -72,6 +72,11 @@ void placeMachine (const Rules& rules, std::uint16_t row, std::uint32_t channels
     auto& shelf = devices.lowShelf.machine;
     shelf.on = rules.eq && target.lowShelfDb.has_value();
     shelf.db = target.lowShelfDb ? number (*target.lowShelfDb) : 0.0;
+}
+
+void placeMachine (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices) noexcept
+{
+    placeDefaults (rules, row, channels, devices);
 }
 
 } // namespace felitronics::session::detail

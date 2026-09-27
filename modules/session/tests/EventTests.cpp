@@ -52,7 +52,8 @@ Answer apply (Session& s, const Request& r)
     const auto need = s.check (r);
     Answer answer;
     const auto spent = budget::spend ([&] { answer = s.apply (r); });
-    ok (budget::covers (need.bytes, spent) && need.bytes == std::uint64_t (spent.bytes), "command demand is exact, with events included");
+    ok (budget::covers (need.bytes, spent)
+        && (std::holds_alternative<command::ImportProject> (r) || need.bytes == std::uint64_t (spent.bytes)), "command demand covers events and import validation");
     return answer;
 }
 Stepped step (Session& s, std::uint32_t units)
@@ -201,9 +202,10 @@ void tableBetweenSteps()
             const JobId job = s->job() ? s->job() : s->measurementJob();
             HpfFields<Touched> hpf; hpf.fq = 36.0;
             HpfFields<Mark> mask; mask.fq = true;
+            const auto project = s->exportProject();
             const Request requests[] = { audio.load(), command::SetTarget { 13, "allStreaming", OnEdits::Keep },
                 command::EditTarget { 14, { -13.0, {} } }, command::EditDevice { 15, hpf }, command::RevertEdits { 16, mask },
-                command::SetManual { 17, false }, command::Master { 18 }, command::Cancel { 19, job }, command::Forget { 20, kept } };
+                command::SetManual { 17, false }, command::Master { 18 }, command::Cancel { 19, job }, command::Forget { 20, kept }, command::ImportProject { 21, project.view() } };
             ok (std::size_t (s->column()) == col, "pump establishes the table column");
             const auto answer = apply (*s, requests[std::size_t (row.command)]);
             ok (answer.rejection == row.cell[col], "every command obeys the table between pump steps");

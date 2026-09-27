@@ -263,3 +263,44 @@ en = "This session no longer accepts commands after a failure."
 [messages.sessionStale]
 ru = "Результат относится к заданию, которое уже не выполняется."
 en = "The result belongs to a job that is no longer running."
+
+[messages.rejectedProjectTooLarge]
+ru = "Текст проекта превышает допустимый размер."
+en = "The project text exceeds the size limit."
+
+[messages.rejectedProjectSyntax]
+ru = "В проекте некорректный TOML."
+en = "The project contains invalid TOML."
+
+[messages.rejectedProjectMissing]
+ru = "В проекте отсутствует обязательное поле."
+en = "A required project field is missing."
+
+[messages.rejectedProjectType]
+ru = "У поля проекта неверный тип."
+en = "A project field has the wrong type."
+
+[messages.rejectedProjectUnknownKey]
+ru = "В проекте неизвестный раздел, поле или суффикс автора."
+en = "The project contains an unknown section, field or author suffix."
+
+[messages.rejectedUnknownDefaults]
+ru = "В этом ядре нет версии умолчаний, указанной в проекте."
+en = "This core does not carry the project’s defaults version."
+
+[messages.rejectedProjectCore]
+ru = "Версия ядра в проекте должна иметь вид major.minor.patch."
+en = "The project’s core version must have the form major.minor.patch."
+
+[messages.rejectedMachineMismatch]
+ru = "Сохранённый слой машины отличается от решения этого ядра."
+en = "The saved machine layer differs from this core’s decision."
+
+[messages.machineDifferences]
+plural = "count"
+ru.one = "Новое ядро решило бы иначе в {count} месте. Слой машины сохранён."
+ru.few = "Новое ядро решило бы иначе в {count} местах. Слой машины сохранён."
+ru.many = "Новое ядро решило бы иначе в {count} местах. Слой машины сохранён."
+ru.other = "Новое ядро решило бы иначе в {count} местах. Слой машины сохранён."
+en.one = "A newer core would decide differently in {count} place. The saved machine layer is retained."
+en.other = "A newer core would decide differently in {count} places. The saved machine layer is retained."
