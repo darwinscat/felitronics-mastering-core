@@ -540,16 +540,26 @@ struct Loaded
 // Comments are not data and are not kept. What `fcore_session config targets|engine` prints.
 [[nodiscard]] std::string text (Document document);
 
-// THE CONFIG VERSION — what a recipe records, so that a master names the numbers it was made with. A 64-bit FNV-1a hash of
-// both documents' data, targets then engine, in document order: every key, every value with its type (an integer, a
-// decimal with its scale, a boolean, a string), every table and array with its count. Any change of the data — a number,
-// a key, a string, the order of keys — moves it; positions, comments, spacing and inline-or-not do not. Integers only,
-// so the same on every platform. version() walks the data compiled into the library and allocates nothing, which is why
-// the C ABI can answer it (fc_session_config_version) with no demand to declare.
-[[nodiscard]] std::uint64_t version() noexcept;
+// THE CONFIG'S VERSIONS — 64-bit FNV-1a hashes of the documents' NORMALISED data, targets then engine. Every number is
+// the bits of its correctly rounded double, −0 read as +0 (so 50, 50.0 and 50.00 are one value); every table is walked in
+// the byte order of its keys (so the order keys are written in, and whether a table is inline, is no data); order counts
+// in arrays alone, where it means something (the main targets, a series). Positions, comments and spacing are not data.
+// The same on every platform, and computed from the data compiled into the library without allocating.
+//   all    every key of both documents: which config this is.
+//   sound  what can change a master — the targets, the devices, the input, the landing, the limiter, the dither, the
+//          measurements the machine decides from — without what is only shown, measured after the master or used in
+//          development (the default target and the main list, the edit's green ranges, the observation kinds, the
+//          curve scales, marks, comfort window and zones, the crest and the cost, the progress weights, the blind test,
+//          the name of the defaults). A recipe records this one: a master names the numbers it was made with.
+struct Versions
+{
+    std::uint64_t all = 0;
+    std::uint64_t sound = 0;
+};
+[[nodiscard]] Versions versions() noexcept;
 
-// The version of two documents given as text — the source files, say — by the same walk; nullopt when either does not
-// parse. For the library's own sources it equals version().
-[[nodiscard]] std::optional<std::uint64_t> versionOf (std::string_view targetsToml, std::string_view engineToml);
+// The versions of two documents given as text — the source files, say — by the same walk; nullopt when either does not
+// parse. For the library's own sources they equal versions().
+[[nodiscard]] std::optional<Versions> versionsOf (std::string_view targetsToml, std::string_view engineToml);
 
 } // namespace felitronics::session::config

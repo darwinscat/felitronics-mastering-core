@@ -40,9 +40,11 @@ std::string text (Document document)
     return toml::write (toml::embedded::toTable (rootOf (document)));
 }
 
-std::uint64_t version() noexcept
+Versions versions() noexcept
 {
-    return detail::versionOf (rootOf (Document::Targets), rootOf (Document::Engine));
+    const auto targets = rootOf (Document::Targets);
+    const auto engine = rootOf (Document::Engine);
+    return { detail::version (targets, engine, false), detail::version (targets, engine, true) };
 }
 
 } // namespace felitronics::session::config

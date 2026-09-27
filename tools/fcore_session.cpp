@@ -14,8 +14,9 @@
 //   fcore_session config targets  the config the library was built with, one document at a time, spelled by
 //   fcore_session config engine   felitronics-toml's canonical writer (session::config::text): the numbers of
 //                                 modules/session/config/*.toml without their comments, to open and read.
-//   fcore_session config version  the config version (session::config::version) in 16 hexadecimal digits — what a
-//                                 recipe will record.
+//   fcore_session config version        the config's versions (session::config::versions), 16 hexadecimal digits:
+//   fcore_session config sound-version  `version` of all its data — which config this is — and `sound-version` of
+//                                       what can change a master, the one a recipe will record.
 //
 // THE SCRIPT. One command per line; `#` starts a comment that runs to the end of the line; a line that is empty or
 // blank after that is not a command. There are no commands yet, so the only script this accepts is one with none in
@@ -44,7 +45,7 @@ namespace
 {
 int usage (const char* argv0)
 {
-    std::fprintf (stderr, "usage: %s version\n       %s run <script|->\n       %s config targets|engine|version\n",
+    std::fprintf (stderr, "usage: %s version\n       %s run <script|->\n       %s config targets|engine|version|sound-version\n",
                   argv0, argv0, argv0);
     return 2;
 }
@@ -120,9 +121,10 @@ int main (int argc, char** argv)
     }
     if (argc == 3 && std::strcmp (argv[1], "config") == 0)
     {
-        if (std::strcmp (argv[2], "version") == 0)
+        if (std::strcmp (argv[2], "version") == 0 || std::strcmp (argv[2], "sound-version") == 0)
         {
-            std::printf ("%016" PRIx64 "\n", config::version());
+            const config::Versions v = config::versions();
+            std::printf ("%016" PRIx64 "\n", std::strcmp (argv[2], "version") == 0 ? v.all : v.sound);
             return 0;
         }
         const bool targets = std::strcmp (argv[2], "targets") == 0;

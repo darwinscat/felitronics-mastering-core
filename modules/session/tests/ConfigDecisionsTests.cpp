@@ -7,6 +7,10 @@
 // a schema that happens to admit the new number. Run as `felitronics_session_config_decisions_tests <targets.toml>
 // <engine.toml>`.
 //
+// AND THE VERSION OF THE SOUND, pinned to the name of the defaults (kGolden): a number that can change a master, changed
+// without naming new defaults in engine.toml, turns this red — a project records the name, so two sets of numbers must
+// never carry one.
+//
 // Its controls plant a departure a review found the schema admitting (the high-pass top above 50 Hz, another slope, another
 // landing series, another target number) and require this suite to name it.
 
@@ -30,6 +34,17 @@ using felitronics::test::ok;
 namespace
 {
 std::string g_targetsText, g_engineText;
+
+// THE NAME OF THE DEFAULTS → THE VERSION OF THEIR SOUND. A new set of sound numbers is a new name in engine.toml
+// (`defaults`) and a new line here; an old line stays, for the projects that name it.
+struct Golden
+{
+    std::string_view defaults;
+    std::uint64_t sound;
+};
+constexpr Golden kGolden[] = {
+    { "2026-09", 0x40f23a08b4c3e613ull },
+};
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
 // floor 24 Hz (vinyl 32) and slope 24 dB/oct (vinyl 12), the loss at the lowest note 1 dB (club 0.3), the delivery;
@@ -164,6 +179,21 @@ void theConfigHoldsTheDecisions()
     ok (away.empty(), "no departure" + (away.empty() ? std::string{} : ": " + joined (away)));
 }
 
+void theSoundIsPinnedToTheDefaults()
+{
+    felitronics::test::group ("the version of the sound is pinned to the name of the defaults");
+    const config::Loaded loaded = config::load();
+    const config::Versions v = config::versions();
+    char hex[24];
+    std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) v.sound);
+    const Golden* golden = nullptr;
+    for (const auto& g : kGolden)
+        if (g.defaults == loaded.config.engine.defaults) golden = &g;
+    ok (golden != nullptr, "defaults = \"" + loaded.config.engine.defaults + "\" has a line in kGolden");
+    ok (golden != nullptr && golden->sound == v.sound,
+        std::string ("its sound version is ") + hex + " — a sound number changed without new defaults turns this red");
+}
+
 void aDepartureIsNamed()
 {
     felitronics::test::group ("control: a departure the schema admits is named here");
@@ -200,6 +230,7 @@ int main (int argc, char** argv)
         return 2;
     }
     theConfigHoldsTheDecisions();
+    theSoundIsPinnedToTheDefaults();
     aDepartureIsNamed();
     return felitronics::test::report();
 }

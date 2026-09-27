@@ -3,26 +3,32 @@
 
 #pragma once
 
-// THE CONFIG VERSION, ONE WALK FOR TWO TREES (internal to modules/session; Config.h has the public face). The version is a
-// 64-bit FNV-1a hash of both documents' DATA, targets then engine, walked in document order. The same walk reads the data
-// compiled into the library (toml::embedded::View — no allocation, so config::version() can answer through the C ABI
-// without a demand to declare) and a document parsed from text (toml::Table — how config::versionOf() hashes the source
-// files, and what a shell or a test can compare the library's number with).
+// THE CONFIG'S VERSIONS, ONE WALK FOR TWO TREES (internal to modules/session; Config.h has the public face). A 64-bit FNV-1a
+// hash of both documents' NORMALISED data, targets then engine. The same bytes are fed from the data compiled into the
+// library (toml::embedded::View — config::versions(), no allocation, which is why the C ABI can answer it) and from a
+// document parsed from text (toml::Table — config::versionsOf(), how the source files are hashed).
 //
-// WHAT IS FED, and why it cannot be read two ways: every value starts with a byte naming its type, so an integer 3 and a
-// decimal 3.0 hash apart; an integer is its 8 bytes, a decimal its 8-byte mantissa, its scale and its negative-zero flag
-// (1.5 and 1.50 are different text, and different data), a boolean one byte; a string, and every key, its length and then
-// its bytes; a table, an array and an array of tables their count and then their items. So no two trees feed the same
-// bytes. Every step of FNV-1a is (h ^ byte) · prime with an odd prime — a bijection of h — so two trees whose bytes differ
-// in one place at the same length (any number changed: numbers are fixed width) always hash apart.
+// NORMALISED, so that what is no data does not move it:
+//   * a number — an integer or a decimal — is the 64 bits of its correctly rounded double, with −0 read as +0: 50, 50.0
+//     and 50.00 are one value, and so are 0.1 and 0.10;
+//   * a table's entries are walked in the byte order of their keys, by selection over the entries (no allocation): the
+//     order keys are written in is no data, and neither is whether a table is inline or under a header;
+//   * an array keeps its order — there it means something (the main targets, a series, a band's edges).
+// UNAMBIGUOUS: every value starts with a byte naming its kind; a string and a key are their length and their bytes; an
+// entry is a marker, its key and its value, and a table closes with an end byte; an array is its count and its items.
 //
-// WHAT IS NOT DATA does not move it: positions, comments, spacing, and whether a table was written inline.
+// TWO VERSIONS. `all` walks everything. `sound` leaves out what cannot change a master — kPresentation below: what is
+// only shown, measured after the master, or used in development — so that a recipe, which records `sound`, names the
+// numbers a master was made with and nothing else. Moving a key between the two is a change of this list and of the
+// suite that holds it (tests/ConfigTests.cpp).
 
 #include <felitronics/toml/Embedded.h>
 #include <felitronics/toml/Toml.h>
 
+#include <bit>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <string_view>
 #include <variant>
 
@@ -52,94 +58,188 @@ private:
     std::uint64_t h_ = 14695981039346656037ull;
 };
 
-// The type bytes. Shared by both walks, so they cannot disagree on a spelling.
-enum : std::uint8_t { kString = 0, kInteger = 1, kDecimal = 2, kBoolean = 3, kArray = 4, kTable = 5, kTables = 6 };
+// The kind bytes, shared by both walks so they cannot disagree on a spelling.
+enum : std::uint8_t { kString = 0, kNumber = 1, kBoolean = 2, kArray = 3, kTable = 4, kEntry = 5, kEnd = 6 };
 
-inline void feedDecimal (Fnv& f, const toml::Decimal& d) noexcept
+// A number as the bits of its double, −0 as +0.
+inline void feedNumber (Fnv& f, double x) noexcept
 {
-    f.byte (kDecimal);
-    f.u64 (static_cast<std::uint64_t> (d.mantissa));
-    f.byte (d.scale);
-    f.byte (d.negativeZero ? 1 : 0);
+    const std::uint64_t bits = std::bit_cast<std::uint64_t> (x);
+    f.byte (kNumber);
+    f.u64 (bits == 0x8000000000000000ull ? 0u : bits);
 }
 
-// The data compiled into the library. `depth` bounds the recursion as the parser bounds the document (kMaxDepth).
-inline void feed (Fnv& f, toml::embedded::View v, std::size_t depth) noexcept
+// WHAT CANNOT CHANGE A MASTER, by key path: left out of `sound`. A path covers everything under it.
+inline constexpr std::string_view kTargetsPresentation[] = {
+    "default",          // the target a session starts with — a master names its own
+    "main",             // the order of the list
+    "edit.lufs.green",  // the ranges drawn green
+    "edit.tp.green",
+};
+inline constexpr std::string_view kEnginePresentation[] = {
+    "defaults",             // the name of this set of defaults — a label, recorded beside the version
+    "hpf.comfort",          // the knob field's colours
+    "hpf.curveTopDb", "hpf.curveBottomDb", "hpf.curveStepDb", "hpf.curveHeadroomDb",
+    "hpf.marks",
+    "monoBass.zones",       // the knob scale's regions
+    "eq",                   // the summed curve's colours and scale
+    "observations.kinds",   // how a finding is styled
+    "crest",                // measured after the master
+    "cost",                 // measured after the master
+    "progress",             // the progress bar's weights
+    "blindTest",            // a development tool
+};
+
+// The key path being walked, without allocating: the keys from the root, at most one per level.
+struct Path
+{
+    std::string_view part[toml::kMaxDepth + 1];
+    std::size_t size = 0;
+};
+
+// Not string_view::substr: it checks its position and throws, and under -fno-exceptions that check links libc++'s abort
+// path, printf included — a tenth of the wasm module for a bound this loop already keeps.
+inline bool equals (std::string_view dotted, const Path& p) noexcept
+{
+    std::size_t i = 0, at = 0;
+    for (;;)
+    {
+        const std::size_t dot = dotted.find ('.', at);
+        const std::size_t end = dot == std::string_view::npos ? dotted.size() : dot;
+        const std::string_view part (dotted.data() + at, end - at);
+        if (i >= p.size || part != p.part[i]) return false;
+        ++i;
+        if (dot == std::string_view::npos) return i == p.size;
+        at = dot + 1;
+    }
+}
+
+// Which paths a walk leaves out: none for `all`.
+struct Skip
+{
+    const std::string_view* paths = nullptr;
+    std::size_t count = 0;
+    [[nodiscard]] bool covers (const Path& p) const noexcept
+    {
+        for (std::size_t i = 0; i < count; ++i)
+            if (equals (paths[i], p)) return true;
+        return false;
+    }
+};
+
+//==============================================================================
+// The data compiled into the library.
+
+inline void feed (Fnv& f, toml::embedded::View v, Path& path, const Skip& skip) noexcept
 {
     using toml::embedded::Type;
     const auto type = v.type();
-    if (! type || depth > toml::kMaxDepth) return;
+    if (! type || path.size > toml::kMaxDepth) return;
     switch (*type)
     {
         case Type::String:  f.byte (kString); f.text (*v.string()); break;
-        case Type::Integer: f.byte (kInteger); f.u64 (static_cast<std::uint64_t> (*v.integer())); break;
-        case Type::Decimal: feedDecimal (f, *v.decimal()); break;
+        case Type::Integer: feedNumber (f, static_cast<double> (*v.integer())); break;
+        case Type::Decimal: feedNumber (f, v.decimal()->toDouble()); break;
         case Type::Boolean: f.byte (kBoolean); f.byte (*v.boolean() ? 1 : 0); break;
         case Type::Array:
+        case Type::Tables:
             f.byte (kArray);
             f.u32 (static_cast<std::uint32_t> (v.size()));
-            for (const auto item : v) feed (f, item, depth + 1);
+            for (const auto item : v) feed (f, item, path, skip);
             break;
         case Type::Table:
+        {
             f.byte (kTable);
-            f.u32 (static_cast<std::uint32_t> (v.size()));
-            for (const auto entry : v)
+            std::string_view last;
+            for (std::size_t fed = 0; fed < v.size(); ++fed)
             {
-                f.text (entry.key());
-                feed (f, entry, depth + 1);
+                std::size_t best = v.size();
+                for (std::size_t i = 0; i < v.size(); ++i)
+                {
+                    const std::string_view k = v[i].key();
+                    if ((fed == 0 || last < k) && (best == v.size() || k < v[best].key())) best = i;
+                }
+                if (best == v.size()) break;
+                last = v[best].key();
+                path.part[path.size++] = last;
+                if (! skip.covers (path))
+                {
+                    f.byte (kEntry);
+                    f.text (last);
+                    feed (f, v[best], path, skip);
+                }
+                --path.size;
             }
+            f.byte (kEnd);
             break;
-        case Type::Tables:
-            f.byte (kTables);
-            f.u32 (static_cast<std::uint32_t> (v.size()));
-            for (const auto table : v) feed (f, table, depth + 1);
-            break;
+        }
     }
 }
 
+//==============================================================================
 // A document parsed from text: the same bytes for the same data.
-inline void feed (Fnv& f, const toml::Value& v, std::size_t depth) noexcept;
-inline void feed (Fnv& f, const toml::Table& t, std::size_t depth) noexcept
+
+inline void feed (Fnv& f, const toml::Value& v, Path& path, const Skip& skip) noexcept;
+inline void feed (Fnv& f, const toml::Table& t, Path& path, const Skip& skip) noexcept
 {
-    if (depth > toml::kMaxDepth) return;
+    if (path.size > toml::kMaxDepth) return;
+    const auto& entries = t.entries();
     f.byte (kTable);
-    f.u32 (static_cast<std::uint32_t> (t.entries().size()));
-    for (const auto& e : t.entries())
+    std::string_view last;
+    for (std::size_t fed = 0; fed < entries.size(); ++fed)
     {
-        f.text (e.key);
-        feed (f, e.value, depth + 1);
+        std::size_t best = entries.size();
+        for (std::size_t i = 0; i < entries.size(); ++i)
+        {
+            const std::string_view k = entries[i].key;
+            if ((fed == 0 || last < k) && (best == entries.size() || k < std::string_view (entries[best].key))) best = i;
+        }
+        if (best == entries.size()) break;
+        last = entries[best].key;
+        path.part[path.size++] = last;
+        if (! skip.covers (path))
+        {
+            f.byte (kEntry);
+            f.text (last);
+            feed (f, entries[best].value, path, skip);
+        }
+        --path.size;
     }
+    f.byte (kEnd);
 }
-inline void feed (Fnv& f, const toml::Value& v, std::size_t depth) noexcept
+inline void feed (Fnv& f, const toml::Value& v, Path& path, const Skip& skip) noexcept
 {
-    if (depth > toml::kMaxDepth) return;
+    if (path.size > toml::kMaxDepth) return;
     if (const auto* s = std::get_if<std::string> (&v.data)) { f.byte (kString); f.text (*s); }
-    else if (const auto* n = std::get_if<std::int64_t> (&v.data)) { f.byte (kInteger); f.u64 (static_cast<std::uint64_t> (*n)); }
-    else if (const auto* d = std::get_if<toml::Decimal> (&v.data)) feedDecimal (f, *d);
+    else if (const auto* n = std::get_if<std::int64_t> (&v.data)) feedNumber (f, static_cast<double> (*n));
+    else if (const auto* d = std::get_if<toml::Decimal> (&v.data)) feedNumber (f, d->toDouble());
     else if (const auto* b = std::get_if<bool> (&v.data)) { f.byte (kBoolean); f.byte (*b ? 1 : 0); }
     else if (const auto* a = std::get_if<toml::Array> (&v.data))
     {
         f.byte (kArray);
         f.u32 (static_cast<std::uint32_t> (a->size()));
-        for (const auto& item : *a) feed (f, item, depth + 1);
+        for (const auto& item : *a) feed (f, item, path, skip);
     }
-    else if (const auto* t = std::get_if<toml::Table> (&v.data)) feed (f, *t, depth);
+    else if (const auto* t = std::get_if<toml::Table> (&v.data)) feed (f, *t, path, skip);
     else if (const auto* ts = std::get_if<toml::Tables> (&v.data))
     {
-        f.byte (kTables);
+        f.byte (kArray);
         f.u32 (static_cast<std::uint32_t> (ts->size()));
-        for (const auto& table : *ts) feed (f, table, depth + 1);
+        for (const auto& table : *ts) feed (f, table, path, skip);
     }
 }
 
-// Both documents, targets first. A document tag before each, so the pair is read as a pair.
-template <class Tree> std::uint64_t versionOf (const Tree& targets, const Tree& engine) noexcept
+// Both documents, targets first, each behind a tag of its own. `sound` leaves out kPresentation.
+template <class Tree> std::uint64_t version (const Tree& targets, const Tree& engine, bool sound) noexcept
 {
+    const Skip targetsSkip = sound ? Skip { kTargetsPresentation, std::size (kTargetsPresentation) } : Skip {};
+    const Skip engineSkip = sound ? Skip { kEnginePresentation, std::size (kEnginePresentation) } : Skip {};
     Fnv f;
+    Path path;
     f.byte ('T');
-    feed (f, targets, 0);
+    feed (f, targets, path, targetsSkip);
     f.byte ('E');
-    feed (f, engine, 0);
+    feed (f, engine, path, engineSkip);
     return f.value();
 }
 
