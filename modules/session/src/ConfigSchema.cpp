@@ -392,11 +392,16 @@ void readLowEnd (Doc& d, Reader& in, LowEnd& o)
 void readHpf (Doc& d, Reader& in, Hpf& o, std::vector<std::int32_t>& bands, const std::optional<double>& dcFrom)
 {
     d.band (in, o.band, bands);
+    // THE CUTOFF IS WHOLE HERTZ — the knob's travel, where the manual cutoff starts, and every target's floor
+    // (readTarget): the machine places max(hzDefault, the floor), and a person may set every value it places.
+    const Grid wholeHertz { toml::Decimal { 0, 1, false }, toml::Decimal { 10, 1, false } };
     const bool lo = in.required ("hzMin", o.hzMin, R { 1.0, 200.0 });
+    if (lo) d.onStep (in, "hzMin", wholeHertz);
     const bool hi = in.required ("hzMax", o.hzMax, R { 1.0, 200.0 });
+    if (hi) d.onStep (in, "hzMax", wholeHertz);
     d.below (in, lo && hi, o.hzMin, o.hzMax, "hzMax");
     const R travel = lo && hi && o.hzMin < o.hzMax ? R { o.hzMin, o.hzMax } : R { 1.0, 200.0 };
-    in.required ("hzDefault", o.hzDefault, travel);
+    if (in.required ("hzDefault", o.hzDefault, travel)) d.onStep (in, "hzDefault", wholeHertz);
     if (in.required ("slopes", o.slopes, I { 6, 96 }))
     {
         if (o.slopes.empty()) d.refuse (in, "slopes", Refusal::NotOneOf);

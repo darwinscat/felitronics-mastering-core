@@ -150,7 +150,8 @@ every stage a device writes is named, the limiter's second release included.
 - **Read by schema: form and physics.** `Config::load()` (`<felitronics/session/Config.h>`) binds them to typed structs:
   every key with its type and its domain — where a number stops meaning what its document says: a share outside 0…1, a
   ramp whose ends would divide by zero, a series that shrinks, a value off its knob's grid (a whole number of steps from
-  where the travel starts, checked exactly on the decimals as written, across the two documents too) — a range another
+  where the travel starts, checked exactly on the decimals as written, across the two documents too; the high-pass's
+  travel, its default and every target's floor in whole hertz) — a range another
   key states included (a target's loudness on the edit travel, its crossover on the knob's); the checks across keys (a
   name that is no target, a target under an empty key, a name given twice, an EQ band two devices share, "no DC" apart from the dcOffset finding's
   threshold, a ramp law outside its domain, the limiter switched off, a default written out); and every key nobody read
@@ -265,6 +266,8 @@ carries one, the dither where the target's bit depth is one it serves, mono bass
   the target decides (the high-pass's slope and floor, the mono-bass crossover, no needles where the target has no peak
   clipper, the dither at its bit depth, the low shelf's gain, the glue its row names) and each device's own section for
   the rest; tilt starts flat. The devices are placed so when the first measurement ends, and again on a change of target.
+- **Every value the machine places is one a person could set**: on its knob's travel and step — which the schema holds
+  for every default the config gives, and `felitronics_session_state_tests` for every target and source.
 - **A person's edits** are taken only after that — before it, `NotPlaced` — and only with the manual mode on. Every
   value is checked on its knob exactly: the double a shell sends is read as the decimal of nine places or fewer whose
   correctly rounded double it is, and that decimal must lie on the travel and a whole number of steps from where the
