@@ -22,10 +22,10 @@
 //                                       what can change a master, the one a recipe will record.
 //
 // THE SCRIPT. One command per line; `#` starts a comment that runs to the end of the line; a line that is empty or
-// blank after that is not a command. There are no commands yet, so the only script this accepts is one with none in
-// it — empty, or comments and blank lines — and it answers `done 0`. A line that is a command is refused: exit 2, the
-// line named on stderr, nothing on stdout. A refusal is the whole run's, never a prefix of it: the script is read and
-// checked to the end before the session is created, so a refused script touched no session at all.
+// blank after that is not a command. A script carries none of the session's commands, so the only script this accepts
+// is one with none in it — empty, or comments and blank lines — and it answers `done 0`. A line that is a command is
+// refused: exit 2, the line named on stderr, nothing on stdout. A refusal is the whole run's, never a prefix of it: the
+// script is read and checked to the end before the session is created, so a refused script touched no session at all.
 //
 // EXIT STATUS: 0 done; 2 refused — a usage error, a file that cannot be read, a script this build does not accept, or a
 // session that refused to be created (felitronics::session::Status, named on stderr).
@@ -163,7 +163,7 @@ bool readAll (const char* path, std::string& out)
 }
 
 // The number of commands in `script`, or -1 after naming the first line that is one this build does not know — which,
-// with no commands defined yet, is any command at all.
+// with no command a script carries, is any command at all.
 long countCommands (const std::string& script)
 {
     long line = 0, commands = 0;

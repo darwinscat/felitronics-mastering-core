@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
-// JUCE-free self-tests for felitronics::session — the empty session, and the laws of docs/SESSION.md that a running
-// program can check. The others are held by the build (modules/session/CMakeLists.txt and its controls), by the
-// object-file gates and by the session-laws lint. Pinned here:
+// JUCE-free self-tests for felitronics::session — its creation, and the laws of docs/SESSION.md that a running program
+// can check. The others are held by the build (modules/session/CMakeLists.txt and its controls), by the object-file gates
+// and by the session-laws lint; the states and the commands by tests/StateTests.cpp. Pinned here:
 //   * MEMORY IS DECLARED BEFORE THE WORK: what create() asks the heap for, through the one allocation counter, against
 //     Session::createBytes() — and the harness that compares them, proven able to fail on a sample built to fail it;
 //   * create() and destruction: a fresh object per call, and destroyed by its owner;
