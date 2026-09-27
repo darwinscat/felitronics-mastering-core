@@ -337,20 +337,25 @@ main thread.
   not declare — renders as its id (`Text::key`), never in another language. An argument that does not match its fact's
   declaration renders as `{name}`; a plural or a select whose own argument does not match cannot choose, and renders the
   id.
-- **Numbers by rules of its own**, stated in `Text.h` and held by `felitronics_session_text_tests`: the exact value of
-  the double rounded to the decimal grid of `precision` digits, a half away from zero — in integer arithmetic
-  (`src/TextNumber.cpp`: no libm, no printf, no locale) — checked against an independent oracle over 22 000 values, at
-  exact halves, at doubles just off a half (1.005 → 1.00, its double being 1.00499999999999989…), across a carry into a
-  new digit and at the extremes of the double; the sign is the printed number's — a value that prints as zero takes none,
+- **Numbers by rules of its own**, stated in `Text.h` and held by `felitronics_session_text_tests`: a double is read as
+  its shortest round-trip decimal — `std::to_chars`'s shortest form, which the standard specifies exactly, so every
+  standard library gives the same digits, with no locale — and that decimal is rounded to the grid of `precision`
+  digits, a half away from zero, in characters and integers (`src/TextNumber.cpp`: no libm, no printf, no floating-point
+  arithmetic). The number a person wrote rounds as they would round it: 1.005 → 1.01 and −14.05 → −14.1, though their
+  doubles lie just off the half (the owner's decision, 2026-09-27). Checked against an independent oracle over 24 000
+  decimals of up to 15 significant digits — each its own double's shortest form, since DBL_DIG is 15 — rounded in 64-bit
+  integers, and at the halves where the two readings disagree, across a carry into a new digit and at the extremes of
+  the double (1e300 prints a one and three hundred zeros); the sign is the printed number's — a value that prints as zero takes none,
   under every `Sign` (−0.04 at one digit is "0.0", never "−0.0", which a musician reads as a bug; either zero is "0");
   a value that is not finite prints the absent sign alone. Between a number and its unit is a no-break space (U+00A0;
   French U+202F), so "−14" and "LUFS" never wrap apart. All twelve rows are pinned to CLDR 48 as ICU 78
   writes it.
-- **No rendering depends on the thread's floating-point environment.** The digits are integers and the signs are read
-  from the double's bits — through a volatile, since clang folds an integer test on them back into a floating-point
-  compare, which a thread that reads subnormals as zero answers "zero" (measured). The suite renders subnormals, halves and
-  zeros under flush-to-zero, denormals-are-zero and each rounding mode, set the way a host sets them, and requires the
-  bytes of the default environment — which a formatter that multiplied or rounded in floating point would miss.
+- **No rendering depends on the thread's floating-point environment.** The digits come from `std::to_chars` (integer
+  arithmetic in every standard library) and the signs are read from the double's bits — through a volatile, since clang
+  folds an integer test on them back into a floating-point compare, which a thread that reads subnormals as zero answers
+  "zero" (measured). The suite renders subnormals, halves and zeros under flush-to-zero, denormals-are-zero and each
+  rounding mode, set the way a host sets them, and requires the bytes of the default environment — which a formatter
+  that multiplied or rounded in floating point would miss.
 - **Plural categories on the printed number.** CLDR 48's cardinal rules for the twelve languages, evaluated on the digits
   as printed — "1.0" is not "one" in English — by the component that formats them; pinned against ICU 78's own answers on
   39 numbers of every category in each language, each language's set reached exactly.

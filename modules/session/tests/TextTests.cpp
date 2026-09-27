@@ -9,9 +9,10 @@
 //     placeholder, another placeholder set in another language, a language nothing declares, a key nothing reads, a
 //     selector that names no argument or one of the wrong kind, a wrong type, an empty text, a syntax error — each must be
 //     reported with its fault, key path, rule, line and column;
-//   * ROUNDING ON THE DECIMAL GRID: the exact value, ties away from zero — at exact halves, at doubles just off a half,
-//     across a carry into a new digit, at the extremes of the double; and against an independent oracle (the binary
-//     fraction multiplied out digit by digit in 64-bit integers) over twenty thousand random values;
+//   * ROUNDING ON THE DECIMAL GRID: the shortest round-trip decimal, halves away from zero — at the halves where it and
+//     the double's exact value disagree (1.005, 2.675, −14.05, 0.15 …), at exact halves, across a carry into a new
+//     digit, at the extremes of the double; and against an independent oracle (a decimal of up to 15 significant digits
+//     is its double's shortest form, rounded here in 64-bit integers) over twenty-four thousand decimals;
 //   * the formatting table in all twelve languages: separators, grouping and its minimum, the Unicode minus, the plus of
 //     Sign::Always, the bounds, the absent value, units and the percent sign's side, the note names (de: H);
 //   * NO RENDERING DEPENDS ON THE THREAD'S FLOATING-POINT ENVIRONMENT: subnormals, halves and zeros render the same bytes
@@ -186,7 +187,7 @@ void theGateRefusesEachMistake()
         // A message missing in a declared language — no fallback: the build is red.
         { D::Catalog, "en = \"{value}\"", "", "[messages.value]", F::Missing, "messages.value.en", "" },
         // A fact without any message.
-        { D::Catalog, "[messages.loudestLowNote]\nru = \"Громчайшая нота низа: {note}\"\nen = \"Loudest bass note: {note}\"\n", "",
+        { D::Catalog, "[messages.loudestLowNote]\nru = \"Самая громкая нота баса: {note}\"\nen = \"Loudest bass note: {note}\"\n", "",
           "messages.value]", F::Missing, "messages.loudestLowNote", "" },
         // A message no fact has: a key nothing reads.
         { D::Catalog, "# ── messages ──\n", "# ── messages ──\n[messages.unused]\nru = \"x\"\nen = \"x\"\n", "unused]",
@@ -198,8 +199,8 @@ void theGateRefusesEachMistake()
         { D::Catalog, "en = \"Landing · pass {pass} of {passes}\"", "en = \"Landing · pass of {passes}\"", "\"Landing · pass of",
           F::Refused, "messages.landingPass.en.{pass}", "LostPlaceholder" },
         // ...and every variant on its own: ru's "one" is also 21, so a variant without the number is a wrong sentence.
-        { D::Catalog, "ru.one = \"посадка: сошлось за {passes} проход\"", "ru.one = \"посадка: сошлось за один проход\"",
-          "\"посадка: сошлось за один проход\"", F::Refused, "messages.landingConverged.ru.one.{passes}", "LostPlaceholder" },
+        { D::Catalog, "ru.one = \"посадка сошлась за {passes} проход\"", "ru.one = \"посадка сошлась за один проход\"",
+          "\"посадка сошлась за один проход\"", F::Refused, "messages.landingConverged.ru.one.{passes}", "LostPlaceholder" },
         { D::Catalog, "en.one = \"repeat consistency: {agreed} of {pairs} pair\"", "en.one = \"repeat consistency: of {pairs} pair\"",
           "\"repeat consistency: of", F::Refused, "messages.pairsConsistent.en.one.{agreed}", "LostPlaceholder" },
         { D::Catalog, "en.web = \"This file is {rate}. Above {limit} is for the desktop version.\"",
@@ -213,7 +214,7 @@ void theGateRefusesEachMistake()
         { D::Catalog, "ru = \"{value}\"", "ru = \"{1}\"", "\"{1}\"", F::Refused, "messages.value.ru", "BadPlaceholder" },
         { D::Catalog, "ru = \"{value}\"", "ru = \"{value}}\"", "\"{value}}\"", F::Refused, "messages.value.ru", "BadPlaceholder" },
         // A plural message without one of its language's categories, and with one its language does not have.
-        { D::Catalog, "ru.few = \"посадка: сошлось за {passes} прохода\"\n", "", "ru.one = \"посадка", F::Missing,
+        { D::Catalog, "ru.few = \"посадка сошлась за {passes} прохода\"\n", "", "ru.one = \"посадка", F::Missing,
           "messages.landingConverged.ru.few", "" },
         { D::Catalog, "en.one = \"landing: converged after {passes} pass\"\n",
           "en.one = \"landing: converged after {passes} pass\"\nen.few = \"landing: converged after {passes} passes\"\n",
@@ -309,53 +310,40 @@ std::string gridText (double value, unsigned precision)
     return s;
 }
 
-// THE ORACLE, an independent algorithm: a double m·2^e with −60 ≤ e ≤ 10 is written out digit by digit — its integer
-// part m >> −e, then each fraction digit as (f·10) >> −e with f the binary fraction, all in 64-bit integers (f < 2^60, so
-// f·10 < 2^64) — to precision + 1 digits, which is exact; ties away from zero are then "digit precision + 1 is 5 or more".
-std::string oracleText (double value, unsigned precision)
+// THE ORACLE for the decimal reading, independent of std::to_chars: a decimal of at most 15 significant digits, M·10^−s,
+// read as its correctly rounded double ((double) M / 10^s: both operands exact, one IEEE division), has that decimal as
+// its shortest round-trip form — DBL_DIG is 15, so no two such decimals are one double. So the renderer must print the
+// decimal itself rounded to `precision` digits, which this rounds in 64-bit integers, a half away from zero; a result of
+// zero has no sign.
+std::string decimalOracle (std::int64_t m, unsigned scale, unsigned precision)
 {
-    const auto bits = std::bit_cast<std::uint64_t> (value);
-    const int e = (int) ((bits >> 52) & 0x7FFu) - 1075;
-    const std::uint64_t m = (bits & ((std::uint64_t (1) << 52) - 1)) | (std::uint64_t (1) << 52);
-    std::string digits;
-    std::size_t integerDigits = 0;
-    if (e >= 0)
-    {
-        digits = std::to_string (m << e);
-        integerDigits = digits.size();
-        digits.append (precision + 1, '0');
-    }
+    constexpr std::array<std::uint64_t, 19> pow10 = { 1ull, 10ull, 100ull, 1000ull, 10000ull, 100000ull, 1000000ull,
+        10000000ull, 100000000ull, 1000000000ull, 10000000000ull, 100000000000ull, 1000000000000ull, 10000000000000ull,
+        100000000000000ull, 1000000000000000ull, 10000000000000000ull, 100000000000000000ull, 1000000000000000000ull };
+    std::uint64_t q = m < 0 ? (std::uint64_t) -m : (std::uint64_t) m;
+    if (precision >= scale) q *= pow10[precision - scale];
     else
     {
-        const unsigned k = (unsigned) -e;
-        const std::uint64_t mask = (std::uint64_t (1) << k) - 1;
-        digits = std::to_string (m >> k);
-        integerDigits = digits.size();
-        std::uint64_t f = m & mask;
-        for (unsigned i = 0; i <= precision; ++i)
-        {
-            f *= 10;
-            digits += (char) ('0' + (f >> k));
-            f &= mask;
-        }
+        const std::uint64_t unit = pow10[scale - precision];
+        const std::uint64_t rest = q % unit;
+        q /= unit;
+        if (rest * 2 >= unit) ++q;
     }
-    const bool up = digits.back() >= '5';
-    digits.pop_back();
-    if (up)
+    std::string s = m < 0 && q != 0 ? "-" : "";
+    s += std::to_string (q / pow10[precision]);
+    if (precision != 0)
     {
-        std::size_t i = digits.size();
-        while (i > 0 && digits[i - 1] == '9') digits[--i] = '0';
-        if (i == 0) { digits.insert (digits.begin(), '1'); ++integerDigits; }
-        else ++digits[i - 1];
+        const std::string fraction = std::to_string (q % pow10[precision]);
+        s += "." + std::string (precision - fraction.size(), '0') + fraction;
     }
-    std::string integer = digits.substr (0, integerDigits);
-    const std::size_t nonzero = integer.find_first_not_of ('0');
-    integer = nonzero == std::string::npos ? "0" : integer.substr (nonzero);
-    const bool zero = digits.find_first_not_of ('0') == std::string::npos;   // prints as zero: no sign
-    std::string s = value < 0.0 && ! zero ? "-" : "";
-    s += integer;
-    if (precision != 0) s += "." + digits.substr (integerDigits);
     return s;
+}
+
+double decimalValue (std::int64_t m, unsigned scale)
+{
+    std::int64_t unit = 1;
+    for (unsigned i = 0; i < scale; ++i) unit *= 10;
+    return (double) m / (double) unit;
 }
 
 std::uint64_t splitmix (std::uint64_t& state)
@@ -368,37 +356,44 @@ std::uint64_t splitmix (std::uint64_t& state)
 
 void roundingIsOnTheDecimalGrid()
 {
-    felitronics::test::group ("rounding: the exact value on the decimal grid, halves away from zero");
-    struct Case { double value; unsigned precision; std::string_view want; std::string_view why; };
+    felitronics::test::group ("rounding: the shortest round-trip decimal, rounded on the grid, halves away from zero");
+    struct Case { double value; unsigned precision; std::string want; std::string_view why; };
     const Case cases[] = {
-        { 0.125, 2, "0.13", "an exact half rounds away from zero" },
-        { -0.125, 2, "-0.13", "and so does a negative one" },
+        // Where the double's exact value and its shortest decimal fall on different sides of a half, the decimal decides:
+        { 1.005, 2, "1.01", "1.005 is 1.01 — its double is 1.00499999999999989…, its shortest decimal 1.005" },
+        { 2.675, 2, "2.68", "2.675 is 2.68 (the double: 2.67499999999999982…)" },
+        { -14.05, 1, "-14.1", "−14.05 is −14.1 (the double: −14.050000000000000710…, and the decimal a half)" },
+        { 1.25, 1, "1.3", "1.25 is 1.3" },
+        { 0.15, 1, "0.2", "0.15 is 0.2 (the double: 0.14999999999999999444…)" },
+        { 0.35, 1, "0.4", "0.35 is 0.4 (the double: 0.34999999999999997779…)" },
+        { 9.995, 2, "10.00", "9.995 is 10.00, the carry making a new digit (the double: 9.99499999999999921840…)" },
+        { -1.005, 2, "-1.01", "and −1.005 is −1.01" },
+        // Exact halves, the same under either reading.
+        { 0.125, 2, "0.13", "0.125 is 0.13" },
+        { -0.125, 2, "-0.13", "−0.125 is −0.13" },
         { 2.5, 0, "3", "2.5 is 3 (round-half-even would say 2)" },
-        { -2.5, 0, "-3", "-2.5 is -3" },
+        { -2.5, 0, "-3", "−2.5 is −3" },
         { 0.5, 0, "1", "0.5 is 1" },
-        { 1.5, 0, "2", "1.5 is 2" },
-        { 3.5, 0, "4", "3.5 is 4" },
-        { 0.25, 1, "0.3", "0.25 is an exact half: 0.3" },
+        { 0.05, 1, "0.1", "0.05 is 0.1" },
+        { 0.45, 1, "0.5", "0.45 is 0.5" },
+        { 99.95, 1, "100.0", "99.95 is 100.0" },
         { 999999.5, 0, "1000000", "a half that carries into a new digit" },
-        { 1.005, 2, "1.00", "1.005 is 1.00499999999999989…: below the half" },
-        { 2.675, 2, "2.67", "2.675 is 2.67499999999999982…" },
-        { 0.05, 1, "0.1", "0.05 is 0.05000000000000000277…: above the half" },
-        { 0.15, 1, "0.1", "0.15 is 0.14999999999999999444…" },
-        { 0.35, 1, "0.3", "0.35 is 0.34999999999999997779…" },
-        { 0.45, 1, "0.5", "0.45 is 0.45000000000000001110…" },
-        { 9.995, 2, "9.99", "9.995 is 9.99499999999999921840…" },
-        { 99.95, 1, "100.0", "99.95 is 99.95000000000000284217…, and the carry makes a new digit" },
+        // Not halves.
+        { 0.1 + 0.2, 2, "0.30", "0.1 + 0.2 (0.30000000000000004) is 0.30" },
+        { 1.0000000000000002, 9, "1.000000000", "the double after 1, at nine digits, is 1.000000000" },
+        { 0.1, 9, "0.100000000", "nine fraction digits" },
+        { 1234567.891, 0, "1234568", "no fraction digit" },
+        { 0.0000000004, 9, "0.000000000", "a value below the grid's last half is zero" },
+        { 0.0000000005, 9, "0.000000001", "and one at it is a unit" },
+        // Signs and zeros.
         { -0.04, 1, "0.0", "a negative value that rounds to zero prints unsigned" },
         { -0.4, 0, "0", "and so at no digit" },
         { -0.0, 1, "0.0", "negative zero is zero" },
         { 0.0, 3, "0.000", "zero with its fraction digits" },
-        { 1234567.891, 0, "1234568", "no fraction digit" },
-        { 0.1, 9, "0.100000000", "nine fraction digits" },
+        // The extremes of the double: its shortest decimal, not its exact expansion.
         { 5e-324, 9, "0.000000000", "the smallest subnormal" },
-        { 1e300, 0, "1000000000000000052504760255204420248704468581108159154915854115511802457988908195786371375080447864043704443832883878176942523235360430575644792184786706982848387200926575803737830233794788090059368953234970799945081119038967640880074652742780142494579258788820056842838115669472196386865459400540160",
-          "1e300, every exact digit" },
-        { DBL_MAX, 0, "179769313486231570814527423731704356798070567525844996598917476803157260780028538760589558632766878171540458953514382464234321326889464182768467546703537516986049910576551282076245490090389328944075868508455133942304583236903222948165808559332123348274797826204144723168738177180919299881250404026184124858368",
-          "the largest double, every exact digit" },
+        { 1e300, 0, "1" + std::string (300, '0'), "1e300 is a one and three hundred zeros (its exact value is not)" },
+        { DBL_MAX, 0, "17976931348623157" + std::string (292, '0'), "the largest double: its seventeen digits and zeros" },
     };
     for (const Case& c : cases) same (gridText (c.value, c.precision), c.want, std::string (c.why));
     same (gridText (std::numeric_limits<double>::quiet_NaN(), 1), "(none)", "NaN has no digits");
@@ -409,39 +404,43 @@ void roundingIsOnTheDecimalGrid()
     ok (detail::gridDigits (DBL_MAX, 9, big) && big.integer().size() == 309 && big.fraction() == "000000000",
         "the largest double at nine fraction digits: 309 integer digits and nine zeros");
 
-    // THE ORACLE: random doubles with −60 ≤ e ≤ 10 (about 0.004 … 1.8e19), random precision and sign, and exact halves
-    // built on purpose (an integer and a half, at every precision the half is exact at).
+    // THE ORACLE: random decimals of 1 to 15 significant digits and 0 to 15 fraction digits, either sign, at every
+    // precision — and exact decimal halves built on purpose (a digit 5 just below the precision), where the reading
+    // decides the most.
     std::uint64_t state = 20260927;
     int agreed = 0, tried = 0;
     std::string firstMiss;
+    const auto check = [&] (std::int64_t m, unsigned scale, unsigned precision)
+    {
+        ++tried;
+        const std::string got = gridText (decimalValue (m, scale), precision), want = decimalOracle (m, scale, precision);
+        if (got == want) ++agreed;
+        else if (firstMiss.empty()) firstMiss = got + " vs " + want + " (" + std::to_string (m) + "e-" + std::to_string (scale) + ")";
+    };
     for (int n = 0; n < 20000; ++n)
     {
         const std::uint64_t r = splitmix (state);
-        const int e = -60 + (int) (r % 71);
-        const std::uint64_t mantissa = splitmix (state) & ((std::uint64_t (1) << 52) - 1);
-        const std::uint64_t sign = (r >> 40) & 1u;
-        const auto value = std::bit_cast<double> ((sign << 63) | ((std::uint64_t) (e + 1075) << 52) | mantissa);
-        const unsigned precision = (unsigned) ((r >> 20) % 10);
-        ++tried;
-        const std::string got = gridText (value, precision), want = oracleText (value, precision);
-        if (got == want) ++agreed;
-        else if (firstMiss.empty()) firstMiss = got + " vs " + want;
+        const auto scale = (unsigned) ((r >> 8) % 16), precision = (unsigned) ((r >> 20) % 10);
+        // The oracle pads with zeros in 64 bits: digits and padding together stay within 18.
+        const unsigned padding = precision > scale ? precision - scale : 0;
+        unsigned digits = 1 + (unsigned) (r % 15);
+        if (digits + padding > 18) digits = 18 - padding;
+        std::int64_t limit = 1;
+        for (unsigned i = 0; i < digits; ++i) limit *= 10;
+        const auto m = (std::int64_t) (splitmix (state) % (std::uint64_t) limit);
+        check ((r >> 40) & 1u ? -m : m, scale, precision);
     }
-    for (int n = 0; n < 2000; ++n)
+    for (int n = 0; n < 4000; ++n)
     {
-        // k + 1/2 · 10^−p with k random: an exact binary fraction only when 10^−p · 1/2 is — p = 0 (k.5).
         const std::uint64_t r = splitmix (state);
-        const double value = (double) (r % 1000000) + 0.5;
-        ++tried;
-        const std::string got = gridText ((r & 1u) != 0 ? -value : value, 0);
-        const std::string want = oracleText ((r & 1u) != 0 ? -value : value, 0);
-        if (got == want) ++agreed;
-        else if (firstMiss.empty()) firstMiss = got + " vs " + want;
+        const unsigned precision = (unsigned) (r % 10);
+        const std::int64_t m = (std::int64_t) (splitmix (state) % 100000) * 10 + 5;   // …5 at the place just below
+        check ((r >> 40) & 1u ? -m : m, precision + 1, precision);
     }
-    ok (agreed == tried, "the oracle agrees on " + std::to_string (agreed) + " of " + std::to_string (tried) + " values"
+    ok (agreed == tried, "the oracle agrees on " + std::to_string (agreed) + " of " + std::to_string (tried) + " decimals"
                          + (firstMiss.empty() ? "" : " (first miss: " + firstMiss + ")"));
-    same (oracleText (0.125, 2), "0.13", "PRECONDITION: the oracle itself rounds an exact half away from zero");
-    same (oracleText (2.675, 2), "2.67", "PRECONDITION: and reads the double below 2.675 as below the half");
+    same (decimalOracle (1005, 3, 2), "1.01", "PRECONDITION: the oracle rounds the decimal 1.005 to 1.01");
+    same (decimalOracle (-4, 2, 1), "0.0", "PRECONDITION: and −0.04 to an unsigned 0.0");
 }
 
 //==============================================================================
@@ -676,15 +675,15 @@ void everyMessageRenders()
 
     struct Passes { std::int64_t n; std::string_view ru, en; };
     const Passes passes[] = {
-        { 1, "посадка: сошлось за 1 проход", "landing: converged after 1 pass" },
-        { 2, "посадка: сошлось за 2 прохода", "landing: converged after 2 passes" },
-        { 5, "посадка: сошлось за 5 проходов", "landing: converged after 5 passes" },
-        { 11, "посадка: сошлось за 11 проходов", "landing: converged after 11 passes" },
-        { 12, "посадка: сошлось за 12 проходов", "landing: converged after 12 passes" },
-        { 21, "посадка: сошлось за 21 проход", "landing: converged after 21 passes" },
-        { 24, "посадка: сошлось за 24 прохода", "landing: converged after 24 passes" },
-        { 32, "посадка: сошлось за 32 прохода", "landing: converged after 32 passes" },
-        { 0, "посадка: сошлось за 0 проходов", "landing: converged after 0 passes" },
+        { 1, "посадка сошлась за 1 проход", "landing: converged after 1 pass" },
+        { 2, "посадка сошлась за 2 прохода", "landing: converged after 2 passes" },
+        { 5, "посадка сошлась за 5 проходов", "landing: converged after 5 passes" },
+        { 11, "посадка сошлась за 11 проходов", "landing: converged after 11 passes" },
+        { 12, "посадка сошлась за 12 проходов", "landing: converged after 12 passes" },
+        { 21, "посадка сошлась за 21 проход", "landing: converged after 21 passes" },
+        { 24, "посадка сошлась за 24 прохода", "landing: converged after 24 passes" },
+        { 32, "посадка сошлась за 32 прохода", "landing: converged after 32 passes" },
+        { 0, "посадка сошлась за 0 проходов", "landing: converged after 0 passes" },
     };
     for (const Passes& p : passes)
     {
@@ -706,7 +705,7 @@ void everyMessageRenders()
         same (render (Fact::of (FactId::PairsConsistent, Arg::count (p.agreed), Arg::count (p.pairs)), Lang::En), p.en, "en");
     }
 
-    same (render (Fact::of (FactId::LoudestLowNote, Arg::midi (28)), Lang::Ru), "Громчайшая нота низа: E1", "ru note");
+    same (render (Fact::of (FactId::LoudestLowNote, Arg::midi (28)), Lang::Ru), "Самая громкая нота баса: E1", "ru note");
     same (render (Fact::of (FactId::LoudestLowNote, Arg::midi (61)), Lang::En), "Loudest bass note: C♯4", "en note");
 
     const Fact wide = Fact::of (FactId::WideBass, Arg::value (18.2, Unit::Percent, 0));
@@ -924,7 +923,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0x73f7b5b855df0434ull;
+    constexpr std::uint64_t kPinned = 0x39521534e582462full;
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");

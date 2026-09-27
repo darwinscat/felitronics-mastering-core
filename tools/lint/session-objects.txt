@@ -64,7 +64,12 @@ undefined  coff-debug  ^__imp__CrtDbgReport$                            the debu
 undefined  coff-debug  ^__imp__dtest$                                   the debug UCRT's out-of-line classification of a double (fpclassify), exact
 undefined  coff-debug  ^__imp_\?\?0_Lockit@std@@QEAA@H@Z$               std::_Lockit::_Lockit(int): the debug STL's lock around its iterator bookkeeping
 undefined  coff-debug  ^__imp_\?\?1_Lockit@std@@QEAA@XZ$                std::_Lockit::~_Lockit(): its release
-# --- the text (src/TextNumber.cpp) reads a typed number with std::from_chars
+
+# --- the text (src/TextNumber.cpp) prints a double through std::to_chars's shortest round-trip form, and reads a typed number
+# --- with std::from_chars
+undefined  all     ^_ZNSt3__[12]8to_charsEPcS0_dNS_12chars_formatE$    std::to_chars (char*, char*, double, chars_format), which libc++ compiles once in its own library: the shortest round-trip decimal of a double — integer arithmetic (Ryu), no locale, no state
+undefined  all     ^_ZSt8to_charsPcS_dSt12chars_format$    ...and libstdc++'s, the same function in its own library
+undefined  coff    ^\?__(DOUBLE_POW5_INV_SPLIT|DOUBLE_POW5_SPLIT|POW10_SPLIT|POW10_SPLIT_2)@std@@3QAY0[12]\$\$CB_KA$    ...and on MSVC, whose std::to_chars is in its headers, the four constant tables of its Ryu that the STL's library defines (std::__DOUBLE_POW5_INV_SPLIT, __DOUBLE_POW5_SPLIT, __POW10_SPLIT, __POW10_SPLIT_2): read-only data, read
 undefined  wasm    ^__multi3$                       compiler-rt's 128-bit multiply, which libc++'s std::from_chars over a 64-bit integer calls on wasm32 to detect an overflow: integer arithmetic, no state
 undefined  coff    ^__std_search_[1248]$            the STL's vectorised std::search, compiled once in its own library, behind string_view::find of a substring (a unit's pattern, its {n}): a search of memory
 
