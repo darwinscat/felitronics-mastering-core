@@ -58,8 +58,9 @@ jobs:
           felitronics_master_abi_tests felitronics_storage_tests
           felitronics_session_tests felitronics_session_state_tests felitronics_session_config_tests
           felitronics_session_config_decisions_tests felitronics_session_text_tests
+          felitronics_session_event_tests felitronics_session_project_tests felitronics_session_replay_tests
       - name: Test allocation budgets with iterator debugging
-        # Measured x64 MSVC Debug test time: 121.40 s for these ten suites.
+        # Measured x64 MSVC Debug: 139.99 s for these thirteen suites; 211.22 s configure/build/test.
         # The full session handle-generation walk remains in Release. These session suites have no long walk.
         run: |
           node tools/tests/windows-debug.mjs --self-test

@@ -152,8 +152,8 @@ public:
     [[nodiscard]] Answer apply (const Request& request) noexcept;
 
     // Preflight and memory demand (law 11d), also run first by apply(). Typed commands validate fully here.
-    // Import validates entry, state and size here; its allocating parse/schema work is covered by the bound
-    // from the input size, including a document refusal. No input byte is read to compute that demand.
+    // Import checks entry and state, then counts the text through the library without allocating.
+    // Its parse/schema work and document refusals use that allowance, plus the session's owned storage.
     [[nodiscard]] Checked check (const Request& request) const noexcept;
 
     // Export is an owned exact byte allocation, without a terminator. Only placed projects are exportable.

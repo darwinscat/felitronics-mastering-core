@@ -67,7 +67,7 @@ if(PROJECT_IS_TOP_LEVEL)
     # install rules stay off: both default to "top level only" there.
     set(FELITRONICS_MASTERING_TOML_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-toml" CACHE PATH
         "Local felitronics-toml checkout (used if present); else the pinned release is fetched")
-    set(FELITRONICS_MASTERING_TOML_TAG "v0.2.0" CACHE STRING
+    set(FELITRONICS_MASTERING_TOML_TAG "v0.3.0" CACHE STRING
         "felitronics-toml git tag to fetch when no local checkout is present")
     if(FELITRONICS_MASTERING_TOML_DIR AND EXISTS "${FELITRONICS_MASTERING_TOML_DIR}/CMakeLists.txt")
         message(STATUS "felitronics-toml: local checkout — ${FELITRONICS_MASTERING_TOML_DIR}")
@@ -126,12 +126,12 @@ if(NOT FELITRONICS_MASTERING_FCORE_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
 endif()
 
 # felitronics-toml, by the same rule: made available before this repository by whoever owns the graph (above, when
-# that is this repository). v0.2.0 is the first release with inline tables, felitronics_toml_embed() and the schema
-# reader felitronics::session's config stands on. Its release is read from the directory that ran its project() line,
-# like core's; a package found by find_package states it in felitronics_toml_VERSION instead.
+# that is this repository). v0.3.0 adds the parse and schema storage declaration used by project import; the config
+# still uses felitronics_toml_embed() and the schema reader. Its release is read from the directory that ran its
+# project() line, like core's; a package found by find_package states it in felitronics_toml_VERSION instead.
 if(NOT TARGET felitronics::toml OR NOT COMMAND felitronics_toml_embed)
     message(FATAL_ERROR
-        "felitronics-mastering-core needs felitronics-toml v0.2.0 or later (felitronics::toml and "
+        "felitronics-mastering-core needs felitronics-toml v0.3.0 or later (felitronics::toml and "
         "felitronics_toml_embed()), made available BEFORE this repository, so ONE copy is resolved by the product "
         "that owns the graph.")
 endif()
@@ -142,8 +142,8 @@ else()
     set(FELITRONICS_MASTERING_TOML_VERSION "${felitronics_toml_VERSION}")
 endif()
 if(NOT FELITRONICS_MASTERING_TOML_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$"
-   OR FELITRONICS_MASTERING_TOML_VERSION VERSION_LESS 0.2.0)
-    message(FATAL_ERROR "felitronics-mastering-core needs felitronics-toml v0.2.0 or later "
+   OR FELITRONICS_MASTERING_TOML_VERSION VERSION_LESS 0.3.0)
+    message(FATAL_ERROR "felitronics-mastering-core needs felitronics-toml v0.3.0 or later "
                         "(this graph resolved '${FELITRONICS_MASTERING_TOML_VERSION}')")
 endif()
 # The checkout tools/wasm/build.sh must embed the config with — the same one this build compiled (CI reads it back with

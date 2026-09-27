@@ -18,7 +18,7 @@ short-term P95 and its glue on cd, saturation, tilt, the low shelf, dither at 16
 offered), the observations' thresholds, what a master's cost is measured with — as measured, without a verdict — the
 progress weights and the blind test's protocol.
 
-**Compiled in, never read.** felitronics-toml v0.2.0 (MIT, listed in `THIRD_PARTY_NOTICES.md`) is resolved like
+**Compiled in, never read.** felitronics-toml v0.3.0 (MIT, listed in `THIRD_PARTY_NOTICES.md`) is resolved like
 felitronics-core — a sibling checkout for local work, the pinned tag otherwise — and compiles both documents into the
 library as constexpr data (`felitronics_toml_embed`); nothing reads a file at run time. A product that consumes this
 repository makes felitronics-toml available before it, as it does core. A document the parser refuses stops the build at
