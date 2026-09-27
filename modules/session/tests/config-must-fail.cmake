@@ -20,7 +20,7 @@ file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
 file(COPY "${CONFIG}/targets.toml" "${CONFIG}/engine.toml" DESTINATION "${WORK}")
 
-execute_process(COMMAND "${CHECK}" --files "${WORK}/targets.toml" "${WORK}/engine.toml"
+execute_process(COMMAND "${CHECK}" "${WORK}/targets.toml" "${WORK}/engine.toml"
                 RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err)
 if(NOT rc EQUAL 0)
     message(FATAL_ERROR "PRECONDITION: the check must pass on the unplanted copies; it exited ${rc}:\n${err}")
@@ -57,7 +57,7 @@ math(EXPR line "${line} + 1")
 string(FIND "${before}" "\n" lastNewline REVERSE)
 math(EXPR column "${at} - ${lastNewline}")
 
-execute_process(COMMAND "${CHECK}" --files "${WORK}/targets.toml" "${WORK}/engine.toml"
+execute_process(COMMAND "${CHECK}" "${WORK}/targets.toml" "${WORK}/engine.toml"
                 RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err)
 set(want "${WORK}/${DOC}.toml:${line}:${column}: error: ${EXPECT}")
 if(NOT rc EQUAL 1)
