@@ -25,6 +25,7 @@ LINTARGS=()
 
 SESSION_CPP=modules/session/src/Session.cpp
 SESSION_H=modules/session/include/felitronics/session/Session.h
+CONFIG_H=modules/session/include/felitronics/session/Config.h
 SOURCES=modules/session/sources.txt
 SRC=modules/session/src
 FACADE=tools/wasm/fc_session.cpp
@@ -34,7 +35,7 @@ node "$LINT" "${LINTARGS[@]+"${LINTARGS[@]}"}" > /dev/null \
     || { echo "the tree is not clean before the controls — they would prove nothing"; node "$LINT" "${LINTARGS[@]+"${LINTARGS[@]}"}"; exit 1; }
 
 BK="$(mktemp -d)"
-EDITED=("$SESSION_CPP" "$SESSION_H" "$SOURCES" "$FACADE" "$ZONE")
+EDITED=("$SESSION_CPP" "$SESSION_H" "$CONFIG_H" "$SOURCES" "$FACADE" "$ZONE")
 for i in "${!EDITED[@]}"; do cp "${EDITED[$i]}" "$BK/$i"; done
 PLANTED=()
 restore () {
@@ -89,6 +90,8 @@ append case-include.inc      "$SESSION_CPP"; expect "#include <Memory>"         
 
 # --- INCLUDE: a felitronics header that is not admitted by name
 append core-header.inc       "$SESSION_CPP"; expect "#include <felitronics/core/FlushToZero.h>" "$SESSION_CPP:$LINE: [INCLUDE]"
+# --- ...and a header the build generates from the config, outside the one unit its allowance names
+append generated-include.inc "$SESSION_CPP"; expect "#include \"embedded/engine.h\" in Session.cpp" "$SESSION_CPP:$LINE: [INCLUDE]"
 
 # --- PRAGMA: a local contraction switch, the operator spelling
 append fp-pragma.inc         "$SESSION_CPP"; expect "#pragma clang fp contract(fast)"     "$SESSION_CPP:$LINE: [PRAGMA]"
@@ -117,10 +120,11 @@ append guarded-throw.inc     "$SESSION_CPP"; expect "a throw inside #if _MSC_VER
 # --- CONDITIONAL: a platform branch in a source of the session
 append conditional.inc       "$SESSION_CPP"; expect "#if defined(__APPLE__)"              "$SESSION_CPP:$LINE: [CONDITIONAL]"
 
-# --- NOSYMBOL: an atomic, a cycle counter, an asm label
+# --- NOSYMBOL: an atomic, a cycle counter, an asm label, the FPU's flush-to-zero set by hand
 append atomic.inc            "$SESSION_CPP"; expect "__atomic_add_fetch"                  "$SESSION_CPP:$LINE: [NOSYMBOL]"
 append cycle-counter.inc     "$SESSION_CPP"; expect "__builtin_readcyclecounter"          "$SESSION_CPP:$LINE: [NOSYMBOL]"
 append asm-label.inc         "$SESSION_CPP"; expect "an asm label"                        "$SESSION_CPP:$LINE: [NOSYMBOL]"
+append flush-to-zero.inc     "$SESSION_CPP"; expect "core's ScopedFlushToZero"            "$SESSION_CPP:$LINE: [NOSYMBOL]"
 
 # --- ORDER: an unordered container, an unstable sort, hash<> unqualified, a using-directive
 append unordered.inc         "$SESSION_CPP"; expect "std::unordered_map"                  "$SESSION_CPP:$LINE: [ORDER]"
@@ -128,10 +132,12 @@ append unstable-sort.inc     "$SESSION_CPP"; expect "std::sort"                 
 append unqualified-hash.inc  "$SESSION_CPP"; expect "hash<int> after using std::hash"     "$SESSION_CPP:$LINE: [ORDER]"
 append using-namespace.inc   "$SESSION_CPP"; expect "using namespace std"                 "$SESSION_CPP:$LINE: [ORDER]"
 
-# --- BODY and PUBLIC: a function body in the public header; a variable it defines, at namespace scope and as a member
+# --- BODY and PUBLIC: a function body in the public header; a variable it defines, at namespace scope and as a member;
+# --- a free function in the config's header
 append header-body.inc       "$SESSION_H";   expect "a body in Session.h"                 "$SESSION_H:$LINE: [BODY]"
 append header-inline-var.inc "$SESSION_H";   expect "inline int in Session.h"             "$SESSION_H:$LINE: [PUBLIC]"
 append header-static-member.inc "$SESSION_H"; expect "inline static member in Session.h"  "$SESSION_H:$LINE: [PUBLIC]"
+append header-free-function.inc "$CONFIG_H"; expect "a free function in Config.h"         "$CONFIG_H:$LINE: [PUBLIC]"
 
 # --- MUTABLE: a mutable member of a constexpr object in the public header; a mutable lambda in a source
 append header-mutable.inc    "$SESSION_H";   expect "a mutable member of a constexpr object" "$SESSION_H:$LINE: [MUTABLE]"
@@ -160,13 +166,16 @@ plant private.tpp "$SRC/private.tpp"
 printf '#include "private.tpp"\n' >> "$SESSION_CPP"
 expect "src/private.tpp, included by Session.cpp" "$SRC/private.tpp: [ZONE]"
 
-# --- FILES: a unit sources.txt does not list, in a subdirectory; an orphan header; an unknown type
+# --- FILES: a unit sources.txt does not list, in a subdirectory; an orphan header; an unknown type; a document the
+# --- config does not have
 plant subdir-source.cpp "$SRC/sub/_control_subdir.cpp"; PLANTED+=("$SRC/sub")
 expect "a .cpp in src/sub/ that sources.txt does not list" "$SRC/sub/_control_subdir.cpp: [FILES] a translation unit that sources.txt does not list"
 plant orphan.h "$SRC/_control_orphan.h"
 expect "a header nothing includes" "$SRC/_control_orphan.h: [FILES] nothing in the library compiles or includes this file"
 plant unknown-type.foo "$SRC/_control.foo"
 expect "a file of an unknown type" "$SRC/_control.foo: [FILES] a file of an unknown type"
+plant unknown-type.foo modules/session/config/_control.toml
+expect "a third document in config/" "modules/session/config/_control.toml: [FILES] a file of an unknown type"
 
 # --- FILES, THE CROSS-CHECK: the build's own compile_commands.json, edited — a unit compiled into felitronics_session
 # --- that sources.txt does not list, a listed unit the build does not compile; and the file with no `output` fields (CMake
