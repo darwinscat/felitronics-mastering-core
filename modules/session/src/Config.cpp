@@ -9,7 +9,7 @@
 // FORM AND PHYSICS, NOT CHOICES. A range here is where a number stops meaning what its document says: a share outside 0…1,
 // a band that does not ascend, a corner or a hop an analyzer refuses (the analyzers' own domains: analysis::BandCrest,
 // analysis::LowEnd, analysis::BandBursts — each check names its source), a ramp that would divide by zero, a value off
-// its knob's step. The numbers the owner chose are not the schema's business. A range that
+// its knob's step. The numbers the owner chose are pinned by tests/ConfigDecisionsTests.cpp, not here. A range that
 // another key states — a target's loudness on the edit travel, a default on its knob's travel — is taken from that key
 // once it was read; until then the key's own domain stands in, so one wrong number is one problem.
 //

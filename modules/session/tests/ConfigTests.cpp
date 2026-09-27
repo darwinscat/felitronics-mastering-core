@@ -3,10 +3,9 @@
 
 // JUCE-free self-tests for felitronics::session::config (Config.h) — the config compiled into the library, its schema and
 // its version. Run as `felitronics_session_config_tests <targets.toml> <engine.toml>`, the two source documents, which
-// ctest passes. Pinned:
+// ctest passes. The owner's decisions are pinned by a suite of their own (tests/ConfigDecisionsTests.cpp). Pinned:
 //   * the embedded config binds with no problem, and it IS the source documents: the library's canonical text of each
 //     equals felitronics-toml's canonical text of the file — so a stale embedding cannot pass;
-//   * the decisions the documents carry, number by number, where a number is a decision rather than a measurement;
 //   * THE SCHEMA'S CONTROLS, each of which must go red: a planted unknown key, wrong type, missing key, value out of its
 //     domain or out of a range another key states, refusal across keys and syntax error — every input a review found the
 //     schema accepting among them — each reported with its document, key path, line and column; and the documents
@@ -78,66 +77,6 @@ void theEmbeddedConfigIsTheSource()
         "the embedded engine is engine.toml, byte for byte in canonical form (" + std::to_string (engine.size()) + " bytes)");
     const config::Loaded fromFiles = config::bind (g_targetsText, g_engineText);
     ok (fromFiles.ok(), "and the source files bind clean through bind() too");
-}
-
-void itCarriesTheDecisions()
-{
-    felitronics::test::group ("the config carries the decisions, number by number");
-    const config::Config c = config::load().config;
-    const config::Engine& e = c.engine;
-
-    ok (e.landing.passes == std::vector<std::int32_t> { 12, 24, 32 }, "landing: series of 12, 24 and 32 passes");
-    ok (same (e.landing.toleranceLu, 0.1), "landing: landed within ±0.1 LU");
-    ok (same (e.limiter.ceilingMarginDb, 0.15) && same (e.limiter.releaseMs, 50.0),
-        "limiter: a 0.15 dB ceiling margin and a 50 ms release, no longer numbers inside a shell");
-    ok (same (e.input.referenceLufs, -18.0), "input brought to −18 LUFS before the chain");
-    ok (same (e.input.quietWarningLufs, -40.0) && same (e.input.quietGainOnlyLufs, -55.0),
-        "quiet input: a warning below −40 LUFS, gain and ceiling only below −55");
-    ok (same (e.hpf.hzMax, 50.0) && same (e.hpf.hzMin, 15.0), "high-pass: the knob and the machine top out at 50 Hz");
-    ok (e.hpf.slopes == std::vector<std::int32_t> { 12, 24, 48 }, "high-pass slopes 12 / 24 / 48");
-    ok (same (e.hpf.nothingBelowNoteInfraLowBelow, 0.01), "no high-pass when the infra-low share is under 1 %");
-    ok (same (e.observations.wideBassSideFractionAtLeast, 0.06) && e.observations.kinds.wideBass == config::Kind::Warning,
-        "wide bass: ONE threshold, 6 % of side, and it is a warning");
-    ok (e.compressor.thresholdFrom == config::ThresholdFrom::ShortTermP95,
-        "the compressor's threshold is counted from the short-term P95");
-    ok (e.glue.byTarget.size() == 1 && e.glue.byTarget[0].target == "cd" && same (e.glue.byTarget[0].position, 0.7),
-        "the machine glues on cd only, at 0.7");
-    ok (same (e.compressor.limitRelease.min, 50.0), "the compressor's release floor is 50 ms");
-    ok (e.stages.limiter, "the limiter is always on");
-    ok (e.dither.onUpToBits == 16, "dither at 16 bits only");
-    ok (! e.deEsser.automatic && same (e.deEsser.manualDepthDb, -6.0), "the de-esser: manual, off, −6 dB");
-
-    const config::Targets& t = c.targets;
-    ok (t.defaultTarget == "allStreaming", "a session starts on allStreaming");
-    ok (t.main == std::vector<std::string> { "allStreaming", "lp", "cdDynamic", "cd", "bandcamp", "club" }, "the main targets");
-    ok (t.targets.size() == 25, "25 targets (" + std::to_string (t.targets.size()) + ")");
-    bool monoBass = true, floor = true, loss = true, slope = true, shelf = true, clipper = true, always = true;
-    bool pass = true, album = true;
-    for (const config::Target& x : t.targets)
-    {
-        const bool lp = x.key == "lp", club = x.key == "club", cd = x.key == "cd" || x.key == "cdDynamic";
-        monoBass = monoBass && same (x.monoBass, lp ? 150.0 : 120.0);
-        floor = floor && same (x.hpfFloor, lp ? 32.0 : 24.0);
-        loss = loss && same (x.noteLossDb, club ? 0.3 : 1.0);
-        slope = slope && x.hpfSlopeDbPerOct == (lp ? 12 : 24);
-        shelf = shelf && (lp ? x.lowShelfDb.has_value() && same (*x.lowShelfDb, 0.5) : ! x.lowShelfDb.has_value());
-        clipper = clipper && x.noClipper == lp;
-        always = always && x.hpfAlways == lp;
-        pass = pass && x.sourceRatePass == cd;
-        album = album && (x.key == "td1008" ? x.album.has_value() && same (x.album->lufs, -14.0) && x.album->desktopOnly
-                                            : ! x.album.has_value());
-    }
-    ok (monoBass, "mono bass at 120 Hz on every target, 150 on vinyl");
-    ok (floor, "the high-pass floor is 24 Hz on every target, 32 on vinyl");
-    ok (loss, "the high-pass takes 1 dB at the lowest note, 0.3 on club");
-    ok (slope, "the machine's high-pass slope is 24 dB/oct, 12 on vinyl");
-    ok (shelf, "a +0.5 dB low shelf on vinyl, and on no other target");
-    ok (clipper && always, "vinyl alone: no peak clipper, the high-pass always");
-    ok (pass, "cd and cdDynamic alone take a pass at the source's rate");
-    ok (album, "TD1008 carries the −14 LUFS album loudness, marked desktop only; no other target has one");
-    const config::Target* td = config::find (t, "td1008");
-    ok (td != nullptr && same (td->lufs, -16.0) && same (td->tp, -1.0), "TD1008's own target is the track, −16 / −1");
-    ok (config::find (t, "no such target") == nullptr, "find() answers null for a key that is no row");
 }
 
 //==============================================================================
@@ -437,7 +376,6 @@ int main (int argc, char** argv)
         return 2;
     }
     theEmbeddedConfigIsTheSource();
-    itCarriesTheDecisions();
     theSchemaRefuses();
     theVersionMovesWithEveryValue();
     return felitronics::test::report();

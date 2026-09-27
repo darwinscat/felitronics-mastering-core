@@ -39,10 +39,11 @@
 # AES TD1008 guidance for lossy delivery. AES TD1008 itself: −16 LUFS for a track, −14 LUFS for an album, the ceiling no
 # higher than −1 dBTP.
 #
-# EVERY ROW IS AN OWNER DECISION. The schema checks what a row may be — a lufs and a ceiling on the edit's travel and
-# step, a crossover on the mono-bass knob, a floor on the high-pass knob, a slope from its list, a delivery rate from the
-# set (0, 44100, 48000, 88200, 96000, 176400, 192000) — not which one was chosen. An optional flag is written only when it
-# is true; sourceRatePass only on a target that delivers at a rate of its own.
+# EVERY ROW IS AN OWNER DECISION, pinned field by field by the decisions suite (modules/session/tests/
+# ConfigDecisionsTests.cpp). The schema checks what a row may be — a lufs and a ceiling on the edit's travel and step, a
+# crossover on the mono-bass knob, a floor on the high-pass knob, a slope from its list, a delivery rate from the set
+# (0, 44100, 48000, 88200, 96000, 176400, 192000) — and that suite checks what it is. An optional flag is written only when
+# it is true; sourceRatePass only on a target that delivers at a rate of its own.
 
 # The target a new session starts with.
 default = "allStreaming"

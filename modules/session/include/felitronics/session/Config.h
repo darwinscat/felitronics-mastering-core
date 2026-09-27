@@ -28,6 +28,11 @@
 // for a library that was built, load() has no problems; it returns them anyway, because bind() — the same schema over
 // texts a caller hands in — can.
 //
+// THE SCHEMA HOLDS FORM AND PHYSICS, NOT CHOICES: a key's type, the domain where its number means what its document says
+// (a share within 0…1, a band that ascends, a corner the analyzer admits), and the checks across keys. Which numbers the
+// owner chose is pinned elsewhere, by the decisions suite (tests/ConfigDecisionsTests.cpp), so that changing one is a
+// deliberate edit of that test and not a schema error.
+//
 // As Session.h: this header carries no function body that computes anything. The binding, the canonical text and the
 // version are compiled with the library's own flags (docs/SESSION.md).
 namespace felitronics::session::config
