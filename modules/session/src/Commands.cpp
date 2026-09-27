@@ -289,7 +289,7 @@ Answer Session::apply (const Request& request) noexcept
         masterRoom_ = 0;
         samples_.reset();
         project_.manual = false;
-        clearHands (project_.devices);
+        project_.devices = {};                                      // unplaced: both layers, until the new source is measured
         // WRITE — one array of exactly the samples, then a copy into it.
         const auto frames = std::size_t (pcm.frames);   // fits: check() refused a source past what size_t counts
         std::unique_ptr<float[]> samples (new float[frames * pcm.channelCount]);
@@ -307,7 +307,6 @@ Answer Session::apply (const Request& request) noexcept
         source_ = { pcm.channelCount, pcm.sampleRate, pcm.frames, hash.h, load->meta.fileRate, load->meta.rateKnown,
                     load->meta.bitDepth, std::string_view (name_.get(), given.size()) };
         state_ = State::Loaded;
-        detail::placeMachine (rules, project_.target, source_.channels, project_.devices);
     }
     else if (const auto* set = std::get_if<command::SetTarget> (&request))
     {
@@ -316,7 +315,8 @@ Answer Session::apply (const Request& request) noexcept
         project_.targetEdit = {};                                   // the new target's numbers, silently
         if (set->onEdits == OnEdits::Reset) clearHands (project_.devices);
         else clearHandsNotOffered (rules, row, source_.channels, project_.devices);
-        detail::placeMachine (rules, row, source_.channels, project_.devices);
+        // Placed devices are placed again for the new target; unplaced ones wait for the first measurement's end.
+        if (placed()) detail::placeMachine (rules, row, source_.channels, project_.devices);
     }
     else if (const auto* edit = std::get_if<command::EditTarget> (&request))
     {

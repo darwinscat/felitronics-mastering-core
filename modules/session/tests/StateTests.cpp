@@ -313,7 +313,7 @@ void rejectedWhole (Session& s, const Request& r, Rejection want, std::uint8_t f
 
 void theDefaultsAtCreate()
 {
-    felitronics::test::group ("create: Empty, revision 0, the default target, the manual mode off, the machine's layer placed");
+    felitronics::test::group ("create: Empty, revision 0, the default target, the manual mode off, the devices unplaced");
     auto s = fresh();
     const auto loaded = config::Config::load();
     ok (s->state() == State::Empty && ! s->mastering() && s->column() == Column::Empty && s->revision() == 0,
@@ -322,6 +322,13 @@ void theDefaultsAtCreate()
     ok (! s->project().manual && handsEmpty (s->project().devices) && ! s->project().targetEdit.lufs && ! s->project().targetEdit.tp,
         "the manual mode off, no edit of a person's anywhere");
     ok (s->source().channels == 0 && s->job() == 0 && s->masters().empty(), "no source, no job, no master");
+    ok (sameMachine (s->project().devices, Devices {}), "the devices unplaced: the machine's layer at its types' zeros");
+    Audio a = makeAudio (2, 480);
+    ok (accepted (*s, loadOf (a)) && sameMachine (s->project().devices, Devices {}), "and still after a load");
+    ok (accepted (*s, command::SetTarget { 2, "lp", OnEdits::Keep }) && sameMachine (s->project().devices, Devices {})
+            && accepted (*s, command::SetTarget { 3, "allStreaming", OnEdits::Keep }),
+        "and after a change of target while the first measurement runs");
+    ok (Driver::measured1 (*s), "the first measurement ends");
     const auto& d = s->project().devices;
     // allStreaming: 24 Hz floor under the 30 Hz default, 24 dB/oct, mono bass at 120 Hz, a peak clipper, 24-bit delivery.
     ok (same (d.hpf.machine.fq, 30.0) && d.hpf.machine.slope == 24 && d.hpf.machine.on, "the high-pass: 30 Hz, 24 dB/oct, on");
@@ -396,9 +403,12 @@ void placement()
     HpfFields<Mark> fq {};
     fq.fq = true;
     rejectedWhole (s, revertOf (fq), Rejection::NotPlaced, kNoField, "a revert while the first measurement runs");
-    const Devices unplaced = s.project().devices;
+    ok (sameMachine (s.project().devices, Devices {}), "the devices unplaced while the first measurement runs");
     ok (Driver::measured1 (s) && s.state() == State::Measured1, "the first measurement ends: Measured1");
-    ok (sameMachine (unplaced, s.project().devices), "the devices placed on the config's numbers for the target");
+    Devices expected {};
+    detail::placeMachine (detail::rules(), s.project().target, s.source().channels, expected);
+    ok (sameMachine (expected, s.project().devices) && ! sameMachine (Devices {}, s.project().devices),
+        "the devices placed then, on the config's numbers for the target and the source — and nothing placed them before");
     const Answer a = s.apply (editOf (hpfFq (36.0)));
     ok (a.rejection == Rejection::None && s.project().devices.hpf.hand.fq && same (*s.project().devices.hpf.hand.fq, 36.0),
         "after it an edit is taken, into a person's layer");
@@ -832,6 +842,7 @@ void aLoadDisarms()
     ok (s.state() == State::Loaded && ! s.mastering() && s.job() == 0 && s.masters().empty(),
         "Loaded: the master being made stopped, the masters gone");
     ok (handsEmpty (s.project().devices), "a person's device edits gone: they were about the old source");
+    ok (sameMachine (s.project().devices, Devices {}), "and the devices unplaced until the new source is measured");
     ok (! s.project().manual, "the manual mode is off: it does not outlive the file");
     ok (s.targetName() == "lp" && s.project().targetEdit.lufs && same (*s.project().targetEdit.lufs, -11.0),
         "the target and its edited number stay");
