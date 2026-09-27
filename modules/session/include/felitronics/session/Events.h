@@ -3,27 +3,25 @@
 
 #pragma once
 
-#include <felitronics/session/Commands.h>
+#include <felitronics/session/Text.h>
 #include <cstddef>
 #include <cstdint>
 
 namespace felitronics::session
 {
-// Wire values are stable. Facts carry typed arguments; text is a separate consumer.
-enum class FactId : std::uint8_t { Measurement1, Measurement2, MasterPass, MasterReady, Cancelled, FloatingPointEnvironment };
-enum class ArgKind : std::uint8_t { Number, Count, Enum };
-struct FactArg
+// An event owns a text fact, including every UserText byte. Stored arguments contain no views into another value;
+// view() binds them to this value's buffer for the renderer. Copies and moves remain independent, without allocation.
+class OwnedFact final
 {
-    ArgKind kind = ArgKind::Number;
-    double value = 0.0;
-    std::uint32_t count = 0;
-    std::uint32_t enumId = 0;
-};
-struct Fact
-{
-    FactId id = FactId::Measurement1;
-    FactArg args[2] {};
-    std::uint8_t count = 0;
+public:
+    static constexpr std::size_t kTextCapacity = 256;
+    // Too many arguments or text bytes refuses whole and leaves this value unchanged. No text is truncated.
+    [[nodiscard]] bool assign (const text::Fact& fact) noexcept;
+    [[nodiscard]] text::Fact view() const noexcept;
+private:
+    text::Fact fact_ {};
+    char text_[kTextCapacity] {};
+    std::size_t lengths_[text::Fact::kMaxArgs] {};
 };
 enum class PhaseName : std::uint8_t { Stream, Report, Analyzers, Pass, Remeasure };
 struct Phase
@@ -49,11 +47,11 @@ struct Reading
 struct Done { MasterId masterId = 0; };
 struct Rejected { CommandId commandId = 0; Rejection code = Rejection::None; };
 enum class ErrorCode : std::uint8_t { Trap, Contract, Refusal, Memory, Poisoned, Stale };
-enum class Recover : std::uint8_t { None, Replay };
+enum class Recover : std::uint8_t { None, Replay, Continue };
 struct Error
 {
     ErrorCode code = ErrorCode::Contract;
-    Fact fact {};
+    OwnedFact fact {};
     Recover recover = Recover::None;
     double needBytes = 0.0;                // exact integer, strictly below 2^53
 };
@@ -62,7 +60,7 @@ struct EventPayload
 {
     // Only the member named by kind is meaningful. All payloads are self-contained values.
     Phase phase {};
-    Fact fact {};
+    OwnedFact fact {};
     Reading reading {};
     Done done {};
     Rejected rejected {};
@@ -80,7 +78,7 @@ struct Stepped
 {
     StepState state = StepState::Done;
     std::uint32_t units = 0;
-    bool refused = false;                  // FP environment refused; the job remains resumable
+    bool refused = false;                  // FP refusal leaves the job resumable and publishes Recover::Continue
 };
 inline constexpr std::uint32_t kStepUnits = 16;
 inline constexpr std::size_t kEventBatch = 3 * kStepUnits;

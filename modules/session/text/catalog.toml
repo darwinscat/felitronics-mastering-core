@@ -147,8 +147,8 @@ ru = "Мастер уже делается — дождитесь его или 
 en = "A master is already being made — wait for it or cancel it."
 
 [messages.rejectedNoJob]
-ru = "Отменять нечего: мастер сейчас не делается."
-en = "Nothing to cancel: no master is being made."
+ru = "Отменять нечего: замер или мастер сейчас не выполняется."
+en = "Nothing to cancel: no measurement or master is running."
 
 [messages.rejectedNoMaster]
 ru = "Готовых мастеров нет — убирать нечего."
@@ -167,8 +167,8 @@ ru = "Этот прибор здесь не предлагается: этой �
 en = "This device is not offered here: this target or this file does not call for it."
 
 [messages.rejectedUnknownJob]
-ru = "Этот мастер уже не делается — отменять нечего."
-en = "That master is no longer being made — there is nothing to cancel."
+ru = "Это задание уже не выполняется — отменять нечего."
+en = "That job is no longer running — there is nothing to cancel."
 
 [messages.rejectedUnknownMaster]
 ru = "Такого мастера среди готовых нет."
@@ -211,5 +211,55 @@ ru = "Файл слишком длинный: этой машине не хва�
 en = "The file is too long: this machine cannot address the memory it needs."
 
 [messages.rejectedNoJobId]
-ru = "Номера заданий этой сессии исчерпаны — нового мастера в ней уже не сделать."
-en = "This session has used up its job numbers — it can make no new master."
+ru = "Номера заданий этой сессии исчерпаны — загрузить файл или сделать новый мастер в ней уже нельзя."
+en = "This session has used up its job numbers — it cannot load a file or make a new master."
+
+[messages.rejectedInvalidUtf8]
+ru = "Имя файла содержит некорректный UTF-8 — проверьте его кодировку."
+en = "The file name contains invalid UTF-8 — check its encoding."
+
+# The phases of the work. A pass names only its current number, never a budget.
+[messages.measurement1]
+ru = "Первый замер завершён."
+en = "The first measurement is complete."
+
+[messages.measurement2]
+ru = "Второй замер завершён."
+en = "The second measurement is complete."
+
+[messages.masterPass]
+ru = "Мастер · проход {pass}"
+en = "Master · pass {pass}"
+
+[messages.masterReady]
+ru = "Мастер готов."
+en = "The master is ready."
+
+[messages.cancelled]
+ru = "Задание отменено."
+en = "The job was cancelled."
+
+# The session's errors. Recovery is a separate event field, never inferred from these words.
+[messages.sessionTrap]
+ru = "Выполнение сессии прервано из-за сбоя."
+en = "The session stopped because execution failed."
+
+[messages.sessionContract]
+ru = "Задание остановлено: нарушены условия работы сессии."
+en = "The job stopped because the session's contract was violated."
+
+[messages.sessionRefusal]
+ru = "Шаг не выполнен: арифметика потока не соответствует правилам IEEE-754. Восстановите настройки потока, чтобы продолжить."
+en = "The step was refused: the thread's arithmetic is not IEEE-754's default. Restore the thread's settings to continue."
+
+[messages.sessionMemory]
+ru = "Недостаточно памяти для выполнения операции."
+en = "There is not enough memory to perform the operation."
+
+[messages.sessionPoisoned]
+ru = "После сбоя эта сессия больше не принимает команды."
+en = "This session no longer accepts commands after a failure."
+
+[messages.sessionStale]
+ru = "Результат относится к заданию, которое уже не выполняется."
+en = "The result belongs to a job that is no longer running."

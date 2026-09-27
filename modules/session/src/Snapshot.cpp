@@ -57,9 +57,13 @@ Snapshot Snapshot::copy (const SnapshotView& v) noexcept
 }
 std::uint64_t Session::snapshotBytes() const noexcept
 {
-    return targetName().size() + source_.name.size() + masters().size_bytes();
+    return Snapshot::storageFor (buildView());
 }
 Snapshot Session::snapshot() const noexcept
+{
+    return Snapshot::copy (buildView());
+}
+SnapshotView Session::buildView() const noexcept
 {
     SnapshotView v;
     v.state = state_;
@@ -76,6 +80,6 @@ Snapshot Session::snapshot() const noexcept
     v.masterProgress = masterProgress_;
     v.integratedLufs = std::numeric_limits<double>::quiet_NaN(); // the stub establishes no audio measurement
     v.sourceBytes = double (source_.frames * source_.channels * sizeof (float));
-    return Snapshot::copy (v);
+    return v;
 }
 } // namespace felitronics::session

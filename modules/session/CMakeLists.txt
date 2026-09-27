@@ -622,4 +622,17 @@ if(FELITRONICS_BUILD_TESTS)
     add_test(NAME felitronics_session_codec_types
         COMMAND ${CMAKE_COMMAND} -DCHECK=ON -DOUTPUT=${FELITRONICS_SESSION_TYPES}
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake)
+    find_program(FELITRONICS_SESSION_NODE NAMES node nodejs REQUIRED)
+    add_executable(felitronics_session_codec_fixture tests/CodecFixture.cpp)
+    target_link_libraries(felitronics_session_codec_fixture PRIVATE felitronics::session)
+    target_include_directories(felitronics_session_codec_fixture PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_features(felitronics_session_codec_fixture PRIVATE cxx_std_20)
+    add_test(NAME felitronics_session_codec_encoded_types
+        COMMAND ${FELITRONICS_SESSION_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec-check.mjs
+                ${FELITRONICS_SESSION_TYPES} ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec-schema.json
+                ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:felitronics_session_codec_fixture>)
+    include(tests/codec-controls.cmake)
+    add_test(NAME felitronics_session_contract_controls
+        COMMAND ${FELITRONICS_SESSION_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-contract-controls.mjs
+                ${PROJECT_SOURCE_DIR} ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:felitronics_session_event_tests>)
 endif()

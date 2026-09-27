@@ -44,6 +44,7 @@ enum class Status : std::uint8_t
 
 class Session;
 class Snapshot;
+struct SnapshotView;
 
 // What create() gives back: a session, or the reason there is none (`session` null, `status` not Ok).
 struct Created
@@ -69,7 +70,7 @@ struct Kept
     Recipe recipe {};
 };
 
-// The source a load gave, as the session holds it. The name and the samples live in the session until the next load.
+// The source a load gave, as the session holds it. The name and the samples live in the session until the next load or cancellation of the first measurement.
 struct Source
 {
     std::uint32_t channels = 0;                // 0: nothing loaded
@@ -145,8 +146,8 @@ public:
     //==========================================================================
     // THE COMMANDS (Commands.h)
 
-    // Does the request, whole, or rejects it having changed nothing — the revision included. The checks run in the order
-    // Commands.h declares: the floating-point environment, then the table, then the rest. Every accepted request moves
+    // Does the request, whole, or rejects it with no state or revision change. A rejection publishes an event and advances seq.
+    // The checks run in the order Commands.h declares: the floating-point environment, then the table, then the rest. Every accepted request moves
     // the revision by one, and so does each of the session's own transitions; a rejected one leaves it as it was.
     [[nodiscard]] Answer apply (const Request& request) noexcept;
 
@@ -155,7 +156,9 @@ public:
     [[nodiscard]] Checked check (const Request& request) const noexcept;
 
     // Each unit completes one deterministic stub step. A call takes at most kStepUnits units;
-    // zero polls. Drain/copy events() after each apply/step, before the next call replaces the batch.
+    // zero polls. With no work, even a hostile FP environment returns Done without an event or a seq change.
+    // An FP refusal while work remains publishes Error{Refusal, Continue}; restoring the environment permits resumption.
+    // Drain/copy events() after each apply/step, before the next call replaces the batch.
     // The batch lives inside createBytes(); step and events request no heap memory.
     [[nodiscard]] static std::uint64_t stepBytes() noexcept;
     [[nodiscard]] Stepped step (std::uint32_t budget) noexcept;
@@ -180,8 +183,8 @@ public:
 
 private:
     friend struct detail::Driver;   // the session's own transitions, driven by the work that ends (src/Driver.h)
-    // Defined by the state suite alone, to stand a session where only billions of calls would take it (its last job
-    // id); the library defines none.
+    // Defined by the state and event suites to reach the last job id, Driver failures and batch bounds;
+    // the library defines none.
     friend struct detail::Inspector;
 
     Session() noexcept = default;
@@ -190,6 +193,8 @@ private:
     [[nodiscard]] bool placed() const noexcept;
 
     void emit (Notification event) noexcept;
+    void dropJob (JobId job) noexcept;
+    [[nodiscard]] SnapshotView buildView() const noexcept;
     [[nodiscard]] bool hasWork() const noexcept;
     JobId measurementJob_ = 0;
     std::uint32_t measurementUnit_ = 0, masterUnit_ = 0;

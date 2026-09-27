@@ -73,8 +73,8 @@ constexpr const char* kColumnNames[] = { "Empty", "Loaded", "Measured1", "Measur
 constexpr const char* kEventNames[] = { "Measured1", "Measured2", "Mastered" };
 constexpr const char* kRejectionNames[] = { "None", "FloatingPointEnvironment", "NoSource", "NotPlaced", "NotMeasured",
     "Busy", "NoJob", "NoMaster", "ManualOff", "UnknownTarget", "NotOffered", "UnknownJob", "UnknownMaster", "NoFields",
-    "NotFinite", "NotOneOf", "OutOfTravel", "OffStep", "BadChannels", "BadRate", "NoAudio", "TooLong", "NoJobId" };
-constexpr auto kLastRejection = Rejection::NoJobId;
+    "NotFinite", "NotOneOf", "OutOfTravel", "OffStep", "BadChannels", "BadRate", "NoAudio", "TooLong", "NoJobId", "InvalidUtf8" };
+constexpr auto kLastRejection = Rejection::InvalidUtf8;
 static_assert (std::size (kRejectionNames) == std::size_t (kLastRejection) + 1, "a name for every rejection");
 
 std::string nameOf (Rejection r)
@@ -848,6 +848,9 @@ void jobIds()
     ok (last.rejection == Rejection::None && last.job == std::numeric_limits<JobId>::max(), "the last id is issued");
     ok (accepted (s, command::Cancel { 5, last.job }), "cancelled");
     rejectedWhole (s, command::Master { 6 }, Rejection::NoJobId, kNoField, "a master after the last id");
+    auto fresh = Session::create();
+    command::Load invalid; invalid.meta.name = "\x80";
+    rejectedWhole (*fresh.session, invalid, Rejection::InvalidUtf8, kNoField, "invalid UTF-8 name before audio checks");
     ok (s.job() == 0 && ! s.mastering(), "and no job runs — none numbered 0");
 }
 

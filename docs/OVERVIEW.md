@@ -84,7 +84,8 @@ floating-point environment is not IEEE-754's default, and it holds:
 
 The session also exposes `step(workUnits)`, copyable event deltas and owned immutable snapshots. The deterministic
 stub runs two five-unit measurement phases and a master with config-weighted pass progress. Cheap commands and
-queries run between calls; cancellation preserves the session, and completion identities reject stale work.
+queries run between calls; phase-one cancellation returns Empty and drops the source, while later cancellations keep
+the measured state. Completion identities reject stale work.
 `Snapshot.h` provides a named-field JSON codec with explicit non-finite values and exact memory demands. Its description
 also generates `snapshot.d.ts` in the build output. The event suite pins sequences across runs and pump slicing, every
 command-table cell between steps, stale completions, snapshot ownership, codec round trips and allocation demands.
