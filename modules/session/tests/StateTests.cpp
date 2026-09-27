@@ -68,7 +68,7 @@ namespace config = felitronics::session::config;
 namespace
 {
 constexpr const char* kCommandNames[] = { "load", "setTarget", "editTarget", "editDevice", "revertEdits", "setManual",
-                                          "master", "cancel", "forget" };
+                                          "master", "cancel", "forget", "importProject" };
 constexpr const char* kColumnNames[] = { "Empty", "Loaded", "Measured1", "Measured2", "Mastering1", "Mastering2" };
 constexpr const char* kEventNames[] = { "Measured1", "Measured2", "Mastered" };
 constexpr const char* kRejectionNames[] = { "None", "FloatingPointEnvironment", "NoSource", "NotPlaced", "NotMeasured",
@@ -156,7 +156,8 @@ bool handsEmpty (const Devices& d)
 
 bool sameProject (const Project& a, const Project& b)
 {
-    return a.target == b.target && same (a.targetEdit.lufs, b.targetEdit.lufs) && same (a.targetEdit.tp, b.targetEdit.tp)
+    return a.core.major == b.core.major && a.core.minor == b.core.minor && a.core.patch == b.core.patch
+        && a.target == b.target && same (a.targetEdit.lufs, b.targetEdit.lufs) && same (a.targetEdit.tp, b.targetEdit.tp)
         && a.manual == b.manual && sameLayers (a.devices.hpf, b.devices.hpf)
         && sameLayers (a.devices.monoBass, b.devices.monoBass) && sameLayers (a.devices.glue, b.devices.glue)
         && sameLayers (a.devices.saturation, b.devices.saturation) && sameLayers (a.devices.tilt, b.devices.tilt)
@@ -243,6 +244,7 @@ struct Situation
     Audio audio;
     JobId job = 0;
     MasterId kept = 0;
+    ProjectText projectText;
 };
 
 Situation situation (Column column, bool manual = true, const char* target = nullptr, std::uint32_t channels = 2)
@@ -272,6 +274,7 @@ Situation situation (Column column, bool manual = true, const char* target = nul
     }
     if (manual) good = good && accepted (s, command::SetManual { 100, true });
     ok (good && s.column() == column, std::string ("PRECONDITION: the session stands in ") + kColumnNames[std::size_t (column)]);
+    x.projectText = s.exportProject();
     return x;
 }
 
@@ -289,6 +292,7 @@ Request validRequest (Command c, const Situation& x, CommandId id)
         case Command::Master:      return command::Master { id };
         case Command::Cancel:      return command::Cancel { id, x.job != 0 ? x.job : x.s->measurementJob() };
         case Command::Forget:      return command::Forget { id, x.kept };
+        case Command::ImportProject: return command::ImportProject { id, x.projectText.view() };
     }
     return command::Master { id };
 }
@@ -776,7 +780,7 @@ void memoryIsDeclared()
                            { Command::EditTarget, Column::Measured1, 0 }, { Command::EditDevice, Column::Measured1, 0 },
                            { Command::RevertEdits, Column::Measured1, 0 }, { Command::SetManual, Column::Measured1, 0 },
                            { Command::Master, Column::Measured1, 1 }, { Command::Cancel, Column::Mastering1, 0 },
-                           { Command::Forget, Column::Measured2, 0 } };
+                           { Command::Forget, Column::Measured2, 0 }, { Command::ImportProject, Column::Measured2, -1 } };
     for (const Case& c : cases)
     {
         Situation x = situation (c.column);
@@ -790,9 +794,12 @@ void memoryIsDeclared()
         ok (checking.requests == 0, what + ": check() asks the heap for nothing");
         ok (a.rejection == Rejection::None, what + ": PRECONDITION: accepted");
         ok (budget::covers (declared.bytes, spent), what + ": declared >= requested — " + budget::describe (declared.bytes, spent));
-        ok (spent.bytes == (long long) declared.bytes, what + ": and exactly the declaration");
-        ok (spent.requests == c.requests, what + ": in " + std::to_string (c.requests) + " request(s) (got "
-                                              + std::to_string (spent.requests) + ")");
+        if (c.requests >= 0)
+        {
+            ok (spent.bytes == (long long) declared.bytes, what + ": and exactly the declaration");
+            ok (spent.requests == c.requests, what + ": in " + std::to_string (c.requests) + " request(s) (got "
+                                                  + std::to_string (spent.requests) + ")");
+        }
     }
     // The two that ask: a load's is its samples and its name; a master's is room for one more kept.
     {

@@ -17,6 +17,16 @@
       "Analyzers",
       "Pass",
       "Remeasure"
+    ],
+    "Device": [
+      "Hpf",
+      "MonoBass",
+      "Glue",
+      "Saturation",
+      "Tilt",
+      "Limiter",
+      "Dither",
+      "LowShelf"
     ]
   },
   "records": {
@@ -220,7 +230,8 @@
         "target": "uint16",
         "targetEdit": "TargetFieldsTouched",
         "manual": "bool",
-        "devices": "Devices"
+        "devices": "Devices",
+        "core": "Version"
       }
     },
     "Recipe": {
@@ -297,7 +308,25 @@
         "integratedLufs": "double",
         "momentary": "ReadingPoint[]",
         "shortTerm": "ReadingPoint[]",
-        "runs": "ReadingRun[]"
+        "runs": "ReadingRun[]",
+        "machineDifferences": "MachineDifference[]"
+      }
+    },
+    "Version": {
+      "cpp": "Version",
+      "fields": {
+        "major": "uint32",
+        "minor": "uint32",
+        "patch": "uint32"
+      }
+    },
+    "MachineDifference": {
+      "cpp": "MachineDifference",
+      "fields": {
+        "device": "Device",
+        "field": "uint8",
+        "fileValue": "double",
+        "coreValue": "double"
       }
     }
   }

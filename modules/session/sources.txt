@@ -14,3 +14,4 @@ src/Text.cpp
 src/Pump.cpp
 src/Snapshot.cpp
 src/Codec.cpp
+src/ProjectIO.cpp

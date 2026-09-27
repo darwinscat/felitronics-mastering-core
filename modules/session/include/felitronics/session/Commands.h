@@ -36,8 +36,8 @@ namespace felitronics::session
 enum class State : std::uint8_t { Empty, Loaded, Measured1, Measured2 };
 
 // The commands, in the order of the table's rows and of Request's alternatives.
-enum class Command : std::uint8_t { Load, SetTarget, EditTarget, EditDevice, RevertEdits, SetManual, Master, Cancel, Forget };
-inline constexpr std::size_t kCommands = 9;
+enum class Command : std::uint8_t { Load, SetTarget, EditTarget, EditDevice, RevertEdits, SetManual, Master, Cancel, Forget, ImportProject };
+inline constexpr std::size_t kCommands = 10;
 
 // The session's own transitions, in the order of the events table's rows.
 enum class Event : std::uint8_t { Measured1, Measured2, Mastered };
@@ -79,6 +79,15 @@ enum class Rejection : std::uint8_t
     // what the command names (continued)
     NoJobId,                    // every job id was issued: load and master cannot start another job
     InvalidUtf8,                // a load's name is not valid UTF-8
+    ProjectTooLarge,            // before reading any input
+    ProjectSyntax,              // felitronics-toml refused the document
+    ProjectMissing,             // a required field is absent
+    ProjectType,                // a field has another TOML type
+    ProjectUnknownKey,          // an unknown section, knob or author suffix
+    UnknownDefaults,            // malformed defaults label, or an uncarried label between the retained versions
+    ProjectCore,                // core must be a canonical major.minor.patch version
+    MachineMismatch,            // this core's decision disagrees with its own saved layer
+    NewerDefaults,              // defaults are newer than the current compiled table
 };
 
 using CommandId = std::uint64_t;   // the shell's own number for a request, given back in its answer
@@ -132,11 +141,12 @@ struct SetManual   { CommandId id = 0; bool on = false; };
 struct Master      { CommandId id = 0; };
 struct Cancel      { CommandId id = 0; JobId job = 0; };
 struct Forget      { CommandId id = 0; MasterId master = 0; };
+struct ImportProject { CommandId id = 0; std::string_view bytes; };
 } // namespace command
 
 // Any request: the alternative is the command, in the order of Command.
 using Request = std::variant<command::Load, command::SetTarget, command::EditTarget, command::EditDevice,
-                             command::RevertEdits, command::SetManual, command::Master, command::Cancel, command::Forget>;
+                             command::RevertEdits, command::SetManual, command::Master, command::Cancel, command::Forget, command::ImportProject>;
 
 // THE ANSWER — whole: accepted with the revision the command made, or rejected with no state change, but an event.
 struct Answer
@@ -145,17 +155,20 @@ struct Answer
     Rejection rejection = Rejection::None;     // None: accepted
     std::uint64_t revision = 0;                // accepted: the revision it made; rejected: the revision, unchanged
     JobId job = 0;                             // an accepted load or master: the job it started
+    ProjectPosition position {};              // import: 1-based Unicode line and column; zero for preflight refusals
+    std::optional<Device> device;              // import: absent for a target field
     std::uint8_t field = kNoField;             // rejected on a field: its place among the fields, in the order written
                                                // (the target's: lufs 0, tp 1; a device's: as its Fields lists them)
 };
 
 // WHAT A REQUEST WOULD DO, BEFORE IT IS DONE — Session::check(): the answer it would get, and the bytes it would ask the
-// heap for if it is accepted (law 11d: memory is declared before the work).
+// heap for (law 11d). Import checks only entry, state and size here: parsing and schema validation are
+// work inside apply(), covered by the size-derived bound even when they refuse the document.
 struct Checked
 {
     Rejection rejection = Rejection::None;
     std::uint8_t field = kNoField;
-    std::uint64_t bytes = 0;                   // accepted: what apply() will request from the heap; rejected: 0
+    std::uint64_t bytes = 0;                   // preflight passed: demand of apply(), including import refusals; otherwise 0
 };
 
 // A session's situation — its state, and whether a master is being made — as the column of the tables below.
@@ -199,7 +212,12 @@ struct Table
         { Command::Master,      {    NoSource, NotMeasured, None,     None,     Busy,      Busy } },
         { Command::Cancel,      {    NoJob,    None,        None,     NoJob,    None,      None } },
         { Command::Forget,      {    NoSource, NoMaster,    None,     None,     None,      None } },
+        { Command::ImportProject, { NoSource, NotPlaced,   None,     None,     None,      None } },
     };
+
+    // Import: entry, state, size (no input read), then TOML syntax, schema in canonical field order,
+    // defaults version, core version, target name, manual/offered constraints, same-core machine equality.
+    // The file supplies manual mode; the current mode is not a prerequisite for restoring a project.
 
     // Cancel in Loaded drops the source and returns Empty; in Measured1 it stops phase two and keeps Measured1.
     // A master cancellation ends the overlay and keeps the measured state. Each cancelled job's progress is reset.

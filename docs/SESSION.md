@@ -48,8 +48,8 @@ The laws are felitronics-core's (`docs/DSP-ARCHITECTURE.md` §2), numbered as th
 | **8a**, **11a** the sample clock | **no** | the session has no stream of samples and no clock |
 | **9** no `long double` | yes | core's long-double lint reads every `modules/*/include` and `modules/*/src`, this module's included, and the wasm tier's artifact gate reads every emitted object |
 | **10** FP contraction is stated | yes — **as `off`** | the target's own flags in one `SHELL:` group, the compile line read back (this build's and a consumer's), the hostile-flags tests, the library's probes asked from a contracting caller, and the source lint's pragma and attribute rules. Core states `on` for its tree; the session's numbers are compared across rows, native and wasm, and baseline wasm has no fused multiply-add, so a contracting native build would disagree with the module. The library's flags reach its own objects only: a program that links it compiles **every** translation unit with the same FP flags (below, "What the flags do not reach"). The sign and payload of a NaN, and the floating-point exception masks and flags, are outside every check here, as core's law 10 leaves them |
-| **11**, **11b** a request that cannot be honoured is refused whole; checks in a fixed order | yes | `create()` checks the floating-point environment and the config it reads, then allocates: a refused create requested nothing (`felitronics_session_tests`). Every command runs the checks `Commands.h` declares, in their order — the thread's floating-point environment, then the table — before changing session state. A rejection publishes its event and advances `seq`; the session’s state and revision do not change. A `load` runs its checks, then disarms, then writes (check → disarm → write), so a rejected load, too, leaves state and revision unchanged while publishing its rejection: `felitronics_session_state_tests` compares the whole session before and after every rejection it produces, produces every rejection code, and holds the order with requests wrong in several ways. The C boundary's checks run in its header's order and a refused call writes nothing and allocates nothing (`felitronics_session_abi_tests`). `fcore_session` reads and checks a whole script before it creates a session |
-| **11d** memory is declared before the work | yes | `Session::createBytes()` is the demand of `create()`, counted by the expression that sizes the request, and `Session::check()` gives the demand of every command before it runs — computed by the same function `apply()` runs first; the declared-budget harness (`modules/session/tests/DeclaredBudget.h`, on core's one allocation counter) holds `create()` and every command to *declared ≥ requested* (exactly equal, where the request is one exact allocation), holds `check()`, every rejection and every transition to nothing requested, and is itself shown to fail on a sample that under-declares. The event suite also holds `stepBytes()`, `snapshotBytes()`, snapshot copy, and codec size queries and work to their declared demands (below). The demand is checked in C++; the draft C ABI does not forward it. The C boundary adds nothing to it (its table is static) and keeps the poison |
+| **11**, **11b** a request that cannot be honoured is refused whole; checks in a fixed order | yes | `create()` checks the floating-point environment and the config it reads, then allocates: a refused create requested nothing (`felitronics_session_tests`). Every command runs the checks `Commands.h` declares, in their order — the thread's floating-point environment, then the table — before changing session state. Import adds the ordered document checks below. A rejection publishes its event and advances `seq`; the session’s state and revision do not change. A `load` runs its checks, then disarms, then writes (check → disarm → write), so a rejected load, too, leaves state and revision unchanged while publishing its rejection: `felitronics_session_state_tests` compares the whole session before and after every rejection it produces, produces every rejection code, and holds the order with requests wrong in several ways. The C boundary's checks run in its header's order and a refused call writes nothing and allocates nothing (`felitronics_session_abi_tests`). `fcore_session` reads and checks a whole script before it creates a session |
+| **11d** memory is declared before the work | yes | `Session::createBytes()` is the demand of `create()`, counted by the expression that sizes the request, and `Session::check()` gives the demand of every command before it runs — computed by the same function `apply()` runs first; the declared-budget harness (`modules/session/tests/DeclaredBudget.h`, on core's one allocation counter) holds `create()` and every command to *declared ≥ requested* (exactly equal, where the request is one exact allocation), holds `check()`, typed-command refusals and every transition to nothing requested; import parsing and its refusals are covered by the size-derived bound in `felitronics_session_project_tests`, and is itself shown to fail on a sample that under-declares. The event suite also holds `stepBytes()`, `snapshotBytes()`, snapshot copy, and codec size queries and work to their declared demands (below). The demand is checked in C++; the draft C ABI does not forward it. The C boundary adds nothing to it (its table is static) and keeps the poison |
 
 Not listed, and why: **3** (float in the hot path) — there is no hot path; **11c** (a pause is silence) — there are no
 clock-only calls; **11e** (a restart adopts an accepted publication) — the session publishes and adopts nothing.
@@ -185,7 +185,7 @@ every stage a device writes is named, the limiter's second release included.
   warning without switching a device (every observation threshold but `observations.polarity`; the peak clipper's
   density figures), what is measured after the master (the crest, the cost), development (the progress weights, the
   blind test), the name of the defaults, and — while no shell offers the de-esser — its block and the bursts only it
-  reads. The default target stays in. `sound` is what a recipe will record. They walk the
+  reads. The default target stays in. `sound` is what a recipe records. They walk the
   embedded data and allocate nothing, so the C ABI answers the config's `all` (`fc_session_config_version`) with no
   demand to declare. The suite changes every value of both documents, one at a time — through their text and through the
   embedded data — and requires `all` to move each time to a value of its own, and `sound` to move exactly for the values
@@ -214,7 +214,7 @@ every stage a device writes is named, the limiter's second release included.
 (nothing loaded), **Loaded** (a source, its first measurement not completed, the devices not placed), **Measured1** (the first
 measurement ended: the devices are placed, a master can be made), **Measured2** (the second ended too) — and a master
 being made is an overlay on the two measured ones. A shell asks by a `Request`, one struct per command with the shell's
-own id for it: `load`, `setTarget`, `editTarget`, `editDevice`, `revertEdits`, `setManual`, `master`, `cancel`, `forget`.
+own id for it: `load`, `setTarget`, `editTarget`, `editDevice`, `revertEdits`, `setManual`, `master`, `cancel`, `forget`, `importProject`.
 `Session::apply()` answers it whole — accepted, with the revision it made, or rejected with a `Rejection` code and no state change. A rejection publishes an event and advances `seq`. Every accepted command and every transition moves the revision by one; a rejection leaves it.
 
 **Who may do what, when, is one table in code** (`Table` in `Commands.h`), and every command consults it right after
@@ -236,6 +236,7 @@ from the code, and ctest holds the text between the markers below to that output
 | master | NoSource | NotMeasured | yes | yes | Busy | Busy |
 | cancel | NoJob | yes | yes | NoJob | yes | yes |
 | forget | NoSource | NoMaster | yes | yes | yes | yes |
+| importProject | NoSource | NotPlaced | yes | yes | yes | yes |
 
 | the session's own transition | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 |
 |---|---|---|---|---|---|---|
@@ -258,8 +259,8 @@ by construction — `check()` is `const`.
 and ceiling, on `[edit]`'s travels), the manual mode, and every device's parameters. **One parameter form per device**:
 a device's fields are written once, as a template over the form a field takes, and used as the machine's layer (every
 field a value), a person's layer (a field a value only where touched — a touched field is the person's even where its
-number is the machine's) and a revert's mask (a field yes or no). No string names a field anywhere: an edit is the
-device's struct, a variant whose alternative is the device. The devices are the high-pass, mono bass, the glue (its
+number is the machine's) and a revert's mask (a field yes or no). Commands name fields through typed structs: an edit is the
+device's struct, a variant whose alternative is the device. TOML keys are bound at the serialization boundary. The devices are the high-pass, mono bass, the glue (its
 knob, "up to N dB", as the config writes every glue number),
 saturation, tilt, the limiter's needles, the dither and the low shelf; the low shelf is offered on a target that
 carries one, the dither where the target's bit depth is one it serves, mono bass except on a mono source.
@@ -296,15 +297,115 @@ carries one, the dither where the target's bit depth is one it serves, mono bass
 
 **Memory.** `check()` says, before the work, what a command will ask the heap for, by the expressions that size its
 requests: a load its samples and its name, a master room for one more master kept (so that the render's end asks for
-nothing), every other command nothing. `felitronics_session_state_tests` holds every command to it through the
-allocation counter — exactly, since each is one exact request.
+nothing), import a conservative bound derived solely from the input byte count, and every other command nothing.
+`felitronics_session_state_tests` holds typed commands to exact requests; `felitronics_session_project_tests` holds
+import, including malformed and hostile documents, to its bound on cumulative allocation requests. Import preflight
+checks entry, state and size without reading input; document validation is work inside `apply()`, so a passed
+`check()` is not a promise that the document passes its schema.
 
 **No text.** A rejection is a `Rejection` code, and a field its place in its struct; the values are stable, and a new
-reason is a new value at the end. What a person reads is written from the code by a shell's catalogue.
+reason is a new value at the end. Import also returns a 1-based Unicode line and column and, for a device field,
+its typed device identity. `Text::rejected()` renders the code and field from the shared catalog.
+
+## The project file and replay
+
+`exportProject()` materializes the placed `Project` in one canonical TOML writer. `exportProjectBytes()` gives its
+exact allocation demand without allocating; the returned `ProjectText` owns exactly those bytes, without a terminator.
+An Empty or Loaded session refuses export (`NoSource` or `NotPlaced`): its unplaced zeros are not machine decisions.
+Files and browser storage belong to the shell. The writer reads no filesystem and the session reads no file itself.
+
+```toml
+defaults = "2026-09"
+core = "0.2.2"
+manual = true
+
+[target]
+name = "allStreaming"
+lufs.hand = -12.5
+
+[hpf]
+fq.hand = 36
+
+```
+
+The first two keys identify the defaults and the release that placed the machine layer. A new placement stamps
+`Session::version()`, sourced from the root `project(... VERSION ...)` line that the release tool updates; the existing
+version suite pins the binary to those build definitions. A core version is canonical `major.minor.patch`, each part
+an unsigned 32-bit integer. The manual flag follows. `[target]` names a target by its config **key**, never an index;
+only touched `lufs.hand` and `tp.hand` follow it. Device sections follow the typed order and use the config's names;
+a section appears only when a machine difference or touched hand follows. The reader accepts absent and empty sections.
+Each field writes `.machine` before `.hand`, one value per line. Defaults are omitted from the machine layer; every
+touched hand is retained, including a number equal to the machine's. Booleans are TOML booleans, slopes integers, and
+needles are `"auto"`, `"manual"` or `"off"`. Doubles use the shortest fixed decimal that reads back to the same binary64
+value (`to_chars` with fixed notation); all admitted knobs have at most nine decimal places. Negative zero writes `0`.
+The exact-size allocation counter and a sweep across every knob's travel hold the writer's demand and round trips.
+
+`importProject(commandId, bytes)` is `apply(command::ImportProject{...})`. Its row in the one command table is the
+device-edit row: `NoSource`, `NotPlaced`, then accepted in both measured states and both mastering overlays. The file
+supplies manual mode, so a fresh session need not enable it first. A hand with manual mode off is refused; an edit to
+a device not offered for the imported target and loaded source is refused. Import leaves ongoing jobs, captured
+recipes, measurements and kept masters alone. An accepted import moves the revision exactly once.
+
+Checks run in this order:
+
+1. The thread's floating-point environment, then the command table, then the **16,384-byte** inclusive text bound.
+   No input byte is read before these checks. `ProjectTooLarge` requests no allocation.
+2. felitronics-toml syntax, then its `Reader` schema: required defaults, core and manual fields; target name and touched
+   target numbers; devices in typed order, fields in declaration order, machine before hand. Numeric fields check the
+   written decimal's travel and exact grid. Unknown keys are reported as each table closes, including unknown sections
+   and author suffixes. Dotted keys and inline tables bind through the same schema.
+3. The defaults version, the core version spelling, and the target name.
+4. Manual mode and offered-device constraints in device/field order, then same-core machine equality in that order.
+
+The first refusal carries its code and position. A missing key points at its table; a bad value at the value; an
+unknown key at the key. Syntax refusals carry the parser's position. The candidate and its comparison live separately
+until every check passes. Rejection changes no project, state, revision, source, job, progress, master or comparison;
+it publishes the ordinary rejected event and advances only `seq`. Each appended rejection is fact `100 + code`, in
+Russian first and English, held by the catalog gate.
+
+`check(ImportProject)` publishes `65536 + inputBytes * perByte`, where `perByte` is
+`16 * (sizeof(toml::Entry) + sizeof(toml::Value) + sizeof(toml::Table) + sizeof(toml::Problem) + 128)`.
+The formula in `src/ProjectIO.cpp` bounds **cumulative requested bytes**, including parser paths, geometric container
+growth, schema reports, and debug-STL proxies and alignment. It covers rejected documents too, while preflight itself
+allocates nothing. The bound is tested with long strings, many keys, nested tables, arrays, partial syntax failures,
+empty input and the size boundary under the declared-budget harness, including MSVC Debug. There is no allocator
+recovery after the published budget is exceeded by the environment.
+
+The core carries the **current and previous defaults tables**. Today the current label is `2026-09` and the previous
+slot is empty. A carried label uses its compiled defaults. Labels are strictly `YYYY-MM`, with months `01` through `12`.
+A label older than every carried version is converted: written numbers are retained and omitted fields take current
+defaults. Fact `DefaultsConverted` (9) owns the original label and reports the conversion in both catalog languages.
+Export uses the current label; a converted project round trips without a second conversion warning. A newer label
+is refused as `NewerDefaults` (32, fact 132); a malformed label is `UnknownDefaults`. A future uncarried label between
+the retained versions is also `UnknownDefaults`. All these refusals leave state and revision unchanged.
+
+After defaults selection or conversion, with the same core stamp, the machine decides again and every field must equal the file's complete layer (omitted
+fields mean defaults). A difference is `MachineMismatch`. With another stamp, the file's complete machine layer and
+the person's touched layer remain intact. Fact `MachineDifferences` (8) publishes the count, including zero;
+`snapshot().view().machineDifferences` holds ordered `(device, field, fileValue, coreValue)` rows so a shell can show
+“HPF 32 → 34”. Flag values use 0/1, choices their enum numbers, and knobs their doubles. Snapshot ownership, JSON
+encoding and the generated `.d.ts` include the rows through the same generator and drift gates. The imported core
+stamp stays with that layer in the next export: replacing it with the running core's stamp would make that file fail
+its next same-core check. A target change explicitly places the current machine, stamps this core and clears the
+comparison. Hand edits and switching off manual mode do not replace the machine layer.
+
+Recovery and heap compaction use the same operation: create a new session, load the same source, advance measurement
+to the same measured state, then import the last exported project. The project includes target, manual mode and both
+layers. **Revision, sequence numbers, job ids, progress and the masters list are not part of the project.** Retained
+masters and active work are not recreated by import. The replay suite drives repeated loads, target changes, edits,
+manual mode and masters, then compares the recovered state and every project field. The measurement suite compares
+all facts in order and the complete final snapshot with step budgets 1, 7 and a large budget; phase-event counts are
+not a replay requirement.
+
+The facade's existing poison latch is permanent. Its native replay test injects the allocation failure used by the
+master ABI suite. Since session creation is `noexcept`, the test observes the abandoned call from a termination
+handler, verifies every status entry point refuses, replays outside the facade, and exits; it never resumes or clears
+the broken instance. A test-only accessor reaches its C++ project without adding a draft ABI export. The
+exceptions-free tier exercises the same permanent latch through allocation reentry. The draft ABI remains version 0.
 
 ## The text — facts, one catalog, one formatting table
 
-Nothing in the session prints. It states a **fact** — a `FactId` and typed arguments: a number with its unit, precision,
+Nothing in the session prints to a console. It states a **fact** — a `FactId` and typed arguments: a number with its unit, precision,
 sign and bound; a count; a term the catalog names; a note as a MIDI number; a text of the user's, never translated
 (`<felitronics/session/Text.h>`). `Text::text(fact, lang)` renders it: a pure function over two documents compiled into
 the library — no state, no file, the same bytes on every row, native and wasm — so the pure kit can call it on a page's
@@ -380,7 +481,7 @@ main thread.
   `-Werror`); the suite holds the table code by code, the field terms position by position against `src/Devices.h`'s
   walk of the fields (a term exactly where a check can refuse), and renders the answers of a real session.
 - **Only in words:** the wording itself — the glossary's Latin terms and the polite form, which the site's guards hold
-  for its own catalogs and which join this catalog in a later step; and that a fact's user text is a view whose bytes
+  for its own catalogs; this catalog has no wording lint; and that a fact's user text is a view whose bytes
   its caller keeps alive while it is rendered.
 
 The facts' ids are stable and fall in ranges (`Text.h`): 1–99 readings and the landing, 100–199 a command's rejection,
@@ -451,7 +552,7 @@ Every internal completion checks its captured job id, and measurement completion
 A stale completion changes nothing, including when the same samples are loaded again or a newer master runs.
 
 `Snapshot` is a move-only immutable owned value. Its const view includes state, revision, both project layers, target
-name, source metadata and identity, both jobs, the captured master recipe, kept masters, progress and reading arrays.
+name, machine-layer differences, source metadata and identity, both jobs, the captured master recipe, kept masters, progress and reading arrays.
 A retained snapshot survives later commands and destruction of its session. Calls, including snapshot acquisition,
 remain on one thread at a time; a completed value can be handed to a shell independently. Demand sums widen each
 term to `uint64_t` before addition. Copy traps before allocating, in every configuration, if combined text or

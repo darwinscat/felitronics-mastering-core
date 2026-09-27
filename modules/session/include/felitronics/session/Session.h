@@ -16,14 +16,6 @@
 namespace felitronics::session
 {
 
-// A release number, as the project() line of the repository that built it states it.
-struct Version
-{
-    std::uint32_t major = 0;
-    std::uint32_t minor = 0;
-    std::uint32_t patch = 0;
-};
-
 // Why a call was refused. A refused call did nothing: it allocated nothing, and it created or changed no session.
 enum class Status : std::uint8_t
 {
@@ -40,6 +32,14 @@ enum class Status : std::uint8_t
     // config's schema puts it. Not reachable in a library whose build ran the config's gate (every build does): the
     // session reads the same documents the gate read, and its reading is held to the schema's by the state suite.
     Config = 2,
+};
+
+struct ProjectText
+{
+    Rejection rejection = Rejection::None;
+    std::unique_ptr<char[]> data;
+    std::size_t size = 0;
+    [[nodiscard]] std::string_view view() const noexcept;
 };
 
 class Session;
@@ -151,9 +151,15 @@ public:
     // the revision by one, and so does each of the session's own transitions; a rejected one leaves it as it was.
     [[nodiscard]] Answer apply (const Request& request) noexcept;
 
-    // What apply() would answer, without doing it — and the bytes it would ask the heap for if it is accepted, counted by
-    // the expressions that size its requests (law 11d). apply() runs exactly this first, so the two cannot disagree.
+    // Preflight and memory demand (law 11d), also run first by apply(). Typed commands validate fully here.
+    // Import validates entry, state and size here; its allocating parse/schema work is covered by the bound
+    // from the input size, including a document refusal. No input byte is read to compute that demand.
     [[nodiscard]] Checked check (const Request& request) const noexcept;
+
+    // Export is an owned exact byte allocation, without a terminator. Only placed projects are exportable.
+    [[nodiscard]] Checked exportProjectBytes() const noexcept;
+    [[nodiscard]] ProjectText exportProject() const noexcept;
+    [[nodiscard]] Answer importProject (CommandId id, std::string_view bytes) noexcept;
 
     // Each unit completes one deterministic stub step. A call takes at most kStepUnits units;
     // zero polls. With no work, even a hostile FP environment returns Done without an event or a seq change.
@@ -207,6 +213,8 @@ private:
     bool mastering_ = false;
     std::uint64_t revision_ = 0;
     Project project_ {};
+    MachineDifference differences_[kDeviceFields] {};
+    std::size_t differenceCount_ = 0;
     // OWNED BUFFERS, EACH ONE EXACT REQUEST — not std::vector: a debugging standard library (MSVC's at
     // _ITERATOR_DEBUG_LEVEL 1 or 2) gives every vector a heap-allocated proxy of its own, which no declared demand
     // counts. The source: its samples planar, channel after channel (source_.channels × source_.frames), and the name

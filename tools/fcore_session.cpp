@@ -72,6 +72,7 @@ const char* nameOf (felitronics::session::Command c)
         case Command::Master:      return "master";
         case Command::Cancel:      return "cancel";
         case Command::Forget:      return "forget";
+        case Command::ImportProject: return "importProject";
     }
     return "?";
 }
@@ -117,6 +118,14 @@ const char* nameOf (felitronics::session::Rejection r)
         case Rejection::TooLong:                  return "TooLong";
         case Rejection::NoJobId:                  return "NoJobId";
         case Rejection::InvalidUtf8:              return "InvalidUtf8";
+        case Rejection::ProjectTooLarge: return "ProjectTooLarge";
+        case Rejection::ProjectSyntax: return "ProjectSyntax";
+        case Rejection::ProjectMissing: return "ProjectMissing";
+        case Rejection::ProjectType: return "ProjectType";
+        case Rejection::ProjectUnknownKey: return "ProjectUnknownKey";
+        case Rejection::UnknownDefaults: return "UnknownDefaults";
+        case Rejection::ProjectCore: return "ProjectCore";
+        case Rejection::MachineMismatch: return "MachineMismatch";
     }
     return "?";
 }

@@ -11,7 +11,19 @@ namespace felitronics::session::detail
 {
 template <class T> constexpr unsigned enumLast() noexcept
 {
-    if constexpr (std::is_same_v<T, Needles>)
+    if constexpr (std::is_same_v<T, Device>)
+    {
+        static_assert (unsigned (Device::Hpf) == 0);
+        static_assert (unsigned (Device::MonoBass) == 1);
+        static_assert (unsigned (Device::Glue) == 2);
+        static_assert (unsigned (Device::Saturation) == 3);
+        static_assert (unsigned (Device::Tilt) == 4);
+        static_assert (unsigned (Device::Limiter) == 5);
+        static_assert (unsigned (Device::Dither) == 6);
+        static_assert (unsigned (Device::LowShelf) == 7);
+        return 7;
+    }
+    else if constexpr (std::is_same_v<T, Needles>)
     {
         static_assert (unsigned (Needles::Auto) == 0);
         static_assert (unsigned (Needles::Manual) == 1);
@@ -36,6 +48,21 @@ template <class T> constexpr unsigned enumLast() noexcept
         return 3;
     }
     else static_assert (std::is_same_v<T, void>, "enum missing from codec description");
+}
+
+constexpr void checkEnum (Device value) noexcept
+{
+    switch (value)
+    {
+        case Device::Hpf: break;
+        case Device::MonoBass: break;
+        case Device::Glue: break;
+        case Device::Saturation: break;
+        case Device::Tilt: break;
+        case Device::Limiter: break;
+        case Device::Dither: break;
+        case Device::LowShelf: break;
+    }
 }
 
 constexpr void checkEnum (Needles value) noexcept
@@ -222,6 +249,18 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.on)>, bool>);
         v.field ("on", x.on);
     }
+    else if constexpr (std::is_same_v<U, MachineDifference>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.coreValue)>, double>);
+        v.field ("coreValue", x.coreValue);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.device)>, Device>);
+        v.field ("device", x.device);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.field)>, std::uint8_t>);
+        v.field ("field", x.field);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.fileValue)>, double>);
+        v.field ("fileValue", x.fileValue);
+    }
     else if constexpr (std::is_same_v<U, Layers<MonoBassFields>>)
     {
         [[maybe_unused]] auto& [f0, f1] = x;
@@ -270,7 +309,9 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, Project>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.core)>, Version>);
+        v.field ("core", x.core);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.devices)>, Devices>);
         v.field ("devices", x.devices);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.manual)>, bool>);
@@ -342,13 +383,15 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, SnapshotView>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.integratedLufs)>, double>);
         v.field ("integratedLufs", x.integratedLufs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.job)>, std::uint32_t>);
         v.field ("job", x.job);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.jobRecipe)>, Recipe>);
         v.field ("jobRecipe", x.jobRecipe);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.machineDifferences)>, std::span<const MachineDifference>>);
+        v.field ("machineDifferences", x.machineDifferences);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.masterProgress)>, Phase>);
         v.field ("masterProgress", x.masterProgress);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.mastering)>, bool>);
@@ -429,6 +472,16 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("db", x.db);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.on)>, bool>);
         v.field ("on", x.on);
+    }
+    else if constexpr (std::is_same_v<U, Version>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.major)>, std::uint32_t>);
+        v.field ("major", x.major);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.minor)>, std::uint32_t>);
+        v.field ("minor", x.minor);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.patch)>, std::uint32_t>);
+        v.field ("patch", x.patch);
     }
     else static_assert (std::is_same_v<U, void>, "type missing from codec description");
 }
