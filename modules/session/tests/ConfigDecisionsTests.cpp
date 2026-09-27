@@ -12,7 +12,8 @@
 // never carry one.
 //
 // Its controls plant a departure a review found the schema admitting (the high-pass top above 50 Hz, another slope, another
-// landing series, another target number or delivery rate) and require this suite to name it.
+// landing series, another target number or delivery rate, glue by default, a wider mono bass, another knob start) and
+// require this suite to name it.
 
 #include "ConfigTestSupport.h"
 
@@ -137,6 +138,7 @@ std::vector<std::string> departures (const config::Config& c)
           "a quiet input: a warning below −40 LUFS, gain and ceiling only below −55");
     need (e.landing.passes == std::vector<std::int32_t> { 12, 24, 32 }, "the landing: series of 12, 24 and 32 passes");
     need (same (e.hpf.hzMax, 50.0), "the high-pass tops out at 50 Hz, the machine's and the knob's");
+    need (same (e.hpf.hzMin, 15.0), "the high-pass knob starts at 15 Hz");
     need (e.hpf.slopes == std::vector<std::int32_t> { 12, 24, 48 }, "the high-pass slopes are 12, 24 and 48 dB/oct");
     need (same (e.hpf.comfort.lowHz, 24.0) && same (e.hpf.comfort.highHz, 42.0), "the high-pass comfort window is 24–42 Hz");
     need (same (e.hpf.comfort.warningLowHz, 20.0) && same (e.hpf.comfort.warningHighHz, 50.0),
@@ -151,6 +153,13 @@ std::vector<std::string> departures (const config::Config& c)
           "the machine glues on cd alone, at 0.7");
     need (same (e.glue.knobMinDb, 0.0) && same (e.glue.knobMaxDb, 3.0) && same (e.glue.knobStepDb, 0.1),
           "the glue knob runs 0…3 dB in steps of 0.1");
+    need (same (e.glue.defaultPosition, 0.0), "no glue by default: a target without its own takes the compressor out");
+    const config::MonoBass& m = e.monoBass;
+    need (same (m.lowWidth, 0.0), "mono bass is full mono below its crossover");
+    need (same (m.lowWidthRange.min, 0.0) && same (m.lowWidthRange.max, 1.0) && same (m.lowWidthStep, 0.05),
+          "the mono-bass width knob runs 0…1 in steps of 0.05");
+    need (same (m.frequencyRange.min, 60.0) && same (m.frequencyRange.max, 300.0) && same (m.frequencyStep, 1.0),
+          "the mono-bass crossover knob runs 60…300 Hz in steps of 1");
     const config::PeakClipper& p = e.limiter.peakClipper;
     need (same (p.littleNeedDb, 3.0), "needles are not measured at a need of 3 dB or less");
     need (same (p.shortOverDb, 3.0) && same (p.betweenOverDb, 1.5), "the peak clipper: 3 dB above the ceiling, 1.5 between");
@@ -208,6 +217,9 @@ void aDepartureIsNamed()
         { true, "lufs = -7,", "lufs = -8,", "targets.youtubeMusic.lufs" },
         { true, "sampleRate = 48000, bitDepth = 24 }\n# YouTube Music", "sampleRate = 22050, bitDepth = 24 }\n# YouTube Music",
           "targets.youtube.sampleRate" },
+        { false, "default = 0\nwhenTicked", "default = 0.3\nwhenTicked", "no glue by default: a target without its own takes the compressor out" },
+        { false, "lowWidth = 0\n", "lowWidth = 0.2\n", "mono bass is full mono below its crossover" },
+        { false, "hzMin = 15", "hzMin = 16", "the high-pass knob starts at 15 Hz" },
     };
     for (const auto& d : plants)
     {
