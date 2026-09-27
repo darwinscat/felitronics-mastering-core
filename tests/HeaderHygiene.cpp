@@ -6,7 +6,7 @@
 // -fno-exceptions / -fno-rtti probe. Nothing here is a class template with a default to instantiate: the
 // chain, the solver and every analyzer are concrete types, so including them puts their member bodies
 // through the compiler. felitronics::session is compiled, not header-only: what this TU checks of it is its public
-// header, the whole of what a consumer compiles; its sources carry the same laws on the library's own compile line.
+// headers, the whole of what a consumer compiles; its sources carry the same laws on the library's own compile line.
 
 #include <felitronics/analysis/BandBursts.h>
 #include <felitronics/analysis/BandCrest.h>
@@ -27,6 +27,9 @@
 #include <felitronics/mastering/OfflineRenderer.h>
 #include <felitronics/mastering/Planes.h>
 #include <felitronics/mastering/Progress.h>
+#include <felitronics/session/Commands.h>
+#include <felitronics/session/Config.h>
+#include <felitronics/session/Project.h>
 #include <felitronics/session/Session.h>
 #include <felitronics/tempo/JsNumerics.h>
 #include <felitronics/tempo/TempoDetector.h>
