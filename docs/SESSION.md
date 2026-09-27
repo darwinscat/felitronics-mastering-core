@@ -146,7 +146,7 @@ every stage a device writes is named, the limiter's second release included.
   compiles both documents into the library as constexpr data (`felitronics_toml_embed`); the session reads no file
   (law 6). A document the parser refuses stops the build at its line and column. `tools/wasm/build.sh` embeds them the
   same way for `fcsession`, with felitronics-toml's own tool run through node.
-- **Read by schema: form and physics.** `config::load()` (`<felitronics/session/Config.h>`) binds them to typed structs:
+- **Read by schema: form and physics.** `Config::load()` (`<felitronics/session/Config.h>`) binds them to typed structs:
   every key with its type and its domain — where a number stops meaning what its document says: a share outside 0…1, a
   ramp whose ends would divide by zero, a series that shrinks, a value off its knob's grid (a whole number of steps from
   where the travel starts, checked exactly on the decimals as written, across the two documents too) — a range another
@@ -174,7 +174,7 @@ every stage a device writes is named, the limiter's second release included.
   this suite says which number was decided, so changing one is a deliberate edit of it. Its controls plant departures
   the schema admits (a high-pass top of 51 or 60 Hz, a slope of 36, another series, another target number or rate, glue
   by default, a wider mono bass) and require them named.
-- **Its versions** (`config::versions()`): 64-bit FNV-1a hashes of both documents' NORMALISED data — every number as the
+- **Its versions** (`Config::versions()`): 64-bit FNV-1a hashes of both documents' NORMALISED data — every number as the
   bits of its correctly rounded double (−0 as +0), every table walked in the byte order of its keys, order kept in
   arrays and in the rows of `[targets]` (for `all`: the order a shell lists them in) — so a number's spelling, the order
   keys are written in, inline-or-not, comments and spacing move nothing. `all` covers every key; `sound` is what can
@@ -190,8 +190,8 @@ every stage a device writes is named, the limiter's second release included.
   that can change a master; the decisions suite pins `sound` to the name of the defaults, so a sound number changed
   without new defaults is red. `fcore_session config version|sound-version`, the source files and the wasm module must
   answer the same numbers (ctest, and CI's artifact check).
-- **Only in words, for now: the config's memory.** `load()` allocates and publishes no demand; nothing in the session
-  calls it yet. The `create` that takes the config, frozen with fc_session v1, declares it (law 11d).
+- **Only in words, for now: the config's memory.** `Config::load()` allocates and publishes no demand; nothing in the
+  session calls it yet. The `create` that takes the config, frozen with fc_session v1, declares it (law 11d).
 - **Only in words: the golden pin is append-only.** A new set of sound numbers is a new name in `defaults` and a new
   line in the decisions suite's table, and the line of an old name is never rewritten — a project names its defaults,
   and two sets of numbers under one name would reopen it as another master. The suite holds the current name to its

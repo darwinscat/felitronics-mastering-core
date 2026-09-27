@@ -27,6 +27,7 @@
 #include <vector>
 
 namespace config = felitronics::session::config;
+using config::Config;
 using config::testing::plant;
 using config::testing::Plant;
 using config::testing::same;
@@ -183,7 +184,7 @@ std::string joined (const std::vector<std::string>& v)
 void theConfigHoldsTheDecisions()
 {
     felitronics::test::group ("the config holds the owner's decisions, every target field by field");
-    const config::Loaded loaded = config::load();
+    const config::Loaded loaded = Config::load();
     ok (loaded.ok(), "PRECONDITION: the embedded config binds");
     const auto away = departures (loaded.config);
     ok (away.empty(), "no departure" + (away.empty() ? std::string{} : ": " + joined (away)));
@@ -192,8 +193,8 @@ void theConfigHoldsTheDecisions()
 void theSoundIsPinnedToTheDefaults()
 {
     felitronics::test::group ("the version of the sound is pinned to the name of the defaults");
-    const config::Loaded loaded = config::load();
-    const config::Versions v = config::versions();
+    const config::Loaded loaded = Config::load();
+    const config::Versions v = Config::versions();
     char hex[24];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) v.sound);
     const Golden* golden = nullptr;
@@ -207,7 +208,7 @@ void theSoundIsPinnedToTheDefaults()
 void aDepartureIsNamed()
 {
     felitronics::test::group ("control: a departure the schema admits is named here");
-    ok (departures (config::load().config).empty(), "PRECONDITION: the embedded config departs from nothing");
+    ok (departures (Config::load().config).empty(), "PRECONDITION: the embedded config departs from nothing");
     struct Departure { bool inTargets; std::string_view from, to, decision; };
     const Departure plants[] = {
         { false, "hzMax = 50", "hzMax = 51", "the high-pass tops out at 50 Hz, the machine's and the knob's" },
@@ -228,7 +229,7 @@ void aDepartureIsNamed()
     {
         const Plant p = plant (d.inTargets ? g_targetsText : g_engineText, d.from, d.to, d.to);
         if (! p.planted) { ok (false, std::string (d.to) + ": the control has rotted"); continue; }
-        const config::Loaded loaded = d.inTargets ? config::bind (p.text, g_engineText) : config::bind (g_targetsText, p.text);
+        const config::Loaded loaded = d.inTargets ? Config::bind (p.text, g_engineText) : Config::bind (g_targetsText, p.text);
         const auto away = departures (loaded.config);
         bool named = false;
         for (const auto& a : away) named = named || a == d.decision;

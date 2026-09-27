@@ -1100,12 +1100,12 @@ void readTargets (Doc& d, Reader& in, Targets& o, const Engine& e, const Grids& 
                 o.targets.push_back (std::move (x));
             });
     });
-    if (in.required ("default", o.defaultTarget) && find (o, o.defaultTarget) == nullptr)
+    if (in.required ("default", o.defaultTarget) && o.find (o.defaultTarget) == nullptr)
         d.refuse (in, "default", Refusal::NotATarget);
     if (in.required ("main", o.main))
     {
         for (std::size_t i = 0; i < o.main.size(); ++i)
-            if (find (o, o.main[i]) == nullptr) d.refuseItem (in, "main", i, Refusal::NotATarget);
+            if (o.find (o.main[i]) == nullptr) d.refuseItem (in, "main", i, Refusal::NotATarget);
         d.unique (in, "main", o.main);
     }
 }
@@ -1132,7 +1132,7 @@ void collect (const toml::Report& report, Document document, std::vector<Problem
                 q.refusal = p.detail <= std::uint32_t (Refusal::AnalyzerRefuses) ? static_cast<Refusal> (p.detail) : Refusal::None;
                 break;
         }
-        q.code = q.fault == Fault::Refused ? name (q.refusal) : name (q.fault);
+        q.code = q.fault == Fault::Refused ? Problem::name (q.refusal) : Problem::name (q.fault);
         out.push_back (std::move (q));
     }
 }
@@ -1177,14 +1177,14 @@ Loaded bindTables (const toml::Table* targetsDocument, const toml::Table* engine
 }
 } // namespace detail
 
-const Target* find (const Targets& targets, std::string_view key) noexcept
+const Target* Targets::find (std::string_view key) const noexcept
 {
-    for (const Target& t : targets.targets)
+    for (const Target& t : targets)
         if (t.key == key) return &t;
     return nullptr;
 }
 
-const char* name (Document document) noexcept
+const char* Problem::name (Document document) noexcept
 {
     switch (document)
     {
@@ -1194,7 +1194,7 @@ const char* name (Document document) noexcept
     return "unknown";
 }
 
-const char* name (Fault fault) noexcept
+const char* Problem::name (Fault fault) noexcept
 {
     switch (fault)
     {
@@ -1208,7 +1208,7 @@ const char* name (Fault fault) noexcept
     return "Unknown";
 }
 
-const char* name (Refusal refusal) noexcept
+const char* Problem::name (Refusal refusal) noexcept
 {
     switch (refusal)
     {
@@ -1235,7 +1235,7 @@ bool Loaded::ok() const noexcept
     return problems.empty();
 }
 
-Loaded bind (std::string_view targetsToml, std::string_view engineToml)
+Loaded Config::bind (std::string_view targetsToml, std::string_view engineToml)
 {
     const toml::ParseResult targets = toml::parse (targetsToml, detail::kTargetsSource);
     const toml::ParseResult engine = toml::parse (engineToml, detail::kEngineSource);
@@ -1249,7 +1249,7 @@ Loaded bind (std::string_view targetsToml, std::string_view engineToml)
     return out;
 }
 
-std::optional<Versions> versionsOf (std::string_view targetsToml, std::string_view engineToml)
+std::optional<Versions> Config::versionsOf (std::string_view targetsToml, std::string_view engineToml)
 {
     const toml::ParseResult targets = toml::parse (targetsToml);
     const toml::ParseResult engine = toml::parse (engineToml);
