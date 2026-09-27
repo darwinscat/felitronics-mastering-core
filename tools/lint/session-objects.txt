@@ -28,7 +28,7 @@ undefined  all     ^_Zn[wa][jmy]                    operator new / new[] — the
 undefined  all     ^_Zd[la]Pv                       operator delete / delete[], every form
 undefined  coff    ^\?\?[23]@                       operator new / delete, MSVC's decoration
 undefined  coff    ^\?\?_[UV]@                      operator new[] / delete[], MSVC's decoration
-undefined  all     ^(memcpy|memmove|memset|memcmp|bzero)$    what the compiler emits for a copy or a clear
+undefined  all     ^(memcpy|memmove|memset|memcmp|bcmp|bzero)$    what the compiler emits for a copy, a clear or a comparison (clang turns an equality memcmp into bcmp)
 undefined  elf     ^__(memcpy|memmove|memset)_chk$  the same under _FORTIFY_SOURCE, which distributions turn on by default
 undefined  all     ^__stack_chk_(fail|guard)$       the stack protector, which distributions turn on by default
 undefined  elf     ^__stack_chk_fail_local$         the stack protector, 32-bit
@@ -57,6 +57,7 @@ writable   coff    ^\?\?_R0\?AV(exception|bad_alloc|bad_array_new_length)@std@@@
 # --- the sanitizer row: the instrumentation's runtime and the metadata it plants
 undefined  san     ^_*(asan|ubsan|lsan|sanitizer)_  ASan / UBSan / LSan runtime entry points
 undefined  san     ^__(start|stop)_asan_globals$    the bounds of ASan's globals section, defined by the linker (clang instruments ELF globals this way)
+undefined  san     ^_ZSt21__glibcxx_assert_failPKciS0_S0_$    libstdc++'s failed-assertion end of the process, present because the sanitizer row defines _GLIBCXX_ASSERTIONS
 writable   san     ^_*(asan|ubsan|lsan|sanitizer)   ASan's registration flag and metadata
 
 # --- the C boundary on the wasm tier bounds a page's pointers by the heap's size
