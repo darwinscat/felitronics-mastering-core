@@ -42,6 +42,11 @@
 //                name reach std unqualified. std::stable_sort, or a total order, gives one answer everywhere.
 //   BODY         no function body in modules/session/include — only `= default` and `= delete`. A body in the public
 //                header is compiled under the CONSUMER's flags, and the library's flags say nothing about it.
+//   MUTABLE      no `mutable`, anywhere in the scan. A mutable member is state that changes inside a const — or
+//                constexpr — object: `struct S { mutable int n = 0; }; inline constexpr S s {};` in a public header is
+//                one shared, changing variable in every consumer, and `constexpr` said it was not. The session keeps its
+//                state in its objects and has no use for the keyword (nor for a mutable lambda), so it is refused in
+//                every file, not only the public header.
 //   PUBLIC       in modules/session/include, no variable with static storage duration that is not constexpr — at
 //                namespace scope or a static member, `inline` or not — and no namespace-scope function declaration. A
 //                variable a public header defines is emitted by the CONSUMER's translation units, where the object gate
@@ -236,6 +241,8 @@ const word = (alternatives) => new RegExp(`${NOT_ID_BEFORE}(${alternatives})${NO
 const TOKEN_RULES = [
     { rule: 'EXCEPTIONS', re: word('throw|try|catch|typeid|dynamic_cast|__try|__except|__finally|__leave'),
       why: (t) => `\`${t}\` — felitronics::session is compiled without exceptions and RTTI, and a branch another row preprocesses away is still this row's code (MSVC compiles a bare throw under /EHs-c-)` },
+    { rule: 'MUTABLE', re: word('mutable'),
+      why: () => '`mutable` — state that changes inside a const or constexpr object: in a public header\'s constexpr variable it is shared, changing state in every consumer, which the constexpr rule would pass. The session has no use for it' },
     { rule: 'NOSYMBOL', re: word('atomic|atomic_ref|atomic_flag|atomic_thread_fence|atomic_signal_fence|__atomic_[A-Za-z0-9_]+|__sync_[A-Za-z0-9_]+|_Interlocked[A-Za-z0-9_]*|__c11_atomic_[A-Za-z0-9_]+'),
       why: (t) => `\`${t}\` — an atomic exists to share a value with another thread, and the session has none; it compiles to instructions and leaves no symbol for the object-file gate` },
     { rule: 'NOSYMBOL', re: word('__builtin_readcyclecounter|__builtin_readsteadycounter|__rdtsc|__rdtscp|_rdtsc|__builtin_ia32_[A-Za-z0-9_]+|__builtin_arm_[A-Za-z0-9_]+|__builtin_aarch64_[A-Za-z0-9_]+|__builtin_wasm_[A-Za-z0-9_]+|__builtin_frame_address|__builtin_return_address'),
@@ -790,6 +797,10 @@ function selfTest ()
         [H, 'struct W { int n; } g_w;', ['PUBLIC']],
         [H, 'struct W g_w2;', ['PUBLIC']],
         [H, 'int twice (int x);', ['PUBLIC']],
+        // MUTABLE
+        [H, 'struct S { mutable int n = 0; };\ninline constexpr S s {};', ['MUTABLE']],
+        [S, 'auto f = [n = 0] () mutable { return ++n; };', ['MUTABLE']],
+        [S, 'const char* c = "mutable"; // mutable in a comment', []],
     ];
     let bad = 0;
     for (const [path, src, want] of cases)

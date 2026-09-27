@@ -133,6 +133,10 @@ append header-body.inc       "$SESSION_H";   expect "a body in Session.h"       
 append header-inline-var.inc "$SESSION_H";   expect "inline int in Session.h"             "$SESSION_H:$LINE: [PUBLIC]"
 append header-static-member.inc "$SESSION_H"; expect "inline static member in Session.h"  "$SESSION_H:$LINE: [PUBLIC]"
 
+# --- MUTABLE: a mutable member of a constexpr object in the public header; a mutable lambda in a source
+append header-mutable.inc    "$SESSION_H";   expect "a mutable member of a constexpr object" "$SESSION_H:$LINE: [MUTABLE]"
+append lambda-mutable.inc    "$SESSION_CPP"; expect "a mutable lambda in Session.cpp"      "$SESSION_CPP:$LINE: [MUTABLE]"
+
 # --- THE C BOUNDARY, under the same rules and no further than its allowance: a second macro, a second platform branch,
 # --- the console, its build guards taken away, its zone line taken away
 append facade-define.inc     "$FACADE";      expect "a #define in fc_session.cpp"         "$FACADE:$LINE: [MACRO]"

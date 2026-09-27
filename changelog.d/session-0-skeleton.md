@@ -31,25 +31,26 @@ than to nearest (`Status::FloatingPointEnvironment`, read with ordinary arithmet
 exception masks are outside the check.
 
 **The laws, each held by a check with a control** — against honest mistakes and reasonable spelling variants, not a
-hostile author (`docs/SESSION.md` states the threat model). An object-file gate (`modules/session/tests/object-gates.cmake`,
-on every native row and the wasm tier, with `readelf`, `objdump`, `dumpbin` or `llvm-readobj`) reads every object of the
-library and of its C boundary: no symbol in writable memory, judged by what the object says of each section (ELF and
-COFF write flags; the read-only places by name on Mach-O and wasm, which carry no such flag) — the boundary keeps exactly
-its handle table and poison flag, and an allowance naming a symbol that is gone is rot — and nothing called that is not
-on `tools/lint/session-objects.txt` or defined with global binding elsewhere in the set, so `printf`, `fopen`, `time`,
-`getenv`, `strtod`, `isalpha`, `rand` are refused whatever header declared them and however they are spelled or
-reached, and a local `getpid` in one object answers no other object's call. Sixteen controls compile each shape — a
-global in a section of its own naming among them, and the shipped boundary with a third global and with a renamed one —
-and require the refusal to name the planted symbol whole; one — a constexpr table of pointers, relocated constant data —
-requires the gate to accept it. A source lint (`tools/lint/check-session-laws.mjs`) holds what leaves no symbol, over the
-module and the C boundary, after translation phase 2: an include allowlist (felitronics headers by name), no macros and
-no directive but `#include` and `#pragma once` outside the guards and the boundary's stated allowance, no pragma, an
-attribute allowlist (no vendor attribute, no section placement), no alternative tokens, no exception or RTTI token in
-any `#if` branch, no atomics, cycle counters or inline assembly, no `std::unordered_*`, `hash<`, unstable sort or
-`using namespace`, no function body, non-constexpr variable or namespace-scope function in the public header, the guards
-first in every unit — scanned from the targets' sources (`modules/session/sources.txt` and the boundary's unit,
-cross-checked against `compile_commands.json`) and the `#include` closure, failing closed on files it cannot classify;
-`tools/lint/session-controls/run.sh` plants 41 violations and requires each to fail on its file and line. Every file of
+hostile author (`docs/SESSION.md` states the threat model). An object-file gate
+(`modules/session/tests/object-gates.cmake`, on every native row and the wasm tier, with `readelf`, `objdump`, `dumpbin`
+or `llvm-readobj`) reads every object of the library and of its C boundary: no symbol in writable memory, judged by what
+the object says of each section (ELF and COFF write flags; the read-only places by name on Mach-O and wasm, which carry
+no such flag) — the boundary keeps exactly its handle table and poison flag, and an allowance naming a symbol that is
+gone is rot — and nothing called that is not on `tools/lint/session-objects.txt` or defined with global binding
+elsewhere in the set, so `printf`, `fopen`, `time`, `getenv`, `strtod`, `isalpha`, `rand` are refused whatever header
+declared them and however they are spelled or reached, and a local `getpid` in one object answers no other object's
+call. Sixteen controls compile each shape — a global in a section of its own naming among them, and the shipped boundary
+with a third global and with a renamed one — and require the refusal to name the planted symbol whole; one — a constexpr
+table of pointers, relocated constant data — requires the gate to accept it. A source lint
+(`tools/lint/check-session-laws.mjs`) holds what leaves no symbol, over the module and the C boundary, after translation
+phase 2: an include allowlist (felitronics headers by name), no macros and no directive but `#include` and `#pragma
+once` outside the guards and the boundary's stated allowance, no pragma, an attribute allowlist (no vendor attribute, no
+section placement), no alternative tokens, no `mutable`, no exception or RTTI token in any `#if` branch, no atomics,
+cycle counters or inline assembly, no `std::unordered_*`, `hash<`, unstable sort or `using namespace`, no function body,
+non-constexpr variable or namespace-scope function in the public header, the guards first in every unit — scanned from
+the targets' sources (`modules/session/sources.txt` and the boundary's unit, cross-checked against
+`compile_commands.json`) and the `#include` closure, failing closed on files it cannot classify;
+`tools/lint/session-controls/run.sh` plants 43 violations and requires each to fail on its file and line. Every file of
 the module and the boundary is in the det-math zone and every translation unit — the library's, the boundary's, the
 CLI's — is an entry point (four new det-math controls). Memory is declared before the work: a declared-budget harness on
 core's allocation counter holds `create()` to `createBytes()`.
