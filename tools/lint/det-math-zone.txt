@@ -1,7 +1,8 @@
 # THE DETERMINISTIC ZONE of felitronics-mastering-core, and its parity entry points. Read by
-# felitronics-core's tools/lint/check-det-math.mjs, run from THIS repository's root with --satellite; read that
-# file for what the zone is, what the four rules are, and why the zone is a written list and the #include
-# closure only a discovery net. Core's own zone (the reference true-peak meter, OfflineFft and the two
+# felitronics-core's tools/lint/check-det-math.mjs, run from THIS repository's root with --satellite and
+# --include-root <felitronics-toml checkout>/include (the session's units include felitronics-toml's headers; CI reads
+# the checkout from the build's cache, FELITRONICS_MASTERING_TOML_SOURCE_DIR); read that file for what the zone is,
+# what the four rules are, and why the zone is a written list and the #include closure only a discovery net. Core's own zone (the reference true-peak meter, OfflineFft and the two
 # oversamplers these analyzers stand on) is core's, and the same run lints it.
 #
 # Format (one per line; the reason is required):

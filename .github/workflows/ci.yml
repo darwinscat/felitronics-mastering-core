@@ -59,9 +59,12 @@ jobs:
       - name: Test
         run: ctest --test-dir build --output-on-failure --no-tests=error -j "$(nproc)"
       - name: det-math, both passes, against core main
+        # felitronics-toml's headers, which the session's units include, resolve through --include-root: the checkout
+        # this configure resolved, read back from its cache. An empty TOML is `/include`, which the lint refuses.
         run: |
           CORE="$(sed -n 's/^FELITRONICS_MASTERING_CORE_SOURCE_DIR:INTERNAL=//p' build/CMakeCache.txt)"
-          node "$CORE/tools/lint/check-det-math.mjs" --satellite
+          TOML="$(sed -n 's/^FELITRONICS_MASTERING_TOML_SOURCE_DIR:INTERNAL=//p' build/CMakeCache.txt)"
+          node "$CORE/tools/lint/check-det-math.mjs" --satellite --include-root "$TOML/include"
 
   sanitizers:
     name: ubuntu-clang-asan-ubsan
@@ -110,10 +113,12 @@ jobs:
       - name: Fetch core (configure only)
         run: cmake -S . -B build -DFELITRONICS_MASTERING_BUILD_TESTS=OFF
       - name: det-math — core's pass and this repository's
+        # With felitronics-toml's include directory (see the core-main job): the session's units include its headers.
         run: |
           CORE="$(sed -n 's/^FELITRONICS_MASTERING_CORE_SOURCE_DIR:INTERNAL=//p' build/CMakeCache.txt)"
+          TOML="$(sed -n 's/^FELITRONICS_MASTERING_TOML_SOURCE_DIR:INTERNAL=//p' build/CMakeCache.txt)"
           node "$CORE/tools/lint/check-det-math.mjs" --self-test
-          node "$CORE/tools/lint/check-det-math.mjs" --satellite
+          node "$CORE/tools/lint/check-det-math.mjs" --satellite --include-root "$TOML/include"
       - name: One allocation counter
         # tools/ too: the ABI suites live under tools/tests.
         run: |
@@ -135,7 +140,9 @@ jobs:
         run: |
           set -e
           CORE="$(sed -n 's/^FELITRONICS_MASTERING_CORE_SOURCE_DIR:INTERNAL=//p' build/CMakeCache.txt)"
+          TOML="$(sed -n 's/^FELITRONICS_MASTERING_TOML_SOURCE_DIR:INTERNAL=//p' build/CMakeCache.txt)"
           LINT="$CORE/tools/lint/check-det-math.mjs"
+          SATELLITE=(--satellite --include-root "$TOML/include")   # every run below: the session includes felitronics-toml
           ZONEH=modules/analysis_offline/include/felitronics/analysis/HumDetector.h
           MANH=modules/mastering/include/felitronics/mastering/MasteringChain.h
           MANIFEST=tools/lint/det-math-manifest.txt
@@ -151,9 +158,9 @@ jobs:
           for i in "${!FILES[@]}"; do cp "${FILES[$i]}" "$BK/$i"; done
           det_restore () { for i in "${!FILES[@]}"; do cp "$BK/$i" "${FILES[$i]}"; done; }
           det_control () {  # det_control <n> <what> <expected substring>
-            if node "$LINT" --satellite > /dev/null 2>&1; then
+            if node "$LINT" "${SATELLITE[@]}" > /dev/null 2>&1; then
               det_restore; echo "CONTROL FAILED ($1): the lint PASSED with $2 planted"; exit 1; fi
-            node "$LINT" --satellite 2>&1 | grep -qF "$3" \
+            node "$LINT" "${SATELLITE[@]}" 2>&1 | grep -qF "$3" \
               || { det_restore; echo "CONTROL FAILED ($1): fired but did not report '$3'"; exit 1; }
             det_restore; echo "control $1 ok: $2 is caught"
           }
@@ -198,9 +205,9 @@ jobs:
           # to be read by the closure and audited by nobody.
           printf 'inline double p80c (double x) { return std::cos (x); }\n' > tools/_lint_control.inc
           printf '\n#include "_lint_control.inc"\n' >> "$PROBEH"
-          if node "$LINT" --satellite > /dev/null 2>&1; then
+          if node "$LINT" "${SATELLITE[@]}" > /dev/null 2>&1; then
             rm -f tools/_lint_control.inc; det_restore; echo "CONTROL FAILED (17): a call in a reached .inc passed"; exit 1; fi
-          node "$LINT" --satellite 2>&1 | grep -qF "_lint_control.inc" \
+          node "$LINT" "${SATELLITE[@]}" 2>&1 | grep -qF "_lint_control.inc" \
             || { rm -f tools/_lint_control.inc; det_restore; echo "CONTROL FAILED (17): fired but did not name the .inc"; exit 1; }
           rm -f tools/_lint_control.inc; det_restore; echo "control 17 ok: a call in a file only the closure reaches is caught"
           # 18: felitronics::session is in the zone, file by file (the session-laws lint keeps the list whole), so a
@@ -212,9 +219,9 @@ jobs:
           # included by Session.cpp, is reached and its std::cos refused.
           printf 'inline double sessionDetMathControl (double x) { return std::cos (x); }\n' > modules/session/src/_det_control.tpp
           printf '\n#include "_det_control.tpp"\n' >> "$SESS"
-          if node "$LINT" --satellite > /dev/null 2>&1; then
+          if node "$LINT" "${SATELLITE[@]}" > /dev/null 2>&1; then
             rm -f modules/session/src/_det_control.tpp; det_restore; echo "CONTROL FAILED (19): a std::cos in a .tpp the session includes passed"; exit 1; fi
-          node "$LINT" --satellite 2>&1 | grep -qF "_det_control.tpp" \
+          node "$LINT" "${SATELLITE[@]}" 2>&1 | grep -qF "_det_control.tpp" \
             || { rm -f modules/session/src/_det_control.tpp; det_restore; echo "CONTROL FAILED (19): fired but did not name the .tpp"; exit 1; }
           rm -f modules/session/src/_det_control.tpp; det_restore; echo "control 19 ok: a libm call in a file only a session unit includes is caught"
           # 20, 21: the two roads into the session — the C boundary and the native CLI — are entry points too, so a header
@@ -223,13 +230,13 @@ jobs:
             IFS='|' read -r num unit header <<< "$road"
             printf 'inline double sessionRoadControl (double x) { return std::cos (x); }\n' > "$header"
             printf '\n#include "_det_control_road.h"\n' >> "$unit"
-            if node "$LINT" --satellite > /dev/null 2>&1; then
+            if node "$LINT" "${SATELLITE[@]}" > /dev/null 2>&1; then
               rm -f "$header"; det_restore; echo "CONTROL FAILED ($num): a std::cos in a header $unit includes passed"; exit 1; fi
-            node "$LINT" --satellite 2>&1 | grep -qF "$header" \
+            node "$LINT" "${SATELLITE[@]}" 2>&1 | grep -qF "$header" \
               || { rm -f "$header"; det_restore; echo "CONTROL FAILED ($num): fired but did not name $header"; exit 1; }
             rm -f "$header"; det_restore; echo "control $num ok: a libm call in a header ${unit##*/} includes is caught"
           done
-          node "$LINT" --satellite > /dev/null \
+          node "$LINT" "${SATELLITE[@]}" > /dev/null \
             || { echo "CONTROL FAILED: the tree did not come back clean, so controls 5-21 proved nothing"; exit 1; }
           echo "controls 5-21 ok: the libm audit fires on every rule, on both sides, and the tree is clean again"
           # The other two lints reach this repository's files too.
