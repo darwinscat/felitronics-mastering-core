@@ -1,0 +1,326 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+#
+# THE FORMATTING TABLE of felitronics::session — how each of the twelve languages writes a number, as data. The one table
+# the session's renderer reads (src/Text.cpp, through <felitronics/session/Text.h>), compiled into the library at build
+# time (felitronics_toml_embed) and checked by felitronics_session_text_check before the library is built: every
+# language has a row and every unit a pattern for it, or the build is red (src/TextSchema.h has the rules).
+#
+# Where the numbers come from:
+#   decimal, group, minimumGrouping  CLDR 48, as ICU 78 formats them: the decimal sign; the grouping separator, a
+#                                    no-break space where CLDR has one (U+00A0; French the narrow U+202F); and the fewest
+#                                    digits the leading group must have before a number is grouped at all — 2 in es, it
+#                                    and pl, where 1234 stays 1234 and 12 345 is grouped.
+#   minus, plus                      The Unicode minus U+2212 in every language (the mastering-core architecture, §6), not
+#                                    the hyphen: a negative LUFS reads as a number, not a dash.
+#   atLeast, atMost                  A bound, before the number: "≥ 6 %" — the sign and a no-break space (French: the
+#                                    narrow one), so the bound never wraps away from its number.
+#   absent                           What a value that is not a number prints, alone: the em dash.
+#                                    The gate holds the fixed signs to exactly these (minus U+2212, absent U+2014, "≥" or
+#                                    "≤" with a no-break space), and no sign may hold a digit or be a separator.
+#   notes                            The names of the twelve pitch classes from C, with sharps: a note has no key to
+#                                    spell a flat from. Three systems, each the one the site's key finder writes in that
+#                                    language: letters; the German system (de, cs, pl), where B natural is H; solfège (it,
+#                                    ro). The octave is scientific pitch notation (MIDI 60 is C4) and is added by the
+#                                    renderer.
+#   [units.*]                        Where the number goes ({n}) and the unit's sign. Percent after CLDR 48 (Turkish
+#                                    before the number, "%45"; French with the narrow no-break space, the owner's decision
+#                                    of 2026-09-12 for the site). A unit sign after a NO-BREAK space, U+00A0 in every
+#                                    language, so "−14" and "LUFS" never wrap apart (French: the narrow U+202F, where CLDR
+#                                    has it); the gate refuses a breaking space in any pattern. The glossary's Latin stays
+#                                    Latin in every language (LUFS, dBTP,
+#                                    dBFS, LU, BPM); Russian and Ukrainian write dB, Hz, kHz, ms and s in Cyrillic, as
+#                                    the site's Russian mastering pages do; Turkish seconds are "sn", as the site writes
+#                                    them.
+#
+# The rows of the languages the catalog does not declare yet (every one but en and ru) are CLDR's and the site's; each is
+# read again when its language's catalog lands.
+
+# ── numbers ──
+
+[numbers.en]   # notes: letters
+decimal = "."
+group = ","
+minimumGrouping = 1
+minus = "\u2212"
+plus = "+"
+atLeast = "≥\u00A0"
+atMost = "≤\u00A0"
+absent = "—"
+notes = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"]
+
+[numbers.de]   # notes: German: B natural is H, sharps are -is
+decimal = ","
+group = "."
+minimumGrouping = 1
+minus = "\u2212"
+plus = "+"
+atLeast = "≥\u00A0"
+atMost = "≤\u00A0"
+absent = "—"
+notes = ["C", "Cis", "D", "Dis", "E", "F", "Fis", "G", "Gis", "A", "Ais", "H"]
+
+[numbers.ru]   # notes: letters
+decimal = ","
+group = "\u00A0"
+minimumGrouping = 1
+minus = "\u2212"
+plus = "+"
+atLeast = "≥\u00A0"
+atMost = "≤\u00A0"
+absent = "—"
+notes = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"]
+
+[numbers.uk]   # notes: letters
+decimal = ","
+group = "\u00A0"
+minimumGrouping = 1
+minus = "\u2212"
+plus = "+"
+atLeast = "≥\u00A0"
+atMost = "≤\u00A0"
+absent = "—"
+notes = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"]
+
+[numbers.cs]   # notes: German: B natural is H, sharps are -is
+decimal = ","
+group = "\u00A0"
+minimumGrouping = 1
+minus = "\u2212"
+plus = "+"
+atLeast = "≥\u00A0"
+atMost = "≤\u00A0"
+absent = "—"
+notes = ["C", "Cis", "D", "Dis", "E", "F", "Fis", "G", "Gis", "A", "Ais", "H"]
+
+[numbers.es]   # notes: letters
+decimal = ","
+group = "."
+minimumGrouping = 2
+minus = "\u2212"
+plus = "+"
+atLeast = "≥\u00A0"
+atMost = "≤\u00A0"
+absent = "—"
+notes = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"]
+
+[numbers.fr]   # notes: letters
+decimal = ","
+group = "\u202F"
+minimumGrouping = 1
+minus = "\u2212"
+plus = "+"
+atLeast = "≥\u202F"
+atMost = "≤\u202F"
+absent = "—"
+notes = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"]
+
+[numbers.it]   # notes: solfège
+decimal = ","
+group = "."
+minimumGrouping = 2
+minus = "\u2212"
+plus = "+"
+atLeast = "≥\u00A0"
+atMost = "≤\u00A0"
+absent = "—"
+notes = ["Do", "Do♯", "Re", "Re♯", "Mi", "Fa", "Fa♯", "Sol", "Sol♯", "La", "La♯", "Si"]
+
+[numbers.pl]   # notes: German: B natural is H, sharps are -is
+decimal = ","
+group = "\u00A0"
+minimumGrouping = 2
+minus = "\u2212"
+plus = "+"
+atLeast = "≥\u00A0"
+atMost = "≤\u00A0"
+absent = "—"
+notes = ["C", "Cis", "D", "Dis", "E", "F", "Fis", "G", "Gis", "A", "Ais", "H"]
+
+[numbers.pt]   # notes: letters
+decimal = ","
+group = "."
+minimumGrouping = 1
+minus = "\u2212"
+plus = "+"
+atLeast = "≥\u00A0"
+atMost = "≤\u00A0"
+absent = "—"
+notes = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"]
+
+[numbers.ro]   # notes: solfège
+decimal = ","
+group = "."
+minimumGrouping = 1
+minus = "\u2212"
+plus = "+"
+atLeast = "≥\u00A0"
+atMost = "≤\u00A0"
+absent = "—"
+notes = ["Do", "Do♯", "Re", "Re♯", "Mi", "Fa", "Fa♯", "Sol", "Sol♯", "La", "La♯", "Si"]
+
+[numbers.tr]   # notes: letters
+decimal = ","
+group = "."
+minimumGrouping = 1
+minus = "\u2212"
+plus = "+"
+atLeast = "≥\u00A0"
+atMost = "≤\u00A0"
+absent = "—"
+notes = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"]
+
+# ── units ──
+
+[units.percent]
+en = "{n}%"
+de = "{n}\u00A0%"
+ru = "{n}\u00A0%"
+uk = "{n}%"
+cs = "{n}\u00A0%"
+es = "{n}\u00A0%"
+fr = "{n}\u202F%"
+it = "{n}%"
+pl = "{n}%"
+pt = "{n}%"
+ro = "{n}\u00A0%"
+tr = "%{n}"
+
+[units.db]
+en = "{n}\u00A0dB"
+de = "{n}\u00A0dB"
+ru = "{n}\u00A0дБ"
+uk = "{n}\u00A0дБ"
+cs = "{n}\u00A0dB"
+es = "{n}\u00A0dB"
+fr = "{n}\u202FdB"
+it = "{n}\u00A0dB"
+pl = "{n}\u00A0dB"
+pt = "{n}\u00A0dB"
+ro = "{n}\u00A0dB"
+tr = "{n}\u00A0dB"
+
+[units.dbtp]
+en = "{n}\u00A0dBTP"
+de = "{n}\u00A0dBTP"
+ru = "{n}\u00A0dBTP"
+uk = "{n}\u00A0dBTP"
+cs = "{n}\u00A0dBTP"
+es = "{n}\u00A0dBTP"
+fr = "{n}\u202FdBTP"
+it = "{n}\u00A0dBTP"
+pl = "{n}\u00A0dBTP"
+pt = "{n}\u00A0dBTP"
+ro = "{n}\u00A0dBTP"
+tr = "{n}\u00A0dBTP"
+
+[units.dbfs]
+en = "{n}\u00A0dBFS"
+de = "{n}\u00A0dBFS"
+ru = "{n}\u00A0dBFS"
+uk = "{n}\u00A0dBFS"
+cs = "{n}\u00A0dBFS"
+es = "{n}\u00A0dBFS"
+fr = "{n}\u202FdBFS"
+it = "{n}\u00A0dBFS"
+pl = "{n}\u00A0dBFS"
+pt = "{n}\u00A0dBFS"
+ro = "{n}\u00A0dBFS"
+tr = "{n}\u00A0dBFS"
+
+[units.lufs]
+en = "{n}\u00A0LUFS"
+de = "{n}\u00A0LUFS"
+ru = "{n}\u00A0LUFS"
+uk = "{n}\u00A0LUFS"
+cs = "{n}\u00A0LUFS"
+es = "{n}\u00A0LUFS"
+fr = "{n}\u202FLUFS"
+it = "{n}\u00A0LUFS"
+pl = "{n}\u00A0LUFS"
+pt = "{n}\u00A0LUFS"
+ro = "{n}\u00A0LUFS"
+tr = "{n}\u00A0LUFS"
+
+[units.lu]
+en = "{n}\u00A0LU"
+de = "{n}\u00A0LU"
+ru = "{n}\u00A0LU"
+uk = "{n}\u00A0LU"
+cs = "{n}\u00A0LU"
+es = "{n}\u00A0LU"
+fr = "{n}\u202FLU"
+it = "{n}\u00A0LU"
+pl = "{n}\u00A0LU"
+pt = "{n}\u00A0LU"
+ro = "{n}\u00A0LU"
+tr = "{n}\u00A0LU"
+
+[units.hz]
+en = "{n}\u00A0Hz"
+de = "{n}\u00A0Hz"
+ru = "{n}\u00A0Гц"
+uk = "{n}\u00A0Гц"
+cs = "{n}\u00A0Hz"
+es = "{n}\u00A0Hz"
+fr = "{n}\u202FHz"
+it = "{n}\u00A0Hz"
+pl = "{n}\u00A0Hz"
+pt = "{n}\u00A0Hz"
+ro = "{n}\u00A0Hz"
+tr = "{n}\u00A0Hz"
+
+[units.khz]
+en = "{n}\u00A0kHz"
+de = "{n}\u00A0kHz"
+ru = "{n}\u00A0кГц"
+uk = "{n}\u00A0кГц"
+cs = "{n}\u00A0kHz"
+es = "{n}\u00A0kHz"
+fr = "{n}\u202FkHz"
+it = "{n}\u00A0kHz"
+pl = "{n}\u00A0kHz"
+pt = "{n}\u00A0kHz"
+ro = "{n}\u00A0kHz"
+tr = "{n}\u00A0kHz"
+
+[units.ms]
+en = "{n}\u00A0ms"
+de = "{n}\u00A0ms"
+ru = "{n}\u00A0мс"
+uk = "{n}\u00A0мс"
+cs = "{n}\u00A0ms"
+es = "{n}\u00A0ms"
+fr = "{n}\u202Fms"
+it = "{n}\u00A0ms"
+pl = "{n}\u00A0ms"
+pt = "{n}\u00A0ms"
+ro = "{n}\u00A0ms"
+tr = "{n}\u00A0msn"
+
+[units.s]
+en = "{n}\u00A0s"
+de = "{n}\u00A0s"
+ru = "{n}\u00A0с"
+uk = "{n}\u00A0с"
+cs = "{n}\u00A0s"
+es = "{n}\u00A0s"
+fr = "{n}\u202Fs"
+it = "{n}\u00A0s"
+pl = "{n}\u00A0s"
+pt = "{n}\u00A0s"
+ro = "{n}\u00A0s"
+tr = "{n}\u00A0sn"
+
+[units.bpm]
+en = "{n}\u00A0BPM"
+de = "{n}\u00A0BPM"
+ru = "{n}\u00A0BPM"
+uk = "{n}\u00A0BPM"
+cs = "{n}\u00A0BPM"
+es = "{n}\u00A0BPM"
+fr = "{n}\u202FBPM"
+it = "{n}\u00A0BPM"
+pl = "{n}\u00A0BPM"
+pt = "{n}\u00A0BPM"
+ro = "{n}\u00A0BPM"
+tr = "{n}\u00A0BPM"
