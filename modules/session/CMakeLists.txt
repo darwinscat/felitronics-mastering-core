@@ -138,7 +138,8 @@ add_custom_command(OUTPUT ${FELITRONICS_SESSION_CONFIG_STAMP}
     DEPENDS ${FELITRONICS_SESSION_CONFIG_GATE_DEPENDS}
             ${FELITRONICS_SESSION_CONFIG}/targets.toml ${FELITRONICS_SESSION_CONFIG}/engine.toml
             ${CMAKE_CURRENT_SOURCE_DIR}/src/ConfigSchema.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/ConfigBind.h
-            ${CMAKE_CURRENT_SOURCE_DIR}/src/ConfigVersion.h ${CMAKE_CURRENT_SOURCE_DIR}/include/felitronics/session/Config.h
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/ConfigVersion.h ${CMAKE_CURRENT_SOURCE_DIR}/src/Grid.h
+            ${CMAKE_CURRENT_SOURCE_DIR}/include/felitronics/session/Config.h
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/ConfigCheck.cpp
     COMMENT "felitronics::session: the config, read by schema"
     VERBATIM)
