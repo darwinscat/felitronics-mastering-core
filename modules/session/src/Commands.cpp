@@ -25,9 +25,10 @@
 #include <cstdint>
 #include <optional>
 #include <type_traits>
+#include <limits>
+#include <memory>
 #include <utility>
 #include <variant>
-#include <vector>
 
 namespace felitronics::session
 {
@@ -55,6 +56,11 @@ constexpr bool rowsInOrder()
     return true;
 }
 static_assert (rowsInOrder(), "Table::commands and Table::events list their rows in the order of Command and Event");
+
+// `new T[n]` asks for exactly n × sizeof (T) where T has a trivial destructor: no array cookie, on any ABI. The demands
+// check() states count on it.
+static_assert (std::is_trivially_destructible_v<Kept> && std::is_trivially_destructible_v<float>,
+               "the session's owned arrays carry no cookie");
 
 // f(the active alternative) — without std::visit, whose path for a variant left valueless by an exception throws. With
 // exceptions off no variant here is ever valueless, so the last alternative is the active one when no other is.
@@ -181,13 +187,14 @@ Checked Session::check (const Request& request) const noexcept
         if (pcm.frames == 0 || pcm.channels == nullptr) return rejected (Rejection::NoAudio);
         for (std::uint32_t c = 0; c < pcm.channelCount; ++c)
             if (pcm.channels[c] == nullptr) return rejected (Rejection::NoAudio);
-        if (pcm.frames > samples_.max_size() / pcm.channelCount) return rejected (Rejection::TooLong);
+        if (pcm.frames > std::numeric_limits<std::size_t>::max() / sizeof (float) / pcm.channelCount)
+            return rejected (Rejection::TooLong);
         const auto frames = std::size_t (pcm.frames);   // fits: the line above
         for (std::uint32_t c = 0; c < pcm.channelCount; ++c)
             for (std::size_t i = 0; i < frames; ++i)
                 if (! finite (pcm.channels[c][i])) return rejected (Rejection::NotFinite);
         // THE WORK'S BYTES: the samples, channel after channel, and the name — each one exact request (the load in apply()
-        // below: a vector of exactly this many floats, a vector of exactly this many chars).
+        // below: an array of exactly this many floats, and one of exactly this many chars unless the name is empty).
         return { Rejection::None, kNoField,
                  std::uint64_t (pcm.channelCount) * pcm.frames * sizeof (float) + std::uint64_t (load->meta.name.size()) };
     }
@@ -229,14 +236,14 @@ Checked Session::check (const Request& request) const noexcept
     {
         // THE WORK'S BYTES: room for one more master kept — its recipe is kept when it is done, and that must not ask
         // the heap at the end of a render — as one exact reserve, unless the room is there already.
-        const bool room = masters_.capacity() > masters_.size();
-        return { Rejection::None, kNoField, room ? 0 : std::uint64_t (masters_.size() + 1) * sizeof (Kept) };
+        const bool room = masterRoom_ > masterCount_;
+        return { Rejection::None, kNoField, room ? 0 : std::uint64_t (masterCount_ + 1) * sizeof (Kept) };
     }
     if (const auto* cancel = std::get_if<command::Cancel> (&request))
         return cancel->job == job_ ? Checked {} : rejected (Rejection::UnknownJob);
     if (const auto* forget = std::get_if<command::Forget> (&request))
     {
-        for (const Kept& k : masters_)
+        for (const Kept& k : masters())
             if (k.id == forget->master) return {};
         return rejected (Rejection::UnknownMaster);
     }
@@ -263,9 +270,11 @@ Answer Session::apply (const Request& request) noexcept
     if (const auto* load = std::get_if<command::Load> (&request))
     {
         const Pcm& pcm = load->pcm;
-        // The name first, into a vector of its own: it may be the name this session holds (a shell that loads again
+        // The name first, into an array of its own: it may be the name this session holds (a shell that loads again
         // under source().name), which the disarm below frees.
-        std::vector<char> name (load->meta.name.begin(), load->meta.name.end());
+        const std::string_view given = load->meta.name;
+        std::unique_ptr<char[]> name (given.empty() ? nullptr : new char[given.size()]);
+        std::copy (given.begin(), given.end(), name.get());
         // DISARM: nothing of the old source stays beside the new — the master being made stops, the masters and the
         // measurements go, the manual mode is switched off and a person's device edits go with it (the mode does not
         // outlive the file: its edits were decisions about the old source), and the old samples are freed before the
@@ -273,27 +282,28 @@ Answer Session::apply (const Request& request) noexcept
         mastering_ = false;
         job_ = 0;
         jobRecipe_ = {};
-        std::vector<Kept>().swap (masters_);
-        std::vector<float>().swap (samples_);
+        masters_.reset();
+        masterCount_ = 0;
+        masterRoom_ = 0;
+        samples_.reset();
         project_.manual = false;
         clearHands (project_.devices);
-        // WRITE — one vector of exactly the samples, then a copy into it. (Not a reserve and a range insert: MSVC's STL
-        // wraps its range insert in a try, which the library's flags refuse.)
-        const auto frames = std::size_t (pcm.frames);   // fits: check() refused a source past max_size()
-        std::vector<float> samples (frames * pcm.channelCount);
+        // WRITE — one array of exactly the samples, then a copy into it.
+        const auto frames = std::size_t (pcm.frames);   // fits: check() refused a source past what size_t counts
+        std::unique_ptr<float[]> samples (new float[frames * pcm.channelCount]);
         Fnv hash;
         hash.u32 (pcm.sampleRate);
         hash.u32 (pcm.channelCount);
         hash.u64 (pcm.frames);
         for (std::uint32_t c = 0; c < pcm.channelCount; ++c)
         {
-            std::copy (pcm.channels[c], pcm.channels[c] + frames, samples.data() + std::size_t (c) * frames);
+            std::copy (pcm.channels[c], pcm.channels[c] + frames, samples.get() + std::size_t (c) * frames);
             for (std::size_t i = 0; i < frames; ++i) hash.u32 (std::bit_cast<std::uint32_t> (pcm.channels[c][i]));
         }
         samples_ = std::move (samples);
         name_ = std::move (name);
         source_ = { pcm.channelCount, pcm.sampleRate, pcm.frames, hash.h, load->meta.fileRate, load->meta.rateKnown,
-                    load->meta.bitDepth, std::string_view (name_.data(), name_.size()) };
+                    load->meta.bitDepth, std::string_view (name_.get(), given.size()) };
         state_ = State::Loaded;
         detail::placeMachine (rules, project_.target, source_.channels, project_.devices);
     }
@@ -340,7 +350,13 @@ Answer Session::apply (const Request& request) noexcept
     }
     else if (std::get_if<command::Master> (&request) != nullptr)
     {
-        masters_.reserve (masters_.size() + 1);                    // the room check() counted
+        if (masterRoom_ == masterCount_)                            // the room check() counted, as one exact array
+        {
+            std::unique_ptr<Kept[]> room (new Kept[masterCount_ + 1]);
+            std::copy (masters_.get(), masters_.get() + masterCount_, room.get());
+            masters_ = std::move (room);
+            masterRoom_ = masterCount_ + 1;
+        }
         job_ = ++lastJob_;
         jobRecipe_ = { project_, source_.hash, config::Config::versions().sound };
         mastering_ = true;
@@ -354,8 +370,11 @@ Answer Session::apply (const Request& request) noexcept
     }
     else if (const auto* forget = std::get_if<command::Forget> (&request))
     {
-        for (auto it = masters_.begin(); it != masters_.end(); ++it)
-            if (it->id == forget->master) { masters_.erase (it); break; }
+        Kept* const first = masters_.get();
+        Kept* const last = first + masterCount_;
+        Kept* const it = std::find_if (first, last, [&] (const Kept& k) { return k.id == forget->master; });
+        std::copy (it + 1, last, it);                               // the room stays
+        --masterCount_;
     }
     answer.revision = ++revision_;
     return answer;
@@ -391,7 +410,8 @@ bool Driver::measured2 (Session& session) noexcept
 bool Driver::mastered (Session& session) noexcept
 {
     if (Session::checkFloatingPointEnvironment() != Status::Ok || ! allowed (session, Event::Mastered)) return false;
-    session.masters_.push_back ({ session.job_, session.jobRecipe_ });   // into the room master() took
+    if (session.masterRoom_ == session.masterCount_) return false;       // master() took the room; without it, nothing
+    session.masters_[session.masterCount_++] = { session.job_, session.jobRecipe_ };   // into the room master() took
     session.mastering_ = false;
     session.job_ = 0;
     session.jobRecipe_ = {};

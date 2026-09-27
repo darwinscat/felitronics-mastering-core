@@ -8,9 +8,9 @@
 
 #include <cstdint>
 #include <memory>
+#include <cstddef>
 #include <span>
 #include <string_view>
-#include <vector>
 
 namespace felitronics::session
 {
@@ -174,15 +174,21 @@ private:
     bool mastering_ = false;
     std::uint64_t revision_ = 0;
     Project project_ {};
-    // The source: its samples planar, channel after channel, and the name the load gave.
+    // OWNED BUFFERS, EACH ONE EXACT REQUEST — not std::vector: a debugging standard library (MSVC's at
+    // _ITERATOR_DEBUG_LEVEL 1 or 2) gives every vector a heap-allocated proxy of its own, which no declared demand
+    // counts. The source: its samples planar, channel after channel (source_.channels × source_.frames), and the name
+    // the load gave (source_.name views it; null when it is empty).
     Source source_ {};
-    std::vector<float> samples_;
-    std::vector<char> name_;
-    // The master being made, and the masters kept. The ids count from 1 for the session's life.
+    std::unique_ptr<float[]> samples_;
+    std::unique_ptr<char[]> name_;
+    // The master being made, and the masters kept: `masterCount_` of them in room for `masterRoom_`. The ids count
+    // from 1 for the session's life.
     JobId job_ = 0;
     JobId lastJob_ = 0;
     Recipe jobRecipe_ {};
-    std::vector<Kept> masters_;
+    std::unique_ptr<Kept[]> masters_;
+    std::size_t masterCount_ = 0;
+    std::size_t masterRoom_ = 0;
 };
 
 } // namespace felitronics::session

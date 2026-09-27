@@ -725,12 +725,14 @@ void everyRejectionWasProduced()
 void memoryIsDeclared()
 {
     felitronics::test::group ("memory is declared before the work: check() covers what apply() asks the heap for, every command");
-    struct Case { Command command; Column column; };
-    const Case cases[] = { { Command::Load, Column::Measured2 }, { Command::SetTarget, Column::Measured1 },
-                           { Command::EditTarget, Column::Measured1 }, { Command::EditDevice, Column::Measured1 },
-                           { Command::RevertEdits, Column::Measured1 }, { Command::SetManual, Column::Measured1 },
-                           { Command::Master, Column::Measured1 }, { Command::Cancel, Column::Mastering1 },
-                           { Command::Forget, Column::Measured2 } };
+    // ...and in as many requests as the work has buffers: a load its samples and its name, a master its room — a
+    // debugging standard library that gives a container a proxy of its own would show here as a request too many.
+    struct Case { Command command; Column column; long long requests; };
+    const Case cases[] = { { Command::Load, Column::Measured2, 2 }, { Command::SetTarget, Column::Measured1, 0 },
+                           { Command::EditTarget, Column::Measured1, 0 }, { Command::EditDevice, Column::Measured1, 0 },
+                           { Command::RevertEdits, Column::Measured1, 0 }, { Command::SetManual, Column::Measured1, 0 },
+                           { Command::Master, Column::Measured1, 1 }, { Command::Cancel, Column::Mastering1, 0 },
+                           { Command::Forget, Column::Measured2, 0 } };
     for (const Case& c : cases)
     {
         Situation x = situation (c.column);
@@ -745,6 +747,8 @@ void memoryIsDeclared()
         ok (a.rejection == Rejection::None, what + ": PRECONDITION: accepted");
         ok (budget::covers (declared.bytes, spent), what + ": declared >= requested — " + budget::describe (declared.bytes, spent));
         ok (spent.bytes == (long long) declared.bytes, what + ": and exactly the declaration");
+        ok (spent.requests == c.requests, what + ": in " + std::to_string (c.requests) + " request(s) (got "
+                                              + std::to_string (spent.requests) + ")");
     }
     // The two that ask: a load's is its samples and its name; a master's is room for one more kept.
     {

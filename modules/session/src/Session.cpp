@@ -61,7 +61,7 @@ const Project& Session::project() const noexcept { return project_; }
 Source Session::source() const noexcept { return source_; }
 JobId Session::job() const noexcept { return job_; }
 const Recipe& Session::jobRecipe() const noexcept { return jobRecipe_; }
-std::span<const Kept> Session::masters() const noexcept { return { masters_.data(), masters_.size() }; }
+std::span<const Kept> Session::masters() const noexcept { return { masters_.get(), masterCount_ }; }
 
 std::string_view Session::targetName() const noexcept
 {
