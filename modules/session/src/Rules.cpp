@@ -126,6 +126,9 @@ Rules readRules (View targets, View engine) noexcept
     out.engine = engine;
     Reading r;
 
+    // A document holds at most felitronics-toml's kMaxEntries keys, [targets] itself among them, so every row's index fits
+    // the project's 16 bits after any document the parser took.
+    static_assert (toml::kMaxEntries - 1 <= std::numeric_limits<std::uint16_t>::max());
     const View rows = targets.find ("targets");
     if (! rows.is (Type::Table) || rows.size() == 0 || rows.size() > std::numeric_limits<std::uint16_t>::max()) r.complete = false;
     else out.rows = std::uint16_t (rows.size());

@@ -1072,6 +1072,9 @@ void readTargets (Doc& d, Reader& in, Targets& o, const Engine& e, const Grids& 
     in.table ("targets", Need::Required, [&] (Reader& t)
     {
         for (const auto& entry : t.data().entries())
+        {
+            // A person picks a target, and a project names one, by its key: an empty key names nothing.
+            if (entry.key.empty()) d.refuse (t, entry.key, Refusal::EmptyKey);
             t.table (entry.key, Need::Required, [&] (Reader& row)
             {
                 Target x;
@@ -1079,6 +1082,7 @@ void readTargets (Doc& d, Reader& in, Targets& o, const Engine& e, const Grids& 
                 readTarget (d, row, x, b);
                 o.targets.push_back (std::move (x));
             });
+        }
     });
     if (in.required ("default", o.defaultTarget) && o.find (o.defaultTarget) == nullptr)
         d.refuse (in, "default", Refusal::NotATarget);
@@ -1109,7 +1113,7 @@ void collect (const toml::Report& report, Document document, std::vector<Problem
             case toml::Fault::UnknownKey: q.fault = Fault::UnknownKey; break;
             case toml::Fault::Refused:
                 q.fault = Fault::Refused;
-                q.refusal = p.detail <= std::uint32_t (Refusal::AnalyzerRefuses) ? static_cast<Refusal> (p.detail) : Refusal::None;
+                q.refusal = p.detail <= std::uint32_t (Refusal::EmptyKey) ? static_cast<Refusal> (p.detail) : Refusal::None;
                 break;
         }
         q.code = q.fault == Fault::Refused ? Problem::name (q.refusal) : Problem::name (q.fault);
@@ -1206,6 +1210,7 @@ const char* Problem::name (Refusal refusal) noexcept
         case Refusal::OutsideLaw:     return "OutsideLaw";
         case Refusal::AboveNyquist:   return "AboveNyquist";
         case Refusal::AnalyzerRefuses: return "AnalyzerRefuses";
+        case Refusal::EmptyKey:       return "EmptyKey";
     }
     return "Refused";
 }

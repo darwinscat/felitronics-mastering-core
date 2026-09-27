@@ -499,7 +499,8 @@ enum class Refusal : std::uint8_t
     NotApplicable, // set where it cannot apply (a pass at the source's rate on a target that keeps the source's rate)
     OutsideLaw,    // a ramp's ends outside its law's domain, or a law the field does not take
     AboveNyquist,  // a frequency at or above half the rate the signal it filters is sampled at
-    AnalyzerRefuses// the analyzer this block feeds refuses it — its own storageFor() — at a source rate the product accepts
+    AnalyzerRefuses,// the analyzer this block feeds refuses it — its own storageFor() — at a source rate the product accepts
+    EmptyKey       // a row of [targets] under an empty key: a target is named by its key, and "" names none
 };
 
 struct Problem
