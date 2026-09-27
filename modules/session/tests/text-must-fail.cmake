@@ -21,8 +21,10 @@ file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
 file(COPY "${TEXT}/catalog.toml" "${TEXT}/format.toml" DESTINATION "${WORK}")
 
+# The gate prints UTF-8 (its rules follow an em dash); on Windows execute_process would decode it with the console's code
+# page unless told.
 execute_process(COMMAND "${CHECK}" "${WORK}/catalog.toml" "${WORK}/format.toml"
-                RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err)
+                RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err ENCODING UTF8)
 if(NOT rc EQUAL 0)
     message(FATAL_ERROR "PRECONDITION: the gate must pass on the unplanted copies; it exited ${rc}:\n${err}")
 endif()
@@ -60,7 +62,7 @@ string(FIND "${before}" "\n" lastNewline REVERSE)
 math(EXPR column "${at} - ${lastNewline}")
 
 execute_process(COMMAND "${CHECK}" "${WORK}/catalog.toml" "${WORK}/format.toml"
-                RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err)
+                RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err ENCODING UTF8)
 set(want "${WORK}/${DOC}.toml:${line}:${column}: error: ${EXPECT}")
 if(NOT rc EQUAL 1)
     message(FATAL_ERROR "the gate did not go red on '${TO}' (exit ${rc}):\n${err}")
