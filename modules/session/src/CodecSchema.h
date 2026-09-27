@@ -38,6 +38,39 @@ template <class T> constexpr unsigned enumLast() noexcept
     else static_assert (std::is_same_v<T, void>, "enum missing from codec description");
 }
 
+constexpr void checkEnum (Needles value) noexcept
+{
+    switch (value)
+    {
+        case Needles::Auto: break;
+        case Needles::Manual: break;
+        case Needles::Off: break;
+    }
+}
+
+constexpr void checkEnum (PhaseName value) noexcept
+{
+    switch (value)
+    {
+        case PhaseName::Stream: break;
+        case PhaseName::Report: break;
+        case PhaseName::Analyzers: break;
+        case PhaseName::Pass: break;
+        case PhaseName::Remeasure: break;
+    }
+}
+
+constexpr void checkEnum (State value) noexcept
+{
+    switch (value)
+    {
+        case State::Empty: break;
+        case State::Loaded: break;
+        case State::Measured1: break;
+        case State::Measured2: break;
+    }
+}
+
 template <class V, class T> void describe (V& v, T& x) noexcept
 {
     using U = std::remove_cv_t<T>;

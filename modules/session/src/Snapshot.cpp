@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 #include "BuildGuards.h"
+#include "SnapshotStorage.h"
 #include <felitronics/session/Snapshot.h>
 #include <algorithm>
 #include <limits>
@@ -16,14 +17,17 @@ Snapshot& Snapshot::operator= (Snapshot&&) noexcept = default;
 const SnapshotView& Snapshot::view() const noexcept { return view_; }
 std::uint64_t Snapshot::storageFor (const SnapshotView& v) noexcept
 {
-    return v.target.size() + v.source.name.size() + v.masters.size_bytes()
-         + v.momentary.size_bytes() + v.shortTerm.size_bytes() + v.runs.size_bytes();
+    return detail::snapshotStorage (v.target.size(), v.source.name.size(), v.masters.size_bytes(),
+                                    v.momentary.size_bytes(), v.shortTerm.size_bytes(), v.runs.size_bytes());
 }
 Snapshot Snapshot::copy (const SnapshotView& v) noexcept
 {
     Snapshot out;
     out.view_ = v;
-    const auto chars = v.target.size() + v.source.name.size();
+    const auto chars = detail::snapshotAllocationSize<std::size_t> (
+        detail::snapshotTextBytes (v.target.size(), v.source.name.size()));
+    const auto pointBytes = std::uint64_t (v.momentary.size_bytes()) + std::uint64_t (v.shortTerm.size_bytes());
+    const auto points = detail::snapshotAllocationSize<std::size_t> (pointBytes) / sizeof (ReadingPoint);
     if (chars != 0)
     {
         out.text_.reset (new char[chars]);
@@ -38,7 +42,6 @@ Snapshot Snapshot::copy (const SnapshotView& v) noexcept
         std::copy (v.masters.begin(), v.masters.end(), out.masters_.get());
         out.view_.masters = { out.masters_.get(), v.masters.size() };
     }
-    const auto points = v.momentary.size() + v.shortTerm.size();
     if (points != 0)
     {
         out.points_.reset (new ReadingPoint[points]);
