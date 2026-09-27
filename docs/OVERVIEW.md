@@ -113,7 +113,7 @@ same names, with a version of its own, because a version is a promise about a wh
 (`tools/fc_session_abi.h`, `tools/wasm/fc_session.cpp`) over the session, the surface a shell that cannot link C++
 talks to the library through (a DRAFT, version 0, with no promise: the version, a session created and destroyed
 through a handle, the config version, the session's refusals of a create, the poison; its wasm module `fcsession`, which
-carries the config, is 44 KB, 13 KB brotli) — each with its ABI version
+carries the config, is 61 KB, 18 KB brotli) — each with its ABI version
 and, for the first three, the append-only rule that moves it in its header —
 with their native CLIs (`fcore_master`, `fcore_measure`, `fcore_session`) and suites. `tools/wasm/build.sh` builds the wasm modules against a felitronics-core checkout
 (`FELITRONICS_CORE_DIR`, or the sibling `../felitronics-core`) and records both versions in `BUILD-INFO` beside

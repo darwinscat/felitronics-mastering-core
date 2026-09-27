@@ -448,7 +448,7 @@ above.
 
 `fcsession` is its wasm module (`tools/wasm/build.sh`): the facade and the sources `modules/session/sources.txt` lists
 (the build refuses a `.cpp` under `modules/session/src`, at any depth, that is not listed), linked with
-`--wrap=pthread_create`, with its embedded config — 44 KB of wasm, 13 KB brotli, almost all of it the config's data. `tools/wasm/session-check.mjs` compares every export of the
+`--wrap=pthread_create`, with its embedded config — 61 KB of wasm, 18 KB brotli: the config's data, and the states and the commands over it. `tools/wasm/session-check.mjs` compares every export of the
 loaded module against the ABI's surface and the runtime's own, runs the surface, and walks the wrap boundary; `build.sh`
 builds a control copy with one undeclared export and requires the check to refuse it.
 
