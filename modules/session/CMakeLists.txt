@@ -282,19 +282,56 @@ if(FELITRONICS_BUILD_TESTS)
         endif()
     endforeach()
 
-    # THE COMPILE LINE, READ BACK. What no preprocessor macro announces — contraction on clang and gcc — is read from
-    # the compile commands this build and a consumer's build actually produce: for every source of the library, the last
-    # -ffp-contract= is `off`, nothing after -fno-fast-math licenses fast math, and the last word on exceptions and RTTI
-    # is `no`. A per-source override, or an option de-duplicated away, is red here. Needs compile_commands.json, which
+    # THE COMPILE LINE, READ BACK (tests/compile-line-gate.cmake). What no preprocessor macro announces — contraction, and
+    # licences like -fno-honor-nans or -ffp-model=fast, on clang and gcc — is read from the compile commands this build and
+    # a consumer's build actually produce: for every unit of the library, and the C boundary's, the library's flag group
+    # (build-flags.txt) is the last word on floating point, exceptions and RTTI, and nothing forces an include or passes
+    # flags through. A per-source override, or the group de-duplicated away, is red. Needs compile_commands.json, which
     # the Makefile and Ninja generators write (CMAKE_EXPORT_COMPILE_COMMANDS is on at the top level).
-    if(CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
+    # NOT ON MSVC, whatever the generator: cl.exe announces /fp:precise, /fp:contract, exceptions and RTTI to the
+    # preprocessor, and src/BuildGuards.h refuses a wrong unit from inside it (the append controls above prove that).
+    if(CMAKE_GENERATOR MATCHES "Ninja|Makefiles" AND NOT MSVC)
+        set(FELITRONICS_SESSION_LINE_TARGETS felitronics_session.dir)
+        set(FELITRONICS_SESSION_LINE_SOURCES "")
+        foreach(src IN LISTS FELITRONICS_SESSION_SOURCES)
+            list(APPEND FELITRONICS_SESSION_LINE_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/${src})
+        endforeach()
+        set(FELITRONICS_SESSION_LIBRARY_LINE_SOURCES ${FELITRONICS_SESSION_LINE_SOURCES})
+        if(PROJECT_IS_TOP_LEVEL)   # tools/ — and the C boundary's object library with it — is a top-level build's
+            list(APPEND FELITRONICS_SESSION_LINE_TARGETS felitronics_session_facade.dir)
+            list(APPEND FELITRONICS_SESSION_LINE_SOURCES ${PROJECT_SOURCE_DIR}/tools/wasm/fc_session.cpp)
+        endif()
+        string(REPLACE ";" "|" FELITRONICS_SESSION_LINE_TARGETS "${FELITRONICS_SESSION_LINE_TARGETS}")
+        string(REPLACE ";" "|" FELITRONICS_SESSION_LINE_SOURCES "${FELITRONICS_SESSION_LINE_SOURCES}")
+        string(REPLACE ";" "|" FELITRONICS_SESSION_LIBRARY_LINE_SOURCES "${FELITRONICS_SESSION_LIBRARY_LINE_SOURCES}")
         add_test(NAME felitronics_session_compile_line
                  COMMAND ${CMAKE_COMMAND} -DCOMPILE_COMMANDS=${CMAKE_BINARY_DIR}/compile_commands.json
-                         -DTARGET_DIR=felitronics_session.dir
+                         -DFLAGS_FILE=${CMAKE_CURRENT_SOURCE_DIR}/build-flags.txt
+                         "-DTARGETS=${FELITRONICS_SESSION_LINE_TARGETS}" "-DSOURCES=${FELITRONICS_SESSION_LINE_SOURCES}"
                          -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile-line-gate.cmake)
+        # ITS CONTROLS (tests/compile-line-controls.cmake). One is real: a copy of a library unit, compiled with the
+        # library's options and a per-source `-ffp-model=fast` — the property on a COPY, because a source property is the
+        # directory's and would reach the library's own unit — configured into this build's compile commands and never
+        # built. The others edit this build's own compile_commands.json.
+        set(FELITRONICS_SESSION_PERSOURCE ${CMAKE_CURRENT_BINARY_DIR}/compile-line-control/PerSourceOverride.cpp)
+        configure_file(src/BuildContract.cpp ${FELITRONICS_SESSION_PERSOURCE} COPYONLY)
+        add_library(fs_cl_persource OBJECT EXCLUDE_FROM_ALL ${FELITRONICS_SESSION_PERSOURCE})
+        target_include_directories(fs_cl_persource PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        target_compile_features(fs_cl_persource PRIVATE cxx_std_20)
+        target_compile_definitions(fs_cl_persource PRIVATE ${FELITRONICS_SESSION_VERSION_DEFINITIONS})
+        target_compile_options(fs_cl_persource PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
+        set_source_files_properties(${FELITRONICS_SESSION_PERSOURCE} PROPERTIES COMPILE_OPTIONS -ffp-model=fast)
+        add_test(NAME felitronics_session_compile_line_controls
+                 COMMAND ${CMAKE_COMMAND} -DGATE=${CMAKE_CURRENT_SOURCE_DIR}/tests/compile-line-gate.cmake
+                         -DCOMPILE_COMMANDS=${CMAKE_BINARY_DIR}/compile_commands.json
+                         -DFLAGS_FILE=${CMAKE_CURRENT_SOURCE_DIR}/build-flags.txt
+                         "-DTARGETS=${FELITRONICS_SESSION_LINE_TARGETS}" "-DSOURCES=${FELITRONICS_SESSION_LINE_SOURCES}"
+                         -DPERSOURCE=${FELITRONICS_SESSION_PERSOURCE} -DPERSOURCE_TARGET=fs_cl_persource.dir
+                         -DSCRATCH=${CMAKE_CURRENT_BINARY_DIR}/compile-line-controls
+                         -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile-line-controls.cmake)
         # ...and in a CONSUMER's build: tests/consumer/ is a parent project that states `add_compile_options(-ffp-contract=off)`
         # and then makes felitronics-core and this repository available. Configured, not built.
-        if(NOT EMSCRIPTEN AND NOT MSVC)
+        if(NOT EMSCRIPTEN)
             add_test(NAME felitronics_session_consumer_compile_line
                      COMMAND ${CMAKE_COMMAND}
                              -DGENERATOR=${CMAKE_GENERATOR}
@@ -304,6 +341,8 @@ if(FELITRONICS_BUILD_TESTS)
                              -DCORE=${FELITRONICS_MASTERING_CORE_SOURCE_DIR}
                              -DMASTERING=${PROJECT_SOURCE_DIR}
                              -DGATE=${CMAKE_CURRENT_SOURCE_DIR}/tests/compile-line-gate.cmake
+                             -DFLAGS_FILE=${CMAKE_CURRENT_SOURCE_DIR}/build-flags.txt
+                             "-DSOURCES=${FELITRONICS_SESSION_LIBRARY_LINE_SOURCES}"
                              -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/consumer-compile-line.cmake)
         endif()
     endif()
