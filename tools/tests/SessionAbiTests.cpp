@@ -44,8 +44,8 @@ void theVersion()
 {
     felitronics::test::group ("the version is the header's, and it is the draft");
     ok (fc_session_abi_version() == FC_SESSION_ABI_VERSION, "fc_session_abi_version() == FC_SESSION_ABI_VERSION");
-    // 0 IS THE DRAFT: no append-only promise until v1, which freezes the surface together with a create that takes the
-    // shell's capabilities and forwards its demand (tools/fc_session_abi.h). Freezing it edits this line on purpose.
+    // 0 IS THE DRAFT: no append-only promise holds for it (tools/fc_session_abi.h). A version that freezes the surface
+    // is a different number, and moving to it edits this line on purpose.
     ok (FC_SESSION_ABI_VERSION == 0u, "and that is 0, the draft — no shell may gate on it as a stable interface");
 }
 

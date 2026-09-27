@@ -72,14 +72,18 @@ destroyed, asked for its version, and refusing a thread whose floating-point env
 keeps no state. What is fixed is the ground it stands on:
 
 - **a compiled STATIC target**, the repository's first, whose sources are compiled with PRIVATE flags in one `SHELL:`
-  group — no FP contraction, no fast-math, no exceptions, no RTTI — so an application that links it cannot recompile it
-  with its own. Every translation unit refuses to compile without them, the compile line is read back (this build's and
-  a consumer's), and the library answers IEEE-754 under hostile flags placed ahead of its own;
-- **its laws, each held by a check with a control**: an object-file gate over its objects (no writable data; nothing
-  called outside a short list — no OS, file, console, locale, clock or process state), a source lint for what leaves no
-  symbol (includes, pragmas, exception and RTTI tokens, atomics, implementation-defined orders, function bodies in the
-  public header), the whole module in the deterministic zone, memory declared before the work. Which of core's laws
-  apply, which do not, and what holds each: [`SESSION.md`](SESSION.md).
+  group — no FP contraction, no fast-math, no exceptions, no RTTI. Every translation unit refuses to compile without
+  them, the compile line is read back (this build's and a consumer's), and the library answers IEEE-754 under hostile
+  flags placed ahead of its own. The flags settle the library's own objects, not the header-inline code it shares with
+  the program, of which the linker keeps one copy: so a program that links it compiles **every** translation unit with
+  the same FP flags — no contraction, no fast-math. The wasm modules are built whole here and are not affected;
+- **its laws, each held by a check with a control**: an object-file gate over its objects and its C boundary's (no
+  writable data, read from what each object says of its sections; nothing called outside a short list — no OS, file,
+  console, locale, clock or process state), a source lint for what leaves no symbol (includes, directives and macros,
+  pragmas, attributes, exception and RTTI tokens, atomics, implementation-defined orders, function bodies and variables
+  in the public header) over the module and the C boundary, the whole module in the deterministic zone, memory declared
+  before the work. Which of core's laws apply, which do not, what holds each, and what the checks do not try to catch:
+  [`SESSION.md`](SESSION.md).
 
 ## The C ABIs — `tools/`
 
@@ -89,7 +93,7 @@ keeps no state. What is fixed is the ground it stands on:
 same names, with a version of its own, because a version is a promise about a whole surface — and `fc_session`
 (`tools/fc_session_abi.h`, `tools/wasm/fc_session.cpp`) over the session, the surface a shell that cannot link C++
 talks to the library through (a DRAFT, version 0, with no promise: the version, a session created and destroyed
-through a handle, the session's refusals, the poison; its wasm module `fcsession` is 3.2 KB) — each with its ABI version
+through a handle, the session's refusals, the poison; its wasm module `fcsession` is 2.9 KB) — each with its ABI version
 and, for the first three, the append-only rule that moves it in its header —
 with their native CLIs (`fcore_master`, `fcore_measure`, `fcore_session`) and suites. `tools/wasm/build.sh` builds the wasm modules against a felitronics-core checkout
 (`FELITRONICS_CORE_DIR`, or the sibling `../felitronics-core`) and records both versions in `BUILD-INFO` beside
