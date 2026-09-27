@@ -59,8 +59,10 @@ allStreaming = { group = "streaming", lufs = -14, tp = -1, monoBass = 120, hpfFl
 cdDynamic    = { group = "delivery", lufs = -12, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 44100, bitDepth = 16, sourceRatePass = true }
 # A club master. Club tracks are observed at −10…−6 LUFS, most often −8: not an official standard. The high-pass takes
 # only 0.3 dB at the lowest note here, on a hypothesis: a club system reproduces the fundamental, where everywhere else
-# 20 Hz is heard through its harmonics.
-club         = { group = "delivery", lufs = -8, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 0.3, sampleRate = 0, bitDepth = 24 }
+# 20 Hz is heard through its harmonics. And the high-pass is always placed, as on vinyl: it protects the club's
+# subwoofers from infrasonic bursts, which a share of the whole programme does not see. Mono bass is not the reason —
+# it folds the side only.
+club         = { group = "delivery", lufs = -8, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 0.3, sampleRate = 0, bitDepth = 24, hpfAlways = true }
 # Vinyl. No peak clipper and a ceiling of −3 dBTP for the cutting lathe; mono bass up to 150 Hz, where cutting rooms put
 # their elliptical filter (100…150 Hz); the high-pass is always placed, never below 32 Hz and at a gentle 12 dB/oct;
 # a +0.5 dB low shelf. Never RIAA, never upsampled, never dithered to 16 bits.

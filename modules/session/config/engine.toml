@@ -137,7 +137,8 @@ skipBlocks = 0
 
 # THE HIGH-PASS — the machine's (owner decisions: placement, the 50 Hz top, the slopes, the comfort window). It is placed
 # always, except when there is nothing below the lowest note (nothingBelowNote), seen in the first phase without a trial
-# render; the report then says "high-pass not placed: nothing below the note". Vinyl always (hpfAlways in targets.toml).
+# render; the report then says "high-pass not placed: nothing below the note". Vinyl and club always (hpfAlways in
+# targets.toml).
 # The cutoff is max(the cutoff the note allows, the target's floor): a Butterworth of order n = slope/6 loses
 # −10·log10(1/(1 + (fc/f)^(2n))) dB at f, so the note allows f/fc = (10^(loss/10) − 1)^(−1/(2n)) at the target's
 # noteLossDb (1.184 at 24 dB/oct and 1 dB). The cutoff is rounded to the hertz and never above hzMax: "the cutoff hit
