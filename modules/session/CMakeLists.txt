@@ -171,6 +171,18 @@ if(FELITRONICS_BUILD_TESTS)
     target_compile_options(felitronics_session_tests PRIVATE ${FELITRONICS_SESSION_CONTRACT_FAST} ${FELITRONICS_SESSION_OPTIMISED})
     add_test(NAME felitronics_session_tests COMMAND felitronics_session_tests)
 
+    # THE STATES AND THE COMMANDS (Commands.h): the table cell by cell and the session's own transitions, every rejection
+    # changing nothing, the order of the checks, every knob's travel and step, placement, a change of target, the manual
+    # mode, memory declared before every command (law 11d, through the one allocation counter), a master's recipe, a
+    # load's disarm, and the numbers the commands read in place held to the schema's. It drives the transitions through
+    # src/Driver.h, the library's internal seam.
+    add_executable(felitronics_session_state_tests tests/StateTests.cpp)
+    target_link_libraries(felitronics_session_state_tests PRIVATE
+        felitronics::session felitronics::toml felitronics::core felitronics::test_support)
+    target_include_directories(felitronics_session_state_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_features(felitronics_session_state_tests PRIVATE cxx_std_20)
+    add_test(NAME felitronics_session_state_tests COMMAND felitronics_session_state_tests)
+
     # HOSTILE FLAGS AHEAD OF THE LIBRARY'S. The library's sources compiled again, into test binaries, with a licence the
     # session refuses PREPENDED to the target's own options — the position a consumer's CMAKE_CXX_FLAGS or directory
     # options take. The library's options come after and must win: every build probe answers IEEE. Each binary also
