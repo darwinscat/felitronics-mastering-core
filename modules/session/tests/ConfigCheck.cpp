@@ -27,6 +27,8 @@
 #include <variant>
 
 namespace config = felitronics::session::config;
+using config::Config;
+using config::Problem;
 
 namespace
 {
@@ -56,7 +58,7 @@ int report (const config::Loaded& loaded, const char* targetsPath, const char* e
         const char* file = p.document == config::Document::Targets ? targetsPath : enginePath;
         const bool coded = p.fault == config::Fault::Syntax || p.fault == config::Fault::Refused;
         std::fprintf (stderr, "%s:%u:%u: error: %s%s%s%s%s\n", file, (unsigned) p.line, (unsigned) p.column,
-                      config::name (p.fault), p.path.empty() ? "" : " ", p.path.c_str(), coded ? " — " : "",
+                      Problem::name (p.fault), p.path.empty() ? "" : " ", p.path.c_str(), coded ? " — " : "",
                       coded ? p.code : "");
     }
     return loaded.ok() ? 0 : 1;
@@ -98,11 +100,11 @@ int main (int argc, char** argv)
     std::string targets, engine;
     if (! readFile (targetsPath, targets)) { std::fprintf (stderr, "config_check: cannot read %s\n", targetsPath); return 2; }
     if (! readFile (enginePath, engine)) { std::fprintf (stderr, "config_check: cannot read %s\n", enginePath); return 2; }
-    if (! expect) return report (config::bind (targets, engine), targetsPath, enginePath);
+    if (! expect) return report (Config::bind (targets, engine), targetsPath, enginePath);
 
     std::string targetsText, engineText;
     if (! canonical (targetsPath, targets, targetsText) || ! canonical (enginePath, engine, engineText)) return 2;
-    const auto v = config::versionsOf (targets, engine);
+    const auto v = Config::versionsOf (targets, engine);
     if (! v) return 2;   // canonical() above has already parsed both and said why
     const std::string dir = argv[4];
     if (! writeFile (dir + "/targets.toml", targetsText) || ! writeFile (dir + "/engine.toml", engineText)

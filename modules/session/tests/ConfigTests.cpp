@@ -21,7 +21,7 @@
 #include <felitronics/toml/Embedded.h>
 #include <felitronics/toml/Toml.h>
 
-#include "ConfigVersion.h"      // the walk config::versions() is (modules/session/src)
+#include "ConfigVersion.h"      // the walk Config::versions() is (modules/session/src)
 #include "testcopy/engine.h"    // this suite's own embedding of the two documents, by the same tool from the same files
 #include "testcopy/targets.h"
 
@@ -36,6 +36,8 @@
 #include <vector>
 
 namespace config = felitronics::session::config;
+using config::Config;
+using config::Problem;
 namespace toml = felitronics::toml;
 using config::testing::canonicalOf;
 using config::testing::plant;
@@ -49,18 +51,18 @@ std::string g_targetsText, g_engineText;   // the two source documents, read onc
 void theEmbeddedConfigIsTheSource()
 {
     felitronics::test::group ("the embedded config binds with no problem, and it is the source documents");
-    const config::Loaded loaded = config::load();
+    const config::Loaded loaded = Config::load();
     ok (loaded.ok(), "load(): no problem (" + std::to_string (loaded.problems.size()) + ")");
     for (const auto& p : loaded.problems)
-        std::printf ("    %s %u:%u %s %s %s\n", config::name (p.document), (unsigned) p.line, (unsigned) p.column,
-                     config::name (p.fault), p.path.c_str(), p.code);
-    const std::string targets = config::text (config::Document::Targets);
-    const std::string engine = config::text (config::Document::Engine);
+        std::printf ("    %s %u:%u %s %s %s\n", Problem::name (p.document), (unsigned) p.line, (unsigned) p.column,
+                     Problem::name (p.fault), p.path.c_str(), p.code);
+    const std::string targets = Config::text (config::Document::Targets);
+    const std::string engine = Config::text (config::Document::Engine);
     ok (! targets.empty() && targets == canonicalOf (g_targetsText),
         "the embedded targets are targets.toml, byte for byte in canonical form (" + std::to_string (targets.size()) + " bytes)");
     ok (! engine.empty() && engine == canonicalOf (g_engineText),
         "the embedded engine is engine.toml, byte for byte in canonical form (" + std::to_string (engine.size()) + " bytes)");
-    ok (config::bind (g_targetsText, g_engineText).ok(), "and the source files bind clean through bind() too");
+    ok (Config::bind (g_targetsText, g_engineText).ok(), "and the source files bind clean through bind() too");
 }
 
 //==============================================================================
@@ -80,26 +82,26 @@ void mustRefuse (config::Document document, std::string_view from, std::string_v
         const std::string line = "\n" + std::string (at) + "\n";
         p = plant (p.text, line, line, at);
     }
-    const std::string what = std::string (config::name (fault)) + (refusal != config::Refusal::None
-        ? std::string (" ") + config::name (refusal) : std::string{}) + " " + path;
+    const std::string what = std::string (Problem::name (fault)) + (refusal != config::Refusal::None
+        ? std::string (" ") + Problem::name (refusal) : std::string{}) + " " + path;
     if (! p.planted) { ok (false, what + ": the control has rotted — '" + std::string (from) + "' is not in the document once"); return; }
-    const config::Loaded loaded = inTargets ? config::bind (p.text, g_engineText) : config::bind (g_targetsText, p.text);
+    const config::Loaded loaded = inTargets ? Config::bind (p.text, g_engineText) : Config::bind (g_targetsText, p.text);
     bool found = false;
     for (const auto& q : loaded.problems)
         found = found || (q.document == document && q.fault == fault && q.path == path && q.refusal == refusal
                           && q.line == p.line && q.column == p.column);
     std::string seen;
     for (const auto& q : loaded.problems)
-        seen += std::string (" [") + config::name (q.document) + " " + std::to_string (q.line) + ":" + std::to_string (q.column)
+        seen += std::string (" [") + Problem::name (q.document) + " " + std::to_string (q.line) + ":" + std::to_string (q.column)
               + " " + q.code + " " + q.path + "]";
-    ok (found, what + " at " + config::name (document) + ".toml:" + std::to_string (p.line) + ":" + std::to_string (p.column)
+    ok (found, what + " at " + Problem::name (document) + ".toml:" + std::to_string (p.line) + ":" + std::to_string (p.column)
                    + (found ? "" : " — got:" + seen));
 }
 
 void theSchemaRefuses()
 {
     felitronics::test::group ("control: the schema refuses every planted mistake, at its line and column");
-    ok (config::bind (g_targetsText, g_engineText).ok(), "PRECONDITION: the documents without a plant bind clean");
+    ok (Config::bind (g_targetsText, g_engineText).ok(), "PRECONDITION: the documents without a plant bind clean");
     using config::Document;
     using config::Fault;
     using config::Refusal;
@@ -231,7 +233,7 @@ std::optional<config::Loaded> bindWith (std::initializer_list<Edit> edits, std::
         text = p.text;
     }
     if (targets != nullptr) *targets = t;
-    return config::bind (t, e);
+    return Config::bind (t, e);
 }
 
 bool hasProblem (const config::Loaded& l, config::Document d, const std::string& path, config::Refusal r, const std::string& text,
@@ -350,17 +352,17 @@ bool sameVersions (const std::optional<config::Versions>& a, const config::Versi
 void theVersionsAreNormalised()
 {
     felitronics::test::group ("the versions are of the data: spelling, key order, inline-or-not and −0 move nothing");
-    const config::Versions v = config::versions();
+    const config::Versions v = Config::versions();
     char hex[48];
     std::snprintf (hex, sizeof hex, "%016llx / %016llx", (unsigned long long) v.all, (unsigned long long) v.sound);
     std::printf ("    config versions (all / sound) %s\n", hex);
-    ok (sameVersions (config::versionsOf (g_targetsText, g_engineText), v),
+    ok (sameVersions (Config::versionsOf (g_targetsText, g_engineText), v),
         "versions(), the walk over the embedded data, are the source files' versions");
     ok (config::detail::version (config::testcopy::targets.root(), config::testcopy::engine.root(), false) == v.all
             && config::detail::version (config::testcopy::targets.root(), config::testcopy::engine.root(), true) == v.sound,
         "...and this suite's own embedding hashes to them by the walk versions() uses");
     ok (v.all != v.sound, "all and sound are two versions");
-    ok (! config::versionsOf ("[[", g_engineText).has_value(), "a document that does not parse has no version");
+    ok (! Config::versionsOf ("[[", g_engineText).has_value(), "a document that does not parse has no version");
 
     // Each is a meaning-preserving respelling a review found moving the old version.
     struct Respelling { config::Document document; std::string_view from, to, what; };
@@ -382,25 +384,25 @@ void theVersionsAreNormalised()
         const bool inTargets = r.document == config::Document::Targets;
         const Plant p = plant (inTargets ? g_targetsText : g_engineText, r.from, r.to, r.to.substr (0, 3));
         if (! p.planted) { ok (false, std::string (r.what) + ": the respelling has rotted"); continue; }
-        const auto w = inTargets ? config::versionsOf (p.text, g_engineText) : config::versionsOf (g_targetsText, p.text);
-        const auto bound = inTargets ? config::bind (p.text, g_engineText) : config::bind (g_targetsText, p.text);
+        const auto w = inTargets ? Config::versionsOf (p.text, g_engineText) : Config::versionsOf (g_targetsText, p.text);
+        const auto bound = inTargets ? Config::bind (p.text, g_engineText) : Config::bind (g_targetsText, p.text);
         ok (bound.ok() && sameVersions (w, v), std::string (r.what) + ": still valid, and neither version moves");
     }
     // A comment and spacing are not data either.
     const Plant commented = plant (g_engineText, "[landing]\n", "[landing]   # a comment\n", "[landing]");
     const Plant spaced = plant (g_targetsText, "lufs = -23", "lufs    =    -23", "lufs");
-    ok (commented.planted && spaced.planted && sameVersions (config::versionsOf (spaced.text, commented.text), v),
+    ok (commented.planted && spaced.planted && sameVersions (Config::versionsOf (spaced.text, commented.text), v),
         "a comment or spacing changes nothing");
     // Order counts where it means something: the main list, in presentation — so `all` moves and `sound` does not.
     const Plant reordered = plant (g_targetsText, "\"allStreaming\", \"lp\"", "\"lp\", \"allStreaming\"", "\"lp\"");
-    const auto r = reordered.planted ? config::versionsOf (reordered.text, g_engineText) : std::nullopt;
+    const auto r = reordered.planted ? Config::versionsOf (reordered.text, g_engineText) : std::nullopt;
     ok (r && r->all != v.all && r->sound == v.sound, "the main list reordered moves all, and not sound");
 }
 
 void theSoundIsWhatCanChangeAMaster()
 {
     felitronics::test::group ("sound: what can change a master; what only shows or prints moves all alone");
-    const config::Versions v = config::versions();
+    const config::Versions v = Config::versions();
     struct Case { config::Document document; std::string_view from, to, what; bool soundMoves; };
     const std::string spotifyRow = "spotify      = { group = \"streaming\", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 24, "
                                    "hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }\n";
@@ -437,7 +439,7 @@ void theSoundIsWhatCanChangeAMaster()
         const bool inTargets = c.document == config::Document::Targets;
         const Plant p = plant (inTargets ? g_targetsText : g_engineText, c.from, c.to, c.to);
         if (! p.planted) { ok (false, std::string (c.what) + ": the case has rotted"); continue; }
-        const auto w = inTargets ? config::versionsOf (p.text, g_engineText) : config::versionsOf (g_targetsText, p.text);
+        const auto w = inTargets ? Config::versionsOf (p.text, g_engineText) : Config::versionsOf (g_targetsText, p.text);
         const bool held = w && w->all != v.all && (w->sound != v.sound) == c.soundMoves;
         ok (held, std::string (c.what) + (c.soundMoves ? ": moves all and sound" : ": moves all, and not sound"));
     }
@@ -446,7 +448,7 @@ void theSoundIsWhatCanChangeAMaster()
 void theVersionsMoveWithEveryValue()
 {
     felitronics::test::group ("the versions: moved by every single value, sound by what can change a master, through both paths");
-    const config::Versions v = config::versions();
+    const config::Versions v = Config::versions();
 
     // THROUGH THE TEXT: every leaf of the parsed sources changed in turn, the tree written and hashed as a document.
     const auto targets = std::get<toml::Table> (toml::parse (g_targetsText));
@@ -463,7 +465,7 @@ void theVersionsMoveWithEveryValue()
             std::string path;
             if (! changeLeaf (root, down, leaves, "", path)) break;
             const std::string changed = toml::write (std::get<toml::Table> (root.data));
-            const auto w = doc == 0 ? config::versionsOf (changed, g_engineText) : config::versionsOf (g_targetsText, changed);
+            const auto w = doc == 0 ? Config::versionsOf (changed, g_engineText) : Config::versionsOf (g_targetsText, changed);
             if (! w) { all.push_back (v.all); continue; }
             all.push_back (w->all);
             const bool shown = presentation (doc, path);

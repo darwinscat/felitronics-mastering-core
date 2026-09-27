@@ -24,7 +24,7 @@ library as constexpr data (`felitronics_toml_embed`); nothing reads a file at ru
 repository makes felitronics-toml available before it, as it does core. A document the parser refuses stops the build at
 its line and column.
 
-**Read by schema — form and physics** (`<felitronics/session/Config.h>`): `config::load()` binds the documents to typed
+**Read by schema — form and physics** (`<felitronics/session/Config.h>`): `Config::load()` binds the documents to typed
 structs — every key with its type and its domain (a share within 0…1, a ramp whose ends cannot divide by zero, a series
 that does not shrink, a value on its knob's grid counted from the travel's start and checked exactly on the written
 decimals, a range another key states such as a target's loudness on the edit travel), checks across keys (a name that is
@@ -32,7 +32,7 @@ no target, a name given twice, an EQ band two devices share, a ramp law outside 
 default written out), and every key nobody read reported as unknown. The blocks the config feeds an analyzer — the low
 end, the crest, the sibilance-band bursts — are handed to that analyzer's own `storageFor()` at the source rates the
 product accepts and refused whole where it refuses: one source of truth for its domain. A problem is data: document,
-fault, key path, line and column; `config::bind()` runs the same schema over texts.
+fault, key path, line and column; `Config::bind()` runs the same schema over texts.
 
 **Every build runs the schema.** `felitronics_session_config_check`, a host tool compiled from the library's own schema,
 reads the documents before `felitronics::session` is built — a consumer's build and a build without tests included, under
@@ -47,8 +47,8 @@ config suite plants over sixty more, in-process.
 its default of none, the mono-bass block, …), so changing one is a deliberate test edit; its controls plant departures the
 schema admits and require them named.
 
-**The config's versions** (`config::versions()`): 64-bit FNV-1a hashes of both documents' normalised data — numbers as the
-bits of their double (−0 as +0), tables in key order, order kept in arrays — so spelling, key order, inline-or-not,
+**The config's versions** (`Config::versions()`): 64-bit FNV-1a hashes of both documents' normalised data — numbers as
+the bits of their double (−0 as +0), tables in key order, order kept in arrays — so spelling, key order, inline-or-not,
 comments and spacing move nothing; the target rows' written order counts in `all`. `all` covers every key; `sound`, what a
 recipe will record, is what can change a master — when unsure a key stays in — leaving out what is only shown, what
 prints a finding without switching a device (every observation threshold but polarity), what is measured after the

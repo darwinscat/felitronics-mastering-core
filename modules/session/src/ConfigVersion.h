@@ -5,8 +5,8 @@
 
 // THE CONFIG'S VERSIONS, ONE WALK FOR TWO TREES (internal to modules/session; Config.h has the public face). A 64-bit FNV-1a
 // hash of both documents' NORMALISED data, targets then engine. The same bytes are fed from the data compiled into the
-// library (toml::embedded::View — config::versions(), no allocation, which is why the C ABI can answer it) and from a
-// document parsed from text (toml::Table — config::versionsOf(), how the source files are hashed).
+// library (toml::embedded::View — Config::versions(), no allocation, which is why the C ABI can answer it) and from a
+// document parsed from text (toml::Table — Config::versionsOf(), how the source files are hashed).
 //
 // NORMALISED, so that what is no data does not move it:
 //   * a number — an integer or a decimal — is the 64 bits of its correctly rounded double, with −0 read as +0: 50, 50.0

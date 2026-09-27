@@ -216,7 +216,7 @@ if(FELITRONICS_BUILD_TESTS)
         target_link_options(felitronics_session_config_tests PRIVATE -sNODERAWFS=1)
     endif()
     # The suite hashes the embedded data itself, changed node by node: it embeds its own copy of the documents (by the same
-    # tool, from the same files) and reads src/ConfigVersion.h, the walk config::versions() is.
+    # tool, from the same files) and reads src/ConfigVersion.h, the walk config::Config::versions() is.
     felitronics_toml_embed(felitronics_session_config_tests INPUT config/targets.toml
                            NAMESPACE felitronics::session::config::testcopy NAME targets HEADER testcopy/targets.h)
     felitronics_toml_embed(felitronics_session_config_tests INPUT config/engine.toml

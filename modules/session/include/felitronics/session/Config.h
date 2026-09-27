@@ -13,9 +13,9 @@
 // felitronics::session::config — the numbers of the mastering session, as typed structs. Two TOML documents,
 // modules/session/config/targets.toml (what a master is made for) and modules/session/config/engine.toml (every other
 // number the session decides, measures, renders and reports with), are compiled into the library at build time as
-// constexpr data (felitronics-toml's felitronics_toml_embed); nothing reads a file at run time. load() binds them to the
-// structs below by schema — every key read with its type and its range, and every key the schema did not read reported —
-// so a typo is an error with a line and a column, never a silently ignored setting.
+// constexpr data (felitronics-toml's felitronics_toml_embed); nothing reads a file at run time. Config::load() binds
+// them to the structs below by schema — every key read with its type and its range, and every key the schema did not
+// read reported — so a typo is an error with a line and a column, never a silently ignored setting.
 //
 // THE DOCUMENTS SAY WHAT THE NUMBERS MEAN. Every struct here mirrors a table of a document and every field a key of the
 // same name — a small inline table's fields joined to its key's name (observations.hum.fromProminenceDb is
@@ -91,10 +91,10 @@ struct Targets
     std::vector<Target> targets;               // in the document's order
     Edit editLufs;                             // [edit] lufs
     Edit editTp;                               // [edit] tp
-};
 
-// The row whose key is `key`, or null.
-[[nodiscard]] const Target* find (const Targets& targets, std::string_view key) noexcept;
+    // The row whose key is `key`, or null.
+    [[nodiscard]] const Target* find (std::string_view key) const noexcept;
+};
 
 //==============================================================================
 // engine.toml
@@ -468,12 +468,6 @@ struct Engine
     BlindTest blindTest;
 };
 
-struct Config
-{
-    Targets targets;
-    Engine engine;
-};
-
 //==============================================================================
 // PROBLEMS — data, never text: which document, what is wrong, where (line and column, 1-based, the column counted in
 // characters), the key path in TOML spelling, and a stable name. The message a person reads is a shell's to write.
@@ -517,29 +511,11 @@ struct Problem
     std::uint32_t column = 0;
     std::string path;
     const char* code = "";                     // the fault's name, the parser's code for Syntax, the refusal's for Refused
+
+    [[nodiscard]] static const char* name (Document document) noexcept;   // "targets", "engine"
+    [[nodiscard]] static const char* name (Fault fault) noexcept;
+    [[nodiscard]] static const char* name (Refusal refusal) noexcept;
 };
-
-[[nodiscard]] const char* name (Document document) noexcept;   // "targets", "engine"
-[[nodiscard]] const char* name (Fault fault) noexcept;
-[[nodiscard]] const char* name (Refusal refusal) noexcept;
-
-struct Loaded
-{
-    Config config;
-    std::vector<Problem> problems;             // in the order found: the engine first, then the targets
-    [[nodiscard]] bool ok() const noexcept;    // no problem
-};
-
-// THE CONFIG THIS LIBRARY WAS BUILT WITH, bound by schema. Allocates; reads no file.
-[[nodiscard]] Loaded load();
-
-// The same schema over two documents a caller hands in — a tool, a test. A document that does not parse is one Syntax
-// problem and binds nothing; the other is still read.
-[[nodiscard]] Loaded bind (std::string_view targetsToml, std::string_view engineToml);
-
-// An embedded document as TOML, through felitronics-toml's canonical writer: the same data always gives the same bytes.
-// Comments are not data and are not kept. What `fcore_session config targets|engine` prints.
-[[nodiscard]] std::string text (Document document);
 
 // THE CONFIG'S VERSIONS — 64-bit FNV-1a hashes of the documents' NORMALISED data, targets then engine. Every number is
 // the bits of its correctly rounded double, −0 read as +0 (so 50, 50.0 and 50.00 are one value); every table is walked in
@@ -562,10 +538,42 @@ struct Versions
     std::uint64_t all = 0;
     std::uint64_t sound = 0;
 };
-[[nodiscard]] Versions versions() noexcept;
 
-// The versions of two documents given as text — the source files, say — by the same walk; nullopt when either does not
-// parse. For the library's own sources they equal versions().
-[[nodiscard]] std::optional<Versions> versionsOf (std::string_view targetsToml, std::string_view engineToml);
+//==============================================================================
+// THE CONFIG, and the functions that give it — static members, as Session's are: a public header declares no free
+// function (the session-laws lint, rule PUBLIC).
+
+struct Loaded;
+
+struct Config
+{
+    Targets targets;
+    Engine engine;
+
+    // THE CONFIG THIS LIBRARY WAS BUILT WITH, bound by schema. Allocates; reads no file.
+    [[nodiscard]] static Loaded load();
+
+    // The same schema over two documents a caller hands in — a tool, a test. A document that does not parse is one
+    // Syntax problem and binds nothing; the other is still read.
+    [[nodiscard]] static Loaded bind (std::string_view targetsToml, std::string_view engineToml);
+
+    // An embedded document as TOML, through felitronics-toml's canonical writer: the same data always gives the same
+    // bytes. Comments are not data and are not kept. What `fcore_session config targets|engine` prints.
+    [[nodiscard]] static std::string text (Document document);
+
+    // The config's versions (above), from the data compiled into the library; allocates nothing.
+    [[nodiscard]] static Versions versions() noexcept;
+
+    // The versions of two documents given as text — the source files, say — by the same walk; nullopt when either does
+    // not parse. For the library's own sources they equal versions().
+    [[nodiscard]] static std::optional<Versions> versionsOf (std::string_view targetsToml, std::string_view engineToml);
+};
+
+struct Loaded
+{
+    Config config;
+    std::vector<Problem> problems;             // in the order found: the engine first, then the targets
+    [[nodiscard]] bool ok() const noexcept;    // no problem
+};
 
 } // namespace felitronics::session::config

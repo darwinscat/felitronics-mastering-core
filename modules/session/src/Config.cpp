@@ -28,19 +28,19 @@ toml::embedded::View rootOf (Document document) noexcept
 }
 } // namespace
 
-Loaded load()
+Loaded Config::load()
 {
     const toml::Table targets = toml::embedded::toTable (rootOf (Document::Targets), detail::kTargetsSource);
     const toml::Table engine = toml::embedded::toTable (rootOf (Document::Engine), detail::kEngineSource);
     return detail::bindTables (&targets, &engine);
 }
 
-std::string text (Document document)
+std::string Config::text (Document document)
 {
     return toml::write (toml::embedded::toTable (rootOf (document)));
 }
 
-Versions versions() noexcept
+Versions Config::versions() noexcept
 {
     const auto targets = rootOf (Document::Targets);
     const auto engine = rootOf (Document::Engine);
