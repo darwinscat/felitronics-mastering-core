@@ -786,7 +786,7 @@ void everyRejectionIsAFact()
     // rejections a field makes.
     bool table = true, spoken = true;
     std::string misses;
-    const auto last = (std::size_t) session::Rejection::NoJobId;
+    const auto last = (std::size_t) session::Rejection::InvalidUtf8;
     for (std::size_t code = 1; code <= last; ++code)
     {
         const auto r = (session::Rejection) code;
@@ -815,8 +815,10 @@ void everyRejectionIsAFact()
         "None is no rejection, and a code past the last is none this library knows");
     bool inRange = true;
     for (const auto& shape : detail::kFacts)
-        inRange = inRange && ((std::size_t) shape.id < 100 || ((std::size_t) shape.id > 100 && (std::size_t) shape.id <= 100 + last));
-    ok (inRange, "no fact in the rejections' range but the rejections, and the phases' and errors' ranges still empty");
+        inRange = inRange && ((std::size_t) shape.id < 100 || ((std::size_t) shape.id > 100 && (std::size_t) shape.id <= 100 + last)
+            || ((std::size_t) shape.id >= 200 && (std::size_t) shape.id <= 204)
+            || ((std::size_t) shape.id >= 300 && (std::size_t) shape.id <= 305));
+    ok (inRange, "rejections, phases and session errors occupy only their own declared ranges");
 
     // THE FIELDS, held against the state machine's own walk of them (src/Devices.h).
     std::string why;
@@ -858,7 +860,7 @@ void everyRejectionIsAFact()
         { session::command::Master { 4 }, session::Rejection::NoSource,
           "Файл ещё не загружен — сначала загрузите его.", "No file is loaded yet — load one first." },
         { session::command::Cancel { 5, 1 }, session::Rejection::NoJob,
-          "Отменять нечего: мастер сейчас не делается.", "Nothing to cancel: no master is being made." },
+          "Отменять нечего: замер или мастер сейчас не выполняется.", "Nothing to cancel: no measurement or master is running." },
         { session::command::EditDevice { 6, hpf }, session::Rejection::NoSource,
           "Файл ещё не загружен — сначала загрузите его.", "No file is loaded yet — load one first." },
         { session::command::Load { 7, { channels, 1, 4, 48000 }, {} }, session::Rejection::NotFinite,
@@ -1064,7 +1066,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0xa17a7d0a730e1deaull;
+    constexpr std::uint64_t kPinned = 0x5bd860cade34cd53ull;
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");

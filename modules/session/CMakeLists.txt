@@ -57,7 +57,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     if(MSVC_VERSION LESS 1930)
         message(FATAL_ERROR "felitronics::session needs MSVC 2022 (19.30) or later (this is ${MSVC_VERSION})")
     endif()
-    set(FELITRONICS_SESSION_COMPILE_OPTIONS "SHELL:/fp:precise /EHs-c- /EHa- /GR- /we4530 /we4541")
+    set(FELITRONICS_SESSION_COMPILE_OPTIONS "SHELL:/fp:precise /EHs-c- /EHa- /GR- /we4530 /we4541 /we4062")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$"
        AND NOT "${CMAKE_CXX_COMPILER_FRONTEND_VARIANT}" STREQUAL "MSVC")
     file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/build-flags.txt FELITRONICS_SESSION_GNU_FLAGS REGEX "^-")
@@ -229,6 +229,11 @@ if(FELITRONICS_BUILD_TESTS)
     target_include_directories(felitronics_session_state_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_features(felitronics_session_state_tests PRIVATE cxx_std_20)
     add_test(NAME felitronics_session_state_tests COMMAND felitronics_session_state_tests)
+    add_executable(felitronics_session_event_tests tests/EventTests.cpp)
+    target_link_libraries(felitronics_session_event_tests PRIVATE felitronics::session felitronics::test_support)
+    target_include_directories(felitronics_session_event_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_features(felitronics_session_event_tests PRIVATE cxx_std_20)
+    add_test(NAME felitronics_session_event_tests COMMAND felitronics_session_event_tests)
 
     # HOSTILE FLAGS AHEAD OF THE LIBRARY'S. The library's sources compiled again, into test binaries, with a licence the
     # session refuses PREPENDED to the target's own options — the position a consumer's CMAKE_CXX_FLAGS or directory
@@ -601,4 +606,38 @@ if(FELITRONICS_BUILD_TESTS)
                              -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/consumer-compile-line.cmake)
         endif()
     endif()
+endif()
+
+# TypeScript and the compiled field walk are checked against the same named-field description.
+set(FELITRONICS_SESSION_TYPES ${CMAKE_CURRENT_BINARY_DIR}/snapshot.d.ts)
+add_custom_command(OUTPUT ${FELITRONICS_SESSION_TYPES}
+    COMMAND ${CMAKE_COMMAND} -DOUTPUT=${FELITRONICS_SESSION_TYPES}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec-schema.json
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/CodecSchema.h VERBATIM)
+add_custom_target(felitronics_session_types ALL DEPENDS ${FELITRONICS_SESSION_TYPES})
+add_dependencies(felitronics_session felitronics_session_types)
+if(FELITRONICS_BUILD_TESTS)
+    add_test(NAME felitronics_session_codec_types
+        COMMAND ${CMAKE_COMMAND} -DCHECK=ON -DOUTPUT=${FELITRONICS_SESSION_TYPES}
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake)
+    find_program(FELITRONICS_SESSION_NODE NAMES node nodejs REQUIRED)
+    add_executable(felitronics_session_codec_fixture tests/CodecFixture.cpp)
+    target_link_libraries(felitronics_session_codec_fixture PRIVATE felitronics::session)
+    target_include_directories(felitronics_session_codec_fixture PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_features(felitronics_session_codec_fixture PRIVATE cxx_std_20)
+    add_test(NAME felitronics_session_codec_encoded_types
+        COMMAND ${FELITRONICS_SESSION_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec-check.mjs
+                ${FELITRONICS_SESSION_TYPES} ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec-schema.json
+                ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:felitronics_session_codec_fixture>)
+    include(tests/codec-controls.cmake)
+    foreach(control emit snapshot)
+        add_test(NAME felitronics_session_${control}_limit
+            COMMAND ${CMAKE_COMMAND} "-DEXECUTABLE=$<TARGET_FILE:felitronics_session_event_tests>"
+                    "-DEMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR}" -DCONTROL=${control}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/must-trap.cmake)
+        set_tests_properties(felitronics_session_${control}_limit PROPERTIES
+                            SKIP_REGULAR_EXPRESSION "debug bound is disabled")
+    endforeach()
 endif()
