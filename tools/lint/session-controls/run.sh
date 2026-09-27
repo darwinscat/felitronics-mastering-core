@@ -26,6 +26,7 @@ LINTARGS=()
 SESSION_CPP=modules/session/src/Session.cpp
 SESSION_H=modules/session/include/felitronics/session/Session.h
 CONFIG_H=modules/session/include/felitronics/session/Config.h
+CONFIG_SCHEMA=modules/session/src/ConfigSchema.cpp
 SOURCES=modules/session/sources.txt
 SRC=modules/session/src
 FACADE=tools/wasm/fc_session.cpp
@@ -35,7 +36,7 @@ node "$LINT" "${LINTARGS[@]+"${LINTARGS[@]}"}" > /dev/null \
     || { echo "the tree is not clean before the controls — they would prove nothing"; node "$LINT" "${LINTARGS[@]+"${LINTARGS[@]}"}"; exit 1; }
 
 BK="$(mktemp -d)"
-EDITED=("$SESSION_CPP" "$SESSION_H" "$CONFIG_H" "$SOURCES" "$FACADE" "$ZONE")
+EDITED=("$SESSION_CPP" "$SESSION_H" "$CONFIG_H" "$CONFIG_SCHEMA" "$SOURCES" "$FACADE" "$ZONE")
 for i in "${!EDITED[@]}"; do cp "${EDITED[$i]}" "$BK/$i"; done
 PLANTED=()
 restore () {
@@ -120,11 +121,12 @@ append guarded-throw.inc     "$SESSION_CPP"; expect "a throw inside #if _MSC_VER
 # --- CONDITIONAL: a platform branch in a source of the session
 append conditional.inc       "$SESSION_CPP"; expect "#if defined(__APPLE__)"              "$SESSION_CPP:$LINE: [CONDITIONAL]"
 
-# --- NOSYMBOL: an atomic, a cycle counter, an asm label, the FPU's flush-to-zero set by hand
+# --- NOSYMBOL: an atomic, a cycle counter, an asm label, the FPU's flush-to-zero and the rounding mode set by hand
 append atomic.inc            "$SESSION_CPP"; expect "__atomic_add_fetch"                  "$SESSION_CPP:$LINE: [NOSYMBOL]"
 append cycle-counter.inc     "$SESSION_CPP"; expect "__builtin_readcyclecounter"          "$SESSION_CPP:$LINE: [NOSYMBOL]"
 append asm-label.inc         "$SESSION_CPP"; expect "an asm label"                        "$SESSION_CPP:$LINE: [NOSYMBOL]"
 append flush-to-zero.inc     "$SESSION_CPP"; expect "core's ScopedFlushToZero"            "$SESSION_CPP:$LINE: [NOSYMBOL]"
+append mxcsr-macro.inc       "$CONFIG_SCHEMA"; expect "_MM_SET_ROUNDING_MODE in ConfigSchema.cpp" "$CONFIG_SCHEMA:$LINE: [NOSYMBOL]"
 
 # --- ORDER: an unordered container, an unstable sort, hash<> unqualified, a using-directive
 append unordered.inc         "$SESSION_CPP"; expect "std::unordered_map"                  "$SESSION_CPP:$LINE: [ORDER]"
