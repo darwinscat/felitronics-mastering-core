@@ -5,6 +5,7 @@
 #include "Driver.h"
 #include "FpEnvironmentControl.h"
 #include "JsonNumber.h"
+#include "SnapshotStorage.h"
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Snapshot.h>
 #include <felitronics_test.h>
@@ -444,6 +445,13 @@ void environment()
 }
 int main (int argc, char** argv)
 {
+    if (argc == 2 && std::string_view (argv[1]) == "--snapshot-limit")
+    {
+        const auto bytes = detail::snapshotTextBytes (UINT32_MAX, std::uint32_t (1));
+        std::puts ("snapshot allocation limit reached"); std::fflush (stdout);
+        (void) detail::snapshotAllocationSize<std::uint32_t> (bytes);
+        return 0; // Reaching this line means the allocation guard failed.
+    }
     if (argc == 2 && std::string_view (argv[1]) == "--emit-limit")
     {
 #if defined (NDEBUG)
@@ -457,6 +465,12 @@ int main (int argc, char** argv)
         return 0; // Reaching this line means the debug bound failed.
 #endif
     }
+    const auto max = std::numeric_limits<std::uint32_t>::max();
+    ok (detail::snapshotTextBytes (max, max) == 8589934590ull, "combined text widens each 32-bit size before adding");
+    ok (detail::snapshotStorage (max, max, max, max, max, max) == 25769803770ull,
+        "snapshot demand widens all six 32-bit terms before adding");
+    ok (detail::snapshotAllocationSize<std::uint32_t> (max) == max,
+        "the largest representable allocation size is accepted without allocating");
     pump(); tableBetweenSteps(); codec(); numbers(); environment(); contracts();
     return felitronics::test::report();
 }

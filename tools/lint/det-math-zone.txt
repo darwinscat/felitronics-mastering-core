@@ -114,3 +114,4 @@ zone   modules/session/include/felitronics/session/Snapshot.h  the session publi
 zone   modules/session/src/CodecSchema.h  the named fields generated from the codec description
 zone   modules/session/src/JsonNumber.h  exact decimal JSON and binary64 rounding without host math
 zone   modules/session/src/Utf8.h  Unicode scalar validation shared by load and JSON
+zone   modules/session/src/SnapshotStorage.h  widened snapshot demand and allocation bounds

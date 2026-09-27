@@ -57,7 +57,7 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "MSVC")
     if(MSVC_VERSION LESS 1930)
         message(FATAL_ERROR "felitronics::session needs MSVC 2022 (19.30) or later (this is ${MSVC_VERSION})")
     endif()
-    set(FELITRONICS_SESSION_COMPILE_OPTIONS "SHELL:/fp:precise /EHs-c- /EHa- /GR- /we4530 /we4541")
+    set(FELITRONICS_SESSION_COMPILE_OPTIONS "SHELL:/fp:precise /EHs-c- /EHa- /GR- /we4530 /we4541 /we4062")
 elseif(CMAKE_CXX_COMPILER_ID MATCHES "^(GNU|Clang|AppleClang)$"
        AND NOT "${CMAKE_CXX_COMPILER_FRONTEND_VARIANT}" STREQUAL "MSVC")
     file(STRINGS ${CMAKE_CURRENT_SOURCE_DIR}/build-flags.txt FELITRONICS_SESSION_GNU_FLAGS REGEX "^-")
@@ -632,7 +632,12 @@ if(FELITRONICS_BUILD_TESTS)
                 ${FELITRONICS_SESSION_TYPES} ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec-schema.json
                 ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:felitronics_session_codec_fixture>)
     include(tests/codec-controls.cmake)
-    add_test(NAME felitronics_session_contract_controls
-        COMMAND ${FELITRONICS_SESSION_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-contract-controls.mjs
-                ${PROJECT_SOURCE_DIR} ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:felitronics_session_event_tests>)
+    foreach(control emit snapshot)
+        add_test(NAME felitronics_session_${control}_limit
+            COMMAND ${CMAKE_COMMAND} "-DEXECUTABLE=$<TARGET_FILE:felitronics_session_event_tests>"
+                    "-DEMULATOR=${CMAKE_CROSSCOMPILING_EMULATOR}" -DCONTROL=${control}
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/must-trap.cmake)
+        set_tests_properties(felitronics_session_${control}_limit PROPERTIES
+                            SKIP_REGULAR_EXPRESSION "debug bound is disabled")
+    endforeach()
 endif()

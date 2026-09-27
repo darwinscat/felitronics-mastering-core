@@ -41,6 +41,7 @@ public:
     Snapshot& operator= (const Snapshot&) = delete;
     [[nodiscard]] const SnapshotView& view() const noexcept;
     [[nodiscard]] static std::uint64_t storageFor (const SnapshotView& view) noexcept;
+    // Traps before allocating if combined text or reading-point storage cannot fit size_t, in every build.
     [[nodiscard]] static Snapshot copy (const SnapshotView& view) noexcept;
 private:
     friend class Codec;

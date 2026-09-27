@@ -48,7 +48,7 @@ The laws are felitronics-core's (`docs/DSP-ARCHITECTURE.md` §2), numbered as th
 | **8a**, **11a** the sample clock | **no** | the session has no stream of samples and no clock |
 | **9** no `long double` | yes | core's long-double lint reads every `modules/*/include` and `modules/*/src`, this module's included, and the wasm tier's artifact gate reads every emitted object |
 | **10** FP contraction is stated | yes — **as `off`** | the target's own flags in one `SHELL:` group, the compile line read back (this build's and a consumer's), the hostile-flags tests, the library's probes asked from a contracting caller, and the source lint's pragma and attribute rules. Core states `on` for its tree; the session's numbers are compared across rows, native and wasm, and baseline wasm has no fused multiply-add, so a contracting native build would disagree with the module. The library's flags reach its own objects only: a program that links it compiles **every** translation unit with the same FP flags (below, "What the flags do not reach"). The sign and payload of a NaN, and the floating-point exception masks and flags, are outside every check here, as core's law 10 leaves them |
-| **11**, **11b** a request that cannot be honoured is refused whole; checks in a fixed order | yes | `create()` checks the floating-point environment and the config it reads, then allocates: a refused create requested nothing (`felitronics_session_tests`). Every command runs the checks `Commands.h` declares, in their order — the thread's floating-point environment, then the table — before it touches anything, and a rejected one changed nothing — the revision included. A `load` runs its checks, then disarms, then writes (check → disarm → write), so a rejected load, too, changed nothing: `felitronics_session_state_tests` compares the whole session before and after every rejection it produces, produces every rejection code, and holds the order with requests wrong in several ways. The C boundary's checks run in its header's order and a refused call writes nothing and allocates nothing (`felitronics_session_abi_tests`). `fcore_session` reads and checks a whole script before it creates a session |
+| **11**, **11b** a request that cannot be honoured is refused whole; checks in a fixed order | yes | `create()` checks the floating-point environment and the config it reads, then allocates: a refused create requested nothing (`felitronics_session_tests`). Every command runs the checks `Commands.h` declares, in their order — the thread's floating-point environment, then the table — before changing session state. A rejection publishes its event and advances `seq`; the session’s state and revision do not change. A `load` runs its checks, then disarms, then writes (check → disarm → write), so a rejected load, too, leaves state and revision unchanged while publishing its rejection: `felitronics_session_state_tests` compares the whole session before and after every rejection it produces, produces every rejection code, and holds the order with requests wrong in several ways. The C boundary's checks run in its header's order and a refused call writes nothing and allocates nothing (`felitronics_session_abi_tests`). `fcore_session` reads and checks a whole script before it creates a session |
 | **11d** memory is declared before the work | yes | `Session::createBytes()` is the demand of `create()`, counted by the expression that sizes the request, and `Session::check()` gives the demand of every command before it runs — computed by the same function `apply()` runs first; the declared-budget harness (`modules/session/tests/DeclaredBudget.h`, on core's one allocation counter) holds `create()` and every command to *declared ≥ requested* (exactly equal, where the request is one exact allocation), holds `check()`, every rejection and every transition to nothing requested, and is itself shown to fail on a sample that under-declares. The event suite also holds `stepBytes()`, `snapshotBytes()`, snapshot copy, and codec size queries and work to their declared demands (below). The demand is checked in C++; the draft C ABI does not forward it. The C boundary adds nothing to it (its table is static) and keeps the poison |
 
 Not listed, and why: **3** (float in the hot path) — there is no hot path; **11c** (a pause is silence) — there are no
@@ -73,7 +73,7 @@ linker keeps of the header-inline code it shares with the program (below). The f
 de-duplication cannot remove a member of it: a parent that states `add_compile_options(-ffp-contract=off)` first used to
 make CMake drop the library's own later `-ffp-contract=off`, leaving core's `-ffp-contract=on` last on the line.
 
-- gcc, clang, emscripten: `modules/session/build-flags.txt` — `-fno-fast-math -ffp-contract=off -fno-exceptions -fno-rtti`,
+- gcc, clang, emscripten: `modules/session/build-flags.txt` — `-fno-fast-math -ffp-contract=off -fno-exceptions -fno-rtti -Werror=switch`,
   in that order: what `-fno-fast-math` does to an `-ffp-contract=` before it differs between compilers (Apple clang 21
   keeps an earlier `fast`, Apple clang 14 resets it to `on`), so the contraction switch is stated after it. `tools/wasm/build.sh` reads the
   same file, so the library and the wasm module are compiled with one definition of the flags.
@@ -453,9 +453,12 @@ A stale completion changes nothing, including when the same samples are loaded a
 `Snapshot` is a move-only immutable owned value. Its const view includes state, revision, both project layers, target
 name, source metadata and identity, both jobs, the captured master recipe, kept masters, progress and reading arrays.
 A retained snapshot survives later commands and destruction of its session. Calls, including snapshot acquisition,
-remain on one thread at a time; a completed value can be handed to a shell independently.
+remain on one thread at a time; a completed value can be handed to a shell independently. Demand sums widen each
+term to `uint64_t` before addition. Copy traps before allocating, in every configuration, if combined text or
+reading-point storage exceeds `size_t`; it never allocates a wrapped size.
 
-`Codec` exchanges named-field JSON from `tools/session-codec-schema.json`. Object order is immaterial; missing,
+`tools/session-codec-schema.json` is the one hand-edited codec description. `Codec` exchanges its named-field JSON.
+Object order is immaterial; missing,
 duplicate, unknown and ill-typed fields are refused. Rows are arrays. Optional edits use null; uint64 identities use
 decimal strings so JavaScript loses no bits; byte counts use whole double values strictly below 2^53. Non-finite doubles
 use the explicit strings `"-Infinity"`, `"Infinity"`, `"NaN"`. Finite doubles use exact decimal numbers, with bounded
@@ -466,9 +469,12 @@ The description generates the compiled field walk (`src/CodecSchema.h`) and `sna
 `modules/session/` directory. Every build verifies the checked-in walk against the description; the declaration test
 compares the generated TypeScript with that same description. Generated structured bindings hold every record's arity,
 field assertions hold its types, and each described enum value has its numeric assertion; an undescribed enum fails
-compilation. Offline Node checks actual encoded fixtures against `snapshot.d.ts`, covering every wire mapping, optional
-alternative and record. Compile controls add a field, reorder an enum and request an undescribed enum; all must fail. `tools/wasm/build.sh` also emits `snapshot.d.ts` beside
-the modules. Regenerate the field walk with `cmake -DUPDATE=ON -P tools/session-codec.cmake`.
+compilation. An exhaustive generated switch with no default catches appended members: the session always compiles
+with `-Werror=switch` on gcc/clang/emscripten and `/we4062` on MSVC, including consumer builds without tests. Offline Node
+checks actual encoded fixtures against `snapshot.d.ts`, covering every wire mapping, optional alternative and record.
+Compile controls add a field, reorder an enum, append to each described enum and request an undescribed enum; all must
+fail. `tools/wasm/build.sh` also emits `snapshot.d.ts` beside the modules. Regenerate the field walk with
+`cmake -DUPDATE=ON -P tools/session-codec.cmake`.
 
 | operation | demand before work | evidence |
 |---|---|---|
