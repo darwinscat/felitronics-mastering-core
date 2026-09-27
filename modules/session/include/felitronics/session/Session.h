@@ -80,7 +80,7 @@ struct Source
     std::string_view name;
 };
 
-namespace detail { struct Driver; }
+namespace detail { struct Driver; struct Inspector; }
 
 //==============================================================================
 // felitronics::session::Session — the mastering session: the object a shell (the web worker through the fcsession
@@ -167,6 +167,9 @@ public:
 
 private:
     friend struct detail::Driver;   // the session's own transitions, driven by the work that ends (src/Driver.h)
+    // Defined by the state suite alone, to stand a session where only billions of calls would take it (its last job
+    // id); the library defines none.
+    friend struct detail::Inspector;
 
     Session() noexcept = default;
 

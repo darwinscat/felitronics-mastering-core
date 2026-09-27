@@ -52,6 +52,13 @@
 #include <vector>
 
 using namespace felitronics::session;
+
+// The state suite's own seam into a session (Session.h names it a friend; the library defines none): a session whose
+// jobs have spent their ids, which only billions of masters would reach otherwise.
+struct felitronics::session::detail::Inspector
+{
+    static void lastJob (Session& s, JobId last) noexcept { s.lastJob_ = last; }
+};
 using felitronics::test::ok;
 using felitronics::session::detail::Driver;
 namespace budget = felitronics::session::testing;
@@ -66,8 +73,8 @@ constexpr const char* kColumnNames[] = { "Empty", "Loaded", "Measured1", "Measur
 constexpr const char* kEventNames[] = { "Measured1", "Measured2", "Mastered" };
 constexpr const char* kRejectionNames[] = { "None", "FloatingPointEnvironment", "NoSource", "NotPlaced", "NotMeasured",
     "Busy", "NoJob", "NoMaster", "ManualOff", "UnknownTarget", "NotOffered", "UnknownJob", "UnknownMaster", "NoFields",
-    "NotFinite", "NotOneOf", "OutOfTravel", "OffStep", "BadChannels", "BadRate", "NoAudio", "TooLong" };
-constexpr auto kLastRejection = Rejection::TooLong;
+    "NotFinite", "NotOneOf", "OutOfTravel", "OffStep", "BadChannels", "BadRate", "NoAudio", "TooLong", "NoJobId" };
+constexpr auto kLastRejection = Rejection::NoJobId;
 static_assert (std::size (kRejectionNames) == std::size_t (kLastRejection) + 1, "a name for every rejection");
 
 std::string nameOf (Rejection r)
@@ -788,6 +795,25 @@ void aMasterKeepsItsRecipe()
         "kept under its job's id, with the recipe it was asked with");
 }
 
+void jobIds()
+{
+    felitronics::test::group ("job ids: never 0, never twice in a session's life — the last one issued, a master is rejected");
+    Situation x = situation (Column::Measured1);
+    Session& s = *x.s;
+    const JobId before = x.kept;
+    ok (accepted (s, loadOf (x.audio, 1)) && Driver::measured1 (s), "a new source, measured");
+    const Answer again = s.apply (command::Master { 2 });
+    ok (again.rejection == Rejection::None && again.job == before + 1,
+        "the next job after a load is numbered on from the last, not again from 1 (" + std::to_string (again.job) + ")");
+    ok (accepted (s, command::Cancel { 3, again.job }), "cancelled");
+    detail::Inspector::lastJob (s, std::numeric_limits<JobId>::max() - 1);
+    const Answer last = s.apply (command::Master { 4 });
+    ok (last.rejection == Rejection::None && last.job == std::numeric_limits<JobId>::max(), "the last id is issued");
+    ok (accepted (s, command::Cancel { 5, last.job }), "cancelled");
+    rejectedWhole (s, command::Master { 6 }, Rejection::NoJobId, kNoField, "a master after the last id");
+    ok (s.job() == 0 && ! s.mastering(), "and no job runs — none numbered 0");
+}
+
 void aLoadDisarms()
 {
     felitronics::test::group ("load: disarm, then write — nothing of the old source stays beside the new");
@@ -932,6 +958,7 @@ int main()
     theOtherRejections();
     memoryIsDeclared();
     aMasterKeepsItsRecipe();
+    jobIds();
     aLoadDisarms();
     theSourceHash();
     everyRejectionWasProduced();

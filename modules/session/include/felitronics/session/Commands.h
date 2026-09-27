@@ -76,10 +76,13 @@ enum class Rejection : std::uint8_t
     BadRate,                    // a sample rate below 8000 Hz (felitronics-core's lowest)
     NoAudio,                    // no frames, or no data
     TooLong,                    // more samples than this machine's memory can address
+    // what the command names (continued)
+    NoJobId,                    // every job id of the session's life has been issued: no master can be asked again
 };
 
 using CommandId = std::uint64_t;   // the shell's own number for a request, given back in its answer
-using JobId = std::uint32_t;       // a master being made: 1, 2, … in the order asked; 0 is no job
+using JobId = std::uint32_t;       // a master being made: 1, 2, … in the order asked, never 0 and never twice in a
+                                   // session's life (the last one issued, the session asks for no master again)
 using MasterId = std::uint32_t;    // a master kept: the id of the job that made it
 
 inline constexpr std::uint8_t kNoField = 0xFF;
@@ -167,7 +170,7 @@ inline constexpr std::size_t kColumns = 6;
 //   2. STATE    this table: the command's cell in the session's column
 //   3. MANUAL   the device panel's commands — editDevice, revertEdits — need the manual mode (ManualOff)
 //   4. NAMES    what the command names: a target (setTarget), a device offered for this target and source (editDevice,
-//               revertEdits), the master being made (cancel), a master kept (forget)
+//               revertEdits), an id left for a new job (master), the master being made (cancel), a master kept (forget)
 //   5. FIELDS   an edit or a revert touches a field (NoFields); then field by field, in the order written: finite, one of
 //               the field's values, on its travel, on its step
 //   6. AUDIO    a load's audio: its channels, its rate, its frames, its size, then every sample finite

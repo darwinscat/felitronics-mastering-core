@@ -244,8 +244,8 @@ from the code, and ctest holds the text between the markers below to that output
 
 **The checks run in one declared order, the same for every command**, and the first that fails is the answer:
 1. the calling thread's floating-point environment; 2. the table; 3. the manual mode, for the device panel's commands
-(`editDevice`, `revertEdits`); 4. what the command names — a target, a device offered for this target and source, the
-master being made, a master kept; 5. the fields — at least one touched, then each touched one in the order its struct
+(`editDevice`, `revertEdits`); 4. what the command names — a target, a device offered for this target and source, an
+id left for a new job, the master being made, a master kept; 5. the fields — at least one touched, then each touched one in the order its struct
 writes them: finite, one of its values, on its travel, on its step; 6. a load's audio — one or two channels, a rate of
 at least felitronics-core's 8000 Hz, frames and data, a size the machine can address, every sample finite. A rejection
 on a field names it by its place in its struct. `Session::check()` runs exactly these and says what the command would
@@ -281,7 +281,8 @@ carries one, the dither where the target's bit depth is one it serves, mono bass
   are asked for — and then WRITES the new source: its samples, channel after channel, its name and its hash (64-bit
   FNV-1a of its rate, channels, frames and every sample's bits). The target and its edited numbers stay.
 - **`master`** captures the recipe — the project as it is, the source's hash, the config's sound version — and starts a
-  job; the project may change meanwhile, and the master renders its recipe. When it is done the session keeps it under
+  job, numbered on from the last for the session's whole life, a load included: an id is never 0 and never issued twice,
+  and once the last is issued a master is rejected (`NoJobId`); the project may change meanwhile, and the master renders its recipe. When it is done the session keeps it under
   its job's id; `cancel(job)` ends the overlay, `forget(master)` lets a kept master go.
 
 **Memory.** `check()` says, before the work, what a command will ask the heap for, by the expressions that size its

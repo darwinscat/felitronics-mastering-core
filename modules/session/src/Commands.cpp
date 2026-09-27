@@ -234,6 +234,8 @@ Checked Session::check (const Request& request) const noexcept
     }
     if (std::get_if<command::Master> (&request) != nullptr)
     {
+        // 4. NAMES: an id for the job, never 0 and never one issued before.
+        if (lastJob_ == std::numeric_limits<JobId>::max()) return rejected (Rejection::NoJobId);
         // THE WORK'S BYTES: room for one more master kept — its recipe is kept when it is done, and that must not ask
         // the heap at the end of a render — as one exact reserve, unless the room is there already.
         const bool room = masterRoom_ > masterCount_;
