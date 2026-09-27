@@ -154,8 +154,10 @@ template <class D, class V> void eachDevice (D& devices, V&& v)
 // numbers the devices start from, from the config: [stages] for the ticks, the target's row for what the target decides
 // (the high-pass's slope and floor, the mono-bass crossover, the needles off where the target has no peak clipper, the
 // dither at its bit depth, the low shelf's gain, the glue of [glue] byTarget) and each device's section for the rest.
-// Tilt starts at 0 dB: the machine does not touch timbre. This is the whole of the machine's decision: the session places
-// the devices on these numbers when the first measurement ends, and a change of target places them again.
+// Tilt starts at 0 dB: the machine does not touch timbre. These are the config's defaults, not a decision taken from a
+// measurement — no planner reads the measurements here, so mono bass, which [stages] leaves off, is off. The session
+// places the devices on these numbers when the first measurement ends, and a change of target after that places them
+// again.
 void placeMachine (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices) noexcept;
 
 // Is `device` offered for the target in row `row` and a source of `channels` channels? The low shelf where the target

@@ -51,7 +51,7 @@ struct Created
 };
 
 // THE RECIPE OF A MASTER — what a master is made from, captured when it is asked for: the project as it was then (the
-// machine's decisions included), the source it renders and the config's sound version. Two masters with equal recipes,
+// machine's layer included), the source it renders and the config's sound version. Two masters with equal recipes,
 // made by one release, are one master.
 struct Recipe
 {

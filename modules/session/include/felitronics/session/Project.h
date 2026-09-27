@@ -7,20 +7,24 @@
 #include <optional>
 
 //==============================================================================
-// felitronics::session — THE PROJECT: the one structure that holds what a person and the machine decided about a
-// master — the target and a person's edits of its numbers, the manual mode, and every device's parameters. The session
+// felitronics::session — THE PROJECT: the one structure that holds what a master is made from — the target and a
+// person's edits of its numbers, the manual mode, and every device's parameters. The session
 // keeps one, changes it only through its commands (Commands.h), and moves its revision with every change; the project
 // file is this structure printed.
 //
 // ONE PARAMETER FORM PER DEVICE. A device's parameters are its knobs, as typed fields with the knobs' names — no string
 // addresses anywhere. Each device's fields are written ONCE, below, as a template over the FORM a field takes, and used
 // in three forms:
-//   Value    every field says a value                    the machine's layer: always complete
+//   Value    every field says a value                    the machine's layer: complete once the devices are placed
 //   Touched  a field says a value only where touched     a person's layer: a touched field belongs to the person, even
 //                                                        where its number equals the machine's
 //   Mark     a field says yes or no                      which fields: what revertEdits takes back
 // So the machine's layer, a person's edits and the mask of a revert cannot disagree on a field's name or type: they are
-// one list. What sounds is the machine's layer with a person's touched fields over it.
+// one list. A master is made from the machine's layer with a person's touched fields over it.
+//
+// THE MACHINE'S LAYER IS THE CONFIG'S DEFAULTS for the target and the source (src/Devices.h), placed when the first
+// measurement ends and at its types' zeros before. No planner reads the measurements here: nothing in it is a decision
+// taken from one, and mono bass — which the defaults leave off — is off.
 //
 // The units and the knobs' travels are the config's (modules/session/config/engine.toml, the section of each device);
 // they are not repeated here.
