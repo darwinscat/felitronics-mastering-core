@@ -27,12 +27,14 @@ SESSION_CPP=modules/session/src/Session.cpp
 SESSION_H=modules/session/include/felitronics/session/Session.h
 SOURCES=modules/session/sources.txt
 SRC=modules/session/src
+FACADE=tools/wasm/fc_session.cpp
+ZONE=tools/lint/det-math-zone.txt
 
 node "$LINT" "${LINTARGS[@]+"${LINTARGS[@]}"}" > /dev/null \
     || { echo "the tree is not clean before the controls — they would prove nothing"; node "$LINT" "${LINTARGS[@]+"${LINTARGS[@]}"}"; exit 1; }
 
 BK="$(mktemp -d)"
-EDITED=("$SESSION_CPP" "$SESSION_H" "$SOURCES")
+EDITED=("$SESSION_CPP" "$SESSION_H" "$SOURCES" "$FACADE" "$ZONE")
 for i in "${!EDITED[@]}"; do cp "${EDITED[$i]}" "$BK/$i"; done
 PLANTED=()
 restore () {
@@ -56,6 +58,16 @@ expect () {
     restore
     echo "control $n ok: $1 — $(grep -m1 -F -- "$2" <<< "$out" | cut -c1-150)"
 }
+# expect_clean <what was changed> — the lint must PASS (a correct variant it must not refuse)
+expect_clean () {
+    n=$((n + 1))
+    local out
+    if ! out=$(node "$LINT" "${LINTARGS[@]+"${LINTARGS[@]}"}" 2>&1); then
+        restore; echo "CONTROL FAILED ($n): the lint refused $1:"; echo "$out"; exit 1
+    fi
+    restore
+    echo "control $n ok: $1 — clean"
+}
 # append <fixture> <file> — the fixture's lines added at the end of <file>; LINE becomes the line it marks // VIOLATION
 append () {
     local before
@@ -75,10 +87,29 @@ append clock-include.inc     "$SESSION_CPP"; expect "#include <chrono>"         
 append dot-include.inc       "$SESSION_CPP"; expect "#include <./chrono>" "$SESSION_CPP:$LINE: [INCLUDE]"
 append case-include.inc      "$SESSION_CPP"; expect "#include <Memory>"                   "$SESSION_CPP:$LINE: [INCLUDE]"
 
-# --- PRAGMA: a local contraction switch, the operator spelling, a per-function optimisation attribute
+# --- INCLUDE: a felitronics header that is not admitted by name
+append core-header.inc       "$SESSION_CPP"; expect "#include <felitronics/core/FlushToZero.h>" "$SESSION_CPP:$LINE: [INCLUDE]"
+
+# --- PRAGMA: a local contraction switch, the operator spelling
 append fp-pragma.inc         "$SESSION_CPP"; expect "#pragma clang fp contract(fast)"     "$SESSION_CPP:$LINE: [PRAGMA]"
 append pragma-operator.inc   "$SESSION_CPP"; expect "_Pragma(...)"                        "$SESSION_CPP:$LINE: [PRAGMA]"
-append optimize-attribute.inc "$SESSION_CPP"; expect "[[gnu::optimize]]"                  "$SESSION_CPP:$LINE: [PRAGMA]"
+
+# --- ATTRIBUTE: per-function optimisation, alone and second in a list; a section, in three spellings
+append optimize-attribute.inc "$SESSION_CPP"; expect "[[gnu::optimize]]"                  "$SESSION_CPP:$LINE: [ATTRIBUTE]"
+append attribute-list.inc    "$SESSION_CPP"; expect "[[nodiscard, gnu::optimize]]"        "$SESSION_CPP:$LINE: [ATTRIBUTE]"
+append section-attribute.inc "$SESSION_CPP"; expect "[[gnu::section]]"                    "$SESSION_CPP:$LINE: [ATTRIBUTE]"
+append gnu-attribute.inc     "$SESSION_CPP"; expect "__attribute__((__section__))"        "$SESSION_CPP:$LINE: [ATTRIBUTE]"
+append using-attribute.inc   "$SESSION_CPP"; expect "[[using gnu: section]]"              "$SESSION_CPP:$LINE: [ATTRIBUTE]"
+
+# --- MACRO, DIGRAPH, DIRECTIVE: a #define, token pasting, a directive behind %:, #line
+append macro-define.inc      "$SESSION_CPP"; expect "#define"                             "$SESSION_CPP:$LINE: [MACRO]"
+append token-paste.inc       "$SESSION_CPP"; expect "a ## b"                              "$SESSION_CPP:$LINE: [MACRO]"
+append digraph.inc           "$SESSION_CPP"; expect "%:define"                            "$SESSION_CPP:$LINE: [DIGRAPH]"
+append line-directive.inc    "$SESSION_CPP"; expect "#line"                               "$SESSION_CPP:$LINE: [DIRECTIVE]"
+
+# --- the lexer: a keyword split by a backslash-newline, a u8 character literal before a throw
+append line-splice.inc       "$SESSION_CPP"; expect "thr\\<newline>ow"                     "$SESSION_CPP:$LINE: [EXCEPTIONS]"
+append digit-separator.inc   "$SESSION_CPP"; expect "u8'0' before a throw"                "$SESSION_CPP:$LINE: [EXCEPTIONS]"
 
 # --- EXCEPTIONS: a throw only MSVC compiles, in a branch every other row preprocesses away
 append guarded-throw.inc     "$SESSION_CPP"; expect "a throw inside #if _MSC_VER"         "$SESSION_CPP:$LINE: [EXCEPTIONS]"
@@ -91,12 +122,27 @@ append atomic.inc            "$SESSION_CPP"; expect "__atomic_add_fetch"        
 append cycle-counter.inc     "$SESSION_CPP"; expect "__builtin_readcyclecounter"          "$SESSION_CPP:$LINE: [NOSYMBOL]"
 append asm-label.inc         "$SESSION_CPP"; expect "an asm label"                        "$SESSION_CPP:$LINE: [NOSYMBOL]"
 
-# --- ORDER: an unordered container, an unstable sort
+# --- ORDER: an unordered container, an unstable sort, hash<> unqualified, a using-directive
 append unordered.inc         "$SESSION_CPP"; expect "std::unordered_map"                  "$SESSION_CPP:$LINE: [ORDER]"
 append unstable-sort.inc     "$SESSION_CPP"; expect "std::sort"                           "$SESSION_CPP:$LINE: [ORDER]"
+append unqualified-hash.inc  "$SESSION_CPP"; expect "hash<int> after using std::hash"     "$SESSION_CPP:$LINE: [ORDER]"
+append using-namespace.inc   "$SESSION_CPP"; expect "using namespace std"                 "$SESSION_CPP:$LINE: [ORDER]"
 
-# --- BODY: a function body in the public header
+# --- BODY and PUBLIC: a function body in the public header; a variable it defines, at namespace scope and as a member
 append header-body.inc       "$SESSION_H";   expect "a body in Session.h"                 "$SESSION_H:$LINE: [BODY]"
+append header-inline-var.inc "$SESSION_H";   expect "inline int in Session.h"             "$SESSION_H:$LINE: [PUBLIC]"
+append header-static-member.inc "$SESSION_H"; expect "inline static member in Session.h"  "$SESSION_H:$LINE: [PUBLIC]"
+
+# --- THE C BOUNDARY, under the same rules and no further than its allowance: a second macro, a second platform branch,
+# --- the console, its build guards taken away, its zone line taken away
+append facade-define.inc     "$FACADE";      expect "a #define in fc_session.cpp"         "$FACADE:$LINE: [MACRO]"
+append facade-conditional.inc "$FACADE";     expect "#if defined(__APPLE__) in fc_session.cpp" "$FACADE:$LINE: [CONDITIONAL]"
+append facade-include.inc    "$FACADE";      expect "#include <cstdio> in fc_session.cpp" "$FACADE:$LINE: [INCLUDE]"
+LINE=$(grep -n -m1 '^#include "BuildGuards.h"' "$FACADE" | cut -d: -f1)
+sed -i.bak '/^#include "BuildGuards.h"/d' "$FACADE"; rm -f "$FACADE.bak"
+expect "fc_session.cpp without BuildGuards.h first" "$FACADE:$LINE: [GUARD]"
+sed -i.bak '/^zone  *tools\/wasm\/fc_session.cpp /d' "$ZONE"; rm -f "$ZONE.bak"
+expect "fc_session.cpp out of the det-math zone" "$FACADE: [ZONE]"
 
 # --- GUARD: a translation unit, on the target's list, whose first include is not the build guards
 plant unguarded.cpp "$SRC/_control_unguarded.cpp"
@@ -117,6 +163,27 @@ plant orphan.h "$SRC/_control_orphan.h"
 expect "a header nothing includes" "$SRC/_control_orphan.h: [FILES] nothing in the library compiles or includes this file"
 plant unknown-type.foo "$SRC/_control.foo"
 expect "a file of an unknown type" "$SRC/_control.foo: [FILES] a file of an unknown type"
+
+# --- FILES, THE CROSS-CHECK: the build's own compile_commands.json, edited — a unit compiled into felitronics_session
+# --- that sources.txt does not list, a listed unit the build does not compile; and the file with no `output` fields (CMake
+# --- 3.22's Ninja and Makefile generators write none), which must still cross-check, and pass.
+if [ ${#LINTARGS[@]} -gt 0 ]; then
+    fake () {   # fake <name> <node expression over `cc`, the parsed entries>
+        mkdir -p "$BK/$1"
+        cp "$BUILD/CMakeCache.txt" "$BK/$1/"
+        node -e "const fs = require('fs'); let cc = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); cc = ($2); fs.writeFileSync(process.argv[2], JSON.stringify(cc))" \
+            "$BUILD/compile_commands.json" "$BK/$1/compile_commands.json"
+        LINTARGS=(--build "$BK/$1")
+    }
+    SESSION_ENTRY="e => /felitronics_session\\.dir/.test(e.output || e.command) && /Session\\.cpp\$/.test(e.file)"
+    fake cc-extra "cc.concat(cc.filter($SESSION_ENTRY).map(e => ({ ...e, file: e.file.replace(/Session\\.cpp\$/, 'Planted.cpp'), output: (e.output || '').replace('Session.cpp', 'Planted.cpp'), command: e.command.split('Session.cpp').join('Planted.cpp') })))"
+    expect "a unit compiled into felitronics_session that sources.txt does not list" "[FILES] felitronics_session compiles $SRC/Planted.cpp, which sources.txt does not list"
+    fake cc-missing "cc.filter(e => ! (/felitronics_session\\.dir/.test(e.output || e.command) && /BuildContract\\.cpp\$/.test(e.file)))"
+    expect "a listed unit the build does not compile" "$SRC/BuildContract.cpp is on sources.txt but the build does not compile it into felitronics_session"
+    fake cc-no-output "cc.map(({ output, ...e }) => e)"
+    expect_clean "compile commands without \`output\` fields"
+    LINTARGS=(--build "$BUILD")
+fi
 
 node "$LINT" "${LINTARGS[@]+"${LINTARGS[@]}"}" > /dev/null \
     || { echo "CONTROL FAILED: the tree did not come back clean, so the controls proved nothing"; exit 1; }
