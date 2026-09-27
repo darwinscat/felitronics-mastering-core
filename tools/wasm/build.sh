@@ -514,11 +514,12 @@ sizes fcmaster.web.wasm fcmaster.web.mjs
 #     copy with one callable the ABI does not declare (session-controls/extra_export.cpp), which the check must refuse.
 #     No debug variant: felitronics_session_abi_tests runs this translation unit natively under ASan and UBSan, and on
 #     the wasm tier's checked build (SAFE_HEAP, ASSERTIONS=2) in CI.
-#  6. THE CONFIG, embedded as modules/session/CMakeLists.txt embeds it (felitronics_toml_embed): felitronics-toml's own
-#     tool, compiled here for wasm and run through node on the host's files, turns modules/session/config/*.toml into
-#     the two headers src/Config.cpp includes, under the same names. A document the parser refuses stops the build at
-#     its line and column; the schema itself is held by the CMake build's check and by fc_session_config_version, which
-#     session-check.mjs compares with the native CLI's.
+#  6. THE CONFIG, embedded and gated as modules/session/CMakeLists.txt embeds and gates it: felitronics-toml's own tool,
+#     compiled here for wasm and run through node on the host's files, turns modules/session/config/*.toml into the two
+#     headers src/Config.cpp includes, under the same names — a document the parser refuses stops the build at its line
+#     and column — and the session's own gate (modules/session/tests/ConfigCheck.cpp with src/ConfigSchema.cpp, the
+#     library's schema) reads both by schema before anything is linked: a typo stops the module's build at its line.
+#     session-check.mjs then compares the module's config version with the native CLI's.
 #==================================================================================================
 # project_version <CMakeLists.txt> <project name> — "MAJOR MINOR PATCH" of that project() line, or nothing.
 project_version () { sed -nE "s/^project\\($2 VERSION ([0-9]+)\\.([0-9]+)\\.([0-9]+)[ )].*/\\1 \\2 \\3/p" "$1" | head -1; }
@@ -579,6 +580,12 @@ for doc in targets engine; do
     node "$SGEN/toml2cpp.js" "$ROOT/modules/session/config/$doc.toml" "$SGEN/embedded/$doc.h" \
          felitronics::session::config::embedded "$doc"
 done
+em++ -std=c++20 -O1 -I"$ROOT/modules/session/include" -I"$ROOT/modules/session/src" -I"$TOML/include" \
+     "$ROOT/modules/session/tests/ConfigCheck.cpp" "$ROOT/modules/session/src/ConfigSchema.cpp" \
+     -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -o "$SGEN/config_check.js"
+node "$SGEN/config_check.js" "$ROOT/modules/session/config/targets.toml" "$ROOT/modules/session/config/engine.toml" \
+    || { echo "*** the session's config breaks its schema — see above"; exit 1; }
+echo "--- fc_session config: read by schema, no problem"
 
 SSRC="$HERE/fc_session.cpp"
 SFRONT=(-std=c++20 "${SESSION_FLAGS[@]}"
@@ -640,10 +647,14 @@ sizes fcsession.web.wasm fcsession.web.mjs
 # WHAT THIS WAS BUILT FROM, beside what it built. A consumer that installs these modules records which engine
 # it ships, and a checkout's own `git describe` cannot say which core the modules were compiled against: the
 # two repositories move separately, and a local build may use a sibling core that is not the pinned one.
+# felitronics-toml is recorded too: the config fcsession carries was embedded and gated with it.
 describe() { git -C "$1" describe --tags --always --dirty 2>/dev/null || echo unknown; }
+TOML_DESCRIBED="$(describe "$TOML")"
+[ "$TOML_DESCRIBED" != unknown ] || TOML_DESCRIBED="v$TV_MAJOR.$TV_MINOR.$TV_PATCH (no git checkout)"
 {
     echo "felitronics-mastering-core $(describe "$ROOT")"
     echo "felitronics-core $(describe "$CORE")"
+    echo "felitronics-toml $TOML_DESCRIBED"
 } > "$OUT/BUILD-INFO"
 echo
 echo "=== built from"

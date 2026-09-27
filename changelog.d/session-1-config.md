@@ -1,44 +1,60 @@
 ### session · tools — the mastering config: two TOML documents compiled into `felitronics::session`, read by schema
 
 **Every number of the mastering session now lives in the session**, in two TOML documents of the module, each number
-with what it means and where it came from beside it. `modules/session/config/targets.toml` is the table of targets —
-25 of them, each with its loudness, true-peak ceiling, mono-bass crossover (120 Hz; vinyl 150), high-pass floor (24 Hz;
-vinyl 32) and slope (24 dB/oct; vinyl 12), how much the high-pass may take at the lowest note (1 dB; club 0.3), and its
-delivery rate and bit depth; vinyl's +0.5 dB low shelf, its ceiling without a peak clipper and its high-pass that is
-always placed; the one extra pass at the source's rate of cd and cdDynamic; AES TD1008's −14 LUFS album loudness,
-marked desktop-only; the default target, the main list and the travels of the hand edit. `engine.toml` holds every
-other number: the input brought to −18 LUFS (a warning below −40, gain and ceiling only below −55), the landing in
-series of 12, 24 and 32 passes, the limiter's 0.15 dB ceiling margin and 50 ms release, the peak clipper's classes, the
-low-end measurement's geometry, the high-pass knob topping out at 50 Hz, mono bass with ONE wide-bass warning at 6 % of
-side, the compressor's threshold counted from the short-term P95 and its glue on cd, saturation, tilt, the low shelf,
-dither at 16 bits only, the de-esser's numbers (manual, off), the observations' thresholds, what a master's cost is
-measured with, the progress weights and the blind test's.
+with what it means and where it came from beside it, and the owner's decisions marked as such. `modules/session/config/
+targets.toml` is the table of targets — 25 of them, each with its loudness, true-peak ceiling, mono-bass crossover (120 Hz;
+vinyl 150), high-pass floor (24 Hz; vinyl 32) and slope (24 dB/oct; vinyl 12), how much the high-pass may take at the
+lowest note (1 dB; club 0.3), and its delivery rate and bit depth; vinyl's +0.5 dB low shelf, its ceiling without a peak
+clipper and its high-pass that is always placed; the one extra pass at the source's rate of cd and cdDynamic; AES
+TD1008's −14 LUFS album loudness, marked desktop-only; the default target, the main list and the travels of the hand
+edit. `engine.toml` holds every other number: the input brought to −18 LUFS (a warning below −40, gain and ceiling only
+below −55), the landing in series of 12, 24 and 32 passes, the limiter's 0.15 dB ceiling margin and 50 ms release with
+its second release stated off (the sound depends on no default of the core's), the peak clipper's classes (its manual
+threshold starts at the "between" class), the low-end measurement's geometry, the high-pass knob topping out at 50 Hz
+with one comfort window (24–42 Hz, warning towards 20 and 50) and "no DC" named as the dcOffset finding's threshold,
+mono bass with its width knob and ONE wide-bass warning at 6 % of side, the compressor's threshold counted from the
+short-term P95 and its glue on cd, saturation, tilt, the low shelf, dither at 16 bits only, the de-esser (manual, off, not
+offered), the observations' thresholds, what a master's cost is measured with — as measured, without a verdict — the
+progress weights and the blind test's protocol.
 
-**Compiled in, never read.** felitronics-toml v0.2.0 (MIT) is resolved like felitronics-core — a sibling checkout for
-local work, the pinned tag otherwise — and compiles both documents into the library as constexpr data
-(`felitronics_toml_embed`); nothing reads a file at run time. A product that consumes this repository makes
-felitronics-toml available before it, as it does core. A document the parser refuses stops the build at its line and
-column.
+**Compiled in, never read.** felitronics-toml v0.2.0 (MIT, listed in `THIRD_PARTY_NOTICES.md`) is resolved like
+felitronics-core — a sibling checkout for local work, the pinned tag otherwise — and compiles both documents into the
+library as constexpr data (`felitronics_toml_embed`); nothing reads a file at run time. A product that consumes this
+repository makes felitronics-toml available before it, as it does core. A document the parser refuses stops the build at
+its line and column.
 
-**Read by schema** (`<felitronics/session/Config.h>`): `config::load()` binds the documents to typed structs — every
-key with its type and range (a range another key states included, such as a target's loudness on the edit travel),
-checks across keys (a name that is no target, an EQ band two devices share, a minimum above its maximum, the limiter
-switched off), and every key nobody read reported as unknown. A problem is data: document, fault, key path, line and
-column; `config::bind()` runs the same schema over texts. In this repository's builds `felitronics_session_config_check`
-runs the schema over the embedded config right after it is linked, so a typo is a red build at `<file>:<line>:<column>`;
-three controls plant an unknown key, a wrong type and a value out of range in a copy and require it to go red at the
-spot, and the config suite plants twenty more, one of every kind of problem.
+**Read by schema — form and physics** (`<felitronics/session/Config.h>`): `config::load()` binds the documents to typed
+structs — every key with its type and its domain (a share within 0…1, a ramp whose ends cannot divide by zero, a series
+that ascends, the corners, hops and bands the analyzers admit, a value on its knob's step, a range another key states such
+as a target's loudness on the edit travel), checks across keys (a name that is no target, a name given twice, an EQ band
+two devices share, a ramp law outside its domain, the limiter switched off, a default written out), and every key nobody
+read reported as unknown. A problem is data: document, fault, key path, line and column; `config::bind()` runs the same
+schema over texts.
 
-**The config version** (`config::version()`), what a recipe will record: a 64-bit FNV-1a hash of both documents' data in
-document order — comments, spacing and positions are not data — computed from the embedded data without allocating.
-The suite changes every value of both documents one at a time, through their text and through the embedded data, and
-requires a version of its own each time.
+**Every build runs the schema.** `felitronics_session_config_check`, a host tool compiled from the library's own schema,
+reads the documents before `felitronics::session` is built — a consumer's build and a build without tests included, under
+the emulator where the build cross-compiles, or `FELITRONICS_SESSION_CONFIG_CHECK_EXECUTABLE` — so a typo is a red build at
+`<file>:<line>:<column>`, and a failed gate runs again. `tools/wasm/build.sh` runs it before linking `fcsession` and records
+felitronics-toml in `BUILD-INFO`. Six controls plant mistakes in a copy and require the gate to go red at the spot; the
+config suite plants over sixty more, in-process.
 
-**`fcore_session config targets|engine|version`** prints a document of the embedded config through felitronics-toml's
-canonical writer, or its version; ctest holds the output byte for byte to the source documents.
+**The owner's decisions are pinned apart** (`felitronics_session_config_decisions_tests`): every target row field by field
+and the engine's decided numbers, so changing one is a deliberate test edit; its controls plant departures the schema
+admits and require them named.
 
-**`fc_session_config_version`** joins the draft `fc_session` (still version 0, no promise): the module's config version in
+**The config's versions** (`config::versions()`): 64-bit FNV-1a hashes of both documents' normalised data — numbers as the
+bits of their double (−0 as +0), tables in key order, order kept in arrays — so spelling, key order, inline-or-not,
+comments and spacing move nothing. `all` covers every key; `sound`, what a recipe will record, leaves out what cannot
+change a master (what is only shown, measured after the master, or used in development). Both are computed from the
+embedded data without allocating. The suite changes every value of both documents one at a time and requires `all` to
+move each time to a value of its own and `sound` to move exactly for the values that can change a master; the sound
+version is pinned to the name of the defaults, so a sound number changed without new defaults is red.
+
+**`fcore_session config targets|engine|version|sound-version`** prints a document of the embedded config through
+felitronics-toml's canonical writer, or a version; ctest holds the output byte for byte to the source documents.
+
+**`fc_session_config_version`** joins the draft `fc_session` (still version 0, no promise): the config's `all` version in
 two uint32 halves, the out-pointer checked before anything is written, nothing allocated. `fcsession` now carries the
-config — 40.7 KB of wasm, 11.9 KB brotli, from 2.5 / 1.2 — and `tools/wasm/session-check.mjs --config-version` requires
-its version to be the native CLI's. `tools/wasm/build.sh` embeds the config with a felitronics-toml checkout:
+config — 41.6 KB of wasm, 12.6 KB brotli, from 2.5 / 1.2 — and `tools/wasm/session-check.mjs --config-version` requires
+its version to be the native CLI's. `tools/wasm/build.sh` embeds and gates the config with a felitronics-toml checkout:
 `FELITRONICS_TOML_DIR`, or the sibling `../felitronics-toml`.
