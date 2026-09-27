@@ -14,7 +14,8 @@
 #                 contract, same no-threads and byte-identity checks — see the fc_master section below.
 #   fcsession.* — the session ABI (tools/fc_session_abi.h + tools/wasm/fc_session.cpp) over felitronics::session, the
 #                 first module with a COMPILED library behind it: the sources modules/session/sources.txt lists, with the
-#                 flags modules/session/build-flags.txt states and the library's releases. See the fc_session section.
+#                 flags modules/session/build-flags.txt states and the library's releases, and its config embedded as
+#                 the CMake build embeds it. See the fc_session section.
 #   tierup/     — never shipped: fctempo and fcprobe linked again with their function names, which is how the build
 #                 proves the tempo detector's hot loops survived the optimiser (tools/wasm/tierup-check.mjs).
 #
@@ -40,6 +41,9 @@
 # CMake configure fetched (<build>/_deps/felitronics_core-src), so the wasm modules and the native references
 # they are diffed against are built from ONE core — and the sibling ../felitronics-core otherwise, the same
 # default the CMake uses. Nothing else is guessed: with neither, the build stops.
+#
+# AND A felitronics-toml CHECKOUT, for fcsession's config: FELITRONICS_TOML_DIR when that is set (CI passes the one its
+# CMake configure resolved), the sibling ../felitronics-toml otherwise — the same rule, for the same reason.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -52,7 +56,7 @@ echo "emcc: $(emcc --version | head -1)"
 
 CORE="${FELITRONICS_CORE_DIR:-$ROOT/../felitronics-core}"
 [ -f "$CORE/modules/core/include/felitronics/core/DetMath.h" ] \
-    || { echo "no felitronics-core at $CORE — set FELITRONICS_CORE_DIR to a checkout (v0.53.0 or later)"; exit 1; }
+    || { echo "no felitronics-core at $CORE — set FELITRONICS_CORE_DIR to a checkout (v0.55.0 or later)"; exit 1; }
 CORE="$(cd "$CORE" && pwd)"
 # A core that still carries these modules would put a SECOND copy of every header here on the include path,
 # and which one a TU compiled would depend on the order of the -I flags below. The CMake refuses such a core
@@ -510,6 +514,12 @@ sizes fcmaster.web.wasm fcmaster.web.mjs
 #     copy with one callable the ABI does not declare (session-controls/extra_export.cpp), which the check must refuse.
 #     No debug variant: felitronics_session_abi_tests runs this translation unit natively under ASan and UBSan, and on
 #     the wasm tier's checked build (SAFE_HEAP, ASSERTIONS=2) in CI.
+#  6. THE CONFIG, embedded and gated as modules/session/CMakeLists.txt embeds and gates it: felitronics-toml's own tool,
+#     compiled here for wasm and run through node on the host's files, turns modules/session/config/*.toml into the two
+#     headers src/Config.cpp includes, under the same names — a document the parser refuses stops the build at its line
+#     and column — and the session's own gate (modules/session/tests/ConfigCheck.cpp with src/ConfigSchema.cpp, the
+#     library's schema) reads both by schema before anything is linked: a typo stops the module's build at its line.
+#     session-check.mjs then compares the module's config version with the native CLI's.
 #==================================================================================================
 # project_version <CMakeLists.txt> <project name> — "MAJOR MINOR PATCH" of that project() line, or nothing.
 project_version () { sed -nE "s/^project\\($2 VERSION ([0-9]+)\\.([0-9]+)\\.([0-9]+)[ )].*/\\1 \\2 \\3/p" "$1" | head -1; }
@@ -552,13 +562,39 @@ SESSION_FLAGS_LINE=$(grep -E '^-' "$ROOT/modules/session/build-flags.txt")
 [ "$(printf '%s\n' "$SESSION_FLAGS_LINE" | grep -c .)" -eq 1 ] || { echo "*** modules/session/build-flags.txt must hold one line of flags"; exit 1; }
 read -r -a SESSION_FLAGS <<< "$SESSION_FLAGS_LINE"
 
-SSRC="$HERE/fc_session.cpp"
+TOML="${FELITRONICS_TOML_DIR:-$ROOT/../felitronics-toml}"
+[ -f "$TOML/include/felitronics/toml/Embedded.h" ] && [ -f "$TOML/tools/toml2cpp.cpp" ] \
+    || { echo "no felitronics-toml at $TOML — set FELITRONICS_TOML_DIR to a checkout (v0.2.0 or later)"; exit 1; }
+TOML="$(cd "$TOML" && pwd)"
+# felitronics-toml states its version on a line of its own inside project( ... ), so it is read from that block.
+read -r TV_MAJOR TV_MINOR TV_PATCH <<< "$(sed -nE '/^project\(felitronics_toml/,/\)/ s/.*VERSION ([0-9]+)\.([0-9]+)\.([0-9]+).*/\1 \2 \3/p' \
+                                         "$TOML/CMakeLists.txt" | head -1)" || true
+[ -n "${TV_PATCH:-}" ] && { [ "$TV_MAJOR" -gt 0 ] || [ "$TV_MINOR" -ge 2 ]; } \
+    || { echo "*** felitronics-toml at $TOML is not v0.2.0 or later (${TV_MAJOR:-?}.${TV_MINOR:-?}.${TV_PATCH:-?})"; exit 1; }
+echo "--- fc_session config: felitronics-toml $TV_MAJOR.$TV_MINOR.$TV_PATCH at $TOML"
+SGEN="$OUT/session-config"
+mkdir -p "$SGEN/embedded"
+em++ -std=c++20 -O1 -I"$TOML/include" "$TOML/tools/toml2cpp.cpp" \
+     -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -o "$SGEN/toml2cpp.js"
+for doc in targets engine; do
+    node "$SGEN/toml2cpp.js" "$ROOT/modules/session/config/$doc.toml" "$SGEN/embedded/$doc.h" \
+         felitronics::session::config::embedded "$doc"
+done
+# The analyzers' include roots too (INC): the schema asks them what they admit (their storageFor). The gate compiles the
+# library's schema with this front end as well — src/BuildGuards.h, its first include, refuses any other.
 SFRONT=(-std=c++20 "${SESSION_FLAGS[@]}"
-        -I"$ROOT/tools" -I"$ROOT/modules/session/include" -I"$ROOT/modules/session/src" -msimd128
+        -I"$ROOT/tools" -I"$ROOT/modules/session/include" -I"$ROOT/modules/session/src" -I"$TOML/include" -I"$SGEN" "${INC[@]}" -msimd128
         -DFELITRONICS_SESSION_VERSION_MAJOR="$SV_MAJOR" -DFELITRONICS_SESSION_VERSION_MINOR="$SV_MINOR"
         -DFELITRONICS_SESSION_VERSION_PATCH="$SV_PATCH"
         -DFELITRONICS_SESSION_CORE_VERSION_MAJOR="$CV_MAJOR" -DFELITRONICS_SESSION_CORE_VERSION_MINOR="$CV_MINOR"
         -DFELITRONICS_SESSION_CORE_VERSION_PATCH="$CV_PATCH")
+em++ "${SFRONT[@]}" -O1 "$ROOT/modules/session/tests/ConfigCheck.cpp" "$ROOT/modules/session/src/ConfigSchema.cpp" \
+     -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -o "$SGEN/config_check.js"
+node "$SGEN/config_check.js" "$ROOT/modules/session/config/targets.toml" "$ROOT/modules/session/config/engine.toml" \
+    || { echo "*** the session's config breaks its schema — see above"; exit 1; }
+echo "--- fc_session config: read by schema, no problem"
+
+SSRC="$HERE/fc_session.cpp"
 SLIST=$(abi_files "$SSRC" "${SFRONT[@]}" -O3)
 SFILES=(); while IFS= read -r f; do [ -z "$f" ] || SFILES+=("$f"); done <<< "$SLIST"
 SNAMES=$(export_names "${SFILES[@]}")
@@ -612,10 +648,14 @@ sizes fcsession.web.wasm fcsession.web.mjs
 # WHAT THIS WAS BUILT FROM, beside what it built. A consumer that installs these modules records which engine
 # it ships, and a checkout's own `git describe` cannot say which core the modules were compiled against: the
 # two repositories move separately, and a local build may use a sibling core that is not the pinned one.
+# felitronics-toml is recorded too: the config fcsession carries was embedded and gated with it.
 describe() { git -C "$1" describe --tags --always --dirty 2>/dev/null || echo unknown; }
+TOML_DESCRIBED="$(describe "$TOML")"
+[ "$TOML_DESCRIBED" != unknown ] || TOML_DESCRIBED="v$TV_MAJOR.$TV_MINOR.$TV_PATCH (no git checkout)"
 {
     echo "felitronics-mastering-core $(describe "$ROOT")"
     echo "felitronics-core $(describe "$CORE")"
+    echo "felitronics-toml $TOML_DESCRIBED"
 } > "$OUT/BUILD-INFO"
 echo
 echo "=== built from"

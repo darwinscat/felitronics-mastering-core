@@ -7,7 +7,7 @@ wasm module, a desktop application by linking the library, and `fcore_session`, 
 `Session`: it is created, destroyed and asked for its version, and it checks the floating-point environment of the
 thread that calls it. It keeps no state.
 
-What is fixed is the ground it stands on: how it is built, and the laws it keeps. Each law here is written down together
+Beside it is its config, every number it will decide with (below). What is fixed is the ground it stands on: how it is built, and the laws it keeps. Each law here is written down together
 with the check that holds it, and each check has a control that turns it red. A law no check holds is marked as held
 **only in words**.
 
@@ -132,6 +132,71 @@ build of the library does not get `-Werror`.
 The library reports the releases it was built from — `Session::version()` (this repository) and `Session::coreVersion()`
 (the felitronics-core it was compiled against) — answered by the compiled code, so they name the binary that runs.
 
+## The config — two documents, compiled in, read by schema
+
+Every number the session decides, measures, renders and reports with lives in two TOML documents of the module:
+`config/targets.toml`, the targets — the loudness and ceiling a person picks, the physics of the medium that come with
+them, the delivery format — and `config/engine.toml`, every other number: the input's reference and its quiet
+thresholds, the landing's series, the devices' travels and rules, the observations' thresholds, what a master's cost is
+measured with (as measured, without a verdict), the progress weights. What each number means and where it came from is
+written beside it, as a comment; a number the owner decided says so. The sound depends on no default of the core's:
+every stage a device writes is named, the limiter's second release included.
+
+- **Compiled in, never read.** felitronics-toml (v0.2.0, resolved like core: a sibling checkout, or the pinned tag)
+  compiles both documents into the library as constexpr data (`felitronics_toml_embed`); the session reads no file
+  (law 6). A document the parser refuses stops the build at its line and column. `tools/wasm/build.sh` embeds them the
+  same way for `fcsession`, with felitronics-toml's own tool run through node.
+- **Read by schema: form and physics.** `Config::load()` (`<felitronics/session/Config.h>`) binds them to typed structs:
+  every key with its type and its domain — where a number stops meaning what its document says: a share outside 0…1, a
+  ramp whose ends would divide by zero, a series that shrinks, a value off its knob's grid (a whole number of steps from
+  where the travel starts, checked exactly on the decimals as written, across the two documents too) — a range another
+  key states included (a target's loudness on the edit travel, its crossover on the knob's); the checks across keys (a
+  name that is no target, a name given twice, an EQ band two devices share, "no DC" apart from the dcOffset finding's
+  threshold, a ramp law outside its domain, the limiter switched off, a default written out); and every key nobody read
+  reported as unknown. What an analyzer admits is the analyzer's to say: the blocks the config feeds one — the low end
+  (both runs), the crest, the sibilance-band bursts — go to that analyzer's own `storageFor()` at the source rates the
+  product accepts (8, 44.1, 48 and 96 kHz; the bursts from 44.1, since a 9 kHz corner needs the room) and are refused
+  whole where it refuses. A problem is data: the document, the fault, the key path, the line and the column.
+- **The build holds the schema — every build.** `felitronics_session_config_check`, a host tool compiled from the
+  library's own `src/ConfigSchema.cpp` (so it does not link the library it gates), reads the two documents before
+  `felitronics::session` is built — in a consumer's build and in a build without tests too, under the emulator where the
+  build cross-compiles (node, on the wasm tier) — and a problem stops the build as
+  `<file>:<line>:<column>: error: <fault> <key path>`; its stamp is written only on success, so a failed gate runs
+  again. The stamp depends on the documents, the schema's sources and the checker — the built-in target, or a supplied
+  `FELITRONICS_SESSION_CONFIG_CHECK_EXECUTABLE` as a file, so a newer checker or another path runs the gate again (a
+  supplied checker is its supplier's to keep built from the same sources). `tools/wasm/build.sh` runs the same gate before it links `fcsession`. Six controls plant a mistake in a copy of
+  the documents and require the gate to go red at that spot, after it passed the copy without the plant; the config
+  suite plants over sixty more in-process, every input a review found the schema accepting among them.
+- **The owner's decisions are held apart** (`tests/ConfigDecisionsTests.cpp`): every target row field by field and the
+  engine's decided numbers — the landing's series, the high-pass knob's travel and slopes and comfort window, the
+  wide-bass warning, the quiet thresholds, the peak clipper's classes, the glue knob and its default of none, the
+  mono-bass block, the delivery rates, and the rest. The schema would admit another number where the physics allows;
+  this suite says which number was decided, so changing one is a deliberate edit of it. Its controls plant departures
+  the schema admits (a high-pass top of 51 or 60 Hz, a slope of 36, another series, another target number or rate, glue
+  by default, a wider mono bass) and require them named.
+- **Its versions** (`Config::versions()`): 64-bit FNV-1a hashes of both documents' NORMALISED data — every number as the
+  bits of its correctly rounded double (−0 as +0), every table walked in the byte order of its keys, order kept in
+  arrays and in the rows of `[targets]` (for `all`: the order a shell lists them in) — so a number's spelling, the order
+  keys are written in, inline-or-not, comments and spacing move nothing. `all` covers every key; `sound` is what can
+  change a master, and keeps a key when it is not sure: it leaves out only what is shown (the main list and the rows'
+  order, the edit's travels, the red and comfort zones, the curve scales, marks and zones), what prints a finding or a
+  warning without switching a device (every observation threshold but `observations.polarity`; the peak clipper's
+  density figures), what is measured after the master (the crest, the cost), development (the progress weights, the
+  blind test), the name of the defaults, and — while no shell offers the de-esser — its block and the bursts only it
+  reads. The default target stays in. `sound` is what a recipe will record. They walk the
+  embedded data and allocate nothing, so the C ABI answers the config's `all` (`fc_session_config_version`) with no
+  demand to declare. The suite changes every value of both documents, one at a time — through their text and through the
+  embedded data — and requires `all` to move each time to a value of its own, and `sound` to move exactly for the values
+  that can change a master; the decisions suite pins `sound` to the name of the defaults, so a sound number changed
+  without new defaults is red. `fcore_session config version|sound-version`, the source files and the wasm module must
+  answer the same numbers (ctest, and CI's artifact check).
+- **Only in words, for now: the config's memory.** `Config::load()` allocates and publishes no demand; nothing in the
+  session calls it yet. The `create` that takes the config, frozen with fc_session v1, declares it (law 11d).
+- **Only in words: the golden pin is append-only.** A new set of sound numbers is a new name in `defaults` and a new
+  line in the decisions suite's table, and the line of an old name is never rewritten — a project names its defaults,
+  and two sets of numbers under one name would reopen it as another master. The suite holds the current name to its
+  sound version; that an old line was not overwritten is held by review alone.
+
 ## The floating-point environment
 
 The flags decide what the compiler emits. The thread decides what the arithmetic does: a host may have set flush-to-zero
@@ -216,16 +281,21 @@ against that build's `compile_commands.json`, with or without `output` fields). 
 from the target's list (`modules/session/sources.txt`, which CMake and `tools/wasm/build.sh` read too), the C boundary
 compiled with the session's flags (`tools/wasm/fc_session.cpp` and `tools/fc_session_abi.h`), and the `#include` closure
 of those units, whatever the files are called; it refuses a file of unknown type, a unit the list does not name, and a
-file nothing compiles or includes. Only `modules/session/tests` is outside it.
+file nothing compiles or includes; the config's two documents are data, named as such. Only `modules/session/tests` is
+outside it. `--build` also names the felitronics-core and felitronics-toml checkouts the lint resolves admitted headers in
+(or their sibling checkouts).
 
 Before any rule the text goes through **translation phase 2** — every backslash-newline joined, a line map kept — and
 the lexer consumes identifiers and preprocessing numbers whole, so a keyword split across a continuation is read whole
 and `u8'0'` is a character literal, not a digit separator. Its rules:
 
 - **includes** on an allowlist: canonically spelled standard headers that reach no OS, file, locale, thread, clock or
-  process state; felitronics headers **by name** (`FELITRONICS_ALLOWED` — today `felitronics/session/Session.h`: core's
-  `FlushToZero.h` sets flush-to-zero with no symbol and several core headers pull in `<atomic>`, so each is a reviewed
-  one-line addition); quoted headers inside the module;
+  process state; felitronics headers **by name** (`FELITRONICS_ALLOWED`: core's `FlushToZero.h` sets flush-to-zero with
+  no symbol and several core headers pull in `<atomic>`, so each is a reviewed one-line addition — today the module's
+  own `Session.h` and `Config.h`, felitronics-toml's `Toml.h`, `Schema.h` and `Embedded.h`, and the three analyzers the
+  config's schema asks what they admit, `LowEnd.h`, `BandCrest.h` and `StereoBandBursts.h`, which bring core's DSP and
+  `FlushToZero.h` with it; the schema calls only their `storageFor()`); quoted headers inside the module, and in
+  `src/Config.cpp` the two headers the build generates from the config, by name;
 - **no macros** — no `#define`, `#undef` or `##` — and **no directive** but `#include` and `#pragma once`;
   `src/BuildGuards.h` and `src/BuildContract.cpp` may carry `#if` / `#error` logic and nothing that defines a macro;
 - no pragma but `#pragma once`, no `_Pragma` / `__pragma`;
@@ -238,7 +308,10 @@ and `u8'0'` is a character literal, not a digit separator. Its rules:
   `struct S { mutable int n = 0; }; inline constexpr S s {};` in a public header is one shared, changing variable in
   every consumer, which the `constexpr` rule below would pass — and the session has no use for it (nor for a mutable
   lambda);
-- no exception or RTTI token in any `#if` branch; no atomics, cycle counters, target intrinsics or inline assembly;
+- no exception or RTTI token in any `#if` branch; no atomics, cycle counters, target intrinsics or inline assembly, and
+  no FP control register touched by hand (`ScopedFlushToZero`, `_mm_setcsr` / `_mm_getcsr`, every `_MM_SET_*` /
+  `_MM_GET_*` macro: rounding mode, exception mask and state, flush-to-zero, denormals-are-zero) — what an admitted
+  header brings cannot be used;
 - no `std::unordered_*`, no `hash<` qualified or not, no unstable sort, no `using namespace`;
 - in the public header, no function body, no variable with static storage duration that is not `constexpr` (at
   namespace scope or as a static member, `inline` or not), and no namespace-scope function declaration — at namespace
@@ -257,7 +330,8 @@ build's `compile_commands.json` to plant an unlisted unit and drop a listed one.
 
 `tools/fc_session_abi.h`, implemented by `tools/wasm/fc_session.cpp`. Its version is **0, a draft**: no promise — any
 entry point, argument, code or constant may change without a bump. It carries the ABI version, a session created and
-destroyed through a handle, the session's refusals passed through as status codes, and the poison. It follows
+destroyed through a handle, the config's version (`all`), the session's refusals passed through as status codes, and the
+poison. It follows
 fc_master's law — the facade is thin: handles instead of pointers, a status per call, checks on the addresses a page
 computed, the poison, and nothing that decides. It is compiled with the session library's own options and definitions,
 natively and in the wasm module, includes `src/BuildGuards.h` first, and is under the source lint with the allowance
@@ -277,14 +351,16 @@ above.
 
 `fcsession` is its wasm module (`tools/wasm/build.sh`): the facade and the sources `modules/session/sources.txt` lists
 (the build refuses a `.cpp` under `modules/session/src`, at any depth, that is not listed), linked with
-`--wrap=pthread_create` — 2.9 KB of wasm, 1.4 KB brotli. `tools/wasm/session-check.mjs` compares every export of the
+`--wrap=pthread_create`, with its embedded config — 44 KB of wasm, 13 KB brotli, almost all of it the config's data. `tools/wasm/session-check.mjs` compares every export of the
 loaded module against the ABI's surface and the runtime's own, runs the surface, and walks the wrap boundary; `build.sh`
 builds a control copy with one undeclared export and requires the check to refuse it.
 
 ## The native CLI — `fcore_session`
 
-`fcore_session version` prints the two releases and the ABI version; `fcore_session run <script>` reads a command script
-(`-` is stdin) into a fresh session and prints `done <commands>`. There are no commands: a script with none in it —
+`fcore_session version` prints the two releases and the ABI version; `fcore_session config targets|engine` prints a
+document of the embedded config through felitronics-toml's canonical writer (its numbers, without the comments), and
+`fcore_session config version|sound-version` its versions; `fcore_session run <script>` reads a command script (`-` is stdin) into a
+fresh session and prints `done <commands>`. There are no commands: a script with none in it —
 empty, or comments and blank lines — answers `done 0`; a script with a command in it, and a session that refuses to be
 created, are refused with exit status 2 and nothing on stdout. It links the library as C++, the way a desktop
 application does.

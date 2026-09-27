@@ -35,7 +35,11 @@
 //                branch of any #if: MSVC compiles a bare `throw` under /EHs-c-.
 //   NOSYMBOL     no facility that compiles to instructions and leaves no symbol: atomics (std::atomic and friends,
 //                __atomic_*, __sync_*, _Interlocked*), cycle counters and target intrinsics (__builtin_readcyclecounter,
-//                __rdtsc, __builtin_ia32_* / _arm_ / _aarch64_), inline assembly (asm, __asm__).
+//                __rdtsc, __builtin_ia32_* / _arm_ / _aarch64_), inline assembly (asm, __asm__), and the x86 FP
+//                control register touched by hand — core's ScopedFlushToZero, _mm_setcsr / _mm_getcsr and every
+//                _MM_SET_* / _MM_GET_* accessor macro (rounding mode, exception mask and state, flush-to-zero,
+//                denormals-are-zero): what an admitted header brings that could change the session's arithmetic
+//                with no symbol, since each compiles to a bare ldmxcsr / stmxcsr.
 //   ORDER        no std::unordered_* containers, no hash<> (qualified or not), no std::sort / partial_sort /
 //                partial_sort_copy / nth_element, and no `using namespace`: their order is implementation-defined
 //                (libstdc++, libc++ and MSVC answer differently from one input), and a using-directive would let a
@@ -94,7 +98,11 @@ const GUARDS = `${MODULE}/src/BuildGuards.h`;
 const CONTRACT = `${MODULE}/src/BuildContract.cpp`;
 const FACADE_TU = 'tools/wasm/fc_session.cpp';
 const FACADE_ABI = 'tools/fc_session_abi.h';
-const NOT_CODE = new Set([`${MODULE}/CMakeLists.txt`, SOURCES_FILE, `${MODULE}/build-flags.txt`]);
+// Files of the module that are not code, by name: the build's lists, and the config's two documents — data the build
+// embeds (felitronics_toml_embed) and reads by schema before the library is built.
+const NOT_CODE = new Set([`${MODULE}/CMakeLists.txt`, SOURCES_FILE, `${MODULE}/build-flags.txt`,
+                          `${MODULE}/config/targets.toml`, `${MODULE}/config/engine.toml`]);
+const CONFIG_TU = `${MODULE}/src/Config.cpp`;
 const CODE_EXT = /\.(h|hh|hpp|hxx|inl|ipp|tpp|inc|cpp|cc|cxx)$/;
 const TU_EXT = /\.(cpp|cc|cxx)$/;
 // Where each translation unit's object lives in a CMake build tree (the `output`, or the -o, of its compile command).
@@ -111,7 +119,25 @@ const STD_ALLOWED = new Set(['algorithm', 'array', 'bit', 'charconv', 'cfloat', 
 // The felitronics headers the session may include — each by name. Not `felitronics/...` wholesale: core's FlushToZero.h
 // sets the FPU's flush-to-zero with no symbol any object gate could read, and several core headers pull <atomic> in. A
 // header added here is reviewed, in one line, for what it does by being included.
-const FELITRONICS_ALLOWED = new Set(['felitronics/session/Session.h']);
+const FELITRONICS_ALLOWED = new Set([
+    'felitronics/session/Session.h',             // this module's own public headers, scanned here as every file of it is
+    'felitronics/session/Config.h',
+    // felitronics-toml (resolved in the checkout the build uses): its parser and canonical writer, over <algorithm>,
+    // <cfloat>, <cmath>, <cstddef>, <cstdint>, <limits>, <optional>, <string>, <string_view>, <utility>, <variant> and
+    // <vector> — no file, locale, libc number conversion, exception or RTTI, by its own contract; the schema's Reader
+    // over it (+ <concepts>, <type_traits>); and the views of an embedded document over it.
+    'felitronics/toml/Toml.h',
+    'felitronics/toml/Schema.h',
+    'felitronics/toml/Embedded.h',
+    // The analyzers the config feeds, of this repository: the schema calls only their static storageFor(), a size
+    // computation over its arguments. They bring core's DSP with them — FlushToZero.h through the EQ, whose
+    // ScopedFlushToZero sets the FPU's flush-to-zero with no symbol, and <xmmintrin.h> behind it has the _MM_SET_* macros
+    // (the rounding mode, the exception mask) that compile to a bare ldmxcsr; rule NOSYMBOL refuses all of them, and
+    // _mm_setcsr / _mm_getcsr, as tokens in every session source, so what is admitted here cannot touch the register.
+    'felitronics/analysis/LowEnd.h',
+    'felitronics/analysis/BandCrest.h',
+    'felitronics/analysis/StereoBandBursts.h',
+]);
 
 // THE STATED ALLOWANCES — the files outside the plain rules, and exactly what each may carry beyond them. A directive is
 // matched as `<name> <rest>`, whitespace collapsed.
@@ -120,6 +146,11 @@ const ALLOWANCES = new Map([
     // The build guards and the build contract: preprocessor LOGIC, and nothing that defines a macro.
     [GUARDS, { directives: GUARD_DIRECTIVES }],
     [CONTRACT, { directives: GUARD_DIRECTIVES }],
+    // The config compiled in: the two headers the build GENERATES from modules/session/config/*.toml
+    // (felitronics_toml_embed; tools/wasm/build.sh runs the same tool) — constexpr data of felitronics-toml's embedded
+    // types, admitted by name and not scanned: they live in the build tree, and what they compile to is read-only data
+    // the object-file gate reads.
+    [CONFIG_TU, { directives: [], generated: new Set(['embedded/engine.h', 'embedded/targets.h']) }],
     // The C boundary: the export macro build.sh's export scanner reads, the emscripten headers and one platform branch
     // (natively there is no linear memory to bound an out-pointer by), and its two quoted includes, by name.
     [FACADE_TU, {
@@ -249,6 +280,8 @@ const TOKEN_RULES = [
       why: (t) => `\`${t}\` — a clock, an address or a target instruction read without a symbol: invisible to the object-file gate, and a different answer per run or per row` },
     { rule: 'NOSYMBOL', re: word('asm|__asm|__asm__'),
       why: (t) => `\`${t}\` — inline assembly (or an asm label): code or names no flag and no object-file rule can judge` },
+    { rule: 'NOSYMBOL', re: word('ScopedFlushToZero|_mm_setcsr|_mm_getcsr|_MM_(?:SET|GET)_[A-Z0-9_]+'),
+      why: (t) => `\`${t}\` — the FPU's control register touched by hand (x86 MXCSR, arm64 FPCR): its rounding mode, exception mask, flush-to-zero or denormals-are-zero set — every later operation of the thread rounds or traps differently — or read, and a bare ldmxcsr / msr leaves no symbol the object-file gate could read` },
     { rule: 'ORDER', re: word('unordered_map|unordered_set|unordered_multimap|unordered_multiset'),
       why: (t) => `\`${t}\` — its iteration order is implementation-defined (and std::hash with it): one input, three answers across libstdc++, libc++ and MSVC` },
     { rule: 'ORDER', re: new RegExp(`${NOT_ID_BEFORE}(std\\s*::\\s*hash${NOT_ID_AFTER}|hash\\s*<)`, 'g'),
@@ -555,8 +588,20 @@ function coreRoot (buildDir)
     return existsSync(join(sibling, 'modules')) ? sibling : null;
 }
 
-// Resolve a felitronics include in this repository or in core: the first include root that has it.
-function resolveFelitronics (inc, core)
+// The felitronics-toml checkout this repository builds against: the one a --build tree resolved, or the sibling.
+function tomlRoot (buildDir)
+{
+    if (buildDir && existsSync(join(buildDir, 'CMakeCache.txt')))
+    {
+        const m = /^FELITRONICS_MASTERING_TOML_SOURCE_DIR:INTERNAL=(.*)$/m.exec(readFileSync(join(buildDir, 'CMakeCache.txt'), 'utf8'));
+        if (m && existsSync(m[1])) return m[1];
+    }
+    const sibling = join(process.cwd(), '..', 'felitronics-toml');
+    return existsSync(join(sibling, 'include')) ? sibling : null;
+}
+
+// Resolve a felitronics include in this repository, in core or in felitronics-toml: the first include root that has it.
+function resolveFelitronics (inc, core, toml)
 {
     const roots = [];
     for (const base of [process.cwd(), core].filter(Boolean))
@@ -565,6 +610,7 @@ function resolveFelitronics (inc, core)
         if (! existsSync(modules)) continue;
         for (const m of readdirSync(modules)) roots.push(join(modules, m, 'include'));
     }
+    if (toml) roots.push(join(toml, 'include'));
     for (const r of roots) { const p = join(r, inc); if (existsExactCase(p)) return p; }
     return null;
 }
@@ -631,6 +677,7 @@ export function scanFile (path, text, opts)
         { V(inc.line, 'INCLUDE', `#include ${spelled} — not canonically spelled (no \`./\`, no \`..\`, no backslash, no capital letter): a header must be named the one way the build and this lint both read it`); continue; }
         if (inc.kind === '"')
         {
+            if (allowance.generated && allowance.generated.has(inc.path)) continue;    // the build's own output, by name
             if (allowance.quoted)
             {
                 const p = allowance.quoted.get(inc.path);
@@ -648,8 +695,8 @@ export function scanFile (path, text, opts)
         {
             if (! FELITRONICS_ALLOWED.has(inc.path))
             { V(inc.line, 'INCLUDE', `#include <${inc.path}> — not on the session's felitronics allowlist (tools/lint/check-session-laws.mjs, FELITRONICS_ALLOWED). Each felitronics header is admitted by name after a review of what it does by being included: core's FlushToZero.h sets the FPU's flush-to-zero with no symbol, and several core headers pull in <atomic>`); continue; }
-            const p = resolveFelitronics(inc.path, opts.core);
-            if (! p) { V(inc.line, 'INCLUDE', `#include <${inc.path}> resolves in neither this repository nor felitronics-core${opts.core ? '' : ' (no core checkout found: pass --build <dir>)'} — a header this lint cannot find is one it cannot audit`); continue; }
+            const p = resolveFelitronics(inc.path, opts.core, opts.toml);
+            if (! p) { V(inc.line, 'INCLUDE', `#include <${inc.path}> resolves in none of this repository, felitronics-core and felitronics-toml${opts.core && opts.toml ? '' : ' (a checkout was not found: pass --build <dir>)'} — a header this lint cannot find is one it cannot audit`); continue; }
             const r = rel(p);
             if (r.startsWith(MODULE + '/')) next.push(r);
             continue;
@@ -708,6 +755,11 @@ function selfTest ()
         [S, '// #include <chrono>\n/* #include <thread> */', []],
         [S, '#include <felitronics/core/FlushToZero.h>', ['INCLUDE']],
         [S, '#include <felitronics/session/Session.h>', []],                   // allowed by name, and resolved in this repository
+        [S, '#include <felitronics/session/Config.h>\n#include <felitronics/analysis/LowEnd.h>', []],
+        [S, '#include <felitronics/analysis/Loudness.h>', ['INCLUDE']],        // an analyzer the allowlist does not name
+        [S, '#include "embedded/engine.h"', ['INCLUDE']],                       // generated headers: the config's unit only
+        [CONFIG_TU, '#include "BuildGuards.h"\n#include "embedded/engine.h"\n#include "embedded/targets.h"', []],
+        [CONFIG_TU, '#include "embedded/other.h"', ['INCLUDE']],
         [S, '#pragma once', []],
         [S, '#if defined(__clang__)\n#pragma clang fp contract(fast)\n#endif', ['CONDITIONAL', 'PRAGMA']],
         [S, '#pragma STDC FP_CONTRACT ON', ['PRAGMA']],
@@ -757,6 +809,13 @@ function selfTest ()
         [S, 'std::atomic<int> n;', ['NOSYMBOL']],
         [S, 'auto t = __builtin_readcyclecounter ();', ['NOSYMBOL']],
         [S, 'int counter asm ("counter") = 0;', ['NOSYMBOL']],
+        [S, 'void f () { const felitronics::core::ScopedFlushToZero ftz; }', ['NOSYMBOL']],
+        [S, 'void f () { _mm_setcsr (_mm_getcsr() | 0x8040u); }', ['NOSYMBOL', 'NOSYMBOL']],
+        [S, 'void f () { _MM_SET_ROUNDING_MODE (_MM_ROUND_DOWN); }', ['NOSYMBOL']],
+        [S, 'void f () { _MM_SET_EXCEPTION_MASK (_MM_MASK_MASK & ~_MM_MASK_INVALID); }', ['NOSYMBOL']],
+        [S, 'void f () {\n_MM_SET_FLUSH_ZERO_MODE (_MM_FLUSH_ZERO_ON);\n_MM_SET_DENORMALS_ZERO_MODE (_MM_DENORMALS_ZERO_ON);\n_MM_SET_EXCEPTION_STATE (0);\n}', ['NOSYMBOL', 'NOSYMBOL', 'NOSYMBOL']],
+        [S, 'unsigned f () { return _MM_GET_ROUNDING_MODE (); }', ['NOSYMBOL']],
+        [S, 'constexpr unsigned kDown = 0x2000u; int _MM_SETTLE = 0; int x_MM_SET_ROUNDING_MODE = 0;', []],   // not an accessor
         // ORDER
         [S, 'std::unordered_map<int, int> m;', ['ORDER']],
         [S, 'std::sort (v.begin(), v.end());', ['ORDER']],
@@ -846,6 +905,7 @@ if (RUN_AS_PROGRAM)
     const violations = [];
     const V = (f, line, rule, msg) => violations.push({ f, line, rule, msg });
     const core = coreRoot(buildDir);
+    const toml = tomlRoot(buildDir);
 
     // THE TARGET'S SOURCES — sources.txt, cross-checked against the compile commands a build wrote; and the facade's one.
     const sources = readFileSync(SOURCES_FILE, 'utf8').split('\n').map(l => l.trim()).filter(l => l && ! l.startsWith('#'))
@@ -904,7 +964,7 @@ if (RUN_AS_PROGRAM)
     {
         const f = queue.shift();
         if (scanned.has(f)) continue;
-        const res = scanFile(f, readFileSync(f, 'utf8'), { core });
+        const res = scanFile(f, readFileSync(f, 'utf8'), { core, toml });
         scanned.set(f, res);
         for (const v of res.found) V(f, v.line, v.rule, v.msg);
         for (const n of res.next) if (! scanned.has(n)) queue.push(n);
