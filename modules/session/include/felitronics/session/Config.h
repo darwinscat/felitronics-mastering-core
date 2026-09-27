@@ -543,15 +543,20 @@ struct Loaded
 
 // THE CONFIG'S VERSIONS — 64-bit FNV-1a hashes of the documents' NORMALISED data, targets then engine. Every number is
 // the bits of its correctly rounded double, −0 read as +0 (so 50, 50.0 and 50.00 are one value); every table is walked in
-// the byte order of its keys (so the order keys are written in, and whether a table is inline, is no data); order counts
-// in arrays alone, where it means something (the main targets, a series). Positions, comments and spacing are not data.
+// the byte order of its keys (so the order keys are written in, and whether a table is inline, is no data), except the
+// rows of [targets], whose written order `all` keeps (it is the order a shell lists them in); order counts in arrays,
+// where it means something (the main targets, a series). Positions, comments and spacing are not data.
 // The same on every platform, and computed from the data compiled into the library without allocating.
 //   all    every key of both documents: which config this is.
-//   sound  what can change a master — the targets, the devices, the input, the landing, the limiter, the dither, the
-//          measurements the machine decides from — without what is only shown, measured after the master or used in
-//          development (the default target and the main list, the edit's green ranges, the observation kinds, the
-//          curve scales, marks, comfort window and zones, the crest and the cost, the progress weights, the blind test,
-//          the name of the defaults). A recipe records this one: a master names the numbers it was made with.
+//   sound  what can change a master; when it is not sure, a key stays in. It leaves out only: what is shown (the main
+//          list and the order of the target rows, the hand edit's travels and green ranges, the red and comfort zones —
+//          hpf.comfort, tilt.normal, lowShelf.normal, hpf.slopesNormal — the curve scales and marks, the knob scale's
+//          zones); what prints a finding or a warning without switching a device (every observation threshold but
+//          observations.polarity, which keeps mono bass out; the peak clipper's density figures); what is measured
+//          after the master (the crest, the cost); development (the progress weights, the blind test); the name of the
+//          defaults; and, while deEsser.offered is false, the de-esser's block and the bursts only it reads. The default
+//          target stays in: a project that leaves an unchanged target out reopens on it. A recipe records this one: a
+//          master names the numbers it was made with.
 struct Versions
 {
     std::uint64_t all = 0;

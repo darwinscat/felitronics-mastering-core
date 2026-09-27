@@ -12,15 +12,19 @@
 //   * a number — an integer or a decimal — is the 64 bits of its correctly rounded double, with −0 read as +0: 50, 50.0
 //     and 50.00 are one value, and so are 0.1 and 0.10;
 //   * a table's entries are walked in the byte order of their keys, by selection over the entries (no allocation): the
-//     order keys are written in is no data, and neither is whether a table is inline or under a header;
+//     order keys are written in is no data, and neither is whether a table is inline or under a header — with one
+//     exception, the rows of [targets], whose order is the order a shell lists them in after the main ones: `all` walks
+//     them as written, `sound` by key;
 //   * an array keeps its order — there it means something (the main targets, a series, a band's edges).
 // UNAMBIGUOUS: every value starts with a byte naming its kind; a string and a key are their length and their bytes; an
 // entry is a marker, its key and its value, and a table closes with an end byte; an array is its count and its items.
 //
-// TWO VERSIONS. `all` walks everything. `sound` leaves out what cannot change a master — kPresentation below: what is
-// only shown, measured after the master, or used in development — so that a recipe, which records `sound`, names the
-// numbers a master was made with and nothing else. Moving a key between the two is a change of this list and of the
-// suite that holds it (tests/ConfigTests.cpp).
+// TWO VERSIONS. `all` walks everything. `sound` is what can change a master, and when it is not sure it keeps a key: it
+// leaves out only what the lists below name — what is only shown, prints a finding or a warning, is measured after the
+// master, or serves development — and, while no shell offers the de-esser (deEsser.offered = false), the de-esser's block
+// with the measurement only it reads. A recipe records `sound`, so a master names the numbers it was made with and
+// nothing else. Moving a key between the two is a change of these lists and of the suite that holds them
+// (tests/ConfigTests.cpp).
 
 #include <felitronics/toml/Embedded.h>
 #include <felitronics/toml/Toml.h>
@@ -71,24 +75,37 @@ inline void feedNumber (Fnv& f, double x) noexcept
 
 // WHAT CANNOT CHANGE A MASTER, by key path: left out of `sound`. A path covers everything under it.
 inline constexpr std::string_view kTargetsPresentation[] = {
-    "default",          // the target a session starts with — a master names its own
-    "main",             // the order of the list
-    "edit.lufs.green",  // the ranges drawn green
-    "edit.tp.green",
+    "main",                                            // the order of the list
+    "edit.lufs.from", "edit.lufs.to", "edit.lufs.green",   // the hand edit's travels and green ranges; a master holds its
+    "edit.tp.from", "edit.tp.to", "edit.tp.green",         // own numbers, whatever the travel (the steps stay in)
 };
 inline constexpr std::string_view kEnginePresentation[] = {
-    "defaults",             // the name of this set of defaults — a label, recorded beside the version
-    "hpf.comfort",          // the knob field's colours
+    "defaults",                                        // the name of this set of defaults — a label, recorded beside it
+    "limiter.peakClipper.densityMinusDb",              // the density near the ceiling, printed beside the class
+    "limiter.peakClipper.densityWithinDb",
+    "hpf.slopesNormal",                                // which slopes warn
+    "hpf.comfort",                                     // the knob field's colours
     "hpf.curveTopDb", "hpf.curveBottomDb", "hpf.curveStepDb", "hpf.curveHeadroomDb",
     "hpf.marks",
-    "monoBass.zones",       // the knob scale's regions
-    "eq",                   // the summed curve's colours and scale
-    "observations.kinds",   // how a finding is styled
-    "crest",                // measured after the master
-    "cost",                 // measured after the master
-    "progress",             // the progress bar's weights
-    "blindTest",            // a development tool
+    "monoBass.zones",                                  // the knob scale's regions
+    "tilt.normal",                                     // where a knob's value turns red
+    "lowShelf.normal",
+    "eq",                                              // the summed curve's colours and scale
+    // The observations weight and print findings; none of these switches a device. observations.polarity does — it
+    // keeps mono bass out — and stays in; dcOffset.from is in through hpf.nothingBelowNote.dcOffsetBelow, which equals it.
+    "observations.doubtfulBelow", "observations.clipping", "observations.dcOffset", "observations.bitsUnused",
+    "observations.edgeSilence", "observations.hum", "observations.humWandered", "observations.spectralWall",
+    "observations.infraLow", "observations.wideBass", "observations.alreadyLimited", "observations.kinds",
+    "observations.sibilance",
+    "crest",                                           // measured after the master
+    "cost",                                            // measured after the master
+    "progress",                                        // the progress bar's weights
+    "blindTest",                                       // a development tool
 };
+// ...and, while no shell offers the de-esser, its block and the measurement only it reads.
+inline constexpr std::string_view kEngineWhileNoDeEsser[] = { "deEsser", "stereoBursts" };
+// The table whose entries `all` walks in their written order.
+inline constexpr std::string_view kTargetsRowOrder = "targets";
 
 // The key path being walked, without allocating: the keys from the root, at most one per level.
 struct Path
@@ -114,17 +131,23 @@ inline bool equals (std::string_view dotted, const Path& p) noexcept
     }
 }
 
-// Which paths a walk leaves out: none for `all`.
+// What a walk leaves out (nothing for `all`), and which table it walks in written order (only `all` does).
 struct Skip
 {
     const std::string_view* paths = nullptr;
     std::size_t count = 0;
+    const std::string_view* more = nullptr;
+    std::size_t moreCount = 0;
+    std::string_view written;
     [[nodiscard]] bool covers (const Path& p) const noexcept
     {
         for (std::size_t i = 0; i < count; ++i)
             if (equals (paths[i], p)) return true;
+        for (std::size_t i = 0; i < moreCount; ++i)
+            if (equals (more[i], p)) return true;
         return false;
     }
+    [[nodiscard]] bool inWrittenOrder (const Path& p) const noexcept { return ! written.empty() && equals (written, p); }
 };
 
 //==============================================================================
@@ -150,11 +173,12 @@ inline void feed (Fnv& f, toml::embedded::View v, Path& path, const Skip& skip) 
         case Type::Table:
         {
             f.byte (kTable);
+            const bool written = skip.inWrittenOrder (path);
             std::string_view last;
             for (std::size_t fed = 0; fed < v.size(); ++fed)
             {
-                std::size_t best = v.size();
-                for (std::size_t i = 0; i < v.size(); ++i)
+                std::size_t best = written ? fed : v.size();
+                for (std::size_t i = 0; i < v.size() && ! written; ++i)
                 {
                     const std::string_view k = v[i].key();
                     if ((fed == 0 || last < k) && (best == v.size() || k < v[best].key())) best = i;
@@ -185,11 +209,12 @@ inline void feed (Fnv& f, const toml::Table& t, Path& path, const Skip& skip) no
     if (path.size > toml::kMaxDepth) return;
     const auto& entries = t.entries();
     f.byte (kTable);
+    const bool written = skip.inWrittenOrder (path);
     std::string_view last;
     for (std::size_t fed = 0; fed < entries.size(); ++fed)
     {
-        std::size_t best = entries.size();
-        for (std::size_t i = 0; i < entries.size(); ++i)
+        std::size_t best = written ? fed : entries.size();
+        for (std::size_t i = 0; i < entries.size() && ! written; ++i)
         {
             const std::string_view k = entries[i].key;
             if ((fed == 0 || last < k) && (best == entries.size() || k < std::string_view (entries[best].key))) best = i;
@@ -229,11 +254,30 @@ inline void feed (Fnv& f, const toml::Value& v, Path& path, const Skip& skip) no
     }
 }
 
-// Both documents, targets first, each behind a tag of its own. `sound` leaves out kPresentation.
+// Is the de-esser offered by a shell? Absent or not a boolean reads as offered — the answer that keeps its keys in `sound`.
+inline bool deEsserOffered (toml::embedded::View engine) noexcept
+{
+    return engine.find ("deEsser").find ("offered").boolean().value_or (true);
+}
+inline bool deEsserOffered (const toml::Table& engine) noexcept
+{
+    const toml::Value* d = engine.find ("deEsser");
+    const auto* t = d != nullptr ? std::get_if<toml::Table> (&d->data) : nullptr;
+    const toml::Value* o = t != nullptr ? t->find ("offered") : nullptr;
+    const auto* b = o != nullptr ? std::get_if<bool> (&o->data) : nullptr;
+    return b == nullptr || *b;
+}
+
+// Both documents, targets first, each behind a tag of its own.
 template <class Tree> std::uint64_t version (const Tree& targets, const Tree& engine, bool sound) noexcept
 {
-    const Skip targetsSkip = sound ? Skip { kTargetsPresentation, std::size (kTargetsPresentation) } : Skip {};
-    const Skip engineSkip = sound ? Skip { kEnginePresentation, std::size (kEnginePresentation) } : Skip {};
+    const bool deEsser = deEsserOffered (engine);
+    const Skip targetsSkip = sound ? Skip { kTargetsPresentation, std::size (kTargetsPresentation), nullptr, 0, {} }
+                                   : Skip { nullptr, 0, nullptr, 0, kTargetsRowOrder };
+    const Skip engineSkip = sound ? Skip { kEnginePresentation, std::size (kEnginePresentation),
+                                           deEsser ? nullptr : kEngineWhileNoDeEsser,
+                                           deEsser ? 0 : std::size (kEngineWhileNoDeEsser), {} }
+                                  : Skip {};
     Fnv f;
     Path path;
     f.byte ('T');

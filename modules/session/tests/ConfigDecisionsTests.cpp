@@ -44,7 +44,7 @@ struct Golden
     std::uint64_t sound;
 };
 constexpr Golden kGolden[] = {
-    { "2026-09", 0x40f23a08b4c3e613ull },
+    { "2026-09", 0xd0057260f3498451ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass

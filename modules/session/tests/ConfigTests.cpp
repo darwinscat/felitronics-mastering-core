@@ -273,20 +273,34 @@ void theSchemaAdmitsWhatTheAnalyzersAdmit()
 //==============================================================================
 // THE VERSIONS
 
-// Which key paths cannot change a master — this suite's own statement, held against the library's walk: a path of the
-// list, or under one, moves `all` and never `sound`; every other moves both.
-constexpr std::string_view kTargetsPresentation[] = { "default", "main", "edit.lufs.green", "edit.tp.green" };
-constexpr std::string_view kEnginePresentation[] = {
-    "defaults", "hpf.comfort", "hpf.curveTopDb", "hpf.curveBottomDb", "hpf.curveStepDb", "hpf.curveHeadroomDb", "hpf.marks",
-    "monoBass.zones", "eq", "observations.kinds", "crest", "cost", "progress", "blindTest",
+// Which key paths cannot change a master — this suite's own statement of the rule, held against the library's walk: a
+// path listed, or under one, moves `all` and never `sound`; every other moves both. The rule: what is shown, what prints a
+// finding or a warning without switching a device (every observation threshold but observations.polarity), what is
+// measured after the master, development, the name of the defaults — and, while no shell offers the de-esser, its block
+// and the bursts only it reads (but not deEsser.offered itself: offering it brings them in).
+constexpr std::string_view kTargetsPresentation[] = {
+    "main", "edit.lufs.from", "edit.lufs.to", "edit.lufs.green", "edit.tp.from", "edit.tp.to", "edit.tp.green",
 };
+constexpr std::string_view kEnginePresentation[] = {
+    "defaults", "limiter.peakClipper.densityMinusDb", "limiter.peakClipper.densityWithinDb", "hpf.slopesNormal",
+    "hpf.comfort", "hpf.curveTopDb", "hpf.curveBottomDb", "hpf.curveStepDb", "hpf.curveHeadroomDb", "hpf.marks",
+    "monoBass.zones", "tilt.normal", "lowShelf.normal", "eq", "crest", "cost", "progress", "blindTest",
+};
+constexpr std::string_view kWhileNoDeEsser[] = { "deEsser", "stereoBursts" };
+
+bool under (const std::string& path, std::string_view p)
+{
+    return path == p || (path.size() > p.size() && path.compare (0, p.size(), p) == 0 && path[p.size()] == '.');
+}
 
 bool presentation (int doc, const std::string& path)
 {
-    const auto covers = [&] (std::string_view p) { return path == p || (path.size() > p.size() && path.compare (0, p.size(), p) == 0
-                                                                        && path[p.size()] == '.'); };
+    const auto covers = [&] (std::string_view p) { return under (path, p); };
     if (doc == 0) return std::any_of (std::begin (kTargetsPresentation), std::end (kTargetsPresentation), covers);
-    return std::any_of (std::begin (kEnginePresentation), std::end (kEnginePresentation), covers);
+    if (under (path, "observations")) return ! under (path, "observations.polarity");
+    if (path == "deEsser.offered") return false;   // the documents' de-esser is not offered
+    return std::any_of (std::begin (kEnginePresentation), std::end (kEnginePresentation), covers)
+        || std::any_of (std::begin (kWhileNoDeEsser), std::end (kWhileNoDeEsser), covers);
 }
 
 struct Leaves
@@ -383,6 +397,52 @@ void theVersionsAreNormalised()
     ok (r && r->all != v.all && r->sound == v.sound, "the main list reordered moves all, and not sound");
 }
 
+void theSoundIsWhatCanChangeAMaster()
+{
+    felitronics::test::group ("sound: what can change a master; what only shows or prints moves all alone");
+    const config::Versions v = config::versions();
+    struct Case { config::Document document; std::string_view from, to, what; bool soundMoves; };
+    const std::string spotifyRow = "spotify      = { group = \"streaming\", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 24, "
+                                   "hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }\n";
+    const std::string loudRow = "spotifyLoud  = { group = \"streaming\", lufs = -11, tp = -2, monoBass = 120, hpfFloor = 24, "
+                                "hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }\n";
+    const std::string rows = spotifyRow + loudRow, swapped = loudRow + spotifyRow;
+    const Case cases[] = {
+        { config::Document::Targets, rows, swapped, "two target rows swapped: the order a shell lists them in", false },
+        { config::Document::Targets, "default = \"allStreaming\"", "default = \"spotify\"",
+          "the default target: a project that omits an unchanged target reopens on it", true },
+        { config::Document::Targets, "lufs = { from = -25,", "lufs = { from = -26,", "the hand edit's travel", false },
+        { config::Document::Targets, "green = [-15, -13], step = 0.1 }", "green = [-15, -13], step = 0.05 }",
+          "the hand edit's step, which the targets' numbers sit on", true },
+        { config::Document::Engine, "clipping = { fullAtShareOfProgramme = 0.001 }", "clipping = { fullAtShareOfProgramme = 0.002 }",
+          "a report-only observation threshold (clipping's full weight)", false },
+        { config::Document::Engine, "wideBass = { sideFractionAtLeast = 0.06 }", "wideBass = { sideFractionAtLeast = 0.07 }",
+          "the wide-bass warning: mono bass is placed whatever it says", false },
+        { config::Document::Engine, "polarity = { correlationBelow = 0,", "polarity = { correlationBelow = 0.1,",
+          "observations.polarity, which keeps mono bass out", true },
+        { config::Document::Engine, "normal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.1\n\n# THE LOW SHELF",
+          "normal = [-1.2, 1.5]\nhard = [-3, 3]\nstep = 0.1\n\n# THE LOW SHELF", "tilt's red zone", false },
+        { config::Document::Engine, "slopesNormal = [12, 24]", "slopesNormal = [12]", "which slopes warn", false },
+        { config::Document::Engine, "densityMinusDb = 3", "densityMinusDb = 4", "the peak clipper's printed density", false },
+        { config::Document::Engine, "band = 8", "band = 9", "the de-esser's block, while no shell offers it", false },
+        { config::Document::Engine, "witnessQuantiles = [0.5, 0.9]", "witnessQuantiles = [0.5, 0.95]",
+          "the de-esser's witness quantiles, while it is not offered", false },
+        { config::Document::Engine, "eventCapacity = 16384", "eventCapacity = 8192", "the bursts only the de-esser reads", false },
+        { config::Document::Engine, "[deEsser]\noffered = false", "[deEsser]\noffered = true",
+          "offering the de-esser brings its block in", true },
+        { config::Document::Engine, "toleranceLu = 0.1", "toleranceLu = 0.2", "the landing's tolerance", true },
+    };
+    for (const auto& c : cases)
+    {
+        const bool inTargets = c.document == config::Document::Targets;
+        const Plant p = plant (inTargets ? g_targetsText : g_engineText, c.from, c.to, c.to);
+        if (! p.planted) { ok (false, std::string (c.what) + ": the case has rotted"); continue; }
+        const auto w = inTargets ? config::versionsOf (p.text, g_engineText) : config::versionsOf (g_targetsText, p.text);
+        const bool held = w && w->all != v.all && (w->sound != v.sound) == c.soundMoves;
+        ok (held, std::string (c.what) + (c.soundMoves ? ": moves all and sound" : ": moves all, and not sound"));
+    }
+}
+
 void theVersionsMoveWithEveryValue()
 {
     felitronics::test::group ("the versions: moved by every single value, sound by what can change a master, through both paths");
@@ -469,6 +529,7 @@ int main (int argc, char** argv)
     theSchemaRefuses();
     theSchemaAdmitsWhatTheAnalyzersAdmit();
     theVersionsAreNormalised();
+    theSoundIsWhatCanChangeAMaster();
     theVersionsMoveWithEveryValue();
     return felitronics::test::report();
 }
