@@ -87,6 +87,12 @@ if(FELITRONICS_BUILD_TESTS)
     # every arm64 row. (x86-64 has FMA only with -mfma / /arch:AVX2, which this tree does not set.) The suites below
     # REQUIRE their positive controls to fuse on these rows, so a control that went quietly dead is red.
     set(FELITRONICS_SESSION_CONTRACT_FAST $<IF:$<CXX_COMPILER_ID:MSVC>,/fp:contract,-ffp-contract=fast>)
+    # The positive controls below — a licence that DOES change the answer — are optimiser transformations: an
+    # unoptimised build fuses nothing and reassociates nothing, and a build with no CMAKE_BUILD_TYPE is unoptimised. So the
+    # targets that carry a positive control are compiled -O2 whatever the build type says (last on their line, it wins),
+    # and a configuration-less build is green for the right reason. MSVC gets /O2 in every configuration but Debug, whose
+    # /RTC1 /O2 is refused beside; in an MSVC Debug build the tests say the positive controls are not reachable.
+    set(FELITRONICS_SESSION_OPTIMISED $<IF:$<CXX_COMPILER_ID:MSVC>,$<$<NOT:$<CONFIG:Debug>>:/O2>,-O2>)
 
     # The session and its laws that a running program can check: the demand of create() against what create() asks the
     # heap for (law 11d, through the one allocation counter), the harness proven able to fail, the two versions, the
@@ -97,7 +103,7 @@ if(FELITRONICS_BUILD_TESTS)
     target_include_directories(felitronics_session_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_features(felitronics_session_tests PRIVATE cxx_std_20)
     target_compile_definitions(felitronics_session_tests PRIVATE ${FELITRONICS_SESSION_VERSION_DEFINITIONS})
-    target_compile_options(felitronics_session_tests PRIVATE ${FELITRONICS_SESSION_CONTRACT_FAST})
+    target_compile_options(felitronics_session_tests PRIVATE ${FELITRONICS_SESSION_CONTRACT_FAST} ${FELITRONICS_SESSION_OPTIMISED})
     add_test(NAME felitronics_session_tests COMMAND felitronics_session_tests)
 
     # HOSTILE FLAGS AHEAD OF THE LIBRARY'S. The library's sources compiled again, into test binaries, with a licence the
@@ -129,7 +135,8 @@ if(FELITRONICS_BUILD_TESTS)
         target_compile_features(felitronics_session_hostile_${licence} PRIVATE cxx_std_20)
         target_compile_definitions(felitronics_session_hostile_${licence} PRIVATE ${FELITRONICS_SESSION_VERSION_DEFINITIONS})
         target_compile_options(felitronics_session_hostile_${licence} PRIVATE
-            "${FELITRONICS_SESSION_HOSTILE_${licence}}" $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
+            "${FELITRONICS_SESSION_HOSTILE_${licence}}" $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>
+            ${FELITRONICS_SESSION_OPTIMISED})
         add_executable(felitronics_session_hostile_${licence}_tests tests/HostileFlagsTests.cpp
                        $<TARGET_OBJECTS:felitronics_session_hostile_${licence}>)
         target_link_libraries(felitronics_session_hostile_${licence}_tests PRIVATE felitronics::test_support)
@@ -138,7 +145,8 @@ if(FELITRONICS_BUILD_TESTS)
         target_compile_features(felitronics_session_hostile_${licence}_tests PRIVATE cxx_std_20)
         target_compile_definitions(felitronics_session_hostile_${licence}_tests PRIVATE
             FELITRONICS_SESSION_HOSTILE_LICENCE_${licence}=1)
-        target_compile_options(felitronics_session_hostile_${licence}_tests PRIVATE "${FELITRONICS_SESSION_HOSTILE_${licence}}")
+        target_compile_options(felitronics_session_hostile_${licence}_tests PRIVATE "${FELITRONICS_SESSION_HOSTILE_${licence}}"
+                               ${FELITRONICS_SESSION_OPTIMISED})
         add_test(NAME felitronics_session_hostile_${licence}_tests COMMAND felitronics_session_hostile_${licence}_tests)
     endforeach()
 

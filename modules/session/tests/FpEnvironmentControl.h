@@ -127,9 +127,16 @@ constexpr int kRoundTowardZero = FE_TOWARDZERO;
 constexpr int kRoundTowardZero = -1;
 #endif
 
-// The rows where a contraction that is allowed actually happens: every arm64 row, and x86-64 built with FMA.
+// The rows where a contraction that is allowed actually happens: every arm64 row, and x86-64 built with FMA — in an
+// optimised build (modules/session/CMakeLists.txt compiles the positive controls -O2, and /O2 on MSVC in every
+// configuration but Debug, which is unoptimised and cannot be).
+#if defined (_MSC_VER) && ! defined (__clang__) && defined (_DEBUG)
+constexpr bool kOptimised = false;
+#else
+constexpr bool kOptimised = true;
+#endif
 #if defined (__aarch64__) || defined (_M_ARM64) || defined (__FMA__)
-constexpr bool kRowCanFuse = true;
+constexpr bool kRowCanFuse = kOptimised;
 #else
 constexpr bool kRowCanFuse = false;
 #endif
