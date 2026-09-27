@@ -1,7 +1,10 @@
 # felitronics::session — the mastering session, the object a shell talks to (docs/SESSION.md). The repository's first
 # COMPILED target: every other module here is header-only and compiles under whatever flags its consumer chooses; this
-# one is a static library, so its sources are compiled once, with the flags below, and a desktop application that links
-# it cannot recompile it with its own.
+# one is a static library, so its sources are compiled once, with the flags below. That holds for what the library's
+# own objects contain — not for header-inline code the application's translation units compile too (from the standard
+# library, from core): the linker may keep the application's copy. So a program that links felitronics::session compiles
+# EVERY translation unit with the session's FP flags — no contraction, no fast-math (docs/SESSION.md, "What the flags do
+# not reach"). The wasm modules are built whole by this repository and are not affected.
 
 # THE SOURCES — sources.txt, the one list (CMake compiles it, tools/wasm/build.sh compiles it into the fcsession module,
 # the session-laws lint scans from it).
@@ -138,16 +141,6 @@ if(FELITRONICS_BUILD_TESTS)
         target_compile_options(felitronics_session_hostile_${licence}_tests PRIVATE "${FELITRONICS_SESSION_HOSTILE_${licence}}")
         add_test(NAME felitronics_session_hostile_${licence}_tests COMMAND felitronics_session_hostile_${licence}_tests)
     endforeach()
-
-    # INLINE CODE AND THE LINKER. tests/ComdatForcedCopy.cpp compiles the contraction canary (src/ContractionCanary.h)
-    # with -ffp-contract=fast and is linked AHEAD of the library, so the linker keeps its copy; create() must then refuse
-    # with Status::ContractedHelper. The order of the sources is the order on the link line, and it is the test.
-    add_executable(felitronics_session_comdat_tests tests/ComdatForcedCopy.cpp tests/ComdatTests.cpp)
-    target_link_libraries(felitronics_session_comdat_tests PRIVATE felitronics::session felitronics::test_support)
-    target_include_directories(felitronics_session_comdat_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
-    target_compile_features(felitronics_session_comdat_tests PRIVATE cxx_std_20)
-    set_source_files_properties(tests/ComdatForcedCopy.cpp PROPERTIES COMPILE_OPTIONS "${FELITRONICS_SESSION_CONTRACT_FAST}")
-    add_test(NAME felitronics_session_comdat_tests COMMAND felitronics_session_comdat_tests)
 
     # THE BUILD CONTROLS — each forbidden construct, and each forbidden licence, proven to fail the build.
     #  1. Constructs (tests/controls/): one source compiled with the library's OWN compile options (read off the target),

@@ -100,10 +100,8 @@ int main (int argc, char** argv)
         auto created = Session::create();
         if (created.status != felitronics::session::Status::Ok)
         {
-            std::fprintf (stderr, "fcore_session: the session refused to be created (%s)\n",
-                          created.status == felitronics::session::Status::FloatingPointEnvironment
-                              ? "this thread's floating-point environment is not IEEE-754's default"
-                              : "a shared helper was kept in a copy compiled with FP contraction");
+            std::fprintf (stderr, "fcore_session: the session refused to be created (this thread's floating-point "
+                                  "environment is not IEEE-754's default)\n");
             return 2;
         }
         // The script held no command, so nothing runs against the session: it is created, and destroyed.

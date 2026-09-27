@@ -153,8 +153,6 @@ void theLibraryKeepsItsFlags()
     ok (! p.fusesMultiplyAdd, "the library rounds a*b and then +c separately — -ffp-contract=off reached it");
     ok (! p.dividesByReciprocal && ! p.reassociatesSums && ! p.dropsSignedZeros,
         "and divides, adds and keeps signed zeros as IEEE-754 says — no fast-math licence reached it");
-    ok (! felitronics::session::detail::keptCanaryContracts(),
-        "the kept copy of the contraction canary is the library's own — nothing in this binary compiled another");
 }
 } // namespace
 

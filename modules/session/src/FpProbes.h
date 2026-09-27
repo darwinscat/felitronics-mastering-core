@@ -18,8 +18,8 @@
 //                                    arithmetic is what the session's numbers go through, and it has no symbol to link.
 //
 // INTERNAL LINKAGE, ON PURPOSE: an anonymous namespace, so every translation unit that includes this has its OWN copy,
-// compiled with its OWN flags. An inline function with external linkage would be one COMDAT copy for the whole program,
-// chosen by the linker (src/ContractionCanary.h is that case, on purpose).
+// compiled with its OWN flags. An inline function with external linkage would be one copy for the whole program, chosen
+// by the linker from whichever unit it met first.
 //
 // Every operand is `volatile`, so nothing is folded at compile time — where the flags under test would not apply.
 

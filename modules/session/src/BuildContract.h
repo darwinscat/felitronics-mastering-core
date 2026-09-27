@@ -19,7 +19,4 @@ struct BuildProbes
     bool dropsSignedZeros = false;      // a no-signed-zeros licence did
 };
 [[nodiscard]] BuildProbes buildProbes() noexcept;
-
-// Does the copy of detail::contractionCanary that the linker KEPT fuse across statements (src/ContractionCanary.h)?
-[[nodiscard]] bool keptCanaryContracts() noexcept;
 } // namespace felitronics::session::detail
