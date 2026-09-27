@@ -27,7 +27,7 @@
 //              meanwhile, and the master does not.
 //
 // Everything a shell asks is a Request, answered whole by Session::apply(): accepted with the revision it made, or
-// rejected with a code, having changed nothing. WHO MAY ASK WHAT, IN WHICH STATE, is the table below and nothing else —
+// rejected with a code and no state change; rejection publishes an event and advances seq. WHO MAY ASK WHAT, IN WHICH STATE, is the table below and nothing else —
 // every command consults it right after the floating-point entry check. The endings of the measurements and of a master are not commands: they are the
 // session's own transitions (Table::events), driven by the work that ends (the steps that measure and render).
 namespace felitronics::session
@@ -78,6 +78,7 @@ enum class Rejection : std::uint8_t
     TooLong,                    // more samples than this machine's memory can address
     // what the command names (continued)
     NoJobId,                    // every job id was issued: load and master cannot start another job
+    InvalidUtf8,                // a load's name is not valid UTF-8
 };
 
 using CommandId = std::uint64_t;   // the shell's own number for a request, given back in its answer
@@ -110,7 +111,7 @@ struct Pcm
     std::uint32_t sampleRate = 0;              // Hz
 };
 
-// What a load says about the file the audio came from. The name is a person's text and is kept as given.
+// What a load says about the file the audio came from. The name must be valid UTF-8 and is kept as given.
 struct SourceMeta
 {
     std::string_view name;
@@ -137,7 +138,7 @@ struct Forget      { CommandId id = 0; MasterId master = 0; };
 using Request = std::variant<command::Load, command::SetTarget, command::EditTarget, command::EditDevice,
                              command::RevertEdits, command::SetManual, command::Master, command::Cancel, command::Forget>;
 
-// THE ANSWER — whole: accepted with the revision the command made, or rejected with the reason and nothing changed.
+// THE ANSWER — whole: accepted with the revision the command made, or rejected with no state change, but an event.
 struct Answer
 {
     CommandId command = 0;                     // the request's own id
@@ -170,7 +171,8 @@ inline constexpr std::size_t kColumns = 6;
 //   2. STATE    this table: the command's cell in the session's column
 //   3. MANUAL   the device panel's commands — editDevice, revertEdits — need the manual mode (ManualOff)
 //   4. NAMES    what the command names: a target (setTarget), a device offered for this target and source (editDevice,
-//               revertEdits), an id left for a new job (master), the active job (cancel), a master kept (forget)
+//               revertEdits), an id left for a new job (load, master: NoJobId), a load's UTF-8 name (InvalidUtf8),
+//               the active job (cancel), a master kept (forget)
 //   5. FIELDS   an edit or a revert touches a field (NoFields); then field by field, in the order written: finite, one of
 //               the field's values, on its travel, on its step
 //   6. AUDIO    a load's audio: its channels, its rate, its frames, its size, then every sample finite
@@ -199,7 +201,9 @@ struct Table
         { Command::Forget,      {    NoSource, NoMaster,    None,     None,     None,      None } },
     };
 
-    // Cancel in Loaded or Measured1 additionally checks for a live measurement; after cancellation it returns NoJob.
+    // Cancel in Loaded drops the source and returns Empty; in Measured1 it stops phase two and keeps Measured1.
+    // A master cancellation ends the overlay and keeps the measured state. Each cancelled job's progress is reset.
+    // Cancel in Measured1 checks for a live measurement; after phase-two cancellation it returns NoJob.
     // THE SESSION'S OWN TRANSITIONS — where each may happen (true), and what it does:
     //   Measured1  the first measurement ended: Loaded becomes Measured1, and the devices are placed
     //   Measured2  the second ended: Measured1 becomes Measured2, with a master being made or not

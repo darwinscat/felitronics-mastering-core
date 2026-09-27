@@ -20,13 +20,6 @@
     ]
   },
   "records": {
-    "TargetFieldsValue": {
-      "cpp": "TargetFields<Value>",
-      "fields": {
-        "lufs": "double",
-        "tp": "double"
-      }
-    },
     "TargetFieldsTouched": {
       "cpp": "TargetFields<Touched>",
       "fields": {

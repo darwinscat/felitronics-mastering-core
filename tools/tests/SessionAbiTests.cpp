@@ -150,7 +150,7 @@ void theSessionsRefusalPassesThrough()
         "restored, a create succeeds: the refusal took no slot");
 }
 
-void theGenerationRetiresInsteadOfWrapping()
+[[maybe_unused]] void theGenerationRetiresInsteadOfWrapping()
 {
     felitronics::test::group ("a slot retires at its last generation instead of wrapping — at the shipped width");
     // Every slot is free here, so each create takes slot 0 (handle & 0xFF == 1) until it retires.
@@ -254,7 +254,12 @@ int main()
     createAndDestroy();
     theTableHoldsItsCapacity();
     theSessionsRefusalPassesThrough();
+#if defined (_MSC_VER) && ! defined (NDEBUG)
+    // MSVC Debug runs every other ABI check; Release holds the full 16.7-million-generation walk.
+    std::puts ("SKIP: generation-wrap walk in MSVC Debug; covered in Release");
+#else
     theGenerationRetiresInsteadOfWrapping();
+#endif
     theConfigVersion();
     thePoisonIsForGood();   // LAST: the poison is for good, and nothing after it could run
     return felitronics::test::report();

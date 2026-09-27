@@ -3,7 +3,7 @@
 
 // THE COMMANDS (Commands.h): check() runs the checks in the order Commands.h declares — the floating-point environment,
 // then the table, then the rest — and says what the request would ask the heap for; apply() runs check() and, only when
-// it passed, does the work. So a rejected request has changed nothing by construction: check() is const, and the work
+// it passed, does the work. A rejection publishes an event and advances seq, but changes no state: check() is const, and the work
 // starts after it. The session's own transitions (src/Driver.h) are here too, beside the table they read.
 
 #include "BuildGuards.h"
@@ -12,6 +12,7 @@
 #include "Driver.h"
 #include "Grid.h"
 #include "Rules.h"
+#include "Utf8.h"
 
 #include <felitronics/session/Commands.h>
 #include <felitronics/session/Config.h>
@@ -181,6 +182,7 @@ Checked Session::check (const Request& request) const noexcept
     if (const auto* load = std::get_if<command::Load> (&request))
     {
         if (lastJob_ == std::numeric_limits<JobId>::max()) return rejected (Rejection::NoJobId);
+        if (! detail::validUtf8 (load->meta.name)) return rejected (Rejection::InvalidUtf8);
         // 6. AUDIO
         const Pcm& pcm = load->pcm;
         if (pcm.channelCount < 1 || pcm.channelCount > 2) return rejected (Rejection::BadChannels);
@@ -387,17 +389,11 @@ Answer Session::apply (const Request& request) noexcept
     }
     else if (const auto* cancel = std::get_if<command::Cancel> (&request))
     {
-        if (cancel->job == measurementJob_) measurementJob_ = 0;
-        else
-        {
-            mastering_ = false;
-            job_ = 0;
-            jobRecipe_ = {};
-        }
+        dropJob (cancel->job);
         Notification event;
         event.jobId = cancel->job;
         event.kind = EventKind::Fact;
-        event.payload.fact.id = FactId::Cancelled;
+        (void) event.payload.fact.assign (text::Fact::of (text::FactId::Cancelled));
         emit (event);
     }
     else if (const auto* forget = std::get_if<command::Forget> (&request))

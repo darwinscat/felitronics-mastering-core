@@ -19,4 +19,6 @@ struct BuildProbes
     bool dropsSignedZeros = false;      // a no-signed-zeros licence did
 };
 [[nodiscard]] BuildProbes buildProbes() noexcept;
+// Debug-only bounds trap, compiled under the library flags; no console or assertion handler.
+void debugBound (bool within) noexcept;
 } // namespace felitronics::session::detail

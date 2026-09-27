@@ -19,6 +19,16 @@
 using namespace felitronics::session;
 using felitronics::test::ok;
 using detail::Driver;
+using text::FactId;
+// Test-only corruption reaches the guards without depending on real driver failures.
+struct felitronics::session::detail::Inspector
+{
+    static void state (Session& s, State state) { s.state_ = state; }
+    static void measurementUnit (Session& s, std::uint32_t unit) { s.measurementUnit_ = unit; }
+    static void noMasterRoom (Session& s) { s.masterRoom_ = s.masterCount_; }
+    static std::uint64_t sequence (const Session& s) { return s.sequence_; }
+    static void fillBatch (Session& s, std::size_t count) { for (std::size_t i = 0; i < count; ++i) s.emit ({}); }
+};
 namespace budget = felitronics::session::testing;
 namespace
 {
@@ -56,7 +66,7 @@ Snapshot snapshot (const Session& s)
     Snapshot out;
     const auto need = s.snapshotBytes();
     const auto spent = budget::spend ([&] { out = s.snapshot(); });
-    ok (need == std::uint64_t (spent.bytes), "snapshot declares exact owned storage");
+    ok (need == std::uint64_t (spent.bytes) && need == Snapshot::storageFor (out.view()), "snapshot and its storage demand use the same complete view");
     return out;
 }
 std::string encoded (const SnapshotView& view)
@@ -89,12 +99,17 @@ std::uint64_t eventsHash (const std::vector<Notification>& events)
         }
         if (e.kind == EventKind::Fact)
         {
-            hash = digest (hash, std::uint8_t (e.payload.fact.id)); hash = digest (hash, e.payload.fact.count);
-            for (unsigned i = 0; i < e.payload.fact.count; ++i)
+            const auto fact = e.payload.fact.view();
+            hash = digest (hash, std::uint16_t (fact.id)); hash = digest (hash, fact.argCount);
+            for (unsigned i = 0; i < fact.argCount; ++i)
             {
-                hash = digest (hash, std::uint8_t (e.payload.fact.args[i].kind));
-                hash = digest (hash, std::bit_cast<std::uint64_t> (e.payload.fact.args[i].value));
-                hash = digest (hash, e.payload.fact.args[i].count); hash = digest (hash, e.payload.fact.args[i].enumId);
+                const auto& arg = fact.args[i];
+                hash = digest (hash, std::uint8_t (arg.kind)); hash = digest (hash, std::uint8_t (arg.unit));
+                hash = digest (hash, arg.precision); hash = digest (hash, std::uint8_t (arg.sign));
+                hash = digest (hash, std::uint8_t (arg.bound)); hash = digest (hash, std::uint16_t (arg.termId));
+                hash = digest (hash, std::bit_cast<std::uint64_t> (arg.number));
+                hash = digest (hash, std::uint64_t (arg.integer)); hash = digest (hash, arg.userText.size());
+                for (const char c : arg.userText) hash = digest (hash, static_cast<unsigned char> (c));
             }
         }
         if (e.kind == EventKind::Done) hash = digest (hash, e.payload.done.masterId);
@@ -115,7 +130,7 @@ std::vector<Notification> scenario (std::uint32_t chunk, bool cancel)
         const unsigned n = left < chunk ? left : chunk;
         left -= step (*s, n).units; collect();
     }
-    ok (s->state() == State::Measured1 && events.back().payload.fact.id == FactId::Measurement1, "phase one fact is available on the step that establishes it");
+    ok (s->state() == State::Measured1 && events.back().payload.fact.view().id == FactId::Measurement1, "phase one fact is available on the step that establishes it");
     auto saved = snapshot (*s);
     const auto job = apply (*s, command::Master { 2 }).job;
     ok (snapshot (*s).view().masterProgress.totalUnits == 4, "master work estimate is available before the first step");
@@ -144,14 +159,14 @@ void pump()
     ok (eventsHash (one) == eventsHash (bulk) && eventsHash (one) == eventsHash (again), "complete event sequence is invariant across runs and pump slicing");
     ok (eventsHash (cancelled) == eventsHash (cancelledAgain), "cancelled scenario sequence is invariant across runs and slicing");
     ok (one.size() == 22 && cancelled.size() == 25, "fixed event counts for the two scenarios");
-    ok (eventsHash (one) == 0x82ea9ee80d5e4d21ull && eventsHash (cancelled) == 0xcb2185b270ed0182ull, "event fixtures pin every active payload field");
+    ok (eventsHash (one) == 0xe2d3b1997699c4acull && eventsHash (cancelled) == 0x74d299b0b8b47839ull, "event fixtures pin every active payload field");
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     Audio audio; auto s = fresh();
     const auto old = apply (*s, audio.load()).job;
     const auto source = s->source().hash;
     (void) step (*s, 2);
     (void) apply (*s, command::Cancel { 2, old });
-    ok (step (*s, 16).state == StepState::Done && s->state() == State::Loaded, "measurement cancel stops work and keeps the source");
+    ok (step (*s, 16).state == StepState::Done && s->state() == State::Empty && s->source().channels == 0 && s->source().name.empty(), "phase-one cancel drops the source and returns Empty");
     ok (! Driver::measured1 (*s, old, source), "cancelled measurement completion is ignored");
     const auto next = apply (*s, audio.load()).job;
     ok (next != old && s->source().hash == source, "even reloading identical samples gets a new job identity");
@@ -255,6 +270,123 @@ void codec()
     s.reset(); base = Snapshot {};
     ok (encoded (owned.view()) == text, "snapshot owns its data beyond the session's life");
 }
+void contracts()
+{
+    Audio audio;
+    // Cancellation at each phase boundary clears only the cancelled work's progress.
+    for (unsigned units : { 0u, 4u, 5u, 9u })
+    {
+        auto s = fresh();
+        const auto job = apply (*s, audio.load()).job;
+        (void) step (*s, units);
+        const auto revision = s->revision();
+        const auto seq = detail::Inspector::sequence (*s);
+        ok (apply (*s, command::Cancel { 2, job }).rejection == Rejection::None, "measurement cancellation accepts every live phase");
+        const auto v = snapshot (*s);
+        ok (s->state() == (units < 5 ? State::Empty : State::Measured1) && s->revision() == revision + 1,
+            "phase-one cancellation is exactly Loaded to Empty; phase two keeps Measured1");
+        ok (v.view().measurementJob == 0 && v.view().measurementProgress.completedUnits == 0
+            && v.view().measurementProgress.totalUnits == 0 && v.view().measurementProgress.weightsVersion == 0,
+            "measurement cancellation resets its progress");
+        ok (s->events().size() == 1 && s->events()[0].seq == seq + 1
+            && s->events()[0].payload.fact.view().id == FactId::Cancelled, "cancel publishes the shared text fact");
+        const auto before = encoded (v.view());
+        ok (apply (*s, command::Cancel { 3, job }).rejection == Rejection::NoJob
+            && before == encoded (snapshot (*s).view()) && s->events()[0].seq == seq + 2,
+            "rejection changes no snapshot field but publishes and advances seq");
+        if (units < 5)
+        {
+            ok (s->source().frames == 0 && s->source().hash == 0, "phase-one cancellation drops the audio identity");
+            (void) apply (*s, audio.load());
+            ok (step (*s, 16).state == StepState::Done && s->state() == State::Measured2, "the shell can reload the same audio after phase-one cancellation");
+        }
+    }
+    for (unsigned units : { 5u, 10u })
+    {
+        auto s = fresh(); (void) apply (*s, audio.load()); (void) step (*s, units);
+        const auto state = s->state(); const auto measurement = s->measurementJob();
+        const auto job = apply (*s, command::Master { 2 }).job; (void) step (*s, 2);
+        (void) apply (*s, command::Cancel { 3, job });
+        const auto v = snapshot (*s);
+        ok (s->state() == state && s->measurementJob() == measurement && ! s->mastering()
+            && v.view().masterProgress.completedUnits == 0 && v.view().masterProgress.totalUnits == 0
+            && v.view().masterProgress.weightsVersion == 0, "master cancellation keeps the measured state and resets progress");
+    }
+    // Each Driver failure and an exhausted/corrupt measurement cursor must emit Contract and disarm the job.
+    for (unsigned fault = 0; fault < 5; ++fault)
+    {
+        auto s = fresh(); (void) apply (*s, audio.load());
+        if (fault == 0) { (void) step (*s, 4); detail::Inspector::state (*s, State::Measured1); }
+        if (fault == 1) { (void) step (*s, 9); detail::Inspector::state (*s, State::Measured2); }
+        if (fault == 2 || fault == 3) detail::Inspector::measurementUnit (*s, fault == 2 ? 10u : std::numeric_limits<std::uint32_t>::max());
+        if (fault == 4)
+        {
+            (void) step (*s, 10); (void) apply (*s, command::Master { 2 }); (void) step (*s, 3);
+            detail::Inspector::noMasterRoom (*s);
+        }
+        (void) step (*s, 1);
+        const auto& error = s->events().back();
+        ok (error.kind == EventKind::Error && error.payload.error.code == ErrorCode::Contract
+            && error.payload.error.fact.view().id == FactId::SessionContract && error.payload.error.recover == Recover::None,
+            "failed driver or out-of-table cursor publishes Contract");
+        ok (s->measurementJob() == 0 && s->job() == 0 && step (*s, 16).state == StepState::Done,
+            "contract failure drops the job instead of continuing beyond the table");
+    }
+    for (const auto id : { FactId::Measurement1, FactId::Measurement2, FactId::MasterPass, FactId::MasterReady, FactId::Cancelled,
+                          FactId::SessionTrap, FactId::SessionContract, FactId::SessionRefusal, FactId::SessionMemory,
+                          FactId::SessionPoisoned, FactId::SessionStale, FactId::RejectedInvalidUtf8 })
+    {
+        const auto fact = id == FactId::MasterPass ? text::Fact::of (id, text::Arg::count (3)) : text::Fact::of (id);
+        for (const auto lang : { text::Lang::Ru, text::Lang::En })
+        {
+            const auto rendered = text::Text::text (fact, lang);
+            ok (! rendered.empty() && rendered != text::Text::key (id) && rendered.find ('{') == std::string::npos,
+                "every event and UTF-8 refusal fact renders a whole message in both catalog languages");
+        }
+    }
+    ok (text::Text::text (text::Fact::of (FactId::MasterPass, text::Arg::count (3)), text::Lang::En) == "Master · pass 3",
+        "the human pass label carries no budget");
+    Notification saved;
+    {
+        Notification event; event.kind = EventKind::Fact;
+        std::string first = "source.wav", second = "target";
+        const auto fact = text::Fact::of (FactId::Value, text::Arg::text (first), text::Arg::text (second));
+        bool assigned = false;
+        const auto spent = budget::spend ([&] { assigned = event.payload.fact.assign (fact); });
+        saved = event;
+        first.assign (first.size(), 'x'); second.clear();
+        ok (assigned && spent.bytes == 0 && saved.payload.fact.view().args[0].userText == "source.wav",
+            "event user text is owned without an allocation, independent of the producer");
+    }
+    Notification moved = std::move (saved); saved = {};
+    ok (moved.payload.fact.view().args[0].userText == "source.wav" && moved.payload.fact.view().args[1].userText == "target",
+        "copied and moved notifications bind views to their own bytes after the original dies");
+    ok (moved.payload.fact.assign (moved.payload.fact.view()), "assigning an owned fact's own view is safe");
+    const std::string tooLong (OwnedFact::kTextCapacity + 1, 'x');
+    ok (! moved.payload.fact.assign (text::Fact::of (FactId::Value, text::Arg::text (tooLong)))
+        && moved.payload.fact.view().args[0].userText == "source.wav", "over-capacity user text refuses whole without truncation");
+    const std::string exact (OwnedFact::kTextCapacity, 'y');
+    ok (moved.payload.fact.assign (text::Fact::of (FactId::Value, text::Arg::text (exact)))
+        && moved.payload.fact.view().args[0].userText == exact, "the full declared user-text capacity is usable");
+    auto s = fresh();
+    for (const std::string invalid : { std::string ("\x80"), std::string ("\xC0\xAF"), std::string ("\xE0\x80\x80"),
+        std::string ("\xED\xA0\x80"), std::string ("\xF4\x90\x80\x80"), std::string ("\xF0\x9F"), std::string ("\xC2x") })
+    {
+        auto request = audio.load(); request.meta.name = invalid;
+        const auto need = s->check (request); const auto before = encoded (snapshot (*s).view());
+        ok (need.rejection == Rejection::InvalidUtf8 && need.bytes == 0, "invalid UTF-8 load names are refused at check");
+        const auto answer = apply (*s, request);
+        ok (answer.rejection == Rejection::InvalidUtf8 && before == encoded (snapshot (*s).view()), "invalid UTF-8 refusal leaves the snapshot unchanged");
+        const auto fact = text::Text::rejected (answer, request);
+        ok (fact && unsigned (fact->id) == 100 + unsigned (answer.rejection), "rejected event text uses 100 plus the appended code");
+    }
+    const std::string valid ("\0\xC2\xA2\xE2\x82\xAC\xF0\x9F\x8E\xB5", 10);
+    auto request = audio.load(); request.meta.name = valid;
+    ok (apply (*s, request).rejection == Rejection::None, "valid UTF-8 at every width, including NUL, is kept");
+    const auto json = encoded (snapshot (*s).view()); Snapshot restored;
+    ok (Codec::decode (json, restored) == CodecStatus::Ok && restored.view().source.name == valid, "UTF-8 names survive the JSON round trip");
+}
+
 void numbers()
 {
     bool same = true;
@@ -290,16 +422,41 @@ void environment()
         const auto need = Codec::decodedBytes (before);
         budget::restoreFpEnvironment (env);
         ok (s->events().size() == 1 && s->events()[0].kind == EventKind::Error
-            && s->events()[0].payload.error.fact.id == FactId::FloatingPointEnvironment
-            && s->events()[0].payload.error.recover == Recover::None, "FP refusal publishes a self-contained contract error");
+            && s->events()[0].payload.error.fact.view().id == FactId::SessionRefusal
+            && s->events()[0].payload.error.code == ErrorCode::Refusal
+            && s->events()[0].payload.error.recover == Recover::Continue, "FP refusal publishes resumable recovery");
         ok (result.refused && result.units == 0 && need.status == CodecStatus::FloatingPointEnvironment, "pump and codec refuse hostile floating-point environment");
         ok (before == encoded (snapshot (*s).view()), "FP refusal preserves all snapshot state");
+        ok (step (*s, 16).state == StepState::Done && s->state() == State::Measured2, "restoring the environment resumes the refused job");
+    }
+    else budget::restoreFpEnvironment (env);
+    auto empty = fresh();
+    const auto seq = detail::Inspector::sequence (*empty);
+    if (budget::setFlushToZero())
+    {
+        const auto result = empty->step (0);
+        budget::restoreFpEnvironment (env);
+        ok (! result.refused && result.state == StepState::Done && empty->events().empty()
+            && detail::Inspector::sequence (*empty) == seq, "Empty poll publishes nothing even under a hostile environment");
     }
     else budget::restoreFpEnvironment (env);
 }
 }
-int main()
+int main (int argc, char** argv)
 {
-    pump(); tableBetweenSteps(); codec(); numbers(); environment();
+    if (argc == 2 && std::string_view (argv[1]) == "--emit-limit")
+    {
+#if defined (NDEBUG)
+        return 77;
+#else
+        auto s = Session::create();
+        detail::Inspector::fillBatch (*s.session, kEventBatch);
+        if (s.session->events().size() != kEventBatch) return 2;
+        std::puts ("batch capacity filled"); std::fflush (stdout);
+        detail::Inspector::fillBatch (*s.session, 1);
+        return 0; // Reaching this line means the debug bound failed.
+#endif
+    }
+    pump(); tableBetweenSteps(); codec(); numbers(); environment(); contracts();
     return felitronics::test::report();
 }

@@ -4,6 +4,7 @@
 #include "BuildGuards.h"
 #include "CodecSchema.h"
 #include "JsonNumber.h"
+#include "Utf8.h"
 #include <felitronics/session/Snapshot.h>
 #include <bit>
 #include <cmath>
@@ -26,6 +27,7 @@ struct Writer
     void text (std::string_view s) noexcept { for (char c : s) put (c); }
     void string (std::string_view s) noexcept
     {
+        if (! detail::validUtf8 (s)) good = false;
         constexpr char hex[] = "0123456789abcdef";
         put ('"');
         for (char c : s)
@@ -333,6 +335,7 @@ bool valid (const SnapshotView& v) noexcept
 }
 bool read (std::string_view json, Storage& storage, SnapshotView& view) noexcept
 {
+    if (! detail::validUtf8 (json)) return false;
     Reader reader { json, storage, 0, true, {}, 0, 0, false };
     reader.value (view); reader.space();
     return reader.good && reader.pos == json.size() && valid (view);

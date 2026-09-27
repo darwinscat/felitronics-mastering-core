@@ -215,8 +215,7 @@ every stage a device writes is named, the limiter's second release included.
 measurement ended: the devices are placed, a master can be made), **Measured2** (the second ended too) — and a master
 being made is an overlay on the two measured ones. A shell asks by a `Request`, one struct per command with the shell's
 own id for it: `load`, `setTarget`, `editTarget`, `editDevice`, `revertEdits`, `setManual`, `master`, `cancel`, `forget`.
-`Session::apply()` answers it whole — accepted, with the revision it made, or rejected with a `Rejection` code, having
-changed nothing. Every accepted command and every transition moves the revision by one; a rejection leaves it.
+`Session::apply()` answers it whole — accepted, with the revision it made, or rejected with a `Rejection` code and no state change. A rejection publishes an event and advances `seq`. Every accepted command and every transition moves the revision by one; a rejection leaves it.
 
 **Who may do what, when, is one table in code** (`Table` in `Commands.h`), and every command consults it right after
 the floating-point entry check, before anything else: in each column, `yes` where the command is taken, or the rejection it gets. Mastering1 and Mastering2
@@ -248,11 +247,11 @@ from the code, and ctest holds the text between the markers below to that output
 **The checks run in one declared order, the same for every command**, and the first that fails is the answer:
 1. the calling thread's floating-point environment; 2. the table; 3. the manual mode, for the device panel's commands
 (`editDevice`, `revertEdits`); 4. what the command names — a target, a device offered for this target and source, an
-id left for a new job, the master being made, a master kept; 5. the fields — at least one touched, then each touched one in the order its struct
+id left for a new job (`load` and `master`), a load's valid UTF-8 name, the active job, a master kept; 5. the fields — at least one touched, then each touched one in the order its struct
 writes them: finite, one of its values, on its travel, on its step; 6. a load's audio — one or two channels, a rate of
 at least felitronics-core's 8000 Hz, frames and data, a size the machine can address, every sample finite. A rejection
 on a field names it by its place in its struct. `Session::check()` runs exactly these and says what the command would
-answer; `apply()` runs `check()` first and does the work only when it passed, so a rejected command has changed nothing
+answer; `apply()` runs `check()` first and does the work only when it passed, so a rejected command changes no state
 by construction — `check()` is `const`.
 
 **The project** (`Project.h`) is the target — a row of `[targets]` — with a person's edits of its two numbers (loudness
@@ -385,7 +384,7 @@ main thread.
   its caller keeps alive while it is rendered.
 
 The facts' ids are stable and fall in ranges (`Text.h`): 1–99 readings and the landing, 100–199 a command's rejection,
-200–299 the phases of the work and 300–399 the session's errors, reserved. Adding a fact is three edits: its id in
+200–299 the phases of the work and 300–399 the session's errors. Adding a fact is three edits: its id in
 `Text.h`, in its range, its row in `src/TextFacts.h`, in id order, and its message in every declared language — the
 build is red until the three agree.
 
@@ -425,22 +424,29 @@ to the diagnostic journal. Completed and total work units are deterministic inpu
 `events()` views the latest `apply()` or `step()` batch. The caller copies or consumes it before the next such call;
 queries leave it intact. Each `Notification` is an independent value with `seq`, `jobId`, `kind`, and the payload
 selected by kind. Sequence numbers count publications across loads and cancellations. No callback runs inside the
-session. The fixed batch has room for the maximum three events per unit, declared inside `createBytes()`.
+session. Event facts use `OwnedFact`: `assign(text::Fact)` copies up to 256 user-text bytes without allocation and
+refuses excess whole; `view()` returns a `text::Fact` whose user-text views belong to that event. Copying or moving a
+notification preserves its own bytes. Render with `text::Text::text(event.payload.fact.view(), lang)`. Rejected events
+remain `{commandId, code}`: render their answer and original request with `text::Text::rejected(...)`, fact `100 + code`.
+A step with no work returns `Done` without a publication or a `seq` change, even under a hostile FP environment.
+Restoring the FP environment allows a refused job to resume. The fixed batch has room for the maximum three events per unit, declared inside `createBytes()`.
 
 | kind | payload and publication |
 |---|---|
 | phase | phase name, weighted fraction, weights version, pass and work counters; every completed unit |
-| fact | `FactId` and typed number/count/enum arguments; measurement completion, each master pass, master readiness, cancellation |
+| fact | `text::FactId` and `text::Arg` arguments; measurement completion, each master pass, master readiness, cancellation |
 | reading | owned momentary and short-term points and runs, with positions and lengths; shape only, the stub emits none |
 | done | the completed master's id, immediately after its recipe is kept |
-| rejected | command id and rejection code; the project, revision and work remain unchanged |
-| error | trap/contract/refusal/memory/poisoned/stale code, fact and arguments, byte demand and none/replay recovery; a refused pump FP environment publishes a contract error |
+| rejected | command id and rejection code; the project, revision and work remain unchanged; `seq` advances |
+| error | trap/contract/refusal/memory/poisoned/stale code, fact and arguments, byte demand and none/replay/continue recovery; an FP refusal publishes `Error{Refusal, Continue}` and leaves the job resumable |
 
 An accepted load issues a measurement job id, shared by its two phases. Masters and loads use one monotonic id
 sequence; the load answer returns its id and `measurementJob()` exposes the active measurement. `job()` retains its
-meaning as the active master. Cancellation checks the named id after the state table; an already cancelled measurement
-has `NoJob` even while the state remains Loaded or Measured1. Cancellation preserves the session and its source.
-Loading again restarts measurement. A first-phase result suffices for a master even after phase two is cancelled.
+meaning as the active master. Cancellation checks the named id after the state table. Cancelling phase one takes
+`Loaded` to `Empty` and drops the source; the shell loads the same audio again to restart. Cancelling phase two leaves
+`Measured1`; cancelling a master leaves the measured state and ends its overlay. The cancelled job's progress resets
+in every case. After phase-two cancellation, `cancel` in `Measured1` returns `NoJob` if no master runs. A first-phase
+result still suffices for a master. A failed Driver transition publishes `Error{Contract, None}` and drops that job.
 Every internal completion checks its captured job id, and measurement completions also check the captured source hash.
 A stale completion changes nothing, including when the same samples are loaded again or a newer master runs.
 
@@ -458,13 +464,16 @@ not represented. Numeric tokens are bounded to 1100 characters. This is a snapsh
 
 The description generates the compiled field walk (`src/CodecSchema.h`) and `snapshot.d.ts` in the build's
 `modules/session/` directory. Every build verifies the checked-in walk against the description; the declaration test
-compares the generated TypeScript with that same description. `tools/wasm/build.sh` also emits `snapshot.d.ts` beside
+compares the generated TypeScript with that same description. Generated structured bindings hold every record's arity,
+field assertions hold its types, and each described enum value has its numeric assertion; an undescribed enum fails
+compilation. Offline Node checks actual encoded fixtures against `snapshot.d.ts`, covering every wire mapping, optional
+alternative and record. Compile controls add a field, reorder an enum and request an undescribed enum; all must fail. `tools/wasm/build.sh` also emits `snapshot.d.ts` beside
 the modules. Regenerate the field walk with `cmake -DUPDATE=ON -P tools/session-codec.cmake`.
 
 | operation | demand before work | evidence |
 |---|---|---|
 | step, event/query access | `stepBytes() == 0`; fixed batch included in create | event suite allocation counter |
-| snapshot | `snapshotBytes()`; exact text and master arrays | event suite, retained value after session destruction |
+| snapshot | `snapshotBytes() = Snapshot::storageFor(buildView())`; the same view passed to `Snapshot::copy` | event suite, retained value after session destruction |
 | snapshot copy | `Snapshot::storageFor(view)`; exact text, masters and rows | event suite, all array types |
 | encode | `Codec::encodedBytes(view)` caller buffer; zero heap demand | exact-size and short-buffer tests |
 | decode | `Codec::decodedBytes(json)`; complete validation before exact arrays | round trip, invalid-input refusal, allocation counter |
@@ -472,7 +481,7 @@ the modules. Regenerate the field walk with `cmake -DUPDATE=ON -P tools/session-
 `felitronics_session_event_tests` holds every command-table cell between actual pump calls, immediate fact publication,
 cancellation and continued use, stale completions, and complete event fingerprints across runs and work slicing. The
 fixture is the suite's four synthetic samples at 48 kHz (source hash `0ba6b096abb7c779`) and the embedded config; regenerate its fingerprints by running
-the suite and reviewing changes against those inputs. The pinned hashes include all active event payload fields and
+the suite and reviewing changes against those inputs. The pinned event hashes (`e2d3b1997699c4ac`, `74d299b0b8b47839`) include all active event payload fields and
 the weights version. The same executable and fixtures run native and wasm. The codec suite covers retained snapshots,
 both project layers, all reading arrays, silence, gaps, finite exponent extremes, signed zero, and deterministic
 binary64 samples. The object gate admits Apple's compiler-generated `__chkstk_darwin` stack probe for the bounded

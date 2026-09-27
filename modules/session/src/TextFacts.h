@@ -80,6 +80,18 @@ inline constexpr FactShape kFacts[] = {
     { FactId::RejectedNoAudio, "rejectedNoAudio", {}, 0 },
     { FactId::RejectedTooLong, "rejectedTooLong", {}, 0 },
     { FactId::RejectedNoJobId, "rejectedNoJobId", {}, 0 },
+    { FactId::RejectedInvalidUtf8, "rejectedInvalidUtf8", {}, 0 },
+    { FactId::Measurement1, "measurement1", {}, 0 },
+    { FactId::Measurement2, "measurement2", {}, 0 },
+    { FactId::MasterPass, "masterPass", { { { "pass", ArgKind::Count, {} } } }, 1 },
+    { FactId::MasterReady, "masterReady", {}, 0 },
+    { FactId::Cancelled, "cancelled", {}, 0 },
+    { FactId::SessionTrap, "sessionTrap", {}, 0 },
+    { FactId::SessionContract, "sessionContract", {}, 0 },
+    { FactId::SessionRefusal, "sessionRefusal", {}, 0 },
+    { FactId::SessionMemory, "sessionMemory", {}, 0 },
+    { FactId::SessionPoisoned, "sessionPoisoned", {}, 0 },
+    { FactId::SessionStale, "sessionStale", {}, 0 },
 };
 inline constexpr std::size_t kFactCount = sizeof (kFacts) / sizeof (kFacts[0]);
 
@@ -182,6 +194,7 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Rejection::NoAudio: return FactId::RejectedNoAudio;
         case Rejection::TooLong: return FactId::RejectedTooLong;
         case Rejection::NoJobId: return FactId::RejectedNoJobId;
+        case Rejection::InvalidUtf8: return FactId::RejectedInvalidUtf8;
     }
     return std::nullopt;
 }
