@@ -28,7 +28,7 @@
 //
 // Everything a shell asks is a Request, answered whole by Session::apply(): accepted with the revision it made, or
 // rejected with a code, having changed nothing. WHO MAY ASK WHAT, IN WHICH STATE, is the table below and nothing else —
-// every command consults it first. The endings of the measurements and of a master are not commands: they are the
+// every command consults it right after the floating-point entry check. The endings of the measurements and of a master are not commands: they are the
 // session's own transitions (Table::events), driven by the work that ends (the steps that measure and render).
 namespace felitronics::session
 {

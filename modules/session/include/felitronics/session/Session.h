@@ -143,8 +143,8 @@ public:
     // THE COMMANDS (Commands.h)
 
     // Does the request, whole, or rejects it having changed nothing — the revision included. The checks run in the order
-    // Commands.h declares, the table first. Every accepted request moves the revision by one, and so does each of the
-    // session's own transitions; a rejected one leaves it as it was.
+    // Commands.h declares: the floating-point environment, then the table, then the rest. Every accepted request moves
+    // the revision by one, and so does each of the session's own transitions; a rejected one leaves it as it was.
     [[nodiscard]] Answer apply (const Request& request) noexcept;
 
     // What apply() would answer, without doing it — and the bytes it would ask the heap for if it is accepted, counted by

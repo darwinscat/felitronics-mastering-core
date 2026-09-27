@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
-// THE COMMANDS (Commands.h): check() runs the checks in the order Commands.h declares — the table first — and says what
-// the request would ask the heap for; apply() runs check() and, only when it passed, does the work. So a rejected request
-// has changed nothing by construction: check() is const, and the work starts after it. The session's own transitions
-// (src/Driver.h) are here too, beside the table they read.
+// THE COMMANDS (Commands.h): check() runs the checks in the order Commands.h declares — the floating-point environment,
+// then the table, then the rest — and says what the request would ask the heap for; apply() runs check() and, only when
+// it passed, does the work. So a rejected request has changed nothing by construction: check() is const, and the work
+// starts after it. The session's own transitions (src/Driver.h) are here too, beside the table they read.
 
 #include "BuildGuards.h"
 
