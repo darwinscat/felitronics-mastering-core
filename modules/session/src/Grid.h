@@ -61,6 +61,10 @@ inline int compare (const toml::Decimal& x, const toml::Decimal& y) noexcept
 // Exact equality of two doubles, without -Wfloat-equal's objection. −0 equals +0.
 inline bool same (double a, double b) noexcept { return ! (a < b) && ! (b < a); }
 
+// A number as the project keeps it: −0 written as +0. The two are one value on every knob, and a recipe is compared by
+// its bits.
+inline double kept (double x) noexcept { return same (x, 0.0) ? 0.0 : x; }
+
 // THE DECIMAL A DOUBLE IS: the number with the fewest decimal places, one to nine, whose correctly rounded double is x
 // — what a person typed or a knob stepped to, given back as the double a shell holds. Nothing when no such number
 // exists (x has more places than a knob steps by, or is past 2^53 at one place), and a value with no decimal is on no

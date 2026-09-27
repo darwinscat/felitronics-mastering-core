@@ -320,8 +320,8 @@ Answer Session::apply (const Request& request) noexcept
     }
     else if (const auto* edit = std::get_if<command::EditTarget> (&request))
     {
-        if (edit->fields.lufs) project_.targetEdit.lufs = edit->fields.lufs;
-        if (edit->fields.tp) project_.targetEdit.tp = edit->fields.tp;
+        if (edit->fields.lufs) project_.targetEdit.lufs = detail::kept (*edit->fields.lufs);
+        if (edit->fields.tp) project_.targetEdit.tp = detail::kept (*edit->fields.tp);
     }
     else if (const auto* device = std::get_if<command::EditDevice> (&request))
     {
@@ -330,7 +330,11 @@ Answer Session::apply (const Request& request) noexcept
             using Of = detail::DeviceOf<std::remove_cvref_t<decltype (fields)>>;
             Of::each (rules, [] (std::uint8_t, const FieldRule&, auto& hand, const auto& v)
             {
-                if (v) hand = v;
+                if constexpr (std::is_same_v<std::remove_cvref_t<decltype (v)>, std::optional<double>>)
+                {
+                    if (v) hand = detail::kept (*v);
+                }
+                else if (v) hand = v;
             }, Of::layers (project_.devices).hand, fields);
         });
     }

@@ -533,6 +533,30 @@ template <class F> void knobsOf (Session& s, const std::string& device)
     }, F {});
 }
 
+void negativeZero()
+{
+    felitronics::test::group ("-0 is written as +0: one value on every knob, and a recipe is compared by its bits");
+    Situation x = situation (Column::Measured1);
+    Situation y = situation (Column::Measured1);
+    TiltFields<Touched> minus {}, plus {};
+    minus.db = -0.0;
+    plus.db = 0.0;
+    SaturationFields<Touched> outMinus {}, outPlus {};
+    outMinus.output = -0.0;   // the output's travel ends at 0
+    outPlus.output = 0.0;
+    ok (accepted (*x.s, editOf (minus)) && accepted (*x.s, editOf (outMinus)) && accepted (*y.s, editOf (plus))
+            && accepted (*y.s, editOf (outPlus)),
+        "tilt and the saturator's output edited to -0 in one session, to +0 in the other");
+    ok (std::bit_cast<std::uint64_t> (*x.s->project().devices.tilt.hand.db) == 0
+            && std::bit_cast<std::uint64_t> (*x.s->project().devices.saturation.hand.output) == 0,
+        "-0 is kept as +0");
+    ok (sameProject (x.s->project(), y.s->project()), "and the two projects are one, bit for bit");
+    const Answer a = x.s->apply (command::Master { 1 });
+    const Answer b = y.s->apply (command::Master { 1 });
+    ok (a.rejection == Rejection::None && b.rejection == Rejection::None && sameRecipe (x.s->jobRecipe(), y.s->jobRecipe()),
+        "so the two masters' recipes are equal");
+}
+
 void theKnobs()
 {
     felitronics::test::group ("every knob: its travel and its step, on the field the answer names");
@@ -1005,6 +1029,7 @@ int main()
     aChangeOfTarget();
     theManualModeOff();
     theKnobs();
+    negativeZero();
     theOrderOfTheChecks();
     theOtherRejections();
     memoryIsDeclared();
