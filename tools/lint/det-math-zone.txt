@@ -67,7 +67,6 @@ zone   modules/session/src/BuildContract.cpp                  the library's buil
 zone   modules/session/src/BuildContract.h                    the build contract's private declarations
 zone   modules/session/src/BuildGuards.h                      the build guards every translation unit includes first
 zone   modules/session/src/FpProbes.h                         the floating-point probes: compiler licences and the thread's environment
-zone   modules/session/src/ContractionCanary.h                the header-inline canary the linker keeps one copy of
 # The C boundary and the native CLI: the two roads into the library; what either includes is rule 4's net.
 entry  tools/wasm/fc_session.cpp  the session ABI, the translation unit of the fcsession module
 entry  tools/fcore_session.cpp    the native CLI over the session, the native road into the same library

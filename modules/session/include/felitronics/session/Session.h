@@ -28,11 +28,6 @@ enum class Status : std::uint8_t
     // other row, so it refuses rather than answering with them. Nothing in the library changes the environment; the
     // caller restores it (or calls from another thread) and calls again.
     FloatingPointEnvironment = 1,
-
-    // A helper the session shares with the rest of the program was kept, by the linker, in a copy compiled with FP
-    // contraction across statements (gcc's default -ffp-contract=fast, or fast-math) — the application linking the
-    // library does not compile with felitronics-core's FP policy. docs/SESSION.md, "Inline code and the linker".
-    ContractedHelper = 2,
 };
 
 class Session;
@@ -51,10 +46,16 @@ struct Created
 // each one.
 //
 // A COMPILED LIBRARY, NOT A HEADER. Everything else in this repository is header-only and compiles under its consumer's
-// flags. This does not: `felitronics::session` is a static library whose sources are compiled with ITS flags (no FP
-// contraction, no fast-math, no exceptions, no RTTI — modules/session/CMakeLists.txt), and an application that links it
-// cannot recompile it with its own. This header is the whole of what a consumer compiles, which is why it carries no
-// function body (the session-laws lint refuses one): a body here would be compiled under the consumer's flags.
+// flags. This does not: `felitronics::session` is a static library whose own sources are compiled with ITS flags (no FP
+// contraction, no fast-math, no exceptions, no RTTI — modules/session/CMakeLists.txt). This header is the whole of what a
+// consumer compiles, which is why it carries no function body and no variable that is not constexpr (the session-laws
+// lint refuses both): either would be compiled under the consumer's flags.
+//
+// WHAT THE LIBRARY'S FLAGS DO NOT REACH. Inline code the session shares with the program — a template or inline function
+// from a header both include — is compiled once per translation unit that uses it, each copy under that unit's flags,
+// and the linker keeps one copy for the program. So a program that links felitronics::session compiles EVERY translation
+// unit with the session's FP flags: no contraction (-ffp-contract=off) and no fast-math. The wasm modules this repository
+// builds are built whole, with those flags, and are not affected. docs/SESSION.md, "Inline code and the linker".
 //
 // ONE OWNER, ONE THREAD AT A TIME. A Session is created on the heap and owned by the caller's unique_ptr; destroying it
 // is the unique_ptr's reset. It is neither copied nor moved — a shell holds it by address (the C ABI's handle table
@@ -68,16 +69,15 @@ public:
     // two cannot drift. REQUESTED bytes: the allocator's own header and alignment are the caller's margin.
     [[nodiscard]] static std::uint64_t createBytes() noexcept;
 
-    // A new, empty session — or a refusal, in this order, before anything is allocated:
-    //   Status::FloatingPointEnvironment   the calling thread's FP environment (see checkFloatingPointEnvironment);
-    //   Status::ContractedHelper           the kept copy of a shared helper was compiled with contraction.
+    // A new, empty session — or a refusal before anything is allocated: Status::FloatingPointEnvironment, the calling
+    // thread's FP environment (see checkFloatingPointEnvironment).
     // An accepted create never gives a null session: under -fno-exceptions a heap that cannot serve createBytes() ends
     // the process (natively) or the module (wasm) inside this call, which is what the demand above keeps a shell clear of.
     [[nodiscard]] static Created create() noexcept;
 
     // Is the calling thread's floating-point environment IEEE-754's default — no flush-to-zero, no denormals-are-zero,
     // rounding to nearest? Status::Ok if it is, Status::FloatingPointEnvironment if not. Read with ordinary arithmetic;
-    // it changes nothing. create() asks it first; every call that computes asks it on entry.
+    // it changes nothing. create() asks it before it allocates, and create() is the only call that computes.
     [[nodiscard]] static Status checkFloatingPointEnvironment() noexcept;
 
     ~Session();

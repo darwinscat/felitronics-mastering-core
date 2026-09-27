@@ -5,7 +5,6 @@
 
 #include <felitronics/session/Session.h>
 
-#include "BuildContract.h"
 #include "FpProbes.h"
 
 #include <cstdint>
@@ -30,10 +29,9 @@ Status Session::checkFloatingPointEnvironment() noexcept
 
 Created Session::create() noexcept
 {
-    // The checks in a fixed order, all before the one allocation, so a refused create requested nothing (law 11).
+    // The check before the one allocation, so a refused create requested nothing (law 11).
     Created c;
     if ((c.status = checkFloatingPointEnvironment()) != Status::Ok) return c;
-    if (detail::keptCanaryContracts()) { c.status = Status::ContractedHelper; return c; }
     // `new`, not make_unique: the constructor is private, and a Session made anywhere but here would be one whose demand
     // nobody published.
     c.session = std::unique_ptr<Session> (new Session);
