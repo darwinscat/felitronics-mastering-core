@@ -6,9 +6,10 @@
 // Compiled into the library and into felitronics_session_config_check, the gate every build runs.
 //
 // FORM AND PHYSICS, NOT CHOICES. A range here is where a number stops meaning what its document says: a share outside 0…1,
-// a band that does not ascend, a corner or a hop an analyzer refuses (the analyzers' own domains: analysis::BandCrest,
-// analysis::LowEnd, analysis::BandBursts — each check names its source), a ramp that would divide by zero, a value off
-// its knob's step. The numbers the owner chose are pinned by tests/ConfigDecisionsTests.cpp, not here. A range that
+// a ramp that would divide by zero, a value off its knob's step. What an analyzer admits is the analyzer's to say, so a
+// block the config feeds one (analysis::LowEnd, analysis::BandCrest, analysis::StereoBandBursts) is handed to that
+// analyzer's own storageFor() at the source rates the product accepts, and refused whole when the analyzer refuses it —
+// one source of truth, never a hand-written copy of its domain. The numbers the owner chose are pinned by tests/ConfigDecisionsTests.cpp, not here. A range that
 // another key states — a target's loudness on the edit travel, a default on its knob's travel — is taken from that key
 // once it was read; until then the key's own domain stands in, so one wrong number is one problem.
 //
@@ -20,6 +21,9 @@
 #include "ConfigBind.h"
 #include "ConfigVersion.h"
 
+#include <felitronics/analysis/BandCrest.h>
+#include <felitronics/analysis/LowEnd.h>
+#include <felitronics/analysis/StereoBandBursts.h>
 #include <felitronics/session/Config.h>
 #include <felitronics/toml/Schema.h>
 #include <felitronics/toml/Toml.h>
@@ -51,19 +55,20 @@ R share() { return { 0.0, 1.0 }; }
 R anyLufs() { return { -120.0, 0.0 }; }
 I eqBand() { return { 0, 23 }; }   // the core's EQ stage has 24 bands (FC_MAX_EQ_BANDS)
 
-// The lowest rate the core admits (core::kMinSampleRate): a measurement's geometry must hold there, since the source can be
-// at any rate from it up.
-constexpr double kLowestRate = 8000.0;
-// The analyzers' Nyquist margin (analysis::LowEnd, analysis::BandBursts: 0.49 of the rate; analysis::BandCrest: 0.49 of
-// its 4× oversampled rate).
-constexpr double kCornerFraction = 0.49;
-constexpr double kSemitoneHalfUp = 1.0293022366434921;   // 2^(1/24): the top band's upper edge (analysis::LowEnd)
-constexpr double kTwoSemitones = 1.122462048309373;      // 2^(1/6): a note range that holds two note centres
+// THE SOURCE RATES THE PRODUCT ACCEPTS, at which an analyzer must admit its block: the lowest the core admits
+// (core::kMinSampleRate), the two common ones and the highest the web shell takes. The phase-one measurements the machine
+// decides from (the low end, the crest) must hold at every one of them.
+constexpr double kSourceRates[] = { 8000.0, 44100.0, 48000.0, 96000.0 };
+// The sibilance-band bursts from 44.1 kHz up: their band's upper corner needs 0.49 of the rate above it, which a source
+// under about 18.4 kHz cannot give a 9 kHz corner — there the analyzer refuses and the bursts go unmeasured, a fact of
+// that source and not of this config.
+constexpr double kBurstRates[] = { 44100.0, 48000.0, 96000.0 };
+constexpr int kChannels = 2;                   // a stereo source, the most an analyzer is asked to hold here
 // Where analysis::SourceForensics starts calling a drop a wall (SourceForensicsParams::minDropDb): the spectral wall's
 // confidence ramp starts there, so its full weight must lie above it.
 constexpr double kCoreMinDropDb = 24.0;
-// The delivery rates a target may name, besides 0 (the source's rate).
-constexpr std::int32_t kDeliveryRates[] = { 44100, 48000, 88200, 96000, 176400, 192000 };
+constexpr std::int32_t kLowestDeliveryRate = 8000;     // a delivery rate other than 0 is at least the core's lowest
+constexpr std::int32_t kHighestDeliveryRate = 384000;
 
 template <class E> struct Name
 {
@@ -120,20 +125,38 @@ bool scaleUp (std::int64_t m, int by, std::int64_t& out)
     return true;
 }
 
-// Is x a whole number of steps, exactly? Both are decimals of the documents, brought to one scale — no floating point.
-bool multipleOf (const toml::Decimal& x, const toml::Decimal& step)
+// Is x on the grid that starts at `from` with `step` — is (x − from) a whole number of steps, exactly? All three are
+// decimals of the documents, brought to one scale: no floating point.
+bool onGrid (const toml::Decimal& x, const toml::Decimal& from, const toml::Decimal& step)
 {
-    const int scale = std::max (int (x.scale), int (step.scale));
-    std::int64_t a = 0, b = 0;
-    if (! scaleUp (x.mantissa, scale - int (x.scale), a) || ! scaleUp (step.mantissa, scale - int (step.scale), b)) return false;
-    return b != 0 && a % b == 0;
+    const int scale = std::max ({ int (x.scale), int (from.scale), int (step.scale) });
+    std::int64_t a = 0, f = 0, b = 0;
+    if (! scaleUp (x.mantissa, scale - int (x.scale), a) || ! scaleUp (from.mantissa, scale - int (from.scale), f)
+        || ! scaleUp (step.mantissa, scale - int (step.scale), b))
+        return false;
+    constexpr std::int64_t half = std::numeric_limits<std::int64_t>::max() / 2;
+    if (a > half || a < -half || f > half || f < -half) return false;
+    return b != 0 && (a - f) % b == 0;
 }
 
+// The decimal a key holds, and the decimal an array's item holds — the document's own digits, never a double's.
 std::optional<toml::Decimal> decimalAt (const Reader& in, std::string_view key)
 {
     const toml::Value* v = in.data().find (key);
     return v != nullptr ? toml::asDecimal (*v) : std::nullopt;
 }
+std::optional<toml::Decimal> itemAt (const Reader& in, std::string_view key, std::size_t i)
+{
+    const toml::Value* v = in.data().find (key);
+    const auto* a = v != nullptr ? std::get_if<toml::Array> (&v->data) : nullptr;
+    return a != nullptr && i < a->size() ? toml::asDecimal ((*a)[i]) : std::nullopt;
+}
+
+// A knob's grid: where its travel starts, and its step — both as written.
+struct Grid
+{
+    std::optional<toml::Decimal> from, step;
+};
 
 // ONE DOCUMENT BEING READ: its reader's report, and the checks across keys that report into it.
 struct Doc
@@ -233,11 +256,11 @@ struct Doc
                 refuseItem (in, key, i, Refusal::Duplicate);
     }
 
-    // The value at `key` is a whole number of `step`s (the knob's grid it is set on).
-    void onStep (Reader& in, std::string_view key, const std::optional<toml::Decimal>& step)
+    // The value at `key` sits on its knob's grid: a whole number of steps from where the travel starts.
+    void onStep (Reader& in, std::string_view key, const Grid& grid)
     {
         const auto x = decimalAt (in, key);
-        if (step && x && ! multipleOf (*x, *step)) refuse (in, key, Refusal::NotOnStep);
+        if (grid.from && grid.step && x && ! onGrid (*x, *grid.from, *grid.step)) refuse (in, key, Refusal::NotOnStep);
     }
 
     // An EQ band of the core, which no two devices may share.
@@ -295,7 +318,8 @@ void readLanding (Doc& d, Reader& in, Landing& o)
     if (in.required ("passes", o.passes, I { 1, 1000 }))
     {
         if (o.passes.empty()) d.refuse (in, "passes", Refusal::NotOneOf);   // a landing has at least one series
-        d.ascending (in, "passes", o.passes);                                // each series longer than the last
+        for (std::size_t i = 1; i < o.passes.size(); ++i)                   // a series is never shorter than the last
+            if (o.passes[i] < o.passes[i - 1]) { d.refuseItem (in, "passes", i, Refusal::OutOfOrder); break; }
     }
     in.required ("toleranceLu", o.toleranceLu, R { 0.001, 1.0 });
     in.required ("overshootFreeDb", o.overshootFreeDb, R { 0.0, 24.0 });
@@ -329,7 +353,7 @@ void readPeakClipper (Doc& d, Reader& in, PeakClipper& o)
     // The manual threshold starts at the "between" class, so that number sits on the manual travel and its step.
     const R manual = lo && hi && o.manualMinDb < o.manualMaxDb ? R { o.manualMinDb, o.manualMaxDb } : R { 0.0, 12.0 };
     const bool between = in.required ("betweenOverDb", o.betweenOverDb, manual);
-    if (between) d.onStep (in, "betweenOverDb", decimalAt (in, "manualStepDb"));
+    if (between) d.onStep (in, "betweenOverDb", Grid { decimalAt (in, "manualMinDb"), decimalAt (in, "manualStepDb") });
     const bool sh = in.required ("shortOverDb", o.shortOverDb, R { 0.0, 12.0 });
     d.below (in, between && sh, o.betweenOverDb, o.shortOverDb, "shortOverDb");
 }
@@ -344,29 +368,45 @@ void readLimiter (Doc& d, Reader& in, Limiter& o)
     in.table ("peakClipper", Need::Required, [&] (Reader& t) { readPeakClipper (d, t, o.peakClipper); });
 }
 
+// The low end (analysis::LowEnd): the main run and the infra-low run — the same geometry, split at infraLowCrossoverHz —
+// each admitted by LowEnd::storageFor at every source rate, or refused whole.
+bool lowEndAdmits (const LowEndRun& r, double crossoverHz)
+{
+    analysis::LowEndParams p;
+    p.crossoverHz = crossoverHz;
+    p.lowNoteHz = r.lowNoteHz;
+    p.highNoteHz = r.highNoteHz;
+    p.fftOrder = r.fftOrder;
+    p.dutyThresholdDb = r.dutyThresholdDb;
+    p.skipBlocks = r.skipBlocks;
+    return std::all_of (std::begin (kSourceRates), std::end (kSourceRates),
+                        [&] (double rate) { return analysis::LowEnd::storageFor (rate, kChannels, p).ok; });
+}
+
 void readLowEnd (Doc& d, Reader& in, LowEnd& o)
 {
     in.required ("occupiedFromDuty", o.occupiedFromDuty, share());
     in.required ("occupiedMarginWhenOnDb", o.occupiedMarginWhenOnDb, R { 0.0, 40.0 });
-    // analysis::LowEnd's domains, held at the lowest rate the core admits.
-    bool crossover = false;
+    bool run = false;
     in.table ("run", Need::Required, [&] (Reader& t)
     {
         LowEndRun& r = o.run;
-        crossover = t.required ("crossoverHz", r.crossoverHz, R { 1.0, kCornerFraction * kLowestRate });
-        const bool lo = t.required ("lowNoteHz", r.lowNoteHz, R { 1.0, 0.5 * kLowestRate });
-        const bool hi = t.required ("highNoteHz", r.highNoteHz, R { 1.0, 0.5 * kLowestRate });
-        // The top band must fit under Nyquist, and the range must hold two note centres — "the dominant note among one" is
-        // not a measurement.
-        if (hi && ! (r.highNoteHz * kSemitoneHalfUp < 0.5 * kLowestRate)) d.refuse (t, "highNoteHz", Refusal::AboveNyquist);
-        else if (lo && hi && ! (r.highNoteHz >= r.lowNoteHz * kTwoSemitones)) d.refuse (t, "highNoteHz", Refusal::OutOfOrder);
-        t.required ("fftOrder", r.fftOrder, I { 4, 22 });
-        t.required ("dutyThresholdDb", r.dutyThresholdDb, R { 0.0, 200.0 });   // the core takes −5 silently; we do not
-        t.required ("skipBlocks", r.skipBlocks, I { 0, 1 << 24 });             // ... nor −1
+        // Types and signs here; what the analyzer admits, below, is the analyzer's to say. Every key is read, whichever fail.
+        const bool read[] = { t.required ("crossoverHz", r.crossoverHz, R { 0.0, 1.0e6 }),
+                              t.required ("lowNoteHz", r.lowNoteHz, R { 0.0, 1.0e6 }),
+                              t.required ("highNoteHz", r.highNoteHz, R { 0.0, 1.0e6 }),
+                              t.required ("fftOrder", r.fftOrder, I { 0, 30 }),
+                              t.required ("dutyThresholdDb", r.dutyThresholdDb, R { -1.0e6, 1.0e6 }),
+                              t.required ("skipBlocks", r.skipBlocks) };
+        run = std::all_of (std::begin (read), std::end (read), [] (bool x) { return x; });
     });
+    if (run && ! lowEndAdmits (o.run, o.run.crossoverHz)) d.refuse (in, "run", Refusal::AnalyzerRefuses);
     // The infra-low run is a second split BELOW the main one.
-    const bool infra = in.required ("infraLowCrossoverHz", o.infraLowCrossoverHz, R { 1.0, kCornerFraction * kLowestRate });
-    d.below (in, infra && crossover, o.infraLowCrossoverHz, o.run.crossoverHz, "infraLowCrossoverHz");
+    if (in.required ("infraLowCrossoverHz", o.infraLowCrossoverHz, R { 0.0, 1.0e6 }) && run)
+    {
+        if (! (o.infraLowCrossoverHz < o.run.crossoverHz)) d.refuse (in, "infraLowCrossoverHz", Refusal::OutOfOrder);
+        else if (! lowEndAdmits (o.run, o.infraLowCrossoverHz)) d.refuse (in, "infraLowCrossoverHz", Refusal::AnalyzerRefuses);
+    }
 }
 
 void readHpf (Doc& d, Reader& in, Hpf& o, std::vector<std::int32_t>& bands, const std::optional<double>& dcFrom)
@@ -435,7 +475,7 @@ void readMonoBass (Doc& d, Reader& in, MonoBass& o)
     const bool width = d.pair (in, "lowWidthRange", o.lowWidthRange, share());
     in.required ("lowWidthStep", o.lowWidthStep, R { 0.001, 1.0 });
     if (in.required ("lowWidth", o.lowWidth, width ? R { o.lowWidthRange.min, o.lowWidthRange.max } : share()))
-        d.onStep (in, "lowWidth", decimalAt (in, "lowWidthStep"));
+        d.onStep (in, "lowWidth", Grid { itemAt (in, "lowWidthRange", 0), decimalAt (in, "lowWidthStep") });
     const bool range = d.pair (in, "frequencyRange", o.frequencyRange, R { 20.0, 1000.0 });
     in.required ("frequencyStep", o.frequencyStep, R { 0.1, 50.0 });
     const R travel = range ? R { o.frequencyRange.min, o.frequencyRange.max } : R { 20.0, 1000.0 };
@@ -486,7 +526,7 @@ void readCompressor (Doc& d, Reader& in, Compressor& o)
 void readGlue (Doc& d, Reader& in, Glue& o, const std::vector<std::string>* targets)
 {
     in.required ("step", o.step, R { 0.0001, 1.0 });
-    const auto step = decimalAt (in, "step");
+    const Grid step { toml::Decimal { 0, 1, false }, decimalAt (in, "step") };   // the travel runs from 0
     if (in.required ("default", o.defaultPosition, share())) d.onStep (in, "default", step);
     if (in.required ("whenTicked", o.whenTicked, share())) d.onStep (in, "whenTicked", step);
     in.table ("byTarget", Need::Required, [&] (Reader& t)
@@ -532,16 +572,16 @@ void readSaturation (Doc& d, Reader& in, Saturation& o)
     in.required ("driveStep", o.driveStep, R { 0.01, 12.0 });
     const bool drive = d.pair (in, "driveRange", o.driveRange, R { 0.0, 48.0 });
     if (in.required ("driveDb", o.driveDb, drive ? R { o.driveRange.min, o.driveRange.max } : R { 0.0, 48.0 }))
-        d.onStep (in, "driveDb", decimalAt (in, "driveStep"));
+        d.onStep (in, "driveDb", Grid { itemAt (in, "driveRange", 0), decimalAt (in, "driveStep") });
     in.required ("bias", o.bias, R { -0.95, 0.95 });   // the core's domain
     in.required ("mixStep", o.mixStep, R { 0.001, 1.0 });
     const bool mix = d.pair (in, "mixRange", o.mixRange, share());
     if (in.required ("mix", o.mix, mix ? R { o.mixRange.min, o.mixRange.max } : share()))
-        d.onStep (in, "mix", decimalAt (in, "mixStep"));
+        d.onStep (in, "mix", Grid { itemAt (in, "mixRange", 0), decimalAt (in, "mixStep") });
     in.required ("outputStep", o.outputStep, R { 0.01, 6.0 });
     const bool output = d.pair (in, "outputRange", o.outputRange, R { -48.0, 24.0 });
     if (in.required ("outputDb", o.outputDb, output ? R { o.outputRange.min, o.outputRange.max } : R { -48.0, 24.0 }))
-        d.onStep (in, "outputDb", decimalAt (in, "outputStep"));
+        d.onStep (in, "outputDb", Grid { itemAt (in, "outputRange", 0), decimalAt (in, "outputStep") });
     in.required ("autoComp", o.autoComp, share());       // the core's domain
     in.required ("dcBlockHz", o.dcBlockHz, R { 0.0, 200.0 });
 }
@@ -613,7 +653,7 @@ void readDeEsser (Doc& d, Reader& in, DeEsser& o, std::vector<std::int32_t>& ban
     d.pair (in, "widthOct", o.widthOct, R { 0.05, 8.0 });
     const bool depth = d.pair (in, "depthDb", o.depthDb, R { -48.0, 0.0 });
     if (in.required ("manualDepthDb", o.manualDepthDb, depth ? R { o.depthDb.min, o.depthDb.max } : R { -48.0, 0.0 }))
-        d.onStep (in, "manualDepthDb", decimalAt (in, "depthStepDb"));
+        d.onStep (in, "manualDepthDb", Grid { itemAt (in, "depthDb", 0), decimalAt (in, "depthStepDb") });
     if (in.required ("witnessQuantiles", o.witnessQuantiles, share()))
     {
         if (o.witnessQuantiles.empty()) d.refuse (in, "witnessQuantiles", Refusal::NotOneOf);
@@ -621,22 +661,30 @@ void readDeEsser (Doc& d, Reader& in, DeEsser& o, std::vector<std::int32_t>& ban
     }
 }
 
-void readStereoBursts (Doc& d, Reader& in, StereoBursts& o)
+// The sibilance-band bursts (analysis::StereoBandBursts): types and signs here; the block is admitted, or refused whole,
+// by StereoBandBursts::storageFor — see burstsAdmit.
+bool readStereoBursts (Reader& in, StereoBursts& o)
 {
-    // analysis::BandBursts's domains. The band's corners must also clear 0.49 of the rate, which a low source rate does not
-    // give a 9 kHz corner: there the analyzer refuses and the bursts go unmeasured — a fact of that source, not of this
-    // config, so it is not refused here.
-    const bool lo = in.required ("bandLowHz", o.bandLowHz, R { 1.0, 24000.0 });
-    const bool hi = in.required ("bandHighHz", o.bandHighHz, R { 1.0, 24000.0 });
-    d.below (in, lo && hi, o.bandLowHz, o.bandHighHz, "bandHighHz");
-    const bool hop = in.required ("hopMs", o.hopMs, R { 1.0, 1000.0 });
-    const bool baseline = in.required ("baselineMs", o.baselineMs, R { 1.0, 1000.0 * 65536.0 });
-    d.notAbove (in, hop && baseline, o.hopMs, o.baselineMs, "baselineMs");   // a baseline of at least one hop
-    const bool entered = in.required ("enterDb", o.enterDb, R { 0.0, 200.0 });
-    if (entered && ! (o.enterDb > 0.0)) d.outOfRange (in, "enterDb");        // above zero: 10^(0/10) opens on every hop
-    const bool exited = in.required ("exitDb", o.exitDb, R { 0.0, 200.0 });
-    d.notAbove (in, entered && exited, o.exitDb, o.enterDb, "enterDb");       // an event leaves at or below where it entered
-    in.required ("eventCapacity", o.eventCapacity, I { 1, 1 << 24 });
+    const R any { -1.0e9, 1.0e9 };
+    const bool read[] = { in.required ("bandLowHz", o.bandLowHz, any), in.required ("bandHighHz", o.bandHighHz, any),
+                          in.required ("hopMs", o.hopMs, any), in.required ("baselineMs", o.baselineMs, any),
+                          in.required ("enterDb", o.enterDb, any), in.required ("exitDb", o.exitDb, any),
+                          in.required ("eventCapacity", o.eventCapacity) };
+    return std::all_of (std::begin (read), std::end (read), [] (bool x) { return x; });
+}
+
+bool burstsAdmit (const StereoBursts& o)
+{
+    analysis::StereoBandBursts::Params p;
+    p.bandLowHz = o.bandLowHz;
+    p.bandHighHz = o.bandHighHz;
+    p.hopMs = o.hopMs;
+    p.baselineMs = o.baselineMs;
+    p.enterDb = o.enterDb;
+    p.exitDb = o.exitDb;
+    p.maxEvents = o.eventCapacity;
+    return std::all_of (std::begin (kBurstRates), std::end (kBurstRates),
+                        [&] (double rate) { return analysis::StereoBandBursts::storageFor (rate, p).ok; });
 }
 
 void readKinds (Doc& d, Reader& in, Kinds& o)
@@ -767,21 +815,40 @@ void readObservations (Doc& d, Reader& in, Observations& o, std::optional<double
     in.table ("sibilance", Need::Required, [&] (Reader& t) { readSibilance (d, t, o.sibilance); });
 }
 
-void readCrest (Doc& d, Reader& in, Crest& o)
+// The crest per band (analysis::BandCrest): three corners — the shape of its parameters — and a hop of whole 10 ms
+// sub-hops, which the analyzer rounds to without refusing (15 would run as 20 and read back as 15); everything else it
+// admits, or refuses, itself — see crestAdmits.
+bool readCrest (Doc& d, Reader& in, Crest& o)
 {
-    // analysis::BandCrest's domains: exactly three corners, ascending, each clearing 0.49 of its 4× oversampled rate at
-    // the lowest source rate; a hop of 10 ms or more, a whole number of its 10 ms sub-hops; at most 64 hops to a block.
-    if (in.required ("bandEdgesHz", o.bandEdgesHz, R { 1.0, kCornerFraction * 4.0 * kLowestRate }))
+    bool corners = false;
+    if (in.required ("bandEdgesHz", o.bandEdgesHz, R { -1.0e9, 1.0e9 }))
     {
-        if (o.bandEdgesHz.size() != 3) d.refuse (in, "bandEdgesHz", Refusal::NotOneOf);
-        d.ascending (in, "bandEdgesHz", o.bandEdgesHz);
+        corners = o.bandEdgesHz.size() == 3;
+        if (! corners) d.refuse (in, "bandEdgesHz", Refusal::NotOneOf);
     }
-    if (in.required ("hopMs", o.hopMs, R { 10.0, 10000.0 })) d.onStep (in, "hopMs", toml::Decimal { 100, 1, false });
-    in.required ("blockHops", o.blockHops, I { 1, 64 });
-    in.required ("bandShareFloorDb", o.bandShareFloorDb, R { -200.0, 0.0 });
-    in.required ("floorDb", o.floorDb, R { -200.0, 0.0 });
+    const bool hop = in.required ("hopMs", o.hopMs, R { -1.0e9, 1.0e9 });
+    if (hop) d.onStep (in, "hopMs", Grid { toml::Decimal { 0, 1, false }, toml::Decimal { 100, 1, false } });
+    const bool block = in.required ("blockHops", o.blockHops);
+    const bool shareFloor = in.required ("bandShareFloorDb", o.bandShareFloorDb, R { -1.0e9, 1.0e9 });
+    const bool programmeFloor = in.required ("floorDb", o.floorDb, R { -1.0e9, 1.0e9 });
     in.required ("belowMeanSquareDb", o.belowMeanSquareDb, R { 0.0, 200.0 });
     in.required ("noProgrammeDb", o.noProgrammeDb, R { -1000.0, 0.0 });
+    return corners && hop && block && shareFloor && programmeFloor;
+}
+
+bool crestAdmits (const Crest& o)
+{
+    analysis::BandCrestParams p;
+    for (std::size_t i = 0; i < 3; ++i) p.bandEdgeHz[i] = o.bandEdgesHz[i];
+    p.hopMs = o.hopMs;
+    p.blockHops = o.blockHops;
+    p.programmeFloorDb = o.floorDb;
+    p.bandShareFloorDb = o.bandShareFloorDb;
+    return std::all_of (std::begin (kSourceRates), std::end (kSourceRates), [&] (double rate)
+    {
+        const long long minute = (long long) (60.0 * rate);   // a length to size by; the domain does not depend on it
+        return analysis::BandCrest::storageFor (rate, kChannels, minute, p).ok;
+    });
 }
 
 void readCost (Doc& d, Reader& in, Cost& o)
@@ -870,7 +937,13 @@ void readBlindTest (Doc& d, Reader& in, BlindTest& o, const std::vector<std::str
     in.table ("listened", Need::Required, [&] (Reader& t) { t.required ("minSwitches", o.listenedMinSwitches, I { 0, 100 }); });
 }
 
-void readEngine (Doc& d, Reader& in, Engine& o, const std::vector<std::string>* targets)
+// The engine's grids the target rows are set on: taken from the engine document as written.
+struct Grids
+{
+    Grid monoBass, hpfFloor, lowShelf;
+};
+
+void readEngine (Doc& d, Reader& in, Engine& o, const std::vector<std::string>* targets, Grids& grids)
 {
     std::vector<std::int32_t> bands;   // the core's EQ bands the devices have taken, in reading order
     std::optional<double> dcFrom;      // observations.dcOffset.from, once read
@@ -880,13 +953,25 @@ void readEngine (Doc& d, Reader& in, Engine& o, const std::vector<std::string>* 
     in.table ("limiter", Need::Required, [&] (Reader& t) { readLimiter (d, t, o.limiter); });
     in.table ("lowEnd", Need::Required, [&] (Reader& t) { readLowEnd (d, t, o.lowEnd); });
     in.table ("observations", Need::Required, [&] (Reader& t) { readObservations (d, t, o.observations, dcFrom); });
-    in.table ("hpf", Need::Required, [&] (Reader& t) { readHpf (d, t, o.hpf, bands, dcFrom); });
-    in.table ("monoBass", Need::Required, [&] (Reader& t) { readMonoBass (d, t, o.monoBass); });
+    in.table ("hpf", Need::Required, [&] (Reader& t)
+    {
+        readHpf (d, t, o.hpf, bands, dcFrom);
+        grids.hpfFloor = { decimalAt (t, "hzMin"), toml::Decimal { 10, 1, false } };   // the cutoff is whole hertz
+    });
+    in.table ("monoBass", Need::Required, [&] (Reader& t)
+    {
+        readMonoBass (d, t, o.monoBass);
+        grids.monoBass = { itemAt (t, "frequencyRange", 0), decimalAt (t, "frequencyStep") };
+    });
     in.table ("compressor", Need::Required, [&] (Reader& t) { readCompressor (d, t, o.compressor); });
     in.table ("glue", Need::Required, [&] (Reader& t) { readGlue (d, t, o.glue, targets); });
     in.table ("saturation", Need::Required, [&] (Reader& t) { readSaturation (d, t, o.saturation); });
     in.table ("tilt", Need::Required, [&] (Reader& t) { readTilt (d, t, o.tilt, bands); });
-    in.table ("lowShelf", Need::Required, [&] (Reader& t) { readLowShelf (d, t, o.lowShelf, bands); });
+    in.table ("lowShelf", Need::Required, [&] (Reader& t)
+    {
+        readLowShelf (d, t, o.lowShelf, bands);
+        grids.lowShelf = { itemAt (t, "hard", 0), decimalAt (t, "step") };
+    });
     in.table ("eq", Need::Required, [&] (Reader& t)
     {
         t.table ("curve", Need::Required, [&] (Reader& c)
@@ -899,8 +984,11 @@ void readEngine (Doc& d, Reader& in, Engine& o, const std::vector<std::string>* 
     in.table ("stages", Need::Required, [&] (Reader& t) { readStages (d, t, o.stages); });
     in.table ("dither", Need::Required, [&] (Reader& t) { readDither (d, t, o.dither); });
     in.table ("deEsser", Need::Required, [&] (Reader& t) { readDeEsser (d, t, o.deEsser, bands); });
-    in.table ("stereoBursts", Need::Required, [&] (Reader& t) { readStereoBursts (d, t, o.stereoBursts); });
-    in.table ("crest", Need::Required, [&] (Reader& t) { readCrest (d, t, o.crest); });
+    bool bursts = false, crest = false;
+    in.table ("stereoBursts", Need::Required, [&] (Reader& t) { bursts = readStereoBursts (t, o.stereoBursts); });
+    if (bursts && ! burstsAdmit (o.stereoBursts)) d.refuse (in, "stereoBursts", Refusal::AnalyzerRefuses);
+    in.table ("crest", Need::Required, [&] (Reader& t) { crest = readCrest (d, t, o.crest); });
+    if (crest && ! crestAdmits (o.crest)) d.refuse (in, "crest", Refusal::AnalyzerRefuses);
     in.table ("cost", Need::Required, [&] (Reader& t) { readCost (d, t, o.cost); });
     in.table ("progress", Need::Required, [&] (Reader& t) { readProgress (t, o.progress); });
     in.table ("blindTest", Need::Required, [&] (Reader& t) { readBlindTest (d, t, o.blindTest, targets); });
@@ -909,7 +997,7 @@ void readEngine (Doc& d, Reader& in, Engine& o, const std::vector<std::string>* 
 //==============================================================================
 // targets.toml
 
-// What a target row is checked against: the edit travels and steps, and the engine's knobs once those were read.
+// What a target row is checked against: the edit travels and grids, and the engine's knobs once those were read.
 struct RowDomains
 {
     R lufs { -70.0, 0.0 };
@@ -917,11 +1005,11 @@ struct RowDomains
     R monoBass { 20.0, 1000.0 };
     R hpfFloor { 1.0, 200.0 };
     R lowShelf { -24.0, 24.0 };
-    std::optional<toml::Decimal> lufsStep, tpStep, monoBassStep, lowShelfStep;
+    Grid lufsGrid, tpGrid, monoBassGrid, hpfFloorGrid, lowShelfGrid;
     const std::vector<std::int32_t>* slopes = nullptr;
 };
 
-bool readEdit (Doc& d, Reader& in, std::string_view key, Edit& o, const R& domain, std::optional<toml::Decimal>& step)
+bool readEdit (Doc& d, Reader& in, std::string_view key, Edit& o, const R& domain, Grid& grid)
 {
     bool good = false;
     in.table (key, Need::Required, [&] (Reader& t)
@@ -931,7 +1019,7 @@ bool readEdit (Doc& d, Reader& in, std::string_view key, Edit& o, const R& domai
         d.below (t, from && to, o.from, o.to, "to");
         const bool travel = from && to && o.from < o.to;
         d.pair (t, "green", o.green, travel ? R { o.from, o.to } : domain);
-        if (t.required ("step", o.step, R { 0.001, 1.0 })) step = decimalAt (t, "step");
+        if (t.required ("step", o.step, R { 0.001, 1.0 }) && from) grid = { decimalAt (t, "from"), decimalAt (t, "step") };
         good = travel;
     });
     return good;
@@ -940,18 +1028,19 @@ bool readEdit (Doc& d, Reader& in, std::string_view key, Edit& o, const R& domai
 void readTarget (Doc& d, Reader& row, Target& x, const RowDomains& b)
 {
     d.name (row, "group", x.group, kGroups);
-    if (row.required ("lufs", x.lufs, b.lufs)) d.onStep (row, "lufs", b.lufsStep);
-    if (row.required ("tp", x.tp, b.tp)) d.onStep (row, "tp", b.tpStep);
-    if (row.required ("monoBass", x.monoBass, b.monoBass)) d.onStep (row, "monoBass", b.monoBassStep);
+    if (row.required ("lufs", x.lufs, b.lufs)) d.onStep (row, "lufs", b.lufsGrid);
+    if (row.required ("tp", x.tp, b.tp)) d.onStep (row, "tp", b.tpGrid);
+    if (row.required ("monoBass", x.monoBass, b.monoBass)) d.onStep (row, "monoBass", b.monoBassGrid);
     // The machine's cutoff is a whole number of hertz, so is its floor.
-    if (row.required ("hpfFloor", x.hpfFloor, b.hpfFloor)) d.onStep (row, "hpfFloor", toml::Decimal { 10, 1, false });
+    if (row.required ("hpfFloor", x.hpfFloor, b.hpfFloor)) d.onStep (row, "hpfFloor", b.hpfFloorGrid);
     if (row.required ("hpfSlopeDbPerOct", x.hpfSlopeDbPerOct, I { 6, 96 }) && b.slopes != nullptr
         && ! contains (*b.slopes, x.hpfSlopeDbPerOct))
         d.refuse (row, "hpfSlopeDbPerOct", Refusal::NotOneOf);
     row.required ("noteLossDb", x.noteLossDb, R { 0.1, 3.0 });
-    if (row.required ("sampleRate", x.sampleRate, I { 0, 192000 }) && x.sampleRate != 0
-        && std::find (std::begin (kDeliveryRates), std::end (kDeliveryRates), x.sampleRate) == std::end (kDeliveryRates))
-        d.refuse (row, "sampleRate", Refusal::NotOneOf);
+    // 0 (the source's rate) or a physical delivery rate; which rates the targets deliver at is a decision, pinned apart.
+    if (row.required ("sampleRate", x.sampleRate, I { 0, kHighestDeliveryRate }) && x.sampleRate != 0
+        && x.sampleRate < kLowestDeliveryRate)
+        d.outOfRange (row, "sampleRate");
     if (row.required ("bitDepth", x.bitDepth, I { 16, 24 }) && x.bitDepth != 16 && x.bitDepth != 24)
         d.refuse (row, "bitDepth", Refusal::NotOneOf);
     d.flag (row, "noClipper", x.noClipper);
@@ -966,7 +1055,7 @@ void readTarget (Doc& d, Reader& row, Target& x, const RowDomains& b)
         if (row.required ("lowShelfDb", db, b.lowShelf))
         {
             x.lowShelfDb = db;
-            d.onStep (row, "lowShelfDb", b.lowShelfStep);
+            d.onStep (row, "lowShelfDb", b.lowShelfGrid);
         }
     }
     if (row.data().find ("album") != nullptr)
@@ -974,28 +1063,30 @@ void readTarget (Doc& d, Reader& row, Target& x, const RowDomains& b)
         {
             Album album;
             const bool lufs = a.required ("lufs", album.lufs, b.lufs);
-            if (lufs) d.onStep (a, "lufs", b.lufsStep);
+            if (lufs) d.onStep (a, "lufs", b.lufsGrid);
             const bool desktopOnly = a.required ("desktopOnly", album.desktopOnly);
             if (lufs && desktopOnly) x.album = album;
         });
 }
 
-void readTargets (Doc& d, Reader& in, Targets& o, const Engine& e)
+void readTargets (Doc& d, Reader& in, Targets& o, const Engine& e, const Grids& grids)
 {
     RowDomains b;
     in.table ("edit", Need::Required, [&] (Reader& t)
     {
-        if (readEdit (d, t, "lufs", o.editLufs, R { -70.0, 0.0 }, b.lufsStep)) b.lufs = R { o.editLufs.from, o.editLufs.to };
-        if (readEdit (d, t, "tp", o.editTp, R { -20.0, 0.0 }, b.tpStep)) b.tp = R { o.editTp.from, o.editTp.to };
+        if (readEdit (d, t, "lufs", o.editLufs, R { -70.0, 0.0 }, b.lufsGrid)) b.lufs = R { o.editLufs.from, o.editLufs.to };
+        if (readEdit (d, t, "tp", o.editTp, R { -20.0, 0.0 }, b.tpGrid)) b.tp = R { o.editTp.from, o.editTp.to };
     });
+    // The engine's grids, as the engine document wrote them.
+    b.monoBassGrid = grids.monoBass;
+    b.hpfFloorGrid = grids.hpfFloor;
+    b.lowShelfGrid = grids.lowShelf;
     // The engine's travels. A travel the engine failed to read is still its default {0, 0} here, and every row would be
     // refused against it for the engine's mistake — so only a travel that is a range is used.
     if (e.monoBass.frequencyRange.min < e.monoBass.frequencyRange.max)
         b.monoBass = R { e.monoBass.frequencyRange.min, e.monoBass.frequencyRange.max };
-    if (e.monoBass.frequencyStep > 0.0) b.monoBassStep = toml::Decimal::fromDouble (e.monoBass.frequencyStep, 6);
     if (e.hpf.hzMin < e.hpf.hzMax) b.hpfFloor = R { e.hpf.hzMin, e.hpf.hzMax };
     if (e.lowShelf.hard.min < e.lowShelf.hard.max) b.lowShelf = R { e.lowShelf.hard.min, e.lowShelf.hard.max };
-    if (e.lowShelf.step > 0.0) b.lowShelfStep = toml::Decimal::fromDouble (e.lowShelf.step, 6);
     if (! e.hpf.slopes.empty()) b.slopes = &e.hpf.slopes;
 
     in.table ("targets", Need::Required, [&] (Reader& t)
@@ -1038,7 +1129,7 @@ void collect (const toml::Report& report, Document document, std::vector<Problem
             case toml::Fault::UnknownKey: q.fault = Fault::UnknownKey; break;
             case toml::Fault::Refused:
                 q.fault = Fault::Refused;
-                q.refusal = p.detail <= std::uint32_t (Refusal::AboveNyquist) ? static_cast<Refusal> (p.detail) : Refusal::None;
+                q.refusal = p.detail <= std::uint32_t (Refusal::AnalyzerRefuses) ? static_cast<Refusal> (p.detail) : Refusal::None;
                 break;
         }
         q.code = q.fault == Fault::Refused ? name (q.refusal) : name (q.fault);
@@ -1063,13 +1154,14 @@ namespace detail
 Loaded bindTables (const toml::Table* targetsDocument, const toml::Table* engineDocument)
 {
     Loaded out;
+    Grids grids;
     std::optional<std::vector<std::string>> targets;
     if (targetsDocument != nullptr) targets = rowKeys (*targetsDocument);
     if (engineDocument != nullptr)
     {
         Doc d;
         Reader reader (*engineDocument, d.report);
-        readEngine (d, reader, out.config.engine, targets ? &*targets : nullptr);
+        readEngine (d, reader, out.config.engine, targets ? &*targets : nullptr, grids);
         reader.finish();
         collect (d.report, Document::Engine, out.problems);
     }
@@ -1077,7 +1169,7 @@ Loaded bindTables (const toml::Table* targetsDocument, const toml::Table* engine
     {
         Doc d;
         Reader reader (*targetsDocument, d.report);
-        readTargets (d, reader, out.config.targets, out.config.engine);
+        readTargets (d, reader, out.config.targets, out.config.engine, grids);
         reader.finish();
         collect (d.report, Document::Targets, out.problems);
     }
@@ -1133,6 +1225,7 @@ const char* name (Refusal refusal) noexcept
         case Refusal::NotApplicable:  return "NotApplicable";
         case Refusal::OutsideLaw:     return "OutsideLaw";
         case Refusal::AboveNyquist:   return "AboveNyquist";
+        case Refusal::AnalyzerRefuses: return "AnalyzerRefuses";
     }
     return "Refused";
 }

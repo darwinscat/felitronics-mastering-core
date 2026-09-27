@@ -12,7 +12,7 @@
 // never carry one.
 //
 // Its controls plant a departure a review found the schema admitting (the high-pass top above 50 Hz, another slope, another
-// landing series, another target number) and require this suite to name it.
+// landing series, another target number or delivery rate) and require this suite to name it.
 
 #include "ConfigTestSupport.h"
 
@@ -206,6 +206,8 @@ void aDepartureIsNamed()
         { false, "passes = [12, 24, 32]", "passes = [12, 24, 40]", "the landing: series of 12, 24 and 32 passes" },
         { true, "noteLossDb = 0.3", "noteLossDb = 0.5", "targets.club.noteLossDb" },
         { true, "lufs = -7,", "lufs = -8,", "targets.youtubeMusic.lufs" },
+        { true, "sampleRate = 48000, bitDepth = 24 }\n# YouTube Music", "sampleRate = 22050, bitDepth = 24 }\n# YouTube Music",
+          "targets.youtube.sampleRate" },
     };
     for (const auto& d : plants)
     {

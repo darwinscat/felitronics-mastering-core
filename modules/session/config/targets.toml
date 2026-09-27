@@ -41,9 +41,9 @@
 #
 # EVERY ROW IS AN OWNER DECISION, pinned field by field by the decisions suite (modules/session/tests/
 # ConfigDecisionsTests.cpp). The schema checks what a row may be — a lufs and a ceiling on the edit's travel and step, a
-# crossover on the mono-bass knob, a floor on the high-pass knob, a slope from its list, a delivery rate from the set
-# (0, 44100, 48000, 88200, 96000, 176400, 192000) — and that suite checks what it is. An optional flag is written only when
-# it is true; sourceRatePass only on a target that delivers at a rate of its own.
+# crossover on the mono-bass knob, a floor on the high-pass knob, a slope from its list, a delivery rate of 0 or 8 kHz and
+# up — and that suite checks what it is. Every number sits on its knob's grid, counted from where the travel starts. An
+# optional flag is written only when it is true; sourceRatePass only on a target that delivers at a rate of its own.
 
 # The target a new session starts with.
 default = "allStreaming"
