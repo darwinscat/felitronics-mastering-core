@@ -9,6 +9,13 @@ landing's pass and its convergence (plural on the passes), the blind test's repe
 number), the loudest bass note, the wide-bass warning of phase 1 in the owner's words, and a file above the platform's
 highest rate (select on the platform). Russian first, then English.
 
+**The first real facts: a command's rejection.** Every code of the state machine's `Rejection` is a fact, 100 + its code,
+with a sentence in Russian and English that says what was refused and why; the four a field refuses name the field (the
+target's loudness or ceiling, a device's knob, a load's audio). `Text::rejected(answer, request)` builds the fact from a
+refused answer. Fact ids are stable and fall in ranges: 1–99 readings and the landing, 100–199 rejections, 200–299 and
+300–399 reserved for the phases and the errors. An unmapped new code is a red build; the suite holds the table code by
+code, the field terms against the state machine's walk of the fields, and the answers of a real session.
+
 **Two TOML documents, compiled in** (felitronics_toml_embed, as the config): `modules/session/text/catalog.toml` — whole
 messages with named placeholders, `plural` variants by CLDR category and `select` variants by term, and the languages it
 declares, `ru` and `en` — and `modules/session/text/format.toml`, the one table of how each of the twelve site languages

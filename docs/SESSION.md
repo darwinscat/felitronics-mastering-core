@@ -372,12 +372,22 @@ main thread.
 - **The same bytes on every row.** The suite renders a corpus — every fact in every language, 36 000 numbers from a fixed
   generator across every unit, sign, bound and precision, every note — and pins one FNV-1a hash of it, which every native
   row and the wasm tier must give.
+- **A command's rejection is a fact.** Every code of the state machine's `Rejection` (`Commands.h`) is the fact
+  100 + its code, a sentence in every declared language that says what was refused and why; the four a field refuses
+  (not finite, not one of its values, off its travel, off its step) name the field — a term for each field a check can
+  refuse: the target's two numbers, every device's knob and choice, a load's audio. `Text::rejected(answer, request)`
+  builds it from a refused answer, reading the field off the request. The mapping is a switch over every code with no
+  default, so a code the state machine adds and nobody maps is an error in this repository's builds (`-Wswitch`,
+  `-Werror`); the suite holds the table code by code, the field terms position by position against `src/Devices.h`'s
+  walk of the fields (a term exactly where a check can refuse), and renders the answers of a real session.
 - **Only in words:** the wording itself — the glossary's Latin terms and the polite form, which the site's guards hold
   for its own catalogs and which join this catalog in a later step; and that a fact's user text is a view whose bytes
   its caller keeps alive while it is rendered.
 
-Adding a fact is three edits: its id in `Text.h`, its row in `src/TextFacts.h`, its message in every declared language —
-the build is red until the three agree.
+The facts' ids are stable and fall in ranges (`Text.h`): 1–99 readings and the landing, 100–199 a command's rejection,
+200–299 the phases of the work and 300–399 the session's errors, reserved. Adding a fact is three edits: its id in
+`Text.h`, in its range, its row in `src/TextFacts.h`, in id order, and its message in every declared language — the
+build is red until the three agree.
 
 ## The floating-point environment
 
