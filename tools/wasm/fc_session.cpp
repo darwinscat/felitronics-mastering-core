@@ -26,6 +26,7 @@
 #include "BuildGuards.h"                       // first: refuses a unit compiled with exceptions, RTTI or fast-math
 #include "fc_session_abi.h"
 
+#include <felitronics/session/Config.h>
 #include <felitronics/session/Session.h>
 
 #include <cstdint>
@@ -155,6 +156,15 @@ fc_session_status checkHandleOut (const fc_session* out) noexcept
     return FC_SESSION_OK;
 }
 
+// Two uint32 halves of a 64-bit number: the same checks, over both.
+fc_session_status checkHalvesOut (const std::uint32_t* out) noexcept
+{
+    if (out == nullptr) return FC_SESSION_ERR_NULL;
+    if ((reinterpret_cast<std::uintptr_t> (out) & (alignof (std::uint32_t) - 1u)) != 0u) return FC_SESSION_ERR_ALIGNMENT;
+    if (! inHeap (out, 2 * sizeof (std::uint32_t))) return FC_SESSION_ERR_SPAN;
+    return FC_SESSION_OK;
+}
+
 } // namespace
 
 //==============================================================================
@@ -200,5 +210,17 @@ FC_EXPORT fc_session_status fc_session_destroy (fc_session session)
         s->retired = true;
     else
         ++s->gen;
+    return FC_SESSION_OK;
+}
+
+FC_EXPORT fc_session_status fc_session_config_version (std::uint32_t* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const fc_session_status st = checkHalvesOut (out); st != FC_SESSION_OK) return st;
+    // Reads the embedded data; allocates nothing.
+    const std::uint64_t v = felitronics::session::config::Config::versions().all;
+    out[0] = static_cast<std::uint32_t> (v);
+    out[1] = static_cast<std::uint32_t> (v >> 32);
     return FC_SESSION_OK;
 }

@@ -1,7 +1,8 @@
 # THE DETERMINISTIC ZONE of felitronics-mastering-core, and its parity entry points. Read by
-# felitronics-core's tools/lint/check-det-math.mjs, run from THIS repository's root with --satellite; read that
-# file for what the zone is, what the four rules are, and why the zone is a written list and the #include
-# closure only a discovery net. Core's own zone (the reference true-peak meter, OfflineFft and the two
+# felitronics-core's tools/lint/check-det-math.mjs, run from THIS repository's root with --satellite and
+# --include-root <felitronics-toml checkout>/include (the session's units include felitronics-toml's headers; CI reads
+# the checkout from the build's cache, FELITRONICS_MASTERING_TOML_SOURCE_DIR); read that file for what the zone is,
+# what the four rules are, and why the zone is a written list and the #include closure only a discovery net. Core's own zone (the reference true-peak meter, OfflineFft and the two
 # oversamplers these analyzers stand on) is core's, and the same run lints it.
 #
 # Format (one per line; the reason is required):
@@ -67,6 +68,13 @@ zone   modules/session/src/BuildContract.cpp                  the library's buil
 zone   modules/session/src/BuildContract.h                    the build contract's private declarations
 zone   modules/session/src/BuildGuards.h                      the build guards every translation unit includes first
 zone   modules/session/src/FpProbes.h                         the floating-point probes: compiler licences and the thread's environment
+entry  modules/session/src/Config.cpp                         a translation unit of felitronics::session
+entry  modules/session/src/ConfigSchema.cpp                   a translation unit of felitronics::session
+zone   modules/session/include/felitronics/session/Config.h   the config's typed structs
+zone   modules/session/src/Config.cpp                         the config compiled in
+zone   modules/session/src/ConfigBind.h                       the schema's seam, shared with the build's gate
+zone   modules/session/src/ConfigSchema.cpp                   the config, read by schema
+zone   modules/session/src/ConfigVersion.h                    the config's versions, one walk over the embedded and the parsed data
 # The C boundary and the native CLI: the two roads into the library; what either includes is rule 4's net. The boundary
 # is compiled with the session's flags and scanned by the session-laws lint, which holds it in the zone as the module is.
 entry  tools/wasm/fc_session.cpp  the session ABI, the translation unit of the fcsession module
