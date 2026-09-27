@@ -16,7 +16,10 @@
       "Report",
       "Analyzers",
       "Pass",
-      "Remeasure"
+      "Remeasure",
+      "Convert",
+      "Lra",
+      "Final"
     ],
     "Device": [
       "Hpf",
@@ -309,7 +312,8 @@
         "momentary": "ReadingPoint[]",
         "shortTerm": "ReadingPoint[]",
         "runs": "ReadingRun[]",
-        "machineDifferences": "MachineDifference[]"
+        "machineDifferences": "MachineDifference[]",
+        "offeredDevices": "uint32"
       }
     },
     "Version": {
@@ -329,5 +333,387 @@
         "coreValue": "double"
       }
     }
+  },
+  "wireAliases": {
+    "SessionStatus": "0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16",
+    "CommandAnswer": "AcceptedAnswer | RejectedAnswer | ContractAnswer",
+    "SessionEvent": "PhaseEvent | FactEvent | ReadingEvent | DoneEvent | RejectedEvent | ErrorEvent",
+    "SessionCommand": "SetTargetCommand | SetManualCommand | EditTargetCommand | EditDeviceCommand | RevertEditsCommand | MasterCommand | CancelCommand | ForgetCommand",
+    "EditDeviceCommand": "EditDeviceHpfCommand | EditDeviceMonoBassCommand | EditDeviceGlueCommand | EditDeviceSaturationCommand | EditDeviceTiltCommand | EditDeviceLimiterCommand | EditDeviceDitherCommand | EditDeviceLowShelfCommand",
+    "RevertEditsCommand": "RevertEditsHpfCommand | RevertEditsMonoBassCommand | RevertEditsGlueCommand | RevertEditsSaturationCommand | RevertEditsTiltCommand | RevertEditsLimiterCommand | RevertEditsDitherCommand | RevertEditsLowShelfCommand"
+  },
+  "wireRecords": {
+    "Row": {
+      "byteOffset": "number",
+      "length": "number",
+      "stride": "2 | 3 | 4"
+    },
+    "AcceptedAnswer": {
+      "kind": "\"accepted\"",
+      "commandId": "string",
+      "revision": "string",
+      "jobId": "number"
+    },
+    "RejectedAnswer": {
+      "kind": "\"rejected\"",
+      "commandId": "string",
+      "revision": "string",
+      "code": "Rejection",
+      "needBytes": "number",
+      "field": "number",
+      "device": "number",
+      "line": "number",
+      "column": "number"
+    },
+    "ContractAnswer": {
+      "kind": "\"rejected\"",
+      "commandId": "string",
+      "revision": "string",
+      "code": "\"contract\"",
+      "reason": "\"unknown\" | \"missing\" | \"duplicate\" | \"invalid\"",
+      "field": "string"
+    },
+    "WireFact": {
+      "FactId": "number",
+      "args": "ReadonlyArray<WireArg>"
+    },
+    "WireArg": {
+      "kind": "number",
+      "unit": "number",
+      "precision": "number",
+      "sign": "number",
+      "bound": "number",
+      "termId": "number",
+      "number": "WireNumber",
+      "integer": "string",
+      "userText": "string"
+    },
+    "ReadingPayload": {
+      "momentary": "Row",
+      "shortTerm": "Row",
+      "runs": "Row"
+    },
+    "DonePayload": {
+      "masterId": "number"
+    },
+    "RejectedPayload": {
+      "commandId": "string",
+      "code": "Rejection"
+    },
+    "ErrorPayload": {
+      "code": "ErrorCode",
+      "recover": "Recover",
+      "needBytes": "number",
+      "fact": "WireFact"
+    },
+    "SourceMeta": {
+      "name": "string",
+      "fileRate": "number",
+      "rateKnown": "boolean",
+      "bitDepth": "number"
+    },
+    "SetTargetCommand": {
+      "kind": "\"setTarget\"",
+      "commandId": "string",
+      "target": "string",
+      "onEdits": "\"reset\" | \"keep\""
+    },
+    "SetManualCommand": {
+      "kind": "\"setManual\"",
+      "commandId": "string",
+      "on": "boolean"
+    },
+    "EditTargetCommand": {
+      "kind": "\"editTarget\"",
+      "commandId": "string",
+      "fields": "TargetPatch"
+    },
+    "TargetPatch": {
+      "lufs?": "WireNumber | null",
+      "tp?": "WireNumber | null"
+    },
+    "MasterCommand": {
+      "kind": "\"master\"",
+      "commandId": "string"
+    },
+    "CancelCommand": {
+      "kind": "\"cancel\"",
+      "commandId": "string",
+      "jobId": "number"
+    },
+    "ForgetCommand": {
+      "kind": "\"forget\"",
+      "commandId": "string",
+      "masterId": "number"
+    },
+    "PhaseEvent": {
+      "seq": "string",
+      "jobId": "number",
+      "kind": "\"phase\"",
+      "payload": "Phase"
+    },
+    "FactEvent": {
+      "seq": "string",
+      "jobId": "number",
+      "kind": "\"fact\"",
+      "payload": "WireFact"
+    },
+    "ReadingEvent": {
+      "seq": "string",
+      "jobId": "number",
+      "kind": "\"reading\"",
+      "payload": "ReadingPayload"
+    },
+    "DoneEvent": {
+      "seq": "string",
+      "jobId": "number",
+      "kind": "\"done\"",
+      "payload": "DonePayload"
+    },
+    "RejectedEvent": {
+      "seq": "string",
+      "jobId": "number",
+      "kind": "\"rejected\"",
+      "payload": "RejectedPayload"
+    },
+    "ErrorEvent": {
+      "seq": "string",
+      "jobId": "number",
+      "kind": "\"error\"",
+      "payload": "ErrorPayload"
+    },
+    "EditDeviceHpfCommand": {
+      "kind": "\"editDevice\"",
+      "commandId": "string",
+      "device": "0",
+      "fields": "EditDeviceHpfFields"
+    },
+    "EditDeviceHpfFields": {
+      "on?": "boolean | null",
+      "fq?": "WireNumber | null",
+      "slope?": "number | null"
+    },
+    "EditDeviceMonoBassCommand": {
+      "kind": "\"editDevice\"",
+      "commandId": "string",
+      "device": "1",
+      "fields": "EditDeviceMonoBassFields"
+    },
+    "EditDeviceMonoBassFields": {
+      "on?": "boolean | null",
+      "fq?": "WireNumber | null",
+      "width?": "WireNumber | null"
+    },
+    "EditDeviceGlueCommand": {
+      "kind": "\"editDevice\"",
+      "commandId": "string",
+      "device": "2",
+      "fields": "EditDeviceGlueFields"
+    },
+    "EditDeviceGlueFields": {
+      "on?": "boolean | null",
+      "upToDb?": "WireNumber | null"
+    },
+    "EditDeviceSaturationCommand": {
+      "kind": "\"editDevice\"",
+      "commandId": "string",
+      "device": "3",
+      "fields": "EditDeviceSaturationFields"
+    },
+    "EditDeviceSaturationFields": {
+      "on?": "boolean | null",
+      "drive?": "WireNumber | null",
+      "mix?": "WireNumber | null",
+      "output?": "WireNumber | null"
+    },
+    "EditDeviceTiltCommand": {
+      "kind": "\"editDevice\"",
+      "commandId": "string",
+      "device": "4",
+      "fields": "EditDeviceTiltFields"
+    },
+    "EditDeviceTiltFields": {
+      "on?": "boolean | null",
+      "db?": "WireNumber | null"
+    },
+    "EditDeviceLimiterCommand": {
+      "kind": "\"editDevice\"",
+      "commandId": "string",
+      "device": "5",
+      "fields": "EditDeviceLimiterFields"
+    },
+    "EditDeviceLimiterFields": {
+      "needles?": "Needles | null",
+      "needlesDb?": "WireNumber | null"
+    },
+    "EditDeviceDitherCommand": {
+      "kind": "\"editDevice\"",
+      "commandId": "string",
+      "device": "6",
+      "fields": "EditDeviceDitherFields"
+    },
+    "EditDeviceDitherFields": {
+      "on?": "boolean | null"
+    },
+    "EditDeviceLowShelfCommand": {
+      "kind": "\"editDevice\"",
+      "commandId": "string",
+      "device": "7",
+      "fields": "EditDeviceLowShelfFields"
+    },
+    "EditDeviceLowShelfFields": {
+      "on?": "boolean | null",
+      "db?": "WireNumber | null"
+    },
+    "RevertEditsHpfCommand": {
+      "kind": "\"revertEdits\"",
+      "commandId": "string",
+      "device": "0",
+      "fields": "RevertEditsHpfFields"
+    },
+    "RevertEditsHpfFields": {
+      "on?": "boolean",
+      "fq?": "boolean",
+      "slope?": "boolean"
+    },
+    "RevertEditsMonoBassCommand": {
+      "kind": "\"revertEdits\"",
+      "commandId": "string",
+      "device": "1",
+      "fields": "RevertEditsMonoBassFields"
+    },
+    "RevertEditsMonoBassFields": {
+      "on?": "boolean",
+      "fq?": "boolean",
+      "width?": "boolean"
+    },
+    "RevertEditsGlueCommand": {
+      "kind": "\"revertEdits\"",
+      "commandId": "string",
+      "device": "2",
+      "fields": "RevertEditsGlueFields"
+    },
+    "RevertEditsGlueFields": {
+      "on?": "boolean",
+      "upToDb?": "boolean"
+    },
+    "RevertEditsSaturationCommand": {
+      "kind": "\"revertEdits\"",
+      "commandId": "string",
+      "device": "3",
+      "fields": "RevertEditsSaturationFields"
+    },
+    "RevertEditsSaturationFields": {
+      "on?": "boolean",
+      "drive?": "boolean",
+      "mix?": "boolean",
+      "output?": "boolean"
+    },
+    "RevertEditsTiltCommand": {
+      "kind": "\"revertEdits\"",
+      "commandId": "string",
+      "device": "4",
+      "fields": "RevertEditsTiltFields"
+    },
+    "RevertEditsTiltFields": {
+      "on?": "boolean",
+      "db?": "boolean"
+    },
+    "RevertEditsLimiterCommand": {
+      "kind": "\"revertEdits\"",
+      "commandId": "string",
+      "device": "5",
+      "fields": "RevertEditsLimiterFields"
+    },
+    "RevertEditsLimiterFields": {
+      "needles?": "boolean",
+      "needlesDb?": "boolean"
+    },
+    "RevertEditsDitherCommand": {
+      "kind": "\"revertEdits\"",
+      "commandId": "string",
+      "device": "6",
+      "fields": "RevertEditsDitherFields"
+    },
+    "RevertEditsDitherFields": {
+      "on?": "boolean"
+    },
+    "RevertEditsLowShelfCommand": {
+      "kind": "\"revertEdits\"",
+      "commandId": "string",
+      "device": "7",
+      "fields": "RevertEditsLowShelfFields"
+    },
+    "RevertEditsLowShelfFields": {
+      "on?": "boolean",
+      "db?": "boolean"
+    },
+    "SessionCapabilities": {
+      "heapCeilingBytes": "number",
+      "maxRateHz": "number",
+      "offeredDevices": "number"
+    }
+  },
+  "binaryRows": [
+    "momentary",
+    "shortTerm",
+    "runs",
+    "machineDifferences"
+  ],
+  "transportEnums": {
+    "Rejection": [
+      "None",
+      "FloatingPointEnvironment",
+      "NoSource",
+      "NotPlaced",
+      "NotMeasured",
+      "Busy",
+      "NoJob",
+      "NoMaster",
+      "ManualOff",
+      "UnknownTarget",
+      "NotOffered",
+      "UnknownJob",
+      "UnknownMaster",
+      "NoFields",
+      "NotFinite",
+      "NotOneOf",
+      "OutOfTravel",
+      "OffStep",
+      "BadChannels",
+      "BadRate",
+      "NoAudio",
+      "TooLong",
+      "NoJobId",
+      "InvalidUtf8",
+      "ProjectTooLarge",
+      "ProjectSyntax",
+      "ProjectMissing",
+      "ProjectType",
+      "ProjectUnknownKey",
+      "UnknownDefaults",
+      "ProjectCore",
+      "MachineMismatch",
+      "NewerDefaults",
+      "RateAboveLimit",
+      "Memory"
+    ],
+    "ErrorCode": [
+      "Trap",
+      "Contract",
+      "Refusal",
+      "Memory",
+      "Poisoned",
+      "Stale"
+    ],
+    "Recover": [
+      "None",
+      "Replay",
+      "Continue"
+    ],
+    "StepState": [
+      "More",
+      "Done"
+    ]
   }
 }

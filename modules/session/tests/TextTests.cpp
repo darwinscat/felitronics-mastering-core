@@ -786,7 +786,7 @@ void everyRejectionIsAFact()
     // rejections a field makes.
     bool table = true, spoken = true;
     std::string misses;
-    const auto last = (std::size_t) session::Rejection::NewerDefaults;
+    const auto last = (std::size_t) session::Rejection::Memory;
     for (std::size_t code = 1; code <= last; ++code)
     {
         const auto r = (session::Rejection) code;
@@ -818,7 +818,7 @@ void everyRejectionIsAFact()
     bool inRange = true;
     for (const auto& shape : detail::kFacts)
         inRange = inRange && ((std::size_t) shape.id < 100 || ((std::size_t) shape.id > 100 && (std::size_t) shape.id <= 100 + last)
-            || ((std::size_t) shape.id >= 200 && (std::size_t) shape.id <= 204)
+            || ((std::size_t) shape.id >= 200 && (std::size_t) shape.id <= 207)
             || ((std::size_t) shape.id >= 300 && (std::size_t) shape.id <= 305));
     ok (inRange, "rejections, phases and session errors occupy only their own declared ranges");
 
@@ -1068,7 +1068,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0x5bf41f3d6e88c94dull;
+    constexpr std::uint64_t kPinned = 0xd00fbc0f623651a4ull;
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");

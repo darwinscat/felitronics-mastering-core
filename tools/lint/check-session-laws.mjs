@@ -126,6 +126,7 @@ const FELITRONICS_ALLOWED = new Set([
     'felitronics/session/Config.h',
     'felitronics/session/Commands.h',
     'felitronics/session/Events.h',             // value payloads only, scanned as every public header
+    'felitronics/session/Wire.h',
     'felitronics/session/Snapshot.h',           // owned snapshots and codec declarations, scanned here
 
     'felitronics/session/Project.h',
@@ -158,7 +159,7 @@ const ALLOWANCES = new Map([
     // (felitronics_toml_embed; tools/wasm/build.sh runs the same tool) — constexpr data of felitronics-toml's embedded
     // types, admitted by name and not scanned: they live in the build tree, and what they compile to is read-only data
     // the object-file gate reads.
-    [CONFIG_TU, { directives: [], generated: new Set(['embedded/engine.h', 'embedded/targets.h']) }],
+    [CONFIG_TU, { directives: [], generated: new Set(['embedded/engine.h', 'embedded/targets.h', 'embedded/versions.h']) }],
     // The text compiled in, the same way: the two headers the build generates from modules/session/text/*.toml.
     [TEXT_TU, { directives: [], generated: new Set(['embedded/catalog.h', 'embedded/format.h']) }],
     // The C boundary: the export macro build.sh's export scanner reads, the emscripten headers and one platform branch

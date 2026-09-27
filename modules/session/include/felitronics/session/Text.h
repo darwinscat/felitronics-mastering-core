@@ -132,12 +132,17 @@ enum class FactId : std::uint16_t
     RejectedProjectCore = 130,
     RejectedMachineMismatch = 131,
     RejectedNewerDefaults = 132,
+    RejectedRateAboveLimit = 133,
+    RejectedMemory = 134,
 
     Measurement1 = 200,
     Measurement2 = 201,
     MasterPass = 202,          // {pass}, without a pass budget
     MasterReady = 203,
     Cancelled = 204,
+    Convert = 205,
+    Lra = 206,
+    Final = 207,
 
     SessionTrap = 300,
     SessionContract = 301,

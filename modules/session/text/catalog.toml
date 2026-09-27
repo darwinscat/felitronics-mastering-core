@@ -312,3 +312,23 @@ en = "The project from defaults version {version} was converted. Written numbers
 [messages.rejectedNewerDefaults]
 ru = "Проект использует более новую версию умолчаний, которой нет в этом ядре."
 en = "The project uses a newer defaults version that this core does not carry."
+
+[messages.rejectedRateAboveLimit]
+ru = "Частота источника выше предела оболочки."
+en = "The source sample rate exceeds the shell's limit."
+
+[messages.rejectedMemory]
+ru = "Для команды недостаточно памяти."
+en = "The command exceeds the memory ceiling."
+
+[messages.convert]
+ru = "Преобразование частоты"
+en = "Converting sample rate"
+
+[messages.lra]
+ru = "Диапазон громкости"
+en = "Loudness range"
+
+[messages.final]
+ru = "Завершение"
+en = "Finalizing"

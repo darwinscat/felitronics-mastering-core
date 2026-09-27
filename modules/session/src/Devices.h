@@ -177,7 +177,7 @@ template <class D, class V> void eachDevice (D& devices, V&& v)
 void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices) noexcept;
 
 // The current planner places defaults; file omissions are filled independently of planner decisions.
-void placeMachine (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices) noexcept;
+void placeMachine (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices, std::uint32_t offeredDevices = 255u) noexcept;
 
 // Is `device` offered for the target in row `row` and a source of `channels` channels? The low shelf where the target
 // carries one; the dither where the target's bit depth is one it serves; mono bass except on a mono source (it has no

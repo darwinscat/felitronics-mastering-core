@@ -37,6 +37,8 @@ function(felitronics_session_config_inputs target)
     felitronics_toml_embed(${target} INPUT text/format.toml
                            NAMESPACE felitronics::session::text::embedded NAME format HEADER embedded/format.h)
     target_link_libraries(${target} PRIVATE felitronics::analysis_offline)
+    target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/session-version)
+    target_sources(${target} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/versions.h)
 endfunction()
 felitronics_session_config_inputs(felitronics_session)
 
@@ -140,7 +142,10 @@ else()
 endif()
 set(FELITRONICS_SESSION_CONFIG_STAMP ${CMAKE_CURRENT_BINARY_DIR}/felitronics_session_config.checked)
 add_custom_command(OUTPUT ${FELITRONICS_SESSION_CONFIG_STAMP}
-    COMMAND ${FELITRONICS_SESSION_CONFIG_GATE} ${FELITRONICS_SESSION_CONFIG}/targets.toml ${FELITRONICS_SESSION_CONFIG}/engine.toml
+                          ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/versions.h
+                          ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/version.txt
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded
+    COMMAND ${FELITRONICS_SESSION_CONFIG_GATE} --expect ${FELITRONICS_SESSION_CONFIG}/targets.toml ${FELITRONICS_SESSION_CONFIG}/engine.toml ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded
     COMMAND ${CMAKE_COMMAND} -E touch ${FELITRONICS_SESSION_CONFIG_STAMP}
     DEPENDS ${FELITRONICS_SESSION_CONFIG_GATE_DEPENDS}
             ${FELITRONICS_SESSION_CONFIG}/targets.toml ${FELITRONICS_SESSION_CONFIG}/engine.toml
@@ -617,16 +622,19 @@ endif()
 # TypeScript and the compiled field walk are checked against the same named-field description.
 set(FELITRONICS_SESSION_TYPES ${CMAKE_CURRENT_BINARY_DIR}/snapshot.d.ts)
 add_custom_command(OUTPUT ${FELITRONICS_SESSION_TYPES}
-    COMMAND ${CMAKE_COMMAND} -DOUTPUT=${FELITRONICS_SESSION_TYPES}
+    BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/snapshot.mjs
+    COMMAND ${CMAKE_COMMAND} -DOUTPUT=${FELITRONICS_SESSION_TYPES} -DVERSION_FILE=${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/version.txt
             -P ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/version.txt
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake
             ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec-schema.json
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-runtime.mjs.in
             ${CMAKE_CURRENT_SOURCE_DIR}/src/CodecSchema.h VERBATIM)
 add_custom_target(felitronics_session_types ALL DEPENDS ${FELITRONICS_SESSION_TYPES})
 add_dependencies(felitronics_session felitronics_session_types)
 if(FELITRONICS_BUILD_TESTS)
     add_test(NAME felitronics_session_codec_types
-        COMMAND ${CMAKE_COMMAND} -DCHECK=ON -DOUTPUT=${FELITRONICS_SESSION_TYPES}
+        COMMAND ${CMAKE_COMMAND} -DCHECK=ON -DOUTPUT=${FELITRONICS_SESSION_TYPES} -DVERSION_FILE=${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/version.txt
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake)
     find_program(FELITRONICS_SESSION_NODE NAMES node nodejs REQUIRED)
     add_executable(felitronics_session_codec_fixture tests/CodecFixture.cpp)

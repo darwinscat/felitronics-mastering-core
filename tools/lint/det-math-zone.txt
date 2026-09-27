@@ -118,3 +118,7 @@ zone   modules/session/src/SnapshotStorage.h  widened snapshot demand and alloca
 entry  modules/session/src/ProjectIO.cpp  project import and canonical export
 zone   modules/session/src/ProjectIO.cpp  project schema, decimal writing and machine comparison
 zone   modules/session/src/ProjectIO.h  project import staging and its memory bound
+entry  modules/session/src/Wire.cpp  named commands and binary transfer
+zone   modules/session/src/Wire.cpp  named commands and binary transfer
+zone   modules/session/src/JsonCodec.h  shared allocation-free JSON scalar codec
+zone   modules/session/include/felitronics/session/Wire.h  caller-owned transfer buffers

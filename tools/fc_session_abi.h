@@ -19,16 +19,29 @@
 // state of the session's own: every answer is the session's, read out of it.
 //
 // ====================================================================================
-// VERSION 0 IS A DRAFT
+// VERSION HISTORY — ONLY ADD
 // ====================================================================================
-// No promise: any entry point, argument, status code, constant or struct in this file may change or go, without a
-// version bump. A shell built against it is built against this revision of the repository and no other.
+// Once published, a signature, value, constant or field offset stays. New entry points and new
+// values may be appended. tools/session-abi-check.mjs compares a compiled probe to the v1 manifest
+// on every tier, including wasm32; its mutation control must fail on a changed or missing line.
 //
 //   fc_session   the surface
 //   ----------   ------------------------------------------------------------------------------------------------
-//   0 (draft)    fc_session_abi_version, fc_session_create, fc_session_destroy, fc_session_config_version — plus the
-//                heap's _malloc / _free.
-#define FC_SESSION_ABI_VERSION 0u
+//   1            capabilities/config creation and demand, commands/load/project, step, events and snapshot copies.
+#define FC_SESSION_ABI_VERSION 1u
+#define FC_SESSION_STEP_UNITS 16u
+#define FC_SESSION_MIN_RATE_HZ 8000u
+#define FC_SESSION_COMMAND_JSON_BYTES 4096u
+#define FC_SESSION_ANSWER_BYTES 32768u
+#define FC_SESSION_DEVICE_HPF 1u
+#define FC_SESSION_DEVICE_MONO_BASS 2u
+#define FC_SESSION_DEVICE_GLUE 4u
+#define FC_SESSION_DEVICE_SATURATION 8u
+#define FC_SESSION_DEVICE_TILT 16u
+#define FC_SESSION_DEVICE_LIMITER 32u
+#define FC_SESSION_DEVICE_DITHER 64u
+#define FC_SESSION_DEVICE_LOW_SHELF 128u
+#define FC_SESSION_DEVICES_ALL 255u
 
 // HOW MANY SESSIONS ONE MODULE INSTANCE HOLDS AT ONCE (law 5: the capacity is stated, not discovered). A create past it
 // answers FC_SESSION_ERR_EXHAUSTED.
@@ -51,23 +64,29 @@ extern "C" {
 // moved on. A handle is not an address and means nothing outside the module instance that issued it.
 typedef uint32_t fc_session;
 
-// THE STATUS OF EVERY CALL THAT CAN FAIL. The values run in the order the checks do, so one malformed call has one
-// answer:   POISON -> out-parameter (null, alignment, in the heap) -> handle -> the table -> the session's own.
+// THE STATUS OF EVERY CALL THAT CAN FAIL. One malformed call has one answer, in the argument order below:
+// POISON -> out-parameter (null, alignment, span) -> handle -> inputs -> overlap -> the session's own.
 typedef enum fc_session_status
 {
     FC_SESSION_OK            = 0,
     FC_SESSION_ERR_POISONED  = 1,   // an earlier call into this module never returned — see POISON below
-    FC_SESSION_ERR_NULL      = 2,   // a required out-pointer was null
-    FC_SESSION_ERR_ALIGNMENT = 3,   // an out-pointer that is not aligned for what it points to
-    FC_SESSION_ERR_SPAN      = 4,   // an out-pointer whose object leaves the wasm heap (wasm only — natively there is
-                                    // no linear memory to bound it by)
+    FC_SESSION_ERR_NULL      = 2,   // a required pointer was null
+    FC_SESSION_ERR_ALIGNMENT = 3,   // a pointer that is not aligned for what it points to
+    FC_SESSION_ERR_SPAN      = 4,   // an address range wraps, or leaves the wasm heap; native addresses have no heap bound
     FC_SESSION_ERR_HANDLE    = 5,   // 0, never issued, already destroyed, or from a previous generation of its slot
     FC_SESSION_ERR_EXHAUSTED = 6,   // FC_SESSION_MAX_HANDLES sessions are alive already, or every free slot has retired
     // The session's own refusals (felitronics::session::Status), passed through:
     FC_SESSION_ERR_FP_ENVIRONMENT = 7,  // the calling thread flushes to zero, reads subnormals as zero, or does not round
                                         // to nearest — restore the environment (or call from another thread)
-    FC_SESSION_ERR_CONFIG = 8           // the config compiled into the module lacks a number the session's commands check
-                                        // against — not reachable in a module whose build ran the config's gate
+    FC_SESSION_ERR_CONFIG = 8,
+    FC_SESSION_ERR_CONFIG_VERSION = 9,  // page build's config hash differs from this module's
+    FC_SESSION_ERR_CAPABILITIES = 10,   // invalid ceiling, rate or device bits
+    FC_SESSION_ERR_MEMORY = 11,         // create demand exceeds the supplied ceiling
+    FC_SESSION_ERR_TOO_SMALL = 12,      // caller output capacity is insufficient
+    FC_SESSION_ERR_CONTRACT = 13,       // invalid transfer value
+    FC_SESSION_ERR_STATE = 14,          // exportProject requires placed devices
+    FC_SESSION_ERR_OVERLAP = 15,        // output overlaps another output or an input
+    FC_SESSION_ERR_TRAP = 16            // shell maps a thrown wasm trap/abort to this status; see POISON
 } fc_session_status;
 
 // ====================================================================================
@@ -87,26 +106,81 @@ typedef enum fc_session_status
 // (from a new_handler, from anything the runtime runs inside an allocation) cannot be told apart from the first call
 // after an abandoned one, and is answered FC_SESSION_ERR_POISONED — for good.
 
-// The version this build speaks — FC_SESSION_ABI_VERSION, 0: the draft. Takes nothing, reads no state, cannot fail.
+// STRUCT LAYOUTS are measured by a compiled probe, never inferred from source. Capabilities are
+// input from the shell. heapCeilingBytes is an exact integer >= 0 and < 2^53; maxRateHz >= 8000.
+// offeredDevices is a bit set of FC_SESSION_DEVICE_*. The session enforces all three, in C++ too.
+typedef struct fc_session_capabilities
+{
+    double heapCeilingBytes;
+    uint32_t maxRateHz;
+    uint32_t offeredDevices;
+} fc_session_capabilities;
+
+typedef struct fc_session_sizes
+{
+    uint32_t jsonBytes;
+    uint32_t rowBytes;
+} fc_session_sizes;
+
+typedef enum fc_session_step_state
+{
+    FC_SESSION_MORE = 0,
+    FC_SESSION_DONE = 1
+} fc_session_step_state;
+
+// ARGUMENT ORDER for every call below: poison; each output in signature order (null, alignment,
+// span); handle if present; inputs in signature order (null, alignment, span); overlap; session.
+// Entry refusals write and allocate nothing. A call poisoned during work may have allocated
+// already, but publishes nothing. Create checks for a free slot before the session checks.
+// The session's command rejection is an OK call with a rejected JSON answer; import's declared
+// parse work may allocate on rejection.
+// Byte buffers have alignment 1, uint32/handles/sizes 4, capabilities and doubles 8, planar pointer
+// tables alignof(pointer). Null is allowed only for a zero-byte rows buffer or a zero-length input.
+// Every output is disjoint from all other buffers. A query/copy pair describes the same batch only
+// while no command or step intervenes. No pointer into session memory survives a call.
+//
+// A wasm trap cannot return through C: the shell catches it as ERR_TRAP and discards the instance.
+// Every later status call returns ERR_POISONED, publishes nothing, and cannot destroy even a handle.
+// Recovery is a new instance, load, then importProject. abi_version alone remains callable.
 uint32_t fc_session_abi_version (void);
 
-// Creates an empty session and writes its handle to `*out`. `*out` is written ONLY on FC_SESSION_OK: a refused call
-// leaves it as it was, so a variable that still holds a live handle is not overwritten by a create that failed.
-// Checks: poison, `out` (null, 4-byte alignment, in the heap), a free slot, then the session's own (the floating-point
-// environment, then the config it reads). A refused create allocated nothing.
-fc_session_status fc_session_create (fc_session* out);
-
-// Destroys the session `session` names; the handle is refused from then on. Checks: poison, the handle.
+// Demand is available BEFORE creation, including when the ceiling cannot afford it. Requested
+// bytes, not allocator overhead. Config halves carry the version in the generated declaration.
+fc_session_status fc_session_create_bytes (const fc_session_capabilities* capabilities, double* out);
+fc_session_status fc_session_create (const fc_session_capabilities* capabilities, uint32_t config_low,
+                                     uint32_t config_high, fc_session* out);
 fc_session_status fc_session_destroy (fc_session session);
+fc_session_status fc_session_config_version (uint32_t* out); // two halves, low first
 
-// THE CONFIG VERSION of this module — felitronics::session::config::Config::versions().all: a 64-bit hash of ALL the
-// data of the config compiled into it (modules/session/config/*.toml), normalised — which config this module carries,
-// what a shell may compare with `fcore_session config version`. It is not the sound version a recipe records
-// (versions().sound, which leaves out what cannot change a master); that one comes with the recipe. Written as two
-// uint32 halves, `out[0]` the low one, since a JavaScript Number holds no 64-bit integer; written ONLY on
-// FC_SESSION_OK. It reads the data compiled in and allocates nothing. Checks: poison, `out` (null, 4-byte alignment,
-// both halves in the heap).
-fc_session_status fc_session_config_version (uint32_t* out);
+// The named-field JSON codec. No terminator is read or written; written is the exact byte length.
+// Commands take at most COMMAND_JSON_BYTES. The answer capacity must be at least ANSWER_BYTES
+// BEFORE the command runs, including for malformed JSON. Unknown/missing/duplicate fields yield
+// rejected{code:"contract",reason,field}; domain rejections carry the stable Rejection code.
+fc_session_status fc_session_command (fc_session session, const char* json, uint32_t json_bytes,
+                                      char* answer, uint32_t capacity, uint32_t* written);
+fc_session_status fc_session_load (fc_session session, uint32_t command_low, uint32_t command_high,
+                                   const float* const* pcm, uint32_t channels, uint32_t frames, uint32_t rate,
+                                   const char* meta, uint32_t meta_bytes, char* answer, uint32_t capacity, uint32_t* written);
+fc_session_status fc_session_import_project (fc_session session, uint32_t command_low, uint32_t command_high,
+                                             const char* project, uint32_t project_bytes,
+                                             char* answer, uint32_t capacity, uint32_t* written);
+fc_session_status fc_session_export_project_size (fc_session session, uint32_t* out);
+fc_session_status fc_session_export_project_copy (fc_session session, char* output, uint32_t capacity, uint32_t* written);
+
+// Work units, never milliseconds. Zero polls; one call takes at most the session's kStepUnits.
+fc_session_status fc_session_step (fc_session session, uint32_t budget, uint32_t* out);
+fc_session_status fc_session_events_size (fc_session session, fc_session_sizes* out);
+fc_session_status fc_session_events_copy (fc_session session, char* json, uint32_t json_capacity,
+                                          double* rows, uint32_t row_capacity);
+fc_session_status fc_session_snapshot_size (fc_session session, fc_session_sizes* out);
+fc_session_status fc_session_snapshot_copy (fc_session session, char* json, uint32_t json_capacity,
+                                            double* rows, uint32_t row_capacity);
+// row_capacity is BYTES, divisible by 8. JSON descriptors {byteOffset,length,stride} address the
+// separate f64 buffer: points [index,value], runs [first,count,value], machine differences
+// [device,field,fileValue,coreValue]. The page reads Float64Array. Binary non-finite values keep
+// IEEE-754 bits; JSON uses "-Infinity", "Infinity", "NaN". Byte
+// counters are exact doubles < 2^53; uint64 identities are decimal strings. Events are a union
+// discriminated by kind in the generated .d.ts. Size queries and copies allocate nothing.
 
 #ifdef __cplusplus
 }   // extern "C"

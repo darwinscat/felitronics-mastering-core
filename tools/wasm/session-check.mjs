@@ -26,7 +26,10 @@
 
 import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
-import { basename, resolve } from 'node:path';
+import { basename, resolve, dirname, join } from 'node:path';
+
+import { types } from '../session-wire-types.mjs';
+import { pathToFileURL } from 'node:url';
 
 const [, , modPath, ...options] = process.argv;
 const usage = () => { console.error('usage: node session-check.mjs <fcsession.node.js> [--config-version <16 hex digits>]'); process.exit(2); };
@@ -54,10 +57,12 @@ for (const m of header.matchAll(/^\s*FC_SESSION_(OK|ERR_[A-Z_]+)\s*=\s*([0-9]+)/
 for (const k of ['OK', 'ERR_POISONED', 'ERR_NULL', 'ERR_ALIGNMENT', 'ERR_SPAN', 'ERR_HANDLE', 'ERR_EXHAUSTED'])
     if (STATUS[k] === undefined) distrust(`tools/fc_session_abi.h declares no FC_SESSION_${k}`);
 
-// THE SURFACE of the version this module answers — its entry points, as the page sees them. Version 0 is the draft
-// (tools/fc_session_abi.h): no promise, so a change of the draft edits this line with the header.
+// The frozen surface, independently listed to catch unintended exports.
 const SURFACE = {
-    0: ['_fc_session_abi_version', '_fc_session_create', '_fc_session_destroy', '_fc_session_config_version'],
+    1: ['_fc_session_abi_version', '_fc_session_create', '_fc_session_destroy', '_fc_session_config_version',
+        '_fc_session_create_bytes', '_fc_session_command', '_fc_session_load', '_fc_session_import_project',
+        '_fc_session_export_project_size', '_fc_session_export_project_copy', '_fc_session_step',
+        '_fc_session_events_size', '_fc_session_events_copy', '_fc_session_snapshot_size', '_fc_session_snapshot_copy'],
 };
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
@@ -87,6 +92,20 @@ ok(surface.every(k => typeof M[k] === 'function') && typeof M._malloc === 'funct
 
 // No HEAP view is held across a call: a create may grow the memory, and a grown memory detaches every view taken
 // before it. So each read takes M.HEAPU32 afresh.
+if (bad) process.exit(1);
+const declarations = readFileSync(join(dirname(resolve(modPath)), 'snapshot.d.ts'), 'utf8');
+const accepts = types(declarations);
+const configConstant = /export declare const FC_SESSION_CONFIG_VERSION: "([a-f0-9]{16})";/.exec(declarations)?.[1];
+if (!configConstant) distrust('generated .d.ts has no config version constant');
+const constants = await import(pathToFileURL(join(dirname(resolve(modPath)), 'snapshot.mjs')));
+ok(constants.FC_SESSION_CONFIG_VERSION === configConstant && constants.FC_SESSION_ABI_VERSION === VERSION, 'runtime constants agree with declarations');
+const configLow = Number.parseInt(configConstant.slice(8), 16);
+const configHigh = Number.parseInt(configConstant.slice(0, 8), 16);
+const caps = M._malloc(16);
+new DataView(M.HEAPU32.buffer).setFloat64(caps, 256 * 1024 * 1024, true);
+M.HEAPU32[(caps + 8) >>> 2] = 48000;
+M.HEAPU32[(caps + 12) >>> 2] = macro('FC_SESSION_DEVICES_ALL');
+const create = out => M._fc_session_create(caps, configLow, configHigh, out);
 const SENTINEL = 0xC0FFEE;
 const out = M._malloc(8);
 const read = () => M.HEAPU32[out >>> 2];
@@ -94,7 +113,7 @@ const write = v => { M.HEAPU32[out >>> 2] = v; };
 
 // create and destroy
 write(SENTINEL);
-ok(M._fc_session_create(out) === STATUS.OK && read() !== 0 && read() !== SENTINEL, 'create writes a handle that is not 0');
+ok(create(out) === STATUS.OK && read() !== 0 && read() !== SENTINEL, 'create writes a handle that is not 0');
 const h = read();
 ok(M._fc_session_destroy(h) === STATUS.OK, 'the handle destroys');
 ok(M._fc_session_destroy(h) === STATUS.ERR_HANDLE, 'and is refused once destroyed');
@@ -102,27 +121,27 @@ ok(M._fc_session_destroy(0) === STATUS.ERR_HANDLE, '0 is never a handle');
 
 // the out-pointer's checks, in the header's order, each leaving the memory as it was
 write(SENTINEL);
-ok(M._fc_session_create(0) === STATUS.ERR_NULL, 'a null out-pointer is refused');
-ok(M._fc_session_create(out + 1) === STATUS.ERR_ALIGNMENT && read() === SENTINEL, 'a misaligned out-pointer is refused, and nothing is written');
+ok(create(0) === STATUS.ERR_NULL, 'a null out-pointer is refused');
+ok(create(out + 1) === STATUS.ERR_ALIGNMENT && read() === SENTINEL, 'a misaligned out-pointer is refused, and nothing is written');
 const heapEnd = M.HEAPU32.buffer.byteLength;
-ok(M._fc_session_create(heapEnd) === STATUS.ERR_SPAN, 'an out-pointer at the end of the heap is refused as SPAN — the check only this tier makes');
-ok(M._fc_session_create(heapEnd - 2) === STATUS.ERR_ALIGNMENT, '...and one straddling it is refused before its span is looked at');
+ok(create(heapEnd) === STATUS.ERR_SPAN, 'an out-pointer at the end of the heap is refused as SPAN — the check only this tier makes');
+ok(create(heapEnd - 2) === STATUS.ERR_ALIGNMENT, '...and one straddling it is refused before its span is looked at');
 
 // the table
 const live = [];
 let allCreated = true;
 for (let i = 0; i < MAX_HANDLES; i++)
 {
-    const st = M._fc_session_create(out);
+    const st = create(out);
     allCreated = allCreated && st === STATUS.OK && read() !== 0;
     live.push(read());
 }
 ok(allCreated && new Set(live).size === MAX_HANDLES, `${MAX_HANDLES} creates give ${MAX_HANDLES} distinct handles`);
 write(SENTINEL);
-ok(M._fc_session_create(out) === STATUS.ERR_EXHAUSTED && read() === SENTINEL,
+ok(create(out) === STATUS.ERR_EXHAUSTED && read() === SENTINEL,
    'the next create is refused as EXHAUSTED and leaves *out as it was');
 ok(live.every(x => M._fc_session_destroy(x) === STATUS.OK), 'every live handle destroys');
-ok(M._fc_session_create(out) === STATUS.OK && ! live.includes(read()), 'a create after that fits, under a handle never issued before');
+ok(create(out) === STATUS.OK && ! live.includes(read()), 'a create after that fits, under a handle never issued before');
 ok(M._fc_session_destroy(read()) === STATUS.OK, 'and destroys');
 
 // THE WRAP BOUNDARY, for real, at the shipped width. Every slot is free, so each create takes slot 0 (handle & 0xFF ==
@@ -133,7 +152,7 @@ let first = 0, last = 0, cycles = 0, allOk = true;
 // BOUNDED: a slot that wraps instead of retiring would take slot 0 for ever, and a regression must fail, not hang.
 while (cycles < SLOT_GENERATIONS + 2)
 {
-    if (M._fc_session_create(out) !== STATUS.OK) { allOk = false; break; }
+    if (create(out) !== STATUS.OK) { allOk = false; break; }
     const h = read();
     if (first === 0) first = h;
     if ((h & 0xFF) !== 1) { seen.push(h); break; }
@@ -166,8 +185,108 @@ const end = M.HEAPU32.buffer.byteLength;
 ok(M._fc_session_config_version(end - 4) === STATUS.ERR_SPAN, 'one whose high half would leave the heap is refused as SPAN');
 if (nativeConfigVersion !== null)
     ok(configVersion === nativeConfigVersion, `the module's config version ${configVersion} is the native CLI's ${nativeConfigVersion}`);
+ok(configVersion === configConstant, 'compiled config matches the page build constant');
 M._free(halves);
 console.log(`session-check: config version ${configVersion}`);
 
-console.log(`session-check: fcsession v${version}${version === 0 ? ' (the draft)' : ''} — ${checks} checks, ${bad} failures`);
+// Named commands and transferable buffers through the shipped facade.
+const encoder = new TextEncoder(), decoder = new TextDecoder();
+const heapBytes = () => new Uint8Array(M.HEAPU32.buffer);
+const input = text => { const bytes = encoder.encode(text); const ptr = M._malloc(Math.max(1, bytes.length)); heapBytes().set(bytes, ptr); return [ptr, bytes.length]; };
+const answer = M._malloc(macro('FC_SESSION_ANSWER_BYTES'));
+const resultSize = M._malloc(8);
+const reply = () => {
+    const n = M.HEAPU32[resultSize >>> 2];
+    const value = JSON.parse(decoder.decode(heapBytes().slice(answer, answer + n)));
+    ok(accepts(value, 'CommandAnswer'), 'answer agrees with generated union'); return value;
+};
+const cmd = (h, object) => {
+    ok(accepts(object, 'SessionCommand'), 'command agrees with generated union');
+    const [p, n] = input(JSON.stringify(object));
+    ok(M._fc_session_command(h, p, n, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK, 'command call');
+    M._free(p); return reply();
+};
+const demand = M._malloc(8);
+ok(M._fc_session_create_bytes(caps, demand) === STATUS.OK && new DataView(M.HEAPU32.buffer).getFloat64(demand, true) > 0,
+   'create demand published before create');
+ok(M._fc_session_create(caps, configLow ^ 1, configHigh, resultSize) === STATUS.ERR_CONFIG_VERSION, 'page config mismatch refused');
+ok(create(resultSize) === STATUS.OK, 'smoke session created');
+const session = M.HEAPU32[resultSize >>> 2];
+const readTransfer = what => {
+    ok(M[`_fc_session_${what}_size`](session, resultSize) === STATUS.OK, `${what} size`);
+    const jsonBytes = M.HEAPU32[resultSize >>> 2], rowBytes = M.HEAPU32[(resultSize >>> 2) + 1];
+    const j = M._malloc(jsonBytes), r = rowBytes ? M._malloc(rowBytes) : 0;
+    ok(M[`_fc_session_${what}_copy`](session, j, jsonBytes, r, rowBytes) === STATUS.OK, `${what} copy`);
+    const json = JSON.parse(decoder.decode(heapBytes().slice(j, j + jsonBytes)));
+    const binary = rowBytes ? heapBytes().slice(r, r + rowBytes).buffer : new ArrayBuffer(0);
+    const viewRows = row => {
+        const values = new Float64Array(binary, row.byteOffset, row.length * row.stride);
+        ok(values.length === row.length * row.stride, 'rows read as Float64Array'); return values;
+    };
+    if (what === 'snapshot') {
+        ok(accepts(json, 'SessionSnapshot'), 'snapshot decoded with generated types');
+        for (const key of ['momentary', 'shortTerm', 'runs']) viewRows(json[key]);
+    } else {
+        ok(accepts(json, 'ReadonlyArray<SessionEvent>'), 'event batch decoded with generated tagged union');
+        for (const event of json) if (event.kind === 'reading') for (const key of ['momentary', 'shortTerm', 'runs']) viewRows(event.payload[key]);
+    }
+    M._free(j); if (r) M._free(r); return json;
+};
+const pcm = M._malloc(256 * 4), pointers = M._malloc(4);
+for (let i = 0; i < 256; ++i) new Float32Array(M.HEAPU32.buffer)[(pcm >>> 2) + i] = (i % 32 - 16) / 64;
+M.HEAPU32[pointers >>> 2] = pcm;
+const [meta, metaBytes] = input(JSON.stringify({name:'synthetic', fileRate:48000, bitDepth:24, rateKnown:true}));
+ok(M._fc_session_load(session, 1, 0, pointers, 1, 256, 48001, meta, metaBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
+    && reply().code === 33, 'above maximum rate refused');
+ok(M._fc_session_load(session, 1, 0, pointers, 1, 256, 48000, meta, metaBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
+    && reply().kind === 'accepted', 'synthetic PCM loaded');
+M._free(meta); M._free(pointers); M._free(pcm);
+let steps = 0, done = false, phases = 0;
+while (!done && steps < 32) {
+    ok(M._fc_session_step(session, 1, resultSize) === STATUS.OK, 'small work-unit budget');
+    done = M.HEAPU32[resultSize >>> 2] === 1; ++steps;
+    for (const e of readTransfer('events')) if (e.kind === 'phase') ++phases;
+}
+ok(done && steps === 10 && phases === 10, 'pump reaches done through ten small steps');
+const snapshot = readTransfer('snapshot');
+ok(snapshot.state === 3 && snapshot.sourceBytes === 1024 && snapshot.integratedLufs === 'NaN', 'owned measured snapshot and explicit NaN');
+ok(cmd(session, {kind:'setManual', commandId:'2', on:true}).kind === 'accepted', 'manual command');
+ok(M._fc_session_export_project_size(session, resultSize) === STATUS.OK, 'project size');
+const projectBytes = M.HEAPU32[resultSize >>> 2], project = M._malloc(projectBytes);
+ok(M._fc_session_export_project_copy(session, project, projectBytes, resultSize) === STATUS.OK, 'project copy');
+ok(M._fc_session_import_project(session, 3, 0, project, projectBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
+    && reply().kind === 'accepted', 'project import');
+M._free(project);
+const past = M.HEAPU32.buffer.byteLength;
+for (const what of ['events', 'snapshot']) {
+    ok(M[`_fc_session_${what}_size`](session, past - 4) === STATUS.ERR_SPAN, `${what} size output crosses heap`);
+    ok(M[`_fc_session_${what}_copy`](session, past - 1, 2, 0, 0) === STATUS.ERR_SPAN, `${what} JSON output crosses heap`);
+    ok(M[`_fc_session_${what}_copy`](session, answer, 1, past, 8) === STATUS.ERR_SPAN, `${what} row output crosses heap`);
+}
+ok(M._fc_session_command(session, past, 1, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.ERR_SPAN, 'command input crosses heap');
+ok(M._fc_session_import_project(session, 0, 0, past, 1, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.ERR_SPAN, 'project input crosses heap');
+ok(M._fc_session_load(session, 0, 0, past, 1, 1, 48000, 0, 0, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.ERR_SPAN, 'PCM pointer table crosses heap');
+ok(M._fc_session_export_project_size(session, past) === STATUS.ERR_SPAN && M._fc_session_step(session, 1, past) === STATUS.ERR_SPAN, 'project and step output spans');
+ok(M._fc_session_create_bytes(caps, past - 4) === STATUS.ERR_ALIGNMENT, 'demand output alignment precedes span');
+ok(M._fc_session_create_bytes(caps, past) === STATUS.ERR_SPAN, 'demand output leaves heap');
+ok(M._fc_session_create_bytes(past - 8, demand) === STATUS.ERR_SPAN, 'capability input crosses heap');
+ok(M._fc_session_create(past - 8, configLow, configHigh, resultSize) === STATUS.ERR_SPAN, 'create capability input crosses heap');
+const answerCalls = [
+    (output, written) => M._fc_session_command(session, 0, 0, output, 8, written),
+    (output, written) => M._fc_session_load(session, 0, 0, 0, 0, 0, 0, 0, 0, output, 8, written),
+    (output, written) => M._fc_session_import_project(session, 0, 0, 0, 0, output, 8, written),
+    (output, written) => M._fc_session_export_project_copy(session, output, 8, written),
+];
+for (const call of answerCalls) {
+    ok(call(past - 4, 0) === STATUS.ERR_SPAN, 'first output span checked before null second output');
+    ok(call(answer, past) === STATUS.ERR_SPAN, 'written output leaves heap');
+    ok(call(answer, resultSize + 1) === STATUS.ERR_ALIGNMENT, 'written output alignment');
+}
+const table = M._malloc(4); M.HEAPU32[table >>> 2] = M.HEAPU32.buffer.byteLength - 4;
+ok(M._fc_session_load(session, 0, 0, table, 1, 2, 48000, 0, 0, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.ERR_SPAN,
+   'a channel sample span crosses heap');
+M._free(table);
+ok(M._fc_session_destroy(session) === STATUS.OK, 'smoke session destroyed');
+for (const p of [caps, answer, resultSize, demand]) M._free(p);
+console.log(`session-check: fcsession v${version} — ${checks} checks, ${bad} failures`);
 process.exit(bad ? 1 : 0);

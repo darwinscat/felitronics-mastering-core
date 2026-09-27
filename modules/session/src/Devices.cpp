@@ -74,9 +74,18 @@ void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channel
     shelf.db = target.lowShelfDb ? number (*target.lowShelfDb) : 0.0;
 }
 
-void placeMachine (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices) noexcept
+void placeMachine (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices, std::uint32_t offeredDevices) noexcept
 {
     placeDefaults (rules, row, channels, devices);
+    eachDevice (devices, [&] (Device d, auto& layers)
+    {
+        if ((offeredDevices & (1u << unsigned (d))) == 0)
+        {
+            layers.hand = {};
+            if constexpr (requires { layers.machine.on; }) layers.machine.on = false;
+        }
+    });
+    if ((offeredDevices & (1u << unsigned (Device::Limiter))) == 0) devices.limiter.machine.needles = Needles::Off;
 }
 
 } // namespace felitronics::session::detail
