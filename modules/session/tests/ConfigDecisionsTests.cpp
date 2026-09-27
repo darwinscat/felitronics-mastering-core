@@ -44,12 +44,13 @@ struct Golden
     std::uint64_t sound;
 };
 constexpr Golden kGolden[] = {
-    { "2026-09", 0xd0057260f3498451ull },
+    { "2026-09", 0x0d00aba36313b765ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
 // floor 24 Hz (vinyl 32) and slope 24 dB/oct (vinyl 12), the loss at the lowest note 1 dB (club 0.3), the delivery;
-// vinyl alone without a peak clipper, with the high-pass always and a +0.5 dB low shelf; cd and cdDynamic alone with a
+// vinyl alone without a peak clipper and with a +0.5 dB low shelf; vinyl and club with the high-pass always (on club it
+// guards the subwoofers from infrasonic bursts a share of the whole programme does not see); cd and cdDynamic alone with a
 // pass at the source's rate; TD1008's −14 LUFS album loudness, desktop only.
 struct Row
 {
@@ -70,7 +71,7 @@ constexpr Row kRows[] = {
     //  key            group lufs   tp    mono  floor slope loss  rate   bits  noClip always srcPass shelf album
     { "allStreaming",  S,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
     { "cdDynamic",     D,   -12,  -1,   120,  24,  24,   1,    44100, 16,  false, false, true,   0,    0 },
-    { "club",          D,   -8,   -1,   120,  24,  24,   0.3,  0,     24,  false, false, false,  0,    0 },
+    { "club",          D,   -8,   -1,   120,  24,  24,   0.3,  0,     24,  false, true,  false,  0,    0 },
     { "lp",            D,   -14,  -3,   150,  32,  12,   1,    0,     24,  true,  true,  false,  0.5,  0 },
     { "spotify",       S,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
     { "spotifyLoud",   S,   -11,  -2,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
@@ -215,6 +216,8 @@ void aDepartureIsNamed()
         { false, "passes = [12, 24, 32]", "passes = [12, 24, 40]", "the landing: series of 12, 24 and 32 passes" },
         { true, "noteLossDb = 0.3", "noteLossDb = 0.5", "targets.club.noteLossDb" },
         { true, "lufs = -7,", "lufs = -8,", "targets.youtubeMusic.lufs" },
+        { true, "noteLossDb = 0.3, sampleRate = 0, bitDepth = 24, hpfAlways = true }",
+          "noteLossDb = 0.3, sampleRate = 0, bitDepth = 24 }", "targets.club.hpfAlways" },
         { true, "sampleRate = 48000, bitDepth = 24 }\n# YouTube Music", "sampleRate = 22050, bitDepth = 24 }\n# YouTube Music",
           "targets.youtube.sampleRate" },
         { false, "default = 0\nwhenTicked", "default = 0.3\nwhenTicked", "no glue by default: a target without its own takes the compressor out" },

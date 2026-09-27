@@ -4,8 +4,9 @@
 with what it means and where it came from beside it, and the owner's decisions marked as such. `modules/session/config/
 targets.toml` is the table of targets — 25 of them, each with its loudness, true-peak ceiling, mono-bass crossover (120 Hz;
 vinyl 150), high-pass floor (24 Hz; vinyl 32) and slope (24 dB/oct; vinyl 12), how much the high-pass may take at the
-lowest note (1 dB; club 0.3), and its delivery rate and bit depth; vinyl's +0.5 dB low shelf, its ceiling without a peak
-clipper and its high-pass that is always placed; the one extra pass at the source's rate of cd and cdDynamic; AES
+lowest note (1 dB; club 0.3), and its delivery rate and bit depth; vinyl's +0.5 dB low shelf and its ceiling without a
+peak clipper; the high-pass always placed on vinyl and on club (there it guards the subwoofers from infrasonic bursts);
+the one extra pass at the source's rate of cd and cdDynamic; AES
 TD1008's −14 LUFS album loudness, marked desktop-only; the default target, the main list and the travels of the hand
 edit. `engine.toml` holds every other number: the input brought to −18 LUFS (a warning below −40, gain and ceiling only
 below −55), the landing in series of 12, 24 and 32 passes, the limiter's 0.15 dB ceiling margin and 50 ms release with
