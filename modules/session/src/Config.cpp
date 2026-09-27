@@ -5,6 +5,8 @@
 // felitronics_toml_embed; this file hands those two documents to the schema (src/ConfigSchema.cpp), writes them back as
 // canonical text, and hashes them (src/ConfigVersion.h). Nothing here reads a file.
 
+#include "BuildGuards.h"
+
 #include "ConfigBind.h"
 #include "ConfigVersion.h"
 #include "embedded/engine.h"    // generated at build time from modules/session/config/engine.toml

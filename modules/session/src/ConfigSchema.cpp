@@ -18,6 +18,8 @@
 // targets (the glue per target, the blind test's series) are checked against the row keys of the targets document, read
 // before either is bound.
 
+#include "BuildGuards.h"
+
 #include "ConfigBind.h"
 #include "ConfigVersion.h"
 
