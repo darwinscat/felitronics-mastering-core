@@ -216,12 +216,30 @@ if(FELITRONICS_BUILD_TESTS)
     # THE OBJECT-FILE GATE over felitronics::session and its C boundary (modules/session/tests/object-gates.cmake): every
     # object of the library holds no writable data and calls nothing outside the list in tools/lint/session-objects.txt;
     # the facade's object keeps exactly its handle table and its poison flag. Read with this row's own symbol-table reader
-    # — objdump on ELF and Mach-O, dumpbin on COFF, llvm-readobj on wasm — so every row of the matrix, the sanitizer row
+    # — readelf on ELF, objdump on Mach-O, dumpbin on COFF, llvm-readobj on wasm — so every row of the matrix, the sanitizer row
     # and the wasm tier included, asks the question of the objects it actually built. Its controls are in
     # modules/session/CMakeLists.txt.
     include(${PROJECT_SOURCE_DIR}/modules/session/tests/SessionTestTools.cmake)
     felitronics_session_object_gate(NAME felitronics_session_object_gate
                                     LIBRARY felitronics_session FACADE felitronics_session_facade)
+    # ...and the FACADE role's own controls: the boundary exactly as it ships, compiled as the facade is, with a third
+    # global planted (it must be refused while each allowed global is found once), and with an allowed global renamed
+    # (the allowance names a symbol that is not there — rot, refused as [ALLOWANCE]). Sources in
+    # modules/session/tests/object-controls/, beside the library's controls.
+    foreach(entry "facade_third_global|g_planted" "facade_renamed|g_callState")
+        string(REPLACE "|" ";" f "${entry}")
+        list(GET f 0 ctl)
+        list(GET f 1 expect)
+        add_library(fs_objctl_${ctl} OBJECT ${PROJECT_SOURCE_DIR}/modules/session/tests/object-controls/${ctl}.cpp)
+        target_link_libraries(fs_objctl_${ctl} PRIVATE felitronics::session)
+        target_include_directories(fs_objctl_${ctl} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/wasm
+                                                           ${PROJECT_SOURCE_DIR}/modules/session/src)
+        target_compile_features(fs_objctl_${ctl} PRIVATE cxx_std_20)
+        target_compile_options(fs_objctl_${ctl} PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
+        target_compile_definitions(fs_objctl_${ctl} PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_DEFINITIONS>)
+        felitronics_session_object_gate(NAME felitronics_session_object_control_${ctl}
+                                        LIBRARY felitronics_session FACADE fs_objctl_${ctl} EXPECT "${expect}")
+    endforeach()
 
     # THE CLI'S CONTRACT, byte for byte on stdout and by exit status (tools/tests/cli-expect.cmake): the versions it
     # prints are the ones this build was configured with; an empty script and a script of comments are accepted with

@@ -24,11 +24,13 @@ endfunction()
 
 # THE OBJECT-FILE GATE (tests/object-gates.cmake) — the question the object file answers exactly, asked of compiled
 # objects: which symbols live in writable memory, and which symbols are called that nothing in the set defines. The
-# tool that reads the symbol table is this row's own:
-#   ELF (Linux)      objdump -t         sections .data* (not .data.rel.ro*), .bss*, .tdata*, .tbss*, COMMON
-#   Mach-O (Apple)   objdump -t         __DATA,__data / __bss / __common / __thread_data / __thread_bss / __thread_vars
-#   COFF (MSVC)      dumpbin /symbols   .data, .bss, .tls$
-#   wasm             llvm-readobj       data segments .data.*, .bss.*, .tdata.*, .tbss.*
+# tool that reads the symbol table is this row's own, and writable is what the object says of the section:
+#   ELF (Linux)      readelf -S -s          the section's A and W flags (.data.rel.ro* read-only), COMMON
+#   Mach-O (Apple)   objdump -t             every section but __TEXT,*, __DATA_CONST,*, __DATA,__const
+#   COFF (MSVC)      dumpbin /headers       the section's IMAGE_SCN_MEM_WRITE
+#                           /symbols
+#   wasm             llvm-readobj           every data segment but .rodata* and .data.rel.ro* (names demangled by the
+#                                           SDK's llvm-cxxfilt beside it)
 # No tool, no gate: configuring the tests without one is an error, not a skipped check.
 if(EMSCRIPTEN)
     set(FELITRONICS_SESSION_OBJECT_FORMAT wasm)
@@ -46,17 +48,21 @@ elseif(APPLE)
     set(FELITRONICS_SESSION_OBJECT_TOOL "${CMAKE_OBJDUMP}")
 else()
     set(FELITRONICS_SESSION_OBJECT_FORMAT elf)
-    set(FELITRONICS_SESSION_OBJECT_TOOL "${CMAKE_OBJDUMP}")
+    set(FELITRONICS_SESSION_OBJECT_TOOL "${CMAKE_READELF}")
 endif()
 if(NOT FELITRONICS_SESSION_OBJECT_TOOL OR NOT EXISTS "${FELITRONICS_SESSION_OBJECT_TOOL}")
-    find_program(FELITRONICS_SESSION_OBJECT_TOOL_FALLBACK NAMES objdump llvm-objdump)
-    if(NOT FELITRONICS_SESSION_OBJECT_FORMAT MATCHES "coff|wasm" AND FELITRONICS_SESSION_OBJECT_TOOL_FALLBACK)
+    if(FELITRONICS_SESSION_OBJECT_FORMAT STREQUAL "elf")
+        find_program(FELITRONICS_SESSION_OBJECT_TOOL_FALLBACK NAMES readelf llvm-readelf)
+    elseif(FELITRONICS_SESSION_OBJECT_FORMAT STREQUAL "macho")
+        find_program(FELITRONICS_SESSION_OBJECT_TOOL_FALLBACK NAMES objdump llvm-objdump)
+    endif()
+    if(FELITRONICS_SESSION_OBJECT_TOOL_FALLBACK)
         set(FELITRONICS_SESSION_OBJECT_TOOL "${FELITRONICS_SESSION_OBJECT_TOOL_FALLBACK}")
     else()
         message(FATAL_ERROR "felitronics::session's object-file gates need a symbol-table reader for "
-                            "${FELITRONICS_SESSION_OBJECT_FORMAT} objects on this row (objdump / dumpbin / llvm-readobj), "
-                            "and found none. The gates are tests of this repository; without the tool they cannot run, "
-                            "and a gate that does not run must not read as passed.")
+                            "${FELITRONICS_SESSION_OBJECT_FORMAT} objects on this row (readelf / objdump / dumpbin / "
+                            "llvm-readobj), and found none. The gates are tests of this repository; without the tool "
+                            "they cannot run, and a gate that does not run must not read as passed.")
     endif()
 endif()
 
