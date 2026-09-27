@@ -189,6 +189,7 @@ FC_EXPORT fc_session_status fc_session_create (fc_session* out)
     {
         case Status::Ok:                       break;
         case Status::FloatingPointEnvironment: return FC_SESSION_ERR_FP_ENVIRONMENT;
+        case Status::Config:                   return FC_SESSION_ERR_CONFIG;
     }
     g_slots[slot].session = created.session.release();
     *out = packHandle (slot, g_slots[slot].gen);

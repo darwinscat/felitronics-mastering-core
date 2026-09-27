@@ -1,0 +1,146 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
+
+#pragma once
+
+#include <cstdint>
+#include <optional>
+
+//==============================================================================
+// felitronics::session — THE PROJECT: the one structure that holds what a master is made from — the target and a
+// person's edits of its numbers, the manual mode, and every device's parameters. The session
+// keeps one, changes it only through its commands (Commands.h), and moves its revision with every change; the project
+// file is this structure printed.
+//
+// ONE PARAMETER FORM PER DEVICE. A device's parameters are its knobs, as typed fields with the knobs' names — no string
+// addresses anywhere. Each device's fields are written ONCE, below, as a template over the FORM a field takes, and used
+// in three forms:
+//   Value    every field says a value                    the machine's layer: complete once the devices are placed
+//   Touched  a field says a value only where touched     a person's layer: a touched field belongs to the person, even
+//                                                        where its number equals the machine's
+//   Mark     a field says yes or no                      which fields: what revertEdits takes back
+// So the machine's layer, a person's edits and the mask of a revert cannot disagree on a field's name or type: they are
+// one list. A master is made from the machine's layer with a person's touched fields over it.
+//
+// THE MACHINE'S LAYER IS THE CONFIG'S DEFAULTS for the target and the source (src/Devices.h), placed when the first
+// measurement ends and at its types' zeros before. No planner reads the measurements here: nothing in it is a decision
+// taken from one, and mono bass — which the defaults leave off — is off.
+//
+// The units and the knobs' travels are the config's (modules/session/config/engine.toml, the section of each device);
+// they are not repeated here.
+namespace felitronics::session
+{
+
+template <class T> using Value = T;
+template <class T> using Touched = std::optional<T>;
+template <class T> using Mark = bool;
+
+// The limiter's "cut needles" knob: the peak clipper inside the limiter decides by itself, at a threshold a person sets,
+// or not at all.
+enum class Needles : std::uint8_t { Auto, Manual, Off };
+
+// THE TARGET'S NUMBERS a person may edit in place ([edit] in targets.toml): the loudness, LUFS, and the true-peak ceiling,
+// dBTP. The other numbers of a target come with its name.
+template <template <class> class F> struct TargetFields
+{
+    F<double> lufs {};
+    F<double> tp {};
+};
+
+// THE DEVICES — the seven of the first release, and the low shelf of the targets that carry one (vinyl). A device is a
+// task with its knobs and its tick (`on`), not a stage of the chain: the high-pass, tilt and the low shelf write one EQ
+// stage. The limiter is always on and has no tick.
+
+// [hpf]: the cutoff, Hz, and the slope, dB/oct.
+template <template <class> class F> struct HpfFields
+{
+    F<bool> on {};
+    F<double> fq {};
+    F<std::int32_t> slope {};
+};
+
+// [monoBass]: the crossover, Hz, and the width kept below it (0 is mono).
+template <template <class> class F> struct MonoBassFields
+{
+    F<bool> on {};
+    F<double> fq {};
+    F<double> width {};
+};
+
+// [glue]: the glue knob, "up to N dB" — 0 takes the compressor out of the chain.
+template <template <class> class F> struct GlueFields
+{
+    F<bool> on {};
+    F<double> upToDb {};
+};
+
+// [saturation]: the drive, dB from the programme's peak; the mix, 0…1; the output, dB.
+template <template <class> class F> struct SaturationFields
+{
+    F<bool> on {};
+    F<double> drive {};
+    F<double> mix {};
+    F<double> output {};
+};
+
+// [tilt]: the tilt, dB.
+template <template <class> class F> struct TiltFields
+{
+    F<bool> on {};
+    F<double> db {};
+};
+
+// [limiter]: the peak clipper's mode and its manual threshold, dB above the ceiling. The ceiling is the target's tp.
+template <template <class> class F> struct LimiterFields
+{
+    F<Needles> needles {};
+    F<double> needlesDb {};
+};
+
+// [dither]: on a delivery of 16 bits.
+template <template <class> class F> struct DitherFields
+{
+    F<bool> on {};
+};
+
+// [lowShelf]: the shelf's gain, dB — on a target that carries one.
+template <template <class> class F> struct LowShelfFields
+{
+    F<bool> on {};
+    F<double> db {};
+};
+
+// The devices, in the order Devices below holds them (and a device edit's alternatives, Commands.h, are listed).
+enum class Device : std::uint8_t { Hpf, MonoBass, Glue, Saturation, Tilt, Limiter, Dither, LowShelf };
+
+// A device's two layers: the machine's, complete, and a person's, only what was touched.
+template <template <template <class> class> class Fields> struct Layers
+{
+    Fields<Value> machine {};
+    Fields<Touched> hand {};
+};
+
+struct Devices
+{
+    Layers<HpfFields> hpf;
+    Layers<MonoBassFields> monoBass;
+    Layers<GlueFields> glue;
+    Layers<SaturationFields> saturation;
+    Layers<TiltFields> tilt;
+    Layers<LimiterFields> limiter;
+    Layers<DitherFields> dither;
+    Layers<LowShelfFields> lowShelf;
+};
+
+struct Project
+{
+    // The target: a row of [targets] in targets.toml, counted in the order the rows are written (the session's
+    // targetName() gives its key), and a person's edits of its numbers.
+    std::uint16_t target = 0;
+    TargetFields<Touched> targetEdit {};
+    // The manual mode: without it the device panel is closed — no device is edited, and a person's layers are empty.
+    bool manual = false;
+    Devices devices {};
+};
+
+} // namespace felitronics::session

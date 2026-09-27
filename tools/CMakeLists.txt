@@ -246,10 +246,10 @@ if(FELITRONICS_BUILD_TESTS)
     endforeach()
 
     # THE CLI'S CONTRACT, byte for byte on stdout and by exit status (tools/tests/cli-expect.cmake): the versions it
-    # prints are the ones this build was configured with; an empty script and a script of comments are accepted with
-    # `done 0`, from a file and from stdin; the config it prints is its sources in canonical form, and its version
-    # theirs; a script with a command in it, a script that is not there and a malformed command line are refused with 2
-    # and nothing on stdout.
+    # prints are the ones this build was configured with; the table it prints is the one docs/SESSION.md shows; an
+    # empty script and a script of comments are accepted with `done 0`, from a file and from stdin; the config it prints
+    # is its sources in canonical form, and its version theirs; a script with a command in it, a script that is not there
+    # and a malformed command line are refused with 2 and nothing on stdout.
     # NOT ON THE WASM TIER: the CLI reads its script from the host's filesystem, which the node runner the emscripten
     # tests go through does not have. The wasm road into the session is the fcsession module, and CI checks that.
     if(NOT EMSCRIPTEN)
@@ -282,10 +282,29 @@ if(FELITRONICS_BUILD_TESTS)
         add_custom_target(fcore_session_config_expect ALL DEPENDS
             ${FCORE_SESSION_CONFIG_EXPECT}/targets.toml ${FCORE_SESSION_CONFIG_EXPECT}/engine.toml
             ${FCORE_SESSION_CONFIG_EXPECT}/version.txt ${FCORE_SESSION_CONFIG_EXPECT}/sound-version.txt)
+        # WHO MAY DO WHAT, WHEN, IN THE DOCS IS THE TABLE IN THE CODE: `fcore_session table` prints Commands.h's tables, and
+        # the text docs/SESSION.md carries between its markers must be exactly that output. Read here at configure time,
+        # line endings as LF (a Windows checkout may have rewritten them); an edit of the document configures again.
+        set(FCORE_SESSION_DOC ${PROJECT_SOURCE_DIR}/docs/SESSION.md)
+        set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${FCORE_SESSION_DOC})
+        file(READ ${FCORE_SESSION_DOC} FCORE_SESSION_DOC_TEXT)
+        string(REPLACE "\r\n" "\n" FCORE_SESSION_DOC_TEXT "${FCORE_SESSION_DOC_TEXT}")
+        set(FCORE_SESSION_TABLE_BEGIN "<!-- the table: begin -->\n")
+        string(FIND "${FCORE_SESSION_DOC_TEXT}" "${FCORE_SESSION_TABLE_BEGIN}" FCORE_SESSION_TABLE_AT)
+        string(FIND "${FCORE_SESSION_DOC_TEXT}" "<!-- the table: end -->" FCORE_SESSION_TABLE_END)
+        if(FCORE_SESSION_TABLE_AT EQUAL -1 OR FCORE_SESSION_TABLE_END EQUAL -1)
+            message(FATAL_ERROR "docs/SESSION.md: the table's markers (<!-- the table: begin --> / end) are not there")
+        endif()
+        string(LENGTH "${FCORE_SESSION_TABLE_BEGIN}" FCORE_SESSION_TABLE_SKIP)
+        math(EXPR FCORE_SESSION_TABLE_AT "${FCORE_SESSION_TABLE_AT} + ${FCORE_SESSION_TABLE_SKIP}")
+        math(EXPR FCORE_SESSION_TABLE_LENGTH "${FCORE_SESSION_TABLE_END} - ${FCORE_SESSION_TABLE_AT}")
+        string(SUBSTRING "${FCORE_SESSION_DOC_TEXT}" ${FCORE_SESSION_TABLE_AT} ${FCORE_SESSION_TABLE_LENGTH} FCORE_SESSION_TABLE)
+        file(WRITE ${FCORE_SESSION_EXPECT}/table.md "${FCORE_SESSION_TABLE}")
         set(FCORE_SESSION_SCRIPTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/session-scripts)
         # name | expected exit | expected stdout | stdin file ("-" none) | arguments...
         set(FCORE_SESSION_CASES
             "version|0|version.txt|-|version"
+            "table|0|table.md|-|table"
             "empty|0|done0.txt|-|run|${FCORE_SESSION_SCRIPTS}/empty.txt"
             "comments|0|done0.txt|-|run|${FCORE_SESSION_SCRIPTS}/comments.txt"
             "stdin|0|done0.txt|${FCORE_SESSION_SCRIPTS}/comments.txt|run|-"

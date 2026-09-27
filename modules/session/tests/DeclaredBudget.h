@@ -28,8 +28,11 @@
 namespace felitronics::session::testing
 {
 
-// What one piece of work asked the heap for: the number of requests and their bytes, as the counter's `bytes` —
-// requested bytes, the quantity a law-11d demand states (alloc_counter.h, "WHAT THE NUMBERS MEAN").
+// What one piece of work asked the heap for: the number of requests and their bytes, as the counter's `rawBytes` —
+// exactly what reached the allocator. The session asks with plain `new` and `new[]` and holds no container, so there is
+// no container padding to take off: the counter's `bytes` subtracts what MSVC's STL adds on top of a container's own
+// request of 4 KiB or more, and would count a plain array of that size short (alloc_counter.h, "WHAT THE NUMBERS
+// MEAN").
 struct Spent
 {
     long long requests = 0;
@@ -43,9 +46,9 @@ Spent spend (Work&& work)
 {
     namespace alloc = felitronics::test::alloc;
     const long long requests = alloc::count.load();
-    const long long bytes = alloc::bytes.load();
+    const long long bytes = alloc::rawBytes.load();
     work();
-    return { alloc::count.load() - requests, alloc::bytes.load() - bytes };
+    return { alloc::count.load() - requests, alloc::rawBytes.load() - bytes };
 }
 
 // Does the declaration cover what was requested?

@@ -3,7 +3,8 @@
 #
 # THE OBJECT-FILE GATE of felitronics::session. Run by ctest (tests/SessionTestTools.cmake):
 #   cmake -DFORMAT=elf|macho|coff|wasm -DTOOL=<reader> -DOBJECTS_FILE=<role|path lines> -DLISTS=<session-objects.txt>
-#         -DSANITIZERS=ON|OFF [-DEXPECT=<re&&&re...>] -P object-gates.cmake
+#         -DSANITIZERS=ON|OFF -DMSVC_DEBUG=ON|OFF [-DEXPECT=<re&&&re...>] -P object-gates.cmake
+# MSVC_DEBUG is ON for an MSVC build in its Debug configuration (/MDd): the lists' `coff-debug` lines apply then alone.
 #
 # WHY THE OBJECT FILE AND NOT THE SOURCE. The laws "no mutable state outside an object" and "no operating system, file,
 # console, locale, clock or process state" are questions about what the compiled code KEEPS and CALLS. The source asks
@@ -32,7 +33,7 @@
 # symbol it refused (see name_candidates). A control whose object passed, or failed on something else, is red.
 cmake_minimum_required(VERSION 3.22)
 
-foreach(var FORMAT TOOL OBJECTS_FILE LISTS SANITIZERS)
+foreach(var FORMAT TOOL OBJECTS_FILE LISTS SANITIZERS MSVC_DEBUG)
     if(NOT DEFINED ${var} OR "${${var}}" STREQUAL "")
         message(FATAL_ERROR "object-gates.cmake: ${var} is not set")
     endif()
@@ -60,6 +61,10 @@ foreach(l IN LISTS list_lines)
         set(applies ON)
     elseif(scope STREQUAL "san")
         set(applies ${SANITIZERS})
+    elseif(scope STREQUAL "coff-debug")
+        if(FORMAT STREQUAL "coff" AND MSVC_DEBUG)
+            set(applies ON)
+        endif()
     elseif(scope STREQUAL "facade" OR scope STREQUAL "facade-${FORMAT}")
         set(applies ON)
         set(facade_only ON)

@@ -22,6 +22,7 @@
 
 #include "ConfigBind.h"
 #include "ConfigVersion.h"
+#include "Grid.h"
 
 #include <felitronics/analysis/BandCrest.h>
 #include <felitronics/analysis/LowEnd.h>
@@ -33,7 +34,6 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -114,32 +114,10 @@ std::string pathOf (const Reader& in, std::string_view key)
     return path;
 }
 
-// m · 10^by, or false when it leaves int64.
-bool scaleUp (std::int64_t m, int by, std::int64_t& out)
-{
-    constexpr std::int64_t limit = std::numeric_limits<std::int64_t>::max() / 10;
-    for (; by > 0; --by)
-    {
-        if (m > limit || m < -limit) return false;
-        m *= 10;
-    }
-    out = m;
-    return true;
-}
-
-// Is x on the grid that starts at `from` with `step` — is (x − from) a whole number of steps, exactly? All three are
-// decimals of the documents, brought to one scale: no floating point.
-bool onGrid (const toml::Decimal& x, const toml::Decimal& from, const toml::Decimal& step)
-{
-    const int scale = std::max ({ int (x.scale), int (from.scale), int (step.scale) });
-    std::int64_t a = 0, f = 0, b = 0;
-    if (! scaleUp (x.mantissa, scale - int (x.scale), a) || ! scaleUp (from.mantissa, scale - int (from.scale), f)
-        || ! scaleUp (step.mantissa, scale - int (step.scale), b))
-        return false;
-    constexpr std::int64_t half = std::numeric_limits<std::int64_t>::max() / 2;
-    if (a > half || a < -half || f > half || f < -half) return false;
-    return b != 0 && (a - f) % b == 0;
-}
+// Is x on the grid that starts at `from` with `step` — is (x − from) a whole number of steps, exactly, on the decimals
+// as written? The one rule for a knob's grid, which the session's commands hold a person's edits to as well
+// (src/Grid.h).
+using felitronics::session::detail::onGrid;
 
 // The decimal a key holds, and the decimal an array's item holds — the document's own digits, never a double's.
 std::optional<toml::Decimal> decimalAt (const Reader& in, std::string_view key)
@@ -414,11 +392,16 @@ void readLowEnd (Doc& d, Reader& in, LowEnd& o)
 void readHpf (Doc& d, Reader& in, Hpf& o, std::vector<std::int32_t>& bands, const std::optional<double>& dcFrom)
 {
     d.band (in, o.band, bands);
+    // THE CUTOFF IS WHOLE HERTZ — the knob's travel, where the manual cutoff starts, and every target's floor
+    // (readTarget): the machine places max(hzDefault, the floor), and a person may set every value it places.
+    const Grid wholeHertz { toml::Decimal { 0, 1, false }, toml::Decimal { 10, 1, false } };
     const bool lo = in.required ("hzMin", o.hzMin, R { 1.0, 200.0 });
+    if (lo) d.onStep (in, "hzMin", wholeHertz);
     const bool hi = in.required ("hzMax", o.hzMax, R { 1.0, 200.0 });
+    if (hi) d.onStep (in, "hzMax", wholeHertz);
     d.below (in, lo && hi, o.hzMin, o.hzMax, "hzMax");
     const R travel = lo && hi && o.hzMin < o.hzMax ? R { o.hzMin, o.hzMax } : R { 1.0, 200.0 };
-    in.required ("hzDefault", o.hzDefault, travel);
+    if (in.required ("hzDefault", o.hzDefault, travel)) d.onStep (in, "hzDefault", wholeHertz);
     if (in.required ("slopes", o.slopes, I { 6, 96 }))
     {
         if (o.slopes.empty()) d.refuse (in, "slopes", Refusal::NotOneOf);
@@ -527,17 +510,24 @@ void readCompressor (Doc& d, Reader& in, Compressor& o)
 // `targets`: the row keys of the targets document, or null when it did not parse (nothing to check a name against).
 void readGlue (Doc& d, Reader& in, Glue& o, const std::vector<std::string>* targets)
 {
+    // THE KNOB, "up to N dB", first: every glue number of the document is written on it.
+    const bool lo = in.required ("knobMinDb", o.knobMinDb, R { 0.0, 24.0 });
+    const bool hi = in.required ("knobMaxDb", o.knobMaxDb, R { 0.0, 24.0 });
+    d.below (in, lo && hi, o.knobMinDb, o.knobMaxDb, "knobMaxDb");
+    in.required ("knobStepDb", o.knobStepDb, R { 0.01, 3.0 });
+    const R knob = lo && hi && o.knobMinDb < o.knobMaxDb ? R { o.knobMinDb, o.knobMaxDb } : R { 0.0, 24.0 };
+    const Grid onKnob { decimalAt (in, "knobMinDb"), decimalAt (in, "knobStepDb") };
+    if (in.required ("default", o.defaultUpToDb, knob)) d.onStep (in, "default", onKnob);
+    if (in.required ("whenTicked", o.whenTickedUpToDb, knob)) d.onStep (in, "whenTicked", onKnob);
+    // THE TRAVEL, 0…1 in steps of `step`: the compressor's internal mapping.
     in.required ("step", o.step, R { 0.0001, 1.0 });
-    const Grid step { toml::Decimal { 0, 1, false }, decimalAt (in, "step") };   // the travel runs from 0
-    if (in.required ("default", o.defaultPosition, share())) d.onStep (in, "default", step);
-    if (in.required ("whenTicked", o.whenTicked, share())) d.onStep (in, "whenTicked", step);
     in.table ("byTarget", Need::Required, [&] (Reader& t)
     {
         for (const auto& e : t.data().entries())
         {
             GlueAtTarget g { e.key, 0.0 };
-            if (! t.required (e.key, g.position, share())) continue;
-            d.onStep (t, e.key, step);
+            if (! t.required (e.key, g.upToDb, knob)) continue;
+            d.onStep (t, e.key, onKnob);
             if (targets != nullptr && ! contains (*targets, e.key)) d.refuse (t, e.key, Refusal::NotATarget);
             else o.byTarget.push_back (std::move (g));
         }
@@ -562,10 +552,6 @@ void readGlue (Doc& d, Reader& in, Glue& o, const std::vector<std::string>* targ
     ramp ("attack", o.attack, R { 0.01, 1000.0 }, false);
     ramp ("knee", o.knee, R { 0.0, 48.0 }, false);
     ramp ("divisor", o.divisor, R { 0.01, 1000.0 }, false);   // above zero whatever the law: the release divides by it
-    const bool lo = in.required ("knobMinDb", o.knobMinDb, R { 0.0, 24.0 });
-    const bool hi = in.required ("knobMaxDb", o.knobMaxDb, R { 0.0, 24.0 });
-    d.below (in, lo && hi, o.knobMinDb, o.knobMaxDb, "knobMaxDb");
-    in.required ("knobStepDb", o.knobStepDb, R { 0.01, 3.0 });
 }
 
 void readSaturation (Doc& d, Reader& in, Saturation& o)
@@ -1094,6 +1080,9 @@ void readTargets (Doc& d, Reader& in, Targets& o, const Engine& e, const Grids& 
     in.table ("targets", Need::Required, [&] (Reader& t)
     {
         for (const auto& entry : t.data().entries())
+        {
+            // A person picks a target, and a project names one, by its key: an empty key names nothing.
+            if (entry.key.empty()) d.refuse (t, entry.key, Refusal::EmptyKey);
             t.table (entry.key, Need::Required, [&] (Reader& row)
             {
                 Target x;
@@ -1101,6 +1090,7 @@ void readTargets (Doc& d, Reader& in, Targets& o, const Engine& e, const Grids& 
                 readTarget (d, row, x, b);
                 o.targets.push_back (std::move (x));
             });
+        }
     });
     if (in.required ("default", o.defaultTarget) && o.find (o.defaultTarget) == nullptr)
         d.refuse (in, "default", Refusal::NotATarget);
@@ -1131,7 +1121,7 @@ void collect (const toml::Report& report, Document document, std::vector<Problem
             case toml::Fault::UnknownKey: q.fault = Fault::UnknownKey; break;
             case toml::Fault::Refused:
                 q.fault = Fault::Refused;
-                q.refusal = p.detail <= std::uint32_t (Refusal::AnalyzerRefuses) ? static_cast<Refusal> (p.detail) : Refusal::None;
+                q.refusal = p.detail <= std::uint32_t (Refusal::EmptyKey) ? static_cast<Refusal> (p.detail) : Refusal::None;
                 break;
         }
         q.code = q.fault == Fault::Refused ? Problem::name (q.refusal) : Problem::name (q.fault);
@@ -1228,6 +1218,7 @@ const char* Problem::name (Refusal refusal) noexcept
         case Refusal::OutsideLaw:     return "OutsideLaw";
         case Refusal::AboveNyquist:   return "AboveNyquist";
         case Refusal::AnalyzerRefuses: return "AnalyzerRefuses";
+        case Refusal::EmptyKey:       return "EmptyKey";
     }
     return "Refused";
 }
