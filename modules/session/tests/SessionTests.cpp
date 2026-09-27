@@ -58,6 +58,8 @@ void theDemandOfCreateCoversWhatItAsksFor()
     // Exact today, by construction (one expression sizes both, src/Session.cpp): pinned so that a create that starts
     // asking for less than it declares is seen as well, not only one that asks for more.
     ok (spent.bytes == (long long) declared, "and exactly the declaration, while create() is one object");
+    ok (spent.requests == 1, "in one request: the session holds no container that asks for a proxy of its own (got "
+                             + std::to_string (spent.requests) + ")");
 
     const budget::Spent freed = budget::spend ([&] { c.session.reset(); });
     ok (freed.requests == 0, "destroying a session asks the heap for nothing");
