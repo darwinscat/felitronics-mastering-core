@@ -40,6 +40,20 @@ undefined  wasm    ^(__stack_pointer|__memory_base|__table_base|__indirect_funct
 # --- MSVC's standard library defines one writable variable in every translation unit that includes its headers
 writable   coff    ^_Avx2WmemEnabledWeakValue$      the STL's own dispatch flag for its vectorised wmem* (an `extern "C" inline` in its headers): the session neither reads nor writes it
 
+# --- the config (src/Config.cpp, src/ConfigSchema.cpp) holds strings and containers, and asks three analyzers what they
+# --- admit: what the standard library compiles out of line for those, per library, and the exact libm calls of storageFor
+undefined  all     ^(memchr|wmemchr|strlen)$        std::find and char_traits over chars and 4-byte integers: a search of memory
+undefined  all     ^(__imp_)?(floor|ceil|lround|llround)$    rounding to an integer is exact — one answer from every libm (the det-math lint governs the inexact calls); the analyzers' storageFor rounds a hop to whole samples, its argument bounded first
+undefined  all     ^_ZNK?St3__[12]12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE    std::string's members, which libc++ compiles once in its own library (an extern template): copies, appends, growth
+undefined  all     ^abort$                          libc++ with exceptions off: a string or a vector asked to grow past max_size() ends the process, as a heap that cannot serve operator new does
+undefined  all     ^_ZSt(17__throw_bad_allocv|20__throw_length_errorPKc|19__throw_logic_errorPKc|24__throw_out_of_range_fmtPKcz)$    libstdc++'s out-of-line throws behind the same limits (and a string built from a null pointer, an index past the end): an allocation or a length the process cannot serve, as operator new's
+undefined  coff    ^(_CxxThrowException|__std_exception_copy|__std_exception_destroy)$    MSVC's STL throws behind the same limits even under /EHs-c- (std::bad_alloc, std::bad_array_new_length): the throw itself
+undefined  coff    ^(\?_X(length_error|out_of_range)@std@@YAXPEBD@Z|__imp__invoke_watson)$    ...its out-of-line length and index checks, and the invalid-parameter end of the process
+undefined  coff    ^(\?\?_7type_info@@6B@|__ImageBase)$    ...and what a throw's metadata points at: type_info's vtable and the image base its offsets count from
+undefined  coff    ^__std_(find_trivial_[14]|max_element_4|max_4i)$    the STL's vectorised std::find and std::max_element, compiled once in its own library
+undefined  coff    ^_dclass$                        the UCRT's fpclassify, behind std::isfinite and std::isnan: a classification, exact
+writable   coff    ^\?\?_R0\?AV(exception|bad_alloc|bad_array_new_length)@std@@@8$    the type descriptors of the exceptions MSVC's STL throws on a failed allocation: a throw's metadata, which MSVC keeps in writable .data$r (a type_info caches its name there); the session neither reads nor writes them
+
 # --- the sanitizer row: the instrumentation's runtime and the metadata it plants
 undefined  san     ^_*(asan|ubsan|lsan|sanitizer)_  ASan / UBSan / LSan runtime entry points
 undefined  san     ^__(start|stop)_asan_globals$    the bounds of ASan's globals section, defined by the linker (clang instruments ELF globals this way)
