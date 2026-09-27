@@ -158,15 +158,19 @@ void theGenerationRetiresInsteadOfWrapping()
     bool allOk = true;
     fc_session h = 0, last = 0;
     std::uint32_t cycles = 0;
-    for (;;)
+    // BOUNDED: a slot that wraps instead of retiring would take slot 0 for ever, and a regression must fail, not hang.
+    const std::uint32_t bound = FC_SESSION_SLOT_GENERATIONS + 2u;
+    bool retired = false;
+    while (cycles < bound)
     {
         if (fc_session_create (&h) != FC_SESSION_OK) { allOk = false; break; }
-        if ((h & 0xFFu) != 1u) break;                     // slot 0 has retired: this is slot 1
+        if ((h & 0xFFu) != 1u) { retired = true; break; }  // slot 0 has retired: this is slot 1
         last = h;
         if (fc_session_destroy (h) != FC_SESSION_OK) { allOk = false; break; }
         ++cycles;
     }
     ok (allOk, "every create and destroy on the way succeeded (" + std::to_string (cycles) + " cycles)");
+    ok (retired, "slot 0 retired within its generations — it did not go on issuing handles past its last one");
     ok ((last >> 8) == FC_SESSION_SLOT_GENERATIONS, "slot 0's last handle carries its last generation, "
                                                    + std::to_string (FC_SESSION_SLOT_GENERATIONS));
     ok ((h & 0xFFu) == 2u, "and the next create went to slot 1: slot 0 retired, it did not wrap");
