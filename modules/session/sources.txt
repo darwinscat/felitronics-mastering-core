@@ -11,3 +11,6 @@ src/Commands.cpp
 src/TextNumber.cpp
 src/TextSchema.cpp
 src/Text.cpp
+src/Pump.cpp
+src/Snapshot.cpp
+src/Codec.cpp

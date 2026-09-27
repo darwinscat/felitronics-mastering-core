@@ -1,0 +1,70 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
+
+#pragma once
+
+#include <felitronics/session/Session.h>
+#include <memory>
+#include <span>
+#include <string_view>
+
+namespace felitronics::session
+{
+struct SnapshotView
+{
+    State state = State::Empty;
+    bool mastering = false;
+    std::uint64_t revision = 0;
+    Project project {};
+    std::string_view target;
+    Source source {};
+    JobId job = 0, measurementJob = 0;
+    Recipe jobRecipe {};
+    std::span<const Kept> masters;
+    Phase measurementProgress {}, masterProgress {};
+    double sourceBytes = 0.0;
+    double integratedLufs = 0.0;
+    std::span<const ReadingPoint> momentary, shortTerm;
+    std::span<const ReadingRun> runs;
+};
+class Codec;
+// An immutable, owned value. view() remains valid until this value is moved or destroyed,
+// independent of the session that produced it. All arrays are exact allocations.
+class Snapshot final
+{
+public:
+    Snapshot() noexcept;
+    ~Snapshot();
+    Snapshot (Snapshot&&) noexcept;
+    Snapshot& operator= (Snapshot&&) noexcept;
+    Snapshot (const Snapshot&) = delete;
+    Snapshot& operator= (const Snapshot&) = delete;
+    [[nodiscard]] const SnapshotView& view() const noexcept;
+    [[nodiscard]] static std::uint64_t storageFor (const SnapshotView& view) noexcept;
+    [[nodiscard]] static Snapshot copy (const SnapshotView& view) noexcept;
+private:
+    friend class Codec;
+    SnapshotView view_ {};
+    std::unique_ptr<char[]> text_;
+    std::unique_ptr<Kept[]> masters_;
+    std::unique_ptr<ReadingPoint[]> points_;
+    std::unique_ptr<ReadingRun[]> runs_;
+};
+enum class CodecStatus : std::uint8_t { Ok, Invalid, TooSmall, FloatingPointEnvironment };
+struct CodecNeed
+{
+    CodecStatus status = CodecStatus::Ok;
+    std::uint64_t bytes = 0;
+};
+// Named-field JSON. uint64 identities are decimal strings; byte counts are exact JSON
+// numbers below 2^53. Non-finite doubles are "-Infinity", "Infinity", and "NaN".
+// encode writes into caller storage; decode validates completely before it allocates.
+class Codec final
+{
+public:
+    [[nodiscard]] static CodecNeed encodedBytes (const SnapshotView& view) noexcept;
+    [[nodiscard]] static CodecStatus encode (const SnapshotView& view, std::span<char> output) noexcept;
+    [[nodiscard]] static CodecNeed decodedBytes (std::string_view json) noexcept;
+    [[nodiscard]] static CodecStatus decode (std::string_view json, Snapshot& output) noexcept;
+};
+} // namespace felitronics::session

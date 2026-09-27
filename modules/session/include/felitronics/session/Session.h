@@ -5,6 +5,7 @@
 
 #include <felitronics/session/Commands.h>
 #include <felitronics/session/Project.h>
+#include <felitronics/session/Events.h>
 
 #include <cstdint>
 #include <memory>
@@ -42,6 +43,7 @@ enum class Status : std::uint8_t
 };
 
 class Session;
+class Snapshot;
 
 // What create() gives back: a session, or the reason there is none (`session` null, `status` not Ok).
 struct Created
@@ -124,7 +126,7 @@ public:
 
     // Is the calling thread's floating-point environment IEEE-754's default — no flush-to-zero, no denormals-are-zero,
     // rounding to nearest? Status::Ok if it is, Status::FloatingPointEnvironment if not. Read with ordinary arithmetic;
-    // it changes nothing. Every call that computes asks it first: create(), check(), apply().
+    // it changes nothing. Every call that computes asks it first: create(), check(), apply(), step(), codec entry points.
     [[nodiscard]] static Status checkFloatingPointEnvironment() noexcept;
 
     ~Session();
@@ -152,6 +154,16 @@ public:
     // the expressions that size its requests (law 11d). apply() runs exactly this first, so the two cannot disagree.
     [[nodiscard]] Checked check (const Request& request) const noexcept;
 
+    // Each unit completes one deterministic stub step. A call takes at most kStepUnits units;
+    // zero polls. Drain/copy events() after each apply/step, before the next call replaces the batch.
+    // The batch lives inside createBytes(); step and events request no heap memory.
+    [[nodiscard]] static std::uint64_t stepBytes() noexcept;
+    [[nodiscard]] Stepped step (std::uint32_t budget) noexcept;
+    [[nodiscard]] std::span<const Notification> events() const noexcept;
+    [[nodiscard]] JobId measurementJob() const noexcept;
+    [[nodiscard]] std::uint64_t snapshotBytes() const noexcept;
+    [[nodiscard]] Snapshot snapshot() const noexcept;
+
     //==========================================================================
     // WHAT THE SESSION HOLDS — read between calls; a reference stays valid until the next call that changes the session.
 
@@ -176,6 +188,15 @@ private:
 
     // Are the devices placed — has the first measurement of this source ended (Measured1, Measured2)?
     [[nodiscard]] bool placed() const noexcept;
+
+    void emit (Notification event) noexcept;
+    [[nodiscard]] bool hasWork() const noexcept;
+    JobId measurementJob_ = 0;
+    std::uint32_t measurementUnit_ = 0, masterUnit_ = 0;
+    Phase measurementProgress_ {}, masterProgress_ {};
+    Notification events_[kEventBatch] {};
+    std::size_t eventCount_ = 0;
+    std::uint64_t sequence_ = 0;
 
     State state_ = State::Empty;
     bool mastering_ = false;

@@ -1,0 +1,311 @@
+{
+  "enums": {
+    "State": [
+      "Empty",
+      "Loaded",
+      "Measured1",
+      "Measured2"
+    ],
+    "Needles": [
+      "Auto",
+      "Manual",
+      "Off"
+    ],
+    "PhaseName": [
+      "Stream",
+      "Report",
+      "Analyzers",
+      "Pass",
+      "Remeasure"
+    ]
+  },
+  "records": {
+    "TargetFieldsValue": {
+      "cpp": "TargetFields<Value>",
+      "fields": {
+        "lufs": "double",
+        "tp": "double"
+      }
+    },
+    "TargetFieldsTouched": {
+      "cpp": "TargetFields<Touched>",
+      "fields": {
+        "lufs": "double?",
+        "tp": "double?"
+      }
+    },
+    "HpfFieldsValue": {
+      "cpp": "HpfFields<Value>",
+      "fields": {
+        "on": "bool",
+        "fq": "double",
+        "slope": "int32"
+      }
+    },
+    "HpfFieldsTouched": {
+      "cpp": "HpfFields<Touched>",
+      "fields": {
+        "on": "bool?",
+        "fq": "double?",
+        "slope": "int32?"
+      }
+    },
+    "HpfFieldsLayers": {
+      "cpp": "Layers<HpfFields>",
+      "fields": {
+        "machine": "HpfFieldsValue",
+        "hand": "HpfFieldsTouched"
+      }
+    },
+    "MonoBassFieldsValue": {
+      "cpp": "MonoBassFields<Value>",
+      "fields": {
+        "on": "bool",
+        "fq": "double",
+        "width": "double"
+      }
+    },
+    "MonoBassFieldsTouched": {
+      "cpp": "MonoBassFields<Touched>",
+      "fields": {
+        "on": "bool?",
+        "fq": "double?",
+        "width": "double?"
+      }
+    },
+    "MonoBassFieldsLayers": {
+      "cpp": "Layers<MonoBassFields>",
+      "fields": {
+        "machine": "MonoBassFieldsValue",
+        "hand": "MonoBassFieldsTouched"
+      }
+    },
+    "GlueFieldsValue": {
+      "cpp": "GlueFields<Value>",
+      "fields": {
+        "on": "bool",
+        "upToDb": "double"
+      }
+    },
+    "GlueFieldsTouched": {
+      "cpp": "GlueFields<Touched>",
+      "fields": {
+        "on": "bool?",
+        "upToDb": "double?"
+      }
+    },
+    "GlueFieldsLayers": {
+      "cpp": "Layers<GlueFields>",
+      "fields": {
+        "machine": "GlueFieldsValue",
+        "hand": "GlueFieldsTouched"
+      }
+    },
+    "SaturationFieldsValue": {
+      "cpp": "SaturationFields<Value>",
+      "fields": {
+        "on": "bool",
+        "drive": "double",
+        "mix": "double",
+        "output": "double"
+      }
+    },
+    "SaturationFieldsTouched": {
+      "cpp": "SaturationFields<Touched>",
+      "fields": {
+        "on": "bool?",
+        "drive": "double?",
+        "mix": "double?",
+        "output": "double?"
+      }
+    },
+    "SaturationFieldsLayers": {
+      "cpp": "Layers<SaturationFields>",
+      "fields": {
+        "machine": "SaturationFieldsValue",
+        "hand": "SaturationFieldsTouched"
+      }
+    },
+    "TiltFieldsValue": {
+      "cpp": "TiltFields<Value>",
+      "fields": {
+        "on": "bool",
+        "db": "double"
+      }
+    },
+    "TiltFieldsTouched": {
+      "cpp": "TiltFields<Touched>",
+      "fields": {
+        "on": "bool?",
+        "db": "double?"
+      }
+    },
+    "TiltFieldsLayers": {
+      "cpp": "Layers<TiltFields>",
+      "fields": {
+        "machine": "TiltFieldsValue",
+        "hand": "TiltFieldsTouched"
+      }
+    },
+    "LimiterFieldsValue": {
+      "cpp": "LimiterFields<Value>",
+      "fields": {
+        "needles": "Needles",
+        "needlesDb": "double"
+      }
+    },
+    "LimiterFieldsTouched": {
+      "cpp": "LimiterFields<Touched>",
+      "fields": {
+        "needles": "Needles?",
+        "needlesDb": "double?"
+      }
+    },
+    "LimiterFieldsLayers": {
+      "cpp": "Layers<LimiterFields>",
+      "fields": {
+        "machine": "LimiterFieldsValue",
+        "hand": "LimiterFieldsTouched"
+      }
+    },
+    "DitherFieldsValue": {
+      "cpp": "DitherFields<Value>",
+      "fields": {
+        "on": "bool"
+      }
+    },
+    "DitherFieldsTouched": {
+      "cpp": "DitherFields<Touched>",
+      "fields": {
+        "on": "bool?"
+      }
+    },
+    "DitherFieldsLayers": {
+      "cpp": "Layers<DitherFields>",
+      "fields": {
+        "machine": "DitherFieldsValue",
+        "hand": "DitherFieldsTouched"
+      }
+    },
+    "LowShelfFieldsValue": {
+      "cpp": "LowShelfFields<Value>",
+      "fields": {
+        "on": "bool",
+        "db": "double"
+      }
+    },
+    "LowShelfFieldsTouched": {
+      "cpp": "LowShelfFields<Touched>",
+      "fields": {
+        "on": "bool?",
+        "db": "double?"
+      }
+    },
+    "LowShelfFieldsLayers": {
+      "cpp": "Layers<LowShelfFields>",
+      "fields": {
+        "machine": "LowShelfFieldsValue",
+        "hand": "LowShelfFieldsTouched"
+      }
+    },
+    "Devices": {
+      "cpp": "Devices",
+      "fields": {
+        "hpf": "HpfFieldsLayers",
+        "monoBass": "MonoBassFieldsLayers",
+        "glue": "GlueFieldsLayers",
+        "saturation": "SaturationFieldsLayers",
+        "tilt": "TiltFieldsLayers",
+        "limiter": "LimiterFieldsLayers",
+        "dither": "DitherFieldsLayers",
+        "lowShelf": "LowShelfFieldsLayers"
+      }
+    },
+    "Project": {
+      "cpp": "Project",
+      "fields": {
+        "target": "uint16",
+        "targetEdit": "TargetFieldsTouched",
+        "manual": "bool",
+        "devices": "Devices"
+      }
+    },
+    "Recipe": {
+      "cpp": "Recipe",
+      "fields": {
+        "project": "Project",
+        "source": "uint64",
+        "sound": "uint64"
+      }
+    },
+    "Kept": {
+      "cpp": "Kept",
+      "fields": {
+        "id": "uint32",
+        "recipe": "Recipe"
+      }
+    },
+    "Source": {
+      "cpp": "Source",
+      "fields": {
+        "channels": "uint32",
+        "sampleRate": "uint32",
+        "frames": "uint64",
+        "hash": "uint64",
+        "fileRate": "uint32",
+        "rateKnown": "bool",
+        "bitDepth": "uint8",
+        "name": "string"
+      }
+    },
+    "Phase": {
+      "cpp": "Phase",
+      "fields": {
+        "name": "PhaseName",
+        "fraction": "double",
+        "weightsVersion": "uint64",
+        "pass": "uint32",
+        "totalPasses": "uint32",
+        "completedUnits": "uint32",
+        "totalUnits": "uint32"
+      }
+    },
+    "ReadingPoint": {
+      "cpp": "ReadingPoint",
+      "fields": {
+        "index": "uint64",
+        "value": "double"
+      }
+    },
+    "ReadingRun": {
+      "cpp": "ReadingRun",
+      "fields": {
+        "first": "uint64",
+        "count": "uint64",
+        "value": "double"
+      }
+    },
+    "Snapshot": {
+      "cpp": "SnapshotView",
+      "fields": {
+        "state": "State",
+        "mastering": "bool",
+        "revision": "uint64",
+        "project": "Project",
+        "target": "string",
+        "source": "Source",
+        "job": "uint32",
+        "measurementJob": "uint32",
+        "jobRecipe": "Recipe",
+        "masters": "Kept[]",
+        "measurementProgress": "Phase",
+        "masterProgress": "Phase",
+        "sourceBytes": "bytes",
+        "integratedLufs": "double",
+        "momentary": "ReadingPoint[]",
+        "shortTerm": "ReadingPoint[]",
+        "runs": "ReadingRun[]"
+      }
+    }
+  }
+}

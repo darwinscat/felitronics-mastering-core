@@ -256,10 +256,11 @@ Situation situation (Column column, bool manual = true, const char* target = nul
         good = good && accepted (s, loadOf (x.audio, 102));
         if (column != Column::Loaded)
         {
-            good = good && Driver::measured1 (s);
-            if (column == Column::Measured2 || column == Column::Mastering2) good = good && Driver::measured2 (s);
+            good = good && Driver::measured1 (s, s.measurementJob(), s.source().hash);
+            if (column == Column::Measured2 || column == Column::Mastering2)
+                good = good && Driver::measured2 (s, s.measurementJob(), s.source().hash);
             const Answer m = s.apply (command::Master { 103 });
-            good = good && m.rejection == Rejection::None && Driver::mastered (s);
+            good = good && m.rejection == Rejection::None && Driver::mastered (s, s.job());
             x.kept = m.job;
             if (column == Column::Mastering1 || column == Column::Mastering2)
             {
@@ -286,7 +287,7 @@ Request validRequest (Command c, const Situation& x, CommandId id)
         case Command::RevertEdits: { HpfFields<Mark> m {}; m.fq = true; return revertOf (m, id); }
         case Command::SetManual:   return command::SetManual { id, true };
         case Command::Master:      return command::Master { id };
-        case Command::Cancel:      return command::Cancel { id, x.job };
+        case Command::Cancel:      return command::Cancel { id, x.job != 0 ? x.job : x.s->measurementJob() };
         case Command::Forget:      return command::Forget { id, x.kept };
     }
     return command::Master { id };
@@ -328,7 +329,7 @@ void theDefaultsAtCreate()
     ok (accepted (*s, command::SetTarget { 2, "lp", OnEdits::Keep }) && sameMachine (s->project().devices, Devices {})
             && accepted (*s, command::SetTarget { 3, "allStreaming", OnEdits::Keep }),
         "and after a change of target while the first measurement runs");
-    ok (Driver::measured1 (*s), "the first measurement ends");
+    ok (Driver::measured1 (*s, s->measurementJob(), s->source().hash), "the first measurement ends");
     const auto& d = s->project().devices;
     // allStreaming: 24 Hz floor under the 30 Hz default, 24 dB/oct, mono bass at 120 Hz, a peak clipper, 24-bit delivery.
     ok (same (d.hpf.machine.fq, 30.0) && d.hpf.machine.slope == 24 && d.hpf.machine.on, "the high-pass: 30 Hz, 24 dB/oct, on");
@@ -377,7 +378,9 @@ void everyCellOfTheEvents()
             bool done = false;
             const budget::Spent spent = budget::spend ([&]
             {
-                done = e == 0 ? Driver::measured1 (s) : e == 1 ? Driver::measured2 (s) : Driver::mastered (s);
+                done = e == 0 ? Driver::measured1 (s, s.measurementJob(), s.source().hash)
+                     : e == 1 ? Driver::measured2 (s, s.measurementJob(), s.source().hash)
+                              : Driver::mastered (s, s.job());
             });
             const bool cell = Table::events[e].cell[col];
             const std::string what = std::string (kEventNames[e]) + " in " + kColumnNames[col];
@@ -404,7 +407,7 @@ void placement()
     fq.fq = true;
     rejectedWhole (s, revertOf (fq), Rejection::NotPlaced, kNoField, "a revert while the first measurement runs");
     ok (sameMachine (s.project().devices, Devices {}), "the devices unplaced while the first measurement runs");
-    ok (Driver::measured1 (s) && s.state() == State::Measured1, "the first measurement ends: Measured1");
+    ok (Driver::measured1 (s, s.measurementJob(), s.source().hash) && s.state() == State::Measured1, "the first measurement ends: Measured1");
     Devices expected {};
     detail::placeMachine (detail::rules(), s.project().target, s.source().channels, expected);
     ok (sameMachine (expected, s.project().devices) && ! sameMachine (Devices {}, s.project().devices),
@@ -683,7 +686,7 @@ void theOrderOfTheChecks()
         {
             const Seen before = seen (*m.s);
             const Answer a = m.s->apply (command::Master { 1 });
-            const bool driven = Driver::mastered (*m.s);
+            const bool driven = Driver::mastered (*m.s, m.s->job());
             fpenv::restoreFpEnvironment (saved);
             ok (a.rejection == Rejection::FloatingPointEnvironment && ! driven && sameSeen (before, seen (*m.s)),
                 "ENTRY before STATE: a master while mastering, on a thread rounding upward, is refused for the thread; "
@@ -802,7 +805,7 @@ void memoryIsDeclared()
             "a master asked and cancelled");
         ok (x.s->check (command::Master { 4 }).bytes == 0, "the next master finds its room there: 0");
         const budget::Spent again = budget::spend ([&] { (void) x.s->apply (command::Master { 5 }); });
-        const budget::Spent done = budget::spend ([&] { (void) Driver::mastered (*x.s); });
+        const budget::Spent done = budget::spend ([&] { (void) Driver::mastered (*x.s, x.s->job()); });
         ok (again.requests == 0 && done.requests == 0 && x.s->masters().size() == 2,
             "and neither it nor its ending asks the heap for anything");
     }
@@ -825,7 +828,7 @@ void aMasterKeepsItsRecipe()
         "the project moves on while it is made");
     ok (same (*s.jobRecipe().project.devices.hpf.hand.fq, 36.0) && s.jobRecipe().project.target != s.project().target,
         "and the recipe does not");
-    ok (Driver::mastered (s) && s.masters().back().id == m.job && same (*s.masters().back().recipe.project.devices.hpf.hand.fq, 36.0),
+    ok (Driver::mastered (s, s.job()) && s.masters().back().id == m.job && same (*s.masters().back().recipe.project.devices.hpf.hand.fq, 36.0),
         "kept under its job's id, with the recipe it was asked with");
 }
 
@@ -835,9 +838,9 @@ void jobIds()
     Situation x = situation (Column::Measured1);
     Session& s = *x.s;
     const JobId before = x.kept;
-    ok (accepted (s, loadOf (x.audio, 1)) && Driver::measured1 (s), "a new source, measured");
+    ok (accepted (s, loadOf (x.audio, 1)) && Driver::measured1 (s, s.measurementJob(), s.source().hash), "a new source, measured");
     const Answer again = s.apply (command::Master { 2 });
-    ok (again.rejection == Rejection::None && again.job == before + 1,
+    ok (again.rejection == Rejection::None && again.job == before + 2,
         "the next job after a load is numbered on from the last, not again from 1 (" + std::to_string (again.job) + ")");
     ok (accepted (s, command::Cancel { 3, again.job }), "cancelled");
     detail::Inspector::lastJob (s, std::numeric_limits<JobId>::max() - 1);

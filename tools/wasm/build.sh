@@ -575,6 +575,7 @@ read -r TV_MAJOR TV_MINOR TV_PATCH <<< "$(sed -nE '/^project\(felitronics_toml/,
 [ -n "${TV_PATCH:-}" ] && { [ "$TV_MAJOR" -gt 0 ] || [ "$TV_MINOR" -ge 2 ]; } \
     || { echo "*** felitronics-toml at $TOML is not v0.2.0 or later (${TV_MAJOR:-?}.${TV_MINOR:-?}.${TV_PATCH:-?})"; exit 1; }
 echo "--- fc_session config: felitronics-toml $TV_MAJOR.$TV_MINOR.$TV_PATCH at $TOML"
+cmake -DOUTPUT="$OUT/snapshot.d.ts" -P "$ROOT/tools/session-codec.cmake"
 SGEN="$OUT/session-config"
 mkdir -p "$SGEN/embedded"
 em++ -std=c++20 -O1 -I"$TOML/include" "$TOML/tools/toml2cpp.cpp" \

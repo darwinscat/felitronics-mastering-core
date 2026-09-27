@@ -34,6 +34,7 @@ undefined  elf     ^__(memcpy|memmove|memset)_chk$  the same under _FORTIFY_SOUR
 undefined  all     ^__stack_chk_(fail|guard)$       the stack protector, which distributions turn on by default
 undefined  elf     ^__stack_chk_fail_local$         the stack protector, 32-bit
 undefined  elf     ^_GLOBAL_OFFSET_TABLE_$          a relocation base the linker defines, not code
+undefined  macho   ^__chkstk_darwin$                Apple clang stack probing for the bounded integer JSON conversion scratch
 undefined  coff    ^(_fltused|__security_check_cookie|__security_cookie|__GSHandlerCheck|__chkstk)$    MSVC's floating-point marker, /GS and the stack probe
 undefined  coff    ^_RTC_                           MSVC's run-time checks in a debug build
 undefined  wasm    ^(__stack_pointer|__memory_base|__table_base|__indirect_function_table)$    the linear memory's own registers
