@@ -67,6 +67,9 @@ zone   modules/session/src/BuildContract.cpp                  the library's buil
 zone   modules/session/src/BuildContract.h                    the build contract's private declarations
 zone   modules/session/src/BuildGuards.h                      the build guards every translation unit includes first
 zone   modules/session/src/FpProbes.h                         the floating-point probes: compiler licences and the thread's environment
-# The C boundary and the native CLI: the two roads into the library; what either includes is rule 4's net.
+# The C boundary and the native CLI: the two roads into the library; what either includes is rule 4's net. The boundary
+# is compiled with the session's flags and scanned by the session-laws lint, which holds it in the zone as the module is.
 entry  tools/wasm/fc_session.cpp  the session ABI, the translation unit of the fcsession module
 entry  tools/fcore_session.cpp    the native CLI over the session, the native road into the same library
+zone   tools/wasm/fc_session.cpp  the session ABI: checks what a page hands over and forwards the session's answers
+zone   tools/fc_session_abi.h     the session ABI's declarations and constants, included by the boundary

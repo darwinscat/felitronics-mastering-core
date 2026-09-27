@@ -18,7 +18,12 @@
 // flag, and nothing else — the object-file gate reads this translation unit's object and refuses any writable symbol
 // but those two, named in tools/lint/session-objects.txt. Both are trivially destructible, so the module registers no
 // destructor to run at exit either.
+//
+// AND THE SESSION'S SOURCE LAWS HOLD HERE TOO (tools/lint/check-session-laws.mjs scans this file and the ABI header): the
+// build guards first, no macro but FC_EXPORT (which tools/wasm/build.sh's export scanner reads), no platform branch but
+// the one below, the include allowlist plus the two emscripten headers. That list is the file's stated allowance.
 
+#include "BuildGuards.h"                       // first: refuses a unit compiled with exceptions, RTTI or fast-math
 #include "fc_session_abi.h"
 
 #include <felitronics/session/Session.h>
@@ -78,24 +83,35 @@ Slot g_slots[FC_SESSION_MAX_HANDLES];
 enum : std::uint8_t { kIdle = 0, kInCall = 1, kPoisoned = 2 };
 volatile std::uint8_t g_callState = kIdle;
 
-// Clears the in-call mark on a normal return. Nothing else can end a call: this translation unit and the library are
-// compiled without exceptions, so there is no unwinding to tell apart from a return — an allocation that cannot be
-// served ends the process natively and aborts the module in wasm, where the mark stays set and poisons what follows.
-// A mark that became Poisoned during the call (a re-entry) is not cleared — the latch is the point.
-struct CallGuard
+// THE CALL, as an object — the first statement of every status-returning entry point, ahead of every other check,
+// because an abandoned module has no handle and no argument this file can vouch for:
+//     const CallGuard call;
+//     if (call.refused()) return FC_SESSION_ERR_POISONED;
+// Entering finds the mark Idle and sets InCall, or finds anything else — a call that never returned, or a re-entry,
+// which it cannot tell apart — and latches Poisoned. Leaving clears InCall on a normal return. Nothing else can end a
+// call: this translation unit and the library are compiled without exceptions, so there is no unwinding to tell apart
+// from a return — an allocation that cannot be served ends the process natively and aborts the module in wasm, where
+// the mark stays set and poisons what follows. A mark that became Poisoned during the call is not cleared — the latch
+// is the point. (A class, not a macro: the session's sources define no macros, and this file keeps only FC_EXPORT.)
+class CallGuard
 {
+public:
+    CallGuard() noexcept : refused_ (g_callState != kIdle)
+    {
+        g_callState = refused_ ? kPoisoned : kInCall;
+    }
     ~CallGuard()
     {
         if (g_callState == kInCall) g_callState = kIdle;
     }
-};
+    CallGuard (const CallGuard&) = delete;
+    CallGuard& operator= (const CallGuard&) = delete;
 
-// The first statement of every status-returning entry point — ahead of every other check, because an abandoned module
-// has no handle and no argument this file can vouch for.
-#define FC_SESSION_GUARD                                                                          \
-    if (g_callState != kIdle) { g_callState = kPoisoned; return FC_SESSION_ERR_POISONED; }       \
-    g_callState = kInCall;                                                                        \
-    const CallGuard fcGuard_ {}
+    [[nodiscard]] bool refused() const noexcept { return refused_; }
+
+private:
+    const bool refused_;
+};
 
 fc_session packHandle (std::uint32_t slot, std::uint32_t gen) noexcept
 {
@@ -148,7 +164,8 @@ FC_EXPORT std::uint32_t fc_session_abi_version (void) { return FC_SESSION_ABI_VE
 
 FC_EXPORT fc_session_status fc_session_create (fc_session* out)
 {
-    FC_SESSION_GUARD;
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
     if (const fc_session_status st = checkHandleOut (out); st != FC_SESSION_OK) return st;
     std::uint32_t slot = 0;
     while (slot < FC_SESSION_MAX_HANDLES && (g_slots[slot].session != nullptr || g_slots[slot].retired)) ++slot;
@@ -170,7 +187,8 @@ FC_EXPORT fc_session_status fc_session_create (fc_session* out)
 
 FC_EXPORT fc_session_status fc_session_destroy (fc_session session)
 {
-    FC_SESSION_GUARD;
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
     Slot* s = lookup (session);
     if (s == nullptr) return FC_SESSION_ERR_HANDLE;
     delete s->session;
