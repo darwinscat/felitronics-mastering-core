@@ -201,10 +201,12 @@ every stage a device writes is named, the limiter's second release included.
   `create()` answers with `Status::Config`, not reachable in a library whose build ran the gate.
 - **Only in words, for now: the config's memory.** `Config::load()` allocates and publishes no demand; the session does
   not call it.
-- **Only in words: the golden pin is append-only.** A new set of sound numbers is a new name in `defaults` and a new
-  line in the decisions suite's table, and the line of an old name is never rewritten — a project names its defaults,
-  and two sets of numbers under one name would reopen it as another master. The suite holds the current name to its
-  sound version; that an old line was not overwritten is held by review alone.
+- **Only in words: the golden pin is append-only once released.** A new set of sound numbers is a new name in
+  `defaults` and a new line in the decisions suite's table, and the line of defaults that a release carries is never
+  rewritten — a project names its defaults, and two sets of numbers under one name would reopen it as another master.
+  Before the first release that carries a name, its line may be updated in place: no project can name defaults no
+  release shipped (no release tag carries `2026-09`). The suite holds the current name to its sound version; that a
+  released line was not overwritten is held by review alone.
 
 ## The states and the commands
 

@@ -43,8 +43,8 @@ Created Session::create() noexcept
         return c;
     }
     // `new`, not make_unique: the constructor is private, and a Session made anywhere but here would be one whose demand
-    // nobody published. The vectors it holds are empty and ask for nothing.
-    // The devices stay unplaced until the first measurement ends (src/Driver.h).
+    // nobody published. The arrays it owns start empty (null) and ask for nothing; the devices stay unplaced until the
+    // first measurement ends (src/Driver.h).
     c.session = std::unique_ptr<Session> (new Session);
     c.session->project_.target = rules.defaultRow;
     return c;
