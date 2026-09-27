@@ -227,8 +227,9 @@ template <class F> command::RevertEdits revertOf (const F& mask, CommandId id = 
 
 HpfFields<Touched> hpfFq (double fq) { HpfFields<Touched> f; f.fq = fq; return f; }
 
-// A session standing in `column`: the manual mode on (unless asked otherwise), a stereo source where the column has one,
-// one master kept where masters can be, and a master being made in the Mastering columns.
+// A session standing in `column`: a stereo source where the column has one, one master kept where masters can be, a
+// master being made in the Mastering columns — and the manual mode on (unless asked otherwise), switched on last: a load
+// switches it off.
 struct Situation
 {
     std::unique_ptr<Session> s;
@@ -242,7 +243,6 @@ Situation situation (Column column, bool manual = true, const char* target = nul
     Situation x { fresh(), makeAudio (channels, 4800) };
     Session& s = *x.s;
     bool good = true;
-    if (manual) good = good && accepted (s, command::SetManual { 100, true });
     if (target != nullptr) good = good && accepted (s, command::SetTarget { 101, target, OnEdits::Keep });
     if (column != Column::Empty)
     {
@@ -262,6 +262,7 @@ Situation situation (Column column, bool manual = true, const char* target = nul
             }
         }
     }
+    if (manual) good = good && accepted (s, command::SetManual { 100, true });
     ok (good && s.column() == column, std::string ("PRECONDITION: the session stands in ") + kColumnNames[std::size_t (column)]);
     return x;
 }
@@ -801,8 +802,9 @@ void aLoadDisarms()
     ok (s.state() == State::Loaded && ! s.mastering() && s.job() == 0 && s.masters().empty(),
         "Loaded: the master being made stopped, the masters gone");
     ok (handsEmpty (s.project().devices), "a person's device edits gone: they were about the old source");
-    ok (s.targetName() == "lp" && s.project().targetEdit.lufs && same (*s.project().targetEdit.lufs, -11.0) && s.project().manual,
-        "the target, its edited number and the manual mode stay");
+    ok (! s.project().manual, "the manual mode is off: it does not outlive the file");
+    ok (s.targetName() == "lp" && s.project().targetEdit.lufs && same (*s.project().targetEdit.lufs, -11.0),
+        "the target and its edited number stay");
     ok (s.source().channels == 1 && s.source().frames == 3000 && s.source().sampleRate == 44100 && s.source().bitDepth == 16
             && s.source().name == "second.wav" && s.source().hash != oldHash,
         "the new source, its name and its hash");

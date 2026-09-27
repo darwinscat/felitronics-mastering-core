@@ -276,10 +276,10 @@ carries one, the dither where the target's bit depth is one it serves, mono bass
 - **`setManual(false)`** takes back a person's device edits and nothing else: the machine's layer stays, and so does an
   edit of the target's numbers.
 - **`load`** checks everything first, then DISARMS — whatever ran on the old source stops, and the old source, its
-  measurements, its masters and a person's device edits go (they were decisions about the old source); the old samples
-  are freed before the new are asked for — and then WRITES the new source: its samples, channel after channel, its name
-  and its hash (64-bit FNV-1a of its rate, channels, frames and every sample's bits). The target, its edited numbers and
-  the manual mode stay.
+  measurements and its masters go; the manual mode is switched off, and a person's device edits go with it (the mode
+  does not outlive the file: its edits were decisions about the old source); the old samples are freed before the new
+  are asked for — and then WRITES the new source: its samples, channel after channel, its name and its hash (64-bit
+  FNV-1a of its rate, channels, frames and every sample's bits). The target and its edited numbers stay.
 - **`master`** captures the recipe — the project as it is, the source's hash, the config's sound version — and starts a
   job; the project may change meanwhile, and the master renders its recipe. When it is done the session keeps it under
   its job's id; `cancel(job)` ends the overlay, `forget(master)` lets a kept master go.
