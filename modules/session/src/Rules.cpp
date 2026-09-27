@@ -159,9 +159,9 @@ Rules readRules (View targets, View engine) noexcept
     r.read (mono.find ("lowWidth"), out.monoBassWidthDefault);
 
     const View glue = engine.find ("glue");
-    out.glue.from = Decimal { 0, 1, false };     // the glue's travel is 0…1 (engine.toml, [glue] THE TRAVEL)
-    out.glue.to = Decimal { 10, 1, false };
-    r.read (glue.find ("step"), out.glue.step);
+    r.read (glue.find ("knobMinDb"), out.glue.from);
+    r.read (glue.find ("knobMaxDb"), out.glue.to);
+    r.read (glue.find ("knobStepDb"), out.glue.step);
     r.read (glue.find ("default"), out.glueDefault);
     const View byTarget = glue.find ("byTarget");
     if (! byTarget.is (Type::Table)) r.complete = false;

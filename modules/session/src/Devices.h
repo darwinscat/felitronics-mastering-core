@@ -72,7 +72,7 @@ template <template <class> class F> struct DeviceOf<GlueFields<F>>
     template <class V, class... S> static void each (const Rules& r, V&& v, S&&... s)
     {
         v (0, flagRule(), s.on...);
-        v (1, knobRule (r.glue), s.amount...);
+        v (1, knobRule (r.glue), s.upToDb...);
     }
 };
 

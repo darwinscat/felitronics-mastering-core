@@ -51,7 +51,7 @@ void placeMachine (const Rules& rules, std::uint16_t row, std::uint32_t channels
 
     auto& glue = devices.glue.machine;
     glue.on = rules.compressor;
-    glue.amount = number (target.glue ? *target.glue : rules.glueDefault);
+    glue.upToDb = number (target.glue ? *target.glue : rules.glueDefault);
 
     auto& sat = devices.saturation.machine;
     sat.on = rules.clipper;

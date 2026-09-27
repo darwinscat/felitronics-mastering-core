@@ -47,3 +47,9 @@ and memory declared for every command.
 
 **`fcsession`** carries the states and the commands with its config: 61.0 KB of wasm, 17.8 KB brotli, from 43.8 / 13.4.
 The draft C boundary carries none of the commands.
+
+**The glue is its knob, "up to N dB"** (an owner decision): the project's glue field (`upToDb`), a person's edits of it
+and every glue number of `engine.toml` are on the knob — 0…3 dB in steps of 0.1 — and the schema holds `default` (0),
+`whenTicked` (0.5 dB, where the travel's 0.3 gave 0.51 dB) and `byTarget` (cd 2.6 dB, what the travel's 0.7 read as)
+on its travel and step. The travel 0…1 and its laws stay the compressor's internal mapping. The sound version of the
+2026-09 defaults moves with these numbers.

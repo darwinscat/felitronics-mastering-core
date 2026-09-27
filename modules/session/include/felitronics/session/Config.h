@@ -236,16 +236,18 @@ struct GlueRamp
     Law law = Law::Linear;
 };
 
+// The glue's numbers are on its knob, "up to N dB" — `default`, `whenTicked`, `byTarget`; `step` and the ramps are its
+// travel, the compressor's internal mapping.
 struct GlueAtTarget
 {
     std::string target;
-    double position = 0.0;
+    double upToDb = 0.0;
 };
 
 struct Glue
 {
-    double defaultPosition = 0.0;              // `default`
-    double whenTicked = 0.0;
+    double defaultUpToDb = 0.0;                // `default`
+    double whenTickedUpToDb = 0.0;             // `whenTicked`
     std::vector<GlueAtTarget> byTarget;        // in the document's order
     double step = 0.0;
     GlueRamp ratio, threshOffset, attack, knee, divisor;

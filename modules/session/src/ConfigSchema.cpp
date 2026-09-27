@@ -510,17 +510,24 @@ void readCompressor (Doc& d, Reader& in, Compressor& o)
 // `targets`: the row keys of the targets document, or null when it did not parse (nothing to check a name against).
 void readGlue (Doc& d, Reader& in, Glue& o, const std::vector<std::string>* targets)
 {
+    // THE KNOB, "up to N dB", first: every glue number of the document is written on it.
+    const bool lo = in.required ("knobMinDb", o.knobMinDb, R { 0.0, 24.0 });
+    const bool hi = in.required ("knobMaxDb", o.knobMaxDb, R { 0.0, 24.0 });
+    d.below (in, lo && hi, o.knobMinDb, o.knobMaxDb, "knobMaxDb");
+    in.required ("knobStepDb", o.knobStepDb, R { 0.01, 3.0 });
+    const R knob = lo && hi && o.knobMinDb < o.knobMaxDb ? R { o.knobMinDb, o.knobMaxDb } : R { 0.0, 24.0 };
+    const Grid onKnob { decimalAt (in, "knobMinDb"), decimalAt (in, "knobStepDb") };
+    if (in.required ("default", o.defaultUpToDb, knob)) d.onStep (in, "default", onKnob);
+    if (in.required ("whenTicked", o.whenTickedUpToDb, knob)) d.onStep (in, "whenTicked", onKnob);
+    // THE TRAVEL, 0…1 in steps of `step`: the compressor's internal mapping.
     in.required ("step", o.step, R { 0.0001, 1.0 });
-    const Grid step { toml::Decimal { 0, 1, false }, decimalAt (in, "step") };   // the travel runs from 0
-    if (in.required ("default", o.defaultPosition, share())) d.onStep (in, "default", step);
-    if (in.required ("whenTicked", o.whenTicked, share())) d.onStep (in, "whenTicked", step);
     in.table ("byTarget", Need::Required, [&] (Reader& t)
     {
         for (const auto& e : t.data().entries())
         {
             GlueAtTarget g { e.key, 0.0 };
-            if (! t.required (e.key, g.position, share())) continue;
-            d.onStep (t, e.key, step);
+            if (! t.required (e.key, g.upToDb, knob)) continue;
+            d.onStep (t, e.key, onKnob);
             if (targets != nullptr && ! contains (*targets, e.key)) d.refuse (t, e.key, Refusal::NotATarget);
             else o.byTarget.push_back (std::move (g));
         }
@@ -545,10 +552,6 @@ void readGlue (Doc& d, Reader& in, Glue& o, const std::vector<std::string>* targ
     ramp ("attack", o.attack, R { 0.01, 1000.0 }, false);
     ramp ("knee", o.knee, R { 0.0, 48.0 }, false);
     ramp ("divisor", o.divisor, R { 0.01, 1000.0 }, false);   // above zero whatever the law: the release divides by it
-    const bool lo = in.required ("knobMinDb", o.knobMinDb, R { 0.0, 24.0 });
-    const bool hi = in.required ("knobMaxDb", o.knobMaxDb, R { 0.0, 24.0 });
-    d.below (in, lo && hi, o.knobMinDb, o.knobMaxDb, "knobMaxDb");
-    in.required ("knobStepDb", o.knobStepDb, R { 0.01, 3.0 });
 }
 
 void readSaturation (Doc& d, Reader& in, Saturation& o)
