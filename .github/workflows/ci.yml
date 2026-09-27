@@ -251,12 +251,14 @@ jobs:
 
       - name: The session laws in the source — the lint, its self-test, and its controls planted in the tree
         # tools/lint/check-session-laws.mjs holds what leaves no symbol in any object (docs/SESSION.md): the include
-        # allowlist, pragmas, exception and RTTI tokens in every #if branch, conditional compilation, atomics, cycle
-        # counters and inline assembly, implementation-defined orders, function bodies in the public header, the build
-        # guards first in every unit, every file in the det-math zone. The scan starts from the target's sources and is
-        # cross-checked against this configure's compile_commands.json. What the OBJECT answers — writable state, calls
-        # to the operating system, the locale, the clock — is the object-file gate's, a ctest test on every row above.
-        # run.sh plants each rule's violation in the real tree and requires the lint to fail on the planted file and line.
+        # allowlists, directives, macros, pragmas, attributes, alternative tokens, exception and RTTI tokens in every #if
+        # branch, conditional compilation, atomics, cycle counters and inline assembly, implementation-defined orders,
+        # function bodies and variables in the public header, the build guards first in every unit, every file in the
+        # det-math zone — over modules/session and the C boundary compiled with its flags. The scan starts from the
+        # targets' sources and is cross-checked against this configure's compile_commands.json. What the OBJECT answers —
+        # writable state, calls to the operating system, the locale, the clock — is the object-file gate's, a ctest test on
+        # every row above. run.sh plants each rule's violation in the real tree and requires the lint to fail on the planted
+        # file and line.
         run: |
           node tools/lint/check-session-laws.mjs --self-test
           node tools/lint/check-session-laws.mjs --build build
