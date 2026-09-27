@@ -196,6 +196,19 @@ if(FELITRONICS_BUILD_TESTS)
              COMMAND felitronics_session_config_tests ${FELITRONICS_SESSION_CONFIG}/targets.toml
                                                       ${FELITRONICS_SESSION_CONFIG}/engine.toml)
 
+    # THE OWNER'S DECISIONS, apart from the schema: every target row field by field and the engine's decided numbers — so
+    # changing a decision is a deliberate edit of this suite.
+    add_executable(felitronics_session_config_decisions_tests tests/ConfigDecisionsTests.cpp)
+    target_link_libraries(felitronics_session_config_decisions_tests PRIVATE
+        felitronics::session felitronics::toml felitronics::test_support)
+    target_compile_features(felitronics_session_config_decisions_tests PRIVATE cxx_std_20)
+    if(EMSCRIPTEN)
+        target_link_options(felitronics_session_config_decisions_tests PRIVATE -sNODERAWFS=1)
+    endif()
+    add_test(NAME felitronics_session_config_decisions_tests
+             COMMAND felitronics_session_config_decisions_tests ${FELITRONICS_SESSION_CONFIG}/targets.toml
+                                                                ${FELITRONICS_SESSION_CONFIG}/engine.toml)
+
     # THE CHECK ITSELF, PROVEN ABLE TO FAIL: a copy of the documents with one mistake planted must turn the check red
     # with that mistake's line, column, fault and key path, and the same copy without the plant must pass
     # (tests/config-must-fail.cmake). Not on the wasm tier: the in-process controls above run there.

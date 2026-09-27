@@ -5,9 +5,10 @@
 # (targets.toml). Compiled into felitronics::session at build time and read by schema, like the targets: an unknown key,
 # a wrong type or a value outside its range stops the build at its line and column.
 #
-# What each number means and where it came from stands beside it. "An owner decision" is a number the owner chose;
-# "measured" is a measurement on real programme; "a hypothesis" is a starting value no measurement has confirmed yet. The
-# schema checks form and physical domains only.
+# What each number means and where it came from stands beside it. "An owner decision" is a number the owner chose, pinned
+# by the decisions suite (modules/session/tests/ConfigDecisionsTests.cpp); "measured" is a measurement on real programme;
+# "a hypothesis" is a starting value no measurement has confirmed yet. The schema checks form and physical domains only,
+# so an owner decision changes by an edit of that suite, not by a schema error.
 #
 # A section is a device of the session ([hpf], [monoBass], [glue], [limiter], …) or a stage of its work ([input],
 # [landing], [cost], [progress]). The travels of the knobs a person turns are OUR numbers — taste and the physics of the
