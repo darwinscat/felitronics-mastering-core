@@ -9,8 +9,8 @@
 // small can refuse the call before it is made — on the wasm tier an allocation that cannot be served is not a refusal
 // but the end of the module — and that is only worth anything if the declaration is never short.
 //
-// Today one call is declared, Session::create(). The harness is written for every call a session will grow: each gets
-// a demand, and each demand gets a line in its suite through spend() and covers().
+// One call is declared, Session::create(). The harness does not depend on which call it holds: a declared call is a
+// demand, and each demand is one line in its suite through spend() and covers().
 //
 // INCLUDING THIS HEADER INSTALLS THE COUNTER (it includes core's test_support/alloc_counter.h, which replaces every
 // form of `new`), so it belongs in exactly ONE translation unit of an executable, as that header says.
