@@ -226,10 +226,13 @@ if(FELITRONICS_BUILD_TESTS)
     # tools/CMakeLists.txt, next to the boundary. Here: sources that each break the law in one shape, compiled with the
     # library's own options into objects nobody links, and each run through the gate, which must refuse it and name the
     # symbol (tests/object-controls/ has one file per shape, and says which review found it).
-    # name | what the gate's refusal must name (regexes, `&&&` between several that must all appear) — or PASS, for the
-    # control the gate must ACCEPT: a constexpr table of pointers, relocated constant data, built position-independent
-    # so it lands in .data.rel.ro (ELF, wasm) and __DATA,__const (Mach-O), where pointer_array — the same table with
-    # mutable pointers — must be refused.
+    # name | what the gate's refusal must name — regexes, `&&&` between several that must all appear, each matching a
+    # refused symbol's WHOLE name (its raw or demangled name, or the last identifier of it: `lambdaCounter` of a static
+    # local, `to_string` of `std::__1::to_string(double)`) — or PASS, for the control the gate must ACCEPT: a constexpr
+    # table of pointers, relocated constant data, built position-independent so it lands in .data.rel.ro (ELF, wasm) and
+    # __DATA,__const (Mach-O), where pointer_array — the same table with mutable pointers — must be refused. The
+    # alternatives in a call's pattern are that call's spelling per C library: glibc's __ctype_b_loc, Apple's __maskrune,
+    # the UCRT's __stdio_common_vfprintf behind an inline printf, libstdc++'s vsnprintf behind an inline to_string.
     set(FELITRONICS_SESSION_OBJECT_CONTROLS
         "constexpr_pointer_table|PASS"
         "direct_init_global|directInitCounter"
@@ -240,9 +243,20 @@ if(FELITRONICS_BUILD_TESTS)
         "pointer_array|kPhaseNames"
         "thread_local|perThreadCount"
         "const_dynamic_init|kStartupValue"
-        "forbidden_calls|printf&&&fopen&&&time&&&getenv&&&strtod&&&rand&&&isalpha|maskrune|RuneLocale|ctype"
-        "string_via_pointer|to_string|printf"
-        "stod_rand|stod|strtod&&&rand")
+        "forbidden_calls|printf|iprintf|__stdio_common_vfprintf&&&fopen|fopen64&&&time|time64|_time64&&&getenv&&&strtod&&&rand&&&isalpha|__maskrune|_DefaultRuneLocale|__ctype_b_loc|__istype|_isctype|_isctype_l|_chvalidator|__pctype_func"
+        "string_via_pointer|to_string|vsnprintf|__vsnprintf_chk|__stdio_common_vsprintf|__stdio_common_vsprintf_s|_scprintf|sprintf_s"
+        "stod_rand|stod|strtod&&&rand"
+        "local_definition|getpid")
+    # A global in a section of its own naming; on ELF a second one in a section NAMED .rodata.*, which the object still
+    # marks writable. (wasm segments carry no write flag at all — the linear memory is writable as a whole — so there the
+    # read-only places are known by name, and the session-laws lint refuses the section attribute that could choose one.)
+    if(CMAKE_SYSTEM_NAME STREQUAL "Linux" AND NOT EMSCRIPTEN)
+        list(APPEND FELITRONICS_SESSION_OBJECT_CONTROLS "custom_section|sectionCounter&&&rodataNamedCounter")
+    else()
+        list(APPEND FELITRONICS_SESSION_OBJECT_CONTROLS "custom_section|sectionCounter")
+    endif()
+    set(FELITRONICS_SESSION_OBJECT_CONTROL_SOURCES_local_definition
+        tests/object-controls/local_definition_call.cpp tests/object-controls/local_definition_static.cpp)
     if(NOT MSVC)
         list(APPEND FELITRONICS_SESSION_OBJECT_CONTROLS "asm_label|asmCounter")   # MSVC has no asm labels
     endif()
@@ -252,7 +266,11 @@ if(FELITRONICS_BUILD_TESTS)
         math(EXPR bar "${bar} + 1")
         string(SUBSTRING "${entry}" ${bar} -1 expect)
         set(tgt fs_objctl_${ctl})   # short: MSBuild writes a target's name twice into one log path, under 260 characters
-        add_library(${tgt} OBJECT tests/object-controls/${ctl}.cpp)
+        if(DEFINED FELITRONICS_SESSION_OBJECT_CONTROL_SOURCES_${ctl})
+            add_library(${tgt} OBJECT ${FELITRONICS_SESSION_OBJECT_CONTROL_SOURCES_${ctl}})
+        else()
+            add_library(${tgt} OBJECT tests/object-controls/${ctl}.cpp)
+        endif()
         target_compile_features(${tgt} PRIVATE cxx_std_20)
         target_compile_options(${tgt} PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
         if(expect STREQUAL "PASS")
