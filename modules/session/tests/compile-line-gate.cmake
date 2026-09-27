@@ -16,9 +16,13 @@
 #     -Ofast ...), exceptions or RTTI. A per-source option comes after the target's on every generator, so a per-source
 #     -ffp-model=fast is red here; and a group CMake de-duplicated away (a parent stated -ffp-contract=off first, and the
 #     library's own was dropped — it happened) is not on the line at all, which is red too.
-#   * NO FORCED INCLUDE AND NO PASS-THROUGH anywhere on the line (-include, -imacros, -Wp,, -Xclang, -mllvm): each carries
-#     flags or pragmas this gate cannot read. A RESPONSE FILE (`@file`, which the emscripten toolchain uses for the include
-#     directories) is read and its tokens take its place on the line; one that cannot be read is refused.
+#   * NO FORCED INCLUDE, PASS-THROUGH, PLUGIN OR FLAG FILE anywhere on the line, in any spelling the drivers accept —
+#     separated or joined: -include / -include<path> / -include-pch, --include / --include=, -imacros / -imacros<path>,
+#     --imacros=, -Wp,..., every -X... (-Xclang, -Xclang=, -Xpreprocessor, -Xarch_*), -mllvm / -mllvm=, MSVC's /FI and
+#     /Yu (and -FI, -Yu), clang-cl's /clang:, -fplugin*, -fpass-plugin=, -specs= / --specs=, --config*, -B<dir>. Each
+#     carries flags or pragmas — or a different compiler — this gate cannot read. A RESPONSE FILE (`@file`, which the
+#     emscripten toolchain uses for the include directories) is read and its tokens take its place on the line; one that
+#     cannot be read is refused.
 #   * EVERY SOURCE IS COMPILED into one of TARGETS, and every unit compiled into them is one of SOURCES.
 # An entry is matched by its `file`; the object it builds is its `output`, or else the -o / /Fo of its command — CMake
 # 3.22's Ninja and Makefile generators write no `output` field — and an entry whose object is known and lies outside
@@ -58,7 +62,7 @@ foreach(s IN LISTS sources_in)
 endforeach()
 
 set(FP_SEMANTICS "^(-ffp-.*|-fno-fp-.*|-f(no-)?honor-.*|-f(no-)?approx-func|-fdenormal-fp-math.*|-f(no-)?cx-.*|-mfpmath.*|-fexcess-precision.*|-f(no-)?fast-math|-Ofast|-f(no-)?unsafe-math-optimizations|-f(no-)?associative-math|-f(no-)?reciprocal-math|-f(no-)?signed-zeros|-f(no-)?finite-math-only|-f(no-)?trapping-math|-f(no-)?math-errno|-f(no-)?rounding-math|-f(no-)?signaling-nans|-f(no-)?float-store|-fsingle-precision-constant|-f(no-)?protect-parens|-f(no-)?strict-float-cast-overflow|-f(no-)?(cxx-)?exceptions|-f(no-)?rtti)$")
-set(UNREADABLE "^(-include|-imacros|--include|--imacros|-Xclang|-mllvm|-Xcompiler|-Wp,.*)$")
+set(UNREADABLE "^(-include.*|--include(=.*)?|-imacros.*|--imacros(=.*)?|-Wp,.*|-X.*|-mllvm(=.*)?|[/-]FI.*|[/-]Yu.*|/clang:.*|-fplugin.*|-fpass-plugin.*|-specs.*|--specs.*|--config.*|-B.*)$")
 
 # expand_response_files <out var> <directory> <args...> — each `@file` replaced by the tokens it holds (relative to the
 # entry's directory, two levels deep), or by a marker the checks below refuse when it cannot be read.
@@ -203,7 +207,7 @@ if(n GREATER 0)
         math(EXPR group_end "${group_at} + ${group_n} - 1")
         foreach(a IN LISTS args)
             if(a MATCHES "${UNREADABLE}" OR a MATCHES "^<unreadable response file")
-                list(APPEND violations "${short}: `${a}` — a forced include, a pass-through or an unreadable response file: it carries flags or pragmas this gate cannot read")
+                list(APPEND violations "${short}: `${a}` — a forced include, a pass-through, a plugin, a flag file or an unreadable response file: it carries flags or pragmas this gate cannot read")
             elseif(group_at GREATER_EQUAL 0 AND pos GREATER group_end AND a MATCHES "${FP_SEMANTICS}")
                 list(APPEND violations "${short}: `${a}` comes after the library's flag group — it changes floating-point semantics, exceptions or RTTI past the library's own word")
             endif()
