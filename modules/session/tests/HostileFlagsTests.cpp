@@ -39,9 +39,14 @@ int main()
 #elif defined (FELITRONICS_SESSION_HOSTILE_LICENCE_fastmath)
     std::printf ("felitronics session: fast-math licences ahead of the library's flags\n");
     felitronics::test::group ("the licences are live here, and the library's flags override them");
-    ok (probes::dividesByReciprocal(), "CONTROL: under the licence alone x / 3 becomes x * (1/3) on this row");
-    ok (probes::reassociatesSums(), "CONTROL: under the licence alone (a + 1) + 1 becomes a + 2 on this row");
-    ok (probes::dropsSignedZeros(), "CONTROL: under the licence alone -(x - y) at x == y loses its sign on this row");
+    if (felitronics::session::testing::kOptimised)
+    {
+        ok (probes::dividesByReciprocal(), "CONTROL: under the licence alone x / 3 becomes x * (1/3) on this row");
+        ok (probes::reassociatesSums(), "CONTROL: under the licence alone (a + 1) + 1 becomes a + 2 on this row");
+        ok (probes::dropsSignedZeros(), "CONTROL: under the licence alone -(x - y) at x == y loses its sign on this row");
+    }
+    else
+        std::printf ("    an MSVC Debug build is unoptimised and transforms nothing: the licences are not live here, the checks below cannot fail\n");
     ok (! lib.dividesByReciprocal, "the library divides");
     ok (! lib.reassociatesSums, "the library adds in the order written");
     ok (! lib.dropsSignedZeros, "the library keeps -(x - y) = -0");
