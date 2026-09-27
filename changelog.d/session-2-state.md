@@ -26,9 +26,9 @@ only in the manual mode, each value checked on its knob's travel and step exactl
 decimal it is, on the same grid rule the config's schema holds its own numbers to (now shared, `src/Grid.h`). A change of
 target replaces the target's numbers silently and keeps or resets a person's device edits as asked; switching the manual
 mode off takes back a person's device edits and nothing else; the low shelf, the dither and mono bass are offered only
-where they apply. `load` checks everything first, then disarms — what ran on the old source stops, its masters and a
-person's device edits go, the old samples are freed before the new are asked for — and writes the new source with its
-hash. `master` captures the recipe (the project, the source's hash, the config's sound version); the master is kept
+where they apply. `load` checks everything first, then disarms — what ran on the old source stops, its masters go, the
+manual mode is switched off and a person's device edits with it, the old samples are freed before the new are asked
+for — and writes the new source with its hash. `master` captures the recipe (the project, the source's hash, the config's sound version); the master is kept
 under its job's id when it is done.
 
 **Memory is declared before every command** (law 11d): `Session::check()` runs exactly the checks `apply()` runs first

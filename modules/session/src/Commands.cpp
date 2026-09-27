@@ -267,13 +267,15 @@ Answer Session::apply (const Request& request) noexcept
         // under source().name), which the disarm below frees.
         std::vector<char> name (load->meta.name.begin(), load->meta.name.end());
         // DISARM: nothing of the old source stays beside the new — the master being made stops, the masters and the
-        // measurements go, a person's device edits go (they were decisions about the old source), and the old samples
-        // are freed before the new are asked for.
+        // measurements go, the manual mode is switched off and a person's device edits go with it (the mode does not
+        // outlive the file: its edits were decisions about the old source), and the old samples are freed before the
+        // new are asked for.
         mastering_ = false;
         job_ = 0;
         jobRecipe_ = {};
         std::vector<Kept>().swap (masters_);
         std::vector<float>().swap (samples_);
+        project_.manual = false;
         clearHands (project_.devices);
         // WRITE — one vector of exactly the samples, then a copy into it. (Not a reserve and a range insert: MSVC's STL
         // wraps its range insert in a try, which the library's flags refuse.)
