@@ -15,6 +15,8 @@ add_library(felitronics_session STATIC ${FELITRONICS_SESSION_SOURCES})
 add_library(felitronics::session ALIAS felitronics_session)
 target_include_directories(felitronics_session PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(felitronics_session PUBLIC cxx_std_20)
+# The analyzers the config feeds admit its blocks themselves (their storageFor, called by the schema); header-only.
+target_link_libraries(felitronics_session PRIVATE felitronics::analysis_offline)
 
 # THE CONFIG — config/targets.toml and config/engine.toml, compiled into the library as constexpr data by felitronics-toml's
 # felitronics_toml_embed: nothing reads a file at run time. A document that does not parse stops the build at its line and
@@ -36,7 +38,7 @@ felitronics_toml_embed(felitronics_session INPUT config/engine.toml
 add_executable(felitronics_session_config_check tests/ConfigCheck.cpp src/ConfigSchema.cpp)
 target_include_directories(felitronics_session_config_check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
                                                                     ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(felitronics_session_config_check PRIVATE felitronics::toml)
+target_link_libraries(felitronics_session_config_check PRIVATE felitronics::toml felitronics::analysis_offline)
 target_compile_features(felitronics_session_config_check PRIVATE cxx_std_20)
 if(EMSCRIPTEN)
     # Run through node at build time, on the host's files, with its exit status.
@@ -240,7 +242,7 @@ if(FELITRONICS_BUILD_TESTS)
             "unknown_key|engine|releaseMs = 50|releseMs = 50|releseMs|UnknownKey limiter.releseMs"
             "out_of_range|engine|hzMax = 50|hzMax = 500|500|OutOfRange hpf.hzMax"
             "wrong_type|targets|default = \"allStreaming\"|default = 14|14|WrongType default"
-            "crest_hop|engine|hopMs = 100|hopMs = 1|1|OutOfRange crest.hopMs"
+            "crest_corners|engine|bandEdgesHz = [120, 2000, 6000]|bandEdgesHz = []|[]|Refused crest.bandEdgesHz"
             "geometric_offset|engine|to = -9, law = \"linear\"|to = -9, law = \"geometric\"|\"geometric\"|Refused glue.threshOffset.law"
             "shaping_above_dither|engine|shapingUpToBits = 16|shapingUpToBits = 24|24|Refused dither.shapingUpToBits")
         foreach(ctl IN LISTS FELITRONICS_SESSION_CONFIG_CONTROLS)

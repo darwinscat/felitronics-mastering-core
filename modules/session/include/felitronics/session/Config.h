@@ -504,7 +504,8 @@ enum class Refusal : std::uint8_t
     WrittenDefault,// an optional flag written as its default: it is written only when it is true
     NotApplicable, // set where it cannot apply (a pass at the source's rate on a target that keeps the source's rate)
     OutsideLaw,    // a ramp's ends outside its law's domain, or a law the field does not take
-    AboveNyquist   // a frequency at or above half the rate the signal it filters is sampled at
+    AboveNyquist,  // a frequency at or above half the rate the signal it filters is sampled at
+    AnalyzerRefuses// the analyzer this block feeds refuses it — its own storageFor() — at a source rate the product accepts
 };
 
 struct Problem

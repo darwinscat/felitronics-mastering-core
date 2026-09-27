@@ -124,8 +124,9 @@ infraLowCrossoverHz = 30
 # that may move. With these the table is 47 semitone bands, MIDI 16…62 (20.60…293.66 Hz). fftOrder 17: a 2.73 s window
 # and a 1.365 s hop at 48 kHz (18 would take 12.6 MB instead of 7.1 on 48 kHz stereo). skipBlocks 0 is a named
 # impossibility rather than a choice: the settling count the core derives from the filter is not on its interface, and
-# skipBlocks moves only the histogram, which is not read. The core does not check skipBlocks and dutyThresholdDb (−1 and
-# −5 are accepted, and quietly mean "none skipped" and "no band occupied"), so these come from here, never from a hand.
+# skipBlocks moves only the histogram, which is not read. The schema hands this block — and the infra-low run, the same
+# geometry split at infraLowCrossoverHz — to LowEnd::storageFor at every source rate the product accepts (8, 44.1, 48 and
+# 96 kHz): the analyzer says what it admits, and the block is refused whole where it refuses.
 [lowEnd.run]
 crossoverHz = 120
 lowNoteHz = 20
@@ -397,7 +398,8 @@ witnessQuantiles = [0.5, 0.9]
 # BURSTS IN THE SIBILANCE BAND, on mid and side (analysis::StereoBandBursts), second phase: a short rise over the band's own
 # baseline. The band, the hop, the baseline and the enter and exit levels are the starting settings (hypotheses);
 # eventCapacity is the core's published default for stored events per axis — completeness is the core's to report, and a
-# lost tail never reads as zero events.
+# lost tail never reads as zero events. StereoBandBursts::storageFor admits the block, or the schema refuses it whole, at
+# 44.1, 48 and 96 kHz — a source under about 18.4 kHz has no room for a 9 kHz corner, and there the bursts go unmeasured.
 [stereoBursts]
 bandLowHz = 5000
 bandHighHz = 9000
@@ -516,7 +518,9 @@ loudestMoments = 3
 #   The guarantee ends where the derived threshold meets floorDb, with the programme's mean square below −28 dBFS.
 # floorDb is also the fixed gate of that mean square, never the threshold derived from it (which would depend on itself).
 # noProgrammeDb: the core's answer on digital silence — "no programme", not "a very quiet one".
-# bandShareFloorDb: the floor of a band's share. hopMs, blockHops: 100 ms hops, four to a block.
+# bandShareFloorDb: the floor of a band's share. hopMs, blockHops: 100 ms hops, four to a block — whole 10 ms sub-hops,
+# which the schema holds; the rest of the block BandCrest::storageFor admits, or the schema refuses it whole, at 8, 44.1,
+# 48 and 96 kHz.
 [crest]
 bandEdgesHz = [120, 2000, 6000]
 hopMs = 100

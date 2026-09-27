@@ -580,7 +580,7 @@ for doc in targets engine; do
     node "$SGEN/toml2cpp.js" "$ROOT/modules/session/config/$doc.toml" "$SGEN/embedded/$doc.h" \
          felitronics::session::config::embedded "$doc"
 done
-em++ -std=c++20 -O1 -I"$ROOT/modules/session/include" -I"$ROOT/modules/session/src" -I"$TOML/include" \
+em++ -std=c++20 -O1 -msimd128 -I"$ROOT/modules/session/include" -I"$ROOT/modules/session/src" -I"$TOML/include" "${INC[@]}" \
      "$ROOT/modules/session/tests/ConfigCheck.cpp" "$ROOT/modules/session/src/ConfigSchema.cpp" \
      -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -o "$SGEN/config_check.js"
 node "$SGEN/config_check.js" "$ROOT/modules/session/config/targets.toml" "$ROOT/modules/session/config/engine.toml" \
@@ -588,8 +588,9 @@ node "$SGEN/config_check.js" "$ROOT/modules/session/config/targets.toml" "$ROOT/
 echo "--- fc_session config: read by schema, no problem"
 
 SSRC="$HERE/fc_session.cpp"
+# The analyzers' include roots too (INC): the schema asks them what they admit (their storageFor).
 SFRONT=(-std=c++20 "${SESSION_FLAGS[@]}"
-        -I"$ROOT/tools" -I"$ROOT/modules/session/include" -I"$ROOT/modules/session/src" -I"$TOML/include" -I"$SGEN" -msimd128
+        -I"$ROOT/tools" -I"$ROOT/modules/session/include" -I"$ROOT/modules/session/src" -I"$TOML/include" -I"$SGEN" "${INC[@]}" -msimd128
         -DFELITRONICS_SESSION_VERSION_MAJOR="$SV_MAJOR" -DFELITRONICS_SESSION_VERSION_MINOR="$SV_MINOR"
         -DFELITRONICS_SESSION_VERSION_PATCH="$SV_PATCH"
         -DFELITRONICS_SESSION_CORE_VERSION_MAJOR="$CV_MAJOR" -DFELITRONICS_SESSION_CORE_VERSION_MINOR="$CV_MINOR"

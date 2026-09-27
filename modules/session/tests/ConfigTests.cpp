@@ -28,6 +28,8 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <initializer_list>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -64,11 +66,20 @@ void theEmbeddedConfigIsTheSource()
 //==============================================================================
 // THE SCHEMA'S CONTROLS
 
+// `at` is searched from the plant onwards — or, when it names a table's header ("[crest]"), from the top: a block the
+// analyzer refuses is refused at its header.
 void mustRefuse (config::Document document, std::string_view from, std::string_view to, std::string_view at,
                  config::Fault fault, const std::string& path, config::Refusal refusal = config::Refusal::None)
 {
     const bool inTargets = document == config::Document::Targets;
-    const Plant p = plant (inTargets ? g_targetsText : g_engineText, from, to, at);
+    const bool header = at.size() > 2 && at.front() == '[' && at.back() == ']' && at[1] != ']';
+    Plant p = plant (inTargets ? g_targetsText : g_engineText, from, to, header ? to : at);
+    if (p.planted && header)
+    {
+        // The header's own line: the bracketed name also occurs in comments.
+        const std::string line = "\n" + std::string (at) + "\n";
+        p = plant (p.text, line, line, at);
+    }
     const std::string what = std::string (config::name (fault)) + (refusal != config::Refusal::None
         ? std::string (" ") + config::name (refusal) : std::string{}) + " " + path;
     if (! p.planted) { ok (false, what + ": the control has rotted — '" + std::string (from) + "' is not in the document once"); return; }
@@ -113,11 +124,9 @@ void theSchemaRefuses()
     mustRefuse (T, "lufs = -23", "lufs = -30", "-30", Fault::OutOfRange, "targets.ebu.lufs");
     mustRefuse (T, "monoBass = 150", "monoBass = 400", "400", Fault::OutOfRange, "targets.lp.monoBass");
     mustRefuse (E, "betweenOverDb = 1.5", "betweenOverDb = 4", "4", Fault::OutOfRange, "limiter.peakClipper.betweenOverDb");
-    // analysis::BandCrest's domains: a hop of 10 ms or more, at most 64 hops to a block.
-    mustRefuse (E, "hopMs = 100", "hopMs = 1", "1", Fault::OutOfRange, "crest.hopMs");
-    mustRefuse (E, "blockHops = 4", "blockHops = 65", "65", Fault::OutOfRange, "crest.blockHops");
-    // A bound the ranges cannot say: above zero, above the core's own number.
-    mustRefuse (E, "enterDb = 6", "enterDb = 0", "0", Fault::OutOfRange, "stereoBursts.enterDb");
+    // A bound the ranges cannot say: above zero, above the core's own number, a hole in a range.
+    mustRefuse (T, "sampleRate = 48000, bitDepth = 24 }\n# YouTube Music", "sampleRate = 4000, bitDepth = 24 }\n# YouTube Music",
+                "4000", Fault::OutOfRange, "targets.youtube.sampleRate");
     mustRefuse (E, "clipping = { fullAtShareOfProgramme = 0.001 }", "clipping = { fullAtShareOfProgramme = 0 }", "0 }",
                 Fault::OutOfRange, "observations.clipping.fullAtShareOfProgramme");
     mustRefuse (E, "fullAtDropDb = 60", "fullAtDropDb = 24", "24", Fault::OutOfRange, "observations.spectralWall.fullAtDropDb");
@@ -129,8 +138,6 @@ void theSchemaRefuses()
     mustRefuse (T, "hpfSlopeDbPerOct = 12", "hpfSlopeDbPerOct = 18", "18", Fault::Refused, "targets.lp.hpfSlopeDbPerOct",
                 Refusal::NotOneOf);
     mustRefuse (E, "detector = \"rms\"", "detector = \"rsm\"", "\"rsm\"", Fault::Refused, "compressor.detector", Refusal::NotOneOf);
-    mustRefuse (T, "sampleRate = 48000, bitDepth = 24 }\n# YouTube Music", "sampleRate = 22050, bitDepth = 24 }\n# YouTube Music",
-                "22050", Fault::Refused, "targets.youtube.sampleRate", Refusal::NotOneOf);
     // ...duplicates, everywhere a name counts once.
     mustRefuse (T, "\"cd\", \"bandcamp\"", "\"cd\", \"cd\"", "\"cd\", \"club\"", Fault::Refused, "main[4]", Refusal::Duplicate);
     mustRefuse (E, "targets = [\"allStreaming\", \"cdDynamic\"]", "targets = [\"allStreaming\", \"allStreaming\"]",
@@ -140,11 +147,6 @@ void theSchemaRefuses()
     mustRefuse (E, "band = 2", "band = 1", "1", Fault::Refused, "lowShelf.band", Refusal::Duplicate);
     // ...order: ranges, series and the classes of the peak clipper.
     mustRefuse (E, "passes = [12, 24, 32]", "passes = [12, 24, 2]", "2]", Fault::Refused, "landing.passes[2]", Refusal::OutOfOrder);
-    mustRefuse (E, "lowNoteHz = 20\nhighNoteHz = 300", "lowNoteHz = 20\nhighNoteHz = 20", "20\nfftOrder", Fault::Refused,
-                "lowEnd.run.highNoteHz", Refusal::OutOfOrder);
-    mustRefuse (E, "bandLowHz = 5000\nbandHighHz = 9000", "bandLowHz = 5000\nbandHighHz = 5000", "5000\nhop", Fault::Refused,
-                "stereoBursts.bandHighHz", Refusal::OutOfOrder);
-    mustRefuse (E, "baselineMs = 2000", "baselineMs = 5", "5", Fault::Refused, "stereoBursts.baselineMs", Refusal::OutOfOrder);
     mustRefuse (E, "infraLowCrossoverHz = 30", "infraLowCrossoverHz = 120", "120", Fault::Refused, "lowEnd.infraLowCrossoverHz",
                 Refusal::OutOfOrder);
     mustRefuse (E, "dcOffset = { from = 0.001, fullAt = 0.01 }", "dcOffset = { from = 0.001, fullAt = 0.001 }", "0.001 }",
@@ -172,9 +174,25 @@ void theSchemaRefuses()
                 "glue.threshOffset.law", Refusal::OutsideLaw);
     mustRefuse (E, "knee = { from = 8, to = 4, law = \"linear\" }", "knee = { from = 0, to = 4, law = \"byDepth\" }", "\"byDepth\"",
                 Fault::Refused, "glue.knee.law", Refusal::OutsideLaw);
-    // ...a filter on a trace at or above half its rate, and a top band above Nyquist at the lowest rate.
+    // ...a filter on a trace at or above half its rate.
     mustRefuse (E, "lowPassHz = 8", "lowPassHz = 20", "20", Fault::Refused, "cost.pumping.lowPassHz", Refusal::AboveNyquist);
-    mustRefuse (E, "highNoteHz = 300", "highNoteHz = 3900", "3900", Fault::Refused, "lowEnd.run.highNoteHz", Refusal::AboveNyquist);
+    // ...and a block its analyzer refuses at a source rate the product accepts — asked of the analyzer itself
+    // (storageFor), refused at the block: a crest hop under its 10 ms quantum or more than 64 hops to a block; a note
+    // range of one note, or whose top band is above Nyquist at 8 kHz; a burst band of no width, a baseline under a hop or
+    // over the analyzer's 65 536 hops, no enter level, a band whose corners are one float.
+    mustRefuse (E, "hopMs = 100", "hopMs = 1", "[crest]", Fault::Refused, "crest", Refusal::AnalyzerRefuses);
+    mustRefuse (E, "blockHops = 4", "blockHops = 65", "[crest]", Fault::Refused, "crest", Refusal::AnalyzerRefuses);
+    mustRefuse (E, "lowNoteHz = 20\nhighNoteHz = 300", "lowNoteHz = 20\nhighNoteHz = 20", "[lowEnd.run]", Fault::Refused,
+                "lowEnd.run", Refusal::AnalyzerRefuses);
+    mustRefuse (E, "highNoteHz = 300", "highNoteHz = 3900", "[lowEnd.run]", Fault::Refused, "lowEnd.run", Refusal::AnalyzerRefuses);
+    mustRefuse (E, "bandLowHz = 5000\nbandHighHz = 9000", "bandLowHz = 5000\nbandHighHz = 5000", "[stereoBursts]", Fault::Refused,
+                "stereoBursts", Refusal::AnalyzerRefuses);
+    mustRefuse (E, "bandLowHz = 5000\nbandHighHz = 9000", "bandLowHz = 5000\nbandHighHz = 5000.0001", "[stereoBursts]",
+                Fault::Refused, "stereoBursts", Refusal::AnalyzerRefuses);
+    mustRefuse (E, "baselineMs = 2000", "baselineMs = 5", "[stereoBursts]", Fault::Refused, "stereoBursts", Refusal::AnalyzerRefuses);
+    mustRefuse (E, "baselineMs = 2000", "baselineMs = 1000000", "[stereoBursts]", Fault::Refused, "stereoBursts",
+                Refusal::AnalyzerRefuses);
+    mustRefuse (E, "enterDb = 6", "enterDb = 0", "[stereoBursts]", Fault::Refused, "stereoBursts", Refusal::AnalyzerRefuses);
     // ...a value off its knob's step.
     mustRefuse (T, "appleMusic   = { group = \"streaming\", lufs = -16, tp = -1,", "appleMusic   = { group = \"streaming\", lufs = -16, tp = -1.05,",
                 "-1.05", Fault::Refused, "targets.appleMusic.tp", Refusal::NotOnStep);
@@ -194,6 +212,62 @@ void theSchemaRefuses()
 
     // A document that is not TOML at all stops at the parser's error.
     mustRefuse (E, "toleranceLu = 0.1", "toleranceLu = 0.1\ntoleranceLu = 0.2", "toleranceLu = 0.2", Fault::Syntax, "");
+}
+
+// Binds the documents with edits planted in either, or reports that a plant rotted.
+struct Edit
+{
+    config::Document document;
+    std::string_view from, to;
+};
+std::optional<config::Loaded> bindWith (std::initializer_list<Edit> edits, std::string* targets = nullptr)
+{
+    std::string t = g_targetsText, e = g_engineText;
+    for (const Edit& x : edits)
+    {
+        std::string& text = x.document == config::Document::Targets ? t : e;
+        const Plant p = plant (text, x.from, x.to, x.to);
+        if (! p.planted) return std::nullopt;
+        text = p.text;
+    }
+    if (targets != nullptr) *targets = t;
+    return config::bind (t, e);
+}
+
+bool hasProblem (const config::Loaded& l, config::Document d, const std::string& path, config::Refusal r, const std::string& text,
+                 std::string_view at)
+{
+    const Plant where = plant (text, at, at, at);   // the position of `at`, which must be in the text once
+    for (const auto& q : l.problems)
+        if (q.document == d && q.path == path && q.refusal == r && q.line == where.line && q.column == where.column) return true;
+    return false;
+}
+
+void theSchemaAdmitsWhatTheAnalyzersAdmit()
+{
+    felitronics::test::group ("control: what an analyzer admits passes, and a knob's grid starts where its travel starts");
+    using config::Document;
+    using config::Refusal;
+    // A two-note range just two hertz wide: LowEnd::storageFor admits it (MIDI 16 and 17 fall inside 20…22 Hz), and a
+    // hand-written semitone rule refused it.
+    const auto twoNotes = bindWith ({ { Document::Engine, "highNoteHz = 300", "highNoteHz = 22" } });
+    ok (twoNotes && twoNotes->ok(), "lowEnd.run 20…22 Hz: two notes, admitted by the analyzer, passes the schema");
+    // The grid is counted from the travel's start: a mono-bass travel from 60.5 Hz puts 120 Hz half a step off.
+    std::string targets;
+    const auto offset = bindWith ({ { Document::Engine, "frequencyRange = [60, 300]", "frequencyRange = [60.5, 300.0]" } }, &targets);
+    ok (offset && hasProblem (*offset, Document::Targets, "targets.allStreaming.monoBass", Refusal::NotOnStep, targets,
+                              "120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }\n# A dynamic CD"),
+        "a mono-bass travel from 60.5 Hz: the targets' 120 Hz is refused as off its step");
+    // Across the documents the engine's step is its own decimal, all nine places: on a low shelf of step 0.100000001 from
+    // −3, 0.500000035 is on the grid and 0.5 is not.
+    const auto fine = bindWith ({ { Document::Engine, "q = 0.6\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.1",
+                                    "q = 0.6\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.100000001" },
+                                  { Document::Targets, "lowShelfDb = 0.5", "lowShelfDb = 0.500000035" } });
+    ok (fine && fine->ok(), "lowShelfDb 0.500000035 on a step of 0.100000001 from −3: on the grid");
+    const auto coarse = bindWith ({ { Document::Engine, "q = 0.6\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.1",
+                                      "q = 0.6\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.100000001" } }, &targets);
+    ok (coarse && hasProblem (*coarse, Document::Targets, "targets.lp.lowShelfDb", Refusal::NotOnStep, targets, "0.5 }"),
+        "lowShelfDb 0.5 on that step: off the grid, refused");
 }
 
 //==============================================================================
@@ -393,6 +467,7 @@ int main (int argc, char** argv)
     }
     theEmbeddedConfigIsTheSource();
     theSchemaRefuses();
+    theSchemaAdmitsWhatTheAnalyzersAdmit();
     theVersionsAreNormalised();
     theVersionsMoveWithEveryValue();
     return felitronics::test::report();
