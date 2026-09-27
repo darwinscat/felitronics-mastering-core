@@ -14,10 +14,12 @@
 //             declared language, a non-empty string with no brace. [messages.<key>]: every fact of kFacts, in every
 //             declared language — a string, or, under `plural = "<argument>"` (a Value or a Count) exactly the
 //             language's CLDR categories, under `select = "<argument>"` (a Term) exactly its group's term keys. Every
-//             message text: no malformed brace, no placeholder that names no argument, every argument placed (a select
-//             argument may be left out: its variant already says it), and the same set of placeholders in every
-//             language. No key nothing reads: no message, term, group, language or field the tables do not know.
-//   format    [numbers.<code>] for each of the twelve: decimal and group (non-empty, no digit, no sign, not equal),
+//             message text — every variant on its own — no malformed brace, no placeholder that names no argument, every
+//             argument placed (a select argument may be left out: its variant already says it); and the same set of
+//             placeholders in every language. No key nothing reads: no message, term, group, language or field the
+//             tables do not know.
+//   format    [numbers.<code>] for each of the twelve: decimal and group (non-empty, no digit, no sign — ASCII's or the
+//             row's own minus and plus — and not equal),
 //             minimumGrouping (1 … 4), minus, plus, atLeast, atMost, absent (non-empty), notes (twelve non-empty names,
 //             from C). [units.<key>] for each unit but None: a pattern for each of the twelve with exactly one {n} and
 //             no other brace. No key nothing reads.

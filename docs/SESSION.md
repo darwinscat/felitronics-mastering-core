@@ -323,16 +323,17 @@ main thread.
   `src/TextSchema.cpp`, checks both documents before the library is built — in every build, a consumer's and one without
   tests included, through node on the wasm tier, and in `tools/wasm/build.sh`: every declared language has every message
   and every term; a placeholder names an argument of its fact (`src/TextFacts.h` declares each fact's arguments by name
-  and kind), every argument is placed — a `select`'s own may be left out, its variant says it — and every language
-  places the same set, repeated or reordered freely; a plural message has exactly its language's CLDR categories, a
-  select message exactly its group's terms; no brace is malformed; the table has every field, and a pattern for every
-  unit, in all twelve languages; and no key is one nothing reads. A problem is `<file>:<line>:<column>: error: <fault>
+  and kind), every text — each variant on its own, since Russian "one" is also 21 — places every argument (a `select`'s
+  own may be left out, its variant says it), and every language places the same set, repeated or reordered freely; a plural message has exactly its language's CLDR categories, a
+  select message exactly its group's terms; no brace is malformed; the table has every field — a separator with no digit and no sign, the
+  row's own minus included — and a pattern for every unit, in all twelve languages; and no key is one nothing reads. A problem is `<file>:<line>:<column>: error: <fault>
   <key path> — <rule>`, and its stamp is written only on success. Six controls (`tests/text-must-fail.cmake`) plant a
   missing message, a stray placeholder, a lost one, a missing plural category, an undeclared language and a unit without
-  a pattern in a copy, and require the gate to go red at the spot; the suite plants thirty-five more in-process.
+  a pattern in a copy, and require the gate to go red at the spot; the suite plants thirty-nine more in-process.
 - **No fallback, no guess.** A message the catalog does not have in a language — every message, in a language it does
   not declare — renders as its id (`Text::key`), never in another language. An argument that does not match its fact's
-  declaration renders as `{name}`; a plural or a select that cannot choose renders the id.
+  declaration renders as `{name}`; a plural or a select whose own argument does not match cannot choose, and renders the
+  id.
 - **Numbers by rules of its own**, stated in `Text.h` and held by `felitronics_session_text_tests`: the exact value of
   the double rounded to the decimal grid of `precision` digits, a half away from zero — in integer arithmetic
   (`src/TextNumber.cpp`: no libm, no printf, no locale) — checked against an independent oracle over 22 000 values, at
@@ -340,15 +341,24 @@ main thread.
   new digit and at the extremes of the double; the sign follows the value (−0.04 at one digit is "−0.0", and either zero
   is unsigned); a value that is not finite prints the absent sign alone. All twelve rows are pinned to CLDR 48 as ICU 78
   writes it.
+- **No rendering depends on the thread's floating-point environment.** The digits are integers and the signs are read
+  from the double's bits — through a volatile, since clang folds an integer test on them back into a floating-point
+  compare, which a thread that reads subnormals as zero answers "zero" (measured). The suite renders subnormals, halves and
+  zeros under flush-to-zero, denormals-are-zero and each rounding mode, set the way a host sets them, and requires the
+  bytes of the default environment; with the bits read plainly, flush-to-zero changes 72 of those 412 renderings.
 - **Plural categories on the printed number.** CLDR 48's cardinal rules for the twelve languages, evaluated on the digits
   as printed — "1.0" is not "one" in English — by the component that formats them; pinned against ICU 78's own answers on
   39 numbers of every category in each language, each language's set reached exactly.
 - **What a person typed.** `Text::parse` reads a number with `std::from_chars` over its digits and one correctly rounded
-  division: the double a correctly rounded `strtod` gives, without the process's locale. The language's decimal sign or
-  ".", no grouping, at most nine fraction digits and 2^53.
+  division: the double a correctly rounded `strtod` gives, without the process's locale. The language's decimal sign, or
+  "." where "." does not group; no grouping separator, so a grouped number the table printed is never read back as
+  another ("12.345" is not twelve in German); at most nine fraction digits and 2^53. It is the text's one computing call,
+  and asks for the default floating-point environment on entry, as the rule is; a thread that rounds upward gets nullopt,
+  not 0.30000000000000004.
 - **Memory.** `size()` and `write()` allocate nothing; `text()` asks the heap for at most `textBytes()` — the result's
-  length and terminator, rounded up to the 16-byte step a standard library allocates a string's storage in. The suite
-  holds both through the allocation counter, and requires a declaration one step short to be caught.
+  length and terminator, rounded up to the 16-byte step a standard library allocates a string's storage in, and 64 bytes
+  for what MSVC's STL asks beside them (47 to align a block of 4 KiB or more, a 16-byte proxy under iterator debugging).
+  The suite holds both through the allocation counter, and requires a declaration 80 bytes short to be caught.
 - **The same bytes on every row.** The suite renders a corpus — every fact in every language, 36 000 numbers from a fixed
   generator across every unit, sign, bound and precision, every note — and pins one FNV-1a hash of it, which every native
   row and the wasm tier must give.

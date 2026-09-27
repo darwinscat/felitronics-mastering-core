@@ -45,12 +45,18 @@ inline constexpr unsigned kMaxPrecision = 9;
 // The digits of an integer (no fraction digits).
 void integerDigits (std::int64_t n, Digits& out) noexcept;
 
+// The sign of a finite double read from its bits, not by a comparison: −1, 0 or +1, either zero 0. A thread that reads
+// subnormal inputs as zero (DAZ) would compare −5e−324 as equal to zero; its bits still say negative.
+[[nodiscard]] int signOf (double value) noexcept;
+
 // CLDR's cardinal plural category of a number printed with these digits in `lang` (CLDR 48, as ICU 78 selects): the
 // operands i (the integer digits), v (how many fraction digits are shown) and t (whether any of them is not zero) read
 // off the digits, so "1" and "1.0" are different numbers here, as they are to a reader.
 [[nodiscard]] Plural pluralOf (Lang lang, std::string_view integer, std::string_view fraction) noexcept;
 
-// What a person typed, read as <felitronics/session/Text.h> states (Text::parse); `decimalSign` is the language's own.
-[[nodiscard]] std::optional<double> parseTyped (std::string_view typed, std::string_view decimalSign) noexcept;
+// What a person typed, read as <felitronics/session/Text.h> states (Text::parse): `decimalSign` and `groupSeparator` are
+// the language's own — "." is a decimal sign too, unless it is the language's grouping separator.
+[[nodiscard]] std::optional<double> parseTyped (std::string_view typed, std::string_view decimalSign,
+                                                std::string_view groupSeparator) noexcept;
 
 } // namespace felitronics::session::text::detail

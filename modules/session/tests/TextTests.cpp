@@ -14,18 +14,21 @@
 //     fraction multiplied out digit by digit in 64-bit integers) over twenty thousand random values;
 //   * the formatting table in all twelve languages: separators, grouping and its minimum, the Unicode minus, the plus of
 //     Sign::Always, the bounds, the absent value, units and the percent sign's side, the note names (de: H);
+//   * NO RENDERING DEPENDS ON THE THREAD'S FLOATING-POINT ENVIRONMENT: subnormals, halves and zeros render the same bytes
+//     under flush-to-zero, denormals-are-zero and every rounding mode, set the way a host sets them;
 //   * CLDR PLURAL CATEGORIES on the printed number: all twelve languages against ICU 78's own answers on numbers of every
 //     category, each language's set reached exactly; and through whole messages in ru and en;
 //   * every message of the catalog rendered in ru and en; a language the catalog does not declare renders the id; an
 //     argument that does not match its declaration renders `{name}`;
 //   * Text::parse, from_chars under it: signs, separators, limits, and the correctly rounded double;
-//   * MEMORY: size() and write() allocate nothing, text() allocates no more than textBytes() — and a declaration one step
-//     short is caught; a short buffer gets nothing;
+//   * MEMORY: size() and write() allocate nothing, text() allocates no more than textBytes() — and a declaration short
+//     by the STL's bookkeeping and one allocation step is caught; a short buffer gets nothing;
 //   * THE SAME BYTES ON EVERY ROW: one FNV-1a hash of a corpus of renderings — every fact in every language, numbers from
 //     a fixed generator in every language and unit, every note — pinned, so native rows and the wasm tier agree.
 
 #include "DeclaredBudget.h"   // installs the allocation counter: EVERY form of `new`
 #include "ConfigTestSupport.h"
+#include "FpEnvironmentControl.h"
 
 #include <felitronics_test.h>
 #include <felitronics/session/Text.h>
@@ -52,6 +55,7 @@
 namespace text = felitronics::session::text;
 namespace detail = felitronics::session::text::detail;
 namespace budget = felitronics::session::testing;
+namespace fpenv = felitronics::session::testing;
 using felitronics::test::ok;
 using text::Arg;
 using text::Bound;
@@ -193,6 +197,14 @@ void theGateRefusesEachMistake()
         // An argument the language never places.
         { D::Catalog, "en = \"Landing · pass {pass} of {passes}\"", "en = \"Landing · pass of {passes}\"", "\"Landing · pass of",
           F::Refused, "messages.landingPass.en.{pass}", "LostPlaceholder" },
+        // ...and every variant on its own: ru's "one" is also 21, so a variant without the number is a wrong sentence.
+        { D::Catalog, "ru.one = \"посадка: сошлось за {passes} проход\"", "ru.one = \"посадка: сошлось за один проход\"",
+          "\"посадка: сошлось за один проход\"", F::Refused, "messages.landingConverged.ru.one.{passes}", "LostPlaceholder" },
+        { D::Catalog, "en.one = \"repeat consistency: {agreed} of {pairs} pair\"", "en.one = \"repeat consistency: of {pairs} pair\"",
+          "\"repeat consistency: of", F::Refused, "messages.pairsConsistent.en.one.{agreed}", "LostPlaceholder" },
+        { D::Catalog, "en.web = \"This file is {rate}. Above {limit} is for the desktop version.\"",
+          "en.web = \"This file is {rate}. It is for the desktop version.\"", "\"This file is {rate}. It is", F::Refused,
+          "messages.rateAboveLimit.en.web.{limit}", "LostPlaceholder" },
         // A select's own argument placed in one language and not in the other: another set.
         { D::Catalog, "ru.web = \"Файл — {rate}.", "ru.web = \"{platform}: файл — {rate}.", "en.web", F::Refused,
           "messages.rateAboveLimit.en", "PlaceholderSet" },
@@ -254,6 +266,8 @@ void theGateRefusesEachMistake()
           F::Refused, "numbers.en.group", "DecimalIsGroup" },
         { D::Format, "decimal = \".\"\ngroup = \",\"", "decimal = \"1\"\ngroup = \",\"", "\"1\"", F::Refused, "numbers.en.decimal",
           "NotASeparator" },
+        { D::Format, "decimal = \".\"\ngroup = \",\"", "decimal = \"\\u2212\"\ngroup = \",\"", "\"\\u2212\"\ngroup = \",\"",
+          F::Refused, "numbers.en.decimal", "NotASeparator" },
         { D::Format, "decimal = \".\"\ngroup = \",\"", "decimal = \".\"\ngroup = \",\"\nthousands = \",\"", "thousands", F::UnknownKey,
           "numbers.en.thousands", "" },
         { D::Format, "[units.percent]\n", "[units.parsec]\nen = \"{n} pc\"\n\n[units.percent]\n", "parsec]", F::UnknownKey,
@@ -480,6 +494,7 @@ void theTableFormatsEveryLanguage()
         same (arg (Arg::value (u.value, u.unit, u.precision), Lang::Ru), u.ru, "ru unit");
     }
     same (arg (Arg::value (5.0, Unit::S, 0), Lang::Tr), "5 sn", "tr: seconds are sn");
+
     same (arg (Arg::value (5.0, Unit::Ms, 1), Lang::Fr), "5,0" + NN + "ms", "fr: a unit after the narrow no-break space");
 
     // Notes: scientific pitch notation, each language's system.
@@ -502,6 +517,58 @@ void theTableFormatsEveryLanguage()
     same (arg (Arg::term (text::Term::PlatformWeb), Lang::En), "web version", "en: a term's word");
     same (arg (Arg::term (text::Term::PlatformWeb), Lang::De), "platform.web", "de, undeclared: the term's id");
     same (arg (Arg::text ("mix {final}.wav"), Lang::Ru), "mix {final}.wav", "a user's text is never read: its braces stay");
+}
+
+//==============================================================================
+// THE ENVIRONMENT
+
+// Values whose rendering a floating-point operation could change: subnormals of both signs (flush-to-zero and
+// denormals-are-zero), exact halves and doubles just off them (the rounding mode), a carry, the zeros.
+std::vector<std::string> trickyRenderings()
+{
+    const double values[] = { -5e-324, 5e-324, -2.2250738585072009e-308, 2.2250738585072009e-308, 0.125, -0.125, 2.5, -2.5,
+                              1.005, 2.675, 99.95, -0.04, 0.02, -0.0, 0.0, 1e300, 0.1 };
+    std::vector<std::string> out;
+    for (const Lang l : { Lang::En, Lang::Ru, Lang::Tr })
+        for (const double v : values)
+            for (const std::uint8_t p : { 0, 1, 2, 9 })
+            {
+                out.push_back (arg (Arg::value (v, Unit::Percent, p, Sign::Always), l));
+                out.push_back (arg (Arg::value (v, Unit::Db, p), l));
+            }
+    for (const std::int64_t n : { -1, 0, 1, 21 }) out.push_back (Text::text (Fact::of (FactId::LandingConverged, Arg::count (n)), Lang::Ru));
+    return out;
+}
+
+void theEnvironmentChangesNoRendering()
+{
+    felitronics::test::group ("no rendering depends on the thread's floating-point environment: the same bytes under each");
+    const std::vector<std::string> reference = trickyRenderings();
+    same (reference[0], "\xE2\x88\x92" "0%", "PRECONDITION: −5e−324 as a percent at no digit is −0%");
+    struct Setter { const char* name; bool (*set)() noexcept; };
+    const Setter setters[] = {
+        { "flush-to-zero", [] () noexcept { return fpenv::setFlushToZero(); } },
+        { "denormals-are-zero", [] () noexcept { return fpenv::setDenormalsAreZero(); } },
+        { "rounding upward", [] () noexcept { return fpenv::setRounding (fpenv::kRoundUpward); } },
+        { "rounding downward", [] () noexcept { return fpenv::setRounding (fpenv::kRoundDownward); } },
+        { "rounding toward zero", [] () noexcept { return fpenv::setRounding (fpenv::kRoundTowardZero); } },
+    };
+    for (const Setter& s : setters)
+    {
+        const auto saved = fpenv::saveFpEnvironment();
+        if (! s.set())
+        {
+            fpenv::restoreFpEnvironment (saved);
+            std::printf ("    %s: this row has no such control — not reachable here\n", s.name);
+            continue;
+        }
+        const std::vector<std::string> under = trickyRenderings();
+        fpenv::restoreFpEnvironment (saved);
+        std::size_t differ = 0;
+        for (std::size_t i = 0; i < under.size() && i < reference.size(); ++i) differ += under[i] != reference[i] ? 1 : 0;
+        ok (under.size() == reference.size() && differ == 0,
+            std::string (s.name) + ": " + std::to_string (reference.size()) + " renderings, " + std::to_string (differ) + " differ");
+    }
 }
 
 //==============================================================================
@@ -685,6 +752,36 @@ void typedNumbersAreParsed()
     ok (! Text::parse ("1,5", Lang::En).has_value(), "en: a comma is not a decimal sign (it is the grouping separator)");
     ok (! Text::parse ("1,234", Lang::En).has_value(), "en: and a grouped number is refused rather than guessed");
     ok (bitsEqual (Text::parse ("1,5", Lang::Tr), 1.5) && bitsEqual (Text::parse ("1,5", Lang::Pl), 1.5), "tr, pl: the comma");
+    ok (! Text::parse ("12.345", Lang::De).has_value() && ! Text::parse ("-14.5", Lang::De).has_value()
+            && ! Text::parse ("1.5", Lang::Es).has_value() && ! Text::parse ("1.5", Lang::Tr).has_value(),
+        "de, es, tr: where \".\" groups, it is no decimal sign — \"12.345\" is not read as twelve");
+    ok (bitsEqual (Text::parse ("1.5", Lang::Fr), 1.5) && bitsEqual (Text::parse ("1.5", Lang::Uk), 1.5)
+            && bitsEqual (Text::parse ("1.5", Lang::Cs), 1.5), "fr, uk, cs: where it does not, it is");
+    // A grouped number the table printed is never read back as another number: refused whole, in every language.
+    bool neverMisread = true;
+    for (const Lang l : kAll)
+    {
+        neverMisread = neverMisread && ! Text::parse (arg (Arg::value (12345.0, Unit::None, 0), l), l).has_value()
+                       && ! Text::parse (arg (Arg::value (-1234567.5, Unit::None, 1), l), l).has_value();
+        const auto small = Text::parse (arg (Arg::value (1234.0, Unit::None, 0), l), l);
+        const bool ungrouped = l == Lang::Es || l == Lang::It || l == Lang::Pl;   // they group from five digits
+        neverMisread = neverMisread && (ungrouped ? bitsEqual (small, 1234.0) : ! small.has_value());
+    }
+    ok (neverMisread, "every language: 12 345 and −1 234 567,5 as printed are refused, 1234 read where it is not grouped");
+    // The one division asks for the default environment first.
+    const auto saved = fpenv::saveFpEnvironment();
+    if (fpenv::setRounding (fpenv::kRoundUpward))
+    {
+        const auto up = Text::parse ("0.3", Lang::En);
+        fpenv::restoreFpEnvironment (saved);
+        ok (! up.has_value(), "rounding upward: parse refuses rather than answer 0.30000000000000004");
+        ok (bitsEqual (Text::parse ("0.3", Lang::En), 0.3), "and, the environment restored, reads 0.3");
+    }
+    else
+    {
+        fpenv::restoreFpEnvironment (saved);
+        std::printf ("    this row cannot round upward — not reachable here\n");
+    }
     ok (! Text::parse ("1", (Lang) 30).has_value(), "a language that is not one of the twelve reads nothing");
 
     // What the renderer prints, read back: every value of a sweep on its own grid.
@@ -737,13 +834,14 @@ void theDemandCoversWhatTextAsksFor()
             if (spent.bytes > 0)
             {
                 seen = true;
-                caught = caught && ! budget::covers (declared - 16, spent);   // a declaration one step short is caught
+                caught = caught && ! budget::covers (declared - 80, spent);   // the STL's 64 and one 16-byte step short
             }
         }
     ok (quiet, "size() and write() asked the heap for nothing, and write() wrote size() bytes");
     ok (covered, "declared >= requested for every fact in every language, and text() is what write() wrote" + (worst.empty() ? "" : " — " + worst));
     ok (seen, "PRECONDITION: the counter saw text() ask the heap (a message longer than a string's own buffer)");
-    ok (caught, "and a declaration 16 bytes short would have been caught: the demand is tight to the allocator's step");
+    ok (caught, "and a declaration 80 bytes short would have been caught: the demand is the request, the allocator's step "
+                "and the STL's bookkeeping, no more");
 
     std::array<char, 8> small {};
     small.fill ('x');
@@ -818,6 +916,7 @@ int main (int argc, char** argv)
     theGateRefusesEachMistake();
     roundingIsOnTheDecimalGrid();
     theTableFormatsEveryLanguage();
+    theEnvironmentChangesNoRendering();
     pluralsAreCldrsOnThePrintedNumber();
     everyMessageRenders();
     typedNumbersAreParsed();

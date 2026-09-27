@@ -7,11 +7,17 @@
 // formatted in place. One walk serves both size() and write(): it counts, or it copies, so the two cannot disagree.
 //
 // What the build's gate has proved (src/TextSchema.cpp) is relied on, and what it cannot prove is not: a fact built
-// with arguments that do not match its declaration prints `{name}` where each of them goes, and a message the catalog
-// does not have prints its id — never another language's.
+// with arguments that do not match its declaration prints `{name}` where each of them goes — or its id, when the
+// mismatched argument is the one a plural or select chooses by — and a message the catalog does not have prints its id,
+// never another language's.
+//
+// No floating-point operation decides what is printed: the digits are integer arithmetic (src/TextNumber.cpp) and the
+// signs are read from the bits, so the thread's floating-point environment cannot change a rendering. Text::parse does
+// divide, and asks for the default environment first.
 
 #include "BuildGuards.h"
 
+#include <felitronics/session/Session.h>
 #include <felitronics/session/Text.h>
 
 #include "TextFacts.h"
@@ -105,7 +111,7 @@ void putValue (Sink& s, const Arg& a, Lang lang) noexcept
     if (a.bound == Bound::AtLeast) s.put (textOf (row.find ("atLeast")));
     else if (a.bound == Bound::AtMost) s.put (textOf (row.find ("atMost")));
     if (d.negative) s.put (textOf (row.find ("minus")));
-    else if (a.sign == Sign::Always && a.number > 0.0) s.put (textOf (row.find ("plus")));
+    else if (a.sign == Sign::Always && detail::signOf (a.number) > 0) s.put (textOf (row.find ("plus")));
     const std::string_view pattern = a.unit == Unit::None
         ? std::string_view ("{n}")
         : textOf (detail::formatRoot().find ("units").find (detail::kUnitKeys[(std::size_t) a.unit])
@@ -389,8 +395,10 @@ std::string Text::text (const Fact& fact, Lang lang)
 std::uint64_t Text::textBytes (const Fact& fact, Lang lang) noexcept
 {
     // The length and the terminator, in the 16-byte steps libc++ and MSVC's STL allocate a string's storage in
-    // (libstdc++ asks for exactly the two): an upper bound on every standard library this repository is built with.
-    return ((std::uint64_t) size (fact, lang) + 1 + 15) / 16 * 16;
+    // (libstdc++ asks for exactly the two), and 64 bytes for what MSVC's STL asks beside them: 47 to align a block of
+    // 4 KiB or more, and a 16-byte proxy in a build with iterator debugging. An upper bound on every standard library
+    // this repository is built with.
+    return ((std::uint64_t) size (fact, lang) + 1 + 15) / 16 * 16 + 64;
 }
 
 Plural Text::category (const Arg& number, Lang lang) noexcept
@@ -400,8 +408,11 @@ Plural Text::category (const Arg& number, Lang lang) noexcept
 
 std::optional<double> Text::parse (std::string_view typed, Lang lang) noexcept
 {
-    if (! known (lang)) return std::nullopt;
-    return detail::parseTyped (typed, textOf (numbersOf (lang).find ("decimal")));
+    // The one division is correctly rounded only under IEEE-754's default environment: asked first, as every call that
+    // computes asks it (docs/SESSION.md).
+    if (! known (lang) || Session::checkFloatingPointEnvironment() != Status::Ok) return std::nullopt;
+    const View row = numbersOf (lang);
+    return detail::parseTyped (typed, textOf (row.find ("decimal")), textOf (row.find ("group")));
 }
 
 std::string_view Text::code (Lang lang) noexcept
