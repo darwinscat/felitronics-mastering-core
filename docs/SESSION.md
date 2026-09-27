@@ -171,8 +171,8 @@ every stage a device writes is named, the limiter's second release included.
   suite plants over sixty more in-process, every input a review found the schema accepting among them.
 - **The owner's decisions are held apart** (`tests/ConfigDecisionsTests.cpp`): every target row field by field and the
   engine's decided numbers — the landing's series, the high-pass knob's travel and slopes and comfort window, the
-  wide-bass warning, the quiet thresholds, the peak clipper's classes, the glue knob and its default of none, the
-  mono-bass block, the delivery rates, and the rest. The schema would admit another number where the physics allows;
+  wide-bass warning, the quiet thresholds, the peak clipper's classes, the glue knob ("up to N dB", 0…3 in steps
+  of 0.1) with its default of none, 0.5 dB when ticked and 2.6 dB on cd, the mono-bass block, the delivery rates, and the rest. The schema would admit another number where the physics allows;
   this suite says which number was decided, so changing one is a deliberate edit of it. Its controls plant departures
   the schema admits (a high-pass top of 51 or 60 Hz, a slope of 36, another series, another target number or rate, glue
   by default, a wider mono bass) and require them named.
@@ -258,7 +258,8 @@ and ceiling, on `[edit]`'s travels), the manual mode, and every device's paramet
 a device's fields are written once, as a template over the form a field takes, and used as the machine's layer (every
 field a value), a person's layer (a field a value only where touched — a touched field is the person's even where its
 number is the machine's) and a revert's mask (a field yes or no). No string names a field anywhere: an edit is the
-device's struct, a variant whose alternative is the device. The devices are the high-pass, mono bass, the glue,
+device's struct, a variant whose alternative is the device. The devices are the high-pass, mono bass, the glue (its
+knob, "up to N dB", as the config writes every glue number),
 saturation, tilt, the limiter's needles, the dither and the low shelf; the low shelf is offered on a target that
 carries one, the dither where the target's bit depth is one it serves, mono bass except on a mono source.
 

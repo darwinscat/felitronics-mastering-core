@@ -141,7 +141,7 @@ void theSchemaRefuses()
     // Refusals across keys: names — the one a row goes by among them, which an empty key cannot be.
     mustRefuse (T, "ebu          = {", "\"\"           = {", "{ group = \"streaming\", lufs = -23", Fault::Refused, "targets.\"\"",
                 Refusal::EmptyKey);
-    mustRefuse (E, "byTarget = { cd = 0.7 }", "byTarget = { cdd = 0.7 }", "0.7", Fault::Refused, "glue.byTarget.cdd", Refusal::NotATarget);
+    mustRefuse (E, "byTarget = { cd = 2.6 }", "byTarget = { cdd = 2.6 }", "2.6", Fault::Refused, "glue.byTarget.cdd", Refusal::NotATarget);
     mustRefuse (T, "default = \"allStreaming\"", "default = \"allStreamin\"", "\"allStreamin\"", Fault::Refused, "default",
                 Refusal::NotATarget);
     mustRefuse (T, "hpfSlopeDbPerOct = 12", "hpfSlopeDbPerOct = 18", "18", Fault::Refused, "targets.lp.hpfSlopeDbPerOct",

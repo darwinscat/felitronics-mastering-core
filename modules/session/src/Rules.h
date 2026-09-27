@@ -41,7 +41,7 @@ struct TargetRow
     std::int32_t bitDepth = 0;
     bool noClipper = false;
     std::optional<Decimal> lowShelfDb;
-    std::optional<Decimal> glue;               // [glue] byTarget, when it names this target
+    std::optional<Decimal> glue;               // [glue] byTarget, on the knob, when it names this target
 };
 
 struct Rules
@@ -55,8 +55,8 @@ struct Rules
     Decimal hpfDefault {};                     // [hpf] hzDefault
     Knob monoBassFq {}, monoBassWidth {};      // [monoBass] frequencyRange / frequencyStep, lowWidthRange / lowWidthStep
     Decimal monoBassWidthDefault {};           // [monoBass] lowWidth
-    Knob glue {};                              // [glue] 0…1 by step
-    Decimal glueDefault {};                    // [glue] default
+    Knob glue {};                              // [glue] knobMinDb…knobMaxDb by knobStepDb: "up to N dB"
+    Decimal glueDefault {};                    // [glue] default, on the knob
     Knob drive {}, mix {}, output {};          // [saturation] driveRange, mixRange, outputRange, by their steps
     Decimal driveDefault {}, mixDefault {}, outputDefault {};   // [saturation] driveDb, mix, outputDb
     Knob tilt {}, lowShelf {};                 // [tilt] hard / step, [lowShelf] hard / step

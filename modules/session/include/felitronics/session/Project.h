@@ -67,11 +67,11 @@ template <template <class> class F> struct MonoBassFields
     F<double> width {};
 };
 
-// [glue]: the position on the glue's travel, 0…1 — 0 takes the compressor out of the chain.
+// [glue]: the glue knob, "up to N dB" — 0 takes the compressor out of the chain.
 template <template <class> class F> struct GlueFields
 {
     F<bool> on {};
-    F<double> amount {};
+    F<double> upToDb {};
 };
 
 // [saturation]: the drive, dB from the programme's peak; the mix, 0…1; the output, dB.

@@ -335,7 +335,7 @@ void theDefaultsAtCreate()
     ok (same (d.monoBass.machine.fq, 120.0) && same (d.monoBass.machine.width, 0.0), "mono bass: 120 Hz, width 0");
     ok (d.limiter.machine.needles == Needles::Auto && same (d.limiter.machine.needlesDb, 1.5), "the needles: auto, 1.5 dB");
     ok (! d.dither.machine.on && ! d.lowShelf.machine.on, "no dither at 24 bits, no low shelf off vinyl");
-    ok (same (d.glue.machine.amount, 0.0) && same (d.tilt.machine.db, 0.0), "no glue by default, a flat tilt");
+    ok (same (d.glue.machine.upToDb, 0.0) && same (d.tilt.machine.db, 0.0), "no glue by default, a flat tilt");
 }
 
 void everyCellOfTheTable()
@@ -452,8 +452,8 @@ void aChangeOfTarget()
 
     ok (accepted (s, command::SetTarget { 4, "cd", OnEdits::Reset }), "setTarget cd, reset");
     ok (handsEmpty (s.project().devices), "a person's device edits are gone");
-    ok (s.project().devices.dither.machine.on && same (s.project().devices.glue.machine.amount, 0.7),
-        "and the machine dithers cd's 16 bits and glues it at 0.7");
+    ok (s.project().devices.dither.machine.on && same (s.project().devices.glue.machine.upToDb, 2.6),
+        "and the machine dithers cd's 16 bits and glues it up to 2.6 dB");
     DitherFields<Touched> dither {};
     dither.on = false;
     ok (accepted (s, editOf (dither)), "the dither is offered at 16 bits");
@@ -914,7 +914,8 @@ void theRulesAreTheSchemas()
     ok (knob (r.monoBassFq, e.monoBass.frequencyRange.min, e.monoBass.frequencyRange.max, e.monoBass.frequencyStep)
             && knob (r.monoBassWidth, e.monoBass.lowWidthRange.min, e.monoBass.lowWidthRange.max, e.monoBass.lowWidthStep)
             && is (r.monoBassWidthDefault, e.monoBass.lowWidth), "[monoBass]");
-    ok (knob (r.glue, 0.0, 1.0, e.glue.step) && is (r.glueDefault, e.glue.defaultPosition), "[glue]");
+    ok (knob (r.glue, e.glue.knobMinDb, e.glue.knobMaxDb, e.glue.knobStepDb) && is (r.glueDefault, e.glue.defaultUpToDb),
+        "[glue]: the knob, up to N dB, and its default");
     const auto& sat = e.saturation;
     ok (knob (r.drive, sat.driveRange.min, sat.driveRange.max, sat.driveStep) && knob (r.mix, sat.mixRange.min, sat.mixRange.max, sat.mixStep)
             && knob (r.output, sat.outputRange.min, sat.outputRange.max, sat.outputStep) && is (r.driveDefault, sat.driveDb)
@@ -934,7 +935,7 @@ void theRulesAreTheSchemas()
         const config::Target& t = c.targets.targets[i];
         std::optional<double> glue;
         for (const auto& g : e.glue.byTarget)
-            if (g.target == t.key) glue = g.position;
+            if (g.target == t.key) glue = g.upToDb;
         const bool eq = row.key == t.key && is (row.lufs, t.lufs) && is (row.tp, t.tp) && is (row.monoBass, t.monoBass)
                      && is (row.hpfFloor, t.hpfFloor) && row.hpfSlope == t.hpfSlopeDbPerOct && row.bitDepth == t.bitDepth
                      && row.noClipper == t.noClipper && row.lowShelfDb.has_value() == t.lowShelfDb.has_value()
