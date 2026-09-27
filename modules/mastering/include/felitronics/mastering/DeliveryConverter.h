@@ -13,7 +13,8 @@
 #include <cmath>
 #include <cstdint>
 #include <numeric>
-#include <vector>
+#include <felitronics/storage/Buffer.h>
+#include <felitronics/storage/VectorBytes.h>
 
 namespace felitronics::mastering
 {
@@ -84,6 +85,8 @@ public:
     }
 
     // WHAT prepare() ASKS THE HEAP FOR (law 11d): the resampler plus one block of output staging per channel.
+    static constexpr std::uint64_t constructBytes() noexcept { return 5u * storage::kVectorProxyBytes; }
+
     struct Storage
     {
         bool ok = false;
@@ -99,7 +102,10 @@ public:
         if (! rs.ok) return st;
         const long long perCall = outputBoundFor (rs.plan, block);
         if (perCall <= 0 || perCall > (1 << 26)) return st;
-        st.resampler = rs.bytes();
+        // newCoef and the three empty fill values; every nested vector header; and
+        // designPhases' prototype and returned phase table for each stage.
+        st.resampler = rs.bytes() + (4u + rs.vectorHeaders + 2u * (std::uint64_t) rs.plan.count)
+                                     * storage::kVectorProxyBytes;
         st.staging   = (std::uint64_t) sizeof (float) * (std::uint64_t) numChannels * (std::uint64_t) perCall
                      + (std::uint64_t) sizeof (float) * (std::uint64_t) numChannels * (std::uint64_t) block    // silence
                      + (std::uint64_t) sizeof (float) * (std::uint64_t) numChannels * (std::uint64_t) block;   // gated input
@@ -240,7 +246,7 @@ private:
     }
 
     core::DeliveryResampler src_;
-    std::vector<float> staging_, silence_, gated_;
+    storage::Buffer<float> staging_, silence_, gated_;
     std::uint64_t nonFinite_ = 0;
     double inRate_ = 0.0, deliveryRate_ = 0.0;
     int nch_ = 0, block_ = 0, perCall_ = 0;

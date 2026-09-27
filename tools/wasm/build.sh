@@ -65,7 +65,7 @@ CORE="$(cd "$CORE" && pwd)"
     || { echo "$CORE still carries the mastering modules (felitronics-core before v0.52.0) — use a core without them"; exit 1; }
 echo "felitronics-core: $CORE"
 
-INC=(-I"$ROOT/tools"
+INC=(-I"$ROOT/modules/storage/include" -I"$ROOT/tools"
      -I"$ROOT/modules/analysis_offline/include"
      -I"$ROOT/modules/tempo/include"
      -I"$CORE/modules/core/include"
@@ -81,7 +81,7 @@ INC=(-I"$ROOT/tools"
 # modules/mastering/CMakeLists.txt, spelled as include paths — plus oversampling, which analysis needs.
 # There is nothing to compile but the two headers' worth of templates: every one of these modules is
 # header-only (INTERFACE libraries), which is why one em++ invocation is the whole build.
-MASTER_INC=(-I"$ROOT/tools"
+MASTER_INC=(-I"$ROOT/modules/storage/include" -I"$ROOT/tools"
             -I"$ROOT/modules/mastering/include"
             -I"$CORE/modules/core/include"
             -I"$CORE/modules/eq/include"

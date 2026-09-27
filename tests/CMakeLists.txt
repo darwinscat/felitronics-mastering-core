@@ -16,3 +16,14 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
     target_link_libraries(felitronics_mastering_no_exceptions_probe PRIVATE felitronics::mastering felitronics::analysis_offline felitronics::tempo felitronics::session)
     target_compile_options(felitronics_mastering_no_exceptions_probe PRIVATE -fno-exceptions -fno-rtti)
 endif()
+
+add_executable(felitronics_storage_tests StorageTests.cpp)
+target_link_libraries(felitronics_storage_tests PRIVATE felitronics::mastering felitronics::analysis_offline felitronics::tempo felitronics::test_support)
+add_test(NAME felitronics_storage_tests COMMAND felitronics_storage_tests)
+
+if(FELITRONICS_NODE)
+    add_test(NAME felitronics_master_budget_law
+        COMMAND "${FELITRONICS_NODE}" "${PROJECT_SOURCE_DIR}/tools/tests/master-budget-law.mjs" "${PROJECT_SOURCE_DIR}")
+    add_test(NAME felitronics_windows_debug_selection
+        COMMAND "${FELITRONICS_NODE}" "${PROJECT_SOURCE_DIR}/tools/tests/windows-debug.mjs" --self-test)
+endif()

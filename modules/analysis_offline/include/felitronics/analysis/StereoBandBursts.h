@@ -8,7 +8,7 @@
 
 #include <cmath>
 #include <cstdint>
-#include <vector>
+#include <felitronics/storage/Buffer.h>
 
 namespace felitronics::analysis
 {
@@ -346,7 +346,7 @@ private:
     std::int64_t samples_ = 0;
 
     BandBursts eng_[kAxes];
-    std::vector<Cross> cross_[kAxes];
+    storage::Buffer<Cross> cross_[kAxes];
     Cross        pending_[kAxes] {};
     Cross        last_[kAxes] {};          // each axis's most recent hop, so a passed hop can still answer
     std::int64_t pendingHop_[kAxes] { -1, -1 };

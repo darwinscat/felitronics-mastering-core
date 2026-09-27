@@ -6,7 +6,7 @@
 add_library(felitronics_mastering INTERFACE)
 add_library(felitronics::mastering ALIAS felitronics_mastering)
 target_include_directories(felitronics_mastering INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(felitronics_mastering INTERFACE
+target_link_libraries(felitronics_mastering INTERFACE felitronics_storage
     felitronics::core
     felitronics::eq
     felitronics::dynamics
