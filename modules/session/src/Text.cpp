@@ -36,6 +36,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <variant>
 
 namespace felitronics::session::text
 {
@@ -438,6 +439,24 @@ std::string_view Text::key (FactId id) noexcept
 {
     const detail::FactShape* shape = detail::shapeOf (id);
     return shape != nullptr ? shape->key : std::string_view {};
+}
+
+std::optional<Fact> Text::rejected (const Answer& answer, const Request& request) noexcept
+{
+    const std::optional<FactId> id = detail::factOf (answer.rejection);
+    if (! id) return std::nullopt;
+    const detail::FactShape* shape = detail::shapeOf (*id);
+    if (shape == nullptr || shape->argCount == 0) return Fact::of (*id);
+    // A field's rejection: the field, read off the request the answer is for. None found — a field the tables do not
+    // name — leaves the argument out, and the message shows {field}.
+    std::optional<Term> field;
+    if (std::holds_alternative<command::EditTarget> (request)) field = detail::targetFieldTerm (answer.field);
+    else if (const auto* device = std::get_if<command::EditDevice> (&request))
+        field = detail::deviceFieldTerm ((Device) device->fields.index(), answer.field);
+    else if (const auto* revert = std::get_if<command::RevertEdits> (&request))
+        field = detail::deviceFieldTerm ((Device) revert->fields.index(), answer.field);
+    else if (std::holds_alternative<command::Load> (request)) field = Term::FieldAudio;
+    return field ? Fact::of (*id, Arg::term (*field)) : Fact::of (*id);
 }
 
 std::string detail::argText (const Arg& arg, Lang lang)
