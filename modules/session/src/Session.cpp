@@ -47,6 +47,7 @@ Created Session::create() noexcept
     // first measurement ends (src/Driver.h).
     c.session = std::unique_ptr<Session> (new Session);
     c.session->project_.target = rules.defaultRow;
+    c.session->project_.core = version();
     return c;
 }
 

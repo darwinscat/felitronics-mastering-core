@@ -121,12 +121,21 @@ enum class FactId : std::uint16_t
     RejectedTooLong = 121,
     RejectedNoJobId = 122,
     RejectedInvalidUtf8 = 123,
+    RejectedProjectTooLarge = 124,
+    RejectedProjectSyntax = 125,
+    RejectedProjectMissing = 126,
+    RejectedProjectType = 127,
+    RejectedProjectUnknownKey = 128,
+    RejectedUnknownDefaults = 129,
+    RejectedProjectCore = 130,
+    RejectedMachineMismatch = 131,
 
     Measurement1 = 200,
     Measurement2 = 201,
     MasterPass = 202,          // {pass}, without a pass budget
     MasterReady = 203,
     Cancelled = 204,
+    MachineDifferences = 205,  // {count}: the saved machine layer is retained
 
     SessionTrap = 300,
     SessionContract = 301,

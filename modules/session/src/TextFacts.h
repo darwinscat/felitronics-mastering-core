@@ -81,11 +81,20 @@ inline constexpr FactShape kFacts[] = {
     { FactId::RejectedTooLong, "rejectedTooLong", {}, 0 },
     { FactId::RejectedNoJobId, "rejectedNoJobId", {}, 0 },
     { FactId::RejectedInvalidUtf8, "rejectedInvalidUtf8", {}, 0 },
+    { FactId::RejectedProjectTooLarge, "rejectedProjectTooLarge", {}, 0 },
+    { FactId::RejectedProjectSyntax, "rejectedProjectSyntax", {}, 0 },
+    { FactId::RejectedProjectMissing, "rejectedProjectMissing", {}, 0 },
+    { FactId::RejectedProjectType, "rejectedProjectType", {}, 0 },
+    { FactId::RejectedProjectUnknownKey, "rejectedProjectUnknownKey", {}, 0 },
+    { FactId::RejectedUnknownDefaults, "rejectedUnknownDefaults", {}, 0 },
+    { FactId::RejectedProjectCore, "rejectedProjectCore", {}, 0 },
+    { FactId::RejectedMachineMismatch, "rejectedMachineMismatch", {}, 0 },
     { FactId::Measurement1, "measurement1", {}, 0 },
     { FactId::Measurement2, "measurement2", {}, 0 },
     { FactId::MasterPass, "masterPass", { { { "pass", ArgKind::Count, {} } } }, 1 },
     { FactId::MasterReady, "masterReady", {}, 0 },
     { FactId::Cancelled, "cancelled", {}, 0 },
+    { FactId::MachineDifferences, "machineDifferences", { { { "count", ArgKind::Count, {} } } }, 1 },
     { FactId::SessionTrap, "sessionTrap", {}, 0 },
     { FactId::SessionContract, "sessionContract", {}, 0 },
     { FactId::SessionRefusal, "sessionRefusal", {}, 0 },
@@ -195,6 +204,14 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Rejection::TooLong: return FactId::RejectedTooLong;
         case Rejection::NoJobId: return FactId::RejectedNoJobId;
         case Rejection::InvalidUtf8: return FactId::RejectedInvalidUtf8;
+        case Rejection::ProjectTooLarge: return FactId::RejectedProjectTooLarge;
+        case Rejection::ProjectSyntax: return FactId::RejectedProjectSyntax;
+        case Rejection::ProjectMissing: return FactId::RejectedProjectMissing;
+        case Rejection::ProjectType: return FactId::RejectedProjectType;
+        case Rejection::ProjectUnknownKey: return FactId::RejectedProjectUnknownKey;
+        case Rejection::UnknownDefaults: return FactId::RejectedUnknownDefaults;
+        case Rejection::ProjectCore: return FactId::RejectedProjectCore;
+        case Rejection::MachineMismatch: return FactId::RejectedMachineMismatch;
     }
     return std::nullopt;
 }

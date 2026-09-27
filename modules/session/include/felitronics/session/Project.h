@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 
@@ -22,14 +23,27 @@
 // So the machine's layer, a person's edits and the mask of a revert cannot disagree on a field's name or type: they are
 // one list. A master is made from the machine's layer with a person's touched fields over it.
 //
-// THE MACHINE'S LAYER IS THE CONFIG'S DEFAULTS for the target and the source (src/Devices.h), placed when the first
+// THE MACHINE'S LAYER starts from the config's defaults for the target and source (src/Devices.h), placed when the first
 // measurement ends and at its types' zeros before. No planner reads the measurements here: nothing in it is a decision
-// taken from one, and mono bass — which the defaults leave off — is off.
+// taken from one, and mono bass — which the defaults leave off — is off. An imported layer from another core
+// retains its saved values and provenance; its differences from this placement are exposed by the snapshot.
 //
 // The units and the knobs' travels are the config's (modules/session/config/engine.toml, the section of each device);
 // they are not repeated here.
 namespace felitronics::session
 {
+
+struct Version
+{
+    std::uint32_t major = 0, minor = 0, patch = 0;
+};
+
+inline constexpr std::size_t kMaxProjectText = 16384;
+
+struct ProjectPosition
+{
+    std::uint32_t line = 0, column = 0;
+};
 
 template <class T> using Value = T;
 template <class T> using Touched = std::optional<T>;
@@ -132,8 +146,19 @@ struct Devices
     Layers<LowShelfFields> lowShelf;
 };
 
+// Values use the field's native numeric domain: flags 0/1, choices their enum value.
+struct MachineDifference
+{
+    Device device = Device::Hpf;
+    std::uint8_t field = 0;
+    double fileValue = 0.0, coreValue = 0.0;
+};
+inline constexpr std::size_t kDeviceFields = 19;
+
 struct Project
 {
+    // The release that placed the machine layer. Import preserves it until a new placement.
+    Version core {};
     // The target: a row of [targets] in targets.toml, counted in the order the rows are written (the session's
     // targetName() gives its key), and a person's edits of its numbers.
     std::uint16_t target = 0;
