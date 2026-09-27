@@ -309,7 +309,9 @@ and `u8'0'` is a character literal, not a digit separator. Its rules:
   every consumer, which the `constexpr` rule below would pass — and the session has no use for it (nor for a mutable
   lambda);
 - no exception or RTTI token in any `#if` branch; no atomics, cycle counters, target intrinsics or inline assembly, and
-  no flush-to-zero set by hand (`ScopedFlushToZero`, `_mm_setcsr`) — what an admitted header brings cannot be used;
+  no FP control register touched by hand (`ScopedFlushToZero`, `_mm_setcsr` / `_mm_getcsr`, every `_MM_SET_*` /
+  `_MM_GET_*` macro: rounding mode, exception mask and state, flush-to-zero, denormals-are-zero) — what an admitted
+  header brings cannot be used;
 - no `std::unordered_*`, no `hash<` qualified or not, no unstable sort, no `using namespace`;
 - in the public header, no function body, no variable with static storage duration that is not `constexpr` (at
   namespace scope or as a static member, `inline` or not), and no namespace-scope function declaration — at namespace

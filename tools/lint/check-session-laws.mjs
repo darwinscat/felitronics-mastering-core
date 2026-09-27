@@ -35,9 +35,11 @@
 //                branch of any #if: MSVC compiles a bare `throw` under /EHs-c-.
 //   NOSYMBOL     no facility that compiles to instructions and leaves no symbol: atomics (std::atomic and friends,
 //                __atomic_*, __sync_*, _Interlocked*), cycle counters and target intrinsics (__builtin_readcyclecounter,
-//                __rdtsc, __builtin_ia32_* / _arm_ / _aarch64_), inline assembly (asm, __asm__), and the FPU's
-//                flush-to-zero set by hand (core's ScopedFlushToZero, _mm_setcsr and its macros) — the one thing an
-//                admitted core header could do to the session's arithmetic without a symbol.
+//                __rdtsc, __builtin_ia32_* / _arm_ / _aarch64_), inline assembly (asm, __asm__), and the x86 FP
+//                control register touched by hand — core's ScopedFlushToZero, _mm_setcsr / _mm_getcsr and every
+//                _MM_SET_* / _MM_GET_* accessor macro (rounding mode, exception mask and state, flush-to-zero,
+//                denormals-are-zero): what an admitted header brings that could change the session's arithmetic
+//                with no symbol, since each compiles to a bare ldmxcsr / stmxcsr.
 //   ORDER        no std::unordered_* containers, no hash<> (qualified or not), no std::sort / partial_sort /
 //                partial_sort_copy / nth_element, and no `using namespace`: their order is implementation-defined
 //                (libstdc++, libc++ and MSVC answer differently from one input), and a using-directive would let a
@@ -129,8 +131,9 @@ const FELITRONICS_ALLOWED = new Set([
     'felitronics/toml/Embedded.h',
     // The analyzers the config feeds, of this repository: the schema calls only their static storageFor(), a size
     // computation over its arguments. They bring core's DSP with them — FlushToZero.h through the EQ, whose
-    // ScopedFlushToZero sets the FPU's flush-to-zero with no symbol; rule NOSYMBOL refuses it (and _mm_setcsr) as a token
-    // in every session source, so what is admitted here cannot set it from the session.
+    // ScopedFlushToZero sets the FPU's flush-to-zero with no symbol, and <xmmintrin.h> behind it has the _MM_SET_* macros
+    // (the rounding mode, the exception mask) that compile to a bare ldmxcsr; rule NOSYMBOL refuses all of them, and
+    // _mm_setcsr / _mm_getcsr, as tokens in every session source, so what is admitted here cannot touch the register.
     'felitronics/analysis/LowEnd.h',
     'felitronics/analysis/BandCrest.h',
     'felitronics/analysis/StereoBandBursts.h',
@@ -277,8 +280,8 @@ const TOKEN_RULES = [
       why: (t) => `\`${t}\` — a clock, an address or a target instruction read without a symbol: invisible to the object-file gate, and a different answer per run or per row` },
     { rule: 'NOSYMBOL', re: word('asm|__asm|__asm__'),
       why: (t) => `\`${t}\` — inline assembly (or an asm label): code or names no flag and no object-file rule can judge` },
-    { rule: 'NOSYMBOL', re: word('ScopedFlushToZero|_mm_setcsr|_mm_getcsr|_MM_SET_FLUSH_ZERO_MODE|_MM_SET_DENORMALS_ZERO_MODE'),
-      why: (t) => `\`${t}\` — the FPU's flush-to-zero set by hand: every later operation of the thread rounds differently, and nothing leaves a symbol the object-file gate could read` },
+    { rule: 'NOSYMBOL', re: word('ScopedFlushToZero|_mm_setcsr|_mm_getcsr|_MM_(?:SET|GET)_[A-Z0-9_]+'),
+      why: (t) => `\`${t}\` — the FPU's control register touched by hand (x86 MXCSR, arm64 FPCR): its rounding mode, exception mask, flush-to-zero or denormals-are-zero set — every later operation of the thread rounds or traps differently — or read, and a bare ldmxcsr / msr leaves no symbol the object-file gate could read` },
     { rule: 'ORDER', re: word('unordered_map|unordered_set|unordered_multimap|unordered_multiset'),
       why: (t) => `\`${t}\` — its iteration order is implementation-defined (and std::hash with it): one input, three answers across libstdc++, libc++ and MSVC` },
     { rule: 'ORDER', re: new RegExp(`${NOT_ID_BEFORE}(std\\s*::\\s*hash${NOT_ID_AFTER}|hash\\s*<)`, 'g'),
@@ -808,6 +811,11 @@ function selfTest ()
         [S, 'int counter asm ("counter") = 0;', ['NOSYMBOL']],
         [S, 'void f () { const felitronics::core::ScopedFlushToZero ftz; }', ['NOSYMBOL']],
         [S, 'void f () { _mm_setcsr (_mm_getcsr() | 0x8040u); }', ['NOSYMBOL', 'NOSYMBOL']],
+        [S, 'void f () { _MM_SET_ROUNDING_MODE (_MM_ROUND_DOWN); }', ['NOSYMBOL']],
+        [S, 'void f () { _MM_SET_EXCEPTION_MASK (_MM_MASK_MASK & ~_MM_MASK_INVALID); }', ['NOSYMBOL']],
+        [S, 'void f () {\n_MM_SET_FLUSH_ZERO_MODE (_MM_FLUSH_ZERO_ON);\n_MM_SET_DENORMALS_ZERO_MODE (_MM_DENORMALS_ZERO_ON);\n_MM_SET_EXCEPTION_STATE (0);\n}', ['NOSYMBOL', 'NOSYMBOL', 'NOSYMBOL']],
+        [S, 'unsigned f () { return _MM_GET_ROUNDING_MODE (); }', ['NOSYMBOL']],
+        [S, 'constexpr unsigned kDown = 0x2000u; int _MM_SETTLE = 0; int x_MM_SET_ROUNDING_MODE = 0;', []],   // not an accessor
         // ORDER
         [S, 'std::unordered_map<int, int> m;', ['ORDER']],
         [S, 'std::sort (v.begin(), v.end());', ['ORDER']],
