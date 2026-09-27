@@ -217,7 +217,7 @@ FC_EXPORT fc_session_status fc_session_config_version (std::uint32_t* out)
 {
     FC_SESSION_GUARD;
     if (const fc_session_status st = checkHalvesOut (out); st != FC_SESSION_OK) return st;
-    const std::uint64_t v = felitronics::session::config::version();   // reads the embedded data; allocates nothing
+    const std::uint64_t v = felitronics::session::config::versions().all;   // reads the embedded data; allocates nothing
     out[0] = static_cast<std::uint32_t> (v);
     out[1] = static_cast<std::uint32_t> (v >> 32);
     return FC_SESSION_OK;

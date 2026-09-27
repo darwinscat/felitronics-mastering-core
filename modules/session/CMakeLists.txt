@@ -197,7 +197,8 @@ if(FELITRONICS_BUILD_TESTS)
     endforeach()
 
     # The config: bound with no problem and equal to its sources, the schema's controls in-process (every kind of problem,
-    # at its line and column), and the version moved by every single value.
+    # at its line and column), and the versions — normalised, moved by every single value, `sound` by what can change a
+    # master only.
     add_executable(felitronics_session_config_tests tests/ConfigTests.cpp)
     target_link_libraries(felitronics_session_config_tests PRIVATE
         felitronics::session felitronics::toml felitronics::test_support)
@@ -206,7 +207,7 @@ if(FELITRONICS_BUILD_TESTS)
         target_link_options(felitronics_session_config_tests PRIVATE -sNODERAWFS=1)
     endif()
     # The suite hashes the embedded data itself, changed node by node: it embeds its own copy of the documents (by the same
-    # tool, from the same files) and reads src/ConfigVersion.h, the walk config::version() is.
+    # tool, from the same files) and reads src/ConfigVersion.h, the walk config::versions() is.
     felitronics_toml_embed(felitronics_session_config_tests INPUT config/targets.toml
                            NAMESPACE felitronics::session::config::testcopy NAME targets HEADER testcopy/targets.h)
     felitronics_toml_embed(felitronics_session_config_tests INPUT config/engine.toml
@@ -216,8 +217,9 @@ if(FELITRONICS_BUILD_TESTS)
              COMMAND felitronics_session_config_tests ${FELITRONICS_SESSION_CONFIG}/targets.toml
                                                       ${FELITRONICS_SESSION_CONFIG}/engine.toml)
 
-    # THE OWNER'S DECISIONS, apart from the schema: every target row field by field and the engine's decided numbers — so
-    # changing a decision is a deliberate edit of this suite.
+    # THE OWNER'S DECISIONS, apart from the schema: every target row field by field and the engine's decided numbers, and
+    # the version of the sound pinned to the name of the defaults — so changing a decision, or a sound number without
+    # naming new defaults, is a deliberate edit of this suite.
     add_executable(felitronics_session_config_decisions_tests tests/ConfigDecisionsTests.cpp)
     target_link_libraries(felitronics_session_config_decisions_tests PRIVATE
         felitronics::session felitronics::toml felitronics::test_support)

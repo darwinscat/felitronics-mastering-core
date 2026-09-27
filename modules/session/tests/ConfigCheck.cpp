@@ -12,7 +12,7 @@
 //       the format compilers and IDEs understand. A problem is a red build, at its line.
 //   config_check --expect <targets.toml> <engine.toml> <directory>
 //       Writes what `fcore_session config` must print for these sources: <directory>/targets.toml and engine.toml, each
-//       document through felitronics-toml's canonical writer, and version.txt, their version.
+//       document through felitronics-toml's canonical writer, and version.txt and sound-version.txt, their versions.
 //
 // Exit status: 0 no problem (or written); 1 problems, one line each on stderr; 2 a usage error or a file that cannot be
 // read or written.
@@ -102,11 +102,11 @@ int main (int argc, char** argv)
 
     std::string targetsText, engineText;
     if (! canonical (targetsPath, targets, targetsText) || ! canonical (enginePath, engine, engineText)) return 2;
-    const auto v = config::versionOf (targets, engine);
+    const auto v = config::versionsOf (targets, engine);
     if (! v) return 2;   // canonical() above has already parsed both and said why
     const std::string dir = argv[4];
     if (! writeFile (dir + "/targets.toml", targetsText) || ! writeFile (dir + "/engine.toml", engineText)
-        || ! writeFile (dir + "/version.txt", hex (*v)))
+        || ! writeFile (dir + "/version.txt", hex (v->all)) || ! writeFile (dir + "/sound-version.txt", hex (v->sound)))
     {
         std::fprintf (stderr, "config_check: cannot write into %s\n", argv[4]);
         return 2;

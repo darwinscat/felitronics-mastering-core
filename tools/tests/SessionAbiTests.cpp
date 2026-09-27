@@ -190,10 +190,10 @@ void theConfigVersion()
     const long long r0 = requestsNow();
     const fc_session_status answered = fc_session_config_version (halves);
     const long long spent = requestsNow() - r0;
-    const std::uint64_t v = felitronics::session::config::version();
+    const std::uint64_t v = felitronics::session::config::versions().all;
     ok (answered == FC_SESSION_OK, "answered");
     ok (halves[0] == (std::uint32_t) v && halves[1] == (std::uint32_t) (v >> 32),
-        "the low half first, then the high: felitronics::session::config::version()");
+        "the low half first, then the high: felitronics::session::config::versions().all");
     ok (spent == 0, "and the heap was asked for nothing: a call with no demand to declare");
 
     alignas (8) unsigned char raw[16] {};

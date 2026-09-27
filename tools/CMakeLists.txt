@@ -273,7 +273,7 @@ if(FELITRONICS_BUILD_TESTS)
         file(MAKE_DIRECTORY ${FCORE_SESSION_CONFIG_EXPECT})
         add_custom_command(
             OUTPUT ${FCORE_SESSION_CONFIG_EXPECT}/targets.toml ${FCORE_SESSION_CONFIG_EXPECT}/engine.toml
-                   ${FCORE_SESSION_CONFIG_EXPECT}/version.txt
+                   ${FCORE_SESSION_CONFIG_EXPECT}/version.txt ${FCORE_SESSION_CONFIG_EXPECT}/sound-version.txt
             COMMAND felitronics_session_config_check --expect ${FCORE_SESSION_CONFIG}/targets.toml
                     ${FCORE_SESSION_CONFIG}/engine.toml ${FCORE_SESSION_CONFIG_EXPECT}
             DEPENDS felitronics_session_config_check ${FCORE_SESSION_CONFIG}/targets.toml ${FCORE_SESSION_CONFIG}/engine.toml
@@ -281,7 +281,7 @@ if(FELITRONICS_BUILD_TESTS)
             VERBATIM)
         add_custom_target(fcore_session_config_expect ALL DEPENDS
             ${FCORE_SESSION_CONFIG_EXPECT}/targets.toml ${FCORE_SESSION_CONFIG_EXPECT}/engine.toml
-            ${FCORE_SESSION_CONFIG_EXPECT}/version.txt)
+            ${FCORE_SESSION_CONFIG_EXPECT}/version.txt ${FCORE_SESSION_CONFIG_EXPECT}/sound-version.txt)
         set(FCORE_SESSION_SCRIPTS ${CMAKE_CURRENT_SOURCE_DIR}/tests/session-scripts)
         # name | expected exit | expected stdout | stdin file ("-" none) | arguments...
         set(FCORE_SESSION_CASES
@@ -297,6 +297,7 @@ if(FELITRONICS_BUILD_TESTS)
             "config_targets|0|config/targets.toml|-|config|targets"
             "config_engine|0|config/engine.toml|-|config|engine"
             "config_version|0|config/version.txt|-|config|version"
+            "config_sound_version|0|config/sound-version.txt|-|config|sound-version"
             "config_bogus|2|nothing.txt|-|config|bogus"
             "config_bare|2|nothing.txt|-|config")
         foreach(case IN LISTS FCORE_SESSION_CASES)

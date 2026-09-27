@@ -1156,14 +1156,14 @@ Loaded bind (std::string_view targetsToml, std::string_view engineToml)
     return out;
 }
 
-std::optional<std::uint64_t> versionOf (std::string_view targetsToml, std::string_view engineToml)
+std::optional<Versions> versionsOf (std::string_view targetsToml, std::string_view engineToml)
 {
     const toml::ParseResult targets = toml::parse (targetsToml);
     const toml::ParseResult engine = toml::parse (engineToml);
     const auto* t = std::get_if<toml::Table> (&targets);
     const auto* e = std::get_if<toml::Table> (&engine);
     if (t == nullptr || e == nullptr) return std::nullopt;
-    return detail::versionOf (*t, *e);
+    return Versions { detail::version (*t, *e, false), detail::version (*t, *e, true) };
 }
 
 } // namespace felitronics::session::config
