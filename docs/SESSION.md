@@ -361,9 +361,11 @@ every native row and the wasm tier, with the row's own reader — `readelf` on E
   and each required to be found once — an allowance that names a symbol no longer there is refused as rot.
 - **What is called.** Every undefined symbol must be defined — with global or weak binding — by another object of the
   set, or match a line of `tools/lint/session-objects.txt`: operator new and delete, what the compiler emits for a copy,
-  the stack protector, the toolchain's own markers, and the sanitizer runtime on the sanitizer row. A **local**
-  definition answers no other object's call — the linker never resolves one with it — so a `static getpid` in one object
-  leaves another object's `getpid` call refused. `printf`, `fopen`, `time`, `getenv`, `strtod`, `isalpha`, `rand` — or
+  the stack protector, the toolchain's own markers, the sanitizer runtime on the sanitizer row, and — in an MSVC Debug
+  build (/MDd) alone, the `coff-debug` scope — the debug runtime's `_CrtDbgReport` and `_dtest` and the debug STL's
+  `std::_Lockit`, each by its exact decorated name (a lock around the STL's iterator bookkeeping, not a thread: the session
+  creates none). A **local** definition answers no other object's call — the linker never resolves one with it — so a
+  `static getpid` in one object leaves another object's `getpid` call refused. `printf`, `fopen`, `time`, `getenv`, `strtod`, `isalpha`, `rand` — or
   `std::to_string` taken by pointer — are refused whatever header declared them.
 
 Its controls (`modules/session/tests/object-controls/`) compile each shape the reviews found — a direct-initialised

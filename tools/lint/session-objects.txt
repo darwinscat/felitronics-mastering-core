@@ -16,8 +16,9 @@
 #   writable   <scope>  <regex>    <why>   writable symbols allowed by pattern (instrumentation, a toolchain's own)
 #   undefined  <scope>  <regex>    <why>   called symbols allowed by pattern, matched against the symbol's name (Mach-O's
 #                                           leading underscore removed)
-# <scope>: all · elf · macho · coff · wasm · san (only when FELITRONICS_ENABLE_SANITIZERS is on) · facade (only the C
-# boundary's objects) · facade-<format>. Patterns are CMake regular expressions.
+# <scope>: all · elf · macho · coff · wasm · san (only when FELITRONICS_ENABLE_SANITIZERS is on) · coff-debug (only an
+# MSVC build in its Debug configuration, /MDd — the debug runtime's own calls, which exist in no other build) · facade
+# (only the C boundary's objects) · facade-<format>. Patterns are CMake regular expressions.
 
 # --- the C boundary keeps these two, and nothing else keeps anything
 global     facade  g_slots        the handle table: a handle must name a session between two calls
@@ -54,6 +55,14 @@ undefined  coff    ^__std_(find_trivial|max_element|min_element|minmax_element|m
 undefined  coff    ^_dclass$                        the UCRT's fpclassify, behind std::isfinite and std::isnan: a classification, exact
 undefined  coff    ^(__imp_)?_dsign$                the UCRT's signbit, behind felitronics-toml's Decimal::fromDouble (a knob's value read as a decimal, src/Grid.h): a bit read, exact
 writable   coff    ^\?\?_R0\?AV(exception|bad_alloc|bad_array_new_length)@std@@@8$    the type descriptors of the exceptions MSVC's STL throws on a failed allocation: a throw's metadata, which MSVC keeps in writable .data$r (a type_info caches its name there); the session neither reads nor writes them
+
+# --- MSVC's Debug configuration (/MDd): the debug runtime's own reporting and the debug STL's lock, each by its exact
+# --- decorated name. A lock the debug STL takes around its iterator bookkeeping is not a thread: the session creates none,
+# --- and calls are made from one thread at a time (docs/SESSION.md). None of these exists in a Release build.
+undefined  coff-debug  ^__imp__CrtDbgReport$                            the debug runtime's report of a failed debug check (_ASSERTE, the debug STL's iterator checks)
+undefined  coff-debug  ^__imp__dtest$                                   the debug UCRT's out-of-line classification of a double (fpclassify), exact
+undefined  coff-debug  ^__imp_\?\?0_Lockit@std@@QEAA@H@Z$               std::_Lockit::_Lockit(int): the debug STL's lock around its iterator bookkeeping
+undefined  coff-debug  ^__imp_\?\?1_Lockit@std@@QEAA@XZ$                std::_Lockit::~_Lockit(): its release
 
 # --- the sanitizer row: the instrumentation's runtime and the metadata it plants
 undefined  san     ^_*(asan|ubsan|lsan|sanitizer)_  ASan / UBSan / LSan runtime entry points
