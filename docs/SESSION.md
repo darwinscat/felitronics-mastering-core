@@ -281,16 +281,21 @@ against that build's `compile_commands.json`, with or without `output` fields). 
 from the target's list (`modules/session/sources.txt`, which CMake and `tools/wasm/build.sh` read too), the C boundary
 compiled with the session's flags (`tools/wasm/fc_session.cpp` and `tools/fc_session_abi.h`), and the `#include` closure
 of those units, whatever the files are called; it refuses a file of unknown type, a unit the list does not name, and a
-file nothing compiles or includes. Only `modules/session/tests` is outside it.
+file nothing compiles or includes; the config's two documents are data, named as such. Only `modules/session/tests` is
+outside it. `--build` also names the felitronics-core and felitronics-toml checkouts the lint resolves admitted headers in
+(or their sibling checkouts).
 
 Before any rule the text goes through **translation phase 2** — every backslash-newline joined, a line map kept — and
 the lexer consumes identifiers and preprocessing numbers whole, so a keyword split across a continuation is read whole
 and `u8'0'` is a character literal, not a digit separator. Its rules:
 
 - **includes** on an allowlist: canonically spelled standard headers that reach no OS, file, locale, thread, clock or
-  process state; felitronics headers **by name** (`FELITRONICS_ALLOWED` — today `felitronics/session/Session.h`: core's
-  `FlushToZero.h` sets flush-to-zero with no symbol and several core headers pull in `<atomic>`, so each is a reviewed
-  one-line addition); quoted headers inside the module;
+  process state; felitronics headers **by name** (`FELITRONICS_ALLOWED`: core's `FlushToZero.h` sets flush-to-zero with
+  no symbol and several core headers pull in `<atomic>`, so each is a reviewed one-line addition — today the module's
+  own `Session.h` and `Config.h`, felitronics-toml's `Toml.h`, `Schema.h` and `Embedded.h`, and the three analyzers the
+  config's schema asks what they admit, `LowEnd.h`, `BandCrest.h` and `StereoBandBursts.h`, which bring core's DSP and
+  `FlushToZero.h` with it; the schema calls only their `storageFor()`); quoted headers inside the module, and in
+  `src/Config.cpp` the two headers the build generates from the config, by name;
 - **no macros** — no `#define`, `#undef` or `##` — and **no directive** but `#include` and `#pragma once`;
   `src/BuildGuards.h` and `src/BuildContract.cpp` may carry `#if` / `#error` logic and nothing that defines a macro;
 - no pragma but `#pragma once`, no `_Pragma` / `__pragma`;
@@ -303,7 +308,8 @@ and `u8'0'` is a character literal, not a digit separator. Its rules:
   `struct S { mutable int n = 0; }; inline constexpr S s {};` in a public header is one shared, changing variable in
   every consumer, which the `constexpr` rule below would pass — and the session has no use for it (nor for a mutable
   lambda);
-- no exception or RTTI token in any `#if` branch; no atomics, cycle counters, target intrinsics or inline assembly;
+- no exception or RTTI token in any `#if` branch; no atomics, cycle counters, target intrinsics or inline assembly, and
+  no flush-to-zero set by hand (`ScopedFlushToZero`, `_mm_setcsr`) — what an admitted header brings cannot be used;
 - no `std::unordered_*`, no `hash<` qualified or not, no unstable sort, no `using namespace`;
 - in the public header, no function body, no variable with static storage duration that is not `constexpr` (at
   namespace scope or as a static member, `inline` or not), and no namespace-scope function declaration — at namespace
