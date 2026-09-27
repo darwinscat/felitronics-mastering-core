@@ -19,13 +19,14 @@ namespace felitronics::session::detail
 
 struct Driver
 {
+    // Captured identities are mandatory; a cancelled/replaced job or source changes nothing.
     // The first measurement ended: Loaded becomes Measured1, and the devices are placed.
-    [[nodiscard]] static bool measured1 (Session& session) noexcept;
+    [[nodiscard]] static bool measured1 (Session& session, JobId job, std::uint64_t source) noexcept;
     // The second measurement ended: Measured1 becomes Measured2, with a master being made or not.
-    [[nodiscard]] static bool measured2 (Session& session) noexcept;
+    [[nodiscard]] static bool measured2 (Session& session, JobId job, std::uint64_t source) noexcept;
     // The master being made is done: it is kept under its job's id, and the overlay ends. Its room among the masters was
     // taken when it was asked for, so this asks the heap for nothing.
-    [[nodiscard]] static bool mastered (Session& session) noexcept;
+    [[nodiscard]] static bool mastered (Session& session, JobId job) noexcept;
 
     // Is `event` allowed in the session's column — Table::events, read.
     [[nodiscard]] static bool allowed (const Session& session, Event event) noexcept;

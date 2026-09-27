@@ -180,6 +180,7 @@ Checked Session::check (const Request& request) const noexcept
 
     if (const auto* load = std::get_if<command::Load> (&request))
     {
+        if (lastJob_ == std::numeric_limits<JobId>::max()) return rejected (Rejection::NoJobId);
         // 6. AUDIO
         const Pcm& pcm = load->pcm;
         if (pcm.channelCount < 1 || pcm.channelCount > 2) return rejected (Rejection::BadChannels);
@@ -187,7 +188,8 @@ Checked Session::check (const Request& request) const noexcept
         if (pcm.frames == 0 || pcm.channels == nullptr) return rejected (Rejection::NoAudio);
         for (std::uint32_t c = 0; c < pcm.channelCount; ++c)
             if (pcm.channels[c] == nullptr) return rejected (Rejection::NoAudio);
-        if (pcm.frames > std::numeric_limits<std::size_t>::max() / sizeof (float) / pcm.channelCount)
+        if (pcm.frames > std::numeric_limits<std::size_t>::max() / sizeof (float) / pcm.channelCount
+            || pcm.frames > 9007199254740991ull / sizeof (float) / pcm.channelCount)
             return rejected (Rejection::TooLong);
         const auto frames = std::size_t (pcm.frames);   // fits: the line above
         for (std::uint32_t c = 0; c < pcm.channelCount; ++c)
@@ -242,7 +244,9 @@ Checked Session::check (const Request& request) const noexcept
         return { Rejection::None, kNoField, room ? 0 : std::uint64_t (masterCount_ + 1) * sizeof (Kept) };
     }
     if (const auto* cancel = std::get_if<command::Cancel> (&request))
-        return cancel->job == job_ ? Checked {} : rejected (Rejection::UnknownJob);
+        return job_ == 0 && measurementJob_ == 0 ? rejected (Rejection::NoJob)
+             : cancel->job != 0 && (cancel->job == job_ || cancel->job == measurementJob_)
+                 ? Checked {} : rejected (Rejection::UnknownJob);
     if (const auto* forget = std::get_if<command::Forget> (&request))
     {
         for (const Kept& k : masters())
@@ -257,6 +261,7 @@ Checked Session::check (const Request& request) const noexcept
 
 Answer Session::apply (const Request& request) noexcept
 {
+    eventCount_ = 0;
     Answer answer;
     answer.command = idOf (request);
     const Checked checked = check (request);
@@ -265,6 +270,10 @@ Answer Session::apply (const Request& request) noexcept
         answer.rejection = checked.rejection;
         answer.field = checked.field;
         answer.revision = revision_;
+        Notification event;
+        event.kind = EventKind::Rejected;
+        event.payload.rejected = { answer.command, answer.rejection };
+        emit (event);
         return answer;
     }
 
@@ -307,6 +316,11 @@ Answer Session::apply (const Request& request) noexcept
         source_ = { pcm.channelCount, pcm.sampleRate, pcm.frames, hash.h, load->meta.fileRate, load->meta.rateKnown,
                     load->meta.bitDepth, std::string_view (name_.get(), given.size()) };
         state_ = State::Loaded;
+        measurementJob_ = ++lastJob_;
+        measurementUnit_ = masterUnit_ = 0;
+        measurementProgress_ = { PhaseName::Stream, 0.0, config::Config::versions().all, 0, 0, 0, 10 };
+        masterProgress_ = {};
+        answer.job = measurementJob_;
     }
     else if (const auto* set = std::get_if<command::SetTarget> (&request))
     {
@@ -366,13 +380,25 @@ Answer Session::apply (const Request& request) noexcept
         job_ = ++lastJob_;
         jobRecipe_ = { project_, source_.hash, config::Config::versions().sound };
         mastering_ = true;
+        masterUnit_ = 0;
+        const auto passes = std::uint32_t (*rules.engine.find ("progress").find ("master").find ("expectedPasses").integer());
+        masterProgress_ = { PhaseName::Pass, 0.0, config::Config::versions().all, 0, passes, 0, passes + 1 };
         answer.job = job_;
     }
-    else if (std::get_if<command::Cancel> (&request) != nullptr)
+    else if (const auto* cancel = std::get_if<command::Cancel> (&request))
     {
-        mastering_ = false;
-        job_ = 0;
-        jobRecipe_ = {};
+        if (cancel->job == measurementJob_) measurementJob_ = 0;
+        else
+        {
+            mastering_ = false;
+            job_ = 0;
+            jobRecipe_ = {};
+        }
+        Notification event;
+        event.jobId = cancel->job;
+        event.kind = EventKind::Fact;
+        event.payload.fact.id = FactId::Cancelled;
+        emit (event);
     }
     else if (const auto* forget = std::get_if<command::Forget> (&request))
     {
@@ -396,25 +422,30 @@ bool Driver::allowed (const Session& session, Event event) noexcept
     return Table::events[index (event)].cell[index (session.column())];
 }
 
-bool Driver::measured1 (Session& session) noexcept
+bool Driver::measured1 (Session& session, JobId job, std::uint64_t source) noexcept
 {
+    if (job == 0 || job != session.measurementJob_ || source != session.source_.hash) return false;
     if (Session::checkFloatingPointEnvironment() != Status::Ok || ! allowed (session, Event::Measured1)) return false;
     session.state_ = State::Measured1;
+    session.measurementUnit_ = 5;
     detail::placeMachine (detail::rules(), session.project_.target, session.source_.channels, session.project_.devices);
     ++session.revision_;
     return true;
 }
 
-bool Driver::measured2 (Session& session) noexcept
+bool Driver::measured2 (Session& session, JobId job, std::uint64_t source) noexcept
 {
+    if (job == 0 || job != session.measurementJob_ || source != session.source_.hash) return false;
     if (Session::checkFloatingPointEnvironment() != Status::Ok || ! allowed (session, Event::Measured2)) return false;
     session.state_ = State::Measured2;
+    session.measurementJob_ = 0;
     ++session.revision_;
     return true;
 }
 
-bool Driver::mastered (Session& session) noexcept
+bool Driver::mastered (Session& session, JobId job) noexcept
 {
+    if (job == 0 || job != session.job_) return false;
     if (Session::checkFloatingPointEnvironment() != Status::Ok || ! allowed (session, Event::Mastered)) return false;
     if (session.masterRoom_ == session.masterCount_) return false;       // master() took the room; without it, nothing
     session.masters_[session.masterCount_++] = { session.job_, session.jobRecipe_ };   // into the room master() took

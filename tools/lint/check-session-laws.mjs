@@ -125,6 +125,9 @@ const FELITRONICS_ALLOWED = new Set([
     'felitronics/session/Session.h',             // this module's own public headers, scanned here as every file of it is
     'felitronics/session/Config.h',
     'felitronics/session/Commands.h',
+    'felitronics/session/Events.h',             // value payloads only, scanned as every public header
+    'felitronics/session/Snapshot.h',           // owned snapshots and codec declarations, scanned here
+
     'felitronics/session/Project.h',
     'felitronics/session/Text.h',
     // felitronics-toml (resolved in the checkout the build uses): its parser and canonical writer, over <algorithm>,

@@ -229,6 +229,11 @@ if(FELITRONICS_BUILD_TESTS)
     target_include_directories(felitronics_session_state_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_features(felitronics_session_state_tests PRIVATE cxx_std_20)
     add_test(NAME felitronics_session_state_tests COMMAND felitronics_session_state_tests)
+    add_executable(felitronics_session_event_tests tests/EventTests.cpp)
+    target_link_libraries(felitronics_session_event_tests PRIVATE felitronics::session felitronics::test_support)
+    target_include_directories(felitronics_session_event_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_features(felitronics_session_event_tests PRIVATE cxx_std_20)
+    add_test(NAME felitronics_session_event_tests COMMAND felitronics_session_event_tests)
 
     # HOSTILE FLAGS AHEAD OF THE LIBRARY'S. The library's sources compiled again, into test binaries, with a licence the
     # session refuses PREPENDED to the target's own options — the position a consumer's CMAKE_CXX_FLAGS or directory
@@ -601,4 +606,20 @@ if(FELITRONICS_BUILD_TESTS)
                              -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/consumer-compile-line.cmake)
         endif()
     endif()
+endif()
+
+# TypeScript and the compiled field walk are checked against the same named-field description.
+set(FELITRONICS_SESSION_TYPES ${CMAKE_CURRENT_BINARY_DIR}/snapshot.d.ts)
+add_custom_command(OUTPUT ${FELITRONICS_SESSION_TYPES}
+    COMMAND ${CMAKE_COMMAND} -DOUTPUT=${FELITRONICS_SESSION_TYPES}
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec-schema.json
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/CodecSchema.h VERBATIM)
+add_custom_target(felitronics_session_types ALL DEPENDS ${FELITRONICS_SESSION_TYPES})
+add_dependencies(felitronics_session felitronics_session_types)
+if(FELITRONICS_BUILD_TESTS)
+    add_test(NAME felitronics_session_codec_types
+        COMMAND ${CMAKE_COMMAND} -DCHECK=ON -DOUTPUT=${FELITRONICS_SESSION_TYPES}
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake)
 endif()

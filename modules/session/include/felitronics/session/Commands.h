@@ -19,7 +19,7 @@
 //                                                                  └ master ──▶ Mastering ◀── master ┘
 //
 //   Empty      nothing loaded; a target and the manual mode can be chosen already.
-//   Loaded     a source is loaded and its first measurement runs. The devices are not placed: their panel is closed.
+//   Loaded     a source is loaded and its first measurement has not ended. The devices are not placed: their panel is closed.
 //   Measured1  the first measurement ended and the devices are placed: a master can be made, a person may edit them.
 //   Measured2  the second measurement ended too.
 //   Mastering  a master is being made, on Measured1 or on Measured2 — the second measurement may end meanwhile. It
@@ -55,7 +55,7 @@ enum class Rejection : std::uint8_t
     NotPlaced,                  // the devices are not placed yet: the first measurement runs
     NotMeasured,                // the first measurement has not ended
     Busy,                       // a master is being made
-    NoJob,                      // no master is being made
+    NoJob,                      // no named measurement or master is running
     NoMaster,                   // no master is kept in this state
     // the device panel
     ManualOff,                  // the manual mode is off: the device panel is closed
@@ -63,7 +63,7 @@ enum class Rejection : std::uint8_t
     UnknownTarget,              // no row of [targets] has this name
     NotOffered,                 // this device is not offered here: the low shelf off a target that carries one, the
                                 // dither above the bit depth it serves, mono bass on a mono source
-    UnknownJob,                 // not the master being made
+    UnknownJob,                 // not an active measurement or master
     UnknownMaster,              // no master kept under this id
     // the fields
     NoFields,                   // an edit or a revert that touches no field
@@ -77,12 +77,12 @@ enum class Rejection : std::uint8_t
     NoAudio,                    // no frames, or no data
     TooLong,                    // more samples than this machine's memory can address
     // what the command names (continued)
-    NoJobId,                    // every job id of the session's life has been issued: no master can be asked again
+    NoJobId,                    // every job id was issued: load and master cannot start another job
 };
 
 using CommandId = std::uint64_t;   // the shell's own number for a request, given back in its answer
-using JobId = std::uint32_t;       // a master being made: 1, 2, … in the order asked, never 0 and never twice in a
-                                   // session's life (the last one issued, the session asks for no master again)
+using JobId = std::uint32_t;       // a measurement or master job: 1, 2, … in the order asked, never 0 and never twice in a
+                                   // session's life (after the last one, neither load nor master starts another job)
 using MasterId = std::uint32_t;    // a master kept: the id of the job that made it
 
 inline constexpr std::uint8_t kNoField = 0xFF;
@@ -143,7 +143,7 @@ struct Answer
     CommandId command = 0;                     // the request's own id
     Rejection rejection = Rejection::None;     // None: accepted
     std::uint64_t revision = 0;                // accepted: the revision it made; rejected: the revision, unchanged
-    JobId job = 0;                             // an accepted master: the job it started
+    JobId job = 0;                             // an accepted load or master: the job it started
     std::uint8_t field = kNoField;             // rejected on a field: its place among the fields, in the order written
                                                // (the target's: lufs 0, tp 1; a device's: as its Fields lists them)
 };
@@ -170,7 +170,7 @@ inline constexpr std::size_t kColumns = 6;
 //   2. STATE    this table: the command's cell in the session's column
 //   3. MANUAL   the device panel's commands — editDevice, revertEdits — need the manual mode (ManualOff)
 //   4. NAMES    what the command names: a target (setTarget), a device offered for this target and source (editDevice,
-//               revertEdits), an id left for a new job (master), the master being made (cancel), a master kept (forget)
+//               revertEdits), an id left for a new job (master), the active job (cancel), a master kept (forget)
 //   5. FIELDS   an edit or a revert touches a field (NoFields); then field by field, in the order written: finite, one of
 //               the field's values, on its travel, on its step
 //   6. AUDIO    a load's audio: its channels, its rate, its frames, its size, then every sample finite
@@ -195,10 +195,11 @@ struct Table
         { Command::RevertEdits, {    NoSource, NotPlaced,   None,     None,     None,      None } },
         { Command::SetManual,   {    None,     None,        None,     None,     None,      None } },
         { Command::Master,      {    NoSource, NotMeasured, None,     None,     Busy,      Busy } },
-        { Command::Cancel,      {    NoJob,    NoJob,       NoJob,    NoJob,    None,      None } },
+        { Command::Cancel,      {    NoJob,    None,        None,     NoJob,    None,      None } },
         { Command::Forget,      {    NoSource, NoMaster,    None,     None,     None,      None } },
     };
 
+    // Cancel in Loaded or Measured1 additionally checks for a live measurement; after cancellation it returns NoJob.
     // THE SESSION'S OWN TRANSITIONS — where each may happen (true), and what it does:
     //   Measured1  the first measurement ended: Loaded becomes Measured1, and the devices are placed
     //   Measured2  the second ended: Measured1 becomes Measured2, with a master being made or not
