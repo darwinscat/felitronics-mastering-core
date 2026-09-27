@@ -272,13 +272,14 @@ function(read_object obj)
             message(FATAL_ERROR "object-gates.cmake: ${TOOL} /headers /symbols ${obj} failed: ${err}")
         endif()
         split_lines("${raw}" lines)
-        # Section headers: `SECTION HEADER #3`, then `   .bss name`, ..., then `C0300080 flags`. The header number is in
-        # hex, as the SECTn of the symbol table is.
+        # Section headers: `SECTION HEADER #3`, then the name right-aligned in eight columns (`    .bss name`, and an
+        # eight-letter `fcsstate name` with no indent at all), ..., then `C0300080 flags`. The header number is in hex,
+        # as the SECTn of the symbol table is.
         set(cur "")
         foreach(line IN LISTS lines)
             if(line MATCHES "^SECTION HEADER #([0-9A-Fa-f]+)")
                 string(TOUPPER "${CMAKE_MATCH_1}" cur)
-            elseif(NOT cur STREQUAL "" AND line MATCHES "^ +(.*[^ ]) name$")
+            elseif(NOT cur STREQUAL "" AND line MATCHES "^ *(.*[^ ]) name$")
                 set(secname_${cur} "${CMAKE_MATCH_1}")
             elseif(NOT cur STREQUAL "" AND line MATCHES "^ *([0-9A-Fa-f]+) flags$")
                 math(EXPR bits "0x${CMAKE_MATCH_1} & 0x80000000" OUTPUT_FORMAT DECIMAL)
@@ -322,6 +323,9 @@ function(read_object obj)
                 message(FATAL_ERROR "object-gates.cmake: ${obj}: symbol ${name} is in section ${hdr}, which /headers did not list")
             endif()
             if(NOT secwrite_${hdr} EQUAL 0)
+                if(NOT DEFINED secname_${hdr})
+                    message(FATAL_ERROR "object-gates.cmake: ${obj}: section ${hdr} has flags but no name that /headers printed")
+                endif()
                 list(APPEND w "${name}")
                 list(APPEND wd "${dname}")
                 list(APPEND ws "${secname_${hdr}}")
@@ -445,12 +449,15 @@ function(read_object obj)
     endforeach()
 endfunction()
 
-# THE NAMES A CONTROL'S EXPECTATION MAY MATCH, each in full: the raw symbol, the raw symbol less Mach-O's underscore, the
-# demangled name, its last identifier (`...::lambdaCounter` of a static local), and the identifier before its parameter
-# list (`to_string` of `std::__1::to_string(double)`). A control names a whole symbol, not a fragment of one.
+# THE NAMES A CONTROL'S EXPECTATION MAY MATCH, each in full: the raw symbol, the raw symbol less Mach-O's underscore or
+# less COFF's `__imp_` (the import-table entry of a function called from a DLL: `__imp_fopen` is fopen), the demangled
+# name, its last identifier (`...::lambdaCounter` of a static local), and the identifier before its parameter list
+# (`to_string` of `std::__1::to_string(double)`). A control names a whole symbol, not a fragment of one.
 function(name_candidates raw dem out)
     set(c "${raw}" "${dem}")
-    if(raw MATCHES "^_(.*)$")
+    if(raw MATCHES "^__imp_(.*)$")
+        list(APPEND c "${CMAKE_MATCH_1}")
+    elseif(raw MATCHES "^_(.*)$")
         list(APPEND c "${CMAKE_MATCH_1}")
     endif()
     string(REGEX MATCHALL "[A-Za-z_][A-Za-z0-9_]*" ids "${dem}")
