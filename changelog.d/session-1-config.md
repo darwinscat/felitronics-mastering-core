@@ -62,6 +62,6 @@ felitronics-toml's canonical writer, or a version; ctest holds the output byte f
 
 **`fc_session_config_version`** joins the draft `fc_session` (still version 0, no promise): the config's `all` version in
 two uint32 halves, the out-pointer checked before anything is written, nothing allocated. `fcsession` now carries the
-config — 43.3 KB of wasm, 13.0 KB brotli, from 2.5 / 1.2 — and `tools/wasm/session-check.mjs --config-version` requires
+config — 43.8 KB of wasm, 13.4 KB brotli, from 2.9 / 1.4 — and `tools/wasm/session-check.mjs --config-version` requires
 its version to be the native CLI's. `tools/wasm/build.sh` embeds and gates the config with a felitronics-toml checkout:
 `FELITRONICS_TOML_DIR`, or the sibling `../felitronics-toml`.
