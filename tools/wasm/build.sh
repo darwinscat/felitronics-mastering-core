@@ -494,7 +494,8 @@ sizes fcmaster.web.wasm fcmaster.web.mjs
 # brings is the difference from the modules above:
 #  1. THE LIBRARY'S FLAGS, READ FROM THE FILE THE TARGET READS — modules/session/build-flags.txt, one line, one group:
 #     the native library and this module are compiled with one definition of the flags, not two copies of it. One em++
-#     line gives every translation unit those flags, the facade's included — as tools/CMakeLists.txt gives it natively.
+#     line gives every translation unit those flags, the facade's included — as tools/CMakeLists.txt gives it natively —
+#     and the facade includes the library's src/BuildGuards.h first, as the library's own units do (-I modules/session/src).
 #  2. THE TWO RELEASES THE LIBRARY REPORTS (Session::version, Session::coreVersion), read from the project() lines of
 #     this repository and of the core it is built against — the same two lines the CMake build reads. The library
 #     refuses to compile without them.
@@ -553,7 +554,7 @@ read -r -a SESSION_FLAGS <<< "$SESSION_FLAGS_LINE"
 
 SSRC="$HERE/fc_session.cpp"
 SFRONT=(-std=c++20 "${SESSION_FLAGS[@]}"
-        -I"$ROOT/tools" -I"$ROOT/modules/session/include" -msimd128
+        -I"$ROOT/tools" -I"$ROOT/modules/session/include" -I"$ROOT/modules/session/src" -msimd128
         -DFELITRONICS_SESSION_VERSION_MAJOR="$SV_MAJOR" -DFELITRONICS_SESSION_VERSION_MINOR="$SV_MINOR"
         -DFELITRONICS_SESSION_VERSION_PATCH="$SV_PATCH"
         -DFELITRONICS_SESSION_CORE_VERSION_MAJOR="$CV_MAJOR" -DFELITRONICS_SESSION_CORE_VERSION_MINOR="$CV_MINOR"

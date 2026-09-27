@@ -144,7 +144,9 @@ jobs:
           CORE_ZONEH="$CORE/modules/analysis/include/felitronics/analysis/ReferenceTruePeakMeter.h"
           PROBEH=tools/fcore_probe.h
           SESS=modules/session/src/Session.cpp
-          FILES=("$ZONEH" "$MANH" "$MANIFEST" "$ZONEFILE" "$SOLV" "$CORE_ZONEH" "$PROBEH" "$SESS")
+          FACADE=tools/wasm/fc_session.cpp
+          SESSCLI=tools/fcore_session.cpp
+          FILES=("$ZONEH" "$MANH" "$MANIFEST" "$ZONEFILE" "$SOLV" "$CORE_ZONEH" "$PROBEH" "$SESS" "$FACADE" "$SESSCLI")
           BK="$(mktemp -d)"
           for i in "${!FILES[@]}"; do cp "${FILES[$i]}" "$BK/$i"; done
           det_restore () { for i in "${!FILES[@]}"; do cp "$BK/$i" "${FILES[$i]}"; done; }
@@ -215,9 +217,21 @@ jobs:
           node "$LINT" --satellite 2>&1 | grep -qF "_det_control.tpp" \
             || { rm -f modules/session/src/_det_control.tpp; det_restore; echo "CONTROL FAILED (19): fired but did not name the .tpp"; exit 1; }
           rm -f modules/session/src/_det_control.tpp; det_restore; echo "control 19 ok: a libm call in a file only a session unit includes is caught"
+          # 20, 21: the two roads into the session — the C boundary and the native CLI — are entry points too, so a header
+          # either one includes is reached, whatever it is called, and its std::cos refused.
+          for road in "20|$FACADE|tools/wasm/_det_control_road.h" "21|$SESSCLI|tools/_det_control_road.h"; do
+            IFS='|' read -r num unit header <<< "$road"
+            printf 'inline double sessionRoadControl (double x) { return std::cos (x); }\n' > "$header"
+            printf '\n#include "_det_control_road.h"\n' >> "$unit"
+            if node "$LINT" --satellite > /dev/null 2>&1; then
+              rm -f "$header"; det_restore; echo "CONTROL FAILED ($num): a std::cos in a header $unit includes passed"; exit 1; fi
+            node "$LINT" --satellite 2>&1 | grep -qF "$header" \
+              || { rm -f "$header"; det_restore; echo "CONTROL FAILED ($num): fired but did not name $header"; exit 1; }
+            rm -f "$header"; det_restore; echo "control $num ok: a libm call in a header ${unit##*/} includes is caught"
+          done
           node "$LINT" --satellite > /dev/null \
-            || { echo "CONTROL FAILED: the tree did not come back clean, so controls 5-19 proved nothing"; exit 1; }
-          echo "controls 5-19 ok: the libm audit fires on every rule, on both sides, and the tree is clean again"
+            || { echo "CONTROL FAILED: the tree did not come back clean, so controls 5-21 proved nothing"; exit 1; }
+          echo "controls 5-21 ok: the libm audit fires on every rule, on both sides, and the tree is clean again"
           # The other two lints reach this repository's files too.
           printf 'using Forbidden = long double;\n' > modules/mastering/include/felitronics/mastering/_lint_control.h
           if node "$CORE/tools/lint/check-no-long-double.mjs" > /dev/null 2>&1; then
