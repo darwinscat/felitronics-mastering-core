@@ -243,7 +243,7 @@ if(FELITRONICS_BUILD_TESTS)
         "pointer_array|kPhaseNames"
         "thread_local|perThreadCount"
         "const_dynamic_init|kStartupValue"
-        "forbidden_calls|printf|iprintf|__stdio_common_vfprintf&&&fopen|fopen64&&&time|time64|_time64&&&getenv&&&strtod&&&rand&&&isalpha|__maskrune|_DefaultRuneLocale|__ctype_b_loc|__istype|_isctype|_isctype_l|_chvalidator|__pctype_func"
+        "forbidden_calls|printf|iprintf|__printf_chk|__stdio_common_vfprintf&&&fopen|fopen64&&&time|time64|_time64&&&getenv&&&strtod&&&rand&&&isalpha|__maskrune|_DefaultRuneLocale|__ctype_b_loc|__istype|_isctype|_isctype_l|_chvalidator|__pctype_func"
         "string_via_pointer|to_string|vsnprintf|__vsnprintf_chk|__stdio_common_vsprintf|__stdio_common_vsprintf_s|_scprintf|sprintf_s"
         "stod_rand|stod|strtod&&&rand"
         "local_definition|getpid")
