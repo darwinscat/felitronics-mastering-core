@@ -325,11 +325,14 @@ main thread.
   and every term; a placeholder names an argument of its fact (`src/TextFacts.h` declares each fact's arguments by name
   and kind), every text — each variant on its own, since Russian "one" is also 21 — places every argument (a `select`'s
   own may be left out, its variant says it), and every language places the same set, repeated or reordered freely; a plural message has exactly its language's CLDR categories, a
-  select message exactly its group's terms; no brace is malformed; the table has every field — a separator with no digit and no sign, the
-  row's own minus included — and a pattern for every unit, in all twelve languages; and no key is one nothing reads. A problem is `<file>:<line>:<column>: error: <fault>
-  <key path> — <rule>`, and its stamp is written only on success. Six controls (`tests/text-must-fail.cmake`) plant a
-  missing message, a stray placeholder, a lost one, a missing plural category, an undeclared language and a unit without
-  a pattern in a copy, and require the gate to go red at the spot; the suite plants thirty-nine more in-process.
+  select message exactly its group's terms; no brace is malformed; the table has every field — a separator with no digit
+  and no sign, the row's own minus included; signs with no digit that are no separator, the fixed ones exactly as the
+  law states them (minus U+2212, absent "—", "≥" and "≤" with a no-break space); a pattern for every unit with no
+  breaking space — in all twelve languages; and no key is one nothing reads. A problem is `<file>:<line>:<column>:
+  error: <fault> <key path> — <rule>`, and its stamp is written only on success. Eight controls
+  (`tests/text-must-fail.cmake`) plant a missing message, a stray placeholder, a lost one, a missing plural category, an
+  undeclared language, a unit without a pattern, a breaking space before a unit and an absent sign of "1" in a copy, and
+  require the gate to go red at the spot; the suite plants forty-six more in-process.
 - **No fallback, no guess.** A message the catalog does not have in a language — every message, in a language it does
   not declare — renders as its id (`Text::key`), never in another language. An argument that does not match its fact's
   declaration renders as `{name}`; a plural or a select whose own argument does not match cannot choose, and renders the
@@ -338,14 +341,16 @@ main thread.
   the double rounded to the decimal grid of `precision` digits, a half away from zero — in integer arithmetic
   (`src/TextNumber.cpp`: no libm, no printf, no locale) — checked against an independent oracle over 22 000 values, at
   exact halves, at doubles just off a half (1.005 → 1.00, its double being 1.00499999999999989…), across a carry into a
-  new digit and at the extremes of the double; the sign follows the value (−0.04 at one digit is "−0.0", and either zero
-  is unsigned); a value that is not finite prints the absent sign alone. All twelve rows are pinned to CLDR 48 as ICU 78
+  new digit and at the extremes of the double; the sign is the printed number's — a value that prints as zero takes none,
+  under every `Sign` (−0.04 at one digit is "0.0", never "−0.0", which a musician reads as a bug; either zero is "0");
+  a value that is not finite prints the absent sign alone. Between a number and its unit is a no-break space (U+00A0;
+  French U+202F), so "−14" and "LUFS" never wrap apart. All twelve rows are pinned to CLDR 48 as ICU 78
   writes it.
 - **No rendering depends on the thread's floating-point environment.** The digits are integers and the signs are read
   from the double's bits — through a volatile, since clang folds an integer test on them back into a floating-point
   compare, which a thread that reads subnormals as zero answers "zero" (measured). The suite renders subnormals, halves and
   zeros under flush-to-zero, denormals-are-zero and each rounding mode, set the way a host sets them, and requires the
-  bytes of the default environment; with the bits read plainly, flush-to-zero changes 72 of those 412 renderings.
+  bytes of the default environment — which a formatter that multiplied or rounded in floating point would miss.
 - **Plural categories on the printed number.** CLDR 48's cardinal rules for the twelve languages, evaluated on the digits
   as printed — "1.0" is not "one" in English — by the component that formats them; pinned against ICU 78's own answers on
   39 numbers of every category in each language, each language's set reached exactly.

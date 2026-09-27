@@ -28,10 +28,11 @@ struct Digits
     std::array<char, kCapacity> buffer {};
     std::size_t integerDigits = 0;
     std::size_t fractionDigits = 0;
-    bool negative = false;             // the VALUE is below zero — its digits may all be 0 (−0.04 at one digit)
+    bool negative = false;             // below zero AS PRINTED: a value whose digits are all 0 (−0.04 at one digit) is not
 
     [[nodiscard]] std::string_view integer() const noexcept;
     [[nodiscard]] std::string_view fraction() const noexcept;
+    [[nodiscard]] bool zero() const noexcept;   // every digit is 0: the number prints as zero, and takes no sign
 };
 
 // The largest precision a Value takes.

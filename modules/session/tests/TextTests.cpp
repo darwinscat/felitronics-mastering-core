@@ -250,9 +250,29 @@ void theGateRefusesEachMistake()
         { D::Catalog, "languages = [\"ru\", \"en\"]", "languages = [\"ru\", \"en\"", "[terms.platform]", F::Syntax, "", "ExpectedArraySeparator" },
         // THE TABLE: a unit without a pattern, a pattern without its number, a row without a field, a field out of range,
         // eleven note names, a decimal sign that is the group separator, a digit as a separator, keys nothing reads.
-        { D::Format, "tr = \"{n} dBTP\"\n", "", "[units.dbtp]", F::Missing, "units.dbtp.tr", "" },
-        { D::Format, "en = \"{n} dB\"", "en = \"dB\"", "\"dB\"", F::Refused, "units.db.en", "Pattern" },
-        { D::Format, "en = \"{n} dB\"", "en = \"{n} {n} dB\"", "\"{n} {n} dB\"", F::Refused, "units.db.en", "Pattern" },
+        { D::Format, "tr = \"{n}\\u00A0dBTP\"\n", "", "[units.dbtp]", F::Missing, "units.dbtp.tr", "" },
+        { D::Format, "en = \"{n}\\u00A0dB\"", "en = \"dB\"", "\"dB\"", F::Refused, "units.db.en", "Pattern" },
+        { D::Format, "en = \"{n}\\u00A0dB\"", "en = \"{n}\\u00A0{n}\\u00A0dB\"", "\"{n}\\u00A0{n}", F::Refused, "units.db.en", "Pattern" },
+        // A number and its unit never wrap apart.
+        { D::Format, "en = \"{n}\\u00A0LUFS\"", "en = \"{n} LUFS\"", "\"{n} LUFS\"", F::Refused, "units.lufs.en", "BreakingSpace" },
+        { D::Format, "tr = \"%{n}\"", "tr = \"% {n}\"", "\"% {n}\"", F::Refused, "units.percent.tr", "BreakingSpace" },
+        // The signs: no digit, no separator, the fixed ones as the law states them. An absent "1" would print a NaN as 1.
+        { D::Format, "[numbers.en]   # notes: letters\ndecimal = \".\"\ngroup = \",\"\nminimumGrouping = 1\nminus = \"\\u2212\"\nplus = \"+\"\n"
+                     "atLeast = \"≥\\u00A0\"\natMost = \"≤\\u00A0\"\nabsent = \"—\"",
+          "[numbers.en]   # notes: letters\ndecimal = \".\"\ngroup = \",\"\nminimumGrouping = 1\nminus = \"\\u2212\"\nplus = \"+\"\n"
+          "atLeast = \"≥\\u00A0\"\natMost = \"≤\\u00A0\"\nabsent = \"1\"", "\"1\"", F::Refused, "numbers.en.absent", "NotASign" },
+        { D::Format, "[numbers.en]   # notes: letters\ndecimal = \".\"\ngroup = \",\"\nminimumGrouping = 1\nminus = \"\\u2212\"\nplus = \"+\"\n"
+                     "atLeast = \"≥\\u00A0\"\natMost = \"≤\\u00A0\"\nabsent = \"—\"",
+          "[numbers.en]   # notes: letters\ndecimal = \".\"\ngroup = \",\"\nminimumGrouping = 1\nminus = \"\\u2212\"\nplus = \"+\"\n"
+          "atLeast = \"≥\\u00A0\"\natMost = \"≤\\u00A0\"\nabsent = \"1\"", "\"1\"", F::Refused, "numbers.en.absent", "FixedSign" },
+        { D::Format, "group = \",\"\nminimumGrouping = 1\nminus = \"\\u2212\"",
+          "group = \",\"\nminimumGrouping = 1\nminus = \"-\"", "\"-\"", F::Refused, "numbers.en.minus", "FixedSign" },
+        { D::Format, "group = \",\"\nminimumGrouping = 1\nminus = \"\\u2212\"\nplus = \"+\"",
+          "group = \",\"\nminimumGrouping = 1\nminus = \"\\u2212\"\nplus = \",\"", "\",\"\natLeast", F::Refused, "numbers.en.plus",
+          "NotASign" },
+        { D::Format, "plus = \"+\"\natLeast = \"≥\\u00A0\"\natMost = \"≤\\u00A0\"\nabsent = \"—\"\nnotes = [\"C\", \"C♯\", \"D\", \"D♯\", \"E\", \"F\", \"F♯\", \"G\", \"G♯\", \"A\", \"A♯\", \"B\"]\n\n[numbers.de]",
+          "plus = \"+\"\natLeast = \"≥ \"\natMost = \"≤\\u00A0\"\nabsent = \"—\"\nnotes = [\"C\", \"C♯\", \"D\", \"D♯\", \"E\", \"F\", \"F♯\", \"G\", \"G♯\", \"A\", \"A♯\", \"B\"]\n\n[numbers.de]",
+          "\"≥ \"", F::Refused, "numbers.en.atLeast", "FixedSign" },
         { D::Format, "[numbers.es]   # notes: letters\ndecimal = \",\"\n", "[numbers.es]   # notes: letters\n", "[numbers.es]",
           F::Missing, "numbers.es.decimal", "" },
         { D::Format, "[numbers.en]   # notes: letters\ndecimal = \".\"\ngroup = \",\"\nminimumGrouping = 1",
@@ -331,7 +351,8 @@ std::string oracleText (double value, unsigned precision)
     std::string integer = digits.substr (0, integerDigits);
     const std::size_t nonzero = integer.find_first_not_of ('0');
     integer = nonzero == std::string::npos ? "0" : integer.substr (nonzero);
-    std::string s = value < 0.0 ? "-" : "";
+    const bool zero = digits.find_first_not_of ('0') == std::string::npos;   // prints as zero: no sign
+    std::string s = value < 0.0 && ! zero ? "-" : "";
     s += integer;
     if (precision != 0) s += "." + digits.substr (integerDigits);
     return s;
@@ -367,7 +388,8 @@ void roundingIsOnTheDecimalGrid()
         { 0.45, 1, "0.5", "0.45 is 0.45000000000000001110…" },
         { 9.995, 2, "9.99", "9.995 is 9.99499999999999921840…" },
         { 99.95, 1, "100.0", "99.95 is 99.95000000000000284217…, and the carry makes a new digit" },
-        { -0.04, 1, "-0.0", "a negative value that rounds to zero keeps its minus" },
+        { -0.04, 1, "0.0", "a negative value that rounds to zero prints unsigned" },
+        { -0.4, 0, "0", "and so at no digit" },
         { -0.0, 1, "0.0", "negative zero is zero" },
         { 0.0, 3, "0.000", "zero with its fraction digits" },
         { 1234567.891, 0, "1234568", "no fraction digit" },
@@ -462,14 +484,19 @@ void theTableFormatsEveryLanguage()
     same (arg (Arg::value (123.0, Unit::None, 0), Lang::En), "123", "three digits are never grouped");
 
     // Signs and bounds.
-    same (arg (Arg::value (3.24, Unit::Db, 1, Sign::Always), Lang::En), "+3.2 dB", "en: Sign::Always shows the plus");
-    same (arg (Arg::value (3.24, Unit::Db, 1, Sign::Always), Lang::Ru), "+3,2 дБ", "ru: the same gain");
-    same (arg (Arg::value (0.0, Unit::Db, 1, Sign::Always), Lang::En), "0.0 dB", "zero takes no sign, even under Always");
-    same (arg (Arg::value (0.02, Unit::Db, 1, Sign::Always), Lang::En), "+0.0 dB", "a positive value that rounds to zero keeps its plus");
-    same (arg (Arg::value (-0.04, Unit::DbTp, 1), Lang::En), MINUS + "0.0 dBTP", "a negative one keeps its minus");
-    same (arg (Arg::value (-0.0, Unit::DbTp, 1), Lang::En), "0.0 dBTP", "negative zero is zero");
+    same (arg (Arg::value (3.24, Unit::Db, 1, Sign::Always), Lang::En), "+3.2\u00A0dB", "en: Sign::Always shows the plus");
+    same (arg (Arg::value (3.24, Unit::Db, 1, Sign::Always), Lang::Ru), "+3,2\u00A0дБ", "ru: the same gain");
+    same (arg (Arg::value (0.0, Unit::Db, 1, Sign::Always), Lang::En), "0.0\u00A0dB", "zero takes no sign, even under Always");
+    same (arg (Arg::value (0.02, Unit::Db, 1, Sign::Always), Lang::En), "0.0\u00A0dB", "a positive value that prints as zero takes no plus");
+    same (arg (Arg::value (-0.04, Unit::DbTp, 1), Lang::En), "0.0\u00A0dBTP", "a negative value that prints as zero takes no minus: never −0.0");
+    same (arg (Arg::value (-0.04, Unit::DbTp, 1, Sign::Always), Lang::En), "0.0\u00A0dBTP", "nor under Always");
+    same (arg (Arg::value (-0.4, Unit::None, 0), Lang::Ru), "0", "ru: −0.4 at no digit is 0");
+    same (arg (Arg::value (-0.0, Unit::None, 0), Lang::En), "0", "negative zero is 0");
+    same (arg (Arg::value (-0.0, Unit::DbTp, 1, Sign::Always), Lang::En), "0.0\u00A0dBTP", "and 0.0 under Always");
+    same (arg (Arg::value (-0.05, Unit::DbTp, 1), Lang::En), MINUS + "0.1\u00A0dBTP", "a negative value that prints as a number keeps its minus");
+    same (arg (Arg::value (0.05, Unit::Db, 1, Sign::Always), Lang::En), "+0.1\u00A0dB", "and a positive one its plus under Always");
     same (arg (Arg::value (6.0, Unit::Percent, 0, Sign::Negative, Bound::AtLeast), Lang::Ru), "≥" + NB + "6" + NB + "%", "ru: at least 6 %");
-    same (arg (Arg::value (-14.0, Unit::Lufs, 0, Sign::Negative, Bound::AtMost), Lang::En), "≤" + NB + MINUS + "14 LUFS",
+    same (arg (Arg::value (-14.0, Unit::Lufs, 0, Sign::Negative, Bound::AtMost), Lang::En), "≤" + NB + MINUS + "14\u00A0LUFS",
           "en: at most −14 LUFS — the bound before the sign");
     same (arg (Arg::value (6.0, Unit::Percent, 0, Sign::Negative, Bound::AtLeast), Lang::Fr), "≥" + NN + "6" + NN + "%", "fr: its narrow spaces");
     same (arg (Arg::value (5.0, Unit::Percent, 0, Sign::Negative, Bound::AtLeast), Lang::Tr), "≥" + NB + "%5", "tr: the bound before the percent sign");
@@ -477,23 +504,23 @@ void theTableFormatsEveryLanguage()
     // Units, in en and ru (and the Latin ones everywhere).
     struct Unit1 { Unit unit; double value; std::uint8_t precision; std::string en, ru; };
     const Unit1 units[] = {
-        { Unit::Db, -6.02, 2, MINUS + "6.02 dB", MINUS + "6,02 дБ" },
-        { Unit::DbTp, -1.0, 1, MINUS + "1.0 dBTP", MINUS + "1,0 dBTP" },
-        { Unit::DbFs, -60.0, 0, MINUS + "60 dBFS", MINUS + "60 dBFS" },
-        { Unit::Lufs, -14.03, 1, MINUS + "14.0 LUFS", MINUS + "14,0 LUFS" },
-        { Unit::Lu, 7.25, 1, "7.3 LU", "7,3 LU" },
-        { Unit::Hz, 44100.0, 0, "44,100 Hz", "44" + NB + "100 Гц" },
-        { Unit::KHz, 44.1, 1, "44.1 kHz", "44,1 кГц" },
-        { Unit::Ms, 5.0, 0, "5 ms", "5 мс" },
-        { Unit::S, 2.5, 1, "2.5 s", "2,5 с" },
-        { Unit::Bpm, 128.0, 0, "128 BPM", "128 BPM" },
+        { Unit::Db, -6.02, 2, MINUS + "6.02\u00A0dB", MINUS + "6,02\u00A0дБ" },
+        { Unit::DbTp, -1.0, 1, MINUS + "1.0\u00A0dBTP", MINUS + "1,0\u00A0dBTP" },
+        { Unit::DbFs, -60.0, 0, MINUS + "60\u00A0dBFS", MINUS + "60\u00A0dBFS" },
+        { Unit::Lufs, -14.03, 1, MINUS + "14.0\u00A0LUFS", MINUS + "14,0\u00A0LUFS" },
+        { Unit::Lu, 7.25, 1, "7.3\u00A0LU", "7,3\u00A0LU" },
+        { Unit::Hz, 44100.0, 0, "44,100\u00A0Hz", "44" + NB + "100\u00A0Гц" },
+        { Unit::KHz, 44.1, 1, "44.1\u00A0kHz", "44,1\u00A0кГц" },
+        { Unit::Ms, 5.0, 0, "5\u00A0ms", "5\u00A0мс" },
+        { Unit::S, 2.5, 1, "2.5\u00A0s", "2,5\u00A0с" },
+        { Unit::Bpm, 128.0, 0, "128\u00A0BPM", "128\u00A0BPM" },
     };
     for (const Unit1& u : units)
     {
         same (arg (Arg::value (u.value, u.unit, u.precision), Lang::En), u.en, "en unit");
         same (arg (Arg::value (u.value, u.unit, u.precision), Lang::Ru), u.ru, "ru unit");
     }
-    same (arg (Arg::value (5.0, Unit::S, 0), Lang::Tr), "5 sn", "tr: seconds are sn");
+    same (arg (Arg::value (5.0, Unit::S, 0), Lang::Tr), "5\u00A0sn", "tr: seconds are sn");
 
     same (arg (Arg::value (5.0, Unit::Ms, 1), Lang::Fr), "5,0" + NN + "ms", "fr: a unit after the narrow no-break space");
 
@@ -544,7 +571,8 @@ void theEnvironmentChangesNoRendering()
 {
     felitronics::test::group ("no rendering depends on the thread's floating-point environment: the same bytes under each");
     const std::vector<std::string> reference = trickyRenderings();
-    same (reference[0], "\xE2\x88\x92" "0%", "PRECONDITION: −5e−324 as a percent at no digit is −0%");
+    same (reference[0], "0%", "PRECONDITION: −5e−324 as a percent at no digit is 0%");
+    ok (reference[reference.size() - 4].find ("\xE2\x88\x92" "1 ") != std::string::npos, "PRECONDITION: and a count of −1 keeps its minus");
     struct Setter { const char* name; bool (*set)() noexcept; };
     const Setter setters[] = {
         { "flush-to-zero", [] () noexcept { return fpenv::setFlushToZero(); } },
@@ -640,8 +668,8 @@ void everyMessageRenders()
 {
     felitronics::test::group ("every message of the catalog, in ru and en; no fallback, no guess");
     const std::string NB = "\xC2\xA0", MINUS = "\xE2\x88\x92";
-    same (render (Fact::of (FactId::Value, Arg::value (-14.03, Unit::Lufs, 1)), Lang::Ru), MINUS + "14,0 LUFS", "ru value");
-    same (render (Fact::of (FactId::Value, Arg::value (-14.03, Unit::Lufs, 1)), Lang::En), MINUS + "14.0 LUFS", "en value");
+    same (render (Fact::of (FactId::Value, Arg::value (-14.03, Unit::Lufs, 1)), Lang::Ru), MINUS + "14,0\u00A0LUFS", "ru value");
+    same (render (Fact::of (FactId::Value, Arg::value (-14.03, Unit::Lufs, 1)), Lang::En), MINUS + "14.0\u00A0LUFS", "en value");
 
     same (render (Fact::of (FactId::LandingPass, Arg::count (3), Arg::count (12)), Lang::Ru), "Посадка · проход 3 из 12", "ru landingPass");
     same (render (Fact::of (FactId::LandingPass, Arg::count (3), Arg::count (12)), Lang::En), "Landing · pass 3 of 12", "en landingPass");
@@ -693,10 +721,10 @@ void everyMessageRenders()
                                Arg::term (text::Term::PlatformWeb));
     const Fact desktop = Fact::of (FactId::RateAboveLimit, Arg::value (384.0, Unit::KHz, 0), Arg::value (192.0, Unit::KHz, 0),
                                    Arg::term (text::Term::PlatformDesktop));
-    same (render (web, Lang::Ru), "Файл — 176,4 кГц. Всё, что выше 96 кГц, — для десктоп-версии.", "ru select: web");
-    same (render (web, Lang::En), "This file is 176.4 kHz. Above 96 kHz is for the desktop version.", "en select: web");
-    same (render (desktop, Lang::Ru), "Файл — 384 кГц. Всё, что выше 192 кГц, движок не принимает.", "ru select: desktop");
-    same (render (desktop, Lang::En), "This file is 384 kHz. The engine takes nothing above 192 kHz.", "en select: desktop");
+    same (render (web, Lang::Ru), "Файл — 176,4\u00A0кГц. Всё, что выше 96\u00A0кГц, — для десктоп-версии.", "ru select: web");
+    same (render (web, Lang::En), "This file is 176.4\u00A0kHz. Above 96\u00A0kHz is for the desktop version.", "en select: web");
+    same (render (desktop, Lang::Ru), "Файл — 384\u00A0кГц. Всё, что выше 192\u00A0кГц, движок не принимает.", "ru select: desktop");
+    same (render (desktop, Lang::En), "This file is 384\u00A0kHz. The engine takes nothing above 192\u00A0kHz.", "en select: desktop");
 
     // No fallback: a language the catalog does not declare renders the message's id, in every language but ru and en.
     bool ids = true;
@@ -896,7 +924,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0x3032c37f22b2a86bull;
+    constexpr std::uint64_t kPinned = 0x73f7b5b855df0434ull;
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");

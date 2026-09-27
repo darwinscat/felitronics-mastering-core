@@ -309,6 +309,23 @@ bool separatorShaped (std::string_view s, const std::string* minus, const std::s
     return plus == nullptr || s.find (*plus) == std::string_view::npos;
 }
 
+// The signs the law fixes (the mastering-core architecture, §6): the Unicode minus, the em dash for a value that is not a
+// number, and a bound as "≥" or "≤" followed by a no-break space — U+00A0, or French's narrow U+202F — so it never wraps
+// away from its number. The plus is the table's to choose.
+bool fixedSign (std::string_view field, std::string_view s) noexcept
+{
+    constexpr std::string_view kNoBreak = "\xC2\xA0", kNarrowNoBreak = "\xE2\x80\xAF";
+    const auto bound = [&] (std::string_view symbol)
+    {
+        return s.starts_with (symbol) && (s.substr (symbol.size()) == kNoBreak || s.substr (symbol.size()) == kNarrowNoBreak);
+    };
+    if (field == "minus") return s == "\xE2\x88\x92";
+    if (field == "absent") return s == "\xE2\x80\x94";
+    if (field == "atLeast") return bound ("\xE2\x89\xA5");
+    if (field == "atMost") return bound ("\xE2\x89\xA4");
+    return true;
+}
+
 void checkNumbers (Checker& c, const toml::Table& row, const std::string& path)
 {
     std::array<const std::string*, kSigns.size()> sign {};
@@ -318,6 +335,18 @@ void checkNumbers (Checker& c, const toml::Table& row, const std::string& path)
             c.report (Fault::Refused, row.find (kSigns[i])->position, join (path, kSigns[i]), "NotASeparator");
     if (sign[0] != nullptr && sign[1] != nullptr && *sign[0] == *sign[1])
         c.report (Fault::Refused, row.find ("group")->position, join (path, "group"), "DecimalIsGroup");
+    // The signs — minus, plus, atLeast, atMost, absent: no digit, and not a separator (an absent "1" would print a NaN as
+    // a number, a minus "," a negative as a fraction); the fixed ones exactly as the law states them.
+    for (std::size_t i = 2; i < kSigns.size(); ++i)
+    {
+        if (sign[i] == nullptr) continue;
+        bool digit = false;
+        for (const char ch : *sign[i]) digit = digit || (ch >= '0' && ch <= '9');
+        if (digit || (sign[0] != nullptr && *sign[i] == *sign[0]) || (sign[1] != nullptr && *sign[i] == *sign[1]))
+            c.report (Fault::Refused, row.find (kSigns[i])->position, join (path, kSigns[i]), "NotASign");
+        if (! fixedSign (kSigns[i], *sign[i]))
+            c.report (Fault::Refused, row.find (kSigns[i])->position, join (path, kSigns[i]), "FixedSign");
+    }
 
     if (const toml::Value* v = row.find ("minimumGrouping"); v == nullptr)
         c.report (Fault::Missing, row.position, join (path, "minimumGrouping"));
@@ -373,8 +402,13 @@ void checkFormat (Checker& c, const toml::Table& root)
             const toml::Table* patterns = requireTable (c, *units, kUnitKeys[u], "units");
             if (patterns == nullptr) continue;
             for (const std::string_view code : kLangCodes)
-                if (const std::string* p = requireString (c, *patterns, code, unitPath); p != nullptr && ! patternShaped (*p))
-                    c.report (Fault::Refused, patterns->find (code)->position, join (unitPath, code), "Pattern");
+                if (const std::string* p = requireString (c, *patterns, code, unitPath); p != nullptr)
+                {
+                    if (! patternShaped (*p)) c.report (Fault::Refused, patterns->find (code)->position, join (unitPath, code), "Pattern");
+                    // A number and its unit never wrap apart: the space between them is a no-break one.
+                    if (p->find (' ') != std::string::npos)
+                        c.report (Fault::Refused, patterns->find (code)->position, join (unitPath, code), "BreakingSpace");
+                }
             unknownKeys (c, *patterns, unitPath, isLang);
         }
         unknownKeys (c, *units, "units", [] (std::string_view key)
