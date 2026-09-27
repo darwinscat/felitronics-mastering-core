@@ -138,27 +138,48 @@ Every number the session decides, measures, renders and reports with lives in tw
 `config/targets.toml`, the targets — the loudness and ceiling a person picks, the physics of the medium that come with
 them, the delivery format — and `config/engine.toml`, every other number: the input's reference and its quiet
 thresholds, the landing's series, the devices' travels and rules, the observations' thresholds, what a master's cost is
-measured with, the progress weights. What each number means and where it came from is written beside it, as a comment.
+measured with (as measured, without a verdict), the progress weights. What each number means and where it came from is
+written beside it, as a comment; a number the owner decided says so. The sound depends on no default of the core's:
+every stage a device writes is named, the limiter's second release included.
 
 - **Compiled in, never read.** felitronics-toml (v0.2.0, resolved like core: a sibling checkout, or the pinned tag)
   compiles both documents into the library as constexpr data (`felitronics_toml_embed`); the session reads no file
   (law 6). A document the parser refuses stops the build at its line and column. `tools/wasm/build.sh` embeds them the
   same way for `fcsession`, with felitronics-toml's own tool run through node.
-- **Read by schema, and the build holds the schema.** `config::load()` (`<felitronics/session/Config.h>`) binds them to
-  typed structs: every key with its type and its range — a range another key states included (a target's loudness on
-  the edit travel, its mono-bass crossover on the knob's) — the checks across keys (a name that is no target, an EQ band
-  two devices share, a minimum above its maximum, the limiter switched off), and every key nobody read reported as
-  unknown. A problem is data: the document, the fault, the key path, the line and the column. In this repository's
-  builds `felitronics_session_config_check` runs the schema over the embedded config right after it is linked, and a
-  problem stops the build as `<file>:<line>:<column>: error: <fault> <key path>`. Three controls plant an unknown key, a
-  wrong type and a value out of range in a copy of the documents and require the check to go red at that spot, after
-  it passed the copy without the plant; the config suite plants twenty more, one of every kind of problem, in-process.
-- **Its version** (`config::version()`) is what a recipe will record: a 64-bit FNV-1a hash of both documents' data in
-  document order — keys, typed values, counts; positions, comments, spacing and inline-or-not are not data. It walks the
-  embedded data and allocates nothing, so the C ABI answers it (`fc_session_config_version`) with no demand to declare.
-  The suite changes every value of both documents, one at a time — through their text and through the embedded data —
-  and requires a version of its own each time; `fcore_session config version`, the source files and the wasm module
-  must all answer the same number (ctest, and CI's artifact check).
+- **Read by schema: form and physics.** `config::load()` (`<felitronics/session/Config.h>`) binds them to typed structs:
+  every key with its type and its domain — where a number stops meaning what its document says: a share outside 0…1, a
+  ramp whose ends would divide by zero, a series that does not ascend, a corner, hop or band an analyzer refuses (the
+  analyzers' own domains, held at the lowest rate the core admits), a value off its knob's step — a range another key
+  states included (a target's loudness on the edit travel, its crossover on the knob's); the checks across keys (a name
+  that is no target, a name given twice, an EQ band two devices share, "no DC" apart from the dcOffset finding's
+  threshold, a ramp law outside its domain, the limiter switched off, a default written out); and every key nobody read
+  reported as unknown. A problem is data: the document, the fault, the key path, the line and the column.
+- **The build holds the schema — every build.** `felitronics_session_config_check`, a host tool compiled from the
+  library's own `src/ConfigSchema.cpp` (so it does not link the library it gates), reads the two documents before
+  `felitronics::session` is built — in a consumer's build and in a build without tests too, under the emulator where the
+  build cross-compiles (node, on the wasm tier) — and a problem stops the build as
+  `<file>:<line>:<column>: error: <fault> <key path>`; its stamp is written only on success, so a failed gate runs
+  again. `tools/wasm/build.sh` runs the same gate before it links `fcsession`. Six controls plant a mistake in a copy of
+  the documents and require the gate to go red at that spot, after it passed the copy without the plant; the config
+  suite plants over sixty more in-process, every input a review found the schema accepting among them.
+- **The owner's decisions are held apart** (`tests/ConfigDecisionsTests.cpp`): every target row field by field and the
+  engine's decided numbers — the landing's series, the high-pass top and slopes and comfort window, the wide-bass
+  warning, the quiet thresholds, the peak clipper's classes, the glue knob, and the rest. The schema would admit another
+  number where the physics allows; this suite says which number was decided, so changing one is a deliberate edit of it.
+  Its controls plant departures the schema admits (a high-pass top of 51 or 60 Hz, a slope of 36, another series,
+  another target number) and require them named.
+- **Its versions** (`config::versions()`): 64-bit FNV-1a hashes of both documents' NORMALISED data — every number as the
+  bits of its correctly rounded double (−0 as +0), every table walked in the byte order of its keys, order kept in
+  arrays alone — so a number's spelling, the order keys are written in, inline-or-not, comments and spacing move
+  nothing. `all` covers every key; `sound` leaves out what cannot change a master (the default target and the main list,
+  the edit's green ranges, observation kinds, curve scales, marks, the comfort window and zones, the crest and the cost,
+  the progress weights, the blind test, the name of the defaults), and it is what a recipe will record. They walk the
+  embedded data and allocate nothing, so the C ABI answers the config's `all` (`fc_session_config_version`) with no
+  demand to declare. The suite changes every value of both documents, one at a time — through their text and through the
+  embedded data — and requires `all` to move each time to a value of its own, and `sound` to move exactly for the values
+  that can change a master; the decisions suite pins `sound` to the name of the defaults, so a sound number changed
+  without new defaults is red. `fcore_session config version|sound-version`, the source files and the wasm module must
+  answer the same numbers (ctest, and CI's artifact check).
 - **Only in words, for now: the config's memory.** `load()` allocates and publishes no demand; nothing in the session
   calls it yet. The `create` that takes the config, frozen with fc_session v1, declares it (law 11d).
 
@@ -287,7 +308,7 @@ build's `compile_commands.json` to plant an unlisted unit and drop a listed one.
 
 `tools/fc_session_abi.h`, implemented by `tools/wasm/fc_session.cpp`. Its version is **0, a draft**: no promise — any
 entry point, argument, code or constant may change without a bump. It carries the ABI version, a session created and
-destroyed through a handle, the config version, the session's refusals passed through as status codes, and the
+destroyed through a handle, the config's version (`all`), the session's refusals passed through as status codes, and the
 poison. It follows
 fc_master's law — the facade is thin: handles instead of pointers, a status per call, checks on the addresses a page
 computed, the poison, and nothing that decides. It is compiled with the session library's own options and definitions,
@@ -308,7 +329,7 @@ above.
 
 `fcsession` is its wasm module (`tools/wasm/build.sh`): the facade and the sources `modules/session/sources.txt` lists
 (the build refuses a `.cpp` under `modules/session/src`, at any depth, that is not listed), linked with
-`--wrap=pthread_create`, with its embedded config — 40 KB of wasm, 12 KB brotli, almost all of it the config's data. `tools/wasm/session-check.mjs` compares every export of the
+`--wrap=pthread_create`, with its embedded config — 42 KB of wasm, 13 KB brotli, almost all of it the config's data. `tools/wasm/session-check.mjs` compares every export of the
 loaded module against the ABI's surface and the runtime's own, runs the surface, and walks the wrap boundary; `build.sh`
 builds a control copy with one undeclared export and requires the check to refuse it.
 
@@ -316,7 +337,7 @@ builds a control copy with one undeclared export and requires the check to refus
 
 `fcore_session version` prints the two releases and the ABI version; `fcore_session config targets|engine` prints a
 document of the embedded config through felitronics-toml's canonical writer (its numbers, without the comments), and
-`fcore_session config version` its version; `fcore_session run <script>` reads a command script (`-` is stdin) into a
+`fcore_session config version|sound-version` its versions; `fcore_session run <script>` reads a command script (`-` is stdin) into a
 fresh session and prints `done <commands>`. There are no commands: a script with none in it —
 empty, or comments and blank lines — answers `done 0`; a script with a command in it, and a session that refuses to be
 created, are refused with exit status 2 and nothing on stdout. It links the library as C++, the way a desktop

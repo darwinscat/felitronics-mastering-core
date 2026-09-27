@@ -74,8 +74,9 @@ keeps no state. What is fixed is the ground it stands on:
 - **its config** (`<felitronics/session/Config.h>`): every number the session decides, measures and reports with, in
   two TOML documents — `modules/session/config/targets.toml` (the targets) and `engine.toml` (everything else) —
   compiled into the library at build time by felitronics-toml and read by schema into typed structs: an unknown key, a
-  wrong type or a value out of range stops the build at its line and column. Its version, a hash of the data, is what a
-  recipe will record. [`SESSION.md`](SESSION.md) has the details;
+  wrong type or a value out of its domain stops every build of the library at its line and column. The owner's decisions
+  in it are pinned by a suite of their own; its sound version, a hash of the normalised data that can change a master, is
+  what a recipe will record. [`SESSION.md`](SESSION.md) has the details;
 
 - **a compiled STATIC target**, the repository's first, whose sources are compiled with PRIVATE flags in one `SHELL:`
   group — no FP contraction, no fast-math, no exceptions, no RTTI. Every translation unit refuses to compile without
@@ -100,7 +101,7 @@ same names, with a version of its own, because a version is a promise about a wh
 (`tools/fc_session_abi.h`, `tools/wasm/fc_session.cpp`) over the session, the surface a shell that cannot link C++
 talks to the library through (a DRAFT, version 0, with no promise: the version, a session created and destroyed
 through a handle, the config version, the session's refusals, the poison; its wasm module `fcsession`, which carries the
-config, is 40 KB, 12 KB brotli) — each with its ABI version
+config, is 42 KB, 13 KB brotli) — each with its ABI version
 and, for the first three, the append-only rule that moves it in its header —
 with their native CLIs (`fcore_master`, `fcore_measure`, `fcore_session`) and suites. `tools/wasm/build.sh` builds the wasm modules against a felitronics-core checkout
 (`FELITRONICS_CORE_DIR`, or the sibling `../felitronics-core`) and records both versions in `BUILD-INFO` beside
