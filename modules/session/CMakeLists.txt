@@ -22,13 +22,20 @@ target_compile_features(felitronics_session PUBLIC cxx_std_20)
 # are PRIVATE: Config.h, the public face, speaks typed structs only.
 # What every target that compiles the library's sources needs for them (the library, and its copies under hostile flags
 # below): the two documents embedded — felitronics_toml_embed writes one generated copy per target — and the analyzers
-# the config feeds, which admit its blocks themselves (their storageFor, called by the schema; header-only).
+# the config feeds, which admit its blocks themselves (their storageFor, called by the schema; header-only). And THE TEXT
+# (<felitronics/session/Text.h>): text/catalog.toml, the messages, and text/format.toml, the one formatting table,
+# embedded the same way for src/Text.cpp.
 set(FELITRONICS_SESSION_CONFIG ${CMAKE_CURRENT_SOURCE_DIR}/config)
+set(FELITRONICS_SESSION_TEXT ${CMAKE_CURRENT_SOURCE_DIR}/text)
 function(felitronics_session_config_inputs target)
     felitronics_toml_embed(${target} INPUT config/targets.toml
                            NAMESPACE felitronics::session::config::embedded NAME targets HEADER embedded/targets.h)
     felitronics_toml_embed(${target} INPUT config/engine.toml
                            NAMESPACE felitronics::session::config::embedded NAME engine HEADER embedded/engine.h)
+    felitronics_toml_embed(${target} INPUT text/catalog.toml
+                           NAMESPACE felitronics::session::text::embedded NAME catalog HEADER embedded/catalog.h)
+    felitronics_toml_embed(${target} INPUT text/format.toml
+                           NAMESPACE felitronics::session::text::embedded NAME format HEADER embedded/format.h)
     target_link_libraries(${target} PRIVATE felitronics::analysis_offline)
 endfunction()
 felitronics_session_config_inputs(felitronics_session)
@@ -144,6 +151,46 @@ add_custom_command(OUTPUT ${FELITRONICS_SESSION_CONFIG_STAMP}
     COMMENT "felitronics::session: the config, read by schema"
     VERBATIM)
 target_sources(felitronics_session PRIVATE ${FELITRONICS_SESSION_CONFIG_STAMP})
+
+# THE TEXT'S GATE — the catalog and the formatting table, checked by EVERY build of the library before it is built, as the
+# config is: a message missing in a declared language, a placeholder that names no argument, a plural message without
+# one of its language's categories, a unit without a pattern — a red build at `<file>:<line>:<column>`, never a message
+# that silently renders as its id. felitronics_session_text_check is a HOST tool compiled from tests/TextCheck.cpp and the
+# library's own src/TextSchema.cpp, with the library's flags and releases; under a cross build it runs through the
+# emulator, or FELITRONICS_SESSION_TEXT_CHECK_EXECUTABLE names a host build of it. The stamp is written only when the
+# check passed, and it depends on the documents, the check's sources and the checker.
+add_executable(felitronics_session_text_check tests/TextCheck.cpp src/TextSchema.cpp)
+target_include_directories(felitronics_session_text_check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
+                                                                  ${CMAKE_CURRENT_SOURCE_DIR}/src)
+target_link_libraries(felitronics_session_text_check PRIVATE felitronics::toml)
+target_compile_features(felitronics_session_text_check PRIVATE cxx_std_20)
+target_compile_options(felitronics_session_text_check PRIVATE ${FELITRONICS_SESSION_COMPILE_OPTIONS})
+target_compile_definitions(felitronics_session_text_check PRIVATE ${FELITRONICS_SESSION_VERSION_DEFINITIONS})
+if(EMSCRIPTEN)
+    target_link_options(felitronics_session_text_check PRIVATE -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1)
+endif()
+if(FELITRONICS_SESSION_TEXT_CHECK_EXECUTABLE)
+    set(FELITRONICS_SESSION_TEXT_GATE "${FELITRONICS_SESSION_TEXT_CHECK_EXECUTABLE}")
+    set(FELITRONICS_SESSION_TEXT_GATE_DEPENDS "${FELITRONICS_SESSION_TEXT_CHECK_EXECUTABLE}")
+elseif(CMAKE_CROSSCOMPILING AND NOT CMAKE_CROSSCOMPILING_EMULATOR)
+    message(FATAL_ERROR "felitronics::session: this cross build cannot run its text gate — build "
+                        "felitronics_session_text_check for the host and set FELITRONICS_SESSION_TEXT_CHECK_EXECUTABLE")
+else()
+    set(FELITRONICS_SESSION_TEXT_GATE felitronics_session_text_check)
+    set(FELITRONICS_SESSION_TEXT_GATE_DEPENDS felitronics_session_text_check)
+endif()
+set(FELITRONICS_SESSION_TEXT_STAMP ${CMAKE_CURRENT_BINARY_DIR}/felitronics_session_text.checked)
+add_custom_command(OUTPUT ${FELITRONICS_SESSION_TEXT_STAMP}
+    COMMAND ${FELITRONICS_SESSION_TEXT_GATE} ${FELITRONICS_SESSION_TEXT}/catalog.toml ${FELITRONICS_SESSION_TEXT}/format.toml
+    COMMAND ${CMAKE_COMMAND} -E touch ${FELITRONICS_SESSION_TEXT_STAMP}
+    DEPENDS ${FELITRONICS_SESSION_TEXT_GATE_DEPENDS}
+            ${FELITRONICS_SESSION_TEXT}/catalog.toml ${FELITRONICS_SESSION_TEXT}/format.toml
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/TextSchema.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/TextSchema.h
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/TextFacts.h ${CMAKE_CURRENT_SOURCE_DIR}/include/felitronics/session/Text.h
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/TextCheck.cpp
+    COMMENT "felitronics::session: the text catalog and the formatting table, checked"
+    VERBATIM)
+target_sources(felitronics_session PRIVATE ${FELITRONICS_SESSION_TEXT_STAMP})
 
 if(FELITRONICS_BUILD_TESTS)
     include(${CMAKE_CURRENT_SOURCE_DIR}/tests/SessionTestTools.cmake)
@@ -263,6 +310,51 @@ if(FELITRONICS_BUILD_TESTS)
     add_test(NAME felitronics_session_config_decisions_tests
              COMMAND felitronics_session_config_decisions_tests ${FELITRONICS_SESSION_CONFIG}/targets.toml
                                                                 ${FELITRONICS_SESSION_CONFIG}/engine.toml)
+
+    # THE TEXT: the renderer and its rules — rounding on the decimal grid, the formatting table in every language, CLDR
+    # plural categories on the printed number, the parser — the gate's controls in-process, the demand of text(), and one
+    # hash of a corpus of renderings pinned, so every row (and the wasm tier) is held to the same bytes.
+    add_executable(felitronics_session_text_tests tests/TextTests.cpp)
+    target_link_libraries(felitronics_session_text_tests PRIVATE
+        felitronics::session felitronics::toml felitronics::test_support)
+    target_include_directories(felitronics_session_text_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_features(felitronics_session_text_tests PRIVATE cxx_std_20)
+    if(EMSCRIPTEN)
+        target_link_options(felitronics_session_text_tests PRIVATE -sNODERAWFS=1)
+    endif()
+    add_test(NAME felitronics_session_text_tests
+             COMMAND felitronics_session_text_tests ${FELITRONICS_SESSION_TEXT}/catalog.toml
+                                                    ${FELITRONICS_SESSION_TEXT}/format.toml)
+
+    # THE TEXT'S GATE, PROVEN ABLE TO FAIL (tests/text-must-fail.cmake): a copy of the two documents passes, then one
+    # mistake planted in it must turn the gate red at the mistake's line and column. Not on the wasm tier: the in-process
+    # controls of the suite above run there.
+    #   name | document | planted: from | to | the problem points at | the line the gate must print
+    if(NOT EMSCRIPTEN)
+        set(FELITRONICS_SESSION_TEXT_CONTROLS
+            "missing_message|catalog|en = \"{value}\"|# en removed|[messages.value]|Missing messages.value.en"
+            "stray_placeholder|catalog|en.other = \"landing: converged after {passes} passes\"|en.other = \"landing: converged after {pass} passes\"|\"landing: converged after {pass}|Refused messages.landingConverged.en.other.{pass} — StrayPlaceholder"
+            "lost_placeholder|catalog|en = \"Landing · pass {pass} of {passes}\"|en = \"Landing · pass of {passes}\"|\"Landing · pass of|Refused messages.landingPass.en.{pass} — LostPlaceholder"
+            "missing_category|catalog|en.one = \"landing: converged after {passes} pass\"|# en.one removed|en.other = \"landing|Missing messages.landingConverged.en.one"
+            "undeclared_language|catalog|en = \"Loudest bass note: {note}\"|en = \"Loudest bass note: {note}\"\nde = \"Tiefster Ton: {note}\"|de =|UnknownKey messages.loudestLowNote.de"
+            "unit_without_pattern|format|tr = \"{n} dBTP\"|# tr removed|[units.dbtp]|Missing units.dbtp.tr")
+        foreach(ctl IN LISTS FELITRONICS_SESSION_TEXT_CONTROLS)
+            string(REPLACE "|" ";" f "${ctl}")
+            list(GET f 0 name)
+            list(GET f 1 doc)
+            list(GET f 2 from)
+            list(GET f 3 to)
+            list(GET f 4 at)
+            list(GET f 5 expect)
+            add_test(NAME felitronics_session_text_control_${name}
+                     COMMAND ${CMAKE_COMMAND}
+                             -DCHECK=$<TARGET_FILE:felitronics_session_text_check>
+                             -DTEXT=${FELITRONICS_SESSION_TEXT}
+                             -DWORK=${CMAKE_CURRENT_BINARY_DIR}/text-controls/${name}
+                             -DDOC=${doc} "-DFROM=${from}" "-DTO=${to}" "-DAT=${at}" "-DEXPECT=${expect}"
+                             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/text-must-fail.cmake)
+        endforeach()
+    endif()
 
     # THE CHECK ITSELF, PROVEN ABLE TO FAIL: a copy of the documents with one mistake planted must turn the check red
     # with that mistake's line, column, fault and key path, and the same copy without the plant must pass
