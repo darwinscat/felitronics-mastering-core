@@ -20,8 +20,9 @@ the table, the manual mode, what the command names, the fields, a load's audio �
 loudness and ceiling, the manual mode, and the devices of the first release — the high-pass, mono bass, the glue,
 saturation, tilt, the limiter's needles, the dither and the vinyl low shelf. Each device's fields are written once, as a
 template over a field's form, and used as the machine's layer (complete), a person's layer (only what was touched) and a
-revert's mask: no string names a field. The machine's layer is placed from the config for the target and the source when
-the first measurement ends, and again on a change of target. A person's device edits are taken only after placement and
+revert's mask: no string names a field. The machine's layer — in this release the config's defaults for the target and
+the source — is placed when the first measurement ends, and again on a change of target after that; until then the
+devices are unplaced (the layer at its types' zeros), and a load unplaces them again. A person's device edits are taken only after placement and
 only in the manual mode, each value checked on its knob's travel and step exactly — the double a shell sends read as the
 decimal it is, on the same grid rule the config's schema holds its own numbers to (now shared, `src/Grid.h`). A change of
 target replaces the target's numbers silently and keeps or resets a person's device edits as asked; switching the manual

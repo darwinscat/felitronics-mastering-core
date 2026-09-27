@@ -5,7 +5,6 @@
 
 #include <felitronics/session/Session.h>
 
-#include "Devices.h"
 #include "FpProbes.h"
 #include "Rules.h"
 
@@ -45,16 +44,16 @@ Created Session::create() noexcept
     }
     // `new`, not make_unique: the constructor is private, and a Session made anywhere but here would be one whose demand
     // nobody published. The vectors it holds are empty and ask for nothing.
+    // The devices stay unplaced until the first measurement ends (src/Driver.h).
     c.session = std::unique_ptr<Session> (new Session);
-    Project& project = c.session->project_;
-    project.target = rules.defaultRow;
-    detail::placeMachine (rules, project.target, 0, project.devices);
+    c.session->project_.target = rules.defaultRow;
     return c;
 }
 
 Session::~Session() = default;
 
 State Session::state() const noexcept { return state_; }
+bool Session::placed() const noexcept { return state_ == State::Measured1 || state_ == State::Measured2; }
 bool Session::mastering() const noexcept { return mastering_; }
 std::uint64_t Session::revision() const noexcept { return revision_; }
 const Project& Session::project() const noexcept { return project_; }

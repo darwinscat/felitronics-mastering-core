@@ -265,7 +265,10 @@ carries one, the dither where the target's bit depth is one it serves, mono bass
 - **The machine's layer** is placed from the config for the target and the source — the ticks from `[stages]`, what
   the target decides (the high-pass's slope and floor, the mono-bass crossover, no needles where the target has no peak
   clipper, the dither at its bit depth, the low shelf's gain, the glue its row names) and each device's own section for
-  the rest; tilt starts flat. The devices are placed so when the first measurement ends, and again on a change of target.
+  the rest; tilt starts flat. In this release it is the config's defaults for the target and the source, not a decision
+  taken from a measurement: mono bass, which `[stages]` leaves off, is off. The devices are placed when the first
+  measurement ends, and again on a change of target after that; before it they are unplaced — every field of the
+  machine's layer at its type's zero, and the state says so. A load unplaces them again.
 - **Every value the machine places is one a person could set**: on its knob's travel and step — which the schema holds
   for every default the config gives, and `felitronics_session_state_tests` for every target and source.
 - **A person's edits** are taken only after that — before it, `NotPlaced` — and only with the manual mode on. Every

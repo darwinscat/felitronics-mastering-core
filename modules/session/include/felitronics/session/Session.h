@@ -114,9 +114,10 @@ public:
     // two cannot drift. REQUESTED bytes: the allocator's own header and alignment are the caller's margin.
     [[nodiscard]] static std::uint64_t createBytes() noexcept;
 
-    // A new session — Empty, at revision 0, on the config's default target, the manual mode off — or a refusal before
-    // anything is allocated: Status::FloatingPointEnvironment, the calling thread's FP environment (see
-    // checkFloatingPointEnvironment), or Status::Config.
+    // A new session — Empty, at revision 0, on the config's default target, the manual mode off, the devices unplaced
+    // (they are placed when the first measurement ends) — or a refusal before anything is allocated:
+    // Status::FloatingPointEnvironment, the calling thread's FP environment (see checkFloatingPointEnvironment), or
+    // Status::Config.
     // An accepted create never gives a null session: under -fno-exceptions a heap that cannot serve createBytes() ends
     // the process (natively) or the module (wasm) inside this call, which is what the demand above keeps a shell clear of.
     [[nodiscard]] static Created create() noexcept;
@@ -172,6 +173,9 @@ private:
     friend struct detail::Inspector;
 
     Session() noexcept = default;
+
+    // Are the devices placed — has the first measurement of this source ended (Measured1, Measured2)?
+    [[nodiscard]] bool placed() const noexcept;
 
     State state_ = State::Empty;
     bool mastering_ = false;
