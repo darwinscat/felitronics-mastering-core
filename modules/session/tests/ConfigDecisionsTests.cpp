@@ -38,7 +38,8 @@ namespace
 std::string g_targetsText, g_engineText;
 
 // THE NAME OF THE DEFAULTS → THE VERSION OF THEIR SOUND. A new set of sound numbers is a new name in engine.toml
-// (`defaults`) and a new line here; an old line stays, for the projects that name it.
+// (`defaults`) and a new line here; the line of defaults a release carries stays, for the projects that name it (before
+// the first release that carries them, a line may be updated in place).
 struct Golden
 {
     std::string_view defaults;
