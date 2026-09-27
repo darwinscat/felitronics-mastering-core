@@ -204,7 +204,10 @@ if(FELITRONICS_BUILD_TESTS)
         set(FELITRONICS_SESSION_CONFIG_CONTROLS
             "unknown_key|engine|releaseMs = 50|releseMs = 50|releseMs|UnknownKey limiter.releseMs"
             "out_of_range|engine|hzMax = 50|hzMax = 500|500|OutOfRange hpf.hzMax"
-            "wrong_type|targets|default = \"allStreaming\"|default = 14|14|WrongType default")
+            "wrong_type|targets|default = \"allStreaming\"|default = 14|14|WrongType default"
+            "crest_hop|engine|hopMs = 100|hopMs = 1|1|OutOfRange crest.hopMs"
+            "geometric_offset|engine|to = -9, law = \"linear\"|to = -9, law = \"geometric\"|\"geometric\"|Refused glue.threshOffset.law"
+            "shaping_above_dither|engine|shapingUpToBits = 16|shapingUpToBits = 24|24|Refused dither.shapingUpToBits")
         foreach(ctl IN LISTS FELITRONICS_SESSION_CONFIG_CONTROLS)
             string(REPLACE "|" ";" f "${ctl}")
             list(GET f 0 name)

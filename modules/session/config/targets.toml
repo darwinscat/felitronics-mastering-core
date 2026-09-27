@@ -35,9 +35,14 @@
 #   album             optional: the album loudness, { lufs, desktopOnly }. Album mastering is a project of several
 #                     tracks; desktopOnly = true marks a number the web shell does not offer.
 #
-# Sources: the platforms' published numbers as of September 2026, checked 2026-09-24. A platform that publishes no
-# ceiling gets −1 dBTP, the AES TD1008 guidance for lossy delivery. AES TD1008 itself: −16 LUFS for a track, −14 LUFS
-# for an album, the ceiling no higher than −1 dBTP.
+# Sources: the platforms' published numbers as of September 2026. A platform that publishes no ceiling gets −1 dBTP, the
+# AES TD1008 guidance for lossy delivery. AES TD1008 itself: −16 LUFS for a track, −14 LUFS for an album, the ceiling no
+# higher than −1 dBTP.
+#
+# EVERY ROW IS AN OWNER DECISION. The schema checks what a row may be — a lufs and a ceiling on the edit's travel and
+# step, a crossover on the mono-bass knob, a floor on the high-pass knob, a slope from its list, a delivery rate from the
+# set (0, 44100, 48000, 88200, 96000, 176400, 192000) — not which one was chosen. An optional flag is written only when it
+# is true; sourceRatePass only on a target that delivers at a rate of its own.
 
 # The target a new session starts with.
 default = "allStreaming"
@@ -84,8 +89,7 @@ horusmusic   = { group = "aggregator", lufs = -14, tp = -1, monoBass = 120, hpfF
 dittomusic   = { group = "aggregator", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
 # A loud CD.
 cd           = { group = "delivery", lufs = -9, tp = -0.3, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 44100, bitDepth = 16, sourceRatePass = true }
-# Bandcamp does not normalise loudness (confirmed by Bandcamp, checked 2026-09-24): a delivery preset, not a platform
-# target.
+# Bandcamp does not normalise loudness (confirmed by Bandcamp): a delivery preset, not a platform target.
 bandcamp     = { group = "delivery", lufs = -10, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
 
 # THE HAND EDIT OF A TARGET'S TWO NUMBERS. A person may change the loudness and the ceiling of the chosen target in
