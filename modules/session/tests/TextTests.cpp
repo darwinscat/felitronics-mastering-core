@@ -21,6 +21,9 @@
 //     category, each language's set reached exactly; and through whole messages in ru and en;
 //   * every message of the catalog rendered in ru and en; a language the catalog does not declare renders the id; an
 //     argument that does not match its declaration renders `{name}`;
+//   * A COMMAND'S REJECTION: every code of the state machine is the fact 100 + its code, a sentence in ru and en, with
+//     the refused field named — the field terms held position by position against src/Devices.h's walk — and real
+//     answers of a real session rendered;
 //   * Text::parse, from_chars under it: signs, separators, limits, and the correctly rounded double;
 //   * MEMORY: size() and write() allocate nothing, text() allocates no more than textBytes() — and a declaration short
 //     by the STL's bookkeeping and one allocation step is caught; a short buffer gets nothing;
@@ -36,9 +39,12 @@
 #include <felitronics/toml/Embedded.h>
 #include <felitronics/toml/Toml.h>
 
+#include "Devices.h"      // the devices' fields in the order the state machine walks them (modules/session/src)
 #include "TextFacts.h"
 #include "TextNumber.h"
 #include "TextSchema.h"
+
+#include <felitronics/session/Session.h>
 
 #include <array>
 #include <bit>
@@ -246,7 +252,7 @@ void theGateRefusesEachMistake()
         { D::Catalog, "desktop.en = \"desktop version\"\n", "desktop.en = \"desktop version\"\nmobile.ru = \"x\"\nmobile.en = \"x\"\n",
           "mobile.ru", F::UnknownKey, "terms.platform.mobile", "" },
         // A wrong type, an empty text, a syntax error.
-        { D::Catalog, "en = \"{value}\"", "en = 5", "5", F::WrongType, "messages.value.en", "" },
+        { D::Catalog, "en = \"{value}\"", "en = 777", "777", F::WrongType, "messages.value.en", "" },
         { D::Catalog, "en = \"{value}\"", "en = \"\"", "\"\"", F::Refused, "messages.value.en", "Empty" },
         { D::Catalog, "languages = [\"ru\", \"en\"]", "languages = [\"ru\", \"en\"", "[terms.platform]", F::Syntax, "", "ExpectedArraySeparator" },
         // THE TABLE: a unit without a pattern, a pattern without its number, a row without a field, a field out of range,
@@ -749,6 +755,140 @@ void everyMessageRenders()
 }
 
 //==============================================================================
+// A COMMAND'S REJECTION
+
+namespace session = felitronics::session;
+
+// The terms of a device's fields, position by position as src/Devices.h walks them: a term exactly where the field's
+// check can refuse it (a knob, the slope, the needles' mode) and none on a tick; none past the last field.
+template <class Mask> bool fieldTermsMatch (session::Device device, std::string& why)
+{
+    bool match = true;
+    std::uint8_t count = 0;
+    session::detail::DeviceOf<Mask>::each (session::detail::Rules {}, [&] (std::uint8_t i, const session::detail::FieldRule& rule)
+    {
+        const bool refusable = rule.kind != session::detail::FieldRule::Kind::Flag;
+        if (detail::deviceFieldTerm (device, i).has_value() != refusable)
+        {
+            match = false;
+            why += " device " + std::to_string ((int) device) + " field " + std::to_string (i);
+        }
+        count = (std::uint8_t) (i + 1);
+    });
+    if (detail::deviceFieldTerm (device, count).has_value()) { match = false; why += " a term past the last field"; }
+    return match;
+}
+
+void everyRejectionIsAFact()
+{
+    felitronics::test::group ("a command's rejection: every code a fact of its own, in ru and en; a refused field named");
+    // THE TABLE, code by code: 100 + the code, a message in both languages, and a field argument exactly for the four
+    // rejections a field makes.
+    bool table = true, spoken = true;
+    std::string misses;
+    const auto last = (std::size_t) session::Rejection::NoJobId;
+    for (std::size_t code = 1; code <= last; ++code)
+    {
+        const auto r = (session::Rejection) code;
+        const std::optional<FactId> id = detail::factOf (r);
+        const detail::FactShape* shape = id ? detail::shapeOf (*id) : nullptr;
+        const bool fieldCode = r == session::Rejection::NotFinite || r == session::Rejection::NotOneOf
+                            || r == session::Rejection::OutOfTravel || r == session::Rejection::OffStep;
+        if (! id || (std::size_t) *id != 100 + code || shape == nullptr || (shape->argCount == 1) != fieldCode
+            || (fieldCode && shape->args[0].group != "field"))
+        {
+            table = false;
+            misses += " " + std::to_string (code);
+            continue;
+        }
+        const Fact f = fieldCode ? Fact::of (*id, Arg::term (text::Term::FieldHpfFq)) : Fact::of (*id);
+        for (const Lang l : { Lang::Ru, Lang::En })
+        {
+            const std::string t = Text::text (f, l);
+            spoken = spoken && t != shape->key && t.find ('{') == std::string::npos && t.size() > 10;
+        }
+    }
+    ok (table, "every Rejection code, 1 to " + std::to_string (last) + ", is the fact 100 + its code, with {field} exactly "
+               "where a field refuses" + (misses.empty() ? "" : " — not:" + misses));
+    ok (spoken, "and every one renders a whole sentence in ru and in en");
+    ok (! detail::factOf (session::Rejection::None) && ! detail::factOf ((session::Rejection) (last + 1)),
+        "None is no rejection, and a code past the last is none this library knows");
+    bool inRange = true;
+    for (const auto& shape : detail::kFacts)
+        inRange = inRange && ((std::size_t) shape.id < 100 || ((std::size_t) shape.id > 100 && (std::size_t) shape.id <= 100 + last));
+    ok (inRange, "no fact in the rejections' range but the rejections, and the phases' and errors' ranges still empty");
+
+    // THE FIELDS, held against the state machine's own walk of them (src/Devices.h).
+    std::string why;
+    const bool fields = fieldTermsMatch<session::HpfFields<session::Mark>> (session::Device::Hpf, why)
+                      & fieldTermsMatch<session::MonoBassFields<session::Mark>> (session::Device::MonoBass, why)
+                      & fieldTermsMatch<session::GlueFields<session::Mark>> (session::Device::Glue, why)
+                      & fieldTermsMatch<session::SaturationFields<session::Mark>> (session::Device::Saturation, why)
+                      & fieldTermsMatch<session::TiltFields<session::Mark>> (session::Device::Tilt, why)
+                      & fieldTermsMatch<session::LimiterFields<session::Mark>> (session::Device::Limiter, why)
+                      & fieldTermsMatch<session::DitherFields<session::Mark>> (session::Device::Dither, why)
+                      & fieldTermsMatch<session::LowShelfFields<session::Mark>> (session::Device::LowShelf, why);
+    ok (fields, "every device: a term exactly for each field a check can refuse, in src/Devices.h's order" + why);
+    ok (detail::targetFieldTerm (0) == text::Term::FieldTargetLufs && detail::targetFieldTerm (1) == text::Term::FieldTargetTp
+            && ! detail::targetFieldTerm (2) && ! detail::targetFieldTerm (session::kNoField),
+        "the target's fields: lufs 0, tp 1, nothing else");
+
+    // REAL ANSWERS from a real session, turned into facts and rendered.
+    auto created = session::Session::create();
+    ok (created.session != nullptr, "PRECONDITION: a session");
+    if (created.session == nullptr) return;
+    session::Session& s = *created.session;
+    struct Real { session::Request request; session::Rejection want; std::string_view ru, en; };
+    session::TargetFields<session::Touched> tooLoud;
+    tooLoud.lufs = 99.0;
+    session::TargetFields<session::Touched> notANumber;
+    notANumber.tp = std::numeric_limits<double>::quiet_NaN();
+    session::HpfFields<session::Touched> hpf;
+    hpf.fq = 30.0;
+    const float nan = std::numeric_limits<float>::quiet_NaN();
+    const float samples[4] = { 0.0f, 0.1f, nan, 0.0f };
+    const float* channels[1] = { samples };
+    const float* three[3] = { samples, samples, samples };
+    const Real reals[] = {
+        { session::command::EditTarget { 1, tooLoud }, session::Rejection::OutOfTravel,
+          "Громкость: значение за пределами хода ручки.", "Loudness: the value is outside the knob's travel." },
+        { session::command::EditTarget { 2, notANumber }, session::Rejection::NotFinite,
+          "Потолок: не число — принимается только конечное значение.", "Ceiling: not a number — only a finite value is taken." },
+        { session::command::SetTarget { 3, "nowhere" }, session::Rejection::UnknownTarget, "Такой цели нет.", "There is no such target." },
+        { session::command::Master { 4 }, session::Rejection::NoSource,
+          "Файл ещё не загружен — сначала загрузите его.", "No file is loaded yet — load one first." },
+        { session::command::Cancel { 5, 1 }, session::Rejection::NoJob,
+          "Отменять нечего: мастер сейчас не делается.", "Nothing to cancel: no master is being made." },
+        { session::command::EditDevice { 6, hpf }, session::Rejection::NoSource,
+          "Файл ещё не загружен — сначала загрузите его.", "No file is loaded yet — load one first." },
+        { session::command::Load { 7, { channels, 1, 4, 48000 }, {} }, session::Rejection::NotFinite,
+          "Звук: не число — принимается только конечное значение.", "Audio: not a number — only a finite value is taken." },
+        { session::command::Load { 8, { three, 3, 4, 48000 }, {} }, session::Rejection::BadChannels,
+          "Движок принимает звук в одном или двух каналах, а в этом файле их другое число.",
+          "The engine takes audio in one or two channels; this file has another number of them." },
+    };
+    for (const Real& r : reals)
+    {
+        const session::Answer answer = s.apply (r.request);
+        const std::optional<Fact> f = Text::rejected (answer, r.request);
+        ok (answer.rejection == r.want && f.has_value(), "PRECONDITION: the session refused with the expected code");
+        if (! f) continue;
+        same (Text::text (*f, Lang::Ru), r.ru, "ru, a real refusal");
+        same (Text::text (*f, Lang::En), r.en, "en, a real refusal");
+    }
+    session::command::SetManual on { 9, true };
+    const session::Answer accepted = s.apply (on);
+    ok (accepted.rejection == session::Rejection::None && ! Text::rejected (accepted, on).has_value(),
+        "an accepted answer is no rejection: no fact");
+    session::Answer odd;
+    odd.rejection = session::Rejection::OffStep;
+    odd.field = 7;
+    const auto unnamed = Text::rejected (odd, session::command::EditTarget { 10, {} });
+    ok (unnamed && Text::text (*unnamed, Lang::En) == "{field}: the value is not on the knob's step.",
+        "a field the tables do not name leaves the argument out, visibly: {field}");
+}
+
+//==============================================================================
 // PARSING
 
 bool bitsEqual (std::optional<double> got, double want)
@@ -904,7 +1044,8 @@ void theCorpusIsTheSameBytesOnEveryRow()
                 f.args[i] = kind == text::ArgKind::Value ? Arg::value (-3.25, Unit::Db, 1, Sign::Always)
                           : kind == text::ArgKind::Count ? Arg::count (21)
                           : kind == text::ArgKind::Midi ? Arg::midi (40)
-                          : kind == text::ArgKind::Term ? Arg::term (text::Term::PlatformDesktop)
+                          : kind == text::ArgKind::Term ? Arg::term (shape.args[i].group == "field" ? text::Term::FieldHpfSlope
+                                                                                                   : text::Term::PlatformDesktop)
                           : Arg::text ("take 3.wav");
             }
             f.argCount = (std::uint8_t) shape.argCount;
@@ -923,7 +1064,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0x39521534e582462full;
+    constexpr std::uint64_t kPinned = 0xa17a7d0a730e1deaull;
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");
@@ -946,6 +1087,7 @@ int main (int argc, char** argv)
     theEnvironmentChangesNoRendering();
     pluralsAreCldrsOnThePrintedNumber();
     everyMessageRenders();
+    everyRejectionIsAFact();
     typedNumbersAreParsed();
     theDemandCoversWhatTextAsksFor();
     theCorpusIsTheSameBytesOnEveryRow();

@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <felitronics/session/Commands.h>
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -78,8 +80,13 @@ enum class Bound : std::uint8_t { Exact, AtLeast, AtMost };
 enum class Plural : std::uint8_t { Zero, One, Two, Few, Many, Other };
 
 // THE FACTS — one id per message of modules/session/text/catalog.toml, whose key Text::key() gives. The numbers are
-// stable: a fact is stored and compared by its id, so an id is never reused for another message. The arguments each fact
-// takes, by name and kind, are src/TextFacts.h's, and the build holds the catalog to them.
+// stable: a fact is stored and compared by its id, so an id is never reused for another message, and each kind of fact
+// has a range of its own:
+//     1 –  99   readings and the landing
+//   100 – 199   a command's rejection: 100 + its Rejection code (Commands.h), one fact per code
+//   200 – 299   the phases of the work          (reserved for the session's progress)
+//   300 – 399   the session's errors            (reserved)
+// The arguments each fact takes, by name and kind, are src/TextFacts.h's, and the build holds the catalog to them.
 enum class FactId : std::uint16_t
 {
     Value = 1,               // a reading alone: {value}
@@ -89,15 +96,55 @@ enum class FactId : std::uint16_t
     LoudestLowNote = 5,      // the loudest note of the low end: {note}
     WideBass = 6,            // the bass is wide (side {side}) — the warning of phase 1
     RateAboveLimit = 7,      // the file's rate {rate} is above what this platform takes, {limit} (select on platform)
-    // The session's own facts — its phases, its commands' refusals, its errors — take the next numbers.
+
+    // A command's rejection, by its code — what was refused and why. The four a field refuses name it: {field}.
+    RejectedFloatingPointEnvironment = 101,
+    RejectedNoSource = 102,
+    RejectedNotPlaced = 103,
+    RejectedNotMeasured = 104,
+    RejectedBusy = 105,
+    RejectedNoJob = 106,
+    RejectedNoMaster = 107,
+    RejectedManualOff = 108,
+    RejectedUnknownTarget = 109,
+    RejectedNotOffered = 110,
+    RejectedUnknownJob = 111,
+    RejectedUnknownMaster = 112,
+    RejectedNoFields = 113,
+    RejectedNotFinite = 114,     // {field}
+    RejectedNotOneOf = 115,      // {field}
+    RejectedOutOfTravel = 116,   // {field}
+    RejectedOffStep = 117,       // {field}
+    RejectedBadChannels = 118,
+    RejectedBadRate = 119,
+    RejectedNoAudio = 120,
+    RejectedTooLong = 121,
+    RejectedNoJobId = 122,
 };
 
 // THE TERMS — words an argument of kind Term names: one value of a group of the catalog's [terms]. Printed as the
-// catalog's word, or chosen on by a select message.
+// catalog's word, or chosen on by a select message. Stable numbers too: a new term takes the next one.
 enum class Term : std::uint16_t
 {
     PlatformWeb = 1,
     PlatformDesktop = 2,
+    // The fields a command's check can refuse (Rejection's NotFinite, NotOneOf, OutOfTravel, OffStep): the target's two
+    // numbers, every device's knob and choice — a tick is never refused — and a load's audio, whose samples can be.
+    FieldTargetLufs = 3,
+    FieldTargetTp = 4,
+    FieldHpfFq = 5,
+    FieldHpfSlope = 6,
+    FieldMonoBassFq = 7,
+    FieldMonoBassWidth = 8,
+    FieldGlueUpToDb = 9,
+    FieldSaturationDrive = 10,
+    FieldSaturationMix = 11,
+    FieldSaturationOutput = 12,
+    FieldTiltDb = 13,
+    FieldLimiterNeedles = 14,
+    FieldLimiterNeedlesDb = 15,
+    FieldLowShelfDb = 16,
+    FieldAudio = 17,
 };
 
 enum class ArgKind : std::uint8_t { None, Value, Count, Term, Midi, UserText };
@@ -186,6 +233,12 @@ struct Text
 
     // A fact's key in the catalog: the id a message renders as where the catalog does not have it.
     [[nodiscard]] static std::string_view key (FactId id) noexcept;
+
+    // THE FACT OF A REJECTION — what a shell shows for a refused command: the rejection's fact (100 + its code), and,
+    // where the rejection is a field's, that field as a Term — read off the request the answer is for: the target's
+    // number (editTarget), the device's knob (editDevice, revertEdits: the request's device and the answer's field), a
+    // load's audio. nullopt for an accepted answer, or a code this library does not know.
+    [[nodiscard]] static std::optional<Fact> rejected (const Answer& answer, const Request& request) noexcept;
 };
 
 } // namespace felitronics::session::text
