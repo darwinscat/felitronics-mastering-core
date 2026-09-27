@@ -148,32 +148,42 @@ every stage a device writes is named, the limiter's second release included.
   same way for `fcsession`, with felitronics-toml's own tool run through node.
 - **Read by schema: form and physics.** `config::load()` (`<felitronics/session/Config.h>`) binds them to typed structs:
   every key with its type and its domain — where a number stops meaning what its document says: a share outside 0…1, a
-  ramp whose ends would divide by zero, a series that does not ascend, a corner, hop or band an analyzer refuses (the
-  analyzers' own domains, held at the lowest rate the core admits), a value off its knob's step — a range another key
-  states included (a target's loudness on the edit travel, its crossover on the knob's); the checks across keys (a name
-  that is no target, a name given twice, an EQ band two devices share, "no DC" apart from the dcOffset finding's
+  ramp whose ends would divide by zero, a series that shrinks, a value off its knob's grid (a whole number of steps from
+  where the travel starts, checked exactly on the decimals as written, across the two documents too) — a range another
+  key states included (a target's loudness on the edit travel, its crossover on the knob's); the checks across keys (a
+  name that is no target, a name given twice, an EQ band two devices share, "no DC" apart from the dcOffset finding's
   threshold, a ramp law outside its domain, the limiter switched off, a default written out); and every key nobody read
-  reported as unknown. A problem is data: the document, the fault, the key path, the line and the column.
+  reported as unknown. What an analyzer admits is the analyzer's to say: the blocks the config feeds one — the low end
+  (both runs), the crest, the sibilance-band bursts — go to that analyzer's own `storageFor()` at the source rates the
+  product accepts (8, 44.1, 48 and 96 kHz; the bursts from 44.1, since a 9 kHz corner needs the room) and are refused
+  whole where it refuses. A problem is data: the document, the fault, the key path, the line and the column.
 - **The build holds the schema — every build.** `felitronics_session_config_check`, a host tool compiled from the
   library's own `src/ConfigSchema.cpp` (so it does not link the library it gates), reads the two documents before
   `felitronics::session` is built — in a consumer's build and in a build without tests too, under the emulator where the
   build cross-compiles (node, on the wasm tier) — and a problem stops the build as
   `<file>:<line>:<column>: error: <fault> <key path>`; its stamp is written only on success, so a failed gate runs
-  again. `tools/wasm/build.sh` runs the same gate before it links `fcsession`. Six controls plant a mistake in a copy of
+  again. The stamp depends on the documents, the schema's sources and the checker — the built-in target, or a supplied
+  `FELITRONICS_SESSION_CONFIG_CHECK_EXECUTABLE` as a file, so a newer checker or another path runs the gate again (a
+  supplied checker is its supplier's to keep built from the same sources). `tools/wasm/build.sh` runs the same gate before it links `fcsession`. Six controls plant a mistake in a copy of
   the documents and require the gate to go red at that spot, after it passed the copy without the plant; the config
   suite plants over sixty more in-process, every input a review found the schema accepting among them.
 - **The owner's decisions are held apart** (`tests/ConfigDecisionsTests.cpp`): every target row field by field and the
-  engine's decided numbers — the landing's series, the high-pass top and slopes and comfort window, the wide-bass
-  warning, the quiet thresholds, the peak clipper's classes, the glue knob, and the rest. The schema would admit another
-  number where the physics allows; this suite says which number was decided, so changing one is a deliberate edit of it.
-  Its controls plant departures the schema admits (a high-pass top of 51 or 60 Hz, a slope of 36, another series,
-  another target number) and require them named.
+  engine's decided numbers — the landing's series, the high-pass knob's travel and slopes and comfort window, the
+  wide-bass warning, the quiet thresholds, the peak clipper's classes, the glue knob and its default of none, the
+  mono-bass block, the delivery rates, and the rest. The schema would admit another number where the physics allows;
+  this suite says which number was decided, so changing one is a deliberate edit of it. Its controls plant departures
+  the schema admits (a high-pass top of 51 or 60 Hz, a slope of 36, another series, another target number or rate, glue
+  by default, a wider mono bass) and require them named.
 - **Its versions** (`config::versions()`): 64-bit FNV-1a hashes of both documents' NORMALISED data — every number as the
   bits of its correctly rounded double (−0 as +0), every table walked in the byte order of its keys, order kept in
-  arrays alone — so a number's spelling, the order keys are written in, inline-or-not, comments and spacing move
-  nothing. `all` covers every key; `sound` leaves out what cannot change a master (the default target and the main list,
-  the edit's green ranges, observation kinds, curve scales, marks, the comfort window and zones, the crest and the cost,
-  the progress weights, the blind test, the name of the defaults), and it is what a recipe will record. They walk the
+  arrays and in the rows of `[targets]` (for `all`: the order a shell lists them in) — so a number's spelling, the order
+  keys are written in, inline-or-not, comments and spacing move nothing. `all` covers every key; `sound` is what can
+  change a master, and keeps a key when it is not sure: it leaves out only what is shown (the main list and the rows'
+  order, the edit's travels, the red and comfort zones, the curve scales, marks and zones), what prints a finding or a
+  warning without switching a device (every observation threshold but `observations.polarity`; the peak clipper's
+  density figures), what is measured after the master (the crest, the cost), development (the progress weights, the
+  blind test), the name of the defaults, and — while no shell offers the de-esser — its block and the bursts only it
+  reads. The default target stays in. `sound` is what a recipe will record. They walk the
   embedded data and allocate nothing, so the C ABI answers the config's `all` (`fc_session_config_version`) with no
   demand to declare. The suite changes every value of both documents, one at a time — through their text and through the
   embedded data — and requires `all` to move each time to a value of its own, and `sound` to move exactly for the values
@@ -182,6 +192,10 @@ every stage a device writes is named, the limiter's second release included.
   answer the same numbers (ctest, and CI's artifact check).
 - **Only in words, for now: the config's memory.** `load()` allocates and publishes no demand; nothing in the session
   calls it yet. The `create` that takes the config, frozen with fc_session v1, declares it (law 11d).
+- **Only in words: the golden pin is append-only.** A new set of sound numbers is a new name in `defaults` and a new
+  line in the decisions suite's table, and the line of an old name is never rewritten — a project names its defaults,
+  and two sets of numbers under one name would reopen it as another master. The suite holds the current name to its
+  sound version; that an old line was not overwritten is held by review alone.
 
 ## The floating-point environment
 
