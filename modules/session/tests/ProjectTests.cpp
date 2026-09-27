@@ -68,7 +68,7 @@ std::string exported (Session& s)
         && out.size == need.bytes, "export allocates exactly its declared bytes, without a terminator");
     return std::string (out.view());
 }
-Answer import (Session& s, const std::string& input)
+Answer import (Session& s, const std::string& input, const char* evidence = nullptr)
 {
     Checked need;
     const command::ImportProject request { 927, input };
@@ -78,6 +78,9 @@ Answer import (Session& s, const std::string& input)
     spent = budget::spend ([&] { answer = s.importProject (request.id, request.bytes); });
     ok (answer.command == request.id && budget::covers (need.bytes, spent), budget::describe (need.bytes, spent));
     if (spent.bytes > 0) ok (! budget::covers (std::uint64_t (spent.bytes - 1), spent), "under-declared import demand turns the harness red");
+    if (evidence)
+        std::printf ("import budget %s: text=%zu declared=%llu actual=%lld ratio=%.4f\n", evidence, input.size(),
+                     static_cast<unsigned long long> (need.bytes), spent.bytes, double (need.bytes) / double (spent.bytes));
     return answer;
 }
 void refused (Session& s, const std::string& input, Rejection code, std::string_view marker = {})
@@ -215,7 +218,7 @@ void roundTrip()
         "section names are the config's names");
     auto restored = fresh();
     const auto before = restored->revision();
-    ok (import (*restored, saved).rejection == Rejection::None && restored->revision() == before + 1, "import commits once");
+    ok (import (*restored, saved, "realistic").rejection == Rejection::None && restored->revision() == before + 1, "import commits once");
     ok (exported (*restored) == saved, "export import export is byte-identical");
     auto dither = fresh();
     (void) dither->apply (command::SetTarget { 2, "cd", OnEdits::Reset });
@@ -271,13 +274,13 @@ void refusals()
     refused (*s, header() + "[target]\n", Rejection::ProjectMissing);
     refused (*s, project() + "\n[hpf\n", Rejection::ProjectSyntax);
     refused (*s, project() + "\n[hpf]\nfq.hand = 36\nfq.hand = 38\n", Rejection::ProjectSyntax);
-    refused (*s, std::string (kMaxProjectText + 1, 'x'), Rejection::ProjectTooLarge);
+    refused (*s, std::string (felitronics::toml::kMaxDocument + 1, 'x'), Rejection::ProjectSyntax);
     refused (*s, project (false) + "\n[hpf]\nfq.hand = 36\n", Rejection::ManualOff, "36");
     refused (*s, project() + "\n[lowShelf]\ndb.hand = 1\n", Rejection::NotOffered, "1\n");
     refused (*s, project() + "\n[target.lufs]\nmachine = -12\n", Rejection::ProjectUnknownKey, "machine");
     refused (*s, project (false) + "\n[hpf]\nfq.machine = 36\n\n[tilt]\ndb.hand = 1\n", Rejection::ManualOff, "1\n");
-    auto limit = project(); limit += '#' + std::string (kMaxProjectText - limit.size() - 1, 'x');
-    ok (import (*s, limit).rejection == Rejection::None, "the stated text limit is inclusive");
+    auto limit = project(); limit += '#' + std::string (felitronics::toml::kMaxDocument - limit.size() - 1, 'x');
+    ok (import (*s, limit).rejection == Rejection::None, "a project at the library text limit is accepted beyond the former 16 KiB cap");
     // Positions count Unicode characters; the prefix comment has a multibyte value.
     refused (*s, project() + "\n[hpf]\n\"fq\" = { hand = \"\xC3\xA9\", nope = 1 }\n", Rejection::ProjectType, "\"\xC3\xA9\"");
 }
@@ -401,15 +404,15 @@ void slicing()
 void demandsAndOrder()
 {
     auto empty = Session::create();
-    refused (*empty.session, std::string (kMaxProjectText + 1, 'x'), Rejection::NoSource);
+    refused (*empty.session, std::string (felitronics::toml::kMaxDocument + 1, 'x'), Rejection::NoSource);
     auto loaded = fresh (0);
-    refused (*loaded, std::string (kMaxProjectText + 1, 'x'), Rejection::NotPlaced);
+    refused (*loaded, std::string (felitronics::toml::kMaxDocument + 1, 'x'), Rejection::NotPlaced);
     ok (empty.session->exportProject().rejection == Rejection::NoSource
         && loaded->exportProject().rejection == Rejection::NotPlaced, "unplaced projects cannot masquerade as decisions");
     auto s = fresh();
     namespace fpenv = felitronics::session::testing;
     const auto env = fpenv::saveFpEnvironment();
-    const auto input = std::string (kMaxProjectText + 1, 'x');
+    const auto input = std::string (felitronics::toml::kMaxDocument + 1, 'x');
     if (fpenv::setRounding (fpenv::kRoundUpward))
     {
         const auto checked = s->check (command::ImportProject { 1, input });
@@ -420,21 +423,24 @@ void demandsAndOrder()
             && answer.rejection == checked.rejection && exported.rejection == checked.rejection, "FP entry precedes size and serialization");
     }
     else fpenv::restoreFpEnvironment (env);
-    // Hostile shapes exercise parser growth, partial failures, schema report growth, and debug STL proxies.
-    std::vector<std::string> hostile { "", "x = [1, 2, 3]", "x = { a = { b = { c = 1 } } }", "x = \"" + std::string (8000, 'a') + "\"" };
-    std::string keys, tables, array = "x = [";
-    for (unsigned i = 0; i < 600; ++i)
-    {
-        keys += "unknown" + std::to_string (i) + " = 1\n";
-        tables += "[t" + std::to_string (i) + ".x]\na = 1\n";
-        array += "{ x = 1 },";
-    }
-    array += ']'; hostile.push_back (keys); hostile.push_back (tables); hostile.push_back (array);
+    // The session law measures the whole import, including schema refusals and owned results.
+    // Parser/container allocation laws are tested by felitronics-toml.
+    std::vector<std::string> hostile {
+        "", header() + "[target]\n", project() + "[hpf]\nfq.hand = 32.5\n",
+        project() + "[limiter]\nneedles.hand = \"" + std::string (8000, 'a') + "\"\n",
+        project() + "[hpf]\nfq.hand = \"bad\"\n", project() + "[hpf\n"
+    };
+    std::string largest = project();
+    for (unsigned i = 0; i < 8192; ++i)
+        largest += "[unknown" + std::to_string (i) + ".author]\nvalue = 1\n";
+    largest += '#' + std::string (felitronics::toml::kMaxDocument - largest.size() - 1, 'x');
+    hostile.push_back (largest);
     for (const auto& inputText : hostile)
     {
         const auto before = json (s->snapshot().view());
-        ok (import (*s, inputText).rejection != Rejection::None && json (s->snapshot().view()) == before,
-            "hostile input is covered by the declared cumulative allocation bound and changes nothing");
+        ok (import (*s, inputText, inputText.size() == largest.size() ? "largest-adversarial" : nullptr).rejection
+                != Rejection::None && json (s->snapshot().view()) == before,
+            "hostile project import is covered by its declared demand and changes nothing");
     }
 }
 }
