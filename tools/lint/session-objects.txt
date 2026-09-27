@@ -42,6 +42,7 @@ writable   coff    ^_Avx2WmemEnabledWeakValue$      the STL's own dispatch flag 
 
 # --- the sanitizer row: the instrumentation's runtime and the metadata it plants
 undefined  san     ^_*(asan|ubsan|lsan|sanitizer)_  ASan / UBSan / LSan runtime entry points
+undefined  san     ^__(start|stop)_asan_globals$    the bounds of ASan's globals section, defined by the linker (clang instruments ELF globals this way)
 writable   san     ^_*(asan|ubsan|lsan|sanitizer)   ASan's registration flag and metadata
 
 # --- the C boundary on the wasm tier bounds a page's pointers by the heap's size
