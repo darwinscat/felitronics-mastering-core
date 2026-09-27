@@ -29,17 +29,18 @@ space; and no key is one nothing reads. A problem is a red build at `<file>:<lin
 English anywhere: a message the catalog does not have in a language renders as its id. Eight controls plant mistakes in
 a copy and require the gate red at the spot; the suite plants forty-six more in-process.
 
-**Numbers by rules of its own**, in integer arithmetic — no libm, no printf, no locale: the exact value of the double
-rounded to the decimal grid, halves away from zero (0.125 → 0.13, 2.5 → 3, and 1.005 → 1.00 because its double lies
-below the half), checked against an independent oracle over 22 000 values; the sign is the printed number's — a value
-that prints as zero takes none under every Sign ("0.0", never "−0.0") — and is read from its bits, so no rendering
-depends on the thread's floating-point environment (held under flush-to-zero, denormals-are-zero and every rounding
-mode); CLDR 48's plural categories for all twelve languages, selected on the number as printed ("1.0" is not "one" in
-English) and pinned against ICU 78's answers; `Text::parse` reads a typed number with `std::from_chars` and one
-correctly rounded division, never `strtod`, refuses a grouping separator rather than guess (a German "12.345" is not
-twelve), and asks for the default floating-point environment first. `felitronics_session_text_tests` pins the twelve
-rows, every message in both languages, the memory demand through the allocation counter, and one FNV-1a hash of a corpus
-of renderings that every native row and the wasm tier must reproduce byte for byte.
+**Numbers by rules of its own** — no libm, no printf, no locale, no floating-point arithmetic: a double is read as its
+shortest round-trip decimal (`std::to_chars`) and that decimal rounded to the grid, halves away from zero, so the number
+a person wrote rounds as they would round it (1.005 → 1.01, −14.05 → −14.1, 0.125 → 0.13, 2.5 → 3), checked against an
+independent oracle over 24 000 decimals; the sign is the printed number's — a value that prints as zero takes none under
+every Sign ("0.0", never "−0.0") — and is read from its bits, so no rendering depends on the thread's floating-point
+environment (held under flush-to-zero, denormals-are-zero and every rounding mode); CLDR 48's plural categories for all
+twelve languages, selected on the number as printed ("1.0" is not "one" in English) and pinned against ICU 78's answers;
+`Text::parse` reads a typed number with `std::from_chars` and one correctly rounded division, never `strtod`, refuses a
+grouping separator rather than guess (a German "12.345" is not twelve), and asks for the default floating-point
+environment first. `felitronics_session_text_tests` pins the twelve rows, every message in both languages, the memory
+demand through the allocation counter, and one FNV-1a hash of a corpus of renderings that every native row and the wasm
+tier must reproduce byte for byte.
 
 The session-laws lint names the two documents as data, admits `Text.h` and, in `src/Text.cpp` alone, the two headers the
 build generates from them; the new units are det-math entry points; `tests/HeaderHygiene.cpp` compiles `Text.h`.

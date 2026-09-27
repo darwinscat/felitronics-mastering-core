@@ -11,8 +11,9 @@
 // mismatched argument is the one a plural or select chooses by — and a message the catalog does not have prints its id,
 // never another language's.
 //
-// No floating-point operation decides what is printed: the digits are integer arithmetic (src/TextNumber.cpp) and the
-// signs are read from the bits, so the thread's floating-point environment cannot change a rendering. Text::parse does
+// No floating-point operation decides what is printed: the digits are std::to_chars's shortest decimal rounded in
+// characters and integers (src/TextNumber.cpp) and the signs are read from the bits, so the thread's floating-point
+// environment cannot change a rendering. Text::parse does
 // divide, and asks for the default environment first.
 
 #include "BuildGuards.h"

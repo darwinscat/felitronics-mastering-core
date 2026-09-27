@@ -35,14 +35,18 @@
 // its id.
 //
 // NUMBERS ARE FORMATTED BY RULES OF ITS OWN, stated here and tested: no locale, no printf, no JavaScript semantics.
-//   * Rounding: the EXACT value of the double is rounded to the decimal grid of `precision` fraction digits — to the
-//     nearest multiple of 10^−precision, a value exactly halfway rounded away from zero. 0.125 → 0.13 and 2.5 → 3 are
-//     exact halves; 1.005 → 1.00 is not, because the double nearest 1.005 is 1.00499999999999989…
+//   * Rounding: the double is read as its SHORTEST ROUND-TRIP DECIMAL — the fewest significant digits that read back as
+//     the same double (std::to_chars's shortest form: specified exactly by the standard, the same on every standard
+//     library, no locale) — and that decimal is rounded to the grid of `precision` fraction digits, to the nearest
+//     multiple of 10^−precision, a decimal exactly halfway rounded away from zero. So the number a person wrote rounds
+//     as they would round it: 1.005 → 1.01 and 2.675 → 2.68 (their doubles are 1.00499999999999989… and
+//     2.67499999999999982…), −14.05 → −14.1, 0.125 → 0.13, 2.5 → 3; 1e300 prints a one and three hundred zeros. The
+//     rounding is on the decimal's digits, in characters and integers: no floating-point arithmetic takes part.
 //   * The sign is the printed number's: a negative value takes the minus, a positive one the plus under Sign::Always —
 //     and a value whose digits print as zero takes neither, under every Sign: −0.04 at one digit is "0.0", never
-//     "−0.0", which a musician reads as a bug; either zero is "0". The sign is read from the double's bits, as the digits
-//     are computed in integers: no floating-point operation decides a rendering, so the calling thread's
-//     floating-point environment cannot change one.
+//     "−0.0", which a musician reads as a bug; either zero is "0". The sign is read from the double's bits, and the digits
+//     come from std::to_chars and integer steps: no floating-point operation decides a rendering, so the calling
+//     thread's floating-point environment cannot change one.
 //   * Plural categories are CLDR's, selected on the number AS PRINTED: "1.0" is not "one" in English, "1" is. The
 //     formatter and the selector are one component.
 //   * A value that is not finite prints the language's absent sign ("—") alone: no sign, no bound, no unit.

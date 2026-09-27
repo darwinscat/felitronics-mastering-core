@@ -42,7 +42,8 @@ desktop.en = "desktop version"
 ru = "{value}"
 en = "{value}"
 
-# The landing's progress: the pass being rendered, and how many the series has.
+# The landing's progress: the pass being rendered, and how many the series has. A line of the geek's journal, not of
+# the report a musician reads.
 [messages.landingPass]
 ru = "Посадка · проход {pass} из {passes}"
 en = "Landing · pass {pass} of {passes}"
@@ -50,10 +51,10 @@ en = "Landing · pass {pass} of {passes}"
 # The landing converged.
 [messages.landingConverged]
 plural = "passes"
-ru.one = "посадка: сошлось за {passes} проход"
-ru.few = "посадка: сошлось за {passes} прохода"
-ru.many = "посадка: сошлось за {passes} проходов"
-ru.other = "посадка: сошлось за {passes} прохода"
+ru.one = "посадка сошлась за {passes} проход"
+ru.few = "посадка сошлась за {passes} прохода"
+ru.many = "посадка сошлась за {passes} проходов"
+ru.other = "посадка сошлась за {passes} прохода"
 en.one = "landing: converged after {passes} pass"
 en.other = "landing: converged after {passes} passes"
 
@@ -70,7 +71,7 @@ en.other = "repeat consistency: {agreed} of {pairs} pairs"
 
 # The loudest note of the low end, as a MIDI number the table names.
 [messages.loudestLowNote]
-ru = "Громчайшая нота низа: {note}"
+ru = "Самая громкая нота баса: {note}"
 en = "Loudest bass note: {note}"
 
 # Phase 1's warning of a wide bass: its side share. The owner's wording.

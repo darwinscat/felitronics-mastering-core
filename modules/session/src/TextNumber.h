@@ -4,8 +4,9 @@
 #pragma once
 
 // THE NUMBERS OF THE TEXT (internal to modules/session; <felitronics/session/Text.h> states the rules): a double or an
-// integer turned into its decimal digits, exactly, by integer arithmetic alone — no libm, no printf, no locale, so every
-// row prints the same digits; the CLDR plural category of those digits; and what a person typed read back as a number.
+// integer turned into its decimal digits — a double through its shortest round-trip decimal (std::to_chars), rounded on
+// that decimal's digits; no libm, no printf, no locale, no floating-point arithmetic, so every row prints the same
+// digits; the CLDR plural category of those digits; and what a person typed read back as a number.
 // Where the separators, signs and units go is the formatting table's (src/Text.cpp reads it); this file only counts.
 
 #include <felitronics/session/Text.h>
@@ -23,7 +24,7 @@ namespace felitronics::session::text::detail
 // one — and no leading zero) followed by exactly `precision` fraction digits.
 struct Digits
 {
-    // The largest double is 309 integer digits; nine fraction digits and room to spare.
+    // The largest double is 309 integer digits; nine fraction digits, a carry and room to spare.
     static constexpr std::size_t kCapacity = 336;
     std::array<char, kCapacity> buffer {};
     std::size_t integerDigits = 0;
@@ -38,9 +39,10 @@ struct Digits
 // The largest precision a Value takes.
 inline constexpr unsigned kMaxPrecision = 9;
 
-// |value| on the decimal grid of `precision` fraction digits: the exact value of the double rounded to the nearest
-// multiple of 10^−precision, a value exactly halfway rounded away from zero. False, and nothing written, for a value that
-// is not finite or a precision above kMaxPrecision.
+// |value| on the decimal grid of `precision` fraction digits: the double's shortest round-trip decimal (the fewest
+// significant digits that read back as the same double) rounded to the nearest multiple of 10^−precision, a decimal
+// exactly halfway rounded away from zero — so 1.005 is 1.01. False, and nothing written, for a value that is not finite
+// or a precision above kMaxPrecision.
 [[nodiscard]] bool gridDigits (double value, unsigned precision, Digits& out) noexcept;
 
 // The digits of an integer (no fraction digits).
