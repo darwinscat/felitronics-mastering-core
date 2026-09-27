@@ -3,18 +3,22 @@
 #
 # THE COMPILE-LINE GATE'S CONTROLS (compile-line-gate.cmake). Run by ctest:
 #   cmake -DGATE=<gate> -DCOMPILE_COMMANDS=<this build's compile_commands.json> -DFLAGS_FILE=<build-flags.txt>
-#         -DTARGETS=<dirs> -DSOURCES=<paths> -DPERSOURCE=<source> -DPERSOURCE_TARGET=<dir> -DSCRATCH=<dir>
+#         -DTARGETS=<dirs> -DSOURCES=<paths> -DPERSOURCE=<source> -DPERSOURCE_TARGET=<dir>
+#         -DPERINCLUDE=<source> -DPERINCLUDE_TARGET=<dir> -DPERINCLUDE_HEADER=<header> -DSCRATCH=<dir>
 #         -P compile-line-controls.cmake
 #
-# 1. A REAL PER-SOURCE OVERRIDE: CMake itself wrote PERSOURCE's compile command (fs_cl_persource, a copy of a library unit
-#    compiled with the library's options and a `-ffp-model=fast` source property — configured, never built). Red, naming it.
-# 2-8. THIS BUILD'S OWN compile_commands.json, edited: a licence after the group (-fno-honor-nans), the group removed from
-#    one line, a forced include, a unit compiled into the target that is not a listed source, a listed source that
-#    nothing compiles — each red, naming what it planted; and the same file with every `output` field removed (CMake
-#    3.22's Ninja and Makefile generators write none) and with `command` rewritten as an `arguments` array — each green,
-#    holding exactly as many compile commands as the file as written.
+# 1, 2. REAL PER-SOURCE OPTIONS: CMake itself wrote the compile commands of two copies of a library unit, compiled with
+#    the library's options and a source property each — `-ffp-model=fast` (fs_cl_persource), and a JOINED forced include,
+#    `-include<absolute path>` (fs_cl_perinclude); configured, never built. Each red, naming its option.
+# 3-.. THIS BUILD'S OWN compile_commands.json, edited: a licence after the group (-fno-honor-nans), the group removed from
+#    one line, a separated forced include, every other joined spelling of a forced include, pass-through, plugin or flag
+#    file, a unit compiled into the target that is not a listed source, a listed source that nothing compiles — each red,
+#    naming what it planted; and the same file with every `output` field removed (CMake 3.22's Ninja and Makefile
+#    generators write none) and with `command` rewritten as an `arguments` array — each green, holding exactly as many
+#    compile commands as the file as written.
 cmake_minimum_required(VERSION 3.22)
-foreach(var GATE COMPILE_COMMANDS FLAGS_FILE TARGETS SOURCES PERSOURCE PERSOURCE_TARGET SCRATCH)
+foreach(var GATE COMPILE_COMMANDS FLAGS_FILE TARGETS SOURCES PERSOURCE PERSOURCE_TARGET PERINCLUDE PERINCLUDE_TARGET
+            PERINCLUDE_HEADER SCRATCH)
     if(NOT DEFINED ${var} OR "${${var}}" STREQUAL "")
         message(FATAL_ERROR "compile-line-controls.cmake: ${var} is not set")
     endif()
@@ -76,8 +80,10 @@ if(NOT out MATCHES "compile line: ([0-9]+) compile command")
 endif()
 set(real_count ${CMAKE_MATCH_1})
 
-# 1: the real per-source override
+# 1, 2: the real per-source options
 expect_red("per-source -ffp-model=fast" "${COMPILE_COMMANDS}" "${PERSOURCE_TARGET}" "${PERSOURCE}" "-ffp-model=fast")
+expect_red("per-source joined -include<path>" "${COMPILE_COMMANDS}" "${PERINCLUDE_TARGET}" "${PERINCLUDE}"
+           "`-include${PERINCLUDE_HEADER}`")
 
 # The edits are made on the entries that build into TARGETS alone — the rest of the file is other targets', and editing
 # a few hundred entries of JSON one call at a time is slow for nothing. That excerpt must itself pass with the same count.
@@ -160,6 +166,23 @@ string(JSON j4 SET "${json}" ${victim} command "${q}")
 planted(forced_include "${j4}")
 expect_red("a forced include" "${PLANTED}" "${TARGETS}" "${SOURCES}" "`-include`")
 
+# ...and every joined spelling a driver accepts, of a forced include, a pass-through, a plugin or a flag file
+set(joined_spellings -imacros/planted/macros.h --include=/planted/forced.h --imacros=/planted/macros.h
+                     -Wp,-include,/planted/forced.h -Xclang=-ffast-math -Xpreprocessor -Xarch_arm64 -mllvm=-x
+                     /FIforced.h -FIforced.h /Yuforced.h /clang:-ffast-math -fplugin=/planted/p.so
+                     -fpass-plugin=/planted/p.so -specs=/planted/s.specs --specs=/planted/s.specs
+                     --config=/planted/c.cfg -B/planted/bin)
+set(n_joined 0)
+foreach(spelling IN LISTS joined_spellings)
+    string(REPLACE " -o " " ${spelling} -o " cmdj "${victim_cmd}")
+    json_string("${cmdj}" q)
+    string(JSON jj SET "${json}" ${victim} command "${q}")
+    string(MAKE_C_IDENTIFIER "${spelling}" jname)
+    planted(joined_${jname} "${jj}")
+    expect_red("${spelling}" "${PLANTED}" "${TARGETS}" "${SOURCES}" "`${spelling}`")
+    math(EXPR n_joined "${n_joined} + 1")
+endforeach()
+
 # 5: a unit compiled into the target that is not a listed source
 get_filename_component(vdir "${victim_file}" DIRECTORY)
 set(planted_file "${vdir}/PlantedUnit.cpp")
@@ -209,4 +232,4 @@ planted(arguments "${j8}")
 expect_green("arguments arrays" "${PLANTED}" "${TARGETS}" "${SOURCES}" ${real_count})
 
 file(REMOVE_RECURSE "${SCRATCH}")
-message(STATUS "compile-line gate controls: 6 refused as they must be, 3 correct variants passed")
+message(STATUS "compile-line gate controls: ${n_joined} joined spellings and 7 other plants refused as they must be, 3 correct variants passed")

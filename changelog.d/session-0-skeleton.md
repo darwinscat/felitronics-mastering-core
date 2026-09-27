@@ -13,13 +13,13 @@ time. Every translation unit — the library's and its C boundary's — includes
 exceptions, RTTI, fast-math, `FLT_EVAL_METHOD` other than 0 and, on MSVC, `/fp:contract`. The compile line is read back
 from `compile_commands.json` — this build's, and a consumer's that states `-ffp-contract=off` first: the library's group
 must be the last word on floating point, exceptions and RTTI (a per-source `-ffp-model=fast` or `-fno-honor-nans` after
-it is red), with no forced include or pass-through, entries matched by file and read with or without CMake's `output`
-field (skipped on MSVC, whose guards hold it from inside each unit). The library's sources are also compiled with
-`-ffp-contract=fast` and with fast-math licences ahead of its own options and must answer IEEE-754 anyway — the targets
-that carry those positive controls are built optimised, so a build with no configuration is green for the right
-reason; build controls compile `try`, `throw`, `typeid`, `dynamic_cast` and appended `-ffast-math` / `-fexceptions` /
-`-frtti` and require the build to fail on each. Consumers link it like any other module:
-`target_link_libraries(app PRIVATE felitronics::session)`.
+it is red), with no forced include, pass-through, plugin or flag file in any spelling, separated or joined, entries
+matched by file and read with or without CMake's `output` field (skipped on MSVC, whose guards hold it from inside each
+unit). The library's sources are also compiled with `-ffp-contract=fast` and with fast-math licences ahead of its own
+options and must answer IEEE-754 anyway — the targets that carry those positive controls are built optimised, so a build
+with no configuration is green for the right reason; build controls compile `try`, `throw`, `typeid`, `dynamic_cast` and
+appended `-ffast-math` / `-fexceptions` / `-frtti` and require the build to fail on each. Consumers link it like any
+other module: `target_link_libraries(app PRIVATE felitronics::session)`.
 
 **What the flags do not reach, stated rather than checked**: header-inline code the library shares with the program
 (`std::` templates, core's header functions), of which the linker keeps one copy. A program that links

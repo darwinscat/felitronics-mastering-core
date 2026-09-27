@@ -309,10 +309,10 @@ if(FELITRONICS_BUILD_TESTS)
                          -DFLAGS_FILE=${CMAKE_CURRENT_SOURCE_DIR}/build-flags.txt
                          "-DTARGETS=${FELITRONICS_SESSION_LINE_TARGETS}" "-DSOURCES=${FELITRONICS_SESSION_LINE_SOURCES}"
                          -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile-line-gate.cmake)
-        # ITS CONTROLS (tests/compile-line-controls.cmake). One is real: a copy of a library unit, compiled with the
-        # library's options and a per-source `-ffp-model=fast` — the property on a COPY, because a source property is the
-        # directory's and would reach the library's own unit — configured into this build's compile commands and never
-        # built. The others edit this build's own compile_commands.json.
+        # ITS CONTROLS (tests/compile-line-controls.cmake). Two are real: copies of a library unit, compiled with the
+        # library's options and a per-source `-ffp-model=fast`, or a joined `-include<path>` — the property on a COPY,
+        # because a source property is the directory's and would reach the library's own unit — configured into this
+        # build's compile commands and never built. The others edit this build's own compile_commands.json.
         set(FELITRONICS_SESSION_PERSOURCE ${CMAKE_CURRENT_BINARY_DIR}/compile-line-control/PerSourceOverride.cpp)
         configure_file(src/BuildContract.cpp ${FELITRONICS_SESSION_PERSOURCE} COPYONLY)
         add_library(fs_cl_persource OBJECT EXCLUDE_FROM_ALL ${FELITRONICS_SESSION_PERSOURCE})
@@ -321,12 +321,28 @@ if(FELITRONICS_BUILD_TESTS)
         target_compile_definitions(fs_cl_persource PRIVATE ${FELITRONICS_SESSION_VERSION_DEFINITIONS})
         target_compile_options(fs_cl_persource PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
         set_source_files_properties(${FELITRONICS_SESSION_PERSOURCE} PROPERTIES COMPILE_OPTIONS -ffp-model=fast)
+        # ...and a second copy with a JOINED forced include as its source property, `-include<absolute path>` — the
+        # spelling a separated-only match missed. The header says what such a header could do; nothing compiles it.
+        set(FELITRONICS_SESSION_PERINCLUDE ${CMAKE_CURRENT_BINARY_DIR}/compile-line-control/PerSourceInclude.cpp)
+        set(FELITRONICS_SESSION_PERINCLUDE_HEADER ${CMAKE_CURRENT_BINARY_DIR}/compile-line-control/forced.h)
+        configure_file(src/BuildContract.cpp ${FELITRONICS_SESSION_PERINCLUDE} COPYONLY)
+        file(CONFIGURE OUTPUT ${FELITRONICS_SESSION_PERINCLUDE_HEADER}
+             CONTENT "// a forced include can switch contraction on for the whole unit, past every flag\n#pragma clang fp contract(fast)\n")
+        add_library(fs_cl_perinclude OBJECT EXCLUDE_FROM_ALL ${FELITRONICS_SESSION_PERINCLUDE})
+        target_include_directories(fs_cl_perinclude PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        target_compile_features(fs_cl_perinclude PRIVATE cxx_std_20)
+        target_compile_definitions(fs_cl_perinclude PRIVATE ${FELITRONICS_SESSION_VERSION_DEFINITIONS})
+        target_compile_options(fs_cl_perinclude PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
+        set_source_files_properties(${FELITRONICS_SESSION_PERINCLUDE} PROPERTIES
+                                    COMPILE_OPTIONS "-include${FELITRONICS_SESSION_PERINCLUDE_HEADER}")
         add_test(NAME felitronics_session_compile_line_controls
                  COMMAND ${CMAKE_COMMAND} -DGATE=${CMAKE_CURRENT_SOURCE_DIR}/tests/compile-line-gate.cmake
                          -DCOMPILE_COMMANDS=${CMAKE_BINARY_DIR}/compile_commands.json
                          -DFLAGS_FILE=${CMAKE_CURRENT_SOURCE_DIR}/build-flags.txt
                          "-DTARGETS=${FELITRONICS_SESSION_LINE_TARGETS}" "-DSOURCES=${FELITRONICS_SESSION_LINE_SOURCES}"
                          -DPERSOURCE=${FELITRONICS_SESSION_PERSOURCE} -DPERSOURCE_TARGET=fs_cl_persource.dir
+                         -DPERINCLUDE=${FELITRONICS_SESSION_PERINCLUDE} -DPERINCLUDE_TARGET=fs_cl_perinclude.dir
+                         -DPERINCLUDE_HEADER=${FELITRONICS_SESSION_PERINCLUDE_HEADER}
                          -DSCRATCH=${CMAKE_CURRENT_BINARY_DIR}/compile-line-controls
                          -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/compile-line-controls.cmake)
         # ...and in a CONSUMER's build: tests/consumer/ is a parent project that states `add_compile_options(-ffp-contract=off)`

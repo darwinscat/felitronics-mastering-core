@@ -94,14 +94,17 @@ What holds the flags:
    For every unit of the library and of the C boundary, the library's group is the **last word** on floating point,
    exceptions and RTTI: its tokens appear in order, and after their last appearance no token touches floating-point
    semantics (`-ffp-*`, `-fno-honor-*`, `-fapprox-func`, `-fdenormal-fp-math*`, `-fcx-*`, `-mfpmath*`,
-   `-fexcess-precision*`, the fast-math family, `-Ofast`), exceptions or RTTI; no forced include or pass-through
-   (`-include`, `-imacros`, `-Wp,`, `-Xclang`, `-mllvm`, a response file) appears anywhere; every listed unit is compiled
-   into the target and every unit the target compiles is listed. An entry is matched by its `file`, its object read from
-   `output` or from the command's `-o` — CMake 3.22's Ninja and Makefile generators write no `output`.
-   `felitronics_session_compile_line_controls` requires the gate to refuse a real per-source `-ffp-model=fast` (a copy of
-   a library unit with that source property, configured and never built), a `-fno-honor-nans` after the group, the group
-   removed, a forced include, an unlisted unit in the target and a listed unit nothing compiles — and to pass the same
-   compile commands without `output` fields and with `arguments` arrays. **Not on MSVC, with any generator**: cl.exe
+   `-fexcess-precision*`, the fast-math family, `-Ofast`), exceptions or RTTI; no forced include, pass-through, plugin
+   or flag file appears anywhere, separated or joined (`-include` and `-include<path>`, `--include=`, `-imacros…`,
+   `-Wp,…`, every `-X…`, `-mllvm…`, `/FI…`, `/Yu…`, `-fplugin…`, `-specs=`, `--config…`, `-B…`); a response file
+   (`@file`, which the emscripten toolchain uses for its include directories) is read, and its tokens are checked where it
+   stands; every listed unit is compiled into the target and every unit the target compiles is listed. An entry is
+   matched by its `file`, its object read from `output` or from the command's `-o` — CMake 3.22's Ninja and Makefile
+   generators write no `output`. `felitronics_session_compile_line_controls` requires the gate to refuse two real
+   per-source options — `-ffp-model=fast` and a joined `-include<absolute path>` (copies of a library unit with those
+   source properties, configured and never built) — a `-fno-honor-nans` after the group, the group removed, a separated
+   forced include and every joined spelling above, an unlisted unit in the target and a listed unit nothing compiles —
+   and to pass the same compile commands without `output` fields and with `arguments` arrays. **Not on MSVC, with any generator**: cl.exe
    announces `/fp:precise`, `/fp:contract`, exceptions and RTTI to the preprocessor, so the guards of item 1 hold MSVC
    from inside each unit and there is no compile line to read.
 3. **The library answers for itself, under hostile flags.** Its build probes (`src/FpProbes.h`: a fused multiply-add, a
