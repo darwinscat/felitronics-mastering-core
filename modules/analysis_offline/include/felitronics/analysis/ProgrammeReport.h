@@ -19,7 +19,8 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
-#include <vector>
+#include <felitronics/storage/Buffer.h>
+#include <felitronics/storage/VectorBytes.h>
 
 namespace felitronics::analysis
 {
@@ -508,6 +509,8 @@ public:
     // storage that still fits. `ok == false` on exactly the arguments prepare() refuses, and then every
     // number below is zero. The 3 s sub-hop ring and the percentile histogram are NOT here: both are fixed
     // and inline, so they are not heap at all.
+    static constexpr std::uint64_t constructBytes() noexcept { return (storage::kLoudnessProxies + 1u + storage::kPolyphaseProxies * core::kMaxChannels) * storage::kVectorProxyBytes; }
+
     struct Storage
     {
         bool          ok               = false;
@@ -525,6 +528,7 @@ public:
 
         // 64 bits because the product is the point: on wasm32 a size_t byte count wraps long before the
         // element counts do.
+        std::uint64_t firstBytes() const noexcept { return ProgrammeReport::constructBytes() + bytes(); }
         std::uint64_t bytes() const noexcept
         {
             return (std::uint64_t) sizeof (double)       * (std::uint64_t) tailRingEnergies
@@ -1429,12 +1433,12 @@ private:
 
     std::array<ChannelState, core::kMaxChannels> chans_ {};
 
-    std::vector<double>       tailSq_;
-    std::vector<std::int32_t> tailN_;
-    std::vector<std::int32_t> tailPendN_;
-    std::vector<double>       tailPendSq_;
-    std::vector<float>        scratch_;
-    std::vector<double>       shortTerm_;
+    storage::Buffer<double>       tailSq_;
+    storage::Buffer<std::int32_t> tailN_;
+    storage::Buffer<std::int32_t> tailPendN_;
+    storage::Buffer<double>       tailPendSq_;
+    storage::Buffer<float>        scratch_;
+    storage::Buffer<double>       shortTerm_;
     std::array<double, (std::size_t) kShortTermSubHops> subRing_ {};
 
     std::int64_t totalSamples_ = 0, nextSubHopEnd_ = 0;

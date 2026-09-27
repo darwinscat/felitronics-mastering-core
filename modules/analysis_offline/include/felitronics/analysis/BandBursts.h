@@ -13,7 +13,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <vector>
+#include <felitronics/storage/Buffer.h>
 
 namespace felitronics::analysis
 {
@@ -941,10 +941,10 @@ private:
     double enterRatio_   = 0.0, exitRatio_ = 0.0;
     bool   prepared_     = false, finished_ = false;
 
-    std::vector<double>       ring_, scratch_;
-    std::vector<std::uint8_t> ringFlags_;
-    std::vector<BandBurst>    events_;
-    std::vector<Channel>      chans_;
+    storage::Buffer<double>       ring_, scratch_;
+    storage::Buffer<std::uint8_t> ringFlags_;
+    storage::Buffer<BandBurst>    events_;
+    storage::Buffer<Channel>      chans_;
 
     std::int64_t totalSamples_ = 0, nextHopEnd_ = 0, hopCount_ = 0;
     double       hopSumSq_ = 0.0, hopWideSumSq_ = 0.0;

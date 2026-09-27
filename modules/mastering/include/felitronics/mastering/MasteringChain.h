@@ -19,7 +19,8 @@
 #include <cmath>
 #include <cstdint>
 #include <memory>
-#include <vector>
+#include <felitronics/storage/Buffer.h>
+#include <felitronics/storage/VectorBytes.h>
 
 namespace felitronics::mastering
 {
@@ -432,6 +433,12 @@ public:
             if (compressor) b += alignComp.freshBytes();
             if (clipper)    b += clip.bytes() + alignClip.freshBytes();
             if (limiter)    b += lim.bytes()  + alignLim.freshBytes();
+            // EqEngine's scratch; the compressor's delay rings; Saturator's delay rings and
+            // oversampler reset; the limiter's per-channel buffers/rings and oversampler reset.
+            const std::uint64_t proxies = (eq ? 1u : 0u) + comp.lines
+                + (clipper ? clip.dryLines + (clip.os.bytes() == 0 ? 7u : 1u) : 0u)
+                + (limiter ? 2u * lim.channels + 1u : 0u);
+            b += proxies * storage::kVectorProxyBytes;
             return b;                                  // MonoBass and Dither allocate nothing — measured
         }
 
@@ -604,13 +611,17 @@ public:
     // this chain where a sum of requests exceeds what is held at once — `prepare()` replaces those seeds
     // for a topology that uses them, so each buffer it re-sizes hands its share of those 12 bytes back.
     // Stated, because a budget that is an upper bound has to say where it is not tight.
-    static constexpr std::uint64_t constructBytes() noexcept { return 3u * core::DryAligner::constructBytes(); }
+    static constexpr std::uint64_t constructBytes() noexcept
+    {
+        return 3u * core::DryAligner::constructBytes()
+        // Compressor: 1; Saturator: 6 buffers + delay bank + oversampler (6 + 1);
+        // limiter: oversampler (6 + 1), three banks, three two-vector windows; aligners: 2 each.
+                     + (1u + 14u + 16u + 3u * 2u) * storage::kVectorProxyBytes;
+    }
 
-    // WHAT RE-PREPARING **THIS** CHAIN ASKS FOR — nothing, when the geometry it already holds covers the
-    // one being asked for, and that is the case the C ABI's `configure` is: it re-prepares at the handle's
-    // own rate, width and config. Every container is `assign`ed to a length it already has, and the EQ
-    // engine is REUSED rather than rebuilt (see prepare()), so the answer is exactly zero rather than
-    // nearly zero.
+    // WHAT RE-PREPARING THIS CHAIN ASKS FOR. When the geometry fits, only core's temporary
+    // oversampler proxies can allocate. configure() uses this same preparation at the stored geometry.
+    // Every buffer is assigned to a length it already has, and the EQ engine is reused.
     //
     // Otherwise the FRESH SUM with no aligner seed assumed (`unseededBytes()`: a moved-from chain has given
     // its seeds away with everything else), which bounds what this chain will ask its containers for — not what they
@@ -646,7 +657,10 @@ public:
         // re-prepared smaller and was growing back inside storage it never gave up. (The fix round.)
         if (fifo_.capacity() < want.fifo || keyBuf_.capacity() < want.keyBuf) return want.unseededBytes();
         if (dyn_.capacity() < want.dynBands) return want.unseededBytes();
-        return want.fitsWithin (have) ? 0u : want.unseededBytes();
+        // Core's Oversampler::prepare constructs an empty temporary even when its buffers fit.
+        const auto transient = (want.clipper ? (want.clip.os.bytes() == 0 ? 7u : 1u) : 0u)
+                             + (want.limiter ? 1u : 0u);
+        return want.fitsWithin (have) ? transient * storage::kVectorProxyBytes : want.unseededBytes();
     }
 
     // Returns false and leaves the chain UNPREPARED on anything it cannot honour. A false return is
@@ -840,6 +854,21 @@ public:
         inGain_.snap (inGain_.target); preGain_.snap (preGain_.target); mix_.snap (mix_.target);
         clipFade_ = {}; limFade_ = {};
         fresh_ = true;
+    }
+
+    // A configure uses the SAME preparation as a stream restart at the stored geometry. Applying
+    // after reset consumes the EQ's first-write snap; applying before it alone does not establish
+    // every stage's prepare state. Keep the original path, including its Debug temporary proxies.
+    [[nodiscard]] std::uint64_t configureBytes() const noexcept
+    {
+        return prepared_ ? reprepareBytes (fs_, nch_, cfg_) : 0u;
+    }
+
+    [[nodiscard]] bool configure (const MasteringChainParams& p)
+    {
+        if (! prepared_) return false;
+        setParams (p);
+        return prepare (fs_, nch_, cfg_);
     }
 
     // Takes effect at the next internal quantum boundary, which is what keeps a parameter change from
@@ -1586,11 +1615,11 @@ private:
     bool  fadersSnap_ = true;
     bool  fresh_ = true;                     // no quantum has run since reset(): a parameter write SNAPS
 
-    std::vector<float> fifo_, keyBuf_;
+    storage::Buffer<float> fifo_, keyBuf_;
 
     std::unique_ptr<eq::EqEngine> eq_;                 // 331 KiB — behind a pointer so this object is stack-sized
     // One per EQ band, on the heap for the same reason the engine is: 24 of them is ~60 KiB.
-    std::vector<dynamiceq::LaneDynamics> dyn_;
+    storage::Buffer<dynamiceq::LaneDynamics> dyn_;
     stereo::MonoBass              monoBass_;
     dynamics::Compressor          comp_;
     saturation::Saturator         sat_;

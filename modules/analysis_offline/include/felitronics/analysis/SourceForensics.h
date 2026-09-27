@@ -14,7 +14,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <vector>
+#include <felitronics/storage/Buffer.h>
 
 namespace felitronics::analysis
 {
@@ -490,6 +490,8 @@ public:
 
     // WHAT prepare() ASKS THE HEAP FOR (law 11d), from the function prepare() sizes itself with — the frame
     // producer's own budget included, since this object owns one.
+    static constexpr std::uint64_t constructBytes() noexcept { return SpectrumFrames::constructBytes(); }
+
     struct Storage
     {
         bool ok = false;
@@ -503,9 +505,10 @@ public:
         std::size_t strictMax  = 0;      // double, cellCount — and the raw, unforgiving one, published beside it
         std::size_t sortScratch = 0;     // double, max(plateauCells, floorCells)
         std::size_t tableSlots = 0;      // uint32, slots * channels
+        std::uint64_t firstBytes() const noexcept { return SourceForensics::constructBytes() + bytes(); }
         std::uint64_t bytes() const noexcept
         {
-            return frames.bytes()
+            return SpectrumFrames::constructBytes() + frames.bytes()
                  + (std::uint64_t) sizeof (double) * (powerSum + powerComp + meanBins + cells + smoothCells
                                                       + suffixMax + strictMax + sortScratch)
                  + (std::uint64_t) sizeof (std::uint32_t) * tableSlots;
@@ -1257,8 +1260,8 @@ private:
     void* obsUser_ = nullptr;
     Channel chans_[core::kMaxChannels] {};
     SpectralWall walls_[core::kMaxChannels + 1] {};            // one per channel, plus the aggregate
-    std::vector<double> sum_, comp_, mean_, cells_, smooth_, suffix_, strict_, sortScratch_;
-    std::vector<std::uint32_t> table_;
+    storage::Buffer<double> sum_, comp_, mean_, cells_, smooth_, suffix_, strict_, sortScratch_;
+    storage::Buffer<std::uint32_t> table_;
 };
 
 } // namespace felitronics::analysis

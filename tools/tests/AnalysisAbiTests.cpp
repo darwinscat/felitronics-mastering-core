@@ -261,7 +261,7 @@ double oracleReport (std::uint32_t ch, double sr)
 {
     const auto st = felitronics::analysis::ProgrammeReport::storageFor (
         sr, (int) fcore::Probe::kChunk, (int) ch, felitronics::analysis::ProgrammeReportParams {});
-    return st.ok ? (double) st.bytes() : 0.0;
+    return st.ok ? (double) st.firstBytes() : 0.0;
 }
 double oracleBursts (std::uint32_t ch, double sr)
 {
@@ -271,12 +271,12 @@ double oracleBursts (std::uint32_t ch, double sr)
 double oracleHum (std::uint32_t ch, double sr)
 {
     const auto st = felitronics::analysis::HumDetector::storageFor (sr, (int) ch, felitronics::analysis::HumDetectorParams {});
-    return st.ok ? (double) st.bytes() : 0.0;
+    return st.ok ? (double) st.firstBytes() : 0.0;
 }
 double oracleForensics (std::uint32_t ch, double sr)
 {
     const auto st = felitronics::analysis::SourceForensics::storageFor (sr, (int) ch, felitronics::analysis::SourceForensicsParams {});
-    return st.ok ? (double) st.bytes() : 0.0;
+    return st.ok ? (double) st.firstBytes() : 0.0;
 }
 // The stereo band bursts run TWO MONO engines whatever the input width, so the width does not enter the price — but an
 // invalid one is still refused, which is why `ch` is passed through geometry on the other side.
@@ -290,7 +290,7 @@ double oracleStereoBursts (std::uint32_t ch, double sr)
 double oracleLowEnd (std::uint32_t ch, double sr)
 {
     const auto st = felitronics::analysis::LowEnd::storageFor (sr, (int) ch, felitronics::analysis::LowEndParams {});
-    return st.ok ? (double) st.bytes() : 0.0;
+    return st.ok ? (double) st.firstBytes() : 0.0;
 }
 
 // `acceptsEmpty` is the ONE deliberate asymmetry between the two roads: four of the five report on an
@@ -359,9 +359,9 @@ void theByteCounterCountsWhatWasAsked()
         volatile double* sink = v.data();
         sink[0] = 1.0;
     });
-    ok (counted == 4096ull * sizeof (double),
+    ok (counted == 4096ull * sizeof (double) + felitronics::storage::kVectorProxyBytes,
         "the byte counter reports a 4096-double vector as " + std::to_string (counted)
-        + " bytes, which is what its container asked for"
+        + " bytes, including its iterator proxy"
         + (felitronics::test::alloc::kStlBigPad != 0
                ? "  [after taking back this STL's " + std::to_string (felitronics::test::alloc::kStlBigPad)
                  + "-byte big-block padding]"
@@ -413,8 +413,8 @@ void theShimQuotesTheCoreBudget()
     //
     // The headline number as a LITERAL, so a mutant that carried the byte count through a float — where
     // 352688184 is not representable — fails here even if every relative comparison above still held.
-    ok (fc_probe_hum_storage_bytes (16u, 768000.0) == 352688184.0,
-        "hum_storage_bytes(16, 768000) is exactly 352688184 bytes");
+    ok (fc_probe_hum_storage_bytes (16u, 768000.0) == 352688184.0 + (double) felitronics::analysis::HumDetector::constructBytes(),
+        "hum_storage_bytes(16, 768000) is 352688184 payload bytes plus construction");
     // And the modes must not be interchangeable, or a copy-paste between the five would be invisible.
     // ALL TEN PAIRS, not a hand-picked three: "the five are distinct" is a claim about every pair, and three
     // inequalities do not make it. A query wired to the wrong analyzer has to be visible whichever two got
@@ -471,10 +471,10 @@ void theShimQuotesTheCoreBudget()
     //   stretchHi = ceil ((120 + 13 + bin) / bin)             538 at 8130 and 8130.5, 537 at 8131
     // so each half-hertz step drops one double (8 B) from a different row. (The witness was 1000 / 1000.5 Hz
     // before the 8000 Hz floor, below it now.)
-    ok (fc_probe_hum_storage_bytes (1u, 8130.0) == 1110784.0,
-        "hum(1, 8130) is exactly 1110784 bytes — the rate is read as given");
-    ok (fc_probe_hum_storage_bytes (1u, 8130.5) == 1110776.0 && fc_probe_hum_storage_bytes (1u, 8131.0) == 1110768.0,
-        "hum(1, 8130.5) is exactly 1110776 — neither 8130's price nor 8131's (1110768): a FRACTIONAL rate survives");
+    ok (fc_probe_hum_storage_bytes (1u, 8130.0) == 1110784.0 + (double) felitronics::analysis::HumDetector::constructBytes(),
+        "hum(1, 8130) is 1110784 payload bytes plus construction — the rate is read as given");
+    ok (fc_probe_hum_storage_bytes (1u, 8130.5) == 1110776.0 + (double) felitronics::analysis::HumDetector::constructBytes() && fc_probe_hum_storage_bytes (1u, 8131.0) == 1110768.0 + (double) felitronics::analysis::HumDetector::constructBytes(),
+        "hum(1, 8130.5) is 1110776 payload bytes plus construction: a FRACTIONAL rate survives");
 }
 
 // ---- refused geometries ---------------------------------------------------------------------------

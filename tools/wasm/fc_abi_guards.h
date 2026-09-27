@@ -109,7 +109,12 @@ namespace
     // ProgrammeReport.h's own "all zeros where prepare() refuses" note is true of the members and not of the
     // total.)
     template <typename Storage>
-    double demand (const Storage& st) { return st.ok ? (double) st.bytes() : 0.0; }
+    double demand (const Storage& st)
+    {
+        if (! st.ok) return 0.0;
+        if constexpr (requires { st.firstBytes(); }) return (double) st.firstBytes();
+        else return (double) st.bytes();
+    }
 }
 
 #endif   // FC_ABI_GUARDS_H

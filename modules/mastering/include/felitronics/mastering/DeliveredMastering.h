@@ -13,7 +13,7 @@
 #include <climits>
 #include <cmath>
 #include <cstdint>
-#include <vector>
+#include <felitronics/storage/Buffer.h>
 
 namespace felitronics::mastering
 {
@@ -84,6 +84,15 @@ public:
         if (d <= 0 || d > INT_MAX || numChannels < 1 || numChannels > core::kMaxChannels) return 0u;
         const std::uint64_t search = TargetLoudnessSolver::solveBytes (deliveryRate, numChannels, (int) d, grTraceBuckets, binDb);
         return search == 0u ? 0u : programmeBytes (sourceRate, deliveryRate, numChannels, d) + search;
+    }
+
+    // The result exists even when conversion or the search is refused. Keep its construction
+    // inside the core's call budget, alongside the converted programme and the search's working set.
+    [[nodiscard]] static std::uint64_t solveCallBytes (double sourceRate, double deliveryRate, int numChannels,
+                                                       long long inFrames, int grTraceBuckets, double binDb = 0.01) noexcept
+    {
+        return solveBytes (sourceRate, deliveryRate, numChannels, inFrames, grTraceBuckets, binDb)
+             + TargetLoudnessSolver::solutionReturnBytes();
     }
 
     // measureInputLoudnessRange(): the converted programme and one meter — and NOTHING for a delivered length too
@@ -186,30 +195,35 @@ public:
                             float* const* out, long long outFrames, const LoudnessRequest& req,
                             const ProgressCallback& progress)
     {
-        LoudnessSolution refused;
-        refused.activityThresholdDb = req.activityThresholdDb;
-        if (! prepared_) { refused.status = MasteringSolveStatus::NotPrepared; return refused; }
+        const auto refuse = [&] (MasteringSolveStatus status)
+        {
+            LoudnessSolution result;
+            result.activityThresholdDb = req.activityThresholdDb;
+            result.status = status;
+            return result;
+        };
+        MasteringSolveStatus why = MasteringSolveStatus::InvalidRequest;
+        if (! prepared_) return refuse (MasteringSolveStatus::NotPrepared);
         if (! admits (chain, numChannels, inFrames, outFrames))
-            { refused.status = MasteringSolveStatus::InvalidRequest; return refused; }
+            return refuse (MasteringSolveStatus::InvalidRequest);
         // AN EMPTY PROGRAMME IS THE SOLVER'S TO ANSWER, not this class's: it answers `InvalidRequest` before any
         // pass, and answering for it here would be a second policy for one question.
         if (outFrames == 0)
             return solver.solve (chain, renderer, params, in, out, numChannels, 0, req, progress);
         // THE SOLVER'S OWN VERDICT, ASKED BEFORE A BYTE IS SPENT. Its words, its order, one definition.
-        if (! solver.admits (chain, renderer, numChannels, (int) outFrames, req, refused.status)) return refused;
+        if (! solver.admits (chain, renderer, numChannels, (int) outFrames, req, why)) return refuse (why);
         // The planes, at the CALLER's two lengths — not left to the solver, which sees the converted programme and
         // never the caller's input. (At equal rates the search reads `in` directly on every pass, so an overlap there
         // would read its own master.)
         if (! planesUsable (in, out, numChannels, inFrames, outFrames))
-            { refused.status = MasteringSolveStatus::InvalidRequest; return refused; }
+            return refuse (MasteringSolveStatus::InvalidRequest);
 
         const float* src[core::kMaxChannels] {};
-        std::vector<float> programme;
+        storage::Buffer<float> programme;
         ProgressClock clock (progress);
         if (! converted (in, numChannels, inFrames, outFrames, programme, src, clock))
         {
-            refused.status = clock.stopped() ? MasteringSolveStatus::Cancelled : MasteringSolveStatus::InvalidRequest;
-            return refused;
+            return refuse (clock.stopped() ? MasteringSolveStatus::Cancelled : MasteringSolveStatus::InvalidRequest);
         }
         return solver.solve (chain, renderer, params, src, out, numChannels, (int) outFrames, req, progress);
     }
@@ -235,7 +249,7 @@ public:
         if (d <= 0 || d > INT_MAX) return false;
         if (TargetLoudnessSolver::measureRangeBytes (deliveryRate_, (int) d) == 0u) return false;
         const float* src[core::kMaxChannels] {};
-        std::vector<float> programme;
+        storage::Buffer<float> programme;
         ProgressClock clock (progress);
         if (! converted (in, numChannels, inFrames, d, programme, src, clock)) return false;
         return solver.measureInputLoudnessRange (src, numChannels, (int) d, out, progress);
@@ -262,7 +276,7 @@ private:
 
     // The programme at the delivery rate, in `src`. At equal rates that is the caller's own input, read in place.
     bool converted (const float* const* in, int numChannels, long long inFrames, long long outFrames,
-                    std::vector<float>& programme, const float** src, ProgressClock& clock)
+                    storage::Buffer<float>& programme, const float** src, ProgressClock& clock)
     {
         if (identity_)
         {
@@ -294,5 +308,19 @@ private:
     std::uint64_t nonFinite_ = 0;
     bool identity_ = false, prepared_ = false;
 };
+
+// A mastering instance owns a solver and a delivery converter even before either is prepared.
+// A delivery rate of 0 selects the plain chain. Refused geometry constructs no instance, so the
+// verdict stays 0; every admitted create includes all four core objects' construction here.
+[[nodiscard]] inline std::uint64_t createInstanceBytes (double sampleRate, double deliveryRate, int numChannels,
+                                                        const MasteringChainConfig& config, int rendererBlock) noexcept
+{
+    // Only zero selects a plain chain; a NaN still reaches the delivery plan's refusal.
+    const bool plain = deliveryRate <= 0.0 && deliveryRate >= 0.0;
+    const auto prepared = plain
+        ? createBytes (sampleRate, numChannels, config, rendererBlock)
+        : DeliveredMastering::createBytes (sampleRate, deliveryRate, numChannels, config, rendererBlock);
+    return prepared == 0u ? 0u : prepared + TargetLoudnessSolver::constructBytes() + DeliveryConverter::constructBytes();
+}
 
 } // namespace felitronics::mastering

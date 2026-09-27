@@ -148,7 +148,7 @@ void thePriceIsTheCoresBudget()
                 const auto st = TempoDetector::storageFor (sr, (int) ch, frames, TempoParams {});
                 const bool fits = (std::uint64_t) frames * ch * 4u <= 0xFFFFFFFFull;   // the run's own span bound
                 ++rows;
-                if (! (st.ok && cost == 0 && (fits ? (got == (double) st.bytes() && got > 0.0) : (got == 0.0 && ! std::signbit (got)))))
+                if (! (st.ok && cost == 0 && (fits ? (got == (double) st.firstBytes() && got > 0.0) : (got == 0.0 && ! std::signbit (got)))))
                     ++wrong;
             }
     ok (wrong == 0, "all " + std::to_string (rows) + " rows (widths 1/2/16, five rates, five lengths up to 2^32 - 1) quote "
@@ -172,7 +172,7 @@ void thePriceIsTheCoresBudget()
     const TempoParams wide { 40.0, 300.0, 4.0, 1.0 };
     ok (fc_probe_tempo_storage_bytes_with (2u, 48000.0, 480000u, 60.0, 180.0, 6.0, 1.5) == fc_probe_tempo_storage_bytes (2u, 48000.0, 480000u)
             && fc_probe_tempo_storage_bytes_with (2u, 48000.0, 480000u, 40.0, 300.0, 4.0, 1.0)
-                   == (double) TempoDetector::storageFor (48000.0, 2, 480000u, wide).bytes()
+                   == (double) TempoDetector::storageFor (48000.0, 2, 480000u, wide).firstBytes()
             && fc_probe_tempo_storage_bytes_with (2u, 48000.0, 480000u, 40.0, 300.0, 4.0, 1.0) != fc_probe_tempo_storage_bytes (2u, 48000.0, 480000u),
         "the parameterised price is the default one at the defaults, the core's budget at others, and moves with them");
 
