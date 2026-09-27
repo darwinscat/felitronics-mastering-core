@@ -88,6 +88,8 @@ enum class Rejection : std::uint8_t
     ProjectCore,                // core must be a canonical major.minor.patch version
     MachineMismatch,            // this core's decision disagrees with its own saved layer
     NewerDefaults,              // defaults are newer than the current compiled table
+    RateAboveLimit,             // above the shell's maxRateHz
+    Memory,                     // live declared bytes plus demand exceeds heapCeilingBytes
 };
 
 using CommandId = std::uint64_t;   // the shell's own number for a request, given back in its answer
@@ -155,6 +157,7 @@ struct Answer
     Rejection rejection = Rejection::None;     // None: accepted
     std::uint64_t revision = 0;                // accepted: the revision it made; rejected: the revision, unchanged
     JobId job = 0;                             // an accepted load or master: the job it started
+    double needBytes = 0.0;                    // Memory: live declared bytes plus the refused demand, below 2^53
     ProjectPosition position {};              // import: 1-based Unicode line and column; zero for preflight refusals
     std::optional<Device> device;              // import: absent for a target field
     std::uint8_t field = kNoField;             // rejected on a field: its place among the fields, in the order written
@@ -169,6 +172,7 @@ struct Checked
     Rejection rejection = Rejection::None;
     std::uint8_t field = kNoField;
     std::uint64_t bytes = 0;                   // preflight passed: demand of apply(), including import refusals; otherwise 0
+    double needBytes = 0.0;                    // Memory: total declared live bytes and demand
 };
 
 // A session's situation — its state, and whether a master is being made — as the column of the tables below.

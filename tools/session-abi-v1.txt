@@ -1,0 +1,659 @@
+function fc_session_abi_version uint32_t()
+function fc_session_create_bytes fc_session_status(const fc_session_capabilities*,double*)
+function fc_session_create fc_session_status(const fc_session_capabilities*,uint32_t,uint32_t,fc_session*)
+function fc_session_destroy fc_session_status(fc_session)
+function fc_session_config_version fc_session_status(uint32_t*)
+function fc_session_command fc_session_status(fc_session,const char*,uint32_t,char*,uint32_t,uint32_t*)
+function fc_session_load fc_session_status(fc_session,uint32_t,uint32_t,const float*const*,uint32_t,uint32_t,uint32_t,const char*,uint32_t,char*,uint32_t,uint32_t*)
+function fc_session_import_project fc_session_status(fc_session,uint32_t,uint32_t,const char*,uint32_t,char*,uint32_t,uint32_t*)
+function fc_session_export_project_size fc_session_status(fc_session,uint32_t*)
+function fc_session_export_project_copy fc_session_status(fc_session,char*,uint32_t,uint32_t*)
+function fc_session_step fc_session_status(fc_session,uint32_t,uint32_t*)
+function fc_session_events_size fc_session_status(fc_session,fc_session_sizes*)
+function fc_session_events_copy fc_session_status(fc_session,char*,uint32_t,double*,uint32_t)
+function fc_session_snapshot_size fc_session_status(fc_session,fc_session_sizes*)
+function fc_session_snapshot_copy fc_session_status(fc_session,char*,uint32_t,double*,uint32_t)
+define FC_SESSION_ABI_VERSION=1
+define FC_SESSION_STEP_UNITS=16
+define FC_SESSION_MIN_RATE_HZ=8000
+define FC_SESSION_COMMAND_JSON_BYTES=4096
+define FC_SESSION_ANSWER_BYTES=32768
+define FC_SESSION_DEVICE_HPF=1
+define FC_SESSION_DEVICE_MONO_BASS=2
+define FC_SESSION_DEVICE_GLUE=4
+define FC_SESSION_DEVICE_SATURATION=8
+define FC_SESSION_DEVICE_TILT=16
+define FC_SESSION_DEVICE_LIMITER=32
+define FC_SESSION_DEVICE_DITHER=64
+define FC_SESSION_DEVICE_LOW_SHELF=128
+define FC_SESSION_DEVICES_ALL=255
+define FC_SESSION_MAX_HANDLES=8
+define FC_SESSION_SLOT_GENERATIONS=16777215
+sizeof fc_session_status=4
+enum FC_SESSION_OK=0
+enum FC_SESSION_ERR_POISONED=1
+enum FC_SESSION_ERR_NULL=2
+enum FC_SESSION_ERR_ALIGNMENT=3
+enum FC_SESSION_ERR_SPAN=4
+enum FC_SESSION_ERR_HANDLE=5
+enum FC_SESSION_ERR_EXHAUSTED=6
+enum FC_SESSION_ERR_FP_ENVIRONMENT=7
+enum FC_SESSION_ERR_CONFIG=8
+enum FC_SESSION_ERR_CONFIG_VERSION=9
+enum FC_SESSION_ERR_CAPABILITIES=10
+enum FC_SESSION_ERR_MEMORY=11
+enum FC_SESSION_ERR_TOO_SMALL=12
+enum FC_SESSION_ERR_CONTRACT=13
+enum FC_SESSION_ERR_STATE=14
+enum FC_SESSION_ERR_OVERLAP=15
+enum FC_SESSION_ERR_TRAP=16
+sizeof fc_session_step_state=4
+enum FC_SESSION_MORE=0
+enum FC_SESSION_DONE=1
+typedef fc_session uint32_t
+sizeof fc_session=4
+sizeof fc_session_capabilities=16
+alignof fc_session_capabilities=8
+field fc_session_capabilities.heapCeilingBytes double
+offset fc_session_capabilities.heapCeilingBytes=0
+field fc_session_capabilities.maxRateHz uint32_t
+offset fc_session_capabilities.maxRateHz=8
+field fc_session_capabilities.offeredDevices uint32_t
+offset fc_session_capabilities.offeredDevices=12
+sizeof fc_session_sizes=8
+alignof fc_session_sizes=4
+field fc_session_sizes.jsonBytes uint32_t
+offset fc_session_sizes.jsonBytes=0
+field fc_session_sizes.rowBytes uint32_t
+offset fc_session_sizes.rowBytes=4
+enum felitronics::session::State::Empty=0
+enum felitronics::session::State::Loaded=1
+enum felitronics::session::State::Measured1=2
+enum felitronics::session::State::Measured2=3
+enum felitronics::session::Command::Load=0
+enum felitronics::session::Command::SetTarget=1
+enum felitronics::session::Command::EditTarget=2
+enum felitronics::session::Command::EditDevice=3
+enum felitronics::session::Command::RevertEdits=4
+enum felitronics::session::Command::SetManual=5
+enum felitronics::session::Command::Master=6
+enum felitronics::session::Command::Cancel=7
+enum felitronics::session::Command::Forget=8
+enum felitronics::session::Command::ImportProject=9
+enum felitronics::session::Event::Measured1=0
+enum felitronics::session::Event::Measured2=1
+enum felitronics::session::Event::Mastered=2
+enum felitronics::session::Rejection::None=0
+enum felitronics::session::Rejection::FloatingPointEnvironment=1
+enum felitronics::session::Rejection::NoSource=2
+enum felitronics::session::Rejection::NotPlaced=3
+enum felitronics::session::Rejection::NotMeasured=4
+enum felitronics::session::Rejection::Busy=5
+enum felitronics::session::Rejection::NoJob=6
+enum felitronics::session::Rejection::NoMaster=7
+enum felitronics::session::Rejection::ManualOff=8
+enum felitronics::session::Rejection::UnknownTarget=9
+enum felitronics::session::Rejection::NotOffered=10
+enum felitronics::session::Rejection::UnknownJob=11
+enum felitronics::session::Rejection::UnknownMaster=12
+enum felitronics::session::Rejection::NoFields=13
+enum felitronics::session::Rejection::NotFinite=14
+enum felitronics::session::Rejection::NotOneOf=15
+enum felitronics::session::Rejection::OutOfTravel=16
+enum felitronics::session::Rejection::OffStep=17
+enum felitronics::session::Rejection::BadChannels=18
+enum felitronics::session::Rejection::BadRate=19
+enum felitronics::session::Rejection::NoAudio=20
+enum felitronics::session::Rejection::TooLong=21
+enum felitronics::session::Rejection::NoJobId=22
+enum felitronics::session::Rejection::InvalidUtf8=23
+enum felitronics::session::Rejection::ProjectTooLarge=24
+enum felitronics::session::Rejection::ProjectSyntax=25
+enum felitronics::session::Rejection::ProjectMissing=26
+enum felitronics::session::Rejection::ProjectType=27
+enum felitronics::session::Rejection::ProjectUnknownKey=28
+enum felitronics::session::Rejection::UnknownDefaults=29
+enum felitronics::session::Rejection::ProjectCore=30
+enum felitronics::session::Rejection::MachineMismatch=31
+enum felitronics::session::Rejection::NewerDefaults=32
+enum felitronics::session::Rejection::RateAboveLimit=33
+enum felitronics::session::Rejection::Memory=34
+enum felitronics::session::OnEdits::Reset=0
+enum felitronics::session::OnEdits::Keep=1
+enum felitronics::session::Column::Empty=0
+enum felitronics::session::Column::Loaded=1
+enum felitronics::session::Column::Measured1=2
+enum felitronics::session::Column::Measured2=3
+enum felitronics::session::Column::Mastering1=4
+enum felitronics::session::Column::Mastering2=5
+enum felitronics::session::Needles::Auto=0
+enum felitronics::session::Needles::Manual=1
+enum felitronics::session::Needles::Off=2
+enum felitronics::session::Device::Hpf=0
+enum felitronics::session::Device::MonoBass=1
+enum felitronics::session::Device::Glue=2
+enum felitronics::session::Device::Saturation=3
+enum felitronics::session::Device::Tilt=4
+enum felitronics::session::Device::Limiter=5
+enum felitronics::session::Device::Dither=6
+enum felitronics::session::Device::LowShelf=7
+enum felitronics::session::PhaseName::Stream=0
+enum felitronics::session::PhaseName::Report=1
+enum felitronics::session::PhaseName::Analyzers=2
+enum felitronics::session::PhaseName::Pass=3
+enum felitronics::session::PhaseName::Remeasure=4
+enum felitronics::session::PhaseName::Convert=5
+enum felitronics::session::PhaseName::Lra=6
+enum felitronics::session::PhaseName::Final=7
+enum felitronics::session::ErrorCode::Trap=0
+enum felitronics::session::ErrorCode::Contract=1
+enum felitronics::session::ErrorCode::Refusal=2
+enum felitronics::session::ErrorCode::Memory=3
+enum felitronics::session::ErrorCode::Poisoned=4
+enum felitronics::session::ErrorCode::Stale=5
+enum felitronics::session::Recover::None=0
+enum felitronics::session::Recover::Replay=1
+enum felitronics::session::Recover::Continue=2
+enum felitronics::session::EventKind::Phase=0
+enum felitronics::session::EventKind::Fact=1
+enum felitronics::session::EventKind::Reading=2
+enum felitronics::session::EventKind::Done=3
+enum felitronics::session::EventKind::Rejected=4
+enum felitronics::session::EventKind::Error=5
+enum felitronics::session::StepState::More=0
+enum felitronics::session::StepState::Done=1
+enum felitronics::session::CodecStatus::Ok=0
+enum felitronics::session::CodecStatus::Invalid=1
+enum felitronics::session::CodecStatus::TooSmall=2
+enum felitronics::session::CodecStatus::FloatingPointEnvironment=3
+enum felitronics::session::Status::Ok=0
+enum felitronics::session::Status::FloatingPointEnvironment=1
+enum felitronics::session::Status::Config=2
+enum felitronics::session::Status::ConfigVersion=3
+enum felitronics::session::Status::Capabilities=4
+enum felitronics::session::Status::Memory=5
+enum felitronics::session::text::Lang::En=0
+enum felitronics::session::text::Lang::De=1
+enum felitronics::session::text::Lang::Ru=2
+enum felitronics::session::text::Lang::Uk=3
+enum felitronics::session::text::Lang::Cs=4
+enum felitronics::session::text::Lang::Es=5
+enum felitronics::session::text::Lang::Fr=6
+enum felitronics::session::text::Lang::It=7
+enum felitronics::session::text::Lang::Pl=8
+enum felitronics::session::text::Lang::Pt=9
+enum felitronics::session::text::Lang::Ro=10
+enum felitronics::session::text::Lang::Tr=11
+enum felitronics::session::text::Unit::None=0
+enum felitronics::session::text::Unit::Percent=1
+enum felitronics::session::text::Unit::Db=2
+enum felitronics::session::text::Unit::DbTp=3
+enum felitronics::session::text::Unit::DbFs=4
+enum felitronics::session::text::Unit::Lufs=5
+enum felitronics::session::text::Unit::Lu=6
+enum felitronics::session::text::Unit::Hz=7
+enum felitronics::session::text::Unit::KHz=8
+enum felitronics::session::text::Unit::Ms=9
+enum felitronics::session::text::Unit::S=10
+enum felitronics::session::text::Unit::Bpm=11
+enum felitronics::session::text::Sign::Negative=0
+enum felitronics::session::text::Sign::Always=1
+enum felitronics::session::text::Bound::Exact=0
+enum felitronics::session::text::Bound::AtLeast=1
+enum felitronics::session::text::Bound::AtMost=2
+enum felitronics::session::text::Plural::Zero=0
+enum felitronics::session::text::Plural::One=1
+enum felitronics::session::text::Plural::Two=2
+enum felitronics::session::text::Plural::Few=3
+enum felitronics::session::text::Plural::Many=4
+enum felitronics::session::text::Plural::Other=5
+enum felitronics::session::text::FactId::Value=1
+enum felitronics::session::text::FactId::LandingPass=2
+enum felitronics::session::text::FactId::LandingConverged=3
+enum felitronics::session::text::FactId::PairsConsistent=4
+enum felitronics::session::text::FactId::LoudestLowNote=5
+enum felitronics::session::text::FactId::WideBass=6
+enum felitronics::session::text::FactId::RateAboveLimit=7
+enum felitronics::session::text::FactId::MachineDifferences=8
+enum felitronics::session::text::FactId::DefaultsConverted=9
+enum felitronics::session::text::FactId::RejectedFloatingPointEnvironment=101
+enum felitronics::session::text::FactId::RejectedNoSource=102
+enum felitronics::session::text::FactId::RejectedNotPlaced=103
+enum felitronics::session::text::FactId::RejectedNotMeasured=104
+enum felitronics::session::text::FactId::RejectedBusy=105
+enum felitronics::session::text::FactId::RejectedNoJob=106
+enum felitronics::session::text::FactId::RejectedNoMaster=107
+enum felitronics::session::text::FactId::RejectedManualOff=108
+enum felitronics::session::text::FactId::RejectedUnknownTarget=109
+enum felitronics::session::text::FactId::RejectedNotOffered=110
+enum felitronics::session::text::FactId::RejectedUnknownJob=111
+enum felitronics::session::text::FactId::RejectedUnknownMaster=112
+enum felitronics::session::text::FactId::RejectedNoFields=113
+enum felitronics::session::text::FactId::RejectedNotFinite=114
+enum felitronics::session::text::FactId::RejectedNotOneOf=115
+enum felitronics::session::text::FactId::RejectedOutOfTravel=116
+enum felitronics::session::text::FactId::RejectedOffStep=117
+enum felitronics::session::text::FactId::RejectedBadChannels=118
+enum felitronics::session::text::FactId::RejectedBadRate=119
+enum felitronics::session::text::FactId::RejectedNoAudio=120
+enum felitronics::session::text::FactId::RejectedTooLong=121
+enum felitronics::session::text::FactId::RejectedNoJobId=122
+enum felitronics::session::text::FactId::RejectedInvalidUtf8=123
+enum felitronics::session::text::FactId::RejectedProjectTooLarge=124
+enum felitronics::session::text::FactId::RejectedProjectSyntax=125
+enum felitronics::session::text::FactId::RejectedProjectMissing=126
+enum felitronics::session::text::FactId::RejectedProjectType=127
+enum felitronics::session::text::FactId::RejectedProjectUnknownKey=128
+enum felitronics::session::text::FactId::RejectedUnknownDefaults=129
+enum felitronics::session::text::FactId::RejectedProjectCore=130
+enum felitronics::session::text::FactId::RejectedMachineMismatch=131
+enum felitronics::session::text::FactId::RejectedNewerDefaults=132
+enum felitronics::session::text::FactId::RejectedRateAboveLimit=133
+enum felitronics::session::text::FactId::RejectedMemory=134
+enum felitronics::session::text::FactId::Measurement1=200
+enum felitronics::session::text::FactId::Measurement2=201
+enum felitronics::session::text::FactId::MasterPass=202
+enum felitronics::session::text::FactId::MasterReady=203
+enum felitronics::session::text::FactId::Cancelled=204
+enum felitronics::session::text::FactId::Convert=205
+enum felitronics::session::text::FactId::Lra=206
+enum felitronics::session::text::FactId::Final=207
+enum felitronics::session::text::FactId::SessionTrap=300
+enum felitronics::session::text::FactId::SessionContract=301
+enum felitronics::session::text::FactId::SessionRefusal=302
+enum felitronics::session::text::FactId::SessionMemory=303
+enum felitronics::session::text::FactId::SessionPoisoned=304
+enum felitronics::session::text::FactId::SessionStale=305
+enum felitronics::session::text::Term::PlatformWeb=1
+enum felitronics::session::text::Term::PlatformDesktop=2
+enum felitronics::session::text::Term::FieldTargetLufs=3
+enum felitronics::session::text::Term::FieldTargetTp=4
+enum felitronics::session::text::Term::FieldHpfFq=5
+enum felitronics::session::text::Term::FieldHpfSlope=6
+enum felitronics::session::text::Term::FieldMonoBassFq=7
+enum felitronics::session::text::Term::FieldMonoBassWidth=8
+enum felitronics::session::text::Term::FieldGlueUpToDb=9
+enum felitronics::session::text::Term::FieldSaturationDrive=10
+enum felitronics::session::text::Term::FieldSaturationMix=11
+enum felitronics::session::text::Term::FieldSaturationOutput=12
+enum felitronics::session::text::Term::FieldTiltDb=13
+enum felitronics::session::text::Term::FieldLimiterNeedles=14
+enum felitronics::session::text::Term::FieldLimiterNeedlesDb=15
+enum felitronics::session::text::Term::FieldLowShelfDb=16
+enum felitronics::session::text::Term::FieldAudio=17
+enum felitronics::session::text::ArgKind::None=0
+enum felitronics::session::text::ArgKind::Value=1
+enum felitronics::session::text::ArgKind::Count=2
+enum felitronics::session::text::ArgKind::Term=3
+enum felitronics::session::text::ArgKind::Midi=4
+enum felitronics::session::text::ArgKind::UserText=5
+codec TargetFieldsTouched.lufs double?
+codec TargetFieldsTouched.tp double?
+codec HpfFieldsValue.on bool
+codec HpfFieldsValue.fq double
+codec HpfFieldsValue.slope int32
+codec HpfFieldsTouched.on bool?
+codec HpfFieldsTouched.fq double?
+codec HpfFieldsTouched.slope int32?
+codec HpfFieldsLayers.machine HpfFieldsValue
+codec HpfFieldsLayers.hand HpfFieldsTouched
+codec MonoBassFieldsValue.on bool
+codec MonoBassFieldsValue.fq double
+codec MonoBassFieldsValue.width double
+codec MonoBassFieldsTouched.on bool?
+codec MonoBassFieldsTouched.fq double?
+codec MonoBassFieldsTouched.width double?
+codec MonoBassFieldsLayers.machine MonoBassFieldsValue
+codec MonoBassFieldsLayers.hand MonoBassFieldsTouched
+codec GlueFieldsValue.on bool
+codec GlueFieldsValue.upToDb double
+codec GlueFieldsTouched.on bool?
+codec GlueFieldsTouched.upToDb double?
+codec GlueFieldsLayers.machine GlueFieldsValue
+codec GlueFieldsLayers.hand GlueFieldsTouched
+codec SaturationFieldsValue.on bool
+codec SaturationFieldsValue.drive double
+codec SaturationFieldsValue.mix double
+codec SaturationFieldsValue.output double
+codec SaturationFieldsTouched.on bool?
+codec SaturationFieldsTouched.drive double?
+codec SaturationFieldsTouched.mix double?
+codec SaturationFieldsTouched.output double?
+codec SaturationFieldsLayers.machine SaturationFieldsValue
+codec SaturationFieldsLayers.hand SaturationFieldsTouched
+codec TiltFieldsValue.on bool
+codec TiltFieldsValue.db double
+codec TiltFieldsTouched.on bool?
+codec TiltFieldsTouched.db double?
+codec TiltFieldsLayers.machine TiltFieldsValue
+codec TiltFieldsLayers.hand TiltFieldsTouched
+codec LimiterFieldsValue.needles Needles
+codec LimiterFieldsValue.needlesDb double
+codec LimiterFieldsTouched.needles Needles?
+codec LimiterFieldsTouched.needlesDb double?
+codec LimiterFieldsLayers.machine LimiterFieldsValue
+codec LimiterFieldsLayers.hand LimiterFieldsTouched
+codec DitherFieldsValue.on bool
+codec DitherFieldsTouched.on bool?
+codec DitherFieldsLayers.machine DitherFieldsValue
+codec DitherFieldsLayers.hand DitherFieldsTouched
+codec LowShelfFieldsValue.on bool
+codec LowShelfFieldsValue.db double
+codec LowShelfFieldsTouched.on bool?
+codec LowShelfFieldsTouched.db double?
+codec LowShelfFieldsLayers.machine LowShelfFieldsValue
+codec LowShelfFieldsLayers.hand LowShelfFieldsTouched
+codec Devices.hpf HpfFieldsLayers
+codec Devices.monoBass MonoBassFieldsLayers
+codec Devices.glue GlueFieldsLayers
+codec Devices.saturation SaturationFieldsLayers
+codec Devices.tilt TiltFieldsLayers
+codec Devices.limiter LimiterFieldsLayers
+codec Devices.dither DitherFieldsLayers
+codec Devices.lowShelf LowShelfFieldsLayers
+codec Project.target uint16
+codec Project.targetEdit TargetFieldsTouched
+codec Project.manual bool
+codec Project.devices Devices
+codec Project.core Version
+codec Recipe.project Project
+codec Recipe.source uint64
+codec Recipe.sound uint64
+codec Kept.id uint32
+codec Kept.recipe Recipe
+codec Source.channels uint32
+codec Source.sampleRate uint32
+codec Source.frames uint64
+codec Source.hash uint64
+codec Source.fileRate uint32
+codec Source.rateKnown bool
+codec Source.bitDepth uint8
+codec Source.name string
+codec Phase.name PhaseName
+codec Phase.fraction double
+codec Phase.weightsVersion uint64
+codec Phase.pass uint32
+codec Phase.totalPasses uint32
+codec Phase.completedUnits uint32
+codec Phase.totalUnits uint32
+codec ReadingPoint.index uint64
+codec ReadingPoint.value double
+codec ReadingRun.first uint64
+codec ReadingRun.count uint64
+codec ReadingRun.value double
+codec Snapshot.state State
+codec Snapshot.mastering bool
+codec Snapshot.revision uint64
+codec Snapshot.project Project
+codec Snapshot.target string
+codec Snapshot.source Source
+codec Snapshot.job uint32
+codec Snapshot.measurementJob uint32
+codec Snapshot.jobRecipe Recipe
+codec Snapshot.masters Kept[]
+codec Snapshot.measurementProgress Phase
+codec Snapshot.masterProgress Phase
+codec Snapshot.sourceBytes bytes
+codec Snapshot.integratedLufs double
+codec Snapshot.momentary ReadingPoint[]
+codec Snapshot.shortTerm ReadingPoint[]
+codec Snapshot.runs ReadingRun[]
+codec Snapshot.machineDifferences MachineDifference[]
+codec Snapshot.offeredDevices uint32
+codec Version.major uint32
+codec Version.minor uint32
+codec Version.patch uint32
+codec MachineDifference.device Device
+codec MachineDifference.field uint8
+codec MachineDifference.fileValue double
+codec MachineDifference.coreValue double
+wire Row.byteOffset number
+wire Row.length number
+wire Row.stride 2 | 3 | 4
+wire AcceptedAnswer.kind "accepted"
+wire AcceptedAnswer.commandId string
+wire AcceptedAnswer.revision string
+wire AcceptedAnswer.jobId number
+wire RejectedAnswer.kind "rejected"
+wire RejectedAnswer.commandId string
+wire RejectedAnswer.revision string
+wire RejectedAnswer.code Rejection
+wire RejectedAnswer.needBytes number
+wire RejectedAnswer.field number
+wire RejectedAnswer.device number
+wire RejectedAnswer.line number
+wire RejectedAnswer.column number
+wire ContractAnswer.kind "rejected"
+wire ContractAnswer.commandId string
+wire ContractAnswer.revision string
+wire ContractAnswer.code "contract"
+wire ContractAnswer.reason "unknown" | "missing" | "duplicate" | "invalid"
+wire ContractAnswer.field string
+wire WireFact.FactId number
+wire WireFact.args ReadonlyArray<WireArg>
+wire WireArg.kind number
+wire WireArg.unit number
+wire WireArg.precision number
+wire WireArg.sign number
+wire WireArg.bound number
+wire WireArg.termId number
+wire WireArg.number WireNumber
+wire WireArg.integer string
+wire WireArg.userText string
+wire ReadingPayload.momentary Row
+wire ReadingPayload.shortTerm Row
+wire ReadingPayload.runs Row
+wire DonePayload.masterId number
+wire RejectedPayload.commandId string
+wire RejectedPayload.code Rejection
+wire ErrorPayload.code ErrorCode
+wire ErrorPayload.recover Recover
+wire ErrorPayload.needBytes number
+wire ErrorPayload.fact WireFact
+wire SourceMeta.name string
+wire SourceMeta.fileRate number
+wire SourceMeta.rateKnown boolean
+wire SourceMeta.bitDepth number
+wire SetTargetCommand.kind "setTarget"
+wire SetTargetCommand.commandId string
+wire SetTargetCommand.target string
+wire SetTargetCommand.onEdits "reset" | "keep"
+wire SetManualCommand.kind "setManual"
+wire SetManualCommand.commandId string
+wire SetManualCommand.on boolean
+wire EditTargetCommand.kind "editTarget"
+wire EditTargetCommand.commandId string
+wire EditTargetCommand.fields TargetPatch
+wire TargetPatch.lufs? WireNumber | null
+wire TargetPatch.tp? WireNumber | null
+wire MasterCommand.kind "master"
+wire MasterCommand.commandId string
+wire CancelCommand.kind "cancel"
+wire CancelCommand.commandId string
+wire CancelCommand.jobId number
+wire ForgetCommand.kind "forget"
+wire ForgetCommand.commandId string
+wire ForgetCommand.masterId number
+wire PhaseEvent.seq string
+wire PhaseEvent.jobId number
+wire PhaseEvent.kind "phase"
+wire PhaseEvent.payload Phase
+wire FactEvent.seq string
+wire FactEvent.jobId number
+wire FactEvent.kind "fact"
+wire FactEvent.payload WireFact
+wire ReadingEvent.seq string
+wire ReadingEvent.jobId number
+wire ReadingEvent.kind "reading"
+wire ReadingEvent.payload ReadingPayload
+wire DoneEvent.seq string
+wire DoneEvent.jobId number
+wire DoneEvent.kind "done"
+wire DoneEvent.payload DonePayload
+wire RejectedEvent.seq string
+wire RejectedEvent.jobId number
+wire RejectedEvent.kind "rejected"
+wire RejectedEvent.payload RejectedPayload
+wire ErrorEvent.seq string
+wire ErrorEvent.jobId number
+wire ErrorEvent.kind "error"
+wire ErrorEvent.payload ErrorPayload
+wire EditDeviceHpfCommand.kind "editDevice"
+wire EditDeviceHpfCommand.commandId string
+wire EditDeviceHpfCommand.device 0
+wire EditDeviceHpfCommand.fields EditDeviceHpfFields
+wire EditDeviceHpfFields.on? boolean | null
+wire EditDeviceHpfFields.fq? WireNumber | null
+wire EditDeviceHpfFields.slope? number | null
+wire EditDeviceMonoBassCommand.kind "editDevice"
+wire EditDeviceMonoBassCommand.commandId string
+wire EditDeviceMonoBassCommand.device 1
+wire EditDeviceMonoBassCommand.fields EditDeviceMonoBassFields
+wire EditDeviceMonoBassFields.on? boolean | null
+wire EditDeviceMonoBassFields.fq? WireNumber | null
+wire EditDeviceMonoBassFields.width? WireNumber | null
+wire EditDeviceGlueCommand.kind "editDevice"
+wire EditDeviceGlueCommand.commandId string
+wire EditDeviceGlueCommand.device 2
+wire EditDeviceGlueCommand.fields EditDeviceGlueFields
+wire EditDeviceGlueFields.on? boolean | null
+wire EditDeviceGlueFields.upToDb? WireNumber | null
+wire EditDeviceSaturationCommand.kind "editDevice"
+wire EditDeviceSaturationCommand.commandId string
+wire EditDeviceSaturationCommand.device 3
+wire EditDeviceSaturationCommand.fields EditDeviceSaturationFields
+wire EditDeviceSaturationFields.on? boolean | null
+wire EditDeviceSaturationFields.drive? WireNumber | null
+wire EditDeviceSaturationFields.mix? WireNumber | null
+wire EditDeviceSaturationFields.output? WireNumber | null
+wire EditDeviceTiltCommand.kind "editDevice"
+wire EditDeviceTiltCommand.commandId string
+wire EditDeviceTiltCommand.device 4
+wire EditDeviceTiltCommand.fields EditDeviceTiltFields
+wire EditDeviceTiltFields.on? boolean | null
+wire EditDeviceTiltFields.db? WireNumber | null
+wire EditDeviceLimiterCommand.kind "editDevice"
+wire EditDeviceLimiterCommand.commandId string
+wire EditDeviceLimiterCommand.device 5
+wire EditDeviceLimiterCommand.fields EditDeviceLimiterFields
+wire EditDeviceLimiterFields.needles? Needles | null
+wire EditDeviceLimiterFields.needlesDb? WireNumber | null
+wire EditDeviceDitherCommand.kind "editDevice"
+wire EditDeviceDitherCommand.commandId string
+wire EditDeviceDitherCommand.device 6
+wire EditDeviceDitherCommand.fields EditDeviceDitherFields
+wire EditDeviceDitherFields.on? boolean | null
+wire EditDeviceLowShelfCommand.kind "editDevice"
+wire EditDeviceLowShelfCommand.commandId string
+wire EditDeviceLowShelfCommand.device 7
+wire EditDeviceLowShelfCommand.fields EditDeviceLowShelfFields
+wire EditDeviceLowShelfFields.on? boolean | null
+wire EditDeviceLowShelfFields.db? WireNumber | null
+wire RevertEditsHpfCommand.kind "revertEdits"
+wire RevertEditsHpfCommand.commandId string
+wire RevertEditsHpfCommand.device 0
+wire RevertEditsHpfCommand.fields RevertEditsHpfFields
+wire RevertEditsHpfFields.on? boolean
+wire RevertEditsHpfFields.fq? boolean
+wire RevertEditsHpfFields.slope? boolean
+wire RevertEditsMonoBassCommand.kind "revertEdits"
+wire RevertEditsMonoBassCommand.commandId string
+wire RevertEditsMonoBassCommand.device 1
+wire RevertEditsMonoBassCommand.fields RevertEditsMonoBassFields
+wire RevertEditsMonoBassFields.on? boolean
+wire RevertEditsMonoBassFields.fq? boolean
+wire RevertEditsMonoBassFields.width? boolean
+wire RevertEditsGlueCommand.kind "revertEdits"
+wire RevertEditsGlueCommand.commandId string
+wire RevertEditsGlueCommand.device 2
+wire RevertEditsGlueCommand.fields RevertEditsGlueFields
+wire RevertEditsGlueFields.on? boolean
+wire RevertEditsGlueFields.upToDb? boolean
+wire RevertEditsSaturationCommand.kind "revertEdits"
+wire RevertEditsSaturationCommand.commandId string
+wire RevertEditsSaturationCommand.device 3
+wire RevertEditsSaturationCommand.fields RevertEditsSaturationFields
+wire RevertEditsSaturationFields.on? boolean
+wire RevertEditsSaturationFields.drive? boolean
+wire RevertEditsSaturationFields.mix? boolean
+wire RevertEditsSaturationFields.output? boolean
+wire RevertEditsTiltCommand.kind "revertEdits"
+wire RevertEditsTiltCommand.commandId string
+wire RevertEditsTiltCommand.device 4
+wire RevertEditsTiltCommand.fields RevertEditsTiltFields
+wire RevertEditsTiltFields.on? boolean
+wire RevertEditsTiltFields.db? boolean
+wire RevertEditsLimiterCommand.kind "revertEdits"
+wire RevertEditsLimiterCommand.commandId string
+wire RevertEditsLimiterCommand.device 5
+wire RevertEditsLimiterCommand.fields RevertEditsLimiterFields
+wire RevertEditsLimiterFields.needles? boolean
+wire RevertEditsLimiterFields.needlesDb? boolean
+wire RevertEditsDitherCommand.kind "revertEdits"
+wire RevertEditsDitherCommand.commandId string
+wire RevertEditsDitherCommand.device 6
+wire RevertEditsDitherCommand.fields RevertEditsDitherFields
+wire RevertEditsDitherFields.on? boolean
+wire RevertEditsLowShelfCommand.kind "revertEdits"
+wire RevertEditsLowShelfCommand.commandId string
+wire RevertEditsLowShelfCommand.device 7
+wire RevertEditsLowShelfCommand.fields RevertEditsLowShelfFields
+wire RevertEditsLowShelfFields.on? boolean
+wire RevertEditsLowShelfFields.db? boolean
+wire SessionCapabilities.heapCeilingBytes number
+wire SessionCapabilities.maxRateHz number
+wire SessionCapabilities.offeredDevices number
+wire union SessionStatus 0
+wire union SessionStatus 1
+wire union SessionStatus 2
+wire union SessionStatus 3
+wire union SessionStatus 4
+wire union SessionStatus 5
+wire union SessionStatus 6
+wire union SessionStatus 7
+wire union SessionStatus 8
+wire union SessionStatus 9
+wire union SessionStatus 10
+wire union SessionStatus 11
+wire union SessionStatus 12
+wire union SessionStatus 13
+wire union SessionStatus 14
+wire union SessionStatus 15
+wire union SessionStatus 16
+wire union CommandAnswer AcceptedAnswer
+wire union CommandAnswer RejectedAnswer
+wire union CommandAnswer ContractAnswer
+wire union SessionEvent PhaseEvent
+wire union SessionEvent FactEvent
+wire union SessionEvent ReadingEvent
+wire union SessionEvent DoneEvent
+wire union SessionEvent RejectedEvent
+wire union SessionEvent ErrorEvent
+wire union SessionCommand SetTargetCommand
+wire union SessionCommand SetManualCommand
+wire union SessionCommand EditTargetCommand
+wire union SessionCommand EditDeviceCommand
+wire union SessionCommand RevertEditsCommand
+wire union SessionCommand MasterCommand
+wire union SessionCommand CancelCommand
+wire union SessionCommand ForgetCommand
+wire union EditDeviceCommand EditDeviceHpfCommand
+wire union EditDeviceCommand EditDeviceMonoBassCommand
+wire union EditDeviceCommand EditDeviceGlueCommand
+wire union EditDeviceCommand EditDeviceSaturationCommand
+wire union EditDeviceCommand EditDeviceTiltCommand
+wire union EditDeviceCommand EditDeviceLimiterCommand
+wire union EditDeviceCommand EditDeviceDitherCommand
+wire union EditDeviceCommand EditDeviceLowShelfCommand
+wire union RevertEditsCommand RevertEditsHpfCommand
+wire union RevertEditsCommand RevertEditsMonoBassCommand
+wire union RevertEditsCommand RevertEditsGlueCommand
+wire union RevertEditsCommand RevertEditsSaturationCommand
+wire union RevertEditsCommand RevertEditsTiltCommand
+wire union RevertEditsCommand RevertEditsLimiterCommand
+wire union RevertEditsCommand RevertEditsDitherCommand
+wire union RevertEditsCommand RevertEditsLowShelfCommand
+binary SessionSnapshot.momentary
+binary SessionSnapshot.shortTerm
+binary SessionSnapshot.runs
+binary SessionSnapshot.machineDifferences

@@ -126,6 +126,9 @@ const char* nameOf (felitronics::session::Rejection r)
         case Rejection::UnknownDefaults: return "UnknownDefaults";
         case Rejection::ProjectCore: return "ProjectCore";
         case Rejection::MachineMismatch: return "MachineMismatch";
+        case Rejection::NewerDefaults: return "NewerDefaults";
+        case Rejection::RateAboveLimit: return "RateAboveLimit";
+        case Rejection::Memory: return "Memory";
     }
     return "?";
 }

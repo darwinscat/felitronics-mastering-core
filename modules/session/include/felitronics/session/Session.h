@@ -32,6 +32,17 @@ enum class Status : std::uint8_t
     // config's schema puts it. Not reachable in a library whose build ran the config's gate (every build does): the
     // session reads the same documents the gate read, and its reading is held to the schema's by the state suite.
     Config = 2,
+    ConfigVersion = 3,
+    Capabilities = 4,
+    Memory = 5,
+};
+
+// Shell input; exact byte counts are doubles strictly below 2^53. Device bits follow Device.
+struct Capabilities
+{
+    double heapCeilingBytes = 9007199254740991.0;
+    std::uint32_t maxRateHz = 4294967295u;
+    std::uint32_t offeredDevices = 255u;
 };
 
 struct ProjectText
@@ -115,7 +126,7 @@ public:
     // THE DEMAND OF create(), before it is made (law 11d: memory that cannot be had is fatal, so the demand is published
     // instead). The bytes create() requests from the heap, counted by the same expression that sizes the request, so the
     // two cannot drift. REQUESTED bytes: the allocator's own header and alignment are the caller's margin.
-    [[nodiscard]] static std::uint64_t createBytes() noexcept;
+    [[nodiscard]] static std::uint64_t createBytes (const Capabilities& capabilities = {}) noexcept;
 
     // A new session — Empty, at revision 0, on the config's default target, the manual mode off, the devices unplaced
     // (they are placed when the first measurement ends) — or a refusal before anything is allocated:
@@ -124,6 +135,10 @@ public:
     // An accepted create never gives a null session: under -fno-exceptions a heap that cannot serve createBytes() ends
     // the process (natively) or the module (wasm) inside this call, which is what the demand above keeps a shell clear of.
     [[nodiscard]] static Created create() noexcept;
+    [[nodiscard]] static Created create (const Capabilities& capabilities, std::uint64_t configVersion) noexcept;
+    [[nodiscard]] static Status checkCreate (const Capabilities& capabilities, std::uint64_t configVersion) noexcept;
+    [[nodiscard]] double liveBytes() const noexcept;
+    [[nodiscard]] const Capabilities& capabilities() const noexcept;
 
     // Is the calling thread's floating-point environment IEEE-754's default — no flush-to-zero, no denormals-are-zero,
     // rounding to nearest? Status::Ok if it is, Status::FloatingPointEnvironment if not. Read with ordinary arithmetic;
@@ -159,6 +174,7 @@ public:
     // Export is an owned exact byte allocation, without a terminator. Only placed projects are exportable.
     [[nodiscard]] Checked exportProjectBytes() const noexcept;
     [[nodiscard]] ProjectText exportProject() const noexcept;
+    [[nodiscard]] Rejection exportProject (std::span<char> output) const noexcept;
     [[nodiscard]] Answer importProject (CommandId id, std::string_view bytes) noexcept;
 
     // Each unit completes one deterministic stub step. A call takes at most kStepUnits units;
@@ -188,12 +204,15 @@ public:
     [[nodiscard]] std::span<const Kept> masters() const noexcept;   // the masters kept, in the order they were made
 
 private:
+    friend class Wire;
     friend struct detail::Driver;   // the session's own transitions, driven by the work that ends (src/Driver.h)
     // Defined by the state and event suites to reach the last job id, Driver failures and batch bounds;
     // the library defines none.
     friend struct detail::Inspector;
 
     Session() noexcept = default;
+    Capabilities capabilities_ {};
+    [[nodiscard]] Checked demand (std::uint64_t bytes) const noexcept;
 
     // Are the devices placed — has the first measurement of this source ended (Measured1, Measured2)?
     [[nodiscard]] bool placed() const noexcept;

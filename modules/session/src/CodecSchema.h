@@ -37,7 +37,10 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (PhaseName::Analyzers) == 2);
         static_assert (unsigned (PhaseName::Pass) == 3);
         static_assert (unsigned (PhaseName::Remeasure) == 4);
-        return 4;
+        static_assert (unsigned (PhaseName::Convert) == 5);
+        static_assert (unsigned (PhaseName::Lra) == 6);
+        static_assert (unsigned (PhaseName::Final) == 7);
+        return 7;
     }
     else if constexpr (std::is_same_v<T, State>)
     {
@@ -84,6 +87,9 @@ constexpr void checkEnum (PhaseName value) noexcept
         case PhaseName::Analyzers: break;
         case PhaseName::Pass: break;
         case PhaseName::Remeasure: break;
+        case PhaseName::Convert: break;
+        case PhaseName::Lra: break;
+        case PhaseName::Final: break;
     }
 }
 
@@ -383,7 +389,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, SnapshotView>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.integratedLufs)>, double>);
         v.field ("integratedLufs", x.integratedLufs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.job)>, std::uint32_t>);
@@ -404,6 +410,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("measurementProgress", x.measurementProgress);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.momentary)>, std::span<const ReadingPoint>>);
         v.field ("momentary", x.momentary);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.offeredDevices)>, std::uint32_t>);
+        v.field ("offeredDevices", x.offeredDevices);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.project)>, Project>);
         v.field ("project", x.project);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.revision)>, std::uint64_t>);

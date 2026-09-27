@@ -49,7 +49,7 @@ The laws are felitronics-core's (`docs/DSP-ARCHITECTURE.md` §2), numbered as th
 | **9** no `long double` | yes | core's long-double lint reads every `modules/*/include` and `modules/*/src`, this module's included, and the wasm tier's artifact gate reads every emitted object |
 | **10** FP contraction is stated | yes — **as `off`** | the target's own flags in one `SHELL:` group, the compile line read back (this build's and a consumer's), the hostile-flags tests, the library's probes asked from a contracting caller, and the source lint's pragma and attribute rules. Core states `on` for its tree; the session's numbers are compared across rows, native and wasm, and baseline wasm has no fused multiply-add, so a contracting native build would disagree with the module. The library's flags reach its own objects only: a program that links it compiles **every** translation unit with the same FP flags (below, "What the flags do not reach"). The sign and payload of a NaN, and the floating-point exception masks and flags, are outside every check here, as core's law 10 leaves them |
 | **11**, **11b** a request that cannot be honoured is refused whole; checks in a fixed order | yes | `create()` checks the floating-point environment and the config it reads, then allocates: a refused create requested nothing (`felitronics_session_tests`). Every command runs the checks `Commands.h` declares, in their order — the thread's floating-point environment, then the table — before changing session state. Import adds the ordered document checks below. A rejection publishes its event and advances `seq`; the session’s state and revision do not change. A `load` runs its checks, then disarms, then writes (check → disarm → write), so a rejected load, too, leaves state and revision unchanged while publishing its rejection: `felitronics_session_state_tests` compares the whole session before and after every rejection it produces, produces every rejection code, and holds the order with requests wrong in several ways. The C boundary's checks run in its header's order and a refused call writes nothing and allocates nothing (`felitronics_session_abi_tests`). `fcore_session` reads and checks a whole script before it creates a session |
-| **11d** memory is declared before the work | yes | `Session::createBytes()` is the demand of `create()`, counted by the expression that sizes the request, and `Session::check()` gives the demand of every command before it runs — computed by the same function `apply()` runs first; the declared-budget harness (`modules/session/tests/DeclaredBudget.h`, on core's one allocation counter) holds `create()` and every command to *declared ≥ requested* (exactly equal, where the request is one exact allocation), holds `check()`, typed-command refusals and every transition to nothing requested; import parsing and its refusals are covered by the size-derived bound in `felitronics_session_project_tests`, and is itself shown to fail on a sample that under-declares. The event suite also holds `stepBytes()`, `snapshotBytes()`, snapshot copy, and codec size queries and work to their declared demands (below). The demand is checked in C++; the draft C ABI does not forward it. The C boundary adds nothing to it (its table is static) and keeps the poison |
+| **11d** memory is declared before the work | yes | `Session::createBytes()` is the demand of `create()`, counted by the expression that sizes the request, and `Session::check()` gives the demand of every command before it runs — computed by the same function `apply()` runs first; the declared-budget harness (`modules/session/tests/DeclaredBudget.h`, on core's one allocation counter) holds `create()` and every command to *declared ≥ requested* (exactly equal, where the request is one exact allocation), holds `check()`, typed-command refusals and every transition to nothing requested; import parsing and its refusals are covered by the size-derived bound in `felitronics_session_project_tests`, and is itself shown to fail on a sample that under-declares. The event suite also holds `stepBytes()`, `snapshotBytes()`, snapshot copy, and codec size queries and work to their declared demands (below). The demand is checked in C++ and `fc_session_create_bytes` publishes creation demand before creation. The shell supplies a heap ceiling; live declared bytes plus each allocating command's demand must fit before work begins. The C boundary adds nothing to it (its table is static) and keeps the poison |
 
 Not listed, and why: **3** (float in the hot path) — there is no hot path; **11c** (a pause is silence) — there are no
 clock-only calls; **11e** (a restart adopts an accepted publication) — the session publishes and adopts nothing.
@@ -185,8 +185,7 @@ every stage a device writes is named, the limiter's second release included.
   warning without switching a device (every observation threshold but `observations.polarity`; the peak clipper's
   density figures), what is measured after the master (the crest, the cost), development (the progress weights, the
   blind test), the name of the defaults, and — while no shell offers the de-esser — its block and the bursts only it
-  reads. The default target stays in. `sound` is what a recipe records. They walk the
-  embedded data and allocate nothing, so the C ABI answers the config's `all` (`fc_session_config_version`) with no
+  reads. The default target stays in. `sound` is what a recipe records. The build gate hashes the config into constants shared by the compiled library and generated page declarations; queries allocate nothing, so the C ABI answers the config's `all` (`fc_session_config_version`) with no
   demand to declare. The suite changes every value of both documents, one at a time — through their text and through the
   embedded data — and requires `all` to move each time to a value of its own, and `sound` to move exactly for the values
   that can change a master; the decisions suite pins `sound` to the name of the defaults, so a sound number changed
@@ -400,8 +399,8 @@ not a replay requirement.
 The facade's existing poison latch is permanent. Its native replay test injects the allocation failure used by the
 master ABI suite. Since session creation is `noexcept`, the test observes the abandoned call from a termination
 handler, verifies every status entry point refuses, replays outside the facade, and exits; it never resumes or clears
-the broken instance. A test-only accessor reaches its C++ project without adding a draft ABI export. The
-exceptions-free tier exercises the same permanent latch through allocation reentry. The draft ABI remains version 0.
+the broken instance. A test-only accessor reaches its C++ project for comparison with its owned snapshot. The
+exceptions-free tier exercises the same permanent latch through allocation reentry. The C ABI is version 1.
 
 ## The text — facts, one catalog, one formatting table
 
@@ -678,7 +677,7 @@ and `u8'0'` is a character literal, not a digit separator. Its rules:
   own `Session.h`, `Config.h`, `Commands.h`, `Project.h` and `Text.h`, felitronics-toml's `Toml.h`, `Schema.h` and `Embedded.h`, and the three analyzers the
   config's schema asks what they admit, `LowEnd.h`, `BandCrest.h` and `StereoBandBursts.h`, which bring core's DSP and
   `FlushToZero.h` with it; the schema calls only their `storageFor()`); quoted headers inside the module, and in
-  `src/Config.cpp` the two headers the build generates from the config, and in `src/Text.cpp` the two it generates from
+  `src/Config.cpp` the three headers the build generates from the config, and in `src/Text.cpp` the two it generates from
   the text, by name;
 - **no macros** — no `#define`, `#undef` or `##` — and **no directive** but `#include` and `#pragma once`;
   `src/BuildGuards.h` and `src/BuildContract.cpp` may carry `#if` / `#error` logic and nothing that defines a macro;
@@ -712,33 +711,74 @@ build's `compile_commands.json` to plant an unlisted unit and drop a listed one.
 
 ## The C boundary — `fc_session`
 
-`tools/fc_session_abi.h`, implemented by `tools/wasm/fc_session.cpp`. Its version is **0, a draft**: no promise — any
-entry point, argument, code or constant may change without a bump. It carries the ABI version, a session created and
-destroyed through a handle, the config's version (`all`), the session's refusals of `create()` passed through as status
-codes (`FC_SESSION_ERR_FP_ENVIRONMENT`, `FC_SESSION_ERR_CONFIG`), and the poison. It carries no command: the states
-and the commands are the library's C++ surface. It follows
-fc_master's law — the facade is thin: handles instead of pointers, a status per call, checks on the addresses a page
-computed, the poison, and nothing that decides. It is compiled with the session library's own options and definitions,
-natively and in the wasm module, includes `src/BuildGuards.h` first, and is under the source lint with the allowance
-above.
+`tools/fc_session_abi.h`, implemented by `tools/wasm/fc_session.cpp`, freezes **version 1**. Existing
+signatures, constants, enum values and C layouts remain unchanged; additions are allowed. The facade follows
+fc_master's law: handles, address checks, a status per call and permanent poison. Commands, capability enforcement
+and serialization belong to the compiled C++ library, including `Wire.h`, so a desktop can use the same behavior.
 
-- **Two globals, the only ones session has**: the handle table and the poison flag — a handle must name a session between
-  two calls, and the poison must outlive the call that never returned. Both are trivially destructible, so no exit-time
-  destructor runs. The object-file gate refuses a third.
-- **Handles retire, they do not wrap.** A handle is a slot and that slot's 24-bit generation. A generation that wrapped
-  would give an old handle's number to a new session, and the stale handle would destroy it (reproduced on the module:
-  16 777 214 create/destroy cycles, a fraction of a second). So a slot issues `FC_SESSION_SLOT_GENERATIONS` handles and
-  then retires; after `FC_SESSION_MAX_HANDLES × FC_SESSION_SLOT_GENERATIONS` creates a module instance answers
-  `FC_SESSION_ERR_EXHAUSTED` for good. The table's capacity is **8** — fixed, compiled in, not configurable. The native suite and `tools/wasm/session-check.mjs` walk one slot through all of
-  its generations.
-- **The poison**: an entry point that finds a call still in progress — an earlier one never returned (the wasm module
-  aborted inside it), or it was re-entered from inside an allocation — answers `FC_SESSION_ERR_POISONED`, for good.
+`create(capabilities, configVersion)` takes the shell's exact `heapCeilingBytes` (a double below 2^53), `maxRateHz`,
+and `offeredDevices` bit set. `fc_session_create_bytes` publishes its allocation demand before creation, even when
+the ceiling cannot afford it. Creation refuses an incompatible config with `FC_SESSION_ERR_CONFIG_VERSION`.
+The generated `snapshot.d.ts` declares `FC_SESSION_CONFIG_VERSION` as a literal hash; `snapshot.mjs` exports its
+runtime value. Both come from the build's config gate. The library's no-argument `Session::create()` selects its
+compiled config with unrestricted capabilities; the overload accepts the shell's explicit inputs.
 
-`fcsession` is its wasm module (`tools/wasm/build.sh`): the facade and the sources `modules/session/sources.txt` lists
-(the build refuses a `.cpp` under `modules/session/src`, at any depth, that is not listed), linked with
-`--wrap=pthread_create`, with its embedded config — 58 KB of wasm, 17 KB brotli: the config's data, and the states and the commands over it. `tools/wasm/session-check.mjs` compares every export of the
-loaded module against the ABI's surface and the runtime's own, runs the surface, and walks the wrap boundary; `build.sh`
-builds a control copy with one undeclared export and requires the check to refuse it.
+The session counts its own live declared allocations plus each command's declared demand before work. A memory
+refusal preserves state and revision, allocates nothing, and publishes `ErrorCode::Memory` with exact `needBytes`.
+It precedes a load's sample scan and an import's parser. Rates above `maxRateHz` receive `Rejection::RateAboveLimit`.
+An unoffered device stays inactive, cannot be edited or reverted, and cannot be activated by project import.
+The snapshot's `offeredDevices` tells the shell which devices it can expose; the existing target/source restrictions
+still apply. Convert, Lra and Final are appended to `PhaseName` at 5, 6 and 7 and have catalog facts in ru and en.
+
+| Entry points (`fc_session_` prefix) | Contract |
+| --- | --- |
+| `abi_version`, `config_version` | ABI number; config hash as low/high uint32 halves |
+| `create_bytes`, `create`, `destroy` | Pre-create demand; capability/config creation; generation-checked destruction |
+| `command` | Named-field JSON in; accepted/rejected JSON out |
+| `load` | Planar f32 pointers, channels, frames, rate and JSON metadata; owned PCM copy |
+| `import_project`, `export_project_size`, `export_project_copy` | Project bytes in caller buffers |
+| `step` | Work units, bounded by `kStepUnits`; zero polls; More or Done |
+| `events_size`, `events_copy` | The current batch as tagged JSON and f64 rows |
+| `snapshot_size`, `snapshot_copy` | Current snapshot as named JSON and f64 rows |
+
+For example, `{"kind":"editDevice","commandId":"17","device":0,"fields":{"fq":32}}` edits the HPF frequency.
+Command identities are decimal strings. Fields can arrive in any order; unknown, missing, duplicate or malformed
+fields produce a `rejected` answer naming the field. Edits omit untouched knobs or use null. `load` metadata requires
+`name`, `fileRate`, `bitDepth`, and `rateKnown`. Load and import carry command identities as low/high uint32 arguments.
+The page reserves `FC_SESSION_ANSWER_BYTES` before commands run; a short output cannot execute a command and then
+lose its answer. `written` excludes a terminator. A domain rejection is an OK transport call with a rejected answer;
+an import's syntax/schema refusal can allocate within its declared parsing demand.
+
+Size queries and copies allocate nothing. No session pointer leaves a call. JSON row descriptors
+`{byteOffset,length,stride}` point into a separate buffer aligned to 8 bytes, with capacity stated in bytes.
+The page reads `Float64Array`: points have `[index,value]`, runs `[first,count,value]`, and machine differences
+`[device,field,fileValue,coreValue]`. Only records such as retained recipes remain JSON arrays. Binary values preserve
+IEEE-754 infinities and NaN; scalar JSON values use `"-Infinity"`, `"Infinity"`, and `"NaN"`. Indices and byte counters
+remain exact below 2^53. `SessionEvent` is a generated union discriminated by `kind`. The snapshot-only recorded JSON
+codec remains available for owned C++ fixtures; `Wire` supplies the transferable form to both native and wasm callers.
+
+The header fixes the check order: poison; outputs in signature order (null, alignment, span); handle; inputs;
+overlap; session checks. A non-OK status leaves every output untouched. Buffers are disjoint and caller-owned.
+Size/copy pairs require no intervening mutation. Calls use one thread; callbacks must not reenter the facade.
+
+The only mutable globals are the handle table and poison latch. Eight slots each issue 24-bit generations and retire
+before wrapping. Release tests walk every generation; Debug uses a test-only seam to exercise the last generation and
+retirement directly. Every status entry detects an abandoned or reentered call. A real wasm trap cannot return through
+C; generated `invokeSession` maps it to `FC_SESSION_ERR_TRAP`. Subsequent calls return `FC_SESSION_ERR_POISONED` and
+publish nothing; even destruction is refused. `abi_version` remains callable. Recovery uses a fresh module, the same
+source, and the exported project. A reentered call also suppresses the outer call's output.
+
+`tools/session-abi-v1.txt` is the frozen floor. `session-abi-check.mjs` generates a probe that compiles exact function
+type assertions and emits constants, every public enum value, C struct sizes, alignment and field offsets. Each tier,
+including wasm32, runs its own probe; codec field/type lines are frozen beside the C surface. The gate requires every
+frozen line to remain and permits additions. Its control deletes and changes each line and requires rejection.
+CI runs the gate and control. The Windows Debug selection includes the session ABI suites.
+
+`tools/wasm/build.sh` builds `fcsession` from the facade and `modules/session/sources.txt`, audits the exact export list,
+compares node/web wasm bytes, checks for threads, and runs a node scenario through the ABI and generated types.
+Controls reject an extra export and verify a real allocation trap followed by permanent poison. The wire fixture
+checks all six event kinds and nonempty binary rows against the generated declarations. Full native/wasm scenario
+parity is a separate contract suite.
 
 ## The native CLI — `fcore_session`
 

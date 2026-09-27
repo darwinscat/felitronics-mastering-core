@@ -92,11 +92,16 @@ inline constexpr FactShape kFacts[] = {
     { FactId::RejectedProjectCore, "rejectedProjectCore", {}, 0 },
     { FactId::RejectedMachineMismatch, "rejectedMachineMismatch", {}, 0 },
     { FactId::RejectedNewerDefaults, "rejectedNewerDefaults", {}, 0 },
+    { FactId::RejectedRateAboveLimit, "rejectedRateAboveLimit", {}, 0 },
+    { FactId::RejectedMemory, "rejectedMemory", {}, 0 },
     { FactId::Measurement1, "measurement1", {}, 0 },
     { FactId::Measurement2, "measurement2", {}, 0 },
     { FactId::MasterPass, "masterPass", { { { "pass", ArgKind::Count, {} } } }, 1 },
     { FactId::MasterReady, "masterReady", {}, 0 },
     { FactId::Cancelled, "cancelled", {}, 0 },
+    { FactId::Convert, "convert", {}, 0 },
+    { FactId::Lra, "lra", {}, 0 },
+    { FactId::Final, "final", {}, 0 },
     { FactId::SessionTrap, "sessionTrap", {}, 0 },
     { FactId::SessionContract, "sessionContract", {}, 0 },
     { FactId::SessionRefusal, "sessionRefusal", {}, 0 },
@@ -214,6 +219,8 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Rejection::UnknownDefaults: return FactId::RejectedUnknownDefaults;
         case Rejection::ProjectCore: return FactId::RejectedProjectCore;
         case Rejection::MachineMismatch: return FactId::RejectedMachineMismatch;
+        case Rejection::RateAboveLimit: return FactId::RejectedRateAboveLimit;
+        case Rejection::Memory: return FactId::RejectedMemory;
         case Rejection::NewerDefaults: return FactId::RejectedNewerDefaults;
     }
     return std::nullopt;

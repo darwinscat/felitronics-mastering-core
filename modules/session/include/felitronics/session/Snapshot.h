@@ -12,6 +12,7 @@ namespace felitronics::session
 {
 struct SnapshotView
 {
+    std::uint32_t offeredDevices = 0;
     State state = State::Empty;
     bool mastering = false;
     std::uint64_t revision = 0;

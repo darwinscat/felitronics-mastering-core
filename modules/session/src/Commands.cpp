@@ -183,7 +183,7 @@ Checked Session::check (const Request& request) const noexcept
     if (const auto* imported = std::get_if<command::ImportProject> (&request))
     {
         if (imported->bytes.size() > kMaxProjectText) return rejected (Rejection::ProjectTooLarge);
-        return { Rejection::None, kNoField, detail::importBytes (imported->bytes.size()) };
+        return demand (detail::importBytes (imported->bytes.size()));
     }
     if (const auto* load = std::get_if<command::Load> (&request))
     {
@@ -193,20 +193,23 @@ Checked Session::check (const Request& request) const noexcept
         const Pcm& pcm = load->pcm;
         if (pcm.channelCount < 1 || pcm.channelCount > 2) return rejected (Rejection::BadChannels);
         if (pcm.sampleRate < kMinSampleRate) return rejected (Rejection::BadRate);
+        if (pcm.sampleRate > capabilities_.maxRateHz) return rejected (Rejection::RateAboveLimit);
         if (pcm.frames == 0 || pcm.channels == nullptr) return rejected (Rejection::NoAudio);
         for (std::uint32_t c = 0; c < pcm.channelCount; ++c)
             if (pcm.channels[c] == nullptr) return rejected (Rejection::NoAudio);
         if (pcm.frames > std::numeric_limits<std::size_t>::max() / sizeof (float) / pcm.channelCount
             || pcm.frames > 9007199254740991ull / sizeof (float) / pcm.channelCount)
             return rejected (Rejection::TooLong);
+        const auto need = demand (std::uint64_t (pcm.channelCount) * pcm.frames * sizeof (float)
+                                  + std::uint64_t (load->meta.name.size()));
+        if (need.rejection != Rejection::None) return need;
         const auto frames = std::size_t (pcm.frames);   // fits: the line above
         for (std::uint32_t c = 0; c < pcm.channelCount; ++c)
             for (std::size_t i = 0; i < frames; ++i)
                 if (! finite (pcm.channels[c][i])) return rejected (Rejection::NotFinite);
         // THE WORK'S BYTES: the samples, channel after channel, and the name — each one exact request (the load in apply()
         // below: an array of exactly this many floats, and one of exactly this many chars unless the name is empty).
-        return { Rejection::None, kNoField,
-                 std::uint64_t (pcm.channelCount) * pcm.frames * sizeof (float) + std::uint64_t (load->meta.name.size()) };
+        return need;
     }
     if (const auto* set = std::get_if<command::SetTarget> (&request))
     {
@@ -230,14 +233,16 @@ Checked Session::check (const Request& request) const noexcept
     {
         // 3. MANUAL, 4. NAMES, 5. FIELDS
         if (! project_.manual) return rejected (Rejection::ManualOff);
-        if (! detail::offered (rules, project_.target, source_.channels, Device (edit->fields.index())))
+        if ((capabilities_.offeredDevices & (1u << edit->fields.index())) == 0
+            || ! detail::offered (rules, project_.target, source_.channels, Device (edit->fields.index())))
             return rejected (Rejection::NotOffered);
         return onActive (edit->fields, [&] (const auto& fields) { return editCheck (rules, fields); });
     }
     if (const auto* revert = std::get_if<command::RevertEdits> (&request))
     {
         if (! project_.manual) return rejected (Rejection::ManualOff);
-        if (! detail::offered (rules, project_.target, source_.channels, Device (revert->fields.index())))
+        if ((capabilities_.offeredDevices & (1u << revert->fields.index())) == 0
+            || ! detail::offered (rules, project_.target, source_.channels, Device (revert->fields.index())))
             return rejected (Rejection::NotOffered);
         const bool any = onActive (revert->fields, [&] (const auto& mask) { return anyMarked (rules, mask); });
         return any ? Checked {} : rejected (Rejection::NoFields);
@@ -249,7 +254,7 @@ Checked Session::check (const Request& request) const noexcept
         // THE WORK'S BYTES: room for one more master kept — its recipe is kept when it is done, and that must not ask
         // the heap at the end of a render — as one exact reserve, unless the room is there already.
         const bool room = masterRoom_ > masterCount_;
-        return { Rejection::None, kNoField, room ? 0 : std::uint64_t (masterCount_ + 1) * sizeof (Kept) };
+        return demand (room ? 0 : std::uint64_t (masterCount_ + 1) * sizeof (Kept));
     }
     if (const auto* cancel = std::get_if<command::Cancel> (&request))
         return job_ == 0 && measurementJob_ == 0 ? rejected (Rejection::NoJob)
@@ -275,17 +280,27 @@ Answer Session::apply (const Request& request) noexcept
     const Checked checked = check (request);
     answer.rejection = checked.rejection;
     answer.field = checked.field;
+    answer.needBytes = checked.needBytes;
     detail::ImportedProject imported;
     if (checked.rejection == Rejection::None)
         if (const auto* input = std::get_if<command::ImportProject> (&request))
         {
-            imported = detail::readProject (input->bytes, source_.channels);
+            imported = detail::readProject (input->bytes, source_.channels, capabilities_.offeredDevices);
             answer = imported.answer;
             answer.command = input->id;
         }
     if (answer.rejection != Rejection::None)
     {
         answer.revision = revision_;
+        if (answer.rejection == Rejection::Memory)
+        {
+            Notification error;
+            error.kind = EventKind::Error;
+            error.payload.error.code = ErrorCode::Memory;
+            error.payload.error.needBytes = answer.needBytes;
+            (void) error.payload.error.fact.assign (text::Fact::of (text::FactId::SessionMemory));
+            emit (error);
+        }
         Notification event;
         event.kind = EventKind::Rejected;
         event.payload.rejected = { answer.command, answer.rejection };
@@ -350,7 +365,7 @@ Answer Session::apply (const Request& request) noexcept
         if (set->onEdits == OnEdits::Reset) clearHands (project_.devices);
         else clearHandsNotOffered (rules, row, source_.channels, project_.devices);
         // Placed devices are placed again for the new target; unplaced ones wait for the first measurement's end.
-        if (placed()) detail::placeMachine (rules, row, source_.channels, project_.devices);
+        if (placed()) detail::placeMachine (rules, row, source_.channels, project_.devices, capabilities_.offeredDevices);
     }
     else if (const auto* edit = std::get_if<command::EditTarget> (&request))
     {
@@ -464,7 +479,7 @@ bool Driver::measured1 (Session& session, JobId job, std::uint64_t source) noexc
     if (Session::checkFloatingPointEnvironment() != Status::Ok || ! allowed (session, Event::Measured1)) return false;
     session.state_ = State::Measured1;
     session.measurementUnit_ = 5;
-    detail::placeMachine (detail::rules(), session.project_.target, session.source_.channels, session.project_.devices);
+    detail::placeMachine (detail::rules(), session.project_.target, session.source_.channels, session.project_.devices, session.capabilities_.offeredDevices);
     ++session.revision_;
     return true;
 }

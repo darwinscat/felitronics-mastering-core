@@ -198,6 +198,14 @@ Checked Session::exportProjectBytes() const noexcept
     Writer w; w.project (project_, detail::rules(), source_.channels);
     return { Rejection::None, kNoField, w.size };
 }
+Rejection Session::exportProject (std::span<char> output) const noexcept
+{
+    const auto need = exportProjectBytes();
+    if (need.rejection != Rejection::None) return need.rejection;
+    if (output.size() < need.bytes) return Rejection::TooLong;
+    Writer w { output.data() }; w.project (project_, detail::rules(), source_.channels);
+    return Rejection::None;
+}
 ProjectText Session::exportProject() const noexcept
 {
     ProjectText out;
@@ -225,7 +233,7 @@ std::uint64_t importBytes (std::size_t size) noexcept
                                    + sizeof (toml::Problem) + 128);
     return 65536 + std::uint64_t (size) * perByte;
 }
-ImportedProject readProject (std::string_view bytes, std::uint32_t channels) noexcept
+ImportedProject readProject (std::string_view bytes, std::uint32_t channels, std::uint32_t offeredDevices) noexcept
 {
     ImportedProject out;
     auto parsed = toml::parse (bytes);
@@ -316,7 +324,7 @@ ImportedProject readProject (std::string_view bytes, std::uint32_t channels) noe
     out.foreignCore = ! sameVersion (out.project.core, Session::version());
     Devices decided;
     Answer mismatch;
-    placeMachine (rules, out.project.target, channels, decided);
+    placeMachine (rules, out.project.target, channels, decided, offeredDevices);
     eachDevice (out.project.devices, [&] (Device device, const auto& layers)
     {
         using Of = DeviceOf<std::remove_cvref_t<decltype (layers.machine)>>;
@@ -334,10 +342,11 @@ ImportedProject readProject (std::string_view bytes, std::uint32_t channels) noe
             if (out.answer.rejection == Rejection::None && hand)
             {
                 if (! out.project.manual) fail (Rejection::ManualOff, at ("hand"));
-                else if (! offered (rules, out.project.target, channels, device)) fail (Rejection::NotOffered, at ("hand"));
+                else if ((offeredDevices & (1u << unsigned (device))) == 0 || ! offered (rules, out.project.target, channels, device)) fail (Rejection::NotOffered, at ("hand"));
             }
             if (! detail::same (double (machine), double (current)))
             {
+                if ((offeredDevices & (1u << unsigned (device))) == 0) fail (Rejection::NotOffered, at ("machine"));
                 if (mismatch.rejection == Rejection::None && ! out.foreignCore)
                 {
                     mismatch.rejection = Rejection::MachineMismatch;

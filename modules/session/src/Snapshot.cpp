@@ -76,6 +76,7 @@ Snapshot Session::snapshot() const noexcept
 SnapshotView Session::buildView() const noexcept
 {
     SnapshotView v;
+    v.offeredDevices = capabilities_.offeredDevices;
     v.state = state_;
     v.mastering = mastering_;
     v.revision = revision_;

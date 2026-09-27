@@ -575,7 +575,7 @@ read -r TV_MAJOR TV_MINOR TV_PATCH <<< "$(sed -nE '/^project\(felitronics_toml/,
 [ -n "${TV_PATCH:-}" ] && { [ "$TV_MAJOR" -gt 0 ] || [ "$TV_MINOR" -ge 2 ]; } \
     || { echo "*** felitronics-toml at $TOML is not v0.2.0 or later (${TV_MAJOR:-?}.${TV_MINOR:-?}.${TV_PATCH:-?})"; exit 1; }
 echo "--- fc_session config: felitronics-toml $TV_MAJOR.$TV_MINOR.$TV_PATCH at $TOML"
-cmake -DOUTPUT="$OUT/snapshot.d.ts" -P "$ROOT/tools/session-codec.cmake"
+
 SGEN="$OUT/session-config"
 mkdir -p "$SGEN/embedded"
 em++ -std=c++20 -O1 -I"$TOML/include" "$TOML/tools/toml2cpp.cpp" \
@@ -598,9 +598,14 @@ SFRONT=(-std=c++20 "${SESSION_FLAGS[@]}"
         -DFELITRONICS_SESSION_CORE_VERSION_PATCH="$CV_PATCH")
 em++ "${SFRONT[@]}" -O1 "$ROOT/modules/session/tests/ConfigCheck.cpp" "$ROOT/modules/session/src/ConfigSchema.cpp" \
      -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -o "$SGEN/config_check.js"
-node "$SGEN/config_check.js" "$ROOT/modules/session/config/targets.toml" "$ROOT/modules/session/config/engine.toml" \
+node "$SGEN/config_check.js" --expect "$ROOT/modules/session/config/targets.toml" "$ROOT/modules/session/config/engine.toml" "$SGEN/embedded" \
     || { echo "*** the session's config breaks its schema — see above"; exit 1; }
 echo "--- fc_session config: read by schema, no problem"
+cmake -DOUTPUT="$OUT/snapshot.d.ts" -DVERSION_FILE="$SGEN/embedded/version.txt" -P "$ROOT/tools/session-codec.cmake"
+node "$ROOT/tools/session-abi-check.mjs" --generate "$SGEN/abi-probe.cpp"
+em++ "${SFRONT[@]}" -O1 "$SGEN/abi-probe.cpp" -sEXIT_RUNTIME=1 -o "$SGEN/abi-probe.js"
+node "$ROOT/tools/session-abi-check.mjs" node "$SGEN/abi-probe.js"
+node "$ROOT/tools/session-abi-check.mjs" --self-test
 em++ "${SFRONT[@]}" -O1 "$ROOT/modules/session/tests/TextCheck.cpp" "$ROOT/modules/session/src/TextSchema.cpp" \
      -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -o "$SGEN/text_check.js"
 node "$SGEN/text_check.js" "$ROOT/modules/session/text/catalog.toml" "$ROOT/modules/session/text/format.toml" \
@@ -614,6 +619,9 @@ SNAMES=$(export_names "${SFILES[@]}")
 SFOUND=$(printf '%s\n' "$SNAMES" | grep -c . || true)
 check_exports "$SFOUND" "${SFILES[@]}"
 check_return_types 'std::uint32_t|fc_session_status' "${SFILES[@]}"
+SEXACT="_fc_session_abi_version _fc_session_command _fc_session_config_version _fc_session_create _fc_session_create_bytes _fc_session_destroy _fc_session_events_copy _fc_session_events_size _fc_session_export_project_copy _fc_session_export_project_size _fc_session_import_project _fc_session_load _fc_session_snapshot_copy _fc_session_snapshot_size _fc_session_step"
+[ "$(printf '%s\n' "$SNAMES" | LC_ALL=C sort | paste -sd' ' -)" = "$SEXACT" ] \
+    || { echo "*** fc_session exports differ from the frozen v1 list"; exit 1; }
 SEXPORTS="$(printf '%s\n' "$SNAMES" | paste -sd, -),_malloc,_free"
 echo "--- fc_session exports: $SFOUND entry points (+ _malloc/_free), matching $SFOUND declarations in: ${SFILES[*]##*/}"
 echo "    library flags (modules/session/build-flags.txt): ${SESSION_FLAGS[*]}"
@@ -655,6 +663,12 @@ grep -q 'debug_probe' "$OUT/controls/session-check.txt" \
 echo "  control ok: $(grep -m1 'debug_probe' "$OUT/controls/session-check.txt")"
 
 echo
+echo "=== allocation trap and permanent poison (fc_session)"
+mkdir -p "$OUT/trap"
+em++ "${SCOMMON[@]}" -O3 -sENVIRONMENT=node "$SSRC" "${SESSION_SRCS[@]}" "$HERE/session-controls/trap_allocation.cpp" \
+     -o "$OUT/trap/fcsession.node.js"
+node "$HERE/session-trap-check.mjs" "$OUT/trap/fcsession.node.js" "$OUT/snapshot.mjs"
+
 echo "=== size (fc_session)"
 sizes fcsession.web.wasm fcsession.web.mjs
 
