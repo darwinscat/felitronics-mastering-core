@@ -5,9 +5,9 @@
 
 // THE SESSION'S OWN TRANSITIONS (internal to modules/session; not public API). A measurement or a master ends by the work
 // that ran it, never by a shell's command — so the endings are not Requests: the work that measures and renders calls
-// them here. Each consults Table::events (Commands.h) for the session's column first, and changes nothing where the
-// table does not allow it, or on a thread whose floating-point environment the session refuses (it computes: the
-// devices are placed on the config's numbers). Where it is allowed it moves the revision by one, as a command does.
+// them here. Each checks the thread's floating-point environment (it computes: the devices are placed on the config's
+// numbers) and then Table::events (Commands.h) for the session's column, and changes nothing on a thread the session
+// refuses or where the table does not allow it. Where it is allowed it moves the revision by one, as a command does.
 //
 // Session names this struct its friend; nothing but the library's own sources and its suites include this file.
 

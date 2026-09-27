@@ -10,7 +10,7 @@ revision included. No text anywhere: the codes are stable values a shell's catal
 
 **Who may do what, when, is one table in code** (`Table` in `Commands.h`): a row per command, a cell per column (Empty,
 Loaded, Measured1, Measured2, and a master being made on either measured state) — taken, or the rejection it gets there.
-Every command consults it first; the endings of the work (the first measurement, the second, a master) are the session's
+Every command consults it right after the floating-point entry check; the endings of the work (the first measurement, the second, a master) are the session's
 own transitions with a table of their own, driven by the work through an internal seam, not by commands.
 `fcore_session table` prints both tables from the code as Markdown, and ctest holds `docs/SESSION.md`'s copy to that
 output byte for byte. The checks after the table run in one declared order — the thread's floating-point environment,

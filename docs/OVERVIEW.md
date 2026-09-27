@@ -74,7 +74,8 @@ floating-point environment is not IEEE-754's default, and it holds:
   being made as an overlay on the measured two. A shell asks by typed requests — `load`, `setTarget`, `editTarget`,
   `editDevice`, `revertEdits`, `setManual`, `master`, `cancel`, `forget` — each answered whole: accepted with the
   revision it made, or rejected with a code, having changed nothing. Who may do what, when, is one table in the code,
-  consulted first by every command, and the checks after it run in one declared order. Every command states what it
+  consulted by every command right after the floating-point entry check, and the checks after it run in one declared
+  order. Every command states what it
   will ask the heap for before it runs;
 - **its project** (`<felitronics/session/Project.h>`): the target and a person's edits of its numbers, the manual mode,
   and every device's parameters as typed fields written once and used in two layers — the machine's, complete, placed
