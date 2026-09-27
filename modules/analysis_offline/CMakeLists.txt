@@ -8,7 +8,7 @@
 add_library(felitronics_analysis_offline INTERFACE)
 add_library(felitronics::analysis_offline ALIAS felitronics_analysis_offline)
 target_include_directories(felitronics_analysis_offline INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(felitronics_analysis_offline INTERFACE
+target_link_libraries(felitronics_analysis_offline INTERFACE felitronics_storage
     felitronics::analysis felitronics::eq felitronics::stereo)
 target_compile_features(felitronics_analysis_offline INTERFACE cxx_std_20)
 

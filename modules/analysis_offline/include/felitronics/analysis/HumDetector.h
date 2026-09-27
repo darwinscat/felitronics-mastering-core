@@ -11,7 +11,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <vector>
+#include <felitronics/storage/Buffer.h>
 
 namespace felitronics::analysis
 {
@@ -524,6 +524,8 @@ private:
 
 public:
     // WHAT prepare() ASKS THE HEAP FOR (law 11d), from the function prepare() sizes itself with.
+    static constexpr std::uint64_t constructBytes() noexcept { return SpectrumFrames::constructBytes(); }
+
     struct Storage
     {
         bool ok = false;
@@ -536,6 +538,7 @@ public:
         std::size_t traceEntries    = 0;   // HumFrameTrace, traceCapacity
         std::size_t floorDoubles    = 0;   // double, floorPairs (scratch, reused)
         std::size_t excludeEntries  = 0;   // BinRange, the merged candidate bands
+        std::uint64_t firstBytes() const noexcept { return HumDetector::constructBytes() + bytes(); }
         std::uint64_t bytes() const noexcept
         {
             return frames.bytes()
@@ -1257,13 +1260,13 @@ private:
     double quietLin_ = 0.0, promLin_ = 1.0, levelLin_ = 0.0, harmTolHz_ = 0.0;
     int channels_ = 0, excludeUsed_ = 0;
     std::int64_t traceCount_ = 0;
-    std::vector<double> band_, stretchBuf_;
-    mutable std::vector<double> floorScratch_;
-    std::vector<HumStretch> stretches_;
-    std::vector<HumHarmonic> harmonics_;
-    std::vector<ChannelState> chans_;
-    std::vector<HumFrameTrace> trace_;
-    std::vector<BinRange> exclude_;
+    storage::Buffer<double> band_, stretchBuf_;
+    mutable storage::Buffer<double> floorScratch_;
+    storage::Buffer<HumStretch> stretches_;
+    storage::Buffer<HumHarmonic> harmonics_;
+    storage::Buffer<ChannelState> chans_;
+    storage::Buffer<HumFrameTrace> trace_;
+    storage::Buffer<BinRange> exclude_;
 };
 
 } // namespace felitronics::analysis

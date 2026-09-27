@@ -5,7 +5,7 @@
 add_library(felitronics_tempo INTERFACE)
 add_library(felitronics::tempo ALIAS felitronics_tempo)
 target_include_directories(felitronics_tempo INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-target_link_libraries(felitronics_tempo INTERFACE felitronics::core)
+target_link_libraries(felitronics_tempo INTERFACE felitronics_storage felitronics::core)
 target_compile_features(felitronics_tempo INTERFACE cxx_std_20)
 
 if(FELITRONICS_BUILD_TESTS)

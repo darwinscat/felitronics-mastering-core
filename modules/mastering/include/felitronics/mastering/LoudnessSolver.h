@@ -21,6 +21,8 @@
 #include <utility>
 #include <array>
 #include <vector>
+#include <felitronics/storage/Buffer.h>
+#include <felitronics/storage/VectorBytes.h>
 
 namespace felitronics::mastering
 {
@@ -866,6 +868,21 @@ struct LoudnessSolution
 class TargetLoudnessSolver
 {
 public:
+    static constexpr std::uint64_t constructBytes() noexcept { return 3u * storage::kVectorProxyBytes; }
+    static constexpr std::uint64_t meterConstructBytes() noexcept
+    {
+        return (storage::kLoudnessProxies + 1u + storage::kPolyphaseProxies * core::kMaxChannels)
+             * storage::kVectorProxyBytes;
+    }
+    // Six vectors in a solution (band results, two traces, three histograms). A non-elided
+    // return constructs a second set of proxies; moving a Debug vector allocates its empty proxy.
+    static constexpr std::uint64_t solutionConstructBytes() noexcept { return 6u * storage::kVectorProxyBytes; }
+    static constexpr std::uint64_t solutionReturnBytes() noexcept { return 3u * solutionConstructBytes(); }
+    static constexpr std::uint64_t solveProxyBytes() noexcept
+    {
+        // render(): seven local vectors for the optional band measurements, including empty ones.
+        return 7u * storage::kVectorProxyBytes;
+    }
     static constexpr double kMaxGainDb = 60.0;      // MasteringChain::kMaxGainDb — the search's actuator range
     static constexpr int    kMaxPasses = TargetLoudnessSolverLimits::kMaxPasses;
     // The lowest rate the search measures at — the core's 8000 Hz floor. Below twice the K-weighting shelf the meters
@@ -998,6 +1015,7 @@ public:
              + 3u * hist + bandTap;
     }
 
+    // Working storage alone; solveCallBytes() below includes the result's construction and return.
     // solve(): its PEAK. Every pass builds a loudness meter and the reference true-peak meter and frees them at the
     // pass's end, so the peak is ONE pass. (The drain used to be a buffer of zeros the first solve allocated and later
     // ones reused; the reference meter drains from its own fixed array, so there is nothing left over.) 0 for a length
@@ -1016,7 +1034,16 @@ public:
         const std::uint64_t meter = meterBytes (sampleRate, frames);
         if (meter == 0) return 0u;       // the meter refuses its capacity: measure() stops before anything is allocated
         return meter + analysis::ReferenceTruePeakMeter::storageFor (sampleRate, frames, numChannels).bytes()
-             + 2u * GainReductionTrace::bytesFor (grTraceBuckets, frames) + 3u * hist;
+             + 2u * GainReductionTrace::bytesFor (grTraceBuckets, frames) + 3u * hist
+             + meterConstructBytes() + solveProxyBytes();
+    }
+
+    // The whole call, including a refused solve's result. Three sets of solution proxies bound
+    // the local, a non-elided return and the caller's destination; the facade forwards this sum.
+    static std::uint64_t solveCallBytes (double sampleRate, int numChannels, int frames, int grTraceBuckets,
+                                         double binDb = 0.01) noexcept
+    {
+        return solveBytes (sampleRate, numChannels, frames, grTraceBuckets, binDb) + solutionReturnBytes();
     }
 
     // The request's bucket count, as admits() judges it.
@@ -1032,7 +1059,8 @@ public:
     {
         // The rate first: rangeMeasurable() divides by it. (The answer was 0 either way — meterBytes() refuses the
         // same rates — but a division by a zero rate is not a question this budget should have to ask.)
-        return rateAdmitted (sampleRate) && rangeMeasurable (frames, sampleRate) ? meterBytes (sampleRate, frames) : 0u;
+        return rateAdmitted (sampleRate) && rangeMeasurable (frames, sampleRate)
+             ? meterBytes (sampleRate, frames) + storage::kLoudnessProxies * storage::kVectorProxyBytes : 0u;
     }
 
     // Render `frames` of `in` into `out` at a gain and ceiling chosen to meet `req`. `params` is the
@@ -2496,7 +2524,7 @@ private:
     int    nch_ = 0, frameCap_ = 0, osCap_ = 0;
     bool   prepared_ = false;
 
-    std::vector<float> compTap_, limTap_, limPeak_, bandTap_;
+    storage::Buffer<float> compTap_, limTap_, limPeak_, bandTap_;
     int    bandQuantaCap_ = 0;
     dynamics::offline::QuantileHistogram compHist_, limHist_, limActiveHist_;
     float  maxReconLin_ = 0.0f;

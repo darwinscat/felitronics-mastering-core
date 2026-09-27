@@ -11,7 +11,8 @@
 #include <complex>
 #include <cstddef>
 #include <cstdint>
-#include <vector>
+#include <felitronics/storage/Buffer.h>
+#include <felitronics/storage/VectorBytes.h>
 
 namespace felitronics::analysis
 {
@@ -75,6 +76,8 @@ class SpectrumFrames
 public:
     // WHAT prepare() ASKS THE HEAP FOR (law 11d), from the function prepare() sizes itself with, so a
     // caller budgeting memory reads the numbers the object is actually built from.
+    static constexpr std::uint64_t constructBytes() noexcept { return storage::kVectorProxyBytes; }
+
     struct Storage
     {
         bool ok = false;
@@ -83,6 +86,7 @@ public:
         std::size_t windowD     = 0;     // double, N
         std::size_t fftComplex  = 0;     // complex<double>, N — ONE scratch, reused per channel
         std::size_t powerD      = 0;     // double, (N/2 + 1) * channels
+        std::uint64_t firstBytes() const noexcept { return SpectrumFrames::constructBytes() + bytes(); }
         std::uint64_t bytes() const noexcept
         {
             return (std::uint64_t) sizeof (float) * ringSamples
@@ -298,11 +302,11 @@ private:
     double sumW_ = 0.0, sumW2_ = 0.0;
     std::int64_t holesInWindow_[core::kMaxChannels] {};
     bool frameFinite_[core::kMaxChannels] {};
-    std::vector<float> ring_;
-    std::vector<std::uint8_t> hole_;
-    std::vector<double> window_;
+    storage::Buffer<float> ring_;
+    storage::Buffer<std::uint8_t> hole_;
+    storage::Buffer<double> window_;
     std::vector<std::complex<double>> scratch_;
-    std::vector<double> power_;
+    storage::Buffer<double> power_;
 };
 
 } // namespace felitronics::analysis

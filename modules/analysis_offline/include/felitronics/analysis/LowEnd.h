@@ -14,7 +14,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
-#include <vector>
+#include <felitronics/storage/Buffer.h>
 
 namespace felitronics::analysis
 {
@@ -317,6 +317,8 @@ public:
     // with, so a caller budgeting memory reads the numbers the object is actually built from. The nested
     // SpectrumFrames ask is part of it — at the default order it is 5 505 040 bytes on its own and
     // leaving it out would make this a promise with no budget.
+    static constexpr std::uint64_t constructBytes() noexcept { return SpectrumFrames::constructBytes(); }
+
     struct Storage
     {
         bool ok = false;
@@ -332,6 +334,7 @@ public:
         std::size_t dutyRatios    = 0;      // bands: the sum of its share of the frame max, over those frames
         std::int64_t blockSamples = 0;      // lround(0.01*fs), published because every coordinate uses it
         int bandCount             = 0;
+        std::uint64_t firstBytes() const noexcept { return LowEnd::constructBytes() + bytes(); }
         std::uint64_t bytes() const noexcept
         {
             return frames.bytes()
@@ -1394,13 +1397,13 @@ private:
     TraceFn trace_ = nullptr;
     void* traceUser_ = nullptr;
 
-    std::vector<BlockRecord> blocks_;
-    std::vector<LowEndBand>  bands_;
-    std::vector<BinWeight>   weights_;
-    std::vector<int>         bandCountBins_;
-    std::vector<double>      accMid_, accSide_, accMoment_, traceMid_, traceSide_, sort_;
-    std::vector<std::int64_t> dutyCount_;   // occupancy: frames this band was present in
-    std::vector<double>      dutyRatio_;    // …and the sum of its share of the frame max over those
+    storage::Buffer<BlockRecord> blocks_;
+    storage::Buffer<LowEndBand>  bands_;
+    storage::Buffer<BinWeight>   weights_;
+    storage::Buffer<int>         bandCountBins_;
+    storage::Buffer<double>      accMid_, accSide_, accMoment_, traceMid_, traceSide_, sort_;
+    storage::Buffer<std::int64_t> dutyCount_;   // occupancy: frames this band was present in
+    storage::Buffer<double>      dutyRatio_;    // …and the sum of its share of the frame max over those
     double                   dutyShare_ = 0.0;   // the threshold as a linear ratio, made once
     std::int64_t             dutyFrames_ = 0;    // frames that cleared the note floor and were counted
 };

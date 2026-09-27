@@ -974,9 +974,7 @@ constexpr int kRendererBlock = 4096;
 // decides the kind. Shared by `fc_master_create` and `fc_master_need_create`, so the two cannot disagree.
 std::uint64_t createBytesFor (const fc_master_config& c, const MasteringChainConfig& cc) noexcept
 {
-    return c.deliveryRate != 0.0
-        ? DeliveredMastering::createBytes (c.sampleRate, c.deliveryRate, c.channels, cc, kRendererBlock)
-        : mastering::createBytes (c.sampleRate, c.channels, cc, kRendererBlock);
+    return mastering::createInstanceBytes (c.sampleRate, c.deliveryRate, c.channels, cc, kRendererBlock);
 }
 
 // THE CALL THAT NEVER RETURNED. Under -fno-exceptions an exhausted heap ABORTS inside a core call, and the module is
@@ -1272,9 +1270,7 @@ FC_EXPORT fc_status fc_master_configure (fc_master h, const fc_master_params* pa
 
     // NOTHING HAS MOVED UNTIL HERE. A refused call above left the chain exactly as it was, which is what
     // makes "a refused call is indistinguishable from one never made" true at this boundary too.
-    m.chain.setParams (cp);
-    if (! m.chain.prepare (m.chain.sampleRate(), m.chain.numChannels(), m.cfg))
-        return FC_ERR_REFUSED_BY_CORE;
+    if (! m.chain.configure (cp)) return FC_ERR_REFUSED_BY_CORE;
 
     m.framesIn = m.framesFlushed = 0;
     m.solverRan = false;                    // a known parameter set is back in the chain
@@ -1444,13 +1440,13 @@ std::uint64_t solveBudget (const MasterInstance& m, std::uint32_t frames, int gr
 {
     const int nch = m.chain.numChannels();
     return m.delivering
-        ? DeliveredMastering::solveBytes (m.delivered.sourceRate(), m.delivered.deliveryRate(), nch, (long long) frames, grTraceBuckets)
-        : TargetLoudnessSolver::solveBytes (m.chain.sampleRate(), nch, (int) frames, grTraceBuckets);
+        ? DeliveredMastering::solveCallBytes (m.delivered.sourceRate(), m.delivered.deliveryRate(), nch, (long long) frames, grTraceBuckets)
+        : TargetLoudnessSolver::solveCallBytes (m.chain.sampleRate(), nch, (int) frames, grTraceBuckets);
 }
 }   // namespace
 
-// Forwarding only: every number is the core's (TargetLoudnessSolver's budgets) or this file's own `sizeof`, and
-// none is added to another here — the page sums what applies.
+// Forwarding only: every number is the core's budget or this file's own `sizeof`, and none is added
+// to another here — the page sums what applies.
 FC_EXPORT fc_status fc_master_need (fc_master h, std::int32_t op, std::uint32_t frames, fc_need* out)
 {
     FC_GUARD;
@@ -1483,9 +1479,8 @@ FC_EXPORT fc_status fc_master_need (fc_master h, std::int32_t op, std::uint32_t 
         // argument a call reads as nothing is an argument a caller can be wrong about for ever.
         case FC_NEED_CONFIGURE:   if (frames != 0u) return FC_ERR_RANGE;
                                   // The core's own answer about the chain in front of it: `configure`
-                                  // re-prepares at the handle's own rate, width and config, and a chain
-                                  // that already holds that geometry asks for nothing.
-                                  call = m.chain.reprepareBytes (fs, nch, m.cfg);
+                                  // re-prepares at the stored geometry, including Debug temporaries.
+                                  call = m.chain.configureBytes();
                                   facade = 0; solverOp = false;                           break;
         default:                  return FC_ERR_ENUM;
     }
@@ -1809,8 +1804,11 @@ FC_EXPORT fc_status fc_master_solve (fc_master h, const fc_master_params* params
     }
 
     ProgressState progress;
-    g_slots[idx].solution = std::make_unique<LoudnessSolution> (
-        m.solver.solve (m.chain, m.renderer, cp, ip, op, nch, (int) frames, lr, progressFor (m, progress)));
+    // Allocate the record before entering the solver: a Debug STL vector can allocate its proxy
+    // inside a noexcept constructor. A failed record allocation must still unwind through CallGuard.
+    g_slots[idx].solution = std::make_unique<LoudnessSolution>();
+    *g_slots[idx].solution =
+        m.solver.solve (m.chain, m.renderer, cp, ip, op, nch, (int) frames, lr, progressFor (m, progress));
     if (g_slots[idx].solution->status == MasteringSolveStatus::Cancelled) return cancelledSolve (m, g_slots[idx]);
 
     // The search drives the renderer, which RESETS the chain on every pass — so where it ran, the
@@ -2274,9 +2272,12 @@ FC_EXPORT fc_status fc_master_solve_delivered (fc_master h, const fc_master_para
         op[c] = out + (std::size_t) c * (std::size_t) outFrames;
     }
     ProgressState progress;
-    g_slots[idx].solution = std::make_unique<LoudnessSolution> (
+    // Allocate the record before entering the solver: a Debug STL vector can allocate its proxy
+    // inside a noexcept constructor. A failed record allocation must still unwind through CallGuard.
+    g_slots[idx].solution = std::make_unique<LoudnessSolution>();
+    *g_slots[idx].solution =
         m.delivered.solve (m.solver, m.chain, m.renderer, cp, ip, nch, (long long) inFrames,
-                           op, (long long) outFrames, lr, progressFor (m, progress)));
+                           op, (long long) outFrames, lr, progressFor (m, progress));
     if (g_slots[idx].solution->status == MasteringSolveStatus::Cancelled) return cancelledSolve (m, g_slots[idx]);
 
     // As `fc_master_solve`: where the search ran, the chain holds its parameters; where it did not, nothing moved.

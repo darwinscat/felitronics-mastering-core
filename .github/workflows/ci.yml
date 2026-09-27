@@ -43,6 +43,28 @@ jobs:
           n=$( (getconf _NPROCESSORS_ONLN || nproc || sysctl -n hw.ncpu) 2>/dev/null | head -1 )
           ctest --test-dir build -C Release --output-on-failure --no-tests=error -j "${n:-4}"
 
+  windows-debug:
+    name: windows-msvc-debug-budgets
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure
+        run: cmake -S . -B build-debug -DFELITRONICS_MASTERING_BUILD_TESTS=ON
+      - name: Build allocation and session suites
+        run: >
+          cmake --build build-debug --config Debug -j 4 --target
+          felitronics_analysis_abi_tests felitronics_tempo_abi_tests felitronics_fctempo_abi_tests
+          felitronics_master_abi_tests felitronics_storage_tests
+          felitronics_session_tests felitronics_session_state_tests felitronics_session_config_tests
+          felitronics_session_config_decisions_tests felitronics_session_text_tests
+      - name: Test allocation budgets with iterator debugging
+        # Measured x64 MSVC Debug test time: 121.40 s for these ten suites.
+        # The full session handle-generation walk remains in Release. These session suites have no long walk.
+        run: |
+          node tools/tests/windows-debug.mjs --self-test
+          node tools/tests/windows-debug.mjs build-debug
+
   # Against core's CURRENT main instead of the pin: the rows above prove the pinned core, and nothing on core's
   # side builds these modules any more, so a core change that breaks them is found here (nightly at the latest),
   # not at the next pin bump. The lints run too: this repository's zone stands on core's.
