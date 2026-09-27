@@ -326,26 +326,14 @@ lufs.hand = -12.5
 [hpf]
 fq.hand = 36
 
-[monoBass]
-
-[glue]
-
-[saturation]
-
-[tilt]
-
-[limiter]
-
-[dither]
-
-[lowShelf]
 ```
 
 The first two keys identify the defaults and the release that placed the machine layer. A new placement stamps
 `Session::version()`, sourced from the root `project(... VERSION ...)` line that the release tool updates; the existing
 version suite pins the binary to those build definitions. A core version is canonical `major.minor.patch`, each part
 an unsigned 32-bit integer. The manual flag follows. `[target]` names a target by its config **key**, never an index;
-only touched `lufs.hand` and `tp.hand` follow it. Sections follow the typed device order and use the config's names.
+only touched `lufs.hand` and `tp.hand` follow it. Device sections follow the typed order and use the config's names;
+a section appears only when a machine difference or touched hand follows. The reader accepts absent and empty sections.
 Each field writes `.machine` before `.hand`, one value per line. Defaults are omitted from the machine layer; every
 touched hand is retained, including a number equal to the machine's. Booleans are TOML booleans, slopes integers, and
 needles are `"auto"`, `"manual"` or `"off"`. Doubles use the shortest fixed decimal that reads back to the same binary64
@@ -383,13 +371,17 @@ allocates nothing. The bound is tested with long strings, many keys, nested tabl
 empty input and the size boundary under the declared-budget harness, including MSVC Debug. There is no allocator
 recovery after the published budget is exceeded by the environment.
 
-This binary carries **one defaults version**, the `engine.toml` label. A different label gets `UnknownDefaults`.
-Supporting a second version requires its compiled default tables and an explicit version lookup for placement,
-validation and writing; no conversion or fallback is implicit.
+The core carries the **current and previous defaults tables**. Today the current label is `2026-09` and the previous
+slot is empty. A carried label uses its compiled defaults. Labels are strictly `YYYY-MM`, with months `01` through `12`.
+A label older than every carried version is converted: written numbers are retained and omitted fields take current
+defaults. Fact `DefaultsConverted` (9) owns the original label and reports the conversion in both catalog languages.
+Export uses the current label; a converted project round trips without a second conversion warning. A newer label
+is refused as `NewerDefaults` (32, fact 132); a malformed label is `UnknownDefaults`. A future uncarried label between
+the retained versions is also `UnknownDefaults`. All these refusals leave state and revision unchanged.
 
-With the same core stamp, the machine decides again and every field must equal the file's complete layer (omitted
+After defaults selection or conversion, with the same core stamp, the machine decides again and every field must equal the file's complete layer (omitted
 fields mean defaults). A difference is `MachineMismatch`. With another stamp, the file's complete machine layer and
-the person's touched layer remain intact. Fact `MachineDifferences` publishes the count, including zero;
+the person's touched layer remain intact. Fact `MachineDifferences` (8) publishes the count, including zero;
 `snapshot().view().machineDifferences` holds ordered `(device, field, fileValue, coreValue)` rows so a shell can show
 “HPF 32 → 34”. Flag values use 0/1, choices their enum numbers, and knobs their doubles. Snapshot ownership, JSON
 encoding and the generated `.d.ts` include the rows through the same generator and drift gates. The imported core

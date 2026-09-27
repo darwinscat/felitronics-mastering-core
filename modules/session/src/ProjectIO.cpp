@@ -6,6 +6,7 @@
 #include "Devices.h"
 #include "Grid.h"
 #include <felitronics/toml/Schema.h>
+#include <algorithm>
 #include <charconv>
 #include <limits>
 #include <string>
@@ -22,6 +23,13 @@ using detail::Rules;
 bool sameVersion (Version a, Version b) noexcept
 {
     return a.major == b.major && a.minor == b.minor && a.patch == b.patch;
+}
+bool defaultsLabel (std::string_view text) noexcept
+{
+    if (text.size() != 7 || text[4] != '-') return false;
+    for (std::size_t i = 0; i < text.size(); ++i)
+        if (i != 4 && (text[i] < '0' || text[i] > '9')) return false;
+    return text.substr (5) >= "01" && text.substr (5) <= "12";
 }
 bool readVersion (std::string_view text, Version& out) noexcept
 {
@@ -105,10 +113,13 @@ struct Writer
         detail::eachDevice (p.devices, [&] (Device, const auto& layers)
         {
             using Of = detail::DeviceOf<std::remove_cvref_t<decltype (layers.machine)>>;
-            text ("\n["); text (Of::name); text ("]\n");
+            bool started = false;
             Of::each (rules, [&] (std::uint8_t field, const detail::FieldRule&, const auto& machine, const auto& hand, const auto& def)
             {
-                if (! detail::same (double (machine), double (def))) line (Of::fields[field], "machine", machine);
+                const bool different = ! detail::same (double (machine), double (def));
+                if (! different && ! hand) return;
+                if (! started) { text ("\n["); text (Of::name); text ("]\n"); started = true; }
+                if (different) line (Of::fields[field], "machine", machine);
                 if (hand) line (Of::fields[field], "hand", *hand);
             }, layers.machine, layers.hand, Of::layers (defaults).machine);
         });
@@ -225,7 +236,10 @@ ImportedProject readProject (std::string_view bytes, std::uint32_t channels) noe
         return out;
     }
     const auto& root = *std::get_if<toml::Table> (&parsed);
-    const Rules rules = detail::rules();
+    const auto carried = carriedDefaults();
+    const Rules& rules = carried.current;
+    const auto currentLabel = *rules.engine.find ("defaults").string();
+    const auto previousLabel = carried.previous ? carried.previous->engine.find ("defaults").string() : std::nullopt;
     std::string defaults, core, target;
     const auto report = toml::read (root, [&] (Reader& in)
     {
@@ -248,7 +262,8 @@ ImportedProject readProject (std::string_view bytes, std::uint32_t channels) noe
         });
         // A missing/unknown target is reported after schema checks; use a known row only for filling defaults.
         out.project.target = rules.find (target).value_or (rules.defaultRow);
-        placeDefaults (rules, out.project.target, channels, out.project.devices);
+        const Rules& defaultsRules = previousLabel && defaults == *previousLabel ? *carried.previous : rules;
+        placeDefaults (defaultsRules, defaultsRules.find (target).value_or (defaultsRules.defaultRow), channels, out.project.devices);
         eachDevice (out.project.devices, [&] (Device, auto& layers)
         {
             using Of = DeviceOf<std::remove_cvref_t<decltype (layers.machine)>>;
@@ -279,9 +294,19 @@ ImportedProject readProject (std::string_view bytes, std::uint32_t channels) noe
     {
         out.answer.rejection = r; out.answer.position = position (p);
     };
-    if (defaults != *rules.engine.find ("defaults").string())
+    if (! defaultsLabel (defaults))
         fail (Rejection::UnknownDefaults, root.find ("defaults")->position);
-    else if (! readVersion (core, out.project.core)) fail (Rejection::ProjectCore, root.find ("core")->position);
+    else if (defaults > currentLabel)
+        fail (Rejection::NewerDefaults, root.find ("defaults")->position);
+    else if (defaults < previousLabel.value_or (currentLabel))
+    {
+        out.convertedDefaults = true;
+        std::copy_n (defaults.data(), sizeof (out.originalDefaults), out.originalDefaults);
+    }
+    else if (defaults != currentLabel && (! previousLabel || defaults != *previousLabel))
+        fail (Rejection::UnknownDefaults, root.find ("defaults")->position);
+    if (out.answer.rejection != Rejection::None) return out;
+    if (! readVersion (core, out.project.core)) fail (Rejection::ProjectCore, root.find ("core")->position);
     else if (! rules.find (target))
     {
         const auto& t = *std::get_if<toml::Table> (&root.find ("target")->data);

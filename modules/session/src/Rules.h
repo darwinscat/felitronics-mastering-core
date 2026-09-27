@@ -79,4 +79,12 @@ struct Rules
 // The rules of the config compiled into the library (src/Config.cpp).
 [[nodiscard]] Rules rules() noexcept;
 
+// Compiled defaults retained for project import. The previous slot stays empty until a second version ships.
+struct DefaultsTables
+{
+    Rules current;
+    std::optional<Rules> previous;
+};
+[[nodiscard]] DefaultsTables carriedDefaults() noexcept;
+
 } // namespace felitronics::session::detail

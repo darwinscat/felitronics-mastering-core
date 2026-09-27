@@ -84,9 +84,10 @@ enum class Rejection : std::uint8_t
     ProjectMissing,             // a required field is absent
     ProjectType,                // a field has another TOML type
     ProjectUnknownKey,          // an unknown section, knob or author suffix
-    UnknownDefaults,            // this core carries no defaults with this version
+    UnknownDefaults,            // malformed defaults label, or an uncarried label between the retained versions
     ProjectCore,                // core must be a canonical major.minor.patch version
     MachineMismatch,            // this core's decision disagrees with its own saved layer
+    NewerDefaults,              // defaults are newer than the current compiled table
 };
 
 using CommandId = std::uint64_t;   // the shell's own number for a request, given back in its answer

@@ -304,3 +304,11 @@ ru.many = "Новое ядро решило бы иначе в {count} мест�
 ru.other = "Новое ядро решило бы иначе в {count} местах. Слой машины сохранён."
 en.one = "A newer core would decide differently in {count} place. The saved machine layer is retained."
 en.other = "A newer core would decide differently in {count} places. The saved machine layer is retained."
+
+[messages.defaultsConverted]
+ru = "Проект с версией умолчаний {version} сконвертирован. Записанные числа сохранены; для отсутствующих полей использованы текущие умолчания."
+en = "The project from defaults version {version} was converted. Written numbers were kept; omitted fields use the current defaults."
+
+[messages.rejectedNewerDefaults]
+ru = "Проект использует более новую версию умолчаний, которой нет в этом ядре."
+en = "The project uses a newer defaults version that this core does not carry."

@@ -14,6 +14,8 @@ struct ImportedProject
     MachineDifference differences[kDeviceFields] {};
     std::size_t differenceCount = 0;
     bool foreignCore = false;
+    bool convertedDefaults = false;
+    char originalDefaults[7] {};
 };
 [[nodiscard]] std::uint64_t importBytes (std::size_t size) noexcept;
 [[nodiscard]] ImportedProject readProject (std::string_view bytes, std::uint32_t channels) noexcept;
