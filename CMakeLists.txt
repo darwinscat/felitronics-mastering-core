@@ -158,6 +158,9 @@ if(FELITRONICS_MASTERING_BUILD_TESTS)
     enable_testing()
 endif()
 
+add_library(felitronics_storage INTERFACE)
+target_include_directories(felitronics_storage INTERFACE ${CMAKE_CURRENT_SOURCE_DIR}/modules/storage/include)
+
 add_subdirectory(modules/analysis_offline)   # the offline analyzers; analysis + eq + stereo
 add_subdirectory(modules/mastering)          # the chain; every core stage it composes + analysis
 add_subdirectory(modules/tempo)              # the tempo detector; core alone

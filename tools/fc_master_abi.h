@@ -16,8 +16,9 @@
 // without it. What is duplicated here is exactly two things — the ENUM CODES and the FIELD MAPPING.
 // No arithmetic. Not one clamp, not one default, not one derived number. Every value this header hands
 // back was computed by the core and read out of it — save one, `fc_need.facadeBytes`, the facade's own
-// `sizeof`, named as such and never added to a core number; where the core cannot answer, this file
-// refuses rather than inventing.
+// `sizeof`, named as such. Core budgets are forwarded field by field, never summed in the facade;
+// `facadeBytes` is never added to a core number. Where the core cannot answer, this file refuses
+// rather than inventing. Construction and Debug iterator proxies belong to the core's budgets.
 //
 // The mechanical proof of that is `fcore_master selftest`: the same programme rendered through this
 // ABI and through a direct C++ call, in ONE binary on ONE machine, compared bit for bit. A facade that
@@ -670,10 +671,10 @@ typedef struct fc_master_stats
 // WHAT A CALL WILL ASK THE HEAP FOR (law 11d, docs/DSP-ARCHITECTURE.md)
 //
 // On the wasm tier exhaustion is not a status (see POISON above), so a page that must not lose its worker
-// budgets BEFORE the call. Every number here but `facadeBytes` is computed by the core with the very functions
-// its prepare() sizes itself with — a budget cannot drift from its allocation — and `facadeBytes` is the facade's
-// own `sizeof`; all are forwarded field by field, never summed: the page adds what applies. REQUESTED bytes, not a promise that a heap can serve them: allocator headers,
-// alignment and fragmentation are the page's margin to keep.
+// budgets BEFORE the call. Buffer sizes and construction costs are published by the core, forwarded
+// field by field and never summed here. `facadeBytes` is ONLY the facade record's `sizeof`; the page
+// adds the fields that apply. REQUESTED bytes: allocator headers, alignment and fragmentation are the page's
+// margin to keep. MSVC iterator proxies are separate allocations and ARE included in these budgets.
 //
 // The op is a code rather than a field per call, which is how `configure` joined without moving this
 // struct — and how `create`, which has no handle to ask, gets an entry point of its own below instead.
@@ -695,16 +696,19 @@ typedef struct fc_need
     //
     //   * SOLVE — one PASS. The search builds its meters per pass and frees them at the pass's end, so
     //     this is one pass. Plus the solution's two gain-reduction traces: at 1000 buckets through `fc_master_need`,
-    //     at the request's `grTraceBuckets` through `fc_master_need_solve`.
+    //     at the request's `grTraceBuckets` through `fc_master_need_solve`. Also the core's bound on
+    //     solution construction and return, including a refused solve's empty result. Debug vector
+    //     proxies may be transient here; on Release their cost is 0.
     //   * MEASURE_LRA — one meter, and 0 for a programme too short to have a range, which the call
     //     refuses before building one.
-    //   * CREATE — the SUM of what the call requests, which is what it holds: everything a create asks
-    //     for, it keeps until the instance is destroyed. It exceeds the peak by the part of the seed each
-    //     of the chain's three dry aligners hands back when its preparation re-sizes it — 12 bytes for
+    //   * CREATE — the SUM of what the call requests. Persistent storage stays until the instance is
+    //     destroyed. The sum exceeds the peak by the part of the seed each of the chain's three dry
+    //     aligners hands back when its preparation re-sizes it — 12 bytes for
     //     an aligner re-sized whole, 4 for a mono compressor whose lookahead rounds to 0 samples — and, on a
-    //     plain handle, by nothing else. A DELIVERING create also counts the converter's transient FIR
-    //     prototypes, which its preparation designs the phase tables from and frees before it builds the
-    //     histories: there the sum exceeds the peak by those too, and it is still exactly what the call requests.
+    //     Debug build, by the temporary iterator proxies too. A DELIVERING create also counts the
+    //     converter's transient FIR prototypes, which its preparation designs the phase tables from
+    //     and frees before it builds the histories: there the sum exceeds the peak by those too,
+    //     and it is still exactly what the call requests.
     //   * ON A DELIVERING HANDLE (`deliveryRate != 0`), SOLVE and MEASURE_LRA budget the calls that handle can
     //     make — `fc_master_solve_delivered` and the converting `fc_master_measure_lra` — and `frames` is still
     //     the count the caller hands IN, at the source rate. Each adds the converted programme, which the call
@@ -717,17 +721,14 @@ typedef struct fc_need
     //     input, the page's output at the delivery rate, and the converted input. Stereo 44.1 -> 192 kHz is
     //     3,424,800 bytes per second of input, so a 2 GiB heap (emscripten's growth limit) holds about ten
     //     minutes of it before anything else is counted; 44.1 -> 96 kHz, about nineteen.
-    //   * CONFIGURE — 0 when the chain already holds the geometry it is being re-prepared at, which is
-    //     every configure this ABI can make (the rate, the width and the config are the handle's own).
-    //     The chain re-uses its EQ engine and assigns every buffer to the length it already has, so this
-    //     is exactly zero rather than nearly zero: it used to be 345 224 bytes, a second 331 KiB EQ engine
-    //     built before the first was destroyed plus three temporaries.
+    //   * CONFIGURE — the chain's re-preparation at the handle's fixed rate, width and topology.
+    //     Existing buffers are reused; Debug oversampler temporaries are counted. 0 in Release.
     uint64_t callBytes;
     uint64_t solverPrepareBytes;  // the search's one-time preparation — tap buffers and gain-reduction histograms —
                                   // done lazily by the first solve, measure_lra or channel weight on the handle.
                                   // NEUTRAL (0) for CREATE and CONFIGURE: neither call touches the search
-    uint64_t facadeBytes;         // this file's own object for the call: a solve's solution record, an instance
-                                  // record for CREATE; 0 for measure_lra and for CONFIGURE
+    uint64_t facadeBytes;         // ONLY sizeof of the facade's record: a solution for SOLVE, an instance
+                                  // for CREATE; 0 for MEASURE_LRA and CONFIGURE. Never a core cost.
     int32_t  solverPrepared;      // 1 once that preparation has happened: `solverPrepareBytes` is then already spent.
                                   // NEUTRAL (0) for CREATE and CONFIGURE
     int32_t  _pad0;               // the tail padding, NAMED — see rule 4 of VERSIONING. Always written 0.
@@ -1040,10 +1041,12 @@ fc_status fc_master_create (const fc_master_config* cfg, fc_master* out);
 // What is left is the order the core itself blesses: "configure, then prepare" — MasteringChain.h says
 // in as many words that this is the order a C-ABI facade takes, and `prepare()` applies the pending set
 // and then resets. So this call stores the parameters and re-prepares, which makes `resolved` exact and
-// makes N calls identical to the last one alone. It COSTS NOTHING at the heap — it used to rebuild the
-// 331 KiB EQ engine and pay 345 224 bytes to change nothing, and the chain now re-uses it and assigns every
-// buffer to the length it already has (`FC_NEED_CONFIGURE` publishes the 0, and a suite pins it). It is
-// still NOT real-time — it is a worker call between renders, and it says so.
+// makes N calls identical to the last one alone. It also leaves the first-write snap armed for a
+// subsequent `set_params` before any audio. A reset followed by an apply consumed that snap: an active
+// 120 Hz EQ band configured at +3 dB and then written to +9 dB glided where re-preparation snapped.
+// The chain reuses its 331 KiB EQ engine and every prepared buffer. Release asks the heap for nothing;
+// Debug's temporary oversampler proxies are published by `FC_NEED_CONFIGURE` and pinned by the suite.
+// This is still NOT real-time — it is a worker call between renders, and it says so.
 //
 // It is therefore REFUSED with FC_ERR_STATE once audio has been handed to this handle, because
 // re-preparing would silently discard the stream. `fc_master_reset` is how a caller gets back to the

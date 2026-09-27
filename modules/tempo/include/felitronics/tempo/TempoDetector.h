@@ -15,7 +15,8 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
-#include <vector>
+#include <felitronics/storage/Buffer.h>
+#include <felitronics/storage/VectorBytes.h>
 
 // A FUNCTION BOUNDARY THE OPTIMISER MUST KEEP — see "WHERE THE TIME IS SPENT" in the class comment for why this
 // file has any. Spelled per compiler because the attribute is not standard C++; undefined again at the end of the
@@ -223,6 +224,8 @@ public:
     // WHAT prepare() ASKS THE HEAP FOR (law 11d), from the function prepare() sizes AND validates itself with.
     // Every count is a function of (rate, length, params) and nothing else, so a caller can price a programme
     // before decoding it.
+    static constexpr std::uint64_t constructBytes() noexcept { return storage::kVectorProxyBytes; }
+
     struct Storage
     {
         bool ok = false;
@@ -238,6 +241,7 @@ public:
         std::size_t pointDoubles  = 0;    // double, one per point: the median's sort
         std::uint64_t odfFrames   = 0;    // how many onset frames the prepared length yields
         std::uint64_t points      = 0;    // how many curve points it yields at most
+        std::uint64_t firstBytes() const noexcept { return TempoDetector::constructBytes() + bytes(); }
         std::uint64_t bytes() const noexcept
         {
             return (std::uint64_t) sizeof (float) * ringFloats
@@ -833,13 +837,13 @@ private:
     int channels_ = 0;
     std::uint64_t total_ = 0, seen_ = 0, odfFrames_ = 0, nonFinite_ = 0;
 
-    std::vector<float> ring_;
-    std::vector<double> window_;
+    storage::Buffer<float> ring_;
+    storage::Buffer<double> window_;
     std::vector<std::complex<double>> scratch_;
-    std::vector<double> mag_, odf_, prefix_, ac_;
-    std::vector<Peak> globalPeaks_, windowPeaks_, sortScratch_;
-    std::vector<TempoPoint> raw_, curve_;
-    std::vector<double> sortPts_;
+    storage::Buffer<double> mag_, odf_, prefix_, ac_;
+    storage::Buffer<Peak> globalPeaks_, windowPeaks_, sortScratch_;
+    storage::Buffer<TempoPoint> raw_, curve_;
+    storage::Buffer<double> sortPts_;
 
     TempoHeadline headline_ {}, wholeTrack_ {};
     bool varies_ = false, hasRange_ = false;

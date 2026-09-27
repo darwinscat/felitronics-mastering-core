@@ -38,6 +38,8 @@
 #include <tuple>
 #include <vector>
 
+#include "MasterConfigureSequences.h"
+
 // The allocation counter is the shared one (test_support/alloc_counter.h, included above): every form of
 // `new`, the over-aligned included. This file used to carry its own copy of it — the reference copy, in
 // fact, since it was already complete — and the counter's fault switch, its byte accounting and the
@@ -89,6 +91,8 @@ const std::uint64_t kGrWindowBytes =
 // at the check below — which is the point of subtracting them. wasm32 is four bytes tighter: the 120-byte
 // absence array lands in padding the smaller vector leaves behind, and no single term expresses that. The
 // two spellings are stated rather than absorbed into an inequality, because an inequality is not a pin.
+constexpr auto kSolutionReturnBytes = felitronics::mastering::TargetLoudnessSolver::solutionReturnBytes();
+
 constexpr std::uint64_t kSolutionRecordRest = sizeof (void*) == 8 ? 2464u : 2460u;
 
 // The topology axis of the memory-exhaustion (law 11d) create/configure matrix — see the switch that reads it.
@@ -242,6 +246,8 @@ std::vector<double> measuredCurve (const felitronics::eq::BandParams* bands, int
 int main()
 {
     std::printf ("fc_master — the mastering C ABI, exercised natively\n");
+    masterConfigureSequences();
+    masterBudgetFields();
 
     //==========================================================================
     group ("build identity");
@@ -1520,12 +1526,12 @@ int main()
     group ("fc_master_need: each budget is exactly what the call allocates");
     {
         // The counter's own rule first (see LoudnessConformanceTests.cpp): around the STL's big-block threshold and far
-        // above it, a vector counts as exactly the bytes it asked for. Literal sizes, not the counter's own constants.
+        // above it, a vector counts as its payload plus its separately allocated iterator proxy.
         for (const std::size_t nb : { std::size_t { 4095 }, std::size_t { 4096 }, std::size_t { 4097 }, std::size_t { 1 } << 20 })
         {
             const long long got = vectorRequest (nb);
-            ok (got == (long long) nb, "the byte counter counts a " + std::to_string (nb) + "-byte vector as "
-                                       + std::to_string (nb) + " bytes (read " + std::to_string (got) + ")");
+            ok (got == (long long) (nb + felitronics::storage::kVectorProxyBytes), "the byte counter counts a " + std::to_string (nb) + "-byte vector as "
+                                       + std::to_string (nb) + " payload bytes plus its iterator proxy (read " + std::to_string (got) + ")");
         }
         fc_master h = make();
         fc_master_params p = goodParams();
@@ -1555,12 +1561,14 @@ int main()
         // 1024·4 floats = 16 384 B: 2·2312 + 16 384 = 21 008 B. It drains from a fixed array, so there is no drain term
         // (the solve used to carry a 392 B TruePeakMeter and a 512 B drain buffer).
         // And two traces of 1000 x 32 B: 64 000 B.
-        ok (lra.callBytes == 3296u, "the measure_lra budget is the hand-derived 3296 B");
+        ok (lra.callBytes == 3296u + felitronics::storage::kLoudnessProxies * felitronics::storage::kVectorProxyBytes, "the measure_lra budget is 3296 payload bytes plus three meter proxies");
         // And, since the quantile read-back (`fc_solution_gr_quantile`), the window histograms the solution keeps —
         // three of them since the active-window statistics. THE FIGURE IS PRINTED rather than spelled: the literal
         // that used to stand here (727 960 B) described the two-histogram build and would have gone on reading as a
         // measurement.
-        ok (solve.callBytes == 3296u + 21008u + 64000u + kGrWindowBytes,
+        ok (solve.callBytes == 3296u + 21008u + 64000u + kGrWindowBytes
+                + felitronics::mastering::TargetLoudnessSolver::meterConstructBytes()
+                + felitronics::mastering::TargetLoudnessSolver::solveProxyBytes() + kSolutionReturnBytes,
             "the solve budget is meter + reference true-peak meter + two traces + three window histograms = "
             + std::to_string (solve.callBytes) + " B");
 
@@ -1604,10 +1612,11 @@ int main()
         // (727 696 B) was parameterised on one side and written out on the other, so it went on reading as a
         // measurement after the histograms moved it.
         fc_need s1 {}, s0 {}; FC_INIT (s1); FC_INIT (s0);
-        ok (fc_master_need (h, FC_NEED_SOLVE, 48000, &s1) == FC_OK && s1.callBytes == 87824u + kGrWindowBytes,
+        ok (fc_master_need (h, FC_NEED_SOLVE, 48000, &s1) == FC_OK && s1.callBytes == 87824u + kGrWindowBytes + felitronics::mastering::TargetLoudnessSolver::meterConstructBytes()
+                + felitronics::mastering::TargetLoudnessSolver::solveProxyBytes() + kSolutionReturnBytes,
             "a 1 s solve is budgeted in full: " + std::to_string (s1.callBytes) + " B");
-        ok (fc_master_need (h, FC_NEED_SOLVE, 0, &s0) == FC_OK && s0.callBytes == 0,
-            "a 0-frame solve, which the core refuses before any pass, costs 0");
+        ok (fc_master_need (h, FC_NEED_SOLVE, 0, &s0) == FC_OK && s0.callBytes == kSolutionReturnBytes,
+            "a 0-frame solve, which the core refuses before any pass, budgets only the result's construction and return");
 
         std::vector<float> out (in.size(), 0.0f);
         fc_loudness_request req {}; fc_loudness_request_default (&req);
@@ -1615,7 +1624,7 @@ int main()
         fc_solution sol = 0;
         // THE SOLUTION RECORD IS A PLAIN OBJECT, told to the counter so that MSVC's container padding is never taken off
         // it (as for the instance record above).
-        alloc::plainObjectSize.store ((std::size_t) solve.facadeBytes, std::memory_order_relaxed);
+        alloc::plainObjectSize.store ((std::size_t) sizeof (felitronics::mastering::LoudnessSolution), std::memory_order_relaxed);
         before = alloc::bytes.load();
         const fc_status sv = fc_master_solve (h, &p, &req, in.data(), out.data(), n, &sol);
         const long long solveBytes = alloc::bytes.load() - before;
@@ -1623,9 +1632,9 @@ int main()
         fc_solution_summary sum {}; FC_INIT (sum);
         ok (sv == FC_OK && fc_solution_summary_get (sol, &sum) == FC_OK && sum.passes > 0, "PRECONDITION: the search rendered");
         const long long traces = 2LL * 1000LL * 32LL;
-        const long long perPass = (long long) solve.callBytes - traces - (long long) kGrWindowBytes;
+        const long long perPass = (long long) solve.callBytes - traces - (long long) kGrWindowBytes - (long long) kSolutionReturnBytes;
         ok (solveBytes == (long long) sum.passes * perPass + traces + (long long) kGrWindowBytes
-                          + (long long) solve.facadeBytes,
+                          + (long long) solve.facadeBytes + (long long) kSolutionReturnBytes,
             "a solve allocates passes × (both meters) + its two traces + its window histograms + the facade's record: "
             "its budget's parts");
         (void) fc_solution_destroy (sol);
@@ -1714,9 +1723,15 @@ int main()
                     if (nd.header.abiVersion != FC_MASTER_ABI_VERSION
                         || nd.header.structSize != (std::uint32_t) sizeof (fc_need)) ++headerOff;
                     const long long budget = (long long) (nd.callBytes + nd.facadeBytes);
-                    if (got != budget) { ++bytesOff; if (got > worst) worst = got; }
+                    if (got != budget)
+                    {
+                        ++bytesOff;
+                        worst = std::max (worst, std::llabs (got - budget));
+                        std::printf ("create mismatch: %.0f Hz, %d channels, topology %d: %lld allocated, %lld declared\n",
+                                     fs, nch, topo, got, budget);
+                    }
 
-                    // THE RE-PREPARATION, on the same handle: published 0 and measured 0.
+                    // THE RE-PREPARATION, on the same handle: Debug temporaries are published too.
                     fc_master_params p = goodParams();
                     fc_master_resolved r {}; FC_INIT (r);
                     fc_need cn {}; FC_INIT (cn);
@@ -1724,7 +1739,7 @@ int main()
                     const long long b2 = alloc::bytes.load();
                     const fc_status ccs = fc_master_configure (h, &p, &r);
                     const long long got2 = alloc::bytes.load() - b2;
-                    if (cns != FC_OK || ccs != FC_OK || cn.callBytes != 0u || got2 != 0
+                    if (cns != FC_OK || ccs != FC_OK || got2 != (long long) cn.callBytes
                         || cn.facadeBytes != 0u || cn.solverPrepareBytes != 0u || cn.solverPrepared != 0) ++cfgOff;
                     (void) fc_master_destroy (h);
                 }
@@ -1737,7 +1752,7 @@ int main()
         ok (zeroBudget == 0, "FC_OK never carries a budget of 0: the number means ONE thing on this op");
         ok (solverOff == 0, "the solver's fields come back neutral for a create");
         ok (headerOff == 0, "and the budget it wrote carries THIS build's header (" + std::to_string (headerOff) + " off)");
-        ok (cfgOff == 0, "a configure is published as 0 and allocates 0, on every row ("
+        ok (cfgOff == 0, "a configure publishes exactly its re-preparation costs, on every row ("
                          + std::to_string (cfgOff) + " off)");
 
         // THE REFUSALS, each with the status the create gives it — and NOTHING allocated on the way to it.
@@ -1879,7 +1894,7 @@ int main()
         ok (fc_master_configure (h, &p, &r) == FC_OK, "PRECONDITION: a configured handle");
         fc_need cn {}; FC_INIT (cn);
         ok (fc_master_need (h, FC_NEED_CONFIGURE, 1, &cn) == FC_ERR_RANGE, "a frame count with a configure: FC_ERR_RANGE");
-        ok (fc_master_need (h, FC_NEED_CONFIGURE, 0, &cn) == FC_OK && cn.callBytes == 0u, "and 0 is the count it takes");
+        ok (fc_master_need (h, FC_NEED_CONFIGURE, 0, &cn) == FC_OK && cn.callBytes == 2u * felitronics::storage::kVectorProxyBytes, "and 0 is the frame count it takes");
 
         // THE DEMAND ANSWERS A NUMBER, NEVER A PERMISSION (the decision recorded with this work). A stream in
         // progress makes the configure itself FC_ERR_STATE; its COST is unchanged by the moment, and a page
@@ -1890,7 +1905,7 @@ int main()
         ok (fc_master_process (h, audio.data(), outBuf.data(), 256) == FC_OK, "PRECONDITION: a stream is in progress");
         ok (fc_master_configure (h, &p, &r) == FC_ERR_STATE, "PRECONDITION: the configure itself is refused now");
         fc_need mid {}; FC_INIT (mid);
-        ok (fc_master_need (h, FC_NEED_CONFIGURE, 0, &mid) == FC_OK && mid.callBytes == 0u,
+        ok (fc_master_need (h, FC_NEED_CONFIGURE, 0, &mid) == FC_OK && mid.callBytes == cn.callBytes,
             "and its budget is still answered: the demand is a number, not a permission");
         fc_need sd {}; FC_INIT (sd);
         ok (fc_master_need (h, FC_NEED_SOLVE, 48000, &sd) == FC_OK && sd.callBytes > 0u,
@@ -2302,7 +2317,8 @@ int main()
             // instead would have made the pin pass on the desktop and fail in the browser, which is how
             // this was found.
             ok (fc_master_need (hb, FC_NEED_SOLVE, 48000u, &nd) == FC_OK
-                && nd.facadeBytes == kSolutionRecordRest + 2u * sizeof (GainReductionTrace)
+                && nd.facadeBytes == kSolutionRecordRest
+                                      + 2u * sizeof (GainReductionTrace)
                                       + 3u * sizeof (QuantileHistogram)
                                       + sizeof (felitronics::mastering::ActiveGainReductionStats)
                                       + sizeof (std::vector<felitronics::mastering::BandGrResult>)
@@ -2515,7 +2531,7 @@ int main()
             ok (fc_master_need_solve (h, &req, n, &big) == FC_OK && big.callBytes == base.callBytes + 2u * (65536u - 1000u) * 32u,
                 "65 536 buckets: two traces of 65 536 x 32 B in place of 1000 x 32 B");
             req.grTraceBuckets = 0;
-            ok (fc_master_need_solve (h, &req, n, &zero) == FC_OK && zero.callBytes == 0u, "a count the core refuses: FC_OK, callBytes 0");
+            ok (fc_master_need_solve (h, &req, n, &zero) == FC_OK && zero.callBytes == kSolutionReturnBytes, "a count the core refuses: only result construction and return");
             req.grTraceBuckets = 4096;
             fc_need s1 {}, d1 {}; FC_INIT (s1); FC_INIT (d1);
             ok (fc_master_need_solve (h, &req, 1000u, &s1) == FC_OK && fc_master_need (h, FC_NEED_SOLVE, 1000u, &d1) == FC_OK
@@ -2543,7 +2559,7 @@ int main()
             auto in = tone (n, kNch);
             std::vector<float> out (in.size(), 0.0f);
             fc_solution sol = 0;
-            alloc::plainObjectSize.store ((std::size_t) nb.facadeBytes, std::memory_order_relaxed);
+            alloc::plainObjectSize.store ((std::size_t) sizeof (felitronics::mastering::LoudnessSolution), std::memory_order_relaxed);
             const long long before = alloc::bytes.load();
             const fc_status sv = fc_master_solve (h, &p, &req, in.data(), out.data(), n, &sol);
             const long long got = alloc::bytes.load() - before;
@@ -2553,9 +2569,9 @@ int main()
             ok (sv == FC_OK && fc_solution_summary_get (sol, &sum) == FC_OK && sum.passes > 0 && fc_solution_measurement (sol, &m) == FC_OK
                 && m.limiterGrTraceBuckets == 65536, "PRECONDITION: the search rendered, 65 536 buckets");
             const long long traces = 2LL * 65536LL * 32LL;
-            const long long perPass = (long long) nb.callBytes - traces - (long long) kGrWindowBytes;
+            const long long perPass = (long long) nb.callBytes - traces - (long long) kGrWindowBytes - (long long) kSolutionReturnBytes;
             ok (perPass > 0 && got == (long long) sum.passes * perPass + traces + (long long) kGrWindowBytes
-                               + (long long) nb.facadeBytes,
+                               + (long long) nb.facadeBytes + (long long) kSolutionReturnBytes,
                 "a 65 536-bucket solve allocates passes x its meters + two traces of 2 097 152 B + its window histograms "
                 "+ the record (" + std::to_string (got) + ")");
             (void) fc_solution_destroy (sol);
@@ -2583,7 +2599,7 @@ int main()
                 auto in = tone (n, kNch);
                 std::vector<float> out ((std::size_t) outN * kNch, 0.0f);
                 fc_solution sol = 0;
-                alloc::plainObjectSize.store ((std::size_t) nb.facadeBytes, std::memory_order_relaxed);
+                alloc::plainObjectSize.store ((std::size_t) sizeof (felitronics::mastering::LoudnessSolution), std::memory_order_relaxed);
                 const long long before = alloc::bytes.load();
                 const fc_status sv = ! ready ? FC_ERR_STATE
                                    : dr == 0.0 ? fc_master_solve (h, &p, &req, in.data(), out.data(), n, &sol)
@@ -2844,7 +2860,7 @@ int main()
             auto in = tone (n, kNch);
             std::vector<float> out ((std::size_t) 384000 * kNch, 0.0f);
             fc_solution sol = 0;
-            alloc::plainObjectSize.store ((std::size_t) solve.facadeBytes, std::memory_order_relaxed);   // the record: see above
+            alloc::plainObjectSize.store ((std::size_t) sizeof (felitronics::mastering::LoudnessSolution), std::memory_order_relaxed);   // the record: see above
             long long before = alloc::bytes.load();
             const fc_status sv = fc_master_solve_delivered (h, &p, &req, in.data(), n, out.data(), 384000u, &sol);
             const long long solveBytes = alloc::bytes.load() - before;
@@ -2852,9 +2868,9 @@ int main()
             fc_solution_summary sum {}; FC_INIT (sum);
             ok (sv == FC_OK && fc_solution_summary_get (sol, &sum) == FC_OK && sum.passes > 0, "PRECONDITION: the delivered search rendered");
             const long long traces = 2LL * 1000LL * 32LL;
-            const long long perPass = (long long) solve.callBytes - programme - traces - (long long) kGrWindowBytes;
+            const long long perPass = (long long) solve.callBytes - programme - traces - (long long) kGrWindowBytes - (long long) kSolutionReturnBytes;
             ok (perPass > 0 && solveBytes == (long long) sum.passes * perPass + traces + (long long) kGrWindowBytes
-                               + programme + (long long) solve.facadeBytes,
+                               + programme + (long long) solve.facadeBytes + (long long) kSolutionReturnBytes,
                 "a delivered solve allocates passes x (both meters at 96 kHz) + two traces + its window histograms + the "
                 "converted programme + the record (" + std::to_string (solveBytes) + ")");
             (void) fc_solution_destroy (sol);
@@ -3008,13 +3024,16 @@ int main()
                 "and the handle still renders: a refused search did not mark the chain as the solver's");
             (void) fc_solution_destroy (sv);
 
-            // THE RE-PREPARATION of a delivering handle costs nothing, as a plain one's does — at the delivery rate.
+            // THE RE-PREPARATION of a delivering handle counts its temporaries at the delivery rate.
             fc_need cn {}; FC_INIT (cn);
             const long long b0 = alloc::bytes.load();
             const fc_status cs = fc_master_configure (h, &p, &r);
             const long long got = alloc::bytes.load() - b0;
-            ok (fc_master_need (h, FC_NEED_CONFIGURE, 0u, &cn) == FC_OK && cn.callBytes == 0u && cs == FC_OK && got == 0,
-                "a delivering configure is budgeted 0 and allocates 0");
+            // This fixture has the limiter alone: one temporary proxy, not the clipper's second one.
+            ok (fc_master_need (h, FC_NEED_CONFIGURE, 0u, &cn) == FC_OK
+                && cn.callBytes == felitronics::storage::kVectorProxyBytes
+                && cs == FC_OK && got == (long long) cn.callBytes,
+                "a delivering configure allocates exactly its published temporary costs");
             (void) fc_master_destroy (h);
         }
 
