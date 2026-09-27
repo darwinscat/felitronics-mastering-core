@@ -7,10 +7,10 @@
 //   * the embedded config binds with no problem, and it IS the source documents: the library's canonical text of each
 //     equals felitronics-toml's canonical text of the file — so a stale embedding cannot pass;
 //   * the decisions the documents carry, number by number, where a number is a decision rather than a measurement;
-//   * THE SCHEMA'S CONTROLS, each of which must go red: a planted unknown key, wrong type, value out of range (its own
-//     domain, an array item, a range another key states), refusal across keys, missing key and syntax error, each
-//     reported with its document, key path, line and column — and the source without the plant binds clean, so the plant
-//     is the only difference;
+//   * THE SCHEMA'S CONTROLS, each of which must go red: a planted unknown key, wrong type, missing key, value out of its
+//     domain or out of a range another key states, refusal across keys and syntax error — every input a review found the
+//     schema accepting among them — each reported with its document, key path, line and column; and the documents
+//     without a plant bind clean, so the plant is the only difference;
 //   * THE VERSION: the library's (a walk over its embedded data) is the source files' (the same walk over their parsed
 //     text); every number, flag, string and key of both documents, changed one at a time, moves it — through the text
 //     path and through the embedded-data path — and to a different value each time; comments and spacing do not.
@@ -95,7 +95,7 @@ void itCarriesTheDecisions()
         "quiet input: a warning below −40 LUFS, gain and ceiling only below −55");
     ok (same (e.hpf.hzMax, 50.0) && same (e.hpf.hzMin, 15.0), "high-pass: the knob and the machine top out at 50 Hz");
     ok (e.hpf.slopes == std::vector<std::int32_t> { 12, 24, 48 }, "high-pass slopes 12 / 24 / 48");
-    ok (same (e.hpf.nothingToCut, 0.01), "no high-pass when the infra-low share is under 1 %");
+    ok (same (e.hpf.nothingBelowNoteInfraLowBelow, 0.01), "no high-pass when the infra-low share is under 1 %");
     ok (same (e.observations.wideBassSideFractionAtLeast, 0.06) && e.observations.kinds.wideBass == config::Kind::Warning,
         "wide bass: ONE threshold, 6 % of side, and it is a warning");
     ok (e.compressor.thresholdFrom == config::ThresholdFrom::ShortTermP95,
@@ -176,7 +176,8 @@ void mustRefuse (config::Document document, std::string_view from, std::string_v
 {
     const bool inTargets = document == config::Document::Targets;
     const Plant p = plant (inTargets ? g_targetsText : g_engineText, from, to, at);
-    const std::string what = std::string (config::name (fault)) + " " + path;
+    const std::string what = std::string (config::name (fault)) + (refusal != config::Refusal::None
+        ? std::string (" ") + config::name (refusal) : std::string{}) + " " + path;
     if (! p.planted) { ok (false, what + ": the control has rotted — '" + std::string (from) + "' is not in the document once"); return; }
     const config::Loaded loaded = inTargets ? config::bind (p.text, g_engineText) : config::bind (g_targetsText, p.text);
     bool found = false;
@@ -198,46 +199,108 @@ void theSchemaRefuses()
     using config::Document;
     using config::Fault;
     using config::Refusal;
+    const auto E = Document::Engine;
+    const auto T = Document::Targets;
 
-    // Unknown keys: a typo is an error, never a setting silently ignored — in a table and inside an inline row.
-    mustRefuse (Document::Engine, "releaseMs = 50", "releseMs = 50", "releseMs", Fault::UnknownKey, "limiter.releseMs");
-    mustRefuse (Document::Targets, "hpfFloor = 32", "hpfFlor = 32", "hpfFlor", Fault::UnknownKey, "targets.lp.hpfFlor");
-    // ...and the key the typo stood for is missing, pointed at the table that lacks it.
-    mustRefuse (Document::Engine, "[limiter]\nceilingMarginDb = 0.15\n", "[limiter]\n", "[limiter]", Fault::Missing,
-                "limiter.ceilingMarginDb");
+    // Unknown keys — a typo is an error, never a setting silently ignored — in a table and inside an inline row, and the
+    // key the typo stood for is missing, pointed at the table that lacks it.
+    mustRefuse (E, "releaseMs = 50", "releseMs = 50", "releseMs", Fault::UnknownKey, "limiter.releseMs");
+    mustRefuse (T, "hpfFloor = 32", "hpfFlor = 32", "hpfFlor", Fault::UnknownKey, "targets.lp.hpfFlor");
+    mustRefuse (E, "[limiter]\nceilingMarginDb = 0.15\n", "[limiter]\n", "[limiter]", Fault::Missing, "limiter.ceilingMarginDb");
 
     // Wrong types.
-    mustRefuse (Document::Engine, "toleranceLu = 0.1", "toleranceLu = \"0.1\"", "\"0.1\"", Fault::WrongType, "landing.toleranceLu");
-    mustRefuse (Document::Targets, "noClipper = true", "noClipper = 1", "1", Fault::WrongType, "targets.lp.noClipper");
-    mustRefuse (Document::Targets, "default = \"allStreaming\"", "default = 14", "14", Fault::WrongType, "default");
+    mustRefuse (E, "toleranceLu = 0.1", "toleranceLu = \"0.1\"", "\"0.1\"", Fault::WrongType, "landing.toleranceLu");
+    mustRefuse (T, "noClipper = true", "noClipper = 1", "1", Fault::WrongType, "targets.lp.noClipper");
+    mustRefuse (T, "default = \"allStreaming\"", "default = 14", "14", Fault::WrongType, "default");
+    mustRefuse (E, "dualRelease = false", "dualRelease = 0", "0", Fault::WrongType, "limiter.dualRelease");
 
-    // Out of range: its own domain, an item of an array, and a range another key states (the edit travel, the knob).
-    mustRefuse (Document::Engine, "hzMax = 50", "hzMax = 500", "500", Fault::OutOfRange, "hpf.hzMax");
-    mustRefuse (Document::Engine, "passes = [12, 24, 32]", "passes = [12, 0, 32]", "0", Fault::OutOfRange, "landing.passes[1]");
-    mustRefuse (Document::Targets, "lufs = -23", "lufs = -30", "-30", Fault::OutOfRange, "targets.ebu.lufs");
-    mustRefuse (Document::Targets, "monoBass = 150", "monoBass = 400", "400", Fault::OutOfRange, "targets.lp.monoBass");
-    mustRefuse (Document::Engine, "manualDefaultDb = 1.5", "manualDefaultDb = 4", "4", Fault::OutOfRange,
-                "limiter.peakClipper.manualDefaultDb");
+    // Out of a domain: its own, an item of an array, and a range another key states (the edit travel, the knob).
+    mustRefuse (E, "hzMax = 50", "hzMax = 500", "500", Fault::OutOfRange, "hpf.hzMax");
+    mustRefuse (E, "passes = [12, 24, 32]", "passes = [12, 0, 32]", "0", Fault::OutOfRange, "landing.passes[1]");
+    mustRefuse (T, "lufs = -23", "lufs = -30", "-30", Fault::OutOfRange, "targets.ebu.lufs");
+    mustRefuse (T, "monoBass = 150", "monoBass = 400", "400", Fault::OutOfRange, "targets.lp.monoBass");
+    mustRefuse (E, "betweenOverDb = 1.5", "betweenOverDb = 4", "4", Fault::OutOfRange, "limiter.peakClipper.betweenOverDb");
+    // analysis::BandCrest's domains: a hop of 10 ms or more, at most 64 hops to a block.
+    mustRefuse (E, "hopMs = 100", "hopMs = 1", "1", Fault::OutOfRange, "crest.hopMs");
+    mustRefuse (E, "blockHops = 4", "blockHops = 65", "65", Fault::OutOfRange, "crest.blockHops");
+    // A bound the ranges cannot say: above zero, above the core's own number.
+    mustRefuse (E, "enterDb = 6", "enterDb = 0", "0", Fault::OutOfRange, "stereoBursts.enterDb");
+    mustRefuse (E, "clipping = { fullAtShareOfProgramme = 0.001 }", "clipping = { fullAtShareOfProgramme = 0 }", "0 }",
+                Fault::OutOfRange, "observations.clipping.fullAtShareOfProgramme");
+    mustRefuse (E, "fullAtDropDb = 60", "fullAtDropDb = 24", "24", Fault::OutOfRange, "observations.spectralWall.fullAtDropDb");
 
-    // Refusals across keys.
-    mustRefuse (Document::Engine, "byTarget = { cd = 0.7 }", "byTarget = { cdd = 0.7 }", "0.7", Fault::Refused,
-                "glue.byTarget.cdd", Refusal::NotATarget);
-    mustRefuse (Document::Targets, "default = \"allStreaming\"", "default = \"allStreamin\"", "\"allStreamin\"",
-                Fault::Refused, "default", Refusal::NotATarget);
-    mustRefuse (Document::Targets, "\"cd\", \"bandcamp\"", "\"cd\", \"cd\"", "\"cd\", \"club\"", Fault::Refused, "main[4]",
+    // Refusals across keys: names.
+    mustRefuse (E, "byTarget = { cd = 0.7 }", "byTarget = { cdd = 0.7 }", "0.7", Fault::Refused, "glue.byTarget.cdd", Refusal::NotATarget);
+    mustRefuse (T, "default = \"allStreaming\"", "default = \"allStreamin\"", "\"allStreamin\"", Fault::Refused, "default",
+                Refusal::NotATarget);
+    mustRefuse (T, "hpfSlopeDbPerOct = 12", "hpfSlopeDbPerOct = 18", "18", Fault::Refused, "targets.lp.hpfSlopeDbPerOct",
+                Refusal::NotOneOf);
+    mustRefuse (E, "detector = \"rms\"", "detector = \"rsm\"", "\"rsm\"", Fault::Refused, "compressor.detector", Refusal::NotOneOf);
+    mustRefuse (T, "sampleRate = 48000, bitDepth = 24 }\n# YouTube Music", "sampleRate = 22050, bitDepth = 24 }\n# YouTube Music",
+                "22050", Fault::Refused, "targets.youtube.sampleRate", Refusal::NotOneOf);
+    // ...duplicates, everywhere a name counts once.
+    mustRefuse (T, "\"cd\", \"bandcamp\"", "\"cd\", \"cd\"", "\"cd\", \"club\"", Fault::Refused, "main[4]", Refusal::Duplicate);
+    mustRefuse (E, "targets = [\"allStreaming\", \"cdDynamic\"]", "targets = [\"allStreaming\", \"allStreaming\"]",
+                "\"allStreaming\"]", Fault::Refused, "blindTest.targets[1]", Refusal::Duplicate);
+    mustRefuse (E, "{ key = \"bass5\", hz = 31 }", "{ key = \"bass4\", hz = 31 }", "\"bass4\"", Fault::Refused, "hpf.marks[2].key",
                 Refusal::Duplicate);
-    mustRefuse (Document::Targets, "hpfSlopeDbPerOct = 12", "hpfSlopeDbPerOct = 18", "18", Fault::Refused,
-                "targets.lp.hpfSlopeDbPerOct", Refusal::NotOneOf);
-    mustRefuse (Document::Engine, "detector = \"rms\"", "detector = \"rsm\"", "\"rsm\"", Fault::Refused,
-                "compressor.detector", Refusal::NotOneOf);
-    mustRefuse (Document::Engine, "limiter = true", "limiter = false", "false", Fault::Refused, "stages.limiter", Refusal::Fixed);
-    mustRefuse (Document::Engine, "band = 2", "band = 1", "1", Fault::Refused, "lowShelf.band", Refusal::Duplicate);
-    mustRefuse (Document::Engine, "hzNormal = [15, 42]", "hzNormal = [42, 15]", "[", Fault::Refused, "hpf.hzNormal",
+    mustRefuse (E, "band = 2", "band = 1", "1", Fault::Refused, "lowShelf.band", Refusal::Duplicate);
+    // ...order: ranges, series and the classes of the peak clipper.
+    mustRefuse (E, "passes = [12, 24, 32]", "passes = [12, 24, 2]", "2]", Fault::Refused, "landing.passes[2]", Refusal::OutOfOrder);
+    mustRefuse (E, "lowNoteHz = 20\nhighNoteHz = 300", "lowNoteHz = 20\nhighNoteHz = 20", "20\nfftOrder", Fault::Refused,
+                "lowEnd.run.highNoteHz", Refusal::OutOfOrder);
+    mustRefuse (E, "bandLowHz = 5000\nbandHighHz = 9000", "bandLowHz = 5000\nbandHighHz = 5000", "5000\nhop", Fault::Refused,
+                "stereoBursts.bandHighHz", Refusal::OutOfOrder);
+    mustRefuse (E, "baselineMs = 2000", "baselineMs = 5", "5", Fault::Refused, "stereoBursts.baselineMs", Refusal::OutOfOrder);
+    mustRefuse (E, "infraLowCrossoverHz = 30", "infraLowCrossoverHz = 120", "120", Fault::Refused, "lowEnd.infraLowCrossoverHz",
                 Refusal::OutOfOrder);
+    mustRefuse (E, "dcOffset = { from = 0.001, fullAt = 0.01 }", "dcOffset = { from = 0.001, fullAt = 0.001 }", "0.001 }",
+                Fault::Refused, "observations.dcOffset.fullAt", Refusal::OutOfOrder);
+    mustRefuse (E, "bitsUnused = { fromBits = 1, fullAtBits = 8 }", "bitsUnused = { fromBits = 1, fullAtBits = 1 }", "1 }",
+                Fault::Refused, "observations.bitsUnused.fullAtBits", Refusal::OutOfOrder);
+    mustRefuse (E, "witnessQuantiles = [0.5, 0.9]", "witnessQuantiles = [0.9, 0.5]", "0.5]", Fault::Refused,
+                "deEsser.witnessQuantiles[1]", Refusal::OutOfOrder);
+    mustRefuse (E, "shortP90Ms = 2", "shortP90Ms = 8", "8\nlongBassShare", Fault::Refused, "limiter.peakClipper.longP90Ms",
+                Refusal::OutOfOrder);   // points at the value of longP90Ms
+    mustRefuse (E, "shapingUpToBits = 16", "shapingUpToBits = 24", "24", Fault::Refused, "dither.shapingUpToBits", Refusal::OutOfOrder);
+    mustRefuse (E, "slowReleaseMs = 200", "slowReleaseMs = 20", "20", Fault::Refused, "limiter.slowReleaseMs", Refusal::OutOfOrder);
+    mustRefuse (E, "warningLowHz = 20, warningHighHz = 50", "warningLowHz = 20, warningHighHz = 40", "40", Fault::Refused,
+                "hpf.comfort.warningHighHz", Refusal::OutOfOrder);
+    mustRefuse (E, "hzMin = 15", "hzMin = 50", "50\nhzDefault", Fault::Refused, "hpf.hzMax", Refusal::OutOfOrder);
+    // ...a crest of exactly three corners, and the printed quantiles that the fields' names state.
+    mustRefuse (E, "bandEdgesHz = [120, 2000, 6000]", "bandEdgesHz = []", "[]", Fault::Refused, "crest.bandEdgesHz", Refusal::NotOneOf);
+    mustRefuse (E, "printedQuantiles = [0.5, 0.95]", "printedQuantiles = [0.1, 0.9]", "[0.1", Fault::Refused, "cost.printedQuantiles",
+                Refusal::Fixed);
+    mustRefuse (E, "printedQuantiles = [0.5, 0.95]", "printedQuantiles = []", "[]", Fault::Refused, "cost.printedQuantiles",
+                Refusal::Fixed);
+    mustRefuse (E, "limiter = true", "limiter = false", "false", Fault::Refused, "stages.limiter", Refusal::Fixed);
+    // ...the laws of a ramp: byDepth is the ratio's alone, geometric needs both ends above zero.
+    mustRefuse (E, "to = -9, law = \"linear\"", "to = -9, law = \"geometric\"", "\"geometric\"", Fault::Refused,
+                "glue.threshOffset.law", Refusal::OutsideLaw);
+    mustRefuse (E, "knee = { from = 8, to = 4, law = \"linear\" }", "knee = { from = 0, to = 4, law = \"byDepth\" }", "\"byDepth\"",
+                Fault::Refused, "glue.knee.law", Refusal::OutsideLaw);
+    // ...a filter on a trace at or above half its rate, and a top band above Nyquist at the lowest rate.
+    mustRefuse (E, "lowPassHz = 8", "lowPassHz = 20", "20", Fault::Refused, "cost.pumping.lowPassHz", Refusal::AboveNyquist);
+    mustRefuse (E, "highNoteHz = 300", "highNoteHz = 3900", "3900", Fault::Refused, "lowEnd.run.highNoteHz", Refusal::AboveNyquist);
+    // ...a value off its knob's step.
+    mustRefuse (T, "appleMusic   = { group = \"streaming\", lufs = -16, tp = -1,", "appleMusic   = { group = \"streaming\", lufs = -16, tp = -1.05,",
+                "-1.05", Fault::Refused, "targets.appleMusic.tp", Refusal::NotOnStep);
+    mustRefuse (T, "lowShelfDb = 0.5", "lowShelfDb = 0.55", "0.55", Fault::Refused, "targets.lp.lowShelfDb", Refusal::NotOnStep);
+    mustRefuse (E, "betweenOverDb = 1.5", "betweenOverDb = 1.25", "1.25", Fault::Refused, "limiter.peakClipper.betweenOverDb",
+                Refusal::NotOnStep);
+    mustRefuse (E, "lowWidth = 0\n", "lowWidth = 0.03\n", "0.03", Fault::Refused, "monoBass.lowWidth", Refusal::NotOnStep);
+    mustRefuse (E, "hopMs = 100", "hopMs = 15", "15", Fault::Refused, "crest.hopMs", Refusal::NotOnStep);
+    // ...one threshold named in two places, refused apart.
+    mustRefuse (E, "dcOffsetBelow = 0.001", "dcOffsetBelow = 0.002", "0.002", Fault::Refused, "hpf.nothingBelowNote.dcOffsetBelow",
+                Refusal::Mismatch);
+    // ...an optional flag written as its default, and a flag where it cannot apply.
+    mustRefuse (T, "sampleRate = 0, bitDepth = 24 }\nappleMusic", "sampleRate = 0, bitDepth = 24, hpfAlways = false }\nappleMusic",
+                "false", Fault::Refused, "targets.spotifyLoud.hpfAlways", Refusal::WrittenDefault);
+    mustRefuse (T, "sampleRate = 0, bitDepth = 24 }\nspotifyLoud", "sampleRate = 0, bitDepth = 24, sourceRatePass = true }\nspotifyLoud",
+                "true", Fault::Refused, "targets.spotify.sourceRatePass", Refusal::NotApplicable);
 
     // A document that is not TOML at all stops at the parser's error.
-    mustRefuse (Document::Engine, "toleranceLu = 0.1", "toleranceLu = 0.1\ntoleranceLu = 0.2", "toleranceLu = 0.2",
-                Fault::Syntax, "");
+    mustRefuse (E, "toleranceLu = 0.1", "toleranceLu = 0.1\ntoleranceLu = 0.2", "toleranceLu = 0.2", Fault::Syntax, "");
 }
 
 //==============================================================================

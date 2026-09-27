@@ -121,13 +121,15 @@ struct PeakClipper
     double bassBelowHz = 0.0;
     double densityMinusDb = 0.0, densityWithinDb = 0.0;
     double kneeDb = 0.0;
-    double manualMinDb = 0.0, manualMaxDb = 0.0, manualStepDb = 0.0, manualDefaultDb = 0.0;
+    double manualMinDb = 0.0, manualMaxDb = 0.0, manualStepDb = 0.0;   // the manual threshold starts at betweenOverDb
 };
 
 struct Limiter
 {
     double ceilingMarginDb = 0.0;
     double releaseMs = 0.0;
+    bool dualRelease = false;
+    double slowReleaseMs = 0.0;
     PeakClipper peakClipper;
 };
 
@@ -154,6 +156,7 @@ struct HpfComfort
     double lowHz = 0.0;
     double highHz = 0.0;
     double warningLowHz = 0.0;
+    double warningHighHz = 0.0;
 };
 
 struct HpfMark
@@ -167,12 +170,12 @@ struct Hpf
     std::int32_t band = 0;
     double hzMin = 0.0;
     double hzMax = 0.0;
-    Span hzNormal;
     double hzDefault = 0.0;
     std::vector<std::int32_t> slopes;
     std::vector<std::int32_t> slopesNormal;
     std::int32_t slopeDefault = 0;
-    double nothingToCut = 0.0;
+    double nothingBelowNoteInfraLowBelow = 0.0;   // nothingBelowNote.infraLowBelow
+    double nothingBelowNoteDcOffsetBelow = 0.0;   // nothingBelowNote.dcOffsetBelow — observations.dcOffset.from
     HpfComfort comfort;
     double curveTopDb = 0.0, curveBottomDb = 0.0, curveStepDb = 0.0, curveHeadroomDb = 0.0;
     std::vector<HpfMark> marks;
@@ -187,6 +190,8 @@ struct Zone
 struct MonoBass
 {
     double lowWidth = 0.0;
+    Span lowWidthRange;
+    double lowWidthStep = 0.0;
     Span frequencyRange;
     double frequencyStep = 0.0;
     Zone clubZone;                             // zones.club
@@ -303,6 +308,7 @@ struct Dither
 
 struct DeEsser
 {
+    bool offered = false;
     bool automatic = false;
     double manualDepthDb = 0.0;
     std::int32_t band = 0;
@@ -311,7 +317,6 @@ struct DeEsser
     double confidenceAbove = 0.0, minDeltaLufs = 0.0, maxDeltaLufs = 0.0;
     double centreStepHz = 0.0, widthStepOct = 0.0, depthStepDb = 0.0;
     Span centreHz, widthOct, depthDb;
-    double minPairedDepthShare = 0.0;
     std::vector<double> witnessQuantiles;
 };
 
@@ -381,7 +386,6 @@ struct Crest
 struct Sections
 {
     double changeLu = 0.0, minSeconds = 0.0;
-    double warnLu = 0.0, limitLu = 0.0, spikeLu = 0.0;
     double masterShorterByAtMost = 0.0, minComparedShare = 0.0;
     std::int32_t worstNamedAbove = 0;
     double quantile = 0.0;
@@ -423,25 +427,14 @@ struct Progress
     std::int32_t masterExpectedPasses = 0;     // [progress.master] expectedPasses
 };
 
-enum class BlindCompressor : std::uint8_t { None, Page, Given };
-
-struct BlindVariant
-{
-    std::string key;
-    BlindCompressor compressor = BlindCompressor::None;
-    // The compressor of a Given variant; zero otherwise.
-    double ratio = 0.0, threshOffset = 0.0, attackMs = 0.0, kneeDb = 0.0, releaseMs = 0.0;
-};
-
+// The blind test's protocol. Its variants — the chains a pair compares — are not here: they are defined with the test.
 struct BlindTest
 {
     std::vector<std::string> targets;
     double fragmentSeconds = 0.0;
     std::int32_t repeats = 0;
     double matchToleranceLu = 0.0;
-    double clipperKnobDb = 0.0;
     std::int32_t listenedMinSwitches = 0;      // listened.minSwitches
-    std::vector<BlindVariant> variants;
 };
 
 struct Engine
@@ -500,7 +493,13 @@ enum class Refusal : std::uint8_t
     NotAPair,      // a range must be a two-item array
     OutOfOrder,    // a minimum above its maximum, or a list that must ascend and does not
     Duplicate,     // named twice where once is the rule (a target in `main`, an EQ band given to two devices)
-    Fixed          // a value the session does not let change (the limiter is always on)
+    Fixed,         // a value the session does not let change (the limiter is always on, the printed quantiles)
+    NotOnStep,     // not a whole number of its knob's steps
+    Mismatch,      // differs from the key it must equal
+    WrittenDefault,// an optional flag written as its default: it is written only when it is true
+    NotApplicable, // set where it cannot apply (a pass at the source's rate on a target that keeps the source's rate)
+    OutsideLaw,    // a ramp's ends outside its law's domain, or a law the field does not take
+    AboveNyquist   // a frequency at or above half the rate the signal it filters is sampled at
 };
 
 struct Problem
