@@ -34,7 +34,11 @@ felitronics_toml_embed(felitronics_session INPUT config/engine.toml
 # library's own src/ConfigSchema.cpp — one schema, one text — so it does not link the library it gates. Where the build
 # cross-compiles it runs under the build's emulator (node, on the wasm tier), as felitronics_toml2cpp does; a cross build
 # without one names a host build of it in FELITRONICS_SESSION_CONFIG_CHECK_EXECUTABLE. The step writes its stamp only
-# when the check passed, so a failed gate is run again by the next build, whichever generator runs it.
+# when the check passed, so a failed gate is run again by the next build, whichever generator runs it. The stamp depends
+# on the documents, on the schema's own sources and on the checker: the built-in target, or the supplied executable as a
+# file — a newer one (its mtime) runs the gate again, and so does another path (the command changes; Ninja and the Visual
+# Studio generators re-run a command whose line changed). Keeping a supplied checker built from the same sources is its
+# supplier's part: the gate re-runs when either moves, but it cannot rebuild a checker it did not build.
 add_executable(felitronics_session_config_check tests/ConfigCheck.cpp src/ConfigSchema.cpp)
 target_include_directories(felitronics_session_config_check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
                                                                     ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -46,7 +50,7 @@ if(EMSCRIPTEN)
 endif()
 if(FELITRONICS_SESSION_CONFIG_CHECK_EXECUTABLE)
     set(FELITRONICS_SESSION_CONFIG_GATE "${FELITRONICS_SESSION_CONFIG_CHECK_EXECUTABLE}")
-    set(FELITRONICS_SESSION_CONFIG_GATE_DEPENDS "")
+    set(FELITRONICS_SESSION_CONFIG_GATE_DEPENDS "${FELITRONICS_SESSION_CONFIG_CHECK_EXECUTABLE}")
 elseif(CMAKE_CROSSCOMPILING AND NOT CMAKE_CROSSCOMPILING_EMULATOR)
     message(FATAL_ERROR "felitronics::session: this cross build cannot run its config gate — build "
                         "felitronics_session_config_check for the host and set FELITRONICS_SESSION_CONFIG_CHECK_EXECUTABLE")
@@ -60,6 +64,9 @@ add_custom_command(OUTPUT ${FELITRONICS_SESSION_CONFIG_STAMP}
     COMMAND ${CMAKE_COMMAND} -E touch ${FELITRONICS_SESSION_CONFIG_STAMP}
     DEPENDS ${FELITRONICS_SESSION_CONFIG_GATE_DEPENDS}
             ${FELITRONICS_SESSION_CONFIG}/targets.toml ${FELITRONICS_SESSION_CONFIG}/engine.toml
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/ConfigSchema.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/ConfigBind.h
+            ${CMAKE_CURRENT_SOURCE_DIR}/src/ConfigVersion.h ${CMAKE_CURRENT_SOURCE_DIR}/include/felitronics/session/Config.h
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/ConfigCheck.cpp
     COMMENT "felitronics::session: the config, read by schema"
     VERBATIM)
 target_sources(felitronics_session PRIVATE ${FELITRONICS_SESSION_CONFIG_STAMP})
