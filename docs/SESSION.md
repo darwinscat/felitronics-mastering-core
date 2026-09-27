@@ -234,6 +234,10 @@ and `u8'0'` is a character literal, not a digit separator. Its rules:
   `__declspec`, `[[gnu::…]]`, `[[clang::…]]`, `[[using …:]]`, and by name no `section`, `allocate`, `data_seg`,
   `bss_seg`, `const_seg`;
 - no alternative tokens (`<:`, `%:` …);
+- no `mutable`, in any file: a mutable member is state that changes inside a `const` or `constexpr` object —
+  `struct S { mutable int n = 0; }; inline constexpr S s {};` in a public header is one shared, changing variable in
+  every consumer, which the `constexpr` rule below would pass — and the session has no use for it (nor for a mutable
+  lambda);
 - no exception or RTTI token in any `#if` branch; no atomics, cycle counters, target intrinsics or inline assembly;
 - no `std::unordered_*`, no `hash<` qualified or not, no unstable sort, no `using namespace`;
 - in the public header, no function body, no variable with static storage duration that is not `constexpr` (at
