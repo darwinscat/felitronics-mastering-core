@@ -120,7 +120,8 @@ ok(M._fc_session_destroy(read()) === STATUS.OK, 'and destroys');
 // cycles answered the first handle again, and destroying it through a stale copy destroyed the new session.
 const seen = [];
 let first = 0, last = 0, cycles = 0, allOk = true;
-for (;;)
+// BOUNDED: a slot that wraps instead of retiring would take slot 0 for ever, and a regression must fail, not hang.
+while (cycles < SLOT_GENERATIONS + 2)
 {
     if (M._fc_session_create(out) !== STATUS.OK) { allOk = false; break; }
     const h = read();

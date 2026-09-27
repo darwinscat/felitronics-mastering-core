@@ -27,7 +27,8 @@ every native row and the wasm tier, with `objdump`, `dumpbin` or `llvm-readobj`)
 its C boundary: no symbol in writable memory (the boundary: exactly its handle table and poison flag), and nothing
 called that is not on `tools/lint/session-objects.txt` — so `printf`, `fopen`, `time`, `getenv`, `strtod`, `isalpha`,
 `rand` are refused whatever header declared them and however they are spelled or reached; twelve controls compile each
-shape and require the refusal. A source lint (`tools/lint/check-session-laws.mjs`) holds what leaves no symbol: an
+shape and require the refusal, and one — a constexpr table of pointers, relocated constant data — requires the gate to
+accept it. A source lint (`tools/lint/check-session-laws.mjs`) holds what leaves no symbol: an
 include allowlist, no pragma but `#pragma once`, no exception or RTTI token in any `#if` branch, no conditional
 compilation outside the guards, no atomics, cycle counters or inline assembly, no `std::unordered_*`, `std::hash` or
 unstable sort, no function body in the public header, the guards first in every unit — scanned from the target's
