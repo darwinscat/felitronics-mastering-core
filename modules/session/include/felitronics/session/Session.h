@@ -102,7 +102,7 @@ struct Source
     std::string_view name;
 };
 
-namespace detail { struct Driver; struct Inspector; struct MeasurementWorkspace; struct LiveMeasurements; struct NeedlesWork; struct NeedlesResult; }
+namespace detail { struct Driver; struct Inspector; struct MeasurementWorkspace; struct LiveMeasurements; struct SourceMeasurements; struct NeedlesWork; struct NeedlesResult; }
 
 //==============================================================================
 // felitronics::session::Session — the mastering session: the object a shell (the web worker through the fcsession
@@ -246,6 +246,8 @@ private:
     void requestNeedles() noexcept;
     void stepNeedles() noexcept;
     void stepMeasurements() noexcept;
+    void stepSourceMeasurements() noexcept;
+    [[nodiscard]] bool mandatoryReady() const noexcept;
     void clearNeedles() noexcept;
     void needlesChanged() noexcept;
     std::unique_ptr<detail::NeedlesWork> needlesWork_;
@@ -263,7 +265,7 @@ private:
     std::uint64_t sequence_ = 0;
 
     State state_ = State::Empty, stoppedState_ = State::Loaded;
-    bool mastering_ = false;
+    bool mastering_ = false, devicesPlaced_ = false;
     std::uint64_t revision_ = 0;
     Project project_ {};
     MachineDifference differences_[kDeviceFields] {};
@@ -283,6 +285,7 @@ private:
     std::uint64_t measurementOwnedBytes_ = 0;
     std::unique_ptr<detail::MeasurementWorkspace> measurementWorkspace_;
     std::unique_ptr<detail::LiveMeasurements> liveMeasurements_;
+    std::unique_ptr<detail::SourceMeasurements> sourceMeasurements_;
     std::unique_ptr<float[]> samples_;
     std::unique_ptr<char[]> name_;
     // The master being made, and the masters kept: `masterCount_` of them in room for `masterRoom_`. The ids count

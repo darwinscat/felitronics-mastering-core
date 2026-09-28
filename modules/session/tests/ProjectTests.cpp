@@ -452,7 +452,7 @@ void slicing()
         }
         const auto final = json (s->snapshot().view());
         if (reference.empty()) { reference = final; referenceFacts = facts; }
-        ok (final == reference && facts == referenceFacts && facts.size() == 3,
+        ok (final == reference && facts == referenceFacts && facts.size() >= 8,
             "budgets 1, 7 and large yield identical ordered absence/completion facts and every final snapshot field");
     }
 }

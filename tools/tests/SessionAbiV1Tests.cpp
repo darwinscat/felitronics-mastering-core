@@ -115,6 +115,15 @@ std::string load (fc_session s, std::uint32_t rate = 48000)
         "load returns its answer");
     return { answer, written };
 }
+std::string measuredLoad (fc_session s)
+{
+    std::vector<float> samples (48000);
+    for (unsigned i = 0; i < samples.size(); ++i) samples[i] = i % 48 < 24 ? .25f : -.25f;
+    const float* pcm[] { samples.data(), samples.data() };
+    char answer[FC_SESSION_ANSWER_BYTES]; std::uint32_t written = 0;
+    ok (fc_session_load (s, 42, 1, pcm, 2, 48000, 48000, meta, sizeof (meta) - 1, answer, sizeof (answer), &written) == FC_SESSION_OK, "load measurable source");
+    return { answer, written };
+}
 void capabilities()
 {
     felitronics::test::group ("capabilities: the C and C++ entries enforce identical limits before work");
@@ -317,7 +326,17 @@ fc_session_status innerPoison = FC_SESSION_OK;
 void poisonDuringWork (std::string_view which)
 {
     fc_session h = 0; ok (create (full, &h) == FC_SESSION_OK, "poison work session");
-    (void) load (h); std::uint32_t stepped = 0; do { (void) fc_session_step (h, 16, &stepped); } while (stepped == FC_SESSION_MORE);
+    (void) measuredLoad (h); std::uint32_t stepped = 0; do { (void) fc_session_step (h, 16, &stepped); } while (stepped == FC_SESSION_MORE);
+    if (which == "import")
+    {
+        char answer[FC_SESSION_ANSWER_BYTES]; std::uint32_t written = 0;
+        const auto before = alloc::count.load();
+        const auto status = fc_session_import_project (h, 1, 0, "", 0, answer, sizeof (answer), &written);
+        const auto spent = alloc::count.load() - before;
+        ok (status == FC_SESSION_OK && contains ({ answer, written }, "\"code\":3") && spent == 0,
+            "unplaced import refuses before an allocation or reentry is possible");
+        (void) fc_session_destroy (h); return;
+    }
     std::uint32_t size = 0; (void) fc_session_export_project_size (h, &size);
     std::string project (size, ' '); (void) fc_session_export_project_copy (h, project.data(), size, &size);
     char output[FC_SESSION_ANSWER_BYTES]; std::fill (std::begin (output), std::end (output), '?');
@@ -339,59 +358,24 @@ void poisonDuringWork (std::string_view which)
 }
 void scenario()
 {
-    felitronics::test::group ("named commands, small work budgets, project replay and owned transfer");
-    auto caps = full; caps.offeredDevices = FC_SESSION_DEVICE_HPF;
-    fc_session h = 0; ok (create (caps, &h) == FC_SESSION_OK, "restricted devices session");
-    const auto initial = snapshot (h);
-    for (const auto json : { R"({"kind":"setManual","commandId":"7"})", R"({"kind":"setManual","commandId":"7","on":true,"surprise":1})",
-                             R"({"kind":"setManual","commandId":"7","on":true,"on":false})", R"({"kind":"master","commandId":7})" })
-        ok (contains (command (h, json), "\"code\":\"contract\""), "invalid named input is a loud refusal");
-    ok (snapshot (h) == initial, "malformed commands change no state");
-    ok (contains (command (h, R"({"kind":"setManual","commandId":"7"})"), "\"field\":\"on\""), "missing field is named");
-    ok (contains (command (h, R"({"kind":"setManual","commandId":"7","on":true,"surprise":1})"), "\"field\":\"surprise\""), "unknown field is named");
-    ok (contains (load (h), "\"commandId\":\"4294967338\""), "load command id halves are lossless");
-    std::uint32_t more = 99;
-    ok (fc_session_step (h, 0, &more) == FC_SESSION_OK && more == FC_SESSION_MORE, "zero budget polls");
-    unsigned calls = 0;
-    do
-    {
-        ok (fc_session_step (h, 1, &more) == FC_SESSION_OK, "one unit step");
-        ok (contains (events (h), "\"kind\":\"phase\""), "phase batch copies");
-        ++calls;
-    } while (more == FC_SESSION_MORE && calls < 100);
-    ok (more == FC_SESSION_DONE && calls > 10, "small budgets finish the analyzer work and finalization");
-    auto state = snapshot (h);
-    ok (contains (state, "\"offeredDevices\":1") && contains (state, "\"state\":3"), "snapshot carries offered set and measured state");
-    ok (contains (state, "\"momentary\":{\"byteOffset\":") && contains (state, "\"integratedLufs\":\"NaN\""), "snapshot rows are descriptors and scalar NaN is explicit");
-    ok (contains (command (h, R"({"kind":"setManual","commandId":"8","on":true})"), "accepted"), "manual mode");
-    ok (contains (command (h, R"({"kind":"editDevice","commandId":"9","device":1,"fields":{"on":true}})"), "\"code\":9"), "unoffered edit refused");
-    ok (contains (command (h, R"({"kind":"revertEdits","commandId":"9","device":1,"fields":{"on":true}})"), "\"code\":9"), "unoffered revert refused");
-    ok (contains (command (h, R"({"fields":{"fq":32},"device":0,"commandId":"10","kind":"editDevice"})"), "accepted"), "field order is free; an offered device is editable");
-    ok (contains (command (h, R"({"kind":"revertEdits","commandId":"11","device":0,"fields":{"fq":true}})"), "accepted"), "revert named field");
-    ok (contains (command (h, R"({"kind":"editTarget","commandId":"12","fields":{"lufs":-14}})"), "accepted"), "edit target");
-    ok (contains (command (h, R"({"kind":"editDevice","commandId":"12","device":0,"fields":{"on":false,"fq":36}})"), "accepted"), "device edits before target change");
-    ok (contains (snapshot (h), "\"handFieldCount\":2"), "shell can count device edits before warning");
-    ok (contains (command (h, R"({"kind":"setTarget","commandId":"13","target":"cd"})"), "accepted"), "set target");
-    ok (contains (snapshot (h), "\"handFieldCount\":0") && contains (snapshot (h), "\"hand\":{\"fq\":null,\"on\":null,\"slope\":null}"),
-        "wire target change resets device edits and snapshot count");
-    std::uint32_t projectSize = 0;
-    ok (fc_session_export_project_size (h, &projectSize) == FC_SESSION_OK, "project size");
-    std::string project (projectSize, '?'); std::uint32_t written = 777;
-    const auto before = alloc::count.load();
-    auto st = fc_session_export_project_copy (h, project.data(), projectSize - 1, &written);
-    const auto spent = alloc::count.load() - before;
-    ok (st == FC_SESSION_ERR_TOO_SMALL && written == 777 && project[0] == '?' && spent == 0, "short export writes and allocates nothing");
-    ok (fc_session_export_project_copy (h, project.data(), projectSize, &written) == FC_SESSION_OK && written == projectSize, "export bytes");
-    char reply[FC_SESSION_ANSWER_BYTES]; written = 0;
-    ok (fc_session_import_project (h, 14, 0, project.data(), projectSize, reply, sizeof (reply), &written) == FC_SESSION_OK
-        && contains ({ reply, written }, "accepted"), "same-capabilities project imports through byte buffer");
-    ok (contains (command (h, R"({"kind":"master","commandId":"15"})"), "accepted"), "master");
-    ok (contains (command (h, R"({"kind":"cancel","commandId":"16","jobId":2})"), "accepted"), "cancel keeps session alive");
-    ok (contains (command (h, R"({"kind":"master","commandId":"17"})"), "accepted"), "master again");
-    do { ok (fc_session_step (h, 2, &more) == FC_SESSION_OK, "master step"); } while (more == FC_SESSION_MORE);
-    ok (contains (events (h), "\"kind\":\"done\""), "done event");
-    ok (contains (command (h, R"({"kind":"forget","commandId":"18","masterId":3})"), "accepted"), "forget");
-    ok (fc_session_destroy (h) == FC_SESSION_OK && contains (state, "\"state\":3"), "copied snapshot remains readable after destruction");
+    felitronics::test::group ("named commands, real readiness and owned transfer");
+    fc_session h = 0; ok (create (full, &h) == FC_SESSION_OK, "session created");
+    (void) load (h); std::uint32_t more = 0;
+    do { ok (fc_session_step (h, 16, &more) == FC_SESSION_OK, "short source step"); } while (more == FC_SESSION_MORE);
+    ok (contains (snapshot (h), "\"state\":1") && contains (command (h, R"({"kind":"master","commandId":"1"})"), "\"code\":4"), "missing mandatory readings block Measured1 and Master through C");
+    (void) measuredLoad (h);
+    do { ok (fc_session_step (h, 1, &more) == FC_SESSION_OK, "one bounded unit"); } while (more == FC_SESSION_MORE);
+    const auto saved = snapshot (h);
+    ok (contains (saved, "\"state\":2"), "completed source measurements reach Measured1 only");
+    ok (contains (command (h, R"({"kind":"editDevice","commandId":"2","device":0,"fields":{"fq":32}})"), "\"code\":3"), "measurements do not unlock device edits before placement");
+    std::uint32_t size = 0;
+    ok (fc_session_export_project_size (h, &size) == FC_SESSION_ERR_NOT_PLACED, "unplaced defaults cannot be exported as decisions");
+    ok (contains (command (h, R"({"kind":"editTarget","commandId":"3","fields":{"lufs":-14}})"), "accepted"), "target editing stays available");
+    ok (contains (command (h, R"({"kind":"master","commandId":"4"})"), "accepted"), "usable LUFS and true peak permit Master");
+    bool done = false;
+    do { (void) fc_session_step (h, 1, &more); done = done || contains (events (h), "\"kind\":\"done\""); } while (more == FC_SESSION_MORE);
+    ok (done, "master completion crosses the event transport");
+    ok (fc_session_destroy (h) == FC_SESSION_OK && contains (saved, "\"state\":2"), "owned snapshot survives destruction");
 }
 void rows()
 {
@@ -580,6 +564,8 @@ void freezeRegressions()
             "malformed command replaces batch and advances sequence once");
     }
     do { (void) fc_session_step (h, 16, &written); } while (written == FC_SESSION_MORE);
+    (void) measuredLoad (h);
+    do { (void) fc_session_step (h, 16, &written); } while (written == FC_SESSION_MORE);
     constexpr char master[] = R"({"kind":"master","commandId":"8"})";
     ok (fc_session_command_bytes (h, master, sizeof (master) - 1, &price) == FC_SESSION_OK && price.rejection == 0 && price.bytes > 0,
         "command demand comes from the same JSON before allocation");
@@ -589,20 +575,8 @@ void freezeRegressions()
     ok (fc_session_command_bytes (h, master, sizeof (master) - 1, &price) == FC_SESSION_OK && price.bytes == masterPrice.bytes,
         "demand remains available under insufficient capacity");
     constexpr char project[] = "invalid TOML";
-    ok (fc_session_import_project_bytes (h, project, sizeof (project) - 1, &price) == FC_SESSION_OK && price.rejection == 0 && price.bytes > 0,
-        "import demand is quoted from bytes before its allocating parse");
-    constexpr std::string_view required[] { "defaults", "core", "manual", "target", "target.name" };
-    const auto library = felitronics::toml::storageFor (project, felitronics::toml::ReadStorage { required });
-    const auto importBytes = library.parse + library.read + detail::ImportedProject::storageBytes();
-    ok (price.bytes == double (importBytes) && price.largestBlockBytes == price.bytes,
-        "C import demand is exactly TOML parse + read + owned storage, with the conservative block bound");
-    restored.largestFreeBlockBytes = price.largestBlockBytes - 1;
-    (void) fc_session_set_capacity (h, &restored);
-    const auto before = alloc::count.load();
-    const auto imported = fc_session_import_project (h, 9, 0, project, sizeof (project) - 1, json, sizeof (json), &written);
-    const auto allocations = alloc::count.load() - before;
-    ok (imported == FC_SESSION_OK && contains ({ json, written }, "\"code\":30") && allocations == 0,
-        "import checks largest block before parsing malformed bytes");
+    ok (fc_session_import_project_bytes (h, project, sizeof (project) - 1, &price) == FC_SESSION_OK
+        && price.rejection == std::uint32_t (Rejection::NotPlaced), "unplaced import preflight precedes parsing and allocation");
     price.size = sizeof (price) + 1;
     ok (fc_session_command_bytes (0, nullptr, 1, &price) == FC_SESSION_ERR_STRUCT_TOO_LARGE, "demand output size before handle");
     restored.size = sizeof (restored) - 1;

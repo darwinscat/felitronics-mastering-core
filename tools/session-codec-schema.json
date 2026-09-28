@@ -363,7 +363,9 @@
         "needlesLargestBlockBytes": "bytes",
         "needlesRunsTruncated": "bool",
         "canContinueMeasurement": "bool",
-        "measurementResumeState": "State"
+        "measurementResumeState": "State",
+        "mandatoryMeasurementsReady": "bool",
+        "devicesPlaced": "bool"
       }
     },
     "Version": {

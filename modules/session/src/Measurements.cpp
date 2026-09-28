@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 #include "BuildGuards.h"
+#include <felitronics/analysis/BandCrestResult.h>
 #include "BuildContract.h"
 #include "Utf8.h"
 #include <felitronics/session/Measurements.h>
@@ -131,6 +132,38 @@ OwnedMeasurements OwnedMeasurements::copy (std::span<const MeasurementResult> re
             out.arrays_[ai++] = array;
         }
     }
+    return out;
+}
+analysis::BandCrestResult MeasurementCrest::view (const MeasurementResult& result) noexcept
+{
+    analysis::BandCrestResult out;
+    if (result.analyzer != Analyzer::Crest) return out;
+    out.frames = result.framesRead;
+    for (const auto& a : result.arrays)
+    {
+        if (a.name == "blocks" && a.columns == 10) { out.blocks = a.values; out.hopSamples = a.grid.stepFrames; }
+        if (a.name == "active" && a.columns == 5) out.mask = a.values;
+    }
+    for (const auto& n : result.numbers) if (n.value)
+    {
+        const auto v = *n.value;
+        if (! std::isfinite (v)) continue;
+        if (n.name == "sampleRate" && v > 0) out.sampleRate = v;
+        else if (n.name == "blockHops" && v >= 1 && v <= 64) out.parameters.blockHops = int (v);
+        else if (n.name == "droppedHops" && v >= 0 && v < 9007199254740992.0) out.droppedHops = std::uint64_t (v);
+        else if (n.name == "nonFiniteSamples" && v >= 0 && v < 9007199254740992.0) out.nonFiniteSamples = std::uint64_t (v);
+        else if (n.name == "invalidReason" && v >= 0 && v <= 2) out.reason = analysis::BandCrestInvalid (int (v));
+        else if (n.name == "programmeMeanSquareDb") out.programmeMeanSquareDb = v;
+        else if (n.name == "activityFloorDb") out.activityFloorDb = v;
+        else if (n.name == "bandShareFloorDb") out.parameters.bandShareFloorDb = v;
+        else for (unsigned b = 0; b < 3; ++b)
+        {
+            constexpr std::string_view names[] { "bandEdgeHz[0]", "bandEdgeHz[1]", "bandEdgeHz[2]" };
+            if (n.name == names[b]) out.parameters.bandEdgeHz[b] = v;
+        }
+    }
+    if (out.sampleRate > 0) out.parameters.hopMs = double (out.hopSamples) * 1000 / out.sampleRate;
+    out.parameters.programmeFloorDb = out.activityFloorDb;
     return out;
 }
 } // namespace felitronics::session

@@ -84,7 +84,7 @@ void Session::requestNeedles() noexcept
     const auto lufs = reading (loudness, "integratedLufs");
     const auto peak = reading (loudness, "truePeakDb");
     std::optional<double> need, ceiling;
-    if (placed() && lufs && peak)
+    if (lufs && peak)
     {
         const auto target = detail::rules().row (project_.target);
         const double targetLufs = project_.targetEdit.lufs ? *project_.targetEdit.lufs : target.lufs.toDouble();
@@ -100,7 +100,7 @@ void Session::requestNeedles() noexcept
     needlesKey_ = ceiling ? resultKey (measurementKey_, *ceiling) : measurementKey_;
     needlesDemand_ = {}; needlesProgress_ = {};
     auto& result = measurementResults_[slot]; result.key = needlesKey_;
-    if (! placed()) return; // the first measurement's end evaluates the latest target
+    if (! mandatoryReady()) return;
     result.status = MeasurementStatus::Unavailable;
     if (! need || ! ceiling)
         result.reason = loudness.status == MeasurementStatus::Ready ? MeasurementReason::NoSignal : loudness.reason;

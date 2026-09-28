@@ -38,8 +38,8 @@ struct AnalyzerDemand
 };
 struct MeasurementPlan
 {
-    // The instruments the pump currently runs together. Other prices are independent preparations,
-    // admitted before use; scheduling another instrument must also add its lifetime to this plan.
+    // These instruments stream together. SourceMeasurements::order adds sequential source and
+    // background preparations; every scheduled lifetime is included in the whole declaration.
     static constexpr std::array streaming { Analyzer::Loudness, Analyzer::Clipping, Analyzer::Programme };
     // Each lifetime keeps its share of the whole-plan allocator reserve until that storage is freed.
     static constexpr std::uint64_t workspaceAllowance = 128u * 64u, rowAllowance = 128u * 64u;

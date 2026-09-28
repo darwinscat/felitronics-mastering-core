@@ -383,3 +383,87 @@ en = "Clipping was detected in the source recording."
 [messages.continueMeasurement]
 ru = "Продолжить замер"
 en = "Continue measurement"
+
+[terms.analyzer.lowEnd]
+ru = "Низ до 120 Гц"
+en = "Low end below 120 Hz"
+
+[terms.analyzer.lowEnd150]
+ru = "Низ до 150 Гц"
+en = "Low end below 150 Hz"
+
+[terms.analyzer.infraLow]
+ru = "Инфраниз"
+en = "Infra-low"
+
+[terms.analyzer.forensics]
+ru = "Происхождение записи"
+en = "Source evidence"
+
+[terms.analyzer.stereo]
+ru = "Стерео"
+en = "Stereo"
+
+[terms.analyzer.crest]
+ru = "Пик-фактор"
+en = "Crest factor"
+
+[terms.analyzer.hum]
+ru = "Гул"
+en = "Hum"
+
+[terms.analyzer.bursts]
+ru = "Всплески Mid и Side"
+en = "Mid and Side bursts"
+
+[terms.measurementStatus.ready]
+ru = "замер готов"
+en = "measurement ready"
+
+[terms.measurementStatus.unsupported]
+ru = "не измерено: параметры звука не подходят"
+en = "not measured: unsupported audio parameters"
+
+[terms.measurementStatus.short]
+ru = "не измерено: запись слишком короткая"
+en = "not measured: the recording is too short"
+
+[terms.measurementStatus.nonFinite]
+ru = "не измерено: неконечное число"
+en = "not measured: a non-finite value occurred"
+
+[terms.measurementStatus.capacity]
+ru = "замер неполон: достигнута ёмкость списка"
+en = "measurement incomplete: list capacity reached"
+
+[terms.measurementStatus.noSignal]
+ru = "не измерено: нет подходящего сигнала"
+en = "not measured: no suitable signal"
+
+[terms.measurementStatus.memory]
+ru = "не измерено: недостаточно памяти"
+en = "not measured: insufficient memory"
+
+[messages.analyzerStatus]
+ru = "{analyzer}: {status}."
+en = "{analyzer}: {status}."
+
+[messages.sourceQuiet]
+ru = "Исходная запись тихая ({lufs}). Возможно, стоит проверить сведение или экспорт."
+en = "The source is quiet ({lufs}). Please check the mix or export."
+
+[messages.sourceGainOnly]
+ru = "Исходная запись очень тихая ({lufs}); доступен безопасный путь с усилением и потолком."
+en = "The source is very quiet ({lufs}); the gain and ceiling fallback applies."
+
+[messages.sourceDc]
+ru = "В исходной записи есть постоянное смещение ({offset})."
+en = "The source has a DC offset ({offset})."
+
+[messages.sourceUnusedBits]
+ru = "В исходной записи не используются младшие биты: {bits}."
+en = "Unused low bits in the source: {bits}."
+
+[messages.sourcePolarity]
+ru = "В низких частотах обнаружена противоположная полярность каналов."
+en = "Opposite channel polarity was detected in the low frequencies."

@@ -43,6 +43,7 @@ struct SnapshotView
     bool needlesRunsTruncated = false;
     bool canContinueMeasurement = false;
     State measurementResumeState = State::Empty;
+    bool mandatoryMeasurementsReady = false, devicesPlaced = false;
 };
 class Codec;
 // An immutable, owned value. view() remains valid until this value is moved or destroyed,

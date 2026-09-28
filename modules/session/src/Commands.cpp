@@ -17,6 +17,7 @@
 #include "MeasurementPlan.h"
 #include "MeasurementWorkspace.h"
 #include "LiveMeasurements.h"
+#include "SourceMeasurements.h"
 #include "Utf8.h"
 
 #include <felitronics/session/Commands.h>
@@ -167,6 +168,9 @@ Checked Session::storageFor (const Request& request) const noexcept
     // 2. STATE
     const auto which = Command (request.index());
     if (const Rejection r = Table::commands[index (which)].cell[index (column())]; r != Rejection::None) return rejected (r);
+
+    if (! placed() && (which == Command::EditDevice || which == Command::RevertEdits || which == Command::ImportProject))
+        return rejected (Rejection::NotPlaced);
 
     // The config, read in place after the build gate established its contract.
     const Rules rules = detail::rules();
@@ -349,6 +353,7 @@ Answer Session::apply (const Request& request) noexcept
         const auto key = detail::MeasurementPlan::key (hash.h, plan.parameters, config::Config::versions().all, coreVersion(), version());
         const bool cached = source_.channels != 0 && key == measurementKey_;
         const auto previousState = state_;
+        const auto previousPlacement = devicesPlaced_;
         const auto previousUnit = measurementUnit_;
         const auto previousProgress = measurementProgress_;
         // The name first, into an array of its own: it may be the name this session holds (a shell that loads again
@@ -372,6 +377,7 @@ Answer Session::apply (const Request& request) noexcept
             samples_.reset();
             measurementWorkspace_.reset (new detail::MeasurementWorkspace);
             liveMeasurements_.reset (new detail::LiveMeasurements);
+            sourceMeasurements_.reset (new detail::SourceMeasurements);
             measurementOwnedBytes_ = 0;
             for (std::size_t i = 0; i < kAnalyzers; ++i)
             {
@@ -391,6 +397,7 @@ Answer Session::apply (const Request& request) noexcept
         project_.core = version();
         differenceCount_ = 0;
         project_.manual = false;
+        devicesPlaced_ = cached && previousPlacement;
         project_.devices = {};                                      // unplaced: both layers, until the new source is measured
         // WRITE — one array of exactly the samples, then a copy into it.
         const auto frames = std::size_t (pcm.frames);   // fits: check() refused a source past what size_t counts
@@ -414,7 +421,7 @@ Answer Session::apply (const Request& request) noexcept
             state_ = previousState == State::MeasurementStopped ? stoppedState_ : previousState;
             measurementUnit_ = previousUnit;
             measurementProgress_ = previousProgress;
-            if (state_ == State::Measured2) measurementJob_ = 0;
+            if (state_ == State::Measured2 || (sourceMeasurements_ && sourceMeasurements_->finished)) measurementJob_ = 0;
             for (auto& r : measurementResults_)
                 if (r.analyzer != Analyzer::Excursions && r.status == MeasurementStatus::Cancelled) { r.status = MeasurementStatus::Pending; r.reason = MeasurementReason::Pending; }
             if (placed()) detail::placeMachine (rules, project_.target, source_.channels, project_.devices, capabilities_.offeredDevices);
@@ -592,6 +599,7 @@ bool Driver::measured1 (Session& session, JobId job, std::uint64_t source) noexc
     if (job == 0 || job != session.measurementJob_ || source != session.source_.hash) return false;
     if (Session::checkFloatingPointEnvironment() != Status::Ok || ! allowed (session, Event::Measured1)) return false;
     session.state_ = State::Measured1;
+    session.devicesPlaced_ = true;
     session.measurementUnit_ = 5;
     detail::placeMachine (detail::rules(), session.project_.target, session.source_.channels, session.project_.devices, session.capabilities_.offeredDevices);
     session.refreshEqCurve();

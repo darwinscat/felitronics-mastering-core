@@ -3,6 +3,7 @@
 
 #pragma once
 
+
 #include <felitronics/session/Text.h>
 #include <cstddef>
 #include <cstdint>
@@ -10,6 +11,8 @@
 #include <optional>
 #include <span>
 #include <string_view>
+
+namespace felitronics::analysis { struct BandCrestResult; }
 
 namespace felitronics::session
 {
@@ -19,7 +22,7 @@ enum class Analyzer : std::uint8_t
     StereoBursts, Crest, Hum, Tempo, Excursions, LowEnd150
 };
 inline constexpr std::size_t kAnalyzers = 14;
-inline constexpr std::size_t kMeasurementNumbers = 128, kMeasurementArrays = 16, kMeasurementNameBytes = 64;
+inline constexpr std::size_t kMeasurementNumbers = 256, kMeasurementArrays = 16, kMeasurementNameBytes = 64;
 enum class MeasurementStatus : std::uint8_t { Pending, Ready, Unavailable, Cancelled };
 enum class MeasurementReason : std::uint8_t
 {
@@ -71,6 +74,11 @@ public:
     [[nodiscard]] static text::FactId fact (MeasurementReason reason) noexcept;
 };
 // Exact arrays, including text and nested rows; no analyzer or scratch pointer survives copy().
+struct MeasurementCrest
+{
+    // The returned spans share the result owner's lifetime, including an owned Snapshot after Session destruction.
+    [[nodiscard]] static analysis::BandCrestResult view (const MeasurementResult& result) noexcept;
+};
 class OwnedMeasurements final
 {
 public:

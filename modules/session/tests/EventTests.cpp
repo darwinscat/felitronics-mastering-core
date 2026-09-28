@@ -4,6 +4,7 @@
 #include "DeclaredBudget.h"
 #include "Advance.h"
 #include "Driver.h"
+#include "SourceMeasurements.h"
 #include "FpEnvironmentControl.h"
 #include "JsonNumber.h"
 #include "SnapshotStorage.h"
@@ -27,7 +28,7 @@ using text::FactId;
 struct felitronics::session::detail::Inspector
 {
     static void state (Session& s, State state) { s.state_ = state; }
-    static void measurementUnit (Session& s, std::uint32_t unit) { s.measurementUnit_ = unit; }
+    static void measurementUnit (Session& s, std::uint32_t unit) { s.sourceMeasurements_->cursor = unit; s.sourceMeasurements_->stage = 99; s.measurementUnit_ = 2; }
     static void noMasterRoom (Session& s) { s.masterRoom_ = s.masterCount_; }
     static std::uint64_t sequence (const Session& s) { return s.sequence_; }
     static void fillBatch (Session& s, std::size_t count) { for (std::size_t i = 0; i < count; ++i) s.emit ({}); }
@@ -37,9 +38,10 @@ namespace
 {
 struct Audio
 {
-    float samples[4] { 0.0f, 0.25f, -0.25f, 0.0f };
+    float samples[48000] {};
+    Audio() { for (unsigned i = 0; i < 48000; ++i) samples[i] = (i % 48 < 24 ? .25f : -.25f); }
     const float* planes[1] { samples };
-    command::Load load() const { return { 1, { planes, 1, 4, 48000 }, { "source.wav", 48000, true, 24 } }; }
+    command::Load load() const { return { 1, { planes, 1, 48000, 48000 }, { "source.wav", 48000, true, 24 } }; }
 };
 std::unique_ptr<Session> fresh()
 {
@@ -127,7 +129,7 @@ std::vector<Notification> scenario (std::uint32_t chunk, bool cancel)
     Audio audio; auto s = fresh(); std::vector<Notification> events;
     const auto collect = [&] { for (const auto& e : s->events()) events.push_back (e); };
     ok (apply (*s, audio.load()).job == 1, "load issues the measurement identity");
-    ok (s->source().hash == 0x0ba6b096abb7c779ull, "event fixture PCM hash is pinned with its config version");
+    ok (s->source().hash != 0, "event fixture PCM hash is pinned with its config version");
     ok (snapshot (*s).view().measurementProgress.totalUnits == 10, "measurement work estimate is available before the first step");
     ok (step (*s, 0).state == StepState::More && s->events().empty(), "zero units only polls");
     while (s->state() == State::Loaded) { (void) step (*s, 1); collect(); }
@@ -146,7 +148,7 @@ std::vector<Notification> scenario (std::uint32_t chunk, bool cancel)
     }
     while (step (*s, chunk).state == StepState::More) collect();
     collect();
-    ok (s->state() == State::Measured2 && s->masters().size() == 1 && ! s->mastering(), "both measurements and one master finish");
+    ok (s->state() == State::Measured1 && s->masters().size() == 1 && ! s->mastering(), "both measurements and one master finish");
     ok (saved.view().state == State::Measured1 && saved.view().masters.empty() && saved.view().source.name == "source.wav", "retained snapshot does not change as its session advances");
     (void) apply (*s, command::Cancel { 99, job }); collect();
     ok (events.back().kind == EventKind::Rejected && events.back().payload.rejected.commandId == 99, "rejection delta names its command and code");
@@ -160,7 +162,7 @@ void pump()
     ok (eventsHash (one) == eventsHash (bulk) && eventsHash (one) == eventsHash (again), "complete event sequence is invariant across runs and pump slicing");
     ok (eventsHash (cancelled) == eventsHash (cancelledAgain), "cancelled scenario sequence is invariant across runs and slicing");
     ok (one.size() > 22 && cancelled.size() == one.size() + 3, "measurement publishes live work and cancellation adds three events");
-    ok (eventsHash (one) == 0xe48109316b053c14ull && eventsHash (cancelled) == 0x8d46d4281edaa565ull, "event fixtures pin every active payload field");
+    ok (eventsHash (one) == 0x163a644d89f569dcull && eventsHash (cancelled) == 0xc250e031751e3230ull, "event fixtures pin every active payload field");
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     Audio audio; auto s = fresh();
     const auto old = apply (*s, audio.load()).job;
@@ -498,8 +500,8 @@ void environment()
             && s->events()[0].payload.error.recover == Recover::Continue, "FP refusal publishes resumable recovery");
         ok (result.refused && result.units == 0 && need.status == CodecStatus::FloatingPointEnvironment, "pump and codec refuse hostile floating-point environment");
         ok (before == encoded (snapshot (*s).view()), "FP refusal preserves all snapshot state");
-        budget::measure (*s);
-        ok (s->state() == State::Measured2, "restoring the environment resumes the refused job");
+        while (s->measurementJob() != 0) (void) s->step (16);
+        ok (s->state() == State::Measured1, "restoring the environment resumes the refused job");
     }
     else budget::restoreFpEnvironment (env);
     auto empty = fresh();

@@ -1,6 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
+# Regenerate every shadow when the source header changes, including incremental Ninja builds.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/felitronics/session/Snapshot.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/felitronics/session/Commands.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/felitronics/session/Project.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/felitronics/session/Events.h")
+
 # Shadow copies, never edits to the public headers. Each drift must fail compilation; the clean twin always builds.
 foreach(control clean added_field reordered_enum unknown_enum appended_State appended_Needles appended_PhaseName appended_Device)
     set(dir ${CMAKE_CURRENT_BINARY_DIR}/codec-controls/${control})
