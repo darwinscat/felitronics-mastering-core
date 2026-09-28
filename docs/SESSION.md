@@ -226,7 +226,7 @@ from the code, and ctest holds the text between the markers below to that output
 | revertEdits | NoSource | NotPlaced | yes | yes | yes | yes |
 | setManual | yes | yes | yes | yes | yes | yes |
 | master | NoSource | NotMeasured | yes | yes | Busy | Busy |
-| cancel | NoJob | yes | yes | NoJob | yes | yes |
+| cancel | NoJob | yes | yes | yes | yes | yes |
 | forget | NoSource | NoMaster | yes | yes | yes | yes |
 | importProject | NoSource | NotPlaced | yes | yes | yes | yes |
 
@@ -553,7 +553,8 @@ meaning as the active master. Cancellation checks the named id after the state t
 the source, completed results, analyzer workspace and saved progress; unfinished results become `Cancelled`.
 The internal continuation gets a fresh job identity and restores those results to `Pending`. The public command and
 state table still expose the existing commands. Cancelling a master ends its overlay and resets its progress.
-After phase-two cancellation, `cancel` in `Measured1` returns `NoJob` if no master runs. A first-phase
+Cancellation in either measured state returns `NoJob` only when no measurement, master or needles job runs.
+A target change after phase two can start needles; its active ID can be cancelled in `Measured2`. A first-phase
 result still suffices for a master. A failed Driver transition publishes `Error{Contract, None}` and drops that job.
 Every internal completion checks its captured job id, and measurement completions also check the captured source hash.
 A stale completion changes nothing, including when the same samples are loaded again or a newer master runs.
@@ -566,7 +567,9 @@ term to `uint64_t` before addition. Copy traps before allocating, in every confi
 reading-point storage exceeds `size_t`; it never allocates a wrapped size.
 
 `Measurements.h` adds owned analyzer results: named optional numbers with reasons, named numeric arrays with frame
-grids, total/stored counters and completeness. Each source has one result per analyzer. `OwnedMeasurements::copy`
+grids, total/stored counters and completeness. Each source has one result per analyzer. The all-target plan retains
+independent 120 Hz (`LowEnd`), 150 Hz (`LowEnd150`) and infra-low (`InfraLow`) readings, each with its own preparation
+and result demand. `LowEnd150` is appended after the existing analyzer identities. `OwnedMeasurements::copy`
 copies every name and row; snapshot copies therefore survive workspace destruction, replacement loads and session
 destruction. A `Measurement` event owns the result identity, status, counters and revision; its numeric data is read
 from the corresponding snapshot. The codec generator describes both forms, including transferable f64 rows.

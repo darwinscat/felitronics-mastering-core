@@ -18,7 +18,7 @@ struct MeasurementWorkspace
     std::unique_ptr<analysis::DeterministicLoudnessMeter> loudness;
     std::unique_ptr<analysis::ClipDetector> clipping;
     std::unique_ptr<analysis::ProgrammeReport> programme;
-    std::unique_ptr<analysis::LowEnd> lowEnd, infraLow;
+    std::unique_ptr<analysis::LowEnd> lowEnd, infraLow, lowEnd150;
     std::unique_ptr<analysis::SourceForensics> forensics;
     std::unique_ptr<analysis::StereoColumns> stereo;
     std::unique_ptr<analysis::WaveformPeaks> waveform;

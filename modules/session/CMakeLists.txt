@@ -656,6 +656,12 @@ if(FELITRONICS_BUILD_TESTS)
         COMMAND ${CMAKE_COMMAND} -DCHECK=ON -DOUTPUT=${FELITRONICS_SESSION_TYPES} -DVERSION_FILE=${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/version.txt
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake)
     find_program(FELITRONICS_SESSION_NODE NAMES node nodejs REQUIRED)
+    add_test(NAME felitronics_session_needles_parity_controls
+        COMMAND ${FELITRONICS_SESSION_NODE} ${PROJECT_SOURCE_DIR}/tools/tests/needles-parity.mjs
+                --self-test $<TARGET_FILE:felitronics_session_needles_tests>)
+    add_test(NAME felitronics_session_needles_tier_wiring
+        COMMAND ${FELITRONICS_SESSION_NODE} ${PROJECT_SOURCE_DIR}/tools/tests/needles-parity.mjs
+                --check-wiring ${PROJECT_SOURCE_DIR})
     add_executable(felitronics_session_codec_fixture tests/CodecFixture.cpp)
     target_link_libraries(felitronics_session_codec_fixture PRIVATE felitronics::session)
     target_include_directories(felitronics_session_codec_fixture PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

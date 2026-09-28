@@ -209,7 +209,8 @@ void tableBetweenSteps()
                 command::SetManual { 17, false }, command::Master { 18 }, command::Cancel { 19, job }, command::Forget { 20, kept }, command::ImportProject { 21, project.view() } };
             ok (std::size_t (s->column()) == col, "pump establishes the table column");
             const auto answer = apply (*s, requests[std::size_t (row.command)]);
-            ok (answer.rejection == row.cell[col], "every command obeys the table between pump steps");
+            const auto expected = row.command == Command::Cancel && job == 0 ? Rejection::NoJob : row.cell[col];
+            ok (answer.rejection == expected, "every command obeys the table and active-job check between pump steps");
             if (answer.rejection != Rejection::None) ok (before == encoded (snapshot (*s).view()), "rejection leaves the entire snapshot intact");
         }
 }

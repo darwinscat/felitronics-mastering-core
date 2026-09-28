@@ -210,7 +210,7 @@ struct Table
         { Command::RevertEdits, {    NoSource, NotPlaced,   None,     None,     None,      None } },
         { Command::SetManual,   {    None,     None,        None,     None,     None,      None } },
         { Command::Master,      {    NoSource, NotMeasured, None,     None,     Busy,      Busy } },
-        { Command::Cancel,      {    NoJob,    None,        None,     NoJob,    None,      None } },
+        { Command::Cancel,      {    NoJob,    None,        None,     None,     None,      None } },
         { Command::Forget,      {    NoSource, NoMaster,    None,     None,     None,      None } },
         { Command::ImportProject, { NoSource, NotPlaced,   None,     None,     None,      None } },
     };

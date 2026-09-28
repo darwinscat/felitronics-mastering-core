@@ -33,6 +33,7 @@ bool MeasurementWorkspace::prepare (Analyzer analyzer, const Pcm& pcm, const Mea
         case Analyzer::Clipping: return start (clipping, [&] (auto& a) { a.setParams ({ p.clipRuns }); return a.prepare (sampleRate, p.maxBlock, channelCount); });
         case Analyzer::Programme: return start (programme, [&] (auto& a) { a.setParams (p.programme); return a.prepare (sampleRate, p.maxBlock, channelCount); });
         case Analyzer::LowEnd: return start (lowEnd, [&] (auto& a) { a.setParams (p.lowEnd); return a.prepare (sampleRate, p.maxBlock, channelCount); });
+        case Analyzer::LowEnd150: return start (lowEnd150, [&] (auto& a) { a.setParams (p.lowEnd150); return a.prepare (sampleRate, p.maxBlock, channelCount); });
         case Analyzer::InfraLow: return start (infraLow, [&] (auto& a) { a.setParams (p.infraLow); return a.prepare (sampleRate, p.maxBlock, channelCount); });
         case Analyzer::Forensics: return start (forensics, [&] (auto& a) { a.setParams (p.forensics); return a.prepare (sampleRate, p.maxBlock, channelCount); });
         case Analyzer::Stereo: return start (stereo, [&] (auto& a) { return a.prepare (channelCount, pcm.frames, p.columns); });
@@ -65,6 +66,7 @@ void MeasurementWorkspace::release (Analyzer analyzer) noexcept
         case Analyzer::Programme: programme.reset(); break;
         case Analyzer::LowEnd: lowEnd.reset(); break;
         case Analyzer::InfraLow: infraLow.reset(); break;
+        case Analyzer::LowEnd150: lowEnd150.reset(); break;
         case Analyzer::Forensics: forensics.reset(); break;
         case Analyzer::Stereo: stereo.reset(); break;
         case Analyzer::Waveform: waveform.reset(); break;
