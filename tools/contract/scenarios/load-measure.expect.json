@@ -1,0 +1,51 @@
+{
+  "checks": [
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "state",
+      "value": 1,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "state",
+      "value": 3,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "sourceBytes",
+      "value": 1024,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "integratedLufs",
+      "value": "NaN",
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "measurementJob",
+      "value": 0,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "measurementProgress.completedUnits",
+      "value": 10,
+      "session": "main"
+    }
+  ],
+  "minEvents": 10,
+  "eventKinds": [
+    "phase",
+    "fact"
+  ]
+}

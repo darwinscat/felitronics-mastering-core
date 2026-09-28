@@ -42,6 +42,8 @@
 # they are diffed against are built from ONE core — and the sibling ../felitronics-core otherwise, the same
 # default the CMake uses. Nothing else is guessed: with neither, the build stops.
 #
+# FELITRONICS_WASM_KEEP_CONTROLS=1 retains temporary source-list controls on build hosts that forbid deletion.
+#
 # AND A felitronics-toml CHECKOUT, for fcsession's config: FELITRONICS_TOML_DIR when that is set (CI passes the one its
 # CMake configure resolved), the sibling ../felitronics-toml otherwise — the same rule, for the same reason.
 set -euo pipefail
@@ -547,16 +549,25 @@ session_sources () { mod="$1"
     printf '%s\n' "$listed" | sed "s|^|$mod/|"; }
 
 # ...and before it is trusted: a tree with one unlisted source in a SUBDIRECTORY of src/ must be refused.
-SCTL="$(mktemp -d)"
+if [ "${FELITRONICS_WASM_KEEP_CONTROLS:-0}" = 1 ]; then
+    SCTL="$(mktemp -d "$OUT/source-control.XXXXXX")"
+else
+    SCTL="$(mktemp -d)"
+fi
 mkdir -p "$SCTL/src/sub"
 cp "$ROOT/modules/session/sources.txt" "$SCTL/"
 while IFS= read -r f; do mkdir -p "$SCTL/$(dirname "$f")"; : > "$SCTL/$f"; done \
     < <(sed -e 's/#.*//' -e 's/[[:space:]]*$//' "$ROOT/modules/session/sources.txt" | grep -v '^$')
 : > "$SCTL/src/sub/unlisted.cpp"
 if session_sources "$SCTL" > /dev/null 2>&1; then
-    rm -rf "$SCTL"; echo "*** CONTROL: a source in src/sub/ that sources.txt does not list was not refused"; exit 1
+    [ "${FELITRONICS_WASM_KEEP_CONTROLS:-0}" = 1 ] || rm -rf "$SCTL"
+    echo "*** CONTROL: a source in src/sub/ that sources.txt does not list was not refused"; exit 1
 fi
-rm -rf "$SCTL"
+if [ "${FELITRONICS_WASM_KEEP_CONTROLS:-0}" = 1 ]; then
+    printf 'source-list control retained: %s\n' "$SCTL"
+else
+    rm -rf "$SCTL"
+fi
 echo "    control ok: an unlisted source in a subdirectory of src/ is refused"
 
 SESSION_SRCS=(); while IFS= read -r f; do SESSION_SRCS+=("$f"); done < <(session_sources "$ROOT/modules/session")
@@ -670,6 +681,11 @@ mkdir -p "$OUT/trap"
 em++ "${SCOMMON[@]}" -O3 -sENVIRONMENT=node "$SSRC" "${SESSION_SRCS[@]}" "$HERE/session-controls/trap_allocation.cpp" -I"$CORE/test_support" \
      -o "$OUT/trap/fcsession.node.js"
 node "$HERE/session-trap-check.mjs" "$OUT/trap/fcsession.node.js" "$OUT/snapshot.mjs"
+
+echo "=== contract allocation trap (fc_session)"
+mkdir -p "$OUT/contract-trap"
+em++ "${SCOMMON[@]}" -O3 -sENVIRONMENT=node "$SSRC" "${SESSION_SRCS[@]}" "$HERE/session-controls/contract_trap.cpp" \
+     -o "$OUT/contract-trap/fcsession.node.js"
 
 echo "=== size (fc_session)"
 sizes fcsession.web.wasm fcsession.web.mjs

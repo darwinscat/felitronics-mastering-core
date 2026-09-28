@@ -1,0 +1,105 @@
+{
+  "checks": [
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.targetEdit.lufs",
+      "value": -12.5,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.devices.hpf.hand.fq",
+      "value": 4000.125,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "project.devices.hpf.hand.fq",
+      "value": 4000.125,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "project.devices.hpf.hand.on",
+      "value": false,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "project.targetEdit",
+      "value": {
+        "lufs": null,
+        "tp": null
+      },
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "target",
+      "value": "lp",
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 2,
+      "path": "target",
+      "value": "cd",
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 2,
+      "path": "project.devices.hpf.hand.fq",
+      "value": null,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 2,
+      "path": "project.devices.hpf.hand.on",
+      "value": null,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.manual",
+      "value": false
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.devices.low.hand.db",
+      "value": -2.375
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "project.devices.low.hand.db",
+      "value": -2.375
+    },
+    {
+      "kind": "snapshot",
+      "index": 2,
+      "path": "project.devices.low.hand.db",
+      "value": null
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.devices.hpf.hand.slope",
+      "value": 96
+    }
+  ],
+  "minEvents": 10,
+  "eventKinds": [
+    "phase",
+    "fact"
+  ]
+}

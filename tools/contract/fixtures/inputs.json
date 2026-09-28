@@ -1,0 +1,26 @@
+{
+  "mono": {
+    "rate": 48000,
+    "channels": 1,
+    "frames": 256,
+    "period": 32,
+    "scale": 256
+  },
+  "stereo": {
+    "rate": 44100,
+    "channels": 2,
+    "frames": 384,
+    "period": 64,
+    "scale": 128
+  },
+  "saved-machine": {
+    "project": {
+      "defaults": "2026-09",
+      "core": "0.2.1",
+      "manual": false,
+      "target": "allStreaming",
+      "hpfFrequency": 41.125,
+      "lowDb": 2.375
+    }
+  }
+}

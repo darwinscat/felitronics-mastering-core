@@ -1,0 +1,61 @@
+{
+  "checks": [
+    {
+      "kind": "answer",
+      "index": 0,
+      "path": "code",
+      "value": 2,
+      "session": "main"
+    },
+    {
+      "kind": "answer",
+      "index": 2,
+      "path": "code",
+      "value": 3,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 3,
+      "path": "revision",
+      "value": "1",
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 3,
+      "path": "project.devices.hpf.hand.fq",
+      "value": null,
+      "session": "main"
+    }
+  ],
+  "minEvents": 10,
+  "eventKinds": [
+    "rejected",
+    "phase",
+    "fact"
+  ],
+  "rejections": 2,
+  "equal": [
+    [
+      {
+        "kind": "snapshot",
+        "index": 0
+      },
+      {
+        "kind": "snapshot",
+        "index": 1
+      }
+    ],
+    [
+      {
+        "kind": "snapshot",
+        "index": 2
+      },
+      {
+        "kind": "snapshot",
+        "index": 3
+      }
+    ]
+  ]
+}
