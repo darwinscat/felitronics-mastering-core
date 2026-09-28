@@ -106,11 +106,11 @@ MeasurementPlan MeasurementPlan::storageFor (const Pcm& pcm, const MeasurementPa
     };
     const auto report = analysis::ProgrammeReport::storageFor (rate, p.maxBlock, channels, p.programme);
     set (Analyzer::Programme, report.ok, sizeof (analysis::ProgrammeReport) + report.firstBytes(), 0);
-    analysis::DeterministicLoudnessMeter::Storage meter {};
-    const bool loudness = analysis::DeterministicLoudnessMeter::storageFor (rate, p.programme.maxDurationSec * rate, meter);
+    analysis::StreamingLoudnessMeter::Storage meter {};
+    const bool loudness = analysis::StreamingLoudnessMeter::storageFor (rate, p.programme.maxDurationSec * rate, meter);
     const auto sub = std::max<std::uint64_t> (1, std::uint64_t (std::floor (rate * 0.01 + 0.5)));
-    set (Analyzer::Loudness, loudness, sizeof (analysis::DeterministicLoudnessMeter) + meter.bytes()
-         + storage::kLoudnessProxies * storage::kVectorProxyBytes, 4u * (pcm.frames / (10u * sub) + 1u));
+    set (Analyzer::Loudness, loudness, sizeof (analysis::StreamingLoudnessMeter) + meter.bytes(),
+         4u * (pcm.frames / (10u * sub) + 1u));
     const auto clips = analysis::ClipDetector::storageFor (rate, channels, p.clipRuns);
     set (Analyzer::Clipping, clips.ok, sizeof (analysis::ClipDetector) + clips.firstBytes(), clips.runEntries * 6u);
     const std::array lowIds { Analyzer::LowEnd, Analyzer::InfraLow, Analyzer::LowEnd150 };
@@ -160,9 +160,9 @@ MeasurementPlan MeasurementPlan::storageFor (const Pcm& pcm, const MeasurementPa
     // separately: an optional export buffer is not a condition for admitting the web measurement.
     s.codecBytes = s.resultBytes + 6.0 * (s.copyBytes - s.resultBytes)
                  + double (streaming.size() * kMeasurementNumbers * JsonNumber::capacity);
-    // The allocator allowance covers headers/alignment and MSVC's 31-byte large-vector padding.
+    // The allocator allowance covers headers/alignment, including MSVC's 39/47-byte large-block padding.
     // At most 256 requests per analyzer for the declared one/two-channel preparations and output copies.
-    s.allocatorBytes = double (streaming.size() * 256u * 64u);
+    s.allocatorBytes = double (streaming.size() * (workspaceAllowance + rowAllowance));
     s.loadPeakBytes = 2.0 * s.sourceBytes + double (sizeof (MeasurementWorkspace) + sizeof (LiveMeasurements)) + s.allocatorBytes;
     // Streaming instruments coexist. Include one detached result and its serialization even if requested mid-stream.
     // Future instruments and target-dependent needles have their own admission; unused maxima are not load demand.

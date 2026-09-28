@@ -238,6 +238,8 @@ private:
     [[nodiscard]] bool placed() const noexcept;
 
     void emit (Notification event) noexcept;
+    void emit (Notification event, const Phase& progress) noexcept;
+    [[nodiscard]] Phase jobProgress (JobId job) const noexcept;
     void dropJob (JobId job) noexcept;
     [[nodiscard]] SnapshotView buildView() const noexcept;
     [[nodiscard]] bool hasWork() const noexcept;

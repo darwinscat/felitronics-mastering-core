@@ -881,6 +881,18 @@ reason arrays preserve each point's status. `framesRead` and `tailFrames` distin
 final off-grid tail; no padded point is manufactured. `reading.finished` closes stream delivery, while the report
 remains pending until its own finalization completes.
 
+Preparation reserves allocator overhead before each instrument starts and retains that reserve until its workspace
+or rows are freed. A capacity reduction between load and preparation can therefore refuse before any allocation,
+including MSVC Debug vector padding. Duration-sized loudness and report stores initialize observations as written;
+preparation resets counts and fixed rings without scanning those stores. `StreamingLoudnessMeter` preserves the
+deterministic core v0.55 kernel and storage geometry with this offline ownership policy; direct-kernel comparisons
+cover block energies, readings, damaged input, channel changes and resets on native and wasm.
+
+Every event's phase and work counters belong to its emitting job. Phase envelopes agree with their payload;
+completion and cancellation preserve that job's final progress even after its active ID is cleared. Command-level
+facts, errors and rejections without a job carry zero work. Reading and report publications describe the completed
+pump unit, independently of concurrent needles or mastering work.
+
 The additive `reading.clips` scalar row groups every six values as start, length, channel, sign, level, and native
 ClipEvidence. Existing `runs` retain their three-column prefix. Snapshot clipping arrays declare six columns;
 total and stored counts distinguish exact aggregate counts from a truncated coordinate list. The source-damage

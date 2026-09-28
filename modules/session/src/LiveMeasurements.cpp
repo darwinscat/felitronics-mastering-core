@@ -47,6 +47,7 @@ void Session::stepMeasurements() noexcept
     const Pcm pcm { nullptr, source_.channels, source_.frames, source_.sampleRate };
     const auto rate = source_.sampleRate;
     const auto channels = source_.channels;
+    const auto firstEvent = eventCount_;
     Notification event; event.jobId = measurementJob_;
     const auto publish = [&] (unsigned index)
     {
@@ -63,9 +64,11 @@ void Session::stepMeasurements() noexcept
     {
         const auto plan = detail::MeasurementPlan::storageFor (pcm, detail::MeasurementPlan::parametersFor (pcm));
         const auto id = detail::MeasurementPlan::streaming[live.stage];
-        const auto& demand = plan.analyzers[live.stage];
-        Checked request; request.bytes = demand.workspace + demand.rowValues * sizeof (double);
-        request.largestBlockBytes = std::max (demand.workspace, demand.rowValues * sizeof (double));
+        const auto& demand = plan.analyzers[std::size_t (id)];
+        const auto workspace = demand.available ? demand.workspace + detail::MeasurementPlan::workspaceAllowance : 0;
+        const auto rows = demand.rowValues == 0 ? 0 : demand.rowValues * sizeof (double) + detail::MeasurementPlan::rowAllowance;
+        Checked request; request.bytes = workspace + rows;
+        request.largestBlockBytes = std::max (workspace, rows);
         const auto checked = this->demand (request);
         if (checked.rejection != Rejection::None)
         {
@@ -79,7 +82,7 @@ void Session::stepMeasurements() noexcept
             live.hop = 10u * std::max<std::uint64_t> (1, std::uint64_t (std::floor (double (rate) * 0.01 + 0.5)));
             live.rowCapacity = demand.available ? source_.frames / live.hop + 1 : 0;
             if (live.rowCapacity != 0) live.loudness.reset (new double[std::size_t (4 * live.rowCapacity)]);
-            live.bytes += 4 * live.rowCapacity * sizeof (double);
+            live.bytes += rows;
             constexpr std::string_view names[] { "momentary", "shortTerm", "momentaryReasons", "shortTermReasons" };
             for (unsigned i = 0; i < 4; ++i)
                 live.arrays[0][i] = { names[i], { live.hop, live.hop, 0, rate }, 1, 0, 0, false, {} };
@@ -89,7 +92,7 @@ void Session::stepMeasurements() noexcept
         {
             live.clipCapacity = demand.available ? std::uint64_t (plan.parameters.clipRuns) : 0;
             if (live.clipCapacity != 0) live.clips.reset (new double[std::size_t (live.clipCapacity * 6)]);
-            live.bytes += live.clipCapacity * 6 * sizeof (double);
+            live.bytes += rows;
             live.arrays[1][0] = { "clips", { 0, 0, 0, rate }, 6, 0, 0, false, {} };
             measurementResults_[1].arrays = { live.arrays[1], 1 };
         }
@@ -254,6 +257,13 @@ void Session::stepMeasurements() noexcept
         stream ? 0.1 * double (live.frames) / double (source_.frames) : live.stage >= 9 ? 0.2 : 0.15,
         config::Config::versions().all, 0, 0, std::uint32_t (std::min<std::uint64_t> (live.work, 4294967295u)),
         std::uint32_t (std::min<std::uint64_t> (source_.frames + live.clipCapacity + 32, 4294967295u)) };
+    // Publications from this unit describe its completed work, including the last reading/report.
+    for (auto i = firstEvent; i < eventCount_; ++i)
+    {
+        events_[i].phase = measurementProgress_.name;
+        events_[i].completedWork = measurementProgress_.completedUnits;
+        events_[i].totalWork = measurementProgress_.totalUnits;
+    }
     event.kind = EventKind::Phase; event.payload.phase = measurementProgress_; emit (event);
 }
 }

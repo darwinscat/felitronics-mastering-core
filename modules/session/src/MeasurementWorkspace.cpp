@@ -46,7 +46,7 @@ bool MeasurementWorkspace::prepare (Analyzer analyzer, const Pcm& pcm, const Mea
     }
     return false;
     }();
-    if (prepared) allocations[index] = plan.analyzers[index].workspace;
+    if (prepared) allocations[index] = plan.analyzers[index].workspace + MeasurementPlan::workspaceAllowance;
     return prepared;
 }
 std::uint64_t MeasurementWorkspace::bytes() const noexcept

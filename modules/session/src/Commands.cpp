@@ -495,12 +495,13 @@ Answer Session::apply (const Request& request) noexcept
     }
     else if (const auto* cancel = std::get_if<command::Cancel> (&request))
     {
+        const auto progress = jobProgress (cancel->job);
         dropJob (cancel->job);
         Notification event;
         event.jobId = cancel->job;
         event.kind = EventKind::Fact;
         (void) event.payload.fact.assign (text::Fact::of (state_ == State::MeasurementStopped ? text::FactId::MeasurementStopped : text::FactId::Cancelled));
-        emit (event);
+        emit (event, progress);
     }
     else if (const auto* forget = std::get_if<command::Forget> (&request))
     {
