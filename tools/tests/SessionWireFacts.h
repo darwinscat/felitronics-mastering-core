@@ -3,6 +3,7 @@
 
 #pragma once
 #include "../../modules/session/src/JsonCodec.h"
+#include "../../modules/session/src/Devices.h"
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Wire.h>
 #include <bit>
@@ -36,7 +37,11 @@ int sessionWireFixture (bool frozen = false)
     const ReadingPoint points[] { { 9007199254740991ull, -std::numeric_limits<double>::infinity() },
                                  { 4, std::numeric_limits<double>::quiet_NaN() } };
     const ReadingRun runs[] { { 7, 2, 0.5 } };
-    const MachineDifference difference[] { { Device::Hpf, 1, 24, 32 } };
+    HpfFields<Value> hpf;
+    std::uint8_t frequencyId = 255;
+    detail::DeviceOf<decltype (hpf)>::each (detail::rules(), [&] (std::uint8_t id, const detail::FieldRule&, auto& field)
+    { if (static_cast<const void*> (&field) == &hpf.fq) frequencyId = id; }, hpf);
+    const MachineDifference difference[] { { Device::Hpf, frequencyId, 24, 32 } };
     v.machineDifferences = difference;
     const EqPoint curve[] { { 20, -3.5 }, { 1000, 0.25 } };
     v.eqCurve = curve; v.handFieldCount = 2;
@@ -74,5 +79,59 @@ int sessionWireFixture (bool frozen = false)
         if (Wire::command (*made.session, request, reply, size) != CodecStatus::Ok) return 6;
         std::printf ("%.*s\n", int (size), reply);
     }
+    const float samples[] { 0, 0.25f, -0.25f, 0 }; const float* pcm[] { samples, samples };
+    if (Wire::load (*made.session, 10, { pcm, 2, 4, 48000 },
+        R"({"name":"wire.wav","fileRate":44100,"rateKnown":true,"bitDepth":24})", reply, size) != CodecStatus::Ok) return 7;
+    std::printf ("%.*s\n", int (size), reply);
+    // Observe the parsed metadata as well as its answer, without freezing config-dependent values.
+    char effect[8192]; detail::Writer writer; writer.output = effect;
+    writer.value (made.session->snapshot().view().source);
+    std::printf ("json load-source %.*s\n", int (writer.size), effect);
+    (void) made.session->step (16);
+    unsigned fixture = 0;
+    for (const auto request : {
+        R"({"kind":"setTarget","commandId":"11","target":"cd","onEdits":"keep"})",
+        R"({"kind":"editTarget","commandId":"12","fields":{"lufs":-13.25,"tp":-1.25}})",
+        R"({"kind":"editDevice","commandId":"13","device":0,"fields":{"on":true,"fq":36,"slope":24}})",
+        R"({"kind":"editDevice","commandId":"14","device":1,"fields":{"on":true,"fq":120,"width":0.5}})",
+        R"({"kind":"editDevice","commandId":"15","device":2,"fields":{"on":true,"upToDb":1.5}})",
+        R"({"kind":"editDevice","commandId":"16","device":3,"fields":{"on":true,"drive":1,"mix":0.5,"output":-1}})",
+        R"({"kind":"editDevice","commandId":"17","device":4,"fields":{"on":true,"db":1.25}})",
+        R"({"kind":"editDevice","commandId":"18","device":5,"fields":{"needles":1,"needlesDb":2}})",
+        R"({"kind":"editDevice","commandId":"19","device":6,"fields":{"on":true}})",
+        R"({"kind":"editDevice","commandId":"20","device":7,"fields":{"on":true,"db":0.75}})",
+        R"({"kind":"revertEdits","commandId":"21","device":0,"fields":{"on":true,"fq":true,"slope":true}})",
+        R"({"kind":"revertEdits","commandId":"22","device":1,"fields":{"on":true,"fq":true,"width":true}})",
+        R"({"kind":"revertEdits","commandId":"23","device":2,"fields":{"on":true,"upToDb":true}})",
+        R"({"kind":"revertEdits","commandId":"24","device":3,"fields":{"on":true,"drive":true,"mix":true,"output":true}})",
+        R"({"kind":"revertEdits","commandId":"25","device":4,"fields":{"on":true,"db":true}})",
+        R"({"kind":"revertEdits","commandId":"26","device":5,"fields":{"needles":true,"needlesDb":true}})",
+        R"({"kind":"revertEdits","commandId":"27","device":6,"fields":{"on":true}})",
+        R"({"kind":"revertEdits","commandId":"28","device":7,"fields":{"on":true,"db":true}})",
+        R"({"kind":"editTarget","commandId":"29","fields":{"lufs":null,"tp":null}})",
+        R"({"kind":"setTarget","commandId":"30","target":"lp","onEdits":"reset"})",
+        R"({"kind":"master","commandId":"31"})",
+        R"({"kind":"cancel","commandId":"32","jobId":2})",
+        R"({"kind":"forget","commandId":"33","masterId":99})",
+        R"({"kind":"master","commandId":"34","unknown":1})",
+        R"({"kind":"master"})",
+        R"({"kind":"setManual","commandId":"36","on":true,"on":false})",
+        R"({"kind":"setManual","commandId":"37","on":1})" })
+    {
+        if (Wire::command (*made.session, request, reply, size) != CodecStatus::Ok) return 8;
+        std::printf ("%.*s\n", int (size), reply);
+        const auto& project = made.session->project();
+        writer = {}; writer.output = effect; writer.put ('{');
+        writer.field ("target", made.session->targetName()); writer.field ("manual", project.manual);
+        writer.field ("targetEdit", project.targetEdit);
+        detail::eachDevice (project.devices, [&] (Device, const auto& layer) {
+            using Of = detail::DeviceOf<std::remove_cvref_t<decltype (layer.hand)>>;
+            writer.field (Of::name, layer.hand);
+        });
+        writer.put ('}');
+        std::printf ("json command-effect-%u %.*s\n", fixture++, int (writer.size), effect);
+    }
+    if (Wire::importProject (*made.session, 38, "invalid TOML", reply, size) != CodecStatus::Ok) return 9;
+    std::printf ("%.*s\n", int (size), reply);
     return 0;
 }
