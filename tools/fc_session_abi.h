@@ -258,6 +258,26 @@ fc_session_status fc_session_snapshot_copy (fc_session session, char* json, uint
 // counters are exact doubles < 2^53; uint64 identities are decimal strings. Events are a union
 // discriminated by kind in the generated .d.ts. Size queries and copies allocate nothing.
 
+// Measurement queries are named JSON MeasurementQuery records from the one codec generator.
+// Source frame ranges are [fromFrame,toFrame); channel/axis order and row layouts are documented
+// in docs/SESSION.md. QueryStatus is carried by the answer. Entry/JSON errors write nothing.
+// query_size returns capacity bounds BEFORE work; query_copy returns actual sizes in written.
+// Between them no command/step/query may intervene. Request IDs are echoed exactly; source,
+// revision and measurement key identify the retained evidence. Arrays belong to the caller.
+// query_bytes prices the transient result and bounded cache, using fc_session_storage semantics.
+fc_session_status fc_session_query_bytes (fc_session session, const char* request, uint32_t request_bytes,
+                                          fc_session_storage* out);
+fc_session_status fc_session_query_size (fc_session session, const char* request, uint32_t request_bytes,
+                                         fc_session_sizes* out);
+fc_session_status fc_session_query_copy (fc_session session, const char* request, uint32_t request_bytes,
+                                         char* json, uint32_t json_capacity, double* rows, uint32_t row_capacity,
+                                         fc_session_sizes* written);
+// Frequent UI snapshots: same fields and scalar measurements, measurementRowsIncluded=false.
+// Large rows are read through queries; the existing full snapshot entry points are unchanged.
+fc_session_status fc_session_summary_size (fc_session session, fc_session_sizes* out);
+fc_session_status fc_session_summary_copy (fc_session session, char* json, uint32_t json_capacity,
+                                           double* rows, uint32_t row_capacity);
+
 #ifdef __cplusplus
 }   // extern "C"
 #endif

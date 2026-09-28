@@ -66,6 +66,28 @@
       "NotImplemented",
       "NeedNotAbove3",
       "Memory"
+    ],
+    "QueryKind": [
+      "Waveform",
+      "LowSpectrum",
+      "LowSide",
+      "Momentary",
+      "ShortTerm",
+      "Clipping",
+      "Stereo"
+    ],
+    "QueryStatus": [
+      "Ready",
+      "Pending",
+      "Unavailable",
+      "Empty",
+      "InvalidRange",
+      "ColumnLimit",
+      "StaleSource",
+      "Memory",
+      "Contract",
+      "Cancelled",
+      "FloatingPointEnvironment"
     ]
   },
   "records": {
@@ -365,7 +387,8 @@
         "canContinueMeasurement": "bool",
         "measurementResumeState": "State",
         "mandatoryMeasurementsReady": "bool",
-        "devicesPlaced": "bool"
+        "devicesPlaced": "bool",
+        "measurementRowsIncluded": "bool"
       }
     },
     "Version": {
@@ -466,6 +489,40 @@
         "stored": "uint64",
         "complete": "bool"
       }
+    },
+    "MeasurementQuery": {
+      "cpp": "MeasurementQuery",
+      "fields": {
+        "kind": "QueryKind",
+        "audioId": "uint64",
+        "fromFrame": "uint64",
+        "toFrame": "uint64",
+        "columns": "uint32",
+        "requestId": "uint64",
+        "crossoverHz": "double",
+        "fromHz": "double",
+        "toHz": "double"
+      }
+    },
+    "QueryView": {
+      "cpp": "QueryView",
+      "fields": {
+        "request": "MeasurementQuery",
+        "audioId": "uint64",
+        "revision": "uint64",
+        "measurementKey": "uint64",
+        "status": "QueryStatus",
+        "reason": "MeasurementReason",
+        "sampleRate": "uint32",
+        "channels": "uint32",
+        "stride": "uint32",
+        "total": "uint64",
+        "stored": "uint64",
+        "complete": "bool",
+        "cacheHit": "bool",
+        "pcmFramesRead": "uint64",
+        "values": "double[]"
+      }
     }
   },
   "wireAliases": {
@@ -476,7 +533,8 @@
     "EditDeviceCommand": "EditDeviceHpfCommand | EditDeviceMonoBassCommand | EditDeviceGlueCommand | EditDeviceSaturationCommand | EditDeviceTiltCommand | EditDeviceLimiterCommand | EditDeviceDitherCommand | EditDeviceLowCommand",
     "RevertEditsCommand": "RevertEditsHpfCommand | RevertEditsMonoBassCommand | RevertEditsGlueCommand | RevertEditsSaturationCommand | RevertEditsTiltCommand | RevertEditsLimiterCommand | RevertEditsDitherCommand | RevertEditsLowCommand",
     "SessionMeasurementArray": "Omit<MeasurementArray, \"values\"> & { readonly values: ScalarRow }",
-    "SessionMeasurementResult": "Omit<MeasurementResult, \"arrays\"> & { readonly arrays: ReadonlyArray<SessionMeasurementArray> }"
+    "SessionMeasurementResult": "Omit<MeasurementResult, \"arrays\"> & { readonly arrays: ReadonlyArray<SessionMeasurementArray> }",
+    "QueryResponse": "Omit<QueryView, \"values\"> & { readonly values: ScalarRow }"
   },
   "wireRecords": {
     "ScalarRow": {
@@ -975,6 +1033,24 @@
       "devicesPlaced": {
         "default": "false",
         "description": "Device placement is unknown."
+      },
+      "measurementRowsIncluded": {
+        "default": "true",
+        "description": "true; historical snapshots include their retained measurement rows."
+      }
+    },
+    "MeasurementQuery": {
+      "crossoverHz": {
+        "default": "120.0",
+        "description": "120 Hz."
+      },
+      "fromHz": {
+        "default": "20.0",
+        "description": "20 Hz."
+      },
+      "toHz": {
+        "default": "250.0",
+        "description": "250 Hz."
       }
     }
   },
@@ -1173,5 +1249,53 @@
         "description": "Unknown state; Empty (0)."
       }
     }
+  },
+  "queryRows": {
+    "Waveform": [
+      "firstFrame",
+      "lastFrame",
+      "axis",
+      "minimum",
+      "maximum",
+      "peak",
+      "envelope",
+      "rms",
+      "lowEnergy",
+      "middleEnergy",
+      "highEnergy",
+      "finiteFrames",
+      "reason"
+    ],
+    "LowSpectrum": [
+      "hz",
+      "density",
+      "reason"
+    ],
+    "LowSide": [
+      "hz",
+      "sideFraction",
+      "reason"
+    ],
+    "Loudness": [
+      "frame",
+      "lufs",
+      "reason"
+    ],
+    "Clipping": [
+      "firstFrame",
+      "frameCount",
+      "channel",
+      "sign",
+      "level",
+      "evidence"
+    ],
+    "Stereo": [
+      "firstFrame",
+      "lastFrame",
+      "width",
+      "correlation",
+      "rms",
+      "reason"
+    ]
   }
 }

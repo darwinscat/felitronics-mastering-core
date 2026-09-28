@@ -70,5 +70,13 @@ int main()
     std::string json (std::size_t (counter.size), '\0');
     detail::Writer writer; writer.output = json.data(); writer.value (change);
     std::puts (json.c_str());
+    QueryView query;
+    double queryValues[] { 2, 0.5, 0 };
+    query.values = queryValues;
+    query.stride = 3; query.stored = query.total = 1;
+    detail::Writer queryCounter; queryCounter.value (query);
+    std::string queryJson (std::size_t (queryCounter.size), '\0');
+    detail::Writer queryWriter; queryWriter.output = queryJson.data(); queryWriter.value (query);
+    std::puts (queryJson.c_str());
     return 0;
 }

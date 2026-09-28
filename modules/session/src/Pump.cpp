@@ -6,6 +6,7 @@
 #include "Driver.h"
 #include "LiveMeasurements.h"
 #include "SourceMeasurements.h"
+#include "QueryState.h"
 #include "Rules.h"
 
 #include <felitronics/session/Config.h>
@@ -195,6 +196,10 @@ Stepped Session::step (std::uint32_t budget) noexcept
         else if (needlesJob_ != 0)
         {
             stepNeedles();
+        }
+        else if (waveform_ && ! waveform_->finished)
+        {
+            stepWaveform();
         }
         else if (liveMeasurements_ && liveMeasurements_->stage < 9 && measurementUnit_ < 2)
         {

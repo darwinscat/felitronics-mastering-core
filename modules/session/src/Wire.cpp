@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 #include "BuildGuards.h"
+#include "BuildContract.h"
 #include "JsonCodec.h"
 #include "Devices.h"
 #include <felitronics/session/Wire.h>
@@ -235,6 +236,67 @@ CodecStatus Wire::snapshot (const SnapshotView& v, std::span<char> json, std::sp
 }
 TransferNeed Wire::snapshotBytes (const Session& s) noexcept { return snapshotBytes (s.buildView()); }
 CodecStatus Wire::snapshot (const Session& s, std::span<char> j, std::span<double> r) noexcept { return snapshot (s.buildView(), j, r); }
+TransferNeed Wire::summaryBytes (const Session& s) noexcept
+{
+    MeasurementResult results[kAnalyzers]; return snapshotBytes (s.buildSummary (results));
+}
+CodecStatus Wire::summary (const Session& s, std::span<char> j, std::span<double> r) noexcept
+{
+    MeasurementResult results[kAnalyzers]; return snapshot (s.buildSummary (results), j, r);
+}
+CodecStatus Wire::queryRequest (std::string_view json, MeasurementQuery& out) noexcept
+{
+    if (Session::checkFloatingPointEnvironment() != Status::Ok) return CodecStatus::FloatingPointEnvironment;
+    if (json.size() > kCommandJsonBytes || ! detail::validUtf8 (json)) return CodecStatus::Invalid;
+    Storage storage; MeasurementQuery q;
+    Reader reader { json, storage, 0, true, {}, 0, 0, false };
+    reader.value (q); reader.space();
+    if (! reader.good || reader.pos != json.size()) return CodecStatus::Invalid;
+    out = q; return CodecStatus::Ok;
+}
+Checked Wire::queryStorage (const Session& s, std::string_view json) noexcept
+{
+    MeasurementQuery q;
+    const auto parsed = queryRequest (json, q);
+    if (parsed != CodecStatus::Ok) return { parsed == CodecStatus::FloatingPointEnvironment ? Rejection::FloatingPointEnvironment : Rejection::Contract };
+    const auto demand = s.queryStorage (q);
+    if (demand.status == QueryStatus::FloatingPointEnvironment) return { Rejection::FloatingPointEnvironment };
+    if (demand.status == QueryStatus::Contract) return { Rejection::Contract };
+    Checked out; out.bytes = demand.bytes; out.largestBlockBytes = demand.largestBlockBytes; return out;
+}
+TransferNeed Wire::queryBuffers (const Session& s, std::string_view json) noexcept
+{
+    MeasurementQuery q;
+    if (const auto status = queryRequest (json, q); status != CodecStatus::Ok) return { status, 0, 0 };
+    const auto demand = s.queryStorage (q);
+    return { CodecStatus::Ok, kQueryJsonBytes, std::uint32_t (demand.rowBytes) };
+}
+TransferNeed Wire::queryBytes (const QueryView& response) noexcept
+{
+    if (Session::checkFloatingPointEnvironment() != Status::Ok) return { CodecStatus::FloatingPointEnvironment, 0, 0 };
+    if (response.values.size() > kQueryValues || response.stride == 0 || response.values.size() % response.stride != 0
+        || response.stored != response.values.size() / response.stride) return { CodecStatus::Invalid, 0, 0 };
+    Writer w; w.binaryRows = true; w.value (response); return need (w);
+}
+CodecStatus Wire::query (const QueryView& response, std::span<char> json, std::span<double> rows) noexcept
+{
+    const auto status = buffers (queryBytes (response), json, rows);
+    if (status != CodecStatus::Ok) return status;
+    Writer w; w.output = json.data(); w.binaryRows = true; w.rows = rows.data(); w.value (response);
+    return CodecStatus::Ok;
+}
+TransferNeed Wire::query (Session& s, std::string_view request, std::span<char> json, std::span<double> rows) noexcept
+{
+    const auto status = buffers (queryBuffers (s, request), json, rows);
+    if (status != CodecStatus::Ok) return { status, 0, 0 };
+    MeasurementQuery q;
+    if (const auto parsed = queryRequest (request, q); parsed != CodecStatus::Ok) return { parsed, 0, 0 };
+    const auto response = s.query (q);
+    const auto n = queryBytes (response.view());
+    if (n.status != CodecStatus::Ok) return n;
+    if (n.jsonBytes > kQueryJsonBytes) detail::storageOverflow();
+    return { query (response.view(), json, rows), n.jsonBytes, n.rowBytes };
+}
 TransferNeed Wire::eventsBytes (std::span<const Notification> events) noexcept
 {
     if (Session::checkFloatingPointEnvironment() != Status::Ok) return { CodecStatus::FloatingPointEnvironment, 0, 0 };

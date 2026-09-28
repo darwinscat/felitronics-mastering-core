@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 #pragma once
 #include "MeasurementPlan.h"
+#include <felitronics/analysis/WaveformIndex.h>
 #include <memory>
 
 namespace felitronics::session::detail
@@ -21,7 +22,7 @@ struct MeasurementWorkspace
     std::unique_ptr<analysis::LowEnd> lowEnd, infraLow, lowEnd150;
     std::unique_ptr<analysis::SourceForensics> forensics;
     std::unique_ptr<analysis::StereoColumns> stereo;
-    std::unique_ptr<analysis::WaveformPeaks> waveform;
+    std::unique_ptr<analysis::WaveformIndex> waveform;
     std::unique_ptr<analysis::StereoBandBursts> bursts;
     std::unique_ptr<analysis::BandCrest> crest;
     std::unique_ptr<analysis::HumDetector> hum;

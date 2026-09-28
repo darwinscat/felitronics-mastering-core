@@ -11,7 +11,7 @@ const read = path => readFileSync(new URL(path, root), 'utf8');
 const clean = text => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 const normalize = text => text.replace(/\s+/g, ' ').replace(/\s*([*,()])\s*/g, '$1').trim();
 const header = clean(read('tools/fc_session_abi.h'));
-const publicHeaders = ['Commands', 'Project', 'Events', 'Snapshot', 'Session', 'Text', 'Measurements'];
+const publicHeaders = ['Commands', 'Project', 'Events', 'Snapshot', 'Session', 'Text', 'Measurements', 'Queries'];
 function generate() {
     const code = ['#include "fc_session_abi.h"', '#include <cstddef>', '#include <cstdio>', '#include <type_traits>', '#include "tests/SessionWireFacts.h"'];
     for (const h of publicHeaders) code.push(`#include <felitronics/session/${h}.h>`);
@@ -73,6 +73,7 @@ function generate() {
     literal('row ReadingPoint element=f64 byteOrder=little columns=index,value stride=2 bytes=16');
     literal('row ReadingRun element=f64 byteOrder=little columns=first,count,value stride=3 bytes=24');
     literal('row MachineDifference element=f64 byteOrder=little columns=device,field,fileValue,coreValue stride=4 bytes=32');
+    for (const [name, fields] of Object.entries(schema.queryRows)) literal(`row Query${name} element=f64 byteOrder=little columns=${fields.join(',')} stride=${fields.length} bytes=${fields.length * 8}`);
     number('row element sizeof', 'sizeof(double)');
     code.push('static_assert(sizeof(double) == 8 && std::numeric_limits<double>::is_iec559);');
     code.push('int main() {', ...body, 'return sessionWireFixture(true); }');

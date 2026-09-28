@@ -37,7 +37,7 @@ bool MeasurementWorkspace::prepare (Analyzer analyzer, const Pcm& pcm, const Mea
         case Analyzer::InfraLow: return start (infraLow, [&] (auto& a) { a.setParams (p.infraLow); return a.prepare (sampleRate, p.maxBlock, channelCount); });
         case Analyzer::Forensics: return start (forensics, [&] (auto& a) { a.setParams (p.forensics); return a.prepare (sampleRate, p.maxBlock, channelCount); });
         case Analyzer::Stereo: return start (stereo, [&] (auto& a) { return a.prepare (channelCount, pcm.frames, p.columns); });
-        case Analyzer::Waveform: return start (waveform, [&] (auto& a) { return a.prepare (sampleRate, channelCount, pcm.frames, p.waveformBuckets, p.waveformMix); });
+        case Analyzer::Waveform: return start (waveform, [&] (auto& a) { return a.prepare (pcm.sampleRate, pcm.channelCount, pcm.frames); });
         case Analyzer::StereoBursts: return start (bursts, [&] (auto& a) { a.setParams (p.bursts); return a.prepare (sampleRate, channelCount); });
         case Analyzer::Crest: return start (crest, [&] (auto& a) { a.setParams (p.crest); return a.prepare (sampleRate, channelCount, static_cast<long long> (pcm.frames)); });
         case Analyzer::Hum: return start (hum, [&] (auto& a) { a.setParams (p.hum); return a.prepare (sampleRate, p.maxBlock, channelCount); });

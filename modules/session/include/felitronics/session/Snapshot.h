@@ -44,6 +44,7 @@ struct SnapshotView
     bool canContinueMeasurement = false;
     State measurementResumeState = State::Empty;
     bool mandatoryMeasurementsReady = false, devicesPlaced = false;
+    bool measurementRowsIncluded = true;
 };
 class Codec;
 // An immutable, owned value. view() remains valid until this value is moved or destroyed,

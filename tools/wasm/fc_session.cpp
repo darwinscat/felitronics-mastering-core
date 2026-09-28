@@ -453,6 +453,72 @@ FC_EXPORT fc_session_status fc_session_snapshot_copy (fc_session session, char* 
     return transferCopy (session, json, json_capacity, rows, row_capacity, true);
 }
 
+FC_EXPORT fc_session_status fc_session_summary_size (fc_session session, fc_session_sizes* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = record (out); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    const auto n = Wire::summaryBytes (*slot->session);
+    if (n.status != CodecStatus::Ok) return status (n.status);
+    out->jsonBytes = n.jsonBytes; out->rowBytes = n.rowBytes; return FC_SESSION_OK;
+}
+FC_EXPORT fc_session_status fc_session_summary_copy (fc_session session, char* json, std::uint32_t json_capacity,
+                                                    double* rows, std::uint32_t row_capacity)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = pointer (json, json_capacity, 1); st != FC_SESSION_OK) return st;
+    if (const auto st = pointer (rows, row_capacity, 8, true); st != FC_SESSION_OK) return st;
+    if (row_capacity % sizeof (double) != 0) return FC_SESSION_ERR_ALIGNMENT;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (overlap (json, json_capacity, rows, row_capacity)) return FC_SESSION_ERR_OVERLAP;
+    return status (Wire::summary (*slot->session, { json, json_capacity }, { rows, row_capacity / sizeof (double) }));
+}
+FC_EXPORT fc_session_status fc_session_query_bytes (fc_session session, const char* request, std::uint32_t request_bytes,
+                                                   fc_session_storage* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = record (out); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = pointer (request, request_bytes, 1, true); st != FC_SESSION_OK) return st;
+    if (overlap (out, sizeof (*out), request, request_bytes)) return FC_SESSION_ERR_OVERLAP;
+    return storageOut (*slot->session, Wire::queryStorage (*slot->session, { request, request_bytes }), out);
+}
+FC_EXPORT fc_session_status fc_session_query_size (fc_session session, const char* request, std::uint32_t request_bytes,
+                                                  fc_session_sizes* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = record (out); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = pointer (request, request_bytes, 1, true); st != FC_SESSION_OK) return st;
+    if (overlap (out, sizeof (*out), request, request_bytes)) return FC_SESSION_ERR_OVERLAP;
+    const auto n = Wire::queryBuffers (*slot->session, { request, request_bytes });
+    if (n.status != CodecStatus::Ok) return status (n.status);
+    out->jsonBytes = n.jsonBytes; out->rowBytes = n.rowBytes; return FC_SESSION_OK;
+}
+FC_EXPORT fc_session_status fc_session_query_copy (fc_session session, const char* request, std::uint32_t request_bytes,
+                                                  char* json, std::uint32_t json_capacity, double* rows, std::uint32_t row_capacity,
+                                                  fc_session_sizes* written)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = pointer (json, json_capacity, 1); st != FC_SESSION_OK) return st;
+    if (const auto st = pointer (rows, row_capacity, 8, true); st != FC_SESSION_OK) return st;
+    if (row_capacity % sizeof (double) != 0) return FC_SESSION_ERR_ALIGNMENT;
+    if (const auto st = record (written); st != FC_SESSION_OK) return st;
+    auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = pointer (request, request_bytes, 1, true); st != FC_SESSION_OK) return st;
+    if (overlap (json, json_capacity, rows, row_capacity) || overlap (json, json_capacity, written, sizeof (*written))
+        || overlap (rows, row_capacity, written, sizeof (*written)) || overlap (request, request_bytes, json, json_capacity)
+        || overlap (request, request_bytes, rows, row_capacity) || overlap (request, request_bytes, written, sizeof (*written))) return FC_SESSION_ERR_OVERLAP;
+    const auto n = Wire::query (*slot->session, { request, request_bytes }, { json, json_capacity }, { rows, row_capacity / sizeof (double) });
+    if (n.status != CodecStatus::Ok) return status (n.status);
+    written->jsonBytes = n.jsonBytes; written->rowBytes = n.rowBytes; return FC_SESSION_OK;
+}
+
 FC_EXPORT fc_session_status fc_session_set_capacity (fc_session session, const fc_session_capacity* capacity)
 {
     const CallGuard call;

@@ -7,6 +7,7 @@
 #include <felitronics/session/Project.h>
 #include <felitronics/session/Events.h>
 #include <felitronics/session/Measurements.h>
+#include <felitronics/session/Queries.h>
 
 #include <cstdint>
 #include <memory>
@@ -102,7 +103,7 @@ struct Source
     std::string_view name;
 };
 
-namespace detail { struct Driver; struct Inspector; struct MeasurementWorkspace; struct LiveMeasurements; struct SourceMeasurements; struct NeedlesWork; struct NeedlesResult; }
+namespace detail { struct Driver; struct Inspector; struct MeasurementWorkspace; struct LiveMeasurements; struct SourceMeasurements; struct NeedlesWork; struct NeedlesResult; struct WaveformState; struct QueryCache; }
 
 //==============================================================================
 // felitronics::session::Session — the mastering session: the object a shell (the web worker through the fcsession
@@ -185,6 +186,8 @@ public:
     // Additional job demand, before preparation; includes the analyzer run list, owned aggregates, copy and codec.
     [[nodiscard]] Checked needlesStorage (double ceilingDb) const noexcept;
     [[nodiscard]] JobId needlesJob() const noexcept;
+    [[nodiscard]] QueryDemand queryStorage (const MeasurementQuery& request) const noexcept;
+    [[nodiscard]] QueryResult query (const MeasurementQuery& request) noexcept;
     [[nodiscard]] Answer rejectProtocol (CommandId id) noexcept;
 
     // Export is an owned exact byte allocation, without a terminator. Only placed projects are exportable.
@@ -207,6 +210,8 @@ public:
     [[nodiscard]] JobId measurementJob() const noexcept;
     [[nodiscard]] std::uint64_t snapshotBytes() const noexcept;
     [[nodiscard]] Snapshot snapshot() const noexcept;
+    [[nodiscard]] std::uint64_t summaryBytes() const noexcept;
+    [[nodiscard]] Snapshot summary() const noexcept;
 
     //==========================================================================
     // WHAT THE SESSION HOLDS — read between calls; a reference stays valid until the next call that changes the session.
@@ -242,10 +247,12 @@ private:
     [[nodiscard]] Phase jobProgress (JobId job) const noexcept;
     void dropJob (JobId job) noexcept;
     [[nodiscard]] SnapshotView buildView() const noexcept;
+    [[nodiscard]] SnapshotView buildSummary (std::span<MeasurementResult> results) const noexcept;
     [[nodiscard]] bool hasWork() const noexcept;
     void requestNeedles() noexcept;
     void stepNeedles() noexcept;
     void stepMeasurements() noexcept;
+    void stepWaveform() noexcept;
     void stepSourceMeasurements() noexcept;
     [[nodiscard]] bool mandatoryReady() const noexcept;
     void clearNeedles() noexcept;
@@ -286,6 +293,8 @@ private:
     std::unique_ptr<detail::MeasurementWorkspace> measurementWorkspace_;
     std::unique_ptr<detail::LiveMeasurements> liveMeasurements_;
     std::unique_ptr<detail::SourceMeasurements> sourceMeasurements_;
+    std::unique_ptr<detail::WaveformState> waveform_;
+    std::unique_ptr<detail::QueryCache> queryCache_;
     std::unique_ptr<float[]> samples_;
     std::unique_ptr<char[]> name_;
     // The master being made, and the masters kept: `masterCount_` of them in room for `masterRoom_`. The ids count
