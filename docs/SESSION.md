@@ -603,9 +603,9 @@ The generated `Query*Row` tuples in `snapshot.d.ts` give column names. Their num
 |---|---|
 | Waveform | `[firstFrame,lastFrame,axis,min,max,peak,envelope,rms,lowEnergy,middleEnergy,highEnergy,finiteFrames,reason]`; axes 0=L, 1=R, 2=Mid=(L+R)/2, 3=Side=(L-R)/2; mono has only 0 and 2. Amplitudes are linear, energies are sums of squares. Peak preserves either signed extremum; envelope is the maximum absolute box mean near 8 kHz. Bands use complementary 250/2500 Hz one-pole drawing filters and are not LR4 measurements. |
 | LowSpectrum / LowSide | `[Hz,density,reason]` / `[Hz,sideFraction,reason]`; the requested Hz grid includes both endpoints (one column uses `fromHz`). The retained full-source LowEnd measurement is selected by exact `crossoverHz` 120 or 150. These kinds require the whole-source frame range and a finite grid within Nyquist. |
-| Momentary / ShortTerm | `[sourceFrame,LUFS,reason]` from the retained live grid, decimated to the requested maximum row count. |
+| Momentary / ShortTerm | `[sourceFrame,LUFS,reason]` from the retained live grid, decimated to the requested maximum row count. `sourceFrame` is the window end: `(fromFrame,toFrame]` selects readings for the half-open audio range `[fromFrame,toFrame)`, including a reading at the source end. |
 | Clipping | `[firstFrame,frameCount,channel,sign,level,evidence]` for retained runs intersecting the range; `total` counts all matches, `stored` is capped by `columns`, and `complete` reports truncation. |
-| Stereo | `[firstFrame,lastFrame,width,correlation,rms,reason]` from retained source stereo columns on the selected grid. |
+| Stereo | `[firstFrame,lastFrame,width,correlation,rms,reason]` from retained source stereo columns intersecting the requested range. Bounds name each retained column's actual source interval; `total` counts intersecting columns and `complete` is false when the column limit omits some. |
 
 Waveform inner buckets combine completed index nodes; only two edge leaves can replay resident PCM. Its index owns
 the multiresolution columns and filter checkpoints with no second PCM copy. `pcmFramesRead` exposes exact-edge work;

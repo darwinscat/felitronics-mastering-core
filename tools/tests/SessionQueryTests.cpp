@@ -23,6 +23,7 @@ struct felitronics::session::detail::Inspector
     static std::uint64_t frames (const Session& s) { return s.waveform_->index.framesSeen(); }
     static std::uint64_t cacheBytes (const Session& s) { return s.queryCache_ ? s.queryCache_->bytes() : 0; }
     static std::uint64_t key (const Session& s) { return s.measurementKey_; }
+    static const MeasurementResult& measurement (const Session& s, Analyzer id) { return s.measurementResults_[std::size_t (id)]; }
 };
 std::uint64_t digest = 0xCBF29CE484222325ull;
 void hash (const QueryView& v)
@@ -245,9 +246,101 @@ void abiQueries()
     ok (fc_session_query_size (handle, invalid, 2, nullptr) == FC_SESSION_ERR_NULL, "null output before handle/input");
     ok (fc_session_destroy (handle) == FC_SESSION_OK, "C fixture destroy");
 }
+struct CQuery
+{
+    std::string metadata;
+    std::vector<double> rows;
+};
+CQuery queryC (fc_session handle, const MeasurementQuery& q)
+{
+    const auto request = json (q);
+    fc_session_storage demand { sizeof (demand), 0, 0, 0, 0 };
+    fc_session_sizes size { sizeof (size), 0, 0 }, actual { sizeof (actual), 0, 0 };
+    ok (fc_session_query_bytes (handle, request.data(), std::uint32_t (request.size()), &demand) == FC_SESSION_OK, "regression C demand");
+    ok (fc_session_query_size (handle, request.data(), std::uint32_t (request.size()), &size) == FC_SESSION_OK, "regression C size");
+    std::vector<char> text (size.jsonBytes);
+    CQuery out; out.rows.resize (size.rowBytes / sizeof (double));
+    const auto spent = budget::spend ([&]
+    { ok (fc_session_query_copy (handle, request.data(), std::uint32_t (request.size()), text.data(), size.jsonBytes,
+        out.rows.data(), size.rowBytes, &actual) == FC_SESSION_OK, "regression C copy"); });
+    ok (budget::covers (std::uint64_t (demand.bytes), spent), "regression C allocation declared");
+    out.metadata.assign (text.data(), actual.jsonBytes);
+    out.rows.resize (actual.rowBytes / sizeof (double));
+    return out;
+}
+void reviewRegressions()
+{
+    constexpr std::uint64_t frames = 48000;
+    std::vector<float> left (frames), right (frames); source (left, right);
+    left[3] = right[3] = 0.0f;
+    const float* planes[] { left.data(), right.data() };
+    auto made = Session::create(); auto& native = *made.session;
+    ok (native.apply (command::Load { 1, { planes, 2, frames, 48000 }, {} }).rejection == Rejection::None, "regression native load");
+    fc_session_capabilities caps { sizeof (caps), 1073741824, 96000, 255, 1073741824 };
+    const auto version = config::Config::versions().all; fc_session handle = 0;
+    ok (fc_session_create (&caps, std::uint32_t (version), std::uint32_t (version >> 32u), &handle) == FC_SESSION_OK, "regression C create");
+    std::vector<char> answer (kAnswerBytes); std::uint32_t written = 0;
+    constexpr char meta[] = R"({"name":"","fileRate":0,"bitDepth":0,"rateKnown":false})";
+    ok (fc_session_load (handle, 1, 0, planes, 2, std::uint32_t (frames), 48000, meta, sizeof (meta) - 1,
+        answer.data(), std::uint32_t (answer.size()), &written) == FC_SESSION_OK, "regression C load");
+    MeasurementQuery clips; clips.kind = QueryKind::Clipping; clips.audioId = native.source().hash;
+    clips.toFrame = frames; clips.columns = 8;
+    std::uint32_t state = FC_SESSION_MORE;
+    bool drained = false;
+    for (unsigned i = 0; i < 200 && ! drained; ++i)
+    {
+        const auto& result = detail::Inspector::measurement (native, Analyzer::Clipping);
+        if (! result.arrays.empty() && result.arrays[0].total >= 4 && result.arrays[0].stored == 0)
+        {
+            const auto priorFrame = result.arrays[0].grid.framesRead;
+            const auto before = ask (native, clips); const auto beforeC = queryC (handle, clips);
+            ok (before.view().stored == 0 && beforeC.rows.empty(), "clip cache primed before drain");
+            (void) native.step (1);
+            ok (fc_session_step (handle, 1, &state) == FC_SESSION_OK, "regression C drain step");
+            const auto& afterResult = detail::Inspector::measurement (native, Analyzer::Clipping);
+            drained = afterResult.arrays[0].grid.framesRead == priorFrame && afterResult.arrays[0].stored >= 4;
+            const auto after = ask (native, clips); const auto afterC = queryC (handle, clips);
+            ok (drained && after.view().stored >= 4 && ! after.view().cacheHit
+                && afterC.rows.size() >= 24 && afterC.metadata.find ("\"cacheHit\":false") != std::string::npos,
+                "drain-only publication invalidates native and C clip cache");
+            break;
+        }
+        (void) native.step (1);
+        ok (fc_session_step (handle, 1, &state) == FC_SESSION_OK, "regression C stream step");
+    }
+    ok (drained, "four clip runs drain without advancing frames");
+    finish (native);
+    for (unsigned i = 0; i < 20000 && state == FC_SESSION_MORE; ++i)
+        ok (fc_session_step (handle, 16, &state) == FC_SESSION_OK, "regression C completion step");
+    ok (state == FC_SESSION_DONE, "regression C completion");
+    MeasurementQuery stereo; stereo.kind = QueryKind::Stereo; stereo.audioId = native.source().hash;
+    stereo.fromFrame = 3; stereo.toFrame = 4; stereo.columns = 7;
+    const auto one = ask (native, stereo); const auto oneC = queryC (handle, stereo);
+    ok (one.view().stored == 1 && one.view().values.size() == 6 && same (one.view().values[0], 0)
+        && same (one.view().values[1], 40) && one.view().values[4] > 0
+        && identical (one.view().values, oneC.rows), "stereo row reports its retained source interval");
+    stereo.toFrame = 5;
+    const auto adjacent = ask (native, stereo); const auto adjacentC = queryC (handle, stereo);
+    ok (adjacent.view().total == 1 && adjacent.view().stored == 1 && adjacent.view().complete
+        && identical (adjacent.view().values, adjacentC.rows), "two samples in one retained stereo column are not duplicated");
+    for (const auto kind : { QueryKind::Momentary, QueryKind::ShortTerm })
+    {
+        MeasurementQuery loud; loud.kind = kind; loud.audioId = native.source().hash;
+        loud.toFrame = frames; loud.columns = 10;
+        const auto whole = ask (native, loud); const auto wholeC = queryC (handle, loud);
+        ok (whole.view().total == 10 && whole.view().stored == 10 && whole.view().complete
+            && same (whole.view().values[27], double (frames)) && identical (whole.view().values, wholeC.rows),
+            "whole-source loudness includes its terminal window-end reading");
+        loud.fromFrame = frames - 1;
+        const auto tail = ask (native, loud); const auto tailC = queryC (handle, loud);
+        ok (tail.view().stored == 1 && tail.view().complete && same (tail.view().values[0], double (frames))
+            && identical (tail.view().values, tailC.rows), "last frame can query terminal loudness reading");
+    }
+    ok (fc_session_destroy (handle) == FC_SESSION_OK, "regression C destroy");
+}
 int main()
 {
-    nativeQueries(); abiQueries();
+    nativeQueries(); abiQueries(); reviewRegressions();
     std::printf ("measurement-query-digest=%016llx\n", static_cast<unsigned long long> (digest));
     return felitronics::test::report();
 }
