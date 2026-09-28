@@ -139,17 +139,17 @@ template <template <class> class F> struct DeviceOf<DitherFields<F>>
     }
 };
 
-template <template <class> class F> struct DeviceOf<LowShelfFields<F>>
+template <template <class> class F> struct DeviceOf<LowFields<F>>
 {
-    static constexpr Device device = Device::LowShelf;
-    static constexpr std::string_view name = "lowShelf";
+    static constexpr Device device = Device::Low;
+    static constexpr std::string_view name = "low";
     static constexpr std::string_view fields[] = { "on", "db" };
-    static auto& layers (Devices& d) noexcept { return d.lowShelf; }
-    static const auto& layers (const Devices& d) noexcept { return d.lowShelf; }
+    static auto& layers (Devices& d) noexcept { return d.low; }
+    static const auto& layers (const Devices& d) noexcept { return d.low; }
     template <class V, class... S> static void each (const Rules& r, V&& v, S&&... s)
     {
         v (0, flagRule(), s.on...);
-        v (1, knobRule (r.lowShelf), s.db...);
+        v (1, knobRule (r.low), s.db...);
     }
 };
 
@@ -163,7 +163,7 @@ template <class D, class V> void eachDevice (D& devices, V&& v)
     v (Device::Tilt, devices.tilt);
     v (Device::Limiter, devices.limiter);
     v (Device::Dither, devices.dither);
-    v (Device::LowShelf, devices.lowShelf);
+    v (Device::Low, devices.low);
 }
 
 // THE MACHINE'S LAYER of every device for the target in row `row` and a source of `channels` channels (0: none) — the
@@ -179,8 +179,8 @@ void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channel
 // The current planner places defaults; file omissions are filled independently of planner decisions.
 void placeMachine (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices, std::uint32_t offeredDevices = 255u) noexcept;
 
-// Is `device` offered for the target in row `row` and a source of `channels` channels? The low shelf where the target
-// carries one; the dither where the target's bit depth is one it serves; mono bass except on a mono source (it has no
+// Is `device` offered for the target in row `row` and a source of `channels` channels?
+// Dither where the target's bit depth is one it serves; mono bass except on a mono source (it has no
 // side). Every other device, always.
 [[nodiscard]] bool offered (const Rules& rules, std::uint16_t row, std::uint32_t channels, Device device) noexcept;
 

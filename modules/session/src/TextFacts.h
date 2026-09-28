@@ -59,6 +59,7 @@ inline constexpr FactShape kFacts[] = {
       3 },
     { FactId::MachineDifferences, "machineDifferences", { { { "count", ArgKind::Count, {} } } }, 1 },
     { FactId::DefaultsConverted, "defaultsConverted", { { { "version", ArgKind::UserText, {} } } }, 1 },
+    { FactId::SameCoreMachineDifferences, "sameCoreMachineDifferences", { { { "count", ArgKind::Count, {} } } }, 1 },
     // A command's rejection (Commands.h), one per code; the four a field refuses name it.
     { FactId::RejectedFloatingPointEnvironment, "rejectedFloatingPointEnvironment", {}, 0 },
     { FactId::RejectedNoSource, "rejectedNoSource", {}, 0 },
@@ -67,7 +68,6 @@ inline constexpr FactShape kFacts[] = {
     { FactId::RejectedBusy, "rejectedBusy", {}, 0 },
     { FactId::RejectedNoJob, "rejectedNoJob", {}, 0 },
     { FactId::RejectedNoMaster, "rejectedNoMaster", {}, 0 },
-    { FactId::RejectedManualOff, "rejectedManualOff", {}, 0 },
     { FactId::RejectedUnknownTarget, "rejectedUnknownTarget", {}, 0 },
     { FactId::RejectedNotOffered, "rejectedNotOffered", {}, 0 },
     { FactId::RejectedUnknownJob, "rejectedUnknownJob", {}, 0 },
@@ -88,7 +88,6 @@ inline constexpr FactShape kFacts[] = {
     { FactId::RejectedProjectUnknownKey, "rejectedProjectUnknownKey", {}, 0 },
     { FactId::RejectedUnknownDefaults, "rejectedUnknownDefaults", {}, 0 },
     { FactId::RejectedProjectCore, "rejectedProjectCore", {}, 0 },
-    { FactId::RejectedMachineMismatch, "rejectedMachineMismatch", {}, 0 },
     { FactId::RejectedNewerDefaults, "rejectedNewerDefaults", {}, 0 },
     { FactId::RejectedRateAboveLimit, "rejectedRateAboveLimit", {}, 0 },
     { FactId::RejectedMemory, "rejectedMemory", {}, 0 },
@@ -133,7 +132,7 @@ inline constexpr TermShape kTerms[] = {
     { Term::FieldTiltDb, "field", "tiltDb" },
     { Term::FieldLimiterNeedles, "field", "limiterNeedles" },
     { Term::FieldLimiterNeedlesDb, "field", "limiterNeedlesDb" },
-    { Term::FieldLowShelfDb, "field", "lowShelfDb" },
+    { Term::FieldLowDb, "field", "lowDb" },
     { Term::FieldAudio, "field", "audio" },
 };
 inline constexpr std::size_t kTermCount = sizeof (kTerms) / sizeof (kTerms[0]);
@@ -194,7 +193,6 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Rejection::Busy: return FactId::RejectedBusy;
         case Rejection::NoJob: return FactId::RejectedNoJob;
         case Rejection::NoMaster: return FactId::RejectedNoMaster;
-        case Rejection::ManualOff: return FactId::RejectedManualOff;
         case Rejection::UnknownTarget: return FactId::RejectedUnknownTarget;
         case Rejection::NotOffered: return FactId::RejectedNotOffered;
         case Rejection::UnknownJob: return FactId::RejectedUnknownJob;
@@ -215,7 +213,6 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Rejection::ProjectUnknownKey: return FactId::RejectedProjectUnknownKey;
         case Rejection::UnknownDefaults: return FactId::RejectedUnknownDefaults;
         case Rejection::ProjectCore: return FactId::RejectedProjectCore;
-        case Rejection::MachineMismatch: return FactId::RejectedMachineMismatch;
         case Rejection::RateAboveLimit: return FactId::RejectedRateAboveLimit;
         case Rejection::Contract: return FactId::RejectedContract;
         case Rejection::Memory: return FactId::RejectedMemory;
@@ -252,7 +249,7 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Device::Tilt: return at ({ Term {}, Term::FieldTiltDb });
         case Device::Limiter: return at ({ Term::FieldLimiterNeedles, Term::FieldLimiterNeedlesDb });
         case Device::Dither: return at ({ Term {} });
-        case Device::LowShelf: return at ({ Term {}, Term::FieldLowShelfDb });
+        case Device::Low: return at ({ Term {}, Term::FieldLowDb });
     }
     return std::nullopt;
 }

@@ -132,7 +132,7 @@ void theSchemaRefuses()
                 "[1, 6", Fault::OutOfRange, "tilt.domain");
     mustAccept (E, "hzDefault = 30", "hzDefault = 100.25");
     mustAccept (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 5.25 }");
-    mustAccept (T, "lowShelfDb = 0.5", "lowShelfDb = 5.25");
+    mustAccept (T, "lowDb = 0.5", "lowDb = 5.25");
     mustAccept (T, "hpfFloor = 32", "hpfFloor = 100.25");
     // Wrong types.
     mustRefuse (E, "toleranceLu = 0.1", "toleranceLu = \"0.1\"", "\"0.1\"", Fault::WrongType, "landing.toleranceLu");
@@ -172,7 +172,7 @@ void theSchemaRefuses()
                 "\"allStreaming\"]", Fault::Refused, "blindTest.targets[1]", Refusal::Duplicate);
     mustRefuse (E, "{ key = \"bass5\", hz = 31 }", "{ key = \"bass4\", hz = 31 }", "\"bass4\"", Fault::Refused, "hpf.marks[2].key",
                 Refusal::Duplicate);
-    mustRefuse (E, "band = 2", "band = 1", "1", Fault::Refused, "lowShelf.band", Refusal::Duplicate);
+    mustRefuse (E, "band = 2", "band = 1", "1", Fault::Refused, "low.band", Refusal::Duplicate);
     // ...order: ranges, series and the classes of the peak clipper.
     mustRefuse (E, "passes = [12, 24, 32]", "passes = [12, 24, 2]", "2]", Fault::Refused, "landing.passes[2]", Refusal::OutOfOrder);
     mustRefuse (E, "infraLowCrossoverHz = 30", "infraLowCrossoverHz = 120", "120", Fault::Refused, "lowEnd.infraLowCrossoverHz",
@@ -223,7 +223,7 @@ void theSchemaRefuses()
     mustRefuse (E, "enterDb = 6", "enterDb = 0", "[stereoBursts]", Fault::Refused, "stereoBursts", Refusal::AnalyzerRefuses);
     // ...a value off its knob's step.
     mustAccept (T, "appleMusic   = { group = \"streaming\", lufs = -16, tp = -1,", "appleMusic   = { group = \"streaming\", lufs = -16, tp = -1.05,");
-    mustAccept (T, "lowShelfDb = 0.5", "lowShelfDb = 0.55");
+    mustAccept (T, "lowDb = 0.5", "lowDb = 0.55");
     mustAccept (E, "betweenOverDb = 1.5", "betweenOverDb = 1.25");
     mustAccept (E, "lowWidth = 0\n", "lowWidth = 0.03\n");
     mustRefuse (E, "hopMs = 100", "hopMs = 15", "15", Fault::Refused, "crest.hopMs", Refusal::NotOnStep);
@@ -286,8 +286,8 @@ void theSchemaAdmitsWhatTheAnalyzersAdmit()
     // −3, 0.500000035 is on the grid and 0.5 is not.
     const auto fine = bindWith ({ { Document::Engine, "q = 0.6\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.1",
                                     "q = 0.6\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.100000001" },
-                                  { Document::Targets, "lowShelfDb = 0.5", "lowShelfDb = 0.500000035" } });
-    ok (fine && fine->ok(), "lowShelfDb 0.500000035 on a step of 0.100000001 from −3: on the grid");
+                                  { Document::Targets, "lowDb = 0.5", "lowDb = 0.500000035" } });
+    ok (fine && fine->ok(), "lowDb 0.500000035 on a step of 0.100000001 from −3: on the grid");
     const auto coarse = bindWith ({ { Document::Engine, "q = 0.6\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.1",
                                       "q = 0.6\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.100000001" } }, &targets);
     ok (coarse && coarse->ok(), "defaults need not be on slider steps");
@@ -307,7 +307,7 @@ constexpr std::string_view kTargetsPresentation[] = {
 constexpr std::string_view kEnginePresentation[] = {
     "defaults", "limiter.peakClipper.densityMinusDb", "limiter.peakClipper.densityWithinDb", "hpf.slopesNormal",
     "hpf.comfort", "hpf.curveTopDb", "hpf.curveBottomDb", "hpf.curveStepDb", "hpf.curveHeadroomDb", "hpf.marks",
-    "monoBass.zones", "tilt.normal", "lowShelf.normal", "eq", "crest", "cost", "progress", "blindTest",
+    "monoBass.zones", "tilt.normal", "low.normal", "eq", "crest", "cost", "progress", "blindTest",
 };
 constexpr std::string_view kWhileNoDeEsser[] = { "deEsser", "stereoBursts" };
 
@@ -390,7 +390,7 @@ void theVersionsAreNormalised()
     const Respelling respellings[] = {
         { config::Document::Engine, "toleranceLu = 0.1", "toleranceLu = 0.10", "a decimal's scale: 0.1 as 0.10" },
         { config::Document::Engine, "releaseMs = 50\n", "releaseMs = 50.0\n", "an integer written as a decimal: 50 as 50.0" },
-        { config::Document::Targets, "lowShelfDb = 0.5", "lowShelfDb = 0.50", "a target's number respelled: 0.5 as 0.50" },
+        { config::Document::Targets, "lowDb = 0.5", "lowDb = 0.50", "a target's number respelled: 0.5 as 0.50" },
         { config::Document::Engine, "makeupDb = 0\n", "makeupDb = -0.0\n", "a zero written as −0.0" },
         { config::Document::Engine, "ceilingMarginDb = 0.15\nreleaseMs = 50\n", "releaseMs = 50\nceilingMarginDb = 0.15\n",
           "two keys of a table swapped" },
@@ -443,8 +443,8 @@ void theSoundIsWhatCanChangeAMaster()
           "the wide-bass warning: mono bass is placed whatever it says", false },
         { config::Document::Engine, "polarity = { correlationBelow = 0,", "polarity = { correlationBelow = 0.1,",
           "observations.polarity, which keeps mono bass out", true },
-        { config::Document::Engine, "normal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.1\n\n# THE LOW SHELF",
-          "normal = [-1.2, 1.5]\nhard = [-3, 3]\nstep = 0.1\n\n# THE LOW SHELF", "tilt's red zone", false },
+        { config::Document::Engine, "normal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.1\n\n# LOW",
+          "normal = [-1.2, 1.5]\nhard = [-3, 3]\nstep = 0.1\n\n# LOW", "tilt's red zone", false },
         { config::Document::Engine, "slopesNormal = [12, 24]", "slopesNormal = [12]", "which slopes warn", false },
         { config::Document::Engine, "densityMinusDb = 3", "densityMinusDb = 4", "the peak clipper's printed density", false },
         { config::Document::Engine, "band = 8", "band = 9", "the de-esser's block, while no shell offers it", false },

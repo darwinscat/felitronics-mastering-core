@@ -98,6 +98,7 @@ enum class FactId : std::uint16_t
     RateAboveLimit = 7,      // the file's rate {rate} is above what this platform takes, {limit} (select on platform)
     MachineDifferences = 8,  // {count}: the saved machine layer is retained
     DefaultsConverted = 9,   // {version}: the project was converted from older defaults
+    SameCoreMachineDifferences = 10, // {count}: same-core differences usually indicate a hand-edited file
 
     // A command's rejection, by its code — what was refused and why. The three a field refuses name it: {field}.
     RejectedFloatingPointEnvironment = 101,
@@ -107,33 +108,31 @@ enum class FactId : std::uint16_t
     RejectedBusy = 105,
     RejectedNoJob = 106,
     RejectedNoMaster = 107,
-    RejectedManualOff = 108,
-    RejectedUnknownTarget = 109,
-    RejectedNotOffered = 110,
-    RejectedUnknownJob = 111,
-    RejectedUnknownMaster = 112,
-    RejectedNotFinite = 113,     // {field}
-    RejectedNotOneOf = 114,      // {field}
-    RejectedOutOfDomain = 115,   // {field}
-    RejectedBadChannels = 116,
-    RejectedBadRate = 117,
-    RejectedNoAudio = 118,
-    RejectedTooLong = 119,
-    RejectedNoJobId = 120,
-    RejectedInvalidUtf8 = 121,
-    RejectedProjectTooLarge = 122,
-    RejectedProjectSyntax = 123,
-    RejectedProjectMissing = 124,
-    RejectedProjectType = 125,
-    RejectedProjectUnknownKey = 126,
-    RejectedUnknownDefaults = 127,
-    RejectedProjectCore = 128,
-    RejectedMachineMismatch = 129,
-    RejectedNewerDefaults = 130,
-    RejectedRateAboveLimit = 131,
-    RejectedMemory = 132,
+    RejectedUnknownTarget = 108,
+    RejectedNotOffered = 109,
+    RejectedUnknownJob = 110,
+    RejectedUnknownMaster = 111,
+    RejectedNotFinite = 112,     // {field}
+    RejectedNotOneOf = 113,      // {field}
+    RejectedOutOfDomain = 114,   // {field}
+    RejectedBadChannels = 115,
+    RejectedBadRate = 116,
+    RejectedNoAudio = 117,
+    RejectedTooLong = 118,
+    RejectedNoJobId = 119,
+    RejectedInvalidUtf8 = 120,
+    RejectedProjectTooLarge = 121,
+    RejectedProjectSyntax = 122,
+    RejectedProjectMissing = 123,
+    RejectedProjectType = 124,
+    RejectedProjectUnknownKey = 125,
+    RejectedUnknownDefaults = 126,
+    RejectedProjectCore = 127,
+    RejectedNewerDefaults = 128,
+    RejectedRateAboveLimit = 129,
+    RejectedMemory = 130,
 
-    RejectedContract = 133,
+    RejectedContract = 131,
 
     Measurement1 = 200,
     Measurement2 = 201,
@@ -173,7 +172,7 @@ enum class Term : std::uint16_t
     FieldTiltDb = 13,
     FieldLimiterNeedles = 14,
     FieldLimiterNeedlesDb = 15,
-    FieldLowShelfDb = 16,
+    FieldLowDb = 16,
     FieldAudio = 17,
 };
 

@@ -122,3 +122,7 @@ entry  modules/session/src/Wire.cpp  named commands and binary transfer
 zone   modules/session/src/Wire.cpp  named commands and binary transfer
 zone   modules/session/src/JsonCodec.h  shared allocation-free JSON scalar codec
 zone   modules/session/include/felitronics/session/Wire.h  caller-owned transfer buffers
+
+zone modules/session/src/EqCurve.h summed EQ response declaration
+zone modules/session/src/EqCurve.cpp deterministic summed EQ response
+entry modules/session/src/EqCurve.cpp snapshot EQ response

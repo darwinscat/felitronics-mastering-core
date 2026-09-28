@@ -22,13 +22,13 @@ bool offered (const Rules& rules, std::uint16_t row, std::uint32_t channels, Dev
 {
     switch (device)
     {
-        case Device::LowShelf: return rules.row (row).lowShelfDb.has_value();
         case Device::Dither:   return rules.row (row).bitDepth <= rules.ditherUpToBits;
         case Device::MonoBass: return channels != 1;
         case Device::Hpf:
         case Device::Glue:
         case Device::Saturation:
         case Device::Tilt:
+        case Device::Low:
         case Device::Limiter:  return true;
     }
     storageOverflow();
@@ -70,9 +70,9 @@ void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channel
 
     devices.dither.machine.on = rules.dither && offered (rules, row, channels, Device::Dither);
 
-    auto& shelf = devices.lowShelf.machine;
-    shelf.on = rules.eq && target.lowShelfDb.has_value();
-    shelf.db = target.lowShelfDb ? number (*target.lowShelfDb) : 0.0;
+    auto& shelf = devices.low.machine;
+    shelf.on = rules.eq && target.lowDb.has_value();
+    shelf.db = target.lowDb ? number (*target.lowDb) : 0.0;
 }
 
 void placeMachine (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices, std::uint32_t offeredDevices) noexcept

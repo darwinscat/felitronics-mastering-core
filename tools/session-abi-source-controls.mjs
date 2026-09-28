@@ -36,6 +36,7 @@ try {
         ['struct field', 'tools/fc_session_abi.h', '    uint32_t maxRateHz;\n    uint32_t offeredDevices;', '    uint32_t offeredDevices;\n    uint32_t maxRateHz;'],
         ['wire field name', 'modules/session/src/Wire.cpp', 'w.field ("seq", e.seq)', 'w.field ("sequence", e.seq)'],
         ['row column order', 'modules/session/src/JsonCodec.h', 'append (row.fileValue); append (row.coreValue);', 'append (row.coreValue); append (row.fileValue);'],
+        ['EQ row column order', 'modules/session/src/JsonCodec.h', 'append (row.hz); append (row.db);', 'append (row.db); append (row.hz);'],
         ['entry signature', 'tools/fc_session_abi.h', 'fc_session_destroy (fc_session session)', 'fc_session_destroy (uint64_t session)'],
     ];
     for (const [name, file, before, after] of mutations) {

@@ -68,7 +68,8 @@ CodecStatus Codec::decode (std::string_view json, Snapshot& output) noexcept
     if (sizes.points) out.points_.reset (new ReadingPoint[sizes.points]);
     if (sizes.runs) out.runs_.reset (new ReadingRun[sizes.runs]);
     if (sizes.differences) out.differences_.reset (new MachineDifference[sizes.differences]);
-    Storage storage { 0, 0, 0, 0, 0, out.text_.get(), out.masters_.get(), out.points_.get(), out.runs_.get(), out.differences_.get() };
+    if (sizes.eqPoints) out.eqCurve_.reset (new EqPoint[sizes.eqPoints]);
+    Storage storage { 0, 0, 0, 0, 0, out.text_.get(), out.masters_.get(), out.points_.get(), out.runs_.get(), out.differences_.get(), 0, out.eqCurve_.get() };
     const bool filled = read (json, storage, out.view_);
     detail::debugBound (filled);
     output = std::move (out);

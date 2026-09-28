@@ -238,10 +238,9 @@ from the code, and ctest holds the text between the markers below to that output
 <!-- the table: end -->
 
 **The checks run in one declared order, the same for every command**, and the first that fails is the answer:
-1. the calling thread's floating-point environment; 2. the table; 3. the manual mode, for the device panel's commands
-(`editDevice`, `revertEdits`); 4. what the command names — a target, a device offered for this target and source, an
-id left for a new job (`load` and `master`), a load's valid UTF-8 name, the active job, a master kept; 5. the fields — each touched one in the order its struct
-writes them: finite, one of its values, within its domain; 6. a load's audio — one or two channels, a rate of
+1. the calling thread's floating-point environment; 2. the table; 3. what the command names — a target, a device offered for this target and source, an
+id left for a new job (`load` and `master`), a load's valid UTF-8 name, the active job, a master kept; 4. the fields — each touched one in the order its struct
+writes them: finite, one of its values, within its domain; 5. a load's audio — one or two channels, a rate of
 at least felitronics-core's 8000 Hz, frames and data, a size the machine can address, every sample finite. A rejection
 on a field names it by its place in its struct. `Session::check()` runs exactly these and says what the command would
 answer; `apply()` runs `check()` first and does the work only when it passed, so a rejected command changes no state
@@ -254,8 +253,9 @@ field a value), a person's layer (a field a value only where touched — a touch
 number is the machine's) and a revert's mask (a field yes or no). Commands name fields through typed structs: an edit is the
 device's struct, a variant whose alternative is the device. TOML keys are bound at the serialization boundary. The devices are the high-pass, mono bass, the glue (its
 knob, "up to N dB", as the config writes every glue number),
-saturation, tilt, the limiter's needles, the dither and the low shelf; the low shelf is offered on a target that
-carries one, the dither where the target's bit depth is one it serves, mono bass except on a mono source.
+saturation, tilt, the limiter's needles, dither and low. Tilt and low are separate devices on every target.
+The machine enables low only for a target with `lowDb` (today `lp`, +0.5 dB); otherwise low starts off at 0 dB.
+Dither is offered through 16 bits, and mono bass except on a mono source; the shell may exclude any device.
 
 - **The machine's layer** is placed from the config for the target and the source — the ticks from `[stages]`, what
   the target decides (the high-pass's slope and floor, the mono-bass crossover, no needles where the target has no peak
@@ -266,14 +266,17 @@ carries one, the dither where the target's bit depth is one it serves, mono bass
   machine's layer at its type's zero, and the state says so. A load unplaces them again.
 - **Every value the machine places is one a person could set**: inside its knob's accepted domain, which the schema
   holds for every default and `felitronics_session_state_tests` checks for every target and source.
-- **A person's edits** are taken only after placement (`NotPlaced` before it), with manual mode on. Values must be
+- **A person's edits** are taken only after placement (`NotPlaced` before it), whether the panel is visible or hidden. Values must be
   finite and inside the knob's domain; travel and step guide the slider. Values between steps or outside travel are
   accepted within the domain. A number is kept with −0 written as +0, so equal values give identical project bits.
 - **`setTarget(name, onEdits)`** replaces the target's numbers silently — a person's edits of them go with the old
-  target — and keeps or takes back a person's device edits as `onEdits` says; an edit of a device the new target does
-  not offer goes either way. The machine's layer is placed again for the new target.
-- **`setManual(false)`** takes back a person's device edits and nothing else: the machine's layer stays, and so does an
-  edit of the target's numbers.
+  target — and keeps or takes back a person's device edits as `onEdits` says. The machine's layer is placed again.
+  Dither edits remain stored but dormant above 16 bits: they survive export/import and become applicable again
+  on an eligible target. New dither edits still return `NotOffered` there; an explicit revert can remove stored edits.
+- **`setManual(bool)`** changes only panel visibility. Device edits stay effective in either mode, including in a
+  master recipe. `snapshot().view().handFieldCount` counts touched device fields, including false ticks and values
+  equal to the machine, for the hidden-panel marker. Target-number edits are separate. `revertEdits` and
+  `setTarget(..., reset)` explicitly remove device edits.
 - **`load`** checks everything first, then DISARMS — whatever ran on the old source stops, and the old source, its
   measurements and its masters go; the manual mode is switched off, and a person's device edits go with it (the mode
   does not outlive the file: its edits were decisions about the old source); the old samples are freed before the new
@@ -331,8 +334,8 @@ Negative zero writes `0`. Allocation tests and domain/extreme-value round trips 
 
 `importProject(commandId, bytes)` is `apply(command::ImportProject{...})`. Its row in the one command table is the
 device-edit row: `NoSource`, `NotPlaced`, then accepted in both measured states and both mastering overlays. The file
-supplies manual mode, so a fresh session need not enable it first. A hand with manual mode off is refused; an edit to
-a device not offered for the imported target and loaded source is refused. Import leaves ongoing jobs, captured
+supplies panel visibility and accepts hand fields with either value of `manual`; an edit to
+a device excluded by the shell or mono bass on a mono source is refused. Stored dither edits may be dormant above 16 bits. Import leaves ongoing jobs, captured
 recipes, measurements and kept masters alone. An accepted import moves the revision exactly once.
 
 Checks run in this order:
@@ -345,7 +348,7 @@ Checks run in this order:
    accepted domain at the loaded source's sample rate. Unknown keys are reported as each table closes, including unknown sections
    and author suffixes. Dotted keys and inline tables bind through the same schema.
 3. The defaults version, the core version spelling, and the target name.
-4. Manual mode and offered-device constraints in device/field order, then same-core machine equality in that order.
+4. Offered-device constraints in device/field order, then comparison with today's machine decisions.
 
 The first refusal carries its code and position. A missing key points at its table; a bad value at the value; an
 unknown key at the key. Syntax refusals carry the parser's position. The candidate and its comparison live separately
@@ -372,18 +375,25 @@ slot is empty. A carried label uses its compiled defaults. Labels are strictly `
 A label older than every carried version is converted: written numbers are retained and omitted fields take current
 defaults. Fact `DefaultsConverted` (9) owns the original label and reports the conversion in both catalog languages.
 Export uses the current label; a converted project round trips without a second conversion warning. A newer label
-is refused as `NewerDefaults` (32, fact 132); a malformed label is `UnknownDefaults`. A future uncarried label between
+is refused as `NewerDefaults` (28, fact 128); a malformed label is `UnknownDefaults`. A future uncarried label between
 the retained versions is also `UnknownDefaults`. All these refusals leave state and revision unchanged.
 
-After defaults selection or conversion, with the same core stamp, the machine decides again and every field must equal the file's complete layer (omitted
-fields mean defaults). A difference is `MachineMismatch`. With another stamp, the file's complete machine layer and
-the person's touched layer remain intact. Fact `MachineDifferences` (8) publishes the count, including zero;
-`snapshot().view().machineDifferences` holds ordered `(device, field, fileValue, coreValue)` rows so a shell can show
-“HPF 32 → 34”. Flag values use 0/1, choices their enum numbers, and knobs their doubles. Snapshot ownership, JSON
-encoding and the generated `.d.ts` include the rows through the same generator and drift gates. The imported core
-stamp stays with that layer in the next export: replacing it with the running core's stamp would make that file fail
-its next same-core check. A target change explicitly places the current machine, stamps this core and clears the
-comparison. Hand edits and switching off manual mode do not replace the machine layer.
+After defaults selection or conversion, the file's complete machine layer always wins (omitted fields mean defaults),
+with the person's touched layer over it. The machine decides again beside it. `MachineDifferences` (8) publishes the
+count for a foreign core, including zero; `SameCoreMachineDifferences` (10) publishes nonzero same-core differences
+and politely explains that these usually indicate a project file edited by hand. Both facts render in Russian and English.
+`snapshot().view().machineDifferences` holds ordered `(device, field, fileValue, coreValue)` rows. Flags use 0/1,
+choices their enum numbers, and knobs their doubles. Owned snapshots, the codec and its generated `.d.ts` carry them.
+Export preserves the stamp of the core whose machine decisions the file carries. A target change explicitly places
+today's machine, stamps this core and clears the comparison. Hand edits and panel visibility do not replace it.
+
+The page draws **`snapshot().view().eqCurve`**: the summed high-pass + tilt + low response using hand-over-machine
+values, independent of panel visibility. It is empty before placement, then contains 128 logarithmic `(hz, db)` points
+from 20 Hz to min(20 kHz, 0.49 × source rate). Each tick bypasses its own contribution. The coefficient designs follow
+core's matched filters with deterministic math; the event suite compares their response with core across rates and
+all high-pass slopes. Low keeps EQ band 2, 80 Hz and Q 0.6; tilt keeps band 1 and its 1 kHz pivot.
+The one codec generator carries `eqCurve` into `snapshot.d.ts`; `SessionSnapshot.eqCurve` describes transferable
+little-endian f64 rows, columns `[hz, db]`, stride 2. `handFieldCount` is a JSON number in both snapshot forms.
 
 Recovery and heap compaction use the same operation: create a new session, load the same source, advance measurement
 to the same measured state, then import the last exported project. The project includes target, manual mode and both
@@ -723,7 +733,7 @@ compiled config with unrestricted capabilities; the overload accepts the shell's
 The session counts its own live declared allocations plus each command's declared demand before work. A memory
 refusal preserves state and revision, allocates nothing, and publishes `ErrorCode::Memory` with exact `needBytes`.
 It precedes a load's sample scan and an import's parser. Rates above `maxRateHz` receive `Rejection::RateAboveLimit`.
-An unoffered device stays inactive, cannot be edited or reverted, and cannot be activated by project import.
+A device excluded by the shell stays inactive, cannot be edited or reverted, and cannot be activated by project import.
 The snapshot's `offeredDevices` tells the shell which devices it can expose; the existing target/source restrictions
 still apply. Convert, Lra and Final are appended to `PhaseName` at 5, 6 and 7 and have catalog facts in ru and en.
 
@@ -793,8 +803,8 @@ desktop application does.
 
 Knob travel and step describe the shell's slider. Commands and project import accept the domains below, including
 values between steps and beyond travel. An empty edit or revert is accepted with unchanged revision. Device edits
-still require manual mode and an offered device; the low shelf belongs to the vinyl target. Same-core machine
-mismatches are refused, and older defaults are converted with their warning.
+require placement and an offered device. Panel visibility does not gate them. Low is offered on every target,
+saved machine layers are retained for every core stamp, and older defaults are converted with their warning.
 
 | Knob | Accepted domain | Reason |
 | --- | --- | --- |
@@ -805,7 +815,7 @@ mismatches are refused, and older defaults are converted with their warning.
 | Mono-bass frequency / width | 60–300 Hz / 0–1 | Product / device |
 | Glue | 0–6 dB | Product |
 | Saturation drive / mix / output | 0–12 dB / 0–1 / −6–0 dB | Product / device / product |
-| Tilt / low shelf | −6–6 dB | Product |
+| Tilt / low | −6–6 dB | Product |
 | Needles above ceiling | 0–6 dB | Product |
 
 Limiter release is configuration, not a project knob. Its schema requires at least eight source samples at the

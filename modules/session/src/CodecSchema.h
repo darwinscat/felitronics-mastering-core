@@ -20,7 +20,7 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (Device::Tilt) == 4);
         static_assert (unsigned (Device::Limiter) == 5);
         static_assert (unsigned (Device::Dither) == 6);
-        static_assert (unsigned (Device::LowShelf) == 7);
+        static_assert (unsigned (Device::Low) == 7);
         return 7;
     }
     else if constexpr (std::is_same_v<T, Needles>)
@@ -64,7 +64,7 @@ constexpr void checkEnum (Device value) noexcept
         case Device::Tilt: break;
         case Device::Limiter: break;
         case Device::Dither: break;
-        case Device::LowShelf: break;
+        case Device::Low: break;
     }
 }
 
@@ -118,8 +118,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("hpf", x.hpf);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.limiter)>, Layers<LimiterFields>>);
         v.field ("limiter", x.limiter);
-        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.lowShelf)>, Layers<LowShelfFields>>);
-        v.field ("lowShelf", x.lowShelf);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.low)>, Layers<LowFields>>);
+        v.field ("low", x.low);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.monoBass)>, Layers<MonoBassFields>>);
         v.field ("monoBass", x.monoBass);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.saturation)>, Layers<SaturationFields>>);
@@ -146,6 +146,14 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         [[maybe_unused]] auto& [f0] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.on)>, bool>);
         v.field ("on", x.on);
+    }
+    else if constexpr (std::is_same_v<U, EqPoint>)
+    {
+        [[maybe_unused]] auto& [f0, f1] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.db)>, double>);
+        v.field ("db", x.db);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.hz)>, double>);
+        v.field ("hz", x.hz);
     }
     else if constexpr (std::is_same_v<U, Layers<GlueFields>>)
     {
@@ -231,15 +239,15 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.needlesDb)>, double>);
         v.field ("needlesDb", x.needlesDb);
     }
-    else if constexpr (std::is_same_v<U, Layers<LowShelfFields>>)
+    else if constexpr (std::is_same_v<U, Layers<LowFields>>)
     {
         [[maybe_unused]] auto& [f0, f1] = x;
-        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.hand)>, LowShelfFields<Touched>>);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.hand)>, LowFields<Touched>>);
         v.field ("hand", x.hand);
-        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.machine)>, LowShelfFields<Value>>);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.machine)>, LowFields<Value>>);
         v.field ("machine", x.machine);
     }
-    else if constexpr (std::is_same_v<U, LowShelfFields<Touched>>)
+    else if constexpr (std::is_same_v<U, LowFields<Touched>>)
     {
         [[maybe_unused]] auto& [f0, f1] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.db)>, std::optional<double>>);
@@ -247,7 +255,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.on)>, std::optional<bool>>);
         v.field ("on", x.on);
     }
-    else if constexpr (std::is_same_v<U, LowShelfFields<Value>>)
+    else if constexpr (std::is_same_v<U, LowFields<Value>>)
     {
         [[maybe_unused]] auto& [f0, f1] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.db)>, double>);
@@ -389,7 +397,11 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, SnapshotView>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.eqCurve)>, std::span<const EqPoint>>);
+        v.field ("eqCurve", x.eqCurve);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.handFieldCount)>, std::uint32_t>);
+        v.field ("handFieldCount", x.handFieldCount);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.integratedLufs)>, double>);
         v.field ("integratedLufs", x.integratedLufs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.job)>, std::uint32_t>);

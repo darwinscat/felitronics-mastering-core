@@ -593,7 +593,7 @@ void readTilt (Doc& d, Reader& in, Tilt& o, std::vector<std::int32_t>& bands)
     in.required ("step", o.step, R { 0.01, 3.0 });
 }
 
-void readLowShelf (Doc& d, Reader& in, LowShelf& o, std::vector<std::int32_t>& bands)
+void readLow (Doc& d, Reader& in, Low& o, std::vector<std::int32_t>& bands)
 {
     d.band (in, o.band, bands);
     in.required ("freqHz", o.freqHz, R { 20.0, 20000.0 });
@@ -953,9 +953,9 @@ void readEngine (Doc& d, Reader& in, Engine& o, const std::vector<std::string>* 
     in.table ("glue", Need::Required, [&] (Reader& t) { readGlue (d, t, o.glue, targets); });
     in.table ("saturation", Need::Required, [&] (Reader& t) { readSaturation (d, t, o.saturation); });
     in.table ("tilt", Need::Required, [&] (Reader& t) { readTilt (d, t, o.tilt, bands); });
-    in.table ("lowShelf", Need::Required, [&] (Reader& t)
+    in.table ("low", Need::Required, [&] (Reader& t)
     {
-        readLowShelf (d, t, o.lowShelf, bands);
+        readLow (d, t, o.low, bands);
     });
     in.table ("eq", Need::Required, [&] (Reader& t)
     {
@@ -989,7 +989,7 @@ struct RowDomains
     R tp { -6.0, -0.1 };
     R monoBass { 60.0, 300.0 };
     R hpfFloor = hpfDomain();
-    R lowShelf { -6.0, 6.0 };
+    R low { -6.0, 6.0 };
 };
 
 void readEdit (Doc& d, Reader& in, std::string_view key, Edit& o, R& domain)
@@ -1033,12 +1033,12 @@ void readTarget (Doc& d, Reader& row, Target& x, const RowDomains& b)
     // A pass at the source's rate exists only where the delivery rate is another.
     if (x.sourceRatePass && x.sampleRate == 0 && row.data().find ("sampleRate") != nullptr)
         d.refuse (row, "sourceRatePass", Refusal::NotApplicable);
-    if (row.data().find ("lowShelfDb") != nullptr)
+    if (row.data().find ("lowDb") != nullptr)
     {
         double db = 0.0;
-        if (row.required ("lowShelfDb", db, b.lowShelf))
+        if (row.required ("lowDb", db, b.low))
         {
-            x.lowShelfDb = db;
+            x.lowDb = db;
         }
     }
     if (row.data().find ("album") != nullptr)
@@ -1061,7 +1061,7 @@ void readTargets (Doc& d, Reader& in, Targets& o, const Engine& e)
     });
     if (e.monoBass.frequencyDomain.min < e.monoBass.frequencyDomain.max)
         b.monoBass = R { e.monoBass.frequencyDomain.min, e.monoBass.frequencyDomain.max };
-    if (e.lowShelf.domain.min < e.lowShelf.domain.max) b.lowShelf = R { e.lowShelf.domain.min, e.lowShelf.domain.max };
+    if (e.low.domain.min < e.low.domain.max) b.low = R { e.low.domain.min, e.low.domain.max };
 
     in.table ("targets", Need::Required, [&] (Reader& t)
     {

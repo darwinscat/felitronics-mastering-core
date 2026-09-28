@@ -187,8 +187,8 @@ void defaultsVersions()
     ok (import (*s, withDefaults (current, "2026-08")).rejection == Rejection::None
         && s->events().size() == 1 && s->events()[0].payload.fact.view().id == text::FactId::DefaultsConverted,
         "an older month with the same core converts when the complete machine matches");
-    refused (*s, withDefaults (project() + "\n[hpf]\nfq.machine = 37\n", "2026-08"),
-        Rejection::MachineMismatch, "37");
+    ok (import (*s, withDefaults (project() + "\n[hpf]\nfq.machine = 37\n", "2026-08")).rejection == Rejection::None
+        && s->events().size() == 2, "same-core differences survive older-default conversion");
     for (const auto newer : { "2026-10", "2027-01", "9999-12" })
         refused (*s, withDefaults (project(), newer), Rejection::NewerDefaults, std::string ("\"") + newer + '"');
     for (const auto malformed : { "2026-00", "2026-13", "2026-9", "026-09", "20260-09", "2026/09", "2026-09x", " 2026-09", "2026-0a", "" })
@@ -214,7 +214,7 @@ void roundTrip()
     ok (saved.starts_with (header()), "defaults and stamped core version are first, with manual mode");
     ok (saved.find (".machine") == std::string::npos && saved.find ("fq.hand = 32\n") != std::string::npos,
         "defaults are omitted; an equal hand remains owned");
-    ok (saved.find ("[hpf]\n") != std::string::npos && saved.find ("[lowShelf]\n") != std::string::npos,
+    ok (saved.find ("[hpf]\n") != std::string::npos && saved.find ("[low]\n") != std::string::npos,
         "section names are the config's names");
     auto restored = fresh();
     const auto before = restored->revision();
@@ -229,6 +229,18 @@ void roundTrip()
     const auto ditherText = exported (*dither);
     ok (import (*ditherCopy, ditherText).rejection == Rejection::None && exported (*ditherCopy) == ditherText,
         "dither's hand round trips too");
+    (void) dither->apply (command::SetTarget { 6, "allStreaming", OnEdits::Keep });
+    const auto dormant = exported (*dither);
+    ok (! dither->project().devices.dither.machine.on && dither->project().devices.dither.hand.on == true
+        && import (*ditherCopy, dormant).rejection == Rejection::None && exported (*ditherCopy) == dormant,
+        "above 16 bits a dormant dither hand survives keep and import without activating the machine");
+    ok (ditherCopy->apply (command::EditDevice { 7, ditherHand }).rejection == Rejection::NotOffered,
+        "dither edits still require delivery at 16 bits or below");
+    (void) ditherCopy->apply (command::SetTarget { 8, "cd", OnEdits::Keep });
+    ok (ditherCopy->project().devices.dither.hand.on == true, "returning to CD restores the kept dither hand");
+    (void) dither->apply (command::RevertEdits { 9, DitherFields<Mark> { true } });
+    ok (! dither->project().devices.dither.hand.on, "a dormant dither hand can be explicitly reverted");
+
     auto a = s->snapshot(), b = restored->snapshot();
     SnapshotView av = a.view(), bv = b.view(); av.revision = bv.revision;
     ok (json (av) == json (bv), "both complete project layers and measured state survive round trip");
@@ -261,7 +273,7 @@ void domainsAndExactNumbers()
         { "monoBass", "fq", "120.25", "300.1" }, { "monoBass", "width", "0.333333333", "1.01" },
         { "glue", "upToDb", "5.25", "6.01" }, { "saturation", "drive", "1.25", "12.01" },
         { "saturation", "mix", "0.123456789", "-0.01" }, { "saturation", "output", "-1.25", "0.01" },
-        { "tilt", "db", "5.25", "6.01" }, { "lowShelf", "db", "-5.25", "-6.01" },
+        { "tilt", "db", "5.25", "6.01" }, { "low", "db", "-5.25", "-6.01" },
         { "limiter", "needlesDb", "5.25", "6.01" }
     };
     for (const auto& row : rows)
@@ -313,15 +325,15 @@ void refusals()
     auto old = project(); old.replace (old.find ("defaults = "), old.find ('\n'), "defaults = \"missing\"");
     refused (*s, old, Rejection::UnknownDefaults, "\"missing\"");
     refused (*s, project (true, "01.2.3"), Rejection::ProjectCore, "\"01.2.3\"");
-    refused (*s, project() + "\n[hpf]\nfq.machine = 36\n", Rejection::MachineMismatch, "36");
+    ok (import (*s, project() + "\n[hpf]\nfq.machine = 36\n").rejection == Rejection::None, "saved machine and hidden hand are accepted");
     refused (*s, header() + "[target]\n", Rejection::ProjectMissing);
     refused (*s, project() + "\n[hpf\n", Rejection::ProjectSyntax);
     refused (*s, project() + "\n[hpf]\nfq.hand = 36\nfq.hand = 38\n", Rejection::ProjectSyntax);
     refused (*s, std::string (felitronics::toml::kMaxDocument + 1, 'x'), Rejection::ProjectSyntax);
-    refused (*s, project (false) + "\n[hpf]\nfq.hand = 36\n", Rejection::ManualOff, "36");
-    refused (*s, project() + "\n[lowShelf]\ndb.hand = 1\n", Rejection::NotOffered, "1\n");
+    ok (import (*s, project (false) + "\n[hpf]\nfq.hand = 36\n").rejection == Rejection::None, "saved machine and hidden hand are accepted");
+    ok (import (*s, project() + "\n[low]\ndb.hand = 1\n").rejection == Rejection::None, "saved machine and hidden hand are accepted");
     refused (*s, project() + "\n[target.lufs]\nmachine = -12\n", Rejection::ProjectUnknownKey, "machine");
-    refused (*s, project (false) + "\n[hpf]\nfq.machine = 36\n\n[tilt]\ndb.hand = 1\n", Rejection::ManualOff, "1\n");
+    ok (import (*s, project (false) + "\n[hpf]\nfq.machine = 36\n\n[tilt]\ndb.hand = 1\n").rejection == Rejection::None, "saved machine and hidden hand are accepted");
     auto limit = project(); limit += '#' + std::string (felitronics::toml::kMaxDocument - limit.size() - 1, 'x');
     ok (import (*s, limit).rejection == Rejection::None, "a project at the library text limit is accepted beyond the former 16 KiB cap");
     // Positions count Unicode characters; the prefix comment has a multibyte value.

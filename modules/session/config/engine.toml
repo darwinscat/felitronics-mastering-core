@@ -340,10 +340,11 @@ normal = [-1.5, 1.5]
 hard = [-3, 3]
 step = 0.1
 
-# THE LOW SHELF — a small manual device, one knob in dB, on the targets that carry lowShelfDb (targets.toml: lp, +0.5 dB).
-# A property of the medium, like the vinyl floor and crossover, not a decision taken from a measurement; a person decides.
+# LOW — a separate device on every target, with one dB knob and an on tick. The machine enables it only
+# when the target carries lowDb, its correction for the medium (today lp, +0.5 dB); otherwise off at 0 dB.
+# Hand edits apply whether the panel is visible or hidden.
 # band: the core's EQ band; freqHz, q: the shelf's corner and Q; normal, hard, step: as for tilt.
-[lowShelf]
+[low]
 domain = [-6, 6]
 band = 2
 freqHz = 80
@@ -352,9 +353,9 @@ normal = [-1.5, 1.5]
 hard = [-3, 3]
 step = 0.1
 
-# THE EQ STAGE — one stage of the core that several devices write (the high-pass, tilt, the low shelf): a device is not a
+# THE EQ STAGE — one stage of the core that several devices write (the high-pass, tilt, low): a device is not a
 # stage. curve: where the summed curve the core computes leaves ±warnDb it is filled red and labelled; scaleDb is the
-# curve's scale and fieldDb its field.
+# curve's scale and fieldDb its field. Snapshot eqCurve carries the summed response in Hz/dB for the page.
 [eq]
 curve = { warnDb = 2, scaleDb = 3, fieldDb = 4 }
 

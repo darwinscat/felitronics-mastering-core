@@ -56,6 +56,10 @@ struct ProjectText
     [[nodiscard]] std::string_view view() const noexcept;
 };
 
+// Summed high-pass + tilt + low response, in Hz and dB.
+struct EqPoint { double hz = 0.0, db = 0.0; };
+inline constexpr std::size_t kEqCurvePoints = 128;
+
 class Session;
 class Snapshot;
 struct SnapshotView;
@@ -242,6 +246,9 @@ private:
     Project project_ {};
     MachineDifference differences_[kDeviceFields] {};
     std::size_t differenceCount_ = 0;
+    // Derived at placement and after accepted commands; owned snapshots copy these points.
+    void refreshEqCurve() noexcept;
+    EqPoint eqCurve_[kEqCurvePoints] {};
     // OWNED BUFFERS, EACH ONE EXACT REQUEST — not std::vector: a debugging standard library (MSVC's at
     // _ITERATOR_DEBUG_LEVEL 1 or 2) gives every vector a heap-allocated proxy of its own, which no declared demand
     // counts. The source: its samples planar, channel after channel (source_.channels × source_.frames), and the name

@@ -9,6 +9,7 @@
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Snapshot.h>
 #include <felitronics_test.h>
+#include <felitronics/eq/EqBand.h>
 #include <bit>
 #include <cmath>
 #include <cstdio>
@@ -161,7 +162,7 @@ void pump()
     ok (eventsHash (one) == eventsHash (bulk) && eventsHash (one) == eventsHash (again), "complete event sequence is invariant across runs and pump slicing");
     ok (eventsHash (cancelled) == eventsHash (cancelledAgain), "cancelled scenario sequence is invariant across runs and slicing");
     ok (one.size() == 22 && cancelled.size() == 25, "fixed event counts for the two scenarios");
-    ok (eventsHash (one) == 0x68cafab522eee524ull && eventsHash (cancelled) == 0x723e5e3186a911a4ull, "event fixtures pin every active payload field");
+    ok (eventsHash (one) == 0xf09d9900da1aa92cull && eventsHash (cancelled) == 0xa36dcbf58db0ec3dull, "event fixtures pin every active payload field");
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     Audio audio; auto s = fresh();
     const auto old = apply (*s, audio.load()).job;
@@ -408,6 +409,76 @@ void numbers()
     ok (detail::JsonNumber::read ("0.1", d) && std::bit_cast<std::uint64_t> (d) == 0x3FB999999999999Aull, "decimal input rounds once, correctly");
     ok (detail::JsonNumber::read ("1.00000000000000011102230246251565404236316680908203125", d) && std::bit_cast<std::uint64_t> (d) == 0x3FF0000000000000ull, "halfway decimal rounds to even");
 }
+void eqSnapshot()
+{
+    namespace eq = felitronics::eq;
+    auto created = Session::create(); auto& s = *created.session;
+    ok (s.snapshot().view().eqCurve.empty(), "empty session has no EQ curve");
+    float sample[4] {}; const float* pcm[] { sample, sample };
+    (void) s.apply (command::Load { 1, { pcm, 2, 4, 48000 }, {} });
+    ok (s.snapshot().view().eqCurve.empty(), "unplaced devices have no EQ curve");
+    (void) s.step (10);
+    const auto cfg = config::Config::load();
+    const auto& engine = cfg.config.engine;
+    std::uint64_t curveHash = 0xCBF29CE484222325ull;
+    for (const auto rate : { 8000u, 44100u, 48000u, 192000u })
+    {
+        (void) s.apply (command::Load { 1, { pcm, 2, 4, rate }, {} });
+        (void) s.step (10);
+        for (int slope = 6; slope <= 96; slope += 6)
+        {
+            HpfFields<Touched> hp; hp.on = true; hp.fq = 36.25; hp.slope = slope;
+            TiltFields<Touched> tilt; tilt.on = true; tilt.db = -1.25;
+            LowFields<Touched> low; low.on = true; low.db = slope % 12 ? -5.25 : 5.25;
+            ok (s.apply (command::EditDevice { 2, hp }).rejection == Rejection::None
+                && s.apply (command::EditDevice { 3, tilt }).rejection == Rejection::None
+                && s.apply (command::EditDevice { 4, low }).rejection == Rejection::None, "all EQ tasks accept edits while hidden");
+            const auto snap = s.snapshot(); const auto& v = snap.view();
+            ok (v.eqCurve.size() == kEqCurvePoints && v.handFieldCount == 7, "summed curve and touched-field count are published");
+            eq::BandParams h, t, l;
+            h.on = t.on = l.on = true;
+            h.type = eq::FilterType::HighPass; h.lanes[0].freq = 36.25; h.lanes[0].slope = slope;
+            t.type = eq::FilterType::Tilt; t.lanes[0].freq = engine.tilt.freqHz; t.lanes[0].gainDb = -1.25;
+            l.type = eq::FilterType::LowShelf; l.lanes[0].freq = engine.low.freqHz; l.lanes[0].Q = engine.low.q; l.lanes[0].gainDb = *low.db;
+            bool agrees = true, grid = true; double previous = 0;
+            for (const auto& p : v.eqCurve)
+            {
+                const double w = 2 * eq::kPi * p.hz / rate;
+                const double expected = 20 * std::log10 (std::abs (eq::bandResponse (h, rate, w)))
+                                      + 20 * std::log10 (std::abs (eq::bandResponse (t, rate, w)))
+                                      + 20 * std::log10 (std::abs (eq::bandResponse (l, rate, w)));
+                agrees = agrees && std::isfinite (p.db) && std::abs (p.db - expected) < 0.002;
+                grid = grid && p.hz > previous && p.hz <= double (rate) * 0.5;
+                previous = p.hz;
+                curveHash = digest (digest (curveHash, std::bit_cast<std::uint64_t> (p.hz)), std::bit_cast<std::uint64_t> (p.db));
+            }
+            ok (agrees && grid, "summed response matches core high-pass + tilt + low, every slope/rate");
+            (void) s.apply (command::SetManual { 5, true });
+            const auto shown = s.snapshot();
+            bool unchanged = true;
+            for (std::size_t i = 0; i < v.eqCurve.size(); ++i)
+                unchanged = unchanged && std::bit_cast<std::uint64_t> (v.eqCurve[i].db) == std::bit_cast<std::uint64_t> (shown.view().eqCurve[i].db);
+            ok (unchanged, "panel visibility leaves the sounding curve unchanged");
+            (void) s.apply (command::SetManual { 6, false });
+        }
+    }
+    std::printf ("EQ response fingerprint: %016llx\n", static_cast<unsigned long long> (curveHash));
+    HpfFields<Touched> hp; hp.on = false;
+    TiltFields<Touched> tilt; tilt.on = false;
+    LowFields<Touched> low; low.on = false;
+    (void) s.apply (command::EditDevice { 7, hp });
+    (void) s.apply (command::EditDevice { 8, tilt });
+    const auto before = s.snapshot();
+    (void) s.apply (command::EditDevice { 9, low });
+    const auto flat = s.snapshot(); bool zero = true, previousHasLow = false;
+    for (const auto& p : flat.view().eqCurve) zero = zero && std::abs (p.db) < 1e-12;
+    for (const auto& p : before.view().eqCurve) previousHasLow = previousHasLow || std::abs (p.db) > 0.1;
+    ok (zero && previousHasLow, "ticks bypass their bands; the previous curve owns its points");
+    (void) s.apply (command::Master { 10 });
+    ok (s.jobRecipe().project.devices.low.hand.db == 5.25 && ! s.jobRecipe().project.manual,
+        "master recipe keeps hidden hand edits");
+}
+
 void environment()
 {
     Audio audio; auto s = fresh(); (void) apply (*s, audio.load());
@@ -468,6 +539,6 @@ int main (int argc, char** argv)
         "snapshot demand widens all six 32-bit terms before adding");
     ok (detail::snapshotAllocationSize<std::uint32_t> (max) == max,
         "the largest representable allocation size is accepted without allocating");
-    pump(); tableBetweenSteps(); codec(); numbers(); environment(); contracts();
+    pump(); tableBetweenSteps(); codec(); numbers(); eqSnapshot(); environment(); contracts();
     return felitronics::test::report();
 }

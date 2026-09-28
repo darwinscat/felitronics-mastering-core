@@ -38,6 +38,8 @@ int sessionWireFixture (bool frozen = false)
     const ReadingRun runs[] { { 7, 2, 0.5 } };
     const MachineDifference difference[] { { Device::Hpf, 1, 24, 32 } };
     v.machineDifferences = difference;
+    const EqPoint curve[] { { 20, -3.5 }, { 1000, 0.25 } };
+    v.eqCurve = curve; v.handFieldCount = 2;
     v.momentary = points; v.shortTerm = { points, 1 }; v.runs = runs;
     v.sourceBytes = 9007199254740991.0; v.integratedLufs = -std::numeric_limits<double>::infinity();
     auto need = Wire::snapshotBytes (v);

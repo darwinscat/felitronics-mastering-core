@@ -89,7 +89,7 @@ inline constexpr std::string_view kEnginePresentation[] = {
     "hpf.marks",
     "monoBass.zones",                                  // the knob scale's regions
     "tilt.normal",                                     // where a knob's value turns red
-    "lowShelf.normal",
+    "low.normal",
     "eq",                                              // the summed curve's colours and scale
     // The observations weight and print findings; none of these switches a device. observations.polarity does — it
     // keeps mono bass out — and stays in; dcOffset.from is in through hpf.nothingBelowNote.dcOffsetBelow, which equals it.

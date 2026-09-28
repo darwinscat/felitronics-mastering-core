@@ -831,7 +831,7 @@ void everyRejectionIsAFact()
                       & fieldTermsMatch<session::TiltFields<session::Mark>> (session::Device::Tilt, why)
                       & fieldTermsMatch<session::LimiterFields<session::Mark>> (session::Device::Limiter, why)
                       & fieldTermsMatch<session::DitherFields<session::Mark>> (session::Device::Dither, why)
-                      & fieldTermsMatch<session::LowShelfFields<session::Mark>> (session::Device::LowShelf, why);
+                      & fieldTermsMatch<session::LowFields<session::Mark>> (session::Device::Low, why);
     ok (fields, "every device: a term exactly for each field a check can refuse, in src/Devices.h's order" + why);
     ok (detail::targetFieldTerm (0) == text::Term::FieldTargetLufs && detail::targetFieldTerm (1) == text::Term::FieldTargetTp
             && ! detail::targetFieldTerm (2) && ! detail::targetFieldTerm (session::kNoField),
@@ -1068,7 +1068,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0xae36966def52131cull;
+    constexpr std::uint64_t kPinned = 0x380bc12f93a271fdull;
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");
