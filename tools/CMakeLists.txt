@@ -212,7 +212,7 @@ add_executable(fcore_session fcore_session.cpp session-script.cpp session-script
 target_include_directories(fcore_session PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_compile_options(fcore_session PRIVATE ${FCORE_NO_FP_CONTRACT}
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fno-fast-math>)
-target_link_libraries(fcore_session PRIVATE felitronics::session)
+target_link_libraries(fcore_session PRIVATE felitronics::session felitronics::test_support)
 target_include_directories(fcore_session PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(fcore_session PRIVATE cxx_std_20)
 
