@@ -118,7 +118,7 @@ struct Writer
         for (const T& row : values) { if (! start) put (','); start = false; value (row); }
         put (']');
     }
-    template <class T> void optionalField (std::string_view name, const T& x) noexcept { field (name, x); }
+    template <class T, class D> void optionalField (std::string_view name, const T& x, const D&) noexcept { field (name, x); }
     template <class T> void field (std::string_view name, const T& x) noexcept
     {
         if (! first) put (',');
@@ -405,9 +405,11 @@ struct Reader
         }
         if (out) rows = { out + start, *count - start };
     }
-    template <class T> void optionalField (std::string_view name, T& x) noexcept
+    template <class T, class D> void optionalField (std::string_view name, T& x, const D& defaultValue) noexcept
     {
-        optionalMask |= std::uint64_t (1) << ordinal;
+        const auto bit = std::uint64_t (1) << ordinal;
+        optionalMask |= bit;
+        if ((seen & bit) == 0) x = defaultValue;
         field (name, x);
     }
     template <class T> void field (std::string_view name, T& x) noexcept

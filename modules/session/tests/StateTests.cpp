@@ -58,6 +58,7 @@ using namespace felitronics::session;
 struct felitronics::session::detail::Inspector
 {
     static void lastJob (Session& s, JobId last) noexcept { s.lastJob_ = last; }
+    static void unplace (Session& s) noexcept { s.devicesPlaced_ = false; }
 };
 using felitronics::test::ok;
 using felitronics::session::detail::Driver;
@@ -69,7 +70,8 @@ namespace
 {
 constexpr const char* kCommandNames[] = { "load", "setTarget", "editTarget", "editDevice", "revertEdits", "setManual",
                                           "master", "cancel", "forget", "importProject", "continueMeasurement" };
-constexpr const char* kColumnNames[] = { "Empty", "Loaded", "Measured1", "Measured2", "Mastering1", "Mastering2", "Stopped", "StoppedMeasured", "MasteringStopped" };
+constexpr const char* kColumnNames[] = { "Empty", "Loaded", "Measured1", "Measured2", "Mastering1", "Mastering2", "Stopped", "StoppedMeasured", "MasteringStopped",
+    "Measured1Unplaced", "Measured2Unplaced", "Mastering1Unplaced", "Mastering2Unplaced", "StoppedMeasuredUnplaced", "MasteringStoppedUnplaced" };
 constexpr const char* kEventNames[] = { "Measured1", "Measured2", "Mastered" };
 constexpr const char* kRejectionNames[] = { "None", "FloatingPointEnvironment", "NoSource", "NotPlaced", "NotMeasured",
     "Busy", "NoJob", "NoMaster", "UnknownTarget", "NotOffered", "UnknownJob", "UnknownMaster",
@@ -249,6 +251,14 @@ struct Situation
 
 Situation situation (Column column, bool manual = true, const char* target = nullptr, std::uint32_t channels = 2)
 {
+    if (column >= Column::Measured1Unplaced)
+    {
+        constexpr Column placed[] { Column::Measured1, Column::Measured2, Column::Mastering1, Column::Mastering2, Column::StoppedMeasured, Column::MasteringStopped };
+        auto x = situation (placed[std::size_t (column) - std::size_t (Column::Measured1Unplaced)], manual, target, channels);
+        detail::Inspector::unplace (*x.s);
+        ok (x.s->column() == column, "unplaced situation selects its explicit table column");
+        return x;
+    }
     Situation x { fresh(), makeAudio (channels, 4800) };
     Session& s = *x.s;
     bool good = true;
@@ -357,7 +367,8 @@ void everyCellOfTheTable()
             Session& s = *x.s;
             const Request r = validRequest (Command (c), x, 1000 + c);
             // Measured2 admits target-dependent needles cancellation; this fixture has no active job.
-            const Rejection cell = Command (c) == Command::Cancel && (Column (col) == Column::Measured2 || Column (col) == Column::StoppedMeasured)
+            const Rejection cell = Command (c) == Command::Cancel && (Column (col) == Column::Measured2 || Column (col) == Column::StoppedMeasured
+                || Column (col) == Column::Measured2Unplaced || Column (col) == Column::StoppedMeasuredUnplaced)
                 ? Rejection::NoJob : Table::commands[c].cell[col];
             const std::string what = std::string (kCommandNames[c]) + " in " + kColumnNames[col];
             if (cell == Rejection::None)

@@ -677,6 +677,7 @@ add_custom_command(OUTPUT ${FELITRONICS_SESSION_TYPES}
     DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/version.txt
             ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake
             ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec-schema.json
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-abi-v1.txt
             ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-runtime.mjs.in
             ${CMAKE_CURRENT_SOURCE_DIR}/src/CodecSchema.h VERBATIM)
 add_custom_target(felitronics_session_types ALL DEPENDS ${FELITRONICS_SESSION_TYPES})

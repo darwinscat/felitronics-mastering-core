@@ -36,7 +36,7 @@ struct Fill
         else { T v {}; value (v); x = v; }
     }
     template <class T> void value (std::span<const T>&) {}
-    template <class T> void optionalField (std::string_view name, T& x) { field (name, x); }
+    template <class T, class D> void optionalField (std::string_view name, T& x, const D&) { field (name, x); }
     template <class T> void field (std::string_view, T& x) { value (x); }
 };
 }

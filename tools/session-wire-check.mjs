@@ -14,6 +14,9 @@ assert.equal(/FC_SESSION_CONFIG_VERSION: "([0-9a-f]{16})"/.exec(source)?.[1], ve
 const snapshot = JSON.parse(snapshotJson), events = JSON.parse(eventsJson);
 assert(accepts(snapshot, 'SessionSnapshot'));
 assert(accepts(events, 'ReadonlyArray<SessionEvent>'));
+const frozen = readFileSync(new URL('./session-abi-v1.txt', import.meta.url), 'utf8').split(/\r?\n/);
+assert(accepts(JSON.parse(frozen.find(line => line.startsWith('{"eqCurve"'))), 'SessionSnapshot'), 'frozen v1 snapshot is accepted by the generated declaration');
+assert(accepts(JSON.parse(frozen.find(line => line.startsWith('['))), 'ReadonlyArray<SessionEvent>'), 'frozen v1 events may omit appended metadata and reading fields');
 assert.equal(snapshot.sourceBytes, Number.MAX_SAFE_INTEGER);
 assert.equal(snapshot.integratedLufs, '-Infinity');
 function rows(row, hex) {

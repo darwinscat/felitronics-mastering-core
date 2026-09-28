@@ -919,19 +919,259 @@
     "measurements": "ReadonlyArray<SessionMeasurementResult>"
   },
   "optionalFields": {
-    "Snapshot": [
-      "measurementStorage",
-      "measurements",
-      "needlesJob",
-      "needlesSource",
-      "needlesNeedDb",
-      "needlesCeilingDb",
-      "needlesProgress",
-      "needlesBytes",
-      "needlesLargestBlockBytes",
-      "needlesRunsTruncated",
-      "canContinueMeasurement",
-      "measurementResumeState"
-    ]
+    "Snapshot": {
+      "measurementStorage": {
+        "default": "MeasurementStorage {}",
+        "description": "Zero byte counts."
+      },
+      "measurements": {
+        "default": "std::span<const MeasurementResult> {}",
+        "description": "No published measurements."
+      },
+      "needlesJob": {
+        "default": "JobId {}",
+        "description": "No needles job."
+      },
+      "needlesSource": {
+        "default": "std::uint64_t {}",
+        "description": "No needles source identity."
+      },
+      "needlesNeedDb": {
+        "default": "std::optional<double> {}",
+        "description": "Unknown loudness need (null)."
+      },
+      "needlesCeilingDb": {
+        "default": "std::optional<double> {}",
+        "description": "Unknown needles ceiling (null)."
+      },
+      "needlesProgress": {
+        "default": "Phase {}",
+        "description": "Stream phase with all progress values zero."
+      },
+      "needlesBytes": {
+        "default": "0.0",
+        "description": "Zero declared needles bytes."
+      },
+      "needlesLargestBlockBytes": {
+        "default": "0.0",
+        "description": "Zero declared needles block size."
+      },
+      "needlesRunsTruncated": {
+        "default": "false",
+        "description": "No known truncation."
+      },
+      "canContinueMeasurement": {
+        "default": "false",
+        "description": "No known resumable measurement."
+      },
+      "measurementResumeState": {
+        "default": "State::Empty",
+        "description": "No known state to resume."
+      },
+      "mandatoryMeasurementsReady": {
+        "default": "false",
+        "description": "Mandatory readiness is unknown."
+      },
+      "devicesPlaced": {
+        "default": "false",
+        "description": "Device placement is unknown."
+      }
+    }
+  },
+  "optionalWireFields": {
+    "ReadingPayload": {
+      "grid": {
+        "defaultJson": "{\"firstFrame\":\"0\",\"stepFrames\":\"0\",\"framesRead\":\"0\",\"sampleRate\":0}",
+        "description": "Unknown grid; all coordinates and rate are zero."
+      },
+      "momentaryReason": {
+        "defaultJson": "0",
+        "description": "Pending."
+      },
+      "shortTermReason": {
+        "defaultJson": "0",
+        "description": "Pending."
+      },
+      "clips": {
+        "defaultJson": "{\"byteOffset\":0,\"length\":0,\"stride\":6}",
+        "description": "Empty six-column clip rows."
+      },
+      "totalRuns": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown total, zero."
+      },
+      "storedRuns": {
+        "defaultJson": "\"0\"",
+        "description": "No stored runs, zero."
+      },
+      "tailFrames": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown tail coverage, zero."
+      },
+      "runsComplete": {
+        "defaultJson": "false",
+        "description": "Completeness is unknown."
+      },
+      "finished": {
+        "defaultJson": "false",
+        "description": "Completion is unknown."
+      }
+    },
+    "PhaseEvent": {
+      "source": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown source identity."
+      },
+      "revision": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown revision."
+      },
+      "phase": {
+        "defaultJson": "0",
+        "description": "Unknown phase; Stream (0)."
+      },
+      "completedWork": {
+        "defaultJson": "0",
+        "description": "No known completed work."
+      },
+      "totalWork": {
+        "defaultJson": "0",
+        "description": "Unknown total work."
+      },
+      "state": {
+        "defaultJson": "0",
+        "description": "Unknown state; Empty (0)."
+      }
+    },
+    "FactEvent": {
+      "source": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown source identity."
+      },
+      "revision": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown revision."
+      },
+      "phase": {
+        "defaultJson": "0",
+        "description": "Unknown phase; Stream (0)."
+      },
+      "completedWork": {
+        "defaultJson": "0",
+        "description": "No known completed work."
+      },
+      "totalWork": {
+        "defaultJson": "0",
+        "description": "Unknown total work."
+      },
+      "state": {
+        "defaultJson": "0",
+        "description": "Unknown state; Empty (0)."
+      }
+    },
+    "ReadingEvent": {
+      "source": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown source identity."
+      },
+      "revision": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown revision."
+      },
+      "phase": {
+        "defaultJson": "0",
+        "description": "Unknown phase; Stream (0)."
+      },
+      "completedWork": {
+        "defaultJson": "0",
+        "description": "No known completed work."
+      },
+      "totalWork": {
+        "defaultJson": "0",
+        "description": "Unknown total work."
+      },
+      "state": {
+        "defaultJson": "0",
+        "description": "Unknown state; Empty (0)."
+      }
+    },
+    "DoneEvent": {
+      "source": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown source identity."
+      },
+      "revision": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown revision."
+      },
+      "phase": {
+        "defaultJson": "0",
+        "description": "Unknown phase; Stream (0)."
+      },
+      "completedWork": {
+        "defaultJson": "0",
+        "description": "No known completed work."
+      },
+      "totalWork": {
+        "defaultJson": "0",
+        "description": "Unknown total work."
+      },
+      "state": {
+        "defaultJson": "0",
+        "description": "Unknown state; Empty (0)."
+      }
+    },
+    "RejectedEvent": {
+      "source": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown source identity."
+      },
+      "revision": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown revision."
+      },
+      "phase": {
+        "defaultJson": "0",
+        "description": "Unknown phase; Stream (0)."
+      },
+      "completedWork": {
+        "defaultJson": "0",
+        "description": "No known completed work."
+      },
+      "totalWork": {
+        "defaultJson": "0",
+        "description": "Unknown total work."
+      },
+      "state": {
+        "defaultJson": "0",
+        "description": "Unknown state; Empty (0)."
+      }
+    },
+    "ErrorEvent": {
+      "source": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown source identity."
+      },
+      "revision": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown revision."
+      },
+      "phase": {
+        "defaultJson": "0",
+        "description": "Unknown phase; Stream (0)."
+      },
+      "completedWork": {
+        "defaultJson": "0",
+        "description": "No known completed work."
+      },
+      "totalWork": {
+        "defaultJson": "0",
+        "description": "Unknown total work."
+      },
+      "state": {
+        "defaultJson": "0",
+        "description": "Unknown state; Empty (0)."
+      }
+    }
   }
 }

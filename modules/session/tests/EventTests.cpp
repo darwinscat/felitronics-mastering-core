@@ -30,6 +30,7 @@ struct felitronics::session::detail::Inspector
     static void state (Session& s, State state) { s.state_ = state; }
     static void measurementUnit (Session& s, std::uint32_t unit) { s.sourceMeasurements_->cursor = unit; s.sourceMeasurements_->stage = 99; s.measurementUnit_ = 2; }
     static void noMasterRoom (Session& s) { s.masterRoom_ = s.masterCount_; }
+    static void unplace (Session& s) { s.devicesPlaced_ = false; }
     static std::uint64_t sequence (const Session& s) { return s.sequence_; }
     static void fillBatch (Session& s, std::size_t count) { for (std::size_t i = 0; i < count; ++i) s.emit ({}); }
 };
@@ -187,17 +188,20 @@ void tableBetweenSteps()
     for (std::size_t col = 0; col < kColumns; ++col)
         for (const auto& row : Table::commands)
         {
+            constexpr unsigned placedColumns[] { 2, 3, 4, 5, 7, 8 };
+            const auto placed = col < 9 ? col : placedColumns[col - 9];
             auto s = fresh();
             MasterId kept = 0;
-            if (col != 0) (void) apply (*s, audio.load());
-            if (col >= 2 && col != 6)
+            if (placed != 0) (void) apply (*s, audio.load());
+            if (placed >= 2 && placed != 6)
             {
-                budget::measure (*s, col != 3 && col != 5);
+                budget::measure (*s, placed != 3 && placed != 5);
                 kept = apply (*s, command::Master { 10 }).job;
                 (void) step (*s, 4);
-                if (col == 4 || col == 5 || col == 8) { (void) apply (*s, command::Master { 11 }); (void) step (*s, 1); }
+                if (placed == 4 || placed == 5 || placed == 8) { (void) apply (*s, command::Master { 11 }); (void) step (*s, 1); }
             }
-            if (col >= 6) (void) apply (*s, command::Cancel { 22, s->measurementJob() });
+            if (placed >= 6) (void) apply (*s, command::Cancel { 22, s->measurementJob() });
+            if (col >= 9) detail::Inspector::unplace (*s);
             (void) apply (*s, command::SetManual { 12, true });
             (void) snapshot (*s);
             const auto before = encoded (snapshot (*s).view());
