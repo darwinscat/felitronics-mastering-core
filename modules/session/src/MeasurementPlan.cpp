@@ -5,6 +5,7 @@
 #include "MeasurementPlan.h"
 #include "MeasurementWorkspace.h"
 #include "LiveMeasurements.h"
+#include "JsonNumber.h"
 #include "Rules.h"
 #include "BuildContract.h"
 #include <felitronics/storage/VectorBytes.h>
@@ -58,6 +59,9 @@ MeasurementParameters MeasurementPlan::parametersFor (const Pcm& pcm) noexcept
     const auto blockFrames = std::max<std::uint64_t> (1, std::uint64_t (std::floor (double (pcm.sampleRate) * 0.01 + 0.5)));
     p.lowEnd.maxBlocks = int (std::min<std::uint64_t> (std::uint64_t (p.lowEnd.maxBlocks), pcm.frames / blockFrames + 1u));
     p.clipRuns = int (std::min<std::uint64_t> (std::uint64_t (p.clipRuns), pcm.frames * pcm.channelCount));
+    // The all-target source readings include the 150 Hz split alongside the main 120 Hz and infra-low splits.
+    p.lowEnd150 = p.lowEnd;
+    p.lowEnd150.crossoverHz = 150;
     p.infraLow = p.lowEnd;
     p.infraLow.crossoverHz = number (low.find ("infraLowCrossoverHz"));
     const auto bursts = engine.find ("stereoBursts");
@@ -68,6 +72,13 @@ MeasurementParameters MeasurementPlan::parametersFor (const Pcm& pcm) noexcept
     p.bursts.enterDb = number (bursts.find ("enterDb"));
     p.bursts.exitDb = number (bursts.find ("exitDb"));
     p.bursts.maxEvents = int (number (bursts.find ("eventCapacity")));
+    const auto burstHop = std::max<std::uint64_t> (1, std::uint64_t (std::floor (double (pcm.sampleRate) * p.bursts.hopMs / 1000.0 + 0.5)));
+    // At most one event begins per hop; at most one distinct value arrives per source frame/channel.
+    p.bursts.maxEvents = int (std::min<std::uint64_t> (std::uint64_t (p.bursts.maxEvents), pcm.frames / burstHop + 1u));
+    p.forensics.maxDistinctValues = int (std::min<std::uint64_t> (std::uint64_t (p.forensics.maxDistinctValues), pcm.frames + 1u));
+    const auto humGeometry = analysis::HumDetector::geometryFor (double (pcm.sampleRate), p.hum);
+    if (humGeometry.ok)
+        p.hum.maxStretches = int (std::min<std::uint64_t> (std::uint64_t (p.hum.maxStretches), pcm.frames / std::uint64_t (humGeometry.hop) + 1u));
     const auto crest = engine.find ("crest");
     for (std::size_t i = 0; i < 3; ++i) p.crest.bandEdgeHz[i] = number (crest.find ("bandEdgesHz")[i]);
     p.crest.hopMs = number (crest.find ("hopMs"));
@@ -102,10 +113,12 @@ MeasurementPlan MeasurementPlan::storageFor (const Pcm& pcm, const MeasurementPa
          + storage::kLoudnessProxies * storage::kVectorProxyBytes, 4u * (pcm.frames / (10u * sub) + 1u));
     const auto clips = analysis::ClipDetector::storageFor (rate, channels, p.clipRuns);
     set (Analyzer::Clipping, clips.ok, sizeof (analysis::ClipDetector) + clips.firstBytes(), clips.runEntries * 6u);
-    for (std::size_t i = 0; i < 2; ++i)
+    const std::array lowIds { Analyzer::LowEnd, Analyzer::InfraLow, Analyzer::LowEnd150 };
+    const std::array lowParameters { p.lowEnd, p.infraLow, p.lowEnd150 };
+    for (std::size_t i = 0; i < lowIds.size(); ++i)
     {
-        const auto low = analysis::LowEnd::storageFor (rate, channels, i == 0 ? p.lowEnd : p.infraLow);
-        set (i == 0 ? Analyzer::LowEnd : Analyzer::InfraLow, low.ok, sizeof (analysis::LowEnd) + low.firstBytes(),
+        const auto low = analysis::LowEnd::storageFor (rate, channels, lowParameters[i]);
+        set (lowIds[i], low.ok, sizeof (analysis::LowEnd) + low.firstBytes(),
              low.blockRecords * 8u + low.bands * 12u + analysis::LowEnd::kHistogramBins);
     }
     const auto forensics = analysis::SourceForensics::storageFor (rate, channels, p.forensics);
@@ -132,16 +145,27 @@ MeasurementPlan MeasurementPlan::storageFor (const Pcm& pcm, const MeasurementPa
     auto& s = out.storage;
     s.sourceBytes = double (pcm.frames * pcm.channelCount * sizeof (float));
     s.workspaceBytes = double (sizeof (MeasurementWorkspace) + sizeof (LiveMeasurements));
-    for (const auto& a : out.analyzers) { s.workspaceBytes += double (a.workspace); s.resultBytes += double (a.result); }
-    s.copyBytes = s.resultBytes;
-    // A double's longest JSON form is 24 bytes; a row element has a comma as well. 32 includes both.
-    // Metadata names expand to at most six bytes per UTF-8 byte. Six times the owned representation bounds them.
-    s.codecBytes = 6.0 * s.resultBytes;
+    s.copyBytes = double ((kAnalyzers - streaming.size()) * sizeof (MeasurementResult));
+    for (const auto id : streaming)
+    {
+        const auto& a = out.analyzers[std::size_t (id)];
+        s.workspaceBytes += double (a.workspace);
+        // Scalar names and array descriptors are already inline in LiveMeasurements, priced above.
+        s.resultBytes += double (a.rowValues * sizeof (double));
+        s.copyBytes += double (a.result);
+    }
+    // fc_session transports numeric rows as binary f64. Scalar JSON uses exact decimals, which can
+    // exceed a thousand bytes; reserve the writer's own capacity for every possible scalar. Text and
+    // record framing retain the escaping bound. Plain JSON row exports query Codec::encodedBytes
+    // separately: an optional export buffer is not a condition for admitting the web measurement.
+    s.codecBytes = s.resultBytes + 6.0 * (s.copyBytes - s.resultBytes)
+                 + double (streaming.size() * kMeasurementNumbers * JsonNumber::capacity);
     // The allocator allowance covers headers/alignment and MSVC's 31-byte large-vector padding.
     // At most 256 requests per analyzer for the declared one/two-channel preparations and output copies.
-    s.allocatorBytes = double (kAnalyzers * 256u * 64u);
-    s.loadPeakBytes = 2.0 * s.sourceBytes + s.allocatorBytes;
-    // All workspaces are counted together until an execution stage proves that its predecessor has been destroyed.
+    s.allocatorBytes = double (streaming.size() * 256u * 64u);
+    s.loadPeakBytes = 2.0 * s.sourceBytes + double (sizeof (MeasurementWorkspace) + sizeof (LiveMeasurements)) + s.allocatorBytes;
+    // Streaming instruments coexist. Include one detached result and its serialization even if requested mid-stream.
+    // Future instruments and target-dependent needles have their own admission; unused maxima are not load demand.
     s.workPeakBytes = s.sourceBytes + s.resultBytes + s.workspaceBytes + s.copyBytes + s.codecBytes + s.allocatorBytes;
     s.peakBytes = std::max (s.loadPeakBytes, s.workPeakBytes);
     s.largestBlockBytes = std::max ({ s.sourceBytes, s.resultBytes, s.workspaceBytes, s.codecBytes });
@@ -160,24 +184,18 @@ std::uint64_t MeasurementPlan::key (std::uint64_t pcmHash, const MeasurementPara
     h.add (p.programme.tailWindowMs);
     h.add (p.programme.infraLowHz);
     h.add (p.programme.maxDurationSec);
-    h.add (p.lowEnd.crossoverHz);
-    h.add (p.lowEnd.lowNoteHz);
-    h.add (p.lowEnd.highNoteHz);
-    h.add (p.lowEnd.tuningHz);
-    h.add (p.lowEnd.fftOrder);
-    h.add (p.lowEnd.hop);
-    h.add (p.lowEnd.dutyThresholdDb);
-    h.add (p.lowEnd.skipBlocks);
-    h.add (p.lowEnd.maxBlocks);
-    h.add (p.infraLow.crossoverHz);
-    h.add (p.infraLow.lowNoteHz);
-    h.add (p.infraLow.highNoteHz);
-    h.add (p.infraLow.tuningHz);
-    h.add (p.infraLow.fftOrder);
-    h.add (p.infraLow.hop);
-    h.add (p.infraLow.dutyThresholdDb);
-    h.add (p.infraLow.skipBlocks);
-    h.add (p.infraLow.maxBlocks);
+    for (const auto& low : { p.lowEnd, p.infraLow, p.lowEnd150 })
+    {
+        h.add (low.crossoverHz);
+        h.add (low.lowNoteHz);
+        h.add (low.highNoteHz);
+        h.add (low.tuningHz);
+        h.add (low.fftOrder);
+        h.add (low.hop);
+        h.add (low.dutyThresholdDb);
+        h.add (low.skipBlocks);
+        h.add (low.maxBlocks);
+    }
     h.add (p.forensics.fftOrder);
     h.add (p.forensics.hop);
     h.add (p.forensics.cellWidthHz);

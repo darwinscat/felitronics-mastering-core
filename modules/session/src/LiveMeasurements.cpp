@@ -62,10 +62,10 @@ void Session::stepMeasurements() noexcept
     if (live.stage < 3)
     {
         const auto plan = detail::MeasurementPlan::storageFor (pcm, detail::MeasurementPlan::parametersFor (pcm));
-        const auto id = Analyzer (live.stage);
+        const auto id = detail::MeasurementPlan::streaming[live.stage];
         const auto& demand = plan.analyzers[live.stage];
         Checked request; request.bytes = demand.workspace + demand.rowValues * sizeof (double);
-        request.largestBlockBytes = request.bytes;
+        request.largestBlockBytes = std::max (demand.workspace, demand.rowValues * sizeof (double));
         const auto checked = this->demand (request);
         if (checked.rejection != Rejection::None)
         {

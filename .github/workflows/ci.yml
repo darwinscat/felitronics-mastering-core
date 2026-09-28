@@ -62,9 +62,10 @@ jobs:
           felitronics_session_config_decisions_tests felitronics_session_text_tests
           felitronics_session_abi_tests felitronics_session_abi_v1_tests felitronics_session_abi_probe
           felitronics_session_event_tests felitronics_session_project_tests felitronics_session_replay_tests
-          felitronics_session_measurement_tests felitronics_session_live_tests
+          felitronics_session_measurement_tests felitronics_session_live_tests felitronics_session_needles_tests
+          felitronics_session_measurement_budget_tests
       - name: Test allocation budgets with iterator debugging
-        # Seventeen named suites, including live measurements; the full generation walk stays in Release.
+        # Nineteen named suites, including live and needles budgets; the full generation walk stays in Release.
         run: |
           node tools/tests/windows-debug.mjs --self-test
           node tools/tests/windows-debug.mjs build-debug
@@ -355,18 +356,25 @@ jobs:
         # walk). Under SAFE_HEAP they are the whole tail of this step, each alone on a core — the generation walk for
         # eighteen minutes — because one test cannot be split by -j. They add nothing here: the same sweeps already
         # ran above for their numbers, and natively under ASan for memory safety, which is the stronger instrument.
+        # The ten-minute memory fixture also runs above; the four-second fixture covers the checked allocation path.
         run: |
           cmake --preset wasm-audio -B build-wasm-checked $CORE_TAG -DFELITRONICS_WASM_ASSERTIONS=2 \
                 -DCMAKE_EXE_LINKER_FLAGS="-sSAFE_HEAP=1 -sSTACK_OVERFLOW_CHECK=2"
           cmake --build build-wasm-checked -j "$(nproc)"
-          ctest --test-dir build-wasm-checked -j "$(nproc)" --output-on-failure --no-tests=error -E 'delivered_ceiling|loudness_solver|clip_detector|session_abi_generation'
+          ctest --test-dir build-wasm-checked -j "$(nproc)" --output-on-failure --no-tests=error -E 'delivered_ceiling|loudness_solver|clip_detector|session_abi_generation|session_measurement_budget_600s'
       - name: The native references — the CLIs every comparison below diffs against
         # Configured once, here, and the core it fetched is the core the wasm modules are built against in the
         # next step: two fetches of one tag are one tree, but "the same core" should be a fact of the run, not
         # of the tag.
         run: |
-          cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release -DFELITRONICS_MASTERING_BUILD_TESTS=OFF $CORE_TAG
-          cmake --build build-native -j "$(nproc)" --target fcore_measure fcore_master fcore_session
+          cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release -DFELITRONICS_MASTERING_BUILD_TESTS=ON $CORE_TAG
+          cmake --build build-native -j "$(nproc)" --target fcore_measure fcore_master fcore_session felitronics_session_needles_tests
+      - name: Retained needles — native and both Wasm tiers, bit-exact
+        run: |
+          node tools/tests/needles-parity.mjs --check-wiring
+          node tools/tests/needles-parity.mjs build-native/modules/session/felitronics_session_needles_tests \
+            build-wasm-audio/modules/session/felitronics_session_needles_tests.js \
+            build-wasm-checked/modules/session/felitronics_session_needles_tests.js
       - name: The wasm modules build (tools/wasm/build.sh)
         run: |
           export FELITRONICS_CORE_DIR="$(sed -n 's/^FELITRONICS_MASTERING_CORE_SOURCE_DIR:INTERNAL=//p' build-native/CMakeCache.txt)"
@@ -751,9 +759,7 @@ jobs:
         #     compare a wrong demand with itself.
         run: |
           set -euo pipefail
-          # build-native was configured with tests OFF (it only needed fcore_measure); turning them on
-          # re-uses its object cache and adds this one target.
-          cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release -DFELITRONICS_MASTERING_BUILD_TESTS=ON $CORE_TAG
+          # The native references already enabled tests for the retained needles comparison.
           cmake --build build-native -j "$(nproc)" --target felitronics_analysis_abi_tests
           ./build-native/tools/felitronics_analysis_abi_tests --storage-table > storage-native.txt
           test -s storage-native.txt

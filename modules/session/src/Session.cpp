@@ -83,7 +83,11 @@ MeasurementStorage Session::measurementStorage (const Pcm& pcm) const noexcept
     if (pcm.sampleRate < kMinSampleRate || pcm.channelCount < 1 || pcm.channelCount > 2 || pcm.frames == 0) return {};
     const auto plan = detail::MeasurementPlan::storageFor (pcm, detail::MeasurementPlan::parametersFor (pcm));
     auto result = plan.storage;
-    result.loadPeakBytes += liveBytes();
+    // The old source is freed before the new PCM copy. Its live storage overlaps the caller's input,
+    // not both input and replacement copy. New control objects can briefly coexist with the old ones.
+    const auto controls = double (sizeof (detail::MeasurementWorkspace) + sizeof (detail::LiveMeasurements));
+    result.loadPeakBytes = std::max (result.loadPeakBytes + double (createBytes()),
+                                    liveBytes() + result.sourceBytes + controls + result.allocatorBytes);
     result.workPeakBytes += double (createBytes());
     result.peakBytes = std::max (result.loadPeakBytes, result.workPeakBytes);
     return result;

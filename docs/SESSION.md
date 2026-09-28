@@ -226,7 +226,7 @@ from the code, and ctest holds the text between the markers below to that output
 | revertEdits | NoSource | NotPlaced | yes | yes | yes | yes | NotPlaced | yes | yes |
 | setManual | yes | yes | yes | yes | yes | yes | yes | yes | yes |
 | master | NoSource | NotMeasured | yes | yes | Busy | Busy | NotMeasured | yes | Busy |
-| cancel | NoJob | yes | yes | NoJob | yes | yes | NoJob | NoJob | yes |
+| cancel | NoJob | yes | yes | yes | yes | yes | NoJob | yes | yes |
 | forget | NoSource | NoMaster | yes | yes | yes | yes | NoMaster | yes | yes |
 | importProject | NoSource | NotPlaced | yes | yes | yes | yes | NotPlaced | yes | yes |
 | continueMeasurement | NoJob | NoJob | NoJob | NoJob | NoJob | NoJob | yes | yes | yes |
@@ -557,6 +557,8 @@ the source, completed results, analyzer workspace and saved progress; unfinished
 position without feeding silence or repeating a completed instrument. The snapshot publishes its availability and
 the state it resumes. Stopped, StoppedMeasured, and MasteringStopped are explicit table columns for the stopped state
 before placement, after placement, and with a master running. Cancelling a master ends only that overlay.
+Cancellation in either measured state or StoppedMeasured returns `NoJob` only when no measurement, master or needles job runs.
+A target change after phase two can start needles; its active ID can be cancelled in `Measured2`.
 A failed Driver transition publishes `Error{Contract, None}` and drops that job.
 Every internal completion checks its captured job id, and measurement completions also check the captured source hash.
 A stale completion changes nothing, including when the same samples are loaded again or a newer master runs.
@@ -569,7 +571,9 @@ term to `uint64_t` before addition. Copy traps before allocating, in every confi
 reading-point storage exceeds `size_t`; it never allocates a wrapped size.
 
 `Measurements.h` adds owned analyzer results: named optional numbers with reasons, named numeric arrays with frame
-grids, total/stored counters and completeness. Each source has one result per analyzer. `OwnedMeasurements::copy`
+grids, total/stored counters and completeness. Each source has one result per analyzer. The all-target plan retains
+independent 120 Hz (`LowEnd`), 150 Hz (`LowEnd150`) and infra-low (`InfraLow`) readings, each with its own preparation
+and result demand. `LowEnd150` is appended after the existing analyzer identities. `OwnedMeasurements::copy`
 copies every name and row; snapshot copies therefore survive workspace destruction, replacement loads and session
 destruction. A `Measurement` event owns the result identity, status, counters and revision; its numeric data is read
 from the corresponding snapshot. The codec generator describes both forms, including transferable f64 rows.
@@ -583,9 +587,15 @@ retained loudness and true-peak readings through the controller seam; see [NEEDL
 `measurementStorage` exposes source, result, workspace, copy, codec and allocator demands and the maximum live
 set across load and work. Native `storageFor` calls share the exact parameter records used for preparation, including
 the separate loudness meter and waveform/stereo columns. Nested spectrum and band-burst storage is included only
-through its parent analyzer. The estimate conservatively includes every available workspace simultaneously, a
-detached result copy and JSON serialization. Load demand also includes the previous live session, temporary input
-PCM and source-name copies. The largest-block demand is conservative; capabilities remain the shell's limits.
+through its parent analyzer. The whole-work estimate includes only the pump's declared streaming instruments:
+loudness, clipping and programme report. They coexist with retained row buffers, one detached snapshot and its
+serialization. Scalar metadata already inside the live output object is counted once. The codec reserve covers the web transport's binary f64 rows and JSON metadata. Exact scalar decimals use
+the codec writer's maximum width; text uses its escaping bound. Optional plain-JSON exports query their exact
+`Codec::encodedBytes` separately and are not reserved for every load. Per-analyzer prices remain available for separate preparations;
+scheduling another analyzer must declare its lifetime before it runs. Burst, distinct-value and hum capacities
+are bounded by the source's possible observations without changing analysis thresholds or arithmetic.
+Load demand takes the maximum of old storage plus caller input, and new storage plus its input copy: old and
+replacement PCM copies do not coexist. Source-name copies remain included. The largest-block demand is conservative; capabilities remain the shell's limits.
 Embedded TOML views allocate nothing; runtime config/project parsing keeps its separate declared TOML budget.
 There is no excursion index. Needles are re-measured over retained PCM for one ceiling, with a separate
 `needlesStorage` / `fc_session_needles_bytes` demand. Preparation checks capacity before allocating;

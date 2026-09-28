@@ -155,6 +155,8 @@ typedef struct fc_session_storage
 } fc_session_storage;
 
 // Detailed source measurement demand. Counts include one retained result copy and its codec buffers.
+// Codec buffers are the snapshot transport's JSON metadata plus binary f64 rows. A C++ plain-JSON
+// export has a separate exact Codec::encodedBytes query; it is not reserved for every web measurement.
 // Reserved slots preserve the earlier record layout; always zero. Needles have a separate job demand.
 typedef struct fc_session_measurement_storage
 {

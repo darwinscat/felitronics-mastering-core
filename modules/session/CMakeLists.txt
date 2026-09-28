@@ -252,6 +252,18 @@ if(FELITRONICS_BUILD_TESTS)
     add_test(NAME felitronics_session_live_tests COMMAND felitronics_session_live_tests)
     add_test(NAME felitronics_session_live_overflow COMMAND felitronics_session_live_tests --overflow)
 
+    add_executable(felitronics_session_measurement_budget_tests tests/MeasurementBudgetTests.cpp)
+    target_link_libraries(felitronics_session_measurement_budget_tests PRIVATE felitronics::session felitronics::test_support felitronics::analysis_offline felitronics::tempo)
+    target_include_directories(felitronics_session_measurement_budget_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_features(felitronics_session_measurement_budget_tests PRIVATE cxx_std_20)
+    if(NOT MSVC)
+        target_compile_options(felitronics_session_measurement_budget_tests PRIVATE -ffp-contract=off)
+    endif()
+    add_test(NAME felitronics_session_measurement_budget_tests COMMAND felitronics_session_measurement_budget_tests)
+    foreach(seconds 60 600)
+        add_test(NAME felitronics_session_measurement_budget_${seconds}s COMMAND felitronics_session_measurement_budget_tests ${seconds})
+    endforeach()
+
     add_executable(felitronics_session_needles_tests tests/NeedlesTests.cpp)
     target_link_libraries(felitronics_session_needles_tests PRIVATE felitronics::session felitronics::test_support felitronics::analysis_offline)
     target_include_directories(felitronics_session_needles_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -665,6 +677,12 @@ if(FELITRONICS_BUILD_TESTS)
         COMMAND ${CMAKE_COMMAND} -DCHECK=ON -DOUTPUT=${FELITRONICS_SESSION_TYPES} -DVERSION_FILE=${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/version.txt
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake)
     find_program(FELITRONICS_SESSION_NODE NAMES node nodejs REQUIRED)
+    add_test(NAME felitronics_session_needles_parity_controls
+        COMMAND ${FELITRONICS_SESSION_NODE} ${PROJECT_SOURCE_DIR}/tools/tests/needles-parity.mjs
+                --self-test $<TARGET_FILE:felitronics_session_needles_tests>)
+    add_test(NAME felitronics_session_needles_tier_wiring
+        COMMAND ${FELITRONICS_SESSION_NODE} ${PROJECT_SOURCE_DIR}/tools/tests/needles-parity.mjs
+                --check-wiring ${PROJECT_SOURCE_DIR})
     add_executable(felitronics_session_codec_fixture tests/CodecFixture.cpp)
     target_link_libraries(felitronics_session_codec_fixture PRIVATE felitronics::session)
     target_include_directories(felitronics_session_codec_fixture PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
