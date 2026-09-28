@@ -31,8 +31,8 @@
 #   sourceRatePass    optional, false when absent: when the delivery rate is not the source's, the landing is followed
 #                     by one more pass at the source's rate, so the per-band crest of the master is compared with the
 #                     source at the source's own rate. The landing itself is not repeated.
-#   lowShelfDb        optional, absent for none: a low shelf, dB — a property of the medium, not a decision taken from a
-#                     measurement. It is the gain of the [lowShelf] device.
+#   lowDb             optional machine low correction in dB, from the medium, not the measurement.
+#                     Enables [low] at this gain; absent means off at 0 dB. The device is offered on every target.
 #   album             optional: the album loudness, { lufs, desktopOnly }. Album mastering is a project of several
 #                     tracks; desktopOnly = true marks a number the web shell does not offer.
 #
@@ -66,7 +66,7 @@ club         = { group = "delivery", lufs = -8, tp = -1, monoBass = 120, hpfFloo
 # Vinyl. No peak clipper and a ceiling of −3 dBTP for the cutting lathe; mono bass up to 150 Hz, where cutting rooms put
 # their elliptical filter (100…150 Hz); the high-pass is always placed, never below 32 Hz and at a gentle 12 dB/oct;
 # a +0.5 dB low shelf. Never RIAA, never upsampled, never dithered to 16 bits.
-lp           = { group = "delivery", lufs = -14, tp = -3, monoBass = 150, hpfFloor = 32, hpfSlopeDbPerOct = 12, noteLossDb = 1, sampleRate = 0, bitDepth = 24, noClipper = true, hpfAlways = true, lowShelfDb = 0.5 }
+lp           = { group = "delivery", lufs = -14, tp = -3, monoBass = 150, hpfFloor = 32, hpfSlopeDbPerOct = 12, noteLossDb = 1, sampleRate = 0, bitDepth = 24, noClipper = true, hpfAlways = true, lowDb = 0.5 }
 spotify      = { group = "streaming", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
 spotifyLoud  = { group = "streaming", lufs = -11, tp = -2, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
 appleMusic   = { group = "streaming", lufs = -16, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }

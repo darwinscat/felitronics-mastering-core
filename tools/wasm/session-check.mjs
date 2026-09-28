@@ -229,6 +229,10 @@ const readTransfer = what => {
     };
     if (what === 'snapshot') {
         ok(accepts(json, 'SessionSnapshot'), 'snapshot decoded with generated types');
+        if (json.eqCurve.length) {
+            const curve = new Float64Array(heapBytes().buffer, r + json.eqCurve.byteOffset, json.eqCurve.length * json.eqCurve.stride);
+            ok(curve.length === 256 && curve[0] === 20 && Number.isFinite(curve[1]), 'summed EQ curve transfers Hz/dB points');
+        }
         for (const key of ['momentary', 'shortTerm', 'runs', 'machineDifferences']) viewRows(json[key]);
         if (json.machineDifferences.length) {
             const difference = viewRows(json.machineDifferences);
@@ -245,7 +249,7 @@ for (let i = 0; i < 256; ++i) new Float32Array(M.HEAPU32.buffer)[(pcm >>> 2) + i
 M.HEAPU32[pointers >>> 2] = pcm;
 const [meta, metaBytes] = input(JSON.stringify({name:'synthetic', fileRate:48000, bitDepth:24, rateKnown:true}));
 ok(M._fc_session_load(session, 1, 0, pointers, 1, 256, 48001, meta, metaBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
-    && reply().code === 31, 'above maximum rate refused');
+    && reply().code === 29, 'above maximum rate refused');
 ok(M._fc_session_load(session, 1, 0, pointers, 1, 256, 48000, meta, metaBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
     && reply().kind === 'accepted', 'synthetic PCM loaded');
 M._free(meta); M._free(pointers); M._free(pcm);
@@ -258,7 +262,9 @@ while (!done && steps < 32) {
 ok(done && steps === 10 && phases === 10, 'pump reaches done through ten small steps');
 const snapshot = readTransfer('snapshot');
 ok(snapshot.state === 3 && snapshot.sourceBytes === 1024 && snapshot.integratedLufs === 'NaN', 'owned measured snapshot and explicit NaN');
+ok(cmd(session, {kind:'editDevice', commandId:'2', device:7, fields:{on:true, db:1.25}}).kind === 'accepted', 'low edits with hidden panel on streaming');
 ok(cmd(session, {kind:'setManual', commandId:'2', on:true}).kind === 'accepted', 'manual command');
+ok(cmd(session, {kind:'setManual', commandId:'2', on:false}).kind === 'accepted', 'hide panel with edits');
 ok(M._fc_session_export_project_size(session, resultSize) === STATUS.OK, 'project size');
 const projectBytes = M.HEAPU32[resultSize >>> 2], project = M._malloc(projectBytes);
 ok(M._fc_session_export_project_copy(session, project, projectBytes, resultSize) === STATUS.OK, 'project copy');

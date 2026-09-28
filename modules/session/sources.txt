@@ -16,3 +16,4 @@ src/Snapshot.cpp
 src/Codec.cpp
 src/ProjectIO.cpp
 src/Wire.cpp
+src/EqCurve.cpp

@@ -21,6 +21,8 @@ function rows(row, hex) {
     return new Float64Array(bytes.buffer, row.byteOffset, row.length * row.stride);
 }
 assert.deepEqual([...rows(snapshot.momentary, snapshotHex)], [Number.MAX_SAFE_INTEGER, -Infinity, 4, NaN]);
+assert.equal(snapshot.handFieldCount, 2);
+assert.deepEqual([...rows(snapshot.eqCurve, snapshotHex)], [20, -3.5, 1000, 0.25]);
 assert.deepEqual([...rows(snapshot.runs, snapshotHex)], [7, 2, 0.5]);
 assert.deepEqual([...rows(snapshot.machineDifferences, snapshotHex)], [0, 1, 24, 32]);
 assert.equal(events[3].payload.args[1].integer, '-9223372036854775808');

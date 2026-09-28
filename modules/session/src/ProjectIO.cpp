@@ -342,7 +342,6 @@ ImportedProject readProject (std::string_view bytes, std::uint32_t channels, std
     if (out.answer.rejection != Rejection::None) return out;
     out.foreignCore = ! sameVersion (out.project.core, Session::version());
     Devices decided;
-    Answer mismatch;
     placeMachine (rules, out.project.target, channels, decided, offeredDevices);
     eachDevice (out.project.devices, [&] (Device device, const auto& layers)
     {
@@ -360,23 +359,19 @@ ImportedProject readProject (std::string_view bytes, std::uint32_t channels, std
             };
             if (out.answer.rejection == Rejection::None && hand)
             {
-                if (! out.project.manual) fail (Rejection::ManualOff, at ("hand"));
-                else if ((offeredDevices & (1u << unsigned (device))) == 0 || ! offered (rules, out.project.target, channels, device)) fail (Rejection::NotOffered, at ("hand"));
+                // Dither's saved hand may be dormant above its delivery bit depth. It can be reverted,
+                // and is used again on an eligible target; editDevice still requires eligibility.
+                if ((offeredDevices & (1u << unsigned (device))) == 0
+                    || (device != Device::Dither && ! offered (rules, out.project.target, channels, device)))
+                    fail (Rejection::NotOffered, at ("hand"));
             }
             if (! detail::same (double (machine), double (current)))
             {
                 if ((offeredDevices & (1u << unsigned (device))) == 0) fail (Rejection::NotOffered, at ("machine"));
-                if (mismatch.rejection == Rejection::None && ! out.foreignCore)
-                {
-                    mismatch.rejection = Rejection::MachineMismatch;
-                    mismatch.position = position (at ("machine"));
-                    mismatch.device = device; mismatch.field = i;
-                }
                 out.differences[out.differenceCount++] = { device, i, double (machine), double (current) };
             }
         }, layers.machine, layers.hand, Of::layers (decided).machine);
     });
-    if (out.answer.rejection == Rejection::None) out.answer = mismatch;
     return out;
 }
 }

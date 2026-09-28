@@ -25,7 +25,7 @@
 //
 // THE MACHINE'S LAYER starts from the config's defaults for the target and source (src/Devices.h), placed when the first
 // measurement ends and at its types' zeros before. No planner reads the measurements here: nothing in it is a decision
-// taken from one, and mono bass — which the defaults leave off — is off. An imported layer from another core
+// taken from one, and mono bass — which the defaults leave off — is off. An imported layer from any core
 // retains its saved values and provenance; its differences from this placement are exposed by the snapshot.
 //
 // The units, knob domains and slider hints are the config's (modules/session/config/engine.toml, the section of each device);
@@ -59,7 +59,7 @@ template <template <class> class F> struct TargetFields
     F<double> tp {};
 };
 
-// THE DEVICES — the seven of the first release, and the low shelf of the targets that carry one (vinyl). A device is a
+// THE DEVICES — eight devices, including the separate tilt and low tasks on every target. A device is a
 // task with its knobs and its tick (`on`), not a stage of the chain: the high-pass, tilt and the low shelf write one EQ
 // stage. The limiter is always on and has no tick.
 
@@ -115,15 +115,15 @@ template <template <class> class F> struct DitherFields
     F<bool> on {};
 };
 
-// [lowShelf]: the shelf's gain, dB — on a target that carries one.
-template <template <class> class F> struct LowShelfFields
+// [low]: the low shelf's gain, dB — offered on every target.
+template <template <class> class F> struct LowFields
 {
     F<bool> on {};
     F<double> db {};
 };
 
 // The devices, in the order Devices below holds them (and a device edit's alternatives, Commands.h, are listed).
-enum class Device : std::uint8_t { Hpf, MonoBass, Glue, Saturation, Tilt, Limiter, Dither, LowShelf };
+enum class Device : std::uint8_t { Hpf, MonoBass, Glue, Saturation, Tilt, Limiter, Dither, Low };
 
 // A device's two layers: the machine's, complete, and a person's, only what was touched.
 template <template <template <class> class> class Fields> struct Layers
@@ -141,7 +141,7 @@ struct Devices
     Layers<TiltFields> tilt;
     Layers<LimiterFields> limiter;
     Layers<DitherFields> dither;
-    Layers<LowShelfFields> lowShelf;
+    Layers<LowFields> low;
 };
 
 // Values use the field's native numeric domain: flags 0/1, choices their enum value.
@@ -161,7 +161,7 @@ struct Project
     // targetName() gives its key), and a person's edits of its numbers.
     std::uint16_t target = 0;
     TargetFields<Touched> targetEdit {};
-    // The manual mode: without it the device panel is closed — no device is edited, and a person's layers are empty.
+    // The device panel's visibility only. Touched fields remain owned and effective when it is hidden.
     bool manual = false;
     Devices devices {};
 };

@@ -94,13 +94,13 @@ void readRow (View rowView, View byTarget, TargetRow& out) noexcept
     // Optional in a row: absent is their default.
     if (const View v = rowView.find ("noClipper")) r.read (v, out.noClipper);
     else out.noClipper = false;
-    if (const View v = rowView.find ("lowShelfDb"))
+    if (const View v = rowView.find ("lowDb"))
     {
         Decimal d {};
         r.read (v, d);
-        out.lowShelfDb = d;
+        out.lowDb = d;
     }
-    else out.lowShelfDb.reset();
+    else out.lowDb.reset();
     if (const View v = byTarget.find (out.key))
     {
         Decimal d {};
@@ -161,8 +161,8 @@ Rules readRules (View targets, View engine) noexcept
 
     const View tilt = engine.find ("tilt");
     r.knob (tilt.find ("hard"), tilt.find ("step"), tilt.find ("domain"), out.tilt);
-    const View shelf = engine.find ("lowShelf");
-    r.knob (shelf.find ("hard"), shelf.find ("step"), shelf.find ("domain"), out.lowShelf);
+    const View shelf = engine.find ("low");
+    r.knob (shelf.find ("hard"), shelf.find ("step"), shelf.find ("domain"), out.low);
 
     const View clipper = engine.find ("limiter").find ("peakClipper");
     r.read (clipper.find ("manualMinDb"), out.needles.from);

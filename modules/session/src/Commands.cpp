@@ -45,7 +45,7 @@ static_assert (std::variant_size_v<DeviceEdit> == 8 && std::variant_size_v<Devic
 static_assert (std::is_same_v<std::variant_alternative_t<std::size_t (Command::Forget), Request>, command::Forget>
                && std::is_same_v<std::variant_alternative_t<std::size_t (Command::Load), Request>, command::Load>,
                "Request's alternatives are in the order of Command");
-static_assert (std::is_same_v<std::variant_alternative_t<std::size_t (Device::LowShelf), DeviceEdit>, LowShelfFields<Touched>>
+static_assert (std::is_same_v<std::variant_alternative_t<std::size_t (Device::Low), DeviceEdit>, LowFields<Touched>>
                && std::is_same_v<std::variant_alternative_t<std::size_t (Device::Hpf), DeviceMask>, HpfFields<Mark>>,
                "a device edit's alternatives are in the order of Device");
 
@@ -143,17 +143,10 @@ struct Fnv
     void u64 (std::uint64_t v) noexcept { for (int i = 0; i < 8; ++i) byte (std::uint8_t (v >> (8 * i))); }
 };
 
-// A person's layers, taken back: all of them, or those of the devices the target and the source do not offer.
+// A person's layers, taken back only by an explicit target reset.
 void clearHands (Devices& devices) noexcept
 {
     detail::eachDevice (devices, [] (Device, auto& layers) { layers.hand = {}; });
-}
-void clearHandsNotOffered (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices) noexcept
-{
-    detail::eachDevice (devices, [&] (Device d, auto& layers)
-    {
-        if (! detail::offered (rules, row, channels, d)) layers.hand = {};
-    });
 }
 
 std::size_t index (Command c) noexcept { return std::size_t (c); }
@@ -214,8 +207,7 @@ Checked Session::storageFor (const Request& request) const noexcept
     }
     if (const auto* edit = std::get_if<command::EditDevice> (&request))
     {
-        // 3. MANUAL, 4. NAMES, 5. FIELDS
-        if (! project_.manual) return rejected (Rejection::ManualOff);
+        // 3. NAMES, 4. FIELDS
         if ((capabilities_.offeredDevices & (1u << edit->fields.index())) == 0
             || ! detail::offered (rules, project_.target, source_.channels, Device (edit->fields.index())))
             return rejected (Rejection::NotOffered);
@@ -223,9 +215,9 @@ Checked Session::storageFor (const Request& request) const noexcept
     }
     if (const auto* revert = std::get_if<command::RevertEdits> (&request))
     {
-        if (! project_.manual) return rejected (Rejection::ManualOff);
         if ((capabilities_.offeredDevices & (1u << revert->fields.index())) == 0
-            || ! detail::offered (rules, project_.target, source_.channels, Device (revert->fields.index())))
+            || (Device (revert->fields.index()) != Device::Dither
+                && ! detail::offered (rules, project_.target, source_.channels, Device (revert->fields.index()))))
             return rejected (Rejection::NotOffered);
         return {};
     }
@@ -389,7 +381,6 @@ Answer Session::apply (const Request& request) noexcept
         differenceCount_ = 0;
         project_.targetEdit = {};                                   // the new target's numbers, silently
         if (set->onEdits == OnEdits::Reset) clearHands (project_.devices);
-        else clearHandsNotOffered (rules, row, source_.channels, project_.devices);
         // Placed devices are placed again for the new target; unplaced ones wait for the first measurement's end.
         if (placed()) detail::placeMachine (rules, row, source_.channels, project_.devices, capabilities_.offeredDevices);
     }
@@ -427,7 +418,6 @@ Answer Session::apply (const Request& request) noexcept
     else if (const auto* manual = std::get_if<command::SetManual> (&request))
     {
         project_.manual = manual->on;
-        if (! manual->on) clearHands (project_.devices);           // a person's edits go; the machine's stay
     }
     else if (std::get_if<command::Master> (&request) != nullptr)
     {
@@ -476,15 +466,16 @@ Answer Session::apply (const Request& request) noexcept
                 text::Arg::text ({ imported.originalDefaults, sizeof (imported.originalDefaults) })));
             emit (event);
         }
-        if (imported.foreignCore)
+        if (imported.foreignCore || differenceCount_ != 0)
         {
             Notification event;
             event.kind = EventKind::Fact;
-            (void) event.payload.fact.assign (text::Fact::of (text::FactId::MachineDifferences,
+            (void) event.payload.fact.assign (text::Fact::of (imported.foreignCore ? text::FactId::MachineDifferences : text::FactId::SameCoreMachineDifferences,
                 text::Arg::count (std::int64_t (differenceCount_))));
             emit (event);
         }
     }
+    refreshEqCurve();
     answer.revision = ++revision_;
     return answer;
 }
@@ -506,6 +497,7 @@ bool Driver::measured1 (Session& session, JobId job, std::uint64_t source) noexc
     session.state_ = State::Measured1;
     session.measurementUnit_ = 5;
     detail::placeMachine (detail::rules(), session.project_.target, session.source_.channels, session.project_.devices, session.capabilities_.offeredDevices);
+    session.refreshEqCurve();
     ++session.revision_;
     return true;
 }

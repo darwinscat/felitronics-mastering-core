@@ -3,6 +3,8 @@
 
 #include "BuildGuards.h"
 #include "SnapshotStorage.h"
+#include "Devices.h"
+#include "EqCurve.h"
 #include <felitronics/session/Snapshot.h>
 #include <algorithm>
 #include <limits>
@@ -19,7 +21,7 @@ std::uint64_t Snapshot::storageFor (const SnapshotView& v) noexcept
 {
     return detail::snapshotStorage (v.target.size(), v.source.name.size(), v.masters.size_bytes(),
                                     v.momentary.size_bytes(), v.shortTerm.size_bytes(), v.runs.size_bytes())
-         + std::uint64_t (v.machineDifferences.size_bytes());
+         + std::uint64_t (v.machineDifferences.size_bytes()) + std::uint64_t (v.eqCurve.size_bytes());
 }
 Snapshot Snapshot::copy (const SnapshotView& v) noexcept
 {
@@ -49,6 +51,12 @@ Snapshot Snapshot::copy (const SnapshotView& v) noexcept
         std::copy (v.machineDifferences.begin(), v.machineDifferences.end(), out.differences_.get());
         out.view_.machineDifferences = { out.differences_.get(), v.machineDifferences.size() };
     }
+    if (! v.eqCurve.empty())
+    {
+        out.eqCurve_.reset (new EqPoint[v.eqCurve.size()]);
+        std::copy (v.eqCurve.begin(), v.eqCurve.end(), out.eqCurve_.get());
+        out.view_.eqCurve = { out.eqCurve_.get(), v.eqCurve.size() };
+    }
     if (points != 0)
     {
         out.points_.reset (new ReadingPoint[points]);
@@ -73,6 +81,10 @@ Snapshot Session::snapshot() const noexcept
 {
     return Snapshot::copy (buildView());
 }
+void Session::refreshEqCurve() noexcept
+{
+    if (placed()) detail::eqCurve (project_, detail::rules(), double (source_.sampleRate), eqCurve_);
+}
 SnapshotView Session::buildView() const noexcept
 {
     SnapshotView v;
@@ -81,6 +93,14 @@ SnapshotView Session::buildView() const noexcept
     v.mastering = mastering_;
     v.revision = revision_;
     v.project = project_;
+    const auto rules = detail::rules();
+    detail::eachDevice (project_.devices, [&] (Device, const auto& layers)
+    {
+        using Of = detail::DeviceOf<std::remove_cvref_t<decltype (layers.machine)>>;
+        Of::each (rules, [&] (std::uint8_t, const detail::FieldRule&, const auto& hand)
+        { if (hand) ++v.handFieldCount; }, layers.hand);
+    });
+    if (placed()) v.eqCurve = eqCurve_;
     v.target = targetName();
     v.source = source_;
     v.job = job_;

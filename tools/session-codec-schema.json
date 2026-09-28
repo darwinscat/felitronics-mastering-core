@@ -29,7 +29,7 @@
       "Tilt",
       "Limiter",
       "Dither",
-      "LowShelf"
+      "Low"
     ]
   },
   "records": {
@@ -193,25 +193,25 @@
         "hand": "DitherFieldsTouched"
       }
     },
-    "LowShelfFieldsValue": {
-      "cpp": "LowShelfFields<Value>",
+    "LowFieldsValue": {
+      "cpp": "LowFields<Value>",
       "fields": {
         "on": "bool",
         "db": "double"
       }
     },
-    "LowShelfFieldsTouched": {
-      "cpp": "LowShelfFields<Touched>",
+    "LowFieldsTouched": {
+      "cpp": "LowFields<Touched>",
       "fields": {
         "on": "bool?",
         "db": "double?"
       }
     },
-    "LowShelfFieldsLayers": {
-      "cpp": "Layers<LowShelfFields>",
+    "LowFieldsLayers": {
+      "cpp": "Layers<LowFields>",
       "fields": {
-        "machine": "LowShelfFieldsValue",
-        "hand": "LowShelfFieldsTouched"
+        "machine": "LowFieldsValue",
+        "hand": "LowFieldsTouched"
       }
     },
     "Devices": {
@@ -224,7 +224,7 @@
         "tilt": "TiltFieldsLayers",
         "limiter": "LimiterFieldsLayers",
         "dither": "DitherFieldsLayers",
-        "lowShelf": "LowShelfFieldsLayers"
+        "low": "LowFieldsLayers"
       }
     },
     "Project": {
@@ -313,7 +313,9 @@
         "shortTerm": "ReadingPoint[]",
         "runs": "ReadingRun[]",
         "machineDifferences": "MachineDifference[]",
-        "offeredDevices": "uint32"
+        "offeredDevices": "uint32",
+        "handFieldCount": "uint32",
+        "eqCurve": "EqPoint[]"
       }
     },
     "Version": {
@@ -332,6 +334,13 @@
         "fileValue": "double",
         "coreValue": "double"
       }
+    },
+    "EqPoint": {
+      "cpp": "EqPoint",
+      "fields": {
+        "hz": "double",
+        "db": "double"
+      }
     }
   },
   "wireAliases": {
@@ -339,8 +348,8 @@
     "CommandAnswer": "AcceptedAnswer | RejectedAnswer | ContractAnswer",
     "SessionEvent": "PhaseEvent | FactEvent | ReadingEvent | DoneEvent | RejectedEvent | ErrorEvent",
     "SessionCommand": "SetTargetCommand | SetManualCommand | EditTargetCommand | EditDeviceCommand | RevertEditsCommand | MasterCommand | CancelCommand | ForgetCommand",
-    "EditDeviceCommand": "EditDeviceHpfCommand | EditDeviceMonoBassCommand | EditDeviceGlueCommand | EditDeviceSaturationCommand | EditDeviceTiltCommand | EditDeviceLimiterCommand | EditDeviceDitherCommand | EditDeviceLowShelfCommand",
-    "RevertEditsCommand": "RevertEditsHpfCommand | RevertEditsMonoBassCommand | RevertEditsGlueCommand | RevertEditsSaturationCommand | RevertEditsTiltCommand | RevertEditsLimiterCommand | RevertEditsDitherCommand | RevertEditsLowShelfCommand"
+    "EditDeviceCommand": "EditDeviceHpfCommand | EditDeviceMonoBassCommand | EditDeviceGlueCommand | EditDeviceSaturationCommand | EditDeviceTiltCommand | EditDeviceLimiterCommand | EditDeviceDitherCommand | EditDeviceLowCommand",
+    "RevertEditsCommand": "RevertEditsHpfCommand | RevertEditsMonoBassCommand | RevertEditsGlueCommand | RevertEditsSaturationCommand | RevertEditsTiltCommand | RevertEditsLimiterCommand | RevertEditsDitherCommand | RevertEditsLowCommand"
   },
   "wireRecords": {
     "Row": {
@@ -555,13 +564,13 @@
     "EditDeviceDitherFields": {
       "on?": "boolean | null"
     },
-    "EditDeviceLowShelfCommand": {
+    "EditDeviceLowCommand": {
       "kind": "\"editDevice\"",
       "commandId": "string",
       "device": "7",
-      "fields": "EditDeviceLowShelfFields"
+      "fields": "EditDeviceLowFields"
     },
-    "EditDeviceLowShelfFields": {
+    "EditDeviceLowFields": {
       "on?": "boolean | null",
       "db?": "WireNumber | null"
     },
@@ -638,13 +647,13 @@
     "RevertEditsDitherFields": {
       "on?": "boolean"
     },
-    "RevertEditsLowShelfCommand": {
+    "RevertEditsLowCommand": {
       "kind": "\"revertEdits\"",
       "commandId": "string",
       "device": "7",
-      "fields": "RevertEditsLowShelfFields"
+      "fields": "RevertEditsLowFields"
     },
-    "RevertEditsLowShelfFields": {
+    "RevertEditsLowFields": {
       "on?": "boolean",
       "db?": "boolean"
     },
@@ -658,7 +667,8 @@
     "momentary",
     "shortTerm",
     "runs",
-    "machineDifferences"
+    "machineDifferences",
+    "eqCurve"
   ],
   "transportEnums": {
     "Rejection": [
@@ -670,7 +680,6 @@
       "Busy",
       "NoJob",
       "NoMaster",
-      "ManualOff",
       "UnknownTarget",
       "NotOffered",
       "UnknownJob",
@@ -691,7 +700,6 @@
       "ProjectUnknownKey",
       "UnknownDefaults",
       "ProjectCore",
-      "MachineMismatch",
       "NewerDefaults",
       "RateAboveLimit",
       "Memory",

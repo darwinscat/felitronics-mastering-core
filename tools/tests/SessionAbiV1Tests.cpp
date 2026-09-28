@@ -96,7 +96,7 @@ void capabilities()
     const auto st = fc_session_load (h, 1, 0, pcm, 1, 2, 48000, meta, sizeof (meta) - 1, answer, sizeof (answer), &written);
     const auto used = alloc::count.load() - count;
     const std::string_view refused (answer, written);
-    ok (st == FC_SESSION_OK && contains (refused, "\"code\":32") && contains (refused, "\"needBytes\":"), "memory refuses before scanning NaN samples");
+    ok (st == FC_SESSION_OK && contains (refused, "\"code\":30") && contains (refused, "\"needBytes\":"), "memory refuses before scanning NaN samples");
     ok (used == 0 && snapshot (h) == snap, "memory refusal allocates nothing and keeps state");
     const auto batch = events (h);
     ok (contains (batch, "\"kind\":\"error\"") && contains (batch, "\"code\":3") && contains (batch, "\"needBytes\":"), "memory publishes ErrorCode::Memory with demand");
@@ -106,7 +106,7 @@ void capabilities()
     ok (checked.rejection == Rejection::Memory && checked.needBytes == bytes + 8, "direct C++ memory demand is live plus new demand");
     ok (direct.session->apply (command::Load { 1, { pcm, 1, 2, 48001 }, {} }).rejection == Rejection::RateAboveLimit, "direct C++ maximum rate");
     ok (create (full, &h) == FC_SESSION_OK, "normal session");
-    ok (contains (load (h, 48001), "\"code\":31"), "ABI rate limit");
+    ok (contains (load (h, 48001), "\"code\":29"), "ABI rate limit");
     ok (contains (load (h), "\"kind\":\"accepted\""), "rate boundary accepted");
     ok (fc_session_destroy (h) == FC_SESSION_OK, "destroy normal session");
 }
@@ -139,13 +139,13 @@ void directCapabilities()
         if (changed.rejection == Rejection::UnknownTarget) continue;
         const auto& d = r.project().devices;
         ok (!d.hpf.machine.on && !d.monoBass.machine.on && !d.glue.machine.on && !d.saturation.machine.on
-            && !d.tilt.machine.on && !d.dither.machine.on && !d.lowShelf.machine.on && d.limiter.machine.needles == Needles::Off,
+            && !d.tilt.machine.on && !d.dither.machine.on && !d.low.machine.on && d.limiter.machine.needles == Needles::Off,
             "no unoffered machine is active, including after target changes");
     }
     const DeviceEdit edits[] { HpfFields<Touched> {}, MonoBassFields<Touched> {}, GlueFields<Touched> {}, SaturationFields<Touched> {},
-                              TiltFields<Touched> {}, LimiterFields<Touched> {}, DitherFields<Touched> {}, LowShelfFields<Touched> {} };
+                              TiltFields<Touched> {}, LimiterFields<Touched> {}, DitherFields<Touched> {}, LowFields<Touched> {} };
     const DeviceMask masks[] { HpfFields<Mark> {}, MonoBassFields<Mark> {}, GlueFields<Mark> {}, SaturationFields<Mark> {},
-                              TiltFields<Mark> {}, LimiterFields<Mark> {}, DitherFields<Mark> {}, LowShelfFields<Mark> {} };
+                              TiltFields<Mark> {}, LimiterFields<Mark> {}, DitherFields<Mark> {}, LowFields<Mark> {} };
     for (unsigned i = 0; i < 8; ++i)
         ok (r.apply (command::EditDevice { 4, edits[i] }).rejection == Rejection::NotOffered
             && r.apply (command::RevertEdits { 5, masks[i] }).rejection == Rejection::NotOffered, "each unoffered device refuses both edit paths");
@@ -307,8 +307,8 @@ void scenario()
     ok (contains (state, "\"offeredDevices\":1") && contains (state, "\"state\":3"), "snapshot carries offered set and measured state");
     ok (contains (state, "\"momentary\":{\"byteOffset\":") && contains (state, "\"integratedLufs\":\"NaN\""), "snapshot rows are descriptors and scalar NaN is explicit");
     ok (contains (command (h, R"({"kind":"setManual","commandId":"8","on":true})"), "accepted"), "manual mode");
-    ok (contains (command (h, R"({"kind":"editDevice","commandId":"9","device":1,"fields":{"on":true}})"), "\"code\":10"), "unoffered edit refused");
-    ok (contains (command (h, R"({"kind":"revertEdits","commandId":"9","device":1,"fields":{"on":true}})"), "\"code\":10"), "unoffered revert refused");
+    ok (contains (command (h, R"({"kind":"editDevice","commandId":"9","device":1,"fields":{"on":true}})"), "\"code\":9"), "unoffered edit refused");
+    ok (contains (command (h, R"({"kind":"revertEdits","commandId":"9","device":1,"fields":{"on":true}})"), "\"code\":9"), "unoffered revert refused");
     ok (contains (command (h, R"({"fields":{"fq":32},"device":0,"commandId":"10","kind":"editDevice"})"), "accepted"), "field order is free; an offered device is editable");
     ok (contains (command (h, R"({"kind":"revertEdits","commandId":"11","device":0,"fields":{"fq":true}})"), "accepted"), "revert named field");
     ok (contains (command (h, R"({"kind":"editTarget","commandId":"12","fields":{"lufs":-14}})"), "accepted"), "edit target");
@@ -401,7 +401,7 @@ void freezeRegressions()
         const float a[] { std::numeric_limits<float>::quiet_NaN(), 0, 0, 0 }; const float* pcm[] { a, a };
         const auto st = fc_session_load (h, 1, 0, pcm, 2, 4, 48000, meta, sizeof (meta) - 1, json, sizeof (json), &written);
         const auto allocations = alloc::count.load() - before;
-        ok (st == FC_SESSION_OK && contains ({ json, written }, "\"code\":32") && contains ({ json, written }, "\"needBytes\":")
+        ok (st == FC_SESSION_OK && contains ({ json, written }, "\"code\":30") && contains ({ json, written }, "\"needBytes\":")
             && allocations == 0, "ceiling and largest block refuse before NaN sample scan");
         ok (direct.session->setCapacity ({ cap.heapCeilingBytes, cap.largestFreeBlockBytes }) == Status::Ok
             && direct.session->apply (command::Load { 1, { pcm, 2, 4, 48000 }, { "signal" } }).rejection == Rejection::Memory,
@@ -419,7 +419,7 @@ void freezeRegressions()
         ok (contains (command (h, malformed), "\"code\":\"contract\""), "protocol refusal answer");
         const auto rejected = events (h);
         ok (contains (rejected, "\"kind\":\"rejected\"") && ! contains (rejected, "\"kind\":\"phase\"")
-            && contains (rejected, "\"seq\":\"" + std::to_string (seq + 1) + "\"") && contains (rejected, "\"code\":33"),
+            && contains (rejected, "\"seq\":\"" + std::to_string (seq + 1) + "\"") && contains (rejected, "\"code\":31"),
             "malformed command replaces batch and advances sequence once");
     }
     (void) fc_session_step (h, 16, &written);
@@ -428,7 +428,7 @@ void freezeRegressions()
         "command demand comes from the same JSON before allocation");
     const auto masterPrice = price;
     restored.largestFreeBlockBytes = price.largestBlockBytes - 1;
-    ok (fc_session_set_capacity (h, &restored) == FC_SESSION_OK && contains (command (h, master), "\"code\":32"), "fragmented master refused");
+    ok (fc_session_set_capacity (h, &restored) == FC_SESSION_OK && contains (command (h, master), "\"code\":30"), "fragmented master refused");
     ok (fc_session_command_bytes (h, master, sizeof (master) - 1, &price) == FC_SESSION_OK && price.bytes == masterPrice.bytes,
         "demand remains available under insufficient capacity");
     constexpr char project[] = "invalid TOML";
@@ -444,7 +444,7 @@ void freezeRegressions()
     const auto before = alloc::count.load();
     const auto imported = fc_session_import_project (h, 9, 0, project, sizeof (project) - 1, json, sizeof (json), &written);
     const auto allocations = alloc::count.load() - before;
-    ok (imported == FC_SESSION_OK && contains ({ json, written }, "\"code\":32") && allocations == 0,
+    ok (imported == FC_SESSION_OK && contains ({ json, written }, "\"code\":30") && allocations == 0,
         "import checks largest block before parsing malformed bytes");
     price.size = sizeof (price) + 1;
     ok (fc_session_command_bytes (0, nullptr, 1, &price) == FC_SESSION_ERR_STRUCT_TOO_LARGE, "demand output size before handle");

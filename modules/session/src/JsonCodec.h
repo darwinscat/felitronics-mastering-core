@@ -81,11 +81,11 @@ struct Writer
     template <class T> void value (const std::optional<T>& x) noexcept { if (x) value (*x); else text ("null"); }
     template <class T> void value (std::span<const T> values) noexcept
     {
-        if constexpr (std::is_same_v<T, ReadingPoint> || std::is_same_v<T, ReadingRun> || std::is_same_v<T, MachineDifference>)
+        if constexpr (std::is_same_v<T, EqPoint> || std::is_same_v<T, ReadingPoint> || std::is_same_v<T, ReadingRun> || std::is_same_v<T, MachineDifference>)
         {
             if (binaryRows)
             {
-                const unsigned stride = std::is_same_v<T, ReadingPoint> ? 2u : std::is_same_v<T, ReadingRun> ? 3u : 4u;
+                const unsigned stride = (std::is_same_v<T, EqPoint> || std::is_same_v<T, ReadingPoint>) ? 2u : std::is_same_v<T, ReadingRun> ? 3u : 4u;
                 const bool parent = first; first = true; put ('{');
                 field ("byteOffset", double (rowSize * sizeof (double)));
                 field ("length", double (values.size())); field ("stride", stride); put ('}'); first = parent;
@@ -101,6 +101,7 @@ struct Writer
                     {
                         append (double (row.device)); append (double (row.field)); append (row.fileValue); append (row.coreValue);
                     }
+                    else if constexpr (std::is_same_v<T, EqPoint>) { append (row.hz); append (row.db); }
                     else
                     {
                         if constexpr (std::is_same_v<T, ReadingPoint>) index (row.index);
@@ -132,9 +133,11 @@ struct Storage
     ReadingPoint* point = nullptr;
     ReadingRun* run = nullptr;
     MachineDifference* difference = nullptr;
+    std::size_t eqPoints = 0;
+    EqPoint* eqPoint = nullptr;
     std::uint64_t bytes() const noexcept
     {
-        return chars + masters * sizeof (Kept) + points * sizeof (ReadingPoint) + runs * sizeof (ReadingRun) + differences * sizeof (MachineDifference);
+        return chars + masters * sizeof (Kept) + points * sizeof (ReadingPoint) + runs * sizeof (ReadingRun) + differences * sizeof (MachineDifference) + eqPoints * sizeof (EqPoint);
     }
 };
 
@@ -341,6 +344,7 @@ struct Reader
         if constexpr (std::is_same_v<T, Kept>) { count = &storage.masters; out = storage.kept; }
         else if constexpr (std::is_same_v<T, ReadingPoint>) { count = &storage.points; out = storage.point; }
         else if constexpr (std::is_same_v<T, ReadingRun>) { count = &storage.runs; out = storage.run; }
+        else if constexpr (std::is_same_v<T, EqPoint>) { count = &storage.eqPoints; out = storage.eqPoint; }
         else { count = &storage.differences; out = storage.difference; }
         const auto start = *count;
         expect ('[');

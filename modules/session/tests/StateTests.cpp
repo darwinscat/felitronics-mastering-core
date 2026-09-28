@@ -15,7 +15,7 @@
 //   * PLACEMENT: device edits refused before the first measurement ends, taken after it; the manual mode opens the panel.
 //   * A CHANGE OF TARGET: its numbers replaced silently; a person's device edits kept or reset as asked (and dropped for a
 //     device the new target does not offer); the machine's layer placed again.
-//   * THE MANUAL MODE SWITCHED OFF takes back a person's device edits and nothing else.
+//   * THE MANUAL MODE SWITCHED OFF hides the panel and keeps a person's device edits.
 //   * MEMORY IS DECLARED BEFORE THE WORK (law 11d): for every command, check() says what apply() will ask the heap for,
 //     and the allocation counter says it asked exactly that; check() itself, a rejection and every transition ask nothing.
 //   * A MASTER KEEPS ITS RECIPE while the project moves on; a load disarms whatever ran on the old source.
@@ -72,7 +72,7 @@ constexpr const char* kCommandNames[] = { "load", "setTarget", "editTarget", "ed
 constexpr const char* kColumnNames[] = { "Empty", "Loaded", "Measured1", "Measured2", "Mastering1", "Mastering2" };
 constexpr const char* kEventNames[] = { "Measured1", "Measured2", "Mastered" };
 constexpr const char* kRejectionNames[] = { "None", "FloatingPointEnvironment", "NoSource", "NotPlaced", "NotMeasured",
-    "Busy", "NoJob", "NoMaster", "ManualOff", "UnknownTarget", "NotOffered", "UnknownJob", "UnknownMaster",
+    "Busy", "NoJob", "NoMaster", "UnknownTarget", "NotOffered", "UnknownJob", "UnknownMaster",
     "NotFinite", "NotOneOf", "OutOfDomain", "BadChannels", "BadRate", "NoAudio", "TooLong", "NoJobId", "InvalidUtf8" };
 constexpr auto kLastRejection = Rejection::InvalidUtf8;
 static_assert (std::size (kRejectionNames) == std::size_t (kLastRejection) + 1, "a name for every rejection");
@@ -140,7 +140,7 @@ bool sameMachine (const Devices& a, const Devices& b)
     return sameFields (a.hpf.machine, b.hpf.machine) && sameFields (a.monoBass.machine, b.monoBass.machine)
         && sameFields (a.glue.machine, b.glue.machine) && sameFields (a.saturation.machine, b.saturation.machine)
         && sameFields (a.tilt.machine, b.tilt.machine) && sameFields (a.limiter.machine, b.limiter.machine)
-        && sameFields (a.dither.machine, b.dither.machine) && sameFields (a.lowShelf.machine, b.lowShelf.machine);
+        && sameFields (a.dither.machine, b.dither.machine) && sameFields (a.low.machine, b.low.machine);
 }
 
 bool handsEmpty (const Devices& d)
@@ -162,7 +162,7 @@ bool sameProject (const Project& a, const Project& b)
         && sameLayers (a.devices.monoBass, b.devices.monoBass) && sameLayers (a.devices.glue, b.devices.glue)
         && sameLayers (a.devices.saturation, b.devices.saturation) && sameLayers (a.devices.tilt, b.devices.tilt)
         && sameLayers (a.devices.limiter, b.devices.limiter) && sameLayers (a.devices.dither, b.devices.dither)
-        && sameLayers (a.devices.lowShelf, b.devices.lowShelf);
+        && sameLayers (a.devices.low, b.devices.low);
 }
 
 bool sameRecipe (const Recipe& a, const Recipe& b)
@@ -339,7 +339,7 @@ void theDefaultsAtCreate()
     ok (same (d.hpf.machine.fq, 30.0) && d.hpf.machine.slope == 24 && d.hpf.machine.on, "the high-pass: 30 Hz, 24 dB/oct, on");
     ok (same (d.monoBass.machine.fq, 120.0) && same (d.monoBass.machine.width, 0.0), "mono bass: 120 Hz, width 0");
     ok (d.limiter.machine.needles == Needles::Auto && same (d.limiter.machine.needlesDb, 1.5), "the needles: auto, 1.5 dB");
-    ok (! d.dither.machine.on && ! d.lowShelf.machine.on, "no dither at 24 bits, no low shelf off vinyl");
+    ok (! d.dither.machine.on && ! d.low.machine.on, "no dither at 24 bits, no low shelf off vinyl");
     ok (same (d.glue.machine.upToDb, 0.0) && same (d.tilt.machine.db, 0.0), "no glue by default, a flat tilt");
 }
 
@@ -403,7 +403,7 @@ void everyCellOfTheEvents()
 
 void placement()
 {
-    felitronics::test::group ("device edits wait for the devices to be placed, and for the manual mode");
+    felitronics::test::group ("device edits wait for the devices to be placed");
     Situation x = situation (Column::Loaded);
     Session& s = *x.s;
     rejectedWhole (s, editOf (hpfFq (36.0)), Rejection::NotPlaced, kNoField, "an edit while the first measurement runs");
@@ -423,8 +423,8 @@ void placement()
     ok (accepted (s, revertOf (fq)) && ! s.project().devices.hpf.hand.fq, "a revert takes it back");
 
     Situation y = situation (Column::Measured1, false);
-    rejectedWhole (*y.s, editOf (hpfFq (36.0)), Rejection::ManualOff, kNoField, "an edit with the manual mode off");
-    rejectedWhole (*y.s, revertOf (fq), Rejection::ManualOff, kNoField, "a revert with the manual mode off");
+    ok (accepted (*y.s, editOf (hpfFq (36.0))), "an edit with the panel hidden");
+    ok (accepted (*y.s, revertOf (fq)), "a revert with the panel hidden");
 }
 
 void aChangeOfTarget()
@@ -445,17 +445,17 @@ void aChangeOfTarget()
             && same (*p.devices.monoBass.hand.width, 0.5),
         "a person's device edits are kept");
     ok (same (p.devices.hpf.machine.fq, 32.0) && p.devices.hpf.machine.slope == 12 && same (p.devices.monoBass.machine.fq, 150.0)
-            && p.devices.limiter.machine.needles == Needles::Off && p.devices.lowShelf.machine.on
-            && same (p.devices.lowShelf.machine.db, 0.5) && ! p.devices.dither.machine.on,
+            && p.devices.limiter.machine.needles == Needles::Off && p.devices.low.machine.on
+            && same (p.devices.low.machine.db, 0.5) && ! p.devices.dither.machine.on,
         "the machine's layer placed again for vinyl: 32 Hz at 12 dB/oct, mono bass at 150 Hz, no needles, the +0.5 dB shelf");
 
-    LowShelfFields<Touched> shelf {};
+    LowFields<Touched> shelf {};
     shelf.db = 1.0;
     ok (accepted (s, editOf (shelf)), "the low shelf is offered on lp, and edited");
     ok (accepted (s, command::SetTarget { 3, "allStreaming", OnEdits::Keep }), "setTarget allStreaming, keep");
-    ok (! s.project().devices.lowShelf.hand.db && s.project().devices.hpf.hand.fq,
-        "the low shelf's edit goes with the device allStreaming does not offer; the others stay");
-    rejectedWhole (s, editOf (shelf), Rejection::NotOffered, kNoField, "the low shelf off vinyl");
+    ok (s.project().devices.low.hand.db && s.project().devices.hpf.hand.fq,
+        "low edits stay across targets");
+    ok (accepted (s, editOf (shelf)), "low is offered on streaming");
 
     ok (accepted (s, command::SetTarget { 4, "cd", OnEdits::Reset }), "setTarget cd, reset");
     ok (handsEmpty (s.project().devices), "a person's device edits are gone");
@@ -466,14 +466,14 @@ void aChangeOfTarget()
     ok (accepted (s, editOf (dither)), "the dither is offered at 16 bits");
     rejectedWhole (s, command::SetTarget { 5, "nowhere", OnEdits::Keep }, Rejection::UnknownTarget, kNoField, "an unknown target");
     rejectedWhole (s, command::SetTarget { 6, "lp", OnEdits (7) }, Rejection::NotOneOf, kNoField, "onEdits that is neither");
-    ok (accepted (s, command::SetTarget { 7, "allStreaming", OnEdits::Keep }) && ! s.project().devices.dither.hand.on,
-        "the dither's edit goes where the dither is not offered (24 bits)");
+    ok (accepted (s, command::SetTarget { 7, "allStreaming", OnEdits::Keep }) && s.project().devices.dither.hand.on == false,
+        "the dither's edit remains dormant where dither is not offered (24 bits)");
     rejectedWhole (s, editOf (dither), Rejection::NotOffered, kNoField, "the dither at 24 bits");
 }
 
 void theManualModeOff()
 {
-    felitronics::test::group ("setManual(false) takes back a person's device edits and nothing else");
+    felitronics::test::group ("setManual(false) hides the panel and preserves device edits");
     Situation x = situation (Column::Measured2);
     Session& s = *x.s;
     command::EditTarget tp { 1, {} };
@@ -483,11 +483,11 @@ void theManualModeOff()
     ok (accepted (s, tp) && accepted (s, editOf (hpfFq (40.0))) && accepted (s, editOf (tilt)), "PRECONDITION: edits");
     const Project before = s.project();
     ok (accepted (s, command::SetManual { 2, false }), "the manual mode off");
-    ok (handsEmpty (s.project().devices), "a person's device edits are gone");
+    ok (! handsEmpty (s.project().devices), "device edits remain while hidden");
     ok (sameMachine (before.devices, s.project().devices), "the machine's layer stays as it was");
     ok (s.project().targetEdit.tp && same (*s.project().targetEdit.tp, -2.0), "and the edit of the target's ceiling stays");
-    rejectedWhole (s, editOf (tilt), Rejection::ManualOff, kNoField, "an edit after it");
-    ok (accepted (s, command::SetManual { 3, true }) && handsEmpty (s.project().devices), "on again: the panel opens empty");
+    ok (accepted (s, editOf (tilt)), "an edit after hiding");
+    ok (accepted (s, command::SetManual { 3, true }) && ! handsEmpty (s.project().devices), "on again: the panel opens with its edits");
 }
 
 // Every knob of `F`'s device: accepted at both ends and one step in, rejected past the ends, between two steps and as
@@ -580,7 +580,7 @@ void theKnobs()
     knobsOf<SaturationFields<Touched>> (s, "saturation");
     knobsOf<TiltFields<Touched>> (s, "tilt");
     knobsOf<LimiterFields<Touched>> (s, "limiter");
-    knobsOf<LowShelfFields<Touched>> (s, "lowShelf");
+    knobsOf<LowFields<Touched>> (s, "low");
 
     // A value that is the correct double of a decimal on the grid is taken, however the shell computed it.
     ok (accepted (s, editOf (hpfFq (36.0))), "hpf 36 Hz");
@@ -648,24 +648,24 @@ void theOrderOfTheChecks()
     felitronics::test::group ("the checks run in the declared order: the first that fails is the answer");
     {
         Situation x = situation (Column::Loaded, false);
-        LowShelfFields<Touched> f {};
+        LowFields<Touched> f {};
         f.db = 99.0;
         rejectedWhole (*x.s, editOf (f), Rejection::NotPlaced, kNoField,
-                       "STATE before MANUAL, NAMES and FIELDS: not placed, manual off, not offered, out of travel");
+                       "STATE before NAMES and FIELDS: not placed, panel hidden, out of domain");
     }
     {
         Situation x = situation (Column::Measured1, false);
-        LowShelfFields<Touched> f {};
+        LowFields<Touched> f {};
         f.db = 99.0;
-        rejectedWhole (*x.s, editOf (f), Rejection::ManualOff, kNoField, "MANUAL before NAMES and FIELDS");
+        rejectedWhole (*x.s, editOf (f), Rejection::OutOfDomain, 1, "hidden panel still checks the domain");
     }
     Situation x = situation (Column::Measured1);
     Session& s = *x.s;
     {
-        LowShelfFields<Touched> f {};
-        f.db = 99.0;
-        rejectedWhole (s, editOf (f), Rejection::NotOffered, kNoField, "NAMES before FIELDS");
-        rejectedWhole (s, editOf (LowShelfFields<Touched> {}), Rejection::NotOffered, kNoField, "NAMES before an empty edit");
+        LimiterFields<Touched> f {};
+        f.needlesDb = 99.0;
+        rejectedWhole (s, editOf (f), Rejection::OutOfDomain, 1, "FIELDS checks domain");
+        rejectedWhole (s, editOf (DitherFields<Touched> {}), Rejection::NotOffered, kNoField, "NAMES before an empty edit");
     }
     {
         SaturationFields<Touched> f {};
@@ -951,7 +951,7 @@ void theRulesAreTheSchemas()
             && knob (r.output, sat.outputRange.min, sat.outputRange.max, sat.outputStep) && is (r.driveDefault, sat.driveDb)
             && is (r.mixDefault, sat.mix) && is (r.outputDefault, sat.outputDb), "[saturation]");
     ok (knob (r.tilt, e.tilt.hard.min, e.tilt.hard.max, e.tilt.step)
-            && knob (r.lowShelf, e.lowShelf.hard.min, e.lowShelf.hard.max, e.lowShelf.step), "[tilt], [lowShelf]");
+            && knob (r.low, e.low.hard.min, e.low.hard.max, e.low.step), "[tilt], [low]");
     const auto& pc = e.limiter.peakClipper;
     ok (knob (r.needles, pc.manualMinDb, pc.manualMaxDb, pc.manualStepDb) && is (r.needlesDefault, pc.betweenOverDb), "[limiter.peakClipper]");
     ok (r.eq == e.stages.eq && r.monoBass == e.stages.monoBass && r.compressor == e.stages.compressor
@@ -968,8 +968,8 @@ void theRulesAreTheSchemas()
             if (g.target == t.key) glue = g.upToDb;
         const bool eq = row.key == t.key && is (row.lufs, t.lufs) && is (row.tp, t.tp) && is (row.monoBass, t.monoBass)
                      && is (row.hpfFloor, t.hpfFloor) && row.hpfSlope == t.hpfSlopeDbPerOct && row.bitDepth == t.bitDepth
-                     && row.noClipper == t.noClipper && row.lowShelfDb.has_value() == t.lowShelfDb.has_value()
-                     && (! row.lowShelfDb || is (*row.lowShelfDb, *t.lowShelfDb)) && row.glue.has_value() == glue.has_value()
+                     && row.noClipper == t.noClipper && row.lowDb.has_value() == t.lowDb.has_value()
+                     && (! row.lowDb || is (*row.lowDb, *t.lowDb)) && row.glue.has_value() == glue.has_value()
                      && (! row.glue || is (*row.glue, *glue)) && r.find (t.key) == i;
         if (! eq) ok (false, "[targets] row " + t.key);
         rows = rows && eq;
@@ -1036,7 +1036,7 @@ void everyFieldIsWalked()
     };
     ok (count (HpfFields<Mark> {}) && count (MonoBassFields<Mark> {}) && count (GlueFields<Mark> {})
             && count (SaturationFields<Mark> {}) && count (TiltFields<Mark> {}) && count (LimiterFields<Mark> {})
-            && count (DitherFields<Mark> {}) && count (LowShelfFields<Mark> {}),
+            && count (DitherFields<Mark> {}) && count (LowFields<Mark> {}),
         "every device: as many fields walked as its mask holds");
     ok (kMinSampleRate == std::uint32_t (felitronics::core::kMinSampleRate), "the lowest rate a load takes is felitronics-core's");
 }

@@ -65,7 +65,7 @@ struct Target
     bool noClipper = false;                    // optional in the document: false when absent
     bool hpfAlways = false;                    // optional: false when absent
     bool sourceRatePass = false;               // optional: false when absent
-    std::optional<double> lowShelfDb;
+    std::optional<double> lowDb;
     std::optional<Album> album;
 };
 
@@ -292,7 +292,7 @@ struct Tilt
     double step = 0.0;
 };
 
-struct LowShelf
+struct Low
 {
     Span domain;
     std::int32_t band = 0;
@@ -468,7 +468,7 @@ struct Engine
     Glue glue;
     Saturation saturation;
     Tilt tilt;
-    LowShelf lowShelf;
+    Low low;
     Eq eq;
     Stages stages;
     Dither dither;
@@ -540,7 +540,7 @@ struct Problem
 //   all    every key of both documents: which config this is.
 //   sound  what can change a master; when it is not sure, a key stays in. It leaves out only: what is shown (the main
 //          list and the order of the target rows, the hand edit's travels and green ranges, the red and comfort zones —
-//          hpf.comfort, tilt.normal, lowShelf.normal, hpf.slopesNormal — the curve scales and marks, the knob scale's
+//          hpf.comfort, tilt.normal, low.normal, hpf.slopesNormal — the curve scales and marks, the knob scale's
 //          zones); what prints a finding or a warning without switching a device (every observation threshold but
 //          observations.polarity, which keeps mono bass out; the peak clipper's density figures); what is measured
 //          after the master (the crest, the cost); development (the progress weights, the blind test); the name of the

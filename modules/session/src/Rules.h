@@ -38,7 +38,7 @@ struct TargetRow
     std::int32_t hpfSlope = 0;                 // hpfSlopeDbPerOct
     std::int32_t bitDepth = 0;
     bool noClipper = false;
-    std::optional<Decimal> lowShelfDb;
+    std::optional<Decimal> lowDb;
     std::optional<Decimal> glue;               // [glue] byTarget, on the knob, when it names this target
 };
 
@@ -56,7 +56,7 @@ struct Rules
     Decimal glueDefault {};                    // [glue] default, on the knob
     Knob drive {}, mix {}, output {};          // [saturation] driveRange, mixRange, outputRange, by their steps
     Decimal driveDefault {}, mixDefault {}, outputDefault {};   // [saturation] driveDb, mix, outputDb
-    Knob tilt {}, lowShelf {};                 // [tilt] hard / step, [lowShelf] hard / step
+    Knob tilt {}, low {};                 // [tilt] hard / step, [low] hard / step
     Knob needles {};                           // [limiter.peakClipper] manualMinDb…manualMaxDb by manualStepDb
     Decimal needlesDefault {};                 // [limiter.peakClipper] betweenOverDb: where the manual threshold starts
     bool eq = false, monoBass = false, compressor = false, clipper = false, dither = false;   // [stages]

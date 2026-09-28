@@ -138,6 +138,7 @@ const FELITRONICS_ALLOWED = new Set([
     'felitronics/toml/Toml.h',
     'felitronics/toml/Schema.h',
     'felitronics/toml/Embedded.h',
+    'felitronics/core/DetMath.h',
     // The analyzers the config feeds, of this repository: the schema calls only their static storageFor(), a size
     // computation over its arguments. They bring core's DSP with them — FlushToZero.h through the EQ, whose
     // ScopedFlushToZero sets the FPU's flush-to-zero with no symbol, and <xmmintrin.h> behind it has the _MM_SET_* macros

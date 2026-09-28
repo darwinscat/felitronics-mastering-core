@@ -59,6 +59,7 @@ function generate() {
     for (const [name, values] of Object.entries(schema.transportEnums))
         values.forEach((value, i) => code.push(`static_assert(unsigned(felitronics::session::${name}::${value}) == ${i});`));
     for (const field of schema.binaryRows) literal(`binary SessionSnapshot.${field}`);
+    literal('row EqPoint element=f64 byteOrder=little columns=hz,db stride=2 bytes=16');
     literal('row ReadingPoint element=f64 byteOrder=little columns=index,value stride=2 bytes=16');
     literal('row ReadingRun element=f64 byteOrder=little columns=first,count,value stride=3 bytes=24');
     literal('row MachineDifference element=f64 byteOrder=little columns=device,field,fileValue,coreValue stride=4 bytes=32');

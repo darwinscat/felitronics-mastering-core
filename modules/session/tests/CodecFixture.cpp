@@ -45,10 +45,10 @@ int main()
     {
         Fill fill { mode };
         SnapshotView view;
-        Kept kept[1]; ReadingPoint points[1]; ReadingRun runs[1]; MachineDifference differences[1];
-        fill.value (view); fill.value (kept[0]); fill.value (points[0]); fill.value (runs[0]); fill.value (differences[0]);
+        Kept kept[1]; ReadingPoint points[1]; ReadingRun runs[1]; MachineDifference differences[1]; EqPoint curve[1];
+        fill.value (view); fill.value (kept[0]); fill.value (points[0]); fill.value (runs[0]); fill.value (differences[0]); fill.value (curve[0]);
         view.sourceBytes = mode ? 9007199254740991.0 : 0.0;
-        if (mode) { view.masters = kept; view.momentary = points; view.shortTerm = points; view.runs = runs; view.machineDifferences = differences; }
+        if (mode) { view.masters = kept; view.momentary = points; view.shortTerm = points; view.runs = runs; view.machineDifferences = differences; view.eqCurve = curve; }
         const auto need = Codec::encodedBytes (view);
         if (need.status != CodecStatus::Ok) return 1;
         std::string json (std::size_t (need.bytes), '\0');

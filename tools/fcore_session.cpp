@@ -102,7 +102,6 @@ const char* nameOf (felitronics::session::Rejection r)
         case Rejection::Busy:                     return "Busy";
         case Rejection::NoJob:                    return "NoJob";
         case Rejection::NoMaster:                 return "NoMaster";
-        case Rejection::ManualOff:                return "ManualOff";
         case Rejection::UnknownTarget:            return "UnknownTarget";
         case Rejection::NotOffered:               return "NotOffered";
         case Rejection::UnknownJob:               return "UnknownJob";
@@ -123,7 +122,6 @@ const char* nameOf (felitronics::session::Rejection r)
         case Rejection::ProjectUnknownKey: return "ProjectUnknownKey";
         case Rejection::UnknownDefaults: return "UnknownDefaults";
         case Rejection::ProjectCore: return "ProjectCore";
-        case Rejection::MachineMismatch: return "MachineMismatch";
         case Rejection::NewerDefaults: return "NewerDefaults";
         case Rejection::RateAboveLimit: return "RateAboveLimit";
         case Rejection::Contract:                 return "Contract";

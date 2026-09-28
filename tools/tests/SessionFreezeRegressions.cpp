@@ -28,19 +28,19 @@ int main (int argc, char** argv)
     {
         (void) s.apply (load); (void) s.step (10);
         HpfFields<Touched> fields; fields.fq = 100.25; fields.slope = 18;
-        if (item == "C" && s.apply (command::EditDevice { 2, fields }).rejection != Rejection::ManualOff) return 1;
+        if (item == "C" && s.apply (command::EditDevice { 2, fields }).rejection != Rejection::None) return 1;
         (void) s.apply (command::SetManual { 3, true });
         if (s.apply (command::EditDevice { 4, fields }).rejection != Rejection::None) return 1;
         if (item == "B") return 0;
-        LowShelfFields<Touched> shelf; shelf.db = 5.25;
-        if (s.apply (command::EditDevice { 5, shelf }).rejection != Rejection::NotOffered) return 1;
+        std::variant_alternative_t<7, DeviceEdit> shelf; shelf.db = 5.25;
+        if (s.apply (command::EditDevice { 5, shelf }).rejection != Rejection::None) return 1;
         (void) s.apply (command::SetTarget { 6, "lp" });
         if (s.apply (command::EditDevice { 7, shelf }).rejection != Rejection::None) return 1;
         auto file = s.exportProject(); std::string project (file.view());
         const auto at = project.find ("defaults = "); project.replace (at, project.find ('\n', at) - at, "defaults = \"2020-01\"");
         if (s.importProject (8, project).rejection != Rejection::None || s.events().empty() || s.events()[0].kind != EventKind::Fact) return 1;
         const auto current = s.exportProject(); project = current.view(); project += "\n[hpf]\nfq.machine = 100.25\n";
-        return s.importProject (9, project).rejection == Rejection::MachineMismatch ? 0 : 1;
+        return s.importProject (9, project).rejection == Rejection::None ? 0 : 1;
     }
     if (item == "F5")
     {

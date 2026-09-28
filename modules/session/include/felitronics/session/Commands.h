@@ -57,12 +57,10 @@ enum class Rejection : std::uint8_t
     Busy,                       // a master is being made
     NoJob,                      // no named measurement or master is running
     NoMaster,                   // no master is kept in this state
-    // the device panel
-    ManualOff,                  // the manual mode is off: the device panel is closed
     // what the command names
     UnknownTarget,              // no row of [targets] has this name
-    NotOffered,                 // this device is not offered here: the low shelf off a target that carries one, the
-                                // dither above the bit depth it serves, mono bass on a mono source
+    NotOffered,                 // this device is excluded by the shell, dither above the bit depth it serves,
+                                // or mono bass on a mono source
     UnknownJob,                 // not an active measurement or master
     UnknownMaster,              // no master kept under this id
     // the fields
@@ -84,7 +82,6 @@ enum class Rejection : std::uint8_t
     ProjectUnknownKey,          // an unknown section, knob or author suffix
     UnknownDefaults,            // malformed defaults label, or an uncarried label between the retained versions
     ProjectCore,                // core must be a canonical major.minor.patch version
-    MachineMismatch,            // this core's decision disagrees with its own saved layer
     NewerDefaults,              // defaults are newer than the current compiled table
     RateAboveLimit,             // above the shell's maxRateHz
     Memory,                     // live bytes plus demand exceeds capacity, or a block cannot fit
@@ -100,10 +97,10 @@ inline constexpr std::uint8_t kNoField = 0xFF;
 
 // A DEVICE'S EDIT: which device (the alternative, in the order of Device) and the fields a person touched.
 using DeviceEdit = std::variant<HpfFields<Touched>, MonoBassFields<Touched>, GlueFields<Touched>, SaturationFields<Touched>,
-                                TiltFields<Touched>, LimiterFields<Touched>, DitherFields<Touched>, LowShelfFields<Touched>>;
+                                TiltFields<Touched>, LimiterFields<Touched>, DitherFields<Touched>, LowFields<Touched>>;
 // ...and the fields a revert takes back.
 using DeviceMask = std::variant<HpfFields<Mark>, MonoBassFields<Mark>, GlueFields<Mark>, SaturationFields<Mark>,
-                                TiltFields<Mark>, LimiterFields<Mark>, DitherFields<Mark>, LowShelfFields<Mark>>;
+                                TiltFields<Mark>, LimiterFields<Mark>, DitherFields<Mark>, LowFields<Mark>>;
 
 // Whether setTarget keeps a person's device edits or takes them back. The target's own numbers are replaced either way.
 enum class OnEdits : std::uint8_t { Reset, Keep };
@@ -186,13 +183,12 @@ inline constexpr std::size_t kColumns = 6;
 // THE ORDER OF THE CHECKS, the same for every command — the first that fails is the answer, and nothing has changed:
 //   1. ENTRY    the calling thread's floating-point environment (FloatingPointEnvironment)
 //   2. STATE    this table: the command's cell in the session's column
-//   3. MANUAL   the device panel's commands — editDevice, revertEdits — need the manual mode (ManualOff)
-//   4. NAMES    what the command names: a target (setTarget), a device offered for this target and source (editDevice,
+//   3. NAMES    what the command names: a target (setTarget), a device offered for this target and source (editDevice,
 //               revertEdits), an id left for a new job (load, master: NoJobId), a load's UTF-8 name (InvalidUtf8),
 //               the active job (cancel), a master kept (forget)
-//   5. FIELDS   each touched field, in the order written: finite, one of its values, within its domain.
+//   4. FIELDS   each touched field, in the order written: finite, one of its values, within its domain.
 //               Empty edits/reverts are accepted without a revision change; travel and step are slider hints.
-//   6. AUDIO    a load's audio: its channels, its rate, its frames, its size, then every sample finite
+//   5. AUDIO    a load's audio: its channels, its rate, its frames, its size, then every sample finite
 // Only a command that passed them all does its work. A load's work starts by DISARMING — whatever runs on the old source
 // stops, and the old source, its measurements, its masters and a person's device edits go — and then writes the new one.
 struct Table
@@ -220,7 +216,7 @@ struct Table
     };
 
     // Import: entry, state, size (no input read), then TOML syntax, schema in canonical field order,
-    // defaults version, core version, target name, manual/offered constraints, same-core machine equality.
+    // defaults version, core version, target name, offered-device constraints. The saved machine layer is kept; differences are reported.
     // The file supplies manual mode; the current mode is not a prerequisite for restoring a project.
 
     // Cancel in Loaded drops the source and returns Empty; in Measured1 it stops phase two and keeps Measured1.
