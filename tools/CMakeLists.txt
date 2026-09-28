@@ -216,6 +216,8 @@ if(FELITRONICS_BUILD_TESTS)
     target_include_directories(felitronics_session_abi_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_features(felitronics_session_abi_tests PRIVATE cxx_std_20)
     add_test(NAME felitronics_session_abi_tests COMMAND felitronics_session_abi_tests)
+    # The 16.7-million-generation walk alone: one test -j cannot split, so an instrumented build can leave it out.
+    add_test(NAME felitronics_session_abi_generation_tests COMMAND felitronics_session_abi_tests --generation-walk)
 
     add_library(felitronics_session_replay_facade OBJECT tests/SessionReplayFacade.cpp)
     target_link_libraries(felitronics_session_replay_facade PRIVATE felitronics::session)
