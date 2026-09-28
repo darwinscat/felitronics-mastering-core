@@ -219,7 +219,7 @@ add_custom_command(OUTPUT ${FELITRONICS_ABI_PROBE}
         ${PROJECT_SOURCE_DIR}/modules/session/include/felitronics/session/Snapshot.h
         ${PROJECT_SOURCE_DIR}/modules/session/include/felitronics/session/Text.h VERBATIM)
 add_executable(felitronics_session_abi_probe ${FELITRONICS_ABI_PROBE})
-target_link_libraries(felitronics_session_abi_probe PRIVATE felitronics::session)
+target_link_libraries(felitronics_session_abi_probe PRIVATE felitronics::session felitronics::toml)
 target_compile_options(felitronics_session_abi_probe PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
 target_include_directories(felitronics_session_abi_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 if(FELITRONICS_BUILD_TESTS)
@@ -228,8 +228,12 @@ if(FELITRONICS_BUILD_TESTS)
                 ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:felitronics_session_abi_probe>)
     if(NOT CMAKE_CROSSCOMPILING)
         add_test(NAME felitronics_session_abi_source_controls
-            COMMAND ${FELITRONICS_ABI_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/session-abi-source-controls.mjs ${CMAKE_BINARY_DIR})
+            COMMAND ${FELITRONICS_ABI_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/session-abi-source-controls.mjs ${CMAKE_BINARY_DIR} --config $<CONFIG>)
     endif()
+    add_test(NAME felitronics_session_abi_review_control
+        COMMAND ${FELITRONICS_ABI_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/session-abi-review-controls.mjs)
+    add_test(NAME felitronics_session_abi_platform_control
+        COMMAND ${FELITRONICS_ABI_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/session-abi-source-controls.mjs --self-test)
     add_test(NAME felitronics_session_abi_manifest_control
         COMMAND ${FELITRONICS_ABI_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/session-abi-check.mjs --self-test)
 endif()
@@ -277,7 +281,7 @@ if(FELITRONICS_BUILD_TESTS)
             COMMAND felitronics_session_abi_v1_tests ${operation})
     endforeach()
     add_executable(felitronics_session_wire_fixture tests/SessionWireFixture.cpp)
-    target_link_libraries(felitronics_session_wire_fixture PRIVATE felitronics::session)
+    target_link_libraries(felitronics_session_wire_fixture PRIVATE felitronics::session felitronics::toml)
     target_include_directories(felitronics_session_wire_fixture PRIVATE ${PROJECT_SOURCE_DIR}/modules/session/src)
     target_compile_options(felitronics_session_wire_fixture PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
     add_test(NAME felitronics_session_wire_types

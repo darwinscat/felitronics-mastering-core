@@ -42,14 +42,17 @@ function generate() {
             number(`offset ${m[1]}.${f[2]}`, `offsetof(${m[1]},${f[2]})`);
         }
     }
+    const schema = JSON.parse(read('tools/session-codec-schema.json'));
+    // Only numeric values exposed by C or encoded on the wire belong to the floor.
+    const observable = new Set([...Object.keys(schema.enums), ...Object.keys(schema.transportEnums),
+        'Unit', 'Sign', 'Bound', 'FactId', 'Term', 'ArgKind']);
     for (const h of publicHeaders) {
         const text = clean(read(`modules/session/include/felitronics/session/${h}.h`));
         const ns = `felitronics::session::${h === 'Text' ? 'text::' : ''}`;
         for (const m of text.matchAll(/enum class (\w+)\s*:\s*[^{}]+\{([^}]+)\}/g))
-            for (const v of m[2].split(',').map(s => s.trim().split(/[ =]/)[0]).filter(Boolean))
+            if (observable.has(m[1])) for (const v of m[2].split(',').map(s => s.trim().split(/[ =]/)[0]).filter(Boolean))
                 number(`enum ${ns}${m[1]}::${v}`, `${ns}${m[1]}::${v}`);
     }
-    const schema = JSON.parse(read('tools/session-codec-schema.json'));
     for (const [name, record] of Object.entries(schema.records))
         for (const [field, type] of Object.entries(record.fields)) literal(`codec ${name}.${field} ${type}`);
     for (const [name, record] of Object.entries(schema.wireRecords))
@@ -58,6 +61,13 @@ function generate() {
         for (const type of variants.split(' | ')) literal(`wire union ${name} ${type}`);
     for (const [name, values] of Object.entries(schema.transportEnums))
         values.forEach((value, i) => code.push(`static_assert(unsigned(felitronics::session::${name}::${value}) == ${i});`));
+    for (const device of schema.enums.Device) {
+        const fields = schema.records[`${device}FieldsValue`].fields;
+        body.push(`{ ${device}Fields<Value> fields; detail::DeviceOf<decltype(fields)>::each(detail::rules(), [&](std::uint8_t id, const detail::FieldRule&, auto& value) {`);
+        for (const field of Object.keys(fields))
+            body.push(`if (static_cast<const void*>(&value) == static_cast<const void*>(&fields.${field})) std::printf("field-id ${device}.${field}=%u\\n", unsigned(id));`);
+        body.push('}, fields); }');
+    }
     for (const field of schema.binaryRows) literal(`binary SessionSnapshot.${field}`);
     literal('row EqPoint element=f64 byteOrder=little columns=hz,db stride=2 bytes=16');
     literal('row ReadingPoint element=f64 byteOrder=little columns=index,value stride=2 bytes=16');
@@ -68,7 +78,42 @@ function generate() {
     code.push('int main() {', ...body, 'return sessionWireFixture(true); }');
     return code.join('\n') + '\n';
 }
-const lines = text => new Set(text.split(/\r?\n/).filter(l => l && !l.startsWith('#')));
+// Keep documents in the floor readable, but compare paths instead of complete JSON lines.
+// Row offsets may move when fields are added: compare the bytes each descriptor addresses.
+const rawLines = text => text.split(/\r?\n/).filter(l => l && !l.startsWith('#'));
+function lines(text) {
+    const result = new Set(), input = rawLines(text);
+    const fail = why => { throw Error(`frozen session ABI changed or disappeared: ${why}`); };
+    for (let i = 0; i < input.length; ++i) {
+        const line = input[i], named = /^json (\S+) (.*)$/.exec(line);
+        if (!named && !/^[{[]/.test(line)) { result.add(line); continue; }
+        let value;
+        try { value = JSON.parse(named ? named[2] : line); } catch { fail('invalid JSON fixture'); }
+        const name = named ? named[1] : Array.isArray(value) ? 'events' : 'commandId' in value ? `answer-${value.commandId}` : 'snapshot';
+        const hex = /^[0-9a-f]+$/.test(input[i + 1] ?? '') ? input[++i] : '';
+        const binary = Buffer.from(hex, 'hex');
+        const walk = (v, path) => {
+            const key = `json ${name} ${path}`, type = v === null ? 'null' : Array.isArray(v) ? 'array' : typeof v;
+            result.add(`${key} type=${type}`);
+            if (type !== 'object' && type !== 'array') { result.add(`${key} value=${JSON.stringify(v)}`); return; }
+            const row = type === 'object' && ['byteOffset', 'length', 'stride'].every(k => Object.hasOwn(v, k));
+            if (row) {
+                if (![v.byteOffset, v.length, v.stride].every(Number.isSafeInteger) || v.byteOffset < 0 || v.byteOffset % 8
+                    || v.length < 0 || v.stride <= 0 || v.byteOffset + v.length * v.stride * 8 > binary.length)
+                    fail(`${key}: invalid row descriptor`);
+                for (let j = 0; j < v.length * v.stride; ++j)
+                    result.add(`row ${name} ${path}/${j}=${binary.subarray(v.byteOffset + j * 8, v.byteOffset + (j + 1) * 8).toString('hex')}`);
+            }
+            for (const [k, x] of Object.entries(v)) {
+                const child = `${path}/${k.replaceAll('~', '~0').replaceAll('/', '~1')}`;
+                if (row && k === 'byteOffset') result.add(`json ${name} ${child} type=number`);
+                else walk(x, child);
+            }
+        };
+        walk(value, '');
+    }
+    return result;
+}
 function check(floor, actual) {
     const extensible = new Set([...header.matchAll(/typedef struct (\w+)/g)].map(m => m[1]));
     const missing = [...floor].filter(line => {
@@ -102,6 +147,28 @@ if (args[0] === '--generate') {
         missing.add(`${line} CHANGED`);
         assert.throws(() => check(floor, missing), /changed or disappeared/);
     }
+    const raw = rawLines(read('tools/session-abi-v1.txt'));
+    const at = raw.findIndex(line => line.startsWith('{'));
+    const snapshot = JSON.parse(raw[at]);
+    const mutated = change => {
+        const doc = structuredClone(snapshot), copy = [...raw]; change(doc, copy);
+        copy[at] = JSON.stringify(doc); return lines(copy.join('\n'));
+    };
+    check(floor, mutated(doc => { doc.future = { enabled: true }; doc.project.future = 42; }));
+    // Insert an additional binary row before all existing rows and adjust their offsets.
+    check(floor, mutated((doc, copy) => {
+        const shift = v => { if (!v || typeof v !== 'object') return; if ('byteOffset' in v) v.byteOffset += 16; else Object.values(v).forEach(shift); };
+        shift(doc); doc.futureRows = { byteOffset: 0, length: 1, stride: 2 };
+        copy[at + 1] = '000000000000f03f0000000000000040' + copy[at + 1];
+    }));
+    for (const change of [doc => { doc.renamed = doc.handFieldCount; delete doc.handFieldCount; },
+        doc => { delete doc.project; }, doc => { doc.handFieldCount = String(doc.handFieldCount); },
+        doc => { doc.handFieldCount++; }, doc => { doc.eqCurve.byteOffset += 8; },
+        doc => { doc.eqCurve.stride++; }])
+        assert.throws(() => check(floor, mutated(change)), /changed or disappeared/);
+    assert(![...floor].some(line => /enum felitronics::session::(?:Command|Event|Column|Status|CodecStatus|OnEdits|EventKind|text::(?:Lang|Plural))::/.test(line)),
+        'C++-only enum ordinals are not a permanent contract');
+    console.log('session ABI JSON controls: nested additions and relocated rows GREEN; rename/removal/type/value/descriptor changes RED');
     console.log(`session ABI control: deletion and change go red for all ${floor.size} lines; additions pass`);
 } else {
     if (!args.length) throw Error('usage: session-abi-check.mjs [--generate probe.cpp | --self-test | executable [args...]]');
