@@ -181,10 +181,7 @@ Checked Session::check (const Request& request) const noexcept
     const Rules rules = detail::rules();
 
     if (const auto* imported = std::get_if<command::ImportProject> (&request))
-    {
-        if (imported->bytes.size() > kMaxProjectText) return rejected (Rejection::ProjectTooLarge);
-        return { Rejection::None, kNoField, detail::importBytes (imported->bytes.size()) };
-    }
+        return detail::importBytes (imported->bytes);
     if (const auto* load = std::get_if<command::Load> (&request))
     {
         if (lastJob_ == std::numeric_limits<JobId>::max()) return rejected (Rejection::NoJobId);
