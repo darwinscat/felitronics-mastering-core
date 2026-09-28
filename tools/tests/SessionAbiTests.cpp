@@ -15,7 +15,8 @@
 //     FC_SESSION_ERR_FP_ENVIRONMENT, `*out` untouched and the slot still free;
 //   * THE WRAP BOUNDARY, at the shipped width: one slot driven through all FC_SESSION_SLOT_GENERATIONS of its
 //     generations — 16.7 million create/destroy cycles, the reproduction of a stale handle destroying a new session —
-//     retires instead of wrapping, and every handle it issued stays refused;
+//     retires instead of wrapping, and every handle it issued stays refused. It runs alone, as its own ctest entry
+//     (`--generation-walk`): one test that -j cannot split, and the one an instrumented build leaves out;
 //   * the config version: the library's own, low half first, its out-pointer checked before anything is written, and
 //     nothing asked of the heap — so there is no demand to declare;
 //   * THE POISON, LAST, because it is for good: an entry point re-entered from inside an allocation the module made
@@ -246,20 +247,25 @@ void thePoisonIsForGood()
 }
 } // namespace
 
-int main()
+int main (int argc, char** argv)
 {
+    if (argc > 1 && std::string (argv[1]) == "--generation-walk")
+    {
+        std::printf ("felitronics fc_session ABI tests: the generation walk\n");
+#if defined (_MSC_VER) && ! defined (NDEBUG)
+        // MSVC Debug runs every other ABI check; Release holds the full 16.7-million-generation walk.
+        std::puts ("SKIP: generation-wrap walk in MSVC Debug; covered in Release");
+#else
+        theGenerationRetiresInsteadOfWrapping();
+#endif
+        return felitronics::test::report();
+    }
     std::printf ("felitronics fc_session ABI tests\n");
     theVersion();
     createChecksItsOutPointer();
     createAndDestroy();
     theTableHoldsItsCapacity();
     theSessionsRefusalPassesThrough();
-#if defined (_MSC_VER) && ! defined (NDEBUG)
-    // MSVC Debug runs every other ABI check; Release holds the full 16.7-million-generation walk.
-    std::puts ("SKIP: generation-wrap walk in MSVC Debug; covered in Release");
-#else
-    theGenerationRetiresInsteadOfWrapping();
-#endif
     theConfigVersion();
     thePoisonIsForGood();   // LAST: the poison is for good, and nothing after it could run
     return felitronics::test::report();

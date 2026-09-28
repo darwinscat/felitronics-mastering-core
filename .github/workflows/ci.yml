@@ -58,8 +58,9 @@ jobs:
           felitronics_master_abi_tests felitronics_storage_tests
           felitronics_session_tests felitronics_session_state_tests felitronics_session_config_tests
           felitronics_session_config_decisions_tests felitronics_session_text_tests
+          felitronics_session_event_tests felitronics_session_project_tests felitronics_session_replay_tests
       - name: Test allocation budgets with iterator debugging
-        # Measured x64 MSVC Debug test time: 121.40 s for these ten suites.
+        # Measured x64 MSVC Debug: 139.99 s for these thirteen suites; 211.22 s configure/build/test.
         # The full session handle-generation walk remains in Release. These session suites have no long walk.
         run: |
           node tools/tests/windows-debug.mjs --self-test
@@ -346,15 +347,15 @@ jobs:
           fi
           echo "no long double arithmetic in any emitted object"
       - name: Checked build — SAFE_HEAP + assertions + stack-overflow checks
-        # Excluded: the three exhaustive sweeps (two mastering, one clip detector). Under SAFE_HEAP they are the
-        # whole tail of this step, each alone on a core for over four minutes, because one test cannot be split
-        # by -j. They add nothing here: the same sweeps already ran above for their numbers, and natively under
-        # ASan for memory safety, which is the stronger instrument.
+        # Excluded: the four exhaustive sweeps (two mastering, one clip detector, the session's handle-generation
+        # walk). Under SAFE_HEAP they are the whole tail of this step, each alone on a core — the generation walk for
+        # eighteen minutes — because one test cannot be split by -j. They add nothing here: the same sweeps already
+        # ran above for their numbers, and natively under ASan for memory safety, which is the stronger instrument.
         run: |
           cmake --preset wasm-audio -B build-wasm-checked $CORE_TAG -DFELITRONICS_WASM_ASSERTIONS=2 \
                 -DCMAKE_EXE_LINKER_FLAGS="-sSAFE_HEAP=1 -sSTACK_OVERFLOW_CHECK=2"
           cmake --build build-wasm-checked -j "$(nproc)"
-          ctest --test-dir build-wasm-checked -j "$(nproc)" --output-on-failure --no-tests=error -E 'delivered_ceiling|loudness_solver|clip_detector'
+          ctest --test-dir build-wasm-checked -j "$(nproc)" --output-on-failure --no-tests=error -E 'delivered_ceiling|loudness_solver|clip_detector|session_abi_generation'
       - name: The native references — the CLIs every comparison below diffs against
         # Configured once, here, and the core it fetched is the core the wasm modules are built against in the
         # next step: two fetches of one tag are one tree, but "the same core" should be a fact of the run, not
