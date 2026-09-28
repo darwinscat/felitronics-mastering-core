@@ -567,13 +567,13 @@ read -r -a SESSION_FLAGS <<< "$SESSION_FLAGS_LINE"
 
 TOML="${FELITRONICS_TOML_DIR:-$ROOT/../felitronics-toml}"
 [ -f "$TOML/include/felitronics/toml/Embedded.h" ] && [ -f "$TOML/tools/toml2cpp.cpp" ] \
-    || { echo "no felitronics-toml at $TOML — set FELITRONICS_TOML_DIR to a checkout (v0.2.0 or later)"; exit 1; }
+    || { echo "no felitronics-toml at $TOML — set FELITRONICS_TOML_DIR to a checkout (v0.3.0 or later)"; exit 1; }
 TOML="$(cd "$TOML" && pwd)"
 # felitronics-toml states its version on a line of its own inside project( ... ), so it is read from that block.
 read -r TV_MAJOR TV_MINOR TV_PATCH <<< "$(sed -nE '/^project\(felitronics_toml/,/\)/ s/.*VERSION ([0-9]+)\.([0-9]+)\.([0-9]+).*/\1 \2 \3/p' \
                                          "$TOML/CMakeLists.txt" | head -1)" || true
-[ -n "${TV_PATCH:-}" ] && { [ "$TV_MAJOR" -gt 0 ] || [ "$TV_MINOR" -ge 2 ]; } \
-    || { echo "*** felitronics-toml at $TOML is not v0.2.0 or later (${TV_MAJOR:-?}.${TV_MINOR:-?}.${TV_PATCH:-?})"; exit 1; }
+[ -n "${TV_PATCH:-}" ] && { [ "$TV_MAJOR" -gt 0 ] || [ "$TV_MINOR" -ge 3 ]; } \
+    || { echo "*** felitronics-toml at $TOML is not v0.3.0 or later (${TV_MAJOR:-?}.${TV_MINOR:-?}.${TV_PATCH:-?})"; exit 1; }
 echo "--- fc_session config: felitronics-toml $TV_MAJOR.$TV_MINOR.$TV_PATCH at $TOML"
 
 SGEN="$OUT/session-config"

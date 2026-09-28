@@ -15,8 +15,9 @@
 //     FC_SESSION_ERR_FP_ENVIRONMENT, `*out` untouched and the slot still free;
 //   * THE WRAP BOUNDARY, at the shipped width: one slot driven through all FC_SESSION_SLOT_GENERATIONS of its
 //     generations — 16.7 million create/destroy cycles, the reproduction of a stale handle destroying a new session —
-//     retires instead of wrapping, and every handle it issued stays refused. Debug starts at the final generation
-//     through a test-only seam; Release walks them all;
+//     retires instead of wrapping, and every handle it issued stays refused. It runs alone, as its own ctest entry
+//     (`--generation-walk`): one test that -j cannot split, and the one an instrumented build leaves out.
+//     Debug starts at the final generation through a test-only seam; Release walks them all;
 //   * the config version: the library's own, low half first, its out-pointer checked before anything is written, and
 //     nothing asked of the heap — so there is no demand to declare;
 //   * THE POISON, LAST, because it is for good: an entry point re-entered from inside an allocation the module made
@@ -157,7 +158,7 @@ void theSessionsRefusalPassesThrough()
         "restored, a create succeeds: the refusal took no slot");
 }
 
-[[maybe_unused]] void theGenerationRetiresInsteadOfWrapping()
+void theGenerationRetiresInsteadOfWrapping()
 {
     felitronics::test::group ("a slot retires at its last generation instead of wrapping — at the shipped width");
     // Every slot is free here, so each create takes slot 0 (handle & 0xFF == 1) until it retires.
@@ -258,15 +259,20 @@ void thePoisonIsForGood()
 }
 } // namespace
 
-int main()
+int main (int argc, char** argv)
 {
+    if (argc > 1 && std::string (argv[1]) == "--generation-walk")
+    {
+        std::printf ("felitronics fc_session ABI tests: the generation walk\n");
+        theGenerationRetiresInsteadOfWrapping();
+        return felitronics::test::report();
+    }
     std::printf ("felitronics fc_session ABI tests\n");
     theVersion();
     createChecksItsOutPointer();
     createAndDestroy();
     theTableHoldsItsCapacity();
     theSessionsRefusalPassesThrough();
-    theGenerationRetiresInsteadOfWrapping();
     theConfigVersion();
     thePoisonIsForGood();   // LAST: the poison is for good, and nothing after it could run
     return felitronics::test::report();

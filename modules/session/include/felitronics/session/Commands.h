@@ -164,8 +164,8 @@ struct Answer
 };
 
 // WHAT A REQUEST WOULD DO, BEFORE IT IS DONE — Session::check(): the answer it would get, and the bytes it would ask the
-// heap for (law 11d). Import checks only entry, state and size here: parsing and schema validation are
-// work inside apply(), covered by the size-derived bound even when they refuse the document.
+// heap for (law 11d). Import checks entry, state and representable demand here. The library counts the text without
+// allocation; parsing and schema validation run inside apply(), including document refusals.
 struct Checked
 {
     Rejection rejection = Rejection::None;
