@@ -91,11 +91,13 @@ int main()
     {
         ok (old->apply (load).rejection == Rejection::None, "successive loads");
         testing::measure (*old);
-        (void) old->apply (command::SetTarget { 2, "cd", OnEdits::Reset });
+        (void) old->apply (command::SetTarget { 2, "cd" });
         (void) old->apply (command::SetManual { 3, true });
         HpfFields<Touched> hpf; hpf.fq = 36; hpf.on = false;
         ok (old->apply (command::EditDevice { 4, hpf }).rejection == Rejection::None, "device edits");
-        (void) old->apply (command::SetTarget { 5, "lp", OnEdits::Keep });
+        (void) old->apply (command::SetTarget { 5, "lp" });
+        ok (! old->project().devices.hpf.hand.fq && ! old->project().devices.hpf.hand.on, "target change resets prior edits");
+        ok (old->apply (command::EditDevice { 5, hpf }).rejection == Rejection::None, "new target edits enter the replay recipe");
         (void) old->apply (command::EditTarget { 6, { -12.5, -0.5 } });
         (void) old->apply (command::Master { 7 }); (void) old->step (4);
     }

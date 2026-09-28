@@ -199,7 +199,7 @@ void defaultsVersions()
 void roundTrip()
 {
     auto s = fresh();
-    (void) s->apply (command::SetTarget { 2, "lp", OnEdits::Reset });
+    (void) s->apply (command::SetTarget { 2, "lp" });
     (void) s->apply (command::SetManual { 3, true });
     (void) s->apply (command::EditTarget { 4, { -12.5, -0.5 } });
     // Every typed field and optional alternative participates, including a hand equal to its machine.
@@ -222,7 +222,7 @@ void roundTrip()
     ok (import (*restored, saved, "realistic").rejection == Rejection::None && restored->revision() == before + 1, "import commits once");
     ok (exported (*restored) == saved, "export import export is byte-identical");
     auto dither = fresh();
-    (void) dither->apply (command::SetTarget { 2, "cd", OnEdits::Reset });
+    (void) dither->apply (command::SetTarget { 2, "cd" });
     (void) dither->apply (command::SetManual { 3, true });
     DitherFields<Touched> ditherHand; ditherHand.on = true;
     ok (dither->apply (command::EditDevice { 4, ditherHand }).rejection == Rejection::None, "dither hand on a 16-bit target");
@@ -230,17 +230,16 @@ void roundTrip()
     const auto ditherText = exported (*dither);
     ok (import (*ditherCopy, ditherText).rejection == Rejection::None && exported (*ditherCopy) == ditherText,
         "dither's hand round trips too");
-    (void) dither->apply (command::SetTarget { 6, "allStreaming", OnEdits::Keep });
-    const auto dormant = exported (*dither);
-    ok (! dither->project().devices.dither.machine.on && dither->project().devices.dither.hand.on == true
-        && import (*ditherCopy, dormant).rejection == Rejection::None && exported (*ditherCopy) == dormant,
-        "above 16 bits a dormant dither hand survives keep and import without activating the machine");
+    (void) dither->apply (command::SetTarget { 6, "allStreaming" });
+    const auto reset = exported (*dither);
+    ok (! dither->project().devices.dither.machine.on && ! dither->project().devices.dither.hand.on
+        && import (*ditherCopy, reset).rejection == Rejection::None && exported (*ditherCopy) == reset,
+        "target change clears dither hand and the reset project round trips");
     ok (ditherCopy->apply (command::EditDevice { 7, ditherHand }).rejection == Rejection::NotOffered,
         "dither edits still require delivery at 16 bits or below");
-    (void) ditherCopy->apply (command::SetTarget { 8, "cd", OnEdits::Keep });
-    ok (ditherCopy->project().devices.dither.hand.on == true, "returning to CD restores the kept dither hand");
-    (void) dither->apply (command::RevertEdits { 9, DitherFields<Mark> { true } });
-    ok (! dither->project().devices.dither.hand.on, "a dormant dither hand can be explicitly reverted");
+    (void) ditherCopy->apply (command::SetTarget { 8, "cd" });
+    ok (! ditherCopy->project().devices.dither.hand.on && ditherCopy->project().devices.dither.machine.on,
+        "returning to CD uses the machine's decision with no device edit");
 
     auto a = s->snapshot(), b = restored->snapshot();
     SnapshotView av = a.view(), bv = b.view(); av.revision = bv.revision;
@@ -385,7 +384,7 @@ void foreignMachine()
     (void) import (*s, input);
     (void) s->apply (command::SetManual { 9, false });
     ok (s->snapshot().view().machineDifferences.size() == 2, "switching off manual leaves the saved machine layer");
-    (void) s->apply (command::SetTarget { 10, "lp", OnEdits::Reset });
+    (void) s->apply (command::SetTarget { 10, "lp" });
     ok (s->snapshot().view().machineDifferences.empty() && version (s->project().core) == version (Session::version()),
         "a new target places the current machine and clears the old comparison");
     s.reset();
@@ -398,7 +397,7 @@ void numbers()
 {
     const auto rules = detail::rules();
     auto s = fresh();
-    (void) s->apply (command::SetTarget { 2, "lp", OnEdits::Reset });
+    (void) s->apply (command::SetTarget { 2, "lp" });
     (void) s->apply (command::SetManual { 3, true });
     auto replay = fresh();
     Devices devices;

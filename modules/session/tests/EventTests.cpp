@@ -203,7 +203,7 @@ void tableBetweenSteps()
             HpfFields<Touched> hpf; hpf.fq = 36.0;
             HpfFields<Mark> mask; mask.fq = true;
             const auto project = s->exportProject();
-            const Request requests[] = { audio.load(), command::SetTarget { 13, "allStreaming", OnEdits::Keep },
+            const Request requests[] = { audio.load(), command::SetTarget { 13, "allStreaming" },
                 command::EditTarget { 14, { -13.0, {} } }, command::EditDevice { 15, hpf }, command::RevertEdits { 16, mask },
                 command::SetManual { 17, false }, command::Master { 18 }, command::Cancel { 19, job }, command::Forget { 20, kept }, command::ImportProject { 21, project.view() }, command::ContinueMeasurement { 23 } };
             ok (std::size_t (s->column()) == col, "pump establishes the table column");

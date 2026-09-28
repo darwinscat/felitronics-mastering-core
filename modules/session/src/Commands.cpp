@@ -200,9 +200,8 @@ Checked Session::storageFor (const Request& request) const noexcept
     }
     if (const auto* set = std::get_if<command::SetTarget> (&request))
     {
-        // 4. NAMES, 5. FIELDS
+        // 4. NAMES
         if (! rules.find (set->target)) return rejected (Rejection::UnknownTarget);
-        if (set->onEdits != OnEdits::Reset && set->onEdits != OnEdits::Keep) return rejected (Rejection::NotOneOf);
         return {};
     }
     if (const auto* edit = std::get_if<command::EditTarget> (&request))
@@ -430,7 +429,7 @@ Answer Session::apply (const Request& request) noexcept
         project_.core = version();
         differenceCount_ = 0;
         project_.targetEdit = {};                                   // the new target's numbers, silently
-        if (set->onEdits == OnEdits::Reset) clearHands (project_.devices);
+        clearHands (project_.devices);
         // Placed devices are placed again for the new target; unplaced ones wait for the first measurement's end.
         if (placed()) detail::placeMachine (rules, row, source_.channels, project_.devices, capabilities_.offeredDevices);
     }

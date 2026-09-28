@@ -280,6 +280,12 @@ const foreignSnapshot = readTransfer('snapshot');
 ok(foreignSnapshot.machineDifferences.length > 0, 'shipped facade transfers nonempty binary rows');
 M._free(foreignPtr);
 M._free(project);
+ok(foreignSnapshot.handFieldCount === 2, 'snapshot counts hidden edits for the shell warning');
+ok(cmd(session, {kind:'setTarget', commandId:'5', target:'lp'}).kind === 'accepted', 'target command needs only a target');
+const resetSnapshot = readTransfer('snapshot');
+ok(resetSnapshot.handFieldCount === 0 && resetSnapshot.project.devices.low.hand.db === null
+    && resetSnapshot.project.devices.low.hand.on === null, 'target change clears hidden edits');
+ok(resetSnapshot.project.devices.low.machine.db === 0.5, 'machine decides again for vinyl');
 const past = M.HEAPU32.buffer.byteLength;
 for (const what of ['events', 'snapshot']) {
     ok(M[`_fc_session_${what}_size`](session, past - 4) === STATUS.ERR_SPAN, `${what} size output crosses heap`);

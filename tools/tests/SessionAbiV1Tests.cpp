@@ -22,6 +22,59 @@
 using namespace felitronics::session;
 using felitronics::test::ok;
 namespace alloc = felitronics::test::alloc;
+// Internal implementation checks, intentionally outside the C/wire manifest.
+static_assert (unsigned (Command::Load) == 0);
+static_assert (unsigned (Command::SetTarget) == 1);
+static_assert (unsigned (Command::EditTarget) == 2);
+static_assert (unsigned (Command::EditDevice) == 3);
+static_assert (unsigned (Command::RevertEdits) == 4);
+static_assert (unsigned (Command::SetManual) == 5);
+static_assert (unsigned (Command::Master) == 6);
+static_assert (unsigned (Command::Cancel) == 7);
+static_assert (unsigned (Command::Forget) == 8);
+static_assert (unsigned (Command::ImportProject) == 9);
+static_assert (unsigned (Event::Measured1) == 0);
+static_assert (unsigned (Event::Measured2) == 1);
+static_assert (unsigned (Event::Mastered) == 2);
+static_assert (unsigned (Column::Empty) == 0);
+static_assert (unsigned (Column::Loaded) == 1);
+static_assert (unsigned (Column::Measured1) == 2);
+static_assert (unsigned (Column::Measured2) == 3);
+static_assert (unsigned (Column::Mastering1) == 4);
+static_assert (unsigned (Column::Mastering2) == 5);
+static_assert (unsigned (EventKind::Phase) == 0);
+static_assert (unsigned (EventKind::Fact) == 1);
+static_assert (unsigned (EventKind::Reading) == 2);
+static_assert (unsigned (EventKind::Done) == 3);
+static_assert (unsigned (EventKind::Rejected) == 4);
+static_assert (unsigned (EventKind::Error) == 5);
+static_assert (unsigned (CodecStatus::Ok) == 0);
+static_assert (unsigned (CodecStatus::Invalid) == 1);
+static_assert (unsigned (CodecStatus::TooSmall) == 2);
+static_assert (unsigned (CodecStatus::FloatingPointEnvironment) == 3);
+static_assert (unsigned (Status::Ok) == 0);
+static_assert (unsigned (Status::FloatingPointEnvironment) == 1);
+static_assert (unsigned (Status::ConfigVersion) == 2);
+static_assert (unsigned (Status::Capabilities) == 3);
+static_assert (unsigned (Status::Memory) == 4);
+static_assert (unsigned (text::Lang::En) == 0);
+static_assert (unsigned (text::Lang::De) == 1);
+static_assert (unsigned (text::Lang::Ru) == 2);
+static_assert (unsigned (text::Lang::Uk) == 3);
+static_assert (unsigned (text::Lang::Cs) == 4);
+static_assert (unsigned (text::Lang::Es) == 5);
+static_assert (unsigned (text::Lang::Fr) == 6);
+static_assert (unsigned (text::Lang::It) == 7);
+static_assert (unsigned (text::Lang::Pl) == 8);
+static_assert (unsigned (text::Lang::Pt) == 9);
+static_assert (unsigned (text::Lang::Ro) == 10);
+static_assert (unsigned (text::Lang::Tr) == 11);
+static_assert (unsigned (text::Plural::Zero) == 0);
+static_assert (unsigned (text::Plural::One) == 1);
+static_assert (unsigned (text::Plural::Two) == 2);
+static_assert (unsigned (text::Plural::Few) == 3);
+static_assert (unsigned (text::Plural::Many) == 4);
+static_assert (unsigned (text::Plural::Other) == 5);
 namespace
 {
 constexpr char meta[] = R"({"name":"signal","fileRate":48000,"bitDepth":24,"rateKnown":true})";
@@ -137,10 +190,10 @@ void directCapabilities()
     auto& r = *restricted.session;
     ok (r.apply (command::Load { 1, { pcm, 2, 4, 48000 }, {} }).rejection == Rejection::None, "restricted direct load");
     testing::measure (r); (void) r.apply (command::SetManual { 2, true });
-    for (const auto target : { "allStreaming", "cd", "vinyl" })
+    for (const auto target : { "allStreaming", "cd", "lp" })
     {
-        const auto changed = r.apply (command::SetTarget { 3, target, OnEdits::Keep });
-        if (changed.rejection == Rejection::UnknownTarget) continue;
+        const auto changed = r.apply (command::SetTarget { 3, target });
+        ok (changed.rejection == Rejection::None, "every restricted-device target is selected successfully");
         const auto& d = r.project().devices;
         ok (!d.hpf.machine.on && !d.monoBass.machine.on && !d.glue.machine.on && !d.saturation.machine.on
             && !d.tilt.machine.on && !d.dither.machine.on && !d.low.machine.on && d.limiter.machine.needles == Needles::Off,
@@ -316,7 +369,11 @@ void scenario()
     ok (contains (command (h, R"({"fields":{"fq":32},"device":0,"commandId":"10","kind":"editDevice"})"), "accepted"), "field order is free; an offered device is editable");
     ok (contains (command (h, R"({"kind":"revertEdits","commandId":"11","device":0,"fields":{"fq":true}})"), "accepted"), "revert named field");
     ok (contains (command (h, R"({"kind":"editTarget","commandId":"12","fields":{"lufs":-14}})"), "accepted"), "edit target");
-    ok (contains (command (h, R"({"kind":"setTarget","commandId":"13","target":"cd","onEdits":"keep"})"), "accepted"), "set target");
+    ok (contains (command (h, R"({"kind":"editDevice","commandId":"12","device":0,"fields":{"on":false,"fq":36}})"), "accepted"), "device edits before target change");
+    ok (contains (snapshot (h), "\"handFieldCount\":2"), "shell can count device edits before warning");
+    ok (contains (command (h, R"({"kind":"setTarget","commandId":"13","target":"cd"})"), "accepted"), "set target");
+    ok (contains (snapshot (h), "\"handFieldCount\":0") && contains (snapshot (h), "\"hand\":{\"fq\":null,\"on\":null,\"slope\":null}"),
+        "wire target change resets device edits and snapshot count");
     std::uint32_t projectSize = 0;
     ok (fc_session_export_project_size (h, &projectSize) == FC_SESSION_OK, "project size");
     std::string project (projectSize, '?'); std::uint32_t written = 777;
@@ -360,6 +417,82 @@ void rows()
     ok (Wire::events ({ &event, 1 }, json, binary) == CodecStatus::Ok && binary[0] == 7 && std::isinf (binary[1]), "reading events use the same binary representation");
     ReadingPoint tooBig { 9007199254740992ull, 0 }; v.momentary = { &tooBig, 1 };
     ok (Wire::snapshotBytes (v).status == CodecStatus::Invalid, "row indices cannot silently lose integer precision");
+}
+// Exercise combined faults, so moving a guard can never be hidden by isolated cases.
+void demandGuards()
+{
+    felitronics::test::group ("demand/capacity guard matrix: outputs, handle, input, overlap, session");
+    fc_session h = 0; ok (create (full, &h) == FC_SESSION_OK, "matrix session");
+    using Query = fc_session_status (*) (fc_session, const char*, std::uint32_t, fc_session_storage*);
+    const Query queries[] { fc_session_command_bytes, fc_session_import_project_bytes,
+        +[] (fc_session session, const char* input, std::uint32_t n, fc_session_storage* out) {
+            return fc_session_load_bytes (session, 0, 0, 0, input, n, out);
+        } };
+    alignas (fc_session_storage) unsigned char raw[sizeof (fc_session_storage) + 8];
+    std::fill (std::begin (raw), std::end (raw), 0xA5);
+    const auto* badInput = reinterpret_cast<const char*> (UINTPTR_MAX - 7);
+    auto* badOutput = reinterpret_cast<fc_session_storage*> (UINTPTR_MAX - 7);
+    for (const auto query : queries)
+    {
+        fc_session_storage out { sizeof (fc_session_storage), 777, 888, 999, 111 };
+        unsigned char unchanged[sizeof (out)]; std::memcpy (unchanged, &out, sizeof (out));
+        const auto count = alloc::count.load();
+        bool good = true;
+        const auto expect = [&] (fc_session handle, const char* input, std::uint32_t n, fc_session_storage* output, fc_session_status want) {
+            unsigned char previous[sizeof (out)]; std::memcpy (previous, &out, sizeof (out));
+            const auto got = query (handle, input, n, output);
+            good = good && got == want && std::memcmp (&out, previous, sizeof (out)) == 0;
+        };
+        expect (0, nullptr, 1, nullptr, FC_SESSION_ERR_NULL);
+        expect (0, nullptr, 1, reinterpret_cast<fc_session_storage*> (raw + 1), FC_SESSION_ERR_ALIGNMENT);
+        expect (0, nullptr, 1, badOutput, FC_SESSION_ERR_SPAN);
+        for (const auto size : { 0u, unsigned (sizeof (out) - 1), unsigned (sizeof (out) + 1) })
+        {
+            out.size = size;
+            expect (0, reinterpret_cast<const char*> (&out), sizeof (out), &out,
+                size < sizeof (out) ? FC_SESSION_ERR_STRUCT_TOO_SMALL : FC_SESSION_ERR_STRUCT_TOO_LARGE);
+        }
+        out.size = sizeof (out);
+        expect (0, nullptr, 1, &out, FC_SESSION_ERR_HANDLE);
+        expect (0, badInput, 16, &out, FC_SESSION_ERR_HANDLE);
+        expect (0, reinterpret_cast<const char*> (&out), sizeof (out), &out, FC_SESSION_ERR_HANDLE);
+        expect (h, nullptr, 1, &out, FC_SESSION_ERR_NULL);
+        expect (h, badInput, 16, &out, FC_SESSION_ERR_SPAN);
+        expect (h, reinterpret_cast<const char*> (&out), sizeof (out), &out, FC_SESSION_ERR_OVERLAP);
+        expect (h, reinterpret_cast<const char*> (&out) + sizeof (out) - 1, 1, &out, FC_SESSION_ERR_OVERLAP);
+        const auto spent = alloc::count.load() - count;
+        ok (good, "query combined faults follow the declared refusal order");
+        ok (spent == 0 && std::memcmp (&out, unchanged, sizeof (out)) == 0
+            && std::all_of (std::begin (raw), std::end (raw), [] (unsigned char c) { return c == 0xA5; }),
+            "every refused query leaves all output bytes unchanged and allocates zero");
+    }
+    fc_session_capacity cap { sizeof (fc_session_capacity), -1, -1 };
+    unsigned char unchanged[sizeof (cap)]; std::memcpy (unchanged, &cap, sizeof (cap));
+    const auto count = alloc::count.load();
+    bool good = true;
+    const auto expect = [&] (fc_session handle, const fc_session_capacity* input, fc_session_status want) {
+        unsigned char previous[sizeof (cap)]; std::memcpy (previous, &cap, sizeof (cap));
+        const auto got = fc_session_set_capacity (handle, input);
+        good = good && got == want && std::memcmp (&cap, previous, sizeof (cap)) == 0;
+    };
+    expect (0, nullptr, FC_SESSION_ERR_HANDLE);
+    expect (0, reinterpret_cast<const fc_session_capacity*> (raw + 1), FC_SESSION_ERR_HANDLE);
+    expect (0, reinterpret_cast<const fc_session_capacity*> (badInput), FC_SESSION_ERR_HANDLE);
+    expect (h, nullptr, FC_SESSION_ERR_NULL);
+    expect (h, reinterpret_cast<const fc_session_capacity*> (raw + 1), FC_SESSION_ERR_ALIGNMENT);
+    expect (h, reinterpret_cast<const fc_session_capacity*> (badInput), FC_SESSION_ERR_SPAN);
+    for (const auto size : { 0u, unsigned (sizeof (cap) - 1), unsigned (sizeof (cap) + 1) })
+    {
+        cap.size = size;
+        expect (0, &cap, FC_SESSION_ERR_HANDLE);
+        expect (h, &cap, size < sizeof (cap) ? FC_SESSION_ERR_STRUCT_TOO_SMALL : FC_SESSION_ERR_STRUCT_TOO_LARGE);
+    }
+    cap.size = sizeof (cap); expect (h, &cap, FC_SESSION_ERR_CAPABILITIES);
+    const auto spent = alloc::count.load() - count;
+    ok (good && spent == 0 && std::memcmp (&cap, unchanged, sizeof (cap)) == 0,
+        "capacity handle precedes input guards and value checks, without writes or allocations");
+    ok (contains (load (h), "accepted"), "refused capacity updates preserve the session capacity");
+    ok (fc_session_destroy (h) == FC_SESSION_OK, "matrix session destroyed");
 }
 void freezeRegressions()
 {
@@ -508,6 +641,6 @@ void poison()
 int main (int argc, char** argv)
 {
     if (argc == 2) poisonDuringWork (argv[1]);
-    else { capabilities(); directCapabilities(); guards(); fpRefusals(); scenario(); rows(); freezeRegressions(); poison(); }
+    else { capabilities(); directCapabilities(); guards(); fpRefusals(); scenario(); rows(); demandGuards(); freezeRegressions(); poison(); }
     return felitronics::test::report();
 }
