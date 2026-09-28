@@ -438,7 +438,6 @@ wire SourceMeta.bitDepth number
 wire SetTargetCommand.kind "setTarget"
 wire SetTargetCommand.commandId string
 wire SetTargetCommand.target string
-wire SetTargetCommand.onEdits "reset" | "keep"
 wire SetManualCommand.kind "setManual"
 wire SetManualCommand.commandId string
 wire SetManualCommand.on boolean

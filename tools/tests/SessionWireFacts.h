@@ -90,7 +90,7 @@ int sessionWireFixture (bool frozen = false)
     (void) made.session->step (16);
     unsigned fixture = 0;
     for (const auto request : {
-        R"({"kind":"setTarget","commandId":"11","target":"cd","onEdits":"keep"})",
+        R"({"kind":"setTarget","commandId":"11","target":"cd"})",
         R"({"kind":"editTarget","commandId":"12","fields":{"lufs":-13.25,"tp":-1.25}})",
         R"({"kind":"editDevice","commandId":"13","device":0,"fields":{"on":true,"fq":36,"slope":24}})",
         R"({"kind":"editDevice","commandId":"14","device":1,"fields":{"on":true,"fq":120,"width":0.5}})",
@@ -109,7 +109,7 @@ int sessionWireFixture (bool frozen = false)
         R"({"kind":"revertEdits","commandId":"27","device":6,"fields":{"on":true}})",
         R"({"kind":"revertEdits","commandId":"28","device":7,"fields":{"on":true,"db":true}})",
         R"({"kind":"editTarget","commandId":"29","fields":{"lufs":null,"tp":null}})",
-        R"({"kind":"setTarget","commandId":"30","target":"lp","onEdits":"reset"})",
+        R"({"kind":"setTarget","commandId":"30","target":"lp"})",
         R"({"kind":"master","commandId":"31"})",
         R"({"kind":"cancel","commandId":"32","jobId":2})",
         R"({"kind":"forget","commandId":"33","masterId":99})",

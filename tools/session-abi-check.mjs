@@ -166,7 +166,7 @@ if (args[0] === '--generate') {
         doc => { doc.handFieldCount++; }, doc => { doc.eqCurve.byteOffset += 8; },
         doc => { doc.eqCurve.stride++; }])
         assert.throws(() => check(floor, mutated(change)), /changed or disappeared/);
-    assert(![...floor].some(line => /enum felitronics::session::(?:Command|Event|Column|Status|CodecStatus|OnEdits|EventKind|text::(?:Lang|Plural))::/.test(line)),
+    assert(![...floor].some(line => /enum felitronics::session::(?:Command|Event|Column|Status|CodecStatus|EventKind|text::(?:Lang|Plural))::/.test(line)),
         'C++-only enum ordinals are not a permanent contract');
     console.log('session ABI JSON controls: nested additions and relocated rows GREEN; rename/removal/type/value/descriptor changes RED');
     console.log(`session ABI control: deletion and change go red for all ${floor.size} lines; additions pass`);

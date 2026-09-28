@@ -109,7 +109,7 @@ try {
         ['device field ordinal', 'modules/session/src/Devices.h', 'v (1, knobRule (r.hpfFq), s.fq...);', 'v (0, knobRule (r.hpfFq), s.fq...);'],
         ['entry signature', 'tools/fc_session_abi.h', 'fc_session_destroy (fc_session session)', 'fc_session_destroy (uint64_t session)'],
     ];
-    for (const key of ['name', 'fileRate', 'bitDepth', 'rateKnown', 'target', 'onEdits', 'on', 'jobId', 'masterId'])
+    for (const key of ['name', 'fileRate', 'bitDepth', 'rateKnown', 'target', 'on', 'jobId', 'masterId'])
         mutations.push([`parser key ${key}`, 'modules/session/src/Wire.cpp', `root.get ("${key}",`, `root.get ("changed_${key}",`]);
     for (const [name, file, rawBefore, rawAfter] of mutations) {
         const path = join(source,file), original = readFileSync(path,'utf8');
