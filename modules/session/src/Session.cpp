@@ -134,6 +134,15 @@ bool Session::mandatoryReady() const noexcept
         }
     return lufs && peak;
 }
+bool Session::masterRequiresTempo() const noexcept
+{
+    const auto target = detail::rules().row (project_.target).key;
+    if (target == "cd" || target == "cdDynamic") return true;
+    if ((capabilities_.offeredDevices & (1u << unsigned (Device::Glue))) == 0) return false;
+    const auto& glue = project_.devices.glue;
+    return glue.hand.on.value_or (glue.machine.on)
+        && glue.hand.upToDb.value_or (glue.machine.upToDb) > 0.0;
+}
 TempoChoice Session::tempoForDevice() const noexcept
 {
     const auto& result = measurementResults_[std::size_t (Analyzer::Tempo)];

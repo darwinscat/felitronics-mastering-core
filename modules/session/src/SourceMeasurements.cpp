@@ -251,6 +251,7 @@ void Session::stepSourceMeasurements() noexcept
         }
         return;
     }
+    if (run.cursor == 8 && run.tempoPublishedEarly) { ++run.cursor; run.tempoPublishedEarly = false; }
     if (run.cursor == run.order.size())
     {
         for (const auto& result : measurementResults_)
@@ -299,6 +300,8 @@ void Session::stepSourceMeasurements() noexcept
         event.kind = EventKind::Fact;
         (void) event.payload.fact.assign (text::Fact::of (text::FactId::AnalyzerStatus, text::Arg::term (analyzers[run.cursor]), text::Arg::term (status))); emit (event);
         workspace.release (id); ++run.cursor; run.stage = 0; run.frames = run.copied = 0;
+        if (id == Analyzer::Tempo && run.tempoReturnCursor < run.order.size())
+        { run.cursor = run.tempoReturnCursor; run.tempoReturnCursor = unsigned (run.order.size()); run.tempoPublishedEarly = true; }
     };
     ++run.work;
     const auto chunks = (source_.frames + 1023u) / 1024u;

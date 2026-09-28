@@ -515,13 +515,18 @@ session compares or prints one.
 
 ## Work units, event deltas, and snapshots
 
-`Session::step(budget)` runs live loudness, source clipping, the programme report, and the needles analyzer. Other analyzers and mastering retain their scheduling placeholders. The budget counts **work units**, never milliseconds. A call
+`Session::step(budget)` runs live loudness, source clipping, the programme report, waveform, source analyzers, needles, and mastering. The budget counts **work units**, never milliseconds. A call
 consumes at most `min(budget, 16)` units, reports the number consumed, and returns `More` while any job remains or
 `Done` when none does. Zero units poll without progress. The shell measures its own speed and converts time to
 units. The library has no clock. A measurement unit prepares one instrument, reads at most 1024 source frames,
 publishes at most four newly decided clipping runs, or advances report finalization by at most 1024 entries.
 The report drains reference true peak and scans tail energy, integrated gates, and short-term gates without changing
-summation order. A master takes priority over phase two, which resumes when the master finishes.
+summation order. A master needs terminal tempo for CD targets or enabled Glue. While tempo is pending, its
+own job schedules that analyzer after the current analyzer reaches a stage boundary, resumes a
+stopped measurement if needed, and reports `Analyzers` progress with no render pass. The recipe
+is captured once tempo becomes terminal. Other phase-two analyzers resume after the master;
+targets without a tempo dependency start their passes immediately. Cancelling a waiting master
+leaves the measurement running; cancelling that measurement also stops its waiting master.
 
 Every completed unit publishes a phase. Measurement progress is the cumulative weight divided by the sum of
 `progress.analysis.weights`, in this order: loudness, report, lowEnd120, forensics, stereo, lowEndSweep, stereoBursts,
@@ -935,7 +940,7 @@ Real source measurement completes the 120 Hz, 150 Hz and configured infra-low LR
 channel forensics and stereo columns before publishing `Measured1`. Integrated LUFS and true
 peak must both be usable. Optional outcomes carry their own reasons. Device editing and project
 export still require placement; measurement does not place the default devices. Master may run
-while source crest, hum and Mid/Side bursts continue. These results alone do not establish
+while source crest, hum and Mid/Side bursts continue, subject to the target's tempo dependency. These results alone do not establish
 `Measured2`: tempo and the second-phase join remain separate work.
 
 `mandatoryMeasurementsReady` and `devicesPlaced` are separate appended snapshot fields.
@@ -960,6 +965,8 @@ needles job. Continue resumes the saved analyzer, PCM offset and output-copy pos
 | Hum / stretches | channel, index, start frame, end frame, selected frames |
 | Bursts / midEvents, sideEvents | start, length, peak frame, peak power/baseline/excess dB/wide power, energy, hops, input damage, baseline damage, closed by finish, other-axis power/baseline/eligible/hop |
 | Bursts / midIntervals, sideIntervals | interval count and lag count, lags 1 through 512 |
+| Tempo / candidates | BPM, score; no time grid, because candidates describe the whole source |
+| Tempo / curve | rounded seconds, smoothed BPM/confidence/present, raw BPM/confidence; grid starts at the first window centre and advances by the actual detector hop in source frames |
 
 Every list publishes total/stored counts and completeness; capped low-end blocks and burst
 lists never claim completeness. Forensics does not infer a codec from missing evidence.
