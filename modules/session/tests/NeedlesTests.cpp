@@ -180,6 +180,36 @@ void lifecycle()
     (void)s.setCapacity({}); target(s,-201);
     ok(s.needlesJob()==0 && s.snapshot().view().measurements[slot].reason==MeasurementReason::Unsupported,"out-of-analyzer-domain ceiling is honest and does no work");
 }
+void measured2Cancellation()
+{
+    auto pcm = signal (12001); auto created = Session::create(); auto& s = *created.session;
+    load (s, pcm, 48000, 2); readings (s); target (s, -6);
+    while (s.measurementJob() != 0 || s.needlesJob() != 0) (void) s.step (7);
+    ok (s.state() == State::Measured2 && s.measurementJob() == 0, "both measurement phases completed");
+    const auto saved = s.snapshot();
+    const auto source = s.source().hash;
+    target (s, -9); const auto job = s.needlesJob(); (void) s.step (2);
+    ok (job != 0 && s.state() == State::Measured2, "target change starts needles after phase two");
+    const auto revision = s.revision();
+    ok (s.apply (command::Cancel { 3, job + 1 }).rejection == Rejection::UnknownJob
+        && s.needlesJob() == job && s.revision() == revision, "wrong ID cannot cancel phase-two needles");
+    ok (s.check (command::Cancel { 4, job }).rejection == Rejection::None, "phase-two needles cancellation preflight");
+    Answer answer;
+    const auto spent = budget::spend ([&] { answer = s.apply (command::Cancel { 4, job }); });
+    const auto stopped = s.snapshot();
+    ok (answer.rejection == Rejection::None && spent.bytes == 0 && s.needlesJob() == 0 && s.measurementJob() == 0
+        && s.state() == State::Measured2 && s.source().hash == source, "cancel phase-two needles without allocation or source loss");
+    ok (stopped.view().measurements[slot].status == MeasurementStatus::Cancelled
+        && stopped.view().measurements[slot].reason == MeasurementReason::Cancelled
+        && same (number (stopped.view().measurements[0], "integratedLufs"), -18)
+        && same (number (saved.view().measurements[slot], "thresholdDbTp"), -6), "cancellation preserves completed source readings and saved needles");
+    ok (s.apply (command::Cancel { 5, job }).rejection == Rejection::NoJob, "no active phase-two job still returns NoJob");
+    target (s, -12); const auto next = s.needlesJob();
+    ok (next != 0 && next != job && s.apply (command::Cancel { 6, job }).rejection == Rejection::UnknownJob,
+        "cancelled phase-two ID cannot cancel its replacement");
+    finish (s);
+    ok (same (number (s.snapshot().view().measurements[slot], "thresholdDbTp"), -12), "replacement completes after phase-two cancellation");
+}
 void dense()
 {
     std::vector<float> pcm(128u*65540u,0.0f);
@@ -196,6 +226,6 @@ int main(int argc,char** argv)
 {
     std::setbuf(stdout,nullptr);
     const bool fixture=argc>1 && std::string_view(argv[1])=="--fixture";
-    if(argc>1 && std::string_view(argv[1])=="--dense") dense(); else {parity(fixture);lifecycle();}
+    if(argc>1 && std::string_view(argv[1])=="--dense") dense(); else {parity(fixture);lifecycle();measured2Cancellation();}
     return felitronics::test::report();
 }

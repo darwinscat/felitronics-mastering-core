@@ -24,7 +24,7 @@ struct MeasurementParameters
     int maxBlock = 1024, clipRuns = 65536, columns = 1200, waveformBuckets = 1200;
     analysis::PeakMix waveformMix = analysis::PeakMix::Average;
     analysis::ProgrammeReportParams programme {};
-    analysis::LowEndParams lowEnd {}, infraLow {};
+    analysis::LowEndParams lowEnd {}, infraLow {}, lowEnd150 {};
     analysis::SourceForensicsParams forensics {};
     analysis::StereoBandBursts::Params bursts {};
     analysis::BandCrestParams crest {};

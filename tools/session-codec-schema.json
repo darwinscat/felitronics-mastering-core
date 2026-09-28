@@ -44,7 +44,8 @@
       "Crest",
       "Hum",
       "Tempo",
-      "Excursions"
+      "Excursions",
+      "LowEnd150"
     ],
     "MeasurementStatus": [
       "Pending",

@@ -57,6 +57,9 @@ MeasurementParameters MeasurementPlan::parametersFor (const Pcm& pcm) noexcept
     const auto blockFrames = std::max<std::uint64_t> (1, std::uint64_t (std::floor (double (pcm.sampleRate) * 0.01 + 0.5)));
     p.lowEnd.maxBlocks = int (std::min<std::uint64_t> (std::uint64_t (p.lowEnd.maxBlocks), pcm.frames / blockFrames + 1u));
     p.clipRuns = int (std::min<std::uint64_t> (std::uint64_t (p.clipRuns), pcm.frames * pcm.channelCount));
+    // The all-target source readings include the 150 Hz split alongside the main 120 Hz and infra-low splits.
+    p.lowEnd150 = p.lowEnd;
+    p.lowEnd150.crossoverHz = 150;
     p.infraLow = p.lowEnd;
     p.infraLow.crossoverHz = number (low.find ("infraLowCrossoverHz"));
     const auto bursts = engine.find ("stereoBursts");
@@ -101,10 +104,12 @@ MeasurementPlan MeasurementPlan::storageFor (const Pcm& pcm, const MeasurementPa
          + storage::kLoudnessProxies * storage::kVectorProxyBytes, 2u * (pcm.frames / (10u * sub) + 1u));
     const auto clips = analysis::ClipDetector::storageFor (rate, channels, p.clipRuns);
     set (Analyzer::Clipping, clips.ok, sizeof (analysis::ClipDetector) + clips.firstBytes(), clips.runEntries * 6u);
-    for (std::size_t i = 0; i < 2; ++i)
+    const std::array lowIds { Analyzer::LowEnd, Analyzer::InfraLow, Analyzer::LowEnd150 };
+    const std::array lowParameters { p.lowEnd, p.infraLow, p.lowEnd150 };
+    for (std::size_t i = 0; i < lowIds.size(); ++i)
     {
-        const auto low = analysis::LowEnd::storageFor (rate, channels, i == 0 ? p.lowEnd : p.infraLow);
-        set (i == 0 ? Analyzer::LowEnd : Analyzer::InfraLow, low.ok, sizeof (analysis::LowEnd) + low.firstBytes(),
+        const auto low = analysis::LowEnd::storageFor (rate, channels, lowParameters[i]);
+        set (lowIds[i], low.ok, sizeof (analysis::LowEnd) + low.firstBytes(),
              low.blockRecords * 8u + low.bands * 12u + analysis::LowEnd::kHistogramBins);
     }
     const auto forensics = analysis::SourceForensics::storageFor (rate, channels, p.forensics);
@@ -159,24 +164,18 @@ std::uint64_t MeasurementPlan::key (std::uint64_t pcmHash, const MeasurementPara
     h.add (p.programme.tailWindowMs);
     h.add (p.programme.infraLowHz);
     h.add (p.programme.maxDurationSec);
-    h.add (p.lowEnd.crossoverHz);
-    h.add (p.lowEnd.lowNoteHz);
-    h.add (p.lowEnd.highNoteHz);
-    h.add (p.lowEnd.tuningHz);
-    h.add (p.lowEnd.fftOrder);
-    h.add (p.lowEnd.hop);
-    h.add (p.lowEnd.dutyThresholdDb);
-    h.add (p.lowEnd.skipBlocks);
-    h.add (p.lowEnd.maxBlocks);
-    h.add (p.infraLow.crossoverHz);
-    h.add (p.infraLow.lowNoteHz);
-    h.add (p.infraLow.highNoteHz);
-    h.add (p.infraLow.tuningHz);
-    h.add (p.infraLow.fftOrder);
-    h.add (p.infraLow.hop);
-    h.add (p.infraLow.dutyThresholdDb);
-    h.add (p.infraLow.skipBlocks);
-    h.add (p.infraLow.maxBlocks);
+    for (const auto& low : { p.lowEnd, p.infraLow, p.lowEnd150 })
+    {
+        h.add (low.crossoverHz);
+        h.add (low.lowNoteHz);
+        h.add (low.highNoteHz);
+        h.add (low.tuningHz);
+        h.add (low.fftOrder);
+        h.add (low.hop);
+        h.add (low.dutyThresholdDb);
+        h.add (low.skipBlocks);
+        h.add (low.maxBlocks);
+    }
     h.add (p.forensics.fftOrder);
     h.add (p.forensics.hop);
     h.add (p.forensics.cellWidthHz);
