@@ -107,19 +107,6 @@ enum felitronics::session::State::Empty=0
 enum felitronics::session::State::Loaded=1
 enum felitronics::session::State::Measured1=2
 enum felitronics::session::State::Measured2=3
-enum felitronics::session::Command::Load=0
-enum felitronics::session::Command::SetTarget=1
-enum felitronics::session::Command::EditTarget=2
-enum felitronics::session::Command::EditDevice=3
-enum felitronics::session::Command::RevertEdits=4
-enum felitronics::session::Command::SetManual=5
-enum felitronics::session::Command::Master=6
-enum felitronics::session::Command::Cancel=7
-enum felitronics::session::Command::Forget=8
-enum felitronics::session::Command::ImportProject=9
-enum felitronics::session::Event::Measured1=0
-enum felitronics::session::Event::Measured2=1
-enum felitronics::session::Event::Mastered=2
 enum felitronics::session::Rejection::None=0
 enum felitronics::session::Rejection::FloatingPointEnvironment=1
 enum felitronics::session::Rejection::NoSource=2
@@ -152,14 +139,6 @@ enum felitronics::session::Rejection::NewerDefaults=28
 enum felitronics::session::Rejection::RateAboveLimit=29
 enum felitronics::session::Rejection::Memory=30
 enum felitronics::session::Rejection::Contract=31
-enum felitronics::session::OnEdits::Reset=0
-enum felitronics::session::OnEdits::Keep=1
-enum felitronics::session::Column::Empty=0
-enum felitronics::session::Column::Loaded=1
-enum felitronics::session::Column::Measured1=2
-enum felitronics::session::Column::Measured2=3
-enum felitronics::session::Column::Mastering1=4
-enum felitronics::session::Column::Mastering2=5
 enum felitronics::session::Needles::Auto=0
 enum felitronics::session::Needles::Manual=1
 enum felitronics::session::Needles::Off=2
@@ -188,35 +167,8 @@ enum felitronics::session::ErrorCode::Stale=5
 enum felitronics::session::Recover::None=0
 enum felitronics::session::Recover::Replay=1
 enum felitronics::session::Recover::Continue=2
-enum felitronics::session::EventKind::Phase=0
-enum felitronics::session::EventKind::Fact=1
-enum felitronics::session::EventKind::Reading=2
-enum felitronics::session::EventKind::Done=3
-enum felitronics::session::EventKind::Rejected=4
-enum felitronics::session::EventKind::Error=5
 enum felitronics::session::StepState::More=0
 enum felitronics::session::StepState::Done=1
-enum felitronics::session::CodecStatus::Ok=0
-enum felitronics::session::CodecStatus::Invalid=1
-enum felitronics::session::CodecStatus::TooSmall=2
-enum felitronics::session::CodecStatus::FloatingPointEnvironment=3
-enum felitronics::session::Status::Ok=0
-enum felitronics::session::Status::FloatingPointEnvironment=1
-enum felitronics::session::Status::ConfigVersion=2
-enum felitronics::session::Status::Capabilities=3
-enum felitronics::session::Status::Memory=4
-enum felitronics::session::text::Lang::En=0
-enum felitronics::session::text::Lang::De=1
-enum felitronics::session::text::Lang::Ru=2
-enum felitronics::session::text::Lang::Uk=3
-enum felitronics::session::text::Lang::Cs=4
-enum felitronics::session::text::Lang::Es=5
-enum felitronics::session::text::Lang::Fr=6
-enum felitronics::session::text::Lang::It=7
-enum felitronics::session::text::Lang::Pl=8
-enum felitronics::session::text::Lang::Pt=9
-enum felitronics::session::text::Lang::Ro=10
-enum felitronics::session::text::Lang::Tr=11
 enum felitronics::session::text::Unit::None=0
 enum felitronics::session::text::Unit::Percent=1
 enum felitronics::session::text::Unit::Db=2
@@ -234,12 +186,6 @@ enum felitronics::session::text::Sign::Always=1
 enum felitronics::session::text::Bound::Exact=0
 enum felitronics::session::text::Bound::AtLeast=1
 enum felitronics::session::text::Bound::AtMost=2
-enum felitronics::session::text::Plural::Zero=0
-enum felitronics::session::text::Plural::One=1
-enum felitronics::session::text::Plural::Two=2
-enum felitronics::session::text::Plural::Few=3
-enum felitronics::session::text::Plural::Many=4
-enum felitronics::session::text::Plural::Other=5
 enum felitronics::session::text::FactId::Value=1
 enum felitronics::session::text::FactId::LandingPass=2
 enum felitronics::session::text::FactId::LandingConverged=3
@@ -690,6 +636,25 @@ wire union RevertEditsCommand RevertEditsTiltCommand
 wire union RevertEditsCommand RevertEditsLimiterCommand
 wire union RevertEditsCommand RevertEditsDitherCommand
 wire union RevertEditsCommand RevertEditsLowCommand
+field-id Hpf.on=0
+field-id Hpf.fq=1
+field-id Hpf.slope=2
+field-id MonoBass.on=0
+field-id MonoBass.fq=1
+field-id MonoBass.width=2
+field-id Glue.on=0
+field-id Glue.upToDb=1
+field-id Saturation.on=0
+field-id Saturation.drive=1
+field-id Saturation.mix=2
+field-id Saturation.output=3
+field-id Tilt.on=0
+field-id Tilt.db=1
+field-id Limiter.needles=0
+field-id Limiter.needlesDb=1
+field-id Dither.on=0
+field-id Low.on=0
+field-id Low.db=1
 binary SessionSnapshot.momentary
 binary SessionSnapshot.shortTerm
 binary SessionSnapshot.runs
@@ -707,3 +672,60 @@ ffffffffffff3f43000000000000f0ff0000000000001040000000000000f87f0000000000001c40
 {"kind":"accepted","commandId":"9007199254740993","revision":"1","jobId":0}
 {"kind":"rejected","commandId":"9007199254740994","revision":"1","code":2,"needBytes":0,"field":255,"device":-1,"line":0,"column":0}
 {"kind":"rejected","commandId":"9007199254740995","revision":"1","code":"contract","reason":"unknown","field":"unknown"}
+{"kind":"accepted","commandId":"10","revision":"2","jobId":1}
+json load-source {"bitDepth":24,"channels":2,"fileRate":44100,"frames":"4","hash":"15094001361299705642","name":"wire.wav","rateKnown":true,"sampleRate":48000}
+{"kind":"accepted","commandId":"11","revision":"5","jobId":0}
+json command-effect-0 {"target":"cd","manual":false,"targetEdit":{"lufs":null,"tp":null},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"12","revision":"6","jobId":0}
+json command-effect-1 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"13","revision":"7","jobId":0}
+json command-effect-2 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":36,"on":true,"slope":24},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"14","revision":"8","jobId":0}
+json command-effect-3 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":36,"on":true,"slope":24},"monoBass":{"fq":120,"on":true,"width":0.5},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"15","revision":"9","jobId":0}
+json command-effect-4 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":36,"on":true,"slope":24},"monoBass":{"fq":120,"on":true,"width":0.5},"glue":{"on":true,"upToDb":1.5},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"16","revision":"10","jobId":0}
+json command-effect-5 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":36,"on":true,"slope":24},"monoBass":{"fq":120,"on":true,"width":0.5},"glue":{"on":true,"upToDb":1.5},"saturation":{"drive":1,"mix":0.5,"on":true,"output":-1},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"17","revision":"11","jobId":0}
+json command-effect-6 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":36,"on":true,"slope":24},"monoBass":{"fq":120,"on":true,"width":0.5},"glue":{"on":true,"upToDb":1.5},"saturation":{"drive":1,"mix":0.5,"on":true,"output":-1},"tilt":{"db":1.25,"on":true},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"18","revision":"12","jobId":0}
+json command-effect-7 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":36,"on":true,"slope":24},"monoBass":{"fq":120,"on":true,"width":0.5},"glue":{"on":true,"upToDb":1.5},"saturation":{"drive":1,"mix":0.5,"on":true,"output":-1},"tilt":{"db":1.25,"on":true},"limiter":{"needles":1,"needlesDb":2},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"19","revision":"13","jobId":0}
+json command-effect-8 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":36,"on":true,"slope":24},"monoBass":{"fq":120,"on":true,"width":0.5},"glue":{"on":true,"upToDb":1.5},"saturation":{"drive":1,"mix":0.5,"on":true,"output":-1},"tilt":{"db":1.25,"on":true},"limiter":{"needles":1,"needlesDb":2},"dither":{"on":true},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"20","revision":"14","jobId":0}
+json command-effect-9 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":36,"on":true,"slope":24},"monoBass":{"fq":120,"on":true,"width":0.5},"glue":{"on":true,"upToDb":1.5},"saturation":{"drive":1,"mix":0.5,"on":true,"output":-1},"tilt":{"db":1.25,"on":true},"limiter":{"needles":1,"needlesDb":2},"dither":{"on":true},"low":{"db":0.75,"on":true}}
+{"kind":"accepted","commandId":"21","revision":"15","jobId":0}
+json command-effect-10 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":120,"on":true,"width":0.5},"glue":{"on":true,"upToDb":1.5},"saturation":{"drive":1,"mix":0.5,"on":true,"output":-1},"tilt":{"db":1.25,"on":true},"limiter":{"needles":1,"needlesDb":2},"dither":{"on":true},"low":{"db":0.75,"on":true}}
+{"kind":"accepted","commandId":"22","revision":"16","jobId":0}
+json command-effect-11 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":true,"upToDb":1.5},"saturation":{"drive":1,"mix":0.5,"on":true,"output":-1},"tilt":{"db":1.25,"on":true},"limiter":{"needles":1,"needlesDb":2},"dither":{"on":true},"low":{"db":0.75,"on":true}}
+{"kind":"accepted","commandId":"23","revision":"17","jobId":0}
+json command-effect-12 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":1,"mix":0.5,"on":true,"output":-1},"tilt":{"db":1.25,"on":true},"limiter":{"needles":1,"needlesDb":2},"dither":{"on":true},"low":{"db":0.75,"on":true}}
+{"kind":"accepted","commandId":"24","revision":"18","jobId":0}
+json command-effect-13 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":1.25,"on":true},"limiter":{"needles":1,"needlesDb":2},"dither":{"on":true},"low":{"db":0.75,"on":true}}
+{"kind":"accepted","commandId":"25","revision":"19","jobId":0}
+json command-effect-14 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":1,"needlesDb":2},"dither":{"on":true},"low":{"db":0.75,"on":true}}
+{"kind":"accepted","commandId":"26","revision":"20","jobId":0}
+json command-effect-15 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":true},"low":{"db":0.75,"on":true}}
+{"kind":"accepted","commandId":"27","revision":"21","jobId":0}
+json command-effect-16 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":0.75,"on":true}}
+{"kind":"accepted","commandId":"28","revision":"22","jobId":0}
+json command-effect-17 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"29","revision":"22","jobId":0}
+json command-effect-18 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"30","revision":"23","jobId":0}
+json command-effect-19 {"target":"lp","manual":false,"targetEdit":{"lufs":null,"tp":null},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"31","revision":"24","jobId":2}
+json command-effect-20 {"target":"lp","manual":false,"targetEdit":{"lufs":null,"tp":null},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"32","revision":"25","jobId":0}
+json command-effect-21 {"target":"lp","manual":false,"targetEdit":{"lufs":null,"tp":null},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"rejected","commandId":"33","revision":"25","code":11,"needBytes":0,"field":255,"device":-1,"line":0,"column":0}
+json command-effect-22 {"target":"lp","manual":false,"targetEdit":{"lufs":null,"tp":null},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"rejected","commandId":"34","revision":"25","code":"contract","reason":"unknown","field":"unknown"}
+json command-effect-23 {"target":"lp","manual":false,"targetEdit":{"lufs":null,"tp":null},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"rejected","commandId":"0","revision":"25","code":"contract","reason":"missing","field":"commandId"}
+json command-effect-24 {"target":"lp","manual":false,"targetEdit":{"lufs":null,"tp":null},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"rejected","commandId":"36","revision":"25","code":"contract","reason":"duplicate","field":"on"}
+json command-effect-25 {"target":"lp","manual":false,"targetEdit":{"lufs":null,"tp":null},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"rejected","commandId":"37","revision":"25","code":"contract","reason":"invalid","field":"on"}
+json command-effect-26 {"target":"lp","manual":false,"targetEdit":{"lufs":null,"tp":null},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"rejected","commandId":"38","revision":"25","code":22,"needBytes":0,"field":255,"device":-1,"line":1,"column":9}
