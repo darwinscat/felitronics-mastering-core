@@ -5,6 +5,8 @@
 #include <felitronics_test.h>
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Wire.h>
+#include <felitronics/toml/Schema.h>
+#include "../../modules/session/src/ProjectIO.h"
 #include "fc_session_abi.h"
 #include "../../modules/session/tests/FpEnvironmentControl.h"
 #include <algorithm>
@@ -432,7 +434,12 @@ void freezeRegressions()
     constexpr char project[] = "invalid TOML";
     ok (fc_session_import_project_bytes (h, project, sizeof (project) - 1, &price) == FC_SESSION_OK && price.rejection == 0 && price.bytes > 0,
         "import demand is quoted from bytes before its allocating parse");
-    restored.largestFreeBlockBytes = 0;
+    constexpr std::string_view required[] { "defaults", "core", "manual", "target", "target.name" };
+    const auto library = felitronics::toml::storageFor (project, felitronics::toml::ReadStorage { required });
+    const auto importBytes = library.parse + library.read + detail::ImportedProject::storageBytes();
+    ok (price.bytes == double (importBytes) && price.largestBlockBytes == price.bytes,
+        "C import demand is exactly TOML parse + read + owned storage, with the conservative block bound");
+    restored.largestFreeBlockBytes = price.largestBlockBytes - 1;
     (void) fc_session_set_capacity (h, &restored);
     const auto before = alloc::count.load();
     const auto imported = fc_session_import_project (h, 9, 0, project, sizeof (project) - 1, json, sizeof (json), &written);

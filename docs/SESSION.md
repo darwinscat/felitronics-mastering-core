@@ -49,7 +49,7 @@ The laws are felitronics-core's (`docs/DSP-ARCHITECTURE.md` §2), numbered as th
 | **9** no `long double` | yes | core's long-double lint reads every `modules/*/include` and `modules/*/src`, this module's included, and the wasm tier's artifact gate reads every emitted object |
 | **10** FP contraction is stated | yes — **as `off`** | the target's own flags in one `SHELL:` group, the compile line read back (this build's and a consumer's), the hostile-flags tests, the library's probes asked from a contracting caller, and the source lint's pragma and attribute rules. Core states `on` for its tree; the session's numbers are compared across rows, native and wasm, and baseline wasm has no fused multiply-add, so a contracting native build would disagree with the module. The library's flags reach its own objects only: a program that links it compiles **every** translation unit with the same FP flags (below, "What the flags do not reach"). The sign and payload of a NaN, and the floating-point exception masks and flags, are outside every check here, as core's law 10 leaves them |
 | **11**, **11b** a request that cannot be honoured is refused whole; checks in a fixed order | yes | `create()` checks the floating-point environment and the config it reads, then allocates: a refused create requested nothing (`felitronics_session_tests`). Every command runs the checks `Commands.h` declares, in their order — the thread's floating-point environment, then the table — before changing session state. Import adds the ordered document checks below. A rejection publishes its event and advances `seq`; the session’s state and revision do not change. A `load` runs its checks, then disarms, then writes (check → disarm → write), so a rejected load, too, leaves state and revision unchanged while publishing its rejection: `felitronics_session_state_tests` compares the whole session before and after every rejection it produces, produces every rejection code, and holds the order with requests wrong in several ways. The C boundary's checks run in its header's order and a refused call writes nothing and allocates nothing (`felitronics_session_abi_tests`). `fcore_session` reads and checks a whole script before it creates a session |
-| **11d** memory is declared before the work | yes | `Session::createBytes()` is the demand of `create()`, counted by the expression that sizes the request, and `Session::check()` gives the demand of every command before it runs — computed by the same function `apply()` runs first; the declared-budget harness (`modules/session/tests/DeclaredBudget.h`, on core's one allocation counter) holds `create()` and every command to *declared ≥ requested* (exactly equal, where the request is one exact allocation), holds `check()`, typed-command refusals and every transition to nothing requested; import parsing and its refusals are covered by the size-derived bound in `felitronics_session_project_tests`, and is itself shown to fail on a sample that under-declares. The event suite also holds `stepBytes()`, `snapshotBytes()`, snapshot copy, and codec size queries and work to their declared demands (below). The demand is checked in C++ and `fc_session_create_bytes` publishes creation demand before creation. The shell supplies a heap ceiling; live declared bytes plus each allocating command's demand must fit before work begins. The C boundary adds nothing to it (its table is static) and keeps the poison |
+| **11d** memory is declared before the work | yes | `Session::createBytes()` is the demand of `create()`, counted by the expression that sizes the request, and `Session::check()` gives the demand of every command before it runs — computed by the same function `apply()` runs first; the declared-budget harness (`modules/session/tests/DeclaredBudget.h`, on core's one allocation counter) holds `create()` and every command to *declared ≥ requested* (exactly equal, where the request is one exact allocation), holds `check()`, typed-command refusals and every transition to nothing requested; import parsing and its refusals are covered by the library storage declaration in `felitronics_session_project_tests`, and is itself shown to fail on a sample that under-declares. The event suite also holds `stepBytes()`, `snapshotBytes()`, snapshot copy, and codec size queries and work to their declared demands (below). The demand is checked in C++ and `fc_session_create_bytes` publishes creation demand before creation. The shell supplies a heap ceiling; live declared bytes plus each allocating command's demand must fit before work begins. The C boundary adds nothing to it (its table is static) and keeps the poison |
 
 Not listed, and why: **3** (float in the hot path) — there is no hot path; **11c** (a pause is silence) — there are no
 clock-only calls; **11e** (a restart adopts an accepted publication) — the session publishes and adopts nothing.
@@ -143,7 +143,7 @@ measured with (as measured, without a verdict), the progress weights. What each 
 written beside it, as a comment; a number the owner decided says so. The sound depends on no default of the core's:
 every stage a device writes is named, the limiter's second release included.
 
-- **Compiled in, never read.** felitronics-toml (v0.2.0, resolved like core: a sibling checkout, or the pinned tag)
+- **Compiled in, never read.** felitronics-toml (v0.3.0, resolved like core: a sibling checkout, or the pinned tag)
   compiles both documents into the library as constexpr data (`felitronics_toml_embed`); the session reads no file
   (law 6). A document the parser refuses stops the build at its line and column. `tools/wasm/build.sh` embeds them the
   same way for `fcsession`, with felitronics-toml's own tool run through node.
@@ -286,10 +286,10 @@ carries one, the dither where the target's bit depth is one it serves, mono bass
 
 **Memory.** `check()` says, before the work, what a command will ask the heap for, by the expressions that size its
 requests: a load its samples and its name, a master room for one more master kept (so that the render's end asks for
-nothing), import a conservative bound derived solely from the input byte count, and every other command nothing.
+nothing), import the library's parse/read allowance plus the session's owned storage, and every other command nothing.
 `felitronics_session_state_tests` holds typed commands to exact requests; `felitronics_session_project_tests` holds
 import, including malformed and hostile documents, to its bound on cumulative allocation requests. Import preflight
-checks entry, state and size without reading input; document validation is work inside `apply()`, so a passed
+checks entry and state, then counts the text allocation-free; document validation is work inside `apply()`, so a passed
 `check()` is not a promise that the document passes its schema.
 
 **No text.** A rejection is a `Rejection` code, and a field its place in its struct; the values are stable, and a new
@@ -337,8 +337,9 @@ recipes, measurements and kept masters alone. An accepted import moves the revis
 
 Checks run in this order:
 
-1. The thread's floating-point environment, then the command table, then the **16,384-byte** inclusive text bound.
-   No input byte is read before these checks. `ProjectTooLarge` requests no allocation.
+1. The thread's floating-point environment, then the command table, then the library's allocation-free storage count.
+   A saturated count or a sum that does not fit `size_t` is `ProjectTooLarge`, without allocation. There is no separate
+   session text cap; felitronics-toml enforces its own 1 MiB document limit during parsing.
 2. felitronics-toml syntax, then its `Reader` schema: required defaults, core and manual fields; target name and touched
    target numbers; devices in typed order, fields in declaration order, machine before hand. Numeric fields check the
    accepted domain at the loaded source's sample rate. Unknown keys are reported as each table closes, including unknown sections
@@ -352,13 +353,19 @@ until every check passes. Rejection changes no project, state, revision, source,
 it publishes the ordinary rejected event and advances only `seq`. Each appended rejection is fact `100 + code`, in
 Russian first and English, held by the catalog gate.
 
-`check(ImportProject)` publishes `65536 + inputBytes * perByte`, where `perByte` is
-`16 * (sizeof(toml::Entry) + sizeof(toml::Value) + sizeof(toml::Table) + sizeof(toml::Problem) + 128)`.
-The formula in `src/ProjectIO.cpp` bounds **cumulative requested bytes**, including parser paths, geometric container
-growth, schema reports, and debug-STL proxies and alignment. It covers rejected documents too, while preflight itself
-allocates nothing. The bound is tested with long strings, many keys, nested tables, arrays, partial syntax failures,
-empty input and the size boundary under the declared-budget harness, including MSVC Debug. There is no allocator
-recovery after the published budget is exceeded by the environment.
+`check(ImportProject)` obtains `s = toml::storageFor(text, toml::ReadStorage{required})` and publishes
+`s.parse + s.read + ImportedProject::storageBytes()`.
+The library counts cumulative allocation requests for this text, including malformed input, container growth and
+MSVC Debug bookkeeping. The possible missing required paths are `defaults`, `core`, `manual`, `target` and `target.name`.
+The read visits each present table and field once. Each custom refusal follows a successful conversion and is the
+only problem for that key, so it needs no additional path allowance. String conversions are included in the library's
+read allowance. The session's own storage function returns zero: the candidate project, comparison rows, original
+defaults label and emitted owned facts use fixed inline storage, already on the stack or in the session.
+The two library counts and the owned allowance are added with overflow checks. The declared-budget harness measures
+the complete import on realistic projects, schema refusals and adversarial texts up to the library's document limit,
+and prints declared/actual tightness for a realistic project. It also proves an under-declaration fails. Parser
+allocation laws belong to felitronics-toml's storage suite. If the environment cannot serve the published demand,
+allocation has no recovery path.
 
 The core carries the **current and previous defaults tables**. Today the current label is `2026-09` and the previous
 slot is empty. A carried label uses its compiled defaults. Labels are strictly `YYYY-MM`, with months `01` through `12`.

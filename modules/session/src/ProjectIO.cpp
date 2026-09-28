@@ -238,14 +238,19 @@ Answer Session::importProject (CommandId id, std::string_view bytes) noexcept
 
 namespace detail
 {
-std::uint64_t importBytes (std::size_t size) noexcept
+Checked importBytes (std::string_view bytes) noexcept
 {
-    // Bound cumulative requests, not just live storage: parse paths (at most kMaxDepth), geometric
-    // vector/string growth, schema reports and MSVC iterator proxies/alignment. Each input byte can
-    // introduce at most one node or key part. The fixed term covers empty input and schema readers.
-    constexpr auto perByte = 16 * (sizeof (toml::Entry) + sizeof (toml::Value) + sizeof (toml::Table)
-                                   + sizeof (toml::Problem) + 128);
-    return 65536 + std::uint64_t (size) * perByte;
+    // readProject visits each table/field once. A custom refusal follows a successful conversion,
+    // so it is the only problem at that key. Only missing required paths need extra report slots.
+    constexpr std::string_view required[] { "defaults", "core", "manual", "target", "target.name" };
+    const auto library = toml::storageFor (bytes, toml::ReadStorage { required });
+    constexpr auto limit = std::numeric_limits<std::size_t>::max();
+    const auto owned = ImportedProject::storageBytes();
+    if (library.parse == limit || library.read == limit || library.read > limit - library.parse
+        || owned > limit - library.parse - library.read)
+        return { Rejection::ProjectTooLarge, kNoField, 0 };
+    const auto total = std::uint64_t (library.parse) + library.read + owned;
+    return { Rejection::None, kNoField, total, 0.0, total };
 }
 ImportedProject readProject (std::string_view bytes, std::uint32_t channels, std::uint32_t offeredDevices, std::uint32_t sourceRate) noexcept
 {
