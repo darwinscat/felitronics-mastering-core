@@ -77,7 +77,7 @@ void ownership()
         "identical input reuses PCM and results, allocating only the new source name");
     ok (s.snapshot().view().measurements[7].arrays[0].values[2] == 0.75, "cached result survived its analyzer scratch");
     const auto key = s.snapshot().view().measurements[7].key;
-    (void) s.apply (command::SetTarget { 4, "cd", OnEdits::Keep });
+    (void) s.apply (command::SetTarget { 4, "cd" });
     ok (s.snapshot().view().measurements[7].key == key, "target is outside the measurement cache key");
     const auto revision = s.revision(); const auto job = s.measurementJob();
     const auto whole = encode (s.snapshot().view());
@@ -158,7 +158,7 @@ void allLowEndReadings()
     const auto saved = s.snapshot();
     for (const auto id : ids) work.release (id);
     ok (work.bytes() == sizeof (detail::MeasurementWorkspace), "releasing all low-end preparations releases their declared bytes");
-    (void) s.apply (command::SetTarget { 2, "lp", OnEdits::Keep });
+    (void) s.apply (command::SetTarget { 2, "lp" });
     (void) s.apply (command::Cancel { 3, answer.job });
     const auto stopped = s.snapshot();
     for (std::size_t i = 0; i < ids.size(); ++i)

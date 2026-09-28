@@ -254,10 +254,8 @@ template <class F> auto parseCommand (std::string_view json, F&& finish) noexcep
     Request request = command::Master { id };
     if (kind == "setTarget")
     {
-        command::SetTarget r { id, {}, OnEdits::Reset }; std::string_view onEdits;
-        root.get ("target", r.target); root.get ("onEdits", onEdits);
-        if (onEdits == "keep") r.onEdits = OnEdits::Keep;
-        else if (onEdits != "reset") p.set ("invalid", "onEdits");
+        command::SetTarget r { id, {} };
+        root.get ("target", r.target);
         request = r;
     }
     else if (kind == "setManual") { command::SetManual r { id }; root.get ("on", r.on); request = r; }

@@ -13,8 +13,7 @@
 //     and rejected past either end, between two steps, and as NaN or infinity — on the field the answer names; the
 //     slopes and the needles' modes.
 //   * PLACEMENT: device edits refused before the first measurement ends, taken after it; the manual mode opens the panel.
-//   * A CHANGE OF TARGET: its numbers replaced silently; a person's device edits kept or reset as asked (and dropped for a
-//     device the new target does not offer); the machine's layer placed again.
+//   * A CHANGE OF TARGET: its numbers replaced silently; every device edit reset; the machine's layer placed again.
 //   * THE MANUAL MODE SWITCHED OFF hides the panel and keeps a person's device edits.
 //   * MEMORY IS DECLARED BEFORE THE WORK (law 11d): for every command, check() says what apply() will ask the heap for,
 //     and the allocation counter says it asked exactly that; check() itself, a rejection and every transition ask nothing.
@@ -23,6 +22,7 @@
 
 #include "DeclaredBudget.h"   // installs the allocation counter: EVERY form of `new`, over-aligned included
 #include "FpEnvironmentControl.h"
+#include <felitronics/session/Snapshot.h>
 
 #include <felitronics_test.h>
 #include <felitronics/core/Config.h>
@@ -252,7 +252,7 @@ Situation situation (Column column, bool manual = true, const char* target = nul
     Situation x { fresh(), makeAudio (channels, 4800) };
     Session& s = *x.s;
     bool good = true;
-    if (target != nullptr) good = good && accepted (s, command::SetTarget { 101, target, OnEdits::Keep });
+    if (target != nullptr) good = good && accepted (s, command::SetTarget { 101, target });
     if (column != Column::Empty)
     {
         good = good && accepted (s, loadOf (x.audio, 102));
@@ -286,7 +286,7 @@ Request validRequest (Command c, const Situation& x, CommandId id)
     switch (c)
     {
         case Command::Load:        return command::Load { id, x.audio.pcm, { "other.wav", 44100, true, 16 } };
-        case Command::SetTarget:   return command::SetTarget { id, "lp", OnEdits::Keep };
+        case Command::SetTarget:   return command::SetTarget { id, "lp" };
         case Command::EditTarget:  { command::EditTarget e { id, {} }; e.fields.lufs = -13.0; return e; }
         case Command::EditDevice:  return editOf (hpfFq (36.0), id);
         case Command::RevertEdits: { HpfFields<Mark> m {}; m.fq = true; return revertOf (m, id); }
@@ -333,8 +333,8 @@ void theDefaultsAtCreate()
     ok (sameMachine (s->project().devices, Devices {}), "the devices unplaced: the machine's layer at its types' zeros");
     Audio a = makeAudio (2, 480);
     ok (accepted (*s, loadOf (a)) && sameMachine (s->project().devices, Devices {}), "and still after a load");
-    ok (accepted (*s, command::SetTarget { 2, "lp", OnEdits::Keep }) && sameMachine (s->project().devices, Devices {})
-            && accepted (*s, command::SetTarget { 3, "allStreaming", OnEdits::Keep }),
+    ok (accepted (*s, command::SetTarget { 2, "lp" }) && sameMachine (s->project().devices, Devices {})
+            && accepted (*s, command::SetTarget { 3, "allStreaming" }),
         "and after a change of target while the first measurement runs");
     ok (Driver::measured1 (*s, s->measurementJob(), s->source().hash), "the first measurement ends");
     const auto& d = s->project().devices;
@@ -434,7 +434,7 @@ void placement()
 
 void aChangeOfTarget()
 {
-    felitronics::test::group ("setTarget: the target's numbers replaced silently; a person's device edits kept or reset as asked");
+    felitronics::test::group ("setTarget: the target's numbers replaced silently; every device edit reset");
     Situation x = situation (Column::Measured1);
     Session& s = *x.s;
     command::EditTarget lufs { 1, {} };
@@ -443,12 +443,11 @@ void aChangeOfTarget()
     width.width = 0.5;
     ok (accepted (s, lufs) && accepted (s, editOf (hpfFq (36.0))) && accepted (s, editOf (width)), "PRECONDITION: three edits");
 
-    ok (accepted (s, command::SetTarget { 2, "lp", OnEdits::Keep }) && s.targetName() == "lp", "setTarget lp, keep");
+    ok (accepted (s, command::SetTarget { 2, "lp" }) && s.targetName() == "lp", "setTarget lp");
     const Project& p = s.project();
     ok (! p.targetEdit.lufs && ! p.targetEdit.tp, "the target's numbers are lp's: the edit of its loudness is gone");
-    ok (p.devices.hpf.hand.fq && same (*p.devices.hpf.hand.fq, 36.0) && p.devices.monoBass.hand.width
-            && same (*p.devices.monoBass.hand.width, 0.5),
-        "a person's device edits are kept");
+    ok (handsEmpty (p.devices) && s.snapshot().view().handFieldCount == 0,
+        "every device edit is reset, including the snapshot count");
     ok (same (p.devices.hpf.machine.fq, 32.0) && p.devices.hpf.machine.slope == 12 && same (p.devices.monoBass.machine.fq, 150.0)
             && p.devices.limiter.machine.needles == Needles::Off && p.devices.low.machine.on
             && same (p.devices.low.machine.db, 0.5) && ! p.devices.dither.machine.on,
@@ -457,22 +456,20 @@ void aChangeOfTarget()
     LowFields<Touched> shelf {};
     shelf.db = 1.0;
     ok (accepted (s, editOf (shelf)), "the low shelf is offered on lp, and edited");
-    ok (accepted (s, command::SetTarget { 3, "allStreaming", OnEdits::Keep }), "setTarget allStreaming, keep");
-    ok (s.project().devices.low.hand.db && s.project().devices.hpf.hand.fq,
-        "low edits stay across targets");
+    ok (accepted (s, command::SetTarget { 3, "allStreaming" }), "setTarget allStreaming");
+    ok (handsEmpty (s.project().devices), "low edits reset across targets");
     ok (accepted (s, editOf (shelf)), "low is offered on streaming");
 
-    ok (accepted (s, command::SetTarget { 4, "cd", OnEdits::Reset }), "setTarget cd, reset");
+    ok (accepted (s, command::SetTarget { 4, "cd" }), "setTarget cd");
     ok (handsEmpty (s.project().devices), "a person's device edits are gone");
     ok (s.project().devices.dither.machine.on && same (s.project().devices.glue.machine.upToDb, 2.6),
         "and the machine dithers cd's 16 bits and glues it up to 2.6 dB");
     DitherFields<Touched> dither {};
     dither.on = false;
     ok (accepted (s, editOf (dither)), "the dither is offered at 16 bits");
-    rejectedWhole (s, command::SetTarget { 5, "nowhere", OnEdits::Keep }, Rejection::UnknownTarget, kNoField, "an unknown target");
-    rejectedWhole (s, command::SetTarget { 6, "lp", OnEdits (7) }, Rejection::NotOneOf, kNoField, "onEdits that is neither");
-    ok (accepted (s, command::SetTarget { 7, "allStreaming", OnEdits::Keep }) && s.project().devices.dither.hand.on == false,
-        "the dither's edit remains dormant where dither is not offered (24 bits)");
+    rejectedWhole (s, command::SetTarget { 5, "nowhere" }, Rejection::UnknownTarget, kNoField, "an unknown target");
+    ok (accepted (s, command::SetTarget { 7, "allStreaming" }) && ! s.project().devices.dither.hand.on,
+        "the dither's false edit resets where dither is not offered (24 bits)");
     rejectedWhole (s, editOf (dither), Rejection::NotOffered, kNoField, "the dither at 24 bits");
 }
 
@@ -726,8 +723,8 @@ void theOrderOfTheChecks()
             std::printf ("    this row cannot round upward — the entry check is not reachable here\n");
         }
     }
-    rejectedWhole (s, command::SetTarget { 1, "nowhere", OnEdits (9) }, Rejection::UnknownTarget, kNoField,
-                   "NAMES before FIELDS: an unknown target with a bad onEdits");
+    rejectedWhole (s, command::SetTarget { 1, "nowhere" }, Rejection::UnknownTarget, kNoField,
+                   "an unknown target is rejected without changing the session");
 }
 
 void theOtherRejections()
@@ -853,7 +850,7 @@ void aMasterKeepsItsRecipe()
     ok (sameProject (s.jobRecipe().project, s.project()) && s.jobRecipe().source == s.source().hash
             && s.jobRecipe().sound == config::Config::versions().sound,
         "its recipe: the project, the source's hash, the config's sound version");
-    ok (accepted (s, editOf (hpfFq (40.0))) && accepted (s, command::SetTarget { 2, "club", OnEdits::Keep }),
+    ok (accepted (s, editOf (hpfFq (40.0))) && accepted (s, command::SetTarget { 2, "club" }),
         "the project moves on while it is made");
     ok (same (*s.jobRecipe().project.devices.hpf.hand.fq, 36.0) && s.jobRecipe().project.target != s.project().target,
         "and the recipe does not");
@@ -890,7 +887,7 @@ void aLoadDisarms()
     Session& s = *x.s;
     command::EditTarget e { 1, {} };
     e.fields.lufs = -11.0;
-    ok (accepted (s, e) && accepted (s, command::SetTarget { 2, "lp", OnEdits::Keep }) && accepted (s, e)
+    ok (accepted (s, e) && accepted (s, command::SetTarget { 2, "lp" }) && accepted (s, e)
             && accepted (s, editOf (hpfFq (44.0))),
         "PRECONDITION: a target, an edit of it, a device edit, a master kept and one being made");
     const std::uint64_t oldHash = s.source().hash;
