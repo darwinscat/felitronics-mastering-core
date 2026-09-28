@@ -136,8 +136,8 @@ const char* nameOf (felitronics::session::Rejection r)
 // read anything else in its own code page.
 void printHeader (const char* first)
 {
-    std::printf ("| %s | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 | Stopped | StoppedMeasured | MasteringStopped |\n"
-                 "|---|---|---|---|---|---|---|---|---|---|\n", first);
+    std::printf ("| %s | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 | Stopped | StoppedMeasured | MasteringStopped | Measured1Unplaced | Measured2Unplaced | Mastering1Unplaced | Mastering2Unplaced | StoppedMeasuredUnplaced | MasteringStoppedUnplaced |\n"
+                 "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n", first);
 }
 
 void printTable()

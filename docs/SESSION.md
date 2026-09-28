@@ -204,7 +204,7 @@ every stage a device writes is named, the limiter's second release included.
 
 `<felitronics/session/Commands.h>` and `<felitronics/session/Project.h>`. A session is in one of five states — **Empty**
 (nothing loaded), **Loaded** (a source, its first measurement not completed, the devices not placed), **Measured1** (the first
-measurement ended: the devices are placed, a master can be made), **Measured2** (the second ended too), **MeasurementStopped** (audio, results, and unfinished work retained) — and a master
+measurement ended: a master can be made, while device edits wait for explicit placement), **Measured2** (the second ended too), **MeasurementStopped** (audio, results, and unfinished work retained) — and a master
 being made is an overlay on the two measured ones. A shell asks by a `Request`, one struct per command with the shell's
 own id for it: `load`, `setTarget`, `editTarget`, `editDevice`, `revertEdits`, `setManual`, `master`, `cancel`, `forget`, `importProject`, `continueMeasurement`.
 `Session::apply()` answers it whole — accepted, with the revision it made, or rejected with a `Rejection` code and no state change. A rejection publishes an event and advances `seq`. Every accepted command and every transition moves the revision by one; a rejection leaves it.
@@ -217,25 +217,25 @@ session's friend and not public), and they happen only where their row says so. 
 from the code, and ctest holds the text between the markers below to that output byte for byte.
 
 <!-- the table: begin -->
-| command | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 | Stopped | StoppedMeasured | MasteringStopped |
-|---|---|---|---|---|---|---|---|---|---|
-| load | yes | yes | yes | yes | yes | yes | yes | yes | yes |
-| setTarget | yes | yes | yes | yes | yes | yes | yes | yes | yes |
-| editTarget | yes | yes | yes | yes | yes | yes | yes | yes | yes |
-| editDevice | NoSource | NotPlaced | yes | yes | yes | yes | NotPlaced | yes | yes |
-| revertEdits | NoSource | NotPlaced | yes | yes | yes | yes | NotPlaced | yes | yes |
-| setManual | yes | yes | yes | yes | yes | yes | yes | yes | yes |
-| master | NoSource | NotMeasured | yes | yes | Busy | Busy | NotMeasured | yes | Busy |
-| cancel | NoJob | yes | yes | yes | yes | yes | NoJob | yes | yes |
-| forget | NoSource | NoMaster | yes | yes | yes | yes | NoMaster | yes | yes |
-| importProject | NoSource | NotPlaced | yes | yes | yes | yes | NotPlaced | yes | yes |
-| continueMeasurement | NoJob | NoJob | NoJob | NoJob | NoJob | NoJob | yes | yes | yes |
+| command | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 | Stopped | StoppedMeasured | MasteringStopped | Measured1Unplaced | Measured2Unplaced | Mastering1Unplaced | Mastering2Unplaced | StoppedMeasuredUnplaced | MasteringStoppedUnplaced |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| load | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| setTarget | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| editTarget | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| editDevice | NoSource | NotPlaced | yes | yes | yes | yes | NotPlaced | yes | yes | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced |
+| revertEdits | NoSource | NotPlaced | yes | yes | yes | yes | NotPlaced | yes | yes | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced |
+| setManual | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| master | NoSource | NotMeasured | yes | yes | Busy | Busy | NotMeasured | yes | Busy | yes | yes | Busy | Busy | yes | Busy |
+| cancel | NoJob | yes | yes | yes | yes | yes | NoJob | yes | yes | yes | yes | yes | yes | yes | yes |
+| forget | NoSource | NoMaster | yes | yes | yes | yes | NoMaster | yes | yes | yes | yes | yes | yes | yes | yes |
+| importProject | NoSource | NotPlaced | yes | yes | yes | yes | NotPlaced | yes | yes | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced |
+| continueMeasurement | NoJob | NoJob | NoJob | NoJob | NoJob | NoJob | yes | yes | yes | NoJob | NoJob | NoJob | NoJob | yes | yes |
 
-| the session's own transition | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 | Stopped | StoppedMeasured | MasteringStopped |
-|---|---|---|---|---|---|---|---|---|---|
-| the first measurement ends | no | yes | no | no | no | no | no | no | no |
-| the second measurement ends | no | no | yes | no | yes | no | no | no | no |
-| the master is done | no | no | no | no | yes | yes | no | no | yes |
+| the session's own transition | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 | Stopped | StoppedMeasured | MasteringStopped | Measured1Unplaced | Measured2Unplaced | Mastering1Unplaced | Mastering2Unplaced | StoppedMeasuredUnplaced | MasteringStoppedUnplaced |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| the first measurement ends | no | yes | no | no | no | no | no | no | no | no | no | no | no | no | no |
+| the second measurement ends | no | no | yes | no | yes | no | no | no | no | yes | no | yes | no | no | no |
+| the master is done | no | no | no | no | yes | yes | no | no | yes | no | no | yes | yes | no | yes |
 <!-- the table: end -->
 
 **The checks run in one declared order, the same for every command**, and the first that fails is the answer:
@@ -555,8 +555,9 @@ meaning as the active master. Cancellation checks the named id after the state t
 the source, completed results, analyzer workspace and saved progress; unfinished results become `Cancelled`.
 `continueMeasurement` gets a fresh job identity, restores unfinished results to `Pending`, and resumes at the saved
 position without feeding silence or repeating a completed instrument. The snapshot publishes its availability and
-the state it resumes. Stopped, StoppedMeasured, and MasteringStopped are explicit table columns for the stopped state
-before placement, after placement, and with a master running. Cancelling a master ends only that overlay.
+the state it resumes. Stopped denotes cancellation before mandatory readiness. StoppedMeasured and MasteringStopped
+denote ready sources with placed devices; their Unplaced counterparts retain readiness without device placement.
+Cancelling a master ends only that overlay.
 Cancellation in either measured state or StoppedMeasured returns `NoJob` only when no measurement, master or needles job runs.
 A target change after phase two can start needles; its active ID can be cancelled in `Measured2`.
 A failed Driver transition publishes `Error{Contract, None}` and drops that job.
@@ -939,3 +940,16 @@ The source activity floor is the configured maximum of -70 dB and BandCrest's ow
 mean power minus 42 dB. Building the mask reads saved powers, never PCM a second time.
 Only measurement statuses and mandatory input warnings are emitted here; device decisions and
 other findings remain separate. Uncertain lowest-note evidence requests the safe target HPF floor.
+
+Snapshot fields appended after frozen v1 are optional on decode. Their defaults are declared in
+`tools/session-codec-schema.json` and emitted in the generated declarations: no results, zero byte counts
+and identities, null need/ceiling, zero progress in Stream, false flags and Empty resume state.
+Missing readiness or placement flags convey no known readiness or placement. Present fields still require
+valid types; required frozen fields stay required. Appended event metadata and reading fields are also
+optional in transport declarations with documented conservative defaults. The generator refuses an
+appended field without a decode default. The frozen snapshot and event fixtures hold backward acceptance.
+
+The table distinguishes measured sources with unplaced devices, including master and stopped overlays.
+Mastering depends on measurements; edit, revert and import depend on placement through their table cells.
+Cached PCM reloads schedule needles from mandatory readiness. Bit-depth changes refresh unused-bit
+readings from the retained exact PCM grid without allocating or repeating source analysis.

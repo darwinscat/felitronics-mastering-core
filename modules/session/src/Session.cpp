@@ -148,12 +148,17 @@ Column Session::column() const noexcept
 {
     switch (state_)
     {
-        case State::MeasurementStopped: return mastering_ ? Column::MasteringStopped
-            : stoppedState_ == State::Measured1 ? Column::StoppedMeasured : Column::Stopped;
+        case State::MeasurementStopped:
+            if (mastering_) return placed() ? Column::MasteringStopped : Column::MasteringStoppedUnplaced;
+            if (stoppedState_ == State::Measured1 || stoppedState_ == State::Measured2)
+                return placed() ? Column::StoppedMeasured : Column::StoppedMeasuredUnplaced;
+            return Column::Stopped;
         case State::Empty:     return Column::Empty;
         case State::Loaded:    return Column::Loaded;
-        case State::Measured1: return mastering_ ? Column::Mastering1 : Column::Measured1;
-        case State::Measured2: return mastering_ ? Column::Mastering2 : Column::Measured2;
+        case State::Measured1: return mastering_ ? (placed() ? Column::Mastering1 : Column::Mastering1Unplaced)
+                                               : (placed() ? Column::Measured1 : Column::Measured1Unplaced);
+        case State::Measured2: return mastering_ ? (placed() ? Column::Mastering2 : Column::Mastering2Unplaced)
+                                               : (placed() ? Column::Measured2 : Column::Measured2Unplaced);
     }
     detail::storageOverflow();
 }

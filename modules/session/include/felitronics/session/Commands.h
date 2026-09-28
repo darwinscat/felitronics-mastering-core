@@ -20,7 +20,7 @@
 //
 //   Empty      nothing loaded; a target and the manual mode can be chosen already.
 //   Loaded     a source is loaded and its first measurement has not ended. The devices are not placed: their panel is closed.
-//   Measured1  the first measurement ended and the devices are placed: a master can be made, a person may edit them.
+//   Measured1  the first measurement ended: a master can be made. Device edits wait for explicit placement.
 //   Measured2  the second measurement ended too.
 //   MeasurementStopped retains audio, results and cursor; ContinueMeasurement restores the previous phase.
 //   Mastering  a master is being made, on Measured1 or on Measured2 — the second measurement may end meanwhile. It
@@ -53,7 +53,7 @@ enum class Rejection : std::uint8_t
     FloatingPointEnvironment,   // the calling thread flushes to zero, reads subnormals as zero or does not round to nearest
     // the state (the table)
     NoSource,                   // nothing is loaded
-    NotPlaced,                  // the devices are not placed yet: the first measurement runs
+    NotPlaced,                  // the devices have not been placed yet
     NotMeasured,                // the first measurement has not ended
     Busy,                       // a master is being made
     NoJob,                      // no named measurement or master is running
@@ -172,9 +172,14 @@ struct Checked
     std::uint64_t largestBlockBytes = 0;       // largest single allocation (import: conservative bound)
 };
 
-// A session's situation — its state, and whether a master is being made — as the column of the tables below.
-enum class Column : std::uint8_t { Empty, Loaded, Measured1, Measured2, Mastering1, Mastering2, Stopped, StoppedMeasured, MasteringStopped };
-inline constexpr std::size_t kColumns = 9;
+// A session's situation: measurement state, master overlay and device placement.
+// Existing measured columns denote placed devices; appended Unplaced columns expose measurement-only readiness.
+enum class Column : std::uint8_t
+{
+    Empty, Loaded, Measured1, Measured2, Mastering1, Mastering2, Stopped, StoppedMeasured, MasteringStopped,
+    Measured1Unplaced, Measured2Unplaced, Mastering1Unplaced, Mastering2Unplaced, StoppedMeasuredUnplaced, MasteringStoppedUnplaced
+};
+inline constexpr std::size_t kColumns = 15;
 
 //==============================================================================
 // THE TABLE — who may do what, when. One row per command: in each column, None where the command is taken, or the
@@ -203,17 +208,17 @@ struct Table
 
     static constexpr Row commands[kCommands] = {
         //                           Empty     Loaded       Measured1 Measured2 Mastering1 Mastering2
-        { Command::Load,        {    None,     None,        None,     None,     None,      None, None, None, None } },
-        { Command::SetTarget,   {    None,     None,        None,     None,     None,      None, None, None, None } },
-        { Command::EditTarget,  {    None,     None,        None,     None,     None,      None, None, None, None } },
-        { Command::EditDevice,  {    NoSource, NotPlaced,   None,     None,     None,      None, NotPlaced, None, None } },
-        { Command::RevertEdits, {    NoSource, NotPlaced,   None,     None,     None,      None, NotPlaced, None, None } },
-        { Command::SetManual,   {    None,     None,        None,     None,     None,      None, None, None, None } },
-        { Command::Master,      {    NoSource, NotMeasured, None,     None,     Busy,      Busy, NotMeasured, None, Busy } },
-        { Command::Cancel,      {    NoJob,    None,        None,     None,     None,      None, NoJob, None, None } },
-        { Command::Forget,      {    NoSource, NoMaster,    None,     None,     None,      None, NoMaster, None, None } },
-        { Command::ImportProject, { NoSource, NotPlaced,   None,     None,     None,      None, NotPlaced, None, None } },
-        { Command::ContinueMeasurement, { NoJob, NoJob, NoJob, NoJob, NoJob, NoJob, None, None, None } },
+        { Command::Load,        {    None,     None,        None,     None,     None,      None, None, None, None, None, None, None, None, None, None } },
+        { Command::SetTarget,   {    None,     None,        None,     None,     None,      None, None, None, None, None, None, None, None, None, None } },
+        { Command::EditTarget,  {    None,     None,        None,     None,     None,      None, None, None, None, None, None, None, None, None, None } },
+        { Command::EditDevice,  {    NoSource, NotPlaced,   None,     None,     None,      None, NotPlaced, None, None, NotPlaced, NotPlaced, NotPlaced, NotPlaced, NotPlaced, NotPlaced } },
+        { Command::RevertEdits, {    NoSource, NotPlaced,   None,     None,     None,      None, NotPlaced, None, None, NotPlaced, NotPlaced, NotPlaced, NotPlaced, NotPlaced, NotPlaced } },
+        { Command::SetManual,   {    None,     None,        None,     None,     None,      None, None, None, None, None, None, None, None, None, None } },
+        { Command::Master,      {    NoSource, NotMeasured, None,     None,     Busy,      Busy, NotMeasured, None, Busy, None, None, Busy, Busy, None, Busy } },
+        { Command::Cancel,      {    NoJob,    None,        None,     None,     None,      None, NoJob, None, None, None, None, None, None, None, None } },
+        { Command::Forget,      {    NoSource, NoMaster,    None,     None,     None,      None, NoMaster, None, None, None, None, None, None, None, None } },
+        { Command::ImportProject, { NoSource, NotPlaced,   None,     None,     None,      None, NotPlaced, None, None, NotPlaced, NotPlaced, NotPlaced, NotPlaced, NotPlaced, NotPlaced } },
+        { Command::ContinueMeasurement, { NoJob, NoJob, NoJob, NoJob, NoJob, NoJob, None, None, None, NoJob, NoJob, NoJob, NoJob, None, None } },
     };
 
     // Import: entry, state, size (no input read), then TOML syntax, schema in canonical field order,
@@ -224,7 +229,8 @@ struct Table
     // ContinueMeasurement restores the previous measurement phase with a fresh job identity.
     // Cancelling a master ends its overlay and preserves the measurement state.
     // THE SESSION'S OWN TRANSITIONS — where each may happen (true), and what it does:
-    //   Measured1  the first measurement ended: Loaded becomes Measured1, and the devices are placed
+    //   Measured1  the internal placement seam completes: Loaded becomes Measured1 and devices are placed;
+    //              the real measurement pump publishes unplaced Measured1 separately
     //   Measured2  the second ended: Measured1 becomes Measured2, with a master being made or not
     //   Mastered   the master being made is done: it is kept, and the overlay ends
     struct EventRow
@@ -235,9 +241,9 @@ struct Table
 
     static constexpr EventRow events[kEvents] = {
         //                          Empty  Loaded Measured1 Measured2 Mastering1 Mastering2
-        { Event::Measured1,     {   false, true,  false,    false,    false,     false, false, false, false } },
-        { Event::Measured2,     {   false, false, true,     false,    true,      false, false, false, false } },
-        { Event::Mastered,      {   false, false, false,    false,    true,      true, false, false, true } },
+        { Event::Measured1,     {   false, true,  false,    false,    false,     false, false, false, false, false, false, false, false, false, false } },
+        { Event::Measured2,     {   false, false, true,     false,    true,      false, false, false, false, true, false, true, false, false, false } },
+        { Event::Mastered,      {   false, false, false,    false,    true,      true, false, false, true, false, false, true, true, false, true } },
     };
 };
 

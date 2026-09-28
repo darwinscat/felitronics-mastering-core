@@ -43,7 +43,7 @@ foreach(control clean added_field reordered_enum unknown_enum appended_State app
     file(WRITE ${dir}/felitronics/session/Project.h "${project}")
     file(WRITE ${dir}/felitronics/session/Events.h "${events}")
     file(WRITE ${dir}/control.cpp
-        "#include \"CodecSchema.h\"\nusing namespace felitronics::session;\nstruct Visitor { template<class T> void optionalField(std::string_view, const T&) {} template<class T> void field(std::string_view, T&) {} };\n${probe}\nvoid check() { Visitor v; SnapshotView x; detail::describe(v, x); }\n")
+        "#include \"CodecSchema.h\"\nusing namespace felitronics::session;\nstruct Visitor { template<class T, class D> void optionalField(std::string_view, const T&, const D&) {} template<class T> void field(std::string_view, T&) {} };\n${probe}\nvoid check() { Visitor v; SnapshotView x; detail::describe(v, x); }\n")
     set(target fs_codec_${control})
     if(control STREQUAL "clean")
         add_library(${target} OBJECT ${dir}/control.cpp)

@@ -107,6 +107,31 @@ void SourceResults::lowEnd (MeasurementStore& out, const analysis::LowEnd& a, do
     auto* histogram = out.array ("sideHistogram", 1, analysis::LowEnd::kHistogramBins, analysis::LowEnd::kHistogramBins, true, grid);
     for (int i = 0; i < analysis::LowEnd::kHistogramBins; ++i) histogram[i] = double (a.histogram (i));
 }
+int SourceResults::forensicsMetadata (MeasurementStore& out, int bitDepth) noexcept
+{
+    // The exact grid belongs to the PCM; unused container bits also depend on the current file metadata.
+    int mostUnused = 0;
+    for (std::size_t i = 0; i < out.numberCount; ++i)
+    {
+        const auto& exact = out.numbers[i];
+        if (! exact.name.starts_with ("grid.minExactPcmBits[")) continue;
+        for (std::size_t j = 0; j < out.numberCount; ++j)
+        {
+            auto& unused = out.numbers[j];
+            if (! unused.name.starts_with ("grid.alwaysZeroLowBits[")
+                || unused.name.substr (unused.name.size() - 3) != exact.name.substr (exact.name.size() - 3)) continue;
+            unused.value.reset(); unused.reason = MeasurementReason::Unsupported;
+            if (exact.value && bitDepth > 0)
+            {
+                const auto bits = *exact.value;
+                unused.value = bits > 0 && bitDepth > bits ? bitDepth - bits : 0;
+                unused.reason = MeasurementReason::None;
+                mostUnused = std::max (mostUnused, int (*unused.value));
+            }
+        }
+    }
+    return mostUnused;
+}
 void SourceResults::forensics (MeasurementStore& out, const analysis::SourceForensics& a, int bitDepth) noexcept
 {
     out.number ("sampleRate", double (a.sampleRate())); out.number ("windowSamples", double (a.windowSamples())); out.number ("hopSamples", double (a.hopSamples())); out.number ("binHz", double (a.binHz())); out.number ("cellHz", double (a.cellHz()));

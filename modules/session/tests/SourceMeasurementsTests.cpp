@@ -316,13 +316,100 @@ void finiteSourceOverflow()
         ok (snapshot.view().measurements[std::size_t (id)].reason == MeasurementReason::NonFinite,
             "an unusable Mid/Side pair reports numerical failure rather than silence");
 }
+void cachedSourceAndCommands()
+{
+    std::vector<float> pcm (48000);
+    for (unsigned i = 0; i < pcm.size(); ++i) pcm[i] = float (int (i % 97) - 48) / 32768;
+    pcm[480] = 32767.0f / 32768;
+    const float* planes[] { pcm.data(), pcm.data() };
+    auto made = Session::create(); auto& s = *made.session;
+    command::Load load { 1, { planes, 2, pcm.size(), 48000 }, { {}, 48000, true, 16 } };
+    ok (s.apply (load).rejection == Rejection::None, "load quantized source with 16-bit metadata");
+    drive (s);
+    const auto before = s.snapshot();
+    ok (before.view().mandatoryMeasurementsReady && ! before.view().devicesPlaced
+        && before.view().measurements[std::size_t (Analyzer::Excursions)].status == MeasurementStatus::Ready,
+        "real measurement reaches mandatory readiness and completes required needles without placement");
+    const auto forensics = std::size_t (Analyzer::Forensics);
+    ok (*value (before.view().measurements[forensics], "grid.alwaysZeroLowBits[0]").value == 0,
+        "16-bit PCM initially has no unused low bits");
+    for (const Request request : { Request (command::EditDevice { 7, HpfFields<Touched> {} }),
+                                  Request (command::RevertEdits { 8, HpfFields<Mark> {} }),
+                                  Request (command::ImportProject { 9, {} }) })
+    {
+        const auto cell = Table::commands[request.index()].cell[std::size_t (s.column())];
+        ok (cell == Rejection::NotPlaced && s.check (request).rejection == cell && s.apply (request).rejection == cell,
+            "the public table itself refuses device operations after a real unplaced measurement");
+    }
+    load.meta.bitDepth = 24;
+    const auto spent = budget::spend ([&] { (void) s.apply (load); });
+    ok (spent.bytes == 0, "cached metadata refresh and needles scheduling allocate nothing");
+    const auto after = s.snapshot();
+    ok (s.measurementJob() == 0 && s.needlesJob() != 0,
+        "cached reload schedules replacement needles from mandatory readiness");
+    ok (*value (after.view().measurements[forensics], "grid.alwaysZeroLowBits[0]").value == 8,
+        "cached 24-bit metadata refreshes unused bits from the retained PCM grid");
+    bool unusedBitsFact = false;
+    for (const auto& e : s.events())
+        if (e.kind == EventKind::Fact && e.payload.fact.view().id == text::FactId::SourceUnusedBits)
+            unusedBitsFact = e.payload.fact.view().args[0].integer == 8;
+    ok (unusedBitsFact, "metadata-dependent warning facts agree with refreshed forensics");
+    ok (detail::Inspector::run (s).finished && after.view().measurements[forensics].key == before.view().measurements[forensics].key,
+        "metadata refresh keeps completed source analysis and its key");
+    drive (s);
+    ok (s.snapshot().view().measurements[std::size_t (Analyzer::Excursions)].status == MeasurementStatus::Ready,
+        "replacement needles finish instead of remaining orphaned Pending");
+    for (const unsigned depth : { 32u, 0u, 16u, 24u })
+    {
+        load.meta.bitDepth = depth;
+        const auto refreshed = budget::spend ([&] { (void) s.apply (load); });
+        const auto current = s.snapshot();
+        for (const auto name : { "grid.alwaysZeroLowBits[0]", "grid.alwaysZeroLowBits[1]" })
+        {
+            const auto& bits = value (current.view().measurements[forensics], name);
+            ok (depth ? bits.value && *bits.value == double (depth - 16) : ! bits.value && bits.reason == MeasurementReason::Unsupported,
+                "metadata refresh supports both channels and known/unknown depth transitions");
+        }
+        ok (refreshed.bytes == 0 && detail::Inspector::run (s).finished, "every cached refresh avoids allocation and source DSP");
+        drive (s);
+    }
+}
+void unplacedCommandsDuringWork()
+{
+    std::vector<float> pcm (48000, .1f); const float* planes[] { pcm.data(), pcm.data() };
+    auto made = Session::create(); auto& s = *made.session;
+    (void) s.apply (command::Load { 1, { planes, 2, pcm.size(), 48000 }, {} });
+    while (s.state() == State::Loaded && s.measurementJob()) (void) s.step (1);
+    const auto refused = [&] (Column column)
+    {
+        ok (s.column() == column, "the real pump exposes placement in its table column");
+        for (const Request request : { Request (command::EditDevice { 2, HpfFields<Touched> {} }),
+                                      Request (command::RevertEdits { 3, HpfFields<Mark> {} }),
+                                      Request (command::ImportProject { 4, {} }) })
+        {
+            const auto cell = Table::commands[request.index()].cell[std::size_t (column)];
+            const auto result = s.apply (request);
+            ok (cell == Rejection::NotPlaced && result.rejection == cell, "all unplaced command refusals come from the published table");
+        }
+    };
+    refused (Column::Measured1Unplaced);
+    ok (s.apply (command::Master { 5 }).rejection == Rejection::None, "a real measured source can master before placement");
+    refused (Column::Mastering1Unplaced);
+    (void) s.apply (command::Cancel { 6, s.measurementJob() });
+    refused (Column::MasteringStoppedUnplaced);
+    (void) s.apply (command::Cancel { 7, s.job() });
+    refused (Column::StoppedMeasuredUnplaced);
+    ok (s.apply (command::ContinueMeasurement { 8 }).rejection == Rejection::None, "unplaced stopped measurement can continue");
+    refused (Column::Measured1Unplaced);
+    drive (s);
+}
 int main()
 {
     fixture (2, 48000, 192000, 317, true);
     fixture (1, 48000, 192000, 1024, false);
     fixture (2, 8000, 800, 1, false);
     fixture (2, 8000, 8000, 319, false);
-    optionalFailure(); missingMandatory(); driftingHum(); truncatedLists(); finiteSourceOverflow();
+    optionalFailure(); missingMandatory(); driftingHum(); truncatedLists(); finiteSourceOverflow(); cachedSourceAndCommands(); unplacedCommandsDuringWork();
     ok (! detail::SourceWarnings::wideBass (.059999999) && detail::SourceWarnings::wideBass (.06), "wide bass includes exactly six percent");
     ok (detail::SourceWarnings::quiet (-40) == text::FactId::Value && detail::SourceWarnings::quiet (-40.0001) == text::FactId::SourceQuiet
         && detail::SourceWarnings::quiet (-55) == text::FactId::SourceQuiet && detail::SourceWarnings::quiet (-55.0001) == text::FactId::SourceGainOnly,

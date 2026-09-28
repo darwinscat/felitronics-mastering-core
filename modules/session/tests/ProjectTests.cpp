@@ -6,6 +6,7 @@
 #include "Devices.h"
 #include "FpEnvironmentControl.h"
 #include "Grid.h"
+#include "SnapshotV1Fixture.h"
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/toml/Toml.h>
 #include <felitronics_test.h>
@@ -498,9 +499,39 @@ void demandsAndOrder()
             "hostile project import is covered by its declared demand and changes nothing");
     }
 }
+void olderSnapshot()
+{
+    Snapshot out;
+    const auto need = Codec::decodedBytes (snapshotV1);
+    CodecStatus status {};
+    const auto spent = budget::spend ([&] { status = Codec::decode (snapshotV1, out); });
+    ok (need.status == CodecStatus::Ok && status == CodecStatus::Ok && budget::covers (need.bytes, spent),
+        "a frozen v1 snapshot decodes within its declared storage");
+    if (status != CodecStatus::Ok) return;
+    const auto& v = out.view();
+    ok (! v.mandatoryMeasurementsReady && ! v.devicesPlaced && ! v.canContinueMeasurement
+        && ! v.needlesRunsTruncated && v.measurementResumeState == State::Empty,
+        "absent appended flags use conservative false/Empty defaults");
+    ok (v.measurements.empty() && v.measurementStorage.peakBytes == 0 && v.needlesJob == 0 && v.needlesSource == 0
+        && ! v.needlesNeedDb && ! v.needlesCeilingDb && v.needlesBytes == 0 && v.needlesLargestBlockBytes == 0
+        && v.needlesProgress.name == PhaseName::Stream && v.needlesProgress.totalUnits == 0,
+        "all other fields appended since frozen v1 have zero, empty or null defaults");
+    ok (v.eqCurve.size() == 2 && v.handFieldCount == 2, "historical rows and fields retain their values");
+    auto partial = std::string (snapshotV1);
+    partial.insert (1, "\"mandatoryMeasurementsReady\":true,");
+    ok (Codec::decode (partial, out) == CodecStatus::Ok && out.view().mandatoryMeasurementsReady && ! out.view().devicesPlaced,
+        "present appended flags survive default initialization of absent peers");
+    auto invalid = std::string (snapshotV1);
+    invalid.insert (1, "\"devicesPlaced\":null,");
+    const auto rejected = budget::spend ([&] { status = Codec::decode (invalid, out); });
+    ok (status == CodecStatus::Invalid && rejected.bytes == 0 && out.view().mandatoryMeasurementsReady,
+        "an optional field with an invalid present value rejects before allocation and preserves output");
+    ok (Codec::decode (snapshotV1, out) == CodecStatus::Ok && ! out.view().mandatoryMeasurementsReady,
+        "decoding an older snapshot replaces previous values with documented defaults");
+}
 }
 int main()
 {
-    sparseSections(); defaultsVersions(); roundTrip(); domainsAndExactNumbers(); refusals(); foreignMachine(); numbers(); slicing(); demandsAndOrder();
+    sparseSections(); defaultsVersions(); roundTrip(); domainsAndExactNumbers(); refusals(); foreignMachine(); numbers(); slicing(); demandsAndOrder(); olderSnapshot();
     return felitronics::test::report();
 }

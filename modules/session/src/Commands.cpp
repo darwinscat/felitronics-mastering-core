@@ -169,9 +169,6 @@ Checked Session::storageFor (const Request& request) const noexcept
     const auto which = Command (request.index());
     if (const Rejection r = Table::commands[index (which)].cell[index (column())]; r != Rejection::None) return rejected (r);
 
-    if (! placed() && (which == Command::EditDevice || which == Command::RevertEdits || which == Command::ImportProject))
-        return rejected (Rejection::NotPlaced);
-
     // The config, read in place after the build gate established its contract.
     const Rules rules = detail::rules();
 
@@ -352,6 +349,7 @@ Answer Session::apply (const Request& request) noexcept
         const auto plan = detail::MeasurementPlan::storageFor (pcm, detail::MeasurementPlan::parametersFor (pcm));
         const auto key = detail::MeasurementPlan::key (hash.h, plan.parameters, config::Config::versions().all, coreVersion(), version());
         const bool cached = source_.channels != 0 && key == measurementKey_;
+        const bool changedBitDepth = source_.bitDepth != load->meta.bitDepth;
         const auto previousState = state_;
         const auto previousPlacement = devicesPlaced_;
         const auto previousUnit = measurementUnit_;
@@ -418,6 +416,25 @@ Answer Session::apply (const Request& request) noexcept
         masterProgress_ = {};
         if (cached)
         {
+            if (sourceMeasurements_)
+                if (auto& evidence = sourceMeasurements_->results[std::size_t (Analyzer::Forensics)]; evidence)
+                {
+                    const auto unused = detail::SourceResults::forensicsMetadata (*evidence, source_.bitDepth);
+                    if (changedBitDepth && measurementResults_[std::size_t (Analyzer::Forensics)].status == MeasurementStatus::Ready)
+                    {
+                        auto& run = *sourceMeasurements_;
+                        auto kept = run.warningRead;
+                        for (auto i = run.warningRead; i < run.warningCount; ++i)
+                            if (run.warnings[i].id != text::FactId::SourceUnusedBits) run.warnings[kept++] = run.warnings[i];
+                        run.warningCount = kept;
+                        if (unused >= *rules.engine.find ("observations").find ("bitsUnused").find ("fromBits").integer())
+                        {
+                            Notification event; event.kind = EventKind::Fact;
+                            (void) event.payload.fact.assign (text::Fact::of (text::FactId::SourceUnusedBits, text::Arg::count (unused)));
+                            emit (event);
+                        }
+                    }
+                }
             state_ = previousState == State::MeasurementStopped ? stoppedState_ : previousState;
             measurementUnit_ = previousUnit;
             measurementProgress_ = previousProgress;
@@ -427,7 +444,7 @@ Answer Session::apply (const Request& request) noexcept
             if (placed()) detail::placeMachine (rules, project_.target, source_.channels, project_.devices, capabilities_.offeredDevices);
         }
         answer.job = measurementJob_;
-        if (placed()) requestNeedles();
+        if (mandatoryReady()) requestNeedles();
     }
     else if (const auto* set = std::get_if<command::SetTarget> (&request))
     {
