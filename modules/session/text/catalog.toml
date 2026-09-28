@@ -375,3 +375,11 @@ en = "Needles are not measured: need is at most 3 dB."
 [messages.needlesRunsTruncated]
 ru = "Список превышений усечён; сводные показатели рассчитаны по всему источнику."
 en = "The excursion run list is truncated; aggregates cover the whole source."
+
+[messages.sourceClipping]
+ru = "В исходной записи обнаружены участки клиппинга."
+en = "Clipping was detected in the source recording."
+
+[messages.continueMeasurement]
+ru = "Продолжить замер"
+en = "Continue measurement"

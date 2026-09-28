@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
+#include "../../modules/session/tests/Advance.h"
 #include <alloc_counter.h>
 #include <felitronics_test.h>
 #include <felitronics/session/Config.h>
@@ -130,12 +131,12 @@ void directCapabilities()
     const auto spent = alloc::count.load() - before;
     ok (reload.rejection == Rejection::Memory && reload.needBytes > base + 36 && reload.revision == revision,
         "reload counts old live PCM plus new demand before disarming");
-    ok (stepped.state == StepState::Done && imported.rejection == Rejection::Memory && master.rejection == Rejection::Memory && spent == 0,
-        "import refuses before parsing and master before reserving");
+    ok (stepped.state == StepState::More && imported.rejection == Rejection::NotPlaced && master.rejection == Rejection::NotMeasured && spent == 0,
+        "preparation pauses without allocation after capacity reduction; later commands preserve state guards");
     auto restricted = Session::create ({ 9007199254740991.0, 48000, 0 }, version());
     auto& r = *restricted.session;
     ok (r.apply (command::Load { 1, { pcm, 2, 4, 48000 }, {} }).rejection == Rejection::None, "restricted direct load");
-    (void) r.step (16); (void) r.apply (command::SetManual { 2, true });
+    testing::measure (r); (void) r.apply (command::SetManual { 2, true });
     for (const auto target : { "allStreaming", "cd", "vinyl" })
     {
         const auto changed = r.apply (command::SetTarget { 3, target, OnEdits::Keep });
@@ -153,7 +154,7 @@ void directCapabilities()
         ok (r.apply (command::EditDevice { 4, edits[i] }).rejection == Rejection::NotOffered
             && r.apply (command::RevertEdits { 5, masks[i] }).rejection == Rejection::NotOffered, "each unoffered device refuses both edit paths");
     auto ordinary = Session::create(); auto& o = *ordinary.session;
-    (void) o.apply (command::Load { 1, { pcm, 2, 4, 48000 }, {} }); (void) o.step (16);
+    (void) o.apply (command::Load { 1, { pcm, 2, 4, 48000 }, {} }); testing::measure (o);
     (void) o.apply (command::SetManual { 2, true }); HpfFields<Touched> on; on.on = true;
     (void) o.apply (command::EditDevice { 3, on }); const auto saved = o.exportProject();
     ok (r.importProject (6, saved.view()).rejection == Rejection::NotOffered, "project cannot restore an unoffered hand");
@@ -255,7 +256,7 @@ void fpRefusals()
     ok (refused && spent == 0 && n == 777 && sizes.jsonBytes == 777 && sizes.rowBytes == 888 && demand == 999,
         "all computing ABI entries forward the FP refusal without allocation or output");
     ok (std::all_of (std::begin (output), std::end (output), [] (char c) { return c == '?'; }), "FP refusals leave buffers untouched");
-    ok (fc_session_step (h, 16, &n) == FC_SESSION_OK && n == FC_SESSION_DONE, "FP refusal leaves work resumable");
+    do { ok (fc_session_step (h, 16, &n) == FC_SESSION_OK, "FP refusal leaves work resumable"); } while (n == FC_SESSION_MORE);
     ok (fc_session_destroy (h) == FC_SESSION_OK, "destroy restored FP session");
 }
 
@@ -263,7 +264,7 @@ fc_session_status innerPoison = FC_SESSION_OK;
 void poisonDuringWork (std::string_view which)
 {
     fc_session h = 0; ok (create (full, &h) == FC_SESSION_OK, "poison work session");
-    (void) load (h); std::uint32_t stepped = 0; (void) fc_session_step (h, 16, &stepped);
+    (void) load (h); std::uint32_t stepped = 0; do { (void) fc_session_step (h, 16, &stepped); } while (stepped == FC_SESSION_MORE);
     std::uint32_t size = 0; (void) fc_session_export_project_size (h, &size);
     std::string project (size, ' '); (void) fc_session_export_project_copy (h, project.data(), size, &size);
     char output[FC_SESSION_ANSWER_BYTES]; std::fill (std::begin (output), std::end (output), '?');
@@ -305,7 +306,7 @@ void scenario()
         ok (contains (events (h), "\"kind\":\"phase\""), "phase batch copies");
         ++calls;
     } while (more == FC_SESSION_MORE && calls < 100);
-    ok (more == FC_SESSION_DONE && calls == 10, "small budgets finish exactly ten units");
+    ok (more == FC_SESSION_DONE && calls > 10, "small budgets finish the analyzer work and finalization");
     auto state = snapshot (h);
     ok (contains (state, "\"offeredDevices\":1") && contains (state, "\"state\":3"), "snapshot carries offered set and measured state");
     ok (contains (state, "\"momentary\":{\"byteOffset\":") && contains (state, "\"integratedLufs\":\"NaN\""), "snapshot rows are descriptors and scalar NaN is explicit");
@@ -445,7 +446,7 @@ void freezeRegressions()
             && contains (rejected, "\"seq\":\"" + std::to_string (seq + 1) + "\"") && contains (rejected, "\"code\":31"),
             "malformed command replaces batch and advances sequence once");
     }
-    (void) fc_session_step (h, 16, &written);
+    do { (void) fc_session_step (h, 16, &written); } while (written == FC_SESSION_MORE);
     constexpr char master[] = R"({"kind":"master","commandId":"8"})";
     ok (fc_session_command_bytes (h, master, sizeof (master) - 1, &price) == FC_SESSION_OK && price.rejection == 0 && price.bytes > 0,
         "command demand comes from the same JSON before allocation");

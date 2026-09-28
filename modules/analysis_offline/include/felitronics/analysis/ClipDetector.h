@@ -416,7 +416,7 @@ private:
                 if (k > ch.latticeK)
                 {
                     ch.latticeK = k;
-                    ch.latticeQ = k <= kMaxLatticeK ? std::ldexp (1.0, -k) : std::numeric_limits<double>::infinity();
+                    ch.latticeQ = k <= kMaxLatticeK ? std::bit_cast<double> (std::uint64_t (1023 - k) << 52) : std::numeric_limits<double>::infinity();
                 }
             }
             ch.q = std::min (ch.minStep, ch.latticeQ);

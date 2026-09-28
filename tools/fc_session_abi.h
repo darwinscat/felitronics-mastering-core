@@ -192,6 +192,10 @@ typedef enum fc_session_step_state
 // Every output is disjoint from all other buffers. A query/copy pair describes the same batch only
 // while no command or step intervenes. No pointer into session memory survives a call.
 //
+// Additive v1 measurement data: reading payloads include a fixed source-frame grid, window reasons,
+// detailed clip rows and total/stored counts. Reports live in snapshot measurements with per-field reasons.
+// Events include source/revision/state/phase and deterministic work. continueMeasurement resumes a stopped
+// measurement; snapshot canContinueMeasurement and measurementResumeState describe availability.
 // A wasm trap cannot return through C: the shell catches it as ERR_TRAP and discards the instance.
 // Every later status call returns ERR_POISONED, publishes nothing, and cannot destroy even a handle.
 // Recovery is a new instance, load, then importProject. abi_version alone remains callable.

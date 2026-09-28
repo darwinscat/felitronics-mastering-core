@@ -37,13 +37,21 @@ struct Phase
 };
 struct ReadingPoint { std::uint64_t index = 0; double value = 0.0; };
 struct ReadingRun { std::uint64_t first = 0; std::uint64_t count = 0; double value = 0.0; };
-// Every delta owns its rows and their positions. The stub produces no readings.
+// Every delta owns only new rows. Frame coordinates are fixed from the first publication.
 struct Reading
 {
     ReadingPoint momentary[4] {};
     ReadingPoint shortTerm[4] {};
     ReadingRun runs[4] {};
     std::uint8_t momentaryCount = 0, shortTermCount = 0, runCount = 0;
+    MeasurementGrid grid {};
+    MeasurementReason momentaryReason = MeasurementReason::Pending, shortTermReason = MeasurementReason::Pending;
+    // Six columns per run: start, length, channel, sign, level, evidence.
+    double clips[24] {};
+    std::uint8_t clipCount = 0;
+    std::uint64_t totalRuns = 0, storedRuns = 0, tailFrames = 0;
+    bool runsComplete = true, finished = false;
+
 };
 struct Done { MasterId masterId = 0; };
 struct Rejected { CommandId commandId = 0; Rejection code = Rejection::None; };
@@ -82,6 +90,10 @@ struct Notification
     JobId jobId = 0;
     EventKind kind = EventKind::Phase;
     EventPayload payload {};
+    std::uint64_t source = 0, revision = 0, completedWork = 0, totalWork = 0;
+    PhaseName phase = PhaseName::Stream;
+    State state = State::Empty;
+
 };
 enum class StepState : std::uint8_t { More, Done };
 struct Stepped

@@ -16,6 +16,7 @@
 #include "ProjectIO.h"
 #include "MeasurementPlan.h"
 #include "MeasurementWorkspace.h"
+#include "LiveMeasurements.h"
 #include "Utf8.h"
 
 #include <felitronics/session/Commands.h>
@@ -240,6 +241,8 @@ Checked Session::storageFor (const Request& request) const noexcept
         const auto bytes = room ? 0 : std::uint64_t (masterCount_ + 1) * sizeof (Kept);
         return storage (bytes, bytes);
     }
+    if (std::holds_alternative<command::ContinueMeasurement> (request))
+        return lastJob_ == std::numeric_limits<JobId>::max() ? rejected (Rejection::NoJobId) : Checked {};
     if (const auto* cancel = std::get_if<command::Cancel> (&request))
         return job_ == 0 && measurementJob_ == 0 && needlesJob_ == 0 ? rejected (Rejection::NoJob)
              : cancel->job != 0 && (cancel->job == job_ || cancel->job == measurementJob_ || cancel->job == needlesJob_)
@@ -369,6 +372,7 @@ Answer Session::apply (const Request& request) noexcept
         {
             samples_.reset();
             measurementWorkspace_.reset (new detail::MeasurementWorkspace);
+            liveMeasurements_.reset (new detail::LiveMeasurements);
             measurementOwnedBytes_ = 0;
             for (std::size_t i = 0; i < kAnalyzers; ++i)
             {
@@ -408,7 +412,7 @@ Answer Session::apply (const Request& request) noexcept
         masterProgress_ = {};
         if (cached)
         {
-            state_ = previousState;
+            state_ = previousState == State::MeasurementStopped ? stoppedState_ : previousState;
             measurementUnit_ = previousUnit;
             measurementProgress_ = previousProgress;
             if (state_ == State::Measured2) measurementJob_ = 0;
@@ -482,13 +486,20 @@ Answer Session::apply (const Request& request) noexcept
         masterProgress_ = { PhaseName::Pass, 0.0, config::Config::versions().all, 0, passes, 0, passes + 1 };
         answer.job = job_;
     }
+    else if (std::holds_alternative<command::ContinueMeasurement> (request))
+    {
+        answer.job = detail::Driver::continueMeasurement (*this);
+        --revision_; // the command publishes its single revision below
+        Notification event; event.jobId = answer.job; event.kind = EventKind::Phase;
+        event.payload.phase = measurementProgress_; emit (event);
+    }
     else if (const auto* cancel = std::get_if<command::Cancel> (&request))
     {
         dropJob (cancel->job);
         Notification event;
         event.jobId = cancel->job;
         event.kind = EventKind::Fact;
-        (void) event.payload.fact.assign (text::Fact::of (text::FactId::Cancelled));
+        (void) event.payload.fact.assign (text::Fact::of (state_ == State::MeasurementStopped ? text::FactId::MeasurementStopped : text::FactId::Cancelled));
         emit (event);
     }
     else if (const auto* forget = std::get_if<command::Forget> (&request))
@@ -525,6 +536,7 @@ Answer Session::apply (const Request& request) noexcept
         || std::holds_alternative<command::ImportProject> (request)) requestNeedles();
     refreshEqCurve();
     answer.revision = ++revision_;
+    for (std::size_t i = 0; i < eventCount_; ++i) events_[i].revision = revision_;
     return answer;
 }
 
@@ -563,6 +575,7 @@ JobId Driver::continueMeasurement (Session& session) noexcept
 {
     if (session.source_.channels == 0 || session.measurementJob_ != 0 || session.state_ == State::Measured2
         || session.lastJob_ == std::numeric_limits<JobId>::max() || Session::checkFloatingPointEnvironment() != Status::Ok) return 0;
+    if (session.state_ == State::MeasurementStopped) session.state_ = session.stoppedState_;
     session.measurementJob_ = ++session.lastJob_;
     for (auto& r : session.measurementResults_)
         if (r.analyzer != Analyzer::Excursions && r.status == MeasurementStatus::Cancelled) { r.status = MeasurementStatus::Pending; r.reason = MeasurementReason::Pending; }

@@ -142,3 +142,7 @@ entry modules/session/src/MeasurementWorkspace.cpp persistent analyzer preparati
 zone modules/session/src/Needles.h target-dependent needles job storage
 zone modules/session/src/Needles.cpp target-dependent needles execution
 entry modules/session/src/Needles.cpp target-dependent needles execution
+
+zone modules/session/src/LiveMeasurements.h live measurement ownership
+zone modules/session/src/LiveMeasurements.cpp live measurement pump
+entry modules/session/src/LiveMeasurements.cpp live measurement pump

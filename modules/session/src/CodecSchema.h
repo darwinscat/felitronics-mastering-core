@@ -88,7 +88,8 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (State::Loaded) == 1);
         static_assert (unsigned (State::Measured1) == 2);
         static_assert (unsigned (State::Measured2) == 3);
-        return 3;
+        static_assert (unsigned (State::MeasurementStopped) == 4);
+        return 4;
     }
     else static_assert (std::is_same_v<T, void>, "enum missing from codec description");
 }
@@ -190,6 +191,7 @@ constexpr void checkEnum (State value) noexcept
         case State::Loaded: break;
         case State::Measured1: break;
         case State::Measured2: break;
+        case State::MeasurementStopped: break;
     }
 }
 
@@ -600,7 +602,9 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, SnapshotView>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.canContinueMeasurement)>, bool>);
+        v.optionalField ("canContinueMeasurement", x.canContinueMeasurement);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.eqCurve)>, std::span<const EqPoint>>);
         v.field ("eqCurve", x.eqCurve);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.handFieldCount)>, std::uint32_t>);
@@ -623,6 +627,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("measurementJob", x.measurementJob);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.measurementProgress)>, Phase>);
         v.field ("measurementProgress", x.measurementProgress);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.measurementResumeState)>, State>);
+        v.optionalField ("measurementResumeState", x.measurementResumeState);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.measurementStorage)>, MeasurementStorage>);
         v.optionalField ("measurementStorage", x.measurementStorage);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.measurements)>, std::span<const MeasurementResult>>);

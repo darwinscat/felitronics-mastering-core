@@ -4,7 +4,8 @@
       "Empty",
       "Loaded",
       "Measured1",
-      "Measured2"
+      "Measured2",
+      "MeasurementStopped"
     ],
     "Needles": [
       "Auto",
@@ -359,7 +360,9 @@
         "needlesProgress": "Phase",
         "needlesBytes": "bytes",
         "needlesLargestBlockBytes": "bytes",
-        "needlesRunsTruncated": "bool"
+        "needlesRunsTruncated": "bool",
+        "canContinueMeasurement": "bool",
+        "measurementResumeState": "State"
       }
     },
     "Version": {
@@ -466,7 +469,7 @@
     "SessionStatus": "0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18",
     "CommandAnswer": "AcceptedAnswer | RejectedAnswer | ContractAnswer",
     "SessionEvent": "PhaseEvent | FactEvent | ReadingEvent | DoneEvent | RejectedEvent | ErrorEvent | MeasurementEvent",
-    "SessionCommand": "SetTargetCommand | SetManualCommand | EditTargetCommand | EditDeviceCommand | RevertEditsCommand | MasterCommand | CancelCommand | ForgetCommand",
+    "SessionCommand": "SetTargetCommand | SetManualCommand | EditTargetCommand | EditDeviceCommand | RevertEditsCommand | MasterCommand | CancelCommand | ForgetCommand | ContinueMeasurementCommand",
     "EditDeviceCommand": "EditDeviceHpfCommand | EditDeviceMonoBassCommand | EditDeviceGlueCommand | EditDeviceSaturationCommand | EditDeviceTiltCommand | EditDeviceLimiterCommand | EditDeviceDitherCommand | EditDeviceLowCommand",
     "RevertEditsCommand": "RevertEditsHpfCommand | RevertEditsMonoBassCommand | RevertEditsGlueCommand | RevertEditsSaturationCommand | RevertEditsTiltCommand | RevertEditsLimiterCommand | RevertEditsDitherCommand | RevertEditsLowCommand",
     "SessionMeasurementArray": "Omit<MeasurementArray, \"values\"> & { readonly values: ScalarRow }",
@@ -526,7 +529,16 @@
     "ReadingPayload": {
       "momentary": "Row",
       "shortTerm": "Row",
-      "runs": "Row"
+      "runs": "Row",
+      "grid": "MeasurementGrid",
+      "momentaryReason": "MeasurementReason",
+      "shortTermReason": "MeasurementReason",
+      "clips": "ScalarRow",
+      "totalRuns": "string",
+      "storedRuns": "string",
+      "tailFrames": "string",
+      "runsComplete": "boolean",
+      "finished": "boolean"
     },
     "DonePayload": {
       "masterId": "number"
@@ -585,37 +597,73 @@
       "seq": "string",
       "jobId": "number",
       "kind": "\"phase\"",
-      "payload": "Phase"
+      "payload": "Phase",
+      "source": "string",
+      "revision": "string",
+      "phase": "PhaseName",
+      "completedWork": "string",
+      "totalWork": "string",
+      "state": "State"
     },
     "FactEvent": {
       "seq": "string",
       "jobId": "number",
       "kind": "\"fact\"",
-      "payload": "WireFact"
+      "payload": "WireFact",
+      "source": "string",
+      "revision": "string",
+      "phase": "PhaseName",
+      "completedWork": "string",
+      "totalWork": "string",
+      "state": "State"
     },
     "ReadingEvent": {
       "seq": "string",
       "jobId": "number",
       "kind": "\"reading\"",
-      "payload": "ReadingPayload"
+      "payload": "ReadingPayload",
+      "source": "string",
+      "revision": "string",
+      "phase": "PhaseName",
+      "completedWork": "string",
+      "totalWork": "string",
+      "state": "State"
     },
     "DoneEvent": {
       "seq": "string",
       "jobId": "number",
       "kind": "\"done\"",
-      "payload": "DonePayload"
+      "payload": "DonePayload",
+      "source": "string",
+      "revision": "string",
+      "phase": "PhaseName",
+      "completedWork": "string",
+      "totalWork": "string",
+      "state": "State"
     },
     "RejectedEvent": {
       "seq": "string",
       "jobId": "number",
       "kind": "\"rejected\"",
-      "payload": "RejectedPayload"
+      "payload": "RejectedPayload",
+      "source": "string",
+      "revision": "string",
+      "phase": "PhaseName",
+      "completedWork": "string",
+      "totalWork": "string",
+      "state": "State"
     },
     "ErrorEvent": {
       "seq": "string",
       "jobId": "number",
       "kind": "\"error\"",
-      "payload": "ErrorPayload"
+      "payload": "ErrorPayload",
+      "source": "string",
+      "revision": "string",
+      "phase": "PhaseName",
+      "completedWork": "string",
+      "totalWork": "string",
+      "state": "State"
     },
     "EditDeviceHpfCommand": {
       "kind": "\"editDevice\"",
@@ -792,7 +840,17 @@
       "seq": "string",
       "jobId": "number",
       "kind": "\"measurement\"",
-      "payload": "MeasurementChange"
+      "payload": "MeasurementChange",
+      "source": "string",
+      "revision": "string",
+      "phase": "PhaseName",
+      "completedWork": "string",
+      "totalWork": "string",
+      "state": "State"
+    },
+    "ContinueMeasurementCommand": {
+      "kind": "\"continueMeasurement\"",
+      "commandId": "string"
     }
   },
   "binaryRows": [
@@ -869,7 +927,9 @@
       "needlesProgress",
       "needlesBytes",
       "needlesLargestBlockBytes",
-      "needlesRunsTruncated"
+      "needlesRunsTruncated",
+      "canContinueMeasurement",
+      "measurementResumeState"
     ]
   }
 }

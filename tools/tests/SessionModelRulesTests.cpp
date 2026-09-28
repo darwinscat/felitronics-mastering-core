@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 // Uses the pre-freeze public surface too: each scenario runs red on 31a9b1c.
+#include "../../modules/session/tests/Advance.h"
 #include <felitronics/session/Wire.h>
 #include <felitronics/session/Config.h>
 #include <cstdio>
@@ -21,7 +22,7 @@ int main (int argc, char** argv) {
     auto made = Session::create(); auto& s = *made.session;
     float data[4] {}; const float* pcm[] { data, data };
     require (s.apply (command::Load { 1, { pcm, 2, 4, 48000 }, {} }).rejection == Rejection::None, "load");
-    (void) s.step (10);
+    testing::measure (s);
     if (item == "M1") {
         HpfFields<Touched> f; f.fq = 36; f.on = false;
         require (s.apply (command::EditDevice { 2, f }).rejection == Rejection::None, "hidden panel accepts edits");

@@ -68,8 +68,8 @@ namespace config = felitronics::session::config;
 namespace
 {
 constexpr const char* kCommandNames[] = { "load", "setTarget", "editTarget", "editDevice", "revertEdits", "setManual",
-                                          "master", "cancel", "forget", "importProject" };
-constexpr const char* kColumnNames[] = { "Empty", "Loaded", "Measured1", "Measured2", "Mastering1", "Mastering2" };
+                                          "master", "cancel", "forget", "importProject", "continueMeasurement" };
+constexpr const char* kColumnNames[] = { "Empty", "Loaded", "Measured1", "Measured2", "Mastering1", "Mastering2", "Stopped", "StoppedMeasured", "MasteringStopped" };
 constexpr const char* kEventNames[] = { "Measured1", "Measured2", "Mastered" };
 constexpr const char* kRejectionNames[] = { "None", "FloatingPointEnvironment", "NoSource", "NotPlaced", "NotMeasured",
     "Busy", "NoJob", "NoMaster", "UnknownTarget", "NotOffered", "UnknownJob", "UnknownMaster",
@@ -256,7 +256,7 @@ Situation situation (Column column, bool manual = true, const char* target = nul
     if (column != Column::Empty)
     {
         good = good && accepted (s, loadOf (x.audio, 102));
-        if (column != Column::Loaded)
+        if (column != Column::Loaded && column != Column::Stopped)
         {
             good = good && Driver::measured1 (s, s.measurementJob(), s.source().hash);
             if (column == Column::Measured2 || column == Column::Mastering2)
@@ -264,7 +264,7 @@ Situation situation (Column column, bool manual = true, const char* target = nul
             const Answer m = s.apply (command::Master { 103 });
             good = good && m.rejection == Rejection::None && Driver::mastered (s, s.job());
             x.kept = m.job;
-            if (column == Column::Mastering1 || column == Column::Mastering2)
+            if (column == Column::Mastering1 || column == Column::Mastering2 || column == Column::MasteringStopped)
             {
                 const Answer j = s.apply (command::Master { 104 });
                 good = good && j.rejection == Rejection::None;
@@ -272,6 +272,8 @@ Situation situation (Column column, bool manual = true, const char* target = nul
             }
         }
     }
+    if (column == Column::Stopped || column == Column::StoppedMeasured || column == Column::MasteringStopped)
+        good = good && accepted (s, command::Cancel { 105, s.measurementJob() });
     if (manual) good = good && accepted (s, command::SetManual { 100, true });
     ok (good && s.column() == column, std::string ("PRECONDITION: the session stands in ") + kColumnNames[std::size_t (column)]);
     x.projectText = s.exportProject();
@@ -292,6 +294,7 @@ Request validRequest (Command c, const Situation& x, CommandId id)
         case Command::Master:      return command::Master { id };
         case Command::Cancel:      return command::Cancel { id, x.job != 0 ? x.job : x.s->measurementJob() };
         case Command::Forget:      return command::Forget { id, x.kept };
+        case Command::ContinueMeasurement: return command::ContinueMeasurement { id };
         case Command::ImportProject: return command::ImportProject { id, x.projectText.view() };
     }
     return command::Master { id };

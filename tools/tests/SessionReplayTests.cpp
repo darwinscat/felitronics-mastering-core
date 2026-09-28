@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
+#include "../../modules/session/tests/Advance.h"
 #include <alloc_counter.h>
 #include <felitronics_test.h>
 #include <felitronics/session/Snapshot.h>
@@ -57,7 +58,7 @@ int replayAfterPoison()
     // Outside the abandoned module: desktop's new C++ owner, wasm's fresh module instance.
     auto restored = Session::create();
     ok (restored.session->apply (replayLoad).rejection == Rejection::None, "replay loads the same source");
-    (void) restored.session->step (7); (void) restored.session->step (7);
+    testing::measure (*restored.session);
     const auto answer = restored.session->importProject (8, savedProject->view());
     ok (answer.rejection == Rejection::None, "replay imports after the same measurement");
     auto replayed = restored.session->snapshot();
@@ -89,7 +90,7 @@ int main()
     for (unsigned i = 0; i < 3; ++i)
     {
         ok (old->apply (load).rejection == Rejection::None, "successive loads");
-        (void) old->step (10);
+        testing::measure (*old);
         (void) old->apply (command::SetTarget { 2, "cd", OnEdits::Reset });
         (void) old->apply (command::SetManual { 3, true });
         HpfFields<Touched> hpf; hpf.fq = 36; hpf.on = false;

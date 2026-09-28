@@ -118,6 +118,8 @@ inline constexpr FactShape kFacts[] = {
     { FactId::MeasurementUnavailable, "measurementUnavailable", {}, 0 },
     { FactId::NeedlesSkipped, "needlesSkipped", {}, 0 },
     { FactId::NeedlesRunsTruncated, "needlesRunsTruncated", {}, 0 },
+    { FactId::SourceClipping, "sourceClipping", {}, 0 },
+    { FactId::ContinueMeasurement, "continueMeasurement", {}, 0 },
 
 };
 inline constexpr std::size_t kFactCount = sizeof (kFacts) / sizeof (kFacts[0]);

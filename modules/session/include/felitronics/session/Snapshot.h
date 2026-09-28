@@ -41,6 +41,8 @@ struct SnapshotView
     Phase needlesProgress {};
     double needlesBytes = 0, needlesLargestBlockBytes = 0;
     bool needlesRunsTruncated = false;
+    bool canContinueMeasurement = false;
+    State measurementResumeState = State::Empty;
 };
 class Codec;
 // An immutable, owned value. view() remains valid until this value is moved or destroyed,
