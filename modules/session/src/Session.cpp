@@ -134,6 +134,27 @@ bool Session::mandatoryReady() const noexcept
         }
     return lufs && peak;
 }
+TempoChoice Session::tempoForDevice() const noexcept
+{
+    const auto& result = measurementResults_[std::size_t (Analyzer::Tempo)];
+    if (result.status == MeasurementStatus::Pending || result.status == MeasurementStatus::Cancelled)
+        return { false, false, 0.0, result.reason };
+    double bpm = 0.0; bool hasBpm = false, high = false;
+    if (result.status == MeasurementStatus::Ready)
+        for (const auto& value : result.numbers) if (value.value)
+        {
+            if (value.name == "headlineBpm") { bpm = *value.value; hasBpm = true; }
+            else if (value.name == "headlineLabel")
+                high = std::bit_cast<std::uint64_t> (*value.value)
+                    == std::bit_cast<std::uint64_t> (double (tempo::ConfidenceLabel::High));
+        }
+    if (result.status == MeasurementStatus::Ready && hasBpm && high && std::isfinite (bpm) && bpm > 0)
+        return { true, true, bpm, MeasurementReason::None };
+    const auto configured = detail::rules().engine.find ("compressor").find ("tempo").find ("bpmWhenUnsure");
+    const double fallback = configured.decimal() ? configured.decimal()->toDouble() : double (*configured.integer());
+    const auto reason = result.status == MeasurementStatus::Ready ? MeasurementReason::NoSignal : result.reason;
+    return { true, false, fallback, reason };
+}
 bool Session::mastering() const noexcept { return mastering_; }
 std::uint64_t Session::revision() const noexcept { return revision_; }
 const Project& Session::project() const noexcept { return project_; }

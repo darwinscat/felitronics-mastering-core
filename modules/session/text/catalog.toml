@@ -471,3 +471,7 @@ en = "Opposite channel polarity was detected in the low frequencies."
 [terms.analyzer.waveform]
 ru = "Данные волны"
 en = "Waveform data"
+
+[terms.analyzer.tempo]
+ru = "Темп"
+en = "Tempo"

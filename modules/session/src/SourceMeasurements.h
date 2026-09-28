@@ -8,6 +8,7 @@
 #include <memory>
 
 namespace felitronics::analysis { class LowEnd; class SourceForensics; class HumDetector; class StereoBandBursts; }
+namespace felitronics::tempo { class TempoDetector; }
 
 namespace felitronics::session::detail
 {
@@ -29,7 +30,7 @@ struct MeasurementStore
 struct SourceMeasurements
 {
     static constexpr std::array order { Analyzer::LowEnd, Analyzer::LowEnd150, Analyzer::InfraLow,
-        Analyzer::Forensics, Analyzer::Stereo, Analyzer::Crest, Analyzer::Hum, Analyzer::StereoBursts };
+        Analyzer::Forensics, Analyzer::Stereo, Analyzer::Crest, Analyzer::Hum, Analyzer::StereoBursts, Analyzer::Tempo };
     static constexpr unsigned firstCount = 5;
     std::unique_ptr<MeasurementStore> results[kAnalyzers];
     std::uint64_t bytes = 0, frames = 0, copied = 0, work = 0;
@@ -55,5 +56,7 @@ struct SourceResults
     [[nodiscard]] static int forensicsMetadata (MeasurementStore& out, int bitDepth) noexcept;
     static void hum (MeasurementStore& out, const analysis::HumDetector& instrument) noexcept;
     static void bursts (MeasurementStore& out, const analysis::StereoBandBursts& instrument) noexcept;
+    static void tempo (MeasurementStore& out, const tempo::TempoDetector& instrument, std::uint32_t rate,
+                       std::uint64_t frames) noexcept;
 };
 } // namespace felitronics::session::detail

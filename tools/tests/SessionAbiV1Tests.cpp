@@ -366,7 +366,7 @@ void scenario()
     (void) measuredLoad (h);
     do { ok (fc_session_step (h, 1, &more) == FC_SESSION_OK, "one bounded unit"); } while (more == FC_SESSION_MORE);
     const auto saved = snapshot (h);
-    ok (contains (saved, "\"state\":2"), "completed source measurements reach Measured1 only");
+    ok (contains (saved, "\"state\":3"), "completed source measurements reach Measured2");
     ok (contains (command (h, R"({"kind":"editDevice","commandId":"2","device":0,"fields":{"fq":32}})"), "\"code\":3"), "measurements do not unlock device edits before placement");
     std::uint32_t size = 0;
     ok (fc_session_export_project_size (h, &size) == FC_SESSION_ERR_NOT_PLACED, "unplaced defaults cannot be exported as decisions");
@@ -375,7 +375,7 @@ void scenario()
     bool done = false;
     do { (void) fc_session_step (h, 1, &more); done = done || contains (events (h), "\"kind\":\"done\""); } while (more == FC_SESSION_MORE);
     ok (done, "master completion crosses the event transport");
-    ok (fc_session_destroy (h) == FC_SESSION_OK && contains (saved, "\"state\":2"), "owned snapshot survives destruction");
+    ok (fc_session_destroy (h) == FC_SESSION_OK && contains (saved, "\"state\":3"), "owned snapshot survives destruction");
 }
 void rows()
 {

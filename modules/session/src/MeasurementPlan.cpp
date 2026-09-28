@@ -139,7 +139,7 @@ MeasurementPlan MeasurementPlan::storageFor (const Pcm& pcm, const MeasurementPa
          pcm.channelCount * 72u + hum.stretchEntries * 5u + hum.harmonicEntries * 13u);
     const auto tempo = tempo::TempoDetector::storageFor (rate, channels, pcm.frames, p.tempo);
     set (Analyzer::Tempo, tempo.ok, sizeof (tempo::TempoDetector) + tempo.firstBytes(),
-         tempo.pointRecords * 3u + tempo.peakRecords * 2u);
+         tempo.points * 6u + 2u * tempo::TempoDetector::kMaxCandidates);
     // Target-dependent needles have a separate job and demand; no source-wide index is built.
     out.analyzers[std::size_t (Analyzer::Excursions)] = {};
     auto& s = out.storage;

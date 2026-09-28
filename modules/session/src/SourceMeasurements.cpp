@@ -3,6 +3,7 @@
 #include "BuildGuards.h"
 #include "SourceMeasurements.h"
 #include "MeasurementWorkspace.h"
+#include "Driver.h"
 #include "BuildContract.h"
 #include "Rules.h"
 #include <felitronics/session/Session.h>
@@ -40,12 +41,13 @@ void process (Workspace& w, Analyzer id, const float* const* planes, int channel
         case Analyzer::Crest: ok = w.crest->process (planes, channels, count); break;
         case Analyzer::Hum: ok = w.hum->process (planes, channels, count); break;
         case Analyzer::StereoBursts: ok = w.bursts->process (planes, channels, count); break;
+        case Analyzer::Tempo: ok = w.tempo->process (planes, channels, count); break;
         case Analyzer::Loudness: case Analyzer::Clipping: case Analyzer::Programme: case Analyzer::LowEnd:
-        case Analyzer::InfraLow: case Analyzer::LowEnd150: case Analyzer::Waveform: case Analyzer::Tempo: case Analyzer::Excursions: break;
+        case Analyzer::InfraLow: case Analyzer::LowEnd150: case Analyzer::Waveform: case Analyzer::Excursions: break;
     }
     if (! ok) detail::storageOverflow();
 }
-void finish (Workspace& w, Analyzer id, Store& out, detail::SourceMeasurements& run, const Source& source,
+bool finish (Workspace& w, Analyzer id, Store& out, detail::SourceMeasurements& run, const Source& source,
              const detail::MeasurementParameters& params) noexcept
 {
     if (isLowEnd (id))
@@ -85,6 +87,12 @@ void finish (Workspace& w, Analyzer id, Store& out, detail::SourceMeasurements& 
         (void) out.array ("active", 5, count, count, a.droppedHops() == 0, grid);
         (void) out.array ("oversampledMeanSquare", 1, count, count, a.droppedHops() == 0, grid);
     }
+    else if (id == Analyzer::Tempo)
+    {
+        if (! w.tempo->finishStep()) return false;
+        detail::SourceResults::tempo (out, *w.tempo, source.sampleRate, source.frames);
+    }
+    return true;
 }
 // Only the unwritten rows of each array are touched. Every unit copies at most 128 source records.
 bool copy (Workspace& w, Analyzer id, Store& out, detail::SourceMeasurements& run) noexcept
@@ -174,6 +182,30 @@ bool copy (Workspace& w, Analyzer id, Store& out, detail::SourceMeasurements& ru
         }
         return run.copied == count;
     }
+    if (id == Analyzer::Tempo)
+    {
+        const auto& a = *w.tempo;
+        if (run.copied == 0)
+        {
+            for (std::uint64_t i = 0; i < out.arrays[0].stored; ++i)
+            {
+                const auto c = a.candidate (int (i));
+                out.rows[std::size_t (i * 2)] = c.bpm;
+                out.rows[std::size_t (i * 2 + 1)] = c.score;
+            }
+        }
+        const auto count = out.arrays[1].stored;
+        const auto end = std::min (limit, count);
+        auto* rows = out.rows.get() + out.arrays[0].values.size();
+        for (; run.copied < end; ++run.copied)
+        {
+            const auto p = a.point (std::int64_t (run.copied));
+            const auto raw = a.rawPoint (std::int64_t (run.copied));
+            const double row[] { p.t, p.bpm, p.conf, p.hasBpm ? 1.0 : 0.0, raw.bpm, raw.conf };
+            std::copy_n (row, 6, rows + std::size_t (run.copied * 6));
+        }
+        return run.copied == count;
+    }
     return true;
 }
 }
@@ -221,7 +253,20 @@ void Session::stepSourceMeasurements() noexcept
     }
     if (run.cursor == run.order.size())
     {
-        run.finished = true; measurementJob_ = 0; return;
+        for (const auto& result : measurementResults_)
+            if (result.analyzer != Analyzer::Excursions)
+                detail::debugBound (result.status == MeasurementStatus::Ready || result.status == MeasurementStatus::Unavailable);
+        run.finished = true;
+        const auto job = measurementJob_;
+        measurementProgress_ = { PhaseName::Analyzers, 1.0, config::Config::versions().all, 0, 0, 1, 1 };
+        if (mandatoryReady() && detail::Driver::measured2 (*this, job, source_.hash))
+        {
+            event.kind = EventKind::Fact;
+            (void) event.payload.fact.assign (text::Fact::of (text::FactId::Measurement2));
+            emit (event, measurementProgress_);
+        }
+        else measurementJob_ = 0;
+        return;
     }
     const auto id = run.order[run.cursor]; const auto index = std::size_t (id);
     auto& result = measurementResults_[index];
@@ -241,7 +286,7 @@ void Session::stepSourceMeasurements() noexcept
         emit (event);
         constexpr text::Term analyzers[] { text::Term::AnalyzerLowEnd, text::Term::AnalyzerLowEnd150,
             text::Term::AnalyzerInfraLow, text::Term::AnalyzerForensics, text::Term::AnalyzerStereo,
-            text::Term::AnalyzerCrest, text::Term::AnalyzerHum, text::Term::AnalyzerBursts };
+            text::Term::AnalyzerCrest, text::Term::AnalyzerHum, text::Term::AnalyzerBursts, text::Term::AnalyzerTempo };
         auto status = text::Term::StatusReady;
         if (! result.complete && result.status == MeasurementStatus::Ready) status = text::Term::StatusCapacity;
         if (result.status == MeasurementStatus::Unavailable)
@@ -253,22 +298,6 @@ void Session::stepSourceMeasurements() noexcept
         }
         event.kind = EventKind::Fact;
         (void) event.payload.fact.assign (text::Fact::of (text::FactId::AnalyzerStatus, text::Arg::term (analyzers[run.cursor]), text::Arg::term (status))); emit (event);
-        if (id == Analyzer::LowEnd && workspace.lowEnd && workspace.lowEnd->widthValid())
-        {
-            const auto side = workspace.lowEnd->lowSideFraction();
-            if (detail::SourceWarnings::wideBass (side)) warn (text::Fact::of (text::FactId::WideBass, text::Arg::value (100 * side, text::Unit::Percent, 1)));
-            const auto config = detail::rules().engine.find ("observations").find ("polarity");
-            if (workspace.lowEnd->rawSideFraction() > configured (config.find ("rawSideFractionAbove")))
-                warn (text::Fact::of (text::FactId::SourcePolarity));
-        }
-        if (id == Analyzer::Forensics && workspace.forensics && source_.bitDepth > 0)
-        {
-            int bits = 0;
-            for (int c = 0; c < int (source_.channels); ++c)
-                bits = std::max (bits, workspace.forensics->sampleGrid (c).alwaysZeroLowBits (source_.bitDepth));
-            if (bits >= int (configured (detail::rules().engine.find ("observations").find ("bitsUnused").find ("fromBits"))))
-                warn (text::Fact::of (text::FactId::SourceUnusedBits, text::Arg::count (bits)));
-        }
         workspace.release (id); ++run.cursor; run.stage = 0; run.frames = run.copied = 0;
     };
     ++run.work;
@@ -310,7 +339,7 @@ void Session::stepSourceMeasurements() noexcept
         if (run.frames == source_.frames) ++run.stage;
     }
     else if (run.stage == 2)
-    { finish (workspace, id, *run.results[index], run, source_, params); ++run.stage; }
+    { if (finish (workspace, id, *run.results[index], run, source_, params)) ++run.stage; }
     else if (run.stage == 3)
     {
         if (copy (workspace, id, *run.results[index], run))
@@ -362,6 +391,13 @@ void Session::stepSourceMeasurements() noexcept
                 result.status = MeasurementStatus::Unavailable;
                 result.reason = workspace.hum->report (0).reason == analysis::HumReason::ShorterThanWindow ? MeasurementReason::TooShort : MeasurementReason::NoSignal;
             }
+        }
+        if (id == Analyzer::Tempo && (workspace.tempo->nonFiniteSamples() != 0 || ! workspace.tempo->determined()))
+        {
+            result.status = MeasurementStatus::Unavailable;
+            result.reason = workspace.tempo->nonFiniteSamples() != 0 ? MeasurementReason::NonFinite
+                : double (workspace.tempo->onsetFrames()) < workspace.tempo->odfSampleRate() * tempo::TempoDetector::kMinAnalysisSec
+                    ? MeasurementReason::TooShort : MeasurementReason::NoSignal;
         }
         publish(); return;
     }

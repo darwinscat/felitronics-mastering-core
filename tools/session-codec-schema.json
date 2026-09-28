@@ -388,7 +388,8 @@
         "measurementResumeState": "State",
         "mandatoryMeasurementsReady": "bool",
         "devicesPlaced": "bool",
-        "measurementRowsIncluded": "bool"
+        "measurementRowsIncluded": "bool",
+        "tempoChoice": "TempoChoice"
       }
     },
     "Version": {
@@ -473,6 +474,15 @@
         "workPeakBytes": "bytes",
         "peakBytes": "bytes",
         "largestBlockBytes": "bytes"
+      }
+    },
+    "TempoChoice": {
+      "cpp": "TempoChoice",
+      "fields": {
+        "ready": "bool",
+        "measured": "bool",
+        "bpm": "double",
+        "reason": "MeasurementReason"
       }
     },
     "MeasurementChange": {
@@ -1037,6 +1047,10 @@
       "measurementRowsIncluded": {
         "default": "true",
         "description": "true; historical snapshots include their retained measurement rows."
+      },
+      "tempoChoice": {
+        "default": "TempoChoice {}",
+        "description": "No device tempo decision before the session finishes the tempo measurement."
       }
     },
     "MeasurementQuery": {

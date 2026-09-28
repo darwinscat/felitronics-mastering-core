@@ -235,4 +235,55 @@ void SourceResults::bursts (MeasurementStore& out, const analysis::StereoBandBur
         { intervals[2 * (i - 1)] = double (b.intervalBin (i)); intervals[2 * (i - 1) + 1] = double (b.lagBin (i)); }
     }
 }
+void SourceResults::tempo (MeasurementStore& out, const tempo::TempoDetector& a, std::uint32_t rate,
+                           std::uint64_t frames) noexcept
+{
+    const auto reason = a.nonFiniteSamples() != 0 ? MeasurementReason::NonFinite
+        : double (a.onsetFrames()) < a.odfSampleRate() * tempo::TempoDetector::kMinAnalysisSec
+            ? MeasurementReason::TooShort : MeasurementReason::NoSignal;
+    const auto ready = a.headline().determined && a.nonFiniteSamples() == 0;
+    const auto missing = ready ? MeasurementReason::None : reason;
+    const auto headline = [&] (std::string_view prefix, const tempo::TempoHeadline& h)
+    {
+        // Names are fixed facts; missing readings carry their cause instead of a numeric zero.
+        if (prefix == "headline")
+        {
+            out.number ("headlineBpm", h.bpm, -1, missing);
+            out.number ("headlineConfidence", h.confidence, -1, missing);
+            out.number ("headlineLabel", double (h.label), -1, missing);
+            out.number ("headlineBeatPeriodSec", h.beatPeriodSec, -1, missing);
+            out.number ("headlineBeatOffsetSec", h.beatOffsetSec, -1, missing);
+            out.number ("headlineAlternativeCount", h.altCount, -1, missing);
+            if (ready) for (int i = 0; i < h.altCount; ++i) out.number ("headlineAlternative", h.alts[i], i);
+        }
+        else
+        {
+            out.number ("wholeTrackBpm", h.bpm, -1, missing);
+            out.number ("wholeTrackConfidence", h.confidence, -1, missing);
+            out.number ("wholeTrackLabel", double (h.label), -1, missing);
+            out.number ("wholeTrackBeatPeriodSec", h.beatPeriodSec, -1, missing);
+            out.number ("wholeTrackBeatOffsetSec", h.beatOffsetSec, -1, missing);
+            out.number ("wholeTrackAlternativeCount", h.altCount, -1, missing);
+            if (ready) for (int i = 0; i < h.altCount; ++i) out.number ("wholeTrackAlternative", h.alts[i], i);
+        }
+    };
+    headline ("headline", a.headline()); headline ("wholeTrack", a.wholeTrack());
+    out.number ("varies", a.varies() ? 1 : 0, -1, missing);
+    out.number ("hasRange", a.hasRange() ? 1 : 0, -1, missing);
+    out.number ("rangeLowBpm", a.rangeLow(), -1, ! ready ? missing : a.hasRange() ? MeasurementReason::None : MeasurementReason::TooShort);
+    out.number ("rangeHighBpm", a.rangeHigh(), -1, ! ready ? missing : a.hasRange() ? MeasurementReason::None : MeasurementReason::TooShort);
+    out.number ("anchorBpm", a.anchorBpm(), -1, missing);
+    out.number ("anchorConfidence", a.anchorConfidence(), -1, missing);
+    out.number ("anchorLag", a.anchorLag(), -1, missing);
+    out.number ("nonFiniteSamples", double (a.nonFiniteSamples()));
+    out.number ("onsetFrames", double (a.onsetFrames()));
+    out.number ("odfSampleRate", a.odfSampleRate());
+    out.number ("candidateCount", ready ? a.candidateCount() : 0);
+    out.number ("curvePoints", ready ? double (a.pointCount()) : 0);
+    const auto candidates = ready ? std::uint64_t (a.candidateCount()) : 0u;
+    const auto points = ready ? std::uint64_t (a.pointCount()) : 0u;
+    const MeasurementGrid grid { 0, std::uint64_t (a.hopFrames()) * tempo::TempoDetector::kHop, frames, rate };
+    (void) out.array ("candidates", 2, candidates, candidates, true, grid);
+    (void) out.array ("curve", 6, points, points, true, grid);
+}
 } // namespace felitronics::session::detail

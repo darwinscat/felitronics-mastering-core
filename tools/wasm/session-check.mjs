@@ -263,7 +263,10 @@ while (!done && steps < 1500) {
 }
 ok(done && steps > 10 && phases > 10, 'pump reaches done after bounded preparation, streaming, and finalization');
 const snapshot = readTransfer('snapshot');
-ok(snapshot.state === 2 && snapshot.sourceBytes === 192000 && typeof snapshot.integratedLufs === 'number', 'owned measured snapshot and explicit NaN');
+ok(snapshot.state === 3 && snapshot.sourceBytes === 192000 && typeof snapshot.integratedLufs === 'number', 'owned phase-two snapshot and explicit NaN');
+ok(snapshot.tempoChoice.ready && !snapshot.tempoChoice.measured && snapshot.tempoChoice.bpm === 120
+    && snapshot.measurements.find(r => r.analyzer === 11)?.status === 2,
+    'short optional tempo gives a terminal cause and a separate device fallback');
 const queryRequest = {kind:0, audioId:snapshot.source.hash, fromFrame:'0', toFrame:'48000', columns:7, requestId:'9007199254740993'};
 const queryEncoded = new TextEncoder().encode(JSON.stringify(queryRequest));
 const queryInput = M._malloc(queryEncoded.length);

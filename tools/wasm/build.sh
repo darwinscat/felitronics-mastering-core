@@ -16,7 +16,7 @@
 #                 first module with a COMPILED library behind it: the sources modules/session/sources.txt lists, with the
 #                 flags modules/session/build-flags.txt states and the library's releases, and its config embedded as
 #                 the CMake build embeds it. See the fc_session section.
-#   tierup/     — never shipped: fctempo and fcprobe linked again with their function names, which is how the build
+#   tierup/     — never shipped: fctempo, fcprobe and fcsession linked again with their function names, so the build
 #                 proves the tempo detector's hot loops survived the optimiser (tools/wasm/tierup-check.mjs).
 #
 # The probe part first. Three artifacts from one source:
@@ -361,7 +361,7 @@ echo "=== size (fc_tempo, and what it saves a page that wants only a tempo)"
 sizes fctempo.web.wasm fctempo.web.mjs fcprobe.web.wasm
 
 #==================================================================================================
-# THE FIRST ANALYSIS — the tempo detector's hot loops must be functions of their own in BOTH modules that carry it
+# THE FIRST ANALYSIS — the tempo detector's hot loops must be functions of their own in every module that carries it
 # (RELEASE above says why, TempoDetector.h "WHERE THE TIME IS SPENT" says which). Losing one changes no answer, only
 # how long the first one takes, so no parity diff can see it; this reads it from the artifact instead of timing it.
 # Each module gets a NAMED TWIN — its node line plus --profiling-funcs, into $OUT/tierup/ — and tierup-check.mjs
@@ -641,10 +641,14 @@ SCOMMON=("${SFRONT[@]}"
          "-sEXPORTED_RUNTIME_METHODS=['HEAPU32']")
 
 echo "--- fc_session node (for session-check.mjs)"
-em++ "${SCOMMON[@]}" -O3 -sENVIRONMENT=node "$SSRC" "${SESSION_SRCS[@]}" -o "$OUT/fcsession.node.js"
+em++ "${SCOMMON[@]}" "${RELEASE[@]}" -sENVIRONMENT=node "$SSRC" "${SESSION_SRCS[@]}" -o "$OUT/fcsession.node.js"
 echo "--- fc_session web ES module (for a module worker)"
-em++ "${SCOMMON[@]}" -O3 -sENVIRONMENT=web,worker -sEXPORT_ES6=1 "$SSRC" "${SESSION_SRCS[@]}" -o "$OUT/fcsession.web.mjs"
+em++ "${SCOMMON[@]}" "${RELEASE[@]}" -sENVIRONMENT=web,worker -sEXPORT_ES6=1 "$SSRC" "${SESSION_SRCS[@]}" -o "$OUT/fcsession.web.mjs"
 same_as_node fcsession fcsession.web.mjs
+
+echo "--- fc_session named twin: first analysis keeps the four tempo loops"
+em++ "${SCOMMON[@]}" "${RELEASE[@]}" --profiling-funcs -sENVIRONMENT=node "$SSRC" "${SESSION_SRCS[@]}" -o "$TIERUP/fcsession.names.js"
+node "$HERE/tierup-check.mjs" "$OUT/fcsession.node.wasm" "$TIERUP/fcsession.names.wasm" "${HOT[@]}"
 
 echo
 echo "=== no threads (fc_session)"
@@ -655,7 +659,7 @@ echo "=== the module on the artifact: its exact exports, its surface, its wrap b
 node "$HERE/session-check.mjs" "$OUT/fcsession.node.js"
 echo "  control — the same module with one callable the ABI does not declare, which the check must refuse:"
 mkdir -p "$OUT/controls"
-em++ "${SCOMMON[@]}" -O3 -sENVIRONMENT=node "$SSRC" "${SESSION_SRCS[@]}" "$HERE/session-controls/extra_export.cpp" \
+em++ "${SCOMMON[@]}" "${RELEASE[@]}" -sENVIRONMENT=node "$SSRC" "${SESSION_SRCS[@]}" "$HERE/session-controls/extra_export.cpp" \
      -o "$OUT/controls/fcsession.node.js"
 if node "$HERE/session-check.mjs" "$OUT/controls/fcsession.node.js" > "$OUT/controls/session-check.txt" 2>&1; then
     cat "$OUT/controls/session-check.txt"; echo "*** CONTROL: session-check passed a module that exports debug_probe"; exit 1
@@ -667,7 +671,7 @@ echo "  control ok: $(grep -m1 'debug_probe' "$OUT/controls/session-check.txt")"
 echo
 echo "=== allocation trap and permanent poison (fc_session)"
 mkdir -p "$OUT/trap"
-em++ "${SCOMMON[@]}" -O3 -sENVIRONMENT=node "$SSRC" "${SESSION_SRCS[@]}" "$HERE/session-controls/trap_allocation.cpp" -I"$CORE/test_support" \
+em++ "${SCOMMON[@]}" "${RELEASE[@]}" -sENVIRONMENT=node "$SSRC" "${SESSION_SRCS[@]}" "$HERE/session-controls/trap_allocation.cpp" -I"$CORE/test_support" \
      -o "$OUT/trap/fcsession.node.js"
 node "$HERE/session-trap-check.mjs" "$OUT/trap/fcsession.node.js" "$OUT/snapshot.mjs"
 
