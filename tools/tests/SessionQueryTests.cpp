@@ -1,0 +1,253 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
+#include "../../modules/session/tests/DeclaredBudget.h"
+#include "../../modules/session/src/JsonCodec.h"
+#include "../../modules/session/src/QueryState.h"
+#include "../../modules/session/src/MeasurementPlan.h"
+#include <felitronics/session/Wire.h>
+#include <felitronics/session/Config.h>
+#include <felitronics/core/DetMath.h>
+#include "fc_session_abi.h"
+#include <algorithm>
+#include <bit>
+#include <cstdio>
+#include <cstring>
+#include <string>
+#include <vector>
+
+using namespace felitronics::session;
+using felitronics::test::ok;
+namespace budget = felitronics::session::testing;
+struct felitronics::session::detail::Inspector
+{
+    static std::uint64_t frames (const Session& s) { return s.waveform_->index.framesSeen(); }
+    static std::uint64_t cacheBytes (const Session& s) { return s.queryCache_ ? s.queryCache_->bytes() : 0; }
+    static std::uint64_t key (const Session& s) { return s.measurementKey_; }
+};
+std::uint64_t digest = 0xCBF29CE484222325ull;
+void hash (const QueryView& v)
+{
+    for (double value : v.values)
+    {
+        const auto bits = std::bit_cast<std::uint64_t> (value);
+        for (unsigned i = 0; i < 8; ++i) digest = (digest ^ std::uint8_t (bits >> (i * 8u))) * 0x100000001B3ull;
+    }
+    digest = (digest ^ std::uint64_t (v.status)) * 0x100000001B3ull;
+}
+bool same (double a, double b) { return std::bit_cast<std::uint64_t> (a) == std::bit_cast<std::uint64_t> (b); }
+bool identical (std::span<const double> a, std::span<const double> b)
+{ return a.size() == b.size() && (a.empty() || std::memcmp (a.data(), b.data(), a.size_bytes()) == 0); }
+std::string json (const MeasurementQuery& q)
+{
+    detail::Writer count; count.value (q); std::string text (std::size_t (count.size), '\0');
+    detail::Writer write; write.output = text.data(); write.value (q); return text;
+}
+void finish (Session& s)
+{
+    unsigned calls = 0;
+    while (s.step (16).state != StepState::Done && ++calls < 20000) {}
+    ok (calls < 20000, "bounded jobs finish");
+}
+QueryResult ask (Session& s, const MeasurementQuery& q)
+{
+    QueryResult answer;
+    const auto need = s.queryStorage (q);
+    const auto spent = budget::spend ([&] { answer = s.query (q); });
+    ok (budget::covers (need.bytes, spent), budget::describe (need.bytes, spent).c_str());
+    hash (answer.view()); return answer;
+}
+void source (std::vector<float>& left, std::vector<float>& right)
+{
+    for (std::size_t i = 0; i < left.size(); ++i)
+    {
+        left[i] = float (std::clamp (0.9 * felitronics::core::det::sin (double (i) * 0.031), -0.4, 0.4));
+        right[i] = float (std::clamp (0.9 * felitronics::core::det::sin (double (i) * 0.021 + 0.2), -0.4, 0.4));
+    }
+    left[0] = 1.0f; left[1] = 1.0f; right[right.size() - 1] = -1.0f; right[right.size() - 2] = -1.0f;
+}
+void nativeQueries()
+{
+    constexpr std::uint64_t frames = 192013;
+    std::vector<float> left (frames), right (frames); source (left, right);
+    const float* planes[] { left.data(), right.data() };
+    auto made = Session::create(); auto& s = *made.session;
+    const command::Load load { 1, { planes, 2, frames, 48000 }, {} };
+    const auto allocation = s.check (load);
+    const auto spent = budget::spend ([&] { ok (s.apply (load).rejection == Rejection::None, "load"); });
+    ok (budget::covers (allocation.bytes, spent), "load is declared including waveform controls");
+    MeasurementQuery q; q.audioId = s.source().hash; q.toFrame = frames; q.columns = 17; q.requestId = 9007199254740993ull;
+    ok (s.queryStorage (q).bytes == 0, "unbuilt waveform demand is allocation free");
+    auto pending = ask (s, q); ok (pending.view().status == QueryStatus::Pending && pending.view().values.empty(), "overview explicitly pending before construction");
+    (void) s.step (4);
+    const auto prefix = detail::Inspector::frames (s);
+    q.toFrame = prefix;
+    auto prefixAnswer = ask (s, q);
+    ok (prefixAnswer.view().status == QueryStatus::Ready && prefixAnswer.view().stored == 68, "ready prefix is queryable between pump steps");
+    const auto id = s.measurementJob();
+    ok (s.apply (command::Cancel { 2, id }).rejection == Rejection::None, "cancel retains index");
+    q.toFrame = frames;
+    auto stopped = ask (s, q); ok (stopped.view().status == QueryStatus::Cancelled, "unfinished range names cancellation");
+    ok (s.apply (command::ContinueMeasurement { 3 }).rejection == Rejection::None, "continue index");
+    (void) s.step (1);
+    ok (detail::Inspector::frames (s) == prefix + 1024u, "continue reads only unfinished frames");
+    while (detail::Inspector::frames (s) != frames) (void) s.step (1);
+    ok (s.state() == State::Loaded, "overview completes before later measurements");
+    auto overview = ask (s, q);
+    ok (overview.view().status == QueryStatus::Ready && overview.view().complete, "whole overview ready");
+    const auto revision = s.revision(); const auto events = s.events().size();
+    auto q2 = q; q2.requestId = std::numeric_limits<std::uint64_t>::max();
+    auto repeated = ask (s, q2);
+    ok (repeated.view().cacheHit && repeated.view().pcmFramesRead == 0 && repeated.view().request.requestId == q2.requestId, "request identity is echoed without duplicating demand");
+    ok (identical (overview.view().values, repeated.view().values) && s.revision() == revision && s.events().size() == events, "query leaves jobs, revision and event batch intact");
+    const auto key = detail::Inspector::key (s);
+    ok (s.apply (command::SetTarget { 4, "cd" }).rejection == Rejection::None, "target change");
+    auto target = ask (s, q);
+    ok (target.view().cacheHit && detail::Inspector::key (s) == key && target.view().revision == s.revision(), "target reuses source query with current revision");
+    auto zoom = q; zoom.fromFrame = 13; zoom.toFrame = 1027; zoom.columns = 11;
+    auto z = ask (s, zoom); ok (! z.view().cacheHit && same (z.view().values[0], 13) && same (z.view().values[z.view().values.size() - 12], 1027), "zoom has exact requested edges");
+    auto sample = q; sample.fromFrame = frames - 1; sample.columns = 2048;
+    auto one = ask (s, sample);
+    ok (one.view().stored == 4 && same (one.view().values[16], -1) && same (one.view().values[17], -1), "individual final sample preserves channel and polarity");
+    ok (same (overview.view().values[0], 0) && overview.view().request.requestId == q.requestId, "evicted response stays owned");
+    auto changed = zoom; ++changed.columns; ok (! ask (s, changed).view().cacheHit, "column count is in cache key");
+    changed = zoom; ++changed.fromFrame; ok (! ask (s, changed).view().cacheHit, "first edge is in cache key");
+    changed = zoom; --changed.toFrame; ok (! ask (s, changed).view().cacheHit, "last edge is in cache key");
+    changed = zoom; changed.fromHz = 21; ok (! ask (s, changed).view().cacheHit, "explicit grid input is in cache key");
+    ok (detail::Inspector::cacheBytes (s) <= sizeof (detail::QueryCache) + 2u * (kQueryValues * 8u + 128u), "two bounded cache entries");
+    const auto invalid = [&] (MeasurementQuery bad, QueryStatus status)
+    { const auto a = ask (s, bad); ok (a.view().status == status && a.view().values.empty(), "range/source/column refusal is explicit and allocation free"); };
+    changed = q; changed.fromFrame = frames; invalid (changed, QueryStatus::Empty);
+    changed = q; ++changed.toFrame; invalid (changed, QueryStatus::InvalidRange);
+    changed = q; changed.fromFrame = frames + 1; invalid (changed, QueryStatus::InvalidRange);
+    changed = q; changed.columns = 0; invalid (changed, QueryStatus::ColumnLimit);
+    changed = q; changed.columns = kQueryColumns + 1; invalid (changed, QueryStatus::ColumnLimit);
+    changed = q; ++changed.audioId; invalid (changed, QueryStatus::StaleSource);
+    changed = q; changed.kind = QueryKind (255); invalid (changed, QueryStatus::Contract);
+    const auto capacity = s.capabilities();
+    auto miss = q; miss.columns = 31;
+    const auto need = s.queryStorage (miss);
+    ok (s.setCapacity ({ s.liveBytes() + double (need.bytes) - 1, capacity.largestFreeBlockBytes }) == Status::Ok, "capacity boundary");
+    ok (ask (s, miss).view().status == QueryStatus::Memory, "query refuses before allocation");
+    ok (s.setCapacity ({ capacity.heapCeilingBytes, capacity.largestFreeBlockBytes }) == Status::Ok, "restore capacity");
+    finish (s);
+    const auto snapshot = s.snapshot();
+    for (const auto kind : { QueryKind::LowSpectrum, QueryKind::LowSide, QueryKind::Momentary, QueryKind::ShortTerm, QueryKind::Clipping, QueryKind::Stereo })
+    {
+        auto rq = q; rq.kind = kind; rq.columns = 19;
+        auto result = ask (s, rq);
+        ok (result.view().status == QueryStatus::Ready && ! result.view().values.empty(), "ready measurement rows are queryable");
+        ok (result.view().pcmFramesRead == 0, "retained measurement query reads no PCM");
+        ok (ask (s, rq).view().cacheHit, "all query kinds use bounded cache");
+        if (kind == QueryKind::LowSpectrum || kind == QueryKind::LowSide)
+        {
+            const auto& low = snapshot.view().measurements[std::size_t (Analyzer::LowEnd)];
+            for (const auto& a : low.arrays) if (a.name == "bands")
+            {
+                const auto j = a.stored / 2; const auto* row = a.values.data() + std::size_t (j * 16u);
+                rq.fromHz = rq.toHz = row[1]; rq.columns = 1;
+                auto band = ask (s, rq);
+                const double expected = kind == QueryKind::LowSpectrum ? row[7] : row[5] / (row[4] + row[5]);
+                ok (std::fabs (band.view().values[1] - expected) < 1e-12, "frequency grid reads retained spectrum and Side evidence");
+                rq.crossoverHz = 150;
+                ok (! ask (s, rq).view().cacheHit, "120 and 150 Hz do not collide");
+            }
+        }
+        if (kind == QueryKind::Clipping)
+        {
+            rq.columns = 1;
+            const auto clipped = ask (s, rq);
+            ok (clipped.view().stored == 1 && clipped.view().total > 1 && ! clipped.view().complete, "clipping truncation preserves counts");
+        }
+    }
+    const auto summary = s.summary();
+    ok (! summary.view().measurementRowsIncluded && snapshot.view().measurementRowsIncluded, "summary explicitly omits large rows");
+    for (const auto& r : summary.view().measurements) ok (r.arrays.empty(), "summary retains scalar status without row copies");
+    ok (s.summaryBytes() < s.snapshotBytes() && Wire::summaryBytes (s).rowBytes < Wire::snapshotBytes (s).rowBytes, "frequent summaries avoid whole-row transport");
+    left[8] *= 0.75f;
+    ok (s.apply (load).rejection == Rejection::None, "replacement source");
+    ok (ask (s, q).view().status == QueryStatus::StaleSource && same (overview.view().values[0], 0), "old response survives source replacement and new request rejects old audio ID");
+}
+void abiQueries()
+{
+    constexpr std::uint64_t frames = 48013;
+    std::vector<float> left (frames), right (frames); source (left, right);
+    const float* planes[] { left.data(), right.data() };
+    auto native = Session::create();
+    ok (native.session->apply (command::Load { 1, { planes, 2, frames, 48000 }, {} }).rejection == Rejection::None, "native fixture load");
+    fc_session_capabilities caps { sizeof (caps), 1073741824, 96000, 255, 1073741824 };
+    const auto version = config::Config::versions().all; fc_session handle = 0;
+    ok (fc_session_create (&caps, std::uint32_t (version), std::uint32_t (version >> 32u), &handle) == FC_SESSION_OK, "C fixture create");
+    std::vector<char> answer (kAnswerBytes); std::uint32_t written = 0;
+    constexpr char meta[] = R"({"name":"","fileRate":0,"bitDepth":0,"rateKnown":false})";
+    ok (fc_session_load (handle, 1, 0, planes, 2, std::uint32_t (frames), 48000, meta, sizeof (meta) - 1, answer.data(), std::uint32_t (answer.size()), &written) == FC_SESSION_OK, "C fixture load");
+    ok (std::string_view (answer.data(), written).find ("accepted") != std::string_view::npos, "C load accepted domain answer");
+    finish (*native.session);
+    std::uint32_t state = FC_SESSION_MORE;
+    for (unsigned i = 0; i < 20000 && state == FC_SESSION_MORE; ++i) ok (fc_session_step (handle, 16, &state) == FC_SESSION_OK, "C fixture step");
+    ok (state == FC_SESSION_DONE, "C fixture completes");
+    for (unsigned kind = 0; kind <= unsigned (QueryKind::Stereo); ++kind)
+    {
+        MeasurementQuery q; q.kind = QueryKind (kind); q.audioId = native.session->source().hash; q.toFrame = frames; q.columns = 7; q.requestId = 9007199254740993ull + kind;
+        const auto request = json (q);
+        for (unsigned repetition = 0; repetition < 2; ++repetition)
+        {
+            fc_session_sizes size { sizeof (size), 0, 0 }, actual { sizeof (actual), 777, 888 };
+            fc_session_storage demand { sizeof (demand), 0, 0, 0, 0 };
+            ok (fc_session_query_bytes (handle, request.data(), std::uint32_t (request.size()), &demand) == FC_SESSION_OK && demand.rejection == 0, "C query demand");
+            ok (fc_session_query_size (handle, request.data(), std::uint32_t (request.size()), &size) == FC_SESSION_OK, "C query buffer bounds");
+            std::vector<char> text (size.jsonBytes, '!'); std::vector<double> rows (size.rowBytes / 8u, -777);
+            fc_session_status shortStatus {};
+            const auto rejected = budget::spend ([&]
+            { shortStatus = fc_session_query_copy (handle, request.data(), std::uint32_t (request.size()), text.data(), 1, rows.data(), size.rowBytes, &actual); });
+            ok (shortStatus == FC_SESSION_ERR_TOO_SMALL, "short query buffer");
+            ok (rejected.bytes == 0 && text[0] == '!' && (rows.empty() || same (rows[0], -777)) && actual.jsonBytes == 777, "entry refusal allocates and writes nothing");
+            const auto spent = budget::spend ([&]
+            { ok (fc_session_query_copy (handle, request.data(), std::uint32_t (request.size()), text.data(), size.jsonBytes, rows.data(), size.rowBytes, &actual) == FC_SESSION_OK, "C query copy"); });
+            ok (budget::covers (std::uint64_t (demand.bytes), spent), "C query declaration covers counters");
+            const auto value = native.session->query (q);
+            const auto exact = Wire::queryBytes (value.view());
+            std::vector<char> expected (exact.jsonBytes); std::vector<double> expectedRows (exact.rowBytes / 8u);
+            ok (Wire::query (value.view(), expected, expectedRows) == CodecStatus::Ok, "named response codec");
+            ok (actual.jsonBytes == expected.size() && actual.rowBytes == expectedRows.size() * 8u
+                && std::equal (expected.begin(), expected.end(), text.begin()) && identical ({ rows.data(), actual.rowBytes / 8u }, expectedRows), "native/C response metadata and arrays agree exactly");
+            hash (value.view());
+            if (repetition == 0)
+            {
+                std::printf ("query-fixture %s\n", std::string (text.data(), actual.jsonBytes).c_str());
+                std::printf ("query-rows ");
+                const auto* bytes = reinterpret_cast<const unsigned char*> (rows.data());
+                for (std::uint32_t i = 0; i < actual.rowBytes; ++i) std::printf ("%02x", unsigned (bytes[i]));
+                std::printf ("\n");
+            }
+        }
+    }
+    fc_session_sizes size { sizeof (size), 0, 0 };
+    ok (fc_session_summary_size (handle, &size) == FC_SESSION_OK, "C summary bounds");
+    std::vector<char> text (size.jsonBytes); std::vector<double> rows (size.rowBytes / 8u);
+    ok (fc_session_summary_copy (handle, text.data(), size.jsonBytes, rows.data(), size.rowBytes) == FC_SESSION_OK, "C summary copy");
+    ok (std::string_view (text.data(), text.size()).find ("\"measurementRowsIncluded\":false") != std::string_view::npos, "summary advertises omitted rows");
+    MeasurementQuery outside; outside.audioId = native.session->source().hash; outside.toFrame = frames + 1u;
+    const auto outOfRange = json (outside);
+    fc_session_storage semanticDemand { sizeof (semanticDemand), 0, 0, 0, 0 };
+    fc_session_sizes semanticSize { sizeof (semanticSize), 0, 0 }, semanticWritten { sizeof (semanticWritten), 0, 0 };
+    ok (fc_session_query_bytes (handle, outOfRange.data(), std::uint32_t (outOfRange.size()), &semanticDemand) == FC_SESSION_OK
+        && semanticDemand.rejection == 0 && same (semanticDemand.bytes, 0.0), "invalid range has an allocation-free C preflight");
+    ok (fc_session_query_size (handle, outOfRange.data(), std::uint32_t (outOfRange.size()), &semanticSize) == FC_SESSION_OK
+        && semanticSize.rowBytes == 0, "invalid range needs no row buffer");
+    std::vector<char> semanticJson (semanticSize.jsonBytes);
+    ok (fc_session_query_copy (handle, outOfRange.data(), std::uint32_t (outOfRange.size()), semanticJson.data(), semanticSize.jsonBytes,
+        nullptr, 0, &semanticWritten) == FC_SESSION_OK
+        && std::string_view (semanticJson.data(), semanticWritten.jsonBytes).find ("\"status\":4") != std::string_view::npos,
+        "invalid range returns its explicit status through the C boundary");
+    const char invalid[] = "{}";
+    ok (fc_session_query_size (handle, invalid, 2, &size) == FC_SESSION_ERR_CONTRACT, "malformed query JSON");
+    ok (fc_session_query_copy (handle, invalid, 2, text.data(), size.jsonBytes, reinterpret_cast<double*> (text.data()), 8, &size) == FC_SESSION_ERR_OVERLAP, "overlapping outputs refused before parsing");
+    ok (fc_session_query_size (handle, invalid, 2, nullptr) == FC_SESSION_ERR_NULL, "null output before handle/input");
+    ok (fc_session_destroy (handle) == FC_SESSION_OK, "C fixture destroy");
+}
+int main()
+{
+    nativeQueries(); abiQueries();
+    std::printf ("measurement-query-digest=%016llx\n", static_cast<unsigned long long> (digest));
+    return felitronics::test::report();
+}

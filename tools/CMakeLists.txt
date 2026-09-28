@@ -243,6 +243,13 @@ if(FELITRONICS_BUILD_TESTS)
     # fc_session, version 1 (tools/fc_session_abi.h): guards, handles, capacity, declared allocation and poison —
     # natively, under ASan/UBSan, and on the wasm tier. Release walks every generation; Debug uses the test facade
     # seam to start at the last one. The poison is the last group, because it is for good.
+    add_executable(felitronics_session_query_tests tests/SessionQueryTests.cpp $<TARGET_OBJECTS:felitronics_session_replay_facade>)
+    target_link_libraries(felitronics_session_query_tests PRIVATE felitronics::session felitronics::test_support felitronics::analysis_offline felitronics::tempo)
+    target_include_directories(felitronics_session_query_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/modules/session/src)
+    target_compile_features(felitronics_session_query_tests PRIVATE cxx_std_20)
+    target_compile_options(felitronics_session_query_tests PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
+    add_test(NAME felitronics_session_query_tests COMMAND felitronics_session_query_tests)
+
     add_executable(felitronics_session_abi_tests tests/SessionAbiTests.cpp $<TARGET_OBJECTS:felitronics_session_replay_facade>)
     target_link_libraries(felitronics_session_abi_tests PRIVATE felitronics::session felitronics::test_support)
     target_include_directories(felitronics_session_abi_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

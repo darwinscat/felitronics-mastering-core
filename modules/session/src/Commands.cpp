@@ -18,6 +18,7 @@
 #include "MeasurementWorkspace.h"
 #include "LiveMeasurements.h"
 #include "SourceMeasurements.h"
+#include "QueryState.h"
 #include "Utf8.h"
 
 #include <felitronics/session/Commands.h>
@@ -373,6 +374,8 @@ Answer Session::apply (const Request& request) noexcept
         if (! cached)
         {
             samples_.reset();
+            waveform_.reset (new detail::WaveformState);
+            queryCache_.reset();
             measurementWorkspace_.reset (new detail::MeasurementWorkspace);
             liveMeasurements_.reset (new detail::LiveMeasurements);
             sourceMeasurements_.reset (new detail::SourceMeasurements);

@@ -64,7 +64,8 @@ const SURFACE = {
         '_fc_session_create_bytes', '_fc_session_command', '_fc_session_load', '_fc_session_import_project',
         '_fc_session_export_project_size', '_fc_session_export_project_copy', '_fc_session_step',
         '_fc_session_events_size', '_fc_session_events_copy', '_fc_session_snapshot_size', '_fc_session_snapshot_copy',
-        '_fc_session_measurement_bytes', '_fc_session_needles_bytes'],
+        '_fc_session_measurement_bytes', '_fc_session_needles_bytes', '_fc_session_query_bytes', '_fc_session_query_size',
+        '_fc_session_query_copy', '_fc_session_summary_size', '_fc_session_summary_copy'],
 };
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
@@ -263,6 +264,27 @@ while (!done && steps < 1500) {
 ok(done && steps > 10 && phases > 10, 'pump reaches done after bounded preparation, streaming, and finalization');
 const snapshot = readTransfer('snapshot');
 ok(snapshot.state === 2 && snapshot.sourceBytes === 192000 && typeof snapshot.integratedLufs === 'number', 'owned measured snapshot and explicit NaN');
+const queryRequest = {kind:0, audioId:snapshot.source.hash, fromFrame:'0', toFrame:'48000', columns:7, requestId:'9007199254740993'};
+const queryEncoded = new TextEncoder().encode(JSON.stringify(queryRequest));
+const queryInput = M._malloc(queryEncoded.length);
+new Uint8Array(M.HEAPU32.buffer, queryInput, queryEncoded.length).set(queryEncoded);
+const querySizes = M._malloc(12), queryWritten = M._malloc(12);
+M.HEAPU32[querySizes >>> 2] = 12; M.HEAPU32[queryWritten >>> 2] = 12;
+ok(M._fc_session_query_size(session, queryInput, queryEncoded.length, querySizes) === STATUS.OK, 'query capacity before execution');
+const queryJsonBytes = M.HEAPU32[(querySizes + 4) >>> 2], queryRowBytes = M.HEAPU32[(querySizes + 8) >>> 2];
+const queryJson = M._malloc(queryJsonBytes), queryRows = M._malloc(queryRowBytes);
+for (let repeat = 0; repeat < 2; ++repeat) {
+    ok(M._fc_session_query_copy(session, queryInput, queryEncoded.length, queryJson, queryJsonBytes, queryRows, queryRowBytes, queryWritten) === STATUS.OK, 'owned waveform query');
+    const bytes = M.HEAPU32[(queryWritten + 4) >>> 2];
+    const response = JSON.parse(new TextDecoder().decode(new Uint8Array(M.HEAPU32.buffer, queryJson, bytes)));
+    ok(accepts(response, 'QueryResponse') && response.request.requestId === queryRequest.requestId && response.audioId === queryRequest.audioId, 'generated query metadata and exact request ID');
+    ok(response.status === 0 && response.stored === '28' && response.cacheHit === (repeat === 1), 'overview and repeated demand cache');
+    const values = new Float64Array(M.HEAPU32.buffer, queryRows, response.values.length);
+    ok(Number.isNaN(values[16]) && values[25] === 3, 'mono right axis is absent with a reason');
+}
+M.HEAPU32[querySizes >>> 2] = 12;
+ok(M._fc_session_summary_size(session, querySizes) === STATUS.OK && M.HEAPU32[(querySizes + 8) >>> 2] === 0, 'summary omits large measurement rows');
+for (const p of [queryInput, querySizes, queryWritten, queryJson, queryRows]) M._free(p);
 ok(cmd(session, {kind:'editDevice', commandId:'2', device:7, fields:{on:true, db:1.25}}).code === 3, 'device edits wait for placement');
 ok(cmd(session, {kind:'setManual', commandId:'2', on:true}).kind === 'accepted', 'manual command');
 ok(M._fc_session_export_project_size(session, resultSize) === STATUS.ERR_NOT_PLACED, 'unplaced defaults cannot be exported');

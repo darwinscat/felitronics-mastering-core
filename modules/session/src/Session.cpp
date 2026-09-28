@@ -17,6 +17,7 @@
 #include "LiveMeasurements.h"
 #include "SourceMeasurements.h"
 #include "Needles.h"
+#include "QueryState.h"
 #include "BuildContract.h"
 
 #include <cstdint>
@@ -78,6 +79,8 @@ double Session::liveBytes() const noexcept
                    + (sourceMeasurements_ ? sizeof (detail::SourceMeasurements) + sourceMeasurements_->bytes : 0)
                    + (liveMeasurements_ ? sizeof (detail::LiveMeasurements) + liveMeasurements_->bytes : 0)
                    + (measurementWorkspace_ ? measurementWorkspace_->bytes() : 0)
+                   + (waveform_ ? sizeof (detail::WaveformState) + waveform_->bytes : 0)
+                   + (queryCache_ ? queryCache_->bytes() : 0)
                    + (needlesWork_ ? needlesWork_->bytes : 0) + (needlesResult_ ? sizeof (detail::NeedlesResult) : 0));
 }
 MeasurementStorage Session::measurementStorage (const Pcm& pcm) const noexcept
@@ -87,7 +90,7 @@ MeasurementStorage Session::measurementStorage (const Pcm& pcm) const noexcept
     auto result = plan.storage;
     // The old source is freed before the new PCM copy. Its live storage overlaps the caller's input,
     // not both input and replacement copy. New control objects can briefly coexist with the old ones.
-    const auto controls = double (sizeof (detail::MeasurementWorkspace) + sizeof (detail::LiveMeasurements) + sizeof (detail::SourceMeasurements));
+    const auto controls = double (sizeof (detail::MeasurementWorkspace) + sizeof (detail::LiveMeasurements) + sizeof (detail::SourceMeasurements) + sizeof (detail::WaveformState));
     result.loadPeakBytes = std::max (result.loadPeakBytes + double (createBytes()),
                                     liveBytes() + result.sourceBytes + controls + result.allocatorBytes);
     result.workPeakBytes += double (createBytes());

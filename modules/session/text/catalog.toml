@@ -467,3 +467,7 @@ en = "Unused low bits in the source: {bits}."
 [messages.sourcePolarity]
 ru = "В низких частотах обнаружена противоположная полярность каналов."
 en = "Opposite channel polarity was detected in the low frequencies."
+
+[terms.analyzer.waveform]
+ru = "Данные волны"
+en = "Waveform data"

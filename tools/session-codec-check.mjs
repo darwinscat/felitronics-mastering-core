@@ -33,7 +33,8 @@ function accepts(value, type, path = 'Snapshot') {
 const run = spawnSync(executable, args, { encoding: 'utf8' });
 assert.equal(run.status, 0, run.stderr || String(run.error));
 const fixtures = run.stdout.trim().split(/\r?\n/).map(line => JSON.parse(line));
-assert.equal(fixtures.length, 7);
+assert.equal(fixtures.length, 8);
+assert(accepts(fixtures.pop(), 'QueryView'));
 assert(accepts(fixtures.pop(), 'MeasurementChange'));
 for (const fixture of fixtures) assert(accepts(fixture, 'Snapshot'), 'encoded fixture differs from snapshot.d.ts');
 for (const [name, record] of Object.entries(schema.records)) {

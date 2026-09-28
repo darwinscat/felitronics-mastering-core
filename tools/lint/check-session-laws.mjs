@@ -122,6 +122,7 @@ const STD_ALLOWED = new Set(['algorithm', 'array', 'bit', 'charconv', 'cfloat', 
 // sets the FPU's flush-to-zero with no symbol any object gate could read, and several core headers pull <atomic> in. A
 // header added here is reviewed, in one line, for what it does by being included.
 const FELITRONICS_ALLOWED = new Set([
+    'felitronics/session/Queries.h',            // owned bounded measurement query declarations
     'felitronics/session/Measurements.h',       // owned measurement values and exact arrays
     'felitronics/session/Session.h',             // this module's own public headers, scanned here as every file of it is
     'felitronics/session/Config.h',
@@ -150,6 +151,7 @@ const FELITRONICS_ALLOWED = new Set([
     'felitronics/analysis/ClipDetector.h', // deterministic analyzer storage declarations
     'felitronics/analysis/SourceForensics.h', // deterministic analyzer storage declarations
     'felitronics/analysis/StereoColumns.h', // deterministic analyzer storage declarations
+    'felitronics/analysis/WaveformIndex.h',      // source-owned deterministic pyramid and bounded checkpoint replay
     'felitronics/analysis/WaveformPeaks.h', // deterministic analyzer storage declarations
     'felitronics/analysis/HumDetector.h', // deterministic analyzer storage declarations
     'felitronics/tempo/TempoDetector.h', // deterministic analyzer storage declarations

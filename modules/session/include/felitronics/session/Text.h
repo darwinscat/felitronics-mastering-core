@@ -196,6 +196,7 @@ enum class Term : std::uint16_t
     FieldAudio = 17,
     AnalyzerLowEnd, AnalyzerLowEnd150, AnalyzerInfraLow, AnalyzerForensics, AnalyzerStereo, AnalyzerCrest, AnalyzerHum, AnalyzerBursts,
     StatusReady, StatusUnsupported, StatusShort, StatusNonFinite, StatusCapacity, StatusNoSignal, StatusMemory,
+    AnalyzerWaveform,
 
 };
 

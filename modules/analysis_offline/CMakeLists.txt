@@ -40,6 +40,14 @@ if(FELITRONICS_BUILD_TESTS)
     # WaveformPeaks + StereoColumns — ports of the site's audio-peaks.js / stereo-meter.js, pinned to the spec's own
     # numbers. Built with the tree's own `on`, which is where the natural removal of the stereo products' volatile pin
     # (`mid += m*m`) fuses on arm64 and fails witnesses W5/W6f — see the test file's header for the measured matrix.
+    add_executable(felitronics_waveform_index_tests tests/WaveformIndexTests.cpp)
+    target_link_libraries(felitronics_waveform_index_tests PRIVATE felitronics::analysis_offline felitronics::test_support)
+    target_compile_features(felitronics_waveform_index_tests PRIVATE cxx_std_20)
+    if(NOT MSVC)
+        target_compile_options(felitronics_waveform_index_tests PRIVATE -ffp-contract=off)
+    endif()
+    add_test(NAME felitronics_waveform_index_tests COMMAND felitronics_waveform_index_tests)
+
     add_executable(felitronics_waveform_shape_tests tests/WaveformShapeTests.cpp)
     target_link_libraries(felitronics_waveform_shape_tests PRIVATE felitronics::analysis_offline felitronics::test_support)
     target_compile_features(felitronics_waveform_shape_tests PRIVATE cxx_std_20)

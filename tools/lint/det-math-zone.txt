@@ -154,3 +154,10 @@ zone modules/session/src/SourceResults.cpp owned analyzer result adapters
 entry modules/session/src/SourceResults.cpp owned analyzer result adapters
 
 zone modules/analysis_offline/include/felitronics/analysis/BandCrestResult.h detached source crest data
+zone modules/session/include/felitronics/session/Queries.h bounded source waveform and measurement queries
+zone modules/session/src/QueryState.h bounded source waveform and measurement queries
+zone modules/session/src/Waveform.cpp bounded source waveform and measurement queries
+entry modules/session/src/Waveform.cpp bounded source waveform and measurement queries
+zone modules/session/src/Queries.cpp bounded source waveform and measurement queries
+entry modules/session/src/Queries.cpp bounded source waveform and measurement queries
+zone modules/analysis_offline/include/felitronics/analysis/WaveformIndex.h bounded source waveform and measurement queries

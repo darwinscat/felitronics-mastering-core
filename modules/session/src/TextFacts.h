@@ -171,6 +171,7 @@ inline constexpr TermShape kTerms[] = {
     { Term::StatusNoSignal, "measurementStatus", "noSignal" },
     { Term::StatusMemory, "measurementStatus", "memory" },
 
+    { Term::AnalyzerWaveform, "analyzer", "waveform" },
 };
 inline constexpr std::size_t kTermCount = sizeof (kTerms) / sizeof (kTerms[0]);
 

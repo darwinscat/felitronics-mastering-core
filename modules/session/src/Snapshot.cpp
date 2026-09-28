@@ -76,6 +76,26 @@ Snapshot Snapshot::copy (const SnapshotView& v) noexcept
     }
     return out;
 }
+SnapshotView Session::buildSummary (std::span<MeasurementResult> results) const noexcept
+{
+    auto v = buildView();
+    std::copy (v.measurements.begin(), v.measurements.end(), results.begin());
+    results = results.first (v.measurements.size());
+    for (auto& r : results) r.arrays = {};
+    v.measurements = results; v.momentary = {}; v.shortTerm = {}; v.runs = {};
+    v.measurementRowsIncluded = false;
+    return v;
+}
+std::uint64_t Session::summaryBytes() const noexcept
+{
+    MeasurementResult results[kAnalyzers];
+    return Snapshot::storageFor (buildSummary (results));
+}
+Snapshot Session::summary() const noexcept
+{
+    MeasurementResult results[kAnalyzers];
+    return Snapshot::copy (buildSummary (results));
+}
 std::uint64_t Session::snapshotBytes() const noexcept
 {
     return Snapshot::storageFor (buildView());

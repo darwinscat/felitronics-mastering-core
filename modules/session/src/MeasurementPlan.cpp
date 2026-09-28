@@ -6,6 +6,7 @@
 #include "MeasurementWorkspace.h"
 #include "LiveMeasurements.h"
 #include "SourceMeasurements.h"
+#include "QueryState.h"
 #include "JsonNumber.h"
 #include "Rules.h"
 #include "BuildContract.h"
@@ -160,19 +161,26 @@ MeasurementPlan MeasurementPlan::storageFor (const Pcm& pcm, const MeasurementPa
         s.resultBytes += double (a.rowValues * sizeof (double));
         s.copyBytes += double (a.result);
     }
+    const auto index = analysis::WaveformIndex::storageFor (pcm.sampleRate, pcm.channelCount, pcm.frames);
+    auto& wave = out.analyzers[std::size_t (Analyzer::Waveform)];
+    wave = { index.ok, index.ok ? sizeof (analysis::WaveformIndex) + index.bytes() : 0, sizeof (WaveformState) + (index.ok ? index.bytes() : 0), 0 };
+    s.resultBytes += double (wave.result);
+    s.copyBytes += double (4u * sizeof (MeasurementValue) + 128u);
+    // Two bounded cached responses, one detached answer and one binary transport buffer.
+    const auto queryRows = std::max (std::min<std::uint64_t> (kQueryColumns, pcm.frames) * 4u * kWaveformStride, std::uint64_t (kQueryColumns) * 6u) * sizeof (double);
+    s.workspaceBytes += double (sizeof (QueryCache) + 4u * queryRows + 8192u);
     // fc_session transports numeric rows as binary f64. Scalar JSON uses exact decimals, which can
     // exceed a thousand bytes; reserve the writer's own capacity for every possible scalar. Text and
     // record framing retain the escaping bound. Plain JSON row exports query Codec::encodedBytes
     // separately: an optional export buffer is not a condition for admitting the web measurement.
-    s.codecBytes = s.resultBytes + 6.0 * (s.copyBytes - s.resultBytes)
+    s.codecBytes = (s.resultBytes - double (wave.result)) + 6.0 * (s.copyBytes - (s.resultBytes - double (wave.result)))
                  + double ((streaming.size() + SourceMeasurements::order.size()) * kMeasurementNumbers * JsonNumber::capacity);
     // The allocator allowance covers headers/alignment, including MSVC's 39/47-byte large-block padding.
     // At most 256 requests per analyzer for the declared one/two-channel preparations and output copies.
-    s.allocatorBytes = double ((streaming.size() + SourceMeasurements::order.size()) * (workspaceAllowance + rowAllowance));
-    s.loadPeakBytes = 2.0 * s.sourceBytes + double (sizeof (MeasurementWorkspace) + sizeof (LiveMeasurements) + sizeof (SourceMeasurements)) + s.allocatorBytes;
+    s.allocatorBytes = 896.0 + double ((streaming.size() + SourceMeasurements::order.size()) * (workspaceAllowance + rowAllowance));
+    s.loadPeakBytes = 2.0 * s.sourceBytes + double (sizeof (MeasurementWorkspace) + sizeof (LiveMeasurements) + sizeof (SourceMeasurements) + sizeof (WaveformState)) + s.allocatorBytes;
     // The declaration covers every scheduled preparation, all retained rows and one detached
-    // snapshot with serialization. Unscheduled waveform, tempo and target-dependent needles
-    // keep their independent admission; their unused maximum stores are not load demand.
+    // snapshot with serialization. Tempo and target-dependent needles keep independent admission.
     s.workPeakBytes = s.sourceBytes + s.resultBytes + s.workspaceBytes + s.copyBytes + s.codecBytes + s.allocatorBytes;
     s.peakBytes = std::max (s.loadPeakBytes, s.workPeakBytes);
     s.largestBlockBytes = std::max ({ s.sourceBytes, s.resultBytes, s.workspaceBytes, s.codecBytes });
@@ -183,7 +191,7 @@ MeasurementPlan MeasurementPlan::storageFor (const Pcm& pcm, const MeasurementPa
 std::uint64_t MeasurementPlan::key (std::uint64_t pcmHash, const MeasurementParameters& p,
                                    std::uint64_t configVersion, Version core, Version session) noexcept
 {
-    Hash h; h.add (pcmHash); h.add (configVersion);
+    Hash h; h.add (pcmHash); h.add (configVersion); h.add (1); // waveform index definition
     h.add (int (core.major)); h.add (int (core.minor)); h.add (int (core.patch));
     h.add (int (session.major)); h.add (int (session.minor)); h.add (int (session.patch));
     h.add (p.maxBlock); h.add (p.clipRuns); h.add (p.columns); h.add (p.waveformBuckets); h.add (int (p.waveformMix));

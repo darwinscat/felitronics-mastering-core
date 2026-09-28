@@ -555,7 +555,7 @@ void freezeRegressions()
     for (const auto malformed : { "{", R"({"kind":"master"})", R"({"kind":"master","commandId":"5","unknown":1})" })
     {
         ok (fc_session_step (h, 1, &written) == FC_SESSION_OK, "step before malformed command");
-        const auto phase = events (h); const auto seqAt = phase.find ("\"seq\":\"");
+        const auto phase = events (h); const auto seqAt = phase.rfind ("\"seq\":\"");
         const auto seq = std::stoull (phase.substr (seqAt + 7));
         ok (contains (command (h, malformed), "\"code\":\"contract\""), "protocol refusal answer");
         const auto rejected = events (h);

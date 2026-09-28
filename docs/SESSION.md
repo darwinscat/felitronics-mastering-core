@@ -585,6 +585,36 @@ changing the target does not invalidate them. Needles have a separate source-and
 belong to the session independently of analyzer scratch, so final publication needs no programme-sized copy. The live needles job consumes its
 retained loudness and true-peak readings through the controller seam; see [NEEDLES.md](NEEDLES.md).
 
+`MeasurementQuery` reads retained source data between pump steps on the session thread. The caller supplies
+`audioId` (`Source::hash`), a half-open source-frame range `[fromFrame,toFrame)`, `columns` in `[1,2048]`, and
+an exact uint64 `requestId`. A nonempty valid range has at most `min(columns,toFrame-fromFrame)` waveform buckets;
+bucket `i` uses `fromFrame + floor((toFrame-fromFrame)*i/n)` to the next boundary. The last bucket includes the
+last source frame. `fromFrame == toFrame` returns `Empty` with no rows; reversed or out-of-source ranges return
+`InvalidRange`; a stale `audioId` returns `StaleSource`; invalid column counts return `ColumnLimit`. None clamps.
+The response echoes the request and supplies the source id, session revision, measurement key, status, reason,
+total/stored counts, completeness, source rate/channels, row stride and PCM frames read. Each `QueryResult` owns its
+rows after cache eviction, source replacement or session destruction. Repeated equivalent queries share a bounded
+two-entry cache; `requestId` is an answer label and does not change the measurement. Target edits do not remeasure
+the source. The source/config/core identity and actual grid parameters distinguish cache entries.
+
+The generated `Query*Row` tuples in `snapshot.d.ts` give column names. Their numeric units and order are:
+
+| kind | row meaning |
+|---|---|
+| Waveform | `[firstFrame,lastFrame,axis,min,max,peak,envelope,rms,lowEnergy,middleEnergy,highEnergy,finiteFrames,reason]`; axes 0=L, 1=R, 2=Mid=(L+R)/2, 3=Side=(L-R)/2; mono has only 0 and 2. Amplitudes are linear, energies are sums of squares. Peak preserves either signed extremum; envelope is the maximum absolute box mean near 8 kHz. Bands use complementary 250/2500 Hz one-pole drawing filters and are not LR4 measurements. |
+| LowSpectrum / LowSide | `[Hz,density,reason]` / `[Hz,sideFraction,reason]`; the requested Hz grid includes both endpoints (one column uses `fromHz`). The retained full-source LowEnd measurement is selected by exact `crossoverHz` 120 or 150. These kinds require the whole-source frame range and a finite grid within Nyquist. |
+| Momentary / ShortTerm | `[sourceFrame,LUFS,reason]` from the retained live grid, decimated to the requested maximum row count. |
+| Clipping | `[firstFrame,frameCount,channel,sign,level,evidence]` for retained runs intersecting the range; `total` counts all matches, `stored` is capped by `columns`, and `complete` reports truncation. |
+| Stereo | `[firstFrame,lastFrame,width,correlation,rms,reason]` from retained source stereo columns on the selected grid. |
+
+Waveform inner buckets combine completed index nodes; only two edge leaves can replay resident PCM. Its index owns
+the multiresolution columns and filter checkpoints with no second PCM copy. `pcmFramesRead` exposes exact-edge work;
+other query kinds read retained results and report zero. A waveform range not yet built is `Pending`; a stopped
+unfinished range is `Cancelled`. A row's reason distinguishes absent mono axes (`Unsupported`), nonfinite gaps
+(`NonFinite`) and finite silence (`NoSignal`); unavailable instruments retain their own reason. `summary()` and
+`fc_session_summary_*` keep scalar snapshot status while omitting large measurement rows and mark
+`measurementRowsIncluded=false`. The full snapshot remains available on its existing entry points.
+
 `measurementStorage` exposes source, result, workspace, copy, codec and allocator demands and the maximum live
 set across load and work. Native `storageFor` calls share the exact parameter records used for preparation, including
 the separate loudness meter and waveform/stereo columns. Nested spectrum and band-burst storage is included only
@@ -632,7 +662,7 @@ fail. `tools/wasm/build.sh` also emits `snapshot.d.ts` beside the modules. Regen
 `felitronics_session_event_tests` holds every command-table cell between actual pump calls, immediate fact publication,
 cancellation and continued use, stale completions, and complete event fingerprints across runs and work slicing. The
 fixture is the suite's four synthetic samples at 48 kHz (source hash `0ba6b096abb7c779`) and the embedded config; regenerate its fingerprints by running
-the suite and reviewing changes against those inputs. The pinned event hashes (`e2d3b1997699c4ac`, `74d299b0b8b47839`) include all active event payload fields and
+the suite and reviewing changes against those inputs. The pinned event hashes (`820a89aab5c3d074`, `9b331789613b86ea`) include all active event payload fields and
 the weights version. The same executable and fixtures run native and wasm. The codec suite covers retained snapshots,
 both project layers, all reading arrays, silence, gaps, finite exponent extremes, signed zero, and deterministic
 binary64 samples. The object gate admits Apple's compiler-generated `__chkstk_darwin` stack probe for the bounded

@@ -3,6 +3,7 @@
 #include "DeclaredBudget.h"
 #include "MeasurementPlan.h"
 #include "MeasurementWorkspace.h"
+#include "QueryState.h"
 #include "Driver.h"
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/session/Wire.h>
@@ -25,6 +26,7 @@ bool same (double a, double b);
 
 struct felitronics::session::detail::Inspector
 {
+    static bool waveformFinished (const Session& s) { return s.waveform_->finished; }
     static void eventJobs (Session& s)
     {
         s.measurementJob_ = 11; s.needlesJob_ = 12; s.job_ = 13;
@@ -49,6 +51,7 @@ void capacityBoundary()
     const Pcm audio { channels, 2, pcm.size(), 48000 };
     auto measured = Session::create();
     (void) measured.session->apply (command::Load { 1, audio, {} });
+    while (! detail::Inspector::waveformFinished (*measured.session)) (void) measured.session->step (1);
     for (unsigned stage = 0; stage < 3; ++stage)
     {
         const auto before = measured.session->liveBytes();
@@ -59,6 +62,7 @@ void capacityBoundary()
     }
     auto made = Session::create(); auto& s = *made.session;
     (void) s.apply (command::Load { 1, audio, {} });
+    while (! detail::Inspector::waveformFinished (s)) (void) s.step (1);
     const auto plan = detail::MeasurementPlan::storageFor (audio, detail::MeasurementPlan::parametersFor (audio));
     for (unsigned stage = 0; stage < 3; ++stage)
     {
