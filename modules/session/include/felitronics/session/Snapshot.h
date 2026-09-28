@@ -35,6 +35,12 @@ struct SnapshotView
     std::span<const ReadingRun> runs;
     MeasurementStorage measurementStorage {};
     std::span<const MeasurementResult> measurements;
+    JobId needlesJob = 0;
+    std::uint64_t needlesSource = 0;
+    std::optional<double> needlesNeedDb, needlesCeilingDb;
+    Phase needlesProgress {};
+    double needlesBytes = 0, needlesLargestBlockBytes = 0;
+    bool needlesRunsTruncated = false;
 };
 class Codec;
 // An immutable, owned value. view() remains valid until this value is moved or destroyed,

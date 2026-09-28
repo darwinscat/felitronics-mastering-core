@@ -138,3 +138,7 @@ entry modules/session/src/MeasurementPlan.cpp analyzer storage and cache identit
 zone modules/session/src/MeasurementWorkspace.h analyzer workspace ownership
 zone modules/session/src/MeasurementWorkspace.cpp persistent analyzer preparation
 entry modules/session/src/MeasurementWorkspace.cpp persistent analyzer preparation
+
+zone modules/session/src/Needles.h target-dependent needles job storage
+zone modules/session/src/Needles.cpp target-dependent needles execution
+entry modules/session/src/Needles.cpp target-dependent needles execution

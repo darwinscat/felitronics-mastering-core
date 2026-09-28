@@ -146,6 +146,7 @@ const FELITRONICS_ALLOWED = new Set([
     // (the rounding mode, the exception mask) that compile to a bare ldmxcsr; rule NOSYMBOL refuses all of them, and
     // _mm_setcsr / _mm_getcsr, as tokens in every session source, so what is admitted here cannot touch the register.
     'felitronics/analysis/ProgrammeReport.h', // deterministic analyzer storage declarations
+    'felitronics/analysis/PeakExcursions.h', // deterministic reconstruction; no ambient state or FPU controls
     'felitronics/analysis/ClipDetector.h', // deterministic analyzer storage declarations
     'felitronics/analysis/SourceForensics.h', // deterministic analyzer storage declarations
     'felitronics/analysis/StereoColumns.h', // deterministic analyzer storage declarations

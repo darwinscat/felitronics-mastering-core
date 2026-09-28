@@ -241,8 +241,8 @@ Checked Session::storageFor (const Request& request) const noexcept
         return storage (bytes, bytes);
     }
     if (const auto* cancel = std::get_if<command::Cancel> (&request))
-        return job_ == 0 && measurementJob_ == 0 ? rejected (Rejection::NoJob)
-             : cancel->job != 0 && (cancel->job == job_ || cancel->job == measurementJob_)
+        return job_ == 0 && measurementJob_ == 0 && needlesJob_ == 0 ? rejected (Rejection::NoJob)
+             : cancel->job != 0 && (cancel->job == job_ || cancel->job == measurementJob_ || cancel->job == needlesJob_)
                  ? Checked {} : rejected (Rejection::UnknownJob);
     if (const auto* forget = std::get_if<command::Forget> (&request))
     {
@@ -362,6 +362,9 @@ Answer Session::apply (const Request& request) noexcept
         masters_.reset();
         masterCount_ = 0;
         masterRoom_ = 0;
+        clearNeedles();
+        needlesSource_ = 0; needlesKey_ = 0; needlesNeedDb_.reset(); needlesCeilingDb_.reset();
+        needlesProgress_ = {}; needlesDemand_ = {};
         if (! cached)
         {
             samples_.reset();
@@ -376,7 +379,7 @@ Answer Session::apply (const Request& request) noexcept
                 if (! plan.analyzers[i].available)
                 {
                     r.status = MeasurementStatus::Unavailable;
-                    r.reason = r.analyzer == Analyzer::Excursions ? MeasurementReason::NotImplemented : MeasurementReason::Unsupported;
+                    r.reason = r.analyzer == Analyzer::Excursions ? MeasurementReason::Pending : MeasurementReason::Unsupported;
                 }
             }
         }
@@ -410,10 +413,11 @@ Answer Session::apply (const Request& request) noexcept
             measurementProgress_ = previousProgress;
             if (state_ == State::Measured2) measurementJob_ = 0;
             for (auto& r : measurementResults_)
-                if (r.status == MeasurementStatus::Cancelled) { r.status = MeasurementStatus::Pending; r.reason = MeasurementReason::Pending; }
+                if (r.analyzer != Analyzer::Excursions && r.status == MeasurementStatus::Cancelled) { r.status = MeasurementStatus::Pending; r.reason = MeasurementReason::Pending; }
             if (placed()) detail::placeMachine (rules, project_.target, source_.channels, project_.devices, capabilities_.offeredDevices);
         }
         answer.job = measurementJob_;
+        if (placed()) requestNeedles();
     }
     else if (const auto* set = std::get_if<command::SetTarget> (&request))
     {
@@ -517,6 +521,8 @@ Answer Session::apply (const Request& request) noexcept
             emit (event);
         }
     }
+    if (std::holds_alternative<command::SetTarget> (request) || std::holds_alternative<command::EditTarget> (request)
+        || std::holds_alternative<command::ImportProject> (request)) requestNeedles();
     refreshEqCurve();
     answer.revision = ++revision_;
     return answer;
@@ -529,7 +535,7 @@ namespace detail
 {
 bool Driver::retain (Session& session, JobId job, const MeasurementResult& result) noexcept
 {
-    if (job == 0 || job != session.measurementJob_ || result.key != session.measurementKey_
+    if (result.analyzer == Analyzer::Excursions || job == 0 || job != session.measurementJob_ || result.key != session.measurementKey_
         || result.framesRead > session.source_.frames
         || Session::checkFloatingPointEnvironment() != Status::Ok || ! OwnedMeasurements::valid ({ &result, 1 })) return false;
     const auto i = std::size_t (result.analyzer);
@@ -550,6 +556,7 @@ bool Driver::retain (Session& session, JobId job, const MeasurementResult& resul
     event.payload.measurement = { result.analyzer, result.status, result.reason, result.key, session.source_.hash,
                                   session.revision_, result.framesRead, result.total, result.stored, result.complete };
     session.emit (event);
+    if (result.analyzer == Analyzer::Loudness && session.placed()) session.requestNeedles();
     return true;
 }
 JobId Driver::continueMeasurement (Session& session) noexcept
@@ -558,7 +565,7 @@ JobId Driver::continueMeasurement (Session& session) noexcept
         || session.lastJob_ == std::numeric_limits<JobId>::max() || Session::checkFloatingPointEnvironment() != Status::Ok) return 0;
     session.measurementJob_ = ++session.lastJob_;
     for (auto& r : session.measurementResults_)
-        if (r.status == MeasurementStatus::Cancelled) { r.status = MeasurementStatus::Pending; r.reason = MeasurementReason::Pending; }
+        if (r.analyzer != Analyzer::Excursions && r.status == MeasurementStatus::Cancelled) { r.status = MeasurementStatus::Pending; r.reason = MeasurementReason::Pending; }
     ++session.revision_;
     return session.measurementJob_;
 }
@@ -575,6 +582,7 @@ bool Driver::measured1 (Session& session, JobId job, std::uint64_t source) noexc
     session.measurementUnit_ = 5;
     detail::placeMachine (detail::rules(), session.project_.target, session.source_.channels, session.project_.devices, session.capabilities_.offeredDevices);
     session.refreshEqCurve();
+    session.requestNeedles();
     ++session.revision_;
     return true;
 }

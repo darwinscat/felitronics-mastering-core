@@ -51,7 +51,9 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (MeasurementReason::Capacity) == 6);
         static_assert (unsigned (MeasurementReason::NoSignal) == 7);
         static_assert (unsigned (MeasurementReason::NotImplemented) == 8);
-        return 8;
+        static_assert (unsigned (MeasurementReason::NeedNotAbove3) == 9);
+        static_assert (unsigned (MeasurementReason::Memory) == 10);
+        return 10;
     }
     else if constexpr (std::is_same_v<T, MeasurementStatus>)
     {
@@ -139,6 +141,8 @@ constexpr void checkEnum (MeasurementReason value) noexcept
         case MeasurementReason::Capacity: break;
         case MeasurementReason::NoSignal: break;
         case MeasurementReason::NotImplemented: break;
+        case MeasurementReason::NeedNotAbove3: break;
+        case MeasurementReason::Memory: break;
     }
 }
 
@@ -440,17 +444,13 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, MeasurementStorage>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.allocatorBytes)>, double>);
         v.field ("allocatorBytes", x.allocatorBytes);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.codecBytes)>, double>);
         v.field ("codecBytes", x.codecBytes);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.copyBytes)>, double>);
         v.field ("copyBytes", x.copyBytes);
-        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.indexBudgetKnown)>, bool>);
-        v.field ("indexBudgetKnown", x.indexBudgetKnown);
-        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.indexBytes)>, double>);
-        v.field ("indexBytes", x.indexBytes);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.largestBlockBytes)>, double>);
         v.field ("largestBlockBytes", x.largestBlockBytes);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.loadPeakBytes)>, double>);
@@ -600,7 +600,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, SnapshotView>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.eqCurve)>, std::span<const EqPoint>>);
         v.field ("eqCurve", x.eqCurve);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.handFieldCount)>, std::uint32_t>);
@@ -629,6 +629,22 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.optionalField ("measurements", x.measurements);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.momentary)>, std::span<const ReadingPoint>>);
         v.field ("momentary", x.momentary);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.needlesBytes)>, double>);
+        v.optionalField ("needlesBytes", x.needlesBytes);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.needlesCeilingDb)>, std::optional<double>>);
+        v.optionalField ("needlesCeilingDb", x.needlesCeilingDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.needlesJob)>, std::uint32_t>);
+        v.optionalField ("needlesJob", x.needlesJob);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.needlesLargestBlockBytes)>, double>);
+        v.optionalField ("needlesLargestBlockBytes", x.needlesLargestBlockBytes);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.needlesNeedDb)>, std::optional<double>>);
+        v.optionalField ("needlesNeedDb", x.needlesNeedDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.needlesProgress)>, Phase>);
+        v.optionalField ("needlesProgress", x.needlesProgress);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.needlesRunsTruncated)>, bool>);
+        v.optionalField ("needlesRunsTruncated", x.needlesRunsTruncated);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.needlesSource)>, std::uint64_t>);
+        v.optionalField ("needlesSource", x.needlesSource);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.offeredDevices)>, std::uint32_t>);
         v.field ("offeredDevices", x.offeredDevices);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.project)>, Project>);

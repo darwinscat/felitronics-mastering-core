@@ -102,7 +102,7 @@ struct Source
     std::string_view name;
 };
 
-namespace detail { struct Driver; struct Inspector; struct MeasurementWorkspace; }
+namespace detail { struct Driver; struct Inspector; struct MeasurementWorkspace; struct NeedlesWork; struct NeedlesResult; }
 
 //==============================================================================
 // felitronics::session::Session — the mastering session: the object a shell (the web worker through the fcsession
@@ -182,6 +182,9 @@ public:
     // Allocation-free demand before capacity checks; Load needs shape/meta only, never sample pointers.
     [[nodiscard]] Checked storageFor (const Request& request) const noexcept;
     [[nodiscard]] MeasurementStorage measurementStorage (const Pcm& pcm) const noexcept;
+    // Additional job demand, before preparation; includes the analyzer run list, owned aggregates, copy and codec.
+    [[nodiscard]] Checked needlesStorage (double ceilingDb) const noexcept;
+    [[nodiscard]] JobId needlesJob() const noexcept;
     [[nodiscard]] Answer rejectProtocol (CommandId id) noexcept;
 
     // Export is an owned exact byte allocation, without a terminator. Only placed projects are exportable.
@@ -190,11 +193,12 @@ public:
     [[nodiscard]] Rejection exportProject (std::span<char> output) const noexcept;
     [[nodiscard]] Answer importProject (CommandId id, std::string_view bytes) noexcept;
 
-    // Each unit completes one deterministic stub step. A call takes at most kStepUnits units;
+    // Each needles unit prepares, reads at most 1024 source frames, or finishes; other jobs still use stub steps. A call takes at most kStepUnits units;
     // zero polls. With no work, even a hostile FP environment returns Done without an event or a seq change.
     // An FP refusal while work remains publishes Error{Refusal, Continue}; restoring the environment permits resumption.
     // Drain/copy events() after each apply/step, before the next call replaces the batch.
-    // The batch lives inside createBytes(); step and events request no heap memory.
+    // The batch lives inside createBytes(). Needles preparation uses its separate needlesStorage demand;
+    // subsequent needles units and events request no heap memory.
     [[nodiscard]] static std::uint64_t stepBytes() noexcept;
     [[nodiscard]] Stepped step (std::uint32_t budget) noexcept;
     [[nodiscard]] std::span<const Notification> events() const noexcept;
@@ -235,6 +239,17 @@ private:
     void dropJob (JobId job) noexcept;
     [[nodiscard]] SnapshotView buildView() const noexcept;
     [[nodiscard]] bool hasWork() const noexcept;
+    void requestNeedles() noexcept;
+    void stepNeedles() noexcept;
+    void clearNeedles() noexcept;
+    void needlesChanged() noexcept;
+    std::unique_ptr<detail::NeedlesWork> needlesWork_;
+    std::unique_ptr<detail::NeedlesResult> needlesResult_;
+    JobId needlesJob_ = 0;
+    std::uint64_t needlesSource_ = 0, needlesKey_ = 0;
+    std::optional<double> needlesNeedDb_, needlesCeilingDb_;
+    Phase needlesProgress_ {};
+    Checked needlesDemand_ {};
     JobId measurementJob_ = 0;
     std::uint32_t measurementUnit_ = 0, masterUnit_ = 0;
     Phase measurementProgress_ {}, masterProgress_ {};

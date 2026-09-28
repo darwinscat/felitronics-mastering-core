@@ -61,7 +61,9 @@
       "NonFinite",
       "Capacity",
       "NoSignal",
-      "NotImplemented"
+      "NotImplemented",
+      "NeedNotAbove3",
+      "Memory"
     ]
   },
   "records": {
@@ -349,7 +351,15 @@
         "handFieldCount": "uint32",
         "eqCurve": "EqPoint[]",
         "measurementStorage": "MeasurementStorage",
-        "measurements": "MeasurementResult[]"
+        "measurements": "MeasurementResult[]",
+        "needlesJob": "uint32",
+        "needlesSource": "uint64",
+        "needlesNeedDb": "double?",
+        "needlesCeilingDb": "double?",
+        "needlesProgress": "Phase",
+        "needlesBytes": "bytes",
+        "needlesLargestBlockBytes": "bytes",
+        "needlesRunsTruncated": "bool"
       }
     },
     "Version": {
@@ -426,7 +436,6 @@
       "fields": {
         "sourceBytes": "bytes",
         "resultBytes": "bytes",
-        "indexBytes": "bytes",
         "workspaceBytes": "bytes",
         "copyBytes": "bytes",
         "codecBytes": "bytes",
@@ -434,8 +443,7 @@
         "loadPeakBytes": "bytes",
         "workPeakBytes": "bytes",
         "peakBytes": "bytes",
-        "largestBlockBytes": "bytes",
-        "indexBudgetKnown": "bool"
+        "largestBlockBytes": "bytes"
       }
     },
     "MeasurementChange": {
@@ -853,7 +861,15 @@
   "optionalFields": {
     "Snapshot": [
       "measurementStorage",
-      "measurements"
+      "measurements",
+      "needlesJob",
+      "needlesSource",
+      "needlesNeedDb",
+      "needlesCeilingDb",
+      "needlesProgress",
+      "needlesBytes",
+      "needlesLargestBlockBytes",
+      "needlesRunsTruncated"
     ]
   }
 }
