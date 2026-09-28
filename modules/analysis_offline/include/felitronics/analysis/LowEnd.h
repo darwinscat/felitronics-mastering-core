@@ -282,7 +282,7 @@ class LowEnd
 {
 private:
     // Declared first because the public Storage below sizes itself in terms of them.
-    struct BlockRecord { double mid = 0.0, side = 0.0; std::int32_t samples = 0, finite = 0; };
+    struct BlockRecord { double mid, side; std::int32_t samples, finite; };
     struct BinWeight   { double weight = 0.0, momentHz = 0.0; std::int32_t bin = 0; };
 
     static constexpr int    kAxes     = 2;                    // Mid and Side — the two things measured
@@ -444,7 +444,7 @@ public:
             midiLo_ = lo;
         }
 
-        blocks_.assign (st.blockRecords, BlockRecord {});
+        blocks_.resizeForOverwrite (st.blockRecords);
         bands_.assign (st.bands, LowEndBand {});
         weights_.assign (st.binWeights, BinWeight {});
         traceMid_.assign (st.bands, 0.0);

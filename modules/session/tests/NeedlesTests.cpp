@@ -98,6 +98,7 @@ void parity (bool fixture)
         ok(s.needlesJob()==0,"target waits for first measurement end");
         (void)detail::Driver::measured1(s,s.measurementJob(),s.source().hash);
         ok(s.needlesJob()!=0,"first measurement end schedules needles for the latest target");
+        (void) detail::Driver::measured2 (s, s.measurementJob(), s.source().hash);
         for (double ceiling : {-6.0,-3.01,-12.75,-200.0})
         {
             target(s,ceiling);
@@ -185,7 +186,8 @@ void measured2Cancellation()
     auto pcm = signal (12001); auto created = Session::create(); auto& s = *created.session;
     load (s, pcm, 48000, 2); readings (s); target (s, -6);
     (void) detail::Driver::measured1 (s, s.measurementJob(), s.source().hash);
-    while (s.measurementJob() != 0 || s.needlesJob() != 0) (void) s.step (7);
+    (void) detail::Driver::measured2 (s, s.measurementJob(), s.source().hash);
+    while (s.needlesJob() != 0) (void) s.step (7);
     ok (s.state() == State::Measured2 && s.measurementJob() == 0, "both measurement phases completed");
     const auto saved = s.snapshot();
     const auto source = s.source().hash;

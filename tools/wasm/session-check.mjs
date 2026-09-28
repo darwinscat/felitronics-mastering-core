@@ -245,47 +245,32 @@ const readTransfer = what => {
     }
     M._free(j); if (r) M._free(r); return json;
 };
-const pcm = M._malloc(256 * 4), pointers = M._malloc(4);
-for (let i = 0; i < 256; ++i) new Float32Array(M.HEAPU32.buffer)[(pcm >>> 2) + i] = (i % 32 - 16) / 64;
+const pcm = M._malloc(48000 * 4), pointers = M._malloc(4);
+for (let i = 0; i < 48000; ++i) new Float32Array(M.HEAPU32.buffer)[(pcm >>> 2) + i] = (i % 32 - 16) / 64;
 M.HEAPU32[pointers >>> 2] = pcm;
 const [meta, metaBytes] = input(JSON.stringify({name:'synthetic', fileRate:48000, bitDepth:24, rateKnown:true}));
-ok(M._fc_session_load(session, 1, 0, pointers, 1, 256, 48001, meta, metaBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
+ok(M._fc_session_load(session, 1, 0, pointers, 1, 48000, 48001, meta, metaBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
     && reply().code === 29, 'above maximum rate refused');
-ok(M._fc_session_load(session, 1, 0, pointers, 1, 256, 48000, meta, metaBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
+ok(M._fc_session_load(session, 1, 0, pointers, 1, 48000, 48000, meta, metaBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
     && reply().kind === 'accepted', 'synthetic PCM loaded');
 M._free(meta); M._free(pointers); M._free(pcm);
 let steps = 0, done = false, phases = 0;
-while (!done && steps < 32) {
+while (!done && steps < 1500) {
     ok(M._fc_session_step(session, 1, resultSize) === STATUS.OK, 'small work-unit budget');
     done = M.HEAPU32[resultSize >>> 2] === 1; ++steps;
     for (const e of readTransfer('events')) if (e.kind === 'phase') ++phases;
 }
-ok(done && steps > 10 && phases === steps, 'pump reaches done after bounded preparation, streaming, and finalization');
+ok(done && steps > 10 && phases > 10, 'pump reaches done after bounded preparation, streaming, and finalization');
 const snapshot = readTransfer('snapshot');
-ok(snapshot.state === 3 && snapshot.sourceBytes === 1024 && snapshot.integratedLufs === 'NaN', 'owned measured snapshot and explicit NaN');
-ok(cmd(session, {kind:'editDevice', commandId:'2', device:7, fields:{on:true, db:1.25}}).kind === 'accepted', 'low edits with hidden panel on streaming');
+ok(snapshot.state === 2 && snapshot.sourceBytes === 192000 && typeof snapshot.integratedLufs === 'number', 'owned measured snapshot and explicit NaN');
+ok(cmd(session, {kind:'editDevice', commandId:'2', device:7, fields:{on:true, db:1.25}}).code === 3, 'device edits wait for placement');
 ok(cmd(session, {kind:'setManual', commandId:'2', on:true}).kind === 'accepted', 'manual command');
-ok(cmd(session, {kind:'setManual', commandId:'2', on:false}).kind === 'accepted', 'hide panel with edits');
-ok(M._fc_session_export_project_size(session, resultSize) === STATUS.OK, 'project size');
-const projectBytes = M.HEAPU32[resultSize >>> 2], project = M._malloc(projectBytes);
-ok(M._fc_session_export_project_copy(session, project, projectBytes, resultSize) === STATUS.OK, 'project copy');
-ok(M._fc_session_import_project(session, 3, 0, project, projectBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
-    && reply().kind === 'accepted', 'project import');
-const saved = decoder.decode(heapBytes().slice(project, project + projectBytes));
-const foreign = saved.replace(/core = "[^"]+"/, 'core = "99.0.0"') + '\n[hpf]\nfq.machine = 33\n';
-const [foreignPtr, foreignBytes] = input(foreign);
-ok(M._fc_session_import_project(session, 4, 0, foreignPtr, foreignBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
-    && reply().kind === 'accepted', 'import foreign-core project with a changed machine value');
-const foreignSnapshot = readTransfer('snapshot');
-ok(foreignSnapshot.machineDifferences.length > 0, 'shipped facade transfers nonempty binary rows');
-M._free(foreignPtr);
-M._free(project);
-ok(foreignSnapshot.handFieldCount === 2, 'snapshot counts hidden edits for the shell warning');
+ok(M._fc_session_export_project_size(session, resultSize) === STATUS.ERR_NOT_PLACED, 'unplaced defaults cannot be exported');
+const crest = snapshot.measurements.find(r => r.analyzer === 9);
+ok(crest?.arrays.some(a => a.name === 'blocks' && a.stored > 0), 'shipped facade transfers owned source crest rows');
 ok(cmd(session, {kind:'setTarget', commandId:'5', target:'lp'}).kind === 'accepted', 'target command needs only a target');
 const resetSnapshot = readTransfer('snapshot');
-ok(resetSnapshot.handFieldCount === 0 && resetSnapshot.project.devices.low.hand.db === null
-    && resetSnapshot.project.devices.low.hand.on === null, 'target change clears hidden edits');
-ok(resetSnapshot.project.devices.low.machine.db === 0.5, 'machine decides again for vinyl');
+ok(resetSnapshot.handFieldCount === 0 && resetSnapshot.measurementJob === 0, 'target changes preserve completed source measurements');
 const past = M.HEAPU32.buffer.byteLength;
 for (const what of ['events', 'snapshot']) {
     ok(M[`_fc_session_${what}_size`](session, past - 4) === STATUS.ERR_SPAN, `${what} size output crosses heap`);

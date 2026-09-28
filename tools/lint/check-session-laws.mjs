@@ -156,6 +156,7 @@ const FELITRONICS_ALLOWED = new Set([
     'felitronics/storage/VectorBytes.h', // deterministic analyzer storage declarations
     'felitronics/analysis/LowEnd.h',
     'felitronics/analysis/BandCrest.h',
+    'felitronics/analysis/BandCrestResult.h', // read-only spans and scalar geometry, no preparation or state
     'felitronics/analysis/StereoBandBursts.h',
 ]);
 

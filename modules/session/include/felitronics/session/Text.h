@@ -162,6 +162,12 @@ enum class FactId : std::uint16_t
     NeedlesRunsTruncated = 410,
     SourceClipping = 411,
     ContinueMeasurement = 412,
+    AnalyzerStatus = 413,
+    SourceQuiet = 414,
+    SourceGainOnly = 415,
+    SourceDc = 416,
+    SourceUnusedBits = 417,
+    SourcePolarity = 418,
 
 };
 
@@ -188,6 +194,9 @@ enum class Term : std::uint16_t
     FieldLimiterNeedlesDb = 15,
     FieldLowDb = 16,
     FieldAudio = 17,
+    AnalyzerLowEnd, AnalyzerLowEnd150, AnalyzerInfraLow, AnalyzerForensics, AnalyzerStereo, AnalyzerCrest, AnalyzerHum, AnalyzerBursts,
+    StatusReady, StatusUnsupported, StatusShort, StatusNonFinite, StatusCapacity, StatusNoSignal, StatusMemory,
+
 };
 
 enum class ArgKind : std::uint8_t { None, Value, Count, Term, Midi, UserText };

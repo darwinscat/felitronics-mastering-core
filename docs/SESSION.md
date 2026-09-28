@@ -899,3 +899,43 @@ total and stored counts distinguish exact aggregate counts from a truncated coor
 detector is independent of target-dependent needles. The programme result retains every native value, count, and
 reason, including unconditional short-term P95 and the drained programme true peak. Load still refuses non-finite PCM;
 finite input that overflows an analyzer is reported with its native damage reason.
+
+Real source measurement completes the 120 Hz, 150 Hz and configured infra-low LR4 readings,
+channel forensics and stereo columns before publishing `Measured1`. Integrated LUFS and true
+peak must both be usable. Optional outcomes carry their own reasons. Device editing and project
+export still require placement; measurement does not place the default devices. Master may run
+while source crest, hum and Mid/Side bursts continue. These results alone do not establish
+`Measured2`: tempo and the second-phase join remain separate work.
+
+`mandatoryMeasurementsReady` and `devicesPlaced` are separate appended snapshot fields.
+Source rows use the existing owned `MeasurementResult` transport. They remain valid in a copied
+snapshot after workspace release, cancellation, source replacement and session destruction.
+Target changes preserve source measurements and request only the existing target-dependent
+needles job. Continue resumes the saved analyzer, PCM offset and output-copy position.
+
+| Analyzer / array | Columns, in order |
+| --- | --- |
+| LowEnd / blocks | start, samples, finite samples, holes, Mid energy, Side energy, valid, index |
+| LowEnd / bands | MIDI, centre Hz, width Hz, bins per band, Mid/Side/total energy, density, centroid Hz, cents, Side fraction, duty count, duty, level when on dB, margin dB, resolved |
+| LowEnd / sideHistogram | count per Side-fraction bin |
+| Forensics / meanPower | one column per channel, frequency bin order |
+| Forensics / gridExponentHistogram | one column per channel, native exponent-bucket order |
+| Stereo / columns | width, correlation, RMS; native equal-time column partition |
+| Crest / blocks | linear peak and mean square for Low, LowMid, HighMid, High, Full |
+| Crest / active | source activity bit for each of those five bands |
+| Crest / oversampledMeanSquare | full-band power in the band-share gate's domain |
+| Hum / candidates | channel, nominal Hz, base found/harmonic, fundamental Hz/observed, observed/lowest harmonic, comb without base/Hz, stretch observations/off-tolerance, frame observations, stretch/frame/intra-stretch spread Hz, stationary, passed; then base and window-peak records (found, prominent, accepted, bin, Hz, tone power, bin power, floor power, prominence dB) |
+| Hum / harmonics | channel, candidate, harmonic, in band; native peak record as above |
+| Hum / stretches | channel, index, start frame, end frame, selected frames |
+| Bursts / midEvents, sideEvents | start, length, peak frame, peak power/baseline/excess dB/wide power, energy, hops, input damage, baseline damage, closed by finish, other-axis power/baseline/eligible/hop |
+| Bursts / midIntervals, sideIntervals | interval count and lag count, lags 1 through 512 |
+
+Every list publishes total/stored counts and completeness; capped low-end blocks and burst
+lists never claim completeness. Forensics does not infer a codec from missing evidence.
+Hum exports the detector's stationarity and acceptance evidence, without inventing a confidence
+score. Mono burst data explicitly marks Side absent. `MeasurementCrest::view` returns the
+`analysis::BandCrestResult` representation over owned rows; it requires no live analyzer.
+The source activity floor is the configured maximum of -70 dB and BandCrest's own gated block
+mean power minus 42 dB. Building the mask reads saved powers, never PCM a second time.
+Only measurement statuses and mandatory input warnings are emitted here; device decisions and
+other findings remain separate. Uncertain lowest-note evidence requests the safe target HPF floor.

@@ -89,3 +89,6 @@ writable   san     ^_*(asan|ubsan|lsan|sanitizer)   ASan's registration flag and
 
 # --- the C boundary on the wasm tier bounds a page's pointers by the heap's size
 undefined  facade-wasm  ^emscripten_get_heap_size$  the out-pointer's span check (fc_session.cpp, inHeap)
+
+undefined all ^_ZNSt3__[12]6__sortIRNS_6__lessIddEEPdEEvT0_S5_T_$ libc++'s pure double sort, used by hum finish over its prepared spectral bins
+undefined all ^__muldc3$ compiler-rt complex multiplication, used by the LR4 filter response; pure IEEE arithmetic

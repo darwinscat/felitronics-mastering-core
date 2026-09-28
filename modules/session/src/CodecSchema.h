@@ -604,9 +604,11 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, SnapshotView>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32, f33, f34] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.canContinueMeasurement)>, bool>);
         v.optionalField ("canContinueMeasurement", x.canContinueMeasurement);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.devicesPlaced)>, bool>);
+        v.field ("devicesPlaced", x.devicesPlaced);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.eqCurve)>, std::span<const EqPoint>>);
         v.field ("eqCurve", x.eqCurve);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.handFieldCount)>, std::uint32_t>);
@@ -619,6 +621,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("jobRecipe", x.jobRecipe);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.machineDifferences)>, std::span<const MachineDifference>>);
         v.field ("machineDifferences", x.machineDifferences);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.mandatoryMeasurementsReady)>, bool>);
+        v.field ("mandatoryMeasurementsReady", x.mandatoryMeasurementsReady);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.masterProgress)>, Phase>);
         v.field ("masterProgress", x.masterProgress);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.mastering)>, bool>);

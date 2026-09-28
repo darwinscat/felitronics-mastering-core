@@ -93,6 +93,8 @@ SnapshotView Session::buildView() const noexcept
     SnapshotView v;
     v.offeredDevices = capabilities_.offeredDevices;
     v.state = state_;
+    v.mandatoryMeasurementsReady = mandatoryReady();
+    v.devicesPlaced = placed();
     v.canContinueMeasurement = state_ == State::MeasurementStopped;
     v.measurementResumeState = v.canContinueMeasurement ? stoppedState_ : State::Empty;
     v.mastering = mastering_;

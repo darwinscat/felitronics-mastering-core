@@ -22,3 +22,5 @@ src/MeasurementPlan.cpp
 src/MeasurementWorkspace.cpp
 src/Needles.cpp
 src/LiveMeasurements.cpp
+src/SourceResults.cpp
+src/SourceMeasurements.cpp

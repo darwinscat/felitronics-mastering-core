@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <vector>
 #include <felitronics/storage/VectorBytes.h>
+#include <felitronics/storage/Buffer.h>
 
 namespace felitronics::analysis
 {
@@ -179,7 +180,7 @@ public:
 
     //----------------------------------------------------------------------------------------------
     // WHAT prepare() ALLOCATES, from the function prepare() sizes and validates itself with (law 11d).
-    static constexpr std::uint64_t constructBytes() noexcept { return 6u * storage::kVectorProxyBytes; }
+    static constexpr std::uint64_t constructBytes() noexcept { return 2u * storage::kVectorProxyBytes; }
 
     struct Storage
     {
@@ -313,10 +314,11 @@ public:
         channels_   = maxChannels;
         hopCap_     = st.hopCapacity;
 
-        cells_.assign (st.cellEntries, 0.0);
-        counts_.assign (st.countEntries, 0u);
-        basePeak_.assign (st.countEntries, 0.0);
-        baseMs_.assign   (st.countEntries, 0.0);
+        // Counts delimit written cells; preparation and reset never clear source-sized stores.
+        cells_.resizeForOverwrite (st.cellEntries);
+        counts_.resizeForOverwrite (st.countEntries);
+        basePeak_.resizeForOverwrite (st.countEntries);
+        baseMs_.resizeForOverwrite (st.countEntries);
         scratch_.assign (st.scratchOs, 0.0f);
         os_.resize ((std::size_t) maxChannels);
         for (auto& o : os_) if (! o.prepare (kFactor, 1, kTapsPerPhase)) return false;
@@ -357,10 +359,6 @@ public:
 
     void reset() noexcept
     {
-        std::fill (cells_.begin(), cells_.end(), 0.0);
-        std::fill (counts_.begin(), counts_.end(), 0u);
-        std::fill (basePeak_.begin(), basePeak_.end(), 0.0);
-        std::fill (baseMs_.begin(), baseMs_.end(), 0.0);
         for (SvfType* f : filters()) f->reset();
         for (auto& o : os_) o.reset();
         grid_.reset();
@@ -584,6 +582,9 @@ public:
         return n > 0u ? s / (double) n : 0.0;
     }
 
+    double blockOversampledMeanSq (long long block) const noexcept
+    { return inRange (block, kFull) ? osMeanSq (block) : 0.0; }
+
     // ONE LOGARITHM, from the linear cell. 20log10(peak) - 10log10(meanSq), formed as a single ratio so the
     // two halves cannot be rounded apart. Silence answers the floor rather than -inf.
     double blockCrestDb (long long block, int band) const noexcept
@@ -806,8 +807,8 @@ private:
     double    curPeak_[kBands] {}, curSum_[kBands] {};
     double    floorMs_ = 0.0, shareRatio_ = 0.0;
 
-    std::vector<double>        cells_, basePeak_, baseMs_;
-    std::vector<std::uint64_t> counts_;
+    storage::Buffer<double>        cells_, basePeak_, baseMs_;
+    storage::Buffer<std::uint64_t> counts_;
     std::vector<float>  scratch_;
     std::vector<oversampling::PolyphaseOversampler> os_;
     SvfType lo0a_, lo0b_, hi0a_, hi0b_, m1a_, m1b_, hi1a_, hi1b_, m2a_, m2b_, hi2a_, hi2b_;

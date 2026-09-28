@@ -5,6 +5,7 @@
 #include "MeasurementPlan.h"
 #include "MeasurementWorkspace.h"
 #include "LiveMeasurements.h"
+#include "SourceMeasurements.h"
 #include "JsonNumber.h"
 #include "Rules.h"
 #include "BuildContract.h"
@@ -34,10 +35,9 @@ struct Hash
     void add (double v) noexcept { add (std::bit_cast<std::uint64_t> (v)); }
     void add (int v) noexcept { add (std::uint64_t (v)); }
 };
-// Each output has at most 128 named scalars and 16 named arrays; names are at most 64 UTF-8 bytes.
-// Rows below count complete native output records, widened to at most one f64 per native byte.
-// This also covers integer/enum fields without depending on native struct padding or pointer width.
-constexpr std::uint64_t metadataBytes = sizeof (MeasurementResult) + 128u * (sizeof (MeasurementValue) + 64u)
+// Metadata follows the public scalar, array and name bounds. Row counts below describe the
+// actual detached layouts, independently of native padding and pointer width.
+constexpr std::uint64_t metadataBytes = sizeof (MeasurementResult) + kMeasurementNumbers * (sizeof (MeasurementValue) + 64u)
                                      + 16u * (sizeof (MeasurementArray) + 64u);
 }
 MeasurementParameters MeasurementPlan::parametersFor (const Pcm& pcm) noexcept
@@ -119,24 +119,23 @@ MeasurementPlan MeasurementPlan::storageFor (const Pcm& pcm, const MeasurementPa
     {
         const auto low = analysis::LowEnd::storageFor (rate, channels, lowParameters[i]);
         set (lowIds[i], low.ok, sizeof (analysis::LowEnd) + low.firstBytes(),
-             low.blockRecords * 8u + low.bands * 12u + analysis::LowEnd::kHistogramBins);
+             low.blockRecords * 8u + low.bands * 16u + analysis::LowEnd::kHistogramBins);
     }
     const auto forensics = analysis::SourceForensics::storageFor (rate, channels, p.forensics);
     set (Analyzer::Forensics, forensics.ok, sizeof (analysis::SourceForensics) + forensics.firstBytes(),
-         (pcm.channelCount + 1u) * (sizeof (analysis::SpectralWall) + sizeof (analysis::SampleGrid) + forensics.meanBins + forensics.cells));
+         pcm.channelCount * (forensics.meanBins + 27u));
     const auto stereo = analysis::StereoColumns::storageFor (channels, pcm.frames, p.columns);
     set (Analyzer::Stereo, stereo.ok, sizeof (analysis::StereoColumns) + stereo.firstBytes(), stereo.columns * 3u);
     const auto waveform = analysis::WaveformPeaks::storageFor (rate, channels, pcm.frames, p.waveformBuckets, p.waveformMix);
     set (Analyzer::Waveform, waveform.ok, sizeof (analysis::WaveformPeaks) + waveform.firstBytes(), waveform.buckets);
     const auto bursts = analysis::StereoBandBursts::storageFor (rate, p.bursts);
     set (Analyzer::StereoBursts, bursts.ok, sizeof (analysis::StereoBandBursts) + bursts.bytes(),
-         2u * bursts.crosses * (sizeof (analysis::BandBurst) + sizeof (analysis::StereoBandBursts::Cross)));
+         32u * bursts.crosses + 4u * analysis::BandBursts::kIoiBins);
     const auto crest = analysis::BandCrest::storageFor (rate, channels, static_cast<long long> (pcm.frames), p.crest);
-    set (Analyzer::Crest, crest.ok, sizeof (analysis::BandCrest) + crest.firstBytes(), crest.cellEntries + crest.countEntries * 3u);
+    set (Analyzer::Crest, crest.ok, sizeof (analysis::BandCrest) + crest.firstBytes(), crest.countEntries * 16u);
     const auto hum = analysis::HumDetector::storageFor (rate, channels, p.hum);
     set (Analyzer::Hum, hum.ok, sizeof (analysis::HumDetector) + hum.firstBytes(),
-         pcm.channelCount * (sizeof (analysis::HumReport) + 2u * sizeof (analysis::HumCandidate))
-         + hum.stretchEntries * 4u + hum.harmonicEntries * sizeof (analysis::HumHarmonic));
+         pcm.channelCount * 72u + hum.stretchEntries * 5u + hum.harmonicEntries * 13u);
     const auto tempo = tempo::TempoDetector::storageFor (rate, channels, pcm.frames, p.tempo);
     set (Analyzer::Tempo, tempo.ok, sizeof (tempo::TempoDetector) + tempo.firstBytes(),
          tempo.pointRecords * 3u + tempo.peakRecords * 2u);
@@ -144,7 +143,7 @@ MeasurementPlan MeasurementPlan::storageFor (const Pcm& pcm, const MeasurementPa
     out.analyzers[std::size_t (Analyzer::Excursions)] = {};
     auto& s = out.storage;
     s.sourceBytes = double (pcm.frames * pcm.channelCount * sizeof (float));
-    s.workspaceBytes = double (sizeof (MeasurementWorkspace) + sizeof (LiveMeasurements));
+    s.workspaceBytes = double (sizeof (MeasurementWorkspace) + sizeof (LiveMeasurements) + sizeof (SourceMeasurements));
     s.copyBytes = double ((kAnalyzers - streaming.size()) * sizeof (MeasurementResult));
     for (const auto id : streaming)
     {
@@ -154,18 +153,26 @@ MeasurementPlan MeasurementPlan::storageFor (const Pcm& pcm, const MeasurementPa
         s.resultBytes += double (a.rowValues * sizeof (double));
         s.copyBytes += double (a.result);
     }
+    for (const auto id : SourceMeasurements::order)
+    {
+        const auto& a = out.analyzers[std::size_t (id)];
+        s.workspaceBytes += double (a.workspace + sizeof (MeasurementStore));
+        s.resultBytes += double (a.rowValues * sizeof (double));
+        s.copyBytes += double (a.result);
+    }
     // fc_session transports numeric rows as binary f64. Scalar JSON uses exact decimals, which can
     // exceed a thousand bytes; reserve the writer's own capacity for every possible scalar. Text and
     // record framing retain the escaping bound. Plain JSON row exports query Codec::encodedBytes
     // separately: an optional export buffer is not a condition for admitting the web measurement.
     s.codecBytes = s.resultBytes + 6.0 * (s.copyBytes - s.resultBytes)
-                 + double (streaming.size() * kMeasurementNumbers * JsonNumber::capacity);
+                 + double ((streaming.size() + SourceMeasurements::order.size()) * kMeasurementNumbers * JsonNumber::capacity);
     // The allocator allowance covers headers/alignment, including MSVC's 39/47-byte large-block padding.
     // At most 256 requests per analyzer for the declared one/two-channel preparations and output copies.
-    s.allocatorBytes = double (streaming.size() * (workspaceAllowance + rowAllowance));
-    s.loadPeakBytes = 2.0 * s.sourceBytes + double (sizeof (MeasurementWorkspace) + sizeof (LiveMeasurements)) + s.allocatorBytes;
-    // Streaming instruments coexist. Include one detached result and its serialization even if requested mid-stream.
-    // Future instruments and target-dependent needles have their own admission; unused maxima are not load demand.
+    s.allocatorBytes = double ((streaming.size() + SourceMeasurements::order.size()) * (workspaceAllowance + rowAllowance));
+    s.loadPeakBytes = 2.0 * s.sourceBytes + double (sizeof (MeasurementWorkspace) + sizeof (LiveMeasurements) + sizeof (SourceMeasurements)) + s.allocatorBytes;
+    // The declaration covers every scheduled preparation, all retained rows and one detached
+    // snapshot with serialization. Unscheduled waveform, tempo and target-dependent needles
+    // keep their independent admission; their unused maximum stores are not load demand.
     s.workPeakBytes = s.sourceBytes + s.resultBytes + s.workspaceBytes + s.copyBytes + s.codecBytes + s.allocatorBytes;
     s.peakBytes = std::max (s.loadPeakBytes, s.workPeakBytes);
     s.largestBlockBytes = std::max ({ s.sourceBytes, s.resultBytes, s.workspaceBytes, s.codecBytes });

@@ -146,3 +146,11 @@ entry modules/session/src/Needles.cpp target-dependent needles execution
 zone modules/session/src/LiveMeasurements.h live measurement ownership
 zone modules/session/src/LiveMeasurements.cpp live measurement pump
 entry modules/session/src/LiveMeasurements.cpp live measurement pump
+
+zone modules/session/src/SourceMeasurements.h owned source measurements
+zone modules/session/src/SourceMeasurements.cpp bounded source measurement work
+entry modules/session/src/SourceMeasurements.cpp bounded source measurement work
+zone modules/session/src/SourceResults.cpp owned analyzer result adapters
+entry modules/session/src/SourceResults.cpp owned analyzer result adapters
+
+zone modules/analysis_offline/include/felitronics/analysis/BandCrestResult.h detached source crest data

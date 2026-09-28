@@ -5,6 +5,7 @@
 #include "BuildContract.h"
 #include "Driver.h"
 #include "LiveMeasurements.h"
+#include "SourceMeasurements.h"
 #include "Rules.h"
 
 #include <felitronics/session/Config.h>
@@ -142,15 +143,6 @@ Stepped Session::step (std::uint32_t budget) noexcept
         return { hasWork() ? StepState::More : StepState::Done, 0, true };
     }
     const auto progress = detail::rules().engine.find ("progress");
-    const auto weights = progress.find ("analysis").find ("weights");
-    const double analysis[] = {
-        weight (weights.find ("loudness")), weight (weights.find ("report")), weight (weights.find ("lowEnd120")),
-        weight (weights.find ("forensics")), weight (weights.find ("stereo")), weight (weights.find ("lowEndSweep")),
-        weight (weights.find ("stereoBursts")), weight (weights.find ("crest")), weight (weights.find ("hum")),
-        weight (weights.find ("tempo"))
-    };
-    double total = 0.0;
-    for (double w : analysis) total += w;
     const auto master = progress.find ("master");
     const auto passes = std::uint32_t (*master.find ("expectedPasses").integer());
     const double passWeight = weight (master.find ("passWeight"));
@@ -208,38 +200,13 @@ Stepped Session::step (std::uint32_t budget) noexcept
         {
             stepMeasurements();
         }
-        else
+        else if (sourceMeasurements_)
         {
-            event.jobId = measurementJob_;
-            if (measurementUnit_ >= std::size (analysis))
-            {
-                contract (event.jobId);
-                ++units;
-                continue;
-            }
-            ++measurementUnit_;
-            double completed = 0.0;
-            for (std::size_t i = 0; i < std::size_t (measurementUnit_); ++i)
-                completed += analysis[i];
-            measurementProgress_ = { measurementUnit_ == 1 ? PhaseName::Stream
-                : measurementUnit_ == 2 ? PhaseName::Report : PhaseName::Analyzers,
-                completed / total, version, 0, 0, measurementUnit_, 10 };
-            event.payload.phase = measurementProgress_;
-            emit (event);
-            if (measurementUnit_ == 5 || measurementUnit_ == 10)
-            {
-                const bool first = measurementUnit_ == 5;
-                const bool ended = first ? detail::Driver::measured1 (*this, event.jobId, source_.hash)
-                                         : detail::Driver::measured2 (*this, event.jobId, source_.hash);
-                if (ended)
-                {
-                    event.kind = EventKind::Fact;
-                    (void) event.payload.fact.assign (text::Fact::of (first ? text::FactId::Measurement1 : text::FactId::Measurement2));
-                    emit (event, measurementProgress_);
-                }
-                else contract (event.jobId);
-            }
+            if (sourceMeasurements_->cursor > sourceMeasurements_->order.size() || sourceMeasurements_->stage > 5)
+                contract (measurementJob_);
+            else stepSourceMeasurements();
         }
+        else contract (measurementJob_);
         ++units;
     }
     return { hasWork() ? StepState::More : StepState::Done, units, false };

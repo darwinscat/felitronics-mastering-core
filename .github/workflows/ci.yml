@@ -62,10 +62,10 @@ jobs:
           felitronics_session_config_decisions_tests felitronics_session_text_tests
           felitronics_session_abi_tests felitronics_session_abi_v1_tests felitronics_session_abi_probe
           felitronics_session_event_tests felitronics_session_project_tests felitronics_session_replay_tests
-          felitronics_session_measurement_tests felitronics_session_live_tests felitronics_session_needles_tests
+          felitronics_session_measurement_tests felitronics_session_live_tests felitronics_session_source_tests felitronics_session_needles_tests
           felitronics_session_measurement_budget_tests
       - name: Test allocation budgets with iterator debugging
-        # Nineteen named suites, including live and needles budgets; the full generation walk stays in Release.
+        # Twenty named suites, including live and needles budgets; the full generation walk stays in Release.
         run: |
           node tools/tests/windows-debug.mjs --self-test
           node tools/tests/windows-debug.mjs build-debug
@@ -368,7 +368,12 @@ jobs:
         # of the tag.
         run: |
           cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release -DFELITRONICS_MASTERING_BUILD_TESTS=ON $CORE_TAG
-          cmake --build build-native -j "$(nproc)" --target fcore_measure fcore_master fcore_session felitronics_session_needles_tests
+          cmake --build build-native -j "$(nproc)" --target fcore_measure fcore_master fcore_session felitronics_session_needles_tests felitronics_session_source_tests
+      - name: Owned source measurements — native and both Wasm tiers
+        run: |
+          node tools/tests/source-parity.mjs build-native/modules/session/felitronics_session_source_tests \
+            build-wasm-audio/modules/session/felitronics_session_source_tests.js \
+            build-wasm-checked/modules/session/felitronics_session_source_tests.js
       - name: Retained needles — native and both Wasm tiers, bit-exact
         run: |
           node tools/tests/needles-parity.mjs --check-wiring
