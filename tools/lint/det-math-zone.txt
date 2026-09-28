@@ -126,3 +126,15 @@ zone   modules/session/include/felitronics/session/Wire.h  caller-owned transfer
 zone modules/session/src/EqCurve.h summed EQ response declaration
 zone modules/session/src/EqCurve.cpp deterministic summed EQ response
 entry modules/session/src/EqCurve.cpp snapshot EQ response
+
+zone modules/session/include/felitronics/session/Measurements.h owned measurement values
+zone modules/session/src/Measurements.cpp owned measurement storage
+entry modules/session/src/Measurements.cpp owned measurement storage
+
+zone modules/session/src/MeasurementPlan.h measurement parameters and storage
+zone modules/session/src/MeasurementPlan.cpp analyzer storage and cache identity
+entry modules/session/src/MeasurementPlan.cpp analyzer storage and cache identity
+
+zone modules/session/src/MeasurementWorkspace.h analyzer workspace ownership
+zone modules/session/src/MeasurementWorkspace.cpp persistent analyzer preparation
+entry modules/session/src/MeasurementWorkspace.cpp persistent analyzer preparation

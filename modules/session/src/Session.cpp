@@ -7,10 +7,13 @@
 
 #include <felitronics/session/Config.h>
 #include <cmath>
+#include <algorithm>
 #include <bit>
 
 #include "FpProbes.h"
 #include "Rules.h"
+#include "MeasurementPlan.h"
+#include "MeasurementWorkspace.h"
 #include "BuildContract.h"
 
 #include <cstdint>
@@ -68,7 +71,18 @@ const Capabilities& Session::capabilities() const noexcept { return capabilities
 double Session::liveBytes() const noexcept
 {
     return double (createBytes (capabilities_) + source_.frames * source_.channels * sizeof (float)
-                   + source_.name.size() + masterRoom_ * sizeof (Kept));
+                   + source_.name.size() + masterRoom_ * sizeof (Kept) + measurementOwnedBytes_
+                   + (measurementWorkspace_ ? measurementWorkspace_->bytes() : 0));
+}
+MeasurementStorage Session::measurementStorage (const Pcm& pcm) const noexcept
+{
+    if (pcm.sampleRate < kMinSampleRate || pcm.channelCount < 1 || pcm.channelCount > 2 || pcm.frames == 0) return {};
+    const auto plan = detail::MeasurementPlan::storageFor (pcm, detail::MeasurementPlan::parametersFor (pcm));
+    auto result = plan.storage;
+    result.loadPeakBytes += liveBytes();
+    result.workPeakBytes += double (createBytes());
+    result.peakBytes = std::max (result.loadPeakBytes, result.workPeakBytes);
+    return result;
 }
 Status Session::setCapacity (const Capacity& capacity) noexcept
 {

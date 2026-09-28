@@ -56,7 +56,8 @@ public:
             std::unique_ptr<T, Free> next (std::allocator<T> {}.allocate (n), Free { n });
             std::uninitialized_value_construct_n (next.get(), n);
             std::unique_ptr<T[], Delete> ready (next.release(), Delete { n });
-            std::copy_n (data(), size_, ready.get());
+            // Growth preserves every old element; state the destination bound for inlined range diagnostics too.
+            std::copy_n (data(), std::min (size_, n), ready.get());
             data_ = std::move (ready);
         }
         if (n > size_) std::fill (data() + size_, data() + n, T {});

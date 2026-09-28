@@ -63,7 +63,8 @@ const SURFACE = {
         '_fc_session_set_capacity', '_fc_session_command_bytes', '_fc_session_load_bytes', '_fc_session_import_project_bytes',
         '_fc_session_create_bytes', '_fc_session_command', '_fc_session_load', '_fc_session_import_project',
         '_fc_session_export_project_size', '_fc_session_export_project_copy', '_fc_session_step',
-        '_fc_session_events_size', '_fc_session_events_copy', '_fc_session_snapshot_size', '_fc_session_snapshot_copy'],
+        '_fc_session_events_size', '_fc_session_events_copy', '_fc_session_snapshot_size', '_fc_session_snapshot_copy',
+        '_fc_session_measurement_bytes'],
 };
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).

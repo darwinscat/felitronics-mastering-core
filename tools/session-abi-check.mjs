@@ -11,7 +11,7 @@ const read = path => readFileSync(new URL(path, root), 'utf8');
 const clean = text => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 const normalize = text => text.replace(/\s+/g, ' ').replace(/\s*([*,()])\s*/g, '$1').trim();
 const header = clean(read('tools/fc_session_abi.h'));
-const publicHeaders = ['Commands', 'Project', 'Events', 'Snapshot', 'Session', 'Text'];
+const publicHeaders = ['Commands', 'Project', 'Events', 'Snapshot', 'Session', 'Text', 'Measurements'];
 function generate() {
     const code = ['#include "fc_session_abi.h"', '#include <cstddef>', '#include <cstdio>', '#include <type_traits>', '#include "tests/SessionWireFacts.h"'];
     for (const h of publicHeaders) code.push(`#include <felitronics/session/${h}.h>`);
@@ -69,10 +69,24 @@ function generate() {
     return code.join('\n') + '\n';
 }
 const lines = text => new Set(text.split(/\r?\n/).filter(l => l && !l.startsWith('#')));
+function extendsJson(before, after) {
+    if (Array.isArray(before)) return Array.isArray(after) && before.length === after.length
+        && before.every((value, i) => extendsJson(value, after[i]));
+    if (before && typeof before === 'object') return after && typeof after === 'object' && !Array.isArray(after)
+        && Object.keys(before).every(key => Object.hasOwn(after, key) && extendsJson(before[key], after[key]));
+    return Object.is(before, after);
+}
 function check(floor, actual) {
     const extensible = new Set([...header.matchAll(/typedef struct (\w+)/g)].map(m => m[1]));
     const missing = [...floor].filter(line => {
         if (actual.has(line)) return false;
+        if (/^[{[]/.test(line)) {
+            const before = JSON.parse(line);
+            return ![...actual].some(value => {
+                if (!/^[{[]/.test(value)) return false;
+                try { return extendsJson(before, JSON.parse(value)); } catch { return false; }
+            });
+        }
         const size = /^sizeof (\w+)=(\d+)$/.exec(line);
         if (!size || !extensible.has(size[1])) return true;
         return ![...actual].some(value => {
@@ -94,6 +108,9 @@ if (args[0] === '--generate') {
     writeFileSync(args[1], generate());
 } else if (args[0] === '--self-test') {
     const floor = lines(read('tools/session-abi-v1.txt'));
+    assert(extendsJson({a: {b: 1}}, {a: {b: 1, c: 2}, d: 3}));
+    assert(!extendsJson({a: 1}, {a: 2, b: 1}));
+    assert(!extendsJson({a: 1}, {b: 1}));
     check(floor, floor);
     check(floor, new Set([...floor, 'function fc_session_future fc_session_status()']));
     for (const line of floor) {

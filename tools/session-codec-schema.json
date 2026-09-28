@@ -30,6 +30,38 @@
       "Limiter",
       "Dither",
       "Low"
+    ],
+    "Analyzer": [
+      "Loudness",
+      "Clipping",
+      "Programme",
+      "LowEnd",
+      "InfraLow",
+      "Forensics",
+      "Stereo",
+      "Waveform",
+      "StereoBursts",
+      "Crest",
+      "Hum",
+      "Tempo",
+      "Excursions"
+    ],
+    "MeasurementStatus": [
+      "Pending",
+      "Ready",
+      "Unavailable",
+      "Cancelled"
+    ],
+    "MeasurementReason": [
+      "None",
+      "Pending",
+      "Cancelled",
+      "Unsupported",
+      "TooShort",
+      "NonFinite",
+      "Capacity",
+      "NoSignal",
+      "NotImplemented"
     ]
   },
   "records": {
@@ -315,7 +347,9 @@
         "machineDifferences": "MachineDifference[]",
         "offeredDevices": "uint32",
         "handFieldCount": "uint32",
-        "eqCurve": "EqPoint[]"
+        "eqCurve": "EqPoint[]",
+        "measurementStorage": "MeasurementStorage",
+        "measurements": "MeasurementResult[]"
       }
     },
     "Version": {
@@ -341,17 +375,101 @@
         "hz": "double",
         "db": "double"
       }
+    },
+    "MeasurementValue": {
+      "cpp": "MeasurementValue",
+      "fields": {
+        "name": "string",
+        "value": "double?",
+        "reason": "MeasurementReason",
+        "analyzerReason": "uint32"
+      }
+    },
+    "MeasurementGrid": {
+      "cpp": "MeasurementGrid",
+      "fields": {
+        "firstFrame": "uint64",
+        "stepFrames": "uint64",
+        "framesRead": "uint64",
+        "sampleRate": "uint32"
+      }
+    },
+    "MeasurementArray": {
+      "cpp": "MeasurementArray",
+      "fields": {
+        "name": "string",
+        "grid": "MeasurementGrid",
+        "columns": "uint32",
+        "total": "uint64",
+        "stored": "uint64",
+        "complete": "bool",
+        "values": "double[]"
+      }
+    },
+    "MeasurementResult": {
+      "cpp": "MeasurementResult",
+      "fields": {
+        "analyzer": "Analyzer",
+        "status": "MeasurementStatus",
+        "reason": "MeasurementReason",
+        "key": "uint64",
+        "framesRead": "uint64",
+        "total": "uint64",
+        "stored": "uint64",
+        "complete": "bool",
+        "numbers": "MeasurementValue[]",
+        "arrays": "MeasurementArray[]"
+      }
+    },
+    "MeasurementStorage": {
+      "cpp": "MeasurementStorage",
+      "fields": {
+        "sourceBytes": "bytes",
+        "resultBytes": "bytes",
+        "indexBytes": "bytes",
+        "workspaceBytes": "bytes",
+        "copyBytes": "bytes",
+        "codecBytes": "bytes",
+        "allocatorBytes": "bytes",
+        "loadPeakBytes": "bytes",
+        "workPeakBytes": "bytes",
+        "peakBytes": "bytes",
+        "largestBlockBytes": "bytes",
+        "indexBudgetKnown": "bool"
+      }
+    },
+    "MeasurementChange": {
+      "cpp": "MeasurementChange",
+      "fields": {
+        "analyzer": "Analyzer",
+        "status": "MeasurementStatus",
+        "reason": "MeasurementReason",
+        "key": "uint64",
+        "source": "uint64",
+        "revision": "uint64",
+        "framesRead": "uint64",
+        "total": "uint64",
+        "stored": "uint64",
+        "complete": "bool"
+      }
     }
   },
   "wireAliases": {
     "SessionStatus": "0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18",
     "CommandAnswer": "AcceptedAnswer | RejectedAnswer | ContractAnswer",
-    "SessionEvent": "PhaseEvent | FactEvent | ReadingEvent | DoneEvent | RejectedEvent | ErrorEvent",
+    "SessionEvent": "PhaseEvent | FactEvent | ReadingEvent | DoneEvent | RejectedEvent | ErrorEvent | MeasurementEvent",
     "SessionCommand": "SetTargetCommand | SetManualCommand | EditTargetCommand | EditDeviceCommand | RevertEditsCommand | MasterCommand | CancelCommand | ForgetCommand",
     "EditDeviceCommand": "EditDeviceHpfCommand | EditDeviceMonoBassCommand | EditDeviceGlueCommand | EditDeviceSaturationCommand | EditDeviceTiltCommand | EditDeviceLimiterCommand | EditDeviceDitherCommand | EditDeviceLowCommand",
-    "RevertEditsCommand": "RevertEditsHpfCommand | RevertEditsMonoBassCommand | RevertEditsGlueCommand | RevertEditsSaturationCommand | RevertEditsTiltCommand | RevertEditsLimiterCommand | RevertEditsDitherCommand | RevertEditsLowCommand"
+    "RevertEditsCommand": "RevertEditsHpfCommand | RevertEditsMonoBassCommand | RevertEditsGlueCommand | RevertEditsSaturationCommand | RevertEditsTiltCommand | RevertEditsLimiterCommand | RevertEditsDitherCommand | RevertEditsLowCommand",
+    "SessionMeasurementArray": "Omit<MeasurementArray, \"values\"> & { readonly values: ScalarRow }",
+    "SessionMeasurementResult": "Omit<MeasurementResult, \"arrays\"> & { readonly arrays: ReadonlyArray<SessionMeasurementArray> }"
   },
   "wireRecords": {
+    "ScalarRow": {
+      "byteOffset": "number",
+      "length": "number",
+      "stride": "1"
+    },
     "Row": {
       "byteOffset": "number",
       "length": "number",
@@ -661,6 +779,12 @@
       "heapCeilingBytes": "number",
       "maxRateHz": "number",
       "offeredDevices": "number"
+    },
+    "MeasurementEvent": {
+      "seq": "string",
+      "jobId": "number",
+      "kind": "\"measurement\"",
+      "payload": "MeasurementChange"
     }
   },
   "binaryRows": [
@@ -721,6 +845,15 @@
     "StepState": [
       "More",
       "Done"
+    ]
+  },
+  "wireTypeOverrides": {
+    "measurements": "ReadonlyArray<SessionMeasurementResult>"
+  },
+  "optionalFields": {
+    "Snapshot": [
+      "measurementStorage",
+      "measurements"
     ]
   }
 }

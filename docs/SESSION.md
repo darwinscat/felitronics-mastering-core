@@ -549,10 +549,11 @@ Restoring the FP environment allows a refused job to resume. The fixed batch has
 
 An accepted load issues a measurement job id, shared by its two phases. Masters and loads use one monotonic id
 sequence; the load answer returns its id and `measurementJob()` exposes the active measurement. `job()` retains its
-meaning as the active master. Cancellation checks the named id after the state table. Cancelling phase one takes
-`Loaded` to `Empty` and drops the source; the shell loads the same audio again to restart. Cancelling phase two leaves
-`Measured1`; cancelling a master leaves the measured state and ends its overlay. The cancelled job's progress resets
-in every case. After phase-two cancellation, `cancel` in `Measured1` returns `NoJob` if no master runs. A first-phase
+meaning as the active master. Cancellation checks the named id after the state table. Cancelling measurement retains
+the source, completed results, analyzer workspace and saved progress; unfinished results become `Cancelled`.
+The internal continuation gets a fresh job identity and restores those results to `Pending`. The public command and
+state table still expose the existing commands. Cancelling a master ends its overlay and resets its progress.
+After phase-two cancellation, `cancel` in `Measured1` returns `NoJob` if no master runs. A first-phase
 result still suffices for a master. A failed Driver transition publishes `Error{Contract, None}` and drops that job.
 Every internal completion checks its captured job id, and measurement completions also check the captured source hash.
 A stale completion changes nothing, including when the same samples are loaded again or a newer master runs.
@@ -563,6 +564,28 @@ A retained snapshot survives later commands and destruction of its session. Call
 remain on one thread at a time; a completed value can be handed to a shell independently. Demand sums widen each
 term to `uint64_t` before addition. Copy traps before allocating, in every configuration, if combined text or
 reading-point storage exceeds `size_t`; it never allocates a wrapped size.
+
+`Measurements.h` adds owned analyzer results: named optional numbers with reasons, named numeric arrays with frame
+grids, total/stored counters and completeness. Each source has one result per analyzer. `OwnedMeasurements::copy`
+copies every name and row; snapshot copies therefore survive workspace destruction, replacement loads and session
+destruction. A `Measurement` event owns the result identity, status, counters and revision; its numeric data is read
+from the corresponding snapshot. The codec generator describes both forms, including transferable f64 rows.
+
+The measurement key combines the PCM bit hash, actual native parameters, config version and core/session versions.
+The target is absent. An identical load reuses PCM, saved progress and results; changing the target does not invalidate
+them. Each prepared analyzer stays resident across pauses and is destroyed after its result has been copied. The
+current pump remains the deterministic work-unit stub described above; these ownership and preparation interfaces
+do not yet produce live analyzer output.
+
+`measurementStorage` exposes source, result, index, workspace, copy, codec and allocator demands and the maximum live
+set across load and work. Native `storageFor` calls share the exact parameter records used for preparation, including
+the separate loudness meter and waveform/stereo columns. Nested spectrum and band-burst storage is included only
+through its parent analyzer. The estimate conservatively includes every available workspace simultaneously, a
+detached result copy and JSON serialization. Load demand also includes the previous live session, temporary input
+PCM and source-name copies. The largest-block demand is conservative; capabilities remain the shell's limits.
+Embedded TOML views allocate nothing; runtime config/project parsing keeps its separate declared TOML budget.
+The excursion index has no storage implementation yet: `indexBudgetKnown` is false and its result is unavailable.
+Consequently the published demand does not yet establish the complete excursion-inclusive measurement budget.
 
 `tools/session-codec-schema.json` is the one hand-edited codec description. `Codec` exchanges its named-field JSON.
 Object order is immaterial; missing,
@@ -743,6 +766,7 @@ still apply. Convert, Lra and Final are appended to `PhaseName` at 5, 6 and 7 an
 | `create_bytes`, `create`, `destroy` | Pre-create demand; capability/config creation; generation-checked destruction |
 | `set_capacity` | Update heap ceiling and largest free block between calls |
 | `command_bytes`, `load_bytes`, `import_project_bytes` | Session allocation demand and live bytes before work |
+| `measurement_bytes` | Shape-only detailed measurement demand in an appended size-prefixed record |
 | `command` | Named-field JSON in; accepted/rejected JSON out |
 | `load` | Planar f32 pointers, channels, frames, rate and JSON metadata; owned PCM copy |
 | `import_project`, `export_project_size`, `export_project_copy` | Project bytes in caller buffers |

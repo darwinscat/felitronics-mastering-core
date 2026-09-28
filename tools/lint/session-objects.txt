@@ -34,6 +34,7 @@ undefined  elf     ^__(memcpy|memmove|memset)_chk$  the same under _FORTIFY_SOUR
 undefined  all     ^__stack_chk_(fail|guard)$       the stack protector, which distributions turn on by default
 undefined  elf     ^__stack_chk_fail_local$         the stack protector, 32-bit
 undefined  elf     ^_GLOBAL_OFFSET_TABLE_$          a relocation base the linker defines, not code
+undefined  macho   ^memset_pattern16$                Apple clang emits a repeating 16-byte memory fill for analyzer buffers
 undefined  macho   ^__chkstk_darwin$                Apple clang stack probing for the bounded integer JSON conversion scratch
 undefined  coff    ^(_fltused|__security_check_cookie|__security_cookie|__GSHandlerCheck|__chkstk)$    MSVC's floating-point marker, /GS and the stack probe
 undefined  coff    ^_RTC_                           MSVC's run-time checks in a debug build
@@ -51,10 +52,12 @@ undefined  all     ^_ZNK?St3__[12]12basic_stringIcNS_11char_traitsIcEENS_9alloca
 undefined  all     ^_ZNK?St7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE    ...and the ones libstdc++ compiles once in its own library, the same way (gcc 14 keeps the cold path of a replace there: the text's gate joins key paths with it)
 undefined  all     ^abort$                          libc++ with exceptions off: a string or a vector asked to grow past max_size() ends the process, as a heap that cannot serve operator new does
 undefined  all     ^_ZSt(17__throw_bad_allocv|20__throw_length_errorPKc|19__throw_logic_errorPKc|24__throw_out_of_range_fmtPKcz)$    libstdc++'s out-of-line throws behind the same limits (and a string built from a null pointer, an index past the end): an allocation or a length the process cannot serve, as operator new's
+undefined  elf     ^_ZSt28__throw_bad_array_new_lengthv$    libstdc++'s allocator length-overflow termination path, also emitted with exceptions disabled
 undefined  coff    ^(_CxxThrowException|__std_exception_copy|__std_exception_destroy)$    MSVC's STL throws behind the same limits even under /EHs-c- (std::bad_alloc, std::bad_array_new_length): the throw itself
 undefined  coff    ^(\?_X(length_error|out_of_range)@std@@YAXPEBD@Z|__imp__invoke_watson)$    ...its out-of-line length and index checks, and the invalid-parameter end of the process
 undefined  coff    ^(\?\?_7type_info@@6B@|__ImageBase)$    ...and what a throw's metadata points at: type_info's vtable and the image base its offsets count from
 undefined  coff    ^__std_(find_trivial|max_element|min_element|minmax_element|max|min|minmax)_[1248][iu]?$    the STL's vectorised std::find and std::max_element family, compiled once in its own library (pure computation; the element width and signedness suffix differs between MSVC releases)
+undefined  coff    ^__std_max_element_d$            MSVC's pure double comparison over the finite measurement byte demands
 undefined  coff    ^_dclass$                        the UCRT's fpclassify, behind std::isfinite and std::isnan: a classification, exact
 undefined  coff    ^(__imp_)?_dsign$                the UCRT's signbit, behind felitronics-toml's Decimal::fromDouble (a knob's value read as a decimal, src/Grid.h): a bit read, exact
 writable   coff    ^\?\?_R0\?AV(exception|bad_alloc|bad_array_new_length)@std@@@8$    the type descriptors of the exceptions MSVC's STL throws on a failed allocation: a throw's metadata, which MSVC keeps in writable .data$r (a type_info caches its name there); the session neither reads nor writes them

@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <span>
 #include <vector>
+#include <felitronics/storage/VectorBytes.h>
 
 namespace felitronics::analysis
 {
@@ -143,16 +144,29 @@ public:
         return true;
     }
 
+    static constexpr std::uint64_t constructBytes() noexcept { return 3u * storage::kVectorProxyBytes; }
+    struct Storage
+    {
+        bool ok = false;
+        std::size_t columns = 0;
+        std::uint64_t bytes() const noexcept { return std::uint64_t (columns) * 3u * sizeof (float); }
+        std::uint64_t firstBytes() const noexcept { return StereoColumns::constructBytes() + bytes(); }
+    };
+    [[nodiscard]] static Storage storageFor (int numChannels, std::uint64_t totalFrames,
+                                            int columns = kDefaultColumns) noexcept
+    {
+        if (numChannels < 1 || totalFrames < 1 || totalFrames > kMaxFrames
+            || columns < 1 || columns > kMaxColumns) return {};
+        return { true, std::size_t (std::min<std::uint64_t> (std::uint64_t (columns), totalFrames)) };
+    }
     [[nodiscard]] bool prepare (int numChannels, std::uint64_t totalFrames, int columns = kDefaultColumns)
     {
         prepared_ = false;
-        if (numChannels < 1) return false;
-        if (totalFrames < 1 || totalFrames > kMaxFrames) return false;
-        if (columns < 1 || columns > kMaxColumns) return false;
-
-        nch_    = numChannels;
+        const auto st = storageFor (numChannels, totalFrames, columns);
+        if (! st.ok) return false;
+        nch_ = numChannels;
         frames_ = totalFrames;
-        cols_   = (int) std::min<std::uint64_t> ((std::uint64_t) columns, totalFrames);   // >= 1: both are
+        cols_ = int (st.columns);
         per_    = (double) totalFrames / (double) cols_;
         width_.assign ((std::size_t) cols_, 0.0f);
         corr_.assign  ((std::size_t) cols_, 0.0f);

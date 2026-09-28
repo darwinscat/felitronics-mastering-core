@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <span>
 #include <vector>
+#include <felitronics/storage/VectorBytes.h>
 
 namespace felitronics::analysis
 {
@@ -112,17 +113,31 @@ public:
         return true;
     }
 
+    static constexpr std::uint64_t constructBytes() noexcept { return storage::kVectorProxyBytes; }
+    struct Storage
+    {
+        bool ok = false;
+        std::size_t buckets = 0;
+        int decimation = 0;
+        std::uint64_t bytes() const noexcept { return std::uint64_t (buckets) * sizeof (double); }
+        std::uint64_t firstBytes() const noexcept { return WaveformPeaks::constructBytes() + bytes(); }
+    };
+    [[nodiscard]] static Storage storageFor (double sampleRate, int numChannels, std::uint64_t totalFrames,
+                                            int buckets = kDefaultBuckets, PeakMix mix = PeakMix::Average) noexcept
+    {
+        int decim = 0;
+        if (! decimationFor (sampleRate, decim) || numChannels < 1
+            || totalFrames < 1 || totalFrames > kMaxFrames || buckets < 1 || buckets > kMaxBuckets) return {};
+        if (mix != PeakMix::Average && mix != PeakMix::Left && mix != PeakMix::Right && mix != PeakMix::Max) return {};
+        return { true, std::size_t (buckets), decim };
+    }
     [[nodiscard]] bool prepare (double sampleRate, int numChannels, std::uint64_t totalFrames,
                                 int buckets = kDefaultBuckets, PeakMix mix = PeakMix::Average)
     {
         prepared_ = false;
-        int decim = 0;
-        if (! decimationFor (sampleRate, decim)) return false;
-        if (numChannels < 1) return false;
-        if (totalFrames < 1 || totalFrames > kMaxFrames) return false;
-        if (buckets < 1 || buckets > kMaxBuckets) return false;
-        if (mix != PeakMix::Average && mix != PeakMix::Left && mix != PeakMix::Right && mix != PeakMix::Max)
-            return false;
+        const auto st = storageFor (sampleRate, numChannels, totalFrames, buckets, mix);
+        if (! st.ok) return false;
+        const int decim = st.decimation;
 
         nch_    = numChannels;
         frames_ = totalFrames;
@@ -130,7 +145,7 @@ public:
         mix_    = mix;
         const double decLen = std::max ((double) buckets, std::floor ((double) totalFrames / (double) decim));
         perBucket_ = decLen / (double) buckets;
-        out_.assign ((std::size_t) buckets, 0.0);
+        out_.assign (st.buckets, 0.0);
         prepared_ = true;
         reset();
         return true;

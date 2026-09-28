@@ -330,3 +330,40 @@ ru.many = "Сейчас машина решила бы иначе в {count} м�
 ru.other = "Сейчас машина решила бы иначе в {count} местах. При той же версии ядра это обычно означает, что файл проекта правили вручную; сохранённые решения остаются."
 en.one = "The machine would decide differently in {count} place today. With the same core version, this usually means the project file was edited by hand; the saved decisions are kept."
 en.other = "The machine would decide differently in {count} places today. With the same core version, this usually means the project file was edited by hand; the saved decisions are kept."
+
+
+[messages.measurementPending]
+ru = "Замер ожидается."
+en = "Measurement is pending."
+
+[messages.measurementReady]
+ru = "Замер готов."
+en = "Measurement is ready."
+
+[messages.measurementStopped]
+ru = "Замер остановлен. Звук и готовые результаты сохранены."
+en = "Measurement stopped. Audio and completed results are retained."
+
+[messages.measurementUnsupported]
+ru = "Замер недоступен для этих параметров звука."
+en = "Measurement is unavailable for these audio parameters."
+
+[messages.measurementTooShort]
+ru = "Для этого замера недостаточно звука."
+en = "There is not enough audio for this measurement."
+
+[messages.measurementNonFinite]
+ru = "Замер недоступен: встретилось неконечное число."
+en = "Measurement is unavailable because a non-finite value was encountered."
+
+[messages.measurementCapacity]
+ru = "Замер неполон: не хватило памяти для всех результатов."
+en = "Measurement is incomplete because there was not enough storage for all results."
+
+[messages.measurementNoSignal]
+ru = "Для этого замера не найден подходящий сигнал."
+en = "No suitable signal was found for this measurement."
+
+[messages.measurementUnavailable]
+ru = "Этот замер пока недоступен в движке."
+en = "This measurement is not yet available in the engine."

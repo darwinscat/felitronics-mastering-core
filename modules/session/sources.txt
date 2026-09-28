@@ -17,3 +17,6 @@ src/Codec.cpp
 src/ProjectIO.cpp
 src/Wire.cpp
 src/EqCurve.cpp
+src/Measurements.cpp
+src/MeasurementPlan.cpp
+src/MeasurementWorkspace.cpp

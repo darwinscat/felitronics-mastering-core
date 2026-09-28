@@ -80,17 +80,12 @@ void Session::dropJob (JobId job) noexcept
     if (job == measurementJob_)
     {
         measurementJob_ = 0;
-        measurementUnit_ = 0;
-        measurementProgress_ = {};
-        if (state_ == State::Loaded)
-        {
-            state_ = State::Empty;
-            source_ = {};
-            samples_.reset();
-            name_.reset();
-            project_.devices = {};
-            project_.manual = false;
-        }
+        for (auto& result : measurementResults_)
+            if (result.status == MeasurementStatus::Pending)
+            {
+                result.status = MeasurementStatus::Cancelled;
+                result.reason = MeasurementReason::Cancelled;
+            }
     }
     else
     {

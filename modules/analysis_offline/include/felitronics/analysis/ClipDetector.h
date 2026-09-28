@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <limits>
 #include <vector>
+#include <felitronics/storage/VectorBytes.h>
 
 namespace felitronics::analysis
 {
@@ -136,6 +137,8 @@ public:
 
     // WHAT prepare() ALLOCATES, from the function prepare() sizes and validates itself with (law 11d). ok == false on
     // exactly the arguments prepare() refuses, and then every count is zero.
+    static constexpr std::uint64_t constructBytes() noexcept { return 4u * storage::kVectorProxyBytes; }
+
     struct Storage
     {
         bool        ok = false;
@@ -144,6 +147,7 @@ public:
         std::size_t pendingEntries = 0;     // candidates waiting for their neighbourhood, all channels
         std::size_t runEntries     = 0;
         std::size_t channels       = 0;
+        std::uint64_t firstBytes() const noexcept { return ClipDetector::constructBytes() + bytes(); }
         std::uint64_t bytes() const noexcept
         {
             return (std::uint64_t) dequeEntries * sizeof (WindowEntry) + (std::uint64_t) pendingEntries * sizeof (Pending)

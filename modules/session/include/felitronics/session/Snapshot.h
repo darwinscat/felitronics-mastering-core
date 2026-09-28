@@ -4,6 +4,7 @@
 #pragma once
 
 #include <felitronics/session/Session.h>
+#include <felitronics/session/Measurements.h>
 #include <memory>
 #include <span>
 #include <string_view>
@@ -32,6 +33,8 @@ struct SnapshotView
     double integratedLufs = 0.0;
     std::span<const ReadingPoint> momentary, shortTerm;
     std::span<const ReadingRun> runs;
+    MeasurementStorage measurementStorage {};
+    std::span<const MeasurementResult> measurements;
 };
 class Codec;
 // An immutable, owned value. view() remains valid until this value is moved or destroyed,
@@ -52,6 +55,7 @@ public:
 private:
     friend class Codec;
     SnapshotView view_ {};
+    OwnedMeasurements measurements_;
     std::unique_ptr<char[]> text_;
     std::unique_ptr<Kept[]> masters_;
     std::unique_ptr<MachineDifference[]> differences_;
