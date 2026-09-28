@@ -6,6 +6,7 @@
 #include <felitronics/session/Commands.h>
 #include <felitronics/session/Project.h>
 #include <felitronics/session/Events.h>
+#include <felitronics/session/Measurements.h>
 
 #include <cstdint>
 #include <memory>
@@ -88,7 +89,7 @@ struct Kept
     Recipe recipe {};
 };
 
-// The source a load gave, as the session holds it. The name and the samples live in the session until the next load or cancellation of the first measurement.
+// The source a load gave, as the session holds it. The name and the samples live in the session until a different source is loaded.
 struct Source
 {
     std::uint32_t channels = 0;                // 0: nothing loaded
@@ -101,7 +102,7 @@ struct Source
     std::string_view name;
 };
 
-namespace detail { struct Driver; struct Inspector; }
+namespace detail { struct Driver; struct Inspector; struct MeasurementWorkspace; }
 
 //==============================================================================
 // felitronics::session::Session — the mastering session: the object a shell (the web worker through the fcsession
@@ -180,6 +181,7 @@ public:
     [[nodiscard]] Checked check (const Request& request) const noexcept;
     // Allocation-free demand before capacity checks; Load needs shape/meta only, never sample pointers.
     [[nodiscard]] Checked storageFor (const Request& request) const noexcept;
+    [[nodiscard]] MeasurementStorage measurementStorage (const Pcm& pcm) const noexcept;
     [[nodiscard]] Answer rejectProtocol (CommandId id) noexcept;
 
     // Export is an owned exact byte allocation, without a terminator. Only placed projects are exportable.
@@ -254,6 +256,12 @@ private:
     // counts. The source: its samples planar, channel after channel (source_.channels × source_.frames), and the name
     // the load gave (source_.name views it; null when it is empty).
     Source source_ {};
+    MeasurementStorage measurementStorage_ {};
+    std::uint64_t measurementKey_ = 0;
+    MeasurementResult measurementResults_[kAnalyzers] {};
+    OwnedMeasurements measurementOwners_[kAnalyzers];
+    std::uint64_t measurementOwnedBytes_ = 0;
+    std::unique_ptr<detail::MeasurementWorkspace> measurementWorkspace_;
     std::unique_ptr<float[]> samples_;
     std::unique_ptr<char[]> name_;
     // The master being made, and the masters kept: `masterCount_` of them in room for `masterRoom_`. The ids count

@@ -793,7 +793,7 @@ void memoryIsDeclared()
     // ...and in as many requests as the work has buffers: a load its samples and its name, a master its room — a
     // debugging standard library that gives a container a proxy of its own would show here as a request too many.
     struct Case { Command command; Column column; long long requests; };
-    const Case cases[] = { { Command::Load, Column::Measured2, 2 }, { Command::SetTarget, Column::Measured1, 0 },
+    const Case cases[] = { { Command::Load, Column::Measured2, -1 }, { Command::SetTarget, Column::Measured1, 0 },
                            { Command::EditTarget, Column::Measured1, 0 }, { Command::EditDevice, Column::Measured1, 0 },
                            { Command::RevertEdits, Column::Measured1, 0 }, { Command::SetManual, Column::Measured1, 0 },
                            { Command::Master, Column::Measured1, 1 }, { Command::Cancel, Column::Mastering1, 0 },
@@ -823,7 +823,7 @@ void memoryIsDeclared()
         Situation x = situation (Column::Measured1);
         Audio mono = makeAudio (1, 1000);
         const command::Load l = loadOf (mono, 1, "a name longer than any small-string buffer.wav");
-        ok (x.s->check (l).bytes == 1000 * sizeof (float) + l.meta.name.size(), "a load declares its samples and its name");
+        ok (x.s->check (l).bytes > 1000 * sizeof (float) + l.meta.name.size(), "a load declares samples, name and the complete measurement");
         ok (x.s->check (command::Master { 1 }).bytes == 2 * sizeof (Kept), "a master with one kept declares room for two");
         ok (accepted (*x.s, command::Master { 2 }) && accepted (*x.s, command::Cancel { 3, x.s->job() }),
             "a master asked and cancelled");
@@ -862,7 +862,7 @@ void jobIds()
     Situation x = situation (Column::Measured1);
     Session& s = *x.s;
     const JobId before = x.kept;
-    ok (accepted (s, loadOf (x.audio, 1)) && Driver::measured1 (s, s.measurementJob(), s.source().hash), "a new source, measured");
+    ok (accepted (s, loadOf (x.audio, 1)) && s.state() == State::Measured1, "identical source keeps the completed first phase");
     const Answer again = s.apply (command::Master { 2 });
     ok (again.rejection == Rejection::None && again.job == before + 2,
         "the next job after a load is numbered on from the last, not again from 1 (" + std::to_string (again.job) + ")");

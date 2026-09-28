@@ -169,6 +169,7 @@ constexpr std::uint32_t minimumSize (const fc_session_capabilities*) noexcept { 
 constexpr std::uint32_t minimumSize (const fc_session_sizes*) noexcept { return FC_SESSION_SIZES_V1_BYTES; }
 constexpr std::uint32_t minimumSize (const fc_session_capacity*) noexcept { return FC_SESSION_CAPACITY_V1_BYTES; }
 constexpr std::uint32_t minimumSize (const fc_session_storage*) noexcept { return FC_SESSION_STORAGE_V1_BYTES; }
+constexpr std::uint32_t minimumSize (const fc_session_measurement_storage*) noexcept { return sizeof (fc_session_measurement_storage); }
 template <class T> fc_session_status record (const T* p) noexcept
 {
     if (const auto st = pointer (p, minimumSize (p), alignof (T)); st != FC_SESSION_OK) return st;
@@ -493,4 +494,33 @@ FC_EXPORT fc_session_status fc_session_import_project_bytes (fc_session session,
     if (const auto st = pointer (project, project_bytes, 1, true); st != FC_SESSION_OK) return st;
     if (overlap (out, sizeof (*out), project, project_bytes)) return FC_SESSION_ERR_OVERLAP;
     return storageOut (*slot->session, Wire::importStorage (*slot->session, { project, project_bytes }), out);
+}
+
+FC_EXPORT fc_session_status fc_session_measurement_bytes (fc_session session, std::uint32_t channels,
+                                                         std::uint32_t frames, std::uint32_t rate,
+                                                         fc_session_measurement_storage* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = record (out); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    const felitronics::session::Pcm pcm { nullptr, channels, frames, rate };
+    const auto priced = slot->session->storageFor (felitronics::session::command::Load { 0, pcm, {} });
+    if (priced.rejection == Rejection::FloatingPointEnvironment) return FC_SESSION_ERR_FP_ENVIRONMENT;
+    const auto demand = priced.rejection == Rejection::None ? slot->session->measurementStorage (pcm)
+                                                          : felitronics::session::MeasurementStorage {};
+    out->rejection = std::uint32_t (priced.rejection);
+    out->sourceBytes = demand.sourceBytes;
+    out->resultBytes = demand.resultBytes;
+    out->indexBytes = demand.indexBytes;
+    out->workspaceBytes = demand.workspaceBytes;
+    out->copyBytes = demand.copyBytes;
+    out->codecBytes = demand.codecBytes;
+    out->allocatorBytes = demand.allocatorBytes;
+    out->loadPeakBytes = demand.loadPeakBytes;
+    out->workPeakBytes = demand.workPeakBytes;
+    out->peakBytes = demand.peakBytes;
+    out->largestBlockBytes = demand.largestBlockBytes;
+    out->indexBudgetKnown = demand.indexBudgetKnown ? 1u : 0u;
+    return FC_SESSION_OK;
 }

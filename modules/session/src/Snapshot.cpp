@@ -21,12 +21,14 @@ std::uint64_t Snapshot::storageFor (const SnapshotView& v) noexcept
 {
     return detail::snapshotStorage (v.target.size(), v.source.name.size(), v.masters.size_bytes(),
                                     v.momentary.size_bytes(), v.shortTerm.size_bytes(), v.runs.size_bytes())
-         + std::uint64_t (v.machineDifferences.size_bytes()) + std::uint64_t (v.eqCurve.size_bytes());
+         + std::uint64_t (v.machineDifferences.size_bytes()) + std::uint64_t (v.eqCurve.size_bytes()) + OwnedMeasurements::storageFor (v.measurements);
 }
 Snapshot Snapshot::copy (const SnapshotView& v) noexcept
 {
     Snapshot out;
     out.view_ = v;
+    out.measurements_ = OwnedMeasurements::copy (v.measurements);
+    out.view_.measurements = out.measurements_.view();
     const auto chars = detail::snapshotAllocationSize<std::size_t> (
         detail::snapshotTextBytes (v.target.size(), v.source.name.size()));
     const auto pointBytes = std::uint64_t (v.momentary.size_bytes()) + std::uint64_t (v.shortTerm.size_bytes());
@@ -103,6 +105,8 @@ SnapshotView Session::buildView() const noexcept
     if (placed()) v.eqCurve = eqCurve_;
     v.target = targetName();
     v.source = source_;
+    v.measurementStorage = measurementStorage_;
+    if (source_.channels != 0) v.measurements = measurementResults_;
     v.job = job_;
     v.measurementJob = measurementJob_;
     v.jobRecipe = jobRecipe_;

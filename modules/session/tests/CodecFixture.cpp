@@ -3,7 +3,7 @@
 
 // Every scalar mapping, optional alternative, record and array crosses the real encoder here.
 // The offline JS consumer validates its output against the generated declarations.
-#include "CodecSchema.h"
+#include "JsonCodec.h"
 #include <cstdio>
 #include <limits>
 #include <optional>
@@ -36,6 +36,7 @@ struct Fill
         else { T v {}; value (v); x = v; }
     }
     template <class T> void value (std::span<const T>&) {}
+    template <class T> void optionalField (std::string_view name, T& x) { field (name, x); }
     template <class T> void field (std::string_view, T& x) { value (x); }
 };
 }
@@ -47,6 +48,14 @@ int main()
         SnapshotView view;
         Kept kept[1]; ReadingPoint points[1]; ReadingRun runs[1]; MachineDifference differences[1]; EqPoint curve[1];
         fill.value (view); fill.value (kept[0]); fill.value (points[0]); fill.value (runs[0]); fill.value (differences[0]); fill.value (curve[0]);
+        view.measurementStorage = {};
+        MeasurementValue number { "peak", 1.0, MeasurementReason::None, 0 };
+        double values[] { 0.25, 0.5 };
+        MeasurementArray array { "peaks", { 0, 1, 2, 48000 }, 1, 2, 2, true, values };
+        MeasurementResult result;
+        result.status = MeasurementStatus::Ready; result.reason = MeasurementReason::None;
+        result.numbers = { &number, 1 }; result.arrays = { &array, 1 };
+        view.measurements = { &result, 1 };
         view.sourceBytes = mode ? 9007199254740991.0 : 0.0;
         if (mode) { view.masters = kept; view.momentary = points; view.shortTerm = points; view.runs = runs; view.machineDifferences = differences; view.eqCurve = curve; }
         const auto need = Codec::encodedBytes (view);
@@ -55,5 +64,10 @@ int main()
         if (Codec::encode (view, json) != CodecStatus::Ok) return 2;
         std::puts (json.c_str());
     }
+    MeasurementChange change;
+    detail::Writer counter; counter.value (change);
+    std::string json (std::size_t (counter.size), '\0');
+    detail::Writer writer; writer.output = json.data(); writer.value (change);
+    std::puts (json.c_str());
     return 0;
 }

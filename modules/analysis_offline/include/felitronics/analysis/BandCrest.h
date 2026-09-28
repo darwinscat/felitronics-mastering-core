@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <vector>
+#include <felitronics/storage/VectorBytes.h>
 
 namespace felitronics::analysis
 {
@@ -178,6 +179,8 @@ public:
 
     //----------------------------------------------------------------------------------------------
     // WHAT prepare() ALLOCATES, from the function prepare() sizes and validates itself with (law 11d).
+    static constexpr std::uint64_t constructBytes() noexcept { return 6u * storage::kVectorProxyBytes; }
+
     struct Storage
     {
         bool        ok          = false;
@@ -188,9 +191,11 @@ public:
         std::size_t scratchOs   = 0;                    // the interpolator's output, oversampled floats
         std::size_t channels    = 0;
 
+        std::uint64_t firstBytes() const noexcept { return BandCrest::constructBytes() + bytes(); }
         std::uint64_t bytes() const noexcept
         {
-            return (std::uint64_t) cellEntries  * sizeof (double)
+            return channels * storage::kPolyphaseProxies * storage::kVectorProxyBytes
+                 + (std::uint64_t) cellEntries  * sizeof (double)
                  + (std::uint64_t) countEntries * (sizeof (std::uint64_t) + 2u * sizeof (double))
                  + (std::uint64_t) scratchOs   * sizeof (float)
                  // THE INTERPOLATORS THEMSELVES, not only their buffers: `os_.resize(maxChannels)` asks the

@@ -154,6 +154,26 @@ typedef struct fc_session_storage
     double liveBytes;               // current declared bytes; caller can assess live + bytes
 } fc_session_storage;
 
+// Detailed source measurement demand. Counts include one retained result copy and its codec buffers.
+// indexBudgetKnown is zero until an exact excursion-index storage declaration is available.
+typedef struct fc_session_measurement_storage
+{
+    uint32_t size;
+    uint32_t rejection;
+    double sourceBytes;
+    double resultBytes;
+    double indexBytes;
+    double workspaceBytes;
+    double copyBytes;
+    double codecBytes;
+    double allocatorBytes;
+    double loadPeakBytes;
+    double workPeakBytes;
+    double peakBytes;
+    double largestBlockBytes;
+    uint32_t indexBudgetKnown;
+} fc_session_measurement_storage;
+
 typedef enum fc_session_step_state
 {
     FC_SESSION_MORE = 0,
@@ -192,6 +212,8 @@ fc_session_status fc_session_set_capacity (fc_session session, const fc_session_
 fc_session_status fc_session_command_bytes (fc_session session, const char* json, uint32_t json_bytes, fc_session_storage* out);
 fc_session_status fc_session_load_bytes (fc_session session, uint32_t channels, uint32_t frames, uint32_t rate,
                                          const char* meta, uint32_t meta_bytes, fc_session_storage* out);
+fc_session_status fc_session_measurement_bytes (fc_session session, uint32_t channels, uint32_t frames,
+                                                uint32_t rate, fc_session_measurement_storage* out);
 fc_session_status fc_session_import_project_bytes (fc_session session, const char* project, uint32_t project_bytes,
                                                    fc_session_storage* out);
 fc_session_status fc_session_config_version (uint32_t* out); // two halves, low first

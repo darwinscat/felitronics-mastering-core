@@ -81,11 +81,11 @@ struct Writer
     template <class T> void value (const std::optional<T>& x) noexcept { if (x) value (*x); else text ("null"); }
     template <class T> void value (std::span<const T> values) noexcept
     {
-        if constexpr (std::is_same_v<T, EqPoint> || std::is_same_v<T, ReadingPoint> || std::is_same_v<T, ReadingRun> || std::is_same_v<T, MachineDifference>)
+        if constexpr (std::is_same_v<T, double> || std::is_same_v<T, EqPoint> || std::is_same_v<T, ReadingPoint> || std::is_same_v<T, ReadingRun> || std::is_same_v<T, MachineDifference>)
         {
             if (binaryRows)
             {
-                const unsigned stride = (std::is_same_v<T, EqPoint> || std::is_same_v<T, ReadingPoint>) ? 2u : std::is_same_v<T, ReadingRun> ? 3u : 4u;
+                const unsigned stride = std::is_same_v<T, double> ? 1u : (std::is_same_v<T, EqPoint> || std::is_same_v<T, ReadingPoint>) ? 2u : std::is_same_v<T, ReadingRun> ? 3u : 4u;
                 const bool parent = first; first = true; put ('{');
                 field ("byteOffset", double (rowSize * sizeof (double)));
                 field ("length", double (values.size())); field ("stride", stride); put ('}'); first = parent;
@@ -97,7 +97,8 @@ struct Writer
                 };
                 for (const T& row : values)
                 {
-                    if constexpr (std::is_same_v<T, MachineDifference>)
+                    if constexpr (std::is_same_v<T, double>) append (row);
+                    else if constexpr (std::is_same_v<T, MachineDifference>)
                     {
                         append (double (row.device)); append (double (row.field)); append (row.fileValue); append (row.coreValue);
                     }
@@ -117,6 +118,7 @@ struct Writer
         for (const T& row : values) { if (! start) put (','); start = false; value (row); }
         put (']');
     }
+    template <class T> void optionalField (std::string_view name, const T& x) noexcept { field (name, x); }
     template <class T> void field (std::string_view name, const T& x) noexcept
     {
         if (! first) put (',');
@@ -135,9 +137,17 @@ struct Storage
     MachineDifference* difference = nullptr;
     std::size_t eqPoints = 0;
     EqPoint* eqPoint = nullptr;
+    std::size_t measurementResults = 0, measurementNumbers = 0, measurementArrays = 0, measurementRows = 0;
+    MeasurementResult* measurementResult = nullptr;
+    MeasurementValue* measurementNumber = nullptr;
+    MeasurementArray* measurementArray = nullptr;
+    double* measurementRow = nullptr;
     std::uint64_t bytes() const noexcept
     {
-        return chars + masters * sizeof (Kept) + points * sizeof (ReadingPoint) + runs * sizeof (ReadingRun) + differences * sizeof (MachineDifference) + eqPoints * sizeof (EqPoint);
+        return std::uint64_t (measurementResults) * sizeof (MeasurementResult)
+             + std::uint64_t (measurementNumbers) * sizeof (MeasurementValue)
+             + std::uint64_t (measurementArrays) * sizeof (MeasurementArray)
+             + std::uint64_t (measurementRows) * sizeof (double) + chars + masters * sizeof (Kept) + points * sizeof (ReadingPoint) + runs * sizeof (ReadingRun) + differences * sizeof (MachineDifference) + eqPoints * sizeof (EqPoint);
     }
 };
 
@@ -151,6 +161,7 @@ struct Reader
     std::uint64_t seen = 0;
     unsigned ordinal = 0;
     bool matched = false;
+    std::uint64_t optionalMask = 0;
 
     void space() noexcept { while (pos < input.size() && (input[pos] == ' ' || input[pos] == '\n' || input[pos] == '\r' || input[pos] == '\t')) ++pos; }
     bool take (char c) noexcept { space(); if (pos < input.size() && input[pos] == c) { ++pos; return true; } return false; }
@@ -318,7 +329,10 @@ struct Reader
         {
             const auto parentSeen = seen; const auto parentKey = key;
             const auto parentOrdinal = ordinal; const auto parentMatched = matched;
-            seen = 0;
+            const auto parentOptional = optionalMask;
+            const auto beforeRows = storage.measurementRows, beforeChars = storage.chars;
+            const auto beforeNumbers = storage.measurementNumbers, beforeArrays = storage.measurementArrays;
+            seen = 0; optionalMask = 0;
             expect ('{');
             do
             {
@@ -329,7 +343,27 @@ struct Reader
                 if (! matched) good = false;
             } while (good && take (','));
             expect ('}');
-            if (seen != (std::uint64_t (1) << ordinal) - 1) good = false;
+            if ((seen | optionalMask) != (std::uint64_t (1) << ordinal) - 1) good = false;
+            if constexpr (std::is_same_v<T, MeasurementValue>)
+            {
+                if (storage.chars == beforeChars || storage.chars - beforeChars > kMeasurementNameBytes) good = false;
+                if (x.value ? x.reason != MeasurementReason::None : x.reason == MeasurementReason::None) good = false;
+            }
+            else if constexpr (std::is_same_v<T, MeasurementArray>)
+            {
+                if (storage.chars == beforeChars || storage.chars - beforeChars > kMeasurementNameBytes) good = false;
+                const auto elements = storage.measurementRows - beforeRows;
+                if (x.columns == 0 || elements % x.columns != 0 || x.stored != elements / x.columns
+                    || x.stored > x.total || (x.complete && x.stored != x.total)) good = false;
+            }
+            else if constexpr (std::is_same_v<T, MeasurementResult>)
+            {
+                if (storage.measurementNumbers - beforeNumbers > kMeasurementNumbers
+                    || storage.measurementArrays - beforeArrays > kMeasurementArrays
+                    || x.stored > x.total || (x.complete && x.stored != x.total)
+                    || (x.status == MeasurementStatus::Ready ? x.reason != MeasurementReason::None : x.reason == MeasurementReason::None)) good = false;
+            }
+            optionalMask = parentOptional;
             seen = parentSeen; key = parentKey; ordinal = parentOrdinal; matched = parentMatched;
         }
     }
@@ -345,16 +379,36 @@ struct Reader
         else if constexpr (std::is_same_v<T, ReadingPoint>) { count = &storage.points; out = storage.point; }
         else if constexpr (std::is_same_v<T, ReadingRun>) { count = &storage.runs; out = storage.run; }
         else if constexpr (std::is_same_v<T, EqPoint>) { count = &storage.eqPoints; out = storage.eqPoint; }
+        else if constexpr (std::is_same_v<T, MeasurementResult>) { count = &storage.measurementResults; out = storage.measurementResult; }
+        else if constexpr (std::is_same_v<T, MeasurementValue>) { count = &storage.measurementNumbers; out = storage.measurementNumber; }
+        else if constexpr (std::is_same_v<T, MeasurementArray>) { count = &storage.measurementArrays; out = storage.measurementArray; }
+        else if constexpr (std::is_same_v<T, double>) { count = &storage.measurementRows; out = storage.measurementRow; }
         else { count = &storage.differences; out = storage.difference; }
         const auto start = *count;
+        std::uint32_t analyzers = 0;
         expect ('[');
         if (! take (']'))
         {
-            do { T row {}; value (row); if (good) { if (out) out[*count] = row; ++*count; } }
+            do
+            {
+                T row {}; value (row);
+                if constexpr (std::is_same_v<T, MeasurementResult>)
+                {
+                    const auto bit = 1u << unsigned (row.analyzer);
+                    if ((analyzers & bit) != 0 || *count - start == kAnalyzers) good = false;
+                    analyzers |= bit;
+                }
+                if (good) { if (out) out[*count] = row; ++*count; }
+            }
             while (good && take (','));
             expect (']');
         }
         if (out) rows = { out + start, *count - start };
+    }
+    template <class T> void optionalField (std::string_view name, T& x) noexcept
+    {
+        optionalMask |= std::uint64_t (1) << ordinal;
+        field (name, x);
     }
     template <class T> void field (std::string_view name, T& x) noexcept
     {

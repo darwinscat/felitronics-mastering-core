@@ -23,7 +23,12 @@ using detail::Storage;
 using detail::Reader;
 bool valid (const SnapshotView& v) noexcept
 {
-    return std::isfinite (v.sourceBytes) && v.sourceBytes >= 0.0 && v.sourceBytes < 9007199254740992.0
+    const auto& m = v.measurementStorage;
+    for (const auto bytes : { m.sourceBytes, m.resultBytes, m.indexBytes, m.workspaceBytes, m.copyBytes,
+                             m.codecBytes, m.allocatorBytes, m.loadPeakBytes, m.workPeakBytes, m.peakBytes, m.largestBlockBytes })
+        if (! std::isfinite (bytes) || bytes < 0.0 || bytes >= 9007199254740992.0
+            || std::bit_cast<std::uint64_t> (double (std::uint64_t (bytes))) != std::bit_cast<std::uint64_t> (bytes)) return false;
+    return OwnedMeasurements::valid (v.measurements) && std::isfinite (v.sourceBytes) && v.sourceBytes >= 0.0 && v.sourceBytes < 9007199254740992.0
         && std::bit_cast<std::uint64_t> (double (std::uint64_t (v.sourceBytes))) == std::bit_cast<std::uint64_t> (v.sourceBytes);
 }
 bool read (std::string_view json, Storage& storage, SnapshotView& view) noexcept
@@ -69,7 +74,16 @@ CodecStatus Codec::decode (std::string_view json, Snapshot& output) noexcept
     if (sizes.runs) out.runs_.reset (new ReadingRun[sizes.runs]);
     if (sizes.differences) out.differences_.reset (new MachineDifference[sizes.differences]);
     if (sizes.eqPoints) out.eqCurve_.reset (new EqPoint[sizes.eqPoints]);
+    if (sizes.measurementResults) out.measurements_.results_.reset (new MeasurementResult[sizes.measurementResults]);
+    if (sizes.measurementNumbers) out.measurements_.numbers_.reset (new MeasurementValue[sizes.measurementNumbers]);
+    if (sizes.measurementArrays) out.measurements_.arrays_.reset (new MeasurementArray[sizes.measurementArrays]);
+    if (sizes.measurementRows) out.measurements_.rows_.reset (new double[sizes.measurementRows]);
+    out.measurements_.count_ = sizes.measurementResults;
     Storage storage { 0, 0, 0, 0, 0, out.text_.get(), out.masters_.get(), out.points_.get(), out.runs_.get(), out.differences_.get(), 0, out.eqCurve_.get() };
+    storage.measurementResult = out.measurements_.results_.get();
+    storage.measurementNumber = out.measurements_.numbers_.get();
+    storage.measurementArray = out.measurements_.arrays_.get();
+    storage.measurementRow = out.measurements_.rows_.get();
     const bool filled = read (json, storage, out.view_);
     detail::debugBound (filled);
     output = std::move (out);

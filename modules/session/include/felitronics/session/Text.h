@@ -149,6 +149,16 @@ enum class FactId : std::uint16_t
     SessionMemory = 303,
     SessionPoisoned = 304,
     SessionStale = 305,
+    MeasurementPending = 400,
+    MeasurementReady = 401,
+    MeasurementStopped = 402,
+    MeasurementUnsupported = 403,
+    MeasurementTooShort = 404,
+    MeasurementNonFinite = 405,
+    MeasurementCapacity = 406,
+    MeasurementNoSignal = 407,
+    MeasurementUnavailable = 408,
+
 };
 
 // THE TERMS — words an argument of kind Term names: one value of a group of the catalog's [terms]. Printed as the

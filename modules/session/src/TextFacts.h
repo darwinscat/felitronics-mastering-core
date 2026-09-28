@@ -35,6 +35,7 @@ struct ArgShape
     std::string_view name;            // what its placeholder spells, without the braces
     ArgKind kind = ArgKind::None;
     std::string_view group;           // Term: the term group of the catalog it takes; empty otherwise
+
 };
 
 struct FactShape
@@ -106,6 +107,16 @@ inline constexpr FactShape kFacts[] = {
     { FactId::SessionMemory, "sessionMemory", {}, 0 },
     { FactId::SessionPoisoned, "sessionPoisoned", {}, 0 },
     { FactId::SessionStale, "sessionStale", {}, 0 },
+    { FactId::MeasurementPending, "measurementPending", {}, 0 },
+    { FactId::MeasurementReady, "measurementReady", {}, 0 },
+    { FactId::MeasurementStopped, "measurementStopped", {}, 0 },
+    { FactId::MeasurementUnsupported, "measurementUnsupported", {}, 0 },
+    { FactId::MeasurementTooShort, "measurementTooShort", {}, 0 },
+    { FactId::MeasurementNonFinite, "measurementNonFinite", {}, 0 },
+    { FactId::MeasurementCapacity, "measurementCapacity", {}, 0 },
+    { FactId::MeasurementNoSignal, "measurementNoSignal", {}, 0 },
+    { FactId::MeasurementUnavailable, "measurementUnavailable", {}, 0 },
+
 };
 inline constexpr std::size_t kFactCount = sizeof (kFacts) / sizeof (kFacts[0]);
 

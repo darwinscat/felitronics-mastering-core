@@ -14,6 +14,8 @@
 #include "Rules.h"
 #include "BuildContract.h"
 #include "ProjectIO.h"
+#include "MeasurementPlan.h"
+#include "MeasurementWorkspace.h"
 #include "Utf8.h"
 
 #include <felitronics/session/Commands.h>
@@ -186,7 +188,14 @@ Checked Session::storageFor (const Request& request) const noexcept
         const auto audio = std::uint64_t (pcm.channelCount) * pcm.frames * sizeof (float);
         const auto name = std::uint64_t (load->meta.name.size());
         if (name > 9007199254740991ull - audio) return rejected (Rejection::TooLong);
-        return storage (audio + name, std::max (audio, name));
+        const auto plan = detail::MeasurementPlan::storageFor (pcm, detail::MeasurementPlan::parametersFor (pcm));
+        if (plan.rejection != Rejection::None) return rejected (plan.rejection);
+        const auto footprint = measurementStorage (pcm);
+        // Resident name, detached snapshot name, and its worst-case JSON escaping coexist.
+        if (name > 9007199254740991ull / 8u
+            || footprint.peakBytes + double (8u * name) >= 9007199254740992.0) return rejected (Rejection::TooLong);
+        const auto extra = std::uint64_t (footprint.peakBytes) - std::uint64_t (liveBytes());
+        return storage (extra + 8u * name, std::uint64_t (footprint.largestBlockBytes) + 6u * name);
     }
     if (const auto* set = std::get_if<command::SetTarget> (&request))
     {
@@ -330,39 +339,62 @@ Answer Session::apply (const Request& request) noexcept
     if (const auto* load = std::get_if<command::Load> (&request))
     {
         const Pcm& pcm = load->pcm;
+        Fnv hash;
+        hash.u32 (pcm.sampleRate); hash.u32 (pcm.channelCount); hash.u64 (pcm.frames);
+        for (std::uint32_t c = 0; c < pcm.channelCount; ++c)
+            for (std::size_t i = 0; i < std::size_t (pcm.frames); ++i) hash.u32 (std::bit_cast<std::uint32_t> (pcm.channels[c][i]));
+        const auto plan = detail::MeasurementPlan::storageFor (pcm, detail::MeasurementPlan::parametersFor (pcm));
+        const auto key = detail::MeasurementPlan::key (hash.h, plan.parameters, config::Config::versions().all, coreVersion(), version());
+        const bool cached = source_.channels != 0 && key == measurementKey_;
+        const auto previousState = state_;
+        const auto previousUnit = measurementUnit_;
+        const auto previousProgress = measurementProgress_;
         // The name first, into an array of its own: it may be the name this session holds (a shell that loads again
         // under source().name), which the disarm below frees.
         const std::string_view given = load->meta.name;
         std::unique_ptr<char[]> name (given.empty() ? nullptr : new char[given.size()]);
         std::copy (given.begin(), given.end(), name.get());
-        // DISARM: nothing of the old source stays beside the new — the master being made stops, the masters and the
-        // measurements go, the manual mode is switched off and a person's device edits go with it (the mode does not
-        // outlive the file: its edits were decisions about the old source), and the old samples are freed before the
-        // new are asked for.
+        // End mastering and source-specific edits. A matching measurement key keeps PCM and results;
+        // otherwise release the previous measurement before allocating the new source.
         mastering_ = false;
         job_ = 0;
         jobRecipe_ = {};
         masters_.reset();
         masterCount_ = 0;
         masterRoom_ = 0;
-        samples_.reset();
+        if (! cached)
+        {
+            samples_.reset();
+            measurementWorkspace_.reset (new detail::MeasurementWorkspace);
+            measurementOwnedBytes_ = 0;
+            for (std::size_t i = 0; i < kAnalyzers; ++i)
+            {
+                measurementOwners_[i] = {};
+                measurementResults_[i] = {};
+                auto& r = measurementResults_[i];
+                r.analyzer = Analyzer (i); r.key = key;
+                if (! plan.analyzers[i].available)
+                {
+                    r.status = MeasurementStatus::Unavailable;
+                    r.reason = r.analyzer == Analyzer::Excursions ? MeasurementReason::NotImplemented : MeasurementReason::Unsupported;
+                }
+            }
+        }
+        measurementKey_ = key;
+        measurementStorage_ = plan.storage;
         project_.core = version();
         differenceCount_ = 0;
         project_.manual = false;
         project_.devices = {};                                      // unplaced: both layers, until the new source is measured
         // WRITE — one array of exactly the samples, then a copy into it.
         const auto frames = std::size_t (pcm.frames);   // fits: check() refused a source past what size_t counts
-        std::unique_ptr<float[]> samples (new float[frames * pcm.channelCount]);
-        Fnv hash;
-        hash.u32 (pcm.sampleRate);
-        hash.u32 (pcm.channelCount);
-        hash.u64 (pcm.frames);
-        for (std::uint32_t c = 0; c < pcm.channelCount; ++c)
+        if (! cached)
         {
-            std::copy (pcm.channels[c], pcm.channels[c] + frames, samples.get() + std::size_t (c) * frames);
-            for (std::size_t i = 0; i < frames; ++i) hash.u32 (std::bit_cast<std::uint32_t> (pcm.channels[c][i]));
+            std::unique_ptr<float[]> samples (new float[frames * pcm.channelCount]);
+            for (std::uint32_t c = 0; c < pcm.channelCount; ++c)
+                std::copy_n (pcm.channels[c], frames, samples.get() + std::size_t (c) * frames);
+            samples_ = std::move (samples);
         }
-        samples_ = std::move (samples);
         name_ = std::move (name);
         source_ = { pcm.channelCount, pcm.sampleRate, pcm.frames, hash.h, load->meta.fileRate, load->meta.rateKnown,
                     load->meta.bitDepth, std::string_view (name_.get(), given.size()) };
@@ -371,6 +403,16 @@ Answer Session::apply (const Request& request) noexcept
         measurementUnit_ = masterUnit_ = 0;
         measurementProgress_ = { PhaseName::Stream, 0.0, config::Config::versions().all, 0, 0, 0, 10 };
         masterProgress_ = {};
+        if (cached)
+        {
+            state_ = previousState;
+            measurementUnit_ = previousUnit;
+            measurementProgress_ = previousProgress;
+            if (state_ == State::Measured2) measurementJob_ = 0;
+            for (auto& r : measurementResults_)
+                if (r.status == MeasurementStatus::Cancelled) { r.status = MeasurementStatus::Pending; r.reason = MeasurementReason::Pending; }
+            if (placed()) detail::placeMachine (rules, project_.target, source_.channels, project_.devices, capabilities_.offeredDevices);
+        }
         answer.job = measurementJob_;
     }
     else if (const auto* set = std::get_if<command::SetTarget> (&request))
@@ -485,6 +527,41 @@ Answer Session::apply (const Request& request) noexcept
 
 namespace detail
 {
+bool Driver::retain (Session& session, JobId job, const MeasurementResult& result) noexcept
+{
+    if (job == 0 || job != session.measurementJob_ || result.key != session.measurementKey_
+        || result.framesRead > session.source_.frames
+        || Session::checkFloatingPointEnvironment() != Status::Ok || ! OwnedMeasurements::valid ({ &result, 1 })) return false;
+    const auto i = std::size_t (result.analyzer);
+    if (session.measurementResults_[i].status == MeasurementStatus::Ready) return false;
+    const auto bytes = OwnedMeasurements::storageFor ({ &result, 1 });
+    const Pcm pcm { nullptr, session.source_.channels, session.source_.frames, session.source_.sampleRate };
+    const auto plan = MeasurementPlan::storageFor (pcm, MeasurementPlan::parametersFor (pcm));
+    if (bytes > plan.analyzers[i].result || session.demand (storage (bytes, bytes)).rejection != Rejection::None) return false;
+    auto copy = OwnedMeasurements::copy ({ &result, 1 });
+    session.measurementOwnedBytes_ -= OwnedMeasurements::storageFor (session.measurementOwners_[i].view());
+    session.measurementOwnedBytes_ += bytes;
+    session.measurementOwners_[i] = std::move (copy);
+    session.measurementResults_[i] = session.measurementOwners_[i].view()[0];
+    if (result.status != MeasurementStatus::Pending && session.measurementWorkspace_)
+        session.measurementWorkspace_->release (result.analyzer);
+    ++session.revision_;
+    Notification event; event.jobId = job; event.kind = EventKind::Measurement;
+    event.payload.measurement = { result.analyzer, result.status, result.reason, result.key, session.source_.hash,
+                                  session.revision_, result.framesRead, result.total, result.stored, result.complete };
+    session.emit (event);
+    return true;
+}
+JobId Driver::continueMeasurement (Session& session) noexcept
+{
+    if (session.source_.channels == 0 || session.measurementJob_ != 0 || session.state_ == State::Measured2
+        || session.lastJob_ == std::numeric_limits<JobId>::max() || Session::checkFloatingPointEnvironment() != Status::Ok) return 0;
+    session.measurementJob_ = ++session.lastJob_;
+    for (auto& r : session.measurementResults_)
+        if (r.status == MeasurementStatus::Cancelled) { r.status = MeasurementStatus::Pending; r.reason = MeasurementReason::Pending; }
+    ++session.revision_;
+    return session.measurementJob_;
+}
 bool Driver::allowed (const Session& session, Event event) noexcept
 {
     return Table::events[index (event)].cell[index (session.column())];

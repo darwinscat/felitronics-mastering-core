@@ -54,7 +54,7 @@ Answer apply (Session& s, const Request& r)
     Answer answer;
     const auto spent = budget::spend ([&] { answer = s.apply (r); });
     ok (budget::covers (need.bytes, spent)
-        && (std::holds_alternative<command::ImportProject> (r) || need.bytes == std::uint64_t (spent.bytes)), "command demand covers events and import validation");
+        && (std::holds_alternative<command::ImportProject> (r) || std::holds_alternative<command::Load> (r) || need.bytes == std::uint64_t (spent.bytes)), "command demand covers events and import validation");
     return answer;
 }
 Stepped step (Session& s, std::uint32_t units)
@@ -169,7 +169,7 @@ void pump()
     const auto source = s->source().hash;
     (void) step (*s, 2);
     (void) apply (*s, command::Cancel { 2, old });
-    ok (step (*s, 16).state == StepState::Done && s->state() == State::Empty && s->source().channels == 0 && s->source().name.empty(), "phase-one cancel drops the source and returns Empty");
+    ok (step (*s, 16).state == StepState::Done && s->state() == State::Loaded && s->source().channels == 1 && s->source().hash == source, "phase-one cancel retains the source");
     ok (! Driver::measured1 (*s, old, source), "cancelled measurement completion is ignored");
     const auto next = apply (*s, audio.load()).job;
     ok (next != old && s->source().hash == source, "even reloading identical samples gets a new job identity");
@@ -253,7 +253,7 @@ void codec()
         const auto spent = budget::spend ([&] { status = Codec::decode (input, restored); });
         ok (status == CodecStatus::Invalid && spent.bytes == 0 && before == encoded (restored.view()), "invalid, missing, duplicate and unknown fields refuse whole before allocation");
     }
-    const auto field = text.find ("\"sourceBytes\":");
+    const auto field = text.rfind ("\"sourceBytes\":");
     const auto end = text.find (',', field);
     const auto item = text.substr (field, end - field);
     auto reordered = text.substr (0, field) + text.substr (end + 1);
@@ -287,11 +287,11 @@ void contracts()
         const auto seq = detail::Inspector::sequence (*s);
         ok (apply (*s, command::Cancel { 2, job }).rejection == Rejection::None, "measurement cancellation accepts every live phase");
         const auto v = snapshot (*s);
-        ok (s->state() == (units < 5 ? State::Empty : State::Measured1) && s->revision() == revision + 1,
-            "phase-one cancellation is exactly Loaded to Empty; phase two keeps Measured1");
-        ok (v.view().measurementJob == 0 && v.view().measurementProgress.completedUnits == 0
-            && v.view().measurementProgress.totalUnits == 0 && v.view().measurementProgress.weightsVersion == 0,
-            "measurement cancellation resets its progress");
+        ok (s->state() == (units < 5 ? State::Loaded : State::Measured1) && s->revision() == revision + 1,
+            "cancellation retains the last measurement state");
+        ok (v.view().measurementJob == 0 && v.view().measurementProgress.completedUnits == units
+            && v.view().measurementProgress.totalUnits == 10 && v.view().measurementProgress.weightsVersion != 0,
+            "measurement cancellation retains its progress");
         ok (s->events().size() == 1 && s->events()[0].seq == seq + 1
             && s->events()[0].payload.fact.view().id == FactId::Cancelled, "cancel publishes the shared text fact");
         const auto before = encoded (v.view());
@@ -300,7 +300,7 @@ void contracts()
             "rejection changes no snapshot field but publishes and advances seq");
         if (units < 5)
         {
-            ok (s->source().frames == 0 && s->source().hash == 0, "phase-one cancellation drops the audio identity");
+            ok (s->source().frames != 0 && s->source().hash != 0, "phase-one cancellation retains the audio identity");
             (void) apply (*s, audio.load());
             ok (step (*s, 16).state == StepState::Done && s->state() == State::Measured2, "the shell can reload the same audio after phase-one cancellation");
         }

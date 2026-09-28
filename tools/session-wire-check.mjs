@@ -25,6 +25,13 @@ assert.equal(snapshot.handFieldCount, 2);
 assert.deepEqual([...rows(snapshot.eqCurve, snapshotHex)], [20, -3.5, 1000, 0.25]);
 assert.deepEqual([...rows(snapshot.runs, snapshotHex)], [7, 2, 0.5]);
 assert.deepEqual([...rows(snapshot.machineDifferences, snapshotHex)], [0, 1, 24, 32]);
+assert.deepEqual([...rows(snapshot.measurements[0].arrays[0].values, snapshotHex)], [0.25, 0.5, 0.75]);
+assert.equal(snapshot.measurements[0].key, '9007199254740993');
+assert.equal(events[8].payload.key, snapshot.measurements[0].key);
+assert.equal(events[8].kind, 'measurement');
+const changedRows = structuredClone(snapshot);
+changedRows.measurements[0].arrays[0].values.stride = 2;
+assert(!accepts(changedRows, 'SessionSnapshot'));
 assert.equal(events[3].payload.args[1].integer, '-9223372036854775808');
 assert.deepEqual([...rows(events[4].payload.momentary, eventsHex)], [Number.MAX_SAFE_INTEGER, -Infinity]);
 assert.deepEqual([...rows(events[4].payload.shortTerm, eventsHex)], [4, NaN]);
@@ -37,4 +44,4 @@ for (const event of events) {
 }
 assert(!accepts({...snapshot, momentary:[]}, 'SessionSnapshot'));
 assert(!accepts({...snapshot, sourceBytes:'42'}, 'SessionSnapshot'));
-console.log('session wire: all six event variants, appended phases, exact identities/bytes and nonempty Float64Array rows agree with generated types; drift controls pass');
+console.log('session wire: all seven event variants, appended phases, exact identities/bytes and nested Float64Array rows agree with generated types; drift controls pass');

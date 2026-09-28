@@ -19,6 +19,10 @@ namespace felitronics::session::detail
 
 struct Driver
 {
+    // Copies the analyzer result before its workspace is destroyed. The caller declares OwnedMeasurements::storageFor.
+    [[nodiscard]] static bool retain (Session& session, JobId job, const MeasurementResult& result) noexcept;
+    // Continues the saved position; the command/state presentation is owned by the measurement controller.
+    [[nodiscard]] static JobId continueMeasurement (Session& session) noexcept;
     // Captured identities are mandatory; a cancelled/replaced job or source changes nothing.
     // The first measurement ended: Loaded becomes Measured1, and the devices are placed.
     [[nodiscard]] static bool measured1 (Session& session, JobId job, std::uint64_t source) noexcept;

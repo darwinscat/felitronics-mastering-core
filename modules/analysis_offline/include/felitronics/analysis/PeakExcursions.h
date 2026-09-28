@@ -12,6 +12,7 @@
 #include <cstdint>
 #include <limits>
 #include <vector>
+#include <felitronics/storage/VectorBytes.h>
 
 namespace felitronics::analysis
 {
@@ -185,6 +186,8 @@ public:
     //--------------------------------------------------------------------------------------------------
     // WHAT prepare() ASKS THE HEAP FOR (law 11d): the budget is the allocation, and the container the
     // interpolators live in counts as much as their buffers do.
+    static constexpr std::uint64_t constructBytes() noexcept { return 3u * storage::kVectorProxyBytes; }
+
     struct Storage
     {
         bool        ok        = false;
@@ -192,9 +195,11 @@ public:
         std::size_t scratchOs = 0;     // interpolator output, oversampled floats
         std::size_t channels  = 0;
 
+        std::uint64_t firstBytes() const noexcept { return PeakExcursions::constructBytes() + bytes(); }
         std::uint64_t bytes() const noexcept
         {
-            return (std::uint64_t) runs      * sizeof (Run)
+            return channels * storage::kPolyphaseProxies * storage::kVectorProxyBytes
+                 + (std::uint64_t) runs      * sizeof (Run)
                  + (std::uint64_t) scratchOs * sizeof (float)
                  + (std::uint64_t) channels  * ((std::uint64_t) oneOversamplerBytes()
                                               + sizeof (oversampling::PolyphaseOversampler));

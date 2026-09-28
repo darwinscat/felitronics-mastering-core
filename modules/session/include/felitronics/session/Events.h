@@ -4,6 +4,7 @@
 #pragma once
 
 #include <felitronics/session/Text.h>
+#include <felitronics/session/Measurements.h>
 #include <cstddef>
 #include <cstdint>
 
@@ -55,7 +56,15 @@ struct Error
     Recover recover = Recover::None;
     double needBytes = 0.0;                // exact integer, strictly below 2^53
 };
-enum class EventKind : std::uint8_t { Phase, Fact, Reading, Done, Rejected, Error };
+struct MeasurementChange
+{
+    Analyzer analyzer = Analyzer::Loudness;
+    MeasurementStatus status = MeasurementStatus::Pending;
+    MeasurementReason reason = MeasurementReason::Pending;
+    std::uint64_t key = 0, source = 0, revision = 0, framesRead = 0, total = 0, stored = 0;
+    bool complete = false;
+};
+enum class EventKind : std::uint8_t { Phase, Fact, Reading, Done, Rejected, Error, Measurement };
 struct EventPayload
 {
     // Only the member named by kind is meaningful. All payloads are self-contained values.
@@ -65,6 +74,7 @@ struct EventPayload
     Done done {};
     Rejected rejected {};
     Error error {};
+    MeasurementChange measurement {};
 };
 struct Notification
 {

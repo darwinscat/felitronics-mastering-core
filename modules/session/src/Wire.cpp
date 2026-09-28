@@ -171,11 +171,12 @@ void eventList (Writer& w, std::span<const Notification> events) noexcept
         if (! first) w.put (',');
         first = false;
         begin (w); w.field ("seq", e.seq); w.field ("jobId", e.jobId);
-        constexpr std::string_view kinds[] = { "phase", "fact", "reading", "done", "rejected", "error" };
+        constexpr std::string_view kinds[] = { "phase", "fact", "reading", "done", "rejected", "error", "measurement" };
         if (unsigned (e.kind) >= std::size (kinds)) { w.good = false; return; }
         w.field ("kind", kinds[unsigned (e.kind)]); w.text (",\"payload\":");
         switch (e.kind)
         {
+            case EventKind::Measurement: w.value (e.payload.measurement); break;
             case EventKind::Phase: w.value (e.payload.phase); break;
             case EventKind::Fact: fact (w, e.payload.fact); break;
             case EventKind::Reading:
