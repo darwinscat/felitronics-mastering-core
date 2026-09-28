@@ -68,6 +68,14 @@ struct MeasurementStorage
     double copyBytes = 0, codecBytes = 0, allocatorBytes = 0;
     double loadPeakBytes = 0, workPeakBytes = 0, peakBytes = 0, largestBlockBytes = 0;
 };
+// An instrument may use a tempo only after this decision becomes ready. A low-confidence or
+// unavailable measurement yields the configured fallback without overwriting the measured BPM.
+struct TempoChoice
+{
+    bool ready = false, measured = false;
+    double bpm = 0.0;
+    MeasurementReason reason = MeasurementReason::Pending;
+};
 class MeasurementText final
 {
 public:

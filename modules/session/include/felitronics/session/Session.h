@@ -255,6 +255,7 @@ private:
     void stepWaveform() noexcept;
     void stepSourceMeasurements() noexcept;
     [[nodiscard]] bool mandatoryReady() const noexcept;
+    [[nodiscard]] TempoChoice tempoForDevice() const noexcept;
     void clearNeedles() noexcept;
     void needlesChanged() noexcept;
     std::unique_ptr<detail::NeedlesWork> needlesWork_;

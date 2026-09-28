@@ -45,6 +45,7 @@ struct SnapshotView
     State measurementResumeState = State::Empty;
     bool mandatoryMeasurementsReady = false, devicesPlaced = false;
     bool measurementRowsIncluded = true;
+    TempoChoice tempoChoice {};
 };
 class Codec;
 // An immutable, owned value. view() remains valid until this value is moved or destroyed,

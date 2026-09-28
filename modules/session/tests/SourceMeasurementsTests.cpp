@@ -31,6 +31,12 @@ struct felitronics::session::detail::Inspector
         r.numbers = { live.numbers[0], live.numberCount[0] };
     }
     static unsigned live (const Session& s) { return s.liveMeasurements_->stage; }
+    static void tempoOutcome (Session& s, MeasurementStatus status, MeasurementReason reason,
+                              std::span<const MeasurementValue> numbers)
+    {
+        auto& result = s.measurementResults_[std::size_t (Analyzer::Tempo)];
+        result.status = status; result.reason = reason; result.numbers = numbers;
+    }
 };
 std::uint64_t digest = 0xCBF29CE484222325ull;
 bool same (double a, double b)
@@ -112,9 +118,9 @@ void fixture (unsigned channels, unsigned rate, unsigned frames, int piece, bool
         for (const auto& a : r.arrays) for (const auto v : a.values) (void) same (v, v);
     }
     ok (! snapshot.view().devicesPlaced, "snapshot explicitly separates device placement from measurements");
-    ok (s.state() == (frames >= rate * 4 / 10 ? State::Measured1 : State::Loaded), "first-phase readiness follows usable loudness and true peak; background does not invent Measured2");
+    ok (s.state() == (frames >= rate * 4 / 10 ? State::Measured2 : State::Loaded), "phase two needs usable loudness and true peak plus terminal optional statuses");
     ok (s.check (command::EditDevice { 2, HpfFields<Touched> {} }).rejection == Rejection::NotPlaced, "real measurements do not substitute defaults for device placement");
-    if (s.state() == State::Measured1) ok (s.check (command::Master { 3 }).rejection == Rejection::None, "Master remains available after optional outcomes");
+    if (s.state() == State::Measured2) ok (s.check (command::Master { 3 }).rejection == Rejection::None, "Master remains available after optional outcomes");
     else ok (s.check (command::Master { 3 }).rejection == Rejection::NotMeasured, "missing mandatory readings block Master");
     const auto plan = detail::MeasurementPlan::storageFor (pcm, detail::MeasurementPlan::parametersFor (pcm));
     for (const auto id : detail::SourceMeasurements::order)
@@ -135,6 +141,7 @@ void fixture (unsigned channels, unsigned rate, unsigned frames, int piece, bool
             if (w.crest) (void) w.crest->process (p, int (channels), int (n));
             if (w.hum) (void) w.hum->process (p, int (channels), int (n));
             if (w.bursts) (void) w.bursts->process (p, int (channels), int (n));
+            if (w.tempo) (void) w.tempo->process (p, int (channels), int (n));
             start += n;
         }
         auto* low = w.lowEnd ? w.lowEnd.get() : w.lowEnd150 ? w.lowEnd150.get() : w.infraLow.get();
@@ -208,6 +215,43 @@ void fixture (unsigned channels, unsigned rate, unsigned frames, int piece, bool
                   ok (same (r[3], v.peakPower) && same (r[7], v.energy) && same (r[12], cross.power) && r[0] == double (v.start), "burst coordinates, dose and other-axis evidence match direct output"); }
             }
         }
+        if (w.tempo)
+        {
+            auto& a = *w.tempo; (void) a.finish();
+            ok (! detail::Inspector::workspace (s).tempo, "tempo scratch is released after owned publication");
+            ok (result.status == (a.determined() ? MeasurementStatus::Ready : MeasurementStatus::Unavailable),
+                "an absent tempo carries a terminal status");
+            const auto& candidates = array (result, "candidates");
+            const auto& curve = array (result, "curve");
+            ok (candidates.stored == std::uint64_t (a.candidateCount()) && curve.stored == std::uint64_t (a.pointCount()),
+                "tempo candidates and curve survive scratch release");
+            if (a.determined())
+            {
+                ok (same (*value (result, "headlineBpm").value, a.headline().bpm)
+                    && same (*value (result, "wholeTrackBpm").value, a.wholeTrack().bpm)
+                    && same (*value (result, "headlineConfidence").value, a.headline().confidence),
+                    "headline and whole-track tempo equal the shared detector");
+                for (std::uint64_t i = 0; i < candidates.stored; ++i)
+                {
+                    const auto c = a.candidate (int (i));
+                    ok (same (candidates.values[std::size_t (i * 2)], c.bpm)
+                        && same (candidates.values[std::size_t (i * 2 + 1)], c.score), "candidate BPM and score match");
+                }
+                for (std::uint64_t i = 0; i < curve.stored; ++i)
+                {
+                    const auto p = a.point (std::int64_t (i)); const auto raw = a.rawPoint (std::int64_t (i));
+                    const auto* row = curve.values.data() + std::size_t (i * 6);
+                    ok (same (row[0], p.t) && same (row[1], p.bpm) && same (row[2], p.conf)
+                        && same (row[3], double (p.hasBpm)) && same (row[4], raw.bpm) && same (row[5], raw.conf),
+                        "smoothed and raw tempo curve preserve gaps and exact values");
+                }
+            }
+            else ok (! value (result, "headlineBpm").value && value (result, "headlineBpm").reason == result.reason,
+                "missing tempo is not a measured zero");
+            const auto choice = snapshot.view().tempoChoice;
+            ok (choice.ready && (choice.measured ? result.status == MeasurementStatus::Ready && same (choice.bpm, a.headline().bpm)
+                : same (choice.bpm, 120.0)), "device tempo is decided only from high confidence or the configured fallback");
+        }
     }
     const auto key = snapshot.view().measurements[3].key;
     (void) s.apply (command::SetTarget { 2, "club" });
@@ -241,6 +285,22 @@ void optionalFailure()
         "optional source and background refusals retain their own visible memory reasons");
     ok (view.view().measurements[10].reason != MeasurementReason::Memory && s.check (command::Master { 9 }).rejection == Rejection::None,
         "one failed optional instrument does not block the others or Master");
+
+    auto second = Session::create(); auto& withoutTempo = *second.session;
+    (void) withoutTempo.apply (command::Load { 1, { planes, 2, pcm.size(), 48000 }, {} });
+    while (detail::Inspector::live (withoutTempo) < 9 || detail::Inspector::run (withoutTempo).cursor != 8)
+        (void) withoutTempo.step (1);
+    ok (! withoutTempo.snapshot().view().tempoChoice.ready, "no early 120 BPM default is presented as a decision");
+    (void) withoutTempo.setCapacity ({ withoutTempo.liveBytes(), 0 });
+    while (detail::Inspector::run (withoutTempo).cursor == 8) (void) withoutTempo.step (1);
+    (void) withoutTempo.setCapacity ({}); drive (withoutTempo);
+    const auto terminal = withoutTempo.snapshot();
+    const auto& tempo = terminal.view().measurements[std::size_t (Analyzer::Tempo)];
+    ok (tempo.status == MeasurementStatus::Unavailable && tempo.reason == MeasurementReason::Memory
+        && terminal.view().tempoChoice.ready && ! terminal.view().tempoChoice.measured
+        && same (terminal.view().tempoChoice.bpm, 120.0) && terminal.view().tempoChoice.reason == MeasurementReason::Memory
+        && terminal.view().state == State::Measured2,
+        "optional tempo memory failure has a visible cause, a terminal fallback and no effect on mandatory readiness");
 }
 void missingMandatory()
 {
@@ -353,7 +413,7 @@ void cachedSourceAndCommands()
     for (const auto& e : s.events())
         if (e.kind == EventKind::Fact && e.payload.fact.view().id == text::FactId::SourceUnusedBits)
             unusedBitsFact = e.payload.fact.view().args[0].integer == 8;
-    ok (unusedBitsFact, "metadata-dependent warning facts agree with refreshed forensics");
+    ok (! unusedBitsFact, "metadata refresh changes retained evidence without emitting a late finding");
     ok (detail::Inspector::run (s).finished && after.view().measurements[forensics].key == before.view().measurements[forensics].key,
         "metadata refresh keeps completed source analysis and its key");
     drive (s);
@@ -403,6 +463,81 @@ void unplacedCommandsDuringWork()
     refused (Column::Measured1Unplaced);
     drive (s);
 }
+void tempoFinishCanStopAndContinue()
+{
+    const unsigned rate = 48000, frames = rate * 12;
+    std::vector<float> pcm (frames);
+    for (unsigned i = 0; i < frames; ++i)
+        pcm[i] = i % 24000 < 300 ? .2f : 0.0f;
+    const float* planes[] { pcm.data() };
+    const Pcm audio { planes, 1, frames, rate };
+    auto made = Session::create(); auto& s = *made.session;
+    (void) s.apply (command::Load { 1, audio, {} });
+    while (detail::Inspector::live (s) < 9 || detail::Inspector::run (s).cursor != 8
+           || detail::Inspector::run (s).stage != 2) (void) s.step (1);
+    ok (! s.snapshot().view().tempoChoice.ready && s.snapshot().view().state == State::Measured1,
+        "phase one does not claim a usable tempo while finish is pending");
+    (void) s.step (1); (void) s.step (1); (void) s.step (1);
+    const auto stage = detail::Inspector::workspace (s).tempo->finishStage();
+    const auto source = s.source().hash;
+    const auto prior = s.snapshot();
+    const auto stopped = budget::spend ([&] { (void) s.apply (command::Cancel { 2, s.measurementJob() }); });
+    const auto paused = s.snapshot();
+    ok (stopped.bytes == 0 && s.source().hash == source && paused.view().state == State::MeasurementStopped
+        && paused.view().canContinueMeasurement && ! paused.view().tempoChoice.ready,
+        "cancel during finish keeps PCM, unfinished tempo and a visible resume action");
+    MeasurementQuery q; q.audioId = source; q.toFrame = frames; q.columns = 64;
+    const auto zoom = s.query (q);
+    ok (zoom.view().status == QueryStatus::Ready && zoom.view().stored == 64u * 4u,
+        "waveform zoom is served while tempo finish is stopped");
+    const auto resumed = budget::spend ([&] { (void) s.apply (command::ContinueMeasurement { 3 }); });
+    ok (resumed.bytes == 0 && detail::Inspector::workspace (s).tempo->finishStage() == stage
+        && detail::Inspector::run (s).cursor == 8 && prior.view().measurements[std::size_t (Analyzer::Crest)].key
+            == s.snapshot().view().measurements[std::size_t (Analyzer::Crest)].key,
+        "continue resumes the exact finish stage without restarting completed analyzers");
+    drive (s);
+    auto plain = Session::create(); auto& reference = *plain.session;
+    (void) reference.apply (command::Load { 1, audio, {} }); drive (reference);
+    const auto a = s.snapshot(), b = reference.snapshot();
+    const auto& actual = a.view().measurements[std::size_t (Analyzer::Tempo)];
+    const auto& expected = b.view().measurements[std::size_t (Analyzer::Tempo)];
+    ok (a.view().state == State::Measured2 && actual.status == expected.status
+        && actual.reason == expected.reason && actual.numbers.size() == expected.numbers.size()
+        && actual.arrays.size() == expected.arrays.size(), "resumed finish reaches the same terminal phase");
+    for (std::size_t i = 0; i < actual.numbers.size(); ++i)
+        ok (actual.numbers[i].name == expected.numbers[i].name
+            && actual.numbers[i].reason == expected.numbers[i].reason
+            && actual.numbers[i].value.has_value() == expected.numbers[i].value.has_value()
+            && (! actual.numbers[i].value || same (*actual.numbers[i].value, *expected.numbers[i].value)),
+            "resumed tempo scalars equal uninterrupted results bit for bit");
+    for (std::size_t i = 0; i < actual.arrays.size(); ++i)
+    {
+        const auto& x = actual.arrays[i]; const auto& y = expected.arrays[i];
+        ok (x.name == y.name && x.total == y.total && x.stored == y.stored && x.values.size() == y.values.size(),
+            "resumed tempo array shape matches uninterrupted results");
+        for (std::size_t j = 0; j < x.values.size(); ++j)
+            ok (same (x.values[j], y.values[j]), "resumed tempo curve and candidates match bit for bit");
+    }
+}
+void deviceTempoPolicy()
+{
+    auto made = Session::create(); auto& s = *made.session;
+    MeasurementValue values[] { { "headlineBpm", 127.3, MeasurementReason::None, 0 },
+                                { "headlineLabel", double (felitronics::tempo::ConfidenceLabel::High), MeasurementReason::None, 0 } };
+    detail::Inspector::tempoOutcome (s, MeasurementStatus::Pending, MeasurementReason::Pending, values);
+    ok (! s.snapshot().view().tempoChoice.ready, "pending tempo never masquerades as a finished fallback");
+    detail::Inspector::tempoOutcome (s, MeasurementStatus::Ready, MeasurementReason::None, values);
+    const auto measured = s.snapshot().view().tempoChoice;
+    ok (measured.ready && measured.measured && same (measured.bpm, 127.3), "high confidence uses the measured BPM");
+    values[1].value = double (felitronics::tempo::ConfidenceLabel::Medium);
+    const auto unsure = s.snapshot().view().tempoChoice;
+    ok (unsure.ready && ! unsure.measured && same (unsure.bpm, 120.0)
+        && same (*values[0].value, 127.3), "medium confidence keeps the measured BPM separate from the device fallback");
+    detail::Inspector::tempoOutcome (s, MeasurementStatus::Unavailable, MeasurementReason::Memory, values);
+    const auto unavailable = s.snapshot().view().tempoChoice;
+    ok (unavailable.ready && ! unavailable.measured && same (unavailable.bpm, 120.0)
+        && unavailable.reason == MeasurementReason::Memory, "unavailable tempo uses the fallback with its cause");
+}
 int main()
 {
     fixture (2, 48000, 192000, 317, true);
@@ -410,6 +545,7 @@ int main()
     fixture (2, 8000, 800, 1, false);
     fixture (2, 8000, 8000, 319, false);
     optionalFailure(); missingMandatory(); driftingHum(); truncatedLists(); finiteSourceOverflow(); cachedSourceAndCommands(); unplacedCommandsDuringWork();
+    tempoFinishCanStopAndContinue(); deviceTempoPolicy();
     ok (! detail::SourceWarnings::wideBass (.059999999) && detail::SourceWarnings::wideBass (.06), "wide bass includes exactly six percent");
     ok (detail::SourceWarnings::quiet (-40) == text::FactId::Value && detail::SourceWarnings::quiet (-40.0001) == text::FactId::SourceQuiet
         && detail::SourceWarnings::quiet (-55) == text::FactId::SourceQuiet && detail::SourceWarnings::quiet (-55.0001) == text::FactId::SourceGainOnly,

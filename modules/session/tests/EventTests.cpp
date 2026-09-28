@@ -151,7 +151,7 @@ std::vector<Notification> scenario (std::uint32_t chunk, bool cancel)
     }
     while (step (*s, chunk).state == StepState::More) collect();
     collect();
-    ok (s->state() == State::Measured1 && s->masters().size() == 1 && ! s->mastering(), "both measurements and one master finish");
+    ok (s->state() == State::Measured2 && s->masters().size() == 1 && ! s->mastering(), "both measurements and one master finish");
     ok (saved.view().state == State::Measured1 && saved.view().masters.empty() && saved.view().source.name == "source.wav", "retained snapshot does not change as its session advances");
     (void) apply (*s, command::Cancel { 99, job }); collect();
     ok (events.back().kind == EventKind::Rejected && events.back().payload.rejected.commandId == 99, "rejection delta names its command and code");
@@ -165,7 +165,7 @@ void pump()
     ok (eventsHash (one) == eventsHash (bulk) && eventsHash (one) == eventsHash (again), "complete event sequence is invariant across runs and pump slicing");
     ok (eventsHash (cancelled) == eventsHash (cancelledAgain), "cancelled scenario sequence is invariant across runs and slicing");
     ok (one.size() > 22 && cancelled.size() == one.size() + 3, "measurement publishes live work and cancellation adds three events");
-    ok (eventsHash (one) == 0x820a89aab5c3d074ull && eventsHash (cancelled) == 0x9b331789613b86eaull, "event fixtures pin every active payload field");
+    ok (eventsHash (one) == 0x5b111d29d4820876ull && eventsHash (cancelled) == 0xeaa649102f2a37a5ull, "event fixtures pin every active payload field");
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     Audio audio; auto s = fresh();
     const auto old = apply (*s, audio.load()).job;
@@ -508,7 +508,7 @@ void environment()
         ok (result.refused && result.units == 0 && need.status == CodecStatus::FloatingPointEnvironment, "pump and codec refuse hostile floating-point environment");
         ok (before == encoded (snapshot (*s).view()), "FP refusal preserves all snapshot state");
         while (s->measurementJob() != 0) (void) s->step (16);
-        ok (s->state() == State::Measured1, "restoring the environment resumes the refused job");
+        ok (s->state() == State::Measured2, "restoring the environment resumes the refused job");
     }
     else budget::restoreFpEnvironment (env);
     auto empty = fresh();
