@@ -27,6 +27,8 @@ if (process.argv[2] === '--self-test') {
     process.exit(0);
 }
 const root = fileURLToPath(new URL('../', import.meta.url));
+// A Windows checkout may carry CRLF line endings; a multi-line anchor is written with \n and follows the file's.
+const inCheckoutEol = (text, s) => text.includes('\r\n') ? s.replaceAll('\r\n', '\n').replaceAll('\n', '\r\n') : s;
 const cache = readFileSync(join(resolve(process.argv[2] ?? 'build'), 'CMakeCache.txt'), 'utf8');
 const value = key => new RegExp(`^${key}:[^=]*=(.*)$`, 'm').exec(cache)?.[1]?.trim();
 const option = name => { const i = process.argv.indexOf(name); return i < 0 ? undefined : process.argv[i + 1]; };
@@ -109,8 +111,9 @@ try {
     ];
     for (const key of ['name', 'fileRate', 'bitDepth', 'rateKnown', 'target', 'onEdits', 'on', 'jobId', 'masterId'])
         mutations.push([`parser key ${key}`, 'modules/session/src/Wire.cpp', `root.get ("${key}",`, `root.get ("changed_${key}",`]);
-    for (const [name, file, before, after] of mutations) {
+    for (const [name, file, rawBefore, rawAfter] of mutations) {
         const path = join(source,file), original = readFileSync(path,'utf8');
+        const before = inCheckoutEol(original, rawBefore), after = inCheckoutEol(original, rawAfter);
         assert(original.includes(before), `mutation anchor: ${name}`);
         writeSource(path,original.replace(before,after));
         compile(); const result = compare();
@@ -176,8 +179,9 @@ try {
     const fixture = executable('felitronics_session_contract_fixture');
     buildTarget('felitronics_session_contract_fixture');
     run(fixture, []);
-    for (const [name, file, before, after] of contracts) {
+    for (const [name, file, rawBefore, rawAfter] of contracts) {
         const path = join(source, file), original = readFileSync(path, 'utf8');
+        const before = inCheckoutEol(original, rawBefore), after = inCheckoutEol(original, rawAfter);
         assert(original.includes(before), `contract anchor: ${name}`);
         writeSource(path, original.replaceAll(before, after));
         buildTarget('felitronics_session_contract_fixture');
