@@ -113,10 +113,10 @@ manualStepDb = 0.5
 # occupiedMarginWhenOnDb: the lowest note must stand at least this far above the duty line (a hypothesis; it rejects only
 #   bands at the line itself). Without a band that passes, or a valid note, there is no note: the target's floor, never
 #   the loudest band in its place.
-# infraLowCrossoverHz: the second LowEnd run, for the infra-low share (a hypothesis, and also where "below the table"
+# infraLowCrossoverHz: the infra-low LowEnd run, for the infra-low share (a hypothesis, and also where "below the table"
 #   ends). The share is LR4-weighted — content AT the crossover counts a quarter — not "energy below 30 Hz". The main run
 #   at 120 Hz cannot answer it: its share is the bass, not the infra-low (0.2274 against 0.0056 on the same mix). The
-#   price is the second and last LowEnd pass: 0.28 s per minute of programme at 48 kHz, measured.
+#   price is an additional LowEnd pass alongside the 120 and 150 Hz readings: 0.28 s per minute of programme at 48 kHz, measured.
 [lowEnd]
 occupiedFromDuty = 0.10
 occupiedMarginWhenOnDb = 2

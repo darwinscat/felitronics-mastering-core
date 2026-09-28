@@ -26,7 +26,8 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (Analyzer::Hum) == 10);
         static_assert (unsigned (Analyzer::Tempo) == 11);
         static_assert (unsigned (Analyzer::Excursions) == 12);
-        return 12;
+        static_assert (unsigned (Analyzer::LowEnd150) == 13);
+        return 13;
     }
     else if constexpr (std::is_same_v<T, Device>)
     {
@@ -111,6 +112,7 @@ constexpr void checkEnum (Analyzer value) noexcept
         case Analyzer::Hum: break;
         case Analyzer::Tempo: break;
         case Analyzer::Excursions: break;
+        case Analyzer::LowEnd150: break;
     }
 }
 

@@ -16,9 +16,9 @@ namespace felitronics::session
 enum class Analyzer : std::uint8_t
 {
     Loudness, Clipping, Programme, LowEnd, InfraLow, Forensics, Stereo, Waveform,
-    StereoBursts, Crest, Hum, Tempo, Excursions
+    StereoBursts, Crest, Hum, Tempo, Excursions, LowEnd150
 };
-inline constexpr std::size_t kAnalyzers = 13;
+inline constexpr std::size_t kAnalyzers = 14;
 inline constexpr std::size_t kMeasurementNumbers = 128, kMeasurementArrays = 16, kMeasurementNameBytes = 64;
 enum class MeasurementStatus : std::uint8_t { Pending, Ready, Unavailable, Cancelled };
 enum class MeasurementReason : std::uint8_t
