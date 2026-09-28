@@ -60,6 +60,7 @@ for (const k of ['OK', 'ERR_POISONED', 'ERR_NULL', 'ERR_ALIGNMENT', 'ERR_SPAN', 
 // The frozen surface, independently listed to catch unintended exports.
 const SURFACE = {
     1: ['_fc_session_abi_version', '_fc_session_create', '_fc_session_destroy', '_fc_session_config_version',
+        '_fc_session_set_capacity', '_fc_session_command_bytes', '_fc_session_load_bytes', '_fc_session_import_project_bytes',
         '_fc_session_create_bytes', '_fc_session_command', '_fc_session_load', '_fc_session_import_project',
         '_fc_session_export_project_size', '_fc_session_export_project_copy', '_fc_session_step',
         '_fc_session_events_size', '_fc_session_events_copy', '_fc_session_snapshot_size', '_fc_session_snapshot_copy'],
@@ -101,10 +102,12 @@ const constants = await import(pathToFileURL(join(dirname(resolve(modPath)), 'sn
 ok(constants.FC_SESSION_CONFIG_VERSION === configConstant && constants.FC_SESSION_ABI_VERSION === VERSION, 'runtime constants agree with declarations');
 const configLow = Number.parseInt(configConstant.slice(8), 16);
 const configHigh = Number.parseInt(configConstant.slice(0, 8), 16);
-const caps = M._malloc(16);
-new DataView(M.HEAPU32.buffer).setFloat64(caps, 256 * 1024 * 1024, true);
-M.HEAPU32[(caps + 8) >>> 2] = 48000;
-M.HEAPU32[(caps + 12) >>> 2] = macro('FC_SESSION_DEVICES_ALL');
+const caps = M._malloc(32);
+new DataView(M.HEAPU32.buffer).setFloat64(caps + 8, 256 * 1024 * 1024, true);
+M.HEAPU32[caps >>> 2] = 32;
+new DataView(M.HEAPU32.buffer).setFloat64(caps + 24, 256 * 1024 * 1024, true);
+M.HEAPU32[(caps + 16) >>> 2] = 48000;
+M.HEAPU32[(caps + 20) >>> 2] = macro('FC_SESSION_DEVICES_ALL');
 const create = out => M._fc_session_create(caps, configLow, configHigh, out);
 const SENTINEL = 0xC0FFEE;
 const out = M._malloc(8);
@@ -194,7 +197,7 @@ const encoder = new TextEncoder(), decoder = new TextDecoder();
 const heapBytes = () => new Uint8Array(M.HEAPU32.buffer);
 const input = text => { const bytes = encoder.encode(text); const ptr = M._malloc(Math.max(1, bytes.length)); heapBytes().set(bytes, ptr); return [ptr, bytes.length]; };
 const answer = M._malloc(macro('FC_SESSION_ANSWER_BYTES'));
-const resultSize = M._malloc(8);
+const resultSize = M._malloc(12);
 const reply = () => {
     const n = M.HEAPU32[resultSize >>> 2];
     const value = JSON.parse(decoder.decode(heapBytes().slice(answer, answer + n)));
@@ -213,8 +216,9 @@ ok(M._fc_session_create(caps, configLow ^ 1, configHigh, resultSize) === STATUS.
 ok(create(resultSize) === STATUS.OK, 'smoke session created');
 const session = M.HEAPU32[resultSize >>> 2];
 const readTransfer = what => {
+    M.HEAPU32[resultSize >>> 2] = 12;
     ok(M[`_fc_session_${what}_size`](session, resultSize) === STATUS.OK, `${what} size`);
-    const jsonBytes = M.HEAPU32[resultSize >>> 2], rowBytes = M.HEAPU32[(resultSize >>> 2) + 1];
+    const jsonBytes = M.HEAPU32[(resultSize >>> 2) + 1], rowBytes = M.HEAPU32[(resultSize >>> 2) + 2];
     const j = M._malloc(jsonBytes), r = rowBytes ? M._malloc(rowBytes) : 0;
     ok(M[`_fc_session_${what}_copy`](session, j, jsonBytes, r, rowBytes) === STATUS.OK, `${what} copy`);
     const json = JSON.parse(decoder.decode(heapBytes().slice(j, j + jsonBytes)));
@@ -225,7 +229,11 @@ const readTransfer = what => {
     };
     if (what === 'snapshot') {
         ok(accepts(json, 'SessionSnapshot'), 'snapshot decoded with generated types');
-        for (const key of ['momentary', 'shortTerm', 'runs']) viewRows(json[key]);
+        for (const key of ['momentary', 'shortTerm', 'runs', 'machineDifferences']) viewRows(json[key]);
+        if (json.machineDifferences.length) {
+            const difference = viewRows(json.machineDifferences);
+            ok(difference.length >= 4 && difference[0] === 0 && difference[1] === 1 && difference[2] === 33, 'nonempty facade rows decode file value 33 as Float64Array');
+        }
     } else {
         ok(accepts(json, 'ReadonlyArray<SessionEvent>'), 'event batch decoded with generated tagged union');
         for (const event of json) if (event.kind === 'reading') for (const key of ['momentary', 'shortTerm', 'runs']) viewRows(event.payload[key]);
@@ -237,7 +245,7 @@ for (let i = 0; i < 256; ++i) new Float32Array(M.HEAPU32.buffer)[(pcm >>> 2) + i
 M.HEAPU32[pointers >>> 2] = pcm;
 const [meta, metaBytes] = input(JSON.stringify({name:'synthetic', fileRate:48000, bitDepth:24, rateKnown:true}));
 ok(M._fc_session_load(session, 1, 0, pointers, 1, 256, 48001, meta, metaBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
-    && reply().code === 33, 'above maximum rate refused');
+    && reply().code === 31, 'above maximum rate refused');
 ok(M._fc_session_load(session, 1, 0, pointers, 1, 256, 48000, meta, metaBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
     && reply().kind === 'accepted', 'synthetic PCM loaded');
 M._free(meta); M._free(pointers); M._free(pcm);
@@ -256,6 +264,14 @@ const projectBytes = M.HEAPU32[resultSize >>> 2], project = M._malloc(projectByt
 ok(M._fc_session_export_project_copy(session, project, projectBytes, resultSize) === STATUS.OK, 'project copy');
 ok(M._fc_session_import_project(session, 3, 0, project, projectBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
     && reply().kind === 'accepted', 'project import');
+const saved = decoder.decode(heapBytes().slice(project, project + projectBytes));
+const foreign = saved.replace(/core = "[^"]+"/, 'core = "99.0.0"') + '\n[hpf]\nfq.machine = 33\n';
+const [foreignPtr, foreignBytes] = input(foreign);
+ok(M._fc_session_import_project(session, 4, 0, foreignPtr, foreignBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
+    && reply().kind === 'accepted', 'import foreign-core project with a changed machine value');
+const foreignSnapshot = readTransfer('snapshot');
+ok(foreignSnapshot.machineDifferences.length > 0, 'shipped facade transfers nonempty binary rows');
+M._free(foreignPtr);
 M._free(project);
 const past = M.HEAPU32.buffer.byteLength;
 for (const what of ['events', 'snapshot']) {

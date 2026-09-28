@@ -119,7 +119,7 @@ target_compile_definitions(felitronics_session PRIVATE ${FELITRONICS_SESSION_VER
 # file — a newer one (its mtime) runs the gate again, and so does another path (the command changes; Ninja and the Visual
 # Studio generators re-run a command whose line changed). Keeping a supplied checker built from the same sources is its
 # supplier's part: the gate re-runs when either moves, but it cannot rebuild a checker it did not build.
-add_executable(felitronics_session_config_check tests/ConfigCheck.cpp src/ConfigSchema.cpp)
+add_executable(felitronics_session_config_check tests/ConfigCheck.cpp src/ConfigSchema.cpp src/BuildContract.cpp)
 target_include_directories(felitronics_session_config_check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
                                                                     ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(felitronics_session_config_check PRIVATE felitronics::toml felitronics::analysis_offline)
@@ -381,7 +381,7 @@ if(FELITRONICS_BUILD_TESTS)
     if(NOT EMSCRIPTEN)
         set(FELITRONICS_SESSION_CONFIG_CONTROLS
             "unknown_key|engine|releaseMs = 50|releseMs = 50|releseMs|UnknownKey limiter.releseMs"
-            "out_of_range|engine|hzMax = 50|hzMax = 500|500|OutOfRange hpf.hzMax"
+            "out_of_range|engine|hzMax = 50|hzMax = 4000|4000|OutOfRange hpf.hzMax"
             "wrong_type|targets|default = \"allStreaming\"|default = 14|14|WrongType default"
             "crest_corners|engine|bandEdgesHz = [120, 2000, 6000]|bandEdgesHz = []|[]|Refused crest.bandEdgesHz"
             "geometric_offset|engine|to = -9, law = \"linear\"|to = -9, law = \"geometric\"|\"geometric\"|Refused glue.threshOffset.law"

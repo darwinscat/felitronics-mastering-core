@@ -99,7 +99,7 @@ enum class FactId : std::uint16_t
     MachineDifferences = 8,  // {count}: the saved machine layer is retained
     DefaultsConverted = 9,   // {version}: the project was converted from older defaults
 
-    // A command's rejection, by its code — what was refused and why. The four a field refuses name it: {field}.
+    // A command's rejection, by its code — what was refused and why. The three a field refuses name it: {field}.
     RejectedFloatingPointEnvironment = 101,
     RejectedNoSource = 102,
     RejectedNotPlaced = 103,
@@ -112,28 +112,28 @@ enum class FactId : std::uint16_t
     RejectedNotOffered = 110,
     RejectedUnknownJob = 111,
     RejectedUnknownMaster = 112,
-    RejectedNoFields = 113,
-    RejectedNotFinite = 114,     // {field}
-    RejectedNotOneOf = 115,      // {field}
-    RejectedOutOfTravel = 116,   // {field}
-    RejectedOffStep = 117,       // {field}
-    RejectedBadChannels = 118,
-    RejectedBadRate = 119,
-    RejectedNoAudio = 120,
-    RejectedTooLong = 121,
-    RejectedNoJobId = 122,
-    RejectedInvalidUtf8 = 123,
-    RejectedProjectTooLarge = 124,
-    RejectedProjectSyntax = 125,
-    RejectedProjectMissing = 126,
-    RejectedProjectType = 127,
-    RejectedProjectUnknownKey = 128,
-    RejectedUnknownDefaults = 129,
-    RejectedProjectCore = 130,
-    RejectedMachineMismatch = 131,
-    RejectedNewerDefaults = 132,
-    RejectedRateAboveLimit = 133,
-    RejectedMemory = 134,
+    RejectedNotFinite = 113,     // {field}
+    RejectedNotOneOf = 114,      // {field}
+    RejectedOutOfDomain = 115,   // {field}
+    RejectedBadChannels = 116,
+    RejectedBadRate = 117,
+    RejectedNoAudio = 118,
+    RejectedTooLong = 119,
+    RejectedNoJobId = 120,
+    RejectedInvalidUtf8 = 121,
+    RejectedProjectTooLarge = 122,
+    RejectedProjectSyntax = 123,
+    RejectedProjectMissing = 124,
+    RejectedProjectType = 125,
+    RejectedProjectUnknownKey = 126,
+    RejectedUnknownDefaults = 127,
+    RejectedProjectCore = 128,
+    RejectedMachineMismatch = 129,
+    RejectedNewerDefaults = 130,
+    RejectedRateAboveLimit = 131,
+    RejectedMemory = 132,
+
+    RejectedContract = 133,
 
     Measurement1 = 200,
     Measurement2 = 201,
@@ -158,7 +158,7 @@ enum class Term : std::uint16_t
 {
     PlatformWeb = 1,
     PlatformDesktop = 2,
-    // The fields a command's check can refuse (Rejection's NotFinite, NotOneOf, OutOfTravel, OffStep): the target's two
+    // The fields a command's check can refuse (Rejection's NotFinite, NotOneOf, OutOfDomain): the target's two
     // numbers, every device's knob and choice — a tick is never refused — and a load's audio, whose samples can be.
     FieldTargetLufs = 3,
     FieldTargetTp = 4,

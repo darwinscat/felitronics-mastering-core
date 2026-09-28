@@ -48,6 +48,14 @@ namespace
 {
 std::string g_targetsText, g_engineText;   // the two source documents, read once in main()
 
+void mustAccept (config::Document doc, std::string_view from, std::string_view to)
+{
+    const auto changed = plant (doc == config::Document::Engine ? g_engineText : g_targetsText, from, to, to);
+    const auto loaded = Config::bind (doc == config::Document::Targets ? changed.text : g_targetsText,
+                                      doc == config::Document::Engine ? changed.text : g_engineText);
+    ok (changed.planted && loaded.ok(), "slider hint does not reject " + std::string (to));
+}
+
 void theEmbeddedConfigIsTheSource()
 {
     felitronics::test::group ("the embedded config binds with no problem, and it is the source documents");
@@ -114,6 +122,18 @@ void theSchemaRefuses()
     mustRefuse (T, "hpfFloor = 32", "hpfFlor = 32", "hpfFlor", Fault::UnknownKey, "targets.lp.hpfFlor");
     mustRefuse (E, "[limiter]\nceilingMarginDb = 0.15\n", "[limiter]\n", "[limiter]", Fault::Missing, "limiter.ceilingMarginDb");
 
+    mustRefuse (E, "driveRange = [0, 12]", "driveRange = [0, 13]", "13", Fault::OutOfRange, "saturation.driveRange[1]");
+    mustRefuse (E, "lowWidth = 0\n", "lowWidth = 1.01\n", "1.01", Fault::OutOfRange, "monoBass.lowWidth");
+    mustRefuse (E, "releaseMs = 50", "releaseMs = 0.99", "0.99", Fault::OutOfRange, "limiter.releaseMs");
+    mustRefuse (E, "slowReleaseMs = 200", "slowReleaseMs = 0.99", "0.99", Fault::OutOfRange, "limiter.slowReleaseMs");
+    mustAccept (E, "releaseMs = 50", "releaseMs = 1");
+    mustRefuse (E, "[tilt]\ndomain = [-6, 6]\nband = 1\nfreqHz = 1000\nnormal = [-1.5, 1.5]\nhard = [-3, 3]",
+                "[tilt]\ndomain = [1, 6]\nband = 1\nfreqHz = 1000\nnormal = [1, 2]\nhard = [1, 3]",
+                "[1, 6", Fault::OutOfRange, "tilt.domain");
+    mustAccept (E, "hzDefault = 30", "hzDefault = 100.25");
+    mustAccept (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 5.25 }");
+    mustAccept (T, "lowShelfDb = 0.5", "lowShelfDb = 5.25");
+    mustAccept (T, "hpfFloor = 32", "hpfFloor = 100.25");
     // Wrong types.
     mustRefuse (E, "toleranceLu = 0.1", "toleranceLu = \"0.1\"", "\"0.1\"", Fault::WrongType, "landing.toleranceLu");
     mustRefuse (T, "noClipper = true", "noClipper = 1", "1", Fault::WrongType, "targets.lp.noClipper");
@@ -121,11 +141,11 @@ void theSchemaRefuses()
     mustRefuse (E, "dualRelease = false", "dualRelease = 0", "0", Fault::WrongType, "limiter.dualRelease");
 
     // Out of a domain: its own, an item of an array, and a range another key states (the edit travel, the knob).
-    mustRefuse (E, "hzMax = 50", "hzMax = 500", "500", Fault::OutOfRange, "hpf.hzMax");
+    mustAccept (E, "hzMax = 50", "hzMax = 500");
     mustRefuse (E, "passes = [12, 24, 32]", "passes = [12, 0, 32]", "0", Fault::OutOfRange, "landing.passes[1]");
-    mustRefuse (T, "lufs = -23", "lufs = -30", "-30", Fault::OutOfRange, "targets.ebu.lufs");
+    mustAccept (T, "lufs = -23", "lufs = -30");
     mustRefuse (T, "monoBass = 150", "monoBass = 400", "400", Fault::OutOfRange, "targets.lp.monoBass");
-    mustRefuse (E, "betweenOverDb = 1.5", "betweenOverDb = 4", "4", Fault::OutOfRange, "limiter.peakClipper.betweenOverDb");
+    mustRefuse (E, "betweenOverDb = 1.5", "betweenOverDb = 7", "7", Fault::OutOfRange, "limiter.peakClipper.betweenOverDb");
     // A bound the ranges cannot say: above zero, above the core's own number, a hole in a range.
     mustRefuse (T, "sampleRate = 48000, bitDepth = 24 }\n# YouTube Music", "sampleRate = 4000, bitDepth = 24 }\n# YouTube Music",
                 "4000", Fault::OutOfRange, "targets.youtube.sampleRate");
@@ -133,10 +153,10 @@ void theSchemaRefuses()
                 Fault::OutOfRange, "observations.clipping.fullAtShareOfProgramme");
     mustRefuse (E, "fullAtDropDb = 60", "fullAtDropDb = 24", "24", Fault::OutOfRange, "observations.spectralWall.fullAtDropDb");
 
-    // The cutoff is whole hertz: the knob's travel and where the manual cutoff starts, as the targets' floors.
-    mustRefuse (E, "hzDefault = 30", "hzDefault = 30.5", "30.5", Fault::Refused, "hpf.hzDefault", Refusal::NotOnStep);
-    mustRefuse (E, "hzMax = 50", "hzMax = 49.5", "49.5", Fault::Refused, "hpf.hzMax", Refusal::NotOnStep);
-    mustRefuse (E, "hzMin = 15", "hzMin = 15.5", "15.5", Fault::Refused, "hpf.hzMin", Refusal::NotOnStep);
+    // Fractional cutoff and slider bounds are valid independently of the slider step.
+    mustAccept (E, "hzDefault = 30", "hzDefault = 30.5");
+    mustAccept (E, "hzMax = 50", "hzMax = 50.5");
+    mustAccept (E, "hzMin = 15", "hzMin = 15.5");
 
     // Refusals across keys: names — the one a row goes by among them, which an empty key cannot be.
     mustRefuse (T, "ebu          = {", "\"\"           = {", "{ group = \"streaming\", lufs = -23", Fault::Refused, "targets.\"\"",
@@ -144,8 +164,7 @@ void theSchemaRefuses()
     mustRefuse (E, "byTarget = { cd = 2.6 }", "byTarget = { cdd = 2.6 }", "2.6", Fault::Refused, "glue.byTarget.cdd", Refusal::NotATarget);
     mustRefuse (T, "default = \"allStreaming\"", "default = \"allStreamin\"", "\"allStreamin\"", Fault::Refused, "default",
                 Refusal::NotATarget);
-    mustRefuse (T, "hpfSlopeDbPerOct = 12", "hpfSlopeDbPerOct = 18", "18", Fault::Refused, "targets.lp.hpfSlopeDbPerOct",
-                Refusal::NotOneOf);
+    mustAccept (T, "hpfSlopeDbPerOct = 12", "hpfSlopeDbPerOct = 18");
     mustRefuse (E, "detector = \"rms\"", "detector = \"rsm\"", "\"rsm\"", Fault::Refused, "compressor.detector", Refusal::NotOneOf);
     // ...duplicates, everywhere a name counts once.
     mustRefuse (T, "\"cd\", \"bandcamp\"", "\"cd\", \"cd\"", "\"cd\", \"club\"", Fault::Refused, "main[4]", Refusal::Duplicate);
@@ -203,12 +222,10 @@ void theSchemaRefuses()
                 Refusal::AnalyzerRefuses);
     mustRefuse (E, "enterDb = 6", "enterDb = 0", "[stereoBursts]", Fault::Refused, "stereoBursts", Refusal::AnalyzerRefuses);
     // ...a value off its knob's step.
-    mustRefuse (T, "appleMusic   = { group = \"streaming\", lufs = -16, tp = -1,", "appleMusic   = { group = \"streaming\", lufs = -16, tp = -1.05,",
-                "-1.05", Fault::Refused, "targets.appleMusic.tp", Refusal::NotOnStep);
-    mustRefuse (T, "lowShelfDb = 0.5", "lowShelfDb = 0.55", "0.55", Fault::Refused, "targets.lp.lowShelfDb", Refusal::NotOnStep);
-    mustRefuse (E, "betweenOverDb = 1.5", "betweenOverDb = 1.25", "1.25", Fault::Refused, "limiter.peakClipper.betweenOverDb",
-                Refusal::NotOnStep);
-    mustRefuse (E, "lowWidth = 0\n", "lowWidth = 0.03\n", "0.03", Fault::Refused, "monoBass.lowWidth", Refusal::NotOnStep);
+    mustAccept (T, "appleMusic   = { group = \"streaming\", lufs = -16, tp = -1,", "appleMusic   = { group = \"streaming\", lufs = -16, tp = -1.05,");
+    mustAccept (T, "lowShelfDb = 0.5", "lowShelfDb = 0.55");
+    mustAccept (E, "betweenOverDb = 1.5", "betweenOverDb = 1.25");
+    mustAccept (E, "lowWidth = 0\n", "lowWidth = 0.03\n");
     mustRefuse (E, "hopMs = 100", "hopMs = 15", "15", Fault::Refused, "crest.hopMs", Refusal::NotOnStep);
     // ...one threshold named in two places, refused apart.
     mustRefuse (E, "dcOffsetBelow = 0.001", "dcOffsetBelow = 0.002", "0.002", Fault::Refused, "hpf.nothingBelowNote.dcOffsetBelow",
@@ -254,7 +271,7 @@ bool hasProblem (const config::Loaded& l, config::Document d, const std::string&
 
 void theSchemaAdmitsWhatTheAnalyzersAdmit()
 {
-    felitronics::test::group ("control: what an analyzer admits passes, and a knob's grid starts where its travel starts");
+    felitronics::test::group ("control: analyzer domains and slider hints are independent");
     using config::Document;
     using config::Refusal;
     // A two-note range just two hertz wide: LowEnd::storageFor admits it (MIDI 16 and 17 fall inside 20…22 Hz), and a
@@ -264,9 +281,7 @@ void theSchemaAdmitsWhatTheAnalyzersAdmit()
     // The grid is counted from the travel's start: a mono-bass travel from 60.5 Hz puts 120 Hz half a step off.
     std::string targets;
     const auto offset = bindWith ({ { Document::Engine, "frequencyRange = [60, 300]", "frequencyRange = [60.5, 300.0]" } }, &targets);
-    ok (offset && hasProblem (*offset, Document::Targets, "targets.allStreaming.monoBass", Refusal::NotOnStep, targets,
-                              "120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }\n# A dynamic CD"),
-        "a mono-bass travel from 60.5 Hz: the targets' 120 Hz is refused as off its step");
+    ok (offset && offset->ok(), "shifted slider travel does not reject defaults");
     // Across the documents the engine's step is its own decimal, all nine places: on a low shelf of step 0.100000001 from
     // −3, 0.500000035 is on the grid and 0.5 is not.
     const auto fine = bindWith ({ { Document::Engine, "q = 0.6\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.1",
@@ -275,8 +290,7 @@ void theSchemaAdmitsWhatTheAnalyzersAdmit()
     ok (fine && fine->ok(), "lowShelfDb 0.500000035 on a step of 0.100000001 from −3: on the grid");
     const auto coarse = bindWith ({ { Document::Engine, "q = 0.6\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.1",
                                       "q = 0.6\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.100000001" } }, &targets);
-    ok (coarse && hasProblem (*coarse, Document::Targets, "targets.lp.lowShelfDb", Refusal::NotOnStep, targets, "0.5 }"),
-        "lowShelfDb 0.5 on that step: off the grid, refused");
+    ok (coarse && coarse->ok(), "defaults need not be on slider steps");
 }
 
 //==============================================================================
@@ -420,7 +434,7 @@ void theSoundIsWhatCanChangeAMaster()
         { config::Document::Targets, rows, swapped, "two target rows swapped: the order a shell lists them in", false },
         { config::Document::Targets, "default = \"allStreaming\"", "default = \"spotify\"",
           "the default target: a project that omits an unchanged target reopens on it", true },
-        { config::Document::Targets, "lufs = { from = -25,", "lufs = { from = -26,", "the hand edit's travel", false },
+        { config::Document::Targets, "lufs = { domain = \"finite\", from = -25,", "lufs = { domain = \"finite\", from = -26,", "the hand edit's travel", false },
         { config::Document::Targets, "green = [-15, -13], step = 0.1 }", "green = [-15, -13], step = 0.05 }",
           "the hand edit's step, which the targets' numbers sit on", true },
         { config::Document::Engine, "clipping = { fullAtShareOfProgramme = 0.001 }", "clipping = { fullAtShareOfProgramme = 0.002 }",

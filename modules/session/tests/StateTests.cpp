@@ -72,8 +72,8 @@ constexpr const char* kCommandNames[] = { "load", "setTarget", "editTarget", "ed
 constexpr const char* kColumnNames[] = { "Empty", "Loaded", "Measured1", "Measured2", "Mastering1", "Mastering2" };
 constexpr const char* kEventNames[] = { "Measured1", "Measured2", "Mastered" };
 constexpr const char* kRejectionNames[] = { "None", "FloatingPointEnvironment", "NoSource", "NotPlaced", "NotMeasured",
-    "Busy", "NoJob", "NoMaster", "ManualOff", "UnknownTarget", "NotOffered", "UnknownJob", "UnknownMaster", "NoFields",
-    "NotFinite", "NotOneOf", "OutOfTravel", "OffStep", "BadChannels", "BadRate", "NoAudio", "TooLong", "NoJobId", "InvalidUtf8" };
+    "Busy", "NoJob", "NoMaster", "ManualOff", "UnknownTarget", "NotOffered", "UnknownJob", "UnknownMaster",
+    "NotFinite", "NotOneOf", "OutOfDomain", "BadChannels", "BadRate", "NoAudio", "TooLong", "NoJobId", "InvalidUtf8" };
 constexpr auto kLastRejection = Rejection::InvalidUtf8;
 static_assert (std::size (kRejectionNames) == std::size_t (kLastRejection) + 1, "a name for every rejection");
 
@@ -530,10 +530,15 @@ template <class F> void knobsOf (Session& s, const std::string& device)
             const Answer a = s.apply (edit (v));
             ok (a.rejection == Rejection::None, what + " = " + std::to_string (v) + ": taken (" + nameOf (a.rejection) + ")");
         }
-        rejectedWhole (s, edit (at (-1)), Rejection::OutOfTravel, i, what + " one step below its travel");
-        rejectedWhole (s, edit (rule.knob.to.toDouble() + rule.knob.step.toDouble()), Rejection::OutOfTravel, i,
-                       what + " one step above its travel");
-        rejectedWhole (s, edit (between()), Rejection::OffStep, i, what + " half a step in");
+        const bool nyquist = rule.knob.domain == detail::Knob::Domain::SourceNyquist;
+        const double lower = nyquist ? 0 : rule.knob.minimum.toDouble() - rule.knob.step.toDouble();
+        const double upper = nyquist ? double (s.source().sampleRate) / 2 : rule.knob.maximum.toDouble() + rule.knob.step.toDouble();
+        rejectedWhole (s, edit (lower), Rejection::OutOfDomain, i, what + " below domain");
+        rejectedWhole (s, edit (upper), Rejection::OutOfDomain, i, what + " above domain");
+        if (! nyquist)
+            ok (accepted (s, edit (rule.knob.minimum.toDouble())) && accepted (s, edit (rule.knob.maximum.toDouble())), what + " domain endpoints");
+        else ok (accepted (s, edit (0.001)) && accepted (s, edit (upper - 0.5)), what + " open Nyquist domain");
+        ok (accepted (s, edit (between())), what + " half a slider step is accepted");
         rejectedWhole (s, edit (std::numeric_limits<double>::quiet_NaN()), Rejection::NotFinite, i, what + " NaN");
         rejectedWhole (s, edit (std::numeric_limits<double>::infinity()), Rejection::NotFinite, i, what + " +inf");
         rejectedWhole (s, edit (-std::numeric_limits<double>::infinity()), Rejection::NotFinite, i, what + " -inf");
@@ -584,15 +589,15 @@ void theKnobs()
     ok (accepted (s, editOf (w)), "mono bass width 0.15 — 0.15 has no double; its nearest double is taken as 0.15");
     volatile double step = 0.05;   // computed at run time, as a shell computes it
     w.width = step * 3.0;          // 0.15000000000000002: the double of no decimal of nine places or fewer
-    rejectedWhole (s, editOf (w), Rejection::OffStep, 2, "0.05 × 3, a double one ulp off 0.15");
+    ok (accepted (s, editOf (w)), "0.05 times 3 is accepted without slider quantization");
 
-    for (const std::int32_t slope : { 12, 24, 48 })
+    for (const std::int32_t slope : { 6, 12, 18, 24, 36, 48, 96 })
     {
         HpfFields<Touched> f {};
         f.slope = slope;
         ok (accepted (s, editOf (f)), "hpf slope " + std::to_string (slope) + " taken");
     }
-    for (const std::int32_t slope : { 0, 18, 36, -24, 96 })
+    for (const std::int32_t slope : { 0, 7, 95, -24, 102 })
     {
         HpfFields<Touched> f {};
         f.slope = slope;
@@ -621,9 +626,16 @@ void theKnobs()
             return e;
         };
         ok (accepted (s, edit (k.from.toDouble())) && accepted (s, edit (k.to.toDouble())), what + ": both ends taken");
-        rejectedWhole (s, edit (k.from.toDouble() - k.step.toDouble()), Rejection::OutOfTravel, i, what + " below its travel");
-        rejectedWhole (s, edit (k.to.toDouble() + k.step.toDouble()), Rejection::OutOfTravel, i, what + " above its travel");
-        rejectedWhole (s, edit (k.from.toDouble() + k.step.toDouble() / 2), Rejection::OffStep, i, what + " half a step in");
+        if (i == 0)
+            for (double v : { -1000.0, 99.0, std::numeric_limits<double>::max(), std::numeric_limits<double>::denorm_min() })
+                ok (accepted (s, edit (v)), "any finite LUFS accepted");
+        else
+        {
+            rejectedWhole (s, edit (-6.01), Rejection::OutOfDomain, i, "TP below domain");
+            rejectedWhole (s, edit (0), Rejection::OutOfDomain, i, "TP above domain");
+            ok (accepted (s, edit (-6)), "TP domain extends beyond travel");
+        }
+        ok (accepted (s, edit (k.from.toDouble() + k.step.toDouble() / 2)), what + " half a slider step is accepted");
         rejectedWhole (s, edit (std::numeric_limits<double>::quiet_NaN()), Rejection::NotFinite, i, what + " NaN");
     }
     ok (accepted (s, [] { command::EditTarget e { 1, {} }; e.fields.lufs = -13.4; e.fields.tp = -1.2; return e; }())
@@ -659,17 +671,22 @@ void theOrderOfTheChecks()
         SaturationFields<Touched> f {};
         f.drive = 99.0;
         f.mix = std::numeric_limits<double>::quiet_NaN();
-        rejectedWhole (s, editOf (f), Rejection::OutOfTravel, 1, "FIELDS in the order written: the drive before the mix");
-        rejectedWhole (s, editOf (SaturationFields<Touched> {}), Rejection::NoFields, kNoField, "an edit that touches nothing");
-        rejectedWhole (s, revertOf (SaturationFields<Mark> {}), Rejection::NoFields, kNoField, "a revert that takes back nothing");
-        rejectedWhole (s, command::EditTarget { 1, {} }, Rejection::NoFields, kNoField, "a target edit that touches nothing");
+        rejectedWhole (s, editOf (f), Rejection::OutOfDomain, 1, "FIELDS in the order written: the drive before the mix");
+        const auto revision = s.revision();
+        for (const Request request : { Request (editOf (SaturationFields<Touched> {})), Request (revertOf (SaturationFields<Mark> {})),
+                                       Request (command::EditTarget { 1, {} }) })
+        {
+            const auto answer = s.apply (request);
+            ok (answer.rejection == Rejection::None && answer.revision == revision && s.revision() == revision && s.events().empty(),
+                "empty edit/revert accepted with unchanged revision and empty batch");
+        }
     }
-    rejectedWhole (s, editOf (hpfFq (50.5)), Rejection::OutOfTravel, 1, "the travel before the step: 50.5 Hz");
+    ok (accepted (s, editOf (hpfFq (50.5))), "HPF frequency beyond travel and off step is accepted");
     {
         command::EditTarget e { 1, {} };
         e.fields.lufs = -40.05;
         e.fields.tp = std::numeric_limits<double>::quiet_NaN();
-        rejectedWhole (s, e, Rejection::OutOfTravel, 0, "the target's lufs before its tp");
+        rejectedWhole (s, e, Rejection::NotFinite, 1, "finite LUFS passes before non-finite TP");
     }
     {
         Audio three = makeAudio (2, 16);
@@ -914,7 +931,7 @@ void theRulesAreTheSchemas()
     const detail::Rules r = detail::rules();
     const auto loaded = config::Config::load();
     const config::Config& c = loaded.config;
-    ok (r.complete && loaded.ok(), "PRECONDITION: both readings complete");
+    ok (loaded.ok(), "PRECONDITION: both readings complete");
     const auto is = [] (const detail::Decimal& d, double x) { return same (d.toDouble(), x); };
     const auto knob = [&] (const detail::Knob& k, double from, double to, double step) { return is (k.from, from) && is (k.to, to) && is (k.step, step); };
     ok (knob (r.lufs, c.targets.editLufs.from, c.targets.editLufs.to, c.targets.editLufs.step)
@@ -922,7 +939,7 @@ void theRulesAreTheSchemas()
     const auto& e = c.engine;
     ok (knob (r.hpfFq, e.hpf.hzMin, e.hpf.hzMax, 1.0) && is (r.hpfDefault, e.hpf.hzDefault), "[hpf]: whole hertz from hzMin to hzMax, hzDefault");
     for (std::int32_t slope = -6; slope <= 96; ++slope)
-        if (r.slope (slope) != (std::find (e.hpf.slopes.begin(), e.hpf.slopes.end(), slope) != e.hpf.slopes.end()))
+        if (r.slope (slope) != (slope >= 6 && slope <= 96 && slope % 6 == 0))
             ok (false, "[hpf] slopes: " + std::to_string (slope));
     ok (knob (r.monoBassFq, e.monoBass.frequencyRange.min, e.monoBass.frequencyRange.max, e.monoBass.frequencyStep)
             && knob (r.monoBassWidth, e.monoBass.lowWidthRange.min, e.monoBass.lowWidthRange.max, e.monoBass.lowWidthStep)
@@ -960,12 +977,7 @@ void theRulesAreTheSchemas()
     ok (rows, "every row of [targets], field by field, and found by its key");
     ok (! r.find ("nowhere") && ! r.find (""), "a key no row has is found nowhere");
 
-    // CONTROLS: the reading says when it is not complete.
-    felitronics::toml::embedded::Node emptyRoot {};
-    const felitronics::toml::embedded::Document empty { &emptyRoot, nullptr, 1, nullptr, 0 };
-    ok (! detail::readRules (r.targets, empty.root()).complete, "control: an engine document with nothing in it is not complete");
-    ok (! detail::readRules (empty.root(), r.engine).complete, "control: a targets document with nothing in it is not complete");
-    ok (detail::readRules (r.targets, r.engine).complete, "and the two real documents are");
+
 }
 
 void theMachinePlacesWhatAPersonCouldSet()

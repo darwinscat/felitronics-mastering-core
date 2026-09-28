@@ -72,11 +72,9 @@ inline constexpr FactShape kFacts[] = {
     { FactId::RejectedNotOffered, "rejectedNotOffered", {}, 0 },
     { FactId::RejectedUnknownJob, "rejectedUnknownJob", {}, 0 },
     { FactId::RejectedUnknownMaster, "rejectedUnknownMaster", {}, 0 },
-    { FactId::RejectedNoFields, "rejectedNoFields", {}, 0 },
     { FactId::RejectedNotFinite, "rejectedNotFinite", { { { "field", ArgKind::Term, "field" } } }, 1 },
     { FactId::RejectedNotOneOf, "rejectedNotOneOf", { { { "field", ArgKind::Term, "field" } } }, 1 },
-    { FactId::RejectedOutOfTravel, "rejectedOutOfTravel", { { { "field", ArgKind::Term, "field" } } }, 1 },
-    { FactId::RejectedOffStep, "rejectedOffStep", { { { "field", ArgKind::Term, "field" } } }, 1 },
+    { FactId::RejectedOutOfDomain, "rejectedOutOfDomain", { { { "field", ArgKind::Term, "field" } } }, 1 },
     { FactId::RejectedBadChannels, "rejectedBadChannels", {}, 0 },
     { FactId::RejectedBadRate, "rejectedBadRate", {}, 0 },
     { FactId::RejectedNoAudio, "rejectedNoAudio", {}, 0 },
@@ -94,6 +92,7 @@ inline constexpr FactShape kFacts[] = {
     { FactId::RejectedNewerDefaults, "rejectedNewerDefaults", {}, 0 },
     { FactId::RejectedRateAboveLimit, "rejectedRateAboveLimit", {}, 0 },
     { FactId::RejectedMemory, "rejectedMemory", {}, 0 },
+    { FactId::RejectedContract, "rejectedContract", {}, 0 },
     { FactId::Measurement1, "measurement1", {}, 0 },
     { FactId::Measurement2, "measurement2", {}, 0 },
     { FactId::MasterPass, "masterPass", { { { "pass", ArgKind::Count, {} } } }, 1 },
@@ -200,11 +199,9 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Rejection::NotOffered: return FactId::RejectedNotOffered;
         case Rejection::UnknownJob: return FactId::RejectedUnknownJob;
         case Rejection::UnknownMaster: return FactId::RejectedUnknownMaster;
-        case Rejection::NoFields: return FactId::RejectedNoFields;
         case Rejection::NotFinite: return FactId::RejectedNotFinite;
         case Rejection::NotOneOf: return FactId::RejectedNotOneOf;
-        case Rejection::OutOfTravel: return FactId::RejectedOutOfTravel;
-        case Rejection::OffStep: return FactId::RejectedOffStep;
+        case Rejection::OutOfDomain: return FactId::RejectedOutOfDomain;
         case Rejection::BadChannels: return FactId::RejectedBadChannels;
         case Rejection::BadRate: return FactId::RejectedBadRate;
         case Rejection::NoAudio: return FactId::RejectedNoAudio;
@@ -220,6 +217,7 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Rejection::ProjectCore: return FactId::RejectedProjectCore;
         case Rejection::MachineMismatch: return FactId::RejectedMachineMismatch;
         case Rejection::RateAboveLimit: return FactId::RejectedRateAboveLimit;
+        case Rejection::Contract: return FactId::RejectedContract;
         case Rejection::Memory: return FactId::RejectedMemory;
         case Rejection::NewerDefaults: return FactId::RejectedNewerDefaults;
     }

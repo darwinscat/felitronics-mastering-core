@@ -29,6 +29,10 @@
 //   ----------   ------------------------------------------------------------------------------------------------
 //   1            capabilities/config creation and demand, commands/load/project, step, events and snapshot copies.
 #define FC_SESSION_ABI_VERSION 1u
+#define FC_SESSION_CAPABILITIES_V1_BYTES 32u
+#define FC_SESSION_SIZES_V1_BYTES 12u
+#define FC_SESSION_CAPACITY_V1_BYTES 24u
+#define FC_SESSION_STORAGE_V1_BYTES 32u
 #define FC_SESSION_STEP_UNITS 16u
 #define FC_SESSION_MIN_RATE_HZ 8000u
 #define FC_SESSION_COMMAND_JSON_BYTES 4096u
@@ -65,7 +69,7 @@ extern "C" {
 typedef uint32_t fc_session;
 
 // THE STATUS OF EVERY CALL THAT CAN FAIL. One malformed call has one answer, in the argument order below:
-// POISON -> out-parameter (null, alignment, span) -> handle -> inputs -> overlap -> the session's own.
+// POISON -> outputs -> handle -> inputs -> overlap -> minimum capacity -> session (details below).
 typedef enum fc_session_status
 {
     FC_SESSION_OK            = 0,
@@ -78,15 +82,17 @@ typedef enum fc_session_status
     // The session's own refusals (felitronics::session::Status), passed through:
     FC_SESSION_ERR_FP_ENVIRONMENT = 7,  // the calling thread flushes to zero, reads subnormals as zero, or does not round
                                         // to nearest — restore the environment (or call from another thread)
-    FC_SESSION_ERR_CONFIG = 8,
-    FC_SESSION_ERR_CONFIG_VERSION = 9,  // page build's config hash differs from this module's
-    FC_SESSION_ERR_CAPABILITIES = 10,   // invalid ceiling, rate or device bits
-    FC_SESSION_ERR_MEMORY = 11,         // create demand exceeds the supplied ceiling
-    FC_SESSION_ERR_TOO_SMALL = 12,      // caller output capacity is insufficient
-    FC_SESSION_ERR_CONTRACT = 13,       // invalid transfer value
-    FC_SESSION_ERR_STATE = 14,          // exportProject requires placed devices
-    FC_SESSION_ERR_OVERLAP = 15,        // output overlaps another output or an input
-    FC_SESSION_ERR_TRAP = 16            // shell maps a thrown wasm trap/abort to this status; see POISON
+    FC_SESSION_ERR_CONFIG_VERSION = 8,  // page build's config hash differs from this module's
+    FC_SESSION_ERR_CAPABILITIES = 9,   // invalid ceiling, rate or device bits
+    FC_SESSION_ERR_MEMORY = 10,         // create demand exceeds the supplied ceiling
+    FC_SESSION_ERR_TOO_SMALL = 11,      // caller output capacity is insufficient
+    FC_SESSION_ERR_CONTRACT = 12,       // invalid transfer value
+    FC_SESSION_ERR_OVERLAP = 13,        // output overlaps another output or an input
+    FC_SESSION_ERR_TRAP = 14,           // shell maps a thrown wasm trap/abort to this status; see POISON
+    FC_SESSION_ERR_STRUCT_TOO_SMALL = 15, // size is below the v1 record size
+    FC_SESSION_ERR_STRUCT_TOO_LARGE = 16, // size exceeds the record this build understands
+    FC_SESSION_ERR_NO_SOURCE = 17,        // export: the session has no source
+    FC_SESSION_ERR_NOT_PLACED = 18        // export: the first measurement has not placed devices
 } fc_session_status;
 
 // ====================================================================================
@@ -111,16 +117,42 @@ typedef enum fc_session_status
 // offeredDevices is a bit set of FC_SESSION_DEVICE_*. The session enforces all three, in C++ too.
 typedef struct fc_session_capabilities
 {
+    uint32_t size;
     double heapCeilingBytes;
     uint32_t maxRateHz;
     uint32_t offeredDevices;
+    double largestFreeBlockBytes;
 } fc_session_capabilities;
 
 typedef struct fc_session_sizes
 {
+    uint32_t size;
     uint32_t jsonBytes;
     uint32_t rowBytes;
 } fc_session_sizes;
+
+// All boundary structs are size-prefixed: capabilities (32), sizes (12), capacity (24), storage (32).
+// Set size to the caller's sizeof before EVERY call, including output queries. It is preserved.
+// Fields are append-only. Future builds accept older supported sizes, write only that prefix,
+// and document the v1 default of each absent later field. A new field never changes the
+// meaning of a v1 prefix; appended reserved fields default to zero and are ignored. V1 has no optional suffix fields:
+// size < the v1 size is STRUCT_TOO_SMALL; size > this build's size is STRUCT_TOO_LARGE.
+// No C++ implementation records or binary row structs cross this C boundary.
+typedef struct fc_session_capacity
+{
+    uint32_t size;
+    double heapCeilingBytes;
+    double largestFreeBlockBytes;
+} fc_session_capacity;
+
+typedef struct fc_session_storage
+{
+    uint32_t size;
+    uint32_t rejection;             // session Rejection; zero when priced, no mutation or events
+    double bytes;                   // allocating demand, independent of current capacity
+    double largestBlockBytes;       // largest allocation; import uses a conservative bound
+    double liveBytes;               // current declared bytes; caller can assess live + bytes
+} fc_session_storage;
 
 typedef enum fc_session_step_state
 {
@@ -129,12 +161,13 @@ typedef enum fc_session_step_state
 } fc_session_step_state;
 
 // ARGUMENT ORDER for every call below: poison; each output in signature order (null, alignment,
-// span); handle if present; inputs in signature order (null, alignment, span); overlap; session.
+// span, byte-capacity alignment, struct size); handle if present; inputs in signature order (null, alignment, span); overlap; session.
+// Capacity values are session checks; row byte-capacity alignment belongs to its output check.
 // Entry refusals write and allocate nothing. A call poisoned during work may have allocated
 // already, but publishes nothing. Create checks for a free slot before the session checks.
 // The session's command rejection is an OK call with a rejected JSON answer; import's declared
 // parse work may allocate on rejection.
-// Byte buffers have alignment 1, uint32/handles/sizes 4, capabilities and doubles 8, planar pointer
+// Byte buffers have alignment 1, uint32/handles/sizes 4, capabilities/capacity/storage and doubles 8, planar pointer
 // tables alignof(pointer). Null is allowed only for a zero-byte rows buffer or a zero-length input.
 // Every output is disjoint from all other buffers. A query/copy pair describes the same batch only
 // while no command or step intervenes. No pointer into session memory survives a call.
@@ -150,6 +183,17 @@ fc_session_status fc_session_create_bytes (const fc_session_capabilities* capabi
 fc_session_status fc_session_create (const fc_session_capabilities* capabilities, uint32_t config_low,
                                      uint32_t config_high, fc_session* out);
 fc_session_status fc_session_destroy (fc_session session);
+// Shell updates available capacity between calls. Each allocation checks live + demand against
+// heapCeilingBytes and largestBlockBytes against largestFreeBlockBytes before work or sample scans.
+// Values are exact integers >= 0 and < 2^53. Invalid values do not replace the previous capacity.
+fc_session_status fc_session_set_capacity (fc_session session, const fc_session_capacity* capacity);
+// Demand queries use the session's storageFor, allocate nothing, and replace no event batch.
+// They use the SAME JSON/meta/project bytes as the call. A domain/protocol refusal is in rejection.
+fc_session_status fc_session_command_bytes (fc_session session, const char* json, uint32_t json_bytes, fc_session_storage* out);
+fc_session_status fc_session_load_bytes (fc_session session, uint32_t channels, uint32_t frames, uint32_t rate,
+                                         const char* meta, uint32_t meta_bytes, fc_session_storage* out);
+fc_session_status fc_session_import_project_bytes (fc_session session, const char* project, uint32_t project_bytes,
+                                                   fc_session_storage* out);
 fc_session_status fc_session_config_version (uint32_t* out); // two halves, low first
 
 // The named-field JSON codec. No terminator is read or written; written is the exact byte length.
@@ -158,6 +202,8 @@ fc_session_status fc_session_config_version (uint32_t* out); // two halves, low 
 // rejected{code:"contract",reason,field}; domain rejections carry the stable Rejection code.
 fc_session_status fc_session_command (fc_session session, const char* json, uint32_t json_bytes,
                                       char* answer, uint32_t capacity, uint32_t* written);
+// frames is uint32: the wasm heap (at most 2 GiB) cannot hold more. Native callers needing
+// uint64 frames use C++ Pcm; frames exceeding addressable memory are refused before sample reads.
 fc_session_status fc_session_load (fc_session session, uint32_t command_low, uint32_t command_high,
                                    const float* const* pcm, uint32_t channels, uint32_t frames, uint32_t rate,
                                    const char* meta, uint32_t meta_bytes, char* answer, uint32_t capacity, uint32_t* written);
@@ -176,7 +222,7 @@ fc_session_status fc_session_snapshot_size (fc_session session, fc_session_sizes
 fc_session_status fc_session_snapshot_copy (fc_session session, char* json, uint32_t json_capacity,
                                             double* rows, uint32_t row_capacity);
 // row_capacity is BYTES, divisible by 8. JSON descriptors {byteOffset,length,stride} address the
-// separate f64 buffer: points [index,value], runs [first,count,value], machine differences
+// separate LITTLE-ENDIAN IEEE-754 f64 buffer (big-endian builds are refused at compile time): points [index,value], runs [first,count,value], machine differences
 // [device,field,fileValue,coreValue]. The page reads Float64Array. Binary non-finite values keep
 // IEEE-754 bits; JSON uses "-Infinity", "Infinity", "NaN". Byte
 // counters are exact doubles < 2^53; uint64 identities are decimal strings. Events are a union

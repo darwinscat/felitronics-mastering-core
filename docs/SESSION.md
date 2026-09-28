@@ -149,10 +149,8 @@ every stage a device writes is named, the limiter's second release included.
   same way for `fcsession`, with felitronics-toml's own tool run through node.
 - **Read by schema: form and physics.** `Config::load()` (`<felitronics/session/Config.h>`) binds them to typed structs:
   every key with its type and its domain — where a number stops meaning what its document says: a share outside 0…1, a
-  ramp whose ends would divide by zero, a series that shrinks, a value off its knob's grid (a whole number of steps from
-  where the travel starts, checked exactly on the decimals as written, across the two documents too; the high-pass's
-  travel, its default and every target's floor in whole hertz) — a range another
-  key states included (a target's loudness on the edit travel, its crossover on the knob's); the checks across keys (a
+  ramp whose ends would divide by zero, a series that shrinks, slider travel outside its domain, or a default outside
+  its domain; the checks across keys (a
   name that is no target, a target under an empty key, a name given twice, an EQ band two devices share, "no DC" apart from the dcOffset finding's
   threshold, a ramp law outside its domain, the limiter switched off, a default written out); and every key nobody read
   reported as unknown. What an analyzer admits is the analyzer's to say: the blocks the config feeds one — the low end
@@ -171,8 +169,7 @@ every stage a device writes is named, the limiter's second release included.
   suite plants over sixty more in-process, every input a review found the schema accepting among them.
 - **The owner's decisions are held apart** (`tests/ConfigDecisionsTests.cpp`): every target row field by field and the
   engine's decided numbers — the landing's series, the high-pass knob's travel and slopes and comfort window, the
-  wide-bass warning, the quiet thresholds, the peak clipper's classes, the glue knob ("up to N dB", 0…3 in steps
-  of 0.1) with its default of none, 0.5 dB when ticked and 2.6 dB on cd, the mono-bass block, the delivery rates, and the rest. The schema would admit another number where the physics allows;
+  wide-bass warning, the quiet thresholds, the peak clipper's classes, the glue slider (0…3 dB, step 0.1; accepted domain 0…6 dB) with its default of none, 0.5 dB when ticked and 2.6 dB on cd, the mono-bass block, the delivery rates, and the rest. The schema would admit another number where the physics allows;
   this suite says which number was decided, so changing one is a deliberate edit of it. Its controls plant departures
   the schema admits (a high-pass top of 51 or 60 Hz, a slope of 36, another series, another target number or rate, glue
   by default, a wider mono bass) and require them named.
@@ -191,13 +188,9 @@ every stage a device writes is named, the limiter's second release included.
   that can change a master; the decisions suite pins `sound` to the name of the defaults, so a sound number changed
   without new defaults is red. `fcore_session config version|sound-version`, the source files and the wasm module must
   answer the same numbers (ctest, and CI's artifact check).
-- **Read in place by the commands.** What the session's commands check against — the knobs' travels and steps, the
-  targets' rows, the numbers a device starts from — is read straight from the embedded documents, as the decimals
-  written (`src/Rules.h`): no table is built and nothing is allocated, so reading the config adds nothing to a command's
-  demand. Every number read there is one the schema required and checked before the library was built;
-  `felitronics_session_state_tests` holds every one of them to the schema's binding of the same documents, row by row
-  and knob by knob, and reads documents with the keys missing to see the reading say it is incomplete — which
-  `create()` answers with `Status::Config`, not reachable in a library whose build ran the gate.
+- **Read in place by the commands.** Domains, slider hints, target rows and defaults are read from the build-checked
+  embedded documents without allocation. The state suite compares them with the typed schema binding. Broken required
+  lookups trap as contract failures; session creation does not revalidate the config.
 - **Only in words, for now: the config's memory.** `Config::load()` allocates and publishes no demand; the session does
   not call it.
 - **Only in words: the golden pin is append-only once released.** A new set of sound numbers is a new name in
@@ -247,15 +240,15 @@ from the code, and ctest holds the text between the markers below to that output
 **The checks run in one declared order, the same for every command**, and the first that fails is the answer:
 1. the calling thread's floating-point environment; 2. the table; 3. the manual mode, for the device panel's commands
 (`editDevice`, `revertEdits`); 4. what the command names — a target, a device offered for this target and source, an
-id left for a new job (`load` and `master`), a load's valid UTF-8 name, the active job, a master kept; 5. the fields — at least one touched, then each touched one in the order its struct
-writes them: finite, one of its values, on its travel, on its step; 6. a load's audio — one or two channels, a rate of
+id left for a new job (`load` and `master`), a load's valid UTF-8 name, the active job, a master kept; 5. the fields — each touched one in the order its struct
+writes them: finite, one of its values, within its domain; 6. a load's audio — one or two channels, a rate of
 at least felitronics-core's 8000 Hz, frames and data, a size the machine can address, every sample finite. A rejection
 on a field names it by its place in its struct. `Session::check()` runs exactly these and says what the command would
 answer; `apply()` runs `check()` first and does the work only when it passed, so a rejected command changes no state
 by construction — `check()` is `const`.
 
 **The project** (`Project.h`) is the target — a row of `[targets]` — with a person's edits of its two numbers (loudness
-and ceiling, on `[edit]`'s travels), the manual mode, and every device's parameters. **One parameter form per device**:
+and ceiling, within `[edit]`'s domains), the manual mode, and every device's parameters. **One parameter form per device**:
 a device's fields are written once, as a template over the form a field takes, and used as the machine's layer (every
 field a value), a person's layer (a field a value only where touched — a touched field is the person's even where its
 number is the machine's) and a revert's mask (a field yes or no). Commands name fields through typed structs: an edit is the
@@ -271,14 +264,11 @@ carries one, the dither where the target's bit depth is one it serves, mono bass
   taken from a measurement: mono bass, which `[stages]` leaves off, is off. The devices are placed when the first
   measurement ends, and again on a change of target after that; before it they are unplaced — every field of the
   machine's layer at its type's zero, and the state says so. A load unplaces them again.
-- **Every value the machine places is one a person could set**: on its knob's travel and step — which the schema holds
-  for every default the config gives, and `felitronics_session_state_tests` for every target and source.
-- **A person's edits** are taken only after that — before it, `NotPlaced` — and only with the manual mode on. Every
-  value is checked on its knob exactly: the double a shell sends is read as the decimal of nine places or fewer whose
-  correctly rounded double it is, and that decimal must lie on the travel and a whole number of steps from where the
-  travel starts — by the same code that holds the config's own numbers to their grids (`src/Grid.h`). A double that is
-  the decimal of no such number is off the step. A number is kept with −0 written as +0, so two projects that say one
-  value are one project, bit for bit, and so are their recipes.
+- **Every value the machine places is one a person could set**: inside its knob's accepted domain, which the schema
+  holds for every default and `felitronics_session_state_tests` checks for every target and source.
+- **A person's edits** are taken only after placement (`NotPlaced` before it), with manual mode on. Values must be
+  finite and inside the knob's domain; travel and step guide the slider. Values between steps or outside travel are
+  accepted within the domain. A number is kept with −0 written as +0, so equal values give identical project bits.
 - **`setTarget(name, onEdits)`** replaces the target's numbers silently — a person's edits of them go with the old
   target — and keeps or takes back a person's device edits as `onEdits` says; an edit of a device the new target does
   not offer goes either way. The machine's layer is placed again for the new target.
@@ -335,9 +325,9 @@ only touched `lufs.hand` and `tp.hand` follow it. Device sections follow the typ
 a section appears only when a machine difference or touched hand follows. The reader accepts absent and empty sections.
 Each field writes `.machine` before `.hand`, one value per line. Defaults are omitted from the machine layer; every
 touched hand is retained, including a number equal to the machine's. Booleans are TOML booleans, slopes integers, and
-needles are `"auto"`, `"manual"` or `"off"`. Doubles use the shortest fixed decimal that reads back to the same binary64
-value (`to_chars` with fixed notation); all admitted knobs have at most nine decimal places. Negative zero writes `0`.
-The exact-size allocation counter and a sweep across every knob's travel hold the writer's demand and round trips.
+needles are `"auto"`, `"manual"` or `"off"`. Doubles representable in TOML's exact nine-place decimal subset use ordinary
+numbers. Other binary64 values use quoted shortest round-trip decimals, parsed by the exact JSON numeric reader.
+Negative zero writes `0`. Allocation tests and domain/extreme-value round trips hold the writer to its demand.
 
 `importProject(commandId, bytes)` is `apply(command::ImportProject{...})`. Its row in the one command table is the
 device-edit row: `NoSource`, `NotPlaced`, then accepted in both measured states and both mastering overlays. The file
@@ -351,7 +341,7 @@ Checks run in this order:
    No input byte is read before these checks. `ProjectTooLarge` requests no allocation.
 2. felitronics-toml syntax, then its `Reader` schema: required defaults, core and manual fields; target name and touched
    target numbers; devices in typed order, fields in declaration order, machine before hand. Numeric fields check the
-   written decimal's travel and exact grid. Unknown keys are reported as each table closes, including unknown sections
+   accepted domain at the loaded source's sample rate. Unknown keys are reported as each table closes, including unknown sections
    and author suffixes. Dotted keys and inline tables bind through the same schema.
 3. The defaults version, the core version spelling, and the target name.
 4. Manual mode and offered-device constraints in device/field order, then same-core machine equality in that order.
@@ -472,8 +462,8 @@ main thread.
   generator across every unit, sign, bound and precision, every note — and pins one FNV-1a hash of it, which every native
   row and the wasm tier must give.
 - **A command's rejection is a fact.** Every code of the state machine's `Rejection` (`Commands.h`) is the fact
-  100 + its code, a sentence in every declared language that says what was refused and why; the four a field refuses
-  (not finite, not one of its values, off its travel, off its step) name the field — a term for each field a check can
+  100 + its code, a sentence in every declared language that says what was refused and why; the three a field refuses
+  (not finite, not one of its values, outside its domain) name the field — a term for each field a check can
   refuse: the target's two numbers, every device's knob and choice, a load's audio. `Text::rejected(answer, request)`
   builds it from a refused answer, reading the field off the request. The mapping is a switch over every code with no
   default, so a code the state machine adds and nobody maps is an error in this repository's builds (`-Wswitch`,
@@ -717,7 +707,7 @@ fc_master's law: handles, address checks, a status per call and permanent poison
 and serialization belong to the compiled C++ library, including `Wire.h`, so a desktop can use the same behavior.
 
 `create(capabilities, configVersion)` takes the shell's exact `heapCeilingBytes` (a double below 2^53), `maxRateHz`,
-and `offeredDevices` bit set. `fc_session_create_bytes` publishes its allocation demand before creation, even when
+`largestFreeBlockBytes`, and `offeredDevices` bit set. `fc_session_create_bytes` publishes its allocation demand before creation, even when
 the ceiling cannot afford it. Creation refuses an incompatible config with `FC_SESSION_ERR_CONFIG_VERSION`.
 The generated `snapshot.d.ts` declares `FC_SESSION_CONFIG_VERSION` as a literal hash; `snapshot.mjs` exports its
 runtime value. Both come from the build's config gate. The library's no-argument `Session::create()` selects its
@@ -734,6 +724,8 @@ still apply. Convert, Lra and Final are appended to `PhaseName` at 5, 6 and 7 an
 | --- | --- |
 | `abi_version`, `config_version` | ABI number; config hash as low/high uint32 halves |
 | `create_bytes`, `create`, `destroy` | Pre-create demand; capability/config creation; generation-checked destruction |
+| `set_capacity` | Update heap ceiling and largest free block between calls |
+| `command_bytes`, `load_bytes`, `import_project_bytes` | Session allocation demand and live bytes before work |
 | `command` | Named-field JSON in; accepted/rejected JSON out |
 | `load` | Planar f32 pointers, channels, frames, rate and JSON metadata; owned PCM copy |
 | `import_project`, `export_project_size`, `export_project_copy` | Project bytes in caller buffers |
@@ -790,3 +782,38 @@ a command script (`-` is stdin) into a fresh session and prints `done <commands>
 none in it — empty, or comments and blank lines — answers `done 0`; a script with a command in it, and a session that
 refuses to be created, are refused with exit status 2 and nothing on stdout. It links the library as C++, the way a
 desktop application does.
+
+
+Knob travel and step describe the shell's slider. Commands and project import accept the domains below, including
+values between steps and beyond travel. An empty edit or revert is accepted with unchanged revision. Device edits
+still require manual mode and an offered device; the low shelf belongs to the vinyl target. Same-core machine
+mismatches are refused, and older defaults are converted with their warning.
+
+| Knob | Accepted domain | Reason |
+| --- | --- | --- |
+| Target LUFS | Any finite binary64 | Landing reports unreachable targets |
+| Target ceiling | −6 through −0.1 dBTP | Product |
+| HPF frequency | 0 < f < source sample rate / 2 | Device |
+| HPF slope | Multiples of 6, 6 through 96 dB/oct | Device, orders 1–16 |
+| Mono-bass frequency / width | 60–300 Hz / 0–1 | Product / device |
+| Glue | 0–6 dB | Product |
+| Saturation drive / mix / output | 0–12 dB / 0–1 / −6–0 dB | Product / device / product |
+| Tilt / low shelf | −6–6 dB | Product |
+| Needles above ceiling | 0–6 dB | Product |
+
+Limiter release is configuration, not a project knob. Its schema requires at least eight source samples at the
+minimum supported rate. The schema checks travel within domains, defaults within domains, and positive progress-weight
+sums. Project numeric fields use ordinary TOML numbers when its decimal subset can represent them exactly; other
+finite binary64 values use quoted shortest round-trip decimals, parsed with the same exact numeric reader as JSON.
+
+The C v1 records `fc_session_capabilities`, `fc_session_sizes`, `fc_session_capacity` and `fc_session_storage` start
+with the caller's `sizeof`. Their v1 prefixes are 32, 12, 24 and 32 bytes; fields may only be appended. Sizes below the
+v1 prefix and beyond the current build have distinct statuses. Future suffix fields must define their absent-field
+meaning for v1 callers. Demand queries for commands, loads and imports use the session's own `storageFor`; capacity
+may be updated between calls as a heap ceiling and largest free block. Live bytes plus demand and the largest allocation
+are checked before work. Nonallocating commands remain available when capacity is reduced.
+
+C load frames are uint32 because the wasm heap is limited to 2 GiB; native C++ PCM frames are uint64. Binary rows are
+little-endian IEEE-754 f64, with unsupported byte-order builds refused at compile time. Executed encoder fixtures and
+compiled layout facts freeze every event kind, snapshots, answers, row order, offsets, strides and C signatures. Local
+source controls mutate each class of fact and require comparison to fail, while append-only additions pass.

@@ -36,12 +36,11 @@ under its job's id when it is done.
 and says what the command will ask the heap for — a load its samples and its name, a master room for one more kept,
 everything else nothing — and the state suite holds every command to it, exactly, through the allocation counter.
 Reading the config costs nothing: the commands read the embedded documents in place, as the decimals written, and the
-suite holds every number of that reading to the schema's binding of the same documents. `create()` refuses a config it
-cannot read that way with `Status::Config` (`FC_SESSION_ERR_CONFIG` at the draft C boundary) — not reachable in a library
-whose build ran the config's gate.
+suite holds every number of that reading to the schema's binding of the same documents. The build gate validates the
+embedded config; a broken required lookup is a contract trap. There is no second config validation at session creation.
 
 **`felitronics_session_state_tests`**: every cell of both tables, every rejection code produced with the whole session
-compared before and after, the order of the checks, every knob's ends, step and non-finite values, placement, a change of
+compared before and after, the order of the checks, every knob's domain, fractional values and non-finite values, placement, a change of
 target with `keep` and `reset`, the manual mode switched off, a master's recipe, a load's disarm, the source hash pinned,
 and memory declared for every command.
 

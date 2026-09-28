@@ -432,7 +432,7 @@ void checkDocument (Document document, std::string_view text, std::vector<Proble
         return;
     }
     // get_if, not get: std::get's refusal is a throw, which a build without exceptions turns into an abort call.
-    if (const auto* root = std::get_if<toml::Table> (&parsed)) check (c, *root);
+    check (c, *std::get_if<toml::Table> (&parsed));
 }
 } // namespace
 

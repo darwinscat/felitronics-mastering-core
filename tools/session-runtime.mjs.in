@@ -5,7 +5,7 @@ export const FC_SESSION_CONFIG_VERSION = '@CONFIG_VERSION@';
 export function invokeSession(entry, ...args) {
     try { return entry(...args); }
     catch (error) {
-        if (error instanceof WebAssembly.RuntimeError) return 16;
+        if (error instanceof WebAssembly.RuntimeError) return 14;
         throw error;
     }
 }

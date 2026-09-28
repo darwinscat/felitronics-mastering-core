@@ -211,7 +211,7 @@ find_program(FELITRONICS_ABI_NODE NAMES node nodejs REQUIRED)
 set(FELITRONICS_ABI_PROBE ${CMAKE_CURRENT_BINARY_DIR}/session-abi-probe.cpp)
 add_custom_command(OUTPUT ${FELITRONICS_ABI_PROBE}
     COMMAND ${FELITRONICS_ABI_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/session-abi-check.mjs --generate ${FELITRONICS_ABI_PROBE}
-    DEPENDS session-abi-check.mjs fc_session_abi.h session-codec-schema.json
+    DEPENDS session-abi-check.mjs fc_session_abi.h session-codec-schema.json tests/SessionWireFacts.h
         ${PROJECT_SOURCE_DIR}/modules/session/include/felitronics/session/Commands.h
         ${PROJECT_SOURCE_DIR}/modules/session/include/felitronics/session/Project.h
         ${PROJECT_SOURCE_DIR}/modules/session/include/felitronics/session/Events.h
@@ -220,11 +220,16 @@ add_custom_command(OUTPUT ${FELITRONICS_ABI_PROBE}
         ${PROJECT_SOURCE_DIR}/modules/session/include/felitronics/session/Text.h VERBATIM)
 add_executable(felitronics_session_abi_probe ${FELITRONICS_ABI_PROBE})
 target_link_libraries(felitronics_session_abi_probe PRIVATE felitronics::session)
+target_compile_options(felitronics_session_abi_probe PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
 target_include_directories(felitronics_session_abi_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 if(FELITRONICS_BUILD_TESTS)
     add_test(NAME felitronics_session_abi_manifest
         COMMAND ${FELITRONICS_ABI_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/session-abi-check.mjs
                 ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:felitronics_session_abi_probe>)
+    if(NOT CMAKE_CROSSCOMPILING)
+        add_test(NAME felitronics_session_abi_source_controls
+            COMMAND ${FELITRONICS_ABI_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/session-abi-source-controls.mjs ${CMAKE_BINARY_DIR})
+    endif()
     add_test(NAME felitronics_session_abi_manifest_control
         COMMAND ${FELITRONICS_ABI_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/session-abi-check.mjs --self-test)
 endif()
@@ -238,6 +243,24 @@ if(FELITRONICS_BUILD_TESTS)
     target_include_directories(felitronics_session_abi_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_features(felitronics_session_abi_tests PRIVATE cxx_std_20)
     add_test(NAME felitronics_session_abi_tests COMMAND felitronics_session_abi_tests)
+    add_executable(felitronics_session_freeze_regressions tests/SessionFreezeRegressions.cpp $<TARGET_OBJECTS:felitronics_session_facade>)
+    target_link_libraries(felitronics_session_freeze_regressions PRIVATE felitronics::session)
+    target_include_directories(felitronics_session_freeze_regressions PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    foreach(item F1 F2 F5 F7 F8 F12 A B C)
+        add_test(NAME felitronics_session_freeze_${item} COMMAND felitronics_session_freeze_regressions ${item})
+    endforeach()
+    add_executable(felitronics_session_contract_fixture tests/SessionContractFixture.cpp)
+    target_link_libraries(felitronics_session_contract_fixture PRIVATE felitronics::session)
+    add_executable(felitronics_session_destroy_reentry_tests tests/SessionDestroyReentryTests.cpp $<TARGET_OBJECTS:felitronics_session_facade>)
+    target_link_libraries(felitronics_session_destroy_reentry_tests PRIVATE felitronics::session felitronics::test_support)
+    # Extend the same shared allocator for this isolated test; retain every new/delete form and its startup probe.
+    file(READ "${FELITRONICS_MASTERING_CORE_SOURCE_DIR}/test_support/alloc_counter.h" destroy_counter)
+    string(REPLACE "std::free (p);" "session_destroy_control::onFree(); std::free (p);" destroy_counter "${destroy_counter}")
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/destroy-control/alloc_counter.h"
+        "namespace session_destroy_control { void onFree() noexcept; }\n${destroy_counter}")
+    target_include_directories(felitronics_session_destroy_reentry_tests BEFORE PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/destroy-control")
+    target_include_directories(felitronics_session_destroy_reentry_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME felitronics_session_destroy_reentry_tests COMMAND felitronics_session_destroy_reentry_tests)
     add_executable(felitronics_session_abi_v1_tests tests/SessionAbiV1Tests.cpp $<TARGET_OBJECTS:felitronics_session_facade>)
     target_link_libraries(felitronics_session_abi_v1_tests PRIVATE felitronics::session felitronics::test_support)
     target_include_directories(felitronics_session_abi_v1_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

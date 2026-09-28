@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+# Travel and step are slider hints. Domain is what commands and project import accept.
 # Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 #
 # THE ENGINE — every number the mastering session decides, measures, renders and reports with, besides the targets
@@ -83,8 +84,9 @@ slowReleaseMs = 200
 #   two PLR bounds (10 and 8 dB) and "need ≤ 3 dB: do not measure", which are owner decisions.
 # kneeDb: 0 — a hard clip.
 # manualMinDb…manualMaxDb, manualStepDb: the manual threshold's travel and step (a hypothesis). The manual threshold starts
-#   at betweenOverDb, the "between" class, so that number sits on this travel and its step.
+#   at betweenOverDb, the "between" class, inside manualDomain.
 [limiter.peakClipper]
+manualDomain = [0, 6]
 littleNeedDb = 3
 shortP90Ms = 2
 shortBassShare = 0.25
@@ -144,9 +146,9 @@ skipBlocks = 0
 # noteLossDb (1.184 at 24 dB/oct and 1 dB). The cutoff is rounded to the hertz and never above hzMax: "the cutoff hit
 # 50 Hz: the lowest note is higher".
 # band: the core's EQ band the high-pass writes.
-# hzMin…hzMax: the knob's travel; hzMax is the machine's ceiling too.
+# hzMin…hzMax: slider travel; frequencyDomain checks the actual source Nyquist limit.
 # hzDefault: where the manual cutoff starts, never below the target's floor.
-# slopes: the slopes a person may pick, ascending, each on the core's 6 dB/oct grid; slopesNormal: the ones that are not a
+# slopes: slider choices, ascending; slopeDomain and slopeMultiple accept every filter order 1–16. slopesNormal: not a
 #   warning (48 warns of ringing); slopeDefault: the manual default, named as a number so that the order of the list
 #   cannot change the sound. A project with a slope outside the list reads as the nearest, the gentler on a tie
 #   (18 → 12, 36 → 24), and the report says so.
@@ -163,6 +165,10 @@ skipBlocks = 0
 #   of THIS mix is drawn. What a cutoff costs there: at 30 Hz and 24 dB/oct, 0.3 dB at 41 Hz, 2.5 dB at 31 Hz, 4.7 dB at
 #   23 Hz.
 [hpf]
+frequencyDomain = "sourceNyquist"
+slopeDomain = [6, 96]
+slopeMultiple = 6
+hzStep = 1
 band = 0
 hzMin = 15
 hzMax = 50
@@ -190,6 +196,8 @@ marks = [
 # lowWidth: the width below the crossover — 0, full mono; lowWidthRange, lowWidthStep: its knob's travel and step.
 # frequencyRange, frequencyStep: the crossover knob's travel and step (a step of 5 Hz feels like a jerk).
 [monoBass]
+frequencyDomain = [60, 300]
+lowWidthDomain = [0, 1]
 lowWidth = 0
 lowWidthRange = [0, 1]
 lowWidthStep = 0.05
@@ -274,6 +282,7 @@ trustedConfidence = "high"
 #   release = 60000 / bpm / divisor, so at 120 BPM the ends give 250 and 63 ms. byDepth is the ratio's law alone (it is
 #   defined through 1 − 1/ratio, with both ends at 1 or more); geometric needs both ends above zero.
 [glue]
+domain = [0, 6]
 default = 0
 whenTicked = 0.5
 byTarget = { cd = 2.6 }
@@ -303,6 +312,9 @@ knobStepDb = 0.1
 # bias and dcBlockHz are read by the core for the asym shape only. Below a drive of 0.00087 dB (the core's number) every
 # value is one setting.
 [saturation]
+driveDomain = [0, 12]
+mixDomain = [0, 1]
+outputDomain = [-6, 0]
 shape = "tanh"
 driveDb = 0
 driveRange = [0, 12]
@@ -321,6 +333,7 @@ dcBlockHz = 0
 # genre trap). band: the core's EQ band it writes; freqHz: its pivot; normal: where the value turns red; hard: the ends of
 # the travel; step: the knob's step.
 [tilt]
+domain = [-6, 6]
 band = 1
 freqHz = 1000
 normal = [-1.5, 1.5]
@@ -331,6 +344,7 @@ step = 0.1
 # A property of the medium, like the vinyl floor and crossover, not a decision taken from a measurement; a person decides.
 # band: the core's EQ band; freqHz, q: the shelf's corner and Q; normal, hard, step: as for tilt.
 [lowShelf]
+domain = [-6, 6]
 band = 2
 freqHz = 80
 q = 0.6

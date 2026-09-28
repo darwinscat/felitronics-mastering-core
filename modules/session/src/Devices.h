@@ -18,7 +18,7 @@
 namespace felitronics::session::detail
 {
 
-// How a field's value is checked: a tick (anything goes), a knob (finite, on its travel, on its step), one of the slopes
+// How a field's value is checked: a tick (anything goes), a knob (finite, within its domain), a filter slope
 // of [hpf], or one of the Needles modes.
 struct FieldRule
 {

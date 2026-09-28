@@ -4,6 +4,7 @@
 #include "BuildGuards.h"
 #include "JsonCodec.h"
 #include "JsonNumber.h"
+#include "BuildContract.h"
 #include "Utf8.h"
 #include <felitronics/session/Snapshot.h>
 #include <bit>
@@ -68,7 +69,8 @@ CodecStatus Codec::decode (std::string_view json, Snapshot& output) noexcept
     if (sizes.runs) out.runs_.reset (new ReadingRun[sizes.runs]);
     if (sizes.differences) out.differences_.reset (new MachineDifference[sizes.differences]);
     Storage storage { 0, 0, 0, 0, 0, out.text_.get(), out.masters_.get(), out.points_.get(), out.runs_.get(), out.differences_.get() };
-    if (! read (json, storage, out.view_)) return CodecStatus::Invalid;
+    const bool filled = read (json, storage, out.view_);
+    detail::debugBound (filled);
     output = std::move (out);
     return CodecStatus::Ok;
 }

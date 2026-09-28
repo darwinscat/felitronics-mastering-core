@@ -28,7 +28,7 @@
 // taken from one, and mono bass — which the defaults leave off — is off. An imported layer from another core
 // retains its saved values and provenance; its differences from this placement are exposed by the snapshot.
 //
-// The units and the knobs' travels are the config's (modules/session/config/engine.toml, the section of each device);
+// The units, knob domains and slider hints are the config's (modules/session/config/engine.toml, the section of each device);
 // they are not repeated here.
 namespace felitronics::session
 {

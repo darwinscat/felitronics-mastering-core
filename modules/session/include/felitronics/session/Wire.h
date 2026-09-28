@@ -27,6 +27,10 @@ public:
     [[nodiscard]] static CodecStatus snapshot (const Session& session, std::span<char> json, std::span<double> rows) noexcept;
     [[nodiscard]] static TransferNeed eventsBytes (std::span<const Notification> events) noexcept;
     [[nodiscard]] static CodecStatus events (std::span<const Notification> events, std::span<char> json, std::span<double> rows) noexcept;
+    [[nodiscard]] static Checked commandStorage (const Session& session, std::string_view json) noexcept;
+    [[nodiscard]] static Checked loadStorage (const Session& session, std::uint32_t channels, std::uint64_t frames,
+                                              std::uint32_t rate, std::string_view meta) noexcept;
+    [[nodiscard]] static Checked importStorage (const Session& session, std::string_view project) noexcept;
     // Contract or domain rejection is an answer, CodecStatus::Ok. A non-Ok status writes nothing.
     // The answer buffer must hold kAnswerBytes BEFORE parsing or applying a command.
     [[nodiscard]] static CodecStatus command (Session& session, std::string_view json, std::span<char> answer, std::uint32_t& written) noexcept;

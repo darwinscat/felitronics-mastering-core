@@ -9,6 +9,7 @@
 #include "Devices.h"
 #include "Grid.h"
 #include "Rules.h"
+#include "BuildContract.h"
 
 #include <felitronics/session/Project.h>
 
@@ -30,7 +31,7 @@ bool offered (const Rules& rules, std::uint16_t row, std::uint32_t channels, Dev
         case Device::Tilt:
         case Device::Limiter:  return true;
     }
-    return false;
+    storageOverflow();
 }
 
 void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices) noexcept

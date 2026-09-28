@@ -127,17 +127,16 @@ private:
 
 fc_session packHandle (std::uint32_t slot, std::uint32_t gen) noexcept
 {
-    return ((gen & kMaxGeneration) << 8) | (slot + 1u);
+    return (gen << 8) | (slot + 1u);
 }
 
 Slot* lookup (fc_session h) noexcept
 {
-    if (h == 0u) return nullptr;
     const std::uint32_t slot = (h & 0xFFu) - 1u;          // 0 wraps to a huge index, refused below
     if (slot >= FC_SESSION_MAX_HANDLES) return nullptr;
     Slot& s = g_slots[slot];
     if (s.session == nullptr) return nullptr;
-    if ((s.gen & kMaxGeneration) != (h >> 8)) return nullptr;
+    if (s.gen != (h >> 8)) return nullptr;
     return &s;
 }
 
@@ -149,9 +148,8 @@ bool inHeap (const void* p, std::uint64_t bytes) noexcept
 {
 #if defined(__EMSCRIPTEN__)
     const std::uint64_t base = (std::uint64_t) reinterpret_cast<std::uintptr_t> (p);
-    if (base == 0) return false;
+    // Every span is a uint32 count times at most sizeof (pointer); this sum fits uint64.
     const std::uint64_t end = base + bytes;
-    if (end < base) return false;                                      // wrapped
     return end <= (std::uint64_t) emscripten_get_heap_size();
 #else
     const auto base = reinterpret_cast<std::uintptr_t> (p);
@@ -167,6 +165,24 @@ fc_session_status pointer (const void* p, std::uint64_t bytes, std::size_t align
     if (! inHeap (p, bytes)) return FC_SESSION_ERR_SPAN;
     return FC_SESSION_OK;
 }
+constexpr std::uint32_t minimumSize (const fc_session_capabilities*) noexcept { return FC_SESSION_CAPABILITIES_V1_BYTES; }
+constexpr std::uint32_t minimumSize (const fc_session_sizes*) noexcept { return FC_SESSION_SIZES_V1_BYTES; }
+constexpr std::uint32_t minimumSize (const fc_session_capacity*) noexcept { return FC_SESSION_CAPACITY_V1_BYTES; }
+constexpr std::uint32_t minimumSize (const fc_session_storage*) noexcept { return FC_SESSION_STORAGE_V1_BYTES; }
+template <class T> fc_session_status record (const T* p) noexcept
+{
+    if (const auto st = pointer (p, minimumSize (p), alignof (T)); st != FC_SESSION_OK) return st;
+    if (p->size < minimumSize (p)) return FC_SESSION_ERR_STRUCT_TOO_SMALL;
+    if (p->size > sizeof (T)) return FC_SESSION_ERR_STRUCT_TOO_LARGE;
+    return inHeap (p, p->size) ? FC_SESSION_OK : FC_SESSION_ERR_SPAN;
+}
+fc_session_status rejection (Rejection r) noexcept
+{
+    if (r == Rejection::FloatingPointEnvironment) return FC_SESSION_ERR_FP_ENVIRONMENT;
+    if (r == Rejection::NoSource) return FC_SESSION_ERR_NO_SOURCE;
+    if (r == Rejection::NotPlaced) return FC_SESSION_ERR_NOT_PLACED;
+    return r == Rejection::None ? FC_SESSION_OK : FC_SESSION_ERR_CONTRACT;
+}
 bool overlap (const void* a, std::uint64_t an, const void* b, std::uint64_t bn) noexcept
 {
     if (an == 0 || bn == 0) return false;
@@ -180,7 +196,6 @@ fc_session_status status (Status s) noexcept
     {
         case Status::Ok: return FC_SESSION_OK;
         case Status::FloatingPointEnvironment: return FC_SESSION_ERR_FP_ENVIRONMENT;
-        case Status::Config: return FC_SESSION_ERR_CONFIG;
         case Status::ConfigVersion: return FC_SESSION_ERR_CONFIG_VERSION;
         case Status::Capabilities: return FC_SESSION_ERR_CAPABILITIES;
         case Status::Memory: return FC_SESSION_ERR_MEMORY;
@@ -200,7 +215,7 @@ fc_session_status status (CodecStatus s) noexcept
 }
 felitronics::session::Capabilities unpack (const fc_session_capabilities& caps) noexcept
 {
-    return { caps.heapCeilingBytes, caps.maxRateHz, caps.offeredDevices };
+    return { caps.heapCeilingBytes, caps.maxRateHz, caps.offeredDevices, caps.largestFreeBlockBytes };
 }
 std::uint64_t joined (std::uint32_t low, std::uint32_t high) noexcept { return (std::uint64_t (high) << 32) | low; }
 fc_session_status answerOut (char* out, std::uint32_t capacity, std::uint32_t* written) noexcept
@@ -218,22 +233,30 @@ fc_session_status answerInputs (const char* input, std::uint32_t size, char* out
 }
 fc_session_status transferSize (fc_session session, fc_session_sizes* out, bool snapshot) noexcept
 {
-    if (const auto st = pointer (out, sizeof (*out), alignof (fc_session_sizes)); st != FC_SESSION_OK) return st;
+    if (const auto st = record (out); st != FC_SESSION_OK) return st;
     const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
     const auto n = snapshot ? Wire::snapshotBytes (*slot->session) : Wire::eventsBytes (slot->session->events());
     if (n.status != CodecStatus::Ok) return status (n.status);
-    *out = { n.jsonBytes, n.rowBytes }; return FC_SESSION_OK;
+    out->jsonBytes = n.jsonBytes; out->rowBytes = n.rowBytes; return FC_SESSION_OK;
 }
 fc_session_status transferCopy (fc_session session, char* json, std::uint32_t capacity,
                                 double* rows, std::uint32_t rowCapacity, bool snapshot) noexcept
 {
     if (const auto st = pointer (json, capacity, 1); st != FC_SESSION_OK) return st;
     if (const auto st = pointer (rows, rowCapacity, 8, true); st != FC_SESSION_OK) return st;
+    if (rowCapacity % sizeof (double) != 0) return FC_SESSION_ERR_ALIGNMENT;
     const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
     if (overlap (json, capacity, rows, rowCapacity)) return FC_SESSION_ERR_OVERLAP;
-    if (rowCapacity % sizeof (double) != 0) return FC_SESSION_ERR_ALIGNMENT;
     return status (snapshot ? Wire::snapshot (*slot->session, { json, capacity }, { rows, rowCapacity / sizeof (double) })
                            : Wire::events (slot->session->events(), { json, capacity }, { rows, rowCapacity / sizeof (double) }));
+}
+
+fc_session_status storageOut (const Session& session, const felitronics::session::Checked& priced, fc_session_storage* out) noexcept
+{
+    if (priced.rejection == Rejection::FloatingPointEnvironment) return FC_SESSION_ERR_FP_ENVIRONMENT;
+    out->rejection = std::uint32_t (priced.rejection);
+    out->bytes = double (priced.bytes); out->largestBlockBytes = double (priced.largestBlockBytes);
+    out->liveBytes = session.liveBytes(); return FC_SESSION_OK;
 }
 
 } // namespace
@@ -248,7 +271,7 @@ FC_EXPORT fc_session_status fc_session_create_bytes (const fc_session_capabiliti
     const CallGuard call;
     if (call.refused()) return FC_SESSION_ERR_POISONED;
     if (const auto st = pointer (out, sizeof (*out), 8); st != FC_SESSION_OK) return st;
-    if (const auto st = pointer (capabilities, sizeof (*capabilities), 8); st != FC_SESSION_OK) return st;
+    if (const auto st = record (capabilities); st != FC_SESSION_OK) return st;
     if (overlap (out, sizeof (*out), capabilities, sizeof (*capabilities))) return FC_SESSION_ERR_OVERLAP;
     const auto caps = unpack (*capabilities);
     const auto st = Session::checkCreate (caps, felitronics::session::config::Config::versions().all);
@@ -261,7 +284,7 @@ FC_EXPORT fc_session_status fc_session_create (const fc_session_capabilities* ca
     const CallGuard call;
     if (call.refused()) return FC_SESSION_ERR_POISONED;
     if (const auto st = pointer (out, sizeof (*out), alignof (fc_session)); st != FC_SESSION_OK) return st;
-    if (const auto st = pointer (capabilities, sizeof (*capabilities), 8); st != FC_SESSION_OK) return st;
+    if (const auto st = record (capabilities); st != FC_SESSION_OK) return st;
     if (overlap (out, sizeof (*out), capabilities, sizeof (*capabilities))) return FC_SESSION_ERR_OVERLAP;
     std::uint32_t slot = 0;
     while (slot < FC_SESSION_MAX_HANDLES && (g_slots[slot].session != nullptr || g_slots[slot].retired)) ++slot;
@@ -281,6 +304,7 @@ FC_EXPORT fc_session_status fc_session_destroy (fc_session session)
     Slot* s = lookup (session);
     if (s == nullptr) return FC_SESSION_ERR_HANDLE;
     delete s->session;
+    if (g_callState == kPoisoned) return FC_SESSION_ERR_POISONED;
     s->session = nullptr;
     // The generation moves on, so the handle just destroyed can never address the next session in this slot — and at
     // the last generation the slot retires instead of wrapping (see HANDLES above). Generation 0 is never issued, so no
@@ -336,7 +360,6 @@ FC_EXPORT fc_session_status fc_session_load (fc_session session, std::uint32_t c
         for (std::uint32_t c = 0; c < channels; ++c)
             if (const auto st = pointer (pcm[c], std::uint64_t (frames) * sizeof (float), alignof (float), frames == 0);
                 st != FC_SESSION_OK) return st;
-    if (const auto st = pointer (meta, meta_bytes, 1, true); st != FC_SESSION_OK) return st;
     if (const auto st = answerInputs (meta, meta_bytes, answer, capacity, written); st != FC_SESSION_OK) return st;
     if (overlap (pcm, std::uint64_t (channels) * sizeof (*pcm), answer, capacity)
         || overlap (pcm, std::uint64_t (channels) * sizeof (*pcm), written, sizeof (*written))) return FC_SESSION_ERR_OVERLAP;
@@ -376,8 +399,7 @@ FC_EXPORT fc_session_status fc_session_export_project_size (fc_session session, 
     if (const auto st = pointer (out, sizeof (*out), alignof (std::uint32_t)); st != FC_SESSION_OK) return st;
     const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
     const auto need = slot->session->exportProjectBytes();
-    if (need.rejection == Rejection::FloatingPointEnvironment) return FC_SESSION_ERR_FP_ENVIRONMENT;
-    if (need.rejection != Rejection::None) return FC_SESSION_ERR_STATE;
+    if (const auto st = rejection (need.rejection); st != FC_SESSION_OK) return st;
     *out = std::uint32_t (need.bytes); return FC_SESSION_OK;
 }
 FC_EXPORT fc_session_status fc_session_export_project_copy (fc_session session, char* output, std::uint32_t capacity,
@@ -389,8 +411,7 @@ FC_EXPORT fc_session_status fc_session_export_project_copy (fc_session session, 
     const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
     if (overlap (output, capacity, written, sizeof (*written))) return FC_SESSION_ERR_OVERLAP;
     const auto need = slot->session->exportProjectBytes();
-    if (need.rejection == Rejection::FloatingPointEnvironment) return FC_SESSION_ERR_FP_ENVIRONMENT;
-    if (need.rejection != Rejection::None) return FC_SESSION_ERR_STATE;
+    if (const auto st = rejection (need.rejection); st != FC_SESSION_OK) return st;
     if (capacity < need.bytes) return FC_SESSION_ERR_TOO_SMALL;
     (void) slot->session->exportProject ({ output, capacity }); *written = std::uint32_t (need.bytes); return FC_SESSION_OK;
 }
@@ -429,4 +450,47 @@ FC_EXPORT fc_session_status fc_session_snapshot_copy (fc_session session, char* 
     const CallGuard call;
     if (call.refused()) return FC_SESSION_ERR_POISONED;
     return transferCopy (session, json, json_capacity, rows, row_capacity, true);
+}
+
+FC_EXPORT fc_session_status fc_session_set_capacity (fc_session session, const fc_session_capacity* capacity)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = record (capacity); st != FC_SESSION_OK) return st;
+    return status (slot->session->setCapacity ({ capacity->heapCeilingBytes, capacity->largestFreeBlockBytes }));
+}
+FC_EXPORT fc_session_status fc_session_command_bytes (fc_session session, const char* json, std::uint32_t json_bytes,
+                                                     fc_session_storage* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = record (out); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = pointer (json, json_bytes, 1, true); st != FC_SESSION_OK) return st;
+    if (overlap (out, sizeof (*out), json, json_bytes)) return FC_SESSION_ERR_OVERLAP;
+    return storageOut (*slot->session, Wire::commandStorage (*slot->session, { json, json_bytes }), out);
+}
+FC_EXPORT fc_session_status fc_session_load_bytes (fc_session session, std::uint32_t channels, std::uint32_t frames,
+                                                  std::uint32_t rate, const char* meta, std::uint32_t meta_bytes,
+                                                  fc_session_storage* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = record (out); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = pointer (meta, meta_bytes, 1, true); st != FC_SESSION_OK) return st;
+    if (overlap (out, sizeof (*out), meta, meta_bytes)) return FC_SESSION_ERR_OVERLAP;
+    return storageOut (*slot->session, Wire::loadStorage (*slot->session, channels, frames, rate, { meta, meta_bytes }), out);
+}
+FC_EXPORT fc_session_status fc_session_import_project_bytes (fc_session session, const char* project,
+                                                            std::uint32_t project_bytes, fc_session_storage* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = record (out); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = pointer (project, project_bytes, 1, true); st != FC_SESSION_OK) return st;
+    if (overlap (out, sizeof (*out), project, project_bytes)) return FC_SESSION_ERR_OVERLAP;
+    return storageOut (*slot->session, Wire::importStorage (*slot->session, { project, project_bytes }), out);
 }

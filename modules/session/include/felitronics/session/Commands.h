@@ -66,11 +66,9 @@ enum class Rejection : std::uint8_t
     UnknownJob,                 // not an active measurement or master
     UnknownMaster,              // no master kept under this id
     // the fields
-    NoFields,                   // an edit or a revert that touches no field
     NotFinite,                  // a value or a sample that is not a finite number
     NotOneOf,                   // not one of the values this field takes (a slope, a mode)
-    OutOfTravel,                // outside the knob's travel
-    OffStep,                    // not a whole number of the knob's steps from where its travel starts
+    OutOfDomain,                // outside the knob's accepted domain
     // the audio (load)
     BadChannels,                // not one or two channels
     BadRate,                    // a sample rate below 8000 Hz (felitronics-core's lowest)
@@ -89,7 +87,8 @@ enum class Rejection : std::uint8_t
     MachineMismatch,            // this core's decision disagrees with its own saved layer
     NewerDefaults,              // defaults are newer than the current compiled table
     RateAboveLimit,             // above the shell's maxRateHz
-    Memory,                     // live declared bytes plus demand exceeds heapCeilingBytes
+    Memory,                     // live bytes plus demand exceeds capacity, or a block cannot fit
+    Contract,                   // malformed command or metadata at the protocol boundary
 };
 
 using CommandId = std::uint64_t;   // the shell's own number for a request, given back in its answer
@@ -173,6 +172,7 @@ struct Checked
     std::uint8_t field = kNoField;
     std::uint64_t bytes = 0;                   // preflight passed: demand of apply(), including import refusals; otherwise 0
     double needBytes = 0.0;                    // Memory: total declared live bytes and demand
+    std::uint64_t largestBlockBytes = 0;       // largest single allocation (import: conservative bound)
 };
 
 // A session's situation — its state, and whether a master is being made — as the column of the tables below.
@@ -190,8 +190,8 @@ inline constexpr std::size_t kColumns = 6;
 //   4. NAMES    what the command names: a target (setTarget), a device offered for this target and source (editDevice,
 //               revertEdits), an id left for a new job (load, master: NoJobId), a load's UTF-8 name (InvalidUtf8),
 //               the active job (cancel), a master kept (forget)
-//   5. FIELDS   an edit or a revert touches a field (NoFields); then field by field, in the order written: finite, one of
-//               the field's values, on its travel, on its step
+//   5. FIELDS   each touched field, in the order written: finite, one of its values, within its domain.
+//               Empty edits/reverts are accepted without a revision change; travel and step are slider hints.
 //   6. AUDIO    a load's audio: its channels, its rate, its frames, its size, then every sample finite
 // Only a command that passed them all does its work. A load's work starts by DISARMING — whatever runs on the old source
 // stops, and the old source, its measurements, its masters and a person's device edits go — and then writes the new one.

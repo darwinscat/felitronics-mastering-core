@@ -7,6 +7,9 @@
 #include <felitronics/session/Wire.h>
 #include <algorithm>
 #include <limits>
+#include <bit>
+
+static_assert (std::endian::native == std::endian::little, "fc_session v1 requires little-endian f64 rows");
 
 namespace felitronics::session
 {
@@ -235,10 +238,10 @@ CodecStatus Wire::events (std::span<const Notification> e, std::span<char> j, st
     const auto st = buffers (eventsBytes (e), j, r); if (st != CodecStatus::Ok) return st;
     Writer w; w.output = j.data(); w.binaryRows = true; w.rows = r.data(); eventList (w, e); return CodecStatus::Ok;
 }
-CodecStatus Wire::command (Session& session, std::string_view json, std::span<char> output, std::uint32_t& written) noexcept
+namespace
 {
-    if (output.size() < kAnswerBytes) return CodecStatus::TooSmall;
-    if (Session::checkFloatingPointEnvironment() != Status::Ok) return CodecStatus::FloatingPointEnvironment;
+template <class F> auto parseCommand (std::string_view json, F&& finish) noexcept
+{
     Problem p; Object root (json, p); std::string_view kind; CommandId id = 0;
     root.get ("kind", kind); root.get ("commandId", id);
     Request request = command::Master { id };
@@ -282,22 +285,62 @@ CodecStatus Wire::command (Session& session, std::string_view json, std::span<ch
         fields.finish();
     }
     else if (kind != "master") p.set ("invalid", "kind");
-    root.finish(); Writer w; w.output = output.data();
-    if (! p.reason.empty()) problemAnswer (w, id, session.revision(), p);
+    root.finish(); return finish (id, request, p);
+}
+template <class F> auto parseLoad (CommandId id, const Pcm& pcm, std::string_view meta, F&& finish) noexcept
+{
+    Problem p; Object root (meta, p); SourceMeta m;
+    root.get ("name", m.name); root.get ("fileRate", m.fileRate); root.get ("bitDepth", m.bitDepth); root.get ("rateKnown", m.rateKnown);
+    root.finish(); return finish (id, Request (command::Load { id, pcm, m }), p);
+}
+CodecStatus writeCommand (Session& session, CommandId id, const Request& request, const Problem& p,
+                          std::span<char> output, std::uint32_t& written) noexcept
+{
+    Writer w; w.output = output.data();
+    if (! p.reason.empty())
+    {
+        const auto refused = session.rejectProtocol (id);
+        problemAnswer (w, refused.command, refused.revision, p);
+    }
     else answer (w, session.apply (request));
     written = std::uint32_t (w.size); return CodecStatus::Ok;
+}
+Checked commandStorage (const Session& session, const Request& request, const Problem& p) noexcept
+{
+    return p.reason.empty() ? session.storageFor (request) : Checked { Rejection::Contract };
+}
+}
+Checked Wire::commandStorage (const Session& session, std::string_view json) noexcept
+{
+    if (Session::checkFloatingPointEnvironment() != Status::Ok) return { Rejection::FloatingPointEnvironment };
+    return parseCommand (json, [&] (CommandId, const Request& request, const Problem& p)
+    { return felitronics::session::commandStorage (session, request, p); });
+}
+Checked Wire::loadStorage (const Session& session, std::uint32_t channels, std::uint64_t frames,
+                           std::uint32_t rate, std::string_view meta) noexcept
+{
+    if (Session::checkFloatingPointEnvironment() != Status::Ok) return { Rejection::FloatingPointEnvironment };
+    return parseLoad (0, { nullptr, channels, frames, rate }, meta, [&] (CommandId, const Request& request, const Problem& p)
+    { return felitronics::session::commandStorage (session, request, p); });
+}
+Checked Wire::importStorage (const Session& session, std::string_view project) noexcept
+{
+    return session.storageFor (command::ImportProject { 0, project });
+}
+CodecStatus Wire::command (Session& session, std::string_view json, std::span<char> output, std::uint32_t& written) noexcept
+{
+    if (output.size() < kAnswerBytes) return CodecStatus::TooSmall;
+    if (Session::checkFloatingPointEnvironment() != Status::Ok) return CodecStatus::FloatingPointEnvironment;
+    return parseCommand (json, [&] (CommandId id, const Request& request, const Problem& p)
+    { return writeCommand (session, id, request, p, output, written); });
 }
 CodecStatus Wire::load (Session& session, CommandId id, const Pcm& pcm, std::string_view meta,
                         std::span<char> output, std::uint32_t& written) noexcept
 {
     if (output.size() < kAnswerBytes) return CodecStatus::TooSmall;
     if (Session::checkFloatingPointEnvironment() != Status::Ok) return CodecStatus::FloatingPointEnvironment;
-    Problem p; Object root (meta, p); SourceMeta m;
-    root.get ("name", m.name); root.get ("fileRate", m.fileRate); root.get ("bitDepth", m.bitDepth); root.get ("rateKnown", m.rateKnown);
-    root.finish(); Writer w; w.output = output.data();
-    if (! p.reason.empty()) problemAnswer (w, id, session.revision(), p);
-    else answer (w, session.apply (command::Load { id, pcm, m }));
-    written = std::uint32_t (w.size); return CodecStatus::Ok;
+    return parseLoad (id, pcm, meta, [&] (CommandId command, const Request& request, const Problem& p)
+    { return writeCommand (session, command, request, p, output, written); });
 }
 CodecStatus Wire::importProject (Session& session, CommandId id, std::string_view project,
                                  std::span<char> output, std::uint32_t& written) noexcept

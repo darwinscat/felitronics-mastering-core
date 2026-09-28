@@ -248,6 +248,49 @@ void roundTrip()
     ok (import (*restored, project (false)).rejection == Rejection::None && ! restored->project().manual,
         "manual false imports without depending on the current manual mode");
 }
+void domainsAndExactNumbers()
+{
+    auto s = fresh();
+    struct Row { const char* section; const char* field; const char* accepted; const char* refused; };
+    const Row rows[] {
+        { "target", "lufs", "99", nullptr }, { "target", "tp", "-5.5", "-6.01" },
+        { "hpf", "fq", "20000.25", "24000" }, { "hpf", "slope", "96", "102" },
+        { "monoBass", "fq", "120.25", "300.1" }, { "monoBass", "width", "0.333333333", "1.01" },
+        { "glue", "upToDb", "5.25", "6.01" }, { "saturation", "drive", "1.25", "12.01" },
+        { "saturation", "mix", "0.123456789", "-0.01" }, { "saturation", "output", "-1.25", "0.01" },
+        { "tilt", "db", "5.25", "6.01" }, { "lowShelf", "db", "-5.25", "-6.01" },
+        { "limiter", "needlesDb", "5.25", "6.01" }
+    };
+    for (const auto& row : rows)
+    {
+        const std::string base = header() + "\n[target]\nname = \"lp\"\n";
+        const auto input = [&] (const char* value) { return base + "\n[" + row.section + '.' + row.field + "]\nhand = " + value + '\n'; };
+        ok (import (*s, input (row.accepted)).rejection == Rejection::None,
+            std::string (row.section) + '.' + row.field + " imports within domain, independent of slider");
+        const auto saved = exported (*s);
+        ok (import (*s, saved).rejection == Rejection::None && exported (*s) == saved, "domain project round-trips");
+        if (row.refused)
+            refused (*s, input (row.refused), std::string_view (row.field) == "slope" ? Rejection::NotOneOf : Rejection::OutOfDomain, row.refused);
+    }
+    for (double value : { 1.0 / 3.0, -1.2345678901234567, std::numeric_limits<double>::max(),
+                          std::numeric_limits<double>::min(), std::numeric_limits<double>::denorm_min() })
+    {
+        TargetFields<Touched> fields; fields.lufs = value;
+        ok (s->apply (command::EditTarget { 1, fields }).rejection == Rejection::None, "finite LUFS accepted");
+        const auto saved = exported (*s);
+        ok (import (*s, saved).rejection == Rejection::None
+            && std::bit_cast<std::uint64_t> (*s->project().targetEdit.lufs) == std::bit_cast<std::uint64_t> (value),
+            "full binary64 project value round-trips without quantization");
+        ok (exported (*s) == saved, "extended numeric spelling is canonical");
+    }
+    for (const auto text : { "\"1e\"", "\"NaN\"", "\"1.2.3\"", "\"1e9999\"" })
+        refused (*s, project() + "\n[target.lufs]\nhand = " + text + '\n', Rejection::ProjectType, text);
+    Audio audio; auto load = audio.load(); load.pcm.sampleRate = 8000;
+    ok (s->apply (load).rejection == Rejection::None, "different source rate loaded"); (void) s->step (10);
+    refused (*s, project() + "\n[hpf]\nfq.hand = 4000\n", Rejection::OutOfDomain, "4000");
+    ok (import (*s, project() + "\n[hpf]\nfq.hand = 3999.5\n").rejection == Rejection::None, "import uses current source Nyquist");
+}
+
 void refusals()
 {
     auto s = fresh();
@@ -259,8 +302,8 @@ void refusals()
     refused (*s, project() + "\n[hpf]\nfq.robot = 30\n", Rejection::ProjectUnknownKey, "robot");
     refused (*s, project() + "\n[hpf]\nfq.hand = \"bad\"\n", Rejection::ProjectType, "\"bad\"");
     refused (*s, project() + "\n[hpf]\nfq = 30\n", Rejection::ProjectType, "30");
-    refused (*s, project() + "\n[hpf]\nfq.hand = 900\n", Rejection::OutOfTravel, "900");
-    refused (*s, project() + "\n[hpf]\nfq.hand = 32.5\n", Rejection::OffStep, "32.5");
+    refused (*s, project() + "\n[hpf]\nfq.hand = 24000\n", Rejection::OutOfDomain, "24000");
+    ok (s->importProject (1, project() + "\n[hpf]\nfq.hand = 32.5\n").rejection == Rejection::None, "import accepts a value between slider steps");
     refused (*s, project() + "\n[hpf]\nslope.hand = 11\n", Rejection::NotOneOf, "11");
     refused (*s, project() + "\n[limiter]\nneedles.hand = \"other\"\n", Rejection::NotOneOf, "\"other\"");
     refused (*s, header() + "target = { name = \"unknown\" }\n", Rejection::UnknownTarget, "\"unknown\"");
@@ -440,6 +483,6 @@ void demandsAndOrder()
 }
 int main()
 {
-    sparseSections(); defaultsVersions(); roundTrip(); refusals(); foreignMachine(); numbers(); slicing(); demandsAndOrder();
+    sparseSections(); defaultsVersions(); roundTrip(); domainsAndExactNumbers(); refusals(); foreignMachine(); numbers(); slicing(); demandsAndOrder();
     return felitronics::test::report();
 }
