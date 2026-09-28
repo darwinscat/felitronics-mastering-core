@@ -880,10 +880,10 @@ snapshot
   outputs. No failure injection or poison reset is exported by the shipped module.
 
 The ten scenarios cover load/measure, whole refusal in a forbidden state, cancel during measurement and mastering,
-keep/reset device edits on a target change, poison/replay, interleaved sessions, memory refusal, project round trip,
+reset every device edit on a target change, poison/replay, interleaved sessions, memory refusal, project round trip,
 knob domains and no-op edits, and a saved machine layer from an older core. Device edits work with manual mode hidden;
-`low` is edited and restored across target changes. Domain checks include fractional values beyond slider travel,
-Nyquist refusal, invalid slopes, and an empty edit/revert preserving the whole snapshot.
+`low` is edited and reset across target changes, with the hand-edit count returning to zero. Domain checks include
+fractional values beyond slider travel, Nyquist refusal, invalid slopes, and an empty edit/revert preserving the whole snapshot.
 Memory coverage supplies a zero `heapCeilingBytes`: create refuses before allocating a session or starting work;
 an adequately provisioned session then accepts a nonallocating command with capacity reduced to zero, restores its
 capacity and completes measurement. Before every creation, command, load and import, each consumer queries demand.

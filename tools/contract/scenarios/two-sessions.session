@@ -12,5 +12,5 @@ cancel 2 1
 snapshot
 use right
 step 5 work units
-command {"kind":"setTarget","commandId":"2","target":"cd","onEdits":"reset"}
+command {"kind":"setTarget","commandId":"2","target":"cd"}
 snapshot
