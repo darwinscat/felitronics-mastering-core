@@ -155,14 +155,14 @@ typedef struct fc_session_storage
 } fc_session_storage;
 
 // Detailed source measurement demand. Counts include one retained result copy and its codec buffers.
-// indexBudgetKnown is zero until an exact excursion-index storage declaration is available.
+// Reserved slots preserve the earlier record layout; always zero. Needles have a separate job demand.
 typedef struct fc_session_measurement_storage
 {
     uint32_t size;
     uint32_t rejection;
     double sourceBytes;
     double resultBytes;
-    double indexBytes;
+    double reservedBytes;
     double workspaceBytes;
     double copyBytes;
     double codecBytes;
@@ -171,7 +171,7 @@ typedef struct fc_session_measurement_storage
     double workPeakBytes;
     double peakBytes;
     double largestBlockBytes;
-    uint32_t indexBudgetKnown;
+    uint32_t reserved;
 } fc_session_measurement_storage;
 
 typedef enum fc_session_step_state
@@ -212,6 +212,8 @@ fc_session_status fc_session_set_capacity (fc_session session, const fc_session_
 fc_session_status fc_session_command_bytes (fc_session session, const char* json, uint32_t json_bytes, fc_session_storage* out);
 fc_session_status fc_session_load_bytes (fc_session session, uint32_t channels, uint32_t frames, uint32_t rate,
                                          const char* meta, uint32_t meta_bytes, fc_session_storage* out);
+// Additional demand for one ceiling over the retained source, before any needles work.
+fc_session_status fc_session_needles_bytes (fc_session session, double ceiling_db, fc_session_storage* out);
 fc_session_status fc_session_measurement_bytes (fc_session session, uint32_t channels, uint32_t frames,
                                                 uint32_t rate, fc_session_measurement_storage* out);
 fc_session_status fc_session_import_project_bytes (fc_session session, const char* project, uint32_t project_bytes,

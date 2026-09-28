@@ -496,6 +496,15 @@ FC_EXPORT fc_session_status fc_session_import_project_bytes (fc_session session,
     return storageOut (*slot->session, Wire::importStorage (*slot->session, { project, project_bytes }), out);
 }
 
+FC_EXPORT fc_session_status fc_session_needles_bytes (fc_session session, double ceiling_db, fc_session_storage* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = record (out); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    return storageOut (*slot->session, slot->session->needlesStorage (ceiling_db), out);
+}
+
 FC_EXPORT fc_session_status fc_session_measurement_bytes (fc_session session, std::uint32_t channels,
                                                          std::uint32_t frames, std::uint32_t rate,
                                                          fc_session_measurement_storage* out)
@@ -512,7 +521,7 @@ FC_EXPORT fc_session_status fc_session_measurement_bytes (fc_session session, st
     out->rejection = std::uint32_t (priced.rejection);
     out->sourceBytes = demand.sourceBytes;
     out->resultBytes = demand.resultBytes;
-    out->indexBytes = demand.indexBytes;
+    out->reservedBytes = 0;
     out->workspaceBytes = demand.workspaceBytes;
     out->copyBytes = demand.copyBytes;
     out->codecBytes = demand.codecBytes;
@@ -521,6 +530,6 @@ FC_EXPORT fc_session_status fc_session_measurement_bytes (fc_session session, st
     out->workPeakBytes = demand.workPeakBytes;
     out->peakBytes = demand.peakBytes;
     out->largestBlockBytes = demand.largestBlockBytes;
-    out->indexBudgetKnown = demand.indexBudgetKnown ? 1u : 0u;
+    out->reserved = 0;
     return FC_SESSION_OK;
 }

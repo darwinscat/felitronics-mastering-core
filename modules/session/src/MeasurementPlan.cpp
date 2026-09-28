@@ -126,8 +126,8 @@ MeasurementPlan MeasurementPlan::storageFor (const Pcm& pcm, const MeasurementPa
     const auto tempo = tempo::TempoDetector::storageFor (rate, channels, pcm.frames, p.tempo);
     set (Analyzer::Tempo, tempo.ok, sizeof (tempo::TempoDetector) + tempo.firstBytes(),
          tempo.pointRecords * 3u + tempo.peakRecords * 2u);
-    // The exact excursion index supplies its own proven storage declaration. A missing declaration is visible.
-    set (Analyzer::Excursions, false, 0, 0);
+    // Target-dependent needles have a separate job and demand; no source-wide index is built.
+    out.analyzers[std::size_t (Analyzer::Excursions)] = {};
     auto& s = out.storage;
     s.sourceBytes = double (pcm.frames * pcm.channelCount * sizeof (float));
     s.workspaceBytes = double (sizeof (MeasurementWorkspace));

@@ -5,6 +5,7 @@
 #include "SnapshotStorage.h"
 #include "Devices.h"
 #include "EqCurve.h"
+#include "Needles.h"
 #include <felitronics/session/Snapshot.h>
 #include <algorithm>
 #include <limits>
@@ -106,6 +107,14 @@ SnapshotView Session::buildView() const noexcept
     v.target = targetName();
     v.source = source_;
     v.measurementStorage = measurementStorage_;
+    v.needlesJob = needlesJob_;
+    v.needlesSource = needlesSource_;
+    v.needlesNeedDb = needlesNeedDb_;
+    v.needlesCeilingDb = needlesCeilingDb_;
+    v.needlesProgress = needlesProgress_;
+    v.needlesBytes = double (needlesDemand_.bytes);
+    v.needlesLargestBlockBytes = double (needlesDemand_.largestBlockBytes);
+    v.needlesRunsTruncated = needlesResult_ && needlesResult_->runsTruncated;
     if (source_.channels != 0) v.measurements = measurementResults_;
     v.job = job_;
     v.measurementJob = measurementJob_;

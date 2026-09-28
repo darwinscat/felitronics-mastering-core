@@ -1,0 +1,25 @@
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+
+# Target-dependent needles
+
+There is no excursion index. A needles job runs `analysis::PeakExcursions` at one ceiling over the session's retained planar PCM. It does not decode or copy the source. Other source measurements keep their target-independent identity.
+
+The measurement controller retains the Loudness result with `integratedLufs` and `truePeakDb` before `Driver::measured1`. Need is `(input peak - input LUFS) - (target TP - target LUFS)`, and ceiling is `input peak - need`. Need at or below the configured 3 dB threshold is explicitly skipped. Missing input readings keep their reason; silence has no finite LUFS. Out-of-range ceilings are unavailable rather than clamped. Clip classification and actuator choices remain separate work.
+
+`SetTarget`, `EditTarget`, project import and the first measurement's end evaluate the current target. Late retention of Loudness also evaluates it. An unchanged source and ceiling can reuse an active or ready result. Other requests destroy the superseded preparation and replace its job identity. Every source load invalidates active needles, including identical-source reloads. Each processing step checks captured job, source and result key. Cancellation leaves PCM, source-wide results and the session state intact; requesting the same target again restarts needles. Snapshots already returned remain independent.
+
+The existing `Analyzers` phase reports one preparation unit, `ceil(frames / 1024)` source-read units and one finish unit. The interpolator state survives chunks. Finish drains its own tail exactly once. The master job retains foreground priority. Needles finish before background phase two. The snapshot exposes `needlesJob`, `needlesSource`, need, ceiling, progress and the additional demand; its `measurements[12]` holds the result. A measurement event publishes completion or failure under the captured job identity.
+
+`Session::needlesStorage(ceiling)` and additive `fc_session_needles_bytes` declare the additional demand without allocation. The pending snapshot publishes it before preparation. Preparation rechecks live bytes and the largest free block, returning an error event with `memory` and `needBytes` before allocating when either limit fails. Target acceptance is independent of this optional analyzer's refusal. A smaller capacity between request and pump is respected.
+
+Workspace price is `sizeof(NeedlesWork) + PeakExcursions::storageFor(rate, channels, params).firstBytes()`. This includes the default 65,536 run records and constructor/container proxies. A 4,096-byte allowance covers allocator alignment and MSVC Debug padding. The separate fixed output holds all scalars and five histograms. The demand additionally reserves one owned copy plus six times its representation for codec/transfer buffers and names. Preparation allocates workspace and output; all reads, finish and publication allocate zero. Finish releases the analyzer. Whole-measurement demand has no index workspace or result slot; the obsolete C record slots remain reserved and zero to preserve layout.
+
+## Run-list decision
+
+The page's `src/main/resources/static/js/mastering-v2/peak-excursions.ts`, inspected in the inventory worktree, reads scalar aggregates, crest bins and `ceilingDensityAbove`; its `ExcursionsProbe` has no run-coordinate getter. `peak-clipper.ts` uses run count, p90, bass dose and PLR, while `peak-clipper-report.ts` prints those aggregates. None consumes excursion coordinates. The clipping timestamp UI reads the separate ClipDetector list.
+
+Keep PeakExcursions' capped run list and retain aggregates and histograms only. The analyzer computes counts, doses, duration/crest/ceiling histograms and p90 independently of that list. Snapshot `needlesRunsTruncated` states whether native storage overflowed; scalar `runsComplete` and `storedRunCount` describe the native list. `runListIncluded=0` explicitly says it was not copied. Result `total` counts all runs, `stored=0` counts retained coordinates, and `complete` is false when any coordinates were omitted. `aggregatesComplete=1` and complete histogram arrays separately certify the aggregates. P90 retains the direct analyzer's histogram-bin precision and saturation flag.
+
+The needles suite compares every scalar and histogram against direct analysis at several ceilings and source shapes, cancels mid-job, replaces targets and sources, checks heap and largest-block refusals, and measures allocator requests. Its dense fixture exceeds 65,536 runs and compares all aggregates after exhaustion. `--fixture` emits exact binary64 bits for tier comparison.
+
+The source-wide pump remains the task-01 placeholder until the measurement controller is implemented. The needles integration is exercised through the same owned-result retention and first-phase transition that controller uses; absent measurements are never synthesized.

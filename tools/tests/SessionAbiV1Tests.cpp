@@ -421,6 +421,17 @@ void freezeRegressions()
     }
     fc_session_capacity restored { sizeof (fc_session_capacity), 9007199254740991.0, 9007199254740991.0 };
     ok (fc_session_set_capacity (h, &restored) == FC_SESSION_OK && contains (load (h), "accepted"), "capacity can grow again");
+    fc_session_storage needlesPrice {}; needlesPrice.size = sizeof (needlesPrice);
+    const auto needlesCount = alloc::count.load();
+    const auto needlesStatus = fc_session_needles_bytes (h, -6, &needlesPrice);
+    const auto needlesAllocations = alloc::count.load() - needlesCount;
+    ok (needlesStatus == FC_SESSION_OK && needlesPrice.rejection == 0 && needlesPrice.bytes > 3000000
+        && needlesPrice.largestBlockBytes >= 65536u * 48u && needlesAllocations == 0,
+        "separate needles demand includes the analyzer run list before allocating");
+    ok (fc_session_needles_bytes (h, -201, &needlesPrice) == FC_SESSION_OK
+        && needlesPrice.rejection == std::uint32_t (Rejection::OutOfDomain), "unsupported ceiling is refused in preflight");
+    ok (fc_session_needles_bytes (0, -6, nullptr) == FC_SESSION_ERR_NULL, "needles demand validates output before handle");
+    ok (detailPrice.reservedBytes == 0 && detailPrice.reserved == 0, "retired index slots retain C layout with zero values");
     ok (fc_session_export_project_size (h, &written) == FC_SESSION_ERR_NOT_PLACED
         && fc_session_export_project_copy (h, json, sizeof (json), &written) == FC_SESSION_ERR_NOT_PLACED, "export retains NotPlaced");
     for (const auto malformed : { "{", R"({"kind":"master"})", R"({"kind":"master","commandId":"5","unknown":1})" })

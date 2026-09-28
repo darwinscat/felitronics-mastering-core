@@ -49,6 +49,7 @@ int main()
         Kept kept[1]; ReadingPoint points[1]; ReadingRun runs[1]; MachineDifference differences[1]; EqPoint curve[1];
         fill.value (view); fill.value (kept[0]); fill.value (points[0]); fill.value (runs[0]); fill.value (differences[0]); fill.value (curve[0]);
         view.measurementStorage = {};
+        view.needlesBytes = view.needlesLargestBlockBytes = 0;
         MeasurementValue number { "peak", 1.0, MeasurementReason::None, 0 };
         double values[] { 0.25, 0.5 };
         MeasurementArray array { "peaks", { 0, 1, 2, 48000 }, 1, 2, 2, true, values };

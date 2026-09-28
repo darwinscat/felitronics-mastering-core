@@ -514,9 +514,9 @@ session compares or prints one.
 
 ## Work units, event deltas, and snapshots
 
-`Session::step(budget)` runs deterministic stub work. The budget counts **work units**, never milliseconds. A call
-consumes at most `min(budget, 16)` units, reports the number consumed, and returns `More` while either job remains or
-`Done` when neither does. Zero units poll without progress. The shell measures its own speed and converts time to
+`Session::step(budget)` runs the needles analyzer and deterministic placeholders for the other jobs. The budget counts **work units**, never milliseconds. A call
+consumes at most `min(budget, 16)` units, reports the number consumed, and returns `More` while any job remains or
+`Done` when none does. Zero units poll without progress. The shell measures its own speed and converts time to
 units. The library has no clock. Measurement phase one and phase two each take five units; a master takes the config's
 `progress.master.expectedPasses` pass units and one remeasurement unit. These establish stub facts and recipes, not
 measured audio or rendered PCM. A master takes priority over phase two, which resumes when the master finishes.
@@ -572,20 +572,21 @@ destruction. A `Measurement` event owns the result identity, status, counters an
 from the corresponding snapshot. The codec generator describes both forms, including transferable f64 rows.
 
 The measurement key combines the PCM bit hash, actual native parameters, config version and core/session versions.
-The target is absent. An identical load reuses PCM, saved progress and results; changing the target does not invalidate
-them. Each prepared analyzer stays resident across pauses and is destroyed after its result has been copied. The
-current pump remains the deterministic work-unit stub described above; these ownership and preparation interfaces
-do not yet produce live analyzer output.
+The target is absent from source-wide measurements. An identical load reuses PCM, saved progress and those results;
+changing the target does not invalidate them. Needles have a separate source-and-ceiling identity. Each prepared analyzer stays resident across pauses and is destroyed after its result has been copied. The
+source-wide pump remains the deterministic work-unit stub described above. The live needles job consumes its
+retained loudness and true-peak readings through the controller seam; see [NEEDLES.md](NEEDLES.md).
 
-`measurementStorage` exposes source, result, index, workspace, copy, codec and allocator demands and the maximum live
+`measurementStorage` exposes source, result, workspace, copy, codec and allocator demands and the maximum live
 set across load and work. Native `storageFor` calls share the exact parameter records used for preparation, including
 the separate loudness meter and waveform/stereo columns. Nested spectrum and band-burst storage is included only
 through its parent analyzer. The estimate conservatively includes every available workspace simultaneously, a
 detached result copy and JSON serialization. Load demand also includes the previous live session, temporary input
 PCM and source-name copies. The largest-block demand is conservative; capabilities remain the shell's limits.
 Embedded TOML views allocate nothing; runtime config/project parsing keeps its separate declared TOML budget.
-The excursion index has no storage implementation yet: `indexBudgetKnown` is false and its result is unavailable.
-Consequently the published demand does not yet establish the complete excursion-inclusive measurement budget.
+There is no excursion index. Needles are re-measured over retained PCM for one ceiling, with a separate
+`needlesStorage` / `fc_session_needles_bytes` demand. Preparation checks capacity before allocating;
+all subsequent read and finish units allocate zero. Native run-list truncation is explicit in the snapshot.
 
 `tools/session-codec-schema.json` is the one hand-edited codec description. `Codec` exchanges its named-field JSON.
 Object order is immaterial; missing,
@@ -608,7 +609,7 @@ fail. `tools/wasm/build.sh` also emits `snapshot.d.ts` beside the modules. Regen
 
 | operation | demand before work | evidence |
 |---|---|---|
-| step, event/query access | `stepBytes() == 0`; fixed batch included in create | event suite allocation counter |
+| step, event/query access | `stepBytes() == 0` for fixed work; needles preparation uses `needlesStorage`; batch included in create | event and needles allocation counters |
 | snapshot | `snapshotBytes() = Snapshot::storageFor(buildView())`; the same view passed to `Snapshot::copy` | event suite, retained value after session destruction |
 | snapshot copy | `Snapshot::storageFor(view)`; exact text, masters and rows | event suite, all array types |
 | encode | `Codec::encodedBytes(view)` caller buffer; zero heap demand | exact-size and short-buffer tests |

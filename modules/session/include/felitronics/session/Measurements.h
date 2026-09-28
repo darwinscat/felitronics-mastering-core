@@ -23,7 +23,7 @@ inline constexpr std::size_t kMeasurementNumbers = 128, kMeasurementArrays = 16,
 enum class MeasurementStatus : std::uint8_t { Pending, Ready, Unavailable, Cancelled };
 enum class MeasurementReason : std::uint8_t
 {
-    None, Pending, Cancelled, Unsupported, TooShort, NonFinite, Capacity, NoSignal, NotImplemented
+    None, Pending, Cancelled, Unsupported, TooShort, NonFinite, Capacity, NoSignal, NotImplemented, NeedNotAbove3, Memory
 };
 // A missing number always carries a reason. analyzerReason preserves the instrument's more specific code.
 struct MeasurementValue
@@ -61,10 +61,9 @@ struct MeasurementResult
 };
 struct MeasurementStorage
 {
-    double sourceBytes = 0, resultBytes = 0, indexBytes = 0, workspaceBytes = 0;
+    double sourceBytes = 0, resultBytes = 0, workspaceBytes = 0;
     double copyBytes = 0, codecBytes = 0, allocatorBytes = 0;
     double loadPeakBytes = 0, workPeakBytes = 0, peakBytes = 0, largestBlockBytes = 0;
-    bool indexBudgetKnown = false;
 };
 class MeasurementText final
 {

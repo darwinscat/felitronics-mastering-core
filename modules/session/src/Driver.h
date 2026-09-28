@@ -19,6 +19,8 @@ namespace felitronics::session::detail
 
 struct Driver
 {
+    // Loudness supplies named integratedLufs and truePeakDb scalars for target-dependent needles.
+    // Retain them before measured1; a late Loudness completion also schedules the current target.
     // Copies the analyzer result before its workspace is destroyed. The caller declares OwnedMeasurements::storageFor.
     [[nodiscard]] static bool retain (Session& session, JobId job, const MeasurementResult& result) noexcept;
     // Continues the saved position; the command/state presentation is owned by the measurement controller.

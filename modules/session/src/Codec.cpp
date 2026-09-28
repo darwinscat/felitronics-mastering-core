@@ -24,8 +24,8 @@ using detail::Reader;
 bool valid (const SnapshotView& v) noexcept
 {
     const auto& m = v.measurementStorage;
-    for (const auto bytes : { m.sourceBytes, m.resultBytes, m.indexBytes, m.workspaceBytes, m.copyBytes,
-                             m.codecBytes, m.allocatorBytes, m.loadPeakBytes, m.workPeakBytes, m.peakBytes, m.largestBlockBytes })
+    for (const auto bytes : { m.sourceBytes, m.resultBytes, m.workspaceBytes, m.copyBytes,
+                             m.codecBytes, m.allocatorBytes, m.loadPeakBytes, m.workPeakBytes, m.peakBytes, m.largestBlockBytes, v.needlesBytes, v.needlesLargestBlockBytes })
         if (! std::isfinite (bytes) || bytes < 0.0 || bytes >= 9007199254740992.0
             || std::bit_cast<std::uint64_t> (double (std::uint64_t (bytes))) != std::bit_cast<std::uint64_t> (bytes)) return false;
     return OwnedMeasurements::valid (v.measurements) && std::isfinite (v.sourceBytes) && v.sourceBytes >= 0.0 && v.sourceBytes < 9007199254740992.0

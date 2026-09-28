@@ -52,6 +52,8 @@ text::FactId MeasurementText::fact (MeasurementReason reason) noexcept
         case MeasurementReason::Capacity: return text::FactId::MeasurementCapacity;
         case MeasurementReason::NoSignal: return text::FactId::MeasurementNoSignal;
         case MeasurementReason::NotImplemented: return text::FactId::MeasurementUnavailable;
+        case MeasurementReason::NeedNotAbove3: return text::FactId::NeedlesSkipped;
+        case MeasurementReason::Memory: return text::FactId::SessionMemory;
     }
     detail::storageOverflow();
 }
@@ -74,12 +76,12 @@ bool OwnedMeasurements::valid (std::span<const MeasurementResult> results) noexc
         if (id >= kAnalyzers || (seen & (1u << id)) != 0) return false;
         seen |= 1u << id;
         if (unsigned (r.status) > unsigned (MeasurementStatus::Cancelled)
-            || unsigned (r.reason) > unsigned (MeasurementReason::NotImplemented)
+            || unsigned (r.reason) > unsigned (MeasurementReason::Memory)
             || ! counts (r.total, r.stored, r.complete)) return false;
         if (r.status == MeasurementStatus::Ready ? r.reason != MeasurementReason::None : r.reason == MeasurementReason::None) return false;
         for (const auto& v : r.numbers)
             if (v.name.empty() || v.name.size() > kMeasurementNameBytes || ! detail::validUtf8 (v.name)
-                || unsigned (v.reason) > unsigned (MeasurementReason::NotImplemented)
+                || unsigned (v.reason) > unsigned (MeasurementReason::Memory)
                 || (v.value ? v.reason != MeasurementReason::None : v.reason == MeasurementReason::None)) return false;
         for (const auto& a : r.arrays)
             if (a.name.empty() || a.name.size() > kMeasurementNameBytes || ! detail::validUtf8 (a.name) || a.columns == 0

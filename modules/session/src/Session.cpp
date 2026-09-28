@@ -14,6 +14,7 @@
 #include "Rules.h"
 #include "MeasurementPlan.h"
 #include "MeasurementWorkspace.h"
+#include "Needles.h"
 #include "BuildContract.h"
 
 #include <cstdint>
@@ -72,7 +73,8 @@ double Session::liveBytes() const noexcept
 {
     return double (createBytes (capabilities_) + source_.frames * source_.channels * sizeof (float)
                    + source_.name.size() + masterRoom_ * sizeof (Kept) + measurementOwnedBytes_
-                   + (measurementWorkspace_ ? measurementWorkspace_->bytes() : 0));
+                   + (measurementWorkspace_ ? measurementWorkspace_->bytes() : 0)
+                   + (needlesWork_ ? needlesWork_->bytes : 0) + (needlesResult_ ? sizeof (detail::NeedlesResult) : 0));
 }
 MeasurementStorage Session::measurementStorage (const Pcm& pcm) const noexcept
 {

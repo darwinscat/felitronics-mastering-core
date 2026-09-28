@@ -20,3 +20,4 @@ src/EqCurve.cpp
 src/Measurements.cpp
 src/MeasurementPlan.cpp
 src/MeasurementWorkspace.cpp
+src/Needles.cpp

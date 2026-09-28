@@ -66,7 +66,7 @@ text::Fact OwnedFact::view() const noexcept
 
 std::uint64_t Session::stepBytes() noexcept { return 0; }
 JobId Session::measurementJob() const noexcept { return measurementJob_; }
-bool Session::hasWork() const noexcept { return measurementJob_ != 0 || job_ != 0; }
+bool Session::hasWork() const noexcept { return measurementJob_ != 0 || job_ != 0 || needlesJob_ != 0; }
 std::span<const Notification> Session::events() const noexcept { return { events_, eventCount_ }; }
 void Session::emit (Notification event) noexcept
 {
@@ -77,11 +77,18 @@ void Session::emit (Notification event) noexcept
 
 void Session::dropJob (JobId job) noexcept
 {
-    if (job == measurementJob_)
+    if (job == needlesJob_ && job != 0)
+    {
+        clearNeedles();
+        auto& result = measurementResults_[std::size_t (Analyzer::Excursions)];
+        result.status = MeasurementStatus::Cancelled;
+        result.reason = MeasurementReason::Cancelled;
+    }
+    else if (job == measurementJob_)
     {
         measurementJob_ = 0;
         for (auto& result : measurementResults_)
-            if (result.status == MeasurementStatus::Pending)
+            if (result.analyzer != Analyzer::Excursions && result.status == MeasurementStatus::Pending)
             {
                 result.status = MeasurementStatus::Cancelled;
                 result.reason = MeasurementReason::Cancelled;
@@ -105,7 +112,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
     if (checkFloatingPointEnvironment() != Status::Ok)
     {
         Notification event;
-        event.jobId = job_ != 0 ? job_ : measurementJob_;
+        event.jobId = job_ != 0 ? job_ : needlesJob_ != 0 ? needlesJob_ : measurementJob_;
         event.kind = EventKind::Error;
         event.payload.error.code = ErrorCode::Refusal;
         (void) event.payload.error.fact.assign (text::Fact::of (text::FactId::SessionRefusal));
@@ -170,6 +177,10 @@ Stepped Session::step (std::uint32_t budget) noexcept
                     emit (event);
                 }
             }
+        }
+        else if (needlesJob_ != 0)
+        {
+            stepNeedles();
         }
         else
         {
