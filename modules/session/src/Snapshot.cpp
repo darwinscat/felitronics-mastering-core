@@ -93,6 +93,8 @@ SnapshotView Session::buildView() const noexcept
     SnapshotView v;
     v.offeredDevices = capabilities_.offeredDevices;
     v.state = state_;
+    v.canContinueMeasurement = state_ == State::MeasurementStopped;
+    v.measurementResumeState = v.canContinueMeasurement ? stoppedState_ : State::Empty;
     v.mastering = mastering_;
     v.revision = revision_;
     v.project = project_;
@@ -123,7 +125,9 @@ SnapshotView Session::buildView() const noexcept
     v.machineDifferences = { differences_, differenceCount_ };
     v.measurementProgress = measurementProgress_;
     v.masterProgress = masterProgress_;
-    v.integratedLufs = std::numeric_limits<double>::quiet_NaN(); // the stub establishes no audio measurement
+    v.integratedLufs = std::numeric_limits<double>::quiet_NaN();
+    for (const auto& value : measurementResults_[0].numbers)
+        if (value.name == "integratedLufs" && value.value) v.integratedLufs = *value.value;
     v.sourceBytes = double (source_.frames * source_.channels * sizeof (float));
     return v;
 }

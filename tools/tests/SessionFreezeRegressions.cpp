@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 // This probe also compiles against the pre-freeze public surface to demonstrate the regressions.
+#include "../../modules/session/tests/Advance.h"
 #include "fc_session_abi.h"
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Wire.h>
@@ -26,7 +27,7 @@ int main (int argc, char** argv)
     }
     if (item == "B" || item == "C")
     {
-        (void) s.apply (load); (void) s.step (10);
+        (void) s.apply (load); testing::measure (s);
         HpfFields<Touched> fields; fields.fq = 100.25; fields.slope = 18;
         if (item == "C" && s.apply (command::EditDevice { 2, fields }).rejection != Rejection::None) return 1;
         (void) s.apply (command::SetManual { 3, true });

@@ -24,7 +24,7 @@ something could still do is exactly what a reviewer reads a diff for.
 
 ## Deterministic, bounded, one thread at a time
 
-The session runs no audio thread and no sample loop. It is called synchronously, with its input as arguments, and answers
+The session runs no audio thread; its offline sample loops advance only when called. It is called synchronously, with its input as arguments, and answers
 with values. Its laws are about **replay** — the same calls into a new session give the same session, on every row the
 product runs on — and about **bounds**: memory it asks for is stated before it is asked for.
 
@@ -45,7 +45,7 @@ The laws are felitronics-core's (`docs/DSP-ARCHITECTURE.md` §2), numbered as th
 | **6** no exceptions, RTTI, OS, filesystem, locale; no global mutable state | yes | exceptions and RTTI: the target's flags, `src/BuildGuards.h` first in every unit, the build controls, and the source lint's token rule in every `#if` branch. OS, files, console, locale, clock, process state: the object-file gate (what the objects call) and the source lint's include allowlist. Global state: the object-file gate (what lives in writable memory) |
 | **7** a C++ subset every toolchain accepts | yes | the CI matrix compiles it — clang, gcc 13 and 14, MSVC, emscripten — and in this repository's own builds its sources compile under core's hygiene warning set with `-Werror` |
 | **8** software denormal handling in feedback kernels | **no** | the session has no feedback kernel. What it does about subnormals is a different guarantee: it refuses a thread that flushes them (the floating-point environment, below) |
-| **8a**, **11a** the sample clock | **no** | the session has no stream of samples and no clock |
+| **8a**, **11a** the sample clock | yes, through its analyzers | streaming advances by source frames on a fixed grid; pauses consume no samples, and native analyzer comparisons hold chunk invariance |
 | **9** no `long double` | yes | core's long-double lint reads every `modules/*/include` and `modules/*/src`, this module's included, and the wasm tier's artifact gate reads every emitted object |
 | **10** FP contraction is stated | yes — **as `off`** | the target's own flags in one `SHELL:` group, the compile line read back (this build's and a consumer's), the hostile-flags tests, the library's probes asked from a contracting caller, and the source lint's pragma and attribute rules. Core states `on` for its tree; the session's numbers are compared across rows, native and wasm, and baseline wasm has no fused multiply-add, so a contracting native build would disagree with the module. The library's flags reach its own objects only: a program that links it compiles **every** translation unit with the same FP flags (below, "What the flags do not reach"). The sign and payload of a NaN, and the floating-point exception masks and flags, are outside every check here, as core's law 10 leaves them |
 | **11**, **11b** a request that cannot be honoured is refused whole; checks in a fixed order | yes | `create()` checks the floating-point environment and the config it reads, then allocates: a refused create requested nothing (`felitronics_session_tests`). Every command runs the checks `Commands.h` declares, in their order — the thread's floating-point environment, then the table — before changing session state. Import adds the ordered document checks below. A rejection publishes its event and advances `seq`; the session’s state and revision do not change. A `load` runs its checks, then disarms, then writes (check → disarm → write), so a rejected load, too, leaves state and revision unchanged while publishing its rejection: `felitronics_session_state_tests` compares the whole session before and after every rejection it produces, produces every rejection code, and holds the order with requests wrong in several ways. The C boundary's checks run in its header's order and a refused call writes nothing and allocates nothing (`felitronics_session_abi_tests`). `fcore_session` reads and checks a whole script before it creates a session |
@@ -202,11 +202,11 @@ every stage a device writes is named, the limiter's second release included.
 
 ## The states and the commands
 
-`<felitronics/session/Commands.h>` and `<felitronics/session/Project.h>`. A session is in one of four states — **Empty**
+`<felitronics/session/Commands.h>` and `<felitronics/session/Project.h>`. A session is in one of five states — **Empty**
 (nothing loaded), **Loaded** (a source, its first measurement not completed, the devices not placed), **Measured1** (the first
-measurement ended: the devices are placed, a master can be made), **Measured2** (the second ended too) — and a master
+measurement ended: the devices are placed, a master can be made), **Measured2** (the second ended too), **MeasurementStopped** (audio, results, and unfinished work retained) — and a master
 being made is an overlay on the two measured ones. A shell asks by a `Request`, one struct per command with the shell's
-own id for it: `load`, `setTarget`, `editTarget`, `editDevice`, `revertEdits`, `setManual`, `master`, `cancel`, `forget`, `importProject`.
+own id for it: `load`, `setTarget`, `editTarget`, `editDevice`, `revertEdits`, `setManual`, `master`, `cancel`, `forget`, `importProject`, `continueMeasurement`.
 `Session::apply()` answers it whole — accepted, with the revision it made, or rejected with a `Rejection` code and no state change. A rejection publishes an event and advances `seq`. Every accepted command and every transition moves the revision by one; a rejection leaves it.
 
 **Who may do what, when, is one table in code** (`Table` in `Commands.h`), and every command consults it right after
@@ -217,24 +217,25 @@ session's friend and not public), and they happen only where their row says so. 
 from the code, and ctest holds the text between the markers below to that output byte for byte.
 
 <!-- the table: begin -->
-| command | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 |
-|---|---|---|---|---|---|---|
-| load | yes | yes | yes | yes | yes | yes |
-| setTarget | yes | yes | yes | yes | yes | yes |
-| editTarget | yes | yes | yes | yes | yes | yes |
-| editDevice | NoSource | NotPlaced | yes | yes | yes | yes |
-| revertEdits | NoSource | NotPlaced | yes | yes | yes | yes |
-| setManual | yes | yes | yes | yes | yes | yes |
-| master | NoSource | NotMeasured | yes | yes | Busy | Busy |
-| cancel | NoJob | yes | yes | NoJob | yes | yes |
-| forget | NoSource | NoMaster | yes | yes | yes | yes |
-| importProject | NoSource | NotPlaced | yes | yes | yes | yes |
+| command | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 | Stopped | StoppedMeasured | MasteringStopped |
+|---|---|---|---|---|---|---|---|---|---|
+| load | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| setTarget | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| editTarget | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| editDevice | NoSource | NotPlaced | yes | yes | yes | yes | NotPlaced | yes | yes |
+| revertEdits | NoSource | NotPlaced | yes | yes | yes | yes | NotPlaced | yes | yes |
+| setManual | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| master | NoSource | NotMeasured | yes | yes | Busy | Busy | NotMeasured | yes | Busy |
+| cancel | NoJob | yes | yes | NoJob | yes | yes | NoJob | NoJob | yes |
+| forget | NoSource | NoMaster | yes | yes | yes | yes | NoMaster | yes | yes |
+| importProject | NoSource | NotPlaced | yes | yes | yes | yes | NotPlaced | yes | yes |
+| continueMeasurement | NoJob | NoJob | NoJob | NoJob | NoJob | NoJob | yes | yes | yes |
 
-| the session's own transition | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 |
-|---|---|---|---|---|---|---|
-| the first measurement ends | no | yes | no | no | no | no |
-| the second measurement ends | no | no | yes | no | yes | no |
-| the master is done | no | no | no | no | yes | yes |
+| the session's own transition | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 | Stopped | StoppedMeasured | MasteringStopped |
+|---|---|---|---|---|---|---|---|---|---|
+| the first measurement ends | no | yes | no | no | no | no | no | no | no |
+| the second measurement ends | no | no | yes | no | yes | no | no | no | no |
+| the master is done | no | no | no | no | yes | yes | no | no | yes |
 <!-- the table: end -->
 
 **The checks run in one declared order, the same for every command**, and the first that fails is the answer:
@@ -514,12 +515,13 @@ session compares or prints one.
 
 ## Work units, event deltas, and snapshots
 
-`Session::step(budget)` runs the needles analyzer and deterministic placeholders for the other jobs. The budget counts **work units**, never milliseconds. A call
+`Session::step(budget)` runs live loudness, source clipping, the programme report, and the needles analyzer. Other analyzers and mastering retain their scheduling placeholders. The budget counts **work units**, never milliseconds. A call
 consumes at most `min(budget, 16)` units, reports the number consumed, and returns `More` while any job remains or
 `Done` when none does. Zero units poll without progress. The shell measures its own speed and converts time to
-units. The library has no clock. Measurement phase one and phase two each take five units; a master takes the config's
-`progress.master.expectedPasses` pass units and one remeasurement unit. These establish stub facts and recipes, not
-measured audio or rendered PCM. A master takes priority over phase two, which resumes when the master finishes.
+units. The library has no clock. A measurement unit prepares one instrument, reads at most 1024 source frames,
+publishes at most four newly decided clipping runs, or advances report finalization by at most 1024 entries.
+The report drains reference true peak and scans tail energy, integrated gates, and short-term gates without changing
+summation order. A master takes priority over phase two, which resumes when the master finishes.
 
 Every completed unit publishes a phase. Measurement progress is the cumulative weight divided by the sum of
 `progress.analysis.weights`, in this order: loudness, report, lowEnd120, forensics, stereo, lowEndSweep, stereoBursts,
@@ -529,7 +531,7 @@ estimates; the interface permits them to move backwards. The human pass label us
 to the diagnostic journal. Completed and total work units are deterministic inputs for a shell's time estimate.
 
 `events()` views the latest `apply()` or `step()` batch. The caller copies or consumes it before the next such call;
-queries leave it intact. Each `Notification` is an independent value with `seq`, `jobId`, `kind`, and the payload
+queries leave it intact. Each `Notification` is an independent value with `seq`, `jobId`, source hash, revision, state, phase, deterministic work, `kind`, and the payload
 selected by kind. Sequence numbers count publications across loads and cancellations. No callback runs inside the
 session. Event facts use `OwnedFact`: `assign(text::Fact)` copies up to 256 user-text bytes without allocation and
 refuses excess whole; `view()` returns a `text::Fact` whose user-text views belong to that event. Copying or moving a
@@ -542,7 +544,7 @@ Restoring the FP environment allows a refused job to resume. The fixed batch has
 |---|---|
 | phase | phase name, weighted fraction, weights version, pass and work counters; every completed unit |
 | fact | `text::FactId` and `text::Arg` arguments; measurement completion, each master pass, master readiness, cancellation |
-| reading | owned momentary and short-term points and runs, with positions and lengths; shape only, the stub emits none |
+| reading | new owned momentary and short-term points, fixed frame grid, window reasons, and detailed clipping runs |
 | done | the completed master's id, immediately after its recipe is kept |
 | rejected | command id and rejection code; the project, revision and work remain unchanged; `seq` advances |
 | error | trap/contract/refusal/memory/poisoned/stale code, fact and arguments, byte demand and none/replay/continue recovery; an FP refusal publishes `Error{Refusal, Continue}` and leaves the job resumable |
@@ -551,10 +553,11 @@ An accepted load issues a measurement job id, shared by its two phases. Masters 
 sequence; the load answer returns its id and `measurementJob()` exposes the active measurement. `job()` retains its
 meaning as the active master. Cancellation checks the named id after the state table. Cancelling measurement retains
 the source, completed results, analyzer workspace and saved progress; unfinished results become `Cancelled`.
-The internal continuation gets a fresh job identity and restores those results to `Pending`. The public command and
-state table still expose the existing commands. Cancelling a master ends its overlay and resets its progress.
-After phase-two cancellation, `cancel` in `Measured1` returns `NoJob` if no master runs. A first-phase
-result still suffices for a master. A failed Driver transition publishes `Error{Contract, None}` and drops that job.
+`continueMeasurement` gets a fresh job identity, restores unfinished results to `Pending`, and resumes at the saved
+position without feeding silence or repeating a completed instrument. The snapshot publishes its availability and
+the state it resumes. Stopped, StoppedMeasured, and MasteringStopped are explicit table columns for the stopped state
+before placement, after placement, and with a master running. Cancelling a master ends only that overlay.
+A failed Driver transition publishes `Error{Contract, None}` and drops that job.
 Every internal completion checks its captured job id, and measurement completions also check the captured source hash.
 A stale completion changes nothing, including when the same samples are loaded again or a newer master runs.
 
@@ -573,8 +576,8 @@ from the corresponding snapshot. The codec generator describes both forms, inclu
 
 The measurement key combines the PCM bit hash, actual native parameters, config version and core/session versions.
 The target is absent from source-wide measurements. An identical load reuses PCM, saved progress and those results;
-changing the target does not invalidate them. Needles have a separate source-and-ceiling identity. Each prepared analyzer stays resident across pauses and is destroyed after its result has been copied. The
-source-wide pump remains the deterministic work-unit stub described above. The live needles job consumes its
+changing the target does not invalidate them. Needles have a separate source-and-ceiling identity. Each prepared analyzer stays resident across pauses and is destroyed after publishing its result. Live result arrays
+belong to the session independently of analyzer scratch, so final publication needs no programme-sized copy. The live needles job consumes its
 retained loudness and true-peak readings through the controller seam; see [NEEDLES.md](NEEDLES.md).
 
 `measurementStorage` exposes source, result, workspace, copy, codec and allocator demands and the maximum live
@@ -859,3 +862,18 @@ C load frames are uint32 because the wasm heap is limited to 2 GiB; native C++ P
 little-endian IEEE-754 f64, with unsupported byte-order builds refused at compile time. Executed encoder fixtures and
 compiled layout facts freeze every event kind, snapshots, answers, row order, offsets, strides and C signatures. Local
 source controls mutate each class of fact and require comparison to fail, while append-only additions pass.
+
+
+Live loudness arrays use a 100 ms cadence of ten rounded 10 ms analyzer sub-hops: `firstFrame == stepFrames`,
+point zero ends at that frame, and point indices never change. Momentary and short-term windows cover four and thirty
+hops. Before a complete window, values are NaN with TooShort; silence is negative infinity with NoSignal. The parallel
+reason arrays preserve each point's status. `framesRead` and `tailFrames` distinguish an unfinished window from the
+final off-grid tail; no padded point is manufactured. `reading.finished` closes stream delivery, while the report
+remains pending until its own finalization completes.
+
+The additive `reading.clips` scalar row groups every six values as start, length, channel, sign, level, and native
+ClipEvidence. Existing `runs` retain their three-column prefix. Snapshot clipping arrays declare six columns;
+total and stored counts distinguish exact aggregate counts from a truncated coordinate list. The source-damage
+detector is independent of target-dependent needles. The programme result retains every native value, count, and
+reason, including unconditional short-term P95 and the drained programme true peak. Load still refuses non-finite PCM;
+finite input that overflows an analyzer is reported with its native damage reason.

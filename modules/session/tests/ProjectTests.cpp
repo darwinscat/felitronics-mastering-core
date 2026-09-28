@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 #include "DeclaredBudget.h"
+#include "Advance.h"
 #include "Devices.h"
 #include "FpEnvironmentControl.h"
 #include "Grid.h"
@@ -47,7 +48,7 @@ std::unique_ptr<Session> fresh (unsigned units = 10)
     ok (made.status == Status::Ok, "create succeeds");
     Audio audio;
     ok (made.session->apply (audio.load()).rejection == Rejection::None, "load succeeds");
-    (void) made.session->step (units);
+    if (units >= 5) budget::measure (*made.session, units < 10); else (void) made.session->step (units);
     return std::move (made.session);
 }
 std::string json (const SnapshotView& v)
@@ -301,7 +302,7 @@ void domainsAndExactNumbers()
     for (const auto text : { "\"1e\"", "\"NaN\"", "\"1.2.3\"", "\"1e9999\"" })
         refused (*s, project() + "\n[target.lufs]\nhand = " + text + '\n', Rejection::ProjectType, text);
     Audio audio; auto load = audio.load(); load.pcm.sampleRate = 8000;
-    ok (s->apply (load).rejection == Rejection::None, "different source rate loaded"); (void) s->step (10);
+    ok (s->apply (load).rejection == Rejection::None, "different source rate loaded"); budget::measure (*s);
     refused (*s, project() + "\n[hpf]\nfq.hand = 4000\n", Rejection::OutOfDomain, "4000");
     ok (import (*s, project() + "\n[hpf]\nfq.hand = 3999.5\n").rejection == Rejection::None, "import uses current source Nyquist");
 }
@@ -452,8 +453,8 @@ void slicing()
         }
         const auto final = json (s->snapshot().view());
         if (reference.empty()) { reference = final; referenceFacts = facts; }
-        ok (final == reference && facts == referenceFacts && facts.size() == 2,
-            "budgets 1, 7 and large yield identical ordered facts and every final snapshot field");
+        ok (final == reference && facts == referenceFacts && facts.size() == 3,
+            "budgets 1, 7 and large yield identical ordered absence/completion facts and every final snapshot field");
     }
 }
 void demandsAndOrder()

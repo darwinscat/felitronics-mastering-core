@@ -96,7 +96,7 @@ void parity (bool fixture)
         auto created=Session::create(); auto& s=*created.session;
         load(s,pcm,rate,channels); target(s,-6); readings(s);
         ok(s.needlesJob()==0,"target waits for first measurement end");
-        (void)s.step(5);
+        (void)detail::Driver::measured1(s,s.measurementJob(),s.source().hash);
         ok(s.needlesJob()!=0,"first measurement end schedules needles for the latest target");
         for (double ceiling : {-6.0,-3.01,-12.75,-200.0})
         {
@@ -146,7 +146,7 @@ void parity (bool fixture)
 void lifecycle()
 {
     auto pcm=signal(12001); auto created=Session::create(); auto& s=*created.session;
-    load(s,pcm,48000,2); readings(s); target(s,-6); (void)s.step(5);
+    load(s,pcm,48000,2); readings(s); target(s,-6); (void)detail::Driver::measured1(s,s.measurementJob(),s.source().hash);
     const auto first=s.needlesJob(); (void)s.step(3); const auto progress=s.snapshot().view().needlesProgress;
     ok(progress.completedUnits==3,"preparation and two chunks report progress");
     const auto source=s.source().hash;
@@ -164,7 +164,7 @@ void lifecycle()
     const auto old=s.needlesJob(); pcm[0]=0.1f; load(s,pcm,48000,2);
     ok(s.source().hash!=source && s.needlesJob()==0,"new source discards pending needles");
     ok(s.apply(command::Cancel{5,old}).rejection==Rejection::UnknownJob,"old source job is stale");
-    readings(s); (void)s.step(5); finish(s);
+    readings(s); (void)detail::Driver::measured1(s,s.measurementJob(),s.source().hash); finish(s);
     ok(s.snapshot().view().needlesSource==s.source().hash,"replacement result is tied to new source");
     ok(saved.view().needlesSource==source && same(number(saved.view().measurements[slot],"thresholdDbTp"),-9),"saved snapshot survives target and source replacement");
     target(s,-10); const auto bytes=s.needlesStorage(-10); const auto revision=s.revision();
@@ -184,7 +184,7 @@ void dense()
 {
     std::vector<float> pcm(128u*65540u,0.0f);
     for(std::size_t i=0;i<pcm.size();i+=128) pcm[i]=pcm[i+1]=0.95f;
-    auto created=Session::create();auto& s=*created.session;load(s,pcm,48000,2);readings(s);target(s,-6);(void)s.step(5);
+    auto created=Session::create();auto& s=*created.session;load(s,pcm,48000,2);readings(s);target(s,-6);(void)detail::Driver::measured1(s,s.measurementJob(),s.source().hash);
     finish(s,32);const auto snap=s.snapshot();const auto& r=snap.view().measurements[slot];
     ok(number(r,"runCount")>65536 && same(number(r,"storedRunCount"),65536) && snap.view().needlesRunsTruncated,"dense run exhaustion is explicit in snapshot");
     Excursions a;Excursions::Params p;p.thresholdDbtp=-6;a.setParams(p);ok(a.prepare(48000,2),"dense direct prep");

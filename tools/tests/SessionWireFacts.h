@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 #pragma once
+#include <algorithm>
 #include "../../modules/session/src/JsonCodec.h"
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Wire.h>
@@ -64,6 +65,12 @@ int sessionWireFixture (bool frozen = false)
     e[4].payload.reading.momentary[0] = points[0]; e[4].payload.reading.momentaryCount = 1;
     e[4].payload.reading.shortTerm[0] = points[1]; e[4].payload.reading.shortTermCount = 1;
     e[4].payload.reading.runs[0] = runs[0]; e[4].payload.reading.runCount = 1;
+    if (! frozen)
+    {
+        e[4].payload.reading.clipCount = 1;
+        const double clip[] { 7, 2, 0, 1, 0.5, 1 };
+        std::copy_n (clip, 6, e[4].payload.reading.clips);
+    }
     e[5].kind = EventKind::Done; e[5].payload.done.masterId = 99;
     e[6].kind = EventKind::Rejected; e[6].payload.rejected = { 9007199254740993ull, Rejection::RateAboveLimit };
     e[7].kind = EventKind::Error; e[7].payload.error.code = ErrorCode::Memory; e[7].payload.error.recover = Recover::Replay;

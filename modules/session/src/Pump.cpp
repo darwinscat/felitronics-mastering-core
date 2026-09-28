@@ -4,6 +4,7 @@
 #include "BuildGuards.h"
 #include "BuildContract.h"
 #include "Driver.h"
+#include "LiveMeasurements.h"
 #include "Rules.h"
 
 #include <felitronics/session/Config.h>
@@ -72,6 +73,13 @@ void Session::emit (Notification event) noexcept
 {
     detail::debugBound (eventCount_ < kEventBatch);
     event.seq = ++sequence_;
+    event.source = source_.hash;
+    event.state = state_;
+    event.revision = revision_;
+    event.phase = event.kind == EventKind::Phase ? event.payload.phase.name : measurementProgress_.name;
+    event.completedWork = liveMeasurements_ ? liveMeasurements_->work : 0;
+    event.totalWork = source_.frames + (liveMeasurements_ ? liveMeasurements_->clipCapacity : 0) + 32;
+
     events_[eventCount_++] = event; // at most three per unit, or one per command
 }
 
@@ -87,6 +95,7 @@ void Session::dropJob (JobId job) noexcept
     else if (job == measurementJob_)
     {
         measurementJob_ = 0;
+        stoppedState_ = state_; state_ = State::MeasurementStopped;
         for (auto& result : measurementResults_)
             if (result.analyzer != Analyzer::Excursions && result.status == MeasurementStatus::Pending)
             {
@@ -181,6 +190,10 @@ Stepped Session::step (std::uint32_t budget) noexcept
         else if (needlesJob_ != 0)
         {
             stepNeedles();
+        }
+        else if (liveMeasurements_ && liveMeasurements_->stage < 9 && measurementUnit_ < 2)
+        {
+            stepMeasurements();
         }
         else
         {

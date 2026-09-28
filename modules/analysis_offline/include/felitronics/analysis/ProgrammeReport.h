@@ -672,6 +672,13 @@ public:
         tp_.reset();
         report_ = Report {};
         finished_ = false;
+        finishStage_ = 0; finishIndex_ = 0;
+        finishTail_ = {}; finishTailCount_ = 0;
+        finishSum_ = finishRelative_ = 0.0; finishCount_ = 0;
+        finishLufs_ = kSilenceFloorLufs;
+        finishAbsCount_ = finishLraCount_ = 0;
+        finishP10_ = finishP50_ = finishP95_ = finishLra_ = 0.0;
+        finishHistogram_.fill (0);
     }
 
     // The test surface — see THE TRACE HOOK above. `capacity` events at most, never resized, never
@@ -691,7 +698,7 @@ public:
     [[nodiscard]] bool process (const float* const* in, int numChannels, int n) noexcept
     {
         if (numChannels < 0 || n < 0) return false;
-        if (! prepared_ || finished_) return false;
+        if (! prepared_ || finished_ || finishStage_ != 0) return false;
         if (numChannels > channels_) return false;
         if (numChannels > 0)
         {
@@ -713,10 +720,98 @@ public:
     // and percentiles exactly once, and freezes the report. Idempotent.
     void finish() noexcept
     {
-        if (! prepared_ || finished_) return;
-        tp_.drain();                                              // the last ~16 samples are still in the FIR
-        buildReport();
-        finished_ = true;
+        while (! finishStep (1024)) {}
+    }
+
+    // One bounded slice of finalization. No input is accepted after the first slice.
+    // Each pass keeps the original chronological summation and gate comparisons.
+    // Zero polls; true means the report is frozen (or the instrument is unprepared).
+    bool finishStep (std::uint32_t budget) noexcept
+    {
+        if (! prepared_ || finished_) return true;
+        if (budget == 0) return false;
+        if (finishStage_ == 0)
+        {
+            tp_.drain();
+            finishIndex_ = tailWritten_ - std::min (tailWritten_, tailSamples_);
+            finishStage_ = 1;
+            return false;
+        }
+        const auto blocks = lm_.gatingBlockEnergies();
+        const double absolute = core::det::pow10 ((-70.0 + 0.691) / 10.0);
+        for (std::uint32_t n = 0; n < budget; ++n)
+        {
+            if (finishStage_ == 1)
+            {
+                if (lastActive_ >= 0 && finishIndex_ < tailWritten_)
+                {
+                    const auto i = std::size_t (finishIndex_++ % tailSamples_);
+                    finishTail_.add (tailSq_[i]); finishTailCount_ += tailN_[i];
+                    continue;
+                }
+                finishIndex_ = 0; finishStage_ = 2;
+            }
+            if (finishStage_ == 2 || finishStage_ == 3)
+            {
+                if (finishIndex_ < std::int64_t (blocks.size()))
+                {
+                    const double e = blocks[std::size_t (finishIndex_++)];
+                    if (std::isfinite (e) && e > absolute && (finishStage_ == 2 || e > finishRelative_))
+                    { finishSum_ += e; ++finishCount_; }
+                    continue;
+                }
+                if (finishStage_ == 2 && finishCount_ != 0)
+                {
+                    finishRelative_ = 0.1 * (finishSum_ / finishCount_);
+                    finishSum_ = 0.0; finishCount_ = 0; finishIndex_ = 0; finishStage_ = 3;
+                    continue;
+                }
+                if (finishStage_ == 3 && finishCount_ > 0)
+                {
+                    const double mean = finishSum_ / finishCount_;
+                    finishLufs_ = mean > 1e-12 ? -0.691 + 10.0 * core::det::log10 (mean) : kSilenceFloorLufs;
+                }
+                finishSum_ = 0.0; finishCount_ = 0; finishIndex_ = 0; finishStage_ = 4;
+            }
+            if (finishStage_ == 4 || finishStage_ == 5)
+            {
+                if (finishIndex_ < shortTermCount_)
+                {
+                    const double e = shortTerm_[std::size_t (finishIndex_++)];
+                    if (std::isfinite (e) && e >= kAbsoluteGateEnergy && (finishStage_ == 4 || e >= finishRelative_))
+                    {
+                        if (finishStage_ == 4) finishSum_ += e;
+                        ++finishCount_; ++finishHistogram_[std::size_t (binOf (e))];
+                    }
+                    continue;
+                }
+                if (finishStage_ == 4)
+                {
+                    finishAbsCount_ = finishCount_;
+                    if (finishCount_ >= 2)
+                    {
+                        finishP10_ = percentile (finishHistogram_.data(), finishCount_, 0.10);
+                        finishP50_ = percentile (finishHistogram_.data(), finishCount_, 0.50);
+                        finishP95_ = percentile (finishHistogram_.data(), finishCount_, 0.95);
+                        finishRelative_ = kRelativeGate * (finishSum_ / finishCount_);
+                        finishHistogram_.fill (0); finishCount_ = 0; finishIndex_ = 0; finishStage_ = 5;
+                        continue;
+                    }
+                }
+                else
+                {
+                    finishLraCount_ = finishCount_;
+                    if (finishCount_ >= 2)
+                        finishLra_ = percentile (finishHistogram_.data(), finishCount_, 0.95)
+                                   - percentile (finishHistogram_.data(), finishCount_, 0.10);
+                }
+                finishStage_ = 6;
+            }
+            buildReport();
+            finished_ = true;
+            return true;
+        }
+        return false;
     }
 
     // The report. Meaningful after finish(); before it, every field is invalid and every count is zero.
@@ -1244,13 +1339,8 @@ private:
         if (lastActive_ < 0) { R.tailEnergyRatio = bad (ProgrammeReason::SilentProgramme); return; }
 
         const std::int64_t have = std::min (tailWritten_, tailSamples_);
-        Sum tail; std::int64_t count = 0;
-        for (std::int64_t k = tailWritten_ - have; k < tailWritten_; ++k)   // chronological, one fixed order
-        {
-            const std::size_t i = (std::size_t) (k % tailSamples_);
-            tail.add (tailSq_[i]);
-            count += (std::int64_t) tailN_[i];
-        }
+        const Sum& tail = finishTail_;
+        const std::int64_t count = finishTailCount_;
         R.tailWindowFinite = count;
         emit (ProgrammeTraceKind::TailWindow, -1, 0, tailWritten_ - have, tailWritten_,
               tail.value(), (double) count, progCount > 0 ? progSq / (double) progCount : 0.0);
@@ -1330,7 +1420,7 @@ private:
         R.truePeakDbtp = tpDb;
 
         // --- integrated loudness: -120.0 is the meter's "nothing passed the gates" SENTINEL ---
-        const double lufs = lm_.integratedLufs();
+        const double lufs = finishLufs_;
         const ProgrammeValue integrated =
               damaged                                      ? bad (damage)
             : lm_.droppedBlocks() != 0                     ? bad (ProgrammeReason::LoudnessCapacityExceeded)
@@ -1362,19 +1452,7 @@ private:
         if (damaged)              { all (bad (damage)); return; }
         if (shortTermDropped_ > 0) { all (bad (ProgrammeReason::LoudnessCapacityExceeded)); return; }
 
-        // Pass one: the absolute gate, and the mean the relative gate is taken from.
-        int hist[kHistogramBins] = { 0 };
-        double absSum = 0.0;
-        int    absCount = 0;
-        for (std::int64_t j = 0; j < shortTermCount_; ++j)
-        {
-            const double e = shortTerm_[(std::size_t) j];
-            if (std::isfinite (e) && e >= kAbsoluteGateEnergy)
-            {
-                absSum += e; ++absCount;
-                ++hist[(std::size_t) binOf (e)];
-            }
-        }
+        const int absCount = finishAbsCount_;
         R.shortTermGatedObservations = absCount;
 
         if (absCount < 2)
@@ -1383,26 +1461,12 @@ private:
                                           : ProgrammeReason::TooFewObservations));
             return;
         }
-        R.shortTermP10 = good (percentile (hist, absCount, 0.10));
-        R.shortTermP50 = good (percentile (hist, absCount, 0.50));
-        R.shortTermP95 = good (percentile (hist, absCount, 0.95));
+        R.shortTermP10 = good (finishP10_);
+        R.shortTermP50 = good (finishP50_);
+        R.shortTermP95 = good (finishP95_);
         R.shortTermSpreadLu = good (R.shortTermP95.value - R.shortTermP10.value);
 
-        // Pass two: EBU Tech 3342 — the -20 LU relative gate, then P95 - P10 over what is left.
-        const double relT = kRelativeGate * (absSum / (double) absCount);
-        for (int b = 0; b < kHistogramBins; ++b) hist[b] = 0;
-        int lraCount = 0;
-        for (std::int64_t j = 0; j < shortTermCount_; ++j)
-        {
-            const double e = shortTerm_[(std::size_t) j];
-            if (std::isfinite (e) && e >= kAbsoluteGateEnergy && e >= relT)
-            {
-                ++hist[(std::size_t) binOf (e)]; ++lraCount;
-            }
-        }
-        R.lraLu = lraCount >= 2
-                ? good (percentile (hist, lraCount, 0.95) - percentile (hist, lraCount, 0.10))
-                : bad (ProgrammeReason::TooFewObservations);
+        R.lraLu = finishLraCount_ >= 2 ? good (finishLra_) : bad (ProgrammeReason::TooFewObservations);
     }
 
     // libebur128's rank rule over a fixed-edge histogram, returning the bin's lower bound — the same shape
@@ -1469,6 +1533,13 @@ private:
     std::size_t          traceCap_   = 0;
     std::int64_t         traceCount_ = 0, traceOverflow_ = 0;
 
+    unsigned finishStage_ = 0;
+    std::int64_t finishIndex_ = 0, finishTailCount_ = 0;
+    Sum finishTail_ {};
+    double finishSum_ = 0.0, finishRelative_ = 0.0, finishLufs_ = kSilenceFloorLufs;
+    double finishP10_ = 0.0, finishP50_ = 0.0, finishP95_ = 0.0, finishLra_ = 0.0;
+    int finishCount_ = 0, finishAbsCount_ = 0, finishLraCount_ = 0;
+    std::array<int, kHistogramBins> finishHistogram_ {};
     bool prepared_ = false, finished_ = false;
 };
 

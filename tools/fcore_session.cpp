@@ -72,6 +72,7 @@ const char* nameOf (felitronics::session::Command c)
         case Command::Master:      return "master";
         case Command::Cancel:      return "cancel";
         case Command::Forget:      return "forget";
+        case Command::ContinueMeasurement: return "continueMeasurement";
         case Command::ImportProject: return "importProject";
     }
     return "?";
@@ -135,8 +136,8 @@ const char* nameOf (felitronics::session::Rejection r)
 // read anything else in its own code page.
 void printHeader (const char* first)
 {
-    std::printf ("| %s | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 |\n"
-                 "|---|---|---|---|---|---|---|\n", first);
+    std::printf ("| %s | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 | Stopped | StoppedMeasured | MasteringStopped |\n"
+                 "|---|---|---|---|---|---|---|---|---|---|\n", first);
 }
 
 void printTable()

@@ -260,7 +260,7 @@ while (!done && steps < 32) {
     done = M.HEAPU32[resultSize >>> 2] === 1; ++steps;
     for (const e of readTransfer('events')) if (e.kind === 'phase') ++phases;
 }
-ok(done && steps === 10 && phases === 10, 'pump reaches done through ten small steps');
+ok(done && steps > 10 && phases === steps, 'pump reaches done after bounded preparation, streaming, and finalization');
 const snapshot = readTransfer('snapshot');
 ok(snapshot.state === 3 && snapshot.sourceBytes === 1024 && snapshot.integratedLufs === 'NaN', 'owned measured snapshot and explicit NaN');
 ok(cmd(session, {kind:'editDevice', commandId:'2', device:7, fields:{on:true, db:1.25}}).kind === 'accepted', 'low edits with hidden panel on streaming');

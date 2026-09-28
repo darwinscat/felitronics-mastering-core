@@ -4,6 +4,7 @@
 #include "BuildGuards.h"
 #include "MeasurementPlan.h"
 #include "MeasurementWorkspace.h"
+#include "LiveMeasurements.h"
 #include "Rules.h"
 #include "BuildContract.h"
 #include <felitronics/storage/VectorBytes.h>
@@ -98,7 +99,7 @@ MeasurementPlan MeasurementPlan::storageFor (const Pcm& pcm, const MeasurementPa
     const bool loudness = analysis::DeterministicLoudnessMeter::storageFor (rate, p.programme.maxDurationSec * rate, meter);
     const auto sub = std::max<std::uint64_t> (1, std::uint64_t (std::floor (rate * 0.01 + 0.5)));
     set (Analyzer::Loudness, loudness, sizeof (analysis::DeterministicLoudnessMeter) + meter.bytes()
-         + storage::kLoudnessProxies * storage::kVectorProxyBytes, 2u * (pcm.frames / (10u * sub) + 1u));
+         + storage::kLoudnessProxies * storage::kVectorProxyBytes, 4u * (pcm.frames / (10u * sub) + 1u));
     const auto clips = analysis::ClipDetector::storageFor (rate, channels, p.clipRuns);
     set (Analyzer::Clipping, clips.ok, sizeof (analysis::ClipDetector) + clips.firstBytes(), clips.runEntries * 6u);
     for (std::size_t i = 0; i < 2; ++i)
@@ -130,7 +131,7 @@ MeasurementPlan MeasurementPlan::storageFor (const Pcm& pcm, const MeasurementPa
     out.analyzers[std::size_t (Analyzer::Excursions)] = {};
     auto& s = out.storage;
     s.sourceBytes = double (pcm.frames * pcm.channelCount * sizeof (float));
-    s.workspaceBytes = double (sizeof (MeasurementWorkspace));
+    s.workspaceBytes = double (sizeof (MeasurementWorkspace) + sizeof (LiveMeasurements));
     for (const auto& a : out.analyzers) { s.workspaceBytes += double (a.workspace); s.resultBytes += double (a.result); }
     s.copyBytes = s.resultBytes;
     // A double's longest JSON form is 24 bytes; a row element has a comma as well. 32 includes both.

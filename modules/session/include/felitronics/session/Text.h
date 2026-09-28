@@ -160,6 +160,8 @@ enum class FactId : std::uint16_t
     MeasurementUnavailable = 408,
     NeedlesSkipped = 409,
     NeedlesRunsTruncated = 410,
+    SourceClipping = 411,
+    ContinueMeasurement = 412,
 
 };
 

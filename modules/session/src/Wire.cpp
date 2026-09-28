@@ -173,6 +173,8 @@ void eventList (Writer& w, std::span<const Notification> events) noexcept
         begin (w); w.field ("seq", e.seq); w.field ("jobId", e.jobId);
         constexpr std::string_view kinds[] = { "phase", "fact", "reading", "done", "rejected", "error", "measurement" };
         if (unsigned (e.kind) >= std::size (kinds)) { w.good = false; return; }
+        w.field ("source", e.source); w.field ("revision", e.revision);
+        w.field ("state", e.state); w.field ("phase", e.phase); w.field ("completedWork", e.completedWork); w.field ("totalWork", e.totalWork);
         w.field ("kind", kinds[unsigned (e.kind)]); w.text (",\"payload\":");
         switch (e.kind)
         {
@@ -182,10 +184,14 @@ void eventList (Writer& w, std::span<const Notification> events) noexcept
             case EventKind::Reading:
             {
                 const auto& r = e.payload.reading;
-                if (r.momentaryCount > 4 || r.shortTermCount > 4 || r.runCount > 4) { w.good = false; return; }
+                if (r.momentaryCount > 4 || r.shortTermCount > 4 || r.runCount > 4 || r.clipCount > 4) { w.good = false; return; }
                 begin (w); w.field ("momentary", std::span<const ReadingPoint> (r.momentary, r.momentaryCount));
                 w.field ("shortTerm", std::span<const ReadingPoint> (r.shortTerm, r.shortTermCount));
-                w.field ("runs", std::span<const ReadingRun> (r.runs, r.runCount)); end (w); break;
+                w.field ("runs", std::span<const ReadingRun> (r.runs, r.runCount));
+                w.field ("grid", r.grid); w.field ("momentaryReason", r.momentaryReason); w.field ("shortTermReason", r.shortTermReason);
+                w.field ("clips", std::span<const double> (r.clips, 6u * r.clipCount));
+                w.field ("totalRuns", r.totalRuns); w.field ("storedRuns", r.storedRuns); w.field ("tailFrames", r.tailFrames);
+                w.field ("runsComplete", r.runsComplete); w.field ("finished", r.finished); end (w); break;
             }
             case EventKind::Done: begin (w); w.field ("masterId", e.payload.done.masterId); end (w); break;
             case EventKind::Rejected:
@@ -255,6 +261,7 @@ template <class F> auto parseCommand (std::string_view json, F&& finish) noexcep
         request = r;
     }
     else if (kind == "setManual") { command::SetManual r { id }; root.get ("on", r.on); request = r; }
+    else if (kind == "continueMeasurement") request = command::ContinueMeasurement { id };
     else if (kind == "cancel") { command::Cancel r { id }; root.get ("jobId", r.job); request = r; }
     else if (kind == "forget") { command::Forget r { id }; root.get ("masterId", r.master); request = r; }
     else if (kind == "editTarget" || kind == "editDevice" || kind == "revertEdits")

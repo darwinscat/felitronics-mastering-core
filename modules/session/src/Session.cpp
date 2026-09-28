@@ -14,6 +14,7 @@
 #include "Rules.h"
 #include "MeasurementPlan.h"
 #include "MeasurementWorkspace.h"
+#include "LiveMeasurements.h"
 #include "Needles.h"
 #include "BuildContract.h"
 
@@ -73,6 +74,7 @@ double Session::liveBytes() const noexcept
 {
     return double (createBytes (capabilities_) + source_.frames * source_.channels * sizeof (float)
                    + source_.name.size() + masterRoom_ * sizeof (Kept) + measurementOwnedBytes_
+                   + (liveMeasurements_ ? sizeof (detail::LiveMeasurements) + liveMeasurements_->bytes : 0)
                    + (measurementWorkspace_ ? measurementWorkspace_->bytes() : 0)
                    + (needlesWork_ ? needlesWork_->bytes : 0) + (needlesResult_ ? sizeof (detail::NeedlesResult) : 0));
 }
@@ -109,7 +111,8 @@ Checked Session::demand (const Checked& storage) const noexcept
 Session::~Session() = default;
 
 State Session::state() const noexcept { return state_; }
-bool Session::placed() const noexcept { return state_ == State::Measured1 || state_ == State::Measured2; }
+bool Session::placed() const noexcept { return state_ == State::Measured1 || state_ == State::Measured2
+    || (state_ == State::MeasurementStopped && stoppedState_ == State::Measured1); }
 bool Session::mastering() const noexcept { return mastering_; }
 std::uint64_t Session::revision() const noexcept { return revision_; }
 const Project& Session::project() const noexcept { return project_; }
@@ -127,6 +130,8 @@ Column Session::column() const noexcept
 {
     switch (state_)
     {
+        case State::MeasurementStopped: return mastering_ ? Column::MasteringStopped
+            : stoppedState_ == State::Measured1 ? Column::StoppedMeasured : Column::Stopped;
         case State::Empty:     return Column::Empty;
         case State::Loaded:    return Column::Loaded;
         case State::Measured1: return mastering_ ? Column::Mastering1 : Column::Measured1;

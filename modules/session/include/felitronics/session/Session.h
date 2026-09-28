@@ -102,7 +102,7 @@ struct Source
     std::string_view name;
 };
 
-namespace detail { struct Driver; struct Inspector; struct MeasurementWorkspace; struct NeedlesWork; struct NeedlesResult; }
+namespace detail { struct Driver; struct Inspector; struct MeasurementWorkspace; struct LiveMeasurements; struct NeedlesWork; struct NeedlesResult; }
 
 //==============================================================================
 // felitronics::session::Session — the mastering session: the object a shell (the web worker through the fcsession
@@ -193,12 +193,14 @@ public:
     [[nodiscard]] Rejection exportProject (std::span<char> output) const noexcept;
     [[nodiscard]] Answer importProject (CommandId id, std::string_view bytes) noexcept;
 
-    // Each needles unit prepares, reads at most 1024 source frames, or finishes; other jobs still use stub steps. A call takes at most kStepUnits units;
+    // Each live measurement unit prepares one analyzer, reads at most 1024 source frames, drains new rows,
+    // or advances finalization. A call takes at most kStepUnits units;
     // zero polls. With no work, even a hostile FP environment returns Done without an event or a seq change.
     // An FP refusal while work remains publishes Error{Refusal, Continue}; restoring the environment permits resumption.
     // Drain/copy events() after each apply/step, before the next call replaces the batch.
     // The batch lives inside createBytes(). Needles preparation uses its separate needlesStorage demand;
-    // subsequent needles units and events request no heap memory.
+    // loudness/report preparations use the whole measurement demand published before load.
+    // stepBytes() is additional transient storage beyond those declared preparations and retained output buffers.
     [[nodiscard]] static std::uint64_t stepBytes() noexcept;
     [[nodiscard]] Stepped step (std::uint32_t budget) noexcept;
     [[nodiscard]] std::span<const Notification> events() const noexcept;
@@ -241,6 +243,7 @@ private:
     [[nodiscard]] bool hasWork() const noexcept;
     void requestNeedles() noexcept;
     void stepNeedles() noexcept;
+    void stepMeasurements() noexcept;
     void clearNeedles() noexcept;
     void needlesChanged() noexcept;
     std::unique_ptr<detail::NeedlesWork> needlesWork_;
@@ -257,7 +260,7 @@ private:
     std::size_t eventCount_ = 0;
     std::uint64_t sequence_ = 0;
 
-    State state_ = State::Empty;
+    State state_ = State::Empty, stoppedState_ = State::Loaded;
     bool mastering_ = false;
     std::uint64_t revision_ = 0;
     Project project_ {};
@@ -277,6 +280,7 @@ private:
     OwnedMeasurements measurementOwners_[kAnalyzers];
     std::uint64_t measurementOwnedBytes_ = 0;
     std::unique_ptr<detail::MeasurementWorkspace> measurementWorkspace_;
+    std::unique_ptr<detail::LiveMeasurements> liveMeasurements_;
     std::unique_ptr<float[]> samples_;
     std::unique_ptr<char[]> name_;
     // The master being made, and the masters kept: `masterCount_` of them in room for `masterRoom_`. The ids count
