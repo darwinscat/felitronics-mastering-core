@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 // Mutate an isolated source copy, regenerate, compile, execute and compare. Hosts can retain the copy.
-import {cpSync, mkdtempSync, readFileSync, writeFileSync, rmSync} from 'node:fs';
+import {cpSync, existsSync, mkdtempSync, readFileSync, statSync, utimesSync, writeFileSync, rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -37,6 +37,22 @@ const configuration = option('--config') || value('CMAKE_BUILD_TYPE') || '';
 const multi = Boolean(value('CMAKE_CONFIGURATION_TYPES'));
 const buildArgs = ['--build', join(temporary, 'build'), '--config', configuration, '-j', '8', '--target'];
 const source = join(temporary, 'source'), build = join(temporary, 'build');
+let builtAt = 0;
+const wait = new Int32Array(new SharedArrayBuffer(4));
+function stampInput(path) {
+    // Make 3.81 compares whole seconds; MSBuild also tracks input/output timestamps.
+    // Every mutation, restoration and generated probe must be newer than the previous
+    // build, even on a coarse clock. Wait for real time instead of dating inputs in the future.
+    const nextSecond = (Math.floor(builtAt / 1000) + 1) * 1000;
+    while (Date.now() < nextSecond) Atomics.wait(wait, 0, 0, nextSecond - Date.now());
+    const now = new Date();
+    utimesSync(path, now, now);
+    assert(Math.floor(statSync(path).mtimeMs / 1000) > Math.floor(builtAt / 1000), `fresh input: ${path}`);
+}
+function writeSource(path, text) {
+    writeFileSync(path, text);
+    stampInput(path);
+}
 function run(command, args) {
     const result = spawnSync(command, args, {encoding:'utf8', maxBuffer:8*1024*1024});
     assert.equal(result.status, 0, `${command} ${args.join(' ')}\n${result.stdout}\n${result.stderr}`);
@@ -65,10 +81,18 @@ try {
     assert.equal(new RegExp('^CMAKE_BUILD_TYPE:[^=]*=(.*)$', 'm').exec(childCache)?.[1]?.trim(), configuration);
     console.log(`source control toolchain preserved: ${value('CMAKE_GENERATOR')}, ${configuration || 'unconfigured'}, ${value('CMAKE_CXX_COMPILER')}`);
     const executable = name => join(build, 'tools', multi ? configuration : '', name + (process.platform === 'win32' ? '.exe' : ''));
+    const buildTarget = name => {
+        const path = executable(name), previous = existsSync(path) ? statSync(path).mtimeMs : 0;
+        run('cmake', [...buildArgs, name]);
+        builtAt = Date.now();
+        assert(statSync(path).mtimeMs > previous, `${name}: build must update the selected executable`);
+    };
     const probe = executable('felitronics_session_abi_probe');
     const compile = () => {
-        run(process.execPath, [checker, '--generate', join(build,'tools/session-abi-probe.cpp')]);
-        run('cmake', [...buildArgs, 'felitronics_session_abi_probe']);
+        const generated = join(build,'tools/session-abi-probe.cpp');
+        run(process.execPath, [checker, '--generate', generated]);
+        stampInput(generated);
+        buildTarget('felitronics_session_abi_probe');
     };
     const compare = () => spawnSync(process.execPath, [checker, probe], {encoding:'utf8', maxBuffer:2*1024*1024});
     compile(); assert.equal(compare().status, 0, 'unmodified source agrees');
@@ -88,31 +112,37 @@ try {
     for (const [name, file, before, after] of mutations) {
         const path = join(source,file), original = readFileSync(path,'utf8');
         assert(original.includes(before), `mutation anchor: ${name}`);
-        writeFileSync(path,original.replace(before,after));
+        writeSource(path,original.replace(before,after));
         compile(); const result = compare();
         assert.notEqual(result.status,0, `${name}: comparison must reject compiled mutation`);
         assert.match(result.stderr,/frozen session ABI changed or disappeared/);
         console.log(`source control: ${name}: generation -> compilation -> comparison RED`);
-        writeFileSync(path,original);
+        writeSource(path,original);
     }
     const header = join(source,'tools/fc_session_abi.h'), originalHeader = readFileSync(header, 'utf8');
-    writeFileSync(header,originalHeader.replace('FC_SESSION_DONE = 1','FC_SESSION_DONE = 1, FC_SESSION_FUTURE = 42')
+    writeSource(header,originalHeader.replace('FC_SESSION_DONE = 1','FC_SESSION_DONE = 1, FC_SESSION_FUTURE = 42')
         .replace('    uint32_t rowBytes;', '    uint32_t rowBytes;\n    uint32_t futureReserved;')
         .replace('uint32_t fc_session_abi_version (void);','uint32_t fc_session_abi_version (void);\nfc_session_status fc_session_future (fc_session session);'));
     compile(); const added = compare(); assert.equal(added.status,0,added.stderr);
+    const addedFacts = run(probe, []);
+    for (const fact of ['enum FC_SESSION_FUTURE=42', 'field fc_session_sizes.futureReserved uint32_t',
+        'offset fc_session_sizes.futureReserved=12', 'sizeof fc_session_sizes=16',
+        'function fc_session_future fc_session_status(fc_session)'])
+        assert(addedFacts.split(/\r?\n/).includes(fact), `compiled addition: ${fact}`);
     console.log('source control: appended struct field, enum and entry point: generation -> compilation -> comparison GREEN');
-    writeFileSync(header, originalHeader);
+    writeSource(header, originalHeader);
     const codec = join(source, 'modules/session/src/JsonCodec.h'), originalCodec = readFileSync(codec, 'utf8');
     // Add a snapshot field in the actual writer, not in a fabricated output.
     const addition = 'string (name); put (\':\'); value (x);';
     assert(originalCodec.includes(addition));
-    writeFileSync(codec, originalCodec.replace(addition, addition + ' if (name == \"handFieldCount\") text (",\\\"future\\\":true");'));
+    writeSource(codec, originalCodec.replace(addition, addition + ' if (name == \"handFieldCount\") text (",\\\"future\\\":true");'));
     compile(); const jsonAdded = compare(); assert.equal(jsonAdded.status, 0, jsonAdded.stderr);
+    assert.match(run(probe, []), /"future":true/, 'compiled JSON addition');
     console.log('source control: compiled JSON field addition GREEN');
-    writeFileSync(codec, originalCodec);
+    writeSource(codec, originalCodec);
     // Removing overlap checks used to escape the demand-query suite entirely.
     const facade = join(source, 'tools/wasm/fc_session.cpp'), originalFacade = readFileSync(facade, 'utf8');
-    run('cmake', [...buildArgs, 'felitronics_session_abi_v1_tests']);
+    buildTarget('felitronics_session_abi_v1_tests');
     run(executable('felitronics_session_abi_v1_tests'), []);
     console.log('guard control: unmodified suite GREEN before planting mutations');
     for (const [entry, before, after] of [
@@ -124,14 +154,14 @@ try {
         const end = originalFacade.indexOf('\n}', start) + 2;
         const body = originalFacade.slice(start, end), changed = body.replace(before, after);
         assert.notEqual(changed, body, `guard anchor: ${entry}`);
-        writeFileSync(facade, originalFacade.slice(0, start) + changed + originalFacade.slice(end));
-        run('cmake', [...buildArgs, 'felitronics_session_abi_v1_tests']);
+        writeSource(facade, originalFacade.slice(0, start) + changed + originalFacade.slice(end));
+        buildTarget('felitronics_session_abi_v1_tests');
         const result = spawnSync(executable('felitronics_session_abi_v1_tests'), [], {encoding:'utf8'});
         assert.notEqual(result.status, 0, `${entry}: suite must reject guard mutation`);
         assert.match(result.stdout + result.stderr, /FAIL:/);
         console.log(`guard control: ${entry}: mutation RED`);
     }
-    writeFileSync(facade, originalFacade);
+    writeSource(facade, originalFacade);
     // Corrupt a required embedded lookup after the build gate: never substitute a plausible value.
     const contracts = [
         ['missing string', 'modules/session/src/Text.cpp', 'row.find ("minus")', 'row.find ("absentRequiredString")'],
@@ -144,22 +174,22 @@ try {
         ['invalid schema detail', 'modules/session/src/ConfigSchema.cpp', 'if (p.detail >', 'const volatile std::uint32_t corruptDetail = 999; if (corruptDetail >'],
     ];
     const fixture = executable('felitronics_session_contract_fixture');
-    run('cmake', [...buildArgs, 'felitronics_session_contract_fixture']);
+    buildTarget('felitronics_session_contract_fixture');
     run(fixture, []);
     for (const [name, file, before, after] of contracts) {
         const path = join(source, file), original = readFileSync(path, 'utf8');
         assert(original.includes(before), `contract anchor: ${name}`);
-        writeFileSync(path, original.replaceAll(before, after));
-        run('cmake', [...buildArgs, 'felitronics_session_contract_fixture']);
+        writeSource(path, original.replaceAll(before, after));
+        buildTarget('felitronics_session_contract_fixture');
         const result = spawnSync(fixture, [], {encoding:'utf8'});
         assert.match(result.stdout, /contract fixture reached/);
         assert(trapped(result), `${name}: must trap, got ${result.status}/${result.signal}`);
         console.log(`contract control: ${name}: compiled corruption TRAPS`);
-        writeFileSync(path, original);
+        writeSource(path, original);
     }
     // Compile-time byte-order refusal is a source control, not a synthetic byte fixture.
     const wire = join(source,'modules/session/src/Wire.cpp');
-    writeFileSync(wire,readFileSync(wire,'utf8').replace('std::endian::native == std::endian::little','std::endian::native == std::endian::big'));
+    writeSource(wire,readFileSync(wire,'utf8').replace('std::endian::native == std::endian::little','std::endian::native == std::endian::big'));
     const endian = spawnSync('cmake',[...buildArgs, 'felitronics_session_abi_probe'],{encoding:'utf8'});
     assert.notEqual(endian.status,0); assert.match(endian.stdout+endian.stderr,/requires little-endian f64 rows/);
     console.log('source control: unsupported byte order: compilation RED');
