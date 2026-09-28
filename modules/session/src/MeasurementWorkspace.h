@@ -15,7 +15,7 @@ struct MeasurementWorkspace
     bool bound = false;
     std::uint64_t allocations[kAnalyzers] {};
     [[nodiscard]] std::uint64_t bytes() const noexcept;
-    std::unique_ptr<analysis::DeterministicLoudnessMeter> loudness;
+    std::unique_ptr<analysis::StreamingLoudnessMeter> loudness;
     std::unique_ptr<analysis::ClipDetector> clipping;
     std::unique_ptr<analysis::ProgrammeReport> programme;
     std::unique_ptr<analysis::LowEnd> lowEnd, infraLow, lowEnd150;

@@ -4,7 +4,7 @@
 #pragma once
 
 #include <felitronics/analysis/KWeightingFilter.h>
-#include <felitronics/analysis/LoudnessMeter.h>
+#include <felitronics/analysis/StreamingLoudnessMeter.h>
 #include <felitronics/analysis/ReferenceTruePeakMeter.h>
 #include <felitronics/analysis/StereoColumns.h>
 #include <felitronics/core/DetMath.h>
@@ -509,7 +509,7 @@ public:
     // storage that still fits. `ok == false` on exactly the arguments prepare() refuses, and then every
     // number below is zero. The 3 s sub-hop ring and the percentile histogram are NOT here: both are fixed
     // and inline, so they are not heap at all.
-    static constexpr std::uint64_t constructBytes() noexcept { return (storage::kLoudnessProxies + 1u + storage::kPolyphaseProxies * core::kMaxChannels) * storage::kVectorProxyBytes; }
+    static constexpr std::uint64_t constructBytes() noexcept { return (1u + storage::kPolyphaseProxies * core::kMaxChannels) * storage::kVectorProxyBytes; }
 
     struct Storage
     {
@@ -523,7 +523,7 @@ public:
         std::size_t   tailPendingEnergies = 0; // doubles — …and their energies, which are not always zero
         std::size_t   scratchFloats    = 0;    // maxBlock · channels — the constant-width feed
         std::size_t   shortTermEntries = 0;    // doubles: one short-term observation per 100 ms hop (10 Hz)
-        DeterministicLoudnessMeter::Storage          loudness {};
+        StreamingLoudnessMeter::Storage             loudness {};
         ReferenceTruePeakMeter::Storage truePeak {};
 
         // 64 bits because the product is the point: on wasm32 a size_t byte count wraps long before the
@@ -568,7 +568,7 @@ public:
         const std::int64_t sub = std::max<std::int64_t> (1, (std::int64_t) std::lround (0.01 * sampleRate));
 
         const double maxSamples = p.maxDurationSec * sampleRate;
-        if (! DeterministicLoudnessMeter::storageFor (sampleRate, maxSamples, st.loudness)) return st;
+        if (! StreamingLoudnessMeter::storageFor (sampleRate, maxSamples, st.loudness)) return st;
         st.truePeak = ReferenceTruePeakMeter::storageFor (sampleRate, maxBlock, maxChannels);
         if (! st.truePeak.ok) return st;
 
@@ -621,7 +621,7 @@ public:
         tailPendN_.assign (st.tailPendingCounts, 0);
         tailPendSq_.assign (st.tailPendingEnergies, 0.0);
         scratch_.assign (st.scratchFloats, 0.0f);
-        shortTerm_.assign (st.shortTermEntries, 0.0);
+        shortTerm_.resizeForOverwrite (st.shortTermEntries);
 
         if (! lm_.prepareForSamples (sampleRate, channels_, params_.maxDurationSec * sampleRate)) return false;
         if (! tp_.prepare (sampleRate, maxBlock, channels_)) return false;
@@ -822,7 +822,7 @@ public:
     // deterministic spellings". An alias cannot drift from the member it is declared beside.
     using CrossoverType  = eq::DeterministicCrossover2;
     using KWeightingType = DeterministicKWeightingFilter;
-    using LoudnessType   = DeterministicLoudnessMeter;
+    using LoudnessType   = StreamingLoudnessMeter;
 
 private:
     //==========================================================================

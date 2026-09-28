@@ -71,14 +71,26 @@ bool Session::hasWork() const noexcept { return measurementJob_ != 0 || job_ != 
 std::span<const Notification> Session::events() const noexcept { return { events_, eventCount_ }; }
 void Session::emit (Notification event) noexcept
 {
+    emit (event, event.kind == EventKind::Phase ? event.payload.phase : jobProgress (event.jobId));
+}
+Phase Session::jobProgress (JobId job) const noexcept
+{
+    if (job == 0) return {};
+    if (job == job_) return masterProgress_;
+    if (job == needlesJob_) return needlesProgress_;
+    if (job == measurementJob_) return measurementProgress_;
+    return {};
+}
+void Session::emit (Notification event, const Phase& progress) noexcept
+{
     detail::debugBound (eventCount_ < kEventBatch);
     event.seq = ++sequence_;
     event.source = source_.hash;
     event.state = state_;
     event.revision = revision_;
-    event.phase = event.kind == EventKind::Phase ? event.payload.phase.name : measurementProgress_.name;
-    event.completedWork = liveMeasurements_ ? liveMeasurements_->work : 0;
-    event.totalWork = source_.frames + (liveMeasurements_ ? liveMeasurements_->clipCapacity : 0) + 32;
+    event.phase = progress.name;
+    event.completedWork = progress.completedUnits;
+    event.totalWork = progress.totalUnits;
 
     events_[eventCount_++] = event; // at most three per unit, or one per command
 }
@@ -147,6 +159,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
     std::uint32_t units = 0;
     const auto contract = [&] (JobId job)
     {
+        const auto stoppedProgress = jobProgress (job);
         Notification error;
         error.jobId = job;
         error.kind = EventKind::Error;
@@ -154,7 +167,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
         (void) error.payload.error.fact.assign (text::Fact::of (text::FactId::SessionContract));
         dropJob (job);
         ++revision_;
-        emit (error);
+        emit (error, stoppedProgress);
     };
     // The foreground master takes priority over phase two; phase two resumes after it.
     while (units < std::min (budget, kStepUnits) && hasWork())
@@ -178,12 +191,12 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 event.kind = EventKind::Fact;
                 (void) event.payload.fact.assign (end ? text::Fact::of (text::FactId::MasterReady)
                     : text::Fact::of (text::FactId::MasterPass, text::Arg::count (masterUnit_)));
-                emit (event);
+                emit (event, masterProgress_);
                 if (end)
                 {
                     event.kind = EventKind::Done;
                     event.payload.done.masterId = event.jobId;
-                    emit (event);
+                    emit (event, masterProgress_);
                 }
             }
         }
@@ -222,7 +235,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 {
                     event.kind = EventKind::Fact;
                     (void) event.payload.fact.assign (text::Fact::of (first ? text::FactId::Measurement1 : text::FactId::Measurement2));
-                    emit (event);
+                    emit (event, measurementProgress_);
                 }
                 else contract (event.jobId);
             }

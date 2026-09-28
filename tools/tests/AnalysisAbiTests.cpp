@@ -481,15 +481,10 @@ void theShimQuotesTheCoreBudget()
 void refusedGeometriesQuoteACanonicalZero()
 {
     felitronics::test::group ("storage_bytes — a refused geometry quotes +0.0, and 0 cannot be read as free");
-    // THE TRAP THIS GATE EXISTS FOR, asserted rather than described: a refused Storage is not an empty
-    // Storage. ProgrammeReport's carries DeterministicLoudnessMeter::Storage, whose bytes() has a constant
-    // ring term, so a default-constructed one is worth 2400 bytes. A query that forwarded st.bytes()
-    // without looking at st.ok would quote that for a measurement that cannot happen — and only for
-    // `report`, so probing the other four would show nothing.
-    ok (felitronics::analysis::ProgrammeReport::Storage {}.bytes() > 0,
-        "a refused ProgrammeReport::Storage is worth "
-        + std::to_string ((unsigned long long) felitronics::analysis::ProgrammeReport::Storage {}.bytes())
-        + " bytes, not zero — which is what makes the st.ok gate load-bearing");
+    // The streaming loudness ring is inline now; an empty report geometry has no heap payload.
+    // The ABI still gates on ok: constructor proxies are not a price for a refused preparation.
+    ok (felitronics::analysis::ProgrammeReport::Storage {}.bytes() == 0,
+        "the inline loudness ring contributes no heap payload to an empty report geometry");
 
     const double nan = std::numeric_limits<double>::quiet_NaN();
     const double inf = std::numeric_limits<double>::infinity();
