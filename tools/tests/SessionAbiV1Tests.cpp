@@ -35,8 +35,6 @@ static_assert (unsigned (Command::ImportProject) == 9);
 static_assert (unsigned (Event::Measured1) == 0);
 static_assert (unsigned (Event::Measured2) == 1);
 static_assert (unsigned (Event::Mastered) == 2);
-static_assert (unsigned (OnEdits::Reset) == 0);
-static_assert (unsigned (OnEdits::Keep) == 1);
 static_assert (unsigned (Column::Empty) == 0);
 static_assert (unsigned (Column::Loaded) == 1);
 static_assert (unsigned (Column::Measured1) == 2);
@@ -190,7 +188,7 @@ void directCapabilities()
     (void) r.step (16); (void) r.apply (command::SetManual { 2, true });
     for (const auto target : { "allStreaming", "cd", "lp" })
     {
-        const auto changed = r.apply (command::SetTarget { 3, target, OnEdits::Keep });
+        const auto changed = r.apply (command::SetTarget { 3, target });
         ok (changed.rejection == Rejection::None, "every restricted-device target is selected successfully");
         const auto& d = r.project().devices;
         ok (!d.hpf.machine.on && !d.monoBass.machine.on && !d.glue.machine.on && !d.saturation.machine.on
@@ -367,7 +365,11 @@ void scenario()
     ok (contains (command (h, R"({"fields":{"fq":32},"device":0,"commandId":"10","kind":"editDevice"})"), "accepted"), "field order is free; an offered device is editable");
     ok (contains (command (h, R"({"kind":"revertEdits","commandId":"11","device":0,"fields":{"fq":true}})"), "accepted"), "revert named field");
     ok (contains (command (h, R"({"kind":"editTarget","commandId":"12","fields":{"lufs":-14}})"), "accepted"), "edit target");
-    ok (contains (command (h, R"({"kind":"setTarget","commandId":"13","target":"cd","onEdits":"keep"})"), "accepted"), "set target");
+    ok (contains (command (h, R"({"kind":"editDevice","commandId":"12","device":0,"fields":{"on":false,"fq":36}})"), "accepted"), "device edits before target change");
+    ok (contains (snapshot (h), "\"handFieldCount\":2"), "shell can count device edits before warning");
+    ok (contains (command (h, R"({"kind":"setTarget","commandId":"13","target":"cd"})"), "accepted"), "set target");
+    ok (contains (snapshot (h), "\"handFieldCount\":0") && contains (snapshot (h), "\"hand\":{\"fq\":null,\"on\":null,\"slope\":null}"),
+        "wire target change resets device edits and snapshot count");
     std::uint32_t projectSize = 0;
     ok (fc_session_export_project_size (h, &projectSize) == FC_SESSION_OK, "project size");
     std::string project (projectSize, '?'); std::uint32_t written = 777;

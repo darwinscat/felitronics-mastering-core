@@ -36,9 +36,10 @@ int main (int argc, char** argv) {
         HpfFields<Mark> mask; mask.fq = true;
         require (s.apply (command::RevertEdits { 7, mask }).rejection == Rejection::None, "hidden panel accepts revert");
         require (snapshot (s).find ("\"handFieldCount\":1") != std::string::npos, "revert counts remaining false field");
-        (void) s.apply (command::SetTarget { 8, "lp", OnEdits::Keep });
-        require (s.project().devices.hpf.hand.on == false, "target keep preserves hidden hand");
-        (void) s.apply (command::SetTarget { 9, "allStreaming", OnEdits::Reset });
+        (void) s.apply (command::SetTarget { 8, "lp" });
+        require (! s.project().devices.hpf.hand.on && snapshot (s).find ("\"handFieldCount\":0") != std::string::npos,
+                 "target change resets hidden false edit and count");
+        (void) s.apply (command::SetTarget { 9, "allStreaming" });
         require (snapshot (s).find ("\"handFieldCount\":0") != std::string::npos, "target reset clears count");
     } else if (item == "M2") {
         const auto base = s.exportProject();
@@ -61,7 +62,7 @@ int main (int argc, char** argv) {
     } else if (item == "M3") {
         const auto config = config::Config::load();
         for (const auto& target : config.config.targets.targets) {
-            require (s.apply (command::SetTarget { 2, target.key, OnEdits::Reset }).rejection == Rejection::None, "every target is selectable");
+            require (s.apply (command::SetTarget { 2, target.key }).rejection == Rejection::None, "every target is selectable");
             const auto state = snapshot (s);
             require (state.find (target.key == "lp" ? "\"low\":{\"hand\":{\"db\":null,\"on\":null},\"machine\":{\"db\":0.5,\"on\":true}"
                                              : "\"low\":{\"hand\":{\"db\":null,\"on\":null},\"machine\":{\"db\":0,\"on\":false}") != std::string::npos,
@@ -73,16 +74,16 @@ int main (int argc, char** argv) {
             std::get<7> (low).db = 6.01;
             require (s.apply (command::EditDevice { 5, low }).rejection == Rejection::OutOfDomain, "low domain remains bounded");
         }
-        (void) s.apply (command::SetTarget { 6, "allStreaming", OnEdits::Reset });
+        (void) s.apply (command::SetTarget { 6, "allStreaming" });
         (void) s.apply (command::SetManual { 2, true });
         // Variant 7 remains the low device across the rename.
         DeviceEdit edit; edit.emplace<7>(); std::get<7> (edit).on = true; std::get<7> (edit).db = 5.25;
         require (s.apply (command::EditDevice { 3, edit }).rejection == Rejection::None, "low is offered on streaming");
-        (void) s.apply (command::SetTarget { 4, "lp", OnEdits::Keep });
+        (void) s.apply (command::SetTarget { 4, "lp" });
         require (s.apply (command::EditDevice { 5, edit }).rejection == Rejection::None, "low is offered on lp");
         const auto file = s.exportProject(); require (file.view().find ("[low]\n") != std::string_view::npos, "project uses low section");
-        (void) s.apply (command::SetTarget { 6, "allStreaming", OnEdits::Keep });
-        require (s.exportProject().view().find ("db.hand = 5.25") != std::string_view::npos, "low hand survives target keep");
+        (void) s.apply (command::SetTarget { 6, "allStreaming" });
+        require (s.exportProject().view().find ("db.hand") == std::string_view::npos, "target change removes low hand from export");
         require (snapshot (s).find ("\"eqCurve\":") != std::string::npos, "summed EQ curve is in snapshot");
     } else return 2;
     std::printf ("%s: %d failures\n", item.c_str(), failures); return failures ? 1 : 0;
