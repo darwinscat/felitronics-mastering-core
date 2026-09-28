@@ -174,9 +174,6 @@ en = "That job is no longer running — there is nothing to cancel."
 ru = "Такого мастера среди готовых нет."
 en = "No such master is kept."
 
-[messages.rejectedNoFields]
-ru = "Команда не затрагивает ни одного поля."
-en = "The command touches no field."
 
 [messages.rejectedNotFinite]
 ru = "{field}: не число — принимается только конечное значение."
@@ -186,13 +183,9 @@ en = "{field}: not a number — only a finite value is taken."
 ru = "{field}: у этой ручки нет такого значения."
 en = "{field}: this knob has no such value."
 
-[messages.rejectedOutOfTravel]
-ru = "{field}: значение за пределами хода ручки."
-en = "{field}: the value is outside the knob's travel."
-
-[messages.rejectedOffStep]
-ru = "{field}: значение не попадает на шаг ручки."
-en = "{field}: the value is not on the knob's step."
+[messages.rejectedOutOfDomain]
+ru = "{field}: значение вне допустимого диапазона."
+en = "{field}: the value is outside the accepted domain."
 
 [messages.rejectedBadChannels]
 ru = "Движок принимает звук в одном или двух каналах, а в этом файле их другое число."
@@ -332,3 +325,7 @@ en = "Loudness range"
 [messages.final]
 ru = "Завершение"
 en = "Finalizing"
+
+[messages.rejectedContract]
+ru = "Неверный формат команды."
+en = "The command format is invalid."

@@ -107,11 +107,9 @@ const char* nameOf (felitronics::session::Rejection r)
         case Rejection::NotOffered:               return "NotOffered";
         case Rejection::UnknownJob:               return "UnknownJob";
         case Rejection::UnknownMaster:            return "UnknownMaster";
-        case Rejection::NoFields:                 return "NoFields";
         case Rejection::NotFinite:                return "NotFinite";
         case Rejection::NotOneOf:                 return "NotOneOf";
-        case Rejection::OutOfTravel:              return "OutOfTravel";
-        case Rejection::OffStep:                  return "OffStep";
+        case Rejection::OutOfDomain:              return "OutOfDomain";
         case Rejection::BadChannels:              return "BadChannels";
         case Rejection::BadRate:                  return "BadRate";
         case Rejection::NoAudio:                  return "NoAudio";
@@ -128,6 +126,7 @@ const char* nameOf (felitronics::session::Rejection r)
         case Rejection::MachineMismatch: return "MachineMismatch";
         case Rejection::NewerDefaults: return "NewerDefaults";
         case Rejection::RateAboveLimit: return "RateAboveLimit";
+        case Rejection::Contract:                 return "Contract";
         case Rejection::Memory: return "Memory";
     }
     return "?";

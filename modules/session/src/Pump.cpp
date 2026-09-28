@@ -19,7 +19,7 @@ double weight (toml::embedded::View v) noexcept
 {
     if (const auto d = v.decimal()) return d->toDouble();
     if (const auto i = v.integer()) return double (*i);
-    return 0.0; // the build's config gate establishes all the weights
+    detail::storageOverflow(); // the build gate requires every weight
 }
 }
 
@@ -187,7 +187,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
             }
             ++measurementUnit_;
             double completed = 0.0;
-            for (std::size_t i = 0; i < std::min (std::size_t (measurementUnit_), std::size (analysis)); ++i)
+            for (std::size_t i = 0; i < std::size_t (measurementUnit_); ++i)
                 completed += analysis[i];
             measurementProgress_ = { measurementUnit_ == 1 ? PhaseName::Stream
                 : measurementUnit_ == 2 ? PhaseName::Report : PhaseName::Analyzers,

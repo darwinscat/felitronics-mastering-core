@@ -12,6 +12,7 @@
 #include "Driver.h"
 #include "Grid.h"
 #include "Rules.h"
+#include "BuildContract.h"
 #include "ProjectIO.h"
 #include "Utf8.h"
 
@@ -85,26 +86,21 @@ CommandId idOf (const Request& request) noexcept
 bool finite (double x) noexcept { return std::isfinite (x); }
 bool finite (float x) noexcept { return (std::bit_cast<std::uint32_t> (x) & 0x7F800000u) != 0x7F800000u; }
 
-// A knob's value: finite, on its travel, on its step — in that order.
-Rejection knobCheck (const detail::Knob& knob, double x) noexcept
+// A knob's value: finite and within its domain, in that order.
+Rejection knobCheck (const detail::Knob& knob, double x, std::uint32_t rate) noexcept
 {
     if (! finite (x)) return Rejection::NotFinite;
-    const std::optional<detail::Decimal> d = detail::decimalOf (x);
-    const bool outside = d ? (detail::compare (*d, knob.from) < 0 || detail::compare (*d, knob.to) > 0)
-                           : (x < knob.from.toDouble() || x > knob.to.toDouble());
-    if (outside) return Rejection::OutOfTravel;
-    if (! d || ! detail::onGrid (*d, knob.from, knob.step)) return Rejection::OffStep;
-    return Rejection::None;
+    return knob.accepts (x, rate) ? Rejection::None : Rejection::OutOfDomain;
 }
 
 // A touched field's value, by its rule.
-template <class T> Rejection fieldCheck (const Rules& rules, const FieldRule& rule, const std::optional<T>& v) noexcept
+template <class T> Rejection fieldCheck (const Rules& rules, const FieldRule& rule, const std::optional<T>& v, std::uint32_t rate) noexcept
 {
     if (! v) return Rejection::None;
     if constexpr (std::is_same_v<T, bool>)
         return Rejection::None;
     else if constexpr (std::is_same_v<T, double>)
-        return knobCheck (rule.knob, *v);
+        return knobCheck (rule.knob, *v, rate);
     else if constexpr (std::is_same_v<T, std::int32_t>)
         return rules.slope (*v) ? Rejection::None : Rejection::NotOneOf;
     else
@@ -114,20 +110,19 @@ template <class T> Rejection fieldCheck (const Rules& rules, const FieldRule& ru
     }
 }
 
+Checked storage (std::uint64_t bytes, std::uint64_t block) noexcept { return { Rejection::None, kNoField, bytes, 0, block }; }
+
 Checked rejected (Rejection r, std::uint8_t field = kNoField) noexcept { return { r, field, 0 }; }
 
-// A device edit's fields: at least one touched; then each touched one, in the order written.
-template <class Edit> Checked editCheck (const Rules& rules, const Edit& edit) noexcept
+// A device edit's touched fields, in the order written; an empty edit is accepted.
+template <class Edit> Checked editCheck (const Rules& rules, const Edit& edit, std::uint32_t rate) noexcept
 {
-    bool any = false;
     Checked out;
     detail::DeviceOf<Edit>::each (rules, [&] (std::uint8_t i, const FieldRule& rule, const auto& v)
     {
-        any = any || v.has_value();
         if (out.rejection == Rejection::None)
-            if (const Rejection r = fieldCheck (rules, rule, v); r != Rejection::None) out = rejected (r, i);
+            if (const Rejection r = fieldCheck (rules, rule, v, rate); r != Rejection::None) out = rejected (r, i);
     }, edit);
-    if (! any) return rejected (Rejection::NoFields);
     return out;
 }
 
@@ -169,7 +164,7 @@ std::size_t index (Event e) noexcept { return std::size_t (e); }
 //==============================================================================
 // check — the order of Commands.h, and the bytes of the work
 
-Checked Session::check (const Request& request) const noexcept
+Checked Session::storageFor (const Request& request) const noexcept
 {
     // 1. ENTRY
     if (checkFloatingPointEnvironment() != Status::Ok) return rejected (Rejection::FloatingPointEnvironment);
@@ -177,13 +172,14 @@ Checked Session::check (const Request& request) const noexcept
     const auto which = Command (request.index());
     if (const Rejection r = Table::commands[index (which)].cell[index (column())]; r != Rejection::None) return rejected (r);
 
-    // The config, read in place: complete, or create() would have refused.
+    // The config, read in place after the build gate established its contract.
     const Rules rules = detail::rules();
 
     if (const auto* imported = std::get_if<command::ImportProject> (&request))
     {
         if (imported->bytes.size() > kMaxProjectText) return rejected (Rejection::ProjectTooLarge);
-        return demand (detail::importBytes (imported->bytes.size()));
+        const auto bytes = detail::importBytes (imported->bytes.size());
+        return storage (bytes, bytes);
     }
     if (const auto* load = std::get_if<command::Load> (&request))
     {
@@ -194,22 +190,14 @@ Checked Session::check (const Request& request) const noexcept
         if (pcm.channelCount < 1 || pcm.channelCount > 2) return rejected (Rejection::BadChannels);
         if (pcm.sampleRate < kMinSampleRate) return rejected (Rejection::BadRate);
         if (pcm.sampleRate > capabilities_.maxRateHz) return rejected (Rejection::RateAboveLimit);
-        if (pcm.frames == 0 || pcm.channels == nullptr) return rejected (Rejection::NoAudio);
-        for (std::uint32_t c = 0; c < pcm.channelCount; ++c)
-            if (pcm.channels[c] == nullptr) return rejected (Rejection::NoAudio);
+        if (pcm.frames == 0) return rejected (Rejection::NoAudio);
         if (pcm.frames > std::numeric_limits<std::size_t>::max() / sizeof (float) / pcm.channelCount
             || pcm.frames > 9007199254740991ull / sizeof (float) / pcm.channelCount)
             return rejected (Rejection::TooLong);
-        const auto need = demand (std::uint64_t (pcm.channelCount) * pcm.frames * sizeof (float)
-                                  + std::uint64_t (load->meta.name.size()));
-        if (need.rejection != Rejection::None) return need;
-        const auto frames = std::size_t (pcm.frames);   // fits: the line above
-        for (std::uint32_t c = 0; c < pcm.channelCount; ++c)
-            for (std::size_t i = 0; i < frames; ++i)
-                if (! finite (pcm.channels[c][i])) return rejected (Rejection::NotFinite);
-        // THE WORK'S BYTES: the samples, channel after channel, and the name — each one exact request (the load in apply()
-        // below: an array of exactly this many floats, and one of exactly this many chars unless the name is empty).
-        return need;
+        const auto audio = std::uint64_t (pcm.channelCount) * pcm.frames * sizeof (float);
+        const auto name = std::uint64_t (load->meta.name.size());
+        if (name > 9007199254740991ull - audio) return rejected (Rejection::TooLong);
+        return storage (audio + name, std::max (audio, name));
     }
     if (const auto* set = std::get_if<command::SetTarget> (&request))
     {
@@ -222,11 +210,10 @@ Checked Session::check (const Request& request) const noexcept
     {
         // 5. FIELDS
         const TargetFields<Touched>& f = edit->fields;
-        if (! f.lufs && ! f.tp) return rejected (Rejection::NoFields);
         if (f.lufs)
-            if (const Rejection r = knobCheck (rules.lufs, *f.lufs); r != Rejection::None) return rejected (r, 0);
+            if (const Rejection r = knobCheck (rules.lufs, *f.lufs, source_.sampleRate); r != Rejection::None) return rejected (r, 0);
         if (f.tp)
-            if (const Rejection r = knobCheck (rules.tp, *f.tp); r != Rejection::None) return rejected (r, 1);
+            if (const Rejection r = knobCheck (rules.tp, *f.tp, source_.sampleRate); r != Rejection::None) return rejected (r, 1);
         return {};
     }
     if (const auto* edit = std::get_if<command::EditDevice> (&request))
@@ -236,7 +223,7 @@ Checked Session::check (const Request& request) const noexcept
         if ((capabilities_.offeredDevices & (1u << edit->fields.index())) == 0
             || ! detail::offered (rules, project_.target, source_.channels, Device (edit->fields.index())))
             return rejected (Rejection::NotOffered);
-        return onActive (edit->fields, [&] (const auto& fields) { return editCheck (rules, fields); });
+        return onActive (edit->fields, [&] (const auto& fields) { return editCheck (rules, fields, source_.sampleRate); });
     }
     if (const auto* revert = std::get_if<command::RevertEdits> (&request))
     {
@@ -244,8 +231,7 @@ Checked Session::check (const Request& request) const noexcept
         if ((capabilities_.offeredDevices & (1u << revert->fields.index())) == 0
             || ! detail::offered (rules, project_.target, source_.channels, Device (revert->fields.index())))
             return rejected (Rejection::NotOffered);
-        const bool any = onActive (revert->fields, [&] (const auto& mask) { return anyMarked (rules, mask); });
-        return any ? Checked {} : rejected (Rejection::NoFields);
+        return {};
     }
     if (std::get_if<command::Master> (&request) != nullptr)
     {
@@ -254,7 +240,8 @@ Checked Session::check (const Request& request) const noexcept
         // THE WORK'S BYTES: room for one more master kept — its recipe is kept when it is done, and that must not ask
         // the heap at the end of a render — as one exact reserve, unless the room is there already.
         const bool room = masterRoom_ > masterCount_;
-        return demand (room ? 0 : std::uint64_t (masterCount_ + 1) * sizeof (Kept));
+        const auto bytes = room ? 0 : std::uint64_t (masterCount_ + 1) * sizeof (Kept);
+        return storage (bytes, bytes);
     }
     if (const auto* cancel = std::get_if<command::Cancel> (&request))
         return job_ == 0 && measurementJob_ == 0 ? rejected (Rejection::NoJob)
@@ -272,6 +259,53 @@ Checked Session::check (const Request& request) const noexcept
 //==============================================================================
 // apply — check(), then the work
 
+Checked Session::check (const Request& request) const noexcept
+{
+    const auto priced = storageFor (request);
+    if (priced.rejection != Rejection::None) return priced;
+    const auto checked = demand (priced);
+    if (checked.rejection != Rejection::None) return checked;
+    if (const auto* load = std::get_if<command::Load> (&request))
+    {
+        const auto& pcm = load->pcm;
+        if (! pcm.channels) return rejected (Rejection::NoAudio);
+        for (std::uint32_t c = 0; c < pcm.channelCount; ++c)
+        {
+            if (! pcm.channels[c]) return rejected (Rejection::NoAudio);
+            for (std::size_t i = 0; i < std::size_t (pcm.frames); ++i)
+                if (! finite (pcm.channels[c][i])) return rejected (Rejection::NotFinite);
+        }
+    }
+    return checked;
+}
+
+Answer Session::rejectProtocol (CommandId id) noexcept
+{
+    Answer answer;
+    answer.command = id;
+    answer.rejection = Rejection::Contract;
+    return reject (answer);
+}
+Answer Session::reject (Answer answer) noexcept
+{
+    eventCount_ = 0;
+    answer.revision = revision_;
+    if (answer.rejection == Rejection::Memory)
+    {
+        Notification error;
+        error.kind = EventKind::Error;
+        error.payload.error.code = ErrorCode::Memory;
+        error.payload.error.needBytes = answer.needBytes;
+        (void) error.payload.error.fact.assign (text::Fact::of (text::FactId::SessionMemory));
+        emit (error);
+    }
+    Notification event;
+    event.kind = EventKind::Rejected;
+    event.payload.rejected = { answer.command, answer.rejection };
+    emit (event);
+    return answer;
+}
+
 Answer Session::apply (const Request& request) noexcept
 {
     eventCount_ = 0;
@@ -285,30 +319,26 @@ Answer Session::apply (const Request& request) noexcept
     if (checked.rejection == Rejection::None)
         if (const auto* input = std::get_if<command::ImportProject> (&request))
         {
-            imported = detail::readProject (input->bytes, source_.channels, capabilities_.offeredDevices);
+            imported = detail::readProject (input->bytes, source_.channels, capabilities_.offeredDevices, source_.sampleRate);
             answer = imported.answer;
             answer.command = input->id;
         }
-    if (answer.rejection != Rejection::None)
-    {
-        answer.revision = revision_;
-        if (answer.rejection == Rejection::Memory)
-        {
-            Notification error;
-            error.kind = EventKind::Error;
-            error.payload.error.code = ErrorCode::Memory;
-            error.payload.error.needBytes = answer.needBytes;
-            (void) error.payload.error.fact.assign (text::Fact::of (text::FactId::SessionMemory));
-            emit (error);
-        }
-        Notification event;
-        event.kind = EventKind::Rejected;
-        event.payload.rejected = { answer.command, answer.rejection };
-        emit (event);
-        return answer;
-    }
+    if (answer.rejection != Rejection::None) return reject (answer);
 
     const Rules rules = detail::rules();
+    bool empty = false;
+    if (const auto* edit = std::get_if<command::EditTarget> (&request)) empty = ! edit->fields.lufs && ! edit->fields.tp;
+    if (const auto* edit = std::get_if<command::EditDevice> (&request))
+        empty = onActive (edit->fields, [&] (const auto& fields)
+        {
+            bool any = false;
+            detail::DeviceOf<std::remove_cvref_t<decltype (fields)>>::each (rules,
+                [&] (std::uint8_t, const FieldRule&, const auto& v) { any = any || v.has_value(); }, fields);
+            return ! any;
+        });
+    if (const auto* revert = std::get_if<command::RevertEdits> (&request))
+        empty = onActive (revert->fields, [&] (const auto& mask) { return ! anyMarked (rules, mask); });
+    if (empty) { answer.revision = revision_; return answer; }
     if (const auto* load = std::get_if<command::Load> (&request))
     {
         const Pcm& pcm = load->pcm;
@@ -498,7 +528,7 @@ bool Driver::mastered (Session& session, JobId job) noexcept
 {
     if (job == 0 || job != session.job_) return false;
     if (Session::checkFloatingPointEnvironment() != Status::Ok || ! allowed (session, Event::Mastered)) return false;
-    if (session.masterRoom_ == session.masterCount_) return false;       // master() took the room; without it, nothing
+    detail::debugBound (session.masterRoom_ > session.masterCount_);
     session.masters_[session.masterCount_++] = { session.job_, session.jobRecipe_ };   // into the room master() took
     session.mastering_ = false;
     session.job_ = 0;

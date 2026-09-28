@@ -18,5 +18,5 @@ struct ImportedProject
     char originalDefaults[7] {};
 };
 [[nodiscard]] std::uint64_t importBytes (std::size_t size) noexcept;
-[[nodiscard]] ImportedProject readProject (std::string_view bytes, std::uint32_t channels, std::uint32_t offeredDevices) noexcept;
+[[nodiscard]] ImportedProject readProject (std::string_view bytes, std::uint32_t channels, std::uint32_t offeredDevices, std::uint32_t sourceRate) noexcept;
 }

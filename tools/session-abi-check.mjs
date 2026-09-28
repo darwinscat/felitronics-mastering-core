@@ -13,7 +13,7 @@ const normalize = text => text.replace(/\s+/g, ' ').replace(/\s*([*,()])\s*/g, '
 const header = clean(read('tools/fc_session_abi.h'));
 const publicHeaders = ['Commands', 'Project', 'Events', 'Snapshot', 'Session', 'Text'];
 function generate() {
-    const code = ['#include "fc_session_abi.h"', '#include <cstddef>', '#include <cstdio>', '#include <type_traits>'];
+    const code = ['#include "fc_session_abi.h"', '#include <cstddef>', '#include <cstdio>', '#include <type_traits>', '#include "tests/SessionWireFacts.h"'];
     for (const h of publicHeaders) code.push(`#include <felitronics/session/${h}.h>`);
     const body = [];
     const literal = line => body.push(`std::puts(${JSON.stringify(line)});`);
@@ -59,12 +59,33 @@ function generate() {
     for (const [name, values] of Object.entries(schema.transportEnums))
         values.forEach((value, i) => code.push(`static_assert(unsigned(felitronics::session::${name}::${value}) == ${i});`));
     for (const field of schema.binaryRows) literal(`binary SessionSnapshot.${field}`);
-    code.push('int main() {', ...body, 'return 0; }');
+    literal('row ReadingPoint element=f64 byteOrder=little columns=index,value stride=2 bytes=16');
+    literal('row ReadingRun element=f64 byteOrder=little columns=first,count,value stride=3 bytes=24');
+    literal('row MachineDifference element=f64 byteOrder=little columns=device,field,fileValue,coreValue stride=4 bytes=32');
+    number('row element sizeof', 'sizeof(double)');
+    code.push('static_assert(sizeof(double) == 8 && std::numeric_limits<double>::is_iec559);');
+    code.push('int main() {', ...body, 'return sessionWireFixture(true); }');
     return code.join('\n') + '\n';
 }
 const lines = text => new Set(text.split(/\r?\n/).filter(l => l && !l.startsWith('#')));
 function check(floor, actual) {
-    const missing = [...floor].filter(line => !actual.has(line));
+    const extensible = new Set([...header.matchAll(/typedef struct (\w+)/g)].map(m => m[1]));
+    const missing = [...floor].filter(line => {
+        if (actual.has(line)) return false;
+        const size = /^sizeof (\w+)=(\d+)$/.exec(line);
+        if (!size || !extensible.has(size[1])) return true;
+        return ![...actual].some(value => {
+            const grown = /^sizeof (\w+)=(\d+)$/.exec(value);
+            return grown && grown[1] === size[1] && Number(grown[2]) >= Number(size[2]);
+        });
+    });
+    // Existing offsets/types stay fixed; a new field belongs after the entire frozen prefix.
+    for (const value of actual) {
+        const added = /^offset (\w+)\.(\w+)=(\d+)$/.exec(value);
+        if (!added || [...floor].some(line => line.startsWith(`offset ${added[1]}.${added[2]}=`))) continue;
+        const oldSize = [...floor].find(line => line.startsWith(`sizeof ${added[1]}=`));
+        if (oldSize && Number(added[3]) < Number(oldSize.split('=')[1])) missing.push(`new field overlaps frozen prefix: ${value}`);
+    }
     if (missing.length) throw Error(`frozen session ABI changed or disappeared:\n${missing.join('\n')}`);
 }
 const args = process.argv.slice(2);

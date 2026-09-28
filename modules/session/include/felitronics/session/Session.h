@@ -28,13 +28,9 @@ enum class Status : std::uint8_t
     // caller restores it (or calls from another thread) and calls again.
     FloatingPointEnvironment = 1,
 
-    // The config compiled into the library does not hold a number the session's commands check against where the
-    // config's schema puts it. Not reachable in a library whose build ran the config's gate (every build does): the
-    // session reads the same documents the gate read, and its reading is held to the schema's by the state suite.
-    Config = 2,
-    ConfigVersion = 3,
-    Capabilities = 4,
-    Memory = 5,
+    ConfigVersion = 2,
+    Capabilities = 3,
+    Memory = 4,
 };
 
 // Shell input; exact byte counts are doubles strictly below 2^53. Device bits follow Device.
@@ -43,6 +39,13 @@ struct Capabilities
     double heapCeilingBytes = 9007199254740991.0;
     std::uint32_t maxRateHz = 4294967295u;
     std::uint32_t offeredDevices = 255u;
+    double largestFreeBlockBytes = 9007199254740991.0;
+};
+
+struct Capacity
+{
+    double heapCeilingBytes = 9007199254740991.0;
+    double largestFreeBlockBytes = 9007199254740991.0;
 };
 
 struct ProjectText
@@ -130,8 +133,7 @@ public:
 
     // A new session — Empty, at revision 0, on the config's default target, the manual mode off, the devices unplaced
     // (they are placed when the first measurement ends) — or a refusal before anything is allocated:
-    // Status::FloatingPointEnvironment, the calling thread's FP environment (see checkFloatingPointEnvironment), or
-    // Status::Config.
+    // Status::FloatingPointEnvironment, ConfigVersion, Capabilities or Memory. The embedded config was checked at build time.
     // An accepted create never gives a null session: under -fno-exceptions a heap that cannot serve createBytes() ends
     // the process (natively) or the module (wasm) inside this call, which is what the demand above keeps a shell clear of.
     [[nodiscard]] static Created create() noexcept;
@@ -139,6 +141,8 @@ public:
     [[nodiscard]] static Status checkCreate (const Capabilities& capabilities, std::uint64_t configVersion) noexcept;
     [[nodiscard]] double liveBytes() const noexcept;
     [[nodiscard]] const Capabilities& capabilities() const noexcept;
+    // Update between calls; a smaller capacity is allowed and the next allocation checks it.
+    [[nodiscard]] Status setCapacity (const Capacity& capacity) noexcept;
 
     // Is the calling thread's floating-point environment IEEE-754's default — no flush-to-zero, no denormals-are-zero,
     // rounding to nearest? Status::Ok if it is, Status::FloatingPointEnvironment if not. Read with ordinary arithmetic;
@@ -170,6 +174,9 @@ public:
     // Import validates entry, state and size here; its allocating parse/schema work is covered by the bound
     // from the input size, including a document refusal. No input byte is read to compute that demand.
     [[nodiscard]] Checked check (const Request& request) const noexcept;
+    // Allocation-free demand before capacity checks; Load needs shape/meta only, never sample pointers.
+    [[nodiscard]] Checked storageFor (const Request& request) const noexcept;
+    [[nodiscard]] Answer rejectProtocol (CommandId id) noexcept;
 
     // Export is an owned exact byte allocation, without a terminator. Only placed projects are exportable.
     [[nodiscard]] Checked exportProjectBytes() const noexcept;
@@ -212,7 +219,8 @@ private:
 
     Session() noexcept = default;
     Capabilities capabilities_ {};
-    [[nodiscard]] Checked demand (std::uint64_t bytes) const noexcept;
+    [[nodiscard]] Checked demand (const Checked& storage) const noexcept;
+    [[nodiscard]] Answer reject (Answer answer) noexcept;
 
     // Are the devices placed — has the first measurement of this source ended (Measured1, Measured2)?
     [[nodiscard]] bool placed() const noexcept;

@@ -11,6 +11,7 @@
 
 #include "FpProbes.h"
 #include "Rules.h"
+#include "BuildContract.h"
 
 #include <cstdint>
 #include <memory>
@@ -19,6 +20,15 @@
 
 namespace felitronics::session
 {
+namespace
+{
+bool validBytes (double bytes) noexcept
+{
+    return std::isfinite (bytes) && bytes >= 0 && bytes < 9007199254740992.0
+        && std::bit_cast<std::uint64_t> (double (std::uint64_t (bytes))) == std::bit_cast<std::uint64_t> (bytes);
+}
+}
+
 
 // One expression for the request and for its price: create() asks the heap for exactly one Session, and this is what
 // one Session costs.
@@ -37,13 +47,10 @@ Status Session::checkFloatingPointEnvironment() noexcept
 Status Session::checkCreate (const Capabilities& caps, std::uint64_t configVersion) noexcept
 {
     if (const auto st = checkFloatingPointEnvironment(); st != Status::Ok) return st;
-    if (! detail::rules().complete) return Status::Config;
     if (configVersion != config::Config::versions().all) return Status::ConfigVersion;
-    if (! std::isfinite (caps.heapCeilingBytes) || caps.heapCeilingBytes < 0.0
-        || caps.heapCeilingBytes >= 9007199254740992.0
-        || std::bit_cast<std::uint64_t> (double (std::uint64_t (caps.heapCeilingBytes))) != std::bit_cast<std::uint64_t> (caps.heapCeilingBytes)
+    if (! validBytes (caps.heapCeilingBytes) || ! validBytes (caps.largestFreeBlockBytes)
         || caps.maxRateHz < kMinSampleRate || (caps.offeredDevices & ~255u) != 0) return Status::Capabilities;
-    return double (createBytes (caps)) > caps.heapCeilingBytes ? Status::Memory : Status::Ok;
+    return double (createBytes (caps)) > caps.heapCeilingBytes || double (createBytes (caps)) > caps.largestFreeBlockBytes ? Status::Memory : Status::Ok;
 }
 Created Session::create() noexcept { return create ({}, config::Config::versions().all); }
 Created Session::create (const Capabilities& caps, std::uint64_t configVersion) noexcept
@@ -63,13 +70,24 @@ double Session::liveBytes() const noexcept
     return double (createBytes (capabilities_) + source_.frames * source_.channels * sizeof (float)
                    + source_.name.size() + masterRoom_ * sizeof (Kept));
 }
-Checked Session::demand (std::uint64_t bytes) const noexcept
+Status Session::setCapacity (const Capacity& capacity) noexcept
 {
+    if (const auto st = checkFloatingPointEnvironment(); st != Status::Ok) return st;
+    if (! validBytes (capacity.heapCeilingBytes) || ! validBytes (capacity.largestFreeBlockBytes)) return Status::Capabilities;
+    capabilities_.heapCeilingBytes = capacity.heapCeilingBytes;
+    capabilities_.largestFreeBlockBytes = capacity.largestFreeBlockBytes;
+    return Status::Ok;
+}
+Checked Session::demand (const Checked& storage) const noexcept
+{
+    const auto bytes = storage.bytes;
+    if (bytes == 0) return storage;
     const auto live = std::uint64_t (liveBytes());
     if (bytes > 9007199254740991ull - live) return { Rejection::TooLong, kNoField, 0 };
     const double need = double (live + bytes);
-    if (need > capabilities_.heapCeilingBytes) return { Rejection::Memory, kNoField, 0, need };
-    return { Rejection::None, kNoField, bytes };
+    if (need > capabilities_.heapCeilingBytes || double (storage.largestBlockBytes) > capabilities_.largestFreeBlockBytes)
+        return { Rejection::Memory, kNoField, bytes, need, storage.largestBlockBytes };
+    return storage;
 }
 
 Session::~Session() = default;
@@ -98,7 +116,7 @@ Column Session::column() const noexcept
         case State::Measured1: return mastering_ ? Column::Mastering1 : Column::Measured1;
         case State::Measured2: return mastering_ ? Column::Mastering2 : Column::Measured2;
     }
-    return Column::Empty;
+    detail::storageOverflow();
 }
 
 Version Session::version() noexcept

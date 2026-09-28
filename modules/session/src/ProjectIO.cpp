@@ -5,6 +5,8 @@
 #include "ProjectIO.h"
 #include "Devices.h"
 #include "Grid.h"
+#include "JsonCodec.h"
+#include "BuildContract.h"
 #include <felitronics/toml/Schema.h>
 #include <algorithm>
 #include <charconv>
@@ -16,7 +18,7 @@ namespace felitronics::session
 {
 namespace
 {
-using toml::Reader;
+
 using toml::Need;
 using detail::Rules;
 
@@ -85,10 +87,14 @@ struct Writer
         char buffer[64];
         if constexpr (std::is_same_v<T, double>)
         {
-            // Fixed notation is the TOML subset's decimal notation. This overload writes the shortest
-            // decimal that rounds back to n. Every project number is on a validated, at most nine-place grid.
-            const auto result = std::to_chars (buffer, buffer + sizeof (buffer), detail::kept (n), std::chars_format::fixed);
-            text ({ buffer, std::size_t (result.ptr - buffer) });
+            // Keep ordinary TOML numbers where its Decimal subset represents them exactly.
+            // Other finite binary64 values use a quoted shortest round-trip decimal.
+            const bool plain = detail::decimalOf (n).has_value();
+            const auto result = std::to_chars (buffer, buffer + sizeof (buffer), detail::kept (n),
+                                               plain ? std::chars_format::fixed : std::chars_format::general);
+            if (result.ec != std::errc {}) detail::storageOverflow();
+            const std::string_view digits { buffer, std::size_t (result.ptr - buffer) };
+            if (plain) text (digits); else string (digits);
         }
         else
         {
@@ -126,18 +132,26 @@ struct Writer
     }
 };
 
-// Reading a numeric field keeps the written decimal for its travel and grid checks.
-// A decimal that rounds onto a step from just beside it is still refused.
-template <class T> bool field (Reader& in, std::string_view key, const Rules& rules, const detail::FieldRule& rule, T& out)
+// Import and commands use the same binary64 domain predicate, including the actual source rate.
+template <class T> bool field (toml::Reader& in, std::string_view key, const Rules& rules, const detail::FieldRule& rule, T& out, std::uint32_t sourceRate)
 {
     if constexpr (std::is_same_v<T, double>)
     {
-        toml::Decimal d;
-        if (! in.optional (key, d)) return false;
-        if (detail::compare (d, rule.knob.from) < 0 || detail::compare (d, rule.knob.to) > 0)
-            in.refuse (key, unsigned (Rejection::OutOfTravel));
-        else if (! detail::onGrid (d, rule.knob.from, rule.knob.step)) in.refuse (key, unsigned (Rejection::OffStep));
-        out = detail::kept (d.toDouble());
+        const auto* value = in.data().find (key);
+        if (value && std::holds_alternative<std::string> (value->data))
+        {
+            std::string digits;
+            if (! in.optional (key, digits)) return false;
+            detail::Storage storage;
+            detail::Reader reader { digits, storage, 0, true, {} };
+            const auto number = reader.number();
+            if (! reader.good || reader.pos != digits.size() || ! detail::JsonNumber::read (number, out))
+            { in.refuse (key, unsigned (Rejection::ProjectType)); return false; }
+        }
+        else if (! in.optional (key, out)) return false;
+        if (! std::isfinite (out)) in.refuse (key, unsigned (Rejection::NotFinite));
+        else if (! rule.knob.accepts (out, sourceRate)) in.refuse (key, unsigned (Rejection::OutOfDomain));
+        out = detail::kept (out);
     }
     else if constexpr (std::is_same_v<T, Needles>)
     {
@@ -162,7 +176,7 @@ Rejection rejection (const toml::Problem& p) noexcept
     {
         case toml::Fault::Missing: return Rejection::ProjectMissing;
         case toml::Fault::WrongType: return Rejection::ProjectType;
-        case toml::Fault::OutOfRange: return Rejection::OutOfTravel;
+        case toml::Fault::OutOfRange: return Rejection::OutOfDomain;
         case toml::Fault::UnknownKey: return Rejection::ProjectUnknownKey;
         case toml::Fault::Refused: return Rejection (p.detail);
     }
@@ -233,7 +247,7 @@ std::uint64_t importBytes (std::size_t size) noexcept
                                    + sizeof (toml::Problem) + 128);
     return 65536 + std::uint64_t (size) * perByte;
 }
-ImportedProject readProject (std::string_view bytes, std::uint32_t channels, std::uint32_t offeredDevices) noexcept
+ImportedProject readProject (std::string_view bytes, std::uint32_t channels, std::uint32_t offeredDevices, std::uint32_t sourceRate) noexcept
 {
     ImportedProject out;
     auto parsed = toml::parse (bytes);
@@ -249,20 +263,20 @@ ImportedProject readProject (std::string_view bytes, std::uint32_t channels, std
     const auto currentLabel = *rules.engine.find ("defaults").string();
     const auto previousLabel = carried.previous ? carried.previous->engine.find ("defaults").string() : std::nullopt;
     std::string defaults, core, target;
-    const auto report = toml::read (root, [&] (Reader& in)
+    const auto report = toml::read (root, [&] (toml::Reader& in)
     {
         (void) in.required ("defaults", defaults);
         (void) in.required ("core", core);
         (void) in.required ("manual", out.project.manual);
-        (void) in.table ("target", Need::Required, [&] (Reader& t)
+        (void) in.table ("target", Need::Required, [&] (toml::Reader& t)
         {
             (void) t.required ("name", target);
             const auto readTarget = [&] (std::string_view key, const Knob& knob, std::optional<double>& value)
             {
-                (void) t.table (key, Need::Optional, [&] (Reader& layer)
+                (void) t.table (key, Need::Optional, [&] (toml::Reader& layer)
                 {
                     double n = 0;
-                    if (field (layer, "hand", rules, knobRule (knob), n)) value = n;
+                    if (field (layer, "hand", rules, knobRule (knob), n, sourceRate)) value = n;
                 });
             };
             readTarget ("lufs", rules.lufs, out.project.targetEdit.lufs);
@@ -275,16 +289,16 @@ ImportedProject readProject (std::string_view bytes, std::uint32_t channels, std
         eachDevice (out.project.devices, [&] (Device, auto& layers)
         {
             using Of = DeviceOf<std::remove_cvref_t<decltype (layers.machine)>>;
-            (void) in.table (Of::name, Need::Optional, [&] (Reader& device)
+            (void) in.table (Of::name, Need::Optional, [&] (toml::Reader& device)
             {
                 Of::each (rules, [&] (std::uint8_t i, const FieldRule& rule, auto& machine, auto& hand)
                 {
-                    (void) device.table (Of::fields[i], Need::Optional, [&] (Reader& authors)
+                    (void) device.table (Of::fields[i], Need::Optional, [&] (toml::Reader& authors)
                     {
-                        (void) field (authors, "machine", rules, rule, machine);
+                        (void) field (authors, "machine", rules, rule, machine, sourceRate);
                         using T = std::remove_cvref_t<decltype (machine)>;
                         T n {};
-                        if (field (authors, "hand", rules, rule, n)) hand = n;
+                        if (field (authors, "hand", rules, rule, n, sourceRate)) hand = n;
                     });
                 }, layers.machine, layers.hand);
             });

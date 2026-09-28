@@ -22,7 +22,7 @@ namespace alloc = felitronics::test::alloc;
 namespace
 {
 constexpr char meta[] = R"({"name":"signal","fileRate":48000,"bitDepth":24,"rateKnown":true})";
-const fc_session_capabilities full { 9007199254740991.0, 48000, FC_SESSION_DEVICES_ALL };
+const fc_session_capabilities full { sizeof (fc_session_capabilities), 9007199254740991.0, 48000, FC_SESSION_DEVICES_ALL, 9007199254740991.0 };
 std::uint64_t version() { return config::Config::versions().all; }
 fc_session_status create (const fc_session_capabilities& caps, fc_session* out)
 {
@@ -37,7 +37,7 @@ std::string command (fc_session s, std::string_view json)
 bool contains (std::string_view s, std::string_view part) { return s.find (part) != s.npos; }
 std::string snapshot (fc_session s)
 {
-    fc_session_sizes n {};
+    fc_session_sizes n { sizeof (fc_session_sizes) };
     ok (fc_session_snapshot_size (s, &n) == FC_SESSION_OK, "snapshot size");
     std::string json (n.jsonBytes, '?'); std::vector<double> rows (n.rowBytes / 8);
     ok (fc_session_snapshot_copy (s, json.data(), n.jsonBytes, rows.data(), n.rowBytes) == FC_SESSION_OK, "snapshot copy");
@@ -45,7 +45,7 @@ std::string snapshot (fc_session s)
 }
 std::string events (fc_session s)
 {
-    fc_session_sizes n {};
+    fc_session_sizes n { sizeof (fc_session_sizes) };
     ok (fc_session_events_size (s, &n) == FC_SESSION_OK, "events size");
     std::string json (n.jsonBytes, '?'); std::vector<double> rows (n.rowBytes / 8);
     ok (fc_session_events_copy (s, json.data(), n.jsonBytes, rows.data(), n.rowBytes) == FC_SESSION_OK, "events copy");
@@ -94,7 +94,7 @@ void capabilities()
     const auto st = fc_session_load (h, 1, 0, pcm, 1, 2, 48000, meta, sizeof (meta) - 1, answer, sizeof (answer), &written);
     const auto used = alloc::count.load() - count;
     const std::string_view refused (answer, written);
-    ok (st == FC_SESSION_OK && contains (refused, "\"code\":34") && contains (refused, "\"needBytes\":"), "memory refuses before scanning NaN samples");
+    ok (st == FC_SESSION_OK && contains (refused, "\"code\":32") && contains (refused, "\"needBytes\":"), "memory refuses before scanning NaN samples");
     ok (used == 0 && snapshot (h) == snap, "memory refusal allocates nothing and keeps state");
     const auto batch = events (h);
     ok (contains (batch, "\"kind\":\"error\"") && contains (batch, "\"code\":3") && contains (batch, "\"needBytes\":"), "memory publishes ErrorCode::Memory with demand");
@@ -104,7 +104,7 @@ void capabilities()
     ok (checked.rejection == Rejection::Memory && checked.needBytes == bytes + 8, "direct C++ memory demand is live plus new demand");
     ok (direct.session->apply (command::Load { 1, { pcm, 1, 2, 48001 }, {} }).rejection == Rejection::RateAboveLimit, "direct C++ maximum rate");
     ok (create (full, &h) == FC_SESSION_OK, "normal session");
-    ok (contains (load (h, 48001), "\"code\":33"), "ABI rate limit");
+    ok (contains (load (h, 48001), "\"code\":31"), "ABI rate limit");
     ok (contains (load (h), "\"kind\":\"accepted\""), "rate boundary accepted");
     ok (fc_session_destroy (h) == FC_SESSION_OK, "destroy normal session");
 }
@@ -166,7 +166,7 @@ void guards()
     alignas (8) unsigned char raw[FC_SESSION_ANSWER_BYTES + 16]; std::fill (std::begin (raw), std::end (raw), 0xA5);
     auto* bytes = reinterpret_cast<char*> (raw); auto* odd32 = reinterpret_cast<std::uint32_t*> (raw + 1);
     const float samples[2] {}; const float* pcm[] { samples };
-    std::uint32_t out = 777; fc_session_sizes sizes { 777, 888 }; double row = 123;
+    std::uint32_t out = 777; fc_session_sizes sizes { sizeof (fc_session_sizes), 777, 888 }; double row = 123;
     const auto count = alloc::count.load();
     bool good = fc_session_create_bytes (nullptr, nullptr) == FC_SESSION_ERR_NULL
         && fc_session_create_bytes (nullptr, reinterpret_cast<double*> (raw + 1)) == FC_SESSION_ERR_ALIGNMENT
@@ -194,11 +194,11 @@ void guards()
         && fc_session_export_project_size (0, nullptr) == FC_SESSION_ERR_NULL
         && fc_session_export_project_size (0, odd32) == FC_SESSION_ERR_ALIGNMENT
         && fc_session_export_project_size (0, &out) == FC_SESSION_ERR_HANDLE
-        && fc_session_export_project_size (h, &out) == FC_SESSION_ERR_STATE
+        && fc_session_export_project_size (h, &out) == FC_SESSION_ERR_NO_SOURCE
         && fc_session_export_project_copy (0, nullptr, 1, nullptr) == FC_SESSION_ERR_NULL
         && fc_session_export_project_copy (0, bytes, 1, odd32) == FC_SESSION_ERR_ALIGNMENT
         && fc_session_export_project_copy (0, bytes, 1, &out) == FC_SESSION_ERR_HANDLE
-        && fc_session_export_project_copy (h, bytes, 1, &out) == FC_SESSION_ERR_STATE;
+        && fc_session_export_project_copy (h, bytes, 1, &out) == FC_SESSION_ERR_NO_SOURCE;
     for (int mode = 0; mode < 3; ++mode)
     {
         const auto call = [&] (fc_session handle, const char* input, char* output, std::uint32_t capacity, std::uint32_t* n)
@@ -231,7 +231,7 @@ void fpRefusals()
     const auto saved = fp::saveFpEnvironment();
     if (!fp::setRounding (fp::kRoundUpward)) { fp::restoreFpEnvironment (saved); (void) fc_session_destroy (h); return; }
     char output[FC_SESSION_ANSWER_BYTES]; std::fill (std::begin (output), std::end (output), '?');
-    std::uint32_t n = 777; fc_session_sizes sizes { 777, 888 }; double demand = 999;
+    std::uint32_t n = 777; fc_session_sizes sizes { sizeof (fc_session_sizes), 777, 888 }; double demand = 999;
     const float a[] { 0 }; const float* pcm[] { a };
     const auto before = alloc::count.load();
     const bool refused = fc_session_create_bytes (&full, &demand) == FC_SESSION_ERR_FP_ENVIRONMENT
@@ -275,7 +275,7 @@ void poisonDuringWork (std::string_view which)
     ok (innerPoison == FC_SESSION_ERR_POISONED && st == FC_SESSION_ERR_POISONED, "reentry during work poisons the inner and outer calls");
     ok (written == 777 && std::all_of (std::begin (output), std::end (output), [] (char c) { return c == '?'; }),
         "a call poisoned during work publishes no staged answer");
-    fc_session_sizes sizes {};
+    fc_session_sizes sizes { sizeof (fc_session_sizes) };
     ok (fc_session_snapshot_size (h, &sizes) == FC_SESSION_ERR_POISONED, "the poisoned session cannot publish a snapshot");
 }
 void scenario()
@@ -346,12 +346,107 @@ void rows()
         && binary[4] == 7 && binary[5] == 2 && binary[6] == 0.5, "point and run strides hold exact f64 values");
     ok (contains (json, "\"momentary\":{\"byteOffset\":0,\"length\":2,\"stride\":2}")
         && contains (json, "\"runs\":{\"byteOffset\":32,\"length\":1,\"stride\":3}"), "JSON locates binary rows by byte offset");
+    const unsigned char half[] { 0, 0, 0, 0, 0, 0, 224, 63 };
+    ok (std::memcmp (reinterpret_cast<const unsigned char*> (binary.data()) + 6 * 8, half, 8) == 0,
+        "actual encoder output for 0.5 is little-endian IEEE-754 bytes");
     Notification event; event.kind = EventKind::Reading; event.payload.reading.momentary[0] = points[0]; event.payload.reading.momentaryCount = 1;
     const auto n = Wire::eventsBytes ({ &event, 1 }); json.resize (n.jsonBytes); binary.resize (n.rowBytes / 8);
     ok (Wire::events ({ &event, 1 }, json, binary) == CodecStatus::Ok && binary[0] == 7 && std::isinf (binary[1]), "reading events use the same binary representation");
     ReadingPoint tooBig { 9007199254740992ull, 0 }; v.momentary = { &tooBig, 1 };
     ok (Wire::snapshotBytes (v).status == CodecStatus::Invalid, "row indices cannot silently lose integer precision");
 }
+void freezeRegressions()
+{
+    felitronics::test::group ("v1 freeze: size prefixes, live demand, protocol events, first-fault order, export reasons");
+    fc_session h = 0; ok (create (full, &h) == FC_SESSION_OK, "freeze session");
+    for (const auto size : { 0u, unsigned (sizeof (full) - 1), unsigned (sizeof (full) + 1) })
+    {
+        auto caps = full; caps.size = size; fc_session out = 777; double bytes = 777;
+        const auto want = size < sizeof (full) ? FC_SESSION_ERR_STRUCT_TOO_SMALL : FC_SESSION_ERR_STRUCT_TOO_LARGE;
+        ok (create (caps, &out) == want && out == 777 && fc_session_create_bytes (&caps, &bytes) == want && bytes == 777,
+            "capabilities size is checked without writes");
+    }
+    for (const auto size : { 0u, 11u, 13u })
+    {
+        fc_session_sizes sizes { size, 777, 888 };
+        const auto want = size < sizeof (sizes) ? FC_SESSION_ERR_STRUCT_TOO_SMALL : FC_SESSION_ERR_STRUCT_TOO_LARGE;
+        ok (fc_session_snapshot_size (0, &sizes) == want && fc_session_events_size (0, &sizes) == want
+            && sizes.jsonBytes == 777 && sizes.rowBytes == 888, "output size check precedes bad handle");
+    }
+    char json[FC_SESSION_ANSWER_BYTES]; std::uint32_t written = 777;
+    alignas (8) double rows[2] {};
+    for (const auto copy : { fc_session_events_copy, fc_session_snapshot_copy })
+        ok (copy (0, json, 1, rows, 7) == FC_SESSION_ERR_ALIGNMENT
+            && copy (h, reinterpret_cast<char*> (rows), 8, rows, 7) == FC_SESSION_ERR_ALIGNMENT,
+            "row capacity alignment precedes bad handle and overlap");
+    ok (fc_session_export_project_size (h, &written) == FC_SESSION_ERR_NO_SOURCE
+        && fc_session_export_project_copy (h, json, sizeof (json), &written) == FC_SESSION_ERR_NO_SOURCE, "export retains NoSource");
+    fc_session_storage price { sizeof (fc_session_storage) };
+    const auto count = alloc::count.load();
+    const auto quoted = fc_session_load_bytes (h, 2, 4, 48000, meta, sizeof (meta) - 1, &price);
+    const auto spent = alloc::count.load() - count;
+    ok (quoted == FC_SESSION_OK && price.rejection == 0 && price.bytes == 38 && price.largestBlockBytes == 32 && spent == 0,
+        "load demand uses shape and metadata without PCM or allocation");
+    auto direct = Session::create();
+    const auto cppPrice = direct.session->storageFor (command::Load { 0, { nullptr, 2, 4, 48000 }, { "signal" } });
+    ok (cppPrice.bytes == std::uint64_t (price.bytes) && cppPrice.largestBlockBytes == 32, "C load demand is C++ storageFor");
+    const auto base = price.liveBytes;
+    for (const bool fragmented : { false, true })
+    {
+        fc_session_capacity cap { sizeof (fc_session_capacity), fragmented ? base + 38 : base + 37, fragmented ? 31.0 : 32.0 };
+        ok (fc_session_set_capacity (h, &cap) == FC_SESSION_OK, "capacity can shrink between calls");
+        const auto before = alloc::count.load();
+        const float a[] { std::numeric_limits<float>::quiet_NaN(), 0, 0, 0 }; const float* pcm[] { a, a };
+        const auto st = fc_session_load (h, 1, 0, pcm, 2, 4, 48000, meta, sizeof (meta) - 1, json, sizeof (json), &written);
+        const auto allocations = alloc::count.load() - before;
+        ok (st == FC_SESSION_OK && contains ({ json, written }, "\"code\":32") && contains ({ json, written }, "\"needBytes\":")
+            && allocations == 0, "ceiling and largest block refuse before NaN sample scan");
+        ok (direct.session->setCapacity ({ cap.heapCeilingBytes, cap.largestFreeBlockBytes }) == Status::Ok
+            && direct.session->apply (command::Load { 1, { pcm, 2, 4, 48000 }, { "signal" } }).rejection == Rejection::Memory,
+            "C++ uses the same live capacity and largest-block check");
+    }
+    fc_session_capacity restored { sizeof (fc_session_capacity), 9007199254740991.0, 9007199254740991.0 };
+    ok (fc_session_set_capacity (h, &restored) == FC_SESSION_OK && contains (load (h), "accepted"), "capacity can grow again");
+    ok (fc_session_export_project_size (h, &written) == FC_SESSION_ERR_NOT_PLACED
+        && fc_session_export_project_copy (h, json, sizeof (json), &written) == FC_SESSION_ERR_NOT_PLACED, "export retains NotPlaced");
+    for (const auto malformed : { "{", R"({"kind":"master"})", R"({"kind":"master","commandId":"5","unknown":1})" })
+    {
+        ok (fc_session_step (h, 1, &written) == FC_SESSION_OK, "step before malformed command");
+        const auto phase = events (h); const auto seqAt = phase.find ("\"seq\":\"");
+        const auto seq = std::stoull (phase.substr (seqAt + 7));
+        ok (contains (command (h, malformed), "\"code\":\"contract\""), "protocol refusal answer");
+        const auto rejected = events (h);
+        ok (contains (rejected, "\"kind\":\"rejected\"") && ! contains (rejected, "\"kind\":\"phase\"")
+            && contains (rejected, "\"seq\":\"" + std::to_string (seq + 1) + "\"") && contains (rejected, "\"code\":33"),
+            "malformed command replaces batch and advances sequence once");
+    }
+    (void) fc_session_step (h, 16, &written);
+    constexpr char master[] = R"({"kind":"master","commandId":"8"})";
+    ok (fc_session_command_bytes (h, master, sizeof (master) - 1, &price) == FC_SESSION_OK && price.rejection == 0 && price.bytes > 0,
+        "command demand comes from the same JSON before allocation");
+    const auto masterPrice = price;
+    restored.largestFreeBlockBytes = price.largestBlockBytes - 1;
+    ok (fc_session_set_capacity (h, &restored) == FC_SESSION_OK && contains (command (h, master), "\"code\":32"), "fragmented master refused");
+    ok (fc_session_command_bytes (h, master, sizeof (master) - 1, &price) == FC_SESSION_OK && price.bytes == masterPrice.bytes,
+        "demand remains available under insufficient capacity");
+    constexpr char project[] = "invalid TOML";
+    ok (fc_session_import_project_bytes (h, project, sizeof (project) - 1, &price) == FC_SESSION_OK && price.rejection == 0 && price.bytes > 0,
+        "import demand is quoted from bytes before its allocating parse");
+    restored.largestFreeBlockBytes = 0;
+    (void) fc_session_set_capacity (h, &restored);
+    const auto before = alloc::count.load();
+    const auto imported = fc_session_import_project (h, 9, 0, project, sizeof (project) - 1, json, sizeof (json), &written);
+    const auto allocations = alloc::count.load() - before;
+    ok (imported == FC_SESSION_OK && contains ({ json, written }, "\"code\":32") && allocations == 0,
+        "import checks largest block before parsing malformed bytes");
+    price.size = sizeof (price) + 1;
+    ok (fc_session_command_bytes (0, nullptr, 1, &price) == FC_SESSION_ERR_STRUCT_TOO_LARGE, "demand output size before handle");
+    restored.size = sizeof (restored) - 1;
+    ok (fc_session_set_capacity (0, &restored) == FC_SESSION_ERR_HANDLE
+        && fc_session_set_capacity (h, &restored) == FC_SESSION_ERR_STRUCT_TOO_SMALL, "capacity handle before input size");
+    ok (fc_session_destroy (h) == FC_SESSION_OK, "freeze session destroyed");
+}
+
 void poison()
 {
     felitronics::test::group ("every new entry refuses poison before null outputs or handles");
@@ -361,6 +456,10 @@ void poison()
     ok (outer == FC_SESSION_ERR_POISONED && h == 0, "reentered create publishes no handle");
     const auto before = alloc::count.load();
     const bool all = fc_session_create_bytes (nullptr, nullptr) == FC_SESSION_ERR_POISONED
+        && fc_session_set_capacity (0, nullptr) == FC_SESSION_ERR_POISONED
+        && fc_session_command_bytes (0, nullptr, 0, nullptr) == FC_SESSION_ERR_POISONED
+        && fc_session_load_bytes (0, 0, 0, 0, nullptr, 0, nullptr) == FC_SESSION_ERR_POISONED
+        && fc_session_import_project_bytes (0, nullptr, 0, nullptr) == FC_SESSION_ERR_POISONED
         && fc_session_command (0, nullptr, 0, nullptr, 0, nullptr) == FC_SESSION_ERR_POISONED
         && fc_session_load (0, 0, 0, nullptr, 0, 0, 0, nullptr, 0, nullptr, 0, nullptr) == FC_SESSION_ERR_POISONED
         && fc_session_import_project (0, 0, 0, nullptr, 0, nullptr, 0, nullptr) == FC_SESSION_ERR_POISONED
@@ -378,6 +477,6 @@ void poison()
 int main (int argc, char** argv)
 {
     if (argc == 2) poisonDuringWork (argv[1]);
-    else { capabilities(); directCapabilities(); guards(); fpRefusals(); scenario(); rows(); poison(); }
+    else { capabilities(); directCapabilities(); guards(); fpRefusals(); scenario(); rows(); freezeRegressions(); poison(); }
     return felitronics::test::report();
 }

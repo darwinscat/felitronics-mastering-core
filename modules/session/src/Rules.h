@@ -3,16 +3,9 @@
 
 #pragma once
 
-// THE NUMBERS THE SESSION'S COMMANDS CHECK AGAINST, READ IN PLACE (internal to modules/session). The knobs' travels and
-// steps, the targets' rows and the defaults a device starts from, read straight from the config compiled into the
-// library (felitronics-toml's embedded documents) — not from Config::load(), which builds tables and binds structs and
-// so allocates: a command's demand is declared before it runs (law 11d), and reading the config costs none. The numbers
-// are the documents' own decimals, which is what a knob's grid is checked on (src/Grid.h).
-//
-// ONE SCHEMA, AND THIS READS WHAT IT ALREADY HELD. Every build runs the config's schema over these documents before the
-// library is built, so every number read here is one the schema required and checked; `complete` says every read found
-// it. The state suite holds every number of this reading to the schema's binding of the same documents
-// (Config::load()), and reads a document with keys missing to see `complete` go false.
+// Allocation-free reads of the build-checked embedded config: domains, slider hints, targets and defaults.
+// The schema proves the shape before compilation. A broken required lookup is a contract trap, not a runtime status.
+// State tests compare these reads with Config::load()'s typed binding.
 
 #include <felitronics/toml/Embedded.h>
 #include <felitronics/toml/Toml.h>
@@ -26,10 +19,15 @@ namespace felitronics::session::detail
 
 using Decimal = toml::Decimal;
 
-// A knob: every value from `from` to `to`, in whole steps of `step` counted from `from`.
+// A knob: independent slider hints and an accepted domain.
 struct Knob
 {
-    Decimal from {}, to {}, step {};
+    Decimal from {}, to {}, step {}; // slider hints
+    enum class Domain : std::uint8_t { Bounded, Finite, SourceNyquist };
+    Domain domain = Domain::Bounded;
+    Decimal minimum {}, maximum {};
+    [[nodiscard]] bool accepts (double value, std::uint32_t sourceRate) const noexcept;
+
 };
 
 // One row of [targets] (targets.toml), as far as the commands read it.
@@ -46,12 +44,11 @@ struct TargetRow
 
 struct Rules
 {
-    bool complete = false;                     // every number below was where the schema puts it
     toml::embedded::View targets, engine;      // the two documents
     std::uint16_t rows = 0;                    // [targets]
     std::uint16_t defaultRow = 0;              // `default`
     Knob lufs {}, tp {};                       // [edit] lufs, tp
-    Knob hpfFq {};                             // [hpf] hzMin…hzMax, in whole hertz
+    Knob hpfFq {};                             // [hpf] hzMin…hzMax, slider hints
     Decimal hpfDefault {};                     // [hpf] hzDefault
     Knob monoBassFq {}, monoBassWidth {};      // [monoBass] frequencyRange / frequencyStep, lowWidthRange / lowWidthStep
     Decimal monoBassWidthDefault {};           // [monoBass] lowWidth
@@ -69,11 +66,11 @@ struct Rules
     [[nodiscard]] TargetRow row (std::uint16_t i) const noexcept;
     // The row whose key is `key`.
     [[nodiscard]] std::optional<std::uint16_t> find (std::string_view key) const noexcept;
-    // Is `dbPerOct` one of [hpf] slopes?
+    // Is dbPerOct in the filter order domain (multiples of 6, 6 through 96)?
     [[nodiscard]] bool slope (std::int32_t dbPerOct) const noexcept;
 };
 
-// The rules of two documents — `complete` false when a number is not where the schema puts it. Reads, allocates nothing.
+// Read two build-checked documents without allocations.
 [[nodiscard]] Rules readRules (toml::embedded::View targets, toml::embedded::View engine) noexcept;
 
 // The rules of the config compiled into the library (src/Config.cpp).
