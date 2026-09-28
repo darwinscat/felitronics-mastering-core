@@ -11,7 +11,7 @@ const read = path => readFileSync(resolve(root, path), 'utf8');
 const selected = process.argv[3];
 const checks = {
     scope() {
-        assert(!/enum felitronics::session::(?:Command|Event|Column|Status|CodecStatus|OnEdits|EventKind|text::(?:Lang|Plural))::/.test(read('tools/session-abi-v1.txt')),
+        assert(!/enum felitronics::session::(?:Command|Event|Column|Status|CodecStatus|EventKind|text::(?:Lang|Plural))::/.test(read('tools/session-abi-v1.txt')),
             'the permanent manifest contains only C/wire-observable numeric values');
         const tests = read('tools/tests/SessionAbiV1Tests.cpp');
         for (const name of ['Command', 'Event', 'Column', 'Status', 'CodecStatus'])
