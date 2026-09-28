@@ -5,7 +5,7 @@ step 5 work units
 command {"kind":"setManual","commandId":"2","on":true}
 command {"kind":"editDevice","commandId":"3","device":0,"fields":{"fq":36,"on":false}}
 export project saved
-command {"kind":"setTarget","commandId":"4","target":"lp","onEdits":"reset"}
+command {"kind":"setTarget","commandId":"4","target":"lp"}
 import project 5 saved
 export project restored
 snapshot
