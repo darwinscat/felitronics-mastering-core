@@ -424,8 +424,7 @@
     "SetTargetCommand": {
       "kind": "\"setTarget\"",
       "commandId": "string",
-      "target": "string",
-      "onEdits": "\"reset\" | \"keep\""
+      "target": "string"
     },
     "SetManualCommand": {
       "kind": "\"setManual\"",

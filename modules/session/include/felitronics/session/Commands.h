@@ -102,9 +102,6 @@ using DeviceEdit = std::variant<HpfFields<Touched>, MonoBassFields<Touched>, Glu
 using DeviceMask = std::variant<HpfFields<Mark>, MonoBassFields<Mark>, GlueFields<Mark>, SaturationFields<Mark>,
                                 TiltFields<Mark>, LimiterFields<Mark>, DitherFields<Mark>, LowFields<Mark>>;
 
-// Whether setTarget keeps a person's device edits or takes them back. The target's own numbers are replaced either way.
-enum class OnEdits : std::uint8_t { Reset, Keep };
-
 // The lowest sample rate a load takes: felitronics-core's (core::kMinSampleRate) — below it the loudness weighting is past
 // Nyquist, and what arrives there is a rate in kilohertz or a corrupt header. The highest is the shell's to say.
 inline constexpr std::uint32_t kMinSampleRate = 8000;
@@ -131,7 +128,8 @@ struct SourceMeta
 namespace command
 {
 struct Load        { CommandId id = 0; Pcm pcm {}; SourceMeta meta {}; };
-struct SetTarget   { CommandId id = 0; std::string_view target; OnEdits onEdits = OnEdits::Reset; };
+// Replaces the target's numbers, resets every device edit, and places the machine's layer again when ready.
+struct SetTarget   { CommandId id = 0; std::string_view target; };
 struct EditTarget  { CommandId id = 0; TargetFields<Touched> fields {}; };
 struct EditDevice  { CommandId id = 0; DeviceEdit fields {}; };
 struct RevertEdits { CommandId id = 0; DeviceMask fields {}; };

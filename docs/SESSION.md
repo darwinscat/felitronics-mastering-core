@@ -269,14 +269,14 @@ Dither is offered through 16 bits, and mono bass except on a mono source; the sh
 - **A person's edits** are taken only after placement (`NotPlaced` before it), whether the panel is visible or hidden. Values must be
   finite and inside the knob's domain; travel and step guide the slider. Values between steps or outside travel are
   accepted within the domain. A number is kept with −0 written as +0, so equal values give identical project bits.
-- **`setTarget(name, onEdits)`** replaces the target's numbers silently — a person's edits of them go with the old
-  target — and keeps or takes back a person's device edits as `onEdits` says. The machine's layer is placed again.
-  Dither edits remain stored but dormant above 16 bits: they survive export/import and become applicable again
-  on an eligible target. New dither edits still return `NotOffered` there; an explicit revert can remove stored edits.
+- **`setTarget(name)`** replaces the target's numbers silently and always resets every device edit, including hidden
+  edits and dither edits. The machine decides again for the new target. The shell owns the warning
+  “your N edits will be reset”: it reads `snapshot().view().handFieldCount` before sending the command.
+  The command answer and events are unchanged. New dither edits above 16 bits still return `NotOffered`.
 - **`setManual(bool)`** changes only panel visibility. Device edits stay effective in either mode, including in a
   master recipe. `snapshot().view().handFieldCount` counts touched device fields, including false ticks and values
   equal to the machine, for the hidden-panel marker. Target-number edits are separate. `revertEdits` and
-  `setTarget(..., reset)` explicitly remove device edits.
+  `setTarget(name)` explicitly remove device edits.
 - **`load`** checks everything first, then DISARMS — whatever ran on the old source stops, and the old source, its
   measurements and its masters go; the manual mode is switched off, and a person's device edits go with it (the mode
   does not outlive the file: its edits were decisions about the old source); the old samples are freed before the new
