@@ -684,7 +684,7 @@ node "$HERE/session-trap-check.mjs" "$OUT/trap/fcsession.node.js" "$OUT/snapshot
 
 echo "=== contract allocation trap (fc_session)"
 mkdir -p "$OUT/contract-trap"
-em++ "${SCOMMON[@]}" -O3 -sENVIRONMENT=node "$SSRC" "${SESSION_SRCS[@]}" "$HERE/session-controls/contract_trap.cpp" \
+em++ "${SCOMMON[@]}" -O3 -sENVIRONMENT=node "$SSRC" "${SESSION_SRCS[@]}" "$HERE/session-controls/contract_trap.cpp" -I"$CORE/test_support" \
      -o "$OUT/contract-trap/fcsession.node.js"
 
 echo "=== size (fc_session)"
