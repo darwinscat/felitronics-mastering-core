@@ -1,0 +1,19 @@
+create main 67108864
+load 1 mono
+step 5 work units
+step 5 work units
+command {"kind":"setManual","commandId":"2","on":true}
+command {"kind":"editDevice","commandId":"3","device":0,"fields":{"fq":36,"on":false}}
+export project saved
+command {"kind":"setTarget","commandId":"4","target":"lp","onEdits":"reset"}
+import project 5 saved
+export project restored
+snapshot
+new instance
+create main 67108864
+load 1 mono
+step 5 work units
+step 5 work units
+import project 2 saved
+export project reopened
+snapshot

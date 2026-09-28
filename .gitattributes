@@ -1,3 +1,5 @@
 # The config documents are compared as text by the config tests and embedded byte for byte; a checkout that
 # rewrote their line endings (core.autocrlf on Windows) would make those comparisons fail and the embedded text differ.
 *.toml text eol=lf
+# Contract inputs are hashed as bytes on every checkout, including Windows.
+/tools/contract/** text eol=lf

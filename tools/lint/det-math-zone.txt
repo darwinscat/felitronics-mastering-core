@@ -126,3 +126,8 @@ zone   modules/session/include/felitronics/session/Wire.h  caller-owned transfer
 zone modules/session/src/EqCurve.h summed EQ response declaration
 zone modules/session/src/EqCurve.cpp deterministic summed EQ response
 entry modules/session/src/EqCurve.cpp snapshot EQ response
+entry  tools/session-script.cpp  native contract consumer
+zone   tools/session-script.cpp  deterministic scenario commands and PCM
+zone   tools/session-script.h  native contract consumer declarations
+entry  tools/session-script-poison.cpp  abandoned call control for the native consumer
+zone   tools/session-script-poison.cpp  native failure recovery has no numeric policy

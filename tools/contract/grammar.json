@@ -1,0 +1,15 @@
+{
+  "create": "create ([a-z][a-z0-9_-]*) ([0-9]{1,10})",
+  "use": "use ([a-z][a-z0-9_-]*)",
+  "load": "load ([0-9]{1,9}) ([a-z][a-z0-9_-]*)",
+  "command": "command (\\{[^\\r\\n]*\\})",
+  "cancel": "cancel ([0-9]{1,9}) ([0-9]{1,9})",
+  "step": "step ([0-9]{1,9}) work units",
+  "snapshot": "snapshot",
+  "export": "export project ([a-z][a-z0-9_-]*)",
+  "import": "import project ([0-9]{1,9}) ([a-z][a-z0-9_-]*)",
+  "poison": "poison",
+  "new": "new instance",
+  "capacity": "capacity ([0-9]{1,10}) ([0-9]{1,10})",
+  "import-file": "import project ([0-9]{1,9}) file ([a-z][a-z0-9_-]*)"
+}

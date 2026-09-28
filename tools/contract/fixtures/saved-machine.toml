@@ -1,0 +1,13 @@
+defaults = "2026-09"
+core = "0.2.1"
+manual = false
+
+[target]
+name = "allStreaming"
+
+[hpf]
+fq.machine = 41.125
+
+[low]
+on.machine = true
+db.machine = 2.375

@@ -202,7 +202,16 @@ target_compile_definitions(felitronics_session_facade PRIVATE $<TARGET_PROPERTY:
 # fcore_session — the native CLI over `felitronics::session` (tools/fcore_session.cpp): the library linked AS C++, the
 # way a desktop application links it, plus the fc_session ABI's object beside it, so the ABI version it prints is the
 # facade's own answer. The two are separate translation units for fcore_master's reason: the facade stays a facade.
-add_executable(fcore_session fcore_session.cpp $<TARGET_OBJECTS:felitronics_session_facade>)
+set(SESSION_SCRIPT_GRAMMAR ${CMAKE_CURRENT_BINARY_DIR}/session-script-grammar.h)
+find_program(SESSION_SCRIPT_NODE NAMES node nodejs REQUIRED)
+add_custom_command(OUTPUT ${SESSION_SCRIPT_GRAMMAR}
+    COMMAND ${SESSION_SCRIPT_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/contract/grammar.mjs --generate ${SESSION_SCRIPT_GRAMMAR}
+    DEPENDS contract/grammar.mjs contract/grammar.json VERBATIM)
+add_executable(fcore_session fcore_session.cpp session-script.cpp session-script-poison.cpp
+    ${SESSION_SCRIPT_GRAMMAR} $<TARGET_OBJECTS:felitronics_session_facade>)
+target_include_directories(fcore_session PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+target_compile_options(fcore_session PRIVATE ${FCORE_NO_FP_CONTRACT}
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fno-fast-math>)
 target_link_libraries(fcore_session PRIVATE felitronics::session)
 target_include_directories(fcore_session PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(fcore_session PRIVATE cxx_std_20)
@@ -328,7 +337,7 @@ if(FELITRONICS_BUILD_TESTS)
     # THE CLI'S CONTRACT, byte for byte on stdout and by exit status (tools/tests/cli-expect.cmake): the versions it
     # prints are the ones this build was configured with; the table it prints is the one docs/SESSION.md shows; an
     # empty script and a script of comments are accepted with `done 0`, from a file and from stdin; the config it prints
-    # is its sources in canonical form, and its version theirs; a script with a command in it, a script that is not there
+    # is its sources in canonical form, and its version theirs; a malformed script, a script that is not there
     # and a malformed command line are refused with 2 and nothing on stdout.
     # NOT ON THE WASM TIER: the CLI reads its script from the host's filesystem, which the node runner the emscripten
     # tests go through does not have. The wasm road into the session is the fcsession module, and CI checks that.
@@ -423,4 +432,10 @@ if(FELITRONICS_BUILD_TESTS)
                              -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli-expect.cmake)
         endforeach()
     endif()
+endif()
+
+if(FELITRONICS_BUILD_TESTS AND NOT EMSCRIPTEN)
+    add_test(NAME fcore_session_contract
+        COMMAND ${SESSION_SCRIPT_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/contract/run.mjs
+            $<TARGET_FILE:fcore_session> --native-only)
 endif()
