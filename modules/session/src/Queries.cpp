@@ -125,8 +125,11 @@ void loudness (QueryView& v, double* rows, const MeasurementResult& result) noex
     const auto* reasons = array (result, momentary ? "momentaryReasons" : "shortTermReasons");
     if (! values || ! reasons || values->grid.stepFrames == 0) return;
     const auto& grid = values->grid; const auto& q = v.request;
+    // A row names the end of its window. The query is [from, to), so include an
+    // end at to and exclude one at from; otherwise the source's last row is lost.
     const auto offset = [&] (std::uint64_t frame)
-    { return frame <= grid.firstFrame ? 0 : std::min (values->stored, (frame - grid.firstFrame + grid.stepFrames - 1u) / grid.stepFrames); };
+    { return frame < grid.firstFrame ? std::uint64_t (0)
+        : std::min (values->stored, 1u + (frame - grid.firstFrame) / grid.stepFrames); };
     const auto first = offset (q.fromFrame), end = offset (q.toFrame);
     v.total = end - first; v.stored = std::min (v.total, std::uint64_t (q.columns));
     for (std::uint64_t i = 0; i < v.stored; ++i)
@@ -155,19 +158,33 @@ void stereo (QueryView& v, double* rows, const MeasurementResult& result, std::u
     const auto* data = array (result, "columns");
     if (! data || ! data->stored) return;
     const auto& q = v.request;
-    v.total = v.stored = std::min<std::uint64_t> (q.columns, q.toFrame - q.fromFrame);
-    for (std::uint64_t i = 0; i < v.stored; ++i)
+    // StereoColumns uses these floating-point boundaries, including its known
+    // rounding behavior. A retained value must carry the interval that made it.
+    const double per = double (frames) / double (data->stored);
+    const auto bounds = [&] (std::uint64_t i)
     {
-        const auto first = q.fromFrame + boundary (q.toFrame - q.fromFrame, i, v.stored);
-        const auto last = q.fromFrame + boundary (q.toFrame - q.fromFrame, i + 1u, v.stored);
-        const auto centre = first + (last - first) / 2u;
-        const auto at = std::min (data->stored - 1u, boundary (data->stored, centre, frames));
-        const auto* source = data->values.data() + std::size_t (at * 3u);
+        return std::pair { std::uint64_t (std::floor (double (i) * per)),
+            std::min (frames, std::uint64_t (std::floor (double (i + 1u) * per))) };
+    };
+    for (std::uint64_t i = 0; i < data->stored; ++i)
+    {
+        const auto [first, last] = bounds (i);
+        if (first < q.toFrame && last > q.fromFrame) ++v.total;
+    }
+    v.stored = std::min (v.total, std::uint64_t (q.columns));
+    std::uint64_t ordinal = 0, selected = 0;
+    for (std::uint64_t i = 0; i < data->stored && selected < v.stored; ++i)
+    {
+        const auto [first, last] = bounds (i);
+        if (first >= q.toFrame || last <= q.fromFrame) continue;
+        const auto target = v.stored == 1 ? v.total / 2u : boundary (v.total - 1u, selected, v.stored - 1u);
+        if (ordinal++ != target) continue;
+        const auto* source = data->values.data() + std::size_t (i * 3u);
         const auto reason = std::isfinite (source[2]) ? source[2] <= 0 ? MeasurementReason::NoSignal : MeasurementReason::None : MeasurementReason::NonFinite;
         const double row[] { double (first), double (last), source[0], source[1], source[2], double (reason) };
-        std::copy_n (row, 6, rows + std::size_t (6u * i));
+        std::copy_n (row, 6, rows + std::size_t (6u * selected++));
     }
-    v.complete = result.complete;
+    v.complete = data->complete && v.total != 0 && v.stored == v.total;
 }
 }
 QueryResult::QueryResult() noexcept = default;
@@ -191,6 +208,12 @@ QueryResult QueryResult::copy (const QueryView& view) noexcept
 }
 std::uint64_t detail::QueryCache::bytes() const noexcept
 { return sizeof (QueryCache) + entries[0].bytes + entries[1].bytes; }
+void Session::invalidateQueryCache (Analyzer id) noexcept
+{
+    if (! queryCache_) return;
+    for (auto& entry : queryCache_->entries)
+        if (entry.request.audioId != 0 && analyzer (entry.request) == id) entry = {};
+}
 QueryDemand Session::queryStorage (const MeasurementQuery& q) const noexcept
 {
     if (checkFloatingPointEnvironment() != Status::Ok) return { QueryStatus::FloatingPointEnvironment, 0, 0, 0 };

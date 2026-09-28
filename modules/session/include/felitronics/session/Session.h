@@ -254,6 +254,7 @@ private:
     void stepMeasurements() noexcept;
     void stepWaveform() noexcept;
     void stepSourceMeasurements() noexcept;
+    void invalidateQueryCache (Analyzer analyzer) noexcept;
     [[nodiscard]] bool mandatoryReady() const noexcept;
     [[nodiscard]] TempoChoice tempoForDevice() const noexcept;
     void clearNeedles() noexcept;

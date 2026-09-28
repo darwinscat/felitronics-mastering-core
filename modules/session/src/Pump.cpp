@@ -85,6 +85,12 @@ Phase Session::jobProgress (JobId job) const noexcept
 }
 void Session::emit (Notification event, const Phase& progress) noexcept
 {
+    if (event.kind == EventKind::Measurement) invalidateQueryCache (event.payload.measurement.analyzer);
+    else if (event.kind == EventKind::Reading)
+    {
+        invalidateQueryCache (Analyzer::Loudness);
+        invalidateQueryCache (Analyzer::Clipping);
+    }
     detail::debugBound (eventCount_ < kEventBatch);
     event.seq = ++sequence_;
     event.source = source_.hash;
