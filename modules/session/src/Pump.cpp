@@ -122,6 +122,12 @@ void Session::dropJob (JobId job) noexcept
                 result.status = MeasurementStatus::Cancelled;
                 result.reason = MeasurementReason::Cancelled;
             }
+        // A master cannot silently restart a dependency the user just stopped.
+        if (job_ != 0 && masterRequiresTempo() && ! tempoForDevice().ready)
+        {
+            mastering_ = false; job_ = 0; jobRecipe_ = {};
+            masterUnit_ = 0; masterProgress_ = {};
+        }
     }
     else
     {
@@ -176,6 +182,41 @@ Stepped Session::step (std::uint32_t budget) noexcept
         if (job_ != 0)
         {
             event.jobId = job_;
+            if (masterRequiresTempo() && ! tempoForDevice().ready)
+            {
+                const auto masterJob = job_;
+                if (measurementJob_ == 0 && detail::Driver::continueMeasurement (*this) == 0)
+                    contract (masterJob);
+                else if (! sourceMeasurements_ || sourceMeasurements_->cursor > sourceMeasurements_->order.size()
+                         || sourceMeasurements_->stage > 5)
+                    contract (masterJob);
+                else
+                {
+                    auto& run = *sourceMeasurements_;
+                    // Complete an in-flight optional first. At its next stage boundary,
+                    // do tempo before the other optionals, then resume their cursor.
+                    if (run.cursor < 8 && run.stage == 0)
+                    {
+                        run.tempoReturnCursor = run.cursor;
+                        run.cursor = 8;
+                    }
+                    stepSourceMeasurements();
+                    if (job_ == masterJob)
+                    {
+                        auto& p = masterProgress_;
+                        p.name = PhaseName::Analyzers; p.pass = 0; p.totalPasses = passes;
+                        if (p.completedUnits < 4294967294u) ++p.completedUnits;
+                        p.totalUnits = std::max (p.totalUnits, p.completedUnits + 1u);
+                        p.fraction = measureWeight * double (p.completedUnits) /
+                            (double (p.totalUnits) * (double (passes) * passWeight + measureWeight));
+                        event.kind = EventKind::Phase; event.jobId = masterJob; event.payload.phase = p; emit (event);
+                    }
+                }
+                ++units;
+                continue;
+            }
+            if (masterProgress_.name == PhaseName::Analyzers)
+                jobRecipe_ = { project_, source_.hash, config::Config::versions().sound };
             ++masterUnit_;
             const bool end = masterUnit_ > passes;
             masterProgress_ = { end ? PhaseName::Remeasure : PhaseName::Pass,

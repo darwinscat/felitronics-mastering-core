@@ -31,6 +31,7 @@ struct felitronics::session::detail::Inspector
         r.numbers = { live.numbers[0], live.numberCount[0] };
     }
     static unsigned live (const Session& s) { return s.liveMeasurements_->stage; }
+    static void place (Session& s) { s.devicesPlaced_ = true; }
     static void tempoOutcome (Session& s, MeasurementStatus status, MeasurementReason reason,
                               std::span<const MeasurementValue> numbers)
     {
@@ -519,6 +520,179 @@ void tempoFinishCanStopAndContinue()
             ok (same (x.values[j], y.values[j]), "resumed tempo curve and candidates match bit for bit");
     }
 }
+void masterWaitsForTempo()
+{
+    constexpr unsigned rate = 48000, frames = rate * 12;
+    std::vector<float> pcm (frames);
+    for (unsigned i = 0; i < frames; ++i) pcm[i] = i % 24000 < 300 ? .2f : 0.0f;
+    const float* planes[] { pcm.data() };
+    auto made = Session::create(); auto& s = *made.session;
+    ok (s.apply (command::Load { 1, { planes, 1, frames, rate }, {} }).rejection == Rejection::None, "tempo wait fixture loads");
+    ok (s.apply (command::SetTarget { 2, "cd" }).rejection == Rejection::None, "CD target selected");
+    while (s.state() == State::Loaded) (void) s.step (16);
+    ok (s.state() == State::Measured1 && ! s.snapshot().view().tempoChoice.ready, "CD master starts with pending tempo");
+    const auto first = s.apply (command::Master { 3 });
+    ok (first.rejection == Rejection::None && first.job != 0, "CD master accepted during phase two");
+    (void) s.step (1);
+    auto waiting = s.snapshot();
+    ok (s.job() == first.job && s.masters().empty() && ! waiting.view().tempoChoice.ready
+        && waiting.view().masterProgress.pass == 0 && waiting.view().masterProgress.name == PhaseName::Analyzers,
+        "CD master waits for terminal tempo before any render pass");
+    for (unsigned i = 0; i < 1000 && detail::Inspector::run (s).cursor < 8 && s.job() == first.job; ++i)
+        (void) s.step (1);
+    ok (detail::Inspector::run (s).cursor == 8 && s.measurementJob() != 0
+        && s.snapshot().view().measurements[std::size_t (Analyzer::Hum)].status == MeasurementStatus::Pending,
+        "waiting master schedules tempo before unrelated optionals after the in-flight analyzer");
+    ok (s.apply (command::Cancel { 4, first.job }).rejection == Rejection::None && s.job() == 0 && s.masters().empty(),
+        "waiting master cancels without keeping a master");
+    const auto measurement = s.measurementJob();
+    ok (s.apply (command::Cancel { 5, measurement }).rejection == Rejection::None
+        && s.state() == State::MeasurementStopped, "unfinished tempo can be stopped after master cancellation");
+    const auto second = s.apply (command::Master { 6 });
+    ok (second.rejection == Rejection::None && second.job != 0, "master is accepted with stopped phase two");
+    (void) s.step (1);
+    waiting = s.snapshot();
+    ok (s.job() == second.job && s.measurementJob() != 0 && ! waiting.view().tempoChoice.ready
+        && waiting.view().masterProgress.name == PhaseName::Analyzers,
+        "master restarts the unfinished tempo measurement inside its waiting job");
+    bool endedAfterTempo = true;
+    for (unsigned i = 0; i < 200000 && s.job() != 0; ++i)
+    {
+        (void) s.step (16);
+        if (s.job() == 0 && ! s.snapshot().view().tempoChoice.ready) endedAfterTempo = false;
+    }
+    ok (endedAfterTempo && s.job() == 0 && s.masters().size() == 1
+        && s.snapshot().view().tempoChoice.ready && s.masters()[0].id == second.job,
+        "CD master completes only after the measured or terminal fallback tempo");
+    drive (s);
+    ok (s.state() == State::Measured2, "other optionals continue after the CD master");
+}
+void masterTempoDependencyPolicy()
+{
+    constexpr unsigned rate = 48000, frames = rate * 12;
+    std::vector<float> pcm (frames);
+    for (unsigned i = 0; i < frames; ++i) pcm[i] = i % 24000 < 300 ? .2f : 0.0f;
+    const float* planes[] { pcm.data() };
+    const auto start = [&] (Session& s)
+    {
+        ok (s.apply (command::Load { 1, { planes, 1, frames, rate }, {} }).rejection == Rejection::None,
+            "dependency fixture loads");
+        ok (s.apply (command::SetTarget { 2, "club" }).rejection == Rejection::None,
+            "non-CD target selected");
+        while (s.state() == State::Loaded) (void) s.step (16);
+        ok (s.state() == State::Measured1 && ! s.snapshot().view().tempoChoice.ready,
+            "dependency fixture enters phase two with pending tempo");
+    };
+    {
+        auto made = Session::create(); auto& s = *made.session; start (s);
+        const auto master = s.apply (command::Master { 3 });
+        (void) s.step (1);
+        ok (master.rejection == Rejection::None && s.snapshot().view().masterProgress.pass == 1
+            && ! s.snapshot().view().tempoChoice.ready,
+            "non-CD target without active glue starts rendering without tempo");
+    }
+    {
+        auto made = Session::create(); auto& s = *made.session; start (s);
+        detail::Inspector::place (s);
+        GlueFields<Touched> glue; glue.on = true; glue.upToDb = 1.0;
+        ok (s.apply (command::EditDevice { 3, glue }).rejection == Rejection::None,
+            "glue can be enabled for a non-CD target");
+        const auto master = s.apply (command::Master { 4 });
+        (void) s.step (1);
+        ok (master.rejection == Rejection::None && s.job() == master.job
+            && s.snapshot().view().masterProgress.name == PhaseName::Analyzers
+            && s.snapshot().view().masterProgress.pass == 0,
+            "enabled glue waits inside the master for tempo");
+        const auto measurement = s.measurementJob();
+        ok (s.apply (command::Cancel { 5, measurement }).rejection == Rejection::None
+            && s.measurementJob() == 0 && s.job() == 0 && s.masters().empty(),
+            "cancelling a waiting master's measurement also stops that master");
+    }
+}
+void directTempoParity (const std::vector<float>& pcm, unsigned rate, bool varying, bool gaps)
+{
+    const float* planes[] { pcm.data() };
+    const Pcm audio { planes, 1, pcm.size(), rate };
+    auto made = Session::create(); auto& s = *made.session;
+    ok (s.apply (command::Load { 1, audio, {} }).rejection == Rejection::None, "long tempo parity fixture loads");
+    drive (s);
+    const auto snapshot = s.snapshot();
+    const auto& result = snapshot.view().measurements[std::size_t (Analyzer::Tempo)];
+    const auto plan = detail::MeasurementPlan::storageFor (audio, detail::MeasurementPlan::parametersFor (audio));
+    detail::MeasurementWorkspace direct;
+    ok (direct.prepare (Analyzer::Tempo, audio, plan), "direct tempo analyzer prepares with session parameters");
+    for (std::size_t start = 0; start < pcm.size();)
+    {
+        const auto n = std::min<std::size_t> (317, pcm.size() - start);
+        const float* part[] { pcm.data() + start };
+        ok (direct.tempo->process (part, 1, int (n)), "direct tempo processes independent chunking");
+        start += n;
+    }
+    auto& a = *direct.tempo; ok (a.finish() && a.determined() && result.status == MeasurementStatus::Ready,
+        "long tempo fixture reaches a direct and session report");
+    const auto scalar = [&] (std::string_view name, double expected)
+    { const auto& got = value (result, name); ok (got.value && same (*got.value, expected), "every retained tempo headline field matches direct bits"); };
+    const auto headline = [&] (std::string_view prefix, const felitronics::tempo::TempoHeadline& h)
+    {
+        const std::string pre (prefix);
+        scalar (pre + "Bpm", h.bpm); scalar (pre + "Confidence", h.confidence); scalar (pre + "Label", double (h.label));
+        scalar (pre + "BeatPeriodSec", h.beatPeriodSec); scalar (pre + "BeatOffsetSec", h.beatOffsetSec);
+        scalar (pre + "AlternativeCount", double (h.altCount));
+        for (int i = 0; i < h.altCount; ++i) scalar (pre + "Alternative[" + std::to_string (i) + "]", h.alts[i]);
+    };
+    headline ("headline", a.headline()); headline ("wholeTrack", a.wholeTrack());
+    scalar ("varies", a.varies() ? 1.0 : 0.0); scalar ("hasRange", a.hasRange() ? 1.0 : 0.0);
+    if (a.hasRange()) { scalar ("rangeLowBpm", a.rangeLow()); scalar ("rangeHighBpm", a.rangeHigh()); }
+    scalar ("anchorBpm", a.anchorBpm()); scalar ("anchorConfidence", a.anchorConfidence()); scalar ("anchorLag", a.anchorLag());
+    scalar ("candidateCount", double (a.candidateCount())); scalar ("curvePoints", double (a.pointCount()));
+    const auto& candidates = array (result, "candidates"); const auto& curve = array (result, "curve");
+    ok (curve.stored == std::uint64_t (a.pointCount()) && curve.stored > 0
+        && candidates.stored == std::uint64_t (a.candidateCount()), "long source retains every direct tempo row");
+    ok (candidates.grid.firstFrame == 0 && candidates.grid.stepFrames == 0
+        && candidates.grid.framesRead == 0 && candidates.grid.sampleRate == 0,
+        "BPM candidates have no false time grid");
+    const auto centre = std::uint64_t (a.windowFrames()) * felitronics::tempo::TempoDetector::kHop / 2u;
+    const auto stride = std::uint64_t (a.hopFrames()) * felitronics::tempo::TempoDetector::kHop;
+    ok (curve.grid.firstFrame == centre && curve.grid.stepFrames == stride
+        && curve.grid.framesRead == pcm.size() && curve.grid.sampleRate == rate,
+        "curve grid names actual window centres in source frames");
+    bool sawGap = false, sawBpm = false;
+    for (std::uint64_t i = 0; i < curve.stored; ++i)
+    {
+        const auto p = a.point (std::int64_t (i)), raw = a.rawPoint (std::int64_t (i));
+        const auto* row = curve.values.data() + std::size_t (i * 6u);
+        ok (same (row[0], p.t) && same (row[1], p.bpm) && same (row[2], p.conf)
+            && same (row[3], double (p.hasBpm)) && same (row[4], raw.bpm) && same (row[5], raw.conf),
+            "every long session curve point and gap matches direct bits");
+        ok (std::fabs (double (centre + i * stride) / double (rate) - p.t) <= 0.051,
+            "every curve grid coordinate agrees with its rounded displayed time");
+        sawGap = sawGap || ! p.hasBpm; sawBpm = sawBpm || p.hasBpm;
+    }
+    for (std::uint64_t i = 0; i < candidates.stored; ++i)
+    {
+        const auto c = a.candidate (int (i));
+        ok (same (candidates.values[std::size_t (i * 2u)], c.bpm)
+            && same (candidates.values[std::size_t (i * 2u + 1u)], c.score), "every candidate matches direct bits");
+    }
+    if (varying) ok (a.varies() && sawBpm, "variable tempo produces measured changing windows");
+    if (gaps) ok (sawGap, "a long session curve retains missing-tempo windows");
+}
+void longTempoParity()
+{
+    constexpr unsigned rate = 44100;
+    std::vector<float> changing (rate * 32u);
+    const auto clicks = [&] (unsigned from, unsigned to, unsigned period)
+    {
+        for (unsigned at = from; at < to; at += period)
+            for (unsigned i = 0; i < 220 && at + i < to; ++i)
+                changing[at + i] = float ((1.0 - double (i) / 220.0) * (i % 2 ? -1.0 : 1.0));
+    };
+    clicks (0, rate * 16u, 26460); clicks (rate * 16u, rate * 32u, 17640);
+    directTempoParity (changing, rate, true, false);
+    std::vector<float> lonely (rate * 8u);
+    for (unsigned i = 0; i < 220; ++i) lonely[rate * 3u + i] = float ((1.0 - double (i) / 220.0) * (i % 2 ? -1.0 : 1.0));
+    directTempoParity (lonely, rate, false, true);
+}
 void deviceTempoPolicy()
 {
     auto made = Session::create(); auto& s = *made.session;
@@ -545,7 +719,7 @@ int main()
     fixture (2, 8000, 800, 1, false);
     fixture (2, 8000, 8000, 319, false);
     optionalFailure(); missingMandatory(); driftingHum(); truncatedLists(); finiteSourceOverflow(); cachedSourceAndCommands(); unplacedCommandsDuringWork();
-    tempoFinishCanStopAndContinue(); deviceTempoPolicy();
+    tempoFinishCanStopAndContinue(); masterWaitsForTempo(); masterTempoDependencyPolicy(); longTempoParity(); deviceTempoPolicy();
     ok (! detail::SourceWarnings::wideBass (.059999999) && detail::SourceWarnings::wideBass (.06), "wide bass includes exactly six percent");
     ok (detail::SourceWarnings::quiet (-40) == text::FactId::Value && detail::SourceWarnings::quiet (-40.0001) == text::FactId::SourceQuiet
         && detail::SourceWarnings::quiet (-55) == text::FactId::SourceQuiet && detail::SourceWarnings::quiet (-55.0001) == text::FactId::SourceGainOnly,

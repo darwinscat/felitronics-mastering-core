@@ -256,6 +256,7 @@ private:
     void stepSourceMeasurements() noexcept;
     void invalidateQueryCache (Analyzer analyzer) noexcept;
     [[nodiscard]] bool mandatoryReady() const noexcept;
+    [[nodiscard]] bool masterRequiresTempo() const noexcept;
     [[nodiscard]] TempoChoice tempoForDevice() const noexcept;
     void clearNeedles() noexcept;
     void needlesChanged() noexcept;

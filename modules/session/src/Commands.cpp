@@ -235,7 +235,9 @@ Checked Session::storageFor (const Request& request) const noexcept
     if (std::get_if<command::Master> (&request) != nullptr)
     {
         // 4. NAMES: an id for the job, never 0 and never one issued before.
-        if (lastJob_ == std::numeric_limits<JobId>::max()) return rejected (Rejection::NoJobId);
+        if (lastJob_ == std::numeric_limits<JobId>::max()
+            || (masterRequiresTempo() && ! tempoForDevice().ready && measurementJob_ == 0
+                && lastJob_ == std::numeric_limits<JobId>::max() - 1u)) return rejected (Rejection::NoJobId);
         // THE WORK'S BYTES: room for one more master kept — its recipe is kept when it is done, and that must not ask
         // the heap at the end of a render — as one exact reserve, unless the room is there already.
         const bool room = masterRoom_ > masterCount_;
@@ -488,11 +490,16 @@ Answer Session::apply (const Request& request) noexcept
             masterRoom_ = masterCount_ + 1;
         }
         job_ = ++lastJob_;
-        jobRecipe_ = { project_, source_.hash, config::Config::versions().sound };
+        const bool waitTempo = masterRequiresTempo() && ! tempoForDevice().ready;
+        // A waiting master freezes its recipe only after the needed result is terminal.
+        jobRecipe_ = waitTempo ? Recipe {} : Recipe { project_, source_.hash, config::Config::versions().sound };
         mastering_ = true;
         masterUnit_ = 0;
         const auto passes = std::uint32_t (*rules.engine.find ("progress").find ("master").find ("expectedPasses").integer());
-        masterProgress_ = { PhaseName::Pass, 0.0, config::Config::versions().all, 0, passes, 0, passes + 1 };
+        const auto chunks = (source_.frames + 1023u) / 1024u;
+        const auto waitUnits = std::uint32_t (std::min<std::uint64_t> (3u * chunks + 64u, 4294967295u));
+        masterProgress_ = { waitTempo ? PhaseName::Analyzers : PhaseName::Pass, 0.0,
+            config::Config::versions().all, 0, passes, 0, waitTempo ? waitUnits : passes + 1u };
         answer.job = job_;
     }
     else if (std::holds_alternative<command::ContinueMeasurement> (request))

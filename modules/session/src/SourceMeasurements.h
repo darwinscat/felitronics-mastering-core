@@ -35,6 +35,10 @@ struct SourceMeasurements
     std::unique_ptr<MeasurementStore> results[kAnalyzers];
     std::uint64_t bytes = 0, frames = 0, copied = 0, work = 0;
     unsigned cursor = 0, stage = 0, facts = 0;
+    // A waiting master may move tempo ahead of the remaining optional analyzers
+    // at a stage boundary, then return to this cursor without repeating work.
+    unsigned tempoReturnCursor = unsigned (order.size());
+    bool tempoPublishedEarly = false;
     text::Fact warnings[8] {};
     unsigned warningCount = 0, warningRead = 0;
     bool initialWarnings = false, firstReady = false, firstPublished = false, finished = false;

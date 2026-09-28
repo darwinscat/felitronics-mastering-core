@@ -282,8 +282,11 @@ void SourceResults::tempo (MeasurementStore& out, const tempo::TempoDetector& a,
     out.number ("curvePoints", ready ? double (a.pointCount()) : 0);
     const auto candidates = ready ? std::uint64_t (a.candidateCount()) : 0u;
     const auto points = ready ? std::uint64_t (a.pointCount()) : 0u;
-    const MeasurementGrid grid { 0, std::uint64_t (a.hopFrames()) * tempo::TempoDetector::kHop, frames, rate };
-    (void) out.array ("candidates", 2, candidates, candidates, true, grid);
-    (void) out.array ("curve", 6, points, points, true, grid);
+    // Candidate BPM/score pairs have no position on the source timeline. Curve
+    // points describe window centres; their displayed t is rounded to 0.1 s.
+    const MeasurementGrid curveGrid { std::uint64_t (a.windowFrames()) * tempo::TempoDetector::kHop / 2u,
+        std::uint64_t (a.hopFrames()) * tempo::TempoDetector::kHop, frames, rate };
+    (void) out.array ("candidates", 2, candidates, candidates, true, {});
+    (void) out.array ("curve", 6, points, points, true, curveGrid);
 }
 } // namespace felitronics::session::detail
