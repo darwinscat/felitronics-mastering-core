@@ -218,6 +218,11 @@ target_compile_features(fcore_session PRIVATE cxx_std_20)
 if(FELITRONICS_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME fcore_session_contract
         COMMAND ${SESSION_SCRIPT_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/contract/run.mjs $<TARGET_FILE:fcore_session> --native-only)
+    # The sanitized tier runs each scenario an order of magnitude slower than an optimised build (the ASan/UBSan CI row
+    # took longer than the harness's 30 s for the measurement scenario): its children get ten minutes, still finite.
+    if(FELITRONICS_ENABLE_SANITIZERS)
+        set_tests_properties(fcore_session_contract PROPERTIES ENVIRONMENT FC_SESSION_CONTRACT_TIMEOUT_MS=600000)
+    endif()
     add_test(NAME felitronics_wav_recording_replay
         COMMAND ${SESSION_SCRIPT_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/contract/wav-recording-check.mjs)
 endif()
@@ -261,6 +266,9 @@ if(FELITRONICS_BUILD_TESTS)
         COMMAND ${FELITRONICS_ABI_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/session-abi-source-controls.mjs --self-test)
     add_test(NAME felitronics_session_abi_manifest_control
         COMMAND ${FELITRONICS_ABI_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/session-abi-check.mjs --self-test)
+    # The manifest only grows: CI compares a pull request's manifest with its base branch's; this is that check's control.
+    add_test(NAME felitronics_session_abi_manifest_append_only_control
+        COMMAND ${FELITRONICS_ABI_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/session-abi-append-only.mjs --self-test)
 endif()
 
 if(FELITRONICS_BUILD_TESTS)

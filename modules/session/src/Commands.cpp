@@ -235,8 +235,9 @@ Checked Session::storageFor (const Request& request) const noexcept
     }
     if (const auto* master = std::get_if<command::Master> (&request))
     {
+        // 3. NAMES: the source's audio (a sidecar source has none before attachAudio), then an id for the job, never 0
+        // and never one issued before.
         if (! samples_) return rejected (Rejection::NoAudio);
-        // 4. NAMES: an id for the job, never 0 and never one issued before.
         if (lastJob_ == std::numeric_limits<JobId>::max()
             || (master->ready.version == 0 && masterRequiresTempo() && ! tempoForDevice().ready
                 && measurementJob_ == 0 && lastJob_ == std::numeric_limits<JobId>::max() - 1u))
@@ -382,6 +383,7 @@ Answer Session::apply (const Request& request) noexcept
         const auto previousPlacement = devicesPlaced_;
         const auto previousUnit = measurementUnit_;
         const auto previousProgress = measurementProgress_;
+        const auto previousBitDepth = source_.bitDepth;
         // The name first, into an array of its own: it may be the name this session holds (a shell that loads again
         // under source().name), which the disarm below frees.
         const std::string_view given = load->meta.name;
@@ -408,7 +410,8 @@ Answer Session::apply (const Request& request) noexcept
                 measurementOwners_[i] = {};
                 measurementResults_[i] = {};
                 auto& r = measurementResults_[i];
-                r.analyzer = Analyzer (i); r.key = key;
+                r.analyzer = Analyzer (i);
+                r.key = r.analyzer == Analyzer::Forensics ? detail::MeasurementPlan::forensicsKey (key, load->meta.bitDepth) : key;
                 if (! plan.analyzers[i].available)
                 {
                     r.status = MeasurementStatus::Unavailable;
@@ -442,9 +445,6 @@ Answer Session::apply (const Request& request) noexcept
         masterProgress_ = {};
         if (cached)
         {
-            if (sourceMeasurements_)
-                if (auto& evidence = sourceMeasurements_->results[std::size_t (Analyzer::Forensics)]; evidence)
-                    (void) detail::SourceResults::forensicsMetadata (*evidence, source_.bitDepth);
             state_ = previousState == State::MeasurementStopped ? stoppedState_ : previousState;
             measurementUnit_ = previousUnit;
             measurementProgress_ = previousProgress;
@@ -452,9 +452,25 @@ Answer Session::apply (const Request& request) noexcept
             for (auto& r : measurementResults_)
                 if (r.analyzer != Analyzer::Excursions && r.status == MeasurementStatus::Cancelled) { r.status = MeasurementStatus::Pending; r.reason = MeasurementReason::Pending; }
             if (placed()) detail::placeMachine (rules, project_.target, source_.channels, project_.devices, capabilities_.offeredDevices);
+            // The PCM's results stay. Forensics also reads the file's bit depth: under another depth its unused low bits
+            // are recomputed from the retained grid, and it is another result, under its own key, published as one.
+            if (source_.bitDepth != previousBitDepth)
+            {
+                auto& forensics = measurementResults_[std::size_t (Analyzer::Forensics)];
+                forensics.key = detail::MeasurementPlan::forensicsKey (key, source_.bitDepth);
+                if (sourceMeasurements_)
+                    if (auto& evidence = sourceMeasurements_->results[std::size_t (Analyzer::Forensics)]; evidence)
+                        (void) detail::SourceResults::forensicsMetadata (*evidence, source_.bitDepth);
+                Notification event;
+                event.kind = EventKind::Measurement;
+                event.payload.measurement = { forensics.analyzer, forensics.status, forensics.reason, forensics.key, source_.hash,
+                                              0, forensics.framesRead, forensics.total, forensics.stored, forensics.complete };
+                emit (event);                                   // its revision is the command's, set below
+            }
         }
         answer.job = measurementJob_;
-        if (mandatoryReady()) requestNeedles();
+        // A reload of the same source asks at once, whatever its readings: the result then says why nothing runs.
+        if (cached || mandatoryReady()) requestNeedles();
     }
     else if (const auto* set = std::get_if<command::SetTarget> (&request))
     {
@@ -594,11 +610,14 @@ Answer Session::apply (const Request& request) noexcept
     else if (const auto* cancel = std::get_if<command::Cancel> (&request))
     {
         const auto progress = jobProgress (cancel->job);
+        // The fact names the job that stopped: needles or a master cancelled while the measurement is stopped are
+        // cancelled, not a measurement stopped again.
+        const bool measurement = cancel->job == measurementJob_;
         dropJob (cancel->job);
         Notification event;
         event.jobId = cancel->job;
         event.kind = EventKind::Fact;
-        (void) event.payload.fact.assign (text::Fact::of (state_ == State::MeasurementStopped ? text::FactId::MeasurementStopped : text::FactId::Cancelled));
+        (void) event.payload.fact.assign (text::Fact::of (measurement ? text::FactId::MeasurementStopped : text::FactId::Cancelled));
         emit (event, progress);
     }
     else if (const auto* forget = std::get_if<command::Forget> (&request))
@@ -647,7 +666,11 @@ Answer Session::apply (const Request& request) noexcept
         || std::holds_alternative<command::ImportProject> (request)) requestNeedles();
     refreshEqCurve();
     answer.revision = ++revision_;
-    for (std::size_t i = 0; i < eventCount_; ++i) events_[i].revision = revision_;
+    for (std::size_t i = 0; i < eventCount_; ++i)
+    {
+        events_[i].revision = revision_;
+        if (events_[i].kind == EventKind::Measurement) events_[i].payload.measurement.revision = revision_;
+    }
     return answer;
 }
 
@@ -658,10 +681,12 @@ namespace detail
 {
 bool Driver::retain (Session& session, JobId job, const MeasurementResult& result) noexcept
 {
-    if (result.analyzer == Analyzer::Excursions || job == 0 || job != session.measurementJob_ || result.key != session.measurementKey_
+    if (result.analyzer == Analyzer::Excursions || job == 0 || job != session.measurementJob_
         || result.framesRead > session.source_.frames
         || Session::checkFloatingPointEnvironment() != Status::Ok || ! OwnedMeasurements::valid ({ &result, 1 })) return false;
     const auto i = std::size_t (result.analyzer);
+    // The identity of this analyzer's result for the current source (forensics: its bit depth too).
+    if (result.key != session.measurementResults_[i].key) return false;
     if (session.measurementResults_[i].status == MeasurementStatus::Ready) return false;
     const auto bytes = OwnedMeasurements::storageFor ({ &result, 1 });
     const Pcm pcm { nullptr, session.source_.channels, session.source_.frames, session.source_.sampleRate };

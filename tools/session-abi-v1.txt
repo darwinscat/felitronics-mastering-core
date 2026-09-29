@@ -583,6 +583,7 @@ wire RevertEditsLowFields.db? boolean
 wire SessionCapabilities.heapCeilingBytes number
 wire SessionCapabilities.maxRateHz number
 wire SessionCapabilities.offeredDevices number
+wire SessionCapabilities.largestFreeBlockBytes number
 wire union SessionStatus 0
 wire union SessionStatus 1
 wire union SessionStatus 2

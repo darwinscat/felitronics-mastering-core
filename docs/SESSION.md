@@ -226,7 +226,7 @@ from the code, and ctest holds the text between the markers below to that output
 | revertEdits | NoSource | NotPlaced | yes | yes | yes | yes | NotPlaced | yes | yes | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced |
 | setManual | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
 | master | NoSource | NotMeasured | yes | yes | Busy | Busy | NotMeasured | yes | Busy | yes | yes | Busy | Busy | yes | Busy |
-| cancel | NoJob | yes | yes | yes | yes | yes | NoJob | yes | yes | yes | yes | yes | yes | yes | yes |
+| cancel | NoJob | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
 | forget | NoSource | NoMaster | yes | yes | yes | yes | NoMaster | yes | yes | yes | yes | yes | yes | yes | yes |
 | importProject | NoSource | NotPlaced | yes | yes | yes | yes | NotPlaced | yes | yes | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced |
 | continueMeasurement | NoJob | NoJob | NoJob | NoJob | NoJob | NoJob | yes | yes | yes | NoJob | NoJob | NoJob | NoJob | yes | yes |
@@ -239,8 +239,9 @@ from the code, and ctest holds the text between the markers below to that output
 <!-- the table: end -->
 
 **The checks run in one declared order, the same for every command**, and the first that fails is the answer:
-1. the calling thread's floating-point environment; 2. the table; 3. what the command names — a target, a device offered for this target and source, an
-id left for a new job (`load` and `master`), a load's valid UTF-8 name, the active job, a master kept; 4. the fields — each touched one in the order its struct
+1. the calling thread's floating-point environment; 2. the table; 3. what the command names — a target, a device offered for this target and source,
+the source's audio (`master`: `NoAudio` for a sidecar source before `attachAudio`), an id left for a new job (`load` and `master`), a load's valid
+UTF-8 name, the active job (`cancel`: `NoJob` when none runs, `UnknownJob` when another does), a master kept; 4. the fields — each touched one in the order its struct
 writes them: finite, one of its values, within its domain; 5. a load's audio — one or two channels, a rate of
 at least felitronics-core's 8000 Hz, frames and data, a size the machine can address, every sample finite. A rejection
 on a field names it by its place in its struct. `Session::check()` runs exactly these and says what the command would
@@ -588,7 +589,10 @@ position without feeding silence or repeating a completed instrument. The snapsh
 the state it resumes. Stopped denotes cancellation before mandatory readiness. StoppedMeasured and MasteringStopped
 denote ready sources with placed devices; their Unplaced counterparts retain readiness without device placement.
 Cancelling a master ends only that overlay.
-Cancellation in either measured state or StoppedMeasured returns `NoJob` only when no measurement, master or needles job runs.
+Cancellation in either measured state, Stopped or StoppedMeasured returns `NoJob` only when no measurement, master or needles job runs:
+needles start at the first phase's end, one unit before Measured1, so a measurement stopped there leaves them running in
+Stopped, cancellable like anywhere else. A cancel's fact names the job it stopped — the measurement stopped, or a
+master or needles job cancelled.
 A target change after phase two can start needles; its active ID can be cancelled in `Measured2`.
 A failed Driver transition publishes `Error{Contract, None}` and drops that job.
 Every internal completion checks its captured job id, and measurement completions also check the captured source hash.
@@ -611,7 +615,10 @@ from the corresponding snapshot. The codec generator describes both forms, inclu
 
 The measurement key combines the PCM bit hash, actual native parameters, config version and core/session versions.
 The target is absent from source-wide measurements. An identical load reuses PCM, saved progress and those results;
-changing the target does not invalidate them. Needles have a separate source-and-ceiling identity. Each prepared analyzer stays resident across pauses and is destroyed after publishing its result. Live result arrays
+changing the target does not invalidate them. Forensics also reads the file's bit depth (its unused low bits), so its
+result key mixes the measurement key with that depth: a reload of the same PCM under another depth recomputes those
+bits from the retained grid, moves the forensics key alone, and publishes one `Measurement` event under the reload's
+revision; an unchanged depth is the same result, unannounced. Needles have a separate source-and-ceiling identity. Each prepared analyzer stays resident across pauses and is destroyed after publishing its result. Live result arrays
 belong to the session independently of analyzer scratch, so final publication needs no programme-sized copy. The live needles job consumes its
 retained loudness and true-peak readings through the controller seam; see [NEEDLES.md](NEEDLES.md).
 
@@ -663,7 +670,8 @@ There is no excursion index. Needles are re-measured over retained PCM for one c
 `needlesStorage` / `fc_session_needles_bytes` demand. Preparation checks capacity before allocating;
 all subsequent read and finish units allocate zero. Native run-list truncation is explicit in the snapshot.
 
-`tools/session-codec-schema.json` is the one hand-edited codec description. `Codec` exchanges its named-field JSON.
+`tools/session-codec-schema.json` is the one hand-edited codec description; the call status values, which the C header
+already declares, are not copied into it — `SessionStatus` is generated from `fc_session_status`. `Codec` exchanges its named-field JSON.
 Object order is immaterial; missing,
 duplicate, unknown and ill-typed fields are refused. Rows are arrays. Optional edits use null; uint64 identities use
 decimal strings so JavaScript loses no bits; byte counts use whole double values strictly below 2^53. Non-finite doubles
@@ -882,6 +890,13 @@ type assertions and emits constants, every public enum value, C struct sizes, al
 including wasm32, runs its own probe; codec field/type lines are frozen beside the C surface. The gate requires every
 frozen line to remain and permits additions. Its control deletes and changes each line and requires rejection.
 CI runs the gate and control. The Windows Debug selection includes the session ABI suites.
+Every `fc_session_*` declaration is frozen whatever it returns: one the generator cannot read stops it. Two lines are
+floors rather than values — a boundary struct's size and `FC_SESSION_ABI_VERSION`: after the first release, each batch
+of additions that lands together in one release moves it up by one and adds one row to the header's VERSION HISTORY; a
+lower number is a change. The generated `snapshot.d.ts` and `snapshot.mjs` state the version read from the header. The wire's
+`SessionStatus` union is read from `fc_session_status` by both generators, and a wire record that mirrors a C struct
+(`SessionCapabilities`) must carry each of its fields. The manifest itself only grows: on a pull request CI compares it
+with the base branch's (`tools/session-abi-append-only.mjs`), and a removed or edited line is red.
 
 `tools/wasm/build.sh` builds `fcsession` from the facade and `modules/session/sources.txt`, audits the exact export list,
 compares node/web wasm bytes, checks for threads, and runs a node scenario through the ABI and generated types.
@@ -1015,6 +1030,12 @@ node tools/contract/run.mjs build-release/tools/fcore_session tools/wasm/build/f
 node tools/contract/run.mjs build/tools/fcore_session build/measure-08-wasm-artifacts/fcsession.node.js --rebuild-recordings
 ```
 
+What the comparison proves, and what it does not: the brain answers byte for byte the same natively and in wasm, and
+the wasm module's C facade carries it unchanged. The native consumer calls the C++ session directly, past
+`fc_session`, so the NATIVE facade's argument order, guards and status mapping are not compared here — they are held
+by `felitronics_session_abi_v1_tests` and `felitronics_session_abi_tests` (`tools/tests/SessionAbiV1Tests.cpp`,
+`SessionAbiTests.cpp`), natively and under the sanitizers.
+
 Both consumers emit tab-separated session name, record kind, exact codec JSON (project text is hex), and hex row bytes.
 Native calls `Wire` over its C++ session; Node drives the C ABI, copies every event batch before another mutation, and
 copies snapshots using the size-query/copy entry points. It reacquires heap views after calls and reads copied row
@@ -1051,7 +1072,12 @@ remains pending until its own finalization completes.
 
 Preparation reserves allocator overhead before each instrument starts and retains that reserve until its workspace
 or rows are freed. A capacity reduction between load and preparation can therefore refuse before any allocation,
-including MSVC Debug vector padding. Duration-sized loudness and report stores initialize observations as written;
+including MSVC Debug vector padding. A refusal is that instrument's outcome, as in the source phase: its result is
+`Unavailable` for `Memory`, one `Error{Memory, Continue}` names the demand, and the job goes on to the next
+preparation — capacity restored later does not retry it, and a capacity never restored still ends the job. The
+report's integrated loudness and true peak alone decide the mandatory readings: without the report the loudness result
+is `Unavailable` for `Memory` and the source stays unmeasured; without the meter only its rows are missing — the result
+is `Ready`, its row arrays and the result itself incomplete, with one `measurementCapacity` fact. Duration-sized loudness and report stores initialize observations as written;
 preparation resets counts and fixed rings without scanning those stores. `StreamingLoudnessMeter` preserves the
 deterministic core v0.55 kernel and storage geometry with this offline ownership policy; direct-kernel comparisons
 cover block energies, readings, damaged input, channel changes and resets on native and wasm.

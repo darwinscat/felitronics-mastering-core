@@ -205,8 +205,9 @@ inline constexpr std::size_t kColumns = 15;
 //   1. ENTRY    the calling thread's floating-point environment (FloatingPointEnvironment)
 //   2. STATE    this table: the command's cell in the session's column
 //   3. NAMES    what the command names: a target (setTarget), a device offered for this target and source (editDevice,
-//               revertEdits), an id left for a new job (load, master: NoJobId), a load's UTF-8 name (InvalidUtf8),
-//               the active job (cancel), a master kept (forget)
+//               revertEdits), the source's audio (master: NoAudio — a sidecar source before attachAudio), an id left
+//               for a new job (load, master: NoJobId), a load's UTF-8 name (InvalidUtf8), the active job (cancel:
+//               NoJob when none runs, UnknownJob when another does), a master kept (forget)
 //   4. FIELDS   each touched field, in the order written: finite, one of its values, within its domain.
 //               Empty edits/reverts are accepted without a revision change; travel and step are slider hints.
 //   5. AUDIO    a load's audio: its channels, its rate, its frames, its size, then every sample finite
@@ -231,7 +232,7 @@ struct Table
         { Command::RevertEdits, {    NoSource, NotPlaced,   None,     None,     None,      None, NotPlaced, None, None, NotPlaced, NotPlaced, NotPlaced, NotPlaced, NotPlaced, NotPlaced } },
         { Command::SetManual,   {    None,     None,        None,     None,     None,      None, None, None, None, None, None, None, None, None, None } },
         { Command::Master,      {    NoSource, NotMeasured, None,     None,     Busy,      Busy, NotMeasured, None, Busy, None, None, Busy, Busy, None, Busy } },
-        { Command::Cancel,      {    NoJob,    None,        None,     None,     None,      None, NoJob, None, None, None, None, None, None, None, None } },
+        { Command::Cancel,      {    NoJob,    None,        None,     None,     None,      None, None, None, None, None, None, None, None, None, None } },
         { Command::Forget,      {    NoSource, NoMaster,    None,     None,     None,      None, NoMaster, None, None, None, None, None, None, None, None } },
         { Command::ImportProject, { NoSource, NotPlaced,   None,     None,     None,      None, NotPlaced, None, None, NotPlaced, NotPlaced, NotPlaced, NotPlaced, NotPlaced, NotPlaced } },
         { Command::ContinueMeasurement, { NoJob, NoJob, NoJob, NoJob, NoJob, NoJob, None, None, None, NoJob, NoJob, NoJob, NoJob, None, None } },

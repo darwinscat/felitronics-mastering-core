@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 import assert from 'node:assert/strict';
-import {readFileSync, readdirSync, mkdtempSync, cpSync, rmSync, appendFileSync} from 'node:fs';
+import {readFileSync, readdirSync, mkdtempSync, cpSync, rmSync, appendFileSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve, basename} from 'node:path';
 import {spawnSync} from 'node:child_process';
@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 import {fixtures, fixtureRoot} from './fixtures.mjs';
 import {parse} from './grammar.mjs';
 import {runWasm, arrayEncodings} from './wasm.mjs';
-import {recordings} from './recordings.mjs';
+import {lfBytes, recordings} from './recordings.mjs';
 import {createHash} from 'node:crypto';
 
 const root = fileURLToPath(new URL('scenarios/', import.meta.url));
@@ -91,8 +91,18 @@ function validate(name, bytes) {
     assert.equal(answers.filter(a => a.kind === 'rejected').length, expected.rejections ?? 0, `${name}: unexpected command refusal`);
     assert.ok(trace.some(r => r.kind === 'snapshot'), `${name}: no final snapshot`);
 }
+// ONE BUDGET PER CHILD PROCESS, and one place that sets it. 30 s is ample for every scenario on an optimised build (the
+// longest takes about a second) and a hang still ends quickly there. A sanitized build runs the same scenarios an order
+// of magnitude slower, so tools/CMakeLists.txt raises it for that tier through FC_SESSION_CONTRACT_TIMEOUT_MS. Each
+// child's output fits the buffer with room: the largest scenario writes under 7 MB.
+function childTimeout(value) {
+    if (value === undefined) return 30000;
+    if (!/^[1-9][0-9]{3,8}$/.test(value)) throw new Error(`FC_SESSION_CONTRACT_TIMEOUT_MS must be whole milliseconds, 1000 or more: ${value}`);
+    return Number(value);
+}
+const timeout = childTimeout(process.env.FC_SESSION_CONTRACT_TIMEOUT_MS), maxBuffer = 64 * 1024 * 1024;
 function nativeRun(cli, ...args) {
-    const p = spawnSync(cli, args, {maxBuffer:16 * 1024 * 1024, timeout:30000});
+    const p = spawnSync(cli, args, {maxBuffer, timeout});
     if (p.status !== 0) throw new Error(`native ${args.join(' ')}: exit ${p.status}: ${p.error ?? ''}${p.stderr}`);
     return p.stdout;
 }
@@ -101,7 +111,7 @@ function grammarTest(cli) {
     const corpus = JSON.parse(readFileSync(new URL('grammar-cases.json', import.meta.url), 'utf8'));
     for (const item of corpus) {
         let parsed; try { parsed = parse(item.script); } catch { parsed = null; }
-        const p = spawnSync(cli, ['parse', '-'], {input:item.script, encoding:'utf8', timeout:30000});
+        const p = spawnSync(cli, ['parse', '-'], {input:item.script, encoding:'utf8', timeout, maxBuffer});
         assert.equal(p.status, item.valid ? 0 : 2, `native grammar: ${JSON.stringify(item.script)}: ${p.stderr}`);
         assert.equal(parsed !== null, item.valid, `wasm grammar: ${JSON.stringify(item.script)}`);
         const encoding = parsed?.map(i => [i.line, i.op, ...i.args].join('\t') + '\n').join('') ?? '';
@@ -127,14 +137,14 @@ async function main() {
         const versions = {
             components:nativeRun(cli, 'version').toString('utf8').replace(/\r\n/g, '\n').trim().split('\n'),
             configVersion:nativeRun(cli, 'config', 'version').toString('utf8').trim(),
-            codecSchemaSha256:createHash('sha256').update(readFileSync(new URL('../session-codec-schema.json', import.meta.url))).digest('hex')
+            codecSchemaSha256:createHash('sha256').update(lfBytes(fileURLToPath(new URL('../session-codec-schema.json', import.meta.url)))).digest('hex')
         };
         console.log(`contract recordings: ${recordings(siteTraces, versions, rewrite)} verified`);
     }
     if (controls) {
         assert.ok(!nativeOnly, 'controls require wasm');
         const control = spawnSync(process.execPath, [fileURLToPath(import.meta.url), cli, modulePath, '--reorder'],
-            {encoding:'utf8', timeout:30000, maxBuffer:16 * 1024 * 1024});
+            {encoding:'utf8', timeout, maxBuffer});
         assert.equal(control.status, 1, `reorder must exit red: ${control.error ?? control.stderr}`);
         assert.match(control.stderr, /first differing event index \d+, kind/);
         console.log(`CONTROL RED (exit ${control.status}): ${control.stderr.trim()}`);
@@ -149,8 +159,15 @@ async function main() {
             assert.throws(() => fixtures(temp), /stale fixture inputs; rebuild:/);
             cpSync(fixtureRoot, temp, {recursive:true}); appendFileSync(join(temp, 'mono.pcm'), '0\n');
             assert.throws(() => fixtures(temp), /stale fixture mono.pcm; rebuild:/);
+            // A Windows checkout without the .gitattributes rule: the schema and a scenario arrive CRLF.
+            for (const input of [new URL('../session-codec-schema.json', import.meta.url), new URL('scenarios/measurement.session', import.meta.url)]) {
+                const lf = readFileSync(input), crlf = join(temp, 'crlf-copy');
+                writeFileSync(crlf, lf.toString('latin1').replaceAll('\n', '\r\n'), 'latin1');
+                assert.throws(() => lfBytes(crlf), /has CR line endings/);
+                writeFileSync(crlf, lf); assert.deepEqual(lfBytes(crlf), lf);
+            }
         } finally { rmSync(temp, {recursive:true, force:true}); }
-        console.log('contract controls: event order, scalar field, binary rows, changed inputs and damaged PCM refused');
+        console.log('contract controls: event order, scalar field, binary rows, changed inputs, damaged PCM and CRLF copies of hashed text refused');
     }
     console.log(`contract: ${names.length} scenarios passed in ${((performance.now() - start) / 1000).toFixed(3)} s`);
 }
