@@ -356,6 +356,7 @@ private:
     std::size_t masterRoom_ = 0;
     std::size_t crestJoinIndex_ = 0;
     bool crestJoin_ = false;
+    MeasurementReason crestJoinReason_ = MeasurementReason::None;
 };
 
 } // namespace felitronics::session

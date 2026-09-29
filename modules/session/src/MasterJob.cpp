@@ -199,6 +199,8 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
     if (crest.ok && crest.hopCapacity >= std::size_t (result.crestParams.blockHops))
         result.crestCapacity = crest.hopCapacity - std::size_t (result.crestParams.blockHops) + 1u;
     const std::uint64_t crestRows = std::uint64_t (result.crestCapacity) * 15u * sizeof (double);
+    result.retainedRowBytes = 12u * sizeof (LandingPass)
+        + 2u * std::uint64_t (result.traceBuckets) * sizeof (LandingTraceBucket) + crestRows;
     const auto impactChainBytes = convert ? mastering::MasteringChain::prepareBytes (
         double (s.source_.sampleRate), int (s.source_.channels), result.ready.topology) : 0u;
     const auto impactScratchBytes = convert ? std::uint64_t (s.source_.channels) * 1024u * sizeof (float) : 0u;
@@ -218,9 +220,8 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
         || ! add (total, mastering::MasteringChain::constructBytes())
         || ! add (total, mastering::TargetLoudnessSolver::constructBytes())
         || ! add (total, mastering::DeliveryConverter::constructBytes())
-        || ! add (total, 12u * sizeof (LandingPass))
-        || ! add (total, 2u * std::uint64_t (result.traceBuckets) * sizeof (LandingTraceBucket))
-        || ! add (total, crestRows) || ! add (total, crest.ok ? crest.firstBytes() : 0u)
+        || ! add (total, result.retainedRowBytes)
+        || ! add (total, crest.ok ? crest.firstBytes() : 0u)
         || ! add (total, impactChainBytes) || ! add (total, impactScratchBytes)
         || ! add (total, 128u * 4096u))
     { result.rejection = Rejection::TooLong; return result; }
@@ -353,6 +354,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
             if (! chain.prepare (double (sourceRate), channels, ready.topology))
             { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Unsupported; stage = Stage::Done; return StepResult::Done; }
             auto winning = ready.params;
+            winning.inputGainDb += search.result().normalizationGainDb;
             winning.preLimiterGainDb = search.result().preLimiterGainDb;
             winning.limiter.ceilingDbTp = search.result().ceilingDbTp;
             chain.setParams (winning);

@@ -1172,4 +1172,6 @@ into bounded scratch for crest. The deliverable PCM and its LUFS/TP remain on th
 `checkPasses` records the extra render separately from the landing's budget. Pending source crest and a
 final unavailable reason are distinct; either leaves a verified master available. Retained rows belong to
 the master until forget or source replacement, survive PCM transfer, and are copied by owned snapshots and
-the one generated codec. The later cost task derives its figures from these linear pairs and mask.
+the one generated codec. A late Pending-to-Ready or Pending-to-Unavailable change increments the revision
+and emits a master-keyed crest fact so an event-driven shell can refresh that report. The later cost task
+derives its figures from these linear pairs and mask.
