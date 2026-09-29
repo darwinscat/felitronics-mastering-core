@@ -80,6 +80,8 @@ bool finish (Workspace& w, Analyzer id, Store& out, detail::SourceMeasurements& 
         out.number ("droppedHops", double (a.droppedHops())); out.number ("samplesProcessed", double (a.samplesProcessed())); out.number ("nonFiniteSamples", double (a.nonFiniteSamples())); out.number ("overflowedSamples", double (a.overflowedSamples()));
         out.number ("narrowedSamples", double (a.narrowedSamples())); out.number ("widestChannels", double (a.widestChannels())); out.number ("firstNonFiniteAt", double (a.firstNonFiniteAt())); out.number ("invalidReason", double (a.invalidReason()));
         for (int b = 0; b < 3; ++b) out.number ("bandEdgeHz", params.crest.bandEdgeHz[b], b);
+        out.number ("configuredHopMs", params.crest.hopMs);
+        out.number ("configuredProgrammeFloorDb", params.crest.programmeFloorDb);
         out.number ("bandShareFloorDb", params.crest.bandShareFloorDb);
         const auto count = std::uint64_t (a.blockCount());
         const MeasurementGrid grid { 0, std::uint64_t (a.hopSamples()), source.frames, source.sampleRate };
