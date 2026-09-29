@@ -544,7 +544,6 @@ ok(sameWavSamples, 'decoded WAV equals the measured and listened PCM sample for 
 let wavDigest = 0xcbf29ce484222325n;
 for (const byte of ownedWav) wavDigest = BigInt.asUintN(64, (wavDigest ^ BigInt(byte)) * 0x100000001b3n);
 console.log(`session-master-wav=${wavDigest.toString(16).padStart(16, '0')}`);
-console.log(`session-master-format24-wav=${wavDigest.toString(16).padStart(16, '0')}`);
 console.log(`session-master-wav-header=${Buffer.from(ownedWav.subarray(0, 44)).toString('hex')}`);
 const retainedBefore = heapBytes().slice(pcmAddress, pcmAddress + 16);
 const retainedSame = () => Buffer.from(heapBytes().subarray(pcmAddress, pcmAddress + 16)).equals(Buffer.from(retainedBefore));
@@ -559,6 +558,42 @@ ok(M._fc_session_master_wav_size(masterSession, masterToken, wavSize, pcmAddress
 ok(M._fc_session_master_wav_copy(masterSession, masterToken, 0, 0, wavChunk, 64, pcmAddress + 12)
     === STATUS.ERR_OVERLAP && retainedSame(),
    'WAV copy refuses a written-count output inside retained PCM');
+// EVERY OTHER OUTPUT IS FENCED AGAINST THE RETAINED PCM: a copy onto itself, the four shape numbers, a view's address
+// and length, and a waveform chunk's JSON, rows and sizes.
+ok(M._fc_session_master_audio_copy(masterSession, masterToken, pcmAddress, sampleCount) === STATUS.ERR_OVERLAP
+    && M._fc_session_master_audio_copy(masterSession, masterToken, pcmAddress + 12, sampleCount - 3) === STATUS.ERR_OVERLAP
+    && retainedSame(), 'PCM copy refuses an output inside the retained PCM it copies');
+ok(M._fc_session_master_audio_size(masterSession, masterToken, pcmAddress, audioFrames, audioChannels, audioRate) === STATUS.ERR_OVERLAP
+    && M._fc_session_master_audio_size(masterSession, masterToken, audioBytes, pcmAddress + 4, audioChannels, audioRate) === STATUS.ERR_OVERLAP
+    && M._fc_session_master_audio_size(masterSession, masterToken, audioBytes, audioFrames, pcmAddress + 8, audioRate) === STATUS.ERR_OVERLAP
+    && M._fc_session_master_audio_size(masterSession, masterToken, audioBytes, audioFrames, audioChannels, pcmAddress + 12) === STATUS.ERR_OVERLAP
+    && retainedSame(), 'PCM shape refuses each of its four outputs inside the retained PCM');
+ok(M._fc_session_master_audio_view(masterSession, masterToken, pcmAddress, sampleOut) === STATUS.ERR_OVERLAP
+    && M._fc_session_master_audio_view(masterSession, masterToken, viewOut, pcmAddress + 4) === STATUS.ERR_OVERLAP
+    && retainedSame(), 'a scoped view refuses an address or length output inside the retained PCM');
+{
+    const fenceRequestBytes = new TextEncoder().encode(JSON.stringify({kind:9, audioId:sourceId.toString(),
+        fromFrame:'100', toFrame:'200', columns:10, requestId:'5', crossoverHz:120, fromHz:20,
+        toHz:250, masterId:tokenValue.master}));
+    const fenceRequest = M._malloc(fenceRequestBytes.length), fenceSizes = M._malloc(12), fenceWritten = M._malloc(12);
+    heapBytes().set(fenceRequestBytes, fenceRequest);
+    M.HEAPU32[fenceSizes >>> 2] = 12; M.HEAPU32[fenceWritten >>> 2] = 12;
+    const fenceTable = M._malloc(8);
+    M.HEAPU32[fenceTable >>> 2] = pcmAddress + 400; M.HEAPU32[(fenceTable >>> 2) + 1] = pcmAddress + masterFrames * 4 + 400;
+    ok(M._fc_session_master_waveform_chunk_size(masterSession, fenceRequest, fenceRequestBytes.length,
+        2, 100, 48000, fenceSizes) === STATUS.OK, 'a retained-PCM waveform chunk is sized');
+    const jsonCapacity = M.HEAPU32[(fenceSizes >>> 2) + 1], rowCapacity = M.HEAPU32[(fenceSizes >>> 2) + 2];
+    const fenceJson = M._malloc(jsonCapacity), fenceRows = M._malloc(rowCapacity);
+    const chunk = (json, rows, written) => M._fc_session_master_waveform_chunk_copy(masterSession, fenceRequest,
+        fenceRequestBytes.length, fenceTable, 2, 100, 48000, json, jsonCapacity, rows, rowCapacity, written);
+    ok(chunk(pcmAddress, fenceRows, fenceWritten) === STATUS.ERR_OVERLAP
+        && chunk(fenceJson, pcmAddress, fenceWritten) === STATUS.ERR_OVERLAP
+        && chunk(fenceJson, fenceRows, pcmAddress + 16) !== STATUS.OK && retainedSame(),
+       'a waveform chunk refuses JSON, rows or sizes inside the retained PCM');
+    ok(chunk(fenceJson, fenceRows, fenceWritten) === STATUS.OK,
+       'the retained PCM stays a valid waveform chunk input');
+    for (const ptr of [fenceRequest, fenceSizes, fenceWritten, fenceTable, fenceJson, fenceRows]) M._free(ptr);
+}
 const releaseStatus = M._fc_session_master_audio_release(masterSession, masterToken);
 const repeatReleaseStatus = M._fc_session_master_audio_release(masterSession, masterToken);
 ok(releaseStatus === STATUS.OK && repeatReleaseStatus === STATUS.ERR_STALE,
@@ -611,23 +646,28 @@ contractRecord.scenarios.safe = {inputs:safeInputs, loadAnswer:masterLoadAnswer,
 const formatCases = [];
 const ditherBits = masterParams + layoutOf('fc_master_params').fields.get('dither').offset
     + layoutOf('fc_dither').fields.get('bits').offset;
-for (const bits of [16, 24, 32]) {
-    new DataView(M.HEAPU32.buffer).setInt32(ditherBits, bits, true);
+// THE DELIVERY FORMAT IS THE TARGET'S: dither.bits 0 takes the target's depth and the same depth restates it.
+const deliveryCases = [['cd', 0, 16], ['cd', 16, 16], ['cdDynamic', 0, 16], ['allStreaming', 0, 24], ['spotify', 24, 24]];
+for (const [caseIndex, [target, requested, bits]] of deliveryCases.entries()) {
+    const label = `${target} dither.bits ${requested}`;
+    const targetCommand = {kind:'setTarget', commandId:String(80 + caseIndex), target};
+    ok(cmd(masterSession, targetCommand).kind === 'accepted', `${label}: target selected`);
+    new DataView(M.HEAPU32.buffer).setInt32(ditherBits, requested, true);
     const before = masterSnapshot();
     const version = BigInt(before.revision);
-    const formatInputs = masterInputs(bits, sourceId, version);
-    const started = M._fc_session_master(masterSession, bits, 0, lo(sourceId), hi(sourceId),
+    const formatInputs = masterInputs(90 + caseIndex, sourceId, version);
+    const started = M._fc_session_master(masterSession, 90 + caseIndex, 0, lo(sourceId), hi(sourceId),
         lo(version), hi(version), masterConfig, masterParams, answer,
         macro('FC_SESSION_ANSWER_BYTES'), resultSize);
     const accepted = started === STATUS.OK ? reply() : null;
-    ok(started === STATUS.OK && accepted?.kind === 'accepted', `PCM${bits} facade request accepted`);
+    ok(started === STATUS.OK && accepted?.kind === 'accepted', `${label}: facade request accepted`);
     let finished = null;
     for (let i = 0; i < 40000; ++i) {
         if (i % 16 === 0 && (finished = masterSnapshot())?.pendingMaster?.master
             && finished.pendingMaster.master !== tokenValue.master) break;
         if (M._fc_session_step(masterSession, 16, resultSize) !== STATUS.OK) break;
     }
-    ok(finished?.pendingMaster?.master > tokenValue.master, `PCM${bits} facade master completes`);
+    ok(finished?.pendingMaster?.master > tokenValue.master, `${label}: facade master completes`);
     if (! finished?.pendingMaster?.master) continue;
     const formatWire = masterWire('snapshot'), formatEvents = masterWire('events');
     const t = finished.pendingMaster;
@@ -641,11 +681,11 @@ for (const bits of [16, 24, 32]) {
     const view = new DataView(head.buffer);
     ok(sizeStatus === STATUS.OK && M.HEAPU32[wavBits >>> 2] === bits
         && length === 44 + masterSamples * bits / 8 && headStatus === STATUS.OK
-        && M.HEAPU32[wavWritten >>> 2] === 44 && view.getUint16(20, true) === (bits === 32 ? 3 : 1)
+        && M.HEAPU32[wavWritten >>> 2] === 44 && view.getUint16(20, true) === 1
         && view.getUint16(34, true) === bits && view.getUint32(40, true) === masterSamples * bits / 8,
-       `PCM${bits} requested format reaches WAV sizing and header`);
+       `${label}: the WAV size and header carry the target's PCM${bits}`);
     ok(M._fc_session_master_audio_view(masterSession, masterToken, viewOut, sampleOut) === STATUS.OK,
-       `PCM${bits} view is available`);
+       `${label}: view is available`);
     const ptr = M.HEAPU32[viewOut >>> 2];
     const sample = new Float32Array(M.HEAPU32.buffer, ptr, masterSamples);
     const count = 64;
@@ -659,14 +699,14 @@ for (const bits of [16, 24, 32]) {
         const expected = sample[channel * masterFrames + frame];
         let decoded;
         if (bits === 16) decoded = data.getInt16(i * 2, true) / 32768;
-        else if (bits === 24) {
+        else {
             const raw = data.getUint8(i * 3) | (data.getUint8(i * 3 + 1) << 8)
                 | (data.getUint8(i * 3 + 2) << 16);
             decoded = (raw & 0x800000 ? raw - 0x1000000 : raw) / 8388608;
-        } else decoded = data.getFloat32(i * 4, true);
+        }
         matches &&= Object.is(expected, decoded);
     }
-    ok(matches, `PCM${bits} exported samples equal retained measured PCM`);
+    ok(matches, `${label}: exported samples equal retained measured PCM`);
     const file = new Uint8Array(length);
     let exported = true;
     for (let at = 0; at < file.length; at += 997) {
@@ -679,15 +719,16 @@ for (const bits of [16, 24, 32]) {
         wavChunk, 59, wavWritten);
     ok(exported && repeated === STATUS.OK
         && Buffer.from(file.subarray(0, 59)).equals(Buffer.from(heapBytes().subarray(wavChunk, wavChunk + 59))),
-       `PCM${bits} repeated WAV slice matches the complete download`);
+       `${label}: repeated WAV slice matches the complete download`);
     const released = M._fc_session_master_audio_release(masterSession, masterToken);
     const stale = M._fc_session_master_wav_size(masterSession, masterToken, wavSize, wavBits);
-    ok(released === STATUS.OK && stale === STATUS.ERR_STALE, `PCM${bits} release fences WAV sizing`);
+    ok(released === STATUS.OK && stale === STATUS.ERR_STALE, `${label}: release fences WAV sizing`);
     let formatDigest = 0xcbf29ce484222325n;
     for (const byte of file)
         formatDigest = BigInt.asUintN(64, (formatDigest ^ BigInt(byte)) * 0x100000001b3n);
-    console.log(`session-master-explicit-format${bits}-wav=${formatDigest.toString(16).padStart(16, '0')}`);
-    formatCases.push({bits, inputs:formatInputs, answer:accepted, complete:formatWire, events:formatEvents,
+    console.log(`session-master-${target}-dither${requested}-wav=${formatDigest.toString(16).padStart(16, '0')}`);
+    formatCases.push({target, ditherBits:requested, bits, targetCommand, inputs:formatInputs, answer:accepted,
+        complete:formatWire, events:formatEvents,
         export:{sizeStatus, bytes:length, bits, headerHex:Buffer.from(head).toString('hex'),
             wavSha256:sha256(file), wavFnv64:formatDigest.toString(16).padStart(16, '0'), repeatStatus:repeated,
             firstSliceHex:Buffer.from(file.subarray(0, 59)).toString('hex')},
@@ -696,6 +737,38 @@ for (const bits of [16, 24, 32]) {
     M._free(payload);
 }
 contractRecord.scenarios.formats = formatCases;
+// ...and any other depth is an open refusal before anything is priced: DeliveryFormat (34) in the storage record and
+// the answer, and the fact 134 naming the target's depth among the events.
+const refusalCases = [['allStreaming', 16, 24], ['cd', 24, 16], ['allStreaming', 32, 24], ['allStreaming', 20, 24],
+                      ['cd', -1, 16], ['cd', 272, 16]];
+const formatRefusals = [];
+for (const [caseIndex, [target, requested, depth]] of refusalCases.entries()) {
+    const label = `${target} dither.bits ${requested}`;
+    const targetCommand = {kind:'setTarget', commandId:String(100 + caseIndex), target};
+    ok(cmd(masterSession, targetCommand).kind === 'accepted', `${label}: target selected`);
+    new DataView(M.HEAPU32.buffer).setInt32(ditherBits, requested, true);
+    const version = BigInt(masterSnapshot().revision);
+    const inputs = masterInputs(110 + caseIndex, sourceId, version);
+    M.HEAPU32[masterDemand >>> 2] = 32;
+    const pricedStatus = M._fc_session_master_bytes(masterSession, lo(sourceId), hi(sourceId), lo(version), hi(version),
+        masterConfig, masterParams, masterDemand);
+    const priced = {status:pricedStatus, rejection:M.HEAPU32[(masterDemand >>> 2) + 1],
+        bytes:new DataView(M.HEAPU32.buffer).getFloat64(masterDemand + 8, true)};
+    const started = M._fc_session_master(masterSession, 110 + caseIndex, 0, lo(sourceId), hi(sourceId),
+        lo(version), hi(version), masterConfig, masterParams, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize);
+    const refused = started === STATUS.OK ? reply() : null;
+    const events = masterWire('events'), after = masterSnapshot();
+    const fact = wireValue(events).find(e => e.kind === 'fact' && e.payload?.FactId === 134);
+    ok(pricedStatus === STATUS.OK && priced.rejection === 34 && priced.bytes === 0
+        && refused?.kind === 'rejected' && refused?.code === 34
+        && fact?.payload?.args?.[0]?.integer === String(depth)
+        && after?.job === 0 && BigInt(after?.revision ?? '0') === version,
+       `${label}: an open refusal before anything is priced, naming the target's ${depth}-bit PCM`);
+    formatRefusals.push({target, ditherBits:requested, depth, targetCommand, inputs, priced, answer:refused, events});
+}
+contractRecord.scenarios.formatRefusals = formatRefusals;
+ok(cmd(masterSession, {kind:'setTarget', commandId:'120', target:'allStreaming'}).kind === 'accepted',
+   'the default target is selected again for the scenarios that follow');
 new DataView(M.HEAPU32.buffer).setInt32(ditherBits, 24, true);
 const warmCycles = [], warmHeapBytes = [];
 for (let i = 0; i < 3; ++i) {

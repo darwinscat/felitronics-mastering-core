@@ -127,6 +127,7 @@ const char* nameOf (felitronics::session::Rejection r)
         case Rejection::Memory: return "Memory";
         case Rejection::OutputPending: return "OutputPending";
         case Rejection::MandatoryUnavailable: return "MandatoryUnavailable";
+        case Rejection::DeliveryFormat: return "DeliveryFormat";
     }
     return "?";
 }

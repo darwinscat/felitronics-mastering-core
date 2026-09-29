@@ -299,6 +299,10 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 const auto completedJob = job_;
                 if (! detail::Driver::mastered (*this, completedJob)) { contract (completedJob); ++units; continue; }
                 masters_[masterCount_ - 1].report = masterJob_->reportResult();
+                // A crest joined inside the job is complete: mask copied, five cost bands scanned. Marked so a later
+                // join (a cancelled or finished source measurement) passes over it instead of publishing it again.
+                if (masters_[masterCount_ - 1].report->crest.status == MeasurementStatus::Ready)
+                { rows.crestMaskCopied = std::size_t (masters_[masterCount_ - 1].report->crest.blocks); rows.crestCostBand = 5; }
                 masterSummary_.deliverable = masterSummary_.deliverable
                     && masters_[masterCount_ - 1].report->deliverable;
                 masters_[masterCount_ - 1].landing = masterSummary_;
@@ -314,9 +318,8 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 }
                 if (masterSummary_.deliverable && outcome == mastering::StepResult::Done)
                 {
-                    masterAudioBits_ = masterJob_->ready.deliveryBits != 0 ? masterJob_->ready.deliveryBits
-                        : std::uint32_t (detail::rules().row (jobRecipe_.project.target).bitDepth);
-                    if (masterAudioBits_ == 20) masterAudioBits_ = 24; // the 20-bit grid is exact in PCM24
+                    // The job's own resolved depth: the recipe was handed to masters_ above and jobRecipe_ is empty.
+                    masterAudioBits_ = masterJob_->ready.deliveryBits;
                     masterAudio_ = { masterJob_->takeOutput(), std::uint64_t (masterJob_->frames),
                         std::uint32_t (masterJob_->channels), masterJob_->deliveryRate };
                     pendingMaster_ = { source_.hash, revision_, completedJob, completedJob };

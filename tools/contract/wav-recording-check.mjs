@@ -66,7 +66,16 @@ assert.ok(latePrice.sourcePcmBytes + latePrice.deliveredPcmBytes
 assert.ok(latePrice.observedHeap.afterGrowthBytes > latePrice.observedHeap.beforeGrowthBytes);
 assert.equal(scenarios.safe.release.status, 0);
 assert.equal(wire(scenarios.safe.release.snapshot).pendingMaster.master, 0);
-assert.deepEqual(scenarios.formats.map(x => x.bits), [16, 24, 32]);
+assert.deepEqual(scenarios.formats.map(x => [x.target, x.ditherBits, x.bits]),
+    [['cd', 0, 16], ['cd', 16, 16], ['cdDynamic', 0, 16], ['allStreaming', 0, 24], ['spotify', 24, 24]]);
+for (const item of scenarios.formatRefusals) {
+    inputs(item.inputs);
+    assert.deepEqual(item.priced, {status:0, rejection:34, bytes:0});
+    assert.equal(item.answer.kind, 'rejected');
+    assert.equal(item.answer.code, 34);
+    const fact = wire(item.events).find(e => e.kind === 'fact' && e.payload.FactId === 134);
+    assert.equal(fact.payload.args[0].integer, String(item.depth));
+}
 assert.equal(scenarios.warm.cycles.length, 3);
 assert.equal(scenarios.warm.observedHeapBytes[2], scenarios.warm.observedHeapBytes[1]);
 for (const cycle of scenarios.warm.cycles) {

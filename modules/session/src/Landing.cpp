@@ -134,6 +134,7 @@ LandingPlan LandingOps::plan (const config::Engine& engine, bool sourceLoudnessV
     plan.request.normalizationGainDb = normalization;
     plan.request.initialGainDb = targetLufs - engine.input.referenceLufs;
     plan.request.productLanding = true;
+    plan.request.ceilingMarginDb = engine.limiter.ceilingMarginDb;
     plan.initialCeilingDbTp = targetTruePeakDbTp - engine.limiter.ceilingMarginDb;
     plan.sourceRateImpactPass = ! core::exactlyEqual (sourceRate, deliveryRate);
     return plan;

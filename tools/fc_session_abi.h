@@ -298,9 +298,10 @@ fc_session_status fc_session_attach_audio (fc_session session, uint32_t command_
 
 // A ready v14 fc_master topology/parameter pair, supplied by Decide. Its sampleRate/channels
 // must name the retained source; deliveryRate selects the output grid. The identity arguments
-// fence a stale request before any allocation. params->dither.bits also selects
-// the delivered sample format: 16, 24 or 32 (float); 20 uses a PCM24 container,
-// and zero uses the frozen target bit depth. This selection applies even when
+// fence a stale request before any allocation. The delivered sample format is the
+// target's: PCM16 or PCM24, its bit depth. params->dither.bits 0 takes it, the same
+// depth restates it, and any other value is the open rejection DeliveryFormat, before
+// any allocation, with a fact naming the target's depth. This holds even when
 // topology->dither is off. This is one session job, not another Project.
 fc_session_status fc_session_master_bytes (fc_session session, uint32_t source_low, uint32_t source_high,
                                            uint32_t revision_low, uint32_t revision_high,
@@ -350,7 +351,7 @@ fc_session_status fc_session_master_waveform_chunk_copy (fc_session session, con
                                                          fc_session_sizes* written);
 
 // A completed safe master can be copied as a canonical WAV before its PCM is
-// released. The format is the completed job's delivery bits (16, 24 or float32).
+// released. The format is the completed job's target bit depth (PCM16 or PCM24).
 // Size is allocation-free. Copy writes at most 65536 bytes at a caller-chosen
 // offset; repeat any slice to get identical bytes. The shell owns the assembled
 // image, indexed by master id, before calling master_audio_release. A later

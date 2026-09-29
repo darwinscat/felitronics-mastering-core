@@ -313,6 +313,15 @@ Answer Session::reject (Answer answer) noexcept
         (void) error.payload.error.fact.assign (text::Fact::of (text::FactId::SessionMemory));
         emit (error);
     }
+    if (answer.rejection == Rejection::DeliveryFormat)
+    {
+        // The code alone does not say which format the target takes; the shell reads it from this fact.
+        Notification fact;
+        fact.kind = EventKind::Fact;
+        (void) fact.payload.fact.assign (text::Fact::of (text::FactId::RejectedDeliveryFormat,
+                                                         text::Arg::count (answer.targetBits)));
+        emit (fact);
+    }
     Notification event;
     event.kind = EventKind::Rejected;
     event.payload.rejected = { answer.command, answer.rejection };
@@ -329,6 +338,8 @@ Answer Session::apply (const Request& request) noexcept
     answer.rejection = checked.rejection;
     answer.field = checked.field;
     answer.needBytes = checked.needBytes;
+    if (checked.rejection == Rejection::DeliveryFormat)
+        answer.targetBits = std::uint8_t (detail::rules().row (project_.target).bitDepth);
     detail::ImportedProject imported;
     if (checked.rejection == Rejection::None)
         if (const auto* input = std::get_if<command::ImportProject> (&request))

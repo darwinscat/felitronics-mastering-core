@@ -37,16 +37,18 @@ assert.equal(line(native, 'session-master-input'), line(wasm, 'session-master-in
 assert.equal(line(native, 'session-master-wav-header'), line(wasm, 'session-master-wav-header'), 'native/wasm WAV header');
 assert.equal(line(jobNative, 'wav-outcomes'), line(jobWasm, 'wav-outcomes'), 'native/wasm cancel/refusal/miss outcomes');
 assert.equal(line(jobNative, 'wav-outcomes'), 'cancel:false,refusal:false,unavailable:false,miss:true,unsafe:false');
-for (const bits of [16, 24, 32])
-    assert.equal(line(native, `session-master-format${bits}-wav`),
-        line(wasm, `session-master-explicit-format${bits}-wav`), `PCM${bits} native/wasm WAV bytes`);
+// The delivery format is the target's: [target, dither.bits asked, PCM bits delivered].
+const deliveryCases = [['cd', 0, 16], ['cd', 16, 16], ['cdDynamic', 0, 16], ['allStreaming', 0, 24], ['spotify', 24, 24]];
+for (const [target, requested, bits] of deliveryCases)
+    assert.equal(line(native, `session-master-${target}-dither${requested}-wav`),
+        line(wasm, `session-master-${target}-dither${requested}-wav`), `${target} PCM${bits} native/wasm WAV bytes`);
 const contractBytes = line(wasm, 'wav-record');
 let contract;
 try { contract = JSON.parse(contractBytes); }
 catch { throw new Error(`incomplete wav-record response (${contractBytes.length} bytes)`); }
 assert.equal(contract.format, 2);
 const scenarios = contract.scenarios;
-for (const name of ['safe', 'formats', 'warm', 'refusal', 'cancel', 'miss', 'unavailable', 'unsafe', 'lateCrest'])
+for (const name of ['safe', 'formats', 'formatRefusals', 'warm', 'refusal', 'cancel', 'miss', 'unavailable', 'unsafe', 'lateCrest'])
     assert.ok(scenarios[name], `${name} has actual contract responses`);
 const safePrice = scenarios.safe.price;
 assert.equal(safePrice.sourcePcmBytes, contract.source.frames * contract.source.channels * 4);
@@ -104,7 +106,7 @@ const checkInputs = inputs => {
     assert.equal(sha(Buffer.from(JSON.stringify(inputs.call))), inputs.callSha256);
 };
 for (const name of ['safe', 'refusal', 'cancel', 'miss', 'unavailable', 'unsafe', 'lateCrest']) checkInputs(scenarios[name].inputs);
-for (const item of scenarios.formats) checkInputs(item.inputs);
+for (const item of [...scenarios.formats, ...scenarios.formatRefusals]) checkInputs(item.inputs);
 for (const item of scenarios.warm.cycles) {
     checkInputs(item.inputs);
     assert.equal(item.accepted.kind, 'accepted');
@@ -114,7 +116,16 @@ for (const item of scenarios.warm.cycles) {
 }
 assert.equal(scenarios.warm.cycles.length, 3);
 assert.equal(scenarios.warm.observedHeapBytes[2], scenarios.warm.observedHeapBytes[1]);
-assert.deepEqual(scenarios.formats.map(x => x.bits), [16, 24, 32]);
+assert.deepEqual(scenarios.formats.map(x => [x.target, x.ditherBits, x.bits]), deliveryCases);
+for (const item of scenarios.formats) assert.equal(item.export.bits, item.bits);
+assert.deepEqual(scenarios.formatRefusals.map(x => [x.target, x.ditherBits, x.depth]),
+    [['allStreaming', 16, 24], ['cd', 24, 16], ['allStreaming', 32, 24], ['allStreaming', 20, 24],
+     ['cd', -1, 16], ['cd', 272, 16]]);
+for (const item of scenarios.formatRefusals) {
+    assert.deepEqual(item.priced, {status:0, rejection:34, bytes:0});
+    assert.equal(item.answer.kind, 'rejected');
+    assert.equal(item.answer.code, 34);
+}
 assert.equal(scenarios.refusal.answer.kind, 'rejected');
 assert.equal(scenarios.cancel.answer.kind, 'accepted');
 assert.equal(scenarios.unavailable.answer.kind, 'rejected');

@@ -1186,7 +1186,8 @@
       "Memory",
       "Contract",
       "OutputPending",
-      "MandatoryUnavailable"
+      "MandatoryUnavailable",
+      "DeliveryFormat"
     ],
     "ErrorCode": [
       "Trap",

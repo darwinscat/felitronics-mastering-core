@@ -15,6 +15,9 @@
 #include <cstdint>
 #include <cstring>
 #include <cstdio>
+#include <string>
+#include <string_view>
+#include <tuple>
 #include <vector>
 
 using namespace felitronics::session;
@@ -109,6 +112,7 @@ bool currentDirect (const Session& session, std::vector<float>& pcm,
     request.maxPasses = 12; request.initialGainDb = 4.0;
     request.normalizationGainDb = -18.0 - session.snapshot().view().integratedLufs;
     request.productLanding = true;
+    request.ceilingMarginDb = 0.15;
     request.pcmBits = 24;
     request.grTraceBuckets = mastering::GainReductionTrace::kDefaultBuckets;
     mastering::MasteringChain chain;
@@ -129,19 +133,39 @@ fc_session_master_token token (const MasterToken& t)
     return { sizeof (fc_session_master_token), std::uint32_t (t.source), std::uint32_t (t.source >> 32),
         std::uint32_t (t.revision), std::uint32_t (t.revision >> 32), t.job, t.master };
 }
-bool formatThroughFacade (std::uint32_t bits)
+bool setTarget (fc_session handle, std::uint32_t id, const char* target)
+{
+    char json[128];
+    const int n = std::snprintf (json, sizeof (json), R"({"kind":"setTarget","commandId":"%u","target":"%s"})", id, target);
+    char answer[FC_SESSION_ANSWER_BYTES] {}; std::uint32_t written = 0;
+    return n > 0 && fc_session_command (handle, json, std::uint32_t (n), answer, sizeof (answer), &written) == FC_SESSION_OK
+        && std::string_view (answer, written).find ("\"accepted\"") != std::string_view::npos;
+}
+std::string eventsJson (fc_session handle)
+{
+    fc_session_sizes n { sizeof (fc_session_sizes) };
+    if (fc_session_events_size (handle, &n) != FC_SESSION_OK) return {};
+    std::string json (n.jsonBytes, '?'); std::vector<double> rows (n.rowBytes / 8u + 1u);
+    if (fc_session_events_copy (handle, json.data(), n.jsonBytes, rows.data(), n.rowBytes) != FC_SESSION_OK) return {};
+    return json;
+}
+// THE DELIVERY FORMAT IS THE TARGET'S, end to end through the C facade: dither.bits 0 or the target's own depth
+// masters, and the WAV header carries exactly that depth.
+bool formatThroughFacade (const char* target, std::int32_t bits, std::uint32_t targetBits)
 {
     const auto handle = create();
-    load (handle, bits);
+    load (handle, 1);
     auto* s = contractSession (handle);
+    bool good = setTarget (handle, 2, target);
     fc_master_config config {}; fc_master_params params {};
     ready (config, params);
-    params.dither.bits = std::int32_t (bits);
+    params.dither.bits = bits;
     const auto source = s->source().hash, revision = s->revision();
     char answer[FC_SESSION_ANSWER_BYTES] {}; std::uint32_t written = 0;
-    bool good = fc_session_master (handle, bits, 0, std::uint32_t (source), std::uint32_t (source >> 32),
+    good = good && fc_session_master (handle, 3, 0, std::uint32_t (source), std::uint32_t (source >> 32),
         std::uint32_t (revision), std::uint32_t (revision >> 32), &config, &params,
-        answer, sizeof (answer), &written) == FC_SESSION_OK;
+        answer, sizeof (answer), &written) == FC_SESSION_OK
+        && std::string_view (answer, written).find ("\"accepted\"") != std::string_view::npos;
     for (unsigned i = 0; good && i < 40000 && s->job() != 0; ++i)
     {
         std::uint32_t spent = 0;
@@ -152,14 +176,15 @@ bool formatThroughFacade (std::uint32_t bits)
     {
         const auto t = token (s->pendingMaster());
         double bytes = 0; std::uint32_t actualBits = 0;
+        const auto frames = s->masterAudioShape (s->pendingMaster()).frames;
         good = fc_session_master_wav_size (handle, &t, &bytes, &actualBits) == FC_SESSION_OK
-            && actualBits == bits && bytes == double (44u + frames * 2u * bits / 8u);
+            && actualBits == targetBits && bytes == double (44u + frames * 2u * targetBits / 8u);
         if (good)
         {
             std::uint8_t header[44] {}; std::uint32_t count = 0;
             good = fc_session_master_wav_copy (handle, &t, 0, 0, header, sizeof (header), &count)
                 == FC_SESSION_OK && count == sizeof (header)
-                && header[20] == (bits == 32 ? 3 : 1) && header[34] == bits;
+                && header[20] == 1 && header[21] == 0 && header[34] == targetBits && header[35] == 0;
         }
         if (good)
         {
@@ -174,12 +199,45 @@ bool formatThroughFacade (std::uint32_t bits)
                 for (std::uint32_t i = 0; i < count; ++i)
                     digest = (digest ^ chunk[i]) * 0x100000001b3ull;
             }
-            if (good) std::printf ("session-master-format%u-wav=%016llx\n", bits,
+            if (good) std::printf ("session-master-%s-dither%d-wav=%016llx\n", target, bits,
                 static_cast<unsigned long long> (digest));
         }
     }
     good = fc_session_destroy (handle) == FC_SESSION_OK && good;
     return good;
+}
+// ...and any other depth is an OPEN refusal, before any allocation: the rejection DeliveryFormat (34) in the storage
+// record and in the answer, and a fact (134) naming the target's depth in the events.
+bool refusedThroughFacade (fc_session handle, std::uint32_t id, const char* target, std::int32_t bits,
+                           std::uint32_t targetBits, std::string& why)
+{
+    auto* s = contractSession (handle);
+    if (! setTarget (handle, id, target)) { why = "set target"; return false; }
+    fc_master_config config {}; fc_master_params params {};
+    ready (config, params);
+    params.dither.bits = bits;
+    const auto source = s->source().hash, revision = s->revision();
+    fc_session_storage storage { sizeof (fc_session_storage) };
+    fc_session_status priced = FC_SESSION_ERR_CONTRACT, started = FC_SESSION_ERR_CONTRACT;
+    char answer[FC_SESSION_ANSWER_BYTES] {}; std::uint32_t written = 0;
+    const auto spent = budget::spend ([&] {
+        priced = fc_session_master_bytes (handle, std::uint32_t (source), std::uint32_t (source >> 32),
+            std::uint32_t (revision), std::uint32_t (revision >> 32), &config, &params, &storage);
+        started = fc_session_master (handle, id + 1u, 0, std::uint32_t (source), std::uint32_t (source >> 32),
+            std::uint32_t (revision), std::uint32_t (revision >> 32), &config, &params,
+            answer, sizeof (answer), &written);
+    });
+    const std::string_view reply (answer, written);
+    const auto events = eventsJson (handle);
+    const std::string depth = "\"integer\":\"" + std::to_string (targetBits) + "\"";
+    why = std::string (target) + " dither.bits " + std::to_string (bits) + ": priced " + std::to_string (int (priced))
+        + " rejection " + std::to_string (storage.rejection) + ", started " + std::to_string (int (started))
+        + " " + std::string (reply) + ", " + std::to_string (spent.requests) + " allocations";
+    return priced == FC_SESSION_OK && storage.rejection == 34u && storage.bytes == 0
+        && started == FC_SESSION_OK && reply.find ("\"rejected\"") != std::string_view::npos
+        && reply.find ("\"code\":34") != std::string_view::npos
+        && spent.requests == 0 && s->job() == 0 && s->revision() == revision
+        && events.find ("\"FactId\":134") != std::string::npos && events.find (depth) != std::string::npos;
 }
 }
 
@@ -354,6 +412,62 @@ int main()
                     reinterpret_cast<std::uint32_t*> (const_cast<float*> (view) + 3))
                     == FC_SESSION_ERR_OVERLAP && std::memcmp (view, saved, sizeof (saved)) == 0,
                 "WAV copy cannot write its completion count into retained PCM");
+            // EVERY OTHER OUTPUT IS FENCED AGAINST THE RETAINED PCM TOO: a copy onto itself, a shape, a view and a
+            // waveform chunk written into the samples they describe.
+            auto* retained = const_cast<float*> (view);
+            ok (fc_session_master_audio_copy (handle, &t, retained, samples) == FC_SESSION_ERR_OVERLAP
+                && fc_session_master_audio_copy (handle, &t, retained + 3, samples - 3u) == FC_SESSION_ERR_OVERLAP
+                && std::memcmp (view, copied.data(), bytes) == 0,
+                "PCM copy cannot write into the retained PCM it copies");
+            double shapeBytes = -1.0; std::uint32_t shapeFrames = 7, shapeChannels = 7, shapeRate = 7;
+            ok (fc_session_master_audio_size (handle, &t, reinterpret_cast<double*> (retained), &shapeFrames,
+                    &shapeChannels, &shapeRate) == FC_SESSION_ERR_OVERLAP
+                && fc_session_master_audio_size (handle, &t, &shapeBytes, reinterpret_cast<std::uint32_t*> (retained + 1),
+                    &shapeChannels, &shapeRate) == FC_SESSION_ERR_OVERLAP
+                && fc_session_master_audio_size (handle, &t, &shapeBytes, &shapeFrames,
+                    reinterpret_cast<std::uint32_t*> (retained + 2), &shapeRate) == FC_SESSION_ERR_OVERLAP
+                && fc_session_master_audio_size (handle, &t, &shapeBytes, &shapeFrames, &shapeChannels,
+                    reinterpret_cast<std::uint32_t*> (retained + 3)) == FC_SESSION_ERR_OVERLAP
+                && shapeBytes == -1.0 && shapeFrames == 7 && shapeChannels == 7 && shapeRate == 7
+                && std::memcmp (view, saved, sizeof (saved)) == 0,
+                "PCM shape cannot write any of its four numbers into the retained PCM");
+            const float* viewed = nullptr; std::uint32_t viewedSamples = 7;
+            ok (fc_session_master_audio_view (handle, &t, reinterpret_cast<const float**> (retained + 4), &viewedSamples)
+                    == FC_SESSION_ERR_OVERLAP
+                && fc_session_master_audio_view (handle, &t, &viewed, reinterpret_cast<std::uint32_t*> (retained + 1))
+                    == FC_SESSION_ERR_OVERLAP
+                && viewed == nullptr && viewedSamples == 7 && std::memcmp (view, saved, sizeof (saved)) == 0,
+                "a scoped view cannot write its address or length into the retained PCM");
+            char waveQuery[512];
+            const auto waveLength = std::snprintf (waveQuery, sizeof (waveQuery),
+                "{\"kind\":9,\"audioId\":\"%llu\",\"fromFrame\":\"100\",\"toFrame\":\"200\","
+                "\"columns\":10,\"requestId\":\"4\",\"crossoverHz\":120,\"fromHz\":20,\"toHz\":250,"
+                "\"masterId\":%u}", static_cast<unsigned long long> (source), session->masters().front().id);
+            fc_session_sizes waveSizes { sizeof (fc_session_sizes) };
+            const float* wavePcm[2] { copied.data() + 100, copied.data() + frames + 100 };
+            const auto waveSized = fc_session_master_waveform_chunk_size (handle, waveQuery, std::uint32_t (waveLength),
+                2, 100, rate, &waveSizes);
+            std::vector<char> waveJson (waveSizes.jsonBytes + 1u);
+            std::vector<double> waveRows (waveSizes.rowBytes / sizeof (double) + 1u);
+            fc_session_sizes waveWritten { sizeof (fc_session_sizes) };
+            const auto viewBefore = std::vector<float> (view, view + 64);
+            ok (waveSized == FC_SESSION_OK
+                && fc_session_master_waveform_chunk_copy (handle, waveQuery, std::uint32_t (waveLength), wavePcm, 2, 100,
+                    rate, reinterpret_cast<char*> (retained), waveSizes.jsonBytes, waveRows.data(), waveSizes.rowBytes,
+                    &waveWritten) == FC_SESSION_ERR_OVERLAP
+                && fc_session_master_waveform_chunk_copy (handle, waveQuery, std::uint32_t (waveLength), wavePcm, 2, 100,
+                    rate, waveJson.data(), waveSizes.jsonBytes, reinterpret_cast<double*> (retained), waveSizes.rowBytes,
+                    &waveWritten) == FC_SESSION_ERR_OVERLAP
+                && fc_session_master_waveform_chunk_copy (handle, waveQuery, std::uint32_t (waveLength), wavePcm, 2, 100,
+                    rate, waveJson.data(), waveSizes.jsonBytes, waveRows.data(), waveSizes.rowBytes,
+                    reinterpret_cast<fc_session_sizes*> (retained + 8)) != FC_SESSION_OK
+                && std::memcmp (view, viewBefore.data(), viewBefore.size() * sizeof (float)) == 0,
+                "a waveform chunk cannot write its JSON, rows or sizes into the retained PCM");
+            const float* retainedPcm[2] { view + 100, view + frames + 100 };
+            ok (fc_session_master_waveform_chunk_copy (handle, waveQuery, std::uint32_t (waveLength), retainedPcm, 2, 100,
+                    rate, waveJson.data(), waveSizes.jsonBytes, waveRows.data(), waveSizes.rowBytes, &waveWritten)
+                    == FC_SESSION_OK,
+                "the retained PCM stays a valid waveform chunk INPUT");
         }
         t.job += 1;
         ok (fc_session_master_audio_copy (handle, &t, copied.data(), std::uint32_t (copied.size())) == FC_SESSION_ERR_STALE,
@@ -394,8 +508,25 @@ int main()
             "C facade reads an explicit delivered PCM chunk after release within its declared budget");
     }
     ok (fc_session_destroy (handle) == FC_SESSION_OK, "C session releases all storage");
-    ok (formatThroughFacade (16), "C facade delivers explicitly requested PCM16");
-    ok (formatThroughFacade (24), "C facade delivers explicitly requested PCM24");
-    ok (formatThroughFacade (32), "C facade delivers explicitly requested float32");
+    ok (formatThroughFacade ("cd", 0, 16), "cd: dither.bits 0 delivers the target's PCM16 through the C facade");
+    ok (formatThroughFacade ("cd", 16, 16), "cd: dither.bits 16 restates the target's PCM16");
+    ok (formatThroughFacade ("cdDynamic", 0, 16), "cdDynamic: dither.bits 0 delivers the target's PCM16");
+    ok (formatThroughFacade ("allStreaming", 0, 24), "allStreaming: dither.bits 0 delivers the target's PCM24");
+    ok (formatThroughFacade ("spotify", 24, 24), "spotify: dither.bits 24 restates the target's PCM24");
+    {
+        const auto refusing = create();
+        load (refusing, 1);
+        std::uint32_t id = 10;
+        for (const auto& [target, bits, depth] : { std::tuple<const char*, std::int32_t, std::uint32_t>
+                 { "allStreaming", 16, 24 }, { "cd", 24, 16 }, { "allStreaming", 32, 24 }, { "allStreaming", 20, 24 },
+                 { "cd", -1, 16 }, { "cd", 272, 16 } })
+        {
+            std::string why;
+            ok (refusedThroughFacade (refusing, id, target, bits, depth, why),
+                "a depth other than the target's is an open refusal before any allocation, naming the target's (" + why + ")");
+            id += 10;
+        }
+        ok (fc_session_destroy (refusing) == FC_SESSION_OK, "C session releases all storage after the refusals");
+    }
     return felitronics::test::report();
 }

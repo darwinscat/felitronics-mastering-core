@@ -9,8 +9,9 @@
 namespace felitronics::session
 {
 // A WAV image is copied in bounded slices from one planar f32 allocation. The
-// writer owns no samples, file handles, or output allocation. Integer samples
-// use the same 2^(bits-1) grid and floor(x + 0.5) rule as core Dither/Wav.
+// writer owns no samples, file handles, or output allocation. PCM16 and PCM24
+// only, the two depths a target delivers: the same 2^(bits-1) grid and
+// floor(x + 0.5) rule as core Dither/Wav.
 struct WavPlan
 {
     std::uint64_t bytes = 0, frames = 0;

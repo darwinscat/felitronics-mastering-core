@@ -8,7 +8,7 @@
 
 Completed safe masters expose an additive, token-guarded WAV size and bounded slice copy. The shell can
 assemble one owned RIFF image before releasing session PCM and repeat downloads without rerendering or
-adding dither. The pure planar writer supports PCM16, PCM24 and float32, with the installed core's PCM
+adding dither. The pure planar writer supports PCM16 and PCM24, with the installed core's PCM
 grid and odd-chunk padding. Native and wasm checks decode the written bytes and verify the delivered
 reference true peak; cancelled, unavailable and unsafe jobs expose no file, while a safe twelve-pass miss does.
 Session measures the selected PCM on its delivery grid, and the decoded WAV equals the listening PCM

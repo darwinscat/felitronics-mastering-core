@@ -156,6 +156,11 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
         if (value.name == "integratedLufs" && value.value) sourceLufs = *value.value;
     const auto ruleset = rules();
     const auto target = ruleset.row (s.project_.target);
+    // THE DELIVERY BIT DEPTH IS THE TARGET'S (PLAN: the delivery format comes from the target): 0 names it, the
+    // same depth restates it, and any other depth is refused before anything is priced or allocated.
+    if (input.ready.deliveryBits != 0 && std::int32_t (input.ready.deliveryBits) != target.bitDepth)
+    { result.rejection = Rejection::DeliveryFormat; return result; }
+    const auto deliveryBits = std::uint8_t (target.bitDepth);   // 16 or 24: the config's build gate
     const double targetLufs = s.project_.targetEdit.lufs.value_or (target.lufs.toDouble());
     const double targetTp = s.project_.targetEdit.tp.value_or (target.tp.toDouble());
     const auto engine = ruleset.engine;
@@ -174,10 +179,6 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
     result.ready = input.ready;
     if (! validParams (result.ready.params))
     { result.rejection = Rejection::NotFinite; return result; }
-    if (input.ready.deliveryBits != 0 && input.ready.deliveryBits != 16
-        && input.ready.deliveryBits != 20 && input.ready.deliveryBits != 24
-        && input.ready.deliveryBits != 32)
-    { result.rejection = Rejection::OutOfDomain; return result; }
     result.deliveryRate = input.ready.deliveryRateHz == 0 ? s.source_.sampleRate : input.ready.deliveryRateHz;
     const double rate = double (result.deliveryRate);
     if (result.deliveryRate < kMinSampleRate || result.deliveryRate > s.capabilities_.maxRateHz
@@ -216,11 +217,12 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
     result.request.normalizationGainDb = normalization;
     result.request.initialGainDb = targetLufs - reference;
     result.request.productLanding = true;
+    result.request.ceilingMarginDb = margin;
     result.request.grTraceBuckets = result.traceBuckets;
     result.ready.params.limiter.ceilingDbTp = targetTp - margin;
-    if (input.ready.deliveryBits != 0) result.ready.params.dither.bits = input.ready.deliveryBits;
-    result.request.pcmBits = input.ready.deliveryBits != 0 ? input.ready.deliveryBits
-        : unsigned (target.bitDepth);
+    result.ready.deliveryBits = deliveryBits;
+    result.ready.params.dither.bits = deliveryBits;
+    result.request.pcmBits = deliveryBits;
     if (! std::isfinite (result.ready.params.inputGainDb)
         || std::fabs (result.ready.params.inputGainDb + normalization) > 60.0
         || ! std::isfinite (result.ready.params.preLimiterGainDb))
