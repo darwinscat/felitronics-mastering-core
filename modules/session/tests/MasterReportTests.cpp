@@ -35,15 +35,15 @@ struct Case
 };
 bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool processed,
           bool waitForCrest = true, bool demanding = false, unsigned seconds = 4,
-          unsigned silentSeconds = 0, const char* target = nullptr)
+          unsigned silentSeconds = 0, const char* target = nullptr, float divisor = 4096.0f)
 {
     c.rate = sourceRate; c.delivery = deliveryRate;
     const std::size_t frames = std::size_t (sourceRate) * seconds;
     c.left.resize (frames); c.right.resize (frames);
     for (std::size_t i = 0; i < frames; ++i)
     {
-        c.left[i] = float (int ((i * 17u) % 251u) - 125) / 4096.0f;
-        c.right[i] = float (int ((i * 19u + 7u) % 251u) - 125) / 4096.0f;
+        c.left[i] = float (int ((i * 17u) % 251u) - 125) / divisor;
+        c.right[i] = float (int ((i * 19u + 7u) % 251u) - 125) / divisor;
         if (i < std::size_t (sourceRate) * silentSeconds) c.left[i] = c.right[i] = 0.0f;
     }
     if (! demanding) c.right.back() -= 0.15f;
@@ -159,6 +159,25 @@ bool referenceCrest (const Case& c)
         }
     return true;
 }
+bool crestK1Ready (const Case& c)
+{
+    if (! c.session || c.session->masters().size() != 1 || ! c.session->masters()[0].report
+        || ! c.session->masters()[0].report->cost) return false;
+    const auto& k1 = c.session->masters()[0].report->cost->crestFullDb;
+    return k1.reason == session::MeasurementReason::None && k1.value.has_value();
+}
+bool lateCrestAfterRelease (Case& c)
+{
+    auto& s = *c.session;
+    if (s.masters().size() != 1 || ! s.masters()[0].report
+        || s.masters()[0].report->crest.status != session::MeasurementStatus::Pending
+        || s.releaseMaster (c.token) != session::MasterTransferStatus::Ok) return false;
+    for (unsigned i = 0; i < 200000 && s.measurementJob() != 0; ++i) (void) s.step (73);
+    for (unsigned i = 0; i < 200000 && ! crestK1Ready (c);
+         ++i) (void) s.step (1);
+    return s.measurementJob() == 0 && s.pendingMaster().master == 0
+        && referenceCrest (c) && crestK1Ready (c);
+}
 bool directMeter (const Case& c)
 {
     const auto& report = *c.session->masters()[0].report;
@@ -269,6 +288,37 @@ bool memoryLifecycle (Case& c)
 
 int main()
 {
+    Case normalFirst, normalLate, fractionalFirst, fractionalLate;
+    ok (run (normalFirst, 48000, 48000, false, true, false, 4, 0, nullptr, 512.0f)
+        && referenceCrest (normalFirst) && crestK1Ready (normalFirst),
+        "normal-level source-first crest retains the configured floor and K1 comparison");
+    if (normalFirst.session && ! normalFirst.session->masters().empty())
+    {
+        const auto snapshot = normalFirst.session->snapshot();
+        const auto source = session::MeasurementCrest::view (
+            snapshot.view().measurements[std::size_t (session::Analyzer::Crest)]);
+        ok (source.activityFloorDb > source.parameters.programmeFloorDb + 1.0
+            && source.parameters.programmeFloorDb == -70.0,
+            "configured crest floor survives separately from the effective activity threshold");
+    }
+    ok (run (normalLate, 48000, 48000, false, false, false, 4, 0, nullptr, 512.0f)
+        && lateCrestAfterRelease (normalLate),
+        "normal-level late crest joins after PCM release with configured floor");
+    const bool fractionalFirstRan = run (fractionalFirst, 22050, 48000, false, true, false, 8);
+    ok (fractionalFirstRan && referenceCrest (fractionalFirst) && crestK1Ready (fractionalFirst),
+        "22.05 kHz source-first crest uses the 2210-sample hop and configured duration");
+    if (fractionalFirstRan)
+    {
+        const auto snapshot = fractionalFirst.session->snapshot();
+        const auto source = session::MeasurementCrest::view (
+            snapshot.view().measurements[std::size_t (session::Analyzer::Crest)]);
+        ok (source.hopSamples == 2210 && source.parameters.hopMs == 100.0
+            && double (source.hopSamples) * 1000.0 / source.sampleRate > 100.2,
+            "configured hop duration survives separately from the 22.05 kHz sample grid");
+    }
+    ok (run (fractionalLate, 22050, 48000, false, false, false, 8)
+        && lateCrestAfterRelease (fractionalLate),
+        "22.05 kHz late crest joins after PCM release on the same sample grid");
     budget::LifecycleBudget shortDeclaration { 96, 96 };
     ok (budget::covers (96, { 1, 64 }) && shortDeclaration.charge ({ 1, 64 })
         && ! shortDeclaration.charge ({ 1, 64 }),
