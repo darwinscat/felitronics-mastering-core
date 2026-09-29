@@ -162,5 +162,17 @@
   {
     "script": "attach audio 0 bad?",
     "valid": false
+  },
+  {
+    "script": "place phase 1",
+    "valid": true
+  },
+  {
+    "script": "place phase 2",
+    "valid": true
+  },
+  {
+    "script": "place phase 3",
+    "valid": false
   }
 ]

@@ -1,0 +1,20 @@
+# Restore a saved machine layer from an older core, with nonempty difference rows.
+create main 67108864
+load 1 mono
+step 5 work units
+place phase 1
+step 5 work units
+place phase 2
+import project 2 file saved-machine
+snapshot
+export project saved
+new instance
+create main 67108864
+load 1 mono
+step 5 work units
+place phase 1
+step 5 work units
+place phase 2
+import project 2 saved
+export project restored
+snapshot

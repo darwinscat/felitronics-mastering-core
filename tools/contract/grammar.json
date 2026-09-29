@@ -9,6 +9,7 @@
   "cancel": "cancel ([0-9]{1,9}) ([0-9]{1,9})",
   "step": "step ([0-9]{1,9}) work units",
   "drive": "drive ([0-9]{1,9}) work units",
+  "place": "place phase ([12])",
   "snapshot": "snapshot",
   "summary": "summary",
   "export": "export project ([a-z][a-z0-9_-]*)",

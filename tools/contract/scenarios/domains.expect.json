@@ -16,7 +16,7 @@
       "kind": "snapshot",
       "index": 0,
       "path": "project.devices.hpf.hand.fq",
-      "value": null
+      "value": 10000.125
     },
     {
       "kind": "snapshot",
@@ -28,25 +28,25 @@
       "kind": "snapshot",
       "index": -1,
       "path": "project.devices.hpf.hand.fq",
-      "value": null
+      "value": 10000.125
     },
     {
       "kind": "snapshot",
       "index": -1,
       "path": "handFieldCount",
-      "value": 0
+      "value": 2
     },
     {
       "kind": "answer",
       "index": 5,
       "path": "code",
-      "value": 3
+      "value": 14
     },
     {
       "kind": "answer",
       "index": 6,
       "path": "code",
-      "value": 3
+      "value": 13
     }
   ],
   "equal": [
@@ -87,5 +87,5 @@
     "fact",
     "rejected"
   ],
-  "rejections": 5
+  "rejections": 2
 }

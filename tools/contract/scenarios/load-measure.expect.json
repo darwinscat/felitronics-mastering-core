@@ -11,7 +11,7 @@
       "kind": "snapshot",
       "index": 1,
       "path": "state",
-      "value": 1,
+      "value": 3,
       "session": "main"
     },
     {
@@ -32,14 +32,14 @@
       "kind": "snapshot",
       "index": 1,
       "path": "measurementJob",
-      "value": 1,
+      "value": 0,
       "session": "main"
     },
     {
       "kind": "snapshot",
       "index": 1,
       "path": "measurementProgress.completedUnits",
-      "value": 8,
+      "value": 0,
       "session": "main"
     }
   ],
@@ -47,7 +47,5 @@
   "eventKinds": [
     "phase",
     "fact"
-  ],
-  "rejections": 0,
-  "equal": []
+  ]
 }

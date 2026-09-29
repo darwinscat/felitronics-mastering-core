@@ -125,7 +125,7 @@ async function main() {
     }
     if (!nativeOnly && !reorder) {
         const versions = {
-            components:nativeRun(cli, 'version').toString('utf8').trim().split('\n'),
+            components:nativeRun(cli, 'version').toString('utf8').replace(/\r\n/g, '\n').trim().split('\n'),
             configVersion:nativeRun(cli, 'config', 'version').toString('utf8').trim(),
             codecSchemaSha256:createHash('sha256').update(readFileSync(new URL('../session-codec-schema.json', import.meta.url))).digest('hex')
         };
