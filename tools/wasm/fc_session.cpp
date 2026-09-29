@@ -241,7 +241,7 @@ bool masterReady (const fc_master_config& c, const fc_master_params& p,
     // The session refuses any rate but 0 and the target's, openly. A finite rate that is not a whole number of hertz
     // below 2^32 is no target's rate either: it arrives as 2^32 - 1, which no target delivers.
     const bool whole = c.deliveryRate >= 0.0 && c.deliveryRate < 4294967295.0
-        && std::fabs (c.deliveryRate - std::floor (c.deliveryRate)) == 0.0;
+        && ! (std::fabs (c.deliveryRate - std::floor (c.deliveryRate)) > 0.0);
     ready.version = 1;
     ready.deliveryRateHz = whole ? std::uint32_t (c.deliveryRate) : 4294967295u;
     auto& t = ready.topology;

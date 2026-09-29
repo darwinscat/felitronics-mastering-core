@@ -2280,6 +2280,10 @@ private:
 
     struct PassWorkspace
     {
+        // Provided, not defaulted: `std::optional<PassWorkspace> pass_` is a member of the class this one is nested in,
+        // where a defaulted constructor that needs the member initialisers below is not usable yet — clang with
+        // libstdc++ 14 then refuses `pass_.emplace()`. A provided constructor is usable from its declaration.
+        PassWorkspace() {}
         struct Armed { int band = 0, lane = 0; };
         enum class Phase { Setup, TraceInit, Render, MeterSetup, Meter, FinishDrain, FinishBands,
                            FinishStats, FinishGate, FinishRange, FinishComplete, Done, Failed };

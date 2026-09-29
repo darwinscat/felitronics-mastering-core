@@ -225,7 +225,9 @@ struct TapStreams
     std::vector<float> compressor, preLimiter, limiterGr, limiterPeak, peakClip, band;
     long long frames = 0;
 
-    void take (const MasteringChainTaps& taps, long long position, int channels)
+    int channels = 2;
+
+    void take (const MasteringChainTaps& taps, long long position)
     {
         positions.push_back (position); expected.push_back (frames); framesWritten.push_back (taps.framesWritten);
         compressor.insert (compressor.end(), taps.compressorGrDb, taps.compressorGrDb + taps.framesWritten);
@@ -299,10 +301,10 @@ bool tapSequence (std::string& why)
     TapBuffers oldTaps (a.tapOversampleFactor()), sameTaps (b.tapOversampleFactor()), cutTaps (c.tapOversampleFactor());
     TapStreams oldStreams, sameStreams, cutStreams;
     if (! testing::previousRender (a, source.in, old.out, channels, frames, block, oldTaps.taps,
-            [&] (const MasteringChainTaps& t, long long at) { oldStreams.take (t, at, channels); }))
+            [&] (const MasteringChainTaps& t, long long at) { oldStreams.take (t, at); }))
     { why = "previous render"; return false; }
-    const auto sinkInto = [channels] (TapStreams& into)
-    { return [&into, channels] (const MasteringChainTaps& t, long long at) { into.take (t, at, channels); }; };
+    const auto sinkInto = [] (TapStreams& into)
+    { return [&into] (const MasteringChainTaps& t, long long at) { into.take (t, at); }; };
     if (! renderer.begin (b, source.in, same257.out, channels, frames, sameTaps.taps)) { why = "begin"; return false; }
     StepResult state = StepResult::More;
     for (int i = 0; i < 100000 && state == StepResult::More; ++i)
