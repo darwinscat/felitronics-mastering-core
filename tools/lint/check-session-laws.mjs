@@ -130,6 +130,9 @@ const FELITRONICS_ALLOWED = new Set([
     'felitronics/session/Events.h',             // value payloads only, scanned as every public header
     'felitronics/session/Wire.h',
     'felitronics/session/Snapshot.h',           // owned snapshots and codec declarations, scanned here
+    'felitronics/session/Landing.h',            // pure landing plan and typed result operations
+    'felitronics/session/LandingResult.h',      // value-only verdict and bounded pass rows
+    'felitronics/mastering/LoudnessSolver.h',   // deterministic solver values; including it has no side effects
 
     'felitronics/session/Project.h',
     'felitronics/session/Text.h',

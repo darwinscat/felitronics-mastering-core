@@ -20,9 +20,13 @@ Snapshot& Snapshot::operator= (Snapshot&&) noexcept = default;
 const SnapshotView& Snapshot::view() const noexcept { return view_; }
 std::uint64_t Snapshot::storageFor (const SnapshotView& v) noexcept
 {
+    std::uint64_t landingBytes = 0;
+    for (const Kept& master : v.masters)
+        if (master.landing) landingBytes += std::uint64_t (master.landing->log.size_bytes());
     return detail::snapshotStorage (v.target.size(), v.source.name.size(), v.masters.size_bytes(),
                                     v.momentary.size_bytes(), v.shortTerm.size_bytes(), v.runs.size_bytes())
-         + std::uint64_t (v.machineDifferences.size_bytes()) + std::uint64_t (v.eqCurve.size_bytes()) + OwnedMeasurements::storageFor (v.measurements);
+         + std::uint64_t (v.machineDifferences.size_bytes()) + std::uint64_t (v.eqCurve.size_bytes())
+         + OwnedMeasurements::storageFor (v.measurements) + landingBytes;
 }
 Snapshot Snapshot::copy (const SnapshotView& v) noexcept
 {
@@ -46,6 +50,19 @@ Snapshot Snapshot::copy (const SnapshotView& v) noexcept
     {
         out.masters_.reset (new Kept[v.masters.size()]);
         std::copy (v.masters.begin(), v.masters.end(), out.masters_.get());
+        std::size_t landingCount = 0;
+        for (const Kept& master : v.masters) if (master.landing) landingCount += master.landing->log.size();
+        if (landingCount != 0) out.landingPasses_.reset (new LandingPass[landingCount]);
+        std::size_t offset = 0;
+        for (std::size_t i = 0; i < v.masters.size(); ++i)
+            if (v.masters[i].landing)
+            {
+                const auto log = v.masters[i].landing->log;
+                if (! log.empty()) std::copy (log.begin(), log.end(), out.landingPasses_.get() + offset);
+                out.masters_[i].landing->log = log.empty()
+                    ? std::span<const LandingPass> {} : std::span<const LandingPass> { out.landingPasses_.get() + offset, log.size() };
+                offset += log.size();
+            }
         out.view_.masters = { out.masters_.get(), v.masters.size() };
     }
     if (! v.machineDifferences.empty())

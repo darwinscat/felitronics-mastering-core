@@ -165,7 +165,7 @@ void pump()
     ok (eventsHash (one) == eventsHash (bulk) && eventsHash (one) == eventsHash (again), "complete event sequence is invariant across runs and pump slicing");
     ok (eventsHash (cancelled) == eventsHash (cancelledAgain), "cancelled scenario sequence is invariant across runs and slicing");
     ok (one.size() > 22 && cancelled.size() == one.size() + 3, "measurement publishes live work and cancellation adds three events");
-    ok (eventsHash (one) == 0x2b569aaa1d3c5a31ull && eventsHash (cancelled) == 0x8e4d5fbc4bc1cb6dull, "event fixtures pin every active payload field");
+    ok (eventsHash (one) == 0xbb6a23cf576083a0ull && eventsHash (cancelled) == 0x88c168dd3c1699fdull, "event fixtures pin every active payload field");
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     Audio audio; auto s = fresh();
     const auto old = apply (*s, audio.load()).job;

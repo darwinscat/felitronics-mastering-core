@@ -41,6 +41,28 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (Device::Low) == 7);
         return 7;
     }
+    else if constexpr (std::is_same_v<T, LandingReason>)
+    {
+        static_assert (unsigned (LandingReason::None) == 0);
+        static_assert (unsigned (LandingReason::ExcessSubBass) == 1);
+        static_assert (unsigned (LandingReason::SharpPeaks) == 2);
+        static_assert (unsigned (LandingReason::DarkMix) == 3);
+        static_assert (unsigned (LandingReason::LoudnessDemand) == 4);
+        static_assert (unsigned (LandingReason::GainRange) == 5);
+        static_assert (unsigned (LandingReason::TruePeak) == 6);
+        return 6;
+    }
+    else if constexpr (std::is_same_v<T, LandingStatus>)
+    {
+        static_assert (unsigned (LandingStatus::Solved) == 0);
+        static_assert (unsigned (LandingStatus::TargetUnreachable) == 1);
+        static_assert (unsigned (LandingStatus::PassLimit) == 2);
+        static_assert (unsigned (LandingStatus::TargetBetweenAchievable) == 3);
+        static_assert (unsigned (LandingStatus::Unavailable) == 4);
+        static_assert (unsigned (LandingStatus::Cancelled) == 5);
+        static_assert (unsigned (LandingStatus::TechnicalFailure) == 6);
+        return 6;
+    }
     else if constexpr (std::is_same_v<T, MeasurementReason>)
     {
         static_assert (unsigned (MeasurementReason::None) == 0);
@@ -154,6 +176,34 @@ constexpr void checkEnum (Device value) noexcept
         case Device::Limiter: break;
         case Device::Dither: break;
         case Device::Low: break;
+    }
+}
+
+constexpr void checkEnum (LandingReason value) noexcept
+{
+    switch (value)
+    {
+        case LandingReason::None: break;
+        case LandingReason::ExcessSubBass: break;
+        case LandingReason::SharpPeaks: break;
+        case LandingReason::DarkMix: break;
+        case LandingReason::LoudnessDemand: break;
+        case LandingReason::GainRange: break;
+        case LandingReason::TruePeak: break;
+    }
+}
+
+constexpr void checkEnum (LandingStatus value) noexcept
+{
+    switch (value)
+    {
+        case LandingStatus::Solved: break;
+        case LandingStatus::TargetUnreachable: break;
+        case LandingStatus::PassLimit: break;
+        case LandingStatus::TargetBetweenAchievable: break;
+        case LandingStatus::Unavailable: break;
+        case LandingStatus::Cancelled: break;
+        case LandingStatus::TechnicalFailure: break;
     }
 }
 
@@ -360,11 +410,61 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, Kept>)
     {
-        [[maybe_unused]] auto& [f0, f1] = x;
+        [[maybe_unused]] auto& [f0, f1, f2] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.id)>, std::uint32_t>);
         v.field ("id", x.id);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.landing)>, std::optional<LandingSummary>>);
+        v.optionalField ("landing", x.landing, std::optional<LandingSummary> {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.recipe)>, Recipe>);
         v.field ("recipe", x.recipe);
+    }
+    else if constexpr (std::is_same_v<U, LandingPass>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.achievedLufs)>, double>);
+        v.field ("achievedLufs", x.achievedLufs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ceilingDbTp)>, double>);
+        v.field ("ceilingDbTp", x.ceilingDbTp);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ceilingSafe)>, bool>);
+        v.field ("ceilingSafe", x.ceilingSafe);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.gainDb)>, double>);
+        v.field ("gainDb", x.gainDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.limiterMaxReductionDb)>, double>);
+        v.field ("limiterMaxReductionDb", x.limiterMaxReductionDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.truePeakDbTp)>, double>);
+        v.field ("truePeakDbTp", x.truePeakDbTp);
+    }
+    else if constexpr (std::is_same_v<U, LandingSummary>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.achievedLufs)>, std::optional<double>>);
+        v.field ("achievedLufs", x.achievedLufs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.deliverable)>, bool>);
+        v.field ("deliverable", x.deliverable);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.distanceLu)>, std::optional<double>>);
+        v.field ("distanceLu", x.distanceLu);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.limiterMeanReductionDb)>, std::optional<double>>);
+        v.field ("limiterMeanReductionDb", x.limiterMeanReductionDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.log)>, std::span<const LandingPass>>);
+        v.field ("log", x.log);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.mainReason)>, LandingReason>);
+        v.field ("mainReason", x.mainReason);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.missLu)>, std::optional<double>>);
+        v.field ("missLu", x.missLu);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.passes)>, std::uint32_t>);
+        v.field ("passes", x.passes);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.secondReason)>, LandingReason>);
+        v.field ("secondReason", x.secondReason);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sourcePresenceShare)>, std::optional<double>>);
+        v.field ("sourcePresenceShare", x.sourcePresenceShare);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sourceSubBassShare)>, std::optional<double>>);
+        v.field ("sourceSubBassShare", x.sourceSubBassShare);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.status)>, LandingStatus>);
+        v.field ("status", x.status);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.truePeakDbTp)>, std::optional<double>>);
+        v.field ("truePeakDbTp", x.truePeakDbTp);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.workUnits)>, std::uint64_t>);
+        v.field ("workUnits", x.workUnits);
     }
     else if constexpr (std::is_same_v<U, Layers<LimiterFields>>)
     {

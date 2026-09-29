@@ -7,10 +7,12 @@
 #include <felitronics/session/Project.h>
 #include <felitronics/session/Events.h>
 #include <felitronics/session/Measurements.h>
+#include <felitronics/session/LandingResult.h>
 #include <felitronics/session/Queries.h>
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <cstddef>
 #include <span>
 #include <string_view>
@@ -88,6 +90,7 @@ struct Kept
 {
     MasterId id = 0;
     Recipe recipe {};
+    std::optional<LandingSummary> landing;
 };
 
 // The source a load gave, as the session holds it. The name and the samples live in the session until a different source is loaded.

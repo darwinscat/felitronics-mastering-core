@@ -281,18 +281,10 @@ static void testSolveAndRangeAreTheComposition()
         ok (sg.status == so.status && sg.preLimiterGainDb == so.preLimiterGainDb && sg.ceilingDbTp == so.ceilingDbTp
             && sg.passes == so.passes && sg.passes > 0, tag + "the search's verdict is the hand composition's");
         ok (bitDiff (oracle, got) == 0, tag + "and so is its delivered audio, bit for bit");
-        const long long traceBytes = 2LL * (long long) GainReductionTrace::bytesFor (req.grTraceBuckets, (int) d);
-        // The THREE quantile histograms the solution keeps — the compressor's, the limiter's and the
-        // limiter's gated one — a ONE-TIME allocation of the first render, like the traces.
-        const long long windowBytes =
-            3LL * (long long) dynamics::offline::QuantileHistogram::storageBytes (0.0, TargetLoudnessSolver::kGrRangeDb, 0.01);
-        const long long perPass = (long long) solveBudget - traceBytes - windowBytes;
-        const long long passBytes = (long long) sg.passes * perPass + traceBytes + windowBytes;
-        ok (perPass > 0 && traceBytes == 2LL * 1000LL * 32LL
-            && solveBytes >= passBytes
-            && solveBytes <= passBytes + (long long) TargetLoudnessSolver::solutionReturnBytes(),
-            tag + "the search allocates passes x its meters, traces, histograms and declared result return ("
-                  + std::to_string (solveBytes) + " against " + std::to_string (passBytes) + ")");
+        ok (solveBytes >= (long long) solveBudget
+            && solveBytes <= (long long) DeliveredMastering::solveCallBytes (pr.a, pr.b, kNch, n, req.grTraceBuckets),
+            tag + "the search reuses one meter set, traces and histograms inside the declared call budget ("
+                  + std::to_string (solveBytes) + " against " + std::to_string (solveBudget) + ")");
     }
 
     // THE RANGE IS JUDGED ON THE DELIVERED LENGTH, with nothing converted on the way to a refusal.

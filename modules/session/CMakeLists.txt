@@ -15,6 +15,7 @@ add_library(felitronics_session STATIC ${FELITRONICS_SESSION_SOURCES})
 add_library(felitronics::session ALIAS felitronics_session)
 target_include_directories(felitronics_session PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(felitronics_session PUBLIC cxx_std_20)
+target_link_libraries(felitronics_session PUBLIC felitronics::mastering)
 
 # THE CONFIG — config/targets.toml and config/engine.toml, compiled into the library as constexpr data by felitronics-toml's
 # felitronics_toml_embed: nothing reads a file at run time. A document that does not parse stops the build at its line and
@@ -311,6 +312,7 @@ if(FELITRONICS_BUILD_TESTS)
     foreach(licence contract fastmath)
         if(MSVC AND licence STREQUAL "contract")
             add_library(fs_hostile_contract OBJECT EXCLUDE_FROM_ALL ${FELITRONICS_SESSION_SOURCES})
+            target_link_libraries(fs_hostile_contract PRIVATE felitronics::mastering)
             target_include_directories(fs_hostile_contract PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
             felitronics_session_config_inputs(fs_hostile_contract)
             target_compile_features(fs_hostile_contract PRIVATE cxx_std_20)
@@ -321,6 +323,7 @@ if(FELITRONICS_BUILD_TESTS)
             continue()
         endif()
         add_library(felitronics_session_hostile_${licence} OBJECT ${FELITRONICS_SESSION_SOURCES})
+        target_link_libraries(felitronics_session_hostile_${licence} PRIVATE felitronics::mastering)
         target_include_directories(felitronics_session_hostile_${licence} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
         felitronics_session_config_inputs(felitronics_session_hostile_${licence})
         target_compile_features(felitronics_session_hostile_${licence} PRIVATE cxx_std_20)
@@ -375,6 +378,10 @@ if(FELITRONICS_BUILD_TESTS)
     add_test(NAME felitronics_session_config_decisions_tests
              COMMAND felitronics_session_config_decisions_tests ${FELITRONICS_SESSION_CONFIG}/targets.toml
                                                                 ${FELITRONICS_SESSION_CONFIG}/engine.toml)
+
+    add_executable(felitronics_session_landing_plan_tests tests/LandingPlanTests.cpp)
+    target_link_libraries(felitronics_session_landing_plan_tests PRIVATE felitronics::session felitronics::test_support)
+    add_test(NAME felitronics_session_landing_plan_tests COMMAND felitronics_session_landing_plan_tests)
 
     # THE TEXT: the renderer and its rules — rounding on the decimal grid, the formatting table in every language, CLDR
     # plural categories on the printed number, the parser — the gate's controls in-process, the demand of text(), and one

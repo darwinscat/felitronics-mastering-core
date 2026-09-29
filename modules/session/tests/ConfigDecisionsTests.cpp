@@ -46,7 +46,7 @@ struct Golden
     std::uint64_t sound;
 };
 constexpr Golden kGolden[] = {
-    { "2026-09", 0xb0fb0ddeed3fe5d1ull },
+    { "2026-09", 0xf49360664b45a789ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -139,7 +139,9 @@ std::vector<std::string> departures (const config::Config& c)
     need (same (e.input.referenceLufs, -18.0), "the input is brought to −18 LUFS before the chain");
     need (same (e.input.quietWarningLufs, -40.0) && same (e.input.quietGainOnlyLufs, -55.0),
           "a quiet input: a warning below −40 LUFS, gain and ceiling only below −55");
-    need (e.landing.passes == std::vector<std::int32_t> { 12, 24, 32 }, "the landing: series of 12, 24 and 32 passes");
+    need (e.landing.passes == 12, "the landing: one budget of 12 passes");
+    need (e.landing.truePeakAimDb == 0.05 && e.limiter.ceilingMarginDb == 0.15,
+          "the true-peak aim and initial limiter margin are separate decisions");
     need (same (e.hpf.hzMax, 50.0), "the high-pass tops out at 50 Hz, the machine's and the knob's");
     need (same (e.hpf.hzMin, 15.0), "the high-pass knob starts at 15 Hz");
     need (e.hpf.slopes == std::vector<std::int32_t> { 12, 24, 48 }, "the high-pass slopes are 12, 24 and 48 dB/oct");
@@ -216,7 +218,7 @@ void aDepartureIsNamed()
         { false, "hzMax = 50", "hzMax = 51", "the high-pass tops out at 50 Hz, the machine's and the knob's" },
         { false, "hzMax = 50", "hzMax = 60", "the high-pass tops out at 50 Hz, the machine's and the knob's" },
         { false, "slopes = [12, 24, 48]", "slopes = [12, 24, 36]", "the high-pass slopes are 12, 24 and 48 dB/oct" },
-        { false, "passes = [12, 24, 32]", "passes = [12, 24, 40]", "the landing: series of 12, 24 and 32 passes" },
+        { false, "passes = 12", "passes = 11", "the landing: one budget of 12 passes" },
         { true, "noteLossDb = 0.3", "noteLossDb = 0.5", "targets.club.noteLossDb" },
         { true, "lufs = -7,", "lufs = -8,", "targets.youtubeMusic.lufs" },
         { true, "noteLossDb = 0.3, sampleRate = 0, bitDepth = 24, hpfAlways = true }",

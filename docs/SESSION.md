@@ -138,7 +138,7 @@ The library reports the releases it was built from — `Session::version()` (thi
 Every number the session decides, measures, renders and reports with lives in two TOML documents of the module:
 `config/targets.toml`, the targets — the loudness and ceiling a person picks, the physics of the medium that come with
 them, the delivery format — and `config/engine.toml`, every other number: the input's reference and its quiet
-thresholds, the landing's series, the devices' travels and rules, the observations' thresholds, what a master's cost is
+thresholds, the landing's twelve-pass budget, the devices' travels and rules, the observations' thresholds, what a master's cost is
 measured with (as measured, without a verdict), the progress weights. What each number means and where it came from is
 written beside it, as a comment; a number the owner decided says so. The sound depends on no default of the core's:
 every stage a device writes is named, the limiter's second release included.
@@ -168,7 +168,7 @@ every stage a device writes is named, the limiter's second release included.
   the documents and require the gate to go red at that spot, after it passed the copy without the plant; the config
   suite plants over sixty more in-process, every input a review found the schema accepting among them.
 - **The owner's decisions are held apart** (`tests/ConfigDecisionsTests.cpp`): every target row field by field and the
-  engine's decided numbers — the landing's series, the high-pass knob's travel and slopes and comfort window, the
+  engine's decided numbers — the landing's one budget, tolerance and true-peak aim, the high-pass knob's travel and slopes and comfort window, the
   wide-bass warning, the quiet thresholds, the peak clipper's classes, the glue slider (0…3 dB, step 0.1; accepted domain 0…6 dB) with its default of none, 0.5 dB when ticked and 2.6 dB on cd, the mono-bass block, the delivery rates, and the rest. The schema would admit another number where the physics allows;
   this suite says which number was decided, so changing one is a deliberate edit of it. Its controls plant departures
   the schema admits (a high-pass top of 51 or 60 Hz, a slope of 36, another series, another target number or rate, glue
@@ -517,6 +517,20 @@ session compares or prints one.
 
 The mastering render's source-rate conversion, chain latency, drain, and preparation cursors are specified in
 [Resumable delivery render](RESUMABLE-RENDER.md). The session's master job can drive that API within its work-unit pump.
+
+`LandingSearch` keeps one search across calls. It first surveys source spectrum and crest in bounded units, then
+renders and measures up to twelve candidates. A measured hit stops immediately. Every render is logged; an exhausted
+budget returns the closest ceiling-safe PCM and its measured miss, or `Unavailable` when none is safe. The search
+can pause during SRC, rendering, metering, band statistics, gates, the final PCM copy and independent remeasurement.
+`TargetLoudnessSolver::solve()` drives this same path when `LoudnessRequest::productLanding` is set. Its older
+request policy remains available for existing callers. `LandingSearch::storageFor()` includes its safe PCM copy,
+retained result workspaces and pass meters, in addition to the chain and converter preparations. `LandingOps::plan()`
+sets the source normalization toward −18 LUFS separately from the adjustable pre-limiter gain; a delivery-rate
+change requests one extra source-rate impact pass outside the twelve landing renders.
+
+`LandingSummary` carries status, achieved LUFS, signed miss, absolute distance, reference true peak, measured
+source and limiter hints, work units and the ordered pass log. `Kept::landing` is optional in the generated session
+codec so older v1 snapshots decode without a landing. Its pass rows are owned by `Snapshot`.
 
 `Session::step(budget)` runs live loudness, source clipping, the programme report, waveform, source analyzers, needles, and mastering. The budget counts **work units**, never milliseconds. A call
 consumes at most `min(budget, 16)` units, reports the number consumed, and returns `More` while any job remains or

@@ -16,9 +16,11 @@
 #include <felitronics/mastering/Progress.h>
 
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <utility>
 #include <array>
 #include <vector>
@@ -27,6 +29,7 @@
 
 namespace felitronics::mastering
 {
+class LandingSearch;
 
 //==============================================================================
 // felitronics::mastering::TargetLoudnessSolver — hit a target integrated loudness with a stated true-peak
@@ -192,7 +195,13 @@ enum class MasteringSolveStatus
     RenderFailed,           // the chain or the renderer refused a call
     NotPrepared,
     InvalidRequest,
-    Cancelled
+    Cancelled,
+    Unavailable             // no measured render holds the delivered true-peak ceiling
+};
+
+enum class LandingReason : std::uint8_t
+{
+    None, ExcessSubBass, SharpPeaks, DarkMix, LoudnessDemand, GainRange, TruePeak
 };
 
 // The pass budget's ceiling, named here because `LoudnessSolution` carries an array of that length and
@@ -706,6 +715,8 @@ struct LoudnessRequest
     // rates where the cheap meter stops interpolating — so a render the solver called feasible was delivered
     // above its promise. No margin fixes that, because the disagreement is the material's: see measure().
     double truePeakAimDb   =   0.05;
+    double normalizationGainDb = 0.0;    // source-to--18 LUFS trim, before the chain; separate from the search gain
+    bool productLanding = false;         // one resumable budget, selected by Session
 
     // Constraints. A target that needs one of these broken is REFUSED with the name, not forced through.
     GainReductionLimit limiterGr    {};                                              // off by default
@@ -802,6 +813,16 @@ struct LoudnessSolution
 
     double preLimiterGainDb = 0.0;              // what was applied to produce the delivered render
     double ceilingDbTp      = 0.0;              // ... and the ceiling the limiter was actually given
+    bool deliverable = false;                   // true only for a verified, ceiling-safe landing
+    double achievedLufs = std::numeric_limits<double>::quiet_NaN();
+    double missLu = std::numeric_limits<double>::quiet_NaN();
+    double distanceLu = std::numeric_limits<double>::quiet_NaN();
+    double sourceSubBassShare = std::numeric_limits<double>::quiet_NaN();
+    double sourcePresenceShare = std::numeric_limits<double>::quiet_NaN();
+    double limiterMeanReductionDb = std::numeric_limits<double>::quiet_NaN();
+    double normalizationGainDb = 0.0;
+    std::uint64_t workUnits = 0;
+    LandingReason mainReason = LandingReason::None, secondReason = LandingReason::None;
     MasterMeasurement measured {};              // of the DELIVERED render, always — never of a probe
     // The armed (band, lane) pairs of THIS solve, in band-then-lane order. Only armed pairs appear;
     // `bandGrFor` returns nullptr for the rest, which the ABI turns into the refusal that says WHY.
@@ -865,6 +886,12 @@ struct LoudnessSolution
         return (lim ? limiterGrWindows : compressorGrWindows).quantile (q, outDb);
     }
 };
+
+class TargetLoudnessSolver;
+inline LoudnessSolution solveProductLanding (TargetLoudnessSolver& solver, MasteringChain& chain,
+    OfflineRenderer& renderer, const MasteringChainParams& params, const float* const* source,
+    float* const* out, int channels, int frames, const LoudnessRequest& request,
+    const ProgressCallback& progress, DeliveryConverter* converter, long long sourceFrames);
 
 class TargetLoudnessSolver
 {
@@ -1017,9 +1044,8 @@ public:
     }
 
     // Working storage alone; solveCallBytes() below includes the result's construction and return.
-    // solve(): its PEAK. Every pass builds a loudness meter and the reference true-peak meter and frees them at the
-    // pass's end, so the peak is ONE pass. (The drain used to be a buffer of zeros the first solve allocated and later
-    // ones reused; the reference meter drains from its own fixed array, so there is nothing left over.) 0 for a length
+    // solve(): its PEAK. The pass workspace retains the loudness and reference true-peak meters through every render,
+    // so their storage is charged once. The reference meter drains from its own fixed array. 0 for a length
     // or a channel count solve() refuses before any pass.
     // Plus the solution's two traces of `grTraceBuckets` buckets and its THREE quantile histograms — the two
     // the limits are judged on and the limiter's gated one — which the first render allocates; 0 for a
@@ -1111,6 +1137,9 @@ public:
                             int numChannels, int frames, const LoudnessRequest& req,
                             const ProgressCallback& progress)
     {
+        if (req.productLanding)
+            return solveProductLanding (*this, chain, renderer, params, in, out, numChannels, frames,
+                                        req, progress, deliveryConverter_, deliveryFrames_);
         LoudnessSolution sol;
         sol.activityThresholdDb = req.activityThresholdDb;
         if (! admits (chain, renderer, numChannels, frames, req, sol.status)) return sol;
@@ -2137,9 +2166,326 @@ private:
         return v;
     }
 
+    struct PassWorkspace
+    {
+        struct Armed { int band = 0, lane = 0; };
+        enum class Phase { Setup, Render, MeterSetup, Meter, FinishDrain, FinishBands,
+                           FinishStats, FinishGate, FinishRange, FinishComplete, Done, Failed };
+        Phase phase = Phase::Setup;
+        StepResult conversion = StepResult::More;
+        MasteringChain* chain = nullptr;
+        OfflineRenderer* renderer = nullptr;
+        const MasteringChainParams* params = nullptr;
+        const float* const* in = nullptr;
+        float* const* out = nullptr;
+        int nch = 0, frames = 0, measured = 0;
+        std::size_t finishBand = 0;
+        long long work = 0;
+        int meterFrames = 0, meterChannels = 0;
+        double meterRate = 0.0;
+        const LoudnessRequest* req = nullptr;
+        MasterMeasurement* measurement = nullptr;
+        LoudnessSolution* solution = nullptr;
+        ProgressClock* clock = nullptr;
+        bool finishCheckpoints = false;
+        const float* converted[core::kMaxChannels] {};
+        std::vector<Armed> armed;
+        std::vector<dynamics::offline::QuantileHistogram> bandWholeH, bandActiveH;
+        std::vector<GainReductionSummariser> bandWhole;
+        std::vector<ActiveWindowGrSummariser> bandActive;
+        std::vector<std::pair<int, int>> armedPairs;
+        std::vector<GainReductionTraceBuilder> bandTrace;
+        std::optional<GainReductionSummariser> compSum, limSum;
+        std::optional<ActiveWindowGrSummariser> limActive;
+        std::optional<GainReductionTraceBuilder> compTrace, limTrace;
+        MasteringChainTaps taps {};
+        analysis::LoudnessMeter lm;
+        analysis::ReferenceTruePeakMeter tm;
+    };
+
+    void consumePassTaps (PassWorkspace& p, const MasteringChainTaps& t, long long tapPos) noexcept
+    {
+        const MasteringChainResolved r = p.chain->resolved();
+        const long long compFrom = r.compressorTapOffset, compTo = compFrom + p.frames;
+        const long long limFrom = r.limiterTapOffset, limTo = limFrom + p.frames;
+        const long long bandK = r.internalBlock > 0 ? r.internalBlock : 1;
+        for (int q = 0; q < t.bandQuantaWritten && t.bandDeltaDb != nullptr; ++q)
+        {
+            const float* row = t.bandDeltaDb + (std::size_t) q * (std::size_t) kBandGrStride;
+            for (std::size_t k = 0; k < p.armed.size(); ++k)
+            {
+                const double d = std::fabs ((double) row[(std::size_t) bandGrIndex (p.armed[k].band, p.armed[k].lane)]);
+                p.bandWhole[k].add (d);
+                p.bandActive[k].add (d, d);
+                p.bandTrace[k].add ((std::uint64_t) std::max (0LL, tapPos + (long long) q * bandK), d);
+            }
+        }
+        for (int j = 0; j < t.framesWritten; ++j)
+        {
+            const long long s = tapPos + j;
+            if (s >= compFrom && s < compTo)
+            {
+                const double a = std::fabs ((double) compTap_[(std::size_t) j]);
+                p.compSum->add (a);
+                p.compTrace->add ((std::uint64_t) (s - compFrom), a);
+            }
+            if (s >= limFrom && s < limTo)
+                for (int k = 0; k < p.chain->tapOversampleFactor(); ++k)
+                {
+                    const std::size_t idx = (std::size_t) j * (std::size_t) p.chain->tapOversampleFactor() + (std::size_t) k;
+                    const double a = std::fabs ((double) limTap_[idx]);
+                    p.limSum->add (a);
+                    const float pk = limPeak_[idx];
+                    p.limActive->add (a, (double) pk);
+                    if (pk > maxReconLin_) maxReconLin_ = pk;
+                    p.limTrace->add ((std::uint64_t) (s - limFrom), a);
+                }
+        }
+    }
+
+    bool beginPass (MasteringChain& chain, OfflineRenderer& renderer, const MasteringChainParams& params,
+                    const float* const* in, float* const* out, int nch, int frames,
+                    const LoudnessRequest& req, MasterMeasurement& m, LoudnessSolution& sol, ProgressClock& clock,
+                    bool finishCheckpoints = false)
+    {
+        if (! pass_) pass_.emplace();
+        PassWorkspace& p = *pass_;
+        p.phase = PassWorkspace::Phase::Setup;
+        p.conversion = StepResult::More;
+        p.chain = &chain; p.renderer = &renderer; p.params = &params;
+        p.in = in; p.out = out; p.nch = nch; p.frames = frames; p.measured = 0; p.work = 0;
+        p.req = &req; p.measurement = &m; p.solution = &sol; p.clock = &clock;
+        p.finishCheckpoints = finishCheckpoints;
+        return true;
+    }
+
+    [[nodiscard]] StepResult stepPass (long long budget)
+    {
+        if (! pass_ || budget < 0) return StepResult::Failed;
+        PassWorkspace& p = *pass_;
+        using Phase = PassWorkspace::Phase;
+        if (p.phase == Phase::Done) return StepResult::Done;
+        if (p.phase == Phase::Failed) return StepResult::Failed;
+        if (budget == 0) return StepResult::More;
+        if (p.phase == Phase::Setup)
+        {
+            maxReconLin_ = 0.0f;
+            p.armed.clear();
+            for (int b = 0; b < kBandGrBands; ++b)
+            {
+                const eq::BandParams& bpar = p.params->eqBands[(std::size_t) b];
+                const BandGrAbsence bandWhy = ! bpar.dyn.on ? BandGrAbsence::NotDynamic
+                    : ! (std::fabs (bpar.dyn.rangeDb) > 0.0) ? BandGrAbsence::Inert : BandGrAbsence::Armed;
+                for (int l = 0; l < kBandGrLanes; ++l)
+                {
+                    const BandGrAbsence why = bandWhy != BandGrAbsence::Armed ? bandWhy
+                        : (bpar.lanes[(std::size_t) l].on ? BandGrAbsence::Armed : BandGrAbsence::LaneOff);
+                    p.solution->bandGrAbsence[(std::size_t) bandGrIndex (b, l)] = why;
+                    if (why == BandGrAbsence::Armed) p.armed.push_back ({ b, l });
+                }
+            }
+            p.bandWholeH.resize (p.armed.size()); p.bandActiveH.resize (p.armed.size());
+            p.bandWhole.clear(); p.bandActive.clear(); p.armedPairs.clear(); p.bandTrace.clear();
+            p.bandWhole.reserve (p.armed.size()); p.bandActive.reserve (p.armed.size());
+            p.armedPairs.reserve (p.armed.size()); p.bandTrace.reserve (p.armed.size());
+            const int bandK = p.chain->resolved().internalBlock;
+            const long long bandWin = grQuantileWindowSamples (fs_ / (double) (bandK > 0 ? bandK : 1));
+            for (std::size_t i = 0; i < p.armed.size(); ++i)
+            {
+                if (! p.bandWholeH[i].prepare (0.0, kBandGrRangeDb, 0.01)
+                    || ! p.bandActiveH[i].prepare (0.0, kBandGrRangeDb, 0.01))
+                    { p.phase = Phase::Failed; return StepResult::Failed; }
+                p.bandWhole.emplace_back (p.bandWholeH[i], bandWin, 0.0);
+                p.bandActive.emplace_back (p.bandActiveH[i], bandWin, 0.0,
+                    -std::numeric_limits<double>::infinity());
+                p.armedPairs.emplace_back (p.armed[i].band, p.armed[i].lane);
+            }
+            p.compSum.emplace (compHist_, grQuantileWindowSamples (fs_), p.req->activityThresholdDb);
+            p.limSum.emplace (limHist_, grQuantileWindowSamples (fs_ * (double) p.chain->tapOversampleFactor()),
+                              p.req->activityThresholdDb);
+            p.limActive.emplace (limActiveHist_, grQuantileWindowSamples (fs_ * (double) p.chain->tapOversampleFactor()),
+                                 p.req->activityThresholdDb, p.req->limiterActiveInputDb);
+            p.compTrace.emplace (p.solution->compressorTrace, p.frames, p.req->grTraceBuckets);
+            p.limTrace.emplace (p.solution->limiterTrace, p.frames, p.req->grTraceBuckets);
+            p.solution->compressorGrWindows.reset(); p.solution->limiterGrWindows.reset();
+            p.solution->limiterActiveGrWindows.reset(); p.solution->limiterActive = ActiveGainReductionStats {};
+            p.solution->bandGr.clear(); p.solution->bandGr.resize (p.armed.size());
+            for (std::size_t i = 0; i < p.armed.size(); ++i)
+                p.bandTrace.emplace_back (p.solution->bandGr[i].trace, p.frames, p.req->grTraceBuckets);
+            p.taps = MasteringChainTaps {};
+            p.taps.compressorGrDb = compTap_.data(); p.taps.frameCapacity = frameCap_;
+            p.taps.limiterGrDb = limTap_.data(); p.taps.limiterPeakLin = limPeak_.data(); p.taps.osCapacity = osCap_;
+            if (! p.armed.empty())
+                { p.taps.bandDeltaDb = bandTap_.data(); p.taps.bandQuantaCapacity = bandQuantaCap_; }
+            const float* const* renderInput = p.in;
+            if (deliveryConverter_ != nullptr)
+            {
+                if (! deliveryConverter_->begin (deliverySource_, p.nch, deliveryFrames_, p.out, p.frames))
+                    { p.phase = Phase::Failed; return StepResult::Failed; }
+                for (int c = 0; c < p.nch; ++c) p.converted[c] = p.out[c];
+                renderInput = p.converted;
+            }
+            if (! p.renderer->begin (*p.chain, renderInput, p.out, p.nch, p.frames, p.taps))
+                { p.phase = Phase::Failed; return StepResult::Failed; }
+            p.phase = Phase::Render;
+            --budget; ++p.work;
+        }
+        if (budget == 0) return StepResult::More;
+        if (p.phase == Phase::Render)
+        {
+            auto sink = [this, &p] (const MasteringChainTaps& taps, long long pos) noexcept
+                { consumePassTaps (p, taps, pos); };
+            while (budget > 0)
+            {
+                if (deliveryConverter_ != nullptr && p.conversion == StepResult::More)
+                {
+                    const long long workBefore = deliveryConverter_->workFrames();
+                    const long long readBefore = deliveryConverter_->readFrames();
+                    p.conversion = deliveryConverter_->step (std::min<long long> (budget,
+                        p.clock->piece (p.renderer->blockSize())));
+                    if (p.conversion == StepResult::Failed) { p.phase = Phase::Failed; return StepResult::Failed; }
+                    const long long conversionWork = deliveryConverter_->workFrames() - workBefore;
+                    budget -= conversionWork; p.work += conversionWork;
+                    if (! p.clock->advance (deliveryConverter_->readFrames() - readBefore))
+                        { p.phase = Phase::Failed; return StepResult::Failed; }
+                }
+                if (budget == 0) return StepResult::More;
+                const long long before = p.renderer->processedFrames();
+                const long long available = deliveryConverter_ == nullptr ? p.frames : deliveryConverter_->writtenFrames();
+                const StepResult rendered = p.renderer->step (*p.chain, p.taps, sink, budget, available, p.clock);
+                if (rendered == StepResult::Failed) { p.phase = Phase::Failed; return StepResult::Failed; }
+                const long long renderWork = p.renderer->processedFrames() - before;
+                budget -= renderWork; p.work += renderWork;
+                if (rendered == StepResult::Done)
+                {
+                    if (deliveryConverter_ != nullptr && ! deliveryConverter_->finish())
+                        { p.phase = Phase::Failed; return StepResult::Failed; }
+                    if (! p.renderer->finish()) { p.phase = Phase::Failed; return StepResult::Failed; }
+                    p.phase = Phase::MeterSetup;
+                    break;
+                }
+                if (budget == 0) return StepResult::More;
+                if (p.renderer->processedFrames() == before
+                    && (deliveryConverter_ == nullptr || p.conversion == StepResult::Done))
+                    { p.phase = Phase::Failed; return StepResult::Failed; }
+            }
+        }
+        if (budget == 0) return StepResult::More;
+        if (p.phase == Phase::MeterSetup)
+        {
+            if (p.meterFrames == p.frames && p.meterChannels == p.nch && core::exactlyEqual (p.meterRate, fs_))
+                { p.lm.reset(); p.tm.reset(); }
+            else
+            {
+                if (! p.lm.prepareForSamples (fs_, p.nch, meterSamples (p.frames, fs_))
+                    || ! p.tm.prepare (fs_, p.frames > 0 ? p.frames : 1, p.nch))
+                    { p.phase = Phase::Failed; return StepResult::Failed; }
+                p.meterFrames = p.frames; p.meterChannels = p.nch; p.meterRate = fs_;
+            }
+            for (int c = 0; c < p.nch; ++c) p.lm.setChannelWeight (c, weights_[c]);
+            p.measured = 0; p.phase = Phase::Meter; --budget; ++p.work;
+        }
+        if (budget == 0) return StepResult::More;
+        if (p.phase == Phase::Meter)
+        {
+            while (p.measured < p.frames && budget > 0)
+            {
+                const int n = (int) std::min<long long> (std::min<long long> (budget, p.frames - p.measured),
+                                                           p.clock->piece (p.renderer->blockSize()));
+                const float* planes[core::kMaxChannels] {};
+                for (int c = 0; c < p.nch; ++c) planes[c] = p.out[c] + p.measured;
+                if (! p.lm.process (planes, p.nch, n) || ! p.tm.process (planes, p.nch, n))
+                    { p.phase = Phase::Failed; return StepResult::Failed; }
+                p.measured += n; budget -= n; p.work += n;
+                if (! p.clock->advance (n)) { p.phase = Phase::Failed; return StepResult::Failed; }
+            }
+            if (p.measured == p.frames) p.phase = Phase::FinishDrain;
+        }
+        if (budget == 0) return StepResult::More;
+        if (p.phase == Phase::FinishDrain)
+        {
+            p.tm.drain(); p.finishBand = 0;
+            p.phase = Phase::FinishBands; --budget; ++p.work;
+            if (p.finishCheckpoints && ! p.clock->checkpoint()) { p.phase = Phase::Failed; return StepResult::Failed; }
+        }
+        while (budget > 0 && p.phase == Phase::FinishBands && p.finishBand < p.armed.size())
+        {
+            const std::size_t i = p.finishBand++;
+            p.bandTrace[i].finish();
+            p.solution->bandGr[i].band = p.armed[i].band;
+            p.solution->bandGr[i].lane = p.armed[i].lane;
+            p.solution->bandGr[i].whole = p.bandWhole[i].finish (0.95);
+            p.solution->bandGr[i].active = p.bandActive[i].finish (0.95);
+            --budget; ++p.work;
+            if (p.finishCheckpoints && ! p.clock->checkpoint()) { p.phase = Phase::Failed; return StepResult::Failed; }
+        }
+        if (p.phase == Phase::FinishBands && p.finishBand == p.armed.size()) p.phase = Phase::FinishStats;
+        if (budget == 0) return StepResult::More;
+        MasterMeasurement& m = *p.measurement;
+        if (p.phase == Phase::FinishStats)
+        {
+            p.compTrace->finish(); p.limTrace->finish();
+            m.latencySamples = p.chain->latencySamples();
+            m.compressor = p.compSum->finish (p.req->compressorGr.quantile);
+            m.limiter = p.limSum->finish (p.req->limiterGr.quantile);
+            p.solution->compressorGrWindows = compHist_; p.solution->limiterGrWindows = limHist_;
+            p.solution->limiterActive = p.limActive->finish (p.req->limiterGr.quantile);
+            p.solution->limiterActiveGrWindows = limActiveHist_;
+            p.phase = Phase::FinishGate; --budget; ++p.work;
+            if (p.finishCheckpoints && ! p.clock->checkpoint()) { p.phase = Phase::Failed; return StepResult::Failed; }
+        }
+        if (budget == 0) return StepResult::More;
+        if (p.phase == Phase::FinishGate)
+        {
+            m.integratedLufs = p.lm.integratedLufs();
+            p.phase = Phase::FinishRange; --budget; ++p.work;
+            if (p.finishCheckpoints && ! p.clock->checkpoint()) { p.phase = Phase::Failed; return StepResult::Failed; }
+        }
+        if (budget == 0) return StepResult::More;
+        if (p.phase == Phase::FinishRange)
+        {
+            m.loudnessRangeLu = p.lm.loudnessRangeLu();
+            p.phase = Phase::FinishComplete; --budget; ++p.work;
+            if (p.finishCheckpoints && ! p.clock->checkpoint()) { p.phase = Phase::Failed; return StepResult::Failed; }
+        }
+        if (budget == 0) return StepResult::More;
+        if (p.phase != Phase::FinishComplete) return StepResult::More;
+        m.limiterMaxReconstructedPeakDb = core::gainToDbDet ((double) maxReconLin_);
+        m.peakClipReductionMaxDb = p.chain->peakClipReductionMaxDb();
+        m.peakClipReductionP95Db = p.chain->peakClipReductionP95Db();
+        m.peakClipOccupancy = p.chain->peakClipOccupancy();
+        m.peakClipRuns = p.chain->peakClipRuns();
+        m.peakClipRunSamplesTotal = p.chain->peakClipRunSamplesTotal();
+        m.peakClipLongestRunSamples = p.chain->peakClipLongestRunSamples();
+        m.airMidEnergy = p.chain->airMidEnergy(); m.airSideEnergyBefore = p.chain->airSideEnergyBefore();
+        m.airSideEnergyAfter = p.chain->airSideEnergyAfter(); m.airWidthBefore = p.chain->airWidthBefore();
+        m.airWidthAfter = p.chain->airWidthAfter(); m.airJudgedSamples = p.chain->airJudgedSamples();
+        m.gatingBlocks = p.lm.gatingBlockCount(); m.droppedBlocks = p.lm.droppedBlocks();
+        m.nonFiniteSubHops = (int) p.lm.nonFiniteSubHops();
+        m.truePeakDbTp = peakDb (p.tm.truePeakLinear()); m.samplePeakDb = peakDb (p.tm.samplePeakLinear());
+        m.plrDb = m.truePeakDbTp - m.integratedLufs;
+        m.loudnessValid = m.gatingBlocks > 0 && m.droppedBlocks == 0 && m.nonFiniteSubHops == 0
+                       && m.integratedLufs > -120.0;
+        m.lraValid = m.loudnessValid && rangeMeasurable (p.frames, fs_);
+        p.phase = Phase::Done; ++p.work;
+        return StepResult::Done;
+    }
+
+    // Whole calls drive the same saved pass executor as stepped searches.
+    bool renderPass (MasteringChain& chain, OfflineRenderer& renderer, const MasteringChainParams& params,
+                     const float* const* in, float* const* out, int nch, int frames,
+                     const LoudnessRequest& req, MasterMeasurement& m, LoudnessSolution& sol, ProgressClock& clock)
+    {
+        if (! beginPass (chain, renderer, params, in, out, nch, frames, req, m, sol, clock)) return false;
+        StepResult result = StepResult::More;
+        while (result == StepResult::More) result = stepPass (LLONG_MAX);
+        return result == StepResult::Done;
+    }
+
+    // Saved pre-step path, retained until the differential test is complete.
     // One render, and every measurement of it. Everything here is measured on exactly the delivered
     // frames — the render is `frames` long by contract, and the drain is inside it.
-    bool renderPass (MasteringChain& chain, OfflineRenderer& renderer, const MasteringChainParams& params,
+    bool legacyRenderPass (MasteringChain& chain, OfflineRenderer& renderer, const MasteringChainParams& params,
                      const float* const* in, float* const* out, int nch, int frames,
                      const LoudnessRequest& req, MasterMeasurement& m, LoudnessSolution& sol, ProgressClock& clock)
     {
@@ -2582,6 +2928,8 @@ public:
     }
 
 private:
+    friend class LandingSearch;
+    friend struct SolverPassDifferential;
     double fs_ = 48000.0;
     int    nch_ = 0, frameCap_ = 0, osCap_ = 0;
     bool   prepared_ = false;
@@ -2590,6 +2938,7 @@ private:
     int    bandQuantaCap_ = 0;
     dynamics::offline::QuantileHistogram compHist_, limHist_, limActiveHist_;
     float  maxReconLin_ = 0.0f;
+    std::optional<PassWorkspace> pass_;
 
     DeliveryConverter* deliveryConverter_ = nullptr;
     const float* const* deliverySource_ = nullptr;
@@ -2599,3 +2948,5 @@ private:
 };
 
 } // namespace felitronics::mastering
+
+#include <felitronics/mastering/LandingSearch.h>

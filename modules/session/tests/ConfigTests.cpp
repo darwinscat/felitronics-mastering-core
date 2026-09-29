@@ -142,7 +142,7 @@ void theSchemaRefuses()
 
     // Out of a domain: its own, an item of an array, and a range another key states (the edit travel, the knob).
     mustAccept (E, "hzMax = 50", "hzMax = 500");
-    mustRefuse (E, "passes = [12, 24, 32]", "passes = [12, 0, 32]", "0", Fault::OutOfRange, "landing.passes[1]");
+    mustRefuse (E, "passes = 12", "passes = 0", "0", Fault::OutOfRange, "landing.passes");
     mustAccept (T, "lufs = -23", "lufs = -30");
     mustRefuse (T, "monoBass = 150", "monoBass = 400", "400", Fault::OutOfRange, "targets.lp.monoBass");
     mustRefuse (E, "betweenOverDb = 1.5", "betweenOverDb = 7", "7", Fault::OutOfRange, "limiter.peakClipper.betweenOverDb");
@@ -173,8 +173,7 @@ void theSchemaRefuses()
     mustRefuse (E, "{ key = \"bass5\", hz = 31 }", "{ key = \"bass4\", hz = 31 }", "\"bass4\"", Fault::Refused, "hpf.marks[2].key",
                 Refusal::Duplicate);
     mustRefuse (E, "band = 2", "band = 1", "1", Fault::Refused, "low.band", Refusal::Duplicate);
-    // ...order: ranges, series and the classes of the peak clipper.
-    mustRefuse (E, "passes = [12, 24, 32]", "passes = [12, 24, 2]", "2]", Fault::Refused, "landing.passes[2]", Refusal::OutOfOrder);
+    // ...order: ranges and the classes of the peak clipper.
     mustRefuse (E, "infraLowCrossoverHz = 30", "infraLowCrossoverHz = 120", "120", Fault::Refused, "lowEnd.infraLowCrossoverHz",
                 Refusal::OutOfOrder);
     mustRefuse (E, "dcOffset = { from = 0.001, fullAt = 0.01 }", "dcOffset = { from = 0.001, fullAt = 0.001 }", "0.001 }",

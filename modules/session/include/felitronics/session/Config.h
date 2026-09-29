@@ -111,11 +111,9 @@ struct Input
 
 struct Landing
 {
-    std::vector<std::int32_t> passes;
+    std::int32_t passes = 0;
     double toleranceLu = 0.0;
-    double overshootFreeDb = 0.0;
-    double overshootPerDb = 0.0;
-    double overshootCapDb = 0.0;
+    double truePeakAimDb = 0.0;
 };
 
 struct PeakClipper

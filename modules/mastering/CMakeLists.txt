@@ -58,6 +58,14 @@ if(FELITRONICS_BUILD_TESTS)
     target_link_libraries(felitronics_mastering_resumable_render_tests PRIVATE felitronics::mastering felitronics::test_support)
     add_test(NAME felitronics_mastering_resumable_render_tests COMMAND felitronics_mastering_resumable_render_tests)
 
+    add_executable(felitronics_mastering_landing_search_tests tests/LandingSearchTests.cpp)
+    target_link_libraries(felitronics_mastering_landing_search_tests PRIVATE felitronics::mastering felitronics::test_support)
+    add_test(NAME felitronics_mastering_landing_search_tests COMMAND felitronics_mastering_landing_search_tests)
+
+    add_executable(felitronics_mastering_solver_pass_differential_tests tests/SolverPassDifferentialTests.cpp)
+    target_link_libraries(felitronics_mastering_solver_pass_differential_tests PRIVATE felitronics::mastering felitronics::test_support)
+    add_test(NAME felitronics_mastering_solver_pass_differential_tests COMMAND felitronics_mastering_solver_pass_differential_tests)
+
     add_executable(felitronics_mastering_oracle_tests tests/MasteringOracleTests.cpp)
     target_link_libraries(felitronics_mastering_oracle_tests PRIVATE felitronics::mastering felitronics::test_support)
     target_compile_features(felitronics_mastering_oracle_tests PRIVATE cxx_std_20)
