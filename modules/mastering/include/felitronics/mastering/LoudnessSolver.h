@@ -589,10 +589,11 @@ struct BandGrResult
 // THE TRACE'S THREE STEPS, as one small object the solver's tap sink drives — public so the one path no audio can
 // reach through the solver (a non-finite tap: the chain sanitises its input) can be tested directly.
 //   * construction — before a render: bucketsFor(requested, frames) buckets, `requested` clamped to [1, kMaxBuckets],
-//     every bucket zero, `valid` false, the storage reused when it already holds that many;
+//     every bucket zero, `valid` false, the storage reused when it already holds that many; deferred construction
+//     reaches the same state through bounded stepBegin() calls before the first add();
 //   * `add(frame, a)` — per tap sample, in stream order: `a` is |GR| in dB for programme frame `frame`; it counts the
 //     sample, and either its non-finite count or its running max and SUM (the mean is divided out once, at the end);
-//   * `finish()` — after a render that ran to its end: the means, the totals, and `valid`. A render that did not run
+//   * `finish()` or bounded stepFinish() — after a render that ran to its end: the means, the totals, and `valid`. A render that did not run
 //     to its end never calls it, so its trace stays `valid == false` with whatever it had counted.
 // The bucket of a frame is found by a cursor over the boundaries floor(k·F/B), advanced as the frames arrive — one
 // division per bucket, not per sample. Frames outside [0, F) are ignored.
@@ -600,19 +601,50 @@ class GainReductionTraceBuilder
 {
 public:
     GainReductionTraceBuilder (GainReductionTrace& trace, int programmeFrames,
-                               int requestedBuckets = GainReductionTrace::kDefaultBuckets)
+                               int requestedBuckets = GainReductionTrace::kDefaultBuckets,
+                               bool deferred = false)
         : t (trace), frames (programmeFrames > 0 ? (std::uint64_t) programmeFrames : 0u)
     {
         t.buckets   = GainReductionTrace::bucketsFor (std::clamp (requestedBuckets, 1, GainReductionTrace::kMaxBuckets),
                                                       programmeFrames);
-        t.bucket.assign ((std::size_t) t.buckets, GainReductionTraceBucket {});
+        if (! deferred) t.bucket.assign ((std::size_t) t.buckets, GainReductionTraceBucket {});
         t.valid     = false;
         t.complete  = false;
         t.programmeFrames = this->frames;
         t.samples   = 0;
         t.nonFinite = 0;
         end = t.buckets > 0 ? bucketEnd (0) : 0u;
+        beginPhase = deferred ? BeginPhase::Clear : BeginPhase::Done;
     }
+
+    bool stepBegin (std::uint32_t budget) noexcept
+    {
+        while (budget > 0 && beginPhase != BeginPhase::Done)
+        {
+            if (beginPhase == BeginPhase::Clear)
+            {
+                if (t.bucket.empty()) { beginPhase = BeginPhase::Reserve; continue; }
+                t.bucket.pop_back(); ++beginUnits; --budget;
+            }
+            else if (beginPhase == BeginPhase::Reserve)
+            {
+                // There are no live elements to move when growth replaces storage.
+                t.bucket.reserve ((std::size_t) t.buckets);
+                beginPhase = BeginPhase::Fill;
+                ++beginUnits; --budget;
+            }
+            else
+            {
+                const auto count = std::min<std::size_t> ((std::size_t) t.buckets - t.bucket.size(), budget);
+                t.bucket.resize (t.bucket.size() + count);
+                beginUnits += count; budget -= std::uint32_t (count);
+                if (t.bucket.size() == (std::size_t) t.buckets) beginPhase = BeginPhase::Done;
+            }
+        }
+        return beginPhase == BeginPhase::Done;
+    }
+
+    std::size_t beginWorkUnits() const noexcept { return beginUnits; }
 
     void add (std::uint64_t frame, double a) noexcept
     {
@@ -627,22 +659,30 @@ public:
         b.meanDb += a;                                                      // a running SUM until finish()
     }
 
-    void finish() noexcept
+    bool stepFinish (std::uint32_t budget) noexcept
     {
-        std::uint64_t samples = 0, nonFinite = 0;
-        for (int i = 0; i < t.buckets; ++i)
+        if (t.complete) return true;
+        const auto limit = std::min<std::size_t> ((std::size_t) t.buckets, finishCursor + budget);
+        while (finishCursor < limit)
         {
-            GainReductionTraceBucket& b = t.bucket[(std::size_t) i];
+            GainReductionTraceBucket& b = t.bucket[finishCursor++];
             const std::uint64_t finite = b.samples - b.nonFinite;
             b.meanDb = finite > 0 ? b.meanDb / (double) finite : 0.0;
-            samples   += b.samples;
-            nonFinite += b.nonFinite;
+            finishSamples += b.samples;
+            finishNonFinite += b.nonFinite;
         }
-        t.samples   = samples;
-        t.nonFinite = nonFinite;
-        t.valid     = samples > 0 && nonFinite == 0;
-        t.complete  = true;
+        if (finishCursor == (std::size_t) t.buckets)
+        {
+            t.samples = finishSamples; t.nonFinite = finishNonFinite;
+            t.valid = finishSamples > 0 && finishNonFinite == 0;
+            t.complete = true;
+            return true;
+        }
+        return false;
     }
+
+    std::size_t finishedBuckets() const noexcept { return finishCursor; }
+    void finish() noexcept { (void) stepFinish (std::uint32_t (t.buckets)); }
 
 private:
     // bucket k's end is bucket k+1's start: floor((k+1)·F/B), so a cursor that carries it over never recomputes a start
@@ -651,6 +691,11 @@ private:
     GainReductionTrace& t;
     std::uint64_t frames;
     std::uint64_t k = 0, start = 0, end = 0;
+    enum class BeginPhase : std::uint8_t { Clear, Reserve, Fill, Done };
+    BeginPhase beginPhase = BeginPhase::Done;
+    std::size_t beginUnits = 0;
+    std::size_t finishCursor = 0;
+    std::uint64_t finishSamples = 0, finishNonFinite = 0;
 };
 
 // Everything the request asked to be told, from ONE render. The three achieved numbers are measured on
@@ -2229,7 +2274,7 @@ private:
     struct PassWorkspace
     {
         struct Armed { int band = 0, lane = 0; };
-        enum class Phase { Setup, Render, MeterSetup, Meter, FinishDrain, FinishBands,
+        enum class Phase { Setup, TraceInit, Render, MeterSetup, Meter, FinishDrain, FinishBands,
                            FinishStats, FinishGate, FinishRange, FinishComplete, Done, Failed };
         Phase phase = Phase::Setup;
         StepResult conversion = StepResult::More;
@@ -2239,7 +2284,7 @@ private:
         const float* const* in = nullptr;
         float* const* out = nullptr;
         int nch = 0, frames = 0, measured = 0;
-        std::size_t finishBand = 0;
+        std::size_t finishBand = 0, traceInit = 0, finishTrace = 0;
         long long work = 0;
         int meterFrames = 0, meterChannels = 0;
         double meterRate = 0.0;
@@ -2373,16 +2418,36 @@ private:
                               p.req->activityThresholdDb);
             p.limActive.emplace (limActiveHist_, grQuantileWindowSamples (fs_ * (double) p.chain->tapOversampleFactor()),
                                  p.req->activityThresholdDb, p.req->limiterActiveInputDb);
-            p.compTrace.emplace (p.solution->compressorTrace, p.frames, p.req->grTraceBuckets);
-            p.limTrace.emplace (p.solution->limiterTrace, p.frames, p.req->grTraceBuckets);
-            p.clipTrace.emplace (p.solution->peakClipTrace, p.frames, p.req->grTraceBuckets);
+            p.compTrace.emplace (p.solution->compressorTrace, p.frames, p.req->grTraceBuckets, true);
+            p.limTrace.emplace (p.solution->limiterTrace, p.frames, p.req->grTraceBuckets, true);
+            p.clipTrace.emplace (p.solution->peakClipTrace, p.frames, p.req->grTraceBuckets, true);
             p.solution->compressorGrWindows.reset(); p.solution->limiterGrWindows.reset();
             p.solution->limiterActiveGrWindows.reset(); p.solution->limiterActive = ActiveGainReductionStats {};
             // Resize in place: clearing first destroys every trace buffer and
             // makes each armed band allocate again on the next pass.
             p.solution->bandGr.resize (p.armed.size());
             for (std::size_t i = 0; i < p.armed.size(); ++i)
-                p.bandTrace.emplace_back (p.solution->bandGr[i].trace, p.frames, p.req->grTraceBuckets);
+                p.bandTrace.emplace_back (p.solution->bandGr[i].trace, p.frames, p.req->grTraceBuckets, true);
+            p.traceInit = 0; p.finishTrace = 0; p.phase = Phase::TraceInit;
+            --budget; ++p.work;
+        }
+        if (budget == 0) return StepResult::More;
+        if (p.phase == Phase::TraceInit)
+        {
+            const auto count = p.bandTrace.size() + 3u;
+            while (budget > 0 && p.traceInit < count)
+            {
+                auto& trace = p.traceInit == 0 ? *p.compTrace : p.traceInit == 1 ? *p.limTrace
+                    : p.traceInit == 2 ? *p.clipTrace : p.bandTrace[p.traceInit - 3u];
+                const auto before = trace.beginWorkUnits();
+                const bool done = trace.stepBegin (std::uint32_t (std::min<long long> (budget, 1024)));
+                const auto used = static_cast<long long> (trace.beginWorkUnits() - before);
+                budget -= used; p.work += used;
+                if (done) ++p.traceInit;
+                if (p.finishCheckpoints && ! p.clock->checkpoint())
+                    { p.phase = Phase::Failed; return StepResult::Failed; }
+            }
+            if (p.traceInit != count || budget == 0) return StepResult::More;
             p.taps = MasteringChainTaps {};
             p.taps.compressorGrDb = compTap_.data(); p.taps.frameCapacity = frameCap_;
             p.taps.limiterGrDb = limTap_.data(); p.taps.limiterPeakLin = limPeak_.data();
@@ -2484,12 +2549,18 @@ private:
         }
         while (budget > 0 && p.phase == Phase::FinishBands && p.finishBand < p.armed.size())
         {
-            const std::size_t i = p.finishBand++;
-            p.bandTrace[i].finish();
+            const std::size_t i = p.finishBand;
+            const auto before = p.bandTrace[i].finishedBuckets();
+            const bool done = p.bandTrace[i].stepFinish (std::uint32_t (std::min<long long> (budget, 1024)));
+            const auto used = static_cast<long long> (p.bandTrace[i].finishedBuckets() - before);
+            budget -= used; p.work += used;
+            if (p.finishCheckpoints && ! p.clock->checkpoint()) { p.phase = Phase::Failed; return StepResult::Failed; }
+            if (! done || budget == 0) break;
             p.solution->bandGr[i].band = p.armed[i].band;
             p.solution->bandGr[i].lane = p.armed[i].lane;
             p.solution->bandGr[i].whole = p.bandWhole[i].finish (0.95);
             p.solution->bandGr[i].active = p.bandActive[i].finish (0.95);
+            ++p.finishBand;
             --budget; ++p.work;
             if (p.finishCheckpoints && ! p.clock->checkpoint()) { p.phase = Phase::Failed; return StepResult::Failed; }
         }
@@ -2498,7 +2569,18 @@ private:
         MasterMeasurement& m = *p.measurement;
         if (p.phase == Phase::FinishStats)
         {
-            p.compTrace->finish(); p.limTrace->finish(); p.clipTrace->finish();
+            while (budget > 0 && p.finishTrace < 3u)
+            {
+                auto& trace = p.finishTrace == 0 ? *p.compTrace : p.finishTrace == 1 ? *p.limTrace : *p.clipTrace;
+                const auto before = trace.finishedBuckets();
+                const bool done = trace.stepFinish (std::uint32_t (std::min<long long> (budget, 1024)));
+                const auto used = static_cast<long long> (trace.finishedBuckets() - before);
+                budget -= used; p.work += used;
+                if (done) ++p.finishTrace;
+                if (p.finishCheckpoints && ! p.clock->checkpoint())
+                    { p.phase = Phase::Failed; return StepResult::Failed; }
+            }
+            if (p.finishTrace != 3u || budget == 0) return StepResult::More;
             m.latencySamples = p.chain->latencySamples();
             m.compressor = p.compSum->finish (p.req->compressorGr.quantile);
             m.limiter = p.limSum->finish (p.req->limiterGr.quantile);

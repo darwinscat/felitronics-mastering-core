@@ -7,13 +7,62 @@
 #include "DeclaredBudget.h"
 
 #include <cmath>
+#include <bit>
+#include <algorithm>
 #include <limits>
 #include <string>
+#include <vector>
 
 using namespace felitronics::session;
 namespace test = felitronics::test;
 namespace mastering = felitronics::mastering;
 namespace budget = felitronics::session::testing;
+
+// The trace constructor/add/finish path from 42fa0e8, kept independent of the
+// cursor implementation so their common arithmetic cannot hide a regression.
+struct PreviousTraceBuilder
+{
+    mastering::GainReductionTrace& t;
+    std::uint64_t frames, k = 0, start = 0, end = 0;
+    PreviousTraceBuilder (mastering::GainReductionTrace& trace, int programmeFrames, int requested)
+        : t (trace), frames (programmeFrames > 0 ? std::uint64_t (programmeFrames) : 0u)
+    {
+        t.buckets = mastering::GainReductionTrace::bucketsFor (
+            std::clamp (requested, 1, mastering::GainReductionTrace::kMaxBuckets), programmeFrames);
+        t.bucket.assign (std::size_t (t.buckets), mastering::GainReductionTraceBucket {});
+        t.valid = false; t.complete = false; t.programmeFrames = frames;
+        t.samples = 0; t.nonFinite = 0;
+        end = t.buckets > 0 ? bucketEnd (0) : 0u;
+    }
+    std::uint64_t bucketEnd (std::uint64_t i) const noexcept
+    { return (i + 1u) * frames / std::uint64_t (t.buckets); }
+    void add (std::uint64_t frame, double a) noexcept
+    {
+        if (t.buckets <= 0 || frame >= frames) return;
+        if (frame < start) { k = 0; start = 0; end = bucketEnd (0); }
+        while (frame >= end && k + 1u < std::uint64_t (t.buckets))
+        { ++k; start = end; end = bucketEnd (k); }
+        auto& b = t.bucket[std::size_t (k)];
+        ++b.samples;
+        if (! std::isfinite (a)) { ++b.nonFinite; return; }
+        if (b.samples - b.nonFinite == 1 || a < b.minDb) b.minDb = a;
+        if (a > b.maxDb) b.maxDb = a;
+        b.meanDb += a;
+    }
+    void finish() noexcept
+    {
+        std::uint64_t samples = 0, nonFinite = 0;
+        for (int i = 0; i < t.buckets; ++i)
+        {
+            auto& b = t.bucket[std::size_t (i)];
+            const auto finite = b.samples - b.nonFinite;
+            b.meanDb = finite > 0 ? b.meanDb / double (finite) : 0.0;
+            samples += b.samples; nonFinite += b.nonFinite;
+        }
+        t.samples = samples; t.nonFinite = nonFinite;
+        t.valid = samples > 0 && nonFinite == 0; t.complete = true;
+    }
+};
 
 int main()
 {
@@ -192,5 +241,96 @@ int main()
               && partial.peakClipTrace->rows[0].maxDb == 1.5
               && partial.peakClipTrace->rows[0].meanDb == 1.0,
               "cancelled rows name their incompleteness and retain a real partial mean");
+    mastering::LoudnessSolution longSolution = solution;
+    longSolution.status = mastering::MasteringSolveStatus::Solved;
+    constexpr std::size_t longBuckets = 65536;
+    for (auto* trace : { &longSolution.limiterTrace, &longSolution.peakClipTrace })
+    {
+        trace->buckets = int (longBuckets);
+        trace->programmeFrames = longBuckets;
+        trace->bucket.resize (longBuckets);
+        trace->complete = trace->valid = true;
+        trace->samples = longBuckets; trace->nonFinite = 0;
+        for (std::size_t i = 0; i < longBuckets; ++i)
+        {
+            trace->bucket[i].samples = 1;
+            trace->bucket[i].meanDb = double (i % 7u);
+            trace->bucket[i].minDb = trace->bucket[i].maxDb = trace->bucket[i].meanDb;
+        }
+    }
+    LandingPass wholePass[1] {}, slicedPass[1] {};
+    std::vector<LandingTraceBucket> wholeLim (longBuckets), wholeClip (longBuckets);
+    std::vector<LandingTraceBucket> slicedLim (longBuckets), slicedClip (longBuckets);
+    LandingSummary whole, sliced;
+    const bool wholeOk = LandingOps::summarize (longSolution, wholePass, wholeLim, wholeClip, 48000, whole);
+    const bool baseOk = LandingOps::summarize (longSolution, slicedPass, sliced);
+    std::uint32_t cursor = 0;
+    bool bounded = true, complete = false;
+    for (unsigned i = 0; i < 5000 && ! complete; ++i)
+    {
+        const auto before = cursor;
+        complete = LandingOps::stepTraces (longSolution, slicedLim, slicedClip, 48000, sliced, cursor, 17);
+        bounded = bounded && cursor > before && cursor - before <= 17;
+    }
+    bool equal = wholeOk && baseOk && complete && bounded && whole.limiterTrace && sliced.limiterTrace
+        && whole.peakClipTrace && sliced.peakClipTrace;
+    if (equal) for (std::size_t i = 0; i < longBuckets; ++i)
+        equal = equal && wholeLim[i].meanDb == slicedLim[i].meanDb
+            && wholeClip[i].meanDb == slicedClip[i].meanDb
+            && wholeLim[i].samples == slicedLim[i].samples
+            && wholeClip[i].samples == slicedClip[i].samples;
+    test::ok (equal, "long trace adapter advances in bounded cuts and matches whole-call rows");
+    mastering::GainReductionTrace stagedTrace;
+    mastering::GainReductionTraceBuilder stagedBuilder (stagedTrace, int (longBuckets), int (longBuckets), true);
+    std::size_t initialized = 0;
+    bool traceBounded = true;
+    while (! stagedBuilder.stepBegin (17))
+    {
+        const auto after = stagedBuilder.beginWorkUnits();
+        traceBounded = traceBounded && after > initialized && after - initialized <= 17;
+        initialized = after;
+    }
+    for (std::size_t i = 0; i < longBuckets; ++i) stagedBuilder.add (i, double (i % 7u));
+    std::size_t finished = 0;
+    while (! stagedBuilder.stepFinish (17))
+    {
+        const auto after = stagedBuilder.finishedBuckets();
+        traceBounded = traceBounded && after > finished && after - finished <= 17;
+        finished = after;
+    }
+    bool oldTraceEqual = traceBounded && stagedTrace.complete && stagedTrace.valid
+        && stagedTrace.samples == longBuckets && stagedTrace.nonFinite == 0
+        && stagedTrace.bucket.size() == longBuckets;
+    if (oldTraceEqual) for (std::size_t i = 0; i < longBuckets; ++i)
+        oldTraceEqual = oldTraceEqual && stagedTrace.bucket[i].samples == 1
+            && std::bit_cast<std::uint64_t> (stagedTrace.bucket[i].meanDb)
+                == std::bit_cast<std::uint64_t> (double (i % 7u));
+    test::ok (oldTraceEqual, "trace initialization and finish stay bounded at the maximum bucket count");
+    mastering::GainReductionTrace previousTrace, resumedTrace;
+    PreviousTraceBuilder previous (previousTrace, int (2u * longBuckets), int (longBuckets));
+    mastering::GainReductionTraceBuilder resumed (resumedTrace, int (2u * longBuckets),
+        int (longBuckets), true);
+    while (! resumed.stepBegin (17)) {}
+    for (std::size_t i = 0; i < 2u * longBuckets; ++i)
+    {
+        const double value = i % 101u == 0 ? std::numeric_limits<double>::quiet_NaN()
+            : double (int (i % 13u) - 6) * .125;
+        previous.add (i, value); resumed.add (i, value);
+    }
+    previous.finish();
+    while (! resumed.stepFinish (17)) {}
+    bool previousEqual = previousTrace.buckets == resumedTrace.buckets
+        && previousTrace.samples == resumedTrace.samples
+        && previousTrace.nonFinite == resumedTrace.nonFinite
+        && previousTrace.valid == resumedTrace.valid && resumedTrace.complete;
+    if (previousEqual) for (std::size_t i = 0; i < longBuckets; ++i)
+    {
+        const auto& a = previousTrace.bucket[i]; const auto& b = resumedTrace.bucket[i];
+        previousEqual = previousEqual && a.samples == b.samples && a.nonFinite == b.nonFinite
+            && std::bit_cast<std::uint64_t> (a.minDb) == std::bit_cast<std::uint64_t> (b.minDb)
+            && std::bit_cast<std::uint64_t> (a.maxDb) == std::bit_cast<std::uint64_t> (b.maxDb)
+            && std::bit_cast<std::uint64_t> (a.meanDb) == std::bit_cast<std::uint64_t> (b.meanDb);
+    }
+    test::ok (previousEqual, "maximum resumed trace matches the saved previous builder bit for bit");
     return test::report();
 }

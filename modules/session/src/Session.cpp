@@ -108,6 +108,7 @@ void Session::clearMasters() noexcept
     jobRecipe_ = {};
     masterJob_.reset();
     masterJobBytes_ = 0;
+    masterSummary_ = {}; masterTraceCursor_ = 0; masterTraceActive_ = false;
     masterAudio_ = {};
     pendingMaster_ = {};
     masters_.reset();
@@ -152,14 +153,26 @@ void Session::stepMasterCrestJoin() noexcept
         ++crestJoinIndex_;
     };
     const auto& result = measurementResults_[std::size_t (Analyzer::Crest)];
+    const auto unavailable = [&] (MeasurementReason reason) noexcept
+    {
+        c.status = MeasurementStatus::Unavailable; c.reason = reason;
+        if (master.report->cost)
+        {
+            MasterCostValue* bands[] { &master.report->cost->crestLowDb, &master.report->cost->crestLowMidDb,
+                &master.report->cost->crestHighMidDb, &master.report->cost->crestHighDb,
+                &master.report->cost->crestFullDb };
+            for (auto* band : bands) { *band = {}; band->reason = reason; }
+        }
+        publish();
+    };
     if (result.status != MeasurementStatus::Ready)
-    { c.status = MeasurementStatus::Unavailable; c.reason = crestJoinReason_; publish(); return; }
+    { unavailable (crestJoinReason_); return; }
     const auto source = MeasurementCrest::view (result);
     if (! MasterCrestGrid::compatible (c, source))
-    { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Unsupported; publish(); return; }
+    { unavailable (MeasurementReason::Unsupported); return; }
     auto& rows = masterRows_[index];
     if (! rows.crest || rows.crestCapacity < c.blocks)
-    { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Memory; publish(); return; }
+    { unavailable (MeasurementReason::Memory); return; }
     const auto end = std::min<std::size_t> (std::size_t (c.blocks), rows.crestMaskCopied + 16u);
     auto* mask = rows.crest.get() + rows.crestCapacity * 10u;
     for (std::size_t row = rows.crestMaskCopied; row < end; ++row)

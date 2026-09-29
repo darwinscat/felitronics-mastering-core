@@ -219,6 +219,71 @@ struct SolverPassDifferential
         return true;
     }
 
+    static bool maximumTraceCursors()
+    {
+        constexpr int rate = 48000, frames = 96000, block = 257, buckets = 65536;
+        MasteringChain oldChain, chain;
+        OfflineRenderer oldRenderer, renderer;
+        TargetLoudnessSolver oldSolver, solver;
+        MasteringChainConfig config;
+        if (! oldChain.prepare (rate, 1, config) || ! chain.prepare (rate, 1, config)
+            || ! oldRenderer.prepare (1, block) || ! renderer.prepare (1, block)
+            || ! oldSolver.prepare (rate, 1, block, oldChain.internalBlock(), oldChain.tapOversampleFactor())
+            || ! solver.prepare (rate, 1, block, chain.internalBlock(), chain.tapOversampleFactor())) return false;
+        std::vector<float> source (frames), oldOutput (frames), output (frames);
+        for (int i = 0; i < frames; ++i)
+            source[(std::size_t) i] = float (0.16 * std::sin (0.017 * i)
+                + (i % 499 == 0 ? 0.4 : 0.0));
+        const float* input[1] { source.data() };
+        float* oldOut[1] { oldOutput.data() };
+        float* out[1] { output.data() };
+        MasteringChainParams params;
+        oldChain.setParams (params); chain.setParams (params);
+        LoudnessRequest request;
+        request.targetLufs = -14.0; request.maxTruePeakDbTp = -1.0;
+        request.grTraceBuckets = buckets;
+        MasterMeasurement oldMeasure, measured;
+        LoudnessSolution oldSolution, solution;
+        ProgressClock oldClock (ProgressCallback {}), clock (ProgressCallback {});
+        if (! oldClock.begin (ProgressStage::SearchPass, 1, 1, 2LL * frames, frames)
+            || ! clock.begin (ProgressStage::SearchPass, 1, 1, 2LL * frames, frames)
+            || ! oldSolver.legacyRenderPass (oldChain, oldRenderer, params, input, oldOut, 1,
+                                            frames, request, oldMeasure, oldSolution, oldClock)
+            || ! solver.beginPass (chain, renderer, params, input, out, 1, frames,
+                                  request, measured, solution, clock, true)) return false;
+        using Phase = TargetLoudnessSolver::PassWorkspace::Phase;
+        unsigned initSteps = 0, finishSteps = 0;
+        StepResult state = StepResult::More;
+        for (unsigned guard = 0; guard < 20000 && state == StepResult::More; ++guard)
+        {
+            auto& p = *solver.pass_;
+            const auto phase = p.phase;
+            const auto initialized = p.compTrace ? p.compTrace->beginWorkUnits()
+                + p.limTrace->beginWorkUnits() + p.clipTrace->beginWorkUnits() : 0u;
+            const auto finished = p.compTrace ? p.compTrace->finishedBuckets()
+                + p.limTrace->finishedBuckets() + p.clipTrace->finishedBuckets() : 0u;
+            state = solver.stepPass (1024);
+            if (phase == Phase::TraceInit)
+            {
+                const auto after = p.compTrace->beginWorkUnits()
+                    + p.limTrace->beginWorkUnits() + p.clipTrace->beginWorkUnits();
+                if (after < initialized || after - initialized > 1024) return false;
+                ++initSteps;
+            }
+            if (phase == Phase::FinishStats)
+            {
+                const auto after = p.compTrace->finishedBuckets()
+                    + p.limTrace->finishedBuckets() + p.clipTrace->finishedBuckets();
+                if (after < finished || after - finished > 1024) return false;
+                ++finishSteps;
+            }
+        }
+        return state == StepResult::Done && initSteps > 1 && finishSteps > 1
+            && std::memcmp (oldOutput.data(), output.data(), output.size() * sizeof (float)) == 0
+            && sameMeasurement (oldMeasure, measured)
+            && sameSolutionReadings (oldSolution, solution);
+    }
+
     static bool run (bool sliced)
     {
         constexpr int rate = 48000, frames = 4 * rate, channels = 2;
@@ -389,5 +454,7 @@ int main()
                           "armed dynamic EQ traces allocate only during warmup across twelve passes");
     felitronics::test::ok (felitronics::mastering::SolverPassDifferential::extendedCoverage(),
                           "previous whole path matches both SRC directions, armed EQ, short tails and adversarial cuts");
+    felitronics::test::ok (felitronics::mastering::SolverPassDifferential::maximumTraceCursors(),
+                          "maximum trace initialization and finish yield and match the previous whole path bit for bit");
     return felitronics::test::report();
 }

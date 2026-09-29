@@ -582,9 +582,9 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         if (solution.grQuantile (mastering::GrStage::Limiter, .95, quantile))
             costResult.limiterP95Db = { MeasurementReason::None, quantile, solution.measured.limiter.frames };
         else costResult.limiterP95Db.reason = MeasurementReason::Unsupported;
-        if (solution.measured.limiter.valid)
-            costResult.limiterActiveShare = { MeasurementReason::None, solution.measured.limiter.activeFraction,
-                solution.measured.limiter.frames };
+        if (solution.limiterActive.stats.valid)
+            costResult.limiterActiveShare = { MeasurementReason::None,
+                solution.limiterActive.stats.activeFraction, solution.limiterActive.stats.frames };
         else costResult.limiterActiveShare.reason = MeasurementReason::Unsupported;
         costPumpScan.start (solution.limiterTrace, deliveryRate, costRules);
         stage = Stage::CostWave;
@@ -614,7 +614,10 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     {
         const auto* sourceMomentary = findArray (
             session->measurementResults_[std::size_t (Analyzer::Loudness)], "momentary");
-        if (! sourceMomentary)
+        const auto* momentaryReasons = findArray (
+            session->measurementResults_[std::size_t (Analyzer::Loudness)], "momentaryReasons");
+        if (! sourceMomentary || ! momentaryReasons
+            || momentaryReasons->stored != sourceMomentary->stored)
         { costResult.activeWindowShare.reason = MeasurementReason::Unsupported; stage = Stage::CostShape; return StepResult::More; }
         const auto count = std::size_t (sourceMomentary->stored);
         const auto limit = std::min<std::uint64_t> (count,
@@ -622,8 +625,13 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         const double gate = std::max (costRules.activityFloorLufs, sourceLufs - costRules.activityBelowLu);
         while (costFinishCursor < limit)
         {
-            const double level = sourceMomentary->values[std::size_t (costFinishCursor++)];
-            if (std::isfinite (level)) { ++activeJudged; if (level >= gate) ++activeCount; }
+            const auto i = std::size_t (costFinishCursor++);
+            const double level = sourceMomentary->values[i];
+            const auto reason = std::bit_cast<std::uint64_t> (momentaryReasons->values[i]);
+            if (reason == std::bit_cast<std::uint64_t> (double (MeasurementReason::NoSignal))) ++activeJudged;
+            else if (reason == std::bit_cast<std::uint64_t> (double (MeasurementReason::None))
+                     && std::isfinite (level))
+            { ++activeJudged; if (level >= gate) ++activeCount; }
         }
         if (costFinishCursor == count)
         {
@@ -679,11 +687,12 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         }
         if (costFinishCursor == costShapeScan.sectionCount)
         {
-            if (costComparable > costRules.worstNamedAbove)
+            if (costComparable > 0)
             {
-                costResult.worstSectionIndex = std::uint32_t (costWorst);
                 costResult.largestSectionShiftLu = { MeasurementReason::None,
                     rows.sections[costWorst].shiftLu, costComparable };
+                if (costComparable > costRules.worstNamedAbove)
+                    costResult.worstSectionIndex = std::uint32_t (costWorst);
             }
             else costResult.largestSectionShiftLu.reason = MeasurementReason::TooShort;
             costFinishCursor = 0; stage = Stage::CostCrest;

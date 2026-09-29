@@ -313,6 +313,9 @@ private:
     JobId measurementJob_ = 0;
     std::uint32_t measurementUnit_ = 0, masterUnit_ = 0;
     Phase measurementProgress_ {}, masterProgress_ {};
+    LandingSummary masterSummary_ {};
+    std::uint32_t masterTraceCursor_ = 0;
+    bool masterTraceActive_ = false;
     Notification events_[kEventBatch] {};
     std::size_t eventCount_ = 0;
     std::uint64_t sequence_ = 0;
