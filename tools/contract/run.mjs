@@ -91,8 +91,18 @@ function validate(name, bytes) {
     assert.equal(answers.filter(a => a.kind === 'rejected').length, expected.rejections ?? 0, `${name}: unexpected command refusal`);
     assert.ok(trace.some(r => r.kind === 'snapshot'), `${name}: no final snapshot`);
 }
+// ONE BUDGET PER CHILD PROCESS, and one place that sets it. 30 s is ample for every scenario on an optimised build (the
+// longest takes about a second) and a hang still ends quickly there. A sanitized build runs the same scenarios an order
+// of magnitude slower, so tools/CMakeLists.txt raises it for that tier through FC_SESSION_CONTRACT_TIMEOUT_MS. Each
+// child's output fits the buffer with room: the largest scenario writes under 7 MB.
+function childTimeout(value) {
+    if (value === undefined) return 30000;
+    if (!/^[1-9][0-9]{3,8}$/.test(value)) throw new Error(`FC_SESSION_CONTRACT_TIMEOUT_MS must be whole milliseconds, 1000 or more: ${value}`);
+    return Number(value);
+}
+const timeout = childTimeout(process.env.FC_SESSION_CONTRACT_TIMEOUT_MS), maxBuffer = 64 * 1024 * 1024;
 function nativeRun(cli, ...args) {
-    const p = spawnSync(cli, args, {maxBuffer:16 * 1024 * 1024, timeout:30000});
+    const p = spawnSync(cli, args, {maxBuffer, timeout});
     if (p.status !== 0) throw new Error(`native ${args.join(' ')}: exit ${p.status}: ${p.error ?? ''}${p.stderr}`);
     return p.stdout;
 }
@@ -101,7 +111,7 @@ function grammarTest(cli) {
     const corpus = JSON.parse(readFileSync(new URL('grammar-cases.json', import.meta.url), 'utf8'));
     for (const item of corpus) {
         let parsed; try { parsed = parse(item.script); } catch { parsed = null; }
-        const p = spawnSync(cli, ['parse', '-'], {input:item.script, encoding:'utf8', timeout:30000});
+        const p = spawnSync(cli, ['parse', '-'], {input:item.script, encoding:'utf8', timeout, maxBuffer});
         assert.equal(p.status, item.valid ? 0 : 2, `native grammar: ${JSON.stringify(item.script)}: ${p.stderr}`);
         assert.equal(parsed !== null, item.valid, `wasm grammar: ${JSON.stringify(item.script)}`);
         const encoding = parsed?.map(i => [i.line, i.op, ...i.args].join('\t') + '\n').join('') ?? '';
@@ -134,7 +144,7 @@ async function main() {
     if (controls) {
         assert.ok(!nativeOnly, 'controls require wasm');
         const control = spawnSync(process.execPath, [fileURLToPath(import.meta.url), cli, modulePath, '--reorder'],
-            {encoding:'utf8', timeout:30000, maxBuffer:16 * 1024 * 1024});
+            {encoding:'utf8', timeout, maxBuffer});
         assert.equal(control.status, 1, `reorder must exit red: ${control.error ?? control.stderr}`);
         assert.match(control.stderr, /first differing event index \d+, kind/);
         console.log(`CONTROL RED (exit ${control.status}): ${control.stderr.trim()}`);

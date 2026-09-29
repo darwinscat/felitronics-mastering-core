@@ -148,8 +148,9 @@ function lines(text) {
     }
     return result;
 }
-// FLOORS, not exact values: a boundary struct's size and the ABI version grow with each addition (the version moves
-// by one per addition, as fc_master's does), so the frozen line holds when the compiled value is at least it.
+// FLOORS, not exact values: a boundary struct's size grows with an appended field, and the ABI version moves up by one
+// with each batch of additions that lands together in one release (as fc_master's does), so the frozen line holds when
+// the compiled value is at least it.
 function floorKey(line, extensible) {
     const size = /^(sizeof (\w+))=(\d+)$/.exec(line);
     if (size && extensible.has(size[2])) return { key: size[1], value: Number(size[3]) };
@@ -185,7 +186,7 @@ if (args[0] === '--generate') {
     const floor = lines(read('tools/session-abi-v1.txt'));
     check(floor, floor);
     check(floor, new Set([...floor, 'function fc_session_future fc_session_status()']));
-    // The version is a floor: it grows with each addition, and only a lower number is a change.
+    // The version is a floor: it grows with each release that adds, and only a lower number is a change.
     const version = [...floor].find(line => line.startsWith('define FC_SESSION_ABI_VERSION='));
     const frozenVersion = Number(version.split('=')[1]), without = [...floor].filter(line => line !== version);
     check(floor, new Set([...without, `define FC_SESSION_ABI_VERSION=${frozenVersion + 1}`]));

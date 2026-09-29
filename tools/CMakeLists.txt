@@ -218,6 +218,11 @@ target_compile_features(fcore_session PRIVATE cxx_std_20)
 if(FELITRONICS_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
     add_test(NAME fcore_session_contract
         COMMAND ${SESSION_SCRIPT_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/contract/run.mjs $<TARGET_FILE:fcore_session> --native-only)
+    # The sanitized tier runs each scenario an order of magnitude slower than an optimised build (the ASan/UBSan CI row
+    # took longer than the harness's 30 s for the measurement scenario): its children get ten minutes, still finite.
+    if(FELITRONICS_ENABLE_SANITIZERS)
+        set_tests_properties(fcore_session_contract PROPERTIES ENVIRONMENT FC_SESSION_CONTRACT_TIMEOUT_MS=600000)
+    endif()
 endif()
 
 find_program(FELITRONICS_ABI_NODE NAMES node nodejs REQUIRED)
