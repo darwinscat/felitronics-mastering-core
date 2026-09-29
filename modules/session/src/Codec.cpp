@@ -43,6 +43,8 @@ bool valid (const SnapshotView& v) noexcept
                         if (row.nonFinite > row.samples || ! std::isfinite (row.minDb)
                             || ! std::isfinite (row.maxDb) || ! std::isfinite (row.meanDb)
                             || row.minDb < 0.0 || row.maxDb < row.minDb || row.meanDb < 0.0) return false;
+                        if (row.samples > std::numeric_limits<std::uint64_t>::max() - samples
+                            || row.nonFinite > std::numeric_limits<std::uint64_t>::max() - nonFinite) return false;
                         samples += row.samples; nonFinite += row.nonFinite;
                     }
                     if (trace->complete && (samples != trace->samples || nonFinite != trace->nonFinite)) return false;

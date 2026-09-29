@@ -237,6 +237,19 @@ target_link_libraries(felitronics_session_abi_probe PRIVATE felitronics::session
 target_compile_options(felitronics_session_abi_probe PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
 target_include_directories(felitronics_session_abi_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 if(FELITRONICS_BUILD_TESTS)
+    add_test(NAME felitronics_core_k13_patch_controls
+        COMMAND ${CMAKE_COMMAND}
+            "-DMASTERING_SOURCE=${PROJECT_SOURCE_DIR}"
+            "-DCONTROL_DIR=${CMAKE_CURRENT_BINARY_DIR}/core-k13-patch-controls/$<CONFIG>"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/CoreK13PatchControls.cmake)
+    add_test(NAME felitronics_core_consumption_controls
+        COMMAND ${CMAKE_COMMAND}
+            "-DMASTERING_SOURCE=${PROJECT_SOURCE_DIR}"
+            "-DTOML_SOURCE=${felitronics_toml_SOURCE_DIR}"
+            "-DCONTROL_DIR=${CMAKE_CURRENT_BINARY_DIR}/core-consumption-controls/$<CONFIG>"
+            "-DCONTROL_GENERATOR=${CMAKE_GENERATOR}"
+            "-DCONTROL_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/CoreConsumptionControls.cmake)
     add_test(NAME felitronics_session_abi_manifest
         COMMAND ${FELITRONICS_ABI_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/session-abi-check.mjs
                 ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:felitronics_session_abi_probe>)

@@ -126,12 +126,76 @@ int main()
     for (const auto& bucket : clip.bucket) max = std::max (max, bucket.maxDb);
     test::ok (max > 0.0 && max <= solution.measured.peakClipReductionMaxDb,
               "K13 row maxima agree with the preserved whole-render aggregate");
+    mastering::MasteringChain probeChain;
+    mastering::OfflineRenderer probeRenderer;
+    const bool probeReady = probeChain.prepare (48000.0, 2, cfg) && probeRenderer.prepare (2, 73);
+    test::ok (probeReady, "independent tap-clock render prepares");
+    if (! probeReady) return test::report();
+    auto probeParams = params;
+    probeParams.preLimiterGainDb = solution.preLimiterGainDb;
+    probeParams.limiter.ceilingDbTp = solution.ceilingDbTp;
+    probeChain.setParams (probeParams);
+    const auto resolved = probeChain.resolved();
+    const int factor = probeChain.tapOversampleFactor();
+    std::vector<float> probeAudio (1026, 0.0f);
+    float* probeOut[] { probeAudio.data(), probeAudio.data() + 513 };
+    std::vector<float> rawGr ((std::size_t) (73 + probeChain.internalBlock()) * (std::size_t) factor);
+    std::vector<float> rawClip (rawGr.size());
+    mastering::MasteringChainTaps rawTaps;
+    rawTaps.limiterGrDb = rawGr.data(); rawTaps.peakClipReductionDb = rawClip.data();
+    rawTaps.osCapacity = (int) rawGr.size();
+    std::vector<double> applied (513, 0.0), detector (513, 0.0), clipped (513, 0.0);
+    std::uint64_t appliedTail = 0;
+    const auto collect = [&] (const mastering::MasteringChainTaps& tap, long long streamPos)
+    {
+        for (int j = 0; j < tap.framesWritten; ++j)
+            for (int k = 0; k < factor; ++k)
+            {
+                const auto index = (std::size_t) j * (std::size_t) factor + (std::size_t) k;
+                const long long detect = streamPos + j - resolved.limiterTapOffset;
+                const long long receive = detect - resolved.limiterLookahead;
+                const double reduction = std::fabs ((double) rawGr[index]);
+                if (detect >= 0 && detect < 513)
+                {
+                    detector[(std::size_t) detect] = std::max (detector[(std::size_t) detect], reduction);
+                    clipped[(std::size_t) detect] = std::max (clipped[(std::size_t) detect], (double) rawClip[index]);
+                }
+                if (receive >= 0 && receive < 513)
+                {
+                    applied[(std::size_t) receive] = std::max (applied[(std::size_t) receive], reduction);
+                    if (detect >= 513 && reduction > 0.0) ++appliedTail;
+                }
+            }
+    };
+    test::ok (probeRenderer.render (probeChain, input, probeOut, 2, 513, rawTaps, collect)
+              && std::memcmp (probeAudio.data(), delivered.data(), delivered.size() * sizeof (float)) == 0,
+              "probe renders the same chosen pass and delivered PCM");
+    bool appliedMatches = true, clipMatches = true, detectorDiffers = false;
+    for (std::size_t frame = 0; frame < 513; ++frame)
+    {
+        appliedMatches = appliedMatches && lim.bucket[frame].maxDb == applied[frame];
+        clipMatches = clipMatches && clip.bucket[frame].maxDb == clipped[frame];
+        detectorDiffers = detectorDiffers || detector[frame] != applied[frame];
+    }
+    if (! appliedMatches || ! clipMatches || ! detectorDiffers || appliedTail == 0)
+        std::printf ("tap clocks: lookahead=%d applied=%d clip=%d differs=%d tail=%llu\n",
+            resolved.limiterLookahead, int (appliedMatches), int (clipMatches), int (detectorDiffers),
+            static_cast<unsigned long long> (appliedTail));
+    test::ok (resolved.limiterLookahead == 48 && detectorDiffers && appliedTail > 0
+              && appliedMatches && clipMatches,
+              "limiter rows follow applied gain through the final lookahead tail; K13 stays at the detector");
     std::uint64_t digest = 0xcbf29ce484222325ull;
     const auto word = [&digest] (std::uint64_t value)
     {
         for (unsigned i = 0; i < 8; ++i) digest = (digest ^ std::uint8_t (value >> (8u * i))) * 0x100000001b3ull;
     };
     for (float sample : delivered) word (std::bit_cast<std::uint32_t> (sample));
+    for (double value : { solution.measured.integratedLufs, solution.measured.truePeakDbTp,
+                          solution.measured.limiter.maxDb, solution.measured.limiter.meanDb,
+                          solution.measured.limiter.quantileDb, solution.measured.peakClipReductionMaxDb })
+        word (std::bit_cast<std::uint64_t> (value));
+    word (static_cast<std::uint64_t> (solution.measured.peakClipRunSamplesTotal));
+    std::printf ("audio-legacy-digest=%016llx\n", static_cast<unsigned long long> (digest));
     for (const auto& trace : { &lim, &clip })
         for (const auto& bucket : trace->bucket)
         {

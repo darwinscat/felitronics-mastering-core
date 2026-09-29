@@ -189,6 +189,32 @@ void nativeQueries()
     ok (clipped.view().status == QueryStatus::Ready && clipped.view().complete
         && same (clipped.view().values[3], 0.5) && same (clipped.view().values[10], 0.0),
         "K13 query uses the same grid with its own reductions");
+    gr.fromFrame = 1; gr.toFrame = 3;
+    auto zoomGr = ask (s, gr);
+    ok (zoomGr.view().status == QueryStatus::Ready && zoomGr.view().total == 2
+        && zoomGr.view().stored == 2 && zoomGr.view().complete
+        && same (zoomGr.view().values[0], 0.0) && same (zoomGr.view().values[1], 2.0)
+        && same (zoomGr.view().values[7], 2.0) && same (zoomGr.view().values[8], 4.0),
+        "zoom selects intersecting K13 buckets and reports their retained bounds");
+    gr.columns = 1;
+    auto reducedZoom = ask (s, gr);
+    ok (reducedZoom.view().status == QueryStatus::Ready && reducedZoom.view().total == 2
+        && reducedZoom.view().stored == 1 && ! reducedZoom.view().complete
+        && same (reducedZoom.view().values[0], 0.0) && same (reducedZoom.view().values[1], 4.0)
+        && same (reducedZoom.view().values[4], 0.125),
+        "zoom groups selected buckets with their original bounds and weighted mean");
+    gr.fromFrame = 0; gr.toFrame = 2;
+    auto firstOnly = ask (s, gr);
+    ok (firstOnly.view().status == QueryStatus::Ready && firstOnly.view().total == 1
+        && firstOnly.view().stored == 1 && firstOnly.view().complete
+        && same (firstOnly.view().values[0], 0.0) && same (firstOnly.view().values[1], 2.0),
+        "one-sided zoom returns only the intersecting retained bucket");
+    gr.fromFrame = 2; gr.toFrame = 2;
+    ok (ask (s, gr).view().status == QueryStatus::Empty, "empty master zoom is explicit");
+    gr.fromFrame = 3; gr.toFrame = 5;
+    ok (ask (s, gr).view().status == QueryStatus::InvalidRange, "master zoom beyond the delivered programme refuses");
+    gr.fromFrame = 0; gr.toFrame = 4;
+    gr.columns = 2;
     auto staleGr = gr; staleGr.audioId ^= 1u;
     ok (ask (s, staleGr).view().status == QueryStatus::StaleSource,
         "master trace refuses a mismatched source identity");

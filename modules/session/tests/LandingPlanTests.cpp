@@ -117,6 +117,20 @@ int main()
               && traceDecoded.view().masters[0].landing->peakClipTrace->rows[0].maxDb == 2.0,
               "generated codec round trips both owned series (need " + std::to_string (int (traceNeed.status))
               + ", write " + std::to_string (int (traceWrite)) + ", read " + std::to_string (int (traceRead)) + ")");
+    std::string inconsistentTrace = traceJson;
+    const auto traceAt = inconsistentTrace.find ("\"limiterTrace\":{");
+    const auto totalAt = traceAt == std::string::npos ? std::string::npos
+        : inconsistentTrace.find ("\"samples\":\"8\"", traceAt);
+    if (totalAt != std::string::npos) inconsistentTrace.replace (totalAt, sizeof ("\"samples\":\"8\"") - 1u,
+                                                               "\"samples\":\"9\"");
+    Snapshot refusedTrace;
+    const auto refusedNeed = Codec::decodedBytes (inconsistentTrace);
+    CodecStatus refusedRead {};
+    const auto refusedSpent = budget::spend ([&] { refusedRead = Codec::decode (inconsistentTrace, refusedTrace); });
+    test::ok (totalAt != std::string::npos && refusedNeed.status == CodecStatus::Invalid
+              && refusedRead == CodecStatus::Invalid && refusedSpent.bytes == 0
+              && refusedTrace.view().masters.empty(),
+              "inconsistent completed trace totals refuse before allocation or publication");
     double reduced[7] {};
     const auto reducedCount = LandingOps::query (*saved.limiterTrace, 1, reduced);
     test::ok (reducedCount == 1 && reduced[0] == 0.0 && reduced[1] == 2.0
