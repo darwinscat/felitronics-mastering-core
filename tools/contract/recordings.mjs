@@ -33,8 +33,30 @@ function select(bytes) {
     }
     for (const pair of phases.values()) sample.push(...pair);
     for (const pair of milestones.values()) sample.push(...pair);
+    const keep = new Set(sample);
+    const firstSnapshots = new Map(), lastSnapshots = new Map();
+    for (const row of rows) if (row.kind === 'snapshot') {
+        if (!firstSnapshots.has(row.session)) firstSnapshots.set(row.session, row);
+        lastSnapshots.set(row.session, row);
+    }
+    for (const row of firstSnapshots.values()) keep.add(row);
+    for (const row of lastSnapshots.values()) keep.add(row);
+    for (let i = 0; i < rows.length; ++i) if (keep.has(rows[i]) && rows[i].kind === 'events') {
+        for (let j = i + 1; j < rows.length && rows[j].session === rows[i].session; ++j) {
+            if (rows[j].kind === 'snapshot') { keep.add(rows[j]); break; }
+            if (rows[j].kind === 'events') break;
+        }
+    }
     // These are real codec JSON strings and their owned binary bytes, not parsed-and-reserialized objects.
-    return sample.filter((r, i, a) => a.indexOf(r) === i);
+    const unique = rows.filter(r => keep.has(r));
+    let cursor = 0;
+    for (const record of unique) {
+        const index = rows.indexOf(record, cursor);
+        assert.ok(index >= cursor, 'site recording rewinds the original trace');
+        cursor = index + 1;
+    }
+    assert.ok(unique.some(r => r.kind === 'snapshot'), 'site recording omits milestone snapshots');
+    return unique;
 }
 export function recordings(traces, versions, rewrite = false) {
     const fixture = JSON.parse(readFileSync(join(fixtureRoot, 'manifest.json'), 'utf8'));
