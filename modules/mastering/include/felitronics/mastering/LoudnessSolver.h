@@ -4,6 +4,7 @@
 #pragma once
 
 #include <felitronics/analysis/LoudnessMeter.h>
+#include <felitronics/analysis/StreamingLoudnessMeter.h>
 #include <felitronics/analysis/ReferenceTruePeakMeter.h>
 #include <felitronics/core/Config.h>
 #include <felitronics/core/DetMath.h>
@@ -899,7 +900,9 @@ public:
     static constexpr std::uint64_t constructBytes() noexcept { return 3u * storage::kVectorProxyBytes; }
     static constexpr std::uint64_t meterConstructBytes() noexcept
     {
-        return (storage::kLoudnessProxies + 1u + storage::kPolyphaseProxies * core::kMaxChannels)
+        // The saved streaming meter owns two scalar Buffers, not STL vectors;
+        // only the true-peak scratch and oversampler vectors need Debug proxies.
+        return (1u + storage::kPolyphaseProxies * core::kMaxChannels)
              * storage::kVectorProxyBytes;
     }
     // Six vectors in a solution (band results, two traces, three histograms). A non-elided
@@ -1051,18 +1054,52 @@ public:
     // the limits are judged on and the limiter's gated one — which the first render allocates; 0 for a
     // bucket count or a bin width solve() refuses. `binDb` is the one prepare() was given, because the
     // histograms the solution keeps are copies of the ones prepare() sized.
-    static std::uint64_t solveBytes (double sampleRate, int numChannels, int frames, int grTraceBuckets,
-                                     double binDb = 0.01) noexcept
+    static std::uint64_t ordinarySolveBytes (double sampleRate, int numChannels, int frames, int grTraceBuckets,
+                                             double binDb = 0.01) noexcept
     {
         if (frames <= 0 || numChannels < 1 || numChannels > core::kMaxChannels) return 0u;
         if (! traceBucketsAdmitted (grTraceBuckets)) return 0u;
         const std::uint64_t hist = dynamics::offline::QuantileHistogram::storageBytes (0.0, kGrRangeDb, binDb);
         if (hist == 0) return 0u;
-        const std::uint64_t meter = meterBytes (sampleRate, frames);
+        const std::uint64_t meter = passMeterBytes (sampleRate, frames);
         if (meter == 0) return 0u;       // the meter refuses its capacity: measure() stops before anything is allocated
         return meter + analysis::ReferenceTruePeakMeter::storageFor (sampleRate, frames, numChannels).bytes()
              + 2u * GainReductionTrace::bytesFor (grTraceBuckets, frames) + 3u * hist
              + meterConstructBytes() + solveProxyBytes();
+    }
+
+    // The landing search retains two solution workspaces and one pass meter set.
+    // Its largest allocation is a meter or trace, never another PCM programme.
+    static std::uint64_t productSearchCallBytes (double sampleRate, int numChannels, int frames,
+                                                  int grTraceBuckets, int armedPairs = kBandGrStride,
+                                                  double binDb = 0.01) noexcept
+    {
+        if (armedPairs < 0 || armedPairs > kBandGrStride) return 0u;
+        const std::uint64_t base = ordinarySolveBytes (sampleRate, numChannels, frames, grTraceBuckets, binDb);
+        if (base == 0u) return 0u;
+        const std::uint64_t oneResult = base + solutionReturnBytes();
+        const std::uint64_t bandHist = dynamics::offline::QuantileHistogram::storageBytes (
+            0.0, kBandGrRangeDb, 0.01);
+        const std::uint64_t bandTrace = GainReductionTrace::bytesFor (grTraceBuckets, frames);
+        return 2u * oneResult + (std::uint64_t) armedPairs *
+            (4u * bandHist + 3u * bandTrace + 3u * sizeof (BandGrResult)
+             + 16u * storage::kVectorProxyBytes + 1024u);
+    }
+
+    static std::uint64_t solveBytes (double sampleRate, int numChannels, int frames, int grTraceBuckets,
+                                     double binDb = 0.01) noexcept
+    {
+        return ordinarySolveBytes (sampleRate, numChannels, frames, grTraceBuckets, binDb);
+    }
+
+    static std::uint64_t solveBytes (double sampleRate, int numChannels, int frames,
+                                     const LoudnessRequest& req, double binDb = 0.01) noexcept
+    {
+        if (! req.productLanding) return ordinarySolveBytes (sampleRate, numChannels, frames,
+                                                               req.grTraceBuckets, binDb);
+        const std::uint64_t bytes = productSearchCallBytes (sampleRate, numChannels, frames,
+                                                              req.grTraceBuckets, kBandGrStride, binDb);
+        return bytes == 0u ? 0u : bytes - solutionReturnBytes();
     }
 
     // The whole call, including a refused solve's result. Three sets of solution proxies bound
@@ -1071,6 +1108,11 @@ public:
                                          double binDb = 0.01) noexcept
     {
         return solveBytes (sampleRate, numChannels, frames, grTraceBuckets, binDb) + solutionReturnBytes();
+    }
+    static std::uint64_t solveCallBytes (double sampleRate, int numChannels, int frames,
+                                         const LoudnessRequest& req, double binDb = 0.01) noexcept
+    {
+        return solveBytes (sampleRate, numChannels, frames, req, binDb) + solutionReturnBytes();
     }
 
     // The request's bucket count, as admits() judges it.
@@ -2208,7 +2250,7 @@ private:
         std::optional<ActiveWindowGrSummariser> limActive;
         std::optional<GainReductionTraceBuilder> compTrace, limTrace;
         MasteringChainTaps taps {};
-        analysis::LoudnessMeter lm;
+        analysis::SystemStreamingLoudnessMeter lm;
         analysis::ReferenceTruePeakMeter tm;
     };
 
@@ -2318,7 +2360,9 @@ private:
             p.limTrace.emplace (p.solution->limiterTrace, p.frames, p.req->grTraceBuckets);
             p.solution->compressorGrWindows.reset(); p.solution->limiterGrWindows.reset();
             p.solution->limiterActiveGrWindows.reset(); p.solution->limiterActive = ActiveGainReductionStats {};
-            p.solution->bandGr.clear(); p.solution->bandGr.resize (p.armed.size());
+            // Resize in place: clearing first destroys every trace buffer and
+            // makes each armed band allocate again on the next pass.
+            p.solution->bandGr.resize (p.armed.size());
             for (std::size_t i = 0; i < p.armed.size(); ++i)
                 p.bandTrace.emplace_back (p.solution->bandGr[i].trace, p.frames, p.req->grTraceBuckets);
             p.taps = MasteringChainTaps {};
@@ -2442,22 +2486,31 @@ private:
             p.solution->compressorGrWindows = compHist_; p.solution->limiterGrWindows = limHist_;
             p.solution->limiterActive = p.limActive->finish (p.req->limiterGr.quantile);
             p.solution->limiterActiveGrWindows = limActiveHist_;
+            p.lm.beginIntegratedScan();
             p.phase = Phase::FinishGate; --budget; ++p.work;
             if (p.finishCheckpoints && ! p.clock->checkpoint()) { p.phase = Phase::Failed; return StepResult::Failed; }
         }
         if (budget == 0) return StepResult::More;
         if (p.phase == Phase::FinishGate)
         {
-            m.integratedLufs = p.lm.integratedLufs();
-            p.phase = Phase::FinishRange; --budget; ++p.work;
+            int used = 0;
+            const bool done = p.lm.stepIntegratedScan ((int) std::min<long long> (budget, 256),
+                                                       m.integratedLufs, used);
+            budget -= used; p.work += used;
             if (p.finishCheckpoints && ! p.clock->checkpoint()) { p.phase = Phase::Failed; return StepResult::Failed; }
+            if (! done) return StepResult::More;
+            p.lm.beginRangeScan(); p.phase = Phase::FinishRange;
         }
         if (budget == 0) return StepResult::More;
         if (p.phase == Phase::FinishRange)
         {
-            m.loudnessRangeLu = p.lm.loudnessRangeLu();
-            p.phase = Phase::FinishComplete; --budget; ++p.work;
+            int used = 0;
+            const bool done = p.lm.stepRangeScan ((int) std::min<long long> (budget, 256),
+                                                  m.loudnessRangeLu, used);
+            budget -= used; p.work += used;
             if (p.finishCheckpoints && ! p.clock->checkpoint()) { p.phase = Phase::Failed; return StepResult::Failed; }
+            if (! done) return StepResult::More;
+            p.phase = Phase::FinishComplete;
         }
         if (budget == 0) return StepResult::More;
         if (p.phase != Phase::FinishComplete) return StepResult::More;
@@ -2780,6 +2833,14 @@ private:
         if (! rateAdmitted (sampleRate)) return 0u;
         analysis::LoudnessMeter::Storage st;
         return analysis::LoudnessMeter::storageFor (sampleRate, meterSamples (frames, sampleRate), st) ? st.bytes() : 0u;
+    }
+
+    static std::uint64_t passMeterBytes (double sampleRate, int frames) noexcept
+    {
+        if (! rateAdmitted (sampleRate)) return 0u;
+        analysis::SystemStreamingLoudnessMeter::Storage st;
+        return analysis::SystemStreamingLoudnessMeter::storageFor (
+            sampleRate, meterSamples (frames, sampleRate), st) ? st.bytes() : 0u;
     }
 
     // EBU Tech 3342 needs short-term samples, and the window is 3 s: under 3 s of programme there is not one. ONE

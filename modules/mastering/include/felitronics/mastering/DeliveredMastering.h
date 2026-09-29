@@ -141,6 +141,14 @@ public:
         const std::uint64_t search = TargetLoudnessSolver::solveBytes (deliveryRate, numChannels, (int) d, grTraceBuckets, binDb);
         return search;
     }
+    [[nodiscard]] static std::uint64_t solveBytes (double sourceRate, double deliveryRate, int numChannels,
+                                                   long long inFrames, const LoudnessRequest& req,
+                                                   double binDb = 0.01) noexcept
+    {
+        const long long d = deliveredFrames (sourceRate, deliveryRate, inFrames);
+        if (d <= 0 || d > INT_MAX || numChannels < 1 || numChannels > core::kMaxChannels) return 0u;
+        return TargetLoudnessSolver::solveBytes (deliveryRate, numChannels, (int) d, req, binDb);
+    }
 
     // The result exists even when conversion or the search is refused. Keep its construction
     // inside the core's call budget, alongside the search's working set.
@@ -148,6 +156,13 @@ public:
                                                        long long inFrames, int grTraceBuckets, double binDb = 0.01) noexcept
     {
         return solveBytes (sourceRate, deliveryRate, numChannels, inFrames, grTraceBuckets, binDb)
+             + TargetLoudnessSolver::solutionReturnBytes();
+    }
+    [[nodiscard]] static std::uint64_t solveCallBytes (double sourceRate, double deliveryRate, int numChannels,
+                                                       long long inFrames, const LoudnessRequest& req,
+                                                       double binDb = 0.01) noexcept
+    {
+        return solveBytes (sourceRate, deliveryRate, numChannels, inFrames, req, binDb)
              + TargetLoudnessSolver::solutionReturnBytes();
     }
 

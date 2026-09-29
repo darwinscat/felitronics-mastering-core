@@ -519,12 +519,17 @@ The mastering render's source-rate conversion, chain latency, drain, and prepara
 [Resumable delivery render](RESUMABLE-RENDER.md). The session's master job can drive that API within its work-unit pump.
 
 `LandingSearch` keeps one search across calls. It first surveys source spectrum and crest in bounded units, then
-renders and measures up to twelve candidates. A measured hit stops immediately. Every render is logged; an exhausted
-budget returns the closest ceiling-safe PCM and its measured miss, or `Unavailable` when none is safe. The search
-can pause during SRC, rendering, metering, band statistics, gates, the final PCM copy and independent remeasurement.
+renders and measures within one budget of up to twelve passes. A measured hit stops immediately. Every render is
+logged; an exhausted budget returns the closest ceiling-safe PCM and its measured miss, or `Unavailable` when none is
+safe. Source and output are the only full PCM buffers. If a previous candidate wins, a counted pass restores it; the
+last pass is reserved for that render once a safe candidate exists. The search can pause during SRC, rendering,
+metering, band statistics, integrated gates, the LRA scan, restoration and independent remeasurement.
 `TargetLoudnessSolver::solve()` drives this same path when `LoudnessRequest::productLanding` is set. Its older
-request policy remains available for existing callers. `LandingSearch::storageFor()` includes its safe PCM copy,
-retained result workspaces and pass meters, in addition to the chain and converter preparations. `LandingOps::plan()`
+request policy remains available for existing callers. The request-aware `TargetLoudnessSolver::solveCallBytes(req)`
+and `DeliveredMastering::solveCallBytes(req)` include the product search workspace; the integer-bucket overloads
+keep the legacy solve quote. `LandingSearch::storageForProgramme()` quotes source, output, workspace and the largest
+block, including capacity retained on reuse through `storageForJob()`. Chain and converter preparations are separate.
+`LandingOps::plan()`
 sets the source normalization toward −18 LUFS separately from the adjustable pre-limiter gain; a delivery-rate
 change requests one extra source-rate impact pass outside the twelve landing renders.
 

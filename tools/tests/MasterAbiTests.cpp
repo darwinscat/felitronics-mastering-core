@@ -1553,7 +1553,9 @@ int main()
         ok (solve.solverPrepared == 0, "PRECONDITION: the solver is not prepared yet");
 
         // THE ORACLE, literal on purpose (the one place a restatement is mandatory). 48 kHz stereo, 4 s: the loudness
-        // meter is sized for 192000 + 48000 samples = 50 hops of 4800 → 8·(300 + 54 + 58) = 3296 B. The last term
+        // meter is sized for 192000 + 48000 samples = 50 hops of 4800 → 8·(54 + 58) = 896 B for a solve
+        // (its saved meter holds the 300-entry sub-hop ring inline). A range measurement still spends 3296 B.
+        // The last term
         // is what the LRA cadence moved: one short-term sample per hop, the cadence EBU Tech 3342 §3.1 asks for,
         // where it used to be one per ten — so 5 + 8 became 50 + 8, the margin of 8 unchanged. The REFERENCE
         // true-peak meter is, per channel, one 4x / 32-tap PolyphaseOversampler — prototype 128, phase-major copy
@@ -1566,7 +1568,7 @@ int main()
         // three of them since the active-window statistics. THE FIGURE IS PRINTED rather than spelled: the literal
         // that used to stand here (727 960 B) described the two-histogram build and would have gone on reading as a
         // measurement.
-        ok (solve.callBytes == 3296u + 21008u + 64000u + kGrWindowBytes
+        ok (solve.callBytes == 896u + 21008u + 64000u + kGrWindowBytes
                 + felitronics::mastering::TargetLoudnessSolver::meterConstructBytes()
                 + felitronics::mastering::TargetLoudnessSolver::solveProxyBytes() + kSolutionReturnBytes,
             "the solve budget is meter + reference true-peak meter + two traces + three window histograms = "
@@ -1606,13 +1608,13 @@ int main()
         ok (fc_master_need (h, FC_NEED_MEASURE_LRA, 143999, &under3) == FC_OK && under3.callBytes == 0,
             "one frame under 3 s: nothing is");
         // A solve builds its meters whatever the length — the range rule is NOT the solve's. 1 s still costs
-        // meter + reference true-peak meter + two traces: 8·(300 + 24 + 28) + 21 008 + 64 000 = 87 824 B, the
+        // meter + reference true-peak meter + two traces: 8·(24 + 28) + 21 008 + 64 000 = 85 424 B, the
         // short-term term being the one the LRA cadence moved (one sample per hop, not one per ten). A length the solve
         // refuses costs 0. THE TOTAL IS PRINTED rather than spelled: the literal that used to close this line
         // (727 696 B) was parameterised on one side and written out on the other, so it went on reading as a
         // measurement after the histograms moved it.
         fc_need s1 {}, s0 {}; FC_INIT (s1); FC_INIT (s0);
-        ok (fc_master_need (h, FC_NEED_SOLVE, 48000, &s1) == FC_OK && s1.callBytes == 87824u + kGrWindowBytes + felitronics::mastering::TargetLoudnessSolver::meterConstructBytes()
+        ok (fc_master_need (h, FC_NEED_SOLVE, 48000, &s1) == FC_OK && s1.callBytes == 85424u + kGrWindowBytes + felitronics::mastering::TargetLoudnessSolver::meterConstructBytes()
                 + felitronics::mastering::TargetLoudnessSolver::solveProxyBytes() + kSolutionReturnBytes,
             "a 1 s solve is budgeted in full: " + std::to_string (s1.callBytes) + " B");
         ok (fc_master_need (h, FC_NEED_SOLVE, 0, &s0) == FC_OK && s0.callBytes == kSolutionReturnBytes,
