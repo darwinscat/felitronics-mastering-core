@@ -50,6 +50,8 @@ int main()
         LandingTraceBucket traceRow { 0.0, 1.5, 0.75, 4, 0 };
         double crestRows[10] { 0.5, 0.125, 0.4, 0.08, 0.3, 0.045, 0.2, 0.02, 0.6, 0.18 };
         double crestMask[5] { 1.0, 1.0, 0.0, 1.0, 1.0 };
+        MasterSection section { 0, 48000, -15.0, -14.0, 0.0, true };
+        MasterWaveformBucket wave { 0, 48000, 0, -0.5, 0.5, 0.2, 48000 };
         fill.value (view); fill.value (kept[0]); fill.value (points[0]); fill.value (runs[0]); fill.value (differences[0]); fill.value (curve[0]);
         view.pendingMasterBytes = 0.0; // byte counts are finite and nonnegative, even in hostile scalar fixtures
         fill.value (pass[0]);
@@ -86,6 +88,13 @@ int main()
             report.crest.rows = crestRows; report.crest.sourceMask = crestMask;
             report.firstHint = MasterHint { LandingReason::ExcessSubBass, 35.0, true };
             report.secondHint = MasterHint { LandingReason::TruePeak, -2.0, false };
+            MasterCost cost;
+            cost.sourceRateHz = cost.masterRateHz = 48000;
+            cost.sourceFrames = cost.masterFrames = 48000;
+            cost.crestFullDb = { MeasurementReason::None, 1.5, 1 };
+            cost.shapeP95Lu = { MeasurementReason::None, 0.0, 1 };
+            cost.sections = { &section, 1 }; cost.waveform = { &wave, 1 };
+            report.cost = cost;
         }
         else kept[0].report.reset();
         view.measurementStorage = {};

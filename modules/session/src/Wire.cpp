@@ -297,6 +297,37 @@ TransferNeed Wire::query (Session& s, std::string_view request, std::span<char> 
     if (n.jsonBytes > kQueryJsonBytes) detail::storageOverflow();
     return { query (response.view(), json, rows), n.jsonBytes, n.rowBytes };
 }
+Checked Wire::masterWaveformChunkStorage (const Session& s, std::string_view json, const Pcm& shape) noexcept
+{
+    MeasurementQuery q;
+    const auto parsed = queryRequest (json, q);
+    if (parsed != CodecStatus::Ok) return { parsed == CodecStatus::FloatingPointEnvironment
+        ? Rejection::FloatingPointEnvironment : Rejection::Contract };
+    const auto demand = s.masterWaveformChunkStorage (q, shape);
+    if (demand.status == QueryStatus::FloatingPointEnvironment) return { Rejection::FloatingPointEnvironment };
+    if (demand.status == QueryStatus::Contract) return { Rejection::Contract };
+    Checked out; out.bytes = demand.bytes; out.largestBlockBytes = demand.largestBlockBytes; return out;
+}
+TransferNeed Wire::masterWaveformChunkBuffers (const Session& s, std::string_view json, const Pcm& shape) noexcept
+{
+    MeasurementQuery q;
+    if (const auto status = queryRequest (json, q); status != CodecStatus::Ok) return { status, 0, 0 };
+    const auto demand = s.masterWaveformChunkStorage (q, shape);
+    return { CodecStatus::Ok, kQueryJsonBytes, std::uint32_t (demand.rowBytes) };
+}
+TransferNeed Wire::masterWaveformChunk (Session& s, std::string_view request, const Pcm& chunk,
+                                       std::span<char> json, std::span<double> rows) noexcept
+{
+    const auto status = buffers (masterWaveformChunkBuffers (s, request, chunk), json, rows);
+    if (status != CodecStatus::Ok) return { status, 0, 0 };
+    MeasurementQuery q;
+    if (const auto parsed = queryRequest (request, q); parsed != CodecStatus::Ok) return { parsed, 0, 0 };
+    const auto response = s.masterWaveformChunk (q, chunk);
+    const auto n = queryBytes (response.view());
+    if (n.status != CodecStatus::Ok) return n;
+    if (n.jsonBytes > kQueryJsonBytes) detail::storageOverflow();
+    return { query (response.view(), json, rows), n.jsonBytes, n.rowBytes };
+}
 TransferNeed Wire::eventsBytes (std::span<const Notification> events) noexcept
 {
     if (Session::checkFloatingPointEnvironment() != Status::Ok) return { CodecStatus::FloatingPointEnvironment, 0, 0 };

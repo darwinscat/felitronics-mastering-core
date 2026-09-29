@@ -74,6 +74,11 @@ inline constexpr FactShape kFacts[] = {
     { FactId::MasterReportUnavailable, "masterReportUnavailable", {}, 0 },
     { FactId::MasterCrestDelivered, "masterCrestDelivered", { { { "rate", ArgKind::Value, {} } } }, 1 },
     { FactId::MasterLandingAbove, "masterLandingAbove", { { { "achieved", ArgKind::Value, {} }, { "target", ArgKind::Value, {} }, { "gap", ArgKind::Value, {} } } }, 3 },
+    { FactId::MasterCostShape, "masterCostShape", { { { "shift", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterCostCrest, "masterCostCrest", { { { "loss", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterCostPumping, "masterCostPumping", { { { "level", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterCostK2Deferred, "masterCostK2Deferred", {}, 0 },
+    { FactId::MasterCostUnavailable, "masterCostUnavailable", {}, 0 },
     // A command's rejection (Commands.h), one per code; the four a field refuses name it.
     { FactId::RejectedFloatingPointEnvironment, "rejectedFloatingPointEnvironment", {}, 0 },
     { FactId::RejectedNoSource, "rejectedNoSource", {}, 0 },

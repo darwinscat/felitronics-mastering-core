@@ -7,6 +7,7 @@ src/ConfigSchema.cpp
 src/Config.cpp
 src/Landing.cpp
 src/MasterJob.cpp
+src/Cost.cpp
 src/Rules.cpp
 src/Devices.cpp
 src/Commands.cpp

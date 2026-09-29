@@ -643,6 +643,70 @@ FC_EXPORT fc_session_status fc_session_query_copy (fc_session session, const cha
     if (n.status != CodecStatus::Ok) return status (n.status);
     written->jsonBytes = n.jsonBytes; written->rowBytes = n.rowBytes; return FC_SESSION_OK;
 }
+FC_EXPORT fc_session_status fc_session_master_waveform_chunk_bytes (fc_session session, const char* request,
+    std::uint32_t request_bytes, std::uint32_t channels, std::uint32_t frames, std::uint32_t rate,
+    fc_session_storage* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = record (out); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = pointer (request, request_bytes, 1, true); st != FC_SESSION_OK) return st;
+    if (overlap (out, sizeof (*out), request, request_bytes)) return FC_SESSION_ERR_OVERLAP;
+    return storageOut (*slot->session, Wire::masterWaveformChunkStorage (*slot->session,
+        { request, request_bytes }, { nullptr, channels, frames, rate }), out);
+}
+FC_EXPORT fc_session_status fc_session_master_waveform_chunk_size (fc_session session, const char* request,
+    std::uint32_t request_bytes, std::uint32_t channels, std::uint32_t frames, std::uint32_t rate,
+    fc_session_sizes* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = record (out); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = pointer (request, request_bytes, 1, true); st != FC_SESSION_OK) return st;
+    if (overlap (out, sizeof (*out), request, request_bytes)) return FC_SESSION_ERR_OVERLAP;
+    const auto n = Wire::masterWaveformChunkBuffers (*slot->session, { request, request_bytes },
+        { nullptr, channels, frames, rate });
+    if (n.status != CodecStatus::Ok) return status (n.status);
+    out->jsonBytes = n.jsonBytes; out->rowBytes = n.rowBytes; return FC_SESSION_OK;
+}
+FC_EXPORT fc_session_status fc_session_master_waveform_chunk_copy (fc_session session, const char* request,
+    std::uint32_t request_bytes, const float* const* pcm, std::uint32_t channels, std::uint32_t frames,
+    std::uint32_t rate, char* json, std::uint32_t json_capacity, double* rows,
+    std::uint32_t row_capacity, fc_session_sizes* written)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = pointer (json, json_capacity, 1); st != FC_SESSION_OK) return st;
+    if (const auto st = pointer (rows, row_capacity, 8, true); st != FC_SESSION_OK) return st;
+    if (row_capacity % sizeof (double) != 0) return FC_SESSION_ERR_ALIGNMENT;
+    if (const auto st = record (written); st != FC_SESSION_OK) return st;
+    auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = pointer (request, request_bytes, 1, true); st != FC_SESSION_OK) return st;
+    if (const auto st = pointer (pcm, std::uint64_t (channels) * sizeof (*pcm), alignof (const float*), channels == 0);
+        st != FC_SESSION_OK) return st;
+    if (channels <= 2)
+        for (std::uint32_t c = 0; c < channels; ++c)
+            if (const auto st = pointer (pcm[c], std::uint64_t (frames) * sizeof (float), alignof (float), frames == 0);
+                st != FC_SESSION_OK) return st;
+    if (overlap (json, json_capacity, rows, row_capacity) || overlap (json, json_capacity, written, sizeof (*written))
+        || overlap (rows, row_capacity, written, sizeof (*written)) || overlap (request, request_bytes, json, json_capacity)
+        || overlap (request, request_bytes, rows, row_capacity) || overlap (request, request_bytes, written, sizeof (*written))
+        || overlap (pcm, std::uint64_t (channels) * sizeof (*pcm), json, json_capacity)
+        || overlap (pcm, std::uint64_t (channels) * sizeof (*pcm), rows, row_capacity)
+        || overlap (pcm, std::uint64_t (channels) * sizeof (*pcm), written, sizeof (*written))) return FC_SESSION_ERR_OVERLAP;
+    if (channels <= 2)
+        for (std::uint32_t c = 0; c < channels; ++c)
+            if (overlap (pcm[c], std::uint64_t (frames) * sizeof (float), json, json_capacity)
+                || overlap (pcm[c], std::uint64_t (frames) * sizeof (float), rows, row_capacity)
+                || overlap (pcm[c], std::uint64_t (frames) * sizeof (float), written, sizeof (*written)))
+                return FC_SESSION_ERR_OVERLAP;
+    const auto n = Wire::masterWaveformChunk (*slot->session, { request, request_bytes },
+        { pcm, channels, frames, rate }, { json, json_capacity }, { rows, row_capacity / sizeof (double) });
+    if (n.status != CodecStatus::Ok) return status (n.status);
+    written->jsonBytes = n.jsonBytes; written->rowBytes = n.rowBytes; return FC_SESSION_OK;
+}
 
 FC_EXPORT fc_session_status fc_session_set_capacity (fc_session session, const fc_session_capacity* capacity)
 {

@@ -538,6 +538,16 @@ Answer Session::apply (const Request& request) noexcept
         rows.traceCapacity = std::uint32_t (plan.traceBuckets);
         if (plan.crestCapacity != 0) rows.crest.reset (new double[plan.crestCapacity * 15u]);
         rows.crestCapacity = plan.crestCapacity;
+        if (plan.costCapacity != 0)
+        {
+            rows.costSeries.reset (new double[plan.costCapacity]);
+            rows.sections.reset (new MasterSection[plan.costCapacity]);
+        }
+        if (plan.costScratchCapacity != 0) rows.costScratch.reset (new double[plan.costScratchCapacity]);
+        if (plan.waveformCapacity != 0) rows.waveform.reset (new MasterWaveformBucket[plan.waveformCapacity]);
+        rows.costCapacity = plan.costCapacity;
+        rows.costScratchCapacity = plan.costScratchCapacity;
+        rows.waveformCapacity = plan.waveformCapacity;
         masterJob_.reset (new detail::MasterJob);
         if (! masterJob_->begin (*this, plan)) detail::storageOverflow();
         // liveBytes() counts the installed row owners separately while this job is active.

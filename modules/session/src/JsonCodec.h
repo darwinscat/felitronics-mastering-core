@@ -154,6 +154,9 @@ struct Storage
     LandingTraceBucket* landingTraceRow = nullptr;
     std::size_t masterCrestRows = 0;
     double* masterCrestRow = nullptr;
+    std::size_t masterSections = 0, masterWaveformRows = 0;
+    MasterSection* masterSection = nullptr;
+    MasterWaveformBucket* masterWaveformRow = nullptr;
     std::uint64_t bytes() const noexcept
     {
         return std::uint64_t (measurementResults) * sizeof (MeasurementResult)
@@ -162,7 +165,9 @@ struct Storage
              + std::uint64_t (measurementRows) * sizeof (double) + chars + masters * sizeof (Kept) + points * sizeof (ReadingPoint) + runs * sizeof (ReadingRun) + differences * sizeof (MachineDifference) + eqPoints * sizeof (EqPoint)
              + std::uint64_t (landingPasses) * sizeof (LandingPass)
              + std::uint64_t (landingTraceRows) * sizeof (LandingTraceBucket)
-             + std::uint64_t (masterCrestRows) * sizeof (double);
+             + std::uint64_t (masterCrestRows) * sizeof (double)
+             + std::uint64_t (masterSections) * sizeof (MasterSection)
+             + std::uint64_t (masterWaveformRows) * sizeof (MasterWaveformBucket);
     }
 };
 
@@ -180,6 +185,9 @@ struct Reader
     bool masterCrestContext = false;
     std::size_t crestBandCount = 0, crestMaskCount = 0;
     std::uint64_t traceSamples = 0, traceNonFinite = 0;
+    std::uint64_t costSectionEnd = 0, costWaveEnd = 0, costWaveFrom = 0, costWaveTo = 0;
+    std::size_t costWaveRows = 0;
+    unsigned costWaveChannels = 0;
 
     void space() noexcept { while (pos < input.size() && (input[pos] == ' ' || input[pos] == '\n' || input[pos] == '\r' || input[pos] == '\t')) ++pos; }
     bool take (char c) noexcept { space(); if (pos < input.size() && input[pos] == c) { ++pos; return true; } return false; }
@@ -355,10 +363,16 @@ struct Reader
             const auto beforeNumbers = storage.measurementNumbers, beforeArrays = storage.measurementArrays;
             const auto beforePasses = storage.landingPasses, beforeTraceRows = storage.landingTraceRows;
             const auto beforeCrestRows = storage.masterCrestRows;
+            const auto beforeSections = storage.masterSections, beforeWaveform = storage.masterWaveformRows;
             seen = 0; optionalMask = 0;
             if constexpr (std::is_same_v<T, MasterCrest>)
             { masterCrestContext = true; crestBandCount = crestMaskCount = 0; }
             if constexpr (std::is_same_v<T, LandingTrace>) { traceSamples = 0; traceNonFinite = 0; }
+            if constexpr (std::is_same_v<T, MasterCost>)
+            {
+                costSectionEnd = costWaveEnd = costWaveFrom = costWaveTo = 0;
+                costWaveRows = 0; costWaveChannels = 0;
+            }
             expect ('{');
             do
             {
@@ -445,6 +459,59 @@ struct Reader
                                            x.plrDb, x.gainFromSourceDb, x.missLu })
                     if (value && ! std::isfinite (*value)) good = false;
             }
+            else if constexpr (std::is_same_v<T, MasterCostValue>)
+            {
+                if (x.value ? x.reason != MeasurementReason::None || ! std::isfinite (*x.value)
+                    : x.reason == MeasurementReason::None) good = false;
+            }
+            else if constexpr (std::is_same_v<T, MasterCost>)
+            {
+                if (storage.masterSections - beforeSections > 1000000u
+                    || storage.masterWaveformRows - beforeWaveform > 4096u
+                    || x.k2Reason != MeasurementReason::NotImplemented
+                    || x.sourceRateHz == 0 || x.masterRateHz == 0
+                    || x.sourceFrames == 0 || x.masterFrames == 0
+                    || costSectionEnd > x.sourceFrames || costWaveRows == 0
+                    || costWaveEnd != x.masterFrames
+                    || (costWaveChannels == 2 && costWaveRows % 2u != 0)
+                    || (x.worstSectionIndex && *x.worstSectionIndex >= storage.masterSections - beforeSections)) good = false;
+            }
+            else if constexpr (std::is_same_v<T, MasterSection>)
+            {
+                if (x.toFrame <= x.fromFrame || ! std::isfinite (x.sourceLufs)
+                    || ! std::isfinite (x.masterLufs) || ! std::isfinite (x.shiftLu)
+                    || x.fromFrame < costSectionEnd) good = false;
+                costSectionEnd = x.toFrame;
+            }
+            else if constexpr (std::is_same_v<T, MasterWaveformBucket>)
+            {
+                if (x.toFrame <= x.fromFrame || x.channel > 1 || x.finite > x.toFrame - x.fromFrame
+                    || ! std::isfinite (x.minimum) || ! std::isfinite (x.maximum)
+                    || ! std::isfinite (x.rms) || x.minimum > x.maximum || x.rms < 0) good = false;
+                if (costWaveRows == 0)
+                {
+                    if (x.channel != 0 || x.fromFrame != 0) good = false;
+                }
+                else if (costWaveRows == 1)
+                {
+                    costWaveChannels = x.channel == 1 ? 2u : 1u;
+                    if (x.channel == 1 ? x.fromFrame != costWaveFrom || x.toFrame != costWaveTo
+                        : x.fromFrame != costWaveEnd) good = false;
+                }
+                else if (costWaveChannels == 1)
+                {
+                    if (x.channel != 0 || x.fromFrame != costWaveEnd) good = false;
+                }
+                else if (costWaveRows % 2u == 0)
+                {
+                    if (x.channel != 0 || x.fromFrame != costWaveEnd) good = false;
+                }
+                else if (x.channel != 1 || x.fromFrame != costWaveFrom || x.toFrame != costWaveTo)
+                    good = false;
+                if (x.channel == 0)
+                { costWaveFrom = x.fromFrame; costWaveTo = x.toFrame; costWaveEnd = x.toFrame; }
+                ++costWaveRows;
+            }
             else if constexpr (std::is_same_v<T, MasterHint>)
             {
                 if (x.reason == LandingReason::None || ! std::isfinite (x.evidence)
@@ -475,6 +542,8 @@ struct Reader
         if constexpr (std::is_same_v<T, Kept>) { count = &storage.masters; out = storage.kept; }
         else if constexpr (std::is_same_v<T, LandingPass>) { count = &storage.landingPasses; out = storage.landingPass; }
         else if constexpr (std::is_same_v<T, LandingTraceBucket>) { count = &storage.landingTraceRows; out = storage.landingTraceRow; }
+        else if constexpr (std::is_same_v<T, MasterSection>) { count = &storage.masterSections; out = storage.masterSection; }
+        else if constexpr (std::is_same_v<T, MasterWaveformBucket>) { count = &storage.masterWaveformRows; out = storage.masterWaveformRow; }
         else if constexpr (std::is_same_v<T, ReadingPoint>) { count = &storage.points; out = storage.point; }
         else if constexpr (std::is_same_v<T, ReadingRun>) { count = &storage.runs; out = storage.run; }
         else if constexpr (std::is_same_v<T, EqPoint>) { count = &storage.eqPoints; out = storage.eqPoint; }

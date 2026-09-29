@@ -280,6 +280,26 @@ en = "Impact comparison is waiting for the source measurement."
 ru = "Сравнение удара недоступно; готовый мастер сохраняется, если его громкость и истинный пик пригодны."
 en = "Impact comparison is unavailable; the completed master remains available when its loudness and true peak are valid."
 
+[messages.masterCostShape]
+ru = "Отклонение формы громкости в 95-м процентиле: {shift}."
+en = "The 95th percentile of loudness-shape deviation is {shift}."
+
+[messages.masterCostCrest]
+ru = "Потеря удара в худших 5 % пригодных окон: {loss}."
+en = "Impact loss in the worst 5% of suitable windows is {loss}."
+
+[messages.masterCostPumping]
+ru = "Качание лимитера в полосе 1–8 Гц: {level}."
+en = "Limiter pumping in the 1–8 Hz band is {level}."
+
+[messages.masterCostK2Deferred]
+ru = "Изменение тембра пока не измеряется."
+en = "Tonal change is not measured yet."
+
+[messages.masterCostUnavailable]
+ru = "Часть чисел цены мастера недоступна для этой записи."
+en = "Some master-cost measurements are unavailable for this programme."
+
 [messages.masterReportUnavailable]
 ru = "Обязательный замер готового мастера недоступен; файл не выдаётся."
 en = "The completed master's required measurement is unavailable; no file is delivered."

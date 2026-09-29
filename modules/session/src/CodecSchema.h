@@ -116,7 +116,8 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (QueryKind::Stereo) == 6);
         static_assert (unsigned (QueryKind::LimiterGr) == 7);
         static_assert (unsigned (QueryKind::PeakClipGr) == 8);
-        return 8;
+        static_assert (unsigned (QueryKind::MasterWaveform) == 9);
+        return 9;
     }
     else if constexpr (std::is_same_v<T, QueryStatus>)
     {
@@ -276,6 +277,7 @@ constexpr void checkEnum (QueryKind value) noexcept
         case QueryKind::Stereo: break;
         case QueryKind::LimiterGr: break;
         case QueryKind::PeakClipGr: break;
+        case QueryKind::MasterWaveform: break;
     }
 }
 
@@ -572,6 +574,60 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.fileValue)>, double>);
         v.field ("fileValue", x.fileValue);
     }
+    else if constexpr (std::is_same_v<U, MasterCost>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.activeWindowShare)>, MasterCostValue>);
+        v.field ("activeWindowShare", x.activeWindowShare);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.crestFullDb)>, MasterCostValue>);
+        v.field ("crestFullDb", x.crestFullDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.crestHighDb)>, MasterCostValue>);
+        v.field ("crestHighDb", x.crestHighDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.crestHighMidDb)>, MasterCostValue>);
+        v.field ("crestHighMidDb", x.crestHighMidDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.crestLowDb)>, MasterCostValue>);
+        v.field ("crestLowDb", x.crestLowDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.crestLowMidDb)>, MasterCostValue>);
+        v.field ("crestLowMidDb", x.crestLowMidDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.k2Reason)>, MeasurementReason>);
+        v.field ("k2Reason", x.k2Reason);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.largestSectionShiftLu)>, MasterCostValue>);
+        v.field ("largestSectionShiftLu", x.largestSectionShiftLu);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.limiterActiveShare)>, MasterCostValue>);
+        v.field ("limiterActiveShare", x.limiterActiveShare);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.limiterP50Db)>, MasterCostValue>);
+        v.field ("limiterP50Db", x.limiterP50Db);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.limiterP95Db)>, MasterCostValue>);
+        v.field ("limiterP95Db", x.limiterP95Db);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.masterFrames)>, std::uint64_t>);
+        v.field ("masterFrames", x.masterFrames);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.masterRateHz)>, std::uint32_t>);
+        v.field ("masterRateHz", x.masterRateHz);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.pumpingRmsDb)>, MasterCostValue>);
+        v.field ("pumpingRmsDb", x.pumpingRmsDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sections)>, std::span<const MasterSection>>);
+        v.field ("sections", x.sections);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.shapeP95Lu)>, MasterCostValue>);
+        v.field ("shapeP95Lu", x.shapeP95Lu);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sourceFrames)>, std::uint64_t>);
+        v.field ("sourceFrames", x.sourceFrames);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sourceRateHz)>, std::uint32_t>);
+        v.field ("sourceRateHz", x.sourceRateHz);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.waveform)>, std::span<const MasterWaveformBucket>>);
+        v.field ("waveform", x.waveform);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.worstSectionIndex)>, std::optional<std::uint32_t>>);
+        v.field ("worstSectionIndex", x.worstSectionIndex);
+    }
+    else if constexpr (std::is_same_v<U, MasterCostValue>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.compared)>, std::uint64_t>);
+        v.field ("compared", x.compared);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.reason)>, MeasurementReason>);
+        v.field ("reason", x.reason);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.value)>, std::optional<double>>);
+        v.field ("value", x.value);
+    }
     else if constexpr (std::is_same_v<U, MasterCrest>)
     {
         [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14] = x;
@@ -618,13 +674,15 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, MasterReport>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.achievedLufs)>, std::optional<double>>);
         v.field ("achievedLufs", x.achievedLufs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ceilingDbTp)>, double>);
         v.field ("ceilingDbTp", x.ceilingDbTp);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.checkPasses)>, std::uint32_t>);
         v.field ("checkPasses", x.checkPasses);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.cost)>, std::optional<MasterCost>>);
+        v.optionalField ("cost", x.cost, std::optional<MasterCost> {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.crest)>, MasterCrest>);
         v.field ("crest", x.crest);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.deliverable)>, bool>);
@@ -658,6 +716,22 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.truePeakDbTp)>, std::optional<double>>);
         v.field ("truePeakDbTp", x.truePeakDbTp);
     }
+    else if constexpr (std::is_same_v<U, MasterSection>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.compared)>, bool>);
+        v.field ("compared", x.compared);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.fromFrame)>, std::uint64_t>);
+        v.field ("fromFrame", x.fromFrame);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.masterLufs)>, double>);
+        v.field ("masterLufs", x.masterLufs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.shiftLu)>, double>);
+        v.field ("shiftLu", x.shiftLu);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sourceLufs)>, double>);
+        v.field ("sourceLufs", x.sourceLufs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.toFrame)>, std::uint64_t>);
+        v.field ("toFrame", x.toFrame);
+    }
     else if constexpr (std::is_same_v<U, MasterToken>)
     {
         [[maybe_unused]] auto& [f0, f1, f2, f3] = x;
@@ -669,6 +743,24 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("revision", x.revision);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.source)>, std::uint64_t>);
         v.field ("source", x.source);
+    }
+    else if constexpr (std::is_same_v<U, MasterWaveformBucket>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.channel)>, std::uint32_t>);
+        v.field ("channel", x.channel);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.finite)>, std::uint64_t>);
+        v.field ("finite", x.finite);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.fromFrame)>, std::uint64_t>);
+        v.field ("fromFrame", x.fromFrame);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.maximum)>, double>);
+        v.field ("maximum", x.maximum);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.minimum)>, double>);
+        v.field ("minimum", x.minimum);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.rms)>, double>);
+        v.field ("rms", x.rms);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.toFrame)>, std::uint64_t>);
+        v.field ("toFrame", x.toFrame);
     }
     else if constexpr (std::is_same_v<U, MeasuredSource>)
     {

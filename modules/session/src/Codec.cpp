@@ -84,6 +84,28 @@ bool valid (const SnapshotView& v) noexcept
             if (hint && (hint->reason == LandingReason::None || ! std::isfinite (hint->evidence)
                 || hint->percent != (hint->reason == LandingReason::ExcessSubBass
                                   || hint->reason == LandingReason::DarkMix))) return false;
+        if (r.cost)
+        {
+            const auto& cost = *r.cost;
+            if (cost.k2Reason != MeasurementReason::NotImplemented || cost.sourceRateHz == 0
+                || cost.masterRateHz == 0 || cost.sections.size() > 1000000u
+                || cost.waveform.size() > 4096u
+                || (cost.worstSectionIndex && *cost.worstSectionIndex >= cost.sections.size())) return false;
+            for (const auto& value : { cost.crestLowDb, cost.crestLowMidDb, cost.crestHighMidDb,
+                                       cost.crestHighDb, cost.crestFullDb, cost.shapeP95Lu,
+                                       cost.largestSectionShiftLu,
+                                       cost.pumpingRmsDb, cost.limiterP50Db, cost.limiterP95Db,
+                                       cost.limiterActiveShare, cost.activeWindowShare })
+                if (value.value ? value.reason != MeasurementReason::None || ! std::isfinite (*value.value)
+                    : value.reason == MeasurementReason::None) return false;
+            for (const auto& section : cost.sections)
+                if (section.toFrame <= section.fromFrame || ! std::isfinite (section.sourceLufs)
+                    || ! std::isfinite (section.masterLufs) || ! std::isfinite (section.shiftLu)) return false;
+            for (const auto& row : cost.waveform)
+                if (row.toFrame <= row.fromFrame || row.channel > 1 || row.finite > row.toFrame - row.fromFrame
+                    || ! std::isfinite (row.minimum) || ! std::isfinite (row.maximum)
+                    || ! std::isfinite (row.rms) || row.minimum > row.maximum || row.rms < 0) return false;
+        }
     }
     const auto& m = v.measurementStorage;
     for (const auto bytes : { m.sourceBytes, m.resultBytes, m.workspaceBytes, m.copyBytes,
@@ -135,6 +157,8 @@ CodecStatus Codec::decode (std::string_view json, Snapshot& output) noexcept
     if (sizes.landingPasses) out.landingPasses_.reset (new LandingPass[sizes.landingPasses]);
     if (sizes.landingTraceRows) out.landingTraceRows_.reset (new LandingTraceBucket[sizes.landingTraceRows]);
     if (sizes.masterCrestRows) out.masterCrestRows_.reset (new double[sizes.masterCrestRows]);
+    if (sizes.masterSections) out.masterSections_.reset (new MasterSection[sizes.masterSections]);
+    if (sizes.masterWaveformRows) out.masterWaveform_.reset (new MasterWaveformBucket[sizes.masterWaveformRows]);
     if (sizes.points) out.points_.reset (new ReadingPoint[sizes.points]);
     if (sizes.runs) out.runs_.reset (new ReadingRun[sizes.runs]);
     if (sizes.differences) out.differences_.reset (new MachineDifference[sizes.differences]);
@@ -152,6 +176,8 @@ CodecStatus Codec::decode (std::string_view json, Snapshot& output) noexcept
     storage.landingPass = out.landingPasses_.get();
     storage.landingTraceRow = out.landingTraceRows_.get();
     storage.masterCrestRow = out.masterCrestRows_.get();
+    storage.masterSection = out.masterSections_.get();
+    storage.masterWaveformRow = out.masterWaveform_.get();
     const bool filled = read (json, storage, out.view_);
     detail::debugBound (filled);
     output = std::move (out);

@@ -205,6 +205,32 @@ int main()
         ok (fc_session_master_audio_release (handle, &t) == FC_SESSION_OK
             && fc_session_master_audio_release (handle, &t) == FC_SESSION_ERR_STALE,
             "release is explicit and idempotently refused");
+        char query[512];
+        const auto queryLength = std::snprintf (query, sizeof (query),
+            "{\"kind\":9,\"audioId\":\"%llu\",\"fromFrame\":\"100\",\"toFrame\":\"200\","
+            "\"columns\":10,\"requestId\":\"3\",\"crossoverHz\":120,\"fromHz\":20,\"toHz\":250,"
+            "\"masterId\":%u}", static_cast<unsigned long long> (source), retained.front().id);
+        fc_session_storage chunkStorage { sizeof (fc_session_storage) };
+        fc_session_sizes chunkSizes { sizeof (fc_session_sizes) }, chunkWritten { sizeof (fc_session_sizes) };
+        const auto inputBytes = std::uint32_t (queryLength);
+        const auto pricedChunk = fc_session_master_waveform_chunk_bytes (handle, query, inputBytes,
+            2, 100, rate, &chunkStorage);
+        const auto sizedChunk = fc_session_master_waveform_chunk_size (handle, query, inputBytes,
+            2, 100, rate, &chunkSizes);
+        std::vector<char> chunkJson (chunkSizes.jsonBytes);
+        std::vector<double> chunkRows (chunkSizes.rowBytes / sizeof (double));
+        const float* chunkPcm[2] { copied.data() + 100, copied.data() + frames + 100 };
+        fc_session_status chunkStatus = FC_SESSION_ERR_CONTRACT;
+        const auto chunkSpent = budget::spend ([&] {
+            chunkStatus = fc_session_master_waveform_chunk_copy (handle, query, inputBytes, chunkPcm,
+                2, 100, rate, chunkJson.data(), std::uint32_t (chunkJson.size()), chunkRows.data(),
+                chunkSizes.rowBytes, &chunkWritten);
+        });
+        ok (pricedChunk == FC_SESSION_OK && sizedChunk == FC_SESSION_OK && chunkStatus == FC_SESSION_OK
+            && chunkStorage.rejection == 0 && budget::covers (std::uint64_t (chunkStorage.bytes), chunkSpent)
+            && chunkWritten.rowBytes == 20u * 7u * sizeof (double)
+            && chunkRows[0] == 100 && chunkRows[1] == 110,
+            "C facade reads an explicit delivered PCM chunk after release within its declared budget");
     }
     ok (fc_session_destroy (handle) == FC_SESSION_OK, "C session releases all storage");
     return felitronics::test::report();

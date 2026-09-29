@@ -109,7 +109,7 @@ void Session::emit (Notification event, const Phase& progress) noexcept
     event.completedWork = progress.completedUnits;
     event.totalWork = progress.totalUnits;
 
-    events_[eventCount_++] = event; // at most three per unit, or one per command
+    events_[eventCount_++] = event; // three per ordinary unit; a master completion has five extra slots
 }
 
 void Session::dropJob (JobId job) noexcept
@@ -288,6 +288,16 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 if (! detail::Driver::mastered (*this, completedJob)) { contract (completedJob); ++units; continue; }
                 masters_[masterCount_ - 1].landing = summary;
                 masters_[masterCount_ - 1].report = masterJob_->reportResult();
+                if (const auto& cost = masters_[masterCount_ - 1].report->cost)
+                {
+                    event.kind = EventKind::Fact;
+                    (void) event.payload.fact.assign (MasterReportText::shape (*cost)); emit (event, masterProgress_);
+                    if (cost->crestFullDb.value)
+                    { (void) event.payload.fact.assign (MasterReportText::impact (*cost)); emit (event, masterProgress_); }
+                    if (cost->pumpingRmsDb.value)
+                    { (void) event.payload.fact.assign (MasterReportText::pumping (*cost)); emit (event, masterProgress_); }
+                    (void) event.payload.fact.assign (MasterReportText::tonal()); emit (event, masterProgress_);
+                }
                 if (summary.deliverable && outcome == mastering::StepResult::Done)
                 {
                     masterAudio_ = { masterJob_->takeOutput(), std::uint64_t (masterJob_->frames),

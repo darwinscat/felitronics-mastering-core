@@ -94,7 +94,8 @@
       "Clipping",
       "Stereo",
       "LimiterGr",
-      "PeakClipGr"
+      "PeakClipGr",
+      "MasterWaveform"
     ],
     "QueryStatus": [
       "Ready",
@@ -363,6 +364,62 @@
         "percent": "bool"
       }
     },
+    "MasterSection": {
+      "cpp": "MasterSection",
+      "fields": {
+        "fromFrame": "uint64",
+        "toFrame": "uint64",
+        "sourceLufs": "double",
+        "masterLufs": "double",
+        "shiftLu": "double",
+        "compared": "bool"
+      }
+    },
+    "MasterCostValue": {
+      "cpp": "MasterCostValue",
+      "fields": {
+        "reason": "MeasurementReason",
+        "value": "double?",
+        "compared": "uint64"
+      }
+    },
+    "MasterWaveformBucket": {
+      "cpp": "MasterWaveformBucket",
+      "fields": {
+        "fromFrame": "uint64",
+        "toFrame": "uint64",
+        "channel": "uint32",
+        "minimum": "double",
+        "maximum": "double",
+        "rms": "double",
+        "finite": "uint64"
+      }
+    },
+    "MasterCost": {
+      "cpp": "MasterCost",
+      "fields": {
+        "crestLowDb": "MasterCostValue",
+        "crestLowMidDb": "MasterCostValue",
+        "crestHighMidDb": "MasterCostValue",
+        "crestHighDb": "MasterCostValue",
+        "crestFullDb": "MasterCostValue",
+        "shapeP95Lu": "MasterCostValue",
+        "largestSectionShiftLu": "MasterCostValue",
+        "pumpingRmsDb": "MasterCostValue",
+        "limiterP50Db": "MasterCostValue",
+        "limiterP95Db": "MasterCostValue",
+        "limiterActiveShare": "MasterCostValue",
+        "activeWindowShare": "MasterCostValue",
+        "worstSectionIndex": "uint32?",
+        "k2Reason": "MeasurementReason",
+        "sourceRateHz": "uint32",
+        "masterRateHz": "uint32",
+        "sourceFrames": "uint64",
+        "masterFrames": "uint64",
+        "sections": "MasterSection[]",
+        "waveform": "MasterWaveformBucket[]"
+      }
+    },
     "MasterReport": {
       "cpp": "MasterReport",
       "fields": {
@@ -384,7 +441,8 @@
         "checkPasses": "uint32",
         "crest": "MasterCrest",
         "firstHint": "MasterHint?",
-        "secondHint": "MasterHint?"
+        "secondHint": "MasterHint?",
+        "cost": "MasterCost?"
       }
     },
     "LandingPass": {
@@ -1184,6 +1242,12 @@
       "report": {
         "default": "std::optional<MasterReport> {}",
         "description": "No measured master report was published in the v1 snapshot."
+      }
+    },
+    "MasterReport": {
+      "cost": {
+        "default": "std::optional<MasterCost> {}",
+        "description": "No post-master cost was published in the v1 snapshot."
       }
     },
     "Snapshot": {

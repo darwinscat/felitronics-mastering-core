@@ -1173,5 +1173,60 @@ into bounded scratch for crest. The deliverable PCM and its LUFS/TP remain on th
 final unavailable reason are distinct; either leaves a verified master available. Retained rows belong to
 the master until forget or source replacement, survive PCM transfer, and are copied by owned snapshots and
 the one generated codec. A late Pending-to-Ready or Pending-to-Unavailable change increments the revision
-and emits a master-keyed crest fact so an event-driven shell can refresh that report. The later cost task
-derives its figures from these linear pairs and mask.
+and emits a master-keyed crest fact so an event-driven shell can refresh that report.
+
+## Measured master cost
+
+`MasterReport.cost` exists only after a delivered master. It is descriptive evidence, never a delivery
+gate. Every number has an optional value and a reason; `k2Reason=NotImplemented` means tonal change has
+not been measured. A gain-only render has no shape or crest penalty. The source-rate check supplies the
+crest rows when delivery rate differs, and `sourceRateCheck` marks that provenance.
+
+For each of Low, LowMid, HighMid, High and Full, K1 compares only blocks whose source mask is one and
+whose four linear operands are positive and finite. Its per-block loss is
+`max(0, 20 log10(sourcePeak/masterPeak) - 10 log10(sourceMeanSquare/masterMeanSquare))` dB.
+The cost is the weighted mean of the largest 5% of suitable blocks. With `N` blocks, the tail weighs
+`0.05 N`: the largest `floor(0.05 N)` each weigh one, and the next weighs the fractional remainder.
+For `N < 20`, the sole largest block receives its fractional weight and the answer is still its loss.
+Equal losses have equal value, so their ordering cannot change the answer. An empty mask is `NoSignal`;
+incompatible source and master grids are `Unsupported`. The five band values remain separate.
+
+Shape uses end-stamped 0.1-second short-term LUFS readings of source and delivered PCM after the first
+3 seconds. A source reading is compared only at or above `max(-70 LUFS, source integrated LUFS - 42 LU)`
+with a finite delivered reading. Each compared deviation is the absolute value of
+`(master short-term - source short-term) - (master integrated - source integrated)`.
+The continuous shape is the empirical nearest-rank P95 of those deviations. A master shortened by more
+than 0.1 second, either programme below -55 LUFS, or fewer than half the source-derived sections with
+comparisons makes shape unavailable. A source reading more than 3 LU from the open section's running
+mean starts a new section; exactly 3 LU stays. Sections shorter than 8 seconds join the neighbour
+closest in source level, with ties joining the earlier neighbour. Adjacent sections within 3 LU then
+merge. Each retained section carries source-frame bounds, source/master level and gain-removed shift.
+The largest shift gets a named index only when more than two sections compare. LRA is a separate
+reference measurement, not this ordered shape measure.
+
+Limiter P50/P95 use the solver's 4-ms window distribution. The active fraction uses its input-gated
+tap statistics; `activeWindowShare` separately counts source momentary windows passing the relative
+activity floor. Pumping is RMS of the limiter's retained mean GR buckets after a second-order
+Butterworth 1-Hz high-pass and 8-Hz low-pass in sequence, excluding the first two seconds. It is
+unavailable below 40 buckets per second or without valid GR. Trace bucket count follows duration:
+`clamp(ceil(seconds / 0.004), 1000, 65536)`, then is capped by delivered frame count. The true
+bucket rate is therefore part of the retained trace; a wide bucket can make pumping unavailable.
+
+The master keeps at most 2048 waveform buckets per channel, each with actual delivered-frame bounds,
+minimum, maximum, RMS and finite count. `QueryKind::MasterWaveform` returns intersecting retained
+buckets, grouping them to the requested column count. The bounds in each answer are the actual
+retained bounds, which can be wider than the requested zoom. For exact deep zoom after session PCM
+release, the caller explicitly supplies a planar delivered-PCM chunk of at most 65536 frames covering
+exactly the query range to `Session::masterWaveformChunk` or the additive C facade
+`fc_session_master_waveform_chunk_*` entries. The core reads only that chunk and owns no full-song
+cache. It never re-renders during a query. The chunk's shape and result allocations are priced by
+the paired storage/size calls. Master cost rows, the scan meter, trace expansion, their retained
+capacity and snapshot/codec copies are included in declared memory.
+Waveform finalization, pumping, active-window counting, section building and merging, the shape
+quantile, and each masked crest tail retain cursors across `step` calls. A single work unit visits at
+most 1024 rows; late source crest joins use the same cursor with one row per unit.
+
+Synthetic numerical controls are public in `modules/session/tests/CostTests.cpp`; the source shape
+fixture's FNV-1a hash over little-endian IEEE-754 f64 input bits is `f414d88b72c8a1a5`.
+Rebuild and run it with `cmake --build build --target felitronics_session_cost_tests &&
+ctest --test-dir build -R '^felitronics_session_cost_tests$' --output-on-failure`.

@@ -16,6 +16,12 @@ const native = [
     [-14.000000237683, -7.736064824797, -0.000000237683, 29086.524523220956, 19.949102926956]
 ];
 const tolerance = [0.0001, 0.0001, 0.0001, 0.01, 0.001];
+const nativeCost = [
+    [0.000001316055, 0.000000000087, 0, 1],
+    [0.572601210575, 0.041712411864, 0, 1],
+    [0.537238988185, 0.040364549196, 0, 1]
+];
+const costTolerance = [0.01, 0.001, 0.0001, 0];
 const lines = [...output.matchAll(/^master-report-parity (\d+) (.+)$/gm)];
 assert.equal(lines.length, native.length);
 for (let row = 0; row < lines.length; ++row) {
@@ -28,4 +34,16 @@ for (let row = 0; row < lines.length; ++row) {
             `parity case ${row}, field ${field}: ${values[field]} differs from ${native[row][field]}`);
     }
 }
-console.log('master report: same-rate bits and SRC numeric parity agree with native');
+const costLines = [...output.matchAll(/^master-cost-parity (\d+) (.+)$/gm)];
+assert.equal(costLines.length, nativeCost.length);
+for (let row = 0; row < costLines.length; ++row) {
+    assert.equal(Number(costLines[row][1]), row);
+    const values = costLines[row][2].split(' ').map(Number);
+    assert.equal(values.length, 4);
+    for (let field = 0; field < values.length; ++field) {
+        assert(Number.isFinite(values[field]));
+        assert(Math.abs(values[field] - nativeCost[row][field]) <= costTolerance[field],
+            `cost parity case ${row}, field ${field}: ${values[field]} differs from ${nativeCost[row][field]}`);
+    }
+}
+console.log('master report and cost: same-rate bits and SRC numeric parity agree with native');
