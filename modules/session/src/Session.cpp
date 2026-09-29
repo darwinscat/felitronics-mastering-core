@@ -110,6 +110,7 @@ void Session::clearMasters() noexcept
     masterJobBytes_ = 0;
     masterSummary_ = {}; masterTraceCursor_ = 0; masterTraceActive_ = false;
     masterAudio_ = {};
+    masterAudioBits_ = 0;
     pendingMaster_ = {};
     masters_.reset();
     masterRows_.reset();
@@ -322,6 +323,7 @@ MasterTransferStatus Session::takeMaster (MasterToken token, MasterAudio& output
     if (masterAudioBytes (token) == 0)
         return pendingMaster_.master == 0 ? MasterTransferStatus::Unknown : MasterTransferStatus::Stale;
     output = std::move (masterAudio_);
+    masterAudioBits_ = 0;
     pendingMaster_ = {};
     ++revision_;
     return MasterTransferStatus::Ok;
@@ -331,9 +333,34 @@ MasterTransferStatus Session::releaseMaster (MasterToken token) noexcept
     if (masterAudioBytes (token) == 0)
         return pendingMaster_.master == 0 ? MasterTransferStatus::Unknown : MasterTransferStatus::Stale;
     masterAudio_ = {};
+    masterAudioBits_ = 0;
     pendingMaster_ = {};
     ++revision_;
     return MasterTransferStatus::Ok;
+}
+
+WavPlan Session::masterWavPlan (MasterToken token) const noexcept
+{
+    const auto shape = masterAudioShape (token);
+    return shape.frames == 0 ? WavPlan {} : WavWriter::plan (
+        shape.frames, shape.channels, shape.sampleRate, masterAudioBits_);
+}
+
+MasterTransferStatus Session::copyMasterWav (MasterToken token, std::uint64_t offset,
+                                             std::span<std::uint8_t> output) const noexcept
+{
+    const auto pcm = viewMaster (token);
+    if (pcm.empty()) return pendingMaster_.master == 0 ? MasterTransferStatus::Unknown : MasterTransferStatus::Stale;
+    const auto plan = masterWavPlan (token);
+    if (! plan || offset >= plan.bytes || output.empty() || output.size() > 65536u)
+        return MasterTransferStatus::Contract;
+    if (output.size() > plan.bytes - offset) return MasterTransferStatus::TooSmall;
+    const auto outAddress = reinterpret_cast<std::uintptr_t> (output.data());
+    const auto pcmAddress = reinterpret_cast<std::uintptr_t> (pcm.data());
+    if ((outAddress <= pcmAddress && pcmAddress - outAddress < output.size())
+        || (pcmAddress < outAddress && outAddress - pcmAddress < pcm.size_bytes()))
+        return MasterTransferStatus::Contract;
+    return WavWriter::copy (plan, pcm, offset, output) ? MasterTransferStatus::Ok : MasterTransferStatus::Contract;
 }
 
 std::string_view Session::targetName() const noexcept

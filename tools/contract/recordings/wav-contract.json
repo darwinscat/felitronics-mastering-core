@@ -1,0 +1,29 @@
+{
+  "format": 1,
+  "rebuild": "node tools/contract/wav-contract.mjs <native-ABI-test> <native-job-test> <fcsession.node.js> <wasm-job-test.js> <fcore_session> --rebuild",
+  "command": "fc_session_master_wav_size → fc_session_master_wav_copy(offset, <=65536 bytes) → fc_session_master_audio_release; retain bytes by masterId",
+  "inputSpecSha256": "79b3885fdf8d58e44bc814d391ad16c0ef9a84b5f28f3fbfc77bcaac69313404",
+  "inputPcmSha256": "fe6f65b9449f0600f820adf8bae80d9362de73253a4df4befbe7819551fb7010",
+  "versions": [
+    "felitronics-mastering-core 0.2.2",
+    "felitronics-core 0.56.0",
+    "fc_session_abi 1"
+  ],
+  "codecSchemaSha256": "31d690c22611ea8b7b86c60386e1e314c1df475e1f35f5b0ecb33c4790167737",
+  "wasmSha256": "ebb9869a9d55900872ecb156d2f46205b06e64b83d588fe450167a70b4092c32",
+  "wavFnv64": "9a601c4c5e044b00",
+  "wavHeaderHex": "5249464624ca080057415645666d7420100000000100020080bb000000650400060018006461746100ca0800",
+  "checked": {
+    "master": true,
+    "export": true,
+    "repeat": true,
+    "release": true
+  },
+  "outcomes": [
+    "cancel:false",
+    "refusal:false",
+    "unavailable:false",
+    "miss:true",
+    "unsafe:false"
+  ]
+}

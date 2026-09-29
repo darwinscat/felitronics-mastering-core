@@ -346,6 +346,18 @@ fc_session_status fc_session_master_waveform_chunk_copy (fc_session session, con
                                                          double* rows, uint32_t row_capacity,
                                                          fc_session_sizes* written);
 
+// A completed safe master can be copied as a canonical WAV before its PCM is
+// released. The format is the completed job's delivery bits (16, 24 or float32).
+// Size is allocation-free. Copy writes at most 65536 bytes at a caller-chosen
+// offset; repeat any slice to get identical bytes. The shell owns the assembled
+// image, indexed by master id, before calling master_audio_release. A later
+// format requires an explicit external-PCM contract and cannot re-render here.
+fc_session_status fc_session_master_wav_size (fc_session session, const fc_session_master_token* token,
+                                             double* bytes, uint32_t* bits);
+fc_session_status fc_session_master_wav_copy (fc_session session, const fc_session_master_token* token,
+                                             uint32_t offset_low, uint32_t offset_high,
+                                             uint8_t* output, uint32_t capacity, uint32_t* written);
+
 #ifdef __cplusplus
 }   // extern "C"
 #endif

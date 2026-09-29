@@ -63,6 +63,10 @@ zone  tools/wasm/fc_tempo.cpp      the fctempo module's own TU; its tempo rows a
 entry  modules/session/src/Session.cpp                        a translation unit of felitronics::session
 entry  modules/session/src/BuildContract.cpp                  a translation unit of felitronics::session
 zone   modules/session/include/felitronics/session/Session.h  the session's public surface
+zone   modules/session/include/felitronics/session/Wav.h      bounded WAV delivery declaration
+zone   modules/session/src/Wav.cpp                            deterministic WAV code quantization
+zone   modules/mastering/include/felitronics/mastering/PcmQuantizer.h  shared PCM grid
+entry  modules/session/src/Wav.cpp                            bounded WAV delivery translation unit
 zone   modules/session/src/Session.cpp                        the session
 zone   modules/session/src/BuildContract.cpp                  the library's build contract, answered under its own flags
 zone   modules/session/src/BuildContract.h                    the build contract's private declarations

@@ -71,6 +71,7 @@ const SURFACE = {
         '_fc_session_attach_audio_bytes', '_fc_session_attach_audio',
         '_fc_session_master_bytes', '_fc_session_master', '_fc_session_master_audio_size',
         '_fc_session_master_audio_copy', '_fc_session_master_audio_release', '_fc_session_master_audio_view',
+        '_fc_session_master_wav_size', '_fc_session_master_wav_copy',
         '_fc_session_master_waveform_chunk_bytes', '_fc_session_master_waveform_chunk_size',
         '_fc_session_master_waveform_chunk_copy'],
 };
@@ -367,6 +368,10 @@ for (let i = 0; i < masterFrames; ++i) {
     pcmWords[(masterPcm >>> 2) + i] = (i * 17 % 251 - 125) / 4096;
     pcmWords[(masterPcm >>> 2) + masterFrames + i] = (i * 19 + 7) % 251 / 4096 - 125 / 4096;
 }
+let inputDigest = 0xcbf29ce484222325n;
+for (const byte of heapBytes().subarray(masterPcm, masterPcm + masterSamples * 4))
+    inputDigest = BigInt.asUintN(64, (inputDigest ^ BigInt(byte)) * 0x100000001b3n);
+console.log(`session-master-input=${inputDigest.toString(16).padStart(16, '0')}`);
 M.HEAPU32[masterPointers >>> 2] = masterPcm;
 M.HEAPU32[(masterPointers >>> 2) + 1] = masterPcm + masterFrames * 4;
 const [masterMeta, masterMetaBytes] = input(JSON.stringify({name:'ready.wav', fileRate:48000, bitDepth:24, rateKnown:true}));
@@ -444,9 +449,48 @@ const pcmAddress = M.HEAPU32[viewOut >>> 2], sampleCount = M.HEAPU32[sampleOut >
 const independent = new Float32Array(M.HEAPU32.buffer, pcmAddress, sampleCount).slice().buffer;
 ok(independent !== M.HEAPU32.buffer && independent.byteLength === masterSamples * 4,
    'one copy creates an independent transferable ArrayBuffer');
+const wavSize = M._malloc(8), wavBits = M._malloc(4), wavWritten = M._malloc(4);
+const wavSized = M._fc_session_master_wav_size(masterSession, masterToken, wavSize, wavBits);
+const wavLength = new DataView(M.HEAPU32.buffer).getFloat64(wavSize, true);
+ok(wavSized === STATUS.OK && M.HEAPU32[wavBits >>> 2] === 24
+    && wavLength === 44 + masterSamples * 3, 'WAV is sized before the session PCM is released');
+const wavChunk = M._malloc(997), ownedWav = new Uint8Array(wavLength);
+let wavCopied = true;
+for (let at = 0; at < ownedWav.length; at += 997) {
+    const count = Math.min(997, ownedWav.length - at);
+    wavCopied &&= M._fc_session_master_wav_copy(masterSession, masterToken, at, 0,
+        wavChunk, count, wavWritten) === STATUS.OK && M.HEAPU32[wavWritten >>> 2] === count;
+    ownedWav.set(heapBytes().subarray(wavChunk, wavChunk + count), at);
+}
+const firstWav = ownedWav.slice(0, 59);
+ok(wavCopied && M._fc_session_master_wav_copy(masterSession, masterToken, 0, 0,
+    wavChunk, firstWav.length, wavWritten) === STATUS.OK
+    && firstWav.every((v, i) => v === heapBytes()[wavChunk + i]),
+   'irregular WAV slices and a repeated slice have identical bytes');
+const wavView = new DataView(ownedWav.buffer);
+ok(new TextDecoder().decode(ownedWav.subarray(0, 4)) === 'RIFF'
+    && wavView.getUint32(4, true) + 8 === ownedWav.length
+    && wavView.getUint32(24, true) === 48000 && wavView.getUint16(34, true) === 24
+    && wavView.getUint32(40, true) === masterSamples * 3,
+   'downloaded WAV has the expected RIFF, rate, format and data length');
+const listenedPcm = new Float32Array(independent);
+let sameWavSamples = true;
+for (let frame = 0; frame < masterFrames; ++frame) for (let channel = 0; channel < 2; ++channel) {
+    const at = 44 + (frame * 2 + channel) * 3;
+    const raw = ownedWav[at] | (ownedWav[at + 1] << 8) | (ownedWav[at + 2] << 16);
+    const code = (raw & 0x800000) ? raw - 0x1000000 : raw;
+    sameWavSamples &&= listenedPcm[channel * masterFrames + frame] === code / 8388608;
+}
+ok(sameWavSamples, 'decoded WAV equals the measured and listened PCM sample for sample');
+let wavDigest = 0xcbf29ce484222325n;
+for (const byte of ownedWav) wavDigest = BigInt.asUintN(64, (wavDigest ^ BigInt(byte)) * 0x100000001b3n);
+console.log(`session-master-wav=${wavDigest.toString(16).padStart(16, '0')}`);
+console.log(`session-master-wav-header=${Buffer.from(ownedWav.subarray(0, 44)).toString('hex')}`);
 ok(M._fc_session_master_audio_release(masterSession, masterToken) === STATUS.OK
     && M._fc_session_master_audio_release(masterSession, masterToken) === STATUS.ERR_STALE,
    'release frees the session PCM once');
+ok(M._fc_session_master_wav_size(masterSession, masterToken, wavSize, wavBits) === STATUS.ERR_STALE
+    && ownedWav.length === wavLength, 'owned WAV persists after the session PCM is released');
 const waveRequestBytes = new TextEncoder().encode(JSON.stringify({kind:9, audioId:sourceId.toString(),
     fromFrame:'100', toFrame:'200', columns:10, requestId:'3', crossoverHz:120, fromHz:20,
     toHz:250, masterId:tokenValue.master}));
@@ -475,7 +519,7 @@ let audioHash = 0xcbf29ce484222325n;
 for (const bits of new Uint32Array(independent)) for (let shift = 0; shift < 32; shift += 8)
     audioHash = ((audioHash ^ BigInt((bits >>> shift) & 255)) * 0x100000001b3n) & 0xffffffffffffffffn;
 console.log(`session-master-audio=${audioHash.toString(16).padStart(16, '0')}`);
-ok(audioHash === 0xb495c72924fd8746n, 'ready master PCM matches the native reference bit for bit');
+ok(audioHash === 0xfaa62a730dd59b81n, 'ready master PCM matches the native reference bit for bit');
 for (const p of growth) M._free(p);
 for (const p of [masterConfig, masterParams, masterDemand, masterToken, audioBytes, audioFrames, audioChannels, audioRate,
                  viewOut, sampleOut]) M._free(p);

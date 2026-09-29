@@ -14,6 +14,7 @@
 #include <felitronics/mastering/OfflineRenderer.h>
 #include <felitronics/mastering/DeliveryConverter.h>
 #include <felitronics/mastering/Planes.h>
+#include <felitronics/mastering/PcmQuantizer.h>
 #include <felitronics/mastering/Progress.h>
 
 #include <algorithm>
@@ -770,6 +771,7 @@ struct LoudnessRequest
     double truePeakAimDb   =   0.05;
     double normalizationGainDb = 0.0;    // source-to--18 LUFS trim, before the chain; separate from the search gain
     bool productLanding = false;         // one resumable budget, selected by Session
+    unsigned pcmBits = 0;                // 0: legacy float; 16/20/24: measure the PCM grid; 32: float WAV
 
     // Constraints. A target that needs one of these broken is REFUSED with the name, not forced through.
     GainReductionLimit limiterGr    {};                                              // off by default
@@ -1058,7 +1060,9 @@ public:
             || ! grQuantileAdmitted (req.limiterGr.quantile) || ! grQuantileAdmitted (req.compressorGr.quantile)
             || std::isnan (req.minPlrDb) || std::isnan (req.maxLraLossLu)
             || ! std::isfinite (req.truePeakAimDb) || req.truePeakAimDb < 0.0
-            || ! traceBucketsAdmitted (req.grTraceBuckets)) return false;
+            || ! traceBucketsAdmitted (req.grTraceBuckets)
+            || (req.pcmBits != 0 && req.pcmBits != 16 && req.pcmBits != 20
+                && req.pcmBits != 24 && req.pcmBits != 32)) return false;
         // The tap buffers were sized for a geometry; a chain that does not match them would be measured
         // through a refused call, which is a silent zero rather than a statistic.
         // THE RATE IS CHECKED, not assumed shared. The solver builds its own meters from `fs_`, and a
@@ -2532,7 +2536,13 @@ private:
                 const int n = (int) std::min<long long> (std::min<long long> (budget, p.frames - p.measured),
                                                            p.clock->piece (p.renderer->blockSize()));
                 const float* planes[core::kMaxChannels] {};
-                for (int c = 0; c < p.nch; ++c) planes[c] = p.out[c] + p.measured;
+                for (int c = 0; c < p.nch; ++c)
+                {
+                    float* const block = p.out[c] + p.measured;
+                    if (p.req->pcmBits == 16 || p.req->pcmBits == 20 || p.req->pcmBits == 24)
+                        for (int i = 0; i < n; ++i) block[i] = pcmSample (block[i], p.req->pcmBits);
+                    planes[c] = block;
+                }
                 if (! p.lm.process (planes, p.nch, n) || ! p.tm.process (planes, p.nch, n))
                     { p.phase = Phase::Failed; return StepResult::Failed; }
                 p.measured += n; budget -= n; p.work += n;

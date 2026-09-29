@@ -7,6 +7,7 @@
 #include <felitronics/session/Project.h>
 #include <felitronics/session/Events.h>
 #include <felitronics/session/Measurements.h>
+#include <felitronics/session/Wav.h>
 #include <felitronics/session/LandingResult.h>
 #include <felitronics/session/Queries.h>
 
@@ -118,7 +119,7 @@ struct MasterToken
     JobId job = 0;
     MasterId master = 0;
 };
-enum class MasterTransferStatus : std::uint8_t { Ok, Unknown, Stale, TooSmall };
+enum class MasterTransferStatus : std::uint8_t { Ok, Unknown, Stale, TooSmall, Contract };
 struct MasterAudio
 {
     std::unique_ptr<float[]> samples;
@@ -265,6 +266,9 @@ public:
     [[nodiscard]] std::span<const float> viewMaster (MasterToken token) const noexcept;
     [[nodiscard]] MasterTransferStatus takeMaster (MasterToken token, MasterAudio& output) noexcept;
     [[nodiscard]] MasterTransferStatus releaseMaster (MasterToken token) noexcept;
+    [[nodiscard]] WavPlan masterWavPlan (MasterToken token) const noexcept;
+    [[nodiscard]] MasterTransferStatus copyMasterWav (MasterToken token, std::uint64_t offset,
+                                                     std::span<std::uint8_t> output) const noexcept;
 
 private:
     friend class Wire;
@@ -359,6 +363,7 @@ private:
     std::uint64_t masterJobBytes_ = 0;
     MasterToken pendingMaster_ {};
     MasterAudio masterAudio_ {};
+    std::uint32_t masterAudioBits_ = 0;
     std::size_t masterCount_ = 0;
     std::size_t masterRoom_ = 0;
     std::size_t crestJoinIndex_ = 0;

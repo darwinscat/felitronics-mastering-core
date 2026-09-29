@@ -980,3 +980,52 @@ FC_EXPORT fc_session_status fc_session_master_audio_view (fc_session session,
     if (view.size() > UINT32_MAX) return FC_SESSION_ERR_CONTRACT;
     *output = view.data(); *samples = std::uint32_t (view.size()); return FC_SESSION_OK;
 }
+
+FC_EXPORT fc_session_status fc_session_master_wav_size (fc_session session,
+    const fc_session_master_token* token, double* bytes, std::uint32_t* bits)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = pointer (bytes, sizeof (*bytes), alignof (double)); st != FC_SESSION_OK) return st;
+    if (const auto st = pointer (bits, sizeof (*bits), alignof (std::uint32_t)); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = tokenInput (token); st != FC_SESSION_OK) return st;
+    if (overlap (bytes, sizeof (*bytes), bits, sizeof (*bits))
+        || overlap (bytes, sizeof (*bytes), token, sizeof (*token))
+        || overlap (bits, sizeof (*bits), token, sizeof (*token))) return FC_SESSION_ERR_OVERLAP;
+    const auto identity = unpack (*token);
+    if (slot->session->masterAudioBytes (identity) == 0) return FC_SESSION_ERR_STALE;
+    const auto plan = slot->session->masterWavPlan (identity);
+    if (! plan) return FC_SESSION_ERR_CONTRACT;
+    *bytes = double (plan.bytes); *bits = plan.bits;
+    return FC_SESSION_OK;
+}
+
+FC_EXPORT fc_session_status fc_session_master_wav_copy (fc_session session,
+    const fc_session_master_token* token, std::uint32_t offset_low, std::uint32_t offset_high,
+    std::uint8_t* output, std::uint32_t capacity, std::uint32_t* written)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = pointer (output, capacity, alignof (std::uint8_t)); st != FC_SESSION_OK) return st;
+    if (const auto st = pointer (written, sizeof (*written), alignof (std::uint32_t)); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = tokenInput (token); st != FC_SESSION_OK) return st;
+    if (overlap (output, capacity, written, sizeof (*written))
+        || overlap (output, capacity, token, sizeof (*token))
+        || overlap (written, sizeof (*written), token, sizeof (*token))) return FC_SESSION_ERR_OVERLAP;
+    if (capacity == 0 || capacity > 65536u) return FC_SESSION_ERR_CONTRACT;
+    const auto identity = unpack (*token);
+    if (slot->session->masterAudioBytes (identity) == 0) return FC_SESSION_ERR_STALE;
+    const auto plan = slot->session->masterWavPlan (identity);
+    if (! plan) return FC_SESSION_ERR_CONTRACT;
+    const auto offset = joined (offset_low, offset_high);
+    if (offset >= plan.bytes) return FC_SESSION_ERR_CONTRACT;
+    const auto count = std::uint32_t (std::min<std::uint64_t> (capacity, plan.bytes - offset));
+    const auto pcm = slot->session->viewMaster (identity);
+    if (overlap (output, count, pcm.data(), pcm.size_bytes())) return FC_SESSION_ERR_OVERLAP;
+    const auto state = slot->session->copyMasterWav (identity, offset, { output, count });
+    if (state != felitronics::session::MasterTransferStatus::Ok) return FC_SESSION_ERR_CONTRACT;
+    *written = count;
+    return FC_SESSION_OK;
+}

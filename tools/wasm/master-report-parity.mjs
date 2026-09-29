@@ -6,20 +6,20 @@ import { readFileSync } from 'node:fs';
 
 const output = readFileSync(process.argv[2], 'utf8');
 assert.match(output, /ALL TESTS PASSED/);
-assert.match(output, /^master-report-gain-digest=609a46efee2c2887$/m);
+assert.match(output, /^master-report-gain-digest=2d4c43377c2c8dd9$/m);
 
 // Native AppleClang Release values. The core's rational SRC deliberately uses libm sine for
 // coefficient design, so its PCM is compared numerically across tiers. The same-rate path is exact.
 const native = [
-    [-13.999999840056, -2.904884513397, 0.000000159944, 32272.600098657422, 18.460705399288],
-    [-14.000000213604, -4.344040783315, -0.000000213604, 31578.327480815136, 19.793569797199],
-    [-14.000000237683, -7.736064824797, -0.000000237683, 29086.524523220956, 19.949102926956]
+    [-13.999999805293, -2.904884513397, 0.000000194707, 32272.600070595741, 18.460709186712],
+    [-14.000000214406, -4.344040783315, -0.000000214406, 31578.327455997467, 19.793569797199],
+    [-14.000000231489, -7.736064194032, -0.000000231489, 29086.524525165558, 19.949102926956]
 ];
 const tolerance = [0.0001, 0.0001, 0.0001, 0.01, 0.001];
 const nativeCost = [
-    [0.000001316055, 0.000000000087, 0, 1],
-    [0.572601210575, 0.041712411864, 0, 1],
-    [0.537238988185, 0.040364549196, 0, 1]
+    [0.000000000000, 0.000000000162, 0, 1],
+    [0.572601210575, 0.041712412382, 0, 1],
+    [0.537238988185, 0.040364550514, 0, 1]
 ];
 const costTolerance = [0.01, 0.001, 0.0001, 0];
 const lines = [...output.matchAll(/^master-report-parity (\d+) (.+)$/gm)];

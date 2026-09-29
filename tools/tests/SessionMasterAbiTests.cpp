@@ -9,6 +9,7 @@
 #include <felitronics/session/Session.h>
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/mastering/LandingSearch.h>
+#include <felitronics/analysis/ReferenceTruePeakMeter.h>
 #include <algorithm>
 #include <bit>
 #include <cstdint>
@@ -49,6 +50,15 @@ void load (fc_session handle, std::uint32_t id)
         left[i] = float (int ((i * 17u) % 251u) - 125) / 4096.0f;
         right[i] = float (int ((i * 19u + 7u) % 251u) - 125) / 4096.0f;
     }
+    std::uint64_t inputDigest = 0xcbf29ce484222325ull;
+    for (const auto* plane : { left.data(), right.data() })
+        for (std::size_t i = 0; i < frames; ++i)
+        {
+            const auto bits = std::bit_cast<std::uint32_t> (plane[i]);
+            for (unsigned shift = 0; shift < 32; shift += 8)
+                inputDigest = (inputDigest ^ std::uint8_t (bits >> shift)) * 0x100000001b3ull;
+        }
+    std::printf ("session-master-input=%016llx\n", static_cast<unsigned long long> (inputDigest));
     const float* planes[] { left.data(), right.data() };
     char answer[FC_SESSION_ANSWER_BYTES]; std::uint32_t written = 0;
     ok (fc_session_load (handle, id, 0, planes, 2, frames, rate, meta, sizeof (meta) - 1,
@@ -99,6 +109,7 @@ bool directDacd2b2 (const Session& session, std::vector<float>& pcm,
     request.maxPasses = 12; request.initialGainDb = 4.0;
     request.normalizationGainDb = -18.0 - session.snapshot().view().integratedLufs;
     request.productLanding = true;
+    request.pcmBits = 24;
     request.grTraceBuckets = mastering::GainReductionTrace::kDefaultBuckets;
     mastering::MasteringChain chain;
     mastering::OfflineRenderer renderer;
@@ -173,6 +184,72 @@ int main()
         std::vector<float> copied (frames * 2u);
         ok (fc_session_master_audio_copy (handle, &t, copied.data(), std::uint32_t (copied.size())) == FC_SESSION_OK,
             "C facade copies PCM into caller storage");
+        double wavBytes = 0; std::uint32_t wavBits = 0;
+        const auto wavSizeAllocations = alloc::count.load();
+        const auto wavStatus = fc_session_master_wav_size (handle, &t, &wavBytes, &wavBits);
+        const bool wavSizedWithoutAllocation = alloc::count.load() == wavSizeAllocations;
+        ok (wavStatus == FC_SESSION_OK
+            && wavBits == 24 && wavBytes == double (44u + frames * 2u * 3u),
+            "safe master publishes an exact allocation-free WAV size");
+        ok (wavSizedWithoutAllocation, "WAV sizing allocates nothing");
+        if (wavBytes < 44 || wavBytes > 1000000) return felitronics::test::report();
+        std::vector<std::uint8_t> wav (std::size_t (wavBytes), 0u);
+        bool copiedWav = true;
+        const auto wavSliceAllocations = alloc::count.load();
+        for (std::size_t at = 0; at < wav.size(); at += 997u)
+        {
+            std::uint32_t count = 0;
+            const auto n = std::uint32_t (std::min<std::size_t> (997u, wav.size() - at));
+            copiedWav &= fc_session_master_wav_copy (handle, &t, std::uint32_t (at), std::uint32_t (at >> 32),
+                wav.data() + at, n, &count) == FC_SESSION_OK && count == n;
+        }
+        const bool slicesWithoutAllocation = alloc::count.load() == wavSliceAllocations;
+        ok (slicesWithoutAllocation, "WAV slicing allocates no hidden full-song copy");
+        std::uint8_t first[59] {}; std::uint32_t firstWritten = 0;
+        ok (copiedWav && fc_session_master_wav_copy (handle, &t, 0, 0, first, sizeof (first), &firstWritten) == FC_SESSION_OK
+            && firstWritten == sizeof (first) && std::memcmp (first, wav.data(), sizeof (first)) == 0,
+            "bounded irregular slices and repeated bytes agree without rendering");
+        const auto read32 = [&] (std::size_t at) noexcept -> std::uint32_t
+        { return std::uint32_t (wav[at]) | (std::uint32_t (wav[at + 1]) << 8)
+               | (std::uint32_t (wav[at + 2]) << 16) | (std::uint32_t (wav[at + 3]) << 24); };
+        ok (std::memcmp (wav.data(), "RIFF", 4) == 0 && std::memcmp (wav.data() + 8, "WAVEfmt ", 8) == 0
+            && read32 (4) + 8u == wav.size() && read32 (24) == rate
+            && wav[34] == 24 && read32 (40) == frames * 2u * 3u,
+            "independent WAV reader validates the delivered header");
+        std::vector<float> decoded (frames * 2u);
+        for (std::size_t i = 0; i < frames; ++i)
+            for (std::size_t c = 0; c < 2; ++c)
+            {
+                const auto at = 44u + (i * 2u + c) * 3u;
+                const auto raw = std::uint32_t (wav[at]) | (std::uint32_t (wav[at + 1]) << 8)
+                    | (std::uint32_t (wav[at + 2]) << 16);
+                const auto code = std::int32_t (raw) - ((raw & 0x800000u) ? 0x1000000 : 0);
+                decoded[c * frames + i] = float (double (code) / 8388608.0);
+            }
+        ok (decoded == copied, "downloaded WAV samples equal the measured and listened master PCM");
+        felitronics::analysis::ReferenceTruePeakMeter filePeak;
+        const float* decodedPlanes[] { decoded.data(), decoded.data() + frames };
+        const bool peakPrepared = filePeak.prepare (rate, 1024, 2);
+        bool peakRead = peakPrepared;
+        for (std::size_t at = 0; peakRead && at < frames; at += 1024u)
+        {
+            const float* block[] { decodedPlanes[0] + at, decodedPlanes[1] + at };
+            peakRead &= filePeak.process (block, 2, int (std::min<std::size_t> (1024u, frames - at)));
+        }
+        if (peakRead) filePeak.drain();
+        ok (peakRead && session->masters().front().report
+            && filePeak.truePeakDb() <= session->masters().front().report->ceilingDbTp,
+            "reference true peak of downloaded, decoded PCM respects the ceiling");
+        ok (peakRead && session->masters().front().report->truePeakDbTp
+            && std::bit_cast<std::uint64_t> (filePeak.truePeakDb())
+                == std::bit_cast<std::uint64_t> (*session->masters().front().report->truePeakDbTp),
+            "reported reference true peak is the decoded WAV's reading");
+        std::uint64_t wavDigest = 0xcbf29ce484222325ull;
+        for (const auto byte : wav) wavDigest = (wavDigest ^ byte) * 0x100000001b3ull;
+        std::printf ("session-master-wav=%016llx\n", static_cast<unsigned long long> (wavDigest));
+        std::printf ("session-master-wav-header=");
+        for (std::size_t i = 0; i < 44; ++i) std::printf ("%02x", unsigned (wav[i]));
+        std::printf ("\n");
         std::uint64_t digest = 0xcbf29ce484222325ull;
         for (float sample : copied)
         {
@@ -198,6 +275,12 @@ int main()
         ok (fc_session_master_audio_view (handle, &t, &view, &samples) == FC_SESSION_OK
             && samples == copied.size() && std::memcmp (view, copied.data(), bytes) == 0,
             "scoped wasm view is bit identical to copy");
+        std::uint32_t overlapWritten = 77;
+        ok (fc_session_master_wav_copy (handle, &t, 0, 0,
+            reinterpret_cast<std::uint8_t*> (const_cast<float*> (view)), 16, &overlapWritten)
+            == FC_SESSION_ERR_OVERLAP && overlapWritten == 77
+            && std::memcmp (view, copied.data(), bytes) == 0,
+            "WAV output cannot overwrite the retained PCM or its completion count");
         t.job += 1;
         ok (fc_session_master_audio_copy (handle, &t, copied.data(), std::uint32_t (copied.size())) == FC_SESSION_ERR_STALE,
             "mismatched job cannot copy PCM");
@@ -205,6 +288,10 @@ int main()
         ok (fc_session_master_audio_release (handle, &t) == FC_SESSION_OK
             && fc_session_master_audio_release (handle, &t) == FC_SESSION_ERR_STALE,
             "release is explicit and idempotently refused");
+        double staleWav = -1; std::uint32_t staleBits = 99;
+        ok (fc_session_master_wav_size (handle, &t, &staleWav, &staleBits) == FC_SESSION_ERR_STALE
+            && staleWav == -1 && staleBits == 99 && ! wav.empty(),
+            "owned WAV bytes survive PCM release while the session refuses a stale export");
         char query[512];
         const auto queryLength = std::snprintf (query, sizeof (query),
             "{\"kind\":9,\"audioId\":\"%llu\",\"fromFrame\":\"100\",\"toFrame\":\"200\","

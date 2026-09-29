@@ -6,7 +6,7 @@ import {readFileSync} from 'node:fs';
 
 const expected = ['analysis_abi', 'tempo_abi', 'fctempo_abi', 'master_abi', 'storage',
     'session', 'session_state', 'session_config', 'session_config_decisions', 'session_text',
-    'session_abi', 'session_abi_v1', 'session_event', 'session_project', 'session_replay', 'session_measurement', 'session_live', 'session_source', 'session_needles', 'session_measurement_budget', 'session_master_report', 'session_cost', 'session_sidecar', 'session_query', 'waveform_index']
+    'session_abi', 'session_abi_v1', 'session_event', 'session_project', 'session_replay', 'session_measurement', 'session_live', 'session_source', 'session_needles', 'session_measurement_budget', 'session_master_job', 'session_wav', 'session_master_abi', 'session_master_report', 'session_cost', 'session_sidecar', 'session_query', 'waveform_index']
     .map(name => `felitronics_${name}_tests`).sort();
 const selection = `^(${expected.join('|')})$`;
 function check(tests) {
