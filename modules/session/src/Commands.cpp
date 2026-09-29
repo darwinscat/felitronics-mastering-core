@@ -557,6 +557,7 @@ Answer Session::apply (const Request& request) noexcept
             detail::MasterJob::fingerprint (plan.ready), plan.deliveryRate, plan.ready.version };
         mastering_ = true;
         masterUnit_ = 0;
+        masterSummary_ = {}; masterTraceCursor_ = 0; masterTraceActive_ = false;
         masterProgress_ = { PhaseName::Pass, 0.0, config::Config::versions().all, 0, 12, 0, 12 };
         answer.job = job_;
         }

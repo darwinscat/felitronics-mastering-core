@@ -34,15 +34,17 @@ struct Case
     std::vector<float> delivered;
 };
 bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool processed,
-          bool waitForCrest = true, bool demanding = false)
+          bool waitForCrest = true, bool demanding = false, unsigned seconds = 4,
+          unsigned silentSeconds = 0)
 {
     c.rate = sourceRate; c.delivery = deliveryRate;
-    const std::size_t frames = std::size_t (sourceRate) * 4u;
+    const std::size_t frames = std::size_t (sourceRate) * seconds;
     c.left.resize (frames); c.right.resize (frames);
     for (std::size_t i = 0; i < frames; ++i)
     {
         c.left[i] = float (int ((i * 17u) % 251u) - 125) / 4096.0f;
         c.right[i] = float (int ((i * 19u + 7u) % 251u) - 125) / 4096.0f;
+        if (i < std::size_t (sourceRate) * silentSeconds) c.left[i] = c.right[i] = 0.0f;
     }
     if (! demanding) c.right.back() -= 0.15f;
     const float* planes[2] { c.left.data(), c.right.data() };
@@ -224,7 +226,8 @@ bool memoryLifecycle (Case& c)
                 || s.revision() != before) return false;
             if (s.setCapacity ({}) != session::Status::Ok) return false;
         }
-        std::uint64_t peakLive = initial, largestCall = 0;
+        std::uint64_t peakLive = initial;
+        budget::LifecycleBudget allocation { declared.bytes, declared.largestBlockBytes };
         bool covered = true;
         const auto charge = [&] (auto&& work)
         {
@@ -232,12 +235,8 @@ bool memoryLifecycle (Case& c)
             const auto spent = budget::spend (work);
             const auto after = std::uint64_t (s.liveBytes());
             if (spent.bytes < 0) { covered = false; return; }
-            // liveBytes() already includes the job's declared future workspace while it is active.
             peakLive = std::max ({ peakLive, before, after });
-            largestCall = std::max (largestCall, std::uint64_t (spent.bytes));
-            covered = covered && peakLive <= ceiling
-                // Each individual allocation is no larger than its entire call's measured demand.
-                && largestCall <= declared.largestBlockBytes;
+            covered = covered && allocation.charge (spent) && peakLive <= ceiling;
         };
         session::Answer started;
         charge ([&] { started = s.apply (request); });
@@ -268,6 +267,10 @@ bool memoryLifecycle (Case& c)
 
 int main()
 {
+    budget::LifecycleBudget shortDeclaration { 96, 96 };
+    ok (budget::covers (96, { 1, 64 }) && shortDeclaration.charge ({ 1, 64 })
+        && ! shortDeclaration.charge ({ 1, 64 }),
+        "lifecycle control rejects aggregate demand that separate call checks miss");
     Case gain;
     ok (run (gain, 48000, 48000, false), "gain-only master and declared budget complete");
     if (gain.session && ! gain.session->masters().empty())
@@ -376,7 +379,9 @@ int main()
         const auto& cost = *gain.session->masters()[0].report->cost;
         ok (cost.k2Reason == session::MeasurementReason::NotImplemented
             && cost.crestFullDb.value && *cost.crestFullDb.value < .05
-            && cost.shapeP95Lu.value && *cost.shapeP95Lu.value < .1,
+            && cost.shapeP95Lu.value && *cost.shapeP95Lu.value < .1
+            && cost.sections.size() <= 2 && cost.largestSectionShiftLu.value
+            && ! cost.worstSectionIndex,
             "gain-only master has measured near-zero impact and shape while K2 remains unmeasured");
         session::MeasurementQuery waveform;
         waveform.kind = session::QueryKind::MasterWaveform;
@@ -414,6 +419,13 @@ int main()
             && late.session->masters()[0].report->crest.reason == session::MeasurementReason::Cancelled
             && late.session->pendingMaster().master != 0 && unavailableEvent,
             "final source crest refusal emits a master-keyed update and keeps safe PCM");
+        const auto& cost = *late.session->masters()[0].report->cost;
+        ok (cost.crestLowDb.reason == session::MeasurementReason::Cancelled
+            && cost.crestLowMidDb.reason == session::MeasurementReason::Cancelled
+            && cost.crestHighMidDb.reason == session::MeasurementReason::Cancelled
+            && cost.crestHighDb.reason == session::MeasurementReason::Cancelled
+            && cost.crestFullDb.reason == session::MeasurementReason::Cancelled,
+            "late source cancellation settles all pending crest cost bands");
     }
     Case lateReady;
     ok (run (lateReady, 48000, 48000, false, false),
@@ -497,6 +509,20 @@ int main()
         "SRC up meters delivered PCM and measures one source-rate check against whole renderer");
     ok (run (down, 48000, 44100, true) && referenceCrest (down) && directMeter (down),
         "SRC down meters delivered PCM and measures one source-rate check against whole renderer");
+    Case silentPrefix;
+    ok (run (silentPrefix, 48000, 48000, true, true, false, 8, 3),
+        "a master with a long digital-silence prefix completes");
+    if (silentPrefix.session && ! silentPrefix.session->masters().empty())
+    {
+        const auto& cost = *silentPrefix.session->masters()[0].report->cost;
+        const auto& shape = silentPrefix.session->masterAudioShape (silentPrefix.token);
+        ok (cost.activeWindowShare.value && *cost.activeWindowShare.value < .9
+            && cost.activeWindowShare.compared > 60,
+            "valid silent momentary windows count as inactive");
+        ok (cost.limiterActiveShare.value && cost.limiterActiveShare.compared > 0
+            && cost.limiterActiveShare.compared < shape.frames * 4u,
+            "limiter activity uses input-gated windows and their accepted frame count");
+    }
     Case repeat;
     ok (run (repeat, 44100, 48000, true) && up.session && ! up.session->masters().empty()
         && repeat.delivered == up.delivered
@@ -592,6 +618,13 @@ int main()
     }
     ok (parityCase == 3, "all native/wasm parity cases completed");
     ok (memoryLifecycle (gain), "declared peak and largest block cover large, cancel, small, growth and refusal");
+    Case longTrace;
+    ok (run (longTrace, 48000, 48000, false, true, false, 16)
+        && longTrace.session && ! longTrace.session->masters().empty()
+        && longTrace.session->masters()[0].landing->limiterTrace
+        && longTrace.session->masters()[0].landing->limiterTrace->columns > 1000
+        && memoryLifecycle (longTrace),
+        "long trace lifecycle bounds cumulative allocations through cancellation and growth");
     if (gain.session && ! gain.session->masters().empty())
     {
         session::MeasurementQuery waveform;

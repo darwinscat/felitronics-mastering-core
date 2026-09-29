@@ -144,6 +144,7 @@ void Session::dropJob (JobId job) noexcept
     {
         if (masterJob_) masterJob_->search.cancel();
         masterJob_.reset(); masterJobBytes_ = 0;
+        masterSummary_ = {}; masterTraceCursor_ = 0; masterTraceActive_ = false;
         if (masterRows_ && masterCount_ < masterRoom_) masterRows_[masterCount_] = {};
         mastering_ = false;
         job_ = 0;
@@ -257,7 +258,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 continue;
             }
             const auto beforePass = masterJob_->search.startedPasses();
-            const auto outcome = masterJob_->step (1024);
+            const auto outcome = masterTraceActive_ ? mastering::StepResult::Done : masterJob_->step (1024);
             ++masterUnit_;
             const bool end = outcome != mastering::StepResult::More;
             const auto total = std::uint32_t (std::min<std::uint64_t> (
@@ -278,15 +279,26 @@ Stepped Session::step (std::uint32_t budget) noexcept
             if (end)
             {
                 auto& rows = masterRows_[masterCount_];
-                LandingSummary summary;
                 const auto& solution = masterJob_->result();
                 const auto trace = std::span<LandingTraceBucket> (rows.traces.get(), rows.traceCapacity);
                 const auto clip = std::span<LandingTraceBucket> (rows.traces.get() + rows.traceCapacity, rows.traceCapacity);
-                if (! LandingOps::summarize (solution, { rows.passes.get(), 12 }, trace, clip,
-                    masterJob_->deliveryRate, summary)) { contract (event.jobId); ++units; continue; }
+                if (! masterTraceActive_)
+                {
+                    if (! LandingOps::summarize (solution, { rows.passes.get(), 12 }, masterSummary_))
+                    { contract (event.jobId); ++units; continue; }
+                    masterTraceCursor_ = 0; masterTraceActive_ = true;
+                }
+                const auto beforeTrace = masterTraceCursor_;
+                const bool tracesDone = LandingOps::stepTraces (solution, trace, clip,
+                    masterJob_->deliveryRate, masterSummary_, masterTraceCursor_, 1024);
+                if (! tracesDone)
+                {
+                    if (beforeTrace == masterTraceCursor_) contract (event.jobId);
+                    ++units; continue;
+                }
                 const auto completedJob = job_;
                 if (! detail::Driver::mastered (*this, completedJob)) { contract (completedJob); ++units; continue; }
-                masters_[masterCount_ - 1].landing = summary;
+                masters_[masterCount_ - 1].landing = masterSummary_;
                 masters_[masterCount_ - 1].report = masterJob_->reportResult();
                 if (const auto& cost = masters_[masterCount_ - 1].report->cost)
                 {
@@ -298,14 +310,15 @@ Stepped Session::step (std::uint32_t budget) noexcept
                     { (void) event.payload.fact.assign (MasterReportText::pumping (*cost)); emit (event, masterProgress_); }
                     (void) event.payload.fact.assign (MasterReportText::tonal()); emit (event, masterProgress_);
                 }
-                if (summary.deliverable && outcome == mastering::StepResult::Done)
+                if (masterSummary_.deliverable && outcome == mastering::StepResult::Done)
                 {
                     masterAudio_ = { masterJob_->takeOutput(), std::uint64_t (masterJob_->frames),
                         std::uint32_t (masterJob_->channels), masterJob_->deliveryRate };
                     pendingMaster_ = { source_.hash, revision_, completedJob, completedJob };
                 }
                 masterJob_.reset(); masterJobBytes_ = 0;
-                if (summary.deliverable)
+                masterSummary_ = {}; masterTraceCursor_ = 0; masterTraceActive_ = false;
+                if (masters_[masterCount_ - 1].landing->deliverable)
                 {
                     event.kind = EventKind::Fact;
                     (void) event.payload.fact.assign (text::Fact::of (text::FactId::MasterReady));

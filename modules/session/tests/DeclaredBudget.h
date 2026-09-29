@@ -23,6 +23,7 @@
 #include <alloc_counter.h>
 
 #include <cstdint>
+#include <algorithm>
 #include <string>
 
 namespace felitronics::session::testing
@@ -56,6 +57,20 @@ inline bool covers (std::uint64_t declared, const Spent& s)
 {
     return s.bytes >= 0 && (std::uint64_t) s.bytes <= declared;
 }
+
+// A sum of every allocation requested during a lifecycle conservatively bounds
+// the extra bytes that can be live at any instant, even across replacement peaks.
+struct LifecycleBudget
+{
+    std::uint64_t declared = 0, largestBlock = 0, allocated = 0, largestCall = 0;
+    bool charge (Spent s) noexcept
+    {
+        if (s.bytes < 0 || std::uint64_t (s.bytes) > declared - std::min (declared, allocated)) return false;
+        allocated += std::uint64_t (s.bytes);
+        largestCall = std::max (largestCall, std::uint64_t (s.bytes));
+        return largestCall <= largestBlock;
+    }
+};
 
 inline std::string describe (std::uint64_t declared, const Spent& s)
 {

@@ -234,6 +234,59 @@ bool LandingOps::summarize (const mastering::LoudnessSolution& solution,
     return true;
 }
 
+bool LandingOps::stepTraces (const mastering::LoudnessSolution& solution,
+                            std::span<LandingTraceBucket> limiterRows,
+                            std::span<LandingTraceBucket> peakClipRows,
+                            std::uint32_t deliveryRateHz, LandingSummary& out,
+                            std::uint32_t& cursor, std::uint32_t budget) noexcept
+{
+    const auto& limiter = solution.limiterTrace;
+    const auto& clipper = solution.peakClipTrace;
+    if (deliveryRateHz == 0 || limiter.buckets < 0 || limiter.buckets != clipper.buckets
+        || limiter.programmeFrames != clipper.programmeFrames
+        || limiter.bucket.size() != (std::size_t) limiter.buckets
+        || clipper.bucket.size() != (std::size_t) clipper.buckets
+        || limiterRows.size() < limiter.bucket.size() || peakClipRows.size() < clipper.bucket.size()
+        || cursor > limiter.bucket.size() || budget == 0) return false;
+    const auto n = limiter.bucket.size();
+    if (cursor == 0 && n > 0)
+    {
+        const auto start = [deliveryRateHz] (const mastering::GainReductionTrace& source,
+                                              std::span<LandingTraceBucket> storage) noexcept
+        {
+            LandingTrace trace;
+            trace.toFrame = source.programmeFrames;
+            trace.sampleRateHz = deliveryRateHz;
+            trace.columns = (std::uint32_t) source.buckets;
+            trace.complete = source.complete; trace.valid = source.valid;
+            trace.samples = source.complete ? source.samples : 0;
+            trace.nonFinite = source.complete ? source.nonFinite : 0;
+            trace.rows = storage.first (source.bucket.size());
+            return trace;
+        };
+        out.limiterTrace = start (limiter, limiterRows);
+        out.peakClipTrace = start (clipper, peakClipRows);
+    }
+    if (n > 0 && (! out.limiterTrace || ! out.peakClipTrace)) return false;
+    const auto end = std::min<std::size_t> (n, std::size_t (cursor) + budget);
+    while (cursor < end)
+    {
+        const auto copy = [cursor] (const mastering::GainReductionTrace& source,
+                                    std::span<LandingTraceBucket> storage, LandingTrace& trace) noexcept
+        {
+            const auto& b = source.bucket[cursor];
+            const auto finite = b.samples - b.nonFinite;
+            const double mean = source.complete || finite == 0 ? b.meanDb : b.meanDb / double (finite);
+            storage[cursor] = { b.minDb, b.maxDb, mean, b.samples, b.nonFinite };
+            if (! source.complete) { trace.samples += b.samples; trace.nonFinite += b.nonFinite; }
+        };
+        copy (limiter, limiterRows, *out.limiterTrace);
+        copy (clipper, peakClipRows, *out.peakClipTrace);
+        ++cursor;
+    }
+    return cursor == n;
+}
+
 std::uint32_t LandingOps::query (const LandingTrace& trace, std::uint32_t columns,
                                  std::span<double> output) noexcept
 {

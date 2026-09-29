@@ -39,6 +39,13 @@ public:
                                          std::span<LandingTraceBucket> limiterRows,
                                          std::span<LandingTraceBucket> peakClipRows,
                                          std::uint32_t deliveryRateHz, LandingSummary& out) noexcept;
+    // The Session pump uses the pass-only summary followed by bounded trace copies.
+    // The whole-call overload above remains the numerical control for those copies.
+    [[nodiscard]] static bool stepTraces (const mastering::LoudnessSolution& solution,
+                                         std::span<LandingTraceBucket> limiterRows,
+                                         std::span<LandingTraceBucket> peakClipRows,
+                                         std::uint32_t deliveryRateHz, LandingSummary& out,
+                                         std::uint32_t& cursor, std::uint32_t budget) noexcept;
     // Seven f64 columns: [firstFrame,lastFrame,minDb,maxDb,meanDb,samples,nonFinite].
     // Selects retained buckets intersecting the requested delivered-frame range. Their original
     // bounds remain in the response, including buckets that cross either edge of the request.
