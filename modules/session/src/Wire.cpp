@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 #include "BuildGuards.h"
+#include "BuildContract.h"
 #include "JsonCodec.h"
 #include "Devices.h"
 #include <felitronics/session/Wire.h>
@@ -171,20 +172,27 @@ void eventList (Writer& w, std::span<const Notification> events) noexcept
         if (! first) w.put (',');
         first = false;
         begin (w); w.field ("seq", e.seq); w.field ("jobId", e.jobId);
-        constexpr std::string_view kinds[] = { "phase", "fact", "reading", "done", "rejected", "error" };
+        constexpr std::string_view kinds[] = { "phase", "fact", "reading", "done", "rejected", "error", "measurement" };
         if (unsigned (e.kind) >= std::size (kinds)) { w.good = false; return; }
+        w.field ("source", e.source); w.field ("revision", e.revision);
+        w.field ("state", e.state); w.field ("phase", e.phase); w.field ("completedWork", e.completedWork); w.field ("totalWork", e.totalWork);
         w.field ("kind", kinds[unsigned (e.kind)]); w.text (",\"payload\":");
         switch (e.kind)
         {
+            case EventKind::Measurement: w.value (e.payload.measurement); break;
             case EventKind::Phase: w.value (e.payload.phase); break;
             case EventKind::Fact: fact (w, e.payload.fact); break;
             case EventKind::Reading:
             {
                 const auto& r = e.payload.reading;
-                if (r.momentaryCount > 4 || r.shortTermCount > 4 || r.runCount > 4) { w.good = false; return; }
+                if (r.momentaryCount > 4 || r.shortTermCount > 4 || r.runCount > 4 || r.clipCount > 4) { w.good = false; return; }
                 begin (w); w.field ("momentary", std::span<const ReadingPoint> (r.momentary, r.momentaryCount));
                 w.field ("shortTerm", std::span<const ReadingPoint> (r.shortTerm, r.shortTermCount));
-                w.field ("runs", std::span<const ReadingRun> (r.runs, r.runCount)); end (w); break;
+                w.field ("runs", std::span<const ReadingRun> (r.runs, r.runCount));
+                w.field ("grid", r.grid); w.field ("momentaryReason", r.momentaryReason); w.field ("shortTermReason", r.shortTermReason);
+                w.field ("clips", std::span<const double> (r.clips, 6u * r.clipCount));
+                w.field ("totalRuns", r.totalRuns); w.field ("storedRuns", r.storedRuns); w.field ("tailFrames", r.tailFrames);
+                w.field ("runsComplete", r.runsComplete); w.field ("finished", r.finished); end (w); break;
             }
             case EventKind::Done: begin (w); w.field ("masterId", e.payload.done.masterId); end (w); break;
             case EventKind::Rejected:
@@ -228,6 +236,67 @@ CodecStatus Wire::snapshot (const SnapshotView& v, std::span<char> json, std::sp
 }
 TransferNeed Wire::snapshotBytes (const Session& s) noexcept { return snapshotBytes (s.buildView()); }
 CodecStatus Wire::snapshot (const Session& s, std::span<char> j, std::span<double> r) noexcept { return snapshot (s.buildView(), j, r); }
+TransferNeed Wire::summaryBytes (const Session& s) noexcept
+{
+    MeasurementResult results[kAnalyzers]; return snapshotBytes (s.buildSummary (results));
+}
+CodecStatus Wire::summary (const Session& s, std::span<char> j, std::span<double> r) noexcept
+{
+    MeasurementResult results[kAnalyzers]; return snapshot (s.buildSummary (results), j, r);
+}
+CodecStatus Wire::queryRequest (std::string_view json, MeasurementQuery& out) noexcept
+{
+    if (Session::checkFloatingPointEnvironment() != Status::Ok) return CodecStatus::FloatingPointEnvironment;
+    if (json.size() > kCommandJsonBytes || ! detail::validUtf8 (json)) return CodecStatus::Invalid;
+    Storage storage; MeasurementQuery q;
+    Reader reader { json, storage, 0, true, {}, 0, 0, false };
+    reader.value (q); reader.space();
+    if (! reader.good || reader.pos != json.size()) return CodecStatus::Invalid;
+    out = q; return CodecStatus::Ok;
+}
+Checked Wire::queryStorage (const Session& s, std::string_view json) noexcept
+{
+    MeasurementQuery q;
+    const auto parsed = queryRequest (json, q);
+    if (parsed != CodecStatus::Ok) return { parsed == CodecStatus::FloatingPointEnvironment ? Rejection::FloatingPointEnvironment : Rejection::Contract };
+    const auto demand = s.queryStorage (q);
+    if (demand.status == QueryStatus::FloatingPointEnvironment) return { Rejection::FloatingPointEnvironment };
+    if (demand.status == QueryStatus::Contract) return { Rejection::Contract };
+    Checked out; out.bytes = demand.bytes; out.largestBlockBytes = demand.largestBlockBytes; return out;
+}
+TransferNeed Wire::queryBuffers (const Session& s, std::string_view json) noexcept
+{
+    MeasurementQuery q;
+    if (const auto status = queryRequest (json, q); status != CodecStatus::Ok) return { status, 0, 0 };
+    const auto demand = s.queryStorage (q);
+    return { CodecStatus::Ok, kQueryJsonBytes, std::uint32_t (demand.rowBytes) };
+}
+TransferNeed Wire::queryBytes (const QueryView& response) noexcept
+{
+    if (Session::checkFloatingPointEnvironment() != Status::Ok) return { CodecStatus::FloatingPointEnvironment, 0, 0 };
+    if (response.values.size() > kQueryValues || response.stride == 0 || response.values.size() % response.stride != 0
+        || response.stored != response.values.size() / response.stride) return { CodecStatus::Invalid, 0, 0 };
+    Writer w; w.binaryRows = true; w.value (response); return need (w);
+}
+CodecStatus Wire::query (const QueryView& response, std::span<char> json, std::span<double> rows) noexcept
+{
+    const auto status = buffers (queryBytes (response), json, rows);
+    if (status != CodecStatus::Ok) return status;
+    Writer w; w.output = json.data(); w.binaryRows = true; w.rows = rows.data(); w.value (response);
+    return CodecStatus::Ok;
+}
+TransferNeed Wire::query (Session& s, std::string_view request, std::span<char> json, std::span<double> rows) noexcept
+{
+    const auto status = buffers (queryBuffers (s, request), json, rows);
+    if (status != CodecStatus::Ok) return { status, 0, 0 };
+    MeasurementQuery q;
+    if (const auto parsed = queryRequest (request, q); parsed != CodecStatus::Ok) return { parsed, 0, 0 };
+    const auto response = s.query (q);
+    const auto n = queryBytes (response.view());
+    if (n.status != CodecStatus::Ok) return n;
+    if (n.jsonBytes > kQueryJsonBytes) detail::storageOverflow();
+    return { query (response.view(), json, rows), n.jsonBytes, n.rowBytes };
+}
 TransferNeed Wire::eventsBytes (std::span<const Notification> events) noexcept
 {
     if (Session::checkFloatingPointEnvironment() != Status::Ok) return { CodecStatus::FloatingPointEnvironment, 0, 0 };
@@ -252,6 +321,7 @@ template <class F> auto parseCommand (std::string_view json, F&& finish) noexcep
         request = r;
     }
     else if (kind == "setManual") { command::SetManual r { id }; root.get ("on", r.on); request = r; }
+    else if (kind == "continueMeasurement") request = command::ContinueMeasurement { id };
     else if (kind == "cancel") { command::Cancel r { id }; root.get ("jobId", r.job); request = r; }
     else if (kind == "forget") { command::Forget r { id }; root.get ("masterId", r.master); request = r; }
     else if (kind == "editTarget" || kind == "editDevice" || kind == "revertEdits")
@@ -320,6 +390,51 @@ Checked Wire::loadStorage (const Session& session, std::uint32_t channels, std::
     if (Session::checkFloatingPointEnvironment() != Status::Ok) return { Rejection::FloatingPointEnvironment };
     return parseLoad (0, { nullptr, channels, frames, rate }, meta, [&] (CommandId, const Request& request, const Problem& p)
     { return felitronics::session::commandStorage (session, request, p); });
+}
+namespace
+{
+template <class F> auto measured (std::string_view json, F&& finish) noexcept
+{
+    char text[kCommandJsonBytes] {};
+    Storage storage; storage.text = text;
+    MeasuredSource facts;
+    bool valid = json.size() <= kCommandJsonBytes && detail::validUtf8 (json);
+    if (valid)
+    {
+        Reader reader { json, storage, 0, true, {}, 0, 0, false };
+        reader.value (facts); reader.space();
+        valid = reader.good && reader.pos == json.size() && storage.chars <= sizeof (text);
+    }
+    return finish (facts, valid);
+}
+}
+Checked Wire::loadMeasuredStorage (const Session& session, std::string_view facts) noexcept
+{
+    if (Session::checkFloatingPointEnvironment() != Status::Ok) return { Rejection::FloatingPointEnvironment };
+    return measured (facts, [&] (const MeasuredSource& value, bool valid)
+    { return valid ? session.loadMeasuredStorage (value) : Checked { Rejection::Contract }; });
+}
+Checked Wire::attachAudioStorage (const Session& session, const Pcm& pcm) noexcept
+{ return session.attachAudioStorage (pcm); }
+CodecStatus Wire::loadMeasured (Session& session, CommandId id, std::string_view facts,
+                                std::span<char> output, std::uint32_t& written) noexcept
+{
+    if (output.size() < kAnswerBytes) return CodecStatus::TooSmall;
+    if (Session::checkFloatingPointEnvironment() != Status::Ok) return CodecStatus::FloatingPointEnvironment;
+    return measured (facts, [&] (const MeasuredSource& value, bool valid)
+    {
+        Writer w; w.output = output.data();
+        answer (w, valid ? session.loadMeasured (id, value) : session.rejectProtocol (id));
+        written = std::uint32_t (w.size); return CodecStatus::Ok;
+    });
+}
+CodecStatus Wire::attachAudio (Session& session, CommandId id, const Pcm& pcm,
+                               std::span<char> output, std::uint32_t& written) noexcept
+{
+    if (output.size() < kAnswerBytes) return CodecStatus::TooSmall;
+    if (Session::checkFloatingPointEnvironment() != Status::Ok) return CodecStatus::FloatingPointEnvironment;
+    Writer w; w.output = output.data(); answer (w, session.attachAudio (id, pcm));
+    written = std::uint32_t (w.size); return CodecStatus::Ok;
 }
 Checked Wire::importStorage (const Session& session, std::string_view project) noexcept
 {

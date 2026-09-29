@@ -41,9 +41,27 @@ jobs:
         run: ctest --test-dir build -C Release --output-on-failure --no-tests=error -R "^felitronics_session_abi_manifest"
       - name: Test
         shell: bash
+        env:
+          # On windows-latest the ABI source controls (thirty-odd MSBuild rebuilds of a copied tree) are the whole critical
+          # path: 2120 of 2228 s on main, past the 60-minute limit once slice 1 grew the library. They run in their own
+          # job below, beside this one; every other row runs them here.
+          EXCLUDE: ${{ matrix.os == 'windows-latest' && '^felitronics_session_abi_source_controls$' || '' }}
         run: |
           n=$( (getconf _NPROCESSORS_ONLN || nproc || sysctl -n hw.ncpu) 2>/dev/null | head -1 )
-          ctest --test-dir build -C Release --output-on-failure --no-tests=error -j "${n:-4}"
+          ctest --test-dir build -C Release --output-on-failure --no-tests=error -j "${n:-4}" ${EXCLUDE:+-E "$EXCLUDE"}
+
+  # The ABI source controls with MSVC, alone: they copy the tree and build it with this row's configuration, so the row
+  # needs no build of its own — only the configure whose cache they read.
+  windows-abi-source-controls:
+    name: windows-latest — session ABI source controls
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DFELITRONICS_MASTERING_BUILD_TESTS=ON
+      - name: Mutate, compile, compare — with MSVC
+        run: ctest --test-dir build -C Release --output-on-failure --no-tests=error -R "^felitronics_session_abi_source_controls$"
 
   windows-debug:
     name: windows-msvc-debug-budgets
@@ -62,8 +80,10 @@ jobs:
           felitronics_session_config_decisions_tests felitronics_session_text_tests
           felitronics_session_abi_tests felitronics_session_abi_v1_tests felitronics_session_abi_probe
           felitronics_session_event_tests felitronics_session_project_tests felitronics_session_replay_tests
+          felitronics_session_measurement_tests felitronics_session_live_tests felitronics_session_source_tests felitronics_session_needles_tests
+          felitronics_session_measurement_budget_tests felitronics_session_sidecar_tests felitronics_session_query_tests felitronics_waveform_index_tests
       - name: Test allocation budgets with iterator debugging
-        # Fifteen named suites, including the session ABI; the full generation walk stays in Release.
+        # Every named suite, including live and needles budgets; the full generation walk stays in Release.
         run: |
           node tools/tests/windows-debug.mjs --self-test
           node tools/tests/windows-debug.mjs build-debug
@@ -136,6 +156,23 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+      - name: The frozen session ABI manifest only grows — against the pull request's base
+        # tools/session-abi-check.mjs compares the compiled surface with tools/session-abi-v1.txt, so a pull request that
+        # edits a frozen line in the manifest together with the surface passes it. This compares the manifest with the
+        # base branch's: a removed or edited line is red, additions anywhere are not. Its control runs here and in ctest
+        # (felitronics_session_abi_manifest_append_only_control).
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          node tools/session-abi-append-only.mjs --self-test
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          if git cat-file -e FETCH_HEAD:tools/session-abi-v1.txt 2>/dev/null; then
+            git show FETCH_HEAD:tools/session-abi-v1.txt > "$RUNNER_TEMP/session-abi-base.txt"
+            node tools/session-abi-append-only.mjs "$RUNNER_TEMP/session-abi-base.txt" tools/session-abi-v1.txt
+          else
+            echo "the base branch carries no frozen manifest yet"
+          fi
       - name: Fetch core (configure only)
         run: cmake -S . -B build -DFELITRONICS_MASTERING_BUILD_TESTS=OFF
       - name: det-math — core's pass and this repository's
@@ -354,18 +391,34 @@ jobs:
         # walk). Under SAFE_HEAP they are the whole tail of this step, each alone on a core — the generation walk for
         # eighteen minutes — because one test cannot be split by -j. They add nothing here: the same sweeps already
         # ran above for their numbers, and natively under ASan for memory safety, which is the stronger instrument.
+        # The ten-minute memory fixture also runs above; the four-second fixture covers the checked allocation path.
         run: |
           cmake --preset wasm-audio -B build-wasm-checked $CORE_TAG -DFELITRONICS_WASM_ASSERTIONS=2 \
                 -DCMAKE_EXE_LINKER_FLAGS="-sSAFE_HEAP=1 -sSTACK_OVERFLOW_CHECK=2"
           cmake --build build-wasm-checked -j "$(nproc)"
-          ctest --test-dir build-wasm-checked -j "$(nproc)" --output-on-failure --no-tests=error -E 'delivered_ceiling|loudness_solver|clip_detector|session_abi_generation'
+          ctest --test-dir build-wasm-checked -j "$(nproc)" --output-on-failure --no-tests=error -E 'delivered_ceiling|loudness_solver|clip_detector|session_abi_generation|session_measurement_budget_600s'
       - name: The native references — the CLIs every comparison below diffs against
         # Configured once, here, and the core it fetched is the core the wasm modules are built against in the
         # next step: two fetches of one tag are one tree, but "the same core" should be a fact of the run, not
         # of the tag.
         run: |
-          cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release -DFELITRONICS_MASTERING_BUILD_TESTS=OFF $CORE_TAG
-          cmake --build build-native -j "$(nproc)" --target fcore_measure fcore_master fcore_session
+          cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release -DFELITRONICS_MASTERING_BUILD_TESTS=ON $CORE_TAG
+          cmake --build build-native -j "$(nproc)" --target fcore_measure fcore_master fcore_session felitronics_session_needles_tests felitronics_session_source_tests felitronics_session_query_tests felitronics_waveform_index_tests
+      - name: Owned source measurements — native and both Wasm tiers
+        run: |
+          node tools/tests/source-parity.mjs build-native/modules/session/felitronics_session_source_tests \
+            build-wasm-audio/modules/session/felitronics_session_source_tests.js \
+            build-wasm-checked/modules/session/felitronics_session_source_tests.js
+          node tools/tests/query-parity.mjs build-native/modules/session/snapshot.d.ts \
+            build-native/tools/felitronics_session_query_tests \
+            build-wasm-audio/tools/felitronics_session_query_tests.js \
+            build-wasm-checked/tools/felitronics_session_query_tests.js
+      - name: Retained needles — native and both Wasm tiers, bit-exact
+        run: |
+          node tools/tests/needles-parity.mjs --check-wiring
+          node tools/tests/needles-parity.mjs build-native/modules/session/felitronics_session_needles_tests \
+            build-wasm-audio/modules/session/felitronics_session_needles_tests.js \
+            build-wasm-checked/modules/session/felitronics_session_needles_tests.js
       - name: The wasm modules build (tools/wasm/build.sh)
         run: |
           export FELITRONICS_CORE_DIR="$(sed -n 's/^FELITRONICS_MASTERING_CORE_SOURCE_DIR:INTERNAL=//p' build-native/CMakeCache.txt)"
@@ -762,9 +815,7 @@ jobs:
         #     compare a wrong demand with itself.
         run: |
           set -euo pipefail
-          # build-native was configured with tests OFF (it only needed fcore_measure); turning them on
-          # re-uses its object cache and adds this one target.
-          cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release -DFELITRONICS_MASTERING_BUILD_TESTS=ON $CORE_TAG
+          # The native references already enabled tests for the retained needles comparison.
           cmake --build build-native -j "$(nproc)" --target felitronics_analysis_abi_tests
           ./build-native/tools/felitronics_analysis_abi_tests --storage-table > storage-native.txt
           test -s storage-native.txt

@@ -1,0 +1,19 @@
+{
+  "checks": [
+    {"kind":"snapshot","index":0,"path":"state","value":1},
+    {"kind":"snapshot","index":0,"path":"mandatoryMeasurementsReady","value":false},
+    {"kind":"snapshot","index":0,"path":"measurements.0.status","value":2},
+    {"kind":"snapshot","index":0,"path":"measurements.0.reason","value":7},
+    {"kind":"snapshot","index":0,"path":"measurements.0.numbers.0.value","value":null},
+    {"kind":"snapshot","index":0,"path":"measurements.0.numbers.1.value","value":null},
+    {"kind":"snapshot","index":0,"path":"needlesJob","value":0},
+    {"kind":"snapshot","index":0,"path":"measurements.12.status","value":2},
+    {"kind":"snapshot","index":0,"path":"measurements.12.reason","value":7},
+    {"kind":"answer","index":1,"path":"code","value":4},
+    {"kind":"snapshot","index":1,"path":"masters.length","value":0}
+  ],
+  "samePath": [{"a":{"kind":"snapshot","index":0},"b":{"kind":"snapshot","index":1},"path":"source.hash"}],
+  "minEvents": 2000,
+  "eventKinds": ["phase","measurement","fact","rejected"],
+  "rejections": 1
+}

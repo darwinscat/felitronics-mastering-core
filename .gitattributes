@@ -3,3 +3,6 @@
 *.toml text eol=lf
 # Contract inputs are hashed as bytes on every checkout, including Windows.
 /tools/contract/** text eol=lf
+# ...and so is the codec schema, into the site recordings' manifest (tools/contract/run.mjs, codecSchemaSha256): a CRLF
+# checkout would name another schema and fail the recordings as stale.
+/tools/session-codec-schema.json text eol=lf

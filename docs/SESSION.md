@@ -24,7 +24,7 @@ something could still do is exactly what a reviewer reads a diff for.
 
 ## Deterministic, bounded, one thread at a time
 
-The session runs no audio thread and no sample loop. It is called synchronously, with its input as arguments, and answers
+The session runs no audio thread; its offline sample loops advance only when called. It is called synchronously, with its input as arguments, and answers
 with values. Its laws are about **replay** — the same calls into a new session give the same session, on every row the
 product runs on — and about **bounds**: memory it asks for is stated before it is asked for.
 
@@ -45,7 +45,7 @@ The laws are felitronics-core's (`docs/DSP-ARCHITECTURE.md` §2), numbered as th
 | **6** no exceptions, RTTI, OS, filesystem, locale; no global mutable state | yes | exceptions and RTTI: the target's flags, `src/BuildGuards.h` first in every unit, the build controls, and the source lint's token rule in every `#if` branch. OS, files, console, locale, clock, process state: the object-file gate (what the objects call) and the source lint's include allowlist. Global state: the object-file gate (what lives in writable memory) |
 | **7** a C++ subset every toolchain accepts | yes | the CI matrix compiles it — clang, gcc 13 and 14, MSVC, emscripten — and in this repository's own builds its sources compile under core's hygiene warning set with `-Werror` |
 | **8** software denormal handling in feedback kernels | **no** | the session has no feedback kernel. What it does about subnormals is a different guarantee: it refuses a thread that flushes them (the floating-point environment, below) |
-| **8a**, **11a** the sample clock | **no** | the session has no stream of samples and no clock |
+| **8a**, **11a** the sample clock | yes, through its analyzers | streaming advances by source frames on a fixed grid; pauses consume no samples, and native analyzer comparisons hold chunk invariance |
 | **9** no `long double` | yes | core's long-double lint reads every `modules/*/include` and `modules/*/src`, this module's included, and the wasm tier's artifact gate reads every emitted object |
 | **10** FP contraction is stated | yes — **as `off`** | the target's own flags in one `SHELL:` group, the compile line read back (this build's and a consumer's), the hostile-flags tests, the library's probes asked from a contracting caller, and the source lint's pragma and attribute rules. Core states `on` for its tree; the session's numbers are compared across rows, native and wasm, and baseline wasm has no fused multiply-add, so a contracting native build would disagree with the module. The library's flags reach its own objects only: a program that links it compiles **every** translation unit with the same FP flags (below, "What the flags do not reach"). The sign and payload of a NaN, and the floating-point exception masks and flags, are outside every check here, as core's law 10 leaves them |
 | **11**, **11b** a request that cannot be honoured is refused whole; checks in a fixed order | yes | `create()` checks the floating-point environment and the config it reads, then allocates: a refused create requested nothing (`felitronics_session_tests`). Every command runs the checks `Commands.h` declares, in their order — the thread's floating-point environment, then the table — before changing session state. Import adds the ordered document checks below. A rejection publishes its event and advances `seq`; the session’s state and revision do not change. A `load` runs its checks, then disarms, then writes (check → disarm → write), so a rejected load, too, leaves state and revision unchanged while publishing its rejection: `felitronics_session_state_tests` compares the whole session before and after every rejection it produces, produces every rejection code, and holds the order with requests wrong in several ways. The C boundary's checks run in its header's order and a refused call writes nothing and allocates nothing (`felitronics_session_abi_tests`). `fcore_session` reads and checks a whole script before it creates a session |
@@ -202,11 +202,11 @@ every stage a device writes is named, the limiter's second release included.
 
 ## The states and the commands
 
-`<felitronics/session/Commands.h>` and `<felitronics/session/Project.h>`. A session is in one of four states — **Empty**
+`<felitronics/session/Commands.h>` and `<felitronics/session/Project.h>`. A session is in one of five states — **Empty**
 (nothing loaded), **Loaded** (a source, its first measurement not completed, the devices not placed), **Measured1** (the first
-measurement ended: the devices are placed, a master can be made), **Measured2** (the second ended too) — and a master
+measurement ended: a master can be made, while device edits wait for explicit placement), **Measured2** (the second ended too), **MeasurementStopped** (audio, results, and unfinished work retained) — and a master
 being made is an overlay on the two measured ones. A shell asks by a `Request`, one struct per command with the shell's
-own id for it: `load`, `setTarget`, `editTarget`, `editDevice`, `revertEdits`, `setManual`, `master`, `cancel`, `forget`, `importProject`.
+own id for it: `load`, `setTarget`, `editTarget`, `editDevice`, `revertEdits`, `setManual`, `master`, `cancel`, `forget`, `importProject`, `continueMeasurement`.
 `Session::apply()` answers it whole — accepted, with the revision it made, or rejected with a `Rejection` code and no state change. A rejection publishes an event and advances `seq`. Every accepted command and every transition moves the revision by one; a rejection leaves it.
 
 **Who may do what, when, is one table in code** (`Table` in `Commands.h`), and every command consults it right after
@@ -217,29 +217,31 @@ session's friend and not public), and they happen only where their row says so. 
 from the code, and ctest holds the text between the markers below to that output byte for byte.
 
 <!-- the table: begin -->
-| command | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 |
-|---|---|---|---|---|---|---|
-| load | yes | yes | yes | yes | yes | yes |
-| setTarget | yes | yes | yes | yes | yes | yes |
-| editTarget | yes | yes | yes | yes | yes | yes |
-| editDevice | NoSource | NotPlaced | yes | yes | yes | yes |
-| revertEdits | NoSource | NotPlaced | yes | yes | yes | yes |
-| setManual | yes | yes | yes | yes | yes | yes |
-| master | NoSource | NotMeasured | yes | yes | Busy | Busy |
-| cancel | NoJob | yes | yes | NoJob | yes | yes |
-| forget | NoSource | NoMaster | yes | yes | yes | yes |
-| importProject | NoSource | NotPlaced | yes | yes | yes | yes |
+| command | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 | Stopped | StoppedMeasured | MasteringStopped | Measured1Unplaced | Measured2Unplaced | Mastering1Unplaced | Mastering2Unplaced | StoppedMeasuredUnplaced | MasteringStoppedUnplaced |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| load | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| setTarget | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| editTarget | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| editDevice | NoSource | NotPlaced | yes | yes | yes | yes | NotPlaced | yes | yes | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced |
+| revertEdits | NoSource | NotPlaced | yes | yes | yes | yes | NotPlaced | yes | yes | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced |
+| setManual | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| master | NoSource | NotMeasured | yes | yes | Busy | Busy | NotMeasured | yes | Busy | yes | yes | Busy | Busy | yes | Busy |
+| cancel | NoJob | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes | yes |
+| forget | NoSource | NoMaster | yes | yes | yes | yes | NoMaster | yes | yes | yes | yes | yes | yes | yes | yes |
+| importProject | NoSource | NotPlaced | yes | yes | yes | yes | NotPlaced | yes | yes | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced |
+| continueMeasurement | NoJob | NoJob | NoJob | NoJob | NoJob | NoJob | yes | yes | yes | NoJob | NoJob | NoJob | NoJob | yes | yes |
 
-| the session's own transition | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 |
-|---|---|---|---|---|---|---|
-| the first measurement ends | no | yes | no | no | no | no |
-| the second measurement ends | no | no | yes | no | yes | no |
-| the master is done | no | no | no | no | yes | yes |
+| the session's own transition | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 | Stopped | StoppedMeasured | MasteringStopped | Measured1Unplaced | Measured2Unplaced | Mastering1Unplaced | Mastering2Unplaced | StoppedMeasuredUnplaced | MasteringStoppedUnplaced |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| the first measurement ends | no | yes | no | no | no | no | no | no | no | no | no | no | no | no | no |
+| the second measurement ends | no | no | yes | no | yes | no | no | no | no | yes | no | yes | no | no | no |
+| the master is done | no | no | no | no | yes | yes | no | no | yes | no | no | yes | yes | no | yes |
 <!-- the table: end -->
 
 **The checks run in one declared order, the same for every command**, and the first that fails is the answer:
-1. the calling thread's floating-point environment; 2. the table; 3. what the command names — a target, a device offered for this target and source, an
-id left for a new job (`load` and `master`), a load's valid UTF-8 name, the active job, a master kept; 4. the fields — each touched one in the order its struct
+1. the calling thread's floating-point environment; 2. the table; 3. what the command names — a target, a device offered for this target and source,
+the source's audio (`master`: `NoAudio` for a sidecar source before `attachAudio`), an id left for a new job (`load` and `master`), a load's valid
+UTF-8 name, the active job (`cancel`: `NoJob` when none runs, `UnknownJob` when another does), a master kept; 4. the fields — each touched one in the order its struct
 writes them: finite, one of its values, within its domain; 5. a load's audio — one or two channels, a rate of
 at least felitronics-core's 8000 Hz, frames and data, a size the machine can address, every sample finite. A rejection
 on a field names it by its place in its struct. `Session::check()` runs exactly these and says what the command would
@@ -514,12 +516,18 @@ session compares or prints one.
 
 ## Work units, event deltas, and snapshots
 
-`Session::step(budget)` runs deterministic stub work. The budget counts **work units**, never milliseconds. A call
-consumes at most `min(budget, 16)` units, reports the number consumed, and returns `More` while either job remains or
-`Done` when neither does. Zero units poll without progress. The shell measures its own speed and converts time to
-units. The library has no clock. Measurement phase one and phase two each take five units; a master takes the config's
-`progress.master.expectedPasses` pass units and one remeasurement unit. These establish stub facts and recipes, not
-measured audio or rendered PCM. A master takes priority over phase two, which resumes when the master finishes.
+`Session::step(budget)` runs live loudness, source clipping, the programme report, waveform, source analyzers, needles, and mastering. The budget counts **work units**, never milliseconds. A call
+consumes at most `min(budget, 16)` units, reports the number consumed, and returns `More` while any job remains or
+`Done` when none does. Zero units poll without progress. The shell measures its own speed and converts time to
+units. The library has no clock. A measurement unit prepares one instrument, reads at most 1024 source frames,
+publishes at most four newly decided clipping runs, or advances report finalization by at most 1024 entries.
+The report drains reference true peak and scans tail energy, integrated gates, and short-term gates without changing
+summation order. A master needs terminal tempo for CD targets or enabled Glue. While tempo is pending, its
+own job schedules that analyzer after the current analyzer reaches a stage boundary, resumes a
+stopped measurement if needed, and reports `Analyzers` progress with no render pass. The recipe
+is captured once tempo becomes terminal. Other phase-two analyzers resume after the master;
+targets without a tempo dependency start their passes immediately. Cancelling a waiting master
+leaves the measurement running; cancelling that measurement also stops its waiting master.
 
 Every completed unit publishes a phase. Measurement progress is the cumulative weight divided by the sum of
 `progress.analysis.weights`, in this order: loudness, report, lowEnd120, forensics, stereo, lowEndSweep, stereoBursts,
@@ -529,7 +537,7 @@ estimates; the interface permits them to move backwards. The human pass label us
 to the diagnostic journal. Completed and total work units are deterministic inputs for a shell's time estimate.
 
 `events()` views the latest `apply()` or `step()` batch. The caller copies or consumes it before the next such call;
-queries leave it intact. Each `Notification` is an independent value with `seq`, `jobId`, `kind`, and the payload
+queries leave it intact. Each `Notification` is an independent value with `seq`, `jobId`, source hash, revision, state, phase, deterministic work, `kind`, and the payload
 selected by kind. Sequence numbers count publications across loads and cancellations. No callback runs inside the
 session. Event facts use `OwnedFact`: `assign(text::Fact)` copies up to 256 user-text bytes without allocation and
 refuses excess whole; `view()` returns a `text::Fact` whose user-text views belong to that event. Copying or moving a
@@ -542,18 +550,26 @@ Restoring the FP environment allows a refused job to resume. The fixed batch has
 |---|---|
 | phase | phase name, weighted fraction, weights version, pass and work counters; every completed unit |
 | fact | `text::FactId` and `text::Arg` arguments; measurement completion, each master pass, master readiness, cancellation |
-| reading | owned momentary and short-term points and runs, with positions and lengths; shape only, the stub emits none |
+| reading | new owned momentary and short-term points, fixed frame grid, window reasons, and detailed clipping runs |
 | done | the completed master's id, immediately after its recipe is kept |
 | rejected | command id and rejection code; the project, revision and work remain unchanged; `seq` advances |
 | error | trap/contract/refusal/memory/poisoned/stale code, fact and arguments, byte demand and none/replay/continue recovery; an FP refusal publishes `Error{Refusal, Continue}` and leaves the job resumable |
 
 An accepted load issues a measurement job id, shared by its two phases. Masters and loads use one monotonic id
 sequence; the load answer returns its id and `measurementJob()` exposes the active measurement. `job()` retains its
-meaning as the active master. Cancellation checks the named id after the state table. Cancelling phase one takes
-`Loaded` to `Empty` and drops the source; the shell loads the same audio again to restart. Cancelling phase two leaves
-`Measured1`; cancelling a master leaves the measured state and ends its overlay. The cancelled job's progress resets
-in every case. After phase-two cancellation, `cancel` in `Measured1` returns `NoJob` if no master runs. A first-phase
-result still suffices for a master. A failed Driver transition publishes `Error{Contract, None}` and drops that job.
+meaning as the active master. Cancellation checks the named id after the state table. Cancelling measurement retains
+the source, completed results, analyzer workspace and saved progress; unfinished results become `Cancelled`.
+`continueMeasurement` gets a fresh job identity, restores unfinished results to `Pending`, and resumes at the saved
+position without feeding silence or repeating a completed instrument. The snapshot publishes its availability and
+the state it resumes. Stopped denotes cancellation before mandatory readiness. StoppedMeasured and MasteringStopped
+denote ready sources with placed devices; their Unplaced counterparts retain readiness without device placement.
+Cancelling a master ends only that overlay.
+Cancellation in either measured state, Stopped or StoppedMeasured returns `NoJob` only when no measurement, master or needles job runs:
+needles start at the first phase's end, one unit before Measured1, so a measurement stopped there leaves them running in
+Stopped, cancellable like anywhere else. A cancel's fact names the job it stopped — the measurement stopped, or a
+master or needles job cancelled.
+A target change after phase two can start needles; its active ID can be cancelled in `Measured2`.
+A failed Driver transition publishes `Error{Contract, None}` and drops that job.
 Every internal completion checks its captured job id, and measurement completions also check the captured source hash.
 A stale completion changes nothing, including when the same samples are loaded again or a newer master runs.
 
@@ -564,7 +580,72 @@ remain on one thread at a time; a completed value can be handed to a shell indep
 term to `uint64_t` before addition. Copy traps before allocating, in every configuration, if combined text or
 reading-point storage exceeds `size_t`; it never allocates a wrapped size.
 
-`tools/session-codec-schema.json` is the one hand-edited codec description. `Codec` exchanges its named-field JSON.
+`Measurements.h` adds owned analyzer results: named optional numbers with reasons, named numeric arrays with frame
+grids, total/stored counters and completeness. Each source has one result per analyzer. The all-target plan retains
+independent 120 Hz (`LowEnd`), 150 Hz (`LowEnd150`) and infra-low (`InfraLow`) readings, each with its own preparation
+and result demand. `LowEnd150` is appended after the existing analyzer identities. `OwnedMeasurements::copy`
+copies every name and row; snapshot copies therefore survive workspace destruction, replacement loads and session
+destruction. A `Measurement` event owns the result identity, status, counters and revision; its numeric data is read
+from the corresponding snapshot. The codec generator describes both forms, including transferable f64 rows.
+
+The measurement key combines the PCM bit hash, actual native parameters, config version and core/session versions.
+The target is absent from source-wide measurements. An identical load reuses PCM, saved progress and those results;
+changing the target does not invalidate them. Forensics also reads the file's bit depth (its unused low bits), so its
+result key mixes the measurement key with that depth: a reload of the same PCM under another depth recomputes those
+bits from the retained grid, moves the forensics key alone, and publishes one `Measurement` event under the reload's
+revision; an unchanged depth is the same result, unannounced. Needles have a separate source-and-ceiling identity. Each prepared analyzer stays resident across pauses and is destroyed after publishing its result. Live result arrays
+belong to the session independently of analyzer scratch, so final publication needs no programme-sized copy. The live needles job consumes its
+retained loudness and true-peak readings through the controller seam; see [NEEDLES.md](NEEDLES.md).
+
+`MeasurementQuery` reads retained source data between pump steps on the session thread. The caller supplies
+`audioId` (`Source::hash`), a half-open source-frame range `[fromFrame,toFrame)`, `columns` in `[1,2048]`, and
+an exact uint64 `requestId`. A nonempty valid range has at most `min(columns,toFrame-fromFrame)` waveform buckets;
+bucket `i` uses `fromFrame + floor((toFrame-fromFrame)*i/n)` to the next boundary. The last bucket includes the
+last source frame. `fromFrame == toFrame` returns `Empty` with no rows; reversed or out-of-source ranges return
+`InvalidRange`; a stale `audioId` returns `StaleSource`; invalid column counts return `ColumnLimit`. None clamps.
+The response echoes the request and supplies the source id, session revision, measurement key, status, reason,
+total/stored counts, completeness, source rate/channels, row stride and PCM frames read. Each `QueryResult` owns its
+rows after cache eviction, source replacement or session destruction. Repeated equivalent queries share a bounded
+two-entry cache; `requestId` is an answer label and does not change the measurement. Target edits do not remeasure
+the source. The source/config/core identity and actual grid parameters distinguish cache entries.
+
+The generated `Query*Row` tuples in `snapshot.d.ts` give column names. Their numeric units and order are:
+
+| kind | row meaning |
+|---|---|
+| Waveform | `[firstFrame,lastFrame,axis,min,max,peak,envelope,rms,lowEnergy,middleEnergy,highEnergy,finiteFrames,reason]`; axes 0=L, 1=R, 2=Mid=(L+R)/2, 3=Side=(L-R)/2; mono has only 0 and 2. Amplitudes are linear, energies are sums of squares. Peak preserves either signed extremum; envelope is the maximum absolute box mean near 8 kHz. Bands use complementary 250/2500 Hz one-pole drawing filters and are not LR4 measurements. |
+| LowSpectrum / LowSide | `[Hz,density,reason]` / `[Hz,sideFraction,reason]`; the requested Hz grid includes both endpoints (one column uses `fromHz`). The retained full-source LowEnd measurement is selected by exact `crossoverHz` 120 or 150. These kinds require the whole-source frame range and a finite grid within Nyquist. |
+| Momentary / ShortTerm | `[sourceFrame,LUFS,reason]` from the retained live grid, decimated to the requested maximum row count. `sourceFrame` is the window end: `(fromFrame,toFrame]` selects readings for the half-open audio range `[fromFrame,toFrame)`, including a reading at the source end. |
+| Clipping | `[firstFrame,frameCount,channel,sign,level,evidence]` for retained runs intersecting the range; `total` counts all matches, `stored` is capped by `columns`, and `complete` reports truncation. |
+| Stereo | `[firstFrame,lastFrame,width,correlation,rms,reason]` from retained source stereo columns intersecting the requested range. Bounds name each retained column's actual source interval; `total` counts intersecting columns and `complete` is false when the column limit omits some. |
+
+Waveform inner buckets combine completed index nodes; only two edge leaves can replay resident PCM. Its index owns
+the multiresolution columns and filter checkpoints with no second PCM copy. `pcmFramesRead` exposes exact-edge work;
+other query kinds read retained results and report zero. A waveform range not yet built is `Pending`; a stopped
+unfinished range is `Cancelled`. A row's reason distinguishes absent mono axes (`Unsupported`), nonfinite gaps
+(`NonFinite`) and finite silence (`NoSignal`); unavailable instruments retain their own reason. `summary()` and
+`fc_session_summary_*` keep scalar snapshot status while omitting large measurement rows and mark
+`measurementRowsIncluded=false`. The full snapshot remains available on its existing entry points.
+
+`measurementStorage` exposes source, result, workspace, copy, codec and allocator demands and the maximum live
+set across load and work. Native `storageFor` calls share the exact parameter records used for preparation, including
+the separate loudness meter and waveform/stereo columns. Nested spectrum and band-burst storage is included only
+through its parent analyzer. The whole-work estimate includes only the pump's declared streaming instruments:
+loudness, clipping and programme report. They coexist with retained row buffers, one detached snapshot and its
+serialization. Scalar metadata already inside the live output object is counted once. The codec reserve covers the web transport's binary f64 rows and JSON metadata. Exact scalar decimals use
+the codec writer's maximum width; text uses its escaping bound. Optional plain-JSON exports query their exact
+`Codec::encodedBytes` separately and are not reserved for every load. Per-analyzer prices remain available for separate preparations;
+scheduling another analyzer must declare its lifetime before it runs. Burst, distinct-value and hum capacities
+are bounded by the source's possible observations without changing analysis thresholds or arithmetic.
+Load demand takes the maximum of old storage plus caller input, and new storage plus its input copy: old and
+replacement PCM copies do not coexist. Source-name copies remain included. The largest-block demand is conservative; capabilities remain the shell's limits.
+Embedded TOML views allocate nothing; runtime config/project parsing keeps its separate declared TOML budget.
+There is no excursion index. Needles are re-measured over retained PCM for one ceiling, with a separate
+`needlesStorage` / `fc_session_needles_bytes` demand. Preparation checks capacity before allocating;
+all subsequent read and finish units allocate zero. Native run-list truncation is explicit in the snapshot.
+
+`tools/session-codec-schema.json` is the one hand-edited codec description; the call status values, which the C header
+already declares, are not copied into it — `SessionStatus` is generated from `fc_session_status`. `Codec` exchanges its named-field JSON.
 Object order is immaterial; missing,
 duplicate, unknown and ill-typed fields are refused. Rows are arrays. Optional edits use null; uint64 identities use
 decimal strings so JavaScript loses no bits; byte counts use whole double values strictly below 2^53. Non-finite doubles
@@ -585,7 +666,7 @@ fail. `tools/wasm/build.sh` also emits `snapshot.d.ts` beside the modules. Regen
 
 | operation | demand before work | evidence |
 |---|---|---|
-| step, event/query access | `stepBytes() == 0`; fixed batch included in create | event suite allocation counter |
+| step, event/query access | `stepBytes() == 0` for fixed work; needles preparation uses `needlesStorage`; batch included in create | event and needles allocation counters |
 | snapshot | `snapshotBytes() = Snapshot::storageFor(buildView())`; the same view passed to `Snapshot::copy` | event suite, retained value after session destruction |
 | snapshot copy | `Snapshot::storageFor(view)`; exact text, masters and rows | event suite, all array types |
 | encode | `Codec::encodedBytes(view)` caller buffer; zero heap demand | exact-size and short-buffer tests |
@@ -594,7 +675,7 @@ fail. `tools/wasm/build.sh` also emits `snapshot.d.ts` beside the modules. Regen
 `felitronics_session_event_tests` holds every command-table cell between actual pump calls, immediate fact publication,
 cancellation and continued use, stale completions, and complete event fingerprints across runs and work slicing. The
 fixture is the suite's four synthetic samples at 48 kHz (source hash `0ba6b096abb7c779`) and the embedded config; regenerate its fingerprints by running
-the suite and reviewing changes against those inputs. The pinned event hashes (`e2d3b1997699c4ac`, `74d299b0b8b47839`) include all active event payload fields and
+the suite and reviewing changes against those inputs. The pinned event hashes (`820a89aab5c3d074`, `9b331789613b86ea`) include all active event payload fields and
 the weights version. The same executable and fixtures run native and wasm. The codec suite covers retained snapshots,
 both project layers, all reading arrays, silence, gaps, finite exponent extremes, signed zero, and deterministic
 binary64 samples. The object gate admits Apple's compiler-generated `__chkstk_darwin` stack probe for the bounded
@@ -743,6 +824,7 @@ still apply. Convert, Lra and Final are appended to `PhaseName` at 5, 6 and 7 an
 | `create_bytes`, `create`, `destroy` | Pre-create demand; capability/config creation; generation-checked destruction |
 | `set_capacity` | Update heap ceiling and largest free block between calls |
 | `command_bytes`, `load_bytes`, `import_project_bytes` | Session allocation demand and live bytes before work |
+| `measurement_bytes` | Shape-only detailed measurement demand in an appended size-prefixed record |
 | `command` | Named-field JSON in; accepted/rejected JSON out |
 | `load` | Planar f32 pointers, channels, frames, rate and JSON metadata; owned PCM copy |
 | `import_project`, `export_project_size`, `export_project_copy` | Project bytes in caller buffers |
@@ -782,6 +864,13 @@ type assertions and emits constants, every public enum value, C struct sizes, al
 including wasm32, runs its own probe; codec field/type lines are frozen beside the C surface. The gate requires every
 frozen line to remain and permits additions. Its control deletes and changes each line and requires rejection.
 CI runs the gate and control. The Windows Debug selection includes the session ABI suites.
+Every `fc_session_*` declaration is frozen whatever it returns: one the generator cannot read stops it. Two lines are
+floors rather than values — a boundary struct's size and `FC_SESSION_ABI_VERSION`: after the first release, each batch
+of additions that lands together in one release moves it up by one and adds one row to the header's VERSION HISTORY; a
+lower number is a change. The generated `snapshot.d.ts` and `snapshot.mjs` state the version read from the header. The wire's
+`SessionStatus` union is read from `fc_session_status` by both generators, and a wire record that mirrors a C struct
+(`SessionCapabilities`) must carry each of its fields. The manifest itself only grows: on a pull request CI compares it
+with the base branch's (`tools/session-abi-append-only.mjs`), and a removed or edited line is red.
 
 `tools/wasm/build.sh` builds `fcsession` from the facade and `modules/session/sources.txt`, audits the exact export list,
 compares node/web wasm bytes, checks for threads, and runs a node scenario through the ABI and generated types.
@@ -854,6 +943,8 @@ cancel 2 1
 load 3 mono
 step 5 work units
 step 5 work units
+place phase 1
+place phase 2
 command {"kind":"setManual","commandId":"4","on":true}
 export project saved
 new instance
@@ -861,6 +952,8 @@ create main 67108864
 load 1 mono
 step 5 work units
 step 5 work units
+place phase 1
+place phase 2
 import project 2 saved
 snapshot
 ```
@@ -870,6 +963,11 @@ snapshot
 - `load <commandId> <fixture>` copies planar synthetic PCM; `command <JSON>` forwards an ABI command unchanged.
 - `step <budget> work units` makes one bounded pump call; zero polls. Subsequent commands are consumed in script
   order between pump calls. `cancel <commandId> <jobId>` is shorthand for the named JSON command.
+- `drive <budget> work units` repeats bounded calls until the budget is spent or work is done. `summary` and
+  `query <JSON>` copy the generated summary and bounded query transport, including f64 rows.
+- `place phase 1|2` calls the session's internal transition through a contract-only seam. It keeps the slice 0
+  device-edit and project scenarios executable while the production measurement phase leaves devices unplaced.
+  Only the separate contract Wasm artifact exports this seam; measurement scenarios use the shipped module.
 - `snapshot` copies the current snapshot. Every live session also emits a final snapshot, sorted by name.
 - `export project <name>` stores canonical project bytes outside the instance; `import project <commandId> <name>`
   restores them. `import project <commandId> file <fixture>` reads a generated TOML fixture from `../fixtures`.
@@ -879,7 +977,7 @@ snapshot
   separate `contract-trap` test artifact, then reloads the shipped module. Both verify permanent poison and untouched
   outputs. No failure injection or poison reset is exported by the shipped module.
 
-The ten scenarios cover load/measure, whole refusal in a forbidden state, cancel during measurement and mastering,
+The seventeen scenarios cover load/measure, whole refusal in a forbidden state, cancel during measurement and mastering,
 reset every device edit on a target change, poison/replay, interleaved sessions, memory refusal, project round trip,
 knob domains and no-op edits, and a saved machine layer from an older core. Device edits work with manual mode hidden;
 `low` is edited and reset across target changes, with the hand-edit count returning to zero. Domain checks include
@@ -889,7 +987,8 @@ an adequately provisioned session then accepts a nonallocating command with capa
 capacity and completes measurement. Before every creation, command, load and import, each consumer queries demand.
 The command/load/import queries must preserve both the event batch and snapshot. Prices and live bytes are checked
 locally in each consumer because native and wasm object layouts differ; every emitted answer and event is compared
-unchanged. Measurements remain deterministic stubs. Saved machine differences supply nonempty binary rows through
+unchanged. The slice 0 placement seam preserves those scenarios' original transitions; the measurement scenarios run
+real analyzers and their own status and query checks. Saved machine differences supply nonempty binary rows through
 size-query/copy and `Float64Array` reads. The wasm consumer initializes every v1 record's size prefix.
 
 Run from the repository root (use the core and TOML checkouts resolved by your CMake build):
@@ -902,17 +1001,25 @@ tools/wasm/build.sh
 node tools/contract/run.mjs build-release/tools/fcore_session tools/wasm/build/fcsession.node.js
 node tools/contract/run.mjs build-release/tools/fcore_session --native-only
 node tools/contract/run.mjs build-release/tools/fcore_session tools/wasm/build/fcsession.node.js --controls
+node tools/contract/run.mjs build/tools/fcore_session build/measure-08-wasm-artifacts/fcsession.node.js --rebuild-recordings
 ```
+
+What the comparison proves, and what it does not: the brain answers byte for byte the same natively and in wasm, and
+the wasm module's C facade carries it unchanged. The native consumer calls the C++ session directly, past
+`fc_session`, so the NATIVE facade's argument order, guards and status mapping are not compared here — they are held
+by `felitronics_session_abi_v1_tests` and `felitronics_session_abi_tests` (`tools/tests/SessionAbiV1Tests.cpp`,
+`SessionAbiTests.cpp`), natively and under the sanitizers.
 
 Both consumers emit tab-separated session name, record kind, exact codec JSON (project text is hex), and hex row bytes.
 Native calls `Wire` over its C++ session; Node drives the C ABI, copies every event batch before another mutation, and
 copies snapshots using the size-query/copy entry points. It reacquires heap views after calls and reads copied row
 buffers as `Float64Array`. The generated `.d.ts` validates the received unions. Comparison uses the complete output
-buffers, without JSON reserialization, float tolerance, sorting, or identity removal. A mismatch identifies the first
+buffers, without JSON reserialization, float tolerance, sorting, or identity removal, except native/Wasm object-layout
+budget fields; source and allocator bytes remain compared. A mismatch identifies the first
 differing event's zero-based index and kinds, and prints both original encodings and row bytes. Other record mismatches
 name the record. Each scenario also has handwritten behavior assertions, so two agreeing empty or refused runs fail.
 
-Fixtures contain generated, planar signed integers divided by 32768 and a synthetic saved project; no third-party
+Fixtures contain generated, planar signed integers divided by 32768, a synthetic saved project and measured sidecar; no third-party
 audio or host trigonometry.
 `node tools/contract/fixtures.mjs --rebuild` rebuilds them and their manifest. The manifest records that command, the
 SHA-256 of the generator and input specification, and each output hash. Every contract run verifies these before using
@@ -922,9 +1029,96 @@ all are discovered automatically. Extend the grammar and its acceptance/refusal 
 
 `--reorder` intentionally swaps the first pair of events in one wasm batch and exits nonzero with the mismatch.
 `--controls` runs that command in a child process and requires exit 1 with the diagnostic, then checks a flipped byte
-in a nonempty machine-difference row and stale/damaged fixture refusals; its temporary
+in a nonempty measurement row, a valid scalar change and stale/damaged fixture refusals; its temporary
 fixture mutations clean up locally. CI has a separate comparison step on every PR, and reuses the wasm artifact across
 Linux x64/arm64, macOS and Windows native rows. Each run prints elapsed comparison-step time (build time is separate).
 
 On build hosts that forbid deletion, set `FELITRONICS_WASM_KEEP_CONTROLS=1` for `tools/wasm/build.sh` so its
 source-list control directory is retained. Run the contract's self-cleaning `--controls` only locally.
+
+
+Live loudness arrays use a 100 ms cadence of ten rounded 10 ms analyzer sub-hops: `firstFrame == stepFrames`,
+point zero ends at that frame, and point indices never change. Momentary and short-term windows cover four and thirty
+hops. Before a complete window, values are NaN with TooShort; silence is negative infinity with NoSignal. The parallel
+reason arrays preserve each point's status. `framesRead` and `tailFrames` distinguish an unfinished window from the
+final off-grid tail; no padded point is manufactured. `reading.finished` closes stream delivery, while the report
+remains pending until its own finalization completes.
+
+Preparation reserves allocator overhead before each instrument starts and retains that reserve until its workspace
+or rows are freed. A capacity reduction between load and preparation can therefore refuse before any allocation,
+including MSVC Debug vector padding. A refusal is that instrument's outcome, as in the source phase: its result is
+`Unavailable` for `Memory`, one `Error{Memory, Continue}` names the demand, and the job goes on to the next
+preparation — capacity restored later does not retry it, and a capacity never restored still ends the job. The
+report's integrated loudness and true peak alone decide the mandatory readings: without the report the loudness result
+is `Unavailable` for `Memory` and the source stays unmeasured; without the meter only its rows are missing — the result
+is `Ready`, its row arrays and the result itself incomplete, with one `measurementCapacity` fact. Duration-sized loudness and report stores initialize observations as written;
+preparation resets counts and fixed rings without scanning those stores. `StreamingLoudnessMeter` preserves the
+deterministic core v0.55 kernel and storage geometry with this offline ownership policy; direct-kernel comparisons
+cover block energies, readings, damaged input, channel changes and resets on native and wasm.
+
+Every event's phase and work counters belong to its emitting job. Phase envelopes agree with their payload;
+completion and cancellation preserve that job's final progress even after its active ID is cleared. Command-level
+facts, errors and rejections without a job carry zero work. Reading and report publications describe the completed
+pump unit, independently of concurrent needles or mastering work.
+
+The additive `reading.clips` scalar row groups every six values as start, length, channel, sign, level, and native
+ClipEvidence. Existing `runs` retain their three-column prefix. Snapshot clipping arrays declare six columns;
+total and stored counts distinguish exact aggregate counts from a truncated coordinate list. The source-damage
+detector is independent of target-dependent needles. The programme result retains every native value, count, and
+reason, including unconditional short-term P95 and the drained programme true peak. Load still refuses non-finite PCM;
+finite input that overflows an analyzer is reported with its native damage reason.
+
+Real source measurement completes the 120 Hz, 150 Hz and configured infra-low LR4 readings,
+channel forensics and stereo columns before publishing `Measured1`. Integrated LUFS and true
+peak must both be usable. Optional outcomes carry their own reasons. Device editing and project
+export still require placement; measurement does not place the default devices. Master may run
+while source crest, hum and Mid/Side bursts continue, subject to the target's tempo dependency. These results alone do not establish
+`Measured2`: tempo and the second-phase join remain separate work.
+
+`mandatoryMeasurementsReady` and `devicesPlaced` are separate appended snapshot fields.
+Source rows use the existing owned `MeasurementResult` transport. They remain valid in a copied
+snapshot after workspace release, cancellation, source replacement and session destruction.
+Target changes preserve source measurements and request only the existing target-dependent
+needles job. Continue resumes the saved analyzer, PCM offset and output-copy position.
+
+| Analyzer / array | Columns, in order |
+| --- | --- |
+| LowEnd / blocks | start, samples, finite samples, holes, Mid energy, Side energy, valid, index |
+| LowEnd / bands | MIDI, centre Hz, width Hz, bins per band, Mid/Side/total energy, density, centroid Hz, cents, Side fraction, duty count, duty, level when on dB, margin dB, resolved |
+| LowEnd / sideHistogram | count per Side-fraction bin |
+| Forensics / meanPower | one column per channel, frequency bin order |
+| Forensics / gridExponentHistogram | one column per channel, native exponent-bucket order |
+| Stereo / columns | width, correlation, RMS; native equal-time column partition |
+| Crest / blocks | linear peak and mean square for Low, LowMid, HighMid, High, Full |
+| Crest / active | source activity bit for each of those five bands |
+| Crest / oversampledMeanSquare | full-band power in the band-share gate's domain |
+| Hum / candidates | channel, nominal Hz, base found/harmonic, fundamental Hz/observed, observed/lowest harmonic, comb without base/Hz, stretch observations/off-tolerance, frame observations, stretch/frame/intra-stretch spread Hz, stationary, passed; then base and window-peak records (found, prominent, accepted, bin, Hz, tone power, bin power, floor power, prominence dB) |
+| Hum / harmonics | channel, candidate, harmonic, in band; native peak record as above |
+| Hum / stretches | channel, index, start frame, end frame, selected frames |
+| Bursts / midEvents, sideEvents | start, length, peak frame, peak power/baseline/excess dB/wide power, energy, hops, input damage, baseline damage, closed by finish, other-axis power/baseline/eligible/hop |
+| Bursts / midIntervals, sideIntervals | interval count and lag count, lags 1 through 512 |
+| Tempo / candidates | BPM, score; no time grid, because candidates describe the whole source |
+| Tempo / curve | rounded seconds, smoothed BPM/confidence/present, raw BPM/confidence; grid starts at the first window centre and advances by the actual detector hop in source frames |
+
+Every list publishes total/stored counts and completeness; capped low-end blocks and burst
+lists never claim completeness. Forensics does not infer a codec from missing evidence.
+Hum exports the detector's stationarity and acceptance evidence, without inventing a confidence
+score. Mono burst data explicitly marks Side absent. `MeasurementCrest::view` returns the
+`analysis::BandCrestResult` representation over owned rows; it requires no live analyzer.
+The source activity floor is the configured maximum of -70 dB and BandCrest's own gated block
+mean power minus 42 dB. Building the mask reads saved powers, never PCM a second time.
+Only measurement statuses and mandatory input warnings are emitted here; device decisions and
+other findings remain separate. Uncertain lowest-note evidence requests the safe target HPF floor.
+
+Snapshot fields appended after frozen v1 are optional on decode. Their defaults are declared in
+`tools/session-codec-schema.json` and emitted in the generated declarations: no results, zero byte counts
+and identities, null need/ceiling, zero progress in Stream, false flags and Empty resume state.
+Missing readiness or placement flags convey no known readiness or placement. Present fields still require
+valid types; required frozen fields stay required. Appended event metadata and reading fields are also
+optional in transport declarations with documented conservative defaults. The generator refuses an
+appended field without a decode default. The frozen snapshot and event fixtures hold backward acceptance.
+
+The table distinguishes measured sources with unplaced devices, including master and stopped overlays.
+Mastering depends on measurements; edit, revert and import depend on placement through their table cells.
+Cached PCM reloads schedule needles from mandatory readiness. Bit-depth changes refresh unused-bit
+readings from the retained exact PCM grid without allocating or repeating source analysis.

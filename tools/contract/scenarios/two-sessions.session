@@ -5,12 +5,15 @@ snapshot
 create right 67108864
 load 1 stereo
 step 5 work units
+place phase 1
 snapshot
 use left
 step 3 work units
+place phase 1
 cancel 2 1
 snapshot
 use right
 step 5 work units
+place phase 2
 command {"kind":"setTarget","commandId":"2","target":"cd"}
 snapshot

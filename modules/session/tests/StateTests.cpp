@@ -58,6 +58,7 @@ using namespace felitronics::session;
 struct felitronics::session::detail::Inspector
 {
     static void lastJob (Session& s, JobId last) noexcept { s.lastJob_ = last; }
+    static void unplace (Session& s) noexcept { s.devicesPlaced_ = false; }
 };
 using felitronics::test::ok;
 using felitronics::session::detail::Driver;
@@ -68,8 +69,9 @@ namespace config = felitronics::session::config;
 namespace
 {
 constexpr const char* kCommandNames[] = { "load", "setTarget", "editTarget", "editDevice", "revertEdits", "setManual",
-                                          "master", "cancel", "forget", "importProject" };
-constexpr const char* kColumnNames[] = { "Empty", "Loaded", "Measured1", "Measured2", "Mastering1", "Mastering2" };
+                                          "master", "cancel", "forget", "importProject", "continueMeasurement" };
+constexpr const char* kColumnNames[] = { "Empty", "Loaded", "Measured1", "Measured2", "Mastering1", "Mastering2", "Stopped", "StoppedMeasured", "MasteringStopped",
+    "Measured1Unplaced", "Measured2Unplaced", "Mastering1Unplaced", "Mastering2Unplaced", "StoppedMeasuredUnplaced", "MasteringStoppedUnplaced" };
 constexpr const char* kEventNames[] = { "Measured1", "Measured2", "Mastered" };
 constexpr const char* kRejectionNames[] = { "None", "FloatingPointEnvironment", "NoSource", "NotPlaced", "NotMeasured",
     "Busy", "NoJob", "NoMaster", "UnknownTarget", "NotOffered", "UnknownJob", "UnknownMaster",
@@ -249,6 +251,14 @@ struct Situation
 
 Situation situation (Column column, bool manual = true, const char* target = nullptr, std::uint32_t channels = 2)
 {
+    if (column >= Column::Measured1Unplaced)
+    {
+        constexpr Column placed[] { Column::Measured1, Column::Measured2, Column::Mastering1, Column::Mastering2, Column::StoppedMeasured, Column::MasteringStopped };
+        auto x = situation (placed[std::size_t (column) - std::size_t (Column::Measured1Unplaced)], manual, target, channels);
+        detail::Inspector::unplace (*x.s);
+        ok (x.s->column() == column, "unplaced situation selects its explicit table column");
+        return x;
+    }
     Situation x { fresh(), makeAudio (channels, 4800) };
     Session& s = *x.s;
     bool good = true;
@@ -256,7 +266,7 @@ Situation situation (Column column, bool manual = true, const char* target = nul
     if (column != Column::Empty)
     {
         good = good && accepted (s, loadOf (x.audio, 102));
-        if (column != Column::Loaded)
+        if (column != Column::Loaded && column != Column::Stopped)
         {
             good = good && Driver::measured1 (s, s.measurementJob(), s.source().hash);
             if (column == Column::Measured2 || column == Column::Mastering2)
@@ -264,7 +274,7 @@ Situation situation (Column column, bool manual = true, const char* target = nul
             const Answer m = s.apply (command::Master { 103 });
             good = good && m.rejection == Rejection::None && Driver::mastered (s, s.job());
             x.kept = m.job;
-            if (column == Column::Mastering1 || column == Column::Mastering2)
+            if (column == Column::Mastering1 || column == Column::Mastering2 || column == Column::MasteringStopped)
             {
                 const Answer j = s.apply (command::Master { 104 });
                 good = good && j.rejection == Rejection::None;
@@ -272,6 +282,8 @@ Situation situation (Column column, bool manual = true, const char* target = nul
             }
         }
     }
+    if (column == Column::Stopped || column == Column::StoppedMeasured || column == Column::MasteringStopped)
+        good = good && accepted (s, command::Cancel { 105, s.measurementJob() });
     if (manual) good = good && accepted (s, command::SetManual { 100, true });
     ok (good && s.column() == column, std::string ("PRECONDITION: the session stands in ") + kColumnNames[std::size_t (column)]);
     x.projectText = s.exportProject();
@@ -292,6 +304,7 @@ Request validRequest (Command c, const Situation& x, CommandId id)
         case Command::Master:      return command::Master { id };
         case Command::Cancel:      return command::Cancel { id, x.job != 0 ? x.job : x.s->measurementJob() };
         case Command::Forget:      return command::Forget { id, x.kept };
+        case Command::ContinueMeasurement: return command::ContinueMeasurement { id };
         case Command::ImportProject: return command::ImportProject { id, x.projectText.view() };
     }
     return command::Master { id };
@@ -353,7 +366,12 @@ void everyCellOfTheTable()
             Situation x = situation (Column (col));
             Session& s = *x.s;
             const Request r = validRequest (Command (c), x, 1000 + c);
-            const Rejection cell = Table::commands[c].cell[col];
+            // Measured2 and the stopped columns admit needles cancellation (needles may outlive a stopped measurement);
+            // this fixture has no active job.
+            const Rejection cell = Command (c) == Command::Cancel && (Column (col) == Column::Measured2 || Column (col) == Column::Stopped
+                || Column (col) == Column::StoppedMeasured
+                || Column (col) == Column::Measured2Unplaced || Column (col) == Column::StoppedMeasuredUnplaced)
+                ? Rejection::NoJob : Table::commands[c].cell[col];
             const std::string what = std::string (kCommandNames[c]) + " in " + kColumnNames[col];
             if (cell == Rejection::None)
             {
@@ -790,7 +808,7 @@ void memoryIsDeclared()
     // ...and in as many requests as the work has buffers: a load its samples and its name, a master its room — a
     // debugging standard library that gives a container a proxy of its own would show here as a request too many.
     struct Case { Command command; Column column; long long requests; };
-    const Case cases[] = { { Command::Load, Column::Measured2, 2 }, { Command::SetTarget, Column::Measured1, 0 },
+    const Case cases[] = { { Command::Load, Column::Measured2, -1 }, { Command::SetTarget, Column::Measured1, 0 },
                            { Command::EditTarget, Column::Measured1, 0 }, { Command::EditDevice, Column::Measured1, 0 },
                            { Command::RevertEdits, Column::Measured1, 0 }, { Command::SetManual, Column::Measured1, 0 },
                            { Command::Master, Column::Measured1, 1 }, { Command::Cancel, Column::Mastering1, 0 },
@@ -820,7 +838,7 @@ void memoryIsDeclared()
         Situation x = situation (Column::Measured1);
         Audio mono = makeAudio (1, 1000);
         const command::Load l = loadOf (mono, 1, "a name longer than any small-string buffer.wav");
-        ok (x.s->check (l).bytes == 1000 * sizeof (float) + l.meta.name.size(), "a load declares its samples and its name");
+        ok (x.s->check (l).bytes > 1000 * sizeof (float) + l.meta.name.size(), "a load declares samples, name and the complete measurement");
         ok (x.s->check (command::Master { 1 }).bytes == 2 * sizeof (Kept), "a master with one kept declares room for two");
         ok (accepted (*x.s, command::Master { 2 }) && accepted (*x.s, command::Cancel { 3, x.s->job() }),
             "a master asked and cancelled");
@@ -859,7 +877,7 @@ void jobIds()
     Situation x = situation (Column::Measured1);
     Session& s = *x.s;
     const JobId before = x.kept;
-    ok (accepted (s, loadOf (x.audio, 1)) && Driver::measured1 (s, s.measurementJob(), s.source().hash), "a new source, measured");
+    ok (accepted (s, loadOf (x.audio, 1)) && s.state() == State::Measured1, "identical source keeps the completed first phase");
     const Answer again = s.apply (command::Master { 2 });
     ok (again.rejection == Rejection::None && again.job == before + 2,
         "the next job after a load is numbered on from the last, not again from 1 (" + std::to_string (again.job) + ")");

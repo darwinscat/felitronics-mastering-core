@@ -6,6 +6,11 @@
 #include <felitronics/analysis/ProgrammeReport.h>
 #include <felitronics/analysis/HumDetector.h>
 #include <felitronics/analysis/LowEnd.h>
+#include <felitronics/analysis/BandCrest.h>
+#include <felitronics/analysis/PeakExcursions.h>
+#include <felitronics/analysis/ClipDetector.h>
+#include <felitronics/analysis/StereoColumns.h>
+#include <felitronics/analysis/WaveformPeaks.h>
 #include <felitronics/analysis/SourceForensics.h>
 #include <felitronics/mastering/LoudnessSolver.h>
 #include <felitronics/mastering/DeliveryConverter.h>
@@ -77,6 +82,40 @@ void configureMatchesPreparation()
               "configure renders the same samples as a full preparation with new parameters");
 }
 
+void analyzerStorage()
+{
+    const auto exercise = []<class T> (const char* name, std::uint64_t declared, auto prepare)
+    {
+        const auto before = test::alloc::bytes.load();
+        bool prepared = false;
+        { T object; prepared = prepare (object); }
+        const auto got = test::alloc::bytes.load() - before;
+        std::printf ("  %s: %lld bytes, published %llu\n", name, got, (unsigned long long) declared);
+        test::ok (prepared && got <= (long long) declared, name);
+    };
+    exercise.template operator()<analysis::WaveformPeaks> ("waveform first preparation",
+        analysis::WaveformPeaks::storageFor (48000, 2, 48000, 1100).firstBytes(),
+        [] (auto& a) { return a.prepare (48000, 2, 48000, 1100); });
+    exercise.template operator()<analysis::StereoColumns> ("stereo columns first preparation",
+        analysis::StereoColumns::storageFor (2, 48000, 1100).firstBytes(),
+        [] (auto& a) { return a.prepare (2, 48000, 1100); });
+    exercise.template operator()<analysis::BandCrest> ("band crest first preparation",
+        analysis::BandCrest::storageFor (48000, 2, 48000, {}).firstBytes(),
+        [] (auto& a) { return a.prepare (48000, 2, 48000); });
+    exercise.template operator()<analysis::PeakExcursions> ("peak excursions first preparation",
+        analysis::PeakExcursions::storageFor (48000, 2, {}).firstBytes(),
+        [] (auto& a) { return a.prepare (48000, 2); });
+    exercise.template operator()<analysis::ClipDetector> ("clip detector first preparation",
+        analysis::ClipDetector::storageFor (48000, 2, analysis::ClipDetectorParams {}.maxRuns).firstBytes(),
+        [] (auto& a) { return a.prepare (48000, 0, 2); });
+    test::ok (!analysis::WaveformPeaks::storageFor (0, 2, 100).ok
+        && !analysis::WaveformPeaks::storageFor (48000, 2, 100, 0).ok
+        && !analysis::StereoColumns::storageFor (2, 0).ok
+        && !analysis::StereoColumns::storageFor (0, 100).ok, "shape budgets refuse the preparation domain");
+    const auto small = analysis::StereoColumns::storageFor (1, 2, 1100);
+    test::ok (small.ok && small.columns == 2 && small.bytes() == 24, "columns price the actual short source");
+}
+
 int main()
 {
     constructor<std::vector<double>> (storage::kVectorProxyBytes, "one STL vector proxy");
@@ -117,6 +156,7 @@ int main()
     storage::Buffer<double> c (a);
     c[0] = 4.0;
     test::ok (a[0] == 3.0 && c[0] == 4.0 && c.size() == a.size(), "a copy owns its own array");
+    analyzerStorage();
     configureMatchesPreparation();
     configureSequences();
     return test::report();

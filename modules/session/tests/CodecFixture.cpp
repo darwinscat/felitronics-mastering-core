@@ -3,7 +3,7 @@
 
 // Every scalar mapping, optional alternative, record and array crosses the real encoder here.
 // The offline JS consumer validates its output against the generated declarations.
-#include "CodecSchema.h"
+#include "JsonCodec.h"
 #include <cstdio>
 #include <limits>
 #include <optional>
@@ -36,6 +36,7 @@ struct Fill
         else { T v {}; value (v); x = v; }
     }
     template <class T> void value (std::span<const T>&) {}
+    template <class T, class D> void optionalField (std::string_view name, T& x, const D&) { field (name, x); }
     template <class T> void field (std::string_view, T& x) { value (x); }
 };
 }
@@ -47,6 +48,15 @@ int main()
         SnapshotView view;
         Kept kept[1]; ReadingPoint points[1]; ReadingRun runs[1]; MachineDifference differences[1]; EqPoint curve[1];
         fill.value (view); fill.value (kept[0]); fill.value (points[0]); fill.value (runs[0]); fill.value (differences[0]); fill.value (curve[0]);
+        view.measurementStorage = {};
+        view.needlesBytes = view.needlesLargestBlockBytes = 0;
+        MeasurementValue number { "peak", 1.0, MeasurementReason::None, 0 };
+        double values[] { 0.25, 0.5 };
+        MeasurementArray array { "peaks", { 0, 1, 2, 48000 }, 1, 2, 2, true, values };
+        MeasurementResult result;
+        result.status = MeasurementStatus::Ready; result.reason = MeasurementReason::None;
+        result.numbers = { &number, 1 }; result.arrays = { &array, 1 };
+        view.measurements = { &result, 1 };
         view.sourceBytes = mode ? 9007199254740991.0 : 0.0;
         if (mode) { view.masters = kept; view.momentary = points; view.shortTerm = points; view.runs = runs; view.machineDifferences = differences; view.eqCurve = curve; }
         const auto need = Codec::encodedBytes (view);
@@ -55,5 +65,24 @@ int main()
         if (Codec::encode (view, json) != CodecStatus::Ok) return 2;
         std::puts (json.c_str());
     }
+    MeasurementChange change;
+    detail::Writer counter; counter.value (change);
+    std::string json (std::size_t (counter.size), '\0');
+    detail::Writer writer; writer.output = json.data(); writer.value (change);
+    std::puts (json.c_str());
+    QueryView query;
+    double queryValues[] { 2, 0.5, 0 };
+    query.values = queryValues;
+    query.stride = 3; query.stored = query.total = 1;
+    detail::Writer queryCounter; queryCounter.value (query);
+    std::string queryJson (std::size_t (queryCounter.size), '\0');
+    detail::Writer queryWriter; queryWriter.output = queryJson.data(); queryWriter.value (query);
+    std::puts (queryJson.c_str());
+    MeasuredSource measured;
+    Fill fill { 1 }; fill.value (measured);
+    detail::Writer measuredCounter; measuredCounter.value (measured);
+    std::string measuredJson (std::size_t (measuredCounter.size), '\0');
+    detail::Writer measuredWriter; measuredWriter.output = measuredJson.data(); measuredWriter.value (measured);
+    std::puts (measuredJson.c_str());
     return 0;
 }

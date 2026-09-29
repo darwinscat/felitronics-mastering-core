@@ -1,7 +1,9 @@
 create main 67108864
 load 1 stereo
 step 5 work units
+place phase 1
 step 5 work units
+place phase 2
 command {"kind":"editTarget","commandId":"2","fields":{"lufs":-120.125,"tp":-0.125}}
 command {"kind":"editDevice","commandId":"3","device":0,"fields":{"fq":10000.125,"slope":96}}
 snapshot

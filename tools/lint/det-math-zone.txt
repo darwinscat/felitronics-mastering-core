@@ -79,6 +79,8 @@ zone   modules/session/src/Grid.h                             a knob's grid, exa
 entry  modules/session/src/Rules.cpp                          a translation unit of felitronics::session
 entry  modules/session/src/Devices.cpp                        a translation unit of felitronics::session
 entry  modules/session/src/Commands.cpp                       a translation unit of felitronics::session
+entry  modules/session/src/Sidecar.cpp                        measured source and audio attachment
+zone   modules/session/src/Sidecar.cpp                        deterministic measured source and audio attachment
 zone   modules/session/include/felitronics/session/Commands.h  the states, the commands and the table of who may do what, when
 zone   modules/session/include/felitronics/session/Project.h   the project: the target, the manual mode, every device's two layers
 zone   modules/session/src/Rules.h                            the numbers the commands check against, read in place
@@ -126,6 +128,41 @@ zone   modules/session/include/felitronics/session/Wire.h  caller-owned transfer
 zone modules/session/src/EqCurve.h summed EQ response declaration
 zone modules/session/src/EqCurve.cpp deterministic summed EQ response
 entry modules/session/src/EqCurve.cpp snapshot EQ response
+
+zone modules/session/include/felitronics/session/Measurements.h owned measurement values
+zone modules/session/src/Measurements.cpp owned measurement storage
+entry modules/session/src/Measurements.cpp owned measurement storage
+
+zone modules/session/src/MeasurementPlan.h measurement parameters and storage
+zone modules/session/src/MeasurementPlan.cpp analyzer storage and cache identity
+entry modules/session/src/MeasurementPlan.cpp analyzer storage and cache identity
+
+zone modules/session/src/MeasurementWorkspace.h analyzer workspace ownership
+zone modules/session/src/MeasurementWorkspace.cpp persistent analyzer preparation
+entry modules/session/src/MeasurementWorkspace.cpp persistent analyzer preparation
+
+zone modules/session/src/Needles.h target-dependent needles job storage
+zone modules/session/src/Needles.cpp target-dependent needles execution
+entry modules/session/src/Needles.cpp target-dependent needles execution
+
+zone modules/session/src/LiveMeasurements.h live measurement ownership
+zone modules/session/src/LiveMeasurements.cpp live measurement pump
+entry modules/session/src/LiveMeasurements.cpp live measurement pump
+
+zone modules/session/src/SourceMeasurements.h owned source measurements
+zone modules/session/src/SourceMeasurements.cpp bounded source measurement work
+entry modules/session/src/SourceMeasurements.cpp bounded source measurement work
+zone modules/session/src/SourceResults.cpp owned analyzer result adapters
+entry modules/session/src/SourceResults.cpp owned analyzer result adapters
+
+zone modules/analysis_offline/include/felitronics/analysis/BandCrestResult.h detached source crest data
+zone modules/session/include/felitronics/session/Queries.h bounded source waveform and measurement queries
+zone modules/session/src/QueryState.h bounded source waveform and measurement queries
+zone modules/session/src/Waveform.cpp bounded source waveform and measurement queries
+entry modules/session/src/Waveform.cpp bounded source waveform and measurement queries
+zone modules/session/src/Queries.cpp bounded source waveform and measurement queries
+entry modules/session/src/Queries.cpp bounded source waveform and measurement queries
+zone modules/analysis_offline/include/felitronics/analysis/WaveformIndex.h bounded source waveform and measurement queries
 entry  tools/session-script.cpp  native contract consumer
 zone   tools/session-script.cpp  deterministic scenario commands and PCM
 zone   tools/session-script.h  native contract consumer declarations

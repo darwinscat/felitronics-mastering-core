@@ -36,7 +36,7 @@ function(felitronics_session_config_inputs target)
                            NAMESPACE felitronics::session::text::embedded NAME catalog HEADER embedded/catalog.h)
     felitronics_toml_embed(${target} INPUT text/format.toml
                            NAMESPACE felitronics::session::text::embedded NAME format HEADER embedded/format.h)
-    target_link_libraries(${target} PRIVATE felitronics::analysis_offline)
+    target_link_libraries(${target} PRIVATE felitronics::analysis_offline felitronics::tempo)
     target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/session-version)
     target_sources(${target} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/versions.h)
 endfunction()
@@ -234,8 +234,57 @@ if(FELITRONICS_BUILD_TESTS)
     target_include_directories(felitronics_session_state_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_features(felitronics_session_state_tests PRIVATE cxx_std_20)
     add_test(NAME felitronics_session_state_tests COMMAND felitronics_session_state_tests)
+    add_executable(felitronics_session_measurement_tests tests/MeasurementTests.cpp)
+    target_link_libraries(felitronics_session_measurement_tests PRIVATE felitronics::session felitronics::test_support felitronics::analysis_offline felitronics::tempo)
+    target_include_directories(felitronics_session_measurement_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_features(felitronics_session_measurement_tests PRIVATE cxx_std_20)
+    if(NOT MSVC)
+        target_compile_options(felitronics_session_measurement_tests PRIVATE -ffp-contract=off)
+    endif()
+    add_test(NAME felitronics_session_measurement_tests COMMAND felitronics_session_measurement_tests)
+    add_executable(felitronics_session_live_tests tests/LiveMeasurementsTests.cpp)
+    target_link_libraries(felitronics_session_live_tests PRIVATE felitronics::session felitronics::test_support felitronics::analysis_offline felitronics::tempo)
+    target_include_directories(felitronics_session_live_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_features(felitronics_session_live_tests PRIVATE cxx_std_20)
+    if(NOT MSVC)
+        target_compile_options(felitronics_session_live_tests PRIVATE -ffp-contract=off)
+    endif()
+    add_test(NAME felitronics_session_live_tests COMMAND felitronics_session_live_tests)
+    add_test(NAME felitronics_session_live_overflow COMMAND felitronics_session_live_tests --overflow)
+
+    add_executable(felitronics_session_measurement_budget_tests tests/MeasurementBudgetTests.cpp)
+    target_link_libraries(felitronics_session_measurement_budget_tests PRIVATE felitronics::session felitronics::test_support felitronics::analysis_offline felitronics::tempo)
+    target_include_directories(felitronics_session_measurement_budget_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_features(felitronics_session_measurement_budget_tests PRIVATE cxx_std_20)
+    if(NOT MSVC)
+        target_compile_options(felitronics_session_measurement_budget_tests PRIVATE -ffp-contract=off)
+    endif()
+    add_test(NAME felitronics_session_measurement_budget_tests COMMAND felitronics_session_measurement_budget_tests)
+    foreach(seconds 60 600)
+        add_test(NAME felitronics_session_measurement_budget_${seconds}s COMMAND felitronics_session_measurement_budget_tests ${seconds})
+    endforeach()
+
+    add_executable(felitronics_session_source_tests tests/SourceMeasurementsTests.cpp)
+    target_link_libraries(felitronics_session_source_tests PRIVATE felitronics::session felitronics::test_support felitronics::analysis_offline felitronics::tempo)
+    target_include_directories(felitronics_session_source_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_features(felitronics_session_source_tests PRIVATE cxx_std_20)
+    if(NOT MSVC)
+        target_compile_options(felitronics_session_source_tests PRIVATE -ffp-contract=off)
+    endif()
+    add_test(NAME felitronics_session_source_tests COMMAND felitronics_session_source_tests)
+
+    add_executable(felitronics_session_needles_tests tests/NeedlesTests.cpp)
+    target_link_libraries(felitronics_session_needles_tests PRIVATE felitronics::session felitronics::test_support felitronics::analysis_offline)
+    target_include_directories(felitronics_session_needles_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_features(felitronics_session_needles_tests PRIVATE cxx_std_20)
+    if(NOT MSVC)
+        target_compile_options(felitronics_session_needles_tests PRIVATE -ffp-contract=off)
+    endif()
+    add_test(NAME felitronics_session_needles_tests COMMAND felitronics_session_needles_tests)
+    add_test(NAME felitronics_session_needles_dense COMMAND felitronics_session_needles_tests --dense)
+
     add_executable(felitronics_session_event_tests tests/EventTests.cpp)
-    target_link_libraries(felitronics_session_event_tests PRIVATE felitronics::session felitronics::test_support felitronics::eq)
+    target_link_libraries(felitronics_session_event_tests PRIVATE felitronics::session felitronics::test_support felitronics::eq felitronics::analysis_offline)
     target_include_directories(felitronics_session_event_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_features(felitronics_session_event_tests PRIVATE cxx_std_20)
     add_test(NAME felitronics_session_event_tests COMMAND felitronics_session_event_tests)
@@ -628,6 +677,8 @@ add_custom_command(OUTPUT ${FELITRONICS_SESSION_TYPES}
     DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/version.txt
             ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake
             ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec-schema.json
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-abi-v1.txt
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/fc_session_abi.h
             ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-runtime.mjs.in
             ${CMAKE_CURRENT_SOURCE_DIR}/src/CodecSchema.h VERBATIM)
 add_custom_target(felitronics_session_types ALL DEPENDS ${FELITRONICS_SESSION_TYPES})
@@ -636,7 +687,20 @@ if(FELITRONICS_BUILD_TESTS)
     add_test(NAME felitronics_session_codec_types
         COMMAND ${CMAKE_COMMAND} -DCHECK=ON -DOUTPUT=${FELITRONICS_SESSION_TYPES} -DVERSION_FILE=${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/version.txt
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake)
+    foreach(control status version)
+        add_test(NAME felitronics_session_codec_control_header_${control}
+            COMMAND ${CMAKE_COMMAND} -DCONTROL=${control} -DHEADER=${CMAKE_CURRENT_SOURCE_DIR}/../../tools/fc_session_abi.h
+                    -DGENERATOR=${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake
+                    -DWORK=${CMAKE_CURRENT_BINARY_DIR}/codec-controls/header
+                    -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/codec-header-control.cmake)
+    endforeach()
     find_program(FELITRONICS_SESSION_NODE NAMES node nodejs REQUIRED)
+    add_test(NAME felitronics_session_needles_parity_controls
+        COMMAND ${FELITRONICS_SESSION_NODE} ${PROJECT_SOURCE_DIR}/tools/tests/needles-parity.mjs
+                --self-test $<TARGET_FILE:felitronics_session_needles_tests>)
+    add_test(NAME felitronics_session_needles_tier_wiring
+        COMMAND ${FELITRONICS_SESSION_NODE} ${PROJECT_SOURCE_DIR}/tools/tests/needles-parity.mjs
+                --check-wiring ${PROJECT_SOURCE_DIR})
     add_executable(felitronics_session_codec_fixture tests/CodecFixture.cpp)
     target_link_libraries(felitronics_session_codec_fixture PRIVATE felitronics::session)
     target_include_directories(felitronics_session_codec_fixture PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

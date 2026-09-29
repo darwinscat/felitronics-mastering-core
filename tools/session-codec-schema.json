@@ -4,7 +4,8 @@
       "Empty",
       "Loaded",
       "Measured1",
-      "Measured2"
+      "Measured2",
+      "MeasurementStopped"
     ],
     "Needles": [
       "Auto",
@@ -30,6 +31,63 @@
       "Limiter",
       "Dither",
       "Low"
+    ],
+    "Analyzer": [
+      "Loudness",
+      "Clipping",
+      "Programme",
+      "LowEnd",
+      "InfraLow",
+      "Forensics",
+      "Stereo",
+      "Waveform",
+      "StereoBursts",
+      "Crest",
+      "Hum",
+      "Tempo",
+      "Excursions",
+      "LowEnd150"
+    ],
+    "MeasurementStatus": [
+      "Pending",
+      "Ready",
+      "Unavailable",
+      "Cancelled"
+    ],
+    "MeasurementReason": [
+      "None",
+      "Pending",
+      "Cancelled",
+      "Unsupported",
+      "TooShort",
+      "NonFinite",
+      "Capacity",
+      "NoSignal",
+      "NotImplemented",
+      "NeedNotAbove3",
+      "Memory"
+    ],
+    "QueryKind": [
+      "Waveform",
+      "LowSpectrum",
+      "LowSide",
+      "Momentary",
+      "ShortTerm",
+      "Clipping",
+      "Stereo"
+    ],
+    "QueryStatus": [
+      "Ready",
+      "Pending",
+      "Unavailable",
+      "Empty",
+      "InvalidRange",
+      "ColumnLimit",
+      "StaleSource",
+      "Memory",
+      "Contract",
+      "Cancelled",
+      "FloatingPointEnvironment"
     ]
   },
   "records": {
@@ -315,7 +373,25 @@
         "machineDifferences": "MachineDifference[]",
         "offeredDevices": "uint32",
         "handFieldCount": "uint32",
-        "eqCurve": "EqPoint[]"
+        "eqCurve": "EqPoint[]",
+        "measurementStorage": "MeasurementStorage",
+        "measurements": "MeasurementResult[]",
+        "needlesJob": "uint32",
+        "needlesSource": "uint64",
+        "needlesNeedDb": "double?",
+        "needlesCeilingDb": "double?",
+        "needlesProgress": "Phase",
+        "needlesBytes": "bytes",
+        "needlesLargestBlockBytes": "bytes",
+        "needlesRunsTruncated": "bool",
+        "canContinueMeasurement": "bool",
+        "measurementResumeState": "State",
+        "mandatoryMeasurementsReady": "bool",
+        "devicesPlaced": "bool",
+        "measurementRowsIncluded": "bool",
+        "tempoChoice": "TempoChoice",
+        "measurementsFromSidecar": "bool",
+        "sourceMissingAudio": "bool"
       }
     },
     "Version": {
@@ -341,17 +417,157 @@
         "hz": "double",
         "db": "double"
       }
+    },
+    "MeasurementValue": {
+      "cpp": "MeasurementValue",
+      "fields": {
+        "name": "string",
+        "value": "double?",
+        "reason": "MeasurementReason",
+        "analyzerReason": "uint32"
+      }
+    },
+    "MeasurementGrid": {
+      "cpp": "MeasurementGrid",
+      "fields": {
+        "firstFrame": "uint64",
+        "stepFrames": "uint64",
+        "framesRead": "uint64",
+        "sampleRate": "uint32"
+      }
+    },
+    "MeasurementArray": {
+      "cpp": "MeasurementArray",
+      "fields": {
+        "name": "string",
+        "grid": "MeasurementGrid",
+        "columns": "uint32",
+        "total": "uint64",
+        "stored": "uint64",
+        "complete": "bool",
+        "values": "double[]"
+      }
+    },
+    "MeasurementResult": {
+      "cpp": "MeasurementResult",
+      "fields": {
+        "analyzer": "Analyzer",
+        "status": "MeasurementStatus",
+        "reason": "MeasurementReason",
+        "key": "uint64",
+        "framesRead": "uint64",
+        "total": "uint64",
+        "stored": "uint64",
+        "complete": "bool",
+        "numbers": "MeasurementValue[]",
+        "arrays": "MeasurementArray[]"
+      }
+    },
+    "MeasurementStorage": {
+      "cpp": "MeasurementStorage",
+      "fields": {
+        "sourceBytes": "bytes",
+        "resultBytes": "bytes",
+        "workspaceBytes": "bytes",
+        "copyBytes": "bytes",
+        "codecBytes": "bytes",
+        "allocatorBytes": "bytes",
+        "loadPeakBytes": "bytes",
+        "workPeakBytes": "bytes",
+        "peakBytes": "bytes",
+        "largestBlockBytes": "bytes"
+      }
+    },
+    "TempoChoice": {
+      "cpp": "TempoChoice",
+      "fields": {
+        "ready": "bool",
+        "measured": "bool",
+        "bpm": "double",
+        "reason": "MeasurementReason"
+      }
+    },
+    "MeasurementChange": {
+      "cpp": "MeasurementChange",
+      "fields": {
+        "analyzer": "Analyzer",
+        "status": "MeasurementStatus",
+        "reason": "MeasurementReason",
+        "key": "uint64",
+        "source": "uint64",
+        "revision": "uint64",
+        "framesRead": "uint64",
+        "total": "uint64",
+        "stored": "uint64",
+        "complete": "bool"
+      }
+    },
+    "MeasuredSource": {
+      "cpp": "MeasuredSource",
+      "fields": {
+        "name": "string",
+        "sourceHash": "uint64",
+        "frames": "uint64",
+        "sampleRate": "uint32",
+        "channels": "uint32",
+        "fileRate": "uint32",
+        "bitDepth": "uint32",
+        "rateKnown": "bool",
+        "integratedLufs": "double?",
+        "truePeakDb": "double?"
+      }
+    },
+    "MeasurementQuery": {
+      "cpp": "MeasurementQuery",
+      "fields": {
+        "kind": "QueryKind",
+        "audioId": "uint64",
+        "fromFrame": "uint64",
+        "toFrame": "uint64",
+        "columns": "uint32",
+        "requestId": "uint64",
+        "crossoverHz": "double",
+        "fromHz": "double",
+        "toHz": "double"
+      }
+    },
+    "QueryView": {
+      "cpp": "QueryView",
+      "fields": {
+        "request": "MeasurementQuery",
+        "audioId": "uint64",
+        "revision": "uint64",
+        "measurementKey": "uint64",
+        "status": "QueryStatus",
+        "reason": "MeasurementReason",
+        "sampleRate": "uint32",
+        "channels": "uint32",
+        "stride": "uint32",
+        "total": "uint64",
+        "stored": "uint64",
+        "complete": "bool",
+        "cacheHit": "bool",
+        "pcmFramesRead": "uint64",
+        "values": "double[]"
+      }
     }
   },
   "wireAliases": {
-    "SessionStatus": "0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18",
     "CommandAnswer": "AcceptedAnswer | RejectedAnswer | ContractAnswer",
-    "SessionEvent": "PhaseEvent | FactEvent | ReadingEvent | DoneEvent | RejectedEvent | ErrorEvent",
-    "SessionCommand": "SetTargetCommand | SetManualCommand | EditTargetCommand | EditDeviceCommand | RevertEditsCommand | MasterCommand | CancelCommand | ForgetCommand",
+    "SessionEvent": "PhaseEvent | FactEvent | ReadingEvent | DoneEvent | RejectedEvent | ErrorEvent | MeasurementEvent",
+    "SessionCommand": "SetTargetCommand | SetManualCommand | EditTargetCommand | EditDeviceCommand | RevertEditsCommand | MasterCommand | CancelCommand | ForgetCommand | ContinueMeasurementCommand",
     "EditDeviceCommand": "EditDeviceHpfCommand | EditDeviceMonoBassCommand | EditDeviceGlueCommand | EditDeviceSaturationCommand | EditDeviceTiltCommand | EditDeviceLimiterCommand | EditDeviceDitherCommand | EditDeviceLowCommand",
-    "RevertEditsCommand": "RevertEditsHpfCommand | RevertEditsMonoBassCommand | RevertEditsGlueCommand | RevertEditsSaturationCommand | RevertEditsTiltCommand | RevertEditsLimiterCommand | RevertEditsDitherCommand | RevertEditsLowCommand"
+    "RevertEditsCommand": "RevertEditsHpfCommand | RevertEditsMonoBassCommand | RevertEditsGlueCommand | RevertEditsSaturationCommand | RevertEditsTiltCommand | RevertEditsLimiterCommand | RevertEditsDitherCommand | RevertEditsLowCommand",
+    "SessionMeasurementArray": "Omit<MeasurementArray, \"values\"> & { readonly values: ScalarRow }",
+    "SessionMeasurementResult": "Omit<MeasurementResult, \"arrays\"> & { readonly arrays: ReadonlyArray<SessionMeasurementArray> }",
+    "QueryResponse": "Omit<QueryView, \"values\"> & { readonly values: ScalarRow }"
   },
   "wireRecords": {
+    "ScalarRow": {
+      "byteOffset": "number",
+      "length": "number",
+      "stride": "1"
+    },
     "Row": {
       "byteOffset": "number",
       "length": "number",
@@ -400,7 +616,16 @@
     "ReadingPayload": {
       "momentary": "Row",
       "shortTerm": "Row",
-      "runs": "Row"
+      "runs": "Row",
+      "grid": "MeasurementGrid",
+      "momentaryReason": "MeasurementReason",
+      "shortTermReason": "MeasurementReason",
+      "clips": "ScalarRow",
+      "totalRuns": "string",
+      "storedRuns": "string",
+      "tailFrames": "string",
+      "runsComplete": "boolean",
+      "finished": "boolean"
     },
     "DonePayload": {
       "masterId": "number"
@@ -458,37 +683,73 @@
       "seq": "string",
       "jobId": "number",
       "kind": "\"phase\"",
-      "payload": "Phase"
+      "payload": "Phase",
+      "source": "string",
+      "revision": "string",
+      "phase": "PhaseName",
+      "completedWork": "string",
+      "totalWork": "string",
+      "state": "State"
     },
     "FactEvent": {
       "seq": "string",
       "jobId": "number",
       "kind": "\"fact\"",
-      "payload": "WireFact"
+      "payload": "WireFact",
+      "source": "string",
+      "revision": "string",
+      "phase": "PhaseName",
+      "completedWork": "string",
+      "totalWork": "string",
+      "state": "State"
     },
     "ReadingEvent": {
       "seq": "string",
       "jobId": "number",
       "kind": "\"reading\"",
-      "payload": "ReadingPayload"
+      "payload": "ReadingPayload",
+      "source": "string",
+      "revision": "string",
+      "phase": "PhaseName",
+      "completedWork": "string",
+      "totalWork": "string",
+      "state": "State"
     },
     "DoneEvent": {
       "seq": "string",
       "jobId": "number",
       "kind": "\"done\"",
-      "payload": "DonePayload"
+      "payload": "DonePayload",
+      "source": "string",
+      "revision": "string",
+      "phase": "PhaseName",
+      "completedWork": "string",
+      "totalWork": "string",
+      "state": "State"
     },
     "RejectedEvent": {
       "seq": "string",
       "jobId": "number",
       "kind": "\"rejected\"",
-      "payload": "RejectedPayload"
+      "payload": "RejectedPayload",
+      "source": "string",
+      "revision": "string",
+      "phase": "PhaseName",
+      "completedWork": "string",
+      "totalWork": "string",
+      "state": "State"
     },
     "ErrorEvent": {
       "seq": "string",
       "jobId": "number",
       "kind": "\"error\"",
-      "payload": "ErrorPayload"
+      "payload": "ErrorPayload",
+      "source": "string",
+      "revision": "string",
+      "phase": "PhaseName",
+      "completedWork": "string",
+      "totalWork": "string",
+      "state": "State"
     },
     "EditDeviceHpfCommand": {
       "kind": "\"editDevice\"",
@@ -659,7 +920,24 @@
     "SessionCapabilities": {
       "heapCeilingBytes": "number",
       "maxRateHz": "number",
-      "offeredDevices": "number"
+      "offeredDevices": "number",
+      "largestFreeBlockBytes": "number"
+    },
+    "MeasurementEvent": {
+      "seq": "string",
+      "jobId": "number",
+      "kind": "\"measurement\"",
+      "payload": "MeasurementChange",
+      "source": "string",
+      "revision": "string",
+      "phase": "PhaseName",
+      "completedWork": "string",
+      "totalWork": "string",
+      "state": "State"
+    },
+    "ContinueMeasurementCommand": {
+      "kind": "\"continueMeasurement\"",
+      "commandId": "string"
     }
   },
   "binaryRows": [
@@ -720,6 +998,343 @@
     "StepState": [
       "More",
       "Done"
+    ]
+  },
+  "wireTypeOverrides": {
+    "measurements": "ReadonlyArray<SessionMeasurementResult>"
+  },
+  "optionalFields": {
+    "Snapshot": {
+      "measurementStorage": {
+        "default": "MeasurementStorage {}",
+        "description": "Zero byte counts."
+      },
+      "measurements": {
+        "default": "std::span<const MeasurementResult> {}",
+        "description": "No published measurements."
+      },
+      "needlesJob": {
+        "default": "JobId {}",
+        "description": "No needles job."
+      },
+      "needlesSource": {
+        "default": "std::uint64_t {}",
+        "description": "No needles source identity."
+      },
+      "needlesNeedDb": {
+        "default": "std::optional<double> {}",
+        "description": "Unknown loudness need (null)."
+      },
+      "needlesCeilingDb": {
+        "default": "std::optional<double> {}",
+        "description": "Unknown needles ceiling (null)."
+      },
+      "needlesProgress": {
+        "default": "Phase {}",
+        "description": "Stream phase with all progress values zero."
+      },
+      "needlesBytes": {
+        "default": "0.0",
+        "description": "Zero declared needles bytes."
+      },
+      "needlesLargestBlockBytes": {
+        "default": "0.0",
+        "description": "Zero declared needles block size."
+      },
+      "needlesRunsTruncated": {
+        "default": "false",
+        "description": "No known truncation."
+      },
+      "canContinueMeasurement": {
+        "default": "false",
+        "description": "No known resumable measurement."
+      },
+      "measurementResumeState": {
+        "default": "State::Empty",
+        "description": "No known state to resume."
+      },
+      "mandatoryMeasurementsReady": {
+        "default": "false",
+        "description": "Mandatory readiness is unknown."
+      },
+      "devicesPlaced": {
+        "default": "false",
+        "description": "Device placement is unknown."
+      },
+      "measurementRowsIncluded": {
+        "default": "true",
+        "description": "true; historical snapshots include their retained measurement rows."
+      },
+      "tempoChoice": {
+        "default": "TempoChoice {}",
+        "description": "No device tempo decision before the session finishes the tempo measurement."
+      },
+      "measurementsFromSidecar": {
+        "default": "false",
+        "description": "Historical sessions measured from PCM."
+      },
+      "sourceMissingAudio": {
+        "default": "false",
+        "description": "Historical loaded sources have PCM."
+      }
+    },
+    "MeasurementQuery": {
+      "crossoverHz": {
+        "default": "120.0",
+        "description": "120 Hz."
+      },
+      "fromHz": {
+        "default": "20.0",
+        "description": "20 Hz."
+      },
+      "toHz": {
+        "default": "250.0",
+        "description": "250 Hz."
+      }
+    }
+  },
+  "optionalWireFields": {
+    "ReadingPayload": {
+      "grid": {
+        "defaultJson": "{\"firstFrame\":\"0\",\"stepFrames\":\"0\",\"framesRead\":\"0\",\"sampleRate\":0}",
+        "description": "Unknown grid; all coordinates and rate are zero."
+      },
+      "momentaryReason": {
+        "defaultJson": "0",
+        "description": "Pending."
+      },
+      "shortTermReason": {
+        "defaultJson": "0",
+        "description": "Pending."
+      },
+      "clips": {
+        "defaultJson": "{\"byteOffset\":0,\"length\":0,\"stride\":6}",
+        "description": "Empty six-column clip rows."
+      },
+      "totalRuns": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown total, zero."
+      },
+      "storedRuns": {
+        "defaultJson": "\"0\"",
+        "description": "No stored runs, zero."
+      },
+      "tailFrames": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown tail coverage, zero."
+      },
+      "runsComplete": {
+        "defaultJson": "false",
+        "description": "Completeness is unknown."
+      },
+      "finished": {
+        "defaultJson": "false",
+        "description": "Completion is unknown."
+      }
+    },
+    "PhaseEvent": {
+      "source": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown source identity."
+      },
+      "revision": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown revision."
+      },
+      "phase": {
+        "defaultJson": "0",
+        "description": "Unknown phase; Stream (0)."
+      },
+      "completedWork": {
+        "defaultJson": "0",
+        "description": "No known completed work."
+      },
+      "totalWork": {
+        "defaultJson": "0",
+        "description": "Unknown total work."
+      },
+      "state": {
+        "defaultJson": "0",
+        "description": "Unknown state; Empty (0)."
+      }
+    },
+    "FactEvent": {
+      "source": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown source identity."
+      },
+      "revision": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown revision."
+      },
+      "phase": {
+        "defaultJson": "0",
+        "description": "Unknown phase; Stream (0)."
+      },
+      "completedWork": {
+        "defaultJson": "0",
+        "description": "No known completed work."
+      },
+      "totalWork": {
+        "defaultJson": "0",
+        "description": "Unknown total work."
+      },
+      "state": {
+        "defaultJson": "0",
+        "description": "Unknown state; Empty (0)."
+      }
+    },
+    "ReadingEvent": {
+      "source": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown source identity."
+      },
+      "revision": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown revision."
+      },
+      "phase": {
+        "defaultJson": "0",
+        "description": "Unknown phase; Stream (0)."
+      },
+      "completedWork": {
+        "defaultJson": "0",
+        "description": "No known completed work."
+      },
+      "totalWork": {
+        "defaultJson": "0",
+        "description": "Unknown total work."
+      },
+      "state": {
+        "defaultJson": "0",
+        "description": "Unknown state; Empty (0)."
+      }
+    },
+    "DoneEvent": {
+      "source": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown source identity."
+      },
+      "revision": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown revision."
+      },
+      "phase": {
+        "defaultJson": "0",
+        "description": "Unknown phase; Stream (0)."
+      },
+      "completedWork": {
+        "defaultJson": "0",
+        "description": "No known completed work."
+      },
+      "totalWork": {
+        "defaultJson": "0",
+        "description": "Unknown total work."
+      },
+      "state": {
+        "defaultJson": "0",
+        "description": "Unknown state; Empty (0)."
+      }
+    },
+    "RejectedEvent": {
+      "source": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown source identity."
+      },
+      "revision": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown revision."
+      },
+      "phase": {
+        "defaultJson": "0",
+        "description": "Unknown phase; Stream (0)."
+      },
+      "completedWork": {
+        "defaultJson": "0",
+        "description": "No known completed work."
+      },
+      "totalWork": {
+        "defaultJson": "0",
+        "description": "Unknown total work."
+      },
+      "state": {
+        "defaultJson": "0",
+        "description": "Unknown state; Empty (0)."
+      }
+    },
+    "ErrorEvent": {
+      "source": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown source identity."
+      },
+      "revision": {
+        "defaultJson": "\"0\"",
+        "description": "Unknown revision."
+      },
+      "phase": {
+        "defaultJson": "0",
+        "description": "Unknown phase; Stream (0)."
+      },
+      "completedWork": {
+        "defaultJson": "0",
+        "description": "No known completed work."
+      },
+      "totalWork": {
+        "defaultJson": "0",
+        "description": "Unknown total work."
+      },
+      "state": {
+        "defaultJson": "0",
+        "description": "Unknown state; Empty (0)."
+      }
+    }
+  },
+  "queryRows": {
+    "Waveform": [
+      "firstFrame",
+      "lastFrame",
+      "axis",
+      "minimum",
+      "maximum",
+      "peak",
+      "envelope",
+      "rms",
+      "lowEnergy",
+      "middleEnergy",
+      "highEnergy",
+      "finiteFrames",
+      "reason"
+    ],
+    "LowSpectrum": [
+      "hz",
+      "density",
+      "reason"
+    ],
+    "LowSide": [
+      "hz",
+      "sideFraction",
+      "reason"
+    ],
+    "Loudness": [
+      "frame",
+      "lufs",
+      "reason"
+    ],
+    "Clipping": [
+      "firstFrame",
+      "frameCount",
+      "channel",
+      "sign",
+      "level",
+      "evidence"
+    ],
+    "Stereo": [
+      "firstFrame",
+      "lastFrame",
+      "width",
+      "correlation",
+      "rms",
+      "reason"
     ]
   }
 }

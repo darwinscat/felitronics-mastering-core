@@ -4,6 +4,9 @@
 #include "BuildGuards.h"
 #include "BuildContract.h"
 #include "Driver.h"
+#include "LiveMeasurements.h"
+#include "SourceMeasurements.h"
+#include "QueryState.h"
 #include "Rules.h"
 
 #include <felitronics/session/Config.h>
@@ -66,30 +69,64 @@ text::Fact OwnedFact::view() const noexcept
 
 std::uint64_t Session::stepBytes() noexcept { return 0; }
 JobId Session::measurementJob() const noexcept { return measurementJob_; }
-bool Session::hasWork() const noexcept { return measurementJob_ != 0 || job_ != 0; }
+bool Session::hasWork() const noexcept { return measurementJob_ != 0 || job_ != 0 || needlesJob_ != 0; }
 std::span<const Notification> Session::events() const noexcept { return { events_, eventCount_ }; }
 void Session::emit (Notification event) noexcept
 {
+    emit (event, event.kind == EventKind::Phase ? event.payload.phase : jobProgress (event.jobId));
+}
+Phase Session::jobProgress (JobId job) const noexcept
+{
+    if (job == 0) return {};
+    if (job == job_) return masterProgress_;
+    if (job == needlesJob_) return needlesProgress_;
+    if (job == measurementJob_) return measurementProgress_;
+    return {};
+}
+void Session::emit (Notification event, const Phase& progress) noexcept
+{
+    if (event.kind == EventKind::Measurement) invalidateQueryCache (event.payload.measurement.analyzer);
+    else if (event.kind == EventKind::Reading)
+    {
+        invalidateQueryCache (Analyzer::Loudness);
+        invalidateQueryCache (Analyzer::Clipping);
+    }
     detail::debugBound (eventCount_ < kEventBatch);
     event.seq = ++sequence_;
+    event.source = source_.hash;
+    event.state = state_;
+    event.revision = revision_;
+    event.phase = progress.name;
+    event.completedWork = progress.completedUnits;
+    event.totalWork = progress.totalUnits;
+
     events_[eventCount_++] = event; // at most three per unit, or one per command
 }
 
 void Session::dropJob (JobId job) noexcept
 {
-    if (job == measurementJob_)
+    if (job == needlesJob_ && job != 0)
+    {
+        clearNeedles();
+        auto& result = measurementResults_[std::size_t (Analyzer::Excursions)];
+        result.status = MeasurementStatus::Cancelled;
+        result.reason = MeasurementReason::Cancelled;
+    }
+    else if (job == measurementJob_)
     {
         measurementJob_ = 0;
-        measurementUnit_ = 0;
-        measurementProgress_ = {};
-        if (state_ == State::Loaded)
+        stoppedState_ = state_; state_ = State::MeasurementStopped;
+        for (auto& result : measurementResults_)
+            if (result.analyzer != Analyzer::Excursions && result.status == MeasurementStatus::Pending)
+            {
+                result.status = MeasurementStatus::Cancelled;
+                result.reason = MeasurementReason::Cancelled;
+            }
+        // A master cannot silently restart a dependency the user just stopped.
+        if (job_ != 0 && masterRequiresTempo() && ! tempoForDevice().ready)
         {
-            state_ = State::Empty;
-            source_ = {};
-            samples_.reset();
-            name_.reset();
-            project_.devices = {};
-            project_.manual = false;
+            mastering_ = false; job_ = 0; jobRecipe_ = {};
+            masterUnit_ = 0; masterProgress_ = {};
         }
     }
     else
@@ -110,7 +147,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
     if (checkFloatingPointEnvironment() != Status::Ok)
     {
         Notification event;
-        event.jobId = job_ != 0 ? job_ : measurementJob_;
+        event.jobId = job_ != 0 ? job_ : needlesJob_ != 0 ? needlesJob_ : measurementJob_;
         event.kind = EventKind::Error;
         event.payload.error.code = ErrorCode::Refusal;
         (void) event.payload.error.fact.assign (text::Fact::of (text::FactId::SessionRefusal));
@@ -119,15 +156,6 @@ Stepped Session::step (std::uint32_t budget) noexcept
         return { hasWork() ? StepState::More : StepState::Done, 0, true };
     }
     const auto progress = detail::rules().engine.find ("progress");
-    const auto weights = progress.find ("analysis").find ("weights");
-    const double analysis[] = {
-        weight (weights.find ("loudness")), weight (weights.find ("report")), weight (weights.find ("lowEnd120")),
-        weight (weights.find ("forensics")), weight (weights.find ("stereo")), weight (weights.find ("lowEndSweep")),
-        weight (weights.find ("stereoBursts")), weight (weights.find ("crest")), weight (weights.find ("hum")),
-        weight (weights.find ("tempo"))
-    };
-    double total = 0.0;
-    for (double w : analysis) total += w;
     const auto master = progress.find ("master");
     const auto passes = std::uint32_t (*master.find ("expectedPasses").integer());
     const double passWeight = weight (master.find ("passWeight"));
@@ -136,6 +164,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
     std::uint32_t units = 0;
     const auto contract = [&] (JobId job)
     {
+        const auto stoppedProgress = jobProgress (job);
         Notification error;
         error.jobId = job;
         error.kind = EventKind::Error;
@@ -143,7 +172,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
         (void) error.payload.error.fact.assign (text::Fact::of (text::FactId::SessionContract));
         dropJob (job);
         ++revision_;
-        emit (error);
+        emit (error, stoppedProgress);
     };
     // The foreground master takes priority over phase two; phase two resumes after it.
     while (units < std::min (budget, kStepUnits) && hasWork())
@@ -153,6 +182,41 @@ Stepped Session::step (std::uint32_t budget) noexcept
         if (job_ != 0)
         {
             event.jobId = job_;
+            if (masterRequiresTempo() && ! tempoForDevice().ready)
+            {
+                const auto masterJob = job_;
+                if (measurementJob_ == 0 && detail::Driver::continueMeasurement (*this) == 0)
+                    contract (masterJob);
+                else if (! sourceMeasurements_ || sourceMeasurements_->cursor > sourceMeasurements_->order.size()
+                         || sourceMeasurements_->stage > 5)
+                    contract (masterJob);
+                else
+                {
+                    auto& run = *sourceMeasurements_;
+                    // Complete an in-flight optional first. At its next stage boundary,
+                    // do tempo before the other optionals, then resume their cursor.
+                    if (run.cursor < 8 && run.stage == 0)
+                    {
+                        run.tempoReturnCursor = run.cursor;
+                        run.cursor = 8;
+                    }
+                    stepSourceMeasurements();
+                    if (job_ == masterJob)
+                    {
+                        auto& p = masterProgress_;
+                        p.name = PhaseName::Analyzers; p.pass = 0; p.totalPasses = passes;
+                        if (p.completedUnits < 4294967294u) ++p.completedUnits;
+                        p.totalUnits = std::max (p.totalUnits, p.completedUnits + 1u);
+                        p.fraction = measureWeight * double (p.completedUnits) /
+                            (double (p.totalUnits) * (double (passes) * passWeight + measureWeight));
+                        event.kind = EventKind::Phase; event.jobId = masterJob; event.payload.phase = p; emit (event);
+                    }
+                }
+                ++units;
+                continue;
+            }
+            if (masterProgress_.name == PhaseName::Analyzers)
+                jobRecipe_ = { project_, source_.hash, config::Config::versions().sound };
             ++masterUnit_;
             const bool end = masterUnit_ > passes;
             masterProgress_ = { end ? PhaseName::Remeasure : PhaseName::Pass,
@@ -167,47 +231,40 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 event.kind = EventKind::Fact;
                 (void) event.payload.fact.assign (end ? text::Fact::of (text::FactId::MasterReady)
                     : text::Fact::of (text::FactId::MasterPass, text::Arg::count (masterUnit_)));
-                emit (event);
+                emit (event, masterProgress_);
                 if (end)
                 {
                     event.kind = EventKind::Done;
                     event.payload.done.masterId = event.jobId;
-                    emit (event);
+                    emit (event, masterProgress_);
                 }
             }
         }
-        else
+        else if (needlesJob_ != 0)
         {
-            event.jobId = measurementJob_;
-            if (measurementUnit_ >= std::size (analysis))
-            {
-                contract (event.jobId);
-                ++units;
-                continue;
-            }
-            ++measurementUnit_;
-            double completed = 0.0;
-            for (std::size_t i = 0; i < std::size_t (measurementUnit_); ++i)
-                completed += analysis[i];
-            measurementProgress_ = { measurementUnit_ == 1 ? PhaseName::Stream
-                : measurementUnit_ == 2 ? PhaseName::Report : PhaseName::Analyzers,
-                completed / total, version, 0, 0, measurementUnit_, 10 };
-            event.payload.phase = measurementProgress_;
-            emit (event);
-            if (measurementUnit_ == 5 || measurementUnit_ == 10)
-            {
-                const bool first = measurementUnit_ == 5;
-                const bool ended = first ? detail::Driver::measured1 (*this, event.jobId, source_.hash)
-                                         : detail::Driver::measured2 (*this, event.jobId, source_.hash);
-                if (ended)
-                {
-                    event.kind = EventKind::Fact;
-                    (void) event.payload.fact.assign (text::Fact::of (first ? text::FactId::Measurement1 : text::FactId::Measurement2));
-                    emit (event);
-                }
-                else contract (event.jobId);
-            }
+            stepNeedles();
         }
+        else if (waveform_ && ! waveform_->finished)
+        {
+            stepWaveform();
+        }
+        else if (liveMeasurements_ && liveMeasurements_->stage < 9 && measurementUnit_ < 2)
+        {
+            stepMeasurements();
+        }
+        else if (sourceMeasurements_)
+        {
+            if (sourceMeasurements_->cursor > sourceMeasurements_->order.size() || sourceMeasurements_->stage > 5)
+                contract (measurementJob_);
+            else stepSourceMeasurements();
+        }
+        else if (measurementsFromSidecar_ && measurementJob_ != 0)
+        {
+            measurementJob_ = 0;
+            measurementProgress_ = { PhaseName::Analyzers, 1.0, config::Config::versions().all, 0, 0, 1, 1 };
+            ++revision_;
+        }
+        else contract (measurementJob_);
         ++units;
     }
     return { hasWork() ? StepState::More : StepState::Done, units, false };

@@ -209,12 +209,21 @@ add_custom_command(OUTPUT ${SESSION_SCRIPT_GRAMMAR}
     DEPENDS contract/grammar.mjs contract/grammar.json VERBATIM)
 add_executable(fcore_session fcore_session.cpp session-script.cpp session-script-poison.cpp
     ${SESSION_SCRIPT_GRAMMAR} $<TARGET_OBJECTS:felitronics_session_facade>)
+target_link_libraries(fcore_session PRIVATE felitronics::session felitronics::test_support)
+target_include_directories(fcore_session PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/modules/session/src)
 target_include_directories(fcore_session PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_compile_options(fcore_session PRIVATE ${FCORE_NO_FP_CONTRACT}
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fno-fast-math>)
-target_link_libraries(fcore_session PRIVATE felitronics::session felitronics::test_support)
-target_include_directories(fcore_session PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_compile_features(fcore_session PRIVATE cxx_std_20)
+if(FELITRONICS_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
+    add_test(NAME fcore_session_contract
+        COMMAND ${SESSION_SCRIPT_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/contract/run.mjs $<TARGET_FILE:fcore_session> --native-only)
+    # The sanitized tier runs each scenario an order of magnitude slower than an optimised build (the ASan/UBSan CI row
+    # took longer than the harness's 30 s for the measurement scenario): its children get ten minutes, still finite.
+    if(FELITRONICS_ENABLE_SANITIZERS)
+        set_tests_properties(fcore_session_contract PROPERTIES ENVIRONMENT FC_SESSION_CONTRACT_TIMEOUT_MS=600000)
+    endif()
+endif()
 
 find_program(FELITRONICS_ABI_NODE NAMES node nodejs REQUIRED)
 set(FELITRONICS_ABI_PROBE ${CMAKE_CURRENT_BINARY_DIR}/session-abi-probe.cpp)
@@ -226,7 +235,8 @@ add_custom_command(OUTPUT ${FELITRONICS_ABI_PROBE}
         ${PROJECT_SOURCE_DIR}/modules/session/include/felitronics/session/Events.h
         ${PROJECT_SOURCE_DIR}/modules/session/include/felitronics/session/Session.h
         ${PROJECT_SOURCE_DIR}/modules/session/include/felitronics/session/Snapshot.h
-        ${PROJECT_SOURCE_DIR}/modules/session/include/felitronics/session/Text.h VERBATIM)
+        ${PROJECT_SOURCE_DIR}/modules/session/include/felitronics/session/Text.h
+        ${PROJECT_SOURCE_DIR}/modules/session/include/felitronics/session/Measurements.h VERBATIM)
 add_executable(felitronics_session_abi_probe ${FELITRONICS_ABI_PROBE})
 target_link_libraries(felitronics_session_abi_probe PRIVATE felitronics::session felitronics::toml)
 target_compile_options(felitronics_session_abi_probe PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
@@ -245,12 +255,29 @@ if(FELITRONICS_BUILD_TESTS)
         COMMAND ${FELITRONICS_ABI_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/session-abi-source-controls.mjs --self-test)
     add_test(NAME felitronics_session_abi_manifest_control
         COMMAND ${FELITRONICS_ABI_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/session-abi-check.mjs --self-test)
+    # The manifest only grows: CI compares a pull request's manifest with its base branch's; this is that check's control.
+    add_test(NAME felitronics_session_abi_manifest_append_only_control
+        COMMAND ${FELITRONICS_ABI_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/session-abi-append-only.mjs --self-test)
 endif()
 
 if(FELITRONICS_BUILD_TESTS)
+    add_executable(felitronics_session_sidecar_tests tests/SessionSidecarTests.cpp)
+    target_link_libraries(felitronics_session_sidecar_tests PRIVATE felitronics::session felitronics::analysis_offline felitronics::test_support)
+    target_include_directories(felitronics_session_sidecar_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_features(felitronics_session_sidecar_tests PRIVATE cxx_std_20)
+    target_compile_options(felitronics_session_sidecar_tests PRIVATE ${FCORE_NO_FP_CONTRACT}
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fno-fast-math>)
+    add_test(NAME felitronics_session_sidecar_tests COMMAND felitronics_session_sidecar_tests)
     # fc_session, version 1 (tools/fc_session_abi.h): guards, handles, capacity, declared allocation and poison —
     # natively, under ASan/UBSan, and on the wasm tier. Release walks every generation; Debug uses the test facade
     # seam to start at the last one. The poison is the last group, because it is for good.
+    add_executable(felitronics_session_query_tests tests/SessionQueryTests.cpp $<TARGET_OBJECTS:felitronics_session_replay_facade>)
+    target_link_libraries(felitronics_session_query_tests PRIVATE felitronics::session felitronics::test_support felitronics::analysis_offline felitronics::tempo)
+    target_include_directories(felitronics_session_query_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/modules/session/src)
+    target_compile_features(felitronics_session_query_tests PRIVATE cxx_std_20)
+    target_compile_options(felitronics_session_query_tests PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
+    add_test(NAME felitronics_session_query_tests COMMAND felitronics_session_query_tests)
+
     add_executable(felitronics_session_abi_tests tests/SessionAbiTests.cpp $<TARGET_OBJECTS:felitronics_session_replay_facade>)
     target_link_libraries(felitronics_session_abi_tests PRIVATE felitronics::session felitronics::test_support)
     target_include_directories(felitronics_session_abi_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -341,7 +368,7 @@ if(FELITRONICS_BUILD_TESTS)
     # THE CLI'S CONTRACT, byte for byte on stdout and by exit status (tools/tests/cli-expect.cmake): the versions it
     # prints are the ones this build was configured with; the table it prints is the one docs/SESSION.md shows; an
     # empty script and a script of comments are accepted with `done 0`, from a file and from stdin; the config it prints
-    # is its sources in canonical form, and its version theirs; a malformed script, a script that is not there
+    # is its sources in canonical form, and its version theirs; a script with a command in it, a script that is not there
     # and a malformed command line are refused with 2 and nothing on stdout.
     # NOT ON THE WASM TIER: the CLI reads its script from the host's filesystem, which the node runner the emscripten
     # tests go through does not have. The wasm road into the session is the fcsession module, and CI checks that.
@@ -436,10 +463,4 @@ if(FELITRONICS_BUILD_TESTS)
                              -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/cli-expect.cmake)
         endforeach()
     endif()
-endif()
-
-if(FELITRONICS_BUILD_TESTS AND NOT EMSCRIPTEN)
-    add_test(NAME fcore_session_contract
-        COMMAND ${SESSION_SCRIPT_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/contract/run.mjs
-            $<TARGET_FILE:fcore_session> --native-only)
 endif()

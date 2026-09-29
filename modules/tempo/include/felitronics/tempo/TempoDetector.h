@@ -156,8 +156,8 @@ struct TempoPoint
 // programme, and is refused. A call that would run past the prepared length is refused whole, before anything
 // moves. `finish()` analyses every sample seen so far — the prepared length, or a prefix of it — and freezes.
 //
-// OFFLINE, RT-safe in its calls: prepare() is the only allocation; process() and finish() do no alloc / lock /
-// throw. finish() costs O(frames x lags) and is meant for a worker thread, never an audio callback.
+// OFFLINE, RT-safe in its calls: prepare() is the only allocation; process(), finishStep() and finish() do no
+// alloc / lock / throw. A session uses finishStep() between commands; finish() drives the same stages synchronously.
 //
 // WHERE THE TIME IS SPENT, AND WHY EACH PLACE IS A FUNCTION OF ITS OWN. Nearly all of an analysis is the onset
 // curve — one 1024-point transform per 512 samples, 35 203 of them in a 6:15 programme at 48 kHz — and the rest is
@@ -170,7 +170,7 @@ struct TempoPoint
 // analysis: mixIn() and onsetFrame() once per frame, lagSum() once per lag, analyzeWindow() once per window. Each is
 // FELITRONICS_TEMPO_NOINLINE, so the compiler keeps it; tools/wasm/build.sh keeps binaryen, emcc's post-link
 // optimiser, from inlining a function with one caller regardless (it does, noinline or not); and
-// tools/wasm/tierup-check.mjs fails the build when one of the four is missing from either module. What is left in
+// tools/wasm/tierup-check.mjs fails the build when one of the four is missing from fcprobe, fctempo or fcsession. What is left in
 // once-called code — the detrend, the beat phase, the median — is a few hundred thousand operations, not tens of
 // millions. The boundaries change no arithmetic: the same operations on the same operands in the same order, and
 // the output is byte-identical to v0.2.1's, native and wasm.
@@ -191,6 +191,10 @@ class TempoDetector
     };
 
 public:
+    enum class FinishStage : std::uint8_t
+    {
+        Ready, Prefix, Detrend, GlobalEnergy, GlobalLag, GlobalResolve, Curve, Finalize, Done
+    };
     static constexpr int kFrame = 1024;                   // FRAME — the STFT frame, ~23 ms at 44.1 kHz
     static constexpr int kHop   = 512;                    // HOP   — the onset curve's sample period
     static constexpr int kBins  = kFrame / 2 + 1;         // the magnitude bins the flux is summed over
@@ -305,6 +309,7 @@ public:
         // finished analysis leaves nothing readable.
         prepared_ = false;
         finished_ = false;
+        finishStage_ = FinishStage::Ready;
         channels_ = 0;
         seen_ = 0; odfFrames_ = 0; nonFinite_ = 0; total_ = 0;
         sampleRate_ = 0.0; odfSr_ = 0.0; winFramesSpec_ = 0.0; hopFramesSpec_ = 0.0;
@@ -355,6 +360,7 @@ public:
     void reset() noexcept
     {
         finished_ = false;
+        finishStage_ = FinishStage::Ready;
         seen_ = 0;
         odfFrames_ = 0;
         nonFinite_ = 0;
@@ -371,7 +377,7 @@ public:
     {
         if (numChannels < 0 || n < 0) return false;
         if (numChannels > 0 && in == nullptr) return false;
-        if (! prepared_ || finished_) return false;
+        if (! prepared_ || finishStage_ != FinishStage::Ready) return false;
         if (numChannels != channels_) return false;
         if (n == 0) return true;
         for (int c = 0; c < channels_; ++c) if (in[c] == nullptr) return false;
@@ -391,16 +397,118 @@ public:
         return true;
     }
 
-    // End of the programme: detrend, the whole-track analysis, the curve, the headline. Analyses every sample
-    // seen so far and freezes; process() refuses until reset(). Idempotent.
+    // End of the programme: drive the same bounded stages a session uses. Analyses every sample seen so far and
+    // freezes; process() refuses once finishing begins. Idempotent.
     [[nodiscard]] bool finish() noexcept
     {
         if (! prepared_) return false;
-        if (finished_) return true;
-        analyse();
-        finished_ = true;
+        while (! finishStep()) {}
         return true;
     }
+
+    // One bounded finish unit, with no allocation. False means more work remains (or the detector was not
+    // prepared). The current lag's sum and every cursor survive cancellation between calls.
+    [[nodiscard]] bool finishStep() noexcept
+    {
+        if (! prepared_) return false;
+        if (finished_) return true;
+        constexpr std::int64_t chunk = 4096;
+        const auto n = std::int64_t (odfFrames_);
+        switch (finishStage_)
+        {
+            case FinishStage::Ready:
+                clearReport();
+                finishIndex_ = 0;
+                if (n > 0) prefix_[0] = 0.0;
+                finishStage_ = FinishStage::Prefix;
+                break;
+            case FinishStage::Prefix:
+            {
+                const auto end = std::min (n, finishIndex_ + chunk);
+                for (; finishIndex_ < end; ++finishIndex_)
+                    prefix_[std::size_t (finishIndex_ + 1)] = prefix_[std::size_t (finishIndex_)] + odf_[std::size_t (finishIndex_)];
+                if (finishIndex_ == n) { finishIndex_ = 0; finishStage_ = FinishStage::Detrend; }
+                break;
+            }
+            case FinishStage::Detrend:
+            {
+                const auto w = std::int64_t (js::max (1.0, js::round (odfSr_ * kDetrendSec)));
+                const auto end = std::min (n, finishIndex_ + chunk);
+                for (; finishIndex_ < end; ++finishIndex_)
+                {
+                    const auto a = std::max<std::int64_t> (0, finishIndex_ - w);
+                    const auto b = std::min<std::int64_t> (n, finishIndex_ + w + 1);
+                    const double mean = (prefix_[std::size_t (b)] - prefix_[std::size_t (a)]) / double (b - a);
+                    const double value = odf_[std::size_t (finishIndex_)] - mean;
+                    odf_[std::size_t (finishIndex_)] = value > 0.0 ? value : 0.0;
+                }
+                if (finishIndex_ == n) { finishIndex_ = 0; finishSum_ = 0.0; finishStage_ = FinishStage::GlobalEnergy; }
+                break;
+            }
+            case FinishStage::GlobalEnergy:
+            {
+                const auto end = std::min (n, finishIndex_ + chunk);
+                for (; finishIndex_ < end; ++finishIndex_) finishSum_ += odf_[std::size_t (finishIndex_)];
+                if (finishIndex_ != n) break;
+                if (double (n) < odfSr_ * kMinAnalysisSec || finishSum_ <= 0.0) { finished_ = true; finishStage_ = FinishStage::Done; return true; }
+                const double lo = js::max (1.0, std::floor ((60.0 / installed_.maxBpm) * odfSr_));
+                const double hi = js::min (double (n - 1), std::ceil ((60.0 / installed_.minBpm) * odfSr_));
+                if (! (lo <= hi)) { finished_ = true; finishStage_ = FinishStage::Done; return true; }
+                minLag_ = std::int64_t (lo); maxLag_ = std::int64_t (hi);
+                finishLag_ = minLag_; finishIndex_ = finishLag_; finishSum_ = 0.0;
+                finishStage_ = FinishStage::GlobalLag;
+                break;
+            }
+            case FinishStage::GlobalLag:
+            {
+                const auto end = std::min (n, finishIndex_ + chunk);
+                for (; finishIndex_ < end; ++finishIndex_)
+                    finishSum_ = core::det::mulAdd (odf_[std::size_t (finishIndex_)], odf_[std::size_t (finishIndex_ - finishLag_)], finishSum_);
+                if (finishIndex_ == n)
+                {
+                    ac_[std::size_t (finishLag_)] = finishSum_ / double (n - finishLag_);
+                    ++finishLag_; finishIndex_ = finishLag_; finishSum_ = 0.0;
+                    if (finishLag_ > maxLag_) finishStage_ = FinishStage::GlobalResolve;
+                }
+                break;
+            }
+            case FinishStage::GlobalResolve:
+            {
+                globalWindow_ = resolveWindow (minLag_, maxLag_, false, 0.0, globalPeaks_.data());
+                if (! globalWindow_.ok) { finished_ = true; finishStage_ = FinishStage::Done; return true; }
+                anchorBpm_ = globalWindow_.bpm; anchorConfidence_ = globalWindow_.confidence;
+                anchorLag_ = globalWindow_.refinedLag;
+                candidateCount_ = int (std::min<std::int64_t> (globalWindow_.peaks, kMaxCandidates));
+                hasCurveGeometry_ = curveGeometry (std::uint64_t (n), odfSr_, installed_, finishWinFrames_, finishHopFrames_);
+                finishIndex_ = 0; pointCount_ = 0;
+                finishStage_ = FinishStage::Curve;
+                break;
+            }
+            case FinishStage::Curve:
+                if (hasCurveGeometry_ && finishIndex_ + finishWinFrames_ <= n)
+                {
+                    const auto w = analyzeWindow (odf_.data() + std::size_t (finishIndex_), finishWinFrames_, true,
+                                                  globalWindow_.bpm, windowPeaks_.data());
+                    auto& p = raw_[std::size_t (pointCount_++)];
+                    const double t = (double (finishIndex_) + double (finishWinFrames_) / 2.0) / odfSr_;
+                    p.t = round1 (t);
+                    p.hasBpm = w.ok && w.confidence >= kCurveConfidence;
+                    p.bpm = p.hasBpm ? round1 (w.bpm) : std::numeric_limits<double>::quiet_NaN();
+                    p.conf = w.ok ? round2 (w.confidence) : 0.0;
+                    finishIndex_ += finishHopFrames_;
+                    break;
+                }
+                finishStage_ = FinishStage::Finalize;
+                break;
+            case FinishStage::Finalize:
+                finalizeReport();
+                finished_ = true; finishStage_ = FinishStage::Done;
+                return true;
+            case FinishStage::Done: return true;
+        }
+        return false;
+    }
+    [[nodiscard]] FinishStage finishStage() const noexcept { return finishStage_; }
 
     //==============================================================================
     bool isPrepared() const noexcept { return prepared_; }
@@ -571,45 +679,18 @@ private:
     }
 
     //==============================================================================
-    // The spec's analysis, in its order.
-    void analyse() noexcept
+    // The final reductions run after the curve has been written in the spec's order.
+    void finalizeReport() noexcept
     {
-        clearReport();
-        const std::int64_t n = (std::int64_t) odfFrames_;
-        detrend (n);
-
-        const Window global = analyzeWindow (odf_.data(), n, false, 0.0, globalPeaks_.data());
-        if (! global.ok) return;                                       // UNDETERMINED: no curve, no range
-
-        anchorBpm_ = global.bpm;
-        anchorConfidence_ = global.confidence;
-        anchorLag_ = global.refinedLag;
-        candidateCount_ = (int) std::min<std::int64_t> (global.peaks, kMaxCandidates);
-
-        // --- over time: windows over the SAME detrended onset curve, anchored to the whole track ---
-        const double anchor = global.bpm;
-        std::int64_t count = 0, winFrames = 0, hopFrames = 0;
-        if (curveGeometry ((std::uint64_t) n, odfSr_, installed_, winFrames, hopFrames))
-            for (std::int64_t startAt = 0; startAt + winFrames <= n; startAt += hopFrames)
-            {
-                const Window w = analyzeWindow (odf_.data() + (std::size_t) startAt, winFrames, true, anchor, windowPeaks_.data());
-                const double t = ((double) startAt + (double) winFrames / 2.0) / odfSr_;
-                TempoPoint& p = raw_[(std::size_t) count++];
-                p.t = round1 (t);
-                p.hasBpm = w.ok && w.confidence >= kCurveConfidence;   // a NaN confidence is a gap
-                p.bpm = p.hasBpm ? round1 (w.bpm) : std::numeric_limits<double>::quiet_NaN();
-                p.conf = w.ok ? round2 (w.confidence) : 0.0;
-            }
-        pointCount_ = count;
         medianSmooth();
 
         // --- the robust whole-track number: the median of the smoothed confident points ---
         std::int64_t m = 0;
-        for (std::int64_t i = 0; i < count; ++i)
+        for (std::int64_t i = 0; i < pointCount_; ++i)
             if (curve_[(std::size_t) i].hasBpm && curve_[(std::size_t) i].conf >= kPointConfidence)
                 sortPts_[(std::size_t) m++] = curve_[(std::size_t) i].bpm;
         std::sort (sortPts_.data(), sortPts_.data() + (std::size_t) m);   // finite values: any sort is the spec's
-        double globalBpm = global.bpm;
+        double globalBpm = globalWindow_.bpm;
         if (m >= 3)
         {
             globalBpm = sortPts_[(std::size_t) (m / 2)];
@@ -622,26 +703,9 @@ private:
         }
 
         // --- the two headlines: tempoCurve's (bpm = the median, the rest off its fold) and detectTempo's ---
-        headline_ = assemble (octaveFold (globalBpm, true, anchor), global);
+        headline_ = assemble (octaveFold (globalBpm, true, globalWindow_.bpm), globalWindow_);
         headline_.bpm = round1 (globalBpm);
-        wholeTrack_ = assemble (global.bpm, global);
-    }
-
-    // Subtract a local moving mean (+/- round(0.15 odfSr) frames) and keep the positive part. In place: step i
-    // reads odf[i] before it writes it, and every mean comes from the prefix sums of the RAW curve.
-    void detrend (std::int64_t n) noexcept
-    {
-        if (n <= 0) return;
-        const std::int64_t w = (std::int64_t) js::max (1.0, js::round (odfSr_ * kDetrendSec));
-        prefix_[0] = 0.0;
-        for (std::int64_t i = 0; i < n; ++i) prefix_[(std::size_t) i + 1] = prefix_[(std::size_t) i] + odf_[(std::size_t) i];
-        for (std::int64_t i = 0; i < n; ++i)
-        {
-            const std::int64_t a = std::max<std::int64_t> (0, i - w), b = std::min<std::int64_t> (n, i + w + 1);
-            const double mean = (prefix_[(std::size_t) b] - prefix_[(std::size_t) a]) / (double) (b - a);
-            const double v = odf_[(std::size_t) i] - mean;
-            odf_[(std::size_t) i] = v > 0.0 ? v : 0.0;
-        }
+        wholeTrack_ = assemble (globalWindow_.bpm, globalWindow_);
     }
 
     static double lagToBpm (double lag, double odfSr) noexcept { return (60.0 * odfSr) / lag; }
@@ -722,7 +786,13 @@ private:
         const std::int64_t minLag = (std::int64_t) minLagD, maxLag = (std::int64_t) maxLagD;
         for (std::int64_t lag = minLag; lag <= maxLag; ++lag)
             ac_[(std::size_t) lag] = lagSum (odf, n, lag) / (double) (n - lag);
+        return resolveWindow (minLag, maxLag, hasAnchor, anchor, peaks);
+    }
 
+    // The global finish stages fill the same lag table incrementally, then enter at this point.
+    Window resolveWindow (std::int64_t minLag, std::int64_t maxLag, bool hasAnchor, double anchor, Peak* peaks) noexcept
+    {
+        Window out;
         // --- every local maximum strictly inside the range ---
         std::int64_t count = 0;
         for (std::int64_t lag = minLag + 1; lag < maxLag; ++lag)
@@ -789,8 +859,17 @@ private:
                 double w[kSmoothPoints] {};
                 int k = 0;
                 const std::int64_t lo = std::max<std::int64_t> (0, i - half), hi = std::min<std::int64_t> (pointCount_ - 1, i + half);
-                for (std::int64_t j = lo; j <= hi; ++j) if (raw_[(std::size_t) j].hasBpm) w[k++] = raw_[(std::size_t) j].bpm;
-                std::sort (w, w + k);
+                for (std::int64_t j = lo; j <= hi; ++j)
+                    if (raw_[(std::size_t) j].hasBpm && k < kSmoothPoints) w[k++] = raw_[(std::size_t) j].bpm;
+                // All admitted BPM values are finite. Sorting this fixed five-element buffer
+                // explicitly keeps GCC 14's std::sort inlining from inventing out-of-bounds paths.
+                for (int a = 1; a < k; ++a)
+                {
+                    const double next = w[a];
+                    int b = a;
+                    while (b > 0 && next < w[b - 1]) { w[b] = w[b - 1]; --b; }
+                    w[b] = next;
+                }
                 p.bpm = w[k >> 1];
             }
             curve_[(std::size_t) i] = p;
@@ -853,6 +932,12 @@ private:
     double winFramesSpec_ = 0.0, hopFramesSpec_ = 0.0;
     double anchorBpm_ = std::numeric_limits<double>::quiet_NaN(), anchorConfidence_ = 0.0,
            anchorLag_ = std::numeric_limits<double>::quiet_NaN();
+    FinishStage finishStage_ = FinishStage::Ready;
+    std::int64_t finishIndex_ = 0, finishLag_ = 0, minLag_ = 0, maxLag_ = 0;
+    std::int64_t finishWinFrames_ = 0, finishHopFrames_ = 0;
+    double finishSum_ = 0.0;
+    bool hasCurveGeometry_ = false;
+    Window globalWindow_ {};
 };
 
 } // namespace felitronics::tempo

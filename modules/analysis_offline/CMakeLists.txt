@@ -13,6 +13,13 @@ target_link_libraries(felitronics_analysis_offline INTERFACE felitronics_storage
 target_compile_features(felitronics_analysis_offline INTERFACE cxx_std_20)
 
 if(FELITRONICS_BUILD_TESTS)
+    add_executable(felitronics_source_storage_parity_tests tests/SourceStorageParityTests.cpp)
+    target_link_libraries(felitronics_source_storage_parity_tests PRIVATE felitronics::analysis_offline felitronics::test_support)
+    if(NOT MSVC)
+        target_compile_options(felitronics_source_storage_parity_tests PRIVATE -ffp-contract=off)
+    endif()
+    add_test(NAME felitronics_source_storage_parity_tests COMMAND felitronics_source_storage_parity_tests)
+
     add_executable(felitronics_spectrum_frames_tests tests/SpectrumFramesTests.cpp)   # the shared frame producer: DFT null + law 8a
     target_link_libraries(felitronics_spectrum_frames_tests PRIVATE felitronics::analysis_offline felitronics::test_support)
     target_compile_features(felitronics_spectrum_frames_tests PRIVATE cxx_std_20)
@@ -33,6 +40,14 @@ if(FELITRONICS_BUILD_TESTS)
     # WaveformPeaks + StereoColumns — ports of the site's audio-peaks.js / stereo-meter.js, pinned to the spec's own
     # numbers. Built with the tree's own `on`, which is where the natural removal of the stereo products' volatile pin
     # (`mid += m*m`) fuses on arm64 and fails witnesses W5/W6f — see the test file's header for the measured matrix.
+    add_executable(felitronics_waveform_index_tests tests/WaveformIndexTests.cpp)
+    target_link_libraries(felitronics_waveform_index_tests PRIVATE felitronics::analysis_offline felitronics::test_support)
+    target_compile_features(felitronics_waveform_index_tests PRIVATE cxx_std_20)
+    if(NOT MSVC)
+        target_compile_options(felitronics_waveform_index_tests PRIVATE -ffp-contract=off)
+    endif()
+    add_test(NAME felitronics_waveform_index_tests COMMAND felitronics_waveform_index_tests)
+
     add_executable(felitronics_waveform_shape_tests tests/WaveformShapeTests.cpp)
     target_link_libraries(felitronics_waveform_shape_tests PRIVATE felitronics::analysis_offline felitronics::test_support)
     target_compile_features(felitronics_waveform_shape_tests PRIVATE cxx_std_20)

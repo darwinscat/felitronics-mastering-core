@@ -14,6 +14,11 @@
 #include "Rules.h"
 #include "BuildContract.h"
 #include "ProjectIO.h"
+#include "MeasurementPlan.h"
+#include "MeasurementWorkspace.h"
+#include "LiveMeasurements.h"
+#include "SourceMeasurements.h"
+#include "QueryState.h"
 #include "Utf8.h"
 
 #include <felitronics/session/Commands.h>
@@ -186,7 +191,14 @@ Checked Session::storageFor (const Request& request) const noexcept
         const auto audio = std::uint64_t (pcm.channelCount) * pcm.frames * sizeof (float);
         const auto name = std::uint64_t (load->meta.name.size());
         if (name > 9007199254740991ull - audio) return rejected (Rejection::TooLong);
-        return storage (audio + name, std::max (audio, name));
+        const auto plan = detail::MeasurementPlan::storageFor (pcm, detail::MeasurementPlan::parametersFor (pcm));
+        if (plan.rejection != Rejection::None) return rejected (plan.rejection);
+        const auto footprint = measurementStorage (pcm);
+        // Resident name, detached snapshot name, and its worst-case JSON escaping coexist.
+        if (name > 9007199254740991ull / 8u
+            || footprint.peakBytes + double (8u * name) >= 9007199254740992.0) return rejected (Rejection::TooLong);
+        const auto extra = std::uint64_t (footprint.peakBytes) - std::uint64_t (liveBytes());
+        return storage (extra + 8u * name, std::uint64_t (footprint.largestBlockBytes) + 6u * name);
     }
     if (const auto* set = std::get_if<command::SetTarget> (&request))
     {
@@ -222,17 +234,23 @@ Checked Session::storageFor (const Request& request) const noexcept
     }
     if (std::get_if<command::Master> (&request) != nullptr)
     {
-        // 4. NAMES: an id for the job, never 0 and never one issued before.
-        if (lastJob_ == std::numeric_limits<JobId>::max()) return rejected (Rejection::NoJobId);
+        // 3. NAMES: the source's audio (a sidecar source has none before attachAudio), then an id for the job, never 0
+        // and never one issued before.
+        if (! samples_) return rejected (Rejection::NoAudio);
+        if (lastJob_ == std::numeric_limits<JobId>::max()
+            || (masterRequiresTempo() && ! tempoForDevice().ready && measurementJob_ == 0
+                && lastJob_ == std::numeric_limits<JobId>::max() - 1u)) return rejected (Rejection::NoJobId);
         // THE WORK'S BYTES: room for one more master kept — its recipe is kept when it is done, and that must not ask
         // the heap at the end of a render — as one exact reserve, unless the room is there already.
         const bool room = masterRoom_ > masterCount_;
         const auto bytes = room ? 0 : std::uint64_t (masterCount_ + 1) * sizeof (Kept);
         return storage (bytes, bytes);
     }
+    if (std::holds_alternative<command::ContinueMeasurement> (request))
+        return lastJob_ == std::numeric_limits<JobId>::max() ? rejected (Rejection::NoJobId) : Checked {};
     if (const auto* cancel = std::get_if<command::Cancel> (&request))
-        return job_ == 0 && measurementJob_ == 0 ? rejected (Rejection::NoJob)
-             : cancel->job != 0 && (cancel->job == job_ || cancel->job == measurementJob_)
+        return job_ == 0 && measurementJob_ == 0 && needlesJob_ == 0 ? rejected (Rejection::NoJob)
+             : cancel->job != 0 && (cancel->job == job_ || cancel->job == measurementJob_ || cancel->job == needlesJob_)
                  ? Checked {} : rejected (Rejection::UnknownJob);
     if (const auto* forget = std::get_if<command::Forget> (&request))
     {
@@ -329,39 +347,74 @@ Answer Session::apply (const Request& request) noexcept
     if (const auto* load = std::get_if<command::Load> (&request))
     {
         const Pcm& pcm = load->pcm;
+        Fnv hash;
+        hash.u32 (pcm.sampleRate); hash.u32 (pcm.channelCount); hash.u64 (pcm.frames);
+        for (std::uint32_t c = 0; c < pcm.channelCount; ++c)
+            for (std::size_t i = 0; i < std::size_t (pcm.frames); ++i) hash.u32 (std::bit_cast<std::uint32_t> (pcm.channels[c][i]));
+        const auto plan = detail::MeasurementPlan::storageFor (pcm, detail::MeasurementPlan::parametersFor (pcm));
+        const auto key = detail::MeasurementPlan::key (hash.h, plan.parameters, config::Config::versions().all, coreVersion(), version());
+        const bool cached = source_.channels != 0 && key == measurementKey_;
+        const auto previousState = state_;
+        const auto previousPlacement = devicesPlaced_;
+        const auto previousUnit = measurementUnit_;
+        const auto previousProgress = measurementProgress_;
+        const auto previousBitDepth = source_.bitDepth;
         // The name first, into an array of its own: it may be the name this session holds (a shell that loads again
         // under source().name), which the disarm below frees.
         const std::string_view given = load->meta.name;
         std::unique_ptr<char[]> name (given.empty() ? nullptr : new char[given.size()]);
         std::copy (given.begin(), given.end(), name.get());
-        // DISARM: nothing of the old source stays beside the new — the master being made stops, the masters and the
-        // measurements go, the manual mode is switched off and a person's device edits go with it (the mode does not
-        // outlive the file: its edits were decisions about the old source), and the old samples are freed before the
-        // new are asked for.
+        // End mastering and source-specific edits. A matching measurement key keeps PCM and results;
+        // otherwise release the previous measurement before allocating the new source.
         mastering_ = false;
         job_ = 0;
         jobRecipe_ = {};
         masters_.reset();
         masterCount_ = 0;
         masterRoom_ = 0;
-        samples_.reset();
+        clearNeedles();
+        needlesSource_ = 0; needlesKey_ = 0; needlesNeedDb_.reset(); needlesCeilingDb_.reset();
+        needlesProgress_ = {}; needlesDemand_ = {};
+        if (! cached)
+        {
+            measurementsFromSidecar_ = false;
+            samples_.reset();
+            waveform_.reset (new detail::WaveformState);
+            queryCache_.reset();
+            measurementWorkspace_.reset (new detail::MeasurementWorkspace);
+            liveMeasurements_.reset (new detail::LiveMeasurements);
+            sourceMeasurements_.reset (new detail::SourceMeasurements);
+            measurementOwnedBytes_ = 0;
+            for (std::size_t i = 0; i < kAnalyzers; ++i)
+            {
+                measurementOwners_[i] = {};
+                measurementResults_[i] = {};
+                auto& r = measurementResults_[i];
+                r.analyzer = Analyzer (i);
+                r.key = r.analyzer == Analyzer::Forensics ? detail::MeasurementPlan::forensicsKey (key, load->meta.bitDepth) : key;
+                if (! plan.analyzers[i].available)
+                {
+                    r.status = MeasurementStatus::Unavailable;
+                    r.reason = r.analyzer == Analyzer::Excursions ? MeasurementReason::Pending : MeasurementReason::Unsupported;
+                }
+            }
+        }
+        measurementKey_ = key;
+        measurementStorage_ = plan.storage;
         project_.core = version();
         differenceCount_ = 0;
         project_.manual = false;
+        devicesPlaced_ = cached && previousPlacement;
         project_.devices = {};                                      // unplaced: both layers, until the new source is measured
         // WRITE — one array of exactly the samples, then a copy into it.
         const auto frames = std::size_t (pcm.frames);   // fits: check() refused a source past what size_t counts
-        std::unique_ptr<float[]> samples (new float[frames * pcm.channelCount]);
-        Fnv hash;
-        hash.u32 (pcm.sampleRate);
-        hash.u32 (pcm.channelCount);
-        hash.u64 (pcm.frames);
-        for (std::uint32_t c = 0; c < pcm.channelCount; ++c)
+        if (! cached)
         {
-            std::copy (pcm.channels[c], pcm.channels[c] + frames, samples.get() + std::size_t (c) * frames);
-            for (std::size_t i = 0; i < frames; ++i) hash.u32 (std::bit_cast<std::uint32_t> (pcm.channels[c][i]));
+            std::unique_ptr<float[]> samples (new float[frames * pcm.channelCount]);
+            for (std::uint32_t c = 0; c < pcm.channelCount; ++c)
+                std::copy_n (pcm.channels[c], frames, samples.get() + std::size_t (c) * frames);
+            samples_ = std::move (samples);
         }
-        samples_ = std::move (samples);
         name_ = std::move (name);
         source_ = { pcm.channelCount, pcm.sampleRate, pcm.frames, hash.h, load->meta.fileRate, load->meta.rateKnown,
                     load->meta.bitDepth, std::string_view (name_.get(), given.size()) };
@@ -370,7 +423,34 @@ Answer Session::apply (const Request& request) noexcept
         measurementUnit_ = masterUnit_ = 0;
         measurementProgress_ = { PhaseName::Stream, 0.0, config::Config::versions().all, 0, 0, 0, 10 };
         masterProgress_ = {};
+        if (cached)
+        {
+            state_ = previousState == State::MeasurementStopped ? stoppedState_ : previousState;
+            measurementUnit_ = previousUnit;
+            measurementProgress_ = previousProgress;
+            if (state_ == State::Measured2 || (sourceMeasurements_ && sourceMeasurements_->finished)) measurementJob_ = 0;
+            for (auto& r : measurementResults_)
+                if (r.analyzer != Analyzer::Excursions && r.status == MeasurementStatus::Cancelled) { r.status = MeasurementStatus::Pending; r.reason = MeasurementReason::Pending; }
+            if (placed()) detail::placeMachine (rules, project_.target, source_.channels, project_.devices, capabilities_.offeredDevices);
+            // The PCM's results stay. Forensics also reads the file's bit depth: under another depth its unused low bits
+            // are recomputed from the retained grid, and it is another result, under its own key, published as one.
+            if (source_.bitDepth != previousBitDepth)
+            {
+                auto& forensics = measurementResults_[std::size_t (Analyzer::Forensics)];
+                forensics.key = detail::MeasurementPlan::forensicsKey (key, source_.bitDepth);
+                if (sourceMeasurements_)
+                    if (auto& evidence = sourceMeasurements_->results[std::size_t (Analyzer::Forensics)]; evidence)
+                        (void) detail::SourceResults::forensicsMetadata (*evidence, source_.bitDepth);
+                Notification event;
+                event.kind = EventKind::Measurement;
+                event.payload.measurement = { forensics.analyzer, forensics.status, forensics.reason, forensics.key, source_.hash,
+                                              0, forensics.framesRead, forensics.total, forensics.stored, forensics.complete };
+                emit (event);                                   // its revision is the command's, set below
+            }
+        }
         answer.job = measurementJob_;
+        // A reload of the same source asks at once, whatever its readings: the result then says why nothing runs.
+        if (cached || mandatoryReady()) requestNeedles();
     }
     else if (const auto* set = std::get_if<command::SetTarget> (&request))
     {
@@ -428,21 +508,37 @@ Answer Session::apply (const Request& request) noexcept
             masterRoom_ = masterCount_ + 1;
         }
         job_ = ++lastJob_;
-        jobRecipe_ = { project_, source_.hash, config::Config::versions().sound };
+        const bool waitTempo = masterRequiresTempo() && ! tempoForDevice().ready;
+        // A waiting master freezes its recipe only after the needed result is terminal.
+        jobRecipe_ = waitTempo ? Recipe {} : Recipe { project_, source_.hash, config::Config::versions().sound };
         mastering_ = true;
         masterUnit_ = 0;
         const auto passes = std::uint32_t (*rules.engine.find ("progress").find ("master").find ("expectedPasses").integer());
-        masterProgress_ = { PhaseName::Pass, 0.0, config::Config::versions().all, 0, passes, 0, passes + 1 };
+        const auto chunks = (source_.frames + 1023u) / 1024u;
+        const auto waitUnits = std::uint32_t (std::min<std::uint64_t> (3u * chunks + 64u, 4294967295u));
+        masterProgress_ = { waitTempo ? PhaseName::Analyzers : PhaseName::Pass, 0.0,
+            config::Config::versions().all, 0, passes, 0, waitTempo ? waitUnits : passes + 1u };
         answer.job = job_;
+    }
+    else if (std::holds_alternative<command::ContinueMeasurement> (request))
+    {
+        answer.job = detail::Driver::continueMeasurement (*this);
+        --revision_; // the command publishes its single revision below
+        Notification event; event.jobId = answer.job; event.kind = EventKind::Phase;
+        event.payload.phase = measurementProgress_; emit (event);
     }
     else if (const auto* cancel = std::get_if<command::Cancel> (&request))
     {
+        const auto progress = jobProgress (cancel->job);
+        // The fact names the job that stopped: needles or a master cancelled while the measurement is stopped are
+        // cancelled, not a measurement stopped again.
+        const bool measurement = cancel->job == measurementJob_;
         dropJob (cancel->job);
         Notification event;
         event.jobId = cancel->job;
         event.kind = EventKind::Fact;
-        (void) event.payload.fact.assign (text::Fact::of (text::FactId::Cancelled));
-        emit (event);
+        (void) event.payload.fact.assign (text::Fact::of (measurement ? text::FactId::MeasurementStopped : text::FactId::Cancelled));
+        emit (event, progress);
     }
     else if (const auto* forget = std::get_if<command::Forget> (&request))
     {
@@ -474,8 +570,15 @@ Answer Session::apply (const Request& request) noexcept
             emit (event);
         }
     }
+    if (std::holds_alternative<command::SetTarget> (request) || std::holds_alternative<command::EditTarget> (request)
+        || std::holds_alternative<command::ImportProject> (request)) requestNeedles();
     refreshEqCurve();
     answer.revision = ++revision_;
+    for (std::size_t i = 0; i < eventCount_; ++i)
+    {
+        events_[i].revision = revision_;
+        if (events_[i].kind == EventKind::Measurement) events_[i].payload.measurement.revision = revision_;
+    }
     return answer;
 }
 
@@ -484,6 +587,45 @@ Answer Session::apply (const Request& request) noexcept
 
 namespace detail
 {
+bool Driver::retain (Session& session, JobId job, const MeasurementResult& result) noexcept
+{
+    if (result.analyzer == Analyzer::Excursions || job == 0 || job != session.measurementJob_
+        || result.framesRead > session.source_.frames
+        || Session::checkFloatingPointEnvironment() != Status::Ok || ! OwnedMeasurements::valid ({ &result, 1 })) return false;
+    const auto i = std::size_t (result.analyzer);
+    // The identity of this analyzer's result for the current source (forensics: its bit depth too).
+    if (result.key != session.measurementResults_[i].key) return false;
+    if (session.measurementResults_[i].status == MeasurementStatus::Ready) return false;
+    const auto bytes = OwnedMeasurements::storageFor ({ &result, 1 });
+    const Pcm pcm { nullptr, session.source_.channels, session.source_.frames, session.source_.sampleRate };
+    const auto plan = MeasurementPlan::storageFor (pcm, MeasurementPlan::parametersFor (pcm));
+    if (bytes > plan.analyzers[i].result || session.demand (storage (bytes, bytes)).rejection != Rejection::None) return false;
+    auto copy = OwnedMeasurements::copy ({ &result, 1 });
+    session.measurementOwnedBytes_ -= OwnedMeasurements::storageFor (session.measurementOwners_[i].view());
+    session.measurementOwnedBytes_ += bytes;
+    session.measurementOwners_[i] = std::move (copy);
+    session.measurementResults_[i] = session.measurementOwners_[i].view()[0];
+    if (result.status != MeasurementStatus::Pending && session.measurementWorkspace_)
+        session.measurementWorkspace_->release (result.analyzer);
+    ++session.revision_;
+    Notification event; event.jobId = job; event.kind = EventKind::Measurement;
+    event.payload.measurement = { result.analyzer, result.status, result.reason, result.key, session.source_.hash,
+                                  session.revision_, result.framesRead, result.total, result.stored, result.complete };
+    session.emit (event);
+    if (result.analyzer == Analyzer::Loudness && session.placed()) session.requestNeedles();
+    return true;
+}
+JobId Driver::continueMeasurement (Session& session) noexcept
+{
+    if (session.source_.channels == 0 || session.measurementJob_ != 0 || session.state_ == State::Measured2
+        || session.lastJob_ == std::numeric_limits<JobId>::max() || Session::checkFloatingPointEnvironment() != Status::Ok) return 0;
+    if (session.state_ == State::MeasurementStopped) session.state_ = session.stoppedState_;
+    session.measurementJob_ = ++session.lastJob_;
+    for (auto& r : session.measurementResults_)
+        if (r.analyzer != Analyzer::Excursions && r.status == MeasurementStatus::Cancelled) { r.status = MeasurementStatus::Pending; r.reason = MeasurementReason::Pending; }
+    ++session.revision_;
+    return session.measurementJob_;
+}
 bool Driver::allowed (const Session& session, Event event) noexcept
 {
     return Table::events[index (event)].cell[index (session.column())];
@@ -494,9 +636,11 @@ bool Driver::measured1 (Session& session, JobId job, std::uint64_t source) noexc
     if (job == 0 || job != session.measurementJob_ || source != session.source_.hash) return false;
     if (Session::checkFloatingPointEnvironment() != Status::Ok || ! allowed (session, Event::Measured1)) return false;
     session.state_ = State::Measured1;
+    session.devicesPlaced_ = true;
     session.measurementUnit_ = 5;
     detail::placeMachine (detail::rules(), session.project_.target, session.source_.channels, session.project_.devices, session.capabilities_.offeredDevices);
     session.refreshEqCurve();
+    session.requestNeedles();
     ++session.revision_;
     return true;
 }

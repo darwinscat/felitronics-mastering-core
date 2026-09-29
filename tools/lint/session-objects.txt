@@ -34,7 +34,9 @@ undefined  elf     ^__(memcpy|memmove|memset)_chk$  the same under _FORTIFY_SOUR
 undefined  all     ^__stack_chk_(fail|guard)$       the stack protector, which distributions turn on by default
 undefined  elf     ^__stack_chk_fail_local$         the stack protector, 32-bit
 undefined  elf     ^_GLOBAL_OFFSET_TABLE_$          a relocation base the linker defines, not code
-undefined  macho   ^__chkstk_darwin$                Apple clang stack probing for the bounded integer JSON conversion scratch
+undefined  macho   ^memset_pattern16$                Apple clang emits a repeating 16-byte memory fill for analyzer buffers
+undefined  macho   ^(__chkstk_darwin|___chkstk_darwin)$    Apple clang stack probing for bounded scratch; clang 14 Intel emits the extra-underscore spelling
+undefined  macho   ^__bzero$                        Apple clang 14 Intel emits the LibSystem zero-fill entry for value-initialized buffers
 undefined  coff    ^(_fltused|__security_check_cookie|__security_cookie|__GSHandlerCheck|__chkstk)$    MSVC's floating-point marker, /GS and the stack probe
 undefined  coff    ^_RTC_                           MSVC's run-time checks in a debug build
 undefined  wasm    ^(__stack_pointer|__memory_base|__table_base|__indirect_function_table)$    the linear memory's own registers
@@ -46,16 +48,21 @@ writable   coff    ^_Avx2WmemEnabledWeakValue$      the STL's own dispatch flag 
 # --- admit: what the standard library compiles out of line for those, per library, and the exact libm calls of storageFor
 undefined  all     ^(memchr|wmemchr|strlen)$        std::find and char_traits over chars and 4-byte integers: a search of memory
 undefined  all     ^(__imp_)?(floor|ceil|lround|llround)$    rounding to an integer is exact — one answer from every libm (the det-math lint governs the inexact calls); the analyzers' storageFor rounds a hop to whole samples, its argument bounded first
+undefined  all     ^(__imp_)?fmin$               PeakExcursions ceiling-density bounds: exact selection of finite nonnegative histogram widths
 undefined  all     ^(__imp_)?(sqrt|fabs)$          the EQ response's nonnegative square roots and absolute values: correctly rounded IEEE sqrt and exact sign clearing; compilers may emit library entries
 undefined  all     ^_ZNK?St3__[12]12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE    std::string's members, which libc++ compiles once in its own library (an extern template): copies, appends, growth
 undefined  all     ^_ZNK?St7__cxx1112basic_stringIcSt11char_traitsIcESaIcEE    ...and the ones libstdc++ compiles once in its own library, the same way (gcc 14 keeps the cold path of a replace there: the text's gate joins key paths with it)
 undefined  all     ^abort$                          libc++ with exceptions off: a string or a vector asked to grow past max_size() ends the process, as a heap that cannot serve operator new does
 undefined  all     ^_ZSt(17__throw_bad_allocv|20__throw_length_errorPKc|19__throw_logic_errorPKc|24__throw_out_of_range_fmtPKcz)$    libstdc++'s out-of-line throws behind the same limits (and a string built from a null pointer, an index past the end): an allocation or a length the process cannot serve, as operator new's
+undefined  elf     ^_ZSt28__throw_bad_array_new_lengthv$    libstdc++'s allocator length-overflow termination path, also emitted with exceptions disabled
 undefined  coff    ^(_CxxThrowException|__std_exception_copy|__std_exception_destroy)$    MSVC's STL throws behind the same limits even under /EHs-c- (std::bad_alloc, std::bad_array_new_length): the throw itself
 undefined  coff    ^(\?_X(length_error|out_of_range)@std@@YAXPEBD@Z|__imp__invoke_watson)$    ...its out-of-line length and index checks, and the invalid-parameter end of the process
 undefined  coff    ^(\?\?_7type_info@@6B@|__ImageBase)$    ...and what a throw's metadata points at: type_info's vtable and the image base its offsets count from
 undefined  coff    ^__std_(find_trivial|max_element|min_element|minmax_element|max|min|minmax)_[1248][iu]?$    the STL's vectorised std::find and std::max_element family, compiled once in its own library (pure computation; the element width and signedness suffix differs between MSVC releases)
-undefined  coff    ^_dclass$                        the UCRT's fpclassify, behind std::isfinite and std::isnan: a classification, exact
+undefined  coff    ^__std_(max|min)_element_d_?$    MSVC's pure double comparison over the finite measurement byte demands (the STL of VS 2026, MSVC 14.51, spells its floating-point entries with a trailing underscore: `__std_max_element_d_`)
+undefined  coff    ^__std_swap_ranges_trivially_swappable_noalias$    the STL's vectorised std::swap_ranges (std::swap of two arrays of trivially swappable elements), compiled once in its own library (MSVC 14.51 calls it from SourceMeasurements; 14.44 inlines the swap): an exchange of two disjoint memory ranges
+undefined  coff    ^_(dclass|fdclass)$              the UCRT's double and float fpclassify, behind std::isfinite and std::isnan: a classification, exact
+undefined  coff    ^__isa_available$               the CRT's CPU capability flag, read by MSVC's STL to select equivalent integer bit-count instructions
 undefined  coff    ^(__imp_)?_dsign$                the UCRT's signbit, behind felitronics-toml's Decimal::fromDouble (a knob's value read as a decimal, src/Grid.h): a bit read, exact
 writable   coff    ^\?\?_R0\?AV(exception|bad_alloc|bad_array_new_length)@std@@@8$    the type descriptors of the exceptions MSVC's STL throws on a failed allocation: a throw's metadata, which MSVC keeps in writable .data$r (a type_info caches its name there); the session neither reads nor writes them
 
@@ -63,7 +70,7 @@ writable   coff    ^\?\?_R0\?AV(exception|bad_alloc|bad_array_new_length)@std@@@
 # --- decorated name. A lock the debug STL takes around its iterator bookkeeping is not a thread: the session creates none,
 # --- and calls are made from one thread at a time (docs/SESSION.md). None of these exists in a Release build.
 undefined  coff-debug  ^__imp__CrtDbgReport$                            the debug runtime's report of a failed debug check (_ASSERTE, the debug STL's iterator checks)
-undefined  coff-debug  ^__imp__dtest$                                   the debug UCRT's out-of-line classification of a double (fpclassify), exact
+undefined  coff-debug  ^__imp__(dtest|fdtest)$                          the debug UCRT's out-of-line double and float classification (fpclassify), exact
 undefined  coff-debug  ^__imp_\?\?0_Lockit@std@@QEAA@H@Z$               std::_Lockit::_Lockit(int): the debug STL's lock around its iterator bookkeeping
 undefined  coff-debug  ^__imp_\?\?1_Lockit@std@@QEAA@XZ$                std::_Lockit::~_Lockit(): its release
 
@@ -83,3 +90,6 @@ writable   san     ^_*(asan|ubsan|lsan|sanitizer)   ASan's registration flag and
 
 # --- the C boundary on the wasm tier bounds a page's pointers by the heap's size
 undefined  facade-wasm  ^emscripten_get_heap_size$  the out-pointer's span check (fc_session.cpp, inHeap)
+
+undefined all ^_ZNSt3__[12]6__sortIRNS_6__lessIddEEPdEEvT0_S5_T_$ libc++'s pure double sort, used by hum finish over its prepared spectral bins
+undefined all ^__muldc3$ compiler-rt complex multiplication, used by the LR4 filter response; pure IEEE arithmetic

@@ -896,6 +896,7 @@ void readProgress (Doc& d, Reader& in, Progress& o)
             w.required ("loudness", a.loudness, ms);
             w.required ("report", a.report, ms);
             w.required ("lowEnd120", a.lowEnd120, ms);
+            w.required ("lowEnd150", a.lowEnd150, ms);
             w.required ("forensics", a.forensics, ms);
             w.required ("stereo", a.stereo, ms);
             w.required ("lowEndSweep", a.lowEndSweep, ms);
@@ -903,8 +904,10 @@ void readProgress (Doc& d, Reader& in, Progress& o)
             w.required ("crest", a.crest, ms);
             w.required ("hum", a.hum, ms);
             w.required ("tempo", a.tempo, ms);
-            if (! (a.loudness + a.report + a.lowEnd120 + a.forensics + a.stereo + a.lowEndSweep
-                   + a.stereoBursts + a.crest + a.hum + a.tempo > 0)) d.outOfRange (t, "weights");
+            w.required ("waveformIndex", a.waveformIndex, ms);
+            w.required ("excursionsIndex", a.excursionsIndex, ms);
+            if (! (a.loudness + a.report + a.lowEnd120 + a.lowEnd150 + a.forensics + a.stereo + a.lowEndSweep
+                   + a.stereoBursts + a.crest + a.hum + a.tempo + a.waveformIndex + a.excursionsIndex > 0)) d.outOfRange (t, "weights");
         });
     });
     in.table ("master", Need::Required, [&] (Reader& t)
