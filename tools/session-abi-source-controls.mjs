@@ -2,8 +2,7 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 // Mutate an isolated source copy, regenerate, compile, execute and compare. Hosts can retain the copy.
-import {cpSync, existsSync, mkdtempSync, readFileSync, statSync, utimesSync, writeFileSync, rmSync} from 'node:fs';
-import {tmpdir} from 'node:os';
+import {copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, utimesSync, writeFileSync, rmSync} from 'node:fs';
 import {join, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
@@ -29,12 +28,16 @@ if (process.argv[2] === '--self-test') {
 const root = fileURLToPath(new URL('../', import.meta.url));
 // A Windows checkout may carry CRLF line endings; a multi-line anchor is written with \n and follows the file's.
 const inCheckoutEol = (text, s) => text.includes('\r\n') ? s.replaceAll('\r\n', '\n').replaceAll('\n', '\r\n') : s;
-const cache = readFileSync(join(resolve(process.argv[2] ?? 'build'), 'CMakeCache.txt'), 'utf8');
+const parentBuild = resolve(process.argv[2] ?? 'build');
+const cache = readFileSync(join(parentBuild, 'CMakeCache.txt'), 'utf8');
 const value = key => new RegExp(`^${key}:[^=]*=(.*)$`, 'm').exec(cache)?.[1]?.trim();
 const option = name => { const i = process.argv.indexOf(name); return i < 0 ? undefined : process.argv[i + 1]; };
 // Hosts can retain every artifact under their job; normal CI/local runs clean up their temporary copy.
+// THE COPY LIVES IN THE BUILD TREE, NEVER UNDER THE SYSTEM'S TEMPORARY DIRECTORY: MSBuild's file tracking does not record
+// what a compile reads there (warning MSB8029), so a mutated header left the library's objects stale and the probe linked
+// the old code — the JSON addition below failed on windows-latest for exactly that. Every build refuses MSB8029.
 const retain = option('--retain-work');
-const temporary = mkdtempSync(join(retain ? resolve(retain) : tmpdir(), 'session-abi-source-'));
+const temporary = mkdtempSync(join(retain ? resolve(retain) : parentBuild, 'session-abi-source-'));
 const configuration = option('--config') || value('CMAKE_BUILD_TYPE') || '';
 const multi = Boolean(value('CMAKE_CONFIGURATION_TYPES'));
 const buildArgs = ['--build', join(temporary, 'build'), '--config', configuration, '-j', '8', '--target'];
@@ -63,10 +66,26 @@ function writeSource(path, text) {
 function run(command, args) {
     const result = spawnSync(command, args, {encoding:'utf8', maxBuffer:8*1024*1024});
     assert.equal(result.status, 0, `${command} ${args.join(' ')}\n${result.stdout}\n${result.stderr}`);
+    assert(!/\bMSB8029\b/.test(result.stdout + result.stderr),
+        `${command} ${args.join(' ')}: MSBuild does not track header reads under the temporary directory (MSB8029) — a mutated header would leave stale objects`);
     return result.stdout;
 }
 try {
-    cpSync(root, source, {recursive:true, filter:p => ! /(?:^|\/)(?:build(?:-[^/.]+)?|\.git)(?:\/|$)/.test(p.slice(root.length).split(sep).join('/'))});
+    // The tree without its build directories and version control, and without the copy itself: the parent build — and
+    // with it this copy — may sit inside the source tree (CI's `-B build`), which a plain recursive copy cannot skip.
+    const skipped = p => p === parentBuild || p === temporary
+        || /(?:^|\/)(?:build(?:-[^/.]+)?|\.git)(?:\/|$)/.test(p.slice(root.length).split(sep).join('/'));
+    const copyTree = (from, to) => {
+        mkdirSync(to, {recursive:true});
+        for (const entry of readdirSync(from, {withFileTypes:true})) {
+            const path = join(from, entry.name);
+            if (skipped(path)) continue;
+            if (entry.isDirectory()) copyTree(path, join(to, entry.name));
+            else if (entry.isFile()) copyFileSync(path, join(to, entry.name));
+            else throw Error(`source control copy: ${path} is neither a file nor a directory`);
+        }
+    };
+    copyTree(resolve(root), source);
     const inherited = ['CMAKE_TOOLCHAIN_FILE', 'CMAKE_C_COMPILER', 'CMAKE_CXX_COMPILER', 'CMAKE_MAKE_PROGRAM',
         'CMAKE_GENERATOR_INSTANCE', 'CMAKE_OSX_ARCHITECTURES', 'CMAKE_OSX_DEPLOYMENT_TARGET', 'CMAKE_OSX_SYSROOT',
         'CMAKE_MSVC_RUNTIME_LIBRARY', 'CMAKE_CXX_COMPILER_TARGET', 'CMAKE_CXX_COMPILER_EXTERNAL_TOOLCHAIN',
