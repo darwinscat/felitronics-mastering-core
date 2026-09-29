@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+### session — ready master job and owned audio transfer
+
+An additive `fc_session_master` entry takes frozen, versioned mastering topology and parameters with a source and revision fence. The session prices the job before allocating, drives the twelve-pass landing search in work units, and keeps the selected delivery PCM with its recipe and compact measurement rows. A target edit leaves the running recipe intact. Cancellation removes only unfinished work; a new source invalidates old transfers. `fc_session_master_audio_*` reports shape, copies, provides a scoped wasm view for one independent `ArrayBuffer` copy, and releases session PCM explicitly. The frozen v1 JSON Master command retains its original behavior for existing callers; new callers use the ready entry. Appended snapshot and codec fields carry conservative decode defaults.
+
 ### mastering · session — aligned limiter and K13 traces
 
 The limiter's existing oversampled K13 clipper now exposes its reduction as a time tap without changing

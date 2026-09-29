@@ -570,6 +570,18 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.fileValue)>, double>);
         v.field ("fileValue", x.fileValue);
     }
+    else if constexpr (std::is_same_v<U, MasterToken>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.job)>, std::uint32_t>);
+        v.field ("job", x.job);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.master)>, std::uint32_t>);
+        v.field ("master", x.master);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.revision)>, std::uint64_t>);
+        v.field ("revision", x.revision);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.source)>, std::uint64_t>);
+        v.field ("source", x.source);
+    }
     else if constexpr (std::is_same_v<U, MeasuredSource>)
     {
         [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9] = x;
@@ -846,9 +858,15 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, Recipe>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.deliveryRateHz)>, std::uint32_t>);
+        v.optionalField ("deliveryRateHz", x.deliveryRateHz, std::uint32_t {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.project)>, Project>);
         v.field ("project", x.project);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.readyHash)>, std::uint64_t>);
+        v.optionalField ("readyHash", x.readyHash, std::uint64_t {});
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.readyVersion)>, std::uint32_t>);
+        v.optionalField ("readyVersion", x.readyVersion, std::uint32_t {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sound)>, std::uint64_t>);
         v.field ("sound", x.sound);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.source)>, std::uint64_t>);
@@ -888,9 +906,11 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, SnapshotView>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32, f33, f34, f35, f36, f37, f38] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32, f33, f34, f35, f36, f37, f38, f39, f40, f41] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.canContinueMeasurement)>, bool>);
         v.optionalField ("canContinueMeasurement", x.canContinueMeasurement, false);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.canMaster)>, bool>);
+        v.optionalField ("canMaster", x.canMaster, false);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.devicesPlaced)>, bool>);
         v.optionalField ("devicesPlaced", x.devicesPlaced, false);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.eqCurve)>, std::span<const EqPoint>>);
@@ -947,6 +967,10 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.optionalField ("needlesSource", x.needlesSource, std::uint64_t {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.offeredDevices)>, std::uint32_t>);
         v.field ("offeredDevices", x.offeredDevices);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.pendingMaster)>, MasterToken>);
+        v.optionalField ("pendingMaster", x.pendingMaster, MasterToken {});
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.pendingMasterBytes)>, double>);
+        v.optionalField ("pendingMasterBytes", x.pendingMasterBytes, 0.0);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.project)>, Project>);
         v.field ("project", x.project);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.revision)>, std::uint64_t>);

@@ -133,6 +133,8 @@ enum class FactId : std::uint16_t
     RejectedMemory = 130,
 
     RejectedContract = 131,
+    RejectedOutputPending = 132,
+    RejectedMandatoryUnavailable = 133,
 
     Measurement1 = 200,
     Measurement2 = 201,

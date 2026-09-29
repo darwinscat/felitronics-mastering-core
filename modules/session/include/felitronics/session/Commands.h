@@ -4,6 +4,7 @@
 #pragma once
 
 #include <felitronics/session/Project.h>
+#include <felitronics/mastering/MasteringChain.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -87,6 +88,8 @@ enum class Rejection : std::uint8_t
     RateAboveLimit,             // above the shell's maxRateHz
     Memory,                     // live bytes plus demand exceeds capacity, or a block cannot fit
     Contract,                   // malformed command or metadata at the protocol boundary
+    OutputPending,              // the previous master still owns transferable PCM
+    MandatoryUnavailable,       // the source LUFS or true peak is not usable
 };
 
 using CommandId = std::uint64_t;   // the shell's own number for a request, given back in its answer
@@ -135,7 +138,17 @@ struct EditTarget  { CommandId id = 0; TargetFields<Touched> fields {}; };
 struct EditDevice  { CommandId id = 0; DeviceEdit fields {}; };
 struct RevertEdits { CommandId id = 0; DeviceMask fields {}; };
 struct SetManual   { CommandId id = 0; bool on = false; };
-struct Master      { CommandId id = 0; };
+// Version 0 uses the compiled defaults for older callers. Version 1 carries the
+// ready topology and parameters supplied by Decide; it is a job input, not Project.
+struct MasterReady
+{
+    std::uint32_t version = 0;
+    mastering::MasteringChainConfig topology {};
+    mastering::MasteringChainParams params {};
+    std::uint32_t deliveryRateHz = 0; // 0: source rate
+    std::uint8_t deliveryBits = 0;    // 0: parameter default
+};
+struct Master      { CommandId id = 0; MasterReady ready {}; std::uint64_t source = 0, revision = 0; };
 struct Cancel      { CommandId id = 0; JobId job = 0; };
 struct Forget      { CommandId id = 0; MasterId master = 0; };
 struct ContinueMeasurement { CommandId id = 0; };

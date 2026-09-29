@@ -92,3 +92,9 @@ undefined  facade-wasm  ^emscripten_get_heap_size$  the out-pointer's span check
 
 undefined all ^_ZNSt3__[12]6__sortIRNS_6__lessIddEEPdEEvT0_S5_T_$ libc++'s pure double sort, used by hum finish over its prepared spectral bins
 undefined all ^__muldc3$ compiler-rt complex multiplication, used by the LR4 filter response; pure IEEE arithmetic
+undefined all ^(atan2|atanf|cos|cosh|exp|exp2|hypot|log|log10|nextafterf|pow|sin|tan|tanhf)$ finite DSP coefficient and meter math in the prepared mastering chain and landing search
+undefined macho ^(__divdc3|__exp10|__sincos_stret)$ Apple compiler and libm helpers for the same mastering coefficient and meter math
+undefined elf ^(__divdc3|cexp|sincos|csqrt|cabs|fmax|fmaxf|sqrtf|roundf)$ GCC and libm helpers for the prepared mastering coefficient, response and meter math
+undefined coff ^(__imp_)?(copysign|fmax|fmaxf|hypot|ldexp|nextafterf|atanf|sqrtf|tanhf|roundf)$ UCRT helpers for the same prepared mastering coefficient, response and meter math
+undefined coff ^_Exp$ MSVC STL exp helper in the prepared mastering coefficient path
+undefined coff ^__std_swap_ranges_trivially_swappable_noalias$ MSVC STL's pure contiguous-range swap in retained trace storage

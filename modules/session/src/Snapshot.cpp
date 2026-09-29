@@ -162,6 +162,10 @@ SnapshotView Session::buildView() const noexcept
     v.tempoChoice = tempoForDevice();
     v.measurementsFromSidecar = measurementsFromSidecar_;
     v.sourceMissingAudio = source_.channels != 0 && ! samples_;
+    v.canMaster = mandatoryReady() && pendingMaster_.master == 0
+        && storageFor (command::Master {}).rejection == Rejection::None;
+    v.pendingMaster = pendingMaster_;
+    v.pendingMasterBytes = double (masterAudioBytes (pendingMaster_));
     v.devicesPlaced = placed();
     v.canContinueMeasurement = state_ == State::MeasurementStopped;
     v.measurementResumeState = v.canContinueMeasurement ? stoppedState_ : State::Empty;

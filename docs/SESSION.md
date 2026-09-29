@@ -1122,3 +1122,32 @@ The table distinguishes measured sources with unplaced devices, including master
 Mastering depends on measurements; edit, revert and import depend on placement through their table cells.
 Cached PCM reloads schedule needles from mandatory readiness. Bit-depth changes refresh unused-bit
 readings from the retained exact PCM grid without allocating or repeating source analysis.
+
+## Ready master job and audio ownership
+
+The additive `fc_session_master_bytes` and `fc_session_master` calls accept a current v14 `fc_master_config`
+and `fc_master_params`. Their source hash and revision must match the session before the facade maps the
+ready values. C++ callers use `command::Master` with `ready.version = 1`; version zero preserves the frozen
+v1 command behavior. The ready call freezes the project, source, sound-config version, all topology and
+parameter bits, and delivery rate in its recipe. The project can be edited while the job runs without
+changing that recipe. A new source or an explicit cancel stops unfinished work and fences its old identity.
+
+Ready preflight requires retained PCM and finite completed integrated loudness and true peak. It prices
+the chain, renderer, converter when needed, solver, search workspace, output PCM, compact rows, and
+allocator margin before any job allocation. `step` advances the search by bounded work units; one
+landing has at most twelve measured passes. A safe miss retains the best verified output and its typed
+reason. Unavailable mandatory readings or an unsafe true peak yield no transferable PCM. Optional
+source analyzers continue independently. `canMaster` in the snapshot reports state and mandatory
+readiness; capacity is reported by the preflight demand. The snapshot also exposes the pending transfer
+token and PCM byte count. Appended fields decode as absent on older v1 snapshots.
+
+One session owns at most one pending delivery PCM. Its `MasterToken` names source, completion revision,
+job, and master; every transfer checks all four. The retained master list owns recipe and compact pass,
+limiter, and peak-clip rows, but no previous full PCM. Native callers can `copyMaster`, move it through
+`takeMaster`, or `releaseMaster`. A successful take or release frees the session's PCM claim and advances
+the revision; the caller owns the moved allocation after take. The C facade exposes size, copy, a scoped
+view, and release. A wasm shell constructs a view from the returned address, calls `.slice()` once into
+an independent `ArrayBuffer`, releases the session PCM, and transfers only that independent buffer.
+The heap view expires on the next module call or `memory.grow`; the shell must discard it immediately.
+Forgetting a master releases its pending PCM, while other masters keep only metadata. A poisoned wasm
+instance is discarded and rebuilt by replay; ordinary cancellation is a session command.

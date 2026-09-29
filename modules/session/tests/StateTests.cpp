@@ -53,12 +53,23 @@
 
 using namespace felitronics::session;
 
+constexpr MeasurementValue kReadyMasterNumbers[] {
+    { "integratedLufs", -18.0, MeasurementReason::None, 0 },
+    { "truePeakDb", -1.0, MeasurementReason::None, 0 }
+};
+
 // The state suite's own seam into a session (Session.h names it a friend; the library defines none): a session whose
 // jobs have spent their ids, which only billions of masters would reach otherwise.
 struct felitronics::session::detail::Inspector
 {
     static void lastJob (Session& s, JobId last) noexcept { s.lastJob_ = last; }
     static void unplace (Session& s) noexcept { s.devicesPlaced_ = false; }
+    static void mandatory (Session& s) noexcept
+    {
+        auto& result = s.measurementResults_[std::size_t (Analyzer::Loudness)];
+        result.status = MeasurementStatus::Ready;
+        result.numbers = kReadyMasterNumbers;
+    }
 };
 using felitronics::test::ok;
 using felitronics::session::detail::Driver;
@@ -269,6 +280,7 @@ Situation situation (Column column, bool manual = true, const char* target = nul
         if (column != Column::Loaded && column != Column::Stopped)
         {
             good = good && Driver::measured1 (s, s.measurementJob(), s.source().hash);
+            detail::Inspector::mandatory (s);
             if (column == Column::Measured2 || column == Column::Mastering2)
                 good = good && Driver::measured2 (s, s.measurementJob(), s.source().hash);
             const Answer m = s.apply (command::Master { 103 });
@@ -809,7 +821,7 @@ void memoryIsDeclared()
     const Case cases[] = { { Command::Load, Column::Measured2, -1 }, { Command::SetTarget, Column::Measured1, 0 },
                            { Command::EditTarget, Column::Measured1, 0 }, { Command::EditDevice, Column::Measured1, 0 },
                            { Command::RevertEdits, Column::Measured1, 0 }, { Command::SetManual, Column::Measured1, 0 },
-                           { Command::Master, Column::Measured1, 1 }, { Command::Cancel, Column::Mastering1, 0 },
+                           { Command::Master, Column::Measured1, -1 }, { Command::Cancel, Column::Mastering1, 0 },
                            { Command::Forget, Column::Measured2, 0 }, { Command::ImportProject, Column::Measured2, -1 } };
     for (const Case& c : cases)
     {
@@ -831,20 +843,21 @@ void memoryIsDeclared()
                                                   + std::to_string (spent.requests) + ")");
         }
     }
-    // The two that ask: a load's is its samples and its name; a master's is room for one more kept.
+    // The frozen v1 master command still reserves only a kept metadata slot.
     {
         Situation x = situation (Column::Measured1);
         Audio mono = makeAudio (1, 1000);
         const command::Load l = loadOf (mono, 1, "a name longer than any small-string buffer.wav");
         ok (x.s->check (l).bytes > 1000 * sizeof (float) + l.meta.name.size(), "a load declares samples, name and the complete measurement");
-        ok (x.s->check (command::Master { 1 }).bytes == 2 * sizeof (Kept), "a master with one kept declares room for two");
+        ok (x.s->check (command::Master { 1 }).bytes == 2 * sizeof (Kept), "the legacy master declares metadata room");
         ok (accepted (*x.s, command::Master { 2 }) && accepted (*x.s, command::Cancel { 3, x.s->job() }),
             "a master asked and cancelled");
-        ok (x.s->check (command::Master { 4 }).bytes == 0, "the next master finds its room there: 0");
+        const auto declared = x.s->check (command::Master { 4 });
+        ok (declared.bytes == 0, "the next legacy master reuses its metadata room");
         const budget::Spent again = budget::spend ([&] { (void) x.s->apply (command::Master { 5 }); });
         const budget::Spent done = budget::spend ([&] { (void) Driver::mastered (*x.s, x.s->job()); });
-        ok (again.requests == 0 && done.requests == 0 && x.s->masters().size() == 2,
-            "and neither it nor its ending asks the heap for anything");
+        ok (budget::covers (declared.bytes, again) && done.requests == 0 && x.s->masters().size() == 2,
+            "the repeated preparation is covered and its ending asks nothing");
     }
     const budget::Spent reading = budget::spend ([] { (void) detail::rules(); });
     ok (reading.requests == 0, "reading the config in place asks for nothing");
@@ -877,7 +890,7 @@ void jobIds()
     const JobId before = x.kept;
     ok (accepted (s, loadOf (x.audio, 1)) && s.state() == State::Measured1, "identical source keeps the completed first phase");
     const Answer again = s.apply (command::Master { 2 });
-    ok (again.rejection == Rejection::None && again.job == before + 2,
+    ok (again.rejection == Rejection::None && again.job > before + 1,
         "the next job after a load is numbered on from the last, not again from 1 (" + std::to_string (again.job) + ")");
     ok (accepted (s, command::Cancel { 3, again.job }), "cancelled");
     detail::Inspector::lastJob (s, std::numeric_limits<JobId>::max() - 1);

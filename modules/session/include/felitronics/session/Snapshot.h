@@ -48,6 +48,9 @@ struct SnapshotView
     TempoChoice tempoChoice {};
     bool measurementsFromSidecar = false;
     bool sourceMissingAudio = false;
+    bool canMaster = false;
+    MasterToken pendingMaster {};
+    double pendingMasterBytes = 0.0;
 };
 class Codec;
 // An immutable, owned value. view() remains valid until this value is moved or destroyed,

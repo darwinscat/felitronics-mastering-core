@@ -220,6 +220,14 @@ en = "The second measurement is complete."
 ru = "Мастер · проход {pass}"
 en = "Master · pass {pass}"
 
+[messages.rejectedOutputPending]
+ru = "Звук готового мастера ещё ожидает передачи или освобождения."
+en = "The completed master's audio is still awaiting transfer or release."
+
+[messages.rejectedMandatoryUnavailable]
+ru = "Обязательные замеры громкости и истинного пика недоступны для мастеринга."
+en = "The required loudness and true-peak measurements are unavailable for mastering."
+
 [messages.masterReady]
 ru = "Мастер готов."
 en = "The master is ready."

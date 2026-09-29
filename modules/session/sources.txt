@@ -6,6 +6,7 @@ src/BuildContract.cpp
 src/ConfigSchema.cpp
 src/Config.cpp
 src/Landing.cpp
+src/MasterJob.cpp
 src/Rules.cpp
 src/Devices.cpp
 src/Commands.cpp
