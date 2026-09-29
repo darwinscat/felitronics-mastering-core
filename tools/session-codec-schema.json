@@ -67,6 +67,24 @@
       "NeedNotAbove3",
       "Memory"
     ],
+    "LandingStatus": [
+      "Solved",
+      "TargetUnreachable",
+      "PassLimit",
+      "TargetBetweenAchievable",
+      "Unavailable",
+      "Cancelled",
+      "TechnicalFailure"
+    ],
+    "LandingReason": [
+      "None",
+      "ExcessSubBass",
+      "SharpPeaks",
+      "DarkMix",
+      "LoudnessDemand",
+      "GainRange",
+      "TruePeak"
+    ],
     "QueryKind": [
       "Waveform",
       "LowSpectrum",
@@ -307,7 +325,38 @@
       "cpp": "Kept",
       "fields": {
         "id": "uint32",
+        "landing": "LandingSummary?",
         "recipe": "Recipe"
+      }
+    },
+    "LandingPass": {
+      "cpp": "LandingPass",
+      "fields": {
+        "gainDb": "double",
+        "ceilingDbTp": "double",
+        "achievedLufs": "double",
+        "truePeakDbTp": "double",
+        "limiterMaxReductionDb": "double",
+        "ceilingSafe": "bool"
+      }
+    },
+    "LandingSummary": {
+      "cpp": "LandingSummary",
+      "fields": {
+        "status": "LandingStatus",
+        "mainReason": "LandingReason",
+        "secondReason": "LandingReason",
+        "deliverable": "bool",
+        "achievedLufs": "double?",
+        "missLu": "double?",
+        "distanceLu": "double?",
+        "truePeakDbTp": "double?",
+        "sourceSubBassShare": "double?",
+        "sourcePresenceShare": "double?",
+        "limiterMeanReductionDb": "double?",
+        "passes": "uint32",
+        "workUnits": "uint64",
+        "log": "LandingPass[]"
       }
     },
     "Source": {
@@ -1004,6 +1053,12 @@
     "measurements": "ReadonlyArray<SessionMeasurementResult>"
   },
   "optionalFields": {
+    "Kept": {
+      "landing": {
+        "default": "std::optional<LandingSummary> {}",
+        "description": "No landing result was published in the v1 snapshot."
+      }
+    },
     "Snapshot": {
       "measurementStorage": {
         "default": "MeasurementStorage {}",

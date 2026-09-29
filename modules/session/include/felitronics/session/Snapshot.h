@@ -71,6 +71,7 @@ private:
     OwnedMeasurements measurements_;
     std::unique_ptr<char[]> text_;
     std::unique_ptr<Kept[]> masters_;
+    std::unique_ptr<LandingPass[]> landingPasses_;
     std::unique_ptr<MachineDifference[]> differences_;
     std::unique_ptr<EqPoint[]> eqCurve_;
     std::unique_ptr<ReadingPoint[]> points_;

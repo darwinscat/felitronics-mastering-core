@@ -23,6 +23,14 @@ using detail::Storage;
 using detail::Reader;
 bool valid (const SnapshotView& v) noexcept
 {
+    for (const Kept& master : v.masters)
+        if (master.landing)
+        {
+            const LandingSummary& landing = *master.landing;
+            if (landing.passes > 12 || landing.log.size() != landing.passes
+                || (landing.deliverable && (! landing.achievedLufs || ! landing.missLu
+                    || ! landing.distanceLu || ! landing.truePeakDbTp))) return false;
+        }
     const auto& m = v.measurementStorage;
     for (const auto bytes : { m.sourceBytes, m.resultBytes, m.workspaceBytes, m.copyBytes,
                              m.codecBytes, m.allocatorBytes, m.loadPeakBytes, m.workPeakBytes, m.peakBytes, m.largestBlockBytes, v.needlesBytes, v.needlesLargestBlockBytes })
@@ -70,6 +78,7 @@ CodecStatus Codec::decode (std::string_view json, Snapshot& output) noexcept
     Snapshot out;
     if (sizes.chars) out.text_.reset (new char[sizes.chars]);
     if (sizes.masters) out.masters_.reset (new Kept[sizes.masters]);
+    if (sizes.landingPasses) out.landingPasses_.reset (new LandingPass[sizes.landingPasses]);
     if (sizes.points) out.points_.reset (new ReadingPoint[sizes.points]);
     if (sizes.runs) out.runs_.reset (new ReadingRun[sizes.runs]);
     if (sizes.differences) out.differences_.reset (new MachineDifference[sizes.differences]);
@@ -84,6 +93,7 @@ CodecStatus Codec::decode (std::string_view json, Snapshot& output) noexcept
     storage.measurementNumber = out.measurements_.numbers_.get();
     storage.measurementArray = out.measurements_.arrays_.get();
     storage.measurementRow = out.measurements_.rows_.get();
+    storage.landingPass = out.landingPasses_.get();
     const bool filled = read (json, storage, out.view_);
     detail::debugBound (filled);
     output = std::move (out);

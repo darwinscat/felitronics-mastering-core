@@ -111,6 +111,10 @@ entry  modules/session/src/Snapshot.cpp  a translation unit of felitronics::sess
 zone   modules/session/src/Snapshot.cpp  the deterministic session contract
 entry  modules/session/src/Codec.cpp  a translation unit of felitronics::session
 zone   modules/session/src/Codec.cpp  the deterministic session contract
+entry  modules/session/src/Landing.cpp  a translation unit of felitronics::session
+zone   modules/session/src/Landing.cpp  source normalization and typed landing result
+zone   modules/session/include/felitronics/session/Landing.h  the landing plan and result seam
+zone   modules/session/include/felitronics/session/LandingResult.h  typed landing verdict and pass rows
 zone   modules/session/include/felitronics/session/Events.h  the session public contract
 zone   modules/session/include/felitronics/session/Snapshot.h  the session public contract
 zone   modules/session/src/CodecSchema.h  the named fields generated from the codec description

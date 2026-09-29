@@ -289,18 +289,11 @@ void readInput (Doc& d, Reader& in, Input& o)
     in.required ("shortConfidence", o.shortConfidence, share());
 }
 
-void readLanding (Doc& d, Reader& in, Landing& o)
+void readLanding (Reader& in, Landing& o)
 {
-    if (in.required ("passes", o.passes, I { 1, 1000 }))
-    {
-        if (o.passes.empty()) d.refuse (in, "passes", Refusal::NotOneOf);   // a landing has at least one series
-        for (std::size_t i = 1; i < o.passes.size(); ++i)                   // a series is never shorter than the last
-            if (o.passes[i] < o.passes[i - 1]) { d.refuseItem (in, "passes", i, Refusal::OutOfOrder); break; }
-    }
+    in.required ("passes", o.passes, I { 1, 12 });
     in.required ("toleranceLu", o.toleranceLu, R { 0.001, 1.0 });
-    in.required ("overshootFreeDb", o.overshootFreeDb, R { 0.0, 24.0 });
-    in.required ("overshootPerDb", o.overshootPerDb, R { 0.1, 100.0 });
-    in.required ("overshootCapDb", o.overshootCapDb, R { 0.0, 24.0 });
+    in.required ("truePeakAimDb", o.truePeakAimDb, R { 0.0, 1.0 });
 }
 
 R readDomain (Doc& d, Reader& in, std::string_view key, Span& out, const R& limits)
@@ -940,7 +933,7 @@ void readEngine (Doc& d, Reader& in, Engine& o, const std::vector<std::string>* 
     std::optional<double> dcFrom;      // observations.dcOffset.from, once read
     in.required ("defaults", o.defaults);
     in.table ("input", Need::Required, [&] (Reader& t) { readInput (d, t, o.input); });
-    in.table ("landing", Need::Required, [&] (Reader& t) { readLanding (d, t, o.landing); });
+    in.table ("landing", Need::Required, [&] (Reader& t) { readLanding (t, o.landing); });
     in.table ("limiter", Need::Required, [&] (Reader& t) { readLimiter (d, t, o.limiter); });
     in.table ("lowEnd", Need::Required, [&] (Reader& t) { readLowEnd (d, t, o.lowEnd); });
     in.table ("observations", Need::Required, [&] (Reader& t) { readObservations (d, t, o.observations, dcFrom); });

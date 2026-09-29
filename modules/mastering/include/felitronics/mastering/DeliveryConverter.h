@@ -137,6 +137,8 @@ public:
     }
 
     bool isPrepared() const noexcept { return prepared_; }
+    double sourceRate() const noexcept { return prepared_ ? inRate_ : 0.0; }
+    double deliveryRate() const noexcept { return prepared_ ? deliveryRate_ : 0.0; }
     double latencyOutputSamples() const noexcept { return src_.latencyOutputSamples(); }
     long long trimSamples() const noexcept { return std::llround (src_.latencyOutputSamples()); }
     const core::DeliveryResampler::Plan& plan() const noexcept { return src_.currentPlan(); }

@@ -600,7 +600,7 @@ done
 # The analyzers' include roots too (INC): the schema asks them what they admit (their storageFor). The gate compiles the
 # library's schema with this front end as well — src/BuildGuards.h, its first include, refuses any other.
 SFRONT=(-std=c++20 "${SESSION_FLAGS[@]}"
-        -I"$ROOT/tools" -I"$ROOT/modules/session/include" -I"$ROOT/modules/session/src" -I"$TOML/include" -I"$SGEN" "${INC[@]}" -msimd128
+        -I"$ROOT/tools" -I"$ROOT/modules/session/include" -I"$ROOT/modules/session/src" -I"$TOML/include" -I"$SGEN" "${INC[@]}" "${MASTER_INC[@]}" -msimd128
         -DFELITRONICS_SESSION_VERSION_MAJOR="$SV_MAJOR" -DFELITRONICS_SESSION_VERSION_MINOR="$SV_MINOR"
         -DFELITRONICS_SESSION_VERSION_PATCH="$SV_PATCH"
         -DFELITRONICS_SESSION_CORE_VERSION_MAJOR="$CV_MAJOR" -DFELITRONICS_SESSION_CORE_VERSION_MINOR="$CV_MINOR"

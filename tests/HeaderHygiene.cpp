@@ -21,6 +21,7 @@
 #include <felitronics/analysis/StereoColumns.h>
 #include <felitronics/analysis/WaveformPeaks.h>
 #include <felitronics/mastering/DeliveredMastering.h>
+#include <felitronics/mastering/LandingSearch.h>
 #include <felitronics/mastering/DeliveryConverter.h>
 #include <felitronics/mastering/LoudnessSolver.h>
 #include <felitronics/mastering/MasteringChain.h>

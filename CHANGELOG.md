@@ -4,6 +4,16 @@
 
 ## Unreleased
 
+### mastering · session — saved loudness landing search
+
+The product landing now has one budget of at most twelve measured renders. It stops at a measured hit, otherwise
+keeps the closest output whose delivered reference true peak holds the target ceiling. Its resumable source survey,
+render, statistics, gates, final copy and independent remeasurement expose cancellation without publishing an
+unverified file. Results carry the achieved level, miss, typed reason hints, deterministic work and full pass log.
+Session planning keeps −18 LUFS source normalization separate from search gain and records a source-rate impact pass
+when delivery changes rate. The optional landing result extends the generated session codec and older v1 snapshots
+continue to decode. Differential tests compare the saved pass executor with the previous whole pass bit for bit.
+
 ### mastering — resumable delivery render and bounded PCM
 
 Delivery conversion and offline rendering now retain their source, latency, tap, and drain cursors across bounded steps.

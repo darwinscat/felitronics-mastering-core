@@ -199,6 +199,7 @@ const char* statusName (MasteringSolveStatus s)
         case MasteringSolveStatus::NotPrepared:        return "NotPrepared";
         case MasteringSolveStatus::InvalidRequest:     return "InvalidRequest";
         case MasteringSolveStatus::Cancelled:          return "Cancelled";
+        case MasteringSolveStatus::Unavailable:        return "Unavailable";
     }
     return "?";
 }
@@ -834,12 +835,11 @@ void testTheTraceBucketsAreTheRequests()
         const long long before = alloc::bytes.load();
         const auto sol = rig.solver.solve (rig.chain, rig.renderer, rig.params, src.in(), dst.out(), 2, frames, req);
         const long long got = alloc::bytes.load() - before;
-        const long long perPass = (long long) budget - traces - kGrWindowBytes;
         test::ok (sol.passes > 0 && sol.limiterTrace.buckets == b && sol.compressorTrace.buckets == b && sol.limiterTrace.valid
                   && sol.limiterTrace.bucket.size() == (std::size_t) b,
                   "grTraceBuckets " + std::to_string (b) + " over " + std::to_string (frames) + " frames: a render, " + std::to_string (b) + " buckets per stage");
-        test::ok (perPass > 0 && got == (long long) sol.passes * perPass + traces + kGrWindowBytes,
-                  "and the solve allocates passes x its meters + its three window histograms + two traces of " + std::to_string (traces / 2) + " B ("
+        test::ok (got == (long long) budget,
+                  "and the solve reuses one meter set, three window histograms, and two traces of " + std::to_string (traces / 2) + " B ("
                   + std::to_string (got) + " B over " + std::to_string (sol.passes) + " passes)");
     }
 
@@ -879,8 +879,8 @@ void testTheTraceBucketsAreTheRequests()
     }
 }
 
-// A solve stopped at any event, or refused after a render, holds its traces once: the call allocates the meters of the
-// passes it measured and the two traces, and returns the traces intact.
+// A solve stopped at any event, or refused after a render, holds its traces once: the call allocates one meter set
+// and the two traces, and returns the traces intact.
 struct StopAt
 {
     ProgressStage stage = ProgressStage::SearchPass;
@@ -907,7 +907,6 @@ void testAStoppedOrRefusedSolveHoldsItsTracesOnce()
     const int frames = 65536, B = 65536;
     const std::uint64_t budget = TargetLoudnessSolver::solveBytes (kFs, 1, frames, B);
     const long long traces = 2LL * (long long) GainReductionTrace::bytesFor (B, frames);
-    const long long perPass = (long long) budget - traces - kGrWindowBytes;
     // THE PIN IS THE PART THAT DOES NOT MOVE. Three literals stood here — the budget, the traces and the
     // histograms — and two of the three are functions of things this test is not about: the bucket count and
     // how many distributions a solution keeps. The gated third histogram moved two of them at once, which reads as
@@ -927,7 +926,7 @@ void testAStoppedOrRefusedSolveHoldsItsTracesOnce()
         LoudnessRequest req;
         StopAt stop;
         MasteringSolveStatus want;
-        int measured;                  // passes whose meters the call built
+        int measured;                  // completed passes before the stop or refusal
     };
     auto request = [] (double target, int passes)
     {
@@ -967,9 +966,9 @@ void testAStoppedOrRefusedSolveHoldsItsTracesOnce()
         const std::string at = std::string (cs.what) + ": ";
         test::ok (cs.stop.when == When::Never || cs.stop.seen, "PRECONDITION: " + at + "the event was reached");
         test::ok (sol.status == cs.want, at + "the status (" + std::string (statusName (sol.status)) + ")");
-        test::ok (got == (long long) cs.measured * perPass + traces + kGrWindowBytes,
-                  at + std::to_string (got) + " B allocated, " + std::to_string (cs.measured)
-                     + " x the meters + the traces + the window histograms");
+        test::ok (got == (long long) budget,
+                  at + std::to_string (got) + " B allocated after " + std::to_string (cs.measured)
+                     + " passes: one meter set, traces, and window histograms");
         test::ok (sol.limiterTrace.buckets == B && sol.limiterTrace.bucket.size() == (std::size_t) B
                   && sol.compressorTrace.bucket.size() == (std::size_t) B, at + "the traces are returned whole");
         if (cs.measured == 1) test::ok (got <= (long long) budget, at + "within the budget of " + std::to_string (budget) + " B");

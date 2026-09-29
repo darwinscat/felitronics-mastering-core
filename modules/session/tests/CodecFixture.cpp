@@ -46,8 +46,15 @@ int main()
     {
         Fill fill { mode };
         SnapshotView view;
-        Kept kept[1]; ReadingPoint points[1]; ReadingRun runs[1]; MachineDifference differences[1]; EqPoint curve[1];
+        Kept kept[1]; LandingPass pass[1]; ReadingPoint points[1]; ReadingRun runs[1]; MachineDifference differences[1]; EqPoint curve[1];
         fill.value (view); fill.value (kept[0]); fill.value (points[0]); fill.value (runs[0]); fill.value (differences[0]); fill.value (curve[0]);
+        fill.value (pass[0]);
+        if (kept[0].landing)
+        {
+            kept[0].landing->passes = 1;
+            kept[0].landing->log = pass;
+            kept[0].landing->deliverable = false;
+        }
         view.measurementStorage = {};
         view.needlesBytes = view.needlesLargestBlockBytes = 0;
         MeasurementValue number { "peak", 1.0, MeasurementReason::None, 0 };
