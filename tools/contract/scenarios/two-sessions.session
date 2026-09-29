@@ -1,0 +1,17 @@
+create left 67108864
+load 1 mono
+step 2 work units
+snapshot
+create right 67108864
+load 1 stereo
+step 5 work units
+snapshot
+use left
+step 3 work units
+cancel 2 1
+snapshot
+use right
+step 5 work units
+command {"kind":"setTarget","commandId":"2","target":"cd"}
+snapshot
+summary

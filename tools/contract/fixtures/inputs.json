@@ -1,0 +1,61 @@
+{
+  "mono": {
+    "rate": 48000,
+    "channels": 1,
+    "frames": 256,
+    "period": 32,
+    "scale": 256
+  },
+  "stereo": {
+    "rate": 44100,
+    "channels": 2,
+    "frames": 384,
+    "period": 64,
+    "scale": 128
+  },
+  "measure": {
+    "rate": 48000,
+    "channels": 1,
+    "frames": 384000,
+    "period": 128,
+    "scale": 128
+  },
+  "measure-stereo": {
+    "rate": 48000,
+    "channels": 2,
+    "frames": 192000,
+    "period": 128,
+    "scale": 128
+  },
+  "silence": {
+    "rate": 48000,
+    "channels": 1,
+    "frames": 192000,
+    "period": 128,
+    "scale": 128,
+    "silence": true
+  },
+  "nonfinite": {
+    "rate": 48000,
+    "channels": 1,
+    "frames": 192000,
+    "period": 128,
+    "scale": 128,
+    "nonFiniteAt": 1000
+  },
+  "measure-sidecar": {
+    "sidecarOf": "measure",
+    "integratedLufs": -16.621999667694688,
+    "truePeakDb": -10.205192318773893
+  },
+  "saved-machine": {
+    "project": {
+      "defaults": "2026-09",
+      "core": "0.2.1",
+      "manual": false,
+      "target": "allStreaming",
+      "hpfFrequency": 41.125,
+      "lowDb": 2.375
+    }
+  }
+}

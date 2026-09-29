@@ -1,0 +1,17 @@
+# Generated mono PCM, poll, then ten bounded work units.
+create main 67108864
+load 1 mono
+snapshot
+step 0 work units
+step 1 work units
+step 1 work units
+step 1 work units
+step 1 work units
+step 1 work units
+step 1 work units
+step 1 work units
+step 1 work units
+step 1 work units
+step 1 work units
+snapshot
+summary

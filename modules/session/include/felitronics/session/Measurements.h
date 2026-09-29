@@ -68,6 +68,16 @@ struct MeasurementStorage
     double copyBytes = 0, codecBytes = 0, allocatorBytes = 0;
     double loadPeakBytes = 0, workPeakBytes = 0, peakBytes = 0, largestBlockBytes = 0;
 };
+// Synthetic sidecar facts for a source whose PCM may arrive later. The sourceHash
+// is the normal session FNV hash of planar f32 samples and the source shape.
+struct MeasuredSource
+{
+    std::string_view name;
+    std::uint64_t sourceHash = 0, frames = 0;
+    std::uint32_t sampleRate = 0, channels = 0, fileRate = 0, bitDepth = 0;
+    bool rateKnown = false;
+    std::optional<double> integratedLufs, truePeakDb;
+};
 // An instrument may use a tempo only after this decision becomes ready. A low-confidence or
 // unavailable measurement yields the configured fallback without overwriting the measured BPM.
 struct TempoChoice

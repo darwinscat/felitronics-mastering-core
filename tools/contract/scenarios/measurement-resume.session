@@ -1,0 +1,14 @@
+create main 67108864
+load 1 measure-stereo
+drive 600 work units
+snapshot
+summary
+cancel 2 1
+snapshot
+summary
+command {"kind":"continueMeasurement","commandId":"3"}
+snapshot
+summary
+drive 5000 work units
+snapshot
+summary

@@ -1,0 +1,44 @@
+{
+  "checks": [
+    {
+      "kind": "create",
+      "index": 0,
+      "path": "",
+      "value": 10,
+      "session": "refused"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "state",
+      "value": 1,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "measurementProgress.completedUnits",
+      "value": 8,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "state",
+      "value": 0
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.manual",
+      "value": true
+    }
+  ],
+  "minEvents": 10,
+  "eventKinds": [
+    "phase",
+    "fact"
+  ],
+  "rejections": 0,
+  "equal": []
+}

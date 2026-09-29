@@ -1,0 +1,20 @@
+{
+  "checks": [
+    {"kind":"snapshot","index":0,"path":"measurements.12.reason","value":9},
+    {"kind":"snapshot","index":1,"path":"needlesJob","value":2},
+    {"kind":"snapshot","index":1,"path":"measurements.12.status","value":0},
+    {"kind":"snapshot","index":2,"path":"measurements.12.status","value":1},
+    {"kind":"snapshot","index":3,"path":"needlesJob","value":0},
+    {"kind":"snapshot","index":3,"path":"measurements.12.reason","value":9},
+    {"kind":"snapshot","index":4,"path":"needlesJob","value":3},
+    {"kind":"snapshot","index":5,"path":"measurements.12.status","value":1}
+  ],
+  "samePath": [
+    {"a":{"kind":"snapshot","index":0},"b":{"kind":"snapshot","index":5},"path":"source.hash"},
+    {"a":{"kind":"snapshot","index":0},"b":{"kind":"snapshot","index":5},"path":"measurements.0"},
+    {"a":{"kind":"snapshot","index":2},"b":{"kind":"snapshot","index":5},"path":"measurements.12"}
+  ],
+  "minEvents": 4000,
+  "eventKinds": ["phase","measurement","fact"],
+  "rejections": 0
+}

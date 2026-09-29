@@ -101,6 +101,7 @@ void Session::requestNeedles() noexcept
     needlesDemand_ = {}; needlesProgress_ = {};
     auto& result = measurementResults_[slot]; result.key = needlesKey_;
     if (! mandatoryReady()) return;
+    if (! samples_) { result.status = MeasurementStatus::Unavailable; result.reason = MeasurementReason::Unsupported; return; }
     result.status = MeasurementStatus::Unavailable;
     if (! need || ! ceiling)
         result.reason = loudness.status == MeasurementStatus::Ready ? MeasurementReason::NoSignal : loudness.reason;

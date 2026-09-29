@@ -431,8 +431,9 @@ struct Cost
 // [progress.analysis.weights]: milliseconds of work per step of the measurement.
 struct AnalysisWeights
 {
-    double loudness = 0.0, report = 0.0, lowEnd120 = 0.0, forensics = 0.0, stereo = 0.0;
+    double loudness = 0.0, report = 0.0, lowEnd120 = 0.0, lowEnd150 = 0.0, forensics = 0.0, stereo = 0.0;
     double lowEndSweep = 0.0, stereoBursts = 0.0, crest = 0.0, hum = 0.0, tempo = 0.0;
+    double waveformIndex = 0.0, excursionsIndex = 0.0;
 };
 
 struct Progress

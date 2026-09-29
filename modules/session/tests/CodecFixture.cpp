@@ -78,5 +78,11 @@ int main()
     std::string queryJson (std::size_t (queryCounter.size), '\0');
     detail::Writer queryWriter; queryWriter.output = queryJson.data(); queryWriter.value (query);
     std::puts (queryJson.c_str());
+    MeasuredSource measured;
+    Fill fill { 1 }; fill.value (measured);
+    detail::Writer measuredCounter; measuredCounter.value (measured);
+    std::string measuredJson (std::size_t (measuredCounter.size), '\0');
+    detail::Writer measuredWriter; measuredWriter.output = measuredJson.data(); measuredWriter.value (measured);
+    std::puts (measuredJson.c_str());
     return 0;
 }

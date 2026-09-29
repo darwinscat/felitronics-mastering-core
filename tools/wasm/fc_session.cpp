@@ -599,3 +599,72 @@ FC_EXPORT fc_session_status fc_session_measurement_bytes (fc_session session, st
     out->reserved = 0;
     return FC_SESSION_OK;
 }
+
+FC_EXPORT fc_session_status fc_session_load_measured_bytes (fc_session session, const char* facts,
+                                                             std::uint32_t facts_bytes, fc_session_storage* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = record (out); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = pointer (facts, facts_bytes, 1, true); st != FC_SESSION_OK) return st;
+    if (overlap (facts, facts_bytes, out, sizeof (*out))) return FC_SESSION_ERR_OVERLAP;
+    return storageOut (*slot->session, Wire::loadMeasuredStorage (*slot->session, { facts, facts_bytes }), out);
+}
+FC_EXPORT fc_session_status fc_session_load_measured (fc_session session, std::uint32_t command_low,
+                                                       std::uint32_t command_high, const char* facts,
+                                                       std::uint32_t facts_bytes, char* answer,
+                                                       std::uint32_t capacity, std::uint32_t* written)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = answerOut (answer, capacity, written); st != FC_SESSION_OK) return st;
+    auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = answerInputs (facts, facts_bytes, answer, capacity, written); st != FC_SESSION_OK) return st;
+    if (capacity < FC_SESSION_ANSWER_BYTES) return FC_SESSION_ERR_TOO_SMALL;
+    char reply[FC_SESSION_ANSWER_BYTES]; std::uint32_t size = 0;
+    const auto st = Wire::loadMeasured (*slot->session, joined (command_low, command_high), { facts, facts_bytes }, reply, size);
+    if (g_callState == kPoisoned) return FC_SESSION_ERR_POISONED;
+    if (st != CodecStatus::Ok) return status (st);
+    std::copy_n (reply, size, answer); *written = size; return FC_SESSION_OK;
+}
+FC_EXPORT fc_session_status fc_session_attach_audio_bytes (fc_session session, std::uint32_t channels,
+                                                            std::uint32_t frames, std::uint32_t rate,
+                                                            fc_session_storage* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = record (out); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    return storageOut (*slot->session, Wire::attachAudioStorage (*slot->session, { nullptr, channels, frames, rate }), out);
+}
+FC_EXPORT fc_session_status fc_session_attach_audio (fc_session session, std::uint32_t command_low,
+                                                      std::uint32_t command_high, const float* const* pcm,
+                                                      std::uint32_t channels, std::uint32_t frames,
+                                                      std::uint32_t rate, char* answer, std::uint32_t capacity,
+                                                      std::uint32_t* written)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = answerOut (answer, capacity, written); st != FC_SESSION_OK) return st;
+    auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = pointer (pcm, std::uint64_t (channels) * sizeof (*pcm), alignof (const float*), channels == 0);
+        st != FC_SESSION_OK) return st;
+    if (channels <= 2)
+        for (std::uint32_t c = 0; c < channels; ++c)
+            if (const auto st = pointer (pcm[c], std::uint64_t (frames) * sizeof (float), alignof (float), frames == 0);
+                st != FC_SESSION_OK) return st;
+    if (overlap (pcm, std::uint64_t (channels) * sizeof (*pcm), answer, capacity)
+        || overlap (pcm, std::uint64_t (channels) * sizeof (*pcm), written, sizeof (*written))) return FC_SESSION_ERR_OVERLAP;
+    if (channels <= 2)
+        for (std::uint32_t c = 0; c < channels; ++c)
+            if (overlap (pcm[c], std::uint64_t (frames) * sizeof (float), answer, capacity)
+                || overlap (pcm[c], std::uint64_t (frames) * sizeof (float), written, sizeof (*written))) return FC_SESSION_ERR_OVERLAP;
+    if (capacity < FC_SESSION_ANSWER_BYTES) return FC_SESSION_ERR_TOO_SMALL;
+    char reply[FC_SESSION_ANSWER_BYTES]; std::uint32_t size = 0;
+    const auto st = Wire::attachAudio (*slot->session, joined (command_low, command_high),
+                                       { pcm, channels, frames, rate }, reply, size);
+    if (g_callState == kPoisoned) return FC_SESSION_ERR_POISONED;
+    if (st != CodecStatus::Ok) return status (st);
+    std::copy_n (reply, size, answer); *written = size; return FC_SESSION_OK;
+}

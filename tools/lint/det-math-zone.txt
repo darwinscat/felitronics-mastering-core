@@ -79,6 +79,8 @@ zone   modules/session/src/Grid.h                             a knob's grid, exa
 entry  modules/session/src/Rules.cpp                          a translation unit of felitronics::session
 entry  modules/session/src/Devices.cpp                        a translation unit of felitronics::session
 entry  modules/session/src/Commands.cpp                       a translation unit of felitronics::session
+entry  modules/session/src/Sidecar.cpp                        measured source and audio attachment
+zone   modules/session/src/Sidecar.cpp                        deterministic measured source and audio attachment
 zone   modules/session/include/felitronics/session/Commands.h  the states, the commands and the table of who may do what, when
 zone   modules/session/include/felitronics/session/Project.h   the project: the target, the manual mode, every device's two layers
 zone   modules/session/src/Rules.h                            the numbers the commands check against, read in place

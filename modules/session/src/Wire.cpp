@@ -391,6 +391,51 @@ Checked Wire::loadStorage (const Session& session, std::uint32_t channels, std::
     return parseLoad (0, { nullptr, channels, frames, rate }, meta, [&] (CommandId, const Request& request, const Problem& p)
     { return felitronics::session::commandStorage (session, request, p); });
 }
+namespace
+{
+template <class F> auto measured (std::string_view json, F&& finish) noexcept
+{
+    char text[kCommandJsonBytes] {};
+    Storage storage; storage.text = text;
+    MeasuredSource facts;
+    bool valid = json.size() <= kCommandJsonBytes && detail::validUtf8 (json);
+    if (valid)
+    {
+        Reader reader { json, storage, 0, true, {}, 0, 0, false };
+        reader.value (facts); reader.space();
+        valid = reader.good && reader.pos == json.size() && storage.chars <= sizeof (text);
+    }
+    return finish (facts, valid);
+}
+}
+Checked Wire::loadMeasuredStorage (const Session& session, std::string_view facts) noexcept
+{
+    if (Session::checkFloatingPointEnvironment() != Status::Ok) return { Rejection::FloatingPointEnvironment };
+    return measured (facts, [&] (const MeasuredSource& value, bool valid)
+    { return valid ? session.loadMeasuredStorage (value) : Checked { Rejection::Contract }; });
+}
+Checked Wire::attachAudioStorage (const Session& session, const Pcm& pcm) noexcept
+{ return session.attachAudioStorage (pcm); }
+CodecStatus Wire::loadMeasured (Session& session, CommandId id, std::string_view facts,
+                                std::span<char> output, std::uint32_t& written) noexcept
+{
+    if (output.size() < kAnswerBytes) return CodecStatus::TooSmall;
+    if (Session::checkFloatingPointEnvironment() != Status::Ok) return CodecStatus::FloatingPointEnvironment;
+    return measured (facts, [&] (const MeasuredSource& value, bool valid)
+    {
+        Writer w; w.output = output.data();
+        answer (w, valid ? session.loadMeasured (id, value) : session.rejectProtocol (id));
+        written = std::uint32_t (w.size); return CodecStatus::Ok;
+    });
+}
+CodecStatus Wire::attachAudio (Session& session, CommandId id, const Pcm& pcm,
+                               std::span<char> output, std::uint32_t& written) noexcept
+{
+    if (output.size() < kAnswerBytes) return CodecStatus::TooSmall;
+    if (Session::checkFloatingPointEnvironment() != Status::Ok) return CodecStatus::FloatingPointEnvironment;
+    Writer w; w.output = output.data(); answer (w, session.attachAudio (id, pcm));
+    written = std::uint32_t (w.size); return CodecStatus::Ok;
+}
 Checked Wire::importStorage (const Session& session, std::string_view project) noexcept
 {
     return session.storageFor (command::ImportProject { 0, project });
