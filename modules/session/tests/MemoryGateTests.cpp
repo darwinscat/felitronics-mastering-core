@@ -306,12 +306,13 @@ bool run (unsigned sourceRate, unsigned deliveryRate, unsigned channels, unsigne
 int main (int argc, char** argv)
 {
     if (argc > 2 || (argc == 2 && std::strcmp (argv[1], "--long") != 0)) return 2;
-    Figures a, b, c, d, e, f;
+    Figures a, b, c, d, e, f, g;
     ok (run (48000, 48000, 1, 2, a), "mono full lifecycle stays inside declared memory");
     ok (run (44100, 48000, 2, 2, b), "44.1 to 48 kHz full lifecycle stays inside declared memory");
     ok (run (22050, 48000, 2, 2, c, true), "22.05 to 48 kHz reuse, refusal, cancellation and replacement stay declared");
     ok (run (48000, 44100, 2, 2, e), "48 to 44.1 kHz full lifecycle stays inside declared memory");
     ok (run (16000, 48000, 2, 2, f), "16 to 48 kHz full lifecycle stays inside declared memory");
+    ok (run (96000, 44100, 1, 1, g), "96 to 44.1 kHz (source above output) full lifecycle stays inside declared memory");
     if (argc == 2) ok (run (96000, 44100, 2, 60, d), "long 96 to 44.1 kHz full lifecycle stays inside declared memory");
     return felitronics::test::report();
 }
