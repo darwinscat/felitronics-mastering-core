@@ -49,7 +49,7 @@ The laws are felitronics-core's (`docs/DSP-ARCHITECTURE.md` §2), numbered as th
 | **9** no `long double` | yes | core's long-double lint reads every `modules/*/include` and `modules/*/src`, this module's included, and the wasm tier's artifact gate reads every emitted object |
 | **10** FP contraction is stated | yes — **as `off`** | the target's own flags in one `SHELL:` group, the compile line read back (this build's and a consumer's), the hostile-flags tests, the library's probes asked from a contracting caller, and the source lint's pragma and attribute rules. Core states `on` for its tree; the session's numbers are compared across rows, native and wasm, and baseline wasm has no fused multiply-add, so a contracting native build would disagree with the module. The library's flags reach its own objects only: a program that links it compiles **every** translation unit with the same FP flags (below, "What the flags do not reach"). The sign and payload of a NaN, and the floating-point exception masks and flags, are outside every check here, as core's law 10 leaves them |
 | **11**, **11b** a request that cannot be honoured is refused whole; checks in a fixed order | yes | `create()` checks the floating-point environment and the config it reads, then allocates: a refused create requested nothing (`felitronics_session_tests`). Every command runs the checks `Commands.h` declares, in their order — the thread's floating-point environment, then the table — before changing session state. Import adds the ordered document checks below. A rejection publishes its event and advances `seq`; the session’s state and revision do not change. A `load` runs its checks, then disarms, then writes (check → disarm → write), so a rejected load, too, leaves state and revision unchanged while publishing its rejection: `felitronics_session_state_tests` compares the whole session before and after every rejection it produces, produces every rejection code, and holds the order with requests wrong in several ways. The C boundary's checks run in its header's order and a refused call writes nothing and allocates nothing (`felitronics_session_abi_tests`). `fcore_session` reads and checks a whole script before it creates a session |
-| **11d** memory is declared before the work | yes | `Session::createBytes()` is the demand of `create()`, counted by the expression that sizes the request, and `Session::check()` gives the demand of every command before it runs — computed by the same function `apply()` runs first; the declared-budget harness (`modules/session/tests/DeclaredBudget.h`, on core's one allocation counter) holds `create()` and every command to *declared ≥ requested* (exactly equal, where the request is one exact allocation), holds `check()`, typed-command refusals and every transition to nothing requested; import parsing and its refusals are covered by the library storage declaration in `felitronics_session_project_tests`, and is itself shown to fail on a sample that under-declares. The event suite also holds `stepBytes()`, `snapshotBytes()`, snapshot copy, and codec size queries and work to their declared demands (below). The demand is checked in C++; the draft C ABI does not forward it. The C boundary adds nothing to it (its table is static) and keeps the poison |
+| **11d** memory is declared before the work | yes | `Session::createBytes()` is the demand of `create()`, counted by the expression that sizes the request, and `Session::check()` gives the demand of every command before it runs — computed by the same function `apply()` runs first; the declared-budget harness (`modules/session/tests/DeclaredBudget.h`, on core's one allocation counter) holds `create()` and every command to *declared ≥ requested* (exactly equal, where the request is one exact allocation), holds `check()`, typed-command refusals and every transition to nothing requested; import parsing and its refusals are covered by the library storage declaration in `felitronics_session_project_tests`, and is itself shown to fail on a sample that under-declares. The event suite also holds `stepBytes()`, `snapshotBytes()`, snapshot copy, and codec size queries and work to their declared demands (below). The demand is checked in C++ and `fc_session_create_bytes` publishes creation demand before creation. The shell supplies a heap ceiling; live declared bytes plus each allocating command's demand must fit before work begins. The C boundary adds nothing to it (its table is static) and keeps the poison |
 
 Not listed, and why: **3** (float in the hot path) — there is no hot path; **11c** (a pause is silence) — there are no
 clock-only calls; **11e** (a restart adopts an accepted publication) — the session publishes and adopts nothing.
@@ -149,10 +149,8 @@ every stage a device writes is named, the limiter's second release included.
   same way for `fcsession`, with felitronics-toml's own tool run through node.
 - **Read by schema: form and physics.** `Config::load()` (`<felitronics/session/Config.h>`) binds them to typed structs:
   every key with its type and its domain — where a number stops meaning what its document says: a share outside 0…1, a
-  ramp whose ends would divide by zero, a series that shrinks, a value off its knob's grid (a whole number of steps from
-  where the travel starts, checked exactly on the decimals as written, across the two documents too; the high-pass's
-  travel, its default and every target's floor in whole hertz) — a range another
-  key states included (a target's loudness on the edit travel, its crossover on the knob's); the checks across keys (a
+  ramp whose ends would divide by zero, a series that shrinks, slider travel outside its domain, or a default outside
+  its domain; the checks across keys (a
   name that is no target, a target under an empty key, a name given twice, an EQ band two devices share, "no DC" apart from the dcOffset finding's
   threshold, a ramp law outside its domain, the limiter switched off, a default written out); and every key nobody read
   reported as unknown. What an analyzer admits is the analyzer's to say: the blocks the config feeds one — the low end
@@ -171,8 +169,7 @@ every stage a device writes is named, the limiter's second release included.
   suite plants over sixty more in-process, every input a review found the schema accepting among them.
 - **The owner's decisions are held apart** (`tests/ConfigDecisionsTests.cpp`): every target row field by field and the
   engine's decided numbers — the landing's series, the high-pass knob's travel and slopes and comfort window, the
-  wide-bass warning, the quiet thresholds, the peak clipper's classes, the glue knob ("up to N dB", 0…3 in steps
-  of 0.1) with its default of none, 0.5 dB when ticked and 2.6 dB on cd, the mono-bass block, the delivery rates, and the rest. The schema would admit another number where the physics allows;
+  wide-bass warning, the quiet thresholds, the peak clipper's classes, the glue slider (0…3 dB, step 0.1; accepted domain 0…6 dB) with its default of none, 0.5 dB when ticked and 2.6 dB on cd, the mono-bass block, the delivery rates, and the rest. The schema would admit another number where the physics allows;
   this suite says which number was decided, so changing one is a deliberate edit of it. Its controls plant departures
   the schema admits (a high-pass top of 51 or 60 Hz, a slope of 36, another series, another target number or rate, glue
   by default, a wider mono bass) and require them named.
@@ -185,20 +182,15 @@ every stage a device writes is named, the limiter's second release included.
   warning without switching a device (every observation threshold but `observations.polarity`; the peak clipper's
   density figures), what is measured after the master (the crest, the cost), development (the progress weights, the
   blind test), the name of the defaults, and — while no shell offers the de-esser — its block and the bursts only it
-  reads. The default target stays in. `sound` is what a recipe records. They walk the
-  embedded data and allocate nothing, so the C ABI answers the config's `all` (`fc_session_config_version`) with no
+  reads. The default target stays in. `sound` is what a recipe records. The build gate hashes the config into constants shared by the compiled library and generated page declarations; queries allocate nothing, so the C ABI answers the config's `all` (`fc_session_config_version`) with no
   demand to declare. The suite changes every value of both documents, one at a time — through their text and through the
   embedded data — and requires `all` to move each time to a value of its own, and `sound` to move exactly for the values
   that can change a master; the decisions suite pins `sound` to the name of the defaults, so a sound number changed
   without new defaults is red. `fcore_session config version|sound-version`, the source files and the wasm module must
   answer the same numbers (ctest, and CI's artifact check).
-- **Read in place by the commands.** What the session's commands check against — the knobs' travels and steps, the
-  targets' rows, the numbers a device starts from — is read straight from the embedded documents, as the decimals
-  written (`src/Rules.h`): no table is built and nothing is allocated, so reading the config adds nothing to a command's
-  demand. Every number read there is one the schema required and checked before the library was built;
-  `felitronics_session_state_tests` holds every one of them to the schema's binding of the same documents, row by row
-  and knob by knob, and reads documents with the keys missing to see the reading say it is incomplete — which
-  `create()` answers with `Status::Config`, not reachable in a library whose build ran the gate.
+- **Read in place by the commands.** Domains, slider hints, target rows and defaults are read from the build-checked
+  embedded documents without allocation. The state suite compares them with the typed schema binding. Broken required
+  lookups trap as contract failures; session creation does not revalidate the config.
 - **Only in words, for now: the config's memory.** `Config::load()` allocates and publishes no demand; the session does
   not call it.
 - **Only in words: the golden pin is append-only once released.** A new set of sound numbers is a new name in
@@ -246,24 +238,24 @@ from the code, and ctest holds the text between the markers below to that output
 <!-- the table: end -->
 
 **The checks run in one declared order, the same for every command**, and the first that fails is the answer:
-1. the calling thread's floating-point environment; 2. the table; 3. the manual mode, for the device panel's commands
-(`editDevice`, `revertEdits`); 4. what the command names — a target, a device offered for this target and source, an
-id left for a new job (`load` and `master`), a load's valid UTF-8 name, the active job, a master kept; 5. the fields — at least one touched, then each touched one in the order its struct
-writes them: finite, one of its values, on its travel, on its step; 6. a load's audio — one or two channels, a rate of
+1. the calling thread's floating-point environment; 2. the table; 3. what the command names — a target, a device offered for this target and source, an
+id left for a new job (`load` and `master`), a load's valid UTF-8 name, the active job, a master kept; 4. the fields — each touched one in the order its struct
+writes them: finite, one of its values, within its domain; 5. a load's audio — one or two channels, a rate of
 at least felitronics-core's 8000 Hz, frames and data, a size the machine can address, every sample finite. A rejection
 on a field names it by its place in its struct. `Session::check()` runs exactly these and says what the command would
 answer; `apply()` runs `check()` first and does the work only when it passed, so a rejected command changes no state
 by construction — `check()` is `const`.
 
 **The project** (`Project.h`) is the target — a row of `[targets]` — with a person's edits of its two numbers (loudness
-and ceiling, on `[edit]`'s travels), the manual mode, and every device's parameters. **One parameter form per device**:
+and ceiling, within `[edit]`'s domains), the manual mode, and every device's parameters. **One parameter form per device**:
 a device's fields are written once, as a template over the form a field takes, and used as the machine's layer (every
 field a value), a person's layer (a field a value only where touched — a touched field is the person's even where its
 number is the machine's) and a revert's mask (a field yes or no). Commands name fields through typed structs: an edit is the
 device's struct, a variant whose alternative is the device. TOML keys are bound at the serialization boundary. The devices are the high-pass, mono bass, the glue (its
 knob, "up to N dB", as the config writes every glue number),
-saturation, tilt, the limiter's needles, the dither and the low shelf; the low shelf is offered on a target that
-carries one, the dither where the target's bit depth is one it serves, mono bass except on a mono source.
+saturation, tilt, the limiter's needles, dither and low. Tilt and low are separate devices on every target.
+The machine enables low only for a target with `lowDb` (today `lp`, +0.5 dB); otherwise low starts off at 0 dB.
+Dither is offered through 16 bits, and mono bass except on a mono source; the shell may exclude any device.
 
 - **The machine's layer** is placed from the config for the target and the source — the ticks from `[stages]`, what
   the target decides (the high-pass's slope and floor, the mono-bass crossover, no needles where the target has no peak
@@ -272,19 +264,19 @@ carries one, the dither where the target's bit depth is one it serves, mono bass
   taken from a measurement: mono bass, which `[stages]` leaves off, is off. The devices are placed when the first
   measurement ends, and again on a change of target after that; before it they are unplaced — every field of the
   machine's layer at its type's zero, and the state says so. A load unplaces them again.
-- **Every value the machine places is one a person could set**: on its knob's travel and step — which the schema holds
-  for every default the config gives, and `felitronics_session_state_tests` for every target and source.
-- **A person's edits** are taken only after that — before it, `NotPlaced` — and only with the manual mode on. Every
-  value is checked on its knob exactly: the double a shell sends is read as the decimal of nine places or fewer whose
-  correctly rounded double it is, and that decimal must lie on the travel and a whole number of steps from where the
-  travel starts — by the same code that holds the config's own numbers to their grids (`src/Grid.h`). A double that is
-  the decimal of no such number is off the step. A number is kept with −0 written as +0, so two projects that say one
-  value are one project, bit for bit, and so are their recipes.
-- **`setTarget(name, onEdits)`** replaces the target's numbers silently — a person's edits of them go with the old
-  target — and keeps or takes back a person's device edits as `onEdits` says; an edit of a device the new target does
-  not offer goes either way. The machine's layer is placed again for the new target.
-- **`setManual(false)`** takes back a person's device edits and nothing else: the machine's layer stays, and so does an
-  edit of the target's numbers.
+- **Every value the machine places is one a person could set**: inside its knob's accepted domain, which the schema
+  holds for every default and `felitronics_session_state_tests` checks for every target and source.
+- **A person's edits** are taken only after placement (`NotPlaced` before it), whether the panel is visible or hidden. Values must be
+  finite and inside the knob's domain; travel and step guide the slider. Values between steps or outside travel are
+  accepted within the domain. A number is kept with −0 written as +0, so equal values give identical project bits.
+- **`setTarget(name)`** replaces the target's numbers silently and always resets every device edit, including hidden
+  edits and dither edits. The machine decides again for the new target. The shell owns the warning
+  “your N edits will be reset”: it reads `snapshot().view().handFieldCount` before sending the command.
+  The command answer and events are unchanged. New dither edits above 16 bits still return `NotOffered`.
+- **`setManual(bool)`** changes only panel visibility. Device edits stay effective in either mode, including in a
+  master recipe. `snapshot().view().handFieldCount` counts touched device fields, including false ticks and values
+  equal to the machine, for the hidden-panel marker. Target-number edits are separate. `revertEdits` and
+  `setTarget(name)` explicitly remove device edits.
 - **`load`** checks everything first, then DISARMS — whatever ran on the old source stops, and the old source, its
   measurements and its masters go; the manual mode is switched off, and a person's device edits go with it (the mode
   does not outlive the file: its edits were decisions about the old source); the old samples are freed before the new
@@ -336,14 +328,14 @@ only touched `lufs.hand` and `tp.hand` follow it. Device sections follow the typ
 a section appears only when a machine difference or touched hand follows. The reader accepts absent and empty sections.
 Each field writes `.machine` before `.hand`, one value per line. Defaults are omitted from the machine layer; every
 touched hand is retained, including a number equal to the machine's. Booleans are TOML booleans, slopes integers, and
-needles are `"auto"`, `"manual"` or `"off"`. Doubles use the shortest fixed decimal that reads back to the same binary64
-value (`to_chars` with fixed notation); all admitted knobs have at most nine decimal places. Negative zero writes `0`.
-The exact-size allocation counter and a sweep across every knob's travel hold the writer's demand and round trips.
+needles are `"auto"`, `"manual"` or `"off"`. Doubles representable in TOML's exact nine-place decimal subset use ordinary
+numbers. Other binary64 values use quoted shortest round-trip decimals, parsed by the exact JSON numeric reader.
+Negative zero writes `0`. Allocation tests and domain/extreme-value round trips hold the writer to its demand.
 
 `importProject(commandId, bytes)` is `apply(command::ImportProject{...})`. Its row in the one command table is the
 device-edit row: `NoSource`, `NotPlaced`, then accepted in both measured states and both mastering overlays. The file
-supplies manual mode, so a fresh session need not enable it first. A hand with manual mode off is refused; an edit to
-a device not offered for the imported target and loaded source is refused. Import leaves ongoing jobs, captured
+supplies panel visibility and accepts hand fields with either value of `manual`; an edit to
+a device excluded by the shell or mono bass on a mono source is refused. Stored dither edits may be dormant above 16 bits. Import leaves ongoing jobs, captured
 recipes, measurements and kept masters alone. An accepted import moves the revision exactly once.
 
 Checks run in this order:
@@ -353,10 +345,10 @@ Checks run in this order:
    session text cap; felitronics-toml enforces its own 1 MiB document limit during parsing.
 2. felitronics-toml syntax, then its `Reader` schema: required defaults, core and manual fields; target name and touched
    target numbers; devices in typed order, fields in declaration order, machine before hand. Numeric fields check the
-   written decimal's travel and exact grid. Unknown keys are reported as each table closes, including unknown sections
+   accepted domain at the loaded source's sample rate. Unknown keys are reported as each table closes, including unknown sections
    and author suffixes. Dotted keys and inline tables bind through the same schema.
 3. The defaults version, the core version spelling, and the target name.
-4. Manual mode and offered-device constraints in device/field order, then same-core machine equality in that order.
+4. Offered-device constraints in device/field order, then comparison with today's machine decisions.
 
 The first refusal carries its code and position. A missing key points at its table; a bad value at the value; an
 unknown key at the key. Syntax refusals carry the parser's position. The candidate and its comparison live separately
@@ -383,18 +375,25 @@ slot is empty. A carried label uses its compiled defaults. Labels are strictly `
 A label older than every carried version is converted: written numbers are retained and omitted fields take current
 defaults. Fact `DefaultsConverted` (9) owns the original label and reports the conversion in both catalog languages.
 Export uses the current label; a converted project round trips without a second conversion warning. A newer label
-is refused as `NewerDefaults` (32, fact 132); a malformed label is `UnknownDefaults`. A future uncarried label between
+is refused as `NewerDefaults` (28, fact 128); a malformed label is `UnknownDefaults`. A future uncarried label between
 the retained versions is also `UnknownDefaults`. All these refusals leave state and revision unchanged.
 
-After defaults selection or conversion, with the same core stamp, the machine decides again and every field must equal the file's complete layer (omitted
-fields mean defaults). A difference is `MachineMismatch`. With another stamp, the file's complete machine layer and
-the person's touched layer remain intact. Fact `MachineDifferences` (8) publishes the count, including zero;
-`snapshot().view().machineDifferences` holds ordered `(device, field, fileValue, coreValue)` rows so a shell can show
-“HPF 32 → 34”. Flag values use 0/1, choices their enum numbers, and knobs their doubles. Snapshot ownership, JSON
-encoding and the generated `.d.ts` include the rows through the same generator and drift gates. The imported core
-stamp stays with that layer in the next export: replacing it with the running core's stamp would make that file fail
-its next same-core check. A target change explicitly places the current machine, stamps this core and clears the
-comparison. Hand edits and switching off manual mode do not replace the machine layer.
+After defaults selection or conversion, the file's complete machine layer always wins (omitted fields mean defaults),
+with the person's touched layer over it. The machine decides again beside it. `MachineDifferences` (8) publishes the
+count for a foreign core, including zero; `SameCoreMachineDifferences` (10) publishes nonzero same-core differences
+and politely explains that these usually indicate a project file edited by hand. Both facts render in Russian and English.
+`snapshot().view().machineDifferences` holds ordered `(device, field, fileValue, coreValue)` rows. Flags use 0/1,
+choices their enum numbers, and knobs their doubles. Owned snapshots, the codec and its generated `.d.ts` carry them.
+Export preserves the stamp of the core whose machine decisions the file carries. A target change explicitly places
+today's machine, stamps this core and clears the comparison. Hand edits and panel visibility do not replace it.
+
+The page draws **`snapshot().view().eqCurve`**: the summed high-pass + tilt + low response using hand-over-machine
+values, independent of panel visibility. It is empty before placement, then contains 128 logarithmic `(hz, db)` points
+from 20 Hz to min(20 kHz, 0.49 × source rate). Each tick bypasses its own contribution. The coefficient designs follow
+core's matched filters with deterministic math; the event suite compares their response with core across rates and
+all high-pass slopes. Low keeps EQ band 2, 80 Hz and Q 0.6; tilt keeps band 1 and its 1 kHz pivot.
+The one codec generator carries `eqCurve` into `snapshot.d.ts`; `SessionSnapshot.eqCurve` describes transferable
+little-endian f64 rows, columns `[hz, db]`, stride 2. `handFieldCount` is a JSON number in both snapshot forms.
 
 Recovery and heap compaction use the same operation: create a new session, load the same source, advance measurement
 to the same measured state, then import the last exported project. The project includes target, manual mode and both
@@ -407,8 +406,8 @@ not a replay requirement.
 The facade's existing poison latch is permanent. Its native replay test injects the allocation failure used by the
 master ABI suite. Since session creation is `noexcept`, the test observes the abandoned call from a termination
 handler, verifies every status entry point refuses, replays outside the facade, and exits; it never resumes or clears
-the broken instance. A test-only accessor reaches its C++ project without adding a draft ABI export. The
-exceptions-free tier exercises the same permanent latch through allocation reentry. The draft ABI remains version 0.
+the broken instance. A test-only accessor reaches its C++ project for comparison with its owned snapshot. The
+exceptions-free tier exercises the same permanent latch through allocation reentry. The C ABI is version 1.
 
 ## The text — facts, one catalog, one formatting table
 
@@ -480,8 +479,8 @@ main thread.
   generator across every unit, sign, bound and precision, every note — and pins one FNV-1a hash of it, which every native
   row and the wasm tier must give.
 - **A command's rejection is a fact.** Every code of the state machine's `Rejection` (`Commands.h`) is the fact
-  100 + its code, a sentence in every declared language that says what was refused and why; the four a field refuses
-  (not finite, not one of its values, off its travel, off its step) name the field — a term for each field a check can
+  100 + its code, a sentence in every declared language that says what was refused and why; the three a field refuses
+  (not finite, not one of its values, outside its domain) name the field — a term for each field a check can
   refuse: the target's two numbers, every device's knob and choice, a load's audio. `Text::rejected(answer, request)`
   builds it from a refused answer, reading the field off the request. The mapping is a switch over every code with no
   default, so a code the state machine adds and nobody maps is an error in this repository's builds (`-Wswitch`,
@@ -685,7 +684,7 @@ and `u8'0'` is a character literal, not a digit separator. Its rules:
   own `Session.h`, `Config.h`, `Commands.h`, `Project.h` and `Text.h`, felitronics-toml's `Toml.h`, `Schema.h` and `Embedded.h`, and the three analyzers the
   config's schema asks what they admit, `LowEnd.h`, `BandCrest.h` and `StereoBandBursts.h`, which bring core's DSP and
   `FlushToZero.h` with it; the schema calls only their `storageFor()`); quoted headers inside the module, and in
-  `src/Config.cpp` the two headers the build generates from the config, and in `src/Text.cpp` the two it generates from
+  `src/Config.cpp` the three headers the build generates from the config, and in `src/Text.cpp` the two it generates from
   the text, by name;
 - **no macros** — no `#define`, `#undef` or `##` — and **no directive** but `#include` and `#pragma once`;
   `src/BuildGuards.h` and `src/BuildContract.cpp` may carry `#if` / `#error` logic and nothing that defines a macro;
@@ -719,33 +718,76 @@ build's `compile_commands.json` to plant an unlisted unit and drop a listed one.
 
 ## The C boundary — `fc_session`
 
-`tools/fc_session_abi.h`, implemented by `tools/wasm/fc_session.cpp`. Its version is **0, a draft**: no promise — any
-entry point, argument, code or constant may change without a bump. It carries the ABI version, a session created and
-destroyed through a handle, the config's version (`all`), the session's refusals of `create()` passed through as status
-codes (`FC_SESSION_ERR_FP_ENVIRONMENT`, `FC_SESSION_ERR_CONFIG`), and the poison. It carries no command: the states
-and the commands are the library's C++ surface. It follows
-fc_master's law — the facade is thin: handles instead of pointers, a status per call, checks on the addresses a page
-computed, the poison, and nothing that decides. It is compiled with the session library's own options and definitions,
-natively and in the wasm module, includes `src/BuildGuards.h` first, and is under the source lint with the allowance
-above.
+`tools/fc_session_abi.h`, implemented by `tools/wasm/fc_session.cpp`, freezes **version 1**. Existing
+signatures, constants, enum values and C layouts remain unchanged; additions are allowed. The facade follows
+fc_master's law: handles, address checks, a status per call and permanent poison. Commands, capability enforcement
+and serialization belong to the compiled C++ library, including `Wire.h`, so a desktop can use the same behavior.
 
-- **Two globals, the only ones session has**: the handle table and the poison flag — a handle must name a session between
-  two calls, and the poison must outlive the call that never returned. Both are trivially destructible, so no exit-time
-  destructor runs. The object-file gate refuses a third.
-- **Handles retire, they do not wrap.** A handle is a slot and that slot's 24-bit generation. A generation that wrapped
-  would give an old handle's number to a new session, and the stale handle would destroy it (reproduced on the module:
-  16 777 214 create/destroy cycles, a fraction of a second). So a slot issues `FC_SESSION_SLOT_GENERATIONS` handles and
-  then retires; after `FC_SESSION_MAX_HANDLES × FC_SESSION_SLOT_GENERATIONS` creates a module instance answers
-  `FC_SESSION_ERR_EXHAUSTED` for good. The table's capacity is **8** — fixed, compiled in, not configurable. The native suite and `tools/wasm/session-check.mjs` walk one slot through all of
-  its generations.
-- **The poison**: an entry point that finds a call still in progress — an earlier one never returned (the wasm module
-  aborted inside it), or it was re-entered from inside an allocation — answers `FC_SESSION_ERR_POISONED`, for good.
+`create(capabilities, configVersion)` takes the shell's exact `heapCeilingBytes` (a double below 2^53), `maxRateHz`,
+`largestFreeBlockBytes`, and `offeredDevices` bit set. `fc_session_create_bytes` publishes its allocation demand before creation, even when
+the ceiling cannot afford it. Creation refuses an incompatible config with `FC_SESSION_ERR_CONFIG_VERSION`.
+The generated `snapshot.d.ts` declares `FC_SESSION_CONFIG_VERSION` as a literal hash; `snapshot.mjs` exports its
+runtime value. Both come from the build's config gate. The library's no-argument `Session::create()` selects its
+compiled config with unrestricted capabilities; the overload accepts the shell's explicit inputs.
 
-`fcsession` is its wasm module (`tools/wasm/build.sh`): the facade and the sources `modules/session/sources.txt` lists
-(the build refuses a `.cpp` under `modules/session/src`, at any depth, that is not listed), linked with
-`--wrap=pthread_create`, with its embedded config — 58 KB of wasm, 17 KB brotli: the config's data, and the states and the commands over it. `tools/wasm/session-check.mjs` compares every export of the
-loaded module against the ABI's surface and the runtime's own, runs the surface, and walks the wrap boundary; `build.sh`
-builds a control copy with one undeclared export and requires the check to refuse it.
+The session counts its own live declared allocations plus each command's declared demand before work. A memory
+refusal preserves state and revision, allocates nothing, and publishes `ErrorCode::Memory` with exact `needBytes`.
+It precedes a load's sample scan and an import's parser. Rates above `maxRateHz` receive `Rejection::RateAboveLimit`.
+A device excluded by the shell stays inactive, cannot be edited or reverted, and cannot be activated by project import.
+The snapshot's `offeredDevices` tells the shell which devices it can expose; the existing target/source restrictions
+still apply. Convert, Lra and Final are appended to `PhaseName` at 5, 6 and 7 and have catalog facts in ru and en.
+
+| Entry points (`fc_session_` prefix) | Contract |
+| --- | --- |
+| `abi_version`, `config_version` | ABI number; config hash as low/high uint32 halves |
+| `create_bytes`, `create`, `destroy` | Pre-create demand; capability/config creation; generation-checked destruction |
+| `set_capacity` | Update heap ceiling and largest free block between calls |
+| `command_bytes`, `load_bytes`, `import_project_bytes` | Session allocation demand and live bytes before work |
+| `command` | Named-field JSON in; accepted/rejected JSON out |
+| `load` | Planar f32 pointers, channels, frames, rate and JSON metadata; owned PCM copy |
+| `import_project`, `export_project_size`, `export_project_copy` | Project bytes in caller buffers |
+| `step` | Work units, bounded by `kStepUnits`; zero polls; More or Done |
+| `events_size`, `events_copy` | The current batch as tagged JSON and f64 rows |
+| `snapshot_size`, `snapshot_copy` | Current snapshot as named JSON and f64 rows |
+
+For example, `{"kind":"editDevice","commandId":"17","device":0,"fields":{"fq":32}}` edits the HPF frequency.
+Command identities are decimal strings. Fields can arrive in any order; unknown, missing, duplicate or malformed
+fields produce a `rejected` answer naming the field. Edits omit untouched knobs or use null. `load` metadata requires
+`name`, `fileRate`, `bitDepth`, and `rateKnown`. Load and import carry command identities as low/high uint32 arguments.
+The page reserves `FC_SESSION_ANSWER_BYTES` before commands run; a short output cannot execute a command and then
+lose its answer. `written` excludes a terminator. A domain rejection is an OK transport call with a rejected answer;
+an import's syntax/schema refusal can allocate within its declared parsing demand.
+
+Size queries and copies allocate nothing. No session pointer leaves a call. JSON row descriptors
+`{byteOffset,length,stride}` point into a separate buffer aligned to 8 bytes, with capacity stated in bytes.
+The page reads `Float64Array`: points have `[index,value]`, runs `[first,count,value]`, and machine differences
+`[device,field,fileValue,coreValue]`. Only records such as retained recipes remain JSON arrays. Binary values preserve
+IEEE-754 infinities and NaN; scalar JSON values use `"-Infinity"`, `"Infinity"`, and `"NaN"`. Indices and byte counters
+remain exact below 2^53. `SessionEvent` is a generated union discriminated by `kind`. The snapshot-only recorded JSON
+codec remains available for owned C++ fixtures; `Wire` supplies the transferable form to both native and wasm callers.
+
+The header fixes the check order: poison; outputs in signature order (null, alignment, span); handle; inputs;
+overlap; session checks. A non-OK status leaves every output untouched. Buffers are disjoint and caller-owned.
+Size/copy pairs require no intervening mutation. Calls use one thread; callbacks must not reenter the facade.
+
+The only mutable globals are the handle table and poison latch. Eight slots each issue 24-bit generations and retire
+before wrapping. Release tests walk every generation; Debug uses a test-only seam to exercise the last generation and
+retirement directly. Every status entry detects an abandoned or reentered call. A real wasm trap cannot return through
+C; generated `invokeSession` maps it to `FC_SESSION_ERR_TRAP`. Subsequent calls return `FC_SESSION_ERR_POISONED` and
+publish nothing; even destruction is refused. `abi_version` remains callable. Recovery uses a fresh module, the same
+source, and the exported project. A reentered call also suppresses the outer call's output.
+
+`tools/session-abi-v1.txt` is the frozen floor. `session-abi-check.mjs` generates a probe that compiles exact function
+type assertions and emits constants, every public enum value, C struct sizes, alignment and field offsets. Each tier,
+including wasm32, runs its own probe; codec field/type lines are frozen beside the C surface. The gate requires every
+frozen line to remain and permits additions. Its control deletes and changes each line and requires rejection.
+CI runs the gate and control. The Windows Debug selection includes the session ABI suites.
+
+`tools/wasm/build.sh` builds `fcsession` from the facade and `modules/session/sources.txt`, audits the exact export list,
+compares node/web wasm bytes, checks for threads, and runs a node scenario through the ABI and generated types.
+Controls reject an extra export and verify a real allocation trap followed by permanent poison. The wire fixture
+checks all six event kinds and nonempty binary rows against the generated declarations. Full native/wasm scenario
+parity is a separate contract suite.
 
 ## The native CLI — `fcore_session`
 
@@ -757,3 +799,38 @@ a command script (`-` is stdin) into a fresh session and prints `done <commands>
 none in it — empty, or comments and blank lines — answers `done 0`; a script with a command in it, and a session that
 refuses to be created, are refused with exit status 2 and nothing on stdout. It links the library as C++, the way a
 desktop application does.
+
+
+Knob travel and step describe the shell's slider. Commands and project import accept the domains below, including
+values between steps and beyond travel. An empty edit or revert is accepted with unchanged revision. Device edits
+require placement and an offered device. Panel visibility does not gate them. Low is offered on every target,
+saved machine layers are retained for every core stamp, and older defaults are converted with their warning.
+
+| Knob | Accepted domain | Reason |
+| --- | --- | --- |
+| Target LUFS | Any finite binary64 | Landing reports unreachable targets |
+| Target ceiling | −6 through −0.1 dBTP | Product |
+| HPF frequency | 0 < f < source sample rate / 2 | Device |
+| HPF slope | Multiples of 6, 6 through 96 dB/oct | Device, orders 1–16 |
+| Mono-bass frequency / width | 60–300 Hz / 0–1 | Product / device |
+| Glue | 0–6 dB | Product |
+| Saturation drive / mix / output | 0–12 dB / 0–1 / −6–0 dB | Product / device / product |
+| Tilt / low | −6–6 dB | Product |
+| Needles above ceiling | 0–6 dB | Product |
+
+Limiter release is configuration, not a project knob. Its schema requires at least eight source samples at the
+minimum supported rate. The schema checks travel within domains, defaults within domains, and positive progress-weight
+sums. Project numeric fields use ordinary TOML numbers when its decimal subset can represent them exactly; other
+finite binary64 values use quoted shortest round-trip decimals, parsed with the same exact numeric reader as JSON.
+
+The C v1 records `fc_session_capabilities`, `fc_session_sizes`, `fc_session_capacity` and `fc_session_storage` start
+with the caller's `sizeof`. Their v1 prefixes are 32, 12, 24 and 32 bytes; fields may only be appended. Sizes below the
+v1 prefix and beyond the current build have distinct statuses. Future suffix fields must define their absent-field
+meaning for v1 callers. Demand queries for commands, loads and imports use the session's own `storageFor`; capacity
+may be updated between calls as a heap ceiling and largest free block. Live bytes plus demand and the largest allocation
+are checked before work. Nonallocating commands remain available when capacity is reduced.
+
+C load frames are uint32 because the wasm heap is limited to 2 GiB; native C++ PCM frames are uint64. Binary rows are
+little-endian IEEE-754 f64, with unsupported byte-order builds refused at compile time. Executed encoder fixtures and
+compiled layout facts freeze every event kind, snapshots, answers, row order, offsets, strides and C signatures. Local
+source controls mutate each class of fact and require comparison to fail, while append-only additions pass.

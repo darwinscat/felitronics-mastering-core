@@ -1,0 +1,730 @@
+# fc_session v1: compiled surface and executable encoder fixtures. Only add after publication.
+function fc_session_abi_version uint32_t()
+function fc_session_create_bytes fc_session_status(const fc_session_capabilities*,double*)
+function fc_session_create fc_session_status(const fc_session_capabilities*,uint32_t,uint32_t,fc_session*)
+function fc_session_destroy fc_session_status(fc_session)
+function fc_session_set_capacity fc_session_status(fc_session,const fc_session_capacity*)
+function fc_session_command_bytes fc_session_status(fc_session,const char*,uint32_t,fc_session_storage*)
+function fc_session_load_bytes fc_session_status(fc_session,uint32_t,uint32_t,uint32_t,const char*,uint32_t,fc_session_storage*)
+function fc_session_import_project_bytes fc_session_status(fc_session,const char*,uint32_t,fc_session_storage*)
+function fc_session_config_version fc_session_status(uint32_t*)
+function fc_session_command fc_session_status(fc_session,const char*,uint32_t,char*,uint32_t,uint32_t*)
+function fc_session_load fc_session_status(fc_session,uint32_t,uint32_t,const float*const*,uint32_t,uint32_t,uint32_t,const char*,uint32_t,char*,uint32_t,uint32_t*)
+function fc_session_import_project fc_session_status(fc_session,uint32_t,uint32_t,const char*,uint32_t,char*,uint32_t,uint32_t*)
+function fc_session_export_project_size fc_session_status(fc_session,uint32_t*)
+function fc_session_export_project_copy fc_session_status(fc_session,char*,uint32_t,uint32_t*)
+function fc_session_step fc_session_status(fc_session,uint32_t,uint32_t*)
+function fc_session_events_size fc_session_status(fc_session,fc_session_sizes*)
+function fc_session_events_copy fc_session_status(fc_session,char*,uint32_t,double*,uint32_t)
+function fc_session_snapshot_size fc_session_status(fc_session,fc_session_sizes*)
+function fc_session_snapshot_copy fc_session_status(fc_session,char*,uint32_t,double*,uint32_t)
+define FC_SESSION_ABI_VERSION=1
+define FC_SESSION_CAPABILITIES_V1_BYTES=32
+define FC_SESSION_SIZES_V1_BYTES=12
+define FC_SESSION_CAPACITY_V1_BYTES=24
+define FC_SESSION_STORAGE_V1_BYTES=32
+define FC_SESSION_STEP_UNITS=16
+define FC_SESSION_MIN_RATE_HZ=8000
+define FC_SESSION_COMMAND_JSON_BYTES=4096
+define FC_SESSION_ANSWER_BYTES=32768
+define FC_SESSION_DEVICE_HPF=1
+define FC_SESSION_DEVICE_MONO_BASS=2
+define FC_SESSION_DEVICE_GLUE=4
+define FC_SESSION_DEVICE_SATURATION=8
+define FC_SESSION_DEVICE_TILT=16
+define FC_SESSION_DEVICE_LIMITER=32
+define FC_SESSION_DEVICE_DITHER=64
+define FC_SESSION_DEVICE_LOW_SHELF=128
+define FC_SESSION_DEVICES_ALL=255
+define FC_SESSION_MAX_HANDLES=8
+define FC_SESSION_SLOT_GENERATIONS=16777215
+sizeof fc_session_status=4
+enum FC_SESSION_OK=0
+enum FC_SESSION_ERR_POISONED=1
+enum FC_SESSION_ERR_NULL=2
+enum FC_SESSION_ERR_ALIGNMENT=3
+enum FC_SESSION_ERR_SPAN=4
+enum FC_SESSION_ERR_HANDLE=5
+enum FC_SESSION_ERR_EXHAUSTED=6
+enum FC_SESSION_ERR_FP_ENVIRONMENT=7
+enum FC_SESSION_ERR_CONFIG_VERSION=8
+enum FC_SESSION_ERR_CAPABILITIES=9
+enum FC_SESSION_ERR_MEMORY=10
+enum FC_SESSION_ERR_TOO_SMALL=11
+enum FC_SESSION_ERR_CONTRACT=12
+enum FC_SESSION_ERR_OVERLAP=13
+enum FC_SESSION_ERR_TRAP=14
+enum FC_SESSION_ERR_STRUCT_TOO_SMALL=15
+enum FC_SESSION_ERR_STRUCT_TOO_LARGE=16
+enum FC_SESSION_ERR_NO_SOURCE=17
+enum FC_SESSION_ERR_NOT_PLACED=18
+sizeof fc_session_step_state=4
+enum FC_SESSION_MORE=0
+enum FC_SESSION_DONE=1
+typedef fc_session uint32_t
+sizeof fc_session=4
+sizeof fc_session_capabilities=32
+alignof fc_session_capabilities=8
+field fc_session_capabilities.size uint32_t
+offset fc_session_capabilities.size=0
+field fc_session_capabilities.heapCeilingBytes double
+offset fc_session_capabilities.heapCeilingBytes=8
+field fc_session_capabilities.maxRateHz uint32_t
+offset fc_session_capabilities.maxRateHz=16
+field fc_session_capabilities.offeredDevices uint32_t
+offset fc_session_capabilities.offeredDevices=20
+field fc_session_capabilities.largestFreeBlockBytes double
+offset fc_session_capabilities.largestFreeBlockBytes=24
+sizeof fc_session_sizes=12
+alignof fc_session_sizes=4
+field fc_session_sizes.size uint32_t
+offset fc_session_sizes.size=0
+field fc_session_sizes.jsonBytes uint32_t
+offset fc_session_sizes.jsonBytes=4
+field fc_session_sizes.rowBytes uint32_t
+offset fc_session_sizes.rowBytes=8
+sizeof fc_session_capacity=24
+alignof fc_session_capacity=8
+field fc_session_capacity.size uint32_t
+offset fc_session_capacity.size=0
+field fc_session_capacity.heapCeilingBytes double
+offset fc_session_capacity.heapCeilingBytes=8
+field fc_session_capacity.largestFreeBlockBytes double
+offset fc_session_capacity.largestFreeBlockBytes=16
+sizeof fc_session_storage=32
+alignof fc_session_storage=8
+field fc_session_storage.size uint32_t
+offset fc_session_storage.size=0
+field fc_session_storage.rejection uint32_t
+offset fc_session_storage.rejection=4
+field fc_session_storage.bytes double
+offset fc_session_storage.bytes=8
+field fc_session_storage.largestBlockBytes double
+offset fc_session_storage.largestBlockBytes=16
+field fc_session_storage.liveBytes double
+offset fc_session_storage.liveBytes=24
+enum felitronics::session::State::Empty=0
+enum felitronics::session::State::Loaded=1
+enum felitronics::session::State::Measured1=2
+enum felitronics::session::State::Measured2=3
+enum felitronics::session::Rejection::None=0
+enum felitronics::session::Rejection::FloatingPointEnvironment=1
+enum felitronics::session::Rejection::NoSource=2
+enum felitronics::session::Rejection::NotPlaced=3
+enum felitronics::session::Rejection::NotMeasured=4
+enum felitronics::session::Rejection::Busy=5
+enum felitronics::session::Rejection::NoJob=6
+enum felitronics::session::Rejection::NoMaster=7
+enum felitronics::session::Rejection::UnknownTarget=8
+enum felitronics::session::Rejection::NotOffered=9
+enum felitronics::session::Rejection::UnknownJob=10
+enum felitronics::session::Rejection::UnknownMaster=11
+enum felitronics::session::Rejection::NotFinite=12
+enum felitronics::session::Rejection::NotOneOf=13
+enum felitronics::session::Rejection::OutOfDomain=14
+enum felitronics::session::Rejection::BadChannels=15
+enum felitronics::session::Rejection::BadRate=16
+enum felitronics::session::Rejection::NoAudio=17
+enum felitronics::session::Rejection::TooLong=18
+enum felitronics::session::Rejection::NoJobId=19
+enum felitronics::session::Rejection::InvalidUtf8=20
+enum felitronics::session::Rejection::ProjectTooLarge=21
+enum felitronics::session::Rejection::ProjectSyntax=22
+enum felitronics::session::Rejection::ProjectMissing=23
+enum felitronics::session::Rejection::ProjectType=24
+enum felitronics::session::Rejection::ProjectUnknownKey=25
+enum felitronics::session::Rejection::UnknownDefaults=26
+enum felitronics::session::Rejection::ProjectCore=27
+enum felitronics::session::Rejection::NewerDefaults=28
+enum felitronics::session::Rejection::RateAboveLimit=29
+enum felitronics::session::Rejection::Memory=30
+enum felitronics::session::Rejection::Contract=31
+enum felitronics::session::Needles::Auto=0
+enum felitronics::session::Needles::Manual=1
+enum felitronics::session::Needles::Off=2
+enum felitronics::session::Device::Hpf=0
+enum felitronics::session::Device::MonoBass=1
+enum felitronics::session::Device::Glue=2
+enum felitronics::session::Device::Saturation=3
+enum felitronics::session::Device::Tilt=4
+enum felitronics::session::Device::Limiter=5
+enum felitronics::session::Device::Dither=6
+enum felitronics::session::Device::Low=7
+enum felitronics::session::PhaseName::Stream=0
+enum felitronics::session::PhaseName::Report=1
+enum felitronics::session::PhaseName::Analyzers=2
+enum felitronics::session::PhaseName::Pass=3
+enum felitronics::session::PhaseName::Remeasure=4
+enum felitronics::session::PhaseName::Convert=5
+enum felitronics::session::PhaseName::Lra=6
+enum felitronics::session::PhaseName::Final=7
+enum felitronics::session::ErrorCode::Trap=0
+enum felitronics::session::ErrorCode::Contract=1
+enum felitronics::session::ErrorCode::Refusal=2
+enum felitronics::session::ErrorCode::Memory=3
+enum felitronics::session::ErrorCode::Poisoned=4
+enum felitronics::session::ErrorCode::Stale=5
+enum felitronics::session::Recover::None=0
+enum felitronics::session::Recover::Replay=1
+enum felitronics::session::Recover::Continue=2
+enum felitronics::session::StepState::More=0
+enum felitronics::session::StepState::Done=1
+enum felitronics::session::text::Unit::None=0
+enum felitronics::session::text::Unit::Percent=1
+enum felitronics::session::text::Unit::Db=2
+enum felitronics::session::text::Unit::DbTp=3
+enum felitronics::session::text::Unit::DbFs=4
+enum felitronics::session::text::Unit::Lufs=5
+enum felitronics::session::text::Unit::Lu=6
+enum felitronics::session::text::Unit::Hz=7
+enum felitronics::session::text::Unit::KHz=8
+enum felitronics::session::text::Unit::Ms=9
+enum felitronics::session::text::Unit::S=10
+enum felitronics::session::text::Unit::Bpm=11
+enum felitronics::session::text::Sign::Negative=0
+enum felitronics::session::text::Sign::Always=1
+enum felitronics::session::text::Bound::Exact=0
+enum felitronics::session::text::Bound::AtLeast=1
+enum felitronics::session::text::Bound::AtMost=2
+enum felitronics::session::text::FactId::Value=1
+enum felitronics::session::text::FactId::LandingPass=2
+enum felitronics::session::text::FactId::LandingConverged=3
+enum felitronics::session::text::FactId::PairsConsistent=4
+enum felitronics::session::text::FactId::LoudestLowNote=5
+enum felitronics::session::text::FactId::WideBass=6
+enum felitronics::session::text::FactId::RateAboveLimit=7
+enum felitronics::session::text::FactId::MachineDifferences=8
+enum felitronics::session::text::FactId::DefaultsConverted=9
+enum felitronics::session::text::FactId::SameCoreMachineDifferences=10
+enum felitronics::session::text::FactId::RejectedFloatingPointEnvironment=101
+enum felitronics::session::text::FactId::RejectedNoSource=102
+enum felitronics::session::text::FactId::RejectedNotPlaced=103
+enum felitronics::session::text::FactId::RejectedNotMeasured=104
+enum felitronics::session::text::FactId::RejectedBusy=105
+enum felitronics::session::text::FactId::RejectedNoJob=106
+enum felitronics::session::text::FactId::RejectedNoMaster=107
+enum felitronics::session::text::FactId::RejectedUnknownTarget=108
+enum felitronics::session::text::FactId::RejectedNotOffered=109
+enum felitronics::session::text::FactId::RejectedUnknownJob=110
+enum felitronics::session::text::FactId::RejectedUnknownMaster=111
+enum felitronics::session::text::FactId::RejectedNotFinite=112
+enum felitronics::session::text::FactId::RejectedNotOneOf=113
+enum felitronics::session::text::FactId::RejectedOutOfDomain=114
+enum felitronics::session::text::FactId::RejectedBadChannels=115
+enum felitronics::session::text::FactId::RejectedBadRate=116
+enum felitronics::session::text::FactId::RejectedNoAudio=117
+enum felitronics::session::text::FactId::RejectedTooLong=118
+enum felitronics::session::text::FactId::RejectedNoJobId=119
+enum felitronics::session::text::FactId::RejectedInvalidUtf8=120
+enum felitronics::session::text::FactId::RejectedProjectTooLarge=121
+enum felitronics::session::text::FactId::RejectedProjectSyntax=122
+enum felitronics::session::text::FactId::RejectedProjectMissing=123
+enum felitronics::session::text::FactId::RejectedProjectType=124
+enum felitronics::session::text::FactId::RejectedProjectUnknownKey=125
+enum felitronics::session::text::FactId::RejectedUnknownDefaults=126
+enum felitronics::session::text::FactId::RejectedProjectCore=127
+enum felitronics::session::text::FactId::RejectedNewerDefaults=128
+enum felitronics::session::text::FactId::RejectedRateAboveLimit=129
+enum felitronics::session::text::FactId::RejectedMemory=130
+enum felitronics::session::text::FactId::RejectedContract=131
+enum felitronics::session::text::FactId::Measurement1=200
+enum felitronics::session::text::FactId::Measurement2=201
+enum felitronics::session::text::FactId::MasterPass=202
+enum felitronics::session::text::FactId::MasterReady=203
+enum felitronics::session::text::FactId::Cancelled=204
+enum felitronics::session::text::FactId::Convert=205
+enum felitronics::session::text::FactId::Lra=206
+enum felitronics::session::text::FactId::Final=207
+enum felitronics::session::text::FactId::SessionTrap=300
+enum felitronics::session::text::FactId::SessionContract=301
+enum felitronics::session::text::FactId::SessionRefusal=302
+enum felitronics::session::text::FactId::SessionMemory=303
+enum felitronics::session::text::FactId::SessionPoisoned=304
+enum felitronics::session::text::FactId::SessionStale=305
+enum felitronics::session::text::Term::PlatformWeb=1
+enum felitronics::session::text::Term::PlatformDesktop=2
+enum felitronics::session::text::Term::FieldTargetLufs=3
+enum felitronics::session::text::Term::FieldTargetTp=4
+enum felitronics::session::text::Term::FieldHpfFq=5
+enum felitronics::session::text::Term::FieldHpfSlope=6
+enum felitronics::session::text::Term::FieldMonoBassFq=7
+enum felitronics::session::text::Term::FieldMonoBassWidth=8
+enum felitronics::session::text::Term::FieldGlueUpToDb=9
+enum felitronics::session::text::Term::FieldSaturationDrive=10
+enum felitronics::session::text::Term::FieldSaturationMix=11
+enum felitronics::session::text::Term::FieldSaturationOutput=12
+enum felitronics::session::text::Term::FieldTiltDb=13
+enum felitronics::session::text::Term::FieldLimiterNeedles=14
+enum felitronics::session::text::Term::FieldLimiterNeedlesDb=15
+enum felitronics::session::text::Term::FieldLowDb=16
+enum felitronics::session::text::Term::FieldAudio=17
+enum felitronics::session::text::ArgKind::None=0
+enum felitronics::session::text::ArgKind::Value=1
+enum felitronics::session::text::ArgKind::Count=2
+enum felitronics::session::text::ArgKind::Term=3
+enum felitronics::session::text::ArgKind::Midi=4
+enum felitronics::session::text::ArgKind::UserText=5
+codec TargetFieldsTouched.lufs double?
+codec TargetFieldsTouched.tp double?
+codec HpfFieldsValue.on bool
+codec HpfFieldsValue.fq double
+codec HpfFieldsValue.slope int32
+codec HpfFieldsTouched.on bool?
+codec HpfFieldsTouched.fq double?
+codec HpfFieldsTouched.slope int32?
+codec HpfFieldsLayers.machine HpfFieldsValue
+codec HpfFieldsLayers.hand HpfFieldsTouched
+codec MonoBassFieldsValue.on bool
+codec MonoBassFieldsValue.fq double
+codec MonoBassFieldsValue.width double
+codec MonoBassFieldsTouched.on bool?
+codec MonoBassFieldsTouched.fq double?
+codec MonoBassFieldsTouched.width double?
+codec MonoBassFieldsLayers.machine MonoBassFieldsValue
+codec MonoBassFieldsLayers.hand MonoBassFieldsTouched
+codec GlueFieldsValue.on bool
+codec GlueFieldsValue.upToDb double
+codec GlueFieldsTouched.on bool?
+codec GlueFieldsTouched.upToDb double?
+codec GlueFieldsLayers.machine GlueFieldsValue
+codec GlueFieldsLayers.hand GlueFieldsTouched
+codec SaturationFieldsValue.on bool
+codec SaturationFieldsValue.drive double
+codec SaturationFieldsValue.mix double
+codec SaturationFieldsValue.output double
+codec SaturationFieldsTouched.on bool?
+codec SaturationFieldsTouched.drive double?
+codec SaturationFieldsTouched.mix double?
+codec SaturationFieldsTouched.output double?
+codec SaturationFieldsLayers.machine SaturationFieldsValue
+codec SaturationFieldsLayers.hand SaturationFieldsTouched
+codec TiltFieldsValue.on bool
+codec TiltFieldsValue.db double
+codec TiltFieldsTouched.on bool?
+codec TiltFieldsTouched.db double?
+codec TiltFieldsLayers.machine TiltFieldsValue
+codec TiltFieldsLayers.hand TiltFieldsTouched
+codec LimiterFieldsValue.needles Needles
+codec LimiterFieldsValue.needlesDb double
+codec LimiterFieldsTouched.needles Needles?
+codec LimiterFieldsTouched.needlesDb double?
+codec LimiterFieldsLayers.machine LimiterFieldsValue
+codec LimiterFieldsLayers.hand LimiterFieldsTouched
+codec DitherFieldsValue.on bool
+codec DitherFieldsTouched.on bool?
+codec DitherFieldsLayers.machine DitherFieldsValue
+codec DitherFieldsLayers.hand DitherFieldsTouched
+codec LowFieldsValue.on bool
+codec LowFieldsValue.db double
+codec LowFieldsTouched.on bool?
+codec LowFieldsTouched.db double?
+codec LowFieldsLayers.machine LowFieldsValue
+codec LowFieldsLayers.hand LowFieldsTouched
+codec Devices.hpf HpfFieldsLayers
+codec Devices.monoBass MonoBassFieldsLayers
+codec Devices.glue GlueFieldsLayers
+codec Devices.saturation SaturationFieldsLayers
+codec Devices.tilt TiltFieldsLayers
+codec Devices.limiter LimiterFieldsLayers
+codec Devices.dither DitherFieldsLayers
+codec Devices.low LowFieldsLayers
+codec Project.target uint16
+codec Project.targetEdit TargetFieldsTouched
+codec Project.manual bool
+codec Project.devices Devices
+codec Project.core Version
+codec Recipe.project Project
+codec Recipe.source uint64
+codec Recipe.sound uint64
+codec Kept.id uint32
+codec Kept.recipe Recipe
+codec Source.channels uint32
+codec Source.sampleRate uint32
+codec Source.frames uint64
+codec Source.hash uint64
+codec Source.fileRate uint32
+codec Source.rateKnown bool
+codec Source.bitDepth uint8
+codec Source.name string
+codec Phase.name PhaseName
+codec Phase.fraction double
+codec Phase.weightsVersion uint64
+codec Phase.pass uint32
+codec Phase.totalPasses uint32
+codec Phase.completedUnits uint32
+codec Phase.totalUnits uint32
+codec ReadingPoint.index uint64
+codec ReadingPoint.value double
+codec ReadingRun.first uint64
+codec ReadingRun.count uint64
+codec ReadingRun.value double
+codec Snapshot.state State
+codec Snapshot.mastering bool
+codec Snapshot.revision uint64
+codec Snapshot.project Project
+codec Snapshot.target string
+codec Snapshot.source Source
+codec Snapshot.job uint32
+codec Snapshot.measurementJob uint32
+codec Snapshot.jobRecipe Recipe
+codec Snapshot.masters Kept[]
+codec Snapshot.measurementProgress Phase
+codec Snapshot.masterProgress Phase
+codec Snapshot.sourceBytes bytes
+codec Snapshot.integratedLufs double
+codec Snapshot.momentary ReadingPoint[]
+codec Snapshot.shortTerm ReadingPoint[]
+codec Snapshot.runs ReadingRun[]
+codec Snapshot.machineDifferences MachineDifference[]
+codec Snapshot.offeredDevices uint32
+codec Snapshot.handFieldCount uint32
+codec Snapshot.eqCurve EqPoint[]
+codec Version.major uint32
+codec Version.minor uint32
+codec Version.patch uint32
+codec MachineDifference.device Device
+codec MachineDifference.field uint8
+codec MachineDifference.fileValue double
+codec MachineDifference.coreValue double
+codec EqPoint.hz double
+codec EqPoint.db double
+wire Row.byteOffset number
+wire Row.length number
+wire Row.stride 2 | 3 | 4
+wire AcceptedAnswer.kind "accepted"
+wire AcceptedAnswer.commandId string
+wire AcceptedAnswer.revision string
+wire AcceptedAnswer.jobId number
+wire RejectedAnswer.kind "rejected"
+wire RejectedAnswer.commandId string
+wire RejectedAnswer.revision string
+wire RejectedAnswer.code Rejection
+wire RejectedAnswer.needBytes number
+wire RejectedAnswer.field number
+wire RejectedAnswer.device number
+wire RejectedAnswer.line number
+wire RejectedAnswer.column number
+wire ContractAnswer.kind "rejected"
+wire ContractAnswer.commandId string
+wire ContractAnswer.revision string
+wire ContractAnswer.code "contract"
+wire ContractAnswer.reason "unknown" | "missing" | "duplicate" | "invalid"
+wire ContractAnswer.field string
+wire WireFact.FactId number
+wire WireFact.args ReadonlyArray<WireArg>
+wire WireArg.kind number
+wire WireArg.unit number
+wire WireArg.precision number
+wire WireArg.sign number
+wire WireArg.bound number
+wire WireArg.termId number
+wire WireArg.number WireNumber
+wire WireArg.integer string
+wire WireArg.userText string
+wire ReadingPayload.momentary Row
+wire ReadingPayload.shortTerm Row
+wire ReadingPayload.runs Row
+wire DonePayload.masterId number
+wire RejectedPayload.commandId string
+wire RejectedPayload.code Rejection
+wire ErrorPayload.code ErrorCode
+wire ErrorPayload.recover Recover
+wire ErrorPayload.needBytes number
+wire ErrorPayload.fact WireFact
+wire SourceMeta.name string
+wire SourceMeta.fileRate number
+wire SourceMeta.rateKnown boolean
+wire SourceMeta.bitDepth number
+wire SetTargetCommand.kind "setTarget"
+wire SetTargetCommand.commandId string
+wire SetTargetCommand.target string
+wire SetManualCommand.kind "setManual"
+wire SetManualCommand.commandId string
+wire SetManualCommand.on boolean
+wire EditTargetCommand.kind "editTarget"
+wire EditTargetCommand.commandId string
+wire EditTargetCommand.fields TargetPatch
+wire TargetPatch.lufs? WireNumber | null
+wire TargetPatch.tp? WireNumber | null
+wire MasterCommand.kind "master"
+wire MasterCommand.commandId string
+wire CancelCommand.kind "cancel"
+wire CancelCommand.commandId string
+wire CancelCommand.jobId number
+wire ForgetCommand.kind "forget"
+wire ForgetCommand.commandId string
+wire ForgetCommand.masterId number
+wire PhaseEvent.seq string
+wire PhaseEvent.jobId number
+wire PhaseEvent.kind "phase"
+wire PhaseEvent.payload Phase
+wire FactEvent.seq string
+wire FactEvent.jobId number
+wire FactEvent.kind "fact"
+wire FactEvent.payload WireFact
+wire ReadingEvent.seq string
+wire ReadingEvent.jobId number
+wire ReadingEvent.kind "reading"
+wire ReadingEvent.payload ReadingPayload
+wire DoneEvent.seq string
+wire DoneEvent.jobId number
+wire DoneEvent.kind "done"
+wire DoneEvent.payload DonePayload
+wire RejectedEvent.seq string
+wire RejectedEvent.jobId number
+wire RejectedEvent.kind "rejected"
+wire RejectedEvent.payload RejectedPayload
+wire ErrorEvent.seq string
+wire ErrorEvent.jobId number
+wire ErrorEvent.kind "error"
+wire ErrorEvent.payload ErrorPayload
+wire EditDeviceHpfCommand.kind "editDevice"
+wire EditDeviceHpfCommand.commandId string
+wire EditDeviceHpfCommand.device 0
+wire EditDeviceHpfCommand.fields EditDeviceHpfFields
+wire EditDeviceHpfFields.on? boolean | null
+wire EditDeviceHpfFields.fq? WireNumber | null
+wire EditDeviceHpfFields.slope? number | null
+wire EditDeviceMonoBassCommand.kind "editDevice"
+wire EditDeviceMonoBassCommand.commandId string
+wire EditDeviceMonoBassCommand.device 1
+wire EditDeviceMonoBassCommand.fields EditDeviceMonoBassFields
+wire EditDeviceMonoBassFields.on? boolean | null
+wire EditDeviceMonoBassFields.fq? WireNumber | null
+wire EditDeviceMonoBassFields.width? WireNumber | null
+wire EditDeviceGlueCommand.kind "editDevice"
+wire EditDeviceGlueCommand.commandId string
+wire EditDeviceGlueCommand.device 2
+wire EditDeviceGlueCommand.fields EditDeviceGlueFields
+wire EditDeviceGlueFields.on? boolean | null
+wire EditDeviceGlueFields.upToDb? WireNumber | null
+wire EditDeviceSaturationCommand.kind "editDevice"
+wire EditDeviceSaturationCommand.commandId string
+wire EditDeviceSaturationCommand.device 3
+wire EditDeviceSaturationCommand.fields EditDeviceSaturationFields
+wire EditDeviceSaturationFields.on? boolean | null
+wire EditDeviceSaturationFields.drive? WireNumber | null
+wire EditDeviceSaturationFields.mix? WireNumber | null
+wire EditDeviceSaturationFields.output? WireNumber | null
+wire EditDeviceTiltCommand.kind "editDevice"
+wire EditDeviceTiltCommand.commandId string
+wire EditDeviceTiltCommand.device 4
+wire EditDeviceTiltCommand.fields EditDeviceTiltFields
+wire EditDeviceTiltFields.on? boolean | null
+wire EditDeviceTiltFields.db? WireNumber | null
+wire EditDeviceLimiterCommand.kind "editDevice"
+wire EditDeviceLimiterCommand.commandId string
+wire EditDeviceLimiterCommand.device 5
+wire EditDeviceLimiterCommand.fields EditDeviceLimiterFields
+wire EditDeviceLimiterFields.needles? Needles | null
+wire EditDeviceLimiterFields.needlesDb? WireNumber | null
+wire EditDeviceDitherCommand.kind "editDevice"
+wire EditDeviceDitherCommand.commandId string
+wire EditDeviceDitherCommand.device 6
+wire EditDeviceDitherCommand.fields EditDeviceDitherFields
+wire EditDeviceDitherFields.on? boolean | null
+wire EditDeviceLowCommand.kind "editDevice"
+wire EditDeviceLowCommand.commandId string
+wire EditDeviceLowCommand.device 7
+wire EditDeviceLowCommand.fields EditDeviceLowFields
+wire EditDeviceLowFields.on? boolean | null
+wire EditDeviceLowFields.db? WireNumber | null
+wire RevertEditsHpfCommand.kind "revertEdits"
+wire RevertEditsHpfCommand.commandId string
+wire RevertEditsHpfCommand.device 0
+wire RevertEditsHpfCommand.fields RevertEditsHpfFields
+wire RevertEditsHpfFields.on? boolean
+wire RevertEditsHpfFields.fq? boolean
+wire RevertEditsHpfFields.slope? boolean
+wire RevertEditsMonoBassCommand.kind "revertEdits"
+wire RevertEditsMonoBassCommand.commandId string
+wire RevertEditsMonoBassCommand.device 1
+wire RevertEditsMonoBassCommand.fields RevertEditsMonoBassFields
+wire RevertEditsMonoBassFields.on? boolean
+wire RevertEditsMonoBassFields.fq? boolean
+wire RevertEditsMonoBassFields.width? boolean
+wire RevertEditsGlueCommand.kind "revertEdits"
+wire RevertEditsGlueCommand.commandId string
+wire RevertEditsGlueCommand.device 2
+wire RevertEditsGlueCommand.fields RevertEditsGlueFields
+wire RevertEditsGlueFields.on? boolean
+wire RevertEditsGlueFields.upToDb? boolean
+wire RevertEditsSaturationCommand.kind "revertEdits"
+wire RevertEditsSaturationCommand.commandId string
+wire RevertEditsSaturationCommand.device 3
+wire RevertEditsSaturationCommand.fields RevertEditsSaturationFields
+wire RevertEditsSaturationFields.on? boolean
+wire RevertEditsSaturationFields.drive? boolean
+wire RevertEditsSaturationFields.mix? boolean
+wire RevertEditsSaturationFields.output? boolean
+wire RevertEditsTiltCommand.kind "revertEdits"
+wire RevertEditsTiltCommand.commandId string
+wire RevertEditsTiltCommand.device 4
+wire RevertEditsTiltCommand.fields RevertEditsTiltFields
+wire RevertEditsTiltFields.on? boolean
+wire RevertEditsTiltFields.db? boolean
+wire RevertEditsLimiterCommand.kind "revertEdits"
+wire RevertEditsLimiterCommand.commandId string
+wire RevertEditsLimiterCommand.device 5
+wire RevertEditsLimiterCommand.fields RevertEditsLimiterFields
+wire RevertEditsLimiterFields.needles? boolean
+wire RevertEditsLimiterFields.needlesDb? boolean
+wire RevertEditsDitherCommand.kind "revertEdits"
+wire RevertEditsDitherCommand.commandId string
+wire RevertEditsDitherCommand.device 6
+wire RevertEditsDitherCommand.fields RevertEditsDitherFields
+wire RevertEditsDitherFields.on? boolean
+wire RevertEditsLowCommand.kind "revertEdits"
+wire RevertEditsLowCommand.commandId string
+wire RevertEditsLowCommand.device 7
+wire RevertEditsLowCommand.fields RevertEditsLowFields
+wire RevertEditsLowFields.on? boolean
+wire RevertEditsLowFields.db? boolean
+wire SessionCapabilities.heapCeilingBytes number
+wire SessionCapabilities.maxRateHz number
+wire SessionCapabilities.offeredDevices number
+wire union SessionStatus 0
+wire union SessionStatus 1
+wire union SessionStatus 2
+wire union SessionStatus 3
+wire union SessionStatus 4
+wire union SessionStatus 5
+wire union SessionStatus 6
+wire union SessionStatus 7
+wire union SessionStatus 8
+wire union SessionStatus 9
+wire union SessionStatus 10
+wire union SessionStatus 11
+wire union SessionStatus 12
+wire union SessionStatus 13
+wire union SessionStatus 14
+wire union SessionStatus 15
+wire union SessionStatus 16
+wire union SessionStatus 17
+wire union SessionStatus 18
+wire union CommandAnswer AcceptedAnswer
+wire union CommandAnswer RejectedAnswer
+wire union CommandAnswer ContractAnswer
+wire union SessionEvent PhaseEvent
+wire union SessionEvent FactEvent
+wire union SessionEvent ReadingEvent
+wire union SessionEvent DoneEvent
+wire union SessionEvent RejectedEvent
+wire union SessionEvent ErrorEvent
+wire union SessionCommand SetTargetCommand
+wire union SessionCommand SetManualCommand
+wire union SessionCommand EditTargetCommand
+wire union SessionCommand EditDeviceCommand
+wire union SessionCommand RevertEditsCommand
+wire union SessionCommand MasterCommand
+wire union SessionCommand CancelCommand
+wire union SessionCommand ForgetCommand
+wire union EditDeviceCommand EditDeviceHpfCommand
+wire union EditDeviceCommand EditDeviceMonoBassCommand
+wire union EditDeviceCommand EditDeviceGlueCommand
+wire union EditDeviceCommand EditDeviceSaturationCommand
+wire union EditDeviceCommand EditDeviceTiltCommand
+wire union EditDeviceCommand EditDeviceLimiterCommand
+wire union EditDeviceCommand EditDeviceDitherCommand
+wire union EditDeviceCommand EditDeviceLowCommand
+wire union RevertEditsCommand RevertEditsHpfCommand
+wire union RevertEditsCommand RevertEditsMonoBassCommand
+wire union RevertEditsCommand RevertEditsGlueCommand
+wire union RevertEditsCommand RevertEditsSaturationCommand
+wire union RevertEditsCommand RevertEditsTiltCommand
+wire union RevertEditsCommand RevertEditsLimiterCommand
+wire union RevertEditsCommand RevertEditsDitherCommand
+wire union RevertEditsCommand RevertEditsLowCommand
+field-id Hpf.on=0
+field-id Hpf.fq=1
+field-id Hpf.slope=2
+field-id MonoBass.on=0
+field-id MonoBass.fq=1
+field-id MonoBass.width=2
+field-id Glue.on=0
+field-id Glue.upToDb=1
+field-id Saturation.on=0
+field-id Saturation.drive=1
+field-id Saturation.mix=2
+field-id Saturation.output=3
+field-id Tilt.on=0
+field-id Tilt.db=1
+field-id Limiter.needles=0
+field-id Limiter.needlesDb=1
+field-id Dither.on=0
+field-id Low.on=0
+field-id Low.db=1
+binary SessionSnapshot.momentary
+binary SessionSnapshot.shortTerm
+binary SessionSnapshot.runs
+binary SessionSnapshot.machineDifferences
+binary SessionSnapshot.eqCurve
+row EqPoint element=f64 byteOrder=little columns=hz,db stride=2 bytes=16
+row ReadingPoint element=f64 byteOrder=little columns=index,value stride=2 bytes=16
+row ReadingRun element=f64 byteOrder=little columns=first,count,value stride=3 bytes=24
+row MachineDifference element=f64 byteOrder=little columns=device,field,fileValue,coreValue stride=4 bytes=32
+row element sizeof=8
+{"eqCurve":{"byteOffset":0,"length":2,"stride":2},"handFieldCount":2,"integratedLufs":"-Infinity","job":0,"jobRecipe":{"project":{"core":{"major":0,"minor":0,"patch":0},"devices":{"dither":{"hand":{"on":null},"machine":{"on":false}},"glue":{"hand":{"on":null,"upToDb":null},"machine":{"on":false,"upToDb":0}},"hpf":{"hand":{"fq":null,"on":null,"slope":null},"machine":{"fq":0,"on":false,"slope":0}},"limiter":{"hand":{"needles":null,"needlesDb":null},"machine":{"needles":0,"needlesDb":0}},"low":{"hand":{"db":null,"on":null},"machine":{"db":0,"on":false}},"monoBass":{"hand":{"fq":null,"on":null,"width":null},"machine":{"fq":0,"on":false,"width":0}},"saturation":{"hand":{"drive":null,"mix":null,"on":null,"output":null},"machine":{"drive":0,"mix":0,"on":false,"output":0}},"tilt":{"hand":{"db":null,"on":null},"machine":{"db":0,"on":false}}},"manual":false,"target":0,"targetEdit":{"lufs":null,"tp":null}},"sound":"0","source":"0"},"machineDifferences":{"byteOffset":32,"length":1,"stride":4},"masterProgress":{"completedUnits":0,"fraction":0,"name":0,"pass":0,"totalPasses":0,"totalUnits":0,"weightsVersion":"0"},"mastering":false,"masters":[],"measurementJob":0,"measurementProgress":{"completedUnits":0,"fraction":0,"name":0,"pass":0,"totalPasses":0,"totalUnits":0,"weightsVersion":"0"},"momentary":{"byteOffset":64,"length":2,"stride":2},"offeredDevices":0,"project":{"core":{"major":0,"minor":0,"patch":0},"devices":{"dither":{"hand":{"on":null},"machine":{"on":false}},"glue":{"hand":{"on":null,"upToDb":null},"machine":{"on":false,"upToDb":0}},"hpf":{"hand":{"fq":null,"on":null,"slope":null},"machine":{"fq":0,"on":false,"slope":0}},"limiter":{"hand":{"needles":null,"needlesDb":null},"machine":{"needles":0,"needlesDb":0}},"low":{"hand":{"db":null,"on":null},"machine":{"db":0,"on":false}},"monoBass":{"hand":{"fq":null,"on":null,"width":null},"machine":{"fq":0,"on":false,"width":0}},"saturation":{"hand":{"drive":null,"mix":null,"on":null,"output":null},"machine":{"drive":0,"mix":0,"on":false,"output":0}},"tilt":{"hand":{"db":null,"on":null},"machine":{"db":0,"on":false}}},"manual":false,"target":0,"targetEdit":{"lufs":null,"tp":null}},"revision":"0","runs":{"byteOffset":96,"length":1,"stride":3},"shortTerm":{"byteOffset":120,"length":1,"stride":2},"source":{"bitDepth":0,"channels":0,"fileRate":0,"frames":"0","hash":"0","name":"","rateKnown":false,"sampleRate":0},"sourceBytes":9007199254740991,"state":0,"target":""}
+00000000000034400000000000000cc00000000000408f40000000000000d03f0000000000000000000000000000f03f00000000000038400000000000004040ffffffffffff3f43000000000000f0ff0000000000001040000000000000f87f0000000000001c400000000000000040000000000000e03fffffffffffff3f43000000000000f0ff
+[{"seq":"9007199254741000","jobId":42,"kind":"phase","payload":{"completedUnits":0,"fraction":0,"name":5,"pass":0,"totalPasses":0,"totalUnits":0,"weightsVersion":"0"}},{"seq":"9007199254741001","jobId":42,"kind":"phase","payload":{"completedUnits":0,"fraction":0,"name":6,"pass":0,"totalPasses":0,"totalUnits":0,"weightsVersion":"0"}},{"seq":"9007199254741002","jobId":42,"kind":"phase","payload":{"completedUnits":0,"fraction":0,"name":7,"pass":0,"totalPasses":0,"totalUnits":0,"weightsVersion":"0"}},{"seq":"9007199254741003","jobId":42,"kind":"fact","payload":{"FactId":9,"args":[{"kind":5,"unit":0,"precision":0,"sign":0,"bound":0,"termId":0,"number":0,"integer":"0","userText":"line\u000avoice"},{"kind":2,"unit":0,"precision":0,"sign":0,"bound":0,"termId":0,"number":0,"integer":"-9223372036854775808","userText":""},{"kind":1,"unit":5,"precision":1,"sign":0,"bound":0,"termId":0,"number":-14,"integer":"0","userText":""}]}},{"seq":"9007199254741004","jobId":42,"kind":"reading","payload":{"momentary":{"byteOffset":0,"length":1,"stride":2},"shortTerm":{"byteOffset":16,"length":1,"stride":2},"runs":{"byteOffset":32,"length":1,"stride":3}}},{"seq":"9007199254741005","jobId":42,"kind":"done","payload":{"masterId":99}},{"seq":"9007199254741006","jobId":42,"kind":"rejected","payload":{"commandId":"9007199254740993","code":29}},{"seq":"9007199254741007","jobId":42,"kind":"error","payload":{"code":3,"recover":1,"needBytes":9007199254740991,"fact":{"FactId":1,"args":[]}}}]
+ffffffffffff3f43000000000000f0ff0000000000001040000000000000f87f0000000000001c400000000000000040000000000000e03f
+{"kind":"accepted","commandId":"9007199254740993","revision":"1","jobId":0}
+{"kind":"rejected","commandId":"9007199254740994","revision":"1","code":2,"needBytes":0,"field":255,"device":-1,"line":0,"column":0}
+{"kind":"rejected","commandId":"9007199254740995","revision":"1","code":"contract","reason":"unknown","field":"unknown"}
+{"kind":"accepted","commandId":"10","revision":"2","jobId":1}
+json load-source {"bitDepth":24,"channels":2,"fileRate":44100,"frames":"4","hash":"15094001361299705642","name":"wire.wav","rateKnown":true,"sampleRate":48000}
+{"kind":"accepted","commandId":"11","revision":"5","jobId":0}
+json command-effect-0 {"target":"cd","manual":false,"targetEdit":{"lufs":null,"tp":null},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"12","revision":"6","jobId":0}
+json command-effect-1 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"13","revision":"7","jobId":0}
+json command-effect-2 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":36,"on":true,"slope":24},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"14","revision":"8","jobId":0}
+json command-effect-3 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":36,"on":true,"slope":24},"monoBass":{"fq":120,"on":true,"width":0.5},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"15","revision":"9","jobId":0}
+json command-effect-4 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":36,"on":true,"slope":24},"monoBass":{"fq":120,"on":true,"width":0.5},"glue":{"on":true,"upToDb":1.5},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"16","revision":"10","jobId":0}
+json command-effect-5 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":36,"on":true,"slope":24},"monoBass":{"fq":120,"on":true,"width":0.5},"glue":{"on":true,"upToDb":1.5},"saturation":{"drive":1,"mix":0.5,"on":true,"output":-1},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"17","revision":"11","jobId":0}
+json command-effect-6 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":36,"on":true,"slope":24},"monoBass":{"fq":120,"on":true,"width":0.5},"glue":{"on":true,"upToDb":1.5},"saturation":{"drive":1,"mix":0.5,"on":true,"output":-1},"tilt":{"db":1.25,"on":true},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"18","revision":"12","jobId":0}
+json command-effect-7 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":36,"on":true,"slope":24},"monoBass":{"fq":120,"on":true,"width":0.5},"glue":{"on":true,"upToDb":1.5},"saturation":{"drive":1,"mix":0.5,"on":true,"output":-1},"tilt":{"db":1.25,"on":true},"limiter":{"needles":1,"needlesDb":2},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"19","revision":"13","jobId":0}
+json command-effect-8 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":36,"on":true,"slope":24},"monoBass":{"fq":120,"on":true,"width":0.5},"glue":{"on":true,"upToDb":1.5},"saturation":{"drive":1,"mix":0.5,"on":true,"output":-1},"tilt":{"db":1.25,"on":true},"limiter":{"needles":1,"needlesDb":2},"dither":{"on":true},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"20","revision":"14","jobId":0}
+json command-effect-9 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":36,"on":true,"slope":24},"monoBass":{"fq":120,"on":true,"width":0.5},"glue":{"on":true,"upToDb":1.5},"saturation":{"drive":1,"mix":0.5,"on":true,"output":-1},"tilt":{"db":1.25,"on":true},"limiter":{"needles":1,"needlesDb":2},"dither":{"on":true},"low":{"db":0.75,"on":true}}
+{"kind":"accepted","commandId":"21","revision":"15","jobId":0}
+json command-effect-10 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":120,"on":true,"width":0.5},"glue":{"on":true,"upToDb":1.5},"saturation":{"drive":1,"mix":0.5,"on":true,"output":-1},"tilt":{"db":1.25,"on":true},"limiter":{"needles":1,"needlesDb":2},"dither":{"on":true},"low":{"db":0.75,"on":true}}
+{"kind":"accepted","commandId":"22","revision":"16","jobId":0}
+json command-effect-11 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":true,"upToDb":1.5},"saturation":{"drive":1,"mix":0.5,"on":true,"output":-1},"tilt":{"db":1.25,"on":true},"limiter":{"needles":1,"needlesDb":2},"dither":{"on":true},"low":{"db":0.75,"on":true}}
+{"kind":"accepted","commandId":"23","revision":"17","jobId":0}
+json command-effect-12 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":1,"mix":0.5,"on":true,"output":-1},"tilt":{"db":1.25,"on":true},"limiter":{"needles":1,"needlesDb":2},"dither":{"on":true},"low":{"db":0.75,"on":true}}
+{"kind":"accepted","commandId":"24","revision":"18","jobId":0}
+json command-effect-13 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":1.25,"on":true},"limiter":{"needles":1,"needlesDb":2},"dither":{"on":true},"low":{"db":0.75,"on":true}}
+{"kind":"accepted","commandId":"25","revision":"19","jobId":0}
+json command-effect-14 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":1,"needlesDb":2},"dither":{"on":true},"low":{"db":0.75,"on":true}}
+{"kind":"accepted","commandId":"26","revision":"20","jobId":0}
+json command-effect-15 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":true},"low":{"db":0.75,"on":true}}
+{"kind":"accepted","commandId":"27","revision":"21","jobId":0}
+json command-effect-16 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":0.75,"on":true}}
+{"kind":"accepted","commandId":"28","revision":"22","jobId":0}
+json command-effect-17 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"29","revision":"22","jobId":0}
+json command-effect-18 {"target":"cd","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"30","revision":"23","jobId":0}
+json command-effect-19 {"target":"lp","manual":false,"targetEdit":{"lufs":null,"tp":null},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"31","revision":"24","jobId":2}
+json command-effect-20 {"target":"lp","manual":false,"targetEdit":{"lufs":null,"tp":null},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"accepted","commandId":"32","revision":"25","jobId":0}
+json command-effect-21 {"target":"lp","manual":false,"targetEdit":{"lufs":null,"tp":null},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"rejected","commandId":"33","revision":"25","code":11,"needBytes":0,"field":255,"device":-1,"line":0,"column":0}
+json command-effect-22 {"target":"lp","manual":false,"targetEdit":{"lufs":null,"tp":null},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"rejected","commandId":"34","revision":"25","code":"contract","reason":"unknown","field":"unknown"}
+json command-effect-23 {"target":"lp","manual":false,"targetEdit":{"lufs":null,"tp":null},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"rejected","commandId":"0","revision":"25","code":"contract","reason":"missing","field":"commandId"}
+json command-effect-24 {"target":"lp","manual":false,"targetEdit":{"lufs":null,"tp":null},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"rejected","commandId":"36","revision":"25","code":"contract","reason":"duplicate","field":"on"}
+json command-effect-25 {"target":"lp","manual":false,"targetEdit":{"lufs":null,"tp":null},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"rejected","commandId":"37","revision":"25","code":"contract","reason":"invalid","field":"on"}
+json command-effect-26 {"target":"lp","manual":false,"targetEdit":{"lufs":null,"tp":null},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
+{"kind":"rejected","commandId":"38","revision":"25","code":22,"needBytes":0,"field":255,"device":-1,"line":1,"column":9}

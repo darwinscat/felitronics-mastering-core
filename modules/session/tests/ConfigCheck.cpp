@@ -100,7 +100,8 @@ int main (int argc, char** argv)
     std::string targets, engine;
     if (! readFile (targetsPath, targets)) { std::fprintf (stderr, "config_check: cannot read %s\n", targetsPath); return 2; }
     if (! readFile (enginePath, engine)) { std::fprintf (stderr, "config_check: cannot read %s\n", enginePath); return 2; }
-    if (! expect) return report (Config::bind (targets, engine), targetsPath, enginePath);
+    const int checked = report (Config::bind (targets, engine), targetsPath, enginePath);
+    if (! expect || checked != 0) return checked;
 
     std::string targetsText, engineText;
     if (! canonical (targetsPath, targets, targetsText) || ! canonical (enginePath, engine, engineText)) return 2;
@@ -108,6 +109,7 @@ int main (int argc, char** argv)
     if (! v) return 2;   // canonical() above has already parsed both and said why
     const std::string dir = argv[4];
     if (! writeFile (dir + "/targets.toml", targetsText) || ! writeFile (dir + "/engine.toml", engineText)
+        || ! writeFile (dir + "/versions.h", "#pragma once\n#include <cstdint>\nnamespace felitronics::session::config::embedded {\ninline constexpr std::uint64_t allVersion = 0x" + hex (v->all).substr (0, 16) + "ull;\ninline constexpr std::uint64_t soundVersion = 0x" + hex (v->sound).substr (0, 16) + "ull;\n}\n")
         || ! writeFile (dir + "/version.txt", hex (v->all)) || ! writeFile (dir + "/sound-version.txt", hex (v->sound)))
     {
         std::fprintf (stderr, "config_check: cannot write into %s\n", argv[4]);

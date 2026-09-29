@@ -65,8 +65,8 @@ limiterNeedles.ru = "Резать иглы"
 limiterNeedles.en = "Cut needles"
 limiterNeedlesDb.ru = "Порог игл"
 limiterNeedlesDb.en = "Needle threshold"
-lowShelfDb.ru = "Низкая полка"
-lowShelfDb.en = "Low shelf"
+lowDb.ru = "Низ"
+lowDb.en = "Low"
 audio.ru = "Звук"
 audio.en = "Audio"
 
@@ -154,10 +154,6 @@ en = "Nothing to cancel: no measurement or master is running."
 ru = "Готовых мастеров нет — убирать нечего."
 en = "No master is kept — there is nothing to remove."
 
-[messages.rejectedManualOff]
-ru = "Ручной режим выключен, и панель приборов закрыта. Чтобы править приборы, включите ручной режим."
-en = "Manual mode is off, and the device panel is closed. To edit the devices, turn manual mode on."
-
 [messages.rejectedUnknownTarget]
 ru = "Такой цели нет."
 en = "There is no such target."
@@ -174,9 +170,6 @@ en = "That job is no longer running — there is nothing to cancel."
 ru = "Такого мастера среди готовых нет."
 en = "No such master is kept."
 
-[messages.rejectedNoFields]
-ru = "Команда не затрагивает ни одного поля."
-en = "The command touches no field."
 
 [messages.rejectedNotFinite]
 ru = "{field}: не число — принимается только конечное значение."
@@ -186,13 +179,9 @@ en = "{field}: not a number — only a finite value is taken."
 ru = "{field}: у этой ручки нет такого значения."
 en = "{field}: this knob has no such value."
 
-[messages.rejectedOutOfTravel]
-ru = "{field}: значение за пределами хода ручки."
-en = "{field}: the value is outside the knob's travel."
-
-[messages.rejectedOffStep]
-ru = "{field}: значение не попадает на шаг ручки."
-en = "{field}: the value is not on the knob's step."
+[messages.rejectedOutOfDomain]
+ru = "{field}: значение вне допустимого диапазона."
+en = "{field}: the value is outside the accepted domain."
 
 [messages.rejectedBadChannels]
 ru = "Движок принимает звук в одном или двух каналах, а в этом файле их другое число."
@@ -292,18 +281,14 @@ en = "This core does not carry the project’s defaults version."
 ru = "Версия ядра в проекте должна иметь вид major.minor.patch."
 en = "The project’s core version must have the form major.minor.patch."
 
-[messages.rejectedMachineMismatch]
-ru = "Сохранённый слой машины отличается от решения этого ядра."
-en = "The saved machine layer differs from this core’s decision."
-
 [messages.machineDifferences]
 plural = "count"
-ru.one = "Новое ядро решило бы иначе в {count} месте. Слой машины сохранён."
-ru.few = "Новое ядро решило бы иначе в {count} местах. Слой машины сохранён."
-ru.many = "Новое ядро решило бы иначе в {count} местах. Слой машины сохранён."
-ru.other = "Новое ядро решило бы иначе в {count} местах. Слой машины сохранён."
-en.one = "A newer core would decide differently in {count} place. The saved machine layer is retained."
-en.other = "A newer core would decide differently in {count} places. The saved machine layer is retained."
+ru.one = "Сейчас машина решила бы иначе в {count} месте. Слой машины сохранён."
+ru.few = "Сейчас машина решила бы иначе в {count} местах. Слой машины сохранён."
+ru.many = "Сейчас машина решила бы иначе в {count} местах. Слой машины сохранён."
+ru.other = "Сейчас машина решила бы иначе в {count} местах. Слой машины сохранён."
+en.one = "The machine would decide differently today in {count} place. The saved machine layer is retained."
+en.other = "The machine would decide differently today in {count} places. The saved machine layer is retained."
 
 [messages.defaultsConverted]
 ru = "Проект с версией умолчаний {version} сконвертирован. Записанные числа сохранены; для отсутствующих полей использованы текущие умолчания."
@@ -312,3 +297,36 @@ en = "The project from defaults version {version} was converted. Written numbers
 [messages.rejectedNewerDefaults]
 ru = "Проект использует более новую версию умолчаний, которой нет в этом ядре."
 en = "The project uses a newer defaults version that this core does not carry."
+
+[messages.rejectedRateAboveLimit]
+ru = "Частота источника выше предела оболочки."
+en = "The source sample rate exceeds the shell's limit."
+
+[messages.rejectedMemory]
+ru = "Для команды недостаточно памяти."
+en = "The command exceeds the memory ceiling."
+
+[messages.convert]
+ru = "Преобразование частоты"
+en = "Converting sample rate"
+
+[messages.lra]
+ru = "Диапазон громкости"
+en = "Loudness range"
+
+[messages.final]
+ru = "Завершение"
+en = "Finalizing"
+
+[messages.rejectedContract]
+ru = "Неверный формат команды."
+en = "The command format is invalid."
+
+[messages.sameCoreMachineDifferences]
+plural = "count"
+ru.one = "Сейчас машина решила бы иначе в {count} месте. При той же версии ядра это обычно означает, что файл проекта правили вручную; сохранённые решения остаются."
+ru.few = "Сейчас машина решила бы иначе в {count} местах. При той же версии ядра это обычно означает, что файл проекта правили вручную; сохранённые решения остаются."
+ru.many = "Сейчас машина решила бы иначе в {count} местах. При той же версии ядра это обычно означает, что файл проекта правили вручную; сохранённые решения остаются."
+ru.other = "Сейчас машина решила бы иначе в {count} местах. При той же версии ядра это обычно означает, что файл проекта правили вручную; сохранённые решения остаются."
+en.one = "The machine would decide differently in {count} place today. With the same core version, this usually means the project file was edited by hand; the saved decisions are kept."
+en.other = "The machine would decide differently in {count} places today. With the same core version, this usually means the project file was edited by hand; the saved decisions are kept."

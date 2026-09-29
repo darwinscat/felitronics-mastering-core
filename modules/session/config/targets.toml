@@ -1,4 +1,5 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
+# Travel and step are slider hints. Domain is what commands and project import accept.
 # Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 #
 # THE TARGETS — what a master is made for. The one table of target numbers in the mastering session: the loudness and
@@ -16,9 +17,9 @@
 #   tp                the true-peak ceiling, dBTP. Hard: the landing never moves it.
 #   monoBass          the mono-bass crossover, Hz. Mono bass is always placed — the machine leaves it out for bass in
 #                     opposite polarity and on an input too quiet to measure ([input] in engine.toml), and a person may
-#                     switch it off. Within the knob's travel ([monoBass] in engine.toml).
+#                     switch it off. Within the knob's domain ([monoBass] in engine.toml).
 #   hpfFloor          the lowest cutoff the high-pass may take, Hz: cutoff = max(the cutoff the lowest note allows,
-#                     this); a note that is unsure or below it gives this. Within the knob's travel ([hpf]).
+#                     this); a note that is unsure or below it gives this. Within the knob's domain ([hpf]).
 #   hpfSlopeDbPerOct  the machine's high-pass slope, dB/oct — from the target, never from a trial render. One of the
 #                     knob's slopes ([hpf]).
 #   noteLossDb        how much the high-pass may take at the lowest note found, dB.
@@ -30,8 +31,8 @@
 #   sourceRatePass    optional, false when absent: when the delivery rate is not the source's, the landing is followed
 #                     by one more pass at the source's rate, so the per-band crest of the master is compared with the
 #                     source at the source's own rate. The landing itself is not repeated.
-#   lowShelfDb        optional, absent for none: a low shelf, dB — a property of the medium, not a decision taken from a
-#                     measurement. It is the gain of the [lowShelf] device.
+#   lowDb             optional machine low correction in dB, from the medium, not the measurement.
+#                     Enables [low] at this gain; absent means off at 0 dB. The device is offered on every target.
 #   album             optional: the album loudness, { lufs, desktopOnly }. Album mastering is a project of several
 #                     tracks; desktopOnly = true marks a number the web shell does not offer.
 #
@@ -40,9 +41,8 @@
 # higher than −1 dBTP.
 #
 # EVERY ROW IS AN OWNER DECISION, pinned field by field by the decisions suite (modules/session/tests/
-# ConfigDecisionsTests.cpp). The schema checks what a row may be — a lufs and a ceiling on the edit's travel and step, a
-# crossover on the mono-bass knob, a floor on the high-pass knob, a slope from its list, a delivery rate of 0 or 8 kHz and
-# up — and that suite checks what it is. Every number sits on its knob's grid, counted from where the travel starts. An
+# ConfigDecisionsTests.cpp). The schema checks finite loudness, the ceiling and crossover domains, a high-pass floor
+# below Nyquist, slope orders 1–16, and a delivery rate of 0 or 8 kHz and up. That suite pins the chosen values. An
 # optional flag is written only when it is true; sourceRatePass only on a target that delivers at a rate of its own.
 
 # The target a new session starts with.
@@ -66,7 +66,7 @@ club         = { group = "delivery", lufs = -8, tp = -1, monoBass = 120, hpfFloo
 # Vinyl. No peak clipper and a ceiling of −3 dBTP for the cutting lathe; mono bass up to 150 Hz, where cutting rooms put
 # their elliptical filter (100…150 Hz); the high-pass is always placed, never below 32 Hz and at a gentle 12 dB/oct;
 # a +0.5 dB low shelf. Never RIAA, never upsampled, never dithered to 16 bits.
-lp           = { group = "delivery", lufs = -14, tp = -3, monoBass = 150, hpfFloor = 32, hpfSlopeDbPerOct = 12, noteLossDb = 1, sampleRate = 0, bitDepth = 24, noClipper = true, hpfAlways = true, lowShelfDb = 0.5 }
+lp           = { group = "delivery", lufs = -14, tp = -3, monoBass = 150, hpfFloor = 32, hpfSlopeDbPerOct = 12, noteLossDb = 1, sampleRate = 0, bitDepth = 24, noClipper = true, hpfAlways = true, lowDb = 0.5 }
 spotify      = { group = "streaming", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
 spotifyLoud  = { group = "streaming", lufs = -11, tp = -2, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
 appleMusic   = { group = "streaming", lufs = -16, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
@@ -97,8 +97,8 @@ bandcamp     = { group = "delivery", lufs = -10, tp = -1, monoBass = 120, hpfFlo
 
 # THE HAND EDIT OF A TARGET'S TWO NUMBERS. A person may change the loudness and the ceiling of the chosen target in
 # place: from…to is the knob's travel, step its step, green the range drawn green — broadcast and streaming loudness
-# for lufs, a ceiling that leaves a codec its headroom for tp. Every target above lies on these travels; the schema
-# refuses one that does not, since the knob could not show it.
+# for lufs, a ceiling that leaves a codec its headroom for tp. Travel and step guide the slider; every target default
+# must lie in the accepted domain, independently of those hints.
 [edit]
-lufs = { from = -25, to = -5, green = [-15, -13], step = 0.1 }
-tp = { from = -4, to = -0.1, green = [-2, -1], step = 0.1 }
+lufs = { domain = "finite", from = -25, to = -5, green = [-15, -13], step = 0.1 }
+tp = { domain = [-6.0, -0.1], from = -4, to = -0.1, green = [-2, -1], step = 0.1 }

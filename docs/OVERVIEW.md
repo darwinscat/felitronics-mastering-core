@@ -79,7 +79,12 @@ floating-point environment is not IEEE-754's default, and it holds:
 - **its project** (`<felitronics/session/Project.h>`): the target and a person's edits of its numbers, the manual mode,
   and every device's parameters as typed fields written once and used in two layers — the machine's, complete, placed
   from the config when the first measurement ends, and a person's, only what was touched, edited only after that and
-  checked on each knob's travel and step, exactly. [`SESSION.md`](SESSION.md), "The states and the commands".
+  checked against each knob's domain; travel and step guide the slider. [`SESSION.md`](SESSION.md), "The states and the commands".
+
+`manual` controls only panel visibility: hand edits remain effective while hidden, and `handFieldCount` in the snapshot
+counts touched device fields for the page's marker. Tilt and low are separate devices on every target. The machine
+places low off at 0 dB except where a target carries `lowDb` (today `lp`, +0.5 dB). The page draws the snapshot's
+`eqCurve`, the summed high-pass + tilt + low response in Hz/dB, carried through the one codec generator into `.d.ts`.
 
 The session also exposes `step(workUnits)`, copyable event deltas and owned immutable snapshots. The deterministic
 stub runs two five-unit measurement phases and a master with config-weighted pass progress. Cheap commands and
@@ -91,9 +96,9 @@ command-table cell between steps, stale completions, snapshot ownership, codec r
 
 `exportProject()` writes canonical TOML: defaults and core versions, target by name, manual mode, and only machine
 values that differ from defaults and touched human fields. `importProject()` uses felitronics-toml's schema reader,
-refuses unknown or invalid data with a position, and declares its size-based memory bound before parsing. Same-core
-machine differences are refusals; a foreign machine layer is preserved with its original stamp, a count fact and
-owned snapshot comparison rows. A fresh session plus the same source, measurement and project text restores the
+refuses unknown or invalid data with a position, and declares its size-based memory bound before parsing. The file's
+machine layer is always preserved with its original core stamp. Today's decisions appear beside it as a count fact and
+owned snapshot comparison rows, including for the same core. A fresh session plus the same source, measurement and project text restores the
 project after facade poison or heap compaction. Revisions, job ids and kept masters are outside the project.
 
 What is fixed is the ground it stands on:
@@ -130,10 +135,12 @@ What is fixed is the ground it stands on:
 `tools/wasm/fc_tempo.cpp`) over the tempo detector alone — fc_probe's `fc_probe_tempo_*` entry points under the
 same names, with a version of its own, because a version is a promise about a whole surface — and `fc_session`
 (`tools/fc_session_abi.h`, `tools/wasm/fc_session.cpp`) over the session, the surface a shell that cannot link C++
-talks to the library through (a DRAFT, version 0, with no promise: the version, a session created and destroyed
-through a handle, the config version, the session's refusals of a create, the poison; its wasm module `fcsession`, which
-carries the config, is 58 KB, 17 KB brotli) — each with its ABI version
-and, for the first three, the append-only rule that moves it in its header —
+talks to the library through. Its frozen v1 surface takes capabilities and the page build's config version, publishes
+creation demand, accepts named JSON commands and planar PCM, pumps work units, and copies events, snapshots and project
+bytes into caller buffers. Numeric rows use a separate f64 section; the generated declarations provide tagged events,
+row descriptors and the config constant. The session enforces memory/rate/device limits in C++ as well as through the
+facade. A compiled manifest gate on every tier holds signatures, values and layouts to additions only. Each C ABI has
+its version and append-only contract in its header,
 with their native CLIs (`fcore_master`, `fcore_measure`, `fcore_session`) and suites. `tools/wasm/build.sh` builds the wasm modules against a felitronics-core checkout
 (`FELITRONICS_CORE_DIR`, or the sibling `../felitronics-core`) and records both versions in `BUILD-INFO` beside
 them; `fcsession` embeds its config with a felitronics-toml checkout (`FELITRONICS_TOML_DIR`, or the sibling

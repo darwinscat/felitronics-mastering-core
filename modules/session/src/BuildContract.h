@@ -21,6 +21,6 @@ struct BuildProbes
 [[nodiscard]] BuildProbes buildProbes() noexcept;
 // Debug-only bounds trap, compiled under the library flags; no console or assertion handler.
 void debugBound (bool within) noexcept;
-// A snapshot allocation outside size_t is a contract failure in every configuration.
+// A violated internal contract (including snapshot size overflow) traps in every configuration.
 [[noreturn]] void storageOverflow() noexcept;
 } // namespace felitronics::session::detail

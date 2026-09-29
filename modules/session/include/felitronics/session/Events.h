@@ -23,7 +23,7 @@ private:
     char text_[kTextCapacity] {};
     std::size_t lengths_[text::Fact::kMaxArgs] {};
 };
-enum class PhaseName : std::uint8_t { Stream, Report, Analyzers, Pass, Remeasure };
+enum class PhaseName : std::uint8_t { Stream, Report, Analyzers, Pass, Remeasure, Convert, Lra, Final };
 struct Phase
 {
     PhaseName name = PhaseName::Stream;

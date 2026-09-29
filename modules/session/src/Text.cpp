@@ -22,6 +22,7 @@
 #include <felitronics/session/Text.h>
 
 #include "TextFacts.h"
+#include "BuildContract.h"
 #include "TextNumber.h"
 #include "TextSchema.h"
 #include "embedded/catalog.h"   // generated at build time from modules/session/text/catalog.toml
@@ -54,7 +55,8 @@ using detail::Digits;
 std::string_view textOf (View v) noexcept
 {
     const auto s = v.string();
-    return s ? *s : std::string_view {};
+    if (! s) felitronics::session::detail::storageOverflow();
+    return *s;
 }
 
 bool known (Lang lang) noexcept { return (std::size_t) lang < kLangCount; }
@@ -68,7 +70,11 @@ struct Sink
 
     void put (std::string_view s) noexcept
     {
-        if (out != nullptr && ! s.empty() && n <= capacity && s.size() <= capacity - n) std::memcpy (out + n, s.data(), s.size());
+        if (out != nullptr && ! s.empty())
+        {
+            felitronics::session::detail::debugBound (n <= capacity && s.size() <= capacity - n);
+            std::memcpy (out + n, s.data(), s.size());
+        }
         n += s.size();
     }
 };
@@ -83,7 +89,9 @@ View numbersOf (Lang lang) noexcept
 void putDigits (Sink& s, const Digits& d, View row) noexcept
 {
     const std::string_view integer = d.integer();
-    const std::int64_t minimum = row.find ("minimumGrouping").integer().value_or (1);
+    const auto grouping = row.find ("minimumGrouping").integer();
+    if (! grouping) felitronics::session::detail::storageOverflow();
+    const std::int64_t minimum = *grouping;
     if (integer.size() < 3 + (std::size_t) minimum) s.put (integer);
     else
     {
@@ -119,7 +127,7 @@ void putValue (Sink& s, const Arg& a, Lang lang) noexcept
         : textOf (detail::formatRoot().find ("units").find (detail::kUnitKeys[(std::size_t) a.unit])
                                       .find (detail::kLangCodes[(std::size_t) lang]));
     const std::size_t at = pattern.find ("{n}");
-    if (at == std::string_view::npos) { putDigits (s, d, row); return; }
+    if (at == std::string_view::npos) felitronics::session::detail::storageOverflow();
     s.put (pattern.substr (0, at));
     putDigits (s, d, row);
     s.put (pattern.substr (at + 3));
@@ -150,10 +158,8 @@ void putNote (Sink& s, std::int64_t note, Lang lang) noexcept
 void putTerm (Sink& s, const detail::TermShape& t, Lang lang) noexcept
 {
     const View word = detail::catalogRoot().find ("terms").find (t.group).find (t.key).find (detail::kLangCodes[(std::size_t) lang]);
-    if (word.is (felitronics::toml::embedded::Type::String)) { s.put (textOf (word)); return; }
-    s.put (t.group);
-    s.put (".");
-    s.put (t.key);
+    if (Text::speaks (lang)) s.put (textOf (word));
+    else { s.put (t.group); s.put ("."); s.put (t.key); }
 }
 
 // Does the argument match its declaration, and is every field of it one the renderer knows?
@@ -221,10 +227,11 @@ Plural categoryOf (const Arg& a, Lang lang) noexcept
 // Empty when the catalog has none.
 std::string_view chosenText (const Fact& fact, const detail::FactShape& shape, Lang lang) noexcept
 {
+    if (! Text::speaks (lang)) return {};
     const View message = detail::catalogRoot().find ("messages").find (shape.key);
     const View entry = message.find (detail::kLangCodes[(std::size_t) lang]);
     if (entry.is (felitronics::toml::embedded::Type::String)) return textOf (entry);
-    if (! entry.is (felitronics::toml::embedded::Type::Table)) return {};
+    if (! entry.is (felitronics::toml::embedded::Type::Table)) felitronics::session::detail::storageOverflow();
     if (const auto name = message.find ("plural").string())
     {
         const int i = detail::argIndex (shape, *name);

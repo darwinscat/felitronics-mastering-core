@@ -2,11 +2,12 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 // THE NUMBERS THE COMMANDS CHECK AGAINST, READ IN PLACE (src/Rules.h): a walk over two embedded documents that keeps
-// every number as the decimal written, and says whether it found every one. Nothing is allocated.
+// every number as the decimal written. Missing required values are contract failures. Nothing is allocated.
 
 #include "BuildGuards.h"
 
 #include "Rules.h"
+#include "BuildContract.h"
 
 #include <felitronics/toml/Embedded.h>
 #include <felitronics/toml/Toml.h>
@@ -24,71 +25,63 @@ using View = toml::embedded::View;
 using Type = toml::embedded::Type;
 
 // A number of a document — an integer or a decimal — as a decimal: an integer n is n at one place.
-std::optional<Decimal> number (View v) noexcept
+Decimal number (View v) noexcept
 {
-    if (const auto d = v.decimal(); d && d->valid()) return *d;
-    if (const auto n = v.integer(); n && *n <= Decimal::kMaxMantissa / 10 && *n >= -Decimal::kMaxMantissa / 10)
-        return Decimal { *n * 10, 1, false };
-    return std::nullopt;
+    if (const auto d = v.decimal()) return *d;
+    if (const auto n = v.integer()) return Decimal { *n * 10, 1, false };
+    storageOverflow();
 }
 
-std::optional<std::int32_t> int32 (View v) noexcept
+std::int32_t int32 (View v) noexcept
 {
     const auto n = v.integer();
-    if (! n || *n < std::numeric_limits<std::int32_t>::min() || *n > std::numeric_limits<std::int32_t>::max())
-        return std::nullopt;
+    if (! n) storageOverflow();
     return std::int32_t (*n);
 }
 
 // A range, written as [min, max] or as { min, max }.
-bool span (View v, Decimal& min, Decimal& max) noexcept
+void span (View v, Decimal& min, Decimal& max) noexcept
 {
-    std::optional<Decimal> lo, hi;
-    if (v.is (Type::Array) && v.size() == 2) { lo = number (v[0]); hi = number (v[1]); }
-    else if (v.is (Type::Table)) { lo = number (v.find ("min")); hi = number (v.find ("max")); }
-    if (! lo || ! hi) return false;
-    min = *lo;
-    max = *hi;
-    return true;
+    if (v.is (Type::Array)) { min = number (v[0]); max = number (v[1]); }
+    else { min = number (v.find ("min")); max = number (v.find ("max")); }
 }
 
-// ONE READING: every read that misses a number marks the whole reading incomplete.
+// Every required value was checked by the build gate.
 struct Reading
 {
-    bool complete = true;
-
-    void read (View v, Decimal& out) noexcept
-    {
-        if (const auto d = number (v)) out = *d;
-        else complete = false;
-    }
-    void read (View v, std::int32_t& out) noexcept
-    {
-        if (const auto n = int32 (v)) out = *n;
-        else complete = false;
-    }
+    void read (View v, Decimal& out) noexcept { out = number (v); }
+    void read (View v, std::int32_t& out) noexcept { out = int32 (v); }
     void read (View v, bool& out) noexcept
     {
-        if (const auto b = v.boolean()) out = *b;
-        else complete = false;
+        const auto b = v.boolean();
+        if (! b) storageOverflow();
+        out = *b;
     }
-    // A knob: a range from its key, a step from another.
-    void knob (View range, View step, Knob& out) noexcept
+    void domain (View v, Knob& out) noexcept
     {
-        if (! span (range, out.from, out.to)) complete = false;
-        read (step, out.step);
+        if (const auto name = v.string())
+        {
+            if (*name == "finite") out.domain = Knob::Domain::Finite;
+            else if (*name == "sourceNyquist") out.domain = Knob::Domain::SourceNyquist;
+            else storageOverflow();
+        }
+        else span (v, out.minimum, out.maximum);
     }
-    // A knob written as { from, to, step } ([edit] in targets.toml).
+    void knob (View range, View step, View bounds, Knob& out) noexcept
+    {
+        span (range, out.from, out.to);
+        read (step, out.step);
+        domain (bounds, out);
+    }
     void edit (View v, Knob& out) noexcept
     {
-        read (v.find ("from"), out.from);
-        read (v.find ("to"), out.to);
-        read (v.find ("step"), out.step);
+        read (v.find ("from"), out.from); read (v.find ("to"), out.to);
+        read (v.find ("step"), out.step); domain (v.find ("domain"), out);
     }
 };
 
-// A row, read into `out`; false when a number the schema requires in every row is not there.
-bool readRow (View rowView, View byTarget, TargetRow& out) noexcept
+// A build-checked row, read into `out`.
+void readRow (View rowView, View byTarget, TargetRow& out) noexcept
 {
     Reading r;
     out.key = rowView.key();
@@ -101,13 +94,13 @@ bool readRow (View rowView, View byTarget, TargetRow& out) noexcept
     // Optional in a row: absent is their default.
     if (const View v = rowView.find ("noClipper")) r.read (v, out.noClipper);
     else out.noClipper = false;
-    if (const View v = rowView.find ("lowShelfDb"))
+    if (const View v = rowView.find ("lowDb"))
     {
         Decimal d {};
         r.read (v, d);
-        out.lowShelfDb = d;
+        out.lowDb = d;
     }
-    else out.lowShelfDb.reset();
+    else out.lowDb.reset();
     if (const View v = byTarget.find (out.key))
     {
         Decimal d {};
@@ -115,7 +108,6 @@ bool readRow (View rowView, View byTarget, TargetRow& out) noexcept
         out.glue = d;
     }
     else out.glue.reset();
-    return r.complete && ! out.key.empty() && rowView.is (Type::Table);
 }
 } // namespace
 
@@ -130,14 +122,12 @@ Rules readRules (View targets, View engine) noexcept
     // the project's 16 bits after any document the parser took.
     static_assert (toml::kMaxEntries - 1 <= std::numeric_limits<std::uint16_t>::max());
     const View rows = targets.find ("targets");
-    if (! rows.is (Type::Table) || rows.size() == 0 || rows.size() > std::numeric_limits<std::uint16_t>::max()) r.complete = false;
-    else out.rows = std::uint16_t (rows.size());
-    if (const auto name = targets.find ("default").string(); name && out.rows != 0)
-    {
-        if (const auto row = out.find (*name)) out.defaultRow = *row;
-        else r.complete = false;
-    }
-    else r.complete = false;
+    out.rows = std::uint16_t (rows.size());
+    const auto defaultName = targets.find ("default").string();
+    if (! defaultName) storageOverflow();
+    const auto defaultRow = out.find (*defaultName);
+    if (! defaultRow) storageOverflow();
+    out.defaultRow = *defaultRow;
 
     const View edit = targets.find ("edit");
     r.edit (edit.find ("lufs"), out.lufs);
@@ -146,16 +136,12 @@ Rules readRules (View targets, View engine) noexcept
     const View hpf = engine.find ("hpf");
     r.read (hpf.find ("hzMin"), out.hpfFq.from);
     r.read (hpf.find ("hzMax"), out.hpfFq.to);
-    out.hpfFq.step = Decimal { 10, 1, false };   // the cutoff is whole hertz (the schema's grid for it, and for hpfFloor)
+    r.read (hpf.find ("hzStep"), out.hpfFq.step);
+    r.domain (hpf.find ("frequencyDomain"), out.hpfFq);
     r.read (hpf.find ("hzDefault"), out.hpfDefault);
-    const View slopes = hpf.find ("slopes");
-    if (! slopes.is (Type::Array) || slopes.size() == 0) r.complete = false;
-    for (const View s : slopes)
-        if (! int32 (s)) r.complete = false;
-
     const View mono = engine.find ("monoBass");
-    r.knob (mono.find ("frequencyRange"), mono.find ("frequencyStep"), out.monoBassFq);
-    r.knob (mono.find ("lowWidthRange"), mono.find ("lowWidthStep"), out.monoBassWidth);
+    r.knob (mono.find ("frequencyRange"), mono.find ("frequencyStep"), mono.find ("frequencyDomain"), out.monoBassFq);
+    r.knob (mono.find ("lowWidthRange"), mono.find ("lowWidthStep"), mono.find ("lowWidthDomain"), out.monoBassWidth);
     r.read (mono.find ("lowWidth"), out.monoBassWidthDefault);
 
     const View glue = engine.find ("glue");
@@ -163,27 +149,27 @@ Rules readRules (View targets, View engine) noexcept
     r.read (glue.find ("knobMaxDb"), out.glue.to);
     r.read (glue.find ("knobStepDb"), out.glue.step);
     r.read (glue.find ("default"), out.glueDefault);
-    const View byTarget = glue.find ("byTarget");
-    if (! byTarget.is (Type::Table)) r.complete = false;
+    r.domain (glue.find ("domain"), out.glue);
 
     const View sat = engine.find ("saturation");
-    r.knob (sat.find ("driveRange"), sat.find ("driveStep"), out.drive);
-    r.knob (sat.find ("mixRange"), sat.find ("mixStep"), out.mix);
-    r.knob (sat.find ("outputRange"), sat.find ("outputStep"), out.output);
+    r.knob (sat.find ("driveRange"), sat.find ("driveStep"), sat.find ("driveDomain"), out.drive);
+    r.knob (sat.find ("mixRange"), sat.find ("mixStep"), sat.find ("mixDomain"), out.mix);
+    r.knob (sat.find ("outputRange"), sat.find ("outputStep"), sat.find ("outputDomain"), out.output);
     r.read (sat.find ("driveDb"), out.driveDefault);
     r.read (sat.find ("mix"), out.mixDefault);
     r.read (sat.find ("outputDb"), out.outputDefault);
 
     const View tilt = engine.find ("tilt");
-    r.knob (tilt.find ("hard"), tilt.find ("step"), out.tilt);
-    const View shelf = engine.find ("lowShelf");
-    r.knob (shelf.find ("hard"), shelf.find ("step"), out.lowShelf);
+    r.knob (tilt.find ("hard"), tilt.find ("step"), tilt.find ("domain"), out.tilt);
+    const View shelf = engine.find ("low");
+    r.knob (shelf.find ("hard"), shelf.find ("step"), shelf.find ("domain"), out.low);
 
     const View clipper = engine.find ("limiter").find ("peakClipper");
     r.read (clipper.find ("manualMinDb"), out.needles.from);
     r.read (clipper.find ("manualMaxDb"), out.needles.to);
     r.read (clipper.find ("manualStepDb"), out.needles.step);
     r.read (clipper.find ("betweenOverDb"), out.needlesDefault);
+    r.domain (clipper.find ("manualDomain"), out.needles);
 
     const View stages = engine.find ("stages");
     r.read (stages.find ("eq"), out.eq);
@@ -193,13 +179,6 @@ Rules readRules (View targets, View engine) noexcept
     r.read (stages.find ("dither"), out.dither);
     r.read (engine.find ("dither").find ("onUpToBits"), out.ditherUpToBits);
 
-    // Every row, once: a later row() of a complete reading finds every number.
-    for (std::uint16_t i = 0; i < out.rows; ++i)
-    {
-        TargetRow row;
-        if (! readRow (rows[i], byTarget, row)) r.complete = false;
-    }
-    out.complete = r.complete;
     return out;
 }
 
@@ -220,9 +199,17 @@ std::optional<std::uint16_t> Rules::find (std::string_view key) const noexcept
 
 bool Rules::slope (std::int32_t dbPerOct) const noexcept
 {
-    for (const View s : engine.find ("hpf").find ("slopes"))
-        if (const auto n = int32 (s); n && *n == dbPerOct) return true;
-    return false;
+    const View hpf = engine.find ("hpf");
+    const View bounds = hpf.find ("slopeDomain");
+    return dbPerOct >= int32 (bounds[0]) && dbPerOct <= int32 (bounds[1])
+        && dbPerOct % int32 (hpf.find ("slopeMultiple")) == 0;
+}
+
+bool Knob::accepts (double value, std::uint32_t sourceRate) const noexcept
+{
+    if (domain == Domain::Finite) return true; // caller checks finiteness first
+    if (domain == Domain::SourceNyquist) return value > 0 && value < double (sourceRate) * 0.5;
+    return value >= minimum.toDouble() && value <= maximum.toDouble();
 }
 
 } // namespace felitronics::session::detail

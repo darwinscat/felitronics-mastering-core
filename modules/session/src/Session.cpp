@@ -5,8 +5,13 @@
 
 #include <felitronics/session/Session.h>
 
+#include <felitronics/session/Config.h>
+#include <cmath>
+#include <bit>
+
 #include "FpProbes.h"
 #include "Rules.h"
+#include "BuildContract.h"
 
 #include <cstdint>
 #include <memory>
@@ -15,10 +20,19 @@
 
 namespace felitronics::session
 {
+namespace
+{
+bool validBytes (double bytes) noexcept
+{
+    return std::isfinite (bytes) && bytes >= 0 && bytes < 9007199254740992.0
+        && std::bit_cast<std::uint64_t> (double (std::uint64_t (bytes))) == std::bit_cast<std::uint64_t> (bytes);
+}
+}
+
 
 // One expression for the request and for its price: create() asks the heap for exactly one Session, and this is what
 // one Session costs.
-std::uint64_t Session::createBytes() noexcept
+std::uint64_t Session::createBytes (const Capabilities&) noexcept
 {
     return (std::uint64_t) sizeof (Session);
 }
@@ -30,25 +44,50 @@ Status Session::checkFloatingPointEnvironment() noexcept
     return ieeeDefault ? Status::Ok : Status::FloatingPointEnvironment;
 }
 
-Created Session::create() noexcept
+Status Session::checkCreate (const Capabilities& caps, std::uint64_t configVersion) noexcept
 {
-    // The checks before the one allocation, so a refused create requested nothing (law 11): the thread, then the config
-    // the commands will check against, read in place (src/Rules.h — reading it allocates nothing).
+    if (const auto st = checkFloatingPointEnvironment(); st != Status::Ok) return st;
+    if (configVersion != config::Config::versions().all) return Status::ConfigVersion;
+    if (! validBytes (caps.heapCeilingBytes) || ! validBytes (caps.largestFreeBlockBytes)
+        || caps.maxRateHz < kMinSampleRate || (caps.offeredDevices & ~255u) != 0) return Status::Capabilities;
+    return double (createBytes (caps)) > caps.heapCeilingBytes || double (createBytes (caps)) > caps.largestFreeBlockBytes ? Status::Memory : Status::Ok;
+}
+Created Session::create() noexcept { return create ({}, config::Config::versions().all); }
+Created Session::create (const Capabilities& caps, std::uint64_t configVersion) noexcept
+{
     Created c;
-    if ((c.status = checkFloatingPointEnvironment()) != Status::Ok) return c;
-    const detail::Rules rules = detail::rules();
-    if (! rules.complete)
-    {
-        c.status = Status::Config;
-        return c;
-    }
-    // `new`, not make_unique: the constructor is private, and a Session made anywhere but here would be one whose demand
-    // nobody published. The arrays it owns start empty (null) and ask for nothing; the devices stay unplaced until the
-    // first measurement ends (src/Driver.h).
+    c.status = checkCreate (caps, configVersion);
+    if (c.status != Status::Ok) return c;
     c.session = std::unique_ptr<Session> (new Session);
-    c.session->project_.target = rules.defaultRow;
+    c.session->capabilities_ = caps;
+    c.session->project_.target = detail::rules().defaultRow;
     c.session->project_.core = version();
     return c;
+}
+const Capabilities& Session::capabilities() const noexcept { return capabilities_; }
+double Session::liveBytes() const noexcept
+{
+    return double (createBytes (capabilities_) + source_.frames * source_.channels * sizeof (float)
+                   + source_.name.size() + masterRoom_ * sizeof (Kept));
+}
+Status Session::setCapacity (const Capacity& capacity) noexcept
+{
+    if (const auto st = checkFloatingPointEnvironment(); st != Status::Ok) return st;
+    if (! validBytes (capacity.heapCeilingBytes) || ! validBytes (capacity.largestFreeBlockBytes)) return Status::Capabilities;
+    capabilities_.heapCeilingBytes = capacity.heapCeilingBytes;
+    capabilities_.largestFreeBlockBytes = capacity.largestFreeBlockBytes;
+    return Status::Ok;
+}
+Checked Session::demand (const Checked& storage) const noexcept
+{
+    const auto bytes = storage.bytes;
+    if (bytes == 0) return storage;
+    const auto live = std::uint64_t (liveBytes());
+    if (bytes > 9007199254740991ull - live) return { Rejection::TooLong, kNoField, 0 };
+    const double need = double (live + bytes);
+    if (need > capabilities_.heapCeilingBytes || double (storage.largestBlockBytes) > capabilities_.largestFreeBlockBytes)
+        return { Rejection::Memory, kNoField, bytes, need, storage.largestBlockBytes };
+    return storage;
 }
 
 Session::~Session() = default;
@@ -77,7 +116,7 @@ Column Session::column() const noexcept
         case State::Measured1: return mastering_ ? Column::Mastering1 : Column::Measured1;
         case State::Measured2: return mastering_ ? Column::Mastering2 : Column::Measured2;
     }
-    return Column::Empty;
+    detail::storageOverflow();
 }
 
 Version Session::version() noexcept

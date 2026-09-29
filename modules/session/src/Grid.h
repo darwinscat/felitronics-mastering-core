@@ -3,11 +3,9 @@
 
 #pragma once
 
-// A KNOB'S GRID, EXACTLY (internal to modules/session). One rule for "is this number on its knob's step": the config's
-// schema holds every number of the documents to it (src/ConfigSchema.cpp), and the session holds every edit a person
-// makes to it (src/Commands.cpp) — so a value the config may hold and a value a person may set are on one grid, decided
-// by one piece of code. It works on exact decimals (felitronics-toml's Decimal: a mantissa and a count of decimal
-// places), never on doubles: 0.1 has no double, and (x - from) / step in floating point is a whole number only by luck.
+// Exact decimal helpers for the analyzer hop's required time quantum and the compact numeric project format.
+// Slider steps do not constrain edits. These helpers work on exact decimals (a mantissa and decimal places), so
+// fractional decimal quanta never depend on a floating-point division happening to produce a whole number.
 
 #include <felitronics/toml/Toml.h>
 

@@ -1,0 +1,242 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
+#include "BuildGuards.h"
+#include "EqCurve.h"
+#include "BuildContract.h"
+#include <felitronics/core/DetMath.h>
+#include <algorithm>
+#include <cmath>
+#include <limits>
+
+namespace felitronics::session::detail
+{
+namespace
+{
+// The high-pass and shelf coefficient designs from felitronics-core's MatchedBiquad.h
+// (Vicanek matched filters), evaluated with deterministic transcendentals for snapshot replay.
+// Tests compare the curves with core's audio-band response, including the low shelf's Q.
+// Inputs: rates >= 8 kHz; design frequencies clamped to [10 Hz, 0.49 * rate], gains +/-6 dB,
+// Q from the checked config. Trigonometric arguments stay within 2*pi, far inside det::tan's
+// argument limit; pow10 sees +/-0.3, and response log10 sees positive power floored at 1e-24.
+constexpr double kPi = 3.1415926535897932384626433832795;
+bool sameNumber (double a, double b) noexcept { return a <= b && a >= b; }
+double number (toml::embedded::View v) noexcept
+{
+    if (const auto d = v.decimal()) return d->toDouble();
+    if (const auto n = v.integer()) return double (*n);
+    storageOverflow();
+}
+double expDet (double x) noexcept { return core::det::exp2 (x * 1.4426950408889634074); }
+double coshDet (double x) noexcept { return (expDet (x) + expDet (-x)) * 0.5; }
+struct BiquadCoeffs
+{
+    double b0 = 1, b1 = 0, b2 = 0, a1 = 0, a2 = 0;
+    bool isStable() const noexcept { return std::abs (a1) < 2 && std::abs (a1) - 1 < a2 && a2 < 1; }
+    double db (double w) const noexcept
+    {
+        const double c1 = core::det::cos (w), s1 = core::det::sin (w);
+        const double c2 = core::det::cos (2 * w), s2 = core::det::sin (2 * w);
+        const double nr = b0 + b1 * c1 + b2 * c2, ni = b1 * s1 + b2 * s2;
+        const double dr = 1 + a1 * c1 + a2 * c2, di = a1 * s1 + a2 * s2;
+        return 10 * core::det::log10 (std::max (1e-24, (nr * nr + ni * ni) / (dr * dr + di * di)));
+    }
+};
+    double safeSqrt (double x) noexcept { return std::sqrt (std::max (0.0, x)); }
+    void matchedPoles (double w0, double Q, double& a1, double& a2) noexcept
+    {
+        const double q   = 1.0 / (2.0 * Q);
+        const double eqw = expDet (-q * w0);
+        a1 = (q <= 1.0) ? -2.0 * eqw * core::det::cos (w0 * std::sqrt (1.0 - q * q))
+                        : -2.0 * eqw * coshDet (w0 * std::sqrt (q * q - 1.0));
+        a2 = expDet (-2.0 * q * w0);
+    }
+    void solveNumerator (double B0, double B1, double B2, BiquadCoeffs& c) noexcept
+    {
+        const double sB0 = safeSqrt (B0), sB1 = safeSqrt (B1);
+        const double W   = 0.5 * (sB0 + sB1);
+        c.b0 = 0.5 * (W + safeSqrt (W * W + B2));
+        c.b1 = 0.5 * (sB0 - sB1);
+        c.b2 = (! sameNumber (c.b0, 0.0)) ? -B2 / (4.0 * c.b0) : 0.0;
+    }
+    bool shelfFitFeasible (double B0, double B1, double B2) noexcept
+    {
+        const double W = 0.5 * (safeSqrt (B0) + safeSqrt (B1));
+        return W * W + B2 > 0.0;
+    }
+    struct RatioBound { double lo, hi; };
+    RatioBound ratioExtent (double n2, double n1, double n0, double d2, double d1, double d0,
+                                   double lo, double hi) noexcept
+    {
+        auto val = [&] (double t) noexcept { return (n2 * t * t + n1 * t + n0) / (d2 * t * t + d1 * t + d0); };
+        double mn = 1e300, mx = -1e300;
+        auto upd = [&] (double t) noexcept { if (t >= lo && t <= hi) { const double v = val (t); mn = std::min (mn, v); mx = std::max (mx, v); } };
+        upd (lo);
+        if (std::isfinite (hi)) upd (hi);
+        else if (! sameNumber (d2, 0.0)) { const double v = n2 / d2; mn = std::min (mn, v); mx = std::max (mx, v); }
+        const double a = n2 * d1 - n1 * d2, b = 2.0 * (n2 * d0 - n0 * d2), c = n1 * d0 - n0 * d1;
+        if (std::abs (a) < 1e-300) { if (std::abs (b) > 1e-300) upd (-c / b); }
+        else { const double disc = b * b - 4.0 * a * c; if (disc >= 0.0) { const double s = std::sqrt (disc); upd ((-b + s) / (2.0 * a)); upd ((-b - s) / (2.0 * a)); } }
+        return { mn, mx };
+    }
+    struct ShelfTmp { double v, w, a0, aa2, bb2; };
+    ShelfTmp shelfSolve (double fc, double g) noexcept
+    {
+        const double piHalf = kPi * 0.5;
+        const double invg = 1.0 / g;
+        const double fc2 = fc * fc, fc4 = fc2 * fc2;
+        const double hny = (fc4 + g) / (fc4 + invg);
+        const double f1 = fc / std::sqrt (0.160 + 1.543 * fc2);
+        const double f14 = f1 * f1 * f1 * f1;
+        const double h1 = (fc4 + f14 * g) / (fc4 + f14 * invg);
+        const double s1 = core::det::sin (piHalf * f1); const double phi1 = s1 * s1;
+        const double f2 = fc / std::sqrt (0.947 + 3.806 * fc2);
+        const double f24 = f2 * f2 * f2 * f2;
+        const double h2 = (fc4 + f24 * g) / (fc4 + f24 * invg);
+        const double s2 = core::det::sin (piHalf * f2); const double phi2 = s2 * s2;
+        const double d1 = (h1 - 1.0) * (1.0 - phi1);
+        const double c11 = -phi1 * d1, c12 = phi1 * phi1 * (hny - h1);
+        const double d2 = (h2 - 1.0) * (1.0 - phi2);
+        const double c21 = -phi2 * d2, c22 = phi2 * phi2 * (hny - h2);
+        const double alfa1 = (c22 * d1 - c12 * d2) / (c11 * c22 - c12 * c21);
+        const double aa1 = (d1 - c11 * alfa1) / c12;
+        const double bb1 = hny * aa1;
+        ShelfTmp t;
+        t.aa2 = 0.25 * (alfa1 - aa1);
+        t.bb2 = 0.25 * (alfa1 - bb1);
+        t.v = 0.5 * (1.0 + safeSqrt (aa1));
+        t.w = 0.5 * (1.0 + safeSqrt (bb1));
+        t.a0 = 0.5 * (t.v + safeSqrt (t.v * t.v + t.aa2));
+        return t;
+    }
+    BiquadCoeffs highpass (double f0, double fs, double Q) noexcept
+    {
+        BiquadCoeffs c;
+        const double w0 = 2.0 * kPi * f0 / fs;
+        matchedPoles (w0, Q, c.a1, c.a2);
+        const double s = core::det::sin (w0 * 0.5);
+        const double phi1 = s * s, phi0 = 1.0 - phi1, phi2 = 4.0 * phi0 * phi1;
+        const double t0 = 1.0 + c.a1 + c.a2, t1 = 1.0 - c.a1 + c.a2;
+        const double A0 = t0 * t0, A1 = t1 * t1, A2 = -4.0 * c.a2;
+        c.b0 = Q * safeSqrt (A0 * phi0 + A1 * phi1 + A2 * phi2) / (4.0 * phi1);
+        c.b1 = -2.0 * c.b0;
+        c.b2 = c.b0;
+        return c;
+    }
+    BiquadCoeffs highpass1 (double f0, double fs) noexcept
+    {
+        BiquadCoeffs c;
+        const double K = core::det::tan (kPi * f0 / fs), nrm = 1.0 / (1.0 + K);
+        c.b0 = nrm; c.b1 = -nrm; c.b2 = 0.0; c.a1 = (K - 1.0) * nrm; c.a2 = 0.0;
+        return c;
+    }
+    BiquadCoeffs highShelf (double f0, double fs, double gainLin) noexcept
+    {
+        BiquadCoeffs c;
+        const double fc = 2.0 * f0 / fs;
+        const double g  = (std::abs (1.0 - gainLin) < 1e-6) ? 1.00001 : gainLin;
+        const auto t = shelfSolve (fc, g);
+        const double inva0 = 1.0 / t.a0;
+        c.a1 = (1.0 - t.v) * inva0;
+        c.a2 = -0.25 * t.aa2 * inva0 * inva0;
+        c.b0 = (0.5 * (t.w + safeSqrt (t.w * t.w + t.bb2))) * inva0;
+        c.b1 = (1.0 - t.w) * inva0;
+        c.b2 = (-0.25 * t.bb2 / c.b0) * inva0 * inva0;
+        return c;
+    }
+    BiquadCoeffs lowShelf (double f0, double fs, double gainLin) noexcept
+    {
+        BiquadCoeffs c;
+        const double fc = 2.0 * f0 / fs;
+        const double g  = (std::abs (1.0 - gainLin) < 1e-6) ? 1.00001 : 1.0 / gainLin;
+        const double invg = 1.0 / g;
+        const auto t = shelfSolve (fc, g);
+        const double inva0 = 1.0 / t.a0;
+        const double ginva0 = invg * inva0;
+        c.a1 = (1.0 - t.v) * inva0;
+        c.a2 = -0.25 * t.aa2 * inva0 * inva0;
+        const double b0raw = 0.5 * (t.w + safeSqrt (t.w * t.w + t.bb2));
+        c.b1 = (1.0 - t.w) * ginva0;
+        c.b2 = (-0.25 * t.bb2 / b0raw) * ginva0;
+        c.b0 = b0raw * ginva0;
+        return c;
+    }
+    BiquadCoeffs shelf (double f0, double fs, double gainLin, double Q, bool high) noexcept
+    {
+        if (gainLin < 1.0 && gainLin > 0.0)
+        {
+            const BiquadCoeffs b = shelf (f0, fs, 1.0 / gainLin, Q, high);
+            const double inv = 1.0 / b.b0;
+            const BiquadCoeffs cut { inv, b.a1 * inv, b.a2 * inv, b.b1 * inv, b.b2 * inv };
+            if (cut.isStable()) return cut;
+        }
+        BiquadCoeffs c;
+        const double w0 = 2.0 * kPi * f0 / fs;
+        matchedPoles (w0, Q, c.a1, c.a2);
+        const double s = core::det::sin (w0 * 0.5);
+        const double phi1 = s * s, phi0 = 1.0 - phi1, phi2 = 4.0 * phi0 * phi1;
+        const double t0 = 1.0 + c.a1 + c.a2, t1 = 1.0 - c.a1 + c.a2;
+        const double A0 = t0 * t0, A1 = t1 * t1, A2 = -4.0 * c.a2;
+        const double A   = gainLin, A2g = A * A;
+        const double B0  = high ? A0       : A2g * A0;
+        const double B1  = high ? A2g * A1 : A1;
+        const double Hc2 = Q * Q * (A - 1.0) * (A - 1.0) + A;
+        const double denW0 = A0 * phi0 + A1 * phi1 + A2 * phi2;
+        const double B2  = (Hc2 * denW0 - B0 * phi0 - B1 * phi1) / phi2;
+        if (! shelfFitFeasible (B0, B1, B2))
+            return high ? highShelf (f0, fs, gainLin) : lowShelf (f0, fs, gainLin);
+        solveNumerator (B0, B1, B2, c);
+        const double kq = 1.0 / (Q * Q) - 2.0;
+        const auto an = ratioExtent (high ? A * A : 1.0, A * kq, high ? 1.0 : A * A,
+                                             1.0, kq, 1.0, 0.0, std::numeric_limits<double>::infinity());
+        const auto dg = ratioExtent (4.0 * c.b0 * c.b2, 2.0 * c.b1 * (c.b0 + c.b2),
+                                             (c.b0 - c.b2) * (c.b0 - c.b2) + c.b1 * c.b1,
+                                             4.0 * c.a2, 2.0 * c.a1 * (1.0 + c.a2),
+                                             (1.0 - c.a2) * (1.0 - c.a2) + c.a1 * c.a1, -1.0, 1.0);
+        const double m2 = 2.0;
+        if (dg.hi > an.hi * m2 || dg.lo < an.lo / m2)
+            return high ? highShelf (f0, fs, gainLin) : lowShelf (f0, fs, gainLin);
+        return c;
+    }
+}
+void eqCurve (const Project& project, const Rules& rules, double rate, std::span<EqPoint> output) noexcept
+{
+    BiquadCoeffs bands[11];
+    std::size_t count = 0;
+    const auto& hpf = project.devices.hpf;
+    const auto& tilt = project.devices.tilt;
+    const auto& low = project.devices.low;
+    const auto frequency = [&] (double hz) { return std::clamp (hz, 10.0, 0.49 * rate); };
+    if (hpf.hand.on.value_or (hpf.machine.on))
+    {
+        const double fq = frequency (hpf.hand.fq.value_or (hpf.machine.fq));
+        const int order = hpf.hand.slope.value_or (hpf.machine.slope) / 6;
+        if (order % 2) bands[count++] = highpass1 (fq, rate);
+        const int pairs = order / 2;
+        for (int k = 1; k <= pairs; ++k)
+            bands[count++] = highpass (fq, rate, 1 / (2 * core::det::sin ((2.0 * (pairs - k) + 1) * kPi / (2 * order))));
+    }
+    const double tiltDb = tilt.hand.db.value_or (tilt.machine.db);
+    if (tilt.hand.on.value_or (tilt.machine.on) && ! sameNumber (tiltDb, 0))
+    {
+        const double fq = frequency (number (rules.engine.find ("tilt").find ("freqHz")));
+        bands[count++] = lowShelf (fq, rate, core::det::pow10 (-tiltDb / 20));
+        bands[count++] = highShelf (fq, rate, core::det::pow10 (tiltDb / 20));
+    }
+    const double lowDb = low.hand.db.value_or (low.machine.db);
+    if (low.hand.on.value_or (low.machine.on) && ! sameNumber (lowDb, 0))
+    {
+        const auto config = rules.engine.find ("low");
+        bands[count++] = shelf (frequency (number (config.find ("freqHz"))), rate,
+                               core::det::pow10 (lowDb / 20), number (config.find ("q")), false);
+    }
+    const double last = std::min (20000.0, rate * 0.49);
+    const double octaves = core::det::log2 (last / 20);
+    for (std::size_t i = 0; i < output.size(); ++i)
+    {
+        const double hz = 20 * core::det::exp2 (octaves * double (i) / double (output.size() - 1));
+        double db = 0;
+        for (std::size_t b = 0; b < count; ++b) db += bands[b].db (2 * kPi * hz / rate);
+        output[i] = { hz, db };
+    }
+}
+}

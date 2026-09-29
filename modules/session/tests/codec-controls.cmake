@@ -25,7 +25,7 @@ foreach(control clean added_field reordered_enum unknown_enum appended_State app
         elseif(enum STREQUAL "Needles")
             string(REPLACE "Auto, Manual, Off" "Auto, Manual, Off, CodecControlAdded" project "${project}")
         elseif(enum STREQUAL "Device")
-            string(REPLACE "Dither, LowShelf };" "Dither, LowShelf, CodecControlAdded };" project "${project}")
+            string(REPLACE "Dither, Low };" "Dither, Low, CodecControlAdded };" project "${project}")
         else()
             string(REPLACE "Stream, Report, Analyzers, Pass, Remeasure" "Stream, Report, Analyzers, Pass, Remeasure, CodecControlAdded" events "${events}")
         endif()

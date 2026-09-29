@@ -782,18 +782,18 @@ template <class Mask> bool fieldTermsMatch (session::Device device, std::string&
 void everyRejectionIsAFact()
 {
     felitronics::test::group ("a command's rejection: every code a fact of its own, in ru and en; a refused field named");
-    // THE TABLE, code by code: 100 + the code, a message in both languages, and a field argument exactly for the four
+    // THE TABLE, code by code: 100 + the code, a message in both languages, and a field argument exactly for the three
     // rejections a field makes.
     bool table = true, spoken = true;
     std::string misses;
-    const auto last = (std::size_t) session::Rejection::NewerDefaults;
+    const auto last = (std::size_t) session::Rejection::Contract;
     for (std::size_t code = 1; code <= last; ++code)
     {
         const auto r = (session::Rejection) code;
         const std::optional<FactId> id = detail::factOf (r);
         const detail::FactShape* shape = id ? detail::shapeOf (*id) : nullptr;
         const bool fieldCode = r == session::Rejection::NotFinite || r == session::Rejection::NotOneOf
-                            || r == session::Rejection::OutOfTravel || r == session::Rejection::OffStep;
+                            || r == session::Rejection::OutOfDomain;
         if (! id || (std::size_t) *id != 100 + code || shape == nullptr || (shape->argCount == 1) != fieldCode
             || (fieldCode && shape->args[0].group != "field"))
         {
@@ -818,7 +818,7 @@ void everyRejectionIsAFact()
     bool inRange = true;
     for (const auto& shape : detail::kFacts)
         inRange = inRange && ((std::size_t) shape.id < 100 || ((std::size_t) shape.id > 100 && (std::size_t) shape.id <= 100 + last)
-            || ((std::size_t) shape.id >= 200 && (std::size_t) shape.id <= 204)
+            || ((std::size_t) shape.id >= 200 && (std::size_t) shape.id <= 207)
             || ((std::size_t) shape.id >= 300 && (std::size_t) shape.id <= 305));
     ok (inRange, "rejections, phases and session errors occupy only their own declared ranges");
 
@@ -831,7 +831,7 @@ void everyRejectionIsAFact()
                       & fieldTermsMatch<session::TiltFields<session::Mark>> (session::Device::Tilt, why)
                       & fieldTermsMatch<session::LimiterFields<session::Mark>> (session::Device::Limiter, why)
                       & fieldTermsMatch<session::DitherFields<session::Mark>> (session::Device::Dither, why)
-                      & fieldTermsMatch<session::LowShelfFields<session::Mark>> (session::Device::LowShelf, why);
+                      & fieldTermsMatch<session::LowFields<session::Mark>> (session::Device::Low, why);
     ok (fields, "every device: a term exactly for each field a check can refuse, in src/Devices.h's order" + why);
     ok (detail::targetFieldTerm (0) == text::Term::FieldTargetLufs && detail::targetFieldTerm (1) == text::Term::FieldTargetTp
             && ! detail::targetFieldTerm (2) && ! detail::targetFieldTerm (session::kNoField),
@@ -844,7 +844,7 @@ void everyRejectionIsAFact()
     session::Session& s = *created.session;
     struct Real { session::Request request; session::Rejection want; std::string_view ru, en; };
     session::TargetFields<session::Touched> tooLoud;
-    tooLoud.lufs = 99.0;
+    tooLoud.tp = 99.0;
     session::TargetFields<session::Touched> notANumber;
     notANumber.tp = std::numeric_limits<double>::quiet_NaN();
     session::HpfFields<session::Touched> hpf;
@@ -854,8 +854,8 @@ void everyRejectionIsAFact()
     const float* channels[1] = { samples };
     const float* three[3] = { samples, samples, samples };
     const Real reals[] = {
-        { session::command::EditTarget { 1, tooLoud }, session::Rejection::OutOfTravel,
-          "Громкость: значение за пределами хода ручки.", "Loudness: the value is outside the knob's travel." },
+        { session::command::EditTarget { 1, tooLoud }, session::Rejection::OutOfDomain,
+          "Потолок: значение вне допустимого диапазона.", "Ceiling: the value is outside the accepted domain." },
         { session::command::EditTarget { 2, notANumber }, session::Rejection::NotFinite,
           "Потолок: не число — принимается только конечное значение.", "Ceiling: not a number — only a finite value is taken." },
         { session::command::SetTarget { 3, "nowhere" }, session::Rejection::UnknownTarget, "Такой цели нет.", "There is no such target." },
@@ -885,10 +885,10 @@ void everyRejectionIsAFact()
     ok (accepted.rejection == session::Rejection::None && ! Text::rejected (accepted, on).has_value(),
         "an accepted answer is no rejection: no fact");
     session::Answer odd;
-    odd.rejection = session::Rejection::OffStep;
+    odd.rejection = session::Rejection::OutOfDomain;
     odd.field = 7;
     const auto unnamed = Text::rejected (odd, session::command::EditTarget { 10, {} });
-    ok (unnamed && Text::text (*unnamed, Lang::En) == "{field}: the value is not on the knob's step.",
+    ok (unnamed && Text::text (*unnamed, Lang::En) == "{field}: the value is outside the accepted domain.",
         "a field the tables do not name leaves the argument out, visibly: {field}");
 }
 
@@ -1068,7 +1068,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0x5bf41f3d6e88c94dull;
+    constexpr std::uint64_t kPinned = 0x380bc12f93a271fdull;
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");

@@ -37,6 +37,8 @@ function(felitronics_session_config_inputs target)
     felitronics_toml_embed(${target} INPUT text/format.toml
                            NAMESPACE felitronics::session::text::embedded NAME format HEADER embedded/format.h)
     target_link_libraries(${target} PRIVATE felitronics::analysis_offline)
+    target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/session-version)
+    target_sources(${target} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/versions.h)
 endfunction()
 felitronics_session_config_inputs(felitronics_session)
 
@@ -117,7 +119,7 @@ target_compile_definitions(felitronics_session PRIVATE ${FELITRONICS_SESSION_VER
 # file — a newer one (its mtime) runs the gate again, and so does another path (the command changes; Ninja and the Visual
 # Studio generators re-run a command whose line changed). Keeping a supplied checker built from the same sources is its
 # supplier's part: the gate re-runs when either moves, but it cannot rebuild a checker it did not build.
-add_executable(felitronics_session_config_check tests/ConfigCheck.cpp src/ConfigSchema.cpp)
+add_executable(felitronics_session_config_check tests/ConfigCheck.cpp src/ConfigSchema.cpp src/BuildContract.cpp)
 target_include_directories(felitronics_session_config_check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
                                                                     ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_link_libraries(felitronics_session_config_check PRIVATE felitronics::toml felitronics::analysis_offline)
@@ -140,7 +142,10 @@ else()
 endif()
 set(FELITRONICS_SESSION_CONFIG_STAMP ${CMAKE_CURRENT_BINARY_DIR}/felitronics_session_config.checked)
 add_custom_command(OUTPUT ${FELITRONICS_SESSION_CONFIG_STAMP}
-    COMMAND ${FELITRONICS_SESSION_CONFIG_GATE} ${FELITRONICS_SESSION_CONFIG}/targets.toml ${FELITRONICS_SESSION_CONFIG}/engine.toml
+                          ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/versions.h
+                          ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/version.txt
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded
+    COMMAND ${FELITRONICS_SESSION_CONFIG_GATE} --expect ${FELITRONICS_SESSION_CONFIG}/targets.toml ${FELITRONICS_SESSION_CONFIG}/engine.toml ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded
     COMMAND ${CMAKE_COMMAND} -E touch ${FELITRONICS_SESSION_CONFIG_STAMP}
     DEPENDS ${FELITRONICS_SESSION_CONFIG_GATE_DEPENDS}
             ${FELITRONICS_SESSION_CONFIG}/targets.toml ${FELITRONICS_SESSION_CONFIG}/engine.toml
@@ -230,7 +235,7 @@ if(FELITRONICS_BUILD_TESTS)
     target_compile_features(felitronics_session_state_tests PRIVATE cxx_std_20)
     add_test(NAME felitronics_session_state_tests COMMAND felitronics_session_state_tests)
     add_executable(felitronics_session_event_tests tests/EventTests.cpp)
-    target_link_libraries(felitronics_session_event_tests PRIVATE felitronics::session felitronics::test_support)
+    target_link_libraries(felitronics_session_event_tests PRIVATE felitronics::session felitronics::test_support felitronics::eq)
     target_include_directories(felitronics_session_event_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_features(felitronics_session_event_tests PRIVATE cxx_std_20)
     add_test(NAME felitronics_session_event_tests COMMAND felitronics_session_event_tests)
@@ -376,7 +381,7 @@ if(FELITRONICS_BUILD_TESTS)
     if(NOT EMSCRIPTEN)
         set(FELITRONICS_SESSION_CONFIG_CONTROLS
             "unknown_key|engine|releaseMs = 50|releseMs = 50|releseMs|UnknownKey limiter.releseMs"
-            "out_of_range|engine|hzMax = 50|hzMax = 500|500|OutOfRange hpf.hzMax"
+            "out_of_range|engine|hzMax = 50|hzMax = 4000|4000|OutOfRange hpf.hzMax"
             "wrong_type|targets|default = \"allStreaming\"|default = 14|14|WrongType default"
             "crest_corners|engine|bandEdgesHz = [120, 2000, 6000]|bandEdgesHz = []|[]|Refused crest.bandEdgesHz"
             "geometric_offset|engine|to = -9, law = \"linear\"|to = -9, law = \"geometric\"|\"geometric\"|Refused glue.threshOffset.law"
@@ -617,16 +622,19 @@ endif()
 # TypeScript and the compiled field walk are checked against the same named-field description.
 set(FELITRONICS_SESSION_TYPES ${CMAKE_CURRENT_BINARY_DIR}/snapshot.d.ts)
 add_custom_command(OUTPUT ${FELITRONICS_SESSION_TYPES}
-    COMMAND ${CMAKE_COMMAND} -DOUTPUT=${FELITRONICS_SESSION_TYPES}
+    BYPRODUCTS ${CMAKE_CURRENT_BINARY_DIR}/snapshot.mjs
+    COMMAND ${CMAKE_COMMAND} -DOUTPUT=${FELITRONICS_SESSION_TYPES} -DVERSION_FILE=${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/version.txt
             -P ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake
+    DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/version.txt
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake
             ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec-schema.json
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-runtime.mjs.in
             ${CMAKE_CURRENT_SOURCE_DIR}/src/CodecSchema.h VERBATIM)
 add_custom_target(felitronics_session_types ALL DEPENDS ${FELITRONICS_SESSION_TYPES})
 add_dependencies(felitronics_session felitronics_session_types)
 if(FELITRONICS_BUILD_TESTS)
     add_test(NAME felitronics_session_codec_types
-        COMMAND ${CMAKE_COMMAND} -DCHECK=ON -DOUTPUT=${FELITRONICS_SESSION_TYPES}
+        COMMAND ${CMAKE_COMMAND} -DCHECK=ON -DOUTPUT=${FELITRONICS_SESSION_TYPES} -DVERSION_FILE=${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/version.txt
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake)
     find_program(FELITRONICS_SESSION_NODE NAMES node nodejs REQUIRED)
     add_executable(felitronics_session_codec_fixture tests/CodecFixture.cpp)
