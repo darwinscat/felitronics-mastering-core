@@ -66,7 +66,7 @@ Answer Session::loadMeasured (CommandId id, const MeasuredSource& facts) noexcep
     source_ = { facts.channels, facts.sampleRate, facts.frames, facts.sourceHash, facts.fileRate, facts.rateKnown,
                 std::uint8_t (facts.bitDepth), { name_.get(), facts.name.size() } };
     measurementKey_ = facts.sourceHash;
-    project_.core = version(); project_.manual = false; project_.targetEdit = {}; project_.devices = {};
+    project_.core = version(); project_.manual = false; project_.devices = {};
     devicesPlaced_ = false; differenceCount_ = 0;
     measurementJob_ = 0; measurementUnit_ = masterUnit_ = 0; measurementProgress_ = {}; masterProgress_ = {};
     measurementsFromSidecar_ = true;
@@ -108,7 +108,7 @@ Checked Session::attachAudioStorage (const Pcm& pcm) const noexcept
     const auto indexBytes = wave.bytes() + 256u;
     if (audio > 9007199254740991ull - indexBytes - sizeof (detail::WaveformState)) return refused (Rejection::TooLong);
     Checked c; c.bytes = audio + indexBytes + sizeof (detail::WaveformState);
-    c.largestBlockBytes = std::max (audio, indexBytes);
+    c.largestBlockBytes = std::max ({ audio, indexBytes, std::uint64_t (sizeof (detail::WaveformState)) });
     return demand (c);
 }
 Answer Session::attachAudio (CommandId id, const Pcm& pcm) noexcept
