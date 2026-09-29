@@ -38,6 +38,11 @@ const temporary = mkdtempSync(join(retain ? resolve(retain) : tmpdir(), 'session
 const configuration = option('--config') || value('CMAKE_BUILD_TYPE') || '';
 const multi = Boolean(value('CMAKE_CONFIGURATION_TYPES'));
 const buildArgs = ['--build', join(temporary, 'build'), '--config', configuration, '-j', '8', '--target'];
+// MSBuild compiles the sources of one project one after another unless told otherwise; the library is one project of
+// some thirty sources, rebuilt after every mutation. MultiToolTask runs them in parallel without touching a compile line
+// (measured on MSVC 14.44, 16 threads: the whole run 377 s -> 250 s, its first build 106 s -> 38 s).
+const nativeArgs = (value('CMAKE_GENERATOR') ?? '').startsWith('Visual Studio')
+    ? ['--', '/p:UseMultiToolTask=true', '/p:EnforceProcessCountAcrossBuilds=true'] : [];
 const source = join(temporary, 'source'), build = join(temporary, 'build');
 let builtAt = 0;
 const wait = new Int32Array(new SharedArrayBuffer(4));
@@ -85,7 +90,7 @@ try {
     const executable = name => join(build, 'tools', multi ? configuration : '', name + (process.platform === 'win32' ? '.exe' : ''));
     const buildTarget = name => {
         const path = executable(name), previous = existsSync(path) ? statSync(path).mtimeMs : 0;
-        run('cmake', [...buildArgs, name]);
+        run('cmake', [...buildArgs, name, ...nativeArgs]);
         builtAt = Date.now();
         assert(statSync(path).mtimeMs > previous, `${name}: build must update the selected executable`);
     };
@@ -194,7 +199,7 @@ try {
     // Compile-time byte-order refusal is a source control, not a synthetic byte fixture.
     const wire = join(source,'modules/session/src/Wire.cpp');
     writeSource(wire,readFileSync(wire,'utf8').replace('std::endian::native == std::endian::little','std::endian::native == std::endian::big'));
-    const endian = spawnSync('cmake',[...buildArgs, 'felitronics_session_abi_probe'],{encoding:'utf8'});
+    const endian = spawnSync('cmake',[...buildArgs, 'felitronics_session_abi_probe', ...nativeArgs],{encoding:'utf8'});
     assert.notEqual(endian.status,0); assert.match(endian.stdout+endian.stderr,/requires little-endian f64 rows/);
     console.log('source control: unsupported byte order: compilation RED');
 } finally { if (!retain) rmSync(temporary,{recursive:true,force:true}); }

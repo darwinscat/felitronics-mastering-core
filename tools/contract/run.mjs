@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 import assert from 'node:assert/strict';
-import {readFileSync, readdirSync, mkdtempSync, cpSync, rmSync, appendFileSync} from 'node:fs';
+import {readFileSync, readdirSync, mkdtempSync, cpSync, rmSync, appendFileSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join, resolve, basename} from 'node:path';
 import {spawnSync} from 'node:child_process';
@@ -9,7 +9,7 @@ import {fileURLToPath} from 'node:url';
 import {fixtures, fixtureRoot} from './fixtures.mjs';
 import {parse} from './grammar.mjs';
 import {runWasm, arrayEncodings} from './wasm.mjs';
-import {recordings} from './recordings.mjs';
+import {lfBytes, recordings} from './recordings.mjs';
 import {createHash} from 'node:crypto';
 
 const root = fileURLToPath(new URL('scenarios/', import.meta.url));
@@ -137,7 +137,7 @@ async function main() {
         const versions = {
             components:nativeRun(cli, 'version').toString('utf8').replace(/\r\n/g, '\n').trim().split('\n'),
             configVersion:nativeRun(cli, 'config', 'version').toString('utf8').trim(),
-            codecSchemaSha256:createHash('sha256').update(readFileSync(new URL('../session-codec-schema.json', import.meta.url))).digest('hex')
+            codecSchemaSha256:createHash('sha256').update(lfBytes(fileURLToPath(new URL('../session-codec-schema.json', import.meta.url)))).digest('hex')
         };
         console.log(`contract recordings: ${recordings(siteTraces, versions, rewrite)} verified`);
     }
@@ -159,8 +159,15 @@ async function main() {
             assert.throws(() => fixtures(temp), /stale fixture inputs; rebuild:/);
             cpSync(fixtureRoot, temp, {recursive:true}); appendFileSync(join(temp, 'mono.pcm'), '0\n');
             assert.throws(() => fixtures(temp), /stale fixture mono.pcm; rebuild:/);
+            // A Windows checkout without the .gitattributes rule: the schema and a scenario arrive CRLF.
+            for (const input of [new URL('../session-codec-schema.json', import.meta.url), new URL('scenarios/measurement.session', import.meta.url)]) {
+                const lf = readFileSync(input), crlf = join(temp, 'crlf-copy');
+                writeFileSync(crlf, lf.toString('latin1').replaceAll('\n', '\r\n'), 'latin1');
+                assert.throws(() => lfBytes(crlf), /has CR line endings/);
+                writeFileSync(crlf, lf); assert.deepEqual(lfBytes(crlf), lf);
+            }
         } finally { rmSync(temp, {recursive:true, force:true}); }
-        console.log('contract controls: event order, scalar field, binary rows, changed inputs and damaged PCM refused');
+        console.log('contract controls: event order, scalar field, binary rows, changed inputs, damaged PCM and CRLF copies of hashed text refused');
     }
     console.log(`contract: ${names.length} scenarios passed in ${((performance.now() - start) / 1000).toFixed(3)} s`);
 }
