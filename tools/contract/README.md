@@ -35,6 +35,10 @@ It checks native and wasm PCM16, PCM24 and float32 WAV bytes and records exact
 codec answers, snapshots, events and binary rows for a safe master, repeat
 download, release, refusal, cancellation, safe miss, unavailable source and
 unsafe landing. The source and each binary ready request have SHA-256 hashes.
+The safe Solve example records its preflight demand, largest block, source and delivery PCM bytes,
+observed wasm heap growth, and separate playback, WAV and copy-chunk browser buffers.
+Three identical masters then release and forget their rows; the recording includes each answer,
+snapshot and observed heap size, with the last two high-water readings equal.
 `wav-recording.mjs` decodes the lossless archive for page tests;
 `wav-recording-check.mjs` replays its scenarios without an engine. Regenerate
 with the command in `docs/SESSION.md`; normal verification omits `--rebuild`.

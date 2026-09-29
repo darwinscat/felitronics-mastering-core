@@ -461,6 +461,10 @@ ok(M._fc_session_master_bytes(masterSession, lo(sourceId + 1n), hi(sourceId + 1n
 ok(M._fc_session_master_bytes(masterSession, lo(sourceId), hi(sourceId), lo(revision), hi(revision),
     masterConfig, masterParams, masterDemand) === STATUS.OK && M.HEAPU32[(masterDemand >>> 2) + 1] === 0,
    'ready command has a valid declared demand');
+const safePrice = new DataView(M.HEAPU32.buffer);
+const safeDemand = {bytes:safePrice.getFloat64(masterDemand + 8, true),
+    largestBlockBytes:safePrice.getFloat64(masterDemand + 16, true),
+    liveBytes:safePrice.getFloat64(masterDemand + 24, true)};
 setMaster(masterParams, 'fc_master_params', 'inputGainDb', 100, 'f64');
 const refusalInputs = masterInputs(30, sourceId, revision);
 const refusalStatus = M._fc_session_master(masterSession, 30, 0, lo(sourceId), hi(sourceId), lo(revision), hi(revision),
@@ -491,9 +495,11 @@ const audioBytes = M._malloc(8), audioFrames = M._malloc(4), audioChannels = M._
 ok(M._fc_session_master_audio_size(masterSession, masterToken, audioBytes, audioFrames, audioChannels, audioRate) === STATUS.OK
     && M.HEAPU32[audioFrames >>> 2] === masterFrames && M.HEAPU32[audioChannels >>> 2] === 2,
    'master shape is available before transfer');
-const beforeGrow = M.HEAPU32.buffer, growth = [];
+const beforeGrow = M.HEAPU32.buffer, beforeGrowBytes = beforeGrow.byteLength, growth = [];
 for (let i = 0; i < 12 && M.HEAPU32.buffer === beforeGrow; ++i) growth.push(M._malloc(16 * 1024 * 1024));
 ok(M.HEAPU32.buffer !== beforeGrow, 'heap grew before the scoped PCM view');
+const observedHeap = {beforeGrowthBytes:beforeGrowBytes,
+    afterGrowthBytes:M.HEAPU32.buffer.byteLength};
 const viewOut = M._malloc(4), sampleOut = M._malloc(4);
 ok(M._fc_session_master_audio_view(masterSession, masterToken, viewOut, sampleOut) === STATUS.OK,
    'scoped PCM view returned after growth');
@@ -592,6 +598,10 @@ console.log(`session-master-audio=${audioHash.toString(16).padStart(16, '0')}`);
 ok(audioHash === 0xfaa62a730dd59b81n, 'ready master PCM matches the native reference bit for bit');
 contractRecord.scenarios.safe = {inputs:safeInputs, loadAnswer:masterLoadAnswer, ready:readyWire,
     readyEvents, masterAnswer:safeAnswer, complete:completeWire, completeEvents,
+    price:{sourcePcmBytes:masterSamples * 4, deliveredPcmBytes:masterSamples * 4,
+        declared:safeDemand, observedHeap,
+        browser:{playbackBytes:independent.byteLength, wavBytes:ownedWav.byteLength,
+            copyChunkBytes:997}},
     export:{sizeStatus:wavSized, bits:24, bytes:wavLength, wavSha256:sha256(ownedWav),
         headerHex:Buffer.from(ownedWav.subarray(0, 44)).toString('hex'),
         firstSliceHex:Buffer.from(firstWav).toString('hex'), repeatStatus:wavRepeatStatus,
@@ -686,6 +696,43 @@ for (const bits of [16, 24, 32]) {
     M._free(payload);
 }
 contractRecord.scenarios.formats = formatCases;
+new DataView(M.HEAPU32.buffer).setInt32(ditherBits, 24, true);
+const warmCycles = [], warmHeapBytes = [];
+for (let i = 0; i < 3; ++i) {
+    const commandId = 40 + i * 2;
+    const current = masterSnapshot();
+    const currentRevision = BigInt(current.revision);
+    const inputs = masterInputs(commandId, sourceId, currentRevision);
+    const started = M._fc_session_master(masterSession, commandId, 0, lo(sourceId), hi(sourceId),
+        lo(currentRevision), hi(currentRevision), masterConfig, masterParams,
+        answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize);
+    const accepted = started === STATUS.OK ? reply() : null;
+    let completed = null;
+    for (let step = 0; step < 40000; ++step) {
+        if ((completed = masterSnapshot())?.pendingMaster?.master) break;
+        if (M._fc_session_step(masterSession, 16, resultSize) !== STATUS.OK) break;
+    }
+    const token = completed?.pendingMaster ?? {};
+    const source = BigInt(token.source ?? '0'), revision = BigInt(token.revision ?? '0');
+    for (const [index, value] of [28, lo(source), hi(source), lo(revision), hi(revision),
+                                   token.job ?? 0, token.master ?? 0].entries())
+        M.HEAPU32[(masterToken >>> 2) + index] = value;
+    const released = M._fc_session_master_audio_release(masterSession, masterToken);
+    const forgetCommand = {kind:'forget', commandId:String(commandId + 1), masterId:token.master};
+    const forgotten = cmd(masterSession, forgetCommand);
+    const after = masterWire('snapshot');
+    warmHeapBytes.push(M.HEAPU32.buffer.byteLength);
+    warmCycles.push({inputs, accepted, completed:token, releaseStatus:released,
+        forgetCommand, forgetCommandSha256:sha256(encoder.encode(JSON.stringify(forgetCommand))),
+        forgetAnswer:forgotten, after});
+    ok(started === STATUS.OK && accepted?.kind === 'accepted' && token.master > 0
+        && released === STATUS.OK && forgotten.kind === 'accepted'
+        && wireValue(after).pendingMaster.master === 0,
+       `warmed identical master ${i + 1} releases its PCM and retained rows`);
+}
+ok(warmHeapBytes[2] === warmHeapBytes[1],
+   'identical warmed repeats reuse wasm heap without another high-water increase');
+contractRecord.scenarios.warm = {cycles:warmCycles, observedHeapBytes:warmHeapBytes};
 new DataView(M.HEAPU32.buffer).setInt32(ditherBits, 0, true);
 const cancelRevision = BigInt(masterSnapshot().revision);
 const cancelInputs = masterInputs(70, sourceId, cancelRevision);
@@ -882,6 +929,14 @@ setMaster(masterConfig, 'fc_master_config', 'deliveryRate', 44100, 'f64');
 setMaster(masterParams, 'fc_master_params', 'inputGainDb', 0, 'f64');
 new DataView(M.HEAPU32.buffer).setInt32(ditherBits, 24, true);
 const lateInputs = masterInputs(2, lateSource, lateRevision);
+const lateDemandStatus = M._fc_session_master_bytes(lateSession, lo(lateSource), hi(lateSource),
+    lo(lateRevision), hi(lateRevision), masterConfig, masterParams, masterDemand);
+const latePriceView = new DataView(M.HEAPU32.buffer);
+const lateDemand = {bytes:latePriceView.getFloat64(masterDemand + 8, true),
+    largestBlockBytes:latePriceView.getFloat64(masterDemand + 16, true),
+    liveBytes:latePriceView.getFloat64(masterDemand + 24, true)};
+ok(lateDemandStatus === STATUS.OK && M.HEAPU32[(masterDemand >>> 2) + 1] === 0,
+   'SRC master declares its source-plus-output peak before work');
 const lateStartStatus = M._fc_session_master(lateSession, 2, 0, lo(lateSource), hi(lateSource),
     lo(lateRevision), hi(lateRevision), masterConfig, masterParams,
     answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize);
@@ -895,6 +950,10 @@ const lateCompleteWire = masterWire('snapshot', lateSession);
 const lateMasterId = lateCompleted?.pendingMaster?.master ?? 0;
 const lateBefore = lateCompleted?.masters?.find(row => row.id === lateMasterId)?.report;
 const lateLanding = lateCompleted?.masters?.find(row => row.id === lateMasterId)?.landing;
+const lateOutputPcmBytes = lateCompleted?.pendingMasterBytes ?? 0;
+ok(lateDemand.bytes >= lateOutputPcmBytes && lateDemand.largestBlockBytes >= lateOutputPcmBytes
+    && lateDemand.liveBytes + lateDemand.bytes >= lateSamples * 4 + lateOutputPcmBytes,
+   'SRC price covers both complete PCM buffers without requiring a third');
 const lateToken = lateCompleted?.pendingMaster ?? {};
 const lateTokenSource = BigInt(lateToken.source ?? '0'), lateTokenRevision = BigInt(lateToken.revision ?? '0');
 for (const [i, value] of [28, lo(lateTokenSource), hi(lateTokenSource), lo(lateTokenRevision),
@@ -914,6 +973,7 @@ const lateWavSha256 = sha256(lateWav);
 const lateReleaseStatus = M._fc_session_master_audio_release(lateSession, masterToken);
 const lateReleasedWire = masterWire('snapshot', lateSession);
 const lateHeapBefore = M.HEAPU32.buffer, lateGrowth = [];
+const lateHeapBeforeBytes = lateHeapBefore.byteLength;
 for (let i = 0; i < 12 && M.HEAPU32.buffer === lateHeapBefore; ++i)
     lateGrowth.push(M._malloc(16 * 1024 * 1024));
 const lateGrew = M.HEAPU32.buffer !== lateHeapBefore;
@@ -948,6 +1008,10 @@ contractRecord.scenarios.lateCrest = {source:{pcmSha256:latePcmSha256, metadataJ
     startStatus:lateStartStatus, startAnswer:lateStartAnswer, complete:lateCompleteWire,
     export:{sizeStatus:lateWavSizeStatus, bytes:lateWavBytes, sha256:lateWavSha256,
         postJoinSha256:lateWavAfterSha256},
+    price:{sourcePcmBytes:lateSamples * 4, deliveredPcmBytes:lateOutputPcmBytes,
+        declared:lateDemand, observedHeap:{beforeGrowthBytes:lateHeapBeforeBytes,
+            afterGrowthBytes:M.HEAPU32.buffer.byteLength},
+        browser:{wavBytes:lateWav.byteLength, copyChunkBytes:997}},
     release:{status:lateReleaseStatus, snapshot:lateReleasedWire, heapGrew:lateGrew},
     sourceEvent:lateSourceEvent, joinEvent:lateJoinEvent, joined:lateJoinedWire};
 for (const p of lateGrowth) M._free(p);

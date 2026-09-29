@@ -1125,6 +1125,19 @@ readings from the retained exact PCM grid without allocating or repeating source
 
 ## Ready master job and audio ownership
 
+The complete Solve memory gate is `felitronics_session_memory_gate_tests`; its separate
+`felitronics_session_memory_gate_long` row renders a 60-second stereo 96→44.1 kHz source.
+It charges the core allocation counter across load, measurement, each master step, cancellation,
+snapshot and codec copies, bounded WAV slices, transfer, release, refusal, source replacement,
+and warmed repetitions. `Session::liveBytes()` supplies the resident core claim while cumulative
+allocation requests independently bound replacement peaks. Source plus delivery PCM require at
+least `4 * channels * (sourceFrames + deliveryFrames)` bytes; the largest block is priced
+separately. SRC owns no third complete PCM. The Wasm contract records observed linear-memory
+growth and reacquires heap views after every call. Playback `ArrayBuffer`, assembled WAV and
+bounded copy chunk are browser-owned buffers outside the session price; the recording lists
+their sizes separately. Wasm linear memory may remain at its high-water size after release.
+
+
 The additive `fc_session_master_bytes` and `fc_session_master` calls accept a current v14 `fc_master_config`
 and `fc_master_params`. Their source hash and revision must match the session before the facade maps the
 ready values. C++ callers use `command::Master` with `ready.version = 1`; version zero preserves the frozen
