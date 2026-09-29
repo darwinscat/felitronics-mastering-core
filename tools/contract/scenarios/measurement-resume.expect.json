@@ -1,0 +1,25 @@
+{
+  "checks": [
+    {"kind":"snapshot","index":0,"path":"state","value":1},
+    {"kind":"snapshot","index":0,"path":"measurements.0.status","value":1},
+    {"kind":"snapshot","index":0,"path":"measurements.4.status","value":0},
+    {"kind":"snapshot","index":1,"path":"state","value":4},
+    {"kind":"snapshot","index":1,"path":"canContinueMeasurement","value":true},
+    {"kind":"snapshot","index":1,"path":"source.name","value":"measure-stereo"},
+    {"kind":"snapshot","index":1,"path":"measurements.4.status","value":3},
+    {"kind":"snapshot","index":2,"path":"measurementJob","value":2},
+    {"kind":"snapshot","index":2,"path":"measurements.4.status","value":0},
+    {"kind":"snapshot","index":3,"path":"state","value":3},
+    {"kind":"snapshot","index":3,"path":"measurements.4.status","value":1},
+    {"kind":"snapshot","index":3,"path":"measurements.10.reason","value":7}
+  ],
+  "samePath": [
+    {"a":{"kind":"snapshot","index":0},"b":{"kind":"snapshot","index":1},"path":"measurements.0"},
+    {"a":{"kind":"snapshot","index":0},"b":{"kind":"snapshot","index":2},"path":"measurements.0"},
+    {"a":{"kind":"snapshot","index":0},"b":{"kind":"snapshot","index":3},"path":"measurements.0"},
+    {"a":{"kind":"snapshot","index":0},"b":{"kind":"snapshot","index":3},"path":"source.hash"}
+  ],
+  "minEvents": 2000,
+  "eventKinds": ["phase","measurement","fact"],
+  "rejections": 0
+}

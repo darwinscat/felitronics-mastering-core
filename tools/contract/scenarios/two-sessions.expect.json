@@ -1,0 +1,74 @@
+{
+  "checks": [
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "state",
+      "value": 1,
+      "session": "left"
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "state",
+      "value": 1,
+      "session": "right"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "measurementJob",
+      "value": 0,
+      "session": "left"
+    },
+    {
+      "kind": "snapshot",
+      "index": -1,
+      "path": "state",
+      "value": 4,
+      "session": "left"
+    },
+    {
+      "kind": "snapshot",
+      "index": -1,
+      "path": "state",
+      "value": 1,
+      "session": "right"
+    },
+    {
+      "kind": "snapshot",
+      "index": -1,
+      "path": "source.channels",
+      "value": 1,
+      "session": "left"
+    },
+    {
+      "kind": "snapshot",
+      "index": -1,
+      "path": "source.channels",
+      "value": 2,
+      "session": "right"
+    },
+    {
+      "kind": "snapshot",
+      "index": -1,
+      "path": "target",
+      "value": "allStreaming",
+      "session": "left"
+    },
+    {
+      "kind": "snapshot",
+      "index": -1,
+      "path": "target",
+      "value": "cd",
+      "session": "right"
+    }
+  ],
+  "minEvents": 10,
+  "eventKinds": [
+    "phase",
+    "fact"
+  ],
+  "rejections": 0,
+  "equal": []
+}

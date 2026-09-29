@@ -115,6 +115,8 @@ SnapshotView Session::buildView() const noexcept
     v.state = state_;
     v.mandatoryMeasurementsReady = mandatoryReady();
     v.tempoChoice = tempoForDevice();
+    v.measurementsFromSidecar = measurementsFromSidecar_;
+    v.sourceMissingAudio = source_.channels != 0 && ! samples_;
     v.devicesPlaced = placed();
     v.canContinueMeasurement = state_ == State::MeasurementStopped;
     v.measurementResumeState = v.canContinueMeasurement ? stoppedState_ : State::Empty;
@@ -151,7 +153,7 @@ SnapshotView Session::buildView() const noexcept
     v.integratedLufs = std::numeric_limits<double>::quiet_NaN();
     for (const auto& value : measurementResults_[0].numbers)
         if (value.name == "integratedLufs" && value.value) v.integratedLufs = *value.value;
-    v.sourceBytes = double (source_.frames * source_.channels * sizeof (float));
+    v.sourceBytes = samples_ ? double (source_.frames * source_.channels * sizeof (float)) : 0.0;
     return v;
 }
 } // namespace felitronics::session

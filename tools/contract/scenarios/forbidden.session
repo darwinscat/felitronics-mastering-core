@@ -1,0 +1,11 @@
+create main 67108864
+snapshot
+command {"kind":"master","commandId":"1"}
+snapshot
+load 2 mono
+snapshot
+command {"kind":"editDevice","commandId":"3","device":0,"fields":{"fq":36,"on":false}}
+snapshot
+step 5 work units
+step 5 work units
+summary

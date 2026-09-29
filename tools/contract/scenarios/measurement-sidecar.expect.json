@@ -1,0 +1,35 @@
+{
+  "checks": [
+    {"kind":"snapshot","session":"side","index":0,"path":"state","value":3},
+    {"kind":"snapshot","session":"side","index":0,"path":"measurementsFromSidecar","value":true},
+    {"kind":"snapshot","session":"side","index":0,"path":"sourceMissingAudio","value":true},
+    {"kind":"snapshot","session":"side","index":0,"path":"sourceBytes","value":0},
+    {"kind":"snapshot","session":"side","index":0,"path":"measurements.0.status","value":1},
+    {"kind":"snapshot","session":"side","index":0,"path":"measurements.1.reason","value":8},
+    {"kind":"answer","session":"side","index":1,"path":"code","value":17},
+    {"kind":"answer","session":"side","index":2,"path":"code","value":31},
+    {"kind":"snapshot","session":"side","index":3,"path":"sourceMissingAudio","value":false},
+    {"kind":"snapshot","session":"side","index":3,"path":"measurementJob","value":1},
+    {"kind":"snapshot","session":"side","index":4,"path":"measurements.7.status","value":1},
+    {"kind":"snapshot","session":"side","index":4,"path":"measurements.1.reason","value":8},
+    {"kind":"snapshot","session":"direct","index":0,"path":"measurementsFromSidecar","value":false},
+    {"kind":"query","session":"side","index":0,"path":"status","value":2},
+    {"kind":"query","session":"side","index":1,"path":"status","value":0},
+    {"kind":"answer","session":"side","index":4,"path":"jobId","value":2},
+    {"kind":"snapshot","session":"side","index":6,"path":"masters.length","value":1}
+  ],
+  "equal": [
+    [{"kind":"snapshot","session":"side","index":0},{"kind":"snapshot","session":"side","index":1}],
+    [{"kind":"snapshot","session":"side","index":1},{"kind":"snapshot","session":"side","index":2}]
+  ],
+  "samePath": [
+    {"a":{"kind":"snapshot","session":"side","index":0},"b":{"kind":"snapshot","session":"side","index":4},"path":"measurements.0"},
+    {"a":{"kind":"snapshot","session":"side","index":0},"b":{"kind":"snapshot","session":"side","index":4},"path":"source.hash"},
+    {"a":{"kind":"snapshot","session":"side","index":4},"b":{"kind":"snapshot","session":"direct","index":0},"path":"source.hash"},
+    {"a":{"kind":"snapshot","session":"side","index":4},"b":{"kind":"snapshot","session":"direct","index":0},"path":"measurements.0.numbers.0.value"},
+    {"a":{"kind":"snapshot","session":"side","index":4},"b":{"kind":"snapshot","session":"direct","index":0},"path":"measurements.0.numbers.1.value"}
+  ],
+  "minEvents": 4000,
+  "eventKinds": ["phase","measurement","fact","rejected"],
+  "rejections": 2
+}

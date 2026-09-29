@@ -620,7 +620,7 @@ SNAMES=$(export_names "${SFILES[@]}")
 SFOUND=$(printf '%s\n' "$SNAMES" | grep -c . || true)
 check_exports "$SFOUND" "${SFILES[@]}"
 check_return_types 'std::uint32_t|fc_session_status' "${SFILES[@]}"
-SEXACT="_fc_session_abi_version _fc_session_command _fc_session_command_bytes _fc_session_config_version _fc_session_create _fc_session_create_bytes _fc_session_destroy _fc_session_events_copy _fc_session_events_size _fc_session_export_project_copy _fc_session_export_project_size _fc_session_import_project _fc_session_import_project_bytes _fc_session_load _fc_session_load_bytes _fc_session_measurement_bytes _fc_session_needles_bytes _fc_session_query_bytes _fc_session_query_copy _fc_session_query_size _fc_session_set_capacity _fc_session_snapshot_copy _fc_session_snapshot_size _fc_session_step _fc_session_summary_copy _fc_session_summary_size"
+SEXACT="_fc_session_abi_version _fc_session_attach_audio _fc_session_attach_audio_bytes _fc_session_command _fc_session_command_bytes _fc_session_config_version _fc_session_create _fc_session_create_bytes _fc_session_destroy _fc_session_events_copy _fc_session_events_size _fc_session_export_project_copy _fc_session_export_project_size _fc_session_import_project _fc_session_import_project_bytes _fc_session_load _fc_session_load_bytes _fc_session_load_measured _fc_session_load_measured_bytes _fc_session_measurement_bytes _fc_session_needles_bytes _fc_session_query_bytes _fc_session_query_copy _fc_session_query_size _fc_session_set_capacity _fc_session_snapshot_copy _fc_session_snapshot_size _fc_session_step _fc_session_summary_copy _fc_session_summary_size"
 [ "$(printf '%s\n' "$SNAMES" | LC_ALL=C sort | paste -sd' ' -)" = "$SEXACT" ] \
     || { echo "*** fc_session exports differ from the frozen v1 list and its declared additions"; exit 1; }
 SEXPORTS="$(printf '%s\n' "$SNAMES" | paste -sd, -),_malloc,_free"
@@ -674,6 +674,21 @@ mkdir -p "$OUT/trap"
 em++ "${SCOMMON[@]}" "${RELEASE[@]}" -sENVIRONMENT=node "$SSRC" "${SESSION_SRCS[@]}" "$HERE/session-controls/trap_allocation.cpp" -I"$CORE/test_support" \
      -o "$OUT/trap/fcsession.node.js"
 node "$HERE/session-trap-check.mjs" "$OUT/trap/fcsession.node.js" "$OUT/snapshot.mjs"
+
+# The slice 0 script contract uses a separate poisonable instance for its trap
+# scenario. The production module's exports remain the frozen v1 set.
+mkdir -p "$OUT/contract-trap"
+em++ "${SCOMMON[@]}" "${RELEASE[@]}" -sENVIRONMENT=node "$SSRC" "${SESSION_SRCS[@]}" \
+     "$HERE/session-controls/contract_trap.cpp" -I"$CORE/test_support" -o "$OUT/contract-trap/fcsession.node.js"
+
+echo "--- fc_session checked contract module (SAFE_HEAP, assertions, stack checks)"
+mkdir -p "$OUT/checked/contract-trap"
+cp "$OUT/snapshot.mjs" "$OUT/snapshot.d.ts" "$OUT/checked/"
+em++ "${SCOMMON[@]}" "${RELEASE[@]}" -sENVIRONMENT=node -sSAFE_HEAP=1 -sASSERTIONS=2 -sSTACK_OVERFLOW_CHECK=2 \
+     "$SSRC" "${SESSION_SRCS[@]}" -o "$OUT/checked/fcsession.node.js"
+em++ "${SCOMMON[@]}" "${RELEASE[@]}" -sENVIRONMENT=node -sSAFE_HEAP=1 -sASSERTIONS=2 -sSTACK_OVERFLOW_CHECK=2 \
+     "$SSRC" "${SESSION_SRCS[@]}" "$HERE/session-controls/contract_trap.cpp" -I"$CORE/test_support" \
+     -o "$OUT/checked/contract-trap/fcsession.node.js"
 
 echo "=== size (fc_session)"
 sizes fcsession.web.wasm fcsession.web.mjs

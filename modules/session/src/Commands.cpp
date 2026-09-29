@@ -234,6 +234,7 @@ Checked Session::storageFor (const Request& request) const noexcept
     }
     if (std::get_if<command::Master> (&request) != nullptr)
     {
+        if (! samples_) return rejected (Rejection::NoAudio);
         // 4. NAMES: an id for the job, never 0 and never one issued before.
         if (lastJob_ == std::numeric_limits<JobId>::max()
             || (masterRequiresTempo() && ! tempoForDevice().ready && measurementJob_ == 0
@@ -374,6 +375,7 @@ Answer Session::apply (const Request& request) noexcept
         needlesProgress_ = {}; needlesDemand_ = {};
         if (! cached)
         {
+            measurementsFromSidecar_ = false;
             samples_.reset();
             waveform_.reset (new detail::WaveformState);
             queryCache_.reset();

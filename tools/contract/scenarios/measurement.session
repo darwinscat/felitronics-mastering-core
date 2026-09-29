@@ -1,0 +1,29 @@
+create main 134217728
+load 1 measure
+snapshot
+summary
+drive 3200 work units
+snapshot
+summary
+drive 5000 work units
+snapshot
+summary
+query {"kind":0,"audioId":"$source","fromFrame":"0","toFrame":"384000","columns":32,"requestId":"11","crossoverHz":120,"fromHz":20,"toHz":250}
+query {"kind":3,"audioId":"$source","fromFrame":"0","toFrame":"384000","columns":32,"requestId":"12","crossoverHz":120,"fromHz":20,"toHz":250}
+query {"kind":4,"audioId":"$source","fromFrame":"0","toFrame":"384000","columns":32,"requestId":"13","crossoverHz":120,"fromHz":20,"toHz":250}
+query {"kind":5,"audioId":"$source","fromFrame":"0","toFrame":"384000","columns":32,"requestId":"14","crossoverHz":120,"fromHz":20,"toHz":250}
+query {"kind":6,"audioId":"$source","fromFrame":"0","toFrame":"384000","columns":32,"requestId":"15","crossoverHz":120,"fromHz":20,"toHz":250}
+query {"kind":3,"audioId":"$source","fromFrame":"0","toFrame":"384000","columns":32,"requestId":"12","crossoverHz":120,"fromHz":20,"toHz":250}
+command {"kind":"setTarget","commandId":"2","target":"cd"}
+snapshot
+summary
+query {"kind":3,"audioId":"$source","fromFrame":"0","toFrame":"384000","columns":32,"requestId":"12","crossoverHz":120,"fromHz":20,"toHz":250}
+capacity 0 0
+load 3 mono
+snapshot
+summary
+capacity 134217728 134217728
+load 4 mono
+query {"kind":0,"audioId":"$previous","fromFrame":"0","toFrame":"256","columns":32,"requestId":"20","crossoverHz":120,"fromHz":20,"toHz":250}
+snapshot
+summary

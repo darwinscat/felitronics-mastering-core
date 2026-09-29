@@ -1,0 +1,10 @@
+create main 67108864
+load 1 measure-stereo
+drive 600 work units
+snapshot
+load 2 nonfinite
+snapshot
+summary
+drive 5000 work units
+snapshot
+summary

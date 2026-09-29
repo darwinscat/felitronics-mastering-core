@@ -1,0 +1,46 @@
+{
+  "rebuild": "node tools/contract/fixtures.mjs --rebuild",
+  "inputHash": "fc3a7881d59bf8cba5c26e1d80e89a6790859e0264ef9b3814bfa81bd6e64f31",
+  "files": {
+    "mono.pcm": {
+      "inputHash": "fc3a7881d59bf8cba5c26e1d80e89a6790859e0264ef9b3814bfa81bd6e64f31",
+      "sha256": "246f129686834b8e707e1ea48640f71726b21dcfde54abe02108f6c3f924ce84",
+      "rebuild": "node tools/contract/fixtures.mjs --rebuild"
+    },
+    "stereo.pcm": {
+      "inputHash": "fc3a7881d59bf8cba5c26e1d80e89a6790859e0264ef9b3814bfa81bd6e64f31",
+      "sha256": "35be5697bb18d26784b6afd5e1aa0b6d50b1ed4f77c64ca65d908dd8122f155f",
+      "rebuild": "node tools/contract/fixtures.mjs --rebuild"
+    },
+    "measure.pcm": {
+      "inputHash": "fc3a7881d59bf8cba5c26e1d80e89a6790859e0264ef9b3814bfa81bd6e64f31",
+      "sha256": "39c5350b5e29c0d5b6deb187159c3c6c5efbb65706a36503b989e6c00d1101c1",
+      "rebuild": "node tools/contract/fixtures.mjs --rebuild"
+    },
+    "measure-stereo.pcm": {
+      "inputHash": "fc3a7881d59bf8cba5c26e1d80e89a6790859e0264ef9b3814bfa81bd6e64f31",
+      "sha256": "2da76419f8af317d87e00b2a9f37fe8a059d8b1bb8604b345768945d9c417699",
+      "rebuild": "node tools/contract/fixtures.mjs --rebuild"
+    },
+    "silence.pcm": {
+      "inputHash": "fc3a7881d59bf8cba5c26e1d80e89a6790859e0264ef9b3814bfa81bd6e64f31",
+      "sha256": "351cbc14147da1098cf23cf0d464997add6ba99a9773a923febcd612cff7985d",
+      "rebuild": "node tools/contract/fixtures.mjs --rebuild"
+    },
+    "nonfinite.pcm": {
+      "inputHash": "fc3a7881d59bf8cba5c26e1d80e89a6790859e0264ef9b3814bfa81bd6e64f31",
+      "sha256": "ac78ecde31dc08bc2c543f668f3883948aca3336a793d0817796ab3303359484",
+      "rebuild": "node tools/contract/fixtures.mjs --rebuild"
+    },
+    "measure-sidecar.json": {
+      "inputHash": "fc3a7881d59bf8cba5c26e1d80e89a6790859e0264ef9b3814bfa81bd6e64f31",
+      "sha256": "da0b08b4bfc4ed8d8b0beb4848377456be00de5bb94364d2b7c228fc53294433",
+      "rebuild": "node tools/contract/fixtures.mjs --rebuild"
+    },
+    "saved-machine.toml": {
+      "inputHash": "fc3a7881d59bf8cba5c26e1d80e89a6790859e0264ef9b3814bfa81bd6e64f31",
+      "sha256": "52b9c3d5642cfe86b67cade81a07339afe06a92442ea0f66fa678422c8a1c1e3",
+      "rebuild": "node tools/contract/fixtures.mjs --rebuild"
+    }
+  }
+}

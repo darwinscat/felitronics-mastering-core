@@ -40,12 +40,18 @@ public:
     [[nodiscard]] static Checked commandStorage (const Session& session, std::string_view json) noexcept;
     [[nodiscard]] static Checked loadStorage (const Session& session, std::uint32_t channels, std::uint64_t frames,
                                               std::uint32_t rate, std::string_view meta) noexcept;
+    [[nodiscard]] static Checked loadMeasuredStorage (const Session& session, std::string_view facts) noexcept;
+    [[nodiscard]] static Checked attachAudioStorage (const Session& session, const Pcm& pcm) noexcept;
     [[nodiscard]] static Checked importStorage (const Session& session, std::string_view project) noexcept;
     // Contract or domain rejection is an answer, CodecStatus::Ok. A non-Ok status writes nothing.
     // The answer buffer must hold kAnswerBytes BEFORE parsing or applying a command.
     [[nodiscard]] static CodecStatus command (Session& session, std::string_view json, std::span<char> answer, std::uint32_t& written) noexcept;
     [[nodiscard]] static CodecStatus load (Session& session, CommandId id, const Pcm& pcm, std::string_view meta,
                                          std::span<char> answer, std::uint32_t& written) noexcept;
+    [[nodiscard]] static CodecStatus loadMeasured (Session& session, CommandId id, std::string_view facts,
+                                                  std::span<char> answer, std::uint32_t& written) noexcept;
+    [[nodiscard]] static CodecStatus attachAudio (Session& session, CommandId id, const Pcm& pcm,
+                                                 std::span<char> answer, std::uint32_t& written) noexcept;
     [[nodiscard]] static CodecStatus importProject (Session& session, CommandId id, std::string_view project,
                                                   std::span<char> answer, std::uint32_t& written) noexcept;
 };

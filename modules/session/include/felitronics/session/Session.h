@@ -182,6 +182,12 @@ public:
     [[nodiscard]] Checked check (const Request& request) const noexcept;
     // Allocation-free demand before capacity checks; Load needs shape/meta only, never sample pointers.
     [[nodiscard]] Checked storageFor (const Request& request) const noexcept;
+    // A sidecar supplies certified scalar facts before its PCM arrives. Attachment
+    // verifies the source hash and schedules only the missing waveform index.
+    [[nodiscard]] Checked loadMeasuredStorage (const MeasuredSource& facts) const noexcept;
+    [[nodiscard]] Answer loadMeasured (CommandId id, const MeasuredSource& facts) noexcept;
+    [[nodiscard]] Checked attachAudioStorage (const Pcm& pcm) const noexcept;
+    [[nodiscard]] Answer attachAudio (CommandId id, const Pcm& pcm) noexcept;
     [[nodiscard]] MeasurementStorage measurementStorage (const Pcm& pcm) const noexcept;
     // Additional job demand, before preparation; includes the analyzer run list, owned aggregates, copy and codec.
     [[nodiscard]] Checked needlesStorage (double ceilingDb) const noexcept;
@@ -292,6 +298,8 @@ private:
     std::uint64_t measurementKey_ = 0;
     MeasurementResult measurementResults_[kAnalyzers] {};
     OwnedMeasurements measurementOwners_[kAnalyzers];
+    MeasurementValue sidecarNumbers_[2] {};
+    bool measurementsFromSidecar_ = false;
     std::uint64_t measurementOwnedBytes_ = 0;
     std::unique_ptr<detail::MeasurementWorkspace> measurementWorkspace_;
     std::unique_ptr<detail::LiveMeasurements> liveMeasurements_;

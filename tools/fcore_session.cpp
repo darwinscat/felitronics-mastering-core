@@ -10,7 +10,8 @@
 //                                   felitronics-mastering-core <MAJOR.MINOR.PATCH>   (Session::version)
 //                                   felitronics-core <MAJOR.MINOR.PATCH>             (Session::coreVersion)
 //                                   fc_session_abi <N>                               (fc_session_abi_version)
-//   fcore_session run <script>    reads the script (`-` is stdin) into a fresh session and prints `done <commands>`.
+//   fcore_session run <script>    runs the shared native/Wasm contract grammar and writes tab-delimited codec records.
+//   fcore_session parse <script>  validates the grammar and prints its instruction encoding.
 //   fcore_session table           who may do what, when: the command × state table and the session's own transitions
 //                                 (Commands.h, Table), as Markdown — the text docs/SESSION.md carries between its
 //                                 markers, which ctest holds byte for byte to this output.
@@ -21,17 +22,14 @@
 //   fcore_session config sound-version  `version` of all its data — which config this is — and `sound-version` of
 //                                       what can change a master, the one a recipe will record.
 //
-// THE SCRIPT. One command per line; `#` starts a comment that runs to the end of the line; a line that is empty or
-// blank after that is not a command. A script carries none of the session's commands, so the only script this accepts
-// is one with none in it — empty, or comments and blank lines — and it answers `done 0`. A line that is a command is
-// refused: exit 2, the line named on stderr, nothing on stdout. A refusal is the whole run's, never a prefix of it: the
-// script is read and checked to the end before the session is created, so a refused script touched no session at all.
+// THE SCRIPT. tools/contract/grammar.json defines the one instruction grammar for this CLI and the Wasm runner.
+// One instruction per line; `#` starts a comment. Parsing completes before any session is created.
 //
-// EXIT STATUS: 0 done; 2 refused — a usage error, a file that cannot be read, a script this build does not accept, or a
-// session that refused to be created (felitronics::session::Status, named on stderr).
+// EXIT STATUS: 0 done; 2 refused — usage, file, script, or session refusal.
 // stdout carries the result and nothing else; every diagnostic goes to stderr.
 
 #include "fc_session_abi.h"
+#include "session-script.h"
 
 #include <felitronics/session/Commands.h>
 #include <felitronics/session/Config.h>
@@ -174,30 +172,6 @@ bool readAll (const char* path, std::string& out)
     return true;
 }
 
-// The number of commands in `script`, or -1 after naming the first line that is one this build does not know — which,
-// with no command a script carries, is any command at all.
-long countCommands (const std::string& script)
-{
-    long line = 0, commands = 0;
-    for (std::size_t at = 0; at < script.size();)
-    {
-        const std::size_t eol = script.find ('\n', at);
-        const std::size_t end = eol == std::string::npos ? script.size() : eol;
-        ++line;
-        std::string text = script.substr (at, end - at);
-        if (const std::size_t hash = text.find ('#'); hash != std::string::npos) text.resize (hash);
-        const std::size_t first = text.find_first_not_of (" \t\r\v\f");
-        if (first != std::string::npos)
-        {
-            const std::size_t last = text.find_last_not_of (" \t\r\v\f");
-            std::fprintf (stderr, "fcore_session: line %ld: unknown command '%s' — this build knows no commands\n",
-                          line, text.substr (first, last - first + 1).c_str());
-            return -1;
-        }
-        at = end + 1;
-    }
-    return commands;
-}
 } // namespace
 
 int main (int argc, char** argv)
@@ -211,23 +185,11 @@ int main (int argc, char** argv)
         std::printf ("fc_session_abi %u\n", (unsigned) fc_session_abi_version());
         return 0;
     }
-    if (argc == 3 && std::strcmp (argv[1], "run") == 0)
+    if (argc == 3 && (std::strcmp (argv[1], "run") == 0 || std::strcmp (argv[1], "parse") == 0))
     {
         std::string script;
         if (! readAll (argv[2], script)) return 2;
-        const long commands = countCommands (script);
-        if (commands < 0) return 2;
-        auto created = Session::create();
-        if (created.status != felitronics::session::Status::Ok)
-        {
-            std::fprintf (stderr, "fcore_session: the session refused to be created (this thread's floating-point "
-                                  "environment is not IEEE-754's default)\n");
-            return 2;
-        }
-        // The script held no command, so nothing runs against the session: it is created, and destroyed.
-        created.session.reset();
-        std::printf ("done %ld\n", commands);
-        return 0;
+        return sessionScript (script, argv[2], std::strcmp (argv[1], "parse") == 0);
     }
     if (argc == 2 && std::strcmp (argv[1], "table") == 0)
     {

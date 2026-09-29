@@ -76,10 +76,10 @@ function read (path) {
 let shipped, twin;
 try { shipped = read(shippedPath); twin = read(twinPath); } catch (e) { console.error(`*** ${e.message}`); process.exit(1); }
 
-// The session's two largest bodies differ by 6 and 14 bytes when function
-// indices change width in the named link. The standalone modules retain the
+// The session's two largest bodies differ by up to 20 bytes after the v1
+// sidecar entry points shifted function indices in the named link. The standalone modules retain the
 // original four-byte limit. A lost hot loop also changes the function count.
-const SLACK = basename(shippedPath) === 'fcsession.node.wasm' ? 14 : 4;
+const SLACK = basename(shippedPath) === 'fcsession.node.wasm' ? 20 : 4;
 const sorted = m => [...m.bodies].sort((a, b) => a - b);
 const a = sorted(shipped), t = sorted(twin);
 const worst = a.length === t.length ? Math.max(0, ...a.map((v, i) => Math.abs(v - t[i]))) : Infinity;

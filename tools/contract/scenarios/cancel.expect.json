@@ -1,0 +1,53 @@
+{
+  "checks": [
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "state",
+      "value": 4,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "revision",
+      "value": "3",
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "mastering",
+      "value": false,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "masters.length",
+      "value": 0,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 2,
+      "path": "masters.length",
+      "value": 1,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 2,
+      "path": "source.channels",
+      "value": 2,
+      "session": "main"
+    }
+  ],
+  "minEvents": 10,
+  "eventKinds": [
+    "phase",
+    "fact"
+  ],
+  "rejections": 0,
+  "equal": []
+}

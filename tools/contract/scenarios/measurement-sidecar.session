@@ -1,0 +1,26 @@
+create side 134217728
+load measured 1 measure-sidecar
+snapshot
+summary
+query {"kind":0,"audioId":"$source","fromFrame":"0","toFrame":"384000","columns":8,"requestId":"30","crossoverHz":120,"fromHz":20,"toHz":250}
+command {"kind":"master","commandId":"2"}
+snapshot
+attach audio 3 measure-stereo
+snapshot
+attach audio 4 measure
+snapshot
+drive 5000 work units
+snapshot
+summary
+query {"kind":0,"audioId":"$source","fromFrame":"0","toFrame":"384000","columns":8,"requestId":"31","crossoverHz":120,"fromHz":20,"toHz":250}
+create direct 134217728
+load 1 measure
+drive 5000 work units
+snapshot
+summary
+use side
+snapshot
+command {"kind":"master","commandId":"5"}
+drive 16 work units
+snapshot
+summary

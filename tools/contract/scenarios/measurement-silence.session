@@ -1,0 +1,8 @@
+create main 67108864
+load 1 silence
+drive 5000 work units
+snapshot
+summary
+command {"kind":"master","commandId":"2"}
+snapshot
+summary

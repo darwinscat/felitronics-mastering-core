@@ -1,0 +1,12 @@
+{
+  "checks": [
+    {"kind":"poison","path":"trap","value":14},
+    {"kind":"poison","path":"status","value":1},
+    {"kind":"poison","path":"untouched","value":true},
+    {"kind":"snapshot","session":"fresh","index":0,"path":"source.name","value":"silence"},
+    {"kind":"snapshot","session":"fresh","index":0,"path":"state","value":1}
+  ],
+  "minEvents": 30,
+  "eventKinds": ["phase", "measurement"],
+  "rejections": 0
+}

@@ -74,7 +74,7 @@ Created Session::create (const Capabilities& caps, std::uint64_t configVersion) 
 const Capabilities& Session::capabilities() const noexcept { return capabilities_; }
 double Session::liveBytes() const noexcept
 {
-    return double (createBytes (capabilities_) + source_.frames * source_.channels * sizeof (float)
+    return double (createBytes (capabilities_) + (samples_ ? source_.frames * source_.channels * sizeof (float) : 0)
                    + source_.name.size() + masterRoom_ * sizeof (Kept) + measurementOwnedBytes_
                    + (sourceMeasurements_ ? sizeof (detail::SourceMeasurements) + sourceMeasurements_->bytes : 0)
                    + (liveMeasurements_ ? sizeof (detail::LiveMeasurements) + liveMeasurements_->bytes : 0)

@@ -258,6 +258,12 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 contract (measurementJob_);
             else stepSourceMeasurements();
         }
+        else if (measurementsFromSidecar_ && measurementJob_ != 0)
+        {
+            measurementJob_ = 0;
+            measurementProgress_ = { PhaseName::Analyzers, 1.0, config::Config::versions().all, 0, 0, 1, 1 };
+            ++revision_;
+        }
         else contract (measurementJob_);
         ++units;
     }

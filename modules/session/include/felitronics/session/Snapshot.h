@@ -46,6 +46,8 @@ struct SnapshotView
     bool mandatoryMeasurementsReady = false, devicesPlaced = false;
     bool measurementRowsIncluded = true;
     TempoChoice tempoChoice {};
+    bool measurementsFromSidecar = false;
+    bool sourceMissingAudio = false;
 };
 class Codec;
 // An immutable, owned value. view() remains valid until this value is moved or destroyed,

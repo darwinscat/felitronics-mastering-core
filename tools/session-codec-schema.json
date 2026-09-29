@@ -389,7 +389,9 @@
         "mandatoryMeasurementsReady": "bool",
         "devicesPlaced": "bool",
         "measurementRowsIncluded": "bool",
-        "tempoChoice": "TempoChoice"
+        "tempoChoice": "TempoChoice",
+        "measurementsFromSidecar": "bool",
+        "sourceMissingAudio": "bool"
       }
     },
     "Version": {
@@ -498,6 +500,21 @@
         "total": "uint64",
         "stored": "uint64",
         "complete": "bool"
+      }
+    },
+    "MeasuredSource": {
+      "cpp": "MeasuredSource",
+      "fields": {
+        "name": "string",
+        "sourceHash": "uint64",
+        "frames": "uint64",
+        "sampleRate": "uint32",
+        "channels": "uint32",
+        "fileRate": "uint32",
+        "bitDepth": "uint32",
+        "rateKnown": "bool",
+        "integratedLufs": "double?",
+        "truePeakDb": "double?"
       }
     },
     "MeasurementQuery": {
@@ -1051,6 +1068,14 @@
       "tempoChoice": {
         "default": "TempoChoice {}",
         "description": "No device tempo decision before the session finishes the tempo measurement."
+      },
+      "measurementsFromSidecar": {
+        "default": "false",
+        "description": "Historical sessions measured from PCM."
+      },
+      "sourceMissingAudio": {
+        "default": "false",
+        "description": "Historical loaded sources have PCM."
       }
     },
     "MeasurementQuery": {

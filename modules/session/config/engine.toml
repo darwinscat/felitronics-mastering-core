@@ -621,6 +621,7 @@ estimateFromSeconds = 1
 loudness = 449.51
 report = 895.895
 lowEnd120 = 2410.615
+lowEnd150 = 2410.615
 forensics = 927.09
 stereo = 108.662
 lowEndSweep = 0.038
@@ -628,6 +629,8 @@ stereoBursts = 463.679
 crest = 4501.161
 hum = 1078.918
 tempo = 337.33
+waveformIndex = 140.0
+excursionsIndex = 450.0
 
 # master: the phases of a master — every landing pass weighs passWeight and the measurement of the delivered file
 #   measureWeight, against expectedPasses passes.

@@ -202,10 +202,23 @@ target_compile_definitions(felitronics_session_facade PRIVATE $<TARGET_PROPERTY:
 # fcore_session — the native CLI over `felitronics::session` (tools/fcore_session.cpp): the library linked AS C++, the
 # way a desktop application links it, plus the fc_session ABI's object beside it, so the ABI version it prints is the
 # facade's own answer. The two are separate translation units for fcore_master's reason: the facade stays a facade.
-add_executable(fcore_session fcore_session.cpp $<TARGET_OBJECTS:felitronics_session_facade>)
-target_link_libraries(fcore_session PRIVATE felitronics::session)
+set(SESSION_SCRIPT_GRAMMAR ${CMAKE_CURRENT_BINARY_DIR}/session-script-grammar.h)
+find_program(SESSION_SCRIPT_NODE NAMES node nodejs REQUIRED)
+add_custom_command(OUTPUT ${SESSION_SCRIPT_GRAMMAR}
+    COMMAND ${SESSION_SCRIPT_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/contract/grammar.mjs --generate ${SESSION_SCRIPT_GRAMMAR}
+    DEPENDS contract/grammar.mjs contract/grammar.json VERBATIM)
+add_executable(fcore_session fcore_session.cpp session-script.cpp session-script-poison.cpp
+    ${SESSION_SCRIPT_GRAMMAR} $<TARGET_OBJECTS:felitronics_session_facade>)
+target_link_libraries(fcore_session PRIVATE felitronics::session felitronics::test_support)
 target_include_directories(fcore_session PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(fcore_session PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
+target_compile_options(fcore_session PRIVATE ${FCORE_NO_FP_CONTRACT}
+    $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fno-fast-math>)
 target_compile_features(fcore_session PRIVATE cxx_std_20)
+if(FELITRONICS_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
+    add_test(NAME fcore_session_measure_contract_native
+        COMMAND ${SESSION_SCRIPT_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/contract/run.mjs $<TARGET_FILE:fcore_session> --native-only)
+endif()
 
 find_program(FELITRONICS_ABI_NODE NAMES node nodejs REQUIRED)
 set(FELITRONICS_ABI_PROBE ${CMAKE_CURRENT_BINARY_DIR}/session-abi-probe.cpp)
@@ -240,6 +253,13 @@ if(FELITRONICS_BUILD_TESTS)
 endif()
 
 if(FELITRONICS_BUILD_TESTS)
+    add_executable(felitronics_session_sidecar_tests tests/SessionSidecarTests.cpp)
+    target_link_libraries(felitronics_session_sidecar_tests PRIVATE felitronics::session felitronics::test_support)
+    target_include_directories(felitronics_session_sidecar_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    target_compile_features(felitronics_session_sidecar_tests PRIVATE cxx_std_20)
+    target_compile_options(felitronics_session_sidecar_tests PRIVATE ${FCORE_NO_FP_CONTRACT}
+        $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fno-fast-math>)
+    add_test(NAME felitronics_session_sidecar_tests COMMAND felitronics_session_sidecar_tests)
     # fc_session, version 1 (tools/fc_session_abi.h): guards, handles, capacity, declared allocation and poison —
     # natively, under ASan/UBSan, and on the wasm tier. Release walks every generation; Debug uses the test facade
     # seam to start at the last one. The poison is the last group, because it is for good.
