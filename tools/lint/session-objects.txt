@@ -59,7 +59,8 @@ undefined  coff    ^(_CxxThrowException|__std_exception_copy|__std_exception_des
 undefined  coff    ^(\?_X(length_error|out_of_range)@std@@YAXPEBD@Z|__imp__invoke_watson)$    ...its out-of-line length and index checks, and the invalid-parameter end of the process
 undefined  coff    ^(\?\?_7type_info@@6B@|__ImageBase)$    ...and what a throw's metadata points at: type_info's vtable and the image base its offsets count from
 undefined  coff    ^__std_(find_trivial|max_element|min_element|minmax_element|max|min|minmax)_[1248][iu]?$    the STL's vectorised std::find and std::max_element family, compiled once in its own library (pure computation; the element width and signedness suffix differs between MSVC releases)
-undefined  coff    ^__std_max_element_d$            MSVC's pure double comparison over the finite measurement byte demands
+undefined  coff    ^__std_(max|min)_element_d_?$    MSVC's pure double comparison over the finite measurement byte demands (the STL of VS 2026, MSVC 14.51, spells its floating-point entries with a trailing underscore: `__std_max_element_d_`)
+undefined  coff    ^__std_swap_ranges_trivially_swappable_noalias$    the STL's vectorised std::swap_ranges (std::swap of two arrays of trivially swappable elements), compiled once in its own library (MSVC 14.51 calls it from SourceMeasurements; 14.44 inlines the swap): an exchange of two disjoint memory ranges
 undefined  coff    ^_(dclass|fdclass)$              the UCRT's double and float fpclassify, behind std::isfinite and std::isnan: a classification, exact
 undefined  coff    ^__isa_available$               the CRT's CPU capability flag, read by MSVC's STL to select equivalent integer bit-count instructions
 undefined  coff    ^(__imp_)?_dsign$                the UCRT's signbit, behind felitronics-toml's Decimal::fromDouble (a knob's value read as a decimal, src/Grid.h): a bit read, exact

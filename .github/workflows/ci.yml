@@ -41,9 +41,27 @@ jobs:
         run: ctest --test-dir build -C Release --output-on-failure --no-tests=error -R "^felitronics_session_abi_manifest"
       - name: Test
         shell: bash
+        env:
+          # On windows-latest the ABI source controls (thirty-odd MSBuild rebuilds of a copied tree) are the whole critical
+          # path: 2120 of 2228 s on main, past the 60-minute limit once slice 1 grew the library. They run in their own
+          # job below, beside this one; every other row runs them here.
+          EXCLUDE: ${{ matrix.os == 'windows-latest' && '^felitronics_session_abi_source_controls$' || '' }}
         run: |
           n=$( (getconf _NPROCESSORS_ONLN || nproc || sysctl -n hw.ncpu) 2>/dev/null | head -1 )
-          ctest --test-dir build -C Release --output-on-failure --no-tests=error -j "${n:-4}"
+          ctest --test-dir build -C Release --output-on-failure --no-tests=error -j "${n:-4}" ${EXCLUDE:+-E "$EXCLUDE"}
+
+  # The ABI source controls with MSVC, alone: they copy the tree and build it with this row's configuration, so the row
+  # needs no build of its own — only the configure whose cache they read.
+  windows-abi-source-controls:
+    name: windows-latest — session ABI source controls
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DFELITRONICS_MASTERING_BUILD_TESTS=ON
+      - name: Mutate, compile, compare — with MSVC
+        run: ctest --test-dir build -C Release --output-on-failure --no-tests=error -R "^felitronics_session_abi_source_controls$"
 
   windows-debug:
     name: windows-msvc-debug-budgets
