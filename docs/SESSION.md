@@ -1151,3 +1151,25 @@ an independent `ArrayBuffer`, releases the session PCM, and transfers only that 
 The heap view expires on the next module call or `memory.grow`; the shell must discard it immediately.
 Forgetting a master releases its pending PCM, while other masters keep only metadata. A poisoned wasm
 instance is discarded and rebuilt by replay; ordinary cancellation is a session command.
+
+## Measured ready-master report
+
+Each completed ready master carries an optional `MasterReport` beside its recipe and landing. Its LUFS,
+reference true peak, PLR and suitable LRA are the solver's completed measurement of the selected delivered
+PCM, including the drained tail and enabled dither. The report also gives the achieved-minus-source gain,
+signed achieved-minus-target miss, target and ceiling, and a separate true-peak safety flag. A loudness miss
+can keep the PCM when its reference true peak is safe; a missing mandatory reading or an unsafe peak cannot.
+The two optional hint records expose measured sub-bass or presence share, limiter peak reduction, gain or
+remaining loudness distance with units. `MasterReportText` renders the miss and mix suggestions as typed,
+ru-first/en facts. PassLimit means the twelve-pass budget ended; it makes no claim of physical impossibility.
+
+`MasterCrest` stores five peak-amplitude/mean-square-power pairs per block, in Low, LowMid, HighMid, High,
+Full order, plus five source activity values per block as zero/one values. Version, sample rate, hop
+frames, block hops, three band corners, frame count, block count, completeness and provenance travel with
+the rows. Pairing requires all of these grid properties to match; equal row counts alone are insufficient.
+When delivery changes rate, exactly one additional render with the chosen settings runs at the source rate
+into bounded scratch for crest. The deliverable PCM and its LUFS/TP remain on the delivery rate, and
+`checkPasses` records the extra render separately from the landing's budget. Pending source crest and a
+final unavailable reason are distinct; either leaves a verified master available. Retained rows belong to
+the master until forget or source replacement, survive PCM transfer, and are copied by owned snapshots and
+the one generated codec. The later cost task derives its figures from these linear pairs and mask.

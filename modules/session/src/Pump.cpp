@@ -69,7 +69,7 @@ text::Fact OwnedFact::view() const noexcept
 
 std::uint64_t Session::stepBytes() noexcept { return 0; }
 JobId Session::measurementJob() const noexcept { return measurementJob_; }
-bool Session::hasWork() const noexcept { return measurementJob_ != 0 || job_ != 0 || needlesJob_ != 0; }
+bool Session::hasWork() const noexcept { return measurementJob_ != 0 || job_ != 0 || needlesJob_ != 0 || crestJoin_; }
 std::span<const Notification> Session::events() const noexcept { return { events_, eventCount_ }; }
 void Session::emit (Notification event) noexcept
 {
@@ -85,7 +85,16 @@ Phase Session::jobProgress (JobId job) const noexcept
 }
 void Session::emit (Notification event, const Phase& progress) noexcept
 {
-    if (event.kind == EventKind::Measurement) invalidateQueryCache (event.payload.measurement.analyzer);
+    if (event.kind == EventKind::Measurement)
+    {
+        invalidateQueryCache (event.payload.measurement.analyzer);
+        if (event.payload.measurement.analyzer == Analyzer::Crest
+            && event.payload.measurement.status == MeasurementStatus::Unavailable)
+            settleMasterCrest (event.payload.measurement.reason);
+        else if (event.payload.measurement.analyzer == Analyzer::Crest
+                 && event.payload.measurement.status == MeasurementStatus::Ready)
+        { crestJoin_ = true; crestJoinIndex_ = 0; }
+    }
     else if (event.kind == EventKind::Reading)
     {
         invalidateQueryCache (Analyzer::Loudness);
@@ -122,6 +131,9 @@ void Session::dropJob (JobId job) noexcept
                 result.status = MeasurementStatus::Cancelled;
                 result.reason = MeasurementReason::Cancelled;
             }
+        if (measurementResults_[std::size_t (Analyzer::Crest)].status == MeasurementStatus::Ready)
+        { crestJoin_ = true; crestJoinIndex_ = 0; }
+        else settleMasterCrest (MeasurementReason::Cancelled);
         if (job_ != 0 && ! masterJob_ && masterRequiresTempo() && ! tempoForDevice().ready)
         {
             mastering_ = false; job_ = 0; jobRecipe_ = {};
@@ -275,6 +287,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 const auto completedJob = job_;
                 if (! detail::Driver::mastered (*this, completedJob)) { contract (completedJob); ++units; continue; }
                 masters_[masterCount_ - 1].landing = summary;
+                masters_[masterCount_ - 1].report = masterJob_->reportResult();
                 if (summary.deliverable && outcome == mastering::StepResult::Done)
                 {
                     masterAudio_ = { masterJob_->takeOutput(), std::uint64_t (masterJob_->frames),
@@ -292,6 +305,10 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 event.payload.done.masterId = completedJob;
                 emit (event, masterProgress_);
             }
+        }
+        else if (crestJoin_)
+        {
+            stepMasterCrestJoin();
         }
         else if (needlesJob_ != 0)
         {

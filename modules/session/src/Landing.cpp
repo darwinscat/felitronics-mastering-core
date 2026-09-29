@@ -3,12 +3,67 @@
 
 #include "BuildGuards.h"
 #include <felitronics/session/Landing.h>
+#include <felitronics/analysis/BandCrestResult.h>
 
 #include <cmath>
 #include <algorithm>
 
 namespace felitronics::session
 {
+bool MasterCrestGrid::compatible (const MasterCrest& master,
+                                  const analysis::BandCrestResult& source) noexcept
+{
+    return master.version == 1 && master.complete
+        && source.reason == analysis::BandCrestInvalid::None && source.droppedHops == 0
+        && source.nonFiniteSamples == 0 && source.sampleRate > 0
+        && core::exactlyEqual (source.sampleRate, double (master.sampleRateHz))
+        && source.hopSamples == master.hopFrames && source.parameters.blockHops == int (master.blockHops)
+        && source.frames == master.frames && source.blocks.size() % 10u == 0
+        && source.blockCount() == master.blocks
+        && source.mask.size() == master.blocks * 5u
+        && core::exactlyEqual (source.parameters.bandEdgeHz[0], master.edgeLowHz)
+        && core::exactlyEqual (source.parameters.bandEdgeHz[1], master.edgeMidHz)
+        && core::exactlyEqual (source.parameters.bandEdgeHz[2], master.edgeHighHz);
+}
+std::optional<text::Fact> MasterReportText::miss (const MasterReport& report) noexcept
+{
+    if (report.status != MeasurementStatus::Ready || ! report.deliverable || report.targetMet
+        || ! report.achievedLufs || ! report.missLu || ! std::isfinite (*report.missLu)
+        || std::fabs (*report.missLu) <= 0.0) return {};
+    return text::Fact::of (*report.missLu < 0 ? text::FactId::MasterLandingMiss
+                                              : text::FactId::MasterLandingAbove,
+        text::Arg::value (*report.achievedLufs, text::Unit::Lufs, 1),
+        text::Arg::value (report.targetLufs, text::Unit::Lufs, 1),
+        text::Arg::value (std::fabs (*report.missLu), text::Unit::Lu, 1));
+}
+std::optional<text::Fact> MasterReportText::hint (const MasterHint& hint) noexcept
+{
+    if (! std::isfinite (hint.evidence)) return {};
+    using text::FactId;
+    FactId id = FactId::MasterHintDemand;
+    text::Unit unit = text::Unit::Db;
+    switch (hint.reason)
+    {
+        case LandingReason::ExcessSubBass: id = FactId::MasterHintSubBass; unit = text::Unit::Percent; break;
+        case LandingReason::SharpPeaks: id = FactId::MasterHintPeaks; break;
+        case LandingReason::DarkMix: id = FactId::MasterHintDark; unit = text::Unit::Percent; break;
+        case LandingReason::LoudnessDemand: id = FactId::MasterHintDemand; unit = text::Unit::Lu; break;
+        case LandingReason::GainRange: id = FactId::MasterHintGainRange; break;
+        case LandingReason::TruePeak: id = FactId::MasterHintTruePeak; unit = text::Unit::DbTp; break;
+        case LandingReason::None: return {};
+    }
+    return text::Fact::of (id, text::Arg::value (hint.evidence, unit, 1));
+}
+text::Fact MasterReportText::crest (const MasterCrest& crest) noexcept
+{
+    if (crest.status == MeasurementStatus::Pending)
+        return text::Fact::of (text::FactId::MasterCrestPending);
+    if (crest.status != MeasurementStatus::Ready)
+        return text::Fact::of (text::FactId::MasterCrestUnavailable);
+    return text::Fact::of (crest.sourceRateCheck ? text::FactId::MasterCrestSourceRate
+                                                : text::FactId::MasterCrestDelivered,
+        text::Arg::value (double (crest.sampleRateHz), text::Unit::Hz, 0));
+}
 LandingPlan LandingOps::plan (const config::Engine& engine, bool sourceLoudnessValid,
                          double sourceLufs, double targetLufs, double targetTruePeakDbTp,
                          double sourceRate, double deliveryRate) noexcept

@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <felitronics/session/Measurements.h>
+
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -46,5 +48,50 @@ struct LandingSummary
     std::uint64_t workUnits = 0;
     std::span<const LandingPass> log;
     std::optional<LandingTrace> limiterTrace, peakClipTrace;
+};
+
+// The delivered meter and the source-rate crest check answer different questions. Rows are linear
+// (peak amplitude, mean-square power) in Low, LowMid, HighMid, High, Full order. A mask value of one
+// means that the corresponding source band was suitable for comparison.
+struct MasterCrest
+{
+    MeasurementStatus status = MeasurementStatus::Pending;
+    MeasurementReason reason = MeasurementReason::Pending;
+    std::uint32_t version = 1, sampleRateHz = 0, hopFrames = 0, blockHops = 0;
+    double edgeLowHz = 0, edgeMidHz = 0, edgeHighHz = 0;
+    std::uint64_t frames = 0, blocks = 0;
+    bool complete = false, sourceRateCheck = false;
+    std::span<const double> rows, sourceMask;
+};
+struct MasterHint
+{
+    LandingReason reason = LandingReason::None;
+    double evidence = 0;
+    bool percent = false;
+};
+struct MasterReport
+{
+    MeasurementStatus status = MeasurementStatus::Unavailable;
+    MeasurementReason reason = MeasurementReason::NotImplemented;
+    double targetLufs = 0, ceilingDbTp = 0;
+    std::optional<double> achievedLufs, truePeakDbTp, lraLu, plrDb, gainFromSourceDb, missLu;
+    MeasurementReason lraReason = MeasurementReason::Pending, plrReason = MeasurementReason::Pending;
+    bool peakSafe = false;
+    bool deliverable = false;
+    bool targetMet = false;
+    std::uint32_t checkPasses = 0;
+    MasterCrest crest {};
+    std::optional<MasterHint> firstHint, secondHint;
+};
+struct MasterReportText
+{
+    [[nodiscard]] static std::optional<text::Fact> miss (const MasterReport& report) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> hint (const MasterHint& hint) noexcept;
+    [[nodiscard]] static text::Fact crest (const MasterCrest& crest) noexcept;
+};
+struct MasterCrestGrid
+{
+    [[nodiscard]] static bool compatible (const MasterCrest& master,
+                                          const analysis::BandCrestResult& source) noexcept;
 };
 } // namespace felitronics::session

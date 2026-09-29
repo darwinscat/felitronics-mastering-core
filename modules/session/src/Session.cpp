@@ -4,6 +4,7 @@
 #include "BuildGuards.h"
 
 #include <felitronics/session/Session.h>
+#include <felitronics/analysis/BandCrestResult.h>
 
 #include <felitronics/session/Config.h>
 #include <cmath>
@@ -77,9 +78,13 @@ double Session::liveBytes() const noexcept
 {
     std::uint64_t rows = 0;
     for (std::size_t i = 0; masterRows_ && i < masterRoom_; ++i)
+    {
         if (masterRows_[i].passes)
             rows += 12u * sizeof (LandingPass)
                   + std::uint64_t (2u * masterRows_[i].traceCapacity) * sizeof (LandingTraceBucket);
+        if (masterRows_[i].crest)
+            rows += std::uint64_t (masterRows_[i].crestCapacity) * 15u * sizeof (double);
+    }
     return double (createBytes (capabilities_) + (samples_ ? source_.frames * source_.channels * sizeof (float) : 0)
                    + source_.name.size() + masterRoom_ * (sizeof (Kept) + sizeof (detail::MasterRows))
                    + rows + masterJobBytes_ + (masterAudio_.samples ? masterAudio_.frames * masterAudio_.channels * sizeof (float) : 0)
@@ -103,8 +108,54 @@ void Session::clearMasters() noexcept
     masters_.reset();
     masterRows_.reset();
     masterCount_ = masterRoom_ = 0;
+    crestJoinIndex_ = 0;
+    crestJoin_ = false;
     masterUnit_ = 0;
     masterProgress_ = {};
+}
+void Session::settleMasterCrest (MeasurementReason reason) noexcept
+{
+    crestJoin_ = false;
+    crestJoinIndex_ = 0;
+    for (std::size_t i = 0; i < masterCount_; ++i)
+        if (masters_[i].report && masters_[i].report->crest.status == MeasurementStatus::Pending)
+        {
+            masters_[i].report->crest.status = MeasurementStatus::Unavailable;
+            masters_[i].report->crest.reason = reason;
+        }
+}
+void Session::stepMasterCrestJoin() noexcept
+{
+    if (crestJoinIndex_ >= masterCount_)
+    { crestJoin_ = false; crestJoinIndex_ = 0; return; }
+    const auto index = crestJoinIndex_;
+    auto& master = masters_[index];
+    if (! master.report || master.report->crest.status != MeasurementStatus::Pending)
+    { ++crestJoinIndex_; return; }
+    auto& c = master.report->crest;
+    const auto& result = measurementResults_[std::size_t (Analyzer::Crest)];
+    if (result.status != MeasurementStatus::Ready)
+    { c.status = MeasurementStatus::Unavailable; c.reason = result.reason; ++revision_; ++crestJoinIndex_; return; }
+    const auto source = MeasurementCrest::view (result);
+    if (! MasterCrestGrid::compatible (c, source))
+    { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Unsupported; ++revision_; ++crestJoinIndex_; return; }
+    auto& rows = masterRows_[index];
+    if (! rows.crest || rows.crestCapacity < c.blocks)
+    { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Memory; ++revision_; ++crestJoinIndex_; return; }
+    const auto end = std::min<std::size_t> (std::size_t (c.blocks), rows.crestMaskCopied + 16u);
+    auto* mask = rows.crest.get() + rows.crestCapacity * 10u;
+    for (std::size_t row = rows.crestMaskCopied; row < end; ++row)
+        for (std::size_t band = 0; band < 5u; ++band)
+            mask[row * 5u + band] = source.mask[row * 5u + band];
+    rows.crestMaskCopied = end;
+    if (end == c.blocks)
+    {
+        c.sourceMask = { mask, end * 5u };
+        c.status = MeasurementStatus::Ready;
+        c.reason = MeasurementReason::None;
+        ++revision_;
+        ++crestJoinIndex_;
+    }
 }
 MeasurementStorage Session::measurementStorage (const Pcm& pcm) const noexcept
 {

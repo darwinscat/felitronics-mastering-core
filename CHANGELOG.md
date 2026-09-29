@@ -4,6 +4,10 @@
 
 ## Unreleased
 
+### session — measured master report and comparable crest rows
+
+The ready master now retains delivered LUFS, reference true peak, suitable PLR/LRA, gain from the source, signed target miss, ceiling safety and measured mix hints. A missing LRA carries a reason. Linear band-crest rows use the source's explicit rate, hop and corners and preserve its activity mask when comparable. Rate conversion adds one source-rate check pass with the winning settings, using bounded scratch while the delivered PCM stays intact. Snapshot and the generated codec own the compact rows; older v1 snapshots decode without a report.
+
 ### session — ready master job and owned audio transfer
 
 An additive `fc_session_master` entry takes frozen, versioned mastering topology and parameters with a source and revision fence. The session prices the job before allocating, drives the twelve-pass landing search in work units, and keeps the selected delivery PCM with its recipe and compact measurement rows. A target edit leaves the running recipe intact. Cancellation removes only unfinished work; a new source invalidates old transfers. `fc_session_master_audio_*` reports shape, copies, provides a scoped wasm view for one independent `ArrayBuffer` copy, and releases session PCM explicitly. The frozen v1 JSON Master command retains its original behavior for existing callers; new callers use the ready entry. Appended snapshot and codec fields carry conservative decode defaults.

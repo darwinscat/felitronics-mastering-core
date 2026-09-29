@@ -331,7 +331,60 @@
       "fields": {
         "id": "uint32",
         "landing": "LandingSummary?",
-        "recipe": "Recipe"
+        "recipe": "Recipe",
+        "report": "MasterReport?"
+      }
+    },
+    "MasterCrest": {
+      "cpp": "MasterCrest",
+      "fields": {
+        "status": "MeasurementStatus",
+        "reason": "MeasurementReason",
+        "version": "uint32",
+        "sampleRateHz": "uint32",
+        "hopFrames": "uint32",
+        "blockHops": "uint32",
+        "edgeLowHz": "double",
+        "edgeMidHz": "double",
+        "edgeHighHz": "double",
+        "frames": "uint64",
+        "blocks": "uint64",
+        "complete": "bool",
+        "sourceRateCheck": "bool",
+        "rows": "double[]",
+        "sourceMask": "double[]"
+      }
+    },
+    "MasterHint": {
+      "cpp": "MasterHint",
+      "fields": {
+        "reason": "LandingReason",
+        "evidence": "double",
+        "percent": "bool"
+      }
+    },
+    "MasterReport": {
+      "cpp": "MasterReport",
+      "fields": {
+        "status": "MeasurementStatus",
+        "reason": "MeasurementReason",
+        "targetLufs": "double",
+        "ceilingDbTp": "double",
+        "achievedLufs": "double?",
+        "truePeakDbTp": "double?",
+        "lraLu": "double?",
+        "plrDb": "double?",
+        "lraReason": "MeasurementReason",
+        "plrReason": "MeasurementReason",
+        "gainFromSourceDb": "double?",
+        "missLu": "double?",
+        "peakSafe": "bool",
+        "deliverable": "bool",
+        "targetMet": "bool",
+        "checkPasses": "uint32",
+        "crest": "MasterCrest",
+        "firstHint": "MasterHint?",
+        "secondHint": "MasterHint?"
       }
     },
     "LandingPass": {
@@ -1127,6 +1180,10 @@
       "landing": {
         "default": "std::optional<LandingSummary> {}",
         "description": "No landing result was published in the v1 snapshot."
+      },
+      "report": {
+        "default": "std::optional<MasterReport> {}",
+        "description": "No measured master report was published in the v1 snapshot."
       }
     },
     "Snapshot": {

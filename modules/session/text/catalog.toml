@@ -232,6 +232,58 @@ en = "The required loudness and true-peak measurements are unavailable for maste
 ru = "Мастер готов."
 en = "The master is ready."
 
+[messages.masterLandingMiss]
+ru = "Мастер вышел на {achieved} при цели {target}; недобор {gap}. Это безопасный результат, если истинный пик в пределах потолка."
+en = "The master reached {achieved} against a target of {target}; the shortfall is {gap}. This is a safe result when true peak stays under the ceiling."
+
+[messages.masterLandingAbove]
+ru = "Мастер вышел на {achieved} при цели {target}; превышение по громкости {gap}. Истинный пик остаётся в пределах потолка."
+en = "The master reached {achieved} against a target of {target}; loudness is {gap} above target. True peak remains under the ceiling."
+
+[messages.masterHintSubBass]
+ru = "На саб-бас приходится {share} энергии. Если нужна большая громкость, уберите лишнее ниже 60–80 Гц или настройте сайдчейн баса и бочки."
+en = "Sub-bass carries {share} of the energy. For more loudness, reduce excess below 60–80 Hz or adjust bass and kick sidechain."
+
+[messages.masterHintPeaks]
+ru = "Лимитер снял до {reduction} на резких пиках. Если нужна большая громкость, прижмите транзиенты в миксе."
+en = "The limiter reduced sharp peaks by up to {reduction}. For more loudness, tame transients in the mix."
+
+[messages.masterHintDark]
+ru = "Доля присутствия 2–8 кГц составляет {share}. Если нужна большая громкость, добавьте присутствия в миксе."
+en = "The 2–8 kHz presence share is {share}. For more loudness, add presence in the mix."
+
+[messages.masterHintDemand]
+ru = "До цели остаётся {gap}; явной отдельной помехи замер не нашёл. Можно выбрать более тихую цель."
+en = "The target remains {gap} away; the measurements found no single dominant obstacle. A quieter target may suit this mix."
+
+[messages.masterHintGainRange]
+ru = "Для выбранного прохода потребовалось {gain} предварительного усиления. Проверьте входной уровень и цель."
+en = "The chosen pass used {gain} of pre-limiter gain. Check the input level and target."
+
+[messages.masterHintTruePeak]
+ru = "Измеренный истинный пик составил {peak}. Проверьте потолок пиков перед выдачей файла."
+en = "Measured true peak reached {peak}. Check the peak ceiling before delivery."
+
+[messages.masterCrestSourceRate]
+ru = "Удар измерен на дополнительном проверочном проходе с частотой источника {rate}; громкость и истинный пик относятся к доставленному звуку."
+en = "Impact was measured on one additional check pass at the source rate of {rate}; loudness and true peak describe delivered audio."
+
+[messages.masterCrestDelivered]
+ru = "Удар измерен на доставленном звуке с частотой {rate}."
+en = "Impact was measured on delivered audio at {rate}."
+
+[messages.masterCrestPending]
+ru = "Сравнение удара ожидает замера исходника."
+en = "Impact comparison is waiting for the source measurement."
+
+[messages.masterCrestUnavailable]
+ru = "Сравнение удара недоступно; готовый мастер сохраняется, если его громкость и истинный пик пригодны."
+en = "Impact comparison is unavailable; the completed master remains available when its loudness and true peak are valid."
+
+[messages.masterReportUnavailable]
+ru = "Обязательный замер готового мастера недоступен; файл не выдаётся."
+en = "The completed master's required measurement is unavailable; no file is delivered."
+
 [messages.cancelled]
 ru = "Задание отменено."
 en = "The job was cancelled."
