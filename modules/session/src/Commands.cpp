@@ -540,7 +540,8 @@ Answer Session::apply (const Request& request) noexcept
         rows.crestCapacity = plan.crestCapacity;
         masterJob_.reset (new detail::MasterJob);
         if (! masterJob_->begin (*this, plan)) detail::storageOverflow();
-        masterJobBytes_ = plan.bytes;
+        // liveBytes() counts the installed row owners separately while this job is active.
+        masterJobBytes_ = plan.bytes - plan.retainedRowBytes;
         job_ = ++lastJob_;
         jobRecipe_ = { project_, source_.hash, config::Config::versions().sound,
             detail::MasterJob::fingerprint (plan.ready), plan.deliveryRate, plan.ready.version };

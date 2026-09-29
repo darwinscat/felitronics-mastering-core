@@ -110,19 +110,15 @@ void Session::clearMasters() noexcept
     masterCount_ = masterRoom_ = 0;
     crestJoinIndex_ = 0;
     crestJoin_ = false;
+    crestJoinReason_ = MeasurementReason::None;
     masterUnit_ = 0;
     masterProgress_ = {};
 }
 void Session::settleMasterCrest (MeasurementReason reason) noexcept
 {
-    crestJoin_ = false;
+    crestJoin_ = masterCount_ != 0;
     crestJoinIndex_ = 0;
-    for (std::size_t i = 0; i < masterCount_; ++i)
-        if (masters_[i].report && masters_[i].report->crest.status == MeasurementStatus::Pending)
-        {
-            masters_[i].report->crest.status = MeasurementStatus::Unavailable;
-            masters_[i].report->crest.reason = reason;
-        }
+    crestJoinReason_ = reason;
 }
 void Session::stepMasterCrestJoin() noexcept
 {
@@ -133,15 +129,25 @@ void Session::stepMasterCrestJoin() noexcept
     if (! master.report || master.report->crest.status != MeasurementStatus::Pending)
     { ++crestJoinIndex_; return; }
     auto& c = master.report->crest;
+    const auto publish = [&]() noexcept
+    {
+        ++revision_;
+        Notification event;
+        event.jobId = master.id;
+        event.kind = EventKind::Fact;
+        (void) event.payload.fact.assign (MasterReportText::crest (c));
+        emit (event);
+        ++crestJoinIndex_;
+    };
     const auto& result = measurementResults_[std::size_t (Analyzer::Crest)];
     if (result.status != MeasurementStatus::Ready)
-    { c.status = MeasurementStatus::Unavailable; c.reason = result.reason; ++revision_; ++crestJoinIndex_; return; }
+    { c.status = MeasurementStatus::Unavailable; c.reason = crestJoinReason_; publish(); return; }
     const auto source = MeasurementCrest::view (result);
     if (! MasterCrestGrid::compatible (c, source))
-    { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Unsupported; ++revision_; ++crestJoinIndex_; return; }
+    { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Unsupported; publish(); return; }
     auto& rows = masterRows_[index];
     if (! rows.crest || rows.crestCapacity < c.blocks)
-    { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Memory; ++revision_; ++crestJoinIndex_; return; }
+    { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Memory; publish(); return; }
     const auto end = std::min<std::size_t> (std::size_t (c.blocks), rows.crestMaskCopied + 16u);
     auto* mask = rows.crest.get() + rows.crestCapacity * 10u;
     for (std::size_t row = rows.crestMaskCopied; row < end; ++row)
@@ -153,8 +159,7 @@ void Session::stepMasterCrestJoin() noexcept
         c.sourceMask = { mask, end * 5u };
         c.status = MeasurementStatus::Ready;
         c.reason = MeasurementReason::None;
-        ++revision_;
-        ++crestJoinIndex_;
+        publish();
     }
 }
 MeasurementStorage Session::measurementStorage (const Pcm& pcm) const noexcept

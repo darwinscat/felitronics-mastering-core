@@ -3,6 +3,7 @@
 
 #include "DeclaredBudget.h"
 #include <felitronics/session/Snapshot.h>
+#include <felitronics/session/Config.h>
 #include <felitronics/analysis/BandCrestResult.h>
 #include <felitronics/analysis/ProgrammeReport.h>
 #include <felitronics/mastering/OfflineRenderer.h>
@@ -115,6 +116,12 @@ bool referenceCrest (const Case& c)
     const auto& last = master.landing->log.back();
     auto topology = c.request.ready.topology;
     auto params = c.request.ready.params;
+    double sourceLufs = std::numeric_limits<double>::quiet_NaN();
+    for (const auto& value : sourceSnapshot.view().measurements[std::size_t (session::Analyzer::Loudness)].numbers)
+        if (value.name == "integratedLufs" && value.value) sourceLufs = *value.value;
+    const auto config = session::config::Config::load();
+    if (! config.ok() || ! std::isfinite (sourceLufs)) return false;
+    params.inputGainDb += config.config.engine.input.referenceLufs - sourceLufs;
     params.preLimiterGainDb = last.gainDb;
     params.limiter.ceilingDbTp = last.ceilingDbTp;
     mastering::MasteringChain chain;
@@ -182,6 +189,76 @@ bool directMeter (const Case& c)
         && std::fabs (*report.plrDb - direct.plrDb.value) < 0.05
         && (! report.lraLu || (direct.lraLu.valid
             && std::fabs (*report.lraLu - direct.lraLu.value) < 0.05));
+}
+bool memoryLifecycle (Case& c)
+{
+    auto& s = *c.session;
+    if (s.releaseMaster (c.token) != session::MasterTransferStatus::Ok) return false;
+    const auto exercise = [&] (std::uint32_t rate, session::CommandId id, bool cancel,
+                               bool testRefusal) -> bool
+    {
+        auto request = c.request;
+        request.id = id;
+        request.ready.deliveryRateHz = rate;
+        request.source = s.source().hash;
+        request.revision = s.revision();
+        const auto declared = s.check (request);
+        if (declared.rejection != session::Rejection::None || declared.bytes == 0
+            || declared.largestBlockBytes == 0) return false;
+        const auto initial = std::uint64_t (s.liveBytes());
+        const auto ceiling = initial + declared.bytes;
+        if (testRefusal)
+        {
+            const auto before = s.revision();
+            if (s.setCapacity ({ double (ceiling - 1u), double (ceiling) }) != session::Status::Ok) return false;
+            session::Answer refused;
+            const auto spent = budget::spend ([&] { refused = s.apply (request); });
+            if (refused.rejection != session::Rejection::Memory || spent.requests != 0
+                || s.revision() != before || s.liveBytes() != double (initial)) return false;
+            if (s.setCapacity ({ 9007199254740991.0, double (declared.largestBlockBytes - 1u) })
+                != session::Status::Ok) return false;
+            const auto blockSpent = budget::spend ([&] { refused = s.apply (request); });
+            if (refused.rejection != session::Rejection::Memory || blockSpent.requests != 0
+                || s.revision() != before) return false;
+            if (s.setCapacity ({}) != session::Status::Ok) return false;
+        }
+        std::uint64_t peakLive = initial, largestCall = 0;
+        bool covered = true;
+        const auto charge = [&] (auto&& work)
+        {
+            const auto before = std::uint64_t (s.liveBytes());
+            const auto spent = budget::spend (work);
+            const auto after = std::uint64_t (s.liveBytes());
+            peakLive = std::max ({ peakLive, before, after });
+            largestCall = std::max (largestCall, std::uint64_t (spent.bytes));
+            covered = covered && spent.bytes >= 0 && peakLive <= ceiling
+                // Each individual allocation is no larger than its entire call's measured demand.
+                && largestCall <= declared.largestBlockBytes;
+        };
+        session::Answer started;
+        charge ([&] { started = s.apply (request); });
+        if (started.rejection != session::Rejection::None || ! covered) return false;
+        for (unsigned i = 0; i < 400000 && s.job() != 0; ++i)
+        {
+            charge ([&] { (void) s.step (cancel ? 1u : 73u); });
+            if (! covered) return false;
+            if (cancel && i == 20u)
+            {
+                charge ([&] { (void) s.apply (session::command::Cancel { id + 100u, started.job }); });
+                break;
+            }
+        }
+        if (s.job() != 0 || ! covered || peakLive > ceiling) return false;
+        if (! cancel)
+        {
+            const auto token = s.pendingMaster();
+            if (token.master == 0 || s.releaseMaster (token) != session::MasterTransferStatus::Ok) return false;
+        }
+        return true;
+    };
+    return exercise (96000, 20, true, false)
+        && exercise (48000, 21, false, false)
+        && exercise (96000, 22, false, true);
 }
 }
 
@@ -277,15 +354,25 @@ int main()
         "master can finish while the optional source crest is still pending");
     if (late.session && ! late.session->masters().empty())
     {
+        const auto masterId = late.session->masters()[0].id;
         ok (late.session->masters()[0].report->crest.status == session::MeasurementStatus::Pending
             && late.session->pendingMaster().master != 0,
             "pending crest is distinct from an unavailable master");
         const auto measuring = late.session->measurementJob();
         if (measuring != 0) (void) late.session->apply (session::command::Cancel { 3, measuring });
+        bool unavailableEvent = false;
+        for (unsigned i = 0; i < 8 && ! unavailableEvent; ++i)
+        {
+            for (const auto& event : late.session->events())
+                if (event.jobId == masterId && event.kind == session::EventKind::Fact
+                    && event.payload.fact.view().id == session::text::FactId::MasterCrestUnavailable)
+                    unavailableEvent = true;
+            if (! unavailableEvent) (void) late.session->step (1);
+        }
         ok (late.session->masters()[0].report->crest.status == session::MeasurementStatus::Unavailable
             && late.session->masters()[0].report->crest.reason == session::MeasurementReason::Cancelled
-            && late.session->pendingMaster().master != 0,
-            "final source crest refusal keeps safe PCM while settling the missing comparison");
+            && late.session->pendingMaster().master != 0 && unavailableEvent,
+            "final source crest refusal emits a master-keyed update and keeps safe PCM");
     }
     Case lateReady;
     ok (run (lateReady, 48000, 48000, false, false),
@@ -308,7 +395,7 @@ int main()
         ok (crestPublished
             && lateReady.session->masters()[0].report->crest.status == session::MeasurementStatus::Pending,
             "source completion leaves a distinct bounded master crest join to pump");
-        bool joinAllocated = false, joinOverran = false;
+        bool joinAllocated = false, joinOverran = false, joinedEvent = false;
         for (unsigned i = 0; i < 200000
             && lateReady.session->masters()[0].report->crest.status == session::MeasurementStatus::Pending; ++i)
         {
@@ -316,11 +403,16 @@ int main()
             const auto spent = budget::spend ([&] { joined = lateReady.session->step (1); });
             joinAllocated = joinAllocated || spent.requests != 0;
             joinOverran = joinOverran || joined.units > 1;
+            for (const auto& event : lateReady.session->events())
+                if (event.jobId == lateReady.session->masters()[0].id
+                    && event.kind == session::EventKind::Fact
+                    && event.payload.fact.view().id == session::text::FactId::MasterCrestDelivered)
+                    joinedEvent = true;
         }
         ok (lateReady.session->masters()[0].report->crest.status == session::MeasurementStatus::Ready
             && referenceCrest (lateReady) && lateReady.session->pendingMaster().master != 0
-            && lateReady.session->revision() > beforeJoin && ! joinAllocated && ! joinOverran,
-            "late source crest joins the retained master in bounded row batches and keeps the PCM");
+            && lateReady.session->revision() > beforeJoin && ! joinAllocated && ! joinOverran && joinedEvent,
+            "late source crest emits a master-keyed update in bounded row batches and keeps the PCM");
     }
     Case compact;
     ok (run (compact, 48000, 48000, false, false),
@@ -454,5 +546,6 @@ int main()
         ++parityCase;
     }
     ok (parityCase == 3, "all native/wasm parity cases completed");
+    ok (memoryLifecycle (gain), "declared peak and largest block cover large, cancel, small, growth and refusal");
     return felitronics::test::report();
 }

@@ -93,7 +93,7 @@ void Session::emit (Notification event, const Phase& progress) noexcept
             settleMasterCrest (event.payload.measurement.reason);
         else if (event.payload.measurement.analyzer == Analyzer::Crest
                  && event.payload.measurement.status == MeasurementStatus::Ready)
-        { crestJoin_ = true; crestJoinIndex_ = 0; }
+        { crestJoin_ = masterCount_ != 0; crestJoinIndex_ = 0; }
     }
     else if (event.kind == EventKind::Reading)
     {
@@ -132,7 +132,7 @@ void Session::dropJob (JobId job) noexcept
                 result.reason = MeasurementReason::Cancelled;
             }
         if (measurementResults_[std::size_t (Analyzer::Crest)].status == MeasurementStatus::Ready)
-        { crestJoin_ = true; crestJoinIndex_ = 0; }
+        { crestJoin_ = masterCount_ != 0; crestJoinIndex_ = 0; }
         else settleMasterCrest (MeasurementReason::Cancelled);
         if (job_ != 0 && ! masterJob_ && masterRequiresTempo() && ! tempoForDevice().ready)
         {

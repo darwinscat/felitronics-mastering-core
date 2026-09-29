@@ -25,6 +25,7 @@ struct MasterPlan
     analysis::BandCrestParams crestParams {};
     double sourceLufs = 0;
     std::uint64_t bytes = 0, largestBlock = 0;
+    std::uint64_t retainedRowBytes = 0;
 };
 
 struct MasterRows
