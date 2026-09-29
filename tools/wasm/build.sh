@@ -83,6 +83,7 @@ INC=(-I"$ROOT/modules/storage/include" -I"$ROOT/tools"
 # header-only (INTERFACE libraries), which is why one em++ invocation is the whole build.
 MASTER_INC=(-I"$ROOT/modules/storage/include" -I"$ROOT/tools"
             -I"$ROOT/modules/mastering/include"
+            -I"$ROOT/modules/analysis_offline/include"
             -I"$CORE/modules/core/include"
             -I"$CORE/modules/eq/include"
             -I"$CORE/modules/dynamics/include"

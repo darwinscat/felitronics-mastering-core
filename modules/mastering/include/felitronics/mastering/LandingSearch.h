@@ -15,9 +15,8 @@
 namespace felitronics::mastering
 {
 
-// One landing owns one solver while it is active. The caller owns three disjoint planar buffers:
-// source, render output, and a full-length safe copy. Keeping the best PCM costs memory, but lets
-// all twelve renders be search passes; final delivery is a resumable copy and independent remeasure.
+// One landing owns one solver while it is active. The caller owns source and output
+// planar buffers. A saved candidate is restored by a counted render when needed.
 class LandingSearch final
 {
 public:
@@ -26,67 +25,114 @@ public:
     LandingSearch& operator= (const LandingSearch&) = delete;
     ~LandingSearch() noexcept { releaseDelivery(); }
 
-    // A conservative fresh-call declaration, including a full safe PCM buffer owned by the caller,
+    struct Storage
+    {
+        bool ok = false;
+        std::uint64_t sourceBytes = 0, outputBytes = 0, workspaceBytes = 0;
+        std::uint64_t maxLiveBytes = 0, largestBlockBytes = 0;
+    };
+
+    // A conservative fresh-call declaration, without another full PCM buffer,
     // both retained result workspaces, armed band distributions, and MSVC Debug container proxies.
     // The chain, renderer, converter and solver's prepare() storage are separate preparations.
     static std::uint64_t storageFor (double sampleRate, int channels, int frames,
                                      int traceBuckets, int armedPairs = kBandGrStride,
                                      double binDb = 0.01) noexcept
     {
-        if (armedPairs < 0 || armedPairs > kBandGrStride) return 0;
-        const std::uint64_t base = TargetLoudnessSolver::solveCallBytes (
-            sampleRate, channels, frames, traceBuckets, binDb);
-        if (base == 0) return 0;
-        const std::uint64_t safe = (std::uint64_t) frames * (std::uint64_t) channels * sizeof (float);
-        const std::uint64_t bandHist = dynamics::offline::QuantileHistogram::storageBytes (
-            0.0, kBandGrRangeDb, 0.01);
-        const std::uint64_t bandTrace = GainReductionTrace::bytesFor (traceBuckets, frames);
-        return 3u * base + safe + (std::uint64_t) armedPairs *
-            (4u * bandHist + 3u * bandTrace + 3u * sizeof (BandGrResult)
-             + 16u * storage::kVectorProxyBytes + 1024u);
+        return TargetLoudnessSolver::productSearchCallBytes (
+            sampleRate, channels, frames, traceBuckets, armedPairs, binDb);
     }
 
-    // `sourceRate` is the grid of `source`; `frames` is the delivered length. `safe` has `frames`
-    // writable samples per channel. The converter, when present, was prepared for those two rates.
+    [[nodiscard]] static Storage storageForProgramme (long long sourceFrames, int sourceChannels,
+        double deliveryRate, int deliveryFrames, int traceBuckets,
+        int armedPairs = kBandGrStride, double binDb = 0.01) noexcept
+    {
+        Storage st;
+        if (sourceFrames <= 0 || sourceChannels < 1 || sourceChannels > core::kMaxChannels
+            || deliveryFrames <= 0
+            || (std::uint64_t) sourceFrames > std::numeric_limits<std::uint64_t>::max()
+                                              / ((std::uint64_t) sourceChannels * sizeof (float))) return st;
+        st.workspaceBytes = storageFor (deliveryRate, sourceChannels, deliveryFrames,
+                                        traceBuckets, armedPairs, binDb);
+        if (st.workspaceBytes == 0u) return st;
+        st.sourceBytes = (std::uint64_t) sourceFrames * (std::uint64_t) sourceChannels * sizeof (float);
+        st.outputBytes = (std::uint64_t) deliveryFrames * (std::uint64_t) sourceChannels * sizeof (float);
+        constexpr auto max = std::numeric_limits<std::uint64_t>::max();
+        if (st.sourceBytes > max - st.outputBytes
+            || st.sourceBytes + st.outputBytes > max - st.workspaceBytes) return Storage {};
+        st.maxLiveBytes = st.sourceBytes + st.outputBytes + st.workspaceBytes;
+        // The workspace figure is a conservative bound on any one of its
+        // components, including MSVC Debug proxy allocations.
+        st.largestBlockBytes = std::max ({ st.sourceBytes, st.outputBytes, st.workspaceBytes });
+        st.ok = true;
+        return st;
+    }
+
+    [[nodiscard]] Storage storageForJob (long long sourceFrames, int sourceChannels,
+        double deliveryRate, int deliveryFrames, int traceBuckets,
+        int armedPairs = kBandGrStride, double binDb = 0.01) const noexcept
+    {
+        Storage st = storageForProgramme (sourceFrames, sourceChannels, deliveryRate,
+                                          deliveryFrames, traceBuckets, armedPairs,
+                                          std::min (binDb, solver_.compHist_.binWidth()));
+        if (st.ok)
+        {
+            st.sourceBytes = std::max (st.sourceBytes, retainedSourceUpper_);
+            st.outputBytes = std::max (st.outputBytes, retainedOutputUpper_);
+            constexpr auto max = std::numeric_limits<std::uint64_t>::max();
+            const std::uint64_t pcm = st.sourceBytes > max - st.outputBytes
+                ? max : st.sourceBytes + st.outputBytes;
+            st.maxLiveBytes = pcm > max - st.workspaceBytes ? max : pcm + st.workspaceBytes;
+            st.maxLiveBytes = retainedWorkspaceUpper_ > max - st.maxLiveBytes
+                ? max : st.maxLiveBytes + retainedWorkspaceUpper_;
+            st.largestBlockBytes = std::max ({ st.largestBlockBytes, st.sourceBytes, st.outputBytes });
+            st.largestBlockBytes = std::max (st.largestBlockBytes, retainedLargestBlockUpper_);
+        }
+        return st;
+    }
+
+    // `sourceRate` is the grid of `source`; `frames` is the delivered length.
     [[nodiscard]] bool begin (MasteringChain& chain, OfflineRenderer& renderer,
                               const MasteringChainParams& params, const float* const* source,
                               long long sourceFrames, double sourceRate, float* const* out,
-                              float* const* safe, int channels, int frames, LoudnessRequest request,
+                              int channels, int frames, LoudnessRequest request,
                               const ProgressCallback& progress = {}, DeliveryConverter* converter = nullptr)
     {
         if (phase_ != Phase::Idle && phase_ != Phase::Done && phase_ != Phase::Failed) return false;
         MasteringSolveStatus why = MasteringSolveStatus::InvalidRequest;
-        const float* outputPlanes[core::kMaxChannels] {};
-        if (out != nullptr && channels > 0 && channels <= core::kMaxChannels)
-            for (int c = 0; c < channels; ++c) outputPlanes[c] = out[c];
-        if (request.maxPasses < 1 || request.maxPasses > 12
-            || ! std::isfinite (request.normalizationGainDb) || std::fabs (request.normalizationGainDb) > 60.0
-            || ! std::isfinite (params.inputGainDb)
-            || std::fabs (params.inputGainDb + request.normalizationGainDb) > 60.0
-            || ! solver_.admits (chain, renderer, channels, frames, request, why)
-            || sourceFrames <= 0 || ! std::isfinite (sourceRate) || sourceRate <= 0.0
-            || sourceFrames > LLONG_MAX - 2LL * frames - chain.latencySamples() - kBandGrStride - 6
-            || (converter == nullptr && (sourceFrames != frames || ! core::exactlyEqual (sourceRate, chain.sampleRate())))
-            || (converter != nullptr && (! converter->isPrepared()
-                || ! core::exactlyEqual (converter->sourceRate(), sourceRate)
-                || ! core::exactlyEqual (converter->deliveryRate(), chain.sampleRate())
-                || DeliveryConverter::deliveredFrames (sourceRate, chain.sampleRate(), sourceFrames) != frames))
-            || ! planesUsable (source, out, channels, sourceFrames, frames)
-            || ! planesUsable (source, safe, channels, sourceFrames, frames)
-            || ! planesUsable (outputPlanes, safe, channels, frames, frames))
+        if (! preflight (solver_, chain, renderer, params, source, sourceFrames, sourceRate,
+                         out, channels, frames, request, converter, why))
         {
-            best_.status = why == MasteringSolveStatus::Solved ? MasteringSolveStatus::InvalidRequest : why;
+            best_ = LoudnessSolution {};
+            working_ = LoudnessSolution {};
+            best_.status = why;
             phase_ = Phase::Failed;
+            releaseDelivery();
             return false;
         }
-        chain_ = &chain; renderer_ = &renderer; source_ = source; out_ = out; safe_ = safe;
+        best_ = LoudnessSolution {};
+        working_ = LoudnessSolution {};
+        const Storage demand = storageForProgramme (sourceFrames, channels, chain.sampleRate(), frames,
+                                                     request.grTraceBuckets, kBandGrStride,
+                                                     solver_.compHist_.binWidth());
+        retainedSourceUpper_ = std::max (retainedSourceUpper_, demand.sourceBytes);
+        retainedOutputUpper_ = std::max (retainedOutputUpper_, demand.outputBytes);
+        retainedRateFloor_ = retainedRateFloor_ == 0.0 ? chain.sampleRate()
+            : std::min (retainedRateFloor_, chain.sampleRate());
+        retainedFramesUpper_ = std::max (retainedFramesUpper_, frames);
+        retainedChannelsUpper_ = std::max (retainedChannelsUpper_, channels);
+        retainedBucketsUpper_ = std::max (retainedBucketsUpper_, request.grTraceBuckets);
+        retainedWorkspaceUpper_ = storageFor (retainedRateFloor_, retainedChannelsUpper_,
+            retainedFramesUpper_, retainedBucketsUpper_, kBandGrStride,
+            solver_.compHist_.binWidth());
+        retainedLargestBlockUpper_ = std::max (retainedLargestBlockUpper_, demand.largestBlockBytes);
+        chain_ = &chain; renderer_ = &renderer; source_ = source; out_ = out;
         channels_ = channels; frames_ = frames; sourceFrames_ = sourceFrames; sourceRate_ = sourceRate;
         params_ = params; params_.inputGainDb += request.normalizationGainDb;
         request_ = request; clock_ = ProgressClock (progress);
-        working_ = LoudnessSolution {}; best_ = LoudnessSolution {};
         working_.activityThresholdDb = best_.activityThresholdDb = request.activityThresholdDb;
         haveBest_ = havePrevious_ = haveBelow_ = haveAbove_ = false;
-        passes_ = 0; copied_ = 0; sourceCursor_ = 0; verifyCursor_ = 0;
+        passes_ = 0; sourceCursor_ = 0; verifyCursor_ = 0; bestPass_ = 0; restoring_ = false;
         work_ = 0; bestError_ = std::numeric_limits<double>::infinity();
         lowState_.fill (0.0); low2State_.fill (0.0); low8State_.fill (0.0);
         totalEnergy_ = bassEnergy_ = presenceEnergy_ = sourcePeak_ = 0.0;
@@ -110,8 +156,41 @@ public:
         return true;
     }
 
+    [[nodiscard]] static bool preflight (const TargetLoudnessSolver& solver,
+                                  const MasteringChain& chain, const OfflineRenderer& renderer,
+                                  const MasteringChainParams& params, const float* const* source,
+                                  long long sourceFrames, double sourceRate, float* const* out,
+                                  int channels, int frames, const LoudnessRequest& request,
+                                  const DeliveryConverter* converter, MasteringSolveStatus& why) noexcept
+    {
+        why = MasteringSolveStatus::InvalidRequest;
+        if (request.maxPasses < 1 || request.maxPasses > 12
+            || ! std::isfinite (request.normalizationGainDb) || std::fabs (request.normalizationGainDb) > 60.0
+            || ! std::isfinite (params.inputGainDb)
+            || std::fabs (params.inputGainDb + request.normalizationGainDb) > 60.0
+            || ! solver.admits (chain, renderer, channels, frames, request, why)
+            || sourceFrames <= 0 || ! std::isfinite (sourceRate) || sourceRate <= 0.0
+            || (channels > 0 && (std::uint64_t) sourceFrames >
+                std::numeric_limits<std::size_t>::max() / ((std::size_t) channels * sizeof (float)))
+            || sourceFrames > LLONG_MAX - 2LL * frames - chain.latencySamples() - kBandGrStride - 6
+            || (converter == nullptr && (sourceFrames != frames || ! core::exactlyEqual (sourceRate, chain.sampleRate())))
+            || (converter != nullptr && (! converter->isPrepared()
+                || ! core::exactlyEqual (converter->sourceRate(), sourceRate)
+                || ! core::exactlyEqual (converter->deliveryRate(), chain.sampleRate())
+                || DeliveryConverter::deliveredFrames (sourceRate, chain.sampleRate(), sourceFrames) != frames))
+            || ! storageForProgramme (sourceFrames, channels, chain.sampleRate(), frames,
+                                      request.grTraceBuckets, kBandGrStride,
+                                      solver.compHist_.binWidth()).ok
+            || ! planesUsable (source, out, channels, sourceFrames, frames))
+        {
+            if (why == MasteringSolveStatus::Solved) why = MasteringSolveStatus::InvalidRequest;
+            return false;
+        }
+        return true;
+    }
+
     // A zero budget is inert. A positive call performs at most one render, so the caller can cancel
-    // after any stage. A unit is a source, render, meter, or copy frame; setup and finish cost one.
+    // after any stage. A unit is a source, render, meter or gate item; setup and finish cost one.
     [[nodiscard]] StepResult step (long long budget)
     {
         if (phase_ == Phase::Done) return StepResult::Done;
@@ -170,26 +249,6 @@ public:
             if (r == StepResult::More) return r;
             return completedPass();
         }
-        if (phase_ == Phase::CaptureBest || phase_ == Phase::CopyBest)
-        {
-            const int n = (int) std::min<long long> (budget, frames_ - copied_);
-            for (int c = 0; c < channels_; ++c)
-                std::copy_n ((phase_ == Phase::CaptureBest ? out_[c] : safe_[c]) + copied_, n,
-                             (phase_ == Phase::CaptureBest ? safe_[c] : out_[c]) + copied_);
-            copied_ += n; work_ += (std::uint64_t) n;
-            if (phase_ == Phase::CopyBest && ! clock_.advance (n))
-                return fail (MasteringSolveStatus::Cancelled);
-            if (copied_ < frames_) return StepResult::More;
-            copied_ = 0;
-            if (phase_ == Phase::CaptureBest)
-            {
-                if (stopAfterCapture_) return finishSearch();
-                phase_ = Phase::PassBegin;
-                return StepResult::More;
-            }
-            phase_ = Phase::VerifySetup;
-            return StepResult::More;
-        }
         if (phase_ == Phase::VerifySetup)
         {
             if (! solver_.pass_->lm.prepareForSamples (solver_.fs_, channels_,
@@ -219,15 +278,20 @@ public:
         {
             solver_.pass_->tm.drain(); ++work_;
             verifyTp_ = TargetLoudnessSolver::peakDb (solver_.pass_->tm.truePeakLinear());
+            solver_.pass_->lm.beginIntegratedScan();
             phase_ = Phase::VerifyGate;
             if (! clock_.checkpoint()) return fail (MasteringSolveStatus::Cancelled);
             return StepResult::More;
         }
         if (phase_ == Phase::VerifyGate)
         {
-            verifyLufs_ = solver_.pass_->lm.integratedLufs(); ++work_;
-            phase_ = Phase::VerifyFinish;
+            int used = 0;
+            const bool done = solver_.pass_->lm.stepIntegratedScan (
+                (int) std::min<long long> (budget, 256), verifyLufs_, used);
+            work_ += (std::uint64_t) used;
             if (! clock_.checkpoint()) return fail (MasteringSolveStatus::Cancelled);
+            if (! done) return StepResult::More;
+            phase_ = Phase::VerifyFinish;
             return StepResult::More;
         }
         if (phase_ == Phase::VerifyFinish)
@@ -260,7 +324,7 @@ public:
     bool active() const noexcept { return phase_ != Phase::Idle && phase_ != Phase::Done && phase_ != Phase::Failed; }
 
 private:
-    enum class Phase { Idle, SourceStats, PassBegin, PassRun, CaptureBest, CopyBest, VerifySetup,
+    enum class Phase { Idle, SourceStats, PassBegin, PassRun, VerifySetup,
                        VerifyMeter, VerifyDrain, VerifyGate, VerifyFinish, Done, Failed };
 
     StepResult completedPass()
@@ -272,6 +336,15 @@ private:
         rec.violated = measurement_.truePeakDbTp > request_.maxTruePeakDbTp
             ? constraintBit (MasteringConstraint::TruePeakCeiling) : 0u;
         if (! clock_.finish (&rec)) return fail (MasteringSolveStatus::Cancelled);
+        if (restoring_)
+        {
+            if (! core::exactlyEqual (measurement_.integratedLufs, best_.measured.integratedLufs)
+                || ! core::exactlyEqual (measurement_.truePeakDbTp, best_.measured.truePeakDbTp)
+                || measurement_.truePeakDbTp > request_.maxTruePeakDbTp)
+                return fail (MasteringSolveStatus::Unavailable);
+            restoring_ = false; bestPass_ = passes_;
+            return finishSearch();
+        }
         const bool valid = measurement_.loudnessValid && std::isfinite (measurement_.integratedLufs);
         if (! valid && measurement_.samplePeakDb <= -180.0) return fail (MasteringSolveStatus::Unavailable);
         const bool safe = valid && measurement_.truePeakDbTp <= request_.maxTruePeakDbTp;
@@ -286,13 +359,13 @@ private:
                           || (! bothBelow && ! bothAbove && err < bestError_);
         const bool sameDistance = haveBest_ && core::exactlyEqual (err, bestError_)
                                && core::exactlyEqual (level, previousLevel);
-        bool captured = false;
         if (safe && (nearer || (sameDistance && measurement_.limiter.meanDb < best_.measured.limiter.meanDb)))
         {
             working_.measured = measurement_;
             working_.preLimiterGainDb = gain_; working_.ceilingDbTp = ceiling_;
             std::swap (working_, best_);
-            haveBest_ = captured = true; bestError_ = err;
+            haveBest_ = true; bestError_ = err; bestPass_ = passes_;
+            bestGain_ = gain_; bestCeiling_ = ceiling_;
         }
         if (safe)
         {
@@ -308,14 +381,17 @@ private:
         }
         const bool success = safe && err <= request_.toleranceLu;
         const bool exhausted = passes_ >= request_.maxPasses;
-        stopAfterCapture_ = success || exhausted;
-        if (! stopAfterCapture_) chooseNext (valid);
-        if (captured)
+        if (success || exhausted) return finishSearch();
+        // Reserve the last pass for restoration once a safe candidate exists.
+        // It is a real render and is logged within the caller's one pass budget.
+        if (haveBest_ && passes_ == request_.maxPasses - 1)
         {
-            copied_ = 0; phase_ = Phase::CaptureBest;
+            gain_ = bestGain_; ceiling_ = bestCeiling_;
+            restoring_ = true;
+            phase_ = Phase::PassBegin;
             return StepResult::More;
         }
-        if (stopAfterCapture_) return finishSearch();
+        chooseNext (valid);
         phase_ = Phase::PassBegin;
         return StepResult::More;
     }
@@ -369,9 +445,16 @@ private:
             best_.gainBelowDb = belowGain_; best_.gainAboveDb = aboveGain_;
         }
         // An exhausted budget is not proof that the target is outside the reachable range.
-        copied_ = 0; phase_ = Phase::CopyBest;
+        if (bestPass_ != passes_)
+        {
+            if (passes_ >= request_.maxPasses) return fail (MasteringSolveStatus::Unavailable);
+            gain_ = bestGain_; ceiling_ = bestCeiling_; restoring_ = true;
+            phase_ = Phase::PassBegin;
+            return StepResult::More;
+        }
+        phase_ = Phase::VerifySetup;
         if (! clock_.begin (ProgressStage::FinalRender, passes_, request_.maxPasses,
-                            2LL * frames_ + 2, frames_)) return fail (MasteringSolveStatus::Cancelled);
+                            frames_ + 2, frames_)) return fail (MasteringSolveStatus::Cancelled);
         return StepResult::More;
     }
 
@@ -415,8 +498,7 @@ private:
     DeliveryConverter* converter_ = nullptr;
     const float* const* source_ = nullptr;
     float* const* out_ = nullptr;
-    float* const* safe_ = nullptr;
-    int channels_ = 0, frames_ = 0, passes_ = 0, copied_ = 0, verifyCursor_ = 0;
+    int channels_ = 0, frames_ = 0, passes_ = 0, bestPass_ = 0, verifyCursor_ = 0;
     long long sourceFrames_ = 0, sourceCursor_ = 0;
     double sourceRate_ = 0.0;
     MasteringChainParams params_ {};
@@ -428,13 +510,18 @@ private:
     std::array<double, core::kMaxChannels> lowState_ {}, low2State_ {}, low8State_ {};
     double lowK_ = 0.0, low2K_ = 0.0, low8K_ = 0.0;
     double totalEnergy_ = 0.0, bassEnergy_ = 0.0, presenceEnergy_ = 0.0, sourcePeak_ = 0.0;
-    double gain_ = 0.0, ceiling_ = 0.0, previousDrive_ = 0.0, previousShape_ = 0.0;
+    double gain_ = 0.0, ceiling_ = 0.0, bestGain_ = 0.0, bestCeiling_ = 0.0;
+    double previousDrive_ = 0.0, previousShape_ = 0.0;
     double verifyTp_ = 0.0, verifyLufs_ = 0.0;
     double bestError_ = 0.0, belowLufs_ = 0.0, aboveLufs_ = 0.0, belowGain_ = 0.0, aboveGain_ = 0.0;
     double belowCeiling_ = 0.0, aboveCeiling_ = 0.0;
     std::uint64_t work_ = 0;
+    std::uint64_t retainedWorkspaceUpper_ = 0, retainedLargestBlockUpper_ = 0;
+    std::uint64_t retainedSourceUpper_ = 0, retainedOutputUpper_ = 0;
+    double retainedRateFloor_ = 0.0;
+    int retainedFramesUpper_ = 0, retainedChannelsUpper_ = 0, retainedBucketsUpper_ = 0;
     bool haveBest_ = false, havePrevious_ = false, haveBelow_ = false, haveAbove_ = false;
-    bool stopAfterCapture_ = false;
+    bool restoring_ = false;
     Phase phase_ = Phase::Idle;
 };
 
@@ -443,38 +530,23 @@ inline LoudnessSolution solveProductLanding (TargetLoudnessSolver& solver, Maste
     float* const* out, int channels, int frames, const LoudnessRequest& request,
     const ProgressCallback& progress, DeliveryConverter* converter, long long sourceFrames)
 {
-    LoudnessSolution refused;
-    refused.activityThresholdDb = request.activityThresholdDb;
     const long long sourceLength = converter != nullptr ? sourceFrames : frames;
     const double sourceRate = converter != nullptr ? converter->sourceRate() : chain.sampleRate();
     MasteringSolveStatus why = MasteringSolveStatus::InvalidRequest;
-    if (channels < 1 || channels > core::kMaxChannels || frames <= 0
-        || request.maxPasses < 1 || request.maxPasses > 12
-        || ! solver.admits (chain, renderer, channels, frames, request, why)
-        || sourceLength <= 0 || sourceLength > LLONG_MAX - 2LL * frames - chain.latencySamples()
-                                            - kBandGrStride - 6
-        || ! planesUsable (source, out, channels, sourceLength, frames)
-        || (converter != nullptr && (! converter->isPrepared()
-            || ! core::exactlyEqual (converter->deliveryRate(), chain.sampleRate())
-            || DeliveryConverter::deliveredFrames (sourceRate, chain.sampleRate(), sourceLength) != frames))
-        || (std::uint64_t) frames > std::numeric_limits<std::size_t>::max()
-                                  / ((std::size_t) channels * sizeof (float)))
+    if (! LandingSearch::preflight (solver, chain, renderer, params, source, sourceLength, sourceRate,
+                                    out, channels, frames, request, converter, why))
     {
-        refused.status = why == MasteringSolveStatus::NotPrepared ? why : MasteringSolveStatus::InvalidRequest;
+        LoudnessSolution refused;
+        refused.activityThresholdDb = request.activityThresholdDb;
+        refused.status = why;
         return refused;
     }
-    storage::Buffer<float> safe;
-    safe.resizeForOverwrite ((std::size_t) channels * (std::size_t) frames);
-    std::array<float*, core::kMaxChannels> planes {};
-    for (int c = 0; c < channels; ++c)
-        planes[(std::size_t) c] = safe.data() + (std::size_t) c * (std::size_t) frames;
     LandingSearch search (solver);
     if (! search.begin (chain, renderer, params, source, sourceLength, sourceRate,
-                        out, planes.data(), channels, frames, request, progress, converter))
+                        out, channels, frames, request, progress, converter))
         return search.result();
     StepResult state = StepResult::More;
-    for (int i = 0; i < 256 && state == StepResult::More; ++i) state = search.step (LLONG_MAX);
-    if (state == StepResult::More) search.cancel();
+    while (state == StepResult::More) state = search.step (LLONG_MAX);
     return search.result();
 }
 

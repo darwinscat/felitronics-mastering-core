@@ -2,8 +2,9 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 #include <felitronics/mastering/LandingSearch.h>
+#include <felitronics/mastering/DeliveredMastering.h>
 #include <felitronics_test.h>
-#include <alloc_counter.h>
+#include "../../session/tests/DeclaredBudget.h"
 
 #include <cmath>
 #include <climits>
@@ -25,13 +26,12 @@ struct Rig
     OfflineRenderer renderer;
     TargetLoudnessSolver solver;
     MasteringChainParams params;
-    std::vector<float> source, output, safe;
+    std::vector<float> source, output;
     const float* input[1] {};
     float* out[1] {};
-    float* best[1] {};
 
-    Rig() : source ((std::size_t) kFrames), output ((std::size_t) kFrames), safe ((std::size_t) kFrames)
-    { input[0] = source.data(); out[0] = output.data(); best[0] = safe.data(); }
+    Rig() : source ((std::size_t) kFrames), output ((std::size_t) kFrames)
+    { input[0] = source.data(); out[0] = output.data(); }
 
     bool prepare()
     {
@@ -76,7 +76,7 @@ bool run (Rig& rig, long long budget, double target, int passes, LoudnessSolutio
     LoudnessRequest req;
     req.targetLufs = target; req.maxTruePeakDbTp = -1.0; req.maxPasses = passes;
     if (! search.begin (rig.chain, rig.renderer, rig.params, rig.input, kFrames, kRate,
-                        rig.out, rig.best, 1, kFrames, req)) return false;
+                        rig.out, 1, kFrames, req)) return false;
     StepResult state = StepResult::More;
     for (int guard = 0; state == StepResult::More && guard < 2000000; ++guard)
         state = search.step (budget);
@@ -99,7 +99,7 @@ bool runDelivered (long long budget, LoudnessSolution& answer, std::vector<float
         || ! converter.prepare (sourceRate, kRate, 1, 257)) return false;
     MasteringChainParams params;
     params.limiter.ceilingDbTp = -1.0;
-    std::vector<float> source (sourceRate), output (kFrames), safe (kFrames);
+    std::vector<float> source (sourceRate), output (kFrames);
     for (int i = 0; i < sourceRate; ++i)
     {
         const double t = (double) i / sourceRate;
@@ -109,12 +109,11 @@ bool runDelivered (long long budget, LoudnessSolution& answer, std::vector<float
     }
     const float* input[1] { source.data() };
     float* out[1] { output.data() };
-    float* best[1] { safe.data() };
     LoudnessRequest req;
     req.targetLufs = -14.0; req.maxTruePeakDbTp = -1.0; req.maxPasses = 12;
     LandingSearch search (solver);
     if (! search.begin (chain, renderer, params, input, sourceRate, sourceRate,
-                        out, best, 1, kFrames, req, {}, &converter)) return false;
+                        out, 1, kFrames, req, {}, &converter)) return false;
     StepResult state = StepResult::More;
     for (int guard = 0; state == StepResult::More && guard < 2000000; ++guard)
         state = search.step (budget);
@@ -187,7 +186,142 @@ int main()
         budgeted.input, budgeted.out, 1, kFrames, wrappedRequest);
     const long long asked = alloc::bytes.load() - before;
     test::ok (counted.deliverable && declared > 0 && asked >= 0 && (std::uint64_t) asked <= declared,
-              "the landing call, safe PCM and retained meters fit the declared fresh-call memory budget");
+              "the landing call and retained meters fit the declared fresh-call memory budget");
+    const std::uint64_t plain = TargetLoudnessSolver::ordinarySolveBytes (
+        kRate, 1, kFrames, wrappedRequest.grTraceBuckets);
+    const std::uint64_t plainLong = TargetLoudnessSolver::ordinarySolveBytes (
+        kRate, 1, 2 * kFrames, wrappedRequest.grTraceBuckets);
+    const std::uint64_t search = LandingSearch::storageFor (
+        kRate, 1, kFrames, wrappedRequest.grTraceBuckets, 0);
+    const std::uint64_t searchLong = LandingSearch::storageFor (
+        kRate, 1, 2 * kFrames, wrappedRequest.grTraceBuckets, 0);
+    test::ok (searchLong - search == 2u * (plainLong - plain)
+              && declared == TargetLoudnessSolver::solveCallBytes (
+                  kRate, 1, kFrames, wrappedRequest)
+              && declared == DeliveredMastering::solveCallBytes (
+                  kRate, kRate, 1, kFrames, wrappedRequest),
+              "the landing declaration retains no third full programme");
+    const auto fourMinutes = LandingSearch::storageForProgramme (
+        4LL * 60 * kRate, 2, kRate, 4 * 60 * kRate, wrappedRequest.grTraceBuckets);
+    const std::uint64_t pcmBytes = 4u * 60u * kRate * 2u * sizeof (float);
+    test::ok (fourMinutes.ok && fourMinutes.sourceBytes == pcmBytes
+              && fourMinutes.outputBytes == pcmBytes
+              && fourMinutes.maxLiveBytes == 2u * pcmBytes + fourMinutes.workspaceBytes
+              && fourMinutes.largestBlockBytes >= pcmBytes,
+              "a four-minute stereo quote names source and output PCM only, with a bounded largest block");
+    LoudnessRequest invalid = wrappedRequest;
+    invalid.normalizationGainDb = std::numeric_limits<double>::quiet_NaN();
+    const long long refusalBytes = alloc::bytes.load();
+    const LoudnessSolution refused = budgeted.solver.solve (budgeted.chain, budgeted.renderer,
+        budgeted.params, budgeted.input, budgeted.out, 1, kFrames, invalid);
+    const long long refusalAsked = alloc::bytes.load() - refusalBytes;
+    test::ok (refused.status == MasteringSolveStatus::InvalidRequest
+              && refusalAsked <= (long long) TargetLoudnessSolver::solutionReturnBytes(),
+              "invalid normalization is refused without a programme allocation ("
+              + std::to_string (refusalAsked) + " B, status " + std::to_string ((int) refused.status) + ")");
+    MasteringChainParams invalidGainParams = budgeted.params;
+    invalidGainParams.inputGainDb = std::numeric_limits<double>::quiet_NaN();
+    const long long gainRefusalBytes = alloc::bytes.load();
+    const LoudnessSolution badGain = budgeted.solver.solve (budgeted.chain, budgeted.renderer,
+        invalidGainParams, budgeted.input, budgeted.out, 1, kFrames, wrappedRequest);
+    const long long gainRefusalAsked = alloc::bytes.load() - gainRefusalBytes;
+    test::ok (badGain.status == MasteringSolveStatus::InvalidRequest
+              && gainRefusalAsked <= (long long) TargetLoudnessSolver::solutionReturnBytes(),
+              "invalid input gain is refused before any programme allocation");
+
+    LandingSearch reused (whole.solver);
+    LoudnessRequest fresh;
+    fresh.targetLufs = -14.0; fresh.maxTruePeakDbTp = -1.0; fresh.maxPasses = 1;
+    bool reusable = reused.begin (whole.chain, whole.renderer, whole.params, whole.input,
+        kFrames, kRate, whole.out, 1, kFrames, fresh);
+    StepResult reuseState = StepResult::More;
+    for (int guard = 0; reusable && reuseState == StepResult::More && guard < 1000; ++guard)
+        reuseState = reused.step (LLONG_MAX);
+    fresh.normalizationGainDb = std::numeric_limits<double>::quiet_NaN();
+    const bool rejected = ! reused.begin (whole.chain, whole.renderer, whole.params, whole.input,
+        kFrames, kRate, whole.out, 1, kFrames, fresh);
+    const auto& clean = reused.result();
+    test::ok (reusable && reuseState == StepResult::Done && rejected
+              && clean.status == MasteringSolveStatus::InvalidRequest && ! clean.deliverable
+              && clean.passes == 0 && clean.logCount == 0 && clean.measured.gatingBlocks == 0,
+              "a refused reuse clears the previous deliverable and its measurements and history");
+    const auto rejectsCleanlyAfterSuccess = [&] (const MasteringChainParams& badParams,
+                                                  const LoudnessRequest& badRequest)
+    {
+        LoudnessRequest good;
+        good.targetLufs = -14.0; good.maxTruePeakDbTp = -1.0; good.maxPasses = 1;
+        if (! reused.begin (whole.chain, whole.renderer, whole.params, whole.input,
+                            kFrames, kRate, whole.out, 1, kFrames, good)) return false;
+        StepResult state = StepResult::More;
+        for (int guard = 0; state == StepResult::More && guard < 1000; ++guard)
+            state = reused.step (LLONG_MAX);
+        if (state != StepResult::Done || ! reused.result().deliverable) return false;
+        if (reused.begin (whole.chain, whole.renderer, badParams, whole.input,
+                          kFrames, kRate, whole.out, 1, kFrames, badRequest)) return false;
+        const auto& result = reused.result();
+        return result.status == MasteringSolveStatus::InvalidRequest && ! result.deliverable
+            && result.passes == 0 && result.logCount == 0 && result.measured.gatingBlocks == 0;
+    };
+    LoudnessRequest validRequest;
+    validRequest.targetLufs = -14.0; validRequest.maxTruePeakDbTp = -1.0;
+    validRequest.maxPasses = 1;
+    MasteringChainParams secondBadParams = whole.params;
+    secondBadParams.inputGainDb = std::numeric_limits<double>::quiet_NaN();
+    LoudnessRequest badTarget = validRequest;
+    badTarget.targetLufs = std::numeric_limits<double>::quiet_NaN();
+    test::ok (rejectsCleanlyAfterSuccess (secondBadParams, validRequest)
+              && rejectsCleanlyAfterSuccess (whole.params, badTarget),
+              "bad input gain and malformed target clear a previously deliverable result");
+
+    Rig lifecycle;
+    if (! test::run (lifecycle.prepare())) return test::report();
+    LandingSearch recycled (lifecycle.solver);
+    LoudnessRequest recycleRequest;
+    recycleRequest.targetLufs = -14.0; recycleRequest.maxTruePeakDbTp = -1.0;
+    recycleRequest.maxPasses = 1;
+    bool lifecycleBudget = true;
+    std::string lifecycleDetail;
+    std::uint64_t grownSource = 0, grownOutput = 0, repeatedQuote = 0;
+    for (int cycle = 0; cycle < 4; ++cycle)
+    {
+        const int frames = cycle == 1 ? kFrames : kFrames / 2;
+        const auto quote = recycled.storageForJob (frames, 1, kRate, frames,
+                                                    recycleRequest.grTraceBuckets);
+        StepResult state = StepResult::More;
+        bool admitted = false;
+        const auto spent = session::testing::spend ([&]
+        {
+            admitted = recycled.begin (lifecycle.chain, lifecycle.renderer, lifecycle.params,
+                lifecycle.input, frames, kRate, lifecycle.out, 1, frames, recycleRequest);
+            for (int guard = 0; admitted && state == StepResult::More && guard < 200; ++guard)
+            {
+                state = recycled.step (LLONG_MAX);
+                if (cycle == 0 && guard == 1) { recycled.cancel(); state = StepResult::Failed; }
+            }
+        });
+        lifecycleBudget = lifecycleBudget && quote.ok && admitted
+            && session::testing::covers (quote.maxLiveBytes, spent)
+            && quote.largestBlockBytes >= quote.sourceBytes
+            && quote.largestBlockBytes >= quote.outputBytes
+            && (cycle == 0 ? state == StepResult::Failed : state == StepResult::Done);
+        lifecycleDetail += " cycle " + std::to_string (cycle) + ": "
+            + session::testing::describe (quote.maxLiveBytes, spent)
+            + ", admitted=" + std::to_string (admitted)
+            + ", state=" + std::to_string ((int) state)
+            + ", status=" + std::to_string ((int) recycled.result().status)
+            + ", passes=" + std::to_string (recycled.result().passes);
+        if (cycle == 1) { grownSource = quote.sourceBytes; grownOutput = quote.outputBytes; }
+        if (cycle == 2)
+        {
+            lifecycleBudget = lifecycleBudget && quote.sourceBytes >= grownSource
+                && quote.outputBytes >= grownOutput;
+            repeatedQuote = quote.maxLiveBytes;
+        }
+        if (cycle == 3) lifecycleBudget = lifecycleBudget && quote.maxLiveBytes == repeatedQuote;
+    }
+    test::ok (lifecycleBudget,
+              "DeclaredBudget covers cancel, grow and shrink with retained two-buffer capacity"
+              + lifecycleDetail);
 
     Rig one;
     if (! test::run (one.prepare())) return test::report();
@@ -204,6 +338,15 @@ int main()
     test::ok (highEnded && high.deliverable && high.passes == 12 && high.logCount == 12
               && high.status != MasteringSolveStatus::Solved && high.measured.truePeakDbTp <= -1.0,
               "an over-loud target spends the full budget and keeps its best safe miss");
+    bool restoredInBudget = false;
+    for (int i = 0; i + 1 < high.logCount; ++i)
+        restoredInBudget = restoredInBudget
+            || (high.log[i].gainDb == high.log[high.logCount - 1].gainDb
+                && high.log[i].ceilingDb == high.log[high.logCount - 1].ceilingDb);
+    test::ok (restoredInBudget && high.preLimiterGainDb == high.log[11].gainDb
+              && high.ceilingDbTp == high.log[11].ceilingDb
+              && high.measured.integratedLufs == high.log[11].integratedLufs,
+              "the final pass restores the chosen safe miss and remains inside the twelve logged renders");
     Rig finiteExtreme;
     if (! test::run (finiteExtreme.prepare())) return test::report();
     LoudnessSolution extremeResult;
