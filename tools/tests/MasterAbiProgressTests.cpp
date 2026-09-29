@@ -252,7 +252,7 @@ static void testRange()
 
 static void testDelivered()
 {
-    group ("fc_master_solve_delivered 48 -> 44.1 kHz: CONVERT first, a stop there moves nothing");
+    group ("fc_master_solve_delivered 48 -> 44.1 kHz: conversion is inside each pass");
     const Inputs in;
     const auto audio = programme (kFs, kFrames);
     const fc_master h = makeHandle (44100.0);
@@ -263,20 +263,20 @@ static void testDelivered()
     std::vector<float> out ((std::size_t) d * kNch);
     fc_solution sol = 0;
     ok (fc_master_solve_delivered (h, &in.p, &in.r, audio.data(), kFrames, out.data(), d, &sol) == FC_OK
-        && ! r.seen.empty() && r.seen.front().stage == FC_PROGRESS_CONVERT && r.seen.back().stage == FC_PROGRESS_PASS,
-        "CONVERT, then PASS");
+        && ! r.seen.empty() && r.seen.front().stage == FC_PROGRESS_PASS && r.seen.back().stage == FC_PROGRESS_PASS,
+        "source conversion and rendering share each PASS");
     (void) fc_solution_destroy (sol);
 
     const fc_master g = makeHandle (44100.0);
-    std::size_t convertEvents = 0;
-    while (convertEvents < r.seen.size() && r.seen[convertEvents].stage == FC_PROGRESS_CONVERT) ++convertEvents;
-    Recorder s; s.stopAt = (long long) convertEvents / 2;
+    Recorder s; s.stopAt = (long long) r.seen.size() / 4;
     (void) fc_master_set_progress (g, &Recorder::fn, &s);
     fc_solution none = 0xDEADBEEFu;
     ok (fc_master_solve_delivered (g, &in.p, &in.r, audio.data(), kFrames, out.data(), d, &none) == FC_ERR_CANCELLED
-        && none == 0xDEADBEEFu && s.seen.back().stage == FC_PROGRESS_CONVERT, "a stop in CONVERT: FC_ERR_CANCELLED");
-    ok (fc_master_render_delivered (g, audio.data(), kFrames, out.data(), d) == FC_OK,
-        "and the handle still renders without a configure");
+        && none == 0xDEADBEEFu && s.seen.back().stage == FC_PROGRESS_PASS, "a stop in the first pass: FC_ERR_CANCELLED");
+    fc_master_resolved resolved {}; FC_INIT (resolved);
+    ok (fc_master_reset (g) == FC_OK && fc_master_configure (g, &in.p, &resolved) == FC_OK
+        && fc_master_render_delivered (g, audio.data(), kFrames, out.data(), d) == FC_OK,
+        "and configure returns the stopped handle to rendering");
     (void) fc_master_destroy (h); (void) fc_master_destroy (g);
 }
 

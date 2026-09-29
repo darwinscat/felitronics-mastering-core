@@ -2841,16 +2841,14 @@ int main()
             (void) fc_master_destroy (h);
         }
 
-        // BUDGETS: a delivered search and a delivered range, against the counter. The literal terms are the
-        // converted programme (2 ch x delivered frames x 4 B); since the solve moved to the reference meter there
-        // is no drain buffer to add.
+        // BUDGETS: a delivered search and a delivered range, against the counter. Search now reconverts
+        // into the caller's output on each pass; only range keeps a converted programme.
         {
             fc_master_config c = deliveringConfig (48000.0, 96000.0);
             fc_master h = 0;
             ok (fc_master_create (&c, &h) == FC_OK, "PRECONDITION: a 48 -> 96 kHz handle for the budgets");
             ok (fc_master_set_channel_weight (h, 0, 1.0) == FC_OK, "PRECONDITION: the solver prepared");
             const std::uint32_t n = 192000u;                     // 4 s in, 384 000 delivered
-            const long long programme = 2LL * 384000LL * 4LL;
             fc_need solve {}; FC_INIT (solve);
             ok (fc_master_need (h, FC_NEED_SOLVE, n, &solve) == FC_OK && solve.solverPrepared == 1,
                 "the delivered solve is budgeted, for the INPUT count");
@@ -2868,11 +2866,11 @@ int main()
             fc_solution_summary sum {}; FC_INIT (sum);
             ok (sv == FC_OK && fc_solution_summary_get (sol, &sum) == FC_OK && sum.passes > 0, "PRECONDITION: the delivered search rendered");
             const long long traces = 2LL * 1000LL * 32LL;
-            const long long perPass = (long long) solve.callBytes - programme - traces - (long long) kGrWindowBytes - (long long) kSolutionReturnBytes;
+            const long long perPass = (long long) solve.callBytes - traces - (long long) kGrWindowBytes - (long long) kSolutionReturnBytes;
             ok (perPass > 0 && solveBytes == (long long) sum.passes * perPass + traces + (long long) kGrWindowBytes
-                               + programme + (long long) solve.facadeBytes + (long long) kSolutionReturnBytes,
-                "a delivered solve allocates passes x (both meters at 96 kHz) + two traces + its window histograms + the "
-                "converted programme + the record (" + std::to_string (solveBytes) + ")");
+                               + (long long) solve.facadeBytes + (long long) kSolutionReturnBytes,
+                "a delivered solve allocates passes x (both meters at 96 kHz) + two traces + its window histograms + the record ("
+                + std::to_string (solveBytes) + ")");
             (void) fc_solution_destroy (sol);
             (void) fc_master_destroy (h);
 
@@ -2941,8 +2939,8 @@ int main()
                 "493 250 150 frames deliver exactly INT_MAX");
             fc_need atEdge {}; FC_INIT (atEdge);
             ok (fc_master_need (h, FC_NEED_SOLVE, 493250150u, &atEdge) == FC_OK
-                && atEdge.callBytes >= 2ull * 0x7FFFFFFFull * 4ull,
-                "and its budget is answered, with the converted programme in it — not 0 at the edge");
+                && atEdge.callBytes > 0u && atEdge.callBytes < 2ull * 0x7FFFFFFFull * 4ull,
+                "and its budget is answered without a converted programme at the edge");
             float dummy[4] {};
             fc_master_params pp = goodParams();
             fc_solution so = 0;

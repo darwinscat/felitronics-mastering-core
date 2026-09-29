@@ -34,6 +34,8 @@ struct ProgressCallback
     void* context = nullptr;
 };
 
+enum class StepResult { More, Done, Failed };
+
 class ProgressClock
 {
 public:

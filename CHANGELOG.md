@@ -2,6 +2,17 @@
 
 # Changelog
 
+## Unreleased
+
+### mastering — resumable delivery render and bounded PCM
+
+Delivery conversion and offline rendering now retain their source, latency, tap, and drain cursors across bounded steps.
+The whole APIs use those same steps. A delivery job prepares its chain, renderer, and converter in separate units; a
+zero budget does no work, and cancellation followed by a new job resets every state. Delivered searches reconvert the
+original source on each pass and feed SRC blocks into the chain using the caller's output buffer, removing the extra
+complete converted programme. `storageFor` declares the source, output, and conservative workspace live set in 64-bit
+arithmetic. Split, replay, allocation, and prior-path bit comparisons cover the new render path.
+
 ## v0.2.2 — 2026-09-26
 
 ### tempo · tools · wasm — the first tempo analysis is as fast as every later one

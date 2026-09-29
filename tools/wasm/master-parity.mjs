@@ -385,7 +385,7 @@ for (const dr of deliveryRates) {
     const needP = alloc(sizeOf('fc_need'));
     const need = new Struct(M, 'fc_need', needP).init();
     ok(M._fc_master_need(h, 0 /* FC_NEED_SOLVE */, frames, needP), 'need');
-    console.log(`  budget: call ${need.get('callBytes')} B (the converted programme included)`);
+    console.log(`  budget: call ${need.get('callBytes')} B (search scratch; conversion uses the output)`);
     M._free(needP);
     const solP = alloc(4);
     ok(M._fc_master_solve_delivered(h, prmP, reqP, inP, frames, outP, outFrames, solP), 'solve_delivered');

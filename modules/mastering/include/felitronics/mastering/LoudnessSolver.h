@@ -11,6 +11,7 @@
 #include <felitronics/dynamics/offline/Quantile.h>
 #include <felitronics/mastering/MasteringChain.h>
 #include <felitronics/mastering/OfflineRenderer.h>
+#include <felitronics/mastering/DeliveryConverter.h>
 #include <felitronics/mastering/Planes.h>
 #include <felitronics/mastering/Progress.h>
 
@@ -1079,6 +1080,31 @@ public:
         return solve (chain, renderer, params, in, out, numChannels, frames, req, ProgressCallback {});
     }
 
+    // The source remains at its own rate. Each pass converts it into the caller's
+    // output and then renders that output in place, reusing the same programme buffer.
+    LoudnessSolution solveDelivered (MasteringChain& chain, OfflineRenderer& renderer,
+                                      const MasteringChainParams& params,
+                                      DeliveryConverter& converter, const float* const* source,
+                                      long long sourceFrames, float* const* out,
+                                      int numChannels, int frames, const LoudnessRequest& req,
+                                      const ProgressCallback& progress, std::uint64_t* nonFiniteCount = nullptr)
+    {
+        if (! converter.isPrepared() || sourceFrames < 0 || frames < 0
+            || numChannels < 1 || numChannels > core::kMaxChannels
+            || ! planesUsable (source, out, numChannels, sourceFrames, frames))
+        {
+            LoudnessSolution refused;
+            refused.activityThresholdDb = req.activityThresholdDb;
+            refused.status = MasteringSolveStatus::InvalidRequest;
+            return refused;
+        }
+        deliveryConverter_ = &converter;
+        deliverySource_ = source;
+        deliveryFrames_ = sourceFrames;
+        DeliveryReset reset { *this, converter, sourceFrames, nonFiniteCount };
+        return solve (chain, renderer, params, source, out, numChannels, frames, req, progress);
+    }
+
     LoudnessSolution solve (MasteringChain& chain, OfflineRenderer& renderer,
                             MasteringChainParams params,
                             const float* const* in, float* const* out,
@@ -1102,7 +1128,7 @@ public:
         // second channel's render overwrites the first and the search meters one channel twice (the suite's
         // witnesses, testCrossChannelAliasingIsRefused). A NULL PLANE is refused by the same predicate; it used to
         // reach the renderer and dereference it.
-        if (! planesUsable (in, out, numChannels, frames, frames))
+        if (deliveryConverter_ == nullptr && ! planesUsable (in, out, numChannels, frames, frames))
             { sol.status = MasteringSolveStatus::InvalidRequest; return sol; }
 
         const double target = req.targetLufs;
@@ -1160,7 +1186,9 @@ public:
                                        ? req.truePeakAimDb : 0.0);
 
         ProgressClock clock (progress);
-        const long long passUnits = 2LL * (long long) frames + (long long) chain.latencySamples();
+        const long long passUnits = (deliveryConverter_ == nullptr ? 2LL * (long long) frames
+            : deliveryFrames_ + 2LL * (long long) frames)
+            + (long long) chain.latencySamples();
 
         for (int pass = 0; pass < req.maxPasses; ++pass)
         {
@@ -1781,6 +1809,21 @@ public:
     }
 
 private:
+    struct DeliveryReset
+    {
+        TargetLoudnessSolver& owner;
+        DeliveryConverter& converter;
+        long long sourceFrames;
+        std::uint64_t* nonFiniteCount;
+        ~DeliveryReset() noexcept
+        {
+            if (nonFiniteCount != nullptr && converter.readFrames() == sourceFrames)
+                *nonFiniteCount = converter.nonFiniteInputSamples();
+            owner.deliveryConverter_ = nullptr;
+            owner.deliverySource_ = nullptr;
+            owner.deliveryFrames_ = 0;
+        }
+    };
     static bool keepRecord (LoudnessSolution& sol, ProgressClock& clock, double g, double c,
                             const MasterMeasurement& m, std::uint32_t violated) noexcept
     {
@@ -2317,7 +2360,26 @@ private:
                     }
             }
         };
-        return renderer.render (chain, in, out, nch, frames, taps, sink, &clock);
+        if (deliveryConverter_ == nullptr) return renderer.render (chain, in, out, nch, frames, taps, sink, &clock);
+        if (! deliveryConverter_->begin (deliverySource_, nch, deliveryFrames_, out, frames)) return false;
+        const float* converted[core::kMaxChannels] {};
+        for (int c = 0; c < nch; ++c) converted[c] = out[c];
+        if (! renderer.begin (chain, converted, out, nch, frames, taps)) return false;
+        StepResult conversion = StepResult::More, rendering = StepResult::More;
+        while (rendering == StepResult::More)
+        {
+            if (conversion == StepResult::More)
+            {
+                const long long before = deliveryConverter_->readFrames();
+                conversion = deliveryConverter_->step (clock.piece (renderer.blockSize()));
+                if (conversion == StepResult::Failed) return false;
+                if (! clock.advance (deliveryConverter_->readFrames() - before)) return false;
+            }
+            rendering = renderer.step (chain, taps, sink, renderer.blockSize(),
+                                       deliveryConverter_->writtenFrames(), &clock);
+            if (rendering == StepResult::Failed) return false;
+        }
+        return conversion == StepResult::Done && deliveryConverter_->finish() && renderer.finish();
     }
 
     // THE TWO RULES THE MEASURING RIG OWES, both measured rather than argued:
@@ -2528,6 +2590,10 @@ private:
     int    bandQuantaCap_ = 0;
     dynamics::offline::QuantileHistogram compHist_, limHist_, limActiveHist_;
     float  maxReconLin_ = 0.0f;
+
+    DeliveryConverter* deliveryConverter_ = nullptr;
+    const float* const* deliverySource_ = nullptr;
+    long long deliveryFrames_ = 0;
 
     double weights_[core::kMaxChannels] { };
 };
