@@ -525,6 +525,7 @@ struct GainReductionTraceBucket
     std::uint64_t samples   = 0;    // tap samples that landed in it, finite or not
     std::uint64_t nonFinite = 0;    // ... of which were NaN or infinite: excluded from max and mean, and COUNTED,
                                     // because a max that skips a NaN silently reads 0 — "the stage was idle"
+    double        minDb     = 0.0;  // smallest finite |GR|; 0 when no finite sample was seen
 };
 
 struct GainReductionTrace
@@ -540,6 +541,8 @@ struct GainReductionTrace
     bool          valid     = false;
     std::uint64_t samples   = 0, nonFinite = 0;
     std::vector<GainReductionTraceBucket> bucket;   // `buckets` entries
+    std::uint64_t programmeFrames = 0; // delivered-frame grid, shared by limiter and K13
+    bool complete = false;             // finish() ran; valid additionally requires finite samples
 
     // min(requested, frames); 0 when either is not positive.
     static int bucketsFor (int requested, int frames) noexcept
@@ -604,6 +607,8 @@ public:
                                                       programmeFrames);
         t.bucket.assign ((std::size_t) t.buckets, GainReductionTraceBucket {});
         t.valid     = false;
+        t.complete  = false;
+        t.programmeFrames = this->frames;
         t.samples   = 0;
         t.nonFinite = 0;
         end = t.buckets > 0 ? bucketEnd (0) : 0u;
@@ -617,6 +622,7 @@ public:
         GainReductionTraceBucket& b = t.bucket[(std::size_t) k];
         ++b.samples;
         if (! std::isfinite (a)) { ++b.nonFinite; return; }
+        if (b.samples - b.nonFinite == 1 || a < b.minDb) b.minDb = a;
         if (a > b.maxDb) b.maxDb = a;
         b.meanDb += a;                                                      // a running SUM until finish()
     }
@@ -635,6 +641,7 @@ public:
         t.samples   = samples;
         t.nonFinite = nonFinite;
         t.valid     = samples > 0 && nonFinite == 0;
+        t.complete  = true;
     }
 
 private:
@@ -860,6 +867,7 @@ struct LoudnessSolution
     // not in the solver, because a solution outlives the next solve.
     GainReductionTrace compressorTrace {};
     GainReductionTrace limiterTrace {};
+    GainReductionTrace peakClipTrace {}; // K13, on the limiter trace's delivered-frame grid
 
     // THE DISTRIBUTION EVERY QUANTILE OF THIS SOLUTION IS READ FROM, one per stage — the histogram the search
     // judged this render's gain-reduction limits on, of the LAST render, which is the one in `out`. Written by
@@ -905,9 +913,9 @@ public:
         return (1u + storage::kPolyphaseProxies * core::kMaxChannels)
              * storage::kVectorProxyBytes;
     }
-    // Six vectors in a solution (band results, two traces, three histograms). A non-elided
+    // Seven vectors in a solution (band results, three traces, three histograms). A non-elided
     // return constructs a second set of proxies; moving a Debug vector allocates its empty proxy.
-    static constexpr std::uint64_t solutionConstructBytes() noexcept { return 6u * storage::kVectorProxyBytes; }
+    static constexpr std::uint64_t solutionConstructBytes() noexcept { return 7u * storage::kVectorProxyBytes; }
     static constexpr std::uint64_t solutionReturnBytes() noexcept { return 3u * solutionConstructBytes(); }
     static constexpr std::uint64_t solveProxyBytes() noexcept
     {
@@ -964,6 +972,7 @@ public:
         compTap_.assign ((std::size_t) frameCap_, 0.0f);
         limTap_.assign  ((std::size_t) osCap_, 0.0f);
         limPeak_.assign ((std::size_t) osCap_, 0.0f);
+        clipTap_.assign ((std::size_t) osCap_, 0.0f);
         // The band tap is counted in QUANTA, and a quantum is at least one frame, so a capacity of
         // `frameCap` rows can never be short however small the internal block turns out to be. 120 floats
         // a row: sized here because process() refuses a tap it cannot fill, and refusing mid-solve for a
@@ -1042,7 +1051,7 @@ public:
         // exists to prevent.
         const std::uint64_t bandTap = (std::uint64_t) sizeof (float)
                                     * (std::uint64_t) frameCap * (std::uint64_t) kBandGrStride;
-        return (std::uint64_t) sizeof (float) * ((std::uint64_t) frameCap + 2u * (std::uint64_t) osCap)
+        return (std::uint64_t) sizeof (float) * ((std::uint64_t) frameCap + 3u * (std::uint64_t) osCap)
              + 3u * hist + bandTap;
     }
 
@@ -1064,7 +1073,7 @@ public:
         const std::uint64_t meter = passMeterBytes (sampleRate, frames);
         if (meter == 0) return 0u;       // the meter refuses its capacity: measure() stops before anything is allocated
         return meter + analysis::ReferenceTruePeakMeter::storageFor (sampleRate, frames, numChannels).bytes()
-             + 2u * GainReductionTrace::bytesFor (grTraceBuckets, frames) + 3u * hist
+             + 3u * GainReductionTrace::bytesFor (grTraceBuckets, frames) + 3u * hist
              + meterConstructBytes() + solveProxyBytes();
     }
 
@@ -2248,7 +2257,7 @@ private:
         std::vector<GainReductionTraceBuilder> bandTrace;
         std::optional<GainReductionSummariser> compSum, limSum;
         std::optional<ActiveWindowGrSummariser> limActive;
-        std::optional<GainReductionTraceBuilder> compTrace, limTrace;
+        std::optional<GainReductionTraceBuilder> compTrace, limTrace, clipTrace;
         MasteringChainTaps taps {};
         analysis::SystemStreamingLoudnessMeter lm;
         analysis::ReferenceTruePeakMeter tm;
@@ -2290,6 +2299,7 @@ private:
                     p.limActive->add (a, (double) pk);
                     if (pk > maxReconLin_) maxReconLin_ = pk;
                     p.limTrace->add ((std::uint64_t) (s - limFrom), a);
+                    p.clipTrace->add ((std::uint64_t) (s - limFrom), (double) clipTap_[idx]);
                 }
         }
     }
@@ -2358,6 +2368,7 @@ private:
                                  p.req->activityThresholdDb, p.req->limiterActiveInputDb);
             p.compTrace.emplace (p.solution->compressorTrace, p.frames, p.req->grTraceBuckets);
             p.limTrace.emplace (p.solution->limiterTrace, p.frames, p.req->grTraceBuckets);
+            p.clipTrace.emplace (p.solution->peakClipTrace, p.frames, p.req->grTraceBuckets);
             p.solution->compressorGrWindows.reset(); p.solution->limiterGrWindows.reset();
             p.solution->limiterActiveGrWindows.reset(); p.solution->limiterActive = ActiveGainReductionStats {};
             // Resize in place: clearing first destroys every trace buffer and
@@ -2367,7 +2378,8 @@ private:
                 p.bandTrace.emplace_back (p.solution->bandGr[i].trace, p.frames, p.req->grTraceBuckets);
             p.taps = MasteringChainTaps {};
             p.taps.compressorGrDb = compTap_.data(); p.taps.frameCapacity = frameCap_;
-            p.taps.limiterGrDb = limTap_.data(); p.taps.limiterPeakLin = limPeak_.data(); p.taps.osCapacity = osCap_;
+            p.taps.limiterGrDb = limTap_.data(); p.taps.limiterPeakLin = limPeak_.data();
+            p.taps.peakClipReductionDb = clipTap_.data(); p.taps.osCapacity = osCap_;
             if (! p.armed.empty())
                 { p.taps.bandDeltaDb = bandTap_.data(); p.taps.bandQuantaCapacity = bandQuantaCap_; }
             const float* const* renderInput = p.in;
@@ -2479,7 +2491,7 @@ private:
         MasterMeasurement& m = *p.measurement;
         if (p.phase == Phase::FinishStats)
         {
-            p.compTrace->finish(); p.limTrace->finish();
+            p.compTrace->finish(); p.limTrace->finish(); p.clipTrace->finish();
             m.latencySamples = p.chain->latencySamples();
             m.compressor = p.compSum->finish (p.req->compressorGr.quantile);
             m.limiter = p.limSum->finish (p.req->limiterGr.quantile);
@@ -2613,6 +2625,7 @@ private:
         // held describes a render about to be overwritten in `out`.
         GainReductionTraceBuilder compTrace (sol.compressorTrace, frames, req.grTraceBuckets);
         GainReductionTraceBuilder limTrace  (sol.limiterTrace, frames, req.grTraceBuckets);
+        GainReductionTraceBuilder clipTrace (sol.peakClipTrace, frames, req.grTraceBuckets);
         sol.compressorGrWindows.reset();
         sol.limiterGrWindows.reset();
         sol.limiterActiveGrWindows.reset();
@@ -2626,7 +2639,7 @@ private:
         bandTrace.reserve (armed.size());
         for (std::size_t i = 0; i < armed.size(); ++i)
             bandTrace.emplace_back (sol.bandGr[i].trace, frames, req.grTraceBuckets);
-        if (! renderTapped (chain, renderer, in, out, nch, frames, compSum, limSum, limActive, compTrace, limTrace,
+        if (! renderTapped (chain, renderer, in, out, nch, frames, compSum, limSum, limActive, compTrace, limTrace, clipTrace,
                             armedPairs, bandWhole, bandActive, bandTrace, clock)) return false;
         for (std::size_t i = 0; i < armed.size(); ++i)
         {
@@ -2640,6 +2653,7 @@ private:
         }
         compTrace.finish();
         limTrace.finish();
+        clipTrace.finish();
 
         m.latencySamples = chain.latencySamples();
         // EACH STAGE AT ITS OWN LIMIT'S `q`: `grStatisticValue` reads `quantileDb` without knowing which
@@ -2682,6 +2696,7 @@ private:
                        GainReductionSummariser& compSum, GainReductionSummariser& limSum,
                        ActiveWindowGrSummariser& limActive,
                        GainReductionTraceBuilder& compTrace, GainReductionTraceBuilder& limTrace,
+                       GainReductionTraceBuilder& clipTrace,
                        const std::vector<std::pair<int, int>>& armed,
                        std::vector<GainReductionSummariser>& bandWhole,
                        std::vector<ActiveWindowGrSummariser>& bandActive,
@@ -2713,6 +2728,7 @@ private:
         taps.frameCapacity  = frameCap_;
         taps.limiterGrDb    = limTap_.data();
         taps.limiterPeakLin = limPeak_.data();
+        taps.peakClipReductionDb = clipTap_.data();
         taps.osCapacity     = osCap_;
         // One band-GR ROW per quantum, and only when something armed asks for it: a caller with no dynamic
         // band must not pay a 120-float row per internal block for a statistic nobody will read.
@@ -2767,6 +2783,7 @@ private:
                         limActive.add (a, (double) pk);
                         if (pk > maxReconLin_) maxReconLin_ = pk;
                         limTrace.add ((std::uint64_t) (s - limFrom), a);
+                        clipTrace.add ((std::uint64_t) (s - limFrom), (double) clipTap_[idx]);
                     }
             }
         };
@@ -3008,7 +3025,7 @@ private:
     int    nch_ = 0, frameCap_ = 0, osCap_ = 0;
     bool   prepared_ = false;
 
-    storage::Buffer<float> compTap_, limTap_, limPeak_, bandTap_;
+    storage::Buffer<float> compTap_, limTap_, limPeak_, clipTap_, bandTap_;
     int    bandQuantaCap_ = 0;
     dynamics::offline::QuantileHistogram compHist_, limHist_, limActiveHist_;
     float  maxReconLin_ = 0.0f;

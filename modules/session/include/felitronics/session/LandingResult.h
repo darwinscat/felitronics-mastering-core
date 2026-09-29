@@ -23,6 +23,18 @@ struct LandingPass
     double limiterMaxReductionDb = 0.0;
     bool ceilingSafe = false;
 };
+struct LandingTraceBucket
+{
+    double minDb = 0.0, maxDb = 0.0, meanDb = 0.0;
+    std::uint64_t samples = 0, nonFinite = 0;
+};
+struct LandingTrace
+{
+    std::uint64_t fromFrame = 0, toFrame = 0, samples = 0, nonFinite = 0;
+    std::uint32_t sampleRateHz = 0, columns = 0;
+    bool complete = false, valid = false;
+    std::span<const LandingTraceBucket> rows;
+};
 struct LandingSummary
 {
     LandingStatus status = LandingStatus::Unavailable;
@@ -33,5 +45,6 @@ struct LandingSummary
     std::uint32_t passes = 0;
     std::uint64_t workUnits = 0;
     std::span<const LandingPass> log;
+    std::optional<LandingTrace> limiterTrace, peakClipTrace;
 };
 } // namespace felitronics::session

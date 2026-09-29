@@ -4,6 +4,14 @@
 
 ## Unreleased
 
+### mastering · session — aligned limiter and K13 traces
+
+The limiter's existing oversampled K13 clipper now exposes its reduction as a time tap without changing
+audio or aggregate readings. Delivered mastering stores limiter and clipper min/max/mean rows on one
+frame grid, including the final drain. Session snapshots own both series, the generated codec decodes
+their absence in older snapshots, and `fc_session_query_*` accepts bounded master trace queries.
+The pinned felitronics-core v0.55.0 fetch applies the companion tap patch until the core release contains it.
+
 ### mastering · session — saved loudness landing search
 
 The product landing now has one budget of at most twelve measured renders. It stops at a measured hit, otherwise

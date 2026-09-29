@@ -92,7 +92,9 @@
       "Momentary",
       "ShortTerm",
       "Clipping",
-      "Stereo"
+      "Stereo",
+      "LimiterGr",
+      "PeakClipGr"
     ],
     "QueryStatus": [
       "Ready",
@@ -340,6 +342,30 @@
         "ceilingSafe": "bool"
       }
     },
+    "LandingTraceBucket": {
+      "cpp": "LandingTraceBucket",
+      "fields": {
+        "minDb": "double",
+        "maxDb": "double",
+        "meanDb": "double",
+        "samples": "uint64",
+        "nonFinite": "uint64"
+      }
+    },
+    "LandingTrace": {
+      "cpp": "LandingTrace",
+      "fields": {
+        "fromFrame": "uint64",
+        "toFrame": "uint64",
+        "sampleRateHz": "uint32",
+        "columns": "uint32",
+        "complete": "bool",
+        "valid": "bool",
+        "samples": "uint64",
+        "nonFinite": "uint64",
+        "rows": "LandingTraceBucket[]"
+      }
+    },
     "LandingSummary": {
       "cpp": "LandingSummary",
       "fields": {
@@ -356,7 +382,9 @@
         "limiterMeanReductionDb": "double?",
         "passes": "uint32",
         "workUnits": "uint64",
-        "log": "LandingPass[]"
+        "log": "LandingPass[]",
+        "limiterTrace": "LandingTrace?",
+        "peakClipTrace": "LandingTrace?"
       }
     },
     "Source": {
@@ -577,7 +605,8 @@
         "requestId": "uint64",
         "crossoverHz": "double",
         "fromHz": "double",
-        "toHz": "double"
+        "toHz": "double",
+        "masterId": "uint32"
       }
     },
     "QueryView": {
@@ -1053,6 +1082,16 @@
     "measurements": "ReadonlyArray<SessionMeasurementResult>"
   },
   "optionalFields": {
+    "LandingSummary": {
+      "limiterTrace": {
+        "default": "std::optional<LandingTrace> {}",
+        "description": "No limiter time series was published."
+      },
+      "peakClipTrace": {
+        "default": "std::optional<LandingTrace> {}",
+        "description": "No K13 clipper time series was published."
+      }
+    },
     "Kept": {
       "landing": {
         "default": "std::optional<LandingSummary> {}",
@@ -1134,6 +1173,10 @@
       }
     },
     "MeasurementQuery": {
+      "masterId": {
+        "default": "std::uint32_t {}",
+        "description": "No master selected in baseline source queries."
+      },
       "crossoverHz": {
         "default": "120.0",
         "description": "120 Hz."
@@ -1390,6 +1433,24 @@
       "correlation",
       "rms",
       "reason"
+    ],
+    "LimiterGr": [
+      "firstFrame",
+      "lastFrame",
+      "minDb",
+      "maxDb",
+      "meanDb",
+      "samples",
+      "nonFinite"
+    ],
+    "PeakClipGr": [
+      "firstFrame",
+      "lastFrame",
+      "minDb",
+      "maxDb",
+      "meanDb",
+      "samples",
+      "nonFinite"
     ]
   }
 }

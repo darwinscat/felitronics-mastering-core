@@ -117,7 +117,7 @@ public:
                                                      solver_.compHist_.binWidth());
         retainedSourceUpper_ = std::max (retainedSourceUpper_, demand.sourceBytes);
         retainedOutputUpper_ = std::max (retainedOutputUpper_, demand.outputBytes);
-        retainedRateFloor_ = retainedRateFloor_ == 0.0 ? chain.sampleRate()
+        retainedRateFloor_ = retainedRateFloor_ <= 0.0 ? chain.sampleRate()
             : std::min (retainedRateFloor_, chain.sampleRate());
         retainedFramesUpper_ = std::max (retainedFramesUpper_, frames);
         retainedChannelsUpper_ = std::max (retainedChannelsUpper_, channels);

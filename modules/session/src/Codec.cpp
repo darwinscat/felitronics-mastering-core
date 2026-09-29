@@ -30,6 +30,23 @@ bool valid (const SnapshotView& v) noexcept
             if (landing.passes > 12 || landing.log.size() != landing.passes
                 || (landing.deliverable && (! landing.achievedLufs || ! landing.missLu
                     || ! landing.distanceLu || ! landing.truePeakDbTp))) return false;
+            for (const auto& trace : { landing.limiterTrace, landing.peakClipTrace })
+                if (trace)
+                {
+                    if (trace->columns != trace->rows.size() || trace->columns > 65536
+                        || trace->fromFrame > trace->toFrame || (trace->columns != 0 && trace->sampleRateHz == 0)
+                        || (trace->valid && (! trace->complete || trace->nonFinite != 0 || trace->samples == 0))
+                        || trace->nonFinite > trace->samples) return false;
+                    std::uint64_t samples = 0, nonFinite = 0;
+                    for (const auto& row : trace->rows)
+                    {
+                        if (row.nonFinite > row.samples || ! std::isfinite (row.minDb)
+                            || ! std::isfinite (row.maxDb) || ! std::isfinite (row.meanDb)
+                            || row.minDb < 0.0 || row.maxDb < row.minDb || row.meanDb < 0.0) return false;
+                        samples += row.samples; nonFinite += row.nonFinite;
+                    }
+                    if (trace->complete && (samples != trace->samples || nonFinite != trace->nonFinite)) return false;
+                }
         }
     const auto& m = v.measurementStorage;
     for (const auto bytes : { m.sourceBytes, m.resultBytes, m.workspaceBytes, m.copyBytes,
@@ -79,6 +96,7 @@ CodecStatus Codec::decode (std::string_view json, Snapshot& output) noexcept
     if (sizes.chars) out.text_.reset (new char[sizes.chars]);
     if (sizes.masters) out.masters_.reset (new Kept[sizes.masters]);
     if (sizes.landingPasses) out.landingPasses_.reset (new LandingPass[sizes.landingPasses]);
+    if (sizes.landingTraceRows) out.landingTraceRows_.reset (new LandingTraceBucket[sizes.landingTraceRows]);
     if (sizes.points) out.points_.reset (new ReadingPoint[sizes.points]);
     if (sizes.runs) out.runs_.reset (new ReadingRun[sizes.runs]);
     if (sizes.differences) out.differences_.reset (new MachineDifference[sizes.differences]);
@@ -94,6 +112,7 @@ CodecStatus Codec::decode (std::string_view json, Snapshot& output) noexcept
     storage.measurementArray = out.measurements_.arrays_.get();
     storage.measurementRow = out.measurements_.rows_.get();
     storage.landingPass = out.landingPasses_.get();
+    storage.landingTraceRow = out.landingTraceRows_.get();
     const bool filled = read (json, storage, out.view_);
     detail::debugBound (filled);
     output = std::move (out);

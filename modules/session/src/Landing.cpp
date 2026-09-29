@@ -5,6 +5,7 @@
 #include <felitronics/session/Landing.h>
 
 #include <cmath>
+#include <algorithm>
 
 namespace felitronics::session
 {
@@ -50,8 +51,24 @@ LandingPlan LandingOps::plan (const config::Engine& engine, bool sourceLoudnessV
 bool LandingOps::summarize (const mastering::LoudnessSolution& solution,
                        std::span<LandingPass> rows, LandingSummary& out) noexcept
 {
+    return summarize (solution, rows, {}, {}, 0, out);
+}
+
+bool LandingOps::summarize (const mastering::LoudnessSolution& solution,
+                       std::span<LandingPass> rows, std::span<LandingTraceBucket> limiterRows,
+                       std::span<LandingTraceBucket> peakClipRows, std::uint32_t deliveryRateHz,
+                       LandingSummary& out) noexcept
+{
     if (solution.passes < 0 || solution.passes > 12 || solution.logCount != solution.passes
         || rows.size() < (std::size_t) solution.logCount) return false;
+    const auto& limiter = solution.limiterTrace;
+    const auto& clipper = solution.peakClipTrace;
+    const bool haveTraces = deliveryRateHz > 0;
+    if (haveTraces && (limiter.buckets != clipper.buckets
+        || limiter.programmeFrames != clipper.programmeFrames
+        || limiterRows.size() < limiter.bucket.size() || peakClipRows.size() < clipper.bucket.size()
+        || limiter.bucket.size() != (std::size_t) limiter.buckets
+        || clipper.bucket.size() != (std::size_t) clipper.buckets)) return false;
     LandingSummary next;
     switch (solution.status)
     {
@@ -108,7 +125,68 @@ bool LandingOps::summarize (const mastering::LoudnessSolution& solution,
         row.ceilingSafe = (source.violated & mastering::constraintBit (mastering::MasteringConstraint::TruePeakCeiling)) == 0;
     }
     next.log = { rows.data(), (std::size_t) solution.logCount };
+    if (haveTraces && limiter.buckets > 0)
+    {
+        const auto copyTrace = [deliveryRateHz] (const mastering::GainReductionTrace& source,
+                                                  std::span<LandingTraceBucket> storage) noexcept
+        {
+            LandingTrace trace;
+            trace.toFrame = source.programmeFrames;
+            trace.sampleRateHz = deliveryRateHz;
+            trace.columns = (std::uint32_t) source.buckets;
+            trace.complete = source.complete;
+            trace.valid = source.valid;
+            trace.samples = source.complete ? source.samples : 0;
+            trace.nonFinite = source.complete ? source.nonFinite : 0;
+            for (std::size_t i = 0; i < source.bucket.size(); ++i)
+            {
+                const auto& b = source.bucket[i];
+                const auto finite = b.samples - b.nonFinite;
+                const double mean = source.complete || finite == 0 ? b.meanDb : b.meanDb / double (finite);
+                storage[i] = { b.minDb, b.maxDb, mean, b.samples, b.nonFinite };
+                if (! source.complete) { trace.samples += b.samples; trace.nonFinite += b.nonFinite; }
+            }
+            trace.rows = storage.first (source.bucket.size());
+            return trace;
+        };
+        next.limiterTrace = copyTrace (limiter, limiterRows);
+        next.peakClipTrace = copyTrace (clipper, peakClipRows);
+    }
     out = next;
     return true;
+}
+
+std::uint32_t LandingOps::query (const LandingTrace& trace, std::uint32_t columns,
+                                 std::span<double> output) noexcept
+{
+    if (! trace.complete || columns == 0 || columns > 2048 || trace.rows.empty()
+        || trace.columns != trace.rows.size() || trace.fromFrame > trace.toFrame) return 0;
+    for (const auto& row : trace.rows) if (row.nonFinite > row.samples) return 0;
+    const auto count = std::min<std::uint32_t> (columns, trace.columns);
+    if (output.size() < std::size_t (count) * 7u) return 0;
+    const auto boundary = [] (std::uint64_t length, std::uint64_t i, std::uint64_t total) noexcept
+    { return (length / total) * i + ((length % total) * i) / total; };
+    for (std::uint32_t i = 0; i < count; ++i)
+    {
+        const auto first = boundary (trace.columns, i, count);
+        const auto last = boundary (trace.columns, i + 1u, count);
+        double min = 0.0, max = 0.0, sum = 0.0;
+        std::uint64_t samples = 0, nonFinite = 0;
+        for (std::uint64_t j = first; j < last; ++j)
+        {
+            const auto& b = trace.rows[std::size_t (j)];
+            const auto finite = b.samples - b.nonFinite;
+            if (finite != 0 && (samples == nonFinite || b.minDb < min)) min = b.minDb;
+            max = std::max (max, b.maxDb);
+            sum += b.meanDb * double (finite);
+            samples += b.samples; nonFinite += b.nonFinite;
+        }
+        const auto finite = samples - nonFinite;
+        const double row[] { double (trace.fromFrame + boundary (trace.toFrame - trace.fromFrame, first, trace.columns)),
+            double (trace.fromFrame + boundary (trace.toFrame - trace.fromFrame, last, trace.columns)),
+            min, max, finite == 0 ? 0.0 : sum / double (finite), double (samples), double (nonFinite) };
+        std::copy_n (row, 7, output.data() + std::size_t (7u * i));
+    }
+    return count;
 }
 } // namespace felitronics::session
