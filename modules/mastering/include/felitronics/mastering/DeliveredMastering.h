@@ -14,6 +14,8 @@
 #include <climits>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
+#include <limits>
 #include <felitronics/storage/Buffer.h>
 
 namespace felitronics::mastering
@@ -54,6 +56,12 @@ namespace felitronics::mastering
 class DeliveredMastering
 {
 public:
+    // Reblock job preparation to bound per-step scratch initialization and SRC construction.
+    static constexpr int kMaxJobBlock = 1024;
+    // The job's one-unit preparation stages have a hard admitted work ceiling.
+    // This also bounds the coefficient count and construction loop of the SRC.
+    static constexpr std::uint64_t kMaxPreparationStageBytes = 2u * 1024u * 1024u;
+
     [[nodiscard]] static long long deliveredFrames (double sourceRate, double deliveryRate, long long inFrames) noexcept
     {
         return DeliveryConverter::deliveredFrames (sourceRate, deliveryRate, inFrames);
@@ -66,9 +74,11 @@ public:
         std::uint64_t maxLiveBytes = 0, largestBlockBytes = 0;
     };
 
-    // Conservative whole-job demand. The source and delivery planes each occupy one
-    // contiguous allocation; the workspace is the chain, renderer and converter only.
-    // Both sums use uint64_t even when the caller runs on wasm32.
+    // Fresh whole-job demand. For a reused DeliveredMastering and its same chain
+    // and renderer, call storageForJob before beginJob: retained capacity and
+    // replacement peaks cannot be inferred from geometry alone. The job reblocks
+    // its requested block to kMaxJobBlock and refuses preparation stages whose
+    // fresh demand exceeds kMaxPreparationStageBytes. Both sums use uint64_t.
     [[nodiscard]] static RenderStorage storageFor (double sourceRate, double deliveryRate, int numChannels,
                                                    long long inFrames, const MasteringChainConfig& config,
                                                    int block) noexcept
@@ -76,14 +86,34 @@ public:
         RenderStorage st;
         const long long d = deliveredFrames (sourceRate, deliveryRate, inFrames);
         if (inFrames < 0 || d < 0 || d > INT_MAX) return st;
-        const std::uint64_t prepared = createBytes (sourceRate, deliveryRate, numChannels, config, block);
-        if (prepared == 0) return st;
-        st.workspaceBytes = prepared + DeliveryConverter::constructBytes() + storage::kVectorProxyBytes;
+        if (block < 1) return st;
+        const int jobBlock = std::min (block, kMaxJobBlock);
+        const std::uint64_t chain = mastering::createBytes (deliveryRate, numChannels, config, jobBlock);
+        const std::uint64_t conv = DeliveryConverter::prepareBytes (sourceRate, deliveryRate, numChannels, jobBlock);
+        if (chain == 0 || conv == 0 || allocatorDemand (chain) > kMaxPreparationStageBytes
+            || allocatorDemand (conv) > kMaxPreparationStageBytes) return st;
+        st.workspaceBytes = allocatorDemand (chain) + allocatorDemand (conv)
+                          + DeliveryConverter::constructBytes() + storage::kVectorProxyBytes;
         st.sourceBytes = (std::uint64_t) inFrames * (std::uint64_t) numChannels * sizeof (float);
         st.outputBytes = (std::uint64_t) d * (std::uint64_t) numChannels * sizeof (float);
         st.maxLiveBytes = st.sourceBytes + st.outputBytes + st.workspaceBytes;
         st.largestBlockBytes = std::max (std::max (st.sourceBytes, st.outputBytes), st.workspaceBytes);
         st.ok = true;
+        return st;
+    }
+
+    // A quote for reuse includes capacities retained by earlier geometries and
+    // the temporary old-plus-new peak of this preparation. The retained bound
+    // is stable for repeats of the same geometry, including cancelled attempts.
+    [[nodiscard]] RenderStorage storageForJob (double sourceRate, double deliveryRate, int numChannels,
+                                               long long inFrames, const MasteringChainConfig& config,
+                                               int block) const noexcept
+    {
+        RenderStorage st = storageFor (sourceRate, deliveryRate, numChannels, inFrames, config, block);
+        if (! st.ok) return st;
+        st.workspaceBytes = saturatedAdd (st.workspaceBytes, retainedWorkspaceUpper_);
+        st.maxLiveBytes = saturatedAdd (saturatedAdd (st.sourceBytes, st.outputBytes), st.workspaceBytes);
+        st.largestBlockBytes = std::max (st.largestBlockBytes, retainedLargestBlockUpper_);
         return st;
     }
 
@@ -272,8 +302,10 @@ public:
     }
 
     // A complete render job includes preparation. Its first call only validates
-    // geometry and borrows the planes; each preparation stage costs one unit.
-    // Rendering then spends one unit per source or chain frame.
+    // geometry and borrows the planes. One preparation unit is a bounded stage
+    // (up to kMaxPreparationStageBytes); rendering spends one unit per source
+    // or chain frame. The fixed internal block is a processing granularity,
+    // never a change in the delivered length or content.
     [[nodiscard]] bool beginJob (MasteringChain& chain, OfflineRenderer& renderer,
                                  double sourceRate, double deliveryRate, int numChannels,
                                  long long inFrames, const MasteringChainConfig& config,
@@ -282,13 +314,30 @@ public:
                                  const ProgressCallback& progress = ProgressCallback {}) noexcept
     {
         cancelJob();
-        const RenderStorage st = storageFor (sourceRate, deliveryRate, numChannels, inFrames, config, block);
+        const RenderStorage st = storageForJob (sourceRate, deliveryRate, numChannels, inFrames, config, block);
         if (! st.ok || outFrames != deliveredFrames (sourceRate, deliveryRate, inFrames)
             || ! planesUsable (in, out, numChannels, inFrames, outFrames)) return false;
         jobChain_ = &chain; jobRenderer_ = &renderer;
         jobSourceRate_ = sourceRate; jobDeliveryRate_ = deliveryRate;
-        jobChannels_ = numChannels; jobInFrames_ = inFrames; jobOutFrames_ = outFrames; jobBlock_ = block;
+        jobChannels_ = numChannels; jobInFrames_ = inFrames; jobOutFrames_ = outFrames;
+        jobBlock_ = std::min (block, kMaxJobBlock);
         jobConfig_ = config; jobParams_ = params; jobIn_ = in; jobOut_ = out; jobProgress_ = progress;
+        const RenderStorage fresh = storageFor (sourceRate, deliveryRate, numChannels, inFrames, config, block);
+        bool seen = false;
+        for (const auto& known : knownJobs_)
+            if (known.valid && sameJobGeometry (known, sourceRate, deliveryRate, numChannels, jobBlock_, config))
+                { seen = true; break; }
+        if (! seen)
+        {
+            retainedWorkspaceUpper_ = saturatedAdd (retainedWorkspaceUpper_, fresh.workspaceBytes);
+            for (auto& known : knownJobs_)
+                if (! known.valid)
+                {
+                    known = { sourceRate, deliveryRate, numChannels, jobBlock_, config, true };
+                    break;
+                }
+        }
+        retainedLargestBlockUpper_ = std::max (retainedLargestBlockUpper_, fresh.largestBlockBytes);
         jobState_ = JobState::PrepareChain;
         return true;
     }
@@ -422,6 +471,48 @@ public:
     }
 
 private:
+    struct JobGeometry
+    {
+        double sourceRate = 0.0, deliveryRate = 0.0;
+        int channels = 0, block = 0;
+        MasteringChainConfig config {};
+        bool valid = false;
+    };
+
+    static bool sameDoubleBits (double a, double b) noexcept
+    {
+        return std::memcmp (&a, &b, sizeof a) == 0;
+    }
+
+    static bool sameJobGeometry (const JobGeometry& a, double sourceRate, double deliveryRate,
+                                 int channels, int block, const MasteringChainConfig& b) noexcept
+    {
+        const auto& x = a.config;
+        return sameDoubleBits (a.sourceRate, sourceRate) && sameDoubleBits (a.deliveryRate, deliveryRate)
+            && a.channels == channels && a.block == block
+            && x.internalBlock == b.internalBlock && x.eq == b.eq && x.monoBass == b.monoBass
+            && x.stereoAir == b.stereoAir && x.compressor == b.compressor && x.clipper == b.clipper
+            && x.limiter == b.limiter && x.dither == b.dither
+            && sameDoubleBits (x.compressorLookaheadMs, b.compressorLookaheadMs)
+            && sameDoubleBits (x.limiterLookaheadMs, b.limiterLookaheadMs)
+            && x.oversampleFactor == b.oversampleFactor && x.tapsPerPhase == b.tapsPerPhase
+            && sameDoubleBits (x.sidechainHpfHz, b.sidechainHpfHz);
+    }
+
+    // MSVC's STL can add 47 bytes to each vector request of at least 4096
+    // bytes in Debug (39 in Release). No more than bytes/4096 such requests
+    // fit inside a producer's logical byte budget. Keep this in every tier's
+    // quote so maxLiveBytes bounds the allocator's raw request too.
+    static std::uint64_t allocatorDemand (std::uint64_t bytes) noexcept
+    {
+        return bytes + 47u * (bytes / 4096u + 1u);
+    }
+
+    static std::uint64_t saturatedAdd (std::uint64_t a, std::uint64_t b) noexcept
+    {
+        const auto limit = std::numeric_limits<std::uint64_t>::max();
+        return b > limit - a ? limit : a + b;
+    }
     static std::uint64_t programmeBytes (double sourceRate, double deliveryRate, int numChannels, long long d) noexcept
     {
         core::DeliveryResampler::Params p;
@@ -491,6 +582,8 @@ private:
     const float* const* jobIn_ = nullptr;
     float* const* jobOut_ = nullptr;
     ProgressCallback jobProgress_ {};
+    std::uint64_t retainedWorkspaceUpper_ = 0, retainedLargestBlockUpper_ = 0;
+    JobGeometry knownJobs_[16] {};
 };
 
 // A mastering instance owns a solver and a delivery converter even before either is prepared.

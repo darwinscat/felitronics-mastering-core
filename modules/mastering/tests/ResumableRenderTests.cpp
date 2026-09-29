@@ -3,7 +3,8 @@
 
 #include <felitronics/mastering/DeliveredMastering.h>
 #include <felitronics_test.h>
-#include <alloc_counter.h>
+#include "../../session/tests/DeclaredBudget.h"
+#include "PreviousOfflineRenderer.h"
 
 #include <algorithm>
 #include <climits>
@@ -128,7 +129,7 @@ bool run (double sourceRate, double deliveryRate, int channels, long long frames
     Audio converted (channels, delivered), convertedStep (channels, delivered);
     DeliveryConverter converter;
     MasteringChain chain0, chain1;
-    OfflineRenderer renderer0, renderer1;
+    OfflineRenderer renderer1;
     DeliveredMastering delivery;
     if (! legacyConvert (sourceRate, deliveryRate, channels, frames, source.in, converted.out, delivered)
         || ! converter.prepare (sourceRate, deliveryRate, channels, 257)
@@ -137,8 +138,8 @@ bool run (double sourceRate, double deliveryRate, int channels, long long frames
     for (long long guard = 0; convertedState == StepResult::More && guard < 1000000; ++guard)
         convertedState = converter.step (budget);
     if (convertedState != StepResult::Done || ! converter.finish() || ! same (converted, convertedStep)
-        || ! chain0.prepare (deliveryRate, channels, config()) || ! renderer0.prepare (channels, 257)
-        || ! renderer0.render (chain0, converted.in, reference.out, channels, (int) delivered)
+        || ! chain0.prepare (deliveryRate, channels, config())
+        || ! testing::previousRender (chain0, converted.in, reference.out, channels, (int) delivered, 257)
         || ! chain1.prepare (deliveryRate, channels, config()) || ! renderer1.prepare (channels, 257)
         || ! delivery.prepare (sourceRate, deliveryRate, channels, 257)) return false;
 
@@ -170,6 +171,50 @@ bool run (double sourceRate, double deliveryRate, int channels, long long frames
     allocationFree = alloc::count.load() == allocationsBefore;
     return same (reference, resumed);
 }
+
+bool rendererSequence()
+{
+    constexpr int frames = 4097, block = 257;
+    Audio source (2, frames), old (2, frames), stepped (2, frames);
+    for (int c = 0; c < 2; ++c)
+        for (int i = 0; i < frames; ++i)
+            source.out[c][i] = (float) (0.37 * std::sin (0.023 * i + c) + 0.11 * std::cos (0.051 * i));
+    source.out[1][frames - 1] = 0.99f;
+    MasteringChain a, b;
+    OfflineRenderer renderer;
+    MasteringChainParams beforePrepare, beforeSound, mid, repeat;
+    beforePrepare.preLimiterGainDb = -4.0;
+    beforeSound.preLimiterGainDb = 2.0;
+    mid.preLimiterGainDb = -7.0;
+    repeat.preLimiterGainDb = 5.0;
+    a.setParams (beforePrepare); b.setParams (beforePrepare);
+    if (! a.prepare (48000.0, 2, config()) || ! b.prepare (48000.0, 2, config())
+        || ! renderer.prepare (2, block)) return false;
+    a.setParams (beforeSound); b.setParams (beforeSound);
+    bool changed = false;
+    if (! testing::previousRender (a, source.in, old.out, 2, frames, block, [&] (long long off)
+        {
+            if (! changed && off == block) { a.setParams (mid); changed = true; }
+        })) return false;
+    MasteringChainTaps taps;
+    if (! renderer.begin (b, source.in, stepped.out, 2, frames, taps)) return false;
+    if (renderer.step (b, taps, NullTapSink {}, block, frames) != StepResult::More
+        || renderer.processedFrames() != block) return false;
+    b.setParams (mid);
+    StepResult state = StepResult::More;
+    const int cuts[] { 1, 3, 17, 2, 509, 7, 257 };
+    for (int i = 0; i < 100000 && state == StepResult::More; ++i)
+        state = renderer.step (b, taps, NullTapSink {}, cuts[i % 7], frames);
+    if (state != StepResult::Done || ! renderer.finish() || ! same (old, stepped)) return false;
+
+    a.setParams (repeat); b.setParams (repeat);
+    if (! testing::previousRender (a, source.in, old.out, 2, frames, block)
+        || ! renderer.begin (b, source.in, stepped.out, 2, frames, taps)) return false;
+    state = StepResult::More;
+    for (int i = 0; i < 100000 && state == StepResult::More; ++i)
+        state = renderer.step (b, taps, NullTapSink {}, cuts[(i + 3) % 7], frames);
+    return state == StepResult::Done && renderer.finish() && same (old, stepped);
+}
 }
 
 int main()
@@ -194,6 +239,7 @@ int main()
     ok (cases == 120 && mismatches == 0, "all rates, widths, short tails and cuts match the whole composition bit for bit");
     ok (zeroFailures == 0, "zero budget consumes no frames and writes nothing");
     ok (allocationFailures == 0, "begin, steps, cancellation and finish allocate nothing");
+    ok (rendererSequence(), "previous whole renderer matches adversarial cuts across parameter writes and repeat renders");
 
     group ("whole job: declared storage, stepped preparation and replay");
     {
@@ -209,10 +255,9 @@ int main()
         }
         source.out[1][frames - 1] = 0.9f;
         MasteringChain baselineChain;
-        OfflineRenderer baselineRenderer;
         const bool baseline = legacyConvert (a, b, channels, frames, source.in, converted.out, delivered)
-            && baselineChain.prepare (b, channels, config()) && baselineRenderer.prepare (channels, 257)
-            && baselineRenderer.render (baselineChain, converted.in, oracle.out, channels, (int) delivered);
+            && baselineChain.prepare (b, channels, config())
+            && testing::previousRender (baselineChain, converted.in, oracle.out, channels, (int) delivered, 257);
         const auto storage = DeliveredMastering::storageFor (a, b, channels, frames, config(), 257);
         const long long before = alloc::bytes.load();
         MasteringChain chain;
@@ -251,6 +296,128 @@ int main()
         ok (replayBegun && preparation == StepResult::More && restarted && state == StepResult::Done
             && delivery.finishJob() && same (oracle, got),
             "a cancelled preparation and a repeat produce the same output");
+    }
+    group ("whole job: bounded preparation and retained workspace declaration");
+    {
+        bool admitted = true;
+        for (double a : { 44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0 })
+            for (double b : { 44100.0, 48000.0, 88200.0, 96000.0, 176400.0, 192000.0 })
+                admitted &= DeliveredMastering::storageFor (a, b, 2, 1, config(), 1 << 22).ok;
+        ok (admitted, "all standard delivery rate pairs admit a large requested job block");
+    }
+    {
+        constexpr int hugeBlock = 1 << 22;
+        Audio source (2, 1), got (2, 2);
+        MasteringChain chain; OfflineRenderer renderer; DeliveredMastering delivery;
+        const MasteringChainParams params;
+        const bool began = delivery.beginJob (chain, renderer, 48000.0, 48000.0, 2, 1,
+                                              config(), params, hugeBlock, source.in, got.out, 1);
+        const long long before = alloc::bytes.load();
+        const StepResult twoSteps = began ? delivery.stepJob (2) : StepResult::Failed;
+        const long long asked = alloc::bytes.load() - before;
+        ok (began && twoSteps == StepResult::More && asked < (1 << 20),
+            "unit preparation never initializes a multi-megabyte renderer block");
+        delivery.cancelJob();
+        const auto large = DeliveredMastering::storageFor (48000.0, 48000.0, 2, 1, config(), 1 << 20);
+        const auto small = DeliveredMastering::storageFor (48000.0, 48000.0, 2, 1, config(), 257);
+        const auto reused = delivery.storageForJob (48000.0, 48000.0, 2, 1, config(), 257);
+        ok (large.ok && small.ok && reused.ok
+            && reused.workspaceBytes >= small.workspaceBytes + large.workspaceBytes
+            && reused.maxLiveBytes >= reused.sourceBytes + reused.outputBytes + reused.workspaceBytes,
+            "a reused job quote includes retained capacity and the replacement peak");
+    }
+    {
+        Audio source (2, 1), got (2, 3);
+        MasteringChain chain; OfflineRenderer renderer; DeliveredMastering delivery;
+        MasteringChainParams params;
+        const bool began = delivery.beginJob (chain, renderer, 44100.0, 96000.0, 2, 1,
+                                              config(), params, 1 << 22, source.in, got.out, 3);
+        const StepResult first = began ? delivery.stepJob (2) : StepResult::Failed;
+        const long long before = alloc::bytes.load();
+        const StepResult converter = first == StepResult::More ? delivery.stepJob (1) : StepResult::Failed;
+        const long long asked = alloc::bytes.load() - before;
+        ok (began && first == StepResult::More && converter == StepResult::More
+            && asked <= (long long) DeliveredMastering::kMaxPreparationStageBytes,
+            "a rate-changing job bounds converter buffers and coefficient preparation per step ("
+            + std::to_string (asked) + " bytes)");
+        delivery.cancelJob();
+    }
+    {
+        constexpr long long frames = 9001;
+        constexpr int block = 1 << 22;
+        const long long delivered = DeliveredMastering::deliveredFrames (44100.0, 96000.0, frames);
+        Audio source (2, frames), converted (2, delivered), oracle (2, delivered), got (2, delivered);
+        for (int c = 0; c < 2; ++c)
+            for (long long i = 0; i < frames; ++i)
+                source.out[c][i] = (float) (0.25 * std::sin (0.017 * i + c));
+        source.out[1][frames - 1] = 0.99f;
+        MasteringChain oldChain, chain; OfflineRenderer renderer; DeliveredMastering delivery;
+        MasteringChainParams params;
+        const bool old = legacyConvert (44100.0, 96000.0, 2, frames, source.in, converted.out, delivered)
+            && oldChain.prepare (96000.0, 2, config())
+            && testing::previousRender (oldChain, converted.in, oracle.out, 2, (int) delivered, 257);
+        const bool began = delivery.beginJob (chain, renderer, 44100.0, 96000.0, 2, frames,
+                                              config(), params, block, source.in, got.out, delivered);
+        StepResult state = StepResult::More;
+        for (int i = 0; began && state == StepResult::More && i < 100000; ++i)
+            state = delivery.stepJob ((i % 3) + 1);
+        ok (old && began && state == StepResult::Done && delivery.finishJob() && same (oracle, got),
+            "a capped large-block job preserves the previous whole conversion and renderer bits");
+    }
+    {
+        Audio source (2, 1), got (2, 2);
+        MasteringChain chain; OfflineRenderer renderer; DeliveredMastering delivery;
+        MasteringChainParams params;
+        bool covered = true;
+        std::string detail;
+        std::uint64_t lifetimeAsked = 0;
+        std::uint64_t repeatedQuote = 0;
+        int jobs = 0;
+        for (int block : { 257, 1024, 257 })
+        {
+            const auto quote = delivery.storageForJob (44100.0, 48000.0, 2, 1, config(), block);
+            if (jobs == 2) repeatedQuote = quote.workspaceBytes;
+            bool ran = false;
+            const auto spent = session::testing::spend ([&]
+            {
+                if (! delivery.beginJob (chain, renderer, 44100.0, 48000.0, 2, 1, config(), params,
+                                         block, source.in, got.out, 2)) return;
+                StepResult state = StepResult::More;
+                for (int guard = 0; state == StepResult::More && guard < 10000; ++guard)
+                    state = delivery.stepJob (100000);
+                ran = state == StepResult::Done && delivery.finishJob();
+            });
+            const bool pass = quote.ok && ran && session::testing::covers (quote.workspaceBytes, spent)
+                && quote.workspaceBytes >= lifetimeAsked + (std::uint64_t) spent.bytes;
+            covered &= pass;
+            lifetimeAsked += (std::uint64_t) spent.bytes;
+            if (! pass) detail += " block " + std::to_string (block) + " ran " + std::to_string (ran)
+                + " " + session::testing::describe (quote.workspaceBytes, spent);
+            ++jobs;
+        }
+        covered &= delivery.storageForJob (44100.0, 48000.0, 2, 1, config(), 257).workspaceBytes == repeatedQuote;
+        const auto beforeCancel = delivery.storageForJob (44100.0, 48000.0, 2, 1, config(), 1024);
+        const auto cancelled = session::testing::spend ([&]
+        {
+            if (delivery.beginJob (chain, renderer, 44100.0, 48000.0, 2, 1, config(), params,
+                                   1024, source.in, got.out, 2))
+                (void) delivery.stepJob (2);
+            delivery.cancelJob();
+        });
+        const bool cancelCovered = beforeCancel.ok && session::testing::covers (beforeCancel.workspaceBytes, cancelled)
+            && beforeCancel.workspaceBytes >= lifetimeAsked + (std::uint64_t) cancelled.bytes;
+        covered &= cancelCovered;
+        lifetimeAsked += (std::uint64_t) cancelled.bytes;
+        if (! cancelCovered) detail += " cancel " + session::testing::describe (beforeCancel.workspaceBytes, cancelled);
+        const auto refused = session::testing::spend ([&]
+        {
+            (void) delivery.beginJob (chain, renderer, 44100.0, 48000.0, 2, 1, config(), params,
+                                      0, source.in, got.out, 2);
+        });
+        const bool refusalCovered = refused.bytes == 0 && ! delivery.storageForJob (44100.0, 48000.0, 2, 1, config(), 0).ok;
+        covered &= refusalCovered;
+        if (! refusalCovered) detail += " refusal " + std::to_string (refused.bytes);
+        ok (covered, "DeclaredBudget covers growth, shrink, cancellation and refusal on one reused job object" + detail);
     }
     return felitronics::test::report();
 }

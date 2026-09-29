@@ -1127,7 +1127,8 @@ public:
         deliveryConverter_ = &converter;
         deliverySource_ = source;
         deliveryFrames_ = sourceFrames;
-        DeliveryReset reset { *this, converter, sourceFrames, nonFiniteCount };
+        deliveryFirstCountReady_ = false;
+        DeliveryReset reset { *this, nonFiniteCount };
         return solve (chain, renderer, params, source, out, numChannels, frames, req, progress);
     }
 
@@ -1838,16 +1839,24 @@ public:
     }
 
 private:
+    void captureDeliveryCount() noexcept
+    {
+        if (deliveryConverter_ != nullptr && ! deliveryFirstCountReady_
+            && deliveryConverter_->readFrames() == deliveryFrames_)
+        {
+            deliveryFirstCount_ = deliveryConverter_->nonFiniteInputSamples();
+            deliveryFirstCountReady_ = true;
+        }
+    }
+
     struct DeliveryReset
     {
         TargetLoudnessSolver& owner;
-        DeliveryConverter& converter;
-        long long sourceFrames;
         std::uint64_t* nonFiniteCount;
         ~DeliveryReset() noexcept
         {
-            if (nonFiniteCount != nullptr && converter.readFrames() == sourceFrames)
-                *nonFiniteCount = converter.nonFiniteInputSamples();
+            if (nonFiniteCount != nullptr && owner.deliveryFirstCountReady_)
+                *nonFiniteCount = owner.deliveryFirstCount_;
             owner.deliveryConverter_ = nullptr;
             owner.deliverySource_ = nullptr;
             owner.deliveryFrames_ = 0;
@@ -2322,6 +2331,7 @@ private:
             {
                 if (! deliveryConverter_->begin (deliverySource_, p.nch, deliveryFrames_, p.out, p.frames))
                     { p.phase = Phase::Failed; return StepResult::Failed; }
+                captureDeliveryCount();
                 for (int c = 0; c < p.nch; ++c) p.converted[c] = p.out[c];
                 renderInput = p.converted;
             }
@@ -2344,6 +2354,7 @@ private:
                     p.conversion = deliveryConverter_->step (std::min<long long> (budget,
                         p.clock->piece (p.renderer->blockSize())));
                     if (p.conversion == StepResult::Failed) { p.phase = Phase::Failed; return StepResult::Failed; }
+                    captureDeliveryCount();
                     const long long conversionWork = deliveryConverter_->workFrames() - workBefore;
                     budget -= conversionWork; p.work += conversionWork;
                     if (! p.clock->advance (deliveryConverter_->readFrames() - readBefore))
@@ -2708,6 +2719,7 @@ private:
         };
         if (deliveryConverter_ == nullptr) return renderer.render (chain, in, out, nch, frames, taps, sink, &clock);
         if (! deliveryConverter_->begin (deliverySource_, nch, deliveryFrames_, out, frames)) return false;
+        captureDeliveryCount();
         const float* converted[core::kMaxChannels] {};
         for (int c = 0; c < nch; ++c) converted[c] = out[c];
         if (! renderer.begin (chain, converted, out, nch, frames, taps)) return false;
@@ -2719,6 +2731,7 @@ private:
                 const long long before = deliveryConverter_->readFrames();
                 conversion = deliveryConverter_->step (clock.piece (renderer.blockSize()));
                 if (conversion == StepResult::Failed) return false;
+                captureDeliveryCount();
                 if (! clock.advance (deliveryConverter_->readFrames() - before)) return false;
             }
             rendering = renderer.step (chain, taps, sink, renderer.blockSize(),
@@ -2941,6 +2954,8 @@ private:
     std::optional<PassWorkspace> pass_;
 
     DeliveryConverter* deliveryConverter_ = nullptr;
+    std::uint64_t deliveryFirstCount_ = 0;
+    bool deliveryFirstCountReady_ = false;
     const float* const* deliverySource_ = nullptr;
     long long deliveryFrames_ = 0;
 
