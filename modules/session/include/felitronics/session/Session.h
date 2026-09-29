@@ -94,6 +94,7 @@ struct Kept
     MasterId id = 0;
     Recipe recipe {};
     std::optional<LandingSummary> landing;
+    std::optional<MasterReport> report;
 };
 
 // The source a load gave, as the session holds it. The name and the samples live in the session until a different source is loaded.
@@ -282,6 +283,8 @@ private:
     [[nodiscard]] Phase jobProgress (JobId job) const noexcept;
     void dropJob (JobId job) noexcept;
     void clearMasters() noexcept;
+    void settleMasterCrest (MeasurementReason reason) noexcept;
+    void stepMasterCrestJoin() noexcept;
     [[nodiscard]] SnapshotView buildView() const noexcept;
     [[nodiscard]] SnapshotView buildSummary (std::span<MeasurementResult> results) const noexcept;
     [[nodiscard]] bool hasWork() const noexcept;
@@ -351,6 +354,8 @@ private:
     MasterAudio masterAudio_ {};
     std::size_t masterCount_ = 0;
     std::size_t masterRoom_ = 0;
+    std::size_t crestJoinIndex_ = 0;
+    bool crestJoin_ = false;
 };
 
 } // namespace felitronics::session

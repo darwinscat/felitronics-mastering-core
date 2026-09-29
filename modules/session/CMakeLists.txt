@@ -297,6 +297,12 @@ if(FELITRONICS_BUILD_TESTS)
     target_compile_options(felitronics_session_master_job_tests PRIVATE ${FELITRONICS_SESSION_COMPILE_OPTIONS})
     add_test(NAME felitronics_session_master_job_tests COMMAND felitronics_session_master_job_tests)
 
+    add_executable(felitronics_session_master_report_tests tests/MasterReportTests.cpp)
+    target_link_libraries(felitronics_session_master_report_tests PRIVATE felitronics::session felitronics::test_support)
+    target_compile_features(felitronics_session_master_report_tests PRIVATE cxx_std_20)
+    target_compile_options(felitronics_session_master_report_tests PRIVATE ${FELITRONICS_SESSION_COMPILE_OPTIONS})
+    add_test(NAME felitronics_session_master_report_tests COMMAND felitronics_session_master_report_tests)
+
     add_executable(felitronics_session_direct_oracle_tests tests/SessionDirectOracleTests.cpp)
     target_link_libraries(felitronics_session_direct_oracle_tests PRIVATE felitronics::session felitronics::test_support)
     target_compile_features(felitronics_session_direct_oracle_tests PRIVATE cxx_std_20)

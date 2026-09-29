@@ -7,6 +7,7 @@
 #include "Utf8.h"
 #include <bit>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <optional>
 #include <type_traits>
@@ -14,6 +15,11 @@
 
 namespace felitronics::session::detail
 {
+inline constexpr bool maskValue (double value) noexcept
+{
+    const auto bits = std::bit_cast<std::uint64_t> (value);
+    return (bits & 0x7fffffffffffffffull) == 0u || bits == std::bit_cast<std::uint64_t> (1.0);
+}
 // The same walk sizes and writes. It never allocates, including in a debug standard library.
 struct Writer
 {
@@ -146,6 +152,8 @@ struct Storage
     LandingPass* landingPass = nullptr;
     std::size_t landingTraceRows = 0;
     LandingTraceBucket* landingTraceRow = nullptr;
+    std::size_t masterCrestRows = 0;
+    double* masterCrestRow = nullptr;
     std::uint64_t bytes() const noexcept
     {
         return std::uint64_t (measurementResults) * sizeof (MeasurementResult)
@@ -153,7 +161,8 @@ struct Storage
              + std::uint64_t (measurementArrays) * sizeof (MeasurementArray)
              + std::uint64_t (measurementRows) * sizeof (double) + chars + masters * sizeof (Kept) + points * sizeof (ReadingPoint) + runs * sizeof (ReadingRun) + differences * sizeof (MachineDifference) + eqPoints * sizeof (EqPoint)
              + std::uint64_t (landingPasses) * sizeof (LandingPass)
-             + std::uint64_t (landingTraceRows) * sizeof (LandingTraceBucket);
+             + std::uint64_t (landingTraceRows) * sizeof (LandingTraceBucket)
+             + std::uint64_t (masterCrestRows) * sizeof (double);
     }
 };
 
@@ -168,6 +177,8 @@ struct Reader
     unsigned ordinal = 0;
     bool matched = false;
     std::uint64_t optionalMask = 0;
+    bool masterCrestContext = false;
+    std::size_t crestBandCount = 0, crestMaskCount = 0;
     std::uint64_t traceSamples = 0, traceNonFinite = 0;
 
     void space() noexcept { while (pos < input.size() && (input[pos] == ' ' || input[pos] == '\n' || input[pos] == '\r' || input[pos] == '\t')) ++pos; }
@@ -337,11 +348,16 @@ struct Reader
             const auto parentSeen = seen; const auto parentKey = key;
             const auto parentOrdinal = ordinal; const auto parentMatched = matched;
             const auto parentOptional = optionalMask;
+            const auto parentMasterCrest = masterCrestContext;
+            const auto parentCrestBands = crestBandCount, parentCrestMask = crestMaskCount;
             [[maybe_unused]] const auto parentTraceSamples = traceSamples, parentTraceNonFinite = traceNonFinite;
             const auto beforeRows = storage.measurementRows, beforeChars = storage.chars;
             const auto beforeNumbers = storage.measurementNumbers, beforeArrays = storage.measurementArrays;
             const auto beforePasses = storage.landingPasses, beforeTraceRows = storage.landingTraceRows;
+            const auto beforeCrestRows = storage.masterCrestRows;
             seen = 0; optionalMask = 0;
+            if constexpr (std::is_same_v<T, MasterCrest>)
+            { masterCrestContext = true; crestBandCount = crestMaskCount = 0; }
             if constexpr (std::is_same_v<T, LandingTrace>) { traceSamples = 0; traceNonFinite = 0; }
             expect ('{');
             do
@@ -396,7 +412,53 @@ struct Reader
                     || x.nonFinite > std::numeric_limits<std::uint64_t>::max() - traceNonFinite) good = false;
                 else { traceSamples += x.samples; traceNonFinite += x.nonFinite; }
             }
+            else if constexpr (std::is_same_v<T, MasterCrest>)
+            {
+                const auto count = storage.masterCrestRows - beforeCrestRows;
+                if (x.version != 1 || (x.blocks != 0 && (x.sampleRateHz == 0 || x.hopFrames == 0 || x.blockHops == 0))
+                    || ! std::isfinite (x.edgeLowHz) || ! std::isfinite (x.edgeMidHz)
+                    || ! std::isfinite (x.edgeHighHz) || x.edgeLowHz < 0
+                    || x.edgeMidHz < x.edgeLowHz || x.edgeHighHz < x.edgeMidHz
+                    || x.blocks > crestBandCount / 10u || crestBandCount != x.blocks * 10u
+                    || crestMaskCount != (x.status == MeasurementStatus::Ready ? x.blocks * 5u : 0u)
+                    || count != crestBandCount + crestMaskCount
+                    || (x.status == MeasurementStatus::Ready ? x.reason != MeasurementReason::None || ! x.complete
+                        : x.reason == MeasurementReason::None)) good = false;
+            }
+            else if constexpr (std::is_same_v<T, MasterReport>)
+            {
+                if (! std::isfinite (x.targetLufs) || ! std::isfinite (x.ceilingDbTp)
+                    || x.checkPasses > 1
+                    || (x.status == MeasurementStatus::Ready
+                        && (! x.achievedLufs || ! x.truePeakDbTp || ! x.missLu || ! x.gainFromSourceDb))
+                    || (x.deliverable && (x.status != MeasurementStatus::Ready || ! x.peakSafe))
+                    || (x.peakSafe && (! x.truePeakDbTp || *x.truePeakDbTp > x.ceilingDbTp))
+                    || (x.crest.status == MeasurementStatus::Ready
+                        && x.checkPasses != (x.crest.sourceRateCheck ? 1u : 0u))
+                    || (x.status == MeasurementStatus::Ready ? x.reason != MeasurementReason::None
+                        : x.reason == MeasurementReason::None)
+                    || (x.lraLu ? x.lraReason != MeasurementReason::None
+                        : x.lraReason == MeasurementReason::None)
+                    || (x.plrDb ? x.plrReason != MeasurementReason::None
+                        : x.plrReason == MeasurementReason::None)) good = false;
+                for (const auto& value : { x.achievedLufs, x.truePeakDbTp, x.lraLu,
+                                           x.plrDb, x.gainFromSourceDb, x.missLu })
+                    if (value && ! std::isfinite (*value)) good = false;
+            }
+            else if constexpr (std::is_same_v<T, MasterHint>)
+            {
+                if (x.reason == LandingReason::None || ! std::isfinite (x.evidence)
+                    || x.percent != (x.reason == LandingReason::ExcessSubBass
+                                  || x.reason == LandingReason::DarkMix)) good = false;
+            }
+            else if constexpr (std::is_same_v<T, Kept>)
+            {
+                if (x.report && (! x.landing || x.report->deliverable != x.landing->deliverable
+                    || x.report->targetMet != (x.landing->status == LandingStatus::Solved))) good = false;
+            }
             optionalMask = parentOptional;
+            masterCrestContext = parentMasterCrest;
+            crestBandCount = parentCrestBands; crestMaskCount = parentCrestMask;
             if constexpr (std::is_same_v<T, LandingTrace>)
                 { traceSamples = parentTraceSamples; traceNonFinite = parentTraceNonFinite; }
             seen = parentSeen; key = parentKey; ordinal = parentOrdinal; matched = parentMatched;
@@ -419,7 +481,11 @@ struct Reader
         else if constexpr (std::is_same_v<T, MeasurementResult>) { count = &storage.measurementResults; out = storage.measurementResult; }
         else if constexpr (std::is_same_v<T, MeasurementValue>) { count = &storage.measurementNumbers; out = storage.measurementNumber; }
         else if constexpr (std::is_same_v<T, MeasurementArray>) { count = &storage.measurementArrays; out = storage.measurementArray; }
-        else if constexpr (std::is_same_v<T, double>) { count = &storage.measurementRows; out = storage.measurementRow; }
+        else if constexpr (std::is_same_v<T, double>)
+        {
+            count = masterCrestContext ? &storage.masterCrestRows : &storage.measurementRows;
+            out = masterCrestContext ? storage.masterCrestRow : storage.measurementRow;
+        }
         else { count = &storage.differences; out = storage.difference; }
         const auto start = *count;
         std::uint32_t analyzers = 0;
@@ -429,6 +495,10 @@ struct Reader
             do
             {
                 T row {}; value (row);
+                if constexpr (std::is_same_v<T, double>)
+                    if (masterCrestContext && (! std::isfinite (row)
+                        || (key == "rows" && row < 0.0)
+                        || (key == "sourceMask" && ! maskValue (row)))) good = false;
                 if constexpr (std::is_same_v<T, MeasurementResult>)
                 {
                     const auto bit = 1u << unsigned (row.analyzer);
@@ -441,6 +511,11 @@ struct Reader
             expect (']');
         }
         if (out) rows = { out + start, *count - start };
+        if constexpr (std::is_same_v<T, double>) if (masterCrestContext)
+        {
+            if (key == "rows") crestBandCount = *count - start;
+            else if (key == "sourceMask") crestMaskCount = *count - start;
+        }
     }
     template <class T, class D> void optionalField (std::string_view name, T& x, const D& defaultValue) noexcept
     {

@@ -50,6 +50,41 @@ bool valid (const SnapshotView& v) noexcept
                     if (trace->complete && (samples != trace->samples || nonFinite != trace->nonFinite)) return false;
                 }
         }
+    for (const Kept& master : v.masters) if (master.report)
+    {
+        const auto& r = *master.report;
+        const auto& c = r.crest;
+        if (! master.landing || r.deliverable != master.landing->deliverable
+            || r.targetMet != (master.landing->status == LandingStatus::Solved)
+            || ! std::isfinite (r.targetLufs) || ! std::isfinite (r.ceilingDbTp)
+            || r.checkPasses > 1
+            || (r.status == MeasurementStatus::Ready
+                && (! r.achievedLufs || ! r.truePeakDbTp || ! r.missLu || ! r.gainFromSourceDb))
+            || (r.deliverable && (r.status != MeasurementStatus::Ready || ! r.peakSafe))
+            || (r.peakSafe && (! r.truePeakDbTp || *r.truePeakDbTp > r.ceilingDbTp))
+            || (c.status == MeasurementStatus::Ready
+                && r.checkPasses != (c.sourceRateCheck ? 1u : 0u))
+            || (r.status == MeasurementStatus::Ready ? r.reason != MeasurementReason::None
+                : r.reason == MeasurementReason::None)
+            || (r.lraLu ? r.lraReason != MeasurementReason::None
+                : r.lraReason == MeasurementReason::None)
+            || (r.plrDb ? r.plrReason != MeasurementReason::None
+                : r.plrReason == MeasurementReason::None)
+            || c.version != 1 || (c.blocks != 0 && (c.sampleRateHz == 0 || c.hopFrames == 0 || c.blockHops == 0))
+            || c.blocks > c.rows.size() / 10u || c.rows.size() != c.blocks * 10u
+            || c.sourceMask.size() != (c.status == MeasurementStatus::Ready ? c.blocks * 5u : 0u)
+            || (c.status == MeasurementStatus::Ready ? c.reason != MeasurementReason::None || ! c.complete
+                : c.reason == MeasurementReason::None)) return false;
+        for (double value : c.rows) if (! std::isfinite (value) || value < 0) return false;
+        for (double value : c.sourceMask) if (! detail::maskValue (value)) return false;
+        for (const auto& value : { r.achievedLufs, r.truePeakDbTp, r.lraLu, r.plrDb,
+                                   r.gainFromSourceDb, r.missLu })
+            if (value && ! std::isfinite (*value)) return false;
+        for (const auto& hint : { r.firstHint, r.secondHint })
+            if (hint && (hint->reason == LandingReason::None || ! std::isfinite (hint->evidence)
+                || hint->percent != (hint->reason == LandingReason::ExcessSubBass
+                                  || hint->reason == LandingReason::DarkMix))) return false;
+    }
     const auto& m = v.measurementStorage;
     for (const auto bytes : { m.sourceBytes, m.resultBytes, m.workspaceBytes, m.copyBytes,
                              m.codecBytes, m.allocatorBytes, m.loadPeakBytes, m.workPeakBytes, m.peakBytes, m.largestBlockBytes, v.needlesBytes, v.needlesLargestBlockBytes })
@@ -99,6 +134,7 @@ CodecStatus Codec::decode (std::string_view json, Snapshot& output) noexcept
     if (sizes.masters) out.masters_.reset (new Kept[sizes.masters]);
     if (sizes.landingPasses) out.landingPasses_.reset (new LandingPass[sizes.landingPasses]);
     if (sizes.landingTraceRows) out.landingTraceRows_.reset (new LandingTraceBucket[sizes.landingTraceRows]);
+    if (sizes.masterCrestRows) out.masterCrestRows_.reset (new double[sizes.masterCrestRows]);
     if (sizes.points) out.points_.reset (new ReadingPoint[sizes.points]);
     if (sizes.runs) out.runs_.reset (new ReadingRun[sizes.runs]);
     if (sizes.differences) out.differences_.reset (new MachineDifference[sizes.differences]);
@@ -115,6 +151,7 @@ CodecStatus Codec::decode (std::string_view json, Snapshot& output) noexcept
     storage.measurementRow = out.measurements_.rows_.get();
     storage.landingPass = out.landingPasses_.get();
     storage.landingTraceRow = out.landingTraceRows_.get();
+    storage.masterCrestRow = out.masterCrestRows_.get();
     const bool filled = read (json, storage, out.view_);
     detail::debugBound (filled);
     output = std::move (out);

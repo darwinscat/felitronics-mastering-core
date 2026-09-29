@@ -536,6 +536,8 @@ Answer Session::apply (const Request& request) noexcept
         rows.passes.reset (new LandingPass[12]);
         rows.traces.reset (new LandingTraceBucket[std::size_t (2 * plan.traceBuckets)]);
         rows.traceCapacity = std::uint32_t (plan.traceBuckets);
+        if (plan.crestCapacity != 0) rows.crest.reset (new double[plan.crestCapacity * 15u]);
+        rows.crestCapacity = plan.crestCapacity;
         masterJob_.reset (new detail::MasterJob);
         if (! masterJob_->begin (*this, plan)) detail::storageOverflow();
         masterJobBytes_ = plan.bytes;
@@ -583,6 +585,7 @@ Answer Session::apply (const Request& request) noexcept
                 masterRows_[masterCount_ - 1] = {};
         }
         --masterCount_;
+        if (crestJoin_ && index < crestJoinIndex_) --crestJoinIndex_;
     }
     else if (std::holds_alternative<command::ImportProject> (request))
     {
@@ -690,7 +693,7 @@ bool Driver::mastered (Session& session, JobId job) noexcept
     if (job == 0 || job != session.job_) return false;
     if (Session::checkFloatingPointEnvironment() != Status::Ok || ! allowed (session, Event::Mastered)) return false;
     detail::debugBound (session.masterRoom_ > session.masterCount_);
-    session.masters_[session.masterCount_++] = { session.job_, session.jobRecipe_, {} };   // into the room master() took
+    session.masters_[session.masterCount_++] = { session.job_, session.jobRecipe_, {}, {} };   // into the room master() took
     session.mastering_ = false;
     session.job_ = 0;
     session.jobRecipe_ = {};

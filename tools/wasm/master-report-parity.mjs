@@ -1,0 +1,31 @@
+// SPDX-License-Identifier: AGPL-3.0-or-later
+// Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
+
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const output = readFileSync(process.argv[2], 'utf8');
+assert.match(output, /ALL TESTS PASSED/);
+assert.match(output, /^master-report-gain-digest=609a46efee2c2887$/m);
+
+// Native AppleClang Release values. The core's rational SRC deliberately uses libm sine for
+// coefficient design, so its PCM is compared numerically across tiers. The same-rate path is exact.
+const native = [
+    [-13.999999840056, -2.904884513397, 0.000000159944, 32272.600098657422, 18.460705399288],
+    [-14.000000213604, -4.344040783315, -0.000000213604, 31578.327480815136, 9.997968443598],
+    [-14.000000237683, -7.736064824797, -0.000000237683, 29086.524523220956, 10.090999264156]
+];
+const tolerance = [0.0001, 0.0001, 0.0001, 0.01, 0.001];
+const lines = [...output.matchAll(/^master-report-parity (\d+) (.+)$/gm)];
+assert.equal(lines.length, native.length);
+for (let row = 0; row < lines.length; ++row) {
+    assert.equal(Number(lines[row][1]), row);
+    const values = lines[row][2].split(' ').map(Number);
+    assert.equal(values.length, 5);
+    for (let field = 0; field < values.length; ++field) {
+        assert(Number.isFinite(values[field]));
+        assert(Math.abs(values[field] - native[row][field]) <= tolerance[field],
+            `parity case ${row}, field ${field}: ${values[field]} differs from ${native[row][field]}`);
+    }
+}
+console.log('master report: same-rate bits and SRC numeric parity agree with native');
