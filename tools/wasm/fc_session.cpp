@@ -827,7 +827,8 @@ FC_EXPORT fc_session_status fc_session_master (fc_session session, std::uint32_t
     if (const auto st = masterInputs (topology, params); st != FC_SESSION_OK) return st;
     if (joined (source_low, source_high) != slot->session->source().hash
         || joined (revision_low, revision_high) != slot->session->revision()) return FC_SESSION_ERR_STALE;
-    if (overlap (topology, sizeof (*topology), answer, capacity)
+    if (overlap (answer, capacity, written, sizeof (*written))
+        || overlap (topology, sizeof (*topology), answer, capacity)
         || overlap (params, sizeof (*params), answer, capacity)
         || overlap (topology, sizeof (*topology), written, sizeof (*written))
         || overlap (params, sizeof (*params), written, sizeof (*written))) return FC_SESSION_ERR_OVERLAP;

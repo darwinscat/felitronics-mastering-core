@@ -374,15 +374,7 @@ Answer Session::apply (const Request& request) noexcept
         std::copy (given.begin(), given.end(), name.get());
         // End mastering and source-specific edits. A matching measurement key keeps PCM and results;
         // otherwise release the previous measurement before allocating the new source.
-        mastering_ = false;
-        job_ = 0;
-        jobRecipe_ = {};
-        masterJob_.reset(); masterJobBytes_ = 0;
-        masterAudio_ = {}; pendingMaster_ = {};
-        masters_.reset();
-        masterRows_.reset();
-        masterCount_ = 0;
-        masterRoom_ = 0;
+        clearMasters();
         clearNeedles();
         needlesSource_ = 0; needlesKey_ = 0; needlesNeedDb_.reset(); needlesCeilingDb_.reset();
         needlesProgress_ = {}; needlesDemand_ = {};
@@ -585,7 +577,10 @@ Answer Session::apply (const Request& request) noexcept
         if (masterRows_)
         {
             for (std::size_t i = index; i + 1 < masterCount_; ++i) masterRows_[i] = std::move (masterRows_[i + 1]);
-            masterRows_[masterCount_ - 1] = {};
+            if (masterJob_)
+                masterRows_[masterCount_ - 1] = std::move (masterRows_[masterCount_]);
+            else
+                masterRows_[masterCount_ - 1] = {};
         }
         --masterCount_;
     }

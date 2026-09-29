@@ -8,6 +8,7 @@
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Session.h>
 #include <felitronics/session/Snapshot.h>
+#include <felitronics/mastering/LandingSearch.h>
 #include <algorithm>
 #include <bit>
 #include <cstdint>
@@ -16,6 +17,7 @@
 #include <vector>
 
 using namespace felitronics::session;
+namespace mastering = felitronics::mastering;
 using felitronics::test::ok;
 namespace alloc = felitronics::test::alloc;
 namespace budget = felitronics::session::testing;
@@ -70,6 +72,47 @@ void ready (fc_master_config& config, fc_master_params& params)
     params.header = { FC_MASTER_ABI_VERSION, sizeof (params) };
     params.compressorMix = 1.0;
 }
+bool directDacd2b2 (const Session& session, std::vector<float>& pcm,
+                    mastering::LoudnessSolution& result)
+{
+    std::vector<float> source (frames * 2u);
+    for (std::uint32_t i = 0; i < frames; ++i)
+    {
+        source[i] = float (int ((i * 17u) % 251u) - 125) / 4096.0f;
+        source[frames + i] = float (int ((i * 19u + 7u) % 251u) - 125) / 4096.0f;
+    }
+    const float* input[2] { source.data(), source.data() + frames };
+    pcm.resize (source.size());
+    float* output[2] { pcm.data(), pcm.data() + frames };
+    mastering::MasteringChainConfig topology;
+    topology.eq = topology.compressor = topology.dither = false;
+    topology.compressorLookaheadMs = 0.0;
+    topology.limiterLookaheadMs = 1.0;
+    mastering::MasteringChainParams params;
+    params.limiter.ceilingDbTp = -1.15;
+    params.limiter.releaseMs = 0.0;
+    params.limiter.slowReleaseMs = 0.0;
+    params.limiter.overCeilingDb = 0.0;
+    mastering::LoudnessRequest request;
+    request.targetLufs = -14.0; request.maxTruePeakDbTp = -1.0;
+    request.toleranceLu = 0.1; request.truePeakAimDb = 0.05;
+    request.maxPasses = 12; request.initialGainDb = 4.0;
+    request.normalizationGainDb = -18.0 - session.snapshot().view().integratedLufs;
+    request.productLanding = true;
+    request.grTraceBuckets = mastering::GainReductionTrace::kDefaultBuckets;
+    mastering::MasteringChain chain;
+    mastering::OfflineRenderer renderer;
+    mastering::TargetLoudnessSolver solver;
+    if (! chain.prepare (rate, 2, topology) || ! renderer.prepare (2, 1024)
+        || ! solver.prepare (rate, 2, 1024, topology.internalBlock, topology.oversampleFactor)) return false;
+    chain.setParams (params);
+    mastering::LandingSearch search (solver);
+    if (! search.begin (chain, renderer, params, input, frames, rate, output, 2, frames, request)) return false;
+    mastering::StepResult state = mastering::StepResult::More;
+    for (unsigned i = 0; state == mastering::StepResult::More && i < 200000; ++i) state = search.step (73);
+    result = search.result();
+    return state == mastering::StepResult::Done;
+}
 fc_session_master_token token (const MasterToken& t)
 {
     return { sizeof (fc_session_master_token), std::uint32_t (t.source), std::uint32_t (t.source >> 32),
@@ -94,6 +137,15 @@ int main()
     const auto priced = fc_session_master_bytes (handle, std::uint32_t (source), std::uint32_t (source >> 32),
         std::uint32_t (revision), std::uint32_t (revision >> 32), &topology, &params, &storage);
     ok (priced == FC_SESSION_OK && storage.rejection == 0 && storage.bytes > 0, "ready request has a preflight demand");
+    alignas (8) char aliased[FC_SESSION_ANSWER_BYTES] {};
+    fc_session_status overlapStatus = FC_SESSION_ERR_CONTRACT;
+    const auto overlapSpent = budget::spend ([&] {
+        overlapStatus = fc_session_master (handle, 77, 0, std::uint32_t (source), std::uint32_t (source >> 32),
+            std::uint32_t (revision), std::uint32_t (revision >> 32), &topology, &params,
+            aliased, sizeof (aliased), reinterpret_cast<std::uint32_t*> (aliased));
+    });
+    ok (overlapStatus == FC_SESSION_ERR_OVERLAP && overlapSpent.requests == 0 && session->job() == 0,
+        "overlapping answer and written are rejected before a master starts");
     char answer[FC_SESSION_ANSWER_BYTES]; std::uint32_t written = 0;
     fc_session_status started = FC_SESSION_ERR_CONTRACT;
     const auto spent = budget::spend ([&] { started = fc_session_master (handle, 2, 0, std::uint32_t (source), std::uint32_t (source >> 32),
@@ -129,7 +181,19 @@ int main()
                 digest = (digest ^ std::uint8_t (bits >> shift)) * 0x100000001b3ull;
         }
         std::printf ("session-master-audio=%016llx\n", static_cast<unsigned long long> (digest));
-        ok (digest == 0xb495c72924fd8746ull, "ready master PCM matches the native and wasm digest");
+        std::vector<float> previous;
+        mastering::LoudnessSolution prior;
+        const bool oracle = directDacd2b2 (*session, previous, prior);
+        const auto retained = session->masters();
+        const auto& published = *retained.front().landing;
+        ok (oracle && previous.size() == copied.size()
+            && std::memcmp (previous.data(), copied.data(), bytes) == 0
+            && published.achievedLufs && std::bit_cast<std::uint64_t> (*published.achievedLufs)
+                == std::bit_cast<std::uint64_t> (prior.achievedLufs)
+            && published.truePeakDbTp && std::bit_cast<std::uint64_t> (*published.truePeakDbTp)
+                == std::bit_cast<std::uint64_t> (prior.measured.truePeakDbTp)
+            && published.passes == std::uint32_t (prior.passes),
+            "C bridge matches the dacd2b2 direct PCM, LUFS, true peak and passes");
         const float* view = nullptr; std::uint32_t samples = 0;
         ok (fc_session_master_audio_view (handle, &t, &view, &samples) == FC_SESSION_OK
             && samples == copied.size() && std::memcmp (view, copied.data(), bytes) == 0,

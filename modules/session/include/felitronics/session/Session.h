@@ -281,6 +281,7 @@ private:
     void emit (Notification event, const Phase& progress) noexcept;
     [[nodiscard]] Phase jobProgress (JobId job) const noexcept;
     void dropJob (JobId job) noexcept;
+    void clearMasters() noexcept;
     [[nodiscard]] SnapshotView buildView() const noexcept;
     [[nodiscard]] SnapshotView buildSummary (std::span<MeasurementResult> results) const noexcept;
     [[nodiscard]] bool hasWork() const noexcept;

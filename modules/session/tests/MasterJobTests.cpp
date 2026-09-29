@@ -13,6 +13,17 @@
 using namespace felitronics::session;
 using felitronics::test::ok;
 namespace budget = felitronics::session::testing;
+namespace felitronics::session::detail
+{
+struct Inspector
+{
+    static bool noMasterOwners (const Session& s) noexcept
+    {
+        return ! s.masterJob_ && ! s.masterAudio_.samples && ! s.masterRows_ && ! s.masters_
+            && s.masterRoom_ == 0 && s.masterCount_ == 0 && s.masterJobBytes_ == 0;
+    }
+};
+}
 
 int main()
 {
@@ -96,9 +107,17 @@ int main()
     ok (s.releaseMaster (token) == MasterTransferStatus::Ok
         && s.releaseMaster (token) == MasterTransferStatus::Unknown
         && s.snapshot().view().canMaster, "release is explicit and permits the next master");
+    const auto olderMasterId = kept.id;
     auto next = ready; next.id = 5; next.revision = s.revision();
     const auto again = s.apply (next);
+    const auto forgottenWhileRunning = s.apply (command::Forget { 51, olderMasterId });
+    ok (again.rejection == Rejection::None && forgottenWhileRunning.rejection == Rejection::None
+        && s.job() == again.job && s.masters().empty(),
+        "forgetting an older master leaves the active render intact");
     for (unsigned i = 0; i < 40000 && s.job() != 0; ++i) (void) s.step (16);
+    ok (s.masters().size() == 1 && s.masters().front().landing
+        && s.pendingMaster().master == again.job,
+        "forgetting an older master preserves active rows through completion");
     const auto secondToken = s.pendingMaster();
     MasterAudio moved;
     ok (again.rejection == Rejection::None && secondToken.master != 0
@@ -109,7 +128,7 @@ int main()
     const auto cancelled = s.apply (next);
     ok (cancelled.rejection == Rejection::None
         && s.apply (command::Cancel { 7, cancelled.job }).rejection == Rejection::None
-        && s.masters().size() == 2, "cancel discards only unfinished work and retains completed metadata");
+        && s.masters().size() == 1, "cancel discards only unfinished work and retains completed metadata");
     next.id = 8; next.revision = s.revision();
     const auto replacing = s.apply (next);
     for (unsigned i = 0; i < 40000 && s.job() != 0; ++i) (void) s.step (16);
@@ -149,6 +168,20 @@ int main()
         && miss.landing->truePeakDbTp && *miss.landing->truePeakDbTp <= -6.0
         && s.pendingMaster().master == miss.id,
         "an unreachable loudness goal retains the best ceiling-safe PCM after twelve passes");
+    const auto sidecarToken = s.pendingMaster();
+    const auto sidecarBefore = s.liveBytes();
+    MeasuredSource replacementFacts { "sidecar.wav", s.source().hash + 1u, left.size(), rate, 2, rate, 24,
+        true, -18.0, -2.0 };
+    const auto sidecarDemand = s.loadMeasuredStorage (replacementFacts);
+    Answer sidecarLoaded;
+    const auto sidecarSpent = budget::spend ([&] { sidecarLoaded = s.loadMeasured (12, replacementFacts); });
+    ok (sidecarDemand.rejection == Rejection::None && sidecarLoaded.rejection == Rejection::None
+        && budget::covers (sidecarDemand.bytes, sidecarSpent)
+        && s.pendingMaster().master == 0 && s.masterAudioBytes (sidecarToken) == 0
+        && s.masters().empty() && detail::Inspector::noMasterOwners (s)
+        && ! s.snapshot().view().canMaster && s.snapshot().view().pendingMasterBytes == 0.0
+        && s.liveBytes() < sidecarBefore - double (left.size() * 2u * sizeof (float)),
+        "sidecar replacement releases the prior PCM, token, rows and job owners");
     std::vector<float> transient (2u * rate, 0.003f);
     transient.back() = 1.0f;
     const float* transientPlanes[] { transient.data(), transient.data() };
