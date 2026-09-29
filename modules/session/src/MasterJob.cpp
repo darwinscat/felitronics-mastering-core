@@ -489,7 +489,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         else
         {
             const auto view = MeasurementCrest::view (source);
-            const bool compatible = MasterCrestGrid::compatible (c, view);
+            const bool compatible = MasterCrestGrid::compatible (c, view, crestParams);
             if (compatible)
             { c.status = MeasurementStatus::Ready; c.reason = MeasurementReason::None; sourceMask = view.mask; }
             else { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Unsupported; }

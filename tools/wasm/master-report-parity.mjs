@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 const output = readFileSync(process.argv[2], 'utf8');
 assert.match(output, /ALL TESTS PASSED/);
 assert.match(output, /^master-report-gain-digest=2d4c43377c2c8dd9$/m);
+assert.match(output, /^master-late-crest-digest=cc70eb3ca552797c$/m);
 
 // Native AppleClang Release values. The core's rational SRC deliberately uses libm sine for
 // coefficient design, so its PCM is compared numerically across tiers. The same-rate path is exact.
@@ -46,4 +47,4 @@ for (let row = 0; row < costLines.length; ++row) {
             `cost parity case ${row}, field ${field}: ${values[field]} differs from ${nativeCost[row][field]}`);
     }
 }
-console.log('master report and cost: same-rate bits and SRC numeric parity agree with native');
+console.log('master report, late crest and cost: same-rate bits and SRC numeric parity agree with native');

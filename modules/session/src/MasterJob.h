@@ -35,6 +35,10 @@ struct MasterPlan
 
 struct MasterRows
 {
+    MasterId crestMasterId = 0;
+    std::uint64_t crestSource = 0, crestSourceKey = 0, crestReadyHash = 0, crestSound = 0;
+    std::uint32_t crestDeliveryRate = 0;
+    analysis::BandCrestParams crestParams {};
     std::unique_ptr<LandingPass[]> passes;
     std::unique_ptr<LandingTraceBucket[]> traces;
     std::uint32_t traceCapacity = 0;

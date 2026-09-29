@@ -25,6 +25,19 @@ bool MasterCrestGrid::compatible (const MasterCrest& master,
         && core::exactlyEqual (source.parameters.bandEdgeHz[1], master.edgeMidHz)
         && core::exactlyEqual (source.parameters.bandEdgeHz[2], master.edgeHighHz);
 }
+bool MasterCrestGrid::compatible (const MasterCrest& master,
+                                  const analysis::BandCrestResult& source,
+                                  const analysis::BandCrestParams& expected) noexcept
+{
+    return compatible (master, source)
+        && core::exactlyEqual (source.parameters.hopMs, expected.hopMs)
+        && source.parameters.blockHops == expected.blockHops
+        && core::exactlyEqual (source.parameters.programmeFloorDb, expected.programmeFloorDb)
+        && core::exactlyEqual (source.parameters.bandShareFloorDb, expected.bandShareFloorDb)
+        && core::exactlyEqual (source.parameters.bandEdgeHz[0], expected.bandEdgeHz[0])
+        && core::exactlyEqual (source.parameters.bandEdgeHz[1], expected.bandEdgeHz[1])
+        && core::exactlyEqual (source.parameters.bandEdgeHz[2], expected.bandEdgeHz[2]);
+}
 std::optional<text::Fact> MasterReportText::miss (const MasterReport& report) noexcept
 {
     if (report.status != MeasurementStatus::Ready || ! report.deliverable || report.targetMet

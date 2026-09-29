@@ -1180,6 +1180,8 @@ The synthetic site contract is `tools/contract/wav-input.json` plus
 <wasm-job-test.js> <fcore_session> --rebuild`, then omit `--rebuild` for the gate. The recording
 states the retrieval call sequence, input and artifact hashes, dependency and codec versions, the
 WAV header and the native/wasm digest, and cancel, unavailable, safe miss and unsafe outcomes.
+The same recording includes a late source crest completion after WAV release and wasm heap growth,
+with the source completion and master-keyed join events and snapshots on both sides of the join.
 
 ## Measured ready-master report
 
@@ -1195,14 +1197,18 @@ ru-first/en facts. PassLimit means the twelve-pass budget ended; it makes no cla
 `MasterCrest` stores five peak-amplitude/mean-square-power pairs per block, in Low, LowMid, HighMid, High,
 Full order, plus five source activity values per block as zero/one values. Version, sample rate, hop
 frames, block hops, three band corners, frame count, block count, completeness and provenance travel with
-the rows. Pairing requires all of these grid properties to match; equal row counts alone are insufficient.
+the rows. The retained row owner also holds its source measurement key, master id, captured recipe
+fingerprint, and the two activity gates and configured hop duration. A late join checks the retained
+identity and the complete grid before copying the source mask; equal row counts alone are insufficient.
 When delivery changes rate, exactly one additional render with the chosen settings runs at the source rate
 into bounded scratch for crest. The deliverable PCM and its LUFS/TP remain on the delivery rate, and
 `checkPasses` records the extra render separately from the landing's budget. Pending source crest and a
 final unavailable reason are distinct; either leaves a verified master available. Retained rows belong to
 the master until forget or source replacement, survive PCM transfer, and are copied by owned snapshots and
 the one generated codec. A late Pending-to-Ready or Pending-to-Unavailable change increments the revision
-and emits a master-keyed crest fact so an event-driven shell can refresh that report.
+and emits a master-keyed crest fact so an event-driven shell can refresh that report. Replacing the
+source removes the retained owners, while forgetting one master removes only its rows. A final source
+refusal settles Pending crest and all five crest cost bands with the same reason.
 
 ## Measured master cost
 

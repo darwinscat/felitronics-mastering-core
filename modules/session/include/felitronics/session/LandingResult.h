@@ -9,6 +9,8 @@
 #include <optional>
 #include <span>
 
+namespace felitronics::analysis { struct BandCrestParams; }
+
 namespace felitronics::session
 {
 enum class LandingStatus : std::uint8_t
@@ -132,5 +134,8 @@ struct MasterCrestGrid
 {
     [[nodiscard]] static bool compatible (const MasterCrest& master,
                                           const analysis::BandCrestResult& source) noexcept;
+    [[nodiscard]] static bool compatible (const MasterCrest& master,
+                                          const analysis::BandCrestResult& source,
+                                          const analysis::BandCrestParams& expected) noexcept;
 };
 } // namespace felitronics::session
