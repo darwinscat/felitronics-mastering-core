@@ -64,15 +64,10 @@ CORE="$(cd "$CORE" && pwd)"
 [ ! -d "$CORE/modules/mastering" ] && [ ! -f "$CORE/modules/analysis/include/felitronics/analysis/ProgrammeReport.h" ] \
     || { echo "$CORE still carries the mastering modules (felitronics-core before v0.52.0) — use a core without them"; exit 1; }
 echo "felitronics-core: $CORE"
-node - "$CORE/modules/io/include/felitronics/io/Wav.h" <<'JS'
-const {readFileSync} = require('node:fs');
-const {createHash} = require('node:crypto');
-const actual = createHash('sha256').update(readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n')).digest('hex');
-if (actual !== '7083f40a107ecd1bc772381b8ca164826647c3ebaee36e4d0619b655f75e967c') {
-    console.error('felitronics-core WAV grid or RIFF pad differs from the pinned release');
-    process.exit(1);
-}
-JS
+# Presence, as the CMake checks it; the WAV writer's bytes are proven by felitronics_session_wav_tests, and the
+# release by the version floor below.
+[ -f "$CORE/modules/io/include/felitronics/io/Wav.h" ] \
+    || { echo "felitronics-core at $CORE has no WAV writer (modules/io/include/felitronics/io/Wav.h)"; exit 1; }
 
 INC=(-I"$ROOT/modules/storage/include" -I"$ROOT/tools"
      -I"$ROOT/modules/analysis_offline/include"

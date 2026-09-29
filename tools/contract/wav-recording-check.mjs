@@ -66,8 +66,15 @@ assert.ok(latePrice.sourcePcmBytes + latePrice.deliveredPcmBytes
 assert.ok(latePrice.observedHeap.afterGrowthBytes > latePrice.observedHeap.beforeGrowthBytes);
 assert.equal(scenarios.safe.release.status, 0);
 assert.equal(wire(scenarios.safe.release.snapshot).pendingMaster.master, 0);
-assert.deepEqual(scenarios.formats.map(x => [x.target, x.ditherBits, x.bits]),
-    [['cd', 0, 16], ['cd', 16, 16], ['cdDynamic', 0, 16], ['allStreaming', 0, 24], ['spotify', 24, 24]]);
+assert.deepEqual(scenarios.formats.map(x => [x.target, x.ditherBits, x.deliveryRate, x.bits, x.rate]),
+    [['cd', 0, 0, 16, 44100], ['cd', 16, 44100, 16, 44100], ['cdDynamic', 0, 0, 16, 44100],
+     ['allStreaming', 0, 0, 24, 48000], ['spotify', 24, 48000, 24, 48000]]);
+for (const item of scenarios.formats) {
+    assert.equal(item.export.rate, item.rate);
+    assert.equal(Buffer.from(item.export.headerHex, 'hex').readUInt32LE(24), item.rate);
+    const master = wire(item.complete).masters.at(-1);
+    assert.equal(master.report.checkPasses, item.rate === 48000 ? 0 : 1);
+}
 for (const item of scenarios.formatRefusals) {
     inputs(item.inputs);
     assert.deepEqual(item.priced, {status:0, rejection:34, bytes:0});
@@ -75,6 +82,7 @@ for (const item of scenarios.formatRefusals) {
     assert.equal(item.answer.code, 34);
     const fact = wire(item.events).find(e => e.kind === 'fact' && e.payload.FactId === 134);
     assert.equal(fact.payload.args[0].integer, String(item.depth));
+    assert.equal(fact.payload.args[1].number, item.targetRate);
 }
 assert.equal(scenarios.warm.cycles.length, 3);
 assert.equal(scenarios.warm.observedHeapBytes[2], scenarios.warm.observedHeapBytes[1]);

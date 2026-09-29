@@ -237,12 +237,13 @@ bool masterReady (const fc_master_config& c, const fc_master_params& p,
         || ! std::isfinite (c.sampleRate) || ! std::isfinite (c.deliveryRate)
         || ! std::isfinite (c.compressorLookaheadMs) || ! std::isfinite (c.limiterLookaheadMs)
         || ! std::isfinite (c.sidechainHpfHz) || c.channels != std::int32_t (source.channels)
-        || std::fabs (c.sampleRate - double (source.sampleRate)) > 0.0
-        || c.deliveryRate < 0.0 || c.deliveryRate > 4294967295.0) return false;
-    const auto delivery = std::uint32_t (c.deliveryRate);
-    if (std::fabs (c.deliveryRate - double (delivery)) > 0.0) return false;
+        || std::fabs (c.sampleRate - double (source.sampleRate)) > 0.0) return false;
+    // The session refuses any rate but 0 and the target's, openly. A finite rate that is not a whole number of hertz
+    // below 2^32 is no target's rate either: it arrives as 2^32 - 1, which no target delivers.
+    const bool whole = c.deliveryRate >= 0.0 && c.deliveryRate < 4294967295.0
+        && std::fabs (c.deliveryRate - std::floor (c.deliveryRate)) == 0.0;
     ready.version = 1;
-    ready.deliveryRateHz = delivery;
+    ready.deliveryRateHz = whole ? std::uint32_t (c.deliveryRate) : 4294967295u;
     auto& t = ready.topology;
     t.internalBlock = c.internalBlock; t.eq = c.eq != 0; t.monoBass = c.monoBass != 0;
     t.stereoAir = c.stereoAir != 0; t.compressor = c.compressor != 0; t.clipper = c.clipper != 0;

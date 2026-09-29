@@ -1144,12 +1144,14 @@ ready values. C++ callers use `command::Master` with `ready.version = 1`; versio
 v1 command behavior. The ready call freezes the project, source, sound-config version, all topology and
 parameter bits, and delivery rate in its recipe. The project can be edited while the job runs without
 changing that recipe. A new source or an explicit cancel stops unfinished work and fences its old identity.
-The delivery bit depth is the target's (`targets.toml` `bitDepth`, 16 or 24; dither only at 16). A ready
-`deliveryBits` of 0 takes it and the same depth restates it; any other value, from the C facade's
+The delivery format is the target's (`targets.toml`): its `sampleRate` (0 keeps the source's rate) and its
+`bitDepth` (16 or 24; dither only at 16). A ready `deliveryRateHz` or `deliveryBits` of 0 takes it and the same
+value restates it; any other value, from the C facade's `fc_master_config.deliveryRate` and
 `fc_master_params.dither.bits` included, is refused before any allocation with the appended
-`Rejection::DeliveryFormat`. `Answer::targetBits` and a `RejectedDeliveryFormat` fact event, emitted with the
-rejection, name the target's depth. The resolved depth also sets the chain's dither bits, whether or not the
-dither stage is on.
+`Rejection::DeliveryFormat`. `Answer::targetBits` and `Answer::targetRate` and a `RejectedDeliveryFormat` fact event
+({bits} {rate}), emitted with the rejection, name the target's format. The resolved depth also sets the chain's
+dither bits, whether or not the dither stage is on. A target whose rate is not the source's (cd, cdDynamic, youtube
+on a 44.1 kHz file) takes the one extra source-rate pass for the crest comparison (decision 2.3).
 
 Ready preflight requires retained PCM and finite completed integrated loudness and true peak. It prices
 the chain, renderer, converter when needed, solver, search workspace, output PCM, compact rows, and

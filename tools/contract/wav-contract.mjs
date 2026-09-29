@@ -37,11 +37,13 @@ assert.equal(line(native, 'session-master-input'), line(wasm, 'session-master-in
 assert.equal(line(native, 'session-master-wav-header'), line(wasm, 'session-master-wav-header'), 'native/wasm WAV header');
 assert.equal(line(jobNative, 'wav-outcomes'), line(jobWasm, 'wav-outcomes'), 'native/wasm cancel/refusal/miss outcomes');
 assert.equal(line(jobNative, 'wav-outcomes'), 'cancel:false,refusal:false,unavailable:false,miss:true,unsafe:false');
-// The delivery format is the target's: [target, dither.bits asked, PCM bits delivered].
-const deliveryCases = [['cd', 0, 16], ['cd', 16, 16], ['cdDynamic', 0, 16], ['allStreaming', 0, 24], ['spotify', 24, 24]];
-for (const [target, requested, bits] of deliveryCases)
-    assert.equal(line(native, `session-master-${target}-dither${requested}-wav`),
-        line(wasm, `session-master-${target}-dither${requested}-wav`), `${target} PCM${bits} native/wasm WAV bytes`);
+// The delivery format is the target's: [target, dither.bits asked, deliveryRate asked, PCM bits and rate delivered].
+const deliveryCases = [['cd', 0, 0, 16, 44100], ['cd', 16, 44100, 16, 44100], ['cdDynamic', 0, 0, 16, 44100],
+                       ['allStreaming', 0, 0, 24, 48000], ['spotify', 24, 48000, 24, 48000]];
+for (const [target, requested, requestedRate, bits, rate] of deliveryCases)
+    assert.equal(line(native, `session-master-${target}-dither${requested}-rate${requestedRate}-wav`),
+        line(wasm, `session-master-${target}-dither${requested}-rate${requestedRate}-wav`),
+        `${target} ${rate} Hz PCM${bits} native/wasm WAV bytes`);
 const contractBytes = line(wasm, 'wav-record');
 let contract;
 try { contract = JSON.parse(contractBytes); }
@@ -116,11 +118,16 @@ for (const item of scenarios.warm.cycles) {
 }
 assert.equal(scenarios.warm.cycles.length, 3);
 assert.equal(scenarios.warm.observedHeapBytes[2], scenarios.warm.observedHeapBytes[1]);
-assert.deepEqual(scenarios.formats.map(x => [x.target, x.ditherBits, x.bits]), deliveryCases);
-for (const item of scenarios.formats) assert.equal(item.export.bits, item.bits);
-assert.deepEqual(scenarios.formatRefusals.map(x => [x.target, x.ditherBits, x.depth]),
-    [['allStreaming', 16, 24], ['cd', 24, 16], ['allStreaming', 32, 24], ['allStreaming', 20, 24],
-     ['cd', -1, 16], ['cd', 272, 16]]);
+assert.deepEqual(scenarios.formats.map(x => [x.target, x.ditherBits, x.deliveryRate, x.bits, x.rate]), deliveryCases);
+for (const item of scenarios.formats) {
+    assert.equal(item.export.bits, item.bits);
+    assert.equal(item.export.rate, item.rate);
+    assert.equal(Buffer.from(item.export.headerHex, 'hex').readUInt32LE(24), item.rate);
+}
+assert.deepEqual(scenarios.formatRefusals.map(x => [x.target, x.ditherBits, x.deliveryRate, x.depth, x.targetRate]),
+    [['allStreaming', 16, 0, 24, 48000], ['cd', 24, 0, 16, 44100], ['allStreaming', 32, 0, 24, 48000],
+     ['allStreaming', 20, 0, 24, 48000], ['cd', -1, 0, 16, 44100], ['cd', 272, 0, 16, 44100],
+     ['cd', 0, 48000, 16, 44100], ['allStreaming', 0, 44100, 24, 48000], ['cd', 0, 44100.5, 16, 44100]]);
 for (const item of scenarios.formatRefusals) {
     assert.deepEqual(item.priced, {status:0, rejection:34, bytes:0});
     assert.equal(item.answer.kind, 'rejected');

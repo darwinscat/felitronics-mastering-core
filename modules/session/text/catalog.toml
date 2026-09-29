@@ -229,8 +229,8 @@ ru = "Обязательные замеры громкости и истинно
 en = "The required loudness and true-peak measurements are unavailable for mastering."
 
 [messages.rejectedDeliveryFormat]
-ru = "Формат доставки задаёт цель: её мастер записывается только в {bits}-битном PCM."
-en = "The target sets the delivery format: its master is written only as {bits}-bit PCM."
+ru = "Формат доставки задаёт цель: её мастер записывается только в {bits}-битном PCM с частотой {rate}."
+en = "The target sets the delivery format: its master is written only as {bits}-bit PCM at {rate}."
 
 [messages.masterReady]
 ru = "Мастер готов."

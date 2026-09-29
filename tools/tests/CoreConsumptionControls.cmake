@@ -5,6 +5,7 @@
 # whether this repository resolves it or a parent supplies it.
 file(TO_CMAKE_PATH "${MASTERING_SOURCE}" MASTERING_SOURCE)
 file(TO_CMAKE_PATH "${TOML_SOURCE}" TOML_SOURCE)
+file(TO_CMAKE_PATH "${CORE_SOURCE}" CORE_SOURCE)
 file(TO_CMAKE_PATH "${CONTROL_DIR}" CONTROL_DIR)
 set(fake "${CONTROL_DIR}/pristine-core")
 file(MAKE_DIRECTORY "${fake}/cmake" "${fake}/modules/limiter/include/felitronics/limiter")
@@ -53,40 +54,40 @@ if(embedded_result EQUAL 0 OR NOT "${embedded_output}${embedded_error}" MATCHES 
     message(FATAL_ERROR "A pristine parent core did not fail the K13 preflight: ${embedded_output}${embedded_error}")
 endif()
 
-# The declaration alone does not prove that the tap is filled by the limiter.
-file(WRITE "${fake}/modules/limiter/include/felitronics/limiter/TruePeakLimiter.h"
-    "struct TruePeakLimiterTap {\n    float* peakClipReductionDb = nullptr;\n};\n")
-execute_process(COMMAND "${CMAKE_COMMAND}" -S "${MASTERING_SOURCE}" -B "${CONTROL_DIR}/top-partial"
-    ${generator_args} -DFELITRONICS_MASTERING_FCORE_DIR=${fake}
-    -DFELITRONICS_MASTERING_TOML_DIR=${TOML_SOURCE}
-    -DFELITRONICS_MASTERING_BUILD_TESTS=OFF
-    RESULT_VARIABLE partial_result OUTPUT_VARIABLE partial_output ERROR_VARIABLE partial_error)
-if(partial_result EQUAL 0 OR NOT "${partial_output}${partial_error}" MATCHES "requires the pinned K13 tap implementation")
-    message(FATAL_ERROR "A declaration-only local core passed the implementation preflight: ${partial_output}${partial_error}")
-endif()
-execute_process(COMMAND "${CMAKE_COMMAND}" -S "${parent_source}" -B "${CONTROL_DIR}/embedded-partial"
-    ${generator_args}
-    RESULT_VARIABLE embedded_partial_result OUTPUT_VARIABLE embedded_partial_output ERROR_VARIABLE embedded_partial_error)
-if(embedded_partial_result EQUAL 0 OR NOT "${embedded_partial_output}${embedded_partial_error}" MATCHES "requires the pinned K13 tap implementation")
-    message(FATAL_ERROR "A declaration-only parent core passed the implementation preflight: ${embedded_partial_output}${embedded_partial_error}")
-endif()
-
-# A released tap alone cannot mask an older WAV grid or a missing RIFF pad.
+# The WAV writer is checked for presence: a core without it fails during configuration from both paths.
 file(COPY "${CORE_SOURCE}/modules/limiter/include/felitronics/limiter/TruePeakLimiter.h"
      DESTINATION "${fake}/modules/limiter/include/felitronics/limiter")
-file(MAKE_DIRECTORY "${fake}/modules/io/include/felitronics/io")
-file(WRITE "${fake}/modules/io/include/felitronics/io/Wav.h" "// obsolete WAV writer\n")
+file(REMOVE "${fake}/modules/io/include/felitronics/io/Wav.h")
 execute_process(COMMAND "${CMAKE_COMMAND}" -S "${MASTERING_SOURCE}" -B "${CONTROL_DIR}/top-wav"
     ${generator_args} -DFELITRONICS_MASTERING_FCORE_DIR=${fake}
     -DFELITRONICS_MASTERING_TOML_DIR=${TOML_SOURCE}
     -DFELITRONICS_MASTERING_BUILD_TESTS=OFF
     RESULT_VARIABLE wav_result OUTPUT_VARIABLE wav_output ERROR_VARIABLE wav_error)
-if(wav_result EQUAL 0 OR NOT "${wav_output}${wav_error}" MATCHES "requires the released WAV[\n ]+grid and RIFF pad[\n ]+implementation")
-    message(FATAL_ERROR "An obsolete local WAV implementation passed preflight: ${wav_output}${wav_error}")
+if(wav_result EQUAL 0 OR NOT "${wav_output}${wav_error}" MATCHES "requires the released felitronics-core[\n ]+WAV[\n ]+implementation")
+    message(FATAL_ERROR "A local core without a WAV writer passed preflight: ${wav_output}${wav_error}")
 endif()
 execute_process(COMMAND "${CMAKE_COMMAND}" -S "${parent_source}" -B "${CONTROL_DIR}/embedded-wav"
     ${generator_args}
     RESULT_VARIABLE wav_parent_result OUTPUT_VARIABLE wav_parent_output ERROR_VARIABLE wav_parent_error)
-if(wav_parent_result EQUAL 0 OR NOT "${wav_parent_output}${wav_parent_error}" MATCHES "requires the released WAV[\n ]+grid and RIFF pad[\n ]+implementation")
-    message(FATAL_ERROR "An obsolete parent WAV implementation passed preflight: ${wav_parent_output}${wav_parent_error}")
+if(wav_parent_result EQUAL 0 OR NOT "${wav_parent_output}${wav_parent_error}" MATCHES "requires the released felitronics-core[\n ]+WAV[\n ]+implementation")
+    message(FATAL_ERROR "A parent core without a WAV writer passed preflight: ${wav_parent_output}${wav_parent_error}")
+endif()
+
+# ...and presence is all the text is held to: the resolved release with a comment added to both headers configures.
+# A whole-file pin would refuse it, and a release that rewords a comment is the same release to every byte-level suite.
+set(reworded "${CONTROL_DIR}/reworded-core")
+file(REMOVE_RECURSE "${reworded}")
+file(MAKE_DIRECTORY "${reworded}")
+file(COPY "${CORE_SOURCE}/CMakeLists.txt" "${CORE_SOURCE}/cmake" "${CORE_SOURCE}/modules" "${CORE_SOURCE}/test_support"
+     DESTINATION "${reworded}")
+foreach(header modules/limiter/include/felitronics/limiter/TruePeakLimiter.h modules/io/include/felitronics/io/Wav.h)
+    file(APPEND "${reworded}/${header}" "\n// A comment a later release may add.\n")
+endforeach()
+execute_process(COMMAND "${CMAKE_COMMAND}" -S "${MASTERING_SOURCE}" -B "${CONTROL_DIR}/top-reworded"
+    ${generator_args} -DFELITRONICS_MASTERING_FCORE_DIR=${reworded}
+    -DFELITRONICS_MASTERING_TOML_DIR=${TOML_SOURCE}
+    -DFELITRONICS_MASTERING_BUILD_TESTS=OFF
+    RESULT_VARIABLE reworded_result OUTPUT_VARIABLE reworded_output ERROR_VARIABLE reworded_error)
+if(NOT reworded_result EQUAL 0)
+    message(FATAL_ERROR "A released core with a reworded comment was refused at configure: ${reworded_output}${reworded_error}")
 endif()

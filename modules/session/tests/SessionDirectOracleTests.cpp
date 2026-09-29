@@ -99,6 +99,15 @@ bool caseRun (std::uint32_t sourceRate, std::uint32_t deliveryRate,
         || ! s.snapshot().view().mandatoryMeasurementsReady); ++i) (void) s.step (16);
     const double sourceLufs = s.snapshot().view().integratedLufs;
     if (! std::isfinite (sourceLufs)) return false;
+    // The delivery rate is the target's. Spelled independently: allStreaming keeps the source's rate (-14 LUFS,
+    // -1 dBTP, 24 bits), youtube delivers 48 kHz with the same numbers, cdDynamic 44.1 kHz at -12 LUFS, -1 dBTP, 16 bits.
+    const char* target = sourceRate == deliveryRate ? "allStreaming" : deliveryRate == 48000 ? "youtube"
+                       : deliveryRate == 44100 ? "cdDynamic" : nullptr;
+    if (target == nullptr || s.apply (session::command::SetTarget { 9, target }).rejection != session::Rejection::None)
+        return false;
+    const bool cd = deliveryRate == 44100 && sourceRate != deliveryRate;
+    const double targetLufs = cd ? -12.0 : -14.0;
+    const int targetBits = cd ? 16 : 24;
     session::command::Master request { 2 };
     request.ready.version = 1;
     request.ready.deliveryRateHz = deliveryRate;
@@ -113,21 +122,22 @@ bool caseRun (std::uint32_t sourceRate, std::uint32_t deliveryRate,
     params.compressor.thresholdDb = -30.0;
     params.compressor.ratio = 2.5;
     params.clipper.mix = 0.5f;
+    params.dither.bits = targetBits;
     request.source = s.source().hash; request.revision = s.revision();
 
-    // The direct call has no Session planner. These are the allStreaming target
-    // and engine landing inputs, spelled independently here.
+    // The direct call has no Session planner. These are the target's numbers above
+    // and the engine landing inputs, spelled independently here.
     mastering::LoudnessRequest directRequest;
-    directRequest.targetLufs = -14.0;
+    directRequest.targetLufs = targetLufs;
     directRequest.maxTruePeakDbTp = -1.0;
     directRequest.toleranceLu = 0.1;
     directRequest.truePeakAimDb = 0.05;
     directRequest.maxPasses = 12;
     directRequest.normalizationGainDb = -18.0 - sourceLufs;
-    directRequest.initialGainDb = 4.0;
+    directRequest.initialGainDb = targetLufs + 18.0;
     directRequest.productLanding = true;
     directRequest.ceilingMarginDb = 0.15;
-    directRequest.pcmBits = 0;
+    directRequest.pcmBits = unsigned (targetBits);
     directRequest.grTraceBuckets = std::min (outputFrames, mastering::GainReductionTrace::kDefaultBuckets);
     params.limiter.ceilingDbTp = -1.15;
     mastering::MasteringChain chain;

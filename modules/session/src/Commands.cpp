@@ -319,7 +319,7 @@ Answer Session::reject (Answer answer) noexcept
         Notification fact;
         fact.kind = EventKind::Fact;
         (void) fact.payload.fact.assign (text::Fact::of (text::FactId::RejectedDeliveryFormat,
-                                                         text::Arg::count (answer.targetBits)));
+            text::Arg::count (answer.targetBits), text::Arg::value (double (answer.targetRate), text::Unit::Hz, 0)));
         emit (fact);
     }
     Notification event;
@@ -339,7 +339,11 @@ Answer Session::apply (const Request& request) noexcept
     answer.field = checked.field;
     answer.needBytes = checked.needBytes;
     if (checked.rejection == Rejection::DeliveryFormat)
-        answer.targetBits = std::uint8_t (detail::rules().row (project_.target).bitDepth);
+    {
+        const auto row = detail::rules().row (project_.target);
+        answer.targetBits = std::uint8_t (row.bitDepth);
+        answer.targetRate = row.sampleRate == 0 ? source_.sampleRate : std::uint32_t (row.sampleRate);
+    }
     detail::ImportedProject imported;
     if (checked.rejection == Rejection::None)
         if (const auto* input = std::get_if<command::ImportProject> (&request))

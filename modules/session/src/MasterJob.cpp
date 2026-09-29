@@ -156,11 +156,14 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
         if (value.name == "integratedLufs" && value.value) sourceLufs = *value.value;
     const auto ruleset = rules();
     const auto target = ruleset.row (s.project_.target);
-    // THE DELIVERY BIT DEPTH IS THE TARGET'S (PLAN: the delivery format comes from the target): 0 names it, the
-    // same depth restates it, and any other depth is refused before anything is priced or allocated.
-    if (input.ready.deliveryBits != 0 && std::int32_t (input.ready.deliveryBits) != target.bitDepth)
-    { result.rejection = Rejection::DeliveryFormat; return result; }
+    // THE DELIVERY FORMAT IS THE TARGET'S (PLAN: rate, bit depth and dither come from the target). Its rate — the
+    // source's when the target keeps it (sampleRate 0) — and its depth: 0 names each, the same value restates it,
+    // and any other value is refused before anything is priced or allocated.
+    const auto deliveryRate = target.sampleRate == 0 ? s.source_.sampleRate : std::uint32_t (target.sampleRate);
     const auto deliveryBits = std::uint8_t (target.bitDepth);   // 16 or 24: the config's build gate
+    if ((input.ready.deliveryBits != 0 && input.ready.deliveryBits != deliveryBits)
+        || (input.ready.deliveryRateHz != 0 && input.ready.deliveryRateHz != deliveryRate))
+    { result.rejection = Rejection::DeliveryFormat; return result; }
     const double targetLufs = s.project_.targetEdit.lufs.value_or (target.lufs.toDouble());
     const double targetTp = s.project_.targetEdit.tp.value_or (target.tp.toDouble());
     const auto engine = ruleset.engine;
@@ -179,7 +182,8 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
     result.ready = input.ready;
     if (! validParams (result.ready.params))
     { result.rejection = Rejection::NotFinite; return result; }
-    result.deliveryRate = input.ready.deliveryRateHz == 0 ? s.source_.sampleRate : input.ready.deliveryRateHz;
+    result.deliveryRate = deliveryRate;
+    result.ready.deliveryRateHz = deliveryRate;
     const double rate = double (result.deliveryRate);
     if (result.deliveryRate < kMinSampleRate || result.deliveryRate > s.capabilities_.maxRateHz
         || s.source_.frames > std::uint64_t (std::numeric_limits<int>::max())
