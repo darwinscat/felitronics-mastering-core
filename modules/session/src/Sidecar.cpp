@@ -76,7 +76,8 @@ Answer Session::loadMeasured (CommandId id, const MeasuredSource& facts) noexcep
                            missing (facts.truePeakDb), 0 };
     for (std::size_t i = 0; i < kAnalyzers; ++i)
     {
-        auto& r = measurementResults_[i]; r = {}; r.analyzer = Analyzer (i); r.key = measurementKey_;
+        auto& r = measurementResults_[i]; r = {}; r.analyzer = Analyzer (i);
+        r.key = r.analyzer == Analyzer::Forensics ? detail::MeasurementPlan::forensicsKey (measurementKey_, facts.bitDepth) : measurementKey_;
         r.status = MeasurementStatus::Unavailable; r.reason = MeasurementReason::NotImplemented;
     }
     auto& loudness = measurementResults_[std::size_t (Analyzer::Loudness)];

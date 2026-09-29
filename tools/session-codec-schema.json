@@ -553,7 +553,6 @@
     }
   },
   "wireAliases": {
-    "SessionStatus": "0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18",
     "CommandAnswer": "AcceptedAnswer | RejectedAnswer | ContractAnswer",
     "SessionEvent": "PhaseEvent | FactEvent | ReadingEvent | DoneEvent | RejectedEvent | ErrorEvent | MeasurementEvent",
     "SessionCommand": "SetTargetCommand | SetManualCommand | EditTargetCommand | EditDeviceCommand | RevertEditsCommand | MasterCommand | CancelCommand | ForgetCommand | ContinueMeasurementCommand",
@@ -921,7 +920,8 @@
     "SessionCapabilities": {
       "heapCeilingBytes": "number",
       "maxRateHz": "number",
-      "offeredDevices": "number"
+      "offeredDevices": "number",
+      "largestFreeBlockBytes": "number"
     },
     "MeasurementEvent": {
       "seq": "string",
