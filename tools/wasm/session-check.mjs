@@ -327,6 +327,29 @@ const table = M._malloc(4); M.HEAPU32[table >>> 2] = M.HEAPU32.buffer.byteLength
 ok(M._fc_session_load(session, 0, 0, table, 1, 2, 48000, 0, 0, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.ERR_SPAN,
    'a channel sample span crosses heap');
 M._free(table);
+// A rejected overlapping attachment must leave both outputs and the sidecar unchanged.
+let hash = 0xcbf29ce484222325n;
+for (const byte of [128, 187, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    hash = ((hash ^ BigInt(byte)) * 0x100000001b3n) & 0xffffffffffffffffn;
+const [factsPtr, factsBytes] = input(JSON.stringify({name:'one', sourceHash:hash.toString(), frames:'1',
+    sampleRate:48000, channels:1, fileRate:48000, bitDepth:16, rateKnown:true, integratedLufs:-14, truePeakDb:-0.5}));
+ok(M._fc_session_load_measured(session, 41, 0, factsPtr, factsBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
+    && reply().kind === 'accepted', 'one-frame sidecar loaded through wasm facade');
+M._free(factsPtr);
+const sidecarBefore = readTransfer('snapshot');
+const onePcm = M._malloc(4), oneTable = M._malloc(4);
+new Float32Array(M.HEAPU32.buffer)[onePcm >>> 2] = 0;
+M.HEAPU32[oneTable >>> 2] = onePcm;
+heapBytes().fill(0x5a, answer, answer + macro('FC_SESSION_ANSWER_BYTES'));
+const overlapBefore = heapBytes().slice(answer, answer + macro('FC_SESSION_ANSWER_BYTES'));
+ok(M._fc_session_attach_audio(session, 42, 0, oneTable, 1, 1, 48000,
+    answer, macro('FC_SESSION_ANSWER_BYTES'), answer + 4) === STATUS.ERR_OVERLAP,
+   'attachment refuses overlapping answer and written outputs');
+ok(Buffer.from(heapBytes().slice(answer, answer + macro('FC_SESSION_ANSWER_BYTES'))).equals(Buffer.from(overlapBefore)),
+   'overlap refusal leaves output bytes unchanged');
+ok(JSON.stringify(readTransfer('snapshot')) === JSON.stringify(sidecarBefore),
+   'overlap refusal leaves the full sidecar snapshot unchanged');
+M._free(oneTable); M._free(onePcm);
 ok(M._fc_session_destroy(session) === STATUS.OK, 'smoke session destroyed');
 for (const p of [caps, answer, resultSize, demand]) M._free(p);
 console.log(`session-check: fcsession v${version} — ${checks} checks, ${bad} failures`);

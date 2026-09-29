@@ -254,7 +254,7 @@ endif()
 
 if(FELITRONICS_BUILD_TESTS)
     add_executable(felitronics_session_sidecar_tests tests/SessionSidecarTests.cpp)
-    target_link_libraries(felitronics_session_sidecar_tests PRIVATE felitronics::session felitronics::test_support)
+    target_link_libraries(felitronics_session_sidecar_tests PRIVATE felitronics::session felitronics::analysis_offline felitronics::test_support)
     target_include_directories(felitronics_session_sidecar_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     target_compile_features(felitronics_session_sidecar_tests PRIVATE cxx_std_20)
     target_compile_options(felitronics_session_sidecar_tests PRIVATE ${FCORE_NO_FP_CONTRACT}

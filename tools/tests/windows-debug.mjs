@@ -2,6 +2,7 @@
 // Every named suite, not merely a nonempty ctest selection. A removed registration must fail CI.
 import { spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 
 const expected = ['analysis_abi', 'tempo_abi', 'fctempo_abi', 'master_abi', 'storage',
     'session', 'session_state', 'session_config', 'session_config_decisions', 'session_text',
@@ -11,8 +12,19 @@ const selection = `^(${expected.join('|')})$`;
 function check(tests) {
     assert.deepEqual(tests.map(test => test.name).sort(), expected, 'Windows Debug suite selection changed');
 }
+function checkBuildTargets(workflow) {
+    const job = workflow.replace(/\r\n/g, '\n').split('  windows-debug:\n')[1]?.split('\n  # Against core')[0];
+    const build = job?.split('      - name: Build allocation and session suites\n')[1]?.split('      - name:')[0];
+    assert.ok(build, 'Windows Debug build step missing');
+    const targets = new Set(build.match(/felitronics_[a-z0-9_]+_tests/g) ?? []);
+    for (const name of expected) assert.ok(targets.has(name), `Windows Debug does not build ${name}`);
+}
 
 if (process.argv[2] === '--self-test') {
+    const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+    checkBuildTargets(workflow);
+    checkBuildTargets(workflow.replace(/\r?\n/g, '\r\n'));
+    assert.throws(() => checkBuildTargets(workflow.replace('felitronics_session_sidecar_tests', '')));
     check(expected.map(name => ({name})));
     for (const missing of expected)
         assert.throws(() => check(expected.filter(name => name !== missing).map(name => ({name}))));
