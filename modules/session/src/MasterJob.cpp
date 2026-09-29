@@ -219,6 +219,8 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
     result.request.grTraceBuckets = result.traceBuckets;
     result.ready.params.limiter.ceilingDbTp = targetTp - margin;
     if (input.ready.deliveryBits != 0) result.ready.params.dither.bits = input.ready.deliveryBits;
+    result.request.pcmBits = input.ready.deliveryBits != 0 ? input.ready.deliveryBits
+        : unsigned (target.bitDepth);
     if (! std::isfinite (result.ready.params.inputGainDb)
         || std::fabs (result.ready.params.inputGainDb + normalization) > 60.0
         || ! std::isfinite (result.ready.params.preLimiterGainDb))

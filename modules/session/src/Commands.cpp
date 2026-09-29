@@ -582,7 +582,7 @@ Answer Session::apply (const Request& request) noexcept
     else if (const auto* forget = std::get_if<command::Forget> (&request))
     {
         if (pendingMaster_.master == forget->master)
-        { masterAudio_ = {}; pendingMaster_ = {}; }
+        { masterAudio_ = {}; masterAudioBits_ = 0; pendingMaster_ = {}; }
         Kept* const first = masters_.get();
         Kept* const last = first + masterCount_;
         Kept* const it = std::find_if (first, last, [&] (const Kept& k) { return k.id == forget->master; });

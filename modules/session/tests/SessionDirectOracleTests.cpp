@@ -126,6 +126,7 @@ bool caseRun (std::uint32_t sourceRate, std::uint32_t deliveryRate,
     directRequest.normalizationGainDb = -18.0 - sourceLufs;
     directRequest.initialGainDb = 4.0;
     directRequest.productLanding = true;
+    directRequest.pcmBits = 24;
     directRequest.grTraceBuckets = std::min (outputFrames, mastering::GainReductionTrace::kDefaultBuckets);
     params.limiter.ceilingDbTp = -1.15;
     mastering::MasteringChain chain;

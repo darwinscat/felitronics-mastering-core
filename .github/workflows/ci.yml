@@ -63,7 +63,7 @@ jobs:
           felitronics_session_abi_tests felitronics_session_abi_v1_tests felitronics_session_abi_probe
           felitronics_session_event_tests felitronics_session_project_tests felitronics_session_replay_tests
           felitronics_session_measurement_tests felitronics_session_live_tests felitronics_session_source_tests felitronics_session_needles_tests
-          felitronics_session_measurement_budget_tests felitronics_session_master_report_tests felitronics_session_cost_tests felitronics_session_sidecar_tests felitronics_session_query_tests felitronics_waveform_index_tests
+          felitronics_session_measurement_budget_tests felitronics_session_master_job_tests felitronics_session_wav_tests felitronics_session_master_abi_tests felitronics_session_master_report_tests felitronics_session_cost_tests felitronics_session_sidecar_tests felitronics_session_query_tests felitronics_waveform_index_tests
       - name: Test allocation budgets with iterator debugging
         # Every named suite, including live and needles budgets; the full generation walk stays in Release.
         run: |
@@ -368,7 +368,7 @@ jobs:
         # of the tag.
         run: |
           cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release -DFELITRONICS_MASTERING_BUILD_TESTS=ON $CORE_TAG
-          cmake --build build-native -j "$(nproc)" --target fcore_measure fcore_master fcore_session felitronics_session_needles_tests felitronics_session_source_tests felitronics_session_query_tests felitronics_waveform_index_tests
+          cmake --build build-native -j "$(nproc)" --target fcore_measure fcore_master fcore_session felitronics_session_needles_tests felitronics_session_source_tests felitronics_session_query_tests felitronics_waveform_index_tests felitronics_session_master_job_tests felitronics_session_master_abi_tests
       - name: Owned source measurements — native and both Wasm tiers
         run: |
           node tools/tests/source-parity.mjs build-native/modules/session/felitronics_session_source_tests \
@@ -392,6 +392,12 @@ jobs:
           ./tools/wasm/build.sh
       - name: Session contract — native vs wasm, all scenarios and refusal controls
         run: node tools/contract/run.mjs build-native/tools/fcore_session tools/wasm/build/fcsession.node.js --controls
+      - name: WAV delivery contract — native vs wasm and recorded site inputs
+        run: |
+          node tools/contract/wav-contract.mjs build-native/tools/felitronics_session_master_abi_tests \
+            build-native/modules/session/felitronics_session_master_job_tests \
+            tools/wasm/build/fcsession.node.js tools/wasm/build/session-master-job-tests.js \
+            build-native/tools/fcore_session
       - name: Share the pinned session artifact with the native CI rows
         if: matrix.core == 'pin'
         uses: actions/upload-artifact@v4

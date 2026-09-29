@@ -125,6 +125,7 @@ const FELITRONICS_ALLOWED = new Set([
     'felitronics/session/Queries.h',            // owned bounded measurement query declarations
     'felitronics/session/Measurements.h',       // owned measurement values and exact arrays
     'felitronics/session/Session.h',             // this module's own public headers, scanned here as every file of it is
+    'felitronics/session/Wav.h',                 // value-only WAV plan and bounded copy declarations
     'felitronics/session/Config.h',
     'felitronics/session/Commands.h',
     'felitronics/session/Events.h',             // value payloads only, scanned as every public header
@@ -133,6 +134,7 @@ const FELITRONICS_ALLOWED = new Set([
     'felitronics/session/Landing.h',            // pure landing plan and typed result operations
     'felitronics/session/LandingResult.h',      // value-only verdict and bounded pass rows
     'felitronics/mastering/LoudnessSolver.h',   // deterministic solver values; including it has no side effects
+    'felitronics/mastering/PcmQuantizer.h',       // deterministic PCM grid shared with WAV output
     'felitronics/mastering/MasteringChain.h',    // ready topology and parameters are job values
     'felitronics/mastering/LandingSearch.h',     // bounded source/render/meter search state
 

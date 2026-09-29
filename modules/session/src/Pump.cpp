@@ -298,8 +298,10 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 }
                 const auto completedJob = job_;
                 if (! detail::Driver::mastered (*this, completedJob)) { contract (completedJob); ++units; continue; }
-                masters_[masterCount_ - 1].landing = masterSummary_;
                 masters_[masterCount_ - 1].report = masterJob_->reportResult();
+                masterSummary_.deliverable = masterSummary_.deliverable
+                    && masters_[masterCount_ - 1].report->deliverable;
+                masters_[masterCount_ - 1].landing = masterSummary_;
                 if (const auto& cost = masters_[masterCount_ - 1].report->cost)
                 {
                     event.kind = EventKind::Fact;
@@ -312,6 +314,9 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 }
                 if (masterSummary_.deliverable && outcome == mastering::StepResult::Done)
                 {
+                    masterAudioBits_ = masterJob_->ready.deliveryBits != 0 ? masterJob_->ready.deliveryBits
+                        : std::uint32_t (detail::rules().row (jobRecipe_.project.target).bitDepth);
+                    if (masterAudioBits_ == 20) masterAudioBits_ = 24; // the 20-bit grid is exact in PCM24
                     masterAudio_ = { masterJob_->takeOutput(), std::uint64_t (masterJob_->frames),
                         std::uint32_t (masterJob_->channels), masterJob_->deliveryRate };
                     pendingMaster_ = { source_.hash, revision_, completedJob, completedJob };

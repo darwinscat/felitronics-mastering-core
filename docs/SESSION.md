@@ -1152,6 +1152,33 @@ The heap view expires on the next module call or `memory.grow`; the shell must d
 Forgetting a master releases its pending PCM, while other masters keep only metadata. A poisoned wasm
 instance is discarded and rebuilt by replay; ordinary cancellation is a session command.
 
+## WAV delivery
+
+`Session::masterWavPlan(token)` prices the canonical RIFF image without allocation. The additive
+`fc_session_master_wav_size` reports its byte length and delivery bits; `fc_session_master_wav_copy`
+copies at most 65536 bytes at a time into caller storage. A shell allocates one independent WAV buffer,
+copies all slices while the master token is live, and stores the completed image under `masterId` before
+calling `fc_session_master_audio_release`. Repeated downloads use those owned bytes and do no rendering,
+metering or dither work. A cancelled, unsafe or mandatory-unavailable master has no token and no WAV.
+The twelve-pass safe miss has a token and remains downloadable with its measured miss and hint facts.
+
+The writer reads the existing planar f32 output directly, interleaves 16- or 24-bit PCM using core
+Dither's `2^(bits-1)` grid and `floor(x + 0.5)` code rule, or writes IEEE float32 bytes. The selected
+format is the frozen job's delivery bits, falling back to its frozen target bit depth; a 20-bit grid is
+stored exactly in PCM24 with four zero low bits. Session opts the solver into that grid before each meter step, so the measured
+PCM, the listening transfer and the decoded WAV agree sample for sample. Direct solver callers retain
+their legacy float output unless they set `LoudnessRequest::pcmBits`. Export adds no noise and never
+resets or reruns the chain. Core's installed WAV
+writer is checked byte for byte on grid, clamp and odd RIFF padding cases. If a shell wants another
+format after release, it must retain PCM externally and use a separate future contract.
+
+The synthetic site contract is `tools/contract/wav-input.json` plus
+`tools/contract/recordings/wav-contract.json`. Regenerate and verify it with
+`node tools/contract/wav-contract.mjs <native-ABI-test> <native-job-test> <fcsession.node.js>
+<wasm-job-test.js> <fcore_session> --rebuild`, then omit `--rebuild` for the gate. The recording
+states the retrieval call sequence, input and artifact hashes, dependency and codec versions, the
+WAV header and the native/wasm digest, and cancel, unavailable, safe miss and unsafe outcomes.
+
 ## Measured ready-master report
 
 Each completed ready master carries an optional `MasterReport` beside its recipe and landing. Its LUFS,

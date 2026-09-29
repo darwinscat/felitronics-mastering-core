@@ -4,9 +4,11 @@
 #include "DeclaredBudget.h"
 #include "Driver.h"
 #include <felitronics/session/Snapshot.h>
+#include <felitronics/analysis/ReferenceTruePeakMeter.h>
 #include <felitronics_test.h>
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <limits>
 #include <vector>
 
@@ -102,7 +104,15 @@ int main()
     otherReady.revision = other.revision();
     const auto otherStart = other.apply (otherReady);
     ok (otherStart.rejection == Rejection::None && other.apply (command::Cancel { 3, otherStart.job }).rejection == Rejection::None
-        && other.job() == 0 && s.masterAudioBytes (token) != 0, "cancel in another session leaves this completed PCM intact");
+        && other.job() == 0 && ! other.masterWavPlan (other.pendingMaster())
+        && s.masterAudioBytes (token) != 0, "cancel in another session leaves this completed PCM intact and no false file");
+    auto invalidReady = otherReady; invalidReady.id = 4; invalidReady.revision = other.revision();
+    invalidReady.ready.params.inputGainDb = std::numeric_limits<double>::quiet_NaN();
+    Answer invalidMaster;
+    const auto refusalSpent = budget::spend ([&] { invalidMaster = other.apply (invalidReady); });
+    ok (invalidMaster.rejection == Rejection::NotFinite && refusalSpent.requests == 0
+        && other.job() == 0 && ! other.masterWavPlan (other.pendingMaster()),
+        "invalid ready request refuses before allocation and creates no downloadable master");
 
     ok (s.releaseMaster (token) == MasterTransferStatus::Ok
         && s.releaseMaster (token) == MasterTransferStatus::Unknown
@@ -150,7 +160,8 @@ int main()
     auto impossible = ready; impossible.source = unavailable.source().hash;
     impossible.revision = unavailable.revision();
     const auto refused = unavailable.apply (impossible);
-    ok (refused.rejection == Rejection::MandatoryUnavailable && unavailable.pendingMaster().master == 0,
+    ok (refused.rejection == Rejection::MandatoryUnavailable && unavailable.pendingMaster().master == 0
+        && ! unavailable.masterWavPlan (unavailable.pendingMaster()),
         "unavailable mandatory LUFS or true peak forbids ready PCM");
     for (unsigned i = 0; i < 20000 && (s.state() == State::Loaded
          || ! s.snapshot().view().mandatoryMeasurementsReady); ++i) (void) s.step (16);
@@ -166,8 +177,41 @@ int main()
         && miss.landing && miss.landing->status == LandingStatus::PassLimit
         && miss.landing->deliverable && miss.landing->passes == 12
         && miss.landing->truePeakDbTp && *miss.landing->truePeakDbTp <= -6.0
-        && s.pendingMaster().master == miss.id,
+        && s.pendingMaster().master == miss.id && s.masterWavPlan (s.pendingMaster()),
         "an unreachable loudness goal retains the best ceiling-safe PCM after twelve passes");
+    const auto missToken = s.pendingMaster();
+    const auto filePlan = s.masterWavPlan (missToken);
+    std::vector<std::uint8_t> file (std::size_t (filePlan.bytes), 0u);
+    bool fileCopied = bool (filePlan);
+    for (std::size_t at = 0; fileCopied && at < file.size(); at += 4093u)
+        fileCopied &= s.copyMasterWav (missToken, at,
+            { file.data() + at, std::min<std::size_t> (4093u, file.size() - at) }) == MasterTransferStatus::Ok;
+    ok (fileCopied && filePlan.bits == 24 && file.size() == 44u + filePlan.dataBytes + (filePlan.dataBytes & 1u),
+        "safe miss yields one complete WAV through bounded copies");
+    if (fileCopied && filePlan.bits == 24)
+    {
+        std::vector<float> decoded (std::size_t (filePlan.frames * filePlan.channels));
+        for (std::size_t frame = 0; frame < filePlan.frames; ++frame)
+            for (std::size_t channel = 0; channel < filePlan.channels; ++channel)
+            {
+                const auto at = 44u + (frame * filePlan.channels + channel) * 3u;
+                const auto raw = std::uint32_t (file[at]) | (std::uint32_t (file[at + 1]) << 8)
+                    | (std::uint32_t (file[at + 2]) << 16);
+                const auto code = std::int32_t (raw) - ((raw & 0x800000u) ? 0x1000000 : 0);
+                decoded[channel * filePlan.frames + frame] = float (double (code) / 8388608.0);
+            }
+        felitronics::analysis::ReferenceTruePeakMeter meter;
+        bool measured = meter.prepare (filePlan.rate, 1024, int (filePlan.channels));
+        for (std::size_t at = 0; measured && at < filePlan.frames; at += 1024u)
+        {
+            const float* block[] { decoded.data() + at, decoded.data() + filePlan.frames + at };
+            measured &= meter.process (block, int (filePlan.channels),
+                int (std::min<std::size_t> (1024u, filePlan.frames - at)));
+        }
+        if (measured) meter.drain();
+        ok (measured && miss.report && meter.truePeakDb() <= miss.report->ceilingDbTp,
+            "decoded safe-miss WAV respects the reference true-peak ceiling");
+    }
     const auto sidecarToken = s.pendingMaster();
     const auto sidecarBefore = s.liveBytes();
     MeasuredSource replacementFacts { "sidecar.wav", s.source().hash + 1u, left.size(), rate, 2, rate, 24,
@@ -203,7 +247,9 @@ int main()
     for (unsigned i = 0; i < 40000 && unsafe.job() != 0; ++i) (void) unsafe.step (16);
     ok (unsafeTarget.rejection == Rejection::None && unsafeStart.rejection == Rejection::None
         && unsafe.masters().size() == 1 && unsafe.masters().back().landing
-        && ! unsafe.masters().back().landing->deliverable && unsafe.pendingMaster().master == 0,
+        && ! unsafe.masters().back().landing->deliverable && unsafe.pendingMaster().master == 0
+        && ! unsafe.masterWavPlan (unsafe.pendingMaster()),
         "true-peak violation across all candidates yields no transferable PCM");
+    std::printf ("wav-outcomes=cancel:false,refusal:false,unavailable:false,miss:true,unsafe:false\n");
     return felitronics::test::report();
 }

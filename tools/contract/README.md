@@ -29,3 +29,11 @@ without Emscripten; `--controls` also proves reordered events, corrupted fields 
 and stale fixtures fail. `tools/wasm/build.sh` builds the production and checked
 Wasm modules and a separate poisonable contract control. The four appended v1
 ABI functions load measured facts and attach the matching audio.
+
+The WAV delivery example is `wav-input.json` and `recordings/wav-contract.json`.
+It runs one synthetic ready master through the native C facade and the shipped
+wasm facade, checks byte-identical downloaded WAV, and records cancel, refusal,
+safe miss and unavailable outcomes. Regenerate with the command in
+`docs/SESSION.md`; normal verification omits `--rebuild`. The caller assembles
+the WAV under the master id before releasing session PCM, then serves its own
+retained bytes for repeated downloads.

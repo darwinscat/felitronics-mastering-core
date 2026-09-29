@@ -56,7 +56,7 @@ echo "emcc: $(emcc --version | head -1)"
 
 CORE="${FELITRONICS_CORE_DIR:-$ROOT/../felitronics-core}"
 [ -f "$CORE/modules/core/include/felitronics/core/DetMath.h" ] \
-    || { echo "no felitronics-core at $CORE — set FELITRONICS_CORE_DIR to a checkout (v0.55.0 or later)"; exit 1; }
+    || { echo "no felitronics-core at $CORE — set FELITRONICS_CORE_DIR to a checkout (v0.56.0 or later)"; exit 1; }
 CORE="$(cd "$CORE" && pwd)"
 # A core that still carries these modules would put a SECOND copy of every header here on the include path,
 # and which one a TU compiled would depend on the order of the -I flags below. The CMake refuses such a core
@@ -64,6 +64,15 @@ CORE="$(cd "$CORE" && pwd)"
 [ ! -d "$CORE/modules/mastering" ] && [ ! -f "$CORE/modules/analysis/include/felitronics/analysis/ProgrammeReport.h" ] \
     || { echo "$CORE still carries the mastering modules (felitronics-core before v0.52.0) — use a core without them"; exit 1; }
 echo "felitronics-core: $CORE"
+node - "$CORE/modules/io/include/felitronics/io/Wav.h" <<'JS'
+const {readFileSync} = require('node:fs');
+const {createHash} = require('node:crypto');
+const actual = createHash('sha256').update(readFileSync(process.argv[2], 'utf8').replace(/\r\n/g, '\n')).digest('hex');
+if (actual !== '7083f40a107ecd1bc772381b8ca164826647c3ebaee36e4d0619b655f75e967c') {
+    console.error('felitronics-core WAV grid or RIFF pad differs from the pinned release');
+    process.exit(1);
+}
+JS
 
 INC=(-I"$ROOT/modules/storage/include" -I"$ROOT/tools"
      -I"$ROOT/modules/analysis_offline/include"
@@ -531,6 +540,9 @@ read -r SV_MAJOR SV_MINOR SV_PATCH <<< "$(project_version "$ROOT/CMakeLists.txt"
 read -r CV_MAJOR CV_MINOR CV_PATCH <<< "$(project_version "$CORE/CMakeLists.txt" felitronics_core)" || true
 [ -n "${SV_PATCH:-}" ] || { echo "*** no project(felitronics_mastering_core VERSION x.y.z ...) line in $ROOT/CMakeLists.txt"; exit 1; }
 [ -n "${CV_PATCH:-}" ] || { echo "*** no project(felitronics_core VERSION x.y.z ...) line in $CORE/CMakeLists.txt"; exit 1; }
+if [ "$CV_MAJOR" -eq 0 ] && [ "$CV_MINOR" -lt 56 ]; then
+    echo "*** felitronics-core must be v0.56.0 or later"; exit 1
+fi
 echo
 echo "--- fc_session: felitronics-mastering-core $SV_MAJOR.$SV_MINOR.$SV_PATCH over felitronics-core $CV_MAJOR.$CV_MINOR.$CV_PATCH"
 
@@ -630,7 +642,7 @@ SNAMES=$(export_names "${SFILES[@]}")
 SFOUND=$(printf '%s\n' "$SNAMES" | grep -c . || true)
 check_exports "$SFOUND" "${SFILES[@]}"
 check_return_types 'std::uint32_t|fc_session_status' "${SFILES[@]}"
-SEXACT="_fc_session_abi_version _fc_session_attach_audio _fc_session_attach_audio_bytes _fc_session_command _fc_session_command_bytes _fc_session_config_version _fc_session_create _fc_session_create_bytes _fc_session_destroy _fc_session_events_copy _fc_session_events_size _fc_session_export_project_copy _fc_session_export_project_size _fc_session_import_project _fc_session_import_project_bytes _fc_session_load _fc_session_load_bytes _fc_session_load_measured _fc_session_load_measured_bytes _fc_session_master _fc_session_master_audio_copy _fc_session_master_audio_release _fc_session_master_audio_size _fc_session_master_audio_view _fc_session_master_bytes _fc_session_master_waveform_chunk_bytes _fc_session_master_waveform_chunk_copy _fc_session_master_waveform_chunk_size _fc_session_measurement_bytes _fc_session_needles_bytes _fc_session_query_bytes _fc_session_query_copy _fc_session_query_size _fc_session_set_capacity _fc_session_snapshot_copy _fc_session_snapshot_size _fc_session_step _fc_session_summary_copy _fc_session_summary_size"
+SEXACT="_fc_session_abi_version _fc_session_attach_audio _fc_session_attach_audio_bytes _fc_session_command _fc_session_command_bytes _fc_session_config_version _fc_session_create _fc_session_create_bytes _fc_session_destroy _fc_session_events_copy _fc_session_events_size _fc_session_export_project_copy _fc_session_export_project_size _fc_session_import_project _fc_session_import_project_bytes _fc_session_load _fc_session_load_bytes _fc_session_load_measured _fc_session_load_measured_bytes _fc_session_master _fc_session_master_audio_copy _fc_session_master_audio_release _fc_session_master_audio_size _fc_session_master_audio_view _fc_session_master_bytes _fc_session_master_wav_copy _fc_session_master_wav_size _fc_session_master_waveform_chunk_bytes _fc_session_master_waveform_chunk_copy _fc_session_master_waveform_chunk_size _fc_session_measurement_bytes _fc_session_needles_bytes _fc_session_query_bytes _fc_session_query_copy _fc_session_query_size _fc_session_set_capacity _fc_session_snapshot_copy _fc_session_snapshot_size _fc_session_step _fc_session_summary_copy _fc_session_summary_size"
 [ "$(printf '%s\n' "$SNAMES" | LC_ALL=C sort | paste -sd' ' -)" = "$SEXACT" ] \
     || { echo "*** fc_session exports differ from the frozen v1 list and its declared additions"; exit 1; }
 SEXPORTS="$(printf '%s\n' "$SNAMES" | paste -sd, -),_malloc,_free"
@@ -652,6 +664,18 @@ SCOMMON=("${SFRONT[@]}"
 
 echo "--- fc_session node (for session-check.mjs)"
 em++ "${SCOMMON[@]}" "${RELEASE[@]}" -sENVIRONMENT=node "$SSRC" "${SESSION_SRCS[@]}" -o "$OUT/fcsession.node.js"
+echo "--- bounded WAV writer against the installed core WAV reader and writer"
+em++ "${SFRONT[@]}" -I"$CORE/modules/io/include" -I"$CORE/test_support" -O3 \
+     -sENVIRONMENT=node -sEXIT_RUNTIME=1 \
+     "$ROOT/modules/session/tests/WavTests.cpp" "$ROOT/modules/session/src/Wav.cpp" \
+     -o "$OUT/session-wav-tests.js"
+node "$OUT/session-wav-tests.js"
+echo "--- master, cancellation, refusal, safe miss and unavailable WAV eligibility"
+em++ "${SFRONT[@]}" -I"$CORE/test_support" -O3 -sENVIRONMENT=node -sSTACK_SIZE=8388608 \
+     -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -Wl,--wrap=pthread_create \
+     "$ROOT/modules/session/tests/MasterJobTests.cpp" "${SESSION_SRCS[@]}" \
+     -o "$OUT/session-master-job-tests.js"
+node "$OUT/session-master-job-tests.js"
 echo "--- direct dacd2b2 landing oracle against Session (FP contraction off)"
 em++ "${SFRONT[@]}" -I"$CORE/test_support" -O3 -sENVIRONMENT=node -sSTACK_SIZE=8388608 \
      -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -Wl,--wrap=pthread_create \

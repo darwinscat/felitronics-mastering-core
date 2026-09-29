@@ -70,3 +70,23 @@ execute_process(COMMAND "${CMAKE_COMMAND}" -S "${parent_source}" -B "${CONTROL_D
 if(embedded_partial_result EQUAL 0 OR NOT "${embedded_partial_output}${embedded_partial_error}" MATCHES "requires the pinned K13 tap implementation")
     message(FATAL_ERROR "A declaration-only parent core passed the implementation preflight: ${embedded_partial_output}${embedded_partial_error}")
 endif()
+
+# A released tap alone cannot mask an older WAV grid or a missing RIFF pad.
+file(COPY "${CORE_SOURCE}/modules/limiter/include/felitronics/limiter/TruePeakLimiter.h"
+     DESTINATION "${fake}/modules/limiter/include/felitronics/limiter")
+file(MAKE_DIRECTORY "${fake}/modules/io/include/felitronics/io")
+file(WRITE "${fake}/modules/io/include/felitronics/io/Wav.h" "// obsolete WAV writer\n")
+execute_process(COMMAND "${CMAKE_COMMAND}" -S "${MASTERING_SOURCE}" -B "${CONTROL_DIR}/top-wav"
+    ${generator_args} -DFELITRONICS_MASTERING_FCORE_DIR=${fake}
+    -DFELITRONICS_MASTERING_TOML_DIR=${TOML_SOURCE}
+    -DFELITRONICS_MASTERING_BUILD_TESTS=OFF
+    RESULT_VARIABLE wav_result OUTPUT_VARIABLE wav_output ERROR_VARIABLE wav_error)
+if(wav_result EQUAL 0 OR NOT "${wav_output}${wav_error}" MATCHES "requires the released WAV[\n ]+grid and RIFF pad[\n ]+implementation")
+    message(FATAL_ERROR "An obsolete local WAV implementation passed preflight: ${wav_output}${wav_error}")
+endif()
+execute_process(COMMAND "${CMAKE_COMMAND}" -S "${parent_source}" -B "${CONTROL_DIR}/embedded-wav"
+    ${generator_args}
+    RESULT_VARIABLE wav_parent_result OUTPUT_VARIABLE wav_parent_output ERROR_VARIABLE wav_parent_error)
+if(wav_parent_result EQUAL 0 OR NOT "${wav_parent_output}${wav_parent_error}" MATCHES "requires the released WAV[\n ]+grid and RIFF pad[\n ]+implementation")
+    message(FATAL_ERROR "An obsolete parent WAV implementation passed preflight: ${wav_parent_output}${wav_parent_error}")
+endif()

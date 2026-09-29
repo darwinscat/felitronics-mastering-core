@@ -246,6 +246,7 @@ if(FELITRONICS_BUILD_TESTS)
         COMMAND ${CMAKE_COMMAND}
             "-DMASTERING_SOURCE=${PROJECT_SOURCE_DIR}"
             "-DTOML_SOURCE=${felitronics_toml_SOURCE_DIR}"
+            "-DCORE_SOURCE=${felitronics_core_SOURCE_DIR}"
             "-DCONTROL_DIR=${CMAKE_CURRENT_BINARY_DIR}/core-consumption-controls/$<CONFIG>"
             "-DCONTROL_GENERATOR=${CMAKE_GENERATOR}"
             "-DCONTROL_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"

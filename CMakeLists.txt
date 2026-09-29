@@ -44,7 +44,7 @@ if(PROJECT_IS_TOP_LEVEL)
     include(FetchContent)
     set(FELITRONICS_MASTERING_FCORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-core" CACHE PATH
         "Local felitronics-core checkout (used if present); else the pinned release is fetched")
-    set(FELITRONICS_MASTERING_FCORE_TAG "v0.55.0" CACHE STRING
+    set(FELITRONICS_MASTERING_FCORE_TAG "v0.56.0" CACHE STRING
         "felitronics-core git tag to fetch when no local checkout is present")
     if(FELITRONICS_MASTERING_FCORE_DIR AND EXISTS "${FELITRONICS_MASTERING_FCORE_DIR}/CMakeLists.txt")
         message(STATUS "felitronics-core: local checkout — ${FELITRONICS_MASTERING_FCORE_DIR}")
@@ -54,8 +54,6 @@ if(PROJECT_IS_TOP_LEVEL)
         FetchContent_Declare(felitronics_core
             GIT_REPOSITORY https://github.com/darwinscat/felitronics-core.git
             GIT_TAG        ${FELITRONICS_MASTERING_FCORE_TAG}
-            PATCH_COMMAND  ${CMAKE_COMMAND} -DCORE_SOURCE=<SOURCE_DIR>
-                           -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/core-k13-tap.cmake
             GIT_SHALLOW    TRUE)
     endif()
     # Core's own suites are core's business. A NORMAL variable, which core's option() honours (CMP0077),
@@ -90,7 +88,7 @@ endif()
 if(NOT TARGET felitronics::core OR NOT TARGET felitronics::test_support
    OR NOT EXISTS "${felitronics_core_SOURCE_DIR}/cmake/FelitronicsPolicy.cmake")
     message(FATAL_ERROR
-        "felitronics-mastering-core needs felitronics-core v0.55.0 or later, made available BEFORE this "
+        "felitronics-mastering-core needs felitronics-core v0.56.0 or later, made available BEFORE this "
         "repository (FetchContent_MakeAvailable(felitronics_core) first), so ONE core is resolved by the "
         "product that owns the graph.")
 endif()
@@ -101,7 +99,7 @@ if(TARGET felitronics::mastering OR TARGET felitronics::analysis_offline)
     message(FATAL_ERROR
         "this felitronics-core (${felitronics_core_SOURCE_DIR}) still defines felitronics::mastering / "
         "felitronics::analysis_offline, which live here now: felitronics-mastering-core needs felitronics-core "
-        "v0.55.0 or later. Point FELITRONICS_MASTERING_FCORE_DIR at such a checkout, or remove the sibling "
+        "v0.56.0 or later. Point FELITRONICS_MASTERING_FCORE_DIR at such a checkout, or remove the sibling "
         "checkout to fetch FELITRONICS_MASTERING_FCORE_TAG.")
 endif()
 
@@ -122,12 +120,29 @@ endif()
 file(READ "${FELITRONICS_MASTERING_CORE_LIMITER_HEADER}" FELITRONICS_MASTERING_CORE_TAP_SOURCE)
 string(REPLACE "\r\n" "\n" FELITRONICS_MASTERING_CORE_TAP_SOURCE "${FELITRONICS_MASTERING_CORE_TAP_SOURCE}")
 string(SHA256 FELITRONICS_MASTERING_CORE_TAP_SHA "${FELITRONICS_MASTERING_CORE_TAP_SOURCE}")
-# Pin the complete patched v0.55.0 implementation until a tap-bearing core release replaces it.
+# Pin the complete released K13 tap implementation across local, parent and fetched cores.
 if(NOT FELITRONICS_MASTERING_CORE_TAP_SHA STREQUAL
     "fef7aad6e4f522d93fa8d9dfacd77ee9d90f74c90147559fc8a180e1b820df7d")
     message(FATAL_ERROR
         "felitronics-mastering-core requires the pinned K13 tap implementation; "
         "the resolved core at ${felitronics_core_SOURCE_DIR} has a different limiter header")
+endif()
+
+# WAV export is also a core contract: the installed writer must use Dither's
+# 2^(bits-1) PCM grid, signed clamp, and an uncounted data pad in the RIFF size.
+# Check the released implementation, not a neighbouring checkout. Normalising
+# CRLF before hashing lets Windows autocrlf check out the same release safely.
+set(FELITRONICS_MASTERING_CORE_WAV_HEADER
+    "${felitronics_core_SOURCE_DIR}/modules/io/include/felitronics/io/Wav.h")
+if(NOT EXISTS "${FELITRONICS_MASTERING_CORE_WAV_HEADER}")
+    message(FATAL_ERROR "felitronics-mastering-core requires the released felitronics-core WAV implementation")
+endif()
+file(READ "${FELITRONICS_MASTERING_CORE_WAV_HEADER}" FELITRONICS_MASTERING_CORE_WAV_SOURCE)
+string(REPLACE "\r\n" "\n" FELITRONICS_MASTERING_CORE_WAV_SOURCE "${FELITRONICS_MASTERING_CORE_WAV_SOURCE}")
+string(SHA256 FELITRONICS_MASTERING_CORE_WAV_SHA "${FELITRONICS_MASTERING_CORE_WAV_SOURCE}")
+if(NOT FELITRONICS_MASTERING_CORE_WAV_SHA STREQUAL
+    "7083f40a107ecd1bc772381b8ca164826647c3ebaee36e4d0619b655f75e967c")
+    message(FATAL_ERROR "felitronics-mastering-core requires the released WAV grid and RIFF pad implementation")
 endif()
 
 # Core's build policy — FP contraction (law 10), the MSVC stack + UTF-8, the emscripten physics, the
@@ -150,6 +165,9 @@ get_directory_property(FELITRONICS_MASTERING_FCORE_VERSION DIRECTORY "${felitron
 if(NOT FELITRONICS_MASTERING_FCORE_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
     message(FATAL_ERROR "cannot read felitronics-core's release from ${felitronics_core_SOURCE_DIR} "
                         "(its project() line gave '${FELITRONICS_MASTERING_FCORE_VERSION}')")
+endif()
+if(FELITRONICS_MASTERING_FCORE_VERSION VERSION_LESS "0.56.0")
+    message(FATAL_ERROR "felitronics-mastering-core requires felitronics-core v0.56.0 or later")
 endif()
 
 # felitronics-toml, by the same rule: made available before this repository by whoever owns the graph (above, when

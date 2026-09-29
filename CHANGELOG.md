@@ -4,6 +4,16 @@
 
 ## Unreleased
 
+### session — bounded WAV delivery
+
+Completed safe masters expose an additive, token-guarded WAV size and bounded slice copy. The shell can
+assemble one owned RIFF image before releasing session PCM and repeat downloads without rerendering or
+adding dither. The pure planar writer supports PCM16, PCM24 and float32, with the installed core's PCM
+grid and odd-chunk padding. Native and wasm checks decode the written bytes and verify the delivered
+reference true peak; cancelled, unavailable and unsafe jobs expose no file, while a safe twelve-pass miss does.
+Session measures the selected PCM on its delivery grid, and the decoded WAV equals the listening PCM
+sample for sample; direct solver calls keep legacy float output by default.
+
 ### session — measured master report and comparable crest rows
 
 The ready master now retains delivered LUFS, reference true peak, suitable PLR/LRA, gain from the source, signed target miss, ceiling safety and measured mix hints. A missing LRA carries a reason. Linear band-crest rows use the source's explicit rate, hop and corners and preserve its activity mask when comparable. Rate conversion adds one source-rate check pass with the winning settings, using bounded scratch while the delivered PCM stays intact. Snapshot and the generated codec own the compact rows; older v1 snapshots decode without a report.
@@ -18,7 +28,7 @@ The limiter's existing oversampled K13 clipper now exposes its reduction as a ti
 audio or aggregate readings. Delivered mastering stores limiter and clipper min/max/mean rows on one
 frame grid, including the final drain. Session snapshots own both series, the generated codec decodes
 their absence in older snapshots, and `fc_session_query_*` accepts bounded master trace queries.
-The pinned felitronics-core v0.55.0 fetch applies the companion tap patch until the core release contains it.
+The pinned felitronics-core v0.56.0 release supplies the companion tap and the WAV grid and pad implementation.
 
 ### mastering · session — saved loudness landing search
 
