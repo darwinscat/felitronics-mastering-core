@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <random>
 #include <string>
 #include <vector>
@@ -457,6 +458,22 @@ static void testDelivered()
         if (! sameBits (heardOut, plainOut) || ! sameSolution (again, plain)) ++wrong;
     }
     ok (wrong == 0, "solve: a stop within the first pass is Cancelled, and the next solve is the same bits");
+
+    // A completed first conversion owns the source count even if the next pass stops early.
+    std::vector<float> poisoned = in;
+    poisoned[0] = std::numeric_limits<float>::quiet_NaN();
+    Planes pn (poisoned, n, heardOut, d);
+    long long second = -1;
+    for (std::size_t i = 0; i < r.seen.size(); ++i)
+        if (r.seen[i].e.stage == ProgressStage::SearchPass && r.seen[i].e.pass == 2
+            && r.seen[i].e.fraction > 0.0 && r.seen[i].e.fraction < 0.1)
+        { second = (long long) i; break; }
+    Recorder interrupted; interrupted.stopAt = second;
+    const LoudnessSolution stoppedSecond = dm.solve (solver, chain, renderer, params, pn.in, kNch, n,
+                                                    pn.out, d, req, interrupted.callback());
+    ok (plain.passes >= 2 && second >= 0 && stoppedSecond.status == MasteringSolveStatus::Cancelled
+        && dm.nonFiniteInputSamples() == 1u,
+        "a second-pass cancellation keeps the first completed conversion's source count");
 
     double lraPlain = -1.0, lraHeard = -2.0;
     Recorder q;

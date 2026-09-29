@@ -56,6 +56,8 @@ if(FELITRONICS_BUILD_TESTS)
 
     add_executable(felitronics_mastering_resumable_render_tests tests/ResumableRenderTests.cpp)
     target_link_libraries(felitronics_mastering_resumable_render_tests PRIVATE felitronics::mastering felitronics::test_support)
+    target_compile_options(felitronics_mastering_resumable_render_tests PRIVATE
+        $<IF:$<CXX_COMPILER_ID:MSVC>,/fp:strict,-ffp-contract=off>)
     add_test(NAME felitronics_mastering_resumable_render_tests COMMAND felitronics_mastering_resumable_render_tests)
 
     add_executable(felitronics_mastering_landing_search_tests tests/LandingSearchTests.cpp)
