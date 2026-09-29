@@ -535,7 +535,8 @@ change requests one extra source-rate impact pass outside the twelve landing ren
 
 `LandingSummary` carries status, achieved LUFS, signed miss, absolute distance, reference true peak, measured
 source and limiter hints, work units and the ordered pass log. Its limiter and K13 clipper traces share
-the delivered-frame grid and carry min/max/mean reduction, finite counts, validity and completion.
+the delivered-frame grid and carry min/max/mean reduction, finite counts, validity and completion. Limiter
+GR follows the audio receiving gain after lookahead; K13 reduction follows the detector's input time.
 `Kept::landing` and the appended trace fields are optional in the generated session codec so older v1
 snapshots decode without them. `Snapshot` owns the pass rows and both trace row arrays.
 
@@ -635,7 +636,7 @@ The generated `Query*Row` tuples in `snapshot.d.ts` give column names. Their num
 | Momentary / ShortTerm | `[sourceFrame,LUFS,reason]` from the retained live grid, decimated to the requested maximum row count. `sourceFrame` is the window end: `(fromFrame,toFrame]` selects readings for the half-open audio range `[fromFrame,toFrame)`, including a reading at the source end. |
 | Clipping | `[firstFrame,frameCount,channel,sign,level,evidence]` for retained runs intersecting the range; `total` counts all matches, `stored` is capped by `columns`, and `complete` reports truncation. |
 | Stereo | `[firstFrame,lastFrame,width,correlation,rms,reason]` from retained source stereo columns intersecting the requested range. Bounds name each retained column's actual source interval; `total` counts intersecting columns and `complete` is false when the column limit omits some. |
-| LimiterGr / PeakClipGr | `[firstFrame,lastFrame,minDb,maxDb,meanDb,samples,nonFinite]` on the delivered-frame grid. These require `masterId`, the master's source `audioId`, and the full trace range `[0,toFrame)`. Requested columns group consecutive retained buckets; bounds name the actual group, not an invented uniform step. `total` is the retained bucket count, `stored` is the returned count, and `complete` is false for a reduced column count. An unfinished render returns `Pending` without rows. `sampleRate` is the delivery rate. |
+| LimiterGr / PeakClipGr | `[firstFrame,lastFrame,minDb,maxDb,meanDb,samples,nonFinite]` on the delivered-frame grid. These require `masterId`, the master's source `audioId`, and a nonempty range inside the trace. A zoom selects every retained bucket intersecting the range; requested columns group those buckets and report their actual bounds, including edge buckets that cross the requested bounds. `total` is the selected bucket count, `stored` is the returned count, and `complete` is false for a reduced column count. An unfinished render returns `Pending` without rows. `sampleRate` is the delivery rate. |
 
 Waveform inner buckets combine completed index nodes; only two edge leaves can replay resident PCM. Its index owns
 the multiresolution columns and filter checkpoints with no second PCM copy. `pcmFramesRead` exposes exact-edge work;

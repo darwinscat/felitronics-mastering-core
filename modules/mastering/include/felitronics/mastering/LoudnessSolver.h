@@ -2267,7 +2267,9 @@ private:
     {
         const MasteringChainResolved r = p.chain->resolved();
         const long long compFrom = r.compressorTapOffset, compTo = compFrom + p.frames;
-        const long long limFrom = r.limiterTapOffset, limTo = limFrom + p.frames;
+        const long long limDetectorFrom = r.limiterTapOffset, limDetectorTo = limDetectorFrom + p.frames;
+        const long long limAppliedFrom = limDetectorFrom + r.limiterLookahead;
+        const long long limAppliedTo = limAppliedFrom + p.frames;
         const long long bandK = r.internalBlock > 0 ? r.internalBlock : 1;
         for (int q = 0; q < t.bandQuantaWritten && t.bandDeltaDb != nullptr; ++q)
         {
@@ -2289,17 +2291,22 @@ private:
                 p.compSum->add (a);
                 p.compTrace->add ((std::uint64_t) (s - compFrom), a);
             }
-            if (s >= limFrom && s < limTo)
+            const bool detector = s >= limDetectorFrom && s < limDetectorTo;
+            const bool applied = s >= limAppliedFrom && s < limAppliedTo;
+            if (detector || applied)
                 for (int k = 0; k < p.chain->tapOversampleFactor(); ++k)
                 {
                     const std::size_t idx = (std::size_t) j * (std::size_t) p.chain->tapOversampleFactor() + (std::size_t) k;
                     const double a = std::fabs ((double) limTap_[idx]);
-                    p.limSum->add (a);
-                    const float pk = limPeak_[idx];
-                    p.limActive->add (a, (double) pk);
-                    if (pk > maxReconLin_) maxReconLin_ = pk;
-                    p.limTrace->add ((std::uint64_t) (s - limFrom), a);
-                    p.clipTrace->add ((std::uint64_t) (s - limFrom), (double) clipTap_[idx]);
+                    if (detector)
+                    {
+                        p.limSum->add (a);
+                        const float pk = limPeak_[idx];
+                        p.limActive->add (a, (double) pk);
+                        if (pk > maxReconLin_) maxReconLin_ = pk;
+                        p.clipTrace->add ((std::uint64_t) (s - limDetectorFrom), (double) clipTap_[idx]);
+                    }
+                    if (applied) p.limTrace->add ((std::uint64_t) (s - limAppliedFrom), a);
                 }
         }
     }
@@ -2720,8 +2727,10 @@ private:
         const MasteringChainResolved r = chain.resolved();
         const long long compFrom = r.compressorTapOffset;
         const long long compTo   = compFrom + frames;
-        const long long limFrom  = r.limiterTapOffset;
-        const long long limTo    = limFrom + frames;
+        const long long limDetectorFrom = r.limiterTapOffset;
+        const long long limDetectorTo = limDetectorFrom + frames;
+        const long long limAppliedFrom = limDetectorFrom + r.limiterLookahead;
+        const long long limAppliedTo = limAppliedFrom + frames;
 
         MasteringChainTaps taps;
         taps.compressorGrDb = compTap_.data();
@@ -2770,20 +2779,23 @@ private:
                     compSum.add (a);
                     compTrace.add ((std::uint64_t) (s - compFrom), a);
                 }
-                if (s >= limFrom && s < limTo)
+                const bool detector = s >= limDetectorFrom && s < limDetectorTo;
+                const bool applied = s >= limAppliedFrom && s < limAppliedTo;
+                if (detector || applied)
                     for (int k = 0; k < F; ++k)
                     {
                         const std::size_t idx = (std::size_t) j * (std::size_t) F + (std::size_t) k;
                         const double a = std::fabs ((double) limTap_[idx]);
-                        limSum.add (a);
-                        const float pk = limPeak_[idx];
-                        // The SAME sample's |GR| and the input that produced it, into the gated summary.
-                        // `limiterPeakLin` is the reconstructed peak the limiter saw, at this very index
-                        // (MasteringChain.h:141), so nothing is aligned here and nothing new is tapped.
-                        limActive.add (a, (double) pk);
-                        if (pk > maxReconLin_) maxReconLin_ = pk;
-                        limTrace.add ((std::uint64_t) (s - limFrom), a);
-                        clipTrace.add ((std::uint64_t) (s - limFrom), (double) clipTap_[idx]);
+                        if (detector)
+                        {
+                            limSum.add (a);
+                            const float pk = limPeak_[idx];
+                            // The legacy detector statistic stays aligned to its input.
+                            limActive.add (a, (double) pk);
+                            if (pk > maxReconLin_) maxReconLin_ = pk;
+                            clipTrace.add ((std::uint64_t) (s - limDetectorFrom), (double) clipTap_[idx]);
+                        }
+                        if (applied) limTrace.add ((std::uint64_t) (s - limAppliedFrom), a);
                     }
             }
         };

@@ -252,10 +252,12 @@ QueryDemand Session::queryStorage (const MeasurementQuery& q) const noexcept
         if (master->recipe.source != q.audioId) return { QueryStatus::StaleSource, 0, 0, 0 };
         const LandingTrace* trace = masterTrace (*master, q.kind);
         if (! trace) return { QueryStatus::Unavailable, 0, 0, 0 };
-        if (q.fromFrame != trace->fromFrame || q.toFrame != trace->toFrame)
+        if (q.fromFrame < trace->fromFrame || q.fromFrame > q.toFrame || q.toFrame > trace->toFrame)
             return { QueryStatus::InvalidRange, 0, 0, 0 };
+        if (q.fromFrame == q.toFrame) return { QueryStatus::Empty, 0, 0, 0 };
         if (! trace->complete) return { QueryStatus::Pending, 0, 0, 0 };
-        const std::uint64_t columns = std::min<std::uint64_t> (q.columns, trace->rows.size());
+        const auto [first, last] = LandingOps::bucketRange (*trace, q.fromFrame, q.toFrame);
+        const std::uint64_t columns = std::min<std::uint64_t> (q.columns, last - first);
         const std::uint64_t rowBytes = columns * 7u * sizeof (double);
         const std::uint64_t block = rowBytes + 128u;
         return { QueryStatus::Ready, 2u * block, block, rowBytes };
@@ -294,14 +296,16 @@ QueryResult Session::query (const MeasurementQuery& q) noexcept
         if (demand (request).rejection != Rejection::None)
         { v.status = QueryStatus::Memory; v.reason = MeasurementReason::Memory; return QueryResult::copy (v); }
         const LandingTrace* trace = masterTrace (*masterFor (masters(), q.masterId), q.kind);
+        const auto [first, last] = LandingOps::bucketRange (*trace, q.fromFrame, q.toFrame);
         v.sampleRate = trace->sampleRateHz;
         v.measurementKey = q.masterId;
-        v.total = trace->columns;
-        v.stored = std::min<std::uint64_t> (q.columns, trace->rows.size());
+        v.total = last - first;
+        v.stored = std::min<std::uint64_t> (q.columns, v.total);
         v.complete = trace->complete && v.stored == v.total;
         if (! trace->valid) v.reason = MeasurementReason::NonFinite;
         std::unique_ptr<double[]> rows (new double[std::size_t (v.stored * v.stride)]);
-        if (LandingOps::query (*trace, q.columns, { rows.get(), std::size_t (v.stored * v.stride) }) != v.stored)
+        if (LandingOps::query (*trace, q.fromFrame, q.toFrame, q.columns,
+                               { rows.get(), std::size_t (v.stored * v.stride) }) != v.stored)
             detail::storageOverflow();
         v.values = { rows.get(), std::size_t (v.stored * v.stride) };
         return QueryResult::copy (v);

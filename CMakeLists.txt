@@ -105,6 +105,31 @@ if(TARGET felitronics::mastering OR TARGET felitronics::analysis_offline)
         "checkout to fetch FELITRONICS_MASTERING_FCORE_TAG.")
 endif()
 
+# The core is resolved above for a top-level build and by the parent for an embedded build.
+# Reject a caller-supplied core without the tap at configure time, before compiling its consumer.
+set(FELITRONICS_MASTERING_CORE_LIMITER_HEADER
+    "${felitronics_core_SOURCE_DIR}/modules/limiter/include/felitronics/limiter/TruePeakLimiter.h")
+if(NOT EXISTS "${FELITRONICS_MASTERING_CORE_LIMITER_HEADER}")
+    message(FATAL_ERROR "felitronics-mastering-core requires felitronics-core with the K13 limiter tap")
+endif()
+file(STRINGS "${FELITRONICS_MASTERING_CORE_LIMITER_HEADER}" FELITRONICS_MASTERING_CORE_TAP_DECL
+    REGEX "^[ \t]*float\\* peakClipReductionDb[ \t]*=[ \t]*nullptr;")
+if(NOT FELITRONICS_MASTERING_CORE_TAP_DECL)
+    message(FATAL_ERROR
+        "felitronics-mastering-core requires felitronics-core with the K13 limiter tap; "
+        "the resolved core at ${felitronics_core_SOURCE_DIR} lacks peakClipReductionDb")
+endif()
+file(READ "${FELITRONICS_MASTERING_CORE_LIMITER_HEADER}" FELITRONICS_MASTERING_CORE_TAP_SOURCE)
+string(REPLACE "\r\n" "\n" FELITRONICS_MASTERING_CORE_TAP_SOURCE "${FELITRONICS_MASTERING_CORE_TAP_SOURCE}")
+string(SHA256 FELITRONICS_MASTERING_CORE_TAP_SHA "${FELITRONICS_MASTERING_CORE_TAP_SOURCE}")
+# Pin the complete patched v0.55.0 implementation until a tap-bearing core release replaces it.
+if(NOT FELITRONICS_MASTERING_CORE_TAP_SHA STREQUAL
+    "fef7aad6e4f522d93fa8d9dfacd77ee9d90f74c90147559fc8a180e1b820df7d")
+    message(FATAL_ERROR
+        "felitronics-mastering-core requires the pinned K13 tap implementation; "
+        "the resolved core at ${felitronics_core_SOURCE_DIR} has a different limiter header")
+endif()
+
 # Core's build policy — FP contraction (law 10), the MSVC stack + UTF-8, the emscripten physics, the
 # sanitizer option, the hygiene warning set — stated for THIS directory by the same file core uses. It is
 # load-bearing: the suites here pin bits that depend on FP contraction, and without it they would compile

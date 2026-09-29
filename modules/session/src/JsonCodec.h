@@ -168,6 +168,7 @@ struct Reader
     unsigned ordinal = 0;
     bool matched = false;
     std::uint64_t optionalMask = 0;
+    std::uint64_t traceSamples = 0, traceNonFinite = 0;
 
     void space() noexcept { while (pos < input.size() && (input[pos] == ' ' || input[pos] == '\n' || input[pos] == '\r' || input[pos] == '\t')) ++pos; }
     bool take (char c) noexcept { space(); if (pos < input.size() && input[pos] == c) { ++pos; return true; } return false; }
@@ -336,10 +337,12 @@ struct Reader
             const auto parentSeen = seen; const auto parentKey = key;
             const auto parentOrdinal = ordinal; const auto parentMatched = matched;
             const auto parentOptional = optionalMask;
+            [[maybe_unused]] const auto parentTraceSamples = traceSamples, parentTraceNonFinite = traceNonFinite;
             const auto beforeRows = storage.measurementRows, beforeChars = storage.chars;
             const auto beforeNumbers = storage.measurementNumbers, beforeArrays = storage.measurementArrays;
             const auto beforePasses = storage.landingPasses, beforeTraceRows = storage.landingTraceRows;
             seen = 0; optionalMask = 0;
+            if constexpr (std::is_same_v<T, LandingTrace>) { traceSamples = 0; traceNonFinite = 0; }
             expect ('{');
             do
             {
@@ -380,15 +383,22 @@ struct Reader
                 if (x.columns != storage.landingTraceRows - beforeTraceRows
                     || x.columns > 65536 || x.fromFrame > x.toFrame
                     || (x.columns != 0 && x.sampleRateHz == 0)
-                    || (x.valid && ! x.complete) || x.nonFinite > x.samples) good = false;
+                    || (x.valid && (! x.complete || x.nonFinite != 0 || x.samples == 0))
+                    || x.nonFinite > x.samples
+                    || (x.complete && (traceSamples != x.samples || traceNonFinite != x.nonFinite))) good = false;
             }
             else if constexpr (std::is_same_v<T, LandingTraceBucket>)
             {
                 if (x.nonFinite > x.samples || ! std::isfinite (x.minDb) || ! std::isfinite (x.maxDb)
                     || ! std::isfinite (x.meanDb) || x.minDb < 0.0 || x.maxDb < x.minDb
                     || x.meanDb < 0.0) good = false;
+                if (x.samples > std::numeric_limits<std::uint64_t>::max() - traceSamples
+                    || x.nonFinite > std::numeric_limits<std::uint64_t>::max() - traceNonFinite) good = false;
+                else { traceSamples += x.samples; traceNonFinite += x.nonFinite; }
             }
             optionalMask = parentOptional;
+            if constexpr (std::is_same_v<T, LandingTrace>)
+                { traceSamples = parentTraceSamples; traceNonFinite = parentTraceNonFinite; }
             seen = parentSeen; key = parentKey; ordinal = parentOrdinal; matched = parentMatched;
         }
     }

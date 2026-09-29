@@ -159,17 +159,52 @@ bool LandingOps::summarize (const mastering::LoudnessSolution& solution,
 std::uint32_t LandingOps::query (const LandingTrace& trace, std::uint32_t columns,
                                  std::span<double> output) noexcept
 {
-    if (! trace.complete || columns == 0 || columns > 2048 || trace.rows.empty()
-        || trace.columns != trace.rows.size() || trace.fromFrame > trace.toFrame) return 0;
+    return query (trace, trace.fromFrame, trace.toFrame, columns, output);
+}
+
+std::pair<std::uint32_t, std::uint32_t> LandingOps::bucketRange (
+    const LandingTrace& trace, std::uint64_t fromFrame, std::uint64_t toFrame) noexcept
+{
+    if (trace.columns == 0 || trace.columns != trace.rows.size() || trace.fromFrame > trace.toFrame
+        || fromFrame < trace.fromFrame || fromFrame >= toFrame || toFrame > trace.toFrame) return { 0, 0 };
+    const auto boundary = [] (std::uint64_t length, std::uint64_t i, std::uint64_t total) noexcept
+    { return (length / total) * i + ((length % total) * i) / total; };
+    const auto length = trace.toFrame - trace.fromFrame;
+    std::uint32_t lo = 0, hi = trace.columns;
+    while (lo < hi)
+    {
+        const auto mid = lo + (hi - lo) / 2u;
+        const auto end = trace.fromFrame + boundary (length, std::uint64_t (mid) + 1u, trace.columns);
+        if (end <= fromFrame) lo = mid + 1u; else hi = mid;
+    }
+    const auto first = lo;
+    hi = trace.columns;
+    while (lo < hi)
+    {
+        const auto mid = lo + (hi - lo) / 2u;
+        const auto start = trace.fromFrame + boundary (length, mid, trace.columns);
+        if (start < toFrame) lo = mid + 1u; else hi = mid;
+    }
+    return { first, lo };
+}
+
+std::uint32_t LandingOps::query (const LandingTrace& trace,
+                                 std::uint64_t fromFrame, std::uint64_t toFrame,
+                                 std::uint32_t columns, std::span<double> output) noexcept
+{
+    if (! trace.complete || columns == 0 || columns > 2048 || trace.rows.empty()) return 0;
+    const auto [firstBucket, lastBucket] = bucketRange (trace, fromFrame, toFrame);
+    if (firstBucket == lastBucket) return 0;
     for (const auto& row : trace.rows) if (row.nonFinite > row.samples) return 0;
-    const auto count = std::min<std::uint32_t> (columns, trace.columns);
+    const auto selected = lastBucket - firstBucket;
+    const auto count = std::min<std::uint32_t> (columns, selected);
     if (output.size() < std::size_t (count) * 7u) return 0;
     const auto boundary = [] (std::uint64_t length, std::uint64_t i, std::uint64_t total) noexcept
     { return (length / total) * i + ((length % total) * i) / total; };
     for (std::uint32_t i = 0; i < count; ++i)
     {
-        const auto first = boundary (trace.columns, i, count);
-        const auto last = boundary (trace.columns, i + 1u, count);
+        const auto first = firstBucket + boundary (selected, i, count);
+        const auto last = firstBucket + boundary (selected, i + 1u, count);
         double min = 0.0, max = 0.0, sum = 0.0;
         std::uint64_t samples = 0, nonFinite = 0;
         for (std::uint64_t j = first; j < last; ++j)

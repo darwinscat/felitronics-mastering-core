@@ -664,6 +664,7 @@ void testTheTraceNullsAgainstAHandDrivenChain()
         const long long D = chain2.latencySamples();
         const MasteringChainResolved r = chain2.resolved();
         std::vector<double> gc ((std::size_t) frames, -1.0), gl ((std::size_t) frames * (std::size_t) F, -1.0);
+        std::vector<double> detectorGr (gl.size(), -1.0);
         std::vector<std::vector<float>> scratch (2, std::vector<float> ((std::size_t) blk, 0.0f));
         std::vector<float*> sp { scratch[0].data(), scratch[1].data() };
         long long tapPos = 0;
@@ -684,14 +685,20 @@ void testTheTraceNullsAgainstAHandDrivenChain()
                     gc[(std::size_t) (t - r.compressorTapOffset)] = std::fabs ((double) compTap[(std::size_t) j]);
                 if (t >= r.limiterTapOffset && t < r.limiterTapOffset + frames)
                     for (int k = 0; k < F; ++k)
-                        gl[(std::size_t) (t - r.limiterTapOffset) * (std::size_t) F + (std::size_t) k]
+                        detectorGr[(std::size_t) (t - r.limiterTapOffset) * (std::size_t) F + (std::size_t) k]
+                            = std::fabs ((double) limTap[(std::size_t) (j * F + k)]);
+                const long long applied = t - r.limiterTapOffset - r.limiterLookahead;
+                if (applied >= 0 && applied < frames)
+                    for (int k = 0; k < F; ++k)
+                        gl[(std::size_t) applied * (std::size_t) F + (std::size_t) k]
                             = std::fabs ((double) limTap[(std::size_t) (j * F + k)]);
             }
             tapPos += taps.framesWritten;
             off += m;
         }
         const bool filled = std::none_of (gc.begin(), gc.end(), [] (double v) { return v < 0.0; })
-                         && std::none_of (gl.begin(), gl.end(), [] (double v) { return v < 0.0; });
+                         && std::none_of (gl.begin(), gl.end(), [] (double v) { return v < 0.0; })
+                         && std::none_of (detectorGr.begin(), detectorGr.end(), [] (double v) { return v < 0.0; });
         test::ok (filled, "PRECONDITION: the hand-driven chain delivered every tap of both windows");
 
         const std::string at = " (" + std::to_string (frames) + " frames, " + std::to_string (cs.buckets) + " requested)";
@@ -714,6 +721,14 @@ void testTheTraceNullsAgainstAHandDrivenChain()
                       + at + " — " + std::to_string (bad) + " differ");
         }
         const double limPeak = *std::max_element (gl.begin(), gl.end());
+        if (sol.measured.limiter.valid && sol.measured.limiter.aboveRange == 0)
+        {
+            double detectorSum = 0.0;
+            for (double value : detectorGr) detectorSum += value;
+            const double detectorMean = detectorSum / (double) detectorGr.size();
+            test::ok (std::fabs (detectorMean - sol.measured.limiter.meanDb) <= 1e-8,
+                      "legacy limiter mean stays on the detector window while the trace moves to applied audio" + at);
+        }
         if (seconds > 1.0)
             test::ok (limPeak > 0.5, "PRECONDITION: the limiter really worked (" + std::to_string (limPeak) + " dB peak)" + at);
     }
@@ -764,6 +779,12 @@ void checkTraceAgainstStats (const GainReductionTrace& t, const GainReductionSta
     const double bound = 2.0 * (double) n * 2.220446049250313e-16 * std::max (1.0, st.maxDb);
     test::ok (std::fabs (mean - st.meanDb) <= bound, what + ": the weighted mean of the bucket means is the statistics' mean within "
               + std::to_string (bound) + " (|diff| " + std::to_string (std::fabs (mean - st.meanDb)) + ")");
+}
+
+void checkAppliedLimiterTrace (const GainReductionTrace& t, int frames, int factor, const std::string& what)
+{
+    test::ok (t.complete && t.valid && t.samples == (std::uint64_t) frames * (std::uint64_t) factor,
+              what + ": the applied-gain trace covers every delivered frame at the oversampled rate");
 }
 
 void testTheTraceBuilderCountsWhatNoAudioCanReach()
@@ -1005,7 +1026,7 @@ void testTheTraceDescribesTheDeliveredRender()
                   "PRECONDITION: the delivery was a RE-RENDER, and the last search pass had a different limiter GR ("
                   + std::to_string (lastSearchGr) + " vs delivered " + std::to_string (sol.measured.limiter.maxDb) + ")");
         test::ok (sol.limiterTrace.valid && sol.limiterTrace.buckets == 1000, "the delivered render's trace: valid, 1000 buckets");
-        checkTraceAgainstStats (sol.limiterTrace, sol.measured.limiter, "re-render branch, limiter");
+        checkAppliedLimiterTrace (sol.limiterTrace, src.frames(), rig.chain.tapOversampleFactor(), "re-render branch, limiter");
         checkTraceAgainstStats (sol.compressorTrace, sol.measured.compressor, "re-render branch, compressor");
     }
     // THE NO-RE-RENDER BRANCH: a search that ends on its own best point delivers the last render as it is.
@@ -1019,7 +1040,7 @@ void testTheTraceDescribesTheDeliveredRender()
             if (sol.log[i].gainDb == sol.log[sol.logCount - 1].gainDb && sol.log[i].ceilingDb == sol.log[sol.logCount - 1].ceilingDb) repeated = true;
         test::ok (sol.logCount >= 1 && ! repeated && sol.limiterTrace.valid, "PRECONDITION: no re-render (the last candidate repeats none), a valid trace");
         test::ok (traceMax (sol.limiterTrace) > 0.5, "PRECONDITION: the limiter worked (" + std::to_string (traceMax (sol.limiterTrace)) + " dB)");
-        checkTraceAgainstStats (sol.limiterTrace, sol.measured.limiter, "no-re-render branch, limiter");
+        checkAppliedLimiterTrace (sol.limiterTrace, src.frames(), rig.chain.tapOversampleFactor(), "no-re-render branch, limiter");
         checkTraceAgainstStats (sol.compressorTrace, sol.measured.compressor, "no-re-render branch, compressor");
     }
     // NO ACCUMULATION ACROSS RENDERS: a 0.9 tone asked for -6 LUFS with the limiter allowed 0.5 dB, three passes — an
@@ -1035,7 +1056,7 @@ void testTheTraceDescribesTheDeliveredRender()
         for (int i = 0; i + 1 < sol.logCount; ++i) earlier = std::max (earlier, sol.log[i].limiterMaxGrDb);
         test::ok (earlier > sol.measured.limiter.maxDb, "PRECONDITION: an earlier render limited harder than the delivered one ("
                   + std::to_string (earlier) + " vs " + std::to_string (sol.measured.limiter.maxDb) + ")");
-        checkTraceAgainstStats (sol.limiterTrace, sol.measured.limiter, "reset per render, limiter");
+        checkAppliedLimiterTrace (sol.limiterTrace, src.frames(), rig.chain.tapOversampleFactor(), "reset per render, limiter");
         test::ok (sol.limiterTrace.valid && traceMax (sol.limiterTrace) == sol.measured.limiter.maxDb,
                   "and the trace's max is the DELIVERED render's (" + std::to_string (traceMax (sol.limiterTrace)) + " dB), not an earlier pass's");
     }
@@ -1103,9 +1124,10 @@ void testTheTraceLocatesAnImpulse()
     test::ok (t.bucket[bucketOf (at)].maxDb == G0, "the peak GR is in the impulse's own bucket (" + std::to_string (bucketOf (at)) + ")");
     // The reconstruction filter spreads the impulse over a couple of frames either side: the first active frame is at
     // most 2 before it, which here can only be bucket 124 (frame 5998..5999) or 125.
-    test::ok (first == bucketOf (at - 2) || first == bucketOf (at), "the first active bucket is the impulse's or the one before ("
+    test::ok (first == bucketOf (at - r.limiterLookahead - 2)
+              || first == bucketOf (at - r.limiterLookahead), "the first active bucket follows the delayed audio ("
               + std::to_string (first) + ")");
-    const double holdEnd = (double) at + (double) r.limiterLookahead + 1.0;
+    const double holdEnd = (double) at + 1.0;
     const double decayFrames = r.limiterReleaseMs * 0.001 * kFs * std::log (G0 / theta);
     const double endFrame = holdEnd + decayFrames;
     const int lo = bucketOf ((long long) std::floor (endFrame - 2.0)), hi = bucketOf ((long long) std::ceil (endFrame + 2.0));

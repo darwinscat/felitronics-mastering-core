@@ -3,11 +3,12 @@
 # The paired core change until a release containing the tap supersedes v0.55.0.
 set(header "${CORE_SOURCE}/modules/limiter/include/felitronics/limiter/TruePeakLimiter.h")
 file(READ "${header}" source)
+string(REPLACE "\r\n" "\n" source "${source}")
 string(FIND "${source}" "float* peakClipReductionDb" present)
 if(NOT present EQUAL -1)
     return()
 endif()
-file(SHA256 "${header}" base)
+string(SHA256 base "${source}")
 if(NOT base STREQUAL "4aecef82d3e9879f1dacab2618059e4c4df09181a0aa901ee86a30e97d8d6a19")
     message(FATAL_ERROR "K13 tap patch requires the pinned felitronics-core v0.55.0 header")
 endif()

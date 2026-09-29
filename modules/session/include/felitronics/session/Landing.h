@@ -7,6 +7,7 @@
 #include <felitronics/session/LandingResult.h>
 #include <felitronics/mastering/LoudnessSolver.h>
 #include <cstdint>
+#include <utility>
 
 namespace felitronics::session
 {
@@ -39,9 +40,16 @@ public:
                                          std::span<LandingTraceBucket> peakClipRows,
                                          std::uint32_t deliveryRateHz, LandingSummary& out) noexcept;
     // Seven f64 columns: [firstFrame,lastFrame,minDb,maxDb,meanDb,samples,nonFinite].
-    // Groups consecutive stored buckets without inventing raw samples. Zero means refusal.
+    // Selects retained buckets intersecting the requested delivered-frame range. Their original
+    // bounds remain in the response, including buckets that cross either edge of the request.
+    [[nodiscard]] static std::pair<std::uint32_t, std::uint32_t> bucketRange (
+        const LandingTrace& trace, std::uint64_t fromFrame, std::uint64_t toFrame) noexcept;
+    // Groups consecutive selected buckets without inventing raw samples. Zero means refusal.
     [[nodiscard]] static std::uint32_t query (const LandingTrace& trace, std::uint32_t columns,
                                                std::span<double> output) noexcept;
+    [[nodiscard]] static std::uint32_t query (const LandingTrace& trace,
+                                               std::uint64_t fromFrame, std::uint64_t toFrame,
+                                               std::uint32_t columns, std::span<double> output) noexcept;
 };
 
 } // namespace felitronics::session
