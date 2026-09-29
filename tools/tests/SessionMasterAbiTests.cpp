@@ -322,7 +322,7 @@ int main()
         {
             std::uint32_t count = 0;
             const auto n = std::uint32_t (std::min<std::size_t> (997u, wav.size() - at));
-            copiedWav &= fc_session_master_wav_copy (handle, &t, std::uint32_t (at), std::uint32_t (at >> 32),
+            copiedWav &= fc_session_master_wav_copy (handle, &t, std::uint32_t (at), std::uint32_t (std::uint64_t (at) >> 32),
                 wav.data() + at, n, &count) == FC_SESSION_OK && count == n;
         }
         const bool slicesWithoutAllocation = alloc::count.load() == wavSliceAllocations;

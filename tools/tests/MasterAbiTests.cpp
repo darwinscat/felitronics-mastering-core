@@ -2322,7 +2322,10 @@ int main()
                                       + sizeof (std::vector<felitronics::mastering::BandGrResult>)
                                       + sizeof (std::array<felitronics::mastering::BandGrAbsence,
                                                            (std::size_t) felitronics::mastering::kBandGrStride>)
-                && sizeof (GainReductionTrace) == (24u + sizeof (GainReductionTrace::bucket) + 9u + 7u) / 8u * 8u,
+                // {int, bool, 2 x u64} then the bucket vector (12 or 24 B), then an 8-aligned u64 and a bool: the vector
+                // is padded to 8 before the u64 on wasm32, where it is 12 bytes.
+                && sizeof (GainReductionTrace)
+                    == ((24u + sizeof (GainReductionTrace::bucket) + 7u) / 8u * 8u + 8u + 1u + 7u) / 8u * 8u,
                 "a solution record costs " + std::to_string (kSolutionRecordRest) + " B plus three traces of "
                 + std::to_string (sizeof (GainReductionTrace)) + " B, three window histograms of "
                 + std::to_string (sizeof (QuantileHistogram)) + " B and the gated active-window summary of "

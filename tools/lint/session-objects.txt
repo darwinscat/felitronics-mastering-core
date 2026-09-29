@@ -43,6 +43,7 @@ undefined  wasm    ^(__stack_pointer|__memory_base|__table_base|__indirect_funct
 
 # --- MSVC's standard library defines one writable variable in every translation unit that includes its headers
 writable   coff    ^_Avx2WmemEnabledWeakValue$      the STL's own dispatch flag for its vectorised wmem* (an `extern "C" inline` in its headers): the session neither reads nor writes it
+writable   coff    ^__isa_available_default$        MSVC 14.5x's default for the CRT's CPU capability flag, emitted beside a loop it vectorises with a run-time ISA choice (MasterJob, VS 2026): the compiler's dispatch, which the session neither reads nor writes
 
 # --- the config (src/Config.cpp, src/ConfigSchema.cpp) holds strings and containers, and asks three analyzers what they
 # --- admit: what the standard library compiles out of line for those, per library, and the exact libm calls of storageFor
@@ -97,5 +98,6 @@ undefined all ^(atan2|atanf|cos|cosh|exp|exp2|hypot|log|log10|nextafterf|pow|sin
 undefined macho ^(__divdc3|__exp10|__sincos_stret)$ Apple compiler and libm helpers for the same mastering coefficient and meter math
 undefined elf ^(__divdc3|cexp|sincos|csqrt|cabs|fmax|fmaxf|sqrtf|roundf)$ GCC and libm helpers for the prepared mastering coefficient, response and meter math
 undefined coff ^(__imp_)?(copysign|fmax|fmaxf|hypot|ldexp|nextafterf|atanf|sqrtf|tanhf|roundf)$ UCRT helpers for the same prepared mastering coefficient, response and meter math
+undefined wasm ^(__divdc3|fmax|fmaxf|roundf)$ compiler-rt's complex division and musl's exact fmax and roundf, the same prepared mastering coefficient and meter math (MasterJob)
 undefined coff ^_Exp$ MSVC STL exp helper in the prepared mastering coefficient path
 undefined coff ^__std_swap_ranges_trivially_swappable_noalias$ MSVC STL's pure contiguous-range swap in retained trace storage

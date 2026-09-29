@@ -5,6 +5,7 @@
 # union is fc_session_status (CONTROL=status), and the ABI version stated by snapshot.d.ts and snapshot.mjs is
 # FC_SESSION_ABI_VERSION (CONTROL=version). A shadow copy of the header changes one of them; the generated files must
 # follow with no second edit. The real header is never touched.
+cmake_minimum_required(VERSION 3.22)   # CMP0054: a quoted "status" below is a string, never a variable's value
 file(READ "${HEADER}" header)
 if(CONTROL STREQUAL "status")
     # Appended after the header's LAST status, whichever that is today.
@@ -13,11 +14,11 @@ if(CONTROL STREQUAL "status")
     endif()
     string(REGEX MATCHALL "FC_SESSION_[A-Z_]+ *= *[0-9]+" statuses "${CMAKE_MATCH_0}")
     set(last -1)
-    foreach(status IN LISTS statuses)
-        string(REGEX REPLACE ".*= *" "" value "${status}")
+    foreach(enumerator IN LISTS statuses)
+        string(REGEX REPLACE ".*= *" "" value "${enumerator}")
         if(value GREATER last)
             set(last ${value})
-            set(anchor "${status}")
+            set(anchor "${enumerator}")
         endif()
     endforeach()
     math(EXPR next "${last} + 1")
