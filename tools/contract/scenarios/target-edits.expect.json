@@ -1,0 +1,211 @@
+{
+  "checks": [
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.targetEdit.lufs",
+      "value": -12.5,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.devices.hpf.hand.fq",
+      "value": 4000.125,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "project.targetEdit",
+      "value": {
+        "lufs": null,
+        "tp": null
+      },
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "target",
+      "value": "lp",
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 2,
+      "path": "target",
+      "value": "cd",
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.manual",
+      "value": false
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.devices.low.hand.db",
+      "value": -2.375
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.devices.hpf.hand.slope",
+      "value": 96
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.devices.hpf.hand.on",
+      "value": false,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.devices.low.hand.on",
+      "value": true,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.targetEdit.tp",
+      "value": -0.5,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "handFieldCount",
+      "value": 5,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "handFieldCount",
+      "value": 0,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "project.devices.hpf.hand",
+      "value": {
+        "on": null,
+        "fq": null,
+        "slope": null
+      },
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "project.devices.low.hand",
+      "value": {
+        "on": null,
+        "db": null
+      },
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 2,
+      "path": "handFieldCount",
+      "value": 0,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 2,
+      "path": "project.devices.hpf.hand",
+      "value": {
+        "on": null,
+        "fq": null,
+        "slope": null
+      },
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 2,
+      "path": "project.devices.low.hand",
+      "value": {
+        "on": null,
+        "db": null
+      },
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "project.devices.monoBass.hand",
+      "value": {
+        "on": null,
+        "fq": null,
+        "width": null
+      },
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "project.devices.glue.hand",
+      "value": {
+        "on": null,
+        "upToDb": null
+      },
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "project.devices.saturation.hand",
+      "value": {
+        "on": null,
+        "drive": null,
+        "mix": null,
+        "output": null
+      },
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "project.devices.tilt.hand",
+      "value": {
+        "on": null,
+        "db": null
+      },
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "project.devices.limiter.hand",
+      "value": {
+        "needles": null,
+        "needlesDb": null
+      },
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "project.devices.dither.hand",
+      "value": {
+        "on": null
+      },
+      "session": "main"
+    }
+  ],
+  "minEvents": 10,
+  "eventKinds": [
+    "phase",
+    "fact"
+  ]
+}

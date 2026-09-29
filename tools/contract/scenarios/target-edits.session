@@ -1,0 +1,13 @@
+create main 67108864
+load 1 mono
+step 5 work units
+step 5 work units
+command {"kind":"setManual","commandId":"2","on":false}
+command {"kind":"editDevice","commandId":"3","device":0,"fields":{"fq":4000.125,"slope":96,"on":false}}
+command {"kind":"editDevice","commandId":"30","device":7,"fields":{"db":-2.375,"on":true}}
+command {"kind":"editTarget","commandId":"4","fields":{"lufs":-12.5,"tp":-0.5}}
+snapshot
+command {"kind":"setTarget","commandId":"5","target":"lp"}
+snapshot
+command {"kind":"setTarget","commandId":"6","target":"cd"}
+snapshot

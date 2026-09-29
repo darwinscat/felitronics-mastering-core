@@ -1,0 +1,17 @@
+create main 67108864
+load 1 stereo
+step 5 work units
+step 5 work units
+command {"kind":"editTarget","commandId":"2","fields":{"lufs":-120.125,"tp":-0.125}}
+command {"kind":"editDevice","commandId":"3","device":0,"fields":{"fq":10000.125,"slope":96}}
+snapshot
+command {"kind":"editDevice","commandId":"4","device":0,"fields":{}}
+command {"kind":"revertEdits","commandId":"5","device":7,"fields":{}}
+snapshot
+command {"kind":"editDevice","commandId":"6","device":0,"fields":{"fq":22050,"on":false}}
+snapshot
+command {"kind":"editDevice","commandId":"7","device":0,"fields":{"slope":7}}
+snapshot
+command {"kind":"setManual","commandId":"8","on":true}
+command {"kind":"setManual","commandId":"9","on":false}
+snapshot

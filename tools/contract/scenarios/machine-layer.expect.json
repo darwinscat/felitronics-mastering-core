@@ -1,0 +1,70 @@
+{
+  "checks": [
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.devices.hpf.machine.fq",
+      "value": 41.125
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.devices.low.machine.db",
+      "value": 2.375
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.devices.low.machine.on",
+      "value": true
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.manual",
+      "value": false
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "machineDifferences.length",
+      "value": 3
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "project.devices.hpf.machine.fq",
+      "value": 41.125
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "project.devices.low.machine.db",
+      "value": 2.375
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "project.devices.low.machine.on",
+      "value": true
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "project.manual",
+      "value": false
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "machineDifferences.length",
+      "value": 3
+    }
+  ],
+  "minEvents": 10,
+  "eventKinds": [
+    "phase",
+    "fact"
+  ],
+  "projects": 2
+}
