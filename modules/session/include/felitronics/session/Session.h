@@ -6,6 +6,8 @@
 #include <felitronics/session/Commands.h>
 #include <felitronics/session/Project.h>
 #include <felitronics/session/Events.h>
+#include <felitronics/session/Measurements.h>
+#include <felitronics/session/Queries.h>
 
 #include <cstdint>
 #include <memory>
@@ -88,7 +90,7 @@ struct Kept
     Recipe recipe {};
 };
 
-// The source a load gave, as the session holds it. The name and the samples live in the session until the next load or cancellation of the first measurement.
+// The source a load gave, as the session holds it. The name and the samples live in the session until a different source is loaded.
 struct Source
 {
     std::uint32_t channels = 0;                // 0: nothing loaded
@@ -101,7 +103,7 @@ struct Source
     std::string_view name;
 };
 
-namespace detail { struct Driver; struct Inspector; }
+namespace detail { struct Driver; struct Inspector; struct MeasurementWorkspace; struct LiveMeasurements; struct SourceMeasurements; struct NeedlesWork; struct NeedlesResult; struct WaveformState; struct QueryCache; }
 
 //==============================================================================
 // felitronics::session::Session — the mastering session: the object a shell (the web worker through the fcsession
@@ -180,6 +182,18 @@ public:
     [[nodiscard]] Checked check (const Request& request) const noexcept;
     // Allocation-free demand before capacity checks; Load needs shape/meta only, never sample pointers.
     [[nodiscard]] Checked storageFor (const Request& request) const noexcept;
+    // A sidecar supplies certified scalar facts before its PCM arrives. Attachment
+    // verifies the source hash and schedules only the missing waveform index.
+    [[nodiscard]] Checked loadMeasuredStorage (const MeasuredSource& facts) const noexcept;
+    [[nodiscard]] Answer loadMeasured (CommandId id, const MeasuredSource& facts) noexcept;
+    [[nodiscard]] Checked attachAudioStorage (const Pcm& pcm) const noexcept;
+    [[nodiscard]] Answer attachAudio (CommandId id, const Pcm& pcm) noexcept;
+    [[nodiscard]] MeasurementStorage measurementStorage (const Pcm& pcm) const noexcept;
+    // Additional job demand, before preparation; includes the analyzer run list, owned aggregates, copy and codec.
+    [[nodiscard]] Checked needlesStorage (double ceilingDb) const noexcept;
+    [[nodiscard]] JobId needlesJob() const noexcept;
+    [[nodiscard]] QueryDemand queryStorage (const MeasurementQuery& request) const noexcept;
+    [[nodiscard]] QueryResult query (const MeasurementQuery& request) noexcept;
     [[nodiscard]] Answer rejectProtocol (CommandId id) noexcept;
 
     // Export is an owned exact byte allocation, without a terminator. Only placed projects are exportable.
@@ -188,17 +202,22 @@ public:
     [[nodiscard]] Rejection exportProject (std::span<char> output) const noexcept;
     [[nodiscard]] Answer importProject (CommandId id, std::string_view bytes) noexcept;
 
-    // Each unit completes one deterministic stub step. A call takes at most kStepUnits units;
+    // Each live measurement unit prepares one analyzer, reads at most 1024 source frames, drains new rows,
+    // or advances finalization. A call takes at most kStepUnits units;
     // zero polls. With no work, even a hostile FP environment returns Done without an event or a seq change.
     // An FP refusal while work remains publishes Error{Refusal, Continue}; restoring the environment permits resumption.
     // Drain/copy events() after each apply/step, before the next call replaces the batch.
-    // The batch lives inside createBytes(); step and events request no heap memory.
+    // The batch lives inside createBytes(). Needles preparation uses its separate needlesStorage demand;
+    // loudness/report preparations use the whole measurement demand published before load.
+    // stepBytes() is additional transient storage beyond those declared preparations and retained output buffers.
     [[nodiscard]] static std::uint64_t stepBytes() noexcept;
     [[nodiscard]] Stepped step (std::uint32_t budget) noexcept;
     [[nodiscard]] std::span<const Notification> events() const noexcept;
     [[nodiscard]] JobId measurementJob() const noexcept;
     [[nodiscard]] std::uint64_t snapshotBytes() const noexcept;
     [[nodiscard]] Snapshot snapshot() const noexcept;
+    [[nodiscard]] std::uint64_t summaryBytes() const noexcept;
+    [[nodiscard]] Snapshot summary() const noexcept;
 
     //==========================================================================
     // WHAT THE SESSION HOLDS — read between calls; a reference stays valid until the next call that changes the session.
@@ -230,9 +249,30 @@ private:
     [[nodiscard]] bool placed() const noexcept;
 
     void emit (Notification event) noexcept;
+    void emit (Notification event, const Phase& progress) noexcept;
+    [[nodiscard]] Phase jobProgress (JobId job) const noexcept;
     void dropJob (JobId job) noexcept;
     [[nodiscard]] SnapshotView buildView() const noexcept;
+    [[nodiscard]] SnapshotView buildSummary (std::span<MeasurementResult> results) const noexcept;
     [[nodiscard]] bool hasWork() const noexcept;
+    void requestNeedles() noexcept;
+    void stepNeedles() noexcept;
+    void stepMeasurements() noexcept;
+    void stepWaveform() noexcept;
+    void stepSourceMeasurements() noexcept;
+    void invalidateQueryCache (Analyzer analyzer) noexcept;
+    [[nodiscard]] bool mandatoryReady() const noexcept;
+    [[nodiscard]] bool masterRequiresTempo() const noexcept;
+    [[nodiscard]] TempoChoice tempoForDevice() const noexcept;
+    void clearNeedles() noexcept;
+    void needlesChanged() noexcept;
+    std::unique_ptr<detail::NeedlesWork> needlesWork_;
+    std::unique_ptr<detail::NeedlesResult> needlesResult_;
+    JobId needlesJob_ = 0;
+    std::uint64_t needlesSource_ = 0, needlesKey_ = 0;
+    std::optional<double> needlesNeedDb_, needlesCeilingDb_;
+    Phase needlesProgress_ {};
+    Checked needlesDemand_ {};
     JobId measurementJob_ = 0;
     std::uint32_t measurementUnit_ = 0, masterUnit_ = 0;
     Phase measurementProgress_ {}, masterProgress_ {};
@@ -240,8 +280,8 @@ private:
     std::size_t eventCount_ = 0;
     std::uint64_t sequence_ = 0;
 
-    State state_ = State::Empty;
-    bool mastering_ = false;
+    State state_ = State::Empty, stoppedState_ = State::Loaded;
+    bool mastering_ = false, devicesPlaced_ = false;
     std::uint64_t revision_ = 0;
     Project project_ {};
     MachineDifference differences_[kDeviceFields] {};
@@ -254,6 +294,18 @@ private:
     // counts. The source: its samples planar, channel after channel (source_.channels × source_.frames), and the name
     // the load gave (source_.name views it; null when it is empty).
     Source source_ {};
+    MeasurementStorage measurementStorage_ {};
+    std::uint64_t measurementKey_ = 0;
+    MeasurementResult measurementResults_[kAnalyzers] {};
+    OwnedMeasurements measurementOwners_[kAnalyzers];
+    MeasurementValue sidecarNumbers_[2] {};
+    bool measurementsFromSidecar_ = false;
+    std::uint64_t measurementOwnedBytes_ = 0;
+    std::unique_ptr<detail::MeasurementWorkspace> measurementWorkspace_;
+    std::unique_ptr<detail::LiveMeasurements> liveMeasurements_;
+    std::unique_ptr<detail::SourceMeasurements> sourceMeasurements_;
+    std::unique_ptr<detail::WaveformState> waveform_;
+    std::unique_ptr<detail::QueryCache> queryCache_;
     std::unique_ptr<float[]> samples_;
     std::unique_ptr<char[]> name_;
     // The master being made, and the masters kept: `masterCount_` of them in room for `masterRoom_`. The ids count

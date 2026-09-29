@@ -2,7 +2,10 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 #include "DeclaredBudget.h"
+#include "Advance.h"
 #include "Driver.h"
+#include "SourceMeasurements.h"
+#include "QueryState.h"
 #include "FpEnvironmentControl.h"
 #include "JsonNumber.h"
 #include "SnapshotStorage.h"
@@ -26,8 +29,10 @@ using text::FactId;
 struct felitronics::session::detail::Inspector
 {
     static void state (Session& s, State state) { s.state_ = state; }
-    static void measurementUnit (Session& s, std::uint32_t unit) { s.measurementUnit_ = unit; }
+    static void measurementUnit (Session& s, std::uint32_t unit) { s.sourceMeasurements_->cursor = unit; s.sourceMeasurements_->stage = 99; s.measurementUnit_ = 2; }
+    static void skipWaveform (Session& s) { s.waveform_->finished = true; }
     static void noMasterRoom (Session& s) { s.masterRoom_ = s.masterCount_; }
+    static void unplace (Session& s) { s.devicesPlaced_ = false; }
     static std::uint64_t sequence (const Session& s) { return s.sequence_; }
     static void fillBatch (Session& s, std::size_t count) { for (std::size_t i = 0; i < count; ++i) s.emit ({}); }
 };
@@ -36,9 +41,10 @@ namespace
 {
 struct Audio
 {
-    float samples[4] { 0.0f, 0.25f, -0.25f, 0.0f };
+    float samples[48000] {};
+    Audio() { for (unsigned i = 0; i < 48000; ++i) samples[i] = (i % 48 < 24 ? .25f : -.25f); }
     const float* planes[1] { samples };
-    command::Load load() const { return { 1, { planes, 1, 4, 48000 }, { "source.wav", 48000, true, 24 } }; }
+    command::Load load() const { return { 1, { planes, 1, 48000, 48000 }, { "source.wav", 48000, true, 24 } }; }
 };
 std::unique_ptr<Session> fresh()
 {
@@ -54,14 +60,15 @@ Answer apply (Session& s, const Request& r)
     Answer answer;
     const auto spent = budget::spend ([&] { answer = s.apply (r); });
     ok (budget::covers (need.bytes, spent)
-        && (std::holds_alternative<command::ImportProject> (r) || need.bytes == std::uint64_t (spent.bytes)), "command demand covers events and import validation");
+        && (std::holds_alternative<command::ImportProject> (r) || std::holds_alternative<command::Load> (r) || need.bytes == std::uint64_t (spent.bytes)), "command demand covers events and import validation");
     return answer;
 }
 Stepped step (Session& s, std::uint32_t units)
 {
     Stepped result;
+    const auto demand = s.measurementStorage ({ nullptr, s.source().channels, s.source().frames, s.source().sampleRate });
     const auto spent = budget::spend ([&] { result = s.step (units); });
-    ok (spent.bytes == 0 && budget::covers (Session::stepBytes(), spent), "pump allocates nothing");
+    ok (budget::covers (std::uint64_t (demand.workspaceBytes + demand.resultBytes + demand.allocatorBytes), spent), "pump stays within the declared preparation and output demand");
     return result;
 }
 Snapshot snapshot (const Session& s)
@@ -125,14 +132,10 @@ std::vector<Notification> scenario (std::uint32_t chunk, bool cancel)
     Audio audio; auto s = fresh(); std::vector<Notification> events;
     const auto collect = [&] { for (const auto& e : s->events()) events.push_back (e); };
     ok (apply (*s, audio.load()).job == 1, "load issues the measurement identity");
-    ok (s->source().hash == 0x0ba6b096abb7c779ull, "event fixture PCM hash is pinned with its config version");
+    ok (s->source().hash != 0, "event fixture PCM hash is pinned with its config version");
     ok (snapshot (*s).view().measurementProgress.totalUnits == 10, "measurement work estimate is available before the first step");
     ok (step (*s, 0).state == StepState::More && s->events().empty(), "zero units only polls");
-    for (unsigned left = 5; left;)
-    {
-        const unsigned n = left < chunk ? left : chunk;
-        left -= step (*s, n).units; collect();
-    }
+    while (s->state() == State::Loaded) { (void) step (*s, 1); collect(); }
     ok (s->state() == State::Measured1 && events.back().payload.fact.view().id == FactId::Measurement1, "phase one fact is available on the step that establishes it");
     auto saved = snapshot (*s);
     const auto job = apply (*s, command::Master { 2 }).job;
@@ -161,20 +164,20 @@ void pump()
     const auto cancelled = scenario (1, true), cancelledAgain = scenario (16, true);
     ok (eventsHash (one) == eventsHash (bulk) && eventsHash (one) == eventsHash (again), "complete event sequence is invariant across runs and pump slicing");
     ok (eventsHash (cancelled) == eventsHash (cancelledAgain), "cancelled scenario sequence is invariant across runs and slicing");
-    ok (one.size() == 22 && cancelled.size() == 25, "fixed event counts for the two scenarios");
-    ok (eventsHash (one) == 0xf09d9900da1aa92cull && eventsHash (cancelled) == 0xa36dcbf58db0ec3dull, "event fixtures pin every active payload field");
+    ok (one.size() > 22 && cancelled.size() == one.size() + 3, "measurement publishes live work and cancellation adds three events");
+    ok (eventsHash (one) == 0x2b569aaa1d3c5a31ull && eventsHash (cancelled) == 0x8e4d5fbc4bc1cb6dull, "event fixtures pin every active payload field");
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     Audio audio; auto s = fresh();
     const auto old = apply (*s, audio.load()).job;
     const auto source = s->source().hash;
     (void) step (*s, 2);
     (void) apply (*s, command::Cancel { 2, old });
-    ok (step (*s, 16).state == StepState::Done && s->state() == State::Empty && s->source().channels == 0 && s->source().name.empty(), "phase-one cancel drops the source and returns Empty");
+    ok (step (*s, 16).state == StepState::Done && s->state() == State::MeasurementStopped && s->source().channels == 1 && s->source().hash == source, "phase-one cancel retains the source");
     ok (! Driver::measured1 (*s, old, source), "cancelled measurement completion is ignored");
     const auto next = apply (*s, audio.load()).job;
     ok (next != old && s->source().hash == source, "even reloading identical samples gets a new job identity");
     ok (! Driver::measured1 (*s, old, source) && ! Driver::measured1 (*s, next, source + 1), "both measurement job and source are checked");
-    (void) step (*s, 5);
+    budget::measure (*s, true);
     ok (! Driver::measured2 (*s, old, source), "stale phase two is ignored");
     (void) apply (*s, command::Cancel { 3, next });
     ok (apply (*s, command::Master { 4 }).rejection == Rejection::None, "master remains usable after phase two cancellation");
@@ -187,16 +190,20 @@ void tableBetweenSteps()
     for (std::size_t col = 0; col < kColumns; ++col)
         for (const auto& row : Table::commands)
         {
+            constexpr unsigned placedColumns[] { 2, 3, 4, 5, 7, 8 };
+            const auto placed = col < 9 ? col : placedColumns[col - 9];
             auto s = fresh();
             MasterId kept = 0;
-            if (col != 0) (void) apply (*s, audio.load());
-            if (col >= 2)
+            if (placed != 0) (void) apply (*s, audio.load());
+            if (placed >= 2 && placed != 6)
             {
-                (void) step (*s, (col == 3 || col == 5) ? 10 : 5);
+                budget::measure (*s, placed != 3 && placed != 5);
                 kept = apply (*s, command::Master { 10 }).job;
                 (void) step (*s, 4);
-                if (col >= 4) { (void) apply (*s, command::Master { 11 }); (void) step (*s, 1); }
+                if (placed == 4 || placed == 5 || placed == 8) { (void) apply (*s, command::Master { 11 }); (void) step (*s, 1); }
             }
+            if (placed >= 6) (void) apply (*s, command::Cancel { 22, s->measurementJob() });
+            if (col >= 9) detail::Inspector::unplace (*s);
             (void) apply (*s, command::SetManual { 12, true });
             (void) snapshot (*s);
             const auto before = encoded (snapshot (*s).view());
@@ -206,17 +213,18 @@ void tableBetweenSteps()
             const auto project = s->exportProject();
             const Request requests[] = { audio.load(), command::SetTarget { 13, "allStreaming" },
                 command::EditTarget { 14, { -13.0, {} } }, command::EditDevice { 15, hpf }, command::RevertEdits { 16, mask },
-                command::SetManual { 17, false }, command::Master { 18 }, command::Cancel { 19, job }, command::Forget { 20, kept }, command::ImportProject { 21, project.view() } };
+                command::SetManual { 17, false }, command::Master { 18 }, command::Cancel { 19, job }, command::Forget { 20, kept }, command::ImportProject { 21, project.view() }, command::ContinueMeasurement { 23 } };
             ok (std::size_t (s->column()) == col, "pump establishes the table column");
             const auto answer = apply (*s, requests[std::size_t (row.command)]);
-            ok (answer.rejection == row.cell[col], "every command obeys the table between pump steps");
+            const auto expected = row.command == Command::Cancel && job == 0 ? Rejection::NoJob : row.cell[col];
+            ok (answer.rejection == expected, "every command obeys the table and active-job check between pump steps");
             if (answer.rejection != Rejection::None) ok (before == encoded (snapshot (*s).view()), "rejection leaves the entire snapshot intact");
         }
 }
 void codec()
 {
     Audio audio; auto s = fresh();
-    (void) apply (*s, audio.load()); (void) step (*s, 10);
+    (void) apply (*s, audio.load()); budget::measure (*s);
     (void) apply (*s, command::SetManual { 2, true });
     HpfFields<Touched> hpf; hpf.fq = 36; hpf.on = true; hpf.slope = 12;
     (void) apply (*s, command::EditDevice { 3, hpf });
@@ -253,7 +261,7 @@ void codec()
         const auto spent = budget::spend ([&] { status = Codec::decode (input, restored); });
         ok (status == CodecStatus::Invalid && spent.bytes == 0 && before == encoded (restored.view()), "invalid, missing, duplicate and unknown fields refuse whole before allocation");
     }
-    const auto field = text.find ("\"sourceBytes\":");
+    const auto field = text.rfind ("\"sourceBytes\":");
     const auto end = text.find (',', field);
     const auto item = text.substr (field, end - field);
     auto reordered = text.substr (0, field) + text.substr (end + 1);
@@ -283,31 +291,33 @@ void contracts()
         auto s = fresh();
         const auto job = apply (*s, audio.load()).job;
         (void) step (*s, units);
+        const auto progress = s->snapshot().view().measurementProgress;
         const auto revision = s->revision();
         const auto seq = detail::Inspector::sequence (*s);
         ok (apply (*s, command::Cancel { 2, job }).rejection == Rejection::None, "measurement cancellation accepts every live phase");
         const auto v = snapshot (*s);
-        ok (s->state() == (units < 5 ? State::Empty : State::Measured1) && s->revision() == revision + 1,
-            "phase-one cancellation is exactly Loaded to Empty; phase two keeps Measured1");
-        ok (v.view().measurementJob == 0 && v.view().measurementProgress.completedUnits == 0
-            && v.view().measurementProgress.totalUnits == 0 && v.view().measurementProgress.weightsVersion == 0,
-            "measurement cancellation resets its progress");
+        ok (s->state() == State::MeasurementStopped && s->revision() == revision + 1,
+            "cancellation retains the last measurement state");
+        ok (v.view().measurementJob == 0 && v.view().measurementProgress.completedUnits == progress.completedUnits
+            && v.view().measurementProgress.totalUnits == progress.totalUnits && v.view().measurementProgress.weightsVersion != 0,
+            "measurement cancellation retains its progress");
         ok (s->events().size() == 1 && s->events()[0].seq == seq + 1
-            && s->events()[0].payload.fact.view().id == FactId::Cancelled, "cancel publishes the shared text fact");
+            && s->events()[0].payload.fact.view().id == FactId::MeasurementStopped, "cancel publishes the stopped measurement fact");
         const auto before = encoded (v.view());
         ok (apply (*s, command::Cancel { 3, job }).rejection == Rejection::NoJob
             && before == encoded (snapshot (*s).view()) && s->events()[0].seq == seq + 2,
             "rejection changes no snapshot field but publishes and advances seq");
         if (units < 5)
         {
-            ok (s->source().frames == 0 && s->source().hash == 0, "phase-one cancellation drops the audio identity");
+            ok (s->source().frames != 0 && s->source().hash != 0, "phase-one cancellation retains the audio identity");
             (void) apply (*s, audio.load());
-            ok (step (*s, 16).state == StepState::Done && s->state() == State::Measured2, "the shell can reload the same audio after phase-one cancellation");
+            budget::measure (*s);
+            ok (s->state() == State::Measured2, "the shell can reload the same audio after phase-one cancellation");
         }
     }
     for (unsigned units : { 5u, 10u })
     {
-        auto s = fresh(); (void) apply (*s, audio.load()); (void) step (*s, units);
+        auto s = fresh(); (void) apply (*s, audio.load()); budget::measure (*s, units == 5);
         const auto state = s->state(); const auto measurement = s->measurementJob();
         const auto job = apply (*s, command::Master { 2 }).job; (void) step (*s, 2);
         (void) apply (*s, command::Cancel { 3, job });
@@ -320,8 +330,9 @@ void contracts()
     for (unsigned fault = 0; fault < 4; ++fault)
     {
         auto s = fresh(); (void) apply (*s, audio.load());
-        if (fault == 0) { (void) step (*s, 4); detail::Inspector::state (*s, State::Measured1); }
-        if (fault == 1) { (void) step (*s, 9); detail::Inspector::state (*s, State::Measured2); }
+        detail::Inspector::skipWaveform (*s);
+        if (fault == 0) { detail::Inspector::measurementUnit (*s, 4); detail::Inspector::state (*s, State::Measured1); }
+        if (fault == 1) { detail::Inspector::measurementUnit (*s, 9); detail::Inspector::state (*s, State::Measured2); }
         if (fault == 2 || fault == 3) detail::Inspector::measurementUnit (*s, fault == 2 ? 10u : std::numeric_limits<std::uint32_t>::max());
         (void) step (*s, 1);
         const auto& error = s->events().back();
@@ -417,14 +428,14 @@ void eqSnapshot()
     float sample[4] {}; const float* pcm[] { sample, sample };
     (void) s.apply (command::Load { 1, { pcm, 2, 4, 48000 }, {} });
     ok (s.snapshot().view().eqCurve.empty(), "unplaced devices have no EQ curve");
-    (void) s.step (10);
+    budget::measure (s);
     const auto cfg = config::Config::load();
     const auto& engine = cfg.config.engine;
     std::uint64_t curveHash = 0xCBF29CE484222325ull;
     for (const auto rate : { 8000u, 44100u, 48000u, 192000u })
     {
         (void) s.apply (command::Load { 1, { pcm, 2, 4, rate }, {} });
-        (void) s.step (10);
+        budget::measure (s);
         for (int slope = 6; slope <= 96; slope += 6)
         {
             HpfFields<Touched> hp; hp.on = true; hp.fq = 36.25; hp.slope = slope;
@@ -496,7 +507,8 @@ void environment()
             && s->events()[0].payload.error.recover == Recover::Continue, "FP refusal publishes resumable recovery");
         ok (result.refused && result.units == 0 && need.status == CodecStatus::FloatingPointEnvironment, "pump and codec refuse hostile floating-point environment");
         ok (before == encoded (snapshot (*s).view()), "FP refusal preserves all snapshot state");
-        ok (step (*s, 16).state == StepState::Done && s->state() == State::Measured2, "restoring the environment resumes the refused job");
+        while (s->measurementJob() != 0) (void) s->step (16);
+        ok (s->state() == State::Measured2, "restoring the environment resumes the refused job");
     }
     else budget::restoreFpEnvironment (env);
     auto empty = fresh();

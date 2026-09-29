@@ -2,8 +2,10 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 #pragma once
+#include <algorithm>
 #include "../../modules/session/src/JsonCodec.h"
 #include "../../modules/session/src/Devices.h"
+#include "../../modules/session/src/Driver.h"
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Wire.h>
 #include <bit>
@@ -47,12 +49,20 @@ int sessionWireFixture (bool frozen = false)
     v.eqCurve = curve; v.handFieldCount = 2;
     v.momentary = points; v.shortTerm = { points, 1 }; v.runs = runs;
     v.sourceBytes = 9007199254740991.0; v.integratedLufs = -std::numeric_limits<double>::infinity();
+    const double values[] { 0.25, 0.5, 0.75 };
+    const MeasurementArray array { "peaks", { 0, 1024, 3072, 48000 }, 1, 3, 3, true, values };
+    MeasurementResult measurement;
+    measurement.analyzer = Analyzer::Waveform; measurement.status = MeasurementStatus::Ready;
+    measurement.reason = MeasurementReason::None; measurement.key = 9007199254740993ull;
+    measurement.framesRead = 3072; measurement.total = 3; measurement.stored = 3; measurement.complete = true;
+    measurement.arrays = { &array, 1 };
+    if (! frozen) v.measurements = { &measurement, 1 };
     auto need = Wire::snapshotBytes (v);
     std::string json (need.jsonBytes, ' '); std::vector<double> binary (need.rowBytes / 8);
     if (Wire::snapshot (v, json, binary) != CodecStatus::Ok) return 1;
     print (json, binary);
-    Notification e[8];
-    for (unsigned i = 0; i < 8; ++i) { e[i].seq = 9007199254741000ull + i; e[i].jobId = 42; }
+    Notification e[9];
+    for (unsigned i = 0; i < 9; ++i) { e[i].seq = 9007199254741000ull + i; e[i].jobId = 42; }
     for (unsigned i = 0; i < 3; ++i) { e[i].kind = EventKind::Phase; e[i].payload.phase.name = PhaseName (5 + i); }
     e[3].kind = EventKind::Fact;
     (void) e[3].payload.fact.assign (text::Fact::of (text::FactId::DefaultsConverted, text::Arg::text ("line\nvoice"),
@@ -61,12 +71,22 @@ int sessionWireFixture (bool frozen = false)
     e[4].payload.reading.momentary[0] = points[0]; e[4].payload.reading.momentaryCount = 1;
     e[4].payload.reading.shortTerm[0] = points[1]; e[4].payload.reading.shortTermCount = 1;
     e[4].payload.reading.runs[0] = runs[0]; e[4].payload.reading.runCount = 1;
+    if (! frozen)
+    {
+        e[4].payload.reading.clipCount = 1;
+        const double clip[] { 7, 2, 0, 1, 0.5, 1 };
+        std::copy_n (clip, 6, e[4].payload.reading.clips);
+    }
     e[5].kind = EventKind::Done; e[5].payload.done.masterId = 99;
     e[6].kind = EventKind::Rejected; e[6].payload.rejected = { 9007199254740993ull, Rejection::RateAboveLimit };
     e[7].kind = EventKind::Error; e[7].payload.error.code = ErrorCode::Memory; e[7].payload.error.recover = Recover::Replay;
     e[7].payload.error.needBytes = 9007199254740991.0;
-    need = Wire::eventsBytes (e); json.resize (need.jsonBytes); binary.resize (need.rowBytes / 8);
-    if (Wire::events (e, json, binary) != CodecStatus::Ok) return 2;
+    e[8].kind = EventKind::Measurement;
+    e[8].payload.measurement = { Analyzer::Waveform, MeasurementStatus::Ready, MeasurementReason::None,
+                                measurement.key, 7, 8, 3072, 3, 3, true };
+    const std::span<const Notification> batch { e, frozen ? 8u : 9u };
+    need = Wire::eventsBytes (batch); json.resize (need.jsonBytes); binary.resize (need.rowBytes / 8);
+    if (Wire::events (batch, json, binary) != CodecStatus::Ok) return 2;
     print (json, binary);
     if (! frozen) std::printf ("%016llx\n", static_cast<unsigned long long> (config::Config::versions().all));
     auto made = Session::create();
@@ -87,7 +107,12 @@ int sessionWireFixture (bool frozen = false)
     char effect[8192]; detail::Writer writer; writer.output = effect;
     writer.value (made.session->snapshot().view().source);
     std::printf ("json load-source %.*s\n", int (writer.size), effect);
-    (void) made.session->step (16);
+    // Freeze commands from a measured state, independent of added analyzer publications.
+    // The live pump and its revisions are exercised by the measurement suites.
+    const auto job = made.session->measurementJob();
+    const auto source = made.session->source().hash;
+    if (job != 0 && (! detail::Driver::measured1 (*made.session, job, source)
+        || ! detail::Driver::measured2 (*made.session, job, source))) return 10;
     unsigned fixture = 0;
     for (const auto request : {
         R"({"kind":"setTarget","commandId":"11","target":"cd"})",

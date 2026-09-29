@@ -4,6 +4,7 @@
 #pragma once
 
 #include <felitronics/session/Text.h>
+#include <felitronics/session/Measurements.h>
 #include <cstddef>
 #include <cstdint>
 
@@ -36,13 +37,21 @@ struct Phase
 };
 struct ReadingPoint { std::uint64_t index = 0; double value = 0.0; };
 struct ReadingRun { std::uint64_t first = 0; std::uint64_t count = 0; double value = 0.0; };
-// Every delta owns its rows and their positions. The stub produces no readings.
+// Every delta owns only new rows. Frame coordinates are fixed from the first publication.
 struct Reading
 {
     ReadingPoint momentary[4] {};
     ReadingPoint shortTerm[4] {};
     ReadingRun runs[4] {};
     std::uint8_t momentaryCount = 0, shortTermCount = 0, runCount = 0;
+    MeasurementGrid grid {};
+    MeasurementReason momentaryReason = MeasurementReason::Pending, shortTermReason = MeasurementReason::Pending;
+    // Six columns per run: start, length, channel, sign, level, evidence.
+    double clips[24] {};
+    std::uint8_t clipCount = 0;
+    std::uint64_t totalRuns = 0, storedRuns = 0, tailFrames = 0;
+    bool runsComplete = true, finished = false;
+
 };
 struct Done { MasterId masterId = 0; };
 struct Rejected { CommandId commandId = 0; Rejection code = Rejection::None; };
@@ -55,7 +64,15 @@ struct Error
     Recover recover = Recover::None;
     double needBytes = 0.0;                // exact integer, strictly below 2^53
 };
-enum class EventKind : std::uint8_t { Phase, Fact, Reading, Done, Rejected, Error };
+struct MeasurementChange
+{
+    Analyzer analyzer = Analyzer::Loudness;
+    MeasurementStatus status = MeasurementStatus::Pending;
+    MeasurementReason reason = MeasurementReason::Pending;
+    std::uint64_t key = 0, source = 0, revision = 0, framesRead = 0, total = 0, stored = 0;
+    bool complete = false;
+};
+enum class EventKind : std::uint8_t { Phase, Fact, Reading, Done, Rejected, Error, Measurement };
 struct EventPayload
 {
     // Only the member named by kind is meaningful. All payloads are self-contained values.
@@ -65,6 +82,7 @@ struct EventPayload
     Done done {};
     Rejected rejected {};
     Error error {};
+    MeasurementChange measurement {};
 };
 struct Notification
 {
@@ -72,6 +90,10 @@ struct Notification
     JobId jobId = 0;
     EventKind kind = EventKind::Phase;
     EventPayload payload {};
+    std::uint64_t source = 0, revision = 0, completedWork = 0, totalWork = 0;
+    PhaseName phase = PhaseName::Stream;
+    State state = State::Empty;
+
 };
 enum class StepState : std::uint8_t { More, Done };
 struct Stepped

@@ -126,5 +126,53 @@
   {
     "script": "import project 4 file",
     "valid": true
+  },
+  {
+    "script": "summary",
+    "valid": true
+  },
+  {
+    "script": "drive 5000 work units",
+    "valid": true
+  },
+  {
+    "script": "drive -1 work units",
+    "valid": false
+  },
+  {
+    "script": "query {\"kind\":0,\"audioId\":\"$source\",\"fromFrame\":\"0\",\"toFrame\":\"1\",\"columns\":1,\"requestId\":\"1\",\"crossoverHz\":120,\"fromHz\":20,\"toHz\":250}",
+    "valid": true
+  },
+  {
+    "script": "query {\n}",
+    "valid": false
+  },
+  {
+    "script": "load measured 1 measure-sidecar",
+    "valid": true
+  },
+  {
+    "script": "attach audio 2 measure",
+    "valid": true
+  },
+  {
+    "script": "load measured 1 ../private",
+    "valid": false
+  },
+  {
+    "script": "attach audio 0 bad?",
+    "valid": false
+  },
+  {
+    "script": "place phase 1",
+    "valid": true
+  },
+  {
+    "script": "place phase 2",
+    "valid": true
+  },
+  {
+    "script": "place phase 3",
+    "valid": false
   }
 ]

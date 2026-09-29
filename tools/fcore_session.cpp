@@ -10,7 +10,8 @@
 //                                   felitronics-mastering-core <MAJOR.MINOR.PATCH>   (Session::version)
 //                                   felitronics-core <MAJOR.MINOR.PATCH>             (Session::coreVersion)
 //                                   fc_session_abi <N>                               (fc_session_abi_version)
-//   fcore_session run <script>    runs a contract scenario (`-` is stdin); see docs/SESSION.md.
+//   fcore_session run <script>    runs the shared native/Wasm contract grammar and writes tab-delimited codec records.
+//   fcore_session parse <script>  validates the grammar and prints its instruction encoding.
 //   fcore_session table           who may do what, when: the command × state table and the session's own transitions
 //                                 (Commands.h, Table), as Markdown — the text docs/SESSION.md carries between its
 //                                 markers, which ctest holds byte for byte to this output.
@@ -21,13 +22,10 @@
 //   fcore_session config sound-version  `version` of all its data — which config this is — and `sound-version` of
 //                                       what can change a master, the one a recipe will record.
 //
-// THE SCRIPT. One command per line; # starts a comment. The grammar in tools/contract/grammar.json
-// is shared with the wasm consumer. Parse the whole script before creating a session. Nonempty runs
-// emit codec JSON and hexadecimal binary rows; empty/comment-only runs retain the `done 0` response.
-// See docs/SESSION.md for commands and fixture paths. `parse` prints the parsed instructions only.
+// THE SCRIPT. tools/contract/grammar.json defines the one instruction grammar for this CLI and the Wasm runner.
+// One instruction per line; `#` starts a comment. Parsing completes before any session is created.
 //
-// EXIT STATUS: 0 done; 2 refused — a usage error, a file that cannot be read, a script this build does not accept, or a
-// harness failure. Domain refusals are recorded answers, with exit status 0.
+// EXIT STATUS: 0 done; 2 refused — usage, file, script, or session refusal.
 // stdout carries the result and nothing else; every diagnostic goes to stderr.
 
 #include "fc_session_abi.h"
@@ -72,6 +70,7 @@ const char* nameOf (felitronics::session::Command c)
         case Command::Master:      return "master";
         case Command::Cancel:      return "cancel";
         case Command::Forget:      return "forget";
+        case Command::ContinueMeasurement: return "continueMeasurement";
         case Command::ImportProject: return "importProject";
     }
     return "?";
@@ -135,8 +134,8 @@ const char* nameOf (felitronics::session::Rejection r)
 // read anything else in its own code page.
 void printHeader (const char* first)
 {
-    std::printf ("| %s | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 |\n"
-                 "|---|---|---|---|---|---|---|\n", first);
+    std::printf ("| %s | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 | Stopped | StoppedMeasured | MasteringStopped | Measured1Unplaced | Measured2Unplaced | Mastering1Unplaced | Mastering2Unplaced | StoppedMeasuredUnplaced | MasteringStoppedUnplaced |\n"
+                 "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n", first);
 }
 
 void printTable()

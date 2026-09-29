@@ -8,6 +8,7 @@ src/Config.cpp
 src/Rules.cpp
 src/Devices.cpp
 src/Commands.cpp
+src/Sidecar.cpp
 src/TextNumber.cpp
 src/TextSchema.cpp
 src/Text.cpp
@@ -17,3 +18,12 @@ src/Codec.cpp
 src/ProjectIO.cpp
 src/Wire.cpp
 src/EqCurve.cpp
+src/Measurements.cpp
+src/MeasurementPlan.cpp
+src/MeasurementWorkspace.cpp
+src/Needles.cpp
+src/LiveMeasurements.cpp
+src/SourceResults.cpp
+src/SourceMeasurements.cpp
+src/Waveform.cpp
+src/Queries.cpp

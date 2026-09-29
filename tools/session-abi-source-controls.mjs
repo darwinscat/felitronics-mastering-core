@@ -2,8 +2,7 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 // Mutate an isolated source copy, regenerate, compile, execute and compare. Hosts can retain the copy.
-import {cpSync, existsSync, mkdtempSync, readFileSync, statSync, utimesSync, writeFileSync, rmSync} from 'node:fs';
-import {tmpdir} from 'node:os';
+import {copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, utimesSync, writeFileSync, rmSync} from 'node:fs';
 import {join, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
@@ -29,15 +28,24 @@ if (process.argv[2] === '--self-test') {
 const root = fileURLToPath(new URL('../', import.meta.url));
 // A Windows checkout may carry CRLF line endings; a multi-line anchor is written with \n and follows the file's.
 const inCheckoutEol = (text, s) => text.includes('\r\n') ? s.replaceAll('\r\n', '\n').replaceAll('\n', '\r\n') : s;
-const cache = readFileSync(join(resolve(process.argv[2] ?? 'build'), 'CMakeCache.txt'), 'utf8');
+const parentBuild = resolve(process.argv[2] ?? 'build');
+const cache = readFileSync(join(parentBuild, 'CMakeCache.txt'), 'utf8');
 const value = key => new RegExp(`^${key}:[^=]*=(.*)$`, 'm').exec(cache)?.[1]?.trim();
 const option = name => { const i = process.argv.indexOf(name); return i < 0 ? undefined : process.argv[i + 1]; };
 // Hosts can retain every artifact under their job; normal CI/local runs clean up their temporary copy.
+// THE COPY LIVES IN THE BUILD TREE, NEVER UNDER THE SYSTEM'S TEMPORARY DIRECTORY: MSBuild's file tracking does not record
+// what a compile reads there (warning MSB8029), so a mutated header left the library's objects stale and the probe linked
+// the old code — the JSON addition below failed on windows-latest for exactly that. Every build refuses MSB8029.
 const retain = option('--retain-work');
-const temporary = mkdtempSync(join(retain ? resolve(retain) : tmpdir(), 'session-abi-source-'));
+const temporary = mkdtempSync(join(retain ? resolve(retain) : parentBuild, 'session-abi-source-'));
 const configuration = option('--config') || value('CMAKE_BUILD_TYPE') || '';
 const multi = Boolean(value('CMAKE_CONFIGURATION_TYPES'));
 const buildArgs = ['--build', join(temporary, 'build'), '--config', configuration, '-j', '8', '--target'];
+// MSBuild compiles the sources of one project one after another unless told otherwise; the library is one project of
+// some thirty sources, rebuilt after every mutation. MultiToolTask runs them in parallel without touching a compile line
+// (measured on MSVC 14.44, 16 threads: the whole run 377 s -> 250 s, its first build 106 s -> 38 s).
+const nativeArgs = (value('CMAKE_GENERATOR') ?? '').startsWith('Visual Studio')
+    ? ['--', '/p:UseMultiToolTask=true', '/p:EnforceProcessCountAcrossBuilds=true'] : [];
 const source = join(temporary, 'source'), build = join(temporary, 'build');
 let builtAt = 0;
 const wait = new Int32Array(new SharedArrayBuffer(4));
@@ -58,10 +66,26 @@ function writeSource(path, text) {
 function run(command, args) {
     const result = spawnSync(command, args, {encoding:'utf8', maxBuffer:8*1024*1024});
     assert.equal(result.status, 0, `${command} ${args.join(' ')}\n${result.stdout}\n${result.stderr}`);
+    assert(!/\bMSB8029\b/.test(result.stdout + result.stderr),
+        `${command} ${args.join(' ')}: MSBuild does not track header reads under the temporary directory (MSB8029) — a mutated header would leave stale objects`);
     return result.stdout;
 }
 try {
-    cpSync(root, source, {recursive:true, filter:p => ! /(?:^|\/)(?:build(?:-[^/.]+)?|\.git)(?:\/|$)/.test(p.slice(root.length).split(sep).join('/'))});
+    // The tree without its build directories and version control, and without the copy itself: the parent build — and
+    // with it this copy — may sit inside the source tree (CI's `-B build`), which a plain recursive copy cannot skip.
+    const skipped = p => p === parentBuild || p === temporary
+        || /(?:^|\/)(?:build(?:-[^/.]+)?|\.git)(?:\/|$)/.test(p.slice(root.length).split(sep).join('/'));
+    const copyTree = (from, to) => {
+        mkdirSync(to, {recursive:true});
+        for (const entry of readdirSync(from, {withFileTypes:true})) {
+            const path = join(from, entry.name);
+            if (skipped(path)) continue;
+            if (entry.isDirectory()) copyTree(path, join(to, entry.name));
+            else if (entry.isFile()) copyFileSync(path, join(to, entry.name));
+            else throw Error(`source control copy: ${path} is neither a file nor a directory`);
+        }
+    };
+    copyTree(resolve(root), source);
     const inherited = ['CMAKE_TOOLCHAIN_FILE', 'CMAKE_C_COMPILER', 'CMAKE_CXX_COMPILER', 'CMAKE_MAKE_PROGRAM',
         'CMAKE_GENERATOR_INSTANCE', 'CMAKE_OSX_ARCHITECTURES', 'CMAKE_OSX_DEPLOYMENT_TARGET', 'CMAKE_OSX_SYSROOT',
         'CMAKE_MSVC_RUNTIME_LIBRARY', 'CMAKE_CXX_COMPILER_TARGET', 'CMAKE_CXX_COMPILER_EXTERNAL_TOOLCHAIN',
@@ -85,7 +109,7 @@ try {
     const executable = name => join(build, 'tools', multi ? configuration : '', name + (process.platform === 'win32' ? '.exe' : ''));
     const buildTarget = name => {
         const path = executable(name), previous = existsSync(path) ? statSync(path).mtimeMs : 0;
-        run('cmake', [...buildArgs, name]);
+        run('cmake', [...buildArgs, name, ...nativeArgs]);
         builtAt = Date.now();
         assert(statSync(path).mtimeMs > previous, `${name}: build must update the selected executable`);
     };
@@ -170,7 +194,7 @@ try {
         ['missing string', 'modules/session/src/Text.cpp', 'row.find ("minus")', 'row.find ("absentRequiredString")'],
         ['missing grouping', 'modules/session/src/Text.cpp', 'row.find ("minimumGrouping")', 'row.find ("absentGrouping")'],
         ['bad number pattern', 'modules/session/src/Text.cpp', 'pattern.find ("{n}")', 'pattern.find ("{missing}")'],
-        ['missing phase weight', 'modules/session/src/Pump.cpp', 'weights.find ("loudness")', 'weights.find ("missingWeight")'],
+        ['missing phase weight', 'modules/session/src/Pump.cpp', 'master.find ("passWeight")', 'master.find ("missingWeight")'],
         ['missing config number', 'modules/session/src/Rules.cpp', 'hpf.find ("hzDefault")', 'hpf.find ("missingDefault")'],
         ['invalid state', 'modules/session/src/Session.cpp', 'switch (state_)', 'const volatile State corruptState = static_cast<State> (255); switch (corruptState)'],
         ['invalid device', 'modules/session/src/Devices.cpp', 'switch (device)', 'const volatile Device corruptDevice = static_cast<Device> (255); (void) device; switch (corruptDevice)'],
@@ -194,7 +218,7 @@ try {
     // Compile-time byte-order refusal is a source control, not a synthetic byte fixture.
     const wire = join(source,'modules/session/src/Wire.cpp');
     writeSource(wire,readFileSync(wire,'utf8').replace('std::endian::native == std::endian::little','std::endian::native == std::endian::big'));
-    const endian = spawnSync('cmake',[...buildArgs, 'felitronics_session_abi_probe'],{encoding:'utf8'});
+    const endian = spawnSync('cmake',[...buildArgs, 'felitronics_session_abi_probe', ...nativeArgs],{encoding:'utf8'});
     assert.notEqual(endian.status,0); assert.match(endian.stdout+endian.stderr,/requires little-endian f64 rows/);
     console.log('source control: unsupported byte order: compilation RED');
 } finally { if (!retain) rmSync(temporary,{recursive:true,force:true}); }

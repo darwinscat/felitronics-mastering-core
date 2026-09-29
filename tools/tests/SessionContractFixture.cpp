@@ -3,6 +3,7 @@
 #include <felitronics/session/Session.h>
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Text.h>
+#include "../../modules/session/src/Driver.h"
 #include <cstdio>
 int main()
 {
@@ -13,7 +14,8 @@ int main()
     auto made = Session::create();
     float samples[4] {}; const float* pcm[] { samples };
     if (made.session->apply (command::Load { 1, { pcm, 1, 4, 48000 }, {} }).rejection != Rejection::None) return 1;
-    (void) made.session->step (16);
+    (void) made.session->step (1);
+    (void) detail::Driver::measured1 (*made.session, made.session->measurementJob(), made.session->source().hash);
     (void) made.session->column();
     (void) config::Config::bind ("default = \"bad\"", "");
     return rendered.empty() ? 1 : 0;

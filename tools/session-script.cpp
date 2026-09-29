@@ -8,11 +8,14 @@ int sessionScript (const std::string&, const char*, bool) { return 2; }
 #include "fc_session_abi.h"
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Wire.h>
+#include "Driver.h"
 #include <bit>
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <map>
 #include <regex>
 #include <sstream>
@@ -84,6 +87,7 @@ public:
     std::map<std::string, std::unique_ptr<Session>> sessions;
     std::map<std::string, std::string> projects;
     std::string current;
+    std::uint64_t previousSource = 0;
     std::size_t next = 0;
     bool poisoned = false;
     void record (const char* kind, const std::string& bytes, const std::string& rows = "")
@@ -111,11 +115,19 @@ public:
         const auto [json, rows] = copy (snapshot);
         record (snapshot ? "snapshot" : "events", json, rows);
     }
+    void summary()
+    {
+        const auto need = Wire::summaryBytes (session());
+        require (need.status == CodecStatus::Ok, "summary size refused");
+        std::string json (need.jsonBytes, '\0'); std::vector<double> rows (need.rowBytes / sizeof (double));
+        require (Wire::summary (session(), json, rows) == CodecStatus::Ok, "summary copy refused");
+        record ("summary", json, rowHex (rows));
+    }
     template <class Query> void demand (Query query)
     {
         const auto events = copy (false), snapshot = copy (true);
         const auto need = query();
-        require (need.bytes < 9007199254740992ull && need.largestBlockBytes <= need.bytes, "invalid demand");
+        require (need.bytes < 9007199254740992ull && need.largestBlockBytes < 9007199254740992ull, "invalid demand");
         require (session().liveBytes() > 0, "live session is priced");
         require (copy (false) == events && copy (true) == snapshot, "demand changed events or snapshot");
     }
@@ -153,6 +165,16 @@ public:
                 if (i.op == "use") { current = a[0]; (void) session(); continue; }
                 if (i.op == "poison") { (void) session(); abandonedRunner = this; sessionScriptPoison (&afterPoison); }
                 if (i.op == "snapshot") { transfer (true); continue; }
+                if (i.op == "place")
+                {
+                    const auto job = session().measurementJob();
+                    const auto source = session().source().hash;
+                    const bool placed = a[0] == "1" ? detail::Driver::measured1 (session(), job, source)
+                                                       : detail::Driver::measured2 (session(), job, source);
+                    require (placed, "contract placement refused");
+                    record ("place", a[0]); transfer (false); continue;
+                }
+                if (i.op == "summary") { summary(); continue; }
                 if (i.op == "export")
                 {
                     const auto need = session().exportProjectBytes();
@@ -167,11 +189,44 @@ public:
                              "capacity refused");
                     record ("capacity", "0"); continue;
                 }
+                if (i.op == "query")
+                {
+                    std::string request = a[0];
+                    if (const auto marker = request.find ("$source"); marker != std::string::npos)
+                        request.replace (marker, 7, std::to_string (session().source().hash));
+                    if (const auto marker = request.find ("$previous"); marker != std::string::npos)
+                        request.replace (marker, 9, std::to_string (previousSource));
+                    demand ([&] { return Wire::queryStorage (session(), request); });
+                    const auto bounds = Wire::queryBuffers (session(), request);
+                    require (bounds.status == CodecStatus::Ok, "query bounds refused");
+                    std::string json (bounds.jsonBytes, '\0');
+                    std::vector<double> rows (bounds.rowBytes / sizeof (double));
+                    const auto actual = Wire::query (session(), request, json, rows);
+                    require (actual.status == CodecStatus::Ok && actual.jsonBytes <= json.size()
+                             && actual.rowBytes <= bounds.rowBytes, "query copy refused");
+                    json.resize (actual.jsonBytes); rows.resize (actual.rowBytes / sizeof (double));
+                    record ("query", json, rowHex (rows)); continue;
+                }
                 if (i.op == "step")
                 {
                     const auto stepped = session().step (std::uint32_t (std::stoul (a[0])));
                     require (! stepped.refused, "step refused"); record ("step", std::to_string (unsigned (stepped.state)));
                     transfer (false); continue;
+                }
+                if (i.op == "drive")
+                {
+                    std::uint32_t remaining = std::uint32_t (std::stoul (a[0]));
+                    while (remaining)
+                    {
+                        const auto count = std::min (remaining, 16u);
+                        remaining -= count;
+                        const auto stepped = session().step (count);
+                        require (! stepped.refused, "drive refused");
+                        record ("step", std::to_string (unsigned (stepped.state)));
+                        transfer (false);
+                        if (stepped.state == StepState::Done) break;
+                    }
+                    continue;
                 }
                 char answer[kAnswerBytes]; std::uint32_t written = 0; CodecStatus status = CodecStatus::Invalid;
                 if (i.op == "command" || i.op == "cancel")
@@ -195,8 +250,17 @@ public:
                     demand ([&] { return Wire::importStorage (session(), project); });
                     status = Wire::importProject (session(), std::stoull (a[0]), project, answer, written);
                 }
-                else if (i.op == "load")
+                else if (i.op == "load-measured")
                 {
+                    std::ifstream input (fixtures / (a[1] + ".json"), std::ios::binary);
+                    require (input.good(), "unknown measured fixture");
+                    const std::string facts ((std::istreambuf_iterator<char> (input)), std::istreambuf_iterator<char>());
+                    demand ([&] { return Wire::loadMeasuredStorage (session(), facts); });
+                    status = Wire::loadMeasured (session(), std::stoull (a[0]), facts, answer, written);
+                }
+                else if (i.op == "load" || i.op == "attach-audio")
+                {
+                    if (i.op == "load") previousSource = session().source().hash;
                     std::ifstream input (fixtures / (a[1] + ".pcm"));
                     std::uint32_t rate = 0, channels = 0, frames = 0;
                     input >> rate >> channels >> frames;
@@ -204,14 +268,29 @@ public:
                     std::vector<float> samples (std::size_t (channels) * frames);
                     for (auto& sample : samples)
                     {
-                        int value = 0; require (bool (input >> value) && value >= -32768 && value <= 32767, "bad PCM sample");
-                        sample = float (value) / 32768.0f;
+                        std::string token; require (bool (input >> token), "bad PCM sample");
+                        if (token == "NaN") sample = std::bit_cast<float> (0x7fc00000u);
+                        else
+                        {
+                            const int value = std::stoi (token);
+                            require (value >= -32768 && value <= 32767 && token == std::to_string (value), "bad PCM sample");
+                            sample = float (value) / 32768.0f;
+                        }
                     }
                     std::string extra; require (! (input >> extra), "extra PCM sample");
                     const float* planes[] = { samples.data(), samples.data() + frames };
                     const auto meta = "{\"name\":\"" + a[1] + "\",\"fileRate\":" + std::to_string (rate) + ",\"bitDepth\":16,\"rateKnown\":true}";
-                    demand ([&] { return Wire::loadStorage (session(), channels, frames, rate, meta); });
-                    status = Wire::load (session(), std::stoull (a[0]), { planes, channels, frames, rate }, meta, answer, written);
+                    const Pcm pcm { planes, channels, frames, rate };
+                    if (i.op == "load")
+                    {
+                        demand ([&] { return Wire::loadStorage (session(), channels, frames, rate, meta); });
+                        status = Wire::load (session(), std::stoull (a[0]), pcm, meta, answer, written);
+                    }
+                    else
+                    {
+                        demand ([&] { return Wire::attachAudioStorage (session(), { nullptr, channels, frames, rate }); });
+                        status = Wire::attachAudio (session(), std::stoull (a[0]), pcm, answer, written);
+                    }
                 }
                 require (status == CodecStatus::Ok, "codec call refused");
                 record ("answer", std::string (answer, written)); transfer (false);

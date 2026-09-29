@@ -1,0 +1,11 @@
+create abandoned 67108864
+load 1 measure-stereo
+step 2 work units
+snapshot
+poison
+new instance
+create fresh 67108864
+load 2 silence
+drive 5000 work units
+snapshot
+summary

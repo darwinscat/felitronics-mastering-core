@@ -1,0 +1,52 @@
+# SPDX-License-Identifier: AGPL-3.0-or-later
+# Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
+
+# What the codec generator takes from tools/fc_session_abi.h rather than from a copy of its own: the wire's SessionStatus
+# union is fc_session_status (CONTROL=status), and the ABI version stated by snapshot.d.ts and snapshot.mjs is
+# FC_SESSION_ABI_VERSION (CONTROL=version). A shadow copy of the header changes one of them; the generated files must
+# follow with no second edit. The real header is never touched.
+file(READ "${HEADER}" header)
+if(CONTROL STREQUAL "status")
+    set(anchor "FC_SESSION_ERR_NOT_PLACED = 18")
+    set(replacement "FC_SESSION_ERR_NOT_PLACED = 18,\n    FC_SESSION_ERR_CODEC_CONTROL = 19")
+elseif(CONTROL STREQUAL "version")
+    if(NOT header MATCHES "\n#define FC_SESSION_ABI_VERSION ([0-9]+)u")
+        message(FATAL_ERROR "no FC_SESSION_ABI_VERSION in ${HEADER}")
+    endif()
+    math(EXPR next "${CMAKE_MATCH_1} + 1")
+    set(anchor "#define FC_SESSION_ABI_VERSION ${CMAKE_MATCH_1}u")
+    set(replacement "#define FC_SESSION_ABI_VERSION ${next}u")
+else()
+    message(FATAL_ERROR "CONTROL must be status or version")
+endif()
+string(REPLACE "${anchor}" "${replacement}" shadow "${header}")
+if(shadow STREQUAL header)
+    message(FATAL_ERROR "control anchor ${anchor} not found in ${HEADER}")
+endif()
+set(dir "${WORK}/${CONTROL}")
+file(MAKE_DIRECTORY "${dir}")
+file(WRITE "${dir}/fc_session_abi.h" "${shadow}")
+file(WRITE "${dir}/version.txt" "0123456789abcdef\n")
+file(REMOVE "${dir}/snapshot.d.ts" "${dir}/snapshot.mjs")
+execute_process(COMMAND "${CMAKE_COMMAND}" "-DSESSION_ABI_HEADER=${dir}/fc_session_abi.h" "-DOUTPUT=${dir}/snapshot.d.ts"
+                        "-DVERSION_FILE=${dir}/version.txt" -P "${GENERATOR}"
+                RESULT_VARIABLE result ERROR_VARIABLE error)
+if(NOT result EQUAL 0)
+    message(FATAL_ERROR "the codec generator refused the shadow header: ${error}")
+endif()
+file(READ "${dir}/snapshot.d.ts" ts)
+file(READ "${dir}/snapshot.mjs" runtime)
+if(CONTROL STREQUAL "status")
+    if(NOT ts MATCHES "export type SessionStatus = 0 \\| 1 \\| [^;\n]*\\| 18 \\| 19;")
+        message(FATAL_ERROR "an appended fc_session_status value is missing from the generated SessionStatus union")
+    endif()
+    message(STATUS "codec control: an appended fc_session_status value reaches the generated SessionStatus union")
+else()
+    if(NOT ts MATCHES "export declare const FC_SESSION_ABI_VERSION: ${next};\n")
+        message(FATAL_ERROR "snapshot.d.ts does not state the header's FC_SESSION_ABI_VERSION ${next}")
+    endif()
+    if(NOT runtime MATCHES "export const FC_SESSION_ABI_VERSION = ${next};\n")
+        message(FATAL_ERROR "snapshot.mjs does not state the header's FC_SESSION_ABI_VERSION ${next}")
+    endif()
+    message(STATUS "codec control: a moved FC_SESSION_ABI_VERSION reaches snapshot.d.ts and snapshot.mjs")
+endif()

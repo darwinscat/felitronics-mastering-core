@@ -5,6 +5,7 @@
 #include "SnapshotStorage.h"
 #include "Devices.h"
 #include "EqCurve.h"
+#include "Needles.h"
 #include <felitronics/session/Snapshot.h>
 #include <algorithm>
 #include <limits>
@@ -21,12 +22,14 @@ std::uint64_t Snapshot::storageFor (const SnapshotView& v) noexcept
 {
     return detail::snapshotStorage (v.target.size(), v.source.name.size(), v.masters.size_bytes(),
                                     v.momentary.size_bytes(), v.shortTerm.size_bytes(), v.runs.size_bytes())
-         + std::uint64_t (v.machineDifferences.size_bytes()) + std::uint64_t (v.eqCurve.size_bytes());
+         + std::uint64_t (v.machineDifferences.size_bytes()) + std::uint64_t (v.eqCurve.size_bytes()) + OwnedMeasurements::storageFor (v.measurements);
 }
 Snapshot Snapshot::copy (const SnapshotView& v) noexcept
 {
     Snapshot out;
     out.view_ = v;
+    out.measurements_ = OwnedMeasurements::copy (v.measurements);
+    out.view_.measurements = out.measurements_.view();
     const auto chars = detail::snapshotAllocationSize<std::size_t> (
         detail::snapshotTextBytes (v.target.size(), v.source.name.size()));
     const auto pointBytes = std::uint64_t (v.momentary.size_bytes()) + std::uint64_t (v.shortTerm.size_bytes());
@@ -73,6 +76,26 @@ Snapshot Snapshot::copy (const SnapshotView& v) noexcept
     }
     return out;
 }
+SnapshotView Session::buildSummary (std::span<MeasurementResult> results) const noexcept
+{
+    auto v = buildView();
+    std::copy (v.measurements.begin(), v.measurements.end(), results.begin());
+    results = results.first (v.measurements.size());
+    for (auto& r : results) r.arrays = {};
+    v.measurements = results; v.momentary = {}; v.shortTerm = {}; v.runs = {};
+    v.measurementRowsIncluded = false;
+    return v;
+}
+std::uint64_t Session::summaryBytes() const noexcept
+{
+    MeasurementResult results[kAnalyzers];
+    return Snapshot::storageFor (buildSummary (results));
+}
+Snapshot Session::summary() const noexcept
+{
+    MeasurementResult results[kAnalyzers];
+    return Snapshot::copy (buildSummary (results));
+}
 std::uint64_t Session::snapshotBytes() const noexcept
 {
     return Snapshot::storageFor (buildView());
@@ -90,6 +113,13 @@ SnapshotView Session::buildView() const noexcept
     SnapshotView v;
     v.offeredDevices = capabilities_.offeredDevices;
     v.state = state_;
+    v.mandatoryMeasurementsReady = mandatoryReady();
+    v.tempoChoice = tempoForDevice();
+    v.measurementsFromSidecar = measurementsFromSidecar_;
+    v.sourceMissingAudio = source_.channels != 0 && ! samples_;
+    v.devicesPlaced = placed();
+    v.canContinueMeasurement = state_ == State::MeasurementStopped;
+    v.measurementResumeState = v.canContinueMeasurement ? stoppedState_ : State::Empty;
     v.mastering = mastering_;
     v.revision = revision_;
     v.project = project_;
@@ -103,6 +133,16 @@ SnapshotView Session::buildView() const noexcept
     if (placed()) v.eqCurve = eqCurve_;
     v.target = targetName();
     v.source = source_;
+    v.measurementStorage = measurementStorage_;
+    v.needlesJob = needlesJob_;
+    v.needlesSource = needlesSource_;
+    v.needlesNeedDb = needlesNeedDb_;
+    v.needlesCeilingDb = needlesCeilingDb_;
+    v.needlesProgress = needlesProgress_;
+    v.needlesBytes = double (needlesDemand_.bytes);
+    v.needlesLargestBlockBytes = double (needlesDemand_.largestBlockBytes);
+    v.needlesRunsTruncated = needlesResult_ && needlesResult_->runsTruncated;
+    if (source_.channels != 0) v.measurements = measurementResults_;
     v.job = job_;
     v.measurementJob = measurementJob_;
     v.jobRecipe = jobRecipe_;
@@ -110,8 +150,10 @@ SnapshotView Session::buildView() const noexcept
     v.machineDifferences = { differences_, differenceCount_ };
     v.measurementProgress = measurementProgress_;
     v.masterProgress = masterProgress_;
-    v.integratedLufs = std::numeric_limits<double>::quiet_NaN(); // the stub establishes no audio measurement
-    v.sourceBytes = double (source_.frames * source_.channels * sizeof (float));
+    v.integratedLufs = std::numeric_limits<double>::quiet_NaN();
+    for (const auto& value : measurementResults_[0].numbers)
+        if (value.name == "integratedLufs" && value.value) v.integratedLufs = *value.value;
+    v.sourceBytes = samples_ ? double (source_.frames * source_.channels * sizeof (float)) : 0.0;
     return v;
 }
 } // namespace felitronics::session

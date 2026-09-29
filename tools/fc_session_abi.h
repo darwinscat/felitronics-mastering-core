@@ -25,9 +25,18 @@
 // values may be appended. tools/session-abi-check.mjs compares a compiled probe to the v1 manifest
 // on every tier, including wasm32; its mutation control must fail on a changed or missing line.
 //
+// FC_SESSION_ABI_VERSION IS A FLOOR, as FC_MASTER_ABI_VERSION is: after the first release that carries this surface,
+// each batch of additions that lands together in one release — entry points, fields, values — moves the number up by
+// one and adds one row below, so a page's "module version >= page version" gate is its protection against calling an
+// export the module lacks. The generated snapshot.d.ts and snapshot.mjs state the number read from this line. The
+// manifest's `define FC_SESSION_ABI_VERSION=1` is therefore checked as "at least 1", like a boundary struct's size;
+// a lower number is a change. The manifest itself only grows: CI refuses a pull request that removes or edits a line.
+//
 //   fc_session   the surface
 //   ----------   ------------------------------------------------------------------------------------------------
-//   1            capabilities/config creation and demand, commands/load/project, step, events and snapshot copies.
+//   1            capabilities/config creation and demand, commands/load/project, step, events and snapshot copies;
+//                measurement and needles demand, measurement queries, summaries, the sidecar load and its audio
+//                attachment (no release carried fc_session before them, so they are version 1).
 #define FC_SESSION_ABI_VERSION 1u
 #define FC_SESSION_CAPABILITIES_V1_BYTES 32u
 #define FC_SESSION_SIZES_V1_BYTES 12u
@@ -154,6 +163,28 @@ typedef struct fc_session_storage
     double liveBytes;               // current declared bytes; caller can assess live + bytes
 } fc_session_storage;
 
+// Detailed source measurement demand. Counts include one retained result copy and its codec buffers.
+// Codec buffers are the snapshot transport's JSON metadata plus binary f64 rows. A C++ plain-JSON
+// export has a separate exact Codec::encodedBytes query; it is not reserved for every web measurement.
+// Reserved slots preserve the earlier record layout; always zero. Needles have a separate job demand.
+typedef struct fc_session_measurement_storage
+{
+    uint32_t size;
+    uint32_t rejection;
+    double sourceBytes;
+    double resultBytes;
+    double reservedBytes;
+    double workspaceBytes;
+    double copyBytes;
+    double codecBytes;
+    double allocatorBytes;
+    double loadPeakBytes;
+    double workPeakBytes;
+    double peakBytes;
+    double largestBlockBytes;
+    uint32_t reserved;
+} fc_session_measurement_storage;
+
 typedef enum fc_session_step_state
 {
     FC_SESSION_MORE = 0,
@@ -172,6 +203,10 @@ typedef enum fc_session_step_state
 // Every output is disjoint from all other buffers. A query/copy pair describes the same batch only
 // while no command or step intervenes. No pointer into session memory survives a call.
 //
+// Additive v1 measurement data: reading payloads include a fixed source-frame grid, window reasons,
+// detailed clip rows and total/stored counts. Reports live in snapshot measurements with per-field reasons.
+// Events include source/revision/state/phase and deterministic work. continueMeasurement resumes a stopped
+// measurement; snapshot canContinueMeasurement and measurementResumeState describe availability.
 // A wasm trap cannot return through C: the shell catches it as ERR_TRAP and discards the instance.
 // Every later status call returns ERR_POISONED, publishes nothing, and cannot destroy even a handle.
 // Recovery is a new instance, load, then importProject. abi_version alone remains callable.
@@ -192,6 +227,10 @@ fc_session_status fc_session_set_capacity (fc_session session, const fc_session_
 fc_session_status fc_session_command_bytes (fc_session session, const char* json, uint32_t json_bytes, fc_session_storage* out);
 fc_session_status fc_session_load_bytes (fc_session session, uint32_t channels, uint32_t frames, uint32_t rate,
                                          const char* meta, uint32_t meta_bytes, fc_session_storage* out);
+// Additional demand for one ceiling over the retained source, before any needles work.
+fc_session_status fc_session_needles_bytes (fc_session session, double ceiling_db, fc_session_storage* out);
+fc_session_status fc_session_measurement_bytes (fc_session session, uint32_t channels, uint32_t frames,
+                                                uint32_t rate, fc_session_measurement_storage* out);
 fc_session_status fc_session_import_project_bytes (fc_session session, const char* project, uint32_t project_bytes,
                                                    fc_session_storage* out);
 fc_session_status fc_session_config_version (uint32_t* out); // two halves, low first
@@ -227,6 +266,41 @@ fc_session_status fc_session_snapshot_copy (fc_session session, char* json, uint
 // IEEE-754 bits; JSON uses "-Infinity", "Infinity", "NaN". Byte
 // counters are exact doubles < 2^53; uint64 identities are decimal strings. Events are a union
 // discriminated by kind in the generated .d.ts. Size queries and copies allocate nothing.
+
+// Measurement queries are named JSON MeasurementQuery records from the one codec generator.
+// Source frame ranges are [fromFrame,toFrame); channel/axis order and row layouts are documented
+// in docs/SESSION.md. QueryStatus is carried by the answer. Entry/JSON errors write nothing.
+// query_size returns capacity bounds BEFORE work; query_copy returns actual sizes in written.
+// Between them no command/step/query may intervene. Request IDs are echoed exactly; source,
+// revision and measurement key identify the retained evidence. Arrays belong to the caller.
+// query_bytes prices the transient result and bounded cache, using fc_session_storage semantics.
+fc_session_status fc_session_query_bytes (fc_session session, const char* request, uint32_t request_bytes,
+                                          fc_session_storage* out);
+fc_session_status fc_session_query_size (fc_session session, const char* request, uint32_t request_bytes,
+                                         fc_session_sizes* out);
+fc_session_status fc_session_query_copy (fc_session session, const char* request, uint32_t request_bytes,
+                                         char* json, uint32_t json_capacity, double* rows, uint32_t row_capacity,
+                                         fc_session_sizes* written);
+// Frequent UI snapshots: same fields and scalar measurements, measurementRowsIncluded=false.
+// Large rows are read through queries; the existing full snapshot entry points are unchanged.
+fc_session_status fc_session_summary_size (fc_session session, fc_session_sizes* out);
+fc_session_status fc_session_summary_copy (fc_session session, char* json, uint32_t json_capacity,
+                                           double* rows, uint32_t row_capacity);
+
+// Additive v1 sidecar path. The typed MeasuredSource JSON is generated by the
+// same codec schema as snapshots. A missing PCM is explicit in the snapshot;
+// attachment checks the ordinary source hash, retains the facts, and indexes
+// only the waveform. Each bytes call precedes any allocation or PCM scan.
+fc_session_status fc_session_load_measured_bytes (fc_session session, const char* facts, uint32_t facts_bytes,
+                                                  fc_session_storage* out);
+fc_session_status fc_session_load_measured (fc_session session, uint32_t command_low, uint32_t command_high,
+                                            const char* facts, uint32_t facts_bytes,
+                                            char* answer, uint32_t capacity, uint32_t* written);
+fc_session_status fc_session_attach_audio_bytes (fc_session session, uint32_t channels, uint32_t frames,
+                                                 uint32_t rate, fc_session_storage* out);
+fc_session_status fc_session_attach_audio (fc_session session, uint32_t command_low, uint32_t command_high,
+                                           const float* const* pcm, uint32_t channels, uint32_t frames, uint32_t rate,
+                                           char* answer, uint32_t capacity, uint32_t* written);
 
 #ifdef __cplusplus
 }   // extern "C"

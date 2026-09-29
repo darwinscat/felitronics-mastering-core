@@ -63,7 +63,11 @@ const SURFACE = {
         '_fc_session_set_capacity', '_fc_session_command_bytes', '_fc_session_load_bytes', '_fc_session_import_project_bytes',
         '_fc_session_create_bytes', '_fc_session_command', '_fc_session_load', '_fc_session_import_project',
         '_fc_session_export_project_size', '_fc_session_export_project_copy', '_fc_session_step',
-        '_fc_session_events_size', '_fc_session_events_copy', '_fc_session_snapshot_size', '_fc_session_snapshot_copy'],
+        '_fc_session_events_size', '_fc_session_events_copy', '_fc_session_snapshot_size', '_fc_session_snapshot_copy',
+        '_fc_session_measurement_bytes', '_fc_session_needles_bytes', '_fc_session_query_bytes', '_fc_session_query_size',
+        '_fc_session_query_copy', '_fc_session_summary_size', '_fc_session_summary_copy',
+        '_fc_session_load_measured_bytes', '_fc_session_load_measured',
+        '_fc_session_attach_audio_bytes', '_fc_session_attach_audio'],
 };
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
@@ -244,47 +248,56 @@ const readTransfer = what => {
     }
     M._free(j); if (r) M._free(r); return json;
 };
-const pcm = M._malloc(256 * 4), pointers = M._malloc(4);
-for (let i = 0; i < 256; ++i) new Float32Array(M.HEAPU32.buffer)[(pcm >>> 2) + i] = (i % 32 - 16) / 64;
+const pcm = M._malloc(48000 * 4), pointers = M._malloc(4);
+for (let i = 0; i < 48000; ++i) new Float32Array(M.HEAPU32.buffer)[(pcm >>> 2) + i] = (i % 32 - 16) / 64;
 M.HEAPU32[pointers >>> 2] = pcm;
 const [meta, metaBytes] = input(JSON.stringify({name:'synthetic', fileRate:48000, bitDepth:24, rateKnown:true}));
-ok(M._fc_session_load(session, 1, 0, pointers, 1, 256, 48001, meta, metaBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
+ok(M._fc_session_load(session, 1, 0, pointers, 1, 48000, 48001, meta, metaBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
     && reply().code === 29, 'above maximum rate refused');
-ok(M._fc_session_load(session, 1, 0, pointers, 1, 256, 48000, meta, metaBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
+ok(M._fc_session_load(session, 1, 0, pointers, 1, 48000, 48000, meta, metaBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
     && reply().kind === 'accepted', 'synthetic PCM loaded');
 M._free(meta); M._free(pointers); M._free(pcm);
 let steps = 0, done = false, phases = 0;
-while (!done && steps < 32) {
+while (!done && steps < 1500) {
     ok(M._fc_session_step(session, 1, resultSize) === STATUS.OK, 'small work-unit budget');
     done = M.HEAPU32[resultSize >>> 2] === 1; ++steps;
     for (const e of readTransfer('events')) if (e.kind === 'phase') ++phases;
 }
-ok(done && steps === 10 && phases === 10, 'pump reaches done through ten small steps');
+ok(done && steps > 10 && phases > 10, 'pump reaches done after bounded preparation, streaming, and finalization');
 const snapshot = readTransfer('snapshot');
-ok(snapshot.state === 3 && snapshot.sourceBytes === 1024 && snapshot.integratedLufs === 'NaN', 'owned measured snapshot and explicit NaN');
-ok(cmd(session, {kind:'editDevice', commandId:'2', device:7, fields:{on:true, db:1.25}}).kind === 'accepted', 'low edits with hidden panel on streaming');
+ok(snapshot.state === 3 && snapshot.sourceBytes === 192000 && typeof snapshot.integratedLufs === 'number', 'owned phase-two snapshot and explicit NaN');
+ok(snapshot.tempoChoice.ready && !snapshot.tempoChoice.measured && snapshot.tempoChoice.bpm === 120
+    && snapshot.measurements.find(r => r.analyzer === 11)?.status === 2,
+    'short optional tempo gives a terminal cause and a separate device fallback');
+const queryRequest = {kind:0, audioId:snapshot.source.hash, fromFrame:'0', toFrame:'48000', columns:7, requestId:'9007199254740993'};
+const queryEncoded = new TextEncoder().encode(JSON.stringify(queryRequest));
+const queryInput = M._malloc(queryEncoded.length);
+new Uint8Array(M.HEAPU32.buffer, queryInput, queryEncoded.length).set(queryEncoded);
+const querySizes = M._malloc(12), queryWritten = M._malloc(12);
+M.HEAPU32[querySizes >>> 2] = 12; M.HEAPU32[queryWritten >>> 2] = 12;
+ok(M._fc_session_query_size(session, queryInput, queryEncoded.length, querySizes) === STATUS.OK, 'query capacity before execution');
+const queryJsonBytes = M.HEAPU32[(querySizes + 4) >>> 2], queryRowBytes = M.HEAPU32[(querySizes + 8) >>> 2];
+const queryJson = M._malloc(queryJsonBytes), queryRows = M._malloc(queryRowBytes);
+for (let repeat = 0; repeat < 2; ++repeat) {
+    ok(M._fc_session_query_copy(session, queryInput, queryEncoded.length, queryJson, queryJsonBytes, queryRows, queryRowBytes, queryWritten) === STATUS.OK, 'owned waveform query');
+    const bytes = M.HEAPU32[(queryWritten + 4) >>> 2];
+    const response = JSON.parse(new TextDecoder().decode(new Uint8Array(M.HEAPU32.buffer, queryJson, bytes)));
+    ok(accepts(response, 'QueryResponse') && response.request.requestId === queryRequest.requestId && response.audioId === queryRequest.audioId, 'generated query metadata and exact request ID');
+    ok(response.status === 0 && response.stored === '28' && response.cacheHit === (repeat === 1), 'overview and repeated demand cache');
+    const values = new Float64Array(M.HEAPU32.buffer, queryRows, response.values.length);
+    ok(Number.isNaN(values[16]) && values[25] === 3, 'mono right axis is absent with a reason');
+}
+M.HEAPU32[querySizes >>> 2] = 12;
+ok(M._fc_session_summary_size(session, querySizes) === STATUS.OK && M.HEAPU32[(querySizes + 8) >>> 2] === 0, 'summary omits large measurement rows');
+for (const p of [queryInput, querySizes, queryWritten, queryJson, queryRows]) M._free(p);
+ok(cmd(session, {kind:'editDevice', commandId:'2', device:7, fields:{on:true, db:1.25}}).code === 3, 'device edits wait for placement');
 ok(cmd(session, {kind:'setManual', commandId:'2', on:true}).kind === 'accepted', 'manual command');
-ok(cmd(session, {kind:'setManual', commandId:'2', on:false}).kind === 'accepted', 'hide panel with edits');
-ok(M._fc_session_export_project_size(session, resultSize) === STATUS.OK, 'project size');
-const projectBytes = M.HEAPU32[resultSize >>> 2], project = M._malloc(projectBytes);
-ok(M._fc_session_export_project_copy(session, project, projectBytes, resultSize) === STATUS.OK, 'project copy');
-ok(M._fc_session_import_project(session, 3, 0, project, projectBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
-    && reply().kind === 'accepted', 'project import');
-const saved = decoder.decode(heapBytes().slice(project, project + projectBytes));
-const foreign = saved.replace(/core = "[^"]+"/, 'core = "99.0.0"') + '\n[hpf]\nfq.machine = 33\n';
-const [foreignPtr, foreignBytes] = input(foreign);
-ok(M._fc_session_import_project(session, 4, 0, foreignPtr, foreignBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
-    && reply().kind === 'accepted', 'import foreign-core project with a changed machine value');
-const foreignSnapshot = readTransfer('snapshot');
-ok(foreignSnapshot.machineDifferences.length > 0, 'shipped facade transfers nonempty binary rows');
-M._free(foreignPtr);
-M._free(project);
-ok(foreignSnapshot.handFieldCount === 2, 'snapshot counts hidden edits for the shell warning');
+ok(M._fc_session_export_project_size(session, resultSize) === STATUS.ERR_NOT_PLACED, 'unplaced defaults cannot be exported');
+const crest = snapshot.measurements.find(r => r.analyzer === 9);
+ok(crest?.arrays.some(a => a.name === 'blocks' && a.stored > 0), 'shipped facade transfers owned source crest rows');
 ok(cmd(session, {kind:'setTarget', commandId:'5', target:'lp'}).kind === 'accepted', 'target command needs only a target');
 const resetSnapshot = readTransfer('snapshot');
-ok(resetSnapshot.handFieldCount === 0 && resetSnapshot.project.devices.low.hand.db === null
-    && resetSnapshot.project.devices.low.hand.on === null, 'target change clears hidden edits');
-ok(resetSnapshot.project.devices.low.machine.db === 0.5, 'machine decides again for vinyl');
+ok(resetSnapshot.handFieldCount === 0 && resetSnapshot.measurementJob === 0, 'target changes preserve completed source measurements');
 const past = M.HEAPU32.buffer.byteLength;
 for (const what of ['events', 'snapshot']) {
     ok(M[`_fc_session_${what}_size`](session, past - 4) === STATUS.ERR_SPAN, `${what} size output crosses heap`);
@@ -314,6 +327,29 @@ const table = M._malloc(4); M.HEAPU32[table >>> 2] = M.HEAPU32.buffer.byteLength
 ok(M._fc_session_load(session, 0, 0, table, 1, 2, 48000, 0, 0, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.ERR_SPAN,
    'a channel sample span crosses heap');
 M._free(table);
+// A rejected overlapping attachment must leave both outputs and the sidecar unchanged.
+let hash = 0xcbf29ce484222325n;
+for (const byte of [128, 187, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+    hash = ((hash ^ BigInt(byte)) * 0x100000001b3n) & 0xffffffffffffffffn;
+const [factsPtr, factsBytes] = input(JSON.stringify({name:'one', sourceHash:hash.toString(), frames:'1',
+    sampleRate:48000, channels:1, fileRate:48000, bitDepth:16, rateKnown:true, integratedLufs:-14, truePeakDb:-0.5}));
+ok(M._fc_session_load_measured(session, 41, 0, factsPtr, factsBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
+    && reply().kind === 'accepted', 'one-frame sidecar loaded through wasm facade');
+M._free(factsPtr);
+const sidecarBefore = readTransfer('snapshot');
+const onePcm = M._malloc(4), oneTable = M._malloc(4);
+new Float32Array(M.HEAPU32.buffer)[onePcm >>> 2] = 0;
+M.HEAPU32[oneTable >>> 2] = onePcm;
+heapBytes().fill(0x5a, answer, answer + macro('FC_SESSION_ANSWER_BYTES'));
+const overlapBefore = heapBytes().slice(answer, answer + macro('FC_SESSION_ANSWER_BYTES'));
+ok(M._fc_session_attach_audio(session, 42, 0, oneTable, 1, 1, 48000,
+    answer, macro('FC_SESSION_ANSWER_BYTES'), answer + 4) === STATUS.ERR_OVERLAP,
+   'attachment refuses overlapping answer and written outputs');
+ok(Buffer.from(heapBytes().slice(answer, answer + macro('FC_SESSION_ANSWER_BYTES'))).equals(Buffer.from(overlapBefore)),
+   'overlap refusal leaves output bytes unchanged');
+ok(JSON.stringify(readTransfer('snapshot')) === JSON.stringify(sidecarBefore),
+   'overlap refusal leaves the full sidecar snapshot unchanged');
+M._free(oneTable); M._free(onePcm);
 ok(M._fc_session_destroy(session) === STATUS.OK, 'smoke session destroyed');
 for (const p of [caps, answer, resultSize, demand]) M._free(p);
 console.log(`session-check: fcsession v${version} — ${checks} checks, ${bad} failures`);

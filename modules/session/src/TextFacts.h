@@ -35,6 +35,7 @@ struct ArgShape
     std::string_view name;            // what its placeholder spells, without the braces
     ArgKind kind = ArgKind::None;
     std::string_view group;           // Term: the term group of the catalog it takes; empty otherwise
+
 };
 
 struct FactShape
@@ -106,6 +107,26 @@ inline constexpr FactShape kFacts[] = {
     { FactId::SessionMemory, "sessionMemory", {}, 0 },
     { FactId::SessionPoisoned, "sessionPoisoned", {}, 0 },
     { FactId::SessionStale, "sessionStale", {}, 0 },
+    { FactId::MeasurementPending, "measurementPending", {}, 0 },
+    { FactId::MeasurementReady, "measurementReady", {}, 0 },
+    { FactId::MeasurementStopped, "measurementStopped", {}, 0 },
+    { FactId::MeasurementUnsupported, "measurementUnsupported", {}, 0 },
+    { FactId::MeasurementTooShort, "measurementTooShort", {}, 0 },
+    { FactId::MeasurementNonFinite, "measurementNonFinite", {}, 0 },
+    { FactId::MeasurementCapacity, "measurementCapacity", {}, 0 },
+    { FactId::MeasurementNoSignal, "measurementNoSignal", {}, 0 },
+    { FactId::MeasurementUnavailable, "measurementUnavailable", {}, 0 },
+    { FactId::NeedlesSkipped, "needlesSkipped", {}, 0 },
+    { FactId::NeedlesRunsTruncated, "needlesRunsTruncated", {}, 0 },
+    { FactId::SourceClipping, "sourceClipping", {}, 0 },
+    { FactId::ContinueMeasurement, "continueMeasurement", {}, 0 },
+    { FactId::AnalyzerStatus, "analyzerStatus", { { { "analyzer", ArgKind::Term, "analyzer" }, { "status", ArgKind::Term, "measurementStatus" } } }, 2 },
+    { FactId::SourceQuiet, "sourceQuiet", { { { "lufs", ArgKind::Value, {} } } }, 1 },
+    { FactId::SourceGainOnly, "sourceGainOnly", { { { "lufs", ArgKind::Value, {} } } }, 1 },
+    { FactId::SourceDc, "sourceDc", { { { "offset", ArgKind::Value, {} } } }, 1 },
+    { FactId::SourceUnusedBits, "sourceUnusedBits", { { { "bits", ArgKind::Count, {} } } }, 1 },
+    { FactId::SourcePolarity, "sourcePolarity", {}, 0 },
+
 };
 inline constexpr std::size_t kFactCount = sizeof (kFacts) / sizeof (kFacts[0]);
 
@@ -134,6 +155,24 @@ inline constexpr TermShape kTerms[] = {
     { Term::FieldLimiterNeedlesDb, "field", "limiterNeedlesDb" },
     { Term::FieldLowDb, "field", "lowDb" },
     { Term::FieldAudio, "field", "audio" },
+    { Term::AnalyzerLowEnd, "analyzer", "lowEnd" },
+    { Term::AnalyzerLowEnd150, "analyzer", "lowEnd150" },
+    { Term::AnalyzerInfraLow, "analyzer", "infraLow" },
+    { Term::AnalyzerForensics, "analyzer", "forensics" },
+    { Term::AnalyzerStereo, "analyzer", "stereo" },
+    { Term::AnalyzerCrest, "analyzer", "crest" },
+    { Term::AnalyzerHum, "analyzer", "hum" },
+    { Term::AnalyzerBursts, "analyzer", "bursts" },
+    { Term::StatusReady, "measurementStatus", "ready" },
+    { Term::StatusUnsupported, "measurementStatus", "unsupported" },
+    { Term::StatusShort, "measurementStatus", "short" },
+    { Term::StatusNonFinite, "measurementStatus", "nonFinite" },
+    { Term::StatusCapacity, "measurementStatus", "capacity" },
+    { Term::StatusNoSignal, "measurementStatus", "noSignal" },
+    { Term::StatusMemory, "measurementStatus", "memory" },
+
+    { Term::AnalyzerWaveform, "analyzer", "waveform" },
+    { Term::AnalyzerTempo, "analyzer", "tempo" },
 };
 inline constexpr std::size_t kTermCount = sizeof (kTerms) / sizeof (kTerms[0]);
 

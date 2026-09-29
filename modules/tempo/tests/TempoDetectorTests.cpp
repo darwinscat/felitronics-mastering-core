@@ -21,6 +21,7 @@
 #include <felitronics/tempo/TempoDetector.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <complex>
 #include <cstdint>
@@ -765,6 +766,40 @@ void thePrefixAndTheReset()
     ok (sameReport (capture (d), run (x, sr)), "... and it reports what a fresh detector reports");
 }
 
+void stagedFinishMatchesSynchronous()
+{
+    felitronics::test::group ("staged finish preserves every tempo bit and bounds each return to the caller");
+    using Clock = std::chrono::steady_clock;
+    std::chrono::microseconds longest { 0 };
+    for (const auto stereo : { false, true })
+    {
+        const double sr = 48000.0;
+        Plane left = clickTrain (123.0, 25.0, sr);
+        Plane right = left;
+        for (auto& sample : right) sample *= 0.5f;
+        const Planes planes = stereo ? Planes { left, right } : Planes { left };
+        const auto reference = runSplit (planes, sr, {}, { 317, 1024, 777 });
+        TempoDetector detector;
+        ok (detector.prepare (sr, int (planes.size()), left.size()), "prepare staged detector");
+        std::vector<const float*> input;
+        for (const auto& plane : planes) input.push_back (plane.data());
+        ok (detector.process (input.data(), int (input.size()), int (left.size())), "feed staged detector");
+        unsigned calls = 0;
+        while (! detector.isFinished())
+        {
+            const auto before = Clock::now();
+            const bool done = detector.finishStep();
+            longest = std::max (longest, std::chrono::duration_cast<std::chrono::microseconds> (Clock::now() - before));
+            if (! done) ok (! detector.process (input.data(), int (input.size()), 0), "finishing freezes input between calls");
+            ++calls;
+        }
+        ok (calls > 20 && detector.finishStage() == TempoDetector::FinishStage::Done,
+            "long finish yields repeatedly and reaches its terminal stage");
+        ok (sameReport (capture (detector), reference), "staged and synchronous reports, including ODF, match bit for bit");
+    }
+    std::printf ("tempo-finish-max-step-us=%lld\n", static_cast<long long> (longest.count()));
+}
+
 void theCallContract()
 {
     felitronics::test::group ("law 11: the refusals, the exact width, the prepared length");
@@ -937,6 +972,7 @@ int main()
     anySplitGivesTheSameBits();
     aFrameIsTransformedOnTheSampleThatCompletesIt();
     thePrefixAndTheReset();
+    stagedFinishMatchesSynchronous();
     theCallContract();
     theDemandIsTheAllocation();
     theRulesAtTheirEdges();

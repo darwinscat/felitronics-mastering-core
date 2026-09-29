@@ -10,7 +10,7 @@ const [declarations, schemaFile, executable, ...args] = process.argv.slice(2);
 const source = readFileSync(declarations, 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
 const aliases = new Map([...source.matchAll(/export type (\w+) = ([^;]+);/g)].map(m => [m[1], m[2].trim()]));
 const records = new Map([...source.matchAll(/export interface (\w+) \{([^}]+)\}/g)].map(m =>
-    [m[1], [...m[2].matchAll(/readonly (\w+): ([^;]+);/g)].map(f => [f[1], f[2].trim()])]));
+    [m[1], [...m[2].matchAll(/readonly (\w+)(\?)?: ([^;]+);/g)].map(f => [f[1], f[3].trim(), !!f[2]])]));
 const schema = JSON.parse(readFileSync(schemaFile, 'utf8'));
 const visited = new Set();
 function accepts(value, type, path = 'Snapshot') {
@@ -22,8 +22,8 @@ function accepts(value, type, path = 'Snapshot') {
     if (records.has(type)) {
         if (value === null || typeof value !== 'object' || Array.isArray(value)) return false;
         const fields = records.get(type);
-        return Object.keys(value).length === fields.length && fields.every(([name, t]) =>
-            Object.hasOwn(value, name) && accepts(value[name], t, `${path}.${name}`));
+        return Object.keys(value).every(key => fields.some(([name]) => name === key)) && fields.every(([name, t, optional]) =>
+            Object.hasOwn(value, name) ? accepts(value[name], t, `${path}.${name}`) : optional);
     }
     if (type === 'null') return value === null;
     if (['number', 'string', 'boolean'].includes(type)) return typeof value === type;
@@ -33,7 +33,10 @@ function accepts(value, type, path = 'Snapshot') {
 const run = spawnSync(executable, args, { encoding: 'utf8' });
 assert.equal(run.status, 0, run.stderr || String(run.error));
 const fixtures = run.stdout.trim().split(/\r?\n/).map(line => JSON.parse(line));
-assert.equal(fixtures.length, 6);
+assert.equal(fixtures.length, 9);
+assert(accepts(fixtures.pop(), 'MeasuredSource'));
+assert(accepts(fixtures.pop(), 'QueryView'));
+assert(accepts(fixtures.pop(), 'MeasurementChange'));
 for (const fixture of fixtures) assert(accepts(fixture, 'Snapshot'), 'encoded fixture differs from snapshot.d.ts');
 for (const [name, record] of Object.entries(schema.records)) {
     assert(visited.has(name), `fixture did not reach record ${name}`);
@@ -57,4 +60,7 @@ const extra = structuredClone(fixtures[0]); extra.truePeakDb = 0;
 assert(!accepts(extra, 'Snapshot'));
 const missing = structuredClone(fixtures[0]); delete missing.source;
 assert(!accepts(missing, 'Snapshot'));
+const oldSnapshot = structuredClone(fixtures[0]);
+for (const key of Object.keys(schema.optionalFields.Snapshot)) delete oldSnapshot[key];
+assert(accepts(oldSnapshot, 'Snapshot'), 'older v1 snapshots may omit every appended field');
 console.log(`encoded fixtures match declarations: ${fixtures.length} fixtures, ${records.size} records, all wire mappings and refusal controls`);

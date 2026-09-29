@@ -33,7 +33,8 @@ namespace an   = felitronics::analysis;
 // them, which let a member be switched to SystemMath with the alias left intact and this gate still green.
 static_assert (std::is_same_v<an::ProgrammeReport::CrossoverType,  eq::DeterministicCrossover2>);
 static_assert (std::is_same_v<an::ProgrammeReport::KWeightingType, an::DeterministicKWeightingFilter>);
-static_assert (std::is_same_v<an::ProgrammeReport::LoudnessType,   an::DeterministicLoudnessMeter>);
+static_assert (std::is_same_v<an::ProgrammeReport::LoudnessType,   an::StreamingLoudnessMeter>);
+static_assert (std::is_same_v<an::StreamingLoudnessMeter::Math,   felitronics::core::DetMath>);
 static_assert (std::is_same_v<an::LowEnd::CrossoverType,           eq::DeterministicCrossover2>);
 static_assert (std::is_same_v<an::BandBursts::CrossoverType,       eq::DeterministicCrossover2>);
 static_assert (std::is_same_v<an::BandCrest::CrossoverType,        eq::DeterministicCrossover2>);

@@ -1,6 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 # Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
+# Regenerate every shadow when the source header changes, including incremental Ninja builds.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/felitronics/session/Snapshot.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/felitronics/session/Commands.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/felitronics/session/Project.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/felitronics/session/Events.h")
+
 # Shadow copies, never edits to the public headers. Each drift must fail compilation; the clean twin always builds.
 foreach(control clean added_field reordered_enum unknown_enum appended_State appended_Needles appended_PhaseName appended_Device)
     set(dir ${CMAKE_CURRENT_BINARY_DIR}/codec-controls/${control})
@@ -8,7 +15,7 @@ foreach(control clean added_field reordered_enum unknown_enum appended_State app
     file(READ ${CMAKE_CURRENT_SOURCE_DIR}/include/felitronics/session/Commands.h commands)
     file(READ ${CMAKE_CURRENT_SOURCE_DIR}/include/felitronics/session/Project.h project)
     file(READ ${CMAKE_CURRENT_SOURCE_DIR}/include/felitronics/session/Events.h events)
-    set(probe "static_assert (detail::enumLast<State>() == 3);")
+    set(probe "static_assert (detail::enumLast<State>() == unsigned (State::MeasurementStopped));")
     if(control STREQUAL "added_field")
         string(REPLACE "double integratedLufs = 0.0;" "double integratedLufs = 0.0; double truePeakDb = 0.0;" snapshot "${snapshot}")
         set(expect "decomposes into|structured binding|C3448|C3449|elements")
@@ -21,7 +28,7 @@ foreach(control clean added_field reordered_enum unknown_enum appended_State app
     elseif(control MATCHES "^appended_(.*)$")
         set(enum ${CMAKE_MATCH_1})
         if(enum STREQUAL "State")
-            string(REPLACE "Measured1, Measured2 };" "Measured1, Measured2, CodecControlAdded };" commands "${commands}")
+            string(REPLACE "Measured2, MeasurementStopped };" "Measured2, MeasurementStopped, CodecControlAdded };" commands "${commands}")
         elseif(enum STREQUAL "Needles")
             string(REPLACE "Auto, Manual, Off" "Auto, Manual, Off, CodecControlAdded" project "${project}")
         elseif(enum STREQUAL "Device")
@@ -36,7 +43,7 @@ foreach(control clean added_field reordered_enum unknown_enum appended_State app
     file(WRITE ${dir}/felitronics/session/Project.h "${project}")
     file(WRITE ${dir}/felitronics/session/Events.h "${events}")
     file(WRITE ${dir}/control.cpp
-        "#include \"CodecSchema.h\"\nusing namespace felitronics::session;\nstruct Visitor { template<class T> void field(std::string_view, T&) {} };\n${probe}\nvoid check() { Visitor v; SnapshotView x; detail::describe(v, x); }\n")
+        "#include \"CodecSchema.h\"\nusing namespace felitronics::session;\nstruct Visitor { template<class T, class D> void optionalField(std::string_view, const T&, const D&) {} template<class T> void field(std::string_view, T&) {} };\n${probe}\nvoid check() { Visitor v; SnapshotView x; detail::describe(v, x); }\n")
     set(target fs_codec_${control})
     if(control STREQUAL "clean")
         add_library(${target} OBJECT ${dir}/control.cpp)

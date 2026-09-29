@@ -330,3 +330,148 @@ ru.many = "Сейчас машина решила бы иначе в {count} м�
 ru.other = "Сейчас машина решила бы иначе в {count} местах. При той же версии ядра это обычно означает, что файл проекта правили вручную; сохранённые решения остаются."
 en.one = "The machine would decide differently in {count} place today. With the same core version, this usually means the project file was edited by hand; the saved decisions are kept."
 en.other = "The machine would decide differently in {count} places today. With the same core version, this usually means the project file was edited by hand; the saved decisions are kept."
+
+
+[messages.measurementPending]
+ru = "Замер ожидается."
+en = "Measurement is pending."
+
+[messages.measurementReady]
+ru = "Замер готов."
+en = "Measurement is ready."
+
+[messages.measurementStopped]
+ru = "Замер остановлен. Звук и готовые результаты сохранены."
+en = "Measurement stopped. Audio and completed results are retained."
+
+[messages.measurementUnsupported]
+ru = "Замер недоступен для этих параметров звука."
+en = "Measurement is unavailable for these audio parameters."
+
+[messages.measurementTooShort]
+ru = "Для этого замера недостаточно звука."
+en = "There is not enough audio for this measurement."
+
+[messages.measurementNonFinite]
+ru = "Замер недоступен: встретилось неконечное число."
+en = "Measurement is unavailable because a non-finite value was encountered."
+
+[messages.measurementCapacity]
+ru = "Замер неполон: не хватило памяти для всех результатов."
+en = "Measurement is incomplete because there was not enough storage for all results."
+
+[messages.measurementNoSignal]
+ru = "Для этого замера не найден подходящий сигнал."
+en = "No suitable signal was found for this measurement."
+
+[messages.measurementUnavailable]
+ru = "Этот замер пока недоступен в движке."
+en = "This measurement is not yet available in the engine."
+
+[messages.needlesSkipped]
+ru = "Иглы не измеряются: нужда не больше 3 дБ."
+en = "Needles are not measured: need is at most 3 dB."
+
+[messages.needlesRunsTruncated]
+ru = "Список превышений усечён; сводные показатели рассчитаны по всему источнику."
+en = "The excursion run list is truncated; aggregates cover the whole source."
+
+[messages.sourceClipping]
+ru = "В исходной записи обнаружены участки клиппинга."
+en = "Clipping was detected in the source recording."
+
+[messages.continueMeasurement]
+ru = "Продолжить замер"
+en = "Continue measurement"
+
+[terms.analyzer.lowEnd]
+ru = "Низ до 120 Гц"
+en = "Low end below 120 Hz"
+
+[terms.analyzer.lowEnd150]
+ru = "Низ до 150 Гц"
+en = "Low end below 150 Hz"
+
+[terms.analyzer.infraLow]
+ru = "Инфраниз"
+en = "Infra-low"
+
+[terms.analyzer.forensics]
+ru = "Происхождение записи"
+en = "Source evidence"
+
+[terms.analyzer.stereo]
+ru = "Стерео"
+en = "Stereo"
+
+[terms.analyzer.crest]
+ru = "Пик-фактор"
+en = "Crest factor"
+
+[terms.analyzer.hum]
+ru = "Гул"
+en = "Hum"
+
+[terms.analyzer.bursts]
+ru = "Всплески Mid и Side"
+en = "Mid and Side bursts"
+
+[terms.measurementStatus.ready]
+ru = "замер готов"
+en = "measurement ready"
+
+[terms.measurementStatus.unsupported]
+ru = "не измерено: параметры звука не подходят"
+en = "not measured: unsupported audio parameters"
+
+[terms.measurementStatus.short]
+ru = "не измерено: запись слишком короткая"
+en = "not measured: the recording is too short"
+
+[terms.measurementStatus.nonFinite]
+ru = "не измерено: неконечное число"
+en = "not measured: a non-finite value occurred"
+
+[terms.measurementStatus.capacity]
+ru = "замер неполон: достигнута ёмкость списка"
+en = "measurement incomplete: list capacity reached"
+
+[terms.measurementStatus.noSignal]
+ru = "не измерено: нет подходящего сигнала"
+en = "not measured: no suitable signal"
+
+[terms.measurementStatus.memory]
+ru = "не измерено: недостаточно памяти"
+en = "not measured: insufficient memory"
+
+[messages.analyzerStatus]
+ru = "{analyzer}: {status}."
+en = "{analyzer}: {status}."
+
+[messages.sourceQuiet]
+ru = "Исходная запись тихая ({lufs}). Возможно, стоит проверить сведение или экспорт."
+en = "The source is quiet ({lufs}). Please check the mix or export."
+
+[messages.sourceGainOnly]
+ru = "Исходная запись очень тихая ({lufs}); доступен безопасный путь с усилением и потолком."
+en = "The source is very quiet ({lufs}); the gain and ceiling fallback applies."
+
+[messages.sourceDc]
+ru = "В исходной записи есть постоянное смещение ({offset})."
+en = "The source has a DC offset ({offset})."
+
+[messages.sourceUnusedBits]
+ru = "В исходной записи не используются младшие биты: {bits}."
+en = "Unused low bits in the source: {bits}."
+
+[messages.sourcePolarity]
+ru = "В низких частотах обнаружена противоположная полярность каналов."
+en = "Opposite channel polarity was detected in the low frequencies."
+
+[terms.analyzer.waveform]
+ru = "Данные волны"
+en = "Waveform data"
+
+[terms.analyzer.tempo]
+ru = "Темп"
+en = "Tempo"

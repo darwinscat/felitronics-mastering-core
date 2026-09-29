@@ -1,0 +1,14 @@
+{
+  "checks": [
+    {"kind":"answer","index":1,"path":"code","value":12},
+    {"kind":"snapshot","index":0,"path":"measurementJob","value":1},
+    {"kind":"snapshot","index":0,"path":"source.name","value":"measure-stereo"},
+    {"kind":"snapshot","index":1,"path":"measurementJob","value":1},
+    {"kind":"snapshot","index":1,"path":"source.name","value":"measure-stereo"},
+    {"kind":"snapshot","index":2,"path":"state","value":3}
+  ],
+  "equal": [[{"kind":"snapshot","index":0},{"kind":"snapshot","index":1}]],
+  "minEvents": 2000,
+  "eventKinds": ["phase","measurement","fact","rejected"],
+  "rejections": 1
+}

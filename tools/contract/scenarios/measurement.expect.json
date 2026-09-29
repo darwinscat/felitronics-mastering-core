@@ -1,0 +1,32 @@
+{
+  "checks": [
+    {"kind":"snapshot","session":"main","index":0,"path":"state","value":1},
+    {"kind":"snapshot","session":"main","index":0,"path":"source.frames","value":"384000"},
+    {"kind":"snapshot","session":"main","index":1,"path":"state","value":2},
+    {"kind":"snapshot","session":"main","index":1,"path":"measurements.0.status","value":1},
+    {"kind":"snapshot","session":"main","index":1,"path":"measurements.8.status","value":0},
+    {"kind":"snapshot","session":"main","index":2,"path":"state","value":3},
+    {"kind":"snapshot","session":"main","index":2,"path":"measurementJob","value":0},
+    {"kind":"snapshot","session":"main","index":2,"path":"measurements.8.status","value":1},
+    {"kind":"snapshot","session":"main","index":2,"path":"measurements.10.reason","value":7},
+    {"kind":"snapshot","session":"main","index":2,"path":"measurements.12.reason","value":9},
+    {"kind":"snapshot","session":"main","index":2,"path":"measurements.13.status","value":1},
+    {"kind":"snapshot","session":"main","index":2,"path":"measurements.13.numbers.0.value","value":150},
+    {"kind":"snapshot","session":"main","index":2,"path":"tempoChoice.ready","value":true},
+    {"kind":"snapshot","session":"main","index":3,"path":"source.name","value":"measure"},
+    {"kind":"answer","session":"main","index":2,"path":"code","value":30},
+    {"kind":"snapshot","session":"main","index":4,"path":"revision","value":"17"},
+    {"kind":"snapshot","session":"main","index":5,"path":"source.name","value":"mono"},
+    {"kind":"snapshot","session":"main","index":5,"path":"measurementJob","value":2},
+    {"kind":"query","session":"main","index":0,"path":"status","value":0},
+    {"kind":"query","session":"main","index":0,"path":"stored","value":"128"},
+    {"kind":"query","session":"main","index":1,"path":"complete","value":false},
+    {"kind":"query","session":"main","index":2,"path":"complete","value":false},
+    {"kind":"query","session":"main","index":6,"path":"cacheHit","value":true},
+    {"kind":"query","session":"main","index":7,"path":"status","value":6}
+  ],
+  "equal": [[{"kind":"snapshot","session":"main","index":3},{"kind":"snapshot","session":"main","index":4}]],
+  "minEvents": 4000,
+  "eventKinds": ["phase","measurement","fact"],
+  "rejections": 1
+}

@@ -10,6 +10,14 @@ export function types(source) {
     function accepts(value, type) {
         type = type.trim();
         if (aliases.has(type)) return accepts(value, aliases.get(type));
+        const derived = /^Omit<(\w+), "(\w+)"> & \{ readonly (\w+): (.+) \}$/.exec(type);
+        if (derived && records.has(derived[1])) {
+            if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+            const fields = [...records.get(derived[1]).filter(([name]) => name !== derived[2]),
+                            [derived[3], false, derived[4]]];
+            return Object.keys(value).every(key => fields.some(([name]) => name === key))
+                && fields.every(([name, optional, t]) => Object.hasOwn(value, name) ? accepts(value[name], t) : optional);
+        }
         if (type.includes(' | ')) return type.split(' | ').some(t => accepts(value, t));
         if (type.startsWith('ReadonlyArray<')) return Array.isArray(value) && value.every(v => accepts(v, type.slice(14, -1)));
         if (records.has(type)) {
