@@ -1,0 +1,1 @@
+The complete Solve memory gate now checks load, measurement, mastering, snapshots, bounded WAV export, transfer, release, cancellation, replacement and repeated jobs on native and wasm. The replayable WAV contract includes the safe master's declared price and observed wasm heap growth, with browser-owned playback and file buffers listed separately.

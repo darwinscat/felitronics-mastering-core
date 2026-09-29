@@ -51,9 +51,32 @@ assert.ok(wire(scenarios.safe.readyEvents).length > 0);
 assert.ok(wire(scenarios.safe.complete).pendingMaster.master > 0);
 assert.equal(scenarios.safe.export.bits, 24);
 assert.equal(scenarios.safe.export.firstSliceHex, scenarios.safe.export.repeatedSliceHex);
+const price = scenarios.safe.price;
+assert.equal(price.sourcePcmBytes, contract.source.frames * contract.source.channels * 4);
+assert.equal(price.browser.playbackBytes, price.deliveredPcmBytes);
+assert.equal(price.browser.wavBytes, scenarios.safe.export.bytes);
+assert.ok(price.declared.bytes >= price.deliveredPcmBytes
+    && price.declared.largestBlockBytes >= price.deliveredPcmBytes
+    && price.observedHeap.afterGrowthBytes > price.observedHeap.beforeGrowthBytes);
+assert.deepEqual(saved.memory.safePrice, price.declared);
+const latePrice = scenarios.lateCrest.price;
+assert.deepEqual(saved.memory.latePrice, latePrice.declared);
+assert.ok(latePrice.sourcePcmBytes + latePrice.deliveredPcmBytes
+    <= latePrice.declared.liveBytes + latePrice.declared.bytes);
+assert.ok(latePrice.observedHeap.afterGrowthBytes > latePrice.observedHeap.beforeGrowthBytes);
 assert.equal(scenarios.safe.release.status, 0);
 assert.equal(wire(scenarios.safe.release.snapshot).pendingMaster.master, 0);
 assert.deepEqual(scenarios.formats.map(x => x.bits), [16, 24, 32]);
+assert.equal(scenarios.warm.cycles.length, 3);
+assert.equal(scenarios.warm.observedHeapBytes[2], scenarios.warm.observedHeapBytes[1]);
+for (const cycle of scenarios.warm.cycles) {
+    inputs(cycle.inputs);
+    assert.equal(cycle.accepted.kind, 'accepted');
+    assert.equal(cycle.releaseStatus, 0);
+    assert.equal(cycle.forgetAnswer.kind, 'accepted');
+    assert.equal(sha(Buffer.from(JSON.stringify(cycle.forgetCommand))), cycle.forgetCommandSha256);
+    assert.equal(wire(cycle.after).pendingMaster.master, 0);
+}
 for (const item of scenarios.formats) {
     inputs(item.inputs);
     assert.ok(wire(item.complete).pendingMaster.master > 0);
@@ -72,4 +95,4 @@ assert.ok(Number.isFinite(miss.missLu) && miss.truePeakDbTp <= -6);
 assert.equal(scenarios.miss.export.repeatStatus, 0);
 assert.equal(scenarios.miss.export.releaseStatus, 0);
 assert.equal(wire(scenarios.miss.afterRelease).pendingMaster.master, 0);
-console.log('WAV recording replays seven codec scenarios without running an engine');
+console.log(`WAV recording replays ${Object.keys(scenarios).length} codec scenarios without running an engine`);

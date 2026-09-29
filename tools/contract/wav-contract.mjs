@@ -19,7 +19,7 @@ const file = new URL('recordings/wav-contract.json', import.meta.url);
 const input = new URL('wav-input.json', import.meta.url);
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 function command(exe, ...args) {
-    const p = spawnSync(exe, args, {encoding:'utf8', timeout:180000, maxBuffer:32 * 1024 * 1024});
+    const p = spawnSync(exe, args, {encoding:'utf8', timeout:360000, maxBuffer:32 * 1024 * 1024});
     assert.equal(p.status, 0, `${exe} ${args.join(' ')}: ${p.error ?? p.stderr ?? p.stdout}`);
     return p.stdout.replaceAll('\r\n', '\n');
 }
@@ -46,8 +46,28 @@ try { contract = JSON.parse(contractBytes); }
 catch { throw new Error(`incomplete wav-record response (${contractBytes.length} bytes)`); }
 assert.equal(contract.format, 2);
 const scenarios = contract.scenarios;
-for (const name of ['safe', 'formats', 'refusal', 'cancel', 'miss', 'unavailable', 'unsafe', 'lateCrest'])
+for (const name of ['safe', 'formats', 'warm', 'refusal', 'cancel', 'miss', 'unavailable', 'unsafe', 'lateCrest'])
     assert.ok(scenarios[name], `${name} has actual contract responses`);
+const safePrice = scenarios.safe.price;
+assert.equal(safePrice.sourcePcmBytes, contract.source.frames * contract.source.channels * 4);
+assert.equal(safePrice.deliveredPcmBytes, safePrice.sourcePcmBytes);
+assert.ok(safePrice.declared.bytes >= safePrice.deliveredPcmBytes
+    && safePrice.declared.largestBlockBytes >= safePrice.deliveredPcmBytes
+    && safePrice.declared.liveBytes + safePrice.declared.bytes
+        >= safePrice.sourcePcmBytes + safePrice.deliveredPcmBytes);
+assert.ok(safePrice.observedHeap.afterGrowthBytes > safePrice.observedHeap.beforeGrowthBytes);
+assert.equal(safePrice.browser.playbackBytes, safePrice.deliveredPcmBytes);
+assert.equal(safePrice.browser.wavBytes, scenarios.safe.export.bytes);
+assert.ok(safePrice.browser.copyChunkBytes > 0 && safePrice.browser.copyChunkBytes <= 65536);
+const latePrice = scenarios.lateCrest.price;
+assert.equal(latePrice.sourcePcmBytes, scenarios.lateCrest.source.generator.frames * 2 * 4);
+assert.ok(latePrice.deliveredPcmBytes > 0
+    && latePrice.declared.bytes >= latePrice.deliveredPcmBytes
+    && latePrice.declared.largestBlockBytes >= latePrice.deliveredPcmBytes
+    && latePrice.declared.liveBytes + latePrice.declared.bytes
+        >= latePrice.sourcePcmBytes + latePrice.deliveredPcmBytes);
+assert.ok(latePrice.observedHeap.afterGrowthBytes > latePrice.observedHeap.beforeGrowthBytes);
+assert.equal(latePrice.browser.wavBytes, scenarios.lateCrest.export.bytes);
 const accepts = types(readFileSync(resolve(wasmModule.replace(/fcsession\.node\.js$/, 'snapshot.d.ts')), 'utf8'));
 const checkWire = wire => {
     assert.ok(wire && typeof wire.jsonGzipBase64 === 'string'
@@ -85,6 +105,15 @@ const checkInputs = inputs => {
 };
 for (const name of ['safe', 'refusal', 'cancel', 'miss', 'unavailable', 'unsafe', 'lateCrest']) checkInputs(scenarios[name].inputs);
 for (const item of scenarios.formats) checkInputs(item.inputs);
+for (const item of scenarios.warm.cycles) {
+    checkInputs(item.inputs);
+    assert.equal(item.accepted.kind, 'accepted');
+    assert.equal(item.releaseStatus, 0);
+    assert.equal(item.forgetAnswer.kind, 'accepted');
+    assert.equal(sha(Buffer.from(JSON.stringify(item.forgetCommand))), item.forgetCommandSha256);
+}
+assert.equal(scenarios.warm.cycles.length, 3);
+assert.equal(scenarios.warm.observedHeapBytes[2], scenarios.warm.observedHeapBytes[1]);
 assert.deepEqual(scenarios.formats.map(x => x.bits), [16, 24, 32]);
 assert.equal(scenarios.refusal.answer.kind, 'rejected');
 assert.equal(scenarios.cancel.answer.kind, 'accepted');
@@ -196,6 +225,11 @@ const recording = {
     missMeasurements:{status:scenarios.miss.measurements.status,
         passes:scenarios.miss.measurements.passes, achievedLufs:scenarios.miss.measurements.achievedLufs,
         missLu:scenarios.miss.measurements.missLu, truePeakDbTp:scenarios.miss.measurements.truePeakDbTp},
+    memory:{safePrice:safePrice.declared, latePrice:latePrice.declared,
+        sourcePcmBytes:safePrice.sourcePcmBytes,
+        deliveredPcmBytes:safePrice.deliveredPcmBytes,
+        browser:safePrice.browser, observedHeap:safePrice.observedHeap,
+        lateObservedHeap:latePrice.observedHeap},
     contractArchive:{codec:'br+base64', bytes:archiveBytes.length, sha256:sha(archiveBytes),
         base64:archive.toString('base64')}
 };
