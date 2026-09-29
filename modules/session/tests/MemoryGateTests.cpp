@@ -212,6 +212,13 @@ bool run (unsigned sourceRate, unsigned deliveryRate, unsigned channels, unsigne
     { std::fprintf (stderr, "reuse failed %u %lld\n", unsigned (reused.rejection), reuseSpent.requests); return false; }
     f.declared += reusePrice.bytes;
     f.allocated += std::uint64_t (reuseSpent.bytes);
+    // The delivery rate is the target's: youtube delivers 48 kHz and cdDynamic 44.1 kHz; allStreaming keeps the
+    // source's rate. The request restates it.
+    const auto targetFor = [sourceRate] (unsigned rate) -> const char*
+    { return rate == sourceRate ? "allStreaming" : rate == 48000 ? "youtube" : rate == 44100 ? "cdDynamic" : nullptr; };
+    const auto select = [&] (unsigned rate, CommandId id)
+    { return targetFor (rate) && s.apply (command::SetTarget { id, targetFor (rate) }).rejection == Rejection::None; };
+    if (! select (deliveryRate, 9)) { std::fprintf (stderr, "no target delivers %u from %u\n", deliveryRate, sourceRate); return false; }
     command::Master request { 2 };
     request.ready.version = 1;
     request.ready.deliveryRateHz = deliveryRate;
@@ -236,12 +243,15 @@ bool run (unsigned sourceRate, unsigned deliveryRate, unsigned channels, unsigne
         if (! measure (*otherMade.session, load, otherFigures)
             || otherMade.session->source().hash != s.source().hash
             || otherMade.session->liveBytes() <= double (Session::createBytes())) return false;
+        if (otherMade.session->apply (command::SetTarget { 19, targetFor (deliveryRate) }).rejection != Rejection::None)
+            return false;
         auto otherRequest = request; otherRequest.id = 20;
         if (! cancelled (*otherMade.session, otherRequest, otherFigures)
             || s.masters().empty() || external[0].samples[0] != external[1].samples[0]) return false;
-        auto large = request; large.id = 12; large.ready.deliveryRateHz = 96000;
-        if (! cancelled (s, large, f)) return false;
-        auto small = request; small.id = 14; small.ready.deliveryRateHz = 44100;
+        // Large: the run's rate-raising target. Small: the source's own rate.
+        auto large = request; large.id = 12;
+        if (! cancelled (s, large, f) || ! select (sourceRate, 13)) return false;
+        auto small = request; small.id = 14; small.ready.deliveryRateHz = sourceRate;
         small.source = s.source().hash; small.revision = s.revision();
         const auto price = s.check (small);
         if (price.rejection != Rejection::None || price.bytes == 0 || price.largestBlockBytes == 0) return false;
@@ -255,14 +265,14 @@ bool run (unsigned sourceRate, unsigned deliveryRate, unsigned channels, unsigne
         if (rejected.rejection != Rejection::Memory || blockSpent.requests != 0) return false;
         if (s.setCapacity ({ double (before + price.bytes), double (price.largestBlockBytes) }) != Status::Ok
             || ! master (s, small, f, external, false)) return false;
-        if (s.setCapacity ({}) != Status::Ok) return false;
+        if (s.setCapacity ({}) != Status::Ok || ! select (deliveryRate, 18)) return false;
         large.id = 15;
         if (! master (s, large, f, external, false)) return false;
         left[0] += 0.25f;
         const command::Load next { 16, { planes, channels, frames, sourceRate },
             { "replacement.wav", sourceRate, true, 24 } };
         if (! measure (s, next, f) || s.masters().size() != 0 || s.pendingMaster().master != 0
-            || ! external[0].samples || ! external[1].samples) return false;
+            || ! external[0].samples || ! external[1].samples || ! select (deliveryRate, 19)) return false;
         const auto warmLive = std::uint64_t (s.liveBytes());
         for (unsigned cycle = 0; cycle < 3; ++cycle)
         {
@@ -299,9 +309,9 @@ int main (int argc, char** argv)
     Figures a, b, c, d, e, f;
     ok (run (48000, 48000, 1, 2, a), "mono full lifecycle stays inside declared memory");
     ok (run (44100, 48000, 2, 2, b), "44.1 to 48 kHz full lifecycle stays inside declared memory");
-    ok (run (48000, 96000, 2, 2, c, true), "48 to 96 kHz reuse, refusal, cancellation and replacement stay declared");
+    ok (run (22050, 48000, 2, 2, c, true), "22.05 to 48 kHz reuse, refusal, cancellation and replacement stay declared");
     ok (run (48000, 44100, 2, 2, e), "48 to 44.1 kHz full lifecycle stays inside declared memory");
-    ok (run (44100, 96000, 2, 2, f), "44.1 to 96 kHz full lifecycle stays inside declared memory");
+    ok (run (16000, 48000, 2, 2, f), "16 to 48 kHz full lifecycle stays inside declared memory");
     if (argc == 2) ok (run (96000, 44100, 2, 60, d), "long 96 to 44.1 kHz full lifecycle stays inside declared memory");
     return felitronics::test::report();
 }

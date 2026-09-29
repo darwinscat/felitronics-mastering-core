@@ -149,9 +149,11 @@ std::string eventsJson (fc_session handle)
     if (fc_session_events_copy (handle, json.data(), n.jsonBytes, rows.data(), n.rowBytes) != FC_SESSION_OK) return {};
     return json;
 }
-// THE DELIVERY FORMAT IS THE TARGET'S, end to end through the C facade: dither.bits 0 or the target's own depth
-// masters, and the WAV header carries exactly that depth.
-bool formatThroughFacade (const char* target, std::int32_t bits, std::uint32_t targetBits)
+// THE DELIVERY FORMAT IS THE TARGET'S, end to end through the C facade: deliveryRate and dither.bits of 0 or the
+// target's own rate and depth master, and the WAV header carries exactly that rate and depth. A target of sampleRate 0
+// keeps the source's 48 kHz.
+bool formatThroughFacade (const char* target, std::int32_t bits, double rate, std::uint32_t targetBits,
+                          std::uint32_t targetRate)
 {
     const auto handle = create();
     load (handle, 1);
@@ -160,6 +162,7 @@ bool formatThroughFacade (const char* target, std::int32_t bits, std::uint32_t t
     fc_master_config config {}; fc_master_params params {};
     ready (config, params);
     params.dither.bits = bits;
+    config.deliveryRate = rate;
     const auto source = s->source().hash, revision = s->revision();
     char answer[FC_SESSION_ANSWER_BYTES] {}; std::uint32_t written = 0;
     good = good && fc_session_master (handle, 3, 0, std::uint32_t (source), std::uint32_t (source >> 32),
@@ -176,15 +179,20 @@ bool formatThroughFacade (const char* target, std::int32_t bits, std::uint32_t t
     {
         const auto t = token (s->pendingMaster());
         double bytes = 0; std::uint32_t actualBits = 0;
-        const auto frames = s->masterAudioShape (s->pendingMaster()).frames;
-        good = fc_session_master_wav_size (handle, &t, &bytes, &actualBits) == FC_SESSION_OK
+        const auto shape = s->masterAudioShape (s->pendingMaster());
+        const auto frames = shape.frames;
+        good = shape.sampleRate == targetRate
+            && frames == std::uint64_t (mastering::DeliveryConverter::deliveredFrames (48000.0, double (targetRate), ::frames))
+            && fc_session_master_wav_size (handle, &t, &bytes, &actualBits) == FC_SESSION_OK
             && actualBits == targetBits && bytes == double (44u + frames * 2u * targetBits / 8u);
         if (good)
         {
             std::uint8_t header[44] {}; std::uint32_t count = 0;
             good = fc_session_master_wav_copy (handle, &t, 0, 0, header, sizeof (header), &count)
                 == FC_SESSION_OK && count == sizeof (header)
-                && header[20] == 1 && header[21] == 0 && header[34] == targetBits && header[35] == 0;
+                && header[20] == 1 && header[21] == 0 && header[34] == targetBits && header[35] == 0
+                && (std::uint32_t (header[24]) | std::uint32_t (header[25]) << 8 | std::uint32_t (header[26]) << 16
+                    | std::uint32_t (header[27]) << 24) == targetRate;
         }
         if (good)
         {
@@ -199,23 +207,24 @@ bool formatThroughFacade (const char* target, std::int32_t bits, std::uint32_t t
                 for (std::uint32_t i = 0; i < count; ++i)
                     digest = (digest ^ chunk[i]) * 0x100000001b3ull;
             }
-            if (good) std::printf ("session-master-%s-dither%d-wav=%016llx\n", target, bits,
-                static_cast<unsigned long long> (digest));
+            if (good) std::printf ("session-master-%s-dither%d-rate%u-wav=%016llx\n", target, bits,
+                unsigned (rate), static_cast<unsigned long long> (digest));
         }
     }
     good = fc_session_destroy (handle) == FC_SESSION_OK && good;
     return good;
 }
-// ...and any other depth is an OPEN refusal, before any allocation: the rejection DeliveryFormat (34) in the storage
-// record and in the answer, and a fact (134) naming the target's depth in the events.
-bool refusedThroughFacade (fc_session handle, std::uint32_t id, const char* target, std::int32_t bits,
-                           std::uint32_t targetBits, std::string& why)
+// ...and any other depth or rate is an OPEN refusal, before any allocation: the rejection DeliveryFormat (34) in the
+// storage record and in the answer, and a fact (134) naming the target's depth and rate in the events.
+bool refusedThroughFacade (fc_session handle, std::uint32_t id, const char* target, std::int32_t bits, double rate,
+                           std::uint32_t targetBits, std::uint32_t targetRate, std::string& why)
 {
     auto* s = contractSession (handle);
     if (! setTarget (handle, id, target)) { why = "set target"; return false; }
     fc_master_config config {}; fc_master_params params {};
     ready (config, params);
     params.dither.bits = bits;
+    config.deliveryRate = rate;
     const auto source = s->source().hash, revision = s->revision();
     fc_session_storage storage { sizeof (fc_session_storage) };
     fc_session_status priced = FC_SESSION_ERR_CONTRACT, started = FC_SESSION_ERR_CONTRACT;
@@ -230,14 +239,17 @@ bool refusedThroughFacade (fc_session handle, std::uint32_t id, const char* targ
     const std::string_view reply (answer, written);
     const auto events = eventsJson (handle);
     const std::string depth = "\"integer\":\"" + std::to_string (targetBits) + "\"";
-    why = std::string (target) + " dither.bits " + std::to_string (bits) + ": priced " + std::to_string (int (priced))
+    const std::string hertz = "\"number\":" + std::to_string (targetRate);
+    why = std::string (target) + " dither.bits " + std::to_string (bits) + " deliveryRate " + std::to_string (rate)
+        + ": priced " + std::to_string (int (priced))
         + " rejection " + std::to_string (storage.rejection) + ", started " + std::to_string (int (started))
         + " " + std::string (reply) + ", " + std::to_string (spent.requests) + " allocations";
     return priced == FC_SESSION_OK && storage.rejection == 34u && storage.bytes == 0
         && started == FC_SESSION_OK && reply.find ("\"rejected\"") != std::string_view::npos
         && reply.find ("\"code\":34") != std::string_view::npos
         && spent.requests == 0 && s->job() == 0 && s->revision() == revision
-        && events.find ("\"FactId\":134") != std::string::npos && events.find (depth) != std::string::npos;
+        && events.find ("\"FactId\":134") != std::string::npos && events.find (depth) != std::string::npos
+        && events.find (hertz) != std::string::npos;
 }
 }
 
@@ -508,22 +520,26 @@ int main()
             "C facade reads an explicit delivered PCM chunk after release within its declared budget");
     }
     ok (fc_session_destroy (handle) == FC_SESSION_OK, "C session releases all storage");
-    ok (formatThroughFacade ("cd", 0, 16), "cd: dither.bits 0 delivers the target's PCM16 through the C facade");
-    ok (formatThroughFacade ("cd", 16, 16), "cd: dither.bits 16 restates the target's PCM16");
-    ok (formatThroughFacade ("cdDynamic", 0, 16), "cdDynamic: dither.bits 0 delivers the target's PCM16");
-    ok (formatThroughFacade ("allStreaming", 0, 24), "allStreaming: dither.bits 0 delivers the target's PCM24");
-    ok (formatThroughFacade ("spotify", 24, 24), "spotify: dither.bits 24 restates the target's PCM24");
+    ok (formatThroughFacade ("cd", 0, 0, 16, 44100), "cd: 0 and 0 deliver the target's 44.1 kHz PCM16 through the C facade");
+    ok (formatThroughFacade ("cd", 16, 44100, 16, 44100), "cd: 16 bits at 44.1 kHz restate the target's format");
+    ok (formatThroughFacade ("cdDynamic", 0, 0, 16, 44100), "cdDynamic: 0 and 0 deliver the target's 44.1 kHz PCM16");
+    ok (formatThroughFacade ("allStreaming", 0, 0, 24, 48000),
+        "allStreaming (sampleRate 0): 0 and 0 keep the source's 48 kHz at the target's PCM24");
+    ok (formatThroughFacade ("spotify", 24, 48000, 24, 48000), "spotify: 24 bits at the source's 48 kHz restate its format");
     {
         const auto refusing = create();
         load (refusing, 1);
         std::uint32_t id = 10;
-        for (const auto& [target, bits, depth] : { std::tuple<const char*, std::int32_t, std::uint32_t>
-                 { "allStreaming", 16, 24 }, { "cd", 24, 16 }, { "allStreaming", 32, 24 }, { "allStreaming", 20, 24 },
-                 { "cd", -1, 16 }, { "cd", 272, 16 } })
+        for (const auto& [target, bits, rate, depth, hertz] : { std::tuple<const char*, std::int32_t, double, std::uint32_t, std::uint32_t>
+                 { "allStreaming", 16, 0, 24, 48000 }, { "cd", 24, 0, 16, 44100 }, { "allStreaming", 32, 0, 24, 48000 },
+                 { "allStreaming", 20, 0, 24, 48000 }, { "cd", -1, 0, 16, 44100 }, { "cd", 272, 0, 16, 44100 },
+                 { "cd", 0, 48000, 16, 44100 }, { "cd", 16, 96000, 16, 44100 }, { "allStreaming", 0, 44100, 24, 48000 },
+                 { "youtube", 0, 44100, 24, 48000 }, { "cd", 0, 44100.5, 16, 44100 }, { "cd", 0, -44100, 16, 44100 } })
         {
             std::string why;
-            ok (refusedThroughFacade (refusing, id, target, bits, depth, why),
-                "a depth other than the target's is an open refusal before any allocation, naming the target's (" + why + ")");
+            ok (refusedThroughFacade (refusing, id, target, bits, rate, depth, hertz, why),
+                "a depth or rate other than the target's is an open refusal before any allocation, naming the target's ("
+                + why + ")");
             id += 10;
         }
         ok (fc_session_destroy (refusing) == FC_SESSION_OK, "C session releases all storage after the refusals");

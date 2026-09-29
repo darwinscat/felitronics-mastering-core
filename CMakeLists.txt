@@ -103,8 +103,11 @@ if(TARGET felitronics::mastering OR TARGET felitronics::analysis_offline)
         "checkout to fetch FELITRONICS_MASTERING_FCORE_TAG.")
 endif()
 
-# The core is resolved above for a top-level build and by the parent for an embedded build.
-# Reject a caller-supplied core without the tap at configure time, before compiling its consumer.
+# The core is resolved above for a top-level build and by the parent for an embedded build. PRESENCE checks only, at
+# configure time and before any consumer compiles: the K13 limiter tap the traces read, and the WAV writer the session's
+# WAV export is checked against. What they DO is proven by bytes — felitronics_mastering_limiter_trace_tests and
+# felitronics_session_wav_tests against the installed core — not by pinning the files' text, which would refuse a
+# release that only reworded a comment; the version floor below is what names the release.
 set(FELITRONICS_MASTERING_CORE_LIMITER_HEADER
     "${felitronics_core_SOURCE_DIR}/modules/limiter/include/felitronics/limiter/TruePeakLimiter.h")
 if(NOT EXISTS "${FELITRONICS_MASTERING_CORE_LIMITER_HEADER}")
@@ -117,32 +120,8 @@ if(NOT FELITRONICS_MASTERING_CORE_TAP_DECL)
         "felitronics-mastering-core requires felitronics-core with the K13 limiter tap; "
         "the resolved core at ${felitronics_core_SOURCE_DIR} lacks peakClipReductionDb")
 endif()
-file(READ "${FELITRONICS_MASTERING_CORE_LIMITER_HEADER}" FELITRONICS_MASTERING_CORE_TAP_SOURCE)
-string(REPLACE "\r\n" "\n" FELITRONICS_MASTERING_CORE_TAP_SOURCE "${FELITRONICS_MASTERING_CORE_TAP_SOURCE}")
-string(SHA256 FELITRONICS_MASTERING_CORE_TAP_SHA "${FELITRONICS_MASTERING_CORE_TAP_SOURCE}")
-# Pin the complete released K13 tap implementation across local, parent and fetched cores.
-if(NOT FELITRONICS_MASTERING_CORE_TAP_SHA STREQUAL
-    "fef7aad6e4f522d93fa8d9dfacd77ee9d90f74c90147559fc8a180e1b820df7d")
-    message(FATAL_ERROR
-        "felitronics-mastering-core requires the pinned K13 tap implementation; "
-        "the resolved core at ${felitronics_core_SOURCE_DIR} has a different limiter header")
-endif()
-
-# WAV export is also a core contract: the installed writer must use Dither's
-# 2^(bits-1) PCM grid, signed clamp, and an uncounted data pad in the RIFF size.
-# Check the released implementation, not a neighbouring checkout. Normalising
-# CRLF before hashing lets Windows autocrlf check out the same release safely.
-set(FELITRONICS_MASTERING_CORE_WAV_HEADER
-    "${felitronics_core_SOURCE_DIR}/modules/io/include/felitronics/io/Wav.h")
-if(NOT EXISTS "${FELITRONICS_MASTERING_CORE_WAV_HEADER}")
+if(NOT EXISTS "${felitronics_core_SOURCE_DIR}/modules/io/include/felitronics/io/Wav.h")
     message(FATAL_ERROR "felitronics-mastering-core requires the released felitronics-core WAV implementation")
-endif()
-file(READ "${FELITRONICS_MASTERING_CORE_WAV_HEADER}" FELITRONICS_MASTERING_CORE_WAV_SOURCE)
-string(REPLACE "\r\n" "\n" FELITRONICS_MASTERING_CORE_WAV_SOURCE "${FELITRONICS_MASTERING_CORE_WAV_SOURCE}")
-string(SHA256 FELITRONICS_MASTERING_CORE_WAV_SHA "${FELITRONICS_MASTERING_CORE_WAV_SOURCE}")
-if(NOT FELITRONICS_MASTERING_CORE_WAV_SHA STREQUAL
-    "7083f40a107ecd1bc772381b8ca164826647c3ebaee36e4d0619b655f75e967c")
-    message(FATAL_ERROR "felitronics-mastering-core requires the released WAV grid and RIFF pad implementation")
 endif()
 
 # Core's build policy — FP contraction (law 10), the MSVC stack + UTF-8, the emscripten physics, the

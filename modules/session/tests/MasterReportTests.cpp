@@ -16,6 +16,7 @@
 #include <cstdio>
 #include <limits>
 #include <string>
+#include <tuple>
 #include <vector>
 
 using namespace felitronics;
@@ -62,6 +63,11 @@ bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool pr
             != session::MeasurementStatus::Ready)) return false;
     if (demanding && s.apply (session::command::EditTarget { 9, { -5.0, -6.0 } }).rejection
         != session::Rejection::None) return false;
+    // The delivery rate is the target's: a changed rate names a target that delivers it (youtube at 48 kHz with the
+    // allStreaming numbers, cdDynamic at 44.1 kHz), and the request restates that rate.
+    if (! target && deliveryRate != 0 && deliveryRate != sourceRate)
+        target = deliveryRate == 48000 ? "youtube" : deliveryRate == 44100 ? "cdDynamic" : nullptr;
+    if (! target && deliveryRate != 0 && deliveryRate != sourceRate) return false;
     if (target && s.apply (session::command::SetTarget { 8, target }).rejection
         != session::Rejection::None) return false;
     c.request = session::command::Master { 2 };
@@ -97,7 +103,8 @@ bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool pr
         || ! s.masters()[0].report || ! s.masters()[0].landing) return false;
     c.token = s.pendingMaster();
     const auto shape = s.masterAudioShape (c.token);
-    if (c.token.master == 0 || shape.sampleRate != deliveryRate) return false;
+    if (c.token.master == 0 || (deliveryRate != 0 && shape.sampleRate != deliveryRate)) return false;
+    c.delivery = shape.sampleRate;   // a request of 0 takes the target's rate
     c.delivered.resize (std::size_t (shape.frames * shape.channels));
     return s.copyMaster (c.token, c.delivered) == session::MasterTransferStatus::Ok;
 }
@@ -283,12 +290,14 @@ bool memoryLifecycle (Case& c)
     for (unsigned i = 0; i < 200000 && s.measurementJob() != 0; ++i) (void) s.step (73);
     if (s.measurementJob() != 0) return false;
     if (s.releaseMaster (c.token) != session::MasterTransferStatus::Ok) return false;
-    const auto exercise = [&] (std::uint32_t rate, session::CommandId id, bool cancel,
+    const auto exercise = [&] (const char* target, session::CommandId id, bool cancel,
                                bool testRefusal) -> bool
     {
+        if (s.apply (session::command::SetTarget { id + 200u, target }).rejection != session::Rejection::None)
+            return false;
         auto request = c.request;
         request.id = id;
-        request.ready.deliveryRateHz = rate;
+        request.ready.deliveryRateHz = 0;
         request.source = s.source().hash;
         request.revision = s.revision();
         const auto declared = s.check (request);
@@ -344,9 +353,11 @@ bool memoryLifecycle (Case& c)
         }
         return true;
     };
-    return exercise (96000, 20, true, false)
-        && exercise (48000, 21, false, false)
-        && exercise (96000, 22, false, true);
+    // A rate-converting target (SRC, source-rate crest pass) cancelled, a rate-keeping one, then the converting one
+    // again with its refusals.
+    return exercise ("cdDynamic", 20, true, false)
+        && exercise ("allStreaming", 21, false, false)
+        && exercise ("cdDynamic", 22, false, true);
 }
 }
 
@@ -675,12 +686,15 @@ int main()
         const auto firstRateCheck = s.masters()[0].report->checkPasses;
         const auto firstPasses = s.masters()[0].landing->passes;
         const auto released = s.releaseMaster (differentTargets.token);
-        const auto changed = s.apply (session::command::SetTarget { 80, "spotify" });
+        // The other 48 kHz target, held to this material's loudness by an edit: another recipe, the same rate change.
+        const auto changed = s.apply (session::command::SetTarget { 80, "youtubeMusic" });
+        const auto edited = s.apply (session::command::EditTarget { 83, { -14.0, -1.0 } });
         auto request = differentTargets.request;
         request.id = 81; request.source = s.source().hash; request.revision = s.revision();
         const auto next = s.apply (request);
         for (unsigned i = 0; i < 400000 && s.job() != 0; ++i) (void) s.step (73);
         ok (released == session::MasterTransferStatus::Ok && changed.rejection == session::Rejection::None
+            && edited.rejection == session::Rejection::None
             && next.rejection == session::Rejection::None && s.masters().size() == 2
             && s.masters()[0].id == first && s.masters()[1].id == next.job
             && s.masters()[0].recipe.source == s.masters()[1].recipe.source
@@ -846,14 +860,20 @@ int main()
     }
     // THE WAV TAKES THE FROZEN TARGET'S BIT DEPTH: the completion hands the recipe to the kept master before the file
     // is planned, so the depth is the job's own and not a default recipe's first row.
-    for (const auto& [target, bits] : { std::pair<const char*, std::uint32_t> { "cd", 16u },
-                                        { "cdDynamic", 16u }, { "spotify", 24u } })
+    // ...and its rate: cd and cdDynamic deliver 44.1 kHz from a 48 kHz source, with the source-rate crest pass that
+    // any rate change takes (decision 2.3); a target of sampleRate 0 keeps the source's rate and takes no such pass.
+    for (const auto& [target, bits, rate] : { std::tuple<const char*, std::uint32_t, std::uint32_t> { "cd", 16u, 44100u },
+                                              { "cdDynamic", 16u, 44100u }, { "spotify", 24u, 48000u } })
     {
         Case delivered;
-        const bool ran = run (delivered, 48000, 48000, false, true, false, 4, 0, target, 512.0f);
+        const bool ran = run (delivered, 48000, 0, false, true, false, 4, 0, target, 512.0f);
         const auto plan = ran ? delivered.session->masterWavPlan (delivered.token) : session::WavPlan {};
-        ok (ran && plan && plan.bits == bits, std::string (target) + ": the WAV is " + std::to_string (bits)
-            + "-bit PCM, the target's depth (got " + std::to_string (plan.bits) + ")");
+        const auto& report = ran ? delivered.session->masters()[0].report : std::optional<session::MasterReport> {};
+        ok (ran && plan && plan.bits == bits && plan.rate == rate && report
+            && report->checkPasses == (rate != 48000u ? 1u : 0u) && report->crest.sourceRateCheck == (rate != 48000u),
+            std::string (target) + ": the WAV is " + std::to_string (bits) + "-bit PCM at " + std::to_string (rate)
+            + " Hz, the target's format, with " + (rate != 48000u ? "one" : "no") + " source-rate crest pass (got "
+            + std::to_string (plan.bits) + " bits at " + std::to_string (plan.rate) + " Hz)");
     }
     Case resumed;
     ok (run (resumed, 48000, 48000, false, false, false, 4, 0, nullptr, 512.0f) && resumedBeforeJoin (resumed),

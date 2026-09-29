@@ -646,13 +646,16 @@ contractRecord.scenarios.safe = {inputs:safeInputs, loadAnswer:masterLoadAnswer,
 const formatCases = [];
 const ditherBits = masterParams + layoutOf('fc_master_params').fields.get('dither').offset
     + layoutOf('fc_dither').fields.get('bits').offset;
-// THE DELIVERY FORMAT IS THE TARGET'S: dither.bits 0 takes the target's depth and the same depth restates it.
-const deliveryCases = [['cd', 0, 16], ['cd', 16, 16], ['cdDynamic', 0, 16], ['allStreaming', 0, 24], ['spotify', 24, 24]];
-for (const [caseIndex, [target, requested, bits]] of deliveryCases.entries()) {
-    const label = `${target} dither.bits ${requested}`;
+// THE DELIVERY FORMAT IS THE TARGET'S: deliveryRate and dither.bits of 0 take the target's rate (the source's 48 kHz
+// when the target keeps it) and depth, and the same values restate them.
+const deliveryCases = [['cd', 0, 0, 16, 44100], ['cd', 16, 44100, 16, 44100], ['cdDynamic', 0, 0, 16, 44100],
+                       ['allStreaming', 0, 0, 24, 48000], ['spotify', 24, 48000, 24, 48000]];
+for (const [caseIndex, [target, requested, requestedRate, bits, rate]] of deliveryCases.entries()) {
+    const label = `${target} dither.bits ${requested} deliveryRate ${requestedRate}`;
     const targetCommand = {kind:'setTarget', commandId:String(80 + caseIndex), target};
     ok(cmd(masterSession, targetCommand).kind === 'accepted', `${label}: target selected`);
     new DataView(M.HEAPU32.buffer).setInt32(ditherBits, requested, true);
+    setMaster(masterConfig, 'fc_master_config', 'deliveryRate', requestedRate, 'f64');
     const before = masterSnapshot();
     const version = BigInt(before.revision);
     const formatInputs = masterInputs(90 + caseIndex, sourceId, version);
@@ -674,20 +677,25 @@ for (const [caseIndex, [target, requested, bits]] of deliveryCases.entries()) {
     const ts = BigInt(t.source), tr = BigInt(t.revision);
     for (const [i, value] of [28, lo(ts), hi(ts), lo(tr), hi(tr), t.job, t.master].entries())
         M.HEAPU32[(masterToken >>> 2) + i] = value;
+    const shapeStatus = M._fc_session_master_audio_size(masterSession, masterToken, audioBytes, audioFrames,
+        audioChannels, audioRate);
+    const deliveredFrames = M.HEAPU32[audioFrames >>> 2], deliveredSamples = deliveredFrames * 2;
     const sizeStatus = M._fc_session_master_wav_size(masterSession, masterToken, wavSize, wavBits);
     const length = new DataView(M.HEAPU32.buffer).getFloat64(wavSize, true);
     const headStatus = M._fc_session_master_wav_copy(masterSession, masterToken, 0, 0, wavChunk, 44, wavWritten);
     const head = heapBytes().slice(wavChunk, wavChunk + 44);
     const view = new DataView(head.buffer);
-    ok(sizeStatus === STATUS.OK && M.HEAPU32[wavBits >>> 2] === bits
-        && length === 44 + masterSamples * bits / 8 && headStatus === STATUS.OK
-        && M.HEAPU32[wavWritten >>> 2] === 44 && view.getUint16(20, true) === 1
-        && view.getUint16(34, true) === bits && view.getUint32(40, true) === masterSamples * bits / 8,
-       `${label}: the WAV size and header carry the target's PCM${bits}`);
+    ok(shapeStatus === STATUS.OK && M.HEAPU32[audioRate >>> 2] === rate
+        && (rate === 48000 ? deliveredFrames === masterFrames : deliveredFrames < masterFrames)
+        && sizeStatus === STATUS.OK && M.HEAPU32[wavBits >>> 2] === bits
+        && length === 44 + deliveredSamples * bits / 8 && headStatus === STATUS.OK
+        && M.HEAPU32[wavWritten >>> 2] === 44 && view.getUint16(20, true) === 1 && view.getUint32(24, true) === rate
+        && view.getUint16(34, true) === bits && view.getUint32(40, true) === deliveredSamples * bits / 8,
+       `${label}: the WAV size and header carry the target's ${rate} Hz PCM${bits}`);
     ok(M._fc_session_master_audio_view(masterSession, masterToken, viewOut, sampleOut) === STATUS.OK,
        `${label}: view is available`);
     const ptr = M.HEAPU32[viewOut >>> 2];
-    const sample = new Float32Array(M.HEAPU32.buffer, ptr, masterSamples);
+    const sample = new Float32Array(M.HEAPU32.buffer, ptr, deliveredSamples);
     const count = 64;
     const payload = M._malloc(count * bits / 8);
     const copied = M._fc_session_master_wav_copy(masterSession, masterToken, 44, 0,
@@ -696,7 +704,7 @@ for (const [caseIndex, [target, requested, bits]] of deliveryCases.entries()) {
     let matches = copied;
     for (let i = 0; i < count; ++i) {
         const frame = Math.floor(i / 2), channel = i % 2;
-        const expected = sample[channel * masterFrames + frame];
+        const expected = sample[channel * deliveredFrames + frame];
         let decoded;
         if (bits === 16) decoded = data.getInt16(i * 2, true) / 32768;
         else {
@@ -726,10 +734,11 @@ for (const [caseIndex, [target, requested, bits]] of deliveryCases.entries()) {
     let formatDigest = 0xcbf29ce484222325n;
     for (const byte of file)
         formatDigest = BigInt.asUintN(64, (formatDigest ^ BigInt(byte)) * 0x100000001b3n);
-    console.log(`session-master-${target}-dither${requested}-wav=${formatDigest.toString(16).padStart(16, '0')}`);
-    formatCases.push({target, ditherBits:requested, bits, targetCommand, inputs:formatInputs, answer:accepted,
+    console.log(`session-master-${target}-dither${requested}-rate${requestedRate}-wav=${formatDigest.toString(16).padStart(16, '0')}`);
+    formatCases.push({target, ditherBits:requested, deliveryRate:requestedRate, bits, rate, targetCommand,
+        inputs:formatInputs, answer:accepted,
         complete:formatWire, events:formatEvents,
-        export:{sizeStatus, bytes:length, bits, headerHex:Buffer.from(head).toString('hex'),
+        export:{sizeStatus, bytes:length, bits, rate, headerHex:Buffer.from(head).toString('hex'),
             wavSha256:sha256(file), wavFnv64:formatDigest.toString(16).padStart(16, '0'), repeatStatus:repeated,
             firstSliceHex:Buffer.from(file.subarray(0, 59)).toString('hex')},
         release:{status:released, staleSizeStatus:stale, snapshot:masterWire('snapshot'),
@@ -737,16 +746,18 @@ for (const [caseIndex, [target, requested, bits]] of deliveryCases.entries()) {
     M._free(payload);
 }
 contractRecord.scenarios.formats = formatCases;
-// ...and any other depth is an open refusal before anything is priced: DeliveryFormat (34) in the storage record and
-// the answer, and the fact 134 naming the target's depth among the events.
-const refusalCases = [['allStreaming', 16, 24], ['cd', 24, 16], ['allStreaming', 32, 24], ['allStreaming', 20, 24],
-                      ['cd', -1, 16], ['cd', 272, 16]];
+// ...and any other depth or rate is an open refusal before anything is priced: DeliveryFormat (34) in the storage
+// record and the answer, and the fact 134 naming the target's depth and rate among the events.
+const refusalCases = [['allStreaming', 16, 0, 24, 48000], ['cd', 24, 0, 16, 44100], ['allStreaming', 32, 0, 24, 48000],
+                      ['allStreaming', 20, 0, 24, 48000], ['cd', -1, 0, 16, 44100], ['cd', 272, 0, 16, 44100],
+                      ['cd', 0, 48000, 16, 44100], ['allStreaming', 0, 44100, 24, 48000], ['cd', 0, 44100.5, 16, 44100]];
 const formatRefusals = [];
-for (const [caseIndex, [target, requested, depth]] of refusalCases.entries()) {
-    const label = `${target} dither.bits ${requested}`;
+for (const [caseIndex, [target, requested, requestedRate, depth, targetRate]] of refusalCases.entries()) {
+    const label = `${target} dither.bits ${requested} deliveryRate ${requestedRate}`;
     const targetCommand = {kind:'setTarget', commandId:String(100 + caseIndex), target};
     ok(cmd(masterSession, targetCommand).kind === 'accepted', `${label}: target selected`);
     new DataView(M.HEAPU32.buffer).setInt32(ditherBits, requested, true);
+    setMaster(masterConfig, 'fc_master_config', 'deliveryRate', requestedRate, 'f64');
     const version = BigInt(masterSnapshot().revision);
     const inputs = masterInputs(110 + caseIndex, sourceId, version);
     M.HEAPU32[masterDemand >>> 2] = 32;
@@ -761,11 +772,13 @@ for (const [caseIndex, [target, requested, depth]] of refusalCases.entries()) {
     const fact = wireValue(events).find(e => e.kind === 'fact' && e.payload?.FactId === 134);
     ok(pricedStatus === STATUS.OK && priced.rejection === 34 && priced.bytes === 0
         && refused?.kind === 'rejected' && refused?.code === 34
-        && fact?.payload?.args?.[0]?.integer === String(depth)
+        && fact?.payload?.args?.[0]?.integer === String(depth) && fact?.payload?.args?.[1]?.number === targetRate
         && after?.job === 0 && BigInt(after?.revision ?? '0') === version,
-       `${label}: an open refusal before anything is priced, naming the target's ${depth}-bit PCM`);
-    formatRefusals.push({target, ditherBits:requested, depth, targetCommand, inputs, priced, answer:refused, events});
+       `${label}: an open refusal before anything is priced, naming the target's ${depth}-bit PCM at ${targetRate} Hz`);
+    formatRefusals.push({target, ditherBits:requested, deliveryRate:requestedRate, depth, targetRate, targetCommand,
+        inputs, priced, answer:refused, events});
 }
+setMaster(masterConfig, 'fc_master_config', 'deliveryRate', 0, 'f64');
 contractRecord.scenarios.formatRefusals = formatRefusals;
 ok(cmd(masterSession, {kind:'setTarget', commandId:'120', target:'allStreaming'}).kind === 'accepted',
    'the default target is selected again for the scenarios that follow');
@@ -996,11 +1009,14 @@ for (let i = 0; i < 20000; ++i) {
 }
 const lateReadyWire = masterWire('snapshot', lateSession);
 const lateSource = BigInt(lateReady?.source?.hash ?? '0');
-const lateRevision = BigInt(lateReady?.revision ?? '0');
+// The rate change is the target's: cdDynamic delivers 44.1 kHz PCM16 from this 48 kHz source, restated here.
+const lateTargetCommand = {kind:'setTarget', commandId:'3', target:'cdDynamic'};
+ok(cmd(lateSession, lateTargetCommand).kind === 'accepted', 'late-crest session selects the 44.1 kHz target');
+const lateRevision = BigInt(masterSnapshot(lateSession)?.revision ?? '0');
 setMaster(masterConfig, 'fc_master_config', 'limiter', 1);
 setMaster(masterConfig, 'fc_master_config', 'deliveryRate', 44100, 'f64');
 setMaster(masterParams, 'fc_master_params', 'inputGainDb', 0, 'f64');
-new DataView(M.HEAPU32.buffer).setInt32(ditherBits, 24, true);
+new DataView(M.HEAPU32.buffer).setInt32(ditherBits, 16, true);
 const lateInputs = masterInputs(2, lateSource, lateRevision);
 const lateDemandStatus = M._fc_session_master_bytes(lateSession, lo(lateSource), hi(lateSource),
     lo(lateRevision), hi(lateRevision), masterConfig, masterParams, masterDemand);
@@ -1077,6 +1093,7 @@ ok(lateLoadAnswer?.kind === 'accepted' && lateReady?.canMaster && lateStartAnswe
 contractRecord.scenarios.lateCrest = {source:{pcmSha256:latePcmSha256, metadataJson:lateMetaJson,
     metadataSha256:sha256(encoder.encode(lateMetaJson)),
     generator:{frames:lateFrames, channels:2, rate:48000, lastRightOffset:-.15}},
+    targetCommand:lateTargetCommand,
     inputs:lateInputs, loadStatus:lateLoadStatus, loadAnswer:lateLoadAnswer, ready:lateReadyWire,
     startStatus:lateStartStatus, startAnswer:lateStartAnswer, complete:lateCompleteWire,
     export:{sizeStatus:lateWavSizeStatus, bytes:lateWavBytes, sha256:lateWavSha256,

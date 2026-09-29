@@ -31,10 +31,11 @@ Wasm modules and a separate poisonable contract control. The four appended v1
 ABI functions load measured facts and attach the matching audio.
 
 The WAV delivery example is `wav-input.json` and `recordings/wav-contract.json`.
-It checks native and wasm WAV bytes in each target's own format (PCM16 for cd and
-cdDynamic, PCM24 otherwise, with `dither.bits` 0 or the same depth) and records exact
+It checks native and wasm WAV bytes in each target's own format (44.1 kHz PCM16 for cd
+and cdDynamic, the source's 48 kHz PCM24 for allStreaming and spotify, with `deliveryRate`
+and `dither.bits` 0 or the same values) and records exact
 codec answers, snapshots, events and binary rows for a safe master, repeat
-download, release, refusal, a depth other than the target's (the open rejection
+download, release, refusal, a depth or rate other than the target's (the open rejection
 DeliveryFormat with its fact), cancellation, safe miss, unavailable source and
 unsafe landing. The source and each binary ready request have SHA-256 hashes.
 The safe Solve example records its preflight demand, largest block, source and delivery PCM bytes,

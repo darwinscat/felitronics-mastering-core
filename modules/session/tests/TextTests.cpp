@@ -796,16 +796,17 @@ void everyRejectionIsAFact()
                             || r == session::Rejection::OutOfDomain;
         const bool formatCode = r == session::Rejection::DeliveryFormat;
         if (! id || (std::size_t) *id != 100 + code || shape == nullptr
-            || (shape->argCount == 1) != (fieldCode || formatCode)
+            || shape->argCount != (fieldCode ? 1u : formatCode ? 2u : 0u)
             || (fieldCode && shape->args[0].group != "field")
-            || (formatCode && (shape->args[0].kind != text::ArgKind::Count || shape->args[0].name != "bits")))
+            || (formatCode && (shape->args[0].kind != text::ArgKind::Count || shape->args[0].name != "bits"
+                               || shape->args[1].kind != text::ArgKind::Value || shape->args[1].name != "rate")))
         {
             table = false;
             misses += " " + std::to_string (code);
             continue;
         }
         const Fact f = fieldCode ? Fact::of (*id, Arg::term (text::Term::FieldHpfFq))
-                     : formatCode ? Fact::of (*id, Arg::count (16)) : Fact::of (*id);
+                     : formatCode ? Fact::of (*id, Arg::count (16), Arg::value (44100.0, Unit::Hz, 0)) : Fact::of (*id);
         for (const Lang l : { Lang::Ru, Lang::En })
         {
             const std::string t = Text::text (f, l);
@@ -813,7 +814,7 @@ void everyRejectionIsAFact()
         }
     }
     ok (table, "every Rejection code, 1 to " + std::to_string (last) + ", is the fact 100 + its code, with {field} exactly "
-               "where a field refuses and {bits} where the delivery format does" + (misses.empty() ? "" : " — not:" + misses));
+               "where a field refuses and {bits} {rate} where the delivery format does" + (misses.empty() ? "" : " — not:" + misses));
     ok (spoken, "and every one renders a whole sentence in ru and in en");
     ok (! detail::factOf (session::Rejection::None) && ! detail::factOf ((session::Rejection) (last + 1)),
         "None is no rejection, and a code past the last is none this library knows");
@@ -1073,7 +1074,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0xb36acb0cba9dd140ull;   // with RejectedDeliveryFormat (134)
+    constexpr std::uint64_t kPinned = 0xf41f82e8c27955b5ull;   // with RejectedDeliveryFormat (134): {bits} {rate}
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");

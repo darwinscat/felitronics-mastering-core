@@ -91,6 +91,7 @@ void readRow (View rowView, View byTarget, TargetRow& out) noexcept
     r.read (rowView.find ("hpfFloor"), out.hpfFloor);
     r.read (rowView.find ("hpfSlopeDbPerOct"), out.hpfSlope);
     r.read (rowView.find ("bitDepth"), out.bitDepth);
+    r.read (rowView.find ("sampleRate"), out.sampleRate);
     // Optional in a row: absent is their default.
     if (const View v = rowView.find ("noClipper")) r.read (v, out.noClipper);
     else out.noClipper = false;
