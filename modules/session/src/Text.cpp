@@ -454,6 +454,8 @@ std::optional<Fact> Text::rejected (const Answer& answer, const Request& request
     if (! id) return std::nullopt;
     const detail::FactShape* shape = detail::shapeOf (*id);
     if (shape == nullptr || shape->argCount == 0) return Fact::of (*id);
+    // The delivery format a target takes: its bit depth, read off the answer.
+    if (answer.rejection == Rejection::DeliveryFormat) return Fact::of (*id, Arg::count (answer.targetBits));
     // A field's rejection: the field, read off the request the answer is for. None found — a field the tables do not
     // name — leaves the argument out, and the message shows {field}.
     std::optional<Term> field;

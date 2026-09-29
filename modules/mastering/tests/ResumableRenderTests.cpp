@@ -10,6 +10,7 @@
 #include <climits>
 #include <cmath>
 #include <cstring>
+#include <string>
 #include <vector>
 
 using namespace felitronics;
@@ -215,6 +216,118 @@ bool rendererSequence()
         state = renderer.step (b, taps, NullTapSink {}, cuts[(i + 3) % 7], frames);
     return state == StepResult::Done && renderer.finish() && same (old, stepped);
 }
+
+// Every tap a render hands its sink, as streams: each call appends what it wrote, and records the position the
+// renderer gave it next to the position the calls before it add up to.
+struct TapStreams
+{
+    std::vector<long long> positions, expected, framesWritten;
+    std::vector<float> compressor, preLimiter, limiterGr, limiterPeak, peakClip, band;
+    long long frames = 0;
+
+    void take (const MasteringChainTaps& taps, long long position, int channels)
+    {
+        positions.push_back (position); expected.push_back (frames); framesWritten.push_back (taps.framesWritten);
+        compressor.insert (compressor.end(), taps.compressorGrDb, taps.compressorGrDb + taps.framesWritten);
+        for (int c = 0; c < channels; ++c)
+            preLimiter.insert (preLimiter.end(), taps.preLimiter[c], taps.preLimiter[c] + taps.framesWritten);
+        limiterGr.insert (limiterGr.end(), taps.limiterGrDb, taps.limiterGrDb + taps.osWritten);
+        limiterPeak.insert (limiterPeak.end(), taps.limiterPeakLin, taps.limiterPeakLin + taps.osWritten);
+        peakClip.insert (peakClip.end(), taps.peakClipReductionDb, taps.peakClipReductionDb + taps.osWritten);
+        band.insert (band.end(), taps.bandDeltaDb, taps.bandDeltaDb + (std::size_t) taps.bandQuantaWritten * kBandGrStride);
+        frames += taps.framesWritten;
+    }
+    bool sameStreams (const TapStreams& o) const
+    {
+        const auto bits = [] (const std::vector<float>& a, const std::vector<float>& b)
+        { return a.size() == b.size() && std::memcmp (a.data(), b.data(), a.size() * sizeof (float)) == 0; };
+        return frames == o.frames && bits (compressor, o.compressor) && bits (preLimiter, o.preLimiter)
+            && bits (limiterGr, o.limiterGr) && bits (limiterPeak, o.limiterPeak) && bits (peakClip, o.peakClip)
+            && bits (band, o.band);
+    }
+};
+
+struct TapBuffers
+{
+    static constexpr int kFrameCapacity = 4096, kQuanta = 64;
+    std::vector<float> compressor, pre0, pre1, limiterGr, limiterPeak, peakClip, band;
+    float* pre[2] {};
+    MasteringChainTaps taps;
+
+    explicit TapBuffers (int oversample)
+        : compressor (kFrameCapacity), pre0 (kFrameCapacity), pre1 (kFrameCapacity),
+          limiterGr ((std::size_t) kFrameCapacity * oversample), limiterPeak ((std::size_t) kFrameCapacity * oversample),
+          peakClip ((std::size_t) kFrameCapacity * oversample), band ((std::size_t) kQuanta * kBandGrStride)
+    {
+        pre[0] = pre0.data(); pre[1] = pre1.data();
+        taps.compressorGrDb = compressor.data(); taps.preLimiter = pre; taps.frameCapacity = kFrameCapacity;
+        taps.bandDeltaDb = band.data(); taps.bandQuantaCapacity = kQuanta;
+        taps.limiterGrDb = limiterGr.data(); taps.limiterPeakLin = limiterPeak.data();
+        taps.peakClipReductionDb = peakClip.data(); taps.osCapacity = kFrameCapacity * oversample;
+    }
+};
+
+// THE STEPPED RENDERER'S TAPS AGAINST THE PREVIOUS WHOLE LOOP'S: positions and every trace — the compressor's
+// reduction and the limiter's input per frame, one dynamic-band row per quantum, the limiter's reduction, its
+// reconstructed peak and the K13 clipper's reduction per oversampled sample. The stepped calls cut the stream
+// elsewhere (at the input's end at least), so each call's position must be what the calls before it wrote, and the
+// streams, concatenated, must be the old loop's bits: then every call's taps sit where the old loop put them.
+bool tapSequence (std::string& why)
+{
+    constexpr int frames = 24007, block = 257, channels = 2;
+    Audio source (channels, frames), old (channels, frames), same257 (channels, frames), cut (channels, frames);
+    for (int c = 0; c < channels; ++c)
+        for (int i = 0; i < frames; ++i)
+            source.out[c][i] = (float) (0.33 * std::sin (0.021 * i + c) * (i % 2400 < 600 ? 1.0 : 0.05)
+                                        + 0.17 * std::sin (0.0023 * i) + (i % 997 == 0 ? 0.8 : 0.0));
+    MasteringChainConfig tapped = config();
+    tapped.eq = true;
+    MasteringChainParams params;
+    params.eqBands[0].on = true; params.eqBands[0].type = eq::FilterType::Bell;
+    params.eqBands[0].lanes[0].on = true; params.eqBands[0].lanes[0].freq = 160.0; params.eqBands[0].lanes[0].Q = 1.0;
+    params.eqBands[0].dyn.on = true; params.eqBands[0].dyn.rangeDb = -6.0; params.eqBands[0].dyn.thrAuto = false; params.eqBands[0].dyn.thrDb = -40.0;
+    params.compressor.thresholdDb = -24.0; params.compressor.ratio = 3.0;
+    params.preLimiterGainDb = 9.0;
+    params.limiter.ceilingDbTp = -3.0; params.limiter.peakClip = true; params.limiter.overCeilingDb = 2.0;
+    MasteringChain a, b, c;
+    OfflineRenderer renderer;
+    a.setParams (params); b.setParams (params); c.setParams (params);
+    if (! a.prepare (48000.0, channels, tapped) || ! b.prepare (48000.0, channels, tapped)
+        || ! c.prepare (48000.0, channels, tapped) || ! renderer.prepare (channels, block))
+    { why = "prepare"; return false; }
+    a.setParams (params); b.setParams (params); c.setParams (params);
+    TapBuffers oldTaps (a.tapOversampleFactor()), sameTaps (b.tapOversampleFactor()), cutTaps (c.tapOversampleFactor());
+    TapStreams oldStreams, sameStreams, cutStreams;
+    if (! testing::previousRender (a, source.in, old.out, channels, frames, block, oldTaps.taps,
+            [&] (const MasteringChainTaps& t, long long at) { oldStreams.take (t, at, channels); }))
+    { why = "previous render"; return false; }
+    const auto sinkInto = [channels] (TapStreams& into)
+    { return [&into, channels] (const MasteringChainTaps& t, long long at) { into.take (t, at, channels); }; };
+    if (! renderer.begin (b, source.in, same257.out, channels, frames, sameTaps.taps)) { why = "begin"; return false; }
+    StepResult state = StepResult::More;
+    for (int i = 0; i < 100000 && state == StepResult::More; ++i)
+        state = renderer.step (b, sameTaps.taps, sinkInto (sameStreams), block, frames);
+    if (state != StepResult::Done || ! renderer.finish()) { why = "same-block steps"; return false; }
+    if (! renderer.begin (c, source.in, cut.out, channels, frames, cutTaps.taps)) { why = "begin cut"; return false; }
+    state = StepResult::More;
+    const int cuts[] { 1, 3, 17, 2, 509, 7, 257 };
+    for (int i = 0; i < 100000 && state == StepResult::More; ++i)
+        state = renderer.step (c, cutTaps.taps, sinkInto (cutStreams), cuts[i % 7], frames);
+    if (state != StepResult::Done || ! renderer.finish()) { why = "cut steps"; return false; }
+    double maxClip = 0.0, maxGr = 0.0, maxBand = 0.0;
+    for (float v : oldStreams.peakClip) maxClip = std::max (maxClip, (double) v);
+    for (float v : oldStreams.limiterGr) maxGr = std::max (maxGr, (double) std::fabs (v));
+    for (float v : oldStreams.band) maxBand = std::max (maxBand, (double) std::fabs (v));
+    const bool live = maxClip > 0.0 && maxGr > 0.0 && maxBand > 0.0 && ! oldStreams.compressor.empty();
+    const bool oldSelf = oldStreams.positions == oldStreams.expected;
+    const bool lined = sameStreams.positions == sameStreams.expected && sameStreams.sameStreams (oldStreams);
+    const bool cutSelf = cutStreams.positions == cutStreams.expected && cutStreams.sameStreams (oldStreams);
+    why = "live " + std::to_string (live) + " (clip " + std::to_string (maxClip) + ", GR " + std::to_string (maxGr)
+        + ", band " + std::to_string (maxBand) + " over " + std::to_string (oldStreams.band.size()) + " values, " + std::to_string (oldStreams.compressor.size()) + " frames), old positions " + std::to_string (oldSelf) + ", same-block "
+        + std::to_string (lined) + ", cut " + std::to_string (cutSelf) + ", pcm "
+        + std::to_string (same (old, same257) && same (old, cut));
+    return live && oldSelf && lined && cutSelf && same (old, same257) && same (old, cut);
+}
 }
 
 int main()
@@ -240,6 +353,9 @@ int main()
     ok (zeroFailures == 0, "zero budget consumes no frames and writes nothing");
     ok (allocationFailures == 0, "begin, steps, cancellation and finish allocate nothing");
     ok (rendererSequence(), "previous whole renderer matches adversarial cuts across parameter writes and repeat renders");
+    std::string tapWhy;
+    ok (tapSequence (tapWhy), "the stepped renderer's tap positions, limiter, K13 and band traces are the previous "
+                              "tapped whole loop's (" + tapWhy + ")");
 
     group ("whole job: declared storage, stepped preparation and replay");
     {

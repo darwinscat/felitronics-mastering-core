@@ -302,9 +302,7 @@ bool masterReady (const fc_master_config& c, const fc_master_params& p,
         || ! std::isfinite (p.limiterSlowReleaseMs) || ! std::isfinite (p.peakClipperOverCeilingDb)
         || ! std::isfinite (p.peakClipperKneeDb) || ! std::isfinite (p.stereoAirHz)
         || ! std::isfinite (p.stereoAirDb) || ! std::isfinite (p.compressorMix)
-        || p.dither.shaping < FC_SHAPING_NONE || p.dither.shaping > FC_SHAPING_PSYCHO
-        || (p.dither.bits != 0 && p.dither.bits != 16 && p.dither.bits != 20
-            && p.dither.bits != 24 && p.dither.bits != 32)) return false;
+        || p.dither.shaping < FC_SHAPING_NONE || p.dither.shaping > FC_SHAPING_PSYCHO) return false;
     q.limiter.ceilingDbTp = p.limiter.ceilingDbTp; q.limiter.releaseMs = p.limiter.releaseMs;
     q.limiter.dualRelease = p.limiterDualRelease != 0; q.limiter.slowReleaseMs = p.limiterSlowReleaseMs;
     q.limiter.peakClip = p.peakClipper != 0; q.limiter.overCeilingDb = p.peakClipperOverCeilingDb;
@@ -312,7 +310,9 @@ bool masterReady (const fc_master_config& c, const fc_master_params& p,
     q.stereoAir.enabled = p.stereoAir != 0;
     q.stereoAir.frequencyHz = float (p.stereoAirHz); q.stereoAir.gainDb = float (p.stereoAirDb);
     q.dither.bits = p.dither.bits; q.dither.shaping = static_cast<dither::NoiseShaping> (p.dither.shaping);
-    ready.deliveryBits = std::uint8_t (p.dither.bits);
+    // The session refuses any depth but 0 and the target's, openly. A value one byte cannot hold is no target's depth
+    // either: it arrives as 255, never as its low byte (272 is not 16).
+    ready.deliveryBits = p.dither.bits >= 0 && p.dither.bits <= 255 ? std::uint8_t (p.dither.bits) : std::uint8_t (255);
     q.dither.seed = (std::uint64_t (p.dither.seedHi) << 32) | p.dither.seedLo;
     q.dither.autoBlank = p.dither.autoBlank != 0; q.dither.autoBlankSamples = p.dither.autoBlankSamples;
     q.compressorMix = p.compressorMix;
@@ -705,6 +705,11 @@ FC_EXPORT fc_session_status fc_session_master_waveform_chunk_copy (fc_session se
                 || overlap (pcm[c], std::uint64_t (frames) * sizeof (float), rows, row_capacity)
                 || overlap (pcm[c], std::uint64_t (frames) * sizeof (float), written, sizeof (*written)))
                 return FC_SESSION_ERR_OVERLAP;
+    // The retained master PCM may be this chunk's input, but never an output.
+    const auto retained = slot->session->viewMaster (slot->session->pendingMaster());
+    if (overlap (json, json_capacity, retained.data(), retained.size_bytes())
+        || overlap (rows, row_capacity, retained.data(), retained.size_bytes())
+        || overlap (written, sizeof (*written), retained.data(), retained.size_bytes())) return FC_SESSION_ERR_OVERLAP;
     const auto n = Wire::masterWaveformChunk (*slot->session, { request, request_bytes },
         { pcm, channels, frames, rate }, { json, json_capacity }, { rows, row_capacity / sizeof (double) });
     if (n.status != CodecStatus::Ok) return status (n.status);
@@ -934,6 +939,10 @@ FC_EXPORT fc_session_status fc_session_master_audio_size (fc_session session,
         || overlap (channels, sizeof (*channels), rate, sizeof (*rate))) return FC_SESSION_ERR_OVERLAP;
     const auto owned = slot->session->viewMaster (unpack (*token));
     if (owned.empty()) return FC_SESSION_ERR_STALE;
+    if (overlap (bytes, sizeof (*bytes), owned.data(), owned.size_bytes())
+        || overlap (frames, sizeof (*frames), owned.data(), owned.size_bytes())
+        || overlap (channels, sizeof (*channels), owned.data(), owned.size_bytes())
+        || overlap (rate, sizeof (*rate), owned.data(), owned.size_bytes())) return FC_SESSION_ERR_OVERLAP;
     const auto shape = slot->session->masterAudioShape (unpack (*token));
     *bytes = double (owned.size_bytes());
     *frames = std::uint32_t (shape.frames);
@@ -951,6 +960,9 @@ FC_EXPORT fc_session_status fc_session_master_audio_copy (fc_session session,
     const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
     if (const auto st = tokenInput (token); st != FC_SESSION_OK) return st;
     if (overlap (output, std::uint64_t (sample_capacity) * sizeof (float), token, sizeof (*token))) return FC_SESSION_ERR_OVERLAP;
+    const auto retained = slot->session->viewMaster (unpack (*token));
+    if (overlap (output, std::uint64_t (sample_capacity) * sizeof (float), retained.data(), retained.size_bytes()))
+        return FC_SESSION_ERR_OVERLAP;
     const auto state = slot->session->copyMaster (unpack (*token), { output, sample_capacity });
     if (state == felitronics::session::MasterTransferStatus::TooSmall) return FC_SESSION_ERR_TOO_SMALL;
     return state == felitronics::session::MasterTransferStatus::Ok ? FC_SESSION_OK : FC_SESSION_ERR_STALE;
@@ -980,6 +992,8 @@ FC_EXPORT fc_session_status fc_session_master_audio_view (fc_session session,
         || overlap (samples, sizeof (*samples), token, sizeof (*token))) return FC_SESSION_ERR_OVERLAP;
     const auto view = slot->session->viewMaster (unpack (*token));
     if (view.empty()) return FC_SESSION_ERR_STALE;
+    if (overlap (output, sizeof (*output), view.data(), view.size_bytes())
+        || overlap (samples, sizeof (*samples), view.data(), view.size_bytes())) return FC_SESSION_ERR_OVERLAP;
     if (view.size() > UINT32_MAX) return FC_SESSION_ERR_CONTRACT;
     *output = view.data(); *samples = std::uint32_t (view.size()); return FC_SESSION_OK;
 }

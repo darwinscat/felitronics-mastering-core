@@ -178,6 +178,70 @@ bool lateCrestAfterRelease (Case& c)
     return s.measurementJob() == 0 && s.pendingMaster().master == 0
         && referenceCrest (c) && crestK1Ready (c);
 }
+// A cancelled source measurement resumed before the next step: the join the cancel armed runs while the source crest
+// is Pending again. It must leave the master Pending and join on the resumed measurement's own result.
+bool resumedBeforeJoin (Case& c)
+{
+    auto& s = *c.session;
+    const auto job = s.measurementJob();
+    if (job == 0 || s.masters().size() != 1 || ! s.masters()[0].report
+        || s.masters()[0].report->crest.status != session::MeasurementStatus::Pending
+        || s.apply (session::command::Cancel { 30, job }).rejection != session::Rejection::None
+        || s.apply (session::command::ContinueMeasurement { 31 }).rejection != session::Rejection::None
+        || s.measurementJob() == 0) return false;
+    for (unsigned i = 0; i < 400000 && s.step (73).state == session::StepState::More; ++i) {}
+    return s.measurementJob() == 0 && s.masters()[0].report->crest.status == session::MeasurementStatus::Ready
+        && crestK1Ready (c);
+}
+// A crest joined inside the master job, then a join re-armed by cancelling the still running source measurement: the
+// master is complete, so the join publishes no second fact and moves no revision.
+bool joinedOnce (std::string& why)
+{
+    constexpr std::uint32_t rate = 48000;
+    const std::size_t frames = std::size_t (rate) * 4u;
+    std::vector<float> left (frames), right (frames);
+    for (std::size_t i = 0; i < frames; ++i)
+    {
+        left[i] = float (int ((i * 17u) % 251u) - 125) / 512.0f;
+        right[i] = float (int ((i * 19u + 7u) % 251u) - 125) / 512.0f;
+    }
+    const float* planes[2] { left.data(), right.data() };
+    auto made = session::Session::create();
+    if (made.status != session::Status::Ok) { why = "create"; return false; }
+    auto& s = *made.session;
+    if (s.apply (session::command::Load { 1, { planes, 2, frames, rate }, { "joined.wav", rate, true, 24 } }).rejection
+        != session::Rejection::None) { why = "load"; return false; }
+    const auto crest = [&] { return s.snapshot().view().measurements[std::size_t (session::Analyzer::Crest)].status; };
+    for (unsigned i = 0; i < 200000 && s.measurementJob() != 0
+         && (crest() != session::MeasurementStatus::Ready || ! s.snapshot().view().mandatoryMeasurementsReady); ++i)
+        (void) s.step (1);
+    const auto measuring = s.measurementJob();
+    if (measuring == 0 || crest() != session::MeasurementStatus::Ready)
+    { why = "PRECONDITION: the source crest is ready while its measurement job still runs"; return false; }
+    session::command::Master request { 2 };
+    request.ready.version = 1;
+    request.ready.topology.eq = request.ready.topology.compressor = request.ready.topology.clipper = false;
+    request.ready.topology.dither = false;
+    request.source = s.source().hash; request.revision = s.revision();
+    if (s.apply (request).rejection != session::Rejection::None) { why = "master"; return false; }
+    for (unsigned i = 0; i < 400000 && s.job() != 0; ++i) (void) s.step (73);
+    if (s.job() != 0 || s.masters().size() != 1 || ! s.masters()[0].report
+        || s.masters()[0].report->crest.status != session::MeasurementStatus::Ready || s.measurementJob() != measuring)
+    { why = "PRECONDITION: the crest joined inside the job while the source measurement still runs"; return false; }
+    const auto master = s.masters()[0].id;
+    const auto k1 = s.masters()[0].report->cost ? s.masters()[0].report->cost->crestFullDb.value : std::nullopt;
+    if (s.apply (session::command::Cancel { 3, measuring }).rejection != session::Rejection::None)
+    { why = "cancel"; return false; }
+    const auto revision = s.revision();
+    unsigned facts = 0;
+    for (unsigned i = 0; i < 1000 && s.step (1).state == session::StepState::More; ++i)
+        for (const auto& event : s.events())
+            facts += event.kind == session::EventKind::Fact && event.jobId == master ? 1u : 0u;
+    for (const auto& event : s.events()) facts += event.kind == session::EventKind::Fact && event.jobId == master ? 1u : 0u;
+    const auto k1After = s.masters()[0].report->cost ? s.masters()[0].report->cost->crestFullDb.value : std::nullopt;
+    why = std::to_string (facts) + " facts, revision " + std::to_string (revision) + " -> " + std::to_string (s.revision());
+    return facts == 0 && s.revision() == revision && k1 == k1After;
+}
 bool directMeter (const Case& c)
 {
     const auto& report = *c.session->masters()[0].report;
@@ -780,5 +844,21 @@ int main()
                 == session::QueryStatus::Contract,
             "external chunk must match the delivered master's channel count");
     }
+    // THE WAV TAKES THE FROZEN TARGET'S BIT DEPTH: the completion hands the recipe to the kept master before the file
+    // is planned, so the depth is the job's own and not a default recipe's first row.
+    for (const auto& [target, bits] : { std::pair<const char*, std::uint32_t> { "cd", 16u },
+                                        { "cdDynamic", 16u }, { "spotify", 24u } })
+    {
+        Case delivered;
+        const bool ran = run (delivered, 48000, 48000, false, true, false, 4, 0, target, 512.0f);
+        const auto plan = ran ? delivered.session->masterWavPlan (delivered.token) : session::WavPlan {};
+        ok (ran && plan && plan.bits == bits, std::string (target) + ": the WAV is " + std::to_string (bits)
+            + "-bit PCM, the target's depth (got " + std::to_string (plan.bits) + ")");
+    }
+    Case resumed;
+    ok (run (resumed, 48000, 48000, false, false, false, 4, 0, nullptr, 512.0f) && resumedBeforeJoin (resumed),
+        "a source measurement cancelled and resumed before the join runs leaves the late crest pending, then joins");
+    std::string once;
+    ok (joinedOnce (once), "a crest joined inside the job is not joined or published again (" + once + ")");
     return felitronics::test::report();
 }

@@ -786,7 +786,7 @@ void everyRejectionIsAFact()
     // rejections a field makes.
     bool table = true, spoken = true;
     std::string misses;
-    const auto last = (std::size_t) session::Rejection::MandatoryUnavailable;
+    const auto last = (std::size_t) session::Rejection::DeliveryFormat;
     for (std::size_t code = 1; code <= last; ++code)
     {
         const auto r = (session::Rejection) code;
@@ -794,14 +794,18 @@ void everyRejectionIsAFact()
         const detail::FactShape* shape = id ? detail::shapeOf (*id) : nullptr;
         const bool fieldCode = r == session::Rejection::NotFinite || r == session::Rejection::NotOneOf
                             || r == session::Rejection::OutOfDomain;
-        if (! id || (std::size_t) *id != 100 + code || shape == nullptr || (shape->argCount == 1) != fieldCode
-            || (fieldCode && shape->args[0].group != "field"))
+        const bool formatCode = r == session::Rejection::DeliveryFormat;
+        if (! id || (std::size_t) *id != 100 + code || shape == nullptr
+            || (shape->argCount == 1) != (fieldCode || formatCode)
+            || (fieldCode && shape->args[0].group != "field")
+            || (formatCode && (shape->args[0].kind != text::ArgKind::Count || shape->args[0].name != "bits")))
         {
             table = false;
             misses += " " + std::to_string (code);
             continue;
         }
-        const Fact f = fieldCode ? Fact::of (*id, Arg::term (text::Term::FieldHpfFq)) : Fact::of (*id);
+        const Fact f = fieldCode ? Fact::of (*id, Arg::term (text::Term::FieldHpfFq))
+                     : formatCode ? Fact::of (*id, Arg::count (16)) : Fact::of (*id);
         for (const Lang l : { Lang::Ru, Lang::En })
         {
             const std::string t = Text::text (f, l);
@@ -809,7 +813,7 @@ void everyRejectionIsAFact()
         }
     }
     ok (table, "every Rejection code, 1 to " + std::to_string (last) + ", is the fact 100 + its code, with {field} exactly "
-               "where a field refuses" + (misses.empty() ? "" : " — not:" + misses));
+               "where a field refuses and {bits} where the delivery format does" + (misses.empty() ? "" : " — not:" + misses));
     ok (spoken, "and every one renders a whole sentence in ru and in en");
     ok (! detail::factOf (session::Rejection::None) && ! detail::factOf ((session::Rejection) (last + 1)),
         "None is no rejection, and a code past the last is none this library knows");
@@ -1069,7 +1073,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0xcf3e0076ff779678ull;
+    constexpr std::uint64_t kPinned = 0xb36acb0cba9dd140ull;   // with RejectedDeliveryFormat (134)
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");

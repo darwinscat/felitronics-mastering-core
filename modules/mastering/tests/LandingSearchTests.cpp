@@ -74,6 +74,7 @@ bool run (Rig& rig, long long budget, double target, int passes, LoudnessSolutio
 {
     LandingSearch search (rig.solver);
     LoudnessRequest req;
+    req.ceilingMarginDb = 0.15;   // Session's engine.toml [limiter] ceilingMarginDb
     req.targetLufs = target; req.maxTruePeakDbTp = -1.0; req.maxPasses = passes;
     if (! search.begin (rig.chain, rig.renderer, rig.params, rig.input, kFrames, kRate,
                         rig.out, 1, kFrames, req)) return false;
@@ -110,6 +111,7 @@ bool runDelivered (long long budget, LoudnessSolution& answer, std::vector<float
     const float* input[1] { source.data() };
     float* out[1] { output.data() };
     LoudnessRequest req;
+    req.ceilingMarginDb = 0.15;   // Session's engine.toml [limiter] ceilingMarginDb
     req.targetLufs = -14.0; req.maxTruePeakDbTp = -1.0; req.maxPasses = 12;
     LandingSearch search (solver);
     if (! search.begin (chain, renderer, params, input, sourceRate, sourceRate,
@@ -171,6 +173,7 @@ int main()
     Rig wrapper;
     if (! test::run (wrapper.prepare())) return test::report();
     LoudnessRequest wrappedRequest;
+    wrappedRequest.ceilingMarginDb = 0.15;   // Session's engine.toml [limiter] ceilingMarginDb
     wrappedRequest.targetLufs = -14.0; wrappedRequest.maxTruePeakDbTp = -1.0;
     wrappedRequest.maxPasses = 12; wrappedRequest.productLanding = true;
     const LoudnessSolution wrapped = wrapper.solver.solve (wrapper.chain, wrapper.renderer, wrapper.params,
@@ -231,6 +234,7 @@ int main()
 
     LandingSearch reused (whole.solver);
     LoudnessRequest fresh;
+    fresh.ceilingMarginDb = 0.15;   // Session's engine.toml [limiter] ceilingMarginDb
     fresh.targetLufs = -14.0; fresh.maxTruePeakDbTp = -1.0; fresh.maxPasses = 1;
     bool reusable = reused.begin (whole.chain, whole.renderer, whole.params, whole.input,
         kFrames, kRate, whole.out, 1, kFrames, fresh);
@@ -249,6 +253,7 @@ int main()
                                                   const LoudnessRequest& badRequest)
     {
         LoudnessRequest good;
+        good.ceilingMarginDb = 0.15;   // Session's engine.toml [limiter] ceilingMarginDb
         good.targetLufs = -14.0; good.maxTruePeakDbTp = -1.0; good.maxPasses = 1;
         if (! reused.begin (whole.chain, whole.renderer, whole.params, whole.input,
                             kFrames, kRate, whole.out, 1, kFrames, good)) return false;
@@ -263,6 +268,7 @@ int main()
             && result.passes == 0 && result.logCount == 0 && result.measured.gatingBlocks == 0;
     };
     LoudnessRequest validRequest;
+    validRequest.ceilingMarginDb = 0.15;   // Session's engine.toml [limiter] ceilingMarginDb
     validRequest.targetLufs = -14.0; validRequest.maxTruePeakDbTp = -1.0;
     validRequest.maxPasses = 1;
     MasteringChainParams secondBadParams = whole.params;
@@ -277,6 +283,7 @@ int main()
     if (! test::run (lifecycle.prepare())) return test::report();
     LandingSearch recycled (lifecycle.solver);
     LoudnessRequest recycleRequest;
+    recycleRequest.ceilingMarginDb = 0.15;   // Session's engine.toml [limiter] ceilingMarginDb
     recycleRequest.targetLufs = -14.0; recycleRequest.maxTruePeakDbTp = -1.0;
     recycleRequest.maxPasses = 1;
     bool lifecycleBudget = true;
@@ -352,11 +359,19 @@ int main()
     LoudnessSolution extremeResult;
     const bool extremeEnded = run (finiteExtreme, LLONG_MAX,
         std::numeric_limits<double>::max(), 3, extremeResult);
+    // Each safe pass is the best so far, so pass 2 of 3 is the chosen one when the budget runs out: the reserved last
+    // pass would render it a second time, so the search ends on it instead.
+    bool rendersTwice = false;
+    for (int i = 0; i + 1 < extremeResult.logCount; ++i)
+        rendersTwice = rendersTwice || (extremeResult.log[i].gainDb == extremeResult.log[i + 1].gainDb
+                                        && extremeResult.log[i].ceilingDb == extremeResult.log[i + 1].ceilingDb);
     test::ok (extremeEnded && extremeResult.status == MasteringSolveStatus::PassLimit
-              && extremeResult.deliverable && extremeResult.passes == 3
+              && extremeResult.deliverable && extremeResult.passes == 2 && extremeResult.logCount == 2
+              && ! rendersTwice && extremeResult.preLimiterGainDb == extremeResult.log[1].gainDb
               && extremeResult.achievedLufs < std::numeric_limits<double>::max()
               && extremeResult.distanceLu > 0.0,
-              "a finite extreme target spends its budget and never reports an invented hit");
+              "a finite extreme target ends on its best last pass without rendering it twice, and never reports an "
+              "invented hit (" + std::to_string (extremeResult.passes) + " passes)");
 
     LoudnessSolution deliveredWhole, deliveredSliced;
     std::vector<float> deliveredA, deliveredB;
@@ -371,6 +386,7 @@ int main()
         if (! test::run (cancelled.prepare())) return test::report();
         StopFinal stop { fraction, false };
         LoudnessRequest request;
+        request.ceilingMarginDb = 0.15;   // Session's engine.toml [limiter] ceilingMarginDb
         request.targetLufs = -14.0; request.maxTruePeakDbTp = -1.0;
         request.maxPasses = 12; request.productLanding = true;
         const LoudnessSolution result = cancelled.solver.solve (cancelled.chain, cancelled.renderer,
@@ -383,6 +399,7 @@ int main()
     Rig gated;
     if (! test::run (gated.prepare())) return test::report();
     LoudnessRequest gateRequest;
+    gateRequest.ceilingMarginDb = 0.15;   // Session's engine.toml [limiter] ceilingMarginDb
     gateRequest.targetLufs = -14.0; gateRequest.maxTruePeakDbTp = -1.0;
     gateRequest.maxPasses = 12; gateRequest.productLanding = true;
     const long long passFrames = 2LL * kFrames + gated.chain.latencySamples();
@@ -411,5 +428,37 @@ int main()
               + ", max GR " + std::to_string (sharp.measured.limiter.maxDb)
               + "; dark share " + std::to_string (dark.sourcePresenceShare)
               + "; demand share " + std::to_string (demand.sourcePresenceShare) + ")");
+
+    // THE FIRST CEILING IS THE CALLER'S MARGIN — Session's engine.toml [limiter] ceilingMarginDb — and not a second
+    // copy of it in this class: a margin under 0.15 dB starts there, a wider one caps a looser parameter.
+    const auto firstPass = [] (double parameterCeiling, double margin, LoudnessSolution& answer) -> bool
+    {
+        Rig r;
+        if (! r.prepare()) return false;
+        r.params.limiter.ceilingDbTp = parameterCeiling;
+        LoudnessRequest req;
+        req.ceilingMarginDb = margin;
+        req.targetLufs = -14.0; req.maxTruePeakDbTp = -1.0; req.maxPasses = 1; req.productLanding = true;
+        LandingSearch search (r.solver);
+        const bool began = search.begin (r.chain, r.renderer, r.params, r.input, kFrames, kRate, r.out, 1, kFrames, req);
+        StepResult state = began ? StepResult::More : StepResult::Failed;
+        for (int guard = 0; state == StepResult::More && guard < 2000000; ++guard) state = search.step (LLONG_MAX);
+        answer = search.result();
+        return began;
+    };
+    LoudnessSolution narrow, wide, unstated, negative;
+    const bool narrowRan = firstPass (-1.05, 0.05, narrow), wideRan = firstPass (-1.0, 0.4, wide);
+    test::ok (narrowRan && wideRan && narrow.logCount >= 1 && wide.logCount >= 1
+              && narrow.log[0].ceilingDb == std::fmin (-1.05, -1.0 - 0.05)
+              && wide.log[0].ceilingDb == std::fmin (-1.0, -1.0 - 0.4),
+              "the first limiter ceiling is the stated margin below the promise, 0.05 and 0.4 dB alike (got "
+              + std::to_string (narrow.logCount >= 1 ? narrow.log[0].ceilingDb : 0.0) + ", "
+              + std::to_string (wide.logCount >= 1 ? wide.log[0].ceilingDb : 0.0) + ")");
+    test::ok (! firstPass (-1.0, std::numeric_limits<double>::quiet_NaN(), unstated)
+              && ! firstPass (-1.0, -0.1, negative)
+              && unstated.status == MasteringSolveStatus::InvalidRequest
+              && negative.status == MasteringSolveStatus::InvalidRequest,
+              "an unstated or negative ceiling margin is refused before the search begins");
+
     return test::report();
 }

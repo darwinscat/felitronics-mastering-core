@@ -1144,8 +1144,12 @@ ready values. C++ callers use `command::Master` with `ready.version = 1`; versio
 v1 command behavior. The ready call freezes the project, source, sound-config version, all topology and
 parameter bits, and delivery rate in its recipe. The project can be edited while the job runs without
 changing that recipe. A new source or an explicit cancel stops unfinished work and fences its old identity.
-For the C facade, `fc_master_params.dither.bits` selects PCM16, PCM24 or float32 delivery even when the
-dither stage is off; zero uses the frozen target bit depth. A 20-bit grid is carried in PCM24.
+The delivery bit depth is the target's (`targets.toml` `bitDepth`, 16 or 24; dither only at 16). A ready
+`deliveryBits` of 0 takes it and the same depth restates it; any other value, from the C facade's
+`fc_master_params.dither.bits` included, is refused before any allocation with the appended
+`Rejection::DeliveryFormat`. `Answer::targetBits` and a `RejectedDeliveryFormat` fact event, emitted with the
+rejection, name the target's depth. The resolved depth also sets the chain's dither bits, whether or not the
+dither stage is on.
 
 Ready preflight requires retained PCM and finite completed integrated loudness and true peak. It prices
 the chain, renderer, converter when needed, solver, search workspace, output PCM, compact rows, and
@@ -1177,10 +1181,9 @@ calling `fc_session_master_audio_release`. Repeated downloads use those owned by
 metering or dither work. A cancelled, unsafe or mandatory-unavailable master has no token and no WAV.
 The twelve-pass safe miss has a token and remains downloadable with its measured miss and hint facts.
 
-The writer reads the existing planar f32 output directly, interleaves 16- or 24-bit PCM using core
-Dither's `2^(bits-1)` grid and `floor(x + 0.5)` code rule, or writes IEEE float32 bytes. The selected
-format is the frozen job's delivery bits, falling back to its frozen target bit depth; a 20-bit grid is
-stored exactly in PCM24 with four zero low bits. Session opts the solver into that grid before each meter step, so the measured
+The writer reads the existing planar f32 output directly and interleaves 16- or 24-bit PCM using core
+Dither's `2^(bits-1)` grid and `floor(x + 0.5)` code rule; it writes no other format. The format is the
+job's resolved delivery bits, the frozen target's bit depth. Session opts the solver into that grid before each meter step, so the measured
 PCM, the listening transfer and the decoded WAV agree sample for sample. Direct solver callers retain
 their legacy float output unless they set `LoudnessRequest::pcmBits`. Export adds no noise and never
 resets or reruns the chain. Core's installed WAV

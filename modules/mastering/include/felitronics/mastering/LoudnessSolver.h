@@ -771,6 +771,9 @@ struct LoudnessRequest
     double truePeakAimDb   =   0.05;
     double normalizationGainDb = 0.0;    // source-to--18 LUFS trim, before the chain; separate from the search gain
     bool productLanding = false;         // one resumable budget, selected by Session
+    // productLanding: how far below `maxTruePeakDbTp` the first limiter ceiling sits. REQUIRED there, like the
+    // target: it is the product's number (Session reads engine.toml [limiter] ceilingMarginDb), not this core's.
+    double ceilingMarginDb = std::numeric_limits<double>::quiet_NaN();
     unsigned pcmBits = 0;                // 0: legacy float; 16/20/24: measure the PCM grid; 32: float WAV
 
     // Constraints. A target that needs one of these broken is REFUSED with the name, not forced through.

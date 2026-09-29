@@ -144,7 +144,7 @@ public:
         gain_ = std::clamp (start, -TargetLoudnessSolver::kMaxGainDb, TargetLoudnessSolver::kMaxGainDb);
         const double initialCeiling = std::isfinite (params.limiter.ceilingDbTp)
             ? params.limiter.ceilingDbTp : request.maxTruePeakDbTp;
-        ceiling_ = std::clamp (std::fmin (initialCeiling, request.maxTruePeakDbTp - 0.15),
+        ceiling_ = std::clamp (std::fmin (initialCeiling, request.maxTruePeakDbTp - request.ceilingMarginDb),
                               -TargetLoudnessSolver::kMaxGainDb, TargetLoudnessSolver::kMaxGainDb);
         converter_ = converter;
         if (converter_ != nullptr)
@@ -165,6 +165,8 @@ public:
     {
         why = MasteringSolveStatus::InvalidRequest;
         if (request.maxPasses < 1 || request.maxPasses > 12
+            || ! std::isfinite (request.ceilingMarginDb) || request.ceilingMarginDb < 0.0
+            || request.ceilingMarginDb > 60.0
             || ! std::isfinite (request.normalizationGainDb) || std::fabs (request.normalizationGainDb) > 60.0
             || ! std::isfinite (params.inputGainDb)
             || std::fabs (params.inputGainDb + request.normalizationGainDb) > 60.0
@@ -386,8 +388,10 @@ private:
         if (success || exhausted) return finishSearch();
         // Reserve the last pass for restoration once a safe candidate exists.
         // It is a real render and is logged within the caller's one pass budget.
+        // When this pass IS that candidate, `out` already holds it: finish without rendering it twice.
         if (haveBest_ && passes_ == request_.maxPasses - 1)
         {
+            if (bestPass_ == passes_) return finishSearch();
             gain_ = bestGain_; ceiling_ = bestCeiling_;
             restoring_ = true;
             phase_ = Phase::PassBegin;

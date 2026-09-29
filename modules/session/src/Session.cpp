@@ -173,6 +173,9 @@ void Session::stepMasterCrestJoin() noexcept
         || master.recipe.sound != rows.crestSound
         || master.recipe.deliveryRateHz != rows.crestDeliveryRate)
     { unavailable (MeasurementReason::Unsupported); return; }
+    // Settle only on a terminal source result. A Pending one is a measurement resumed after the cancel that armed
+    // this join: the master stays Pending, and the source's own completion arms the join again.
+    if (result.status == MeasurementStatus::Pending) { ++crestJoinIndex_; return; }
     if (result.status != MeasurementStatus::Ready)
     { unavailable (crestJoinReason_); return; }
     const auto source = MeasurementCrest::view (result);

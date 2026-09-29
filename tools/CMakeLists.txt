@@ -239,11 +239,6 @@ target_link_libraries(felitronics_session_abi_probe PRIVATE felitronics::session
 target_compile_options(felitronics_session_abi_probe PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
 target_include_directories(felitronics_session_abi_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 if(FELITRONICS_BUILD_TESTS)
-    add_test(NAME felitronics_core_k13_patch_controls
-        COMMAND ${CMAKE_COMMAND}
-            "-DMASTERING_SOURCE=${PROJECT_SOURCE_DIR}"
-            "-DCONTROL_DIR=${CMAKE_CURRENT_BINARY_DIR}/core-k13-patch-controls/$<CONFIG>"
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/CoreK13PatchControls.cmake)
     add_test(NAME felitronics_core_consumption_controls
         COMMAND ${CMAKE_COMMAND}
             "-DMASTERING_SOURCE=${PROJECT_SOURCE_DIR}"

@@ -2,7 +2,6 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 #include <felitronics/session/Wav.h>
-#include <felitronics/mastering/PcmQuantizer.h>
 #if ! defined(_MSC_VER)
 #include <felitronics/io/Wav.h>
 #endif
@@ -10,7 +9,6 @@
 #include <felitronics_test.h>
 
 #include <algorithm>
-#include <bit>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -47,7 +45,7 @@ std::vector<float> readIndependent (const std::vector<std::uint8_t>& b, unsigned
         && std::memcmp (b.data() + 8, "WAVEfmt ", 8) == 0
         && std::memcmp (b.data() + 36, "data", 4) == 0, "independent reader sees RIFF/WAVE chunks");
     ok (le (b, 4, 4) + 8u == b.size() && le (b, 16, 4) == 16u
-        && le (b, 20, 2) == (bits == 32 ? 3u : 1u)
+        && le (b, 20, 2) == 1u
         && le (b, 22, 2) == channels && le (b, 24, 4) == rate
         && le (b, 28, 4) == rate * channels * (bits / 8u)
         && le (b, 32, 2) == channels * (bits / 8u) && le (b, 34, 2) == bits,
@@ -61,14 +59,10 @@ std::vector<float> readIndependent (const std::vector<std::uint8_t>& b, unsigned
         for (std::size_t c = 0; c < channels; ++c)
         {
             const auto at = 44u + (f * channels + c) * (bits / 8u);
-            if (bits == 32) pcm[c * frames + f] = std::bit_cast<float> (le (b, at, 4));
-            else
-            {
-                const auto raw = le (b, at, bits / 8u);
-                const auto full = std::int32_t (1u << (bits - 1u));
-                const auto signedCode = std::int32_t (raw) - ((raw & std::uint32_t (full)) ? 2 * full : 0);
-                pcm[c * frames + f] = float (double (signedCode) / full);
-            }
+            const auto raw = le (b, at, bits / 8u);
+            const auto full = std::int32_t (1u << (bits - 1u));
+            const auto signedCode = std::int32_t (raw) - ((raw & std::uint32_t (full)) ? 2 * full : 0);
+            pcm[c * frames + f] = float (double (signedCode) / full);
         }
     return pcm;
 }
@@ -77,9 +71,10 @@ std::vector<float> readIndependent (const std::vector<std::uint8_t>& b, unsigned
 int main()
 {
     ok (! WavWriter::plan (1, 1, 0, 24) && ! WavWriter::plan (0, 1, 48000, 24)
-        && ! WavWriter::plan (1, 1, 48000, 20)
+        && ! WavWriter::plan (1, 1, 48000, 20) && ! WavWriter::plan (1, 1, 48000, 32)
+        && ! WavWriter::plan (1, 2, 48000, 8)
         && ! WavWriter::plan (std::uint64_t (UINT32_MAX), 2, 48000, 24)
-        && ! WavWriter::plan (1, 65535, 48000, 24), "invalid and RIFF-overflow shapes refuse before allocation");
+        && ! WavWriter::plan (1, 65535, 48000, 24), "invalid shapes, depths other than PCM16/PCM24 (float32 included) and RIFF overflow refuse before allocation");
     std::uint8_t untouched = 0x5au;
     ok (! WavWriter::copy ({ 44, 1, 48000, 0, 24, 0 }, {}, 0, { &untouched, 1 })
         && untouched == 0x5au, "invalid plan refuses before writing a byte");
@@ -110,21 +105,10 @@ int main()
     ok (felitronics::io::writeWavMemory ({ std::vector<double> (odd.begin(), odd.end()) },
         44100.0, 24, false) == mono24, "installed core emits the same odd RIFF pad");
 #endif
-    std::vector<float> pcm20 { -1.0f, -0.1234567f, 0.1234567f, 1.0f };
-    for (auto& sample : pcm20) sample = felitronics::mastering::pcmSample (sample, 20);
-    const auto packed20 = image (pcm20, 1, 48000, 24, 7);
-    bool lowBitsClear = true;
-    for (std::size_t frame = 0; frame < pcm20.size(); ++frame)
-        lowBitsClear &= (packed20[44u + frame * 3u] & 15u) == 0u;
-    ok (lowBitsClear && readIndependent (packed20, 24, 48000, 1) == pcm20,
-        "a 20-bit delivery grid is stored exactly in PCM24 with four zero low bits");
     const std::vector<float> stereo { -1.0f, 0.25f, 0.5f, 1.0f };
-    const auto f32 = image (stereo, 2, 48000, 32, 3);
-    ok (readIndependent (f32, 32, 48000, 2) == stereo, "float32 interleaves without changing bits");
-#if ! defined(_MSC_VER)
-    ok (felitronics::io::writeWavMemory ({ { -1.0, 0.25 }, { 0.5, 1.0 } },
-        48000.0, 32, true) == f32, "installed core float32 writer agrees byte for byte");
-#endif
+    const auto s16 = image (stereo, 2, 48000, 16, 3);
+    ok (readIndependent (s16, 16, 48000, 2) == std::vector<float> { -1.0f, 0.25f, 0.5f, 1.0f - 1.0f / 32768.0f },
+        "stereo PCM16 interleaves the planar channels frame by frame");
     std::vector<float> dithered (1024);
     for (std::size_t i = 0; i < dithered.size(); ++i) dithered[i] = float (int (i % 31u) - 15) / 32768.0f;
     felitronics::dither::Dither dither;

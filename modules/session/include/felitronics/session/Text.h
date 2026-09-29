@@ -153,6 +153,7 @@ enum class FactId : std::uint16_t
     RejectedContract = 131,
     RejectedOutputPending = 132,
     RejectedMandatoryUnavailable = 133,
+    RejectedDeliveryFormat = 134,  // {bits}: the target's bit depth
 
     Measurement1 = 200,
     Measurement2 = 201,

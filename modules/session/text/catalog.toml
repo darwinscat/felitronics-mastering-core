@@ -228,6 +228,10 @@ en = "The completed master's audio is still awaiting transfer or release."
 ru = "Обязательные замеры громкости и истинного пика недоступны для мастеринга."
 en = "The required loudness and true-peak measurements are unavailable for mastering."
 
+[messages.rejectedDeliveryFormat]
+ru = "Формат доставки задаёт цель: её мастер записывается только в {bits}-битном PCM."
+en = "The target sets the delivery format: its master is written only as {bits}-bit PCM."
+
 [messages.masterReady]
 ru = "Мастер готов."
 en = "The master is ready."
