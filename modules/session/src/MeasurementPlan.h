@@ -51,5 +51,8 @@ struct MeasurementPlan
     [[nodiscard]] static MeasurementPlan storageFor (const Pcm& pcm, const MeasurementParameters& parameters) noexcept;
     [[nodiscard]] static std::uint64_t key (std::uint64_t pcmHash, const MeasurementParameters& parameters,
                                            std::uint64_t configVersion, Version core, Version session) noexcept;
+    // Forensics also reads the file's bit depth (its unused low bits), which the PCM key does not carry: its result
+    // is keyed by both, so the same PCM under another depth is another result.
+    [[nodiscard]] static std::uint64_t forensicsKey (std::uint64_t measurementKey, std::uint32_t bitDepth) noexcept;
 };
 } // namespace felitronics::session::detail

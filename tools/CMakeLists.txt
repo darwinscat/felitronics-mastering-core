@@ -250,6 +250,9 @@ if(FELITRONICS_BUILD_TESTS)
         COMMAND ${FELITRONICS_ABI_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/session-abi-source-controls.mjs --self-test)
     add_test(NAME felitronics_session_abi_manifest_control
         COMMAND ${FELITRONICS_ABI_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/session-abi-check.mjs --self-test)
+    # The manifest only grows: CI compares a pull request's manifest with its base branch's; this is that check's control.
+    add_test(NAME felitronics_session_abi_manifest_append_only_control
+        COMMAND ${FELITRONICS_ABI_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/session-abi-append-only.mjs --self-test)
 endif()
 
 if(FELITRONICS_BUILD_TESTS)

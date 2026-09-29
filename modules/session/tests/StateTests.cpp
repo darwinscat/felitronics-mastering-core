@@ -366,8 +366,10 @@ void everyCellOfTheTable()
             Situation x = situation (Column (col));
             Session& s = *x.s;
             const Request r = validRequest (Command (c), x, 1000 + c);
-            // Measured2 admits target-dependent needles cancellation; this fixture has no active job.
-            const Rejection cell = Command (c) == Command::Cancel && (Column (col) == Column::Measured2 || Column (col) == Column::StoppedMeasured
+            // Measured2 and the stopped columns admit needles cancellation (needles may outlive a stopped measurement);
+            // this fixture has no active job.
+            const Rejection cell = Command (c) == Command::Cancel && (Column (col) == Column::Measured2 || Column (col) == Column::Stopped
+                || Column (col) == Column::StoppedMeasured
                 || Column (col) == Column::Measured2Unplaced || Column (col) == Column::StoppedMeasuredUnplaced)
                 ? Rejection::NoJob : Table::commands[c].cell[col];
             const std::string what = std::string (kCommandNames[c]) + " in " + kColumnNames[col];

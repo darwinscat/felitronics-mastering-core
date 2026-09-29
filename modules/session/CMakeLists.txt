@@ -678,6 +678,7 @@ add_custom_command(OUTPUT ${FELITRONICS_SESSION_TYPES}
             ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake
             ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec-schema.json
             ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-abi-v1.txt
+            ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/fc_session_abi.h
             ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-runtime.mjs.in
             ${CMAKE_CURRENT_SOURCE_DIR}/src/CodecSchema.h VERBATIM)
 add_custom_target(felitronics_session_types ALL DEPENDS ${FELITRONICS_SESSION_TYPES})
@@ -686,6 +687,11 @@ if(FELITRONICS_BUILD_TESTS)
     add_test(NAME felitronics_session_codec_types
         COMMAND ${CMAKE_COMMAND} -DCHECK=ON -DOUTPUT=${FELITRONICS_SESSION_TYPES} -DVERSION_FILE=${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/version.txt
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake)
+    add_test(NAME felitronics_session_codec_control_appended_status
+        COMMAND ${CMAKE_COMMAND} -DHEADER=${CMAKE_CURRENT_SOURCE_DIR}/../../tools/fc_session_abi.h
+                -DGENERATOR=${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake
+                -DWORK=${CMAKE_CURRENT_BINARY_DIR}/codec-controls/appended_status
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/codec-status-control.cmake)
     find_program(FELITRONICS_SESSION_NODE NAMES node nodejs REQUIRED)
     add_test(NAME felitronics_session_needles_parity_controls
         COMMAND ${FELITRONICS_SESSION_NODE} ${PROJECT_SOURCE_DIR}/tools/tests/needles-parity.mjs
