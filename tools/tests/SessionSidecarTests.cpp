@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 #include "../../modules/session/tests/DeclaredBudget.h"
+#include "../../modules/session/src/QueryState.h"
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Session.h>
 #include <felitronics/session/Snapshot.h>
@@ -96,6 +97,14 @@ int main()
         "attachment indexes only missing waveform evidence");
     ok (view.measurements[0].numbers[0].value == facts.integratedLufs
         && view.measurements[0].numbers[1].value == facts.truePeakDb, "attachment retains ready facts exactly");
+    ok (s.apply (command::EditTarget { 20, { -12.5, -1.25 } }).rejection == Rejection::None,
+        "target LUFS and TP edited");
+    ok (s.apply (command::Load { 21, pcm, { "ordinary", 48000, true, 16 } }).rejection == Rejection::None
+        && s.project().targetEdit.lufs == -12.5 && s.project().targetEdit.tp == -1.25,
+        "ordinary loading keeps target edits");
+    ok (s.loadMeasured (22, facts).rejection == Rejection::None
+        && s.project().targetEdit.lufs == -12.5 && s.project().targetEdit.tp == -1.25,
+        "sidecar loading keeps the same target edits");
     facts.integratedLufs.reset();
     const auto missing = s.loadMeasuredStorage (facts);
     ok (missing.rejection == Rejection::None, "missing mandatory sidecar value is a visible result");
@@ -105,6 +114,22 @@ int main()
         && s.state() == State::Loaded && ! snap.view().mandatoryMeasurementsReady
         && s.apply (command::Master { 6 }).rejection == Rejection::NotMeasured,
         "missing LUFS never readies a master");
+    const float tinySample = 0.0f;
+    const float* tinyChannels[] { &tinySample };
+    const Pcm tinyPcm { tinyChannels, 1, 1, 48000 };
+    auto tinyCreated = Session::create (caps, config::Config::versions().all);
+    ok (tinyCreated.status == Status::Ok && tinyCreated.session, "short sidecar session created");
+    auto& tiny = *tinyCreated.session;
+    const MeasuredSource tinyFacts { "one", sourceHash (tinyPcm), 1, 48000, 1, 48000, 16, true, -14.0, -0.5 };
+    ok (tiny.loadMeasured (1, tinyFacts).rejection == Rejection::None, "one-frame sidecar loaded");
+    const auto blockLimit = double (sizeof (detail::WaveformState) - 1);
+    ok (tiny.setCapacity ({ 134217728, blockLimit }) == Status::Ok, "block limit below waveform object");
+    const auto shortDemand = tiny.attachAudioStorage (tinyPcm);
+    Answer shortAnswer;
+    const auto shortSpent = budget::spend ([&] { shortAnswer = tiny.attachAudio (2, tinyPcm); });
+    ok (shortDemand.rejection == Rejection::Memory && shortAnswer.rejection == Rejection::Memory
+        && shortSpent.bytes == 0 && tiny.snapshot().view().sourceMissingAudio,
+        "one-frame attachment refuses undersized largest block before mutation");
     std::printf ("sidecar budget %llu / %llu bytes; source %llu\n",
                  static_cast<unsigned long long> (attachDemand.bytes), static_cast<unsigned long long> (allSpent),
                  static_cast<unsigned long long> (before));

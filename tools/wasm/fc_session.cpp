@@ -656,6 +656,7 @@ FC_EXPORT fc_session_status fc_session_attach_audio (fc_session session, std::ui
     if (call.refused()) return FC_SESSION_ERR_POISONED;
     if (const auto st = answerOut (answer, capacity, written); st != FC_SESSION_OK) return st;
     auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (overlap (answer, capacity, written, sizeof (*written))) return FC_SESSION_ERR_OVERLAP;
     if (const auto st = pointer (pcm, std::uint64_t (channels) * sizeof (*pcm), alignof (const float*), channels == 0);
         st != FC_SESSION_OK) return st;
     if (channels <= 2)
