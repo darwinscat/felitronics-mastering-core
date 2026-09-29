@@ -447,6 +447,16 @@ CodecStatus Wire::command (Session& session, std::string_view json, std::span<ch
     return parseCommand (json, [&] (CommandId id, const Request& request, const Problem& p)
     { return writeCommand (session, id, request, p, output, written); });
 }
+CodecStatus Wire::master (Session& session, const command::Master& request,
+                          std::span<char> output, std::uint32_t& written) noexcept
+{
+    if (output.size() < kAnswerBytes) return CodecStatus::TooSmall;
+    if (Session::checkFloatingPointEnvironment() != Status::Ok) return CodecStatus::FloatingPointEnvironment;
+    Writer w; w.output = output.data();
+    answer (w, session.apply (request));
+    written = std::uint32_t (w.size);
+    return CodecStatus::Ok;
+}
 CodecStatus Wire::load (Session& session, CommandId id, const Pcm& pcm, std::string_view meta,
                         std::span<char> output, std::uint32_t& written) noexcept
 {

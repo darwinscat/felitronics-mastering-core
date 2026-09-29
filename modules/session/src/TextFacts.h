@@ -93,6 +93,8 @@ inline constexpr FactShape kFacts[] = {
     { FactId::RejectedRateAboveLimit, "rejectedRateAboveLimit", {}, 0 },
     { FactId::RejectedMemory, "rejectedMemory", {}, 0 },
     { FactId::RejectedContract, "rejectedContract", {}, 0 },
+    { FactId::RejectedOutputPending, "rejectedOutputPending", {}, 0 },
+    { FactId::RejectedMandatoryUnavailable, "rejectedMandatoryUnavailable", {}, 0 },
     { FactId::Measurement1, "measurement1", {}, 0 },
     { FactId::Measurement2, "measurement2", {}, 0 },
     { FactId::MasterPass, "masterPass", { { { "pass", ArgKind::Count, {} } } }, 1 },
@@ -254,6 +256,8 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Rejection::ProjectCore: return FactId::RejectedProjectCore;
         case Rejection::RateAboveLimit: return FactId::RejectedRateAboveLimit;
         case Rejection::Contract: return FactId::RejectedContract;
+        case Rejection::OutputPending: return FactId::RejectedOutputPending;
+        case Rejection::MandatoryUnavailable: return FactId::RejectedMandatoryUnavailable;
         case Rejection::Memory: return FactId::RejectedMemory;
         case Rejection::NewerDefaults: return FactId::RejectedNewerDefaults;
     }

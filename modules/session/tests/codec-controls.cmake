@@ -53,5 +53,6 @@ foreach(control clean added_field reordered_enum unknown_enum appended_State app
     endif()
     target_compile_features(${target} PRIVATE cxx_std_20)
     target_compile_options(${target} PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
+    target_link_libraries(${target} PRIVATE felitronics::mastering)
     target_include_directories(${target} PRIVATE ${dir} ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_CURRENT_SOURCE_DIR}/include)
 endforeach()

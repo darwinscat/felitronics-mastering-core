@@ -166,6 +166,9 @@ zone modules/session/src/Waveform.cpp bounded source waveform and measurement qu
 entry modules/session/src/Waveform.cpp bounded source waveform and measurement queries
 zone modules/session/src/Queries.cpp bounded source waveform and measurement queries
 entry modules/session/src/Queries.cpp bounded source waveform and measurement queries
+zone modules/session/src/MasterJob.h bounded product landing owner
+zone modules/session/src/MasterJob.cpp bounded product landing preflight and preparation
+entry modules/session/src/MasterJob.cpp bounded product landing preflight and preparation
 zone modules/analysis_offline/include/felitronics/analysis/WaveformIndex.h bounded source waveform and measurement queries
 entry  tools/session-script.cpp  native contract consumer
 zone   tools/session-script.cpp  deterministic scenario commands and PCM

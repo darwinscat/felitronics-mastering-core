@@ -29,6 +29,7 @@ import { createRequire } from 'node:module';
 import { basename, resolve, dirname, join } from 'node:path';
 
 import { types } from '../session-wire-types.mjs';
+import { layoutOf, sizeOf, FC_MASTER_ABI_VERSION } from './fc-master-layout.mjs';
 import { pathToFileURL } from 'node:url';
 
 const [, , modPath, ...options] = process.argv;
@@ -67,7 +68,9 @@ const SURFACE = {
         '_fc_session_measurement_bytes', '_fc_session_needles_bytes', '_fc_session_query_bytes', '_fc_session_query_size',
         '_fc_session_query_copy', '_fc_session_summary_size', '_fc_session_summary_copy',
         '_fc_session_load_measured_bytes', '_fc_session_load_measured',
-        '_fc_session_attach_audio_bytes', '_fc_session_attach_audio'],
+        '_fc_session_attach_audio_bytes', '_fc_session_attach_audio',
+        '_fc_session_master_bytes', '_fc_session_master', '_fc_session_master_audio_size',
+        '_fc_session_master_audio_copy', '_fc_session_master_audio_release', '_fc_session_master_audio_view'],
 };
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
@@ -350,6 +353,107 @@ ok(Buffer.from(heapBytes().slice(answer, answer + macro('FC_SESSION_ANSWER_BYTES
 ok(JSON.stringify(readTransfer('snapshot')) === JSON.stringify(sidecarBefore),
    'overlap refusal leaves the full sidecar snapshot unchanged');
 M._free(oneTable); M._free(onePcm);
+
+// A versioned ready input reaches the real session renderer. Copy once from its scoped heap view
+// after a memory growth, then transfer only the independent ArrayBuffer.
+ok(create(resultSize) === STATUS.OK, 'master smoke session created');
+const masterSession = M.HEAPU32[resultSize >>> 2];
+const masterFrames = 96000, masterSamples = masterFrames * 2;
+const masterPcm = M._malloc(masterSamples * 4), masterPointers = M._malloc(8);
+const pcmWords = new Float32Array(M.HEAPU32.buffer);
+for (let i = 0; i < masterFrames; ++i) {
+    pcmWords[(masterPcm >>> 2) + i] = (i * 17 % 251 - 125) / 4096;
+    pcmWords[(masterPcm >>> 2) + masterFrames + i] = (i * 19 + 7) % 251 / 4096 - 125 / 4096;
+}
+M.HEAPU32[masterPointers >>> 2] = masterPcm;
+M.HEAPU32[(masterPointers >>> 2) + 1] = masterPcm + masterFrames * 4;
+const [masterMeta, masterMetaBytes] = input(JSON.stringify({name:'ready.wav', fileRate:48000, bitDepth:24, rateKnown:true}));
+ok(M._fc_session_load(masterSession, 1, 0, masterPointers, 2, masterFrames, 48000,
+    masterMeta, masterMetaBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK,
+   'master smoke source loaded');
+M._free(masterMeta); M._free(masterPointers); M._free(masterPcm);
+const masterSnapshot = () => {
+    M.HEAPU32[resultSize >>> 2] = 12;
+    if (M._fc_session_snapshot_size(masterSession, resultSize) !== STATUS.OK) return null;
+    const jsonBytes = M.HEAPU32[(resultSize >>> 2) + 1], rowBytes = M.HEAPU32[(resultSize >>> 2) + 2];
+    const json = M._malloc(jsonBytes), rows = rowBytes ? M._malloc(rowBytes) : 0;
+    const st = M._fc_session_snapshot_copy(masterSession, json, jsonBytes, rows, rowBytes);
+    const value = st === STATUS.OK ? JSON.parse(decoder.decode(heapBytes().slice(json, json + jsonBytes))) : null;
+    M._free(json); if (rows) M._free(rows);
+    return value;
+};
+let readySnapshot = null;
+for (let i = 0; i < 20000; ++i) {
+    if (i % 32 === 0 && (readySnapshot = masterSnapshot())?.canMaster) break;
+    if (M._fc_session_step(masterSession, 16, resultSize) !== STATUS.OK) break;
+}
+ok(readySnapshot?.canMaster === true, 'mandatory readings make the ready command available');
+const sourceId = BigInt(readySnapshot?.source?.hash ?? '0');
+const revision = BigInt(readySnapshot?.revision ?? '0');
+const lo = n => Number(n & 0xffffffffn), hi = n => Number(n >> 32n);
+const configBytes = sizeOf('fc_master_config'), paramsBytes = sizeOf('fc_master_params');
+const masterConfig = M._malloc(configBytes), masterParams = M._malloc(paramsBytes);
+heapBytes().fill(0, masterConfig, masterConfig + configBytes);
+heapBytes().fill(0, masterParams, masterParams + paramsBytes);
+const setMaster = (ptr, name, field, value, kind = 'i32') => {
+    const at = ptr + layoutOf(name).fields.get(field).offset;
+    const dv = new DataView(M.HEAPU32.buffer);
+    if (kind === 'f64') dv.setFloat64(at, value, true); else dv.setInt32(at, value, true);
+};
+new DataView(M.HEAPU32.buffer).setUint32(masterConfig, FC_MASTER_ABI_VERSION, true);
+new DataView(M.HEAPU32.buffer).setUint32(masterConfig + 4, configBytes, true);
+new DataView(M.HEAPU32.buffer).setUint32(masterParams, FC_MASTER_ABI_VERSION, true);
+new DataView(M.HEAPU32.buffer).setUint32(masterParams + 4, paramsBytes, true);
+for (const [field, value, kind] of [['sampleRate',48000,'f64'],['channels',2],['internalBlock',256],
+    ['oversampleFactor',4],['tapsPerPhase',64],['limiter',1],['limiterLookaheadMs',1,'f64']])
+    setMaster(masterConfig, 'fc_master_config', field, value, kind);
+setMaster(masterParams, 'fc_master_params', 'compressorMix', 1, 'f64');
+const masterDemand = M._malloc(32);
+M.HEAPU32[masterDemand >>> 2] = 32;
+ok(M._fc_session_master_bytes(masterSession, lo(sourceId + 1n), hi(sourceId + 1n), lo(revision), hi(revision),
+    masterConfig, masterParams, masterDemand) === STATUS.ERR_STALE, 'stale source is rejected before ready preflight');
+ok(M._fc_session_master_bytes(masterSession, lo(sourceId), hi(sourceId), lo(revision), hi(revision),
+    masterConfig, masterParams, masterDemand) === STATUS.OK && M.HEAPU32[(masterDemand >>> 2) + 1] === 0,
+   'ready command has a valid declared demand');
+ok(M._fc_session_master(masterSession, 2, 0, lo(sourceId), hi(sourceId), lo(revision), hi(revision),
+    masterConfig, masterParams, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK
+    && reply().kind === 'accepted', 'versioned ready input starts a real master');
+let completeSnapshot = null;
+for (let i = 0; i < 40000; ++i) {
+    if (i % 16 === 0 && (completeSnapshot = masterSnapshot())?.pendingMaster?.master) break;
+    if (M._fc_session_step(masterSession, 16, resultSize) !== STATUS.OK) break;
+}
+ok(completeSnapshot?.pendingMaster?.master > 0, 'real master owns transferable PCM');
+const masterToken = M._malloc(28), tokenValue = completeSnapshot.pendingMaster;
+const tokenSource = BigInt(tokenValue.source), tokenRevision = BigInt(tokenValue.revision);
+for (const [i, value] of [28, lo(tokenSource), hi(tokenSource), lo(tokenRevision), hi(tokenRevision),
+                           tokenValue.job, tokenValue.master].entries()) M.HEAPU32[(masterToken >>> 2) + i] = value;
+const audioBytes = M._malloc(8), audioFrames = M._malloc(4), audioChannels = M._malloc(4), audioRate = M._malloc(4);
+ok(M._fc_session_master_audio_size(masterSession, masterToken, audioBytes, audioFrames, audioChannels, audioRate) === STATUS.OK
+    && M.HEAPU32[audioFrames >>> 2] === masterFrames && M.HEAPU32[audioChannels >>> 2] === 2,
+   'master shape is available before transfer');
+const beforeGrow = M.HEAPU32.buffer, growth = [];
+for (let i = 0; i < 12 && M.HEAPU32.buffer === beforeGrow; ++i) growth.push(M._malloc(16 * 1024 * 1024));
+ok(M.HEAPU32.buffer !== beforeGrow, 'heap grew before the scoped PCM view');
+const viewOut = M._malloc(4), sampleOut = M._malloc(4);
+ok(M._fc_session_master_audio_view(masterSession, masterToken, viewOut, sampleOut) === STATUS.OK,
+   'scoped PCM view returned after growth');
+const pcmAddress = M.HEAPU32[viewOut >>> 2], sampleCount = M.HEAPU32[sampleOut >>> 2];
+const independent = new Float32Array(M.HEAPU32.buffer, pcmAddress, sampleCount).slice().buffer;
+ok(independent !== M.HEAPU32.buffer && independent.byteLength === masterSamples * 4,
+   'one copy creates an independent transferable ArrayBuffer');
+ok(M._fc_session_master_audio_release(masterSession, masterToken) === STATUS.OK
+    && M._fc_session_master_audio_release(masterSession, masterToken) === STATUS.ERR_STALE,
+   'release frees the session PCM once');
+let audioHash = 0xcbf29ce484222325n;
+for (const bits of new Uint32Array(independent)) for (let shift = 0; shift < 32; shift += 8)
+    audioHash = ((audioHash ^ BigInt((bits >>> shift) & 255)) * 0x100000001b3n) & 0xffffffffffffffffn;
+console.log(`session-master-audio=${audioHash.toString(16).padStart(16, '0')}`);
+ok(audioHash === 0xb495c72924fd8746n, 'ready master PCM matches the native reference bit for bit');
+for (const p of growth) M._free(p);
+for (const p of [masterConfig, masterParams, masterDemand, masterToken, audioBytes, audioFrames, audioChannels, audioRate,
+                 viewOut, sampleOut]) M._free(p);
+ok(M._fc_session_destroy(masterSession) === STATUS.OK, 'master smoke session destroyed');
 ok(M._fc_session_destroy(session) === STATUS.OK, 'smoke session destroyed');
 for (const p of [caps, answer, resultSize, demand]) M._free(p);
 console.log(`session-check: fcsession v${version} — ${checks} checks, ${bad} failures`);

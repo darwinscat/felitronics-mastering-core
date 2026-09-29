@@ -133,6 +133,8 @@ const FELITRONICS_ALLOWED = new Set([
     'felitronics/session/Landing.h',            // pure landing plan and typed result operations
     'felitronics/session/LandingResult.h',      // value-only verdict and bounded pass rows
     'felitronics/mastering/LoudnessSolver.h',   // deterministic solver values; including it has no side effects
+    'felitronics/mastering/MasteringChain.h',    // ready topology and parameters are job values
+    'felitronics/mastering/LandingSearch.h',     // bounded source/render/meter search state
 
     'felitronics/session/Project.h',
     'felitronics/session/Text.h',
@@ -189,7 +191,7 @@ const ALLOWANCES = new Map([
     [FACADE_ABI, {
         directives: [/^ifndef FC_SESSION_ABI_H$/, /^define FC_SESSION_ABI_H$/, /^define FC_SESSION_[A-Z0-9_]+ [0-9]+u$/,
                      /^ifdef __cplusplus$/, /^endif$/],
-        std: new Set(['stdint.h']) }],
+        std: new Set(['stdint.h', 'fc_master_abi.h']) }], // independently frozen DSP C records; declarations only
 ]);
 
 // The attributes session code may carry, all of them standard and none of them able to change code generation or where

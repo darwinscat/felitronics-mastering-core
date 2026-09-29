@@ -320,7 +320,10 @@
       "fields": {
         "project": "Project",
         "source": "uint64",
-        "sound": "uint64"
+        "sound": "uint64",
+        "readyHash": "uint64",
+        "deliveryRateHz": "uint32",
+        "readyVersion": "uint32"
       }
     },
     "Kept": {
@@ -468,7 +471,19 @@
         "measurementRowsIncluded": "bool",
         "tempoChoice": "TempoChoice",
         "measurementsFromSidecar": "bool",
-        "sourceMissingAudio": "bool"
+        "sourceMissingAudio": "bool",
+        "canMaster": "bool",
+        "pendingMaster": "MasterToken",
+        "pendingMasterBytes": "bytes"
+      }
+    },
+    "MasterToken": {
+      "cpp": "MasterToken",
+      "fields": {
+        "source": "uint64",
+        "revision": "uint64",
+        "job": "uint32",
+        "master": "uint32"
       }
     },
     "Version": {
@@ -631,7 +646,7 @@
     }
   },
   "wireAliases": {
-    "SessionStatus": "0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18",
+    "SessionStatus": "0 | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11 | 12 | 13 | 14 | 15 | 16 | 17 | 18 | 19",
     "CommandAnswer": "AcceptedAnswer | RejectedAnswer | ContractAnswer",
     "SessionEvent": "PhaseEvent | FactEvent | ReadingEvent | DoneEvent | RejectedEvent | ErrorEvent | MeasurementEvent",
     "SessionCommand": "SetTargetCommand | SetManualCommand | EditTargetCommand | EditDeviceCommand | RevertEditsCommand | MasterCommand | CancelCommand | ForgetCommand | ContinueMeasurementCommand",
@@ -1058,7 +1073,9 @@
       "NewerDefaults",
       "RateAboveLimit",
       "Memory",
-      "Contract"
+      "Contract",
+      "OutputPending",
+      "MandatoryUnavailable"
     ],
     "ErrorCode": [
       "Trap",
@@ -1082,6 +1099,20 @@
     "measurements": "ReadonlyArray<SessionMeasurementResult>"
   },
   "optionalFields": {
+    "Recipe": {
+      "readyHash": {
+        "default": "std::uint64_t {}",
+        "description": "No ready input fingerprint in baseline recipes."
+      },
+      "deliveryRateHz": {
+        "default": "std::uint32_t {}",
+        "description": "The baseline recipe did not record a delivery rate."
+      },
+      "readyVersion": {
+        "default": "std::uint32_t {}",
+        "description": "The baseline recipe did not record ready input."
+      }
+    },
     "LandingSummary": {
       "limiterTrace": {
         "default": "std::optional<LandingTrace> {}",
@@ -1170,6 +1201,18 @@
       "sourceMissingAudio": {
         "default": "false",
         "description": "Historical loaded sources have PCM."
+      },
+      "canMaster": {
+        "default": "false",
+        "description": "No known master command availability."
+      },
+      "pendingMaster": {
+        "default": "MasterToken {}",
+        "description": "No pending PCM transfer."
+      },
+      "pendingMasterBytes": {
+        "default": "0.0",
+        "description": "No pending PCM bytes."
       }
     },
     "MeasurementQuery": {

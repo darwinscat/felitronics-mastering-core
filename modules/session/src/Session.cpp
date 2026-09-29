@@ -18,6 +18,7 @@
 #include "SourceMeasurements.h"
 #include "Needles.h"
 #include "QueryState.h"
+#include "MasterJob.h"
 #include "BuildContract.h"
 
 #include <cstdint>
@@ -74,8 +75,15 @@ Created Session::create (const Capabilities& caps, std::uint64_t configVersion) 
 const Capabilities& Session::capabilities() const noexcept { return capabilities_; }
 double Session::liveBytes() const noexcept
 {
+    std::uint64_t rows = 0;
+    for (std::size_t i = 0; masterRows_ && i < masterRoom_; ++i)
+        if (masterRows_[i].passes)
+            rows += 12u * sizeof (LandingPass)
+                  + std::uint64_t (2u * masterRows_[i].traceCapacity) * sizeof (LandingTraceBucket);
     return double (createBytes (capabilities_) + (samples_ ? source_.frames * source_.channels * sizeof (float) : 0)
-                   + source_.name.size() + masterRoom_ * sizeof (Kept) + measurementOwnedBytes_
+                   + source_.name.size() + masterRoom_ * (sizeof (Kept) + sizeof (detail::MasterRows))
+                   + rows + masterJobBytes_ + (masterAudio_.samples ? masterAudio_.frames * masterAudio_.channels * sizeof (float) : 0)
+                   + measurementOwnedBytes_
                    + (sourceMeasurements_ ? sizeof (detail::SourceMeasurements) + sourceMeasurements_->bytes : 0)
                    + (liveMeasurements_ ? sizeof (detail::LiveMeasurements) + liveMeasurements_->bytes : 0)
                    + (measurementWorkspace_ ? measurementWorkspace_->bytes() : 0)
@@ -171,6 +179,52 @@ Source Session::source() const noexcept { return source_; }
 JobId Session::job() const noexcept { return job_; }
 const Recipe& Session::jobRecipe() const noexcept { return jobRecipe_; }
 std::span<const Kept> Session::masters() const noexcept { return { masters_.get(), masterCount_ }; }
+MasterToken Session::pendingMaster() const noexcept { return pendingMaster_; }
+std::uint64_t Session::masterAudioBytes (MasterToken token) const noexcept
+{
+    if (token.source != pendingMaster_.source || token.revision != pendingMaster_.revision
+        || token.job != pendingMaster_.job || token.master != pendingMaster_.master
+        || token.master == 0 || ! masterAudio_.samples) return 0;
+    return masterAudio_.frames * masterAudio_.channels * sizeof (float);
+}
+MasterAudioShape Session::masterAudioShape (MasterToken token) const noexcept
+{
+    return masterAudioBytes (token) == 0 ? MasterAudioShape {} : MasterAudioShape {
+        masterAudio_.frames, masterAudio_.channels, masterAudio_.sampleRate };
+}
+MasterTransferStatus Session::copyMaster (MasterToken token, std::span<float> output) const noexcept
+{
+    const auto bytes = masterAudioBytes (token);
+    if (bytes == 0) return pendingMaster_.master == 0 ? MasterTransferStatus::Unknown : MasterTransferStatus::Stale;
+    const auto samples = std::size_t (bytes / sizeof (float));
+    if (output.size() < samples) return MasterTransferStatus::TooSmall;
+    std::copy_n (masterAudio_.samples.get(), samples, output.data());
+    return MasterTransferStatus::Ok;
+}
+std::span<const float> Session::viewMaster (MasterToken token) const noexcept
+{
+    const auto bytes = masterAudioBytes (token);
+    return bytes == 0 ? std::span<const float> {} : std::span<const float> {
+        masterAudio_.samples.get(), std::size_t (bytes / sizeof (float)) };
+}
+MasterTransferStatus Session::takeMaster (MasterToken token, MasterAudio& output) noexcept
+{
+    if (masterAudioBytes (token) == 0)
+        return pendingMaster_.master == 0 ? MasterTransferStatus::Unknown : MasterTransferStatus::Stale;
+    output = std::move (masterAudio_);
+    pendingMaster_ = {};
+    ++revision_;
+    return MasterTransferStatus::Ok;
+}
+MasterTransferStatus Session::releaseMaster (MasterToken token) noexcept
+{
+    if (masterAudioBytes (token) == 0)
+        return pendingMaster_.master == 0 ? MasterTransferStatus::Unknown : MasterTransferStatus::Stale;
+    masterAudio_ = {};
+    pendingMaster_ = {};
+    ++revision_;
+    return MasterTransferStatus::Ok;
+}
 
 std::string_view Session::targetName() const noexcept
 {

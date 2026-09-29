@@ -49,6 +49,7 @@ int main()
         Kept kept[1]; LandingPass pass[1]; ReadingPoint points[1]; ReadingRun runs[1]; MachineDifference differences[1]; EqPoint curve[1];
         LandingTraceBucket traceRow { 0.0, 1.5, 0.75, 4, 0 };
         fill.value (view); fill.value (kept[0]); fill.value (points[0]); fill.value (runs[0]); fill.value (differences[0]); fill.value (curve[0]);
+        view.pendingMasterBytes = 0.0; // byte counts are finite and nonnegative, even in hostile scalar fixtures
         fill.value (pass[0]);
         if (kept[0].landing)
         {

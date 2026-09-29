@@ -123,7 +123,7 @@ target_compile_definitions(felitronics_session PRIVATE ${FELITRONICS_SESSION_VER
 add_executable(felitronics_session_config_check tests/ConfigCheck.cpp src/ConfigSchema.cpp src/BuildContract.cpp)
 target_include_directories(felitronics_session_config_check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
                                                                     ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(felitronics_session_config_check PRIVATE felitronics::toml felitronics::analysis_offline)
+target_link_libraries(felitronics_session_config_check PRIVATE felitronics::toml felitronics::analysis_offline felitronics::mastering)
 target_compile_features(felitronics_session_config_check PRIVATE cxx_std_20)
 target_compile_options(felitronics_session_config_check PRIVATE ${FELITRONICS_SESSION_COMPILE_OPTIONS})
 target_compile_definitions(felitronics_session_config_check PRIVATE ${FELITRONICS_SESSION_VERSION_DEFINITIONS})
@@ -168,7 +168,7 @@ target_sources(felitronics_session PRIVATE ${FELITRONICS_SESSION_CONFIG_STAMP})
 add_executable(felitronics_session_text_check tests/TextCheck.cpp src/TextSchema.cpp)
 target_include_directories(felitronics_session_text_check PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include
                                                                   ${CMAKE_CURRENT_SOURCE_DIR}/src)
-target_link_libraries(felitronics_session_text_check PRIVATE felitronics::toml)
+target_link_libraries(felitronics_session_text_check PRIVATE felitronics::toml felitronics::mastering)
 target_compile_features(felitronics_session_text_check PRIVATE cxx_std_20)
 target_compile_options(felitronics_session_text_check PRIVATE ${FELITRONICS_SESSION_COMPILE_OPTIONS})
 target_compile_definitions(felitronics_session_text_check PRIVATE ${FELITRONICS_SESSION_VERSION_DEFINITIONS})
@@ -290,6 +290,13 @@ if(FELITRONICS_BUILD_TESTS)
     target_compile_features(felitronics_session_event_tests PRIVATE cxx_std_20)
     add_test(NAME felitronics_session_event_tests COMMAND felitronics_session_event_tests)
 
+    add_executable(felitronics_session_master_job_tests tests/MasterJobTests.cpp)
+    target_link_libraries(felitronics_session_master_job_tests PRIVATE felitronics::session felitronics::test_support)
+    target_include_directories(felitronics_session_master_job_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_features(felitronics_session_master_job_tests PRIVATE cxx_std_20)
+    target_compile_options(felitronics_session_master_job_tests PRIVATE ${FELITRONICS_SESSION_COMPILE_OPTIONS})
+    add_test(NAME felitronics_session_master_job_tests COMMAND felitronics_session_master_job_tests)
+
     add_executable(felitronics_session_project_tests tests/ProjectTests.cpp)
     target_link_libraries(felitronics_session_project_tests PRIVATE felitronics::session felitronics::toml felitronics::test_support)
     target_include_directories(felitronics_session_project_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -333,7 +340,7 @@ if(FELITRONICS_BUILD_TESTS)
             ${FELITRONICS_SESSION_OPTIMISED})
         add_executable(felitronics_session_hostile_${licence}_tests tests/HostileFlagsTests.cpp
                        $<TARGET_OBJECTS:felitronics_session_hostile_${licence}>)
-        target_link_libraries(felitronics_session_hostile_${licence}_tests PRIVATE felitronics::test_support)
+        target_link_libraries(felitronics_session_hostile_${licence}_tests PRIVATE felitronics::test_support felitronics::mastering)
         target_include_directories(felitronics_session_hostile_${licence}_tests PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src)
         target_compile_features(felitronics_session_hostile_${licence}_tests PRIVATE cxx_std_20)
@@ -341,6 +348,15 @@ if(FELITRONICS_BUILD_TESTS)
             FELITRONICS_SESSION_HOSTILE_LICENCE_${licence}=1)
         target_compile_options(felitronics_session_hostile_${licence}_tests PRIVATE "${FELITRONICS_SESSION_HOSTILE_${licence}}"
                                ${FELITRONICS_SESSION_OPTIMISED})
+        # The control TU must retain only the hostile flags. Compile the public-header
+        # consumer with the library's strict options in a separate object.
+        add_library(felitronics_session_hostile_${licence}_consumer OBJECT tests/HostileFlagsConsumer.cpp)
+        target_link_libraries(felitronics_session_hostile_${licence}_consumer PRIVATE felitronics::mastering)
+        target_include_directories(felitronics_session_hostile_${licence}_consumer PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+        target_compile_features(felitronics_session_hostile_${licence}_consumer PRIVATE cxx_std_20)
+        target_compile_options(felitronics_session_hostile_${licence}_consumer PRIVATE ${FELITRONICS_SESSION_COMPILE_OPTIONS})
+        target_sources(felitronics_session_hostile_${licence}_tests PRIVATE
+            $<TARGET_OBJECTS:felitronics_session_hostile_${licence}_consumer>)
         add_test(NAME felitronics_session_hostile_${licence}_tests COMMAND felitronics_session_hostile_${licence}_tests)
     endforeach()
 

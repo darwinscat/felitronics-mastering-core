@@ -46,6 +46,8 @@ public:
     // Contract or domain rejection is an answer, CodecStatus::Ok. A non-Ok status writes nothing.
     // The answer buffer must hold kAnswerBytes BEFORE parsing or applying a command.
     [[nodiscard]] static CodecStatus command (Session& session, std::string_view json, std::span<char> answer, std::uint32_t& written) noexcept;
+    [[nodiscard]] static CodecStatus master (Session& session, const command::Master& request,
+                                             std::span<char> answer, std::uint32_t& written) noexcept;
     [[nodiscard]] static CodecStatus load (Session& session, CommandId id, const Pcm& pcm, std::string_view meta,
                                          std::span<char> answer, std::uint32_t& written) noexcept;
     [[nodiscard]] static CodecStatus loadMeasured (Session& session, CommandId id, std::string_view facts,

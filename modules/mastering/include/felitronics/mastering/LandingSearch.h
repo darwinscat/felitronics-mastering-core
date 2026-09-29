@@ -321,6 +321,8 @@ public:
 
     void cancel() noexcept { (void) fail (MasteringSolveStatus::Cancelled); }
     const LoudnessSolution& result() const noexcept { return best_; }
+    int startedPasses() const noexcept { return passes_; }
+    std::uint64_t completedWork() const noexcept { return work_; }
     bool active() const noexcept { return phase_ != Phase::Idle && phase_ != Phase::Done && phase_ != Phase::Failed; }
 
 private:
