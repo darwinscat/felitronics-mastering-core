@@ -69,6 +69,40 @@ struct MasterHint
     double evidence = 0;
     bool percent = false;
 };
+// A section covers source frames [fromFrame,toFrame). A shift is output short-term loudness
+// minus source short-term loudness after removing the integrated loudness change.
+struct MasterSection
+{
+    std::uint64_t fromFrame, toFrame;
+    double sourceLufs, masterLufs, shiftLu;
+    bool compared;
+};
+struct MasterCostValue
+{
+    MeasurementReason reason = MeasurementReason::NotImplemented;
+    std::optional<double> value;
+    std::uint64_t compared = 0;
+};
+struct MasterWaveformBucket
+{
+    std::uint64_t fromFrame, toFrame;
+    std::uint32_t channel;
+    double minimum, maximum, rms;
+    std::uint64_t finite;
+};
+struct MasterCost
+{
+    // Positive crest loss means flatter attacks. The last band is full band.
+    MasterCostValue crestLowDb {}, crestLowMidDb {}, crestHighMidDb {}, crestHighDb {}, crestFullDb {};
+    MasterCostValue shapeP95Lu {}, largestSectionShiftLu {}, pumpingRmsDb {};
+    MasterCostValue limiterP50Db {}, limiterP95Db {}, limiterActiveShare {}, activeWindowShare {};
+    std::optional<std::uint32_t> worstSectionIndex;
+    MeasurementReason k2Reason = MeasurementReason::NotImplemented;
+    std::uint32_t sourceRateHz = 0, masterRateHz = 0;
+    std::uint64_t sourceFrames = 0, masterFrames = 0;
+    std::span<const MasterSection> sections;
+    std::span<const MasterWaveformBucket> waveform;
+};
 struct MasterReport
 {
     MeasurementStatus status = MeasurementStatus::Unavailable;
@@ -82,12 +116,17 @@ struct MasterReport
     std::uint32_t checkPasses = 0;
     MasterCrest crest {};
     std::optional<MasterHint> firstHint, secondHint;
+    std::optional<MasterCost> cost;
 };
 struct MasterReportText
 {
     [[nodiscard]] static std::optional<text::Fact> miss (const MasterReport& report) noexcept;
     [[nodiscard]] static std::optional<text::Fact> hint (const MasterHint& hint) noexcept;
     [[nodiscard]] static text::Fact crest (const MasterCrest& crest) noexcept;
+    [[nodiscard]] static text::Fact shape (const MasterCost& cost) noexcept;
+    [[nodiscard]] static text::Fact impact (const MasterCost& cost) noexcept;
+    [[nodiscard]] static text::Fact pumping (const MasterCost& cost) noexcept;
+    [[nodiscard]] static text::Fact tonal() noexcept;
 };
 struct MasterCrestGrid
 {

@@ -30,8 +30,13 @@ std::uint64_t Snapshot::storageFor (const SnapshotView& v) noexcept
         }
     for (const Kept& master : v.masters)
         if (master.report)
+        {
             landingBytes += std::uint64_t (master.report->crest.rows.size_bytes())
                           + std::uint64_t (master.report->crest.sourceMask.size_bytes());
+            if (master.report->cost)
+                landingBytes += std::uint64_t (master.report->cost->sections.size_bytes())
+                              + std::uint64_t (master.report->cost->waveform.size_bytes());
+        }
     return detail::snapshotStorage (v.target.size(), v.source.name.size(), v.masters.size_bytes(),
                                     v.momentary.size_bytes(), v.shortTerm.size_bytes(), v.runs.size_bytes())
          + std::uint64_t (v.machineDifferences.size_bytes()) + std::uint64_t (v.eqCurve.size_bytes())
@@ -61,7 +66,7 @@ Snapshot Snapshot::copy (const SnapshotView& v) noexcept
         std::copy (v.masters.begin(), v.masters.end(), out.masters_.get());
         std::size_t landingCount = 0;
         std::uint64_t traceCount = 0;
-        std::uint64_t crestCount = 0;
+        std::uint64_t crestCount = 0, sectionCount = 0, waveformCount = 0;
         for (const Kept& master : v.masters) if (master.landing)
         {
             landingCount += master.landing->log.size();
@@ -69,7 +74,14 @@ Snapshot Snapshot::copy (const SnapshotView& v) noexcept
             if (master.landing->peakClipTrace) traceCount += master.landing->peakClipTrace->rows.size();
         }
         for (const Kept& master : v.masters) if (master.report)
+        {
             crestCount += master.report->crest.rows.size() + master.report->crest.sourceMask.size();
+            if (master.report->cost)
+            {
+                sectionCount += master.report->cost->sections.size();
+                waveformCount += master.report->cost->waveform.size();
+            }
+        }
         if (landingCount != 0) out.landingPasses_.reset (new LandingPass[landingCount]);
         if (traceCount != 0)
         {
@@ -79,7 +91,11 @@ Snapshot Snapshot::copy (const SnapshotView& v) noexcept
         }
         if (crestCount != 0) out.masterCrestRows_.reset (new double[
             detail::snapshotAllocationSize<std::size_t> (crestCount * sizeof (double)) / sizeof (double)]);
-        std::size_t offset = 0, traceOffset = 0, crestOffset = 0;
+        if (sectionCount != 0) out.masterSections_.reset (new MasterSection[
+            detail::snapshotAllocationSize<std::size_t> (sectionCount * sizeof (MasterSection)) / sizeof (MasterSection)]);
+        if (waveformCount != 0) out.masterWaveform_.reset (new MasterWaveformBucket[
+            detail::snapshotAllocationSize<std::size_t> (waveformCount * sizeof (MasterWaveformBucket)) / sizeof (MasterWaveformBucket)]);
+        std::size_t offset = 0, traceOffset = 0, crestOffset = 0, sectionOffset = 0, waveformOffset = 0;
         for (std::size_t i = 0; i < v.masters.size(); ++i)
             if (v.masters[i].landing)
             {
@@ -110,6 +126,18 @@ Snapshot Snapshot::copy (const SnapshotView& v) noexcept
                     ((*out.masters_[i].report).crest.*member) = data.empty() ? std::span<const double> {}
                         : std::span<const double> { out.masterCrestRows_.get() + crestOffset, data.size() };
                     crestOffset += data.size();
+                }
+                if (v.masters[i].report->cost)
+                {
+                    const auto sections = v.masters[i].report->cost->sections;
+                    const auto waveform = v.masters[i].report->cost->waveform;
+                    if (! sections.empty()) std::copy (sections.begin(), sections.end(), out.masterSections_.get() + sectionOffset);
+                    if (! waveform.empty()) std::copy (waveform.begin(), waveform.end(), out.masterWaveform_.get() + waveformOffset);
+                    out.masters_[i].report->cost->sections = sections.empty() ? std::span<const MasterSection> {}
+                        : std::span<const MasterSection> { out.masterSections_.get() + sectionOffset, sections.size() };
+                    out.masters_[i].report->cost->waveform = waveform.empty() ? std::span<const MasterWaveformBucket> {}
+                        : std::span<const MasterWaveformBucket> { out.masterWaveform_.get() + waveformOffset, waveform.size() };
+                    sectionOffset += sections.size(); waveformOffset += waveform.size();
                 }
             }
         out.view_.masters = { out.masters_.get(), v.masters.size() };

@@ -193,6 +193,8 @@ bool directMeter (const Case& c)
 bool memoryLifecycle (Case& c)
 {
     auto& s = *c.session;
+    for (unsigned i = 0; i < 200000 && s.measurementJob() != 0; ++i) (void) s.step (73);
+    if (s.measurementJob() != 0) return false;
     if (s.releaseMaster (c.token) != session::MasterTransferStatus::Ok) return false;
     const auto exercise = [&] (std::uint32_t rate, session::CommandId id, bool cancel,
                                bool testRefusal) -> bool
@@ -229,9 +231,11 @@ bool memoryLifecycle (Case& c)
             const auto before = std::uint64_t (s.liveBytes());
             const auto spent = budget::spend (work);
             const auto after = std::uint64_t (s.liveBytes());
+            if (spent.bytes < 0) { covered = false; return; }
+            // liveBytes() already includes the job's declared future workspace while it is active.
             peakLive = std::max ({ peakLive, before, after });
             largestCall = std::max (largestCall, std::uint64_t (spent.bytes));
-            covered = covered && spent.bytes >= 0 && peakLive <= ceiling
+            covered = covered && peakLive <= ceiling
                 // Each individual allocation is no larger than its entire call's measured demand.
                 && largestCall <= declared.largestBlockBytes;
         };
@@ -287,8 +291,10 @@ int main()
         session::Snapshot copy;
         const auto spent = budget::spend ([&] { copy = gain.session->snapshot(); });
         ok (budget::covers (snapshotBytes, spent)
-            && copy.view().masters[0].report->crest.rows.size() == crest.rows.size(),
-            "owned snapshot retains compact master crest inside declared memory");
+            && copy.view().masters[0].report->crest.rows.size() == crest.rows.size()
+            && copy.view().masters[0].report->cost
+            && ! copy.view().masters[0].report->cost->waveform.empty(),
+            "owned snapshot retains compact cost and waveform rows inside declared memory");
         const auto needed = session::Codec::encodedBytes (copy.view());
         std::vector<char> json (std::size_t (needed.bytes));
         session::Snapshot decoded;
@@ -302,6 +308,9 @@ int main()
         ok (status == session::CodecStatus::Ok && budget::covers (decodedNeed.bytes, decodedSpent)
             && decoded.view().masters[0].report->crest.rows.size() == crest.rows.size()
             && decoded.view().masters[0].report->deliverable == gain.session->masters()[0].report->deliverable
+            && decoded.view().masters[0].report->cost
+            && decoded.view().masters[0].report->cost->waveform.size()
+                == gain.session->masters()[0].report->cost->waveform.size()
             && decoded.view().masters[0].report->targetMet == gain.session->masters()[0].report->targetMet
             && decoded.view().masters[0].report->checkPasses == gain.session->masters()[0].report->checkPasses,
             "one generated codec round-trips the owned report within its declared demand");
@@ -322,6 +331,22 @@ int main()
             && invalidSpent.requests == 0
             && session::Codec::decodedBytes (malformed).status == session::CodecStatus::Invalid,
             "an inconsistent crest row total is rejected before decode allocates");
+        std::string shiftedWave (json.data(), json.size());
+        constexpr std::string_view waveStart = "\"waveform\":[{";
+        const auto waveAt = shiftedWave.find (waveStart);
+        constexpr std::string_view waveFrom = "\"fromFrame\":\"0\"";
+        const auto waveFromAt = waveAt == std::string::npos ? waveAt
+            : shiftedWave.find (waveFrom, waveAt + waveStart.size());
+        if (waveFromAt != std::string::npos)
+            shiftedWave[waveFromAt + waveFrom.size() - 2u] = '1';
+        const auto waveSpent = budget::spend ([&] {
+            invalidStatus = session::Codec::decode (shiftedWave, invalid);
+        });
+        ok (waveAt != std::string::npos && waveFromAt != std::string::npos
+            && invalidStatus == session::CodecStatus::Invalid
+            && waveSpent.requests == 0
+            && session::Codec::decodedBytes (shiftedWave).status == session::CodecStatus::Invalid,
+            "a shifted compact waveform is rejected during the allocation-free parse");
         std::string incoherent (json.data(), json.size());
         const auto met = gain.session->masters()[0].report->targetMet;
         const auto field = std::string ("\"targetMet\":") + (met ? "true" : "false");
@@ -348,6 +373,22 @@ int main()
         grid = altered; grid.droppedHops = 1;
         ok (! session::MasterCrestGrid::compatible (crest, grid),
             "crest pairing refuses incomplete source rows");
+        const auto& cost = *gain.session->masters()[0].report->cost;
+        ok (cost.k2Reason == session::MeasurementReason::NotImplemented
+            && cost.crestFullDb.value && *cost.crestFullDb.value < .05
+            && cost.shapeP95Lu.value && *cost.shapeP95Lu.value < .1,
+            "gain-only master has measured near-zero impact and shape while K2 remains unmeasured");
+        session::MeasurementQuery waveform;
+        waveform.kind = session::QueryKind::MasterWaveform;
+        waveform.audioId = gain.session->source().hash;
+        waveform.masterId = gain.session->masters()[0].id;
+        waveform.fromFrame = 100; waveform.toFrame = 200; waveform.columns = 10;
+        const auto compact = gain.session->query (waveform);
+        ok (compact.view().status == session::QueryStatus::Ready
+            && compact.view().pcmFramesRead == 0 && compact.view().stored > 0
+            && compact.view().stored <= 20
+            && compact.view().values[0] <= 100 && compact.view().values[1] >= 100,
+            "retained master waveform answers zoom with actual compact bucket bounds");
     }
     Case late;
     ok (run (late, 48000, 48000, false, false),
@@ -396,8 +437,7 @@ int main()
             && lateReady.session->masters()[0].report->crest.status == session::MeasurementStatus::Pending,
             "source completion leaves a distinct bounded master crest join to pump");
         bool joinAllocated = false, joinOverran = false, joinedEvent = false;
-        for (unsigned i = 0; i < 200000
-            && lateReady.session->masters()[0].report->crest.status == session::MeasurementStatus::Pending; ++i)
+        for (unsigned i = 0; i < 200000 && ! joinedEvent; ++i)
         {
             session::Stepped joined;
             const auto spent = budget::spend ([&] { joined = lateReady.session->step (1); });
@@ -535,6 +575,11 @@ int main()
         for (double row : r.crest.rows) crestAbs += std::fabs (row);
         std::printf ("master-report-parity %d %.12f %.12f %.12f %.12f %.12f\n",
             parityCase, *r.achievedLufs, *r.truePeakDbTp, *r.missLu, pcmAbs, crestAbs);
+        if (r.cost && r.cost->crestFullDb.value && r.cost->shapeP95Lu.value
+            && r.cost->pumpingRmsDb.value && r.cost->activeWindowShare.value)
+            std::printf ("master-cost-parity %d %.12f %.12f %.12f %.12f\n",
+                parityCase, *r.cost->crestFullDb.value, *r.cost->shapeP95Lu.value,
+                *r.cost->pumpingRmsDb.value, *r.cost->activeWindowShare.value);
         add (std::bit_cast<std::uint64_t> (*r.achievedLufs));
         add (std::bit_cast<std::uint64_t> (*r.truePeakDbTp));
         add (std::bit_cast<std::uint64_t> (*r.missLu));
@@ -547,5 +592,27 @@ int main()
     }
     ok (parityCase == 3, "all native/wasm parity cases completed");
     ok (memoryLifecycle (gain), "declared peak and largest block cover large, cancel, small, growth and refusal");
+    if (gain.session && ! gain.session->masters().empty())
+    {
+        session::MeasurementQuery waveform;
+        waveform.kind = session::QueryKind::MasterWaveform;
+        waveform.audioId = gain.session->source().hash;
+        waveform.masterId = gain.session->masters()[0].id;
+        waveform.fromFrame = 100; waveform.toFrame = 200; waveform.columns = 10;
+        const float* piece[2] { gain.delivered.data() + 100,
+            gain.delivered.data() + gain.delivered.size() / 2u + 100 };
+        const session::Pcm chunk { piece, 2, 100, 48000 };
+        const auto chunkNeed = gain.session->masterWaveformChunkStorage (waveform, chunk);
+        const auto exact = gain.session->masterWaveformChunk (waveform, chunk);
+        ok (chunkNeed.status == session::QueryStatus::Ready
+            && exact.view().status == session::QueryStatus::Ready
+            && exact.view().pcmFramesRead == 100 && exact.view().stored == 20
+            && exact.view().values[0] == 100 && exact.view().values[1] == 110,
+            "explicit external PCM chunk supports exact deep zoom after heap release");
+        const session::Pcm wrongChannels { piece, 1, 100, 48000 };
+        ok (gain.session->masterWaveformChunkStorage (waveform, wrongChannels).status
+                == session::QueryStatus::Contract,
+            "external chunk must match the delivered master's channel count");
+    }
     return felitronics::test::report();
 }

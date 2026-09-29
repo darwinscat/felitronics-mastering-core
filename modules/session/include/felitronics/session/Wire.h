@@ -33,6 +33,12 @@ public:
     // Bounds before execution, then actual written sizes. Refusals precede query/cache mutation.
     [[nodiscard]] static TransferNeed queryBuffers (const Session& session, std::string_view json) noexcept;
     [[nodiscard]] static TransferNeed query (Session& session, std::string_view request, std::span<char> json, std::span<double> rows) noexcept;
+    [[nodiscard]] static Checked masterWaveformChunkStorage (const Session& session, std::string_view request,
+                                                               const Pcm& shape) noexcept;
+    [[nodiscard]] static TransferNeed masterWaveformChunkBuffers (const Session& session, std::string_view request,
+                                                                   const Pcm& shape) noexcept;
+    [[nodiscard]] static TransferNeed masterWaveformChunk (Session& session, std::string_view request, const Pcm& chunk,
+                                                            std::span<char> json, std::span<double> rows) noexcept;
     [[nodiscard]] static TransferNeed queryBytes (const QueryView& response) noexcept;
     [[nodiscard]] static CodecStatus query (const QueryView& response, std::span<char> json, std::span<double> rows) noexcept;
     [[nodiscard]] static TransferNeed eventsBytes (std::span<const Notification> events) noexcept;

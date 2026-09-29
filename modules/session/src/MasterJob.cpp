@@ -4,6 +4,7 @@
 #include "BuildGuards.h"
 #include "MasterJob.h"
 #include "MeasurementPlan.h"
+#include "Cost.h"
 #include <felitronics/analysis/BandCrestResult.h>
 #include "Rules.h"
 #include <felitronics/session/Session.h>
@@ -16,6 +17,11 @@ namespace felitronics::session::detail
 {
 namespace
 {
+const MeasurementArray* findArray (const MeasurementResult& result, std::string_view name) noexcept
+{
+    for (const auto& array : result.arrays) if (array.name == name) return &array;
+    return nullptr;
+}
 double number (toml::embedded::View value) noexcept
 {
     if (const auto decimal = value.decimal()) return decimal->toDouble();
@@ -58,6 +64,27 @@ bool validParams (const mastering::MasteringChainParams& p) noexcept
             if (! std::isfinite (lane.freq) || ! std::isfinite (lane.Q) || ! std::isfinite (lane.gainDb)) return false;
     }
     return true;
+}
+CostRules configuredCost() noexcept
+{
+    const auto root = rules().engine.find ("cost");
+    const auto sections = root.find ("sections");
+    const auto pump = root.find ("pumping");
+    CostRules r;
+    r.activityBelowLu = number (root.find ("activityBelowIntegratedLu"));
+    r.activityFloorLufs = number (root.find ("activityFloorLufs"));
+    r.tooQuietLufs = number (root.find ("tooQuietBelowLufs"));
+    r.changeLu = number (sections.find ("changeLu"));
+    r.minSeconds = number (sections.find ("minSeconds"));
+    r.minComparedShare = number (sections.find ("minComparedShare"));
+    r.quantile = number (sections.find ("quantile"));
+    r.worstNamedAbove = std::uint32_t (number (sections.find ("worstNamedAbove")));
+    r.maxShortfallSeconds = number (sections.find ("masterShorterByAtMost"));
+    r.pumpHighPassHz = number (pump.find ("highPassHz"));
+    r.pumpLowPassHz = number (pump.find ("lowPassHz"));
+    r.pumpSettleSeconds = number (pump.find ("settleSeconds"));
+    r.pumpMinRateHz = number (pump.find ("minTraceRateHz"));
+    return r;
 }
 struct Fingerprint
 {
@@ -163,7 +190,23 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
     if (delivered <= 0 || delivered > std::numeric_limits<int>::max())
     { result.rejection = Rejection::TooLong; return result; }
     result.frames = int (delivered);
-    result.traceBuckets = std::min (result.frames, mastering::GainReductionTrace::kDefaultBuckets);
+    const auto costRules = engine.find ("cost");
+    const double grWindow = number (costRules.find ("grWindowSeconds"));
+    const auto grMin = costRules.find ("grTraceBucketsMin").integer();
+    const auto grMax = costRules.find ("grTraceBucketsMax").integer();
+    if (! std::isfinite (grWindow) || grWindow <= 0 || ! grMin || ! grMax || *grMin < 1 || *grMax < *grMin)
+    { result.rejection = Rejection::OutOfDomain; return result; }
+    result.traceBuckets = std::min (result.frames, int (std::clamp (
+        std::ceil (double (result.frames) / rate / grWindow), double (*grMin), double (*grMax))));
+    result.costHop = 10u * std::max<std::uint64_t> (1u, std::uint64_t (std::floor (rate * .01 + .5)));
+    result.costCapacity = std::size_t (std::uint64_t (result.frames) / result.costHop);
+    const std::uint64_t sourceHop = 10u * std::max<std::uint64_t> (1u,
+        std::uint64_t (std::floor (double (s.source_.sampleRate) * .01 + .5)));
+    result.costCapacity = std::max (result.costCapacity,
+        std::size_t (s.source_.frames / sourceHop + 1u));
+    result.costScratchCapacity = std::max ({ result.costCapacity,
+        std::size_t (s.source_.frames / sourceHop + 1u), result.crestCapacity });
+    result.waveformCapacity = std::size_t (std::min (result.frames, 2048)) * s.source_.channels;
     result.request.targetLufs = targetLufs;
     result.sourceLufs = sourceLufs;
     result.request.maxTruePeakDbTp = targetTp;
@@ -198,9 +241,17 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
         crestFrames, result.crestParams);
     if (crest.ok && crest.hopCapacity >= std::size_t (result.crestParams.blockHops))
         result.crestCapacity = crest.hopCapacity - std::size_t (result.crestParams.blockHops) + 1u;
+    result.costScratchCapacity = std::max (result.costScratchCapacity, result.crestCapacity);
+    analysis::StreamingLoudnessMeter::Storage costMeterStorage;
+    result.costMeterAdmitted = analysis::StreamingLoudnessMeter::storageFor (
+        rate, double (result.frames), costMeterStorage);
+    const auto costMeterBytes = result.costMeterAdmitted ? costMeterStorage.bytes() : 0u;
     const std::uint64_t crestRows = std::uint64_t (result.crestCapacity) * 15u * sizeof (double);
+    const std::uint64_t costRows = std::uint64_t (result.costCapacity) * (sizeof (double) + sizeof (MasterSection))
+        + std::uint64_t (result.costScratchCapacity) * sizeof (double)
+        + std::uint64_t (result.waveformCapacity) * sizeof (MasterWaveformBucket);
     result.retainedRowBytes = 12u * sizeof (LandingPass)
-        + 2u * std::uint64_t (result.traceBuckets) * sizeof (LandingTraceBucket) + crestRows;
+        + 2u * std::uint64_t (result.traceBuckets) * sizeof (LandingTraceBucket) + crestRows + costRows;
     const auto impactChainBytes = convert ? mastering::MasteringChain::prepareBytes (
         double (s.source_.sampleRate), int (s.source_.channels), result.ready.topology) : 0u;
     const auto impactScratchBytes = convert ? std::uint64_t (s.source_.channels) * 1024u * sizeof (float) : 0u;
@@ -209,7 +260,10 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
     const auto outputBytes = search.outputBytes;
     result.largestBlock = std::max ({ outputBytes, chainBytes, solverBytes, converterBytes,
         renderStorage.bytes(), search.workspaceBytes, std::uint64_t (sizeof (MasterJob)),
-        crestRows, crest.ok ? crest.bytes() : 0u, impactChainBytes, impactScratchBytes });
+        crestRows, costMeterBytes, std::uint64_t (result.costCapacity) * sizeof (MasterSection),
+        std::uint64_t (result.waveformCapacity) * sizeof (MasterWaveformBucket),
+        std::uint64_t (result.costScratchCapacity) * sizeof (double),
+        crest.ok ? crest.bytes() : 0u, impactChainBytes, impactScratchBytes });
     std::uint64_t total = 0;
     // Include constructors, all retained search work, two compact traces, and an allocator margin
     // for every tier's vector growth and Debug proxies.
@@ -221,6 +275,7 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
         || ! add (total, mastering::TargetLoudnessSolver::constructBytes())
         || ! add (total, mastering::DeliveryConverter::constructBytes())
         || ! add (total, result.retainedRowBytes)
+        || ! add (total, costMeterBytes)
         || ! add (total, crest.ok ? crest.firstBytes() : 0u)
         || ! add (total, impactChainBytes) || ! add (total, impactScratchBytes)
         || ! add (total, 128u * 4096u))
@@ -244,11 +299,14 @@ bool MasterJob::begin (const Session& s, const MasterPlan& plan)
     deliveryRate = plan.deliveryRate;
     sourceRate = s.source_.sampleRate;
     sourceFrames = s.source_.frames;
+    costHop = plan.costHop;
     constexpr int block = 1024;
     if (! chain.prepare (double (deliveryRate), channels, plan.ready.topology)
         || ! renderer.prepare (channels, block)
         || ! solver.prepare (double (deliveryRate), channels, block,
                             plan.ready.topology.internalBlock, plan.ready.topology.oversampleFactor)) return false;
+    costMeterReady = plan.costMeterAdmitted
+        && costMeter.prepareForSamples (double (deliveryRate), channels, double (frames));
     const bool convert = deliveryRate != s.source_.sampleRate;
     if (convert && ! converter.prepare (double (s.source_.sampleRate), double (deliveryRate), channels, block)) return false;
     if (convert) impactScratch.reset (new float[std::size_t (channels) * block]);
@@ -348,11 +406,11 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         c.edgeLowHz = crestParams.bandEdgeHz[0]; c.edgeMidHz = crestParams.bandEdgeHz[1];
         c.edgeHighHz = crestParams.bandEdgeHz[2]; c.sourceRateCheck = impact;
         if (session->masterRows_[session->masterCount_].crestCapacity == 0)
-        { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::TooShort; stage = Stage::Done; return StepResult::Done; }
+        { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::TooShort; stage = Stage::CostRead; return StepResult::More; }
         if (impact)
         {
             if (! chain.prepare (double (sourceRate), channels, ready.topology))
-            { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Unsupported; stage = Stage::Done; return StepResult::Done; }
+            { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Unsupported; stage = Stage::CostRead; return StepResult::More; }
             auto winning = ready.params;
             winning.inputGainDb += search.result().normalizationGainDb;
             winning.preLimiterGainDb = search.result().preLimiterGainDb;
@@ -363,7 +421,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         }
         crest.setParams (crestParams);
         if (! crest.prepare (double (rate), channels, (long long) c.frames))
-        { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Unsupported; stage = Stage::Done; return StepResult::Done; }
+        { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Unsupported; stage = Stage::CostRead; return StepResult::More; }
         c.hopFrames = std::uint32_t (crest.hopSamples());
         stage = Stage::Read;
         return StepResult::More;
@@ -383,12 +441,15 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
                     const auto frame = crestCursor + i;
                     planes[ch][i] = frame < (long long) sourceFrames ? sourcePlanes[ch][frame] : 0.0f;
                 }
-            if (! chain.process (planes, channels, n)) { stage = Stage::Failed; return StepResult::Failed; }
+            if (! chain.process (planes, channels, n))
+            { report.crest.status = MeasurementStatus::Unavailable; report.crest.reason = MeasurementReason::NonFinite;
+              stage = Stage::CostRead; return StepResult::More; }
             const int skip = int (std::min<long long> (n, std::max (0LL, impactDelay - crestCursor)));
             const int kept = int (std::max (0LL, std::min<long long> (n, total - crestCursor) - skip));
             const float* produced[2] { planes[0] + skip, channels == 2 ? planes[1] + skip : nullptr };
             if (kept != 0 && ! crest.process (produced, channels, kept))
-            { stage = Stage::Failed; return StepResult::Failed; }
+            { report.crest.status = MeasurementStatus::Unavailable; report.crest.reason = MeasurementReason::NonFinite;
+              stage = Stage::CostRead; return StepResult::More; }
             crestCursor += n;
             if (crestCursor == total) { report.checkPasses = 1; stage = Stage::Finish; }
         }
@@ -397,7 +458,9 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
             const int n = int (std::min<long long> ({ budget, block, frames - crestCursor }));
             const float* planes[2] { outputPlanes[0] + crestCursor,
                 channels == 2 ? outputPlanes[1] + crestCursor : nullptr };
-            if (! crest.process (planes, channels, n)) { stage = Stage::Failed; return StepResult::Failed; }
+            if (! crest.process (planes, channels, n))
+            { report.crest.status = MeasurementStatus::Unavailable; report.crest.reason = MeasurementReason::NonFinite;
+              stage = Stage::CostRead; return StepResult::More; }
             crestCursor += n;
             if (crestCursor == frames) stage = Stage::Finish;
         }
@@ -414,7 +477,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
             c.status = MeasurementStatus::Unavailable;
             c.reason = crest.invalidReason() == analysis::BandCrestInvalid::NoBlock
                 ? MeasurementReason::TooShort : MeasurementReason::NonFinite;
-            stage = Stage::Done; return StepResult::Done;
+            stage = Stage::CostRead; return StepResult::More;
         }
         const auto& source = session->measurementResults_[std::size_t (Analyzer::Crest)];
         if (source.status == MeasurementStatus::Pending)
@@ -451,10 +514,210 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         {
             report.crest.rows = { data, crestCopied * 10u };
             if (! sourceMask.empty()) report.crest.sourceMask = { mask, crestCopied * 5u };
-            stage = Stage::Done;
-            return StepResult::Done;
+            stage = Stage::CostRead;
+            return StepResult::More;
         }
         return StepResult::More;
+    }
+    if (stage == Stage::CostRead)
+    {
+        constexpr std::uint64_t block = 1024;
+        const auto remainingHop = costHop - costCursor % costHop;
+        const auto n = std::uint64_t (std::min<long long> (budget,
+            (long long) std::min ({ block, remainingHop, std::uint64_t (frames) - costCursor })));
+        if (n == 0) { stage = Stage::CostFinish; return StepResult::More; }
+        const float* planes[2] { outputPlanes[0] + costCursor,
+            channels == 2 ? outputPlanes[1] + costCursor : nullptr };
+        if (costMeterReady && ! costMeter.process (planes, channels, int (n))) costMeterReady = false;
+        auto& rows = session->masterRows_[session->masterCount_];
+        const std::uint64_t bucketCount = rows.waveformCapacity / std::size_t (channels);
+        for (std::uint64_t i = 0; i < n; ++i)
+        {
+            const auto frame = costCursor + i;
+            const auto bucket = std::min (bucketCount - 1u, frame * bucketCount / std::uint64_t (frames));
+            if (bucket == initializedWaveBuckets)
+            {
+                for (int ch = 0; ch < channels; ++ch)
+                {
+                    auto& w = rows.waveform[std::size_t (bucket * std::uint64_t (channels) + std::uint64_t (ch))];
+                    w.fromFrame = (bucket * std::uint64_t (frames) + bucketCount - 1u) / bucketCount;
+                    w.toFrame = ((bucket + 1u) * std::uint64_t (frames) + bucketCount - 1u) / bucketCount;
+                    w.channel = std::uint32_t (ch);
+                    w.minimum = w.maximum = w.rms = 0;
+                    w.finite = 0;
+                }
+                ++initializedWaveBuckets;
+            }
+            for (int ch = 0; ch < channels; ++ch)
+            {
+                auto& w = rows.waveform[std::size_t (bucket * std::uint64_t (channels) + std::uint64_t (ch))];
+                const double x = planes[ch][std::size_t (i)];
+                if (std::isfinite (x))
+                {
+                    if (w.finite == 0) w.minimum = w.maximum = x;
+                    else { w.minimum = std::min (w.minimum, x); w.maximum = std::max (w.maximum, x); }
+                    w.rms += x * x; ++w.finite;
+                }
+            }
+        }
+        costCursor += n;
+        if (costMeterReady && costCursor % costHop == 0 && costStored < rows.costCapacity)
+            rows.costSeries[std::size_t (costStored++)] = costMeter.shortTermLufs();
+        if (costCursor == std::uint64_t (frames)) stage = Stage::CostFinish;
+        return StepResult::More;
+    }
+    if (stage == Stage::CostFinish)
+    {
+        auto& rows = session->masterRows_[session->masterCount_];
+        costResult = {};
+        costRules = configuredCost();
+        costResult.sourceRateHz = sourceRate; costResult.masterRateHz = deliveryRate;
+        costResult.sourceFrames = sourceFrames; costResult.masterFrames = std::uint64_t (frames);
+        costResult.waveform = { rows.waveform.get(), rows.waveformCapacity };
+        const auto& solution = search.result();
+        double quantile = 0;
+        if (solution.grQuantile (mastering::GrStage::Limiter, .5, quantile))
+            costResult.limiterP50Db = { MeasurementReason::None, quantile, solution.measured.limiter.frames };
+        else costResult.limiterP50Db.reason = MeasurementReason::Unsupported;
+        if (solution.grQuantile (mastering::GrStage::Limiter, .95, quantile))
+            costResult.limiterP95Db = { MeasurementReason::None, quantile, solution.measured.limiter.frames };
+        else costResult.limiterP95Db.reason = MeasurementReason::Unsupported;
+        if (solution.measured.limiter.valid)
+            costResult.limiterActiveShare = { MeasurementReason::None, solution.measured.limiter.activeFraction,
+                solution.measured.limiter.frames };
+        else costResult.limiterActiveShare.reason = MeasurementReason::Unsupported;
+        costPumpScan.start (solution.limiterTrace, deliveryRate, costRules);
+        stage = Stage::CostWave;
+        return StepResult::More;
+    }
+    if (stage == Stage::CostWave)
+    {
+        auto& rows = session->masterRows_[session->masterCount_];
+        const auto limit = std::min<std::uint64_t> (rows.waveformCapacity,
+            costFinishCursor + std::uint64_t (std::min<long long> (budget, 1024)));
+        while (costFinishCursor < limit)
+        {
+            auto& wave = rows.waveform[std::size_t (costFinishCursor++)];
+            if (wave.finite != 0) wave.rms = std::sqrt (wave.rms / double (wave.finite));
+        }
+        if (costFinishCursor == rows.waveformCapacity) { costFinishCursor = 0; stage = Stage::CostPump; }
+        return StepResult::More;
+    }
+    if (stage == Stage::CostPump)
+    {
+        const auto& trace = search.result().limiterTrace;
+        if (costPumpScan.step (trace, std::uint32_t (std::min<long long> (budget, 1024))))
+        { costResult.pumpingRmsDb = costPumpScan.answer; stage = Stage::CostActive; }
+        return StepResult::More;
+    }
+    if (stage == Stage::CostActive)
+    {
+        const auto* sourceMomentary = findArray (
+            session->measurementResults_[std::size_t (Analyzer::Loudness)], "momentary");
+        if (! sourceMomentary)
+        { costResult.activeWindowShare.reason = MeasurementReason::Unsupported; stage = Stage::CostShape; return StepResult::More; }
+        const auto count = std::size_t (sourceMomentary->stored);
+        const auto limit = std::min<std::uint64_t> (count,
+            costFinishCursor + std::uint64_t (std::min<long long> (budget, 1024)));
+        const double gate = std::max (costRules.activityFloorLufs, sourceLufs - costRules.activityBelowLu);
+        while (costFinishCursor < limit)
+        {
+            const double level = sourceMomentary->values[std::size_t (costFinishCursor++)];
+            if (std::isfinite (level)) { ++activeJudged; if (level >= gate) ++activeCount; }
+        }
+        if (costFinishCursor == count)
+        {
+            if (activeJudged)
+                costResult.activeWindowShare = { MeasurementReason::None,
+                    double (activeCount) / double (activeJudged), activeJudged };
+            else costResult.activeWindowShare.reason = MeasurementReason::NoSignal;
+            costFinishCursor = 0; stage = Stage::CostShape;
+        }
+        return StepResult::More;
+    }
+    if (stage == Stage::CostShape)
+    {
+        auto& rows = session->masterRows_[session->masterCount_];
+        const auto* sourceShort = findArray (
+            session->measurementResults_[std::size_t (Analyzer::Loudness)], "shortTerm");
+        if (! costMeterReady || ! sourceShort || sourceShort->grid.stepFrames == 0 || ! rows.costSeries)
+        { costResult.shapeP95Lu.reason = MeasurementReason::Unsupported; stage = Stage::CostCrest; return StepResult::More; }
+        const auto source = sourceShort->values.first (std::size_t (sourceShort->stored));
+        const std::span<const double> master { rows.costSeries.get(), std::size_t (costStored) };
+        const std::span<MasterSection> sections { rows.sections.get(), rows.costCapacity };
+        const std::span<double> scratch { rows.costScratch.get(), rows.costScratchCapacity };
+        if (! costShapeStarted)
+        {
+            costShapeScan.start (source, master, sourceRate, sourceShort->grid.stepFrames,
+                deliveryRate, costHop, sourceLufs, *report.achievedLufs, costRules, sections, scratch);
+            costShapeStarted = true;
+        }
+        if (costShapeScan.step (source, master, sections, scratch,
+                                std::uint32_t (std::min<long long> (budget, 1024))))
+        {
+            costResult.shapeP95Lu = costShapeScan.answer;
+            costResult.sections = { rows.sections.get(), std::size_t (costShapeScan.sectionCount) };
+            stage = costResult.shapeP95Lu.value ? Stage::CostWorst : Stage::CostCrest;
+        }
+        return StepResult::More;
+    }
+    if (stage == Stage::CostWorst)
+    {
+        const auto& rows = session->masterRows_[session->masterCount_];
+        const auto limit = std::min<std::uint64_t> (costShapeScan.sectionCount,
+            costFinishCursor + std::uint64_t (std::min<long long> (budget, 1024)));
+        while (costFinishCursor < limit)
+        {
+            const auto i = std::size_t (costFinishCursor++);
+            if (rows.sections[i].compared)
+            {
+                ++costComparable;
+                if (! rows.sections[costWorst].compared
+                    || std::fabs (rows.sections[i].shiftLu) > std::fabs (rows.sections[costWorst].shiftLu))
+                    costWorst = i;
+            }
+        }
+        if (costFinishCursor == costShapeScan.sectionCount)
+        {
+            if (costComparable > costRules.worstNamedAbove)
+            {
+                costResult.worstSectionIndex = std::uint32_t (costWorst);
+                costResult.largestSectionShiftLu = { MeasurementReason::None,
+                    rows.sections[costWorst].shiftLu, costComparable };
+            }
+            else costResult.largestSectionShiftLu.reason = MeasurementReason::TooShort;
+            costFinishCursor = 0; stage = Stage::CostCrest;
+        }
+        return StepResult::More;
+    }
+    if (stage == Stage::CostCrest)
+    {
+        MasterCostValue* bands[] { &costResult.crestLowDb, &costResult.crestLowMidDb,
+            &costResult.crestHighMidDb, &costResult.crestHighDb, &costResult.crestFullDb };
+        if (report.crest.status != MeasurementStatus::Ready)
+        {
+            for (auto* band : bands) band->reason = report.crest.reason;
+            stage = Stage::CostPublish; return StepResult::More;
+        }
+        auto& rows = session->masterRows_[session->masterCount_];
+        const auto view = MeasurementCrest::view (session->measurementResults_[std::size_t (Analyzer::Crest)]);
+        const std::span<double> scratch { rows.costScratch.get(), rows.costScratchCapacity };
+        if (! costCrestStarted)
+        { costCrestScan.start (view, report.crest, costBand, scratch); costCrestStarted = true; }
+        if (costCrestScan.step (view, report.crest, scratch,
+                                std::uint32_t (std::min<long long> (budget, 1024))))
+        {
+            *bands[costBand++] = costCrestScan.answer;
+            costCrestStarted = false;
+            if (costBand == 5) stage = Stage::CostPublish;
+        }
+        return StepResult::More;
+    }
+    if (stage == Stage::CostPublish)
+    {
+        report.cost = costResult;
+        stage = Stage::Done;
+        return StepResult::Done;
     }
     return StepResult::Failed;
 }

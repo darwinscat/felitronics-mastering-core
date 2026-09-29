@@ -64,6 +64,29 @@ text::Fact MasterReportText::crest (const MasterCrest& crest) noexcept
                                                 : text::FactId::MasterCrestDelivered,
         text::Arg::value (double (crest.sampleRateHz), text::Unit::Hz, 0));
 }
+text::Fact MasterReportText::shape (const MasterCost& cost) noexcept
+{
+    return cost.shapeP95Lu.value
+        ? text::Fact::of (text::FactId::MasterCostShape,
+            text::Arg::value (*cost.shapeP95Lu.value, text::Unit::Lu, 1))
+        : text::Fact::of (text::FactId::MasterCostUnavailable);
+}
+text::Fact MasterReportText::impact (const MasterCost& cost) noexcept
+{
+    return cost.crestFullDb.value
+        ? text::Fact::of (text::FactId::MasterCostCrest,
+            text::Arg::value (*cost.crestFullDb.value, text::Unit::Db, 1))
+        : text::Fact::of (text::FactId::MasterCostUnavailable);
+}
+text::Fact MasterReportText::pumping (const MasterCost& cost) noexcept
+{
+    return cost.pumpingRmsDb.value
+        ? text::Fact::of (text::FactId::MasterCostPumping,
+            text::Arg::value (*cost.pumpingRmsDb.value, text::Unit::Db, 1))
+        : text::Fact::of (text::FactId::MasterCostUnavailable);
+}
+text::Fact MasterReportText::tonal() noexcept
+{ return text::Fact::of (text::FactId::MasterCostK2Deferred); }
 LandingPlan LandingOps::plan (const config::Engine& engine, bool sourceLoudnessValid,
                          double sourceLufs, double targetLufs, double targetTruePeakDbTp,
                          double sourceRate, double deliveryRate) noexcept

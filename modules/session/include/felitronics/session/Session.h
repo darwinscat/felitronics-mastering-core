@@ -216,6 +216,10 @@ public:
     [[nodiscard]] JobId needlesJob() const noexcept;
     [[nodiscard]] QueryDemand queryStorage (const MeasurementQuery& request) const noexcept;
     [[nodiscard]] QueryResult query (const MeasurementQuery& request) noexcept;
+    // Explicit deep zoom: the caller supplies at most 65536 delivered PCM frames in planar
+    // order, exactly covering request [fromFrame,toFrame). No master PCM is retained or rendered.
+    [[nodiscard]] QueryDemand masterWaveformChunkStorage (const MeasurementQuery& request, const Pcm& chunk) const noexcept;
+    [[nodiscard]] QueryResult masterWaveformChunk (const MeasurementQuery& request, const Pcm& chunk) noexcept;
     [[nodiscard]] Answer rejectProtocol (CommandId id) noexcept;
 
     // Export is an owned exact byte allocation, without a terminator. Only placed projects are exportable.

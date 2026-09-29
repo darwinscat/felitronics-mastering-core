@@ -7,7 +7,7 @@ namespace felitronics::session
 {
 inline constexpr std::uint32_t kQueryColumns = 2048, kWaveformStride = 13;
 inline constexpr std::uint64_t kQueryValues = std::uint64_t (kQueryColumns) * 4u * kWaveformStride;
-enum class QueryKind : std::uint8_t { Waveform, LowSpectrum, LowSide, Momentary, ShortTerm, Clipping, Stereo, LimiterGr, PeakClipGr };
+enum class QueryKind : std::uint8_t { Waveform, LowSpectrum, LowSide, Momentary, ShortTerm, Clipping, Stereo, LimiterGr, PeakClipGr, MasterWaveform };
 enum class QueryStatus : std::uint8_t { Ready, Pending, Unavailable, Empty, InvalidRange, ColumnLimit, StaleSource, Memory, Contract, Cancelled, FloatingPointEnvironment };
 // Frame ranges are integer [fromFrame,toFrame). Invalid/out-of-source ranges are refused,
 // never clamped. Waveform emits min(columns,range length) buckets with integer floor boundaries.

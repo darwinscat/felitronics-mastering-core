@@ -70,7 +70,9 @@ const SURFACE = {
         '_fc_session_load_measured_bytes', '_fc_session_load_measured',
         '_fc_session_attach_audio_bytes', '_fc_session_attach_audio',
         '_fc_session_master_bytes', '_fc_session_master', '_fc_session_master_audio_size',
-        '_fc_session_master_audio_copy', '_fc_session_master_audio_release', '_fc_session_master_audio_view'],
+        '_fc_session_master_audio_copy', '_fc_session_master_audio_release', '_fc_session_master_audio_view',
+        '_fc_session_master_waveform_chunk_bytes', '_fc_session_master_waveform_chunk_size',
+        '_fc_session_master_waveform_chunk_copy'],
 };
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
@@ -445,6 +447,30 @@ ok(independent !== M.HEAPU32.buffer && independent.byteLength === masterSamples 
 ok(M._fc_session_master_audio_release(masterSession, masterToken) === STATUS.OK
     && M._fc_session_master_audio_release(masterSession, masterToken) === STATUS.ERR_STALE,
    'release frees the session PCM once');
+const waveRequestBytes = new TextEncoder().encode(JSON.stringify({kind:9, audioId:sourceId.toString(),
+    fromFrame:'100', toFrame:'200', columns:10, requestId:'3', crossoverHz:120, fromHz:20,
+    toHz:250, masterId:tokenValue.master}));
+const waveRequest = M._malloc(waveRequestBytes.length);
+heapBytes().set(waveRequestBytes, waveRequest);
+const waveSizes = M._malloc(12), waveDemand = M._malloc(32);
+M.HEAPU32[waveSizes >>> 2] = 12; M.HEAPU32[waveDemand >>> 2] = 32;
+ok(M._fc_session_master_waveform_chunk_bytes(masterSession, waveRequest, waveRequestBytes.length,
+    2, 100, 48000, waveDemand) === STATUS.OK
+    && M._fc_session_master_waveform_chunk_size(masterSession, waveRequest, waveRequestBytes.length,
+        2, 100, 48000, waveSizes) === STATUS.OK, 'external master waveform chunk is priced before PCM reads');
+const chunkLeft = M._malloc(400), chunkRight = M._malloc(400), chunkTable = M._malloc(8);
+const transferred = new Float32Array(independent);
+new Float32Array(M.HEAPU32.buffer, chunkLeft, 100).set(transferred.subarray(100, 200));
+new Float32Array(M.HEAPU32.buffer, chunkRight, 100).set(transferred.subarray(masterFrames + 100, masterFrames + 200));
+M.HEAPU32[chunkTable >>> 2] = chunkLeft; M.HEAPU32[(chunkTable >>> 2) + 1] = chunkRight;
+const waveJsonCapacity = M.HEAPU32[(waveSizes >>> 2) + 1], waveRowCapacity = M.HEAPU32[(waveSizes >>> 2) + 2];
+const waveJson = M._malloc(waveJsonCapacity), waveRows = M._malloc(waveRowCapacity), waveWritten = M._malloc(12);
+M.HEAPU32[waveWritten >>> 2] = 12;
+ok(M._fc_session_master_waveform_chunk_copy(masterSession, waveRequest, waveRequestBytes.length,
+    chunkTable, 2, 100, 48000, waveJson, waveJsonCapacity, waveRows, waveRowCapacity, waveWritten) === STATUS.OK
+    && new Float64Array(M.HEAPU32.buffer, waveRows, waveRowCapacity / 8)[0] === 100
+    && new Float64Array(M.HEAPU32.buffer, waveRows, waveRowCapacity / 8)[1] === 110,
+   'wasm deep zoom reads an explicit PCM chunk after master release');
 let audioHash = 0xcbf29ce484222325n;
 for (const bits of new Uint32Array(independent)) for (let shift = 0; shift < 32; shift += 8)
     audioHash = ((audioHash ^ BigInt((bits >>> shift) & 255)) * 0x100000001b3n) & 0xffffffffffffffffn;

@@ -112,6 +112,11 @@ enum class FactId : std::uint16_t
     MasterReportUnavailable = 21,
     MasterCrestDelivered = 22,
     MasterLandingAbove = 23,
+    MasterCostShape = 24,
+    MasterCostCrest = 25,
+    MasterCostPumping = 26,
+    MasterCostK2Deferred = 27,
+    MasterCostUnavailable = 28,
 
     // A command's rejection, by its code — what was refused and why. The three a field refuses name it: {field}.
     RejectedFloatingPointEnvironment = 101,

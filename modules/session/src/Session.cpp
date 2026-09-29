@@ -20,6 +20,7 @@
 #include "Needles.h"
 #include "QueryState.h"
 #include "MasterJob.h"
+#include "Cost.h"
 #include "BuildContract.h"
 
 #include <cstdint>
@@ -84,6 +85,10 @@ double Session::liveBytes() const noexcept
                   + std::uint64_t (2u * masterRows_[i].traceCapacity) * sizeof (LandingTraceBucket);
         if (masterRows_[i].crest)
             rows += std::uint64_t (masterRows_[i].crestCapacity) * 15u * sizeof (double);
+        if (masterRows_[i].costSeries) rows += std::uint64_t (masterRows_[i].costCapacity) * sizeof (double);
+        if (masterRows_[i].sections) rows += std::uint64_t (masterRows_[i].costCapacity) * sizeof (MasterSection);
+        if (masterRows_[i].costScratch) rows += std::uint64_t (masterRows_[i].costScratchCapacity) * sizeof (double);
+        if (masterRows_[i].waveform) rows += std::uint64_t (masterRows_[i].waveformCapacity) * sizeof (MasterWaveformBucket);
     }
     return double (createBytes (capabilities_) + (samples_ ? source_.frames * source_.channels * sizeof (float) : 0)
                    + source_.name.size() + masterRoom_ * (sizeof (Kept) + sizeof (detail::MasterRows))
@@ -126,7 +131,9 @@ void Session::stepMasterCrestJoin() noexcept
     { crestJoin_ = false; crestJoinIndex_ = 0; return; }
     const auto index = crestJoinIndex_;
     auto& master = masters_[index];
-    if (! master.report || master.report->crest.status != MeasurementStatus::Pending)
+    if (! master.report || (master.report->crest.status != MeasurementStatus::Pending
+        && ! (master.report->crest.status == MeasurementStatus::Ready && master.report->cost
+            && masterRows_[index].crestCostBand < 5)))
     { ++crestJoinIndex_; return; }
     auto& c = master.report->crest;
     const auto publish = [&]() noexcept
@@ -137,6 +144,11 @@ void Session::stepMasterCrestJoin() noexcept
         event.kind = EventKind::Fact;
         (void) event.payload.fact.assign (MasterReportText::crest (c));
         emit (event);
+        if (c.status == MeasurementStatus::Ready && master.report->cost)
+        {
+            (void) event.payload.fact.assign (MasterReportText::impact (*master.report->cost));
+            emit (event);
+        }
         ++crestJoinIndex_;
     };
     const auto& result = measurementResults_[std::size_t (Analyzer::Crest)];
@@ -159,8 +171,22 @@ void Session::stepMasterCrestJoin() noexcept
         c.sourceMask = { mask, end * 5u };
         c.status = MeasurementStatus::Ready;
         c.reason = MeasurementReason::None;
-        publish();
     }
+    if (c.status == MeasurementStatus::Ready && master.report->cost && rows.crestCostBand < 5)
+    {
+        MasterCostValue* bands[] { &master.report->cost->crestLowDb, &master.report->cost->crestLowMidDb,
+            &master.report->cost->crestHighMidDb, &master.report->cost->crestHighDb,
+            &master.report->cost->crestFullDb };
+        const std::span<double> scratch { rows.costScratch.get(), rows.costScratchCapacity };
+        if (! rows.crestCostStarted)
+        { rows.crestCostScan.start (source, c, rows.crestCostBand, scratch); rows.crestCostStarted = true; }
+        if (rows.crestCostScan.step (source, c, scratch, 1))
+        {
+            *bands[rows.crestCostBand++] = rows.crestCostScan.answer;
+            rows.crestCostStarted = false;
+        }
+    }
+    if (c.status == MeasurementStatus::Ready && (! master.report->cost || rows.crestCostBand == 5)) publish();
 }
 MeasurementStorage Session::measurementStorage (const Pcm& pcm) const noexcept
 {

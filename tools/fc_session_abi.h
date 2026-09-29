@@ -330,6 +330,22 @@ fc_session_status fc_session_master_audio_release (fc_session session, const fc_
 fc_session_status fc_session_master_audio_view (fc_session session, const fc_session_master_token* token,
                                                 const float** output, uint32_t* samples);
 
+// Explicit master waveform deep zoom. The caller supplies planar delivered PCM for exactly the
+// requested [fromFrame,toFrame), at most 65536 frames. Size calls inspect only its shape;
+// copy reads the supplied chunk and never re-renders or stores it in the session.
+fc_session_status fc_session_master_waveform_chunk_bytes (fc_session session, const char* request,
+                                                          uint32_t request_bytes, uint32_t channels,
+                                                          uint32_t frames, uint32_t rate, fc_session_storage* out);
+fc_session_status fc_session_master_waveform_chunk_size (fc_session session, const char* request,
+                                                         uint32_t request_bytes, uint32_t channels,
+                                                         uint32_t frames, uint32_t rate, fc_session_sizes* out);
+fc_session_status fc_session_master_waveform_chunk_copy (fc_session session, const char* request,
+                                                         uint32_t request_bytes, const float* const* pcm,
+                                                         uint32_t channels, uint32_t frames, uint32_t rate,
+                                                         char* json, uint32_t json_capacity,
+                                                         double* rows, uint32_t row_capacity,
+                                                         fc_session_sizes* written);
+
 #ifdef __cplusplus
 }   // extern "C"
 #endif
