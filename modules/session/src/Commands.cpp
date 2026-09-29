@@ -555,6 +555,13 @@ Answer Session::apply (const Request& request) noexcept
         job_ = ++lastJob_;
         jobRecipe_ = { project_, source_.hash, config::Config::versions().sound,
             detail::MasterJob::fingerprint (plan.ready), plan.deliveryRate, plan.ready.version };
+        rows.crestMasterId = job_;
+        rows.crestSource = jobRecipe_.source;
+        rows.crestSourceKey = measurementKey_;
+        rows.crestReadyHash = jobRecipe_.readyHash;
+        rows.crestSound = jobRecipe_.sound;
+        rows.crestDeliveryRate = jobRecipe_.deliveryRateHz;
+        rows.crestParams = plan.crestParams;
         mastering_ = true;
         masterUnit_ = 0;
         masterSummary_ = {}; masterTraceCursor_ = 0; masterTraceActive_ = false;

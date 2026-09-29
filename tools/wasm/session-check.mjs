@@ -850,6 +850,108 @@ contractRecord.scenarios.unsafe = {source:{pcmSha256:unsafePcmSha256,
     events:masterWire('events', unsafeSession), measurements:unsafeLanding,
     wavSizeStatus:unsafeWavStatus};
 ok(M._fc_session_destroy(unsafeSession) === STATUS.OK, 'unsafe scenario session destroyed');
+ok(create(resultSize) === STATUS.OK, 'late crest scenario session created');
+const lateSession = M.HEAPU32[resultSize >>> 2];
+const lateFrames = 48000 * 4, lateSamples = lateFrames * 2;
+const latePcm = M._malloc(lateSamples * 4), latePointers = M._malloc(8);
+const lateData = new Float32Array(M.HEAPU32.buffer, latePcm, lateSamples);
+for (let i = 0; i < lateFrames; ++i) {
+    lateData[i] = (i * 17 % 251 - 125) / 4096;
+    lateData[lateFrames + i] = ((i * 19 + 7) % 251 - 125) / 4096;
+}
+lateData[lateSamples - 1] -= .15;
+M.HEAPU32[latePointers >>> 2] = latePcm;
+M.HEAPU32[(latePointers >>> 2) + 1] = latePcm + lateFrames * 4;
+const latePcmSha256 = sha256(heapBytes().slice(latePcm, latePcm + lateSamples * 4));
+const lateMetaJson = JSON.stringify({name:'late-crest.wav', fileRate:48000, bitDepth:24, rateKnown:true});
+const [lateMeta, lateMetaBytes] = input(lateMetaJson);
+const lateLoadStatus = M._fc_session_load(lateSession, 1, 0, latePointers, 2, lateFrames, 48000,
+    lateMeta, lateMetaBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize);
+const lateLoadAnswer = lateLoadStatus === STATUS.OK ? reply() : null;
+M._free(lateMeta); M._free(latePointers); M._free(latePcm);
+let lateReady = null;
+for (let i = 0; i < 20000; ++i) {
+    if (i % 16 === 0 && (lateReady = masterSnapshot(lateSession))?.canMaster) break;
+    if (M._fc_session_step(lateSession, 16, resultSize) !== STATUS.OK) break;
+}
+const lateReadyWire = masterWire('snapshot', lateSession);
+const lateSource = BigInt(lateReady?.source?.hash ?? '0');
+const lateRevision = BigInt(lateReady?.revision ?? '0');
+setMaster(masterConfig, 'fc_master_config', 'limiter', 1);
+setMaster(masterConfig, 'fc_master_config', 'deliveryRate', 44100, 'f64');
+setMaster(masterParams, 'fc_master_params', 'inputGainDb', 0, 'f64');
+new DataView(M.HEAPU32.buffer).setInt32(ditherBits, 24, true);
+const lateInputs = masterInputs(2, lateSource, lateRevision);
+const lateStartStatus = M._fc_session_master(lateSession, 2, 0, lo(lateSource), hi(lateSource),
+    lo(lateRevision), hi(lateRevision), masterConfig, masterParams,
+    answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize);
+const lateStartAnswer = lateStartStatus === STATUS.OK ? reply() : null;
+let lateCompleted = null;
+for (let i = 0; i < 40000; ++i) {
+    if ((lateCompleted = masterSnapshot(lateSession))?.pendingMaster?.master) break;
+    if (M._fc_session_step(lateSession, 1, resultSize) !== STATUS.OK) break;
+}
+const lateCompleteWire = masterWire('snapshot', lateSession);
+const lateMasterId = lateCompleted?.pendingMaster?.master ?? 0;
+const lateBefore = lateCompleted?.masters?.find(row => row.id === lateMasterId)?.report;
+const lateLanding = lateCompleted?.masters?.find(row => row.id === lateMasterId)?.landing;
+const lateToken = lateCompleted?.pendingMaster ?? {};
+const lateTokenSource = BigInt(lateToken.source ?? '0'), lateTokenRevision = BigInt(lateToken.revision ?? '0');
+for (const [i, value] of [28, lo(lateTokenSource), hi(lateTokenSource), lo(lateTokenRevision),
+                          hi(lateTokenRevision), lateToken.job ?? 0, lateToken.master ?? 0].entries())
+    M.HEAPU32[(masterToken >>> 2) + i] = value;
+const lateWavSizeStatus = M._fc_session_master_wav_size(lateSession, masterToken, wavSize, wavBits);
+const lateWavBytes = new DataView(M.HEAPU32.buffer).getFloat64(wavSize, true);
+const lateWav = new Uint8Array(lateWavBytes);
+let lateWavCopied = lateWavSizeStatus === STATUS.OK;
+for (let at = 0; at < lateWav.length; at += 997) {
+    const count = Math.min(997, lateWav.length - at);
+    lateWavCopied &&= M._fc_session_master_wav_copy(lateSession, masterToken, at, 0,
+        wavChunk, count, wavWritten) === STATUS.OK && M.HEAPU32[wavWritten >>> 2] === count;
+    lateWav.set(heapBytes().subarray(wavChunk, wavChunk + count), at);
+}
+const lateWavSha256 = sha256(lateWav);
+const lateReleaseStatus = M._fc_session_master_audio_release(lateSession, masterToken);
+const lateReleasedWire = masterWire('snapshot', lateSession);
+const lateHeapBefore = M.HEAPU32.buffer, lateGrowth = [];
+for (let i = 0; i < 12 && M.HEAPU32.buffer === lateHeapBefore; ++i)
+    lateGrowth.push(M._malloc(16 * 1024 * 1024));
+const lateGrew = M.HEAPU32.buffer !== lateHeapBefore;
+let lateSourceEvent = null, lateJoinEvent = null;
+for (let i = 0; i < 20000 && !lateJoinEvent; ++i) {
+    if (M._fc_session_step(lateSession, 1, resultSize) !== STATUS.OK) break;
+    const eventWire = masterWire('events', lateSession);
+    if (!eventWire) break;
+    const events = wireValue(eventWire);
+    if (!lateSourceEvent && events.some(e => e.kind === 'measurement' && e.payload.analyzer === 9
+        && e.payload.status === 1)) lateSourceEvent = eventWire;
+    if (events.some(e => e.kind === 'fact' && e.jobId === lateMasterId
+        && e.payload.FactId === 18)) lateJoinEvent = eventWire;
+}
+const lateJoinedWire = masterWire('snapshot', lateSession);
+const lateJoined = wireValue(lateJoinedWire);
+const lateAfter = lateJoined.masters?.find(row => row.id === lateMasterId)?.report;
+const lateWavAfterSha256 = sha256(lateWav);
+ok(lateLoadAnswer?.kind === 'accepted' && lateReady?.canMaster && lateStartAnswer?.kind === 'accepted'
+    && lateBefore?.crest?.status === 0 && lateReleaseStatus === STATUS.OK && lateGrew
+    && lateSourceEvent && lateJoinEvent && lateAfter?.crest?.status === 1
+    && lateBefore.checkPasses === 1 && lateAfter.checkPasses === 1
+    && lateAfter.crest.sourceRateCheck && lateLanding?.passes === lateJoined.masters[0].landing.passes
+    && lateBefore.achievedLufs === lateAfter.achievedLufs
+    && lateBefore.truePeakDbTp === lateAfter.truePeakDbTp && lateWavCopied
+    && lateWavSha256 === lateWavAfterSha256,
+   'source-rate crest joins its master after WAV release and memory growth without changing delivery');
+contractRecord.scenarios.lateCrest = {source:{pcmSha256:latePcmSha256, metadataJson:lateMetaJson,
+    metadataSha256:sha256(encoder.encode(lateMetaJson)),
+    generator:{frames:lateFrames, channels:2, rate:48000, lastRightOffset:-.15}},
+    inputs:lateInputs, loadStatus:lateLoadStatus, loadAnswer:lateLoadAnswer, ready:lateReadyWire,
+    startStatus:lateStartStatus, startAnswer:lateStartAnswer, complete:lateCompleteWire,
+    export:{sizeStatus:lateWavSizeStatus, bytes:lateWavBytes, sha256:lateWavSha256,
+        postJoinSha256:lateWavAfterSha256},
+    release:{status:lateReleaseStatus, snapshot:lateReleasedWire, heapGrew:lateGrew},
+    sourceEvent:lateSourceEvent, joinEvent:lateJoinEvent, joined:lateJoinedWire};
+for (const p of lateGrowth) M._free(p);
+ok(M._fc_session_destroy(lateSession) === STATUS.OK, 'late crest scenario session destroyed');
 console.log(`wav-record=${JSON.stringify(contractRecord)}`);
 for (const p of growth) M._free(p);
 for (const p of [masterConfig, masterParams, masterDemand, masterToken, audioBytes, audioFrames, audioChannels, audioRate,

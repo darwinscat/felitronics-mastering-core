@@ -35,7 +35,7 @@ struct Case
 };
 bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool processed,
           bool waitForCrest = true, bool demanding = false, unsigned seconds = 4,
-          unsigned silentSeconds = 0)
+          unsigned silentSeconds = 0, const char* target = nullptr)
 {
     c.rate = sourceRate; c.delivery = deliveryRate;
     const std::size_t frames = std::size_t (sourceRate) * seconds;
@@ -61,6 +61,8 @@ bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool pr
         || (waitForCrest && s.snapshot().view().measurements[std::size_t (session::Analyzer::Crest)].status
             != session::MeasurementStatus::Ready)) return false;
     if (demanding && s.apply (session::command::EditTarget { 9, { -5.0, -6.0 } }).rejection
+        != session::Rejection::None) return false;
+    if (target && s.apply (session::command::SetTarget { 8, target }).rejection
         != session::Rejection::None) return false;
     c.request = session::command::Master { 2 };
     c.request.ready.version = 1;
@@ -373,6 +375,15 @@ int main()
         grid = altered; grid.parameters.bandEdgeHz[1] += 1.0;
         ok (! session::MasterCrestGrid::compatible (crest, grid),
             "crest pairing checks all band corners");
+        grid = altered; grid.parameters.programmeFloorDb += 1.0;
+        ok (! session::MasterCrestGrid::compatible (crest, grid, altered.parameters),
+            "late crest pairing checks the source programme gate");
+        grid = altered; grid.parameters.bandShareFloorDb += 1.0;
+        ok (! session::MasterCrestGrid::compatible (crest, grid, altered.parameters),
+            "late crest pairing checks the source band gate");
+        grid = altered; grid.parameters.hopMs += 0.01;
+        ok (! session::MasterCrestGrid::compatible (crest, grid, altered.parameters),
+            "late crest pairing checks the configured hop duration");
         grid = altered; grid.droppedHops = 1;
         ok (! session::MasterCrestGrid::compatible (crest, grid),
             "crest pairing refuses incomplete source rows");
@@ -434,6 +445,14 @@ int main()
     {
         ok (lateReady.session->masters()[0].report->crest.status == session::MeasurementStatus::Pending,
             "the unfinished source comparison stays pending");
+        const auto achievedBefore = *lateReady.session->masters()[0].report->achievedLufs;
+        const auto peakBefore = *lateReady.session->masters()[0].report->truePeakDbTp;
+        const auto passBefore = lateReady.session->masters()[0].landing->passes;
+        const auto released = lateReady.session->releaseMaster (lateReady.token);
+        ok (released == session::MasterTransferStatus::Ok
+            && lateReady.session->pendingMaster().master == 0
+            && lateReady.session->masterAudioShape (lateReady.token).frames == 0,
+            "late crest can join after the delivered PCM has been released");
         bool crestPublished = false;
         for (unsigned i = 0; i < 200000 && ! crestPublished; ++i)
         {
@@ -462,9 +481,28 @@ int main()
                     joinedEvent = true;
         }
         ok (lateReady.session->masters()[0].report->crest.status == session::MeasurementStatus::Ready
-            && referenceCrest (lateReady) && lateReady.session->pendingMaster().master != 0
+            && referenceCrest (lateReady) && lateReady.session->pendingMaster().master == 0
             && lateReady.session->revision() > beforeJoin && ! joinAllocated && ! joinOverran && joinedEvent,
-            "late source crest emits a master-keyed update in bounded row batches and keeps the PCM");
+            "late source crest emits a master-keyed update in bounded row batches after PCM release");
+        ok (std::bit_cast<std::uint64_t> (*lateReady.session->masters()[0].report->achievedLufs)
+                == std::bit_cast<std::uint64_t> (achievedBefore)
+            && std::bit_cast<std::uint64_t> (*lateReady.session->masters()[0].report->truePeakDbTp)
+                == std::bit_cast<std::uint64_t> (peakBefore)
+            && lateReady.session->masters()[0].landing->passes == passBefore,
+            "the late join leaves delivered LUFS, true peak and landing passes unchanged");
+        std::uint64_t lateDigest = 0xcbf29ce484222325ull;
+        const auto addLate = [&] (std::uint64_t value) noexcept
+        {
+            for (unsigned byte = 0; byte < 8; ++byte)
+                lateDigest = (lateDigest ^ std::uint8_t (value >> (byte * 8u))) * 0x100000001b3ull;
+        };
+        const auto& settled = lateReady.session->masters()[0].report->crest;
+        addLate (std::uint64_t (settled.status));
+        addLate (settled.sampleRateHz);
+        addLate (settled.blocks);
+        for (const double value : settled.rows) addLate (std::bit_cast<std::uint64_t> (value));
+        for (const double value : settled.sourceMask) addLate (std::bit_cast<std::uint64_t> (value));
+        std::printf ("master-late-crest-digest=%016llx\n", (unsigned long long) lateDigest);
     }
     Case compact;
     ok (run (compact, 48000, 48000, false, false),
@@ -509,6 +547,51 @@ int main()
         "SRC up meters delivered PCM and measures one source-rate check against whole renderer");
     ok (run (down, 48000, 44100, true) && referenceCrest (down) && directMeter (down),
         "SRC down meters delivered PCM and measures one source-rate check against whole renderer");
+    Case cd;
+    ok (run (cd, 48000, 44100, true, true, false, 4, 0, "cdDynamic")
+        && referenceCrest (cd) && cd.session->masters()[0].report->checkPasses == 1,
+        "CD rate conversion retains one source-rate crest pass outside the landing budget");
+    Case differentTargets;
+    ok (run (differentTargets, 44100, 48000, false),
+        "a rate-changed non-CD target completes its source-rate check");
+    if (differentTargets.session && differentTargets.session->masters().size() == 1)
+    {
+        auto& s = *differentTargets.session;
+        const auto first = s.masters()[0].id;
+        const auto firstRateCheck = s.masters()[0].report->checkPasses;
+        const auto firstPasses = s.masters()[0].landing->passes;
+        const auto released = s.releaseMaster (differentTargets.token);
+        const auto changed = s.apply (session::command::SetTarget { 80, "spotify" });
+        auto request = differentTargets.request;
+        request.id = 81; request.source = s.source().hash; request.revision = s.revision();
+        const auto next = s.apply (request);
+        for (unsigned i = 0; i < 400000 && s.job() != 0; ++i) (void) s.step (73);
+        ok (released == session::MasterTransferStatus::Ok && changed.rejection == session::Rejection::None
+            && next.rejection == session::Rejection::None && s.masters().size() == 2
+            && s.masters()[0].id == first && s.masters()[1].id == next.job
+            && s.masters()[0].recipe.source == s.masters()[1].recipe.source
+            && s.masters()[0].recipe.project.target != s.masters()[1].recipe.project.target
+            && firstRateCheck == 1 && s.masters()[0].report->checkPasses == 1
+            && s.masters()[1].report->checkPasses == 1
+            && s.masters()[0].landing->passes == firstPasses
+            && s.masters()[1].report->crest.sourceRateCheck,
+            "two different target recipes each retain exactly one source-rate check outside landing");
+        differentTargets.left[0] += .01f;
+        const float* newPlanes[2] { differentTargets.left.data(), differentTargets.right.data() };
+        const auto replacement = s.apply (session::command::Load { 82,
+            { newPlanes, 2, differentTargets.left.size(), 44100 },
+            { "replacement.wav", 44100, true, 24 } });
+        bool staleFact = false;
+        for (unsigned i = 0; i < 200000 && s.measurementJob() != 0; ++i)
+        {
+            (void) s.step (73);
+            for (const auto& event : s.events())
+                if (event.jobId == first || event.jobId == next.job) staleFact = true;
+        }
+        ok (replacement.rejection == session::Rejection::None && s.masters().empty()
+            && s.source().hash != differentTargets.request.source && ! staleFact,
+            "replacing the source removes both recipes and cannot publish a stale crest join");
+    }
     Case silentPrefix;
     ok (run (silentPrefix, 48000, 48000, true, true, false, 8, 3),
         "a master with a long digital-silence prefix completes");

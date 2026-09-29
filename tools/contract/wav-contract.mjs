@@ -46,7 +46,7 @@ try { contract = JSON.parse(contractBytes); }
 catch { throw new Error(`incomplete wav-record response (${contractBytes.length} bytes)`); }
 assert.equal(contract.format, 2);
 const scenarios = contract.scenarios;
-for (const name of ['safe', 'formats', 'refusal', 'cancel', 'miss', 'unavailable', 'unsafe'])
+for (const name of ['safe', 'formats', 'refusal', 'cancel', 'miss', 'unavailable', 'unsafe', 'lateCrest'])
     assert.ok(scenarios[name], `${name} has actual contract responses`);
 const accepts = types(readFileSync(resolve(wasmModule.replace(/fcsession\.node\.js$/, 'snapshot.d.ts')), 'utf8'));
 const checkWire = wire => {
@@ -83,7 +83,7 @@ const checkInputs = inputs => {
     assert.equal(sha(Buffer.from(inputs.paramsBase64, 'base64')), inputs.paramsSha256);
     assert.equal(sha(Buffer.from(JSON.stringify(inputs.call))), inputs.callSha256);
 };
-for (const name of ['safe', 'refusal', 'cancel', 'miss', 'unavailable', 'unsafe']) checkInputs(scenarios[name].inputs);
+for (const name of ['safe', 'refusal', 'cancel', 'miss', 'unavailable', 'unsafe', 'lateCrest']) checkInputs(scenarios[name].inputs);
 for (const item of scenarios.formats) checkInputs(item.inputs);
 assert.deepEqual(scenarios.formats.map(x => x.bits), [16, 24, 32]);
 assert.equal(scenarios.refusal.answer.kind, 'rejected');
@@ -121,6 +121,41 @@ for (let channel = 0; channel < unsafe.generator.channels; ++channel)
             (channel * unsafe.generator.frames + i) * 4);
 assert.equal(unsafe.pcmSha256, sha(unsafePcm));
 assert.equal(unsafe.metadataSha256, sha(Buffer.from(unsafe.metadataJson)));
+const late = scenarios.lateCrest, lateSource = late.source;
+const latePcm = Buffer.alloc(lateSource.generator.frames * lateSource.generator.channels * 4);
+for (let channel = 0; channel < lateSource.generator.channels; ++channel)
+    for (let i = 0; i < lateSource.generator.frames; ++i) {
+        let value = Math.fround((((i * (channel ? 19 : 17) + (channel ? 7 : 0)) % 251) - 125) / 4096);
+        if (channel === 1 && i + 1 === lateSource.generator.frames)
+            value = Math.fround(value + lateSource.generator.lastRightOffset);
+        latePcm.writeFloatLE(value, (channel * lateSource.generator.frames + i) * 4);
+    }
+assert.equal(lateSource.pcmSha256, sha(latePcm));
+assert.equal(lateSource.metadataSha256, sha(Buffer.from(lateSource.metadataJson)));
+const recordedJson = wire => JSON.parse(gunzipSync(Buffer.from(wire.jsonGzipBase64, 'base64')));
+const lateComplete = recordedJson(late.complete), lateReleased = recordedJson(late.release.snapshot);
+const lateJoined = recordedJson(late.joined);
+const lateId = lateComplete.pendingMaster.master;
+const before = lateComplete.masters.find(x => x.id === lateId);
+const after = lateJoined.masters.find(x => x.id === lateId);
+assert.ok(before && after && before.report.crest.status === 0 && after.report.crest.status === 1);
+assert.equal(lateReleased.pendingMaster.master, 0);
+assert.equal(lateJoined.pendingMaster.master, 0);
+assert.equal(before.recipe.source, lateJoined.source.hash);
+assert.equal(after.recipe.readyHash, before.recipe.readyHash);
+assert.equal(late.release.heapGrew, true);
+assert.equal(before.report.checkPasses, 1);
+assert.equal(after.report.checkPasses, 1);
+assert.equal(after.report.crest.sourceRateCheck, true);
+assert.equal(before.landing.passes, after.landing.passes);
+assert.equal(before.report.achievedLufs, after.report.achievedLufs);
+assert.equal(before.report.truePeakDbTp, after.report.truePeakDbTp);
+assert.ok(recordedJson(late.sourceEvent).some(e => e.kind === 'measurement' && e.payload.analyzer === 9));
+assert.ok(recordedJson(late.joinEvent).some(e => e.kind === 'fact' && e.jobId === lateId
+    && e.payload.FactId === 18));
+assert.equal(late.export.sizeStatus, 0);
+assert.equal(late.export.sha256, late.export.postJoinSha256);
+assert.equal(late.release.status, 0);
 const header = Buffer.from(line(native, 'session-master-wav-header'), 'hex');
 assert.equal(header.length, 44);
 assert.equal(header.toString('ascii', 0, 4), 'RIFF');

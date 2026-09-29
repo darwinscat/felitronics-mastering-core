@@ -154,6 +154,7 @@ void Session::stepMasterCrestJoin() noexcept
         ++crestJoinIndex_;
     };
     const auto& result = measurementResults_[std::size_t (Analyzer::Crest)];
+    auto& rows = masterRows_[index];
     const auto unavailable = [&] (MeasurementReason reason) noexcept
     {
         c.status = MeasurementStatus::Unavailable; c.reason = reason;
@@ -166,12 +167,17 @@ void Session::stepMasterCrestJoin() noexcept
         }
         publish();
     };
+    if (master.id != rows.crestMasterId || master.recipe.source != rows.crestSource
+        || rows.crestSource != source_.hash || rows.crestSourceKey != measurementKey_
+        || result.key != rows.crestSourceKey || master.recipe.readyHash != rows.crestReadyHash
+        || master.recipe.sound != rows.crestSound
+        || master.recipe.deliveryRateHz != rows.crestDeliveryRate)
+    { unavailable (MeasurementReason::Unsupported); return; }
     if (result.status != MeasurementStatus::Ready)
     { unavailable (crestJoinReason_); return; }
     const auto source = MeasurementCrest::view (result);
-    if (! MasterCrestGrid::compatible (c, source))
+    if (! MasterCrestGrid::compatible (c, source, rows.crestParams))
     { unavailable (MeasurementReason::Unsupported); return; }
-    auto& rows = masterRows_[index];
     if (! rows.crest || rows.crestCapacity < c.blocks)
     { unavailable (MeasurementReason::Memory); return; }
     const auto end = std::min<std::size_t> (std::size_t (c.blocks), rows.crestMaskCopied + 16u);
