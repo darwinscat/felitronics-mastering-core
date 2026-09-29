@@ -865,8 +865,9 @@ including wasm32, runs its own probe; codec field/type lines are frozen beside t
 frozen line to remain and permits additions. Its control deletes and changes each line and requires rejection.
 CI runs the gate and control. The Windows Debug selection includes the session ABI suites.
 Every `fc_session_*` declaration is frozen whatever it returns: one the generator cannot read stops it. Two lines are
-floors rather than values — a boundary struct's size and `FC_SESSION_ABI_VERSION`, which moves up by one with each
-addition after the first release (the header's VERSION HISTORY); a lower number is a change. The wire's
+floors rather than values — a boundary struct's size and `FC_SESSION_ABI_VERSION`: after the first release, each batch
+of additions that lands together in one release moves it up by one and adds one row to the header's VERSION HISTORY; a
+lower number is a change. The generated `snapshot.d.ts` and `snapshot.mjs` state the version read from the header. The wire's
 `SessionStatus` union is read from `fc_session_status` by both generators, and a wire record that mirrors a C struct
 (`SessionCapabilities`) must carry each of its fields. The manifest itself only grows: on a pull request CI compares it
 with the base branch's (`tools/session-abi-append-only.mjs`), and a removed or edited line is red.
@@ -1047,8 +1048,10 @@ Preparation reserves allocator overhead before each instrument starts and retain
 or rows are freed. A capacity reduction between load and preparation can therefore refuse before any allocation,
 including MSVC Debug vector padding. A refusal is that instrument's outcome, as in the source phase: its result is
 `Unavailable` for `Memory`, one `Error{Memory, Continue}` names the demand, and the job goes on to the next
-preparation — capacity restored later does not retry it, and a capacity never restored still ends the job. Without the
-meter or the report the loudness result is `Unavailable` for `Memory`, so the source stays unmeasured. Duration-sized loudness and report stores initialize observations as written;
+preparation — capacity restored later does not retry it, and a capacity never restored still ends the job. The
+report's integrated loudness and true peak alone decide the mandatory readings: without the report the loudness result
+is `Unavailable` for `Memory` and the source stays unmeasured; without the meter only its rows are missing — the result
+is `Ready`, its row arrays and the result itself incomplete, with one `measurementCapacity` fact. Duration-sized loudness and report stores initialize observations as written;
 preparation resets counts and fixed rings without scanning those stores. `StreamingLoudnessMeter` preserves the
 deterministic core v0.55 kernel and storage geometry with this offline ownership policy; direct-kernel comparisons
 cover block energies, readings, damaged input, channel changes and resets on native and wasm.

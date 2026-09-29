@@ -26,8 +26,9 @@
 // on every tier, including wasm32; its mutation control must fail on a changed or missing line.
 //
 // FC_SESSION_ABI_VERSION IS A FLOOR, as FC_MASTER_ABI_VERSION is: after the first release that carries this surface,
-// every addition to it — an entry point, a field, a value — moves the number up by one and adds a row below, so a
-// page's "module version >= page version" gate is its protection against calling an export the module lacks. The
+// each batch of additions that lands together in one release — entry points, fields, values — moves the number up by
+// one and adds one row below, so a page's "module version >= page version" gate is its protection against calling an
+// export the module lacks. The generated snapshot.d.ts and snapshot.mjs state the number read from this line. The
 // manifest's `define FC_SESSION_ABI_VERSION=1` is therefore checked as "at least 1", like a boundary struct's size;
 // a lower number is a change. The manifest itself only grows: CI refuses a pull request that removes or edits a line.
 //

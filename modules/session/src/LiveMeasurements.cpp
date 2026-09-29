@@ -204,24 +204,26 @@ void Session::stepMeasurements() noexcept
             number (live, 0, "momentaryWindowFrames", -1, double (4 * live.hop));
             number (live, 0, "shortTermWindowFrames", -1, double (30 * live.hop));
         }
-        for (auto& a : live.arrays[0]) a.complete = true;
-        auto& r = measurementResults_[0]; r.total = r.stored = live.rows; r.complete = true;
-        // A meter refused for memory stays refused; a report refused for memory is why its readings are missing.
-        const bool refused = r.status == MeasurementStatus::Unavailable && r.reason == MeasurementReason::Memory;
+        auto& r = measurementResults_[0];
+        // Two instruments feed this result. The meter's rows: refused for memory at its preparation (stage 0 marked the
+        // result so), they are missing and the result is incomplete. The report's integrated loudness and true peak:
+        // they alone decide whether the mandatory readings are usable — a missing row series does not unmake them.
+        const bool rowsRefused = r.status == MeasurementStatus::Unavailable && r.reason == MeasurementReason::Memory;
+        for (auto& a : live.arrays[0]) a.complete = ! rowsRefused;
+        r.total = r.stored = live.rows; r.complete = ! rowsRefused;
         const bool noReport = ! work.programme && measurementResults_[2].reason == MeasurementReason::Memory;
-        const bool usable = ! refused && live.numberCount[0] >= 2 && live.numbers[0][0].value && live.numbers[0][1].value;
-        if (! refused)
-        {
-            r.status = usable ? MeasurementStatus::Ready : MeasurementStatus::Unavailable;
-            r.reason = usable ? MeasurementReason::None : live.numberCount[0] ? live.numbers[0][0].reason
-                     : noReport ? MeasurementReason::Memory : MeasurementReason::Unsupported;
-            if (! usable && r.reason == MeasurementReason::None) r.reason = live.numbers[0][1].reason;
-        }
+        const bool usable = live.numberCount[0] >= 2 && live.numbers[0][0].value && live.numbers[0][1].value;
+        r.status = usable ? MeasurementStatus::Ready : MeasurementStatus::Unavailable;
+        r.reason = usable ? MeasurementReason::None : live.numberCount[0] ? live.numbers[0][0].reason
+                 : noReport ? MeasurementReason::Memory : MeasurementReason::Unsupported;
+        if (! usable && r.reason == MeasurementReason::None) r.reason = live.numbers[0][1].reason;
         publish (0); work.release (Analyzer::Loudness); ++live.stage;
-        if (! usable)
+        if (! usable || ! r.complete)
         {
+            // Unusable: why. Usable without its rows: incomplete for storage, as a capped clip list says.
             event.kind = EventKind::Fact;
-            (void) event.payload.fact.assign (text::Fact::of (MeasurementText::fact (r.reason))); emit (event);
+            (void) event.payload.fact.assign (text::Fact::of (MeasurementText::fact (usable ? MeasurementReason::Capacity : r.reason)));
+            emit (event);
         }
     }
     else if (live.stage == 7)
