@@ -1,0 +1,11 @@
+# Zero ceiling refuses creation before any session or work exists.
+create refused 0
+create main 67108864
+capacity 0 0
+command {"kind":"setManual","commandId":"1","on":true}
+snapshot
+capacity 67108864 67108864
+load 2 mono
+step 5 work units
+step 5 work units
+snapshot

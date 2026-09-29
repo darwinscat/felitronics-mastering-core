@@ -794,12 +794,8 @@ parity is a separate contract suite.
 `fcore_session version` prints the two releases and the ABI version; `fcore_session config targets|engine` prints a
 document of the embedded config through felitronics-toml's canonical writer (its numbers, without the comments), and
 `fcore_session config version|sound-version` its versions; `fcore_session table` prints who may do what, when — the
-tables of `Commands.h`, as Markdown, which ctest holds to the block of this document; `fcore_session run <script>` reads
-a command script (`-` is stdin) into a fresh session and prints `done <commands>`. A script carries no command: one with
-none in it — empty, or comments and blank lines — answers `done 0`; a script with a command in it, and a session that
-refuses to be created, are refused with exit status 2 and nothing on stdout. It links the library as C++, the way a
-desktop application does.
-
+tables of `Commands.h`, as Markdown, which ctest holds to the block of this document. The CLI links the library as
+C++, the way a desktop application does.
 
 Knob travel and step describe the shell's slider. Commands and project import accept the domains below, including
 values between steps and beyond travel. An empty edit or revert is accepted with unchanged revision. Device edits
@@ -834,3 +830,101 @@ C load frames are uint32 because the wasm heap is limited to 2 GiB; native C++ P
 little-endian IEEE-754 f64, with unsupported byte-order builds refused at compile time. Executed encoder fixtures and
 compiled layout facts freeze every event kind, snapshots, answers, row order, offsets, strides and C signatures. Local
 source controls mutate each class of fact and require comparison to fail, while append-only additions pass.
+
+### Contract scenarios: one script, two consumers
+
+`fcore_session run <script>` reads the entire script before executing it (`-` reads stdin). Empty scripts and comments
+still answer `done 0`. Syntax errors return 2 with a line number and no stdout. Runtime harness errors return 2 and
+may follow an emitted prefix; a domain refusal is a successful command exchange, recorded through the codec.
+`fcore_session parse <script|->` prints instructions without creating a session.
+
+The line grammar lives in `tools/contract/grammar.json`. It generates the native parser's rules and is read directly
+by the Node parser. `grammar-cases.json` holds both parsers to identical instructions and identical refusals. Spaces
+inside commands are literal; leading/trailing ASCII whitespace is ignored. `#` starts a comment, including inside
+JSON: encode a literal hash as `\u0023`. Names match `[a-z][a-z0-9_-]*`; command/job IDs and budgets have at most nine
+decimal digits, capacity byte counts ten. Codec JSON commands retain the ABI's full string command IDs.
+
+```text
+# Fixtures are ../fixtures/<name>.pcm relative to the script.
+create main 67108864
+load 1 mono
+step 5 work units
+snapshot
+cancel 2 1
+load 3 mono
+step 5 work units
+step 5 work units
+command {"kind":"setManual","commandId":"4","on":true}
+export project saved
+new instance
+create main 67108864
+load 1 mono
+step 5 work units
+step 5 work units
+import project 2 saved
+snapshot
+```
+
+- `create <name> <heapCeilingBytes>` creates and selects a session; `use <name>` switches between live sessions.
+- `capacity <heapCeilingBytes> <largestFreeBlockBytes>` updates available capacity between calls.
+- `load <commandId> <fixture>` copies planar synthetic PCM; `command <JSON>` forwards an ABI command unchanged.
+- `step <budget> work units` makes one bounded pump call; zero polls. Subsequent commands are consumed in script
+  order between pump calls. `cancel <commandId> <jobId>` is shorthand for the named JSON command.
+- `snapshot` copies the current snapshot. Every live session also emits a final snapshot, sorted by name.
+- `export project <name>` stores canonical project bytes outside the instance; `import project <commandId> <name>`
+  restores them. `import project <commandId> file <fixture>` reads a generated TOML fixture from `../fixtures`.
+  `new instance` discards sessions while retaining exported project copies.
+- `poison` abandons an actual facade allocation. Native uses the same terminate-handler technique as the replay
+  suite and continues with a new C++ owner. Wasm uses the production facade with an armable allocator in the
+  separate `contract-trap` test artifact, then reloads the shipped module. Both verify permanent poison and untouched
+  outputs. No failure injection or poison reset is exported by the shipped module.
+
+The ten scenarios cover load/measure, whole refusal in a forbidden state, cancel during measurement and mastering,
+reset every device edit on a target change, poison/replay, interleaved sessions, memory refusal, project round trip,
+knob domains and no-op edits, and a saved machine layer from an older core. Device edits work with manual mode hidden;
+`low` is edited and reset across target changes, with the hand-edit count returning to zero. Domain checks include
+fractional values beyond slider travel, Nyquist refusal, invalid slopes, and an empty edit/revert preserving the whole snapshot.
+Memory coverage supplies a zero `heapCeilingBytes`: create refuses before allocating a session or starting work;
+an adequately provisioned session then accepts a nonallocating command with capacity reduced to zero, restores its
+capacity and completes measurement. Before every creation, command, load and import, each consumer queries demand.
+The command/load/import queries must preserve both the event batch and snapshot. Prices and live bytes are checked
+locally in each consumer because native and wasm object layouts differ; every emitted answer and event is compared
+unchanged. Measurements remain deterministic stubs. Saved machine differences supply nonempty binary rows through
+size-query/copy and `Float64Array` reads. The wasm consumer initializes every v1 record's size prefix.
+
+Run from the repository root (use the core and TOML checkouts resolved by your CMake build):
+
+```sh
+cmake -S . -B build-release -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-release --target fcore_session
+# With emsdk on PATH and FELITRONICS_CORE_DIR / FELITRONICS_TOML_DIR set:
+tools/wasm/build.sh
+node tools/contract/run.mjs build-release/tools/fcore_session tools/wasm/build/fcsession.node.js
+node tools/contract/run.mjs build-release/tools/fcore_session --native-only
+node tools/contract/run.mjs build-release/tools/fcore_session tools/wasm/build/fcsession.node.js --controls
+```
+
+Both consumers emit tab-separated session name, record kind, exact codec JSON (project text is hex), and hex row bytes.
+Native calls `Wire` over its C++ session; Node drives the C ABI, copies every event batch before another mutation, and
+copies snapshots using the size-query/copy entry points. It reacquires heap views after calls and reads copied row
+buffers as `Float64Array`. The generated `.d.ts` validates the received unions. Comparison uses the complete output
+buffers, without JSON reserialization, float tolerance, sorting, or identity removal. A mismatch identifies the first
+differing event's zero-based index and kinds, and prints both original encodings and row bytes. Other record mismatches
+name the record. Each scenario also has handwritten behavior assertions, so two agreeing empty or refused runs fail.
+
+Fixtures contain generated, planar signed integers divided by 32768 and a synthetic saved project; no third-party
+audio or host trigonometry.
+`node tools/contract/fixtures.mjs --rebuild` rebuilds them and their manifest. The manifest records that command, the
+SHA-256 of the generator and input specification, and each output hash. Every contract run verifies these before using
+fixtures: changing an input without rebuilding, or damaging an output, is red. No scenario output is silently recorded as
+an expected result. To extend coverage, add a `.session` and its handwritten `.expect.json` beside the existing scenarios;
+all are discovered automatically. Extend the grammar and its acceptance/refusal corpus together.
+
+`--reorder` intentionally swaps the first pair of events in one wasm batch and exits nonzero with the mismatch.
+`--controls` runs that command in a child process and requires exit 1 with the diagnostic, then checks a flipped byte
+in a nonempty machine-difference row and stale/damaged fixture refusals; its temporary
+fixture mutations clean up locally. CI has a separate comparison step on every PR, and reuses the wasm artifact across
+Linux x64/arm64, macOS and Windows native rows. Each run prints elapsed comparison-step time (build time is separate).
+
+On build hosts that forbid deletion, set `FELITRONICS_WASM_KEEP_CONTROLS=1` for `tools/wasm/build.sh` so its
+source-list control directory is retained. Run the contract's self-cleaning `--controls` only locally.

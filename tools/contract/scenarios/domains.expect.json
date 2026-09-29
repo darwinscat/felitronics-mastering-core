@@ -1,0 +1,91 @@
+{
+  "checks": [
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.targetEdit.lufs",
+      "value": -120.125
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.targetEdit.tp",
+      "value": -0.125
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.devices.hpf.hand.fq",
+      "value": 10000.125
+    },
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.manual",
+      "value": false
+    },
+    {
+      "kind": "snapshot",
+      "index": -1,
+      "path": "project.devices.hpf.hand.fq",
+      "value": 10000.125
+    },
+    {
+      "kind": "snapshot",
+      "index": -1,
+      "path": "handFieldCount",
+      "value": 2
+    },
+    {
+      "kind": "answer",
+      "index": 5,
+      "path": "code",
+      "value": 14
+    },
+    {
+      "kind": "answer",
+      "index": 6,
+      "path": "code",
+      "value": 13
+    }
+  ],
+  "equal": [
+    [
+      {
+        "kind": "snapshot",
+        "index": 0
+      },
+      {
+        "kind": "snapshot",
+        "index": 1
+      }
+    ],
+    [
+      {
+        "kind": "snapshot",
+        "index": 0
+      },
+      {
+        "kind": "snapshot",
+        "index": 2
+      }
+    ],
+    [
+      {
+        "kind": "snapshot",
+        "index": 0
+      },
+      {
+        "kind": "snapshot",
+        "index": 3
+      }
+    ]
+  ],
+  "minEvents": 10,
+  "eventKinds": [
+    "phase",
+    "fact",
+    "rejected"
+  ],
+  "rejections": 2
+}

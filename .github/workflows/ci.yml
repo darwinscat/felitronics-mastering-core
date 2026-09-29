@@ -372,6 +372,18 @@ jobs:
           export FELITRONICS_TOML_DIR="$(sed -n 's/^FELITRONICS_MASTERING_TOML_SOURCE_DIR:INTERNAL=//p' build-native/CMakeCache.txt)"
           test -n "$FELITRONICS_CORE_DIR" && test -n "$FELITRONICS_TOML_DIR"
           ./tools/wasm/build.sh
+      - name: Session contract — native vs wasm, all scenarios and refusal controls
+        run: node tools/contract/run.mjs build-native/tools/fcore_session tools/wasm/build/fcsession.node.js --controls
+      - name: Share the pinned session artifact with the native CI rows
+        if: matrix.core == 'pin'
+        uses: actions/upload-artifact@v4
+        with:
+          name: session-contract-wasm
+          path: |
+            tools/wasm/build/fcsession.node.*
+            tools/wasm/build/snapshot.*
+            tools/wasm/build/contract-trap/fcsession.node.*
+          retention-days: 1
       - name: fc_session — the module a page loads, checked on the artifact
         # felitronics_session_abi_tests runs fc_session.cpp natively and on this tier; what they cannot see is the
         # MODULE: that the entry points reached fcsession.node.wasm (byte-identical to the web one, build.sh checks),
@@ -804,3 +816,30 @@ jobs:
           set -euo pipefail
           node tools/wasm/master-parity.mjs tools/wasm/build/fcmaster.node.js ./build-native/tools/fcore_master 48000 2 fixture.f32
           node tools/wasm/master-parity.mjs tools/wasm/build/fcmaster.node.js ./build-native/tools/fcore_master 48000 2 humfix.f32
+
+  session-contract:
+    name: session contract (${{ matrix.os }})
+    needs: wasm
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with:
+          name: session-contract-wasm
+          path: tools/wasm/build
+      - name: Build the native session consumer
+        run: >-
+          cmake -S . -B build-contract -DCMAKE_BUILD_TYPE=Release
+          -DFELITRONICS_MASTERING_BUILD_TESTS=OFF
+      - run: cmake --build build-contract --config Release --target fcore_session -j 4
+      - name: Session contract — native vs wasm, every scenario and red controls
+        shell: bash
+        run: |
+          cli=build-contract/tools/fcore_session
+          if [ -f build-contract/tools/Release/fcore_session.exe ]; then cli=build-contract/tools/Release/fcore_session.exe; fi
+          node tools/contract/run.mjs "$cli" tools/wasm/build/fcsession.node.js --controls

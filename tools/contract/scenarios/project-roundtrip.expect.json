@@ -1,0 +1,38 @@
+{
+  "checks": [
+    {
+      "kind": "snapshot",
+      "index": 0,
+      "path": "project.devices.hpf.hand.fq",
+      "value": 36,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "project.devices.hpf.hand.fq",
+      "value": 36,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "target",
+      "value": "allStreaming",
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "project.manual",
+      "value": true,
+      "session": "main"
+    }
+  ],
+  "minEvents": 10,
+  "eventKinds": [
+    "phase",
+    "fact"
+  ],
+  "projects": 3
+}

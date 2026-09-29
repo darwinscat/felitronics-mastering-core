@@ -1,0 +1,130 @@
+[
+  {
+    "script": "",
+    "valid": true
+  },
+  {
+    "script": " # comment\n\t\r\n",
+    "valid": true
+  },
+  {
+    "script": "create a 0\nuse a\nload 1 mono\nstep 0 work units\ncancel 2 1\nsnapshot\nexport project saved\nimport project 3 saved\npoison\nnew instance",
+    "valid": true
+  },
+  {
+    "script": "\t snapshot # tail\r\n",
+    "valid": true
+  },
+  {
+    "script": "command {\"kind\":\"setManual\",\"commandId\":\"9007199254740993\",\"on\":true}",
+    "valid": true
+  },
+  {
+    "script": "step 999999999 work units",
+    "valid": true
+  },
+  {
+    "script": "create a 9999999999",
+    "valid": true
+  },
+  {
+    "script": "step -1 work units",
+    "valid": false
+  },
+  {
+    "script": "step 1.5 work units",
+    "valid": false
+  },
+  {
+    "script": "step 4294967296 work units",
+    "valid": false
+  },
+  {
+    "script": "step 1 work units extra",
+    "valid": false
+  },
+  {
+    "script": "snapshot extra",
+    "valid": false
+  },
+  {
+    "script": "new instance x",
+    "valid": false
+  },
+  {
+    "script": "create A 12",
+    "valid": false
+  },
+  {
+    "script": "create a -1",
+    "valid": false
+  },
+  {
+    "script": "create a 10000000000",
+    "valid": false
+  },
+  {
+    "script": "use",
+    "valid": false
+  },
+  {
+    "script": "load 1 ../mono",
+    "valid": false
+  },
+  {
+    "script": "cancel 1",
+    "valid": false
+  },
+  {
+    "script": "command []",
+    "valid": false
+  },
+  {
+    "script": "command {\"name\":\"a#b\"}",
+    "valid": false
+  },
+  {
+    "script": "snapshot\nunknown",
+    "valid": false
+  },
+  {
+    "script": "snapshot\u0000",
+    "valid": false
+  },
+  {
+    "script": "\u00a0snapshot",
+    "valid": false
+  },
+  {
+    "script": "capacity 0 0",
+    "valid": true
+  },
+  {
+    "script": "capacity 67108864 67108864",
+    "valid": true
+  },
+  {
+    "script": "capacity 1",
+    "valid": false
+  },
+  {
+    "script": "capacity -1 2",
+    "valid": false
+  },
+  {
+    "script": "capacity 1 10000000000",
+    "valid": false
+  },
+  {
+    "script": "import project 4 file saved-machine",
+    "valid": true
+  },
+  {
+    "script": "import project 4 file ../bad",
+    "valid": false
+  },
+  {
+    "script": "import project 4 file",
+    "valid": true
+  }
+]
