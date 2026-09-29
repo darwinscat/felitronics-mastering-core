@@ -66,8 +66,10 @@ void Session::clearNeedles() noexcept
     needlesJob_ = 0;
     needlesWork_.reset();
     needlesResult_.reset();
+    // No job, no result: unavailable until a job starts (Pending belongs to a running job alone).
     measurementResults_[slot] = {};
     measurementResults_[slot].analyzer = Analyzer::Excursions;
+    measurementResults_[slot].status = MeasurementStatus::Unavailable;
     measurementResults_[slot].key = needlesKey_;
 }
 void Session::needlesChanged() noexcept
@@ -100,9 +102,9 @@ void Session::requestNeedles() noexcept
     needlesKey_ = ceiling ? resultKey (measurementKey_, *ceiling) : measurementKey_;
     needlesDemand_ = {}; needlesProgress_ = {};
     auto& result = measurementResults_[slot]; result.key = needlesKey_;
-    if (! mandatoryReady()) return;
-    if (! samples_) { result.status = MeasurementStatus::Unavailable; result.reason = MeasurementReason::Unsupported; return; }
-    result.status = MeasurementStatus::Unavailable;
+    if (! samples_) { result.reason = MeasurementReason::Unsupported; return; }
+    // Without usable input readings nothing is scheduled, and the result says why: the loudness result's own reason —
+    // Pending while it is still measured (the first phase's end asks again), its refusal once it has ended.
     if (! need || ! ceiling)
         result.reason = loudness.status == MeasurementStatus::Ready ? MeasurementReason::NoSignal : loudness.reason;
     else if (! std::isfinite (*need) || ! std::isfinite (*ceiling)) result.reason = MeasurementReason::Unsupported;

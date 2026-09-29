@@ -213,6 +213,52 @@ void measured2Cancellation()
     finish (s);
     ok (same (number (s.snapshot().view().measurements[slot], "thresholdDbTp"), -12), "replacement completes after phase-two cancellation");
 }
+// The real pump starts needles at the first phase's gate, one unit BEFORE Measured1. A measurement cancelled right there
+// stands in Stopped with the needles job still running: that job is cancellable in Stopped as in every other column.
+void cancelWhileStopped()
+{
+    std::vector<float> pcm (48000);
+    for (std::size_t i = 0; i < pcm.size(); ++i) pcm[i] = i % 2048 < 2 ? -0.95f : float (int (i % 128) - 64) / 8000.0f;
+    auto created = Session::create(); auto& s = *created.session;
+    load (s, pcm, 48000, 2);
+    for (unsigned units = 0; units < 100000 && s.needlesJob() == 0 && s.measurementJob() != 0; ++units) (void) s.step (1);
+    const auto needles = s.needlesJob();
+    ok (needles != 0 && s.state() == State::Loaded, "needles start at the gate while the first measurement is still Loaded");
+    ok (s.apply (command::Cancel { 2, s.measurementJob() }).rejection == Rejection::None && s.column() == Column::Stopped
+        && s.needlesJob() == needles, "cancelling the measurement there stops it and leaves the needles job running");
+    const auto revision = s.revision();
+    const auto answer = s.apply (command::Cancel { 3, needles });
+    ok (answer.rejection == Rejection::None && answer.revision == revision + 1 && s.needlesJob() == 0 && s.column() == Column::Stopped,
+        "the running needles job is cancellable in Stopped");
+    ok (s.events().size() == 1 && s.events()[0].kind == EventKind::Fact && s.events()[0].payload.fact.view().id == text::FactId::Cancelled,
+        "its fact says cancelled, not the measurement stopped again");
+    ok (s.snapshot().view().measurements[slot].status == MeasurementStatus::Cancelled && s.step (1).state == StepState::Done,
+        "nothing steps on after the cancel");
+    ok (s.apply (command::Cancel { 4, needles }).rejection == Rejection::NoJob, "with no job left, NoJob as in every column");
+    ok (s.apply (command::ContinueMeasurement { 5 }).rejection == Rejection::None, "the stopped measurement continues");
+    for (unsigned units = 0; units < 100000 && s.measurementJob() != 0; ++units) (void) s.step (7);
+    ok (s.state() == State::Measured2 && s.snapshot().view().measurements[slot].status == MeasurementStatus::Cancelled,
+        "the measurement completes; the cancelled needles stay cancelled until a target asks again");
+}
+// Unusable readings (silence has no finite loudness) schedule nothing, and the result says why — the loudness result's
+// reason — instead of Pending with no job behind it; a reload of the same source answers the same.
+void unusableReadings()
+{
+    const std::vector<float> pcm (48000, 0.0f);
+    auto created = Session::create(); auto& s = *created.session;
+    for (const bool reload : { false, true })
+    {
+        load (s, pcm, 48000, 2);
+        for (unsigned units = 0; units < 100000 && s.measurementJob() != 0; ++units) (void) s.step (7);
+        const auto ended = s.snapshot();
+        const auto& r = ended.view().measurements[slot];
+        ok (s.measurementJob() == 0 && s.needlesJob() == 0 && ! ended.view().mandatoryMeasurementsReady,
+            reload ? "a cached reload of silence starts no needles" : "silence ends its measurement without needles");
+        ok (r.status == MeasurementStatus::Unavailable && r.reason == MeasurementReason::NoSignal
+            && ended.view().measurements[0].reason == MeasurementReason::NoSignal,
+            "needles are unavailable with the loudness result's reason, never pending without a job");
+    }
+}
 void dense()
 {
     std::vector<float> pcm(128u*65540u,0.0f);
@@ -229,6 +275,6 @@ int main(int argc,char** argv)
 {
     std::setbuf(stdout,nullptr);
     const bool fixture=argc>1 && std::string_view(argv[1])=="--fixture";
-    if(argc>1 && std::string_view(argv[1])=="--dense") dense(); else {parity(fixture);lifecycle();measured2Cancellation();}
+    if(argc>1 && std::string_view(argv[1])=="--dense") dense(); else {parity(fixture);lifecycle();measured2Cancellation();cancelWhileStopped();unusableReadings();}
     return felitronics::test::report();
 }

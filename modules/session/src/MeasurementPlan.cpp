@@ -259,4 +259,11 @@ std::uint64_t MeasurementPlan::key (std::uint64_t pcmHash, const MeasurementPara
     h.add (p.tempo.hopSec);
     return h.value;
 }
+std::uint64_t MeasurementPlan::forensicsKey (std::uint64_t measurementKey, std::uint32_t bitDepth) noexcept
+{
+    // 64-bit FNV-1a steps over the depth's four little-endian bytes, as the needles key mixes its ceiling.
+    auto key = measurementKey;
+    for (unsigned i = 0; i < 4; ++i) key = (key ^ std::uint8_t (bitDepth >> (8 * i))) * 0x100000001B3ull;
+    return key;
+}
 } // namespace felitronics::session::detail

@@ -415,13 +415,35 @@ void cachedSourceAndCommands()
         if (e.kind == EventKind::Fact && e.payload.fact.view().id == text::FactId::SourceUnusedBits)
             unusedBitsFact = e.payload.fact.view().args[0].integer == 8;
     ok (! unusedBitsFact, "metadata refresh changes retained evidence without emitting a late finding");
-    ok (detail::Inspector::run (s).finished && after.view().measurements[forensics].key == before.view().measurements[forensics].key,
-        "metadata refresh keeps completed source analysis and its key");
+    // The same PCM under another depth is another forensics result: a key of its own (the PCM key stays for the
+    // rest), and a Measurement event that says so, under the reload's revision.
+    const auto forensicsEvent = [&] (std::uint64_t key)
+    {
+        unsigned count = 0;
+        for (const auto& e : s.events())
+            if (e.kind == EventKind::Measurement && e.payload.measurement.analyzer == Analyzer::Forensics)
+                count += e.payload.measurement.key == key && e.payload.measurement.status == MeasurementStatus::Ready
+                      && e.payload.measurement.revision == s.revision() && e.revision == s.revision() ? 1u : 100u;
+        return count;
+    };
+    const auto refreshedKey = after.view().measurements[forensics].key;
+    ok (detail::Inspector::run (s).finished && refreshedKey != before.view().measurements[forensics].key
+        && after.view().measurements[0].key == before.view().measurements[0].key,
+        "a changed bit depth moves the forensics key alone and keeps the completed source analysis");
+    ok (forensicsEvent (refreshedKey) == 1, "the cached reload publishes the changed forensics result once, under its new key");
+    {
+        auto fresh = Session::create();
+        ok (fresh.session->apply (load).rejection == Rejection::None
+            && fresh.session->snapshot().view().measurements[forensics].key == refreshedKey,
+            "the key is a function of the inputs: a fresh 24-bit load of the same PCM names the same result");
+    }
     drive (s);
     ok (s.snapshot().view().measurements[std::size_t (Analyzer::Excursions)].status == MeasurementStatus::Ready,
         "replacement needles finish instead of remaining orphaned Pending");
-    for (const unsigned depth : { 32u, 0u, 16u, 24u })
+    for (const unsigned depth : { 32u, 0u, 16u, 24u, 24u })
     {
+        const auto previous = s.snapshot().view().measurements[forensics].key;
+        const bool changed = depth != load.meta.bitDepth;
         load.meta.bitDepth = depth;
         const auto refreshed = budget::spend ([&] { (void) s.apply (load); });
         const auto current = s.snapshot();
@@ -431,6 +453,11 @@ void cachedSourceAndCommands()
             ok (depth ? bits.value && *bits.value == double (depth - 16) : ! bits.value && bits.reason == MeasurementReason::Unsupported,
                 "metadata refresh supports both channels and known/unknown depth transitions");
         }
+        const auto key = current.view().measurements[forensics].key;
+        ok (changed ? key != previous && forensicsEvent (key) == 1 : key == previous && forensicsEvent (key) == 0,
+            "each depth change is a new key and one event; an unchanged depth is the same result, unannounced");
+        ok (key == (depth == 16u ? before.view().measurements[forensics].key : depth == 24u ? refreshedKey : key),
+            "returning to a depth returns to its key");
         ok (refreshed.bytes == 0 && detail::Inspector::run (s).finished, "every cached refresh avoids allocation and source DSP");
         drive (s);
     }

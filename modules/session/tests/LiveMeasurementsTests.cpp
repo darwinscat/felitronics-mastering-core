@@ -4,6 +4,7 @@
 #include "MeasurementPlan.h"
 #include "MeasurementWorkspace.h"
 #include "QueryState.h"
+#include "LiveMeasurements.h"
 #include "Driver.h"
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/session/Wire.h>
@@ -12,6 +13,7 @@
 #include <algorithm>
 #include <bit>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <limits>
 #include <string>
@@ -27,6 +29,7 @@ bool same (double a, double b);
 struct felitronics::session::detail::Inspector
 {
     static bool waveformFinished (const Session& s) { return s.waveform_->finished; }
+    static unsigned liveStage (const Session& s) { return s.liveMeasurements_->stage; }
     static void eventJobs (Session& s)
     {
         s.measurementJob_ = 11; s.needlesJob_ = 12; s.job_ = 13;
@@ -64,20 +67,106 @@ void capacityBoundary()
     (void) s.apply (command::Load { 1, audio, {} });
     while (! detail::Inspector::waveformFinished (s)) (void) s.step (1);
     const auto plan = detail::MeasurementPlan::storageFor (audio, detail::MeasurementPlan::parametersFor (audio));
+    // Each instrument in turn: a capacity without its allocator allowance refuses it before any allocation, and the
+    // refusal is its outcome — Unavailable for memory — while the job moves on to the next preparation.
     for (unsigned stage = 0; stage < 3; ++stage)
     {
         const auto& price = plan.analyzers[stage];
         const auto raw = price.workspace + price.rowValues * sizeof (double);
         const auto before = s.liveBytes();
         (void) s.setCapacity ({ before + double (raw), before + double (raw) });
-        auto spent = budget::spend ([&] { (void) s.step (1); });
-        ok (spent.bytes == 0 && s.events().size() == 1 && s.events()[0].kind == EventKind::Error
-            && s.events()[0].payload.error.code == ErrorCode::Memory, "preparation refuses a capacity without allocator allowance before allocating");
+        const auto spent = budget::spend ([&] { (void) s.step (1); });
+        ok (spent.bytes == 0 && s.liveBytes() == before && s.events().size() == 2 && s.events()[0].kind == EventKind::Error
+            && s.events()[0].payload.error.code == ErrorCode::Memory && s.events()[0].payload.error.recover == Recover::Continue
+            && s.events()[1].kind == EventKind::Phase, "preparation refuses a capacity without allocator allowance before allocating");
         (void) s.setCapacity ({});
-        spent = budget::spend ([&] { (void) s.step (1); });
-        ok (s.liveBytes() - before >= double (spent.bytes), "retained preparation accounting covers raw allocations, including MSVC padding");
-        std::printf ("preparation=%u retained=%.0f raw=%lld\n", stage, s.liveBytes() - before, spent.bytes);
+        const auto refused = s.snapshot();
+        ok (refused.view().measurements[stage].status == MeasurementStatus::Unavailable
+            && refused.view().measurements[stage].reason == MeasurementReason::Memory && detail::Inspector::liveStage (s) == stage + 1,
+            "the refused instrument is unavailable for memory and the job goes on to the next preparation");
     }
+}
+
+// A capacity shrunk after the load refuses the meter alone (its preparation is the smallest of the three, so only a shrink
+// and a raise between them reach this), and the report is then admitted. The meter's rows are missing — the result says
+// incomplete — but the report's integrated loudness and true peak are the mandatory readings, and they stand: the source
+// is measured, Master is taken and needles are not refused for memory.
+void meterRefusedReportKept()
+{
+    std::vector<float> pcm (4u * 48000u);
+    for (std::size_t i = 0; i < pcm.size(); ++i) pcm[i] = float (0.25 * felitronics::core::det::sin (6.283185307179586 * 997.0 * double (i) / 48000.0));
+    const float* channels[] { pcm.data(), pcm.data() };
+    const Pcm audio { channels, 2, pcm.size(), 48000 };
+    auto made = Session::create(); auto& s = *made.session;
+    ok (s.apply (command::Load { 1, audio, {} }).rejection == Rejection::None, "load admitted at full capacity");
+    while (! detail::Inspector::waveformFinished (s)) (void) s.step (1);
+    const auto plan = detail::MeasurementPlan::storageFor (audio, detail::MeasurementPlan::parametersFor (audio));
+    const auto& meter = plan.analyzers[std::size_t (Analyzer::Loudness)];
+    const auto raw = meter.workspace + meter.rowValues * sizeof (double);
+    (void) s.setCapacity ({ s.liveBytes() + double (raw), s.liveBytes() + double (raw) });
+    (void) s.step (1);
+    ok (detail::Inspector::liveStage (s) == 1 && s.events()[0].payload.error.code == ErrorCode::Memory, "the meter alone is refused");
+    (void) s.setCapacity ({});
+    bool incomplete = false, ready = false;
+    for (unsigned units = 0; units < 100000 && (s.measurementJob() != 0 || s.needlesJob() != 0); ++units)
+    {
+        (void) s.step (1);
+        for (const auto& e : s.events())
+        {
+            incomplete = incomplete || (e.kind == EventKind::Fact && e.payload.fact.view().id == text::FactId::MeasurementCapacity);
+            ready = ready || (e.kind == EventKind::Measurement && e.payload.measurement.analyzer == Analyzer::Loudness
+                              && e.payload.measurement.status == MeasurementStatus::Ready && ! e.payload.measurement.complete);
+        }
+    }
+    const auto ended = s.snapshot();
+    const auto& loudness = ended.view().measurements[std::size_t (Analyzer::Loudness)];
+    unsigned readings = 0; bool rows = loudness.arrays.size() == 4;
+    for (const auto& n : loudness.numbers)
+        if ((n.name == "integratedLufs" || n.name == "truePeakDb") && n.value && std::isfinite (*n.value)) ++readings;
+    for (const auto& a : loudness.arrays) rows = rows && a.stored == 0 && a.total == 0 && ! a.complete;
+    ok (loudness.status == MeasurementStatus::Ready && loudness.reason == MeasurementReason::None && readings == 2,
+        "the report's integrated loudness and true peak make the result ready");
+    ok (rows && ! loudness.complete && ready && incomplete, "the refused rows are missing, the result says incomplete, and a fact says so once");
+    ok (ended.view().mandatoryMeasurementsReady && s.state() == State::Measured2 && s.check (command::Master { 2 }).rejection == Rejection::None,
+        "the mandatory readings stand: the source is measured and Master is taken");
+    const auto& needles = ended.view().measurements[std::size_t (Analyzer::Excursions)];
+    ok (needles.reason != MeasurementReason::Memory && needles.status != MeasurementStatus::Pending,
+        "needles are not refused for the meter's memory");
+    ok (OwnedMeasurements::valid (ended.view().measurements) && Codec::encodedBytes (ended.view()).status == CodecStatus::Ok,
+        "an incomplete ready result is a valid snapshot");
+}
+
+// A capacity shrunk below what the load admitted, and never raised again: every live preparation is refused once, and
+// the measurement still ENDS — no unit repeats a refusal. The report's readings are missing for memory, so nothing
+// placed, no master and no needles; each says why.
+void shrunkCapacityEnds()
+{
+    std::vector<float> pcm (48000);
+    for (std::size_t i = 0; i < pcm.size(); ++i) pcm[i] = float (0.25 * felitronics::core::det::sin (6.283185307179586 * 997.0 * double (i) / 48000.0));
+    const float* channels[] { pcm.data(), pcm.data() };
+    auto made = Session::create(); auto& s = *made.session;
+    ok (s.apply (command::Load { 1, { channels, 2, pcm.size(), 48000 }, {} }).rejection == Rejection::None, "load admitted at full capacity");
+    while (! detail::Inspector::waveformFinished (s)) (void) s.step (1);
+    (void) s.setCapacity ({ s.liveBytes(), s.liveBytes() });
+    unsigned memoryErrors = 0, units = 0;
+    for (; units < 100000 && s.measurementJob() != 0; ++units)
+    {
+        (void) s.step (1);
+        for (const auto& e : s.events())
+            if (e.kind == EventKind::Error && e.payload.error.code == ErrorCode::Memory) ++memoryErrors;
+    }
+    ok (s.measurementJob() == 0 && s.needlesJob() == 0 && s.job() == 0, "the measurement ends under a capacity that refuses every preparation");
+    ok (memoryErrors == 3, "one memory error per refused live instrument, never repeated");
+    (void) s.setCapacity ({});
+    const auto ended = s.snapshot();
+    for (const auto id : detail::MeasurementPlan::streaming)
+        ok (ended.view().measurements[std::size_t (id)].status == MeasurementStatus::Unavailable
+            && ended.view().measurements[std::size_t (id)].reason == MeasurementReason::Memory, "each refused live instrument says memory");
+    const auto& needles = ended.view().measurements[std::size_t (Analyzer::Excursions)];
+    ok (s.state() == State::Loaded && ! ended.view().mandatoryMeasurementsReady && s.needlesJob() == 0
+        && needles.status == MeasurementStatus::Unavailable && needles.reason == MeasurementReason::Memory
+        && s.check (command::Master { 2 }).rejection == Rejection::NotMeasured,
+        "without the report nothing is measured: Master is refused and needles say memory, none pending");
 }
 
 void eventMetadata()
@@ -360,7 +449,7 @@ void run (std::uint32_t rate, unsigned channels, unsigned frames, unsigned shape
 }
 int main (int argc, char** argv)
 {
-    if (argc > 1 && std::string_view (argv[1]) == "--capacity") { capacityBoundary(); return felitronics::test::report(); }
+    if (argc > 1 && std::string_view (argv[1]) == "--capacity") { capacityBoundary(); meterRefusedReportKept(); shrunkCapacityEnds(); return felitronics::test::report(); }
     if (argc > 1 && std::string_view (argv[1]) == "--events") { eventMetadata(); return felitronics::test::report(); }
     if (argc > 1 && std::string_view (argv[1]) == "--initialization") { initialization(); return felitronics::test::report(); }
     if (argc > 1 && std::string_view (argv[1]) == "--overflow")
@@ -368,7 +457,7 @@ int main (int argc, char** argv)
         run (8000, 2, 1000000, 0, 1);
         return felitronics::test::report();
     }
-    capacityBoundary(); eventMetadata(); initialization(); streamingKernel();
+    capacityBoundary(); meterRefusedReportKept(); shrunkCapacityEnds(); eventMetadata(); initialization(); streamingKernel();
     run (8000, 1, 8000 * 4 + 7, 0);
     run (48000, 2, 48000 * 4 + 1, 0);
     run (44100, 2, 44100 * 4 + 4410, 0);

@@ -70,19 +70,25 @@ void Session::stepMeasurements() noexcept
         Checked request; request.bytes = workspace + rows;
         request.largestBlockBytes = std::max (workspace, rows);
         const auto checked = this->demand (request);
-        if (checked.rejection != Rejection::None)
+        // The source phase's policy: a refused instrument is unavailable for memory and the job goes on without it —
+        // never the same refusal again on every unit. One error names the demand; the stage still advances.
+        const bool refused = checked.rejection != Rejection::None;
+        const bool prepared = demand.available && ! refused;
+        if (refused)
         {
+            auto& r = measurementResults_[std::size_t (id)];
+            r.status = MeasurementStatus::Unavailable; r.reason = MeasurementReason::Memory;
             event.kind = EventKind::Error; event.payload.error.code = ErrorCode::Memory;
             event.payload.error.needBytes = checked.needBytes; event.payload.error.recover = Recover::Continue;
-            (void) event.payload.error.fact.assign (text::Fact::of (text::FactId::SessionMemory)); emit (event); return;
+            (void) event.payload.error.fact.assign (text::Fact::of (text::FactId::SessionMemory)); emit (event);
         }
-        if (demand.available && ! work.prepare (id, pcm, plan)) detail::storageOverflow();
+        if (prepared && ! work.prepare (id, pcm, plan)) detail::storageOverflow();
         if (live.stage == 0)
         {
             live.hop = 10u * std::max<std::uint64_t> (1, std::uint64_t (std::floor (double (rate) * 0.01 + 0.5)));
-            live.rowCapacity = demand.available ? source_.frames / live.hop + 1 : 0;
+            live.rowCapacity = prepared ? source_.frames / live.hop + 1 : 0;
             if (live.rowCapacity != 0) live.loudness.reset (new double[std::size_t (4 * live.rowCapacity)]);
-            live.bytes += rows;
+            if (prepared) live.bytes += rows;
             constexpr std::string_view names[] { "momentary", "shortTerm", "momentaryReasons", "shortTermReasons" };
             for (unsigned i = 0; i < 4; ++i)
                 live.arrays[0][i] = { names[i], { live.hop, live.hop, 0, rate }, 1, 0, 0, false, {} };
@@ -90,9 +96,9 @@ void Session::stepMeasurements() noexcept
         }
         if (live.stage == 1)
         {
-            live.clipCapacity = demand.available ? std::uint64_t (plan.parameters.clipRuns) : 0;
+            live.clipCapacity = prepared ? std::uint64_t (plan.parameters.clipRuns) : 0;
             if (live.clipCapacity != 0) live.clips.reset (new double[std::size_t (live.clipCapacity * 6)]);
-            live.bytes += rows;
+            if (prepared) live.bytes += rows;
             live.arrays[1][0] = { "clips", { 0, 0, 0, rate }, 6, 0, 0, false, {} };
             measurementResults_[1].arrays = { live.arrays[1], 1 };
         }
@@ -198,17 +204,26 @@ void Session::stepMeasurements() noexcept
             number (live, 0, "momentaryWindowFrames", -1, double (4 * live.hop));
             number (live, 0, "shortTermWindowFrames", -1, double (30 * live.hop));
         }
-        for (auto& a : live.arrays[0]) a.complete = true;
-        auto& r = measurementResults_[0]; r.total = r.stored = live.rows; r.complete = true;
+        auto& r = measurementResults_[0];
+        // Two instruments feed this result. The meter's rows: refused for memory at its preparation (stage 0 marked the
+        // result so), they are missing and the result is incomplete. The report's integrated loudness and true peak:
+        // they alone decide whether the mandatory readings are usable — a missing row series does not unmake them.
+        const bool rowsRefused = r.status == MeasurementStatus::Unavailable && r.reason == MeasurementReason::Memory;
+        for (auto& a : live.arrays[0]) a.complete = ! rowsRefused;
+        r.total = r.stored = live.rows; r.complete = ! rowsRefused;
+        const bool noReport = ! work.programme && measurementResults_[2].reason == MeasurementReason::Memory;
         const bool usable = live.numberCount[0] >= 2 && live.numbers[0][0].value && live.numbers[0][1].value;
         r.status = usable ? MeasurementStatus::Ready : MeasurementStatus::Unavailable;
-        r.reason = usable ? MeasurementReason::None : live.numberCount[0] ? live.numbers[0][0].reason : MeasurementReason::Unsupported;
+        r.reason = usable ? MeasurementReason::None : live.numberCount[0] ? live.numbers[0][0].reason
+                 : noReport ? MeasurementReason::Memory : MeasurementReason::Unsupported;
         if (! usable && r.reason == MeasurementReason::None) r.reason = live.numbers[0][1].reason;
         publish (0); work.release (Analyzer::Loudness); ++live.stage;
-        if (! usable)
+        if (! usable || ! r.complete)
         {
+            // Unusable: why. Usable without its rows: incomplete for storage, as a capped clip list says.
             event.kind = EventKind::Fact;
-            (void) event.payload.fact.assign (text::Fact::of (MeasurementText::fact (r.reason))); emit (event);
+            (void) event.payload.fact.assign (text::Fact::of (MeasurementText::fact (usable ? MeasurementReason::Capacity : r.reason)));
+            emit (event);
         }
     }
     else if (live.stage == 7)
@@ -238,7 +253,7 @@ void Session::stepMeasurements() noexcept
             live.arrays[1][0].complete = r.complete;
         }
         publish (1); work.release (Analyzer::Clipping); ++live.stage;
-        if (! r.complete)
+        if (r.status == MeasurementStatus::Ready && ! r.complete)
         {
             event.kind = EventKind::Fact;
             (void) event.payload.fact.assign (text::Fact::of (MeasurementText::fact (MeasurementReason::Capacity))); emit (event);

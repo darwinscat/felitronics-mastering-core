@@ -41,9 +41,27 @@ jobs:
         run: ctest --test-dir build -C Release --output-on-failure --no-tests=error -R "^felitronics_session_abi_manifest"
       - name: Test
         shell: bash
+        env:
+          # On windows-latest the ABI source controls (thirty-odd MSBuild rebuilds of a copied tree) are the whole critical
+          # path: 2120 of 2228 s on main, past the 60-minute limit once slice 1 grew the library. They run in their own
+          # job below, beside this one; every other row runs them here.
+          EXCLUDE: ${{ matrix.os == 'windows-latest' && '^felitronics_session_abi_source_controls$' || '' }}
         run: |
           n=$( (getconf _NPROCESSORS_ONLN || nproc || sysctl -n hw.ncpu) 2>/dev/null | head -1 )
-          ctest --test-dir build -C Release --output-on-failure --no-tests=error -j "${n:-4}"
+          ctest --test-dir build -C Release --output-on-failure --no-tests=error -j "${n:-4}" ${EXCLUDE:+-E "$EXCLUDE"}
+
+  # The ABI source controls with MSVC, alone: they copy the tree and build it with this row's configuration, so the row
+  # needs no build of its own — only the configure whose cache they read.
+  windows-abi-source-controls:
+    name: windows-latest — session ABI source controls
+    runs-on: windows-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - name: Configure
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DFELITRONICS_MASTERING_BUILD_TESTS=ON
+      - name: Mutate, compile, compare — with MSVC
+        run: ctest --test-dir build -C Release --output-on-failure --no-tests=error -R "^felitronics_session_abi_source_controls$"
 
   windows-debug:
     name: windows-msvc-debug-budgets
@@ -138,6 +156,23 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
+      - name: The frozen session ABI manifest only grows — against the pull request's base
+        # tools/session-abi-check.mjs compares the compiled surface with tools/session-abi-v1.txt, so a pull request that
+        # edits a frozen line in the manifest together with the surface passes it. This compares the manifest with the
+        # base branch's: a removed or edited line is red, additions anywhere are not. Its control runs here and in ctest
+        # (felitronics_session_abi_manifest_append_only_control).
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          node tools/session-abi-append-only.mjs --self-test
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          if git cat-file -e FETCH_HEAD:tools/session-abi-v1.txt 2>/dev/null; then
+            git show FETCH_HEAD:tools/session-abi-v1.txt > "$RUNNER_TEMP/session-abi-base.txt"
+            node tools/session-abi-append-only.mjs "$RUNNER_TEMP/session-abi-base.txt" tools/session-abi-v1.txt
+          else
+            echo "the base branch carries no frozen manifest yet"
+          fi
       - name: Fetch core (configure only)
         run: cmake -S . -B build -DFELITRONICS_MASTERING_BUILD_TESTS=OFF
       - name: det-math — core's pass and this repository's

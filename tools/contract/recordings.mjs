@@ -11,6 +11,13 @@ import {fixtureRoot} from './fixtures.mjs';
 const root = fileURLToPath(new URL('recordings/', import.meta.url));
 const scenarios = fileURLToPath(new URL('scenarios/', import.meta.url));
 const digest = bytes => createHash('sha256').update(bytes).digest('hex');
+// A TEXT HASHED AS BYTES must reach every checkout with LF line endings (.gitattributes says so for each): a CRLF copy is
+// refused by name rather than hashed into a different digest that reads as a stale recording.
+export function lfBytes(path) {
+    const bytes = readFileSync(path);
+    if (bytes.includes(13)) throw new Error(`${path} has CR line endings; the contract hashes it as bytes and .gitattributes checks it out LF — check it out again`);
+    return bytes;
+}
 const rebuild = 'node tools/contract/run.mjs build/tools/fcore_session build/measure-08-wasm-artifacts/fcsession.node.js --rebuild-recordings';
 function select(bytes) {
     const rows = bytes.toString('utf8').trimEnd().split('\n').map(line => {
@@ -63,7 +70,7 @@ export function recordings(traces, versions, rewrite = false) {
     const manifest = {format:1, rebuild, inputHash:fixture.inputHash, versions, scenarios:{}};
     const expected = new Map();
     for (const [name, trace] of [...traces.entries()].sort(([a], [b]) => a.localeCompare(b))) {
-        const scriptSha256 = digest(readFileSync(join(scenarios, `${name}.session`)));
+        const scriptSha256 = digest(lfBytes(join(scenarios, `${name}.session`)));
         const data = Buffer.from(JSON.stringify({scenario:name, scriptSha256, records:select(trace)}, null, 2) + '\n');
         manifest.scenarios[name] = {scriptSha256, sha256:digest(data), bytes:data.length};
         expected.set(name, data);
