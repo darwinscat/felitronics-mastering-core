@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
-// The direct LandingSearch path predates Session's ready-master bridge (dacd2b2).
-// Its implementation differs from that revision only by two read-only accessors.
+// Direct LandingSearch verifies the Session bridge against the current engine.
+// SolverPassDifferentialTests separately retains the pre-quantization whole-call path.
 #include <felitronics/mastering/LandingSearch.h>
 #include <felitronics/mastering/DeliveryConverter.h>
 #include <felitronics/session/Session.h>
@@ -65,12 +65,12 @@ bool measurementsMatch (const session::LandingSummary& a, const mastering::Loudn
         || a.limiterTrace->sampleRateHz != rate || a.peakClipTrace->sampleRateHz != rate) return false;
     for (int i = 0; i < b.logCount; ++i)
     {
-        const auto& row = a.log[std::size_t (i)]; const auto& old = b.log[i];
-        if (! bits (row.gainDb, old.gainDb) || ! bits (row.ceilingDbTp, old.ceilingDb)
-            || ! bits (row.achievedLufs, old.integratedLufs)
-            || ! bits (row.truePeakDbTp, old.truePeakDbTp)
-            || ! bits (row.limiterMaxReductionDb, old.limiterMaxGrDb)
-            || row.ceilingSafe != ((old.violated & mastering::constraintBit (
+        const auto& row = a.log[std::size_t (i)]; const auto& direct = b.log[i];
+        if (! bits (row.gainDb, direct.gainDb) || ! bits (row.ceilingDbTp, direct.ceilingDb)
+            || ! bits (row.achievedLufs, direct.integratedLufs)
+            || ! bits (row.truePeakDbTp, direct.truePeakDbTp)
+            || ! bits (row.limiterMaxReductionDb, direct.limiterMaxGrDb)
+            || row.ceilingSafe != ((direct.violated & mastering::constraintBit (
                 mastering::MasteringConstraint::TruePeakCeiling)) == 0)) return false;
     }
     return true;
@@ -81,7 +81,7 @@ bool caseRun (std::uint32_t sourceRate, std::uint32_t deliveryRate,
     const std::uint32_t inputFrames = 2u * sourceRate;
     const int outputFrames = int (mastering::DeliveryConverter::deliveredFrames (
         double (sourceRate), double (deliveryRate), inputFrames));
-    std::vector<float> source (std::size_t (inputFrames) * 2u), oldOutput (std::size_t (outputFrames) * 2u);
+    std::vector<float> source (std::size_t (inputFrames) * 2u), directOutput (std::size_t (outputFrames) * 2u);
     for (std::uint32_t i = 0; i < inputFrames; ++i)
     {
         source[i] = float (int ((i * 17u) % 251u) - 125) / 4096.0f + (i % 257u == 0 ? 0.12f : 0.0f);
@@ -89,7 +89,7 @@ bool caseRun (std::uint32_t sourceRate, std::uint32_t deliveryRate,
                                 - (i + 1u == inputFrames ? 0.19f : 0.0f);
     }
     const float* input[2] { source.data(), source.data() + inputFrames };
-    float* output[2] { oldOutput.data(), oldOutput.data() + outputFrames };
+    float* output[2] { directOutput.data(), directOutput.data() + outputFrames };
     auto made = session::Session::create();
     if (made.status != session::Status::Ok) return false;
     auto& s = *made.session;
@@ -115,8 +115,8 @@ bool caseRun (std::uint32_t sourceRate, std::uint32_t deliveryRate,
     params.clipper.mix = 0.5f;
     request.source = s.source().hash; request.revision = s.revision();
 
-    // The direct call has no Session planner. These constants are the dacd2b2
-    // allStreaming target and engine landing inputs, spelled independently here.
+    // The direct call has no Session planner. These are the allStreaming target
+    // and engine landing inputs, spelled independently here.
     mastering::LoudnessRequest directRequest;
     directRequest.targetLufs = -14.0;
     directRequest.maxTruePeakDbTp = -1.0;
@@ -126,7 +126,7 @@ bool caseRun (std::uint32_t sourceRate, std::uint32_t deliveryRate,
     directRequest.normalizationGainDb = -18.0 - sourceLufs;
     directRequest.initialGainDb = 4.0;
     directRequest.productLanding = true;
-    directRequest.pcmBits = 24;
+    directRequest.pcmBits = 0;
     directRequest.grTraceBuckets = std::min (outputFrames, mastering::GainReductionTrace::kDefaultBuckets);
     params.limiter.ceilingDbTp = -1.15;
     mastering::MasteringChain chain;
@@ -137,15 +137,15 @@ bool caseRun (std::uint32_t sourceRate, std::uint32_t deliveryRate,
         || ! solver.prepare (double (deliveryRate), 2, 1024, cfg.internalBlock, cfg.oversampleFactor)
         || (sourceRate != deliveryRate && ! converter.prepare (double (sourceRate), double (deliveryRate), 2, 1024))) return false;
     chain.setParams (params);
-    mastering::LandingSearch old (solver);
-    if (! old.begin (chain, renderer, params, input, inputFrames, double (sourceRate), output,
+    mastering::LandingSearch direct (solver);
+    if (! direct.begin (chain, renderer, params, input, inputFrames, double (sourceRate), output,
         2, outputFrames, directRequest, {}, sourceRate == deliveryRate ? nullptr : &converter))
     { std::printf ("oracle begin failed %u/%u\n", sourceRate, deliveryRate); return false; }
-    mastering::StepResult oldState = mastering::StepResult::More;
-    for (unsigned i = 0; oldState == mastering::StepResult::More && i < 200000; ++i)
-        oldState = old.step (directCut);
-    if (oldState != mastering::StepResult::Done)
-    { std::printf ("oracle state %u/%u %d\n", sourceRate, deliveryRate, int (oldState)); return false; }
+    mastering::StepResult directState = mastering::StepResult::More;
+    for (unsigned i = 0; directState == mastering::StepResult::More && i < 200000; ++i)
+        directState = direct.step (directCut);
+    if (directState != mastering::StepResult::Done)
+    { std::printf ("oracle state %u/%u %d\n", sourceRate, deliveryRate, int (directState)); return false; }
 
     const auto started = s.apply (request);
     if (started.rejection != session::Rejection::None)
@@ -156,18 +156,18 @@ bool caseRun (std::uint32_t sourceRate, std::uint32_t deliveryRate,
     const auto token = s.pendingMaster();
     if (token.master == 0)
     { std::printf ("session no PCM %u/%u\n", sourceRate, deliveryRate); return false; }
-    std::vector<float> newer (oldOutput.size());
+    std::vector<float> newer (directOutput.size());
     if (s.copyMaster (token, newer) != session::MasterTransferStatus::Ok) return false;
     if (perturb) newer[outputFrames / 2] = std::nextafter (newer[outputFrames / 2],
         std::numeric_limits<float>::infinity());
-    const bool pcmMatches = std::memcmp (newer.data(), oldOutput.data(), newer.size() * sizeof (float)) == 0;
-    const bool measures = measurementsMatch (*s.masters()[0].landing, old.result(), deliveryRate);
+    const bool pcmMatches = std::memcmp (newer.data(), directOutput.data(), newer.size() * sizeof (float)) == 0;
+    const bool measures = measurementsMatch (*s.masters()[0].landing, direct.result(), deliveryRate);
     if ((! pcmMatches || ! measures) && ! perturb)
     {
-        const auto& a = *s.masters()[0].landing; const auto& b = old.result();
-        std::printf ("oracle mismatch %u/%u pcm=%d measurements=%d oldstatus=%d sessionstatus=%d passes=%u/%d\n",
-            sourceRate, deliveryRate, int (pcmMatches), int (measures), int (old.result().status),
-            int (s.masters()[0].landing->status), s.masters()[0].landing->passes, old.result().passes);
+        const auto& a = *s.masters()[0].landing; const auto& b = direct.result();
+        std::printf ("oracle mismatch %u/%u pcm=%d measurements=%d directstatus=%d sessionstatus=%d passes=%u/%d\n",
+            sourceRate, deliveryRate, int (pcmMatches), int (measures), int (direct.result().status),
+            int (s.masters()[0].landing->status), s.masters()[0].landing->passes, direct.result().passes);
         std::printf ("work=%llu/%llu lufs=%d tp=%d bass=%d presence=%d limiter=%d traces=%d/%d\n",
             static_cast<unsigned long long> (a.workUnits), static_cast<unsigned long long> (b.workUnits),
             int (optionalBits (a.achievedLufs, b.achievedLufs)),
@@ -189,8 +189,8 @@ int main (int argc, char** argv)
         return felitronics::test::report();
     }
     ok (caseRun (48000, 48000, 1, std::numeric_limits<long long>::max(), false),
-        "direct dacd2b2 whole-call search equals Session at source rate");
-    ok (caseRun (44100, 48000, 17, 73, false), "direct dacd2b2 search equals Session for SRC up");
-    ok (caseRun (48000, 44100, 73, 997, false), "direct dacd2b2 search equals Session for SRC down");
+        "direct whole-call search equals Session at source rate");
+    ok (caseRun (44100, 48000, 17, 73, false), "direct search equals Session for SRC up");
+    ok (caseRun (48000, 44100, 73, 997, false), "direct search equals Session for SRC down");
     return felitronics::test::report();
 }

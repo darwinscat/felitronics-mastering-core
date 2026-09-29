@@ -72,6 +72,9 @@ if(FELITRONICS_BUILD_TESTS)
     target_compile_options(felitronics_mastering_solver_pass_differential_tests PRIVATE
         $<IF:$<CXX_COMPILER_ID:MSVC>,/fp:strict,-ffp-contract=off>)
     add_test(NAME felitronics_mastering_solver_pass_differential_tests COMMAND felitronics_mastering_solver_pass_differential_tests)
+    add_test(NAME felitronics_mastering_quantizer_oracle_control
+        COMMAND felitronics_mastering_solver_pass_differential_tests --quantizer-fault)
+    set_tests_properties(felitronics_mastering_quantizer_oracle_control PROPERTIES WILL_FAIL TRUE)
 
     add_executable(felitronics_mastering_limiter_trace_tests tests/LimiterTraceTests.cpp)
     target_link_libraries(felitronics_mastering_limiter_trace_tests PRIVATE felitronics::mastering felitronics::test_support)

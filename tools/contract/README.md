@@ -31,9 +31,10 @@ Wasm modules and a separate poisonable contract control. The four appended v1
 ABI functions load measured facts and attach the matching audio.
 
 The WAV delivery example is `wav-input.json` and `recordings/wav-contract.json`.
-It runs one synthetic ready master through the native C facade and the shipped
-wasm facade, checks byte-identical downloaded WAV, and records cancel, refusal,
-safe miss and unavailable outcomes. Regenerate with the command in
-`docs/SESSION.md`; normal verification omits `--rebuild`. The caller assembles
-the WAV under the master id before releasing session PCM, then serves its own
-retained bytes for repeated downloads.
+It checks native and wasm PCM16, PCM24 and float32 WAV bytes and records exact
+codec answers, snapshots, events and binary rows for a safe master, repeat
+download, release, refusal, cancellation, safe miss, unavailable source and
+unsafe landing. The source and each binary ready request have SHA-256 hashes.
+`wav-recording.mjs` decodes the lossless archive for page tests;
+`wav-recording-check.mjs` replays its scenarios without an engine. Regenerate
+with the command in `docs/SESSION.md`; normal verification omits `--rebuild`.

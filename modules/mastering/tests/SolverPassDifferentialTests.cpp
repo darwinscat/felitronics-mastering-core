@@ -7,6 +7,8 @@
 
 #include <climits>
 #include <algorithm>
+#include <bit>
+#include <cstdio>
 #include <cmath>
 #include <cstring>
 #include <vector>
@@ -435,11 +437,87 @@ struct SolverPassDifferential
         }
         return true;
     }
+
+    // The retained whole-call implementation above predates PCM-grid measurement.
+    // Derive the new grid independently from its float output, then meter those
+    // derived samples without invoking the new pass's quantizer.
+    static bool quantizedAgainstPrevious (unsigned bits, bool fault = false)
+    {
+        constexpr int rate = 48000, frames = 48000, channels = 2, block = 257;
+        MasteringChainConfig config;
+        MasteringChain previousChain, currentChain;
+        OfflineRenderer previousRenderer, currentRenderer;
+        TargetLoudnessSolver previousSolver, currentSolver, expectedMeter;
+        if (! previousChain.prepare (rate, channels, config) || ! currentChain.prepare (rate, channels, config)
+            || ! previousRenderer.prepare (channels, block) || ! currentRenderer.prepare (channels, block)
+            || ! previousSolver.prepare (rate, channels, block, previousChain.internalBlock(), previousChain.tapOversampleFactor())
+            || ! currentSolver.prepare (rate, channels, block, currentChain.internalBlock(), currentChain.tapOversampleFactor())
+            || ! expectedMeter.prepare (rate, channels, block, currentChain.internalBlock(), currentChain.tapOversampleFactor()))
+            return false;
+        std::vector<float> source (channels * frames), previous (source.size()), current (source.size());
+        std::vector<float> expected (source.size());
+        for (int c = 0; c < channels; ++c)
+            for (int i = 0; i < frames; ++i)
+                source[std::size_t (c * frames + i)] = float (0.2 * std::sin (0.017 * i + c)
+                    + 0.06 * std::sin (0.31 * i) + (i % 499 == 0 ? 0.4 : 0.0));
+        source[frames - 1] = 0.93f; source.back() = -0.91f;
+        const float* in[channels] { source.data(), source.data() + frames };
+        float* oldOut[channels] { previous.data(), previous.data() + frames };
+        float* out[channels] { current.data(), current.data() + frames };
+        float* expectedOut[channels] { expected.data(), expected.data() + frames };
+        MasteringChainParams params;
+        params.preLimiterGainDb = 2.75; params.limiter.ceilingDbTp = -1.1;
+        previousChain.setParams (params); currentChain.setParams (params);
+        LoudnessRequest oldRequest, request;
+        oldRequest.targetLufs = request.targetLufs = -14.0;
+        oldRequest.maxTruePeakDbTp = request.maxTruePeakDbTp = -1.0;
+        request.pcmBits = bits;
+        MasterMeasurement oldMeasure, actualMeasure, expectedMeasure;
+        LoudnessSolution oldSolution, actualSolution;
+        ProgressClock oldClock (ProgressCallback {}), actualClock (ProgressCallback {}), meterClock (ProgressCallback {});
+        if (! oldClock.begin (ProgressStage::SearchPass, 1, 1, 2LL * frames, frames)
+            || ! actualClock.begin (ProgressStage::SearchPass, 1, 1, 2LL * frames, frames)
+            || ! meterClock.begin (ProgressStage::SearchPass, 1, 1, frames, frames)
+            || ! previousSolver.legacyRenderPass (previousChain, previousRenderer, params, in, oldOut,
+                                                  channels, frames, oldRequest, oldMeasure, oldSolution, oldClock)
+            || ! currentSolver.beginPass (currentChain, currentRenderer, params, in, out,
+                                         channels, frames, request, actualMeasure, actualSolution, actualClock)) return false;
+        StepResult state = StepResult::More;
+        for (int guard = 0; guard < 200000 && state == StepResult::More; ++guard)
+            state = currentSolver.stepPass (guard % 2 ? 1 : 257);
+        if (state != StepResult::Done) return false;
+        bool changed = false;
+        for (std::size_t i = 0; i < previous.size(); ++i)
+        {
+            const double scale = double (std::uint32_t (1) << (bits - 1));
+            const double rounded = std::floor (double (previous[i]) * scale + 0.5);
+            const double bounded = std::clamp (rounded, -scale, scale - 1.0);
+            expected[i] = bits == 32 ? previous[i] : float (bounded / scale);
+            changed |= std::bit_cast<std::uint32_t> (expected[i]) != std::bit_cast<std::uint32_t> (previous[i]);
+        }
+        if (fault) expected[frames - 1] = std::nextafter (expected[frames - 1], 1.0f);
+        if (! expectedMeter.measure (expectedOut, channels, frames, expectedMeasure, meterClock)) return false;
+        const bool pcm = std::memcmp (expected.data(), current.data(), current.size() * sizeof (float)) == 0;
+        if (! pcm || (bits == 16 && ! changed)) std::printf ("quantizer bits=%u pcm=%d changed=%d\n", bits, int (pcm), int (changed));
+        return (bits != 16 || changed) && pcm
+            && sameDouble (expectedMeasure.integratedLufs, actualMeasure.integratedLufs)
+            && sameDouble (expectedMeasure.truePeakDbTp, actualMeasure.truePeakDbTp)
+            && sameDouble (expectedMeasure.samplePeakDb, actualMeasure.samplePeakDb)
+            && sameDouble (expectedMeasure.loudnessRangeLu, actualMeasure.loudnessRangeLu)
+            && expectedMeasure.gatingBlocks == actualMeasure.gatingBlocks
+            && expectedMeasure.droppedBlocks == actualMeasure.droppedBlocks;
+    }
 };
 } // namespace felitronics::mastering
 
-int main()
+int main (int argc, char** argv)
 {
+    if (argc == 2 && std::strcmp (argv[1], "--quantizer-fault") == 0)
+    {
+        felitronics::test::ok (felitronics::mastering::SolverPassDifferential::quantizedAgainstPrevious (16, true),
+                              "a changed old-path sample must be detected");
+        return felitronics::test::report();
+    }
     felitronics::test::group ("saved solver pass versus the previous complete render and meter");
     felitronics::test::ok (felitronics::mastering::SolverPassDifferential::run (false),
                           "four successive parameter sets preserve exact PCM, loudness, TP, LRA, and limiter trace");
@@ -456,5 +534,8 @@ int main()
                           "previous whole path matches both SRC directions, armed EQ, short tails and adversarial cuts");
     felitronics::test::ok (felitronics::mastering::SolverPassDifferential::maximumTraceCursors(),
                           "maximum trace initialization and finish yield and match the previous whole path bit for bit");
+    for (unsigned bits : { 16u, 24u, 32u })
+        felitronics::test::ok (felitronics::mastering::SolverPassDifferential::quantizedAgainstPrevious (bits),
+            "PCM grid and readings match independent rounding of the saved whole-call float path");
     return felitronics::test::report();
 }

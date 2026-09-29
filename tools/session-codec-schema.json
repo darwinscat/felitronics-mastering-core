@@ -1207,7 +1207,22 @@
     ]
   },
   "wireTypeOverrides": {
-    "measurements": "ReadonlyArray<SessionMeasurementResult>"
+    "measurements": "ReadonlyArray<SessionMeasurementResult>",
+    "masters": "ReadonlyArray<SessionKept>"
+  },
+  "transportRecordViews": {
+    "SessionMasterCrest": {
+      "from": "MasterCrest",
+      "fields": { "rows": "ScalarRow", "sourceMask": "ScalarRow" }
+    },
+    "SessionMasterReport": {
+      "from": "MasterReport",
+      "fields": { "crest": "SessionMasterCrest" }
+    },
+    "SessionKept": {
+      "from": "Kept",
+      "fields": { "report": "SessionMasterReport | null" }
+    }
   },
   "optionalFields": {
     "Recipe": {

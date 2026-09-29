@@ -302,7 +302,9 @@ bool masterReady (const fc_master_config& c, const fc_master_params& p,
         || ! std::isfinite (p.limiterSlowReleaseMs) || ! std::isfinite (p.peakClipperOverCeilingDb)
         || ! std::isfinite (p.peakClipperKneeDb) || ! std::isfinite (p.stereoAirHz)
         || ! std::isfinite (p.stereoAirDb) || ! std::isfinite (p.compressorMix)
-        || p.dither.shaping < FC_SHAPING_NONE || p.dither.shaping > FC_SHAPING_PSYCHO) return false;
+        || p.dither.shaping < FC_SHAPING_NONE || p.dither.shaping > FC_SHAPING_PSYCHO
+        || (p.dither.bits != 0 && p.dither.bits != 16 && p.dither.bits != 20
+            && p.dither.bits != 24 && p.dither.bits != 32)) return false;
     q.limiter.ceilingDbTp = p.limiter.ceilingDbTp; q.limiter.releaseMs = p.limiter.releaseMs;
     q.limiter.dualRelease = p.limiterDualRelease != 0; q.limiter.slowReleaseMs = p.limiterSlowReleaseMs;
     q.limiter.peakClip = p.peakClipper != 0; q.limiter.overCeilingDb = p.peakClipperOverCeilingDb;
@@ -310,6 +312,7 @@ bool masterReady (const fc_master_config& c, const fc_master_params& p,
     q.stereoAir.enabled = p.stereoAir != 0;
     q.stereoAir.frequencyHz = float (p.stereoAirHz); q.stereoAir.gainDb = float (p.stereoAirDb);
     q.dither.bits = p.dither.bits; q.dither.shaping = static_cast<dither::NoiseShaping> (p.dither.shaping);
+    ready.deliveryBits = std::uint8_t (p.dither.bits);
     q.dither.seed = (std::uint64_t (p.dither.seedHi) << 32) | p.dither.seedLo;
     q.dither.autoBlank = p.dither.autoBlank != 0; q.dither.autoBlankSamples = p.dither.autoBlankSamples;
     q.compressorMix = p.compressorMix;
@@ -995,6 +998,9 @@ FC_EXPORT fc_session_status fc_session_master_wav_size (fc_session session,
         || overlap (bits, sizeof (*bits), token, sizeof (*token))) return FC_SESSION_ERR_OVERLAP;
     const auto identity = unpack (*token);
     if (slot->session->masterAudioBytes (identity) == 0) return FC_SESSION_ERR_STALE;
+    const auto pcm = slot->session->viewMaster (identity);
+    if (overlap (bytes, sizeof (*bytes), pcm.data(), pcm.size_bytes())
+        || overlap (bits, sizeof (*bits), pcm.data(), pcm.size_bytes())) return FC_SESSION_ERR_OVERLAP;
     const auto plan = slot->session->masterWavPlan (identity);
     if (! plan) return FC_SESSION_ERR_CONTRACT;
     *bytes = double (plan.bytes); *bits = plan.bits;
@@ -1023,7 +1029,8 @@ FC_EXPORT fc_session_status fc_session_master_wav_copy (fc_session session,
     if (offset >= plan.bytes) return FC_SESSION_ERR_CONTRACT;
     const auto count = std::uint32_t (std::min<std::uint64_t> (capacity, plan.bytes - offset));
     const auto pcm = slot->session->viewMaster (identity);
-    if (overlap (output, count, pcm.data(), pcm.size_bytes())) return FC_SESSION_ERR_OVERLAP;
+    if (overlap (output, count, pcm.data(), pcm.size_bytes())
+        || overlap (written, sizeof (*written), pcm.data(), pcm.size_bytes())) return FC_SESSION_ERR_OVERLAP;
     const auto state = slot->session->copyMasterWav (identity, offset, { output, count });
     if (state != felitronics::session::MasterTransferStatus::Ok) return FC_SESSION_ERR_CONTRACT;
     *written = count;

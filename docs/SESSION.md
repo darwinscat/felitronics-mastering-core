@@ -1131,6 +1131,8 @@ ready values. C++ callers use `command::Master` with `ready.version = 1`; versio
 v1 command behavior. The ready call freezes the project, source, sound-config version, all topology and
 parameter bits, and delivery rate in its recipe. The project can be edited while the job runs without
 changing that recipe. A new source or an explicit cancel stops unfinished work and fences its old identity.
+For the C facade, `fc_master_params.dither.bits` selects PCM16, PCM24 or float32 delivery even when the
+dither stage is off; zero uses the frozen target bit depth. A 20-bit grid is carried in PCM24.
 
 Ready preflight requires retained PCM and finite completed integrated loudness and true peak. It prices
 the chain, renderer, converter when needed, solver, search workspace, output PCM, compact rows, and

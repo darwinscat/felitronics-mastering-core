@@ -4,7 +4,11 @@ import assert from 'node:assert/strict';
 import {createHash} from 'node:crypto';
 import {readFileSync, writeFileSync} from 'node:fs';
 import {spawnSync} from 'node:child_process';
+import {brotliCompressSync, constants as zlibConstants, gunzipSync} from 'node:zlib';
 import {resolve} from 'node:path';
+import {types} from '../session-wire-types.mjs';
+import {sizeOf} from '../wasm/fc-master-layout.mjs';
+import {decodeWavRecording} from './wav-recording.mjs';
 
 const [nativeAbi, nativeJob, wasmModule, wasmJob, nativeCli, option] = process.argv.slice(2);
 if (!nativeAbi || !nativeJob || !wasmModule || !wasmJob || !nativeCli || (option && option !== '--rebuild')) {
@@ -15,7 +19,7 @@ const file = new URL('recordings/wav-contract.json', import.meta.url);
 const input = new URL('wav-input.json', import.meta.url);
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
 function command(exe, ...args) {
-    const p = spawnSync(exe, args, {encoding:'utf8', timeout:180000, maxBuffer:8 * 1024 * 1024});
+    const p = spawnSync(exe, args, {encoding:'utf8', timeout:180000, maxBuffer:32 * 1024 * 1024});
     assert.equal(p.status, 0, `${exe} ${args.join(' ')}: ${p.error ?? p.stderr ?? p.stdout}`);
     return p.stdout.replaceAll('\r\n', '\n');
 }
@@ -33,6 +37,65 @@ assert.equal(line(native, 'session-master-input'), line(wasm, 'session-master-in
 assert.equal(line(native, 'session-master-wav-header'), line(wasm, 'session-master-wav-header'), 'native/wasm WAV header');
 assert.equal(line(jobNative, 'wav-outcomes'), line(jobWasm, 'wav-outcomes'), 'native/wasm cancel/refusal/miss outcomes');
 assert.equal(line(jobNative, 'wav-outcomes'), 'cancel:false,refusal:false,unavailable:false,miss:true,unsafe:false');
+for (const bits of [16, 24, 32])
+    assert.equal(line(native, `session-master-format${bits}-wav`),
+        line(wasm, `session-master-explicit-format${bits}-wav`), `PCM${bits} native/wasm WAV bytes`);
+const contractBytes = line(wasm, 'wav-record');
+let contract;
+try { contract = JSON.parse(contractBytes); }
+catch { throw new Error(`incomplete wav-record response (${contractBytes.length} bytes)`); }
+assert.equal(contract.format, 2);
+const scenarios = contract.scenarios;
+for (const name of ['safe', 'formats', 'refusal', 'cancel', 'miss', 'unavailable', 'unsafe'])
+    assert.ok(scenarios[name], `${name} has actual contract responses`);
+const accepts = types(readFileSync(resolve(wasmModule.replace(/fcsession\.node\.js$/, 'snapshot.d.ts')), 'utf8'));
+const checkWire = wire => {
+    assert.ok(wire && typeof wire.jsonGzipBase64 === 'string'
+        && typeof wire.rowsGzipBase64 === 'string');
+    const json = gunzipSync(Buffer.from(wire.jsonGzipBase64, 'base64'));
+    const rows = wire.rowsGzipBase64
+        ? gunzipSync(Buffer.from(wire.rowsGzipBase64, 'base64')) : Buffer.alloc(0);
+    assert.equal(json.length, wire.jsonBytes);
+    assert.equal(rows.length, wire.rowBytes);
+    assert.equal(sha(json), wire.jsonSha256);
+    assert.equal(sha(rows), wire.rowsSha256);
+    const value = JSON.parse(json);
+    assert.ok(accepts(value, Array.isArray(value) ? 'ReadonlyArray<SessionEvent>' : 'SessionSnapshot'));
+    const walk = x => {
+        if (!x || typeof x !== 'object') return;
+        if (Number.isInteger(x.byteOffset) && Number.isInteger(x.length) && Number.isInteger(x.stride))
+            assert.ok(x.byteOffset >= 0 && x.byteOffset + x.length * x.stride * 8 <= rows.length,
+                'replayable binary row stays inside the recorded payload');
+        for (const v of Object.values(x)) walk(v);
+    };
+    walk(value);
+};
+const checkScenario = value => {
+    if (!value || typeof value !== 'object') return;
+    if ('jsonGzipBase64' in value || 'rowsGzipBase64' in value) { checkWire(value); return; }
+    for (const child of Object.values(value)) checkScenario(child);
+};
+for (const scenario of Object.values(scenarios)) checkScenario(scenario);
+const checkInputs = inputs => {
+    assert.equal(Buffer.from(inputs.configBase64, 'base64').length, sizeOf('fc_master_config'));
+    assert.equal(Buffer.from(inputs.paramsBase64, 'base64').length, sizeOf('fc_master_params'));
+    assert.equal(sha(Buffer.from(inputs.configBase64, 'base64')), inputs.configSha256);
+    assert.equal(sha(Buffer.from(inputs.paramsBase64, 'base64')), inputs.paramsSha256);
+    assert.equal(sha(Buffer.from(JSON.stringify(inputs.call))), inputs.callSha256);
+};
+for (const name of ['safe', 'refusal', 'cancel', 'miss', 'unavailable', 'unsafe']) checkInputs(scenarios[name].inputs);
+for (const item of scenarios.formats) checkInputs(item.inputs);
+assert.deepEqual(scenarios.formats.map(x => x.bits), [16, 24, 32]);
+assert.equal(scenarios.refusal.answer.kind, 'rejected');
+assert.equal(scenarios.cancel.answer.kind, 'accepted');
+assert.equal(scenarios.unavailable.answer.kind, 'rejected');
+assert.equal(scenarios.miss.measurements.status, 2);
+assert.equal(scenarios.miss.measurements.passes, 12);
+assert.ok(Number.isFinite(scenarios.miss.measurements.missLu));
+assert.equal(scenarios.unsafe.measurements.deliverable, false);
+assert.equal(sha(Buffer.from(JSON.stringify(scenarios.cancel.command))), scenarios.cancel.commandSha256);
+assert.equal(sha(Buffer.from(JSON.stringify(scenarios.miss.target))), scenarios.miss.targetSha256);
+assert.equal(sha(Buffer.from(JSON.stringify(scenarios.unsafe.target))), scenarios.unsafe.targetSha256);
 const spec = JSON.parse(readFileSync(input));
 const pcm = Buffer.alloc(spec.frames * spec.channels * 4);
 for (let channel = 0; channel < spec.channels; ++channel) {
@@ -44,14 +107,45 @@ for (let channel = 0; channel < spec.channels; ++channel) {
 let inputFnv = 0xcbf29ce484222325n;
 for (const byte of pcm) inputFnv = BigInt.asUintN(64, (inputFnv ^ BigInt(byte)) * 0x100000001b3n);
 assert.equal(line(native, 'session-master-input'), inputFnv.toString(16).padStart(16, '0'), 'recorded input is exercised');
+assert.equal(contract.source.pcmSha256, sha(pcm));
+assert.equal(contract.source.metadataSha256, sha(Buffer.from(contract.source.metadataJson)));
+assert.equal(scenarios.unavailable.source.pcmSha256,
+    sha(Buffer.from(scenarios.unavailable.source.pcmBase64, 'base64')));
+assert.equal(scenarios.unavailable.source.metadataSha256,
+    sha(Buffer.from(scenarios.unavailable.source.metadataJson)));
+const unsafe = scenarios.unsafe.source;
+const unsafePcm = Buffer.alloc(unsafe.generator.frames * unsafe.generator.channels * 4);
+for (let channel = 0; channel < unsafe.generator.channels; ++channel)
+    for (let i = 0; i < unsafe.generator.frames; ++i)
+        unsafePcm.writeFloatLE(i + 1 === unsafe.generator.frames ? unsafe.generator.last : unsafe.generator.value,
+            (channel * unsafe.generator.frames + i) * 4);
+assert.equal(unsafe.pcmSha256, sha(unsafePcm));
+assert.equal(unsafe.metadataSha256, sha(Buffer.from(unsafe.metadataJson)));
 const header = Buffer.from(line(native, 'session-master-wav-header'), 'hex');
 assert.equal(header.length, 44);
 assert.equal(header.toString('ascii', 0, 4), 'RIFF');
 assert.equal(header.readUInt32LE(24), spec.sampleRate);
 assert.equal(header.readUInt16LE(34), spec.deliveryBits);
 assert.equal(header.readUInt32LE(40), spec.frames * spec.channels * spec.deliveryBits / 8);
+const expandedContract = JSON.parse(JSON.stringify(contract));
+const expandWire = value => {
+    if (!value || typeof value !== 'object') return;
+    if (value.jsonGzipBase64) {
+        value.json = gunzipSync(Buffer.from(value.jsonGzipBase64, 'base64')).toString('utf8');
+        value.rowsBase64 = value.rowsGzipBase64
+            ? gunzipSync(Buffer.from(value.rowsGzipBase64, 'base64')).toString('base64') : '';
+        delete value.jsonGzipBase64;
+        delete value.rowsGzipBase64;
+        return;
+    }
+    for (const child of Object.values(value)) expandWire(child);
+};
+expandWire(expandedContract);
+const archiveBytes = Buffer.from(JSON.stringify(expandedContract));
+const archive = brotliCompressSync(archiveBytes, {params:{
+    [zlibConstants.BROTLI_PARAM_QUALITY]:8, [zlibConstants.BROTLI_PARAM_LGWIN]:24}});
 const recording = {
-    format:1,
+    format:2,
     rebuild:'node tools/contract/wav-contract.mjs <native-ABI-test> <native-job-test> <fcsession.node.js> <wasm-job-test.js> <fcore_session> --rebuild',
     command:'fc_session_master_wav_size → fc_session_master_wav_copy(offset, <=65536 bytes) → fc_session_master_audio_release; retain bytes by masterId',
     inputSpecSha256:sha(readFileSync(input)), inputPcmSha256:sha(pcm),
@@ -60,10 +154,23 @@ const recording = {
     codecSchemaSha256:sha(readFileSync(new URL('../session-codec-schema.json', import.meta.url))),
     wasmSha256:sha(readFileSync(resolve(wasmModule.replace(/\.js$/, '.wasm')))),
     wavFnv64:line(native, 'session-master-wav'), wavHeaderHex:header.toString('hex'),
-    checked:{master:true, export:true, repeat:true, release:true},
-    outcomes:line(jobNative, 'wav-outcomes').split(',')
+    outcomes:line(jobNative, 'wav-outcomes').split(','),
+    scenarios:Object.keys(scenarios),
+    refusalCodes:{invalidInput:scenarios.refusal.answer.code,
+        unavailable:scenarios.unavailable.answer.code, unsafe:scenarios.unsafe.measurements.status},
+    missMeasurements:{status:scenarios.miss.measurements.status,
+        passes:scenarios.miss.measurements.passes, achievedLufs:scenarios.miss.measurements.achievedLufs,
+        missLu:scenarios.miss.measurements.missLu, truePeakDbTp:scenarios.miss.measurements.truePeakDbTp},
+    contractArchive:{codec:'br+base64', bytes:archiveBytes.length, sha256:sha(archiveBytes),
+        base64:archive.toString('base64')}
 };
 const bytes = Buffer.from(JSON.stringify(recording, null, 2) + '\n');
 if (option === '--rebuild') writeFileSync(file, bytes);
-else assert.deepEqual(readFileSync(file), bytes, `stale WAV contract recording; rebuild: ${recording.rebuild}`);
+else {
+    const saved = JSON.parse(readFileSync(file));
+    assert.deepEqual({...saved, contractArchive:null}, {...recording, contractArchive:null},
+        `stale WAV contract recording; rebuild: ${recording.rebuild}`);
+    assert.equal(sha(Buffer.from(JSON.stringify(decodeWavRecording(saved)))), sha(archiveBytes),
+        `stale WAV contract responses; rebuild: ${recording.rebuild}`);
+}
 console.log(`WAV contract: native/wasm identical ${recording.wavFnv64}; repeat, release and outcomes verified`);
