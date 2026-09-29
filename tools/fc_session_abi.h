@@ -298,7 +298,10 @@ fc_session_status fc_session_attach_audio (fc_session session, uint32_t command_
 
 // A ready v14 fc_master topology/parameter pair, supplied by Decide. Its sampleRate/channels
 // must name the retained source; deliveryRate selects the output grid. The identity arguments
-// fence a stale request before any allocation. This is one session job, not another Project.
+// fence a stale request before any allocation. params->dither.bits also selects
+// the delivered sample format: 16, 24 or 32 (float); 20 uses a PCM24 container,
+// and zero uses the frozen target bit depth. This selection applies even when
+// topology->dither is off. This is one session job, not another Project.
 fc_session_status fc_session_master_bytes (fc_session session, uint32_t source_low, uint32_t source_high,
                                            uint32_t revision_low, uint32_t revision_high,
                                            const fc_master_config* topology, const fc_master_params* params,

@@ -82,7 +82,7 @@ void ready (fc_master_config& config, fc_master_params& params)
     params.header = { FC_MASTER_ABI_VERSION, sizeof (params) };
     params.compressorMix = 1.0;
 }
-bool directDacd2b2 (const Session& session, std::vector<float>& pcm,
+bool currentDirect (const Session& session, std::vector<float>& pcm,
                     mastering::LoudnessSolution& result)
 {
     std::vector<float> source (frames * 2u);
@@ -128,6 +128,58 @@ fc_session_master_token token (const MasterToken& t)
 {
     return { sizeof (fc_session_master_token), std::uint32_t (t.source), std::uint32_t (t.source >> 32),
         std::uint32_t (t.revision), std::uint32_t (t.revision >> 32), t.job, t.master };
+}
+bool formatThroughFacade (std::uint32_t bits)
+{
+    const auto handle = create();
+    load (handle, bits);
+    auto* s = contractSession (handle);
+    fc_master_config config {}; fc_master_params params {};
+    ready (config, params);
+    params.dither.bits = std::int32_t (bits);
+    const auto source = s->source().hash, revision = s->revision();
+    char answer[FC_SESSION_ANSWER_BYTES] {}; std::uint32_t written = 0;
+    bool good = fc_session_master (handle, bits, 0, std::uint32_t (source), std::uint32_t (source >> 32),
+        std::uint32_t (revision), std::uint32_t (revision >> 32), &config, &params,
+        answer, sizeof (answer), &written) == FC_SESSION_OK;
+    for (unsigned i = 0; good && i < 40000 && s->job() != 0; ++i)
+    {
+        std::uint32_t spent = 0;
+        good = fc_session_step (handle, 16, &spent) == FC_SESSION_OK;
+    }
+    good = good && s->job() == 0 && s->pendingMaster().master != 0;
+    if (good)
+    {
+        const auto t = token (s->pendingMaster());
+        double bytes = 0; std::uint32_t actualBits = 0;
+        good = fc_session_master_wav_size (handle, &t, &bytes, &actualBits) == FC_SESSION_OK
+            && actualBits == bits && bytes == double (44u + frames * 2u * bits / 8u);
+        if (good)
+        {
+            std::uint8_t header[44] {}; std::uint32_t count = 0;
+            good = fc_session_master_wav_copy (handle, &t, 0, 0, header, sizeof (header), &count)
+                == FC_SESSION_OK && count == sizeof (header)
+                && header[20] == (bits == 32 ? 3 : 1) && header[34] == bits;
+        }
+        if (good)
+        {
+            std::uint64_t digest = 0xcbf29ce484222325ull;
+            std::uint8_t chunk[997] {};
+            for (std::uint32_t at = 0; good && double (at) < bytes; at += sizeof (chunk))
+            {
+                const auto n = std::uint32_t (std::min<double> (sizeof (chunk), bytes - at));
+                std::uint32_t count = 0;
+                good = fc_session_master_wav_copy (handle, &t, at, 0, chunk, n, &count) == FC_SESSION_OK
+                    && count == n;
+                for (std::uint32_t i = 0; i < count; ++i)
+                    digest = (digest ^ chunk[i]) * 0x100000001b3ull;
+            }
+            if (good) std::printf ("session-master-format%u-wav=%016llx\n", bits,
+                static_cast<unsigned long long> (digest));
+        }
+    }
+    good = fc_session_destroy (handle) == FC_SESSION_OK && good;
+    return good;
 }
 }
 
@@ -260,7 +312,7 @@ int main()
         std::printf ("session-master-audio=%016llx\n", static_cast<unsigned long long> (digest));
         std::vector<float> previous;
         mastering::LoudnessSolution prior;
-        const bool oracle = directDacd2b2 (*session, previous, prior);
+        const bool oracle = currentDirect (*session, previous, prior);
         const auto retained = session->masters();
         const auto& published = *retained.front().landing;
         ok (oracle && previous.size() == copied.size()
@@ -270,7 +322,7 @@ int main()
             && published.truePeakDbTp && std::bit_cast<std::uint64_t> (*published.truePeakDbTp)
                 == std::bit_cast<std::uint64_t> (prior.measured.truePeakDbTp)
             && published.passes == std::uint32_t (prior.passes),
-            "C bridge matches the dacd2b2 direct PCM, LUFS, true peak and passes");
+            "C bridge matches current direct PCM, LUFS, true peak and passes");
         const float* view = nullptr; std::uint32_t samples = 0;
         ok (fc_session_master_audio_view (handle, &t, &view, &samples) == FC_SESSION_OK
             && samples == copied.size() && std::memcmp (view, copied.data(), bytes) == 0,
@@ -281,6 +333,28 @@ int main()
             == FC_SESSION_ERR_OVERLAP && overlapWritten == 77
             && std::memcmp (view, copied.data(), bytes) == 0,
             "WAV output cannot overwrite the retained PCM or its completion count");
+        if (view)
+        {
+            double safeBytes = -1.0;
+            std::uint32_t safeBits = 99;
+            std::uint8_t saved[16] {};
+            std::memcpy (saved, view, sizeof (saved));
+            ok (fc_session_master_wav_size (handle, &t,
+                    reinterpret_cast<double*> (const_cast<float*> (view)), &safeBits)
+                    == FC_SESSION_ERR_OVERLAP && safeBits == 99
+                    && std::memcmp (view, saved, sizeof (saved)) == 0,
+                "WAV size cannot write its byte count into retained PCM");
+            ok (fc_session_master_wav_size (handle, &t, &safeBytes,
+                    reinterpret_cast<std::uint32_t*> (const_cast<float*> (view) + 2))
+                    == FC_SESSION_ERR_OVERLAP && safeBytes == -1.0
+                    && std::memcmp (view, saved, sizeof (saved)) == 0,
+                "WAV size cannot write its bit depth into retained PCM");
+            std::uint8_t scratch[64] {};
+            ok (fc_session_master_wav_copy (handle, &t, 0, 0, scratch, sizeof (scratch),
+                    reinterpret_cast<std::uint32_t*> (const_cast<float*> (view) + 3))
+                    == FC_SESSION_ERR_OVERLAP && std::memcmp (view, saved, sizeof (saved)) == 0,
+                "WAV copy cannot write its completion count into retained PCM");
+        }
         t.job += 1;
         ok (fc_session_master_audio_copy (handle, &t, copied.data(), std::uint32_t (copied.size())) == FC_SESSION_ERR_STALE,
             "mismatched job cannot copy PCM");
@@ -320,5 +394,8 @@ int main()
             "C facade reads an explicit delivered PCM chunk after release within its declared budget");
     }
     ok (fc_session_destroy (handle) == FC_SESSION_OK, "C session releases all storage");
+    ok (formatThroughFacade (16), "C facade delivers explicitly requested PCM16");
+    ok (formatThroughFacade (24), "C facade delivers explicitly requested PCM24");
+    ok (formatThroughFacade (32), "C facade delivers explicitly requested float32");
     return felitronics::test::report();
 }

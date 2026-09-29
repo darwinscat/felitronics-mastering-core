@@ -676,7 +676,7 @@ em++ "${SFRONT[@]}" -I"$CORE/test_support" -O3 -sENVIRONMENT=node -sSTACK_SIZE=8
      "$ROOT/modules/session/tests/MasterJobTests.cpp" "${SESSION_SRCS[@]}" \
      -o "$OUT/session-master-job-tests.js"
 node "$OUT/session-master-job-tests.js"
-echo "--- direct dacd2b2 landing oracle against Session (FP contraction off)"
+echo "--- direct landing engine against the Session bridge (FP contraction off)"
 em++ "${SFRONT[@]}" -I"$CORE/test_support" -O3 -sENVIRONMENT=node -sSTACK_SIZE=8388608 \
      -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -Wl,--wrap=pthread_create \
      "$ROOT/modules/session/tests/SessionDirectOracleTests.cpp" "${SESSION_SRCS[@]}" \
@@ -689,6 +689,20 @@ fi
 grep -q 'one-bit PCM fault must fail' "$OUT/session-direct-oracle-control.txt" \
     || { cat "$OUT/session-direct-oracle-control.txt"; echo "*** direct oracle fault did not reach comparison"; exit 1; }
 echo "    control ok: one-bit PCM fault makes the direct oracle red"
+echo "--- saved whole-call solver against PCM-grid measurements (FP contraction off)"
+em++ "${SFRONT[@]}" -I"$CORE/test_support" -O3 -sENVIRONMENT=node -sSTACK_SIZE=8388608 \
+     -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -Wl,--wrap=pthread_create \
+     "$ROOT/modules/mastering/tests/SolverPassDifferentialTests.cpp" \
+     -o "$OUT/session-solver-pass-differential.js"
+node "$OUT/session-solver-pass-differential.js"
+if node "$OUT/session-solver-pass-differential.js" --quantizer-fault \
+    > "$OUT/session-quantizer-oracle-control.txt" 2>&1; then
+    cat "$OUT/session-quantizer-oracle-control.txt"
+    echo "*** saved whole-call oracle accepted a changed sample"; exit 1
+fi
+grep -q 'a changed old-path sample must be detected' "$OUT/session-quantizer-oracle-control.txt" \
+    || { cat "$OUT/session-quantizer-oracle-control.txt"; echo "*** quantizer fault missed the oracle"; exit 1; }
+echo "    control ok: changed old-path sample makes the quantizer oracle red"
 echo "--- measured ready-master report against native and the old whole renderer"
 em++ "${SFRONT[@]}" -I"$CORE/test_support" -O3 -sENVIRONMENT=node -sSTACK_SIZE=8388608 \
      -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -Wl,--wrap=pthread_create \
