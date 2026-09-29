@@ -120,6 +120,7 @@ public:
     [[nodiscard]] bool prepare (double inRate, double deliveryRate, int numChannels, int block)
     {
         prepared_ = false;
+        active_ = false;
         const Storage st = storageFor (inRate, deliveryRate, numChannels, block);
         if (! st.ok) return false;
         core::DeliveryResampler::Params p;
@@ -171,70 +172,102 @@ public:
     [[nodiscard]] bool convert (const float* const* in, int numChannels, long long inFrames,
                                 float* const* out, long long outFrames, ProgressClock& clock) noexcept
     {
+        if (! begin (in, numChannels, inFrames, out, outFrames, &clock)) return false;
+        while (active_ && ! done_)
+            if (step (LLONG_MAX, &clock) == StepResult::Failed) return false;
+        return finish (&clock);
+    }
+
+    // The input and output tables and their planes remain borrowed until finish or cancel.
+    // A unit of budget is one source-rate frame, including silence fed during drain.
+    [[nodiscard]] bool begin (const float* const* in, int numChannels, long long inFrames,
+                              float* const* out, long long outFrames, ProgressClock* clock = nullptr) noexcept
+    {
+        active_ = false;
         if (! prepared_ || numChannels != nch_ || inFrames < 0) return false;
         if (outFrames != deliveredFrames (inRate_, deliveryRate_, inFrames)) return false;
         if (outFrames > 0 && ! planesUsable (in, out, numChannels, inFrames, outFrames)) return false;
-        if (outFrames == 0) { nonFinite_ = 0; return true; }
-        if (! clock.begin (ProgressStage::Convert, 0, 0, inFrames, inFrames)) return false;
-
+        const long long trim = src_.currentPlan().identity ? 0 : trimSamples();
+        if (outFrames > LLONG_MAX - trim - perCall_) return false;
+        if (outFrames > 0 && clock != nullptr && ! clock->begin (ProgressStage::Convert, 0, 0, inFrames, inFrames)) return false;
         src_.reset();
-        const long long T0 = src_.currentPlan().identity ? 0 : trimSamples();
-        long long emitted = 0;                       // converter outputs seen so far
-        auto take = [&] (int got) noexcept
-        {
-            for (int k = 0; k < got; ++k, ++emitted)
-            {
-                const long long n = emitted - T0;
-                if (n < 0 || n >= outFrames) continue;
-                for (int c = 0; c < numChannels; ++c)
-                    out[c][n] = staging_[(std::size_t) c * (std::size_t) perCall_ + (std::size_t) k];
-            }
-        };
-        float* sp[core::kMaxChannels] {};
-        for (int c = 0; c < numChannels; ++c) sp[c] = staging_.data() + (std::size_t) c * (std::size_t) perCall_;
-
-        // Counted aside and published once the last input sample has been read — see `nonFiniteInputSamples`.
-        std::uint64_t counted = 0;
-        for (long long off = 0; off < inFrames; )
-        {
-            const int m = (int) std::min<long long> (clock.piece (block_), inFrames - off);
-            const float* ip[core::kMaxChannels] {};
-            for (int c = 0; c < numChannels; ++c)
-            {
-                // The chain's gate, verbatim — see the class note. Branchless and folded once per plane, for the
-                // reason MasteringChain gives at its own copy.
-                float* g = gated_.data() + (std::size_t) c * (std::size_t) block_;
-                std::uint32_t bad = 0;
-                for (int i = 0; i < m; ++i)
-                {
-                    const float v = in[c][off + i];
-                    const bool  fin = std::isfinite (v);
-                    bad += fin ? 0u : 1u;
-                    g[i] = std::clamp (fin ? v : 0.0f, -1.0e6f, 1.0e6f);
-                }
-                counted += bad;
-                ip[c] = g;
-            }
-            int got = 0;
-            if (! src_.process (ip, numChannels, m, sp, perCall_, got)) return false;
-            take (got);
-            off += m;
-            if (! clock.advance (m)) return false;
-        }
-        nonFinite_ = counted;
-        const float* zp[core::kMaxChannels] {};
-        for (int c = 0; c < numChannels; ++c) zp[c] = silence_.data() + (std::size_t) c * (std::size_t) block_;
-        // The drain: silence until T0 + outFrames outputs exist. Bounded — every block of silence yields
-        // at least block*L/M outputs, and the shortfall after the programme is about one latency.
-        for (long long guard = 0; emitted < T0 + outFrames; ++guard)
-        {
-            if (guard > 64 + (T0 + outFrames) / std::max (1, block_)) return false;
-            int got = 0;
-            if (! src_.process (zp, numChannels, block_, sp, perCall_, got)) return false;
-            take (got);
-        }
-        return clock.finish();
+        in_ = in; out_ = out; inFrames_ = inFrames; outFrames_ = outFrames;
+        read_ = emitted_ = work_ = 0; counted_ = 0; drainCalls_ = 0;
+        trim_ = trim;
+        done_ = outFrames == 0;
+        if (done_) nonFinite_ = 0;
+        active_ = true;
+        return true;
     }
+
+    [[nodiscard]] StepResult step (long long budget, ProgressClock* clock = nullptr) noexcept
+    {
+        if (! active_ || budget < 0) return StepResult::Failed;
+        if (done_) return StepResult::Done;
+        if (budget == 0) return StepResult::More;
+        float* sp[core::kMaxChannels] {};
+        for (int c = 0; c < nch_; ++c) sp[c] = staging_.data() + (std::size_t) c * (std::size_t) perCall_;
+        while (budget > 0 && ! done_)
+        {
+            const bool draining = read_ == inFrames_;
+            if (draining && drainCalls_ > 64LL * block_ + trim_ + outFrames_) return StepResult::Failed;
+            const long long remaining = draining ? budget : std::min (budget, inFrames_ - read_);
+            const int m = (int) std::min<long long> (clock != nullptr && ! draining ? clock->piece (block_) : block_, remaining);
+            if (m <= 0) return StepResult::Failed;
+            if (work_ > LLONG_MAX - m) return StepResult::Failed;
+            const float* ip[core::kMaxChannels] {};
+            for (int c = 0; c < nch_; ++c)
+            {
+                if (draining) ip[c] = silence_.data() + (std::size_t) c * (std::size_t) block_;
+                else
+                {
+                    float* g = gated_.data() + (std::size_t) c * (std::size_t) block_;
+                    std::uint32_t bad = 0;
+                    for (int i = 0; i < m; ++i)
+                    {
+                        const float v = in_[c][read_ + i];
+                        const bool fin = std::isfinite (v);
+                        bad += fin ? 0u : 1u;
+                        g[i] = std::clamp (fin ? v : 0.0f, -1.0e6f, 1.0e6f);
+                    }
+                    counted_ += bad;
+                    ip[c] = g;
+                }
+            }
+            int got = 0;
+            if (! src_.process (ip, nch_, m, sp, perCall_, got)) return StepResult::Failed;
+            for (int k = 0; k < got; ++k, ++emitted_)
+            {
+                const long long n = emitted_ - trim_;
+                if (n < 0 || n >= outFrames_) continue;
+                for (int c = 0; c < nch_; ++c)
+                    out_[c][n] = staging_[(std::size_t) c * (std::size_t) perCall_ + (std::size_t) k];
+            }
+            budget -= m;
+            work_ += m;
+            if (draining) drainCalls_ += m;
+            else
+            {
+                read_ += m;
+                if (read_ == inFrames_) nonFinite_ = counted_;
+                if (clock != nullptr && ! clock->advance (m)) return StepResult::Failed;
+            }
+            done_ = read_ == inFrames_ && emitted_ >= trim_ + outFrames_;
+        }
+        return done_ ? StepResult::Done : StepResult::More;
+    }
+
+    [[nodiscard]] bool finish (ProgressClock* clock = nullptr) noexcept
+    {
+        if (! active_ || ! done_) return false;
+        active_ = false;
+        return clock == nullptr || outFrames_ == 0 || clock->finish();
+    }
+
+    void cancel() noexcept { active_ = false; }
+    long long readFrames() const noexcept { return read_; }
+    long long workFrames() const noexcept { return work_; }
+    long long writtenFrames() const noexcept { return std::min (outFrames_, std::max (0LL, emitted_ - trim_)); }
 
 private:
     static long long outputBoundFor (const core::DeliveryResampler::Plan& pl, long long n) noexcept
@@ -251,6 +284,11 @@ private:
     double inRate_ = 0.0, deliveryRate_ = 0.0;
     int nch_ = 0, block_ = 0, perCall_ = 0;
     bool prepared_ = false;
+    const float* const* in_ = nullptr;
+    float* const* out_ = nullptr;
+    long long inFrames_ = 0, outFrames_ = 0, read_ = 0, emitted_ = 0, trim_ = 0, drainCalls_ = 0, work_ = 0;
+    std::uint64_t counted_ = 0;
+    bool active_ = false, done_ = false;
 };
 
 } // namespace felitronics::mastering

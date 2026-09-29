@@ -515,6 +515,9 @@ session compares or prints one.
 
 ## Work units, event deltas, and snapshots
 
+The mastering render's source-rate conversion, chain latency, drain, and preparation cursors are specified in
+[Resumable delivery render](RESUMABLE-RENDER.md). The session's master job can drive that API within its work-unit pump.
+
 `Session::step(budget)` runs live loudness, source clipping, the programme report, waveform, source analyzers, needles, and mastering. The budget counts **work units**, never milliseconds. A call
 consumes at most `min(budget, 16)` units, reports the number consumed, and returns `More` while any job remains or
 `Done` when none does. Zero units poll without progress. The shell measures its own speed and converts time to
