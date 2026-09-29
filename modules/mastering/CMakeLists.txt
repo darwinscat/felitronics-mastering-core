@@ -73,6 +73,12 @@ if(FELITRONICS_BUILD_TESTS)
         $<IF:$<CXX_COMPILER_ID:MSVC>,/fp:strict,-ffp-contract=off>)
     add_test(NAME felitronics_mastering_solver_pass_differential_tests COMMAND felitronics_mastering_solver_pass_differential_tests)
 
+    add_executable(felitronics_mastering_limiter_trace_tests tests/LimiterTraceTests.cpp)
+    target_link_libraries(felitronics_mastering_limiter_trace_tests PRIVATE felitronics::mastering felitronics::test_support)
+    target_compile_options(felitronics_mastering_limiter_trace_tests PRIVATE
+        $<IF:$<CXX_COMPILER_ID:MSVC>,/fp:strict,-ffp-contract=off>)
+    add_test(NAME felitronics_mastering_limiter_trace_tests COMMAND felitronics_mastering_limiter_trace_tests)
+
     add_executable(felitronics_mastering_oracle_tests tests/MasteringOracleTests.cpp)
     target_link_libraries(felitronics_mastering_oracle_tests PRIVATE felitronics::mastering felitronics::test_support)
     target_compile_features(felitronics_mastering_oracle_tests PRIVATE cxx_std_20)

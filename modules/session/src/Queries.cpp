@@ -4,6 +4,7 @@
 #include "BuildContract.h"
 #include "QueryState.h"
 #include <felitronics/session/Session.h>
+#include <felitronics/session/Landing.h>
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -19,10 +20,33 @@ std::uint64_t boundary (std::uint64_t length, std::uint64_t i, std::uint64_t cou
 { return (length / count) * i + ((length % count) * i) / count; }
 bool sameNumber (double a, double b) noexcept
 { return std::bit_cast<std::uint64_t> (a) == std::bit_cast<std::uint64_t> (b); }
+bool masterKind (QueryKind kind) noexcept
+{ return kind == QueryKind::LimiterGr || kind == QueryKind::PeakClipGr; }
+const Kept* masterFor (std::span<const Kept> masters, std::uint32_t id) noexcept
+{
+    for (const Kept& master : masters)
+        if (master.id == id) return &master;
+    return nullptr;
+}
+const LandingTrace* masterTrace (const Kept& master, QueryKind kind) noexcept
+{
+    if (! master.landing) return nullptr;
+    const auto& trace = kind == QueryKind::LimiterGr
+        ? master.landing->limiterTrace : master.landing->peakClipTrace;
+    if (trace) return &*trace;
+    return nullptr;
+}
 QueryStatus validate (const MeasurementQuery& q, const Source& source) noexcept
 {
-    if (unsigned (q.kind) > unsigned (QueryKind::Stereo) || ! std::isfinite (q.crossoverHz)
+    if (unsigned (q.kind) > unsigned (QueryKind::PeakClipGr) || ! std::isfinite (q.crossoverHz)
         || (! sameNumber (q.crossoverHz, 120) && ! sameNumber (q.crossoverHz, 150)) || ! std::isfinite (q.fromHz) || ! std::isfinite (q.toHz)) return QueryStatus::Contract;
+    if (masterKind (q.kind))
+    {
+        if (q.audioId == 0 || q.masterId == 0) return QueryStatus::Contract;
+        if (q.columns == 0 || q.columns > kQueryColumns) return QueryStatus::ColumnLimit;
+        return QueryStatus::Ready;
+    }
+    if (q.masterId != 0) return QueryStatus::Contract;
     if (q.audioId == 0 || q.audioId != source.hash) return QueryStatus::StaleSource;
     if (q.columns == 0 || q.columns > kQueryColumns) return QueryStatus::ColumnLimit;
     if (q.fromFrame > q.toFrame || q.toFrame > source.frames) return QueryStatus::InvalidRange;
@@ -43,6 +67,7 @@ Analyzer analyzer (const MeasurementQuery& q) noexcept
         case QueryKind::Momentary: case QueryKind::ShortTerm: return Analyzer::Loudness;
         case QueryKind::Clipping: return Analyzer::Clipping;
         case QueryKind::Stereo: return Analyzer::Stereo;
+        case QueryKind::LimiterGr: case QueryKind::PeakClipGr: break;
     }
     detail::storageOverflow();
 }
@@ -60,6 +85,7 @@ std::uint32_t stride (QueryKind kind) noexcept
         case QueryKind::Momentary: case QueryKind::ShortTerm: return 3;
         case QueryKind::Clipping: return 6;
         case QueryKind::Stereo: return 6;
+        case QueryKind::LimiterGr: case QueryKind::PeakClipGr: return 7;
     }
     detail::storageOverflow();
 }
@@ -70,7 +96,7 @@ std::uint64_t maxRows (const MeasurementQuery& q) noexcept
 }
 bool equal (const MeasurementQuery& a, const MeasurementQuery& b) noexcept
 {
-    return a.kind == b.kind && a.audioId == b.audioId && a.fromFrame == b.fromFrame && a.toFrame == b.toFrame
+    return a.kind == b.kind && a.audioId == b.audioId && a.masterId == b.masterId && a.fromFrame == b.fromFrame && a.toFrame == b.toFrame
         && a.columns == b.columns && sameNumber (a.crossoverHz, b.crossoverHz) && sameNumber (a.fromHz, b.fromHz) && sameNumber (a.toHz, b.toHz);
 }
 std::uint64_t freshness (const MeasurementResult& r) noexcept
@@ -219,6 +245,21 @@ QueryDemand Session::queryStorage (const MeasurementQuery& q) const noexcept
     if (checkFloatingPointEnvironment() != Status::Ok) return { QueryStatus::FloatingPointEnvironment, 0, 0, 0 };
     const auto status = validate (q, source_);
     if (status != QueryStatus::Ready) return { status, 0, 0 };
+    if (masterKind (q.kind))
+    {
+        const Kept* master = masterFor (masters(), q.masterId);
+        if (! master) return { QueryStatus::Unavailable, 0, 0, 0 };
+        if (master->recipe.source != q.audioId) return { QueryStatus::StaleSource, 0, 0, 0 };
+        const LandingTrace* trace = masterTrace (*master, q.kind);
+        if (! trace) return { QueryStatus::Unavailable, 0, 0, 0 };
+        if (q.fromFrame != trace->fromFrame || q.toFrame != trace->toFrame)
+            return { QueryStatus::InvalidRange, 0, 0, 0 };
+        if (! trace->complete) return { QueryStatus::Pending, 0, 0, 0 };
+        const std::uint64_t columns = std::min<std::uint64_t> (q.columns, trace->rows.size());
+        const std::uint64_t rowBytes = columns * 7u * sizeof (double);
+        const std::uint64_t block = rowBytes + 128u;
+        return { QueryStatus::Ready, 2u * block, block, rowBytes };
+    }
     const auto& r = measurementResults_[std::size_t (analyzer (q))];
     if (q.kind == QueryKind::Waveform)
     {
@@ -240,8 +281,31 @@ QueryResult Session::query (const MeasurementQuery& q) noexcept
     if (checkFloatingPointEnvironment() != Status::Ok)
     { QueryView v; v.request = q; v.status = QueryStatus::FloatingPointEnvironment; v.reason = MeasurementReason::Unsupported; return QueryResult::copy (v); }
     // Invalid enum cannot reach stride/analyzer dispatch.
-    if (unsigned (q.kind) > unsigned (QueryKind::Stereo))
+    if (unsigned (q.kind) > unsigned (QueryKind::PeakClipGr))
     { QueryView v; v.request = q; v.status = QueryStatus::Contract; v.reason = MeasurementReason::Unsupported; return QueryResult::copy (v); }
+    if (masterKind (q.kind))
+    {
+        QueryView v; v.request = q; v.audioId = q.audioId; v.revision = revision_; v.stride = 7;
+        const auto need = queryStorage (q);
+        v.status = need.status;
+        v.reason = need.status == QueryStatus::Ready ? MeasurementReason::None : MeasurementReason::Unsupported;
+        if (need.status != QueryStatus::Ready) return QueryResult::copy (v);
+        Checked request; request.bytes = need.bytes; request.largestBlockBytes = need.largestBlockBytes;
+        if (demand (request).rejection != Rejection::None)
+        { v.status = QueryStatus::Memory; v.reason = MeasurementReason::Memory; return QueryResult::copy (v); }
+        const LandingTrace* trace = masterTrace (*masterFor (masters(), q.masterId), q.kind);
+        v.sampleRate = trace->sampleRateHz;
+        v.measurementKey = q.masterId;
+        v.total = trace->columns;
+        v.stored = std::min<std::uint64_t> (q.columns, trace->rows.size());
+        v.complete = trace->complete && v.stored == v.total;
+        if (! trace->valid) v.reason = MeasurementReason::NonFinite;
+        std::unique_ptr<double[]> rows (new double[std::size_t (v.stored * v.stride)]);
+        if (LandingOps::query (*trace, q.columns, { rows.get(), std::size_t (v.stored * v.stride) }) != v.stored)
+            detail::storageOverflow();
+        v.values = { rows.get(), std::size_t (v.stored * v.stride) };
+        return QueryResult::copy (v);
+    }
     auto v = header (q, source_, revision_, measurementKey_);
     const auto need = queryStorage (q); v.status = need.status;
     v.reason = need.status == QueryStatus::Empty ? MeasurementReason::None : MeasurementReason::Unsupported;
@@ -300,6 +364,7 @@ QueryResult Session::query (const MeasurementQuery& q) noexcept
         case QueryKind::Clipping: clips (v, rows.get(), result); break;
         case QueryKind::Stereo: stereo (v, rows.get(), result, source_.frames); break;
         case QueryKind::Waveform: break;
+        case QueryKind::LimiterGr: case QueryKind::PeakClipGr: break;
     }
     v.values = { rows.get(), std::size_t (v.stored * v.stride) };
     if (! queryCache_) queryCache_.reset (new detail::QueryCache);

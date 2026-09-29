@@ -149,7 +149,8 @@ struct MasteringChainParams
 //                            delays (its bypass is warm, through its own curve), so the offset does not
 //                            depend on the bypass flags — only on which stages are PRESENT.
 //   * `limiterGrDb`,
-//     `limiterPeakLin`     — the limiter's oversampled traces, `tapOversampleFactor()` samples per frame.
+//     `limiterPeakLin`,
+//     `peakClipReductionDb` — the limiter's oversampled traces, `tapOversampleFactor()` samples per frame.
 //                            Their frame j is chain input sample `j - resolved().limiterTapOffset`. That
 //                            offset is NOT just the stages in front: the trace is written where the gain
 //                            is decided, on the oversampled copy, so it also lags by the UP leg of the
@@ -193,6 +194,7 @@ struct MasteringChainTaps
     float*        limiterGrDb    = nullptr;
     float*        limiterPeakLin = nullptr;
     int           osCapacity     = 0;
+    float*        peakClipReductionDb = nullptr; // positive K13 reduction, zero when bypassed or inactive
 
     // OUT. Set by every accepted call, including one that ran no quantum (all three zero).
     int framesWritten = 0;
@@ -985,7 +987,7 @@ public:
         const long long willFrames = willRun * (long long) K_;
         if ((taps.compressorGrDb != nullptr || taps.preLimiter != nullptr)
             && (long long) taps.frameCapacity < willFrames) return false;
-        if ((taps.limiterGrDb != nullptr || taps.limiterPeakLin != nullptr)
+        if ((taps.limiterGrDb != nullptr || taps.limiterPeakLin != nullptr || taps.peakClipReductionDb != nullptr)
             && (long long) taps.osCapacity < willFrames * (long long) osFactor_) return false;
         // The band-GR row is per QUANTUM, so its capacity is counted in quanta and not in frames — the one
         // tap here whose clock is not the sample.
@@ -997,7 +999,7 @@ public:
         // on a long offline call for a caller that never asked for a trace: 2^31 / 256 quanta is 12
         // hours of audio at 48 kHz, which an offline whole-file call can reach.
         const bool wantTaps = (taps.compressorGrDb != nullptr || taps.preLimiter != nullptr
-                               || taps.limiterGrDb != nullptr || taps.limiterPeakLin != nullptr
+                               || taps.limiterGrDb != nullptr || taps.limiterPeakLin != nullptr || taps.peakClipReductionDb != nullptr
                                || taps.bandDeltaDb != nullptr);
         tap_ = wantTaps ? &taps : nullptr;       // read by runQuantum(); cleared before returning
 
@@ -1271,11 +1273,12 @@ private:
         if (cfg_.limiter)
         {
             limiter::TruePeakLimiterTap limTap {};
-            if (tap_ != nullptr && (tap_->limiterGrDb != nullptr || tap_->limiterPeakLin != nullptr))
+            if (tap_ != nullptr && (tap_->limiterGrDb != nullptr || tap_->limiterPeakLin != nullptr || tap_->peakClipReductionDb != nullptr))
             {
                 const std::size_t o = (std::size_t) tap_->osWritten;
                 if (tap_->limiterGrDb    != nullptr) limTap.gainReductionDb = tap_->limiterGrDb + o;
                 if (tap_->limiterPeakLin != nullptr) limTap.linkedPeakLin   = tap_->limiterPeakLin + o;
+                if (tap_->peakClipReductionDb != nullptr) limTap.peakClipReductionDb = tap_->peakClipReductionDb + o;
                 limTap.capacity = K_ * osFactor_;
             }
             alignLim_.advance ((const float* const*) ch, nch_, K_, lim_.latencySamples());
@@ -1295,6 +1298,7 @@ private:
                 // say over a programme whose bypass moved.
                 if (limTap.gainReductionDb != nullptr) std::fill_n (limTap.gainReductionDb, K_ * osFactor_, 0.0f);
                 if (limTap.linkedPeakLin   != nullptr) std::fill_n (limTap.linkedPeakLin,   K_ * osFactor_, 0.0f);
+                if (limTap.peakClipReductionDb != nullptr) std::fill_n (limTap.peakClipReductionDb, K_ * osFactor_, 0.0f);
             }
         }
         else if (tap_ != nullptr)
@@ -1302,6 +1306,7 @@ private:
             const std::size_t o = (std::size_t) tap_->osWritten;
             if (tap_->limiterGrDb    != nullptr) std::fill_n (tap_->limiterGrDb + o,    K_ * osFactor_, 0.0f);
             if (tap_->limiterPeakLin != nullptr) std::fill_n (tap_->limiterPeakLin + o, K_ * osFactor_, 0.0f);
+            if (tap_->peakClipReductionDb != nullptr) std::fill_n (tap_->peakClipReductionDb + o, K_ * osFactor_, 0.0f);
         }
 
         // --- dither, last, and only when it is not bypassed --------------------------------------

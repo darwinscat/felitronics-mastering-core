@@ -54,6 +54,8 @@ if(PROJECT_IS_TOP_LEVEL)
         FetchContent_Declare(felitronics_core
             GIT_REPOSITORY https://github.com/darwinscat/felitronics-core.git
             GIT_TAG        ${FELITRONICS_MASTERING_FCORE_TAG}
+            PATCH_COMMAND  ${CMAKE_COMMAND} -DCORE_SOURCE=<SOURCE_DIR>
+                           -P ${CMAKE_CURRENT_SOURCE_DIR}/tools/core-k13-tap.cmake
             GIT_SHALLOW    TRUE)
     endif()
     # Core's own suites are core's business. A NORMAL variable, which core's option() honours (CMP0077),

@@ -47,6 +47,7 @@ int main()
         Fill fill { mode };
         SnapshotView view;
         Kept kept[1]; LandingPass pass[1]; ReadingPoint points[1]; ReadingRun runs[1]; MachineDifference differences[1]; EqPoint curve[1];
+        LandingTraceBucket traceRow { 0.0, 1.5, 0.75, 4, 0 };
         fill.value (view); fill.value (kept[0]); fill.value (points[0]); fill.value (runs[0]); fill.value (differences[0]); fill.value (curve[0]);
         fill.value (pass[0]);
         if (kept[0].landing)
@@ -54,6 +55,11 @@ int main()
             kept[0].landing->passes = 1;
             kept[0].landing->log = pass;
             kept[0].landing->deliverable = false;
+            LandingTrace trace;
+            trace.toFrame = 1; trace.sampleRateHz = 48000; trace.columns = 1;
+            trace.samples = 4; trace.complete = trace.valid = true; trace.rows = { &traceRow, 1 };
+            kept[0].landing->limiterTrace = trace;
+            kept[0].landing->peakClipTrace = trace;
         }
         view.measurementStorage = {};
         view.needlesBytes = view.needlesLargestBlockBytes = 0;

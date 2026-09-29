@@ -22,7 +22,12 @@ std::uint64_t Snapshot::storageFor (const SnapshotView& v) noexcept
 {
     std::uint64_t landingBytes = 0;
     for (const Kept& master : v.masters)
-        if (master.landing) landingBytes += std::uint64_t (master.landing->log.size_bytes());
+        if (master.landing)
+        {
+            landingBytes += std::uint64_t (master.landing->log.size_bytes());
+            if (master.landing->limiterTrace) landingBytes += std::uint64_t (master.landing->limiterTrace->rows.size_bytes());
+            if (master.landing->peakClipTrace) landingBytes += std::uint64_t (master.landing->peakClipTrace->rows.size_bytes());
+        }
     return detail::snapshotStorage (v.target.size(), v.source.name.size(), v.masters.size_bytes(),
                                     v.momentary.size_bytes(), v.shortTerm.size_bytes(), v.runs.size_bytes())
          + std::uint64_t (v.machineDifferences.size_bytes()) + std::uint64_t (v.eqCurve.size_bytes())
@@ -51,9 +56,21 @@ Snapshot Snapshot::copy (const SnapshotView& v) noexcept
         out.masters_.reset (new Kept[v.masters.size()]);
         std::copy (v.masters.begin(), v.masters.end(), out.masters_.get());
         std::size_t landingCount = 0;
-        for (const Kept& master : v.masters) if (master.landing) landingCount += master.landing->log.size();
+        std::uint64_t traceCount = 0;
+        for (const Kept& master : v.masters) if (master.landing)
+        {
+            landingCount += master.landing->log.size();
+            if (master.landing->limiterTrace) traceCount += master.landing->limiterTrace->rows.size();
+            if (master.landing->peakClipTrace) traceCount += master.landing->peakClipTrace->rows.size();
+        }
         if (landingCount != 0) out.landingPasses_.reset (new LandingPass[landingCount]);
-        std::size_t offset = 0;
+        if (traceCount != 0)
+        {
+            const auto bytes = traceCount * sizeof (LandingTraceBucket);
+            out.landingTraceRows_.reset (new LandingTraceBucket[
+                detail::snapshotAllocationSize<std::size_t> (bytes) / sizeof (LandingTraceBucket)]);
+        }
+        std::size_t offset = 0, traceOffset = 0;
         for (std::size_t i = 0; i < v.masters.size(); ++i)
             if (v.masters[i].landing)
             {
@@ -62,6 +79,17 @@ Snapshot Snapshot::copy (const SnapshotView& v) noexcept
                 out.masters_[i].landing->log = log.empty()
                     ? std::span<const LandingPass> {} : std::span<const LandingPass> { out.landingPasses_.get() + offset, log.size() };
                 offset += log.size();
+                for (auto member : { &LandingSummary::limiterTrace, &LandingSummary::peakClipTrace })
+                {
+                    const auto& source = (*v.masters[i].landing).*member;
+                    if (! source) continue;
+                    const auto rows = source->rows;
+                    if (! rows.empty()) std::copy (rows.begin(), rows.end(), out.landingTraceRows_.get() + traceOffset);
+                    ((*out.masters_[i].landing).*member)->rows = rows.empty()
+                        ? std::span<const LandingTraceBucket> {}
+                        : std::span<const LandingTraceBucket> { out.landingTraceRows_.get() + traceOffset, rows.size() };
+                    traceOffset += rows.size();
+                }
             }
         out.view_.masters = { out.masters_.get(), v.masters.size() };
     }

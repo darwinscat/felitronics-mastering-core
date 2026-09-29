@@ -144,13 +144,16 @@ struct Storage
     double* measurementRow = nullptr;
     std::size_t landingPasses = 0;
     LandingPass* landingPass = nullptr;
+    std::size_t landingTraceRows = 0;
+    LandingTraceBucket* landingTraceRow = nullptr;
     std::uint64_t bytes() const noexcept
     {
         return std::uint64_t (measurementResults) * sizeof (MeasurementResult)
              + std::uint64_t (measurementNumbers) * sizeof (MeasurementValue)
              + std::uint64_t (measurementArrays) * sizeof (MeasurementArray)
              + std::uint64_t (measurementRows) * sizeof (double) + chars + masters * sizeof (Kept) + points * sizeof (ReadingPoint) + runs * sizeof (ReadingRun) + differences * sizeof (MachineDifference) + eqPoints * sizeof (EqPoint)
-             + std::uint64_t (landingPasses) * sizeof (LandingPass);
+             + std::uint64_t (landingPasses) * sizeof (LandingPass)
+             + std::uint64_t (landingTraceRows) * sizeof (LandingTraceBucket);
     }
 };
 
@@ -335,7 +338,7 @@ struct Reader
             const auto parentOptional = optionalMask;
             const auto beforeRows = storage.measurementRows, beforeChars = storage.chars;
             const auto beforeNumbers = storage.measurementNumbers, beforeArrays = storage.measurementArrays;
-            const auto beforePasses = storage.landingPasses;
+            const auto beforePasses = storage.landingPasses, beforeTraceRows = storage.landingTraceRows;
             seen = 0; optionalMask = 0;
             expect ('{');
             do
@@ -372,6 +375,19 @@ struct Reader
                 if (storage.landingPasses - beforePasses > 12
                     || x.passes != storage.landingPasses - beforePasses) good = false;
             }
+            else if constexpr (std::is_same_v<T, LandingTrace>)
+            {
+                if (x.columns != storage.landingTraceRows - beforeTraceRows
+                    || x.columns > 65536 || x.fromFrame > x.toFrame
+                    || (x.columns != 0 && x.sampleRateHz == 0)
+                    || (x.valid && ! x.complete) || x.nonFinite > x.samples) good = false;
+            }
+            else if constexpr (std::is_same_v<T, LandingTraceBucket>)
+            {
+                if (x.nonFinite > x.samples || ! std::isfinite (x.minDb) || ! std::isfinite (x.maxDb)
+                    || ! std::isfinite (x.meanDb) || x.minDb < 0.0 || x.maxDb < x.minDb
+                    || x.meanDb < 0.0) good = false;
+            }
             optionalMask = parentOptional;
             seen = parentSeen; key = parentKey; ordinal = parentOrdinal; matched = parentMatched;
         }
@@ -386,6 +402,7 @@ struct Reader
         std::size_t* count = nullptr; T* out = nullptr;
         if constexpr (std::is_same_v<T, Kept>) { count = &storage.masters; out = storage.kept; }
         else if constexpr (std::is_same_v<T, LandingPass>) { count = &storage.landingPasses; out = storage.landingPass; }
+        else if constexpr (std::is_same_v<T, LandingTraceBucket>) { count = &storage.landingTraceRows; out = storage.landingTraceRow; }
         else if constexpr (std::is_same_v<T, ReadingPoint>) { count = &storage.points; out = storage.point; }
         else if constexpr (std::is_same_v<T, ReadingRun>) { count = &storage.runs; out = storage.run; }
         else if constexpr (std::is_same_v<T, EqPoint>) { count = &storage.eqPoints; out = storage.eqPoint; }
