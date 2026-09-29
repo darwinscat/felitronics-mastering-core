@@ -652,6 +652,19 @@ SCOMMON=("${SFRONT[@]}"
 
 echo "--- fc_session node (for session-check.mjs)"
 em++ "${SCOMMON[@]}" "${RELEASE[@]}" -sENVIRONMENT=node "$SSRC" "${SESSION_SRCS[@]}" -o "$OUT/fcsession.node.js"
+echo "--- direct dacd2b2 landing oracle against Session (FP contraction off)"
+em++ "${SFRONT[@]}" -I"$CORE/test_support" -O3 -sENVIRONMENT=node -sSTACK_SIZE=8388608 \
+     -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -Wl,--wrap=pthread_create \
+     "$ROOT/modules/session/tests/SessionDirectOracleTests.cpp" "${SESSION_SRCS[@]}" \
+     -o "$OUT/session-direct-oracle.js"
+node "$OUT/session-direct-oracle.js"
+if node "$OUT/session-direct-oracle.js" --fault > "$OUT/session-direct-oracle-control.txt" 2>&1; then
+    cat "$OUT/session-direct-oracle-control.txt"
+    echo "*** direct oracle accepted a one-bit PCM fault"; exit 1
+fi
+grep -q 'one-bit PCM fault must fail' "$OUT/session-direct-oracle-control.txt" \
+    || { cat "$OUT/session-direct-oracle-control.txt"; echo "*** direct oracle fault did not reach comparison"; exit 1; }
+echo "    control ok: one-bit PCM fault makes the direct oracle red"
 echo "--- fc_session web ES module (for a module worker)"
 em++ "${SCOMMON[@]}" "${RELEASE[@]}" -sENVIRONMENT=web,worker -sEXPORT_ES6=1 "$SSRC" "${SESSION_SRCS[@]}" -o "$OUT/fcsession.web.mjs"
 same_as_node fcsession fcsession.web.mjs

@@ -91,6 +91,21 @@ double Session::liveBytes() const noexcept
                    + (queryCache_ ? queryCache_->bytes() : 0)
                    + (needlesWork_ ? needlesWork_->bytes : 0) + (needlesResult_ ? sizeof (detail::NeedlesResult) : 0));
 }
+void Session::clearMasters() noexcept
+{
+    mastering_ = false;
+    job_ = 0;
+    jobRecipe_ = {};
+    masterJob_.reset();
+    masterJobBytes_ = 0;
+    masterAudio_ = {};
+    pendingMaster_ = {};
+    masters_.reset();
+    masterRows_.reset();
+    masterCount_ = masterRoom_ = 0;
+    masterUnit_ = 0;
+    masterProgress_ = {};
+}
 MeasurementStorage Session::measurementStorage (const Pcm& pcm) const noexcept
 {
     if (pcm.sampleRate < kMinSampleRate || pcm.channelCount < 1 || pcm.channelCount > 2 || pcm.frames == 0) return {};
