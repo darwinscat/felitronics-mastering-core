@@ -309,10 +309,11 @@ fc_session_status fc_session_attach_audio (fc_session session, uint32_t command_
 // must name the retained source. The identity arguments fence a stale request before any
 // allocation. The delivery format is the target's: its rate (the source's when the target
 // keeps it) and its bit depth, PCM16 or PCM24. topology->deliveryRate and
-// params->dither.bits of 0 take them, the same value restates them, and any other value
-// is the open rejection DeliveryFormat, before any allocation, with a fact naming the
-// target's depth and rate. This holds even when topology->dither is off. This is one
-// session job, not another Project.
+// params->dither.bits of 0 take them, the same value restates them, and any other
+// finite value is the open rejection DeliveryFormat, before any allocation, with a fact
+// naming the target's depth and rate. A NaN or infinite deliveryRate is a malformed
+// record, as every other non-finite field is: FC_SESSION_ERR_CONTRACT, no answer. This
+// holds even when topology->dither is off. This is one session job, not another Project.
 fc_session_status fc_session_master_bytes (fc_session session, uint32_t source_low, uint32_t source_high,
                                            uint32_t revision_low, uint32_t revision_high,
                                            const fc_master_config* topology, const fc_master_params* params,
