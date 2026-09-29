@@ -5,6 +5,7 @@
 #include <felitronics_test.h>
 #include <felitronics/session/Snapshot.h>
 #include "fc_session_abi.h"
+#include <felitronics/session/Config.h>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
@@ -17,6 +18,13 @@ using felitronics::test::ok;
 Session* sessionForReplayTest (fc_session handle) noexcept;
 namespace
 {
+fc_session_status createSession (fc_session* out)
+{
+    const fc_session_capabilities caps { sizeof (fc_session_capabilities), 9007199254740991.0, 4294967295u, FC_SESSION_DEVICES_ALL, 9007199254740991.0 };
+    const auto version = felitronics::session::config::Config::versions().all;
+    return fc_session_create (&caps, std::uint32_t (version), std::uint32_t (version >> 32), out);
+}
+
 Session* original = nullptr;
 const Snapshot* savedSnapshot = nullptr;
 const ProjectText* savedProject = nullptr;
@@ -38,12 +46,12 @@ int replayAfterPoison()
 {
     fc_session refused = 123;
     std::uint32_t halves[] = { 7, 7 };
-    ok (fc_session_create (&refused) == FC_SESSION_ERR_POISONED && refused == 123, "poison refuses a new handle for good");
+    ok (createSession (&refused) == FC_SESSION_ERR_POISONED && refused == 123, "poison refuses a new handle for good");
     ok (fc_session_destroy (originalHandle) == FC_SESSION_ERR_POISONED && fc_session_destroy (0) == FC_SESSION_ERR_POISONED,
         "poison precedes valid and invalid handles");
     ok (fc_session_config_version (halves) == FC_SESSION_ERR_POISONED && halves[0] == 7 && halves[1] == 7,
         "poison refuses queries without writing");
-    ok (fc_session_create (nullptr) == FC_SESSION_ERR_POISONED && fc_session_config_version (nullptr) == FC_SESSION_ERR_POISONED,
+    ok (createSession (nullptr) == FC_SESSION_ERR_POISONED && fc_session_config_version (nullptr) == FC_SESSION_ERR_POISONED,
         "poison precedes pointer checks");
     ok (fc_session_abi_version() == FC_SESSION_ABI_VERSION, "build identity stays readable");
     // Outside the abandoned module: desktop's new C++ owner, wasm's fresh module instance.
@@ -72,7 +80,7 @@ int replayAfterPoison()
 int main()
 {
     fc_session handle = 0;
-    ok (fc_session_create (&handle) == FC_SESSION_OK, "facade creates the original session");
+    ok (createSession (&handle) == FC_SESSION_OK, "facade creates the original session");
     // Test owns cleanup because a poisoned facade deliberately refuses even destroy.
     std::unique_ptr<Session> old (sessionForReplayTest (handle));
     float samples[] = { 0.0f, 0.25f, -0.25f, 0.0f };
@@ -82,11 +90,13 @@ int main()
     {
         ok (old->apply (load).rejection == Rejection::None, "successive loads");
         (void) old->step (10);
-        (void) old->apply (command::SetTarget { 2, "cd", OnEdits::Reset });
+        (void) old->apply (command::SetTarget { 2, "cd" });
         (void) old->apply (command::SetManual { 3, true });
         HpfFields<Touched> hpf; hpf.fq = 36; hpf.on = false;
         ok (old->apply (command::EditDevice { 4, hpf }).rejection == Rejection::None, "device edits");
-        (void) old->apply (command::SetTarget { 5, "lp", OnEdits::Keep });
+        (void) old->apply (command::SetTarget { 5, "lp" });
+        ok (! old->project().devices.hpf.hand.fq && ! old->project().devices.hpf.hand.on, "target change resets prior edits");
+        ok (old->apply (command::EditDevice { 5, hpf }).rejection == Rejection::None, "new target edits enter the replay recipe");
         (void) old->apply (command::EditTarget { 6, { -12.5, -0.5 } });
         (void) old->apply (command::Master { 7 }); (void) old->step (4);
     }
@@ -99,13 +109,13 @@ int main()
     // termination callback observes the still-active production guard. It never resumes the failed call.
     std::set_terminate (&abandoned);
     alloc::failNext = true;
-    try { (void) fc_session_create (&extra); }
+    try { (void) createSession (&extra); }
     catch (const std::bad_alloc&) { abandoned(); }
     alloc::failNext = false;
     ok (false, "the armed allocation must abandon the call");
 #else
     alloc::onNext = &reenter;
-    (void) fc_session_create (&extra);
+    (void) createSession (&extra);
     std::unique_ptr<Session> extraOwner (sessionForReplayTest (extra));
     ok (inner == FC_SESSION_ERR_POISONED, "reentry exercises the permanent poison on the exceptions-free tier");
 #endif

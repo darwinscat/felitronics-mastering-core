@@ -65,7 +65,7 @@ struct Target
     bool noClipper = false;                    // optional in the document: false when absent
     bool hpfAlways = false;                    // optional: false when absent
     bool sourceRatePass = false;               // optional: false when absent
-    std::optional<double> lowShelfDb;
+    std::optional<double> lowDb;
     std::optional<Album> album;
 };
 
@@ -78,6 +78,7 @@ struct Span
 
 struct Edit
 {
+    Span domain; // finite LUFS has no bounds; TP uses this interval
     double from = 0.0;
     double to = 0.0;
     Span green;
@@ -119,6 +120,7 @@ struct Landing
 
 struct PeakClipper
 {
+    Span manualDomain;
     double littleNeedDb = 0.0;
     double shortP90Ms = 0.0, shortBassShare = 0.0, shortPlrDb = 0.0;
     double longP90Ms = 0.0, longBassShare = 0.0, longPlrDb = 0.0;
@@ -172,6 +174,10 @@ struct HpfMark
 
 struct Hpf
 {
+    std::string frequencyDomain;
+    Span slopeDomain;
+    std::int32_t slopeMultiple = 0;
+    double hzStep = 0.0;
     std::int32_t band = 0;
     double hzMin = 0.0;
     double hzMax = 0.0;
@@ -194,6 +200,7 @@ struct Zone
 
 struct MonoBass
 {
+    Span frequencyDomain, lowWidthDomain;
     double lowWidth = 0.0;
     Span lowWidthRange;
     double lowWidthStep = 0.0;
@@ -246,6 +253,7 @@ struct GlueAtTarget
 
 struct Glue
 {
+    Span domain;
     double defaultUpToDb = 0.0;                // `default`
     double whenTickedUpToDb = 0.0;             // `whenTicked`
     std::vector<GlueAtTarget> byTarget;        // in the document's order
@@ -258,6 +266,7 @@ enum class SaturationShape : std::uint8_t { Tanh, Atan, Cubic, Asym };
 
 struct Saturation
 {
+    Span driveDomain, mixDomain, outputDomain;
     SaturationShape shape = SaturationShape::Tanh;
     double driveDb = 0.0;
     Span driveRange;
@@ -275,6 +284,7 @@ struct Saturation
 
 struct Tilt
 {
+    Span domain;
     std::int32_t band = 0;
     double freqHz = 0.0;
     Span normal;
@@ -282,8 +292,9 @@ struct Tilt
     double step = 0.0;
 };
 
-struct LowShelf
+struct Low
 {
+    Span domain;
     std::int32_t band = 0;
     double freqHz = 0.0;
     double q = 0.0;
@@ -457,7 +468,7 @@ struct Engine
     Glue glue;
     Saturation saturation;
     Tilt tilt;
-    LowShelf lowShelf;
+    Low low;
     Eq eq;
     Stages stages;
     Dither dither;
@@ -495,7 +506,7 @@ enum class Refusal : std::uint8_t
     OutOfOrder,    // a minimum above its maximum, or a list that must ascend and does not
     Duplicate,     // named twice where once is the rule (a target in `main`, an EQ band given to two devices)
     Fixed,         // a value the session does not let change (the limiter is always on, the printed quantiles)
-    NotOnStep,     // not a whole number of its knob's steps
+    NotOnStep,     // analyzer hop is not a whole number of its required time quantum
     Mismatch,      // differs from the key it must equal
     WrittenDefault,// an optional flag written as its default: it is written only when it is true
     NotApplicable, // set where it cannot apply (a pass at the source's rate on a target that keeps the source's rate)
@@ -529,7 +540,7 @@ struct Problem
 //   all    every key of both documents: which config this is.
 //   sound  what can change a master; when it is not sure, a key stays in. It leaves out only: what is shown (the main
 //          list and the order of the target rows, the hand edit's travels and green ranges, the red and comfort zones —
-//          hpf.comfort, tilt.normal, lowShelf.normal, hpf.slopesNormal — the curve scales and marks, the knob scale's
+//          hpf.comfort, tilt.normal, low.normal, hpf.slopesNormal — the curve scales and marks, the knob scale's
 //          zones); what prints a finding or a warning without switching a device (every observation threshold but
 //          observations.polarity, which keeps mono bass out; the peak clipper's density figures); what is measured
 //          after the master (the crest, the cost); development (the progress weights, the blind test); the name of the

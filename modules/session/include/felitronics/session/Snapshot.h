@@ -12,16 +12,21 @@ namespace felitronics::session
 {
 struct SnapshotView
 {
+    std::uint32_t offeredDevices = 0;
     State state = State::Empty;
     bool mastering = false;
     std::uint64_t revision = 0;
     Project project {};
+    // Touched device fields, including equal-to-machine values and false ticks.
+    std::uint32_t handFieldCount = 0;
     std::string_view target;
     Source source {};
     JobId job = 0, measurementJob = 0;
     Recipe jobRecipe {};
     std::span<const Kept> masters;
     std::span<const MachineDifference> machineDifferences;
+    // Empty until placement; 128 logarithmic points from 20 Hz to min(20 kHz, 0.49 * source rate).
+    std::span<const EqPoint> eqCurve;
     Phase measurementProgress {}, masterProgress {};
     double sourceBytes = 0.0;
     double integratedLufs = 0.0;
@@ -50,6 +55,7 @@ private:
     std::unique_ptr<char[]> text_;
     std::unique_ptr<Kept[]> masters_;
     std::unique_ptr<MachineDifference[]> differences_;
+    std::unique_ptr<EqPoint[]> eqCurve_;
     std::unique_ptr<ReadingPoint[]> points_;
     std::unique_ptr<ReadingRun[]> runs_;
 };

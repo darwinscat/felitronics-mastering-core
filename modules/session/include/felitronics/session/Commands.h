@@ -57,20 +57,16 @@ enum class Rejection : std::uint8_t
     Busy,                       // a master is being made
     NoJob,                      // no named measurement or master is running
     NoMaster,                   // no master is kept in this state
-    // the device panel
-    ManualOff,                  // the manual mode is off: the device panel is closed
     // what the command names
     UnknownTarget,              // no row of [targets] has this name
-    NotOffered,                 // this device is not offered here: the low shelf off a target that carries one, the
-                                // dither above the bit depth it serves, mono bass on a mono source
+    NotOffered,                 // this device is excluded by the shell, dither above the bit depth it serves,
+                                // or mono bass on a mono source
     UnknownJob,                 // not an active measurement or master
     UnknownMaster,              // no master kept under this id
     // the fields
-    NoFields,                   // an edit or a revert that touches no field
     NotFinite,                  // a value or a sample that is not a finite number
     NotOneOf,                   // not one of the values this field takes (a slope, a mode)
-    OutOfTravel,                // outside the knob's travel
-    OffStep,                    // not a whole number of the knob's steps from where its travel starts
+    OutOfDomain,                // outside the knob's accepted domain
     // the audio (load)
     BadChannels,                // not one or two channels
     BadRate,                    // a sample rate below 8000 Hz (felitronics-core's lowest)
@@ -86,8 +82,10 @@ enum class Rejection : std::uint8_t
     ProjectUnknownKey,          // an unknown section, knob or author suffix
     UnknownDefaults,            // malformed defaults label, or an uncarried label between the retained versions
     ProjectCore,                // core must be a canonical major.minor.patch version
-    MachineMismatch,            // this core's decision disagrees with its own saved layer
     NewerDefaults,              // defaults are newer than the current compiled table
+    RateAboveLimit,             // above the shell's maxRateHz
+    Memory,                     // live bytes plus demand exceeds capacity, or a block cannot fit
+    Contract,                   // malformed command or metadata at the protocol boundary
 };
 
 using CommandId = std::uint64_t;   // the shell's own number for a request, given back in its answer
@@ -99,13 +97,10 @@ inline constexpr std::uint8_t kNoField = 0xFF;
 
 // A DEVICE'S EDIT: which device (the alternative, in the order of Device) and the fields a person touched.
 using DeviceEdit = std::variant<HpfFields<Touched>, MonoBassFields<Touched>, GlueFields<Touched>, SaturationFields<Touched>,
-                                TiltFields<Touched>, LimiterFields<Touched>, DitherFields<Touched>, LowShelfFields<Touched>>;
+                                TiltFields<Touched>, LimiterFields<Touched>, DitherFields<Touched>, LowFields<Touched>>;
 // ...and the fields a revert takes back.
 using DeviceMask = std::variant<HpfFields<Mark>, MonoBassFields<Mark>, GlueFields<Mark>, SaturationFields<Mark>,
-                                TiltFields<Mark>, LimiterFields<Mark>, DitherFields<Mark>, LowShelfFields<Mark>>;
-
-// Whether setTarget keeps a person's device edits or takes them back. The target's own numbers are replaced either way.
-enum class OnEdits : std::uint8_t { Reset, Keep };
+                                TiltFields<Mark>, LimiterFields<Mark>, DitherFields<Mark>, LowFields<Mark>>;
 
 // The lowest sample rate a load takes: felitronics-core's (core::kMinSampleRate) — below it the loudness weighting is past
 // Nyquist, and what arrives there is a rate in kilohertz or a corrupt header. The highest is the shell's to say.
@@ -133,7 +128,8 @@ struct SourceMeta
 namespace command
 {
 struct Load        { CommandId id = 0; Pcm pcm {}; SourceMeta meta {}; };
-struct SetTarget   { CommandId id = 0; std::string_view target; OnEdits onEdits = OnEdits::Reset; };
+// Replaces the target's numbers, resets every device edit, and places the machine's layer again when ready.
+struct SetTarget   { CommandId id = 0; std::string_view target; };
 struct EditTarget  { CommandId id = 0; TargetFields<Touched> fields {}; };
 struct EditDevice  { CommandId id = 0; DeviceEdit fields {}; };
 struct RevertEdits { CommandId id = 0; DeviceMask fields {}; };
@@ -155,6 +151,7 @@ struct Answer
     Rejection rejection = Rejection::None;     // None: accepted
     std::uint64_t revision = 0;                // accepted: the revision it made; rejected: the revision, unchanged
     JobId job = 0;                             // an accepted load or master: the job it started
+    double needBytes = 0.0;                    // Memory: live declared bytes plus the refused demand, below 2^53
     ProjectPosition position {};              // import: 1-based Unicode line and column; zero for preflight refusals
     std::optional<Device> device;              // import: absent for a target field
     std::uint8_t field = kNoField;             // rejected on a field: its place among the fields, in the order written
@@ -169,6 +166,8 @@ struct Checked
     Rejection rejection = Rejection::None;
     std::uint8_t field = kNoField;
     std::uint64_t bytes = 0;                   // preflight passed: demand of apply(), including import refusals; otherwise 0
+    double needBytes = 0.0;                    // Memory: total declared live bytes and demand
+    std::uint64_t largestBlockBytes = 0;       // largest single allocation (import: conservative bound)
 };
 
 // A session's situation — its state, and whether a master is being made — as the column of the tables below.
@@ -182,13 +181,12 @@ inline constexpr std::size_t kColumns = 6;
 // THE ORDER OF THE CHECKS, the same for every command — the first that fails is the answer, and nothing has changed:
 //   1. ENTRY    the calling thread's floating-point environment (FloatingPointEnvironment)
 //   2. STATE    this table: the command's cell in the session's column
-//   3. MANUAL   the device panel's commands — editDevice, revertEdits — need the manual mode (ManualOff)
-//   4. NAMES    what the command names: a target (setTarget), a device offered for this target and source (editDevice,
+//   3. NAMES    what the command names: a target (setTarget), a device offered for this target and source (editDevice,
 //               revertEdits), an id left for a new job (load, master: NoJobId), a load's UTF-8 name (InvalidUtf8),
 //               the active job (cancel), a master kept (forget)
-//   5. FIELDS   an edit or a revert touches a field (NoFields); then field by field, in the order written: finite, one of
-//               the field's values, on its travel, on its step
-//   6. AUDIO    a load's audio: its channels, its rate, its frames, its size, then every sample finite
+//   4. FIELDS   each touched field, in the order written: finite, one of its values, within its domain.
+//               Empty edits/reverts are accepted without a revision change; travel and step are slider hints.
+//   5. AUDIO    a load's audio: its channels, its rate, its frames, its size, then every sample finite
 // Only a command that passed them all does its work. A load's work starts by DISARMING — whatever runs on the old source
 // stops, and the old source, its measurements, its masters and a person's device edits go — and then writes the new one.
 struct Table
@@ -216,7 +214,7 @@ struct Table
     };
 
     // Import: entry, state, size (no input read), then TOML syntax, schema in canonical field order,
-    // defaults version, core version, target name, manual/offered constraints, same-core machine equality.
+    // defaults version, core version, target name, offered-device constraints. The saved machine layer is kept; differences are reported.
     // The file supplies manual mode; the current mode is not a prerequisite for restoring a project.
 
     // Cancel in Loaded drops the source and returns Empty; in Measured1 it stops phase two and keeps Measured1.

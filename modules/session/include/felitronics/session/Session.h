@@ -28,10 +28,24 @@ enum class Status : std::uint8_t
     // caller restores it (or calls from another thread) and calls again.
     FloatingPointEnvironment = 1,
 
-    // The config compiled into the library does not hold a number the session's commands check against where the
-    // config's schema puts it. Not reachable in a library whose build ran the config's gate (every build does): the
-    // session reads the same documents the gate read, and its reading is held to the schema's by the state suite.
-    Config = 2,
+    ConfigVersion = 2,
+    Capabilities = 3,
+    Memory = 4,
+};
+
+// Shell input; exact byte counts are doubles strictly below 2^53. Device bits follow Device.
+struct Capabilities
+{
+    double heapCeilingBytes = 9007199254740991.0;
+    std::uint32_t maxRateHz = 4294967295u;
+    std::uint32_t offeredDevices = 255u;
+    double largestFreeBlockBytes = 9007199254740991.0;
+};
+
+struct Capacity
+{
+    double heapCeilingBytes = 9007199254740991.0;
+    double largestFreeBlockBytes = 9007199254740991.0;
 };
 
 struct ProjectText
@@ -41,6 +55,10 @@ struct ProjectText
     std::size_t size = 0;
     [[nodiscard]] std::string_view view() const noexcept;
 };
+
+// Summed high-pass + tilt + low response, in Hz and dB.
+struct EqPoint { double hz = 0.0, db = 0.0; };
+inline constexpr std::size_t kEqCurvePoints = 128;
 
 class Session;
 class Snapshot;
@@ -115,15 +133,20 @@ public:
     // THE DEMAND OF create(), before it is made (law 11d: memory that cannot be had is fatal, so the demand is published
     // instead). The bytes create() requests from the heap, counted by the same expression that sizes the request, so the
     // two cannot drift. REQUESTED bytes: the allocator's own header and alignment are the caller's margin.
-    [[nodiscard]] static std::uint64_t createBytes() noexcept;
+    [[nodiscard]] static std::uint64_t createBytes (const Capabilities& capabilities = {}) noexcept;
 
     // A new session — Empty, at revision 0, on the config's default target, the manual mode off, the devices unplaced
     // (they are placed when the first measurement ends) — or a refusal before anything is allocated:
-    // Status::FloatingPointEnvironment, the calling thread's FP environment (see checkFloatingPointEnvironment), or
-    // Status::Config.
+    // Status::FloatingPointEnvironment, ConfigVersion, Capabilities or Memory. The embedded config was checked at build time.
     // An accepted create never gives a null session: under -fno-exceptions a heap that cannot serve createBytes() ends
     // the process (natively) or the module (wasm) inside this call, which is what the demand above keeps a shell clear of.
     [[nodiscard]] static Created create() noexcept;
+    [[nodiscard]] static Created create (const Capabilities& capabilities, std::uint64_t configVersion) noexcept;
+    [[nodiscard]] static Status checkCreate (const Capabilities& capabilities, std::uint64_t configVersion) noexcept;
+    [[nodiscard]] double liveBytes() const noexcept;
+    [[nodiscard]] const Capabilities& capabilities() const noexcept;
+    // Update between calls; a smaller capacity is allowed and the next allocation checks it.
+    [[nodiscard]] Status setCapacity (const Capacity& capacity) noexcept;
 
     // Is the calling thread's floating-point environment IEEE-754's default — no flush-to-zero, no denormals-are-zero,
     // rounding to nearest? Status::Ok if it is, Status::FloatingPointEnvironment if not. Read with ordinary arithmetic;
@@ -155,10 +178,14 @@ public:
     // Import checks entry and state, then counts the text through the library without allocating.
     // Its parse/schema work and document refusals use that allowance, plus the session's owned storage.
     [[nodiscard]] Checked check (const Request& request) const noexcept;
+    // Allocation-free demand before capacity checks; Load needs shape/meta only, never sample pointers.
+    [[nodiscard]] Checked storageFor (const Request& request) const noexcept;
+    [[nodiscard]] Answer rejectProtocol (CommandId id) noexcept;
 
     // Export is an owned exact byte allocation, without a terminator. Only placed projects are exportable.
     [[nodiscard]] Checked exportProjectBytes() const noexcept;
     [[nodiscard]] ProjectText exportProject() const noexcept;
+    [[nodiscard]] Rejection exportProject (std::span<char> output) const noexcept;
     [[nodiscard]] Answer importProject (CommandId id, std::string_view bytes) noexcept;
 
     // Each unit completes one deterministic stub step. A call takes at most kStepUnits units;
@@ -188,12 +215,16 @@ public:
     [[nodiscard]] std::span<const Kept> masters() const noexcept;   // the masters kept, in the order they were made
 
 private:
+    friend class Wire;
     friend struct detail::Driver;   // the session's own transitions, driven by the work that ends (src/Driver.h)
     // Defined by the state and event suites to reach the last job id, Driver failures and batch bounds;
     // the library defines none.
     friend struct detail::Inspector;
 
     Session() noexcept = default;
+    Capabilities capabilities_ {};
+    [[nodiscard]] Checked demand (const Checked& storage) const noexcept;
+    [[nodiscard]] Answer reject (Answer answer) noexcept;
 
     // Are the devices placed — has the first measurement of this source ended (Measured1, Measured2)?
     [[nodiscard]] bool placed() const noexcept;
@@ -215,6 +246,9 @@ private:
     Project project_ {};
     MachineDifference differences_[kDeviceFields] {};
     std::size_t differenceCount_ = 0;
+    // Derived at placement and after accepted commands; owned snapshots copy these points.
+    void refreshEqCurve() noexcept;
+    EqPoint eqCurve_[kEqCurvePoints] {};
     // OWNED BUFFERS, EACH ONE EXACT REQUEST — not std::vector: a debugging standard library (MSVC's at
     // _ITERATOR_DEBUG_LEVEL 1 or 2) gives every vector a heap-allocated proxy of its own, which no declared demand
     // counts. The source: its samples planar, channel after channel (source_.channels × source_.frames), and the name

@@ -187,8 +187,8 @@ void defaultsVersions()
     ok (import (*s, withDefaults (current, "2026-08")).rejection == Rejection::None
         && s->events().size() == 1 && s->events()[0].payload.fact.view().id == text::FactId::DefaultsConverted,
         "an older month with the same core converts when the complete machine matches");
-    refused (*s, withDefaults (project() + "\n[hpf]\nfq.machine = 37\n", "2026-08"),
-        Rejection::MachineMismatch, "37");
+    ok (import (*s, withDefaults (project() + "\n[hpf]\nfq.machine = 37\n", "2026-08")).rejection == Rejection::None
+        && s->events().size() == 2, "same-core differences survive older-default conversion");
     for (const auto newer : { "2026-10", "2027-01", "9999-12" })
         refused (*s, withDefaults (project(), newer), Rejection::NewerDefaults, std::string ("\"") + newer + '"');
     for (const auto malformed : { "2026-00", "2026-13", "2026-9", "026-09", "20260-09", "2026/09", "2026-09x", " 2026-09", "2026-0a", "" })
@@ -198,7 +198,7 @@ void defaultsVersions()
 void roundTrip()
 {
     auto s = fresh();
-    (void) s->apply (command::SetTarget { 2, "lp", OnEdits::Reset });
+    (void) s->apply (command::SetTarget { 2, "lp" });
     (void) s->apply (command::SetManual { 3, true });
     (void) s->apply (command::EditTarget { 4, { -12.5, -0.5 } });
     // Every typed field and optional alternative participates, including a hand equal to its machine.
@@ -214,14 +214,14 @@ void roundTrip()
     ok (saved.starts_with (header()), "defaults and stamped core version are first, with manual mode");
     ok (saved.find (".machine") == std::string::npos && saved.find ("fq.hand = 32\n") != std::string::npos,
         "defaults are omitted; an equal hand remains owned");
-    ok (saved.find ("[hpf]\n") != std::string::npos && saved.find ("[lowShelf]\n") != std::string::npos,
+    ok (saved.find ("[hpf]\n") != std::string::npos && saved.find ("[low]\n") != std::string::npos,
         "section names are the config's names");
     auto restored = fresh();
     const auto before = restored->revision();
     ok (import (*restored, saved, "realistic").rejection == Rejection::None && restored->revision() == before + 1, "import commits once");
     ok (exported (*restored) == saved, "export import export is byte-identical");
     auto dither = fresh();
-    (void) dither->apply (command::SetTarget { 2, "cd", OnEdits::Reset });
+    (void) dither->apply (command::SetTarget { 2, "cd" });
     (void) dither->apply (command::SetManual { 3, true });
     DitherFields<Touched> ditherHand; ditherHand.on = true;
     ok (dither->apply (command::EditDevice { 4, ditherHand }).rejection == Rejection::None, "dither hand on a 16-bit target");
@@ -229,6 +229,17 @@ void roundTrip()
     const auto ditherText = exported (*dither);
     ok (import (*ditherCopy, ditherText).rejection == Rejection::None && exported (*ditherCopy) == ditherText,
         "dither's hand round trips too");
+    (void) dither->apply (command::SetTarget { 6, "allStreaming" });
+    const auto reset = exported (*dither);
+    ok (! dither->project().devices.dither.machine.on && ! dither->project().devices.dither.hand.on
+        && import (*ditherCopy, reset).rejection == Rejection::None && exported (*ditherCopy) == reset,
+        "target change clears dither hand and the reset project round trips");
+    ok (ditherCopy->apply (command::EditDevice { 7, ditherHand }).rejection == Rejection::NotOffered,
+        "dither edits still require delivery at 16 bits or below");
+    (void) ditherCopy->apply (command::SetTarget { 8, "cd" });
+    ok (! ditherCopy->project().devices.dither.hand.on && ditherCopy->project().devices.dither.machine.on,
+        "returning to CD uses the machine's decision with no device edit");
+
     auto a = s->snapshot(), b = restored->snapshot();
     SnapshotView av = a.view(), bv = b.view(); av.revision = bv.revision;
     ok (json (av) == json (bv), "both complete project layers and measured state survive round trip");
@@ -251,6 +262,49 @@ void roundTrip()
     ok (import (*restored, project (false)).rejection == Rejection::None && ! restored->project().manual,
         "manual false imports without depending on the current manual mode");
 }
+void domainsAndExactNumbers()
+{
+    auto s = fresh();
+    struct Row { const char* section; const char* field; const char* accepted; const char* refused; };
+    const Row rows[] {
+        { "target", "lufs", "99", nullptr }, { "target", "tp", "-5.5", "-6.01" },
+        { "hpf", "fq", "20000.25", "24000" }, { "hpf", "slope", "96", "102" },
+        { "monoBass", "fq", "120.25", "300.1" }, { "monoBass", "width", "0.333333333", "1.01" },
+        { "glue", "upToDb", "5.25", "6.01" }, { "saturation", "drive", "1.25", "12.01" },
+        { "saturation", "mix", "0.123456789", "-0.01" }, { "saturation", "output", "-1.25", "0.01" },
+        { "tilt", "db", "5.25", "6.01" }, { "low", "db", "-5.25", "-6.01" },
+        { "limiter", "needlesDb", "5.25", "6.01" }
+    };
+    for (const auto& row : rows)
+    {
+        const std::string base = header() + "\n[target]\nname = \"lp\"\n";
+        const auto input = [&] (const char* value) { return base + "\n[" + row.section + '.' + row.field + "]\nhand = " + value + '\n'; };
+        ok (import (*s, input (row.accepted)).rejection == Rejection::None,
+            std::string (row.section) + '.' + row.field + " imports within domain, independent of slider");
+        const auto saved = exported (*s);
+        ok (import (*s, saved).rejection == Rejection::None && exported (*s) == saved, "domain project round-trips");
+        if (row.refused)
+            refused (*s, input (row.refused), std::string_view (row.field) == "slope" ? Rejection::NotOneOf : Rejection::OutOfDomain, row.refused);
+    }
+    for (double value : { 1.0 / 3.0, -1.2345678901234567, std::numeric_limits<double>::max(),
+                          std::numeric_limits<double>::min(), std::numeric_limits<double>::denorm_min() })
+    {
+        TargetFields<Touched> fields; fields.lufs = value;
+        ok (s->apply (command::EditTarget { 1, fields }).rejection == Rejection::None, "finite LUFS accepted");
+        const auto saved = exported (*s);
+        ok (import (*s, saved).rejection == Rejection::None
+            && std::bit_cast<std::uint64_t> (*s->project().targetEdit.lufs) == std::bit_cast<std::uint64_t> (value),
+            "full binary64 project value round-trips without quantization");
+        ok (exported (*s) == saved, "extended numeric spelling is canonical");
+    }
+    for (const auto text : { "\"1e\"", "\"NaN\"", "\"1.2.3\"", "\"1e9999\"" })
+        refused (*s, project() + "\n[target.lufs]\nhand = " + text + '\n', Rejection::ProjectType, text);
+    Audio audio; auto load = audio.load(); load.pcm.sampleRate = 8000;
+    ok (s->apply (load).rejection == Rejection::None, "different source rate loaded"); (void) s->step (10);
+    refused (*s, project() + "\n[hpf]\nfq.hand = 4000\n", Rejection::OutOfDomain, "4000");
+    ok (import (*s, project() + "\n[hpf]\nfq.hand = 3999.5\n").rejection == Rejection::None, "import uses current source Nyquist");
+}
+
 void refusals()
 {
     auto s = fresh();
@@ -262,23 +316,23 @@ void refusals()
     refused (*s, project() + "\n[hpf]\nfq.robot = 30\n", Rejection::ProjectUnknownKey, "robot");
     refused (*s, project() + "\n[hpf]\nfq.hand = \"bad\"\n", Rejection::ProjectType, "\"bad\"");
     refused (*s, project() + "\n[hpf]\nfq = 30\n", Rejection::ProjectType, "30");
-    refused (*s, project() + "\n[hpf]\nfq.hand = 900\n", Rejection::OutOfTravel, "900");
-    refused (*s, project() + "\n[hpf]\nfq.hand = 32.5\n", Rejection::OffStep, "32.5");
+    refused (*s, project() + "\n[hpf]\nfq.hand = 24000\n", Rejection::OutOfDomain, "24000");
+    ok (s->importProject (1, project() + "\n[hpf]\nfq.hand = 32.5\n").rejection == Rejection::None, "import accepts a value between slider steps");
     refused (*s, project() + "\n[hpf]\nslope.hand = 11\n", Rejection::NotOneOf, "11");
     refused (*s, project() + "\n[limiter]\nneedles.hand = \"other\"\n", Rejection::NotOneOf, "\"other\"");
     refused (*s, header() + "target = { name = \"unknown\" }\n", Rejection::UnknownTarget, "\"unknown\"");
     auto old = project(); old.replace (old.find ("defaults = "), old.find ('\n'), "defaults = \"missing\"");
     refused (*s, old, Rejection::UnknownDefaults, "\"missing\"");
     refused (*s, project (true, "01.2.3"), Rejection::ProjectCore, "\"01.2.3\"");
-    refused (*s, project() + "\n[hpf]\nfq.machine = 36\n", Rejection::MachineMismatch, "36");
+    ok (import (*s, project() + "\n[hpf]\nfq.machine = 36\n").rejection == Rejection::None, "saved machine and hidden hand are accepted");
     refused (*s, header() + "[target]\n", Rejection::ProjectMissing);
     refused (*s, project() + "\n[hpf\n", Rejection::ProjectSyntax);
     refused (*s, project() + "\n[hpf]\nfq.hand = 36\nfq.hand = 38\n", Rejection::ProjectSyntax);
     refused (*s, std::string (felitronics::toml::kMaxDocument + 1, 'x'), Rejection::ProjectSyntax);
-    refused (*s, project (false) + "\n[hpf]\nfq.hand = 36\n", Rejection::ManualOff, "36");
-    refused (*s, project() + "\n[lowShelf]\ndb.hand = 1\n", Rejection::NotOffered, "1\n");
+    ok (import (*s, project (false) + "\n[hpf]\nfq.hand = 36\n").rejection == Rejection::None, "saved machine and hidden hand are accepted");
+    ok (import (*s, project() + "\n[low]\ndb.hand = 1\n").rejection == Rejection::None, "saved machine and hidden hand are accepted");
     refused (*s, project() + "\n[target.lufs]\nmachine = -12\n", Rejection::ProjectUnknownKey, "machine");
-    refused (*s, project (false) + "\n[hpf]\nfq.machine = 36\n\n[tilt]\ndb.hand = 1\n", Rejection::ManualOff, "1\n");
+    ok (import (*s, project (false) + "\n[hpf]\nfq.machine = 36\n\n[tilt]\ndb.hand = 1\n").rejection == Rejection::None, "saved machine and hidden hand are accepted");
     auto limit = project(); limit += '#' + std::string (felitronics::toml::kMaxDocument - limit.size() - 1, 'x');
     ok (import (*s, limit).rejection == Rejection::None, "a project at the library text limit is accepted beyond the former 16 KiB cap");
     // Positions count Unicode characters; the prefix comment has a multibyte value.
@@ -329,7 +383,7 @@ void foreignMachine()
     (void) import (*s, input);
     (void) s->apply (command::SetManual { 9, false });
     ok (s->snapshot().view().machineDifferences.size() == 2, "switching off manual leaves the saved machine layer");
-    (void) s->apply (command::SetTarget { 10, "lp", OnEdits::Reset });
+    (void) s->apply (command::SetTarget { 10, "lp" });
     ok (s->snapshot().view().machineDifferences.empty() && version (s->project().core) == version (Session::version()),
         "a new target places the current machine and clears the old comparison");
     s.reset();
@@ -342,7 +396,7 @@ void numbers()
 {
     const auto rules = detail::rules();
     auto s = fresh();
-    (void) s->apply (command::SetTarget { 2, "lp", OnEdits::Reset });
+    (void) s->apply (command::SetTarget { 2, "lp" });
     (void) s->apply (command::SetManual { 3, true });
     auto replay = fresh();
     Devices devices;
@@ -426,7 +480,7 @@ void demandsAndOrder()
     // The session law measures the whole import, including schema refusals and owned results.
     // Parser/container allocation laws are tested by felitronics-toml.
     std::vector<std::string> hostile {
-        "", header() + "[target]\n", project() + "[hpf]\nfq.hand = 32.5\n",
+        "", header() + "[target]\n", project() + "[hpf]\nfq.hand = 24000\n",
         project() + "[limiter]\nneedles.hand = \"" + std::string (8000, 'a') + "\"\n",
         project() + "[hpf]\nfq.hand = \"bad\"\n", project() + "[hpf\n"
     };
@@ -446,6 +500,6 @@ void demandsAndOrder()
 }
 int main()
 {
-    sparseSections(); defaultsVersions(); roundTrip(); refusals(); foreignMachine(); numbers(); slicing(); demandsAndOrder();
+    sparseSections(); defaultsVersions(); roundTrip(); domainsAndExactNumbers(); refusals(); foreignMachine(); numbers(); slicing(); demandsAndOrder();
     return felitronics::test::report();
 }

@@ -6,11 +6,11 @@
 // Compiled into the library and into felitronics_session_config_check, the gate every build runs.
 //
 // FORM AND PHYSICS, NOT CHOICES. A range here is where a number stops meaning what its document says: a share outside 0…1,
-// a ramp that would divide by zero, a value off its knob's step. What an analyzer admits is the analyzer's to say, so a
+// a ramp that would divide by zero, a default outside its knob's domain. What an analyzer admits is the analyzer's to say, so a
 // block the config feeds one (analysis::LowEnd, analysis::BandCrest, analysis::StereoBandBursts) is handed to that
 // analyzer's own storageFor() at the source rates the product accepts, and refused whole when the analyzer refuses it —
 // one source of truth, never a hand-written copy of its domain. The numbers the owner chose are pinned by tests/ConfigDecisionsTests.cpp, not here. A range that
-// another key states — a target's loudness on the edit travel, a default on its knob's travel — is taken from that key
+// another key states — a target's default inside its knob's domain — is taken from that key
 // once it was read; until then the key's own domain stands in, so one wrong number is one problem.
 //
 // ORDER: the engine first, then the targets, whose rows are checked against the engine's knobs. Within the engine the
@@ -21,6 +21,8 @@
 #include "BuildGuards.h"
 
 #include "ConfigBind.h"
+#include "BuildContract.h"
+#include <limits>
 #include "ConfigVersion.h"
 #include "Grid.h"
 
@@ -124,12 +126,6 @@ std::optional<toml::Decimal> decimalAt (const Reader& in, std::string_view key)
 {
     const toml::Value* v = in.data().find (key);
     return v != nullptr ? toml::asDecimal (*v) : std::nullopt;
-}
-std::optional<toml::Decimal> itemAt (const Reader& in, std::string_view key, std::size_t i)
-{
-    const toml::Value* v = in.data().find (key);
-    const auto* a = v != nullptr ? std::get_if<toml::Array> (&v->data) : nullptr;
-    return a != nullptr && i < a->size() ? toml::asDecimal ((*a)[i]) : std::nullopt;
 }
 
 // A knob's grid: where its travel starts, and its step — both as written.
@@ -236,7 +232,7 @@ struct Doc
                 refuseItem (in, key, i, Refusal::Duplicate);
     }
 
-    // The value at `key` sits on its knob's grid: a whole number of steps from where the travel starts.
+    // The analyzer hop sits on its real time quantum.
     void onStep (Reader& in, std::string_view key, const Grid& grid)
     {
         const auto x = decimalAt (in, key);
@@ -307,8 +303,15 @@ void readLanding (Doc& d, Reader& in, Landing& o)
     in.required ("overshootCapDb", o.overshootCapDb, R { 0.0, 24.0 });
 }
 
+R readDomain (Doc& d, Reader& in, std::string_view key, Span& out, const R& limits)
+{
+    return d.pair (in, key, out, limits) ? R { out.min, out.max } : limits;
+}
+R hpfDomain() { return { std::numeric_limits<double>::min(), 3999.999999999 }; }
+
 void readPeakClipper (Doc& d, Reader& in, PeakClipper& o)
 {
+    const R domain = readDomain (d, in, "manualDomain", o.manualDomain, R { 0.0, 6.0 });
     in.required ("littleNeedDb", o.littleNeedDb, R { 0.0, 24.0 });
     // The classes: short needles are shorter, carry less bass and come with more PLR than long ones; the short class's
     // threshold stands further above the ceiling than the "between" class's.
@@ -326,14 +329,12 @@ void readPeakClipper (Doc& d, Reader& in, PeakClipper& o)
     const bool dw = in.required ("densityWithinDb", o.densityWithinDb, R { 0.0, 24.0 });
     d.below (in, dm && dw, o.densityWithinDb, o.densityMinusDb, "densityMinusDb");
     in.required ("kneeDb", o.kneeDb, R { 0.0, 1.0 });
-    const bool lo = in.required ("manualMinDb", o.manualMinDb, R { 0.0, 12.0 });
-    const bool hi = in.required ("manualMaxDb", o.manualMaxDb, R { 0.0, 12.0 });
+    const bool lo = in.required ("manualMinDb", o.manualMinDb, domain);
+    const bool hi = in.required ("manualMaxDb", o.manualMaxDb, domain);
     d.below (in, lo && hi, o.manualMinDb, o.manualMaxDb, "manualMaxDb");
     in.required ("manualStepDb", o.manualStepDb, R { 0.01, 3.0 });
-    // The manual threshold starts at the "between" class, so that number sits on the manual travel and its step.
-    const R manual = lo && hi && o.manualMinDb < o.manualMaxDb ? R { o.manualMinDb, o.manualMaxDb } : R { 0.0, 12.0 };
-    const bool between = in.required ("betweenOverDb", o.betweenOverDb, manual);
-    if (between) d.onStep (in, "betweenOverDb", Grid { decimalAt (in, "manualMinDb"), decimalAt (in, "manualStepDb") });
+    // The manual threshold starts at the "between" class, inside the accepted domain.
+    const bool between = in.required ("betweenOverDb", o.betweenOverDb, domain);
     const bool sh = in.required ("shortOverDb", o.shortOverDb, R { 0.0, 12.0 });
     d.below (in, between && sh, o.betweenOverDb, o.shortOverDb, "shortOverDb");
 }
@@ -341,9 +342,9 @@ void readPeakClipper (Doc& d, Reader& in, PeakClipper& o)
 void readLimiter (Doc& d, Reader& in, Limiter& o)
 {
     in.required ("ceilingMarginDb", o.ceilingMarginDb, R { 0.0, 3.0 });
-    const bool fast = in.required ("releaseMs", o.releaseMs, R { 1.0, 2000.0 });
+    const bool fast = in.required ("releaseMs", o.releaseMs, R { 8000.0 / kSourceRates[0], std::numeric_limits<double>::max() });
     in.required ("dualRelease", o.dualRelease);
-    const bool slow = in.required ("slowReleaseMs", o.slowReleaseMs, R { 1.0, 5000.0 });
+    const bool slow = in.required ("slowReleaseMs", o.slowReleaseMs, R { 8000.0 / kSourceRates[0], std::numeric_limits<double>::max() });
     d.notAbove (in, fast && slow, o.releaseMs, o.slowReleaseMs, "slowReleaseMs");   // the slow envelope is not the faster
     in.table ("peakClipper", Need::Required, [&] (Reader& t) { readPeakClipper (d, t, o.peakClipper); });
 }
@@ -391,17 +392,19 @@ void readLowEnd (Doc& d, Reader& in, LowEnd& o)
 
 void readHpf (Doc& d, Reader& in, Hpf& o, std::vector<std::int32_t>& bands, const std::optional<double>& dcFrom)
 {
+    if (in.required ("frequencyDomain", o.frequencyDomain) && o.frequencyDomain != "sourceNyquist")
+        d.refuse (in, "frequencyDomain", Refusal::Fixed);
+    readDomain (d, in, "slopeDomain", o.slopeDomain, R { 6.0, 96.0 });
+    if (! same (o.slopeDomain.min, 6) || ! same (o.slopeDomain.max, 96)) d.refuse (in, "slopeDomain", Refusal::Fixed);
+    if (in.required ("slopeMultiple", o.slopeMultiple) && o.slopeMultiple != 6) d.refuse (in, "slopeMultiple", Refusal::Fixed);
+    in.required ("hzStep", o.hzStep, R { std::numeric_limits<double>::min(), 4000.0 });
     d.band (in, o.band, bands);
-    // THE CUTOFF IS WHOLE HERTZ — the knob's travel, where the manual cutoff starts, and every target's floor
-    // (readTarget): the machine places max(hzDefault, the floor), and a person may set every value it places.
-    const Grid wholeHertz { toml::Decimal { 0, 1, false }, toml::Decimal { 10, 1, false } };
-    const bool lo = in.required ("hzMin", o.hzMin, R { 1.0, 200.0 });
-    if (lo) d.onStep (in, "hzMin", wholeHertz);
-    const bool hi = in.required ("hzMax", o.hzMax, R { 1.0, 200.0 });
-    if (hi) d.onStep (in, "hzMax", wholeHertz);
+    // Frequency travel is a slider hint within the domain at the lowest supported rate.
+    const bool lo = in.required ("hzMin", o.hzMin, hpfDomain());
+    const bool hi = in.required ("hzMax", o.hzMax, hpfDomain());
     d.below (in, lo && hi, o.hzMin, o.hzMax, "hzMax");
     const R travel = lo && hi && o.hzMin < o.hzMax ? R { o.hzMin, o.hzMax } : R { 1.0, 200.0 };
-    if (in.required ("hzDefault", o.hzDefault, travel)) d.onStep (in, "hzDefault", wholeHertz);
+    in.required ("hzDefault", o.hzDefault, hpfDomain());
     if (in.required ("slopes", o.slopes, I { 6, 96 }))
     {
         if (o.slopes.empty()) d.refuse (in, "slopes", Refusal::NotOneOf);
@@ -415,7 +418,7 @@ void readHpf (Doc& d, Reader& in, Hpf& o, std::vector<std::int32_t>& bands, cons
             if (! contains (o.slopes, o.slopesNormal[i])) d.refuseItem (in, "slopesNormal", i, Refusal::NotOneOf);
         d.ascending (in, "slopesNormal", o.slopesNormal);
     }
-    if (in.required ("slopeDefault", o.slopeDefault, I { 6, 96 }) && ! contains (o.slopes, o.slopeDefault))
+    if (in.required ("slopeDefault", o.slopeDefault, I { 6, 96 }) && o.slopeDefault % 6 != 0)
         d.refuse (in, "slopeDefault", Refusal::NotOneOf);
     in.table ("nothingBelowNote", Need::Required, [&] (Reader& t)
     {
@@ -457,11 +460,12 @@ void readHpf (Doc& d, Reader& in, Hpf& o, std::vector<std::int32_t>& bands, cons
 
 void readMonoBass (Doc& d, Reader& in, MonoBass& o)
 {
-    const bool width = d.pair (in, "lowWidthRange", o.lowWidthRange, share());
+    const R width = readDomain (d, in, "lowWidthDomain", o.lowWidthDomain, share());
+    d.pair (in, "lowWidthRange", o.lowWidthRange, width);
     in.required ("lowWidthStep", o.lowWidthStep, R { 0.001, 1.0 });
-    if (in.required ("lowWidth", o.lowWidth, width ? R { o.lowWidthRange.min, o.lowWidthRange.max } : share()))
-        d.onStep (in, "lowWidth", Grid { itemAt (in, "lowWidthRange", 0), decimalAt (in, "lowWidthStep") });
-    const bool range = d.pair (in, "frequencyRange", o.frequencyRange, R { 20.0, 1000.0 });
+    in.required ("lowWidth", o.lowWidth, width);
+    const R frequency = readDomain (d, in, "frequencyDomain", o.frequencyDomain, R { 60.0, 300.0 });
+    const bool range = d.pair (in, "frequencyRange", o.frequencyRange, frequency);
     in.required ("frequencyStep", o.frequencyStep, R { 0.1, 50.0 });
     const R travel = range ? R { o.frequencyRange.min, o.frequencyRange.max } : R { 20.0, 1000.0 };
     in.table ("zones", Need::Required, [&] (Reader& z)
@@ -497,7 +501,7 @@ void readCompressor (Doc& d, Reader& in, Compressor& o)
     {
         d.minMax (t, "threshOffset", o.limitThreshOffset, R { -60.0, 60.0 });
         d.minMax (t, "attack", o.limitAttack, R { 0.01, 1000.0 });
-        d.minMax (t, "release", o.limitRelease, R { 1.0, 5000.0 });
+        d.minMax (t, "release", o.limitRelease, R { 8000.0 / kSourceRates[0], std::numeric_limits<double>::max() });
         d.minMax (t, "knee", o.limitKnee, R { 0.0, 48.0 });
     });
     in.table ("tempo", Need::Required, [&] (Reader& t)
@@ -511,14 +515,13 @@ void readCompressor (Doc& d, Reader& in, Compressor& o)
 void readGlue (Doc& d, Reader& in, Glue& o, const std::vector<std::string>* targets)
 {
     // THE KNOB, "up to N dB", first: every glue number of the document is written on it.
-    const bool lo = in.required ("knobMinDb", o.knobMinDb, R { 0.0, 24.0 });
-    const bool hi = in.required ("knobMaxDb", o.knobMaxDb, R { 0.0, 24.0 });
+    const R knob = readDomain (d, in, "domain", o.domain, R { 0.0, 6.0 });
+    const bool lo = in.required ("knobMinDb", o.knobMinDb, knob);
+    const bool hi = in.required ("knobMaxDb", o.knobMaxDb, knob);
     d.below (in, lo && hi, o.knobMinDb, o.knobMaxDb, "knobMaxDb");
     in.required ("knobStepDb", o.knobStepDb, R { 0.01, 3.0 });
-    const R knob = lo && hi && o.knobMinDb < o.knobMaxDb ? R { o.knobMinDb, o.knobMaxDb } : R { 0.0, 24.0 };
-    const Grid onKnob { decimalAt (in, "knobMinDb"), decimalAt (in, "knobStepDb") };
-    if (in.required ("default", o.defaultUpToDb, knob)) d.onStep (in, "default", onKnob);
-    if (in.required ("whenTicked", o.whenTickedUpToDb, knob)) d.onStep (in, "whenTicked", onKnob);
+    in.required ("default", o.defaultUpToDb, knob);
+    in.required ("whenTicked", o.whenTickedUpToDb, knob);
     // THE TRAVEL, 0…1 in steps of `step`: the compressor's internal mapping.
     in.required ("step", o.step, R { 0.0001, 1.0 });
     in.table ("byTarget", Need::Required, [&] (Reader& t)
@@ -527,7 +530,6 @@ void readGlue (Doc& d, Reader& in, Glue& o, const std::vector<std::string>* targ
         {
             GlueAtTarget g { e.key, 0.0 };
             if (! t.required (e.key, g.upToDb, knob)) continue;
-            d.onStep (t, e.key, onKnob);
             if (targets != nullptr && ! contains (*targets, e.key)) d.refuse (t, e.key, Refusal::NotATarget);
             else o.byTarget.push_back (std::move (g));
         }
@@ -558,26 +560,28 @@ void readSaturation (Doc& d, Reader& in, Saturation& o)
 {
     d.name (in, "shape", o.shape, kShapes);
     in.required ("driveStep", o.driveStep, R { 0.01, 12.0 });
-    const bool drive = d.pair (in, "driveRange", o.driveRange, R { 0.0, 48.0 });
-    if (in.required ("driveDb", o.driveDb, drive ? R { o.driveRange.min, o.driveRange.max } : R { 0.0, 48.0 }))
-        d.onStep (in, "driveDb", Grid { itemAt (in, "driveRange", 0), decimalAt (in, "driveStep") });
+    const R drive = readDomain (d, in, "driveDomain", o.driveDomain, R { 0.0, 12.0 });
+    d.pair (in, "driveRange", o.driveRange, drive);
+    in.required ("driveDb", o.driveDb, drive);
     in.required ("bias", o.bias, R { -0.95, 0.95 });   // the core's domain
     in.required ("mixStep", o.mixStep, R { 0.001, 1.0 });
-    const bool mix = d.pair (in, "mixRange", o.mixRange, share());
-    if (in.required ("mix", o.mix, mix ? R { o.mixRange.min, o.mixRange.max } : share()))
-        d.onStep (in, "mix", Grid { itemAt (in, "mixRange", 0), decimalAt (in, "mixStep") });
+    const R mix = readDomain (d, in, "mixDomain", o.mixDomain, R { 0.0, 1.0 });
+    d.pair (in, "mixRange", o.mixRange, mix);
+    in.required ("mix", o.mix, mix);
     in.required ("outputStep", o.outputStep, R { 0.01, 6.0 });
-    const bool output = d.pair (in, "outputRange", o.outputRange, R { -48.0, 24.0 });
-    if (in.required ("outputDb", o.outputDb, output ? R { o.outputRange.min, o.outputRange.max } : R { -48.0, 24.0 }))
-        d.onStep (in, "outputDb", Grid { itemAt (in, "outputRange", 0), decimalAt (in, "outputStep") });
+    const R output = readDomain (d, in, "outputDomain", o.outputDomain, R { -6.0, 0.0 });
+    d.pair (in, "outputRange", o.outputRange, output);
+    in.required ("outputDb", o.outputDb, output);
     in.required ("autoComp", o.autoComp, share());       // the core's domain
     in.required ("dcBlockHz", o.dcBlockHz, R { 0.0, 200.0 });
 }
 
-// normal within hard, hard within ±24 dB.
-void readMoveTravel (Doc& d, Reader& in, Span& normal, Span& hard)
+// Slider ranges lie within the domain, which also contains the implicit zero default.
+void readMoveTravel (Doc& d, Reader& in, Span& normal, Span& hard, Span& domain)
 {
-    const bool h = d.pair (in, "hard", hard, R { -24.0, 24.0 });
+    const R bounds = readDomain (d, in, "domain", domain, R { -6.0, 6.0 });
+    if (domain.min > 0.0 || domain.max < 0.0) d.outOfRange (in, "domain");
+    const bool h = d.pair (in, "hard", hard, bounds);
     d.pair (in, "normal", normal, h ? R { hard.min, hard.max } : R { -24.0, 24.0 });
 }
 
@@ -585,16 +589,16 @@ void readTilt (Doc& d, Reader& in, Tilt& o, std::vector<std::int32_t>& bands)
 {
     d.band (in, o.band, bands);
     in.required ("freqHz", o.freqHz, R { 20.0, 20000.0 });
-    readMoveTravel (d, in, o.normal, o.hard);
+    readMoveTravel (d, in, o.normal, o.hard, o.domain);
     in.required ("step", o.step, R { 0.01, 3.0 });
 }
 
-void readLowShelf (Doc& d, Reader& in, LowShelf& o, std::vector<std::int32_t>& bands)
+void readLow (Doc& d, Reader& in, Low& o, std::vector<std::int32_t>& bands)
 {
     d.band (in, o.band, bands);
     in.required ("freqHz", o.freqHz, R { 20.0, 20000.0 });
     in.required ("q", o.q, R { 0.1, 10.0 });
-    readMoveTravel (d, in, o.normal, o.hard);
+    readMoveTravel (d, in, o.normal, o.hard, o.domain);
     in.required ("step", o.step, R { 0.01, 3.0 });
 }
 
@@ -634,14 +638,13 @@ void readDeEsser (Doc& d, Reader& in, DeEsser& o, std::vector<std::int32_t>& ban
     const bool dlo = in.required ("minDeltaLufs", o.minDeltaLufs, R { -6.0, 6.0 });
     const bool dhi = in.required ("maxDeltaLufs", o.maxDeltaLufs, R { -6.0, 6.0 });
     d.below (in, dlo && dhi, o.minDeltaLufs, o.maxDeltaLufs, "maxDeltaLufs");
-    in.required ("centreStepHz", o.centreStepHz, R { 1.0, 2000.0 });
+    in.required ("centreStepHz", o.centreStepHz, R { 8000.0 / kSourceRates[0], std::numeric_limits<double>::max() });
     in.required ("widthStepOct", o.widthStepOct, R { 0.01, 1.0 });
     in.required ("depthStepDb", o.depthStepDb, R { 0.01, 6.0 });
     d.pair (in, "centreHz", o.centreHz, R { 500.0, 24000.0 });
     d.pair (in, "widthOct", o.widthOct, R { 0.05, 8.0 });
     const bool depth = d.pair (in, "depthDb", o.depthDb, R { -48.0, 0.0 });
-    if (in.required ("manualDepthDb", o.manualDepthDb, depth ? R { o.depthDb.min, o.depthDb.max } : R { -48.0, 0.0 }))
-        d.onStep (in, "manualDepthDb", Grid { itemAt (in, "depthDb", 0), decimalAt (in, "depthStepDb") });
+    in.required ("manualDepthDb", o.manualDepthDb, depth ? R { o.depthDb.min, o.depthDb.max } : R { -48.0, 0.0 });
     if (in.required ("witnessQuantiles", o.witnessQuantiles, share()))
     {
         if (o.witnessQuantiles.empty()) d.refuse (in, "witnessQuantiles", Refusal::NotOneOf);
@@ -880,7 +883,7 @@ void readCost (Doc& d, Reader& in, Cost& o)
     });
 }
 
-void readProgress (Reader& in, Progress& o)
+void readProgress (Doc& d, Reader& in, Progress& o)
 {
     in.table ("analysis", Need::Required, [&] (Reader& t)
     {
@@ -900,6 +903,8 @@ void readProgress (Reader& in, Progress& o)
             w.required ("crest", a.crest, ms);
             w.required ("hum", a.hum, ms);
             w.required ("tempo", a.tempo, ms);
+            if (! (a.loudness + a.report + a.lowEnd120 + a.forensics + a.stereo + a.lowEndSweep
+                   + a.stereoBursts + a.crest + a.hum + a.tempo > 0)) d.outOfRange (t, "weights");
         });
     });
     in.table ("master", Need::Required, [&] (Reader& t)
@@ -907,6 +912,7 @@ void readProgress (Reader& in, Progress& o)
         t.required ("passWeight", o.masterPassWeight, R { 0.0, 1000.0 });
         t.required ("measureWeight", o.masterMeasureWeight, R { 0.0, 1000.0 });
         t.required ("expectedPasses", o.masterExpectedPasses, I { 1, 1000 });
+        if (! (o.masterPassWeight * o.masterExpectedPasses + o.masterMeasureWeight > 0)) d.outOfRange (t, "passWeight");
     });
 }
 
@@ -925,13 +931,7 @@ void readBlindTest (Doc& d, Reader& in, BlindTest& o, const std::vector<std::str
     in.table ("listened", Need::Required, [&] (Reader& t) { t.required ("minSwitches", o.listenedMinSwitches, I { 0, 100 }); });
 }
 
-// The engine's grids the target rows are set on: taken from the engine document as written.
-struct Grids
-{
-    Grid monoBass, hpfFloor, lowShelf;
-};
-
-void readEngine (Doc& d, Reader& in, Engine& o, const std::vector<std::string>* targets, Grids& grids)
+void readEngine (Doc& d, Reader& in, Engine& o, const std::vector<std::string>* targets)
 {
     std::vector<std::int32_t> bands;   // the core's EQ bands the devices have taken, in reading order
     std::optional<double> dcFrom;      // observations.dcOffset.from, once read
@@ -944,21 +944,18 @@ void readEngine (Doc& d, Reader& in, Engine& o, const std::vector<std::string>* 
     in.table ("hpf", Need::Required, [&] (Reader& t)
     {
         readHpf (d, t, o.hpf, bands, dcFrom);
-        grids.hpfFloor = { decimalAt (t, "hzMin"), toml::Decimal { 10, 1, false } };   // the cutoff is whole hertz
     });
     in.table ("monoBass", Need::Required, [&] (Reader& t)
     {
         readMonoBass (d, t, o.monoBass);
-        grids.monoBass = { itemAt (t, "frequencyRange", 0), decimalAt (t, "frequencyStep") };
     });
     in.table ("compressor", Need::Required, [&] (Reader& t) { readCompressor (d, t, o.compressor); });
     in.table ("glue", Need::Required, [&] (Reader& t) { readGlue (d, t, o.glue, targets); });
     in.table ("saturation", Need::Required, [&] (Reader& t) { readSaturation (d, t, o.saturation); });
     in.table ("tilt", Need::Required, [&] (Reader& t) { readTilt (d, t, o.tilt, bands); });
-    in.table ("lowShelf", Need::Required, [&] (Reader& t)
+    in.table ("low", Need::Required, [&] (Reader& t)
     {
-        readLowShelf (d, t, o.lowShelf, bands);
-        grids.lowShelf = { itemAt (t, "hard", 0), decimalAt (t, "step") };
+        readLow (d, t, o.low, bands);
     });
     in.table ("eq", Need::Required, [&] (Reader& t)
     {
@@ -978,51 +975,50 @@ void readEngine (Doc& d, Reader& in, Engine& o, const std::vector<std::string>* 
     in.table ("crest", Need::Required, [&] (Reader& t) { crest = readCrest (d, t, o.crest); });
     if (crest && ! crestAdmits (o.crest)) d.refuse (in, "crest", Refusal::AnalyzerRefuses);
     in.table ("cost", Need::Required, [&] (Reader& t) { readCost (d, t, o.cost); });
-    in.table ("progress", Need::Required, [&] (Reader& t) { readProgress (t, o.progress); });
+    in.table ("progress", Need::Required, [&] (Reader& t) { readProgress (d, t, o.progress); });
     in.table ("blindTest", Need::Required, [&] (Reader& t) { readBlindTest (d, t, o.blindTest, targets); });
 }
 
 //==============================================================================
 // targets.toml
 
-// What a target row is checked against: the edit travels and grids, and the engine's knobs once those were read.
+// Defaults use the accepted domains, independently of the slider hints.
 struct RowDomains
 {
-    R lufs { -70.0, 0.0 };
-    R tp { -20.0, 0.0 };
-    R monoBass { 20.0, 1000.0 };
-    R hpfFloor { 1.0, 200.0 };
-    R lowShelf { -24.0, 24.0 };
-    Grid lufsGrid, tpGrid, monoBassGrid, hpfFloorGrid, lowShelfGrid;
-    const std::vector<std::int32_t>* slopes = nullptr;
+    R lufs {};
+    R tp { -6.0, -0.1 };
+    R monoBass { 60.0, 300.0 };
+    R hpfFloor = hpfDomain();
+    R low { -6.0, 6.0 };
 };
 
-bool readEdit (Doc& d, Reader& in, std::string_view key, Edit& o, const R& domain, Grid& grid)
+void readEdit (Doc& d, Reader& in, std::string_view key, Edit& o, R& domain)
 {
-    bool good = false;
     in.table (key, Need::Required, [&] (Reader& t)
     {
+        if (key == "lufs")
+        {
+            std::string kind;
+            if (t.required ("domain", kind) && kind != "finite") d.refuse (t, "domain", Refusal::Fixed);
+        }
+        else domain = readDomain (d, t, "domain", o.domain, R { -6.0, -0.1 });
         const bool from = t.required ("from", o.from, domain);
         const bool to = t.required ("to", o.to, domain);
         d.below (t, from && to, o.from, o.to, "to");
-        const bool travel = from && to && o.from < o.to;
-        d.pair (t, "green", o.green, travel ? R { o.from, o.to } : domain);
-        if (t.required ("step", o.step, R { 0.001, 1.0 }) && from) grid = { decimalAt (t, "from"), decimalAt (t, "step") };
-        good = travel;
+        d.pair (t, "green", o.green, from && to && o.from < o.to ? R { o.from, o.to } : domain);
+        t.required ("step", o.step, R { 0.001, 1.0 });
     });
-    return good;
 }
 
 void readTarget (Doc& d, Reader& row, Target& x, const RowDomains& b)
 {
     d.name (row, "group", x.group, kGroups);
-    if (row.required ("lufs", x.lufs, b.lufs)) d.onStep (row, "lufs", b.lufsGrid);
-    if (row.required ("tp", x.tp, b.tp)) d.onStep (row, "tp", b.tpGrid);
-    if (row.required ("monoBass", x.monoBass, b.monoBass)) d.onStep (row, "monoBass", b.monoBassGrid);
-    // The machine's cutoff is a whole number of hertz, so is its floor.
-    if (row.required ("hpfFloor", x.hpfFloor, b.hpfFloor)) d.onStep (row, "hpfFloor", b.hpfFloorGrid);
-    if (row.required ("hpfSlopeDbPerOct", x.hpfSlopeDbPerOct, I { 6, 96 }) && b.slopes != nullptr
-        && ! contains (*b.slopes, x.hpfSlopeDbPerOct))
+    row.required ("lufs", x.lufs, b.lufs);
+    row.required ("tp", x.tp, b.tp);
+    row.required ("monoBass", x.monoBass, b.monoBass);
+    // A target floor must work even at the lowest supported source rate.
+    row.required ("hpfFloor", x.hpfFloor, b.hpfFloor);
+    if (row.required ("hpfSlopeDbPerOct", x.hpfSlopeDbPerOct, I { 6, 96 }) && x.hpfSlopeDbPerOct % 6 != 0)
         d.refuse (row, "hpfSlopeDbPerOct", Refusal::NotOneOf);
     row.required ("noteLossDb", x.noteLossDb, R { 0.1, 3.0 });
     // 0 (the source's rate) or a physical delivery rate; which rates the targets deliver at is a decision, pinned apart.
@@ -1037,13 +1033,12 @@ void readTarget (Doc& d, Reader& row, Target& x, const RowDomains& b)
     // A pass at the source's rate exists only where the delivery rate is another.
     if (x.sourceRatePass && x.sampleRate == 0 && row.data().find ("sampleRate") != nullptr)
         d.refuse (row, "sourceRatePass", Refusal::NotApplicable);
-    if (row.data().find ("lowShelfDb") != nullptr)
+    if (row.data().find ("lowDb") != nullptr)
     {
         double db = 0.0;
-        if (row.required ("lowShelfDb", db, b.lowShelf))
+        if (row.required ("lowDb", db, b.low))
         {
-            x.lowShelfDb = db;
-            d.onStep (row, "lowShelfDb", b.lowShelfGrid);
+            x.lowDb = db;
         }
     }
     if (row.data().find ("album") != nullptr)
@@ -1051,31 +1046,22 @@ void readTarget (Doc& d, Reader& row, Target& x, const RowDomains& b)
         {
             Album album;
             const bool lufs = a.required ("lufs", album.lufs, b.lufs);
-            if (lufs) d.onStep (a, "lufs", b.lufsGrid);
             const bool desktopOnly = a.required ("desktopOnly", album.desktopOnly);
             if (lufs && desktopOnly) x.album = album;
         });
 }
 
-void readTargets (Doc& d, Reader& in, Targets& o, const Engine& e, const Grids& grids)
+void readTargets (Doc& d, Reader& in, Targets& o, const Engine& e)
 {
     RowDomains b;
     in.table ("edit", Need::Required, [&] (Reader& t)
     {
-        if (readEdit (d, t, "lufs", o.editLufs, R { -70.0, 0.0 }, b.lufsGrid)) b.lufs = R { o.editLufs.from, o.editLufs.to };
-        if (readEdit (d, t, "tp", o.editTp, R { -20.0, 0.0 }, b.tpGrid)) b.tp = R { o.editTp.from, o.editTp.to };
+        readEdit (d, t, "lufs", o.editLufs, b.lufs);
+        readEdit (d, t, "tp", o.editTp, b.tp);
     });
-    // The engine's grids, as the engine document wrote them.
-    b.monoBassGrid = grids.monoBass;
-    b.hpfFloorGrid = grids.hpfFloor;
-    b.lowShelfGrid = grids.lowShelf;
-    // The engine's travels. A travel the engine failed to read is still its default {0, 0} here, and every row would be
-    // refused against it for the engine's mistake — so only a travel that is a range is used.
-    if (e.monoBass.frequencyRange.min < e.monoBass.frequencyRange.max)
-        b.monoBass = R { e.monoBass.frequencyRange.min, e.monoBass.frequencyRange.max };
-    if (e.hpf.hzMin < e.hpf.hzMax) b.hpfFloor = R { e.hpf.hzMin, e.hpf.hzMax };
-    if (e.lowShelf.hard.min < e.lowShelf.hard.max) b.lowShelf = R { e.lowShelf.hard.min, e.lowShelf.hard.max };
-    if (! e.hpf.slopes.empty()) b.slopes = &e.hpf.slopes;
+    if (e.monoBass.frequencyDomain.min < e.monoBass.frequencyDomain.max)
+        b.monoBass = R { e.monoBass.frequencyDomain.min, e.monoBass.frequencyDomain.max };
+    if (e.low.domain.min < e.low.domain.max) b.low = R { e.low.domain.min, e.low.domain.max };
 
     in.table ("targets", Need::Required, [&] (Reader& t)
     {
@@ -1121,7 +1107,8 @@ void collect (const toml::Report& report, Document document, std::vector<Problem
             case toml::Fault::UnknownKey: q.fault = Fault::UnknownKey; break;
             case toml::Fault::Refused:
                 q.fault = Fault::Refused;
-                q.refusal = p.detail <= std::uint32_t (Refusal::EmptyKey) ? static_cast<Refusal> (p.detail) : Refusal::None;
+                if (p.detail > std::uint32_t (Refusal::EmptyKey)) felitronics::session::detail::storageOverflow();
+                q.refusal = static_cast<Refusal> (p.detail);
                 break;
         }
         q.code = q.fault == Fault::Refused ? Problem::name (q.refusal) : Problem::name (q.fault);
@@ -1146,14 +1133,13 @@ namespace detail
 Loaded bindTables (const toml::Table* targetsDocument, const toml::Table* engineDocument)
 {
     Loaded out;
-    Grids grids;
     std::optional<std::vector<std::string>> targets;
     if (targetsDocument != nullptr) targets = rowKeys (*targetsDocument);
     if (engineDocument != nullptr)
     {
         Doc d;
         Reader reader (*engineDocument, d.report);
-        readEngine (d, reader, out.config.engine, targets ? &*targets : nullptr, grids);
+        readEngine (d, reader, out.config.engine, targets ? &*targets : nullptr);
         reader.finish();
         collect (d.report, Document::Engine, out.problems);
     }
@@ -1161,7 +1147,7 @@ Loaded bindTables (const toml::Table* targetsDocument, const toml::Table* engine
     {
         Doc d;
         Reader reader (*targetsDocument, d.report);
-        readTargets (d, reader, out.config.targets, out.config.engine, grids);
+        readTargets (d, reader, out.config.targets, out.config.engine);
         reader.finish();
         collect (d.report, Document::Targets, out.problems);
     }

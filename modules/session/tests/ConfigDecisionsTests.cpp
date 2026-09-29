@@ -46,7 +46,7 @@ struct Golden
     std::uint64_t sound;
 };
 constexpr Golden kGolden[] = {
-    { "2026-09", 0x12b88e8dddd3f1b2ull },
+    { "2026-09", 0xb0fb0ddeed3fe5d1ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -63,7 +63,7 @@ struct Row
     double noteLossDb;
     std::int32_t sampleRate, bitDepth;
     bool noClipper, hpfAlways, sourceRatePass;
-    double lowShelfDb;           // 0: none
+    double lowDb;           // 0: none
     double albumLufs;            // 0: none; every album is desktop only
 };
 constexpr auto S = config::Group::Streaming;
@@ -126,8 +126,8 @@ std::vector<std::string> departures (const config::Config& c)
         need (x.noClipper == r.noClipper, at + ".noClipper");
         need (x.hpfAlways == r.hpfAlways, at + ".hpfAlways");
         need (x.sourceRatePass == r.sourceRatePass, at + ".sourceRatePass");
-        need (same (r.lowShelfDb, 0.0) ? ! x.lowShelfDb.has_value() : x.lowShelfDb.has_value() && same (*x.lowShelfDb, r.lowShelfDb),
-              at + ".lowShelfDb");
+        need (same (r.lowDb, 0.0) ? ! x.lowDb.has_value() : x.lowDb.has_value() && same (*x.lowDb, r.lowDb),
+              at + ".lowDb");
         need (same (r.albumLufs, 0.0) ? ! x.album.has_value()
                                       : x.album.has_value() && same (x.album->lufs, r.albumLufs) && x.album->desktopOnly,
               at + ".album");

@@ -10,6 +10,7 @@
 
 #include "ConfigBind.h"
 #include "ConfigVersion.h"
+#include "embedded/versions.h"
 #include "Rules.h"
 #include "embedded/engine.h"    // generated at build time from modules/session/config/engine.toml
 #include "embedded/targets.h"   // ... and from modules/session/config/targets.toml
@@ -46,9 +47,7 @@ std::string Config::text (Document document)
 
 Versions Config::versions() noexcept
 {
-    const auto targets = rootOf (Document::Targets);
-    const auto engine = rootOf (Document::Engine);
-    return { detail::version (targets, engine, false), detail::version (targets, engine, true) };
+    return { embedded::allVersion, embedded::soundVersion };
 }
 
 } // namespace felitronics::session::config

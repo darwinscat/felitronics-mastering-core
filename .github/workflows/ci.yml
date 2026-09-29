@@ -37,6 +37,8 @@ jobs:
         run: |
           n=$( (getconf _NPROCESSORS_ONLN || nproc || sysctl -n hw.ncpu) 2>/dev/null | head -1 )
           cmake --build build --config Release -j "${n:-4}"
+      - name: Frozen session ABI and mutation control
+        run: ctest --test-dir build -C Release --output-on-failure --no-tests=error -R "^felitronics_session_abi_manifest"
       - name: Test
         shell: bash
         run: |
@@ -58,13 +60,14 @@ jobs:
           felitronics_master_abi_tests felitronics_storage_tests
           felitronics_session_tests felitronics_session_state_tests felitronics_session_config_tests
           felitronics_session_config_decisions_tests felitronics_session_text_tests
+          felitronics_session_abi_tests felitronics_session_abi_v1_tests felitronics_session_abi_probe
           felitronics_session_event_tests felitronics_session_project_tests felitronics_session_replay_tests
       - name: Test allocation budgets with iterator debugging
-        # Measured x64 MSVC Debug: 139.99 s for these thirteen suites; 211.22 s configure/build/test.
-        # The full session handle-generation walk remains in Release. These session suites have no long walk.
+        # Fifteen named suites, including the session ABI; the full generation walk stays in Release.
         run: |
           node tools/tests/windows-debug.mjs --self-test
           node tools/tests/windows-debug.mjs build-debug
+          ctest --test-dir build-debug -C Debug --output-on-failure --no-tests=error -R "^felitronics_session_abi_manifest"
 
   # Against core's CURRENT main instead of the pin: the rows above prove the pinned core, and nothing on core's
   # side builds these modules any more, so a core change that breaks them is found here (nightly at the latest),

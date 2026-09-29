@@ -12,6 +12,7 @@
 #include "BuildGuards.h"
 
 #include "TextNumber.h"
+#include "BuildContract.h"
 
 #include <array>
 #include <bit>
@@ -75,17 +76,17 @@ bool gridDigits (double value, unsigned precision, Digits& out) noexcept
     std::array<char, 32> text {};
     const std::to_chars_result shortest = std::to_chars (text.data(), text.data() + text.size(), magnitude,
                                                          std::chars_format::scientific);
-    if (shortest.ec != decltype (shortest.ec) {}) return false;   // never: 32 bytes hold every double's form
+    felitronics::session::detail::debugBound (shortest.ec == decltype (shortest.ec) {});
     std::array<char, 20> significant {};
     std::size_t count = 0;
     const char* at = text.data();
     for (; at < shortest.ptr && *at != 'e'; ++at)
-        if (*at != '.' && count < significant.size()) significant[count++] = *at;
-    if (at + 2 >= shortest.ptr || count == 0) return false;
+        if (*at != '.') { felitronics::session::detail::debugBound (count < significant.size()); significant[count++] = *at; }
+    felitronics::session::detail::debugBound (at + 2 < shortest.ptr && count != 0);
     const bool negativeExponent = at[1] == '-';
     int power = 0;
     const std::from_chars_result read = std::from_chars (at + 2, shortest.ptr, power);
-    if (read.ec != decltype (read.ec) {} || read.ptr != shortest.ptr) return false;
+    felitronics::session::detail::debugBound (read.ec == decltype (read.ec) {} && read.ptr == shortest.ptr);
     if (negativeExponent) power = -power;
 
     // The digit of the decimal at the place 10^place: significant[power − place], zeros around it.

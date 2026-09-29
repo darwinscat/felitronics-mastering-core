@@ -59,6 +59,7 @@ inline constexpr FactShape kFacts[] = {
       3 },
     { FactId::MachineDifferences, "machineDifferences", { { { "count", ArgKind::Count, {} } } }, 1 },
     { FactId::DefaultsConverted, "defaultsConverted", { { { "version", ArgKind::UserText, {} } } }, 1 },
+    { FactId::SameCoreMachineDifferences, "sameCoreMachineDifferences", { { { "count", ArgKind::Count, {} } } }, 1 },
     // A command's rejection (Commands.h), one per code; the four a field refuses name it.
     { FactId::RejectedFloatingPointEnvironment, "rejectedFloatingPointEnvironment", {}, 0 },
     { FactId::RejectedNoSource, "rejectedNoSource", {}, 0 },
@@ -67,16 +68,13 @@ inline constexpr FactShape kFacts[] = {
     { FactId::RejectedBusy, "rejectedBusy", {}, 0 },
     { FactId::RejectedNoJob, "rejectedNoJob", {}, 0 },
     { FactId::RejectedNoMaster, "rejectedNoMaster", {}, 0 },
-    { FactId::RejectedManualOff, "rejectedManualOff", {}, 0 },
     { FactId::RejectedUnknownTarget, "rejectedUnknownTarget", {}, 0 },
     { FactId::RejectedNotOffered, "rejectedNotOffered", {}, 0 },
     { FactId::RejectedUnknownJob, "rejectedUnknownJob", {}, 0 },
     { FactId::RejectedUnknownMaster, "rejectedUnknownMaster", {}, 0 },
-    { FactId::RejectedNoFields, "rejectedNoFields", {}, 0 },
     { FactId::RejectedNotFinite, "rejectedNotFinite", { { { "field", ArgKind::Term, "field" } } }, 1 },
     { FactId::RejectedNotOneOf, "rejectedNotOneOf", { { { "field", ArgKind::Term, "field" } } }, 1 },
-    { FactId::RejectedOutOfTravel, "rejectedOutOfTravel", { { { "field", ArgKind::Term, "field" } } }, 1 },
-    { FactId::RejectedOffStep, "rejectedOffStep", { { { "field", ArgKind::Term, "field" } } }, 1 },
+    { FactId::RejectedOutOfDomain, "rejectedOutOfDomain", { { { "field", ArgKind::Term, "field" } } }, 1 },
     { FactId::RejectedBadChannels, "rejectedBadChannels", {}, 0 },
     { FactId::RejectedBadRate, "rejectedBadRate", {}, 0 },
     { FactId::RejectedNoAudio, "rejectedNoAudio", {}, 0 },
@@ -90,13 +88,18 @@ inline constexpr FactShape kFacts[] = {
     { FactId::RejectedProjectUnknownKey, "rejectedProjectUnknownKey", {}, 0 },
     { FactId::RejectedUnknownDefaults, "rejectedUnknownDefaults", {}, 0 },
     { FactId::RejectedProjectCore, "rejectedProjectCore", {}, 0 },
-    { FactId::RejectedMachineMismatch, "rejectedMachineMismatch", {}, 0 },
     { FactId::RejectedNewerDefaults, "rejectedNewerDefaults", {}, 0 },
+    { FactId::RejectedRateAboveLimit, "rejectedRateAboveLimit", {}, 0 },
+    { FactId::RejectedMemory, "rejectedMemory", {}, 0 },
+    { FactId::RejectedContract, "rejectedContract", {}, 0 },
     { FactId::Measurement1, "measurement1", {}, 0 },
     { FactId::Measurement2, "measurement2", {}, 0 },
     { FactId::MasterPass, "masterPass", { { { "pass", ArgKind::Count, {} } } }, 1 },
     { FactId::MasterReady, "masterReady", {}, 0 },
     { FactId::Cancelled, "cancelled", {}, 0 },
+    { FactId::Convert, "convert", {}, 0 },
+    { FactId::Lra, "lra", {}, 0 },
+    { FactId::Final, "final", {}, 0 },
     { FactId::SessionTrap, "sessionTrap", {}, 0 },
     { FactId::SessionContract, "sessionContract", {}, 0 },
     { FactId::SessionRefusal, "sessionRefusal", {}, 0 },
@@ -129,7 +132,7 @@ inline constexpr TermShape kTerms[] = {
     { Term::FieldTiltDb, "field", "tiltDb" },
     { Term::FieldLimiterNeedles, "field", "limiterNeedles" },
     { Term::FieldLimiterNeedlesDb, "field", "limiterNeedlesDb" },
-    { Term::FieldLowShelfDb, "field", "lowShelfDb" },
+    { Term::FieldLowDb, "field", "lowDb" },
     { Term::FieldAudio, "field", "audio" },
 };
 inline constexpr std::size_t kTermCount = sizeof (kTerms) / sizeof (kTerms[0]);
@@ -190,16 +193,13 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Rejection::Busy: return FactId::RejectedBusy;
         case Rejection::NoJob: return FactId::RejectedNoJob;
         case Rejection::NoMaster: return FactId::RejectedNoMaster;
-        case Rejection::ManualOff: return FactId::RejectedManualOff;
         case Rejection::UnknownTarget: return FactId::RejectedUnknownTarget;
         case Rejection::NotOffered: return FactId::RejectedNotOffered;
         case Rejection::UnknownJob: return FactId::RejectedUnknownJob;
         case Rejection::UnknownMaster: return FactId::RejectedUnknownMaster;
-        case Rejection::NoFields: return FactId::RejectedNoFields;
         case Rejection::NotFinite: return FactId::RejectedNotFinite;
         case Rejection::NotOneOf: return FactId::RejectedNotOneOf;
-        case Rejection::OutOfTravel: return FactId::RejectedOutOfTravel;
-        case Rejection::OffStep: return FactId::RejectedOffStep;
+        case Rejection::OutOfDomain: return FactId::RejectedOutOfDomain;
         case Rejection::BadChannels: return FactId::RejectedBadChannels;
         case Rejection::BadRate: return FactId::RejectedBadRate;
         case Rejection::NoAudio: return FactId::RejectedNoAudio;
@@ -213,7 +213,9 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Rejection::ProjectUnknownKey: return FactId::RejectedProjectUnknownKey;
         case Rejection::UnknownDefaults: return FactId::RejectedUnknownDefaults;
         case Rejection::ProjectCore: return FactId::RejectedProjectCore;
-        case Rejection::MachineMismatch: return FactId::RejectedMachineMismatch;
+        case Rejection::RateAboveLimit: return FactId::RejectedRateAboveLimit;
+        case Rejection::Contract: return FactId::RejectedContract;
+        case Rejection::Memory: return FactId::RejectedMemory;
         case Rejection::NewerDefaults: return FactId::RejectedNewerDefaults;
     }
     return std::nullopt;
@@ -247,7 +249,7 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Device::Tilt: return at ({ Term {}, Term::FieldTiltDb });
         case Device::Limiter: return at ({ Term::FieldLimiterNeedles, Term::FieldLimiterNeedlesDb });
         case Device::Dither: return at ({ Term {} });
-        case Device::LowShelf: return at ({ Term {}, Term::FieldLowShelfDb });
+        case Device::Low: return at ({ Term {}, Term::FieldLowDb });
     }
     return std::nullopt;
 }

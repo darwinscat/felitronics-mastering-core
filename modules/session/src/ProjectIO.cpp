@@ -5,6 +5,8 @@
 #include "ProjectIO.h"
 #include "Devices.h"
 #include "Grid.h"
+#include "JsonCodec.h"
+#include "BuildContract.h"
 #include <felitronics/toml/Schema.h>
 #include <algorithm>
 #include <charconv>
@@ -16,7 +18,7 @@ namespace felitronics::session
 {
 namespace
 {
-using toml::Reader;
+
 using toml::Need;
 using detail::Rules;
 
@@ -85,10 +87,14 @@ struct Writer
         char buffer[64];
         if constexpr (std::is_same_v<T, double>)
         {
-            // Fixed notation is the TOML subset's decimal notation. This overload writes the shortest
-            // decimal that rounds back to n. Every project number is on a validated, at most nine-place grid.
-            const auto result = std::to_chars (buffer, buffer + sizeof (buffer), detail::kept (n), std::chars_format::fixed);
-            text ({ buffer, std::size_t (result.ptr - buffer) });
+            // Keep ordinary TOML numbers where its Decimal subset represents them exactly.
+            // Other finite binary64 values use a quoted shortest round-trip decimal.
+            const bool plain = detail::decimalOf (n).has_value();
+            const auto result = std::to_chars (buffer, buffer + sizeof (buffer), detail::kept (n),
+                                               plain ? std::chars_format::fixed : std::chars_format::general);
+            if (result.ec != std::errc {}) detail::storageOverflow();
+            const std::string_view digits { buffer, std::size_t (result.ptr - buffer) };
+            if (plain) text (digits); else string (digits);
         }
         else
         {
@@ -126,18 +132,26 @@ struct Writer
     }
 };
 
-// Reading a numeric field keeps the written decimal for its travel and grid checks.
-// A decimal that rounds onto a step from just beside it is still refused.
-template <class T> bool field (Reader& in, std::string_view key, const Rules& rules, const detail::FieldRule& rule, T& out)
+// Import and commands use the same binary64 domain predicate, including the actual source rate.
+template <class T> bool field (toml::Reader& in, std::string_view key, const Rules& rules, const detail::FieldRule& rule, T& out, std::uint32_t sourceRate)
 {
     if constexpr (std::is_same_v<T, double>)
     {
-        toml::Decimal d;
-        if (! in.optional (key, d)) return false;
-        if (detail::compare (d, rule.knob.from) < 0 || detail::compare (d, rule.knob.to) > 0)
-            in.refuse (key, unsigned (Rejection::OutOfTravel));
-        else if (! detail::onGrid (d, rule.knob.from, rule.knob.step)) in.refuse (key, unsigned (Rejection::OffStep));
-        out = detail::kept (d.toDouble());
+        const auto* value = in.data().find (key);
+        if (value && std::holds_alternative<std::string> (value->data))
+        {
+            std::string digits;
+            if (! in.optional (key, digits)) return false;
+            detail::Storage storage;
+            detail::Reader reader { digits, storage, 0, true, {} };
+            const auto number = reader.number();
+            if (! reader.good || reader.pos != digits.size() || ! detail::JsonNumber::read (number, out))
+            { in.refuse (key, unsigned (Rejection::ProjectType)); return false; }
+        }
+        else if (! in.optional (key, out)) return false;
+        if (! std::isfinite (out)) in.refuse (key, unsigned (Rejection::NotFinite));
+        else if (! rule.knob.accepts (out, sourceRate)) in.refuse (key, unsigned (Rejection::OutOfDomain));
+        out = detail::kept (out);
     }
     else if constexpr (std::is_same_v<T, Needles>)
     {
@@ -162,7 +176,7 @@ Rejection rejection (const toml::Problem& p) noexcept
     {
         case toml::Fault::Missing: return Rejection::ProjectMissing;
         case toml::Fault::WrongType: return Rejection::ProjectType;
-        case toml::Fault::OutOfRange: return Rejection::OutOfTravel;
+        case toml::Fault::OutOfRange: return Rejection::OutOfDomain;
         case toml::Fault::UnknownKey: return Rejection::ProjectUnknownKey;
         case toml::Fault::Refused: return Rejection (p.detail);
     }
@@ -198,6 +212,14 @@ Checked Session::exportProjectBytes() const noexcept
     Writer w; w.project (project_, detail::rules(), source_.channels);
     return { Rejection::None, kNoField, w.size };
 }
+Rejection Session::exportProject (std::span<char> output) const noexcept
+{
+    const auto need = exportProjectBytes();
+    if (need.rejection != Rejection::None) return need.rejection;
+    if (output.size() < need.bytes) return Rejection::TooLong;
+    Writer w { output.data() }; w.project (project_, detail::rules(), source_.channels);
+    return Rejection::None;
+}
 ProjectText Session::exportProject() const noexcept
 {
     ProjectText out;
@@ -227,9 +249,10 @@ Checked importBytes (std::string_view bytes) noexcept
     if (library.parse == limit || library.read == limit || library.read > limit - library.parse
         || owned > limit - library.parse - library.read)
         return { Rejection::ProjectTooLarge, kNoField, 0 };
-    return { Rejection::None, kNoField, std::uint64_t (library.parse) + library.read + owned };
+    const auto total = std::uint64_t (library.parse) + library.read + owned;
+    return { Rejection::None, kNoField, total, 0.0, total };
 }
-ImportedProject readProject (std::string_view bytes, std::uint32_t channels) noexcept
+ImportedProject readProject (std::string_view bytes, std::uint32_t channels, std::uint32_t offeredDevices, std::uint32_t sourceRate) noexcept
 {
     ImportedProject out;
     auto parsed = toml::parse (bytes);
@@ -245,20 +268,20 @@ ImportedProject readProject (std::string_view bytes, std::uint32_t channels) noe
     const auto currentLabel = *rules.engine.find ("defaults").string();
     const auto previousLabel = carried.previous ? carried.previous->engine.find ("defaults").string() : std::nullopt;
     std::string defaults, core, target;
-    const auto report = toml::read (root, [&] (Reader& in)
+    const auto report = toml::read (root, [&] (toml::Reader& in)
     {
         (void) in.required ("defaults", defaults);
         (void) in.required ("core", core);
         (void) in.required ("manual", out.project.manual);
-        (void) in.table ("target", Need::Required, [&] (Reader& t)
+        (void) in.table ("target", Need::Required, [&] (toml::Reader& t)
         {
             (void) t.required ("name", target);
             const auto readTarget = [&] (std::string_view key, const Knob& knob, std::optional<double>& value)
             {
-                (void) t.table (key, Need::Optional, [&] (Reader& layer)
+                (void) t.table (key, Need::Optional, [&] (toml::Reader& layer)
                 {
                     double n = 0;
-                    if (field (layer, "hand", rules, knobRule (knob), n)) value = n;
+                    if (field (layer, "hand", rules, knobRule (knob), n, sourceRate)) value = n;
                 });
             };
             readTarget ("lufs", rules.lufs, out.project.targetEdit.lufs);
@@ -271,16 +294,16 @@ ImportedProject readProject (std::string_view bytes, std::uint32_t channels) noe
         eachDevice (out.project.devices, [&] (Device, auto& layers)
         {
             using Of = DeviceOf<std::remove_cvref_t<decltype (layers.machine)>>;
-            (void) in.table (Of::name, Need::Optional, [&] (Reader& device)
+            (void) in.table (Of::name, Need::Optional, [&] (toml::Reader& device)
             {
                 Of::each (rules, [&] (std::uint8_t i, const FieldRule& rule, auto& machine, auto& hand)
                 {
-                    (void) device.table (Of::fields[i], Need::Optional, [&] (Reader& authors)
+                    (void) device.table (Of::fields[i], Need::Optional, [&] (toml::Reader& authors)
                     {
-                        (void) field (authors, "machine", rules, rule, machine);
+                        (void) field (authors, "machine", rules, rule, machine, sourceRate);
                         using T = std::remove_cvref_t<decltype (machine)>;
                         T n {};
-                        if (field (authors, "hand", rules, rule, n)) hand = n;
+                        if (field (authors, "hand", rules, rule, n, sourceRate)) hand = n;
                     });
                 }, layers.machine, layers.hand);
             });
@@ -319,8 +342,7 @@ ImportedProject readProject (std::string_view bytes, std::uint32_t channels) noe
     if (out.answer.rejection != Rejection::None) return out;
     out.foreignCore = ! sameVersion (out.project.core, Session::version());
     Devices decided;
-    Answer mismatch;
-    placeMachine (rules, out.project.target, channels, decided);
+    placeMachine (rules, out.project.target, channels, decided, offeredDevices);
     eachDevice (out.project.devices, [&] (Device device, const auto& layers)
     {
         using Of = DeviceOf<std::remove_cvref_t<decltype (layers.machine)>>;
@@ -337,22 +359,19 @@ ImportedProject readProject (std::string_view bytes, std::uint32_t channels) noe
             };
             if (out.answer.rejection == Rejection::None && hand)
             {
-                if (! out.project.manual) fail (Rejection::ManualOff, at ("hand"));
-                else if (! offered (rules, out.project.target, channels, device)) fail (Rejection::NotOffered, at ("hand"));
+                // Dither's saved hand may be dormant above its delivery bit depth. It can be reverted,
+                // and is used again on an eligible target; editDevice still requires eligibility.
+                if ((offeredDevices & (1u << unsigned (device))) == 0
+                    || (device != Device::Dither && ! offered (rules, out.project.target, channels, device)))
+                    fail (Rejection::NotOffered, at ("hand"));
             }
             if (! detail::same (double (machine), double (current)))
             {
-                if (mismatch.rejection == Rejection::None && ! out.foreignCore)
-                {
-                    mismatch.rejection = Rejection::MachineMismatch;
-                    mismatch.position = position (at ("machine"));
-                    mismatch.device = device; mismatch.field = i;
-                }
+                if ((offeredDevices & (1u << unsigned (device))) == 0) fail (Rejection::NotOffered, at ("machine"));
                 out.differences[out.differenceCount++] = { device, i, double (machine), double (current) };
             }
         }, layers.machine, layers.hand, Of::layers (decided).machine);
     });
-    if (out.answer.rejection == Rejection::None) out.answer = mismatch;
     return out;
 }
 }

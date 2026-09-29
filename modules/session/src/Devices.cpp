@@ -9,6 +9,7 @@
 #include "Devices.h"
 #include "Grid.h"
 #include "Rules.h"
+#include "BuildContract.h"
 
 #include <felitronics/session/Project.h>
 
@@ -21,16 +22,16 @@ bool offered (const Rules& rules, std::uint16_t row, std::uint32_t channels, Dev
 {
     switch (device)
     {
-        case Device::LowShelf: return rules.row (row).lowShelfDb.has_value();
         case Device::Dither:   return rules.row (row).bitDepth <= rules.ditherUpToBits;
         case Device::MonoBass: return channels != 1;
         case Device::Hpf:
         case Device::Glue:
         case Device::Saturation:
         case Device::Tilt:
+        case Device::Low:
         case Device::Limiter:  return true;
     }
-    return false;
+    storageOverflow();
 }
 
 void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices) noexcept
@@ -69,14 +70,23 @@ void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channel
 
     devices.dither.machine.on = rules.dither && offered (rules, row, channels, Device::Dither);
 
-    auto& shelf = devices.lowShelf.machine;
-    shelf.on = rules.eq && target.lowShelfDb.has_value();
-    shelf.db = target.lowShelfDb ? number (*target.lowShelfDb) : 0.0;
+    auto& shelf = devices.low.machine;
+    shelf.on = rules.eq && target.lowDb.has_value();
+    shelf.db = target.lowDb ? number (*target.lowDb) : 0.0;
 }
 
-void placeMachine (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices) noexcept
+void placeMachine (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices, std::uint32_t offeredDevices) noexcept
 {
     placeDefaults (rules, row, channels, devices);
+    eachDevice (devices, [&] (Device d, auto& layers)
+    {
+        if ((offeredDevices & (1u << unsigned (d))) == 0)
+        {
+            layers.hand = {};
+            if constexpr (requires { layers.machine.on; }) layers.machine.on = false;
+        }
+    });
+    if ((offeredDevices & (1u << unsigned (Device::Limiter))) == 0) devices.limiter.machine.needles = Needles::Off;
 }
 
 } // namespace felitronics::session::detail
