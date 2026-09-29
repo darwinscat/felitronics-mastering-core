@@ -547,16 +547,25 @@ session_sources () { mod="$1"
     printf '%s\n' "$listed" | sed "s|^|$mod/|"; }
 
 # ...and before it is trusted: a tree with one unlisted source in a SUBDIRECTORY of src/ must be refused.
-SCTL="$(mktemp -d)"
+if [ "${FELITRONICS_WASM_KEEP_CONTROLS:-0}" = 1 ]; then
+    SCTL="$(mktemp -d "$OUT/source-control.XXXXXX")"
+else
+    SCTL="$(mktemp -d)"
+fi
 mkdir -p "$SCTL/src/sub"
 cp "$ROOT/modules/session/sources.txt" "$SCTL/"
 while IFS= read -r f; do mkdir -p "$SCTL/$(dirname "$f")"; : > "$SCTL/$f"; done \
     < <(sed -e 's/#.*//' -e 's/[[:space:]]*$//' "$ROOT/modules/session/sources.txt" | grep -v '^$')
 : > "$SCTL/src/sub/unlisted.cpp"
 if session_sources "$SCTL" > /dev/null 2>&1; then
-    rm -rf "$SCTL"; echo "*** CONTROL: a source in src/sub/ that sources.txt does not list was not refused"; exit 1
+    [ "${FELITRONICS_WASM_KEEP_CONTROLS:-0}" = 1 ] || rm -rf "$SCTL"
+    echo "*** CONTROL: a source in src/sub/ that sources.txt does not list was not refused"; exit 1
 fi
-rm -rf "$SCTL"
+if [ "${FELITRONICS_WASM_KEEP_CONTROLS:-0}" = 1 ]; then
+    printf 'source-list control retained: %s\n' "$SCTL"
+else
+    rm -rf "$SCTL"
+fi
 echo "    control ok: an unlisted source in a subdirectory of src/ is refused"
 
 SESSION_SRCS=(); while IFS= read -r f; do SESSION_SRCS+=("$f"); done < <(session_sources "$ROOT/modules/session")
@@ -677,17 +686,20 @@ node "$HERE/session-trap-check.mjs" "$OUT/trap/fcsession.node.js" "$OUT/snapshot
 
 # The slice 0 script contract uses a separate poisonable instance for its trap
 # scenario. The production module's exports remain the frozen v1 set.
+SCONTRACT=("${SCOMMON[@]}")
+SCONTRACT[${#SCONTRACT[@]}-2]="-sEXPORTED_FUNCTIONS=[$SEXPORTS,_contract_arm_trap,_contract_place]"
 mkdir -p "$OUT/contract-trap"
-em++ "${SCOMMON[@]}" "${RELEASE[@]}" -sENVIRONMENT=node "$SSRC" "${SESSION_SRCS[@]}" \
-     "$HERE/session-controls/contract_trap.cpp" -I"$CORE/test_support" -o "$OUT/contract-trap/fcsession.node.js"
+em++ "${SCONTRACT[@]}" "${RELEASE[@]}" -sENVIRONMENT=node "$SSRC" "${SESSION_SRCS[@]}" \
+     "$HERE/session-controls/contract_trap.cpp" "$HERE/session-controls/contract_place.cpp" \
+     -I"$CORE/test_support" -o "$OUT/contract-trap/fcsession.node.js"
 
 echo "--- fc_session checked contract module (SAFE_HEAP, assertions, stack checks)"
 mkdir -p "$OUT/checked/contract-trap"
 cp "$OUT/snapshot.mjs" "$OUT/snapshot.d.ts" "$OUT/checked/"
 em++ "${SCOMMON[@]}" "${RELEASE[@]}" -sENVIRONMENT=node -sSAFE_HEAP=1 -sASSERTIONS=2 -sSTACK_OVERFLOW_CHECK=2 \
      "$SSRC" "${SESSION_SRCS[@]}" -o "$OUT/checked/fcsession.node.js"
-em++ "${SCOMMON[@]}" "${RELEASE[@]}" -sENVIRONMENT=node -sSAFE_HEAP=1 -sASSERTIONS=2 -sSTACK_OVERFLOW_CHECK=2 \
-     "$SSRC" "${SESSION_SRCS[@]}" "$HERE/session-controls/contract_trap.cpp" -I"$CORE/test_support" \
+em++ "${SCONTRACT[@]}" "${RELEASE[@]}" -sENVIRONMENT=node -sSAFE_HEAP=1 -sASSERTIONS=2 -sSTACK_OVERFLOW_CHECK=2 \
+     "$SSRC" "${SESSION_SRCS[@]}" "$HERE/session-controls/contract_trap.cpp" "$HERE/session-controls/contract_place.cpp" -I"$CORE/test_support" \
      -o "$OUT/checked/contract-trap/fcsession.node.js"
 
 echo "=== size (fc_session)"

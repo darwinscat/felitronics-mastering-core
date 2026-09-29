@@ -8,6 +8,7 @@ int sessionScript (const std::string&, const char*, bool) { return 2; }
 #include "fc_session_abi.h"
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Wire.h>
+#include "Driver.h"
 #include <bit>
 #include <algorithm>
 #include <cstdio>
@@ -164,6 +165,15 @@ public:
                 if (i.op == "use") { current = a[0]; (void) session(); continue; }
                 if (i.op == "poison") { (void) session(); abandonedRunner = this; sessionScriptPoison (&afterPoison); }
                 if (i.op == "snapshot") { transfer (true); continue; }
+                if (i.op == "place")
+                {
+                    const auto job = session().measurementJob();
+                    const auto source = session().source().hash;
+                    const bool placed = a[0] == "1" ? detail::Driver::measured1 (session(), job, source)
+                                                       : detail::Driver::measured2 (session(), job, source);
+                    require (placed, "contract placement refused");
+                    record ("place", a[0]); transfer (false); continue;
+                }
                 if (i.op == "summary") { summary(); continue; }
                 if (i.op == "export")
                 {

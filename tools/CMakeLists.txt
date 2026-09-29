@@ -210,13 +210,13 @@ add_custom_command(OUTPUT ${SESSION_SCRIPT_GRAMMAR}
 add_executable(fcore_session fcore_session.cpp session-script.cpp session-script-poison.cpp
     ${SESSION_SCRIPT_GRAMMAR} $<TARGET_OBJECTS:felitronics_session_facade>)
 target_link_libraries(fcore_session PRIVATE felitronics::session felitronics::test_support)
-target_include_directories(fcore_session PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(fcore_session PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${PROJECT_SOURCE_DIR}/modules/session/src)
 target_include_directories(fcore_session PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 target_compile_options(fcore_session PRIVATE ${FCORE_NO_FP_CONTRACT}
     $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fno-fast-math>)
 target_compile_features(fcore_session PRIVATE cxx_std_20)
 if(FELITRONICS_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
-    add_test(NAME fcore_session_measure_contract_native
+    add_test(NAME fcore_session_contract
         COMMAND ${SESSION_SCRIPT_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/contract/run.mjs $<TARGET_FILE:fcore_session> --native-only)
 endif()
 

@@ -262,6 +262,14 @@ fc_session_status storageOut (const Session& session, const felitronics::session
 
 } // namespace
 
+// Linked only by the contract fixture's extra translation unit. Production export
+// lists omit the caller, so the optimizer discards this access function.
+Session* contractSession (fc_session h) noexcept
+{
+    auto* slot = lookup (h);
+    return slot ? slot->session : nullptr;
+}
+
 //==============================================================================
 // ENTRY POINTS
 

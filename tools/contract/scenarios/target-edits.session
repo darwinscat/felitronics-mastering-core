@@ -1,7 +1,9 @@
 create main 67108864
 load 1 mono
 step 5 work units
+place phase 1
 step 5 work units
+place phase 2
 command {"kind":"setManual","commandId":"2","on":false}
 command {"kind":"editDevice","commandId":"3","device":0,"fields":{"fq":4000.125,"slope":96,"on":false}}
 command {"kind":"editDevice","commandId":"30","device":7,"fields":{"db":-2.375,"on":true}}
@@ -11,4 +13,3 @@ command {"kind":"setTarget","commandId":"5","target":"lp"}
 snapshot
 command {"kind":"setTarget","commandId":"6","target":"cd"}
 snapshot
-summary

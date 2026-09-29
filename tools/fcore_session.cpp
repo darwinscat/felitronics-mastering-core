@@ -48,7 +48,7 @@ namespace
 {
 int usage (const char* argv0)
 {
-    std::fprintf (stderr, "usage: %s version\n       %s run <script|->\n       %s table\n"
+    std::fprintf (stderr, "usage: %s version\n       %s run|parse <script|->\n       %s table\n"
                           "       %s config targets|engine|version|sound-version\n",
                   argv0, argv0, argv0, argv0);
     return 2;

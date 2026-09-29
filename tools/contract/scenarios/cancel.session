@@ -3,8 +3,11 @@ load 1 mono
 step 2 work units
 cancel 2 1
 snapshot
-load 3 measure-stereo
-drive 5000 work units
+load 3 stereo
+step 5 work units
+place phase 1
+step 5 work units
+place phase 2
 command {"kind":"master","commandId":"4"}
 step 1 work units
 cancel 5 3
@@ -12,4 +15,3 @@ snapshot
 command {"kind":"master","commandId":"6"}
 step 4 work units
 snapshot
-summary

@@ -11,7 +11,7 @@
       "kind": "snapshot",
       "index": 0,
       "path": "state",
-      "value": 1,
+      "value": 2,
       "session": "right"
     },
     {
@@ -32,7 +32,7 @@
       "kind": "snapshot",
       "index": -1,
       "path": "state",
-      "value": 1,
+      "value": 3,
       "session": "right"
     },
     {
@@ -68,7 +68,5 @@
   "eventKinds": [
     "phase",
     "fact"
-  ],
-  "rejections": 0,
-  "equal": []
+  ]
 }

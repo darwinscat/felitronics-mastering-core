@@ -18,7 +18,8 @@ export async function runWasm(modulePath, scriptPath, {reorder = false, corruptR
     const low = Number.parseInt(version.slice(8), 16), high = Number.parseInt(version.slice(0, 8), 16);
     const require = createRequire(import.meta.url);
     const production = require(resolve(modulePath));
-    const failing = instructions.some(i => i.op === 'poison') ? require(join(directory, 'contract-trap/fcsession.node.js')) : production;
+    const usesPlacement = instructions.some(i => i.op === 'place');
+    const failing = instructions.some(i => i.op === 'poison' || i.op === 'place') ? require(join(directory, 'contract-trap/fcsession.node.js')) : production;
     let M = await failing(), poisoned = false, current = '', swapped = false, corrupted = false, fieldCorrupted = false, previousSource = '0';
     const sessions = new Map(), projects = new Map(), records = [];
     const header = readFileSync(new URL('../fc_session_abi.h', import.meta.url), 'utf8');
@@ -116,7 +117,7 @@ export async function runWasm(modulePath, scriptPath, {reorder = false, corruptR
             try {
                 if (op === 'new') {
                     if (!poisoned) for (const h of sessions.values()) ok('destroy', h);
-                    M = await production(); sessions.clear(); current = ''; poisoned = false; continue;
+                    M = await (usesPlacement ? failing : production)(); sessions.clear(); current = ''; poisoned = false; continue;
                 }
                 assert.ok(!poisoned, 'poisoned instance: use new instance');
                 if (op === 'create') {
@@ -132,6 +133,10 @@ export async function runWasm(modulePath, scriptPath, {reorder = false, corruptR
                     }); continue;
                 }
                 if (op === 'use') { current = a[0]; handle(); continue; }
+                if (op === 'place') {
+                    assert.equal(runtime.invokeSession(M._contract_place, handle(), Number(a[0])), 0, 'contract placement');
+                    record('place', a[0]); await transfer('events'); continue;
+                }
                 if (op === 'snapshot' || op === 'summary') { await transfer(op); continue; }
                 if (op === 'poison') {
                     handle();

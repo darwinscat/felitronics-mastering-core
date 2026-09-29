@@ -11,7 +11,7 @@
       "kind": "snapshot",
       "index": 0,
       "path": "project.devices.hpf.hand.fq",
-      "value": null,
+      "value": 4000.125,
       "session": "main"
     },
     {
@@ -48,26 +48,26 @@
       "kind": "snapshot",
       "index": 0,
       "path": "project.devices.low.hand.db",
-      "value": null
+      "value": -2.375
     },
     {
       "kind": "snapshot",
       "index": 0,
       "path": "project.devices.hpf.hand.slope",
-      "value": null
+      "value": 96
     },
     {
       "kind": "snapshot",
       "index": 0,
       "path": "project.devices.hpf.hand.on",
-      "value": null,
+      "value": false,
       "session": "main"
     },
     {
       "kind": "snapshot",
       "index": 0,
       "path": "project.devices.low.hand.on",
-      "value": null,
+      "value": true,
       "session": "main"
     },
     {
@@ -81,7 +81,7 @@
       "kind": "snapshot",
       "index": 0,
       "path": "handFieldCount",
-      "value": 0,
+      "value": 5,
       "session": "main"
     },
     {
@@ -96,8 +96,8 @@
       "index": 1,
       "path": "project.devices.hpf.hand",
       "value": {
-        "fq": null,
         "on": null,
+        "fq": null,
         "slope": null
       },
       "session": "main"
@@ -107,8 +107,8 @@
       "index": 1,
       "path": "project.devices.low.hand",
       "value": {
-        "db": null,
-        "on": null
+        "on": null,
+        "db": null
       },
       "session": "main"
     },
@@ -124,8 +124,8 @@
       "index": 2,
       "path": "project.devices.hpf.hand",
       "value": {
-        "fq": null,
         "on": null,
+        "fq": null,
         "slope": null
       },
       "session": "main"
@@ -135,8 +135,8 @@
       "index": 2,
       "path": "project.devices.low.hand",
       "value": {
-        "db": null,
-        "on": null
+        "on": null,
+        "db": null
       },
       "session": "main"
     },
@@ -145,8 +145,8 @@
       "index": 1,
       "path": "project.devices.monoBass.hand",
       "value": {
-        "fq": null,
         "on": null,
+        "fq": null,
         "width": null
       },
       "session": "main"
@@ -166,9 +166,9 @@
       "index": 1,
       "path": "project.devices.saturation.hand",
       "value": {
+        "on": null,
         "drive": null,
         "mix": null,
-        "on": null,
         "output": null
       },
       "session": "main"
@@ -178,8 +178,8 @@
       "index": 1,
       "path": "project.devices.tilt.hand",
       "value": {
-        "db": null,
-        "on": null
+        "on": null,
+        "db": null
       },
       "session": "main"
     },
@@ -207,7 +207,5 @@
   "eventKinds": [
     "phase",
     "fact"
-  ],
-  "rejections": 2,
-  "equal": []
+  ]
 }

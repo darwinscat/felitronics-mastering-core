@@ -1,6 +1,6 @@
 {
-  "scenario": "target-edits",
-  "scriptSha256": "0585d7fbb0e8a118ce67b1f9d300f6f4aa319188024aac4ffa5eccb2e8a35d86",
+  "scenario": "machine-layer",
+  "scriptSha256": "de5d778c462e44a0b19d039c42d0c0d24ef946ed624b8e33a71a2377c4cf124c",
   "records": [
     {
       "session": "main",
@@ -22,32 +22,20 @@
     },
     {
       "session": "main",
-      "kind": "answer",
-      "raw": "{\"kind\":\"accepted\",\"commandId\":\"3\",\"revision\":\"6\",\"jobId\":0}",
+      "kind": "create",
+      "raw": "0",
       "rows": ""
     },
     {
       "session": "main",
       "kind": "answer",
-      "raw": "{\"kind\":\"accepted\",\"commandId\":\"30\",\"revision\":\"7\",\"jobId\":0}",
+      "raw": "{\"kind\":\"accepted\",\"commandId\":\"1\",\"revision\":\"1\",\"jobId\":1}",
       "rows": ""
     },
     {
       "session": "main",
       "kind": "answer",
-      "raw": "{\"kind\":\"accepted\",\"commandId\":\"4\",\"revision\":\"8\",\"jobId\":0}",
-      "rows": ""
-    },
-    {
-      "session": "main",
-      "kind": "answer",
-      "raw": "{\"kind\":\"accepted\",\"commandId\":\"5\",\"revision\":\"9\",\"jobId\":0}",
-      "rows": ""
-    },
-    {
-      "session": "main",
-      "kind": "answer",
-      "raw": "{\"kind\":\"accepted\",\"commandId\":\"6\",\"revision\":\"10\",\"jobId\":0}",
+      "raw": "{\"kind\":\"accepted\",\"commandId\":\"2\",\"revision\":\"5\",\"jobId\":0}",
       "rows": ""
     },
     {
@@ -72,6 +60,12 @@
       "session": "main",
       "kind": "events",
       "raw": "[{\"seq\":\"8\",\"jobId\":1,\"source\":\"555976467704356450\",\"revision\":\"3\",\"state\":2,\"phase\":2,\"completedWork\":\"0\",\"totalWork\":\"45\",\"kind\":\"phase\",\"payload\":{\"completedUnits\":0,\"fraction\":0,\"name\":2,\"pass\":0,\"totalPasses\":0,\"totalUnits\":45,\"weightsVersion\":\"17124308844398866313\"}},{\"seq\":\"9\",\"jobId\":1,\"source\":\"555976467704356450\",\"revision\":\"3\",\"state\":2,\"phase\":2,\"completedWork\":\"0\",\"totalWork\":\"45\",\"kind\":\"phase\",\"payload\":{\"completedUnits\":0,\"fraction\":0,\"name\":2,\"pass\":0,\"totalPasses\":0,\"totalUnits\":45,\"weightsVersion\":\"17124308844398866313\"}},{\"seq\":\"10\",\"jobId\":1,\"source\":\"555976467704356450\",\"revision\":\"3\",\"state\":2,\"phase\":2,\"completedWork\":\"0\",\"totalWork\":\"45\",\"kind\":\"phase\",\"payload\":{\"completedUnits\":0,\"fraction\":0,\"name\":2,\"pass\":0,\"totalPasses\":0,\"totalUnits\":45,\"weightsVersion\":\"17124308844398866313\"}},{\"seq\":\"11\",\"jobId\":1,\"source\":\"555976467704356450\",\"revision\":\"3\",\"state\":2,\"phase\":2,\"completedWork\":\"0\",\"totalWork\":\"45\",\"kind\":\"phase\",\"payload\":{\"completedUnits\":0,\"fraction\":0,\"name\":2,\"pass\":0,\"totalPasses\":0,\"totalUnits\":45,\"weightsVersion\":\"17124308844398866313\"}}]",
+      "rows": ""
+    },
+    {
+      "session": "main",
+      "kind": "events",
+      "raw": "[{\"seq\":\"12\",\"jobId\":0,\"source\":\"555976467704356450\",\"revision\":\"5\",\"state\":3,\"phase\":0,\"completedWork\":\"0\",\"totalWork\":\"0\",\"kind\":\"fact\",\"payload\":{\"FactId\":8,\"args\":[{\"kind\":2,\"unit\":0,\"precision\":0,\"sign\":0,\"bound\":0,\"termId\":0,\"number\":0,\"integer\":\"3\",\"userText\":\"\"}]}}]",
       "rows": ""
     }
   ]

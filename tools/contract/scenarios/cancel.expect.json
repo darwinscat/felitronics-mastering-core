@@ -47,7 +47,5 @@
   "eventKinds": [
     "phase",
     "fact"
-  ],
-  "rejections": 0,
-  "equal": []
+  ]
 }

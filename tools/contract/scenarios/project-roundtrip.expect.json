@@ -1,42 +1,38 @@
 {
   "checks": [
     {
-      "kind": "create",
-      "index": 0,
-      "path": "",
-      "value": 10,
-      "session": "refused"
-    },
-    {
       "kind": "snapshot",
-      "index": 1,
-      "path": "state",
-      "value": 3,
+      "index": 0,
+      "path": "project.devices.hpf.hand.fq",
+      "value": 36,
       "session": "main"
     },
     {
       "kind": "snapshot",
       "index": 1,
-      "path": "measurementProgress.completedUnits",
-      "value": 0,
+      "path": "project.devices.hpf.hand.fq",
+      "value": 36,
       "session": "main"
     },
     {
       "kind": "snapshot",
-      "index": 0,
-      "path": "state",
-      "value": 0
+      "index": 1,
+      "path": "target",
+      "value": "allStreaming",
+      "session": "main"
     },
     {
       "kind": "snapshot",
-      "index": 0,
+      "index": 1,
       "path": "project.manual",
-      "value": true
+      "value": true,
+      "session": "main"
     }
   ],
   "minEvents": 10,
   "eventKinds": [
     "phase",
     "fact"
-  ]
+  ],
+  "projects": 3
 }

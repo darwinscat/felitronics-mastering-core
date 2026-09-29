@@ -1,10 +1,38 @@
 {
   "checks": [
     {
-      "kind": "snapshot",
+      "kind": "poison",
       "index": 0,
-      "path": "state",
+      "path": "status",
       "value": 1,
+      "session": "main"
+    },
+    {
+      "kind": "poison",
+      "index": 0,
+      "path": "trap",
+      "value": 14,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "target",
+      "value": "lp",
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "project.devices.hpf.hand.fq",
+      "value": 36,
+      "session": "main"
+    },
+    {
+      "kind": "snapshot",
+      "index": 1,
+      "path": "project.manual",
+      "value": true,
       "session": "main"
     },
     {
@@ -13,39 +41,12 @@
       "path": "state",
       "value": 3,
       "session": "main"
-    },
-    {
-      "kind": "snapshot",
-      "index": 1,
-      "path": "sourceBytes",
-      "value": 1024,
-      "session": "main"
-    },
-    {
-      "kind": "snapshot",
-      "index": 1,
-      "path": "integratedLufs",
-      "value": "NaN",
-      "session": "main"
-    },
-    {
-      "kind": "snapshot",
-      "index": 1,
-      "path": "measurementJob",
-      "value": 0,
-      "session": "main"
-    },
-    {
-      "kind": "snapshot",
-      "index": 1,
-      "path": "measurementProgress.completedUnits",
-      "value": 0,
-      "session": "main"
     }
   ],
   "minEvents": 10,
   "eventKinds": [
     "phase",
     "fact"
-  ]
+  ],
+  "projects": 2
 }
