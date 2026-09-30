@@ -2177,7 +2177,8 @@ static void testClipperPeaks()
     // THE QUIET GAIN is the stage's own: a tone far under the bend comes out multiplied by it, whatever the shape, the
     // drive, the compensation, the mix and the trim.
     double worst = 0.0;
-    for (const Shape shape : { Shape::Tanh, Shape::Atan, Shape::Cubic, Shape::Asym })
+    for (const Shape shape : { Shape::Tanh, Shape::Atan, Shape::Cubic, Shape::Asym,
+                               Shape::Tube, Shape::Transistor, Shape::Transformer, Shape::Tape })
         for (const float comp : { 0.0f, 0.5f, 1.0f })
             for (const float mix : { 1.0f, 0.4f })
                 for (const float trim : { 0.0f, -6.0f })
@@ -2190,8 +2191,29 @@ static void testClipperPeaks()
                         if (! run.counted) { worst = 1.0e9; continue; }
                         worst = std::max (worst, std::fabs (cutDb (run.quietGain, run.peaks.loudUsualRatio)));
                     }
-    ok (worst < 0.01, "a quiet tone leaves the stage at clipperQuietGain(): 96 settings, the worst "
+    ok (worst < 0.01, "a quiet tone leaves the stage at clipperQuietGain(): 192 settings over the eight shapes, the worst "
         + std::to_string (worst) + " dB away");
+
+    // THE FOUR v0.57.0 SHAPES, a row each: the quiet gain is the stage's own, and it is the shape's slope at zero,
+    // compensated — Tube's slope is under 1, so with compensation its quiet gain stands ABOVE 1. A loud programme's
+    // peaks are measured on the stage as for Tanh, whatever the shape makes of them (Tube's bias can leave the peaks a
+    // little louder than a quiet sound; Transformer bends the low end only, so a mid tone passes it untouched).
+    for (const Shape shape : { Shape::Tube, Shape::Transistor, Shape::Transformer, Shape::Tape })
+    {
+        saturation::Saturator::Params q;
+        q.shape = shape; q.driveDb = 6.0f; q.autoComp = 0.5f; q.mix = 1.0f; q.outputDb = 0.0f; q.bias = 0.0f; q.dcBlockHz = 0.0f;
+        const auto quiet = clipRun (q, { { 1.0e-3f, 40 } }, 1.0);
+        const auto loud = clipRun (q, { { 0.1f, 800 }, { 0.3f, 140 }, { 0.8f, 60 } });
+        const double largest = cutDb (loud.peaks.quietGain, loud.peaks.loudLeastRatio);
+        const double usual = cutDb (loud.peaks.quietGain, loud.peaks.loudUsualRatio);
+        const bool tube = shape == Shape::Tube;
+        ok (quiet.counted && loud.counted && std::fabs (cutDb (quiet.quietGain, quiet.peaks.loudUsualRatio)) < 0.01
+            && (! tube || quiet.quietGain > 1.0 + 1.0e-3)
+            && std::isfinite (largest) && std::isfinite (usual) && largest >= usual - 1.0e-9,
+            "shape " + std::to_string (int (shape)) + " at drive 6, compensation 0.5: quiet gain " + std::to_string (quiet.quietGain)
+            + (tube ? " (above 1: Tube's slope at zero is under 1)" : "") + ", the loud peaks cut " + std::to_string (largest)
+            + " dB at most, " + std::to_string (usual) + " dB usually");
+    }
 
     saturation::Saturator::Params p;
     p.shape = Shape::Tanh; p.autoComp = 0.0f; p.mix = 1.0f; p.outputDb = 0.0f; p.bias = 0.0f; p.dcBlockHz = 0.0f;

@@ -311,7 +311,8 @@ typedef enum fc_comp_mode
 
 typedef enum fc_shape
 {
-    FC_SHAPE_TANH = 0, FC_SHAPE_ATAN = 1, FC_SHAPE_CUBIC = 2, FC_SHAPE_ASYM = 3
+    FC_SHAPE_TANH = 0, FC_SHAPE_ATAN = 1, FC_SHAPE_CUBIC = 2, FC_SHAPE_ASYM = 3,
+    FC_SHAPE_TUBE = 4, FC_SHAPE_TRANSISTOR = 5, FC_SHAPE_TRANSFORMER = 6, FC_SHAPE_TAPE = 7
 } fc_shape;
 typedef enum fc_noise_shaping { FC_SHAPING_NONE = 0, FC_SHAPING_WEIGHTED = 1, FC_SHAPING_PSYCHO = 2 } fc_noise_shaping;
 

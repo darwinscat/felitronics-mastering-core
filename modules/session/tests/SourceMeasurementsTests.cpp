@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
-#include "DeclaredBudget.h"
+#include "../../../tests/DeclaredBudget.h"
 #include "SourceMeasurements.h"
 #include "MeasurementWorkspace.h"
 #include "LiveMeasurements.h"
@@ -17,7 +17,7 @@
 using namespace felitronics::session;
 using namespace felitronics::analysis;
 using felitronics::test::ok;
-namespace budget = felitronics::session::testing;
+namespace declared = felitronics::declared;
 struct felitronics::session::detail::Inspector
 {
     static const SourceMeasurements& run (const Session& s) { return *s.sourceMeasurements_; }
@@ -69,9 +69,9 @@ void drive (Session& s, bool cancel = false)
                 previous = run.cursor; stage = run.stage;
                 const auto frames = run.frames, source = s.source().hash;
                 const auto before = s.snapshot();
-                const auto stopped = budget::spend ([&] { (void) s.apply (command::Cancel { 7, s.measurementJob() }); });
+                const auto stopped = declared::spend ([&] { (void) s.apply (command::Cancel { 7, s.measurementJob() }); });
                 ok (stopped.bytes == 0 && s.source().hash == source && run.frames == frames, "cancel retains PCM, results and the exact unfinished position without allocation");
-                const auto resumed = budget::spend ([&] { (void) s.apply (command::ContinueMeasurement { 8 }); });
+                const auto resumed = declared::spend ([&] { (void) s.apply (command::ContinueMeasurement { 8 }); });
                 ok (resumed.bytes == 0 && run.frames == frames, "continue allocates nothing and resumes the saved stage");
                 const auto after = s.snapshot();
                 for (unsigned i = 0; i < kAnalyzers; ++i)
@@ -82,7 +82,7 @@ void drive (Session& s, bool cancel = false)
         const auto& run = detail::Inspector::run (s);
         const bool preparation = s.needlesJob() == 0 && detail::Inspector::live (s) == 9 && run.stage == 0;
         const auto resident = s.liveBytes();
-        const auto spent = budget::spend ([&] { (void) s.step (1); });
+        const auto spent = declared::spend ([&] { (void) s.step (1); });
         if (preparation && spent.bytes != 0)
             ok (s.liveBytes() - resident >= double (spent.bytes), "each optional preparation retains allocator allowance, including MSVC Debug");
         for (const auto& e : s.events()) if (e.kind == EventKind::Fact && e.payload.fact.view().id == text::FactId::AnalyzerStatus)
@@ -406,7 +406,7 @@ void cachedSourceAndCommands()
             "the public table takes device operations after a real measurement placed the devices");
     }
     load.meta.bitDepth = 24;
-    const auto spent = budget::spend ([&] { (void) s.apply (load); });
+    const auto spent = declared::spend ([&] { (void) s.apply (load); });
     ok (spent.bytes == 0, "cached metadata refresh and needles scheduling allocate nothing");
     const auto after = s.snapshot();
     ok (s.measurementJob() == 0 && s.needlesJob() != 0,
@@ -448,7 +448,7 @@ void cachedSourceAndCommands()
         const auto previous = s.snapshot().view().measurements[forensics].key;
         const bool changed = depth != load.meta.bitDepth;
         load.meta.bitDepth = depth;
-        const auto refreshed = budget::spend ([&] { (void) s.apply (load); });
+        const auto refreshed = declared::spend ([&] { (void) s.apply (load); });
         const auto current = s.snapshot();
         for (const auto name : { "grid.alwaysZeroLowBits[0]", "grid.alwaysZeroLowBits[1]" })
         {
@@ -525,7 +525,7 @@ void tempoFinishCanStopAndContinue()
     const auto stage = detail::Inspector::workspace (s).tempo->finishStage();
     const auto source = s.source().hash;
     const auto prior = s.snapshot();
-    const auto stopped = budget::spend ([&] { (void) s.apply (command::Cancel { 2, s.measurementJob() }); });
+    const auto stopped = declared::spend ([&] { (void) s.apply (command::Cancel { 2, s.measurementJob() }); });
     const auto paused = s.snapshot();
     ok (stopped.bytes == 0 && s.source().hash == source && paused.view().state == State::MeasurementStopped
         && paused.view().canContinueMeasurement && ! paused.view().tempoChoice.ready,
@@ -534,7 +534,7 @@ void tempoFinishCanStopAndContinue()
     const auto zoom = s.query (q);
     ok (zoom.view().status == QueryStatus::Ready && zoom.view().stored == 64u * 4u,
         "waveform zoom is served while tempo finish is stopped");
-    const auto resumed = budget::spend ([&] { (void) s.apply (command::ContinueMeasurement { 3 }); });
+    const auto resumed = declared::spend ([&] { (void) s.apply (command::ContinueMeasurement { 3 }); });
     ok (resumed.bytes == 0 && detail::Inspector::workspace (s).tempo->finishStage() == stage
         && detail::Inspector::run (s).cursor == 8 && prior.view().measurements[std::size_t (Analyzer::Crest)].key
             == s.snapshot().view().measurements[std::size_t (Analyzer::Crest)].key,

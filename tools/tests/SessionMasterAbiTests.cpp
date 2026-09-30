@@ -2,7 +2,7 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 #include "fc_session_abi.h"
-#include "../../modules/session/tests/DeclaredBudget.h"
+#include "../../tests/DeclaredBudget.h"
 #include <alloc_counter.h>
 #include <felitronics_test.h>
 #include <felitronics/session/Config.h>
@@ -24,7 +24,7 @@ using namespace felitronics::session;
 namespace mastering = felitronics::mastering;
 using felitronics::test::ok;
 namespace alloc = felitronics::test::alloc;
-namespace budget = felitronics::session::testing;
+namespace declared = felitronics::declared;
 
 // The facade's test seam gives this test the independently typed session state.
 Session* contractSession (fc_session) noexcept;
@@ -229,7 +229,7 @@ bool refusedThroughFacade (fc_session handle, std::uint32_t id, const char* targ
     fc_session_storage storage { sizeof (fc_session_storage) };
     fc_session_status priced = FC_SESSION_ERR_CONTRACT, started = FC_SESSION_ERR_CONTRACT;
     char answer[FC_SESSION_ANSWER_BYTES] {}; std::uint32_t written = 0;
-    const auto spent = budget::spend ([&] {
+    const auto spent = declared::spend ([&] {
         priced = fc_session_master_bytes (handle, std::uint32_t (source), std::uint32_t (source >> 32),
             std::uint32_t (revision), std::uint32_t (revision >> 32), &config, &params, &storage);
         started = fc_session_master (handle, id + 1u, 0, std::uint32_t (source), std::uint32_t (source >> 32),
@@ -281,7 +281,7 @@ void leanThroughFacade()
                         : fc_session_snapshot_copy (handle, json.data(), sizes.jsonBytes, rows.data(), sizes.rowBytes)) == FC_SESSION_OK;
     };
     std::string summary, snapshot; fc_session_sizes summarySizes {}, snapshotSizes {};
-    const auto sizing = budget::spend ([&] { fc_session_sizes probe { sizeof (fc_session_sizes) }; (void) fc_session_summary_size (handle, &probe); });
+    const auto sizing = declared::spend ([&] { fc_session_sizes probe { sizeof (fc_session_sizes) }; (void) fc_session_summary_size (handle, &probe); });
     ok (read (true, summary, summarySizes) && read (false, snapshot, snapshotSizes) && sizing.requests == 0
         && summary.find ("\"masterRowsIncluded\":false") != std::string::npos && summary.find ("\"limiterTrace\":{") == std::string::npos
         && summary.find ("\"log\":[{") != std::string::npos
@@ -297,10 +297,10 @@ void leanThroughFacade()
             || fc_session_query_size (handle, request.data(), std::uint32_t (request.size()), &sizes) != FC_SESSION_OK) return false;
         json.assign (sizes.jsonBytes, '\0'); rows.assign (sizes.rowBytes / sizeof (double), 0.0);
         fc_session_status status = FC_SESSION_ERR_CONTRACT;
-        const auto spent = budget::spend ([&] { status = fc_session_query_copy (handle, request.data(), std::uint32_t (request.size()),
+        const auto spent = declared::spend ([&] { status = fc_session_query_copy (handle, request.data(), std::uint32_t (request.size()),
             json.data(), sizes.jsonBytes, rows.data(), sizes.rowBytes, &wrote); });
         json.resize (wrote.jsonBytes);
-        return status == FC_SESSION_OK && budget::covers (std::uint64_t (storage.bytes), spent) && wrote.jsonBytes <= sizes.jsonBytes && wrote.rowBytes <= sizes.rowBytes;
+        return status == FC_SESSION_OK && declared::covers (std::uint64_t (storage.bytes), spent) && wrote.jsonBytes <= sizes.jsonBytes && wrote.rowBytes <= sizes.rowBytes;
     };
     const std::string head = "{\"audioId\":\"" + std::to_string (source) + "\",\"requestId\":\"9\",\"masterId\":" + std::to_string (id);
     std::string json; std::vector<double> rows; fc_session_sizes wrote {};
@@ -344,7 +344,7 @@ int main()
     ok (priced == FC_SESSION_OK && storage.rejection == 0 && storage.bytes > 0, "ready request has a preflight demand");
     alignas (8) char aliased[FC_SESSION_ANSWER_BYTES] {};
     fc_session_status overlapStatus = FC_SESSION_ERR_CONTRACT;
-    const auto overlapSpent = budget::spend ([&] {
+    const auto overlapSpent = declared::spend ([&] {
         overlapStatus = fc_session_master (handle, 77, 0, std::uint32_t (source), std::uint32_t (source >> 32),
             std::uint32_t (revision), std::uint32_t (revision >> 32), &topology, &params,
             aliased, sizeof (aliased), reinterpret_cast<std::uint32_t*> (aliased));
@@ -353,10 +353,10 @@ int main()
         "overlapping answer and written are rejected before a master starts");
     char answer[FC_SESSION_ANSWER_BYTES]; std::uint32_t written = 0;
     fc_session_status started = FC_SESSION_ERR_CONTRACT;
-    const auto spent = budget::spend ([&] { started = fc_session_master (handle, 2, 0, std::uint32_t (source), std::uint32_t (source >> 32),
+    const auto spent = declared::spend ([&] { started = fc_session_master (handle, 2, 0, std::uint32_t (source), std::uint32_t (source >> 32),
         std::uint32_t (revision), std::uint32_t (revision >> 32), &topology, &params,
         answer, sizeof (answer), &written); });
-    ok (started == FC_SESSION_OK && session->job() != 0 && budget::covers (std::uint64_t (storage.bytes), spent),
+    ok (started == FC_SESSION_OK && session->job() != 0 && declared::covers (std::uint64_t (storage.bytes), spent),
         "ready C command starts the real job within its declared demand");
     ok (fc_session_master (handle, 3, 0, std::uint32_t (source), std::uint32_t (source >> 32),
         std::uint32_t (revision), std::uint32_t (revision >> 32), &topology, &params,
@@ -580,13 +580,13 @@ int main()
         std::vector<double> chunkRows (chunkSizes.rowBytes / sizeof (double));
         const float* chunkPcm[2] { copied.data() + 100, copied.data() + frames + 100 };
         fc_session_status chunkStatus = FC_SESSION_ERR_CONTRACT;
-        const auto chunkSpent = budget::spend ([&] {
+        const auto chunkSpent = declared::spend ([&] {
             chunkStatus = fc_session_master_waveform_chunk_copy (handle, query, inputBytes, chunkPcm,
                 2, 100, rate, chunkJson.data(), std::uint32_t (chunkJson.size()), chunkRows.data(),
                 chunkSizes.rowBytes, &chunkWritten);
         });
         ok (pricedChunk == FC_SESSION_OK && sizedChunk == FC_SESSION_OK && chunkStatus == FC_SESSION_OK
-            && chunkStorage.rejection == 0 && budget::covers (std::uint64_t (chunkStorage.bytes), chunkSpent)
+            && chunkStorage.rejection == 0 && declared::covers (std::uint64_t (chunkStorage.bytes), chunkSpent)
             && chunkWritten.rowBytes == 20u * 7u * sizeof (double)
             && chunkRows[0] == 100 && chunkRows[1] == 110,
             "C facade reads an explicit delivered PCM chunk after release within its declared budget");

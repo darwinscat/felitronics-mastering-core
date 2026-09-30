@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
-#include "DeclaredBudget.h"
+#include "../../../tests/DeclaredBudget.h"
 #include "Advance.h"
 #include "Driver.h"
 #include "SourceMeasurements.h"
@@ -52,6 +52,7 @@ struct felitronics::session::detail::Inspector
     static void fillBatch (Session& s, std::size_t count) { for (std::size_t i = 0; i < count; ++i) s.emit ({}); }
 };
 namespace budget = felitronics::session::testing;
+namespace declared = felitronics::declared;
 namespace
 {
 void measureReady (Session& session, bool firstOnly = false)
@@ -70,16 +71,16 @@ std::unique_ptr<Session> fresh()
 {
     Created made;
     const auto need = Session::createBytes();
-    const auto spent = budget::spend ([&] { made = Session::create(); });
-    ok (made.status == Status::Ok && budget::covers (need, spent) && need == std::uint64_t (spent.bytes), "create declares its exact demand");
+    const auto spent = declared::spend ([&] { made = Session::create(); });
+    ok (made.status == Status::Ok && declared::covers (need, spent) && need == std::uint64_t (spent.bytes), "create declares its exact demand");
     return std::move (made.session);
 }
 Answer apply (Session& s, const Request& r)
 {
     const auto need = s.check (r);
     Answer answer;
-    const auto spent = budget::spend ([&] { answer = s.apply (r); });
-    ok (budget::covers (need.bytes, spent)
+    const auto spent = declared::spend ([&] { answer = s.apply (r); });
+    ok (declared::covers (need.bytes, spent)
         && (std::holds_alternative<command::ImportProject> (r) || std::holds_alternative<command::Load> (r)
             || std::holds_alternative<command::Master> (r) || need.bytes == std::uint64_t (spent.bytes)), "command demand covers events and import validation");
     return answer;
@@ -88,26 +89,26 @@ Stepped step (Session& s, std::uint32_t units)
 {
     Stepped result;
     const auto demand = s.measurementStorage ({ nullptr, s.source().channels, s.source().frames, s.source().sampleRate });
-    const auto spent = budget::spend ([&] { result = s.step (units); });
-    ok (budget::covers (std::uint64_t (demand.workspaceBytes + demand.resultBytes + demand.allocatorBytes + s.liveBytes()), spent), "pump stays within the declared preparation and output demand");
+    const auto spent = declared::spend ([&] { result = s.step (units); });
+    ok (declared::covers (std::uint64_t (demand.workspaceBytes + demand.resultBytes + demand.allocatorBytes + s.liveBytes()), spent), "pump stays within the declared preparation and output demand");
     return result;
 }
 Snapshot snapshot (const Session& s)
 {
     Snapshot out;
     const auto need = s.snapshotBytes();
-    const auto spent = budget::spend ([&] { out = s.snapshot(); });
+    const auto spent = declared::spend ([&] { out = s.snapshot(); });
     ok (need == std::uint64_t (spent.bytes) && need == Snapshot::storageFor (out.view()), "snapshot and its storage demand use the same complete view");
     return out;
 }
 std::string encoded (const SnapshotView& view)
 {
     CodecNeed need;
-    const auto checked = budget::spend ([&] { need = Codec::encodedBytes (view); });
+    const auto checked = declared::spend ([&] { need = Codec::encodedBytes (view); });
     ok (checked.bytes == 0 && need.status == CodecStatus::Ok, "encoding size query allocates nothing");
     std::string text (std::size_t (need.bytes), '\0');
     CodecStatus status {};
-    const auto spent = budget::spend ([&] { status = Codec::encode (view, text); });
+    const auto spent = declared::spend ([&] { status = Codec::encode (view, text); });
     ok (status == CodecStatus::Ok && spent.bytes == 0, "codec writes into exactly the declared caller storage");
     return text;
 }
@@ -269,14 +270,14 @@ void codec()
     const ReadingRun runs[] { { 8, 2, std::numeric_limits<double>::infinity() } };
     v.momentary = momentary; v.shortTerm = shortTerm; v.runs = runs;
     Snapshot owned;
-    const auto copy = budget::spend ([&] { owned = Snapshot::copy (v); });
+    const auto copy = declared::spend ([&] { owned = Snapshot::copy (v); });
     ok (Snapshot::storageFor (v) == std::uint64_t (copy.bytes), "copy declares exact strings, masters and reading arrays");
     const auto text = encoded (owned.view());
     CodecNeed need;
-    const auto checked = budget::spend ([&] { need = Codec::decodedBytes (text); });
+    const auto checked = declared::spend ([&] { need = Codec::decodedBytes (text); });
     ok (need.status == CodecStatus::Ok && checked.bytes == 0 && need.bytes == Snapshot::storageFor (v), "decode validates and declares exact owned storage before work");
     Snapshot restored; CodecStatus status {};
-    const auto decoded = budget::spend ([&] { status = Codec::decode (text, restored); });
+    const auto decoded = declared::spend ([&] { status = Codec::decode (text, restored); });
     ok (status == CodecStatus::Ok && need.bytes == std::uint64_t (decoded.bytes), "decode asks exactly its declared demand");
     ok (encoded (restored.view()) == text, "named fields and both layers round trip, including rows and non-finite values");
     ok (std::isnan (restored.view().momentary[1].value) && std::isinf (restored.view().integratedLufs), "NaN gaps and silence are explicit and restored");
@@ -287,7 +288,7 @@ void codec()
     for (const auto& input : broken)
     {
         const auto before = encoded (restored.view());
-        const auto spent = budget::spend ([&] { status = Codec::decode (input, restored); });
+        const auto spent = declared::spend ([&] { status = Codec::decode (input, restored); });
         ok (status == CodecStatus::Invalid && spent.bytes == 0 && before == encoded (restored.view()), "invalid, missing, duplicate and unknown fields refuse whole before allocation");
     }
     const auto field = text.rfind ("\"sourceBytes\":");
@@ -391,7 +392,7 @@ void contracts()
         std::string first = "source.wav", second = "target";
         const auto fact = text::Fact::of (FactId::Value, text::Arg::text (first), text::Arg::text (second));
         bool assigned = false;
-        const auto spent = budget::spend ([&] { assigned = event.payload.fact.assign (fact); });
+        const auto spent = declared::spend ([&] { assigned = event.payload.fact.assign (fact); });
         saved = event;
         first.assign (first.size(), 'x'); second.clear();
         ok (assigned && spent.bytes == 0 && saved.payload.fact.view().args[0].userText == "source.wav",

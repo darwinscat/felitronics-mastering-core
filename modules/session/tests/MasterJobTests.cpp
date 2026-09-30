@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
-#include "DeclaredBudget.h"
+#include "../../../tests/DeclaredBudget.h"
 #include "Driver.h"
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/analysis/ReferenceTruePeakMeter.h>
@@ -14,7 +14,7 @@
 
 using namespace felitronics::session;
 using felitronics::test::ok;
-namespace budget = felitronics::session::testing;
+namespace declared = felitronics::declared;
 namespace felitronics::session::detail
 {
 struct Inspector
@@ -53,9 +53,9 @@ int main()
     ready.source = s.source().hash; ready.revision = s.revision();
     const auto declared = s.check (ready);
     Answer started;
-    const auto spent = budget::spend ([&] { started = s.apply (ready); });
+    const auto spent = declared::spend ([&] { started = s.apply (ready); });
     ok (declared.rejection == Rejection::None && started.rejection == Rejection::None
-        && budget::covers (declared.bytes, spent), "ready master preflight covers preparation");
+        && declared::covers (declared.bytes, spent), "ready master preflight covers preparation");
     const auto recipe = s.jobRecipe();
     const auto target = s.apply (command::SetTarget { 3, "club" });
     ok (target.rejection == Rejection::None && s.jobRecipe().readyHash == recipe.readyHash
@@ -63,7 +63,7 @@ int main()
     std::uint64_t largestStep = 0;
     for (unsigned i = 0; i < 40000 && s.job() != 0; ++i)
     {
-        const auto work = budget::spend ([&] { (void) s.step (1); });
+        const auto work = declared::spend ([&] { (void) s.step (1); });
         largestStep = std::max (largestStep, std::uint64_t (work.bytes));
     }
     ok (s.job() == 0 && s.masters().size() == 1, "real search finished and retained one master");
@@ -85,7 +85,7 @@ int main()
     float invalidSample = std::numeric_limits<float>::quiet_NaN();
     const float* invalidPlanes[] { &invalidSample, &invalidSample };
     Answer invalidLoad;
-    const auto invalidSpent = budget::spend ([&] { invalidLoad = s.apply (command::Load {
+    const auto invalidSpent = declared::spend ([&] { invalidLoad = s.apply (command::Load {
         4, { invalidPlanes, 2, 1, rate }, { "invalid.wav", rate, true, 24 } }); });
     ok (invalidLoad.rejection == Rejection::NotFinite && invalidSpent.requests == 0
         && s.pendingMaster().master == token.master && s.masterAudioBytes (token) == copy.size() * sizeof (float),
@@ -109,7 +109,7 @@ int main()
     auto invalidReady = otherReady; invalidReady.id = 4; invalidReady.revision = other.revision();
     invalidReady.ready.params.inputGainDb = std::numeric_limits<double>::quiet_NaN();
     Answer invalidMaster;
-    const auto refusalSpent = budget::spend ([&] { invalidMaster = other.apply (invalidReady); });
+    const auto refusalSpent = declared::spend ([&] { invalidMaster = other.apply (invalidReady); });
     ok (invalidMaster.rejection == Rejection::NotFinite && refusalSpent.requests == 0
         && other.job() == 0 && ! other.masterWavPlan (other.pendingMaster()),
         "invalid ready request refuses before allocation and creates no downloadable master");
@@ -218,9 +218,9 @@ int main()
         true, -18.0, -2.0 };
     const auto sidecarDemand = s.loadMeasuredStorage (replacementFacts);
     Answer sidecarLoaded;
-    const auto sidecarSpent = budget::spend ([&] { sidecarLoaded = s.loadMeasured (12, replacementFacts); });
+    const auto sidecarSpent = declared::spend ([&] { sidecarLoaded = s.loadMeasured (12, replacementFacts); });
     ok (sidecarDemand.rejection == Rejection::None && sidecarLoaded.rejection == Rejection::None
-        && budget::covers (sidecarDemand.bytes, sidecarSpent)
+        && declared::covers (sidecarDemand.bytes, sidecarSpent)
         && s.pendingMaster().master == 0 && s.masterAudioBytes (sidecarToken) == 0
         && s.masters().empty() && detail::Inspector::noMasterOwners (s)
         && ! s.snapshot().view().canMaster && s.snapshot().view().pendingMasterBytes == 0.0

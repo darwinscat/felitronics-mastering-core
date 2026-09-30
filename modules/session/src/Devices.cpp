@@ -60,6 +60,10 @@ void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channel
     sat.drive = number (rules.driveDefault);
     sat.mix = number (rules.mixDefault);
     sat.output = number (rules.outputDefault);
+    // The machine never picks a type: its layer holds the config's, which the build checked is one of the eight.
+    const auto type = saturationTypeNamed (rules.shapeDefault);
+    if (! type) storageOverflow();
+    sat.type = *type;
 
     // Tilt is a person's: the machine never ticks it and never sets it.
     auto& tilt = devices.tilt.machine;

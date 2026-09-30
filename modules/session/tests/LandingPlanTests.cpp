@@ -4,7 +4,7 @@
 #include <felitronics/session/Landing.h>
 #include <felitronics/session/Snapshot.h>
 #include <felitronics_test.h>
-#include "DeclaredBudget.h"
+#include "../../../tests/DeclaredBudget.h"
 
 #include <cmath>
 #include <bit>
@@ -16,7 +16,7 @@
 using namespace felitronics::session;
 namespace test = felitronics::test;
 namespace mastering = felitronics::mastering;
-namespace budget = felitronics::session::testing;
+namespace declared = felitronics::declared;
 
 // The trace constructor/add/finish path from 42fa0e8, kept independent of the
 // cursor implementation so their common arithmetic cannot hide a regression.
@@ -140,11 +140,11 @@ int main()
     kept.landing = landing; view.masters = { &kept, 1 };
     const auto declared = Snapshot::storageFor (view);
     Snapshot traceOwned;
-    const auto copied = budget::spend ([&] { traceOwned = Snapshot::copy (view); });
+    const auto copied = declared::spend ([&] { traceOwned = Snapshot::copy (view); });
     limiterRows[0].maxDb = clipRows[0].maxDb = 99.0;
     const auto& saved = *traceOwned.view().masters[0].landing;
     test::ok (declared >= 4u * sizeof (LandingTraceBucket)
-              && budget::covers (declared, copied) && declared == (std::uint64_t) copied.bytes
+              && declared::covers (declared, copied) && declared == (std::uint64_t) copied.bytes
               && saved.limiterTrace && saved.peakClipTrace
               && saved.limiterTrace->rows[0].maxDb == 3.0
               && saved.peakClipTrace->rows[0].maxDb == 2.0
@@ -157,10 +157,10 @@ int main()
     Snapshot traceDecoded;
     const auto decodedNeed = Codec::decodedBytes (traceJson);
     CodecStatus traceRead {};
-    const auto decodedSpent = budget::spend ([&] { traceRead = Codec::decode (traceJson, traceDecoded); });
+    const auto decodedSpent = declared::spend ([&] { traceRead = Codec::decode (traceJson, traceDecoded); });
     test::ok (traceNeed.status == CodecStatus::Ok && traceWrite == CodecStatus::Ok
               && decodedNeed.status == CodecStatus::Ok && decodedNeed.bytes == declared
-              && budget::covers (decodedNeed.bytes, decodedSpent) && traceRead == CodecStatus::Ok
+              && declared::covers (decodedNeed.bytes, decodedSpent) && traceRead == CodecStatus::Ok
               && traceDecoded.view().masters[0].landing
               && traceDecoded.view().masters[0].landing->peakClipTrace
               && traceDecoded.view().masters[0].landing->peakClipTrace->rows[0].maxDb == 2.0,
@@ -175,7 +175,7 @@ int main()
     Snapshot refusedTrace;
     const auto refusedNeed = Codec::decodedBytes (inconsistentTrace);
     CodecStatus refusedRead {};
-    const auto refusedSpent = budget::spend ([&] { refusedRead = Codec::decode (inconsistentTrace, refusedTrace); });
+    const auto refusedSpent = declared::spend ([&] { refusedRead = Codec::decode (inconsistentTrace, refusedTrace); });
     test::ok (totalAt != std::string::npos && refusedNeed.status == CodecStatus::Invalid
               && refusedRead == CodecStatus::Invalid && refusedSpent.bytes == 0
               && refusedTrace.view().masters.empty(),

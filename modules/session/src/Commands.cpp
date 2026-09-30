@@ -110,6 +110,9 @@ template <class T> Rejection fieldCheck (const Rules& rules, const FieldRule& ru
         return knobCheck (rule.knob, *v, rate);
     else if constexpr (std::is_same_v<T, std::int32_t>)
         return rules.slope (*v) ? Rejection::None : Rejection::NotOneOf;
+    else if constexpr (std::is_same_v<T, SaturationType>)
+        return std::uint8_t (*v) <= std::uint8_t (SaturationType::Tape) && detail::handSaturationType (*v)
+             ? Rejection::None : Rejection::NotOneOf;
     else
     {
         static_assert (std::is_same_v<T, Needles>);

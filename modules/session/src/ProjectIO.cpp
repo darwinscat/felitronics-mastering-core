@@ -83,6 +83,7 @@ struct Writer
             case Needles::Off: string ("off"); break;
         }
     }
+    void value (SaturationType t) noexcept { string (detail::kSaturationTypeNames[std::size_t (t)]); }
     template <class T> void value (T n) noexcept
     {
         char buffer[64];
@@ -161,6 +162,15 @@ template <class T> bool field (toml::Reader& in, std::string_view key, const Rul
         if (mode == "auto") out = Needles::Auto;
         else if (mode == "manual") out = Needles::Manual;
         else if (mode == "off") out = Needles::Off;
+        else in.refuse (key, unsigned (Rejection::NotOneOf));
+    }
+    else if constexpr (std::is_same_v<T, SaturationType>)
+    {
+        // The machine's layer may hold any of the config's eight; a person's only the types a hand edit takes.
+        std::string name;
+        if (! in.optional (key, name)) return false;
+        const auto type = detail::saturationTypeNamed (name);
+        if (type && (key != "hand" || detail::handSaturationType (*type))) out = *type;
         else in.refuse (key, unsigned (Rejection::NotOneOf));
     }
     else

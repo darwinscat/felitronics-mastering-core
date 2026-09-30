@@ -161,6 +161,7 @@ Rules readRules (View targets, View engine) noexcept
     r.read (sat.find ("driveDb"), out.driveDefault);
     r.read (sat.find ("mix"), out.mixDefault);
     r.read (sat.find ("outputDb"), out.outputDefault);
+    if (const auto shape = sat.find ("shape").string()) out.shapeDefault = *shape;
 
     const View tilt = engine.find ("tilt");
     r.knob (tilt.find ("hard"), tilt.find ("step"), tilt.find ("domain"), out.tilt);

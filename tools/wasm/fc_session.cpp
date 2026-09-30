@@ -298,7 +298,7 @@ bool masterReady (const fc_master_config& c, const fc_master_params& p,
     q.compressor.kneeDb = p.compressor.kneeDb; q.compressor.rangeDb = p.compressor.rangeDb;
     q.compressor.attackMs = p.compressor.attackMs; q.compressor.releaseMs = p.compressor.releaseMs;
     q.compressor.makeupDb = p.compressor.makeupDb; q.compressor.autoMakeup = p.compressor.autoMakeup != 0;
-    if (p.clipper.shape < FC_SHAPE_TANH || p.clipper.shape > FC_SHAPE_ASYM
+    if (p.clipper.shape < FC_SHAPE_TANH || p.clipper.shape > FC_SHAPE_TAPE
         || ! std::isfinite (p.clipper.driveDb) || ! std::isfinite (p.clipper.bias)
         || ! std::isfinite (p.clipper.mix) || ! std::isfinite (p.clipper.outputDb)
         || ! std::isfinite (p.clipper.autoComp) || ! std::isfinite (p.clipper.dcBlockHz)) return false;

@@ -67,6 +67,54 @@ export function compare(name, native, wasm) {
     }
     throw new Error(`${name}: byte mismatch (including whitespace or final newline)`);
 }
+// WITHIN A TOLERANCE, for a scenario whose expect file names one (`"parity": {"tolerance": t}`): a stage outside the
+// det-math zone (the saturator's tanhf and its kin — libm, which Apple, glibc and musl each round their own way) makes
+// the master's PCM differ in its last bits between native and wasm, and every number measured from it with them. The
+// trace still has ONE shape: the same records, sessions and kinds in the same order, the same keys, every string, every
+// boolean and every integer-valued pair identical (counts, ids, revisions, iterations), a project text byte for byte;
+// only a pair of numbers that is not two integers may differ, by at most t·max(1, |a|, |b|) — JSON numbers and the
+// owned f64 rows alike. The platform budgets are masked as compare() masks them.
+export function compareWithin(name, native, wasm, tolerance) {
+    const left = records(platformBudgets(native)), right = records(platformBudgets(wasm));
+    const fail = (where, a, b) => { throw new Error(`${name}: ${where} differs beyond ${tolerance}\nnative: ${a}\nwasm:   ${b}`); };
+    const near = (a, b, where) => {
+        if (a === b || (Number.isNaN(a) && Number.isNaN(b))) return;
+        if ((Number.isInteger(a) && Number.isInteger(b)) || !(Math.abs(a - b) <= tolerance * Math.max(1, Math.abs(a), Math.abs(b))))
+            fail(where, a, b);
+    };
+    const same = (a, b, where) => {
+        if (typeof a === 'number' && typeof b === 'number') return near(a, b, where);
+        if (a === null || b === null || typeof a !== 'object' || typeof b !== 'object' || Array.isArray(a) !== Array.isArray(b)) {
+            if (a !== b) fail(where, JSON.stringify(a), JSON.stringify(b));
+            return;
+        }
+        const ka = Object.keys(a), kb = Object.keys(b);
+        if (ka.join('\u0000') !== kb.join('\u0000')) fail(`${where} keys`, ka.join(','), kb.join(','));
+        for (const k of ka) same(a[k], b[k], `${where}/${k}`);
+    };
+    if (left.length !== right.length) fail('record count', left.length, right.length);
+    for (let i = 0; i < left.length; ++i) {
+        const a = left[i], b = right[i], where = `record ${i} (${a.kind})`;
+        if (a.session !== b.session || a.kind !== b.kind) fail(`record ${i}`, `${a.session} ${a.kind}`, `${b.session} ${b.kind}`);
+        if (a.raw === b.raw && a.rows === b.rows) continue;
+        if (a.kind === 'project' || a.kind === 'create' || a.kind === 'step') fail(where, a.raw, b.raw);
+        same(JSON.parse(a.raw), JSON.parse(b.raw), where);
+        if (a.rows.length !== b.rows.length) fail(`${where} rows`, a.rows.length, b.rows.length);
+        const ra = Buffer.from(a.rows, 'hex'), rb = Buffer.from(b.rows, 'hex');
+        for (let j = 0; j + 8 <= ra.length; j += 8) near(ra.readDoubleLE(j), rb.readDoubleLE(j), `${where} row value ${j / 8}`);
+    }
+}
+function compareWithinControls() {
+    const trace = (value, count, text = 'x') => Buffer.from(
+        `main\tsnapshot\t{"a":${value},"n":${count},"s":"${text}","r":{"byteOffset":0,"length":1,"stride":1}}\t${
+            (() => { const b = Buffer.alloc(8); b.writeDoubleLE(value); return b.toString('hex'); })()}\n`);
+    const base = trace(-8.972796095814457, 1499);
+    compareWithin('control', base, trace(-8.972799004952195, 1499), 1e-5);   // the scenario's own worst pair passes
+    for (const [why, other] of [['a number past the tolerance', trace(-8.9729, 1499)], ['an integer off by one', trace(-8.972796095814457, 1500)],
+                                ['a string', trace(-8.972796095814457, 1499, 'y')], ['a record more', Buffer.concat([base, base])]])
+        assert.throws(() => compareWithin('control', base, other, 1e-5), /differs beyond/, `tolerance control: ${why} must fail`);
+}
+
 function validate(name, bytes) {
     const trace = records(bytes), expected = JSON.parse(readFileSync(join(root, `${name}.expect.json`), 'utf8'));
     const select = ({kind, session, index = 0}) => trace.filter(r => r.kind === kind && (!session || r.session === session)).at(index);
@@ -116,6 +164,7 @@ function nativeRun(cli, ...args) {
 }
 function grammarTest(cli) {
     assert.deepEqual(scenarioFiles(['._measurement.session', 'measurement.session', 'readme.txt']), ['measurement.session']);
+    compareWithinControls();
     const corpus = JSON.parse(readFileSync(new URL('grammar-cases.json', import.meta.url), 'utf8'));
     for (const item of corpus) {
         let parsed; try { parsed = parse(item.script); } catch { parsed = null; }
@@ -138,8 +187,13 @@ async function main() {
     for (const file of names) {
         const name = basename(file, '.session'), path = join(root, file);
         const native = nativeRun(cli, 'run', path); validate(name, native);
-        if (!nativeOnly) { const wasm = await runWasm(modulePath, path, {reorder}); compare(name, native, wasm); validate(name, wasm); siteTraces.set(name, wasm); }
-        console.log(`contract ${name}: ${nativeOnly ? 'native assertions' : 'byte-identical native/wasm'} (${native.length} bytes)`);
+        const tolerance = JSON.parse(readFileSync(join(root, `${name}.expect.json`), 'utf8')).parity?.tolerance;
+        if (!nativeOnly) {
+            const wasm = await runWasm(modulePath, path, {reorder});
+            if (tolerance !== undefined) compareWithin(name, native, wasm, tolerance); else compare(name, native, wasm);
+            validate(name, wasm); siteTraces.set(name, wasm);
+        }
+        console.log(`contract ${name}: ${nativeOnly ? 'native assertions' : tolerance !== undefined ? `native/wasm within ${tolerance}` : 'byte-identical native/wasm'} (${native.length} bytes)`);
     }
     if (!nativeOnly && !reorder) {
         const versions = {

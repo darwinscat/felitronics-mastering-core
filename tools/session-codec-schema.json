@@ -12,6 +12,16 @@
       "Manual",
       "Off"
     ],
+    "SaturationType": [
+      "Tanh",
+      "Atan",
+      "Cubic",
+      "Asym",
+      "Tube",
+      "Transistor",
+      "Transformer",
+      "Tape"
+    ],
     "PhaseName": [
       "Stream",
       "Report",
@@ -284,7 +294,8 @@
         "on": "bool",
         "drive": "double",
         "mix": "double",
-        "output": "double"
+        "output": "double",
+        "type": "SaturationType"
       }
     },
     "SaturationFieldsTouched": {
@@ -293,7 +304,8 @@
         "on": "bool?",
         "drive": "double?",
         "mix": "double?",
-        "output": "double?"
+        "output": "double?",
+        "type": "SaturationType?"
       }
     },
     "SaturationFieldsLayers": {
@@ -1299,7 +1311,8 @@
       "on?": "boolean | null",
       "drive?": "WireNumber | null",
       "mix?": "WireNumber | null",
-      "output?": "WireNumber | null"
+      "output?": "WireNumber | null",
+      "type?": "SaturationType | null"
     },
     "EditDeviceTiltCommand": {
       "kind": "\"editDevice\"",
@@ -1382,7 +1395,8 @@
       "on?": "boolean",
       "drive?": "boolean",
       "mix?": "boolean",
-      "output?": "boolean"
+      "output?": "boolean",
+      "type?": "boolean"
     },
     "RevertEditsTiltCommand": {
       "kind": "\"revertEdits\"",
@@ -1538,6 +1552,18 @@
     }
   },
   "optionalFields": {
+    "SaturationFieldsValue": {
+      "type": {
+        "default": "SaturationType::Tanh",
+        "description": "A project before the saturation types: the shaper was tanh."
+      }
+    },
+    "SaturationFieldsTouched": {
+      "type": {
+        "default": "std::optional<SaturationType> {}",
+        "description": "A project before the saturation types: no type picked by hand."
+      }
+    },
     "Recipe": {
       "readyHash": {
         "default": "std::uint64_t {}",
@@ -1728,6 +1754,18 @@
     }
   },
   "optionalWireFields": {
+    "EditDeviceSaturationFields": {
+      "type?": {
+        "defaultJson": "null",
+        "description": "Absent or null: the type is not edited."
+      }
+    },
+    "RevertEditsSaturationFields": {
+      "type?": {
+        "defaultJson": "false",
+        "description": "Absent: the type is not reverted."
+      }
+    },
     "SessionCapabilities": {
       "leanSummary": {
         "defaultJson": "0",
