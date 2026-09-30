@@ -2,7 +2,7 @@
 
 # Changelog
 
-## Unreleased
+## v0.3.0 — 2026-09-30
 
 ### session — bounded WAV delivery
 
@@ -48,6 +48,419 @@ zero budget does no work, and cancellation followed by a new job resets every st
 original source on each pass and feed SRC blocks into the chain using the caller's output buffer, removing the extra
 complete converted programme. `storageFor` declares the source, output, and conservative workspace live set in 64-bit
 arithmetic. Split, replay, allocation, and prior-path bit comparisons cover the new render path.
+
+### analysis · tempo · mastering — allocation budgets in MSVC Debug
+
+C ABI memory queries now cover MSVC iterator-debugging allocations as well as audio storage. Private prepared buffers use exact owned arrays; containers required by core APIs retain their iterator debugging and publish their construction costs. Mastering configuration keeps the original re-preparation and publishes its Debug temporaries, and a failed solution-record allocation reaches the ABI's poison handler in Debug too.
+
+Windows CI now runs the four allocation-accounting ABI suites, container-construction controls, and five session suites in Debug; the job refuses a selection missing any of the ten suites. Release keeps the complete test run, including the session handle-generation walk.
+
+### tools — `fcore_master` names the three v13 statuses
+
+The CLI printed `?` for `FC_ERR_BAND_NOT_DYNAMIC`, `FC_ERR_BAND_INERT` and `FC_ERR_LANE_OFF` (16–18, ABI v13): its
+status-name switch stopped at 15, and only a `-Wswitch` warning said so. It now prints `BAND_NOT_DYNAMIC`,
+`BAND_INERT` and `LANE_OFF`, and the build is free of that warning. The names are one list, which the switch reads
+and `fcore_master layout` prints, and `layout-check.mjs` holds it against the header's `fc_status` in both
+directions, so the next code missed fails ctest instead of warning on the rows whose compiler warns at all. The
+domains suite's own status table had the same gap; it is a switch with no `default` now.
+
+### session · analysis — live loudness and resumable programme reports
+
+Live measurements now stream fixed-grid loudness points and source clipping evidence through session events. Programme reports retain native values and absence reasons, with resumable finalization and reference true-peak drainage. Cancelling a measurement retains audio and results; continueMeasurement resumes unfinished work. The v1 transport adds metadata and fields without changing existing layouts or row columns.
+
+### session — preparation budgets and event progress
+
+Preparation admission and retained storage include allocator overhead, including MSVC Debug padding after a capacity reduction. Events carry their emitting job's phase and work through completion and cancellation. Loudness and report preparation initialize duration-sized stores as observations arrive, preserving the deterministic arithmetic and allowing cancellation between bounded pump units.
+
+### session — source-sized measurement admission
+
+Measurement admission counts the instruments the pump runs, retained rows, one snapshot copy and the web transport buffers. Unscheduled analyzer maxima and optional plain-JSON exports no longer inflate every load. Source replacement counts the old and new PCM lifetimes separately, and preparation checks the largest individual allocation. Allocation checks cover four seconds, one minute and ten minutes, including MSVC Debug.
+
+Needles are re-measured for the current target over retained source PCM, in cancellable pump units with a separate declared memory demand. Owned aggregate results carry source and ceiling identity, complete histograms and explicit native run-list truncation. Source-wide measurement demand no longer reserves an excursion index. The additive C query and generated snapshot fields expose job demand, progress and results.
+
+Needles started by a target change after phase two can be cancelled in Measured2. The all-target measurement plan now budgets and owns a separate 150 Hz low-end reading alongside 120 Hz and infra-low. Windows Debug includes the needles allocation suite, and CI compares retained needles fixtures across native, Wasm and checked Wasm, including codec bytes. The MSVC object gate admits UCRT's exact float classifier alongside its existing double classifier.
+
+### session · owned measurement results and memory demand
+
+Analyzer results now have owned numbers, arrays, grids, completeness and missing-value reasons. Snapshot copies
+survive workspace release and source replacement. Cancellation retains PCM, completed results and saved progress;
+identical loads reuse them. Measurement keys include actual parameters and versions independently of the target.
+
+Load preflight includes native analyzer preparation, result copies, serialization, previous source storage and
+allocator allowance. Waveform and stereo columns expose native storage declarations; vector construction and
+oversampler padding are included in the other affected declarations. The excursion-index budget remains explicitly
+unknown. Live analyzer execution is not connected to the existing deterministic pump.
+
+The v1 ABI gains `fc_session_measurement_bytes` and its size-prefixed output record. Snapshot fields, measurement
+events and catalog facts are additive; codec and TypeScript declarations still share one generator. Allocation
+coverage includes MSVC Debug through the existing budget job.
+
+### Measured master cost and waveform
+
+- Report source-masked five-band CVaR95 impact loss, gain-removed short-term shape, source-derived sections, limiter GR and pumping as measured numbers with reasons.
+- Keep compact delivered waveform rows and answer zoom from retained buckets or an explicitly supplied PCM chunk after transfer.
+- Keep K2 tonal change explicitly unmeasured, and publish new cost facts in Russian and English.
+- Compute final cost distributions through bounded session steps and retain their cursors across calls.
+
+### session · mastering — the delivery format is the target's
+
+A master's WAV takes the frozen target's format: its rate (the source's when the target's `sampleRate` is 0) and its
+bit depth, PCM16 or PCM24. A ready `deliveryRateHz` or `deliveryBits` (the C facade's `fc_master_config.deliveryRate`
+and `fc_master_params.dither.bits`) of 0 takes it, the same value restates it, and any other value is refused before
+any allocation with the appended `Rejection::DeliveryFormat` and a fact naming the target's depth and rate. cd and
+cdDynamic now deliver 44.1 kHz and take the source-rate crest pass. The float32 and 20-bit delivery paths are gone. The WAV of a 16-bit target is now 16-bit even though the completed job's working recipe has
+been handed to the kept master. A late crest join waits for a resumed source measurement instead of settling it as
+cancelled, and a crest joined inside the job is not published again. Every facade output that could land in the
+retained master PCM is fenced. The landing search's first ceiling uses the caller's `LoudnessRequest::ceilingMarginDb`
+(required for a product landing; Session passes engine.toml's), and a best pass at the end of the budget is delivered
+without a second render. felitronics-core v0.56.0 is consumed as released, without a build-time patch, and is held to its version floor and the
+presence of the K13 tap and the WAV writer, no longer to whole-file hashes of either header.
+
+Late source crest results now join retained master rows by source, recipe, master id and complete analysis grid after PCM release. The WAV contract recording includes a replayable late join after wasm heap growth.
+
+The complete Solve memory gate now checks load, measurement, mastering, snapshots, bounded WAV export, transfer, release, cancellation, replacement and repeated jobs on native and wasm. The replayable WAV contract includes the safe master's declared price and observed wasm heap growth, with browser-owned playback and file buffers listed separately.
+
+### session · tools — `felitronics::session`: the mastering session, compiled, with its laws held by the build
+
+A new module, `felitronics::session` (`<felitronics/session/Session.h>`): the object a shell talks to. It is an empty
+`Session` — `create()` (which returns the session or the reason there is none), destruction by its owner, `version()`,
+`coreVersion()`, `createBytes()` (the demand of `create()`) and `checkFloatingPointEnvironment()`. It keeps no state. The
+laws it is held to, which of felitronics-core's apply and which do not, and what holds each one: `docs/SESSION.md`.
+
+**The repository's first compiled target.** A STATIC library whose sources are compiled with PRIVATE flags in one
+`SHELL:` group — `-fno-fast-math -ffp-contract=off -fno-exceptions -fno-rtti` (`modules/session/build-flags.txt`, which
+`tools/wasm/build.sh` reads too); MSVC 2022+ `/fp:precise /EHs-c- /EHa- /GR- /we4530 /we4541` — and CMake's option
+de-duplication cannot drop a member of the group. Other compilers, clang-cl, icx-cl and icx are refused at configure
+time. Every translation unit — the library's and its C boundary's — includes `src/BuildGuards.h` first, which refuses
+exceptions, RTTI, fast-math, `FLT_EVAL_METHOD` other than 0 and, on MSVC, `/fp:contract`. The compile line is read back
+from `compile_commands.json` — this build's, and a consumer's that states `-ffp-contract=off` first: the library's group
+must be the last word on floating point, exceptions and RTTI (a per-source `-ffp-model=fast` or `-fno-honor-nans` after
+it is red), with no forced include, pass-through, plugin or flag file in any spelling, separated or joined, entries
+matched by file and read with or without CMake's `output` field (skipped on MSVC, whose guards hold it from inside each
+unit). The library's sources are also compiled with `-ffp-contract=fast` and with fast-math licences ahead of its own
+options and must answer IEEE-754 anyway — the targets that carry those positive controls are built optimised, so a build
+with no configuration is green for the right reason; build controls compile `try`, `throw`, `typeid`, `dynamic_cast` and
+appended `-ffast-math` / `-fexceptions` / `-frtti` and require the build to fail on each. Consumers link it like any
+other module: `target_link_libraries(app PRIVATE felitronics::session)`.
+
+**What the flags do not reach, stated rather than checked**: header-inline code the library shares with the program
+(`std::` templates, core's header functions), of which the linker keeps one copy. A program that links
+`felitronics::session` compiles EVERY translation unit with the session's FP flags — no contraction, no fast-math —
+and does no partial linking; the wasm modules are built whole by this repository and are not affected.
+
+**`create()` refuses before it allocates** a thread that flushes subnormals to zero, reads them as zero or rounds other
+than to nearest (`Status::FloatingPointEnvironment`, read with ordinary arithmetic). NaN sign and payload and the FP
+exception masks are outside the check.
+
+**The laws, each held by a check with a control** — against honest mistakes and reasonable spelling variants, not a
+hostile author (`docs/SESSION.md` states the threat model). An object-file gate
+(`modules/session/tests/object-gates.cmake`, on every native row and the wasm tier, with `readelf`, `objdump`, `dumpbin`
+or `llvm-readobj`) reads every object of the library and of its C boundary: no symbol in writable memory, judged by what
+the object says of each section (ELF and COFF write flags; the read-only places by name on Mach-O and wasm, which carry
+no such flag) — the boundary keeps exactly its handle table and poison flag, and an allowance naming a symbol that is
+gone is rot — and nothing called that is not on `tools/lint/session-objects.txt` or defined with global binding
+elsewhere in the set, so `printf`, `fopen`, `time`, `getenv`, `strtod`, `isalpha`, `rand` are refused whatever header
+declared them and however they are spelled or reached, and a local `getpid` in one object answers no other object's
+call. Sixteen controls compile each shape — a global in a section of its own naming among them, and the shipped boundary
+with a third global and with a renamed one — and require the refusal to name the planted symbol whole; one — a constexpr
+table of pointers, relocated constant data — requires the gate to accept it. A source lint
+(`tools/lint/check-session-laws.mjs`) holds what leaves no symbol, over the module and the C boundary, after translation
+phase 2: an include allowlist (felitronics headers by name), no macros and no directive but `#include` and `#pragma
+once` outside the guards and the boundary's stated allowance, no pragma, an attribute allowlist (no vendor attribute, no
+section placement), no alternative tokens, no `mutable`, no exception or RTTI token in any `#if` branch, no atomics,
+cycle counters or inline assembly, no `std::unordered_*`, `hash<`, unstable sort or `using namespace`, no function body,
+non-constexpr variable or namespace-scope function in the public header, the guards first in every unit — scanned from
+the targets' sources (`modules/session/sources.txt` and the boundary's unit, cross-checked against
+`compile_commands.json`) and the `#include` closure, failing closed on files it cannot classify;
+`tools/lint/session-controls/run.sh` plants 43 violations and requires each to fail on its file and line. Every file of
+the module and the boundary is in the det-math zone and every translation unit — the library's, the boundary's, the
+CLI's — is an entry point (four new det-math controls). Memory is declared before the work: a declared-budget harness on
+core's allocation counter holds `create()` to `createBytes()`.
+
+**`fc_session`, a draft — ABI version 0, no promise** (`tools/fc_session_abi.h`, `tools/wasm/fc_session.cpp`):
+`fc_session_abi_version`, `fc_session_create`, `fc_session_destroy`; handles with 24-bit generations — a slot retires at
+its last generation instead of wrapping, so a stale handle can never name a new session — at most
+`FC_SESSION_MAX_HANDLES` (8 — a fixed capacity, not configurable) live sessions and `FC_SESSION_SLOT_GENERATIONS`
+creates per slot, the session's refusal as `FC_SESSION_ERR_FP_ENVIRONMENT`, and the poison. The boundary is compiled
+with the library's own options and held to its source laws. `tools/wasm/build.sh` builds a fifth module, `fcsession` (`createFcSession`; ES-module web glue and
+node glue, byte-identical wasm, `--wrap=pthread_create`, the sources `sources.txt` lists and none it does not): 2.9 KB of
+wasm, 1.4 KB brotli. `tools/wasm/session-check.mjs` compares every export of the module against the ABI and the runtime's
+own, runs the surface, and walks one slot through all of its generations; a control copy with one undeclared export
+must be refused.
+
+**`fcore_session`**, the native CLI over the session: `fcore_session version` prints both releases and the ABI version;
+`fcore_session run <script|->` accepts a script with no command in it and prints `done 0`, and refuses a script with a
+command in it, or a session that refuses to be created, with exit status 2 and nothing on stdout.
+
+### session · tools — the mastering config: two TOML documents compiled into `felitronics::session`, read by schema
+
+**Every number of the mastering session now lives in the session**, in two TOML documents of the module, each number
+with what it means and where it came from beside it, and the owner's decisions marked as such. `modules/session/config/
+targets.toml` is the table of targets — 25 of them, each with its loudness, true-peak ceiling, mono-bass crossover (120 Hz;
+vinyl 150), high-pass floor (24 Hz; vinyl 32) and slope (24 dB/oct; vinyl 12), how much the high-pass may take at the
+lowest note (1 dB; club 0.3), and its delivery rate and bit depth; vinyl's +0.5 dB low shelf and its ceiling without a
+peak clipper; the high-pass always placed on vinyl and on club (there it guards the subwoofers from infrasonic bursts);
+the one extra pass at the source's rate of cd and cdDynamic; AES
+TD1008's −14 LUFS album loudness, marked desktop-only; the default target, the main list and the travels of the hand
+edit. `engine.toml` holds every other number: the input brought to −18 LUFS (a warning below −40, gain and ceiling only
+below −55), the landing in series of 12, 24 and 32 passes, the limiter's 0.15 dB ceiling margin and 50 ms release with
+its second release stated off (the sound depends on no default of the core's), the peak clipper's classes (its manual
+threshold starts at the "between" class), the low-end measurement's geometry, the high-pass knob topping out at 50 Hz
+with one comfort window (24–42 Hz, warning towards 20 and 50) and "no DC" named as the dcOffset finding's threshold,
+mono bass with its width knob and ONE wide-bass warning at 6 % of side, the compressor's threshold counted from the
+short-term P95 and its glue on cd, saturation, tilt, the low shelf, dither at 16 bits only, the de-esser (manual, off, not
+offered), the observations' thresholds, what a master's cost is measured with — as measured, without a verdict — the
+progress weights and the blind test's protocol.
+
+**Compiled in, never read.** felitronics-toml v0.3.0 (MIT, listed in `THIRD_PARTY_NOTICES.md`) is resolved like
+felitronics-core — a sibling checkout for local work, the pinned tag otherwise — and compiles both documents into the
+library as constexpr data (`felitronics_toml_embed`); nothing reads a file at run time. A product that consumes this
+repository makes felitronics-toml available before it, as it does core. A document the parser refuses stops the build at
+its line and column.
+
+**Read by schema — form and physics** (`<felitronics/session/Config.h>`): `Config::load()` binds the documents to typed
+structs — every key with its type and its domain (a share within 0…1, a ramp whose ends cannot divide by zero, a series
+that does not shrink, a value on its knob's grid counted from the travel's start and checked exactly on the written
+decimals, a range another key states such as a target's loudness on the edit travel), checks across keys (a name that is
+no target, a name given twice, an EQ band two devices share, a ramp law outside its domain, the limiter switched off, a
+default written out), and every key nobody read reported as unknown. The blocks the config feeds an analyzer — the low
+end, the crest, the sibilance-band bursts — are handed to that analyzer's own `storageFor()` at the source rates the
+product accepts and refused whole where it refuses: one source of truth for its domain. A problem is data: document,
+fault, key path, line and column; `Config::bind()` runs the same schema over texts.
+
+**Every build runs the schema.** `felitronics_session_config_check`, a host tool compiled from the library's own schema,
+reads the documents before `felitronics::session` is built — a consumer's build and a build without tests included, under
+the emulator where the build cross-compiles, or `FELITRONICS_SESSION_CONFIG_CHECK_EXECUTABLE` — so a typo is a red build at
+`<file>:<line>:<column>`, and a failed gate runs again; a newer or another supplied checker, or a change of the schema's
+sources, runs it again too. `tools/wasm/build.sh` runs it before linking `fcsession` and records
+felitronics-toml in `BUILD-INFO`. Six controls plant mistakes in a copy and require the gate to go red at the spot; the
+config suite plants over sixty more, in-process.
+
+**The owner's decisions are pinned apart** (`felitronics_session_config_decisions_tests`): every target row field by field
+(delivery rates included) and the engine's decided numbers (the landing's series, the high-pass knob, the glue knob and
+its default of none, the mono-bass block, …), so changing one is a deliberate test edit; its controls plant departures the
+schema admits and require them named.
+
+**The config's versions** (`Config::versions()`): 64-bit FNV-1a hashes of both documents' normalised data — numbers as
+the bits of their double (−0 as +0), tables in key order, order kept in arrays — so spelling, key order, inline-or-not,
+comments and spacing move nothing; the target rows' written order counts in `all`. `all` covers every key; `sound`, what a
+recipe will record, is what can change a master — when unsure a key stays in — leaving out what is only shown, what
+prints a finding without switching a device (every observation threshold but polarity), what is measured after the
+master, development, and the de-esser's block while no shell offers it. Both are computed from the
+embedded data without allocating. The suite changes every value of both documents one at a time and requires `all` to
+move each time to a value of its own and `sound` to move exactly for the values that can change a master; the sound
+version is pinned to the name of the defaults, so a sound number changed without new defaults is red.
+
+**`fcore_session config targets|engine|version|sound-version`** prints a document of the embedded config through
+felitronics-toml's canonical writer, or a version; ctest holds the output byte for byte to the source documents.
+
+**`fc_session_config_version`** joins the draft `fc_session` (still version 0, no promise): the config's `all` version in
+two uint32 halves, the out-pointer checked before anything is written, nothing allocated. `fcsession` now carries the
+config — 43.8 KB of wasm, 13.4 KB brotli, from 2.9 / 1.4 — and `tools/wasm/session-check.mjs --config-version` requires
+its version to be the native CLI's. `tools/wasm/build.sh` embeds and gates the config with a felitronics-toml checkout:
+`FELITRONICS_TOML_DIR`, or the sibling `../felitronics-toml`.
+
+### build — felitronics-core v0.55.0 is the pin
+
+The session's translation units include felitronics-toml's headers, and every one of them is a det-math entry point,
+so the lint must resolve those headers to audit them: felitronics-core v0.55.0's `check-det-math.mjs --satellite` takes
+`--include-root <dir>`, and CI passes it felitronics-toml's include directory from the build's cache
+(`FELITRONICS_MASTERING_TOML_SOURCE_DIR`) on every satellite run. The pinned `FELITRONICS_MASTERING_FCORE_TAG` moves
+from v0.53.0 to v0.55.0, and the configure-time messages and `tools/wasm/build.sh` name v0.55.0 as the minimum.
+
+### session · tools — the session's states and commands: one table of who may do what, when, and a project in two layers
+
+**`felitronics::session` has states and commands** (`<felitronics/session/Commands.h>`). A session is Empty, Loaded (a
+source, its first measurement running, the devices not placed), Measured1 (the devices placed, a master can be made) or
+Measured2, and a master being made is an overlay on the measured two. A shell asks by typed requests — `load`,
+`setTarget(name)`, `editTarget`, `editDevice`, `revertEdits`, `setManual`, `master`, `cancel(job)`,
+`forget(master)` — each with the shell's own id, and `Session::apply()` answers each whole: accepted with the revision it
+made, or rejected with a `Rejection` code (and the field, by its place in its struct), having changed nothing — the
+revision included. No text anywhere: the codes are stable values a shell's catalogue writes from.
+
+**Who may do what, when, is one table in code** (`Table` in `Commands.h`): a row per command, a cell per column (Empty,
+Loaded, Measured1, Measured2, and a master being made on either measured state) — taken, or the rejection it gets there.
+Every command consults it right after the floating-point entry check; the endings of the work (the first measurement, the second, a master) are the session's
+own transitions with a table of their own, driven by the work through an internal seam, not by commands.
+`fcore_session table` prints both tables from the code as Markdown, and ctest holds `docs/SESSION.md`'s copy to that
+output byte for byte. The checks after the table run in one declared order — the thread's floating-point environment,
+the table, what the command names, the fields, a load's audio — and the first that fails is the answer.
+
+**The project** (`<felitronics/session/Project.h>`): the target (a row of `[targets]`) with a person's edits of its
+loudness and ceiling, the manual mode, and the devices of the first release — the high-pass, mono bass, the glue,
+saturation, tilt, the limiter's needles, the dither and the low shelf. Each device's fields are written once, as a
+template over a field's form, and used as the machine's layer (complete), a person's layer (only what was touched) and a
+revert's mask: no string names a field. The machine's layer — in this release the config's defaults for the target and
+the source — is placed when the first measurement ends, and again on a change of target after that; until then the
+devices are unplaced (the layer at its types' zeros), and a load unplaces them again. A person's device edits are taken only after placement and
+regardless of panel visibility, each value finite and within its knob's domain; slider steps guide the UI and do not
+restrict command values. A change of target replaces the target's numbers silently and always resets every device edit;
+the machine decides again for the new target. The shell warns using the snapshot's existing `handFieldCount`; switching the manual
+mode off hides the panel and preserves every edit; the low shelf is offered on every target, while dither and mono
+bass are offered where they apply. `load` checks everything first, then disarms — what ran on the old source stops,
+its masters go, the manual mode is switched off and a person's device edits with it, the old samples are freed before the new are asked
+for — and writes the new source with its hash. `master` captures the recipe (the project, the source's hash, the config's sound version); the master is kept
+under its job's id when it is done.
+
+**Memory is declared before every command** (law 11d): `Session::check()` runs exactly the checks `apply()` runs first
+and says what the command will ask the heap for — a load its samples and its name, a master room for one more kept,
+everything else nothing — and the state suite holds every command to it, exactly, through the allocation counter.
+Reading the config costs nothing: the commands read the embedded documents in place, as the decimals written, and the
+suite holds every number of that reading to the schema's binding of the same documents. The build gate validates the
+embedded config; a broken required lookup is a contract trap. There is no second config validation at session creation.
+
+**`felitronics_session_state_tests`**: every cell of both tables, every rejection code produced with the whole session
+compared before and after, the order of the checks, every knob's domain, fractional values and non-finite values, placement, a change of
+target resetting every device edit, the manual mode switched off, a master's recipe, a load's disarm, the source hash pinned,
+and memory declared for every command.
+
+**`fcsession`** exports `fc_session` v1: commands, capacity and storage queries, project import/export, stepping,
+and snapshot/event transfers into caller-owned buffers.
+
+**The glue is its knob, "up to N dB"** (an owner decision): the project's glue field (`upToDb`), a person's edits of it
+and every glue number of `engine.toml` are on the knob — 0…3 dB with a UI step of 0.1 — and the schema holds `default` (0),
+`whenTicked` (0.5 dB, where the travel's 0.3 gave 0.51 dB) and `byTarget` (cd 2.6 dB, what the travel's 0.7 read as)
+within its domain. The travel 0…1 and its laws stay the compressor's internal mapping. The sound version of the
+2026-09 defaults moves with these numbers.
+
+### session · tools — the text: facts, a catalog of whole messages and one formatting table, compiled into `felitronics::session`
+
+**The session states facts, not strings** (`<felitronics/session/Text.h>`). A fact is a `FactId` and typed arguments — a
+number with its unit, precision, sign and bound; a count; a term the catalog names; a note as a MIDI number; a text of
+the user's, never translated — and carries no ready string. `Text::text(fact, lang)` renders it: a pure function over
+data compiled into the library, with `size()` and `write()` beside it that render into a caller's buffer without the
+heap, and `textBytes()`, the demand of `text()`. The first facts exercise every kind of argument: a reading alone, the
+landing's pass and its convergence (plural on the passes), the blind test's repeat consistency (plural on the second
+number), the loudest bass note, the wide-bass warning of phase 1 in the owner's words, and a file above the platform's
+highest rate (select on the platform). Russian first, then English.
+
+**The first real facts: a command's rejection.** Every code of the state machine's `Rejection` is a fact, 100 + its code,
+with a sentence in Russian and English that says what was refused and why; the four a field refuses name the field (the
+target's loudness or ceiling, a device's knob, a load's audio). `Text::rejected(answer, request)` builds the fact from a
+refused answer. Fact ids are stable and fall in ranges: 1–99 readings and the landing, 100–199 rejections, 200–299 and
+300–399 reserved for the phases and the errors. An unmapped new code is a red build; the suite holds the table code by
+code, the field terms against the state machine's walk of the fields, and the answers of a real session.
+
+**Two TOML documents, compiled in** (felitronics_toml_embed, as the config): `modules/session/text/catalog.toml` — whole
+messages with named placeholders, `plural` variants by CLDR category and `select` variants by term, and the languages it
+declares, `ru` and `en` — and `modules/session/text/format.toml`, the one table of how each of the twelve site languages
+writes a number: decimal sign, grouping separator and CLDR's minimum grouping (es, it, pl group from five digits), the
+Unicode minus, the bounds `≥` and `≤`, `—` for a value that is not a number, each unit's pattern after a no-break space,
+so a number and its unit never wrap apart (Turkish `%45`, French narrow no-break spaces, Russian and Ukrainian unit
+signs in Cyrillic as the site writes them), and the names of the notes in the site's three systems (letters; German,
+where B natural is H; solfège).
+
+**Every build checks the catalog.** `felitronics_session_text_check`, a host tool compiled from the library's own
+`src/TextSchema.cpp`, runs over both documents before the library is built (through node on the wasm tier, and in
+`tools/wasm/build.sh`): every declared language has every message and term; placeholders name the fact's arguments
+(`src/TextFacts.h`), every argument is placed and every language places the same set; a plural message has exactly its
+language's categories, a select message exactly its group's terms, and every variant places every argument (Russian
+"one" is also 21); the table covers all twelve languages and every unit, its signs hold no digit and are no separator,
+the fixed ones are exactly the law's (U+2212, "—", "≥"/"≤" with a no-break space), and no unit pattern holds a breaking
+space; and no key is one nothing reads. A problem is a red build at `<file>:<line>:<column>`. There is no fallback to
+English anywhere: a message the catalog does not have in a language renders as its id. Eight controls plant mistakes in
+a copy and require the gate red at the spot; the suite plants forty-six more in-process.
+
+**Numbers by rules of its own** — no libm, no printf, no locale, no floating-point arithmetic: a double is read as its
+shortest round-trip decimal (`std::to_chars`) and that decimal rounded to the grid, halves away from zero, so the number
+a person wrote rounds as they would round it (1.005 → 1.01, −14.05 → −14.1, 0.125 → 0.13, 2.5 → 3), checked against an
+independent oracle over 24 000 decimals; the sign is the printed number's — a value that prints as zero takes none under
+every Sign ("0.0", never "−0.0") — and is read from its bits, so no rendering depends on the thread's floating-point
+environment (held under flush-to-zero, denormals-are-zero and every rounding mode); CLDR 48's plural categories for all
+twelve languages, selected on the number as printed ("1.0" is not "one" in English) and pinned against ICU 78's answers;
+`Text::parse` reads a typed number with `std::from_chars` and one correctly rounded division, never `strtod`, refuses a
+grouping separator rather than guess (a German "12.345" is not twelve), and asks for the default floating-point
+environment first. `felitronics_session_text_tests` pins the twelve rows, every message in both languages, the memory
+demand through the allocation counter, and one FNV-1a hash of a corpus of renderings that every native row and the wasm
+tier must reproduce byte for byte.
+
+The session-laws lint names the two documents as data, admits `Text.h` and, in `src/Text.cpp` alone, the two headers the
+build generates from them; the new units are det-math entry points; `tests/HeaderHygiene.cpp` compiles `Text.h`.
+
+### session — work-unit pump, event deltas and owned snapshots
+
+The session runs deterministic stub measurement and master jobs through a bounded work-unit pump. Phase events use
+config weights; facts appear on the step that establishes them. Cancellation preserves the session, and job/source
+identity checks ignore late completions. Measurement jobs have ids alongside master jobs.
+
+Snapshots own both project layers, source metadata, recipes, progress and reading rows. The named-field JSON codec
+preserves finite doubles and signed zero, explicitly represents infinities and NaN gaps, and generates TypeScript
+declarations from its field description. Every operation declares its memory demand before work. Scenario tests pin
+event sequences, commands between steps, cancellation, stale completions, round trips and exact allocation demands.
+
+Event facts share the bilingual text catalog and own any user text. Phase-one cancellation returns Empty and drops the source. UTF-8 names are checked before loading. Generated record arity and enum controls, plus actual encoded fixtures checked against TypeScript, hold the codec to its declared surface.
+
+### session — canonical TOML projects and recovery by replay
+
+`exportProject()` writes the target by name, manual mode and both device layers as canonical TOML. Only machine
+values that differ from defaults and touched human fields are written; equal human edits retain their ownership.
+`importProject()` accepts dotted keys and inline tables through felitronics-toml, validates the whole project with
+positioned refusals, and declares a size-based allocation bound before parsing.
+
+Unknown defaults are refused. Every saved machine layer is preserved, including one carrying the same core stamp;
+the session compares it with today's placement and publishes the ordered differences and their count. Owned snapshots
+and their generated JSON/TypeScript codec expose each difference. The original core stamp remains with an imported layer, keeping subsequent exports replayable.
+
+The suites cover canonical round trips, every import refusal without state changes, allocation budgets including
+MSVC Debug, deterministic measurement slicing, permanent facade poison and recovery in a fresh session from the
+source, measurement and last project text.
+
+### session · C ABI — frozen v1 shell contract
+
+`fc_session` v1 exposes capability/config creation and its demand, named JSON commands, planar PCM load, work-unit
+steps, event/snapshot size and copy calls, and project import/export. The session enforces heap ceilings, maximum
+rates and offered devices for C++ callers too. Generated types carry the config version and tagged event union;
+numeric rows travel in caller-owned f64 buffers. Convert, Lra and Final append stable phase values with catalog text.
+
+Compiled probes freeze signatures, constants, enums and layouts on native and wasm32. The manifest gate permits
+additions and has change/deletion controls. Native/wasm tests cover refusal order, allocation bounds, typed transfer,
+project round trips and permanent poison; the wasm artifact smoke exercises the public surface and real trap recovery
+status. Windows Debug includes both session ABI suites.
+
+The 28 September pre-freeze target decision makes `setTarget` always reset device edits. Its C++ request and generated
+JSON/TypeScript command carry only the command id and target. Answers and events are unchanged; the shell warns from
+the snapshot's existing hand-edit count. The v1 manifest baseline is regenerated for this not-yet-frozen surface.
+
+- Add one text scenario grammar for `fcore_session` and the Node fcsession consumer, with ten native/wasm contract scenarios and exact codec/row-byte comparison.
+- Verify synthetic fixture input/output hashes, scenario behavior, poison recovery, and intentional mismatch controls; run the comparison separately on every PR across the native CI rows.
+- Exercise final v1 size prefixes, demand queries and capacity updates, knob domains, hidden manual edits, and saved machine layers including `low`.
+
+Panel visibility leaves device edits active and persistent; snapshots expose their touched-field count. Project import
+keeps every saved machine layer, including same-core changes, and reports today's differences with owned rows and
+Russian/English count facts. Low is a separate device on every target; `lowDb` names the machine's medium correction.
+Snapshots publish the summed high-pass, tilt and low EQ curve through the codec and generated declarations. The
+pre-freeze rejection list removes ManualOff and MachineMismatch and renumbers the corresponding catalog facts.
+
+### session · tools — measurement review fixes, and a manifest that only grows
+
+A reload of the same PCM under another bit depth is another forensics result: its key mixes the measurement key with
+the depth, and the reload publishes one `Measurement` event for it; the other results keep their key. A needles job
+that outlives a measurement cancelled at the first phase's end (the `Stopped` column) is cancellable there, and a
+cancel's fact names the job it stopped. A live preparation refused for memory is that instrument's outcome —
+`Unavailable` for `Memory`, one error, the job goes on — so a capacity shrunk for good no longer repeats the refusal
+on every unit and the job ends; a refused loudness meter leaves its rows missing (the result ready but incomplete),
+while the report's integrated loudness and true peak still make the source measured. Needles are `Pending` only while a job runs: with unusable readings (silence) the
+result is `Unavailable` with the loudness result's reason. The command table names `master`'s `NoAudio` for a sidecar
+source among its name checks.
+
+`FC_SESSION_ABI_VERSION` is a floor, like fc_master's: the manifest's version line is checked as "at least", and after
+the first release each batch of additions that lands together in one release moves the number up by one and adds one
+row to the header's history; the generated declaration and runtime constant read it from the header. Every `fc_session_*` declaration is frozen whatever it
+returns; the wire's `SessionStatus` union is generated from `fc_session_status` instead of a copy in the codec schema;
+the generated `SessionCapabilities` carries `largestFreeBlockBytes`, and a wire record that mirrors a C struct must
+carry all of its fields. On pull requests CI refuses a manifest that removes or edits a base line.
+
+<!-- SPDX-License-Identifier: AGPL-3.0-or-later -->
+### session · build — project import uses the TOML storage contract
+
+Pin felitronics-toml v0.3.0, including the embedding tool. Project import declares the library's allocation-free
+parse/read allowance for its text and required paths, plus its own inline storage's zero heap demand. Checked sums
+refuse an unrepresentable demand. The session's parser-size estimate and separate 16 KiB text cap are gone;
+felitronics-toml enforces its own document limit.
+
+The session budget law continues to measure the whole import, with realistic tightness and adversarial project
+measurements on every tier. Windows MSVC Debug also runs the event, project and replay suites, and its expected-name
+gate requires all thirteen suites.
 
 ## v0.2.2 — 2026-09-26
 
