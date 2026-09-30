@@ -204,9 +204,9 @@ every stage a device writes is named, the limiter's second release included.
 
 `<felitronics/session/Commands.h>` and `<felitronics/session/Project.h>`. A session is in one of five states — **Empty**
 (nothing loaded), **Loaded** (a source, its first measurement not completed, the devices not placed), **Measured1** (the first
-measurement ended: a master can be made, while device edits wait for explicit placement), **Measured2** (the second ended too), **MeasurementStopped** (audio, results, and unfinished work retained) — and a master
+measurement ended: the planner places the devices and a master can be made; device edits are taken once what the devices read has ended), **Measured2** (the second ended too), **MeasurementStopped** (audio, results, and unfinished work retained) — and a master
 being made is an overlay on the two measured ones. A shell asks by a `Request`, one struct per command with the shell's
-own id for it: `load`, `setTarget`, `editTarget`, `editDevice`, `revertEdits`, `setManual`, `master`, `cancel`, `forget`, `importProject`, `continueMeasurement`.
+own id for it: `load`, `setTarget`, `editTarget`, `editDevice`, `revertEdits`, `setManual`, `master`, `cancel`, `forget`, `importProject`, `continueMeasurement`, `adoptMachine`.
 `Session::apply()` answers it whole — accepted, with the revision it made, or rejected with a `Rejection` code and no state change. A rejection publishes an event and advances `seq`. Every accepted command and every transition moves the revision by one; a rejection leaves it.
 
 **Who may do what, when, is one table in code** (`Table` in `Commands.h`), and every command consults it right after
@@ -230,6 +230,7 @@ from the code, and ctest holds the text between the markers below to that output
 | forget | NoSource | NoMaster | yes | yes | yes | yes | NoMaster | yes | yes | yes | yes | yes | yes | yes | yes |
 | importProject | NoSource | NotPlaced | yes | yes | yes | yes | NotPlaced | yes | yes | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced |
 | continueMeasurement | NoJob | NoJob | NoJob | NoJob | NoJob | NoJob | yes | yes | yes | NoJob | NoJob | NoJob | NoJob | yes | yes |
+| adoptMachine | NoSource | NotPlaced | yes | yes | yes | yes | NotPlaced | yes | yes | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced |
 
 | the session's own transition | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 | Stopped | StoppedMeasured | MasteringStopped | Measured1Unplaced | Measured2Unplaced | Mastering1Unplaced | Mastering2Unplaced | StoppedMeasuredUnplaced | MasteringStoppedUnplaced |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -240,7 +241,8 @@ from the code, and ctest holds the text between the markers below to that output
 
 **The checks run in one declared order, the same for every command**, and the first that fails is the answer:
 1. the calling thread's floating-point environment; 2. the table; 3. what the command names — a target, a device offered for this target and source,
-the source's audio (`master`: `NoAudio` for a sidecar source before `attachAudio`), an id left for a new job (`load` and `master`), a load's valid
+the source's audio (`master`: `NoAudio` for a sidecar source before `attachAudio`), with the panel open a plan with nothing left to wait for (`master`
+the session decides: `PlanPending`), an id left for a new job (`load` and `master`), a load's valid
 UTF-8 name, the active job (`cancel`: `NoJob` when none runs, `UnknownJob` when another does), a master kept; 4. the fields — each touched one in the order its struct
 writes them: finite, one of its values, within its domain; 5. a load's audio — one or two channels, a rate of
 at least felitronics-core's 8000 Hz, frames and data, a size the machine can address, every sample finite. A rejection
@@ -259,16 +261,17 @@ saturation, tilt, the limiter's needles, dither and low. Tilt and low are separa
 The machine enables low only for a target with `lowDb` (today `lp`, +0.5 dB); otherwise low starts off at 0 dB.
 Dither is offered through 16 bits, and mono bass except on a mono source; the shell may exclude any device.
 
-- **The machine's layer** is placed from the config for the target and the source — the ticks from `[stages]`, what
-  the target decides (the high-pass's slope and floor, the mono-bass crossover, no needles where the target has no peak
-  clipper, the dither at its bit depth, the low shelf's gain, the glue its row names) and each device's own section for
-  the rest; tilt starts flat. In this release it is the config's defaults for the target and the source, not a decision
-  taken from a measurement: mono bass, which `[stages]` leaves off, is off. The devices are placed when the first
-  measurement ends, and again on a change of target after that; before it they are unplaced — every field of the
-  machine's layer at its type's zero, and the state says so. A load unplaces them again.
+- **The machine's layer** is the planner's (below, "The plan of the devices"): each device proposes its fields from
+  the config for the target and the source — the ticks from `[stages]`, what the target decides (the high-pass's slope
+  and floor, the mono-bass crossover, no needles where the target has no peak clipper, the dither at its bit depth, the
+  low shelf's gain, the glue its row names) and each device's own section for the rest; tilt starts flat — and from
+  what it measures. The devices are placed when the first measurement ends — by the pump, and by a sidecar's facts —
+  and again on a change of target after that; before it they are unplaced — every field of the machine's layer at its
+  type's zero, and the state says so. A load unplaces them again.
 - **Every value the machine places is one a person could set**: inside its knob's accepted domain, which the schema
   holds for every default and `felitronics_session_state_tests` checks for every target and source.
-- **A person's edits** are taken only after placement (`NotPlaced` before it), whether the panel is visible or hidden. Values must be
+- **A person's edits** are taken only after placement and once the plan is Ready (`NotPlaced` before: the table's Unplaced
+  columns), whether the panel is visible or hidden. Values must be
   finite and inside the knob's domain; travel and step guide the slider. Values between steps or outside travel are
   accepted within the domain. A number is kept with −0 written as +0, so equal values give identical project bits.
 - **`setTarget(name)`** replaces the target's numbers silently and always resets every device edit, including hidden
@@ -287,7 +290,54 @@ Dither is offered through 16 bits, and mono bass except on a mono source; the sh
 - **`master`** captures the recipe — the project as it is, the source's hash, the config's sound version — and starts a
   job, numbered on from the last for the session's whole life, a load included: an id is never 0 and never issued twice,
   and once the last is issued a load or master is rejected (`NoJobId`); the project may change meanwhile, and the master renders its recipe. When it is done the session keeps it under
-  its job's id; `cancel(job)` stops the named measurement or master, `forget(master)` lets a kept master go.
+  its job's id; `cancel(job)` stops the named measurement or master, `forget(master)` lets a kept master go. A master the
+  session decides (version 0) waits for what its devices read: with the panel open it is refused (`PlanPending`) until
+  that has ended; with the panel hidden it is taken, and its job measures it first — its recipe, target and a person's
+  layer included, is the project when it was asked for, whatever changes while it waits.
+- **`adoptMachine`** takes the planner's machine layer for the project as it stands — after an import, the decisions the
+  file's differ from (`machineDifferences`). A person's layer stays. With no difference to take it is accepted without a
+  revision.
+
+### The plan of the devices
+
+`src/Planner.h`. **The planner is the one place the machine decides.** Each of the eight devices — the high-pass, mono
+bass, glue, saturation, tilt, the limiter with its needles, dither and low — is a `Planned<>` of its fields: it
+*proposes* its machine fields from what it may read (the target and its edited numbers, the source's shape, the devices
+the shell offers, the measurements) and says where each came from (its target, a measurement, or the config's default)
+and what held it back (the shell, the source, the target, a measurement that ended without a value); and it says what
+it *needs* measured for the settings the project gives it, the machine's layer with a person's over it. A device writes
+none of another's fields. The programme's loudness and true peak are not needs: the first measurement does not end
+without them. What is needed today: the tempo, where a glue compresses (its release follows it — cd's machine glue,
+or a person's), and the needles at the target's ceiling, where the limiter's peak clipper decides by itself.
+
+**The plan** (`SnapshotView::plan`, `PlanView`) says where placement stands — `None` (nothing placed), `Pending` (a
+measurement the target's machine layer reads is still running), `Stopped` (…and it was stopped: `continueMeasurement`,
+or a master, resumes it), `Ready`, `Unavailable` (no usable loudness or true peak: no plan and no master) — what the
+project's devices need and which of those have not ended, the one waited for first (the needles job runs ahead of the
+source's), the device that reads it and how far it is, whether the panel is read-only (the plan not `Ready`: the table's
+Unplaced columns), whether the machine's layer is an imported file's, and every device's plan. A measurement has ended
+when it is Ready or Unavailable; a cancelled needles job has ended too (it is not built again, and the limiter takes its
+path without needles), a stopped source measurement has not. So no plan waits for ever: every need is either measured,
+ends with a reason, or waits for a person's `continueMeasurement`, which a hidden panel's master sends by itself. A
+needed tempo goes ahead of the optional findings in the source's second phase, and the needles are measured at the
+ceiling of the project being planned — a waiting master's own, until what it reads has ended.
+
+**One need, one measurement.** The source's measurements serve every target: a change of target or of a person's
+layer measures nothing again, and the needles run again only for a new ceiling (another target with the same numbers
+reuses them). **The plan's key** is a hash of everything it is made from — the source and its measurements' keys and
+outcomes, the target and its numbers, both layers of every device, the devices offered, the config and core versions;
+equal keys, one plan, and the planner runs again only when the key moved. Showing or hiding the panel is no input.
+`felitronics_session_plan_tests` holds all of it: every device's proposal equal to the previous path's placement for
+every target, source and shell, bit for bit; the key's hits and misses; the open panel's refusal and the hidden panel's
+wait, with the recipe captured when the master was asked for; the tempo waited for only where a glue compresses; the
+needles at a new ceiling; a stopped needles job that ends the wait; one measurement for every target; an import that
+keeps the file's machine and an `adoptMachine` that takes the planner's; a change of target.
+
+**The one EQ stage.** The high-pass, tilt and low are three devices writing one stage of the chain
+(`MasteringChainParams::eqBands`): each owns its own band (`src/EqCurve.h`: the high-pass 0, tilt 1, low 2) and writes
+only that band, so one's change or tick moves nothing of another's. The curve the snapshot shows is drawn from the
+bands written, by the designs the chain's EQ engine runs for them, at the source's rate: the plan test holds it to the
+previous curve bit for bit, to core's response of the same bands, and to the engine's own output on sines.
 
 **Memory.** `check()` says, before the work, what a command will ask the heap for, by the expressions that size its
 requests: a load its samples and its name, a master room for one more master kept (so that the render's end asks for
@@ -305,7 +355,8 @@ its typed device identity. `Text::rejected()` renders the code and field from th
 
 `exportProject()` materializes the placed `Project` in one canonical TOML writer. `exportProjectBytes()` gives its
 exact allocation demand without allocating; the returned `ProjectText` owns exactly those bytes, without a terminator.
-An Empty or Loaded session refuses export (`NoSource` or `NotPlaced`): its unplaced zeros are not machine decisions.
+An Empty or Loaded session refuses export (`NoSource` or `NotPlaced`): its unplaced zeros are not machine decisions. A
+placed project is exportable while what its devices read still ends: its machine layer is written.
 Files and browser storage belong to the shell. The writer reads no filesystem and the session reads no file itself.
 
 ```toml
@@ -381,7 +432,9 @@ is refused as `NewerDefaults` (28, fact 128); a malformed label is `UnknownDefau
 the retained versions is also `UnknownDefaults`. All these refusals leave state and revision unchanged.
 
 After defaults selection or conversion, the file's complete machine layer always wins (omitted fields mean defaults),
-with the person's touched layer over it. The machine decides again beside it. `MachineDifferences` (8) publishes the
+with the person's touched layer over it — on the same core and on another. The planner decides again beside it, for
+the file's target on this source; `plan.fromFile` says the layer is the file's, and `adoptMachine` takes the planner's
+decisions in its place, the person's layer kept. `MachineDifferences` (8) publishes the
 count for a foreign core, including zero; `SameCoreMachineDifferences` (10) publishes nonzero same-core differences
 and politely explains that these usually indicate a project file edited by hand. Both facts render in Russian and English.
 `snapshot().view().machineDifferences` holds ordered `(device, field, fileValue, coreValue)` rows. Flags use 0/1,
@@ -587,7 +640,8 @@ the source, completed results, analyzer workspace and saved progress; unfinished
 `continueMeasurement` gets a fresh job identity, restores unfinished results to `Pending`, and resumes at the saved
 position without feeding silence or repeating a completed instrument. The snapshot publishes its availability and
 the state it resumes. Stopped denotes cancellation before mandatory readiness. StoppedMeasured and MasteringStopped
-denote ready sources with placed devices; their Unplaced counterparts retain readiness without device placement.
+denote ready sources with placed devices whose plan is Ready; their Unplaced counterparts, the same states before the
+devices are placed or while a measurement they read runs.
 Cancelling a master ends only that overlay.
 Cancellation in either measured state, Stopped or StoppedMeasured returns `NoJob` only when no measurement, master or needles job runs:
 needles start at the first phase's end, one unit before Measured1, so a measurement stopped there leaves them running in
@@ -992,7 +1046,8 @@ snapshot
 - `drive <budget> work units` repeats bounded calls until the budget is spent or work is done. `summary` and
   `query <JSON>` copy the generated summary and bounded query transport, including f64 rows.
 - `place phase 1|2` calls the session's internal transition through a contract-only seam. It keeps the slice 0
-  device-edit and project scenarios executable while the production measurement phase leaves devices unplaced.
+  device-edit and project scenarios executable without running the analyzers; the production measurement phase places
+  the devices itself. The seam's second phase ends the source analyzers it did not run, as unavailable.
   Only the separate contract Wasm artifact exports this seam; measurement scenarios use the shipped module.
 - `snapshot` copies the current snapshot. Every live session also emits a final snapshot, sorted by name.
 - `export project <name>` stores canonical project bytes outside the instance; `import project <commandId> <name>`
@@ -1096,9 +1151,9 @@ finite input that overflows an analyzer is reported with its native damage reaso
 
 Real source measurement completes the 120 Hz, 150 Hz and configured infra-low LR4 readings,
 channel forensics and stereo columns before publishing `Measured1`. Integrated LUFS and true
-peak must both be usable. Optional outcomes carry their own reasons. Device editing and project
-export still require placement; measurement does not place the default devices. Master may run
-while source crest, hum and Mid/Side bursts continue, subject to the target's tempo dependency. These results alone do not establish
+peak must both be usable. Optional outcomes carry their own reasons. `Measured1` places the devices; editing waits
+for what they read (the plan), export only for the placement. Master may run
+while source crest, hum and Mid/Side bursts continue, subject to what its devices read (the plan). These results alone do not establish
 `Measured2`: tempo and the second-phase join remain separate work.
 
 `mandatoryMeasurementsReady` and `devicesPlaced` are separate appended snapshot fields.
@@ -1144,8 +1199,9 @@ valid types; required frozen fields stay required. Appended event metadata and r
 optional in transport declarations with documented conservative defaults. The generator refuses an
 appended field without a decode default. The frozen snapshot and event fixtures hold backward acceptance.
 
-The table distinguishes measured sources with unplaced devices, including master and stopped overlays.
-Mastering depends on measurements; edit, revert and import depend on placement through their table cells.
+The table distinguishes measured sources whose devices are not placed or whose plan waits, including master and
+stopped overlays. Mastering depends on measurements (and, with the panel open, on the plan); edit, revert, import and
+adoptMachine depend on placement through their table cells.
 Cached PCM reloads schedule needles from mandatory readiness. Bit-depth changes refresh unused-bit
 readings from the retained exact PCM grid without allocating or repeating source analysis.
 

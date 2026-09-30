@@ -11,6 +11,7 @@ src/MasterJob.cpp
 src/Cost.cpp
 src/Rules.cpp
 src/Devices.cpp
+src/Planner.cpp
 src/Commands.cpp
 src/Sidecar.cpp
 src/TextNumber.cpp

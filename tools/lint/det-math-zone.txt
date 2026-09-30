@@ -91,6 +91,9 @@ zone   modules/session/src/Rules.h                            the numbers the co
 zone   modules/session/src/Rules.cpp                          ...and their reading
 zone   modules/session/src/Devices.h                          every device's fields for the code, and the rule each is checked by
 zone   modules/session/src/Devices.cpp                        the machine's layer, and which device is offered where
+entry  modules/session/src/Planner.cpp                        a translation unit of felitronics::session
+zone   modules/session/src/Planner.h                          the planner: every device's proposal, needs and plan
+zone   modules/session/src/Planner.cpp                        ...and the session's plan, its inputs, key and placement
 zone   modules/session/src/Driver.h                           the session's own transitions, driven by the work that ends
 zone   modules/session/src/Commands.cpp                       the commands: the table consulted, the checks in order, the work
 entry  modules/session/src/Text.cpp                           a translation unit of felitronics::session

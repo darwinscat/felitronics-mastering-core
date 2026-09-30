@@ -65,6 +65,67 @@ struct ProjectText
 struct EqPoint { double hz = 0.0, db = 0.0; };
 inline constexpr std::size_t kEqCurvePoints = 128;
 
+// THE PLAN OF THE DEVICES (src/Planner.h): where the machine's placement for this source and target stands. The machine's
+// layer is written as soon as the first measurement ends (and again on a change of target); what a device then still
+// reads — the tempo the glue's release follows, the needles the limiter's peak clipper is classed by — ends later, and
+// until it has, the panel shows the machine's layer read-only.
+//   None         nothing to plan: no source, or its first measurement has not ended
+//   Pending      a measurement the target's devices read is still running
+//   Stopped      ...and it was stopped: continueMeasurement resumes it (a master resumes it by itself)
+//   Ready        every measurement the devices read has ended — with a value, or with its reason
+//   Unavailable  the first measurement ended without a usable loudness or true peak: no plan, and no master
+enum class PlanStatus : std::uint8_t { None, Pending, Stopped, Ready, Unavailable };
+
+// WHY THE MACHINE HOLDS A DEVICE BACK: a code, never a text.
+//   None        nothing is held back
+//   Shell       the shell does not offer the device (Capabilities::offeredDevices)
+//   Source      the source cannot take it: mono bass on a mono source
+//   Target      the target rules it out: dither above the bit depth it serves, needles where it has no peak clipper
+//   Unmeasured  a measurement it reads ended without a value, and it took its safe path
+enum class HeldBack : std::uint8_t { None, Shell, Source, Target, Unmeasured };
+
+// ONE DEVICE'S PLAN — typed facts about its machine layer: what held it back, what it reads, and where each of its
+// machine fields came from. A field is a bit, in the order Project.h writes the device's fields (the order of
+// MachineDifference::field): `target` — its target decided it; `measured` — a measurement did; neither — the config's
+// default. A person's touched fields are the hand layer's; a machine layer read from a project file is PlanView::fromFile.
+struct DevicePlan
+{
+    HeldBack heldBack = HeldBack::None;
+    std::uint32_t needs = 0;               // the analyzers it reads for what the project makes it do, a bit per Analyzer
+    std::uint8_t target = 0;
+    std::uint8_t measured = 0;
+};
+
+// Every device's plan, in the order of Device.
+struct DevicePlans
+{
+    DevicePlan hpf, monoBass, glue, saturation, tilt, limiter, dither, low;
+};
+
+struct PlanView
+{
+    PlanStatus status = PlanStatus::None;
+    // The identity of everything the plan was made from — the source and its measurements' keys and outcomes, the
+    // target and its edited numbers, a person's layer, the devices offered, the config and core versions. Equal keys,
+    // one plan: the planner runs again only when one of them changed.
+    std::uint64_t key = 0;
+    // The analyzers the project's devices read — the machine's layer with a person's over it — a bit per Analyzer, and
+    // those of them that have not ended. With the panel open a master waits for `waiting` to empty
+    // (Rejection::PlanPending); with the panel hidden a master is taken and waits for it itself.
+    std::uint32_t needs = 0, waiting = 0;
+    // What the master button names while it waits: the first waited-for analyzer (tempo before needles), the device that
+    // reads it, and how far its measurement is, 0…1.
+    std::optional<Analyzer> awaited;
+    std::optional<Device> awaitedBy;
+    double awaitedFraction = 0.0;
+    // The panel takes no device edit: the plan is not Ready (the table's Unplaced columns).
+    bool readOnly = true;
+    // The machine's layer is an imported project's, kept as the file wrote it; machineDifferences says where the
+    // planner would decide otherwise now, and adoptMachine takes its decisions.
+    bool fromFile = false;
+    DevicePlans devices {};
+};
+
 class Session;
 class Snapshot;
 struct SnapshotView;
@@ -111,7 +172,7 @@ struct Source
     std::string_view name;
 };
 
-namespace detail { struct Driver; struct Inspector; struct MeasurementWorkspace; struct LiveMeasurements; struct SourceMeasurements; struct NeedlesWork; struct NeedlesResult; struct WaveformState; struct QueryCache; struct MasterJob; struct MasterRows; }
+namespace detail { struct Driver; struct Inspector; struct PlanInputs; struct MeasurementWorkspace; struct LiveMeasurements; struct SourceMeasurements; struct NeedlesWork; struct NeedlesResult; struct WaveformState; struct QueryCache; struct MasterJob; struct MasterRows; }
 
 struct MasterToken
 {
@@ -223,7 +284,8 @@ public:
     [[nodiscard]] QueryResult masterWaveformChunk (const MeasurementQuery& request, const Pcm& chunk) noexcept;
     [[nodiscard]] Answer rejectProtocol (CommandId id) noexcept;
 
-    // Export is an owned exact byte allocation, without a terminator. Only placed projects are exportable.
+    // Export is an owned exact byte allocation, without a terminator. A project is exportable once the machine's layer is
+    // written (the first measurement ended), while what its devices read still ends too.
     [[nodiscard]] Checked exportProjectBytes() const noexcept;
     [[nodiscard]] ProjectText exportProject() const noexcept;
     [[nodiscard]] Rejection exportProject (std::span<char> output) const noexcept;
@@ -283,7 +345,9 @@ private:
     [[nodiscard]] Checked demand (const Checked& storage) const noexcept;
     [[nodiscard]] Answer reject (Answer answer) noexcept;
 
-    // Are the devices placed — has the first measurement of this source ended (Measured1, Measured2)?
+    // Are the devices placed — the machine's layer written for this source and target, and every measurement the
+    // target's devices read ended (PlanStatus::Ready)? The table's placed columns; the Unplaced ones show the panel
+    // read-only.
     [[nodiscard]] bool placed() const noexcept;
 
     void emit (Notification event) noexcept;
@@ -303,8 +367,21 @@ private:
     void stepSourceMeasurements() noexcept;
     void invalidateQueryCache (Analyzer analyzer) noexcept;
     [[nodiscard]] bool mandatoryReady() const noexcept;
-    [[nodiscard]] bool masterRequiresTempo() const noexcept;
     [[nodiscard]] TempoChoice tempoForDevice() const noexcept;
+    // THE PLAN (src/Planner.h). What the planner may read for `project`'s target; the planner's machine layer for
+    // `project` written into its devices (a person's layer stays, but for a device the shell does not offer); what
+    // `project`'s devices read that has not ended; and the plan the snapshot and the table read, refreshed after every
+    // accepted command and every unit of work — the planner runs again only when an input changed (plan_.key;
+    // planRuns_ counts its runs).
+    [[nodiscard]] detail::PlanInputs planInputs (const Project& project) const noexcept;
+    void place (Project& project) const noexcept;
+    [[nodiscard]] std::uint32_t planWaiting (const Project& project) const noexcept;
+    void replan() noexcept;
+    // A needed tempo goes ahead of the optional analyzers the source's job has left, at an analyzer's boundary; the job
+    // returns to them after it, repeating nothing.
+    void preferTempo() noexcept;
+    // The loudness need `project`'s target sets the input — the needles are measured at the input's peak less it.
+    [[nodiscard]] std::optional<double> needlesNeed (const Project& project) const noexcept;
     void clearNeedles() noexcept;
     void needlesChanged() noexcept;
     std::unique_ptr<detail::NeedlesWork> needlesWork_;
@@ -330,6 +407,12 @@ private:
     Project project_ {};
     MachineDifference differences_[kDeviceFields] {};
     std::size_t differenceCount_ = 0;
+    PlanView plan_ {};
+    std::uint64_t planRuns_ = 0;
+    bool machineFromFile_ = false;
+    // A master asked for with measurements its devices read still running: its recipe's project is the one captured then
+    // (the target, its numbers, a person's layer), and its machine's layer is placed for that project when they end.
+    bool jobWaiting_ = false;
     // Derived at placement and after accepted commands; owned snapshots copy these points.
     void refreshEqCurve() noexcept;
     EqPoint eqCurve_[kEqCurvePoints] {};

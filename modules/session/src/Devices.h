@@ -153,6 +153,20 @@ template <template <class> class F> struct DeviceOf<LowFields<F>>
     }
 };
 
+// A DEVICE'S SETTINGS in the project — what sounds: the machine's layer with a person's touched fields over it (the
+// machine's alone where `withHand` is false).
+template <template <template <class> class> class F>
+F<Value> settingsOf (const Rules& rules, const Layers<F>& layers, bool withHand = true) noexcept
+{
+    F<Value> out = layers.machine;
+    if (withHand)
+        DeviceOf<F<Value>>::each (rules, [] (std::uint8_t, const FieldRule&, auto& value, const auto& hand)
+        {
+            if (hand) value = *hand;
+        }, out, layers.hand);
+    return out;
+}
+
 // Every device's layers, in the order of Device: v(device, layers).
 template <class D, class V> void eachDevice (D& devices, V&& v)
 {
@@ -166,18 +180,14 @@ template <class D, class V> void eachDevice (D& devices, V&& v)
     v (Device::Low, devices.low);
 }
 
-// THE MACHINE'S LAYER of every device for the target in row `row` and a source of `channels` channels (0: none) — the
-// numbers the devices start from, from the config: [stages] for the ticks, the target's row for what the target decides
-// (the high-pass's slope and floor, the mono-bass crossover, the needles off where the target has no peak clipper, the
-// dither at its bit depth, the low shelf's gain, the glue of [glue] byTarget) and each device's section for the rest.
-// Tilt starts at 0 dB: the machine does not touch timbre. These are the config's defaults, not a decision taken from a
-// measurement — no planner reads the measurements here, so mono bass, which [stages] leaves off, is off. The session
-// places the devices on these numbers when the first measurement ends, and a change of target after that places them
-// again.
+// THE CONFIG'S DEFAULTS of every device for the target in row `row` and a source of `channels` channels (0: none) — the
+// numbers the machine starts from: [stages] for the ticks, the target's row for what the target decides (the high-pass's
+// slope and floor, the mono-bass crossover, the needles off where the target has no peak clipper, the dither at its bit
+// depth, the low shelf's gain, the glue of [glue] byTarget) and each device's section for the rest. Tilt starts at 0 dB:
+// the machine does not touch timbre. They are the defaults layer, not a decision taken from a measurement: the planner
+// (src/Planner.h) proposes the machine's layer from them, and a project file writes a machine value only where it differs
+// from them.
 void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices) noexcept;
-
-// The current planner places defaults; file omissions are filled independently of planner decisions.
-void placeMachine (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices, std::uint32_t offeredDevices = 255u) noexcept;
 
 // Is `device` offered for the target in row `row` and a source of `channels` channels?
 // Dither where the target's bit depth is one it serves; mono bass except on a mono source (it has no

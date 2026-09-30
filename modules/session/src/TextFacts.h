@@ -79,6 +79,8 @@ inline constexpr FactShape kFacts[] = {
     { FactId::MasterCostPumping, "masterCostPumping", { { { "level", ArgKind::Value, {} } } }, 1 },
     { FactId::MasterCostK2Deferred, "masterCostK2Deferred", {}, 0 },
     { FactId::MasterCostUnavailable, "masterCostUnavailable", {}, 0 },
+    { FactId::PlanWaiting, "planWaiting",
+      { { { "device", ArgKind::Term, "device" }, { "analyzer", ArgKind::Term, "analyzer" }, { "progress", ArgKind::Value, {} } } }, 3 },
     // A command's rejection (Commands.h), one per code; the four a field refuses name it.
     { FactId::RejectedFloatingPointEnvironment, "rejectedFloatingPointEnvironment", {}, 0 },
     { FactId::RejectedNoSource, "rejectedNoSource", {}, 0 },
@@ -115,6 +117,7 @@ inline constexpr FactShape kFacts[] = {
     { FactId::RejectedMandatoryUnavailable, "rejectedMandatoryUnavailable", {}, 0 },
     { FactId::RejectedDeliveryFormat, "rejectedDeliveryFormat",
       { { { "bits", ArgKind::Count, {} }, { "rate", ArgKind::Value, {} } } }, 2 },
+    { FactId::RejectedPlanPending, "rejectedPlanPending", {}, 0 },
     { FactId::Measurement1, "measurement1", {}, 0 },
     { FactId::Measurement2, "measurement2", {}, 0 },
     { FactId::MasterPass, "masterPass", { { { "pass", ArgKind::Count, {} } } }, 1 },
@@ -195,6 +198,15 @@ inline constexpr TermShape kTerms[] = {
 
     { Term::AnalyzerWaveform, "analyzer", "waveform" },
     { Term::AnalyzerTempo, "analyzer", "tempo" },
+    { Term::AnalyzerNeedles, "analyzer", "needles" },
+    { Term::DeviceHpf, "device", "hpf" },
+    { Term::DeviceMonoBass, "device", "monoBass" },
+    { Term::DeviceGlue, "device", "glue" },
+    { Term::DeviceSaturation, "device", "saturation" },
+    { Term::DeviceTilt, "device", "tilt" },
+    { Term::DeviceLimiter, "device", "limiter" },
+    { Term::DeviceDither, "device", "dither" },
+    { Term::DeviceLow, "device", "low" },
 };
 inline constexpr std::size_t kTermCount = sizeof (kTerms) / sizeof (kTerms[0]);
 
@@ -279,6 +291,7 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Rejection::OutputPending: return FactId::RejectedOutputPending;
         case Rejection::MandatoryUnavailable: return FactId::RejectedMandatoryUnavailable;
         case Rejection::DeliveryFormat: return FactId::RejectedDeliveryFormat;
+        case Rejection::PlanPending: return FactId::RejectedPlanPending;
         case Rejection::Memory: return FactId::RejectedMemory;
         case Rejection::NewerDefaults: return FactId::RejectedNewerDefaults;
     }

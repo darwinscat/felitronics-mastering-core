@@ -200,7 +200,7 @@ Snapshot Session::snapshot() const noexcept
 }
 void Session::refreshEqCurve() noexcept
 {
-    if (placed()) detail::eqCurve (project_, detail::rules(), double (source_.sampleRate), eqCurve_);
+    if (devicesPlaced_) detail::eqCurve (project_, detail::rules(), double (source_.sampleRate), eqCurve_);
 }
 SnapshotView Session::buildView() const noexcept
 {
@@ -228,7 +228,8 @@ SnapshotView Session::buildView() const noexcept
         Of::each (rules, [&] (std::uint8_t, const detail::FieldRule&, const auto& hand)
         { if (hand) ++v.handFieldCount; }, layers.hand);
     });
-    if (placed()) v.eqCurve = eqCurve_;
+    if (devicesPlaced_) v.eqCurve = eqCurve_;
+    v.plan = plan_;
     v.target = targetName();
     v.source = source_;
     v.measurementStorage = measurementStorage_;

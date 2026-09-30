@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
-// THE MACHINE'S LAYER AND WHAT IS OFFERED WHERE (src/Devices.h). Every number comes from the config through the rules
+// THE CONFIG'S DEFAULTS AND WHAT IS OFFERED WHERE (src/Devices.h). Every number comes from the config through the rules
 // read in place (src/Rules.h), as the decimal written, and becomes a double here by one correctly rounded division.
 
 #include "BuildGuards.h"
@@ -73,20 +73,6 @@ void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channel
     auto& shelf = devices.low.machine;
     shelf.on = rules.eq && target.lowDb.has_value();
     shelf.db = target.lowDb ? number (*target.lowDb) : 0.0;
-}
-
-void placeMachine (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices, std::uint32_t offeredDevices) noexcept
-{
-    placeDefaults (rules, row, channels, devices);
-    eachDevice (devices, [&] (Device d, auto& layers)
-    {
-        if ((offeredDevices & (1u << unsigned (d))) == 0)
-        {
-            layers.hand = {};
-            if constexpr (requires { layers.machine.on; }) layers.machine.on = false;
-        }
-    });
-    if ((offeredDevices & (1u << unsigned (Device::Limiter))) == 0) devices.limiter.machine.needles = Needles::Off;
 }
 
 } // namespace felitronics::session::detail

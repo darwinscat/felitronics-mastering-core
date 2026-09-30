@@ -232,6 +232,14 @@ en = "The required loudness and true-peak measurements are unavailable for maste
 ru = "Формат доставки задаёт цель: её мастер записывается только в {bits}-битном PCM с частотой {rate}."
 en = "The target sets the delivery format: its master is written only as {bits}-bit PCM at {rate}."
 
+[messages.rejectedPlanPending]
+ru = "Панель приборов открыта, а замеры, от которых зависят её числа, ещё идут: мастер станет доступен, когда они закончатся."
+en = "The device panel is open and the measurements its numbers depend on are still running: the master becomes available once they end."
+
+[messages.planWaiting]
+ru = "Мастер ждёт замер «{analyzer}» для прибора «{device}»: {progress}"
+en = "The master is waiting for the {analyzer} measurement for {device}: {progress}"
+
 [messages.masterReady]
 ru = "Мастер готов."
 en = "The master is ready."
@@ -559,3 +567,26 @@ en = "Waveform data"
 [terms.analyzer.tempo]
 ru = "Темп"
 en = "Tempo"
+
+[terms.analyzer.needles]
+ru = "Иглы"
+en = "Needles"
+
+# The devices, by the labels of their cards.
+[terms.device]
+hpf.ru = "ФВЧ"
+hpf.en = "HPF"
+monoBass.ru = "Моно-бас"
+monoBass.en = "Mono bass"
+glue.ru = "Клей"
+glue.en = "Glue"
+saturation.ru = "Сатурация"
+saturation.en = "Saturation"
+tilt.ru = "Наклон"
+tilt.en = "Tilt"
+limiter.ru = "Лимитер"
+limiter.en = "Limiter"
+dither.ru = "Дизер"
+dither.en = "Dither"
+low.ru = "Низ"
+low.en = "Low"

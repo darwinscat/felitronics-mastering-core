@@ -3,7 +3,8 @@
 The slice 0 script grammar and native/Wasm runner live here. The same `.session`
 file drives `fcore_session` and the shipped `fcsession.node.js` C ABI. The runner
 compares every event, answer, snapshot, summary, query, and owned f64 row byte in
-order. The only masked fields are host allocation budgets (`measurementStorage`
+order; a scenario's "retained" check compares a row descriptor by the bytes it addresses, since rows added ahead
+of it (a placed project's EQ curve) move its offset. The only masked fields are host allocation budgets (`measurementStorage`
 except `sourceBytes` and `allocatorBytes`, `needlesBytes`,
 `needlesLargestBlockBytes`, and `needBytes`): pointer widths make these different
 between native and Wasm. The allocation suites check each tier's declared bytes
