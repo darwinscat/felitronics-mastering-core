@@ -1097,17 +1097,43 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, MasterMedium>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ceilingDbTp)>, double>);
+        v.field ("ceilingDbTp", x.ceilingDbTp);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ceilingDeparts)>, bool>);
+        v.field ("ceilingDeparts", x.ceilingDeparts);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.crossoverHz)>, double>);
         v.field ("crossoverHz", x.crossoverHz);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.cutDeparts)>, bool>);
+        v.field ("cutDeparts", x.cutDeparts);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.cutoffHz)>, double>);
         v.field ("cutoffHz", x.cutoffHz);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.foldDeparts)>, bool>);
+        v.field ("foldDeparts", x.foldDeparts);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.inputLufs)>, double>);
         v.field ("inputLufs", x.inputLufs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.lowWidth)>, double>);
+        v.field ("lowWidth", x.lowWidth);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.needlesDeparts)>, bool>);
+        v.field ("needlesDeparts", x.needlesDeparts);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.overDb)>, double>);
+        v.field ("overDb", x.overDb);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.quietInput)>, bool>);
         v.field ("quietInput", x.quietInput);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ready)>, bool>);
         v.field ("ready", x.ready);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ruleCeilingDbTp)>, double>);
+        v.field ("ruleCeilingDbTp", x.ruleCeilingDbTp);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ruleCrossoverHz)>, double>);
+        v.field ("ruleCrossoverHz", x.ruleCrossoverHz);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ruleCutoffHz)>, double>);
+        v.field ("ruleCutoffHz", x.ruleCutoffHz);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ruleLowWidth)>, double>);
+        v.field ("ruleLowWidth", x.ruleLowWidth);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ruleSlopeDbPerOct)>, std::int32_t>);
+        v.field ("ruleSlopeDbPerOct", x.ruleSlopeDbPerOct);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.slopeDbPerOct)>, std::int32_t>);
+        v.field ("slopeDbPerOct", x.slopeDbPerOct);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.vinyl)>, bool>);
         v.field ("vinyl", x.vinyl);
     }

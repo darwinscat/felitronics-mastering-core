@@ -774,6 +774,9 @@ stopped measurement if needed, and reports `Analyzers` progress with no render p
 is captured once tempo becomes terminal. Other phase-two analyzers resume after the master;
 targets without a tempo dependency start their passes immediately. Cancelling a waiting master
 leaves the measurement running; cancelling that measurement also stops its waiting master.
+Cancelling the needles job a waiting master waits for does not stop it: the master renders without the peak clipper
+and its plan says `limiterUnmeasured`; cancelling the source's measurement while it waits for one of its results ends
+the master.
 
 Every completed unit publishes a phase. Measurement progress is the cumulative weight divided by the sum of
 `progress.analysis.weights`, in this order: loudness, report, lowEnd120, forensics, stereo, lowEndSweep, stereoBursts,

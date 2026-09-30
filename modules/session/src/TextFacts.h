@@ -136,6 +136,12 @@ inline constexpr FactShape kFacts[] = {
     { FactId::MasterVinylUncheckable, "masterVinylUncheckable", {}, 0 },
     { FactId::MasterQuietInput, "masterQuietInput", { { { "lufs", ArgKind::Value, {} }, { "gain", ArgKind::Value, {} } } }, 2 },
     { FactId::TargetChangeResetsEdits, "targetChangeResetsEdits", { { { "count", ArgKind::Count, {} } } }, 1 },
+    { FactId::MasterVinylNoFold, "masterVinylNoFold", { { { "medium", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterVinylFoldDeparts, "masterVinylFoldDeparts", { { { "crossover", ArgKind::Value, {} }, { "width", ArgKind::Value, {} }, { "medium", ArgKind::Value, {} }, { "mediumWidth", ArgKind::Value, {} } } }, 4 },
+    { FactId::MasterVinylNoHighPass, "masterVinylNoHighPass", { { { "medium", ArgKind::Value, {} }, { "mediumSlope", ArgKind::Count, {} } } }, 2 },
+    { FactId::MasterVinylHighPassDeparts, "masterVinylHighPassDeparts", { { { "cutoff", ArgKind::Value, {} }, { "slope", ArgKind::Count, {} }, { "medium", ArgKind::Value, {} }, { "mediumSlope", ArgKind::Count, {} } } }, 4 },
+    { FactId::MasterVinylCeilingDeparts, "masterVinylCeilingDeparts", { { { "ceiling", ArgKind::Value, {} }, { "medium", ArgKind::Value, {} } } }, 2 },
+    { FactId::MasterVinylNeedlesDeparts, "masterVinylNeedlesDeparts", { { { "over", ArgKind::Value, {} } } }, 1 },
     // A command's rejection (Commands.h), one per code; the four a field refuses name it.
     { FactId::RejectedFloatingPointEnvironment, "rejectedFloatingPointEnvironment", {}, 0 },
     { FactId::RejectedNoSource, "rejectedNoSource", {}, 0 },

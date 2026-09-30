@@ -320,6 +320,19 @@ if(FELITRONICS_BUILD_TESTS)
         target_compile_options(felitronics_session_plan_sound_tests PRIVATE -ffp-contract=off)
     endif()
     add_test(NAME felitronics_session_plan_sound_tests COMMAND felitronics_session_plan_sound_tests)
+    # The shipped targets with lp's `vinyl` taken away and its `noClipper` kept: the medium's warnings key on the medium,
+    # and no shipped row tells the two apart.
+    file(READ ${CMAKE_CURRENT_SOURCE_DIR}/config/targets.toml planSoundTargets)
+    string(REPLACE "noClipper = true, vinyl = true," "noClipper = true," planSoundNoVinyl "${planSoundTargets}")
+    if(planSoundNoVinyl STREQUAL planSoundTargets)
+        message(FATAL_ERROR "config/targets.toml: lp's `noClipper = true, vinyl = true,` is gone — the no-vinyl fixture needs it")
+    endif()
+    file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/plan-sound/targets-no-vinyl.toml.in "${planSoundNoVinyl}")
+    configure_file(${CMAKE_CURRENT_BINARY_DIR}/plan-sound/targets-no-vinyl.toml.in
+                   ${CMAKE_CURRENT_BINARY_DIR}/plan-sound/targets-no-vinyl.toml COPYONLY)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/config/targets.toml)
+    felitronics_toml_embed(felitronics_session_plan_sound_tests INPUT ${CMAKE_CURRENT_BINARY_DIR}/plan-sound/targets-no-vinyl.toml
+                           NAMESPACE felitronics::session::test::embedded NAME noVinyl HEADER embedded/no-vinyl.h)
 
     # The scenario end to end, in independent sessions on one source (docs/DECIDE-COVERAGE.md, A1–A3); its parity lines
     # are checked against the wasm run by tools/wasm/scenario-parity.mjs.

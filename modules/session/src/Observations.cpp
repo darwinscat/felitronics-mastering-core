@@ -205,11 +205,12 @@ Observation dcOffset (const ObservationInputs& in) noexcept
     const auto* r = resultOf (in, Analyzer::Clipping);
     std::optional<double> largest;
     auto reason = MeasurementReason::Unsupported;
+    // Every channel is read, or the offset is not measured: a channel without its number is not a channel without DC.
     for (unsigned c = 0; c < in.channels && c < 2; ++c)
     {
         const auto dc = read (r, Channelled ("dcOffset", c).view());
-        if (dc.value) largest = std::max (largest.value_or (0.0), std::fabs (*dc.value));
-        else reason = dc.reason;
+        if (! dc.value) { reason = dc.reason; largest.reset(); break; }
+        largest = std::max (largest.value_or (0.0), std::fabs (*dc.value));
     }
     if (! largest) return unmeasured (o, r ? reason : MeasurementReason::Pending);
     const auto config = in.rules.engine.find ("observations").find ("dcOffset");
@@ -257,10 +258,17 @@ Observation edgeSilence (const ObservationInputs& in) noexcept
     const auto leadingValid = read (r, "leadingSilenceValid"), trailingValid = read (r, "trailingSilenceValid");
     const bool head = leading.value && leadingValid.value && *leadingValid.value > 0.5;
     const bool tail = trailing.value && trailingValid.value && *trailingValid.value > 0.5;
-    if (! rate.value || ! (*rate.value > 0.0) || (! head && ! tail))
-        return unmeasured (o, ! r ? MeasurementReason::Pending : ! rate.value ? rate.reason : MeasurementReason::NoSignal);
-    o.value = head ? *leading.value / *rate.value : 0.0;
-    o.second = tail ? *trailing.value / *rate.value : 0.0;
+    // Both edges are measured, or neither is judged: an edge not measured is not an edge without silence.
+    if (! rate.value || ! (*rate.value > 0.0) || ! head || ! tail)
+    {
+        // The analyzer calls an edge invalid only for a non-finite sample in it.
+        auto missing = MeasurementReason::NonFinite;
+        for (const auto* x : { &leading, &leadingValid, &trailing, &trailingValid })
+            if (! x->value) { missing = x->reason; break; }
+        return unmeasured (o, ! r ? MeasurementReason::Pending : ! rate.value ? rate.reason : ! (*rate.value > 0.0) ? MeasurementReason::Unsupported : missing);
+    }
+    o.value = *leading.value / *rate.value;
+    o.second = *trailing.value / *rate.value;
     const auto config = in.rules.engine.find ("observations").find ("edgeSilence");
     const double from = number (config.find ("fromSeconds")), fullAt = number (config.find ("fullAtSeconds"));
     const double longest = std::max (o.value, o.second);
@@ -304,6 +312,9 @@ Observation alreadyLimited (const ObservationInputs& in) noexcept
     const double length = seconds (in);
     const bool clipped = runs.value && length > 0.0 && regularlyClipped (in.rules, *runs.value * 60.0 / length);
     const bool dense = o.value < o.second;
+    // Dense is enough to find it; not dense, it is not found only where the clips were counted.
+    if (! dense && ! runs.value) return unmeasured (o, runs.reason);
+    if (! dense && ! (length > 0.0)) return unmeasured (o, MeasurementReason::Pending);
     if (! dense && ! clipped) return absent (o);
     o.third = ! dense && clipped ? 1.0 : 0.0;
     return found (in, o, 1.0, 0.0);
@@ -405,11 +416,13 @@ Observation polarity (const ObservationInputs& in) noexcept
         if (stereo && stereo->status == MeasurementStatus::Ready && correlation.reason == MeasurementReason::NoSignal) return absent (o);
         return unmeasured (o, correlation.reason);
     }
+    // Half the rule is not the rule: a reading that is missing is not measured, never 0.
+    if (! correlation.value || ! rawSide.value) return unmeasured (o, ! correlation.value ? correlation.reason : rawSide.reason);
     const auto config = in.rules.engine.find ("observations").find ("polarity");
-    o.value = correlation.value.value_or (0.0);
-    o.second = rawSide.value.value_or (0.0);
-    const bool opposite = (correlation.value && *correlation.value < number (config.find ("correlationBelow")))
-                       || (rawSide.value && *rawSide.value > number (config.find ("rawSideFractionAbove")));
+    o.value = *correlation.value;
+    o.second = *rawSide.value;
+    const bool opposite = *correlation.value < number (config.find ("correlationBelow"))
+                       || *rawSide.value > number (config.find ("rawSideFractionAbove"));
     if (! opposite) return absent (o);
     return found (in, o, 1.0, 0.0);
 }
