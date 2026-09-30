@@ -96,6 +96,11 @@ struct Awaited
 };
 [[nodiscard]] Awaited awaited (std::uint32_t waiting, const DevicePlans& plans) noexcept;
 
+// THE PLAN'S REASONS (PlanView::facts), stated by PlanText and nothing else: every line it gives for a Ready plan, and
+// the waiting fact the plan's awaited, awaitedBy and awaitedFraction name — which replaces the one stated before it.
+void stateReasons (PlanView& plan) noexcept;
+void stateWaiting (PlanView& plan) noexcept;
+
 // A device's plan in `plans`, by its place in the order of Device.
 [[nodiscard]] DevicePlan& planOf (DevicePlans& plans, Device device) noexcept;
 [[nodiscard]] const DevicePlan& planOf (const DevicePlans& plans, Device device) noexcept;

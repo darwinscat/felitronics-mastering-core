@@ -333,6 +333,13 @@ cancelled, stopped with the source's measurement it waited for, ended by a contr
 `loadMeasured` (which end every master state, the wait included), it hands the needles back to the project's own ceiling, so the project's plan does not wait for needles nobody measures. A master stopped with the
 measurement says so under its own job's id (fact `cancelled`), beside the measurement's `measurementStopped`.
 
+**The plan states its reasons.** `plan.facts` carries every line `PlanText` gives for a Ready plan — `{device, fact}`,
+in the order of `Device` and, within a device, of `PlanText`'s members — and, last, the waiting fact `planWaiting` (the
+device, the measurement, `awaitedFraction` as its percent) wherever the plan names what a master waits for; a plan that
+is not Ready states that fact alone, or nothing. A shell shows them as they are and composes none: some carry config
+numbers it does not have. Each is written as an event's fact is (`WireFact`); the contract scenario `plan-pending`
+records a waiting plan, the master it refuses, and its reasons once Ready.
+
 **A finding is the planner's proposal; a sentence states what sounds.** `plan.hpf` and `plan.monoBass` hold what the
 machine proposes and what it stood on — its cutoff and the note behind it, the loss at its crossover. What sounds is the
 project's device: a person's layer over a machine's layer that a project file may have written. Each finding says which

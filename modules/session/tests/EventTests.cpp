@@ -280,6 +280,22 @@ void codec()
     const auto decoded = declared::spend ([&] { status = Codec::decode (text, restored); });
     ok (status == CodecStatus::Ok && need.bytes == std::uint64_t (decoded.bytes), "decode asks exactly its declared demand");
     ok (encoded (restored.view()) == text, "named fields and both layers round trip, including rows and non-finite values");
+    const auto& reasons = restored.view().plan.facts;
+    bool sameReasons = v.plan.facts.count != 0 && reasons.count == v.plan.facts.count;
+    for (unsigned i = 0; sameReasons && i < reasons.count; ++i)
+        sameReasons = reasons.items[i].device == v.plan.facts.items[i].device && reasons.items[i].fact.id == v.plan.facts.items[i].fact.id
+            && reasons.items[i].fact.argCount == v.plan.facts.items[i].fact.argCount;
+    ok (sameReasons, "the plan's reasons round trip: " + std::to_string (reasons.count) + " facts");
+    for (const auto& [from, to] : { std::pair<std::string, std::string> { "\"userText\":\"\"", "\"userText\":\"x\"" },
+                                    { "\"FactId\":", "\"FactId\":9" }, { "\"precision\":", "\"precision\":1" } })
+    {
+        auto input = text;
+        const auto at = input.find (from);
+        if (at != std::string::npos) input.replace (at, from.size(), to);
+        const auto before = encoded (restored.view());
+        ok (at != std::string::npos && Codec::decode (input, restored) == CodecStatus::Invalid && before == encoded (restored.view()),
+            "a plan's fact with a person's text, an unknown id or a precision out of range refuses whole: " + to);
+    }
     ok (std::isnan (restored.view().momentary[1].value) && std::isinf (restored.view().integratedLufs), "NaN gaps and silence are explicit and restored");
     ok (restored.view().source.name == special && restored.view().revision == v.revision, "strings and 64-bit identities are lossless");
     std::string shortBuffer (text.size() - 1, 'x');

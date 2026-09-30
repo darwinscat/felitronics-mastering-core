@@ -1562,9 +1562,17 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.weightsVersion)>, std::uint64_t>);
         v.field ("weightsVersion", x.weightsVersion);
     }
+    else if constexpr (std::is_same_v<U, PlanFact>)
+    {
+        [[maybe_unused]] auto& [f0, f1] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.device)>, Device>);
+        v.field ("device", x.device);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.fact)>, text::Fact>);
+        v.field ("fact", x.fact);
+    }
     else if constexpr (std::is_same_v<U, PlanView>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.awaited)>, std::optional<Analyzer>>);
         v.field ("awaited", x.awaited);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.awaitedBy)>, std::optional<Device>>);
@@ -1575,6 +1583,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("devices", x.devices);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.dither)>, DitherFinding>);
         v.field ("dither", x.dither);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.facts)>, BoundedList<PlanFact, 14>>);
+        v.field ("facts", x.facts);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.fromFile)>, bool>);
         v.field ("fromFile", x.fromFile);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.glue)>, GlueFinding>);

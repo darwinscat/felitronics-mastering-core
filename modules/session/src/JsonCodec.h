@@ -4,6 +4,7 @@
 #pragma once
 #include "CodecSchema.h"
 #include "JsonNumber.h"
+#include "TextFacts.h"
 #include "Utf8.h"
 #include <bit>
 #include <cmath>
@@ -85,6 +86,37 @@ struct Writer
         }
     }
     template <class T> void value (const std::optional<T>& x) noexcept { if (x) value (*x); else text ("null"); }
+    // A fact as every fact crosses the wire — an event's and a plan's alike: its id, and each argument whole.
+    void value (const session::text::Fact& f) noexcept
+    {
+        if (f.argCount > session::text::Fact::kMaxArgs) { good = false; return; }
+        const bool parent = first;
+        put ('{'); first = true; field ("FactId", unsigned (f.id));
+        text (",\"args\":[");
+        for (unsigned i = 0; i < f.argCount; ++i)
+        {
+            if (i) put (',');
+            const auto& a = f.args[i];
+            put ('{'); first = true; field ("kind", unsigned (a.kind));
+            field ("unit", unsigned (a.unit)); field ("precision", unsigned (a.precision));
+            field ("sign", unsigned (a.sign)); field ("bound", unsigned (a.bound));
+            field ("termId", unsigned (a.termId)); field ("number", a.number);
+            // Signed count identities also cross JSON as decimal strings, without loss.
+            text (",\"integer\":\"");
+            if (a.integer < 0) put ('-');
+            const auto magnitude = a.integer < 0 ? std::uint64_t (-(a.integer + 1)) + 1 : std::uint64_t (a.integer);
+            Writer digits; char buf[24]; digits.output = buf; digits.value (magnitude);
+            text ({ buf + 1, std::size_t (digits.size - 2) }); put ('"');
+            field ("userText", a.userText); put ('}');
+        }
+        text ("]}");
+        first = parent;
+    }
+    template <class T, std::size_t N> void value (const BoundedList<T, N>& list) noexcept
+    {
+        if (list.count > N) { good = false; return; }
+        value (std::span<const T> (list.items.data(), list.count));
+    }
     template <class T> void value (std::span<const T> values) noexcept
     {
         if constexpr (std::is_same_v<T, double> || std::is_same_v<T, EqPoint> || std::is_same_v<T, ReadingPoint> || std::is_same_v<T, ReadingRun> || std::is_same_v<T, MachineDifference>)
@@ -548,6 +580,95 @@ struct Reader
     {
         if (literal ("null")) x.reset();
         else { T v {}; value (v); x = v; }
+    }
+    // A fact, read as the writer writes it: a known id, at most kMaxArgs arguments, every field once. A plan's facts carry
+    // no person's text, and a snapshot's storage holds none for them: a text is refused.
+    void value (session::text::Fact& f) noexcept
+    {
+        f = {};
+        bool id = false, args = false;
+        expect ('{');
+        do
+        {
+            char name[16]; const auto n = string (name, sizeof (name));
+            if (! good) return;
+            const std::string_view k (name, n);
+            expect (':');
+            if (k == "FactId" && ! id)
+            {
+                std::uint16_t raw = 0; value (raw); id = true;
+                f.id = session::text::FactId (raw);
+                if (session::text::detail::shapeOf (f.id) == nullptr) good = false;
+            }
+            else if (k == "args" && ! args)
+            {
+                args = true;
+                expect ('[');
+                if (! take (']'))
+                {
+                    do
+                    {
+                        if (f.argCount == session::text::Fact::kMaxArgs) { good = false; return; }
+                        value (f.args[f.argCount++]);
+                    }
+                    while (good && take (','));
+                    expect (']');
+                }
+            }
+            else good = false;
+        }
+        while (good && take (','));
+        expect ('}');
+        if (! id || ! args) good = false;
+    }
+    void value (session::text::Arg& a) noexcept
+    {
+        namespace t = session::text;
+        a = {};
+        constexpr std::string_view keys[] { "kind", "unit", "precision", "sign", "bound", "termId", "number", "integer", "userText" };
+        unsigned fields = 0;
+        expect ('{');
+        do
+        {
+            char name[16]; const auto n = string (name, sizeof (name));
+            if (! good) return;
+            unsigned k = 0;
+            while (k < std::size (keys) && keys[k] != std::string_view (name, n)) ++k;
+            if (k == std::size (keys) || (fields & (1u << k)) != 0) { good = false; return; }
+            fields |= 1u << k;
+            expect (':');
+            std::uint16_t small = 0;
+            const auto below = [&] (unsigned limit) { value (small); if (small >= limit) good = false; };
+            switch (k)
+            {
+                case 0: below (unsigned (t::ArgKind::UserText) + 1u); a.kind = t::ArgKind (small); break;
+                case 1: below (unsigned (t::kUnitCount)); a.unit = t::Unit (small); break;
+                case 2: below (10u); a.precision = std::uint8_t (small); break;
+                case 3: below (unsigned (t::Sign::Always) + 1u); a.sign = t::Sign (small); break;
+                case 4: below (unsigned (t::Bound::AtMost) + 1u); a.bound = t::Bound (small); break;
+                case 5: value (small); a.termId = t::Term (small); break;
+                case 6: value (a.number); break;
+                case 7: expect ('"'); value (a.integer); expect ('"'); break;
+                default: { char none[1]; if (string (none, 0) != 0) good = false; break; }
+            }
+        }
+        while (good && take (','));
+        expect ('}');
+        if (fields != (1u << std::size (keys)) - 1u
+            || (a.kind == t::ArgKind::Term && t::detail::shapeOf (a.termId) == nullptr)) good = false;
+    }
+    template <class T, std::size_t N> void value (BoundedList<T, N>& list) noexcept
+    {
+        list = {};
+        expect ('[');
+        if (take (']')) return;
+        do
+        {
+            if (list.count == N) { good = false; return; }
+            value (list.items[list.count++]);
+        }
+        while (good && take (','));
+        expect (']');
     }
     template <class T> void value (std::span<const T>& rows) noexcept
     {
