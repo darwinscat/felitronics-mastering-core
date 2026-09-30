@@ -300,9 +300,9 @@ en = "Mono bass below {crossover}: set by hand."
 ru = "Моно-бас ниже {crossover}: значение из файла проекта."
 en = "Mono bass below {crossover}: the value comes from the project file."
 
-[messages.monoBassIncomplete]
-ru = "Моно-бас не включён: замер низа охватывает только начало записи, а по части записи решение не принимается."
-en = "Mono bass is off: the low-end measurement covers only the beginning of the recording, and no decision is made from a part of it."
+[messages.monoBassPartWeighed]
+ru = "Противофаза баса взвешена по первым {covered} записи из {whole}."
+en = "The bass polarity was weighed over the first {covered} of the recording's {whole}."
 
 [messages.glueUnavailable]
 ru = "Клей недоступен: громкие места песни не измерены (нет P95 кратковременной громкости). Мастер будет сделан без клея; значение «до {upTo}» сохранено."

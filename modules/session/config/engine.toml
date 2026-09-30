@@ -15,8 +15,9 @@
 # [landing], [cost], [progress]). The travels of the knobs a person turns are OUR numbers — taste and the physics of the
 # medium. The core's domains (what a stage accepts at all) are the core's and are not copied here.
 
-# The name of this set of defaults. A project records it, never the defaults themselves, and is opened with the set it
-# names.
+# The name of this set of defaults. A project records it, never the defaults themselves. A project of this set keeps
+# its machine's layer; one of another set is converted — a person's values and the target's numbers kept, the machine's
+# layer placed again by the planner (no earlier set is carried).
 defaults = "2026-10"
 
 # THE INPUT, BEFORE THE CHAIN.

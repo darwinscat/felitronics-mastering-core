@@ -116,12 +116,18 @@ std::optional<Note> sureLowestNote (const PlanInputs& in, const MeasurementResul
 // within [monoBass] loss.soundingWithinDb of the level the loudest 5 % of the blocks reach (by duration), when those
 // blocks last [monoBass] loss.soundingAtLeastS in all. Nothing that sounds, or too little of it: no reading.
 struct Weighed { double lossDb = 0.0, seconds = 0.0; };
-// The run keeps a bounded number of blocks: a piece longer than they cover has only its first part in them, and a loss
-// weighed over a part is not the piece's.
-bool cutShort (const MeasurementResult& lowEnd) noexcept
+// The run keeps a bounded number of blocks: a piece longer than they cover has only its first part in them. The loss is
+// weighed over that part — mono bass stands unless a measured loss rules against it — and the finding says how many
+// seconds of the piece the weighing covered.
+std::optional<double> coveredPart (const MeasurementResult& lowEnd) noexcept
 {
     const auto* blocks = arrayOf (lowEnd, "blocks");
-    return blocks && lowEnd.status == MeasurementStatus::Ready && (! blocks->complete || blocks->stored < blocks->total);
+    const auto rate = scalar (lowEnd, "sampleRate");
+    if (! blocks || blocks->columns != 8 || ! rate || ! (*rate > 0) || lowEnd.status != MeasurementStatus::Ready) return {};
+    const auto rows = std::min<std::size_t> (std::size_t (blocks->stored), blocks->values.size() / 8);
+    if ((blocks->complete && blocks->stored >= blocks->total) || rows == 0) return {};
+    const double* last = blocks->values.data() + (rows - 1) * 8;
+    return (last[0] + last[1]) / *rate;
 }
 std::optional<Weighed> weighMonoLoss (const PlanInputs& in, const MeasurementResult& lowEnd) noexcept
 {
@@ -235,20 +241,20 @@ template <> struct Planned<MonoBassFields<Value>>
         if (! offered (in.rules, in.row, in.channels, Device::MonoBass)) f.verdict = MonoBassVerdict::MonoSource;
         else if (in.measurements.empty()) f.verdict = MonoBassVerdict::Unmeasured;
         else if (quiet (in)) f.verdict = MonoBassVerdict::Quiet;
-        else if (lowEnd && cutShort (*lowEnd)) f.verdict = MonoBassVerdict::Incomplete;
         else if (weighed = lowEnd ? weighMonoLoss (in, *lowEnd) : std::nullopt; ! weighed) f.verdict = MonoBassVerdict::Unmeasured;
         else
         {
             f.lossDb = weighed->lossDb;
             f.soundingSeconds = weighed->seconds;
             f.verdict = monoBassVerdictFor (in.rules, weighed->lossDb);
+            if (in.sampleRate != 0)
+                if (f.coveredSeconds = coveredPart (*lowEnd); f.coveredSeconds) f.pieceSeconds = double (in.frames) / double (in.sampleRate);
         }
         switch (f.verdict)
         {
             case MonoBassVerdict::On:
             case MonoBassVerdict::Partial:    m.on = true; plan.measured |= fieldBit (in.rules, m, m.on); break;
             case MonoBassVerdict::AntiPhase:  m.on = false; plan.measured |= fieldBit (in.rules, m, m.on); plan.heldBack = HeldBack::Measured; break;
-            case MonoBassVerdict::Incomplete:
             case MonoBassVerdict::Unmeasured: m.on = false; plan.heldBack = HeldBack::Unmeasured; break;
             case MonoBassVerdict::Quiet:      m.on = false; plan.heldBack = HeldBack::Quiet; break;
             case MonoBassVerdict::MonoSource: m.on = false; plan.heldBack = HeldBack::Source; break;
@@ -676,12 +682,24 @@ std::optional<text::Fact> PlanText::monoBass (const MonoBassFinding& f) noexcept
             return proposed ? std::optional (Fact::of (FactId::MonoBassPartial, Arg::value (f.lossDb.value_or (0.0), Unit::Db, 1))) : std::nullopt;
         case MonoBassVerdict::AntiPhase:  return Fact::of (FactId::MonoBassAntiPhase, Arg::value (f.lossDb.value_or (0.0), Unit::Db, 1));
         case MonoBassVerdict::Unmeasured: return off ? std::optional (Fact::of (FactId::MonoBassUnmeasured)) : std::nullopt;
-        case MonoBassVerdict::Incomplete: return off ? std::optional (Fact::of (FactId::MonoBassIncomplete)) : std::nullopt;
         case MonoBassVerdict::On:
         case MonoBassVerdict::MonoSource:
         case MonoBassVerdict::Quiet:      return std::nullopt;
     }
     detail::storageOverflow();
+}
+std::optional<text::Fact> PlanText::monoBassPolarity (const MonoBassFinding& f) noexcept
+{
+    // A fold at another crossover than the one weighed is named as a person's (or a file's); the bass is in opposite
+    // polarity all the same, and the warning stands beside that sentence.
+    if (f.verdict != MonoBassVerdict::AntiPhase || (f.sounding != Sounding::Hand && f.sounding != Sounding::File)) return std::nullopt;
+    return text::Fact::of (text::FactId::MonoBassAntiPhase, text::Arg::value (f.lossDb.value_or (0.0), text::Unit::Db, 1));
+}
+std::optional<text::Fact> PlanText::monoBassCoverage (const MonoBassFinding& f) noexcept
+{
+    if (! f.coveredSeconds) return std::nullopt;
+    return text::Fact::of (text::FactId::MonoBassPartWeighed, text::Arg::value (*f.coveredSeconds, text::Unit::S, 0),
+        text::Arg::value (f.pieceSeconds, text::Unit::S, 0));
 }
 std::optional<text::Fact> PlanText::glue (const GlueFinding& f) noexcept
 {

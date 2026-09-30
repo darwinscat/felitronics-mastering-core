@@ -532,6 +532,37 @@ void noPlanWaitsForEver()
             "a device edit is taken and, with the panel open, a master too");
     }
     {
+        // A LOAD UNDER A WAITING MASTER ends the wait with every other master state: the needles are the new source's
+        // project's, not the ceiling of a recipe that is gone.
+        auto sp = fresh(); auto& s = *sp;
+        (void) s.apply (audio.load (1));
+        ok (stepUntil (s, [&] { return s.state() == State::Measured2 && s.needlesJob() == 0; }), "PRECONDITION: measured");
+        command::EditTarget tp { 2, {} }; tp.fields.tp = -3.0;
+        (void) s.apply (tp);
+        ok (s.apply (command::Master { 3 }).rejection == Rejection::None && detail::Inspector::jobWaiting (s), "PRECONDITION: a hidden master waits for the needles at its ceiling");
+        Clicks other; other.pcm[7] = 0.31f;
+        ok (s.apply (other.load (4)).rejection == Rejection::None && s.job() == 0 && ! detail::Inspector::jobWaiting (s), "a load ends the master, and its wait");
+        ok (stepUntil (s, [&] { return s.state() == State::Measured2 && s.needlesJob() == 0; })
+            && s.snapshot().view().plan.status == PlanStatus::Ready && s.snapshot().view().plan.waiting == 0,
+            "the new source is measured and its plan ready: nothing waits for a ceiling of the old recipe");
+        (void) s.apply (command::SetManual { 5, true });
+        ok (s.apply (command::Master { 6 }).rejection == Rejection::None, "and with the panel open a master is taken");
+    }
+    {
+        // The same under a sidecar's facts, which bring no audio.
+        auto sp = fresh(); auto& s = *sp;
+        (void) s.apply (audio.load (1));
+        ok (stepUntil (s, [&] { return s.state() == State::Measured2 && s.needlesJob() == 0; }), "PRECONDITION: measured");
+        command::EditTarget tp { 2, {} }; tp.fields.tp = -3.0;
+        (void) s.apply (tp);
+        ok (s.apply (command::Master { 3 }).rejection == Rejection::None && detail::Inspector::jobWaiting (s), "PRECONDITION: a hidden master waits");
+        const MeasuredSource facts { "sidecar.wav", s.source().hash + 1u, Clicks::frames, Clicks::rate, 2, Clicks::rate, 24, true, -18.0, -2.0 };
+        ok (s.loadMeasured (4, facts).rejection == Rejection::None && s.job() == 0 && ! detail::Inspector::jobWaiting (s),
+            "measured facts loaded under it end the master and its wait");
+        ok (s.needlesJob() == 0 && (s.snapshot().view().plan.waiting & detail::bitOf (Analyzer::Excursions)) == 0
+            && s.step (16).state == StepState::Done, "and nothing is left waiting for needles");
+    }
+    {
         // A master waiting for the tempo, and the source's measurement stopped under it: the master stops with it, says
         // so under its own id, and leaves the needles at the project's ceiling.
         auto sp = fresh(); auto& s = *sp;

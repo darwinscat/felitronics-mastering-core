@@ -110,6 +110,7 @@ void Session::clearMasters() noexcept
     mastering_ = false;
     job_ = 0;
     jobRecipe_ = {};
+    jobWaiting_ = false;                       // a load ends a waiting master too: the needles are the new project's
     masterJob_.reset();
     masterJobBytes_ = 0;
     masterSummary_ = {}; masterTraceCursor_ = 0; masterTraceActive_ = false;
