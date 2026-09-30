@@ -771,11 +771,15 @@ The generated `Query*Row` tuples in `snapshot.d.ts` give column names. Their num
 | kind | row meaning |
 |---|---|
 | Waveform | `[firstFrame,lastFrame,axis,min,max,peak,envelope,rms,lowEnergy,middleEnergy,highEnergy,finiteFrames,reason]`; axes 0=L, 1=R, 2=Mid=(L+R)/2, 3=Side=(L-R)/2; mono has only 0 and 2. Amplitudes are linear, energies are sums of squares. Peak preserves either signed extremum; envelope is the maximum absolute box mean near 8 kHz. Bands use complementary 250/2500 Hz one-pole drawing filters and are not LR4 measurements. |
-| LowSpectrum / LowSide | `[Hz,density,reason]` / `[Hz,sideFraction,reason]`; the requested Hz grid includes both endpoints (one column uses `fromHz`). The retained full-source LowEnd measurement is selected by exact `crossoverHz` 120 or 150. These kinds require the whole-source frame range and a finite grid within Nyquist. |
-| Momentary / ShortTerm | `[sourceFrame,LUFS,reason]` from the retained live grid, decimated to the requested maximum row count. `sourceFrame` is the window end: `(fromFrame,toFrame]` selects readings for the half-open audio range `[fromFrame,toFrame)`, including a reading at the source end. |
+| LowSpectrum / LowSide | `[Hz,density,reason]` / `[Hz,sideFraction,reason]`; the requested Hz grid includes both endpoints (one column uses `fromHz`). LowSpectrum's quantity is the request's `spectrum`: `0` (the default, and what a request without the field gets) is DENSITY — the band's energy per hertz of its width, the tilt-free curve; `1` is ENERGY — the band's whole energy, what a bar per band shows, above the density by 10·log10(band width in Hz) dB (about 2 dB at 20 Hz and 11.6 dB at 250 Hz), row `[Hz,energy,reason]`. The retained full-source LowEnd measurement is selected by exact `crossoverHz` 120 or 150. These kinds require the whole-source frame range and a finite grid within Nyquist. |
+| Momentary / ShortTerm | `[sourceFrame,LUFS,reason]` from the retained live grid, decimated to the requested maximum row count. `sourceFrame` is the window end: `(fromFrame,toFrame]` selects readings for the half-open audio range `[fromFrame,toFrame)`, including a reading at the source end. With a `masterId` (and the master's source `audioId`) the curve is that MASTER's: the job's own meter over the delivered audio, a row per 100 ms on the delivered-frame grid, named and reasoned the same way (the rows before a whole window are `TooShort`) — bit for bit what the delivered audio gives measured as a source; `sampleRate` is the delivery rate. |
 | Clipping | `[firstFrame,frameCount,channel,sign,level,evidence]` for retained runs intersecting the range; `total` counts all matches, `stored` is capped by `columns`, and `complete` reports truncation. |
 | Stereo | `[firstFrame,lastFrame,width,correlation,rms,reason]` from retained source stereo columns intersecting the requested range. Bounds name each retained column's actual source interval; `total` counts intersecting columns and `complete` is false when the column limit omits some. |
 | LimiterGr / PeakClipGr | `[firstFrame,lastFrame,minDb,maxDb,meanDb,samples,nonFinite]` on the delivered-frame grid. These require `masterId`, the master's source `audioId`, and a nonempty range inside the trace. A zoom selects every retained bucket intersecting the range; requested columns group those buckets and report their actual bounds, including edge buckets that cross the requested bounds. `total` is the selected bucket count, `stored` is the returned count, and `complete` is false for a reduced column count. An unfinished render returns `Pending` without rows. `sampleRate` is the delivery rate. |
+
+| MasterWaveform | `[firstFrame,lastFrame,channel,min,max,rms,finiteFrames]`, L then R, from the master's retained buckets (at most 2048 a channel). |
+| MasterAxes | The same buckets in the source Waveform's own shape — four axes a column, rows of 13 as Waveform's — kept beside them by the job with the waveform's own arithmetic (`analysis::WaveformStream`). A bucket is, to the bit, what the source's Waveform answers for those frames of the delivered audio (RMS and band energies to a rounding); columns merge buckets, and a merged column's envelope is the largest of its buckets'. On a caller-supplied chunk (`masterWaveformChunk`) the band split starts from rest at the chunk's first frame. |
+| MasterReport | No rows: `master` is the kept master whole — the record a full snapshot carries for it, its traces, crest rows and mask, sections and waveform buckets included — in storage of the answer's own. `columns` and the frame range are not read. `query_size` bounds its JSON by the record as the wire writes it. |
 
 Waveform inner buckets combine completed index nodes; only two edge leaves can replay resident PCM. Its index owns
 the multiresolution columns and filter checkpoints with no second PCM copy. `pcmFramesRead` exposes exact-edge work;
@@ -784,6 +788,20 @@ unfinished range is `Cancelled`. A row's reason distinguishes absent mono axes (
 (`NonFinite`) and finite silence (`NoSignal`); unavailable instruments retain their own reason. `summary()` and
 `fc_session_summary_*` keep scalar snapshot status while omitting large measurement rows and mark
 `measurementRowsIncluded=false`. The full snapshot remains available on its existing entry points.
+
+**The lean summary.** A summary still carries every kept master whole, and a master is heavy: its two reduction
+traces, its crest rows and its waveform buckets are megabytes of JSON — 1.28 MB with one 12-second master, 8.6 MB with
+seven. A shell that sets `Capabilities::leanSummary` (C: `leanSummary = 1`, a field appended to
+`fc_session_capabilities`; a version-1 record of 32 bytes leaves it 0 and gets the summary it always got, byte for byte)
+gets summaries without those rows: each master keeps its scalars — id, recipe, landing status, passes and readings, the
+report's readings and hints, every cost value — with its pass log and its cost sections; its traces are absent, its
+crest rows, mask and waveform buckets empty, and the summary says `masterRowsIncluded=false` (62 KB with one master,
+88 KB with seven: 4.4 KB a master). One master whole is `QueryKind::MasterReport`; its traces and waveform are also the
+`LimiterGr`, `PeakClipGr`, `MasterWaveform` and `MasterAxes` queries. `fc_session_snapshot_*` is the same in both
+modes. A shell reads a summary after each command's answer and the full snapshot when it needs everything at once;
+nothing in the session asks for a snapshot. The room for the lean masters is the session's (`sizeof (Kept)` a master,
+in the master command's declared demand) and sizing or copying a summary allocates nothing. A decoded snapshot is held
+to its flag: whole masters under `masterRowsIncluded=false`, or stripped ones under `true`, are refused.
 
 `measurementStorage` exposes source, result, workspace, copy, codec and allocator demands and the maximum live
 set across load and work. Native `storageFor` calls share the exact parameter records used for preparation, including

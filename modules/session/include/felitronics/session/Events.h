@@ -103,7 +103,7 @@ struct Stepped
     bool refused = false;                  // FP refusal leaves the job resumable and publishes Recover::Continue
 };
 inline constexpr std::uint32_t kStepUnits = 16;
-// One master completion may emit a phase, a pass, six cost facts (the glue's and the saturation's among them), Ready
-// and Done in the same unit. The other units retain their three-event bound.
-inline constexpr std::size_t kEventBatch = 3 * kStepUnits + 7;
+// One master completion may emit a phase, a pass, the landing's miss and its two hints, six cost facts (the glue's and
+// the saturation's among them), Ready and Done in the same unit. The other units retain their three-event bound.
+inline constexpr std::size_t kEventBatch = 3 * kStepUnits + 10;
 } // namespace felitronics::session

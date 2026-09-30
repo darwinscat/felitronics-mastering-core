@@ -45,6 +45,11 @@ struct Capabilities
     std::uint32_t maxRateHz = 4294967295u;
     std::uint32_t offeredDevices = 255u;
     double largestFreeBlockBytes = 9007199254740991.0;
+    // The summary without the masters' heavy rows: each master keeps its scalars, its pass log and its cost sections;
+    // its limiter and peak-clip traces, crest rows and mask and waveform buckets are left out
+    // (SnapshotView::masterRowsIncluded false) and read, a master at a time, by QueryKind::MasterReport. The full
+    // snapshot is the same either way. Off: the summary as it always was.
+    bool leanSummary = false;
 };
 
 struct Capacity
@@ -227,28 +232,6 @@ struct Created
 {
     Status status = Status::Ok;
     std::unique_ptr<Session> session;
-};
-
-// THE RECIPE OF A MASTER — what a master is made from, captured when it is asked for: the project as it was then (the
-// machine's layer included), the source it renders and the config's sound version. Two masters with equal recipes,
-// made by one release, are one master.
-struct Recipe
-{
-    Project project {};
-    std::uint64_t source = 0;                  // the source's hash (Session::source)
-    std::uint64_t sound = 0;                   // config::Config::versions().sound
-    std::uint64_t readyHash = 0;              // exact ready topology, parameters and delivery choice
-    std::uint32_t deliveryRateHz = 0;
-    std::uint32_t readyVersion = 0;
-};
-
-// A master kept: its id and its recipe.
-struct Kept
-{
-    MasterId id = 0;
-    Recipe recipe {};
-    std::optional<LandingSummary> landing;
-    std::optional<MasterReport> report;
 };
 
 // The source a load gave, as the session holds it. The name and the samples live in the session until a different source is loaded.
@@ -533,6 +516,9 @@ private:
     JobId lastJob_ = 0;
     Recipe jobRecipe_ {};
     std::unique_ptr<Kept[]> masters_;
+    // Room for the lean summary's masters (Capabilities::leanSummary): as many as masters_ has, written whole by every
+    // summary — a view's scratch, never state; absent without the capability.
+    std::unique_ptr<Kept[]> leanMasters_;
     std::unique_ptr<detail::MasterRows[]> masterRows_;
     std::unique_ptr<detail::MasterJob> masterJob_;
     std::uint64_t masterJobBytes_ = 0;

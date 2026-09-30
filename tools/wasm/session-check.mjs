@@ -1119,6 +1119,131 @@ for (const p of lateGrowth) M._free(p);
 ok(M._fc_session_destroy(lateSession) === STATUS.OK, 'late crest scenario session destroyed');
 console.log(`wav-record=${JSON.stringify(contractRecord)}`);
 for (const p of growth) M._free(p);
+
+// A MASTER READ BY QUERIES, AND THE LEAN SUMMARY (additions to version 1; after the recorded scenarios, so none of them
+// moves). A shell that appends leanSummary = 1 to its capabilities gets summaries without the masters' heavy rows and
+// reads one master whole with a MasterReport query; a version-1 record of 32 bytes — every session above — does not.
+{
+    const transfer = (what, handle) => {
+        const sizes = M._malloc(12); M.HEAPU32[sizes >>> 2] = 12;
+        let value = null, jsonBytes = 0, rowBytes = 0, binary = new ArrayBuffer(0);
+        if (M[`_fc_session_${what}_size`](handle, sizes) === STATUS.OK) {
+            jsonBytes = M.HEAPU32[(sizes >>> 2) + 1]; rowBytes = M.HEAPU32[(sizes >>> 2) + 2];
+            const json = M._malloc(jsonBytes), rows = rowBytes ? M._malloc(rowBytes) : 0;
+            if (M[`_fc_session_${what}_copy`](handle, json, jsonBytes, rows, rowBytes) === STATUS.OK) {
+                value = JSON.parse(decoder.decode(heapBytes().slice(json, json + jsonBytes)));
+                if (rowBytes) binary = heapBytes().slice(rows, rows + rowBytes).buffer;
+            }
+            M._free(json); if (rows) M._free(rows);
+        }
+        M._free(sizes);
+        return {value, jsonBytes, rowBytes, binary};
+    };
+    const ask = (handle, request) => {
+        const encoded = encoder.encode(JSON.stringify(request));
+        const text = M._malloc(encoded.length); heapBytes().set(encoded, text);
+        const sizes = M._malloc(12), written = M._malloc(12); M.HEAPU32[sizes >>> 2] = 12; M.HEAPU32[written >>> 2] = 12;
+        let answer = null;
+        if (M._fc_session_query_size(handle, text, encoded.length, sizes) === STATUS.OK) {
+            const jsonBytes = M.HEAPU32[(sizes >>> 2) + 1], rowBytes = M.HEAPU32[(sizes >>> 2) + 2];
+            const json = M._malloc(jsonBytes), rows = rowBytes ? M._malloc(rowBytes) : 0;
+            if (M._fc_session_query_copy(handle, text, encoded.length, json, jsonBytes, rows, rowBytes, written) === STATUS.OK) {
+                const wroteJson = M.HEAPU32[(written >>> 2) + 1], wroteRows = M.HEAPU32[(written >>> 2) + 2];
+                answer = {response:JSON.parse(decoder.decode(heapBytes().slice(json, json + wroteJson))),
+                    rows:new Float64Array(heapBytes().slice(rows, rows + wroteRows).buffer), boundJson:jsonBytes, wroteJson, wroteRows};
+            }
+            M._free(json); if (rows) M._free(rows);
+        }
+        M._free(text); M._free(sizes); M._free(written);
+        return answer;
+    };
+    // Row descriptors address each transfer's own buffer: read them out before two records are compared.
+    const resolved = (kept, binary) => {
+        const copy = structuredClone(kept);
+        for (const name of ['rows', 'sourceMask']) {
+            const row = copy.report.crest[name];
+            copy.report.crest[name] = [...new Float64Array(binary, row.byteOffset, row.length * row.stride)];
+        }
+        return copy;
+    };
+    // The grown record: the version-1 prefix of 32 bytes, then leanSummary at 32 — 40 bytes (tools/session-abi-check.mjs
+    // measures both from the compiled header).
+    const leanCapsBytes = 40, leanAt = 32, leanCaps = M._malloc(leanCapsBytes);
+    heapBytes().copyWithin(leanCaps, caps, caps + 32);
+    M.HEAPU32[leanCaps >>> 2] = leanCapsBytes;
+    M.HEAPU32[(leanCaps + leanAt) >>> 2] = 1;
+    ok(M._fc_session_create(leanCaps, configLow, configHigh, resultSize) === STATUS.OK, 'a lean session is created from the grown capabilities record');
+    const leanSession = M.HEAPU32[resultSize >>> 2];
+    M.HEAPU32[(leanCaps + leanAt) >>> 2] = 2;
+    ok(M._fc_session_create(leanCaps, configLow, configHigh, resultSize) === STATUS.ERR_CAPABILITIES, 'a leanSummary that is neither 0 nor 1 is refused');
+    const leanFrames = 96000, leanPcm = M._malloc(leanFrames * 8), leanPointers = M._malloc(8);
+    const words = new Float32Array(M.HEAPU32.buffer);
+    for (let i = 0; i < leanFrames; ++i) {
+        words[(leanPcm >>> 2) + i] = (i * 17 % 251 - 125) / 4096;
+        words[(leanPcm >>> 2) + leanFrames + i] = (i * 19 + 7) % 251 / 4096 - 125 / 4096;
+    }
+    M.HEAPU32[leanPointers >>> 2] = leanPcm; M.HEAPU32[(leanPointers >>> 2) + 1] = leanPcm + leanFrames * 4;
+    const [leanMeta, leanMetaBytes] = input(JSON.stringify({name:'ready.wav', fileRate:48000, bitDepth:24, rateKnown:true}));
+    ok(M._fc_session_load(leanSession, 1, 0, leanPointers, 2, leanFrames, 48000, leanMeta, leanMetaBytes, answer,
+        macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK, 'the lean session loads the master smoke source');
+    M._free(leanMeta); M._free(leanPointers); M._free(leanPcm);
+    let leanReady = null;
+    for (let i = 0; i < 20000; ++i) {
+        if (i % 32 === 0 && (leanReady = transfer('summary', leanSession).value)?.canMaster) break;
+        if (M._fc_session_step(leanSession, 16, resultSize) !== STATUS.OK) break;
+    }
+    ok(leanReady?.canMaster === true && leanReady.masterRowsIncluded === false && accepts(leanReady, 'SessionSnapshot'),
+       'its summary says masterRowsIncluded false and agrees with the generated types');
+    const leanSource = BigInt(leanReady?.source?.hash ?? '0'), leanRevision = BigInt(leanReady?.revision ?? '0');
+    // The delivery format is the target's own (0 and 0), whatever the scenario before left in the shared records.
+    setMaster(masterConfig, 'fc_master_config', 'deliveryRate', 0, 'f64');
+    new DataView(M.HEAPU32.buffer).setInt32(ditherBits, 0, true);
+    ok(M._fc_session_master(leanSession, 2, 0, lo(leanSource), hi(leanSource), lo(leanRevision), hi(leanRevision),
+        masterConfig, masterParams, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize) === STATUS.OK && reply().kind === 'accepted',
+       'the lean session starts a master');
+    for (let i = 0; i < 40000; ++i) {
+        if (M._fc_session_step(leanSession, 16, resultSize) !== STATUS.OK) break;
+        if (masterCompleted(leanSession)) break;
+    }
+    const whole = transfer('snapshot', leanSession), light = transfer('summary', leanSession);
+    const kept = whole.value?.masters?.at(-1), lightKept = light.value?.masters?.at(-1);
+    ok(kept?.landing?.limiterTrace?.rows?.length > 0 && kept.report.cost.waveform.length > 0 && whole.value.masterRowsIncluded === true
+        && accepts(whole.value, 'SessionSnapshot'), 'its snapshot carries the master whole');
+    ok(lightKept && light.value.masterRowsIncluded === false && accepts(light.value, 'SessionSnapshot')
+        && lightKept.landing.limiterTrace == null && lightKept.landing.peakClipTrace == null
+        && lightKept.report.crest.rows.length === 0 && lightKept.report.crest.sourceMask.length === 0
+        && lightKept.report.cost.waveform.length === 0 && lightKept.landing.log.length === lightKept.landing.passes
+        && lightKept.report.cost.sections.length === kept.report.cost.sections.length
+        && lightKept.report.achievedLufs === kept.report.achievedLufs && lightKept.landing.status === kept.landing.status
+        && light.jsonBytes * 10 < whole.jsonBytes,
+       `its summary keeps the master's scalars, pass log and sections, and no heavy row: ${light.jsonBytes} B of JSON against the snapshot's ${whole.jsonBytes}`);
+    const base = {audioId:whole.value.source.hash, requestId:'41', masterId:kept.id};
+    const report = ask(leanSession, {...base, kind:11, fromFrame:'0', toFrame:'0', columns:0});
+    ok(report && accepts(report.response, 'QueryResponse') && report.response.status === 0 && report.wroteJson <= report.boundJson
+        && report.response.values.length === 0 && report.response.requestId === undefined && report.response.request.requestId === '41',
+       'a MasterReport query is answered within the size given beforehand and agrees with the generated types');
+    ok(report && JSON.stringify(resolved(report.response.master, report.rows.buffer)) === JSON.stringify(resolved(kept, whole.binary)),
+       'and its record is the snapshot\'s master, field for field and row for row');
+    const axes = ask(leanSession, {...base, kind:10, fromFrame:'0', toFrame:String(leanFrames), columns:16});
+    ok(axes && accepts(axes.response, 'QueryResponse') && axes.response.status === 0 && axes.response.stride === 13 && axes.response.stored === '64'
+        && axes.rows.length === 64 * 13 && axes.rows[2] === 0 && axes.rows[13 + 2] === 1 && axes.rows[26 + 2] === 2 && axes.rows[39 + 2] === 3
+        && axes.rows[39 + 7] > 0, 'a MasterAxes query answers four axes a column, the Side carrying signal');
+    const curve = ask(leanSession, {...base, kind:4, fromFrame:'0', toFrame:String(leanFrames), columns:64});
+    const early = ask(leanSession, {...base, kind:3, fromFrame:'0', toFrame:String(leanFrames), columns:64});
+    ok(curve && curve.response.status === 0 && curve.response.stride === 3 && curve.response.stored === '20' && curve.rows[0] === 4800
+        && early && early.response.stored === '20' && Number.isFinite(early.rows[3 * 19 + 1]) && early.rows[3 * 19 + 2] === 0,
+       'Momentary and ShortTerm with a master id answer the master\'s own curves, a row per 100 ms');
+    const density = ask(leanSession, {kind:1, audioId:whole.value.source.hash, fromFrame:'0', toFrame:String(leanFrames), columns:8, requestId:'42'});
+    const energy = ask(leanSession, {kind:1, audioId:whole.value.source.hash, fromFrame:'0', toFrame:String(leanFrames), columns:8, requestId:'43', spectrum:1});
+    ok(density && energy && accepts(energy.response, 'QueryResponse') && density.response.request.spectrum === 0 && energy.response.request.spectrum === 1
+        && density.rows.length === 24 && energy.rows.length === 24 && density.rows.some((v, i) => i % 3 === 1 && v !== energy.rows[i]),
+       'LowSpectrum answers density by default and energy when asked');
+    const gone = ask(leanSession, {...base, masterId:kept.id + 9, kind:11, fromFrame:'0', toFrame:'0', columns:0});
+    ok(gone && gone.response.status === 2 && gone.response.master == null && gone.wroteRows === 0, 'no such master: unavailable, no record');
+    console.log(`lean-summary: 1 master — summary ${light.jsonBytes} + ${light.rowBytes} B, snapshot ${whole.jsonBytes} + ${whole.rowBytes} B, report query ${report?.wroteJson} + ${report?.wroteRows} B`);
+    ok(M._fc_session_destroy(leanSession) === STATUS.OK, 'lean session destroyed');
+    M._free(leanCaps);
+}
 for (const p of [masterConfig, masterParams, masterDemand, masterToken, audioBytes, audioFrames, audioChannels, audioRate,
                  viewOut, sampleOut]) M._free(p);
 ok(M._fc_session_destroy(masterSession) === STATUS.OK, 'master smoke session destroyed');

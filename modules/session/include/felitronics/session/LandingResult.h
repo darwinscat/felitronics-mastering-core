@@ -3,7 +3,9 @@
 
 #pragma once
 
+#include <felitronics/session/Commands.h>
 #include <felitronics/session/Measurements.h>
+#include <felitronics/session/Project.h>
 
 #include <cstdint>
 #include <optional>
@@ -140,6 +142,28 @@ struct MasterReportText
     [[nodiscard]] static std::optional<text::Fact> glue (const MasterCost& cost) noexcept;
     [[nodiscard]] static std::optional<text::Fact> saturation (const MasterCost& cost) noexcept;
 };
+// THE RECIPE OF A MASTER — what a master is made from, captured when it is asked for: the project as it was then (the
+// machine's layer included), the source it renders and the config's sound version. Two masters with equal recipes,
+// made by one release, are one master.
+struct Recipe
+{
+    Project project {};
+    std::uint64_t source = 0;                  // the source's hash (Session::source)
+    std::uint64_t sound = 0;                   // config::Config::versions().sound
+    std::uint64_t readyHash = 0;              // exact ready topology, parameters and delivery choice
+    std::uint32_t deliveryRateHz = 0;
+    std::uint32_t readyVersion = 0;
+};
+
+// A master kept: its id and its recipe.
+struct Kept
+{
+    MasterId id = 0;
+    Recipe recipe {};
+    std::optional<LandingSummary> landing;
+    std::optional<MasterReport> report;
+};
+
 struct MasterCrestGrid
 {
     [[nodiscard]] static bool compatible (const MasterCrest& master,

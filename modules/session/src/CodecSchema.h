@@ -166,7 +166,9 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (QueryKind::LimiterGr) == 7);
         static_assert (unsigned (QueryKind::PeakClipGr) == 8);
         static_assert (unsigned (QueryKind::MasterWaveform) == 9);
-        return 9;
+        static_assert (unsigned (QueryKind::MasterAxes) == 10);
+        static_assert (unsigned (QueryKind::MasterReport) == 11);
+        return 11;
     }
     else if constexpr (std::is_same_v<T, QueryStatus>)
     {
@@ -182,6 +184,12 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (QueryStatus::Cancelled) == 9);
         static_assert (unsigned (QueryStatus::FloatingPointEnvironment) == 10);
         return 10;
+    }
+    else if constexpr (std::is_same_v<T, SpectrumQuantity>)
+    {
+        static_assert (unsigned (SpectrumQuantity::Density) == 0);
+        static_assert (unsigned (SpectrumQuantity::Energy) == 1);
+        return 1;
     }
     else if constexpr (std::is_same_v<T, State>)
     {
@@ -398,6 +406,8 @@ constexpr void checkEnum (QueryKind value) noexcept
         case QueryKind::LimiterGr: break;
         case QueryKind::PeakClipGr: break;
         case QueryKind::MasterWaveform: break;
+        case QueryKind::MasterAxes: break;
+        case QueryKind::MasterReport: break;
     }
 }
 
@@ -416,6 +426,15 @@ constexpr void checkEnum (QueryStatus value) noexcept
         case QueryStatus::Contract: break;
         case QueryStatus::Cancelled: break;
         case QueryStatus::FloatingPointEnvironment: break;
+    }
+}
+
+constexpr void checkEnum (SpectrumQuantity value) noexcept
+{
+    switch (value)
+    {
+        case SpectrumQuantity::Density: break;
+        case SpectrumQuantity::Energy: break;
     }
 }
 
@@ -1056,7 +1075,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, MeasurementQuery>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.audioId)>, std::uint64_t>);
         v.field ("audioId", x.audioId);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.columns)>, std::uint32_t>);
@@ -1073,6 +1092,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.optionalField ("masterId", x.masterId, std::uint32_t {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.requestId)>, std::uint64_t>);
         v.field ("requestId", x.requestId);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.spectrum)>, SpectrumQuantity>);
+        v.optionalField ("spectrum", x.spectrum, SpectrumQuantity::Density);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.toFrame)>, std::uint64_t>);
         v.field ("toFrame", x.toFrame);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.toHz)>, double>);
@@ -1248,7 +1269,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, QueryView>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.audioId)>, std::uint64_t>);
         v.field ("audioId", x.audioId);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.cacheHit)>, bool>);
@@ -1257,6 +1278,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("channels", x.channels);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.complete)>, bool>);
         v.field ("complete", x.complete);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.master)>, std::optional<Kept>>);
+        v.optionalField ("master", x.master, std::optional<Kept> {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.measurementKey)>, std::uint64_t>);
         v.field ("measurementKey", x.measurementKey);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.pcmFramesRead)>, std::uint64_t>);
@@ -1360,7 +1383,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, SnapshotView>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32, f33, f34, f35, f36, f37, f38, f39, f40, f41, f42] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32, f33, f34, f35, f36, f37, f38, f39, f40, f41, f42, f43] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.canContinueMeasurement)>, bool>);
         v.optionalField ("canContinueMeasurement", x.canContinueMeasurement, false);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.canMaster)>, bool>);
@@ -1383,6 +1406,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.optionalField ("mandatoryMeasurementsReady", x.mandatoryMeasurementsReady, false);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.masterProgress)>, Phase>);
         v.field ("masterProgress", x.masterProgress);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.masterRowsIncluded)>, bool>);
+        v.optionalField ("masterRowsIncluded", x.masterRowsIncluded, true);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.mastering)>, bool>);
         v.field ("mastering", x.mastering);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.masters)>, std::span<const Kept>>);

@@ -95,7 +95,13 @@
       "Stereo",
       "LimiterGr",
       "PeakClipGr",
-      "MasterWaveform"
+      "MasterWaveform",
+      "MasterAxes",
+      "MasterReport"
+    ],
+    "SpectrumQuantity": [
+      "Density",
+      "Energy"
     ],
     "QueryStatus": [
       "Ready",
@@ -628,6 +634,7 @@
         "mandatoryMeasurementsReady": "bool",
         "devicesPlaced": "bool",
         "measurementRowsIncluded": "bool",
+        "masterRowsIncluded": "bool",
         "tempoChoice": "TempoChoice",
         "measurementsFromSidecar": "bool",
         "sourceMissingAudio": "bool",
@@ -781,7 +788,8 @@
         "crossoverHz": "double",
         "fromHz": "double",
         "toHz": "double",
-        "masterId": "uint32"
+        "masterId": "uint32",
+        "spectrum": "SpectrumQuantity"
       }
     },
     "QueryView": {
@@ -801,7 +809,8 @@
         "complete": "bool",
         "cacheHit": "bool",
         "pcmFramesRead": "uint64",
-        "values": "double[]"
+        "values": "double[]",
+        "master": "Kept?"
       }
     },
     "DevicePlan": {
@@ -902,7 +911,7 @@
     "RevertEditsCommand": "RevertEditsHpfCommand | RevertEditsMonoBassCommand | RevertEditsGlueCommand | RevertEditsSaturationCommand | RevertEditsTiltCommand | RevertEditsLimiterCommand | RevertEditsDitherCommand | RevertEditsLowCommand",
     "SessionMeasurementArray": "Omit<MeasurementArray, \"values\"> & { readonly values: ScalarRow }",
     "SessionMeasurementResult": "Omit<MeasurementResult, \"arrays\"> & { readonly arrays: ReadonlyArray<SessionMeasurementArray> }",
-    "QueryResponse": "Omit<QueryView, \"values\"> & { readonly values: ScalarRow }"
+    "QueryResponse": "SessionQueryView"
   },
   "wireRecords": {
     "ScalarRow": {
@@ -1263,7 +1272,8 @@
       "heapCeilingBytes": "number",
       "maxRateHz": "number",
       "offeredDevices": "number",
-      "largestFreeBlockBytes": "number"
+      "largestFreeBlockBytes": "number",
+      "leanSummary": "number"
     },
     "MeasurementEvent": {
       "seq": "string",
@@ -1366,6 +1376,10 @@
     "SessionKept": {
       "from": "Kept",
       "fields": { "report": "SessionMasterReport | null" }
+    },
+    "SessionQueryView": {
+      "from": "QueryView",
+      "fields": { "values": "ScalarRow", "master": "SessionKept | null" }
     }
   },
   "optionalFields": {
@@ -1488,6 +1502,10 @@
         "default": "true",
         "description": "true; historical snapshots include their retained measurement rows."
       },
+      "masterRowsIncluded": {
+        "default": "true",
+        "description": "true; a snapshot without the field carries every master's rows."
+      },
       "tempoChoice": {
         "default": "TempoChoice {}",
         "description": "No device tempo decision before the session finishes the tempo measurement."
@@ -1533,10 +1551,26 @@
       "toHz": {
         "default": "250.0",
         "description": "250 Hz."
+      },
+      "spectrum": {
+        "default": "SpectrumQuantity::Density",
+        "description": "Density: what LowSpectrum answered before the field existed."
+      }
+    },
+    "QueryView": {
+      "master": {
+        "default": "std::optional<Kept> {}",
+        "description": "No master record: every kind but MasterReport."
       }
     }
   },
   "optionalWireFields": {
+    "SessionCapabilities": {
+      "leanSummary": {
+        "defaultJson": "0",
+        "description": "0: the summary carries every master's rows, as a version-1 record of 32 bytes asks."
+      }
+    },
     "ReadingPayload": {
       "grid": {
         "defaultJson": "{\"firstFrame\":\"0\",\"stepFrames\":\"0\",\"framesRead\":\"0\",\"sampleRate\":0}",
@@ -1796,6 +1830,35 @@
       "meanDb",
       "samples",
       "nonFinite"
+    ],
+    "MasterWaveform": [
+      "firstFrame",
+      "lastFrame",
+      "channel",
+      "minimum",
+      "maximum",
+      "rms",
+      "finiteFrames"
+    ],
+    "MasterAxes": [
+      "firstFrame",
+      "lastFrame",
+      "axis",
+      "minimum",
+      "maximum",
+      "peak",
+      "envelope",
+      "rms",
+      "lowEnergy",
+      "middleEnergy",
+      "highEnergy",
+      "finiteFrames",
+      "reason"
+    ],
+    "LowSpectrumEnergy": [
+      "hz",
+      "energy",
+      "reason"
     ]
   }
 }

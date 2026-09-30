@@ -187,6 +187,9 @@ struct Reader
     std::uint64_t traceSamples = 0, traceNonFinite = 0;
     std::uint64_t costSectionEnd = 0, costWaveEnd = 0, costWaveFrom = 0, costWaveTo = 0;
     std::size_t costWaveRows = 0;
+    // A master read without its heavy rows, and one read with some: a snapshot says which it carries (masterRowsIncluded),
+    // and is held to it when its last field is in.
+    bool leanMasterRead = false, wholeMasterRead = false;
     unsigned costWaveChannels = 0;
 
     void space() noexcept { while (pos < input.size() && (input[pos] == ' ' || input[pos] == '\n' || input[pos] == '\r' || input[pos] == '\t')) ++pos; }
@@ -410,6 +413,7 @@ struct Reader
             }
             else if constexpr (std::is_same_v<T, LandingTrace>)
             {
+                wholeMasterRead = true;
                 if (x.columns != storage.landingTraceRows - beforeTraceRows
                     || x.columns > 65536 || x.fromFrame > x.toFrame
                     || (x.columns != 0 && x.sampleRateHz == 0)
@@ -433,11 +437,13 @@ struct Reader
                     || ! std::isfinite (x.edgeLowHz) || ! std::isfinite (x.edgeMidHz)
                     || ! std::isfinite (x.edgeHighHz) || x.edgeLowHz < 0
                     || x.edgeMidHz < x.edgeLowHz || x.edgeHighHz < x.edgeMidHz
-                    || x.blocks > crestBandCount / 10u || crestBandCount != x.blocks * 10u
-                    || crestMaskCount != (x.status == MeasurementStatus::Ready ? x.blocks * 5u : 0u)
+                    // Rows and mask both absent is a lean summary's crest; the snapshot's own check holds it to its flag.
+                    || (count != 0 && (x.blocks > crestBandCount / 10u || crestBandCount != x.blocks * 10u
+                        || crestMaskCount != (x.status == MeasurementStatus::Ready ? x.blocks * 5u : 0u)))
                     || count != crestBandCount + crestMaskCount
                     || (x.status == MeasurementStatus::Ready ? x.reason != MeasurementReason::None || ! x.complete
                         : x.reason == MeasurementReason::None)) good = false;
+                if (count != 0) wholeMasterRead = true; else if (x.blocks != 0) leanMasterRead = true;
             }
             else if constexpr (std::is_same_v<T, MasterReport>)
             {
@@ -471,10 +477,12 @@ struct Reader
                     || x.k2Reason != MeasurementReason::NotImplemented
                     || x.sourceRateHz == 0 || x.masterRateHz == 0
                     || x.sourceFrames == 0 || x.masterFrames == 0
-                    || costSectionEnd > x.sourceFrames || costWaveRows == 0
-                    || costWaveEnd != x.masterFrames
-                    || (costWaveChannels == 2 && costWaveRows % 2u != 0)
+                    // No bucket at all is a lean summary's cost; the snapshot is held to its flag.
+                    || costSectionEnd > x.sourceFrames
+                    || (costWaveRows != 0 && (costWaveEnd != x.masterFrames
+                        || (costWaveChannels == 2 && costWaveRows % 2u != 0)))
                     || (x.worstSectionIndex && *x.worstSectionIndex >= storage.masterSections - beforeSections)) good = false;
+                (costWaveRows != 0 ? wholeMasterRead : leanMasterRead) = true;
             }
             else if constexpr (std::is_same_v<T, MasterSection>)
             {
@@ -522,6 +530,11 @@ struct Reader
             {
                 if (x.report && (! x.landing || x.report->deliverable != x.landing->deliverable
                     || x.report->targetMet != (x.landing->status == LandingStatus::Solved))) good = false;
+            }
+            else if constexpr (std::is_same_v<T, SnapshotView>)
+            {
+                // A whole snapshot has every master's rows; a lean summary none of the heavy ones.
+                if (x.masterRowsIncluded ? leanMasterRead : wholeMasterRead) good = false;
             }
             optionalMask = parentOptional;
             masterCrestContext = parentMasterCrest;

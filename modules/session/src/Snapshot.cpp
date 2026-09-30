@@ -178,6 +178,23 @@ SnapshotView Session::buildSummary (std::span<MeasurementResult> results) const 
     for (auto& r : results) r.arrays = {};
     v.measurements = results; v.momentary = {}; v.shortTerm = {}; v.runs = {};
     v.measurementRowsIncluded = false;
+    if (capabilities_.leanSummary)
+    {
+        // Every master without its heavy rows — its scalars, pass log and cost sections stay; a MasterReport query
+        // gives one whole. The room is the session's, as long as masters_, and written afresh by every summary.
+        for (std::size_t i = 0; i < v.masters.size(); ++i)
+        {
+            auto& lean = leanMasters_[i] = v.masters[i];
+            if (lean.landing) { lean.landing->limiterTrace.reset(); lean.landing->peakClipTrace.reset(); }
+            if (lean.report)
+            {
+                lean.report->crest.rows = {}; lean.report->crest.sourceMask = {};
+                if (lean.report->cost) lean.report->cost->waveform = {};
+            }
+        }
+        v.masters = { leanMasters_.get(), v.masters.size() };
+        v.masterRowsIncluded = false;
+    }
     return v;
 }
 std::uint64_t Session::summaryBytes() const noexcept

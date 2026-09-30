@@ -45,6 +45,9 @@ struct SnapshotView
     State measurementResumeState = State::Empty;
     bool mandatoryMeasurementsReady = false, devicesPlaced = false;
     bool measurementRowsIncluded = true;
+    // False in a lean summary (Capabilities::leanSummary): every master without its traces, crest rows and mask and
+    // waveform buckets — QueryKind::MasterReport gives one whole.
+    bool masterRowsIncluded = true;
     TempoChoice tempoChoice {};
     bool measurementsFromSidecar = false;
     bool sourceMissingAudio = false;

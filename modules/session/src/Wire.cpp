@@ -269,12 +269,25 @@ TransferNeed Wire::queryBuffers (const Session& s, std::string_view json) noexce
     MeasurementQuery q;
     if (const auto status = queryRequest (json, q); status != CodecStatus::Ok) return { status, 0, 0 };
     const auto demand = s.queryStorage (q);
-    return { CodecStatus::Ok, kQueryJsonBytes, std::uint32_t (demand.rowBytes) };
+    // A master's report is its whole record in JSON, not a row of columns: the bound is the answer's own scalars and
+    // that record as the wire writes it.
+    std::uint64_t record = 0;
+    if (q.kind == QueryKind::MasterReport && demand.status == QueryStatus::Ready)
+        for (const Kept& master : s.masters())
+            if (master.id == q.masterId) { Writer w; w.binaryRows = true; w.value (master); record = w.good ? w.size : 0; }
+    if (record > 4294967295ull - kQueryJsonBytes) return { CodecStatus::Invalid, 0, 0 };
+    return { CodecStatus::Ok, std::uint32_t (kQueryJsonBytes + record), std::uint32_t (demand.rowBytes) };
 }
 TransferNeed Wire::queryBytes (const QueryView& response) noexcept
 {
     if (Session::checkFloatingPointEnvironment() != Status::Ok) return { CodecStatus::FloatingPointEnvironment, 0, 0 };
-    if (response.values.size() > kQueryValues || response.stride == 0 || response.values.size() % response.stride != 0
+    // A MasterReport answer is a record and no rows of its own; every other answer is rows and no record.
+    if (response.request.kind == QueryKind::MasterReport)
+    {
+        if (! response.values.empty() || response.stride != 0 || response.stored != 0
+            || response.master.has_value() != (response.status == QueryStatus::Ready)) return { CodecStatus::Invalid, 0, 0 };
+    }
+    else if (response.master || response.values.size() > kQueryValues || response.stride == 0 || response.values.size() % response.stride != 0
         || response.stored != response.values.size() / response.stride) return { CodecStatus::Invalid, 0, 0 };
     Writer w; w.binaryRows = true; w.value (response); return need (w);
 }
@@ -294,7 +307,7 @@ TransferNeed Wire::query (Session& s, std::string_view request, std::span<char> 
     const auto response = s.query (q);
     const auto n = queryBytes (response.view());
     if (n.status != CodecStatus::Ok) return n;
-    if (n.jsonBytes > kQueryJsonBytes) detail::storageOverflow();
+    if (! response.view().master && n.jsonBytes > kQueryJsonBytes) detail::storageOverflow();
     return { query (response.view(), json, rows), n.jsonBytes, n.rowBytes };
 }
 Checked Wire::masterWaveformChunkStorage (const Session& s, std::string_view json, const Pcm& shape) noexcept

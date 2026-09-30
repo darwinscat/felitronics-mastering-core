@@ -90,9 +90,12 @@ double Session::liveBytes() const noexcept
         if (masterRows_[i].sections) rows += std::uint64_t (masterRows_[i].costCapacity) * sizeof (MasterSection);
         if (masterRows_[i].costScratch) rows += std::uint64_t (masterRows_[i].costScratchCapacity) * sizeof (double);
         if (masterRows_[i].waveform) rows += std::uint64_t (masterRows_[i].waveformCapacity) * sizeof (MasterWaveformBucket);
+        if (masterRows_[i].costMomentary) rows += std::uint64_t (masterRows_[i].costCapacity) * sizeof (double);
+        if (masterRows_[i].axes) rows += std::uint64_t (masterRows_[i].axesCapacity) * sizeof (analysis::WaveformColumn);
     }
     return double (createBytes (capabilities_) + (samples_ ? source_.frames * source_.channels * sizeof (float) : 0)
                    + source_.name.size() + masterRoom_ * (sizeof (Kept) + sizeof (detail::MasterRows))
+                   + (leanMasters_ ? masterRoom_ * sizeof (Kept) : 0)
                    + rows + masterJobBytes_ + (masterAudio_.samples ? masterAudio_.frames * masterAudio_.channels * sizeof (float) : 0)
                    + measurementOwnedBytes_
                    + (sourceMeasurements_ ? sizeof (detail::SourceMeasurements) + sourceMeasurements_->bytes : 0)
@@ -114,6 +117,7 @@ void Session::clearMasters() noexcept
     masterAudioBits_ = 0;
     pendingMaster_ = {};
     masters_.reset();
+    leanMasters_.reset();
     masterRows_.reset();
     masterCount_ = masterRoom_ = 0;
     crestJoinIndex_ = 0;
