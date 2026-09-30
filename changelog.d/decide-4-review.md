@@ -12,9 +12,6 @@
   P95 + the travel's offset, so that the knob is the gain reduction really taken on the loud places — the median of 11
   mixes: 1.27 dB at 1.25, 2.61 at 2.6, 3.02 at 3 (it was 1.68, 3.24, 3.70). cd's 2.6 dB now takes 2.6 dB. The sound
   version of defaults `2026-10` moves.
-- **A converted project's machine layer is the planner's.** A file of other defaults keeps a person's values and the
-  target's numbers; its machine numbers are placed again and nothing is marked "from the file". The conversion fact
-  says so.
 - **Mono bass is not judged on a part of a piece**: where the low-end run holds only the first 10.9 minutes the verdict
   is `Incomplete` — left out, with its own sentence (`monoBassIncomplete`).
 - `[stages]` is documented as the defaults layer of the ticks, not the chain's topology.

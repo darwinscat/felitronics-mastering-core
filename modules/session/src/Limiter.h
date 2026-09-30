@@ -7,14 +7,16 @@
 //
 // THE LIMITER is always in the chain: no tick, and nothing — no gain reduction, no PLR, no cost — limits how far it goes
 // for the loudness; the ceiling alone is hard. Its one knob is the PEAK CLIPPER's, inside the limiter's oversampler
-// (never a stage of its own): decide by itself, cut from a threshold a person sets, or not at all.
+// (never a stage of its own): decide by itself, cut as much as a person sets, or not at all.
 //
 // DECIDING BY ITSELF, the clipper reads the needles measured on the INPUT at the ceiling the target's numbers give — the
 // input's peak less the NEED, (input peak − input loudness) − (ceiling − target loudness) — and classes them
-// ([limiter.peakClipper]): short needles are cut from shortOverDb above the ceiling, the ones between from
-// betweenOverDb, and long, bassy, already-limited or clipped material is not cut at all. A need of littleNeedDb or less
-// is not measured. The class is THE MACHINE'S ANSWER; what sounds is the project's knob, and a person's manual threshold
-// sounds over every refusal of the machine's, with the machine's reason beside it.
+// ([limiter.peakClipper]): short needles lose up to shortCutDb off their peaks, the ones between up to betweenCutDb,
+// and long, bassy, already-limited or clipped material is not cut at all; the limiter does the rest. A need of
+// littleNeedDb or less is not measured. The class is THE MACHINE'S ANSWER; what sounds is the project's knob, and a
+// person's manual cut sounds over every refusal of the machine's, with the machine's reason beside it. The amount — the
+// class's or a person's — is what the finding carries (`overDb`); the chain's threshold is max(0, need − amount) above
+// the ceiling (writeLimiter).
 
 #include "Planner.h"
 #include "Rules.h"
@@ -35,7 +37,7 @@ namespace felitronics::session::detail
 
 // THE KNOB AS THE PROJECT GIVES IT: a person's mode where they set one; MANUAL where they turned the threshold and set
 // no mode (a knob turned is a device wanted — the tick rule, for a device without a tick); else the machine's. The
-// threshold is a person's, else the machine's layer's.
+// amount off the peaks is a person's, else the machine's layer's.
 struct NeedlesKnob
 {
     Needles mode = Needles::Auto;

@@ -48,8 +48,9 @@ struct Golden
 constexpr Golden kGolden[] = {
     { "2026-09", 0xf49360664b45a789ull },
     // the high-pass always, from 32 Hz and the sure lowest note; mono bass by its loss; the glue calibrated on the P95; the
-    // chain's geometry, the dither's noise and the clipped-source bound stated; the lp row marked as cut to vinyl
-    { "2026-10", 0x91ac62922032b848ull },
+    // chain's geometry, the dither's noise and the clipped-source bound stated; the lp row marked as cut to vinyl; the peak
+    // clipper's numbers an amount off the peaks (3 dB short, 1.5 between), no longer a threshold above the ceiling
+    { "2026-10", 0x4b75e7500af2e07eull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -178,7 +179,7 @@ std::vector<std::string> departures (const config::Config& c)
           "the mono-bass crossover knob runs 60…300 Hz in steps of 1");
     const config::PeakClipper& p = e.limiter.peakClipper;
     need (same (p.littleNeedDb, 3.0), "needles are not measured at a need of 3 dB or less");
-    need (same (p.shortOverDb, 3.0) && same (p.betweenOverDb, 1.5), "the peak clipper: 3 dB above the ceiling, 1.5 between");
+    need (same (p.shortCutDb, 3.0) && same (p.betweenCutDb, 1.5), "the peak clipper: up to 3 dB off the peaks short, 1.5 between");
     need (same (p.shortPlrDb, 10.0) && same (p.longPlrDb, 8.0), "the peak clipper's PLR bounds: 10 and 8 dB");
     need (same (p.shortP90Ms, 2.0) && same (p.longP90Ms, 8.0) && same (p.shortBassShare, 0.25) && same (p.longBassShare, 0.5),
           "the needles' classes: short to 2 ms and a bass share of 0.25, long from 8 ms or 0.5");

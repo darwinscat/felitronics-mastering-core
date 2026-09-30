@@ -329,10 +329,11 @@ void readPeakClipper (Doc& d, Reader& in, PeakClipper& o)
     const bool hi = in.required ("manualMaxDb", o.manualMaxDb, domain);
     d.below (in, lo && hi, o.manualMinDb, o.manualMaxDb, "manualMaxDb");
     in.required ("manualStepDb", o.manualStepDb, R { 0.01, 3.0 });
-    // The manual threshold starts at the "between" class, inside the accepted domain.
-    const bool between = in.required ("betweenOverDb", o.betweenOverDb, domain);
-    const bool sh = in.required ("shortOverDb", o.shortOverDb, R { 0.0, 12.0 });
-    d.below (in, between && sh, o.betweenOverDb, o.shortOverDb, "shortOverDb");
+    // The cuts off the peaks: the manual cut starts at the "between" class, inside the accepted domain, and the cautious
+    // class cuts less than the short one.
+    const bool between = in.required ("betweenCutDb", o.betweenCutDb, domain);
+    const bool sh = in.required ("shortCutDb", o.shortCutDb, R { 0.0, 12.0 });
+    d.below (in, between && sh, o.betweenCutDb, o.shortCutDb, "shortCutDb");
 }
 
 void readLimiter (Doc& d, Reader& in, Limiter& o)

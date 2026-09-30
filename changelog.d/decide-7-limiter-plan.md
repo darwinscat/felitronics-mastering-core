@@ -6,8 +6,8 @@
   sidechainHpfHz` and `[limiter] lookaheadMs`. Its demand is declared by the command whole; a master that waits for its
   measurements fixes its chain when the wait ends (a heap too small then: a memory error under its own id). It is,
   sample for sample, the previous path's master of the same chain handed in ready.
-- **The needles' classes** (owner decisions 3.6, 3.7): short needles cut from 3 dB above the ceiling, the ones between
-  from 1.5 dB, long, bassy, already-limited and clipped material not cut (`plan.limiter`, `NeedlesClass`, `NeedlesWhy`);
+- **The needles' classes** (owner decisions 3.6, 3.7): short needles lose up to 3 dB off their peaks, the ones between
+  up to 1.5 dB, long, bassy, already-limited and clipped material not cut (`plan.limiter`, `NeedlesClass`, `NeedlesWhy`);
   a clipped source is ten confirmed clips a minute (`[limiter.peakClipper] clippedPerMinute`). A person's manual
   threshold — or a threshold turned alone — sounds over every refusal, with the machine's reason beside it. "The same
   ceiling" is decided by the bits in `requestNeedles` as in the plan.

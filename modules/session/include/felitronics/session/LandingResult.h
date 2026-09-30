@@ -135,11 +135,11 @@ struct MasterMedium
     double inputLufs = 0.0;                    // the input's loudness (meaningful where quietInput)
     // Where vinyl, each rule of the medium the chain departs from — any one takes the readiness away — with the
     // chain's number beside the rule's: the fold (the crossover and the width below it), the high-pass (its cutoff and
-    // slope), the ceiling, the needles (cut, from overDb above the ceiling).
+    // slope), the ceiling, the needles (cut, up to overDb off the peaks).
     bool foldDeparts = false, cutDeparts = false, ceilingDeparts = false, needlesDeparts = false;
     double lowWidth = 0.0;                     // the fold's width below its crossover (0, full mono), where it ran
     std::int32_t slopeDbPerOct = 0;            // the high-pass's slope, where it ran
-    double ceilingDbTp = 0.0, overDb = 0.0;    // the ceiling the master was held to; the needles' threshold, where cut
+    double ceilingDbTp = 0.0, overDb = 0.0;    // the ceiling the master was held to; the needles' cut, where cut
     double ruleCrossoverHz = 0.0, ruleLowWidth = 0.0, ruleCutoffHz = 0.0, ruleCeilingDbTp = 0.0;
     std::int32_t ruleSlopeDbPerOct = 0;        // the medium's rules, where vinyl
 };

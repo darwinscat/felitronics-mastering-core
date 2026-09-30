@@ -203,8 +203,8 @@ struct SaturationFinding
 // needles measured on the input at the ceiling the target's numbers give (the input's peak less the need):
 //   None      the machine does not cut: NeedlesWhy says why
 //   Short     90 % of the excursions no longer than [limiter.peakClipper] shortP90Ms, the bass share of their dose at most
-//             shortBassShare, the input's PLR at least shortPlrDb: cut from shortOverDb above the ceiling
-//   Between   neither short nor ruled out: cut from betweenOverDb above the ceiling
+//             shortBassShare, the input's PLR at least shortPlrDb: up to shortCutDb off the peaks
+//   Between   neither short nor ruled out: up to betweenCutDb off the peaks, with care
 enum class NeedlesClass : std::uint8_t { None, Short, Between };
 
 // WHY THE MACHINE DOES NOT CUT — the first of these that holds, in this order; Cuts where it does:
@@ -226,24 +226,25 @@ enum class NeedlesWhy : std::uint8_t
 };
 
 // WHAT THE LIMITER COMES TO — always in the chain, with no tick; its setting is the ceiling, and its one knob is the
-// peak clipper's: decide by itself (the class above), cut from a threshold a person sets, or not at all.
+// peak clipper's: decide by itself (the class above), cut as much as a person sets, or not at all. It cuts AT MOST that
+// amount off the peaks, the limiter does the rest: its threshold stands max(0, needDb − amount) above the ceiling.
 struct LimiterFinding
 {
     // The ceiling the master holds: the target's, or a person's edit of it, dBTP.
     double ceilingDbTp = 0.0;
     // The loudness need the target sets the input, dB — (input peak − input loudness) − (ceiling − target loudness).
     std::optional<double> needDb;
-    // THE MACHINE'S OWN ANSWER, whatever sounds: its class, why it does not cut, and the threshold it would cut from.
+    // THE MACHINE'S OWN ANSWER, whatever sounds: its class, why it does not cut, and how much it would cut off the peaks.
     NeedlesClass proposed = NeedlesClass::None;
     NeedlesWhy why = NeedlesWhy::NoReadings;
     MeasurementReason reason = MeasurementReason::None;   // why == Unmeasured: how the needles' measurement ended
-    std::optional<double> proposedOverDb;      // dB above the ceiling; absent where the machine does not cut
+    std::optional<double> proposedOverDb;      // dB off the peaks, at most; absent where the machine does not cut
     // What the class stood on, where the needles were measured: the excursions' p90 length, the bass share of their
     // dose, the input's PLR; and the source's confirmed clips, in all and a minute (where the clip detector ended).
     std::optional<double> p90Ms, bassShare, plrDb, clipsPerMinute;
     std::uint64_t clips = 0;
     // WHAT SOUNDS: the knob as the project gives it — a person's mode, a threshold a person turned (a knob turned is a
-    // device wanted: manual), else the machine's — whether the peak clipper cuts, and from where above the ceiling.
+    // device wanted: manual), else the machine's — whether the peak clipper cuts, and how much off the peaks, at most.
     Needles mode = Needles::Auto;
     bool cutting = false;
     double overDb = 0.0;                       // meaningless where it does not cut

@@ -375,9 +375,16 @@ The limiter is always in the chain, with no tick; nothing — no gain reduction,
 for the loudness, and the ceiling (the target's, or a person's edit of it) alone is hard. Its one knob is the peak
 clipper's, inside its oversampler: `auto` — the machine classes the needles measured on the input at the ceiling the
 target's numbers give (the input's peak less the need, `(TPin − Iin) − (TPtarget − Itarget)`): short (p90 of the runs
-≤ 2 ms, bass share of their dose ≤ 0.25, PLR ≥ 10) cut from 3 dB above the ceiling; not cut where p90 ≥ 8 ms, the bass
+≤ 2 ms, bass share of their dose ≤ 0.25, PLR ≥ 10) lose up to 3 dB off their peaks; not cut where p90 ≥ 8 ms, the bass
 share ≥ 0.5, the PLR < 8 or the source is clipped — ten confirmed clip-detector clips a minute or more (`[limiter.
-peakClipper] clippedPerMinute`); between, with care, from 1.5 dB. A need of 3 dB or less is not measured and not cut.
+peakClipper] clippedPerMinute`); between, with care, up to 1.5 dB. A need of 3 dB or less is not measured and not cut.
+The two numbers (`shortCutDb`, `betweenCutDb`) are AMOUNTS (owner, 30.09): the clipper takes at most that much off the
+peaks and the limiter does the rest, so its threshold stands max(0, need − cut) above the ceiling, the need the input's
+(`plan.limiter.needDb`); a person's `manual X` is X dB off the peaks the same way. The finding carries the amount
+(`overDb`, `proposedOverDb`), the chain the threshold. Where the need is not known, or need − cut lies beyond the
+limiter's working range (12 dB), no threshold keeps to the amount and the clipper stays off. The landing then moves the
+peaks by its own gain and pass ceiling; a rendered master's clipper reduction stays within the amount plus that drift
+(`theClipperCutsItsAmount`: about 1.4–2.0 dB on the suite's mix).
 Every reason is its own (`plan.limiter.why`, `NeedlesWhy`): the shell, the target (vinyl), a quiet input, no readings, a
 little need, still measured, not measured (with how the measurement ended), no excursions, clipped, already limited,
 bass, long. `manual X` — a person's threshold, or a threshold turned with no mode set (a knob turned is a device wanted)
@@ -586,8 +593,7 @@ and prints declared/actual tightness for a realistic project. It also proves an 
 allocation laws belong to felitronics-toml's storage suite. If the environment cannot serve the published demand,
 allocation has no recovery path.
 
-The core carries the **current and previous defaults tables**. Today the current label is `2026-10` and the previous
-slot is empty. A carried label uses its compiled defaults. Labels are strictly `YYYY-MM`, with months `01` through `12`.
+The core carries **only the current defaults table**; today its label is `2026-10`. Labels are strictly `YYYY-MM`, with months `01` through `12`.
 An import accepts only the current defaults label and never converts (owner, 30.09: no project was ever saved with
 another one, so the core carries no code for older labels). Any other label — `2026-09`, saved before the core had its
 planner, included — is refused whole as `UnknownDefaults` (fact 126), as is a malformed one; a newer label is

@@ -1015,7 +1015,7 @@ void theRulesAreTheSchemas()
     ok (knob (r.tilt, e.tilt.hard.min, e.tilt.hard.max, e.tilt.step)
             && knob (r.low, e.low.hard.min, e.low.hard.max, e.low.step), "[tilt], [low]");
     const auto& pc = e.limiter.peakClipper;
-    ok (knob (r.needles, pc.manualMinDb, pc.manualMaxDb, pc.manualStepDb) && is (r.needlesDefault, pc.betweenOverDb), "[limiter.peakClipper]");
+    ok (knob (r.needles, pc.manualMinDb, pc.manualMaxDb, pc.manualStepDb) && is (r.needlesDefault, pc.betweenCutDb), "[limiter.peakClipper]");
     ok (r.eq == e.stages.eq && r.monoBass == e.stages.monoBass && r.compressor == e.stages.compressor
             && r.clipper == e.stages.clipper && r.dither == e.stages.dither && r.ditherUpToBits == e.dither.onUpToBits,
         "[stages], [dither]");

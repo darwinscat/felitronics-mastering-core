@@ -122,11 +122,11 @@ struct PeakClipper
     double shortP90Ms = 0.0, shortBassShare = 0.0, shortPlrDb = 0.0;
     double longP90Ms = 0.0, longBassShare = 0.0, longPlrDb = 0.0;
     double clippedPerMinute = 0.0;             // confirmed clips a minute from which the source is clipped
-    double shortOverDb = 0.0, betweenOverDb = 0.0;
+    double shortCutDb = 0.0, betweenCutDb = 0.0;  // at most this much off the peaks, by class; the limiter does the rest
     double bassBelowHz = 0.0;
     double densityMinusDb = 0.0, densityWithinDb = 0.0;
     double kneeDb = 0.0;
-    double manualMinDb = 0.0, manualMaxDb = 0.0, manualStepDb = 0.0;   // the manual threshold starts at betweenOverDb
+    double manualMinDb = 0.0, manualMaxDb = 0.0, manualStepDb = 0.0;   // the manual cut starts at betweenCutDb
 };
 
 struct Limiter

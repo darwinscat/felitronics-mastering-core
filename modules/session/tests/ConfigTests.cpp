@@ -149,7 +149,7 @@ void theSchemaRefuses()
     mustRefuse (E, "passes = 12", "passes = 0", "0", Fault::OutOfRange, "landing.passes");
     mustAccept (T, "lufs = -23", "lufs = -30");
     mustRefuse (T, "monoBass = 150", "monoBass = 400", "400", Fault::OutOfRange, "targets.lp.monoBass");
-    mustRefuse (E, "betweenOverDb = 1.5", "betweenOverDb = 7", "7", Fault::OutOfRange, "limiter.peakClipper.betweenOverDb");
+    mustRefuse (E, "betweenCutDb = 1.5", "betweenCutDb = 7", "7", Fault::OutOfRange, "limiter.peakClipper.betweenCutDb");
     // A bound the ranges cannot say: above zero, above the core's own number, a hole in a range.
     mustRefuse (T, "sampleRate = 48000, bitDepth = 24 }\n# YouTube Music", "sampleRate = 4000, bitDepth = 24 }\n# YouTube Music",
                 "4000", Fault::OutOfRange, "targets.youtube.sampleRate");
@@ -226,7 +226,7 @@ void theSchemaRefuses()
     // ...a value off its knob's step.
     mustAccept (T, "appleMusic   = { group = \"streaming\", lufs = -16, tp = -1,", "appleMusic   = { group = \"streaming\", lufs = -16, tp = -1.05,");
     mustAccept (T, "lowDb = 0.5", "lowDb = 0.55");
-    mustAccept (E, "betweenOverDb = 1.5", "betweenOverDb = 1.25");
+    mustAccept (E, "betweenCutDb = 1.5", "betweenCutDb = 1.25");
     mustAccept (E, "lowWidth = 0\n", "lowWidth = 0.03\n");
     mustRefuse (E, "hopMs = 100", "hopMs = 15", "15", Fault::Refused, "crest.hopMs", Refusal::NotOnStep);
     // ...a warning above the loss that takes mono bass out.

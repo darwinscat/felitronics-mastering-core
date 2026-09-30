@@ -794,10 +794,10 @@ text::Fact PlanText::limiter (const LimiterFinding& f) noexcept
     // What sounds: the peak clipper cutting — by a person's threshold, or by the machine's class.
     if (f.cutting)
     {
-        const auto over = Arg::value (f.overDb, Unit::Db, 1);
-        if (f.mode == Needles::Manual) return Fact::of (FactId::LimiterManual, ceiling, over);
+        const auto cut = Arg::value (f.overDb, Unit::Db, 1);
+        if (f.mode == Needles::Manual) return Fact::of (FactId::LimiterManual, ceiling, cut);
         return Fact::of (f.proposed == NeedlesClass::Short ? FactId::LimiterShort : FactId::LimiterBetween,
-                         ceiling, over, p90, bass, db (f.plrDb));
+                         ceiling, cut, p90, bass, db (f.plrDb));
     }
     // Not cutting against the machine's answer: the knob is off, a person's or a file's.
     if (f.sounding != Sounding::Proposal) return Fact::of (FactId::LimiterNeedlesOff, ceiling);

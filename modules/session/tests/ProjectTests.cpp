@@ -142,9 +142,7 @@ std::string withDefaults (std::string input, std::string_view label)
 }
 void defaultsVersions()
 {
-    const auto carried = detail::carriedDefaults();
-    ok (! carried.previous && *carried.current.engine.find ("defaults").string() == "2026-10",
-        "the current defaults are compiled, and the previous slot is empty");
+    ok (*detail::rules().engine.find ("defaults").string() == "2026-10", "the current defaults are compiled");
     auto s = fresh();
     const auto current = project() + "\n[hpf]\nfq.hand = 36\n";
     ok (import (*s, current).rejection == Rejection::None && s->events().empty(),

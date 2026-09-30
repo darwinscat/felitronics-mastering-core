@@ -1090,7 +1090,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0x20599a22c1f973ebull;   // …, the observations (52–80, 419–436), the target-change warning (81) and what departs from vinyl (82–87)
+    constexpr std::uint64_t kPinned = 0xe23df8564b622cc9ull;   // …, the observations (52–80, 419–436), the target-change warning (81), what departs from vinyl (82–87) and the clipper's cut off the peaks
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");

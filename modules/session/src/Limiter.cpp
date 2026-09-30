@@ -11,6 +11,7 @@
 #include "Observations.h"
 #include "BuildContract.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <optional>
@@ -128,7 +129,7 @@ NeedlesAnswer needlesAnswer (const PlanInputs& in) noexcept
                       && *a.plrDb >= number (clipper.find ("shortPlrDb"));
     a.proposed = isShort ? NeedlesClass::Short : NeedlesClass::Between;
     a.why = NeedlesWhy::Cuts;
-    a.overDb = kept (number (clipper.find (isShort ? "shortOverDb" : "betweenOverDb")));
+    a.overDb = kept (number (clipper.find (isShort ? "shortCutDb" : "betweenCutDb")));
     return a;
 }
 
@@ -200,9 +201,14 @@ void writeLimiter (const PlanInputs& in, const Devices& devices, mastering::Mast
     l.releaseMs = number (limiter.find ("releaseMs"));
     l.dualRelease = limiter.find ("dualRelease").boolean().value_or (false);
     l.slowReleaseMs = number (limiter.find ("slowReleaseMs"));
-    l.peakClip = finding.cutting;
-    // With the clipper off the threshold is not read; it is stated all the same — where the manual threshold starts.
-    l.overCeilingDb = finding.cutting ? finding.overDb : number (clipper.find ("betweenOverDb"));
+    // The clipper cuts AT MOST its amount off the peaks and the limiter does the rest (owner, 30.09): the input's need
+    // stands the peaks that far above the ceiling, so the threshold is max(0, need − cut) above it. Where the need is
+    // not known, or that threshold lies beyond the limiter's working range, no threshold it can take keeps to the
+    // amount: the clipper stays off. With it off the threshold is not read; it is stated all the same, as it always was:
+    // the "between" class's number.
+    const double threshold = finding.needDb ? std::max (0.0, *finding.needDb - finding.overDb) : 0.0;
+    l.peakClip = finding.cutting && finding.needDb && threshold <= limiter::TruePeakLimiter::kMaxOverCeilingDb;
+    l.overCeilingDb = l.peakClip ? threshold : number (clipper.find ("betweenCutDb"));
     l.kneeDb = number (clipper.find ("kneeDb"));
     params.bypassLimiter = false;
 

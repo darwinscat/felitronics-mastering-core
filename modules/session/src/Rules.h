@@ -60,7 +60,7 @@ struct Rules
     Decimal driveDefault {}, mixDefault {}, outputDefault {};   // [saturation] driveDb, mix, outputDb
     Knob tilt {}, low {};                 // [tilt] hard / step, [low] hard / step
     Knob needles {};                           // [limiter.peakClipper] manualMinDb…manualMaxDb by manualStepDb
-    Decimal needlesDefault {};                 // [limiter.peakClipper] betweenOverDb: where the manual threshold starts
+    Decimal needlesDefault {};                 // [limiter.peakClipper] betweenCutDb: where the manual cut starts
     bool eq = false, monoBass = false, compressor = false, clipper = false, dither = false;   // [stages]
     std::int32_t ditherUpToBits = 0;           // [dither] onUpToBits
 
@@ -78,12 +78,5 @@ struct Rules
 // The rules of the config compiled into the library (src/Config.cpp).
 [[nodiscard]] Rules rules() noexcept;
 
-// Compiled defaults retained for project import. The previous slot stays empty until a second version ships.
-struct DefaultsTables
-{
-    Rules current;
-    std::optional<Rules> previous;
-};
-[[nodiscard]] DefaultsTables carriedDefaults() noexcept;
 
 } // namespace felitronics::session::detail
