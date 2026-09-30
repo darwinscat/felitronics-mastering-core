@@ -64,6 +64,10 @@ struct PlanFindings
     MonoBassFinding monoBass {};
 };
 
+// Is the input too quiet to measure — strictly below [input] quiet.gainOnlyLufs? There the machine places no device but
+// the high-pass, at its floor, and the dither of the delivery's format. At the boundary itself the input is ordinary.
+[[nodiscard]] bool quietInput (const PlanInputs& in) noexcept;
+
 // EVERY DEVICE'S PROPOSAL for the target and the source in `in`: the machine's layers of `machine` (its person's layers
 // are not touched), each device's plan (its needs are left to needs()) and what the devices found.
 void propose (const PlanInputs& in, Devices& machine, DevicePlans& plans, PlanFindings& found) noexcept;

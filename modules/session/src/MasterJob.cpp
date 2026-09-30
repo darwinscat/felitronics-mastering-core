@@ -3,6 +3,7 @@
 
 #include "BuildGuards.h"
 #include "MasterJob.h"
+#include "Chain.h"
 #include "MeasurementPlan.h"
 #include "Cost.h"
 #include <felitronics/analysis/BandCrestResult.h>
@@ -143,7 +144,7 @@ std::uint64_t MasterJob::fingerprint (const command::MasterReady& ready) noexcep
     return h.value;
 }
 
-MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noexcept
+MasterPlan MasterJob::plan (const Session& s, const command::Master& input, const Project& project) noexcept
 {
     MasterPlan result;
     if (input.source != 0 && input.source != s.source_.hash) return result;
@@ -156,7 +157,7 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
     for (const auto& value : s.measurementResults_[std::size_t (Analyzer::Loudness)].numbers)
         if (value.name == "integratedLufs" && value.value) sourceLufs = *value.value;
     const auto ruleset = rules();
-    const auto target = ruleset.row (s.project_.target);
+    const auto target = ruleset.row (project.target);
     // THE DELIVERY FORMAT IS THE TARGET'S (PLAN: rate, bit depth and dither come from the target). Its rate — the
     // source's when the target keeps it (sampleRate 0) — and its depth: 0 names each, the same value restates it,
     // and any other value is refused before anything is priced or allocated.
@@ -165,8 +166,8 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
     if ((input.ready.deliveryBits != 0 && input.ready.deliveryBits != deliveryBits)
         || (input.ready.deliveryRateHz != 0 && input.ready.deliveryRateHz != deliveryRate))
     { result.rejection = Rejection::DeliveryFormat; return result; }
-    const double targetLufs = s.project_.targetEdit.lufs.value_or (target.lufs.toDouble());
-    const double targetTp = s.project_.targetEdit.tp.value_or (target.tp.toDouble());
+    const double targetLufs = project.targetEdit.lufs.value_or (target.lufs.toDouble());
+    const double targetTp = project.targetEdit.tp.value_or (target.tp.toDouble());
     const auto engine = ruleset.engine;
     const double reference = number (engine.find ("input").find ("referenceLufs"));
     const double tolerance = number (engine.find ("landing").find ("toleranceLu"));
@@ -181,6 +182,31 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
     if (! std::isfinite (normalization) || std::fabs (normalization) > 60.0)
     { result.rejection = Rejection::MandatoryUnavailable; return result; }
     result.ready = input.ready;
+    // A master the session decides: the whole plan as the chain gets it, from the project's devices.
+    if (input.ready.version == 0)
+    {
+        const auto inputs = s.planInputs (project);
+        writeChain (inputs, project.devices, result.ready);
+        result.ready.deliveryRateHz = input.ready.deliveryRateHz;
+        result.ready.deliveryBits = input.ready.deliveryBits;
+        // What the chain comes to for the target's medium, and the input's quietness: the report's, said of the chain
+        // as it is written — the high-pass is the EQ stage's first band, the fold the mono-bass stage.
+        const auto& t = result.ready.topology;
+        const auto& p = result.ready.params;
+        const auto& hpf = p.eqBands[0];
+        MasterMedium medium;
+        medium.vinyl = target.vinyl;
+        medium.crossoverHz = t.monoBass ? double (p.monoBass.frequencyHz) : 0.0;
+        medium.cutoffHz = t.eq && hpf.on ? hpf.lanes[0].freq : 0.0;
+        const bool folded = s.source_.channels == 1
+            || (t.monoBass && medium.crossoverHz >= target.monoBass.toDouble()
+                && double (p.monoBass.lowWidth) <= ruleset.monoBassWidthDefault.toDouble());
+        const bool cut = t.eq && hpf.on && medium.cutoffHz >= target.hpfFloor.toDouble() && hpf.lanes[0].slope >= target.hpfSlope;
+        medium.ready = target.vinyl && folded && cut && targetTp <= target.tp.toDouble() && ! p.limiter.peakClip;
+        medium.quietInput = quietInput (inputs);
+        medium.inputLufs = sourceLufs;
+        result.medium = medium;
+    }
     if (! validParams (result.ready.params))
     { result.rejection = Rejection::NotFinite; return result; }
     result.deliveryRate = deliveryRate;
@@ -304,6 +330,7 @@ bool MasterJob::begin (const Session& s, const MasterPlan& plan)
     session = &s;
     crestParams = plan.crestParams;
     ready = plan.ready;
+    medium = plan.medium;
     sourceLufs = plan.sourceLufs;
     targetLufs = plan.request.targetLufs;
     targetTp = plan.request.maxTruePeakDbTp;
@@ -351,6 +378,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
             && chain.clipperPeaks (number (rules().engine.find ("saturation").find ("cut").find ("loudShare")), clipPeaks);
         report.targetLufs = targetLufs;
         report.ceilingDbTp = targetTp;
+        report.medium = medium;
         report.targetMet = solved.status == mastering::MasteringSolveStatus::Solved;
         if (solved.measured.loudnessValid && std::isfinite (solved.measured.integratedLufs)
             && std::isfinite (solved.measured.truePeakDbTp))

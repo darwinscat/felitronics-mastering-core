@@ -21,6 +21,6 @@ summary
 use side
 snapshot
 command {"kind":"master","commandId":"5"}
-drive 16 work units
+drive 100000 work units
 snapshot
 summary

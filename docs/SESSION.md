@@ -343,8 +343,8 @@ on against the machine — and beside the by-hand sentence where a person's cros
 slice's.) The chain's topology follows the same effective settings — the tick rule, `settingsOf` — never `[stages]`,
 which is only the defaults layer a project file is written against: the planner decides every tick it has a rule for
 (mono bass by its loss, whatever `[stages] monoBass` says). `writeEq` and `writeDynamics` are those settings as the chain
-gets them; the render of a session-decided master goes through them (the next task) — today a version-0 master is
-counted, not rendered.
+gets them — and `writeLimiter` the limiter, its peak clipper and the dither; `writeChain` (`src/Chain.h`) is the one
+derivation of a master's chain from a project, and a master the session decides (version 0) is rendered from it.
 
 **The high-pass and mono bass** (owner decisions 3.2–3.5) are the first devices that decide from a measurement, both
 from the first phase's low-end runs, with no trial render. The high-pass stands always — every target, a quiet input
@@ -367,6 +367,61 @@ findings typed; `PlanText` gives their report lines. `felitronics_session_hpf_mo
 the cutoff to core's own response on every target, slope and rate, and — through the pump on synthetic mixes — a
 detector that never errs upward and a loss that tells centred, partial and inverted bass apart, opposite polarity above
 the crossover not counting.
+
+**The limiter, its needles and the dither** (owner decisions 3.6, 3.7, 3.12; technical decision 3О11; `src/Limiter.h`).
+The limiter is always in the chain, with no tick; nothing — no gain reduction, no PLR, no cost — limits how far it goes
+for the loudness, and the ceiling (the target's, or a person's edit of it) alone is hard. Its one knob is the peak
+clipper's, inside its oversampler: `auto` — the machine classes the needles measured on the input at the ceiling the
+target's numbers give (the input's peak less the need, `(TPin − Iin) − (TPtarget − Itarget)`): short (p90 of the runs
+≤ 2 ms, bass share of their dose ≤ 0.25, PLR ≥ 10) cut from 3 dB above the ceiling; not cut where p90 ≥ 8 ms, the bass
+share ≥ 0.5, the PLR < 8 or the source is clipped — ten confirmed clip-detector clips a minute or more (`[limiter.
+peakClipper] clippedPerMinute`); between, with care, from 1.5 dB. A need of 3 dB or less is not measured and not cut.
+Every reason is its own (`plan.limiter.why`, `NeedlesWhy`): the shell, the target (vinyl), a quiet input, no readings, a
+little need, still measured, not measured (with how the measurement ended), no excursions, clipped, already limited,
+bass, long. `manual X` — a person's threshold, or a threshold turned with no mode set (a knob turned is a device wanted)
+— sounds over every one of those refusals, with the machine's reason beside it (`plan.limiter.againstMachine`,
+`PlanText::needlesAgainstMachine`: "the machine would not cut: …"); `off`, none. "The same ceiling" is decided by the
+bits in both rules that read it (`requestNeedles` and `needlesCurrent`). The dither follows the delivery's format alone:
+at 16 bits it is in the chain — weighted TPDF, seed `0x853c49e6748fea9b`, blanked after 4096 zero samples, a stated
+version of the sound (`[dither]`) — unless a person switches it off (the delivery is then rounded to its grid without
+noise); above 16 bits there is none, and a person's tick, which only a project file can bring, is kept and does nothing
+(`plan.dither.keptWithoutEffect`, `PlanText::dither`). The delivery is quantised once, in the chain: its WAV adds no
+second noise. On a target cut to vinyl (`vinyl = true`, lp) the machine never stands above the target's own ceiling
+(−3 dBTP) and never cuts needles; a person's ceiling above it and a person's needles sound, with the medium's warnings
+(`PlanText::vinylCeiling`, `vinylNeedles`) and no refusal, and the plan carries the constant note that the cutting room
+usually rolls off above 16 kHz (`PlanText::vinylTop`). A quiet input — strictly under −55 LUFS — gets the gain, the
+ceiling, the format's dither and the high-pass at its floor, and no other device of the machine's (no mono bass, no glue,
+no low shelf, no needles); a person's hand stays open. `felitronics_session_plan_sound_tests` holds every boundary.
+
+**The whole plan sounding** (`src/Chain.h`, `writeChain`). A master the session decides takes its chain from the
+project's devices in the order defaults → the machine's layer → a person's layer → what can physically apply: the EQ
+stage when one of its three bands is on, mono bass when ticked on a stereo source, the compressor when the glue
+compresses, the clipper stage when the saturation shapes, the limiter always, the dither where the delivery takes it —
+the topology from the devices as they sound, never `[stages]`, and the fixed geometry (`[chain]`, the two lookaheads,
+the key filter) stated. Neither gain of the chain is a device's: the landing search normalises the input and lands the
+loudness, once. The chain is fixed when the master starts — at once, or, for a master that waited for its measurements,
+when the wait ends, from its recipe's project — and its fingerprint is the recipe's `readyHash` (`readyVersion` 0). Its
+demand is declared by the command whole (the same plan the job starts from); a wait that ends on a heap too small drops
+the master with a memory error under its own job's id. Its report carries `medium` (`MasterMedium`): on vinyl whether the
+medium's rules held in the chain it ran — then "ready for cutting: no cardinal corrections (mono bass, infra-low, peaks);
+RIAA and the level for the side's length are the cutting engineer's", what the file shows (the fold's crossover, the
+high-pass's cutoff, the true peak under the ceiling) and what no file can show (the side's length, sibilance at the
+cutter, the centre) — or that the settings depart from them; and a very quiet input's line. The suite holds a decided
+master, sample for sample, to the PREVIOUS path's master of the chain it composes itself from the owner's rules — on
+allStreaming, on cd (44.1 kHz, 16 bits, the glue on the measured tempo) and on lp, and under a person's edits of every
+kind with the panel hidden — and a master that waited to the one asked for after.
+
+**The observations** (owner decision 3.13; `snapshot().view().observations`, `src/Observations.h`). What the
+measurements found in the file, as facts with numbers and never a verdict of taste, in the order of the analysis — the
+file (clipping, DC offset, unused low bits, dual mono, silence at the edges, a quiet input, a short one, an input already
+limited), the spectrum (a spectral wall, the loudest low note, the lowest occupied band, infra-low, wide bass, opposite
+polarity, sibilance — shown whatever the de-esser), the hum (a line, and one that wanders). Each says found, not found or
+not measured (with the measurement's reason) — the three never fold into one — its kind's style, a confidence and a
+severity along the ramps of `[observations]` (its first edition), `doubtful` under `doubtfulBelow`, `hypothesis` where
+its thresholds are starting values, and what deals with it (`handledBy`: the high-pass, mono bass, a person, nothing)
+and whether that device is in the chain. They change nothing: no observation switches a device. Rarer clips are named by
+place ("found 2 clips: 0:12, 1:47 — it looks like an edit"); ten a minute is a clipped source. `ObservationText::fact`
+gives a found one's sentence.
 
 **Tilt and low** (technical decision 3О10) are two devices of the person's taste in that one stage. The machine never
 ticks tilt and leaves it at 0 dB; it ticks low only for a target's correction for its medium (`lowDb`: vinyl's

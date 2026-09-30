@@ -14,6 +14,24 @@
 #include <string>
 #include <vector>
 using namespace felitronics::session;
+// THE MEASURED STATE A REAL SESSION ALWAYS HAS where a master can be asked for: a usable loudness and true peak (the pump
+// does not reach Measured1 without them). The fixture's seam ends the measurement without running an analyzer, so it
+// states the two readings itself — a PLR of 10 dB, whose loudness need on every target the fixture visits is under
+// the needles' bound, so no needles job takes an id of its own — and moves no revision.
+struct felitronics::session::detail::Inspector
+{
+    static void mandatory (Session& s)
+    {
+        static constexpr MeasurementValue numbers[] {
+            { "integratedLufs", -18.0, MeasurementReason::None, 0 },
+            { "truePeakDb", -8.0, MeasurementReason::None, 0 }
+        };
+        auto& result = s.measurementResults_[std::size_t (Analyzer::Loudness)];
+        result.status = MeasurementStatus::Ready;
+        result.reason = MeasurementReason::None;
+        result.numbers = numbers;
+    }
+};
 namespace
 {
 void print (const std::string& json, const std::vector<double>& rows)
@@ -111,6 +129,7 @@ int sessionWireFixture (bool frozen = false)
     // The live pump and its revisions are exercised by the measurement suites.
     const auto job = made.session->measurementJob();
     const auto source = made.session->source().hash;
+    detail::Inspector::mandatory (*made.session);
     if (job != 0 && (! detail::Driver::measured1 (*made.session, job, source)
         || ! detail::Driver::measured2 (*made.session, job, source))) return 10;
     unsigned fixture = 0;

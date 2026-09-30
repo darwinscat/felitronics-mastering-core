@@ -874,17 +874,22 @@ void memoryIsDeclared()
                                                   + std::to_string (spent.requests) + ")");
         }
     }
-    // The frozen v1 master command still reserves only a kept metadata slot.
+    // A master the session decides declares its whole job before anything is done — the kept slot, its retained rows
+    // and the render — as a master with a ready chain does.
     {
         Situation x = situation (Column::Measured1);
         Audio mono = makeAudio (1, 1000);
         const command::Load l = loadOf (mono, 1, "a name longer than any small-string buffer.wav");
         ok (x.s->check (l).bytes > 1000 * sizeof (float) + l.meta.name.size(), "a load declares samples, name and the complete measurement");
-        ok (x.s->check (command::Master { 1 }).bytes == 2 * sizeof (Kept), "the legacy master declares metadata room");
-        ok (accepted (*x.s, command::Master { 2 }) && accepted (*x.s, command::Cancel { 3, x.s->job() }),
-            "a master asked and cancelled");
+        const auto first = x.s->check (command::Master { 1 });
+        ok (first.rejection == Rejection::None && first.bytes > 2 * sizeof (Kept), "a decided master declares its job, not only its kept slot");
+        Answer asked;
+        const budget::Spent spent = budget::spend ([&] { asked = x.s->apply (command::Master { 2 }); });
+        ok (asked.rejection == Rejection::None && budget::covers (first.bytes, spent) && spent.requests > 0,
+            "and what it asks the heap for is inside the declaration — " + budget::describe (first.bytes, spent));
+        ok (accepted (*x.s, command::Cancel { 3, x.s->job() }), "a master asked and cancelled");
         const auto declared = x.s->check (command::Master { 4 });
-        ok (declared.bytes == 0, "the next legacy master reuses its metadata room");
+        ok (declared.rejection == Rejection::None && declared.bytes < first.bytes, "the next one reuses the kept room and declares the rest");
         const budget::Spent again = budget::spend ([&] { (void) x.s->apply (command::Master { 5 }); });
         const budget::Spent done = budget::spend ([&] { (void) Driver::mastered (*x.s, x.s->job()); });
         ok (budget::covers (declared.bytes, again) && done.requests == 0 && x.s->masters().size() == 2,

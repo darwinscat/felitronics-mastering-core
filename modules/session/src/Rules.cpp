@@ -96,6 +96,8 @@ void readRow (View rowView, View byTarget, TargetRow& out) noexcept
     // Optional in a row: absent is their default.
     if (const View v = rowView.find ("noClipper")) r.read (v, out.noClipper);
     else out.noClipper = false;
+    if (const View v = rowView.find ("vinyl")) r.read (v, out.vinyl);
+    else out.vinyl = false;
     if (const View v = rowView.find ("lowDb"))
     {
         Decimal d {};
