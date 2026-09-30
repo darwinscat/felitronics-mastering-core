@@ -587,19 +587,18 @@ allocation laws belong to felitronics-toml's storage suite. If the environment c
 allocation has no recovery path.
 
 The core carries the **current and previous defaults tables**. Today the current label is `2026-10` and the previous
-slot is empty: carrying a "previous" table starts with the first defaults version a shell saved projects with, and none
-has saved one with `2026-09`. A carried label uses its compiled defaults. Labels are strictly `YYYY-MM`, with months
-`01` through `12`. A label older than every carried version is CONVERTED: a person's values and the target's numbers
-are kept, and the machine's layer is placed again by the planner for the file's target on this source — the file's
-machine numbers were written against defaults no longer carried, so a field it left out cannot be told from one that
-meant the old default, and a mixture is not passed off as the file's. The converted layer is this core's:
-`plan.fromFile` is false, there are no `machineDifferences` and nothing to adopt. Fact `DefaultsConverted` (9) owns
-the original label and says so in both catalog languages.
-Export uses the current label; a converted project round trips without a second conversion warning. A newer label
-is refused as `NewerDefaults` (28, fact 128); a malformed label is `UnknownDefaults`. A future uncarried label between
-the retained versions is also `UnknownDefaults`. All these refusals leave state and revision unchanged.
+slot is empty. A carried label uses its compiled defaults. Labels are strictly `YYYY-MM`, with months `01` through `12`.
+Import never converts (owner, 30.09). A project saved with `2026-09` — before the core had its planner — is NOT opened:
+the import is refused whole as `RetiredDefaults` (36, fact 136, which names the version in both catalog languages).
+It is refused before the document is read, since the file follows an older schema and its reason is the version, not
+a key. The refused labels are an explicit list in `src/ProjectIO.cpp` holding `2026-09`, never "older than the
+current": a later change of calibration can neither re-place nor refuse a `2026-10` project unseen —
+`ProjectTests.cpp:defaultsVersions` names `2026-10` and turns red if it stops opening with its own machine layer. An
+older label neither carried nor listed is `UnknownDefaults`, as is a malformed one; a newer label is `NewerDefaults`
+(28, fact 128). All these refusals leave state and revision unchanged. Fact `DefaultsConverted` (9) keeps its id and
+message (append-only) and is emitted by no release since. Export uses the current label.
 
-After defaults selection or conversion, the file's complete machine layer always wins (omitted fields mean defaults),
+After defaults selection, the file's complete machine layer always wins (omitted fields mean defaults),
 with the person's touched layer over it — on the same core and on another. The planner decides again beside it, for
 the file's target on this source; `plan.fromFile` says the layer is the file's, and `adoptMachine` takes the planner's
 decisions in its place, the person's layer kept. `MachineDifferences` (8) publishes the
@@ -1158,7 +1157,7 @@ C++, the way a desktop application does.
 Knob travel and step describe the shell's slider. Commands and project import accept the domains below, including
 values between steps and beyond travel. An empty edit or revert is accepted with unchanged revision. Device edits
 require placement and an offered device. Panel visibility does not gate them. Low is offered on every target,
-saved machine layers are retained for every core stamp, and older defaults are converted with their warning.
+saved machine layers are retained for every core stamp, and a retired or uncarried older defaults label is refused.
 
 | Knob | Accepted domain | Reason |
 | --- | --- | --- |

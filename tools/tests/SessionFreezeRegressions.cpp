@@ -38,8 +38,16 @@ int main (int argc, char** argv)
         (void) s.apply (command::SetTarget { 6, "lp" });
         if (s.apply (command::EditDevice { 7, shelf }).rejection != Rejection::None) return 1;
         auto file = s.exportProject(); std::string project (file.view());
-        const auto at = project.find ("defaults = "); project.replace (at, project.find ('\n', at) - at, "defaults = \"2020-01\"");
-        if (s.importProject (8, project).rejection != Rejection::None || s.events().empty() || s.events()[0].kind != EventKind::Fact) return 1;
+        // An older label is refused whole (owner, 30.09: nothing re-places a file's machine layer on import); the file
+        // of the current defaults opens.
+        const auto at = project.find ("defaults = ");
+        for (const char* label : { "defaults = \"2020-01\"", "defaults = \"2026-09\"" })
+        {
+            std::string older = project; older.replace (at, older.find ('\n', at) - at, label);
+            const auto revision = s.revision();
+            if (s.importProject (8, older).rejection == Rejection::None || s.revision() != revision) return 1;
+        }
+        if (s.importProject (8, project).rejection != Rejection::None) return 1;
         const auto current = s.exportProject(); project = current.view(); project += "\n[hpf]\nfq.machine = 100.25\n";
         return s.importProject (9, project).rejection == Rejection::None ? 0 : 1;
     }

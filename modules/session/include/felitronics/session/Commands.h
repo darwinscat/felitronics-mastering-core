@@ -83,7 +83,7 @@ enum class Rejection : std::uint8_t
     ProjectMissing,             // a required field is absent
     ProjectType,                // a field has another TOML type
     ProjectUnknownKey,          // an unknown section, knob or author suffix
-    UnknownDefaults,            // malformed defaults label, or an uncarried label between the retained versions
+    UnknownDefaults,            // malformed defaults label, or an older label this core neither carries nor retires
     ProjectCore,                // core must be a canonical major.minor.patch version
     NewerDefaults,              // defaults are newer than the current compiled table
     RateAboveLimit,             // above the shell's maxRateHz
@@ -93,6 +93,7 @@ enum class Rejection : std::uint8_t
     MandatoryUnavailable,       // the source LUFS or true peak is not usable
     DeliveryFormat,             // a master's delivery rate or bits are not the target's, its only format
     PlanPending,                // the panel is open and a measurement the devices read has not ended (PlanView::waiting)
+    RetiredDefaults,            // a defaults label this core no longer opens: 2026-09, saved before the core had its planner
 };
 
 using CommandId = std::uint64_t;   // the shell's own number for a request, given back in its answer

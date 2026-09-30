@@ -34,6 +34,14 @@ bool defaultsLabel (std::string_view text) noexcept
         if (i != 4 && (text[i] < '0' || text[i] > '9')) return false;
     return text.substr (5) >= "01" && text.substr (5) <= "12";
 }
+// THE LABELS REFUSED BY NAME (owner, 30.09): 2026-09, saved before the core had its planner. A list, never "older than
+// the current": a later change of calibration neither re-places nor refuses a project whose label is not named here.
+bool retiredDefaults (std::string_view label) noexcept
+{
+    for (const std::string_view retired : { std::string_view ("2026-09") })
+        if (label == retired) return true;
+    return false;
+}
 bool readVersion (std::string_view text, Version& out) noexcept
 {
     std::size_t pos = 0;
@@ -266,6 +274,15 @@ ImportedProject readProject (std::string_view bytes, const PlanInputs& inputs) n
         return out;
     }
     const auto& root = *std::get_if<toml::Table> (&parsed);
+    // A RETIRED LABEL is refused before its document is read: the file was written to an older schema, and its reason is
+    // the version, not a key this core no longer knows.
+    if (const auto* label = root.find ("defaults"))
+        if (const auto* text = std::get_if<std::string> (&label->data); text && retiredDefaults (*text))
+        {
+            out.answer.rejection = Rejection::RetiredDefaults;
+            out.answer.position = position (label->position);
+            return out;
+        }
     const auto carried = carriedDefaults();
     const Rules& rules = carried.current;
     const auto currentLabel = *rules.engine.find ("defaults").string();
@@ -328,11 +345,6 @@ ImportedProject readProject (std::string_view bytes, const PlanInputs& inputs) n
         fail (Rejection::UnknownDefaults, root.find ("defaults")->position);
     else if (defaults > currentLabel)
         fail (Rejection::NewerDefaults, root.find ("defaults")->position);
-    else if (defaults < previousLabel.value_or (currentLabel))
-    {
-        out.convertedDefaults = true;
-        std::copy_n (defaults.data(), sizeof (out.originalDefaults), out.originalDefaults);
-    }
     else if (defaults != currentLabel && (! previousLabel || defaults != *previousLabel))
         fail (Rejection::UnknownDefaults, root.find ("defaults")->position);
     if (out.answer.rejection != Rejection::None) return out;

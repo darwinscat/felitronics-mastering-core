@@ -801,7 +801,7 @@ void everyRejectionIsAFact()
     // rejections a field makes.
     bool table = true, spoken = true;
     std::string misses;
-    const auto last = (std::size_t) session::Rejection::PlanPending;
+    const auto last = (std::size_t) session::Rejection::RetiredDefaults;
     for (std::size_t code = 1; code <= last; ++code)
     {
         const auto r = (session::Rejection) code;
@@ -1090,7 +1090,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0x20599a22c1f973ebull;   // …, the observations (52–80, 419–436), the target-change warning (81) and what departs from vinyl (82–87)
+    constexpr std::uint64_t kPinned = 0x44b56f61d6cd6583ull;   // …, the target-change warning (81), what departs from vinyl (82–87) and the retired defaults refused (136)
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");

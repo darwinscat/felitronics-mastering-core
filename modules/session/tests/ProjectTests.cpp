@@ -143,79 +143,50 @@ std::string withDefaults (std::string input, std::string_view label)
 void defaultsVersions()
 {
     const auto carried = detail::carriedDefaults();
-    // The released 2026-09 table is not carried: its projects convert with a warning, as an older label does.
     ok (! carried.previous && *carried.current.engine.find ("defaults").string() == "2026-10",
         "the current defaults are compiled, and the previous slot is empty");
     auto s = fresh();
     const auto current = project() + "\n[hpf]\nfq.hand = 36\n";
     ok (import (*s, current).rejection == Rejection::None && s->events().empty(),
-        "the carried defaults version is accepted without conversion");
-    auto old = withDefaults (project (true, "0.0.1")
-        + "lufs.hand = -12.5\n\n[hpf]\nfq.machine = 37\nfq.hand = 40\n", "2025-12");
-    const auto before = s->revision();
-    const auto answer = import (*s, old);
-    ok (answer.rejection == Rejection::None && s->revision() == before + 1,
-        "older defaults convert and commit exactly once");
-    // A CONVERTED PROJECT'S MACHINE LAYER IS THE PLANNER'S: the file's machine numbers were written against defaults no
-    // longer carried, so they are not kept and not passed off as "the file's". A person's layer and the target's
-    // numbers are. It is what a session of this core gives with the same hand and target edits and the planner's layer.
-    auto expected = fresh();
-    command::EditTarget louder { 6, {} }; louder.fields.lufs = -12.5;
-    HpfFields<Touched> cutoff; cutoff.fq = 40.0;
-    ok (expected->apply (command::SetManual { 5, true }).rejection == Rejection::None && expected->apply (louder).rejection == Rejection::None
-        && expected->apply (command::EditDevice { 7, cutoff }).rejection == Rejection::None, "the same edits by hand on a session of this core");
-    auto a = s->snapshot(), b = expected->snapshot();
-    SnapshotView av = a.view(), bv = b.view(); av.revision = bv.revision;
-    ok (json (av) == json (bv), "conversion keeps a person's values and the target's numbers, and places the machine's layer again");
-    ok (! av.plan.fromFile && av.machineDifferences.empty() && ! detail::same (av.project.devices.hpf.machine.fq, 37.0)
-        && detail::same (*av.project.devices.hpf.hand.fq, 40.0) && detail::same (*av.project.targetEdit.lufs, -12.5)
-        && av.project.core.major == Session::version().major && av.project.core.minor == Session::version().minor
-        && av.project.core.patch == Session::version().patch,
-        "the file's machine cutoff of 37 Hz is not kept, the layer is not \"from the file\", and it is this core's");
-    ok (s->events().size() == 1 && s->events()[0].kind == EventKind::Fact
-        && s->events()[0].payload.fact.view().id == text::FactId::DefaultsConverted,
-        "conversion emits its warning, and no machine comparison: there is none to make");
-    if (answer.rejection == Rejection::None && s->events().size() == 1)
-    {
-        const auto warning = s->events()[0];
-        old.assign (old.size(), 'x');
-        const auto fact = warning.payload.fact.view();
-        ok (fact.argCount == 1 && fact.args[0].kind == text::ArgKind::UserText
-            && fact.args[0].userText == "2025-12", "warning owns the original defaults version after input destruction");
-        for (const auto lang : { text::Lang::Ru, text::Lang::En })
-        {
-            const auto rendered = text::Text::text (fact, lang);
-            ok (rendered.find ("2025-12") != std::string::npos && rendered.find ('{') == std::string::npos,
-                "conversion warning names the old version in both languages");
-        }
-        const auto ru = text::Text::text (fact, text::Lang::Ru);
-        ok (ru.find ("машинные значения выставлены заново") != std::string::npos, "and says the machine's values were placed again: " + ru);
-    }
-    const auto saved = exported (*s);
-    ok (saved == exported (*expected) && saved.starts_with (header (true)),
-        "converted export uses current defaults and this core's stamp");
-    ok (import (*s, saved).rejection == Rejection::None && exported (*s) == saved
-        && s->events().empty(), "converted project round trips without another conversion warning");
-    // The label alone converts: a file of the released 2026-09 and one a month older are treated alike, whatever the
-    // machine lines they carry.
-    for (const auto label : { "2026-09", "2026-08" })
-    {
-        ok (import (*s, withDefaults (project (true, "0.0.1") + "\n[hpf]\nfq.machine = 37\n", label)).rejection == Rejection::None
-            && s->events().size() == 1 && s->events()[0].payload.fact.view().id == text::FactId::DefaultsConverted
-            && ! s->snapshot().view().plan.fromFile && s->snapshot().view().machineDifferences.empty()
-            && ! detail::same (s->project().devices.hpf.machine.fq, 37.0),
-            std::string (label) + ": converted, its machine cutoff replaced by the planner's, nothing marked as the file's");
-    }
-    // A file of the CURRENT defaults keeps its machine layer, as before.
-    ok (import (*s, project (true, "0.0.1") + "\n[hpf]\nfq.machine = 37\n").rejection == Rejection::None
+        "the carried defaults version is accepted as it is");
+    // EVERY LABEL A RELEASE HAS SAVED, by name (owner, 30.09). From 2026-10 on the file's machine layer is the file's,
+    // its differences shown beside it: a later change of calibration that stops carrying 2026-10 turns this red rather
+    // than re-placing or refusing those projects unseen.
+    ok (import (*s, withDefaults (project (true, "0.0.1") + "\n[hpf]\nfq.machine = 37\n", "2026-10")).rejection == Rejection::None
         && s->snapshot().view().plan.fromFile && detail::same (s->project().devices.hpf.machine.fq, 37.0)
         && s->events().size() == 1 && s->events()[0].payload.fact.view().id == text::FactId::MachineDifferences,
-        "a project of the current defaults keeps the file's machine layer and its comparison");
+        "2026-10: the file's machine cutoff of 37 Hz is kept, as the file's, with its comparison");
+    // 2026-09 — saved before the core had its planner — is not opened: the import is refused whole, with its reason,
+    // whatever the file carries (a key this core does not know included: the version is the reason, read first), and
+    // the open project stays as it was.
+    const auto open = exported (*s);
+    const auto revision = s->revision();
+    for (const auto& body : { project (true, "0.0.1") + "lufs.hand = -12.5\n\n[hpf]\nfq.machine = 37\nfq.hand = 40\n",
+                              project() + "\n[hpf]\nfq.hand = 36\n", project (false),
+                              project() + "\n[retiredSection]\nkey = 1\n" })
+    {
+        const auto old = withDefaults (body, "2026-09");
+        refused (*s, old, Rejection::RetiredDefaults, "\"2026-09\"");
+        ok (s->revision() == revision && exported (*s) == open, "2026-09: the revision and the open project are unchanged");
+        const auto answer = import (*s, old);
+        const auto fact = text::Text::rejected (answer, command::ImportProject { 927, old });
+        ok (answer.rejection == Rejection::RetiredDefaults && fact && fact->id == text::FactId::RejectedRetiredDefaults,
+            "2026-09: the refusal's fact is its own");
+        for (const auto lang : { text::Lang::Ru, text::Lang::En })
+            ok (fact && text::Text::text (*fact, lang).find ("2026-09") != std::string::npos,
+                "2026-09: the reason names the version: " + (fact ? text::Text::text (*fact, lang) : std::string {}));
+    }
+    // A label no release has saved and this core does not carry is not converted either: nothing re-places a file's
+    // machine layer on import.
+    for (const auto uncarried : { "2025-12", "2026-08", "2026-01" })
+        refused (*s, withDefaults (project (true, "0.0.1") + "\n[hpf]\nfq.machine = 37\n", uncarried), Rejection::UnknownDefaults,
+            std::string ("\"") + uncarried + '"');
     for (const auto newer : { "2026-11", "2027-01", "9999-12" })
         refused (*s, withDefaults (project(), newer), Rejection::NewerDefaults, std::string ("\"") + newer + '"');
     for (const auto malformed : { "2026-00", "2026-13", "2026-9", "026-09", "20260-09", "2026/09", "2026-09x", " 2026-09", "2026-0a", "" })
         refused (*s, withDefaults (project(), malformed), Rejection::UnknownDefaults,
             std::string ("\"") + malformed + '"');
+    ok (s->revision() == revision && exported (*s) == open, "no refusal moved the revision or the open project");
 }
 void roundTrip()
 {
