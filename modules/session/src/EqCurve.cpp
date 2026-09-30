@@ -198,6 +198,15 @@ struct BiquadCoeffs
             return high ? highShelf (f0, fs, gainLin) : lowShelf (f0, fs, gainLin);
         return c;
     }
+// The high-pass cascade of order slope/6 at `fc`, into `bands` from `count` on (up to 9 sections).
+void highPassSections (double fc, std::int32_t slope, double rate, BiquadCoeffs* bands, std::size_t& count) noexcept
+{
+    const int order = int (slope / 6);
+    if (order % 2) bands[count++] = highpass1 (fc, rate);
+    const int pairs = order / 2;
+    for (int k = 1; k <= pairs; ++k)
+        bands[count++] = highpass (fc, rate, 1 / (2 * core::det::sin ((2.0 * (pairs - k) + 1) * kPi / (2 * order))));
+}
 eq::BandParams band (eq::FilterType type, bool on, double hz) noexcept
 {
     eq::BandParams b;
@@ -256,15 +265,8 @@ void eqCurve (std::span<const eq::BandParams> written, double rate, std::span<Eq
         switch (b.type)
         {
             case eq::FilterType::HighPass:
-            {
-                const double fq = frequency (lane.freq);
-                const int order = lane.slope / 6;
-                if (order % 2) bands[count++] = highpass1 (fq, rate);
-                const int pairs = order / 2;
-                for (int k = 1; k <= pairs; ++k)
-                    bands[count++] = highpass (fq, rate, 1 / (2 * core::det::sin ((2.0 * (pairs - k) + 1) * kPi / (2 * order))));
+                highPassSections (frequency (lane.freq), lane.slope, rate, bands, count);
                 break;
-            }
             case eq::FilterType::Tilt:
             {
                 const double fq = frequency (lane.freq);
@@ -300,5 +302,30 @@ void eqCurve (const Project& project, const Rules& rules, double rate, std::span
     EqStage stage;
     writeEq (project.devices, rules, stage);
     eqCurve (stage.bands, rate, output);
+}
+
+double highPassLossDb (double fc, std::int32_t slope, double rate, double hz) noexcept
+{
+    BiquadCoeffs sections[9];
+    std::size_t count = 0;
+    highPassSections (std::clamp (fc, 10.0, 0.49 * rate), slope, rate, sections, count);
+    double db = 0;
+    for (std::size_t i = 0; i < count; ++i) db += sections[i].db (2 * kPi * hz / rate);
+    return -db;
+}
+
+double highPassCutoffFor (double hz, double lossDb, std::int32_t slope, double rate) noexcept
+{
+    // The loss at `hz` grows with the cutoff: below the answer it takes less, above it more. At the lowest cutoff the
+    // engine designs it may take the loss already — then that cutoff is the answer.
+    double lo = 10.0, hi = std::max (lo, std::min (hz, 0.49 * rate));
+    if (highPassLossDb (lo, slope, rate, hz) >= lossDb) return lo;
+    for (int i = 0; i < 200; ++i)
+    {
+        const double mid = lo + (hi - lo) * 0.5;
+        if (! (mid > lo && mid < hi)) break;
+        if (highPassLossDb (mid, slope, rate, hz) < lossDb) lo = mid; else hi = mid;
+    }
+    return lo;
 }
 }

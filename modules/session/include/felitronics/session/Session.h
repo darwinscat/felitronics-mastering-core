@@ -82,7 +82,48 @@ enum class PlanStatus : std::uint8_t { None, Pending, Stopped, Ready, Unavailabl
 //   Source      the source cannot take it: mono bass on a mono source
 //   Target      the target rules it out: dither above the bit depth it serves, needles where it has no peak clipper
 //   Unmeasured  a measurement it reads ended without a value, and it took its safe path
-enum class HeldBack : std::uint8_t { None, Shell, Source, Target, Unmeasured };
+//   Measured    a measurement ruled against it (mono bass: bass in opposite polarity)
+//   Quiet       the input is too quiet to measure: below [input] quiet.gainOnlyLufs the machine places no device
+enum class HeldBack : std::uint8_t { None, Shell, Source, Target, Unmeasured, Measured, Quiet };
+
+// WHERE THE MACHINE'S HIGH-PASS CUTOFF CAME FROM (owner decisions 3.2–3.4) — always on, the cutoff:
+//   Note         the cutoff the sure lowest note allows: the target's noteLossDb at the note, on the chain's response
+//   Floor        a sure note above the target's floor whose cutoff is below it: the floor, taking more of the note
+//   BelowFloor   a sure note below the target's floor itself (an 808, a sub): the floor, cutting into the note
+//   Top          a sure note whose cutoff is above the machine's top (hzMax): the top — the note is higher
+//   Unsure       no sure lowest note: the floor
+//   Short        a programme shorter than [input] shortSeconds: not searched, the floor
+//   Quiet        an input too quiet to measure: the floor
+//   Unmeasured   the low end was not measured: the floor
+enum class HpfCut : std::uint8_t { Note, Floor, BelowFloor, Top, Unsure, Short, Quiet, Unmeasured };
+struct HpfFinding
+{
+    HpfCut cut = HpfCut::Unmeasured;
+    double cutoffHz = 0.0;                     // the machine's cutoff
+    std::optional<std::int32_t> noteMidi;      // the sure lowest note, when there is one
+    std::optional<double> noteHz;              // ...its band's centre, Hz
+    std::optional<double> noteLossDb;          // what the machine's high-pass takes there, dB, positive
+};
+
+// WHAT MONO BASS FOUND (owner decision 3.5) — the loss of the low end when it folds to mono, (L+R)/2, below the target's
+// crossover, where the bass sounds:
+//   On           under [monoBass] loss.warnFromDb: placed
+//   Partial      from warnFromDb to offAboveDb, both included: placed, with the number
+//   AntiPhase    above offAboveDb: left out — "check the polarity of a channel"; a person may switch it on
+//   Unmeasured   the loss could not be weighed (too little bass sounding, or no low-end reading): left out
+//   MonoSource   a mono input has no side to fold
+//   Quiet        an input too quiet to measure
+enum class MonoBassVerdict : std::uint8_t { On, Partial, AntiPhase, Unmeasured, MonoSource, Quiet };
+struct MonoBassFinding
+{
+    MonoBassVerdict verdict = MonoBassVerdict::Unmeasured;
+    double crossoverHz = 0.0;                  // the crossover it was weighed at: the target's
+    std::optional<double> lossDb;              // the measured loss, dB
+    double soundingSeconds = 0.0;              // how long the bass sounds, in the blocks it was weighed over
+    // The project's mono bass is on where the machine would leave it out (a person switched it on): the warning beside
+    // the tick and in the report.
+    bool againstMachine = false;
+};
 
 // ONE DEVICE'S PLAN — typed facts about its machine layer: what held it back, what it reads, and where each of its
 // machine fields came from. A field is a bit, in the order Project.h writes the device's fields (the order of
@@ -124,6 +165,16 @@ struct PlanView
     // planner would decide otherwise now, and adoptMachine takes its decisions.
     bool fromFile = false;
     DevicePlans devices {};
+    HpfFinding hpf {};
+    MonoBassFinding monoBass {};
+};
+
+// THE FINDINGS AS FACTS — the report's lines, typed: what the high-pass stood on, and, where mono bass has something to
+// say (the bass partly or wholly in opposite polarity, or not weighed), that.
+struct PlanText
+{
+    [[nodiscard]] static text::Fact hpf (const HpfFinding& finding) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> monoBass (const MonoBassFinding& finding) noexcept;
 };
 
 class Session;

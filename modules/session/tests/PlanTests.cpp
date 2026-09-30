@@ -146,9 +146,9 @@ bool factIn (const Session& s, text::FactId id, std::int64_t count)
 
 void everyDeviceIsPlannedAsBefore()
 {
-    felitronics::test::group ("every device planned, and the machine layer the previous path placed, for every target, source and shell");
+    felitronics::test::group ("every device planned: without a measurement, the previous path's layers — but for the decided high-pass and mono bass");
     const auto r = detail::rules();
-    int cases = 0; bool same = true, facts = true;
+    int cases = 0; bool asBefore = true, facts = true;
     for (std::uint16_t row = 0; row < r.rows; ++row)
         for (const std::uint32_t channels : { 1u, 2u })
             for (std::uint32_t offered = 0; offered <= 255u; ++offered)
@@ -165,10 +165,15 @@ void everyDeviceIsPlannedAsBefore()
                 in.rules = r; in.row = row; in.channels = channels; in.sampleRate = 48000; in.offered = offered;
                 detail::placeMachine (in, now);
                 previous::previousPlaceMachine (r, row, channels, before, offered);
-                same = same && sameDevices (now, before);
-                Devices proposed; DevicePlans plans;
-                detail::propose (in, proposed, plans);
                 const auto target = r.row (row);
+                // Owner decisions 3.3 and 3.5, without a low-end reading: the high-pass at the target's floor, mono bass
+                // not placed until its loss is weighed. Every other field, and every person's layer, as before.
+                Devices expected = before;
+                expected.hpf.machine.fq = target.hpfFloor.toDouble();
+                expected.monoBass.machine.on = false;
+                asBefore = asBefore && sameDevices (now, expected);
+                Devices proposed; DevicePlans plans; detail::PlanFindings found;
+                detail::propose (in, proposed, plans, found);
                 for (unsigned d = 0; d <= unsigned (Device::Low); ++d)
                 {
                     const auto device = Device (d);
@@ -177,15 +182,19 @@ void everyDeviceIsPlannedAsBefore()
                     const bool shell = (offered & (1u << d)) == 0;
                     const HeldBack want = shell ? HeldBack::Shell
                         : device == Device::MonoBass && channels == 1 ? HeldBack::Source
+                        : device == Device::Hpf || device == Device::MonoBass ? HeldBack::Unmeasured
                         : device == Device::Limiter && target.noClipper ? HeldBack::Target
                         : device == Device::Dither && target.bitDepth > r.ditherUpToBits ? HeldBack::Target : HeldBack::None;
                     facts = facts && plan.heldBack == want && (plan.target & ~mask) == 0 && plan.measured == 0 && plan.needs == 0;
                 }
-                facts = facts && (plans.hpf.target & 4u) != 0 && (plans.monoBass.target & 2u) != 0
+                facts = facts && plans.hpf.target == 6u && (plans.monoBass.target & 2u) != 0
+                     && found.hpf.cut == HpfCut::Unmeasured && same (found.hpf.cutoffHz, target.hpfFloor.toDouble())
+                     && found.monoBass.verdict == (channels == 1 ? MonoBassVerdict::MonoSource : MonoBassVerdict::Unmeasured)
                      && ((plans.low.target != 0) == target.lowDb.has_value()) && ((plans.glue.target != 0) == target.glue.has_value());
                 ++cases;
             }
-    ok (same, std::to_string (cases) + " placements equal the previous path's machine and person layers, bit for bit");
+    ok (asBefore, std::to_string (cases) + " placements equal the previous path's machine and person layers, bit for bit, "
+              "the decided high-pass floor and unplaced mono bass apart");
     ok (facts, "each device's plan says what held it back (shell, source, target) and which fields its target decided");
 }
 
@@ -535,7 +544,7 @@ void anImportKeepsTheFilesMachine()
         ok (same (s.project().devices.hpf.machine.fq, 36.0) && v.view().plan.fromFile, "its machine layer is kept as the file wrote it");
         ok (v.view().machineDifferences.size() == 1 && v.view().machineDifferences[0].device == Device::Hpf
             && v.view().machineDifferences[0].field == 1 && same (v.view().machineDifferences[0].fileValue, 36.0)
-            && same (v.view().machineDifferences[0].coreValue, 30.0), "the planner's decision beside it: one difference, the high-pass at 30 Hz");
+            && same (v.view().machineDifferences[0].coreValue, 32.0), "the planner's decision beside it: one difference, the high-pass at its 32 Hz floor");
         ok (factIn (s, foreign ? text::FactId::MachineDifferences : text::FactId::SameCoreMachineDifferences, 1),
             foreign ? "another core: the difference is announced" : "the same core: announced as a hand-edited file");
         Answer adopt;
@@ -543,7 +552,7 @@ void anImportKeepsTheFilesMachine()
         ok (adopt.rejection == Rejection::None && s.revision() == revision + 2, "adoptMachine is taken");
         ok (spent.requests == 0, "and asks the heap for nothing");
         const auto adopted = s.snapshot();
-        ok (same (s.project().devices.hpf.machine.fq, 30.0) && adopted.view().machineDifferences.empty() && ! adopted.view().plan.fromFile
+        ok (same (s.project().devices.hpf.machine.fq, 32.0) && adopted.view().machineDifferences.empty() && ! adopted.view().plan.fromFile
             && s.project().devices.tilt.hand.db && same (*s.project().devices.tilt.hand.db, 1.25),
             "the planner's decision taken, the person's 1.25 dB kept");
         ok (s.apply (command::AdoptMachine { 4 }).rejection == Rejection::None && s.revision() == revision + 2,

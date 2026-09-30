@@ -17,7 +17,7 @@
 
 # The name of this set of defaults. A project records it, never the defaults themselves, and is opened with the set it
 # names.
-defaults = "2026-09"
+defaults = "2026-10"
 
 # THE INPUT, BEFORE THE CHAIN.
 # referenceLufs (an owner decision): the input is brought to this loudness ahead of every stage, so a device whose
@@ -25,16 +25,15 @@ defaults = "2026-09"
 #   of the file. −18 LUFS is about −15 dBFS RMS on music: where the devices' thresholds are meant to sit, with headroom
 #   above for the peaks. The report states only what was done: the lift from the input to the result.
 # quiet (an owner decision): below warningLufs the input is probably a mixing or export mistake, and a warning says so;
-#   the machine works as usual. Below gainOnlyLufs the machine sets the gain and the ceiling and nothing else, without
-#   exception — no high-pass, no mono bass, no glue on cd, no low shelf, no peak clipper: no measurement is reliable at
-#   that level. A person may still switch them on.
-# shortSeconds, shortConfidence: a programme shorter than shortSeconds is short, and the lowest note found on it is
-#   trusted shortConfidence times as much (a hypothesis).
+#   the machine works as usual. Below gainOnlyLufs the machine sets the gain and the ceiling and places no device — no
+#   mono bass, no glue on cd, no low shelf, no peak clipper: no measurement is reliable at that level — but for the
+#   high-pass, which stands always (owner decision 3.3) and takes its floor there. A person may still switch them on.
+# shortSeconds (owner decision 3.2): a programme shorter than this is a sketch — its lowest note is not sought, and the
+#   high-pass takes the target's floor. The former "trust a short file's note half as much" is gone.
 [input]
 referenceLufs = -18
 quiet = { warningLufs = -40, gainOnlyLufs = -55 }
 shortSeconds = 10
-shortConfidence = 0.5
 
 # THE LANDING — the loudness solver moving the gain before the limiter until the master sits on the target, in ONE
 # render at the delivery rate.
@@ -105,9 +104,10 @@ manualStepDb = 0.5
 #   least this share of FRAMES — not of time: frames overlap (the hop is half the window), so the quantum is 1/frames
 #   (263 frames on a six-minute mix at 48 kHz). A hypothesis: on a test mix 0.02, 0.05 and 0.10 gave the same note, 0.20
 #   moved it by two semitones and 0.50 by thirteen — below 0.2 it decides little, above it everything.
-# occupiedMarginWhenOnDb: the lowest note must stand at least this far above the duty line (a hypothesis; it rejects only
-#   bands at the line itself). Without a band that passes, or a valid note, there is no note: the target's floor, never
-#   the loudest band in its place.
+# occupiedMarginWhenOnDb (owner decision 3.2): the lowest note must stand at least this far above the duty line, and its
+#   band be occupied in at least occupiedFromDuty of the frames (10 %). Without a band that passes, or a valid note, there
+#   is no note: the target's floor, never the loudest band in its place, and never a higher band — a note above the true
+#   one would cut music.
 # infraLowCrossoverHz: the infra-low LowEnd run, for the infra-low share (a hypothesis, and also where "below the table"
 #   ends). The share is LR4-weighted — content AT the crossover counts a quarter — not "energy below 30 Hz". The main run
 #   at 120 Hz cannot answer it: its share is the bass, not the infra-low (0.2274 against 0.0056 on the same mix). The
@@ -132,32 +132,31 @@ fftOrder = 17
 dutyThresholdDb = 20
 skipBlocks = 0
 
-# THE HIGH-PASS — the machine's (owner decisions: placement, the 50 Hz top, the slopes, the comfort window). It is placed
-# always, except when there is nothing below the lowest note (nothingBelowNote), seen in the first phase without a trial
-# render; the report then says "high-pass not placed: nothing below the note". Vinyl and club always (hpfAlways in
-# targets.toml).
-# The cutoff is max(the cutoff the note allows, the target's floor): a Butterworth of order n = slope/6 loses
-# −10·log10(1/(1 + (fc/f)^(2n))) dB at f, so the note allows f/fc = (10^(loss/10) − 1)^(−1/(2n)) at the target's
-# noteLossDb (1.184 at 24 dB/oct and 1 dB). The cutoff is rounded to the hertz and never above hzMax: "the cutoff hit
-# 50 Hz: the lowest note is higher".
+# THE HIGH-PASS — the machine's (owner decisions 3.2–3.4: always placed, the floor, the 50 Hz top, the slopes, the comfort
+# window). It stands on every target and every input, a quiet one included; there is no "nothing below the note" any more
+# (owner decision 3.3: a mix made outside a studio always has mud down there, and cutting below 32 Hz too much is better
+# than too little).
+# The cutoff is max(the cutoff the lowest note allows, the target's floor), never above hzMax: the note allows the cutoff
+# at which the high-pass the chain runs — the core's matched Butterworth cascade of the target's slope, at the source's
+# rate — takes exactly the target's noteLossDb at the note. It is found on that response, not on the analogue formula, and
+# it is not rounded to the hertz (technical decision 3О4). A floor above it takes more of the note, and the report says
+# how much; "the cutoff hit 50 Hz: the lowest note is higher" when hzMax stops it.
+# note (owner decision 3.2): the lowest note is sure when its band is occupied ([lowEnd] occupiedFromDuty, 10 %), stands
+#   [lowEnd] occupiedMarginWhenOnDb (2 dB) above the duty line, lies above aboveHz (not DC, not rumble) and sounds at least
+#   soundingAtLeastS in all — its frames times the analyzer's hop. A programme shorter than [input] shortSeconds is not
+#   searched. A note that is not sure gives the floor.
 # band: the core's EQ band the high-pass writes.
-# hzMin…hzMax: slider travel; frequencyDomain checks the actual source Nyquist limit.
-# hzDefault: where the manual cutoff starts, never below the target's floor.
-# slopes: slider choices, ascending; slopeDomain and slopeMultiple accept every filter order 1–16. slopesNormal: not a
-#   warning (48 warns of ringing); slopeDefault: the manual default, named as a number so that the order of the list
-#   cannot change the sound. A project with a slope outside the list reads as the nearest, the gentler on a tie
-#   (18 → 12, 36 → 24), and the report says so.
-# nothingBelowNote: there is nothing below the lowest note when the infra-low share is below infraLowBelow — a decision
-#   threshold (a hypothesis), not proof of absence: the report prints the measured share beside it — and there is no DC
-#   offset: the DC stays below dcOffsetBelow, which is where the dcOffset finding starts ([observations] dcOffset.from),
-#   and the schema refuses the two apart.
+# hzMin…hzMax: slider travel; frequencyDomain checks the actual source Nyquist limit; hzMax is also the machine's top.
+# slopes: slider choices, ascending; slopeDomain and slopeMultiple accept every filter order 1–16 — 18 and 36 included, as
+#   written, never read as the nearest choice. slopesNormal: not a warning (48 warns of ringing); slopeDefault: the manual
+#   default, named as a number so that the order of the list cannot change the sound.
 # comfort: the knob's field is neutral from lowHz to highHz and shades through a warning towards warningLowHz below and
 #   warningHighHz above — one window, a hint to the knob, changing neither the machine nor the travel. Below 20 Hz there
 #   is nothing to cut; above 42 Hz the cutoff takes music, not rubbish (at 50 Hz and 24 dB/oct, 8.4 dB at 40 Hz).
 # curveTopDb, curveBottomDb, curveStepDb, curveHeadroomDb: the scale of the high-pass curve, dB — a filter's slope goes
 #   down by definition, so it is not judged by the ±2 dB of the other curves.
 # marks: labels on the frequency axis of the curve, where the low end of instruments lives; behind the curve the spectrum
-#   of THIS mix is drawn. What a cutoff costs there: at 30 Hz and 24 dB/oct, 0.3 dB at 41 Hz, 2.5 dB at 31 Hz, 4.7 dB at
+#   of THIS mix is drawn. What a cutoff costs there: at 32 Hz and 24 dB/oct, 0.6 dB at 41 Hz, 3.6 dB at 31 Hz, 11.8 dB at
 #   23 Hz.
 [hpf]
 frequencyDomain = "sourceNyquist"
@@ -167,11 +166,10 @@ hzStep = 1
 band = 0
 hzMin = 15
 hzMax = 50
-hzDefault = 30
 slopes = [12, 24, 48]
 slopesNormal = [12, 24]
 slopeDefault = 24
-nothingBelowNote = { infraLowBelow = 0.01, dcOffsetBelow = 0.001 }
+note = { aboveHz = 20, soundingAtLeastS = 3 }
 comfort = { lowHz = 24, highHz = 42, warningLowHz = 20, warningHighHz = 50 }
 curveTopDb = 0
 curveBottomDb = -36
@@ -184,10 +182,19 @@ marks = [
     { key = "sub808", hz = 23 },
 ]
 
-# MONO BASS (owner decisions) — always placed, at the target's crossover (targets.toml): it is there for subwoofers and
-# mono speakers, not for loudness. Wide bass does not switch it off; it is a warning ([observations] wideBass). Bass in
-# opposite polarity: the machine does not place it and warns loudly ("it is fixed in the mix"); a person who switches it
-# on anyway is obeyed and warned beside the tick and in the report. A mono input has no side and no mono bass.
+# MONO BASS (owner decisions 3.5) — always placed, at the target's crossover (targets.toml): it is there for subwoofers and
+# mono speakers, not for loudness. Wide bass does not switch it off; it is a warning ([observations] wideBass). What it
+# decides by is the harm itself: how much of the low end folding to mono, (L+R)/2, takes away below the crossover, where
+# the bass sounds — the loss of the side's share, 10·log10((mid + side) / mid) of the energies under the crossover's LR4,
+# over the 10 ms blocks of the first phase's low-end run at that crossover (120 Hz, 150 Hz on vinyl). Under warnFromDb it is
+# placed; from warnFromDb to offAboveDb, both included, it is placed with the number ("the bass is partly in opposite
+# polarity: mono bass takes N dB of the low end"); above offAboveDb the machine leaves it out ("… check the polarity of a
+# channel"), and a person who switches it on anyway is obeyed and warned beside the tick and in the report. Opposite
+# polarity above the crossover does not count: only the low band is read. A mono input has no side and no mono bass.
+# loss.soundingWithinDb, loss.soundingAtLeastS (hypotheses): the bass sounds in a block whose low-band level is within
+#   soundingWithinDb of the programme's loud bass — the level 5 % of the sounding blocks reach — and the reading holds
+#   when it sounds at least soundingAtLeastS in all. Less than that, or a low end that could not be measured, is its own
+#   reason, and the machine leaves mono bass out: it does not fold what it could not weigh.
 # lowWidth: the width below the crossover — 0, full mono; lowWidthRange, lowWidthStep: its knob's travel and step.
 # frequencyRange, frequencyStep: the crossover knob's travel and step (a step of 5 Hz feels like a jerk).
 [monoBass]
@@ -198,6 +205,7 @@ lowWidthRange = [0, 1]
 lowWidthStep = 0.05
 frequencyRange = [60, 300]
 frequencyStep = 1
+loss = { warnFromDb = 1, offAboveDb = 3, soundingWithinDb = 20, soundingAtLeastS = 3 }
 
 # The knob's scale shows two regions, each with a physical reason rather than a taste; the map is static — it follows
 # neither the target nor anything else — so a person learns it once. club 80…120: a venue sums its subwoofers to mono
@@ -354,8 +362,9 @@ step = 0.1
 [eq]
 curve = { warnDb = 2, scaleDb = 3, fieldDb = 4 }
 
-# WHICH STAGES SOUND BY DEFAULT — the defaults layer of the ticks, under the machine's decisions and a person's edits (the
-# machine places mono bass; a glue of 0 keeps the compressor out of the chain whatever its tick). clipper is the
+# WHICH STAGES SOUND BY DEFAULT — the defaults layer of the ticks, under the machine's decisions and a person's edits (mono
+# bass waits for its loss to be weighed: the machine places it where it measures no harm; a glue of 0 keeps the compressor
+# out of the chain whatever its tick). clipper is the
 # saturator's stage; the peak clipper is inside the limiter. The limiter is always on, and the schema refuses false.
 [stages]
 eq = true

@@ -203,7 +203,7 @@ try {
         ['missing grouping', 'modules/session/src/Text.cpp', 'row.find ("minimumGrouping")', 'row.find ("absentGrouping")'],
         ['bad number pattern', 'modules/session/src/Text.cpp', 'pattern.find ("{n}")', 'pattern.find ("{missing}")'],
         ['missing phase weight', 'modules/session/src/Pump.cpp', 'master.find ("passWeight")', 'master.find ("missingWeight")'],
-        ['missing config number', 'modules/session/src/Rules.cpp', 'hpf.find ("hzDefault")', 'hpf.find ("missingDefault")'],
+        ['missing config number', 'modules/session/src/Rules.cpp', 'hpf.find ("hzStep")', 'hpf.find ("missingStep")'],
         ['invalid state', 'modules/session/src/Session.cpp', 'switch (state_)', 'const volatile State corruptState = static_cast<State> (255); switch (corruptState)'],
         ['invalid device', 'modules/session/src/Devices.cpp', 'switch (device)', 'const volatile Device corruptDevice = static_cast<Device> (255); (void) device; switch (corruptDevice)'],
         ['invalid schema detail', 'modules/session/src/ConfigSchema.cpp', 'if (p.detail >', 'const volatile std::uint32_t corruptDetail = 999; if (corruptDetail >'],

@@ -138,9 +138,10 @@ void SourceResults::forensics (MeasurementStore& out, const analysis::SourceFore
     out.number ("bins", double (a.bins())); out.number ("cellCount", double (a.cellCount())); out.number ("binsPerCell", double (a.binsPerCell())); out.number ("searchFromHz", double (a.searchFromHz())); out.number ("searchToHz", double (a.searchToHz()));
     out.number ("plateauSpanCells", double (a.plateauSpanCells())); out.number ("floorSpanCells", double (a.floorSpanCells())); out.number ("exemptCells", double (a.exemptCells())); out.number ("distinctLimit", double (a.distinctLimit()));
     out.number ("samplesProcessed", double (a.samplesProcessed())); out.number ("tailUncoveredSamples", double (a.tailUncoveredSamples()));
-    for (int c = 0; c < a.channels(); ++c)
+    // THE SPECTRAL WALL, per channel ("wall.x[c]") and of the whole file ("wall.x", no channel): the per-channel means
+    // averaged, as the analyzer states it — what a lossy source's cutoff is read from.
+    const auto walls = [&] (const analysis::SpectralWall& w, int c) noexcept
     {
-        const auto w = a.wall (c); const auto g = a.sampleGrid (c);
         out.number ("wall." "valid", double (w.valid), c); out.number ("wall." "reason", double (w.reason), c); out.number ("wall." "sharp", double (w.sharp), c); out.number ("wall." "nearNyquist", double (w.nearNyquist), c); out.number ("wall." "cutoffFractionOfNyquist", double (w.cutoffFractionOfNyquist), c);
         out.number ("wall." "steepestHz", double (w.steepestHz), c); out.number ("wall." "transitionEndHz", double (w.transitionEndHz), c); out.number ("wall." "transitionHz", double (w.transitionHz), c); out.number ("wall." "transitionClipped", double (w.transitionClipped), c); out.number ("wall." "truncatedAtNyquist", double (w.truncatedAtNyquist), c);
         out.number ("wall." "plateauPower", double (w.plateauPower), c); out.number ("wall." "floorLocalPower", double (w.floorLocalPower), c); out.number ("wall." "maxAbovePower", double (w.maxAbovePower), c); out.number ("wall." "sufMaxPower", double (w.sufMaxPower), c); out.number ("wall." "exemptedCells", double (w.exemptedCells), c);
@@ -152,6 +153,11 @@ void SourceResults::forensics (MeasurementStore& out, const analysis::SourceFore
         out.number ("wall." "framesUsed", double (w.framesUsed), c); out.number ("wall." "framesHoled", double (w.framesHoled), c);
         out.number ("wall.cutoffHz", w.cutoffHz, c, w.valid ? MeasurementReason::None
             : w.reason == analysis::ForensicsReason::ShorterThanWindow ? MeasurementReason::TooShort : MeasurementReason::NoSignal, unsigned (w.reason));
+    };
+    for (int c = 0; c < a.channels(); ++c)
+    {
+        const auto w = a.wall (c); const auto g = a.sampleGrid (c);
+        walls (w, c);
         out.number ("grid." "valid", double (g.valid), c); out.number ("grid." "reason", double (g.reason), c); out.number ("grid." "gridExponent", double (g.gridExponent), c); out.number ("grid." "pcmCompatible", double (g.pcmCompatible), c); out.number ("grid." "outsidePcmRange", double (g.outsidePcmRange), c);
         out.number ("grid." "absPeak", double (g.absPeak), c); out.number ("grid." "sampleMin", double (g.sampleMin), c); out.number ("grid." "sampleMax", double (g.sampleMax), c); out.number ("grid." "nonZeroSamples", double (g.nonZeroSamples), c); out.number ("grid." "zeroSamples", double (g.zeroSamples), c);
         out.number ("grid." "nonFiniteSamples", double (g.nonFiniteSamples), c); out.number ("grid." "absentSamples", double (g.absentSamples), c); out.number ("grid." "offGridSamples", double (g.offGridSamples), c); out.number ("grid." "firstOffGridSample", double (g.firstOffGridSample), c);
@@ -160,6 +166,7 @@ void SourceResults::forensics (MeasurementStore& out, const analysis::SourceFore
         out.number ("grid.alwaysZeroLowBits", g.alwaysZeroLowBits (bitDepth), c,
             g.pcmCompatible && bitDepth > 0 ? MeasurementReason::None : MeasurementReason::Unsupported, unsigned (g.reason));
     }
+    walls (a.wall(), -1);   // after the channels': appended to the numbers a reader already knows
     const MeasurementGrid grid { 0, 0, std::uint64_t (a.samplesProcessed()), std::uint32_t (a.sampleRate()) };
     (void) out.array ("meanPower", std::uint32_t (a.channels()), std::uint64_t (a.bins()), std::uint64_t (a.bins()), true, grid);
     auto* histogram = out.array ("gridExponentHistogram", std::uint32_t (a.channels()), a.gridExponentBuckets(), a.gridExponentBuckets(), true, grid);

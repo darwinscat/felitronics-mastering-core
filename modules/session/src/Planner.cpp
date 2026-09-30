@@ -12,6 +12,7 @@
 #include "Grid.h"
 #include "Rules.h"
 #include "BuildContract.h"
+#include "EqCurve.h"
 #include "Needles.h"
 #include "SourceMeasurements.h"
 
@@ -20,9 +21,11 @@
 #include <felitronics/session/Project.h>
 #include <felitronics/session/Session.h>
 
+#include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <string_view>
 #include <type_traits>
@@ -44,27 +47,201 @@ template <class Fields, class M> std::uint8_t fieldBit (const Rules& rules, cons
 
 bool offeredByShell (const PlanInputs& in, Device device) noexcept { return (in.offered & (1u << unsigned (device))) != 0; }
 
+double configured (toml::embedded::View v) noexcept
+{
+    if (const auto d = v.decimal()) return d->toDouble();
+    if (const auto i = v.integer()) return double (*i);
+    storageOverflow();
+}
+const MeasurementResult* resultOf (const PlanInputs& in, Analyzer analyzer) noexcept
+{
+    const auto i = std::size_t (analyzer);
+    return i < in.measurements.size() ? &in.measurements[i] : nullptr;
+}
+std::optional<double> scalar (const MeasurementResult& r, std::string_view name) noexcept
+{
+    if (r.status == MeasurementStatus::Ready)
+        for (const auto& v : r.numbers)
+            if (v.name == name && v.value && std::isfinite (*v.value)) return v.value;
+    return {};
+}
+const MeasurementArray* arrayOf (const MeasurementResult& r, std::string_view name) noexcept
+{
+    if (r.status == MeasurementStatus::Ready)
+        for (const auto& a : r.arrays)
+            if (a.name == name) return &a;
+    return nullptr;
+}
+// Below [input] quiet.gainOnlyLufs no measurement is reliable: the machine places no device (the high-pass stands at its
+// floor). Strictly below: at the boundary the input is ordinary.
+bool quiet (const PlanInputs& in) noexcept
+{
+    const auto* loudness = resultOf (in, Analyzer::Loudness);
+    const auto lufs = loudness ? scalar (*loudness, "integratedLufs") : std::nullopt;
+    return lufs && *lufs < configured (in.rules.engine.find ("input").find ("quiet").find ("gainOnlyLufs"));
+}
+
+// THE SURE LOWEST NOTE (owner decision 3.2), from the first phase's low-end run: the lowest band of its table occupied in
+// at least [lowEnd] occupiedFromDuty of the frames — and then that band alone: it must be resolved, carry a valid note
+// reading, stand [lowEnd] occupiedMarginWhenOnDb above the duty line, lie above [hpf] note.aboveHz and sound [hpf]
+// note.soundingAtLeastS in all (its frames times the hop). A lowest band that fails is no note — a higher band would be a
+// note above the true one, and that cuts music.
+struct Note { std::int32_t midi = 0; double hz = 0.0; };
+std::optional<Note> sureLowestNote (const PlanInputs& in, const MeasurementResult& lowEnd) noexcept
+{
+    const auto* bands = arrayOf (lowEnd, "bands");
+    const auto hop = scalar (lowEnd, "hopSamples"), rate = scalar (lowEnd, "sampleRate");
+    if (! bands || bands->columns != 16 || ! hop || ! rate || ! (*rate > 0) || ! scalar (lowEnd, "peakMidi")) return {};
+    const auto low = in.rules.engine.find ("lowEnd");
+    const auto note = in.rules.engine.find ("hpf").find ("note");
+    const double dutyFrom = configured (low.find ("occupiedFromDuty")), margin = configured (low.find ("occupiedMarginWhenOnDb"));
+    const double aboveHz = configured (note.find ("aboveHz")), sounding = configured (note.find ("soundingAtLeastS"));
+    const auto rows = std::size_t (bands->stored);
+    for (std::size_t b = 0; b < rows && (b + 1) * 16 <= bands->values.size(); ++b)
+    {
+        const double* row = bands->values.data() + b * 16;
+        const double count = row[11], duty = row[12];
+        if (! (count > 0) || ! (duty >= dutyFrom)) continue;
+        const bool sure = row[15] > 0.5 && row[14] >= margin && row[1] > aboveHz && count * *hop / *rate >= sounding;
+        if (! sure) return {};
+        return Note { std::int32_t (row[0]), row[1] };
+    }
+    return {};
+}
+
+// THE LOSS OF THE LOW END FOLDED TO MONO (owner decision 3.5): the side's share of the low band where the bass sounds —
+// 10·log10((mid + side) / mid) over the 10 ms blocks of the low-end run at the target's crossover whose low-band level is
+// within [monoBass] loss.soundingWithinDb of the level the loudest 5 % of the blocks reach (by duration), when those
+// blocks last [monoBass] loss.soundingAtLeastS in all. Nothing that sounds, or too little of it: no reading.
+struct Weighed { double lossDb = 0.0, seconds = 0.0; };
+std::optional<Weighed> weighMonoLoss (const PlanInputs& in, const MeasurementResult& lowEnd) noexcept
+{
+    const auto* blocks = arrayOf (lowEnd, "blocks");
+    const auto rate = scalar (lowEnd, "sampleRate");
+    if (! blocks || blocks->columns != 8 || ! rate || ! (*rate > 0)) return {};
+    const auto loss = in.rules.engine.find ("monoBass").find ("loss");
+    const double within = configured (loss.find ("soundingWithinDb")), atLeast = configured (loss.find ("soundingAtLeastS"));
+    const auto rows = std::min<std::size_t> (std::size_t (blocks->stored), blocks->values.size() / 8);
+    const auto level = [&] (const double* row) noexcept -> std::optional<double>
+    {
+        const double samples = row[1], energy = row[4] + row[5];
+        if (! (row[6] > 0.5) || ! (samples > 0) || ! (energy > 0) || ! std::isfinite (energy)) return {};
+        return 10 * core::det::log10 (energy / samples);
+    };
+    // The loud reference: the level the loudest 5 % of the sounding duration reaches, on a half-decibel grid.
+    constexpr double lowest = -240.0, step = 0.5;
+    constexpr std::size_t bins = 560;
+    double histogram[bins] {};
+    double duration = 0.0;
+    for (std::size_t i = 0; i < rows; ++i)
+        if (const auto l = level (blocks->values.data() + i * 8))
+        {
+            const double at = std::clamp ((*l - lowest) / step, 0.0, double (bins - 1));
+            histogram[std::size_t (at)] += blocks->values[i * 8 + 1];
+            duration += blocks->values[i * 8 + 1];
+        }
+    if (! (duration > 0)) return {};
+    double above = 0.0, reference = lowest;
+    for (std::size_t b = bins; b-- > 0;)
+    {
+        above += histogram[b];
+        if (above >= 0.05 * duration) { reference = lowest + double (b) * step; break; }
+    }
+    double mid = 0.0, side = 0.0, samples = 0.0;
+    for (std::size_t i = 0; i < rows; ++i)
+    {
+        const double* row = blocks->values.data() + i * 8;
+        if (const auto l = level (row); l && *l >= reference - within)
+        { mid += row[4]; side += row[5]; samples += row[1]; }
+    }
+    const double seconds = samples / *rate;
+    if (! (seconds >= atLeast) || ! (mid + side > 0)) return {};
+    return Weighed { mid > 0 ? 10 * core::det::log10 ((mid + side) / mid) : std::numeric_limits<double>::infinity(), seconds };
+}
+
+} // namespace
+
+MonoBassVerdict monoBassVerdictFor (const Rules& rules, double lossDb) noexcept
+{
+    const auto config = rules.engine.find ("monoBass").find ("loss");
+    return lossDb < configured (config.find ("warnFromDb")) ? MonoBassVerdict::On
+         : lossDb <= configured (config.find ("offAboveDb")) ? MonoBassVerdict::Partial : MonoBassVerdict::AntiPhase;
+}
+
+namespace
+{
 template <class Fields> struct Planned;
 
-// [hpf]: on by [stages]; the cutoff at the config's default, never below the target's floor; the slope the target's.
+// [hpf] (owner decisions 3.2–3.4): on always; the cutoff max(what the sure lowest note allows, the target's floor), never
+// above the machine's top; the slope the target's.
 template <> struct Planned<HpfFields<Value>>
 {
-    static void propose (const PlanInputs& in, HpfFields<Value>& m, DevicePlan& plan) noexcept
+    static void propose (const PlanInputs& in, HpfFields<Value>& m, DevicePlan& plan, PlanFindings& found) noexcept
     {
         const TargetRow target = in.rules.row (in.row);
-        if (compare (in.rules.hpfDefault, target.hpfFloor) < 0) plan.target |= fieldBit (in.rules, m, m.fq);
+        const double floor = target.hpfFloor.toDouble(), top = in.rules.hpfFq.to.toDouble();
         plan.target |= fieldBit (in.rules, m, m.slope);
+        HpfFinding& f = found.hpf;
+        f = {};
+        f.cutoffHz = floor;
+        const auto* lowEnd = resultOf (in, Analyzer::LowEnd);
+        const double rate = double (in.sampleRate);
+        if (! lowEnd || ! (rate > 0)) f.cut = HpfCut::Unmeasured;
+        else if (quiet (in)) f.cut = HpfCut::Quiet;
+        else if (double (in.frames) < configured (in.rules.engine.find ("input").find ("shortSeconds")) * rate) f.cut = HpfCut::Short;
+        else if (lowEnd->status != MeasurementStatus::Ready) f.cut = HpfCut::Unmeasured;
+        else if (const auto note = sureLowestNote (in, *lowEnd); ! note) f.cut = HpfCut::Unsure;
+        else
+        {
+            const double allowed = highPassCutoffFor (note->hz, target.noteLossDb.toDouble(), m.slope, rate);
+            f.cut = allowed < floor ? (note->hz < floor ? HpfCut::BelowFloor : HpfCut::Floor) : allowed > top ? HpfCut::Top : HpfCut::Note;
+            f.cutoffHz = f.cut == HpfCut::Floor || f.cut == HpfCut::BelowFloor ? floor : f.cut == HpfCut::Top ? top : allowed;
+            f.noteMidi = note->midi;
+            f.noteHz = note->hz;
+            f.noteLossDb = highPassLossDb (f.cutoffHz, m.slope, rate, note->hz);
+        }
+        m.fq = kept (f.cutoffHz);
+        plan.measured |= f.cut == HpfCut::Note || f.cut == HpfCut::Top ? fieldBit (in.rules, m, m.fq) : std::uint8_t (0);
+        plan.target |= f.cut == HpfCut::Note || f.cut == HpfCut::Top ? std::uint8_t (0) : fieldBit (in.rules, m, m.fq);
+        if (f.cut == HpfCut::Unmeasured) plan.heldBack = HeldBack::Unmeasured;
     }
     static std::uint32_t needs (const PlanInputs&, const HpfFields<Value>&) noexcept { return 0; }
 };
 
-// [monoBass]: the crossover the target's; nothing to gather on a mono source.
+// [monoBass] (owner decision 3.5): at the target's crossover, placed by the loss the low end takes folded to mono.
 template <> struct Planned<MonoBassFields<Value>>
 {
-    static void propose (const PlanInputs& in, MonoBassFields<Value>& m, DevicePlan& plan) noexcept
+    static void propose (const PlanInputs& in, MonoBassFields<Value>& m, DevicePlan& plan, PlanFindings& found) noexcept
     {
         plan.target |= fieldBit (in.rules, m, m.fq);
-        if (! offered (in.rules, in.row, in.channels, Device::MonoBass)) plan.heldBack = HeldBack::Source;
+        MonoBassFinding& f = found.monoBass;
+        f = {};
+        f.crossoverHz = m.fq;
+        // The low-end run whose crossover is the target's: the one measured at 120 Hz, or the one at 150.
+        const MeasurementResult* lowEnd = nullptr;
+        for (const auto analyzer : { Analyzer::LowEnd, Analyzer::LowEnd150 })
+            if (const auto* r = resultOf (in, analyzer); r)
+                if (const auto at = scalar (*r, "crossoverHz"); at && same (*at, m.fq)) lowEnd = r;
+        std::optional<Weighed> weighed;
+        if (! offered (in.rules, in.row, in.channels, Device::MonoBass)) f.verdict = MonoBassVerdict::MonoSource;
+        else if (in.measurements.empty()) f.verdict = MonoBassVerdict::Unmeasured;
+        else if (quiet (in)) f.verdict = MonoBassVerdict::Quiet;
+        else if (weighed = lowEnd ? weighMonoLoss (in, *lowEnd) : std::nullopt; ! weighed) f.verdict = MonoBassVerdict::Unmeasured;
+        else
+        {
+            f.lossDb = weighed->lossDb;
+            f.soundingSeconds = weighed->seconds;
+            f.verdict = monoBassVerdictFor (in.rules, weighed->lossDb);
+        }
+        switch (f.verdict)
+        {
+            case MonoBassVerdict::On:
+            case MonoBassVerdict::Partial:    m.on = true; plan.measured |= fieldBit (in.rules, m, m.on); break;
+            case MonoBassVerdict::AntiPhase:  m.on = false; plan.measured |= fieldBit (in.rules, m, m.on); plan.heldBack = HeldBack::Measured; break;
+            case MonoBassVerdict::Unmeasured: m.on = false; plan.heldBack = HeldBack::Unmeasured; break;
+            case MonoBassVerdict::Quiet:      m.on = false; plan.heldBack = HeldBack::Quiet; break;
+            case MonoBassVerdict::MonoSource: m.on = false; plan.heldBack = HeldBack::Source; break;
+        }
     }
     static std::uint32_t needs (const PlanInputs&, const MonoBassFields<Value>&) noexcept { return 0; }
 };
@@ -73,7 +250,7 @@ template <> struct Planned<MonoBassFields<Value>>
 // follows it — so a master waits for it.
 template <> struct Planned<GlueFields<Value>>
 {
-    static void propose (const PlanInputs& in, GlueFields<Value>& m, DevicePlan& plan) noexcept
+    static void propose (const PlanInputs& in, GlueFields<Value>& m, DevicePlan& plan, PlanFindings&) noexcept
     {
         if (in.rules.row (in.row).glue) plan.target |= fieldBit (in.rules, m, m.upToDb);
     }
@@ -86,14 +263,14 @@ template <> struct Planned<GlueFields<Value>>
 // [saturation]: the config's defaults — a taste of the manual mode; the machine does not set it.
 template <> struct Planned<SaturationFields<Value>>
 {
-    static void propose (const PlanInputs&, SaturationFields<Value>&, DevicePlan&) noexcept {}
+    static void propose (const PlanInputs&, SaturationFields<Value>&, DevicePlan&, PlanFindings&) noexcept {}
     static std::uint32_t needs (const PlanInputs&, const SaturationFields<Value>&) noexcept { return 0; }
 };
 
 // [tilt]: flat — the machine does not touch timbre.
 template <> struct Planned<TiltFields<Value>>
 {
-    static void propose (const PlanInputs&, TiltFields<Value>&, DevicePlan&) noexcept {}
+    static void propose (const PlanInputs&, TiltFields<Value>&, DevicePlan&, PlanFindings&) noexcept {}
     static std::uint32_t needs (const PlanInputs&, const TiltFields<Value>&) noexcept { return 0; }
 };
 
@@ -101,7 +278,7 @@ template <> struct Planned<TiltFields<Value>>
 // itself, the clipper reads the needles at the ceiling the target's numbers give.
 template <> struct Planned<LimiterFields<Value>>
 {
-    static void propose (const PlanInputs& in, LimiterFields<Value>& m, DevicePlan& plan) noexcept
+    static void propose (const PlanInputs& in, LimiterFields<Value>& m, DevicePlan& plan, PlanFindings&) noexcept
     {
         if (in.rules.row (in.row).noClipper)
         {
@@ -118,7 +295,7 @@ template <> struct Planned<LimiterFields<Value>>
 // [dither]: on a delivery of the bit depths it serves.
 template <> struct Planned<DitherFields<Value>>
 {
-    static void propose (const PlanInputs& in, DitherFields<Value>& m, DevicePlan& plan) noexcept
+    static void propose (const PlanInputs& in, DitherFields<Value>& m, DevicePlan& plan, PlanFindings&) noexcept
     {
         plan.target |= fieldBit (in.rules, m, m.on);
         if (! offered (in.rules, in.row, in.channels, Device::Dither)) plan.heldBack = HeldBack::Target;
@@ -129,7 +306,7 @@ template <> struct Planned<DitherFields<Value>>
 // [low]: the target's correction for its medium (lowDb), where it names one.
 template <> struct Planned<LowFields<Value>>
 {
-    static void propose (const PlanInputs& in, LowFields<Value>& m, DevicePlan& plan) noexcept
+    static void propose (const PlanInputs& in, LowFields<Value>& m, DevicePlan& plan, PlanFindings&) noexcept
     {
         if (in.rules.row (in.row).lowDb) plan.target |= std::uint8_t (fieldBit (in.rules, m, m.on) | fieldBit (in.rules, m, m.db));
     }
@@ -162,16 +339,17 @@ bool ended (const MeasurementResult& result) noexcept
     storageOverflow();
 }
 
-void propose (const PlanInputs& in, Devices& machine, DevicePlans& plans) noexcept
+void propose (const PlanInputs& in, Devices& machine, DevicePlans& plans, PlanFindings& found) noexcept
 {
     Devices defaults;
     placeDefaults (in.rules, in.row, in.channels, defaults);
     plans = {};
+    found = {};
     eachPlan (machine, plans, [&] (Device device, auto& layers, DevicePlan& plan)
     {
         using Fields = std::remove_cvref_t<decltype (layers.machine)>;
         layers.machine = DeviceOf<Fields>::layers (defaults).machine;
-        Planned<Fields>::propose (in, layers.machine, plan);
+        Planned<Fields>::propose (in, layers.machine, plan, found);
         if (! offeredByShell (in, device))
         {
             plan.heldBack = HeldBack::Shell;
@@ -196,7 +374,8 @@ std::uint32_t needs (const PlanInputs& in, const Devices& devices, bool withHand
 void placeMachine (const PlanInputs& in, Devices& devices) noexcept
 {
     DevicePlans plans;
-    propose (in, devices, plans);
+    PlanFindings found;
+    propose (in, devices, plans, found);
     eachDevice (devices, [&] (Device device, auto& layers)
     {
         if (! offeredByShell (in, device)) layers.hand = {};
@@ -305,6 +484,7 @@ detail::PlanInputs Session::planInputs (const Project& project) const noexcept
     in.targetEdit = project.targetEdit;
     in.channels = source_.channels;
     in.sampleRate = source_.sampleRate;
+    in.frames = source_.frames;
     in.offered = capabilities_.offeredDevices;
     if (source_.channels != 0) in.measurements = measurementResults_;
     const auto need = needlesNeed (project);
@@ -337,7 +517,7 @@ void Session::replan() noexcept
     const auto core = version();
     key.u64 (core.major); key.u64 (core.minor); key.u64 (core.patch);
     key.u64 (in.row); key.field (in.targetEdit.lufs); key.field (in.targetEdit.tp);
-    key.u64 (in.channels); key.u64 (in.sampleRate); key.u64 (in.offered); key.byte (in.needlesCurrent ? 1 : 0);
+    key.u64 (in.channels); key.u64 (in.sampleRate); key.u64 (in.frames); key.u64 (in.offered); key.byte (in.needlesCurrent ? 1 : 0);
     const bool firstEnded = sourceMeasurements_ ? sourceMeasurements_->firstPublished : measurementsFromSidecar_;
     key.byte (devicesPlaced_ ? 1 : 0); key.byte (firstEnded ? 1 : 0); key.byte (mandatoryReady() ? 1 : 0);
     for (const auto& r : in.measurements)
@@ -366,7 +546,12 @@ void Session::replan() noexcept
         else
         {
             Devices proposed;
-            detail::propose (in, proposed, plan_.devices);
+            detail::PlanFindings found;
+            detail::propose (in, proposed, plan_.devices, found);
+            plan_.hpf = found.hpf;
+            plan_.monoBass = found.monoBass;
+            plan_.monoBass.againstMachine = ! proposed.monoBass.machine.on
+                && detail::settingsOf (in.rules, project_.devices.monoBass).on;
             plan_.needs = detail::needs (in, project_.devices, true, plan_.devices);
             plan_.waiting = detail::waiting (in, plan_.needs);
             DevicePlans machineOnly;
@@ -388,5 +573,48 @@ void Session::replan() noexcept
              && sourceMeasurements_->cursor < sourceMeasurements_->order.size()
              && sourceMeasurements_->order[sourceMeasurements_->cursor] == Analyzer::Tempo)
         plan_.awaitedFraction = double (sourceMeasurements_->frames) / double (source_.frames);
+}
+} // namespace felitronics::session
+
+namespace felitronics::session
+{
+text::Fact PlanText::hpf (const HpfFinding& f) noexcept
+{
+    using text::Arg; using text::Fact; using text::FactId; using text::Unit;
+    const auto cutoff = Arg::value (f.cutoffHz, Unit::Hz, 1);
+    const auto note = [&] { return Arg::midi (f.noteMidi.value_or (0)); };
+    const auto hz = [&] { return Arg::value (f.noteHz.value_or (0.0), Unit::Hz, 1); };
+    const auto loss = [&] { return Arg::value (f.noteLossDb.value_or (0.0), Unit::Db, 1); };
+    switch (f.cut)
+    {
+        case HpfCut::Note:       return Fact::of (FactId::HpfNote, cutoff, note(), hz(), loss());
+        case HpfCut::Floor:      return Fact::of (FactId::HpfFloor, cutoff, note(), hz(), loss());
+        case HpfCut::BelowFloor: return Fact::of (FactId::HpfBelowFloor, cutoff, note(), hz(), loss());
+        case HpfCut::Top:        return Fact::of (FactId::HpfTop, cutoff, note(), hz());
+        case HpfCut::Unsure:     return Fact::of (FactId::HpfUnsure, cutoff);
+        case HpfCut::Short:
+        {
+            const auto shortest = detail::rules().engine.find ("input").find ("shortSeconds");
+            const double seconds = shortest.decimal() ? shortest.decimal()->toDouble() : double (shortest.integer().value_or (0));
+            return Fact::of (FactId::HpfShort, cutoff, Arg::value (seconds, Unit::S, 0));
+        }
+        case HpfCut::Quiet:      return Fact::of (FactId::HpfQuiet, cutoff);
+        case HpfCut::Unmeasured: return Fact::of (FactId::HpfUnmeasured, cutoff);
+    }
+    detail::storageOverflow();
+}
+std::optional<text::Fact> PlanText::monoBass (const MonoBassFinding& f) noexcept
+{
+    using text::Arg; using text::Fact; using text::FactId; using text::Unit;
+    switch (f.verdict)
+    {
+        case MonoBassVerdict::Partial:    return Fact::of (FactId::MonoBassPartial, Arg::value (f.lossDb.value_or (0.0), Unit::Db, 1));
+        case MonoBassVerdict::AntiPhase:  return Fact::of (FactId::MonoBassAntiPhase, Arg::value (f.lossDb.value_or (0.0), Unit::Db, 1));
+        case MonoBassVerdict::Unmeasured: return Fact::of (FactId::MonoBassUnmeasured);
+        case MonoBassVerdict::On:
+        case MonoBassVerdict::MonoSource:
+        case MonoBassVerdict::Quiet:      return std::nullopt;
+    }
+    detail::storageOverflow();
 }
 } // namespace felitronics::session

@@ -286,7 +286,6 @@ void readInput (Doc& d, Reader& in, Input& o)
         d.below (t, warning && gainOnly, o.quietGainOnlyLufs, o.quietWarningLufs, "warningLufs");   // gain-only is the quieter
     });
     in.required ("shortSeconds", o.shortSeconds, R { 0.0, 600.0 });
-    in.required ("shortConfidence", o.shortConfidence, share());
 }
 
 void readLanding (Reader& in, Landing& o)
@@ -383,7 +382,7 @@ void readLowEnd (Doc& d, Reader& in, LowEnd& o)
     }
 }
 
-void readHpf (Doc& d, Reader& in, Hpf& o, std::vector<std::int32_t>& bands, const std::optional<double>& dcFrom)
+void readHpf (Doc& d, Reader& in, Hpf& o, std::vector<std::int32_t>& bands)
 {
     if (in.required ("frequencyDomain", o.frequencyDomain) && o.frequencyDomain != "sourceNyquist")
         d.refuse (in, "frequencyDomain", Refusal::Fixed);
@@ -397,7 +396,6 @@ void readHpf (Doc& d, Reader& in, Hpf& o, std::vector<std::int32_t>& bands, cons
     const bool hi = in.required ("hzMax", o.hzMax, hpfDomain());
     d.below (in, lo && hi, o.hzMin, o.hzMax, "hzMax");
     const R travel = lo && hi && o.hzMin < o.hzMax ? R { o.hzMin, o.hzMax } : R { 1.0, 200.0 };
-    in.required ("hzDefault", o.hzDefault, hpfDomain());
     if (in.required ("slopes", o.slopes, I { 6, 96 }))
     {
         if (o.slopes.empty()) d.refuse (in, "slopes", Refusal::NotOneOf);
@@ -413,13 +411,10 @@ void readHpf (Doc& d, Reader& in, Hpf& o, std::vector<std::int32_t>& bands, cons
     }
     if (in.required ("slopeDefault", o.slopeDefault, I { 6, 96 }) && o.slopeDefault % 6 != 0)
         d.refuse (in, "slopeDefault", Refusal::NotOneOf);
-    in.table ("nothingBelowNote", Need::Required, [&] (Reader& t)
+    in.table ("note", Need::Required, [&] (Reader& t)
     {
-        t.required ("infraLowBelow", o.nothingBelowNoteInfraLowBelow, share());
-        // "No DC" is no dcOffset finding: the same threshold, named here and refused apart from it.
-        if (t.required ("dcOffsetBelow", o.nothingBelowNoteDcOffsetBelow, share()) && dcFrom
-            && ! same (o.nothingBelowNoteDcOffsetBelow, *dcFrom))
-            d.refuse (t, "dcOffsetBelow", Refusal::Mismatch);
+        t.required ("aboveHz", o.noteAboveHz, R { 0.0, 200.0 });
+        t.required ("soundingAtLeastS", o.noteSoundingAtLeastS, R { 0.0, 600.0 });
     });
     in.table ("comfort", Need::Required, [&] (Reader& t)
     {
@@ -460,6 +455,14 @@ void readMonoBass (Doc& d, Reader& in, MonoBass& o)
     const R frequency = readDomain (d, in, "frequencyDomain", o.frequencyDomain, R { 60.0, 300.0 });
     const bool range = d.pair (in, "frequencyRange", o.frequencyRange, frequency);
     in.required ("frequencyStep", o.frequencyStep, R { 0.1, 50.0 });
+    in.table ("loss", Need::Required, [&] (Reader& t)
+    {
+        const bool warn = t.required ("warnFromDb", o.lossWarnFromDb, R { 0.0, 40.0 });
+        const bool off = t.required ("offAboveDb", o.lossOffAboveDb, R { 0.0, 40.0 });
+        d.notAbove (t, warn && off, o.lossWarnFromDb, o.lossOffAboveDb, "offAboveDb");
+        t.required ("soundingWithinDb", o.lossSoundingWithinDb, R { 0.0, 120.0 });
+        t.required ("soundingAtLeastS", o.lossSoundingAtLeastS, R { 0.0, 600.0 });
+    });
     const R travel = range ? R { o.frequencyRange.min, o.frequencyRange.max } : R { 20.0, 1000.0 };
     in.table ("zones", Need::Required, [&] (Reader& z)
     {
@@ -722,7 +725,7 @@ void readSibilance (Doc& d, Reader& in, Sibilance& o)
 
 // Every weight rises from `from` to 1 at `fullAt`, and divides by their difference: from < fullAt, strictly. A weight
 // written with its `fullAt` alone rises from 0, so its `fullAt` lies above zero.
-void readObservations (Doc& d, Reader& in, Observations& o, std::optional<double>& dcFrom)
+void readObservations (Doc& d, Reader& in, Observations& o)
 {
     const bool doubtful = in.required ("doubtfulBelow", o.doubtfulBelow, share());
     auto fullAtAlone = [&] (Reader& t, std::string_view key, double& out, const R& domain)
@@ -738,7 +741,6 @@ void readObservations (Doc& d, Reader& in, Observations& o, std::optional<double
         const bool f = t.required ("from", o.dcOffsetFrom, share());
         const bool a = t.required ("fullAt", o.dcOffsetFullAt, share());
         d.below (t, f && a, o.dcOffsetFrom, o.dcOffsetFullAt, "fullAt");
-        if (f) dcFrom = o.dcOffsetFrom;
     });
     in.table ("bitsUnused", Need::Required, [&] (Reader& t)
     {
@@ -930,16 +932,15 @@ void readBlindTest (Doc& d, Reader& in, BlindTest& o, const std::vector<std::str
 void readEngine (Doc& d, Reader& in, Engine& o, const std::vector<std::string>* targets)
 {
     std::vector<std::int32_t> bands;   // the core's EQ bands the devices have taken, in reading order
-    std::optional<double> dcFrom;      // observations.dcOffset.from, once read
     in.required ("defaults", o.defaults);
     in.table ("input", Need::Required, [&] (Reader& t) { readInput (d, t, o.input); });
     in.table ("landing", Need::Required, [&] (Reader& t) { readLanding (t, o.landing); });
     in.table ("limiter", Need::Required, [&] (Reader& t) { readLimiter (d, t, o.limiter); });
     in.table ("lowEnd", Need::Required, [&] (Reader& t) { readLowEnd (d, t, o.lowEnd); });
-    in.table ("observations", Need::Required, [&] (Reader& t) { readObservations (d, t, o.observations, dcFrom); });
+    in.table ("observations", Need::Required, [&] (Reader& t) { readObservations (d, t, o.observations); });
     in.table ("hpf", Need::Required, [&] (Reader& t)
     {
-        readHpf (d, t, o.hpf, bands, dcFrom);
+        readHpf (d, t, o.hpf, bands);
     });
     in.table ("monoBass", Need::Required, [&] (Reader& t)
     {
@@ -1024,7 +1025,6 @@ void readTarget (Doc& d, Reader& row, Target& x, const RowDomains& b)
     if (row.required ("bitDepth", x.bitDepth, I { 16, 24 }) && x.bitDepth != 16 && x.bitDepth != 24)
         d.refuse (row, "bitDepth", Refusal::NotOneOf);
     d.flag (row, "noClipper", x.noClipper);
-    d.flag (row, "hpfAlways", x.hpfAlways);
     d.flag (row, "sourceRatePass", x.sourceRatePass);
     // A pass at the source's rate exists only where the delivery rate is another.
     if (x.sourceRatePass && x.sampleRate == 0 && row.data().find ("sampleRate") != nullptr)

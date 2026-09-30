@@ -382,8 +382,8 @@ void theDefaultsAtCreate()
         "and after a change of target while the first measurement runs");
     ok (Driver::measured1 (*s, s->measurementJob(), s->source().hash), "the first measurement ends");
     const auto& d = s->project().devices;
-    // allStreaming: 24 Hz floor under the 30 Hz default, 24 dB/oct, mono bass at 120 Hz, a peak clipper, 24-bit delivery.
-    ok (same (d.hpf.machine.fq, 30.0) && d.hpf.machine.slope == 24 && d.hpf.machine.on, "the high-pass: 30 Hz, 24 dB/oct, on");
+    // allStreaming: the 32 Hz floor (no low end measured here), 24 dB/oct, mono bass at 120 Hz, a peak clipper, 24-bit delivery.
+    ok (same (d.hpf.machine.fq, 32.0) && d.hpf.machine.slope == 24 && d.hpf.machine.on, "the high-pass: 32 Hz, 24 dB/oct, on");
     ok (same (d.monoBass.machine.fq, 120.0) && same (d.monoBass.machine.width, 0.0), "mono bass: 120 Hz, width 0");
     ok (d.limiter.machine.needles == Needles::Auto && same (d.limiter.machine.needlesDb, 1.5), "the needles: auto, 1.5 dB");
     ok (! d.dither.machine.on && ! d.low.machine.on, "no dither at 24 bits, no low shelf off vinyl");
@@ -475,7 +475,7 @@ void placement()
     const Answer a = s.apply (editOf (hpfFq (36.0)));
     ok (a.rejection == Rejection::None && s.project().devices.hpf.hand.fq && same (*s.project().devices.hpf.hand.fq, 36.0),
         "after it an edit is taken, into a person's layer");
-    ok (same (s.project().devices.hpf.machine.fq, 30.0), "and the machine's layer is as it was");
+    ok (same (s.project().devices.hpf.machine.fq, 32.0), "and the machine's layer is as it was");
     ok (accepted (s, revertOf (fq)) && ! s.project().devices.hpf.hand.fq, "a revert takes it back");
 
     Situation y = situation (Column::Measured1, false);
@@ -994,7 +994,7 @@ void theRulesAreTheSchemas()
     ok (knob (r.lufs, c.targets.editLufs.from, c.targets.editLufs.to, c.targets.editLufs.step)
             && knob (r.tp, c.targets.editTp.from, c.targets.editTp.to, c.targets.editTp.step), "[edit] lufs, tp");
     const auto& e = c.engine;
-    ok (knob (r.hpfFq, e.hpf.hzMin, e.hpf.hzMax, 1.0) && is (r.hpfDefault, e.hpf.hzDefault), "[hpf]: whole hertz from hzMin to hzMax, hzDefault");
+    ok (knob (r.hpfFq, e.hpf.hzMin, e.hpf.hzMax, 1.0), "[hpf]: whole hertz from hzMin to hzMax");
     for (std::int32_t slope = -6; slope <= 96; ++slope)
         if (r.slope (slope) != (slope >= 6 && slope <= 96 && slope % 6 == 0))
             ok (false, "[hpf] slopes: " + std::to_string (slope));
