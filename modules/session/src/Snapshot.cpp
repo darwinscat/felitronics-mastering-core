@@ -178,6 +178,23 @@ SnapshotView Session::buildSummary (std::span<MeasurementResult> results) const 
     for (auto& r : results) r.arrays = {};
     v.measurements = results; v.momentary = {}; v.shortTerm = {}; v.runs = {};
     v.measurementRowsIncluded = false;
+    if (capabilities_.leanSummary)
+    {
+        // Every master without its heavy rows — its scalars, pass log and cost sections stay; a MasterReport query
+        // gives one whole. The room is the session's, as long as masters_, and written afresh by every summary.
+        for (std::size_t i = 0; i < v.masters.size(); ++i)
+        {
+            auto& lean = leanMasters_[i] = v.masters[i];
+            if (lean.landing) { lean.landing->limiterTrace.reset(); lean.landing->peakClipTrace.reset(); }
+            if (lean.report)
+            {
+                lean.report->crest.rows = {}; lean.report->crest.sourceMask = {};
+                if (lean.report->cost) lean.report->cost->waveform = {};
+            }
+        }
+        v.masters = { leanMasters_.get(), v.masters.size() };
+        v.masterRowsIncluded = false;
+    }
     return v;
 }
 std::uint64_t Session::summaryBytes() const noexcept
@@ -200,7 +217,7 @@ Snapshot Session::snapshot() const noexcept
 }
 void Session::refreshEqCurve() noexcept
 {
-    if (placed()) detail::eqCurve (project_, detail::rules(), double (source_.sampleRate), eqCurve_);
+    if (devicesPlaced_) detail::eqCurve (project_, detail::rules(), double (source_.sampleRate), eqCurve_);
 }
 SnapshotView Session::buildView() const noexcept
 {
@@ -228,7 +245,9 @@ SnapshotView Session::buildView() const noexcept
         Of::each (rules, [&] (std::uint8_t, const detail::FieldRule&, const auto& hand)
         { if (hand) ++v.handFieldCount; }, layers.hand);
     });
-    if (placed()) v.eqCurve = eqCurve_;
+    if (devicesPlaced_) v.eqCurve = eqCurve_;
+    v.plan = plan_;
+    v.observations = observations_;
     v.target = targetName();
     v.source = source_;
     v.measurementStorage = measurementStorage_;
@@ -253,5 +272,10 @@ SnapshotView Session::buildView() const noexcept
         if (value.name == "integratedLufs" && value.value) v.integratedLufs = *value.value;
     v.sourceBytes = samples_ ? double (source_.frames * source_.channels * sizeof (float)) : 0.0;
     return v;
+}
+std::optional<text::Fact> SnapshotText::targetChange (const SnapshotView& view) noexcept
+{
+    if (view.handFieldCount == 0) return std::nullopt;
+    return text::Fact::of (text::FactId::TargetChangeResetsEdits, text::Arg::count (view.handFieldCount));
 }
 } // namespace felitronics::session

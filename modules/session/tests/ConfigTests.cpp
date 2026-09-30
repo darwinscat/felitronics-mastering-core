@@ -119,7 +119,7 @@ void theSchemaRefuses()
     // Unknown keys — a typo is an error, never a setting silently ignored — in a table and inside an inline row, and the
     // key the typo stood for is missing, pointed at the table that lacks it.
     mustRefuse (E, "releaseMs = 50", "releseMs = 50", "releseMs", Fault::UnknownKey, "limiter.releseMs");
-    mustRefuse (T, "hpfFloor = 32", "hpfFlor = 32", "hpfFlor", Fault::UnknownKey, "targets.lp.hpfFlor");
+    mustRefuse (T, "monoBass = 150, hpfFloor = 32", "monoBass = 150, hpfFlor = 32", "hpfFlor", Fault::UnknownKey, "targets.lp.hpfFlor");
     mustRefuse (E, "[limiter]\nceilingMarginDb = 0.15\n", "[limiter]\n", "[limiter]", Fault::Missing, "limiter.ceilingMarginDb");
 
     mustRefuse (E, "driveRange = [0, 12]", "driveRange = [0, 13]", "13", Fault::OutOfRange, "saturation.driveRange[1]");
@@ -130,10 +130,14 @@ void theSchemaRefuses()
     mustRefuse (E, "[tilt]\ndomain = [-6, 6]\nband = 1\nfreqHz = 1000\nnormal = [-1.5, 1.5]\nhard = [-3, 3]",
                 "[tilt]\ndomain = [1, 6]\nband = 1\nfreqHz = 1000\nnormal = [1, 2]\nhard = [1, 3]",
                 "[1, 6", Fault::OutOfRange, "tilt.domain");
-    mustAccept (E, "hzDefault = 30", "hzDefault = 100.25");
-    mustAccept (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 5.25 }");
+    mustAccept (E, "aboveHz = 20,", "aboveHz = 20.25,");
+    mustAccept (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 2.75 }");
+    // The machine's glue stays on the slider's travel (owner decision 3.8): above knobMaxDb is a person's alone.
+    mustRefuse (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 3.25 }", "3.25", Fault::OutOfRange, "glue.byTarget.cd");
+    mustRefuse (E, "whenTicked = 0.5", "whenTicked = 3.5", "3.5", Fault::OutOfRange, "glue.whenTicked");
+    mustAccept (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 3 }");
     mustAccept (T, "lowDb = 0.5", "lowDb = 5.25");
-    mustAccept (T, "hpfFloor = 32", "hpfFloor = 100.25");
+    mustAccept (T, "monoBass = 150, hpfFloor = 32", "monoBass = 150, hpfFloor = 100.25");
     // Wrong types.
     mustRefuse (E, "toleranceLu = 0.1", "toleranceLu = \"0.1\"", "\"0.1\"", Fault::WrongType, "landing.toleranceLu");
     mustRefuse (T, "noClipper = true", "noClipper = 1", "1", Fault::WrongType, "targets.lp.noClipper");
@@ -145,7 +149,7 @@ void theSchemaRefuses()
     mustRefuse (E, "passes = 12", "passes = 0", "0", Fault::OutOfRange, "landing.passes");
     mustAccept (T, "lufs = -23", "lufs = -30");
     mustRefuse (T, "monoBass = 150", "monoBass = 400", "400", Fault::OutOfRange, "targets.lp.monoBass");
-    mustRefuse (E, "betweenOverDb = 1.5", "betweenOverDb = 7", "7", Fault::OutOfRange, "limiter.peakClipper.betweenOverDb");
+    mustRefuse (E, "betweenCutDb = 1.5", "betweenCutDb = 7", "7", Fault::OutOfRange, "limiter.peakClipper.betweenCutDb");
     // A bound the ranges cannot say: above zero, above the core's own number, a hole in a range.
     mustRefuse (T, "sampleRate = 48000, bitDepth = 24 }\n# YouTube Music", "sampleRate = 4000, bitDepth = 24 }\n# YouTube Music",
                 "4000", Fault::OutOfRange, "targets.youtube.sampleRate");
@@ -154,7 +158,6 @@ void theSchemaRefuses()
     mustRefuse (E, "fullAtDropDb = 60", "fullAtDropDb = 24", "24", Fault::OutOfRange, "observations.spectralWall.fullAtDropDb");
 
     // Fractional cutoff and slider bounds are valid independently of the slider step.
-    mustAccept (E, "hzDefault = 30", "hzDefault = 30.5");
     mustAccept (E, "hzMax = 50", "hzMax = 50.5");
     mustAccept (E, "hzMin = 15", "hzMin = 15.5");
 
@@ -188,7 +191,7 @@ void theSchemaRefuses()
     mustRefuse (E, "slowReleaseMs = 200", "slowReleaseMs = 20", "20", Fault::Refused, "limiter.slowReleaseMs", Refusal::OutOfOrder);
     mustRefuse (E, "warningLowHz = 20, warningHighHz = 50", "warningLowHz = 20, warningHighHz = 40", "40", Fault::Refused,
                 "hpf.comfort.warningHighHz", Refusal::OutOfOrder);
-    mustRefuse (E, "hzMin = 15", "hzMin = 50", "50\nhzDefault", Fault::Refused, "hpf.hzMax", Refusal::OutOfOrder);
+    mustRefuse (E, "hzMin = 15", "hzMin = 50", "50\nslopes", Fault::Refused, "hpf.hzMax", Refusal::OutOfOrder);
     // ...a crest of exactly three corners, and the printed quantiles that the fields' names state.
     mustRefuse (E, "bandEdgesHz = [120, 2000, 6000]", "bandEdgesHz = []", "[]", Fault::Refused, "crest.bandEdgesHz", Refusal::NotOneOf);
     mustRefuse (E, "printedQuantiles = [0.5, 0.95]", "printedQuantiles = [0.1, 0.9]", "[0.1", Fault::Refused, "cost.printedQuantiles",
@@ -223,15 +226,15 @@ void theSchemaRefuses()
     // ...a value off its knob's step.
     mustAccept (T, "appleMusic   = { group = \"streaming\", lufs = -16, tp = -1,", "appleMusic   = { group = \"streaming\", lufs = -16, tp = -1.05,");
     mustAccept (T, "lowDb = 0.5", "lowDb = 0.55");
-    mustAccept (E, "betweenOverDb = 1.5", "betweenOverDb = 1.25");
+    mustAccept (E, "betweenCutDb = 1.5", "betweenCutDb = 1.25");
     mustAccept (E, "lowWidth = 0\n", "lowWidth = 0.03\n");
     mustRefuse (E, "hopMs = 100", "hopMs = 15", "15", Fault::Refused, "crest.hopMs", Refusal::NotOnStep);
-    // ...one threshold named in two places, refused apart.
-    mustRefuse (E, "dcOffsetBelow = 0.001", "dcOffsetBelow = 0.002", "0.002", Fault::Refused, "hpf.nothingBelowNote.dcOffsetBelow",
-                Refusal::Mismatch);
+    // ...a warning above the loss that takes mono bass out.
+    mustRefuse (E, "warnFromDb = 1, offAboveDb = 3", "warnFromDb = 4, offAboveDb = 3", "3", Fault::Refused, "monoBass.loss.offAboveDb",
+                Refusal::OutOfOrder);
     // ...an optional flag written as its default, and a flag where it cannot apply.
-    mustRefuse (T, "sampleRate = 0, bitDepth = 24 }\nappleMusic", "sampleRate = 0, bitDepth = 24, hpfAlways = false }\nappleMusic",
-                "false", Fault::Refused, "targets.spotifyLoud.hpfAlways", Refusal::WrittenDefault);
+    mustRefuse (T, "sampleRate = 0, bitDepth = 24 }\nappleMusic", "sampleRate = 0, bitDepth = 24, noClipper = false }\nappleMusic",
+                "false", Fault::Refused, "targets.spotifyLoud.noClipper", Refusal::WrittenDefault);
     mustRefuse (T, "sampleRate = 0, bitDepth = 24 }\nspotifyLoud", "sampleRate = 0, bitDepth = 24, sourceRatePass = true }\nspotifyLoud",
                 "true", Fault::Refused, "targets.spotify.sourceRatePass", Refusal::NotApplicable);
 
@@ -297,7 +300,7 @@ void theSchemaAdmitsWhatTheAnalyzersAdmit()
 
 // Which key paths cannot change a master — this suite's own statement of the rule, held against the library's walk: a
 // path listed, or under one, moves `all` and never `sound`; every other moves both. The rule: what is shown, what prints a
-// finding or a warning without switching a device (every observation threshold but observations.polarity), what is
+// finding or a warning without switching a device (every observation threshold, polarity included), what is
 // measured after the master, development, the name of the defaults — and, while no shell offers the de-esser, its block
 // and the bursts only it reads (but not deEsser.offered itself: offering it brings them in).
 constexpr std::string_view kTargetsPresentation[] = {
@@ -306,7 +309,7 @@ constexpr std::string_view kTargetsPresentation[] = {
 constexpr std::string_view kEnginePresentation[] = {
     "defaults", "limiter.peakClipper.densityMinusDb", "limiter.peakClipper.densityWithinDb", "hpf.slopesNormal",
     "hpf.comfort", "hpf.curveTopDb", "hpf.curveBottomDb", "hpf.curveStepDb", "hpf.curveHeadroomDb", "hpf.marks",
-    "monoBass.zones", "tilt.normal", "low.normal", "eq", "crest", "cost", "progress", "blindTest",
+    "monoBass.zones", "saturation.cut", "tilt.normal", "low.normal", "eq", "crest", "cost", "progress", "blindTest",
 };
 constexpr std::string_view kWhileNoDeEsser[] = { "deEsser", "stereoBursts" };
 
@@ -319,7 +322,7 @@ bool presentation (int doc, const std::string& path)
 {
     const auto covers = [&] (std::string_view p) { return under (path, p); };
     if (doc == 0) return std::any_of (std::begin (kTargetsPresentation), std::end (kTargetsPresentation), covers);
-    if (under (path, "observations")) return ! under (path, "observations.polarity");
+    if (under (path, "observations")) return true;
     if (path == "deEsser.offered") return false;   // the documents' de-esser is not offered
     return std::any_of (std::begin (kEnginePresentation), std::end (kEnginePresentation), covers)
         || std::any_of (std::begin (kWhileNoDeEsser), std::end (kWhileNoDeEsser), covers);
@@ -395,8 +398,8 @@ void theVersionsAreNormalised()
           "two keys of a table swapped" },
         { config::Document::Engine, "referenceLufs = -18\nquiet = { warningLufs = -40, gainOnlyLufs = -55 }\n",
           "quiet = { warningLufs = -40, gainOnlyLufs = -55 }\nreferenceLufs = -18\n", "a key moved after an inline table" },
-        { config::Document::Engine, "quiet = { warningLufs = -40, gainOnlyLufs = -55 }\nshortSeconds = 10\nshortConfidence = 0.5\n",
-          "shortSeconds = 10\nshortConfidence = 0.5\n\n[input.quiet]\nwarningLufs = -40\ngainOnlyLufs = -55\n",
+        { config::Document::Engine, "quiet = { warningLufs = -40, gainOnlyLufs = -55 }\nshortSeconds = 10\n",
+          "shortSeconds = 10\n\n[input.quiet]\nwarningLufs = -40\ngainOnlyLufs = -55\n",
           "an inline table written under a header of its own" },
     };
     for (const auto& r : respellings)
@@ -424,9 +427,9 @@ void theSoundIsWhatCanChangeAMaster()
     felitronics::test::group ("sound: what can change a master; what only shows or prints moves all alone");
     const config::Versions v = Config::versions();
     struct Case { config::Document document; std::string_view from, to, what; bool soundMoves; };
-    const std::string spotifyRow = "spotify      = { group = \"streaming\", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 24, "
+    const std::string spotifyRow = "spotify      = { group = \"streaming\", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 32, "
                                    "hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }\n";
-    const std::string loudRow = "spotifyLoud  = { group = \"streaming\", lufs = -11, tp = -2, monoBass = 120, hpfFloor = 24, "
+    const std::string loudRow = "spotifyLoud  = { group = \"streaming\", lufs = -11, tp = -2, monoBass = 120, hpfFloor = 32, "
                                 "hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }\n";
     const std::string rows = spotifyRow + loudRow, swapped = loudRow + spotifyRow;
     const Case cases[] = {
@@ -441,7 +444,7 @@ void theSoundIsWhatCanChangeAMaster()
         { config::Document::Engine, "wideBass = { sideFractionAtLeast = 0.06 }", "wideBass = { sideFractionAtLeast = 0.07 }",
           "the wide-bass warning: mono bass is placed whatever it says", false },
         { config::Document::Engine, "polarity = { correlationBelow = 0,", "polarity = { correlationBelow = 0.1,",
-          "observations.polarity, which keeps mono bass out", true },
+          "observations.polarity: a finding — mono bass is decided by the loss of its own band", false },
         { config::Document::Engine, "normal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.1\n\n# LOW",
           "normal = [-1.2, 1.5]\nhard = [-3, 3]\nstep = 0.1\n\n# LOW", "tilt's red zone", false },
         { config::Document::Engine, "slopesNormal = [12, 24]", "slopesNormal = [12]", "which slopes warn", false },

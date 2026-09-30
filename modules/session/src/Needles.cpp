@@ -34,6 +34,12 @@ double configured (std::string_view name) noexcept
     if (const auto i = value.integer()) return double (*i);
     detail::storageOverflow();
 }
+// The same ceiling is the same bits — the rule planInputs() decides "the needles are this project's" by: a ceiling of −0
+// is not one of +0, and two NaNs of one pattern are one. Deciding by value here would keep a result the plan does not take.
+bool sameCeiling (const std::optional<double>& a, const std::optional<double>& b) noexcept
+{
+    return a.has_value() == b.has_value() && (! a || std::bit_cast<std::uint64_t> (*a) == std::bit_cast<std::uint64_t> (*b));
+}
 std::uint64_t resultKey (std::uint64_t sourceKey, double ceiling) noexcept
 {
     auto key = sourceKey;
@@ -83,18 +89,12 @@ void Session::needlesChanged() noexcept
 void Session::requestNeedles() noexcept
 {
     const auto& loudness = measurementResults_[std::size_t (Analyzer::Loudness)];
-    const auto lufs = reading (loudness, "integratedLufs");
     const auto peak = reading (loudness, "truePeakDb");
-    std::optional<double> need, ceiling;
-    if (lufs && peak)
-    {
-        const auto target = detail::rules().row (project_.target);
-        const double targetLufs = project_.targetEdit.lufs ? *project_.targetEdit.lufs : target.lufs.toDouble();
-        const double targetTp = project_.targetEdit.tp ? *project_.targetEdit.tp : target.tp.toDouble();
-        need = (*peak - *lufs) - (targetTp - targetLufs);
-        ceiling = *peak - *need;
-    }
-    if (ceiling && needlesSource_ == source_.hash && needlesCeilingDb_ == ceiling
+    // The need of the project a waiting master captured, until it has what it reads; the project's own after.
+    const auto need = needlesNeed (jobWaiting_ ? jobRecipe_.project : project_);
+    std::optional<double> ceiling;
+    if (need) ceiling = *peak - *need;
+    if (ceiling && needlesSource_ == source_.hash && sameCeiling (needlesCeilingDb_, ceiling)
         && (needlesJob_ != 0 || measurementResults_[slot].status == MeasurementStatus::Ready)) return;
     clearNeedles();
     needlesSource_ = source_.hash;

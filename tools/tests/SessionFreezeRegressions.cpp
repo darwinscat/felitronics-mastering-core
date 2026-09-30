@@ -38,8 +38,16 @@ int main (int argc, char** argv)
         (void) s.apply (command::SetTarget { 6, "lp" });
         if (s.apply (command::EditDevice { 7, shelf }).rejection != Rejection::None) return 1;
         auto file = s.exportProject(); std::string project (file.view());
-        const auto at = project.find ("defaults = "); project.replace (at, project.find ('\n', at) - at, "defaults = \"2020-01\"");
-        if (s.importProject (8, project).rejection != Rejection::None || s.events().empty() || s.events()[0].kind != EventKind::Fact) return 1;
+        // Any label but the current one is refused whole as UnknownDefaults (owner, 30.09: an import accepts only the
+        // current defaults label); the file of the current defaults opens.
+        const auto at = project.find ("defaults = ");
+        for (const char* label : { "defaults = \"2020-01\"", "defaults = \"2026-09\"" })
+        {
+            std::string older = project; older.replace (at, older.find ('\n', at) - at, label);
+            const auto revision = s.revision();
+            if (s.importProject (8, older).rejection != Rejection::UnknownDefaults || s.revision() != revision) return 1;
+        }
+        if (s.importProject (8, project).rejection != Rejection::None) return 1;
         const auto current = s.exportProject(); project = current.view(); project += "\n[hpf]\nfq.machine = 100.25\n";
         return s.importProject (9, project).rejection == Rejection::None ? 0 : 1;
     }
@@ -53,8 +61,8 @@ int main (int argc, char** argv)
     if (item == "F1" || item == "F2")
     {
 #if defined (FC_SESSION_CAPABILITIES_V1_BYTES)
-        const fc_session_capabilities caps { sizeof (caps), 9007199254740991.0, 48000, 255, 9007199254740991.0 };
-        if (caps.size != FC_SESSION_CAPABILITIES_V1_BYTES) return 1;
+        const fc_session_capabilities caps { sizeof (caps), 9007199254740991.0, 48000, 255, 9007199254740991.0, 0 };
+        if (caps.size < FC_SESSION_CAPABILITIES_V1_BYTES) return 1;   // the record keeps its version-1 prefix and only grows
         return item == "F1" || s.storageFor (load).bytes >= 32 && s.measurementStorage (load.pcm).sourceBytes == 32 ? 0 : 1;
 #else
         return 1; // No extensible record prefix or per-call demand entry points.

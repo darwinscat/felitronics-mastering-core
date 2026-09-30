@@ -15,9 +15,10 @@
 # [landing], [cost], [progress]). The travels of the knobs a person turns are OUR numbers — taste and the physics of the
 # medium. The core's domains (what a stage accepts at all) are the core's and are not copied here.
 
-# The name of this set of defaults. A project records it, never the defaults themselves, and is opened with the set it
-# names.
-defaults = "2026-09"
+# The name of this set of defaults. A project records it, never the defaults themselves. A project of this set keeps
+# its machine's layer; one of another set is converted — a person's values and the target's numbers kept, the machine's
+# layer placed again by the planner (no earlier set is carried).
+defaults = "2026-10"
 
 # THE INPUT, BEFORE THE CHAIN.
 # referenceLufs (an owner decision): the input is brought to this loudness ahead of every stage, so a device whose
@@ -25,16 +26,15 @@ defaults = "2026-09"
 #   of the file. −18 LUFS is about −15 dBFS RMS on music: where the devices' thresholds are meant to sit, with headroom
 #   above for the peaks. The report states only what was done: the lift from the input to the result.
 # quiet (an owner decision): below warningLufs the input is probably a mixing or export mistake, and a warning says so;
-#   the machine works as usual. Below gainOnlyLufs the machine sets the gain and the ceiling and nothing else, without
-#   exception — no high-pass, no mono bass, no glue on cd, no low shelf, no peak clipper: no measurement is reliable at
-#   that level. A person may still switch them on.
-# shortSeconds, shortConfidence: a programme shorter than shortSeconds is short, and the lowest note found on it is
-#   trusted shortConfidence times as much (a hypothesis).
+#   the machine works as usual. Below gainOnlyLufs the machine sets the gain and the ceiling and places no device — no
+#   mono bass, no glue on cd, no low shelf, no peak clipper: no measurement is reliable at that level — but for the
+#   high-pass, which stands always (owner decision 3.3) and takes its floor there. A person may still switch them on.
+# shortSeconds (owner decision 3.2): a programme shorter than this is a sketch — its lowest note is not sought, and the
+#   high-pass takes the target's floor. The former "trust a short file's note half as much" is gone.
 [input]
 referenceLufs = -18
 quiet = { warningLufs = -40, gainOnlyLufs = -55 }
 shortSeconds = 10
-shortConfidence = 0.5
 
 # THE LANDING — the loudness solver moving the gain before the limiter until the master sits on the target, in ONE
 # render at the delivery rate.
@@ -48,17 +48,20 @@ passes = 12 # Owner decision 28.09: one budget, stop on success; a miss is a nor
 toleranceLu = 0.1
 truePeakAimDb = 0.05
 
-# THE LIMITER — always on; its setting is the target's ceiling.
+# THE LIMITER — always on, with no tick; its setting is the target's ceiling. No gain reduction, no PLR and no cost of
+# the master limits how far it goes for the loudness: the ceiling alone is hard.
 # ceilingMarginDb: the limiter is first given a ceiling this much below the promised one; the solver moves it from
 #   there.
 # releaseMs: the limiter's release — chosen, not yet calibrated by ear.
 # dualRelease, slowReleaseMs: the core's second, slower release envelope — off, and its release stated anyway, so the sound
 #   depends on no default of the core's.
+# lookaheadMs: the limiter's lookahead — topology of the chain, stated for the same reason.
 [limiter]
 ceilingMarginDb = 0.15
 releaseMs = 50
 dualRelease = false
 slowReleaseMs = 200
+lookaheadMs = 1
 
 # THE PEAK CLIPPER INSIDE THE LIMITER, in the limiter's oversampler, its threshold relative to the ceiling. For a person it
 # is part of the limiter, not a device: the report has one limiter line (the ceiling and the master's true peak), the
@@ -67,19 +70,26 @@ slowReleaseMs = 200
 # littleNeedDb: when the NEED — how many dB must come from somewhere to reach the target: the input's PLR minus the
 #   target's headroom (ceiling minus loudness) — is at most this, the needles are not measured and are left to the
 #   limiter. Above it they are measured on the INPUT, with the ceiling at "input peak − need" (analysis::PeakExcursions),
-#   and their class sets the threshold:
+#   and their class sets how much the clipper cuts off the peaks — at most that much, the limiter does the rest: the
+#   threshold stands max(0, need − cut) above the ceiling (owner, 30.09):
 #     short    p90 of the run length ≤ shortP90Ms, bass share of the dose ≤ shortBassShare, PLR ≥ shortPlrDb, the source
-#              not clipped: shortOverDb above the ceiling;
+#              not clipped: up to shortCutDb off the peaks;
 #     long     bass share ≥ longBassShare, or p90 ≥ longP90Ms, or PLR < longPlrDb, or a clipped source: the clipper is
 #              switched off by its flag (an unreachable threshold is not "off" — the solver moves the ceiling);
-#     between  betweenOverDb above the ceiling.
+#     between  up to betweenCutDb, with care.
+#   clippedPerMinute (owner decision 3.7): a source is CLIPPED — and the machine cuts no needles, a clipper would add
+#     distortion to it — when the clip detector confirmed at least this many clips per minute of programme. Fewer are
+#     single places (an edit, a joint): the clipper is allowed, and the report names where they are.
+#   A person's "manual X" — X dB off the peaks, the threshold max(0, need − X) — sounds over every one of these — the class, a need of littleNeedDb or less, needles that were
+#   not measured, a clipped source, a target without a peak clipper — with the machine's reason beside the knob.
 #   bassBelowHz: the bass of the dose is the crest bins whose lower edge is below it. densityMinusDb, densityWithinDb: the
 #   density near the ceiling (maxima above −densityMinusDb, and within densityWithinDb of it) is printed beside the class
-#   and does not decide it. All of these are hypotheses except the two thresholds (3 and 1.5 dB above the ceiling), the
-#   two PLR bounds (10 and 8 dB) and "need ≤ 3 dB: do not measure", which are owner decisions.
+#   and does not decide it. The class bounds are the owner's starting numbers (decision 3.6), as are the two cuts
+#   (up to 3 and 1.5 dB off the peaks), the two PLR bounds (10 and 8 dB), "need ≤ 3 dB: do not measure" and the ten clips
+#   a minute; bassBelowHz and the density are hypotheses.
 # kneeDb: 0 — a hard clip.
-# manualMinDb…manualMaxDb, manualStepDb: the manual threshold's travel and step (a hypothesis). The manual threshold starts
-#   at betweenOverDb, the "between" class, inside manualDomain.
+# manualMinDb…manualMaxDb, manualStepDb: the manual cut's travel and step (a hypothesis). The manual cut starts at
+#   betweenCutDb, the "between" class, inside manualDomain.
 [limiter.peakClipper]
 manualDomain = [0, 6]
 littleNeedDb = 3
@@ -89,8 +99,9 @@ shortPlrDb = 10
 longP90Ms = 8
 longBassShare = 0.5
 longPlrDb = 8
-shortOverDb = 3
-betweenOverDb = 1.5
+clippedPerMinute = 10
+shortCutDb = 3
+betweenCutDb = 1.5
 bassBelowHz = 200
 densityMinusDb = 3
 densityWithinDb = 0.3
@@ -105,9 +116,10 @@ manualStepDb = 0.5
 #   least this share of FRAMES — not of time: frames overlap (the hop is half the window), so the quantum is 1/frames
 #   (263 frames on a six-minute mix at 48 kHz). A hypothesis: on a test mix 0.02, 0.05 and 0.10 gave the same note, 0.20
 #   moved it by two semitones and 0.50 by thirteen — below 0.2 it decides little, above it everything.
-# occupiedMarginWhenOnDb: the lowest note must stand at least this far above the duty line (a hypothesis; it rejects only
-#   bands at the line itself). Without a band that passes, or a valid note, there is no note: the target's floor, never
-#   the loudest band in its place.
+# occupiedMarginWhenOnDb (owner decision 3.2): the lowest note must stand at least this far above the duty line, and its
+#   band be occupied in at least occupiedFromDuty of the frames (10 %). Without a band that passes, or a valid note, there
+#   is no note: the target's floor, never the loudest band in its place, and never a higher band — a note above the true
+#   one would cut music.
 # infraLowCrossoverHz: the infra-low LowEnd run, for the infra-low share (a hypothesis, and also where "below the table"
 #   ends). The share is LR4-weighted — content AT the crossover counts a quarter — not "energy below 30 Hz". The main run
 #   at 120 Hz cannot answer it: its share is the bass, not the infra-low (0.2274 against 0.0056 on the same mix). The
@@ -132,32 +144,31 @@ fftOrder = 17
 dutyThresholdDb = 20
 skipBlocks = 0
 
-# THE HIGH-PASS — the machine's (owner decisions: placement, the 50 Hz top, the slopes, the comfort window). It is placed
-# always, except when there is nothing below the lowest note (nothingBelowNote), seen in the first phase without a trial
-# render; the report then says "high-pass not placed: nothing below the note". Vinyl and club always (hpfAlways in
-# targets.toml).
-# The cutoff is max(the cutoff the note allows, the target's floor): a Butterworth of order n = slope/6 loses
-# −10·log10(1/(1 + (fc/f)^(2n))) dB at f, so the note allows f/fc = (10^(loss/10) − 1)^(−1/(2n)) at the target's
-# noteLossDb (1.184 at 24 dB/oct and 1 dB). The cutoff is rounded to the hertz and never above hzMax: "the cutoff hit
-# 50 Hz: the lowest note is higher".
+# THE HIGH-PASS — the machine's (owner decisions 3.2–3.4: always placed, the floor, the 50 Hz top, the slopes, the comfort
+# window). It stands on every target and every input, a quiet one included; there is no "nothing below the note" any more
+# (owner decision 3.3: a mix made outside a studio always has mud down there, and cutting below 32 Hz too much is better
+# than too little).
+# The cutoff is max(the cutoff the lowest note allows, the target's floor), never above hzMax: the note allows the cutoff
+# at which the high-pass the chain runs — the core's matched Butterworth cascade of the target's slope, at the source's
+# rate — takes exactly the target's noteLossDb at the note. It is found on that response, not on the analogue formula, and
+# it is not rounded to the hertz (technical decision 3О4). A floor above it takes more of the note, and the report says
+# how much; "the cutoff hit 50 Hz: the lowest note is higher" when hzMax stops it.
+# note (owner decision 3.2): the lowest note is sure when its band is occupied ([lowEnd] occupiedFromDuty, 10 %), stands
+#   [lowEnd] occupiedMarginWhenOnDb (2 dB) above the duty line, lies above aboveHz (not DC, not rumble) and sounds at least
+#   soundingAtLeastS in all — its frames times the analyzer's hop. A programme shorter than [input] shortSeconds is not
+#   searched. A note that is not sure gives the floor.
 # band: the core's EQ band the high-pass writes.
-# hzMin…hzMax: slider travel; frequencyDomain checks the actual source Nyquist limit.
-# hzDefault: where the manual cutoff starts, never below the target's floor.
-# slopes: slider choices, ascending; slopeDomain and slopeMultiple accept every filter order 1–16. slopesNormal: not a
-#   warning (48 warns of ringing); slopeDefault: the manual default, named as a number so that the order of the list
-#   cannot change the sound. A project with a slope outside the list reads as the nearest, the gentler on a tie
-#   (18 → 12, 36 → 24), and the report says so.
-# nothingBelowNote: there is nothing below the lowest note when the infra-low share is below infraLowBelow — a decision
-#   threshold (a hypothesis), not proof of absence: the report prints the measured share beside it — and there is no DC
-#   offset: the DC stays below dcOffsetBelow, which is where the dcOffset finding starts ([observations] dcOffset.from),
-#   and the schema refuses the two apart.
+# hzMin…hzMax: slider travel; frequencyDomain checks the actual source Nyquist limit; hzMax is also the machine's top.
+# slopes: slider choices, ascending; slopeDomain and slopeMultiple accept every filter order 1–16 — 18 and 36 included, as
+#   written, never read as the nearest choice. slopesNormal: not a warning (48 warns of ringing); slopeDefault: the manual
+#   default, named as a number so that the order of the list cannot change the sound.
 # comfort: the knob's field is neutral from lowHz to highHz and shades through a warning towards warningLowHz below and
 #   warningHighHz above — one window, a hint to the knob, changing neither the machine nor the travel. Below 20 Hz there
 #   is nothing to cut; above 42 Hz the cutoff takes music, not rubbish (at 50 Hz and 24 dB/oct, 8.4 dB at 40 Hz).
 # curveTopDb, curveBottomDb, curveStepDb, curveHeadroomDb: the scale of the high-pass curve, dB — a filter's slope goes
 #   down by definition, so it is not judged by the ±2 dB of the other curves.
 # marks: labels on the frequency axis of the curve, where the low end of instruments lives; behind the curve the spectrum
-#   of THIS mix is drawn. What a cutoff costs there: at 30 Hz and 24 dB/oct, 0.3 dB at 41 Hz, 2.5 dB at 31 Hz, 4.7 dB at
+#   of THIS mix is drawn. What a cutoff costs there: at 32 Hz and 24 dB/oct, 0.6 dB at 41 Hz, 3.6 dB at 31 Hz, 11.8 dB at
 #   23 Hz.
 [hpf]
 frequencyDomain = "sourceNyquist"
@@ -167,11 +178,10 @@ hzStep = 1
 band = 0
 hzMin = 15
 hzMax = 50
-hzDefault = 30
 slopes = [12, 24, 48]
 slopesNormal = [12, 24]
 slopeDefault = 24
-nothingBelowNote = { infraLowBelow = 0.01, dcOffsetBelow = 0.001 }
+note = { aboveHz = 20, soundingAtLeastS = 3 }
 comfort = { lowHz = 24, highHz = 42, warningLowHz = 20, warningHighHz = 50 }
 curveTopDb = 0
 curveBottomDb = -36
@@ -184,10 +194,19 @@ marks = [
     { key = "sub808", hz = 23 },
 ]
 
-# MONO BASS (owner decisions) — always placed, at the target's crossover (targets.toml): it is there for subwoofers and
-# mono speakers, not for loudness. Wide bass does not switch it off; it is a warning ([observations] wideBass). Bass in
-# opposite polarity: the machine does not place it and warns loudly ("it is fixed in the mix"); a person who switches it
-# on anyway is obeyed and warned beside the tick and in the report. A mono input has no side and no mono bass.
+# MONO BASS (owner decisions 3.5) — always placed, at the target's crossover (targets.toml): it is there for subwoofers and
+# mono speakers, not for loudness. Wide bass does not switch it off; it is a warning ([observations] wideBass). What it
+# decides by is the harm itself: how much of the low end folding to mono, (L+R)/2, takes away below the crossover, where
+# the bass sounds — the loss of the side's share, 10·log10((mid + side) / mid) of the energies under the crossover's LR4,
+# over the 10 ms blocks of the first phase's low-end run at that crossover (120 Hz, 150 Hz on vinyl). Under warnFromDb it is
+# placed; from warnFromDb to offAboveDb, both included, it is placed with the number ("the bass is partly in opposite
+# polarity: mono bass takes N dB of the low end"); above offAboveDb the machine leaves it out ("… check the polarity of a
+# channel"), and a person who switches it on anyway is obeyed and warned beside the tick and in the report. Opposite
+# polarity above the crossover does not count: only the low band is read. A mono input has no side and no mono bass.
+# loss.soundingWithinDb, loss.soundingAtLeastS (hypotheses): the bass sounds in a block whose low-band level is within
+#   soundingWithinDb of the programme's loud bass — the level 5 % of the sounding blocks reach — and the reading holds
+#   when it sounds at least soundingAtLeastS in all. Less than that, or a low end that could not be measured, is its own
+#   reason, and the machine leaves mono bass out: it does not fold what it could not weigh.
 # lowWidth: the width below the crossover — 0, full mono; lowWidthRange, lowWidthStep: its knob's travel and step.
 # frequencyRange, frequencyStep: the crossover knob's travel and step (a step of 5 Hz feels like a jerk).
 [monoBass]
@@ -198,6 +217,7 @@ lowWidthRange = [0, 1]
 lowWidthStep = 0.05
 frequencyRange = [60, 300]
 frequencyStep = 1
+loss = { warnFromDb = 1, offAboveDb = 3, soundingWithinDb = 20, soundingAtLeastS = 3 }
 
 # The knob's scale shows two regions, each with a physical reason rather than a taste; the map is static — it follows
 # neither the target nor anything else — so a person learns it once. club 80…120: a venue sums its subwoofers to mono
@@ -213,11 +233,12 @@ vinyl = { fromHz = 120, toHz = 200 }
 #   (with RMS a positive offset cuts almost nothing); peak with the same numbers would be another glue.
 # rmsWindowMs, link, mode, rangeDb, makeupDb, autoMakeup, mix: every field named, the neutral ones too, so the sound
 #   depends on no default of the core's.
+# lookaheadMs, sidechainHpfHz: the stage's lookahead and its key filter (0: self-keyed) — topology of the chain, stated
+#   for the same reason.
 # thresholdFrom (an owner decision): the threshold is counted from the programme's short-term P95 — the level the song
 #   is above 5 % of the time, already in the programme report — not from its single loudest second, which one loud joint
-#   moves.
-# roundToMs, roundToDb: a picked attack and release are whole milliseconds, a picked threshold offset and knee whole
-#   decibels.
+#   moves. Both are read in the input's normalised system: the P95 plus the one gain that brings the input to [input]
+#   referenceLufs, so the same mix exported louder or quieter gets the same compressor.
 [compressor]
 detector = "rms"
 rmsWindowMs = 5
@@ -227,13 +248,13 @@ rangeDb = 60
 makeupDb = 0
 autoMakeup = false
 mix = 1
+lookaheadMs = 1
+sidechainHpfHz = 0
 thresholdFrom = "shortTermP95"
-roundToMs = 1
-roundToDb = 1
 
 # The clamps on every compressor value but the ratio: threshOffset, knee dB; attack, release ms. Only the release bites in
-# practice, since it follows the measured tempo: the full glue gives 63 ms at 120 BPM and 54 at 140, and the clamp starts
-# at about 150 BPM. A clamp that ate a person's choice is announced on the device, never silently. release.min 50 ms is one
+# practice, since it follows the measured tempo: at g = 1 the glue gives 63 ms at 120 BPM and 54 at 140, and the clamp
+# starts at about 150 BPM (a knob of 6 dB: 60 ms at 120, the clamp from 144). A clamp that ate a person's choice is announced on the device, never silently. release.min 50 ms is one
 # and a half periods of 30 Hz; a floor derived from the high-pass cutoff (2000 / cutoff) was rejected — at a 15 Hz cutoff
 # it gives 133 ms and clamps hardest exactly where a fast release is needed.
 [compressor.limits]
@@ -249,39 +270,47 @@ knee = { min = 1, max = 8 }
 bpmWhenUnsure = 120
 trustedConfidence = "high"
 
-# THE GLUE — one continuous knob for the whole compressor, "up to N dB" (an owner decision): what a person turns, what a
-# project holds and what every glue number below is written in. The machine sets it only on the targets in byTarget,
-# after the tempo is measured; everywhere else it is a taste of the manual mode. 0, the left end, takes the compressor out
-# of the chain — not "a compressor at zero". The glue does not enter the loudness path: with a 12…30 ms attack it lowers
-# loudness, not peaks.
-# knobMinDb…knobMaxDb, knobStepDb: the knob's travel and step (an owner decision). It describes the static curve on the
-#   loudest part, not a measured gain reduction: the ratio moves with the threshold held, and at the ratio's right end the
-#   threshold comes down instead. Attack, release and knee do not move with it.
+# THE GLUE — one continuous knob for the whole compressor, "up to N dB" (owner decisions 3.8, 3.8а): what a person turns,
+# what a project holds and what every glue number below is written in. N IS THE LOSS ON THE LOUD PLACES: the static curve
+# takes exactly N dB at the short-term P95 of the input brought to [input] referenceLufs — not a ceiling on the live
+# reduction; what the compressor really did (its P95 and its maximum) is measured after the master and reported. The
+# machine sets it only on the targets in byTarget (cd alone), never above knobMaxDb; everywhere else it is a taste of the
+# manual mode. 0, the left end, takes the compressor out of the chain — not "a compressor at zero". The glue does not enter
+# the loudness path: with a 12…30 ms attack it lowers loudness, not peaks. Without a P95 the glue is unavailable to the
+# machine and to a person alike, with its reason — no P95 is invented, the person's value is kept, and a master is made
+# without it.
+# domain: what a command and a project accept, 0…6 dB. knobMinDb…knobMaxDb, knobStepDb: the slider's travel and step —
+#   hints (an owner decision: the slider runs 0…3); a value between steps or past the travel is taken as written.
 # default: the glue a target without an entry in byTarget starts with, dB on the knob.
-# whenTicked: what the knob takes when a person ticks the compressor on without touching the glue, dB — 0.5, where the
-#   travel's 0.3 gave 9·g·(1 − 1/ratio(g)) = 0.51 dB and the old light setting (a 2 dB overshoot at ratio 1.3) cut at
-#   most 0.46 dB.
-# byTarget: the machine's glue per target, dB on the knob (an owner decision: cd alone). cd's 2.6 is what the travel's
-#   0.7 read as on the knob, calibrated with the threshold at the loudest second; it is not yet calibrated for the
-#   threshold at P95 ([compressor] thresholdFrom).
-# THE TRAVEL — the compressor's internal mapping, not what a person or a project speaks. How a knob value maps onto it is
-# defined when the compressor moves into the session; the laws below stand as the travel's own. It runs 0…1 in steps of
-# `step`. Each compressor value moves along it from `from` to `to` by its law, and what
-# must be even along the travel is the HEARD effect, not the number:
-#   byDepth    even steps of (1 − 1/ratio), the share of the overshoot the compressor removes (cut = overshoot ×
-#              (1 − 1/ratio), measured exactly); the middle of the travel gives 1.53;
+# whenTicked: what the knob takes when a person ticks the glue on without touching the knob, dB.
+# byTarget: the machine's glue per target, dB on the knob (an owner decision: cd alone, 2.6).
+# THE TRAVEL — ONE SMOOTH FORMULA for the whole domain, no steps and no rounding. Every compressor value moves along a
+# travel g by its law, from `from` at g = 0 towards `to` at g = 1 and on by the same law past it:
+#   byDepth    even steps of (1 − 1/ratio), the share of the overshoot the compressor removes; the ratio's law alone;
 #   linear     even steps of the number itself;
-#   geometric  even steps of the ratio between neighbours — time is heard logarithmically, and a straight line in ms
-#              would leave the first half of the travel dead.
-#   The right ends, 2.7 and −9, are where the old version reached with two knobs together. divisor divides the beat:
-#   release = 60000 / bpm / divisor, so at 120 BPM the ends give 250 and 63 ms. byDepth is the ratio's law alone (it is
-#   defined through 1 − 1/ratio, with both ends at 1 or more); geometric needs both ends above zero.
+#   geometric  even steps of the ratio between neighbours — time is heard logarithmically.
+# The threshold stands threshOffset(g) dB from the loud places — the P95 plus detectorOverP95Db, below — (under them: they
+# overshoot it by −threshOffset), so the static curve — the core's own, soft knee included — takes
+# kneeOver(−threshOffset(g); knee(g)) · (1 − 1/ratio(g)) dB there.
+# That loss grows with g without a break, and THE KNOB'S N IS THE g AT WHICH IT EQUALS N: N = 2.6 stands at g = 0.677
+# (ratio 1.74, threshold 6.1 dB under the loud places, attack 17.8 ms, knee 5.3 dB), N = 3 at g = 0.728, N = 6 at g = 1.029 — just
+# past the old right end (2.7 and −9, "where the old version reached with two knobs together"), by the same laws. The
+# compressor stays soft: above 3 it is only denser. divisor divides the beat: release = 60000 / bpm / divisor(g), kept
+# within [compressor.limits] release — 250 ms at g = 0 and 63 ms at g = 1 at 120 BPM.
+# detectorOverP95Db — THE CALIBRATION of the scale to music (architecture В11). The P95 is a short-term LOUDNESS, in
+#   LUFS; the compressor's detector is a 5 ms RMS in dBFS with an attack, and what it takes on the loud places is not the
+#   static curve read at that number. The threshold therefore stands detectorOverP95Db above P95 + threshOffset(g): one
+#   offset, chosen so that the knob IS the gain reduction really taken on the loud places — its P95 over the programme,
+#   the median of the owner's 11 mixes. Measured (2026-09-30): the median equals the knob at an offset of 1.57 dB for
+#   1.25, 1.52 for 2.6 and 1.54 for 3 (1.86 for 0.5, 1.74 for 6); with 1.5 the median is 1.27, 2.61 and 3.02 dB, the
+#   single mixes 1.02…1.55, 2.19…3.04 and 2.56…3.48 (at 0 it was 1.68, 3.24 and 3.70). The report states what each
+#   master's compressor really took.
 [glue]
 domain = [0, 6]
 default = 0
 whenTicked = 0.5
 byTarget = { cd = 2.6 }
-step = 0.01
+detectorOverP95Db = 1.5
 ratio = { from = 1.0, to = 2.7, law = "byDepth" }
 threshOffset = { from = 0, to = -9, law = "linear" }
 attack = { from = 30, to = 12, law = "linear" }
@@ -306,6 +335,12 @@ knobStepDb = 0.1
 # autoComp 0 is written over the core's default 0.5: the output is then tanh(k·s)/tanh(k), normalised to its own k.
 # bias and dcBlockHz are read by the core for the asym shape only. Below a drive of 0.00087 dB (the core's number) every
 # value is one setting.
+# cut (owner decision 3.9): what the stage took off the peaks is measured ON THE STAGE — the peak of its input against the
+#   peak of its output, quantum by quantum, after its mix and its output knob — never the fall of the whole chain's true
+#   peak (that is the limiter's and the peak clipper's work). A peak-normalised shaper lifts everything under full scale,
+#   so the ratio alone is a gain: a peak was cut by how much less it got than a sound too quiet to bend gets (the output
+#   knob moves both alike and cancels; the mix is in both). The report gives the largest cut and the usual one over the
+#   loud places — the loudShare of the quanta with the highest input peaks: their largest, and their median.
 [saturation]
 driveDomain = [0, 12]
 mixDomain = [0, 1]
@@ -323,10 +358,14 @@ outputRange = [-6, 0]
 outputStep = 0.1
 autoComp = 0
 dcBlockHz = 0
+cut = { loudShare = 0.05 }
 
-# TILT — a manual device with one knob, in dB: the machine does not touch timbre (a tilt taken from a measurement is a
-# genre trap). band: the core's EQ band it writes; freqHz: its pivot; normal: where the value turns red; hard: the ends of
-# the travel; step: the knob's step.
+# TILT — a manual device with one knob, in dB, and its tick: the machine does not touch timbre (a tilt taken from a
+# measurement is a genre trap) — it leaves the tick off and the knob at 0. The geometry (technical decision 3О10): the
+# core's tilt about freqHz — a low shelf of −dB and a high shelf of +dB at the pivot, so the low end goes down by the
+# knob, the top up by it, the ends 2·dB apart and the pivot unmoved. domain: what a command and a project accept (±6 dB);
+# band: the core's EQ band it writes; normal: where the value turns red; hard: the ends of the slider's travel; step: the
+# knob's step — travel and step are hints, a value between steps or past the travel is taken as written.
 [tilt]
 domain = [-6, 6]
 band = 1
@@ -336,9 +375,11 @@ hard = [-3, 3]
 step = 0.1
 
 # LOW — a separate device on every target, with one dB knob and an on tick. The machine enables it only
-# when the target carries lowDb, its correction for the medium (today lp, +0.5 dB); otherwise off at 0 dB.
-# Hand edits apply whether the panel is visible or hidden.
-# band: the core's EQ band; freqHz, q: the shelf's corner and Q; normal, hard, step: as for tilt.
+# when the target carries lowDb, its correction for the medium (today lp, +0.5 dB) — and not on an input too quiet to
+# measure ([input] quiet), where it places no device; otherwise off at 0 dB. Hand edits apply whether the panel is
+# visible or hidden. A STATIC shelf (technical decision 3О10): no dynamics, no trial render, nothing taken from a
+# measurement.
+# band: the core's EQ band; freqHz, q: the shelf's corner and Q; domain, normal, hard, step: as for tilt.
 [low]
 domain = [-6, 6]
 band = 2
@@ -354,9 +395,21 @@ step = 0.1
 [eq]
 curve = { warnDb = 2, scaleDb = 3, fieldDb = 4 }
 
-# WHICH STAGES SOUND BY DEFAULT — the defaults layer of the ticks, under the machine's decisions and a person's edits (the
-# machine places mono bass; a glue of 0 keeps the compressor out of the chain whatever its tick). clipper is the
-# saturator's stage; the peak clipper is inside the limiter. The limiter is always on, and the schema refuses false.
+# THE CHAIN'S FIXED GEOMETRY — what no device decides and every master shares, stated so the sound depends on no default
+# of the core's: the internal quantum every stage is called with (the chain's output is the same whatever block a caller
+# feeds it), and the oversampling the saturation and the limiter — with the peak clipper inside it — work at. WHICH
+# stages a master's chain has is not here: it follows the devices as they sound (below).
+[chain]
+internalBlock = 256
+oversampleFactor = 4
+tapsPerPhase = 64
+
+# THE DEFAULTS LAYER OF THE TICKS — what a project file is written against (it states a machine value only where it
+# differs from these) and what stands before anything is measured. It is NOT the chain's topology: what sounds is the
+# effective tick — a person's, else the machine's — and the planner decides every tick it has a rule for whatever stands
+# here: the high-pass always; mono bass by the loss it weighs (monoBass = false is only "not yet weighed"); the glue by
+# [glue] byTarget, and a glue of 0 keeps the compressor out whatever its tick. clipper is the saturator's stage; the peak
+# clipper is inside the limiter. The limiter is always on, and the schema refuses false.
 [stages]
 eq = true
 monoBass = false
@@ -368,15 +421,24 @@ dither = true
 # DITHER — only where the delivery cuts the bit depth, at up to onUpToBits: a 24-bit delivery has its quantisation noise
 # near −144 dBFS already and gets none. shaping: the noise shaping at up to shapingUpToBits, which hides the 16-bit floor
 # where the ear is least sensitive. There is no dither stage above that at all — shaped noise at 24 bits would go to
-# 15…20 kHz, which RIAA raises by 19.6 dB on vinyl and which heats the cutting head.
+# 15…20 kHz, which RIAA raises by 19.6 dB on vinyl and which heats the cutting head. A person may switch it off at 16
+# bits (the delivery is then rounded to its grid without noise); above onUpToBits a person's tick is kept and does
+# nothing, with its reason.
+# THE NOISE ITSELF IS A VERSION OF THE SOUND (technical decision 3О11): weighted TPDF from a fixed seed — sixteen
+# hexadecimal digits, a number no TOML integer holds — silenced after autoBlankSamples consecutive zero samples of a
+# channel (autoBlank), so one master is the same bytes every time it is made and digital silence stays silence. The
+# delivery is quantised once, in the chain; writing the file adds no noise again.
 [dither]
 onUpToBits = 16
 shaping = "weighted"
 shapingUpToBits = 16
+seed = "853c49e6748fea9b"
+autoBlank = true
+autoBlankSamples = 4096
 
 # THE DE-ESSER — manual, off, depth −6 dB (an owner decision, after six blind pairs at matched loudness: five of six told
 # apart, none harmed, hats included). offered = false: no shell offers it. Its automatic mode is off until it is
-# calibrated by ear, and while it is off the sibilance observation is not published either.
+# calibrated by ear. The sibilance observation is published all the same (owner decision 3.13: shown before any de-esser).
 # band: the core's free EQ band (0 the high-pass, 1 tilt, 2 the low shelf). Its centre starts at the geometric mean of the
 #   burst band ([stereoBursts], ≈ 6708 Hz); q 1.5 covers the sibilance band (a hypothesis). atk, rel: deviations from the
 #   ballistics the core derives from the band's frequency and Q, 0…1 with 0.5 automatic — not milliseconds.
@@ -453,6 +515,9 @@ eventCapacity = 16384
 # polarity: bass in opposite polarity when the stereo correlation is below correlationBelow or the raw side share is above
 #   rawSideFractionAbove.
 # alreadyLimited: the programme is limited already when its PLR is below plrBelowDb (a hypothesis), or when it is clipped.
+# tooShort: a programme shorter than [input] shortSeconds is a sketch — said once, as a finding.
+# vinylTop (owner decision 3.12): on a target cut to vinyl the report always carries one note, with no threshold and no
+#   measurement behind it — above aboveHz the cutting engineer usually rolls the top off; keep it in mind.
 [observations]
 doubtfulBelow = 0.5
 clipping = { fullAtShareOfProgramme = 0.001 }
@@ -466,6 +531,7 @@ infraLow = { low = 0.02, high = 0.05 }
 wideBass = { sideFractionAtLeast = 0.06 }
 polarity = { correlationBelow = 0, rawSideFractionAbove = 0.5 }
 alreadyLimited = { plrBelowDb = 8 }
+vinylTop = { aboveHz = 16000 }
 
 # The kind of a finding is its nature, not its size: clipping is always an error — even a short clip is a defect; a DC
 # offset, lost bits, a too-quiet export, bass in opposite polarity and wide bass need attention; the rest describe the
@@ -489,7 +555,7 @@ alreadyLimited = "note"
 tooQuiet = "warning"
 tooShort = "note"
 
-# SIBILANCE, measured on the bursts above; not published while the de-esser's automatic mode is off. All hypotheses.
+# SIBILANCE, measured on the bursts above and shown as a finding whatever the de-esser (owner decision 3.13). All hypotheses.
 # minHops…maxHops: 5…15 hops (50…150 ms) tell syllables from needles and steps.
 # fromShareOverDomeDb, fullAtShareOverDomeDb: the band's share RELATIVE to the published LR4 domeShare, from −2 dB, full at
 #   −0.5 dB.

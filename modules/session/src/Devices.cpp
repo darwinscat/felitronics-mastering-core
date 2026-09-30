@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
-// THE MACHINE'S LAYER AND WHAT IS OFFERED WHERE (src/Devices.h). Every number comes from the config through the rules
+// THE CONFIG'S DEFAULTS AND WHAT IS OFFERED WHERE (src/Devices.h). Every number comes from the config through the rules
 // read in place (src/Rules.h), as the decimal written, and becomes a double here by one correctly rounded division.
 
 #include "BuildGuards.h"
@@ -41,8 +41,8 @@ void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channel
 
     auto& hpf = devices.hpf.machine;
     hpf.on = rules.eq;
-    // hzDefault, never below the target's floor.
-    hpf.fq = number (compare (rules.hpfDefault, target.hpfFloor) < 0 ? target.hpfFloor : rules.hpfDefault);
+    // The target's floor: where the machine's cutoff stands until a sure lowest note allows a higher one.
+    hpf.fq = number (target.hpfFloor);
     hpf.slope = target.hpfSlope;
 
     auto& mono = devices.monoBass.machine;
@@ -50,8 +50,9 @@ void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channel
     mono.fq = number (target.monoBass);
     mono.width = number (rules.monoBassWidthDefault);
 
+    // The machine glues only where [glue] byTarget names the target; elsewhere the glue is a person's.
     auto& glue = devices.glue.machine;
-    glue.on = rules.compressor;
+    glue.on = rules.compressor && target.glue.has_value();
     glue.upToDb = number (target.glue ? *target.glue : rules.glueDefault);
 
     auto& sat = devices.saturation.machine;
@@ -60,8 +61,9 @@ void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channel
     sat.mix = number (rules.mixDefault);
     sat.output = number (rules.outputDefault);
 
+    // Tilt is a person's: the machine never ticks it and never sets it.
     auto& tilt = devices.tilt.machine;
-    tilt.on = rules.eq;
+    tilt.on = false;
     tilt.db = 0.0;
 
     auto& limiter = devices.limiter.machine;
@@ -73,20 +75,6 @@ void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channel
     auto& shelf = devices.low.machine;
     shelf.on = rules.eq && target.lowDb.has_value();
     shelf.db = target.lowDb ? number (*target.lowDb) : 0.0;
-}
-
-void placeMachine (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices, std::uint32_t offeredDevices) noexcept
-{
-    placeDefaults (rules, row, channels, devices);
-    eachDevice (devices, [&] (Device d, auto& layers)
-    {
-        if ((offeredDevices & (1u << unsigned (d))) == 0)
-        {
-            layers.hand = {};
-            if constexpr (requires { layers.machine.on; }) layers.machine.on = false;
-        }
-    });
-    if ((offeredDevices & (1u << unsigned (Device::Limiter))) == 0) devices.limiter.machine.needles = Needles::Off;
 }
 
 } // namespace felitronics::session::detail

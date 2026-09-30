@@ -18,7 +18,7 @@ using namespace session_destroy_control;
 int main()
 {
     const auto v = felitronics::session::config::Config::versions().all;
-    const fc_session_capabilities caps { sizeof (caps), 9007199254740991.0, 48000, 255, 9007199254740991.0 };
+    const fc_session_capabilities caps { sizeof (caps), 9007199254740991.0, 48000, 255, 9007199254740991.0, 0 };
     fc_session h = 0;
     if (fc_session_create (&caps, std::uint32_t (v), std::uint32_t (v >> 32), &h) != FC_SESSION_OK) return 1;
     armed = true;

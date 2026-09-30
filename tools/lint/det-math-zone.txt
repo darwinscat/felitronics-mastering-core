@@ -91,6 +91,21 @@ zone   modules/session/src/Rules.h                            the numbers the co
 zone   modules/session/src/Rules.cpp                          ...and their reading
 zone   modules/session/src/Devices.h                          every device's fields for the code, and the rule each is checked by
 zone   modules/session/src/Devices.cpp                        the machine's layer, and which device is offered where
+entry  modules/session/src/Planner.cpp                        a translation unit of felitronics::session
+zone   modules/session/src/Planner.h                          the planner: every device's proposal, needs and plan
+zone   modules/session/src/Planner.cpp                        ...and the session's plan, its inputs, key and placement
+entry  modules/session/src/Dynamics.cpp                       a translation unit of felitronics::session
+zone   modules/session/src/Dynamics.h                         the glue and the saturation as the chain gets them
+zone   modules/session/src/Dynamics.cpp                       the glue's travel on the core's static curve; the shaper's drive
+entry  modules/session/src/Limiter.cpp                        a translation unit of felitronics::session
+zone   modules/session/src/Limiter.h                          the limiter with its needles, and the dither, as the chain gets them
+zone   modules/session/src/Limiter.cpp                        the needles' class on the owner's bounds; the limiter's and the dither's write
+entry  modules/session/src/Chain.cpp                          a translation unit of felitronics::session
+zone   modules/session/src/Chain.h                            the whole plan as the chain gets it
+zone   modules/session/src/Chain.cpp                          a master's chain from the project's devices, the topology from their ticks
+entry  modules/session/src/Observations.cpp                   a translation unit of felitronics::session
+zone   modules/session/src/Observations.h                     the observations: when a measurement becomes a finding
+zone   modules/session/src/Observations.cpp                   the findings' weights on [observations]' ramps
 zone   modules/session/src/Driver.h                           the session's own transitions, driven by the work that ends
 zone   modules/session/src/Commands.cpp                       the commands: the table consulted, the checks in order, the work
 entry  modules/session/src/Text.cpp                           a translation unit of felitronics::session

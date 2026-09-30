@@ -126,6 +126,10 @@ typedef enum fc_session_status
 // STRUCT LAYOUTS are measured by a compiled probe, never inferred from source. Capabilities are
 // input from the shell. heapCeilingBytes is an exact integer >= 0 and < 2^53; maxRateHz >= 8000.
 // offeredDevices is a bit set of FC_SESSION_DEVICE_*. The session enforces all three, in C++ too.
+// leanSummary (appended; a record of FC_SESSION_CAPABILITIES_V1_BYTES leaves it 0) is 0 or 1. With 1,
+// fc_session_summary_* leave every master's heavy rows out — the limiter and peak-clip traces, the crest rows and mask,
+// the waveform buckets — and say so (masterRowsIncluded false); a master's scalars, pass log and cost sections stay.
+// One master whole is a query, kind MasterReport. fc_session_snapshot_* is the same either way.
 typedef struct fc_session_capabilities
 {
     uint32_t size;
@@ -133,6 +137,7 @@ typedef struct fc_session_capabilities
     uint32_t maxRateHz;
     uint32_t offeredDevices;
     double largestFreeBlockBytes;
+    uint32_t leanSummary;
 } fc_session_capabilities;
 
 typedef struct fc_session_sizes

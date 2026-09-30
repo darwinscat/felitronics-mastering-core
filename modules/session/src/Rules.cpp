@@ -90,11 +90,14 @@ void readRow (View rowView, View byTarget, TargetRow& out) noexcept
     r.read (rowView.find ("monoBass"), out.monoBass);
     r.read (rowView.find ("hpfFloor"), out.hpfFloor);
     r.read (rowView.find ("hpfSlopeDbPerOct"), out.hpfSlope);
+    r.read (rowView.find ("noteLossDb"), out.noteLossDb);
     r.read (rowView.find ("bitDepth"), out.bitDepth);
     r.read (rowView.find ("sampleRate"), out.sampleRate);
     // Optional in a row: absent is their default.
     if (const View v = rowView.find ("noClipper")) r.read (v, out.noClipper);
     else out.noClipper = false;
+    if (const View v = rowView.find ("vinyl")) r.read (v, out.vinyl);
+    else out.vinyl = false;
     if (const View v = rowView.find ("lowDb"))
     {
         Decimal d {};
@@ -139,7 +142,6 @@ Rules readRules (View targets, View engine) noexcept
     r.read (hpf.find ("hzMax"), out.hpfFq.to);
     r.read (hpf.find ("hzStep"), out.hpfFq.step);
     r.domain (hpf.find ("frequencyDomain"), out.hpfFq);
-    r.read (hpf.find ("hzDefault"), out.hpfDefault);
     const View mono = engine.find ("monoBass");
     r.knob (mono.find ("frequencyRange"), mono.find ("frequencyStep"), mono.find ("frequencyDomain"), out.monoBassFq);
     r.knob (mono.find ("lowWidthRange"), mono.find ("lowWidthStep"), mono.find ("lowWidthDomain"), out.monoBassWidth);
@@ -169,7 +171,7 @@ Rules readRules (View targets, View engine) noexcept
     r.read (clipper.find ("manualMinDb"), out.needles.from);
     r.read (clipper.find ("manualMaxDb"), out.needles.to);
     r.read (clipper.find ("manualStepDb"), out.needles.step);
-    r.read (clipper.find ("betweenOverDb"), out.needlesDefault);
+    r.read (clipper.find ("betweenCutDb"), out.needlesDefault);
     r.domain (clipper.find ("manualDomain"), out.needles);
 
     const View stages = engine.find ("stages");

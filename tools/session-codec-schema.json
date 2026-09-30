@@ -95,7 +95,13 @@
       "Stereo",
       "LimiterGr",
       "PeakClipGr",
-      "MasterWaveform"
+      "MasterWaveform",
+      "MasterAxes",
+      "MasterReport"
+    ],
+    "SpectrumQuantity": [
+      "Density",
+      "Energy"
     ],
     "QueryStatus": [
       "Ready",
@@ -109,6 +115,92 @@
       "Contract",
       "Cancelled",
       "FloatingPointEnvironment"
+    ],
+    "PlanStatus": [
+      "None",
+      "Pending",
+      "Stopped",
+      "Ready",
+      "Unavailable"
+    ],
+    "HeldBack": [
+      "None",
+      "Shell",
+      "Source",
+      "Target",
+      "Unmeasured",
+      "Measured",
+      "Quiet"
+    ],
+    "Sounding": [
+      "Proposal",
+      "Hand",
+      "File",
+      "Off"
+    ],
+    "GlueState": [
+      "Out",
+      "Active",
+      "Unavailable"
+    ],
+    "TickFrom": [
+      "Machine",
+      "Hand",
+      "Touched"
+    ],
+    "HpfCut": [
+      "Note",
+      "Floor",
+      "BelowFloor",
+      "Top",
+      "Unsure",
+      "Short",
+      "Quiet",
+      "Unmeasured"
+    ],
+    "MonoBassVerdict": [
+      "On",
+      "Partial",
+      "AntiPhase",
+      "Unmeasured",
+      "MonoSource",
+      "Quiet"
+    ],
+    "NeedlesClass": [
+      "None",
+      "Short",
+      "Between"
+    ],
+    "NeedlesWhy": [
+      "Cuts",
+      "Shell",
+      "Target",
+      "Quiet",
+      "NoReadings",
+      "LittleNeed",
+      "Pending",
+      "Unmeasured",
+      "NoExcursions",
+      "Clipped",
+      "LowPlr",
+      "Bass",
+      "Long"
+    ],
+    "ObservationStatus": [
+      "NotMeasured",
+      "NotFound",
+      "Found"
+    ],
+    "ObservationStyle": [
+      "Error",
+      "Warning",
+      "Note"
+    ],
+    "HandledBy": [
+      "Nothing",
+      "Hpf",
+      "MonoBass",
+      "Person"
     ]
   },
   "records": {
@@ -417,7 +509,11 @@
         "sourceFrames": "uint64",
         "masterFrames": "uint64",
         "sections": "MasterSection[]",
-        "waveform": "MasterWaveformBucket[]"
+        "waveform": "MasterWaveformBucket[]",
+        "glueP95Db": "MasterCostValue",
+        "glueMaxDb": "MasterCostValue",
+        "saturationCutMaxDb": "MasterCostValue",
+        "saturationCutUsualDb": "MasterCostValue"
       }
     },
     "MasterReport": {
@@ -442,7 +538,8 @@
         "crest": "MasterCrest",
         "firstHint": "MasterHint?",
         "secondHint": "MasterHint?",
-        "cost": "MasterCost?"
+        "cost": "MasterCost?",
+        "medium": "MasterMedium?"
       }
     },
     "LandingPass": {
@@ -580,12 +677,15 @@
         "mandatoryMeasurementsReady": "bool",
         "devicesPlaced": "bool",
         "measurementRowsIncluded": "bool",
+        "masterRowsIncluded": "bool",
         "tempoChoice": "TempoChoice",
         "measurementsFromSidecar": "bool",
         "sourceMissingAudio": "bool",
         "canMaster": "bool",
         "pendingMaster": "MasterToken",
-        "pendingMasterBytes": "bytes"
+        "pendingMasterBytes": "bytes",
+        "plan": "PlanView",
+        "observations": "Observations"
       }
     },
     "MasterToken": {
@@ -732,7 +832,8 @@
         "crossoverHz": "double",
         "fromHz": "double",
         "toHz": "double",
-        "masterId": "uint32"
+        "masterId": "uint32",
+        "spectrum": "SpectrumQuantity"
       }
     },
     "QueryView": {
@@ -752,19 +853,220 @@
         "complete": "bool",
         "cacheHit": "bool",
         "pcmFramesRead": "uint64",
-        "values": "double[]"
+        "values": "double[]",
+        "master": "Kept?"
+      }
+    },
+    "DevicePlan": {
+      "cpp": "DevicePlan",
+      "fields": {
+        "heldBack": "HeldBack",
+        "needs": "uint32",
+        "target": "uint8",
+        "measured": "uint8",
+        "on": "bool",
+        "tick": "TickFrom"
+      }
+    },
+    "DevicePlans": {
+      "cpp": "DevicePlans",
+      "fields": {
+        "hpf": "DevicePlan",
+        "monoBass": "DevicePlan",
+        "glue": "DevicePlan",
+        "saturation": "DevicePlan",
+        "tilt": "DevicePlan",
+        "limiter": "DevicePlan",
+        "dither": "DevicePlan",
+        "low": "DevicePlan"
+      }
+    },
+    "GlueFinding": {
+      "cpp": "GlueFinding",
+      "fields": {
+        "state": "GlueState",
+        "upToDb": "double",
+        "ratio": "double?",
+        "thresholdDb": "double?",
+        "kneeDb": "double?",
+        "attackMs": "double?",
+        "bpm": "double?",
+        "releaseAskedMs": "double?",
+        "releaseMs": "double?",
+        "releaseClamped": "bool",
+        "tempoMeasured": "bool"
+      }
+    },
+    "SaturationFinding": {
+      "cpp": "SaturationFinding",
+      "fields": {
+        "active": "bool",
+        "knobDb": "double",
+        "driveDb": "double?",
+        "peakDbTp": "double?"
+      }
+    },
+    "PlanView": {
+      "cpp": "PlanView",
+      "fields": {
+        "status": "PlanStatus",
+        "key": "uint64",
+        "needs": "uint32",
+        "waiting": "uint32",
+        "awaited": "Analyzer?",
+        "awaitedBy": "Device?",
+        "awaitedFraction": "double",
+        "readOnly": "bool",
+        "fromFile": "bool",
+        "devices": "DevicePlans",
+        "hpf": "HpfFinding",
+        "monoBass": "MonoBassFinding",
+        "inputGainDb": "double?",
+        "glue": "GlueFinding",
+        "saturation": "SaturationFinding",
+        "limiter": "LimiterFinding",
+        "dither": "DitherFinding"
+      }
+    },
+    "HpfFinding": {
+      "cpp": "HpfFinding",
+      "fields": {
+        "cut": "HpfCut",
+        "cutoffHz": "double",
+        "noteMidi": "int32?",
+        "noteHz": "double?",
+        "noteLossDb": "double?",
+        "sounding": "Sounding",
+        "soundingHz": "double"
+      }
+    },
+    "MonoBassFinding": {
+      "cpp": "MonoBassFinding",
+      "fields": {
+        "verdict": "MonoBassVerdict",
+        "crossoverHz": "double",
+        "lossDb": "double?",
+        "soundingSeconds": "double",
+        "coveredSeconds": "double?",
+        "pieceSeconds": "double",
+        "againstMachine": "bool",
+        "sounding": "Sounding",
+        "soundingHz": "double"
+      }
+    },
+    "LimiterFinding": {
+      "cpp": "LimiterFinding",
+      "fields": {
+        "ceilingDbTp": "double",
+        "needDb": "double?",
+        "proposed": "NeedlesClass",
+        "why": "NeedlesWhy",
+        "reason": "MeasurementReason",
+        "proposedOverDb": "double?",
+        "p90Ms": "double?",
+        "bassShare": "double?",
+        "plrDb": "double?",
+        "clipsPerMinute": "double?",
+        "clips": "uint64",
+        "mode": "Needles",
+        "cutting": "bool",
+        "overDb": "double",
+        "sounding": "Sounding",
+        "againstMachine": "bool",
+        "vinyl": "bool",
+        "mediumCeilingDbTp": "double",
+        "ceilingAboveMedium": "bool",
+        "needlesAgainstMedium": "bool",
+        "vinylTopHz": "double"
+      }
+    },
+    "DitherFinding": {
+      "cpp": "DitherFinding",
+      "fields": {
+        "bits": "int32",
+        "applies": "bool",
+        "on": "bool",
+        "offByHand": "bool",
+        "keptWithoutEffect": "bool"
+      }
+    },
+    "MasterMedium": {
+      "cpp": "MasterMedium",
+      "fields": {
+        "vinyl": "bool",
+        "ready": "bool",
+        "crossoverHz": "double",
+        "cutoffHz": "double",
+        "quietInput": "bool",
+        "inputLufs": "double",
+        "foldDeparts": "bool",
+        "cutDeparts": "bool",
+        "ceilingDeparts": "bool",
+        "needlesDeparts": "bool",
+        "lowWidth": "double",
+        "slopeDbPerOct": "int32",
+        "ceilingDbTp": "double",
+        "overDb": "double",
+        "ruleCrossoverHz": "double",
+        "ruleLowWidth": "double",
+        "ruleCutoffHz": "double",
+        "ruleCeilingDbTp": "double",
+        "ruleSlopeDbPerOct": "int32"
+      }
+    },
+    "Observation": {
+      "cpp": "Observation",
+      "fields": {
+        "status": "ObservationStatus",
+        "reason": "MeasurementReason",
+        "style": "ObservationStyle",
+        "confidence": "double",
+        "severity": "double",
+        "doubtful": "bool",
+        "hypothesis": "bool",
+        "handledBy": "HandledBy",
+        "handled": "bool",
+        "value": "double",
+        "second": "double",
+        "third": "double",
+        "places": "uint32",
+        "at1": "double",
+        "at2": "double",
+        "at3": "double"
+      }
+    },
+    "Observations": {
+      "cpp": "Observations",
+      "fields": {
+        "clipping": "Observation",
+        "dcOffset": "Observation",
+        "bitsUnused": "Observation",
+        "dualMono": "Observation",
+        "edgeSilence": "Observation",
+        "tooQuiet": "Observation",
+        "tooShort": "Observation",
+        "alreadyLimited": "Observation",
+        "spectralWall": "Observation",
+        "loudestLowNote": "Observation",
+        "lowestLowBand": "Observation",
+        "infraLow": "Observation",
+        "wideBass": "Observation",
+        "polarity": "Observation",
+        "sibilance": "Observation",
+        "hum": "Observation",
+        "humWandered": "Observation"
       }
     }
   },
   "wireAliases": {
     "CommandAnswer": "AcceptedAnswer | RejectedAnswer | ContractAnswer",
     "SessionEvent": "PhaseEvent | FactEvent | ReadingEvent | DoneEvent | RejectedEvent | ErrorEvent | MeasurementEvent",
-    "SessionCommand": "SetTargetCommand | SetManualCommand | EditTargetCommand | EditDeviceCommand | RevertEditsCommand | MasterCommand | CancelCommand | ForgetCommand | ContinueMeasurementCommand",
+    "SessionCommand": "SetTargetCommand | SetManualCommand | EditTargetCommand | EditDeviceCommand | RevertEditsCommand | MasterCommand | CancelCommand | ForgetCommand | ContinueMeasurementCommand | AdoptMachineCommand",
     "EditDeviceCommand": "EditDeviceHpfCommand | EditDeviceMonoBassCommand | EditDeviceGlueCommand | EditDeviceSaturationCommand | EditDeviceTiltCommand | EditDeviceLimiterCommand | EditDeviceDitherCommand | EditDeviceLowCommand",
     "RevertEditsCommand": "RevertEditsHpfCommand | RevertEditsMonoBassCommand | RevertEditsGlueCommand | RevertEditsSaturationCommand | RevertEditsTiltCommand | RevertEditsLimiterCommand | RevertEditsDitherCommand | RevertEditsLowCommand",
     "SessionMeasurementArray": "Omit<MeasurementArray, \"values\"> & { readonly values: ScalarRow }",
     "SessionMeasurementResult": "Omit<MeasurementResult, \"arrays\"> & { readonly arrays: ReadonlyArray<SessionMeasurementArray> }",
-    "QueryResponse": "Omit<QueryView, \"values\"> & { readonly values: ScalarRow }"
+    "QueryResponse": "SessionQueryView"
   },
   "wireRecords": {
     "ScalarRow": {
@@ -1125,7 +1427,8 @@
       "heapCeilingBytes": "number",
       "maxRateHz": "number",
       "offeredDevices": "number",
-      "largestFreeBlockBytes": "number"
+      "largestFreeBlockBytes": "number",
+      "leanSummary": "number"
     },
     "MeasurementEvent": {
       "seq": "string",
@@ -1141,6 +1444,10 @@
     },
     "ContinueMeasurementCommand": {
       "kind": "\"continueMeasurement\"",
+      "commandId": "string"
+    },
+    "AdoptMachineCommand": {
+      "kind": "\"adoptMachine\"",
       "commandId": "string"
     }
   },
@@ -1187,7 +1494,8 @@
       "Contract",
       "OutputPending",
       "MandatoryUnavailable",
-      "DeliveryFormat"
+      "DeliveryFormat",
+      "PlanPending"
     ],
     "ErrorCode": [
       "Trap",
@@ -1223,6 +1531,10 @@
     "SessionKept": {
       "from": "Kept",
       "fields": { "report": "SessionMasterReport | null" }
+    },
+    "SessionQueryView": {
+      "from": "QueryView",
+      "fields": { "values": "ScalarRow", "master": "SessionKept | null" }
     }
   },
   "optionalFields": {
@@ -1264,6 +1576,28 @@
       "cost": {
         "default": "std::optional<MasterCost> {}",
         "description": "No post-master cost was published in the v1 snapshot."
+      },
+      "medium": {
+        "default": "std::optional<MasterMedium> {}",
+        "description": "No medium report: a ready chain a shell supplied, or an older snapshot."
+      }
+    },
+    "MasterCost": {
+      "glueP95Db": {
+        "default": "MasterCostValue {}",
+        "description": "No glue reading: not implemented in that snapshot."
+      },
+      "glueMaxDb": {
+        "default": "MasterCostValue {}",
+        "description": "No glue reading: not implemented in that snapshot."
+      },
+      "saturationCutMaxDb": {
+        "default": "MasterCostValue {}",
+        "description": "No saturation reading: not implemented in that snapshot."
+      },
+      "saturationCutUsualDb": {
+        "default": "MasterCostValue {}",
+        "description": "No saturation reading: not implemented in that snapshot."
       }
     },
     "Snapshot": {
@@ -1327,6 +1661,10 @@
         "default": "true",
         "description": "true; historical snapshots include their retained measurement rows."
       },
+      "masterRowsIncluded": {
+        "default": "true",
+        "description": "true; a snapshot without the field carries every master's rows."
+      },
       "tempoChoice": {
         "default": "TempoChoice {}",
         "description": "No device tempo decision before the session finishes the tempo measurement."
@@ -1350,6 +1688,14 @@
       "pendingMasterBytes": {
         "default": "0.0",
         "description": "No pending PCM bytes."
+      },
+      "plan": {
+        "default": "PlanView {}",
+        "description": "No plan: the devices are not placed."
+      },
+      "observations": {
+        "default": "Observations {}",
+        "description": "No observations: nothing measured."
       }
     },
     "MeasurementQuery": {
@@ -1368,10 +1714,26 @@
       "toHz": {
         "default": "250.0",
         "description": "250 Hz."
+      },
+      "spectrum": {
+        "default": "SpectrumQuantity::Density",
+        "description": "Density: what LowSpectrum answered before the field existed."
+      }
+    },
+    "QueryView": {
+      "master": {
+        "default": "std::optional<Kept> {}",
+        "description": "No master record: every kind but MasterReport."
       }
     }
   },
   "optionalWireFields": {
+    "SessionCapabilities": {
+      "leanSummary": {
+        "defaultJson": "0",
+        "description": "0: the summary carries every master's rows, as a version-1 record of 32 bytes asks."
+      }
+    },
     "ReadingPayload": {
       "grid": {
         "defaultJson": "{\"firstFrame\":\"0\",\"stepFrames\":\"0\",\"framesRead\":\"0\",\"sampleRate\":0}",
@@ -1631,6 +1993,35 @@
       "meanDb",
       "samples",
       "nonFinite"
+    ],
+    "MasterWaveform": [
+      "firstFrame",
+      "lastFrame",
+      "channel",
+      "minimum",
+      "maximum",
+      "rms",
+      "finiteFrames"
+    ],
+    "MasterAxes": [
+      "firstFrame",
+      "lastFrame",
+      "axis",
+      "minimum",
+      "maximum",
+      "peak",
+      "envelope",
+      "rms",
+      "lowEnergy",
+      "middleEnergy",
+      "highEnergy",
+      "finiteFrames",
+      "reason"
+    ],
+    "LowSpectrumEnergy": [
+      "hz",
+      "energy",
+      "reason"
     ]
   }
 }

@@ -45,6 +45,11 @@ struct Capabilities
     std::uint32_t maxRateHz = 4294967295u;
     std::uint32_t offeredDevices = 255u;
     double largestFreeBlockBytes = 9007199254740991.0;
+    // The summary without the masters' heavy rows: each master keeps its scalars, its pass log and its cost sections;
+    // its limiter and peak-clip traces, crest rows and mask and waveform buckets are left out
+    // (SnapshotView::masterRowsIncluded false) and read, a master at a time, by QueryKind::MasterReport. The full
+    // snapshot is the same either way. Off: the summary as it always was.
+    bool leanSummary = false;
 };
 
 struct Capacity
@@ -65,6 +70,345 @@ struct ProjectText
 struct EqPoint { double hz = 0.0, db = 0.0; };
 inline constexpr std::size_t kEqCurvePoints = 128;
 
+// THE PLAN OF THE DEVICES (src/Planner.h): where the machine's placement for this source and target stands. The machine's
+// layer is written as soon as the first measurement ends (and again on a change of target); what a device then still
+// reads — the tempo the glue's release follows, the needles the limiter's peak clipper is classed by — ends later, and
+// until it has, the panel shows the machine's layer read-only.
+//   None         nothing to plan: no source, or its first measurement has not ended
+//   Pending      a measurement the target's devices read is still running
+//   Stopped      ...and it was stopped: continueMeasurement resumes it (a master resumes it by itself)
+//   Ready        every measurement the devices read has ended — with a value, or with its reason
+//   Unavailable  the first measurement ended without a usable loudness or true peak: no plan, and no master
+enum class PlanStatus : std::uint8_t { None, Pending, Stopped, Ready, Unavailable };
+
+// WHY THE MACHINE HOLDS A DEVICE BACK: a code, never a text.
+//   None        nothing is held back
+//   Shell       the shell does not offer the device (Capabilities::offeredDevices)
+//   Source      the source cannot take it: mono bass on a mono source
+//   Target      the target rules it out: dither above the bit depth it serves, needles where it has no peak clipper
+//   Unmeasured  a measurement it reads ended without a value, and it took its safe path
+//   Measured    a measurement ruled against it (mono bass: bass in opposite polarity)
+//   Quiet       the input is too quiet to measure: below [input] quiet.gainOnlyLufs the machine places no device
+//               (but for the high-pass, at its floor, and the dither of the delivery's format)
+enum class HeldBack : std::uint8_t { None, Shell, Source, Target, Unmeasured, Measured, Quiet };
+
+// A FINDING IS THE PLANNER'S PROPOSAL AND WHAT IT STOOD ON — the machine's own cutoff, the loss at the machine's
+// crossover. WHAT SOUNDS is the project's device, a person's layer over a machine's that a project file may have
+// written; a finding says which, so that no sentence claims for the sound what is true of the proposal alone:
+//   Proposal   the planner's own values sound: the finding describes the sound
+//   Hand       a person's value sounds instead
+//   File       a machine layer kept from a project file sounds, another than the planner proposes now
+//   Off        the device is out of the chain
+enum class Sounding : std::uint8_t { Proposal, Hand, File, Off };
+
+// WHERE THE MACHINE'S HIGH-PASS CUTOFF CAME FROM (owner decisions 3.2–3.4) — always on, the cutoff:
+//   Note         the cutoff the sure lowest note allows: the target's noteLossDb at the note, on the chain's response
+//   Floor        a sure note above the target's floor whose cutoff is below it: the floor, taking more of the note
+//   BelowFloor   a sure note below the target's floor itself (an 808, a sub): the floor, cutting into the note
+//   Top          a sure note whose cutoff is above the machine's top (hzMax): the top — the note is higher
+//   Unsure       the lowest band that was on is not a sure note (or none was on): the floor — never a higher band
+//   Short        a programme shorter than [input] shortSeconds: not searched, the floor
+//   Quiet        an input too quiet to measure: the floor
+//   Unmeasured   the low end was not measured: the floor
+enum class HpfCut : std::uint8_t { Note, Floor, BelowFloor, Top, Unsure, Short, Quiet, Unmeasured };
+struct HpfFinding
+{
+    HpfCut cut = HpfCut::Unmeasured;
+    double cutoffHz = 0.0;                     // the machine's cutoff
+    std::optional<std::int32_t> noteMidi;      // the sure lowest note, when there is one
+    std::optional<double> noteHz;              // ...its band's centre, Hz
+    std::optional<double> noteLossDb;          // what the machine's high-pass takes there, dB, positive
+    Sounding sounding = Sounding::Proposal;    // whether that cutoff, at the target's slope, is what sounds
+    double soundingHz = 0.0;                   // the cutoff that sounds (meaningless when Off)
+};
+
+// WHAT MONO BASS FOUND (owner decision 3.5) — the loss of the low end when it folds to mono, (L+R)/2, below the target's
+// crossover, where the bass sounds:
+//   On           under [monoBass] loss.warnFromDb: placed
+//   Partial      from warnFromDb to offAboveDb, both included: placed, with the number
+//   AntiPhase    above offAboveDb: left out — "check the polarity of a channel"; a person may switch it on
+//   Unmeasured   the loss could not be weighed (too little bass sounding, or no low-end reading): left out
+//   MonoSource   a mono input has no side to fold
+//   Quiet        an input too quiet to measure
+// Mono bass stands unless a MEASURED loss rules against it. Where the low-end reading holds only a first part of the
+// piece (its blocks are capped, about 10.9 minutes) the loss is weighed over that part and the device placed by it;
+// `coveredSeconds` says how much of the piece the weighing covered.
+enum class MonoBassVerdict : std::uint8_t { On, Partial, AntiPhase, Unmeasured, MonoSource, Quiet };
+struct MonoBassFinding
+{
+    MonoBassVerdict verdict = MonoBassVerdict::Unmeasured;
+    double crossoverHz = 0.0;                  // the crossover it was weighed at: the target's
+    std::optional<double> lossDb;              // the measured loss, dB
+    double soundingSeconds = 0.0;              // how long the bass sounds, in the blocks it was weighed over
+    // Set where the reading holds only the beginning of the piece: the seconds it covers, of `pieceSeconds`.
+    std::optional<double> coveredSeconds;
+    double pieceSeconds = 0.0;
+    // The project's mono bass is on where the machine would leave it out (a person switched it on): the warning beside
+    // the tick and in the report.
+    bool againstMachine = false;
+    Sounding sounding = Sounding::Proposal;    // whether the fold at that crossover, at the machine's width, is what sounds
+    double soundingHz = 0.0;                   // the crossover that sounds (meaningless when Off)
+};
+
+// ONE DEVICE'S PLAN — typed facts about its machine layer: what held it back, what it reads, and where each of its
+// machine fields came from. A field is a bit, in the order Project.h writes the device's fields (the order of
+// MachineDifference::field): `target` — its target decided it; `measured` — a measurement did; neither — the config's
+// default. A person's touched fields are the hand layer's; a machine layer read from a project file is PlanView::fromFile.
+struct DevicePlan
+{
+    HeldBack heldBack = HeldBack::None;
+    std::uint32_t needs = 0;               // the analyzers it reads for what the project makes it do, a bit per Analyzer
+    std::uint8_t target = 0;
+    std::uint8_t measured = 0;
+    // The tick as it sounds, and where it came from — so a shell draws it without deciding. The limiter has no tick:
+    // always on, the machine's.
+    bool on = false;
+    TickFrom tick = TickFrom::Machine;
+};
+
+// Every device's plan, in the order of Device.
+struct DevicePlans
+{
+    DevicePlan hpf, monoBass, glue, saturation, tilt, limiter, dither, low;
+};
+
+// WHAT THE GLUE COMES TO (owner decisions 3.8, 3.8а) — the knob "up to N dB" as the compressor gets it:
+//   Out          not in the chain: unticked, or at 0 dB
+//   Active       compressing: the static curve takes N dB at the input's short-term P95; the values below are the chain's
+//   Unavailable  ticked above 0 dB, but the input has no short-term P95: out of the chain, for the machine and for a
+//                person alike — the person's value is kept, no P95 is invented, and a master is made without the glue
+enum class GlueState : std::uint8_t { Out, Active, Unavailable };
+struct GlueFinding
+{
+    GlueState state = GlueState::Out;
+    double upToDb = 0.0;                       // the knob as it sounds ([glue] whenTicked when ticked on untouched)
+    std::optional<double> ratio, thresholdDb, kneeDb, attackMs;   // Active; the threshold in the normalised input's dB
+    // ...and once the tempo is decided — the measured one, or [compressor.tempo] bpmWhenUnsure: the tempo, the release
+    // it asks for (a beat over the travel's divisor) and the release the compressor gets, inside [compressor.limits].
+    std::optional<double> bpm, releaseAskedMs, releaseMs;
+    bool releaseClamped = false;               // the release asked for was outside the limits: releaseMs is the limit
+    bool tempoMeasured = false;                // the release follows the measured tempo, not the fallback
+};
+
+// WHAT THE SATURATION COMES TO (owner decision 3.9): active when ticked above 0 dB; the shaper's drive is the knob's at
+// the input's true peak after the normalising gain.
+struct SaturationFinding
+{
+    bool active = false;
+    double knobDb = 0.0;
+    std::optional<double> driveDb, peakDbTp;
+};
+
+// THE NEEDLES' CLASS (owner decisions 3.6, 3.7) — what the machine's peak clipper, inside the limiter, makes of the
+// needles measured on the input at the ceiling the target's numbers give (the input's peak less the need):
+//   None      the machine does not cut: NeedlesWhy says why
+//   Short     90 % of the excursions no longer than [limiter.peakClipper] shortP90Ms, the bass share of their dose at most
+//             shortBassShare, the input's PLR at least shortPlrDb: up to shortCutDb off the peaks
+//   Between   neither short nor ruled out: up to betweenCutDb off the peaks, with care
+enum class NeedlesClass : std::uint8_t { None, Short, Between };
+
+// WHY THE MACHINE DOES NOT CUT — the first of these that holds, in this order; Cuts where it does:
+//   Shell         the shell does not offer the limiter's knob
+//   Target        the target has no peak clipper (vinyl)
+//   Quiet         the input is too quiet to measure: the machine places no device
+//   NoReadings    the input's loudness or true peak is not known: the need is not known
+//   LittleNeed    the need is [limiter.peakClipper] littleNeedDb or less: the needles are not measured and not touched
+//   Pending       the needles at this ceiling are not measured yet
+//   Unmeasured    the needles' measurement ended without a value (LimiterFinding::reason says how)
+//   NoExcursions  measured: no peak of the input stands above the ceiling
+//   Clipped       the source is clipped: clippedPerMinute confirmed clips a minute or more — a clipper would add distortion
+//   LowPlr        the input's PLR is under longPlrDb
+//   Bass          the bass share of the excursions' dose is longBassShare or more
+//   Long          90 % of the excursions are longP90Ms or longer
+enum class NeedlesWhy : std::uint8_t
+{
+    Cuts, Shell, Target, Quiet, NoReadings, LittleNeed, Pending, Unmeasured, NoExcursions, Clipped, LowPlr, Bass, Long
+};
+
+// WHAT THE LIMITER COMES TO — always in the chain, with no tick; its setting is the ceiling, and its one knob is the
+// peak clipper's: decide by itself (the class above), cut as much as a person sets, or not at all. It cuts AT MOST that
+// amount off the peaks, the limiter does the rest: its threshold stands max(0, needDb − amount) above the ceiling.
+struct LimiterFinding
+{
+    // The ceiling the master holds: the target's, or a person's edit of it, dBTP.
+    double ceilingDbTp = 0.0;
+    // The loudness need the target sets the input, dB — (input peak − input loudness) − (ceiling − target loudness).
+    std::optional<double> needDb;
+    // THE MACHINE'S OWN ANSWER, whatever sounds: its class, why it does not cut, and how much it would cut off the peaks.
+    NeedlesClass proposed = NeedlesClass::None;
+    NeedlesWhy why = NeedlesWhy::NoReadings;
+    MeasurementReason reason = MeasurementReason::None;   // why == Unmeasured: how the needles' measurement ended
+    std::optional<double> proposedOverDb;      // dB off the peaks, at most; absent where the machine does not cut
+    // What the class stood on, where the needles were measured: the excursions' p90 length, the bass share of their
+    // dose, the input's PLR; and the source's confirmed clips, in all and a minute (where the clip detector ended).
+    std::optional<double> p90Ms, bassShare, plrDb, clipsPerMinute;
+    std::uint64_t clips = 0;
+    // WHAT SOUNDS: the knob as the project gives it — a person's mode, a threshold a person turned (a knob turned is a
+    // device wanted: manual), else the machine's — whether the peak clipper cuts, and how much off the peaks, at most.
+    Needles mode = Needles::Auto;
+    bool cutting = false;
+    double overDb = 0.0;                       // meaningless where it does not cut
+    Sounding sounding = Sounding::Proposal;    // Proposal: as the machine answers; Hand, File: otherwise (never Off)
+    // A person's manual threshold cuts where the machine would not: the warning beside the knob names `why`.
+    bool againstMachine = false;
+    // THE MEDIUM'S RULES (owner decision 3.12), on a target cut to vinyl: the machine never stands above the target's
+    // own ceiling and never cuts needles; a person may do either, and is warned, never refused.
+    bool vinyl = false;
+    double mediumCeilingDbTp = 0.0;            // the target's own ceiling (meaningful on vinyl)
+    bool ceilingAboveMedium = false;           // a person's ceiling stands above it
+    bool needlesAgainstMedium = false;         // the peak clipper cuts on a target that has none
+    double vinylTopHz = 0.0;                   // the constant note: above this the cutting room usually rolls off
+};
+
+// WHAT THE DITHER COMES TO — by the delivery's format alone: at [dither] onUpToBits or less it is in the chain unless a
+// person switched it off (the delivery is then rounded to its grid without noise); above that there is no dither at
+// all, and a person's tick is kept in the project without effect.
+struct DitherFinding
+{
+    std::int32_t bits = 0;                     // the delivery's bit depth: the target's
+    bool applies = false;                      // the depth takes dither, and the shell offers the device
+    bool on = false;                           // it is in the chain
+    bool offByHand = false;                    // it applies, and a person switched it off
+    bool keptWithoutEffect = false;            // it does not apply, and a person's tick is kept: nothing sounds of it
+};
+
+struct PlanView
+{
+    PlanStatus status = PlanStatus::None;
+    // The identity of everything the plan was made from — the source and its measurements' keys and outcomes, the
+    // target and its edited numbers, a person's layer, the devices offered, the config and core versions. Equal keys,
+    // one plan: the planner runs again only when one of them changed.
+    std::uint64_t key = 0;
+    // The analyzers the project's devices read — the machine's layer with a person's over it — a bit per Analyzer, and
+    // those of them that have not ended. With the panel open a master waits for `waiting` to empty
+    // (Rejection::PlanPending); with the panel hidden a master is taken and waits for it itself.
+    std::uint32_t needs = 0, waiting = 0;
+    // What the master button names while it waits: the first waited-for analyzer (the needles before the tempo — the
+    // order a waiting master measures them in), the device that reads it, and how far its measurement is, 0…1.
+    std::optional<Analyzer> awaited;
+    std::optional<Device> awaitedBy;
+    double awaitedFraction = 0.0;
+    // The panel takes no device edit: the plan is not Ready (the table's Unplaced columns).
+    bool readOnly = true;
+    // The machine's layer is an imported project's, kept as the file wrote it; machineDifferences says where the
+    // planner would decide otherwise now, and adoptMachine takes its decisions.
+    bool fromFile = false;
+    DevicePlans devices {};
+    HpfFinding hpf {};
+    MonoBassFinding monoBass {};
+    // The one gain that brings the input to [input] referenceLufs, dB — the system the glue's threshold and the
+    // saturation's drive are read in. The landing search applies it, once.
+    std::optional<double> inputGainDb;
+    GlueFinding glue {};
+    SaturationFinding saturation {};
+    LimiterFinding limiter {};
+    DitherFinding dither {};
+};
+
+// THE OBSERVATIONS (owner decision 3.13) — what the measurements found in the FILE, each a fact with its numbers and
+// never a verdict of taste. They INFORM ONLY: no observation switches a device or changes the sound (a device that
+// decides from a measurement has its own finding in the plan). The thresholds are [observations] of engine.toml, its
+// first edition.
+//   status      Found; NotFound — measured, and it is not there; NotMeasured — the measurement it stands on has not
+//               ended, or ended without a value (`reason` says how). The three are never folded into one.
+//   style       error, warning or note ([observations.kinds]): the nature of the finding, not its size. It styles a
+//               finding and decides nothing.
+//   confidence  0…1, how firmly it is measured; `doubtful` under [observations] doubtfulBelow — shown all the same.
+//   severity    0…1, how much it matters for the master. Both rise along the config's ramps; a kind without a ramp
+//               has confidence 1 where found and severity 0.
+//   hypothesis  its thresholds are starting values no measurement has confirmed yet.
+//   handledBy   the device that deals with it, or Person — nothing in the chain cures it (a new mix or export does) —
+//               or Nothing: it describes the file. `handled`: that device is in the chain as the project stands.
+//   value, second, third   the evidence, by kind (below), in the units ObservationText prints them with
+//   places, at1…at3        up to three places in the programme, seconds from its start
+// THE KINDS, in the order of the analysis — the file, then the spectrum, then the hum:
+//   clipping        confirmed clips: value their count, second a minute, third the clipped share of the programme
+//                   (the fuller channel); places — the first distinct ones. Regular clipping (the limiter's
+//                   clippedPerMinute) is what stops the machine's peak clipper; rarer clips are named by place.
+//   dcOffset        value the largest channel offset, of full scale
+//   bitsUnused      value the low bits every channel leaves unused, of the file's depth
+//   dualMono        a stereo file whose channels are equal
+//   edgeSilence     value the silence at the start, second at the end, seconds
+//   tooQuiet        value the input's loudness, LUFS; second 1 where the machine sets only the gain and the ceiling
+//   tooShort        value the programme's length, second the length under which the lowest note is not sought, seconds
+//   alreadyLimited  value the input's PLR, second the bound, dB; third 1 where it is said because the source is clipped
+//   spectralWall    value the cutoff, Hz; second the drop, dB; third how far below Nyquist it stands, as a share
+//   loudestLowNote  value its MIDI number, second its frequency, Hz
+//   lowestLowBand   value the lowest occupied band's MIDI number, second its centre, Hz
+//   infraLow        value the infra-low share of the energy, second the crossover it is weighed at, Hz
+//   wideBass        value the side's share of the energy below the crossover, second the crossover, Hz
+//   polarity        value the stereo correlation, second the raw side's share
+//   sibilance       value the bursts' excess over their baseline at its quantile, dB; second the bursts a minute;
+//                   third their band's share against the instrument's own ceiling, dB; places — the loudest
+//   hum             value the fundamental, Hz; second its prominence, dB; third its power against the programme's, dB
+//   humWandered     a line that does not hold its frequency: value, second as hum's
+enum class ObservationKind : std::uint8_t
+{
+    Clipping, DcOffset, BitsUnused, DualMono, EdgeSilence, TooQuiet, TooShort, AlreadyLimited,
+    SpectralWall, LoudestLowNote, LowestLowBand, InfraLow, WideBass, Polarity, Sibilance,
+    Hum, HumWandered
+};
+inline constexpr std::size_t kObservationKinds = 17;
+enum class ObservationStatus : std::uint8_t { NotMeasured, NotFound, Found };
+enum class ObservationStyle : std::uint8_t { Error, Warning, Note };
+enum class HandledBy : std::uint8_t { Nothing, Hpf, MonoBass, Person };
+struct Observation
+{
+    ObservationStatus status = ObservationStatus::NotMeasured;
+    MeasurementReason reason = MeasurementReason::Pending;
+    ObservationStyle style = ObservationStyle::Note;
+    double confidence = 0.0, severity = 0.0;
+    bool doubtful = false, hypothesis = false;
+    HandledBy handledBy = HandledBy::Nothing;
+    bool handled = false;
+    double value = 0.0, second = 0.0, third = 0.0;
+    std::uint32_t places = 0;
+    double at1 = 0.0, at2 = 0.0, at3 = 0.0;
+};
+// Every kind's observation, in the order of ObservationKind.
+struct Observations
+{
+    Observation clipping, dcOffset, bitsUnused, dualMono, edgeSilence, tooQuiet, tooShort, alreadyLimited;
+    Observation spectralWall, loudestLowNote, lowestLowBand, infraLow, wideBass, polarity, sibilance;
+    Observation hum, humWandered;
+};
+// An observation as a fact — its sentence with its numbers and units, for one that was found; nothing otherwise.
+struct ObservationText
+{
+    [[nodiscard]] static const Observation& of (const Observations& all, ObservationKind kind) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> fact (ObservationKind kind, const Observation& observation) noexcept;
+};
+
+// THE FINDINGS AS FACTS — the report's lines, typed: what the high-pass stood on, and, where mono bass has something to
+// say (the bass partly or wholly in opposite polarity, or not weighed), that.
+// A sentence states what sounds: the planner's reasons only where its proposal is what sounds (Sounding::Proposal); a
+// person's value, or a file's, is named as that, without the machine's claims.
+struct PlanText
+{
+    [[nodiscard]] static text::Fact hpf (const HpfFinding& finding) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> monoBass (const MonoBassFinding& finding) noexcept;
+    // Beside it: the polarity warning where the fold sounds at a person's or a file's crossover against an opposite-
+    // polarity verdict, and the part of the piece the loss was weighed over where the reading does not hold it whole.
+    [[nodiscard]] static std::optional<text::Fact> monoBassPolarity (const MonoBassFinding& finding) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> monoBassCoverage (const MonoBassFinding& finding) noexcept;
+    // The glue's refusal and its clamps, each with its reason: unavailable without a P95; the release on the fallback
+    // tempo; the release held at a limit.
+    [[nodiscard]] static std::optional<text::Fact> glue (const GlueFinding& finding) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> glueTempo (const GlueFinding& finding) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> glueRelease (const GlueFinding& finding) noexcept;
+    // The limiter's line — the ceiling and what the peak clipper does, as it sounds; beside it, where a person's
+    // threshold cuts against the machine, the machine's reason ("the machine would not cut: …"); and on a target cut to
+    // vinyl the medium's warnings (a ceiling above its own, needles cut) and the constant note about the top.
+    [[nodiscard]] static text::Fact limiter (const LimiterFinding& finding) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> needlesAgainstMachine (const LimiterFinding& finding) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> vinylCeiling (const LimiterFinding& finding) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> vinylNeedles (const LimiterFinding& finding) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> vinylTop (const LimiterFinding& finding) noexcept;
+    // The dither's line: in the chain at the delivery's depth, switched off by a person, not applicable at this depth —
+    // and, there, a person's tick kept without effect.
+    [[nodiscard]] static text::Fact dither (const DitherFinding& finding) noexcept;
+};
+
 class Session;
 class Snapshot;
 struct SnapshotView;
@@ -74,28 +418,6 @@ struct Created
 {
     Status status = Status::Ok;
     std::unique_ptr<Session> session;
-};
-
-// THE RECIPE OF A MASTER — what a master is made from, captured when it is asked for: the project as it was then (the
-// machine's layer included), the source it renders and the config's sound version. Two masters with equal recipes,
-// made by one release, are one master.
-struct Recipe
-{
-    Project project {};
-    std::uint64_t source = 0;                  // the source's hash (Session::source)
-    std::uint64_t sound = 0;                   // config::Config::versions().sound
-    std::uint64_t readyHash = 0;              // exact ready topology, parameters and delivery choice
-    std::uint32_t deliveryRateHz = 0;
-    std::uint32_t readyVersion = 0;
-};
-
-// A master kept: its id and its recipe.
-struct Kept
-{
-    MasterId id = 0;
-    Recipe recipe {};
-    std::optional<LandingSummary> landing;
-    std::optional<MasterReport> report;
 };
 
 // The source a load gave, as the session holds it. The name and the samples live in the session until a different source is loaded.
@@ -111,7 +433,7 @@ struct Source
     std::string_view name;
 };
 
-namespace detail { struct Driver; struct Inspector; struct MeasurementWorkspace; struct LiveMeasurements; struct SourceMeasurements; struct NeedlesWork; struct NeedlesResult; struct WaveformState; struct QueryCache; struct MasterJob; struct MasterRows; }
+namespace detail { struct Driver; struct Inspector; struct PlanInputs; struct MasterPlan; struct MeasurementWorkspace; struct LiveMeasurements; struct SourceMeasurements; struct NeedlesWork; struct NeedlesResult; struct WaveformState; struct QueryCache; struct MasterJob; struct MasterRows; }
 
 struct MasterToken
 {
@@ -223,7 +545,8 @@ public:
     [[nodiscard]] QueryResult masterWaveformChunk (const MeasurementQuery& request, const Pcm& chunk) noexcept;
     [[nodiscard]] Answer rejectProtocol (CommandId id) noexcept;
 
-    // Export is an owned exact byte allocation, without a terminator. Only placed projects are exportable.
+    // Export is an owned exact byte allocation, without a terminator. A project is exportable once the machine's layer is
+    // written (the first measurement ended), while what its devices read still ends too.
     [[nodiscard]] Checked exportProjectBytes() const noexcept;
     [[nodiscard]] ProjectText exportProject() const noexcept;
     [[nodiscard]] Rejection exportProject (std::span<char> output) const noexcept;
@@ -283,13 +606,17 @@ private:
     [[nodiscard]] Checked demand (const Checked& storage) const noexcept;
     [[nodiscard]] Answer reject (Answer answer) noexcept;
 
-    // Are the devices placed — has the first measurement of this source ended (Measured1, Measured2)?
+    // Are the devices placed — the machine's layer written for this source and target, and every measurement the
+    // target's devices read ended (PlanStatus::Ready)? The table's placed columns; the Unplaced ones show the panel
+    // read-only.
     [[nodiscard]] bool placed() const noexcept;
 
     void emit (Notification event) noexcept;
     void emit (Notification event, const Phase& progress) noexcept;
     [[nodiscard]] Phase jobProgress (JobId job) const noexcept;
     void dropJob (JobId job) noexcept;
+    void needlesAfterDroppedMaster() noexcept;
+    void startMaster (const detail::MasterPlan& plan) noexcept;
     void clearMasters() noexcept;
     void settleMasterCrest (MeasurementReason reason) noexcept;
     void stepMasterCrestJoin() noexcept;
@@ -303,8 +630,23 @@ private:
     void stepSourceMeasurements() noexcept;
     void invalidateQueryCache (Analyzer analyzer) noexcept;
     [[nodiscard]] bool mandatoryReady() const noexcept;
-    [[nodiscard]] bool masterRequiresTempo() const noexcept;
     [[nodiscard]] TempoChoice tempoForDevice() const noexcept;
+    // What the measurements found in the file (src/Observations.h), refreshed with the plan.
+    Observations observations_ {};
+    // THE PLAN (src/Planner.h). What the planner may read for `project`'s target; the planner's machine layer for
+    // `project` written into its devices (a person's layer stays, but for a device the shell does not offer); what
+    // `project`'s devices read that has not ended; and the plan the snapshot and the table read, refreshed after every
+    // accepted command and every unit of work — the planner runs again only when an input changed (plan_.key;
+    // planRuns_ counts its runs).
+    [[nodiscard]] detail::PlanInputs planInputs (const Project& project) const noexcept;
+    void place (Project& project) const noexcept;
+    [[nodiscard]] std::uint32_t planWaiting (const Project& project) const noexcept;
+    void replan() noexcept;
+    // A needed tempo goes ahead of the optional analyzers the source's job has left, at an analyzer's boundary; the job
+    // returns to them after it, repeating nothing.
+    void preferTempo() noexcept;
+    // The loudness need `project`'s target sets the input — the needles are measured at the input's peak less it.
+    [[nodiscard]] std::optional<double> needlesNeed (const Project& project) const noexcept;
     void clearNeedles() noexcept;
     void needlesChanged() noexcept;
     std::unique_ptr<detail::NeedlesWork> needlesWork_;
@@ -330,6 +672,15 @@ private:
     Project project_ {};
     MachineDifference differences_[kDeviceFields] {};
     std::size_t differenceCount_ = 0;
+    PlanView plan_ {};
+    std::uint64_t planRuns_ = 0;
+    bool machineFromFile_ = false;
+    // A master asked for with measurements its devices read still running: its recipe's project is the one captured then
+    // (the target, its numbers, a person's layer), and the needles are measured at that project's ceiling until the
+    // wait ends or the master is dropped — cancelled, stopped with its measurement, ended by a contract fault, or
+    // ended by a load or loadMeasured, which clear it with every other master state. When the wait ends the master's
+    // chain is taken from that project's devices (src/Chain.h) and its job starts.
+    bool jobWaiting_ = false;
     // Derived at placement and after accepted commands; owned snapshots copy these points.
     void refreshEqCurve() noexcept;
     EqPoint eqCurve_[kEqCurvePoints] {};
@@ -358,6 +709,9 @@ private:
     JobId lastJob_ = 0;
     Recipe jobRecipe_ {};
     std::unique_ptr<Kept[]> masters_;
+    // Room for the lean summary's masters (Capabilities::leanSummary): as many as masters_ has, written whole by every
+    // summary — a view's scratch, never state; absent without the capability.
+    std::unique_ptr<Kept[]> leanMasters_;
     std::unique_ptr<detail::MasterRows[]> masterRows_;
     std::unique_ptr<detail::MasterJob> masterJob_;
     std::uint64_t masterJobBytes_ = 0;

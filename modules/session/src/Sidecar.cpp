@@ -86,6 +86,10 @@ Answer Session::loadMeasured (CommandId id, const MeasuredSource& facts) noexcep
     loudness.reason = loudness.status == MeasurementStatus::Ready ? MeasurementReason::None
         : sidecarNumbers_[0].reason != MeasurementReason::None ? sidecarNumbers_[0].reason : sidecarNumbers_[1].reason;
     state_ = mandatoryReady() ? State::Measured2 : State::Loaded;
+    // Facts in place of the detectors: with a usable loudness and true peak the planner places the devices at once.
+    devicesPlaced_ = state_ == State::Measured2; machineFromFile_ = false;
+    if (devicesPlaced_) { place (project_); requestNeedles(); }
+    replan(); refreshEqCurve();
     ++revision_;
     for (const auto& r : measurementResults_)
     {
@@ -145,6 +149,7 @@ Answer Session::attachAudio (CommandId id, const Pcm& pcm) noexcept
     Notification event; event.kind = EventKind::Phase; event.jobId = measurementJob_; event.payload.phase = measurementProgress_; emit (event);
     answer.revision = revision_; answer.job = measurementJob_;
     requestNeedles();
+    replan();
     return answer;
 }
 } // namespace felitronics::session

@@ -18,6 +18,8 @@ command {"kind":"setTarget","commandId":"2","target":"cd"}
 snapshot
 summary
 query {"kind":3,"audioId":"$source","fromFrame":"0","toFrame":"384000","columns":32,"requestId":"12","crossoverHz":120,"fromHz":20,"toHz":250}
+query {"kind":1,"audioId":"$source","fromFrame":"0","toFrame":"384000","columns":32,"requestId":"16","crossoverHz":120,"fromHz":20,"toHz":250}
+query {"kind":1,"audioId":"$source","fromFrame":"0","toFrame":"384000","columns":32,"requestId":"17","crossoverHz":120,"fromHz":20,"toHz":250,"spectrum":1}
 capacity 0 0
 load 3 mono
 snapshot

@@ -204,9 +204,9 @@ every stage a device writes is named, the limiter's second release included.
 
 `<felitronics/session/Commands.h>` and `<felitronics/session/Project.h>`. A session is in one of five states — **Empty**
 (nothing loaded), **Loaded** (a source, its first measurement not completed, the devices not placed), **Measured1** (the first
-measurement ended: a master can be made, while device edits wait for explicit placement), **Measured2** (the second ended too), **MeasurementStopped** (audio, results, and unfinished work retained) — and a master
+measurement ended: the planner places the devices and a master can be made; device edits are taken once what the devices read has ended), **Measured2** (the second ended too), **MeasurementStopped** (audio, results, and unfinished work retained) — and a master
 being made is an overlay on the two measured ones. A shell asks by a `Request`, one struct per command with the shell's
-own id for it: `load`, `setTarget`, `editTarget`, `editDevice`, `revertEdits`, `setManual`, `master`, `cancel`, `forget`, `importProject`, `continueMeasurement`.
+own id for it: `load`, `setTarget`, `editTarget`, `editDevice`, `revertEdits`, `setManual`, `master`, `cancel`, `forget`, `importProject`, `continueMeasurement`, `adoptMachine`.
 `Session::apply()` answers it whole — accepted, with the revision it made, or rejected with a `Rejection` code and no state change. A rejection publishes an event and advances `seq`. Every accepted command and every transition moves the revision by one; a rejection leaves it.
 
 **Who may do what, when, is one table in code** (`Table` in `Commands.h`), and every command consults it right after
@@ -230,6 +230,7 @@ from the code, and ctest holds the text between the markers below to that output
 | forget | NoSource | NoMaster | yes | yes | yes | yes | NoMaster | yes | yes | yes | yes | yes | yes | yes | yes |
 | importProject | NoSource | NotPlaced | yes | yes | yes | yes | NotPlaced | yes | yes | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced |
 | continueMeasurement | NoJob | NoJob | NoJob | NoJob | NoJob | NoJob | yes | yes | yes | NoJob | NoJob | NoJob | NoJob | yes | yes |
+| adoptMachine | NoSource | NotPlaced | yes | yes | yes | yes | NotPlaced | yes | yes | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced |
 
 | the session's own transition | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 | Stopped | StoppedMeasured | MasteringStopped | Measured1Unplaced | Measured2Unplaced | Mastering1Unplaced | Mastering2Unplaced | StoppedMeasuredUnplaced | MasteringStoppedUnplaced |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -240,7 +241,8 @@ from the code, and ctest holds the text between the markers below to that output
 
 **The checks run in one declared order, the same for every command**, and the first that fails is the answer:
 1. the calling thread's floating-point environment; 2. the table; 3. what the command names — a target, a device offered for this target and source,
-the source's audio (`master`: `NoAudio` for a sidecar source before `attachAudio`), an id left for a new job (`load` and `master`), a load's valid
+the source's audio (`master`: `NoAudio` for a sidecar source before `attachAudio`), with the panel open a plan with nothing left to wait for (`master`
+the session decides: `PlanPending`), an id left for a new job (`load` and `master`), a load's valid
 UTF-8 name, the active job (`cancel`: `NoJob` when none runs, `UnknownJob` when another does), a master kept; 4. the fields — each touched one in the order its struct
 writes them: finite, one of its values, within its domain; 5. a load's audio — one or two channels, a rate of
 at least felitronics-core's 8000 Hz, frames and data, a size the machine can address, every sample finite. A rejection
@@ -259,22 +261,31 @@ saturation, tilt, the limiter's needles, dither and low. Tilt and low are separa
 The machine enables low only for a target with `lowDb` (today `lp`, +0.5 dB); otherwise low starts off at 0 dB.
 Dither is offered through 16 bits, and mono bass except on a mono source; the shell may exclude any device.
 
-- **The machine's layer** is placed from the config for the target and the source — the ticks from `[stages]`, what
-  the target decides (the high-pass's slope and floor, the mono-bass crossover, no needles where the target has no peak
-  clipper, the dither at its bit depth, the low shelf's gain, the glue its row names) and each device's own section for
-  the rest; tilt starts flat. In this release it is the config's defaults for the target and the source, not a decision
-  taken from a measurement: mono bass, which `[stages]` leaves off, is off. The devices are placed when the first
-  measurement ends, and again on a change of target after that; before it they are unplaced — every field of the
-  machine's layer at its type's zero, and the state says so. A load unplaces them again.
+- **The machine's layer** is the planner's (below, "The plan of the devices"): each device proposes its fields from
+  the config for the target and the source — what the target decides (the high-pass's slope
+  and floor, the mono-bass crossover, no needles where the target has no peak clipper, the dither at its bit depth, the
+  low shelf's gain, the glue its row names) and each device's own section for the rest; tilt starts off and flat — and from
+  what it measures. The devices are placed when the first measurement ends — by the pump, and by a sidecar's facts —
+  and again on a change of target after that; before it they are unplaced — every field of the machine's layer at its
+  type's zero, and the state says so. A load unplaces them again.
 - **Every value the machine places is one a person could set**: inside its knob's accepted domain, which the schema
   holds for every default and `felitronics_session_state_tests` checks for every target and source.
-- **A person's edits** are taken only after placement (`NotPlaced` before it), whether the panel is visible or hidden. Values must be
+- **A person's edits** are taken only after placement and once the plan is Ready (`NotPlaced` before: the table's Unplaced
+  columns), whether the panel is visible or hidden. Values must be
   finite and inside the knob's domain; travel and step guide the slider. Values between steps or outside travel are
   accepted within the domain. A number is kept with −0 written as +0, so equal values give identical project bits.
 - **`setTarget(name)`** replaces the target's numbers silently and always resets every device edit, including hidden
-  edits and dither edits. The machine decides again for the new target. The shell owns the warning
-  “your N edits will be reset”: it reads `snapshot().view().handFieldCount` before sending the command.
-  The command answer and events are unchanged. New dither edits above 16 bits still return `NotOffered`.
+  edits and dither edits. The machine decides again for the new target. The warning before it is the core's fact:
+  `SnapshotText::targetChange (snapshot().view())` gives `targetChangeResetsEdits` — "Manual device edits (N) will be
+  reset", N the `handFieldCount` — and nothing when no field carries a person's value. The shell shows it in its
+  confirmation and sends the command on confirm; a cancel sends nothing. The command answer and events are unchanged.
+  New dither edits above 16 bits still return `NotOffered`.
+- **A person's edit always sounds.** A device's tick is the person's own when they set one, on or off; otherwise it is
+  on when any of the device's fields carries their value — a knob turned is a device wanted, so a project with
+  `[tilt] db.hand = 3` and no tick written sounds; otherwise it is the machine's. Every reader of what sounds goes
+  through the one rule (`settingsOf` in `src/Devices.h`): the EQ stage and its curve, the plan's needs, a recipe. The
+  snapshot says it per device (`plan.devices.<device>.on` and `.tick`: Machine, Hand or Touched), so a shell draws the
+  tick without deciding. A change of target resets the edits, and with them the ticks they gave.
 - **`setManual(bool)`** changes only panel visibility. Device edits stay effective in either mode, including in a
   master recipe. `snapshot().view().handFieldCount` counts touched device fields, including false ticks and values
   equal to the machine, for the hidden-panel marker. Target-number edits are separate. `revertEdits` and
@@ -287,7 +298,216 @@ Dither is offered through 16 bits, and mono bass except on a mono source; the sh
 - **`master`** captures the recipe — the project as it is, the source's hash, the config's sound version — and starts a
   job, numbered on from the last for the session's whole life, a load included: an id is never 0 and never issued twice,
   and once the last is issued a load or master is rejected (`NoJobId`); the project may change meanwhile, and the master renders its recipe. When it is done the session keeps it under
-  its job's id; `cancel(job)` stops the named measurement or master, `forget(master)` lets a kept master go.
+  its job's id; `cancel(job)` stops the named measurement or master, `forget(master)` lets a kept master go. A master the
+  session decides (version 0) waits for what its devices read: with the panel open it is refused (`PlanPending`) until
+  that has ended; with the panel hidden it is taken, and its job measures it first — its recipe, target and a person's
+  layer included, is the project when it was asked for, whatever changes while it waits.
+- **`adoptMachine`** takes the planner's machine layer for the project as it stands — after an import, the decisions the
+  file's differ from (`machineDifferences`). A person's layer stays. With no difference to take it is accepted without a
+  revision.
+
+### The plan of the devices
+
+`src/Planner.h`. **The planner is the one place the machine decides.** Each of the eight devices — the high-pass, mono
+bass, glue, saturation, tilt, the limiter with its needles, dither and low — is a `Planned<>` of its fields: it
+*proposes* its machine fields from what it may read (the target and its edited numbers, the source's shape, the devices
+the shell offers, the measurements) and says where each came from (its target, a measurement, or the config's default)
+and what held it back (the shell, the source, the target, a measurement that ended without a value); and it says what
+it *needs* measured for the settings the project gives it, the machine's layer with a person's over it. A device writes
+none of another's fields. The programme's loudness and true peak are not needs: the first measurement does not end
+without them. What is needed today: the tempo, where a glue compresses (its release follows it — cd's machine glue,
+or a person's), and the needles at the target's ceiling, where the limiter's peak clipper decides by itself.
+
+**The plan** (`SnapshotView::plan`, `PlanView`) says where placement stands — `None` (nothing placed), `Pending` (a
+measurement the target's machine layer reads is still running), `Stopped` (…and it was stopped: `continueMeasurement`,
+or a master, resumes it), `Ready`, `Unavailable` (no usable loudness or true peak: no plan and no master) — what the
+project's devices need and which of those have not ended, the one waited for first (the needles job runs ahead of the
+source's), the device that reads it and how far it is, whether the panel is read-only (the plan not `Ready`: the table's
+Unplaced columns), whether the machine's layer is an imported file's, and every device's plan. A measurement has ended
+when it is Ready or Unavailable; a cancelled needles job has ended too (it is not built again, and the limiter takes its
+path without needles), a stopped source measurement has not. So no plan waits for ever: every need is either measured,
+ends with a reason, or waits for a person's `continueMeasurement`, which a hidden panel's master sends by itself. A
+needed tempo goes ahead of the optional findings in the source's second phase, and the needles are measured at the
+ceiling of the project being planned — a waiting master's own, until what it reads has ended or the master is dropped:
+cancelled, stopped with the source's measurement it waited for, ended by a contract fault, or cleared by a `load` or
+`loadMeasured` (which end every master state, the wait included), it hands the needles back to the project's own ceiling, so the project's plan does not wait for needles nobody measures. A master stopped with the
+measurement says so under its own job's id (fact `cancelled`), beside the measurement's `measurementStopped`.
+
+**A finding is the planner's proposal; a sentence states what sounds.** `plan.hpf` and `plan.monoBass` hold what the
+machine proposes and what it stood on — its cutoff and the note behind it, the loss at its crossover. What sounds is the
+project's device: a person's layer over a machine's layer that a project file may have written. Each finding says which
+(`sounding`: `Proposal`, `Hand`, `File`, `Off`, with `soundingHz`), and `PlanText` gives the planner's reasons only where
+its proposal is what sounds: a person's cutoff is `hpfByHand` with that cutoff and no claim about the note, a file's
+`hpfKept`, an unticked high-pass `hpfOff`; mono bass at another crossover or width is `monoBassByHand` / `monoBassKept`,
+"will take N dB" is said only of the fold as proposed, the opposite-polarity warning of that fold left out or switched
+on against the machine — and beside the by-hand sentence where a person's crossover sounds against that verdict
+(`PlanText::monoBassPolarity`) — and nothing of a loss that does not happen. (The full wording of a person's layer is the next
+slice's.) The chain's topology follows the same effective settings — the tick rule, `settingsOf` — never `[stages]`,
+which is only the defaults layer a project file is written against: the planner decides every tick it has a rule for
+(mono bass by its loss, whatever `[stages] monoBass` says). `writeEq` and `writeDynamics` are those settings as the chain
+gets them — and `writeLimiter` the limiter, its peak clipper and the dither; `writeChain` (`src/Chain.h`) is the one
+derivation of a master's chain from a project, and a master the session decides (version 0) is rendered from it.
+
+**The high-pass and mono bass** (owner decisions 3.2–3.5) are the first devices that decide from a measurement, both
+from the first phase's low-end runs, with no trial render. The high-pass stands always — every target, a quiet input
+included — at a cutoff of max(what the sure lowest note allows, the target's floor, 32 Hz everywhere), never above the
+50 Hz top. The lowest band of the 120 Hz run that was on at all decides, alone: it is a sure note when it is on in 10 %
+of the frames, stands 2 dB over the duty line, lies above 20 Hz and sounds 3 s in all — and if it is not (a rare 808, one
+thump), the cutoff is the floor: the detector never takes a higher band as the note; a programme under 10 s is not searched, and a note that is not
+sure — or a lowest band that fails — gives the floor, never a higher band. The cutoff the note allows is found on the
+chain's own response (`highPassCutoffFor`: the matched cascade of the target's slope at the source's rate, by bisection,
+not rounded to the hertz) so that it takes exactly the target's `noteLossDb` there (1 dB, club 0.3). Mono bass is weighed
+by the harm itself: the loss the low end takes folded to mono, 10·log10((mid + side) / mid) over the 10 ms blocks of the
+run at the target's crossover (120 Hz, vinyl 150) where the bass sounds (within 20 dB of the level the loudest 5 % reach,
+3 s at least). Under 1 dB it is placed; from 1 to 3 dB, both included, placed with the number; above 3 dB left out —
+and a person may switch it on, with `plan.monoBass.againstMachine` for the warning. A loss it cannot weigh is its own
+reason, and it is left out: the machine does not fold what it did not weigh. The run keeps 65536 blocks of 10 ms
+(10.9 minutes), and a piece longer than that has only its beginning in them: the loss is weighed over that part and
+mono bass placed by it — it stands unless a measured loss rules against it — with `coveredSeconds` of `pieceSeconds`
+in the finding and the sentence `monoBassPartWeighed` (`PlanText::monoBassCoverage`) saying what the weighing covered. `plan.hpf` and `plan.monoBass` carry the
+findings typed; `PlanText` gives their report lines. `felitronics_session_hpf_mono_tests` holds each boundary to the bit,
+the cutoff to core's own response on every target, slope and rate, and — through the pump on synthetic mixes — a
+detector that never errs upward and a loss that tells centred, partial and inverted bass apart, opposite polarity above
+the crossover not counting.
+
+**The limiter, its needles and the dither** (owner decisions 3.6, 3.7, 3.12; technical decision 3О11; `src/Limiter.h`).
+The limiter is always in the chain, with no tick; nothing — no gain reduction, no PLR, no cost — limits how far it goes
+for the loudness, and the ceiling (the target's, or a person's edit of it) alone is hard. Its one knob is the peak
+clipper's, inside its oversampler: `auto` — the machine classes the needles measured on the input at the ceiling the
+target's numbers give (the input's peak less the need, `(TPin − Iin) − (TPtarget − Itarget)`): short (p90 of the runs
+≤ 2 ms, bass share of their dose ≤ 0.25, PLR ≥ 10) lose up to 3 dB off their peaks; not cut where p90 ≥ 8 ms, the bass
+share ≥ 0.5, the PLR < 8 or the source is clipped — ten confirmed clip-detector clips a minute or more (`[limiter.
+peakClipper] clippedPerMinute`); between, with care, up to 1.5 dB. A need of 3 dB or less is not measured and not cut.
+The two numbers (`shortCutDb`, `betweenCutDb`) are AMOUNTS (owner, 30.09): the clipper takes at most that much off the
+peaks and the limiter does the rest, so its threshold stands max(0, need − cut) above the ceiling, the need the input's
+(`plan.limiter.needDb`); a person's `manual X` is X dB off the peaks the same way. The finding carries the amount
+(`overDb`, `proposedOverDb`), the chain the threshold. Where the need is not known, or need − cut lies beyond the
+limiter's working range (12 dB), no threshold keeps to the amount and the clipper stays off. The landing then moves the
+peaks by its own gain and pass ceiling; a rendered master's clipper reduction stays within the amount plus that drift
+(`theClipperCutsItsAmount`: about 1.4–2.0 dB on the suite's mix).
+Every reason is its own (`plan.limiter.why`, `NeedlesWhy`): the shell, the target (vinyl), a quiet input, no readings, a
+little need, still measured, not measured (with how the measurement ended), no excursions, clipped, already limited,
+bass, long. `manual X` — a person's threshold, or a threshold turned with no mode set (a knob turned is a device wanted)
+— sounds over every one of those refusals, with the machine's reason beside it (`plan.limiter.againstMachine`,
+`PlanText::needlesAgainstMachine`: "the machine would not cut: …"); `off`, none. "The same ceiling" is decided by the
+bits in both rules that read it (`requestNeedles` and `needlesCurrent`). The dither follows the delivery's format alone:
+at 16 bits it is in the chain — weighted TPDF, seed `0x853c49e6748fea9b`, blanked after 4096 zero samples, a stated
+version of the sound (`[dither]`) — unless a person switches it off (the delivery is then rounded to its grid without
+noise); above 16 bits there is none, and a person's tick, which only a project file can bring, is kept and does nothing
+(`plan.dither.keptWithoutEffect`, `PlanText::dither`). The delivery is quantised once, in the chain: its WAV adds no
+second noise. On a target cut to vinyl (`vinyl = true`, lp) the machine never stands above the target's own ceiling
+(−3 dBTP) and never cuts needles; a person's ceiling above it and a person's needles sound, with the medium's warnings
+(`PlanText::vinylCeiling`, `vinylNeedles`) and no refusal, and the plan carries the constant note that the cutting room
+usually rolls off above 16 kHz (`PlanText::vinylTop`). A quiet input — strictly under −55 LUFS — gets the gain, the
+ceiling, the format's dither and the high-pass at its floor, and no other device of the machine's (no mono bass, no glue,
+no low shelf, no needles); a person's hand stays open. `felitronics_session_plan_sound_tests` holds every boundary.
+
+**The whole plan sounding** (`src/Chain.h`, `writeChain`). A master the session decides takes its chain from the
+project's devices in the order defaults → the machine's layer → a person's layer → what can physically apply: the EQ
+stage when one of its three bands is on, mono bass when ticked on a stereo source, the compressor when the glue
+compresses, the clipper stage when the saturation shapes, the limiter always, the dither where the delivery takes it —
+the topology from the devices as they sound, never `[stages]`, and the fixed geometry (`[chain]`, the two lookaheads,
+the key filter) stated. Neither gain of the chain is a device's: the landing search normalises the input and lands the
+loudness, once. The chain is fixed when the master starts — at once, or, for a master that waited for its measurements,
+when the wait ends, from its recipe's project — and its fingerprint is the recipe's `readyHash` (`readyVersion` 0). Its
+demand is declared by the command whole (the same plan the job starts from); a wait that ends on a heap too small drops
+the master with a memory error under its own job's id. Its report carries `medium` (`MasterMedium`): on vinyl whether the
+medium's rules held in the chain it ran — then "ready for cutting: no cardinal corrections (mono bass, infra-low, peaks);
+RIAA and the level for the side's length are the cutting engineer's", what the file shows (the fold's crossover, the
+high-pass's cutoff, the true peak under the ceiling) and what no file can show (the side's length, sibilance at the
+cutter, the centre) — or that the settings depart from them; and a very quiet input's line. The suite holds a decided
+master, sample for sample, to the PREVIOUS path's master of the chain it composes itself from the owner's rules — on
+allStreaming, on cd (44.1 kHz, 16 bits, the glue on the measured tempo) and on lp, and under a person's edits of every
+kind with the panel hidden — and a master that waited to the one asked for after.
+
+**The observations** (owner decision 3.13; `snapshot().view().observations`, `src/Observations.h`). What the
+measurements found in the file, as facts with numbers and never a verdict of taste, in the order of the analysis — the
+file (clipping, DC offset, unused low bits, dual mono, silence at the edges, a quiet input, a short one, an input already
+limited), the spectrum (a spectral wall, the loudest low note, the lowest occupied band, infra-low, wide bass, opposite
+polarity, sibilance — shown whatever the de-esser), the hum (a line, and one that wanders). Each says found, not found or
+not measured (with the measurement's reason) — the three never fold into one — its kind's style, a confidence and a
+severity along the ramps of `[observations]` (its first edition), `doubtful` under `doubtfulBelow`, `hypothesis` where
+its thresholds are starting values, and what deals with it (`handledBy`: the high-pass, mono bass, a person, nothing)
+and whether that device is in the chain. They change nothing: no observation switches a device. Rarer clips are named by
+place ("found 2 clips: 0:12, 1:47 — it looks like an edit"); ten a minute is a clipped source. The lowest occupied band
+is the low end's reading published with its sureness (`lowestOccupiedSure`, `lowestOccupiedResolved` beside it): an
+unsure one is shown as unsure, never withheld, while the high-pass takes the floor for it. `ObservationText::fact` gives
+a found one's sentence.
+
+**Tilt and low** (technical decision 3О10) are two devices of the person's taste in that one stage. The machine never
+ticks tilt and leaves it at 0 dB; it ticks low only for a target's correction for its medium (`lowDb`: vinyl's
++0.5 dB) — a number of the target, not a measurement — and not on an input too quiet to measure, where the number
+stays on the knob. Tilt is the core's tilt about 1 kHz: the low end down by the knob, the top up by it, the ends 2·dB
+apart, the pivot unmoved; low is a static shelf at 80 Hz, Q 0.6 — no dynamics, nothing swept or split. Both knobs take
+±6 dB as written — between steps and past the slider's travel — and the band carries the value bit for bit: inside the
+domain nothing in the engine clamps. `felitronics_session_tilt_low_tests` holds the machine's layer on every target and
+input, the domain's ends, the geometry against core's response, the three EQ devices together (each tick taking out its
+own contribution; the engine fed the written bands giving, sample for sample, the sound of the decided filters), and a
+person's layer kept hidden, saved and imported until a change of target resets it.
+
+**Glue and saturation** (owner decisions 3.8, 3.8а, 3.9; `src/Dynamics.h`) read the input in ONE system of levels:
+brought to `[input] referenceLufs` by one gain, `referenceLufs − integrated` (`plan.inputGainDb`), which the landing
+search adds to the chain's input gain, once — `writeDynamics` writes the two stages and touches neither gain of the
+chain, and the search, moving only the gain before the limiter, recalibrates neither. The short-term P95 and the true
+peak are read plus that gain, so one mix exported louder or quieter gets the same compressor and the same shaper (the
+true peak to the bit for a level that is a power of two; the P95 within the programme report's own 0.1 LU bin, since
+that report reads its percentiles off bins of the file's level).
+The glue's knob, "up to N dB", is the loss on the loud places: the travel `g` at which the core's own static curve
+(`dynamics::GainComputer`, soft knee included) takes exactly N dB at the loud places (the P95 and the calibration over it, below), found on that curve by bisection — one
+smooth formula over 0…6 dB (`[glue]`: the ratio by depth, the threshold offset, knee and attack linear, the release's
+beat divisor geometric), nothing rounded, no clamp reached inside the domain; 2.6 dB is ratio 1.74 with the threshold
+6.1 dB under the loud places, 6 dB ratio 2.84 and 9.3 dB under. It is not a ceiling on the live reduction. THE SCALE IS CALIBRATED TO MUSIC (`[glue] detectorOverP95Db`, 1.5 dB): the
+P95 is a short-term loudness, the detector a 5 ms RMS with an attack, so the threshold stands that offset above
+P95 + the travel's offset — chosen so that the gain reduction really taken on the loud places (its P95 over the
+programme, the median of the owner's 11 mixes) is the knob: 1.27 dB at 1.25, 2.61 at 2.6, 3.02 at 3, single mixes within
+about ±0.45 dB; uncalibrated it was 1.68, 3.24 and 3.70. The slider's 0…3 dB
+is a hint; the core takes 0…6 as written, the machine sets it on cd alone, 2.6 (the schema refuses a machine value
+above `knobMaxDb`), and a tick without a knob starts at 0.5. The release is a beat over the divisor, from the tempo
+where its label is high (the detector's confidence of 0.5 and up), from 120 BPM otherwise — a tempo that ended
+unavailable included — and is kept inside 50…500 ms. A glue that compresses reads the tempo, so a master waits for a
+pending one; a glue at 0 dB, or unavailable, reads nothing. WITHOUT A P95 (a scrap too short for a short-term loudness)
+the glue is unavailable to the machine and to a person alike: the machine's tick is left off (`HeldBack::Unmeasured`),
+a person's tick and value are kept and shown, `plan.glue.state` is `Unavailable`, the chain gets no compressor, no P95
+is invented and the master is made without it. `plan.glue` carries the state and, where it compresses, the values the
+chain gets — ratio, threshold (in the normalised input's dB), knee, attack, and once the tempo is decided the tempo,
+the release asked for and the release given; `PlanText::glue`, `::glueTempo` and `::glueRelease` give the refusal, the
+fallback tempo and a release held at a limit as facts.
+The saturation is the chain's tanh stage (`MasteringChainParams::clipper`) — not the peak clipper inside the limiter,
+which is the limiter's. The machine never sets it. The knob is the drive the input would get at 0 dBTP: the core drives
+the shaper at k = 10^(drive/20) − 1, so the stage gets `20·log10(1 + (10^(knob/20) − 1)·10^(−peak/20))` for the
+normalised true peak — no trial render; the compensation is 0, mix and output as set (`plan.saturation`).
+WHAT EACH DID is measured on its own stage and reported in the master's cost: `glueP95Db` and `glueMaxDb`, the
+compressor's gain reduction over the programme's 4 ms windows and its largest sample; `saturationCutMaxDb` and
+`saturationCutUsualDb`, the soft clipper's cut of peaks — `MasteringChain::clipperPeaks`: the peak of the stage's
+input against the peak of its output, internal quantum by quantum, after its mix and output trim, each against the gain
+the stage gives a sound too quiet to bend (a peak-normalised shaper lifts everything under full scale, so the ratio
+alone is a gain, not a cut; the output knob moves both and cancels). The loud places are the quanta with the highest
+input peaks, `[saturation] cut.loudShare` of them (5 %); the largest cut is the largest among them and the usual one
+their median — one hit moves the first and not the second. Neither is the fall of the chain's true peak.
+`MasterReportText::glue` and `::saturation` are the report's lines, published with the master's cost; a stage out of
+the chain has no number (`NoSignal`) and no line. `felitronics_session_glue_saturation_tests` holds the knob to the
+core's curve at 0.5, 1.25, 2.6, 3 and 6 dB, the curve's evenness over the whole domain and at 3, the machine's layer on
+every target, a person's values with the panel hidden, saved and imported, the refusal without a P95 through the real
+pump, every tempo outcome and both clamps, the drive at five peaks, every written field, one mix at three levels
+through the real analyzers and the real stages, the cut's even growth over the drive, and a real master whose reported
+numbers are, to the bit, those of the same two stages run alone behind the one gain.
+
+**One need, one measurement.** The source's measurements serve every target: a change of target or of a person's
+layer measures nothing again, and the needles run again only for a new ceiling (another target with the same numbers
+reuses them). **The plan's key** is a hash of everything it is made from — the source and its measurements' keys and
+outcomes, the target and its numbers, both layers of every device, the devices offered, the config and core versions;
+equal keys, one plan, and the planner runs again only when the key moved. Showing or hiding the panel is no input.
+`felitronics_session_plan_tests` holds all of it: every device's proposal equal to the previous path's placement for
+every target, source and shell, bit for bit; the key's hits and misses; the open panel's refusal and the hidden panel's
+wait, with the recipe captured when the master was asked for; the tempo waited for only where a glue compresses; the
+needles at a new ceiling; a stopped needles job that ends the wait; one measurement for every target; an import that
+keeps the file's machine and an `adoptMachine` that takes the planner's; a change of target.
+
+**The one EQ stage.** The high-pass, tilt and low are three devices writing one stage of the chain
+(`MasteringChainParams::eqBands`): each owns its own band (`src/EqCurve.h`: the high-pass 0, tilt 1, low 2) and writes
+only that band, so one's change or tick moves nothing of another's. The curve the snapshot shows is drawn from the
+bands written, by the designs the chain's EQ engine runs for them, at the source's rate: the plan test holds it to the
+previous curve bit for bit, to core's response of the same bands, and to the engine's own output on sines.
 
 **Memory.** `check()` says, before the work, what a command will ask the heap for, by the expressions that size its
 requests: a load its samples and its name, a master room for one more master kept (so that the render's end asks for
@@ -305,7 +525,8 @@ its typed device identity. `Text::rejected()` renders the code and field from th
 
 `exportProject()` materializes the placed `Project` in one canonical TOML writer. `exportProjectBytes()` gives its
 exact allocation demand without allocating; the returned `ProjectText` owns exactly those bytes, without a terminator.
-An Empty or Loaded session refuses export (`NoSource` or `NotPlaced`): its unplaced zeros are not machine decisions.
+An Empty or Loaded session refuses export (`NoSource` or `NotPlaced`): its unplaced zeros are not machine decisions. A
+placed project is exportable while what its devices read still ends: its machine layer is written.
 Files and browser storage belong to the shell. The writer reads no filesystem and the session reads no file itself.
 
 ```toml
@@ -372,16 +593,19 @@ and prints declared/actual tightness for a realistic project. It also proves an 
 allocation laws belong to felitronics-toml's storage suite. If the environment cannot serve the published demand,
 allocation has no recovery path.
 
-The core carries the **current and previous defaults tables**. Today the current label is `2026-09` and the previous
-slot is empty. A carried label uses its compiled defaults. Labels are strictly `YYYY-MM`, with months `01` through `12`.
-A label older than every carried version is converted: written numbers are retained and omitted fields take current
-defaults. Fact `DefaultsConverted` (9) owns the original label and reports the conversion in both catalog languages.
-Export uses the current label; a converted project round trips without a second conversion warning. A newer label
-is refused as `NewerDefaults` (28, fact 128); a malformed label is `UnknownDefaults`. A future uncarried label between
-the retained versions is also `UnknownDefaults`. All these refusals leave state and revision unchanged.
+The core carries **only the current defaults table**; today its label is `2026-10`. Labels are strictly `YYYY-MM`, with months `01` through `12`.
+An import accepts only the current defaults label and never converts (owner, 30.09: no project was ever saved with
+another one, so the core carries no code for older labels). Any other label — `2026-09`, saved before the core had its
+planner, included — is refused whole as `UnknownDefaults` (fact 126), as is a malformed one; a newer label is
+`NewerDefaults` (28, fact 128). These refusals follow the schema read, in its fixed order, and leave state and revision
+unchanged. `ProjectTests.cpp:defaultsVersions` names `2026-10` and turns red if it stops opening with its own machine
+layer. Fact `DefaultsConverted` (9) keeps its id and message (append-only, released in v0.3.0) and is emitted by
+nothing. Export uses the current label.
 
-After defaults selection or conversion, the file's complete machine layer always wins (omitted fields mean defaults),
-with the person's touched layer over it. The machine decides again beside it. `MachineDifferences` (8) publishes the
+After defaults selection, the file's complete machine layer always wins (omitted fields mean defaults),
+with the person's touched layer over it — on the same core and on another. The planner decides again beside it, for
+the file's target on this source; `plan.fromFile` says the layer is the file's, and `adoptMachine` takes the planner's
+decisions in its place, the person's layer kept. `MachineDifferences` (8) publishes the
 count for a foreign core, including zero; `SameCoreMachineDifferences` (10) publishes nonzero same-core differences
 and politely explains that these usually indicate a project file edited by hand. Both facts render in Russian and English.
 `snapshot().view().machineDifferences` holds ordered `(device, field, fileValue, coreValue)` rows. Flags use 0/1,
@@ -553,6 +777,9 @@ stopped measurement if needed, and reports `Analyzers` progress with no render p
 is captured once tempo becomes terminal. Other phase-two analyzers resume after the master;
 targets without a tempo dependency start their passes immediately. Cancelling a waiting master
 leaves the measurement running; cancelling that measurement also stops its waiting master.
+Cancelling the needles job a waiting master waits for does not stop it: the master renders without the peak clipper
+and its plan says `limiterUnmeasured`; cancelling the source's measurement while it waits for one of its results ends
+the master.
 
 Every completed unit publishes a phase. Measurement progress is the cumulative weight divided by the sum of
 `progress.analysis.weights`, in this order: loudness, report, lowEnd120, forensics, stereo, lowEndSweep, stereoBursts,
@@ -587,7 +814,8 @@ the source, completed results, analyzer workspace and saved progress; unfinished
 `continueMeasurement` gets a fresh job identity, restores unfinished results to `Pending`, and resumes at the saved
 position without feeding silence or repeating a completed instrument. The snapshot publishes its availability and
 the state it resumes. Stopped denotes cancellation before mandatory readiness. StoppedMeasured and MasteringStopped
-denote ready sources with placed devices; their Unplaced counterparts retain readiness without device placement.
+denote ready sources with placed devices whose plan is Ready; their Unplaced counterparts, the same states before the
+devices are placed or while a measurement they read runs.
 Cancelling a master ends only that overlay.
 Cancellation in either measured state, Stopped or StoppedMeasured returns `NoJob` only when no measurement, master or needles job runs:
 needles start at the first phase's end, one unit before Measured1, so a measurement stopped there leaves them running in
@@ -639,11 +867,15 @@ The generated `Query*Row` tuples in `snapshot.d.ts` give column names. Their num
 | kind | row meaning |
 |---|---|
 | Waveform | `[firstFrame,lastFrame,axis,min,max,peak,envelope,rms,lowEnergy,middleEnergy,highEnergy,finiteFrames,reason]`; axes 0=L, 1=R, 2=Mid=(L+R)/2, 3=Side=(L-R)/2; mono has only 0 and 2. Amplitudes are linear, energies are sums of squares. Peak preserves either signed extremum; envelope is the maximum absolute box mean near 8 kHz. Bands use complementary 250/2500 Hz one-pole drawing filters and are not LR4 measurements. |
-| LowSpectrum / LowSide | `[Hz,density,reason]` / `[Hz,sideFraction,reason]`; the requested Hz grid includes both endpoints (one column uses `fromHz`). The retained full-source LowEnd measurement is selected by exact `crossoverHz` 120 or 150. These kinds require the whole-source frame range and a finite grid within Nyquist. |
-| Momentary / ShortTerm | `[sourceFrame,LUFS,reason]` from the retained live grid, decimated to the requested maximum row count. `sourceFrame` is the window end: `(fromFrame,toFrame]` selects readings for the half-open audio range `[fromFrame,toFrame)`, including a reading at the source end. |
+| LowSpectrum / LowSide | `[Hz,density,reason]` / `[Hz,sideFraction,reason]`; the requested Hz grid includes both endpoints (one column uses `fromHz`). LowSpectrum's quantity is the request's `spectrum`: `0` (the default, and what a request without the field gets) is DENSITY — the band's energy per hertz of its width, the tilt-free curve; `1` is ENERGY — the band's whole energy, what a bar per band shows, above the density by 10·log10(band width in Hz) dB (0.8 dB at the lowest band — 1.19 Hz wide at 20.6 Hz — and 11.6 dB at 250 Hz), row `[Hz,energy,reason]`. The retained full-source LowEnd measurement is selected by exact `crossoverHz` 120 or 150. These kinds require the whole-source frame range and a finite grid within Nyquist. |
+| Momentary / ShortTerm | `[sourceFrame,LUFS,reason]` from the retained live grid, decimated to the requested maximum row count. `sourceFrame` is the window end: `(fromFrame,toFrame]` selects readings for the half-open audio range `[fromFrame,toFrame)`, including a reading at the source end. With a `masterId` (and the master's source `audioId`) the curve is that MASTER's: the job's own meter over the delivered audio, a row per 100 ms on the delivered-frame grid, named and reasoned the same way (the rows before a whole window are `TooShort`) — bit for bit what the delivered audio gives measured as a source; `sampleRate` is the delivery rate. |
 | Clipping | `[firstFrame,frameCount,channel,sign,level,evidence]` for retained runs intersecting the range; `total` counts all matches, `stored` is capped by `columns`, and `complete` reports truncation. |
 | Stereo | `[firstFrame,lastFrame,width,correlation,rms,reason]` from retained source stereo columns intersecting the requested range. Bounds name each retained column's actual source interval; `total` counts intersecting columns and `complete` is false when the column limit omits some. |
 | LimiterGr / PeakClipGr | `[firstFrame,lastFrame,minDb,maxDb,meanDb,samples,nonFinite]` on the delivered-frame grid. These require `masterId`, the master's source `audioId`, and a nonempty range inside the trace. A zoom selects every retained bucket intersecting the range; requested columns group those buckets and report their actual bounds, including edge buckets that cross the requested bounds. `total` is the selected bucket count, `stored` is the returned count, and `complete` is false for a reduced column count. An unfinished render returns `Pending` without rows. `sampleRate` is the delivery rate. |
+
+| MasterWaveform | `[firstFrame,lastFrame,channel,min,max,rms,finiteFrames]`, L then R, from the master's retained buckets (at most 2048 a channel). |
+| MasterAxes | The same buckets in the source Waveform's own shape — four axes a column, rows of 13 as Waveform's — kept beside them by the job with the waveform's own arithmetic (`analysis::WaveformStream`). A bucket is, to the bit, what the source's Waveform answers for those frames of the delivered audio (RMS and band energies to a rounding); columns merge buckets, and a merged column's envelope is the largest of its buckets'. On a caller-supplied chunk (`masterWaveformChunk`) the band split starts from rest at the chunk's first frame. |
+| MasterReport | No rows: `master` is the kept master whole — the record a full snapshot carries for it, its traces, crest rows and mask, sections and waveform buckets included — in storage of the answer's own. `columns` and the frame range are not read. `query_size` bounds its JSON by the record as the wire writes it. |
 
 Waveform inner buckets combine completed index nodes; only two edge leaves can replay resident PCM. Its index owns
 the multiresolution columns and filter checkpoints with no second PCM copy. `pcmFramesRead` exposes exact-edge work;
@@ -652,6 +884,20 @@ unfinished range is `Cancelled`. A row's reason distinguishes absent mono axes (
 (`NonFinite`) and finite silence (`NoSignal`); unavailable instruments retain their own reason. `summary()` and
 `fc_session_summary_*` keep scalar snapshot status while omitting large measurement rows and mark
 `measurementRowsIncluded=false`. The full snapshot remains available on its existing entry points.
+
+**The lean summary.** A summary still carries every kept master whole, and a master is heavy: its two reduction
+traces, its crest rows and its waveform buckets are megabytes of JSON — 1.28 MB with one 12-second master, 8.6 MB with
+seven. A shell that sets `Capabilities::leanSummary` (C: `leanSummary = 1`, a field appended to
+`fc_session_capabilities`; a version-1 record of 32 bytes leaves it 0 and gets the summary it always got, byte for byte)
+gets summaries without those rows: each master keeps its scalars — id, recipe, landing status, passes and readings, the
+report's readings and hints, every cost value — with its pass log and its cost sections; its traces are absent, its
+crest rows, mask and waveform buckets empty, and the summary says `masterRowsIncluded=false` (62 KB with one master,
+88 KB with seven: 4.4 KB a master). One master whole is `QueryKind::MasterReport`; its traces and waveform are also the
+`LimiterGr`, `PeakClipGr`, `MasterWaveform` and `MasterAxes` queries. `fc_session_snapshot_*` is the same in both
+modes. A shell reads a summary after each command's answer and the full snapshot when it needs everything at once;
+nothing in the session asks for a snapshot. The room for the lean masters is the session's (`sizeof (Kept)` a master,
+in the master command's declared demand) and sizing or copying a summary allocates nothing. A decoded snapshot is held
+to its flag: whole masters under `masterRowsIncluded=false`, or stripped ones under `true`, are refused.
 
 `measurementStorage` exposes source, result, workspace, copy, codec and allocator demands and the maximum live
 set across load and work. Native `storageFor` calls share the exact parameter records used for preparation, including
@@ -915,7 +1161,7 @@ C++, the way a desktop application does.
 Knob travel and step describe the shell's slider. Commands and project import accept the domains below, including
 values between steps and beyond travel. An empty edit or revert is accepted with unchanged revision. Device edits
 require placement and an offered device. Panel visibility does not gate them. Low is offered on every target,
-saved machine layers are retained for every core stamp, and older defaults are converted with their warning.
+saved machine layers are retained for every core stamp, and any defaults label but the current one is refused.
 
 | Knob | Accepted domain | Reason |
 | --- | --- | --- |
@@ -992,7 +1238,8 @@ snapshot
 - `drive <budget> work units` repeats bounded calls until the budget is spent or work is done. `summary` and
   `query <JSON>` copy the generated summary and bounded query transport, including f64 rows.
 - `place phase 1|2` calls the session's internal transition through a contract-only seam. It keeps the slice 0
-  device-edit and project scenarios executable while the production measurement phase leaves devices unplaced.
+  device-edit and project scenarios executable without running the analyzers; the production measurement phase places
+  the devices itself. The seam's second phase ends the source analyzers it did not run, as unavailable.
   Only the separate contract Wasm artifact exports this seam; measurement scenarios use the shipped module.
 - `snapshot` copies the current snapshot. Every live session also emits a final snapshot, sorted by name.
 - `export project <name>` stores canonical project bytes outside the instance; `import project <commandId> <name>`
@@ -1096,9 +1343,9 @@ finite input that overflows an analyzer is reported with its native damage reaso
 
 Real source measurement completes the 120 Hz, 150 Hz and configured infra-low LR4 readings,
 channel forensics and stereo columns before publishing `Measured1`. Integrated LUFS and true
-peak must both be usable. Optional outcomes carry their own reasons. Device editing and project
-export still require placement; measurement does not place the default devices. Master may run
-while source crest, hum and Mid/Side bursts continue, subject to the target's tempo dependency. These results alone do not establish
+peak must both be usable. Optional outcomes carry their own reasons. `Measured1` places the devices; editing waits
+for what they read (the plan), export only for the placement. Master may run
+while source crest, hum and Mid/Side bursts continue, subject to what its devices read (the plan). These results alone do not establish
 `Measured2`: tempo and the second-phase join remain separate work.
 
 `mandatoryMeasurementsReady` and `devicesPlaced` are separate appended snapshot fields.
@@ -1144,8 +1391,9 @@ valid types; required frozen fields stay required. Appended event metadata and r
 optional in transport declarations with documented conservative defaults. The generator refuses an
 appended field without a decode default. The frozen snapshot and event fixtures hold backward acceptance.
 
-The table distinguishes measured sources with unplaced devices, including master and stopped overlays.
-Mastering depends on measurements; edit, revert and import depend on placement through their table cells.
+The table distinguishes measured sources whose devices are not placed or whose plan waits, including master and
+stopped overlays. Mastering depends on measurements (and, with the panel open, on the plan); edit, revert, import and
+adoptMachine depend on placement through their table cells.
 Cached PCM reloads schedule needles from mandatory readiness. Bit-depth changes refresh unused-bit
 readings from the retained exact PCM grid without allocating or repeating source analysis.
 
@@ -1283,6 +1531,9 @@ merge. Each retained section carries source-frame bounds, source/master level an
 The largest shift gets a named index only when more than two sections compare. LRA is a separate
 reference measurement, not this ordered shape measure.
 
+Glue P95 uses the same 4-ms window distribution of the compressor's trace, and glue maximum its largest tap
+sample; the saturation's two cuts come from the soft clipper's own peak counters (see Glue and saturation). Each is
+`NoSignal` when its stage is absent or bypassed, and older snapshots decode them as `NotImplemented`.
 Limiter P50/P95 use the solver's 4-ms window distribution. The active fraction uses its input-gated
 tap statistics; `activeWindowShare` separately counts source momentary windows passing the relative
 activity floor. Pumping is RMS of the limiter's retained mean GR buckets after a second-order

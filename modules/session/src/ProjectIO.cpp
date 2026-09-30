@@ -3,6 +3,7 @@
 
 #include "BuildGuards.h"
 #include "ProjectIO.h"
+#include "Planner.h"
 #include "Devices.h"
 #include "Grid.h"
 #include "JsonCodec.h"
@@ -208,7 +209,8 @@ std::string_view ProjectText::view() const noexcept { return { data.get(), size 
 Checked Session::exportProjectBytes() const noexcept
 {
     if (checkFloatingPointEnvironment() != Status::Ok) return { Rejection::FloatingPointEnvironment, kNoField, 0 };
-    if (! placed()) return { state_ == State::Empty ? Rejection::NoSource : Rejection::NotPlaced, kNoField, 0 };
+    // The machine's layer is written once the first measurement ends — exportable while what the devices read still ends.
+    if (! devicesPlaced_) return { state_ == State::Empty ? Rejection::NoSource : Rejection::NotPlaced, kNoField, 0 };
     Writer w; w.project (project_, detail::rules(), source_.channels);
     return { Rejection::None, kNoField, w.size };
 }
@@ -252,8 +254,9 @@ Checked importBytes (std::string_view bytes) noexcept
     const auto total = std::uint64_t (library.parse) + library.read + owned;
     return { Rejection::None, kNoField, total, 0.0, total };
 }
-ImportedProject readProject (std::string_view bytes, std::uint32_t channels, std::uint32_t offeredDevices, std::uint32_t sourceRate) noexcept
+ImportedProject readProject (std::string_view bytes, const PlanInputs& inputs) noexcept
 {
+    const auto channels = inputs.channels, offeredDevices = inputs.offered, sourceRate = inputs.sampleRate;
     ImportedProject out;
     auto parsed = toml::parse (bytes);
     if (const auto* error = std::get_if<toml::Error> (&parsed))
@@ -263,10 +266,8 @@ ImportedProject readProject (std::string_view bytes, std::uint32_t channels, std
         return out;
     }
     const auto& root = *std::get_if<toml::Table> (&parsed);
-    const auto carried = carriedDefaults();
-    const Rules& rules = carried.current;
+    const Rules rules = detail::rules();
     const auto currentLabel = *rules.engine.find ("defaults").string();
-    const auto previousLabel = carried.previous ? carried.previous->engine.find ("defaults").string() : std::nullopt;
     std::string defaults, core, target;
     const auto report = toml::read (root, [&] (toml::Reader& in)
     {
@@ -289,8 +290,7 @@ ImportedProject readProject (std::string_view bytes, std::uint32_t channels, std
         });
         // A missing/unknown target is reported after schema checks; use a known row only for filling defaults.
         out.project.target = rules.find (target).value_or (rules.defaultRow);
-        const Rules& defaultsRules = previousLabel && defaults == *previousLabel ? *carried.previous : rules;
-        placeDefaults (defaultsRules, defaultsRules.find (target).value_or (defaultsRules.defaultRow), channels, out.project.devices);
+        placeDefaults (rules, out.project.target, channels, out.project.devices);
         eachDevice (out.project.devices, [&] (Device, auto& layers)
         {
             using Of = DeviceOf<std::remove_cvref_t<decltype (layers.machine)>>;
@@ -325,12 +325,7 @@ ImportedProject readProject (std::string_view bytes, std::uint32_t channels, std
         fail (Rejection::UnknownDefaults, root.find ("defaults")->position);
     else if (defaults > currentLabel)
         fail (Rejection::NewerDefaults, root.find ("defaults")->position);
-    else if (defaults < previousLabel.value_or (currentLabel))
-    {
-        out.convertedDefaults = true;
-        std::copy_n (defaults.data(), sizeof (out.originalDefaults), out.originalDefaults);
-    }
-    else if (defaults != currentLabel && (! previousLabel || defaults != *previousLabel))
+    else if (defaults != currentLabel)
         fail (Rejection::UnknownDefaults, root.find ("defaults")->position);
     if (out.answer.rejection != Rejection::None) return out;
     if (! readVersion (core, out.project.core)) fail (Rejection::ProjectCore, root.find ("core")->position);
@@ -341,8 +336,12 @@ ImportedProject readProject (std::string_view bytes, std::uint32_t channels, std
     }
     if (out.answer.rejection != Rejection::None) return out;
     out.foreignCore = ! sameVersion (out.project.core, Session::version());
+    // The planner's machine layer for the file's target on this source: what the machine would decide now.
+    PlanInputs now = inputs;
+    now.row = out.project.target;
+    now.targetEdit = out.project.targetEdit;
     Devices decided;
-    placeMachine (rules, out.project.target, channels, decided, offeredDevices);
+    placeMachine (now, decided);
     eachDevice (out.project.devices, [&] (Device device, const auto& layers)
     {
         using Of = DeviceOf<std::remove_cvref_t<decltype (layers.machine)>>;

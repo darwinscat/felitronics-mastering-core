@@ -247,7 +247,8 @@ void Session::stepSourceMeasurements() noexcept
         run.firstPublished = true;
         if (mandatoryReady())
         {
-            state_ = State::Measured1; ++revision_;
+            // The first measurement ended: the planner places the devices for the project's target.
+            state_ = State::Measured1; devicesPlaced_ = true; place (project_); replan(); refreshEqCurve(); ++revision_;
             event.kind = EventKind::Fact;
             (void) event.payload.fact.assign (text::Fact::of (text::FactId::Measurement1)); emit (event);
         }

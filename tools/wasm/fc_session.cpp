@@ -216,9 +216,16 @@ fc_session_status status (CodecStatus s) noexcept
     }
     return FC_SESSION_ERR_CONTRACT;
 }
+// A field appended after version 1 is read only from a record long enough to hold it.
 felitronics::session::Capabilities unpack (const fc_session_capabilities& caps) noexcept
 {
-    return { caps.heapCeilingBytes, caps.maxRateHz, caps.offeredDevices, caps.largestFreeBlockBytes };
+    felitronics::session::Capabilities out { caps.heapCeilingBytes, caps.maxRateHz, caps.offeredDevices, caps.largestFreeBlockBytes };
+    if (caps.size >= offsetof (fc_session_capabilities, leanSummary) + sizeof (caps.leanSummary)) out.leanSummary = caps.leanSummary != 0;
+    return out;
+}
+bool knownCapabilities (const fc_session_capabilities& caps) noexcept
+{
+    return caps.size < offsetof (fc_session_capabilities, leanSummary) + sizeof (caps.leanSummary) || caps.leanSummary <= 1u;
 }
 
 // The existing fc_master records are the complete, versioned ready DSP input.
@@ -402,7 +409,9 @@ FC_EXPORT fc_session_status fc_session_create_bytes (const fc_session_capabiliti
     if (call.refused()) return FC_SESSION_ERR_POISONED;
     if (const auto st = pointer (out, sizeof (*out), 8); st != FC_SESSION_OK) return st;
     if (const auto st = record (capabilities); st != FC_SESSION_OK) return st;
-    if (overlap (out, sizeof (*out), capabilities, sizeof (*capabilities))) return FC_SESSION_ERR_OVERLAP;
+    // The record is as long as it says: a version-1 shell's ends before the appended fields.
+    if (overlap (out, sizeof (*out), capabilities, capabilities->size)) return FC_SESSION_ERR_OVERLAP;
+    if (! knownCapabilities (*capabilities)) return FC_SESSION_ERR_CAPABILITIES;
     const auto caps = unpack (*capabilities);
     const auto st = Session::checkCreate (caps, felitronics::session::config::Config::versions().all);
     if (st != Status::Ok && st != Status::Memory) return status (st);
@@ -415,7 +424,8 @@ FC_EXPORT fc_session_status fc_session_create (const fc_session_capabilities* ca
     if (call.refused()) return FC_SESSION_ERR_POISONED;
     if (const auto st = pointer (out, sizeof (*out), alignof (fc_session)); st != FC_SESSION_OK) return st;
     if (const auto st = record (capabilities); st != FC_SESSION_OK) return st;
-    if (overlap (out, sizeof (*out), capabilities, sizeof (*capabilities))) return FC_SESSION_ERR_OVERLAP;
+    if (overlap (out, sizeof (*out), capabilities, capabilities->size)) return FC_SESSION_ERR_OVERLAP;
+    if (! knownCapabilities (*capabilities)) return FC_SESSION_ERR_CAPABILITIES;
     std::uint32_t slot = 0;
     while (slot < FC_SESSION_MAX_HANDLES && (g_slots[slot].session != nullptr || g_slots[slot].retired)) ++slot;
     if (slot == FC_SESSION_MAX_HANDLES) return FC_SESSION_ERR_EXHAUSTED;

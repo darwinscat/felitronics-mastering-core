@@ -129,6 +129,53 @@ void signal (unsigned mode, unsigned channels, unsigned rate)
         compare (a, b, true);
         compare (a, reference (l, r, channels, rate, range.first, range.second), false);
     }
+    // THE STREAM: the same programme cut into columns where a caller says — no pyramid, nothing allocated. Each column
+    // is the index's own reading of those frames: extremes, envelope and counts to the bit, the sums to a rounding
+    // (one running sum against the index's tree of them).
+    {
+        WaveformStream stream;
+        const auto streaming = alloc::count.load();
+        bool prepared2 = stream.prepare (rate, channels), columns = true, sums = true;
+        std::size_t from = 0; unsigned cut = 7;
+        while (from < frames)
+        {
+            cut = cut * 1664525u + 1013904223u;
+            const auto to = std::min (frames, from + 1u + cut % 301u);
+            for (auto frame = from; frame < to; ++frame) stream.add (l[frame], channels == 2 ? double (r[frame]) : 0.0);
+            const auto mine = stream.take();
+            WaveformColumn theirs {}; std::uint64_t replayed = 0;
+            prepared2 = whole.read (planes, from, to, theirs, replayed) && prepared2;
+            for (unsigned axis = 0; axis < 4; ++axis)
+            {
+                const auto& x = mine.axes[axis]; const auto& y = theirs.axes[axis];
+                const auto bits = [] (double v) { return std::bit_cast<std::uint64_t> (v); };
+                columns = columns && x.finite == y.finite && bits (x.envelope) == bits (y.envelope) && stream.axisPresent (axis) == whole.axisPresent (axis)
+                    && (x.finite == 0 || (bits (x.minimum) == bits (y.minimum) && bits (x.maximum) == bits (y.maximum)));
+                sums = sums && close (x.squareSum, y.squareSum) && close (x.lowEnergy, y.lowEnergy) && close (x.middleEnergy, y.middleEnergy)
+                    && close (x.highEnergy, y.highEnergy);
+            }
+            from = to;
+        }
+        const auto streamed = alloc::count.load() - streaming;
+        ok (prepared2 && columns, "the stream's columns are the index's own at every cut: extremes, envelope and counts to the bit");
+        ok (sums, "and their energies to a rounding");
+        ok (streamed == 0, "the stream allocates nothing");
+        // A chunk from the middle: its boxes stand on the programme's frame grid, its filters start from rest.
+        WaveformStream chunk;
+        const std::size_t first = 1001, last = 1499;   // neither on a box's edge at any rate with boxes
+        bool middle = chunk.prepare (rate, channels, first);
+        for (auto frame = first; frame < last; ++frame) chunk.add (l[frame], channels == 2 ? double (r[frame]) : 0.0);
+        const auto got = chunk.take();
+        WaveformColumn want {}; std::uint64_t replayed = 0;
+        middle = whole.read (planes, first, last, want, replayed) && middle;
+        for (unsigned axis = 0; axis < 4; ++axis)
+            middle = middle && got.axes[axis].finite == want.axes[axis].finite
+                && std::bit_cast<std::uint64_t> (got.axes[axis].envelope) == std::bit_cast<std::uint64_t> (want.axes[axis].envelope)
+                && close (got.axes[axis].squareSum, want.axes[axis].squareSum);
+        ok (middle, "a stream started mid-programme keeps the envelope's grid and the whole energy");
+        WaveformStream refused;
+        ok (! refused.prepare (7999, channels) && ! refused.prepare (rate, 3), "a rate or a width the index refuses, the stream refuses");
+    }
     WaveformColumn sentinel {}; sentinel.axes[0].finite = 777;
     std::uint64_t reads = 0;
     ok (! whole.read (planes, 2, 1, sentinel, reads) && sentinel.axes[0].finite == 777 && reads == 0, "invalid range changes no output");

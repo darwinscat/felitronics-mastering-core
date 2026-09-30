@@ -342,9 +342,9 @@ jobs:
   wasm:
     name: wasm-audio tier + native-vs-wasm parity (core ${{ matrix.core }})
     runs-on: ubuntu-latest
-    # About 45 minutes since the checked tier runs beside it (wasm-checked below): the two build.sh passes of
-    # session-check and the WAV contract's are the long tail.
-    timeout-minutes: 60
+    # About 60 minutes since slice 3 (tools/wasm/build.sh alone takes ~31 of them, serial emcc): the two build.sh
+    # passes of session-check and the WAV contract's are the long tail. The checked tier runs beside it (wasm-checked).
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:

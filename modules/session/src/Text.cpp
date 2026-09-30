@@ -376,6 +376,14 @@ Fact Fact::of (FactId id, const Arg& a, const Arg& b, const Arg& c, const Arg& d
     return f;
 }
 
+Fact Fact::of (FactId id, const Arg& a, const Arg& b, const Arg& c, const Arg& d, const Arg& e) noexcept
+{
+    Fact f = of (id, a, b, c, d);
+    f.args[4] = e;
+    f.argCount = 5;
+    return f;
+}
+
 std::size_t Text::size (const Fact& fact, Lang lang) noexcept
 {
     Sink s;
