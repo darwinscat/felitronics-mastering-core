@@ -29,8 +29,9 @@ struct EqStage
 // The band a device owns, or −1 for a device that writes none: the high-pass 0, tilt 1, low 2.
 [[nodiscard]] int eqBand (Device device) noexcept;
 
-// Every EQ device writes its band from its settings in the project — the machine's layer with a person's over it. A device
-// that is off, or a shelf at 0 dB, writes its band off. The other bands are left as they are.
+// Every EQ device writes its band from its settings in the project — the machine's layer with a person's over it, by the
+// tick rule (settingsOf). A device that is off, or a shelf at 0 dB, writes its band off. The other bands are left as
+// they are. (The summed curve is drawn from it today; the render of a session-decided master goes through it next.)
 void writeEq (const Devices& devices, const Rules& rules, EqStage& stage) noexcept;
 
 // The summed response of `bands` at `rate`: kEqCurvePoints logarithmic points from 20 Hz to min(20 kHz, 0.49 · rate).

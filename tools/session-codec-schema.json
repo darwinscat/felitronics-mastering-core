@@ -132,6 +132,12 @@
       "Measured",
       "Quiet"
     ],
+    "Sounding": [
+      "Proposal",
+      "Hand",
+      "File",
+      "Off"
+    ],
     "GlueState": [
       "Out",
       "Active",
@@ -158,7 +164,8 @@
       "AntiPhase",
       "Unmeasured",
       "MonoSource",
-      "Quiet"
+      "Quiet",
+      "Incomplete"
     ]
   },
   "records": {
@@ -889,7 +896,9 @@
         "cutoffHz": "double",
         "noteMidi": "int32?",
         "noteHz": "double?",
-        "noteLossDb": "double?"
+        "noteLossDb": "double?",
+        "sounding": "Sounding",
+        "soundingHz": "double"
       }
     },
     "MonoBassFinding": {
@@ -899,7 +908,9 @@
         "crossoverHz": "double",
         "lossDb": "double?",
         "soundingSeconds": "double",
-        "againstMachine": "bool"
+        "againstMachine": "bool",
+        "sounding": "Sounding",
+        "soundingHz": "double"
       }
     }
   },

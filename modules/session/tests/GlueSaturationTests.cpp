@@ -242,16 +242,20 @@ void theCurve()
     felitronics::test::group ("the glue's knob: the loss at the P95 on the core's own curve, one smooth formula over 0…6");
     const auto r = detail::rules();
     const Faked f ("allStreaming", -18.0, -3.0, -12.0);
-    bool exact = true;
+    // The loud places on the detector's scale: the P95 and the calibration over it.
+    const double over = config::Config::load().config.engine.glue.detectorOverP95Db, loud = -12.0 + over;
+    bool exact = true, placed = true;
     for (const double n : { 0.5, 1.25, 2.6, 3.0, 6.0 })
     {
         const auto found = detail::glueFinding (f.in, f.glued (n));
-        const double loss = found.state == GlueState::Active ? coreLossAt (found, -12.0) : -1.0;
+        const double loss = found.state == GlueState::Active ? coreLossAt (found, loud) : -1.0;
         exact = exact && found.state == GlueState::Active && same (found.upToDb, n) && near (loss, n, 1e-9);
-        std::printf ("    up to %.2f dB: ratio %.4f, threshold %.3f dB under the P95, knee %.3f dB, attack %.3f ms, release %.2f ms at 120 BPM; the core's curve takes %.9f dB\n",
-            n, *found.ratio, -12.0 - *found.thresholdDb, *found.kneeDb, *found.attackMs, found.releaseMs.value_or (0.0), loss);
+        placed = placed && found.thresholdDb && same (*found.thresholdDb, -12.0 + over + detail::glueFor (r, n).threshOffsetDb);
+        std::printf ("    up to %.2f dB: ratio %.4f, threshold %.3f dB under the loud places, knee %.3f dB, attack %.3f ms, release %.2f ms at 120 BPM; the core's curve takes %.9f dB\n",
+            n, *found.ratio, loud - *found.thresholdDb, *found.kneeDb, *found.attackMs, found.releaseMs.value_or (0.0), loss);
     }
-    ok (exact, "up to 0.5 / 1.25 / 2.6 / 3 / 6 dB: the core's gain computer takes exactly that at the P95, within 1e-9 dB");
+    ok (exact, "up to 0.5 / 1.25 / 2.6 / 3 / 6 dB: the core's gain computer takes exactly that at the loud places, within 1e-9 dB");
+    ok (placed && same (over, 1.5), "the loud places stand the calibrated 1.5 dB over the short-term P95: the threshold is P95 + 1.5 + the travel's offset, to the bit");
 
     const auto out = detail::glueFinding (f.in, f.glued (0.0));
     auto unticked = f.glued (2.0); unticked.glue.hand.on = false;
@@ -636,6 +640,47 @@ void oneSystemOfLevels()
         + " dB at its P95, " + std::to_string (glued[0].out.grMax) + " dB at most, for a knob of 2.6 dB");
 }
 
+// THE CALIBRATION REACHES THE CHAIN. A steady tone has one detector level, so what the compressor takes is the curve's
+// own value there: the real gain reduction of the real stage is the core's static curve at the tone's RMS, with the
+// threshold where the finding put it — the P95, the calibration over it, the travel's offset. (That the knob then is
+// the reduction MUSIC gets on its loud places is measured on the owner's mixes; its numbers are in [glue].)
+void theCalibration()
+{
+    felitronics::test::group ("the calibrated threshold reaches the chain: on a steady tone the stage takes the curve's own value at the detector's level");
+    struct Tone : Mix
+    {
+        Tone() : Mix (1.0f, 12)
+        {
+            for (unsigned i = 0; i < frames; ++i)
+                left[i] = right[i] = float (0.25 * felitronics::core::det::sin (2 * kPi * 1000.0 * double (i) / rate));
+        }
+    };
+    const Tone tone;
+    auto sp = measured (tone, "allStreaming"); auto& s = *sp;
+    const double over = config::Config::load().config.engine.glue.detectorOverP95Db;
+    bool held = true;
+    for (const double n : { 1.25, 2.6, 3.0, 6.0 })
+    {
+        GlueFields<Touched> glue; glue.on = true; glue.upToDb = n;
+        felitronics::test::run (s.apply (command::EditDevice { 3, glue }).rejection == Rejection::None);
+        const auto snapshot = s.snapshot();
+        const auto& plan = snapshot.view().plan;
+        const auto in = inputsOf (s, snapshot);
+        const auto levels = detail::inputLevels (in);
+        mastering::MasteringChainParams params;
+        detail::writeDynamics (in, s.project().devices, params);
+        const auto out = stage (tone, params, *plan.inputGainDb, loudShare());
+        // The detector's level: the tone's RMS after the one gain.
+        const double detector = 20 * std::log10 (0.25 / std::sqrt (2.0)) + *plan.inputGainDb;
+        const double curve = coreLossAt (plan.glue, detector);
+        held = held && plan.glue.state == GlueState::Active && same (*plan.glue.thresholdDb, *levels.p95Db + over + detail::glueFor (in.rules, n).threshOffsetDb)
+            && same (params.compressor.thresholdDb, *plan.glue.thresholdDb) && near (out.grP95, curve, 0.03) && near (out.grMax, curve, 0.05);
+        std::printf ("    up to %.2f dB: the loud places at %.3f dB (P95 %.3f + %.1f), the tone's RMS at %.3f dB; the curve takes %.3f dB there, the stage took %.3f dB\n",
+            n, *levels.p95Db + over, *levels.p95Db, over, detector, curve, out.grP95);
+    }
+    ok (held, "up to 1.25 / 2.6 / 3 / 6 dB: the stage's gain reduction is the curve's at the detector's level, within 0.03 dB, the threshold the finding's");
+}
+
 void theCut()
 {
     felitronics::test::group ("what the saturation cut: measured on the stage — the largest and the usual — growing evenly with the drive");
@@ -769,6 +814,7 @@ int main()
     theTempo();
     theSaturation();
     oneSystemOfLevels();
+    theCalibration();
     theCut();
     theReport();
     return felitronics::test::report();

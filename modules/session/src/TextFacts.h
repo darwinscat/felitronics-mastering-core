@@ -100,6 +100,12 @@ inline constexpr FactShape kFacts[] = {
     { FactId::GlueReleaseHeld, "glueReleaseHeld", { { { "release", ArgKind::Value, {} }, { "asked", ArgKind::Value, {} } } }, 2 },
     { FactId::MasterGlue, "masterGlue", { { { "usual", ArgKind::Value, {} }, { "largest", ArgKind::Value, {} } } }, 2 },
     { FactId::MasterSaturation, "masterSaturation", { { { "largest", ArgKind::Value, {} }, { "usual", ArgKind::Value, {} } } }, 2 },
+    { FactId::HpfByHand, "hpfByHand", { { { "cutoff", ArgKind::Value, {} } } }, 1 },
+    { FactId::HpfKept, "hpfKept", { { { "cutoff", ArgKind::Value, {} } } }, 1 },
+    { FactId::HpfOff, "hpfOff", {}, 0 },
+    { FactId::MonoBassByHand, "monoBassByHand", { { { "crossover", ArgKind::Value, {} } } }, 1 },
+    { FactId::MonoBassKept, "monoBassKept", { { { "crossover", ArgKind::Value, {} } } }, 1 },
+    { FactId::MonoBassIncomplete, "monoBassIncomplete", {}, 0 },
     // A command's rejection (Commands.h), one per code; the four a field refuses name it.
     { FactId::RejectedFloatingPointEnvironment, "rejectedFloatingPointEnvironment", {}, 0 },
     { FactId::RejectedNoSource, "rejectedNoSource", {}, 0 },

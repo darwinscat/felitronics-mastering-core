@@ -190,7 +190,7 @@ void pump()
     ok (eventsHash (cancelled) == eventsHash (cancelledAgain), "cancelled scenario sequence is invariant across runs and slicing");
     ok (one.size() > 22 && cancelled.size() > one.size(), "measurement publishes live work and cancellation adds events");
     // The phases carry the config's version (weightsVersion): a new config moves these pins.
-    ok (eventsHash (one) == 0x40189e206f2181ffull && eventsHash (cancelled) == 0x9a09347c38297a75ull, "event fixtures pin every active payload field");
+    ok (eventsHash (one) == 0xa9db5702f0116d9dull && eventsHash (cancelled) == 0xedb6260c93291acdull, "event fixtures pin every active payload field");
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     Audio audio; auto s = fresh();
     const auto old = apply (*s, audio.load()).job;

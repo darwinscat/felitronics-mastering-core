@@ -136,6 +136,13 @@ enum class FactId : std::uint16_t
     GlueReleaseHeld = 43,    // the glue's release is held at {release}: the tempo asked for {asked}
     MasterGlue = 44,         // the glue took {usual} on the loud places, {largest} at most
     MasterSaturation = 45,   // the saturation cut peaks by up to {largest}, usually {usual}
+    // A device sounding otherwise than the planner proposes: named as what it is, without the planner's reasons.
+    HpfByHand = 46,          // the high-pass at {cutoff}: a person's value
+    HpfKept = 47,            // the high-pass at {cutoff}: a project file's machine layer
+    HpfOff = 48,             // the high-pass is out of the chain
+    MonoBassByHand = 49,     // mono bass below {crossover}: a person's value
+    MonoBassKept = 50,       // mono bass below {crossover}: a project file's machine layer
+    MonoBassIncomplete = 51, // mono bass left out: the low-end reading covers only a first part of the piece
 
     // A command's rejection, by its code — what was refused and why. The three a field refuses name it: {field}.
     RejectedFloatingPointEnvironment = 101,

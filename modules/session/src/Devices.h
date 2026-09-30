@@ -203,7 +203,8 @@ template <class D, class V> void eachDevice (D& devices, V&& v)
 }
 
 // THE CONFIG'S DEFAULTS of every device for the target in row `row` and a source of `channels` channels (0: none) — the
-// numbers the machine starts from: [stages] for the ticks, the target's row for what the target decides (the high-pass's
+// numbers the machine starts from: [stages] for the ticks before anything is measured (the planner then decides every
+// tick it has a rule for — mono bass by its loss whatever [stages] says), the target's row for what the target decides (the high-pass's
 // slope and floor, the mono-bass crossover, the needles off where the target has no peak clipper, the dither at its bit
 // depth, the low shelf's gain, the glue of [glue] byTarget) and each device's section for the rest. Tilt starts off at
 // 0 dB: the machine does not touch timbre. They are the defaults layer, not a decision taken from a measurement: the planner

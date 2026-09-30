@@ -47,7 +47,7 @@ struct Golden
 };
 constexpr Golden kGolden[] = {
     { "2026-09", 0xf49360664b45a789ull },
-    { "2026-10", 0x85b5f0c18cc604fdull },   // the high-pass always, from 32 Hz and the sure lowest note; mono bass by its loss
+    { "2026-10", 0x31048a804d19515bull },   // the high-pass always, from 32 Hz and the sure lowest note; mono bass by its loss; the glue calibrated on the P95
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -164,6 +164,7 @@ std::vector<std::string> departures (const config::Config& c)
           "the glue knob runs 0…3 dB in steps of 0.1");
     need (same (e.glue.defaultUpToDb, 0.0), "no glue by default: a target without its own takes the compressor out");
     need (same (e.glue.whenTickedUpToDb, 0.5), "ticked on untouched, the glue is up to 0.5 dB");
+    need (same (e.glue.detectorOverP95Db, 1.5), "the glue's threshold is calibrated 1.5 dB over the P95: the knob is the reduction the loud places really get");
     const config::MonoBass& m = e.monoBass;
     need (same (m.lowWidth, 0.0), "mono bass is full mono below its crossover");
     need (same (m.lowWidthRange.min, 0.0) && same (m.lowWidthRange.max, 1.0) && same (m.lowWidthStep, 0.05),

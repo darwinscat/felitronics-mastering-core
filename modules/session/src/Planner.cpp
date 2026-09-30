@@ -115,6 +115,13 @@ std::optional<Note> sureLowestNote (const PlanInputs& in, const MeasurementResul
 // within [monoBass] loss.soundingWithinDb of the level the loudest 5 % of the blocks reach (by duration), when those
 // blocks last [monoBass] loss.soundingAtLeastS in all. Nothing that sounds, or too little of it: no reading.
 struct Weighed { double lossDb = 0.0, seconds = 0.0; };
+// The run keeps a bounded number of blocks: a piece longer than they cover has only its first part in them, and a loss
+// weighed over a part is not the piece's.
+bool cutShort (const MeasurementResult& lowEnd) noexcept
+{
+    const auto* blocks = arrayOf (lowEnd, "blocks");
+    return blocks && lowEnd.status == MeasurementStatus::Ready && (! blocks->complete || blocks->stored < blocks->total);
+}
 std::optional<Weighed> weighMonoLoss (const PlanInputs& in, const MeasurementResult& lowEnd) noexcept
 {
     const auto* blocks = arrayOf (lowEnd, "blocks");
@@ -227,6 +234,7 @@ template <> struct Planned<MonoBassFields<Value>>
         if (! offered (in.rules, in.row, in.channels, Device::MonoBass)) f.verdict = MonoBassVerdict::MonoSource;
         else if (in.measurements.empty()) f.verdict = MonoBassVerdict::Unmeasured;
         else if (quiet (in)) f.verdict = MonoBassVerdict::Quiet;
+        else if (lowEnd && cutShort (*lowEnd)) f.verdict = MonoBassVerdict::Incomplete;
         else if (weighed = lowEnd ? weighMonoLoss (in, *lowEnd) : std::nullopt; ! weighed) f.verdict = MonoBassVerdict::Unmeasured;
         else
         {
@@ -239,6 +247,7 @@ template <> struct Planned<MonoBassFields<Value>>
             case MonoBassVerdict::On:
             case MonoBassVerdict::Partial:    m.on = true; plan.measured |= fieldBit (in.rules, m, m.on); break;
             case MonoBassVerdict::AntiPhase:  m.on = false; plan.measured |= fieldBit (in.rules, m, m.on); plan.heldBack = HeldBack::Measured; break;
+            case MonoBassVerdict::Incomplete:
             case MonoBassVerdict::Unmeasured: m.on = false; plan.heldBack = HeldBack::Unmeasured; break;
             case MonoBassVerdict::Quiet:      m.on = false; plan.heldBack = HeldBack::Quiet; break;
             case MonoBassVerdict::MonoSource: m.on = false; plan.heldBack = HeldBack::Source; break;
@@ -572,6 +581,23 @@ void Session::replan() noexcept
             plan_.monoBass = found.monoBass;
             plan_.monoBass.againstMachine = ! proposed.monoBass.machine.on
                 && detail::settingsOf (in.rules, project_.devices.monoBass).on;
+            // What sounds against what the planner proposes: the project's own device, a person's layer over a
+            // machine's that a file may have written.
+            const auto sounding = [&] (Device device, bool on, bool asProposed, bool byHand)
+            {
+                const bool offeredHere = (in.offered & (1u << unsigned (device))) != 0;
+                return ! on || ! offeredHere ? Sounding::Off : asProposed ? Sounding::Proposal : byHand ? Sounding::Hand : Sounding::File;
+            };
+            const auto hpf = detail::settingsOf (in.rules, project_.devices.hpf);
+            plan_.hpf.soundingHz = hpf.fq;
+            plan_.hpf.sounding = sounding (Device::Hpf, hpf.on,
+                detail::same (hpf.fq, proposed.hpf.machine.fq) && hpf.slope == proposed.hpf.machine.slope,
+                project_.devices.hpf.hand.fq.has_value() || project_.devices.hpf.hand.slope.has_value());
+            const auto mono = detail::settingsOf (in.rules, project_.devices.monoBass);
+            plan_.monoBass.soundingHz = mono.fq;
+            plan_.monoBass.sounding = sounding (Device::MonoBass, mono.on,
+                detail::same (mono.fq, proposed.monoBass.machine.fq) && detail::same (mono.width, proposed.monoBass.machine.width),
+                project_.devices.monoBass.hand.fq.has_value() || project_.devices.monoBass.hand.width.has_value());
             plan_.inputGainDb = detail::inputLevels (in).gainDb;
             plan_.glue = detail::glueFinding (in, project_.devices);
             plan_.saturation = detail::saturationFinding (in, project_.devices);
@@ -604,6 +630,14 @@ namespace felitronics::session
 text::Fact PlanText::hpf (const HpfFinding& f) noexcept
 {
     using text::Arg; using text::Fact; using text::FactId; using text::Unit;
+    // The planner's reasons are said of its own cutoff, and only where that cutoff sounds.
+    switch (f.sounding)
+    {
+        case Sounding::Hand: return Fact::of (FactId::HpfByHand, Arg::value (f.soundingHz, Unit::Hz, 1));
+        case Sounding::File: return Fact::of (FactId::HpfKept, Arg::value (f.soundingHz, Unit::Hz, 1));
+        case Sounding::Off:  return Fact::of (FactId::HpfOff);
+        case Sounding::Proposal: break;
+    }
     const auto cutoff = Arg::value (f.cutoffHz, Unit::Hz, 1);
     const auto note = [&] { return Arg::midi (f.noteMidi.value_or (0)); };
     const auto hz = [&] { return Arg::value (f.noteHz.value_or (0.0), Unit::Hz, 1); };
@@ -629,11 +663,19 @@ text::Fact PlanText::hpf (const HpfFinding& f) noexcept
 std::optional<text::Fact> PlanText::monoBass (const MonoBassFinding& f) noexcept
 {
     using text::Arg; using text::Fact; using text::FactId; using text::Unit;
+    // The loss was weighed at the machine's crossover, folded whole: it is said of that fold alone. "Will take" is true
+    // of a fold that sounds as proposed; "would take — check the polarity" of that fold sounding against the machine or
+    // left out; "off: too little bass" of a fold left out.
+    const bool off = f.sounding == Sounding::Off, proposed = f.sounding == Sounding::Proposal;
+    if (f.sounding == Sounding::Hand) return Fact::of (FactId::MonoBassByHand, Arg::value (f.soundingHz, Unit::Hz, 0));
+    if (f.sounding == Sounding::File) return Fact::of (FactId::MonoBassKept, Arg::value (f.soundingHz, Unit::Hz, 0));
     switch (f.verdict)
     {
-        case MonoBassVerdict::Partial:    return Fact::of (FactId::MonoBassPartial, Arg::value (f.lossDb.value_or (0.0), Unit::Db, 1));
+        case MonoBassVerdict::Partial:
+            return proposed ? std::optional (Fact::of (FactId::MonoBassPartial, Arg::value (f.lossDb.value_or (0.0), Unit::Db, 1))) : std::nullopt;
         case MonoBassVerdict::AntiPhase:  return Fact::of (FactId::MonoBassAntiPhase, Arg::value (f.lossDb.value_or (0.0), Unit::Db, 1));
-        case MonoBassVerdict::Unmeasured: return Fact::of (FactId::MonoBassUnmeasured);
+        case MonoBassVerdict::Unmeasured: return off ? std::optional (Fact::of (FactId::MonoBassUnmeasured)) : std::nullopt;
+        case MonoBassVerdict::Incomplete: return off ? std::optional (Fact::of (FactId::MonoBassIncomplete)) : std::nullopt;
         case MonoBassVerdict::On:
         case MonoBassVerdict::MonoSource:
         case MonoBassVerdict::Quiet:      return std::nullopt;

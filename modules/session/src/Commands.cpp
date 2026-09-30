@@ -666,9 +666,19 @@ Answer Session::apply (const Request& request) noexcept
     else if (std::holds_alternative<command::ImportProject> (request))
     {
         project_ = imported.project;
-        machineFromFile_ = true;
-        differenceCount_ = imported.differenceCount;
+        // A PROJECT WRITTEN AGAINST OTHER DEFAULTS has no whole machine layer of its own: a field it left out meant a
+        // default that is no longer carried, and filling it from today's would pass a mixture off as the file's. Its
+        // machine's layer is the planner's, placed again for the file's target on this source — a person's layer and
+        // the target's numbers kept — and it is this core's, not "from the file": nothing to compare, nothing to adopt.
+        const bool replaced = imported.convertedDefaults;
+        machineFromFile_ = ! replaced;
+        differenceCount_ = replaced ? 0 : imported.differenceCount;
         std::copy_n (imported.differences, differenceCount_, differences_);
+        if (replaced)
+        {
+            project_.core = version();
+            if (devicesPlaced_) place (project_);
+        }
         if (imported.convertedDefaults)
         {
             Notification event;
@@ -677,7 +687,7 @@ Answer Session::apply (const Request& request) noexcept
                 text::Arg::text ({ imported.originalDefaults, sizeof (imported.originalDefaults) })));
             emit (event);
         }
-        if (imported.foreignCore || differenceCount_ != 0)
+        if (! replaced && (imported.foreignCore || differenceCount_ != 0))
         {
             Notification event;
             event.kind = EventKind::Fact;

@@ -9,7 +9,7 @@
   and `roundToDb` are gone). The slider's 0…3 is a hint, the core takes 0…6; the machine sets it on cd alone, 2.6, and
   the config refuses a machine value above the slider's top. The release follows a tempo measured with confidence (0.5
   and up), 120 BPM otherwise, inside 50…500 ms; a clamp and the fallback are facts. **The calibration is the knob's new
-  meaning** — 2.6 dB on cd is ratio 1.74 with the threshold 6.1 dB under the P95 — so the config's sound version moves;
+  meaning** — 2.6 dB on cd is ratio 1.74 with the threshold 6.1 dB under the loud places — so the config's sound version moves;
   the defaults stay `2026-10`, not yet released.
 - **Without a P95** the glue is unavailable to the machine and to a person alike, with its reason
   (`plan.glue.state == Unavailable`, fact `glueUnavailable`): the person's tick and value are kept, no threshold is

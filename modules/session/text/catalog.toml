@@ -280,6 +280,30 @@ en = "The bass is in opposite polarity — mono bass would take {loss} of the lo
 ru = "Моно-бас не включён: баса слишком мало, чтобы измерить противофазу."
 en = "Mono bass is off: there is too little bass to measure its polarity."
 
+[messages.hpfByHand]
+ru = "ФВЧ {cutoff}: задан вручную."
+en = "HPF {cutoff}: set by hand."
+
+[messages.hpfKept]
+ru = "ФВЧ {cutoff}: значение из файла проекта."
+en = "HPF {cutoff}: the value comes from the project file."
+
+[messages.hpfOff]
+ru = "ФВЧ выключен."
+en = "HPF is off."
+
+[messages.monoBassByHand]
+ru = "Моно-бас ниже {crossover}: задан вручную."
+en = "Mono bass below {crossover}: set by hand."
+
+[messages.monoBassKept]
+ru = "Моно-бас ниже {crossover}: значение из файла проекта."
+en = "Mono bass below {crossover}: the value comes from the project file."
+
+[messages.monoBassIncomplete]
+ru = "Моно-бас не включён: замер низа охватывает только начало записи, а по части записи решение не принимается."
+en = "Mono bass is off: the low-end measurement covers only the beginning of the recording, and no decision is made from a part of it."
+
 [messages.glueUnavailable]
 ru = "Клей недоступен: громкие места песни не измерены (нет P95 кратковременной громкости). Мастер будет сделан без клея; значение «до {upTo}» сохранено."
 en = "Glue is unavailable: the song's loud places were not measured (no short-term loudness P95). The master will be made without glue; the value “up to {upTo}” is kept."
@@ -447,8 +471,8 @@ en.one = "The machine would decide differently today in {count} place. The saved
 en.other = "The machine would decide differently today in {count} places. The saved machine layer is retained."
 
 [messages.defaultsConverted]
-ru = "Проект с версией умолчаний {version} сконвертирован. Записанные числа сохранены; для отсутствующих полей использованы текущие умолчания."
-en = "The project from defaults version {version} was converted. Written numbers were kept; omitted fields use the current defaults."
+ru = "Проект с версией умолчаний {version} сконвертирован: значения, заданные вручную, и числа цели сохранены; машинные значения выставлены заново по текущим правилам."
+en = "The project from defaults version {version} was converted: the values set by hand and the target's numbers were kept; the machine's values were placed again by the current rules."
 
 [messages.rejectedNewerDefaults]
 ru = "Проект использует более новую версию умолчаний, которой нет в этом ядре."

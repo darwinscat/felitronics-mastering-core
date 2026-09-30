@@ -514,6 +514,7 @@ void readGlue (Doc& d, Reader& in, Glue& o, const std::vector<std::string>* targ
     const bool hi = in.required ("knobMaxDb", o.knobMaxDb, knob);
     d.below (in, lo && hi, o.knobMinDb, o.knobMaxDb, "knobMaxDb");
     in.required ("knobStepDb", o.knobStepDb, R { 0.01, 3.0 });
+    in.required ("detectorOverP95Db", o.detectorOverP95Db, R { -12.0, 12.0 });
     // WHAT THE MACHINE SETS stays on the slider's travel (owner decision 3.8: never above knobMaxDb); a person's value
     // and a project's take the whole domain.
     const R machine = hi ? R { knob.min, o.knobMaxDb } : knob;

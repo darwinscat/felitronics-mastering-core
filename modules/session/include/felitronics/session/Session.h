@@ -91,6 +91,15 @@ enum class PlanStatus : std::uint8_t { None, Pending, Stopped, Ready, Unavailabl
 //   Quiet       the input is too quiet to measure: below [input] quiet.gainOnlyLufs the machine places no device
 enum class HeldBack : std::uint8_t { None, Shell, Source, Target, Unmeasured, Measured, Quiet };
 
+// A FINDING IS THE PLANNER'S PROPOSAL AND WHAT IT STOOD ON — the machine's own cutoff, the loss at the machine's
+// crossover. WHAT SOUNDS is the project's device, a person's layer over a machine's that a project file may have
+// written; a finding says which, so that no sentence claims for the sound what is true of the proposal alone:
+//   Proposal   the planner's own values sound: the finding describes the sound
+//   Hand       a person's value sounds instead
+//   File       a machine layer kept from a project file sounds, another than the planner proposes now
+//   Off        the device is out of the chain
+enum class Sounding : std::uint8_t { Proposal, Hand, File, Off };
+
 // WHERE THE MACHINE'S HIGH-PASS CUTOFF CAME FROM (owner decisions 3.2–3.4) — always on, the cutoff:
 //   Note         the cutoff the sure lowest note allows: the target's noteLossDb at the note, on the chain's response
 //   Floor        a sure note above the target's floor whose cutoff is below it: the floor, taking more of the note
@@ -108,6 +117,8 @@ struct HpfFinding
     std::optional<std::int32_t> noteMidi;      // the sure lowest note, when there is one
     std::optional<double> noteHz;              // ...its band's centre, Hz
     std::optional<double> noteLossDb;          // what the machine's high-pass takes there, dB, positive
+    Sounding sounding = Sounding::Proposal;    // whether that cutoff, at the target's slope, is what sounds
+    double soundingHz = 0.0;                   // the cutoff that sounds (meaningless when Off)
 };
 
 // WHAT MONO BASS FOUND (owner decision 3.5) — the loss of the low end when it folds to mono, (L+R)/2, below the target's
@@ -118,7 +129,9 @@ struct HpfFinding
 //   Unmeasured   the loss could not be weighed (too little bass sounding, or no low-end reading): left out
 //   MonoSource   a mono input has no side to fold
 //   Quiet        an input too quiet to measure
-enum class MonoBassVerdict : std::uint8_t { On, Partial, AntiPhase, Unmeasured, MonoSource, Quiet };
+//   Incomplete   the low-end reading holds only a first part of the piece (its blocks are capped, about 10.9 minutes): no
+//                verdict is taken from a part — left out, with that reason
+enum class MonoBassVerdict : std::uint8_t { On, Partial, AntiPhase, Unmeasured, MonoSource, Quiet, Incomplete };
 struct MonoBassFinding
 {
     MonoBassVerdict verdict = MonoBassVerdict::Unmeasured;
@@ -128,6 +141,8 @@ struct MonoBassFinding
     // The project's mono bass is on where the machine would leave it out (a person switched it on): the warning beside
     // the tick and in the report.
     bool againstMachine = false;
+    Sounding sounding = Sounding::Proposal;    // whether the fold at that crossover, at the machine's width, is what sounds
+    double soundingHz = 0.0;                   // the crossover that sounds (meaningless when Off)
 };
 
 // ONE DEVICE'S PLAN — typed facts about its machine layer: what held it back, what it reads, and where each of its
@@ -190,8 +205,8 @@ struct PlanView
     // those of them that have not ended. With the panel open a master waits for `waiting` to empty
     // (Rejection::PlanPending); with the panel hidden a master is taken and waits for it itself.
     std::uint32_t needs = 0, waiting = 0;
-    // What the master button names while it waits: the first waited-for analyzer (tempo before needles), the device that
-    // reads it, and how far its measurement is, 0…1.
+    // What the master button names while it waits: the first waited-for analyzer (the needles before the tempo — the
+    // order a waiting master measures them in), the device that reads it, and how far its measurement is, 0…1.
     std::optional<Analyzer> awaited;
     std::optional<Device> awaitedBy;
     double awaitedFraction = 0.0;
@@ -212,6 +227,8 @@ struct PlanView
 
 // THE FINDINGS AS FACTS — the report's lines, typed: what the high-pass stood on, and, where mono bass has something to
 // say (the bass partly or wholly in opposite polarity, or not weighed), that.
+// A sentence states what sounds: the planner's reasons only where its proposal is what sounds (Sounding::Proposal); a
+// person's value, or a file's, is named as that, without the machine's claims.
 struct PlanText
 {
     [[nodiscard]] static text::Fact hpf (const HpfFinding& finding) noexcept;
@@ -429,6 +446,7 @@ private:
     void emit (Notification event, const Phase& progress) noexcept;
     [[nodiscard]] Phase jobProgress (JobId job) const noexcept;
     void dropJob (JobId job) noexcept;
+    void needlesAfterDroppedMaster() noexcept;
     void clearMasters() noexcept;
     void settleMasterCrest (MeasurementReason reason) noexcept;
     void stepMasterCrestJoin() noexcept;
@@ -486,7 +504,9 @@ private:
     std::uint64_t planRuns_ = 0;
     bool machineFromFile_ = false;
     // A master asked for with measurements its devices read still running: its recipe's project is the one captured then
-    // (the target, its numbers, a person's layer), and its machine's layer is placed for that project when they end.
+    // (the target, its numbers, a person's layer), and the needles are measured at that project's ceiling until the
+    // wait ends or the master is dropped. (A version-0 master is counted, not rendered: the render from the planner's
+    // devices — through writeEq and writeDynamics, so the tick rule holds — is the next step's.)
     bool jobWaiting_ = false;
     // Derived at placement and after accepted commands; owned snapshots copy these points.
     void refreshEqCurve() noexcept;
