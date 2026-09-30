@@ -9,7 +9,7 @@
   target's crossover (120 Hz, vinyl 150). Under 1 dB placed; 1 to 3 dB placed with the number; above 3 dB left out, a
   person's switch obeyed and flagged (`plan.monoBass.againstMachine`); a loss it cannot weigh leaves it out with its
   reason. The stereo correlation no longer counts as a device switch.
-- `PlanView::hpf` / `::monoBass`, the typed findings; `HeldBack::Measured` and `::Quiet`; `PlanText` and ten facts (ru,
+- `PlanView::hpf` / `::monoBass`, the typed findings (the LowEnd result no longer publishes `hpfFloorRequired`, which nothing read); `HeldBack::Measured` and `::Quiet`; `PlanText` and ten facts (ru,
   en) for their report lines.
 - **Defaults `2026-10`**: the numbers above change a master, so they are a new set; a project naming `2026-09` converts
   with its warning.

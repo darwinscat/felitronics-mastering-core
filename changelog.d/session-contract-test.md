@@ -1,3 +1,0 @@
-- Add one text scenario grammar for `fcore_session` and the Node fcsession consumer, with ten native/wasm contract scenarios and exact codec/row-byte comparison.
-- Verify synthetic fixture input/output hashes, scenario behavior, poison recovery, and intentional mismatch controls; run the comparison separately on every PR across the native CI rows.
-- Exercise final v1 size prefixes, demand queries and capacity updates, knob domains, hidden manual edits, and saved machine layers including `low`.
