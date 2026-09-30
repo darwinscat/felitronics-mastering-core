@@ -126,6 +126,11 @@
       "Measured",
       "Quiet"
     ],
+    "GlueState": [
+      "Out",
+      "Active",
+      "Unavailable"
+    ],
     "TickFrom": [
       "Machine",
       "Hand",
@@ -456,7 +461,11 @@
         "sourceFrames": "uint64",
         "masterFrames": "uint64",
         "sections": "MasterSection[]",
-        "waveform": "MasterWaveformBucket[]"
+        "waveform": "MasterWaveformBucket[]",
+        "glueP95Db": "MasterCostValue",
+        "glueMaxDb": "MasterCostValue",
+        "saturationCutMaxDb": "MasterCostValue",
+        "saturationCutUsualDb": "MasterCostValue"
       }
     },
     "MasterReport": {
@@ -819,6 +828,31 @@
         "low": "DevicePlan"
       }
     },
+    "GlueFinding": {
+      "cpp": "GlueFinding",
+      "fields": {
+        "state": "GlueState",
+        "upToDb": "double",
+        "ratio": "double?",
+        "thresholdDb": "double?",
+        "kneeDb": "double?",
+        "attackMs": "double?",
+        "bpm": "double?",
+        "releaseAskedMs": "double?",
+        "releaseMs": "double?",
+        "releaseClamped": "bool",
+        "tempoMeasured": "bool"
+      }
+    },
+    "SaturationFinding": {
+      "cpp": "SaturationFinding",
+      "fields": {
+        "active": "bool",
+        "knobDb": "double",
+        "driveDb": "double?",
+        "peakDbTp": "double?"
+      }
+    },
     "PlanView": {
       "cpp": "PlanView",
       "fields": {
@@ -833,7 +867,10 @@
         "fromFile": "bool",
         "devices": "DevicePlans",
         "hpf": "HpfFinding",
-        "monoBass": "MonoBassFinding"
+        "monoBass": "MonoBassFinding",
+        "inputGainDb": "double?",
+        "glue": "GlueFinding",
+        "saturation": "SaturationFinding"
       }
     },
     "HpfFinding": {
@@ -1370,6 +1407,24 @@
       "cost": {
         "default": "std::optional<MasterCost> {}",
         "description": "No post-master cost was published in the v1 snapshot."
+      }
+    },
+    "MasterCost": {
+      "glueP95Db": {
+        "default": "MasterCostValue {}",
+        "description": "No glue reading: not implemented in that snapshot."
+      },
+      "glueMaxDb": {
+        "default": "MasterCostValue {}",
+        "description": "No glue reading: not implemented in that snapshot."
+      },
+      "saturationCutMaxDb": {
+        "default": "MasterCostValue {}",
+        "description": "No saturation reading: not implemented in that snapshot."
+      },
+      "saturationCutUsualDb": {
+        "default": "MasterCostValue {}",
+        "description": "No saturation reading: not implemented in that snapshot."
       }
     },
     "Snapshot": {

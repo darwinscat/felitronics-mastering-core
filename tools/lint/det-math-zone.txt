@@ -94,6 +94,9 @@ zone   modules/session/src/Devices.cpp                        the machine's laye
 entry  modules/session/src/Planner.cpp                        a translation unit of felitronics::session
 zone   modules/session/src/Planner.h                          the planner: every device's proposal, needs and plan
 zone   modules/session/src/Planner.cpp                        ...and the session's plan, its inputs, key and placement
+entry  modules/session/src/Dynamics.cpp                       a translation unit of felitronics::session
+zone   modules/session/src/Dynamics.h                         the glue and the saturation as the chain gets them
+zone   modules/session/src/Dynamics.cpp                       the glue's travel on the core's static curve; the shaper's drive
 zone   modules/session/src/Driver.h                           the session's own transitions, driven by the work that ends
 zone   modules/session/src/Commands.cpp                       the commands: the table consulted, the checks in order, the work
 entry  modules/session/src/Text.cpp                           a translation unit of felitronics::session

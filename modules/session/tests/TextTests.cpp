@@ -1075,7 +1075,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0x194f0f671bd5bed5ull;   // with the high-pass and mono-bass findings (30–40)
+    constexpr std::uint64_t kPinned = 0x66211453bded440dull;   // with the glue and saturation facts (41–45)
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");

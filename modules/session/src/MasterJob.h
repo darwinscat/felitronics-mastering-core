@@ -94,6 +94,10 @@ struct MasterJob final
     PumpScan costPumpScan;
     CostRules costRules;
     MasterCost costResult;
+    // The soft clipper's peaks as the search's last render left them: read when the search ends, before the chain is
+    // prepared again for the source-rate check.
+    mastering::ClipperPeaks clipPeaks {};
+    bool clipCounted = false;
     std::uint64_t costFinishCursor = 0, activeJudged = 0, activeCount = 0;
     std::uint32_t costComparable = 0;
     std::size_t costWorst = 0;

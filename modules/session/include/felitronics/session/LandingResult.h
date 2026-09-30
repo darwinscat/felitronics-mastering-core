@@ -104,6 +104,13 @@ struct MasterCost
     std::uint64_t sourceFrames = 0, masterFrames = 0;
     std::span<const MasterSection> sections;
     std::span<const MasterWaveformBucket> waveform;
+    // WHAT THE GLUE AND THE SATURATION DID, each measured on its own stage (owner decisions 3.8, 3.9), dB, positive.
+    // The glue: the compressor's gain reduction over the programme in 4 ms windows — its P95, the loud places, and its
+    // largest sample. The saturation: how much less the peak of a loud place got than a quiet sound does — the peak
+    // of the stage's input against the peak of its output, quantum by quantum, the mix and the output knob included;
+    // the largest cut and the usual one, the median, over the loudest [saturation] cut.loudShare of the quanta. Never
+    // the fall of the whole chain's true peak. A stage out of the chain has no number: NoSignal.
+    MasterCostValue glueP95Db {}, glueMaxDb {}, saturationCutMaxDb {}, saturationCutUsualDb {};
 };
 struct MasterReport
 {
@@ -129,6 +136,9 @@ struct MasterReportText
     [[nodiscard]] static text::Fact impact (const MasterCost& cost) noexcept;
     [[nodiscard]] static text::Fact pumping (const MasterCost& cost) noexcept;
     [[nodiscard]] static text::Fact tonal() noexcept;
+    // What the glue and the saturation did; nothing for a stage that was out of the chain.
+    [[nodiscard]] static std::optional<text::Fact> glue (const MasterCost& cost) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> saturation (const MasterCost& cost) noexcept;
 };
 struct MasterCrestGrid
 {

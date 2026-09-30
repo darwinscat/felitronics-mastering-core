@@ -357,6 +357,49 @@ input, the domain's ends, the geometry against core's response, the three EQ dev
 own contribution; the engine fed the written bands giving, sample for sample, the sound of the decided filters), and a
 person's layer kept hidden, saved and imported until a change of target resets it.
 
+**Glue and saturation** (owner decisions 3.8, 3.8а, 3.9; `src/Dynamics.h`) read the input in ONE system of levels:
+brought to `[input] referenceLufs` by one gain, `referenceLufs − integrated` (`plan.inputGainDb`), which the landing
+search adds to the chain's input gain, once — `writeDynamics` writes the two stages and touches neither gain of the
+chain, and the search, moving only the gain before the limiter, recalibrates neither. The short-term P95 and the true
+peak are read plus that gain, so one mix exported louder or quieter gets the same compressor and the same shaper (the
+true peak to the bit for a level that is a power of two; the P95 within the programme report's own 0.1 LU bin, since
+that report reads its percentiles off bins of the file's level).
+The glue's knob, "up to N dB", is the loss on the loud places: the travel `g` at which the core's own static curve
+(`dynamics::GainComputer`, soft knee included) takes exactly N dB at the P95, found on that curve by bisection — one
+smooth formula over 0…6 dB (`[glue]`: the ratio by depth, the threshold offset, knee and attack linear, the release's
+beat divisor geometric), nothing rounded, no clamp reached inside the domain; 2.6 dB is ratio 1.74 with the threshold
+6.1 dB under the P95, 6 dB ratio 2.84 and 9.3 dB under. It is not a ceiling on the live reduction. The slider's 0…3 dB
+is a hint; the core takes 0…6 as written, the machine sets it on cd alone, 2.6 (the schema refuses a machine value
+above `knobMaxDb`), and a tick without a knob starts at 0.5. The release is a beat over the divisor, from the tempo
+where its label is high (the detector's confidence of 0.5 and up), from 120 BPM otherwise — a tempo that ended
+unavailable included — and is kept inside 50…500 ms. A glue that compresses reads the tempo, so a master waits for a
+pending one; a glue at 0 dB, or unavailable, reads nothing. WITHOUT A P95 (a scrap too short for a short-term loudness)
+the glue is unavailable to the machine and to a person alike: the machine's tick is left off (`HeldBack::Unmeasured`),
+a person's tick and value are kept and shown, `plan.glue.state` is `Unavailable`, the chain gets no compressor, no P95
+is invented and the master is made without it. `plan.glue` carries the state and, where it compresses, the values the
+chain gets — ratio, threshold (in the normalised input's dB), knee, attack, and once the tempo is decided the tempo,
+the release asked for and the release given; `PlanText::glue`, `::glueTempo` and `::glueRelease` give the refusal, the
+fallback tempo and a release held at a limit as facts.
+The saturation is the chain's tanh stage (`MasteringChainParams::clipper`) — not the peak clipper inside the limiter,
+which is the limiter's. The machine never sets it. The knob is the drive the input would get at 0 dBTP: the core drives
+the shaper at k = 10^(drive/20) − 1, so the stage gets `20·log10(1 + (10^(knob/20) − 1)·10^(−peak/20))` for the
+normalised true peak — no trial render; the compensation is 0, mix and output as set (`plan.saturation`).
+WHAT EACH DID is measured on its own stage and reported in the master's cost: `glueP95Db` and `glueMaxDb`, the
+compressor's gain reduction over the programme's 4 ms windows and its largest sample; `saturationCutMaxDb` and
+`saturationCutUsualDb`, the soft clipper's cut of peaks — `MasteringChain::clipperPeaks`: the peak of the stage's
+input against the peak of its output, internal quantum by quantum, after its mix and output trim, each against the gain
+the stage gives a sound too quiet to bend (a peak-normalised shaper lifts everything under full scale, so the ratio
+alone is a gain, not a cut; the output knob moves both and cancels). The loud places are the quanta with the highest
+input peaks, `[saturation] cut.loudShare` of them (5 %); the largest cut is the largest among them and the usual one
+their median — one hit moves the first and not the second. Neither is the fall of the chain's true peak.
+`MasterReportText::glue` and `::saturation` are the report's lines, published with the master's cost; a stage out of
+the chain has no number (`NoSignal`) and no line. `felitronics_session_glue_saturation_tests` holds the knob to the
+core's curve at 0.5, 1.25, 2.6, 3 and 6 dB, the curve's evenness over the whole domain and at 3, the machine's layer on
+every target, a person's values with the panel hidden, saved and imported, the refusal without a P95 through the real
+pump, every tempo outcome and both clamps, the drive at five peaks, every written field, one mix at three levels
+through the real analyzers and the real stages, the cut's even growth over the drive, and a real master whose reported
+numbers are, to the bit, those of the same two stages run alone behind the one gain.
+
 **One need, one measurement.** The source's measurements serve every target: a change of target or of a person's
 layer measures nothing again, and the needles run again only for a new ceiling (another target with the same numbers
 reuses them). **The plan's key** is a hash of everything it is made from — the source and its measurements' keys and
@@ -1374,6 +1417,9 @@ merge. Each retained section carries source-frame bounds, source/master level an
 The largest shift gets a named index only when more than two sections compare. LRA is a separate
 reference measurement, not this ordered shape measure.
 
+Glue P95 uses the same 4-ms window distribution of the compressor's trace, and glue maximum its largest tap
+sample; the saturation's two cuts come from the soft clipper's own peak counters (see Glue and saturation). Each is
+`NoSignal` when its stage is absent or bypassed, and older snapshots decode them as `NotImplemented`.
 Limiter P50/P95 use the solver's 4-ms window distribution. The active fraction uses its input-gated
 tap statistics; `activeWindowShare` separately counts source momentary windows passing the relative
 activity floor. Pumping is RMS of the limiter's retained mean GR buckets after a second-order

@@ -100,6 +100,18 @@ text::Fact MasterReportText::pumping (const MasterCost& cost) noexcept
 }
 text::Fact MasterReportText::tonal() noexcept
 { return text::Fact::of (text::FactId::MasterCostK2Deferred); }
+std::optional<text::Fact> MasterReportText::glue (const MasterCost& cost) noexcept
+{
+    if (! cost.glueP95Db.value || ! cost.glueMaxDb.value) return std::nullopt;
+    return text::Fact::of (text::FactId::MasterGlue, text::Arg::value (*cost.glueP95Db.value, text::Unit::Db, 1),
+        text::Arg::value (*cost.glueMaxDb.value, text::Unit::Db, 1));
+}
+std::optional<text::Fact> MasterReportText::saturation (const MasterCost& cost) noexcept
+{
+    if (! cost.saturationCutMaxDb.value || ! cost.saturationCutUsualDb.value) return std::nullopt;
+    return text::Fact::of (text::FactId::MasterSaturation, text::Arg::value (*cost.saturationCutMaxDb.value, text::Unit::Db, 1),
+        text::Arg::value (*cost.saturationCutUsualDb.value, text::Unit::Db, 1));
+}
 LandingPlan LandingOps::plan (const config::Engine& engine, bool sourceLoudnessValid,
                          double sourceLufs, double targetLufs, double targetTruePeakDbTp,
                          double sourceRate, double deliveryRate) noexcept

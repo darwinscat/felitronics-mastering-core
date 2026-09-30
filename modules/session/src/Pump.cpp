@@ -110,7 +110,7 @@ void Session::emit (Notification event, const Phase& progress) noexcept
     event.completedWork = progress.completedUnits;
     event.totalWork = progress.totalUnits;
 
-    events_[eventCount_++] = event; // three per ordinary unit; a master completion has five extra slots
+    events_[eventCount_++] = event; // three per ordinary unit; a master completion has seven extra slots
 }
 
 void Session::preferTempo() noexcept
@@ -342,6 +342,10 @@ Stepped Session::step (std::uint32_t budget) noexcept
                     if (cost->pumpingRmsDb.value)
                     { (void) event.payload.fact.assign (MasterReportText::pumping (*cost)); emit (event, masterProgress_); }
                     (void) event.payload.fact.assign (MasterReportText::tonal()); emit (event, masterProgress_);
+                    if (const auto glue = MasterReportText::glue (*cost))
+                    { (void) event.payload.fact.assign (*glue); emit (event, masterProgress_); }
+                    if (const auto saturation = MasterReportText::saturation (*cost))
+                    { (void) event.payload.fact.assign (*saturation); emit (event, masterProgress_); }
                 }
                 if (masterSummary_.deliverable && outcome == mastering::StepResult::Done)
                 {

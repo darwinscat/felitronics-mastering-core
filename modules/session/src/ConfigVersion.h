@@ -88,6 +88,7 @@ inline constexpr std::string_view kEnginePresentation[] = {
     "hpf.curveTopDb", "hpf.curveBottomDb", "hpf.curveStepDb", "hpf.curveHeadroomDb",
     "hpf.marks",
     "monoBass.zones",                                  // the knob scale's regions
+    "saturation.cut",                                  // measured after the master
     "tilt.normal",                                     // where a knob's value turns red
     "low.normal",
     "eq",                                              // the summed curve's colours and scale

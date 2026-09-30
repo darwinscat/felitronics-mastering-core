@@ -47,7 +47,7 @@ struct Golden
 };
 constexpr Golden kGolden[] = {
     { "2026-09", 0xf49360664b45a789ull },
-    { "2026-10", 0xef48d467567ad72full },   // the high-pass always, from 32 Hz and the sure lowest note; mono bass by its loss
+    { "2026-10", 0x85b5f0c18cc604fdull },   // the high-pass always, from 32 Hz and the sure lowest note; mono bass by its loss
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass

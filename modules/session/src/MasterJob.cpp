@@ -8,6 +8,7 @@
 #include <felitronics/analysis/BandCrestResult.h>
 #include "Rules.h"
 #include <felitronics/session/Session.h>
+#include <felitronics/core/DetMath.h>
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -341,6 +342,8 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         const auto result = search.step (budget);
         if (result == StepResult::More) return result;
         const auto& solved = search.result();
+        clipCounted = result == StepResult::Done && ready.topology.clipper && ! ready.params.bypassClipper
+            && chain.clipperPeaks (number (rules().engine.find ("saturation").find ("cut").find ("loudShare")), clipPeaks);
         report.targetLufs = targetLufs;
         report.ceilingDbTp = targetTp;
         report.targetMet = solved.status == mastering::MasteringSolveStatus::Solved;
@@ -594,6 +597,26 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
             costResult.limiterActiveShare = { MeasurementReason::None,
                 solution.limiterActive.stats.activeFraction, solution.limiterActive.stats.frames };
         else costResult.limiterActiveShare.reason = MeasurementReason::Unsupported;
+        // WHAT THE GLUE AND THE SATURATION DID, each on its own stage (owner decisions 3.8, 3.9): the compressor's gain
+        // reduction — its P95 over the programme's 4 ms windows and its largest sample — and the soft clipper's cut of
+        // peaks against its own gain on a quiet sound. A stage out of the chain has no number.
+        const bool compressing = ready.topology.compressor && ! ready.params.bypassCompressor;
+        const auto& glue = solution.measured.compressor;
+        if (compressing && glue.valid && std::isfinite (glue.maxDb) && solution.grQuantile (mastering::GrStage::Compressor, .95, quantile))
+        {
+            costResult.glueP95Db = { MeasurementReason::None, quantile, glue.frames };
+            costResult.glueMaxDb = { MeasurementReason::None, glue.maxDb, glue.frames };
+        }
+        else costResult.glueP95Db.reason = costResult.glueMaxDb.reason = compressing ? MeasurementReason::Unsupported : MeasurementReason::NoSignal;
+        const bool shaping = ready.topology.clipper && ! ready.params.bypassClipper;
+        if (clipCounted && clipPeaks.quietGain > 0.0 && clipPeaks.loudLeastRatio > 0.0 && clipPeaks.loudUsualRatio > 0.0)
+        {
+            costResult.saturationCutMaxDb = { MeasurementReason::None,
+                20.0 * core::det::log10 (clipPeaks.quietGain / clipPeaks.loudLeastRatio), clipPeaks.loudQuanta };
+            costResult.saturationCutUsualDb = { MeasurementReason::None,
+                20.0 * core::det::log10 (clipPeaks.quietGain / clipPeaks.loudUsualRatio), clipPeaks.loudQuanta };
+        }
+        else costResult.saturationCutMaxDb.reason = costResult.saturationCutUsualDb.reason = shaping ? MeasurementReason::Unsupported : MeasurementReason::NoSignal;
         costPumpScan.start (solution.limiterTrace, deliveryRate, costRules);
         stage = Stage::CostWave;
         return StepResult::More;

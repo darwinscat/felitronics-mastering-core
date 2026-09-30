@@ -491,8 +491,6 @@ void readCompressor (Doc& d, Reader& in, Compressor& o)
     in.required ("autoMakeup", o.autoMakeup);
     in.required ("mix", o.mix, share());
     d.name (in, "thresholdFrom", o.thresholdFrom, kThresholdFrom);
-    in.required ("roundToMs", o.roundToMs, R { 0.001, 100.0 });
-    in.required ("roundToDb", o.roundToDb, R { 0.001, 10.0 });
     in.table ("limits", Need::Required, [&] (Reader& t)
     {
         d.minMax (t, "threshOffset", o.limitThreshOffset, R { -60.0, 60.0 });
@@ -516,16 +514,17 @@ void readGlue (Doc& d, Reader& in, Glue& o, const std::vector<std::string>* targ
     const bool hi = in.required ("knobMaxDb", o.knobMaxDb, knob);
     d.below (in, lo && hi, o.knobMinDb, o.knobMaxDb, "knobMaxDb");
     in.required ("knobStepDb", o.knobStepDb, R { 0.01, 3.0 });
-    in.required ("default", o.defaultUpToDb, knob);
-    in.required ("whenTicked", o.whenTickedUpToDb, knob);
-    // THE TRAVEL, 0…1 in steps of `step`: the compressor's internal mapping.
-    in.required ("step", o.step, R { 0.0001, 1.0 });
+    // WHAT THE MACHINE SETS stays on the slider's travel (owner decision 3.8: never above knobMaxDb); a person's value
+    // and a project's take the whole domain.
+    const R machine = hi ? R { knob.min, o.knobMaxDb } : knob;
+    in.required ("default", o.defaultUpToDb, machine);
+    in.required ("whenTicked", o.whenTickedUpToDb, machine);
     in.table ("byTarget", Need::Required, [&] (Reader& t)
     {
         for (const auto& e : t.data().entries())
         {
             GlueAtTarget g { e.key, 0.0 };
-            if (! t.required (e.key, g.upToDb, knob)) continue;
+            if (! t.required (e.key, g.upToDb, machine)) continue;
             if (targets != nullptr && ! contains (*targets, e.key)) d.refuse (t, e.key, Refusal::NotATarget);
             else o.byTarget.push_back (std::move (g));
         }
@@ -545,6 +544,7 @@ void readGlue (Doc& d, Reader& in, Glue& o, const std::vector<std::string>* targ
             if (! fits) d.refuse (t, "law", Refusal::OutsideLaw);
         });
     };
+    // THE TRAVEL: the compressor's internal mapping, one smooth formula (src/Dynamics.h).
     ramp ("ratio", o.ratio, R { 1.0, 20.0 }, true);
     ramp ("threshOffset", o.threshOffset, R { -60.0, 60.0 }, false);
     ramp ("attack", o.attack, R { 0.01, 1000.0 }, false);
@@ -570,6 +570,10 @@ void readSaturation (Doc& d, Reader& in, Saturation& o)
     in.required ("outputDb", o.outputDb, output);
     in.required ("autoComp", o.autoComp, share());       // the core's domain
     in.required ("dcBlockHz", o.dcBlockHz, R { 0.0, 200.0 });
+    in.table ("cut", Need::Required, [&] (Reader& t)
+    {
+        if (t.required ("loudShare", o.cutLoudShare, share()) && ! (o.cutLoudShare > 0.0)) d.outOfRange (t, "loudShare");
+    });
 }
 
 // Slider ranges lie within the domain, which also contains the implicit zero default.

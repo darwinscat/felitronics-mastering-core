@@ -50,8 +50,9 @@ void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channel
     mono.fq = number (target.monoBass);
     mono.width = number (rules.monoBassWidthDefault);
 
+    // The machine glues only where [glue] byTarget names the target; elsewhere the glue is a person's.
     auto& glue = devices.glue.machine;
-    glue.on = rules.compressor;
+    glue.on = rules.compressor && target.glue.has_value();
     glue.upToDb = number (target.glue ? *target.glue : rules.glueDefault);
 
     auto& sat = devices.saturation.machine;
