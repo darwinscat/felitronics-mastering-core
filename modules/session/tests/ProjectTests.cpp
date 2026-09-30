@@ -149,38 +149,28 @@ void defaultsVersions()
     const auto current = project() + "\n[hpf]\nfq.hand = 36\n";
     ok (import (*s, current).rejection == Rejection::None && s->events().empty(),
         "the carried defaults version is accepted as it is");
-    // EVERY LABEL A RELEASE HAS SAVED, by name (owner, 30.09). From 2026-10 on the file's machine layer is the file's,
-    // its differences shown beside it: a later change of calibration that stops carrying 2026-10 turns this red rather
-    // than re-placing or refusing those projects unseen.
+    // THE CURRENT LABEL IS THE ONLY ONE THAT OPENS (owner, 30.09), with the file's machine layer as the file's and its
+    // differences shown beside it.
     ok (import (*s, withDefaults (project (true, "0.0.1") + "\n[hpf]\nfq.machine = 37\n", "2026-10")).rejection == Rejection::None
         && s->snapshot().view().plan.fromFile && detail::same (s->project().devices.hpf.machine.fq, 37.0)
         && s->events().size() == 1 && s->events()[0].payload.fact.view().id == text::FactId::MachineDifferences,
         "2026-10: the file's machine cutoff of 37 Hz is kept, as the file's, with its comparison");
-    // 2026-09 — saved before the core had its planner — is not opened: the import is refused whole, with its reason,
-    // whatever the file carries (a key this core does not know included: the version is the reason, read first), and
-    // the open project stays as it was.
+    // Any other label is refused whole, with the existing reasons, and the open project stays as it was: nothing converts,
+    // nothing re-places a file's machine layer on import. 2026-09 (saved before the core had its planner) is one of them.
     const auto open = exported (*s);
     const auto revision = s->revision();
-    for (const auto& body : { project (true, "0.0.1") + "lufs.hand = -12.5\n\n[hpf]\nfq.machine = 37\nfq.hand = 40\n",
-                              project() + "\n[hpf]\nfq.hand = 36\n", project (false),
-                              project() + "\n[retiredSection]\nkey = 1\n" })
-    {
-        const auto old = withDefaults (body, "2026-09");
-        refused (*s, old, Rejection::RetiredDefaults, "\"2026-09\"");
-        ok (s->revision() == revision && exported (*s) == open, "2026-09: the revision and the open project are unchanged");
-        const auto answer = import (*s, old);
-        const auto fact = text::Text::rejected (answer, command::ImportProject { 927, old });
-        ok (answer.rejection == Rejection::RetiredDefaults && fact && fact->id == text::FactId::RejectedRetiredDefaults,
-            "2026-09: the refusal's fact is its own");
-        for (const auto lang : { text::Lang::Ru, text::Lang::En })
-            ok (fact && text::Text::text (*fact, lang).find ("2026-09") != std::string::npos,
-                "2026-09: the reason names the version: " + (fact ? text::Text::text (*fact, lang) : std::string {}));
-    }
-    // A label no release has saved and this core does not carry is not converted either: nothing re-places a file's
-    // machine layer on import.
-    for (const auto uncarried : { "2025-12", "2026-08", "2026-01" })
-        refused (*s, withDefaults (project (true, "0.0.1") + "\n[hpf]\nfq.machine = 37\n", uncarried), Rejection::UnknownDefaults,
-            std::string ("\"") + uncarried + '"');
+    for (const auto older : { "2026-09", "2020-01", "2025-12", "2026-01" })
+        for (const auto& body : { project (true, "0.0.1") + "lufs.hand = -12.5\n\n[hpf]\nfq.machine = 37\nfq.hand = 40\n",
+                                  project() + "\n[hpf]\nfq.hand = 36\n", project (false) })
+        {
+            const auto file = withDefaults (body, older);
+            refused (*s, file, Rejection::UnknownDefaults, std::string ("\"") + older + '"');
+            ok (s->revision() == revision && exported (*s) == open,
+                std::string (older) + ": the revision and the open project are unchanged");
+            const auto answer = import (*s, file);
+            const auto fact = text::Text::rejected (answer, command::ImportProject { 927, file });
+            ok (fact && fact->id == text::FactId::RejectedUnknownDefaults, std::string (older) + ": the refusal's fact is RejectedUnknownDefaults");
+        }
     for (const auto newer : { "2026-11", "2027-01", "9999-12" })
         refused (*s, withDefaults (project(), newer), Rejection::NewerDefaults, std::string ("\"") + newer + '"');
     for (const auto malformed : { "2026-00", "2026-13", "2026-9", "026-09", "20260-09", "2026/09", "2026-09x", " 2026-09", "2026-0a", "" })

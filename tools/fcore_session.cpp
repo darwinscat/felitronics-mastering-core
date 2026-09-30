@@ -130,7 +130,6 @@ const char* nameOf (felitronics::session::Rejection r)
         case Rejection::MandatoryUnavailable: return "MandatoryUnavailable";
         case Rejection::DeliveryFormat: return "DeliveryFormat";
         case Rejection::PlanPending: return "PlanPending";
-        case Rejection::RetiredDefaults: return "RetiredDefaults";
     }
     return "?";
 }

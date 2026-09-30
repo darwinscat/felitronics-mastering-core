@@ -97,8 +97,8 @@ enum class FactId : std::uint16_t
     WideBass = 6,            // the bass is wide (side {side}) — the warning of phase 1
     RateAboveLimit = 7,      // the file's rate {rate} is above what this platform takes, {limit} (select on platform)
     MachineDifferences = 8,  // {count}: the saved machine layer is retained
-    DefaultsConverted = 9,   // {version}: the project was converted from older defaults — emitted by no release since
-                             // 2026-09 projects are refused (RejectedRetiredDefaults); the id and its message stay
+    DefaultsConverted = 9,   // {version}: the project was converted from older defaults — emitted by nothing since an
+                             // import accepts only the current defaults label; the id and its message stay
     SameCoreMachineDifferences = 10, // {count}: same-core differences usually indicate a hand-edited file
     MasterLandingMiss = 11,
     MasterHintSubBass = 12,
@@ -222,7 +222,6 @@ enum class FactId : std::uint16_t
     RejectedMandatoryUnavailable = 133,
     RejectedDeliveryFormat = 134,  // {bits} {rate}: the target's bit depth and delivery rate
     RejectedPlanPending = 135,
-    RejectedRetiredDefaults = 136,
 
     Measurement1 = 200,
     Measurement2 = 201,

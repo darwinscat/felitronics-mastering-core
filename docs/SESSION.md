@@ -588,15 +588,13 @@ allocation has no recovery path.
 
 The core carries the **current and previous defaults tables**. Today the current label is `2026-10` and the previous
 slot is empty. A carried label uses its compiled defaults. Labels are strictly `YYYY-MM`, with months `01` through `12`.
-Import never converts (owner, 30.09). A project saved with `2026-09` — before the core had its planner — is NOT opened:
-the import is refused whole as `RetiredDefaults` (36, fact 136, which names the version in both catalog languages).
-It is refused before the document is read, since the file follows an older schema and its reason is the version, not
-a key. The refused labels are an explicit list in `src/ProjectIO.cpp` holding `2026-09`, never "older than the
-current": a later change of calibration can neither re-place nor refuse a `2026-10` project unseen —
-`ProjectTests.cpp:defaultsVersions` names `2026-10` and turns red if it stops opening with its own machine layer. An
-older label neither carried nor listed is `UnknownDefaults`, as is a malformed one; a newer label is `NewerDefaults`
-(28, fact 128). All these refusals leave state and revision unchanged. Fact `DefaultsConverted` (9) keeps its id and
-message (append-only) and is emitted by no release since. Export uses the current label.
+An import accepts only the current defaults label and never converts (owner, 30.09: no project was ever saved with
+another one, so the core carries no code for older labels). Any other label — `2026-09`, saved before the core had its
+planner, included — is refused whole as `UnknownDefaults` (fact 126), as is a malformed one; a newer label is
+`NewerDefaults` (28, fact 128). These refusals follow the schema read, in its fixed order, and leave state and revision
+unchanged. `ProjectTests.cpp:defaultsVersions` names `2026-10` and turns red if it stops opening with its own machine
+layer. Fact `DefaultsConverted` (9) keeps its id and message (append-only, released in v0.3.0) and is emitted by
+nothing. Export uses the current label.
 
 After defaults selection, the file's complete machine layer always wins (omitted fields mean defaults),
 with the person's touched layer over it — on the same core and on another. The planner decides again beside it, for
@@ -1157,7 +1155,7 @@ C++, the way a desktop application does.
 Knob travel and step describe the shell's slider. Commands and project import accept the domains below, including
 values between steps and beyond travel. An empty edit or revert is accepted with unchanged revision. Device edits
 require placement and an offered device. Panel visibility does not gate them. Low is offered on every target,
-saved machine layers are retained for every core stamp, and a retired or uncarried older defaults label is refused.
+saved machine layers are retained for every core stamp, and any defaults label but the current one is refused.
 
 | Knob | Accepted domain | Reason |
 | --- | --- | --- |
