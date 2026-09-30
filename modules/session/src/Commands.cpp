@@ -601,6 +601,8 @@ Answer Session::apply (const Request& request) noexcept
     }
     else if (std::holds_alternative<command::AdoptMachine> (request))
     {
+        // The machine's layer is placed by this release from here on, as at every other placement.
+        project_.core = version();
         place (project_);
         machineFromFile_ = false;
         differenceCount_ = 0;
