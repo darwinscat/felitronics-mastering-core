@@ -63,6 +63,7 @@ struct Target
     std::int32_t sampleRate = 0;               // 0: the source's rate
     std::int32_t bitDepth = 0;
     bool noClipper = false;                    // optional in the document: false when absent
+    bool vinyl = false;                        // optional: false when absent — the master goes to a cutting lathe
     bool sourceRatePass = false;               // optional: false when absent
     std::optional<double> lowDb;
     std::optional<Album> album;
@@ -120,6 +121,7 @@ struct PeakClipper
     double littleNeedDb = 0.0;
     double shortP90Ms = 0.0, shortBassShare = 0.0, shortPlrDb = 0.0;
     double longP90Ms = 0.0, longBassShare = 0.0, longPlrDb = 0.0;
+    double clippedPerMinute = 0.0;             // confirmed clips a minute from which the source is clipped
     double shortOverDb = 0.0, betweenOverDb = 0.0;
     double bassBelowHz = 0.0;
     double densityMinusDb = 0.0, densityWithinDb = 0.0;
@@ -130,6 +132,7 @@ struct PeakClipper
 struct Limiter
 {
     double ceilingMarginDb = 0.0;
+    double lookaheadMs = 0.0;
     double releaseMs = 0.0;
     bool dualRelease = false;
     double slowReleaseMs = 0.0;
@@ -223,6 +226,8 @@ struct Compressor
     double makeupDb = 0.0;
     bool autoMakeup = false;
     double mix = 0.0;
+    double lookaheadMs = 0.0;
+    double sidechainHpfHz = 0.0;               // 0: self-keyed
     ThresholdFrom thresholdFrom = ThresholdFrom::ShortTermP95;
     Span limitThreshOffset, limitAttack, limitRelease, limitKnee;   // [compressor.limits]
     double tempoBpmWhenUnsure = 0.0;                                 // [compressor.tempo] bpmWhenUnsure
@@ -318,6 +323,17 @@ struct Dither
     std::int32_t onUpToBits = 0;
     NoiseShaping shaping = NoiseShaping::Weighted;
     std::int32_t shapingUpToBits = 0;
+    std::uint64_t seed = 0;                    // written as sixteen hexadecimal digits
+    bool autoBlank = false;
+    std::int32_t autoBlankSamples = 0;
+};
+
+// [chain]: the chain's fixed geometry — the internal quantum and the oversampling of the saturation and the limiter.
+struct Chain
+{
+    std::int32_t internalBlock = 0;
+    std::int32_t oversampleFactor = 0;
+    std::int32_t tapsPerPhase = 0;
 };
 
 struct DeEsser
@@ -385,6 +401,7 @@ struct Observations
     double wideBassSideFractionAtLeast = 0.0;                                     // wideBass
     double polarityCorrelationBelow = 0.0, polarityRawSideFractionAbove = 0.0;    // polarity
     double alreadyLimitedPlrBelowDb = 0.0;                                        // alreadyLimited
+    double vinylTopAboveHz = 0.0;                                                 // vinylTop
     Kinds kinds;
     Sibilance sibilance;
 };
@@ -467,6 +484,7 @@ struct Engine
     Tilt tilt;
     Low low;
     Eq eq;
+    Chain chain;
     Stages stages;
     Dither dither;
     DeEsser deEsser;
@@ -510,6 +528,7 @@ enum class Refusal : std::uint8_t
     OutsideLaw,    // a ramp's ends outside its law's domain, or a law the field does not take
     AboveNyquist,  // a frequency at or above half the rate the signal it filters is sampled at
     AnalyzerRefuses,// the analyzer this block feeds refuses it — its own storageFor() — at a source rate the product accepts
+                   // (and the chain its [chain] geometry: MasteringChain::admits)
     EmptyKey       // a row of [targets] under an empty key: a target is named by its key, and "" names none
 };
 

@@ -247,6 +247,7 @@ SnapshotView Session::buildView() const noexcept
     });
     if (devicesPlaced_) v.eqCurve = eqCurve_;
     v.plan = plan_;
+    v.observations = observations_;
     v.target = targetName();
     v.source = source_;
     v.measurementStorage = measurementStorage_;

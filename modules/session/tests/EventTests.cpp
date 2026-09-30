@@ -163,7 +163,8 @@ std::vector<Notification> scenario (std::uint32_t chunk, bool cancel)
     if (! snapshot (*s).view().mandatoryMeasurementsReady) detail::Inspector::mandatory (*s);
     auto saved = snapshot (*s);
     const auto job = apply (*s, command::Master { 2 }).job;
-    ok (snapshot (*s).view().masterProgress.totalUnits == 4, "legacy progress bound is available before the first step");
+    ok (snapshot (*s).view().masterProgress.totalUnits == 12 && snapshot (*s).view().masterProgress.totalPasses == 12,
+        "the master's progress bound is available before the first step");
     if (cancel)
     {
         (void) step (*s, 1); collect();
@@ -189,8 +190,9 @@ void pump()
     ok (eventsHash (one) == eventsHash (bulk) && eventsHash (one) == eventsHash (again), "complete event sequence is invariant across runs and pump slicing");
     ok (eventsHash (cancelled) == eventsHash (cancelledAgain), "cancelled scenario sequence is invariant across runs and slicing");
     ok (one.size() > 22 && cancelled.size() > one.size(), "measurement publishes live work and cancellation adds events");
-    // The phases carry the config's version (weightsVersion): a new config moves these pins.
-    ok (eventsHash (one) == 0xa9db5702f0116d9dull && eventsHash (cancelled) == 0xedb6260c93291acdull, "event fixtures pin every active payload field");
+    // The phases carry the config's version (weightsVersion): a new config moves these pins — and the master is rendered
+    // (a master the session decides runs its job: its passes, its cost and its facts are events of the scenario).
+    ok (eventsHash (one) == 0x9ff00bcfc102d575ull && eventsHash (cancelled) == 0xbddab0a8306f1c18ull, "event fixtures pin every active payload field");
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     Audio audio; auto s = fresh();
     const auto old = apply (*s, audio.load()).job;

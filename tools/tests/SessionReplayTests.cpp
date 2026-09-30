@@ -7,6 +7,7 @@
 #include <felitronics/session/Snapshot.h>
 #include "fc_session_abi.h"
 #include <felitronics/session/Config.h>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
@@ -58,7 +59,7 @@ int replayAfterPoison()
     // Outside the abandoned module: desktop's new C++ owner, wasm's fresh module instance.
     auto restored = Session::create();
     ok (restored.session->apply (replayLoad).rejection == Rejection::None, "replay loads the same source");
-    testing::measure (*restored.session);
+    while (restored.session->step (16).state == StepState::More) {}
     const auto answer = restored.session->importProject (8, savedProject->view());
     ok (answer.rejection == Rejection::None, "replay imports after the same measurement");
     auto replayed = restored.session->snapshot();
@@ -85,13 +86,15 @@ int main()
     ok (createSession (&handle) == FC_SESSION_OK, "facade creates the original session");
     // Test owns cleanup because a poisoned facade deliberately refuses even destroy.
     std::unique_ptr<Session> old (sessionForReplayTest (handle));
-    float samples[] = { 0.0f, 0.25f, -0.25f, 0.0f };
+    // Two seconds of a tone: a source the session measures and masters for real — a master it decides is rendered.
+    static float samples[96000];
+    for (unsigned i = 0; i < 96000; ++i) samples[i] = 0.25f * float (std::sin (2.0 * 3.14159265358979323846 * 220.0 * double (i) / 48000.0));
     const float* planes[] = { samples, samples };
-    const command::Load load { 1, { planes, 2, 4, 48000 }, { "replay.wav", 48000, true, 24 } };
+    const command::Load load { 1, { planes, 2, 96000, 48000 }, { "replay.wav", 48000, true, 24 } };
     for (unsigned i = 0; i < 3; ++i)
     {
         ok (old->apply (load).rejection == Rejection::None, "successive loads");
-        testing::measure (*old);
+        while (old->step (16).state == StepState::More) {}
         (void) old->apply (command::SetTarget { 2, "cd" });
         (void) old->apply (command::SetManual { 3, true });
         HpfFields<Touched> hpf; hpf.fq = 36; hpf.on = false;
@@ -100,7 +103,10 @@ int main()
         ok (! old->project().devices.hpf.hand.fq && ! old->project().devices.hpf.hand.on, "target change resets prior edits");
         ok (old->apply (command::EditDevice { 5, hpf }).rejection == Rejection::None, "new target edits enter the replay recipe");
         (void) old->apply (command::EditTarget { 6, { -12.5, -0.5 } });
-        (void) old->apply (command::Master { 7 }); (void) old->step (4);
+        ok (old->apply (command::Master { 7 }).rejection == Rejection::None, "a master of the project is taken");
+        while (old->step (16).state == StepState::More) {}
+        // The rendered audio leaves the session, as a shell takes it: what stays is the project and the kept master.
+        (void) old->releaseMaster (old->pendingMaster());
     }
     const auto snapshot = old->snapshot();
     const auto saved = old->exportProject();

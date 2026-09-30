@@ -310,6 +310,17 @@ if(FELITRONICS_BUILD_TESTS)
     endif()
     add_test(NAME felitronics_session_glue_saturation_tests COMMAND felitronics_session_glue_saturation_tests)
 
+    # The limiter with its needles, the dither, vinyl, a quiet input — and the whole plan sounding: a master the session
+    # decides against the previous path's master of the chain the suite composes itself.
+    add_executable(felitronics_session_plan_sound_tests tests/PlanSoundTests.cpp)
+    target_link_libraries(felitronics_session_plan_sound_tests PRIVATE felitronics::session felitronics::toml felitronics::core felitronics::test_support felitronics::analysis_offline felitronics::tempo)
+    target_include_directories(felitronics_session_plan_sound_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_features(felitronics_session_plan_sound_tests PRIVATE cxx_std_20)
+    if(NOT MSVC)
+        target_compile_options(felitronics_session_plan_sound_tests PRIVATE -ffp-contract=off)
+    endif()
+    add_test(NAME felitronics_session_plan_sound_tests COMMAND felitronics_session_plan_sound_tests)
+
     add_executable(felitronics_session_needles_tests tests/NeedlesTests.cpp)
     target_link_libraries(felitronics_session_needles_tests PRIVATE felitronics::session felitronics::test_support felitronics::analysis_offline)
     target_include_directories(felitronics_session_needles_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)

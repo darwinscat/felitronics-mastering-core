@@ -716,10 +716,10 @@ void everyMessageRenders()
 
     const Fact wide = Fact::of (FactId::WideBass, Arg::value (18.2, Unit::Percent, 0));
     same (render (wide, Lang::Ru),
-          "бас широкий (бока 18" + NB + "%) — моно-бас соберёт его, на наушниках станет уже; если ширина нужна — выключите моно-бас в Настройках",
-          "ru wideBass, the owner's words");
+          "бас широкий (бока 18" + NB + "%) — моно-бас соберёт его, если включён; на наушниках станет уже",
+          "ru wideBass, the owner's words (PLAN: mono bass gathers it IF IT IS ON — the sentence claims nothing of a fold that is out)");
     same (render (wide, Lang::En),
-          "the bass is wide (side 18%) — mono-bass will gather it, and on headphones it will sound narrower; if you need the width, switch mono-bass off in Settings",
+          "the bass is wide (side 18%) — mono bass will gather it if it is on; on headphones it will sound narrower",
           "en wideBass");
 
     const Fact web = Fact::of (FactId::RateAboveLimit, Arg::value (176.4, Unit::KHz, 1), Arg::value (96.0, Unit::KHz, 0),
@@ -825,7 +825,7 @@ void everyRejectionIsAFact()
         inRange = inRange && ((std::size_t) shape.id < 100 || ((std::size_t) shape.id > 100 && (std::size_t) shape.id <= 100 + last)
             || ((std::size_t) shape.id >= 200 && (std::size_t) shape.id <= 207)
             || ((std::size_t) shape.id >= 300 && (std::size_t) shape.id <= 305)
-            || ((std::size_t) shape.id >= 400 && (std::size_t) shape.id <= 418));
+            || ((std::size_t) shape.id >= 400 && (std::size_t) shape.id <= 435));
     ok (inRange, "rejections, phases and session errors occupy only their own declared ranges");
 
     // THE FIELDS, held against the state machine's own walk of them (src/Devices.h).
@@ -1075,7 +1075,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0xbbf0dd5411f9bb27ull;   // with the part mono bass was weighed over (51)
+    constexpr std::uint64_t kPinned = 0x6417a2ca46180732ull;   // the limiter, the dither, vinyl, a quiet input and the observations (52–80, 419–435)
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");

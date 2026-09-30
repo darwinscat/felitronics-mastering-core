@@ -165,6 +165,42 @@
       "Unmeasured",
       "MonoSource",
       "Quiet"
+    ],
+    "NeedlesClass": [
+      "None",
+      "Short",
+      "Between"
+    ],
+    "NeedlesWhy": [
+      "Cuts",
+      "Shell",
+      "Target",
+      "Quiet",
+      "NoReadings",
+      "LittleNeed",
+      "Pending",
+      "Unmeasured",
+      "NoExcursions",
+      "Clipped",
+      "LowPlr",
+      "Bass",
+      "Long"
+    ],
+    "ObservationStatus": [
+      "NotMeasured",
+      "NotFound",
+      "Found"
+    ],
+    "ObservationStyle": [
+      "Error",
+      "Warning",
+      "Note"
+    ],
+    "HandledBy": [
+      "Nothing",
+      "Hpf",
+      "MonoBass",
+      "Person"
     ]
   },
   "records": {
@@ -502,7 +538,8 @@
         "crest": "MasterCrest",
         "firstHint": "MasterHint?",
         "secondHint": "MasterHint?",
-        "cost": "MasterCost?"
+        "cost": "MasterCost?",
+        "medium": "MasterMedium?"
       }
     },
     "LandingPass": {
@@ -647,7 +684,8 @@
         "canMaster": "bool",
         "pendingMaster": "MasterToken",
         "pendingMasterBytes": "bytes",
-        "plan": "PlanView"
+        "plan": "PlanView",
+        "observations": "Observations"
       }
     },
     "MasterToken": {
@@ -885,7 +923,9 @@
         "monoBass": "MonoBassFinding",
         "inputGainDb": "double?",
         "glue": "GlueFinding",
-        "saturation": "SaturationFinding"
+        "saturation": "SaturationFinding",
+        "limiter": "LimiterFinding",
+        "dither": "DitherFinding"
       }
     },
     "HpfFinding": {
@@ -912,6 +952,96 @@
         "againstMachine": "bool",
         "sounding": "Sounding",
         "soundingHz": "double"
+      }
+    },
+    "LimiterFinding": {
+      "cpp": "LimiterFinding",
+      "fields": {
+        "ceilingDbTp": "double",
+        "needDb": "double?",
+        "proposed": "NeedlesClass",
+        "why": "NeedlesWhy",
+        "reason": "MeasurementReason",
+        "proposedOverDb": "double?",
+        "p90Ms": "double?",
+        "bassShare": "double?",
+        "plrDb": "double?",
+        "clipsPerMinute": "double?",
+        "clips": "uint64",
+        "mode": "Needles",
+        "cutting": "bool",
+        "overDb": "double",
+        "sounding": "Sounding",
+        "againstMachine": "bool",
+        "vinyl": "bool",
+        "mediumCeilingDbTp": "double",
+        "ceilingAboveMedium": "bool",
+        "needlesAgainstMedium": "bool",
+        "vinylTopHz": "double"
+      }
+    },
+    "DitherFinding": {
+      "cpp": "DitherFinding",
+      "fields": {
+        "bits": "int32",
+        "applies": "bool",
+        "on": "bool",
+        "offByHand": "bool",
+        "keptWithoutEffect": "bool"
+      }
+    },
+    "MasterMedium": {
+      "cpp": "MasterMedium",
+      "fields": {
+        "vinyl": "bool",
+        "ready": "bool",
+        "crossoverHz": "double",
+        "cutoffHz": "double",
+        "quietInput": "bool",
+        "inputLufs": "double"
+      }
+    },
+    "Observation": {
+      "cpp": "Observation",
+      "fields": {
+        "status": "ObservationStatus",
+        "reason": "MeasurementReason",
+        "style": "ObservationStyle",
+        "confidence": "double",
+        "severity": "double",
+        "doubtful": "bool",
+        "hypothesis": "bool",
+        "handledBy": "HandledBy",
+        "handled": "bool",
+        "value": "double",
+        "second": "double",
+        "third": "double",
+        "places": "uint32",
+        "at1": "double",
+        "at2": "double",
+        "at3": "double"
+      }
+    },
+    "Observations": {
+      "cpp": "Observations",
+      "fields": {
+        "clipping": "Observation",
+        "dcOffset": "Observation",
+        "bitsUnused": "Observation",
+        "dualMono": "Observation",
+        "edgeSilence": "Observation",
+        "tooQuiet": "Observation",
+        "tooShort": "Observation",
+        "alreadyLimited": "Observation",
+        "spectralWall": "Observation",
+        "loudestLowNote": "Observation",
+        "lowestLowBand": "Observation",
+        "infraLow": "Observation",
+        "wideBass": "Observation",
+        "polarity": "Observation",
+        "sibilance": "Observation",
+        "hum": "Observation",
+        "humWandered": "Observation"
       }
     }
   },
@@ -1433,6 +1563,10 @@
       "cost": {
         "default": "std::optional<MasterCost> {}",
         "description": "No post-master cost was published in the v1 snapshot."
+      },
+      "medium": {
+        "default": "std::optional<MasterMedium> {}",
+        "description": "No medium report: a ready chain a shell supplied, or an older snapshot."
       }
     },
     "MasterCost": {
@@ -1545,6 +1679,10 @@
       "plan": {
         "default": "PlanView {}",
         "description": "No plan: the devices are not placed."
+      },
+      "observations": {
+        "default": "Observations {}",
+        "description": "No observations: nothing measured."
       }
     },
     "MeasurementQuery": {

@@ -207,7 +207,6 @@ Stepped Session::step (std::uint32_t budget) noexcept
     const auto passes = std::uint32_t (*master.find ("expectedPasses").integer());
     const double passWeight = weight (master.find ("passWeight"));
     const double measureWeight = weight (master.find ("measureWeight"));
-    const auto version = config::Config::versions().all;
     std::uint32_t units = 0;
     const auto contract = [&] (JobId job)
     {
@@ -268,35 +267,35 @@ Stepped Session::step (std::uint32_t budget) noexcept
                     ++units;
                     continue;
                 }
-                if (jobWaiting_)
+                // WHAT THE RECIPE'S DEVICES READ HAS ENDED: the master's chain is taken from its project's devices on
+                // those measurements — the needles still at the recipe's own ceiling — its demand is checked against
+                // the heap as it is now, and its job starts. Then the needles go back to the project's own ceiling,
+                // where it is another than the recipe's (a cancelled job at the same ceiling is not built again).
+                const auto masterJob = job_;
+                const auto plan = jobWaiting_ ? detail::MasterJob::plan (*this, command::Master {}, jobRecipe_.project)
+                                              : detail::MasterPlan {};
+                if (plan.rejection != Rejection::None) { contract (masterJob); ++units; continue; }
+                const auto roomed = demand ({ Rejection::None, kNoField, plan.bytes, 0, plan.largestBlock });
+                if (roomed.rejection != Rejection::None)
                 {
-                    // What the recipe's devices read has ended: the needles go back to the project's own ceiling,
-                    // where it is another than the recipe's (a cancelled job at the same ceiling is not built again).
-                    jobWaiting_ = false;
-                    if (! planInputs (project_).needlesCurrent) requestNeedles();
+                    const auto stoppedProgress = masterProgress_;
+                    Notification error;
+                    error.jobId = masterJob;
+                    error.kind = EventKind::Error;
+                    error.payload.error.code = ErrorCode::Memory;
+                    error.payload.error.needBytes = roomed.needBytes;
+                    (void) error.payload.error.fact.assign (text::Fact::of (text::FactId::SessionMemory));
+                    dropJob (masterJob);
+                    ++revision_;
+                    emit (error, stoppedProgress);
+                    ++units;
+                    continue;
                 }
-                ++masterUnit_;
-                const bool end = masterUnit_ > passes;
-                masterProgress_ = { end ? PhaseName::Remeasure : PhaseName::Pass,
-                    end ? 1.0 : double (masterUnit_) * passWeight / (double (passes) * passWeight + measureWeight),
-                    version, end ? 0 : masterUnit_, passes, masterUnit_, passes + 1 };
+                startMaster (plan);
+                if (! planInputs (project_).needlesCurrent) requestNeedles();
                 event.payload.phase = masterProgress_;
                 emit (event);
-                const bool ended = ! end || detail::Driver::mastered (*this, event.jobId);
-                if (! ended) contract (event.jobId);
-                else
-                {
-                    event.kind = EventKind::Fact;
-                    (void) event.payload.fact.assign (end ? text::Fact::of (text::FactId::MasterReady)
-                        : text::Fact::of (text::FactId::MasterPass, text::Arg::count (masterUnit_)));
-                    emit (event, masterProgress_);
-                    if (end)
-                    {
-                        event.kind = EventKind::Done;
-                        event.payload.done.masterId = event.jobId;
-                        emit (event, masterProgress_);
-                    }
-                }
+                ++revision_;
                 ++units;
                 continue;
             }
@@ -374,6 +373,15 @@ Stepped Session::step (std::uint32_t budget) noexcept
                     { (void) event.payload.fact.assign (*glue); emit (event, masterProgress_); }
                     if (const auto saturation = MasterReportText::saturation (*cost))
                     { (void) event.payload.fact.assign (*saturation); emit (event, masterProgress_); }
+                }
+                // The medium's lines and a very quiet input's: what the master is ready for, what the file shows of
+                // it and what it cannot show.
+                {
+                    const auto& report = *masters_[masterCount_ - 1].report;
+                    event.kind = EventKind::Fact;
+                    for (const auto& said : { MasterReportText::vinyl (report), MasterReportText::vinylChecked (report),
+                                              MasterReportText::vinylUncheckable (report), MasterReportText::quietInput (report) })
+                        if (said) { (void) event.payload.fact.assign (*said); emit (event, masterProgress_); }
                 }
                 if (masterSummary_.deliverable && outcome == mastering::StepResult::Done)
                 {

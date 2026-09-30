@@ -143,6 +143,38 @@ enum class FactId : std::uint16_t
     MonoBassByHand = 49,     // mono bass below {crossover}: a person's value
     MonoBassKept = 50,       // mono bass below {crossover}: a project file's machine layer
     MonoBassPartWeighed = 51, // mono bass was weighed over the first {covered} of the piece's {whole}
+    // What the limiter comes to (PlanView::limiter; PlanText): its ceiling and what the peak clipper does, as it sounds.
+    LimiterShort = 52,       // ceiling {ceiling}; short needles ({p90}, {bass}, {plr}) are clipped down to {over} above it
+    LimiterBetween = 53,     // ...needles neither short nor ruled out: clipped with care, down to {over}
+    LimiterManual = 54,      // ...clipped by hand, down to {over} above the ceiling
+    LimiterNeedlesOff = 55,  // ...the peak clipper is switched off
+    LimiterLittleNeed = 56,  // ...not cut: the need {need} is no more than {little}
+    LimiterNoExcursions = 57, // ...not cut: no peak stands above the ceiling
+    LimiterUnmeasured = 58,  // ...not cut: the needles were not measured
+    LimiterClipped = 59,     // ...not cut: the source is clipped, {rate} clips a minute
+    LimiterLowPlr = 60,      // ...not cut: the input's PLR {plr} is under {bound}
+    LimiterBass = 61,        // ...not cut: the excursions carry much bass, {bass} of the dose
+    LimiterLong = 62,        // ...not cut: the excursions are long, 90 % within {p90}
+    LimiterNoClipper = 63,   // ...not cut: the target has no peak clipper
+    LimiterQuiet = 64,       // ...not cut: the input is too quiet to measure
+    LimiterPending = 65,     // ...the needles are still being measured
+    LimiterPlain = 66,       // the ceiling alone
+    NeedlesAgainstMachine = 67, // beside a manual threshold: the machine would not cut — {why} (select)
+    VinylCeiling = 68,       // for vinyl the ceiling usually stands no higher than {medium}; it is {ceiling}
+    VinylNeedles = 69,       // for vinyl the needles are usually not cut
+    VinylTop = 70,           // on vinyl the top above {hz} is usually rolled off in the cutting room
+    // What the dither comes to (PlanView::dither; PlanText).
+    DitherOn = 71,           // on: a {bits}-bit delivery
+    DitherOffByHand = 72,    // switched off by a person: the {bits}-bit delivery is rounded without noise
+    DitherOff = 73,          // off: the {bits}-bit delivery is rounded without noise
+    DitherNotApplied = 74,   // does not apply: a {bits}-bit delivery, dither only up to {upTo} bits
+    DitherKept = 75,         // ...and a person's tick is kept without effect
+    // A master's medium and input (MasterReportText), published with the master.
+    MasterVinylReady = 76,   // ready for cutting: no cardinal corrections; RIAA and the level are the cutter's
+    MasterVinylDeparts = 77, // readiness is not confirmed: the settings depart from the rules of vinyl
+    MasterVinylChecked = 78, // checked on the file: mono below {crossover}, infra-low cut from {cutoff}, {peak} ≤ {ceiling}
+    MasterVinylUncheckable = 79, // what a file cannot tell: the side's length, sibilance at the cutter, the centre
+    MasterQuietInput = 80,   // a very quiet input ({lufs}) raised by {gain}: no device but the high-pass and the dither
 
     // A command's rejection, by its code — what was refused and why. The three a field refuses name it: {field}.
     RejectedFloatingPointEnvironment = 101,
@@ -216,6 +248,24 @@ enum class FactId : std::uint16_t
     SourceDc = 416,
     SourceUnusedBits = 417,
     SourcePolarity = 418,
+    // The observations (Observations, Session.h; ObservationText): what the measurements found in the file.
+    SourceClips = 419,         // {count} clips in the source
+    SourceClipsAt1 = 420,      // ...at {first}: it looks like an edit
+    SourceClipsAt2 = 421,      // ...at {first} and {second}
+    SourceClipsAt3 = 422,      // ...the first at {first}, {second} and {third}
+    SourceClipped = 423,       // the source is clipped: {count} clips, {rate} a minute
+    SourceDualMono = 424,      // the channels of the stereo file are equal
+    SourceEdgeSilence = 425,   // silence at the edges: {leading} at the start, {trailing} at the end
+    SourceShort = 426,         // a short recording ({seconds}): under {limit} the lowest note is not sought
+    SourceLimited = 427,       // already limited: PLR {plr}, under {bound}
+    SourceLimitedClipped = 428, // already limited: the source is clipped (PLR {plr})
+    SourceWall = 429,          // the spectrum ends at {cutoff}, a drop of {drop}
+    SourceLowestBand = 430,    // the lowest occupied band: {note} ({hz})
+    SourceInfraLow = 431,      // {share} of the energy lies below {hz}
+    SourceSibilance = 432,     // sibilance: bursts {excess} above their baseline, {rate} a minute
+    SourceSibilanceAt = 433,   // ...the loudest at {first}, {second} and {third}
+    SourceHum = 434,           // hum: a line at {hz}, {prominence} above the background
+    SourceHumWandered = 435,   // possible hum: a line near {hz} that does not hold its frequency
 
 };
 
@@ -249,6 +299,9 @@ enum class Term : std::uint16_t
     // The needles job, and the devices by the labels a person knows them by (a plan's waited-for measurement names both).
     AnalyzerNeedles,
     DeviceHpf, DeviceMonoBass, DeviceGlue, DeviceSaturation, DeviceTilt, DeviceLimiter, DeviceDither, DeviceLow,
+    // Why the machine's peak clipper does not cut (NeedlesWhy, Session.h), for the warning beside a manual threshold.
+    NeedlesWhyShell, NeedlesWhyTarget, NeedlesWhyQuiet, NeedlesWhyNoReadings, NeedlesWhyLittleNeed, NeedlesWhyUnmeasured,
+    NeedlesWhyNoExcursions, NeedlesWhyClipped, NeedlesWhyLowPlr, NeedlesWhyBass, NeedlesWhyLong,
 
 };
 
@@ -291,6 +344,7 @@ struct Fact
     [[nodiscard]] static Fact of (FactId id, const Arg& a, const Arg& b) noexcept;
     [[nodiscard]] static Fact of (FactId id, const Arg& a, const Arg& b, const Arg& c) noexcept;
     [[nodiscard]] static Fact of (FactId id, const Arg& a, const Arg& b, const Arg& c, const Arg& d) noexcept;
+    [[nodiscard]] static Fact of (FactId id, const Arg& a, const Arg& b, const Arg& c, const Arg& d, const Arg& e) noexcept;
 };
 
 //==============================================================================

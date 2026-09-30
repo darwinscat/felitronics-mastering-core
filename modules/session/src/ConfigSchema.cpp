@@ -29,6 +29,7 @@
 #include <felitronics/analysis/BandCrest.h>
 #include <felitronics/analysis/LowEnd.h>
 #include <felitronics/analysis/StereoBandBursts.h>
+#include <felitronics/mastering/MasteringChain.h>
 #include <felitronics/session/Config.h>
 #include <felitronics/toml/Schema.h>
 #include <felitronics/toml/Toml.h>
@@ -316,6 +317,9 @@ void readPeakClipper (Doc& d, Reader& in, PeakClipper& o)
     const bool splr = in.required ("shortPlrDb", o.shortPlrDb, R { 0.0, 40.0 });
     const bool lplr = in.required ("longPlrDb", o.longPlrDb, R { 0.0, 40.0 });
     d.below (in, splr && lplr, o.longPlrDb, o.shortPlrDb, "shortPlrDb");
+    // A source is clipped from this many confirmed clips a minute: a rate, above none at all.
+    if (in.required ("clippedPerMinute", o.clippedPerMinute, R { 0.0, 100000.0 }) && ! (o.clippedPerMinute > 0.0))
+        d.outOfRange (in, "clippedPerMinute");
     in.required ("bassBelowHz", o.bassBelowHz, R { 20.0, 2000.0 });
     const bool dm = in.required ("densityMinusDb", o.densityMinusDb, R { 0.0, 24.0 });
     const bool dw = in.required ("densityWithinDb", o.densityWithinDb, R { 0.0, 24.0 });
@@ -334,6 +338,7 @@ void readPeakClipper (Doc& d, Reader& in, PeakClipper& o)
 void readLimiter (Doc& d, Reader& in, Limiter& o)
 {
     in.required ("ceilingMarginDb", o.ceilingMarginDb, R { 0.0, 3.0 });
+    in.required ("lookaheadMs", o.lookaheadMs, R { 0.0, 20.0 });
     const bool fast = in.required ("releaseMs", o.releaseMs, R { 8000.0 / kSourceRates[0], std::numeric_limits<double>::max() });
     in.required ("dualRelease", o.dualRelease);
     const bool slow = in.required ("slowReleaseMs", o.slowReleaseMs, R { 8000.0 / kSourceRates[0], std::numeric_limits<double>::max() });
@@ -490,6 +495,8 @@ void readCompressor (Doc& d, Reader& in, Compressor& o)
     in.required ("makeupDb", o.makeupDb, R { -24.0, 24.0 });
     in.required ("autoMakeup", o.autoMakeup);
     in.required ("mix", o.mix, share());
+    in.required ("lookaheadMs", o.lookaheadMs, R { 0.0, 20.0 });
+    in.required ("sidechainHpfHz", o.sidechainHpfHz, R { 0.0, 1000.0 });
     d.name (in, "thresholdFrom", o.thresholdFrom, kThresholdFrom);
     in.table ("limits", Need::Required, [&] (Reader& t)
     {
@@ -620,6 +627,53 @@ void readDither (Doc& d, Reader& in, Dither& o)
     const bool shaped = in.required ("shapingUpToBits", o.shapingUpToBits, I { 8, 32 });
     // Shaping shapes the dither, so it cannot reach above the depths that are dithered at all.
     if (on && shaped && o.onUpToBits < o.shapingUpToBits) d.refuse (in, "shapingUpToBits", Refusal::OutOfOrder);
+    // The seed: exactly sixteen hexadecimal digits, the 64 bits of the generator's start.
+    std::string seed;
+    if (in.required ("seed", seed))
+    {
+        std::uint64_t bits = 0;
+        bool hex = seed.size() == 16;
+        for (const char c : seed)
+        {
+            const int digit = c >= '0' && c <= '9' ? c - '0' : c >= 'a' && c <= 'f' ? c - 'a' + 10 : -1;
+            hex = hex && digit >= 0;
+            bits = (bits << 4) | std::uint64_t (digit < 0 ? 0 : digit);
+        }
+        if (hex) o.seed = bits;
+        else d.refuse (in, "seed", Refusal::NotOneOf);
+    }
+    in.required ("autoBlank", o.autoBlank);
+    in.required ("autoBlankSamples", o.autoBlankSamples, I { 1, 1 << 20 });
+}
+
+// The chain's fixed geometry: types and signs here; whether a chain of every stage can be built with it — and with the
+// two lookaheads and the key filter, read before it — is MasteringChain::admits' to say, at the rates a master is
+// delivered at.
+bool readChain (Reader& in, Chain& o)
+{
+    const bool read[] = { in.required ("internalBlock", o.internalBlock, I { 1, 1 << 16 }),
+                          in.required ("oversampleFactor", o.oversampleFactor, I { 1, 64 }),
+                          in.required ("tapsPerPhase", o.tapsPerPhase, I { 1, 1 << 12 }) };
+    return std::all_of (std::begin (read), std::end (read), [] (bool x) { return x; });
+}
+bool chainAdmits (const Engine& e)
+{
+    mastering::MasteringChainConfig c;
+    c.internalBlock = e.chain.internalBlock;
+    c.oversampleFactor = e.chain.oversampleFactor;
+    c.tapsPerPhase = e.chain.tapsPerPhase;
+    c.compressorLookaheadMs = e.compressor.lookaheadMs;
+    c.limiterLookaheadMs = e.limiter.lookaheadMs;
+    c.sidechainHpfHz = e.compressor.sidechainHpfHz;
+    c.eq = c.compressor = c.clipper = c.limiter = c.dither = true;
+    c.stereoAir = false;
+    for (const double rate : kSourceRates)
+        for (int channels = 1; channels <= kChannels; ++channels)
+        {
+            c.monoBass = channels == 2;
+            if (! mastering::MasteringChain::admits (rate, channels, c)) return false;
+        }
+    return true;
 }
 
 void readDeEsser (Doc& d, Reader& in, DeEsser& o, std::vector<std::int32_t>& bands)
@@ -802,6 +856,10 @@ void readObservations (Doc& d, Reader& in, Observations& o)
     {
         t.required ("plrBelowDb", o.alreadyLimitedPlrBelowDb, R { 0.0, 40.0 });
     });
+    in.table ("vinylTop", Need::Required, [&] (Reader& t)
+    {
+        t.required ("aboveHz", o.vinylTopAboveHz, R { 1000.0, 192000.0 });
+    });
     in.table ("kinds", Need::Required, [&] (Reader& t) { readKinds (d, t, o.kinds); });
     in.table ("sibilance", Need::Required, [&] (Reader& t) { readSibilance (d, t, o.sibilance); });
 }
@@ -968,6 +1026,9 @@ void readEngine (Doc& d, Reader& in, Engine& o, const std::vector<std::string>* 
             c.required ("fieldDb", o.eq.curveFieldDb, R { 0.0, 24.0 });
         });
     });
+    bool chain = false;
+    in.table ("chain", Need::Required, [&] (Reader& t) { chain = readChain (t, o.chain); });
+    if (chain && ! chainAdmits (o)) d.refuse (in, "chain", Refusal::AnalyzerRefuses);
     in.table ("stages", Need::Required, [&] (Reader& t) { readStages (d, t, o.stages); });
     in.table ("dither", Need::Required, [&] (Reader& t) { readDither (d, t, o.dither); });
     in.table ("deEsser", Need::Required, [&] (Reader& t) { readDeEsser (d, t, o.deEsser, bands); });
@@ -1030,6 +1091,7 @@ void readTarget (Doc& d, Reader& row, Target& x, const RowDomains& b)
     if (row.required ("bitDepth", x.bitDepth, I { 16, 24 }) && x.bitDepth != 16 && x.bitDepth != 24)
         d.refuse (row, "bitDepth", Refusal::NotOneOf);
     d.flag (row, "noClipper", x.noClipper);
+    d.flag (row, "vinyl", x.vinyl);
     d.flag (row, "sourceRatePass", x.sourceRatePass);
     // A pass at the source's rate exists only where the delivery rate is another.
     if (x.sourceRatePass && x.sampleRate == 0 && row.data().find ("sampleRate") != nullptr)

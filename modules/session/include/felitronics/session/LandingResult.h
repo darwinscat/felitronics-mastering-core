@@ -114,6 +114,25 @@ struct MasterCost
     // the fall of the whole chain's true peak. A stage out of the chain has no number: NoSignal.
     MasterCostValue glueP95Db {}, glueMaxDb {}, saturationCutMaxDb {}, saturationCutUsualDb {};
 };
+// WHAT A MASTER'S MEDIUM AND ITS INPUT ADD TO ITS REPORT — for a master the session decided (version 0), from the chain
+// it ran:
+//   vinyl       the target is cut to vinyl (owner decision 3.12). `ready`: the medium's rules held in that chain — the
+//               bass folded to mono from the target's crossover or above at the machine's width (or a mono source), the
+//               high-pass in from the target's floor or above at its slope or steeper, the ceiling no higher than the
+//               target's own, no needles cut. Then the master is ready for cutting: no cardinal corrections of mono
+//               bass, infra-low or peaks; RIAA and the level for the side's length are the cutting room's, and what a
+//               file cannot show (the side's length, sibilance at the cutter, distortion towards the centre) stays
+//               unchecked. Not ready: the settings depart from those rules, a person's or the machine's.
+//   quietInput  the input was too quiet to measure ([input] quiet.gainOnlyLufs): the machine placed no device but the
+//               high-pass at the target's floor and the dither of the delivery's format.
+struct MasterMedium
+{
+    bool vinyl = false, ready = false;
+    double crossoverHz = 0.0;                  // the mono-bass crossover the chain ran; 0 where the fold was out
+    double cutoffHz = 0.0;                     // the high-pass's cutoff the chain ran; 0 where it was out
+    bool quietInput = false;
+    double inputLufs = 0.0;                    // the input's loudness (meaningful where quietInput)
+};
 struct MasterReport
 {
     MeasurementStatus status = MeasurementStatus::Unavailable;
@@ -128,6 +147,7 @@ struct MasterReport
     MasterCrest crest {};
     std::optional<MasterHint> firstHint, secondHint;
     std::optional<MasterCost> cost;
+    std::optional<MasterMedium> medium;        // a master the session decided; absent for a ready chain a shell supplied
 };
 struct MasterReportText
 {
@@ -141,6 +161,13 @@ struct MasterReportText
     // What the glue and the saturation did; nothing for a stage that was out of the chain.
     [[nodiscard]] static std::optional<text::Fact> glue (const MasterCost& cost) noexcept;
     [[nodiscard]] static std::optional<text::Fact> saturation (const MasterCost& cost) noexcept;
+    // A deliverable master for vinyl: ready for cutting — or that its settings depart from the medium's rules; what the
+    // file shows of it (a ready master only); what no file can show. And a very quiet input's line. Each nothing where
+    // it does not apply.
+    [[nodiscard]] static std::optional<text::Fact> vinyl (const MasterReport& report) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> vinylChecked (const MasterReport& report) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> vinylUncheckable (const MasterReport& report) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> quietInput (const MasterReport& report) noexcept;
 };
 // THE RECIPE OF A MASTER — what a master is made from, captured when it is asked for: the project as it was then (the
 // machine's layer included), the source it renders and the config's sound version. Two masters with equal recipes,

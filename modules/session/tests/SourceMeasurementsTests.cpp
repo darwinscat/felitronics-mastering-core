@@ -630,7 +630,8 @@ void masterTempoDependencyPolicy()
         auto made = Session::create(); auto& s = *made.session; start (s);
         const auto master = s.apply (command::Master { 3 });
         (void) s.step (1);
-        ok (master.rejection == Rejection::None && s.snapshot().view().masterProgress.pass == 1
+        ok (master.rejection == Rejection::None && s.job() == master.job
+            && s.snapshot().view().masterProgress.name == PhaseName::Pass
             && ! s.snapshot().view().tempoChoice.ready,
             "non-CD target without active glue starts rendering without tempo");
     }

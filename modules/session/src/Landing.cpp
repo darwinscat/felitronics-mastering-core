@@ -112,6 +112,30 @@ std::optional<text::Fact> MasterReportText::saturation (const MasterCost& cost) 
     return text::Fact::of (text::FactId::MasterSaturation, text::Arg::value (*cost.saturationCutMaxDb.value, text::Unit::Db, 1),
         text::Arg::value (*cost.saturationCutUsualDb.value, text::Unit::Db, 1));
 }
+std::optional<text::Fact> MasterReportText::vinyl (const MasterReport& report) noexcept
+{
+    if (! report.medium || ! report.medium->vinyl || ! report.deliverable) return std::nullopt;
+    return text::Fact::of (report.medium->ready ? text::FactId::MasterVinylReady : text::FactId::MasterVinylDeparts);
+}
+std::optional<text::Fact> MasterReportText::vinylChecked (const MasterReport& report) noexcept
+{
+    if (! report.medium || ! report.medium->vinyl || ! report.medium->ready || ! report.deliverable || ! report.truePeakDbTp)
+        return std::nullopt;
+    return text::Fact::of (text::FactId::MasterVinylChecked, text::Arg::value (report.medium->crossoverHz, text::Unit::Hz, 0),
+        text::Arg::value (report.medium->cutoffHz, text::Unit::Hz, 0), text::Arg::value (*report.truePeakDbTp, text::Unit::DbTp, 1),
+        text::Arg::value (report.ceilingDbTp, text::Unit::DbTp, 1));
+}
+std::optional<text::Fact> MasterReportText::vinylUncheckable (const MasterReport& report) noexcept
+{
+    if (! report.medium || ! report.medium->vinyl || ! report.deliverable) return std::nullopt;
+    return text::Fact::of (text::FactId::MasterVinylUncheckable);
+}
+std::optional<text::Fact> MasterReportText::quietInput (const MasterReport& report) noexcept
+{
+    if (! report.medium || ! report.medium->quietInput || ! report.deliverable || ! report.gainFromSourceDb) return std::nullopt;
+    return text::Fact::of (text::FactId::MasterQuietInput, text::Arg::value (report.medium->inputLufs, text::Unit::Lufs, 1),
+        text::Arg::value (*report.gainFromSourceDb, text::Unit::Db, 1, text::Sign::Always));
+}
 LandingPlan LandingOps::plan (const config::Engine& engine, bool sourceLoudnessValid,
                          double sourceLufs, double targetLufs, double targetTruePeakDbTp,
                          double sourceRate, double deliveryRate) noexcept

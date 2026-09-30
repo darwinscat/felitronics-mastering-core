@@ -96,7 +96,7 @@ inline constexpr std::string_view kEnginePresentation[] = {
     // decided by the loss of its own band, never by the programme's correlation.
     "observations.doubtfulBelow", "observations.clipping", "observations.dcOffset", "observations.bitsUnused",
     "observations.edgeSilence", "observations.hum", "observations.humWandered", "observations.spectralWall",
-    "observations.infraLow", "observations.wideBass", "observations.polarity", "observations.alreadyLimited", "observations.kinds",
+    "observations.infraLow", "observations.wideBass", "observations.polarity", "observations.alreadyLimited", "observations.vinylTop", "observations.kinds",
     "observations.sibilance",
     "crest",                                           // measured after the master
     "cost",                                            // measured after the master

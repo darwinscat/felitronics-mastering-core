@@ -11,6 +11,7 @@
 #include <felitronics/analysis/WaveformIndex.h>
 #include "Cost.h"
 #include <memory>
+#include <optional>
 
 namespace felitronics::session
 {
@@ -33,6 +34,7 @@ struct MasterPlan
     std::uint64_t bytes = 0, largestBlock = 0;
     std::uint64_t retainedRowBytes = 0;
     bool costMeterAdmitted = false;
+    std::optional<MasterMedium> medium;        // a version-0 master's medium and input, from the chain it will run
 };
 
 struct MasterRows
@@ -65,7 +67,10 @@ struct MasterRows
 
 struct MasterJob final
 {
-    static MasterPlan plan (const Session& session, const command::Master& input) noexcept;
+    // THE PLAN OF A MASTER of `project` on the session's source — its chain, its landing request and what it asks the
+    // heap for, or the rejection it gets; nothing is allocated. A version-1 input carries its chain ready; a version-0
+    // one takes it from the project's devices (src/Chain.h), on the measurements as they stand.
+    static MasterPlan plan (const Session& session, const command::Master& input, const Project& project) noexcept;
     static std::uint64_t fingerprint (const command::MasterReady& ready) noexcept;
     bool begin (const Session& session, const MasterPlan& plan);
     mastering::StepResult step (long long budget) noexcept;
@@ -118,6 +123,7 @@ struct MasterJob final
     analysis::BandCrestParams crestParams {};
     double sourceLufs = 0, targetLufs = 0, targetTp = 0;
     command::MasterReady ready {};
+    std::optional<MasterMedium> medium;
     MasterReport report {};
 };
 } // namespace detail

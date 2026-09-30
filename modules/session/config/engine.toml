@@ -48,17 +48,20 @@ passes = 12 # Owner decision 28.09: one budget, stop on success; a miss is a nor
 toleranceLu = 0.1
 truePeakAimDb = 0.05
 
-# THE LIMITER — always on; its setting is the target's ceiling.
+# THE LIMITER — always on, with no tick; its setting is the target's ceiling. No gain reduction, no PLR and no cost of
+# the master limits how far it goes for the loudness: the ceiling alone is hard.
 # ceilingMarginDb: the limiter is first given a ceiling this much below the promised one; the solver moves it from
 #   there.
 # releaseMs: the limiter's release — chosen, not yet calibrated by ear.
 # dualRelease, slowReleaseMs: the core's second, slower release envelope — off, and its release stated anyway, so the sound
 #   depends on no default of the core's.
+# lookaheadMs: the limiter's lookahead — topology of the chain, stated for the same reason.
 [limiter]
 ceilingMarginDb = 0.15
 releaseMs = 50
 dualRelease = false
 slowReleaseMs = 200
+lookaheadMs = 1
 
 # THE PEAK CLIPPER INSIDE THE LIMITER, in the limiter's oversampler, its threshold relative to the ceiling. For a person it
 # is part of the limiter, not a device: the report has one limiter line (the ceiling and the master's true peak), the
@@ -73,10 +76,16 @@ slowReleaseMs = 200
 #     long     bass share ≥ longBassShare, or p90 ≥ longP90Ms, or PLR < longPlrDb, or a clipped source: the clipper is
 #              switched off by its flag (an unreachable threshold is not "off" — the solver moves the ceiling);
 #     between  betweenOverDb above the ceiling.
+#   clippedPerMinute (owner decision 3.7): a source is CLIPPED — and the machine cuts no needles, a clipper would add
+#     distortion to it — when the clip detector confirmed at least this many clips per minute of programme. Fewer are
+#     single places (an edit, a joint): the clipper is allowed, and the report names where they are.
+#   A person's "manual X" sounds over every one of these — the class, a need of littleNeedDb or less, needles that were
+#   not measured, a clipped source, a target without a peak clipper — with the machine's reason beside the knob.
 #   bassBelowHz: the bass of the dose is the crest bins whose lower edge is below it. densityMinusDb, densityWithinDb: the
 #   density near the ceiling (maxima above −densityMinusDb, and within densityWithinDb of it) is printed beside the class
-#   and does not decide it. All of these are hypotheses except the two thresholds (3 and 1.5 dB above the ceiling), the
-#   two PLR bounds (10 and 8 dB) and "need ≤ 3 dB: do not measure", which are owner decisions.
+#   and does not decide it. The class bounds are the owner's starting numbers (decision 3.6), as are the two thresholds
+#   (3 and 1.5 dB above the ceiling), the two PLR bounds (10 and 8 dB), "need ≤ 3 dB: do not measure" and the ten clips
+#   a minute; bassBelowHz and the density are hypotheses.
 # kneeDb: 0 — a hard clip.
 # manualMinDb…manualMaxDb, manualStepDb: the manual threshold's travel and step (a hypothesis). The manual threshold starts
 #   at betweenOverDb, the "between" class, inside manualDomain.
@@ -89,6 +98,7 @@ shortPlrDb = 10
 longP90Ms = 8
 longBassShare = 0.5
 longPlrDb = 8
+clippedPerMinute = 10
 shortOverDb = 3
 betweenOverDb = 1.5
 bassBelowHz = 200
@@ -222,6 +232,8 @@ vinyl = { fromHz = 120, toHz = 200 }
 #   (with RMS a positive offset cuts almost nothing); peak with the same numbers would be another glue.
 # rmsWindowMs, link, mode, rangeDb, makeupDb, autoMakeup, mix: every field named, the neutral ones too, so the sound
 #   depends on no default of the core's.
+# lookaheadMs, sidechainHpfHz: the stage's lookahead and its key filter (0: self-keyed) — topology of the chain, stated
+#   for the same reason.
 # thresholdFrom (an owner decision): the threshold is counted from the programme's short-term P95 — the level the song
 #   is above 5 % of the time, already in the programme report — not from its single loudest second, which one loud joint
 #   moves. Both are read in the input's normalised system: the P95 plus the one gain that brings the input to [input]
@@ -235,6 +247,8 @@ rangeDb = 60
 makeupDb = 0
 autoMakeup = false
 mix = 1
+lookaheadMs = 1
+sidechainHpfHz = 0
 thresholdFrom = "shortTermP95"
 
 # The clamps on every compressor value but the ratio: threshOffset, knee dB; attack, release ms. Only the release bites in
@@ -380,6 +394,15 @@ step = 0.1
 [eq]
 curve = { warnDb = 2, scaleDb = 3, fieldDb = 4 }
 
+# THE CHAIN'S FIXED GEOMETRY — what no device decides and every master shares, stated so the sound depends on no default
+# of the core's: the internal quantum every stage is called with (the chain's output is the same whatever block a caller
+# feeds it), and the oversampling the saturation and the limiter — with the peak clipper inside it — work at. WHICH
+# stages a master's chain has is not here: it follows the devices as they sound (below).
+[chain]
+internalBlock = 256
+oversampleFactor = 4
+tapsPerPhase = 64
+
 # THE DEFAULTS LAYER OF THE TICKS — what a project file is written against (it states a machine value only where it
 # differs from these) and what stands before anything is measured. It is NOT the chain's topology: what sounds is the
 # effective tick — a person's, else the machine's — and the planner decides every tick it has a rule for whatever stands
@@ -397,15 +420,24 @@ dither = true
 # DITHER — only where the delivery cuts the bit depth, at up to onUpToBits: a 24-bit delivery has its quantisation noise
 # near −144 dBFS already and gets none. shaping: the noise shaping at up to shapingUpToBits, which hides the 16-bit floor
 # where the ear is least sensitive. There is no dither stage above that at all — shaped noise at 24 bits would go to
-# 15…20 kHz, which RIAA raises by 19.6 dB on vinyl and which heats the cutting head.
+# 15…20 kHz, which RIAA raises by 19.6 dB on vinyl and which heats the cutting head. A person may switch it off at 16
+# bits (the delivery is then rounded to its grid without noise); above onUpToBits a person's tick is kept and does
+# nothing, with its reason.
+# THE NOISE ITSELF IS A VERSION OF THE SOUND (technical decision 3О11): weighted TPDF from a fixed seed — sixteen
+# hexadecimal digits, a number no TOML integer holds — silenced after autoBlankSamples consecutive zero samples of a
+# channel (autoBlank), so one master is the same bytes every time it is made and digital silence stays silence. The
+# delivery is quantised once, in the chain; writing the file adds no noise again.
 [dither]
 onUpToBits = 16
 shaping = "weighted"
 shapingUpToBits = 16
+seed = "853c49e6748fea9b"
+autoBlank = true
+autoBlankSamples = 4096
 
 # THE DE-ESSER — manual, off, depth −6 dB (an owner decision, after six blind pairs at matched loudness: five of six told
 # apart, none harmed, hats included). offered = false: no shell offers it. Its automatic mode is off until it is
-# calibrated by ear, and while it is off the sibilance observation is not published either.
+# calibrated by ear. The sibilance observation is published all the same (owner decision 3.13: shown before any de-esser).
 # band: the core's free EQ band (0 the high-pass, 1 tilt, 2 the low shelf). Its centre starts at the geometric mean of the
 #   burst band ([stereoBursts], ≈ 6708 Hz); q 1.5 covers the sibilance band (a hypothesis). atk, rel: deviations from the
 #   ballistics the core derives from the band's frequency and Q, 0…1 with 0.5 automatic — not milliseconds.
@@ -482,6 +514,9 @@ eventCapacity = 16384
 # polarity: bass in opposite polarity when the stereo correlation is below correlationBelow or the raw side share is above
 #   rawSideFractionAbove.
 # alreadyLimited: the programme is limited already when its PLR is below plrBelowDb (a hypothesis), or when it is clipped.
+# tooShort: a programme shorter than [input] shortSeconds is a sketch — said once, as a finding.
+# vinylTop (owner decision 3.12): on a target cut to vinyl the report always carries one note, with no threshold and no
+#   measurement behind it — above aboveHz the cutting engineer usually rolls the top off; keep it in mind.
 [observations]
 doubtfulBelow = 0.5
 clipping = { fullAtShareOfProgramme = 0.001 }
@@ -495,6 +530,7 @@ infraLow = { low = 0.02, high = 0.05 }
 wideBass = { sideFractionAtLeast = 0.06 }
 polarity = { correlationBelow = 0, rawSideFractionAbove = 0.5 }
 alreadyLimited = { plrBelowDb = 8 }
+vinylTop = { aboveHz = 16000 }
 
 # The kind of a finding is its nature, not its size: clipping is always an error — even a short clip is a defect; a DC
 # offset, lost bits, a too-quiet export, bass in opposite polarity and wide bass need attention; the rest describe the
@@ -518,7 +554,7 @@ alreadyLimited = "note"
 tooQuiet = "warning"
 tooShort = "note"
 
-# SIBILANCE, measured on the bursts above; not published while the de-esser's automatic mode is off. All hypotheses.
+# SIBILANCE, measured on the bursts above and shown as a finding whatever the de-esser (owner decision 3.13). All hypotheses.
 # minHops…maxHops: 5…15 hops (50…150 ms) tell syllables from needles and steps.
 # fromShareOverDomeDb, fullAtShareOverDomeDb: the band's share RELATIVE to the published LR4 domeShare, from −2 dB, full at
 #   −0.5 dB.

@@ -456,16 +456,19 @@ void theLeanSummary()
     ok (noHeap, "sized without touching the heap");
     ok (declared, "the masters' memory is declared in both sessions — the lean one's room for its summary included");
     {
-        // The room itself, where the demand is nothing else: a master the session decides (version 0) keeps a record
-        // and, lean, a second one for the summary.
+        // The room itself, on a master the session decides (version 0): the same job in both sessions, and, lean, a
+        // second kept record for the summary — declared, and asked for.
         const Audio small (3);
         auto plain = loaded (small.planes, 2, small.frames, small.rate, false), thin = loaded (small.planes, 2, small.frames, small.rate, true);
         const auto a = plain->check (command::Master { 5 }), b = thin->check (command::Master { 5 });
         Answer started;
+        const auto asked = budget::spend ([&] { (void) plain->apply (command::Master { 5 }); });
         const auto spent = budget::spend ([&] { started = thin->apply (command::Master { 5 }); });
-        ok (a.rejection == Rejection::None && b.rejection == Rejection::None && b.bytes == 2u * a.bytes && a.bytes >= sizeof (Kept)
-            && started.rejection == Rejection::None && budget::covers (b.bytes, spent) && std::uint64_t (spent.bytes) > a.bytes,
-            "a lean session declares twice the room for a kept master — " + std::to_string (b.bytes) + " B — and stays inside it");
+        ok (a.rejection == Rejection::None && b.rejection == Rejection::None && b.bytes == a.bytes + sizeof (Kept) && a.bytes >= sizeof (Kept)
+            && started.rejection == Rejection::None && budget::covers (a.bytes, asked) && budget::covers (b.bytes, spent)
+            && spent.bytes == asked.bytes + (long long) sizeof (Kept),
+            "a lean session declares a second kept record for its summary — " + std::to_string (b.bytes) + " B against "
+            + std::to_string (a.bytes) + " — asks for it, and stays inside the declaration");
     }
     std::printf ("    one summary, JSON + rows: 1 master %u + %u B by default, %u + %u B lean; 7 masters %u + %u B by default, %u + %u B lean\n",
         sizes[0][0][0], sizes[0][0][1], sizes[0][1][0], sizes[0][1][1], sizes[1][0][0], sizes[1][0][1], sizes[1][1][0], sizes[1][1][1]);

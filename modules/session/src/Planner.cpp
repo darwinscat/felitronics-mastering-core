@@ -14,7 +14,9 @@
 #include "BuildContract.h"
 #include "Dynamics.h"
 #include "EqCurve.h"
+#include "Limiter.h"
 #include "Needles.h"
+#include "Observations.h"
 #include "SourceMeasurements.h"
 
 #include <felitronics/session/Config.h>
@@ -73,14 +75,7 @@ const MeasurementArray* arrayOf (const MeasurementResult& r, std::string_view na
             if (a.name == name) return &a;
     return nullptr;
 }
-// Below [input] quiet.gainOnlyLufs no measurement is reliable: the machine places no device (the high-pass stands at its
-// floor). Strictly below: at the boundary the input is ordinary.
-bool quiet (const PlanInputs& in) noexcept
-{
-    const auto* loudness = resultOf (in, Analyzer::Loudness);
-    const auto lufs = loudness ? scalar (*loudness, "integratedLufs") : std::nullopt;
-    return lufs && *lufs < configured (in.rules.engine.find ("input").find ("quiet").find ("gainOnlyLufs"));
-}
+bool quiet (const PlanInputs& in) noexcept { return quietInput (in); }
 
 // THE SURE LOWEST NOTE (owner decision 3.2, as written), from the first phase's low-end run: the LOWEST BAND THAT WAS ON
 // AT ALL decides, and that band alone. It is a sure note when it is on in at least [lowEnd] occupiedFromDuty of the
@@ -175,6 +170,17 @@ std::optional<Weighed> weighMonoLoss (const PlanInputs& in, const MeasurementRes
 }
 
 } // namespace
+
+bool quietInput (const PlanInputs& in) noexcept
+{
+    const auto i = std::size_t (Analyzer::Loudness);
+    if (i >= in.measurements.size() || in.measurements[i].status != MeasurementStatus::Ready) return false;
+    const auto gainOnly = in.rules.engine.find ("input").find ("quiet").find ("gainOnlyLufs");
+    const double below = gainOnly.decimal() ? gainOnly.decimal()->toDouble() : double (gainOnly.integer().value_or (0));
+    for (const auto& v : in.measurements[i].numbers)
+        if (v.name == "integratedLufs" && v.value && std::isfinite (*v.value)) return *v.value < below;
+    return false;
+}
 
 MonoBassVerdict monoBassVerdictFor (const Rules& rules, double lossDb) noexcept
 {
@@ -296,21 +302,44 @@ template <> struct Planned<TiltFields<Value>>
     static std::uint32_t needs (const PlanInputs&, const TiltFields<Value>&) noexcept { return 0; }
 };
 
-// [limiter]: the needles decided by the peak clipper (auto), or none where the target has no peak clipper. Deciding by
-// itself, the clipper reads the needles at the ceiling the target's numbers give.
+// [limiter] (owner decisions 3.6, 3.7, 3.12): always in the chain. Its knob — the needles decided by the peak clipper
+// (auto), or none where the target has no peak clipper and on an input too quiet to measure. Deciding by itself, the
+// clipper reads the needles at the ceiling the target's numbers give and classes them (src/Limiter.h): the class is the
+// machine's answer at the time of the master, and what holds the clipper back is said here.
 template <> struct Planned<LimiterFields<Value>>
 {
     static void propose (const PlanInputs& in, LimiterFields<Value>& m, DevicePlan& plan, PlanFindings&) noexcept
     {
-        if (in.rules.row (in.row).noClipper)
+        const auto answer = needlesAnswer (in);
+        switch (answer.why)
         {
-            plan.target |= fieldBit (in.rules, m, m.needles);
-            plan.heldBack = HeldBack::Target;
+            case NeedlesWhy::Target:
+                plan.target |= fieldBit (in.rules, m, m.needles);
+                plan.heldBack = HeldBack::Target;
+                break;
+            case NeedlesWhy::Quiet:
+                m.needles = Needles::Off;
+                plan.heldBack = HeldBack::Quiet;
+                break;
+            case NeedlesWhy::Unmeasured:   plan.heldBack = HeldBack::Unmeasured; break;
+            case NeedlesWhy::Clipped:
+            case NeedlesWhy::LowPlr:
+            case NeedlesWhy::Bass:
+            case NeedlesWhy::Long:         plan.heldBack = HeldBack::Measured; break;
+            case NeedlesWhy::Cuts:
+            case NeedlesWhy::Shell:        // the planner marks a device the shell does not offer
+            case NeedlesWhy::NoReadings:   // no loudness, no plan at all
+            case NeedlesWhy::LittleNeed:   // nothing to cut: nothing is held back
+            case NeedlesWhy::Pending:
+            case NeedlesWhy::NoExcursions: break;
         }
     }
-    static std::uint32_t needs (const PlanInputs&, const LimiterFields<Value>& limiter) noexcept
+    // The clipper deciding by itself reads the needles — unless its answer stands without them.
+    static std::uint32_t needs (const PlanInputs& in, const LimiterFields<Value>& limiter) noexcept
     {
-        return limiter.needles == Needles::Auto ? bitOf (Analyzer::Excursions) : 0u;
+        if (limiter.needles != Needles::Auto) return 0u;
+        const auto why = needlesAnswer (in).why;
+        return why == NeedlesWhy::Shell || why == NeedlesWhy::Target || why == NeedlesWhy::Quiet ? 0u : bitOf (Analyzer::Excursions);
     }
 };
 
@@ -392,16 +421,21 @@ void propose (const PlanInputs& in, Devices& machine, DevicePlans& plans, PlanFi
 std::uint32_t needs (const PlanInputs& in, const Devices& devices, bool withHand, DevicePlans& plans) noexcept
 {
     std::uint32_t all = 0;
-    eachPlan (devices, plans, [&] (Device, const auto& layers, DevicePlan& plan)
+    eachPlan (devices, plans, [&] (Device device, const auto& layers, DevicePlan& plan)
     {
         using Fields = std::remove_cvref_t<decltype (layers.machine)>;
         auto settings = settingsOf (in.rules, layers, withHand);
         // The glue's knob as it sounds: [glue] whenTicked for a person's tick on a knob the machine left at 0.
         if constexpr (requires { settings.upToDb; }) if (withHand) settings.upToDb = glueKnob (in.rules, layers);
+        // The needles' mode as it sounds: a threshold a person turned is manual.
+        if constexpr (requires { settings.needles; }) settings.needles = needlesKnob (layers, withHand).mode;
         plan.needs = Planned<Fields>::needs (in, settings);
         all |= plan.needs;
         plan.tick = withHand ? tickFrom (in.rules, layers) : TickFrom::Machine;
-        if constexpr (requires { settings.on; }) plan.on = settings.on;
+        // The tick as it SOUNDS: a device the target, the source or the shell rules out is out of the chain whatever
+        // tick the project keeps for it (a person's dither tick above the depth that is dithered).
+        const bool possible = offeredByShell (in, device) && offered (in.rules, in.row, in.channels, device);
+        if constexpr (requires { settings.on; }) plan.on = settings.on && possible;
         else plan.on = true;
     });
     return all;
@@ -503,13 +537,9 @@ struct Key
 
 std::optional<double> Session::needlesNeed (const Project& project) const noexcept
 {
-    const auto& loudness = measurementResults_[std::size_t (Analyzer::Loudness)];
-    const auto lufs = finiteReading (loudness, "integratedLufs"), peak = finiteReading (loudness, "truePeakDb");
-    if (source_.channels == 0 || ! lufs || ! peak) return {};
-    const auto target = detail::rules().row (project.target);
-    const double targetLufs = project.targetEdit.lufs ? *project.targetEdit.lufs : target.lufs.toDouble();
-    const double targetTp = project.targetEdit.tp ? *project.targetEdit.tp : target.tp.toDouble();
-    return (*peak - *lufs) - (targetTp - targetLufs);
+    if (source_.channels == 0) return {};
+    return detail::loudnessNeed (detail::rules(), project.target, project.targetEdit,
+                                 measurementResults_[std::size_t (Analyzer::Loudness)]);
 }
 
 detail::PlanInputs Session::planInputs (const Project& project) const noexcept
@@ -569,7 +599,8 @@ void Session::replan() noexcept
             key.field (machine); key.field (hand);
         }, layers.machine, layers.hand);
     });
-    if (key.h != plan_.key || planRuns_ == 0)
+    const bool observe = key.h != plan_.key || planRuns_ == 0;
+    if (observe)
     {
         ++planRuns_;
         plan_ = {};
@@ -608,6 +639,8 @@ void Session::replan() noexcept
             plan_.inputGainDb = detail::inputLevels (in).gainDb;
             plan_.glue = detail::glueFinding (in, project_.devices);
             plan_.saturation = detail::saturationFinding (in, project_.devices);
+            plan_.limiter = detail::limiterFinding (in, project_.devices);
+            plan_.dither = detail::ditherFinding (in, project_.devices);
             plan_.needs = detail::needs (in, project_.devices, true, plan_.devices);
             plan_.waiting = detail::waiting (in, plan_.needs);
             DevicePlans machineOnly;
@@ -621,6 +654,18 @@ void Session::replan() noexcept
             plan_.awaitedBy = awaited.device;
         }
         plan_.readOnly = plan_.status != PlanStatus::Ready;
+    }
+    if (observe)
+    {
+        // What the measurements found in the file, beside the plan: on the same inputs, and saying which device that
+        // is in the chain deals with each.
+        detail::ObservationInputs seen;
+        seen.rules = in.rules;
+        seen.measurements = in.measurements;
+        seen.channels = in.channels; seen.sampleRate = in.sampleRate; seen.frames = in.frames;
+        seen.hpfOn = devicesPlaced_ && plan_.devices.hpf.on;
+        seen.monoBassOn = devicesPlaced_ && plan_.devices.monoBass.on;
+        detail::observe (seen, observations_);
     }
     plan_.fromFile = machineFromFile_;
     plan_.awaitedFraction = 0.0;
@@ -716,5 +761,95 @@ std::optional<text::Fact> PlanText::glueRelease (const GlueFinding& f) noexcept
     if (f.state != GlueState::Active || ! f.releaseClamped || ! f.releaseMs || ! f.releaseAskedMs) return std::nullopt;
     return text::Fact::of (text::FactId::GlueReleaseHeld, text::Arg::value (*f.releaseMs, text::Unit::Ms, 0),
         text::Arg::value (*f.releaseAskedMs, text::Unit::Ms, 0));
+}
+text::Fact PlanText::limiter (const LimiterFinding& f) noexcept
+{
+    using text::Arg; using text::Fact; using text::FactId; using text::Unit;
+    const auto ceiling = Arg::value (f.ceilingDbTp, Unit::DbTp, 1);
+    const auto db = [] (const std::optional<double>& x) { return Arg::value (x.value_or (0.0), Unit::Db, 1); };
+    const auto p90 = Arg::value (f.p90Ms.value_or (0.0), Unit::Ms, 1);
+    const auto bass = Arg::value (100.0 * f.bassShare.value_or (0.0), Unit::Percent, 0);
+    const auto clipper = detail::rules().engine.find ("limiter").find ("peakClipper");
+    const auto configured = [&] (std::string_view key)
+    {
+        const auto v = clipper.find (key);
+        return v.decimal() ? v.decimal()->toDouble() : double (v.integer().value_or (0));
+    };
+    // What sounds: the peak clipper cutting — by a person's threshold, or by the machine's class.
+    if (f.cutting)
+    {
+        const auto over = Arg::value (f.overDb, Unit::Db, 1);
+        if (f.mode == Needles::Manual) return Fact::of (FactId::LimiterManual, ceiling, over);
+        return Fact::of (f.proposed == NeedlesClass::Short ? FactId::LimiterShort : FactId::LimiterBetween,
+                         ceiling, over, p90, bass, db (f.plrDb));
+    }
+    // Not cutting against the machine's answer: the knob is off, a person's or a file's.
+    if (f.sounding != Sounding::Proposal) return Fact::of (FactId::LimiterNeedlesOff, ceiling);
+    // Not cutting as the machine answers: its reason.
+    switch (f.why)
+    {
+        case NeedlesWhy::LittleNeed:   return Fact::of (FactId::LimiterLittleNeed, ceiling, db (f.needDb), Arg::value (configured ("littleNeedDb"), Unit::Db, 1));
+        case NeedlesWhy::NoExcursions: return Fact::of (FactId::LimiterNoExcursions, ceiling);
+        case NeedlesWhy::Unmeasured:   return Fact::of (FactId::LimiterUnmeasured, ceiling);
+        case NeedlesWhy::Clipped:      return Fact::of (FactId::LimiterClipped, ceiling, Arg::value (f.clipsPerMinute.value_or (0.0), Unit::None, 1));
+        case NeedlesWhy::LowPlr:       return Fact::of (FactId::LimiterLowPlr, ceiling, db (f.plrDb), Arg::value (configured ("longPlrDb"), Unit::Db, 1));
+        case NeedlesWhy::Bass:         return Fact::of (FactId::LimiterBass, ceiling, bass);
+        case NeedlesWhy::Long:         return Fact::of (FactId::LimiterLong, ceiling, p90);
+        case NeedlesWhy::Target:       return Fact::of (FactId::LimiterNoClipper, ceiling);
+        case NeedlesWhy::Quiet:        return Fact::of (FactId::LimiterQuiet, ceiling);
+        case NeedlesWhy::Pending:      return Fact::of (FactId::LimiterPending, ceiling);
+        case NeedlesWhy::Cuts:
+        case NeedlesWhy::Shell:
+        case NeedlesWhy::NoReadings:   return Fact::of (FactId::LimiterPlain, ceiling);
+    }
+    detail::storageOverflow();
+}
+std::optional<text::Fact> PlanText::needlesAgainstMachine (const LimiterFinding& f) noexcept
+{
+    using text::Term;
+    if (! f.againstMachine) return std::nullopt;
+    Term why = Term::NeedlesWhyUnmeasured;
+    switch (f.why)
+    {
+        case NeedlesWhy::Shell:        why = Term::NeedlesWhyShell; break;
+        case NeedlesWhy::Target:       why = Term::NeedlesWhyTarget; break;
+        case NeedlesWhy::Quiet:        why = Term::NeedlesWhyQuiet; break;
+        case NeedlesWhy::NoReadings:   why = Term::NeedlesWhyNoReadings; break;
+        case NeedlesWhy::LittleNeed:   why = Term::NeedlesWhyLittleNeed; break;
+        case NeedlesWhy::Unmeasured:   why = Term::NeedlesWhyUnmeasured; break;
+        case NeedlesWhy::NoExcursions: why = Term::NeedlesWhyNoExcursions; break;
+        case NeedlesWhy::Clipped:      why = Term::NeedlesWhyClipped; break;
+        case NeedlesWhy::LowPlr:       why = Term::NeedlesWhyLowPlr; break;
+        case NeedlesWhy::Bass:         why = Term::NeedlesWhyBass; break;
+        case NeedlesWhy::Long:         why = Term::NeedlesWhyLong; break;
+        case NeedlesWhy::Cuts:
+        case NeedlesWhy::Pending:      return std::nullopt;   // the machine cuts too, or has no answer yet
+    }
+    return text::Fact::of (text::FactId::NeedlesAgainstMachine, text::Arg::term (why));
+}
+std::optional<text::Fact> PlanText::vinylCeiling (const LimiterFinding& f) noexcept
+{
+    if (! f.ceilingAboveMedium) return std::nullopt;
+    return text::Fact::of (text::FactId::VinylCeiling, text::Arg::value (f.ceilingDbTp, text::Unit::DbTp, 1),
+        text::Arg::value (f.mediumCeilingDbTp, text::Unit::DbTp, 1));
+}
+std::optional<text::Fact> PlanText::vinylNeedles (const LimiterFinding& f) noexcept
+{
+    if (! f.needlesAgainstMedium) return std::nullopt;
+    return text::Fact::of (text::FactId::VinylNeedles);
+}
+std::optional<text::Fact> PlanText::vinylTop (const LimiterFinding& f) noexcept
+{
+    if (! f.vinyl) return std::nullopt;
+    return text::Fact::of (text::FactId::VinylTop, text::Arg::value (f.vinylTopHz / 1000.0, text::Unit::KHz, 0));
+}
+text::Fact PlanText::dither (const DitherFinding& f) noexcept
+{
+    using text::Arg; using text::Fact; using text::FactId;
+    const auto bits = Arg::count (f.bits), upTo = Arg::count (detail::rules().ditherUpToBits);
+    if (f.on) return Fact::of (FactId::DitherOn, bits);
+    if (f.offByHand) return Fact::of (FactId::DitherOffByHand, bits);
+    if (f.applies) return Fact::of (FactId::DitherOff, bits);
+    return Fact::of (f.keptWithoutEffect ? FactId::DitherKept : FactId::DitherNotApplied, bits, upTo);
 }
 } // namespace felitronics::session

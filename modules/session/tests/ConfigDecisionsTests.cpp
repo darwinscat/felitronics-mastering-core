@@ -47,12 +47,15 @@ struct Golden
 };
 constexpr Golden kGolden[] = {
     { "2026-09", 0xf49360664b45a789ull },
-    { "2026-10", 0x31048a804d19515bull },   // the high-pass always, from 32 Hz and the sure lowest note; mono bass by its loss; the glue calibrated on the P95
+    // the high-pass always, from 32 Hz and the sure lowest note; mono bass by its loss; the glue calibrated on the P95; the
+    // chain's geometry, the dither's noise and the clipped-source bound stated; the lp row marked as cut to vinyl
+    { "2026-10", 0x91ac62922032b848ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
 // floor 32 Hz on every target (decision 3.3; the high-pass stands always) and slope 24 dB/oct (vinyl 12), the loss at the
-// lowest note 1 dB (club 0.3), the delivery; vinyl alone without a peak clipper and with a +0.5 dB low shelf; cd and
+// lowest note 1 dB (club 0.3), the delivery; vinyl alone without a peak clipper, marked as cut to a lathe (its tp the
+// medium's ceiling) and with a +0.5 dB low shelf; cd and
 // cdDynamic alone with a pass at the source's rate; TD1008's −14 LUFS album loudness, desktop only.
 struct Row
 {
@@ -63,6 +66,7 @@ struct Row
     double noteLossDb;
     std::int32_t sampleRate, bitDepth;
     bool noClipper, sourceRatePass;
+    bool vinyl;             // cut to a lathe: the row's tp is the medium's ceiling
     double lowDb;           // 0: none
     double albumLufs;            // 0: none; every album is desktop only
 };
@@ -70,32 +74,32 @@ constexpr auto S = config::Group::Streaming;
 constexpr auto D = config::Group::Delivery;
 constexpr auto A = config::Group::Aggregator;
 constexpr Row kRows[] = {
-    //  key            group lufs   tp    mono  floor slope loss  rate   bits  noClip srcPass shelf album
-    { "allStreaming",  S,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
-    { "cdDynamic",     D,   -12,  -1,   120,  32,  24,   1,    44100, 16,  false, true,   0,    0 },
-    { "club",          D,   -8,   -1,   120,  32,  24,   0.3,  0,     24,  false,  false,  0,    0 },
-    { "lp",            D,   -14,  -3,   150,  32,  12,   1,    0,     24,  true,  false,  0.5,  0 },
-    { "spotify",       S,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
-    { "spotifyLoud",   S,   -11,  -2,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
-    { "appleMusic",    S,   -16,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
-    { "youtube",       S,   -14,  -1,   120,  32,  24,   1,    48000, 24,  false, false,  0,    0 },
-    { "youtubeMusic",  S,   -7,   -1,   120,  32,  24,   1,    48000, 24,  false, false,  0,    0 },
-    { "amazon",        S,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
-    { "tidal",         S,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
-    { "deezer",        S,   -15,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
-    { "soundcloud",    S,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
-    { "td1008",        S,   -16,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    -14 },
-    { "ebu",           S,   -23,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
-    { "distrokid",     A,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
-    { "cdbaby",        A,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
-    { "tunecore",      A,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
-    { "amuse",         A,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
-    { "feiyr",         A,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
-    { "routenote",     A,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
-    { "horusmusic",    A,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
-    { "dittomusic",    A,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
-    { "cd",            D,   -9,   -0.3, 120,  32,  24,   1,    44100, 16,  false, true,   0,    0 },
-    { "bandcamp",      D,   -10,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
+    //  key           group lufs  tp    mono  floor slope loss rate   bits noClip srcPass vinyl shelf album
+    { "allStreaming",  S, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "cdDynamic",     D, -12,  -1,   120,  32,  24,  1,    44100, 16,  false, true,  false, 0,    0 },
+    { "club",          D, -8,   -1,   120,  32,  24,  0.3,  0,     24,  false, false, false, 0,    0 },
+    { "lp",            D, -14,  -3,   150,  32,  12,  1,    0,     24,  true,  false, true,  0.5,  0 },
+    { "spotify",       S, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "spotifyLoud",   S, -11,  -2,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "appleMusic",    S, -16,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "youtube",       S, -14,  -1,   120,  32,  24,  1,    48000, 24,  false, false, false, 0,    0 },
+    { "youtubeMusic",  S, -7,   -1,   120,  32,  24,  1,    48000, 24,  false, false, false, 0,    0 },
+    { "amazon",        S, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "tidal",         S, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "deezer",        S, -15,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "soundcloud",    S, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "td1008",        S, -16,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    -14 },
+    { "ebu",           S, -23,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "distrokid",     A, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "cdbaby",        A, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "tunecore",      A, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "amuse",         A, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "feiyr",         A, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "routenote",     A, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "horusmusic",    A, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "dittomusic",    A, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "cd",            D, -9,   -0.3, 120,  32,  24,  1,    44100, 16,  false, true,  false, 0,    0 },
+    { "bandcamp",      D, -10,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
 };
 
 // Every decision the config departs from, by name; empty when it holds them all.
@@ -125,6 +129,7 @@ std::vector<std::string> departures (const config::Config& c)
         need (x.bitDepth == r.bitDepth, at + ".bitDepth");
         need (x.noClipper == r.noClipper, at + ".noClipper");
         need (x.sourceRatePass == r.sourceRatePass, at + ".sourceRatePass");
+        need (x.vinyl == r.vinyl, at + ".vinyl");
         need (same (r.lowDb, 0.0) ? ! x.lowDb.has_value() : x.lowDb.has_value() && same (*x.lowDb, r.lowDb),
               at + ".lowDb");
         need (same (r.albumLufs, 0.0) ? ! x.album.has_value()
@@ -175,6 +180,14 @@ std::vector<std::string> departures (const config::Config& c)
     need (same (p.littleNeedDb, 3.0), "needles are not measured at a need of 3 dB or less");
     need (same (p.shortOverDb, 3.0) && same (p.betweenOverDb, 1.5), "the peak clipper: 3 dB above the ceiling, 1.5 between");
     need (same (p.shortPlrDb, 10.0) && same (p.longPlrDb, 8.0), "the peak clipper's PLR bounds: 10 and 8 dB");
+    need (same (p.shortP90Ms, 2.0) && same (p.longP90Ms, 8.0) && same (p.shortBassShare, 0.25) && same (p.longBassShare, 0.5),
+          "the needles' classes: short to 2 ms and a bass share of 0.25, long from 8 ms or 0.5");
+    need (same (p.clippedPerMinute, 10.0), "a source is clipped from 10 confirmed clips a minute");
+    need (same (p.kneeDb, 0.0), "the peak clipper is a hard clip");
+    need (e.dither.seed == 0x853c49e6748fea9bull && e.dither.autoBlank && e.dither.autoBlankSamples == 4096
+          && e.dither.shaping == config::NoiseShaping::Weighted,
+          "the dither: weighted TPDF from the fixed seed, blanked after 4096 zero samples");
+    need (same (e.observations.vinylTopAboveHz, 16000.0), "the vinyl note about the top: above 16 kHz");
     need (e.stages.limiter, "the limiter is always on");
     need (e.dither.onUpToBits == 16, "dither at 16 bits only");
     need (! e.deEsser.offered && ! e.deEsser.automatic && same (e.deEsser.manualDepthDb, -6.0),
