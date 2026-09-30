@@ -7,7 +7,7 @@
 // lean summary — every master's scalars, pass log and sections, its heavy rows left to a MasterReport query that gives
 // one master whole, to the bit of the full snapshot — with its bytes measured and its memory declared.
 
-#include "DeclaredBudget.h"
+#include "../../../tests/DeclaredBudget.h"
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/session/Wire.h>
@@ -27,7 +27,7 @@
 
 using namespace felitronics::session;
 using felitronics::test::ok;
-namespace budget = felitronics::session::testing;
+namespace declared = felitronics::declared;
 
 namespace
 {
@@ -79,7 +79,7 @@ std::unique_ptr<Session> loaded (const float* const* planes, unsigned channels, 
 }
 
 // A master of the session's source through a limiter and nothing else; its delivered audio copied out and released.
-struct Mastered { MasterId id = 0; std::vector<float> audio; MasterAudioShape shape {}; std::vector<Notification> facts; Checked declared {}; budget::Spent spent {}; };
+struct Mastered { MasterId id = 0; std::vector<float> audio; MasterAudioShape shape {}; std::vector<Notification> facts; Checked declared {}; declared::Spent spent {}; };
 Mastered master (Session& s, CommandId id)
 {
     command::Master request { id };
@@ -90,7 +90,7 @@ Mastered master (Session& s, CommandId id)
     Mastered out;
     out.declared = s.check (request);
     Answer started;
-    out.spent = budget::spend ([&] { started = s.apply (request); });
+    out.spent = declared::spend ([&] { started = s.apply (request); });
     ok (started.rejection == Rejection::None, "PRECONDITION: the master is taken");
     for (unsigned i = 0; i < 4000000 && s.job() != 0; ++i)
     {
@@ -120,8 +120,8 @@ QueryResult answered (Session& s, const MeasurementQuery& q, bool& covered)
 {
     const auto need = s.queryStorage (q);
     QueryResult out;
-    const auto spent = budget::spend ([&] { out = s.query (q); });
-    covered = covered && budget::covers (need.bytes, spent) && (spent.requests == 0 || need.largestBlockBytes != 0);
+    const auto spent = declared::spend ([&] { out = s.query (q); });
+    covered = covered && declared::covers (need.bytes, spent) && (spent.requests == 0 || need.largestBlockBytes != 0);
     return out;
 }
 
@@ -344,10 +344,10 @@ void theMastersAxes()
     const auto chunkQuery = ask (QueryKind::MasterAxes, s, 0, 4096, 16, made.id);
     const auto need = s.masterWaveformChunkStorage (chunkQuery, head);
     QueryResult chunk;
-    const auto spent = budget::spend ([&] { chunk = s.masterWaveformChunk (chunkQuery, head); });
+    const auto spent = declared::spend ([&] { chunk = s.masterWaveformChunk (chunkQuery, head); });
     const auto chunkOracle = oracle.query (ask (QueryKind::Waveform, oracle, 0, 4096, 16));
     bool zoom = need.status == QueryStatus::Ready && chunk.view().status == QueryStatus::Ready && chunk.view().stored == 64 && chunk.view().stride == kWaveformStride
-        && budget::covers (need.bytes, spent);
+        && declared::covers (need.bytes, spent);
     for (std::size_t i = 0; zoom && i < chunk.view().values.size(); ++i) zoom = close (chunk.view().values[i], chunkOracle.view().values[i]);
     ok (zoom, "a chunk from frame 0 in 16 columns: the source instrument's rows, inside its declared memory");
     const float* later[] { planes[0] + 100000, planes[1] + 100000 };
@@ -421,10 +421,10 @@ void theLeanSummary()
     {
         const auto a = master (*full, 10 + n), b = master (*lean, 10 + n);
         ids.push_back (b.id);
-        declared = declared && budget::covers (a.declared.bytes, a.spent) && budget::covers (b.declared.bytes, b.spent) && b.spent.bytes > a.spent.bytes;
+        declared = declared && declared::covers (a.declared.bytes, a.spent) && declared::covers (b.declared.bytes, b.spent) && b.spent.bytes > a.spent.bytes;
         const auto before = previousSummary (*full), now = summaryOf (*full);
         identical = identical && sameBytes (before, now);
-        const auto spent = budget::spend ([&] { (void) Wire::summaryBytes (*lean); });
+        const auto spent = declared::spend ([&] { (void) Wire::summaryBytes (*lean); });
         noHeap = noHeap && spent.requests == 0;
         const auto light = summaryOf (*lean);
         if (n == 1 || n == 7)
@@ -462,10 +462,10 @@ void theLeanSummary()
         auto plain = loaded (small.planes, 2, small.frames, small.rate, false), thin = loaded (small.planes, 2, small.frames, small.rate, true);
         const auto a = plain->check (command::Master { 5 }), b = thin->check (command::Master { 5 });
         Answer started;
-        const auto asked = budget::spend ([&] { (void) plain->apply (command::Master { 5 }); });
-        const auto spent = budget::spend ([&] { started = thin->apply (command::Master { 5 }); });
+        const auto asked = declared::spend ([&] { (void) plain->apply (command::Master { 5 }); });
+        const auto spent = declared::spend ([&] { started = thin->apply (command::Master { 5 }); });
         ok (a.rejection == Rejection::None && b.rejection == Rejection::None && b.bytes == a.bytes + sizeof (Kept) && a.bytes >= sizeof (Kept)
-            && started.rejection == Rejection::None && budget::covers (a.bytes, asked) && budget::covers (b.bytes, spent)
+            && started.rejection == Rejection::None && declared::covers (a.bytes, asked) && declared::covers (b.bytes, spent)
             && spent.bytes == asked.bytes + (long long) sizeof (Kept),
             "a lean session declares a second kept record for its summary — " + std::to_string (b.bytes) + " B against "
             + std::to_string (a.bytes) + " — asks for it, and stays inside the declaration");
@@ -569,7 +569,7 @@ void theLeanSummary()
     const auto report = ask (QueryKind::MasterReport, *lean, 0, 0, 0, ids[0]);
     const auto need = lean->queryStorage (report);
     ok (lean->setCapacity ({ lean->liveBytes() + double (need.bytes) - 1.0, 9007199254740991.0 }) == Status::Ok, "PRECONDITION: a ceiling one byte short");
-    const auto spent = budget::spend ([&] { (void) lean->query (report); });
+    const auto spent = declared::spend ([&] { (void) lean->query (report); });
     const auto refused = lean->query (report);
     ok (refused.view().status == QueryStatus::Memory && ! refused.view().master && spent.requests == 0, "under a ceiling one byte short it is refused before any allocation");
     ok (lean->setCapacity ({}) == Status::Ok && lean->query (report).view().status == QueryStatus::Ready, "and answered again with the ceiling lifted");

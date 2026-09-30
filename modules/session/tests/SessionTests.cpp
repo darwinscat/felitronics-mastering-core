@@ -15,7 +15,7 @@
 //     with contraction forced ON (-ffp-contract=fast, /fp:contract) — a caller whose flags the library's arithmetic must
 //     not follow. On a row that can fuse, the caller's own copy of the probe MUST fuse, or the control is dead.
 
-#include "DeclaredBudget.h"   // installs the allocation counter: EVERY form of `new`, over-aligned included
+#include "../../../tests/DeclaredBudget.h"   // installs the allocation counter: EVERY form of `new`, over-aligned included
 #include "FpEnvironmentControl.h"
 
 #include <felitronics_test.h>
@@ -33,7 +33,7 @@
 using felitronics::session::Session;
 using felitronics::session::Status;
 using felitronics::test::ok;
-namespace budget = felitronics::session::testing;
+namespace declared = felitronics::declared;
 namespace fpenv = felitronics::session::testing;
 
 namespace
@@ -48,20 +48,20 @@ void theDemandOfCreateCoversWhatItAsksFor()
     felitronics::test::group ("memory is declared before the work: createBytes() covers what create() asks the heap for");
     const std::uint64_t declared = Session::createBytes();
     felitronics::session::Created c;
-    const budget::Spent spent = budget::spend ([&] { c = Session::create(); });
+    const declared::Spent spent = declared::spend ([&] { c = Session::create(); });
     ok (c.status == Status::Ok && c.session != nullptr, "PRECONDITION: create() returned a session");
     // NOT A COMPARISON OF ZERO WITH ZERO. A counter that saw nothing would satisfy `declared >= requested` for any
     // declaration at all; the create must have been seen asking.
     ok (spent.requests >= 1 && spent.bytes > 0,
-        "the counter saw the create ask the heap (" + budget::describe (declared, spent) + ")");
-    ok (budget::covers (declared, spent), "declared >= requested — " + budget::describe (declared, spent));
+        "the counter saw the create ask the heap (" + declared::describe (declared, spent) + ")");
+    ok (declared::covers (declared, spent), "declared >= requested — " + declared::describe (declared, spent));
     // Exact today, by construction (one expression sizes both, src/Session.cpp): pinned so that a create that starts
     // asking for less than it declares is seen as well, not only one that asks for more.
     ok (spent.bytes == (long long) declared, "and exactly the declaration, while create() is one object");
     ok (spent.requests == 1, "in one request: the session holds no container that asks for a proxy of its own (got "
                              + std::to_string (spent.requests) + ")");
 
-    const budget::Spent freed = budget::spend ([&] { c.session.reset(); });
+    const declared::Spent freed = declared::spend ([&] { c.session.reset(); });
     ok (freed.requests == 0, "destroying a session asks the heap for nothing");
 }
 
@@ -71,10 +71,10 @@ void theHarnessCanFail()
     // A check that cannot fail is not a check. This sample declares 16 bytes and then asks for 64, so covers() must say
     // no — through exactly the path the session's own line above goes through.
     std::vector<unsigned char> v;
-    const budget::Spent spent = budget::spend ([&] { v.resize (64); });
+    const declared::Spent spent = declared::spend ([&] { v.resize (64); });
     ok (spent.requests >= 1 && spent.bytes >= 64, "PRECONDITION: the sample really asked for its 64 bytes");
-    ok (! budget::covers (16, spent), "an under-declared demand is caught — " + budget::describe (16, spent));
-    ok (budget::covers ((std::uint64_t) spent.bytes, spent), "and a declaration equal to the request passes");
+    ok (! declared::covers (16, spent), "an under-declared demand is caught — " + declared::describe (16, spent));
+    ok (declared::covers ((std::uint64_t) spent.bytes, spent), "and a declaration equal to the request passes");
 }
 
 void createAndDestroy()
@@ -103,7 +103,7 @@ void refusedUnder (const char* what, bool (*set)() noexcept)
     }
     const Status env = Session::checkFloatingPointEnvironment();
     felitronics::session::Created c;
-    const budget::Spent spent = budget::spend ([&] { c = Session::create(); });
+    const declared::Spent spent = declared::spend ([&] { c = Session::create(); });
     fpenv::restoreFpEnvironment (saved);
     ok (env == Status::FloatingPointEnvironment, std::string (what) + ": checkFloatingPointEnvironment() says so");
     ok (c.status == Status::FloatingPointEnvironment && c.session == nullptr,

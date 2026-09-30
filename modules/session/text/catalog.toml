@@ -59,6 +59,8 @@ saturationMix.ru = "Микс сатурации"
 saturationMix.en = "Saturation mix"
 saturationOutput.ru = "Выход сатурации"
 saturationOutput.en = "Saturation output"
+saturationType.ru = "Тип сатурации"
+saturationType.en = "Saturation type"
 tiltDb.ru = "Баланс тона"
 tiltDb.en = "Tone balance"
 limiterNeedles.ru = "Резать иглы"
@@ -69,6 +71,20 @@ lowDb.ru = "Низ"
 lowDb.en = "Low"
 audio.ru = "Звук"
 audio.en = "Audio"
+
+# The saturation's types a person may pick, as the page names them (the core's shapes: tanh, tube, transistor,
+# transformer, tape). The owner's run-through may rename them; the report's words do not depend on the type.
+[terms.saturationType]
+tanh.ru = "Мягкая"
+tanh.en = "Soft"
+tube.ru = "Ламповая"
+tube.en = "Tube"
+transistor.ru = "Транзисторная"
+transistor.en = "Transistor"
+transformer.ru = "Трансформаторная"
+transformer.en = "Transformer"
+tape.ru = "Ленточная"
+tape.en = "Tape"
 
 # ── messages ──
 

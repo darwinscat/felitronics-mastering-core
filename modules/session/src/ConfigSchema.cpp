@@ -92,7 +92,9 @@ constexpr Name<ConfidenceLabel> kConfidence[] = { { "low", ConfidenceLabel::Low 
                                                   { "high", ConfidenceLabel::High } };
 constexpr Name<Law> kLaws[] = { { "byDepth", Law::ByDepth }, { "linear", Law::Linear }, { "geometric", Law::Geometric } };
 constexpr Name<SaturationShape> kShapes[] = { { "tanh", SaturationShape::Tanh }, { "atan", SaturationShape::Atan },
-                                              { "cubic", SaturationShape::Cubic }, { "asym", SaturationShape::Asym } };
+                                              { "cubic", SaturationShape::Cubic }, { "asym", SaturationShape::Asym },
+                                              { "tube", SaturationShape::Tube }, { "transistor", SaturationShape::Transistor },
+                                              { "transformer", SaturationShape::Transformer }, { "tape", SaturationShape::Tape } };
 constexpr Name<NoiseShaping> kShapings[] = { { "none", NoiseShaping::None }, { "weighted", NoiseShaping::Weighted },
                                              { "psycho", NoiseShaping::Psycho } };
 constexpr Name<Kind> kKinds[] = { { "error", Kind::Error }, { "warning", Kind::Warning }, { "note", Kind::Note } };

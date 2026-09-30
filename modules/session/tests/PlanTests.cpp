@@ -6,7 +6,7 @@
 // plan's key and cache; what a master waits for with the panel open and hidden; the recipe captured when it is asked
 // for; the machine layer an import keeps and adoptMachine replaces; a change of target; and no plan that waits for ever.
 
-#include "DeclaredBudget.h"
+#include "../../../tests/DeclaredBudget.h"
 #include "Advance.h"
 #include "Devices.h"
 #include "EqCurve.h"
@@ -29,6 +29,7 @@
 using namespace felitronics::session;
 using felitronics::test::ok;
 namespace budget = felitronics::session::testing;
+namespace declared = felitronics::declared;
 
 struct felitronics::session::detail::Inspector
 {
@@ -651,7 +652,7 @@ void anImportKeepsTheFilesMachine()
         ok (factIn (s, foreign ? text::FactId::MachineDifferences : text::FactId::SameCoreMachineDifferences, 1),
             foreign ? "another core: the difference is announced" : "the same core: announced as a hand-edited file");
         Answer adopt;
-        const auto spent = budget::spend ([&] { adopt = s.apply (command::AdoptMachine { 3 }); });
+        const auto spent = declared::spend ([&] { adopt = s.apply (command::AdoptMachine { 3 }); });
         ok (adopt.rejection == Rejection::None && s.revision() == revision + 2, "adoptMachine is taken");
         ok (spent.requests == 0, "and asks the heap for nothing");
         const auto adopted = s.snapshot();

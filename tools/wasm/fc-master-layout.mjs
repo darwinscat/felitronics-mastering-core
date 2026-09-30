@@ -420,7 +420,7 @@ export const FC_FILTER_TYPE   = ['Bell', 'LowShelf', 'HighShelf', 'HighPass', 'L
 export const FC_DETECTOR      = ['Peak', 'Rms'];                                               // fc_compressor.detector
 export const FC_LINK_MODE     = ['Max', 'MeanPower'];                                          // fc_compressor.link
 export const FC_COMP_MODE     = ['DownCompress', 'UpCompress', 'DownExpand'];                  // fc_compressor.mode
-export const FC_SHAPE         = ['Tanh', 'Atan', 'Cubic', 'Asym'];                             // fc_clipper.shape
+export const FC_SHAPE         = ['Tanh', 'Atan', 'Cubic', 'Asym', 'Tube', 'Transistor', 'Transformer', 'Tape']; // fc_clipper.shape
 export const FC_NOISE_SHAPING = ['None', 'Weighted', 'Psycho'];                                // fc_dither.shaping
 export const FC_GR_STATISTIC  = ['Mean', 'P95', 'Max', 'Percentile'];                          // fc_gr_limit.statistic
 export const FC_GR_STAGE      = ['Compressor', 'Limiter'];                                     // `stage` of gr_trace
@@ -568,7 +568,7 @@ export const FC_DOMAINS = [
     { field: 'fc_master_params.compressor.autoMakeup', unit: 'flag', min: null, max: null, open: '', edge: 'any', err: '', nonFinite: 'none', resolved: '', depends: '' },
 
     // ── fc_master_params.clipper ──────────────────────────────────────────────────────────────────
-    { field: 'fc_master_params.clipper.shape', unit: 'enum:FC_SHAPE', min: 0, max: 3, open: '', edge: 'refuse', err: 'FC_ERR_ENUM', nonFinite: 'none', resolved: '', depends: '' },
+    { field: 'fc_master_params.clipper.shape', unit: 'enum:FC_SHAPE', min: 0, max: 7, open: '', edge: 'refuse', err: 'FC_ERR_ENUM', nonFinite: 'none', resolved: '', depends: '' },
     { field: 'fc_master_params.clipper.driveDb', unit: 'dB', min: null, max: null, open: '', edge: 'free', err: '', nonFinite: 'refuse', resolved: '', depends: 'the drive the shaper runs is dbToGain(driveDb) - 1 floored at 1e-4, so every driveDb at or below 20*log10(1 + 1e-4) = 8.685455e-4 dB is the same linear stage. The figure this row used to give, 0.00087, is that threshold ROUNDED THE WRONG WAY: 8.7e-4 is past it, so the value the row named as identical to zero drive already renders differently. A threshold in prose rounds toward the safe side or not at all. NB the floored stage is still not a BYPASSED one — it runs the oversampler round trip; only bypassClipper skips that, and clipper.mix = 0 does not (see MasteringChain.h)' },
     { field: 'fc_master_params.clipper.bias', unit: 'fraction', min: -0.95, max: 0.95, open: '', edge: 'clamp', err: '', nonFinite: 'refuse', resolved: 'render', depends: 'clipper.shape: read only by Asym' },
     { field: 'fc_master_params.clipper.mix', unit: 'fraction', min: 0, max: 1, open: '', edge: 'clamp', err: '', nonFinite: 'refuse', resolved: 'render', depends: '' },

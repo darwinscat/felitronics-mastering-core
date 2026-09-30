@@ -3,7 +3,7 @@
 
 #include <felitronics/mastering/DeliveredMastering.h>
 #include <felitronics_test.h>
-#include "../../session/tests/DeclaredBudget.h"
+#include "../../../tests/DeclaredBudget.h"
 #include "PreviousOfflineRenderer.h"
 
 #include <algorithm>
@@ -496,7 +496,7 @@ int main()
             const auto quote = delivery.storageForJob (44100.0, 48000.0, 2, 1, config(), block);
             if (jobs == 2) repeatedQuote = quote.workspaceBytes;
             bool ran = false;
-            const auto spent = session::testing::spend ([&]
+            const auto spent = felitronics::declared::spend ([&]
             {
                 if (! delivery.beginJob (chain, renderer, 44100.0, 48000.0, 2, 1, config(), params,
                                          block, source.in, got.out, 2)) return;
@@ -505,29 +505,29 @@ int main()
                     state = delivery.stepJob (100000);
                 ran = state == StepResult::Done && delivery.finishJob();
             });
-            const bool pass = quote.ok && ran && session::testing::covers (quote.workspaceBytes, spent)
+            const bool pass = quote.ok && ran && felitronics::declared::covers (quote.workspaceBytes, spent)
                 && quote.workspaceBytes >= lifetimeAsked + (std::uint64_t) spent.bytes;
             covered &= pass;
             lifetimeAsked += (std::uint64_t) spent.bytes;
             if (! pass) detail += " block " + std::to_string (block) + " ran " + std::to_string (ran)
-                + " " + session::testing::describe (quote.workspaceBytes, spent);
+                + " " + felitronics::declared::describe (quote.workspaceBytes, spent);
             ++jobs;
         }
         covered &= delivery.storageForJob (44100.0, 48000.0, 2, 1, config(), 257).workspaceBytes == repeatedQuote;
         const auto beforeCancel = delivery.storageForJob (44100.0, 48000.0, 2, 1, config(), 1024);
-        const auto cancelled = session::testing::spend ([&]
+        const auto cancelled = felitronics::declared::spend ([&]
         {
             if (delivery.beginJob (chain, renderer, 44100.0, 48000.0, 2, 1, config(), params,
                                    1024, source.in, got.out, 2))
                 (void) delivery.stepJob (2);
             delivery.cancelJob();
         });
-        const bool cancelCovered = beforeCancel.ok && session::testing::covers (beforeCancel.workspaceBytes, cancelled)
+        const bool cancelCovered = beforeCancel.ok && felitronics::declared::covers (beforeCancel.workspaceBytes, cancelled)
             && beforeCancel.workspaceBytes >= lifetimeAsked + (std::uint64_t) cancelled.bytes;
         covered &= cancelCovered;
         lifetimeAsked += (std::uint64_t) cancelled.bytes;
-        if (! cancelCovered) detail += " cancel " + session::testing::describe (beforeCancel.workspaceBytes, cancelled);
-        const auto refused = session::testing::spend ([&]
+        if (! cancelCovered) detail += " cancel " + felitronics::declared::describe (beforeCancel.workspaceBytes, cancelled);
+        const auto refused = felitronics::declared::spend ([&]
         {
             (void) delivery.beginJob (chain, renderer, 44100.0, 48000.0, 2, 1, config(), params,
                                       0, source.in, got.out, 2);

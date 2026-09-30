@@ -86,13 +86,20 @@ template <template <class> class F> struct GlueFields
     F<double> upToDb {};
 };
 
-// [saturation]: the drive, dB from the programme's peak; the mix, 0…1; the output, dB.
+// The saturation's type: the shaper's curve, in felitronics-core's WaveShaper::Shape order and values. The machine's layer
+// takes [saturation] shape of the config, any of the eight; a person picks one of the types the page offers — Tanh,
+// Tube, Transistor, Transformer, Tape. Atan, Cubic and Asym stay the config's (research): a hand edit refuses them.
+enum class SaturationType : std::uint8_t { Tanh, Atan, Cubic, Asym, Tube, Transistor, Transformer, Tape };
+
+// [saturation]: the drive, dB from the programme's peak; the mix, 0…1; the output, dB; the type (a person's choice only:
+// the machine never picks one).
 template <template <class> class F> struct SaturationFields
 {
     F<bool> on {};
     F<double> drive {};
     F<double> mix {};
     F<double> output {};
+    F<SaturationType> type {};
 };
 
 // [tilt]: the tilt, dB.
@@ -157,7 +164,7 @@ struct MachineDifference
     std::uint8_t field = 0;
     double fileValue = 0.0, coreValue = 0.0;
 };
-inline constexpr std::size_t kDeviceFields = 19;
+inline constexpr std::size_t kDeviceFields = 20;
 
 struct Project
 {

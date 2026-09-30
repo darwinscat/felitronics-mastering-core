@@ -297,6 +297,12 @@ inline constexpr TermShape kTerms[] = {
     { Term::NeedlesWhyLowPlr, "needlesWhy", "lowPlr" },
     { Term::NeedlesWhyBass, "needlesWhy", "bass" },
     { Term::NeedlesWhyLong, "needlesWhy", "long" },
+    { Term::FieldSaturationType, "field", "saturationType" },
+    { Term::SaturationTypeTanh, "saturationType", "tanh" },
+    { Term::SaturationTypeTube, "saturationType", "tube" },
+    { Term::SaturationTypeTransistor, "saturationType", "transistor" },
+    { Term::SaturationTypeTransformer, "saturationType", "transformer" },
+    { Term::SaturationTypeTape, "saturationType", "tape" },
 };
 inline constexpr std::size_t kTermCount = sizeof (kTerms) / sizeof (kTerms[0]);
 
@@ -412,7 +418,7 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Device::MonoBass: return at ({ Term {}, Term::FieldMonoBassFq, Term::FieldMonoBassWidth });
         case Device::Glue: return at ({ Term {}, Term::FieldGlueUpToDb });
         case Device::Saturation: return at ({ Term {}, Term::FieldSaturationDrive, Term::FieldSaturationMix,
-                                              Term::FieldSaturationOutput });
+                                              Term::FieldSaturationOutput, Term::FieldSaturationType });
         case Device::Tilt: return at ({ Term {}, Term::FieldTiltDb });
         case Device::Limiter: return at ({ Term::FieldLimiterNeedles, Term::FieldLimiterNeedlesDb });
         case Device::Dither: return at ({ Term {} });

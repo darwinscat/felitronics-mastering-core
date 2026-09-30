@@ -90,6 +90,10 @@ static_assert ((int) saturation::WaveShaper::Shape::Tanh  == FC_SHAPE_TANH);
 static_assert ((int) saturation::WaveShaper::Shape::Atan  == FC_SHAPE_ATAN);
 static_assert ((int) saturation::WaveShaper::Shape::Cubic == FC_SHAPE_CUBIC);
 static_assert ((int) saturation::WaveShaper::Shape::Asym  == FC_SHAPE_ASYM);
+static_assert ((int) saturation::WaveShaper::Shape::Tube        == FC_SHAPE_TUBE);
+static_assert ((int) saturation::WaveShaper::Shape::Transistor  == FC_SHAPE_TRANSISTOR);
+static_assert ((int) saturation::WaveShaper::Shape::Transformer == FC_SHAPE_TRANSFORMER);
+static_assert ((int) saturation::WaveShaper::Shape::Tape        == FC_SHAPE_TAPE);
 
 static_assert ((int) dither::NoiseShaping::None          == FC_SHAPING_NONE);
 static_assert ((int) dither::NoiseShaping::Weighted      == FC_SHAPING_WEIGHTED);
@@ -645,7 +649,11 @@ FC_MAP_ENUM (mapShape, saturation::WaveShaper::Shape,
     FC_CASE (FC_SHAPE_TANH,  saturation::WaveShaper::Shape::Tanh)
     FC_CASE (FC_SHAPE_ATAN,  saturation::WaveShaper::Shape::Atan)
     FC_CASE (FC_SHAPE_CUBIC, saturation::WaveShaper::Shape::Cubic)
-    FC_CASE (FC_SHAPE_ASYM,  saturation::WaveShaper::Shape::Asym))
+    FC_CASE (FC_SHAPE_ASYM,  saturation::WaveShaper::Shape::Asym)
+    FC_CASE (FC_SHAPE_TUBE,        saturation::WaveShaper::Shape::Tube)
+    FC_CASE (FC_SHAPE_TRANSISTOR,  saturation::WaveShaper::Shape::Transistor)
+    FC_CASE (FC_SHAPE_TRANSFORMER, saturation::WaveShaper::Shape::Transformer)
+    FC_CASE (FC_SHAPE_TAPE,        saturation::WaveShaper::Shape::Tape))
 
 FC_MAP_ENUM (mapShaping, dither::NoiseShaping,
     FC_CASE (FC_SHAPING_NONE,     dither::NoiseShaping::None)

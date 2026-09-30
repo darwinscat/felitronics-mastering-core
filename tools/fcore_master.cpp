@@ -266,7 +266,7 @@ bool applyKey (Args& a, const std::string& key, const std::string& val)
     static const char* kDet[]   { "peak", "rms" };
     static const char* kLink[]  { "max", "meanpower" };
     static const char* kMode[]  { "downcompress", "upcompress", "downexpand" };
-    static const char* kShape[] { "tanh", "atan", "cubic", "asym" };
+    static const char* kShape[] { "tanh", "atan", "cubic", "asym", "tube", "transistor", "transformer", "tape" };
     static const char* kShap[]  { "none", "weighted", "psycho" };
     static const char* kGrSt[]  { "mean", "p95", "max", "percentile" };
 
@@ -284,7 +284,7 @@ bool applyKey (Args& a, const std::string& key, const std::string& val)
     if (key == "comp.autoMakeup")return parseBool (val, a.prm.compressor.autoMakeup);
     if (key == "comp.mix")       { FC_D (a.prm.compressorMix = d); }
 
-    if (key == "clip.shape")  return parseEnumName (val, kShape, 4, a.prm.clipper.shape);
+    if (key == "clip.shape")  return parseEnumName (val, kShape, 8, a.prm.clipper.shape);
     if (key == "clip.drive")  { FC_D (a.prm.clipper.driveDb  = (float) d); }
     if (key == "clip.bias")   { FC_D (a.prm.clipper.bias     = (float) d); }
     if (key == "clip.mix")    { FC_D (a.prm.clipper.mix      = (float) d); }
