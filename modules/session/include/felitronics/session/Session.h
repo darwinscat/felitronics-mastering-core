@@ -147,6 +147,33 @@ struct DevicePlans
     DevicePlan hpf, monoBass, glue, saturation, tilt, limiter, dither, low;
 };
 
+// WHAT THE GLUE COMES TO (owner decisions 3.8, 3.8а) — the knob "up to N dB" as the compressor gets it:
+//   Out          not in the chain: unticked, or at 0 dB
+//   Active       compressing: the static curve takes N dB at the input's short-term P95; the values below are the chain's
+//   Unavailable  ticked above 0 dB, but the input has no short-term P95: out of the chain, for the machine and for a
+//                person alike — the person's value is kept, no P95 is invented, and a master is made without the glue
+enum class GlueState : std::uint8_t { Out, Active, Unavailable };
+struct GlueFinding
+{
+    GlueState state = GlueState::Out;
+    double upToDb = 0.0;                       // the knob as it sounds ([glue] whenTicked when ticked on untouched)
+    std::optional<double> ratio, thresholdDb, kneeDb, attackMs;   // Active; the threshold in the normalised input's dB
+    // ...and once the tempo is decided — the measured one, or [compressor.tempo] bpmWhenUnsure: the tempo, the release
+    // it asks for (a beat over the travel's divisor) and the release the compressor gets, inside [compressor.limits].
+    std::optional<double> bpm, releaseAskedMs, releaseMs;
+    bool releaseClamped = false;               // the release asked for was outside the limits: releaseMs is the limit
+    bool tempoMeasured = false;                // the release follows the measured tempo, not the fallback
+};
+
+// WHAT THE SATURATION COMES TO (owner decision 3.9): active when ticked above 0 dB; the shaper's drive is the knob's at
+// the input's true peak after the normalising gain.
+struct SaturationFinding
+{
+    bool active = false;
+    double knobDb = 0.0;
+    std::optional<double> driveDb, peakDbTp;
+};
+
 struct PlanView
 {
     PlanStatus status = PlanStatus::None;
@@ -171,6 +198,11 @@ struct PlanView
     DevicePlans devices {};
     HpfFinding hpf {};
     MonoBassFinding monoBass {};
+    // The one gain that brings the input to [input] referenceLufs, dB — the system the glue's threshold and the
+    // saturation's drive are read in. The landing search applies it, once.
+    std::optional<double> inputGainDb;
+    GlueFinding glue {};
+    SaturationFinding saturation {};
 };
 
 // THE FINDINGS AS FACTS — the report's lines, typed: what the high-pass stood on, and, where mono bass has something to
@@ -179,6 +211,11 @@ struct PlanText
 {
     [[nodiscard]] static text::Fact hpf (const HpfFinding& finding) noexcept;
     [[nodiscard]] static std::optional<text::Fact> monoBass (const MonoBassFinding& finding) noexcept;
+    // The glue's refusal and its clamps, each with its reason: unavailable without a P95; the release on the fallback
+    // tempo; the release held at a limit.
+    [[nodiscard]] static std::optional<text::Fact> glue (const GlueFinding& finding) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> glueTempo (const GlueFinding& finding) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> glueRelease (const GlueFinding& finding) noexcept;
 };
 
 class Session;

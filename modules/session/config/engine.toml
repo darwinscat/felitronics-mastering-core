@@ -223,9 +223,8 @@ vinyl = { fromHz = 120, toHz = 200 }
 #   depends on no default of the core's.
 # thresholdFrom (an owner decision): the threshold is counted from the programme's short-term P95 — the level the song
 #   is above 5 % of the time, already in the programme report — not from its single loudest second, which one loud joint
-#   moves.
-# roundToMs, roundToDb: a picked attack and release are whole milliseconds, a picked threshold offset and knee whole
-#   decibels.
+#   moves. Both are read in the input's normalised system: the P95 plus the one gain that brings the input to [input]
+#   referenceLufs, so the same mix exported louder or quieter gets the same compressor.
 [compressor]
 detector = "rms"
 rmsWindowMs = 5
@@ -236,12 +235,10 @@ makeupDb = 0
 autoMakeup = false
 mix = 1
 thresholdFrom = "shortTermP95"
-roundToMs = 1
-roundToDb = 1
 
 # The clamps on every compressor value but the ratio: threshOffset, knee dB; attack, release ms. Only the release bites in
-# practice, since it follows the measured tempo: the full glue gives 63 ms at 120 BPM and 54 at 140, and the clamp starts
-# at about 150 BPM. A clamp that ate a person's choice is announced on the device, never silently. release.min 50 ms is one
+# practice, since it follows the measured tempo: at g = 1 the glue gives 63 ms at 120 BPM and 54 at 140, and the clamp
+# starts at about 150 BPM (a knob of 6 dB: 60 ms at 120, the clamp from 144). A clamp that ate a person's choice is announced on the device, never silently. release.min 50 ms is one
 # and a half periods of 30 Hz; a floor derived from the high-pass cutoff (2000 / cutoff) was rejected — at a 15 Hz cutoff
 # it gives 133 ms and clamps hardest exactly where a fast release is needed.
 [compressor.limits]
@@ -257,39 +254,37 @@ knee = { min = 1, max = 8 }
 bpmWhenUnsure = 120
 trustedConfidence = "high"
 
-# THE GLUE — one continuous knob for the whole compressor, "up to N dB" (an owner decision): what a person turns, what a
-# project holds and what every glue number below is written in. The machine sets it only on the targets in byTarget,
-# after the tempo is measured; everywhere else it is a taste of the manual mode. 0, the left end, takes the compressor out
-# of the chain — not "a compressor at zero". The glue does not enter the loudness path: with a 12…30 ms attack it lowers
-# loudness, not peaks.
-# knobMinDb…knobMaxDb, knobStepDb: the knob's travel and step (an owner decision). It describes the static curve on the
-#   loudest part, not a measured gain reduction: the ratio moves with the threshold held, and at the ratio's right end the
-#   threshold comes down instead. Attack, release and knee do not move with it.
+# THE GLUE — one continuous knob for the whole compressor, "up to N dB" (owner decisions 3.8, 3.8а): what a person turns,
+# what a project holds and what every glue number below is written in. N IS THE LOSS ON THE LOUD PLACES: the static curve
+# takes exactly N dB at the short-term P95 of the input brought to [input] referenceLufs — not a ceiling on the live
+# reduction; what the compressor really did (its P95 and its maximum) is measured after the master and reported. The
+# machine sets it only on the targets in byTarget (cd alone), never above knobMaxDb; everywhere else it is a taste of the
+# manual mode. 0, the left end, takes the compressor out of the chain — not "a compressor at zero". The glue does not enter
+# the loudness path: with a 12…30 ms attack it lowers loudness, not peaks. Without a P95 the glue is unavailable to the
+# machine and to a person alike, with its reason — no P95 is invented, the person's value is kept, and a master is made
+# without it.
+# domain: what a command and a project accept, 0…6 dB. knobMinDb…knobMaxDb, knobStepDb: the slider's travel and step —
+#   hints (an owner decision: the slider runs 0…3); a value between steps or past the travel is taken as written.
 # default: the glue a target without an entry in byTarget starts with, dB on the knob.
-# whenTicked: what the knob takes when a person ticks the compressor on without touching the glue, dB — 0.5, where the
-#   travel's 0.3 gave 9·g·(1 − 1/ratio(g)) = 0.51 dB and the old light setting (a 2 dB overshoot at ratio 1.3) cut at
-#   most 0.46 dB.
-# byTarget: the machine's glue per target, dB on the knob (an owner decision: cd alone). cd's 2.6 is what the travel's
-#   0.7 read as on the knob, calibrated with the threshold at the loudest second; it is not yet calibrated for the
-#   threshold at P95 ([compressor] thresholdFrom).
-# THE TRAVEL — the compressor's internal mapping, not what a person or a project speaks. How a knob value maps onto it is
-# defined when the compressor moves into the session; the laws below stand as the travel's own. It runs 0…1 in steps of
-# `step`. Each compressor value moves along it from `from` to `to` by its law, and what
-# must be even along the travel is the HEARD effect, not the number:
-#   byDepth    even steps of (1 − 1/ratio), the share of the overshoot the compressor removes (cut = overshoot ×
-#              (1 − 1/ratio), measured exactly); the middle of the travel gives 1.53;
+# whenTicked: what the knob takes when a person ticks the glue on without touching the knob, dB.
+# byTarget: the machine's glue per target, dB on the knob (an owner decision: cd alone, 2.6).
+# THE TRAVEL — ONE SMOOTH FORMULA for the whole domain, no steps and no rounding. Every compressor value moves along a
+# travel g by its law, from `from` at g = 0 towards `to` at g = 1 and on by the same law past it:
+#   byDepth    even steps of (1 − 1/ratio), the share of the overshoot the compressor removes; the ratio's law alone;
 #   linear     even steps of the number itself;
-#   geometric  even steps of the ratio between neighbours — time is heard logarithmically, and a straight line in ms
-#              would leave the first half of the travel dead.
-#   The right ends, 2.7 and −9, are where the old version reached with two knobs together. divisor divides the beat:
-#   release = 60000 / bpm / divisor, so at 120 BPM the ends give 250 and 63 ms. byDepth is the ratio's law alone (it is
-#   defined through 1 − 1/ratio, with both ends at 1 or more); geometric needs both ends above zero.
+#   geometric  even steps of the ratio between neighbours — time is heard logarithmically.
+# The threshold stands threshOffset(g) dB from the P95 (below it: the P95 overshoots it by −threshOffset), so the static
+# curve — the core's own, soft knee included — takes kneeOver(−threshOffset(g); knee(g)) · (1 − 1/ratio(g)) dB at the P95.
+# That loss grows with g without a break, and THE KNOB'S N IS THE g AT WHICH IT EQUALS N: N = 2.6 stands at g = 0.677
+# (ratio 1.74, threshold 6.1 dB under the P95, attack 17.8 ms, knee 5.3 dB), N = 3 at g = 0.728, N = 6 at g = 1.029 — just
+# past the old right end (2.7 and −9, "where the old version reached with two knobs together"), by the same laws. The
+# compressor stays soft: above 3 it is only denser. divisor divides the beat: release = 60000 / bpm / divisor(g), kept
+# within [compressor.limits] release — 250 ms at g = 0 and 63 ms at g = 1 at 120 BPM.
 [glue]
 domain = [0, 6]
 default = 0
 whenTicked = 0.5
 byTarget = { cd = 2.6 }
-step = 0.01
 ratio = { from = 1.0, to = 2.7, law = "byDepth" }
 threshOffset = { from = 0, to = -9, law = "linear" }
 attack = { from = 30, to = 12, law = "linear" }
@@ -314,6 +309,12 @@ knobStepDb = 0.1
 # autoComp 0 is written over the core's default 0.5: the output is then tanh(k·s)/tanh(k), normalised to its own k.
 # bias and dcBlockHz are read by the core for the asym shape only. Below a drive of 0.00087 dB (the core's number) every
 # value is one setting.
+# cut (owner decision 3.9): what the stage took off the peaks is measured ON THE STAGE — the peak of its input against the
+#   peak of its output, quantum by quantum, after its mix and its output knob — never the fall of the whole chain's true
+#   peak (that is the limiter's and the peak clipper's work). A peak-normalised shaper lifts everything under full scale,
+#   so the ratio alone is a gain: a peak was cut by how much less it got than a sound too quiet to bend gets (the output
+#   knob moves both alike and cancels; the mix is in both). The report gives the largest cut and the usual one over the
+#   loud places — the loudShare of the quanta with the highest input peaks: their largest, and their median.
 [saturation]
 driveDomain = [0, 12]
 mixDomain = [0, 1]
@@ -331,6 +332,7 @@ outputRange = [-6, 0]
 outputStep = 0.1
 autoComp = 0
 dcBlockHz = 0
+cut = { loudShare = 0.05 }
 
 # TILT — a manual device with one knob, in dB, and its tick: the machine does not touch timbre (a tilt taken from a
 # measurement is a genre trap) — it leaves the tick off and the knob at 0. The geometry (technical decision 3О10): the

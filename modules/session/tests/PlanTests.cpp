@@ -171,6 +171,7 @@ void everyDeviceIsPlannedAsBefore()
                 Devices expected = before;
                 expected.hpf.machine.fq = target.hpfFloor.toDouble();
                 expected.monoBass.machine.on = false;
+                expected.glue.machine.on = false;      // decision 3.8а: no P95, no glue — cd's 2.6 dB stays on the knob
                 asBefore = asBefore && sameDevices (now, expected);
                 Devices proposed; DevicePlans plans; detail::PlanFindings found;
                 detail::propose (in, proposed, plans, found);
@@ -183,6 +184,7 @@ void everyDeviceIsPlannedAsBefore()
                     const HeldBack want = shell ? HeldBack::Shell
                         : device == Device::MonoBass && channels == 1 ? HeldBack::Source
                         : device == Device::Hpf || device == Device::MonoBass ? HeldBack::Unmeasured
+                        : device == Device::Glue && target.glue ? HeldBack::Unmeasured
                         : device == Device::Limiter && target.noClipper ? HeldBack::Target
                         : device == Device::Dither && target.bitDepth > r.ditherUpToBits ? HeldBack::Target : HeldBack::None;
                     facts = facts && plan.heldBack == want && (plan.target & ~mask) == 0 && plan.measured == 0 && plan.needs == 0;
@@ -643,11 +645,12 @@ void aTouchedDeviceSounds()
     TiltFields<Mark> tick; tick.on = true;
     ok (s.apply (command::RevertEdits { 4, tick }).rejection == Rejection::None && s.snapshot().view().plan.devices.tilt.on,
         "the tick reverted, the knob sounds again");
-    // A person's glue knob alone makes the glue compress — and so reads the tempo, like a ticked one.
+    // A person's glue knob alone ticks the glue; on this source, which has no P95, it stays unavailable and reads nothing.
     GlueFields<Touched> glue; glue.upToDb = 1.0;
     ok (s.apply (command::EditDevice { 5, glue }).rejection == Rejection::None
-        && (s.snapshot().view().plan.needs & detail::bitOf (Analyzer::Tempo)) != 0 && s.snapshot().view().plan.devices.glue.tick == TickFrom::Touched,
-        "a touched glue knob compresses, and the plan reads the tempo for it");
+        && s.snapshot().view().plan.devices.glue.on && s.snapshot().view().plan.devices.glue.tick == TickFrom::Touched
+        && s.snapshot().view().plan.glue.state == GlueState::Unavailable && (s.snapshot().view().plan.needs & detail::bitOf (Analyzer::Tempo)) == 0,
+        "a touched glue knob ticks the glue; without a P95 it is unavailable, and the plan waits for no tempo");
     const auto all = s.snapshot();
     ok (all.view().plan.devices.limiter.on && all.view().plan.devices.limiter.tick == TickFrom::Machine
         && all.view().plan.devices.hpf.on && all.view().plan.devices.hpf.tick == TickFrom::Machine

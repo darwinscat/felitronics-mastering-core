@@ -224,8 +224,6 @@ struct Compressor
     bool autoMakeup = false;
     double mix = 0.0;
     ThresholdFrom thresholdFrom = ThresholdFrom::ShortTermP95;
-    double roundToMs = 0.0;
-    double roundToDb = 0.0;
     Span limitThreshOffset, limitAttack, limitRelease, limitKnee;   // [compressor.limits]
     double tempoBpmWhenUnsure = 0.0;                                 // [compressor.tempo] bpmWhenUnsure
     ConfidenceLabel tempoTrustedConfidence = ConfidenceLabel::High;  // [compressor.tempo] trustedConfidence
@@ -240,8 +238,8 @@ struct GlueRamp
     Law law = Law::Linear;
 };
 
-// The glue's numbers are on its knob, "up to N dB" — `default`, `whenTicked`, `byTarget`; `step` and the ramps are its
-// travel, the compressor's internal mapping.
+// The glue's numbers are on its knob, "up to N dB" — `default`, `whenTicked`, `byTarget`; the ramps are its travel, the
+// compressor's internal mapping.
 struct GlueAtTarget
 {
     std::string target;
@@ -254,7 +252,6 @@ struct Glue
     double defaultUpToDb = 0.0;                // `default`
     double whenTickedUpToDb = 0.0;             // `whenTicked`
     std::vector<GlueAtTarget> byTarget;        // in the document's order
-    double step = 0.0;
     GlueRamp ratio, threshOffset, attack, knee, divisor;
     double knobMinDb = 0.0, knobMaxDb = 0.0, knobStepDb = 0.0;
 };
@@ -277,6 +274,7 @@ struct Saturation
     double outputStep = 0.0;
     double autoComp = 0.0;
     double dcBlockHz = 0.0;
+    double cutLoudShare = 0.0;                 // cut.loudShare: the loud places of the measured peak cut
 };
 
 struct Tilt

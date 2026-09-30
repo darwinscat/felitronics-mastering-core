@@ -41,6 +41,13 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (Device::Low) == 7);
         return 7;
     }
+    else if constexpr (std::is_same_v<T, GlueState>)
+    {
+        static_assert (unsigned (GlueState::Out) == 0);
+        static_assert (unsigned (GlueState::Active) == 1);
+        static_assert (unsigned (GlueState::Unavailable) == 2);
+        return 2;
+    }
     else if constexpr (std::is_same_v<T, HeldBack>)
     {
         static_assert (unsigned (HeldBack::None) == 0);
@@ -228,6 +235,16 @@ constexpr void checkEnum (Device value) noexcept
         case Device::Limiter: break;
         case Device::Dither: break;
         case Device::Low: break;
+    }
+}
+
+constexpr void checkEnum (GlueState value) noexcept
+{
+    switch (value)
+    {
+        case GlueState::Out: break;
+        case GlueState::Active: break;
+        case GlueState::Unavailable: break;
     }
 }
 
@@ -535,6 +552,32 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.upToDb)>, double>);
         v.field ("upToDb", x.upToDb);
     }
+    else if constexpr (std::is_same_v<U, GlueFinding>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.attackMs)>, std::optional<double>>);
+        v.field ("attackMs", x.attackMs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.bpm)>, std::optional<double>>);
+        v.field ("bpm", x.bpm);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.kneeDb)>, std::optional<double>>);
+        v.field ("kneeDb", x.kneeDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ratio)>, std::optional<double>>);
+        v.field ("ratio", x.ratio);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.releaseAskedMs)>, std::optional<double>>);
+        v.field ("releaseAskedMs", x.releaseAskedMs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.releaseClamped)>, bool>);
+        v.field ("releaseClamped", x.releaseClamped);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.releaseMs)>, std::optional<double>>);
+        v.field ("releaseMs", x.releaseMs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.state)>, GlueState>);
+        v.field ("state", x.state);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.tempoMeasured)>, bool>);
+        v.field ("tempoMeasured", x.tempoMeasured);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.thresholdDb)>, std::optional<double>>);
+        v.field ("thresholdDb", x.thresholdDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.upToDb)>, double>);
+        v.field ("upToDb", x.upToDb);
+    }
     else if constexpr (std::is_same_v<U, Layers<HpfFields>>)
     {
         [[maybe_unused]] auto& [f0, f1] = x;
@@ -739,7 +782,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, MasterCost>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.activeWindowShare)>, MasterCostValue>);
         v.field ("activeWindowShare", x.activeWindowShare);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.crestFullDb)>, MasterCostValue>);
@@ -752,6 +795,10 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("crestLowDb", x.crestLowDb);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.crestLowMidDb)>, MasterCostValue>);
         v.field ("crestLowMidDb", x.crestLowMidDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.glueMaxDb)>, MasterCostValue>);
+        v.optionalField ("glueMaxDb", x.glueMaxDb, MasterCostValue {});
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.glueP95Db)>, MasterCostValue>);
+        v.optionalField ("glueP95Db", x.glueP95Db, MasterCostValue {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.k2Reason)>, MeasurementReason>);
         v.field ("k2Reason", x.k2Reason);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.largestSectionShiftLu)>, MasterCostValue>);
@@ -768,6 +815,10 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("masterRateHz", x.masterRateHz);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.pumpingRmsDb)>, MasterCostValue>);
         v.field ("pumpingRmsDb", x.pumpingRmsDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.saturationCutMaxDb)>, MasterCostValue>);
+        v.optionalField ("saturationCutMaxDb", x.saturationCutMaxDb, MasterCostValue {});
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.saturationCutUsualDb)>, MasterCostValue>);
+        v.optionalField ("saturationCutUsualDb", x.saturationCutUsualDb, MasterCostValue {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sections)>, std::span<const MasterSection>>);
         v.field ("sections", x.sections);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.shapeP95Lu)>, MasterCostValue>);
@@ -1149,7 +1200,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, PlanView>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.awaited)>, std::optional<Analyzer>>);
         v.field ("awaited", x.awaited);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.awaitedBy)>, std::optional<Device>>);
@@ -1160,8 +1211,12 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("devices", x.devices);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.fromFile)>, bool>);
         v.field ("fromFile", x.fromFile);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.glue)>, GlueFinding>);
+        v.field ("glue", x.glue);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.hpf)>, HpfFinding>);
         v.field ("hpf", x.hpf);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.inputGainDb)>, std::optional<double>>);
+        v.field ("inputGainDb", x.inputGainDb);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.key)>, std::uint64_t>);
         v.field ("key", x.key);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.monoBass)>, MonoBassFinding>);
@@ -1170,6 +1225,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("needs", x.needs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.readOnly)>, bool>);
         v.field ("readOnly", x.readOnly);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.saturation)>, SaturationFinding>);
+        v.field ("saturation", x.saturation);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.status)>, PlanStatus>);
         v.field ("status", x.status);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.waiting)>, std::uint32_t>);
@@ -1288,6 +1345,18 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("on", x.on);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.output)>, double>);
         v.field ("output", x.output);
+    }
+    else if constexpr (std::is_same_v<U, SaturationFinding>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.active)>, bool>);
+        v.field ("active", x.active);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.driveDb)>, std::optional<double>>);
+        v.field ("driveDb", x.driveDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.knobDb)>, double>);
+        v.field ("knobDb", x.knobDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.peakDbTp)>, std::optional<double>>);
+        v.field ("peakDbTp", x.peakDbTp);
     }
     else if constexpr (std::is_same_v<U, SnapshotView>)
     {

@@ -12,6 +12,7 @@ src/Cost.cpp
 src/Rules.cpp
 src/Devices.cpp
 src/Planner.cpp
+src/Dynamics.cpp
 src/Commands.cpp
 src/Sidecar.cpp
 src/TextNumber.cpp

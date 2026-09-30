@@ -130,6 +130,12 @@ enum class FactId : std::uint16_t
     MonoBassAntiPhase = 38,  // bass in opposite polarity: mono bass would take {loss}; check a channel's polarity
     MonoBassUnmeasured = 39, // mono bass left out: the loss could not be weighed
     HpfFloor = 40,           // {cutoff}, the floor: it takes {loss} of the lowest note {note} at {hz}, more than the note allows
+    // What the glue comes to (PlanView::glue; PlanText) and what the glue and the saturation did (MasterCost; MasterReportText).
+    GlueUnavailable = 41,    // the glue is out — no short-term P95 to stand its threshold on; the knob's {upTo} is kept
+    GlueTempoFallback = 42,  // the glue's release is set for {bpm}: the tempo was not measured with confidence
+    GlueReleaseHeld = 43,    // the glue's release is held at {release}: the tempo asked for {asked}
+    MasterGlue = 44,         // the glue took {usual} on the loud places, {largest} at most
+    MasterSaturation = 45,   // the saturation cut peaks by up to {largest}, usually {usual}
 
     // A command's rejection, by its code — what was refused and why. The three a field refuses name it: {field}.
     RejectedFloatingPointEnvironment = 101,

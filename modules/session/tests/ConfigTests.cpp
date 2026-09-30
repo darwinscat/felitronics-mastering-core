@@ -131,7 +131,11 @@ void theSchemaRefuses()
                 "[tilt]\ndomain = [1, 6]\nband = 1\nfreqHz = 1000\nnormal = [1, 2]\nhard = [1, 3]",
                 "[1, 6", Fault::OutOfRange, "tilt.domain");
     mustAccept (E, "aboveHz = 20,", "aboveHz = 20.25,");
-    mustAccept (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 5.25 }");
+    mustAccept (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 2.75 }");
+    // The machine's glue stays on the slider's travel (owner decision 3.8): above knobMaxDb is a person's alone.
+    mustRefuse (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 3.25 }", "3.25", Fault::OutOfRange, "glue.byTarget.cd");
+    mustRefuse (E, "whenTicked = 0.5", "whenTicked = 3.5", "3.5", Fault::OutOfRange, "glue.whenTicked");
+    mustAccept (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 3 }");
     mustAccept (T, "lowDb = 0.5", "lowDb = 5.25");
     mustAccept (T, "monoBass = 150, hpfFloor = 32", "monoBass = 150, hpfFloor = 100.25");
     // Wrong types.
@@ -305,7 +309,7 @@ constexpr std::string_view kTargetsPresentation[] = {
 constexpr std::string_view kEnginePresentation[] = {
     "defaults", "limiter.peakClipper.densityMinusDb", "limiter.peakClipper.densityWithinDb", "hpf.slopesNormal",
     "hpf.comfort", "hpf.curveTopDb", "hpf.curveBottomDb", "hpf.curveStepDb", "hpf.curveHeadroomDb", "hpf.marks",
-    "monoBass.zones", "tilt.normal", "low.normal", "eq", "crest", "cost", "progress", "blindTest",
+    "monoBass.zones", "saturation.cut", "tilt.normal", "low.normal", "eq", "crest", "cost", "progress", "blindTest",
 };
 constexpr std::string_view kWhileNoDeEsser[] = { "deEsser", "stereoBursts" };
 

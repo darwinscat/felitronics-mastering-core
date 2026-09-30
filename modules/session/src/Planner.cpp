@@ -12,6 +12,7 @@
 #include "Grid.h"
 #include "Rules.h"
 #include "BuildContract.h"
+#include "Dynamics.h"
 #include "EqCurve.h"
 #include "Needles.h"
 #include "SourceMeasurements.h"
@@ -246,17 +247,21 @@ template <> struct Planned<MonoBassFields<Value>>
     static std::uint32_t needs (const PlanInputs&, const MonoBassFields<Value>&) noexcept { return 0; }
 };
 
-// [glue]: "up to N dB" where [glue] byTarget names the target. A glue that compresses reads the tempo — its release
-// follows it — so a master waits for it.
+// [glue] (owner decisions 3.8, 3.8а): ticked, "up to N dB", only where [glue] byTarget names the target (cd) — and not
+// on an input too quiet to measure, nor on one without a short-term P95, which the threshold stands on. A glue that
+// compresses reads the tempo — its release follows it — so a master waits for it; one that cannot compress reads nothing.
 template <> struct Planned<GlueFields<Value>>
 {
     static void propose (const PlanInputs& in, GlueFields<Value>& m, DevicePlan& plan, PlanFindings&) noexcept
     {
-        if (in.rules.row (in.row).glue) plan.target |= fieldBit (in.rules, m, m.upToDb);
+        if (! in.rules.row (in.row).glue) return;
+        plan.target |= std::uint8_t (fieldBit (in.rules, m, m.on) | fieldBit (in.rules, m, m.upToDb));
+        if (quiet (in)) { m.on = false; plan.heldBack = HeldBack::Quiet; }
+        else if (! inputLevels (in).p95Db) { m.on = false; plan.heldBack = HeldBack::Unmeasured; }
     }
-    static std::uint32_t needs (const PlanInputs&, const GlueFields<Value>& glue) noexcept
+    static std::uint32_t needs (const PlanInputs& in, const GlueFields<Value>& glue) noexcept
     {
-        return glue.on && glue.upToDb > 0.0 ? bitOf (Analyzer::Tempo) : 0u;
+        return glue.on && glue.upToDb > 0.0 && inputLevels (in).p95Db ? bitOf (Analyzer::Tempo) : 0u;
     }
 };
 
@@ -374,7 +379,9 @@ std::uint32_t needs (const PlanInputs& in, const Devices& devices, bool withHand
     eachPlan (devices, plans, [&] (Device, const auto& layers, DevicePlan& plan)
     {
         using Fields = std::remove_cvref_t<decltype (layers.machine)>;
-        const auto settings = settingsOf (in.rules, layers, withHand);
+        auto settings = settingsOf (in.rules, layers, withHand);
+        // The glue's knob as it sounds: [glue] whenTicked for a person's tick on a knob the machine left at 0.
+        if constexpr (requires { settings.upToDb; }) if (withHand) settings.upToDb = glueKnob (in.rules, layers);
         plan.needs = Planned<Fields>::needs (in, settings);
         all |= plan.needs;
         plan.tick = withHand ? tickFrom (in.rules, layers) : TickFrom::Machine;
@@ -565,6 +572,9 @@ void Session::replan() noexcept
             plan_.monoBass = found.monoBass;
             plan_.monoBass.againstMachine = ! proposed.monoBass.machine.on
                 && detail::settingsOf (in.rules, project_.devices.monoBass).on;
+            plan_.inputGainDb = detail::inputLevels (in).gainDb;
+            plan_.glue = detail::glueFinding (in, project_.devices);
+            plan_.saturation = detail::saturationFinding (in, project_.devices);
             plan_.needs = detail::needs (in, project_.devices, true, plan_.devices);
             plan_.waiting = detail::waiting (in, plan_.needs);
             DevicePlans machineOnly;
@@ -629,5 +639,21 @@ std::optional<text::Fact> PlanText::monoBass (const MonoBassFinding& f) noexcept
         case MonoBassVerdict::Quiet:      return std::nullopt;
     }
     detail::storageOverflow();
+}
+std::optional<text::Fact> PlanText::glue (const GlueFinding& f) noexcept
+{
+    if (f.state != GlueState::Unavailable) return std::nullopt;
+    return text::Fact::of (text::FactId::GlueUnavailable, text::Arg::value (f.upToDb, text::Unit::Db, 1));
+}
+std::optional<text::Fact> PlanText::glueTempo (const GlueFinding& f) noexcept
+{
+    if (f.state != GlueState::Active || ! f.bpm || f.tempoMeasured) return std::nullopt;
+    return text::Fact::of (text::FactId::GlueTempoFallback, text::Arg::value (*f.bpm, text::Unit::Bpm, 0));
+}
+std::optional<text::Fact> PlanText::glueRelease (const GlueFinding& f) noexcept
+{
+    if (f.state != GlueState::Active || ! f.releaseClamped || ! f.releaseMs || ! f.releaseAskedMs) return std::nullopt;
+    return text::Fact::of (text::FactId::GlueReleaseHeld, text::Arg::value (*f.releaseMs, text::Unit::Ms, 0),
+        text::Arg::value (*f.releaseAskedMs, text::Unit::Ms, 0));
 }
 } // namespace felitronics::session

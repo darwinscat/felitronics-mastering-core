@@ -280,6 +280,26 @@ en = "The bass is in opposite polarity — mono bass would take {loss} of the lo
 ru = "Моно-бас не включён: баса слишком мало, чтобы измерить противофазу."
 en = "Mono bass is off: there is too little bass to measure its polarity."
 
+[messages.glueUnavailable]
+ru = "Клей недоступен: громкие места песни не измерены (нет P95 кратковременной громкости). Мастер будет сделан без клея; значение «до {upTo}» сохранено."
+en = "Glue is unavailable: the song's loud places were not measured (no short-term loudness P95). The master will be made without glue; the value “up to {upTo}” is kept."
+
+[messages.glueTempoFallback]
+ru = "Темп не измерен уверенно — восстановление клея рассчитано на {bpm}."
+en = "The tempo was not measured with confidence — the glue release is set for {bpm}."
+
+[messages.glueReleaseHeld]
+ru = "Восстановление клея — {release}: темп просил {asked}, это за пределом прибора."
+en = "Glue release is {release}: the tempo asked for {asked}, which is outside the device's range."
+
+[messages.masterGlue]
+ru = "Клей снял {usual} на громких местах, самое большее — {largest}."
+en = "Glue took {usual} off the loud places, {largest} at most."
+
+[messages.masterSaturation]
+ru = "Сатурация срезала пики до {largest} (обычно {usual})."
+en = "Saturation cut peaks by up to {largest} (usually {usual})."
+
 [messages.planWaiting]
 ru = "Мастер ждёт замер «{analyzer}» для прибора «{device}»: {progress}"
 en = "The master is waiting for the {analyzer} measurement for {device}: {progress}"

@@ -6,5 +6,5 @@
 # Format:   <path>  [<fn>*<count> ...]  <disposition>  <reason>
 # Dispositions: as defined in felitronics-core's tools/lint/det-math-manifest.txt.
 
-modules/mastering/include/felitronics/mastering/MasteringChain.h  [dbToGain()*1]  retain-rt  dbToGain for the chain gain, applied to audio
+modules/mastering/include/felitronics/mastering/MasteringChain.h  [dbToGain()*3 pow*1]  retain-rt  dbToGain for the chain gain, applied to audio; clipperQuietGain() repeats the soft clipper's own libm design arithmetic (its drive and trim through dbToGain, its compensation through pow) once per reading — the gain of a stage whose audio is libm-shaped already, so the reading is as platform-bound as the sound it describes and no more
 tools/fcore_master.cpp  [sin*4]  retain-local  test-signal generation inside the mastering CLI's own fixtures, not a measured value
