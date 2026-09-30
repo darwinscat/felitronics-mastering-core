@@ -541,7 +541,7 @@ Files and browser storage belong to the shell. The writer reads no filesystem an
 
 ```toml
 defaults = "2026-09"
-core = "0.4.0"
+core = "0.5.0"
 manual = true
 
 [target]
