@@ -2,9 +2,13 @@
 # compiles it, tools/wasm/build.sh compiles it into the fcsession module (and refuses a .cpp under src/ that is not
 # on it), and tools/lint/check-session-laws.mjs scans from it (and cross-checks it against compile_commands.json).
 src/Session.cpp
+src/Wav.cpp
 src/BuildContract.cpp
 src/ConfigSchema.cpp
 src/Config.cpp
+src/Landing.cpp
+src/MasterJob.cpp
+src/Cost.cpp
 src/Rules.cpp
 src/Devices.cpp
 src/Commands.cpp

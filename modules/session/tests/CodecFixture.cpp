@@ -46,8 +46,57 @@ int main()
     {
         Fill fill { mode };
         SnapshotView view;
-        Kept kept[1]; ReadingPoint points[1]; ReadingRun runs[1]; MachineDifference differences[1]; EqPoint curve[1];
+        Kept kept[1]; LandingPass pass[1]; ReadingPoint points[1]; ReadingRun runs[1]; MachineDifference differences[1]; EqPoint curve[1];
+        LandingTraceBucket traceRow { 0.0, 1.5, 0.75, 4, 0 };
+        double crestRows[10] { 0.5, 0.125, 0.4, 0.08, 0.3, 0.045, 0.2, 0.02, 0.6, 0.18 };
+        double crestMask[5] { 1.0, 1.0, 0.0, 1.0, 1.0 };
+        MasterSection section { 0, 48000, -15.0, -14.0, 0.0, true };
+        MasterWaveformBucket wave { 0, 48000, 0, -0.5, 0.5, 0.2, 48000 };
         fill.value (view); fill.value (kept[0]); fill.value (points[0]); fill.value (runs[0]); fill.value (differences[0]); fill.value (curve[0]);
+        view.pendingMasterBytes = 0.0; // byte counts are finite and nonnegative, even in hostile scalar fixtures
+        fill.value (pass[0]);
+        if (kept[0].landing)
+        {
+            kept[0].landing->passes = 1;
+            kept[0].landing->log = pass;
+            kept[0].landing->deliverable = false;
+            LandingTrace trace;
+            trace.toFrame = 1; trace.sampleRateHz = 48000; trace.columns = 1;
+            trace.samples = 4; trace.complete = trace.valid = true; trace.rows = { &traceRow, 1 };
+            kept[0].landing->limiterTrace = trace;
+            kept[0].landing->peakClipTrace = trace;
+        }
+        if (mode == 1 && kept[0].report)
+        {
+            auto& report = *kept[0].report;
+            report.status = MeasurementStatus::Ready; report.reason = MeasurementReason::None;
+            report.targetLufs = -14.0; report.ceilingDbTp = -1.0;
+            report.achievedLufs = -14.0; report.truePeakDbTp = -2.0;
+            report.lraLu = 2.0; report.lraReason = MeasurementReason::None;
+            report.plrDb = 8.0; report.plrReason = MeasurementReason::None;
+            report.gainFromSourceDb = 1.0; report.missLu = 0.0;
+            report.peakSafe = true; report.deliverable = false;
+            report.targetMet = kept[0].landing->status == LandingStatus::Solved;
+            report.checkPasses = 0;
+            report.crest.status = MeasurementStatus::Ready;
+            report.crest.reason = MeasurementReason::None;
+            report.crest.version = 1;
+            report.crest.sampleRateHz = 48000; report.crest.hopFrames = 480;
+            report.crest.blockHops = 4; report.crest.frames = 48000;
+            report.crest.blocks = 1; report.crest.complete = true;
+            report.crest.sourceRateCheck = false;
+            report.crest.rows = crestRows; report.crest.sourceMask = crestMask;
+            report.firstHint = MasterHint { LandingReason::ExcessSubBass, 35.0, true };
+            report.secondHint = MasterHint { LandingReason::TruePeak, -2.0, false };
+            MasterCost cost;
+            cost.sourceRateHz = cost.masterRateHz = 48000;
+            cost.sourceFrames = cost.masterFrames = 48000;
+            cost.crestFullDb = { MeasurementReason::None, 1.5, 1 };
+            cost.shapeP95Lu = { MeasurementReason::None, 0.0, 1 };
+            cost.sections = { &section, 1 }; cost.waveform = { &wave, 1 };
+            report.cost = cost;
+        }
+        else kept[0].report.reset();
         view.measurementStorage = {};
         view.needlesBytes = view.needlesLargestBlockBytes = 0;
         MeasurementValue number { "peak", 1.0, MeasurementReason::None, 0 };

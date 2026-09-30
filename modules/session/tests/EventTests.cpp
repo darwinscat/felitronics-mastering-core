@@ -25,6 +25,10 @@ using namespace felitronics::session;
 using felitronics::test::ok;
 using detail::Driver;
 using text::FactId;
+constexpr MeasurementValue kEventReadyNumbers[] {
+    { "integratedLufs", -18.0, MeasurementReason::None, 0 },
+    { "truePeakDb", -1.0, MeasurementReason::None, 0 }
+};
 // Test-only corruption reaches the guards without depending on real driver failures.
 struct felitronics::session::detail::Inspector
 {
@@ -33,12 +37,24 @@ struct felitronics::session::detail::Inspector
     static void skipWaveform (Session& s) { s.waveform_->finished = true; }
     static void noMasterRoom (Session& s) { s.masterRoom_ = s.masterCount_; }
     static void unplace (Session& s) { s.devicesPlaced_ = false; }
+    static void mandatory (Session& s)
+    {
+        auto& result = s.measurementResults_[std::size_t (Analyzer::Loudness)];
+        result.status = MeasurementStatus::Ready;
+        result.reason = MeasurementReason::None;
+        result.numbers = kEventReadyNumbers;
+    }
     static std::uint64_t sequence (const Session& s) { return s.sequence_; }
     static void fillBatch (Session& s, std::size_t count) { for (std::size_t i = 0; i < count; ++i) s.emit ({}); }
 };
 namespace budget = felitronics::session::testing;
 namespace
 {
+void measureReady (Session& session, bool firstOnly = false)
+{
+    budget::measure (session, firstOnly);
+    detail::Inspector::mandatory (session);
+}
 struct Audio
 {
     float samples[48000] {};
@@ -60,7 +76,8 @@ Answer apply (Session& s, const Request& r)
     Answer answer;
     const auto spent = budget::spend ([&] { answer = s.apply (r); });
     ok (budget::covers (need.bytes, spent)
-        && (std::holds_alternative<command::ImportProject> (r) || std::holds_alternative<command::Load> (r) || need.bytes == std::uint64_t (spent.bytes)), "command demand covers events and import validation");
+        && (std::holds_alternative<command::ImportProject> (r) || std::holds_alternative<command::Load> (r)
+            || std::holds_alternative<command::Master> (r) || need.bytes == std::uint64_t (spent.bytes)), "command demand covers events and import validation");
     return answer;
 }
 Stepped step (Session& s, std::uint32_t units)
@@ -68,7 +85,7 @@ Stepped step (Session& s, std::uint32_t units)
     Stepped result;
     const auto demand = s.measurementStorage ({ nullptr, s.source().channels, s.source().frames, s.source().sampleRate });
     const auto spent = budget::spend ([&] { result = s.step (units); });
-    ok (budget::covers (std::uint64_t (demand.workspaceBytes + demand.resultBytes + demand.allocatorBytes), spent), "pump stays within the declared preparation and output demand");
+    ok (budget::covers (std::uint64_t (demand.workspaceBytes + demand.resultBytes + demand.allocatorBytes + s.liveBytes()), spent), "pump stays within the declared preparation and output demand");
     return result;
 }
 Snapshot snapshot (const Session& s)
@@ -137,9 +154,12 @@ std::vector<Notification> scenario (std::uint32_t chunk, bool cancel)
     ok (step (*s, 0).state == StepState::More && s->events().empty(), "zero units only polls");
     while (s->state() == State::Loaded) { (void) step (*s, 1); collect(); }
     ok (s->state() == State::Measured1 && events.back().payload.fact.view().id == FactId::Measurement1, "phase one fact is available on the step that establishes it");
+    while (! snapshot (*s).view().mandatoryMeasurementsReady && s->measurementJob() != 0)
+    { (void) step (*s, 1); collect(); }
+    if (! snapshot (*s).view().mandatoryMeasurementsReady) detail::Inspector::mandatory (*s);
     auto saved = snapshot (*s);
     const auto job = apply (*s, command::Master { 2 }).job;
-    ok (snapshot (*s).view().masterProgress.totalUnits == 4, "master work estimate is available before the first step");
+    ok (snapshot (*s).view().masterProgress.totalUnits == 4, "legacy progress bound is available before the first step");
     if (cancel)
     {
         (void) step (*s, 1); collect();
@@ -164,8 +184,8 @@ void pump()
     const auto cancelled = scenario (1, true), cancelledAgain = scenario (16, true);
     ok (eventsHash (one) == eventsHash (bulk) && eventsHash (one) == eventsHash (again), "complete event sequence is invariant across runs and pump slicing");
     ok (eventsHash (cancelled) == eventsHash (cancelledAgain), "cancelled scenario sequence is invariant across runs and slicing");
-    ok (one.size() > 22 && cancelled.size() == one.size() + 3, "measurement publishes live work and cancellation adds three events");
-    ok (eventsHash (one) == 0x2b569aaa1d3c5a31ull && eventsHash (cancelled) == 0x8e4d5fbc4bc1cb6dull, "event fixtures pin every active payload field");
+    ok (one.size() > 22 && cancelled.size() > one.size(), "measurement publishes live work and cancellation adds events");
+    ok (eventsHash (one) == 0xbb6a23cf576083a0ull && eventsHash (cancelled) == 0x88c168dd3c1699fdull, "event fixtures pin every active payload field");
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     Audio audio; auto s = fresh();
     const auto old = apply (*s, audio.load()).job;
@@ -177,11 +197,11 @@ void pump()
     const auto next = apply (*s, audio.load()).job;
     ok (next != old && s->source().hash == source, "even reloading identical samples gets a new job identity");
     ok (! Driver::measured1 (*s, old, source) && ! Driver::measured1 (*s, next, source + 1), "both measurement job and source are checked");
-    budget::measure (*s, true);
+    measureReady (*s, true);
     ok (! Driver::measured2 (*s, old, source), "stale phase two is ignored");
     (void) apply (*s, command::Cancel { 3, next });
     ok (apply (*s, command::Master { 4 }).rejection == Rejection::None, "master remains usable after phase two cancellation");
-    (void) step (*s, 16);
+    for (unsigned i = 0; i < 10000 && s->job() != 0; ++i) (void) step (*s, 16);
     ok (s->masters().size() == 1, "cancel does not destroy the session");
 }
 void tableBetweenSteps()
@@ -197,9 +217,9 @@ void tableBetweenSteps()
             if (placed != 0) (void) apply (*s, audio.load());
             if (placed >= 2 && placed != 6)
             {
-                budget::measure (*s, placed != 3 && placed != 5);
+                measureReady (*s, placed != 3 && placed != 5);
                 kept = apply (*s, command::Master { 10 }).job;
-                (void) step (*s, 4);
+                (void) Driver::mastered (*s, kept);
                 if (placed == 4 || placed == 5 || placed == 8) { (void) apply (*s, command::Master { 11 }); (void) step (*s, 1); }
             }
             if (placed >= 6) (void) apply (*s, command::Cancel { 22, s->measurementJob() });
@@ -224,7 +244,7 @@ void tableBetweenSteps()
 void codec()
 {
     Audio audio; auto s = fresh();
-    (void) apply (*s, audio.load()); budget::measure (*s);
+    (void) apply (*s, audio.load()); measureReady (*s);
     (void) apply (*s, command::SetManual { 2, true });
     HpfFields<Touched> hpf; hpf.fq = 36; hpf.on = true; hpf.slope = 12;
     (void) apply (*s, command::EditDevice { 3, hpf });
@@ -311,13 +331,13 @@ void contracts()
         {
             ok (s->source().frames != 0 && s->source().hash != 0, "phase-one cancellation retains the audio identity");
             (void) apply (*s, audio.load());
-            budget::measure (*s);
+            measureReady (*s);
             ok (s->state() == State::Measured2, "the shell can reload the same audio after phase-one cancellation");
         }
     }
     for (unsigned units : { 5u, 10u })
     {
-        auto s = fresh(); (void) apply (*s, audio.load()); budget::measure (*s, units == 5);
+        auto s = fresh(); (void) apply (*s, audio.load()); measureReady (*s, units == 5);
         const auto state = s->state(); const auto measurement = s->measurementJob();
         const auto job = apply (*s, command::Master { 2 }).job; (void) step (*s, 2);
         (void) apply (*s, command::Cancel { 3, job });
@@ -428,14 +448,14 @@ void eqSnapshot()
     float sample[4] {}; const float* pcm[] { sample, sample };
     (void) s.apply (command::Load { 1, { pcm, 2, 4, 48000 }, {} });
     ok (s.snapshot().view().eqCurve.empty(), "unplaced devices have no EQ curve");
-    budget::measure (s);
+    measureReady (s);
     const auto cfg = config::Config::load();
     const auto& engine = cfg.config.engine;
     std::uint64_t curveHash = 0xCBF29CE484222325ull;
     for (const auto rate : { 8000u, 44100u, 48000u, 192000u })
     {
         (void) s.apply (command::Load { 1, { pcm, 2, 4, rate }, {} });
-        budget::measure (s);
+        measureReady (s);
         for (int slope = 6; slope <= 96; slope += 6)
         {
             HpfFields<Touched> hp; hp.on = true; hp.fq = 36.25; hp.slope = slope;

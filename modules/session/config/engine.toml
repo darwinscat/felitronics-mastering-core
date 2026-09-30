@@ -38,20 +38,15 @@ shortConfidence = 0.5
 
 # THE LANDING — the loudness solver moving the gain before the limiter until the master sits on the target, in ONE
 # render at the delivery rate.
-# passes (an owner decision): three series of at most 12, 24 and 32 passes, in this order, without an early stop. On 1
-#   230 landings (205 songs × 6 targets) this gave no false "unreachable" and no true-peak violation, and the heaviest
-#   programme landed in 9 passes. A person is shown "pass N" — how many went, never the budget. A target that is not
-#   reached is still delivered when the true peak holds, and the report says how far it got.
+# passes (owner decision, 28.09): one budget of twelve renders. Success stops immediately; a miss is a normal
+#   outcome and delivers the closest measured master whose reference true peak holds the target ceiling.
 # toleranceLu: a master within ±toleranceLu of the target has landed. The ceiling has no positive tolerance.
-# overshootFreeDb, overshootPerDb, overshootCapDb: where the landing starts — the gain from the input's loudness to the
-#   target, plus 1 dB for every overshootPerDb dB that the input's peak rises above the ceiling past overshootFreeDb, and
-#   at most overshootCapDb. A first guess, not a promise: a miss costs passes, not the truth.
+# truePeakAimDb: how far below the promised peak the feedback loop aims; distinct from the limiter's initial margin.
+# The first gain uses the measured input's normalization to referenceLufs and the target's difference from it.
 [landing]
-passes = [12, 24, 32]
+passes = 12 # Owner decision 28.09: one budget, stop on success; a miss is a normal result.
 toleranceLu = 0.1
-overshootFreeDb = 3
-overshootPerDb = 4
-overshootCapDb = 1
+truePeakAimDb = 0.05
 
 # THE LIMITER — always on; its setting is the target's ceiling.
 # ceilingMarginDb: the limiter is first given a ceiling this much below the promised one; the solver moves it from

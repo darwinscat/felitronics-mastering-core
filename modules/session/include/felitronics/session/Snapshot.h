@@ -48,6 +48,9 @@ struct SnapshotView
     TempoChoice tempoChoice {};
     bool measurementsFromSidecar = false;
     bool sourceMissingAudio = false;
+    bool canMaster = false;
+    MasterToken pendingMaster {};
+    double pendingMasterBytes = 0.0;
 };
 class Codec;
 // An immutable, owned value. view() remains valid until this value is moved or destroyed,
@@ -71,6 +74,11 @@ private:
     OwnedMeasurements measurements_;
     std::unique_ptr<char[]> text_;
     std::unique_ptr<Kept[]> masters_;
+    std::unique_ptr<LandingPass[]> landingPasses_;
+    std::unique_ptr<LandingTraceBucket[]> landingTraceRows_;
+    std::unique_ptr<double[]> masterCrestRows_;
+    std::unique_ptr<MasterSection[]> masterSections_;
+    std::unique_ptr<MasterWaveformBucket[]> masterWaveform_;
     std::unique_ptr<MachineDifference[]> differences_;
     std::unique_ptr<EqPoint[]> eqCurve_;
     std::unique_ptr<ReadingPoint[]> points_;

@@ -99,6 +99,24 @@ enum class FactId : std::uint16_t
     MachineDifferences = 8,  // {count}: the saved machine layer is retained
     DefaultsConverted = 9,   // {version}: the project was converted from older defaults
     SameCoreMachineDifferences = 10, // {count}: same-core differences usually indicate a hand-edited file
+    MasterLandingMiss = 11,
+    MasterHintSubBass = 12,
+    MasterHintPeaks = 13,
+    MasterHintDark = 14,
+    MasterHintDemand = 15,
+    MasterHintGainRange = 16,
+    MasterHintTruePeak = 17,
+    MasterCrestSourceRate = 18,
+    MasterCrestPending = 19,
+    MasterCrestUnavailable = 20,
+    MasterReportUnavailable = 21,
+    MasterCrestDelivered = 22,
+    MasterLandingAbove = 23,
+    MasterCostShape = 24,
+    MasterCostCrest = 25,
+    MasterCostPumping = 26,
+    MasterCostK2Deferred = 27,
+    MasterCostUnavailable = 28,
 
     // A command's rejection, by its code — what was refused and why. The three a field refuses name it: {field}.
     RejectedFloatingPointEnvironment = 101,
@@ -133,6 +151,9 @@ enum class FactId : std::uint16_t
     RejectedMemory = 130,
 
     RejectedContract = 131,
+    RejectedOutputPending = 132,
+    RejectedMandatoryUnavailable = 133,
+    RejectedDeliveryFormat = 134,  // {bits} {rate}: the target's bit depth and delivery rate
 
     Measurement1 = 200,
     Measurement2 = 201,

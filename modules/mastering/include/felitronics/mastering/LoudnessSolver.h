@@ -4,6 +4,7 @@
 #pragma once
 
 #include <felitronics/analysis/LoudnessMeter.h>
+#include <felitronics/analysis/StreamingLoudnessMeter.h>
 #include <felitronics/analysis/ReferenceTruePeakMeter.h>
 #include <felitronics/core/Config.h>
 #include <felitronics/core/DetMath.h>
@@ -11,13 +12,17 @@
 #include <felitronics/dynamics/offline/Quantile.h>
 #include <felitronics/mastering/MasteringChain.h>
 #include <felitronics/mastering/OfflineRenderer.h>
+#include <felitronics/mastering/DeliveryConverter.h>
 #include <felitronics/mastering/Planes.h>
+#include <felitronics/mastering/PcmQuantizer.h>
 #include <felitronics/mastering/Progress.h>
 
 #include <algorithm>
+#include <climits>
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <utility>
 #include <array>
 #include <vector>
@@ -26,6 +31,7 @@
 
 namespace felitronics::mastering
 {
+class LandingSearch;
 
 //==============================================================================
 // felitronics::mastering::TargetLoudnessSolver — hit a target integrated loudness with a stated true-peak
@@ -191,7 +197,13 @@ enum class MasteringSolveStatus
     RenderFailed,           // the chain or the renderer refused a call
     NotPrepared,
     InvalidRequest,
-    Cancelled
+    Cancelled,
+    Unavailable             // no measured render holds the delivered true-peak ceiling
+};
+
+enum class LandingReason : std::uint8_t
+{
+    None, ExcessSubBass, SharpPeaks, DarkMix, LoudnessDemand, GainRange, TruePeak
 };
 
 // The pass budget's ceiling, named here because `LoudnessSolution` carries an array of that length and
@@ -514,6 +526,7 @@ struct GainReductionTraceBucket
     std::uint64_t samples   = 0;    // tap samples that landed in it, finite or not
     std::uint64_t nonFinite = 0;    // ... of which were NaN or infinite: excluded from max and mean, and COUNTED,
                                     // because a max that skips a NaN silently reads 0 — "the stage was idle"
+    double        minDb     = 0.0;  // smallest finite |GR|; 0 when no finite sample was seen
 };
 
 struct GainReductionTrace
@@ -529,6 +542,8 @@ struct GainReductionTrace
     bool          valid     = false;
     std::uint64_t samples   = 0, nonFinite = 0;
     std::vector<GainReductionTraceBucket> bucket;   // `buckets` entries
+    std::uint64_t programmeFrames = 0; // delivered-frame grid, shared by limiter and K13
+    bool complete = false;             // finish() ran; valid additionally requires finite samples
 
     // min(requested, frames); 0 when either is not positive.
     static int bucketsFor (int requested, int frames) noexcept
@@ -575,10 +590,11 @@ struct BandGrResult
 // THE TRACE'S THREE STEPS, as one small object the solver's tap sink drives — public so the one path no audio can
 // reach through the solver (a non-finite tap: the chain sanitises its input) can be tested directly.
 //   * construction — before a render: bucketsFor(requested, frames) buckets, `requested` clamped to [1, kMaxBuckets],
-//     every bucket zero, `valid` false, the storage reused when it already holds that many;
+//     every bucket zero, `valid` false, the storage reused when it already holds that many; deferred construction
+//     reaches the same state through bounded stepBegin() calls before the first add();
 //   * `add(frame, a)` — per tap sample, in stream order: `a` is |GR| in dB for programme frame `frame`; it counts the
 //     sample, and either its non-finite count or its running max and SUM (the mean is divided out once, at the end);
-//   * `finish()` — after a render that ran to its end: the means, the totals, and `valid`. A render that did not run
+//   * `finish()` or bounded stepFinish() — after a render that ran to its end: the means, the totals, and `valid`. A render that did not run
 //     to its end never calls it, so its trace stays `valid == false` with whatever it had counted.
 // The bucket of a frame is found by a cursor over the boundaries floor(k·F/B), advanced as the frames arrive — one
 // division per bucket, not per sample. Frames outside [0, F) are ignored.
@@ -586,17 +602,50 @@ class GainReductionTraceBuilder
 {
 public:
     GainReductionTraceBuilder (GainReductionTrace& trace, int programmeFrames,
-                               int requestedBuckets = GainReductionTrace::kDefaultBuckets)
+                               int requestedBuckets = GainReductionTrace::kDefaultBuckets,
+                               bool deferred = false)
         : t (trace), frames (programmeFrames > 0 ? (std::uint64_t) programmeFrames : 0u)
     {
         t.buckets   = GainReductionTrace::bucketsFor (std::clamp (requestedBuckets, 1, GainReductionTrace::kMaxBuckets),
                                                       programmeFrames);
-        t.bucket.assign ((std::size_t) t.buckets, GainReductionTraceBucket {});
+        if (! deferred) t.bucket.assign ((std::size_t) t.buckets, GainReductionTraceBucket {});
         t.valid     = false;
+        t.complete  = false;
+        t.programmeFrames = this->frames;
         t.samples   = 0;
         t.nonFinite = 0;
         end = t.buckets > 0 ? bucketEnd (0) : 0u;
+        beginPhase = deferred ? BeginPhase::Clear : BeginPhase::Done;
     }
+
+    bool stepBegin (std::uint32_t budget) noexcept
+    {
+        while (budget > 0 && beginPhase != BeginPhase::Done)
+        {
+            if (beginPhase == BeginPhase::Clear)
+            {
+                if (t.bucket.empty()) { beginPhase = BeginPhase::Reserve; continue; }
+                t.bucket.pop_back(); ++beginUnits; --budget;
+            }
+            else if (beginPhase == BeginPhase::Reserve)
+            {
+                // There are no live elements to move when growth replaces storage.
+                t.bucket.reserve ((std::size_t) t.buckets);
+                beginPhase = BeginPhase::Fill;
+                ++beginUnits; --budget;
+            }
+            else
+            {
+                const auto count = std::min<std::size_t> ((std::size_t) t.buckets - t.bucket.size(), budget);
+                t.bucket.resize (t.bucket.size() + count);
+                beginUnits += count; budget -= std::uint32_t (count);
+                if (t.bucket.size() == (std::size_t) t.buckets) beginPhase = BeginPhase::Done;
+            }
+        }
+        return beginPhase == BeginPhase::Done;
+    }
+
+    std::size_t beginWorkUnits() const noexcept { return beginUnits; }
 
     void add (std::uint64_t frame, double a) noexcept
     {
@@ -606,25 +655,35 @@ public:
         GainReductionTraceBucket& b = t.bucket[(std::size_t) k];
         ++b.samples;
         if (! std::isfinite (a)) { ++b.nonFinite; return; }
+        if (b.samples - b.nonFinite == 1 || a < b.minDb) b.minDb = a;
         if (a > b.maxDb) b.maxDb = a;
         b.meanDb += a;                                                      // a running SUM until finish()
     }
 
-    void finish() noexcept
+    bool stepFinish (std::uint32_t budget) noexcept
     {
-        std::uint64_t samples = 0, nonFinite = 0;
-        for (int i = 0; i < t.buckets; ++i)
+        if (t.complete) return true;
+        const auto limit = std::min<std::size_t> ((std::size_t) t.buckets, finishCursor + budget);
+        while (finishCursor < limit)
         {
-            GainReductionTraceBucket& b = t.bucket[(std::size_t) i];
+            GainReductionTraceBucket& b = t.bucket[finishCursor++];
             const std::uint64_t finite = b.samples - b.nonFinite;
             b.meanDb = finite > 0 ? b.meanDb / (double) finite : 0.0;
-            samples   += b.samples;
-            nonFinite += b.nonFinite;
+            finishSamples += b.samples;
+            finishNonFinite += b.nonFinite;
         }
-        t.samples   = samples;
-        t.nonFinite = nonFinite;
-        t.valid     = samples > 0 && nonFinite == 0;
+        if (finishCursor == (std::size_t) t.buckets)
+        {
+            t.samples = finishSamples; t.nonFinite = finishNonFinite;
+            t.valid = finishSamples > 0 && finishNonFinite == 0;
+            t.complete = true;
+            return true;
+        }
+        return false;
     }
+
+    std::size_t finishedBuckets() const noexcept { return finishCursor; }
+    void finish() noexcept { (void) stepFinish (std::uint32_t (t.buckets)); }
 
 private:
     // bucket k's end is bucket k+1's start: floor((k+1)·F/B), so a cursor that carries it over never recomputes a start
@@ -633,6 +692,11 @@ private:
     GainReductionTrace& t;
     std::uint64_t frames;
     std::uint64_t k = 0, start = 0, end = 0;
+    enum class BeginPhase : std::uint8_t { Clear, Reserve, Fill, Done };
+    BeginPhase beginPhase = BeginPhase::Done;
+    std::size_t beginUnits = 0;
+    std::size_t finishCursor = 0;
+    std::uint64_t finishSamples = 0, finishNonFinite = 0;
 };
 
 // Everything the request asked to be told, from ONE render. The three achieved numbers are measured on
@@ -705,6 +769,12 @@ struct LoudnessRequest
     // rates where the cheap meter stops interpolating — so a render the solver called feasible was delivered
     // above its promise. No margin fixes that, because the disagreement is the material's: see measure().
     double truePeakAimDb   =   0.05;
+    double normalizationGainDb = 0.0;    // source-to--18 LUFS trim, before the chain; separate from the search gain
+    bool productLanding = false;         // one resumable budget, selected by Session
+    // productLanding: how far below `maxTruePeakDbTp` the first limiter ceiling sits. REQUIRED there, like the
+    // target: it is the product's number (Session reads engine.toml [limiter] ceilingMarginDb), not this core's.
+    double ceilingMarginDb = std::numeric_limits<double>::quiet_NaN();
+    unsigned pcmBits = 0;                // 0: legacy float; 16/20/24: measure the PCM grid; 32: float WAV
 
     // Constraints. A target that needs one of these broken is REFUSED with the name, not forced through.
     GainReductionLimit limiterGr    {};                                              // off by default
@@ -801,6 +871,16 @@ struct LoudnessSolution
 
     double preLimiterGainDb = 0.0;              // what was applied to produce the delivered render
     double ceilingDbTp      = 0.0;              // ... and the ceiling the limiter was actually given
+    bool deliverable = false;                   // true only for a verified, ceiling-safe landing
+    double achievedLufs = std::numeric_limits<double>::quiet_NaN();
+    double missLu = std::numeric_limits<double>::quiet_NaN();
+    double distanceLu = std::numeric_limits<double>::quiet_NaN();
+    double sourceSubBassShare = std::numeric_limits<double>::quiet_NaN();
+    double sourcePresenceShare = std::numeric_limits<double>::quiet_NaN();
+    double limiterMeanReductionDb = std::numeric_limits<double>::quiet_NaN();
+    double normalizationGainDb = 0.0;
+    std::uint64_t workUnits = 0;
+    LandingReason mainReason = LandingReason::None, secondReason = LandingReason::None;
     MasterMeasurement measured {};              // of the DELIVERED render, always — never of a probe
     // The armed (band, lane) pairs of THIS solve, in band-then-lane order. Only armed pairs appear;
     // `bandGrFor` returns nullptr for the rest, which the ABI turns into the refusal that says WHY.
@@ -837,6 +917,7 @@ struct LoudnessSolution
     // not in the solver, because a solution outlives the next solve.
     GainReductionTrace compressorTrace {};
     GainReductionTrace limiterTrace {};
+    GainReductionTrace peakClipTrace {}; // K13, on the limiter trace's delivered-frame grid
 
     // THE DISTRIBUTION EVERY QUANTILE OF THIS SOLUTION IS READ FROM, one per stage — the histogram the search
     // judged this render's gain-reduction limits on, of the LAST render, which is the one in `out`. Written by
@@ -865,18 +946,26 @@ struct LoudnessSolution
     }
 };
 
+class TargetLoudnessSolver;
+inline LoudnessSolution solveProductLanding (TargetLoudnessSolver& solver, MasteringChain& chain,
+    OfflineRenderer& renderer, const MasteringChainParams& params, const float* const* source,
+    float* const* out, int channels, int frames, const LoudnessRequest& request,
+    const ProgressCallback& progress, DeliveryConverter* converter, long long sourceFrames);
+
 class TargetLoudnessSolver
 {
 public:
     static constexpr std::uint64_t constructBytes() noexcept { return 3u * storage::kVectorProxyBytes; }
     static constexpr std::uint64_t meterConstructBytes() noexcept
     {
-        return (storage::kLoudnessProxies + 1u + storage::kPolyphaseProxies * core::kMaxChannels)
+        // The saved streaming meter owns two scalar Buffers, not STL vectors;
+        // only the true-peak scratch and oversampler vectors need Debug proxies.
+        return (1u + storage::kPolyphaseProxies * core::kMaxChannels)
              * storage::kVectorProxyBytes;
     }
-    // Six vectors in a solution (band results, two traces, three histograms). A non-elided
+    // Seven vectors in a solution (band results, three traces, three histograms). A non-elided
     // return constructs a second set of proxies; moving a Debug vector allocates its empty proxy.
-    static constexpr std::uint64_t solutionConstructBytes() noexcept { return 6u * storage::kVectorProxyBytes; }
+    static constexpr std::uint64_t solutionConstructBytes() noexcept { return 7u * storage::kVectorProxyBytes; }
     static constexpr std::uint64_t solutionReturnBytes() noexcept { return 3u * solutionConstructBytes(); }
     static constexpr std::uint64_t solveProxyBytes() noexcept
     {
@@ -933,6 +1022,7 @@ public:
         compTap_.assign ((std::size_t) frameCap_, 0.0f);
         limTap_.assign  ((std::size_t) osCap_, 0.0f);
         limPeak_.assign ((std::size_t) osCap_, 0.0f);
+        clipTap_.assign ((std::size_t) osCap_, 0.0f);
         // The band tap is counted in QUANTA, and a quantum is at least one frame, so a capacity of
         // `frameCap` rows can never be short however small the internal block turns out to be. 120 floats
         // a row: sized here because process() refuses a tap it cannot fill, and refusing mid-solve for a
@@ -973,7 +1063,9 @@ public:
             || ! grQuantileAdmitted (req.limiterGr.quantile) || ! grQuantileAdmitted (req.compressorGr.quantile)
             || std::isnan (req.minPlrDb) || std::isnan (req.maxLraLossLu)
             || ! std::isfinite (req.truePeakAimDb) || req.truePeakAimDb < 0.0
-            || ! traceBucketsAdmitted (req.grTraceBuckets)) return false;
+            || ! traceBucketsAdmitted (req.grTraceBuckets)
+            || (req.pcmBits != 0 && req.pcmBits != 16 && req.pcmBits != 20
+                && req.pcmBits != 24 && req.pcmBits != 32)) return false;
         // The tap buffers were sized for a geometry; a chain that does not match them would be measured
         // through a refused call, which is a silent zero rather than a statistic.
         // THE RATE IS CHECKED, not assumed shared. The solver builds its own meters from `fs_`, and a
@@ -1011,31 +1103,64 @@ public:
         // exists to prevent.
         const std::uint64_t bandTap = (std::uint64_t) sizeof (float)
                                     * (std::uint64_t) frameCap * (std::uint64_t) kBandGrStride;
-        return (std::uint64_t) sizeof (float) * ((std::uint64_t) frameCap + 2u * (std::uint64_t) osCap)
+        return (std::uint64_t) sizeof (float) * ((std::uint64_t) frameCap + 3u * (std::uint64_t) osCap)
              + 3u * hist + bandTap;
     }
 
     // Working storage alone; solveCallBytes() below includes the result's construction and return.
-    // solve(): its PEAK. Every pass builds a loudness meter and the reference true-peak meter and frees them at the
-    // pass's end, so the peak is ONE pass. (The drain used to be a buffer of zeros the first solve allocated and later
-    // ones reused; the reference meter drains from its own fixed array, so there is nothing left over.) 0 for a length
+    // solve(): its PEAK. The pass workspace retains the loudness and reference true-peak meters through every render,
+    // so their storage is charged once. The reference meter drains from its own fixed array. 0 for a length
     // or a channel count solve() refuses before any pass.
     // Plus the solution's two traces of `grTraceBuckets` buckets and its THREE quantile histograms — the two
     // the limits are judged on and the limiter's gated one — which the first render allocates; 0 for a
     // bucket count or a bin width solve() refuses. `binDb` is the one prepare() was given, because the
     // histograms the solution keeps are copies of the ones prepare() sized.
-    static std::uint64_t solveBytes (double sampleRate, int numChannels, int frames, int grTraceBuckets,
-                                     double binDb = 0.01) noexcept
+    static std::uint64_t ordinarySolveBytes (double sampleRate, int numChannels, int frames, int grTraceBuckets,
+                                             double binDb = 0.01) noexcept
     {
         if (frames <= 0 || numChannels < 1 || numChannels > core::kMaxChannels) return 0u;
         if (! traceBucketsAdmitted (grTraceBuckets)) return 0u;
         const std::uint64_t hist = dynamics::offline::QuantileHistogram::storageBytes (0.0, kGrRangeDb, binDb);
         if (hist == 0) return 0u;
-        const std::uint64_t meter = meterBytes (sampleRate, frames);
+        const std::uint64_t meter = passMeterBytes (sampleRate, frames);
         if (meter == 0) return 0u;       // the meter refuses its capacity: measure() stops before anything is allocated
         return meter + analysis::ReferenceTruePeakMeter::storageFor (sampleRate, frames, numChannels).bytes()
-             + 2u * GainReductionTrace::bytesFor (grTraceBuckets, frames) + 3u * hist
+             + 3u * GainReductionTrace::bytesFor (grTraceBuckets, frames) + 3u * hist
              + meterConstructBytes() + solveProxyBytes();
+    }
+
+    // The landing search retains two solution workspaces and one pass meter set.
+    // Its largest allocation is a meter or trace, never another PCM programme.
+    static std::uint64_t productSearchCallBytes (double sampleRate, int numChannels, int frames,
+                                                  int grTraceBuckets, int armedPairs = kBandGrStride,
+                                                  double binDb = 0.01) noexcept
+    {
+        if (armedPairs < 0 || armedPairs > kBandGrStride) return 0u;
+        const std::uint64_t base = ordinarySolveBytes (sampleRate, numChannels, frames, grTraceBuckets, binDb);
+        if (base == 0u) return 0u;
+        const std::uint64_t oneResult = base + solutionReturnBytes();
+        const std::uint64_t bandHist = dynamics::offline::QuantileHistogram::storageBytes (
+            0.0, kBandGrRangeDb, 0.01);
+        const std::uint64_t bandTrace = GainReductionTrace::bytesFor (grTraceBuckets, frames);
+        return 2u * oneResult + (std::uint64_t) armedPairs *
+            (4u * bandHist + 3u * bandTrace + 3u * sizeof (BandGrResult)
+             + 16u * storage::kVectorProxyBytes + 1024u);
+    }
+
+    static std::uint64_t solveBytes (double sampleRate, int numChannels, int frames, int grTraceBuckets,
+                                     double binDb = 0.01) noexcept
+    {
+        return ordinarySolveBytes (sampleRate, numChannels, frames, grTraceBuckets, binDb);
+    }
+
+    static std::uint64_t solveBytes (double sampleRate, int numChannels, int frames,
+                                     const LoudnessRequest& req, double binDb = 0.01) noexcept
+    {
+        if (! req.productLanding) return ordinarySolveBytes (sampleRate, numChannels, frames,
+                                                               req.grTraceBuckets, binDb);
+        const std::uint64_t bytes = productSearchCallBytes (sampleRate, numChannels, frames,
+                                                              req.grTraceBuckets, kBandGrStride, binDb);
+        return bytes == 0u ? 0u : bytes - solutionReturnBytes();
     }
 
     // The whole call, including a refused solve's result. Three sets of solution proxies bound
@@ -1044,6 +1169,11 @@ public:
                                          double binDb = 0.01) noexcept
     {
         return solveBytes (sampleRate, numChannels, frames, grTraceBuckets, binDb) + solutionReturnBytes();
+    }
+    static std::uint64_t solveCallBytes (double sampleRate, int numChannels, int frames,
+                                         const LoudnessRequest& req, double binDb = 0.01) noexcept
+    {
+        return solveBytes (sampleRate, numChannels, frames, req, binDb) + solutionReturnBytes();
     }
 
     // The request's bucket count, as admits() judges it.
@@ -1079,12 +1209,41 @@ public:
         return solve (chain, renderer, params, in, out, numChannels, frames, req, ProgressCallback {});
     }
 
+    // The source remains at its own rate. Each pass converts it into the caller's
+    // output and then renders that output in place, reusing the same programme buffer.
+    LoudnessSolution solveDelivered (MasteringChain& chain, OfflineRenderer& renderer,
+                                      const MasteringChainParams& params,
+                                      DeliveryConverter& converter, const float* const* source,
+                                      long long sourceFrames, float* const* out,
+                                      int numChannels, int frames, const LoudnessRequest& req,
+                                      const ProgressCallback& progress, std::uint64_t* nonFiniteCount = nullptr)
+    {
+        if (! converter.isPrepared() || sourceFrames < 0 || frames < 0
+            || numChannels < 1 || numChannels > core::kMaxChannels
+            || ! planesUsable (source, out, numChannels, sourceFrames, frames))
+        {
+            LoudnessSolution refused;
+            refused.activityThresholdDb = req.activityThresholdDb;
+            refused.status = MasteringSolveStatus::InvalidRequest;
+            return refused;
+        }
+        deliveryConverter_ = &converter;
+        deliverySource_ = source;
+        deliveryFrames_ = sourceFrames;
+        deliveryFirstCountReady_ = false;
+        DeliveryReset reset { *this, nonFiniteCount };
+        return solve (chain, renderer, params, source, out, numChannels, frames, req, progress);
+    }
+
     LoudnessSolution solve (MasteringChain& chain, OfflineRenderer& renderer,
                             MasteringChainParams params,
                             const float* const* in, float* const* out,
                             int numChannels, int frames, const LoudnessRequest& req,
                             const ProgressCallback& progress)
     {
+        if (req.productLanding)
+            return solveProductLanding (*this, chain, renderer, params, in, out, numChannels, frames,
+                                        req, progress, deliveryConverter_, deliveryFrames_);
         LoudnessSolution sol;
         sol.activityThresholdDb = req.activityThresholdDb;
         if (! admits (chain, renderer, numChannels, frames, req, sol.status)) return sol;
@@ -1102,7 +1261,7 @@ public:
         // second channel's render overwrites the first and the search meters one channel twice (the suite's
         // witnesses, testCrossChannelAliasingIsRefused). A NULL PLANE is refused by the same predicate; it used to
         // reach the renderer and dereference it.
-        if (! planesUsable (in, out, numChannels, frames, frames))
+        if (deliveryConverter_ == nullptr && ! planesUsable (in, out, numChannels, frames, frames))
             { sol.status = MasteringSolveStatus::InvalidRequest; return sol; }
 
         const double target = req.targetLufs;
@@ -1160,7 +1319,9 @@ public:
                                        ? req.truePeakAimDb : 0.0);
 
         ProgressClock clock (progress);
-        const long long passUnits = 2LL * (long long) frames + (long long) chain.latencySamples();
+        const long long passUnits = (deliveryConverter_ == nullptr ? 2LL * (long long) frames
+            : deliveryFrames_ + 2LL * (long long) frames)
+            + (long long) chain.latencySamples();
 
         for (int pass = 0; pass < req.maxPasses; ++pass)
         {
@@ -1781,6 +1942,29 @@ public:
     }
 
 private:
+    void captureDeliveryCount() noexcept
+    {
+        if (deliveryConverter_ != nullptr && ! deliveryFirstCountReady_
+            && deliveryConverter_->readFrames() == deliveryFrames_)
+        {
+            deliveryFirstCount_ = deliveryConverter_->nonFiniteInputSamples();
+            deliveryFirstCountReady_ = true;
+        }
+    }
+
+    struct DeliveryReset
+    {
+        TargetLoudnessSolver& owner;
+        std::uint64_t* nonFiniteCount;
+        ~DeliveryReset() noexcept
+        {
+            if (nonFiniteCount != nullptr && owner.deliveryFirstCountReady_)
+                *nonFiniteCount = owner.deliveryFirstCount_;
+            owner.deliveryConverter_ = nullptr;
+            owner.deliverySource_ = nullptr;
+            owner.deliveryFrames_ = 0;
+        }
+    };
     static bool keepRecord (LoudnessSolution& sol, ProgressClock& clock, double g, double c,
                             const MasterMeasurement& m, std::uint32_t violated) noexcept
     {
@@ -2094,9 +2278,396 @@ private:
         return v;
     }
 
+    struct PassWorkspace
+    {
+        // Provided, not defaulted: `std::optional<PassWorkspace> pass_` is a member of the class this one is nested in,
+        // where a defaulted constructor that needs the member initialisers below is not usable yet — clang with
+        // libstdc++ 14 then refuses `pass_.emplace()`. A provided constructor is usable from its declaration.
+        PassWorkspace() {}
+        struct Armed { int band = 0, lane = 0; };
+        enum class Phase { Setup, TraceInit, Render, MeterSetup, Meter, FinishDrain, FinishBands,
+                           FinishStats, FinishGate, FinishRange, FinishComplete, Done, Failed };
+        Phase phase = Phase::Setup;
+        StepResult conversion = StepResult::More;
+        MasteringChain* chain = nullptr;
+        OfflineRenderer* renderer = nullptr;
+        const MasteringChainParams* params = nullptr;
+        const float* const* in = nullptr;
+        float* const* out = nullptr;
+        int nch = 0, frames = 0, measured = 0;
+        std::size_t finishBand = 0, traceInit = 0, finishTrace = 0;
+        long long work = 0;
+        int meterFrames = 0, meterChannels = 0;
+        double meterRate = 0.0;
+        const LoudnessRequest* req = nullptr;
+        MasterMeasurement* measurement = nullptr;
+        LoudnessSolution* solution = nullptr;
+        ProgressClock* clock = nullptr;
+        bool finishCheckpoints = false;
+        const float* converted[core::kMaxChannels] {};
+        std::vector<Armed> armed;
+        std::vector<dynamics::offline::QuantileHistogram> bandWholeH, bandActiveH;
+        std::vector<GainReductionSummariser> bandWhole;
+        std::vector<ActiveWindowGrSummariser> bandActive;
+        std::vector<std::pair<int, int>> armedPairs;
+        std::vector<GainReductionTraceBuilder> bandTrace;
+        std::optional<GainReductionSummariser> compSum, limSum;
+        std::optional<ActiveWindowGrSummariser> limActive;
+        std::optional<GainReductionTraceBuilder> compTrace, limTrace, clipTrace;
+        MasteringChainTaps taps {};
+        analysis::SystemStreamingLoudnessMeter lm;
+        analysis::ReferenceTruePeakMeter tm;
+    };
+
+    void consumePassTaps (PassWorkspace& p, const MasteringChainTaps& t, long long tapPos) noexcept
+    {
+        const MasteringChainResolved r = p.chain->resolved();
+        const long long compFrom = r.compressorTapOffset, compTo = compFrom + p.frames;
+        const long long limDetectorFrom = r.limiterTapOffset, limDetectorTo = limDetectorFrom + p.frames;
+        const long long limAppliedFrom = limDetectorFrom + r.limiterLookahead;
+        const long long limAppliedTo = limAppliedFrom + p.frames;
+        const long long bandK = r.internalBlock > 0 ? r.internalBlock : 1;
+        for (int q = 0; q < t.bandQuantaWritten && t.bandDeltaDb != nullptr; ++q)
+        {
+            const float* row = t.bandDeltaDb + (std::size_t) q * (std::size_t) kBandGrStride;
+            for (std::size_t k = 0; k < p.armed.size(); ++k)
+            {
+                const double d = std::fabs ((double) row[(std::size_t) bandGrIndex (p.armed[k].band, p.armed[k].lane)]);
+                p.bandWhole[k].add (d);
+                p.bandActive[k].add (d, d);
+                p.bandTrace[k].add ((std::uint64_t) std::max (0LL, tapPos + (long long) q * bandK), d);
+            }
+        }
+        for (int j = 0; j < t.framesWritten; ++j)
+        {
+            const long long s = tapPos + j;
+            if (s >= compFrom && s < compTo)
+            {
+                const double a = std::fabs ((double) compTap_[(std::size_t) j]);
+                p.compSum->add (a);
+                p.compTrace->add ((std::uint64_t) (s - compFrom), a);
+            }
+            const bool detector = s >= limDetectorFrom && s < limDetectorTo;
+            const bool applied = s >= limAppliedFrom && s < limAppliedTo;
+            if (detector || applied)
+                for (int k = 0; k < p.chain->tapOversampleFactor(); ++k)
+                {
+                    const std::size_t idx = (std::size_t) j * (std::size_t) p.chain->tapOversampleFactor() + (std::size_t) k;
+                    const double a = std::fabs ((double) limTap_[idx]);
+                    if (detector)
+                    {
+                        p.limSum->add (a);
+                        const float pk = limPeak_[idx];
+                        p.limActive->add (a, (double) pk);
+                        if (pk > maxReconLin_) maxReconLin_ = pk;
+                        p.clipTrace->add ((std::uint64_t) (s - limDetectorFrom), (double) clipTap_[idx]);
+                    }
+                    if (applied) p.limTrace->add ((std::uint64_t) (s - limAppliedFrom), a);
+                }
+        }
+    }
+
+    bool beginPass (MasteringChain& chain, OfflineRenderer& renderer, const MasteringChainParams& params,
+                    const float* const* in, float* const* out, int nch, int frames,
+                    const LoudnessRequest& req, MasterMeasurement& m, LoudnessSolution& sol, ProgressClock& clock,
+                    bool finishCheckpoints = false)
+    {
+        if (! pass_) pass_.emplace();
+        PassWorkspace& p = *pass_;
+        p.phase = PassWorkspace::Phase::Setup;
+        p.conversion = StepResult::More;
+        p.chain = &chain; p.renderer = &renderer; p.params = &params;
+        p.in = in; p.out = out; p.nch = nch; p.frames = frames; p.measured = 0; p.work = 0;
+        p.req = &req; p.measurement = &m; p.solution = &sol; p.clock = &clock;
+        p.finishCheckpoints = finishCheckpoints;
+        return true;
+    }
+
+    [[nodiscard]] StepResult stepPass (long long budget)
+    {
+        if (! pass_ || budget < 0) return StepResult::Failed;
+        PassWorkspace& p = *pass_;
+        using Phase = PassWorkspace::Phase;
+        if (p.phase == Phase::Done) return StepResult::Done;
+        if (p.phase == Phase::Failed) return StepResult::Failed;
+        if (budget == 0) return StepResult::More;
+        if (p.phase == Phase::Setup)
+        {
+            maxReconLin_ = 0.0f;
+            p.armed.clear();
+            for (int b = 0; b < kBandGrBands; ++b)
+            {
+                const eq::BandParams& bpar = p.params->eqBands[(std::size_t) b];
+                const BandGrAbsence bandWhy = ! bpar.dyn.on ? BandGrAbsence::NotDynamic
+                    : ! (std::fabs (bpar.dyn.rangeDb) > 0.0) ? BandGrAbsence::Inert : BandGrAbsence::Armed;
+                for (int l = 0; l < kBandGrLanes; ++l)
+                {
+                    const BandGrAbsence why = bandWhy != BandGrAbsence::Armed ? bandWhy
+                        : (bpar.lanes[(std::size_t) l].on ? BandGrAbsence::Armed : BandGrAbsence::LaneOff);
+                    p.solution->bandGrAbsence[(std::size_t) bandGrIndex (b, l)] = why;
+                    if (why == BandGrAbsence::Armed) p.armed.push_back ({ b, l });
+                }
+            }
+            p.bandWholeH.resize (p.armed.size()); p.bandActiveH.resize (p.armed.size());
+            p.bandWhole.clear(); p.bandActive.clear(); p.armedPairs.clear(); p.bandTrace.clear();
+            p.bandWhole.reserve (p.armed.size()); p.bandActive.reserve (p.armed.size());
+            p.armedPairs.reserve (p.armed.size()); p.bandTrace.reserve (p.armed.size());
+            const int bandK = p.chain->resolved().internalBlock;
+            const long long bandWin = grQuantileWindowSamples (fs_ / (double) (bandK > 0 ? bandK : 1));
+            for (std::size_t i = 0; i < p.armed.size(); ++i)
+            {
+                if (! p.bandWholeH[i].prepare (0.0, kBandGrRangeDb, 0.01)
+                    || ! p.bandActiveH[i].prepare (0.0, kBandGrRangeDb, 0.01))
+                    { p.phase = Phase::Failed; return StepResult::Failed; }
+                p.bandWhole.emplace_back (p.bandWholeH[i], bandWin, 0.0);
+                p.bandActive.emplace_back (p.bandActiveH[i], bandWin, 0.0,
+                    -std::numeric_limits<double>::infinity());
+                p.armedPairs.emplace_back (p.armed[i].band, p.armed[i].lane);
+            }
+            p.compSum.emplace (compHist_, grQuantileWindowSamples (fs_), p.req->activityThresholdDb);
+            p.limSum.emplace (limHist_, grQuantileWindowSamples (fs_ * (double) p.chain->tapOversampleFactor()),
+                              p.req->activityThresholdDb);
+            p.limActive.emplace (limActiveHist_, grQuantileWindowSamples (fs_ * (double) p.chain->tapOversampleFactor()),
+                                 p.req->activityThresholdDb, p.req->limiterActiveInputDb);
+            p.compTrace.emplace (p.solution->compressorTrace, p.frames, p.req->grTraceBuckets, true);
+            p.limTrace.emplace (p.solution->limiterTrace, p.frames, p.req->grTraceBuckets, true);
+            p.clipTrace.emplace (p.solution->peakClipTrace, p.frames, p.req->grTraceBuckets, true);
+            p.solution->compressorGrWindows.reset(); p.solution->limiterGrWindows.reset();
+            p.solution->limiterActiveGrWindows.reset(); p.solution->limiterActive = ActiveGainReductionStats {};
+            // Resize in place: clearing first destroys every trace buffer and
+            // makes each armed band allocate again on the next pass.
+            p.solution->bandGr.resize (p.armed.size());
+            for (std::size_t i = 0; i < p.armed.size(); ++i)
+                p.bandTrace.emplace_back (p.solution->bandGr[i].trace, p.frames, p.req->grTraceBuckets, true);
+            p.traceInit = 0; p.finishTrace = 0; p.phase = Phase::TraceInit;
+            --budget; ++p.work;
+        }
+        if (budget == 0) return StepResult::More;
+        if (p.phase == Phase::TraceInit)
+        {
+            const auto count = p.bandTrace.size() + 3u;
+            while (budget > 0 && p.traceInit < count)
+            {
+                auto& trace = p.traceInit == 0 ? *p.compTrace : p.traceInit == 1 ? *p.limTrace
+                    : p.traceInit == 2 ? *p.clipTrace : p.bandTrace[p.traceInit - 3u];
+                const auto before = trace.beginWorkUnits();
+                const bool done = trace.stepBegin (std::uint32_t (std::min<long long> (budget, 1024)));
+                const auto used = static_cast<long long> (trace.beginWorkUnits() - before);
+                budget -= used; p.work += used;
+                if (done) ++p.traceInit;
+                if (p.finishCheckpoints && ! p.clock->checkpoint())
+                    { p.phase = Phase::Failed; return StepResult::Failed; }
+            }
+            if (p.traceInit != count || budget == 0) return StepResult::More;
+            p.taps = MasteringChainTaps {};
+            p.taps.compressorGrDb = compTap_.data(); p.taps.frameCapacity = frameCap_;
+            p.taps.limiterGrDb = limTap_.data(); p.taps.limiterPeakLin = limPeak_.data();
+            p.taps.peakClipReductionDb = clipTap_.data(); p.taps.osCapacity = osCap_;
+            if (! p.armed.empty())
+                { p.taps.bandDeltaDb = bandTap_.data(); p.taps.bandQuantaCapacity = bandQuantaCap_; }
+            const float* const* renderInput = p.in;
+            if (deliveryConverter_ != nullptr)
+            {
+                if (! deliveryConverter_->begin (deliverySource_, p.nch, deliveryFrames_, p.out, p.frames))
+                    { p.phase = Phase::Failed; return StepResult::Failed; }
+                captureDeliveryCount();
+                for (int c = 0; c < p.nch; ++c) p.converted[c] = p.out[c];
+                renderInput = p.converted;
+            }
+            if (! p.renderer->begin (*p.chain, renderInput, p.out, p.nch, p.frames, p.taps))
+                { p.phase = Phase::Failed; return StepResult::Failed; }
+            p.phase = Phase::Render;
+            --budget; ++p.work;
+        }
+        if (budget == 0) return StepResult::More;
+        if (p.phase == Phase::Render)
+        {
+            auto sink = [this, &p] (const MasteringChainTaps& taps, long long pos) noexcept
+                { consumePassTaps (p, taps, pos); };
+            while (budget > 0)
+            {
+                if (deliveryConverter_ != nullptr && p.conversion == StepResult::More)
+                {
+                    const long long workBefore = deliveryConverter_->workFrames();
+                    const long long readBefore = deliveryConverter_->readFrames();
+                    p.conversion = deliveryConverter_->step (std::min<long long> (budget,
+                        p.clock->piece (p.renderer->blockSize())));
+                    if (p.conversion == StepResult::Failed) { p.phase = Phase::Failed; return StepResult::Failed; }
+                    captureDeliveryCount();
+                    const long long conversionWork = deliveryConverter_->workFrames() - workBefore;
+                    budget -= conversionWork; p.work += conversionWork;
+                    if (! p.clock->advance (deliveryConverter_->readFrames() - readBefore))
+                        { p.phase = Phase::Failed; return StepResult::Failed; }
+                }
+                if (budget == 0) return StepResult::More;
+                const long long before = p.renderer->processedFrames();
+                const long long available = deliveryConverter_ == nullptr ? p.frames : deliveryConverter_->writtenFrames();
+                const StepResult rendered = p.renderer->step (*p.chain, p.taps, sink, budget, available, p.clock);
+                if (rendered == StepResult::Failed) { p.phase = Phase::Failed; return StepResult::Failed; }
+                const long long renderWork = p.renderer->processedFrames() - before;
+                budget -= renderWork; p.work += renderWork;
+                if (rendered == StepResult::Done)
+                {
+                    if (deliveryConverter_ != nullptr && ! deliveryConverter_->finish())
+                        { p.phase = Phase::Failed; return StepResult::Failed; }
+                    if (! p.renderer->finish()) { p.phase = Phase::Failed; return StepResult::Failed; }
+                    p.phase = Phase::MeterSetup;
+                    break;
+                }
+                if (budget == 0) return StepResult::More;
+                if (p.renderer->processedFrames() == before
+                    && (deliveryConverter_ == nullptr || p.conversion == StepResult::Done))
+                    { p.phase = Phase::Failed; return StepResult::Failed; }
+            }
+        }
+        if (budget == 0) return StepResult::More;
+        if (p.phase == Phase::MeterSetup)
+        {
+            if (p.meterFrames == p.frames && p.meterChannels == p.nch && core::exactlyEqual (p.meterRate, fs_))
+                { p.lm.reset(); p.tm.reset(); }
+            else
+            {
+                if (! p.lm.prepareForSamples (fs_, p.nch, meterSamples (p.frames, fs_))
+                    || ! p.tm.prepare (fs_, p.frames > 0 ? p.frames : 1, p.nch))
+                    { p.phase = Phase::Failed; return StepResult::Failed; }
+                p.meterFrames = p.frames; p.meterChannels = p.nch; p.meterRate = fs_;
+            }
+            for (int c = 0; c < p.nch; ++c) p.lm.setChannelWeight (c, weights_[c]);
+            p.measured = 0; p.phase = Phase::Meter; --budget; ++p.work;
+        }
+        if (budget == 0) return StepResult::More;
+        if (p.phase == Phase::Meter)
+        {
+            while (p.measured < p.frames && budget > 0)
+            {
+                const int n = (int) std::min<long long> (std::min<long long> (budget, p.frames - p.measured),
+                                                           p.clock->piece (p.renderer->blockSize()));
+                const float* planes[core::kMaxChannels] {};
+                for (int c = 0; c < p.nch; ++c)
+                {
+                    float* const block = p.out[c] + p.measured;
+                    if (p.req->pcmBits == 16 || p.req->pcmBits == 20 || p.req->pcmBits == 24)
+                        for (int i = 0; i < n; ++i) block[i] = pcmSample (block[i], p.req->pcmBits);
+                    planes[c] = block;
+                }
+                if (! p.lm.process (planes, p.nch, n) || ! p.tm.process (planes, p.nch, n))
+                    { p.phase = Phase::Failed; return StepResult::Failed; }
+                p.measured += n; budget -= n; p.work += n;
+                if (! p.clock->advance (n)) { p.phase = Phase::Failed; return StepResult::Failed; }
+            }
+            if (p.measured == p.frames) p.phase = Phase::FinishDrain;
+        }
+        if (budget == 0) return StepResult::More;
+        if (p.phase == Phase::FinishDrain)
+        {
+            p.tm.drain(); p.finishBand = 0;
+            p.phase = Phase::FinishBands; --budget; ++p.work;
+            if (p.finishCheckpoints && ! p.clock->checkpoint()) { p.phase = Phase::Failed; return StepResult::Failed; }
+        }
+        while (budget > 0 && p.phase == Phase::FinishBands && p.finishBand < p.armed.size())
+        {
+            const std::size_t i = p.finishBand;
+            const auto before = p.bandTrace[i].finishedBuckets();
+            const bool done = p.bandTrace[i].stepFinish (std::uint32_t (std::min<long long> (budget, 1024)));
+            const auto used = static_cast<long long> (p.bandTrace[i].finishedBuckets() - before);
+            budget -= used; p.work += used;
+            if (p.finishCheckpoints && ! p.clock->checkpoint()) { p.phase = Phase::Failed; return StepResult::Failed; }
+            if (! done || budget == 0) break;
+            p.solution->bandGr[i].band = p.armed[i].band;
+            p.solution->bandGr[i].lane = p.armed[i].lane;
+            p.solution->bandGr[i].whole = p.bandWhole[i].finish (0.95);
+            p.solution->bandGr[i].active = p.bandActive[i].finish (0.95);
+            ++p.finishBand;
+            --budget; ++p.work;
+            if (p.finishCheckpoints && ! p.clock->checkpoint()) { p.phase = Phase::Failed; return StepResult::Failed; }
+        }
+        if (p.phase == Phase::FinishBands && p.finishBand == p.armed.size()) p.phase = Phase::FinishStats;
+        if (budget == 0) return StepResult::More;
+        MasterMeasurement& m = *p.measurement;
+        if (p.phase == Phase::FinishStats)
+        {
+            while (budget > 0 && p.finishTrace < 3u)
+            {
+                auto& trace = p.finishTrace == 0 ? *p.compTrace : p.finishTrace == 1 ? *p.limTrace : *p.clipTrace;
+                const auto before = trace.finishedBuckets();
+                const bool done = trace.stepFinish (std::uint32_t (std::min<long long> (budget, 1024)));
+                const auto used = static_cast<long long> (trace.finishedBuckets() - before);
+                budget -= used; p.work += used;
+                if (done) ++p.finishTrace;
+                if (p.finishCheckpoints && ! p.clock->checkpoint())
+                    { p.phase = Phase::Failed; return StepResult::Failed; }
+            }
+            if (p.finishTrace != 3u || budget == 0) return StepResult::More;
+            m.latencySamples = p.chain->latencySamples();
+            m.compressor = p.compSum->finish (p.req->compressorGr.quantile);
+            m.limiter = p.limSum->finish (p.req->limiterGr.quantile);
+            p.solution->compressorGrWindows = compHist_; p.solution->limiterGrWindows = limHist_;
+            p.solution->limiterActive = p.limActive->finish (p.req->limiterGr.quantile);
+            p.solution->limiterActiveGrWindows = limActiveHist_;
+            p.lm.beginIntegratedScan();
+            p.phase = Phase::FinishGate; --budget; ++p.work;
+            if (p.finishCheckpoints && ! p.clock->checkpoint()) { p.phase = Phase::Failed; return StepResult::Failed; }
+        }
+        if (budget == 0) return StepResult::More;
+        if (p.phase == Phase::FinishGate)
+        {
+            int used = 0;
+            const bool done = p.lm.stepIntegratedScan ((int) std::min<long long> (budget, 256),
+                                                       m.integratedLufs, used);
+            budget -= used; p.work += used;
+            if (p.finishCheckpoints && ! p.clock->checkpoint()) { p.phase = Phase::Failed; return StepResult::Failed; }
+            if (! done) return StepResult::More;
+            p.lm.beginRangeScan(); p.phase = Phase::FinishRange;
+        }
+        if (budget == 0) return StepResult::More;
+        if (p.phase == Phase::FinishRange)
+        {
+            int used = 0;
+            const bool done = p.lm.stepRangeScan ((int) std::min<long long> (budget, 256),
+                                                  m.loudnessRangeLu, used);
+            budget -= used; p.work += used;
+            if (p.finishCheckpoints && ! p.clock->checkpoint()) { p.phase = Phase::Failed; return StepResult::Failed; }
+            if (! done) return StepResult::More;
+            p.phase = Phase::FinishComplete;
+        }
+        if (budget == 0) return StepResult::More;
+        if (p.phase != Phase::FinishComplete) return StepResult::More;
+        m.limiterMaxReconstructedPeakDb = core::gainToDbDet ((double) maxReconLin_);
+        m.peakClipReductionMaxDb = p.chain->peakClipReductionMaxDb();
+        m.peakClipReductionP95Db = p.chain->peakClipReductionP95Db();
+        m.peakClipOccupancy = p.chain->peakClipOccupancy();
+        m.peakClipRuns = p.chain->peakClipRuns();
+        m.peakClipRunSamplesTotal = p.chain->peakClipRunSamplesTotal();
+        m.peakClipLongestRunSamples = p.chain->peakClipLongestRunSamples();
+        m.airMidEnergy = p.chain->airMidEnergy(); m.airSideEnergyBefore = p.chain->airSideEnergyBefore();
+        m.airSideEnergyAfter = p.chain->airSideEnergyAfter(); m.airWidthBefore = p.chain->airWidthBefore();
+        m.airWidthAfter = p.chain->airWidthAfter(); m.airJudgedSamples = p.chain->airJudgedSamples();
+        m.gatingBlocks = p.lm.gatingBlockCount(); m.droppedBlocks = p.lm.droppedBlocks();
+        m.nonFiniteSubHops = (int) p.lm.nonFiniteSubHops();
+        m.truePeakDbTp = peakDb (p.tm.truePeakLinear()); m.samplePeakDb = peakDb (p.tm.samplePeakLinear());
+        m.plrDb = m.truePeakDbTp - m.integratedLufs;
+        m.loudnessValid = m.gatingBlocks > 0 && m.droppedBlocks == 0 && m.nonFiniteSubHops == 0
+                       && m.integratedLufs > -120.0;
+        m.lraValid = m.loudnessValid && rangeMeasurable (p.frames, fs_);
+        p.phase = Phase::Done; ++p.work;
+        return StepResult::Done;
+    }
+
+    // Whole calls drive the same saved pass executor as stepped searches.
+    bool renderPass (MasteringChain& chain, OfflineRenderer& renderer, const MasteringChainParams& params,
+                     const float* const* in, float* const* out, int nch, int frames,
+                     const LoudnessRequest& req, MasterMeasurement& m, LoudnessSolution& sol, ProgressClock& clock)
+    {
+        if (! beginPass (chain, renderer, params, in, out, nch, frames, req, m, sol, clock)) return false;
+        StepResult result = StepResult::More;
+        while (result == StepResult::More) result = stepPass (LLONG_MAX);
+        return result == StepResult::Done;
+    }
+
+    // Saved pre-step path, retained until the differential test is complete.
     // One render, and every measurement of it. Everything here is measured on exactly the delivered
     // frames — the render is `frames` long by contract, and the drain is inside it.
-    bool renderPass (MasteringChain& chain, OfflineRenderer& renderer, const MasteringChainParams& params,
+    bool legacyRenderPass (MasteringChain& chain, OfflineRenderer& renderer, const MasteringChainParams& params,
                      const float* const* in, float* const* out, int nch, int frames,
                      const LoudnessRequest& req, MasterMeasurement& m, LoudnessSolution& sol, ProgressClock& clock)
     {
@@ -2160,6 +2731,7 @@ private:
         // held describes a render about to be overwritten in `out`.
         GainReductionTraceBuilder compTrace (sol.compressorTrace, frames, req.grTraceBuckets);
         GainReductionTraceBuilder limTrace  (sol.limiterTrace, frames, req.grTraceBuckets);
+        GainReductionTraceBuilder clipTrace (sol.peakClipTrace, frames, req.grTraceBuckets);
         sol.compressorGrWindows.reset();
         sol.limiterGrWindows.reset();
         sol.limiterActiveGrWindows.reset();
@@ -2173,7 +2745,7 @@ private:
         bandTrace.reserve (armed.size());
         for (std::size_t i = 0; i < armed.size(); ++i)
             bandTrace.emplace_back (sol.bandGr[i].trace, frames, req.grTraceBuckets);
-        if (! renderTapped (chain, renderer, in, out, nch, frames, compSum, limSum, limActive, compTrace, limTrace,
+        if (! renderTapped (chain, renderer, in, out, nch, frames, compSum, limSum, limActive, compTrace, limTrace, clipTrace,
                             armedPairs, bandWhole, bandActive, bandTrace, clock)) return false;
         for (std::size_t i = 0; i < armed.size(); ++i)
         {
@@ -2187,6 +2759,7 @@ private:
         }
         compTrace.finish();
         limTrace.finish();
+        clipTrace.finish();
 
         m.latencySamples = chain.latencySamples();
         // EACH STAGE AT ITS OWN LIMIT'S `q`: `grStatisticValue` reads `quantileDb` without knowing which
@@ -2229,6 +2802,7 @@ private:
                        GainReductionSummariser& compSum, GainReductionSummariser& limSum,
                        ActiveWindowGrSummariser& limActive,
                        GainReductionTraceBuilder& compTrace, GainReductionTraceBuilder& limTrace,
+                       GainReductionTraceBuilder& clipTrace,
                        const std::vector<std::pair<int, int>>& armed,
                        std::vector<GainReductionSummariser>& bandWhole,
                        std::vector<ActiveWindowGrSummariser>& bandActive,
@@ -2252,14 +2826,17 @@ private:
         const MasteringChainResolved r = chain.resolved();
         const long long compFrom = r.compressorTapOffset;
         const long long compTo   = compFrom + frames;
-        const long long limFrom  = r.limiterTapOffset;
-        const long long limTo    = limFrom + frames;
+        const long long limDetectorFrom = r.limiterTapOffset;
+        const long long limDetectorTo = limDetectorFrom + frames;
+        const long long limAppliedFrom = limDetectorFrom + r.limiterLookahead;
+        const long long limAppliedTo = limAppliedFrom + frames;
 
         MasteringChainTaps taps;
         taps.compressorGrDb = compTap_.data();
         taps.frameCapacity  = frameCap_;
         taps.limiterGrDb    = limTap_.data();
         taps.limiterPeakLin = limPeak_.data();
+        taps.peakClipReductionDb = clipTap_.data();
         taps.osCapacity     = osCap_;
         // One band-GR ROW per quantum, and only when something armed asks for it: a caller with no dynamic
         // band must not pay a 120-float row per internal block for a statistic nobody will read.
@@ -2301,23 +2878,48 @@ private:
                     compSum.add (a);
                     compTrace.add ((std::uint64_t) (s - compFrom), a);
                 }
-                if (s >= limFrom && s < limTo)
+                const bool detector = s >= limDetectorFrom && s < limDetectorTo;
+                const bool applied = s >= limAppliedFrom && s < limAppliedTo;
+                if (detector || applied)
                     for (int k = 0; k < F; ++k)
                     {
                         const std::size_t idx = (std::size_t) j * (std::size_t) F + (std::size_t) k;
                         const double a = std::fabs ((double) limTap_[idx]);
-                        limSum.add (a);
-                        const float pk = limPeak_[idx];
-                        // The SAME sample's |GR| and the input that produced it, into the gated summary.
-                        // `limiterPeakLin` is the reconstructed peak the limiter saw, at this very index
-                        // (MasteringChain.h:141), so nothing is aligned here and nothing new is tapped.
-                        limActive.add (a, (double) pk);
-                        if (pk > maxReconLin_) maxReconLin_ = pk;
-                        limTrace.add ((std::uint64_t) (s - limFrom), a);
+                        if (detector)
+                        {
+                            limSum.add (a);
+                            const float pk = limPeak_[idx];
+                            // The legacy detector statistic stays aligned to its input.
+                            limActive.add (a, (double) pk);
+                            if (pk > maxReconLin_) maxReconLin_ = pk;
+                            clipTrace.add ((std::uint64_t) (s - limDetectorFrom), (double) clipTap_[idx]);
+                        }
+                        if (applied) limTrace.add ((std::uint64_t) (s - limAppliedFrom), a);
                     }
             }
         };
-        return renderer.render (chain, in, out, nch, frames, taps, sink, &clock);
+        if (deliveryConverter_ == nullptr) return renderer.render (chain, in, out, nch, frames, taps, sink, &clock);
+        if (! deliveryConverter_->begin (deliverySource_, nch, deliveryFrames_, out, frames)) return false;
+        captureDeliveryCount();
+        const float* converted[core::kMaxChannels] {};
+        for (int c = 0; c < nch; ++c) converted[c] = out[c];
+        if (! renderer.begin (chain, converted, out, nch, frames, taps)) return false;
+        StepResult conversion = StepResult::More, rendering = StepResult::More;
+        while (rendering == StepResult::More)
+        {
+            if (conversion == StepResult::More)
+            {
+                const long long before = deliveryConverter_->readFrames();
+                conversion = deliveryConverter_->step (clock.piece (renderer.blockSize()));
+                if (conversion == StepResult::Failed) return false;
+                captureDeliveryCount();
+                if (! clock.advance (deliveryConverter_->readFrames() - before)) return false;
+            }
+            rendering = renderer.step (chain, taps, sink, renderer.blockSize(),
+                                       deliveryConverter_->writtenFrames(), &clock);
+            if (rendering == StepResult::Failed) return false;
+        }
+        return conversion == StepResult::Done && deliveryConverter_->finish() && renderer.finish();
     }
 
     // THE TWO RULES THE MEASURING RIG OWES, both measured rather than argued:
@@ -2359,6 +2961,14 @@ private:
         if (! rateAdmitted (sampleRate)) return 0u;
         analysis::LoudnessMeter::Storage st;
         return analysis::LoudnessMeter::storageFor (sampleRate, meterSamples (frames, sampleRate), st) ? st.bytes() : 0u;
+    }
+
+    static std::uint64_t passMeterBytes (double sampleRate, int frames) noexcept
+    {
+        if (! rateAdmitted (sampleRate)) return 0u;
+        analysis::SystemStreamingLoudnessMeter::Storage st;
+        return analysis::SystemStreamingLoudnessMeter::storageFor (
+            sampleRate, meterSamples (frames, sampleRate), st) ? st.bytes() : 0u;
     }
 
     // EBU Tech 3342 needs short-term samples, and the window is 3 s: under 3 s of programme there is not one. ONE
@@ -2520,16 +3130,27 @@ public:
     }
 
 private:
+    friend class LandingSearch;
+    friend struct SolverPassDifferential;
     double fs_ = 48000.0;
     int    nch_ = 0, frameCap_ = 0, osCap_ = 0;
     bool   prepared_ = false;
 
-    storage::Buffer<float> compTap_, limTap_, limPeak_, bandTap_;
+    storage::Buffer<float> compTap_, limTap_, limPeak_, clipTap_, bandTap_;
     int    bandQuantaCap_ = 0;
     dynamics::offline::QuantileHistogram compHist_, limHist_, limActiveHist_;
     float  maxReconLin_ = 0.0f;
+    std::optional<PassWorkspace> pass_;
+
+    DeliveryConverter* deliveryConverter_ = nullptr;
+    std::uint64_t deliveryFirstCount_ = 0;
+    bool deliveryFirstCountReady_ = false;
+    const float* const* deliverySource_ = nullptr;
+    long long deliveryFrames_ = 0;
 
     double weights_[core::kMaxChannels] { };
 };
 
 } // namespace felitronics::mastering
+
+#include <felitronics/mastering/LandingSearch.h>

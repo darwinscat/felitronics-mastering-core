@@ -1,0 +1,10 @@
+{
+  "sampleRate": 48000,
+  "channels": 2,
+  "frames": 96000,
+  "denominator": 4096,
+  "period": 251,
+  "left": { "stride": 17, "offset": 0, "subtract": 125 },
+  "right": { "stride": 19, "offset": 7, "subtract": 125 },
+  "deliveryBits": 24
+}

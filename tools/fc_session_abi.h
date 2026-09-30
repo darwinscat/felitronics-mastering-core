@@ -67,6 +67,7 @@
 #define FC_SESSION_SLOT_GENERATIONS 16777215u
 
 #include <stdint.h>
+#include <fc_master_abi.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -101,7 +102,8 @@ typedef enum fc_session_status
     FC_SESSION_ERR_STRUCT_TOO_SMALL = 15, // size is below the v1 record size
     FC_SESSION_ERR_STRUCT_TOO_LARGE = 16, // size exceeds the record this build understands
     FC_SESSION_ERR_NO_SOURCE = 17,        // export: the session has no source
-    FC_SESSION_ERR_NOT_PLACED = 18        // export: the first measurement has not placed devices
+    FC_SESSION_ERR_NOT_PLACED = 18,       // export: the first measurement has not placed devices
+    FC_SESSION_ERR_STALE = 19             // transfer identity no longer names pending audio
 } fc_session_status;
 
 // ====================================================================================
@@ -201,7 +203,8 @@ typedef enum fc_session_step_state
 // Byte buffers have alignment 1, uint32/handles/sizes 4, capabilities/capacity/storage and doubles 8, planar pointer
 // tables alignof(pointer). Null is allowed only for a zero-byte rows buffer or a zero-length input.
 // Every output is disjoint from all other buffers. A query/copy pair describes the same batch only
-// while no command or step intervenes. No pointer into session memory survives a call.
+// while no command or step intervenes. No pointer into session memory survives a call except the
+// explicitly scoped master audio view below, which expires at the next module call or memory.grow.
 //
 // Additive v1 measurement data: reading payloads include a fixed source-frame grid, window reasons,
 // detailed clip rows and total/stored counts. Reports live in snapshot measurements with per-field reasons.
@@ -301,6 +304,74 @@ fc_session_status fc_session_attach_audio_bytes (fc_session session, uint32_t ch
 fc_session_status fc_session_attach_audio (fc_session session, uint32_t command_low, uint32_t command_high,
                                            const float* const* pcm, uint32_t channels, uint32_t frames, uint32_t rate,
                                            char* answer, uint32_t capacity, uint32_t* written);
+
+// A ready v14 fc_master topology/parameter pair, supplied by Decide. Its sampleRate/channels
+// must name the retained source. The identity arguments fence a stale request before any
+// allocation. The delivery format is the target's: its rate (the source's when the target
+// keeps it) and its bit depth, PCM16 or PCM24. topology->deliveryRate and
+// params->dither.bits of 0 take them, the same value restates them, and any other
+// finite value is the open rejection DeliveryFormat, before any allocation, with a fact
+// naming the target's depth and rate. A NaN or infinite deliveryRate is a malformed
+// record, as every other non-finite field is: FC_SESSION_ERR_CONTRACT, no answer. This
+// holds even when topology->dither is off. This is one session job, not another Project.
+fc_session_status fc_session_master_bytes (fc_session session, uint32_t source_low, uint32_t source_high,
+                                           uint32_t revision_low, uint32_t revision_high,
+                                           const fc_master_config* topology, const fc_master_params* params,
+                                           fc_session_storage* out);
+fc_session_status fc_session_master (fc_session session, uint32_t command_low, uint32_t command_high,
+                                     uint32_t source_low, uint32_t source_high,
+                                     uint32_t revision_low, uint32_t revision_high,
+                                     const fc_master_config* topology, const fc_master_params* params,
+                                     char* answer, uint32_t capacity, uint32_t* written);
+
+// One pending PCM transfer per session. The four token fields are read from the snapshot's
+// pendingMaster. A source replacement invalidates them. Copy writes caller storage; release
+// frees session storage. Native C++ callers can move it with Session::takeMaster.
+typedef struct fc_session_master_token
+{
+    uint32_t size;
+    uint32_t source_low, source_high;
+    uint32_t revision_low, revision_high;
+    uint32_t job, master;
+} fc_session_master_token;
+fc_session_status fc_session_master_audio_size (fc_session session, const fc_session_master_token* token,
+                                                double* bytes, uint32_t* frames, uint32_t* channels, uint32_t* rate);
+fc_session_status fc_session_master_audio_copy (fc_session session, const fc_session_master_token* token,
+                                                float* output, uint32_t sample_capacity);
+fc_session_status fc_session_master_audio_release (fc_session session, const fc_session_master_token* token);
+// Scoped wasm view for one copy into an independent ArrayBuffer. The returned address is valid only
+// until the next module call or memory.grow. Construct the heap view and call slice() synchronously,
+// then release; never retain the heap view or transfer the WebAssembly memory buffer.
+fc_session_status fc_session_master_audio_view (fc_session session, const fc_session_master_token* token,
+                                                const float** output, uint32_t* samples);
+
+// Explicit master waveform deep zoom. The caller supplies planar delivered PCM for exactly the
+// requested [fromFrame,toFrame), at most 65536 frames. Size calls inspect only its shape;
+// copy reads the supplied chunk and never re-renders or stores it in the session.
+fc_session_status fc_session_master_waveform_chunk_bytes (fc_session session, const char* request,
+                                                          uint32_t request_bytes, uint32_t channels,
+                                                          uint32_t frames, uint32_t rate, fc_session_storage* out);
+fc_session_status fc_session_master_waveform_chunk_size (fc_session session, const char* request,
+                                                         uint32_t request_bytes, uint32_t channels,
+                                                         uint32_t frames, uint32_t rate, fc_session_sizes* out);
+fc_session_status fc_session_master_waveform_chunk_copy (fc_session session, const char* request,
+                                                         uint32_t request_bytes, const float* const* pcm,
+                                                         uint32_t channels, uint32_t frames, uint32_t rate,
+                                                         char* json, uint32_t json_capacity,
+                                                         double* rows, uint32_t row_capacity,
+                                                         fc_session_sizes* written);
+
+// A completed safe master can be copied as a canonical WAV before its PCM is
+// released. The format is the completed job's target bit depth (PCM16 or PCM24).
+// Size is allocation-free. Copy writes at most 65536 bytes at a caller-chosen
+// offset; repeat any slice to get identical bytes. The shell owns the assembled
+// image, indexed by master id, before calling master_audio_release. A later
+// format requires an explicit external-PCM contract and cannot re-render here.
+fc_session_status fc_session_master_wav_size (fc_session session, const fc_session_master_token* token,
+                                             double* bytes, uint32_t* bits);
+fc_session_status fc_session_master_wav_copy (fc_session session, const fc_session_master_token* token,
+                                             uint32_t offset_low, uint32_t offset_high,
+                                             uint8_t* output, uint32_t capacity, uint32_t* written);
 
 #ifdef __cplusplus
 }   // extern "C"

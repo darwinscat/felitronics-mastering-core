@@ -34,6 +34,8 @@ struct ProgressCallback
     void* context = nullptr;
 };
 
+enum class StepResult { More, Done, Failed };
+
 class ProgressClock
 {
 public:
@@ -65,6 +67,14 @@ public:
     }
 
     [[nodiscard]] bool finish (const SolvePassRecord* record = nullptr) noexcept { return emit (1.0, record); }
+
+    // A saved job reserves finish units when it begins. Each checkpoint consumes one of them.
+    [[nodiscard]] bool checkpoint() noexcept
+    {
+        if (done_ >= units_) return ! stopped_;
+        ++done_; last_ = done_;
+        return emit ((double) done_ / (double) units_, nullptr);
+    }
 
 private:
     bool emit (double fraction, const SolvePassRecord* record) noexcept

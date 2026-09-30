@@ -3,7 +3,7 @@
 
 // Mutate an isolated source copy, regenerate, compile, execute and compare. Hosts can retain the copy.
 import {copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, utimesSync, writeFileSync, rmSync} from 'node:fs';
-import {join, resolve, sep} from 'node:path';
+import {basename, join, resolve, sep} from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import assert from 'node:assert/strict';
@@ -102,8 +102,16 @@ try {
         `-DFELITRONICS_MASTERING_TOML_DIR=${value('FELITRONICS_MASTERING_TOML_SOURCE_DIR')}`]);
     const checker = join(source,'tools/session-abi-check.mjs');
     const childCache = readFileSync(join(build, 'CMakeCache.txt'), 'utf8');
-    for (const key of ['CMAKE_GENERATOR', 'CMAKE_CXX_COMPILER', 'CMAKE_TOOLCHAIN_FILE', 'CMAKE_CXX_FLAGS', 'FELITRONICS_ENABLE_SANITIZERS'])
-        if (value(key) !== undefined) assert.equal(new RegExp(`^${key}:[^=]*=(.*)$`, 'm').exec(childCache)?.[1]?.trim(), value(key), `preserved ${key}`);
+    for (const key of ['CMAKE_GENERATOR', 'CMAKE_CXX_COMPILER', 'CMAKE_TOOLCHAIN_FILE', 'CMAKE_CXX_FLAGS', 'FELITRONICS_ENABLE_SANITIZERS']) {
+        if (value(key) === undefined) continue;
+        const child = new RegExp(`^${key}:[^=]*=(.*)$`, 'm').exec(childCache)?.[1]?.trim();
+        const requested = value(key);
+        // CMake resolves an unqualified compiler name to its executable path.
+        if (key === 'CMAKE_CXX_COMPILER' && ! /[/\\]/.test(requested))
+            assert.equal(basename(child ?? ''), requested, `preserved ${key}`);
+        else
+            assert.equal(child, requested, `preserved ${key}`);
+    }
     assert.equal(new RegExp('^CMAKE_BUILD_TYPE:[^=]*=(.*)$', 'm').exec(childCache)?.[1]?.trim(), configuration);
     console.log(`source control toolchain preserved: ${value('CMAKE_GENERATOR')}, ${configuration || 'unconfigured'}, ${value('CMAKE_CXX_COMPILER')}`);
     const executable = name => join(build, 'tools', multi ? configuration : '', name + (process.platform === 'win32' ? '.exe' : ''));

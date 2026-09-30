@@ -125,6 +125,9 @@ const char* nameOf (felitronics::session::Rejection r)
         case Rejection::RateAboveLimit: return "RateAboveLimit";
         case Rejection::Contract:                 return "Contract";
         case Rejection::Memory: return "Memory";
+        case Rejection::OutputPending: return "OutputPending";
+        case Rejection::MandatoryUnavailable: return "MandatoryUnavailable";
+        case Rejection::DeliveryFormat: return "DeliveryFormat";
     }
     return "?";
 }

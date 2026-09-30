@@ -138,7 +138,7 @@ The library reports the releases it was built from — `Session::version()` (thi
 Every number the session decides, measures, renders and reports with lives in two TOML documents of the module:
 `config/targets.toml`, the targets — the loudness and ceiling a person picks, the physics of the medium that come with
 them, the delivery format — and `config/engine.toml`, every other number: the input's reference and its quiet
-thresholds, the landing's series, the devices' travels and rules, the observations' thresholds, what a master's cost is
+thresholds, the landing's twelve-pass budget, the devices' travels and rules, the observations' thresholds, what a master's cost is
 measured with (as measured, without a verdict), the progress weights. What each number means and where it came from is
 written beside it, as a comment; a number the owner decided says so. The sound depends on no default of the core's:
 every stage a device writes is named, the limiter's second release included.
@@ -168,7 +168,7 @@ every stage a device writes is named, the limiter's second release included.
   the documents and require the gate to go red at that spot, after it passed the copy without the plant; the config
   suite plants over sixty more in-process, every input a review found the schema accepting among them.
 - **The owner's decisions are held apart** (`tests/ConfigDecisionsTests.cpp`): every target row field by field and the
-  engine's decided numbers — the landing's series, the high-pass knob's travel and slopes and comfort window, the
+  engine's decided numbers — the landing's one budget, tolerance and true-peak aim, the high-pass knob's travel and slopes and comfort window, the
   wide-bass warning, the quiet thresholds, the peak clipper's classes, the glue slider (0…3 dB, step 0.1; accepted domain 0…6 dB) with its default of none, 0.5 dB when ticked and 2.6 dB on cd, the mono-bass block, the delivery rates, and the rest. The schema would admit another number where the physics allows;
   this suite says which number was decided, so changing one is a deliberate edit of it. Its controls plant departures
   the schema admits (a high-pass top of 51 or 60 Hz, a slope of 36, another series, another target number or rate, glue
@@ -516,6 +516,31 @@ session compares or prints one.
 
 ## Work units, event deltas, and snapshots
 
+The mastering render's source-rate conversion, chain latency, drain, and preparation cursors are specified in
+[Resumable delivery render](RESUMABLE-RENDER.md). The session's master job can drive that API within its work-unit pump.
+
+`LandingSearch` keeps one search across calls. It first surveys source spectrum and crest in bounded units, then
+renders and measures within one budget of up to twelve passes. A measured hit stops immediately. Every render is
+logged; an exhausted budget returns the closest ceiling-safe PCM and its measured miss, or `Unavailable` when none is
+safe. Source and output are the only full PCM buffers. If a previous candidate wins, a counted pass restores it; the
+last pass is reserved for that render once a safe candidate exists. The search can pause during SRC, rendering,
+metering, band statistics, integrated gates, the LRA scan, restoration and independent remeasurement.
+`TargetLoudnessSolver::solve()` drives this same path when `LoudnessRequest::productLanding` is set. Its older
+request policy remains available for existing callers. The request-aware `TargetLoudnessSolver::solveCallBytes(req)`
+and `DeliveredMastering::solveCallBytes(req)` include the product search workspace; the integer-bucket overloads
+keep the legacy solve quote. `LandingSearch::storageForProgramme()` quotes source, output, workspace and the largest
+block, including capacity retained on reuse through `storageForJob()`. Chain and converter preparations are separate.
+`LandingOps::plan()`
+sets the source normalization toward −18 LUFS separately from the adjustable pre-limiter gain; a delivery-rate
+change requests one extra source-rate impact pass outside the twelve landing renders.
+
+`LandingSummary` carries status, achieved LUFS, signed miss, absolute distance, reference true peak, measured
+source and limiter hints, work units and the ordered pass log. Its limiter and K13 clipper traces share
+the delivered-frame grid and carry min/max/mean reduction, finite counts, validity and completion. Limiter
+GR follows the audio receiving gain after lookahead; K13 reduction follows the detector's input time.
+`Kept::landing` and the appended trace fields are optional in the generated session codec so older v1
+snapshots decode without them. `Snapshot` owns the pass rows and both trace row arrays.
+
 `Session::step(budget)` runs live loudness, source clipping, the programme report, waveform, source analyzers, needles, and mastering. The budget counts **work units**, never milliseconds. A call
 consumes at most `min(budget, 16)` units, reports the number consumed, and returns `More` while any job remains or
 `Done` when none does. Zero units poll without progress. The shell measures its own speed and converts time to
@@ -618,6 +643,7 @@ The generated `Query*Row` tuples in `snapshot.d.ts` give column names. Their num
 | Momentary / ShortTerm | `[sourceFrame,LUFS,reason]` from the retained live grid, decimated to the requested maximum row count. `sourceFrame` is the window end: `(fromFrame,toFrame]` selects readings for the half-open audio range `[fromFrame,toFrame)`, including a reading at the source end. |
 | Clipping | `[firstFrame,frameCount,channel,sign,level,evidence]` for retained runs intersecting the range; `total` counts all matches, `stored` is capped by `columns`, and `complete` reports truncation. |
 | Stereo | `[firstFrame,lastFrame,width,correlation,rms,reason]` from retained source stereo columns intersecting the requested range. Bounds name each retained column's actual source interval; `total` counts intersecting columns and `complete` is false when the column limit omits some. |
+| LimiterGr / PeakClipGr | `[firstFrame,lastFrame,minDb,maxDb,meanDb,samples,nonFinite]` on the delivered-frame grid. These require `masterId`, the master's source `audioId`, and a nonempty range inside the trace. A zoom selects every retained bucket intersecting the range; requested columns group those buckets and report their actual bounds, including edge buckets that cross the requested bounds. `total` is the selected bucket count, `stored` is the returned count, and `complete` is false for a reduced column count. An unfinished render returns `Pending` without rows. `sampleRate` is the delivery rate. |
 
 Waveform inner buckets combine completed index nodes; only two edge leaves can replay resident PCM. Its index owns
 the multiresolution columns and filter checkpoints with no second PCM copy. `pcmFramesRead` exposes exact-edge work;
@@ -1122,3 +1148,164 @@ The table distinguishes measured sources with unplaced devices, including master
 Mastering depends on measurements; edit, revert and import depend on placement through their table cells.
 Cached PCM reloads schedule needles from mandatory readiness. Bit-depth changes refresh unused-bit
 readings from the retained exact PCM grid without allocating or repeating source analysis.
+
+## Ready master job and audio ownership
+
+The complete Solve memory gate is `felitronics_session_memory_gate_tests`; its separate
+`felitronics_session_memory_gate_long` row renders a 60-second stereo 96→44.1 kHz source.
+It charges the core allocation counter across load, measurement, each master step, cancellation,
+snapshot and codec copies, bounded WAV slices, transfer, release, refusal, source replacement,
+and warmed repetitions. `Session::liveBytes()` supplies the resident core claim while cumulative
+allocation requests independently bound replacement peaks. Source plus delivery PCM require at
+least `4 * channels * (sourceFrames + deliveryFrames)` bytes; the largest block is priced
+separately. SRC owns no third complete PCM. The Wasm contract records observed linear-memory
+growth and reacquires heap views after every call. Playback `ArrayBuffer`, assembled WAV and
+bounded copy chunk are browser-owned buffers outside the session price; the recording lists
+their sizes separately. Wasm linear memory may remain at its high-water size after release.
+
+
+The additive `fc_session_master_bytes` and `fc_session_master` calls accept a current v14 `fc_master_config`
+and `fc_master_params`. Their source hash and revision must match the session before the facade maps the
+ready values. C++ callers use `command::Master` with `ready.version = 1`; version zero preserves the frozen
+v1 command behavior. The ready call freezes the project, source, sound-config version, all topology and
+parameter bits, and delivery rate in its recipe. The project can be edited while the job runs without
+changing that recipe. A new source or an explicit cancel stops unfinished work and fences its old identity.
+The delivery format is the target's (`targets.toml`): its `sampleRate` (0 keeps the source's rate) and its
+`bitDepth` (16 or 24; dither only at 16). A ready `deliveryRateHz` or `deliveryBits` of 0 takes it and the same
+value restates it; any other value, from the C facade's `fc_master_config.deliveryRate` and
+`fc_master_params.dither.bits` included, is refused before any allocation with the appended
+`Rejection::DeliveryFormat`. `Answer::targetBits` and `Answer::targetRate` and a `RejectedDeliveryFormat` fact event
+({bits} {rate}), emitted with the rejection, name the target's format. The resolved depth also sets the chain's
+dither bits, whether or not the dither stage is on. A target whose rate is not the source's (cd, cdDynamic, youtube
+on a 44.1 kHz file) takes the one extra source-rate pass for the crest comparison (decision 2.3).
+
+Ready preflight requires retained PCM and finite completed integrated loudness and true peak. It prices
+the chain, renderer, converter when needed, solver, search workspace, output PCM, compact rows, and
+allocator margin before any job allocation. `step` advances the search by bounded work units; one
+landing has at most twelve measured passes. A safe miss retains the best verified output and its typed
+reason. Unavailable mandatory readings or an unsafe true peak yield no transferable PCM. Optional
+source analyzers continue independently. `canMaster` in the snapshot reports state and mandatory
+readiness; capacity is reported by the preflight demand. The snapshot also exposes the pending transfer
+token and PCM byte count. Appended fields decode as absent on older v1 snapshots.
+
+One session owns at most one pending delivery PCM. Its `MasterToken` names source, completion revision,
+job, and master; every transfer checks all four. The retained master list owns recipe and compact pass,
+limiter, and peak-clip rows, but no previous full PCM. Native callers can `copyMaster`, move it through
+`takeMaster`, or `releaseMaster`. A successful take or release frees the session's PCM claim and advances
+the revision; the caller owns the moved allocation after take. The C facade exposes size, copy, a scoped
+view, and release. A wasm shell constructs a view from the returned address, calls `.slice()` once into
+an independent `ArrayBuffer`, releases the session PCM, and transfers only that independent buffer.
+The heap view expires on the next module call or `memory.grow`; the shell must discard it immediately.
+Forgetting a master releases its pending PCM, while other masters keep only metadata. A poisoned wasm
+instance is discarded and rebuilt by replay; ordinary cancellation is a session command.
+
+## WAV delivery
+
+`Session::masterWavPlan(token)` prices the canonical RIFF image without allocation. The additive
+`fc_session_master_wav_size` reports its byte length and delivery bits; `fc_session_master_wav_copy`
+copies at most 65536 bytes at a time into caller storage. A shell allocates one independent WAV buffer,
+copies all slices while the master token is live, and stores the completed image under `masterId` before
+calling `fc_session_master_audio_release`. Repeated downloads use those owned bytes and do no rendering,
+metering or dither work. A cancelled, unsafe or mandatory-unavailable master has no token and no WAV.
+The twelve-pass safe miss has a token and remains downloadable with its measured miss and hint facts.
+
+The writer reads the existing planar f32 output directly and interleaves 16- or 24-bit PCM using core
+Dither's `2^(bits-1)` grid and `floor(x + 0.5)` code rule; it writes no other format. The format is the
+job's resolved delivery bits, the frozen target's bit depth. Session opts the solver into that grid before each meter step, so the measured
+PCM, the listening transfer and the decoded WAV agree sample for sample. Direct solver callers retain
+their legacy float output unless they set `LoudnessRequest::pcmBits`. Export adds no noise and never
+resets or reruns the chain. Core's installed WAV
+writer is checked byte for byte on grid, clamp and odd RIFF padding cases. If a shell wants another
+format after release, it must retain PCM externally and use a separate future contract.
+
+The synthetic site contract is `tools/contract/wav-input.json` plus
+`tools/contract/recordings/wav-contract.json`. Regenerate and verify it with
+`node tools/contract/wav-contract.mjs <native-ABI-test> <native-job-test> <fcsession.node.js>
+<wasm-job-test.js> <fcore_session> --rebuild`, then omit `--rebuild` for the gate. The recording
+states the retrieval call sequence, input and artifact hashes, dependency and codec versions, the
+WAV header and the native/wasm digest, and cancel, unavailable, safe miss and unsafe outcomes.
+The same recording includes a late source crest completion after WAV release and wasm heap growth,
+with the source completion and master-keyed join events and snapshots on both sides of the join.
+
+## Measured ready-master report
+
+Each completed ready master carries an optional `MasterReport` beside its recipe and landing. Its LUFS,
+reference true peak, PLR and suitable LRA are the solver's completed measurement of the selected delivered
+PCM, including the drained tail and enabled dither. The report also gives the achieved-minus-source gain,
+signed achieved-minus-target miss, target and ceiling, and a separate true-peak safety flag. A loudness miss
+can keep the PCM when its reference true peak is safe; a missing mandatory reading or an unsafe peak cannot.
+The two optional hint records expose measured sub-bass or presence share, limiter peak reduction, gain or
+remaining loudness distance with units. `MasterReportText` renders the miss and mix suggestions as typed,
+ru-first/en facts. PassLimit means the twelve-pass budget ended; it makes no claim of physical impossibility.
+
+`MasterCrest` stores five peak-amplitude/mean-square-power pairs per block, in Low, LowMid, HighMid, High,
+Full order, plus five source activity values per block as zero/one values. Version, sample rate, hop
+frames, block hops, three band corners, frame count, block count, completeness and provenance travel with
+the rows. The retained row owner also holds its source measurement key, master id, captured recipe
+fingerprint, and the two activity gates and configured hop duration. A late join checks the retained
+identity and the complete grid before copying the source mask; equal row counts alone are insufficient.
+When delivery changes rate, exactly one additional render with the chosen settings runs at the source rate
+into bounded scratch for crest. The deliverable PCM and its LUFS/TP remain on the delivery rate, and
+`checkPasses` records the extra render separately from the landing's budget. Pending source crest and a
+final unavailable reason are distinct; either leaves a verified master available. Retained rows belong to
+the master until forget or source replacement, survive PCM transfer, and are copied by owned snapshots and
+the one generated codec. A late Pending-to-Ready or Pending-to-Unavailable change increments the revision
+and emits a master-keyed crest fact so an event-driven shell can refresh that report. Replacing the
+source removes the retained owners, while forgetting one master removes only its rows. A final source
+refusal settles Pending crest and all five crest cost bands with the same reason.
+
+## Measured master cost
+
+`MasterReport.cost` exists only after a delivered master. It is descriptive evidence, never a delivery
+gate. Every number has an optional value and a reason; `k2Reason=NotImplemented` means tonal change has
+not been measured. A gain-only render has no shape or crest penalty. The source-rate check supplies the
+crest rows when delivery rate differs, and `sourceRateCheck` marks that provenance.
+
+For each of Low, LowMid, HighMid, High and Full, K1 compares only blocks whose source mask is one and
+whose four linear operands are positive and finite. Its per-block loss is
+`max(0, 20 log10(sourcePeak/masterPeak) - 10 log10(sourceMeanSquare/masterMeanSquare))` dB.
+The cost is the weighted mean of the largest 5% of suitable blocks. With `N` blocks, the tail weighs
+`0.05 N`: the largest `floor(0.05 N)` each weigh one, and the next weighs the fractional remainder.
+For `N < 20`, the sole largest block receives its fractional weight and the answer is still its loss.
+Equal losses have equal value, so their ordering cannot change the answer. An empty mask is `NoSignal`;
+incompatible source and master grids are `Unsupported`. The five band values remain separate.
+
+Shape uses end-stamped 0.1-second short-term LUFS readings of source and delivered PCM after the first
+3 seconds. A source reading is compared only at or above `max(-70 LUFS, source integrated LUFS - 42 LU)`
+with a finite delivered reading. Each compared deviation is the absolute value of
+`(master short-term - source short-term) - (master integrated - source integrated)`.
+The continuous shape is the empirical nearest-rank P95 of those deviations. A master shortened by more
+than 0.1 second, either programme below -55 LUFS, or fewer than half the source-derived sections with
+comparisons makes shape unavailable. A source reading more than 3 LU from the open section's running
+mean starts a new section; exactly 3 LU stays. Sections shorter than 8 seconds join the neighbour
+closest in source level, with ties joining the earlier neighbour. Adjacent sections within 3 LU then
+merge. Each retained section carries source-frame bounds, source/master level and gain-removed shift.
+The largest shift gets a named index only when more than two sections compare. LRA is a separate
+reference measurement, not this ordered shape measure.
+
+Limiter P50/P95 use the solver's 4-ms window distribution. The active fraction uses its input-gated
+tap statistics; `activeWindowShare` separately counts source momentary windows passing the relative
+activity floor. Pumping is RMS of the limiter's retained mean GR buckets after a second-order
+Butterworth 1-Hz high-pass and 8-Hz low-pass in sequence, excluding the first two seconds. It is
+unavailable below 40 buckets per second or without valid GR. Trace bucket count follows duration:
+`clamp(ceil(seconds / 0.004), 1000, 65536)`, then is capped by delivered frame count. The true
+bucket rate is therefore part of the retained trace; a wide bucket can make pumping unavailable.
+
+The master keeps at most 2048 waveform buckets per channel, each with actual delivered-frame bounds,
+minimum, maximum, RMS and finite count. `QueryKind::MasterWaveform` returns intersecting retained
+buckets, grouping them to the requested column count. The bounds in each answer are the actual
+retained bounds, which can be wider than the requested zoom. For exact deep zoom after session PCM
+release, the caller explicitly supplies a planar delivered-PCM chunk of at most 65536 frames covering
+exactly the query range to `Session::masterWaveformChunk` or the additive C facade
+`fc_session_master_waveform_chunk_*` entries. The core reads only that chunk and owns no full-song
+cache. It never re-renders during a query. The chunk's shape and result allocations are priced by
+the paired storage/size calls. Master cost rows, the scan meter, trace expansion, their retained
+capacity and snapshot/codec copies are included in declared memory.
+Waveform finalization, pumping, active-window counting, section building and merging, the shape
+quantile, and each masked crest tail retain cursors across `step` calls. A single work unit visits at
+most 1024 rows; late source crest joins use the same cursor with one row per unit.
+
+Synthetic numerical controls are public in `modules/session/tests/CostTests.cpp`; the source shape
+fixture's FNV-1a hash over little-endian IEEE-754 f64 input bits is `f414d88b72c8a1a5`.
+Rebuild and run it with `cmake --build build --target felitronics_session_cost_tests &&
+ctest --test-dir build -R '^felitronics_session_cost_tests$' --output-on-failure`.

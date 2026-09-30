@@ -10,11 +10,11 @@
 // own copies — internal linkage) first: on this row, does the licence change the answer at all? Where it does, the
 // library's probes, compiled with the licence FOLLOWED by the library's options, must answer IEEE anyway. Where the row
 // cannot show the change (no fused multiply-add to contract into), the test says so rather than passing it.
+// Session.h needs the mastering definitions and their strict-math guard, so the consumer call is compiled separately.
 
 #include "FpEnvironmentControl.h"
 
 #include <felitronics_test.h>
-#include <felitronics/session/Session.h>
 
 #include "BuildContract.h"
 #include "FpProbes.h"
@@ -23,6 +23,7 @@
 
 using felitronics::test::ok;
 namespace probes = felitronics::session::probes;
+bool sessionHostileCanCreate();
 
 int main()
 {
@@ -53,8 +54,7 @@ int main()
 #else
     #error "build HostileFlagsTests.cpp with one FELITRONICS_SESSION_HOSTILE_LICENCE_* defined"
 #endif
-    auto c = felitronics::session::Session::create();
-    ok (c.status == felitronics::session::Status::Ok && c.session != nullptr,
+    ok (sessionHostileCanCreate(),
         "and a session is created: the library's own copies decide, not the licence's");
     return felitronics::test::report();
 }

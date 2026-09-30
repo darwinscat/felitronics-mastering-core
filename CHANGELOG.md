@@ -2,6 +2,53 @@
 
 # Changelog
 
+## Unreleased
+
+### session — bounded WAV delivery
+
+Completed safe masters expose an additive, token-guarded WAV size and bounded slice copy. The shell can
+assemble one owned RIFF image before releasing session PCM and repeat downloads without rerendering or
+adding dither. The pure planar writer supports PCM16 and PCM24, with the installed core's PCM
+grid and odd-chunk padding. Native and wasm checks decode the written bytes and verify the delivered
+reference true peak; cancelled, unavailable and unsafe jobs expose no file, while a safe twelve-pass miss does.
+Session measures the selected PCM on its delivery grid, and the decoded WAV equals the listening PCM
+sample for sample; direct solver calls keep legacy float output by default.
+
+### session — measured master report and comparable crest rows
+
+The ready master now retains delivered LUFS, reference true peak, suitable PLR/LRA, gain from the source, signed target miss, ceiling safety and measured mix hints. A missing LRA carries a reason. Linear band-crest rows use the source's explicit rate, hop and corners and preserve its activity mask when comparable. Rate conversion adds one source-rate check pass with the winning settings, using bounded scratch while the delivered PCM stays intact. Snapshot and the generated codec own the compact rows; older v1 snapshots decode without a report.
+
+### session — ready master job and owned audio transfer
+
+An additive `fc_session_master` entry takes frozen, versioned mastering topology and parameters with a source and revision fence. The session prices the job before allocating, drives the twelve-pass landing search in work units, and keeps the selected delivery PCM with its recipe and compact measurement rows. A target edit leaves the running recipe intact. Cancellation removes only unfinished work; a new source invalidates old transfers. `fc_session_master_audio_*` reports shape, copies, provides a scoped wasm view for one independent `ArrayBuffer` copy, and releases session PCM explicitly. The frozen v1 JSON Master command retains its original behavior for existing callers; new callers use the ready entry. Appended snapshot and codec fields carry conservative decode defaults.
+
+### mastering · session — aligned limiter and K13 traces
+
+The limiter's existing oversampled K13 clipper now exposes its reduction as a time tap without changing
+audio or aggregate readings. Delivered mastering stores limiter and clipper min/max/mean rows on one
+frame grid, including the final drain. Session snapshots own both series, the generated codec decodes
+their absence in older snapshots, and `fc_session_query_*` accepts bounded master trace queries.
+The pinned felitronics-core v0.56.0 release supplies the companion tap and the WAV grid and pad implementation.
+
+### mastering · session — saved loudness landing search
+
+The product landing now has one budget of at most twelve measured renders. It stops at a measured hit, otherwise
+keeps the closest output whose delivered reference true peak holds the target ceiling. Its resumable source survey,
+render, statistics, gates, final copy and independent remeasurement expose cancellation without publishing an
+unverified file. Results carry the achieved level, miss, typed reason hints, deterministic work and full pass log.
+Session planning keeps −18 LUFS source normalization separate from search gain and records a source-rate impact pass
+when delivery changes rate. The optional landing result extends the generated session codec and older v1 snapshots
+continue to decode. Differential tests compare the saved pass executor with the previous whole pass bit for bit.
+
+### mastering — resumable delivery render and bounded PCM
+
+Delivery conversion and offline rendering now retain their source, latency, tap, and drain cursors across bounded steps.
+The whole APIs use those same steps. A delivery job prepares its chain, renderer, and converter in separate units; a
+zero budget does no work, and cancellation followed by a new job resets every state. Delivered searches reconvert the
+original source on each pass and feed SRC blocks into the chain using the caller's output buffer, removing the extra
+complete converted programme. `storageFor` declares the source, output, and conservative workspace live set in 64-bit
+arithmetic. Split, replay, allocation, and prior-path bit comparisons cover the new render path.
+
 ## v0.2.2 — 2026-09-26
 
 ### tempo · tools · wasm — the first tempo analysis is as fast as every later one

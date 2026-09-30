@@ -7,10 +7,13 @@
 #include <felitronics/session/Project.h>
 #include <felitronics/session/Events.h>
 #include <felitronics/session/Measurements.h>
+#include <felitronics/session/Wav.h>
+#include <felitronics/session/LandingResult.h>
 #include <felitronics/session/Queries.h>
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <cstddef>
 #include <span>
 #include <string_view>
@@ -81,6 +84,9 @@ struct Recipe
     Project project {};
     std::uint64_t source = 0;                  // the source's hash (Session::source)
     std::uint64_t sound = 0;                   // config::Config::versions().sound
+    std::uint64_t readyHash = 0;              // exact ready topology, parameters and delivery choice
+    std::uint32_t deliveryRateHz = 0;
+    std::uint32_t readyVersion = 0;
 };
 
 // A master kept: its id and its recipe.
@@ -88,6 +94,8 @@ struct Kept
 {
     MasterId id = 0;
     Recipe recipe {};
+    std::optional<LandingSummary> landing;
+    std::optional<MasterReport> report;
 };
 
 // The source a load gave, as the session holds it. The name and the samples live in the session until a different source is loaded.
@@ -103,7 +111,22 @@ struct Source
     std::string_view name;
 };
 
-namespace detail { struct Driver; struct Inspector; struct MeasurementWorkspace; struct LiveMeasurements; struct SourceMeasurements; struct NeedlesWork; struct NeedlesResult; struct WaveformState; struct QueryCache; }
+namespace detail { struct Driver; struct Inspector; struct MeasurementWorkspace; struct LiveMeasurements; struct SourceMeasurements; struct NeedlesWork; struct NeedlesResult; struct WaveformState; struct QueryCache; struct MasterJob; struct MasterRows; }
+
+struct MasterToken
+{
+    std::uint64_t source = 0, revision = 0;
+    JobId job = 0;
+    MasterId master = 0;
+};
+enum class MasterTransferStatus : std::uint8_t { Ok, Unknown, Stale, TooSmall, Contract };
+struct MasterAudio
+{
+    std::unique_ptr<float[]> samples;
+    std::uint64_t frames = 0;
+    std::uint32_t channels = 0, sampleRate = 0;
+};
+struct MasterAudioShape { std::uint64_t frames = 0; std::uint32_t channels = 0, sampleRate = 0; };
 
 //==============================================================================
 // felitronics::session::Session — the mastering session: the object a shell (the web worker through the fcsession
@@ -194,6 +217,10 @@ public:
     [[nodiscard]] JobId needlesJob() const noexcept;
     [[nodiscard]] QueryDemand queryStorage (const MeasurementQuery& request) const noexcept;
     [[nodiscard]] QueryResult query (const MeasurementQuery& request) noexcept;
+    // Explicit deep zoom: the caller supplies at most 65536 delivered PCM frames in planar
+    // order, exactly covering request [fromFrame,toFrame). No master PCM is retained or rendered.
+    [[nodiscard]] QueryDemand masterWaveformChunkStorage (const MeasurementQuery& request, const Pcm& chunk) const noexcept;
+    [[nodiscard]] QueryResult masterWaveformChunk (const MeasurementQuery& request, const Pcm& chunk) noexcept;
     [[nodiscard]] Answer rejectProtocol (CommandId id) noexcept;
 
     // Export is an owned exact byte allocation, without a terminator. Only placed projects are exportable.
@@ -232,10 +259,21 @@ public:
     [[nodiscard]] JobId job() const noexcept;               // the master being made; 0 when none is
     [[nodiscard]] const Recipe& jobRecipe() const noexcept; // ...and its recipe (meaningless when job() is 0)
     [[nodiscard]] std::span<const Kept> masters() const noexcept;   // the masters kept, in the order they were made
+    [[nodiscard]] MasterToken pendingMaster() const noexcept;
+    [[nodiscard]] std::uint64_t masterAudioBytes (MasterToken token) const noexcept;
+    [[nodiscard]] MasterAudioShape masterAudioShape (MasterToken token) const noexcept;
+    [[nodiscard]] MasterTransferStatus copyMaster (MasterToken token, std::span<float> output) const noexcept;
+    [[nodiscard]] std::span<const float> viewMaster (MasterToken token) const noexcept;
+    [[nodiscard]] MasterTransferStatus takeMaster (MasterToken token, MasterAudio& output) noexcept;
+    [[nodiscard]] MasterTransferStatus releaseMaster (MasterToken token) noexcept;
+    [[nodiscard]] WavPlan masterWavPlan (MasterToken token) const noexcept;
+    [[nodiscard]] MasterTransferStatus copyMasterWav (MasterToken token, std::uint64_t offset,
+                                                     std::span<std::uint8_t> output) const noexcept;
 
 private:
     friend class Wire;
     friend struct detail::Driver;   // the session's own transitions, driven by the work that ends (src/Driver.h)
+    friend struct detail::MasterJob;
     // Defined by the state and event suites to reach the last job id, Driver failures and batch bounds;
     // the library defines none.
     friend struct detail::Inspector;
@@ -252,6 +290,9 @@ private:
     void emit (Notification event, const Phase& progress) noexcept;
     [[nodiscard]] Phase jobProgress (JobId job) const noexcept;
     void dropJob (JobId job) noexcept;
+    void clearMasters() noexcept;
+    void settleMasterCrest (MeasurementReason reason) noexcept;
+    void stepMasterCrestJoin() noexcept;
     [[nodiscard]] SnapshotView buildView() const noexcept;
     [[nodiscard]] SnapshotView buildSummary (std::span<MeasurementResult> results) const noexcept;
     [[nodiscard]] bool hasWork() const noexcept;
@@ -276,6 +317,9 @@ private:
     JobId measurementJob_ = 0;
     std::uint32_t measurementUnit_ = 0, masterUnit_ = 0;
     Phase measurementProgress_ {}, masterProgress_ {};
+    LandingSummary masterSummary_ {};
+    std::uint32_t masterTraceCursor_ = 0;
+    bool masterTraceActive_ = false;
     Notification events_[kEventBatch] {};
     std::size_t eventCount_ = 0;
     std::uint64_t sequence_ = 0;
@@ -314,8 +358,17 @@ private:
     JobId lastJob_ = 0;
     Recipe jobRecipe_ {};
     std::unique_ptr<Kept[]> masters_;
+    std::unique_ptr<detail::MasterRows[]> masterRows_;
+    std::unique_ptr<detail::MasterJob> masterJob_;
+    std::uint64_t masterJobBytes_ = 0;
+    MasterToken pendingMaster_ {};
+    MasterAudio masterAudio_ {};
+    std::uint32_t masterAudioBits_ = 0;
     std::size_t masterCount_ = 0;
     std::size_t masterRoom_ = 0;
+    std::size_t crestJoinIndex_ = 0;
+    bool crestJoin_ = false;
+    MeasurementReason crestJoinReason_ = MeasurementReason::None;
 };
 
 } // namespace felitronics::session

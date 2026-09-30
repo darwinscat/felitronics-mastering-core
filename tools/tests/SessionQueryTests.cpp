@@ -24,6 +24,11 @@ struct felitronics::session::detail::Inspector
     static std::uint64_t cacheBytes (const Session& s) { return s.queryCache_ ? s.queryCache_->bytes() : 0; }
     static std::uint64_t key (const Session& s) { return s.measurementKey_; }
     static const MeasurementResult& measurement (const Session& s, Analyzer id) { return s.measurementResults_[std::size_t (id)]; }
+    static void installMaster (Session& s, const Kept& kept)
+    {
+        s.masters_.reset (new Kept[1]);
+        s.masters_[0] = kept; s.masterCount_ = s.masterRoom_ = 1;
+    }
 };
 std::uint64_t digest = 0xCBF29CE484222325ull;
 void hash (const QueryView& v)
@@ -164,6 +169,63 @@ void nativeQueries()
     ok (! summary.view().measurementRowsIncluded && snapshot.view().measurementRowsIncluded, "summary explicitly omits large rows");
     for (const auto& r : summary.view().measurements) ok (r.arrays.empty(), "summary retains scalar status without row copies");
     ok (s.summaryBytes() < s.snapshotBytes() && Wire::summaryBytes (s).rowBytes < Wire::snapshotBytes (s).rowBytes, "frequent summaries avoid whole-row transport");
+    LandingTraceBucket limiterRows[] { { 0.0, 2.0, 1.0, 8, 0 }, { 0.0, 1.0, 0.5, 8, 0 } };
+    LandingTraceBucket clipRows[] { { 0.0, 0.5, 0.25, 8, 0 }, { 0.0, 0.0, 0.0, 8, 0 } };
+    LandingTrace layer; layer.toFrame = 4; layer.sampleRateHz = 48000; layer.columns = 2;
+    layer.complete = layer.valid = true; layer.samples = 16; layer.rows = limiterRows;
+    LandingSummary landing; landing.limiterTrace = layer; layer.rows = clipRows; landing.peakClipTrace = layer;
+    Kept master; master.id = 42; master.recipe.source = s.source().hash; master.landing = landing;
+    detail::Inspector::installMaster (s, master);
+    MeasurementQuery gr; gr.kind = QueryKind::LimiterGr; gr.audioId = s.source().hash;
+    gr.masterId = 42; gr.toFrame = 4; gr.columns = 1;
+    auto limiter = ask (s, gr);
+    ok (limiter.view().status == QueryStatus::Ready && limiter.view().stride == 7
+        && limiter.view().total == 2 && limiter.view().stored == 1 && ! limiter.view().complete
+        && same (limiter.view().values[0], 0.0) && same (limiter.view().values[1], 4.0)
+        && same (limiter.view().values[3], 2.0) && same (limiter.view().values[4], 0.75),
+        "master limiter query returns bounded delivered-grid columns and explicit reduction");
+    gr.kind = QueryKind::PeakClipGr; gr.columns = 2;
+    auto clipped = ask (s, gr);
+    ok (clipped.view().status == QueryStatus::Ready && clipped.view().complete
+        && same (clipped.view().values[3], 0.5) && same (clipped.view().values[10], 0.0),
+        "K13 query uses the same grid with its own reductions");
+    gr.fromFrame = 1; gr.toFrame = 3;
+    auto zoomGr = ask (s, gr);
+    ok (zoomGr.view().status == QueryStatus::Ready && zoomGr.view().total == 2
+        && zoomGr.view().stored == 2 && zoomGr.view().complete
+        && same (zoomGr.view().values[0], 0.0) && same (zoomGr.view().values[1], 2.0)
+        && same (zoomGr.view().values[7], 2.0) && same (zoomGr.view().values[8], 4.0),
+        "zoom selects intersecting K13 buckets and reports their retained bounds");
+    gr.columns = 1;
+    auto reducedZoom = ask (s, gr);
+    ok (reducedZoom.view().status == QueryStatus::Ready && reducedZoom.view().total == 2
+        && reducedZoom.view().stored == 1 && ! reducedZoom.view().complete
+        && same (reducedZoom.view().values[0], 0.0) && same (reducedZoom.view().values[1], 4.0)
+        && same (reducedZoom.view().values[4], 0.125),
+        "zoom groups selected buckets with their original bounds and weighted mean");
+    gr.fromFrame = 0; gr.toFrame = 2;
+    auto firstOnly = ask (s, gr);
+    ok (firstOnly.view().status == QueryStatus::Ready && firstOnly.view().total == 1
+        && firstOnly.view().stored == 1 && firstOnly.view().complete
+        && same (firstOnly.view().values[0], 0.0) && same (firstOnly.view().values[1], 2.0),
+        "one-sided zoom returns only the intersecting retained bucket");
+    gr.fromFrame = 2; gr.toFrame = 2;
+    ok (ask (s, gr).view().status == QueryStatus::Empty, "empty master zoom is explicit");
+    gr.fromFrame = 3; gr.toFrame = 5;
+    ok (ask (s, gr).view().status == QueryStatus::InvalidRange, "master zoom beyond the delivered programme refuses");
+    gr.fromFrame = 0; gr.toFrame = 4;
+    gr.columns = 2;
+    auto staleGr = gr; staleGr.audioId ^= 1u;
+    ok (ask (s, staleGr).view().status == QueryStatus::StaleSource,
+        "master trace refuses a mismatched source identity");
+    master.landing->peakClipTrace->complete = false;
+    detail::Inspector::installMaster (s, master);
+    auto unfinished = ask (s, gr);
+    ok (unfinished.view().status == QueryStatus::Pending && unfinished.view().values.empty()
+        && ! unfinished.view().complete, "unfinished K13 trace reports pending without rows");
+    master.landing.reset(); detail::Inspector::installMaster (s, master);
+    ok (ask (s, gr).view().status == QueryStatus::Unavailable && same (limiter.view().values[3], 2.0),
+        "cancelled or replaced master exposes no stale trace; previous response remains owned");
     left[8] *= 0.75f;
     ok (s.apply (load).rejection == Rejection::None, "replacement source");
     ok (ask (s, q).view().status == QueryStatus::StaleSource && same (overview.view().values[0], 0), "old response survives source replacement and new request rejects old audio ID");
@@ -222,6 +284,19 @@ void abiQueries()
             }
         }
     }
+    MeasurementQuery absentMaster; absentMaster.kind = QueryKind::PeakClipGr;
+    absentMaster.audioId = native.session->source().hash;
+    absentMaster.masterId = 42; absentMaster.toFrame = 4; absentMaster.columns = 2;
+    const auto masterRequest = json (absentMaster);
+    fc_session_sizes masterSize { sizeof (masterSize), 0, 0 }, masterWritten { sizeof (masterWritten), 0, 0 };
+    ok (fc_session_query_size (handle, masterRequest.data(), std::uint32_t (masterRequest.size()), &masterSize) == FC_SESSION_OK
+        && masterSize.rowBytes == 0, "C master trace query declares zero rows when no master is retained");
+    std::vector<char> masterAnswer (masterSize.jsonBytes);
+    ok (fc_session_query_copy (handle, masterRequest.data(), std::uint32_t (masterRequest.size()),
+        masterAnswer.data(), masterSize.jsonBytes, nullptr, 0, &masterWritten) == FC_SESSION_OK
+        && masterWritten.rowBytes == 0
+        && std::string_view (masterAnswer.data(), masterWritten.jsonBytes).find ("\"status\":2") != std::string_view::npos,
+        "C master trace query returns the explicit unavailable status");
     fc_session_sizes size { sizeof (size), 0, 0 };
     ok (fc_session_summary_size (handle, &size) == FC_SESSION_OK, "C summary bounds");
     std::vector<char> text (size.jsonBytes); std::vector<double> rows (size.rowBytes / 8u);

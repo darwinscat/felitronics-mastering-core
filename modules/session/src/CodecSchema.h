@@ -41,6 +41,28 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (Device::Low) == 7);
         return 7;
     }
+    else if constexpr (std::is_same_v<T, LandingReason>)
+    {
+        static_assert (unsigned (LandingReason::None) == 0);
+        static_assert (unsigned (LandingReason::ExcessSubBass) == 1);
+        static_assert (unsigned (LandingReason::SharpPeaks) == 2);
+        static_assert (unsigned (LandingReason::DarkMix) == 3);
+        static_assert (unsigned (LandingReason::LoudnessDemand) == 4);
+        static_assert (unsigned (LandingReason::GainRange) == 5);
+        static_assert (unsigned (LandingReason::TruePeak) == 6);
+        return 6;
+    }
+    else if constexpr (std::is_same_v<T, LandingStatus>)
+    {
+        static_assert (unsigned (LandingStatus::Solved) == 0);
+        static_assert (unsigned (LandingStatus::TargetUnreachable) == 1);
+        static_assert (unsigned (LandingStatus::PassLimit) == 2);
+        static_assert (unsigned (LandingStatus::TargetBetweenAchievable) == 3);
+        static_assert (unsigned (LandingStatus::Unavailable) == 4);
+        static_assert (unsigned (LandingStatus::Cancelled) == 5);
+        static_assert (unsigned (LandingStatus::TechnicalFailure) == 6);
+        return 6;
+    }
     else if constexpr (std::is_same_v<T, MeasurementReason>)
     {
         static_assert (unsigned (MeasurementReason::None) == 0);
@@ -92,7 +114,10 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (QueryKind::ShortTerm) == 4);
         static_assert (unsigned (QueryKind::Clipping) == 5);
         static_assert (unsigned (QueryKind::Stereo) == 6);
-        return 6;
+        static_assert (unsigned (QueryKind::LimiterGr) == 7);
+        static_assert (unsigned (QueryKind::PeakClipGr) == 8);
+        static_assert (unsigned (QueryKind::MasterWaveform) == 9);
+        return 9;
     }
     else if constexpr (std::is_same_v<T, QueryStatus>)
     {
@@ -154,6 +179,34 @@ constexpr void checkEnum (Device value) noexcept
         case Device::Limiter: break;
         case Device::Dither: break;
         case Device::Low: break;
+    }
+}
+
+constexpr void checkEnum (LandingReason value) noexcept
+{
+    switch (value)
+    {
+        case LandingReason::None: break;
+        case LandingReason::ExcessSubBass: break;
+        case LandingReason::SharpPeaks: break;
+        case LandingReason::DarkMix: break;
+        case LandingReason::LoudnessDemand: break;
+        case LandingReason::GainRange: break;
+        case LandingReason::TruePeak: break;
+    }
+}
+
+constexpr void checkEnum (LandingStatus value) noexcept
+{
+    switch (value)
+    {
+        case LandingStatus::Solved: break;
+        case LandingStatus::TargetUnreachable: break;
+        case LandingStatus::PassLimit: break;
+        case LandingStatus::TargetBetweenAchievable: break;
+        case LandingStatus::Unavailable: break;
+        case LandingStatus::Cancelled: break;
+        case LandingStatus::TechnicalFailure: break;
     }
 }
 
@@ -222,6 +275,9 @@ constexpr void checkEnum (QueryKind value) noexcept
         case QueryKind::ShortTerm: break;
         case QueryKind::Clipping: break;
         case QueryKind::Stereo: break;
+        case QueryKind::LimiterGr: break;
+        case QueryKind::PeakClipGr: break;
+        case QueryKind::MasterWaveform: break;
     }
 }
 
@@ -360,11 +416,103 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, Kept>)
     {
-        [[maybe_unused]] auto& [f0, f1] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.id)>, std::uint32_t>);
         v.field ("id", x.id);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.landing)>, std::optional<LandingSummary>>);
+        v.optionalField ("landing", x.landing, std::optional<LandingSummary> {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.recipe)>, Recipe>);
         v.field ("recipe", x.recipe);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.report)>, std::optional<MasterReport>>);
+        v.optionalField ("report", x.report, std::optional<MasterReport> {});
+    }
+    else if constexpr (std::is_same_v<U, LandingPass>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.achievedLufs)>, double>);
+        v.field ("achievedLufs", x.achievedLufs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ceilingDbTp)>, double>);
+        v.field ("ceilingDbTp", x.ceilingDbTp);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ceilingSafe)>, bool>);
+        v.field ("ceilingSafe", x.ceilingSafe);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.gainDb)>, double>);
+        v.field ("gainDb", x.gainDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.limiterMaxReductionDb)>, double>);
+        v.field ("limiterMaxReductionDb", x.limiterMaxReductionDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.truePeakDbTp)>, double>);
+        v.field ("truePeakDbTp", x.truePeakDbTp);
+    }
+    else if constexpr (std::is_same_v<U, LandingSummary>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.achievedLufs)>, std::optional<double>>);
+        v.field ("achievedLufs", x.achievedLufs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.deliverable)>, bool>);
+        v.field ("deliverable", x.deliverable);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.distanceLu)>, std::optional<double>>);
+        v.field ("distanceLu", x.distanceLu);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.limiterMeanReductionDb)>, std::optional<double>>);
+        v.field ("limiterMeanReductionDb", x.limiterMeanReductionDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.limiterTrace)>, std::optional<LandingTrace>>);
+        v.optionalField ("limiterTrace", x.limiterTrace, std::optional<LandingTrace> {});
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.log)>, std::span<const LandingPass>>);
+        v.field ("log", x.log);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.mainReason)>, LandingReason>);
+        v.field ("mainReason", x.mainReason);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.missLu)>, std::optional<double>>);
+        v.field ("missLu", x.missLu);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.passes)>, std::uint32_t>);
+        v.field ("passes", x.passes);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.peakClipTrace)>, std::optional<LandingTrace>>);
+        v.optionalField ("peakClipTrace", x.peakClipTrace, std::optional<LandingTrace> {});
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.secondReason)>, LandingReason>);
+        v.field ("secondReason", x.secondReason);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sourcePresenceShare)>, std::optional<double>>);
+        v.field ("sourcePresenceShare", x.sourcePresenceShare);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sourceSubBassShare)>, std::optional<double>>);
+        v.field ("sourceSubBassShare", x.sourceSubBassShare);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.status)>, LandingStatus>);
+        v.field ("status", x.status);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.truePeakDbTp)>, std::optional<double>>);
+        v.field ("truePeakDbTp", x.truePeakDbTp);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.workUnits)>, std::uint64_t>);
+        v.field ("workUnits", x.workUnits);
+    }
+    else if constexpr (std::is_same_v<U, LandingTrace>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.columns)>, std::uint32_t>);
+        v.field ("columns", x.columns);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.complete)>, bool>);
+        v.field ("complete", x.complete);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.fromFrame)>, std::uint64_t>);
+        v.field ("fromFrame", x.fromFrame);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.nonFinite)>, std::uint64_t>);
+        v.field ("nonFinite", x.nonFinite);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.rows)>, std::span<const LandingTraceBucket>>);
+        v.field ("rows", x.rows);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sampleRateHz)>, std::uint32_t>);
+        v.field ("sampleRateHz", x.sampleRateHz);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.samples)>, std::uint64_t>);
+        v.field ("samples", x.samples);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.toFrame)>, std::uint64_t>);
+        v.field ("toFrame", x.toFrame);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.valid)>, bool>);
+        v.field ("valid", x.valid);
+    }
+    else if constexpr (std::is_same_v<U, LandingTraceBucket>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.maxDb)>, double>);
+        v.field ("maxDb", x.maxDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.meanDb)>, double>);
+        v.field ("meanDb", x.meanDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.minDb)>, double>);
+        v.field ("minDb", x.minDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.nonFinite)>, std::uint64_t>);
+        v.field ("nonFinite", x.nonFinite);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.samples)>, std::uint64_t>);
+        v.field ("samples", x.samples);
     }
     else if constexpr (std::is_same_v<U, Layers<LimiterFields>>)
     {
@@ -425,6 +573,194 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("field", x.field);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.fileValue)>, double>);
         v.field ("fileValue", x.fileValue);
+    }
+    else if constexpr (std::is_same_v<U, MasterCost>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.activeWindowShare)>, MasterCostValue>);
+        v.field ("activeWindowShare", x.activeWindowShare);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.crestFullDb)>, MasterCostValue>);
+        v.field ("crestFullDb", x.crestFullDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.crestHighDb)>, MasterCostValue>);
+        v.field ("crestHighDb", x.crestHighDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.crestHighMidDb)>, MasterCostValue>);
+        v.field ("crestHighMidDb", x.crestHighMidDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.crestLowDb)>, MasterCostValue>);
+        v.field ("crestLowDb", x.crestLowDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.crestLowMidDb)>, MasterCostValue>);
+        v.field ("crestLowMidDb", x.crestLowMidDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.k2Reason)>, MeasurementReason>);
+        v.field ("k2Reason", x.k2Reason);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.largestSectionShiftLu)>, MasterCostValue>);
+        v.field ("largestSectionShiftLu", x.largestSectionShiftLu);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.limiterActiveShare)>, MasterCostValue>);
+        v.field ("limiterActiveShare", x.limiterActiveShare);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.limiterP50Db)>, MasterCostValue>);
+        v.field ("limiterP50Db", x.limiterP50Db);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.limiterP95Db)>, MasterCostValue>);
+        v.field ("limiterP95Db", x.limiterP95Db);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.masterFrames)>, std::uint64_t>);
+        v.field ("masterFrames", x.masterFrames);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.masterRateHz)>, std::uint32_t>);
+        v.field ("masterRateHz", x.masterRateHz);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.pumpingRmsDb)>, MasterCostValue>);
+        v.field ("pumpingRmsDb", x.pumpingRmsDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sections)>, std::span<const MasterSection>>);
+        v.field ("sections", x.sections);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.shapeP95Lu)>, MasterCostValue>);
+        v.field ("shapeP95Lu", x.shapeP95Lu);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sourceFrames)>, std::uint64_t>);
+        v.field ("sourceFrames", x.sourceFrames);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sourceRateHz)>, std::uint32_t>);
+        v.field ("sourceRateHz", x.sourceRateHz);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.waveform)>, std::span<const MasterWaveformBucket>>);
+        v.field ("waveform", x.waveform);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.worstSectionIndex)>, std::optional<std::uint32_t>>);
+        v.field ("worstSectionIndex", x.worstSectionIndex);
+    }
+    else if constexpr (std::is_same_v<U, MasterCostValue>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.compared)>, std::uint64_t>);
+        v.field ("compared", x.compared);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.reason)>, MeasurementReason>);
+        v.field ("reason", x.reason);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.value)>, std::optional<double>>);
+        v.field ("value", x.value);
+    }
+    else if constexpr (std::is_same_v<U, MasterCrest>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.blockHops)>, std::uint32_t>);
+        v.field ("blockHops", x.blockHops);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.blocks)>, std::uint64_t>);
+        v.field ("blocks", x.blocks);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.complete)>, bool>);
+        v.field ("complete", x.complete);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.edgeHighHz)>, double>);
+        v.field ("edgeHighHz", x.edgeHighHz);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.edgeLowHz)>, double>);
+        v.field ("edgeLowHz", x.edgeLowHz);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.edgeMidHz)>, double>);
+        v.field ("edgeMidHz", x.edgeMidHz);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.frames)>, std::uint64_t>);
+        v.field ("frames", x.frames);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.hopFrames)>, std::uint32_t>);
+        v.field ("hopFrames", x.hopFrames);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.reason)>, MeasurementReason>);
+        v.field ("reason", x.reason);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.rows)>, std::span<const double>>);
+        v.field ("rows", x.rows);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sampleRateHz)>, std::uint32_t>);
+        v.field ("sampleRateHz", x.sampleRateHz);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sourceMask)>, std::span<const double>>);
+        v.field ("sourceMask", x.sourceMask);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sourceRateCheck)>, bool>);
+        v.field ("sourceRateCheck", x.sourceRateCheck);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.status)>, MeasurementStatus>);
+        v.field ("status", x.status);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.version)>, std::uint32_t>);
+        v.field ("version", x.version);
+    }
+    else if constexpr (std::is_same_v<U, MasterHint>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.evidence)>, double>);
+        v.field ("evidence", x.evidence);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.percent)>, bool>);
+        v.field ("percent", x.percent);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.reason)>, LandingReason>);
+        v.field ("reason", x.reason);
+    }
+    else if constexpr (std::is_same_v<U, MasterReport>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.achievedLufs)>, std::optional<double>>);
+        v.field ("achievedLufs", x.achievedLufs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ceilingDbTp)>, double>);
+        v.field ("ceilingDbTp", x.ceilingDbTp);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.checkPasses)>, std::uint32_t>);
+        v.field ("checkPasses", x.checkPasses);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.cost)>, std::optional<MasterCost>>);
+        v.optionalField ("cost", x.cost, std::optional<MasterCost> {});
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.crest)>, MasterCrest>);
+        v.field ("crest", x.crest);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.deliverable)>, bool>);
+        v.field ("deliverable", x.deliverable);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.firstHint)>, std::optional<MasterHint>>);
+        v.field ("firstHint", x.firstHint);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.gainFromSourceDb)>, std::optional<double>>);
+        v.field ("gainFromSourceDb", x.gainFromSourceDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.lraLu)>, std::optional<double>>);
+        v.field ("lraLu", x.lraLu);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.lraReason)>, MeasurementReason>);
+        v.field ("lraReason", x.lraReason);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.missLu)>, std::optional<double>>);
+        v.field ("missLu", x.missLu);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.peakSafe)>, bool>);
+        v.field ("peakSafe", x.peakSafe);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.plrDb)>, std::optional<double>>);
+        v.field ("plrDb", x.plrDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.plrReason)>, MeasurementReason>);
+        v.field ("plrReason", x.plrReason);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.reason)>, MeasurementReason>);
+        v.field ("reason", x.reason);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.secondHint)>, std::optional<MasterHint>>);
+        v.field ("secondHint", x.secondHint);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.status)>, MeasurementStatus>);
+        v.field ("status", x.status);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.targetLufs)>, double>);
+        v.field ("targetLufs", x.targetLufs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.targetMet)>, bool>);
+        v.field ("targetMet", x.targetMet);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.truePeakDbTp)>, std::optional<double>>);
+        v.field ("truePeakDbTp", x.truePeakDbTp);
+    }
+    else if constexpr (std::is_same_v<U, MasterSection>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.compared)>, bool>);
+        v.field ("compared", x.compared);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.fromFrame)>, std::uint64_t>);
+        v.field ("fromFrame", x.fromFrame);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.masterLufs)>, double>);
+        v.field ("masterLufs", x.masterLufs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.shiftLu)>, double>);
+        v.field ("shiftLu", x.shiftLu);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sourceLufs)>, double>);
+        v.field ("sourceLufs", x.sourceLufs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.toFrame)>, std::uint64_t>);
+        v.field ("toFrame", x.toFrame);
+    }
+    else if constexpr (std::is_same_v<U, MasterToken>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.job)>, std::uint32_t>);
+        v.field ("job", x.job);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.master)>, std::uint32_t>);
+        v.field ("master", x.master);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.revision)>, std::uint64_t>);
+        v.field ("revision", x.revision);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.source)>, std::uint64_t>);
+        v.field ("source", x.source);
+    }
+    else if constexpr (std::is_same_v<U, MasterWaveformBucket>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.channel)>, std::uint32_t>);
+        v.field ("channel", x.channel);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.finite)>, std::uint64_t>);
+        v.field ("finite", x.finite);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.fromFrame)>, std::uint64_t>);
+        v.field ("fromFrame", x.fromFrame);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.maximum)>, double>);
+        v.field ("maximum", x.maximum);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.minimum)>, double>);
+        v.field ("minimum", x.minimum);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.rms)>, double>);
+        v.field ("rms", x.rms);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.toFrame)>, std::uint64_t>);
+        v.field ("toFrame", x.toFrame);
     }
     else if constexpr (std::is_same_v<U, MeasuredSource>)
     {
@@ -506,7 +842,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, MeasurementQuery>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.audioId)>, std::uint64_t>);
         v.field ("audioId", x.audioId);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.columns)>, std::uint32_t>);
@@ -519,6 +855,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.optionalField ("fromHz", x.fromHz, 20.0);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.kind)>, QueryKind>);
         v.field ("kind", x.kind);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.masterId)>, std::uint32_t>);
+        v.optionalField ("masterId", x.masterId, std::uint32_t {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.requestId)>, std::uint64_t>);
         v.field ("requestId", x.requestId);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.toFrame)>, std::uint64_t>);
@@ -700,9 +1038,15 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, Recipe>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.deliveryRateHz)>, std::uint32_t>);
+        v.optionalField ("deliveryRateHz", x.deliveryRateHz, std::uint32_t {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.project)>, Project>);
         v.field ("project", x.project);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.readyHash)>, std::uint64_t>);
+        v.optionalField ("readyHash", x.readyHash, std::uint64_t {});
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.readyVersion)>, std::uint32_t>);
+        v.optionalField ("readyVersion", x.readyVersion, std::uint32_t {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sound)>, std::uint64_t>);
         v.field ("sound", x.sound);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.source)>, std::uint64_t>);
@@ -742,9 +1086,11 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, SnapshotView>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32, f33, f34, f35, f36, f37, f38] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32, f33, f34, f35, f36, f37, f38, f39, f40, f41] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.canContinueMeasurement)>, bool>);
         v.optionalField ("canContinueMeasurement", x.canContinueMeasurement, false);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.canMaster)>, bool>);
+        v.optionalField ("canMaster", x.canMaster, false);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.devicesPlaced)>, bool>);
         v.optionalField ("devicesPlaced", x.devicesPlaced, false);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.eqCurve)>, std::span<const EqPoint>>);
@@ -801,6 +1147,10 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.optionalField ("needlesSource", x.needlesSource, std::uint64_t {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.offeredDevices)>, std::uint32_t>);
         v.field ("offeredDevices", x.offeredDevices);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.pendingMaster)>, MasterToken>);
+        v.optionalField ("pendingMaster", x.pendingMaster, MasterToken {});
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.pendingMasterBytes)>, double>);
+        v.optionalField ("pendingMasterBytes", x.pendingMasterBytes, 0.0);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.project)>, Project>);
         v.field ("project", x.project);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.revision)>, std::uint64_t>);

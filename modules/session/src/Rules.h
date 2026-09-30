@@ -37,6 +37,7 @@ struct TargetRow
     Decimal lufs {}, tp {}, monoBass {}, hpfFloor {};
     std::int32_t hpfSlope = 0;                 // hpfSlopeDbPerOct
     std::int32_t bitDepth = 0;
+    std::int32_t sampleRate = 0;               // delivery rate, Hz; 0 keeps the source's
     bool noClipper = false;
     std::optional<Decimal> lowDb;
     std::optional<Decimal> glue;               // [glue] byTarget, on the knob, when it names this target
