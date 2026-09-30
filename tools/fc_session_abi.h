@@ -37,7 +37,9 @@
 //   1            capabilities/config creation and demand, commands/load/project, step, events and snapshot copies;
 //                measurement and needles demand, measurement queries, summaries, the sidecar load and its audio
 //                attachment (no release carried fc_session before them, so they are version 1).
-#define FC_SESSION_ABI_VERSION 1u
+//   2            v0.4.0, Decide: leanSummary appended to fc_session_capabilities; query kinds MasterReport and MasterAxes,
+//                a master's Momentary/ShortTerm and the spectrum choice; the plan's and the landing's snapshot fields.
+#define FC_SESSION_ABI_VERSION 2u
 #define FC_SESSION_CAPABILITIES_V1_BYTES 32u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u
