@@ -9,6 +9,7 @@ import {resolve} from 'node:path';
 import {types} from '../session-wire-types.mjs';
 import {sizeOf} from '../wasm/fc-master-layout.mjs';
 import {decodeWavRecording} from './wav-recording.mjs';
+import {childTimeout} from './child-timeout.mjs';
 
 const [nativeAbi, nativeJob, wasmModule, wasmJob, nativeCli, option] = process.argv.slice(2);
 if (!nativeAbi || !nativeJob || !wasmModule || !wasmJob || !nativeCli || (option && option !== '--rebuild')) {
@@ -18,9 +19,12 @@ if (!nativeAbi || !nativeJob || !wasmModule || !wasmJob || !nativeCli || (option
 const file = new URL('recordings/wav-contract.json', import.meta.url);
 const input = new URL('wav-input.json', import.meta.url);
 const sha = bytes => createHash('sha256').update(bytes).digest('hex');
+// Six minutes a child by default: the wasm session check is the longest, about a minute on a desktop. A slower tier
+// raises it through FC_SESSION_CONTRACT_TIMEOUT_MS, the same variable and rule as run.mjs.
+const timeout = childTimeout(360000);
 function command(exe, ...args) {
-    const p = spawnSync(exe, args, {encoding:'utf8', timeout:360000, maxBuffer:32 * 1024 * 1024});
-    assert.equal(p.status, 0, `${exe} ${args.join(' ')}: ${p.error ?? p.stderr ?? p.stdout}`);
+    const p = spawnSync(exe, args, {encoding:'utf8', timeout, maxBuffer:32 * 1024 * 1024});
+    assert.equal(p.status, 0, `${exe} ${args.join(' ')}: ${p.status === null ? `killed by ${p.signal} after the ${timeout} ms child budget` : ''}${p.error ?? p.stderr ?? p.stdout}`);
     return p.stdout.replaceAll('\r\n', '\n');
 }
 const native = command(resolve(nativeAbi));

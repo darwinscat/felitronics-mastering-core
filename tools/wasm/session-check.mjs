@@ -416,6 +416,17 @@ const masterSnapshot = (handle = masterSession) => {
     M._free(json); if (rows) M._free(rows);
     return value;
 };
+// Did the step just taken complete a master? Its own events say so (a `done` event is a master's), read into one
+// reused buffer: a whole snapshot per unit step costs tens of milliseconds and grows with the retained rows.
+const doneBytes = 1 << 16, doneJson = M._malloc(doneBytes), doneRows = M._malloc(doneBytes);
+const masterCompleted = handle => {
+    M.HEAPU32[resultSize >>> 2] = 12;
+    if (M._fc_session_events_size(handle, resultSize) !== STATUS.OK) return false;
+    const jsonBytes = M.HEAPU32[(resultSize >>> 2) + 1], rowBytes = M.HEAPU32[(resultSize >>> 2) + 2];
+    if (jsonBytes > doneBytes || rowBytes > doneBytes
+        || M._fc_session_events_copy(handle, doneJson, jsonBytes, doneRows, rowBytes) !== STATUS.OK) return false;
+    return /"kind":"done","payload":\{"masterId":[1-9]/.test(decoder.decode(heapBytes().subarray(doneJson, doneJson + jsonBytes)));
+};
 let readySnapshot = null;
 for (let i = 0; i < 20000; ++i) {
     if (i % 32 === 0 && (readySnapshot = masterSnapshot())?.canMaster) break;
@@ -795,9 +806,9 @@ for (let i = 0; i < 3; ++i) {
     const accepted = started === STATUS.OK ? reply() : null;
     let completed = null;
     for (let step = 0; step < 40000; ++step) {
-        if ((completed = masterSnapshot())?.pendingMaster?.master) break;
-        if (M._fc_session_step(masterSession, 16, resultSize) !== STATUS.OK) break;
+        if (M._fc_session_step(masterSession, 16, resultSize) !== STATUS.OK || masterCompleted(masterSession)) break;
     }
+    completed = masterSnapshot();
     const token = completed?.pendingMaster ?? {};
     const source = BigInt(token.source ?? '0'), revision = BigInt(token.revision ?? '0');
     for (const [index, value] of [28, lo(source), hi(source), lo(revision), hi(revision),
@@ -903,12 +914,11 @@ const shortLoadStatus = M._fc_session_load(unavailableSession, 1, 0, shortPointe
     shortMeta, shortMetaBytes, answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize);
 const shortLoadAnswer = shortLoadStatus === STATUS.OK ? reply() : null;
 M._free(shortMeta); M._free(shortPointers); M._free(shortPcm);
-let unavailableSnapshot = null;
-for (let i = 0; i < 20000; ++i) {
-    unavailableSnapshot = snapshotFor(unavailableSession);
-    if (unavailableSnapshot?.state === 3) break;
-    if (M._fc_session_step(unavailableSession, 16, resultSize) !== STATUS.OK) break;
-}
+// Until the session has no work: a four-frame source never reaches Measured2, so waiting for that state ran all the
+// iterations, each with a whole snapshot.
+for (let i = 0; i < 20000; ++i)
+    if (M._fc_session_step(unavailableSession, 16, resultSize) !== STATUS.OK || M.HEAPU32[resultSize >>> 2] === 1) break;
+const unavailableSnapshot = snapshotFor(unavailableSession);
 const unavailableSource = BigInt(unavailableSnapshot?.source?.hash ?? '0');
 const unavailableRevision = BigInt(unavailableSnapshot?.revision ?? '0');
 const unavailableStatus = M._fc_session_master(unavailableSession, 2, 0,
@@ -1030,11 +1040,9 @@ const lateStartStatus = M._fc_session_master(lateSession, 2, 0, lo(lateSource), 
     lo(lateRevision), hi(lateRevision), masterConfig, masterParams,
     answer, macro('FC_SESSION_ANSWER_BYTES'), resultSize);
 const lateStartAnswer = lateStartStatus === STATUS.OK ? reply() : null;
-let lateCompleted = null;
-for (let i = 0; i < 40000; ++i) {
-    if ((lateCompleted = masterSnapshot(lateSession))?.pendingMaster?.master) break;
-    if (M._fc_session_step(lateSession, 1, resultSize) !== STATUS.OK) break;
-}
+for (let i = 0; i < 40000; ++i)
+    if (M._fc_session_step(lateSession, 1, resultSize) !== STATUS.OK || masterCompleted(lateSession)) break;
+const lateCompleted = masterSnapshot(lateSession);
 const lateCompleteWire = masterWire('snapshot', lateSession);
 const lateMasterId = lateCompleted?.pendingMaster?.master ?? 0;
 const lateBefore = lateCompleted?.masters?.find(row => row.id === lateMasterId)?.report;
