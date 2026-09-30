@@ -83,17 +83,23 @@ void SourceResults::lowEnd (MeasurementStore& out, const analysis::LowEnd& a, do
     out.number ("peakNoteHz", a.peakNoteHz(), -1, note, unsigned (a.noteReason()));
     out.number ("peakCentroidHz", a.peakCentroidHz(), -1, note, unsigned (a.noteReason()));
     out.number ("peakCentsOffset", a.peakCentsOffset(), -1, note, unsigned (a.noteReason()));
-    // An uncertain or unresolved lowest occupied band never substitutes the loudest band. This is the reading alone — the
-    // band, its duty and its margin; whether it is a SURE lowest note (its duration, the programme's length) and what the
-    // high-pass does with it is the planner's (src/Planner.cpp), published in the snapshot's plan.
+    // THE LOWEST OCCUPIED BAND — the reading alone, published with its sureness and never withheld for it: the band, its
+    // duty and its margin over the duty line wherever a band was on at all in `duty` of the frames; `lowestOccupiedSure`
+    // says whether it stands the margin and is resolved, `lowestOccupiedResolved` whether the band is resolved at all. An
+    // uncertain band never substitutes the loudest one, and whether it is a SURE lowest note (its duration, the
+    // programme's length) and what the high-pass does with it is the planner's (src/Planner.cpp), in the snapshot's plan.
     const auto occupied = a.lowestOccupiedBand (duty);
-    const bool confident = a.noteValid() && occupied.band >= a.firstResolvedBand() && occupied.band >= 0
-                         && occupied.marginWhenOnDb >= margin;
+    const bool found = a.noteValid() && occupied.band >= 0;
+    const bool resolved = found && occupied.band >= a.firstResolvedBand();
+    const bool confident = resolved && occupied.marginWhenOnDb >= margin;
     const auto missing = note == MeasurementReason::None ? MeasurementReason::NoSignal : note;
-    out.number ("lowestOccupiedMidi", occupied.midi, -1, confident ? MeasurementReason::None : missing, unsigned (a.noteReason()));
-    out.number ("lowestOccupiedHz", occupied.centreHz, -1, confident ? MeasurementReason::None : missing, unsigned (a.noteReason()));
-    out.number ("lowestOccupiedDuty", occupied.duty, -1, confident ? MeasurementReason::None : missing);
-    out.number ("lowestOccupiedMarginDb", occupied.marginWhenOnDb, -1, confident ? MeasurementReason::None : missing);
+    const auto reading = found ? MeasurementReason::None : missing;
+    out.number ("lowestOccupiedMidi", occupied.midi, -1, reading, unsigned (a.noteReason()));
+    out.number ("lowestOccupiedHz", occupied.centreHz, -1, reading, unsigned (a.noteReason()));
+    out.number ("lowestOccupiedDuty", occupied.duty, -1, reading);
+    out.number ("lowestOccupiedMarginDb", occupied.marginWhenOnDb, -1, reading);
+    out.number ("lowestOccupiedSure", confident ? 1.0 : 0.0, -1, reading);
+    out.number ("lowestOccupiedResolved", resolved ? 1.0 : 0.0, -1, reading);
     const MeasurementGrid grid { 0, std::uint64_t (a.blockSamples()), std::uint64_t (a.samplesProcessed()), std::uint32_t (a.sampleRate()) };
     (void) out.array ("blocks", 8, std::uint64_t (a.blockCount()), std::uint64_t (a.storedBlockCount()), a.blocksComplete(), grid);
     auto* bands = out.array ("bands", 16, std::uint64_t (a.bandCount()), std::uint64_t (a.bandCount()), true, { 0, 0, grid.framesRead, grid.sampleRate });

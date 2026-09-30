@@ -840,6 +840,10 @@ en = "The spectrum ends at {cutoff} (a drop of {drop}) — it looks like the tra
 ru = "Самая нижняя занятая полоса: {note} ({hz})."
 en = "The lowest occupied band: {note} ({hz})."
 
+[messages.sourceLowestBandUnsure]
+ru = "Самая нижняя занятая полоса: {note} ({hz}), неуверенно."
+en = "The lowest occupied band: {note} ({hz}), unsure."
+
 [messages.sourceInfraLow]
 ru = "Инфраниз: {share} энергии — ниже {hz}."
 en = "Infra-low: {share} of the energy lies below {hz}."

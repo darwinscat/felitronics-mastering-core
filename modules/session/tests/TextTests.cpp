@@ -825,7 +825,7 @@ void everyRejectionIsAFact()
         inRange = inRange && ((std::size_t) shape.id < 100 || ((std::size_t) shape.id > 100 && (std::size_t) shape.id <= 100 + last)
             || ((std::size_t) shape.id >= 200 && (std::size_t) shape.id <= 207)
             || ((std::size_t) shape.id >= 300 && (std::size_t) shape.id <= 305)
-            || ((std::size_t) shape.id >= 400 && (std::size_t) shape.id <= 435));
+            || ((std::size_t) shape.id >= 400 && (std::size_t) shape.id <= 436));
     ok (inRange, "rejections, phases and session errors occupy only their own declared ranges");
 
     // THE FIELDS, held against the state machine's own walk of them (src/Devices.h).
@@ -1075,7 +1075,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0x6417a2ca46180732ull;   // the limiter, the dither, vinyl, a quiet input and the observations (52–80, 419–435)
+    constexpr std::uint64_t kPinned = 0x79c1cf0e53a4b0ccull;   // the limiter, the dither, vinyl, a quiet input and the observations (52–80, 419–436)
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");

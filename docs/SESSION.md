@@ -420,8 +420,10 @@ not measured (with the measurement's reason) — the three never fold into one �
 severity along the ramps of `[observations]` (its first edition), `doubtful` under `doubtfulBelow`, `hypothesis` where
 its thresholds are starting values, and what deals with it (`handledBy`: the high-pass, mono bass, a person, nothing)
 and whether that device is in the chain. They change nothing: no observation switches a device. Rarer clips are named by
-place ("found 2 clips: 0:12, 1:47 — it looks like an edit"); ten a minute is a clipped source. `ObservationText::fact`
-gives a found one's sentence.
+place ("found 2 clips: 0:12, 1:47 — it looks like an edit"); ten a minute is a clipped source. The lowest occupied band
+is the low end's reading published with its sureness (`lowestOccupiedSure`, `lowestOccupiedResolved` beside it): an
+unsure one is shown as unsure, never withheld, while the high-pass takes the floor for it. `ObservationText::fact` gives
+a found one's sentence.
 
 **Tilt and low** (technical decision 3О10) are two devices of the person's taste in that one stage. The machine never
 ticks tilt and leaves it at 0 dB; it ticks low only for a target's correction for its medium (`lowDb`: vinyl's
