@@ -60,8 +60,9 @@ void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channel
     sat.mix = number (rules.mixDefault);
     sat.output = number (rules.outputDefault);
 
+    // Tilt is a person's: the machine never ticks it and never sets it.
     auto& tilt = devices.tilt.machine;
-    tilt.on = rules.eq;
+    tilt.on = false;
     tilt.db = 0.0;
 
     auto& limiter = devices.limiter.machine;

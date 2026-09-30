@@ -267,7 +267,8 @@ template <> struct Planned<SaturationFields<Value>>
     static std::uint32_t needs (const PlanInputs&, const SaturationFields<Value>&) noexcept { return 0; }
 };
 
-// [tilt]: flat — the machine does not touch timbre.
+// [tilt]: off and flat — the machine does not touch timbre (a tilt taken from a measurement is a genre trap). A person's
+// tick and knob are the whole device.
 template <> struct Planned<TiltFields<Value>>
 {
     static void propose (const PlanInputs&, TiltFields<Value>&, DevicePlan&, PlanFindings&) noexcept {}
@@ -303,12 +304,20 @@ template <> struct Planned<DitherFields<Value>>
     static std::uint32_t needs (const PlanInputs&, const DitherFields<Value>&) noexcept { return 0; }
 };
 
-// [low]: the target's correction for its medium (lowDb), where it names one.
+// [low]: a static shelf on every target. The machine ticks it only for the target's correction for its medium (lowDb:
+// vinyl's +0.5 dB) — a number of the target, not a decision taken from a measurement — and not on an input too quiet
+// to measure, where it places no device; the correction's number stays on the knob for a person's tick.
 template <> struct Planned<LowFields<Value>>
 {
     static void propose (const PlanInputs& in, LowFields<Value>& m, DevicePlan& plan, PlanFindings&) noexcept
     {
-        if (in.rules.row (in.row).lowDb) plan.target |= std::uint8_t (fieldBit (in.rules, m, m.on) | fieldBit (in.rules, m, m.db));
+        if (! in.rules.row (in.row).lowDb) return;
+        plan.target |= std::uint8_t (fieldBit (in.rules, m, m.on) | fieldBit (in.rules, m, m.db));
+        if (quiet (in))
+        {
+            m.on = false;
+            plan.heldBack = HeldBack::Quiet;
+        }
     }
     static std::uint32_t needs (const PlanInputs&, const LowFields<Value>&) noexcept { return 0; }
 };
