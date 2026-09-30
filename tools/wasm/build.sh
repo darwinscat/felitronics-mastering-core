@@ -706,6 +706,14 @@ em++ "${SFRONT[@]}" -I"$CORE/test_support" -O3 -sENVIRONMENT=node -sSTACK_SIZE=8
 node "$OUT/session-master-report.js" > "$OUT/session-master-report.txt"
 cat "$OUT/session-master-report.txt"
 node "$HERE/master-report-parity.mjs" "$OUT/session-master-report.txt"
+echo "--- the scenario end to end: load, measure, plan, hand, master, export, import, master — against its native lines"
+em++ "${SFRONT[@]}" -I"$CORE/test_support" -O3 -sENVIRONMENT=node -sSTACK_SIZE=8388608 \
+     -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -Wl,--wrap=pthread_create \
+     "$ROOT/modules/session/tests/ScenarioTests.cpp" "${SESSION_SRCS[@]}" \
+     -o "$OUT/session-scenario.js"
+node "$OUT/session-scenario.js" > "$OUT/session-scenario.txt"
+cat "$OUT/session-scenario.txt"
+node "$HERE/scenario-parity.mjs" "$OUT/session-scenario.txt"
 echo "--- complete Solve memory gate (short and long lifecycles)"
 em++ "${SFRONT[@]}" -I"$CORE/test_support" -O3 -sENVIRONMENT=node -sSTACK_SIZE=8388608 \
      -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -Wl,--wrap=pthread_create \

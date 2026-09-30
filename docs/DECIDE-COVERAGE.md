@@ -19,15 +19,15 @@ Items 1–3 of the task and every bullet of its checks section, one check per ro
 
 | # | Check | Holder | Status |
 |---|---|---|---|
-| A1 | load → measure → plan → hand → master → export → import → master, run in two independent Sessions as one scenario | Pieces only: `tools/tests/SessionReplayTests.cpp:replayAfterPoison` (load, edits, master, export, a fresh instance, import; state, both layers and the project text are restored, masters are not replayed); `PlanSoundTests.cpp:vinylAndQuietMastered` (export, open in another session, same recipe fingerprint and warnings) | GAP (A1) |
+| A1 | load → measure → plan → hand → master → export → import → master, run in two independent Sessions as one scenario | Pieces only: `tools/tests/SessionReplayTests.cpp:replayAfterPoison` (load, edits, master, export, a fresh instance, import; state, both layers and the project text are restored, masters are not replayed); `PlanSoundTests.cpp:vinylAndQuietMastered` (export, open in another session, same recipe fingerprint and warnings); the whole: `ScenarioTests.cpp:theScenario` | HELD |
 | A2 | Same-core import keeps the file's machine layer | `PlanTests.cpp:anImportKeepsTheFilesMachine` (foreign = false); `ProjectTests.cpp:roundTrip` | HELD |
 | A3 | New-core import keeps the file's machine layer | `PlanTests.cpp:anImportKeepsTheFilesMachine` (foreign = true); `ProjectTests.cpp:foreignMachine`; `TiltLowTests.cpp:theFilesMachineStays` | HELD |
 | A4 | New-defaults import | `ProjectTests.cpp:defaultsVersions`: an older defaults label converts with `DefaultsConverted` and places the planner's machine layer again; a newer or malformed label is refused | HELD as built; see Q1 |
 | A5 | The comparison is shown beside the file's machine layer: the count fact, file and core values per field, the same-core wording | `PlanTests.cpp:anImportKeepsTheFilesMachine`; `ProjectTests.cpp:foreignMachine`; `TiltLowTests.cpp:theFilesMachineStays`; `HpfMonoTests.cpp:aSentenceStatesWhatSounds` | HELD |
-| A6 | The new machine is adopted only on an explicit command: `AdoptMachine` takes the planner's layer, keeps the hand, allocates nothing, and does nothing when repeated | `PlanTests.cpp:anImportKeepsTheFilesMachine` | HELD for the command; the master after adoption: GAP (A1) |
-| A7 | PCM and WAV bytes: the master made after import equals the first one (same core); after `AdoptMachine` it equals a fresh session's master | none | GAP (A1) |
-| A8 | Parameters and facts after import | `ProjectTests.cpp:roundTrip` (the whole snapshot JSON is equal; export → import → export is byte-identical); `PlanSoundTests.cpp:vinylAndQuietMastered` (recipe fingerprint, warnings) | HELD for the plan; for the master: GAP (A1) |
-| A9 | Version of the sound and of the defaults | `ConfigDecisionsTests.cpp:theSoundIsPinnedToTheDefaults`; `ConfigTests.cpp:theSoundIsWhatCanChangeAMaster`, `theVersionsMoveWithEveryValue`; `ProjectTests.cpp:roundTrip` (the header stamps defaults and core) | HELD; asserted inside the scenario: GAP (A1) |
+| A6 | The new machine is adopted only on an explicit command: `AdoptMachine` takes the planner's layer, keeps the hand, allocates nothing, and does nothing when repeated | `PlanTests.cpp:anImportKeepsTheFilesMachine`; the master after adoption: `ScenarioTests.cpp:theFilesMachine` | HELD |
+| A7 | PCM and WAV bytes: the master made after import equals the first one (same core); after `AdoptMachine` it equals a fresh session's master | `ScenarioTests.cpp:theScenario` (same core), `theFilesMachine` (after `AdoptMachine`, the recipe included) | HELD |
+| A8 | Parameters and facts after import | `ProjectTests.cpp:roundTrip` (the whole snapshot JSON is equal; export → import → export is byte-identical); `PlanSoundTests.cpp:vinylAndQuietMastered` (recipe fingerprint, warnings); for the master: `ScenarioTests.cpp:theScenario` (recipe, facts, snapshot JSON with the kept report) | HELD |
+| A9 | Version of the sound and of the defaults | `ConfigDecisionsTests.cpp:theSoundIsPinnedToTheDefaults`; `ConfigTests.cpp:theSoundIsWhatCanChangeAMaster`, `theVersionsMoveWithEveryValue`; `ProjectTests.cpp:roundTrip` (the header stamps defaults and core); inside the scenario: `ScenarioTests.cpp:theScenario` | HELD |
 | A10 | No separate C facade for Decide | `tools/session-abi-v1.txt` is append-only, checked by `tools/session-abi-check.mjs` and `tools/session-abi-append-only.mjs`; the manifest has no Decide entry | HELD |
 
 ### Item 2: what Master waits for, and a change of target
@@ -63,7 +63,7 @@ Items 1–3 of the task and every bullet of its checks section, one check per ro
 | # | Check | Holder | Status |
 |---|---|---|---|
 | A34 | The plan's cache is keyed on its real dependencies | `PlanTests.cpp:thePlansKey`; `SourceMeasurementsTests.cpp:cachedSourceAndCommands`; `MeasurementTests.cpp:ownership` | HELD |
-| A35 | Pump slicing gives the same results | `ProjectTests.cpp:slicing` (measurement facts and the whole snapshot at budgets 1, 7 and large); `EventTests.cpp:pump` (the event sequence, including a decided master, at 1 and 16); `HpfMonoTests.cpp:throughThePump`; DSP: `modules/mastering/tests/SplitInvarianceTests.cpp`, `modules/analysis_offline/tests/SplitInvarianceTests.cpp` (`tests/split_invariance.h`) | HELD; the full scenario's master PCM under slicing: GAP (A1) |
+| A35 | Pump slicing gives the same results | `ProjectTests.cpp:slicing` (measurement facts and the whole snapshot at budgets 1, 7 and large); `EventTests.cpp:pump` (the event sequence, including a decided master, at 1 and 16); `HpfMonoTests.cpp:throughThePump`; DSP: `modules/mastering/tests/SplitInvarianceTests.cpp`, `modules/analysis_offline/tests/SplitInvarianceTests.cpp` (`tests/split_invariance.h`); the full scenario's master and snapshot at 1, 7 and large: `ScenarioTests.cpp:theSlicing` | HELD |
 | A36 | The shared measurements are not repeated | `PlanTests.cpp:oneNeedOneMeasurement`; `HpfMonoTests.cpp:everyTargetFromOneMeasurement` | HELD |
 | A37 | The needles are measured again at a new target's ceiling | `PlanTests.cpp:oneNeedOneMeasurement`, `theNeedlesAreWaitedForAtTheirCeiling`, `noPlanWaitsForEver`; `PlanSoundTests.cpp:theNeedlesAreThePlansNeedles` | HELD |
 | A38 | Cancelled work publishes no plan and no master | `SourceMeasurementsTests.cpp:masterWaitsForTempo`; `PlanTests.cpp:noPlanWaitsForEver`; `EventTests.cpp:pump`; `PlanSoundTests.cpp:theMemoryOfAMaster` | HELD |
@@ -73,7 +73,7 @@ Items 1–3 of the task and every bullet of its checks section, one check per ro
 
 | # | Check | Holder | Status |
 |---|---|---|---|
-| A40 | Native and wasm: the same scenarios, parameters, statuses, PCM/bytes and allowed event packing | Pieces: `MasterReportTests.cpp:main` (parity cases) with `tools/wasm/master-report-parity.mjs`; `tools/tests/needles-parity.mjs`; `tools/tests/query-parity.mjs`; `TextTests.cpp:theCorpusIsTheSameBytesOnEveryRow`; `tools/wasm/session-check.mjs` (the ABI on the built module). No decided-plan scenario is compared across rows | GAP (A2) |
+| A40 | Native and wasm: the same scenarios, parameters, statuses, PCM/bytes and allowed event packing | Pieces: `MasterReportTests.cpp:main` (parity cases) with `tools/wasm/master-report-parity.mjs`; `tools/tests/needles-parity.mjs`; `tools/tests/query-parity.mjs`; `TextTests.cpp:theCorpusIsTheSameBytesOnEveryRow`; `tools/wasm/session-check.mjs` (the ABI on the built module). The decided scenario: `ScenarioTests.cpp:theScenario` prints its digests, `tools/wasm/scenario-parity.mjs` checks the wasm run (`tools/wasm/build.sh`) | HELD |
 | A41 | Every device's bounds: domain ends, travel ends, values between steps | `StateTests.cpp:theKnobs` (`knobsOf` over every knob device; the dither has a tick only), `theMachinePlacesWhatAPersonCouldSet`; `ProjectTests.cpp:domainsAndExactNumbers` | HELD |
 | A42 | 1.25 dB exactly | `TiltLowTests.cpp:theKnobs`; `GlueSaturationTests.cpp:aPersonsKnob`; `PlanTests.cpp:aChangeOfTargetResetsEdits` | HELD |
 | A43 | 18 and 36 dB/oct | `HpfMonoTests.cpp:aPersonsKnobs`; `StateTests.cpp:theKnobs` (6 to 96 in steps of 6 accepted; 0, 7, 95 and 102 refused) | HELD |
@@ -95,18 +95,18 @@ Items 1–3 of the task and every bullet of its checks section, one check per ro
 | A59 | The needles may be measured again on a new target | as A37 | HELD |
 | A60 | The reset warning is checked | as A26 | HELD (B3) |
 | A61 | Cancelling the change of target is checked | as A28 | HELD |
-| A62 | Repeating the project and the master does not grow live memory | `PlanSoundTests.cpp:theMemoryOfAMaster` (declared memory: large, cancelled, small); `MasterReportTests.cpp:main` (`memoryLifecycle`). `liveBytes()` is not measured over repeated import → master cycles | GAP (A3) |
+| A62 | Repeating the project and the master does not grow live memory | `PlanSoundTests.cpp:theMemoryOfAMaster` (declared memory: large, cancelled, small); `MasterReportTests.cpp:main` (`memoryLifecycle`). `liveBytes()` over repeated import → master → release → forget, refusals between: `ScenarioTests.cpp:theScenario` | HELD |
 | A63 | Budget and memory on refusals keep the slice-2 gate | `StateTests.cpp:memoryIsDeclared`; `MemoryGateTests.cpp:main`; `ProjectTests.cpp:demandsAndOrder`; `PlanSoundTests.cpp:theMemoryOfAMaster`; `MeasurementBudgetTests.cpp:main` | HELD |
 | A64 | The report has a coverage map | this file | HELD |
-| A65 | The report has public reproducible commands | none | GAP (A4) |
-| A66 | The report links the private replay without publishing it | none (the replay of 11 measurements, task item 4, is not built) | GAP (A5) |
+| A65 | The report has public reproducible commands | Gap A4 below: the ctest, the parity script, the input hash and versions the scenario prints | HELD |
+| A66 | The report links the private replay without publishing it | Gap A5 below: one line, no path and no data | HELD |
 
 Count: 66 checks.
-- 60 HELD. A6, A8, A9 and A35 leave their scenario half to A1. A4 waits on Q1. A30 is held for the part that is not
-  obsolete. A16, A18, A26, A33 and A60 are held by B1–B4.
-- 6 GAP: A1, A7, A40, A62, A65, A66.
+- 66 HELD. A4 waits on Q1. A30 is held for the part that is not obsolete. A16, A18, A26, A33 and A60 are held by
+  B1–B4; A1, A6–A9, A35, A40 and A62 by the scenario (`ScenarioTests.cpp`); A65 and A66 by gap items A4 and A5.
+- 0 GAP.
 
-These reduce to 5 gap items below (A1–A5). B1–B4 are held.
+The gap items below (A1–A5, B1–B4) are all held.
 
 ## Table B: the 14 MOVE-TO-CORE rows (task item 5)
 
@@ -117,14 +117,14 @@ what the core should hold.
 |---|---|---|---|
 | button-style | Glue by target and tempo; the LP chain; the clipper after the structure | `GlueSaturationTests.cpp:theMachine` (glue on cd alone, 2.6 dB), `theTempo`; `PlanTests.cpp:aTargetWithoutGlueDoesNotWaitForTempo`; `PlanSoundTests.cpp:vinylOnThePlanner` (LP: no needles clipper), `theTopologyFollowsTheTicks` | HELD |
 | chain-by-target | HPF, mono, shelf, topology and rate, assembled per target | `HpfMonoTests.cpp:everyTargetFromOneMeasurement`; `TiltLowTests.cpp:theMachine`; `PlanSoundTests.cpp:theTopologyFollowsTheTicks`, `theRenderIsThePreviousPaths` (cd at another rate); `StateTests.cpp:aChangeOfTarget`; the delivery rate by target: `MemoryGateTests.cpp:main`, `SessionDirectOracleTests.cpp:main`, `MasterReportTests.cpp:main` | HELD |
-| decide | HPF and mono, notes, polarity, silences, determinism | `HpfMonoTests.cpp:theSureLowestNote`, `aRareLowNoteIsNotSkipped`, `theLowestBandWithItsSureness`, `theLossOfTheLowEnd`, `whereTheBassSounds` (a quiet inverted stretch), `quietAndUnmeasured`, `aPieceLongerThanTheReading`, `throughThePump` | HELD; determinism across rows: GAP (A2) |
+| decide | HPF and mono, notes, polarity, silences, determinism | `HpfMonoTests.cpp:theSureLowestNote`, `aRareLowNoteIsNotSkipped`, `theLowestBandWithItsSureness`, `theLossOfTheLowEnd`, `whereTheBassSounds` (a quiet inverted stretch), `quietAndUnmeasured`, `aPieceLongerThanTheReading`, `throughThePump`; across rows, the scenario's plan: `ScenarioTests.cpp:theScenario` with `tools/wasm/scenario-parity.mjs` | HELD |
 | device-picking | Glue parameters, tempo and confidence, clamps, override; the threshold from P95 | `GlueSaturationTests.cpp:theCurve`, `theTempo` (confidence 0.5, 120 BPM fallback, 50…500 ms), `aPersonsKnob`, `theCalibration`; `SourceMeasurementsTests.cpp:deviceTempoPolicy` | HELD |
 | eq-face | Bands, ranges, step, HPF, dynamics | `PlanTests.cpp:theEqStage`; `TiltLowTests.cpp:theGeometry`, `threeDevicesOneStage` ("no band is dynamic"); `StateTests.cpp:theKnobs`; `HpfMonoTests.cpp:aPersonsKnobs` | HELD; the dynamic band is the de-esser, outside this slice (decision 3.13) |
 | findings | Note, duty, infra-low, wide bass, polarity, confidence | `HpfMonoTests.cpp:theSureLowestNote` (2 dB, 10 %, 3 s), `theLowestBandWithItsSureness`, `theCutoffOnTheChainsResponse` (a note under the floor, `hpfBelowFloor`), `theLossOfTheLowEnd` (wide bass at 6 % warns; the polarity advice above 3 dB), `throughThePump`; `PlanSoundTests.cpp:theObservations` (no wide bass and no polarity finding on a mono file) | HELD; infra-low as its own finding is OBSOLETE (3.3) |
 | glue | Off, step, the knob's curve; P95 plus calibration | `GlueSaturationTests.cpp:theCurve`, `aPersonsKnob` (a tick starts at 0.5 dB; 0…6), `theCalibration`, `oneSystemOfLevels`; `StateTests.cpp:theKnobs` | HELD |
 | k13-evidence | Need, PLR, bass, duration; the K13 bounds are inclusive | `PlanSoundTests.cpp:theClasses` (every boundary, the order of reasons), `theNeedAndTheMeasurement` (a need of 3 dB or less is not measured; "not measured" differs from "none") | HELD |
 | observations | Severity, confidence, the order of facts | `PlanSoundTests.cpp:theObservations` (found, not found and not measured are kept apart; strict thresholds; a doubtful wandering hum; the order is file → spectrum → hum) | HELD; severity as a verdict is OBSOLETE (3.13) |
-| rules-corpus | The private Decide replay of 11 finished measurements | none | GAP (A5), private |
+| rules-corpus | The private Decide replay of 11 finished measurements | held outside this repository (gap A5) | HELD, private |
 | stereo-bass | The 3 % and 6 % thresholds, targets, the polarity veto, override, quiet input | `HpfMonoTests.cpp:theLossOfTheLowEnd` (1 and 3 dB to the bit; 6 % width warns; weighed at 150 Hz on vinyl, 120 Hz elsewhere), `aPersonsKnobs` (override), `quietAndUnmeasured`, `everyTargetFromOneMeasurement` | HELD; no current decision names a 3 % threshold (decision 3.5 weighs the loss), so do not carry it |
 | structure | The whole chain, needAfter, veto, gain-only on a quiet input | `PlanSoundTests.cpp:theTopologyFollowsTheTicks`, `theRenderIsThePreviousPaths`, `aQuietInput` (strictly under −55 LUFS: gain, ceiling, dither, HPF), `vinylAndQuietMastered`; the needles veto: `theClasses`, `vinylOnThePlanner` | HELD; `needAfter` has no holder, see Q2 |
 | verify | The choice of slope, off or mono; its price; the veto at each boundary | `HpfMonoTests.cpp:theCutoffOnTheChainsResponse` (the loss at the note on the chain's own response), `theLossOfTheLowEnd`; `PlanSoundTests.cpp:vinylAndQuietMastered` (HPF off, from 25 Hz or at 6 dB/oct removes the "ready for cutting" line) | HELD |
@@ -137,26 +137,35 @@ LowEnd and PeakExcursions tests are cited nowhere in this table as proof of a de
 
 ### A. End-to-end scenario
 
-- **A1.** Add one scenario test, `modules/session/tests/ScenarioTests.cpp` (new, or a function in `PlanSoundTests.cpp`).
-  It runs two independent Sessions: load → measure → plan → hand (edits including 1.25 dB) → master → export → import
-  into the second Session → master. It asserts that the snapshot JSON, recipe, facts, defaults and sound versions,
-  and PCM/WAV bytes are equal. It then checks:
-  - a same-core import and a foreign-core import both keep the file's machine layer and give the same PCM;
-  - a new-defaults import (behaviour as settled by Q1);
-  - `AdoptMachine` followed by a master equals a fresh session's master;
-  - step budgets of 1, 7 and large give the same PCM;
-  - a cancelled waiting master and a stale needles job publish nothing.
-
-  Test only.
-- **A2.** Compare the same scenario on native and wasm. The scenario prints parity lines, as `MasterReportTests.cpp`
-  does. A new `tools/wasm/scenario-parity.mjs` compares the hashes of plan, facts and PCM with the native row. Test
-  only.
-- **A3.** Live memory, inside A1: run N cycles of import → master → release/forget and assert that
-  `Session::liveBytes()` stays flat after the first cycle, on the refusal path too. Test only (BEHAVIOUR if it grows).
-- **A4.** Public reproducible commands: a fixture generator, command lines, and the hash of inputs and versions (task
-  items 4 and 6). Docs and fixtures.
-- **A5.** The private replay of the 11 finished measurements (the rules-corpus row; K9 SHA and k13-install pairs). It
-  lives in the private repo; only a link to it appears here.
+- **A1. HELD.** `modules/session/tests/ScenarioTests.cpp`, ctest `felitronics_session_scenario_tests`. `theScenario`:
+  two independent Sessions on one synthetic source; load → measure → plan → hand (tilt +1.25 dB, low shelf +0.75 dB, the
+  target at −13 LUFS) → master → export → import into the second Session → master. Equal: the snapshot JSON (the
+  revision, the kept masters' ids and `fromFile` aside, `fromFile` asserted on its own), the recipe, the facts, the
+  defaults and core in the file, the sound version, PCM and WAV bytes. `theFilesMachine`: a same-core and a foreign-core
+  file with a machine opinion this planner does not hold (a high-pass from 36 Hz) are both kept and sound alike, and not
+  as the planner's; `AdoptMachine` then gives the fresh session's master, recipe included. `theSlicing`: budgets 1 and
+  7 give the large budget's master and snapshot. `nothingStale`: a master waiting for the tempo, cancelled, and club's
+  needles left before they end publish nothing, and the master after them is the scenario's. The new-defaults import
+  waits for Q1 (`ProjectTests.cpp:defaultsVersions` as built).
+  The scenario found one defect, fixed with it: `AdoptMachine` placed the planner's layer but left `project.core` at the
+  file's release, so the adopted master's recipe and the exported file named the old core.
+- **A2. HELD.** The scenario prints `scenario-input`, `scenario-versions` and `scenario-parity` (plan, facts, PCM, WAV
+  digests). `tools/wasm/scenario-parity.mjs` holds the native lines; `tools/wasm/build.sh` builds the same test for wasm
+  and checks its output with it.
+- **A3. HELD.** Inside `theScenario`: four more cycles of import → master → release → forget, each with a refused
+  import, master and forget, keep `Session::liveBytes()` where the first cycle left it. The cycle forgets its master:
+  a kept master is live until `Forget`, by design.
+- **A4. HELD.** Public reproducible commands. The fixture is generated in the test (`Mix`: a 10 s, 48 kHz stereo kick
+  with a needle on its attack and a pad that swells at 6 s, built with the core's `det::sin`/`det::exp2`).
+  - Native: `cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DFELITRONICS_MASTERING_BUILD_TESTS=ON`, then
+    `cmake --build build --target felitronics_session_scenario_tests` and
+    `ctest --test-dir build -R '^felitronics_session_scenario_tests$' --output-on-failure`.
+  - Wasm: `tools/wasm/build.sh` (with `FELITRONICS_CORE_DIR` and `FELITRONICS_TOML_DIR` set), which runs
+    `node tools/wasm/scenario-parity.mjs <out>/session-scenario.txt`.
+  - What the run prints (release 0.3.0, felitronics-core 0.56.0, defaults `2026-10`): the input
+    `source=f58fa8f9570118b5 frames=480000 rate=48000`, the sound version `91ac62922032b848`, the config version
+    `df60f58ed2252e43`, and `plan=638882e8bd039aae facts=7f984ec47da89834 pcm=e9f73602547ff606 wav=39bd949cfa577e40`.
+- **A5. HELD, private.** The replay of the 11 finished measurements is private and held outside this repository.
 
 ### B. Behaviour
 
