@@ -9,8 +9,8 @@
     "felitronics-core 0.56.0",
     "fc_session_abi 1"
   ],
-  "codecSchemaSha256": "dcbf3e56df0beb70345a6877c1d79cf3ef64ee3ff4b94ee42eb019637bff73d8",
-  "wasmSha256": "905cfccea87d4f1c28c5c6cf76fad135b2c341a5973c0676e11189f2febbc43c",
+  "codecSchemaSha256": "e9b58b0f8a9aa6710be2876c4ed483e82cea2393395f98e24f146c6a46ba2521",
+  "wasmSha256": "85a0ef33797a92f9c82aaddf8f8a180bb5fd6924c6b19cd312d36b1dab1ae350",
   "wavFnv64": "9a601c4c5e044b00",
   "wavHeaderHex": "5249464624ca080057415645666d7420100000000100020080bb000000650400060018006461746100ca0800",
   "outcomes": [

@@ -22,7 +22,7 @@ Items 1–3 of the task and every bullet of its checks section, one check per ro
 | A1 | load → measure → plan → hand → master → export → import → master, run in two independent Sessions as one scenario | Pieces only: `tools/tests/SessionReplayTests.cpp:replayAfterPoison` (load, edits, master, export, a fresh instance, import; state, both layers and the project text are restored, masters are not replayed); `PlanSoundTests.cpp:vinylAndQuietMastered` (export, open in another session, same recipe fingerprint and warnings); the whole: `ScenarioTests.cpp:theScenario` | HELD |
 | A2 | Same-core import keeps the file's machine layer | `PlanTests.cpp:anImportKeepsTheFilesMachine` (foreign = false); `ProjectTests.cpp:roundTrip` | HELD |
 | A3 | New-core import keeps the file's machine layer | `PlanTests.cpp:anImportKeepsTheFilesMachine` (foreign = true); `ProjectTests.cpp:foreignMachine`; `TiltLowTests.cpp:theFilesMachineStays` | HELD |
-| A4 | New-defaults import | `ProjectTests.cpp:defaultsVersions`: a `2026-09` project is refused whole as `RetiredDefaults` with its reason, revision and state unchanged; `2026-10` opens with the file's machine layer and its differences beside it; an older uncarried, a newer or a malformed label is refused | HELD; settled by the owner 30.09, see Q1 |
+| A4 | New-defaults import | `ProjectTests.cpp:defaultsVersions`: only the current label `2026-10` opens, with the file's machine layer and its differences beside it; any other label (`2026-09`, `2020-01`, a newer or a malformed one) is refused whole with the existing `UnknownDefaults` / `NewerDefaults`, revision and state unchanged; nothing converts | HELD; settled by the owner 30.09, see Q1 |
 | A5 | The comparison is shown beside the file's machine layer: the count fact, file and core values per field, the same-core wording | `PlanTests.cpp:anImportKeepsTheFilesMachine`; `ProjectTests.cpp:foreignMachine`; `TiltLowTests.cpp:theFilesMachineStays`; `HpfMonoTests.cpp:aSentenceStatesWhatSounds` | HELD |
 | A6 | The new machine is adopted only on an explicit command: `AdoptMachine` takes the planner's layer, keeps the hand, allocates nothing, and does nothing when repeated | `PlanTests.cpp:anImportKeepsTheFilesMachine`; the master after adoption: `ScenarioTests.cpp:theFilesMachine` | HELD |
 | A7 | PCM and WAV bytes: the master made after import equals the first one (same core); after `AdoptMachine` it equals a fresh session's master | `ScenarioTests.cpp:theScenario` (same core), `theFilesMachine` (after `AdoptMachine`, the recipe included) | HELD |
@@ -190,10 +190,10 @@ LowEnd and PeakExcursions tests are cited nowhere in this table as proof of a de
 ## Open questions
 
 - **Q1. An older-defaults import replaced the file's machine layer. SETTLED by the owner, 30.09.** A project saved on
-  defaults `2026-09` (before the core had its planner) is not opened: the import is refused whole as `RetiredDefaults`
-  with its reason, nothing changes. From `2026-10` on the import rule stands: the machine layer comes from the file,
-  the differences are shown beside it, a new machine opinion only by `adoptMachine`. The refused set is an explicit
-  list holding `2026-09`, never "older than the current". Nothing converts any more; `DefaultsConverted` keeps its id.
+  defaults `2026-09` (before the core had its planner) is not opened: an import accepts only the current defaults
+  label, any other is refused whole as `UnknownDefaults` and nothing changes. On the current label the import rule
+  stands: the machine layer comes from the file, the differences are shown beside it, a new machine opinion only by
+  `adoptMachine`. Nothing converts any more; `DefaultsConverted` keeps its id.
   Held by `ProjectTests.cpp:defaultsVersions` (row A4).
 - **Q2. `needAfter` in the structure row. SETTLED by the owner, 30.09: not carried.** The needles' classes use the
   input's need (`LimiterFinding.needDb`) and the limiter holds the ceiling; no need is measured after the chain.

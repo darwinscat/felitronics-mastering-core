@@ -610,8 +610,8 @@ Answer Session::apply (const Request& request) noexcept
     else if (std::holds_alternative<command::ImportProject> (request))
     {
         project_ = imported.project;
-        // The file's machine layer is the file's, on every defaults label this core opens: the planner's differences
-        // are shown beside it, and its opinion replaces the layer only by adoptMachine (a retired label never gets here).
+        // The file's machine layer is the file's (an import opens only the current defaults label): the planner's
+        // differences are shown beside it, and its opinion replaces the layer only by adoptMachine.
         machineFromFile_ = true;
         differenceCount_ = imported.differenceCount;
         std::copy_n (imported.differences, differenceCount_, differences_);

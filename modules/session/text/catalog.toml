@@ -232,10 +232,6 @@ en = "The required loudness and true-peak measurements are unavailable for maste
 ru = "Формат доставки задаёт цель: её мастер записывается только в {bits}-битном PCM с частотой {rate}."
 en = "The target sets the delivery format: its master is written only as {bits}-bit PCM at {rate}."
 
-[messages.rejectedRetiredDefaults]
-ru = "Этот проект сохранён старой версией (умолчания 2026-09) и не может быть открыт."
-en = "This project was saved by an older version (defaults 2026-09) and cannot be opened."
-
 [messages.rejectedPlanPending]
 ru = "Панель приборов открыта, а замеры, от которых зависят её числа, ещё идут: мастер станет доступен, когда они закончатся."
 en = "The device panel is open and the measurements its numbers depend on are still running: the master becomes available once they end."
