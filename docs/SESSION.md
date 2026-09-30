@@ -348,8 +348,9 @@ counted, not rendered.
 **The high-pass and mono bass** (owner decisions 3.2–3.5) are the first devices that decide from a measurement, both
 from the first phase's low-end runs, with no trial render. The high-pass stands always — every target, a quiet input
 included — at a cutoff of max(what the sure lowest note allows, the target's floor, 32 Hz everywhere), never above the
-50 Hz top. The lowest note is sure when the lowest occupied band of the 120 Hz run (10 % of the frames) stands 2 dB over
-the duty line, lies above 20 Hz and sounds 3 s in all; a programme under 10 s is not searched, and a note that is not
+50 Hz top. The lowest band of the 120 Hz run that was on at all decides, alone: it is a sure note when it is on in 10 %
+of the frames, stands 2 dB over the duty line, lies above 20 Hz and sounds 3 s in all — and if it is not (a rare 808, one
+thump), the cutoff is the floor: the detector never takes a higher band as the note; a programme under 10 s is not searched, and a note that is not
 sure — or a lowest band that fails — gives the floor, never a higher band. The cutoff the note allows is found on the
 chain's own response (`highPassCutoffFor`: the matched cascade of the target's slope at the source's rate, by bisection,
 not rounded to the hertz) so that it takes exactly the target's `noteLossDb` there (1 dB, club 0.3). Mono bass is weighed

@@ -105,7 +105,7 @@ enum class Sounding : std::uint8_t { Proposal, Hand, File, Off };
 //   Floor        a sure note above the target's floor whose cutoff is below it: the floor, taking more of the note
 //   BelowFloor   a sure note below the target's floor itself (an 808, a sub): the floor, cutting into the note
 //   Top          a sure note whose cutoff is above the machine's top (hzMax): the top — the note is higher
-//   Unsure       no sure lowest note: the floor
+//   Unsure       the lowest band that was on is not a sure note (or none was on): the floor — never a higher band
 //   Short        a programme shorter than [input] shortSeconds: not searched, the floor
 //   Quiet        an input too quiet to measure: the floor
 //   Unmeasured   the low end was not measured: the floor

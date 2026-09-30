@@ -126,7 +126,10 @@ void theSureLowestNote()
         ok (cut (under).cut == HpfCut::Unsure, "a hair under 2 dB: not sure — the floor");
         Readings rare; rare.occupy (33, std::nextafter (0.10, 0.0), 20, 6); rare.occupy (45, 0.5, 60, 6);
         const auto g = cut (rare);
-        ok (g.noteMidi == 45, "a hair under 10 % of the frames is not occupied: the next occupied band is the lowest note");
+        ok (g.cut == HpfCut::Unsure && ! g.noteMidi && same (g.cutoffHz, 32.0),
+            "a hair under 10 % of the frames: the lowest band is not sure — the floor, never the next band as the note");
+        Readings once; once.occupy (20, 0.004, 1, 6); once.occupy (45, 0.5, 60, 6);
+        ok (cut (once).cut == HpfCut::Unsure && same (cut (once).cutoffHz, 32.0), "a lowest band on in a single frame: the floor all the same");
         Readings unsureLowest; unsureLowest.occupy (33, 0.2, 20, 1.0); unsureLowest.occupy (45, 0.5, 60, 6);
         ok (cut (unsureLowest).cut == HpfCut::Unsure, "the lowest occupied band not sure: the floor — never a higher band, which would cut music");
     }
@@ -311,6 +314,19 @@ struct Mix
     static constexpr std::uint32_t rate = 48000;
     std::vector<float> left, right;
     explicit Mix (double seconds) : left (std::size_t (seconds * rate)), right (left.size()) {}
+    // A passage of a sine from `from` to `to` seconds, fading over 50 ms at each end (a gated sine's click is broadband).
+    Mix& passage (double hz, double level, double from, double to)
+    {
+        for (std::size_t i = 0; i < left.size(); ++i)
+        {
+            const double t = double (i) / rate;
+            const double gate = std::clamp ((t - from) / 0.05, 0.0, 1.0) * std::clamp ((to - t) / 0.05, 0.0, 1.0);
+            if (! (gate > 0)) continue;
+            const double x = level * gate * felitronics::core::det::sin (2 * kPi * hz * t);
+            left[i] += float (x); right[i] += float (x);
+        }
+        return *this;
+    }
     // `level` of a sine at `hz` into both channels, the right one scaled by `rightGain` (−1: inverted).
     Mix& tone (double hz, double level, double rightGain = 1.0, double from = 0, double to = 1e9)
     {
@@ -380,6 +396,35 @@ void throughThePump()
     {
         const auto m = measure (Mix (20).tone (55.0, 0.3, -1.0), "lp");
         ok (m.plan.monoBass.verdict == MonoBassVerdict::AntiPhase && same (m.plan.monoBass.crossoverHz, 150.0), "vinyl weighs it at 150 Hz");
+    }
+}
+
+void aRareLowNoteIsNotSkipped()
+{
+    felitronics::test::group ("a rare low note is not skipped: the lowest band that was on decides, and unsure means the floor");
+    // A steady bass at 55 Hz allows a cutoff of 46 Hz — were it the lowest thing in the mix.
+    const auto bassy = [] { Mix m (120); m.tone (55.0, 0.3).tone (440.0, 0.05); return m; };
+    {
+        const auto m = measure (bassy());
+        ok (m.plan.hpf.cut == HpfCut::Note && m.plan.hpf.cutoffHz > 40.0, "PRECONDITION: the bass alone gives a cutoff from its note ("
+            + std::to_string (m.plan.hpf.cutoffHz) + " Hz)");
+    }
+    {
+        // An 808 at 29.1 Hz in one 5-second passage of two minutes: under 10 % of the frames.
+        auto mix = bassy(); mix.passage (29.1, 0.3, 50.0, 55.0);
+        const auto m = measure (mix);
+        ok (m.plan.hpf.cut == HpfCut::Unsure && same (m.plan.hpf.cutoffHz, 32.0) && ! m.plan.hpf.noteMidi,
+            "a rare 808 under the bass: the floor — the bass is not taken for the lowest note (" + std::to_string (m.plan.hpf.cutoffHz) + " Hz)");
+        const auto said = text::Text::text (PlanText::hpf (m.plan.hpf), text::Lang::Ru) + " / " + text::Text::text (PlanText::hpf (m.plan.hpf), text::Lang::En);
+        ok (PlanText::hpf (m.plan.hpf).id == text::FactId::HpfUnsure && said.find ("неуверенно") != std::string::npos && said.find ('{') == std::string::npos,
+            "and the floor says the lowest band was not sure: " + said);
+    }
+    {
+        // One 0.2 s thump at 25 Hz.
+        auto mix = bassy(); mix.passage (25.0, 0.4, 40.0, 40.2);
+        const auto m = measure (mix);
+        ok (m.plan.hpf.cut == HpfCut::Unsure && same (m.plan.hpf.cutoffHz, 32.0), "one thump under the bass: the floor as well ("
+            + std::to_string (m.plan.hpf.cutoffHz) + " Hz)");
     }
 }
 
@@ -579,6 +624,7 @@ int main()
     theLossOfTheLowEnd();
     whereTheBassSounds();
     throughThePump();
+    aRareLowNoteIsNotSkipped();
     aPersonsKnobs();
     aPieceLongerThanTheReading();
     aSentenceStatesWhatSounds();
