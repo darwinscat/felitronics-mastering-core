@@ -39,7 +39,9 @@
 //                attachment (no release carried fc_session before them, so they are version 1).
 //   2            v0.4.0, Decide: leanSummary appended to fc_session_capabilities; query kinds MasterReport and MasterAxes,
 //                a master's Momentary/ShortTerm and the spectrum choice; the plan's and the landing's snapshot fields.
-#define FC_SESSION_ABI_VERSION 2u
+//   3            v0.5.0: the saturation's type (SaturationType, a snapshot and command field, and the master parameters'
+//                clipper shapes 4-7, tube to tape); the plan's reasons on the wire (PlanView::facts, PlanFact).
+#define FC_SESSION_ABI_VERSION 3u
 #define FC_SESSION_CAPABILITIES_V1_BYTES 32u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u
