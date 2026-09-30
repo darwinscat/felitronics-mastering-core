@@ -334,12 +334,28 @@ template <> struct Planned<LimiterFields<Value>>
             case NeedlesWhy::NoExcursions: break;
         }
     }
-    // The clipper deciding by itself reads the needles — unless its answer stands without them.
+    // The clipper deciding by itself reads the needles — unless its answer stands without them: a shell or a target
+    // without it, a quiet input, a need too little to cut, a clipped source.
     static std::uint32_t needs (const PlanInputs& in, const LimiterFields<Value>& limiter) noexcept
     {
         if (limiter.needles != Needles::Auto) return 0u;
-        const auto why = needlesAnswer (in).why;
-        return why == NeedlesWhy::Shell || why == NeedlesWhy::Target || why == NeedlesWhy::Quiet ? 0u : bitOf (Analyzer::Excursions);
+        switch (needlesAnswer (in).why)
+        {
+            case NeedlesWhy::Shell:
+            case NeedlesWhy::Target:
+            case NeedlesWhy::Quiet:
+            case NeedlesWhy::LittleNeed:
+            case NeedlesWhy::Clipped:      return 0u;
+            case NeedlesWhy::NoReadings:
+            case NeedlesWhy::Pending:
+            case NeedlesWhy::Unmeasured:
+            case NeedlesWhy::NoExcursions:
+            case NeedlesWhy::LowPlr:
+            case NeedlesWhy::Bass:
+            case NeedlesWhy::Long:
+            case NeedlesWhy::Cuts:         break;
+        }
+        return bitOf (Analyzer::Excursions);
     }
 };
 

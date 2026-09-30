@@ -998,7 +998,20 @@
         "crossoverHz": "double",
         "cutoffHz": "double",
         "quietInput": "bool",
-        "inputLufs": "double"
+        "inputLufs": "double",
+        "foldDeparts": "bool",
+        "cutDeparts": "bool",
+        "ceilingDeparts": "bool",
+        "needlesDeparts": "bool",
+        "lowWidth": "double",
+        "slopeDbPerOct": "int32",
+        "ceilingDbTp": "double",
+        "overDb": "double",
+        "ruleCrossoverHz": "double",
+        "ruleLowWidth": "double",
+        "ruleCutoffHz": "double",
+        "ruleCeilingDbTp": "double",
+        "ruleSlopeDbPerOct": "int32"
       }
     },
     "Observation": {

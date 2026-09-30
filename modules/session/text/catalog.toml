@@ -443,6 +443,30 @@ en = "Checked on the file: the bass is mono below {crossover}, the infra-low is 
 ru = "По файлу не проверяется: длина стороны, свистящие на резце, искажения к центру пластинки. Это не сертификат."
 en = "A file cannot show: the side's length, sibilance at the cutter, distortion towards the centre of the disc. This is not a certificate."
 
+[messages.masterVinylNoFold]
+ru = "Моно-бас выключен, а для винила бас ниже {medium} сводят в моно."
+en = "Mono bass is off, while for vinyl the bass below {medium} is folded to mono."
+
+[messages.masterVinylFoldDeparts]
+ru = "Бас сведён в моно ниже {crossover} при ширине {width}; для винила — ниже {medium} при ширине не больше {mediumWidth}."
+en = "The bass is folded to mono below {crossover} at a width of {width}; for vinyl it is below {medium} at a width of no more than {mediumWidth}."
+
+[messages.masterVinylNoHighPass]
+ru = "ФВЧ выключен, а для винила инфраниз срезают от {medium} с крутизной не меньше {mediumSlope} дБ/окт."
+en = "The high-pass is off, while for vinyl the infra-low is cut from {medium} at no less than {mediumSlope} dB/oct."
+
+[messages.masterVinylHighPassDeparts]
+ru = "ФВЧ срезает от {cutoff} с крутизной {slope} дБ/окт; для винила — от {medium} и не положе {mediumSlope} дБ/окт."
+en = "The high-pass cuts from {cutoff} at {slope} dB/oct; for vinyl it cuts from {medium} and no gentler than {mediumSlope} dB/oct."
+
+[messages.masterVinylCeilingDeparts]
+ru = "Потолок {ceiling}, а для винила — не выше {medium}."
+en = "The ceiling is {ceiling}, while for vinyl it stands no higher than {medium}."
+
+[messages.masterVinylNeedlesDeparts]
+ru = "Клиппер срезает иглы до {over} над потолком, а для винила иглы не режут."
+en = "The peak clipper cuts the needles down to {over} above the ceiling, while for vinyl the needles are not cut."
+
 [messages.masterQuietInput]
 ru = "Вход очень тихий ({lufs}): подняли на {gain}, шум поднялся вместе с музыкой. Кроме ФВЧ на полу цели и дизера формата, машина приборов не ставила — на таком уровне замер ненадёжен; включить их можно вручную."
 en = "The input is very quiet ({lufs}): it was raised by {gain}, and the noise rose with the music. Apart from the high-pass at the target's floor and the format's dither the machine placed no device — at this level a measurement is unreliable; they can be switched on by hand."

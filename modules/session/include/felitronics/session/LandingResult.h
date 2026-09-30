@@ -7,6 +7,7 @@
 #include <felitronics/session/Measurements.h>
 #include <felitronics/session/Project.h>
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -132,6 +133,15 @@ struct MasterMedium
     double cutoffHz = 0.0;                     // the high-pass's cutoff the chain ran; 0 where it was out
     bool quietInput = false;
     double inputLufs = 0.0;                    // the input's loudness (meaningful where quietInput)
+    // Where vinyl, each rule of the medium the chain departs from — any one takes the readiness away — with the
+    // chain's number beside the rule's: the fold (the crossover and the width below it), the high-pass (its cutoff and
+    // slope), the ceiling, the needles (cut, from overDb above the ceiling).
+    bool foldDeparts = false, cutDeparts = false, ceilingDeparts = false, needlesDeparts = false;
+    double lowWidth = 0.0;                     // the fold's width below its crossover (0, full mono), where it ran
+    std::int32_t slopeDbPerOct = 0;            // the high-pass's slope, where it ran
+    double ceilingDbTp = 0.0, overDb = 0.0;    // the ceiling the master was held to; the needles' threshold, where cut
+    double ruleCrossoverHz = 0.0, ruleLowWidth = 0.0, ruleCutoffHz = 0.0, ruleCeilingDbTp = 0.0;
+    std::int32_t ruleSlopeDbPerOct = 0;        // the medium's rules, where vinyl
 };
 struct MasterReport
 {
@@ -167,6 +177,9 @@ struct MasterReportText
     [[nodiscard]] static std::optional<text::Fact> vinyl (const MasterReport& report) noexcept;
     [[nodiscard]] static std::optional<text::Fact> vinylChecked (const MasterReport& report) noexcept;
     [[nodiscard]] static std::optional<text::Fact> vinylUncheckable (const MasterReport& report) noexcept;
+    // Each rule of vinyl a deliverable master departs from, its own line with the chain's number and the rule's — in
+    // the order fold, high-pass, ceiling, needles; nothing for a rule it keeps.
+    [[nodiscard]] static std::array<std::optional<text::Fact>, 4> vinylDepartures (const MasterReport& report) noexcept;
     [[nodiscard]] static std::optional<text::Fact> quietInput (const MasterReport& report) noexcept;
 };
 // THE RECIPE OF A MASTER — what a master is made from, captured when it is asked for: the project as it was then (the

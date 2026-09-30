@@ -198,11 +198,23 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         medium.vinyl = target.vinyl;
         medium.crossoverHz = t.monoBass ? double (p.monoBass.frequencyHz) : 0.0;
         medium.cutoffHz = t.eq && hpf.on ? hpf.lanes[0].freq : 0.0;
+        medium.lowWidth = t.monoBass ? double (p.monoBass.lowWidth) : 0.0;
+        medium.slopeDbPerOct = t.eq && hpf.on ? hpf.lanes[0].slope : 0;
+        medium.ceilingDbTp = targetTp;
+        medium.overDb = p.limiter.peakClip ? p.limiter.overCeilingDb : 0.0;
+        medium.ruleCrossoverHz = target.monoBass.toDouble();
+        medium.ruleLowWidth = ruleset.monoBassWidthDefault.toDouble();
+        medium.ruleCutoffHz = target.hpfFloor.toDouble();
+        medium.ruleSlopeDbPerOct = target.hpfSlope;
+        medium.ruleCeilingDbTp = target.tp.toDouble();
         const bool folded = s.source_.channels == 1
-            || (t.monoBass && medium.crossoverHz >= target.monoBass.toDouble()
-                && double (p.monoBass.lowWidth) <= ruleset.monoBassWidthDefault.toDouble());
-        const bool cut = t.eq && hpf.on && medium.cutoffHz >= target.hpfFloor.toDouble() && hpf.lanes[0].slope >= target.hpfSlope;
-        medium.ready = target.vinyl && folded && cut && targetTp <= target.tp.toDouble() && ! p.limiter.peakClip;
+            || (t.monoBass && medium.crossoverHz >= medium.ruleCrossoverHz && medium.lowWidth <= medium.ruleLowWidth);
+        const bool cut = t.eq && hpf.on && medium.cutoffHz >= medium.ruleCutoffHz && medium.slopeDbPerOct >= medium.ruleSlopeDbPerOct;
+        medium.foldDeparts = target.vinyl && ! folded;
+        medium.cutDeparts = target.vinyl && ! cut;
+        medium.ceilingDeparts = target.vinyl && ! (targetTp <= medium.ruleCeilingDbTp);
+        medium.needlesDeparts = target.vinyl && p.limiter.peakClip;
+        medium.ready = target.vinyl && ! medium.foldDeparts && ! medium.cutDeparts && ! medium.ceilingDeparts && ! medium.needlesDeparts;
         medium.quietInput = quietInput (inputs);
         medium.inputLufs = sourceLufs;
         result.medium = medium;

@@ -379,7 +379,9 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 {
                     const auto& report = *masters_[masterCount_ - 1].report;
                     event.kind = EventKind::Fact;
-                    for (const auto& said : { MasterReportText::vinyl (report), MasterReportText::vinylChecked (report),
+                    const auto departures = MasterReportText::vinylDepartures (report);
+                    for (const auto& said : { MasterReportText::vinyl (report), departures[0], departures[1], departures[2],
+                                              departures[3], MasterReportText::vinylChecked (report),
                                               MasterReportText::vinylUncheckable (report), MasterReportText::quietInput (report) })
                         if (said) { (void) event.payload.fact.assign (*said); emit (event, masterProgress_); }
                 }

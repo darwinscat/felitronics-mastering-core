@@ -176,6 +176,13 @@ enum class FactId : std::uint16_t
     MasterVinylUncheckable = 79, // what a file cannot tell: the side's length, sibilance at the cutter, the centre
     MasterQuietInput = 80,   // a very quiet input ({lufs}) raised by {gain}: no device but the high-pass and the dither
     TargetChangeResetsEdits = 81, // before a change of target: {count} device edits by hand will be reset
+    // Each rule of vinyl a master departs from (MasterReportText::vinylDepartures), the chain's number beside the rule's.
+    MasterVinylNoFold = 82,  // mono bass off: for vinyl the bass below {medium} is folded
+    MasterVinylFoldDeparts = 83, // mono below {crossover} at width {width}: for vinyl below {medium}, width ≤ {mediumWidth}
+    MasterVinylNoHighPass = 84, // high-pass off: for vinyl the infra-low is cut from {medium} at ≥ {mediumSlope} dB/oct
+    MasterVinylHighPassDeparts = 85, // high-pass from {cutoff} at {slope} dB/oct: for vinyl from {medium} at ≥ {mediumSlope}
+    MasterVinylCeilingDeparts = 86, // the ceiling {ceiling} above the medium's {medium}
+    MasterVinylNeedlesDeparts = 87, // the needles cut from {over} above the ceiling: vinyl is cut without the clipper
 
     // A command's rejection, by its code — what was refused and why. The three a field refuses name it: {field}.
     RejectedFloatingPointEnvironment = 101,

@@ -102,6 +102,8 @@ NeedlesAnswer needlesAnswer (const PlanInputs& in) noexcept
     if (quietInput (in)) return off (NeedlesWhy::Quiet);
     if (! a.needDb || ! a.plrDb || ! std::isfinite (*a.needDb)) return off (NeedlesWhy::NoReadings);
     if (*a.needDb <= number (clipper.find ("littleNeedDb"))) return off (NeedlesWhy::LittleNeed);
+    // A clipped source is ruled out whatever its needles are: its answer does not wait for them.
+    if (a.clipsPerMinute && regularlyClipped (in.rules, *a.clipsPerMinute)) return off (NeedlesWhy::Clipped);
     const auto* needles = resultOf (in, Analyzer::Excursions);
     if (! needles || ! in.needlesCurrent || needles->status == MeasurementStatus::Pending) return off (NeedlesWhy::Pending);
     if (needles->status != MeasurementStatus::Ready)
@@ -118,8 +120,7 @@ NeedlesAnswer needlesAnswer (const PlanInputs& in) noexcept
     if (! (*runs > 0.0)) return off (NeedlesWhy::NoExcursions);
     a.p90Ms = p90;
     a.bassShare = bass;
-    // Ruled out first — any one of them is enough, and a clipped source is ruled out whatever its needles are.
-    if (a.clipsPerMinute && regularlyClipped (in.rules, *a.clipsPerMinute)) return off (NeedlesWhy::Clipped);
+    // Ruled out first — any one of them is enough.
     if (*a.plrDb < number (clipper.find ("longPlrDb"))) return off (NeedlesWhy::LowPlr);
     if (*bass >= number (clipper.find ("longBassShare"))) return off (NeedlesWhy::Bass);
     if (*p90 >= number (clipper.find ("longP90Ms"))) return off (NeedlesWhy::Long);
@@ -171,7 +172,7 @@ LimiterFinding limiterFinding (const PlanInputs& in, const Devices& devices) noe
     f.vinyl = target.vinyl;
     f.mediumCeilingDbTp = target.tp.toDouble();
     f.ceilingAboveMedium = target.vinyl && f.ceilingDbTp > f.mediumCeilingDbTp;
-    f.needlesAgainstMedium = target.noClipper && f.cutting;
+    f.needlesAgainstMedium = target.vinyl && f.cutting;
     f.vinylTopHz = target.vinyl ? number (in.rules.engine.find ("observations").find ("vinylTop").find ("aboveHz")) : 0.0;
     return f;
 }

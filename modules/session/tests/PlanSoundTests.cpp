@@ -29,6 +29,7 @@
 #include "MasterJob.h"
 #include "Observations.h"
 #include "Planner.h"
+#include "embedded/no-vinyl.h"
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/session/Text.h>
@@ -229,9 +230,9 @@ void theNeedAndTheMeasurement()
     const auto little = detail::needlesAnswer (exact.in);
     ok (little.needDb && same (*little.needDb, 3.0) && little.why == NeedlesWhy::LittleNeed && little.proposed == NeedlesClass::None,
         "a need of exactly 3 dB: the machine does not cut, and says the need is little");
-    ok (detail::needs (exact.in, exact.machine(), true, *std::make_unique<DevicePlans>()) == detail::bitOf (Analyzer::Excursions)
+    ok ((detail::needs (exact.in, exact.machine(), true, *std::make_unique<DevicePlans>()) & detail::bitOf (Analyzer::Excursions)) == 0
         && detail::waiting (exact.in, detail::bitOf (Analyzer::Excursions)) == 0,
-        "its plan waits for nothing: the needles' result has ended");
+        "its plan reads no needles: its answer stands without them");
     Faked above ("allStreaming", -18.0, -6.0);
     above.headroom (8.75);
     ok (same (*detail::needlesAnswer (above.in).needDb, 3.25) && detail::needlesAnswer (above.in).proposed == NeedlesClass::Short,
@@ -250,6 +251,13 @@ void theNeedAndTheMeasurement()
     ok (detail::needlesAnswer (f.measured (Needle::Pending).in).why == NeedlesWhy::Pending
         && detail::needlesAnswer (f.measured (Needle::Stale).in).why == NeedlesWhy::Pending,
         "a running measurement, or a result measured at another target's ceiling, is not an answer yet");
+    // A clipped source is ruled out whatever its needles are: while they are measured its answer is already there.
+    Faked clippedEarly ("allStreaming", -18.0, -6.0);
+    clippedEarly.headroom (1.0).clips (50.0).measured (Needle::Pending);
+    const auto early = detail::needlesAnswer (clippedEarly.in);
+    ok (early.why == NeedlesWhy::Clipped && early.proposed == NeedlesClass::None && early.clipsPerMinute && same (*early.clipsPerMinute, 50.0)
+        && (detail::needs (clippedEarly.in, clippedEarly.machine(), true, *std::make_unique<DevicePlans>()) & detail::bitOf (Analyzer::Excursions)) == 0,
+        "a source clipped 50 times a minute, its needles still measured: ruled out as clipped, and its plan reads no needles");
     DevicePlans plans;
     f.measured (Needle::Stale);
     const auto needs = detail::needs (f.in, f.machine(), true, plans);
@@ -487,6 +495,19 @@ void vinylOnThePlanner()
     DevicePlans plans;
     ok ((detail::needs (lp.in, lp.machine(), true, plans) & detail::bitOf (Analyzer::Excursions)) == 0,
         "the machine reads no needles on vinyl: nothing to wait for");
+    {
+        // A target without the clipper that is no vinyl: a person's needles there are not against a medium.
+        Faked plain ("lp", -30.0, -6.0);
+        plain.in.rules = detail::readRules (felitronics::session::test::embedded::noVinyl.root(), plain.in.rules.engine);
+        plain.in.row = *plain.in.rules.find ("lp");
+        auto hand = plain.machine(), onVinyl = lp.machine();
+        hand.limiter.hand.needles = onVinyl.limiter.hand.needles = Needles::Manual;
+        hand.limiter.hand.needlesDb = onVinyl.limiter.hand.needlesDb = 1.0;
+        const auto noMedium = detail::limiterFinding (plain.in, hand), medium = detail::limiterFinding (lp.in, onVinyl);
+        ok (plain.in.rules.row (plain.in.row).noClipper && ! plain.in.rules.row (plain.in.row).vinyl && noMedium.cutting && ! noMedium.vinyl
+            && ! noMedium.needlesAgainstMedium && ! PlanText::vinylNeedles (noMedium) && medium.cutting && medium.needlesAgainstMedium,
+            "needles cut by hand on a target without the clipper warn of the medium only where it is vinyl");
+    }
 
     // A person's ceiling above the medium's.
     lp.in.targetEdit.tp = -1.0;
@@ -1115,6 +1136,11 @@ void vinylAndQuietMastered()
             && ! done.said (text::FactId::MasterVinylReady) && ! done.said (text::FactId::MasterVinylChecked)
             && done.said (text::FactId::MasterVinylUncheckable) && *done.kept.report->truePeakDbTp > -3.0,
             "made, above −3 dBTP as asked — and the report does not call it ready: " + done.line (text::FactId::MasterVinylDeparts));
+        ok (done.said (text::FactId::MasterVinylCeilingDeparts) && done.said (text::FactId::MasterVinylNeedlesDeparts)
+            && ! done.said (text::FactId::MasterVinylNoFold) && ! done.said (text::FactId::MasterVinylFoldDeparts)
+            && ! done.said (text::FactId::MasterVinylNoHighPass) && ! done.said (text::FactId::MasterVinylHighPassDeparts),
+            "and says what departs, with its numbers: " + done.line (text::FactId::MasterVinylCeilingDeparts) + " / "
+            + done.line (text::FactId::MasterVinylNeedlesDeparts));
         // Each rule of the medium alone, on the plan of the master the project would get: the fold at the medium's
         // crossover or above at the machine's width, the high-pass from the floor at its slope or steeper, the ceiling
         // no higher than the medium's, no needles.
@@ -1140,6 +1166,55 @@ void vinylAndQuietMastered()
             && ! readyWith ([] (Project& p) { p.devices.hpf.hand.slope = 6; }) && readyWith ([] (Project& p) { p.devices.hpf.hand.slope = 24; })
             && readyWith ([] (Project& p) { p.devices.hpf.hand.fq = 40.0; }),
             "the high-pass off, from 25 Hz or at 6 dB/oct takes it away; steeper or higher keeps it");
+        // What departs, each rule alone: its own line, with the chain's number and the rule's — and none where ready.
+        const auto departures = [&] (auto&& change)
+        {
+            Project project = v.project();
+            change (project);
+            const auto planned = detail::MasterJob::plan (v, command::Master {}, project);
+            MasterReport report;
+            report.medium = planned.medium;
+            report.deliverable = planned.rejection == Rejection::None;
+            return MasterReportText::vinylDepartures (report);
+        };
+        // The one line said, its id and its numbers (a count as its integer).
+        const auto only = [] (const std::array<std::optional<text::Fact>, 4>& said, std::size_t at, text::FactId id, std::vector<double> numbers)
+        {
+            bool fine = said[at] && said[at]->id == id && said[at]->argCount == numbers.size() && whole (*said[at]);
+            for (std::size_t i = 0; i < said.size(); ++i) fine = fine && (i == at) == said[i].has_value();
+            for (std::size_t i = 0; fine && i < numbers.size(); ++i)
+            {
+                const auto& a = said[at]->args[i];
+                fine = a.kind == text::ArgKind::Count ? double (a.integer) == numbers[i] : same (a.number, numbers[i]);
+            }
+            return fine;
+        };
+        const auto lineOf = [] (const std::array<std::optional<text::Fact>, 4>& said)
+        {
+            std::string all;
+            for (const auto& f : said) if (f) all += (all.empty() ? "" : " / ") + ru (*f);
+            return all;
+        };
+        const auto none = departures (asIs);
+        ok (! none[0] && ! none[1] && ! none[2] && ! none[3], "ready: no rule departs, no line");
+        const auto ceiling = departures ([] (Project& p) { p.targetEdit.tp = -2.9; });
+        ok (only (ceiling, 2, text::FactId::MasterVinylCeilingDeparts, { -2.9, -3.0 }), "the ceiling alone: " + lineOf (ceiling));
+        const auto needles = departures ([] (Project& p) { p.devices.limiter.hand.needles = Needles::Manual; p.devices.limiter.hand.needlesDb = 2.0; });
+        ok (only (needles, 3, text::FactId::MasterVinylNeedlesDeparts, { 2.0 }), "the needles alone: " + lineOf (needles));
+        const auto noFold = departures ([] (Project& p) { p.devices.monoBass.hand.on = false; });
+        const auto lowFold = departures ([] (Project& p) { p.devices.monoBass.hand.fq = 120.0; });
+        const auto wideFold = departures ([] (Project& p) { p.devices.monoBass.hand.width = 0.5; });
+        ok (only (noFold, 0, text::FactId::MasterVinylNoFold, { 150.0 })
+            && only (lowFold, 0, text::FactId::MasterVinylFoldDeparts, { 120.0, 0.0, 150.0, 0.0 })
+            && only (wideFold, 0, text::FactId::MasterVinylFoldDeparts, { 150.0, 50.0, 150.0, 0.0 }),
+            "the fold alone — off, too low, too wide: " + lineOf (noFold) + " / " + lineOf (lowFold) + " / " + lineOf (wideFold));
+        const auto noCut = departures ([] (Project& p) { p.devices.hpf.hand.on = false; });
+        const auto lowCut = departures ([] (Project& p) { p.devices.hpf.hand.fq = 25.0; });
+        const auto softCut = departures ([] (Project& p) { p.devices.hpf.hand.slope = 6; });
+        ok (only (noCut, 1, text::FactId::MasterVinylNoHighPass, { 32.0, 12.0 })
+            && only (lowCut, 1, text::FactId::MasterVinylHighPassDeparts, { 25.0, 12.0, 32.0, 12.0 })
+            && only (softCut, 1, text::FactId::MasterVinylHighPassDeparts, { 32.0, 6.0, 32.0, 12.0 }),
+            "the high-pass alone — off, too low, too gentle: " + lineOf (noCut) + " / " + lineOf (lowCut) + " / " + lineOf (softCut));
         // The same hand arriving by a project file.
         const auto saved = s.exportProject();
         auto ip = measured (mix, "allStreaming"); auto& imported = *ip;
@@ -1443,6 +1518,71 @@ void theObservations()
         x.ended (Analyzer::Stereo, MeasurementReason::NoSignal);
         ok (x.seen().wideBass.status == ObservationStatus::NotFound && x.seen().polarity.status == ObservationStatus::NotFound,
             "a mono file has no wide bass and no opposite polarity, whatever its low end's status");
+    }
+    {
+        // A rule one of whose inputs was not measured is not measured: never "not found", never a 0 in its line.
+        Seen x;
+        const auto none = MeasurementReason::None;
+        // Polarity: the correlation read, the low end's side share not — then both.
+        x.stereo[0] = { "correlation", -0.9, none, 0 };
+        x.ready (Analyzer::Stereo, { x.stereo, 1 });
+        x.ended (Analyzer::LowEnd, MeasurementReason::TooShort);
+        const auto halfOpposite = x.seen().polarity;
+        x.stereo[0] = { "correlation", 0.9, none, 0 };
+        const auto halfClean = x.seen().polarity;
+        x.lowEnd[0] = { "rawSideFraction", 0.1, none, 0 };
+        x.ready (Analyzer::LowEnd, { x.lowEnd, 1 });
+        const auto wholeClean = x.seen().polarity;
+        ok (halfOpposite.status == ObservationStatus::NotMeasured && halfClean.status == ObservationStatus::NotMeasured
+            && halfClean.reason == MeasurementReason::TooShort && wholeClean.status == ObservationStatus::NotFound,
+            "polarity with the side share not measured is not measured, whatever the correlation; with both read, judged");
+        // The edges: the tail invalid (a non-finite sample in it), the head read — a long head, then a short one.
+        const auto edges = [&] (double headSeconds, double tailValid)
+        {
+            x.programme[0] = { "sampleRate", 48000.0, none, 0 };
+            x.programme[1] = { "leadingSilenceSamples", headSeconds * 48000.0, none, 0 };
+            x.programme[2] = { "leadingSilenceValid", 1.0, none, 0 };
+            x.programme[3] = { "trailingSilenceSamples", 0.0, none, 0 };
+            x.programme[4] = { "trailingSilenceValid", tailValid, none, 0 };
+            x.ready (Analyzer::Programme, { x.programme, 5 });
+            return x.seen().edgeSilence;
+        };
+        const auto longHead = edges (3.0, 0.0), shortHead = edges (0.1, 0.0), measuredLong = edges (3.0, 1.0);
+        const auto said = ObservationText::fact (ObservationKind::EdgeSilence, measuredLong);
+        ok (longHead.status == ObservationStatus::NotMeasured && longHead.reason == MeasurementReason::NonFinite
+            && shortHead.status == ObservationStatus::NotMeasured && ! ObservationText::fact (ObservationKind::EdgeSilence, longHead)
+            && measuredLong.status == ObservationStatus::Found && same (measuredLong.value, 3.0) && same (measuredLong.second, 0.0) && said && whole (*said),
+            "an edge not measured is not \"0.0 s\": the edges are not measured, a short head is not \"not found\"; both read — "
+            + (said ? ru (*said) : std::string()));
+        // The DC offset: one channel read, the other not.
+        x.clipping[0] = { "runCount", 0.0, none, 0 };
+        x.clipping[1] = { "dcOffset[0]", 0.0, none, 0 };
+        x.ready (Analyzer::Clipping, { x.clipping, 2 });
+        const auto halfDc = x.seen().dcOffset;
+        x.clipping[2] = { "dcOffset[1]", 0.0, none, 0 };
+        x.ready (Analyzer::Clipping, { x.clipping, 3 });
+        ok (halfDc.status == ObservationStatus::NotMeasured && halfDc.reason == MeasurementReason::Unsupported
+            && x.seen().dcOffset.status == ObservationStatus::NotFound,
+            "a DC offset read on one channel of two is not measured; read on both, judged");
+        // The unused low bits: one channel read, the other not.
+        x.forensics[0] = { "grid.alwaysZeroLowBits[0]", 8.0, none, 0 };
+        x.ready (Analyzer::Forensics, { x.forensics, 1 });
+        ok (x.seen().bitsUnused.status == ObservationStatus::NotMeasured, "the unused low bits read on one channel of two: not measured");
+        // Already limited: a PLR that is not dense, the clips not counted — then counted.
+        Seen y;
+        y.loudness[0] = { "integratedLufs", -14.0, none, 0 };
+        y.loudness[1] = { "truePeakDb", -2.0, none, 0 };
+        y.ready (Analyzer::Loudness, { y.loudness, 2 });
+        const auto uncounted = y.seen().alreadyLimited;
+        y.clipping[0] = { "runCount", 0.0, none, 0 };
+        y.ready (Analyzer::Clipping, { y.clipping, 1 });
+        const auto counted = y.seen().alreadyLimited;
+        y.loudness[1] = { "truePeakDb", -8.0, none, 0 };
+        y.ended (Analyzer::Clipping, MeasurementReason::Memory);
+        const auto dense = y.seen().alreadyLimited;
+        ok (uncounted.status == ObservationStatus::NotMeasured && uncounted.reason == MeasurementReason::Pending
+            && counted.status == ObservationStatus::NotFound && dense.status == ObservationStatus::Found && same (dense.value, 6.0),
+            "a PLR of 12 dB with the clips not counted is not measured, counted and none it is not found; a PLR of 6 dB is found without them");
     }
     {
         // The order of the analysis, and nothing that switches a device.
