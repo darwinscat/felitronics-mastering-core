@@ -63,8 +63,8 @@ tiltDb.ru = "Баланс тона"
 tiltDb.en = "Tone balance"
 limiterNeedles.ru = "Резать иглы"
 limiterNeedles.en = "Cut needles"
-limiterNeedlesDb.ru = "Порог игл"
-limiterNeedlesDb.en = "Needle threshold"
+limiterNeedlesDb.ru = "Срез с пиков"
+limiterNeedlesDb.en = "Cut off the peaks"
 lowDb.ru = "Низ"
 lowDb.en = "Low"
 audio.ru = "Звук"
@@ -304,19 +304,19 @@ en = "Mono bass below {crossover}: the value comes from the project file."
 ru = "Противофаза баса взвешена по первым {covered} записи из {whole}."
 en = "The bass polarity was weighed over the first {covered} of the recording's {whole}."
 
-# The limiter's line: its ceiling and what the peak clipper inside it does with the needles, as it sounds. "Clipped down
-# to" is the threshold: what stands further above the ceiling than that is cut to it, and the limiter takes the rest.
+# The limiter's line: its ceiling and what the peak clipper inside it does with the needles, as it sounds. {cut} is the
+# most the clipper takes off the peaks; the limiter takes the rest.
 [messages.limiterShort]
-ru = "Лимитер: потолок {ceiling}. Иглы короткие (90 % не длиннее {p90}, бас в дозе {bass}, PLR {plr}) — клиппер срезает их до {over} над потолком."
-en = "Limiter: ceiling {ceiling}. The needles are short (90 % no longer than {p90}, bass share of the dose {bass}, PLR {plr}) — the peak clipper cuts them down to {over} above the ceiling."
+ru = "Лимитер: потолок {ceiling}. Иглы короткие (90 % не длиннее {p90}, бас в дозе {bass}, PLR {plr}) — клиппер срезает с пиков до {cut}, остальное берёт лимитер."
+en = "Limiter: ceiling {ceiling}. The needles are short (90 % no longer than {p90}, bass share of the dose {bass}, PLR {plr}) — the peak clipper cuts up to {cut} off the peaks, the limiter takes the rest."
 
 [messages.limiterBetween]
-ru = "Лимитер: потолок {ceiling}. Иглы средние (90 % не длиннее {p90}, бас в дозе {bass}, PLR {plr}) — клиппер срезает их осторожно, до {over} над потолком."
-en = "Limiter: ceiling {ceiling}. The needles are neither short nor long (90 % no longer than {p90}, bass share of the dose {bass}, PLR {plr}) — the peak clipper cuts them with care, down to {over} above the ceiling."
+ru = "Лимитер: потолок {ceiling}. Иглы средние (90 % не длиннее {p90}, бас в дозе {bass}, PLR {plr}) — клиппер осторожно срезает с пиков до {cut}, остальное берёт лимитер."
+en = "Limiter: ceiling {ceiling}. The needles are neither short nor long (90 % no longer than {p90}, bass share of the dose {bass}, PLR {plr}) — the peak clipper cuts with care, up to {cut} off the peaks, the limiter takes the rest."
 
 [messages.limiterManual]
-ru = "Лимитер: потолок {ceiling}. Иглы срезаются по ручной настройке — до {over} над потолком."
-en = "Limiter: ceiling {ceiling}. The needles are cut by a manual setting — down to {over} above the ceiling."
+ru = "Лимитер: потолок {ceiling}. Иглы срезаются по ручной настройке — с пиков до {cut}, остальное берёт лимитер."
+en = "Limiter: ceiling {ceiling}. The needles are cut by a manual setting — up to {cut} off the peaks, the limiter takes the rest."
 
 [messages.limiterNeedlesOff]
 ru = "Лимитер: потолок {ceiling}. Клиппер игл выключен."
@@ -366,7 +366,7 @@ en = "Limiter: ceiling {ceiling}. The needles are still being measured."
 ru = "Лимитер: потолок {ceiling}."
 en = "Limiter: ceiling {ceiling}."
 
-# Beside a manual threshold that cuts where the machine would not: the machine's reason. The numbers are the finding's.
+# Beside a manual cut that cuts where the machine would not: the machine's reason. The numbers are the finding's.
 [messages.needlesAgainstMachine]
 select = "why"
 ru.shell = "Машина бы не резала: клиппер игл здесь недоступен."
@@ -464,8 +464,8 @@ ru = "Потолок {ceiling}, а для винила — не выше {medium
 en = "The ceiling is {ceiling}, while for vinyl it stands no higher than {medium}."
 
 [messages.masterVinylNeedlesDeparts]
-ru = "Клиппер срезает иглы до {over} над потолком, а для винила иглы не режут."
-en = "The peak clipper cuts the needles down to {over} above the ceiling, while for vinyl the needles are not cut."
+ru = "Клиппер срезает с пиков до {cut}, а для винила иглы не режут."
+en = "The peak clipper cuts up to {cut} off the peaks, while for vinyl the needles are not cut."
 
 [messages.masterQuietInput]
 ru = "Вход очень тихий ({lufs}): подняли на {gain}, шум поднялся вместе с музыкой. Кроме ФВЧ на полу цели и дизера формата, машина приборов не ставила — на таком уровне замер ненадёжен; включить их можно вручную."
@@ -928,7 +928,7 @@ dither.en = "Dither"
 low.ru = "Низ"
 low.en = "Low"
 
-# Why the machine's peak clipper does not cut — the words of the reasons; the warning beside a manual threshold is whole
+# Why the machine's peak clipper does not cut — the words of the reasons; the warning beside a manual cut is whole
 # sentences of its own (messages.needlesAgainstMachine).
 [terms.needlesWhy]
 shell.ru = "недоступен"

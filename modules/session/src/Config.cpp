@@ -58,8 +58,4 @@ Rules rules() noexcept
 {
     return readRules (config::embedded::targets.root(), config::embedded::engine.root());
 }
-DefaultsTables carriedDefaults() noexcept
-{
-    return { rules(), std::nullopt };
-}
 } // namespace felitronics::session::detail

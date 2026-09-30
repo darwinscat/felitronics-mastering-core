@@ -266,10 +266,8 @@ ImportedProject readProject (std::string_view bytes, const PlanInputs& inputs) n
         return out;
     }
     const auto& root = *std::get_if<toml::Table> (&parsed);
-    const auto carried = carriedDefaults();
-    const Rules& rules = carried.current;
+    const Rules rules = detail::rules();
     const auto currentLabel = *rules.engine.find ("defaults").string();
-    const auto previousLabel = carried.previous ? carried.previous->engine.find ("defaults").string() : std::nullopt;
     std::string defaults, core, target;
     const auto report = toml::read (root, [&] (toml::Reader& in)
     {
@@ -292,8 +290,7 @@ ImportedProject readProject (std::string_view bytes, const PlanInputs& inputs) n
         });
         // A missing/unknown target is reported after schema checks; use a known row only for filling defaults.
         out.project.target = rules.find (target).value_or (rules.defaultRow);
-        const Rules& defaultsRules = previousLabel && defaults == *previousLabel ? *carried.previous : rules;
-        placeDefaults (defaultsRules, defaultsRules.find (target).value_or (defaultsRules.defaultRow), channels, out.project.devices);
+        placeDefaults (rules, out.project.target, channels, out.project.devices);
         eachDevice (out.project.devices, [&] (Device, auto& layers)
         {
             using Of = DeviceOf<std::remove_cvref_t<decltype (layers.machine)>>;
@@ -328,7 +325,7 @@ ImportedProject readProject (std::string_view bytes, const PlanInputs& inputs) n
         fail (Rejection::UnknownDefaults, root.find ("defaults")->position);
     else if (defaults > currentLabel)
         fail (Rejection::NewerDefaults, root.find ("defaults")->position);
-    else if (defaults != currentLabel && (! previousLabel || defaults != *previousLabel))
+    else if (defaults != currentLabel)
         fail (Rejection::UnknownDefaults, root.find ("defaults")->position);
     if (out.answer.rejection != Rejection::None) return out;
     if (! readVersion (core, out.project.core)) fail (Rejection::ProjectCore, root.find ("core")->position);

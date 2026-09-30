@@ -207,10 +207,10 @@ void theClasses()
         return detail::needlesAnswer (f.in);
     };
     ok (at (10.0, 2.0, 0.25).proposed == NeedlesClass::Short && same (*at (10.0, 2.0, 0.25).overDb, 3.0),
-        "p90 2 ms, bass 0.25, PLR 10 — each exactly on its bound — is short: cut from 3 dB above the ceiling");
+        "p90 2 ms, bass 0.25, PLR 10 — each exactly on its bound — is short: up to 3 dB off the peaks");
     ok (at (9.99, 2.0, 0.25).proposed == NeedlesClass::Between && at (10.0, 2.01, 0.25).proposed == NeedlesClass::Between
         && at (10.0, 2.0, 0.26).proposed == NeedlesClass::Between && same (*at (10.0, 2.0, 0.26).overDb, 1.5),
-        "one step past any of the three is between: cut from 1.5 dB above the ceiling");
+        "one step past any of the three is between: up to 1.5 dB off the peaks");
     ok (at (8.0, 7.99, 0.49).proposed == NeedlesClass::Between, "PLR exactly 8, p90 just under 8 ms, bass just under 0.5: still cut, with care");
     ok (at (7.99, 1.0, 0.1).why == NeedlesWhy::LowPlr && at (12.0, 8.0, 0.1).why == NeedlesWhy::Long && at (12.0, 1.0, 0.5).why == NeedlesWhy::Bass,
         "PLR under 8, p90 exactly 8 ms, bass exactly 0.5: each alone rules the clipper out, with its own reason");
@@ -298,7 +298,7 @@ void thePersonsThreshold()
         Faked f ("allStreaming", -18.0, -6.0); f.headroom (9.0);
         const auto got = manual (f, 2.0);
         const auto against = PlanText::needlesAgainstMachine (got);
-        ok (warned (got, NeedlesWhy::LittleNeed, "нужда") && same (got.overDb, 2.0), "over a need of 3 dB: it cuts from its 2 dB — " + (against ? ru (*against) : std::string()));
+        ok (warned (got, NeedlesWhy::LittleNeed, "нужда") && same (got.overDb, 2.0), "over a need of 3 dB: it cuts its 2 dB off the peaks — " + (against ? ru (*against) : std::string()));
     }
     {
         Faked f ("allStreaming", -18.0, -6.0); f.headroom (1.0).measured (Needle::Unavailable);
@@ -339,7 +339,7 @@ void thePersonsThreshold()
         Faked f ("allStreaming", -18.0, -6.0); f.headroom (1.0);
         const auto got = manual (f, 2.0);
         ok (got.cutting && ! got.againstMachine && got.proposed == NeedlesClass::Short && got.sounding == Sounding::Hand && same (got.overDb, 2.0),
-            "where the machine cuts too — short needles, from 3 dB — the person's 2 dB sounds, without a warning");
+            "where the machine cuts too — short needles, up to 3 dB — the person's 2 dB sounds, without a warning");
         ok (ru (PlanText::limiter (got)).find ("по ручной настройке") != std::string::npos && whole (PlanText::limiter (got)),
             "and the limiter's line names it as manual: " + ru (PlanText::limiter (got)));
     }
@@ -368,12 +368,13 @@ void thePersonsThreshold()
         Faked f ("allStreaming", -18.0, -6.0); f.headroom (1.0);
         mastering::MasteringChainParams p;
         detail::writeLimiter (f.in, f.machine(), p);
-        ok (p.limiter.peakClip && same (p.limiter.overCeilingDb, 3.0) && same (p.limiter.kneeDb, 0.0) && same (p.limiter.releaseMs, 50.0)
+        ok (p.limiter.peakClip && same (p.limiter.overCeilingDb, 8.0) && same (p.limiter.kneeDb, 0.0) && same (p.limiter.releaseMs, 50.0)
             && ! p.limiter.dualRelease && same (p.limiter.slowReleaseMs, 200.0) && same (p.limiter.ceilingDbTp, -1.0) && ! p.bypassLimiter,
-            "short needles: the peak clipper on, hard, from 3 dB above the ceiling — inside the limiter, its release 50 ms, never bypassed");
+            "short needles on a need of 11 dB: the peak clipper on, hard, 3 dB off the peaks — its threshold 8 dB above the ceiling — "
+            "inside the limiter, its release 50 ms, never bypassed");
         auto d = f.machine(); d.limiter.hand.needles = Needles::Manual; d.limiter.hand.needlesDb = 0.0;
         detail::writeLimiter (f.in, d, p);
-        ok (p.limiter.peakClip && same (p.limiter.overCeilingDb, 0.0), "a manual threshold of 0 dB is written as it is");
+        ok (p.limiter.peakClip && same (p.limiter.overCeilingDb, 11.0), "a manual cut of 0 dB stands the threshold at the need, 11 dB: nothing off the peaks");
         f.clips (30.0);
         detail::writeLimiter (f.in, f.machine(), p);
         ok (! p.limiter.peakClip && ! p.bypassLimiter, "a clipped source: the clipper's flag off, the limiter in the chain all the same");
@@ -406,6 +407,52 @@ void thePersonsThreshold()
         ok (shortLine.id == text::FactId::LimiterShort && betweenLine.id == text::FactId::LimiterBetween && whole (shortLine) && whole (betweenLine),
             "and the two classes that cut:\n        " + ru (shortLine) + "\n        " + ru (betweenLine));
     }
+}
+
+// THE CUT IS AN AMOUNT (owner, 30.09): the clipper takes at most its class's decibels off the peaks — 3 short, 1.5
+// between — and the limiter does the rest; the threshold stands max(0, need − cut) above the ceiling. Before, the two
+// numbers were thresholds, and the cautious class cut deeper than the bold one.
+void theCutIsAnAmount()
+{
+    felitronics::test::group ("the peak clipper cuts an amount off the peaks: at most 3 dB short, 1.5 between, the limiter the rest");
+    // PLR 10.9 (−20 LUFS, −9.1 dBTP) and 3 dB of headroom: a need of 7.9 dB, the needles short, then between.
+    Faked f ("allStreaming", -20.0, -9.1);
+    f.headroom (3.0).measured (Needle::Ready, 50.0, 1.0, 0.1);
+    mastering::MasteringChainParams shortChain, betweenChain;
+    const auto shortOne = detail::limiterFinding (f.in, f.machine());
+    detail::writeLimiter (f.in, f.machine(), shortChain);
+    f.measured (Needle::Ready, 50.0, 5.0, 0.3);
+    const auto betweenOne = detail::limiterFinding (f.in, f.machine());
+    detail::writeLimiter (f.in, f.machine(), betweenChain);
+    ok (shortOne.needDb && betweenOne.needDb && std::fabs (*shortOne.needDb - 7.9) < 1e-9 && shortOne.proposed == NeedlesClass::Short
+        && betweenOne.proposed == NeedlesClass::Between && shortChain.limiter.peakClip && betweenChain.limiter.peakClip,
+        "PRECONDITION: a need of 7.9 dB, short needles and then between, both cut");
+    const double shortCut = *shortOne.needDb - shortChain.limiter.overCeilingDb;
+    const double betweenCut = *betweenOne.needDb - betweenChain.limiter.overCeilingDb;
+    ok (std::fabs (shortCut - 3.0) < 1e-9 && std::fabs (betweenCut - 1.5) < 1e-9 && betweenCut < shortCut,
+        "on one need of 7.9 dB the cautious class cuts less than the bold one: " + std::to_string (betweenCut) + " dB between, "
+        + std::to_string (shortCut) + " dB short (thresholds " + std::to_string (betweenChain.limiter.overCeilingDb) + " and "
+        + std::to_string (shortChain.limiter.overCeilingDb) + " dB above the ceiling)");
+    ok (same (*shortOne.proposedOverDb, 3.0) && same (shortOne.overDb, 3.0) && same (*betweenOne.proposedOverDb, 1.5),
+        "the finding carries the amount, 3 and 1.5 dB, as the plan's line says it");
+    // A need the cut cannot close: a threshold of need − cut beyond the limiter's working range would cut more.
+    Faked wide ("allStreaming", -30.0, -2.0);
+    wide.headroom (1.0).measured (Needle::Ready, 50.0, 1.0, 0.1);
+    mastering::MasteringChainParams wideChain;
+    detail::writeLimiter (wide.in, wide.machine(), wideChain);
+    ok (detail::limiterFinding (wide.in, wide.machine()).cutting && ! wideChain.limiter.peakClip && ! wideChain.bypassLimiter,
+        "a need of 27 dB puts the threshold past the limiter's 12 dB range: the clipper stays off rather than cut more than 3 dB");
+    // A person's manual X is X dB off the peaks, whatever the need.
+    auto d = f.machine(); d.limiter.hand.needles = Needles::Manual; d.limiter.hand.needlesDb = 2.5;
+    mastering::MasteringChainParams manualChain;
+    detail::writeLimiter (f.in, d, manualChain);
+    ok (manualChain.limiter.peakClip && same (manualChain.limiter.overCeilingDb, *betweenOne.needDb - 2.5),
+        "a manual 2.5 dB on the need of 7.9: the threshold 5.4 dB above the ceiling");
+    Faked little ("allStreaming", -18.0, -6.0); little.headroom (9.0);
+    auto all = little.machine(); all.limiter.hand.needles = Needles::Manual; all.limiter.hand.needlesDb = 6.0;
+    detail::writeLimiter (little.in, all, manualChain);
+    ok (manualChain.limiter.peakClip && same (manualChain.limiter.overCeilingDb, 0.0),
+        "a manual 6 dB over a need of 3: the threshold at the ceiling, never under it");
 }
 
 //==============================================================================
@@ -534,7 +581,8 @@ void vinylOnThePlanner()
         "a person's manual threshold cuts on vinyl, with both warnings: " + (needlesWarning ? ru (*needlesWarning) : std::string())
         + " / " + (against ? ru (*against) : std::string()));
     detail::writeLimiter (lp.in, d, p);
-    ok (p.limiter.peakClip && same (p.limiter.overCeilingDb, 1.0), "and the clipper is written");
+    ok (p.limiter.peakClip && cutting.needDb && same (p.limiter.overCeilingDb, std::max (0.0, *cutting.needDb - 1.0)),
+        "and the clipper is written: 1 dB off the peaks");
     d.limiter.hand.needles = Needles::Auto; d.limiter.hand.needlesDb.reset();
     const auto automatic = detail::limiterFinding (lp.in, d);
     ok (! automatic.cutting && ! automatic.needlesAgainstMedium, "auto by hand on vinyl is the machine's answer: it does not cut");
@@ -726,8 +774,8 @@ command::MasterReady composed (const Session& s, const Snapshot& snapshot, std::
     const auto hand = project.devices.limiter.hand;
     const Needles mode = hand.needles ? *hand.needles : hand.needlesDb ? Needles::Manual : project.devices.limiter.machine.needles;
     bool cuts = false;
-    double over = 1.5;
-    if (mode == Needles::Manual) { cuts = true; over = hand.needlesDb.value_or (project.devices.limiter.machine.needlesDb); }
+    double cut = 0.0;
+    if (mode == Needles::Manual) { cuts = true; cut = hand.needlesDb.value_or (project.devices.limiter.machine.needlesDb); }
     else if (mode == Needles::Auto && ! target.noClipper && *lufs >= -55.0 && need > 3.0)
     {
         const auto runs = numberOf (snapshot, Analyzer::Excursions, "runCount");
@@ -738,12 +786,15 @@ command::MasterReady composed (const Session& s, const Snapshot& snapshot, std::
             const auto want = ownersTable (plr, *numberOf (snapshot, Analyzer::Excursions, "p90Ms"),
                                            *numberOf (snapshot, Analyzer::Excursions, "bassDoseShare"), clips / minutes);
             cuts = want.proposed != NeedlesClass::None;
-            if (cuts) over = want.overDb;
+            if (cuts) cut = want.overDb;
         }
     }
+    // At most the cut off the peaks, which the need stands that far above the ceiling; off where no threshold can keep to it.
+    const double over = cuts ? std::max (0.0, need - cut) : 1.5;
+    cuts = cuts && over <= 12.0;
     p.limiter.ceilingDbTp = ceiling;
     p.limiter.releaseMs = 50.0; p.limiter.dualRelease = false; p.limiter.slowReleaseMs = 200.0;
-    p.limiter.peakClip = cuts; p.limiter.overCeilingDb = over; p.limiter.kneeDb = 0.0;
+    p.limiter.peakClip = cuts; p.limiter.overCeilingDb = cuts ? over : 1.5; p.limiter.kneeDb = 0.0;
     t.limiter = true;
     // The dither: at 16 bits, unless a person switched it off.
     const bool dithered = target.bitDepth <= 16 && detail::settingsOf (rules, project.devices.dither).on;
@@ -867,6 +918,49 @@ void theRenderIsThePreviousPaths()
             "all sound with the panel hidden: the same bits — " + landed (pair.decided));
         ok (pair.decided.said (text::FactId::MasterSaturation) && pair.decided.said (text::FactId::MasterGlue),
             "and the stages a person brought in report what they did");
+    }
+}
+
+// A RENDERED MASTER'S CLIPPER TAKES ITS AMOUNT: on the mix (a need of about 4.5 dB), a manual 1 dB and the machine's
+// short class (3 dB), each mastered to the end; the peak clipper's own reduction trace, over the whole delivery, stays
+// within the amount where the need puts the peaks, plus what the landing itself moves them by. Before, the 1 dB was a
+// threshold 1 dB above the ceiling and took about 5.5 dB.
+void theClipperCutsItsAmount()
+{
+    felitronics::test::group ("a rendered master: the peak clipper takes no more than its amount off the peaks");
+    const Mix mix;
+    const double tolerance = 0.5;
+    for (const double manualCut : { 0.0, 1.0 })
+    {
+        auto s = measured (mix, "allStreaming");
+        const double need = s->snapshot().view().plan.limiter.needDb.value_or (0.0);
+        double amount = 3.0;
+        if (manualCut > 0.0)
+        {
+            LimiterFields<Touched> limiter; limiter.needles = Needles::Manual; limiter.needlesDb = manualCut;
+            ok (s->apply (command::SetManual { 30, true }).rejection == Rejection::None
+                && s->apply (command::EditDevice { 31, DeviceEdit (limiter) }).rejection == Rejection::None
+                && s->apply (command::SetManual { 32, false }).rejection == Rejection::None, "PRECONDITION: the manual cut is taken");
+            amount = manualCut;
+        }
+        const auto plan = s->snapshot().view().plan.limiter;
+        ok (plan.cutting && same (plan.overDb, amount) && need > amount + 1.0,
+            "PRECONDITION: the clipper cuts " + std::to_string (amount) + " dB on a need of " + std::to_string (need) + " dB");
+        ok (s->apply (command::Master { 90 }).rejection == Rejection::None, "PRECONDITION: the master starts");
+        const auto done = finish (*s);
+        const auto& trace = done.kept.landing ? done.kept.landing->peakClipTrace : std::optional<LandingTrace> {};
+        double deepest = 0.0;
+        if (trace) for (const auto& row : trace->rows) deepest = std::max (deepest, row.maxDb);
+        // The need stands the peaks that far above the target's ceiling at the plain gain, the first pass's. The landing
+        // then moves them further by its own: the gain it adds for what the limiter takes off the loudness, and the pass
+        // ceiling it lowers under the target's (its margin and the inter-sample overshoot). That drift is the landing's,
+        // not the class's, and is read from its log.
+        const auto& log = done.kept.landing ? done.kept.landing->log : std::span<const LandingPass> {};
+        const double drift = log.empty() ? 0.0 : (log.back().gainDb - log.front().gainDb) + (plan.ceilingDbTp - log.back().ceilingDbTp);
+        ok (done.made && trace && trace->valid && ! trace->rows.empty() && ! log.empty() && deepest > 0.0 && deepest <= amount + drift + tolerance,
+            std::string (manualCut > 0.0 ? "a manual " : "the machine's short class, ") + std::to_string (amount) + " dB: the clipper took at most "
+            + std::to_string (deepest) + " dB off the peaks — the amount, the landing's drift of " + std::to_string (drift) + " dB and "
+            + std::to_string (tolerance) + " for the chain before it — " + landed (done));
     }
 }
 
@@ -1635,12 +1729,14 @@ int main()
 {
     std::printf ("felitronics::session — the limiter, the dither and the whole plan sounding\n");
     theClasses();
+    theCutIsAnAmount();
     theNeedAndTheMeasurement();
     thePersonsThreshold();
     theDither();
     vinylOnThePlanner();
     aQuietInput();
     theRenderIsThePreviousPaths();
+    theClipperCutsItsAmount();
     theTopologyFollowsTheTicks();
     aMasterThatWaited();
     theMemoryOfAMaster();

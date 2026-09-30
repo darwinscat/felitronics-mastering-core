@@ -11,7 +11,6 @@
   reason. The stereo correlation no longer counts as a device switch.
 - `PlanView::hpf` / `::monoBass`, the typed findings (the LowEnd result no longer publishes `hpfFloorRequired`, which nothing read); `HeldBack::Measured` and `::Quiet`; `PlanText` and ten facts (ru,
   en) for their report lines.
-- **Defaults `2026-10`**: the numbers above change a master, so they are a new set; a project naming `2026-09` converts
-  with its warning.
+- **Defaults `2026-10`**: the numbers above change a master, so they are a new set.
 - **The whole file's spectral wall** in the forensics result: `wall.*` without a channel index, beside `wall.*[c]` — the
   analyzer's aggregate, appended to the result's numbers.

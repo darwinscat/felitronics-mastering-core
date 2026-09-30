@@ -70,25 +70,26 @@ lookaheadMs = 1
 # littleNeedDb: when the NEED — how many dB must come from somewhere to reach the target: the input's PLR minus the
 #   target's headroom (ceiling minus loudness) — is at most this, the needles are not measured and are left to the
 #   limiter. Above it they are measured on the INPUT, with the ceiling at "input peak − need" (analysis::PeakExcursions),
-#   and their class sets the threshold:
+#   and their class sets how much the clipper cuts off the peaks — at most that much, the limiter does the rest: the
+#   threshold stands max(0, need − cut) above the ceiling (owner, 30.09):
 #     short    p90 of the run length ≤ shortP90Ms, bass share of the dose ≤ shortBassShare, PLR ≥ shortPlrDb, the source
-#              not clipped: shortOverDb above the ceiling;
+#              not clipped: up to shortCutDb off the peaks;
 #     long     bass share ≥ longBassShare, or p90 ≥ longP90Ms, or PLR < longPlrDb, or a clipped source: the clipper is
 #              switched off by its flag (an unreachable threshold is not "off" — the solver moves the ceiling);
-#     between  betweenOverDb above the ceiling.
+#     between  up to betweenCutDb, with care.
 #   clippedPerMinute (owner decision 3.7): a source is CLIPPED — and the machine cuts no needles, a clipper would add
 #     distortion to it — when the clip detector confirmed at least this many clips per minute of programme. Fewer are
 #     single places (an edit, a joint): the clipper is allowed, and the report names where they are.
-#   A person's "manual X" sounds over every one of these — the class, a need of littleNeedDb or less, needles that were
+#   A person's "manual X" — X dB off the peaks, the threshold max(0, need − X) — sounds over every one of these — the class, a need of littleNeedDb or less, needles that were
 #   not measured, a clipped source, a target without a peak clipper — with the machine's reason beside the knob.
 #   bassBelowHz: the bass of the dose is the crest bins whose lower edge is below it. densityMinusDb, densityWithinDb: the
 #   density near the ceiling (maxima above −densityMinusDb, and within densityWithinDb of it) is printed beside the class
-#   and does not decide it. The class bounds are the owner's starting numbers (decision 3.6), as are the two thresholds
-#   (3 and 1.5 dB above the ceiling), the two PLR bounds (10 and 8 dB), "need ≤ 3 dB: do not measure" and the ten clips
+#   and does not decide it. The class bounds are the owner's starting numbers (decision 3.6), as are the two cuts
+#   (up to 3 and 1.5 dB off the peaks), the two PLR bounds (10 and 8 dB), "need ≤ 3 dB: do not measure" and the ten clips
 #   a minute; bassBelowHz and the density are hypotheses.
 # kneeDb: 0 — a hard clip.
-# manualMinDb…manualMaxDb, manualStepDb: the manual threshold's travel and step (a hypothesis). The manual threshold starts
-#   at betweenOverDb, the "between" class, inside manualDomain.
+# manualMinDb…manualMaxDb, manualStepDb: the manual cut's travel and step (a hypothesis). The manual cut starts at
+#   betweenCutDb, the "between" class, inside manualDomain.
 [limiter.peakClipper]
 manualDomain = [0, 6]
 littleNeedDb = 3
@@ -99,8 +100,8 @@ longP90Ms = 8
 longBassShare = 0.5
 longPlrDb = 8
 clippedPerMinute = 10
-shortOverDb = 3
-betweenOverDb = 1.5
+shortCutDb = 3
+betweenCutDb = 1.5
 bassBelowHz = 200
 densityMinusDb = 3
 densityWithinDb = 0.3

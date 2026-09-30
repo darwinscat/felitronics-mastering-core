@@ -6,6 +6,7 @@
 #include "Chain.h"
 #include "MeasurementPlan.h"
 #include "Cost.h"
+#include "Limiter.h"
 #include <felitronics/analysis/BandCrestResult.h>
 #include "Rules.h"
 #include <felitronics/session/Session.h>
@@ -201,7 +202,7 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         medium.lowWidth = t.monoBass ? double (p.monoBass.lowWidth) : 0.0;
         medium.slopeDbPerOct = t.eq && hpf.on ? hpf.lanes[0].slope : 0;
         medium.ceilingDbTp = targetTp;
-        medium.overDb = p.limiter.peakClip ? p.limiter.overCeilingDb : 0.0;
+        medium.overDb = p.limiter.peakClip ? limiterFinding (inputs, project.devices).overDb : 0.0;   // the amount off the peaks
         medium.ruleCrossoverHz = target.monoBass.toDouble();
         medium.ruleLowWidth = ruleset.monoBassWidthDefault.toDouble();
         medium.ruleCutoffHz = target.hpfFloor.toDouble();

@@ -171,7 +171,7 @@ Rules readRules (View targets, View engine) noexcept
     r.read (clipper.find ("manualMinDb"), out.needles.from);
     r.read (clipper.find ("manualMaxDb"), out.needles.to);
     r.read (clipper.find ("manualStepDb"), out.needles.step);
-    r.read (clipper.find ("betweenOverDb"), out.needlesDefault);
+    r.read (clipper.find ("betweenCutDb"), out.needlesDefault);
     r.domain (clipper.find ("manualDomain"), out.needles);
 
     const View stages = engine.find ("stages");
