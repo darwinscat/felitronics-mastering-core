@@ -731,6 +731,21 @@ void everyMessageRenders()
     same (render (desktop, Lang::Ru), "Файл — 384\u00A0кГц. Всё, что выше 192\u00A0кГц, движок не принимает.", "ru select: desktop");
     same (render (desktop, Lang::En), "This file is 384\u00A0kHz. The engine takes nothing above 192\u00A0kHz.", "en select: desktop");
 
+    // The warning before a change of target (owner decision, 28.09), the count in brackets in the owner's words: Russian
+    // keeps the plural noun for every count (21 edits are not one), English has its singular for one.
+    struct Edits { std::int64_t n; std::string_view ru, en; };
+    const Edits edits[] = {
+        { 1, "Ручные правки приборов (1) будут сброшены.", "The manual device edit (1) will be reset." },
+        { 3, "Ручные правки приборов (3) будут сброшены.", "Manual device edits (3) will be reset." },
+        { 5, "Ручные правки приборов (5) будут сброшены.", "Manual device edits (5) will be reset." },
+        { 21, "Ручные правки приборов (21) будут сброшены.", "Manual device edits (21) will be reset." },
+    };
+    for (const Edits& e : edits)
+    {
+        same (render (Fact::of (FactId::TargetChangeResetsEdits, Arg::count (e.n)), Lang::Ru), e.ru, "ru targetChangeResetsEdits");
+        same (render (Fact::of (FactId::TargetChangeResetsEdits, Arg::count (e.n)), Lang::En), e.en, "en targetChangeResetsEdits");
+    }
+
     // No fallback: a language the catalog does not declare renders the message's id, in every language but ru and en.
     bool ids = true;
     for (const Lang l : kAll)
@@ -1075,7 +1090,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0x79c1cf0e53a4b0ccull;   // the limiter, the dither, vinyl, a quiet input and the observations (52–80, 419–436)
+    constexpr std::uint64_t kPinned = 0x09cec0fc45592fc8ull;   // …, a quiet input, the observations (52–80, 419–436) and the target-change warning (81)
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");

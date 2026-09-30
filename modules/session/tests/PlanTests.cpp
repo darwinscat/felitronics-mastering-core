@@ -462,13 +462,28 @@ void aHiddenMasterKeepsWhatWasAsked()
         "the panel stays open to edits; what the project reads now waits for the tempo");
     const auto master = s.apply (command::Master { 3 });
     ok (master.rejection == Rejection::None && detail::Inspector::jobWaiting (s), "the hidden panel's master is taken and waits");
+    const auto waits = s.snapshot();
+    ok (waits.view().plan.awaited == Analyzer::Tempo && waits.view().plan.awaitedBy == Device::Glue
+        && waits.view().plan.awaitedFraction >= 0 && waits.view().plan.awaitedFraction < 1,
+        "the waiting master is published: what it waits for, the device that reads it, and how far its measurement is");
+    ok (stepUntil (s, [&] { return s.snapshot().view().plan.awaitedFraction > 0; }, 20000) && detail::Inspector::jobWaiting (s)
+        && s.snapshot().view().plan.awaited == Analyzer::Tempo && s.snapshot().view().plan.awaitedFraction < 1,
+        "and while it waits the fraction moves: the tempo's progress is published");
     const auto asked = s.project().target;
     TiltFields<Touched> tilt; tilt.on = true; tilt.db = 2.0;
     ok (s.apply (command::EditDevice { 4, tilt }).rejection == Rejection::None
         && s.apply (command::SetTarget { 5, "lp" }).rejection == Rejection::None, "a person edits and changes the target meanwhile");
     ok (s.jobRecipe().project.target == asked && s.jobRecipe().project.devices.glue.hand.upToDb == 1.0
         && ! s.jobRecipe().project.devices.tilt.hand.db, "the waiting master's recipe is the project it was asked for");
-    ok (stepUntil (s, [&] { return s.job() == 0; }) && s.masters().size() == 1, "the master ends after the tempo");
+    double furthest = 0;
+    ok (stepUntil (s, [&]
+    {
+        const auto view = s.snapshot();
+        if (view.view().masterProgress.name == PhaseName::Analyzers) furthest = std::max (furthest, view.view().masterProgress.fraction);
+        return s.job() == 0;
+    }) && s.masters().size() == 1, "the master ends after the tempo");
+    ok (furthest > 0 && furthest <= 1, "after the change of target the waiting master's own phase went on publishing its wait ("
+        + std::to_string (furthest) + ")");
     const auto& recipe = s.masters()[0].recipe;
     ok (recipe.project.target == asked && recipe.project.devices.glue.hand.upToDb == 1.0 && ! recipe.project.devices.tilt.hand.db
         && s.masters()[0].id == master.job, "and the master kept is made from it — not from the target and edits that came after");
@@ -602,7 +617,12 @@ void oneNeedOneMeasurement()
         "spotify's numbers are allStreaming's: the needles already measured serve it, nothing runs");
     ok (s.apply (command::SetTarget { 3, "club" }).rejection == Rejection::None && s.needlesJob() != 0 && s.measurementJob() == 0,
         "club's ceiling is another: its needles run, and the source is not measured again");
+    const auto running = s.snapshot();
+    ok (running.view().plan.readOnly && running.view().plan.status == PlanStatus::Pending,
+        "while the new target's needles run the panel is read-only and the plan pending");
     ok (stepUntil (s, [&] { return s.needlesJob() == 0; }), "they end");
+    ok (! s.snapshot().view().plan.readOnly && s.snapshot().view().plan.status == PlanStatus::Ready,
+        "and then the panel takes edits again: the plan is ready");
     const auto after = s.snapshot();
     bool once = true;
     for (unsigned i = 0; i < kAnalyzers; ++i)
@@ -647,11 +667,18 @@ void aChangeOfTargetResetsEdits()
 {
     felitronics::test::group ("a change of target: the count a warning shows, the edits kept until it is sent, reset when it is");
     auto sp = placedShort(); auto& s = *sp;
+    ok (! SnapshotText::targetChange (s.snapshot().view()), "no edit: no warning, a change of target is sent without one");
     TiltFields<Touched> tilt; tilt.db = 1.25;
     LowFields<Touched> low; low.db = 0.75;
     HpfFields<Touched> hpf; hpf.fq = 36.0;
     (void) s.apply (command::EditDevice { 2, tilt }); (void) s.apply (command::EditDevice { 3, low }); (void) s.apply (command::EditDevice { 4, hpf });
     ok (s.snapshot().view().handFieldCount == 3, "three edits: the warning's count");
+    const auto warning = SnapshotText::targetChange (s.snapshot().view());
+    ok (warning && warning->id == text::FactId::TargetChangeResetsEdits && warning->argCount == 1
+        && warning->args[0].kind == text::ArgKind::Count && warning->args[0].integer == 3,
+        "and the warning itself is the core's fact: targetChangeResetsEdits with the count, 3");
+    ok (warning && text::Text::text (*warning, text::Lang::Ru) == "Ручные правки приборов (3) будут сброшены."
+        && warning && text::Text::text (*warning, text::Lang::En) == "Manual device edits (3) will be reset.", "it reads as the owner wrote it");
     ok (s.apply (command::SetTarget { 5, "nowhere" }).rejection == Rejection::UnknownTarget && s.snapshot().view().handFieldCount == 3,
         "a change that does not happen keeps every edit");
     const auto saved = s.exportProject();
@@ -666,6 +693,7 @@ void aChangeOfTargetResetsEdits()
         && s.project().devices.low.hand.db && s.project().devices.hpf.hand.fq, "a revert takes back the one edit it names");
     ok (s.apply (command::SetTarget { 8, "lp" }).rejection == Rejection::None && s.snapshot().view().handFieldCount == 0
         && same (s.project().devices.low.machine.db, 0.5), "the change sent: every device edit reset, lp's own low shelf placed");
+    ok (! SnapshotText::targetChange (s.snapshot().view()), "and the warning is gone with the edits");
 }
 // THE OWNER'S RULE: a person's edit always sounds. A device's tick is the person's when they set one; otherwise on when
 // any of its fields carries their value; otherwise the machine's.
@@ -717,6 +745,26 @@ void aTouchedDeviceSounds()
     ok (std::abs (top (v) - top (flat) - 3.0) < 0.2, "it sounds: the curve's top is up by the 3 dB");
     ok (v.view().plan.devices.tilt.on && v.view().plan.devices.tilt.tick == TickFrom::Touched,
         "and the snapshot says the tick is on, and that a touched knob made it so");
+    // Every device's descriptor, in one placed snapshot, across the wire: its tick, where the tick came from, what it reads.
+    std::string json (std::size_t (Codec::encodedBytes (v.view()).bytes), '\0');
+    Snapshot restored;
+    ok (Codec::encode (v.view(), json) == CodecStatus::Ok && Codec::decode (json, restored) == CodecStatus::Ok, "PRECONDITION: encoded and decoded");
+    const DevicePlans& sent = v.view().plan.devices;
+    const DevicePlans& read = restored.view().plan.devices;
+    const DevicePlan DevicePlans::* const eight[] = { &DevicePlans::hpf, &DevicePlans::monoBass, &DevicePlans::glue, &DevicePlans::saturation,
+                                                     &DevicePlans::tilt, &DevicePlans::limiter, &DevicePlans::dither, &DevicePlans::low };
+    const char* const names[] = { "hpf", "monoBass", "glue", "saturation", "tilt", "limiter", "dither", "low" };
+    bool carried = true, named = true;
+    for (std::size_t i = 0; i < 8; ++i)
+    {
+        carried = carried && (sent.*eight[i]).on == (read.*eight[i]).on && (sent.*eight[i]).tick == (read.*eight[i]).tick
+               && (sent.*eight[i]).needs == (read.*eight[i]).needs;
+        named = named && json.find ("\"" + std::string (names[i]) + "\":{\"heldBack\":") != std::string::npos;
+    }
+    ok (named && carried, "all eight descriptors — hpf, monoBass, glue, saturation, tilt, limiter, dither, low — cross with on, tick and needs");
+    ok (read.tilt.on && read.tilt.tick == TickFrom::Touched && read.hpf.on && read.hpf.tick == TickFrom::Machine && ! read.glue.on
+        && read.limiter.needs == detail::bitOf (Analyzer::Excursions) && read.hpf.needs == 0,
+        "and they differ as the plan made them: the touched tilt on, the machine's high-pass on, the glue off, the limiter reading the needles");
     TiltFields<Touched> off; off.on = false;
     ok (s.apply (command::EditDevice { 3, off }).rejection == Rejection::None, "the person un-ticks it");
     const auto silent = s.snapshot();
