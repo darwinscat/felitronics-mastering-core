@@ -253,8 +253,8 @@ ru = "Срез ФВЧ упёрся в {cutoff}: нижняя нота {note} ({h
 en = "The HPF cutoff stopped at {cutoff}: the lowest note {note} ({hz}) is higher."
 
 [messages.hpfUnsure]
-ru = "ФВЧ {cutoff}: уверенной нижней ноты нет — стоит пол цели."
-en = "HPF {cutoff}: no reliable lowest note — the target's floor applies."
+ru = "ФВЧ {cutoff}: самая нижняя полоса определена неуверенно — стоит пол цели."
+en = "HPF {cutoff}: the lowest band is not certain — the target's floor applies."
 
 [messages.hpfShort]
 ru = "ФВЧ {cutoff}: файл короче {seconds} — нижнюю ноту не ищем, стоит пол цели."

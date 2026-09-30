@@ -82,11 +82,12 @@ bool quiet (const PlanInputs& in) noexcept
     return lufs && *lufs < configured (in.rules.engine.find ("input").find ("quiet").find ("gainOnlyLufs"));
 }
 
-// THE SURE LOWEST NOTE (owner decision 3.2), from the first phase's low-end run: the lowest band of its table occupied in
-// at least [lowEnd] occupiedFromDuty of the frames — and then that band alone: it must be resolved, carry a valid note
-// reading, stand [lowEnd] occupiedMarginWhenOnDb above the duty line, lie above [hpf] note.aboveHz and sound [hpf]
-// note.soundingAtLeastS in all (its frames times the hop). A lowest band that fails is no note — a higher band would be a
-// note above the true one, and that cuts music.
+// THE SURE LOWEST NOTE (owner decision 3.2, as written), from the first phase's low-end run: the LOWEST BAND THAT WAS ON
+// AT ALL decides, and that band alone. It is a sure note when it is on in at least [lowEnd] occupiedFromDuty of the
+// frames, is resolved, carries a valid note reading, stands [lowEnd] occupiedMarginWhenOnDb above the duty line, lies
+// above [hpf] note.aboveHz and sounds [hpf] note.soundingAtLeastS in all (its frames times the hop). A lowest band that
+// fails any of it — a rare 808, one thump — is no note, and the cutoff is the target's floor: the detector never takes
+// a higher band as "the note", because a note above the true one cuts music.
 struct Note { std::int32_t midi = 0; double hz = 0.0; };
 std::optional<Note> sureLowestNote (const PlanInputs& in, const MeasurementResult& lowEnd) noexcept
 {
@@ -102,8 +103,8 @@ std::optional<Note> sureLowestNote (const PlanInputs& in, const MeasurementResul
     {
         const double* row = bands->values.data() + b * 16;
         const double count = row[11], duty = row[12];
-        if (! (count > 0) || ! (duty >= dutyFrom)) continue;
-        const bool sure = row[15] > 0.5 && row[14] >= margin && row[1] > aboveHz && count * *hop / *rate >= sounding;
+        if (! (count > 0)) continue;
+        const bool sure = duty >= dutyFrom && row[15] > 0.5 && row[14] >= margin && row[1] > aboveHz && count * *hop / *rate >= sounding;
         if (! sure) return {};
         return Note { std::int32_t (row[0]), row[1] };
     }
