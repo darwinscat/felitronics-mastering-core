@@ -591,6 +591,91 @@ std::uint32_t Session::planWaiting (const Project& project) const noexcept
     return detail::waiting (in, detail::needs (in, project.devices, true, plans));
 }
 
+namespace detail
+{
+namespace
+{
+void state (PlanView& plan, Device device, const text::Fact& fact) noexcept
+{
+    // Room for every line PlanText can state of one plan and the waiting fact (kPlanFacts): never full.
+    if (plan.facts.count == plan.facts.items.size()) storageOverflow();
+    plan.facts.items[plan.facts.count++] = { device, fact };
+}
+void state (PlanView& plan, Device device, const std::optional<text::Fact>& fact) noexcept
+{
+    if (fact) state (plan, device, *fact);
+}
+std::optional<text::Term> termOf (Analyzer analyzer) noexcept
+{
+    using text::Term;
+    switch (analyzer)
+    {
+        case Analyzer::LowEnd:       return Term::AnalyzerLowEnd;
+        case Analyzer::LowEnd150:    return Term::AnalyzerLowEnd150;
+        case Analyzer::InfraLow:     return Term::AnalyzerInfraLow;
+        case Analyzer::Forensics:    return Term::AnalyzerForensics;
+        case Analyzer::Stereo:       return Term::AnalyzerStereo;
+        case Analyzer::StereoBursts: return Term::AnalyzerBursts;
+        case Analyzer::Crest:        return Term::AnalyzerCrest;
+        case Analyzer::Hum:          return Term::AnalyzerHum;
+        case Analyzer::Waveform:     return Term::AnalyzerWaveform;
+        case Analyzer::Tempo:        return Term::AnalyzerTempo;
+        case Analyzer::Excursions:   return Term::AnalyzerNeedles;
+        // The first measurement's own: it has ended before a device is placed, so no plan waits for one of them.
+        case Analyzer::Loudness:
+        case Analyzer::Clipping:
+        case Analyzer::Programme:    return std::nullopt;
+    }
+    return std::nullopt;
+}
+text::Term termOf (Device device) noexcept
+{
+    using text::Term;
+    switch (device)
+    {
+        case Device::Hpf:        return Term::DeviceHpf;
+        case Device::MonoBass:   return Term::DeviceMonoBass;
+        case Device::Glue:       return Term::DeviceGlue;
+        case Device::Saturation: return Term::DeviceSaturation;
+        case Device::Tilt:       return Term::DeviceTilt;
+        case Device::Limiter:    return Term::DeviceLimiter;
+        case Device::Dither:     return Term::DeviceDither;
+        case Device::Low:        return Term::DeviceLow;
+    }
+    storageOverflow();
+}
+} // namespace
+
+void stateReasons (PlanView& plan) noexcept
+{
+    state (plan, Device::Hpf, PlanText::hpf (plan.hpf));
+    state (plan, Device::MonoBass, PlanText::monoBass (plan.monoBass));
+    state (plan, Device::MonoBass, PlanText::monoBassPolarity (plan.monoBass));
+    state (plan, Device::MonoBass, PlanText::monoBassCoverage (plan.monoBass));
+    state (plan, Device::Glue, PlanText::glue (plan.glue));
+    state (plan, Device::Glue, PlanText::glueTempo (plan.glue));
+    state (plan, Device::Glue, PlanText::glueRelease (plan.glue));
+    state (plan, Device::Limiter, PlanText::limiter (plan.limiter));
+    state (plan, Device::Limiter, PlanText::needlesAgainstMachine (plan.limiter));
+    state (plan, Device::Limiter, PlanText::vinylCeiling (plan.limiter));
+    state (plan, Device::Limiter, PlanText::vinylNeedles (plan.limiter));
+    state (plan, Device::Limiter, PlanText::vinylTop (plan.limiter));
+    state (plan, Device::Dither, PlanText::dither (plan.dither));
+}
+
+void stateWaiting (PlanView& plan) noexcept
+{
+    // The progress moves between plans: the waiting fact stated before gives way to the one the plan names now.
+    auto& facts = plan.facts;
+    if (facts.count != 0 && facts.items[facts.count - 1u].fact.id == text::FactId::PlanWaiting) facts.items[--facts.count] = {};
+    if (! plan.awaited || ! plan.awaitedBy) return;
+    const auto analyzer = termOf (*plan.awaited);
+    if (! analyzer) return;
+    state (plan, *plan.awaitedBy, text::Fact::of (text::FactId::PlanWaiting, text::Arg::term (termOf (*plan.awaitedBy)),
+        text::Arg::term (*analyzer), text::Arg::value (100.0 * plan.awaitedFraction, text::Unit::Percent, 0)));
+}
+} // namespace detail
+
 void Session::replan() noexcept
 {
     const auto in = planInputs (project_);
@@ -670,6 +755,7 @@ void Session::replan() noexcept
             plan_.awaitedBy = awaited.device;
         }
         plan_.readOnly = plan_.status != PlanStatus::Ready;
+        if (plan_.status == PlanStatus::Ready) detail::stateReasons (plan_);
     }
     if (observe)
     {
@@ -690,6 +776,7 @@ void Session::replan() noexcept
              && sourceMeasurements_->cursor < sourceMeasurements_->order.size()
              && sourceMeasurements_->order[sourceMeasurements_->cursor] == Analyzer::Tempo)
         plan_.awaitedFraction = double (sourceMeasurements_->frames) / double (source_.frames);
+    detail::stateWaiting (plan_);
 }
 } // namespace felitronics::session
 

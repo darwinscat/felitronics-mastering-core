@@ -937,7 +937,15 @@
         "glue": "GlueFinding",
         "saturation": "SaturationFinding",
         "limiter": "LimiterFinding",
-        "dither": "DitherFinding"
+        "dither": "DitherFinding",
+        "facts": "PlanFact[<=14]"
+      }
+    },
+    "PlanFact": {
+      "cpp": "PlanFact",
+      "fields": {
+        "device": "Device",
+        "fact": "Fact"
       }
     },
     "HpfFinding": {

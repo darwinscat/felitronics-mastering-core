@@ -37,7 +37,7 @@ Items 1–3 of the task and every bullet of its checks section, one check per ro
 | A11 | Panel open: Master is refused whole (`PlanPending`, revision unchanged, the refusal published and rendered as text) until the tempo that the target's glue reads is measured | `PlanTests.cpp:theOpenPanelWaits`; `SourceMeasurementsTests.cpp:masterWaitsForTempo` | HELD |
 | A12 | Panel open: Master waits in the same way for the needles (K10) at the ceiling | `PlanTests.cpp:theNeedlesAreWaitedForAtTheirCeiling` | HELD |
 | A13 | Master waits only for what this target needs: no tempo when the glue does not compress, and hum does not hold the button | `PlanTests.cpp:aTargetWithoutGlueDoesNotWaitForTempo`, `theOpenPanelWaits`; `SourceMeasurementsTests.cpp:masterTempoDependencyPolicy` | HELD |
-| A14 | The button shows the progress of the awaited measurement (fact `PlanWaiting`) | `PlanTests.cpp:theOpenPanelWaits`, `theNeedlesAreWaitedForAtTheirCeiling` | HELD |
+| A14 | The button shows the progress of the awaited measurement (fact `PlanWaiting`) | `PlanTests.cpp:theOpenPanelWaits`, `theNeedlesAreWaitedForAtTheirCeiling`, `aWaitingPlanStatesItsWaitAlone` (the plan states the fact itself, `plan.facts`); contract `plan-pending` | HELD |
 | A15 | Dimmed panel: read-only while the first measurement runs | `PlanTests.cpp:theOpenPanelWaits` (`plan.readOnly`) | HELD |
 | A16 | Dimmed panel: read-only after a change of target while the new target's needles run | `PlanTests.cpp:oneNeedOneMeasurement` (`plan.readOnly` and `PlanStatus::Pending` while club's needles run, neither after) | HELD (B1) |
 | A17 | Panel hidden: Master is taken at once and waits by itself | `PlanTests.cpp:aHiddenMasterKeepsWhatWasAsked`; `SourceMeasurementsTests.cpp:masterWaitsForTempo` | HELD |
