@@ -249,14 +249,15 @@ Checked Session::storageFor (const Request& request) const noexcept
             return rejected (Rejection::NoJobId);
         if (master->ready.version == 0)
         {
-            const auto bytes = masterRoom_ > masterCount_ ? 0u : std::uint64_t (masterCount_ + 1) * sizeof (Kept)
+            const auto bytes = masterRoom_ > masterCount_ ? 0u
+                : std::uint64_t (masterCount_ + 1) * sizeof (Kept) * (capabilities_.leanSummary ? 2u : 1u)
                 + (masterRows_ ? std::uint64_t (masterCount_ + 1) * sizeof (detail::MasterRows) + 4096u : 0u);
             return storage (bytes, bytes);
         }
         const auto plan = detail::MasterJob::plan (*this, *master);
         if (plan.rejection != Rejection::None) return rejected (plan.rejection);
         const bool room = masterRoom_ > masterCount_;
-        const auto roomBytes = (room ? 0u : std::uint64_t (masterCount_ + 1) * sizeof (Kept))
+        const auto roomBytes = (room ? 0u : std::uint64_t (masterCount_ + 1) * sizeof (Kept) * (capabilities_.leanSummary ? 2u : 1u))
             + std::uint64_t (std::max (masterRoom_, masterCount_ + 1)) * sizeof (detail::MasterRows) + 4096u;
         if (roomBytes > 9007199254740991ull - plan.bytes) return rejected (Rejection::TooLong);
         return storage (plan.bytes + roomBytes, std::max (plan.largestBlock, roomBytes));
@@ -542,6 +543,7 @@ Answer Session::apply (const Request& request) noexcept
                 }
                 masters_ = std::move (room);
                 masterRoom_ = masterCount_ + 1;
+                if (capabilities_.leanSummary) { leanMasters_.reset(); leanMasters_.reset (new Kept[masterRoom_]); }
             }
             job_ = ++lastJob_;
             // The recipe is the project as it is now — the target, its numbers, a person's layer — whatever changes
@@ -567,6 +569,7 @@ Answer Session::apply (const Request& request) noexcept
             std::copy (masters_.get(), masters_.get() + masterCount_, room.get());
             masters_ = std::move (room);
             masterRoom_ = masterCount_ + 1;
+            if (capabilities_.leanSummary) { leanMasters_.reset(); leanMasters_.reset (new Kept[masterRoom_]); }
         }
         {
             std::unique_ptr<detail::MasterRows[]> rowRoom (new detail::MasterRows[masterRoom_]);
@@ -587,6 +590,9 @@ Answer Session::apply (const Request& request) noexcept
         }
         if (plan.costScratchCapacity != 0) rows.costScratch.reset (new double[plan.costScratchCapacity]);
         if (plan.waveformCapacity != 0) rows.waveform.reset (new MasterWaveformBucket[plan.waveformCapacity]);
+        if (plan.costCapacity != 0) rows.costMomentary.reset (new double[plan.costCapacity]);
+        if (plan.axesCapacity != 0) rows.axes.reset (new analysis::WaveformColumn[plan.axesCapacity]);
+        rows.axesCapacity = plan.axesCapacity;
         rows.costCapacity = plan.costCapacity;
         rows.costScratchCapacity = plan.costScratchCapacity;
         rows.waveformCapacity = plan.waveformCapacity;

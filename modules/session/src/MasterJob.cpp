@@ -213,6 +213,7 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
     result.costScratchCapacity = std::max ({ result.costCapacity,
         std::size_t (s.source_.frames / sourceHop + 1u), result.crestCapacity });
     result.waveformCapacity = std::size_t (std::min (result.frames, 2048)) * s.source_.channels;
+    result.axesCapacity = std::size_t (std::min (result.frames, 2048));
     result.request.targetLufs = targetLufs;
     result.sourceLufs = sourceLufs;
     result.request.maxTruePeakDbTp = targetTp;
@@ -256,9 +257,12 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
         rate, double (result.frames), costMeterStorage);
     const auto costMeterBytes = result.costMeterAdmitted ? costMeterStorage.bytes() : 0u;
     const std::uint64_t crestRows = std::uint64_t (result.crestCapacity) * 15u * sizeof (double);
-    const std::uint64_t costRows = std::uint64_t (result.costCapacity) * (sizeof (double) + sizeof (MasterSection))
+    // Two loudness series (short-term and momentary), the sections, the scratch, the waveform's buckets twice: the
+    // L/R rows a snapshot carries and the four axes a query answers.
+    const std::uint64_t axesRows = std::uint64_t (result.axesCapacity) * sizeof (analysis::WaveformColumn);
+    const std::uint64_t costRows = std::uint64_t (result.costCapacity) * (2u * sizeof (double) + sizeof (MasterSection))
         + std::uint64_t (result.costScratchCapacity) * sizeof (double)
-        + std::uint64_t (result.waveformCapacity) * sizeof (MasterWaveformBucket);
+        + std::uint64_t (result.waveformCapacity) * sizeof (MasterWaveformBucket) + axesRows;
     result.retainedRowBytes = 12u * sizeof (LandingPass)
         + 2u * std::uint64_t (result.traceBuckets) * sizeof (LandingTraceBucket) + crestRows + costRows;
     const auto impactChainBytes = convert ? mastering::MasteringChain::prepareBytes (
@@ -270,7 +274,7 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
     result.largestBlock = std::max ({ outputBytes, chainBytes, solverBytes, converterBytes,
         renderStorage.bytes(), search.workspaceBytes, std::uint64_t (sizeof (MasterJob)),
         crestRows, costMeterBytes, std::uint64_t (result.costCapacity) * sizeof (MasterSection),
-        std::uint64_t (result.waveformCapacity) * sizeof (MasterWaveformBucket),
+        std::uint64_t (result.waveformCapacity) * sizeof (MasterWaveformBucket), axesRows,
         std::uint64_t (result.costScratchCapacity) * sizeof (double),
         crest.ok ? crest.bytes() : 0u, impactChainBytes, impactScratchBytes });
     std::uint64_t total = 0;
@@ -316,6 +320,7 @@ bool MasterJob::begin (const Session& s, const MasterPlan& plan)
                             plan.ready.topology.internalBlock, plan.ready.topology.oversampleFactor)) return false;
     costMeterReady = plan.costMeterAdmitted
         && costMeter.prepareForSamples (double (deliveryRate), channels, double (frames));
+    costAxesReady = costAxes.prepare (deliveryRate, unsigned (channels));
     const bool convert = deliveryRate != s.source_.sampleRate;
     if (convert && ! converter.prepare (double (s.source_.sampleRate), double (deliveryRate), channels, block)) return false;
     if (convert) impactScratch.reset (new float[std::size_t (channels) * block]);
@@ -570,10 +575,21 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
                     w.rms += x * x; ++w.finite;
                 }
             }
+            // The same bucket as the source's waveform has a column: closed on its last frame.
+            if (costAxesReady && rows.axes)
+            {
+                costAxes.add (planes[0][std::size_t (i)], channels == 2 ? double (planes[1][std::size_t (i)]) : 0.0);
+                if (frame + 1u == rows.waveform[std::size_t (bucket * std::uint64_t (channels))].toFrame && bucket < rows.axesCapacity)
+                { rows.axes[std::size_t (bucket)] = costAxes.take(); rows.axesRows = std::size_t (bucket) + 1u; }
+            }
         }
         costCursor += n;
         if (costMeterReady && costCursor % costHop == 0 && costStored < rows.costCapacity)
+        {
+            if (rows.costMomentary) rows.costMomentary[std::size_t (costStored)] = costMeter.momentaryLufs();
             rows.costSeries[std::size_t (costStored++)] = costMeter.shortTermLufs();
+            rows.loudnessRows = costStored; rows.loudnessHop = costHop;
+        }
         if (costCursor == std::uint64_t (frames)) stage = Stage::CostFinish;
         return StepResult::More;
     }

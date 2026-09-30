@@ -1,13 +1,30 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 #pragma once
+#include <felitronics/session/LandingResult.h>
 #include <felitronics/session/Measurements.h>
 
 namespace felitronics::session
 {
+class Snapshot;
 inline constexpr std::uint32_t kQueryColumns = 2048, kWaveformStride = 13;
 inline constexpr std::uint64_t kQueryValues = std::uint64_t (kQueryColumns) * 4u * kWaveformStride;
-enum class QueryKind : std::uint8_t { Waveform, LowSpectrum, LowSide, Momentary, ShortTerm, Clipping, Stereo, LimiterGr, PeakClipGr, MasterWaveform };
+// The kinds, in the order they were published. WHAT A MASTER ANSWERS (masterId, and audioId the source it was made from):
+//   LimiterGr, PeakClipGr   the retained reduction traces
+//   MasterWaveform          its retained buckets, L and R: [from,to,channel,min,max,rms,finite]
+//   MasterAxes              the same buckets as the source's Waveform answers — four axes (L, R, Mid, Side), rows of
+//                           kWaveformStride: [from,to,axis,min,max,peak,envelope,rms,low,middle,high,finite,reason]
+//   Momentary, ShortTerm    with a masterId: the master's own loudness curves, [frame,value,reason], a row per 100 ms of
+//                           the delivered audio, named by the frame its window ends at; without one, the source's
+//   MasterReport            the master whole — the record a full snapshot carries for it, rows included (QueryView::master)
+enum class QueryKind : std::uint8_t { Waveform, LowSpectrum, LowSide, Momentary, ShortTerm, Clipping, Stereo, LimiterGr, PeakClipGr, MasterWaveform,
+                                      MasterAxes, MasterReport };
+// WHAT LowSpectrum ANSWERS per band of the retained low-end measurement, interpolated between the bands' centres:
+//   Density   the band's energy per hertz (its energy over its width in Hz) — the tilt-free quantity: level across
+//             bands that widen with frequency; the default, and what LowSpectrum answered before this field existed
+//   Energy    the band's whole energy — what a bar per band shows; above the density by 10·log10(band width in Hz)
+//             dB, so it climbs with frequency where the density is flat
+enum class SpectrumQuantity : std::uint8_t { Density, Energy };
 enum class QueryStatus : std::uint8_t { Ready, Pending, Unavailable, Empty, InvalidRange, ColumnLimit, StaleSource, Memory, Contract, Cancelled, FloatingPointEnvironment };
 // Frame ranges are integer [fromFrame,toFrame). Invalid/out-of-source ranges are refused,
 // never clamped. Waveform emits min(columns,range length) buckets with integer floor boundaries.
@@ -22,6 +39,7 @@ struct MeasurementQuery
     std::uint64_t requestId = 0;
     double crossoverHz = 120, fromHz = 20, toHz = 250;
     std::uint32_t masterId = 0; // required for LimiterGr and PeakClipGr; absent in baseline source queries
+    SpectrumQuantity spectrum = SpectrumQuantity::Density;   // LowSpectrum alone reads it
 };
 struct QueryView
 {
@@ -34,6 +52,8 @@ struct QueryView
     bool complete = false, cacheHit = false;
     std::uint64_t pcmFramesRead = 0;
     std::span<const double> values;
+    // MasterReport alone: the kept master, rows included. Every other kind leaves it empty; MasterReport has no values.
+    std::optional<Kept> master;
 };
 // A response owns its rows independently of the Session, cache eviction, load and other answers.
 class QueryResult final
@@ -51,6 +71,7 @@ public:
 private:
     QueryView view_ {};
     std::unique_ptr<double[]> rows_;
+    std::unique_ptr<Snapshot> master_;         // the owner of a MasterReport answer's record and rows
 };
 struct QueryDemand
 {

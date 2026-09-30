@@ -45,7 +45,7 @@ namespace
 {
 fc_session_status createSession (fc_session* out)
 {
-    const fc_session_capabilities caps { sizeof (fc_session_capabilities), 9007199254740991.0, 4294967295u, FC_SESSION_DEVICES_ALL, 9007199254740991.0 };
+    const fc_session_capabilities caps { sizeof (fc_session_capabilities), 9007199254740991.0, 4294967295u, FC_SESSION_DEVICES_ALL, 9007199254740991.0, 0 };
     const auto version = felitronics::session::config::Config::versions().all;
     return fc_session_create (&caps, std::uint32_t (version), std::uint32_t (version >> 32), out);
 }

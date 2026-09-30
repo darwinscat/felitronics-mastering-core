@@ -23,7 +23,13 @@
     {"kind":"query","session":"main","index":1,"path":"complete","value":false},
     {"kind":"query","session":"main","index":2,"path":"complete","value":false},
     {"kind":"query","session":"main","index":6,"path":"cacheHit","value":true},
-    {"kind":"query","session":"main","index":7,"path":"status","value":6}
+    {"kind":"query","session":"main","index":7,"path":"status","value":0},
+    {"kind":"query","session":"main","index":7,"path":"stored","value":"32"},
+    {"kind":"query","session":"main","index":7,"path":"request.spectrum","value":0},
+    {"kind":"query","session":"main","index":8,"path":"status","value":0},
+    {"kind":"query","session":"main","index":8,"path":"stored","value":"32"},
+    {"kind":"query","session":"main","index":8,"path":"request.spectrum","value":1},
+    {"kind":"query","session":"main","index":9,"path":"status","value":6}
   ],
   "equal": [[{"kind":"snapshot","session":"main","index":3},{"kind":"snapshot","session":"main","index":4}]],
   "minEvents": 4000,

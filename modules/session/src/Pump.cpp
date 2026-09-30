@@ -110,7 +110,7 @@ void Session::emit (Notification event, const Phase& progress) noexcept
     event.completedWork = progress.completedUnits;
     event.totalWork = progress.totalUnits;
 
-    events_[eventCount_++] = event; // three per ordinary unit; a master completion has seven extra slots
+    events_[eventCount_++] = event; // three per ordinary unit; a master completion has ten extra slots
 }
 
 void Session::preferTempo() noexcept
@@ -333,6 +333,18 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 masterSummary_.deliverable = masterSummary_.deliverable
                     && masters_[masterCount_ - 1].report->deliverable;
                 masters_[masterCount_ - 1].landing = masterSummary_;
+                // The landing's own line and what stood behind a miss: the report's facts, the core's to say — a shell
+                // composes none of them from the report's fields.
+                {
+                    const auto& report = *masters_[masterCount_ - 1].report;
+                    event.kind = EventKind::Fact;
+                    if (const auto miss = MasterReportText::miss (report))
+                    { (void) event.payload.fact.assign (*miss); emit (event, masterProgress_); }
+                    for (const auto* hint : { &report.firstHint, &report.secondHint })
+                        if (*hint)
+                            if (const auto said = MasterReportText::hint (**hint))
+                            { (void) event.payload.fact.assign (*said); emit (event, masterProgress_); }
+                }
                 if (const auto& cost = masters_[masterCount_ - 1].report->cost)
                 {
                     event.kind = EventKind::Fact;

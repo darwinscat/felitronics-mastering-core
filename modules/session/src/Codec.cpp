@@ -71,8 +71,13 @@ bool valid (const SnapshotView& v) noexcept
             || (r.plrDb ? r.plrReason != MeasurementReason::None
                 : r.plrReason == MeasurementReason::None)
             || c.version != 1 || (c.blocks != 0 && (c.sampleRateHz == 0 || c.hopFrames == 0 || c.blockHops == 0))
-            || c.blocks > c.rows.size() / 10u || c.rows.size() != c.blocks * 10u
-            || c.sourceMask.size() != (c.status == MeasurementStatus::Ready ? c.blocks * 5u : 0u)
+            // A lean summary (masterRowsIncluded false) carries a master's scalars without its heavy rows: no trace,
+            // no crest rows or mask, no waveform buckets — and nothing else may be missing.
+            || (v.masterRowsIncluded
+                ? c.blocks > c.rows.size() / 10u || c.rows.size() != c.blocks * 10u
+                  || c.sourceMask.size() != (c.status == MeasurementStatus::Ready ? c.blocks * 5u : 0u)
+                : ! c.rows.empty() || ! c.sourceMask.empty() || master.landing->limiterTrace || master.landing->peakClipTrace
+                  || (r.cost && ! r.cost->waveform.empty()))
             || (c.status == MeasurementStatus::Ready ? c.reason != MeasurementReason::None || ! c.complete
                 : c.reason == MeasurementReason::None)) return false;
         for (double value : c.rows) if (! std::isfinite (value) || value < 0) return false;

@@ -53,8 +53,8 @@ int main (int argc, char** argv)
     if (item == "F1" || item == "F2")
     {
 #if defined (FC_SESSION_CAPABILITIES_V1_BYTES)
-        const fc_session_capabilities caps { sizeof (caps), 9007199254740991.0, 48000, 255, 9007199254740991.0 };
-        if (caps.size != FC_SESSION_CAPABILITIES_V1_BYTES) return 1;
+        const fc_session_capabilities caps { sizeof (caps), 9007199254740991.0, 48000, 255, 9007199254740991.0, 0 };
+        if (caps.size < FC_SESSION_CAPABILITIES_V1_BYTES) return 1;   // the record keeps its version-1 prefix and only grows
         return item == "F1" || s.storageFor (load).bytes >= 32 && s.measurementStorage (load.pcm).sourceBytes == 32 ? 0 : 1;
 #else
         return 1; // No extensible record prefix or per-call demand entry points.

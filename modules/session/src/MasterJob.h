@@ -8,6 +8,7 @@
 #include <felitronics/mastering/LandingSearch.h>
 #include <felitronics/analysis/BandCrest.h>
 #include <felitronics/analysis/StreamingLoudnessMeter.h>
+#include <felitronics/analysis/WaveformIndex.h>
 #include "Cost.h"
 #include <memory>
 
@@ -25,6 +26,7 @@ struct MasterPlan
     int frames = 0, traceBuckets = 0;
     std::size_t crestCapacity = 0, costCapacity = 0, costScratchCapacity = 0;
     std::size_t waveformCapacity = 0;
+    std::size_t axesCapacity = 0;
     std::uint64_t costHop = 0;
     analysis::BandCrestParams crestParams {};
     double sourceLufs = 0;
@@ -52,6 +54,13 @@ struct MasterRows
     std::unique_ptr<MasterSection[]> sections;
     std::unique_ptr<MasterWaveformBucket[]> waveform;
     std::size_t costCapacity = 0, costScratchCapacity = 0, waveformCapacity = 0;
+    // THE MASTER'S OWN LOUDNESS CURVES, a reading per hop of the delivered audio as the meter gave it: costSeries is the
+    // short-term one (the cost's shape reads it), costMomentary the momentary; loudnessRows of each are written.
+    std::unique_ptr<double[]> costMomentary;
+    std::uint64_t loudnessRows = 0, loudnessHop = 0;
+    // The waveform's buckets again, as the source's waveform has them: four axes, envelope and band energies.
+    std::unique_ptr<analysis::WaveformColumn[]> axes;
+    std::size_t axesCapacity = 0, axesRows = 0;
 };
 
 struct MasterJob final
@@ -73,6 +82,8 @@ struct MasterJob final
     mastering::LandingSearch search { solver };
     analysis::BandCrest crest;
     analysis::StreamingLoudnessMeter costMeter;
+    analysis::WaveformStream costAxes;
+    bool costAxesReady = false;
     std::unique_ptr<float[]> output;
     std::unique_ptr<float[]> impactScratch;
     const float* sourcePlanes[2] {};

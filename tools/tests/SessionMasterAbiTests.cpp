@@ -39,7 +39,7 @@ fc_session create()
 {
     const auto version = config::Config::versions().all;
     const fc_session_capabilities caps { sizeof (fc_session_capabilities), 256.0 * 1024.0 * 1024.0,
-        rate, FC_SESSION_DEVICES_ALL, 256.0 * 1024.0 * 1024.0 };
+        rate, FC_SESSION_DEVICES_ALL, 256.0 * 1024.0 * 1024.0, 0 };
     fc_session handle = 0;
     ok (fc_session_create (&caps, std::uint32_t (version), std::uint32_t (version >> 32), &handle) == FC_SESSION_OK,
         "C facade creates a session");
@@ -251,6 +251,78 @@ bool refusedThroughFacade (fc_session handle, std::uint32_t id, const char* targ
         && events.find ("\"FactId\":134") != std::string::npos && events.find (depth) != std::string::npos
         && events.find (hertz) != std::string::npos;
 }
+}
+
+// THE LEAN SUMMARY AND A MASTER BY QUERY, through the C entry points: a shell that sets leanSummary gets summaries without
+// the masters' heavy rows and reads one master whole — and its curves — with fc_session_query_*; the snapshot is whole.
+void leanThroughFacade()
+{
+    const auto version = config::Config::versions().all;
+    fc_session_capabilities caps { sizeof (fc_session_capabilities), 256.0 * 1024.0 * 1024.0, rate, FC_SESSION_DEVICES_ALL, 256.0 * 1024.0 * 1024.0, 1 };
+    fc_session handle = 0;
+    ok (fc_session_create (&caps, std::uint32_t (version), std::uint32_t (version >> 32), &handle) == FC_SESSION_OK, "a lean session is created through C");
+    load (handle, 1);
+    auto* session = contractSession (handle);
+    fc_master_config topology {}; fc_master_params params {};
+    ready (topology, params);
+    const auto source = session->source().hash, revision = session->revision();
+    char answer[FC_SESSION_ANSWER_BYTES]; std::uint32_t written = 0;
+    ok (fc_session_master (handle, 2, 0, std::uint32_t (source), std::uint32_t (source >> 32), std::uint32_t (revision), std::uint32_t (revision >> 32),
+        &topology, &params, answer, sizeof (answer), &written) == FC_SESSION_OK, "PRECONDITION: a master starts");
+    for (unsigned i = 0; i < 40000 && session->job() != 0; ++i) { std::uint32_t step = 0; if (fc_session_step (handle, 16, &step) != FC_SESSION_OK) break; }
+    ok (session->job() == 0 && session->masters().size() == 1, "PRECONDITION: mastered");
+    const auto id = session->masters().front().id;
+    const auto read = [&] (bool summary, std::string& json, fc_session_sizes& sizes)
+    {
+        sizes = { sizeof (fc_session_sizes) };
+        if ((summary ? fc_session_summary_size (handle, &sizes) : fc_session_snapshot_size (handle, &sizes)) != FC_SESSION_OK) return false;
+        json.assign (sizes.jsonBytes, '\0'); std::vector<double> rows (sizes.rowBytes / sizeof (double));
+        return (summary ? fc_session_summary_copy (handle, json.data(), sizes.jsonBytes, rows.data(), sizes.rowBytes)
+                        : fc_session_snapshot_copy (handle, json.data(), sizes.jsonBytes, rows.data(), sizes.rowBytes)) == FC_SESSION_OK;
+    };
+    std::string summary, snapshot; fc_session_sizes summarySizes {}, snapshotSizes {};
+    const auto sizing = budget::spend ([&] { fc_session_sizes probe { sizeof (fc_session_sizes) }; (void) fc_session_summary_size (handle, &probe); });
+    ok (read (true, summary, summarySizes) && read (false, snapshot, snapshotSizes) && sizing.requests == 0
+        && summary.find ("\"masterRowsIncluded\":false") != std::string::npos && summary.find ("\"limiterTrace\":{") == std::string::npos
+        && summary.find ("\"log\":[{") != std::string::npos
+        && snapshot.find ("\"masterRowsIncluded\":true") != std::string::npos && snapshot.find ("\"limiterTrace\":{") != std::string::npos
+        && summarySizes.jsonBytes * 10u < snapshotSizes.jsonBytes,
+        "the summary is lean (" + std::to_string (summarySizes.jsonBytes) + " B of JSON, its pass log kept), the snapshot whole ("
+        + std::to_string (snapshotSizes.jsonBytes) + " B); sizing allocates nothing");
+    const auto query = [&] (const std::string& request, std::string& json, std::vector<double>& rows, fc_session_sizes& wrote)
+    {
+        fc_session_storage storage { sizeof (fc_session_storage) }; fc_session_sizes sizes { sizeof (fc_session_sizes) };
+        wrote = { sizeof (fc_session_sizes) };
+        if (fc_session_query_bytes (handle, request.data(), std::uint32_t (request.size()), &storage) != FC_SESSION_OK || storage.rejection != 0
+            || fc_session_query_size (handle, request.data(), std::uint32_t (request.size()), &sizes) != FC_SESSION_OK) return false;
+        json.assign (sizes.jsonBytes, '\0'); rows.assign (sizes.rowBytes / sizeof (double), 0.0);
+        fc_session_status status = FC_SESSION_ERR_CONTRACT;
+        const auto spent = budget::spend ([&] { status = fc_session_query_copy (handle, request.data(), std::uint32_t (request.size()),
+            json.data(), sizes.jsonBytes, rows.data(), sizes.rowBytes, &wrote); });
+        json.resize (wrote.jsonBytes);
+        return status == FC_SESSION_OK && budget::covers (std::uint64_t (storage.bytes), spent) && wrote.jsonBytes <= sizes.jsonBytes && wrote.rowBytes <= sizes.rowBytes;
+    };
+    const std::string head = "{\"audioId\":\"" + std::to_string (source) + "\",\"requestId\":\"9\",\"masterId\":" + std::to_string (id);
+    std::string json; std::vector<double> rows; fc_session_sizes wrote {};
+    ok (query (head + ",\"kind\":11,\"fromFrame\":\"0\",\"toFrame\":\"0\",\"columns\":0}", json, rows, wrote)
+        && json.find ("\"status\":0") != std::string::npos && json.find ("\"master\":{") != std::string::npos
+        && json.find ("\"limiterTrace\":{") != std::string::npos && json.find ("\"waveform\":[{") != std::string::npos,
+        "kind 11 answers the master whole within its declared memory: " + std::to_string (wrote.jsonBytes) + " B of JSON, " + std::to_string (wrote.rowBytes) + " B of rows");
+    ok (query (head + ",\"kind\":10,\"fromFrame\":\"0\",\"toFrame\":\"" + std::to_string (frames) + "\",\"columns\":32}", json, rows, wrote)
+        && wrote.rowBytes == 32u * 4u * 13u * sizeof (double) && json.find ("\"stride\":13") != std::string::npos,
+        "kind 10 answers the master's four axes, rows of 13");
+    ok (query (head + ",\"kind\":4,\"fromFrame\":\"0\",\"toFrame\":\"" + std::to_string (frames) + "\",\"columns\":64}", json, rows, wrote)
+        && wrote.rowBytes == 20u * 3u * sizeof (double) && json.find ("\"stride\":3") != std::string::npos && rows[0] == 4800.0,
+        "kind 4 with a master id answers the master's short-term curve, a row per 100 ms");
+    ok (query (head + ",\"kind\":11,\"fromFrame\":\"0\",\"toFrame\":\"0\",\"columns\":0}", json, rows, wrote),
+        "and the report again");
+    fc_session_sizes sizes { sizeof (fc_session_sizes) };
+    const std::string unknown = "{\"audioId\":\"" + std::to_string (source) + "\",\"requestId\":\"9\",\"masterId\":" + std::to_string (id + 9u)
+        + ",\"kind\":11,\"fromFrame\":\"0\",\"toFrame\":\"0\",\"columns\":0}";
+    ok (query (unknown, json, rows, wrote) && json.find ("\"status\":2") != std::string::npos && json.find ("\"master\":{") == std::string::npos
+        && fc_session_query_size (handle, unknown.data(), std::uint32_t (unknown.size()), &sizes) == FC_SESSION_OK && sizes.rowBytes == 0,
+        "no such master: an answer that says Unavailable and carries no record");
+    ok (fc_session_destroy (handle) == FC_SESSION_OK, "the lean session is destroyed");
 }
 
 int main()
@@ -544,5 +616,6 @@ int main()
         }
         ok (fc_session_destroy (refusing) == FC_SESSION_OK, "C session releases all storage after the refusals");
     }
+    leanThroughFacade();
     return felitronics::test::report();
 }
