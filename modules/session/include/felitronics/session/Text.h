@@ -118,6 +118,18 @@ enum class FactId : std::uint16_t
     MasterCostK2Deferred = 27,
     MasterCostUnavailable = 28,
     PlanWaiting = 29,        // a master waits: {device} reads {analyzer}, measured to {progress}
+    // What the high-pass and mono bass found (PlanView::hpf, ::monoBass; PlanText).
+    HpfNote = 30,            // {cutoff} from the lowest note {note} at {hz}, taking {loss} of it
+    HpfBelowFloor = 31,      // {cutoff}, the floor: the lowest note {note} at {hz} is below it, cut by {loss}
+    HpfTop = 32,             // {cutoff}, the top: the lowest note {note} at {hz} is higher
+    HpfUnsure = 33,          // {cutoff}, the floor: no sure lowest note
+    HpfShort = 34,           // {cutoff}, the floor: a programme shorter than {seconds} is not searched
+    HpfQuiet = 35,           // {cutoff}, the floor: the input is too quiet to search
+    HpfUnmeasured = 36,      // {cutoff}, the floor: the low end was not measured
+    MonoBassPartial = 37,    // bass partly in opposite polarity: mono bass takes {loss} of the low end
+    MonoBassAntiPhase = 38,  // bass in opposite polarity: mono bass would take {loss}; check a channel's polarity
+    MonoBassUnmeasured = 39, // mono bass left out: the loss could not be weighed
+    HpfFloor = 40,           // {cutoff}, the floor: it takes {loss} of the lowest note {note} at {hz}, more than the note allows
 
     // A command's rejection, by its code — what was refused and why. The three a field refuses name it: {field}.
     RejectedFloatingPointEnvironment = 101,

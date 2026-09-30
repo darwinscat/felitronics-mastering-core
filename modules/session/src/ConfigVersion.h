@@ -91,11 +91,11 @@ inline constexpr std::string_view kEnginePresentation[] = {
     "tilt.normal",                                     // where a knob's value turns red
     "low.normal",
     "eq",                                              // the summed curve's colours and scale
-    // The observations weight and print findings; none of these switches a device. observations.polarity does — it
-    // keeps mono bass out — and stays in; dcOffset.from is in through hpf.nothingBelowNote.dcOffsetBelow, which equals it.
+    // The observations weight and print findings; none of these switches a device — polarity included: mono bass is
+    // decided by the loss of its own band, never by the programme's correlation.
     "observations.doubtfulBelow", "observations.clipping", "observations.dcOffset", "observations.bitsUnused",
     "observations.edgeSilence", "observations.hum", "observations.humWandered", "observations.spectralWall",
-    "observations.infraLow", "observations.wideBass", "observations.alreadyLimited", "observations.kinds",
+    "observations.infraLow", "observations.wideBass", "observations.polarity", "observations.alreadyLimited", "observations.kinds",
     "observations.sibilance",
     "crest",                                           // measured after the master
     "cost",                                            // measured after the master

@@ -41,8 +41,8 @@ void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channel
 
     auto& hpf = devices.hpf.machine;
     hpf.on = rules.eq;
-    // hzDefault, never below the target's floor.
-    hpf.fq = number (compare (rules.hpfDefault, target.hpfFloor) < 0 ? target.hpfFloor : rules.hpfDefault);
+    // The target's floor: where the machine's cutoff stands until a sure lowest note allows a higher one.
+    hpf.fq = number (target.hpfFloor);
     hpf.slope = target.hpfSlope;
 
     auto& mono = devices.monoBass.machine;

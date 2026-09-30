@@ -755,6 +755,59 @@ void deviceTempoPolicy()
     ok (unavailable.ready && ! unavailable.measured && same (unavailable.bpm, 120.0)
         && unavailable.reason == MeasurementReason::Memory, "unavailable tempo uses the fallback with its cause");
 }
+// THE WHOLE FILE'S SPECTRAL WALL: a band-limited source (a sum of partials below 15 kHz, one channel quieter, as a lossy
+// encoder leaves it), measured through the session, publishes the analyzer's aggregate wall — every field, bit for bit
+// against the analyzer run directly — beside the two channels' walls.
+void wholeFileWall()
+{
+    constexpr unsigned rate = 48000, frames = rate * 6;
+    std::vector<float> left (frames), right (frames);
+    std::uint64_t seed = 0x9E3779B97F4A7C15ull;
+    for (int k = 0; k < 400; ++k)
+    {
+        seed = seed * 6364136223846793005ull + 1442695040888963407ull;
+        const double hz = 40.0 + double (seed >> 40) / double (1u << 24) * 14900.0;
+        const double phase = double (seed & 0xFFFF) / 65536.0 * 6.283185307179586;
+        for (unsigned i = 0; i < frames; ++i)
+        {
+            const double x = 0.002 * felitronics::core::det::sin (6.283185307179586 * hz * double (i) / rate + phase);
+            left[i] += float (x); right[i] += float (0.5 * x);
+        }
+    }
+    const float* planes[] { left.data(), right.data() };
+    const Pcm pcm { planes, 2, frames, rate };
+    auto made = Session::create(); auto& s = *made.session;
+    ok (s.apply (command::Load { 1, pcm, {} }).rejection == Rejection::None, "the band-limited source loads");
+    drive (s);
+    const auto snapshot = s.snapshot();
+    const auto& result = snapshot.view().measurements[std::size_t (Analyzer::Forensics)];
+    const auto plan = detail::MeasurementPlan::storageFor (pcm, detail::MeasurementPlan::parametersFor (pcm));
+    detail::MeasurementWorkspace direct;
+    ok (direct.prepare (Analyzer::Forensics, pcm, plan), "the forensics analyzer prepares with the session's parameters");
+    for (std::size_t start = 0; start < frames;)
+    {
+        const auto n = std::min<std::size_t> (1024, frames - start);
+        const float* part[] { left.data() + start, right.data() + start };
+        ok (direct.forensics->process (part, 2, int (n)), "direct forensics processes");
+        start += n;
+    }
+    (void) direct.forensics->finish();
+    const auto w = direct.forensics->wall();
+    const auto has = [&] (std::string_view name) { for (const auto& v : result.numbers) if (v.name == name) return true; return false; };
+    ok (has ("wall.cutoffHz") && has ("wall.valid") && has ("wall.cutoffHz[0]") && has ("wall.cutoffHz[1]"),
+        "the forensics result names the whole file's wall beside each channel's");
+    ok (w.valid && std::abs (w.cutoffHz - 15000.0) < 500.0 && same (*value (result, "wall.cutoffHz").value, w.cutoffHz),
+        "the whole file's wall: the band limit near 15 kHz, the analyzer's own number (" + std::to_string (w.cutoffHz) + " Hz)");
+    const std::pair<std::string_view, double> fields[] { { "wall.valid", double (w.valid) }, { "wall.reason", double (w.reason) },
+        { "wall.sharp", double (w.sharp) }, { "wall.nearNyquist", double (w.nearNyquist) }, { "wall.cutoffFractionOfNyquist", w.cutoffFractionOfNyquist },
+        { "wall.steepestHz", w.steepestHz }, { "wall.transitionEndHz", w.transitionEndHz }, { "wall.transitionHz", w.transitionHz },
+        { "wall.dropDb", w.dropDb }, { "wall.strictDropDb", w.strictDropDb }, { "wall.localDropDb", w.localDropDb },
+        { "wall.steepnessDbPerOctave", w.steepnessDbPerOctave }, { "wall.emptyAboveHz", w.emptyAboveHz },
+        { "wall.framesUsed", double (w.framesUsed) }, { "wall.framesHoled", double (w.framesHoled) } };
+    bool all = true;
+    for (const auto& [name, expected] : fields) all = all && value (result, name).value && same (*value (result, name).value, expected);
+    ok (all, "every field of the whole file's wall is the analyzer's, bit for bit");
+}
 int main()
 {
     fixture (2, 48000, 192000, 317, true);
@@ -763,6 +816,7 @@ int main()
     fixture (2, 8000, 8000, 319, false);
     optionalFailure(); missingMandatory(); driftingHum(); truncatedLists(); finiteSourceOverflow(); cachedSourceAndCommands(); unplacedCommandsDuringWork();
     tempoFinishCanStopAndContinue(); masterWaitsForTempo(); masterTempoDependencyPolicy(); longTempoParity(); deviceTempoPolicy();
+    wholeFileWall();
     ok (! detail::SourceWarnings::wideBass (.059999999) && detail::SourceWarnings::wideBass (.06), "wide bass includes exactly six percent");
     ok (detail::SourceWarnings::quiet (-40) == text::FactId::Value && detail::SourceWarnings::quiet (-40.0001) == text::FactId::SourceQuiet
         && detail::SourceWarnings::quiet (-55) == text::FactId::SourceQuiet && detail::SourceWarnings::quiet (-55.0001) == text::FactId::SourceGainOnly,

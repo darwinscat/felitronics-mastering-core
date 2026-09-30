@@ -122,7 +122,27 @@
       "Shell",
       "Source",
       "Target",
+      "Unmeasured",
+      "Measured",
+      "Quiet"
+    ],
+    "HpfCut": [
+      "Note",
+      "Floor",
+      "BelowFloor",
+      "Top",
+      "Unsure",
+      "Short",
+      "Quiet",
       "Unmeasured"
+    ],
+    "MonoBassVerdict": [
+      "On",
+      "Partial",
+      "AntiPhase",
+      "Unmeasured",
+      "MonoSource",
+      "Quiet"
     ]
   },
   "records": {
@@ -804,7 +824,29 @@
         "awaitedFraction": "double",
         "readOnly": "bool",
         "fromFile": "bool",
-        "devices": "DevicePlans"
+        "devices": "DevicePlans",
+        "hpf": "HpfFinding",
+        "monoBass": "MonoBassFinding"
+      }
+    },
+    "HpfFinding": {
+      "cpp": "HpfFinding",
+      "fields": {
+        "cut": "HpfCut",
+        "cutoffHz": "double",
+        "noteMidi": "int32?",
+        "noteHz": "double?",
+        "noteLossDb": "double?"
+      }
+    },
+    "MonoBassFinding": {
+      "cpp": "MonoBassFinding",
+      "fields": {
+        "verdict": "MonoBassVerdict",
+        "crossoverHz": "double",
+        "lossDb": "double?",
+        "soundingSeconds": "double",
+        "againstMachine": "bool"
       }
     }
   },

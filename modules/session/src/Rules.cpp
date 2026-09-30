@@ -90,6 +90,7 @@ void readRow (View rowView, View byTarget, TargetRow& out) noexcept
     r.read (rowView.find ("monoBass"), out.monoBass);
     r.read (rowView.find ("hpfFloor"), out.hpfFloor);
     r.read (rowView.find ("hpfSlopeDbPerOct"), out.hpfSlope);
+    r.read (rowView.find ("noteLossDb"), out.noteLossDb);
     r.read (rowView.find ("bitDepth"), out.bitDepth);
     r.read (rowView.find ("sampleRate"), out.sampleRate);
     // Optional in a row: absent is their default.
@@ -139,7 +140,6 @@ Rules readRules (View targets, View engine) noexcept
     r.read (hpf.find ("hzMax"), out.hpfFq.to);
     r.read (hpf.find ("hzStep"), out.hpfFq.step);
     r.domain (hpf.find ("frequencyDomain"), out.hpfFq);
-    r.read (hpf.find ("hzDefault"), out.hpfDefault);
     const View mono = engine.find ("monoBass");
     r.knob (mono.find ("frequencyRange"), mono.find ("frequencyStep"), mono.find ("frequencyDomain"), out.monoBassFq);
     r.knob (mono.find ("lowWidthRange"), mono.find ("lowWidthStep"), mono.find ("lowWidthDomain"), out.monoBassWidth);

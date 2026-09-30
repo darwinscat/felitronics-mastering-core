@@ -16,6 +16,7 @@
 #include <felitronics/session/Project.h>
 #include <felitronics/session/Session.h>
 
+#include <cstdint>
 #include <span>
 
 namespace felitronics::session::detail
@@ -37,4 +38,11 @@ void eqCurve (std::span<const eq::BandParams> bands, double rate, std::span<EqPo
 
 // ...of the bands the project's EQ devices write.
 void eqCurve (const Project& project, const Rules& rules, double rate, std::span<EqPoint> output) noexcept;
+
+// THE HIGH-PASS AS THE CHAIN RUNS IT — the same cascade the band above describes (cutoff `fc`, `slope` dB/oct, at `rate`,
+// the cutoff clamped as the engine clamps it). The loss it takes at `hz`, dB, positive; and the cutoff at which it takes
+// exactly `lossDb` at `hz`, found on that response by bisection — never below the lowest cutoff the engine designs, where
+// the answer is that one.
+[[nodiscard]] double highPassLossDb (double fc, std::int32_t slope, double rate, double hz) noexcept;
+[[nodiscard]] double highPassCutoffFor (double hz, double lossDb, std::int32_t slope, double rate) noexcept;
 }

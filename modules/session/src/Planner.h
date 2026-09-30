@@ -44,6 +44,7 @@ struct PlanInputs
     std::uint16_t row = 0;                              // the target: a row of [targets]
     TargetFields<Touched> targetEdit {};                // ...and a person's edits of its numbers
     std::uint32_t channels = 0, sampleRate = 0;         // the source's shape; 0 channels before a source
+    std::uint64_t frames = 0;
     std::uint32_t offered = 255u;                       // Capabilities::offeredDevices, a bit per Device
     std::span<const MeasurementResult> measurements;    // every analyzer's result, by Analyzer; empty before a source
     // The needles are measured at a ceiling the target's numbers set: the retained result is this project's only when
@@ -56,13 +57,24 @@ struct PlanInputs
 // resumes. A cancelled needles job HAS ended: it is not built again, and the limiter takes its path without needles.
 [[nodiscard]] bool ended (const MeasurementResult& result) noexcept;
 
+// What the devices found, typed, beside their fields: the high-pass's cutoff and the note it came from, mono bass's loss.
+struct PlanFindings
+{
+    HpfFinding hpf {};
+    MonoBassFinding monoBass {};
+};
+
 // EVERY DEVICE'S PROPOSAL for the target and the source in `in`: the machine's layers of `machine` (its person's layers
-// are not touched) and each device's plan (its needs are left to needs()).
-void propose (const PlanInputs& in, Devices& machine, DevicePlans& plans) noexcept;
+// are not touched), each device's plan (its needs are left to needs()) and what the devices found.
+void propose (const PlanInputs& in, Devices& machine, DevicePlans& plans, PlanFindings& found) noexcept;
 
 // WHAT THE DEVICES READ when the project gives them `devices` — the machine's layer, with a person's over it where
 // `withHand` — into each device's plan, and their union: a bit per Analyzer.
 [[nodiscard]] std::uint32_t needs (const PlanInputs& in, const Devices& devices, bool withHand, DevicePlans& plans) noexcept;
+
+// Mono bass by the loss the low end takes folded to mono, dB ([monoBass] loss): placed under warnFromDb, placed with the
+// number from it to offAboveDb, both included, left out above.
+[[nodiscard]] MonoBassVerdict monoBassVerdictFor (const Rules& rules, double lossDb) noexcept;
 
 // PLACEMENT: the machine's layers of `devices` become the proposals for `in`, and a person's layer of a device the shell
 // does not offer goes (its edits could not be taken now either). The other person's layers stay.

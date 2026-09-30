@@ -63,7 +63,6 @@ struct Target
     std::int32_t sampleRate = 0;               // 0: the source's rate
     std::int32_t bitDepth = 0;
     bool noClipper = false;                    // optional in the document: false when absent
-    bool hpfAlways = false;                    // optional: false when absent
     bool sourceRatePass = false;               // optional: false when absent
     std::optional<double> lowDb;
     std::optional<Album> album;
@@ -106,7 +105,6 @@ struct Input
     double quietWarningLufs = 0.0;             // quiet.warningLufs
     double quietGainOnlyLufs = 0.0;            // quiet.gainOnlyLufs
     double shortSeconds = 0.0;
-    double shortConfidence = 0.0;
 };
 
 struct Landing
@@ -179,12 +177,11 @@ struct Hpf
     std::int32_t band = 0;
     double hzMin = 0.0;
     double hzMax = 0.0;
-    double hzDefault = 0.0;
     std::vector<std::int32_t> slopes;
     std::vector<std::int32_t> slopesNormal;
     std::int32_t slopeDefault = 0;
-    double nothingBelowNoteInfraLowBelow = 0.0;   // nothingBelowNote.infraLowBelow
-    double nothingBelowNoteDcOffsetBelow = 0.0;   // nothingBelowNote.dcOffsetBelow — observations.dcOffset.from
+    double noteAboveHz = 0.0;                  // note.aboveHz
+    double noteSoundingAtLeastS = 0.0;         // note.soundingAtLeastS
     HpfComfort comfort;
     double curveTopDb = 0.0, curveBottomDb = 0.0, curveStepDb = 0.0, curveHeadroomDb = 0.0;
     std::vector<HpfMark> marks;
@@ -204,6 +201,8 @@ struct MonoBass
     double lowWidthStep = 0.0;
     Span frequencyRange;
     double frequencyStep = 0.0;
+    double lossWarnFromDb = 0.0, lossOffAboveDb = 0.0;              // loss.warnFromDb, loss.offAboveDb
+    double lossSoundingWithinDb = 0.0, lossSoundingAtLeastS = 0.0;  // loss.soundingWithinDb, loss.soundingAtLeastS
     Zone clubZone;                             // zones.club
     Zone vinylZone;                            // zones.vinyl
 };

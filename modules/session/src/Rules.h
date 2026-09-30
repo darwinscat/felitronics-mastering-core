@@ -36,6 +36,7 @@ struct TargetRow
     std::string_view key;
     Decimal lufs {}, tp {}, monoBass {}, hpfFloor {};
     std::int32_t hpfSlope = 0;                 // hpfSlopeDbPerOct
+    Decimal noteLossDb {};                     // what the high-pass may take at the lowest note, dB
     std::int32_t bitDepth = 0;
     std::int32_t sampleRate = 0;               // delivery rate, Hz; 0 keeps the source's
     bool noClipper = false;
@@ -50,7 +51,6 @@ struct Rules
     std::uint16_t defaultRow = 0;              // `default`
     Knob lufs {}, tp {};                       // [edit] lufs, tp
     Knob hpfFq {};                             // [hpf] hzMin…hzMax, slider hints
-    Decimal hpfDefault {};                     // [hpf] hzDefault
     Knob monoBassFq {}, monoBassWidth {};      // [monoBass] frequencyRange / frequencyStep, lowWidthRange / lowWidthStep
     Decimal monoBassWidthDefault {};           // [monoBass] lowWidth
     Knob glue {};                              // [glue] knobMinDb…knobMaxDb by knobStepDb: "up to N dB"

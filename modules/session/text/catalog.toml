@@ -236,6 +236,50 @@ en = "The target sets the delivery format: its master is written only as {bits}-
 ru = "Панель приборов открыта, а замеры, от которых зависят её числа, ещё идут: мастер станет доступен, когда они закончатся."
 en = "The device panel is open and the measurements its numbers depend on are still running: the master becomes available once they end."
 
+[messages.hpfNote]
+ru = "ФВЧ {cutoff}: по нижней ноте {note} ({hz}), на ней срезается {loss}."
+en = "HPF {cutoff}: from the lowest note {note} ({hz}), which loses {loss}."
+
+[messages.hpfFloor]
+ru = "ФВЧ {cutoff}: пол цели срезает нижнюю ноту {note} ({hz}) на {loss} — больше, чем позволила бы сама нота."
+en = "HPF {cutoff}: the target's floor takes {loss} of the lowest note {note} ({hz}) — more than the note alone would allow."
+
+[messages.hpfBelowFloor]
+ru = "ФВЧ {cutoff}: нижняя нота {note} ({hz}) ниже пола — подрезана на {loss}. Опустить срез можно ручкой ФВЧ."
+en = "HPF {cutoff}: the lowest note {note} ({hz}) is below the floor — it loses {loss}. The HPF knob can take the cutoff lower."
+
+[messages.hpfTop]
+ru = "Срез ФВЧ упёрся в {cutoff}: нижняя нота {note} ({hz}) выше."
+en = "The HPF cutoff stopped at {cutoff}: the lowest note {note} ({hz}) is higher."
+
+[messages.hpfUnsure]
+ru = "ФВЧ {cutoff}: уверенной нижней ноты нет — стоит пол цели."
+en = "HPF {cutoff}: no reliable lowest note — the target's floor applies."
+
+[messages.hpfShort]
+ru = "ФВЧ {cutoff}: файл короче {seconds} — нижнюю ноту не ищем, стоит пол цели."
+en = "HPF {cutoff}: the file is shorter than {seconds}, so the lowest note is not sought — the target's floor applies."
+
+[messages.hpfQuiet]
+ru = "ФВЧ {cutoff}: вход слишком тихий, чтобы искать нижнюю ноту, — стоит пол цели."
+en = "HPF {cutoff}: the input is too quiet to look for the lowest note — the target's floor applies."
+
+[messages.hpfUnmeasured]
+ru = "ФВЧ {cutoff}: низ не измерен — стоит пол цели."
+en = "HPF {cutoff}: the low end was not measured — the target's floor applies."
+
+[messages.monoBassPartial]
+ru = "Бас частично в противофазе: моно-бас отнимет {loss} низа."
+en = "The bass is partly in opposite polarity: mono bass will take {loss} of the low end."
+
+[messages.monoBassAntiPhase]
+ru = "Бас в противофазе — моно-бас съест {loss} низа; проверьте полярность канала."
+en = "The bass is in opposite polarity — mono bass would take {loss} of the low end; please check the polarity of a channel."
+
+[messages.monoBassUnmeasured]
+ru = "Моно-бас не включён: баса слишком мало, чтобы измерить противофазу."
+en = "Mono bass is off: there is too little bass to measure its polarity."
+
 [messages.planWaiting]
 ru = "Мастер ждёт замер «{analyzer}» для прибора «{device}»: {progress}"
 en = "The master is waiting for the {analyzer} measurement for {device}: {progress}"

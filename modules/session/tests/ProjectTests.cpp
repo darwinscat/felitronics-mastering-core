@@ -143,8 +143,9 @@ std::string withDefaults (std::string input, std::string_view label)
 void defaultsVersions()
 {
     const auto carried = detail::carriedDefaults();
-    ok (! carried.previous && *carried.current.engine.find ("defaults").string() == "2026-09",
-        "current defaults are compiled and the previous slot is empty until a second version exists");
+    // The released 2026-09 table is not carried: its projects convert with a warning, as an older label does.
+    ok (! carried.previous && *carried.current.engine.find ("defaults").string() == "2026-10",
+        "the current defaults are compiled, and the previous slot is empty");
     auto s = fresh();
     const auto current = project() + "\n[hpf]\nfq.hand = 36\n";
     ok (import (*s, current).rejection == Rejection::None && s->events().empty(),
@@ -191,7 +192,7 @@ void defaultsVersions()
         "an older month with the same core converts when the complete machine matches");
     ok (import (*s, withDefaults (project() + "\n[hpf]\nfq.machine = 37\n", "2026-08")).rejection == Rejection::None
         && s->events().size() == 2, "same-core differences survive older-default conversion");
-    for (const auto newer : { "2026-10", "2027-01", "9999-12" })
+    for (const auto newer : { "2026-11", "2027-01", "9999-12" })
         refused (*s, withDefaults (project(), newer), Rejection::NewerDefaults, std::string ("\"") + newer + '"');
     for (const auto malformed : { "2026-00", "2026-13", "2026-9", "026-09", "20260-09", "2026/09", "2026-09x", " 2026-09", "2026-0a", "" })
         refused (*s, withDefaults (project(), malformed), Rejection::UnknownDefaults,

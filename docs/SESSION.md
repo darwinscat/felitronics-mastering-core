@@ -322,6 +322,24 @@ ends with a reason, or waits for a person's `continueMeasurement`, which a hidde
 needed tempo goes ahead of the optional findings in the source's second phase, and the needles are measured at the
 ceiling of the project being planned — a waiting master's own, until what it reads has ended.
 
+**The high-pass and mono bass** (owner decisions 3.2–3.5) are the first devices that decide from a measurement, both
+from the first phase's low-end runs, with no trial render. The high-pass stands always — every target, a quiet input
+included — at a cutoff of max(what the sure lowest note allows, the target's floor, 32 Hz everywhere), never above the
+50 Hz top. The lowest note is sure when the lowest occupied band of the 120 Hz run (10 % of the frames) stands 2 dB over
+the duty line, lies above 20 Hz and sounds 3 s in all; a programme under 10 s is not searched, and a note that is not
+sure — or a lowest band that fails — gives the floor, never a higher band. The cutoff the note allows is found on the
+chain's own response (`highPassCutoffFor`: the matched cascade of the target's slope at the source's rate, by bisection,
+not rounded to the hertz) so that it takes exactly the target's `noteLossDb` there (1 dB, club 0.3). Mono bass is weighed
+by the harm itself: the loss the low end takes folded to mono, 10·log10((mid + side) / mid) over the 10 ms blocks of the
+run at the target's crossover (120 Hz, vinyl 150) where the bass sounds (within 20 dB of the level the loudest 5 % reach,
+3 s at least). Under 1 dB it is placed; from 1 to 3 dB, both included, placed with the number; above 3 dB left out —
+and a person may switch it on, with `plan.monoBass.againstMachine` for the warning. A loss it cannot weigh is its own
+reason, and it is left out: the machine does not fold what it did not weigh. `plan.hpf` and `plan.monoBass` carry the
+findings typed; `PlanText` gives their report lines. `felitronics_session_hpf_mono_tests` holds each boundary to the bit,
+the cutoff to core's own response on every target, slope and rate, and — through the pump on synthetic mixes — a
+detector that never errs upward and a loss that tells centred, partial and inverted bass apart, opposite polarity above
+the crossover not counting.
+
 **One need, one measurement.** The source's measurements serve every target: a change of target or of a person's
 layer measures nothing again, and the needles run again only for a new ceiling (another target with the same numbers
 reuses them). **The plan's key** is a hash of everything it is made from — the source and its measurements' keys and

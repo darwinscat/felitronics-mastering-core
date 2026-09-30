@@ -47,13 +47,13 @@ struct Golden
 };
 constexpr Golden kGolden[] = {
     { "2026-09", 0xf49360664b45a789ull },
+    { "2026-10", 0xef48d467567ad72full },   // the high-pass always, from 32 Hz and the sure lowest note; mono bass by its loss
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
-// floor 24 Hz (vinyl 32) and slope 24 dB/oct (vinyl 12), the loss at the lowest note 1 dB (club 0.3), the delivery;
-// vinyl alone without a peak clipper and with a +0.5 dB low shelf; vinyl and club with the high-pass always (on club it
-// guards the subwoofers from infrasonic bursts a share of the whole programme does not see); cd and cdDynamic alone with a
-// pass at the source's rate; TD1008's −14 LUFS album loudness, desktop only.
+// floor 32 Hz on every target (decision 3.3; the high-pass stands always) and slope 24 dB/oct (vinyl 12), the loss at the
+// lowest note 1 dB (club 0.3), the delivery; vinyl alone without a peak clipper and with a +0.5 dB low shelf; cd and
+// cdDynamic alone with a pass at the source's rate; TD1008's −14 LUFS album loudness, desktop only.
 struct Row
 {
     std::string_view key;
@@ -62,7 +62,7 @@ struct Row
     std::int32_t slope;
     double noteLossDb;
     std::int32_t sampleRate, bitDepth;
-    bool noClipper, hpfAlways, sourceRatePass;
+    bool noClipper, sourceRatePass;
     double lowDb;           // 0: none
     double albumLufs;            // 0: none; every album is desktop only
 };
@@ -70,32 +70,32 @@ constexpr auto S = config::Group::Streaming;
 constexpr auto D = config::Group::Delivery;
 constexpr auto A = config::Group::Aggregator;
 constexpr Row kRows[] = {
-    //  key            group lufs   tp    mono  floor slope loss  rate   bits  noClip always srcPass shelf album
-    { "allStreaming",  S,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "cdDynamic",     D,   -12,  -1,   120,  24,  24,   1,    44100, 16,  false, false, true,   0,    0 },
-    { "club",          D,   -8,   -1,   120,  24,  24,   0.3,  0,     24,  false, true,  false,  0,    0 },
-    { "lp",            D,   -14,  -3,   150,  32,  12,   1,    0,     24,  true,  true,  false,  0.5,  0 },
-    { "spotify",       S,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "spotifyLoud",   S,   -11,  -2,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "appleMusic",    S,   -16,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "youtube",       S,   -14,  -1,   120,  24,  24,   1,    48000, 24,  false, false, false,  0,    0 },
-    { "youtubeMusic",  S,   -7,   -1,   120,  24,  24,   1,    48000, 24,  false, false, false,  0,    0 },
-    { "amazon",        S,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "tidal",         S,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "deezer",        S,   -15,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "soundcloud",    S,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "td1008",        S,   -16,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    -14 },
-    { "ebu",           S,   -23,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "distrokid",     A,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "cdbaby",        A,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "tunecore",      A,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "amuse",         A,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "feiyr",         A,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "routenote",     A,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "horusmusic",    A,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "dittomusic",    A,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "cd",            D,   -9,   -0.3, 120,  24,  24,   1,    44100, 16,  false, false, true,   0,    0 },
-    { "bandcamp",      D,   -10,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
+    //  key            group lufs   tp    mono  floor slope loss  rate   bits  noClip srcPass shelf album
+    { "allStreaming",  S,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
+    { "cdDynamic",     D,   -12,  -1,   120,  32,  24,   1,    44100, 16,  false, true,   0,    0 },
+    { "club",          D,   -8,   -1,   120,  32,  24,   0.3,  0,     24,  false,  false,  0,    0 },
+    { "lp",            D,   -14,  -3,   150,  32,  12,   1,    0,     24,  true,  false,  0.5,  0 },
+    { "spotify",       S,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
+    { "spotifyLoud",   S,   -11,  -2,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
+    { "appleMusic",    S,   -16,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
+    { "youtube",       S,   -14,  -1,   120,  32,  24,   1,    48000, 24,  false, false,  0,    0 },
+    { "youtubeMusic",  S,   -7,   -1,   120,  32,  24,   1,    48000, 24,  false, false,  0,    0 },
+    { "amazon",        S,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
+    { "tidal",         S,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
+    { "deezer",        S,   -15,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
+    { "soundcloud",    S,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
+    { "td1008",        S,   -16,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    -14 },
+    { "ebu",           S,   -23,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
+    { "distrokid",     A,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
+    { "cdbaby",        A,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
+    { "tunecore",      A,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
+    { "amuse",         A,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
+    { "feiyr",         A,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
+    { "routenote",     A,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
+    { "horusmusic",    A,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
+    { "dittomusic",    A,   -14,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
+    { "cd",            D,   -9,   -0.3, 120,  32,  24,   1,    44100, 16,  false, true,   0,    0 },
+    { "bandcamp",      D,   -10,  -1,   120,  32,  24,   1,    0,     24,  false, false,  0,    0 },
 };
 
 // Every decision the config departs from, by name; empty when it holds them all.
@@ -124,7 +124,6 @@ std::vector<std::string> departures (const config::Config& c)
         need (x.sampleRate == r.sampleRate, at + ".sampleRate");
         need (x.bitDepth == r.bitDepth, at + ".bitDepth");
         need (x.noClipper == r.noClipper, at + ".noClipper");
-        need (x.hpfAlways == r.hpfAlways, at + ".hpfAlways");
         need (x.sourceRatePass == r.sourceRatePass, at + ".sourceRatePass");
         need (same (r.lowDb, 0.0) ? ! x.lowDb.has_value() : x.lowDb.has_value() && same (*x.lowDb, r.lowDb),
               at + ".lowDb");
@@ -148,7 +147,12 @@ std::vector<std::string> departures (const config::Config& c)
     need (same (e.hpf.comfort.lowHz, 24.0) && same (e.hpf.comfort.highHz, 42.0), "the high-pass comfort window is 24–42 Hz");
     need (same (e.hpf.comfort.warningLowHz, 20.0) && same (e.hpf.comfort.warningHighHz, 50.0),
           "the high-pass field warns towards 20 and 50 Hz");
-    need (same (e.hpf.nothingBelowNoteInfraLowBelow, 0.01), "no high-pass when the infra-low share is under 1 % (and no DC)");
+    need (same (e.hpf.noteAboveHz, 20.0) && same (e.hpf.noteSoundingAtLeastS, 3.0) && same (e.input.shortSeconds, 10.0)
+          && same (e.lowEnd.occupiedFromDuty, 0.10) && same (e.lowEnd.occupiedMarginWhenOnDb, 2.0),
+          "a sure lowest note: 2 dB over the occupancy line, 10 % of the frames, above 20 Hz, 3 s in all; not sought under 10 s");
+    need (same (e.monoBass.lossWarnFromDb, 1.0) && same (e.monoBass.lossOffAboveDb, 3.0),
+          "mono bass by its loss: placed under 1 dB, with a warning from 1 to 3 dB, left out above 3 dB");
+    need (! e.stages.monoBass, "mono bass is placed by its weighed loss, never before it");
     need (same (e.observations.wideBassSideFractionAtLeast, 0.06) && e.observations.kinds.wideBass == config::Kind::Warning,
           "wide bass: one threshold, 6 % of side, and it is a warning");
     need (same (e.lowEnd.run.crossoverHz, 120.0), "the low end is measured at 120 Hz");
@@ -221,8 +225,12 @@ void aDepartureIsNamed()
         { false, "passes = 12", "passes = 11", "the landing: one budget of 12 passes" },
         { true, "noteLossDb = 0.3", "noteLossDb = 0.5", "targets.club.noteLossDb" },
         { true, "lufs = -7,", "lufs = -8,", "targets.youtubeMusic.lufs" },
-        { true, "noteLossDb = 0.3, sampleRate = 0, bitDepth = 24, hpfAlways = true }",
-          "noteLossDb = 0.3, sampleRate = 0, bitDepth = 24 }", "targets.club.hpfAlways" },
+        { true, "hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 0.3", "hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 0.3",
+          "targets.club.hpfFloor" },
+        { false, "note = { aboveHz = 20, soundingAtLeastS = 3 }", "note = { aboveHz = 20, soundingAtLeastS = 2 }",
+          "a sure lowest note: 2 dB over the occupancy line, 10 % of the frames, above 20 Hz, 3 s in all; not sought under 10 s" },
+        { false, "offAboveDb = 3,", "offAboveDb = 4,", "mono bass by its loss: placed under 1 dB, with a warning from 1 to 3 dB, left out above 3 dB" },
+        { false, "eq = true\nmonoBass = false", "eq = true\nmonoBass = true", "mono bass is placed by its weighed loss, never before it" },
         { true, "sampleRate = 48000, bitDepth = 24 }\n# YouTube Music", "sampleRate = 22050, bitDepth = 24 }\n# YouTube Music",
           "targets.youtube.sampleRate" },
         { false, "default = 0\nwhenTicked", "default = 0.3\nwhenTicked", "no glue by default: a target without its own takes the compressor out" },
