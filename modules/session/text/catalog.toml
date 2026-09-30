@@ -447,6 +447,15 @@ en = "A file cannot show: the side's length, sibilance at the cutter, distortion
 ru = "Вход очень тихий ({lufs}): подняли на {gain}, шум поднялся вместе с музыкой. Кроме ФВЧ на полу цели и дизера формата, машина приборов не ставила — на таком уровне замер ненадёжен; включить их можно вручную."
 en = "The input is very quiet ({lufs}): it was raised by {gain}, and the noise rose with the music. Apart from the high-pass at the target's floor and the format's dither the machine placed no device — at this level a measurement is unreliable; they can be switched on by hand."
 
+[messages.targetChangeResetsEdits]
+plural = "count"
+ru.one = "Ручные правки приборов ({count}) будут сброшены."
+ru.few = "Ручные правки приборов ({count}) будут сброшены."
+ru.many = "Ручные правки приборов ({count}) будут сброшены."
+ru.other = "Ручные правки приборов ({count}) будут сброшены."
+en.one = "The manual device edit ({count}) will be reset."
+en.other = "Manual device edits ({count}) will be reset."
+
 [messages.glueUnavailable]
 ru = "Клей недоступен: громкие места песни не измерены (нет P95 кратковременной громкости). Мастер будет сделан без клея; значение «до {upTo}» сохранено."
 en = "Glue is unavailable: the song's loud places were not measured (no short-term loudness P95). The master will be made without glue; the value “up to {upTo}” is kept."

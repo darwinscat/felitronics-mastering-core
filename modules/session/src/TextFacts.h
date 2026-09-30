@@ -135,6 +135,7 @@ inline constexpr FactShape kFacts[] = {
     { FactId::MasterVinylChecked, "masterVinylChecked", { { { "crossover", ArgKind::Value, {} }, { "cutoff", ArgKind::Value, {} }, { "peak", ArgKind::Value, {} }, { "ceiling", ArgKind::Value, {} } } }, 4 },
     { FactId::MasterVinylUncheckable, "masterVinylUncheckable", {}, 0 },
     { FactId::MasterQuietInput, "masterQuietInput", { { { "lufs", ArgKind::Value, {} }, { "gain", ArgKind::Value, {} } } }, 2 },
+    { FactId::TargetChangeResetsEdits, "targetChangeResetsEdits", { { { "count", ArgKind::Count, {} } } }, 1 },
     // A command's rejection (Commands.h), one per code; the four a field refuses name it.
     { FactId::RejectedFloatingPointEnvironment, "rejectedFloatingPointEnvironment", {}, 0 },
     { FactId::RejectedNoSource, "rejectedNoSource", {}, 0 },

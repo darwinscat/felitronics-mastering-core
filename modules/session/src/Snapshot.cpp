@@ -273,4 +273,9 @@ SnapshotView Session::buildView() const noexcept
     v.sourceBytes = samples_ ? double (source_.frames * source_.channels * sizeof (float)) : 0.0;
     return v;
 }
+std::optional<text::Fact> SnapshotText::targetChange (const SnapshotView& view) noexcept
+{
+    if (view.handFieldCount == 0) return std::nullopt;
+    return text::Fact::of (text::FactId::TargetChangeResetsEdits, text::Arg::count (view.handFieldCount));
+}
 } // namespace felitronics::session

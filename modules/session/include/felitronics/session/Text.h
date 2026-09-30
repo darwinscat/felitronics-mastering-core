@@ -175,6 +175,7 @@ enum class FactId : std::uint16_t
     MasterVinylChecked = 78, // checked on the file: mono below {crossover}, infra-low cut from {cutoff}, {peak} ≤ {ceiling}
     MasterVinylUncheckable = 79, // what a file cannot tell: the side's length, sibilance at the cutter, the centre
     MasterQuietInput = 80,   // a very quiet input ({lufs}) raised by {gain}: no device but the high-pass and the dither
+    TargetChangeResetsEdits = 81, // before a change of target: {count} device edits by hand will be reset
 
     // A command's rejection, by its code — what was refused and why. The three a field refuses name it: {field}.
     RejectedFloatingPointEnvironment = 101,

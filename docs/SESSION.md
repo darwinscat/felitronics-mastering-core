@@ -275,9 +275,11 @@ Dither is offered through 16 bits, and mono bass except on a mono source; the sh
   finite and inside the knob's domain; travel and step guide the slider. Values between steps or outside travel are
   accepted within the domain. A number is kept with −0 written as +0, so equal values give identical project bits.
 - **`setTarget(name)`** replaces the target's numbers silently and always resets every device edit, including hidden
-  edits and dither edits. The machine decides again for the new target. The shell owns the warning
-  “your N edits will be reset”: it reads `snapshot().view().handFieldCount` before sending the command.
-  The command answer and events are unchanged. New dither edits above 16 bits still return `NotOffered`.
+  edits and dither edits. The machine decides again for the new target. The warning before it is the core's fact:
+  `SnapshotText::targetChange (snapshot().view())` gives `targetChangeResetsEdits` — "Manual device edits (N) will be
+  reset", N the `handFieldCount` — and nothing when no field carries a person's value. The shell shows it in its
+  confirmation and sends the command on confirm; a cancel sends nothing. The command answer and events are unchanged.
+  New dither edits above 16 bits still return `NotOffered`.
 - **A person's edit always sounds.** A device's tick is the person's own when they set one, on or off; otherwise it is
   on when any of the device's fields carries their value — a knob turned is a device wanted, so a project with
   `[tilt] db.hand = 3` and no tick written sounds; otherwise it is the machine's. Every reader of what sounds goes

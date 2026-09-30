@@ -39,9 +39,9 @@ Items 1–3 of the task and every bullet of its checks section, one check per ro
 | A13 | Master waits only for what this target needs: no tempo when the glue does not compress, and hum does not hold the button | `PlanTests.cpp:aTargetWithoutGlueDoesNotWaitForTempo`, `theOpenPanelWaits`; `SourceMeasurementsTests.cpp:masterTempoDependencyPolicy` | HELD |
 | A14 | The button shows the progress of the awaited measurement (fact `PlanWaiting`) | `PlanTests.cpp:theOpenPanelWaits`, `theNeedlesAreWaitedForAtTheirCeiling` | HELD |
 | A15 | Dimmed panel: read-only while the first measurement runs | `PlanTests.cpp:theOpenPanelWaits` (`plan.readOnly`) | HELD |
-| A16 | Dimmed panel: read-only after a change of target while the new target's needles run | none (`PlanTests.cpp:oneNeedOneMeasurement` sees the needles run, but does not assert `readOnly`) | GAP (B1) |
+| A16 | Dimmed panel: read-only after a change of target while the new target's needles run | `PlanTests.cpp:oneNeedOneMeasurement` (`plan.readOnly` and `PlanStatus::Pending` while club's needles run, neither after) | HELD (B1) |
 | A17 | Panel hidden: Master is taken at once and waits by itself | `PlanTests.cpp:aHiddenMasterKeepsWhatWasAsked`; `SourceMeasurementsTests.cpp:masterWaitsForTempo` | HELD |
-| A18 | Panel hidden: the waiting master's progress is published | not asserted | GAP (B2) |
+| A18 | Panel hidden: the waiting master's progress is published | `PlanTests.cpp:aHiddenMasterKeepsWhatWasAsked` (`plan.awaited`, `awaitedBy` and a moving `awaitedFraction` while it waits; after a change of target, its own `masterProgress`) | HELD (B2) |
 | A19 | Panel hidden: the waiting master can be cancelled | `PlanTests.cpp:noPlanWaitsForEver`; `SourceMeasurementsTests.cpp:masterWaitsForTempo` | HELD |
 | A20 | Panel hidden: the recipe is the project as it was when Master was asked for, so the result does not depend on how early the button was pressed | `PlanTests.cpp:aHiddenMasterKeepsWhatWasAsked`; `PlanSoundTests.cpp:aMasterThatWaited` (same bits); `StateTests.cpp:aMasterKeepsItsRecipe` | HELD |
 | A21 | A dependency fails | `SourceMeasurementsTests.cpp:optionalFailure`, `deviceTempoPolicy`; `NeedlesTests.cpp:unusableReadings`; `PlanSoundTests.cpp:theNeedAndTheMeasurement` | HELD |
@@ -49,14 +49,14 @@ Items 1–3 of the task and every bullet of its checks section, one check per ro
 | A23 | A new file arrives while a taken master waits | `PlanTests.cpp:noPlanWaitsForEver` (a load; sidecar facts) | HELD |
 | A24 | A new target is set while a taken master waits | `PlanTests.cpp:aHiddenMasterKeepsWhatWasAsked`, `noPlanWaitsForEver` | HELD |
 | A25 | Change of target: the warning's edit count | `PlanTests.cpp:aChangeOfTargetResetsEdits` (`handFieldCount`) | HELD |
-| A26 | Change of target: the warning itself as a core fact | none: no `FactId` and no catalogue entry for "Manual device edits (N) will be reset" | GAP (B3), BEHAVIOUR |
+| A26 | Change of target: the warning itself as a core fact | `PlanTests.cpp:aChangeOfTargetResetsEdits` (`SnapshotText::targetChange`: absent at 0 edits, `targetChangeResetsEdits` with N, gone after the reset); `TextTests.cpp:everyMessageRenders` | HELD (B3) |
 | A27 | Change of target: once sent, every device edit is reset | `StateTests.cpp:aChangeOfTarget`; `PlanTests.cpp:aChangeOfTargetResetsEdits`, `aTouchedDeviceSounds`; `TiltLowTests.cpp:aPersonsLayer`; `ProjectTests.cpp:roundTrip` (the dither hand) | HELD |
 | A28 | Change of target: cancelled, the edits stay | `PlanTests.cpp:aChangeOfTargetResetsEdits` (a change that does not happen keeps every edit, and a project saved before the change keeps them) | HELD; the cancel itself sends no command |
 | A29 | Hidden manual mode: edits are kept and still sound with the panel hidden | `StateTests.cpp:theManualModeOff`; `EventTests.cpp:eqSnapshot`; `GlueSaturationTests.cpp:aPersonsKnob`; `TiltLowTests.cpp:aPersonsLayer`; `PlanSoundTests.cpp:theRenderIsThePreviousPaths`; `PlanTests.cpp:thePlansKey` | HELD |
 | A30 | "Keep" of the project | The reset-or-keep choice at a change of target is obsolete (see below). Still held: a saved project keeps the hand (`PlanTests.cpp:aChangeOfTargetResetsEdits`, `TiltLowTests.cpp:aPersonsLayer`); a kept master keeps its recipe (`StateTests.cpp:aMasterKeepsItsRecipe`) | OBSOLETE / HELD |
 | A31 | Reset and revert | `PlanTests.cpp:thePlansKey`, `aChangeOfTargetResetsEdits`, `aTouchedDeviceSounds` (`RevertEdits`) | HELD |
 | A32 | The hand keeps exact numbers | `PlanTests.cpp:aChangeOfTargetResetsEdits` (1.25 and 0.75 dB bit-exact across sessions); `ProjectTests.cpp:domainsAndExactNumbers`, `numbers`; `StateTests.cpp:negativeZero` | HELD |
-| A33 | All eight device descriptors are in the snapshot | Each device is read by some test (`PlanTests.cpp:aTouchedDeviceSounds`, `PlanSoundTests.cpp`, `GlueSaturationTests.cpp`); the wire runs through the generated codec (`EventTests.cpp:codec`). No single assertion that a placed snapshot carries all eight | PARTIAL, GAP (B4) |
+| A33 | All eight device descriptors are in the snapshot | Each device is read by some test (`PlanTests.cpp:aTouchedDeviceSounds`, `PlanSoundTests.cpp`, `GlueSaturationTests.cpp`); the wire runs through the generated codec (`EventTests.cpp:codec`); `PlanTests.cpp:aTouchedDeviceSounds` carries all eight of one placed snapshot, with on, tick and needs, through encode → decode | HELD (B4) |
 
 ### Item 3: cache, slicing, repeated work, stale work
 
@@ -93,7 +93,7 @@ Items 1–3 of the task and every bullet of its checks section, one check per ro
 | A57 | Edits are not kept across a change of target | as A27 | HELD |
 | A58 | Import does not swap the file's machine layer | as A2, A3 | HELD (but see Q1) |
 | A59 | The needles may be measured again on a new target | as A37 | HELD |
-| A60 | The reset warning is checked | as A26 | GAP (B3), BEHAVIOUR |
+| A60 | The reset warning is checked | as A26 | HELD (B3) |
 | A61 | Cancelling the change of target is checked | as A28 | HELD |
 | A62 | Repeating the project and the master does not grow live memory | `PlanSoundTests.cpp:theMemoryOfAMaster` (declared memory: large, cancelled, small); `MasterReportTests.cpp:main` (`memoryLifecycle`). `liveBytes()` is not measured over repeated import → master cycles | GAP (A3) |
 | A63 | Budget and memory on refusals keep the slice-2 gate | `StateTests.cpp:memoryIsDeclared`; `MemoryGateTests.cpp:main`; `ProjectTests.cpp:demandsAndOrder`; `PlanSoundTests.cpp:theMemoryOfAMaster`; `MeasurementBudgetTests.cpp:main` | HELD |
@@ -102,12 +102,11 @@ Items 1–3 of the task and every bullet of its checks section, one check per ro
 | A66 | The report links the private replay without publishing it | none (the replay of 11 measurements, task item 4, is not built) | GAP (A5) |
 
 Count: 66 checks.
-- 55 HELD. A6, A8, A9 and A35 leave their scenario half to A1. A4 waits on Q1. A30 is held for the part that is not
-  obsolete.
-- 1 PARTIAL: A33.
-- 10 GAP: A1, A7, A16, A18, A26, A40, A60, A62, A65, A66.
+- 60 HELD. A6, A8, A9 and A35 leave their scenario half to A1. A4 waits on Q1. A30 is held for the part that is not
+  obsolete. A16, A18, A26, A33 and A60 are held by B1–B4.
+- 6 GAP: A1, A7, A40, A62, A65, A66.
 
-These reduce to 9 gap items below (A1–A5, B1–B4). One of them, B3, is BEHAVIOUR.
+These reduce to 5 gap items below (A1–A5). B1–B4 are held.
 
 ## Table B: the 14 MOVE-TO-CORE rows (task item 5)
 
@@ -161,20 +160,22 @@ LowEnd and PeakExcursions tests are cited nowhere in this table as proof of a de
 
 ### B. Behaviour
 
-- **B1.** Dimmed panel after a change of target: in `PlanTests.cpp:oneNeedOneMeasurement` (or a new function), assert
-  `plan.readOnly` and `PlanStatus::Pending` while the new target's needles run after `SetTarget`, and not after they
-  end. Test only.
-- **B2.** A hidden waiting master publishes `plan.awaited` and `awaitedFraction`: add this to
-  `PlanTests.cpp:aHiddenMasterKeepsWhatWasAsked`. Test only.
-- **B3. BEHAVIOUR.** The target-change warning becomes a core fact. Owner decision "change of target": "Manual device
-  edits (N) will be reset". The core has the count (`handFieldCount`) but no fact, so today a shell would have to
-  hold the string itself, which law 4 forbids. Add a `FactId` (append-only) in
-  `modules/session/include/felitronics/session/Text.h`, and ru, then en, entries with plurals in
-  `modules/session/text/catalog.toml`. Test it in `PlanTests.cpp:aChangeOfTargetResetsEdits` and
+- **B1. HELD.** Dimmed panel after a change of target: `PlanTests.cpp:oneNeedOneMeasurement` asserts `plan.readOnly`
+  and `PlanStatus::Pending` while club's needles run after `SetTarget`, and neither after they end. A pin of existing
+  behaviour.
+- **B2. HELD.** A hidden waiting master publishes what it waits for: `PlanTests.cpp:aHiddenMasterKeepsWhatWasAsked`
+  asserts `plan.awaited` (the tempo), `awaitedBy` (the glue) and an `awaitedFraction` that moves while the master waits.
+  `plan` is the project's: once the target changes under the waiting master, the project waits for nothing and the
+  master's own `masterProgress` carries its wait, which the test asserts too. A pin of existing behaviour.
+- **B3. HELD, BEHAVIOUR.** The target-change warning is a core fact. Owner decision "change of target": "Manual device
+  edits (N) will be reset". `FactId::TargetChangeResetsEdits` (81, `count`), `messages.targetChangeResetsEdits` (ru,
+  then en, plural on the count), and `SnapshotText::targetChange (const SnapshotView&)`: the fact with `handFieldCount`,
+  nothing at 0 — the snapshot states its sentences as `ObservationText` and `PlanText` do, from the fields it already
+  carries, so the wire does not change. Held by `PlanTests.cpp:aChangeOfTargetResetsEdits` and
   `TextTests.cpp:everyMessageRenders`.
-- **B4.** All eight descriptors in one placed snapshot: in `PlanTests.cpp:aTouchedDeviceSounds` (or
-  `EventTests.cpp:codec`), assert that `plan.devices` carries hpf, monoBass, glue, saturation, tilt, limiter, dither
-  and low, with on, tick and needs, through an encode/decode. Test only.
+- **B4. HELD.** All eight descriptors in one placed snapshot: `PlanTests.cpp:aTouchedDeviceSounds` encodes and decodes
+  it and asserts that `plan.devices` carries hpf, monoBass, glue, saturation, tilt, limiter, dither and low with on, tick
+  and needs. A pin of existing behaviour.
 - Knob boundaries: no gap (A41–A45 are held).
 
 ## Open questions
