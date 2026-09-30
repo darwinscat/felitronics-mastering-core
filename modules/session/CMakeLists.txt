@@ -321,6 +321,14 @@ if(FELITRONICS_BUILD_TESTS)
     endif()
     add_test(NAME felitronics_session_plan_sound_tests COMMAND felitronics_session_plan_sound_tests)
 
+    # The scenario end to end, in independent sessions on one source (docs/DECIDE-COVERAGE.md, A1–A3); its parity lines
+    # are checked against the wasm run by tools/wasm/scenario-parity.mjs.
+    add_executable(felitronics_session_scenario_tests tests/ScenarioTests.cpp)
+    target_link_libraries(felitronics_session_scenario_tests PRIVATE felitronics::session felitronics::core felitronics::test_support)
+    target_compile_features(felitronics_session_scenario_tests PRIVATE cxx_std_20)
+    target_compile_options(felitronics_session_scenario_tests PRIVATE ${FELITRONICS_SESSION_COMPILE_OPTIONS})
+    add_test(NAME felitronics_session_scenario_tests COMMAND felitronics_session_scenario_tests)
+
     add_executable(felitronics_session_needles_tests tests/NeedlesTests.cpp)
     target_link_libraries(felitronics_session_needles_tests PRIVATE felitronics::session felitronics::test_support felitronics::analysis_offline)
     target_include_directories(felitronics_session_needles_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
