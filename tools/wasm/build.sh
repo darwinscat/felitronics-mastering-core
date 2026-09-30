@@ -56,7 +56,7 @@ echo "emcc: $(emcc --version | head -1)"
 
 CORE="${FELITRONICS_CORE_DIR:-$ROOT/../felitronics-core}"
 [ -f "$CORE/modules/core/include/felitronics/core/DetMath.h" ] \
-    || { echo "no felitronics-core at $CORE — set FELITRONICS_CORE_DIR to a checkout (v0.55.0 or later)"; exit 1; }
+    || { echo "no felitronics-core at $CORE — set FELITRONICS_CORE_DIR to a checkout (v0.56.0 or later)"; exit 1; }
 CORE="$(cd "$CORE" && pwd)"
 # A core that still carries these modules would put a SECOND copy of every header here on the include path,
 # and which one a TU compiled would depend on the order of the -I flags below. The CMake refuses such a core
@@ -64,6 +64,10 @@ CORE="$(cd "$CORE" && pwd)"
 [ ! -d "$CORE/modules/mastering" ] && [ ! -f "$CORE/modules/analysis/include/felitronics/analysis/ProgrammeReport.h" ] \
     || { echo "$CORE still carries the mastering modules (felitronics-core before v0.52.0) — use a core without them"; exit 1; }
 echo "felitronics-core: $CORE"
+# Presence, as the CMake checks it; the WAV writer's bytes are proven by felitronics_session_wav_tests, and the
+# release by the version floor below.
+[ -f "$CORE/modules/io/include/felitronics/io/Wav.h" ] \
+    || { echo "felitronics-core at $CORE has no WAV writer (modules/io/include/felitronics/io/Wav.h)"; exit 1; }
 
 INC=(-I"$ROOT/modules/storage/include" -I"$ROOT/tools"
      -I"$ROOT/modules/analysis_offline/include"
@@ -83,6 +87,7 @@ INC=(-I"$ROOT/modules/storage/include" -I"$ROOT/tools"
 # header-only (INTERFACE libraries), which is why one em++ invocation is the whole build.
 MASTER_INC=(-I"$ROOT/modules/storage/include" -I"$ROOT/tools"
             -I"$ROOT/modules/mastering/include"
+            -I"$ROOT/modules/analysis_offline/include"
             -I"$CORE/modules/core/include"
             -I"$CORE/modules/eq/include"
             -I"$CORE/modules/dynamics/include"
@@ -530,6 +535,9 @@ read -r SV_MAJOR SV_MINOR SV_PATCH <<< "$(project_version "$ROOT/CMakeLists.txt"
 read -r CV_MAJOR CV_MINOR CV_PATCH <<< "$(project_version "$CORE/CMakeLists.txt" felitronics_core)" || true
 [ -n "${SV_PATCH:-}" ] || { echo "*** no project(felitronics_mastering_core VERSION x.y.z ...) line in $ROOT/CMakeLists.txt"; exit 1; }
 [ -n "${CV_PATCH:-}" ] || { echo "*** no project(felitronics_core VERSION x.y.z ...) line in $CORE/CMakeLists.txt"; exit 1; }
+if [ "$CV_MAJOR" -eq 0 ] && [ "$CV_MINOR" -lt 56 ]; then
+    echo "*** felitronics-core must be v0.56.0 or later"; exit 1
+fi
 echo
 echo "--- fc_session: felitronics-mastering-core $SV_MAJOR.$SV_MINOR.$SV_PATCH over felitronics-core $CV_MAJOR.$CV_MINOR.$CV_PATCH"
 
@@ -600,7 +608,7 @@ done
 # The analyzers' include roots too (INC): the schema asks them what they admit (their storageFor). The gate compiles the
 # library's schema with this front end as well — src/BuildGuards.h, its first include, refuses any other.
 SFRONT=(-std=c++20 "${SESSION_FLAGS[@]}"
-        -I"$ROOT/tools" -I"$ROOT/modules/session/include" -I"$ROOT/modules/session/src" -I"$TOML/include" -I"$SGEN" "${INC[@]}" -msimd128
+        -I"$ROOT/tools" -I"$ROOT/modules/session/include" -I"$ROOT/modules/session/src" -I"$TOML/include" -I"$SGEN" "${INC[@]}" "${MASTER_INC[@]}" -msimd128
         -DFELITRONICS_SESSION_VERSION_MAJOR="$SV_MAJOR" -DFELITRONICS_SESSION_VERSION_MINOR="$SV_MINOR"
         -DFELITRONICS_SESSION_VERSION_PATCH="$SV_PATCH"
         -DFELITRONICS_SESSION_CORE_VERSION_MAJOR="$CV_MAJOR" -DFELITRONICS_SESSION_CORE_VERSION_MINOR="$CV_MINOR"
@@ -629,7 +637,7 @@ SNAMES=$(export_names "${SFILES[@]}")
 SFOUND=$(printf '%s\n' "$SNAMES" | grep -c . || true)
 check_exports "$SFOUND" "${SFILES[@]}"
 check_return_types 'std::uint32_t|fc_session_status' "${SFILES[@]}"
-SEXACT="_fc_session_abi_version _fc_session_attach_audio _fc_session_attach_audio_bytes _fc_session_command _fc_session_command_bytes _fc_session_config_version _fc_session_create _fc_session_create_bytes _fc_session_destroy _fc_session_events_copy _fc_session_events_size _fc_session_export_project_copy _fc_session_export_project_size _fc_session_import_project _fc_session_import_project_bytes _fc_session_load _fc_session_load_bytes _fc_session_load_measured _fc_session_load_measured_bytes _fc_session_measurement_bytes _fc_session_needles_bytes _fc_session_query_bytes _fc_session_query_copy _fc_session_query_size _fc_session_set_capacity _fc_session_snapshot_copy _fc_session_snapshot_size _fc_session_step _fc_session_summary_copy _fc_session_summary_size"
+SEXACT="_fc_session_abi_version _fc_session_attach_audio _fc_session_attach_audio_bytes _fc_session_command _fc_session_command_bytes _fc_session_config_version _fc_session_create _fc_session_create_bytes _fc_session_destroy _fc_session_events_copy _fc_session_events_size _fc_session_export_project_copy _fc_session_export_project_size _fc_session_import_project _fc_session_import_project_bytes _fc_session_load _fc_session_load_bytes _fc_session_load_measured _fc_session_load_measured_bytes _fc_session_master _fc_session_master_audio_copy _fc_session_master_audio_release _fc_session_master_audio_size _fc_session_master_audio_view _fc_session_master_bytes _fc_session_master_wav_copy _fc_session_master_wav_size _fc_session_master_waveform_chunk_bytes _fc_session_master_waveform_chunk_copy _fc_session_master_waveform_chunk_size _fc_session_measurement_bytes _fc_session_needles_bytes _fc_session_query_bytes _fc_session_query_copy _fc_session_query_size _fc_session_set_capacity _fc_session_snapshot_copy _fc_session_snapshot_size _fc_session_step _fc_session_summary_copy _fc_session_summary_size"
 [ "$(printf '%s\n' "$SNAMES" | LC_ALL=C sort | paste -sd' ' -)" = "$SEXACT" ] \
     || { echo "*** fc_session exports differ from the frozen v1 list and its declared additions"; exit 1; }
 SEXPORTS="$(printf '%s\n' "$SNAMES" | paste -sd, -),_malloc,_free"
@@ -651,6 +659,60 @@ SCOMMON=("${SFRONT[@]}"
 
 echo "--- fc_session node (for session-check.mjs)"
 em++ "${SCOMMON[@]}" "${RELEASE[@]}" -sENVIRONMENT=node "$SSRC" "${SESSION_SRCS[@]}" -o "$OUT/fcsession.node.js"
+echo "--- bounded WAV writer against the installed core WAV reader and writer"
+em++ "${SFRONT[@]}" -I"$CORE/modules/io/include" -I"$CORE/test_support" -O3 \
+     -sENVIRONMENT=node -sEXIT_RUNTIME=1 \
+     "$ROOT/modules/session/tests/WavTests.cpp" "$ROOT/modules/session/src/Wav.cpp" \
+     -o "$OUT/session-wav-tests.js"
+node "$OUT/session-wav-tests.js"
+echo "--- master, cancellation, refusal, safe miss and unavailable WAV eligibility"
+em++ "${SFRONT[@]}" -I"$CORE/test_support" -O3 -sENVIRONMENT=node -sSTACK_SIZE=8388608 \
+     -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -Wl,--wrap=pthread_create \
+     "$ROOT/modules/session/tests/MasterJobTests.cpp" "${SESSION_SRCS[@]}" \
+     -o "$OUT/session-master-job-tests.js"
+node "$OUT/session-master-job-tests.js"
+echo "--- direct landing engine against the Session bridge (FP contraction off)"
+em++ "${SFRONT[@]}" -I"$CORE/test_support" -O3 -sENVIRONMENT=node -sSTACK_SIZE=8388608 \
+     -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -Wl,--wrap=pthread_create \
+     "$ROOT/modules/session/tests/SessionDirectOracleTests.cpp" "${SESSION_SRCS[@]}" \
+     -o "$OUT/session-direct-oracle.js"
+node "$OUT/session-direct-oracle.js"
+if node "$OUT/session-direct-oracle.js" --fault > "$OUT/session-direct-oracle-control.txt" 2>&1; then
+    cat "$OUT/session-direct-oracle-control.txt"
+    echo "*** direct oracle accepted a one-bit PCM fault"; exit 1
+fi
+grep -q 'one-bit PCM fault must fail' "$OUT/session-direct-oracle-control.txt" \
+    || { cat "$OUT/session-direct-oracle-control.txt"; echo "*** direct oracle fault did not reach comparison"; exit 1; }
+echo "    control ok: one-bit PCM fault makes the direct oracle red"
+echo "--- saved whole-call solver against PCM-grid measurements (FP contraction off)"
+em++ "${SFRONT[@]}" -I"$CORE/test_support" -O3 -sENVIRONMENT=node -sSTACK_SIZE=8388608 \
+     -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -Wl,--wrap=pthread_create \
+     "$ROOT/modules/mastering/tests/SolverPassDifferentialTests.cpp" \
+     -o "$OUT/session-solver-pass-differential.js"
+node "$OUT/session-solver-pass-differential.js"
+if node "$OUT/session-solver-pass-differential.js" --quantizer-fault \
+    > "$OUT/session-quantizer-oracle-control.txt" 2>&1; then
+    cat "$OUT/session-quantizer-oracle-control.txt"
+    echo "*** saved whole-call oracle accepted a changed sample"; exit 1
+fi
+grep -q 'a changed old-path sample must be detected' "$OUT/session-quantizer-oracle-control.txt" \
+    || { cat "$OUT/session-quantizer-oracle-control.txt"; echo "*** quantizer fault missed the oracle"; exit 1; }
+echo "    control ok: changed old-path sample makes the quantizer oracle red"
+echo "--- measured ready-master report against native and the old whole renderer"
+em++ "${SFRONT[@]}" -I"$CORE/test_support" -O3 -sENVIRONMENT=node -sSTACK_SIZE=8388608 \
+     -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -Wl,--wrap=pthread_create \
+     "$ROOT/modules/session/tests/MasterReportTests.cpp" "${SESSION_SRCS[@]}" \
+     -o "$OUT/session-master-report.js"
+node "$OUT/session-master-report.js" > "$OUT/session-master-report.txt"
+cat "$OUT/session-master-report.txt"
+node "$HERE/master-report-parity.mjs" "$OUT/session-master-report.txt"
+echo "--- complete Solve memory gate (short and long lifecycles)"
+em++ "${SFRONT[@]}" -I"$CORE/test_support" -O3 -sENVIRONMENT=node -sSTACK_SIZE=8388608 \
+     -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -Wl,--wrap=pthread_create \
+     "$ROOT/modules/session/tests/MemoryGateTests.cpp" "${SESSION_SRCS[@]}" \
+     -o "$OUT/session-memory-gate.js"
+node "$OUT/session-memory-gate.js"
+node "$OUT/session-memory-gate.js" --long
 echo "--- fc_session web ES module (for a module worker)"
 em++ "${SCOMMON[@]}" "${RELEASE[@]}" -sENVIRONMENT=web,worker -sEXPORT_ES6=1 "$SSRC" "${SESSION_SRCS[@]}" -o "$OUT/fcsession.web.mjs"
 same_as_node fcsession fcsession.web.mjs

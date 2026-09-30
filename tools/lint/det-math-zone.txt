@@ -63,6 +63,10 @@ zone  tools/wasm/fc_tempo.cpp      the fctempo module's own TU; its tempo rows a
 entry  modules/session/src/Session.cpp                        a translation unit of felitronics::session
 entry  modules/session/src/BuildContract.cpp                  a translation unit of felitronics::session
 zone   modules/session/include/felitronics/session/Session.h  the session's public surface
+zone   modules/session/include/felitronics/session/Wav.h      bounded WAV delivery declaration
+zone   modules/session/src/Wav.cpp                            deterministic WAV code quantization
+zone   modules/mastering/include/felitronics/mastering/PcmQuantizer.h  shared PCM grid
+entry  modules/session/src/Wav.cpp                            bounded WAV delivery translation unit
 zone   modules/session/src/Session.cpp                        the session
 zone   modules/session/src/BuildContract.cpp                  the library's build contract, answered under its own flags
 zone   modules/session/src/BuildContract.h                    the build contract's private declarations
@@ -111,6 +115,10 @@ entry  modules/session/src/Snapshot.cpp  a translation unit of felitronics::sess
 zone   modules/session/src/Snapshot.cpp  the deterministic session contract
 entry  modules/session/src/Codec.cpp  a translation unit of felitronics::session
 zone   modules/session/src/Codec.cpp  the deterministic session contract
+entry  modules/session/src/Landing.cpp  a translation unit of felitronics::session
+zone   modules/session/src/Landing.cpp  source normalization and typed landing result
+zone   modules/session/include/felitronics/session/Landing.h  the landing plan and result seam
+zone   modules/session/include/felitronics/session/LandingResult.h  typed landing verdict and pass rows
 zone   modules/session/include/felitronics/session/Events.h  the session public contract
 zone   modules/session/include/felitronics/session/Snapshot.h  the session public contract
 zone   modules/session/src/CodecSchema.h  the named fields generated from the codec description
@@ -162,6 +170,12 @@ zone modules/session/src/Waveform.cpp bounded source waveform and measurement qu
 entry modules/session/src/Waveform.cpp bounded source waveform and measurement queries
 zone modules/session/src/Queries.cpp bounded source waveform and measurement queries
 entry modules/session/src/Queries.cpp bounded source waveform and measurement queries
+zone modules/session/src/MasterJob.h bounded product landing owner
+zone modules/session/src/MasterJob.cpp bounded product landing preflight and preparation
+entry modules/session/src/MasterJob.cpp bounded product landing preflight and preparation
+zone modules/session/src/Cost.h measured post-master price declarations
+zone modules/session/src/Cost.cpp deterministic CVaR, shape and pumping measurements
+entry modules/session/src/Cost.cpp deterministic CVaR, shape and pumping measurements
 zone modules/analysis_offline/include/felitronics/analysis/WaveformIndex.h bounded source waveform and measurement queries
 entry  tools/session-script.cpp  native contract consumer
 zone   tools/session-script.cpp  deterministic scenario commands and PCM

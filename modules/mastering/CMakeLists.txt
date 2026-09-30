@@ -20,7 +20,8 @@ target_link_libraries(felitronics_mastering INTERFACE felitronics_storage
     # The loudness solver measures what it renders, so the module now owns a METER dependency as well as
     # a chain of processors. It is the same argument the chain itself makes: the composite is the unit,
     # and a solver that could not measure would be a solver a product had to finish.
-    felitronics::analysis)
+    felitronics::analysis
+    felitronics::analysis_offline)
 target_compile_features(felitronics_mastering INTERFACE cxx_std_20)
 
 if(FELITRONICS_BUILD_TESTS)
@@ -53,6 +54,33 @@ if(FELITRONICS_BUILD_TESTS)
     add_executable(felitronics_mastering_deliveredmastering_tests tests/DeliveredMasteringTests.cpp)
     target_link_libraries(felitronics_mastering_deliveredmastering_tests PRIVATE felitronics::mastering felitronics::test_support)
     add_test(NAME felitronics_mastering_deliveredmastering_tests COMMAND felitronics_mastering_deliveredmastering_tests)
+
+    add_executable(felitronics_mastering_resumable_render_tests tests/ResumableRenderTests.cpp)
+    target_link_libraries(felitronics_mastering_resumable_render_tests PRIVATE felitronics::mastering felitronics::test_support)
+    target_compile_options(felitronics_mastering_resumable_render_tests PRIVATE
+        $<IF:$<CXX_COMPILER_ID:MSVC>,/fp:strict,-ffp-contract=off>)
+    add_test(NAME felitronics_mastering_resumable_render_tests COMMAND felitronics_mastering_resumable_render_tests)
+
+    add_executable(felitronics_mastering_landing_search_tests tests/LandingSearchTests.cpp)
+    target_link_libraries(felitronics_mastering_landing_search_tests PRIVATE felitronics::mastering felitronics::test_support)
+    target_compile_options(felitronics_mastering_landing_search_tests PRIVATE
+        $<IF:$<CXX_COMPILER_ID:MSVC>,/fp:strict,-ffp-contract=off>)
+    add_test(NAME felitronics_mastering_landing_search_tests COMMAND felitronics_mastering_landing_search_tests)
+
+    add_executable(felitronics_mastering_solver_pass_differential_tests tests/SolverPassDifferentialTests.cpp)
+    target_link_libraries(felitronics_mastering_solver_pass_differential_tests PRIVATE felitronics::mastering felitronics::test_support)
+    target_compile_options(felitronics_mastering_solver_pass_differential_tests PRIVATE
+        $<IF:$<CXX_COMPILER_ID:MSVC>,/fp:strict,-ffp-contract=off>)
+    add_test(NAME felitronics_mastering_solver_pass_differential_tests COMMAND felitronics_mastering_solver_pass_differential_tests)
+    add_test(NAME felitronics_mastering_quantizer_oracle_control
+        COMMAND felitronics_mastering_solver_pass_differential_tests --quantizer-fault)
+    set_tests_properties(felitronics_mastering_quantizer_oracle_control PROPERTIES WILL_FAIL TRUE)
+
+    add_executable(felitronics_mastering_limiter_trace_tests tests/LimiterTraceTests.cpp)
+    target_link_libraries(felitronics_mastering_limiter_trace_tests PRIVATE felitronics::mastering felitronics::test_support)
+    target_compile_options(felitronics_mastering_limiter_trace_tests PRIVATE
+        $<IF:$<CXX_COMPILER_ID:MSVC>,/fp:strict,-ffp-contract=off>)
+    add_test(NAME felitronics_mastering_limiter_trace_tests COMMAND felitronics_mastering_limiter_trace_tests)
 
     add_executable(felitronics_mastering_oracle_tests tests/MasteringOracleTests.cpp)
     target_link_libraries(felitronics_mastering_oracle_tests PRIVATE felitronics::mastering felitronics::test_support)
@@ -94,6 +122,10 @@ if(FELITRONICS_BUILD_TESTS)
     target_link_libraries(felitronics_loudness_solver_tests PRIVATE felitronics::mastering felitronics::test_support)
     target_compile_features(felitronics_loudness_solver_tests PRIVATE cxx_std_20)
     add_test(NAME felitronics_loudness_solver_tests COMMAND felitronics_loudness_solver_tests)
+    add_test(NAME felitronics_loudness_solver_budget_tests
+        COMMAND felitronics_loudness_solver_tests --budget-only)
+    add_test(NAME felitronics_loudness_solver_long_counter
+        COMMAND felitronics_loudness_solver_tests --long-counter)
 
     add_executable(felitronics_mastering_progress_tests tests/ProgressTests.cpp)
     target_link_libraries(felitronics_mastering_progress_tests PRIVATE felitronics::mastering felitronics::test_support)

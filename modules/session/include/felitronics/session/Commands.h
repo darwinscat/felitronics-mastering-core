@@ -4,6 +4,7 @@
 #pragma once
 
 #include <felitronics/session/Project.h>
+#include <felitronics/mastering/MasteringChain.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -87,6 +88,9 @@ enum class Rejection : std::uint8_t
     RateAboveLimit,             // above the shell's maxRateHz
     Memory,                     // live bytes plus demand exceeds capacity, or a block cannot fit
     Contract,                   // malformed command or metadata at the protocol boundary
+    OutputPending,              // the previous master still owns transferable PCM
+    MandatoryUnavailable,       // the source LUFS or true peak is not usable
+    DeliveryFormat,             // a master's delivery rate or bits are not the target's, its only format
 };
 
 using CommandId = std::uint64_t;   // the shell's own number for a request, given back in its answer
@@ -135,7 +139,17 @@ struct EditTarget  { CommandId id = 0; TargetFields<Touched> fields {}; };
 struct EditDevice  { CommandId id = 0; DeviceEdit fields {}; };
 struct RevertEdits { CommandId id = 0; DeviceMask fields {}; };
 struct SetManual   { CommandId id = 0; bool on = false; };
-struct Master      { CommandId id = 0; };
+// Version 0 uses the compiled defaults for older callers. Version 1 carries the
+// ready topology and parameters supplied by Decide; it is a job input, not Project.
+struct MasterReady
+{
+    std::uint32_t version = 0;
+    mastering::MasteringChainConfig topology {};
+    mastering::MasteringChainParams params {};
+    std::uint32_t deliveryRateHz = 0; // 0 or the target's rate (the source's when the target keeps it); else refused
+    std::uint8_t deliveryBits = 0;    // 0 or the target's bit depth; any other value is refused
+};
+struct Master      { CommandId id = 0; MasterReady ready {}; std::uint64_t source = 0, revision = 0; };
 struct Cancel      { CommandId id = 0; JobId job = 0; };
 struct Forget      { CommandId id = 0; MasterId master = 0; };
 struct ContinueMeasurement { CommandId id = 0; };
@@ -158,6 +172,8 @@ struct Answer
     std::optional<Device> device;              // import: absent for a target field
     std::uint8_t field = kNoField;             // rejected on a field: its place among the fields, in the order written
                                                // (the target's: lufs 0, tp 1; a device's: as its Fields lists them)
+    std::uint8_t targetBits = 0;               // DeliveryFormat: the target's bit depth and rate (the source's when the
+    std::uint32_t targetRate = 0;              // target keeps it), the one format its master takes
 };
 
 // WHAT A REQUEST WOULD DO, BEFORE IT IS DONE — Session::check(): the answer it would get, and the bytes it would ask the

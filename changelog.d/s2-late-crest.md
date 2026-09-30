@@ -1,0 +1,1 @@
+Late source crest results now join retained master rows by source, recipe, master id and complete analysis grid after PCM release. The WAV contract recording includes a replayable late join after wasm heap growth.

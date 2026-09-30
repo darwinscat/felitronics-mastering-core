@@ -199,6 +199,7 @@ const char* statusName (MasteringSolveStatus s)
         case MasteringSolveStatus::NotPrepared:        return "NotPrepared";
         case MasteringSolveStatus::InvalidRequest:     return "InvalidRequest";
         case MasteringSolveStatus::Cancelled:          return "Cancelled";
+        case MasteringSolveStatus::Unavailable:        return "Unavailable";
     }
     return "?";
 }
@@ -663,6 +664,7 @@ void testTheTraceNullsAgainstAHandDrivenChain()
         const long long D = chain2.latencySamples();
         const MasteringChainResolved r = chain2.resolved();
         std::vector<double> gc ((std::size_t) frames, -1.0), gl ((std::size_t) frames * (std::size_t) F, -1.0);
+        std::vector<double> detectorGr (gl.size(), -1.0);
         std::vector<std::vector<float>> scratch (2, std::vector<float> ((std::size_t) blk, 0.0f));
         std::vector<float*> sp { scratch[0].data(), scratch[1].data() };
         long long tapPos = 0;
@@ -683,14 +685,20 @@ void testTheTraceNullsAgainstAHandDrivenChain()
                     gc[(std::size_t) (t - r.compressorTapOffset)] = std::fabs ((double) compTap[(std::size_t) j]);
                 if (t >= r.limiterTapOffset && t < r.limiterTapOffset + frames)
                     for (int k = 0; k < F; ++k)
-                        gl[(std::size_t) (t - r.limiterTapOffset) * (std::size_t) F + (std::size_t) k]
+                        detectorGr[(std::size_t) (t - r.limiterTapOffset) * (std::size_t) F + (std::size_t) k]
+                            = std::fabs ((double) limTap[(std::size_t) (j * F + k)]);
+                const long long applied = t - r.limiterTapOffset - r.limiterLookahead;
+                if (applied >= 0 && applied < frames)
+                    for (int k = 0; k < F; ++k)
+                        gl[(std::size_t) applied * (std::size_t) F + (std::size_t) k]
                             = std::fabs ((double) limTap[(std::size_t) (j * F + k)]);
             }
             tapPos += taps.framesWritten;
             off += m;
         }
         const bool filled = std::none_of (gc.begin(), gc.end(), [] (double v) { return v < 0.0; })
-                         && std::none_of (gl.begin(), gl.end(), [] (double v) { return v < 0.0; });
+                         && std::none_of (gl.begin(), gl.end(), [] (double v) { return v < 0.0; })
+                         && std::none_of (detectorGr.begin(), detectorGr.end(), [] (double v) { return v < 0.0; });
         test::ok (filled, "PRECONDITION: the hand-driven chain delivered every tap of both windows");
 
         const std::string at = " (" + std::to_string (frames) + " frames, " + std::to_string (cs.buckets) + " requested)";
@@ -713,6 +721,14 @@ void testTheTraceNullsAgainstAHandDrivenChain()
                       + at + " — " + std::to_string (bad) + " differ");
         }
         const double limPeak = *std::max_element (gl.begin(), gl.end());
+        if (sol.measured.limiter.valid && sol.measured.limiter.aboveRange == 0)
+        {
+            double detectorSum = 0.0;
+            for (double value : detectorGr) detectorSum += value;
+            const double detectorMean = detectorSum / (double) detectorGr.size();
+            test::ok (std::fabs (detectorMean - sol.measured.limiter.meanDb) <= 1e-8,
+                      "legacy limiter mean stays on the detector window while the trace moves to applied audio" + at);
+        }
         if (seconds > 1.0)
             test::ok (limPeak > 0.5, "PRECONDITION: the limiter really worked (" + std::to_string (limPeak) + " dB peak)" + at);
     }
@@ -765,6 +781,12 @@ void checkTraceAgainstStats (const GainReductionTrace& t, const GainReductionSta
               + std::to_string (bound) + " (|diff| " + std::to_string (std::fabs (mean - st.meanDb)) + ")");
 }
 
+void checkAppliedLimiterTrace (const GainReductionTrace& t, int frames, int factor, const std::string& what)
+{
+    test::ok (t.complete && t.valid && t.samples == (std::uint64_t) frames * (std::uint64_t) factor,
+              what + ": the applied-gain trace covers every delivered frame at the oversampled rate");
+}
+
 void testTheTraceBuilderCountsWhatNoAudioCanReach()
 {
     test::group ("the trace builder — non-finite taps, sub-samples, short programmes and the boundary formula");
@@ -801,7 +823,7 @@ void testTheTraceBuilderCountsWhatNoAudioCanReach()
               "the 1-frame remainder lands in the LAST bucket (49 frames), the first holds floor(48001/1000) = 48");
 }
 
-// grTraceBuckets: refused outside 1..65536 with nothing allocated; a solve's allocation at 1 and 65536; 64-bit counts.
+// grTraceBuckets: refused outside 1..65536 before programme allocation; a solve's allocation at 1 and 65536; 64-bit counts.
 void testTheTraceBucketsAreTheRequests()
 {
     test::group ("grTraceBuckets — refused outside 1..65536, budgeted to the byte, counted in 64 bits");
@@ -815,13 +837,14 @@ void testTheTraceBucketsAreTheRequests()
         {
             Programme dst; dst.ch = src.ch; dst.bind();
             LoudnessRequest req; req.targetLufs = -12.0; req.maxTruePeakDbTp = -1.0; req.grTraceBuckets = b;
-            const long long before = alloc::count.load();
+            const long long before = alloc::bytes.load();
             const auto sol = rig.solver.solve (rig.chain, rig.renderer, rig.params, src.in(), dst.out(), 2, frames, req);
-            const long long allocs = alloc::count.load() - before;
-            test::ok (sol.status == MasteringSolveStatus::InvalidRequest && sol.passes == 0 && allocs == 0
+            const long long requested = alloc::bytes.load() - before;
+            test::ok (sol.status == MasteringSolveStatus::InvalidRequest && sol.passes == 0
+                      && requested >= 0 && (std::uint64_t) requested <= TargetLoudnessSolver::solutionReturnBytes()
                       && sol.limiterTrace.buckets == 0 && sol.limiterTrace.bucket.empty() && sol.compressorTrace.bucket.empty()
                       && TargetLoudnessSolver::solveBytes (kFs, 2, frames, b) == 0u,
-                      "grTraceBuckets " + std::to_string (b) + ": InvalidRequest before any pass, nothing allocated, a budget of 0");
+                      "grTraceBuckets " + std::to_string (b) + ": InvalidRequest before any pass, only return storage allocated, a work budget of 0");
         }
     }
     for (const int b : { 1, 65536 })
@@ -830,33 +853,18 @@ void testTheTraceBucketsAreTheRequests()
         Programme dst; dst.ch = src.ch; dst.bind();
         LoudnessRequest req; req.targetLufs = -12.0; req.maxTruePeakDbTp = -1.0; req.maxPasses = 3; req.grTraceBuckets = b;
         const std::uint64_t budget = TargetLoudnessSolver::solveBytes (kFs, 2, frames, b);
-        const long long traces = 2LL * (long long) b * 32LL;
+        const long long traces = 3LL * (long long) b * (long long) sizeof (GainReductionTraceBucket);
         const long long before = alloc::bytes.load();
         const auto sol = rig.solver.solve (rig.chain, rig.renderer, rig.params, src.in(), dst.out(), 2, frames, req);
         const long long got = alloc::bytes.load() - before;
-        const long long perPass = (long long) budget - traces - kGrWindowBytes;
         test::ok (sol.passes > 0 && sol.limiterTrace.buckets == b && sol.compressorTrace.buckets == b && sol.limiterTrace.valid
                   && sol.limiterTrace.bucket.size() == (std::size_t) b,
                   "grTraceBuckets " + std::to_string (b) + " over " + std::to_string (frames) + " frames: a render, " + std::to_string (b) + " buckets per stage");
-        test::ok (perPass > 0 && got == (long long) sol.passes * perPass + traces + kGrWindowBytes,
-                  "and the solve allocates passes x its meters + its three window histograms + two traces of " + std::to_string (traces / 2) + " B ("
+        test::ok (got == (long long) (budget + 2u * TargetLoudnessSolver::solutionConstructBytes()),
+                  "and the solve reuses one meter set, three window histograms, and three traces of " + std::to_string (traces / 3) + " B each ("
                   + std::to_string (got) + " B over " + std::to_string (sol.passes) + " passes)");
     }
 
-    // 2^32 + 5 samples into one bucket.
-    {
-        GainReductionTrace t;
-        const std::uint64_t n = (1ULL << 32) + 5u;
-        {
-            GainReductionTraceBuilder b (t, 1, 1);
-            for (std::uint64_t i = 0; i < n; ++i) b.add (0u, 1.0);
-            b.finish();
-        }
-        test::ok (t.buckets == 1 && t.bucket[0].samples == n && t.bucket[0].nonFinite == 0u && t.samples == n
-                  && core::exactlyEqual (t.bucket[0].meanDb, 1.0) && core::exactlyEqual (t.bucket[0].maxDb, 1.0) && t.valid,
-                  "one bucket fed 2^32 + 5 samples of 1 dB counts " + std::to_string (t.bucket[0].samples) + " and means "
-                  + std::to_string (t.bucket[0].meanDb) + " dB");
-    }
     // 65536 buckets over INT_MAX frames: each bucket's first and last frame land in it.
     {
         GainReductionTrace t;
@@ -879,8 +887,24 @@ void testTheTraceBucketsAreTheRequests()
     }
 }
 
-// A solve stopped at any event, or refused after a render, holds its traces once: the call allocates the meters of the
-// passes it measured and the two traces, and returns the traces intact.
+void testTheTraceCounterCrosses32Bits()
+{
+    test::group ("trace counter crosses 2^32 samples");
+    GainReductionTrace t;
+    const std::uint64_t n = (1ULL << 32) + 5u;
+    {
+        GainReductionTraceBuilder b (t, 1, 1);
+        for (std::uint64_t i = 0; i < n; ++i) b.add (0u, 1.0);
+        b.finish();
+    }
+    test::ok (t.buckets == 1 && t.bucket[0].samples == n && t.bucket[0].nonFinite == 0u && t.samples == n
+              && core::exactlyEqual (t.bucket[0].meanDb, 1.0) && core::exactlyEqual (t.bucket[0].maxDb, 1.0) && t.valid,
+              "one bucket fed 2^32 + 5 samples of 1 dB counts " + std::to_string (t.bucket[0].samples)
+              + " and means " + std::to_string (t.bucket[0].meanDb) + " dB");
+}
+
+// A solve stopped at any event, or refused after a render, holds its traces once: the call allocates one meter set
+// and the three traces, and returns the traces intact.
 struct StopAt
 {
     ProgressStage stage = ProgressStage::SearchPass;
@@ -906,18 +930,18 @@ void testAStoppedOrRefusedSolveHoldsItsTracesOnce()
     test::group ("a solve stopped at any event, or refused after a render, allocates its traces once and returns them");
     const int frames = 65536, B = 65536;
     const std::uint64_t budget = TargetLoudnessSolver::solveBytes (kFs, 1, frames, B);
-    const long long traces = 2LL * (long long) GainReductionTrace::bytesFor (B, frames);
-    const long long perPass = (long long) budget - traces - kGrWindowBytes;
+    const long long traces = 3LL * (long long) GainReductionTrace::bytesFor (B, frames);
     // THE PIN IS THE PART THAT DOES NOT MOVE. Three literals stood here — the budget, the traces and the
     // histograms — and two of the three are functions of things this test is not about: the bucket count and
     // how many distributions a solution keeps. The gated third histogram moved two of them at once, which reads as
     // a failure of the solve budget and is a failure of nothing. What this group is about is the PER-PASS cost,
     // so that is the literal, and the rest is spelled through the same expressions the budget is made of.
-    test::ok (budget == 21568u + (std::uint64_t) traces + (std::uint64_t) kGrWindowBytes
-              && traces == 4194304LL,
+    test::ok (budget == 19168u + (std::uint64_t) traces + (std::uint64_t) kGrWindowBytes
+                  + TargetLoudnessSolver::meterConstructBytes() + TargetLoudnessSolver::solveProxyBytes()
+              && traces == 7864320LL,
               "PRECONDITION: mono, 65536 frames and buckets: a budget of "
-              + std::to_string (budget) + " B = 21 568 B of meters + the traces " + std::to_string (traces)
-              + " B + the window histograms " + std::to_string (kGrWindowBytes) + " B");
+              + std::to_string (budget) + " B = 19 168 B of meter payloads + the traces " + std::to_string (traces)
+              + " B + the window histograms " + std::to_string (kGrWindowBytes) + " B + Debug proxies");
 
     using When = StopAt::When;
     struct Case
@@ -927,7 +951,7 @@ void testAStoppedOrRefusedSolveHoldsItsTracesOnce()
         LoudnessRequest req;
         StopAt stop;
         MasteringSolveStatus want;
-        int measured;                  // passes whose meters the call built
+        int measured;                  // completed passes before the stop or refusal
     };
     auto request = [] (double target, int passes)
     {
@@ -967,12 +991,13 @@ void testAStoppedOrRefusedSolveHoldsItsTracesOnce()
         const std::string at = std::string (cs.what) + ": ";
         test::ok (cs.stop.when == When::Never || cs.stop.seen, "PRECONDITION: " + at + "the event was reached");
         test::ok (sol.status == cs.want, at + "the status (" + std::string (statusName (sol.status)) + ")");
-        test::ok (got == (long long) cs.measured * perPass + traces + kGrWindowBytes,
-                  at + std::to_string (got) + " B allocated, " + std::to_string (cs.measured)
-                     + " x the meters + the traces + the window histograms");
+        test::ok (got == (long long) (budget + 2u * TargetLoudnessSolver::solutionConstructBytes()),
+                  at + std::to_string (got) + " B allocated after " + std::to_string (cs.measured)
+                     + " passes: one meter set, traces, and window histograms");
         test::ok (sol.limiterTrace.buckets == B && sol.limiterTrace.bucket.size() == (std::size_t) B
                   && sol.compressorTrace.bucket.size() == (std::size_t) B, at + "the traces are returned whole");
-        if (cs.measured == 1) test::ok (got <= (long long) budget, at + "within the budget of " + std::to_string (budget) + " B");
+        if (cs.measured == 1) test::ok (got <= (long long) TargetLoudnessSolver::solveCallBytes (kFs, 1, frames, B),
+                                        at + "within the whole-call budget including return storage");
     }
 }
 
@@ -1001,7 +1026,7 @@ void testTheTraceDescribesTheDeliveredRender()
                   "PRECONDITION: the delivery was a RE-RENDER, and the last search pass had a different limiter GR ("
                   + std::to_string (lastSearchGr) + " vs delivered " + std::to_string (sol.measured.limiter.maxDb) + ")");
         test::ok (sol.limiterTrace.valid && sol.limiterTrace.buckets == 1000, "the delivered render's trace: valid, 1000 buckets");
-        checkTraceAgainstStats (sol.limiterTrace, sol.measured.limiter, "re-render branch, limiter");
+        checkAppliedLimiterTrace (sol.limiterTrace, src.frames(), rig.chain.tapOversampleFactor(), "re-render branch, limiter");
         checkTraceAgainstStats (sol.compressorTrace, sol.measured.compressor, "re-render branch, compressor");
     }
     // THE NO-RE-RENDER BRANCH: a search that ends on its own best point delivers the last render as it is.
@@ -1015,7 +1040,7 @@ void testTheTraceDescribesTheDeliveredRender()
             if (sol.log[i].gainDb == sol.log[sol.logCount - 1].gainDb && sol.log[i].ceilingDb == sol.log[sol.logCount - 1].ceilingDb) repeated = true;
         test::ok (sol.logCount >= 1 && ! repeated && sol.limiterTrace.valid, "PRECONDITION: no re-render (the last candidate repeats none), a valid trace");
         test::ok (traceMax (sol.limiterTrace) > 0.5, "PRECONDITION: the limiter worked (" + std::to_string (traceMax (sol.limiterTrace)) + " dB)");
-        checkTraceAgainstStats (sol.limiterTrace, sol.measured.limiter, "no-re-render branch, limiter");
+        checkAppliedLimiterTrace (sol.limiterTrace, src.frames(), rig.chain.tapOversampleFactor(), "no-re-render branch, limiter");
         checkTraceAgainstStats (sol.compressorTrace, sol.measured.compressor, "no-re-render branch, compressor");
     }
     // NO ACCUMULATION ACROSS RENDERS: a 0.9 tone asked for -6 LUFS with the limiter allowed 0.5 dB, three passes — an
@@ -1031,7 +1056,7 @@ void testTheTraceDescribesTheDeliveredRender()
         for (int i = 0; i + 1 < sol.logCount; ++i) earlier = std::max (earlier, sol.log[i].limiterMaxGrDb);
         test::ok (earlier > sol.measured.limiter.maxDb, "PRECONDITION: an earlier render limited harder than the delivered one ("
                   + std::to_string (earlier) + " vs " + std::to_string (sol.measured.limiter.maxDb) + ")");
-        checkTraceAgainstStats (sol.limiterTrace, sol.measured.limiter, "reset per render, limiter");
+        checkAppliedLimiterTrace (sol.limiterTrace, src.frames(), rig.chain.tapOversampleFactor(), "reset per render, limiter");
         test::ok (sol.limiterTrace.valid && traceMax (sol.limiterTrace) == sol.measured.limiter.maxDb,
                   "and the trace's max is the DELIVERED render's (" + std::to_string (traceMax (sol.limiterTrace)) + " dB), not an earlier pass's");
     }
@@ -1099,9 +1124,10 @@ void testTheTraceLocatesAnImpulse()
     test::ok (t.bucket[bucketOf (at)].maxDb == G0, "the peak GR is in the impulse's own bucket (" + std::to_string (bucketOf (at)) + ")");
     // The reconstruction filter spreads the impulse over a couple of frames either side: the first active frame is at
     // most 2 before it, which here can only be bucket 124 (frame 5998..5999) or 125.
-    test::ok (first == bucketOf (at - 2) || first == bucketOf (at), "the first active bucket is the impulse's or the one before ("
+    test::ok (first == bucketOf (at - r.limiterLookahead - 2)
+              || first == bucketOf (at - r.limiterLookahead), "the first active bucket follows the delayed audio ("
               + std::to_string (first) + ")");
-    const double holdEnd = (double) at + (double) r.limiterLookahead + 1.0;
+    const double holdEnd = (double) at + 1.0;
     const double decayFrames = r.limiterReleaseMs * 0.001 * kFs * std::log (G0 / theta);
     const double endFrame = holdEnd + decayFrames;
     const int lo = bucketOf ((long long) std::floor (endFrame - 2.0)), hi = bucketOf ((long long) std::ceil (endFrame + 2.0));
@@ -1110,6 +1136,64 @@ void testTheTraceLocatesAnImpulse()
     int beforeActive = 0;
     for (int k = 0; k < first; ++k) if (t.bucket[k].maxDb > 0.0) ++beforeActive;
     test::ok (beforeActive == 0, "silence before the impulse reads exactly 0 dB in every bucket");
+}
+
+void testK13DeliveredTrace()
+{
+    test::group ("K13 trace shares the limiter's delivered grid across a step and the final drain");
+    for (int bucketCount : { 1, 7, 513 })
+    {
+        Rig rig; if (! test::run (rig.build (2, 73))) return;
+        Programme src = makeImpulse (513, 2, 512, 4.0f);
+        src.ch[0][255] = src.ch[1][255] = 4.0f;
+        Programme dst; dst.ch = src.ch; dst.bind();
+        rig.params.limiter.ceilingDbTp = -20.0;
+        rig.params.limiter.peakClip = true;
+        rig.params.limiter.overCeilingDb = 0.0;
+        LoudnessRequest req; req.targetLufs = -14.0; req.maxTruePeakDbTp = -20.0;
+        req.maxPasses = 1; req.grTraceBuckets = bucketCount;
+        const auto sol = rig.solver.solve (rig.chain, rig.renderer, rig.params, src.in(), dst.out(), 2, src.frames(), req);
+        const auto& clip = sol.peakClipTrace;
+        const auto& lim = sol.limiterTrace;
+        double clipMax = 0.0;
+        for (const auto& b : clip.bucket) clipMax = std::max (clipMax, b.maxDb);
+        test::ok (clip.complete && clip.valid && lim.complete && lim.valid
+                  && clip.programmeFrames == 513 && clip.buckets == lim.buckets
+                  && clip.samples == lim.samples && clip.samples == 513u * (std::uint64_t) rig.chain.tapOversampleFactor(),
+                  "both series cover exactly the delivered frames at the oversampled rate");
+        test::ok (clipMax > 0.0 && clipMax <= sol.measured.peakClipReductionMaxDb,
+                  "K13 time rows are bounded by the unchanged whole-render aggregate");
+        if (bucketCount == 513)
+            test::ok (clip.bucket[255].maxDb > 0.0 && clip.bucket[512].maxDb > 0.0,
+                      "peaks crossing a renderer step and in the final frame reach their own buckets");
+    }
+    Rig bypass; if (! test::run (bypass.build (2, 73))) return;
+    Programme src = makeImpulse (513, 2, 512, 4.0f); Programme dst; dst.ch = src.ch; dst.bind();
+    bypass.params.limiter.ceilingDbTp = -20.0;
+    bypass.params.limiter.peakClip = true;
+    bypass.params.limiter.overCeilingDb = 0.0;
+    LoudnessRequest req; req.targetLufs = -14.0; req.maxTruePeakDbTp = -20.0;
+    req.maxPasses = 1; req.grTraceBuckets = 7;
+    const auto active = bypass.solver.solve (bypass.chain, bypass.renderer, bypass.params, src.in(), dst.out(), 2, src.frames(), req);
+    test::ok (traceMax (active.peakClipTrace) > 0.0, "precondition: the reused solver published K13 work");
+    StopAt stop; stop.when = StopAt::When::Begin;
+    const ProgressCallback cancel { &stopAt, &stop };
+    const auto cancelled = bypass.solver.solve (bypass.chain, bypass.renderer, bypass.params, src.in(), dst.out(), 2, src.frames(), req, cancel);
+    test::ok (stop.seen && cancelled.status == MasteringSolveStatus::Cancelled
+              && cancelled.peakClipTrace.buckets == 0 && ! cancelled.peakClipTrace.complete,
+              "cancellation before a repeat publishes no stale K13 row");
+    bypass.params.limiter.peakClip = false;
+    bypass.params.limiter.ceilingDbTp = -1.0; req.maxTruePeakDbTp = -1.0;
+    const auto noClip = bypass.solver.solve (bypass.chain, bypass.renderer, bypass.params, src.in(), dst.out(), 2, src.frames(), req);
+    test::ok (noClip.peakClipTrace.complete && noClip.peakClipTrace.valid
+              && traceMax (noClip.peakClipTrace) == 0.0,
+              "K13 off has a complete zero trace");
+    bypass.params.limiter.peakClip = true;
+    bypass.params.bypassLimiter = true;
+    const auto noLimiter = bypass.solver.solve (bypass.chain, bypass.renderer, bypass.params, src.in(), dst.out(), 2, src.frames(), req);
+    test::ok (noLimiter.peakClipTrace.complete && noLimiter.peakClipTrace.valid
+              && traceMax (noLimiter.peakClipTrace) == 0.0,
+              "limiter bypass also has a complete zero K13 trace");
 }
 
 // =============================================================================================
@@ -3840,15 +3924,16 @@ static void testTheBudgetsRefuseWhatTheCallsRefuse()
     test::ok (TargetLoudnessSolver::solveBytes (48000.0, 0, 48000, kB) == 0 && TargetLoudnessSolver::solveBytes (48000.0, -1, 48000, kB) == 0
               && TargetLoudnessSolver::solveBytes (48000.0, past, 48000, kB) == 0,
               "solveBytes: 0 for a channel count solve() refuses");
-    // Two traces of 1000 x 32 B.
-    test::ok (sizeof (GainReductionTraceBucket) == 32u, "a trace bucket is 32 B");
+    // Three traces of 1000 x 40 B.
+    test::ok (sizeof (GainReductionTraceBucket) == 40u, "a trace bucket is 40 B");
     // THE FIGURE IS PRINTED, NOT SPELLED. It used to read "727 696 B" in the text while the comparison beside it
     // was parameterised by `kGrWindowBytes` — so the gated third histogram moved the assertion and left the sentence
     // describing a number that no longer existed. A test may not carry a number its own run does not produce.
     test::ok (TargetLoudnessSolver::solveBytes (48000.0, 2, 48000, kB)
-                  == 2816u + 21008u + 64000u + (std::uint64_t) kGrWindowBytes,
+                  == 416u + 21008u + 120000u + (std::uint64_t) kGrWindowBytes
+                   + TargetLoudnessSolver::meterConstructBytes() + TargetLoudnessSolver::solveProxyBytes(),
               "and " + std::to_string (TargetLoudnessSolver::solveBytes (48000.0, 2, 48000, kB))
-              + " B for 1 s of stereo at the default 1000 buckets — meter, reference true-peak meter, two "
+              + " B for 1 s of stereo at the default 1000 buckets — meter, reference true-peak meter, three "
                 "traces and the three window histograms (the ABI suite's oracle)");
     // A prepare() refused on its bin width (400 dB at 1e-7 dB is 4e9 bins, past the 4e6 ceiling) allocates NOTHING —
     // which is what its budget says. The diverse-testing round found the tap buffers assigned before that refusal, and
@@ -3866,12 +3951,14 @@ static void testTheBudgetsRefuseWhatTheCallsRefuse()
     // The cheap meter's factor followed the RATE and its budget had to follow too (the diverse-testing round's mutant
     // sized it at 48 kHz and passed). The reference is 4x at EVERY rate, so its budget must NOT move with the rate —
     // the opposite claim, pinned for the same reason: one rate could not tell. 1 s is 20 hops at any multiple of 100 Hz,
-    // so the loudness meter is 8·(300 + 24 + 28) = 2816 B at each of them. THE LAST TERM IS WHAT THE 10 Hz CADENCE
+    // so the saved solve meter is 8·(24 + 28) = 416 B at each of them; its 300-value ring is inline.
+    // THE LAST TERM IS WHAT THE 10 Hz CADENCE
     // MOVED: the short-term store used to hold one sample per ten hops and now holds one per hop, the cadence EBU Tech 3342
     // §3.1 asks for, so 10 doubles became 28 — the 20 hops, plus the same margin of 8 that stood there before.
     test::ok (ReferenceTruePeakMeter::storageFor (96000.0, 96000, 2).bytes() == 21008u && ReferenceTruePeakMeter::storageFor (192000.0, 192000, 2).bytes() == 21008u,
               "the reference true-peak meter is 21 008 B at 96 and at 192 kHz too");
-    const std::uint64_t oneSecond = 2816u + 21008u + 64000u + (std::uint64_t) kGrWindowBytes;
+    const std::uint64_t oneSecond = 416u + 21008u + 120000u + (std::uint64_t) kGrWindowBytes
+                                  + TargetLoudnessSolver::meterConstructBytes() + TargetLoudnessSolver::solveProxyBytes();
     test::ok (TargetLoudnessSolver::solveBytes (96000.0, 2, 96000, kB) == oneSecond
               && TargetLoudnessSolver::solveBytes (192000.0, 2, 192000, kB) == oneSecond,
               "and a 1 s solve at 96 and 192 kHz carries it unchanged: "
@@ -4154,12 +4241,13 @@ static void testThePercentileLimitAndItsReadBack()
             LoudnessRequest req;
             req.targetLufs = -12.0; req.maxTruePeakDbTp = -1.0;
             (which == 0 ? req.limiterGr.quantile : req.compressorGr.quantile) = q;
-            const long long before = alloc::count.load();
+            const long long before = alloc::bytes.load();
             const auto s = rig.solver.solve (rig.chain, rig.renderer, rig.params, src.in(), dst.out(), 2, src.frames(), req);
-            const long long allocs = alloc::count.load() - before;
-            test::ok (s.status == MasteringSolveStatus::InvalidRequest && s.passes == 0 && allocs == 0,
+            const long long requested = alloc::bytes.load() - before;
+            test::ok (s.status == MasteringSolveStatus::InvalidRequest && s.passes == 0
+                      && requested >= 0 && (std::uint64_t) requested <= TargetLoudnessSolver::solutionReturnBytes(),
                       std::string (which == 0 ? "limiterGr" : "compressorGr") + ".quantile = " + std::to_string (q)
-                      + ": InvalidRequest before any pass, nothing allocated");
+                      + ": InvalidRequest before any pass, only return storage allocated");
         }
     // ... and q = 1 is INSIDE the interval: the interval is half-open at 0, not at 1.
     {
@@ -4938,9 +5026,22 @@ void testK11ActiveWindowStatistics()
               "the gate moves nothing the solver judges: the ungated statistics are identical at both gates");
 }
 
-int main()
+int main (int argc, char** argv)
 {
     std::printf ("felitronics::mastering::TargetLoudnessSolver\n");
+    if (argc == 2 && std::strcmp (argv[1], "--long-counter") == 0)
+    {
+        testTheTraceCounterCrosses32Bits();
+        return felitronics::test::report();
+    }
+    if (argc == 2 && std::strcmp (argv[1], "--budget-only") == 0)
+    {
+        testTheTraceBucketsAreTheRequests();
+        testAStoppedOrRefusedSolveHoldsItsTracesOnce();
+        testTheBudgetsRefuseWhatTheCallsRefuse();
+        testThePercentileLimitAndItsReadBack();
+        return felitronics::test::report();
+    }
     testSilenceIsStillSpelledMinus200();
     testTappedRenderNullsAgainstThePlainOne();
     testShortTapRefusesTheWholeCall();
@@ -4956,6 +5057,7 @@ int main()
     testK11ActiveWindowStatistics();
     testTheTraceDescribesTheDeliveredRender();
     testTheTraceLocatesAnImpulse();
+    testK13DeliveredTrace();
     testRefusalsAndDegenerateInputs();
     testBlockIndependence();
     testTheReportedRenderIsTheDeliveredOne();

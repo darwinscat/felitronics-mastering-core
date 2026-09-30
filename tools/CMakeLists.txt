@@ -223,6 +223,8 @@ if(FELITRONICS_BUILD_TESTS AND NOT CMAKE_CROSSCOMPILING)
     if(FELITRONICS_ENABLE_SANITIZERS)
         set_tests_properties(fcore_session_contract PROPERTIES ENVIRONMENT FC_SESSION_CONTRACT_TIMEOUT_MS=600000)
     endif()
+    add_test(NAME felitronics_wav_recording_replay
+        COMMAND ${SESSION_SCRIPT_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/contract/wav-recording-check.mjs)
 endif()
 
 find_program(FELITRONICS_ABI_NODE NAMES node nodejs REQUIRED)
@@ -242,6 +244,15 @@ target_link_libraries(felitronics_session_abi_probe PRIVATE felitronics::session
 target_compile_options(felitronics_session_abi_probe PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
 target_include_directories(felitronics_session_abi_probe PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 if(FELITRONICS_BUILD_TESTS)
+    add_test(NAME felitronics_core_consumption_controls
+        COMMAND ${CMAKE_COMMAND}
+            "-DMASTERING_SOURCE=${PROJECT_SOURCE_DIR}"
+            "-DTOML_SOURCE=${felitronics_toml_SOURCE_DIR}"
+            "-DCORE_SOURCE=${felitronics_core_SOURCE_DIR}"
+            "-DCONTROL_DIR=${CMAKE_CURRENT_BINARY_DIR}/core-consumption-controls/$<CONFIG>"
+            "-DCONTROL_GENERATOR=${CMAKE_GENERATOR}"
+            "-DCONTROL_PLATFORM=${CMAKE_GENERATOR_PLATFORM}"
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/CoreConsumptionControls.cmake)
     add_test(NAME felitronics_session_abi_manifest
         COMMAND ${FELITRONICS_ABI_NODE} ${CMAKE_CURRENT_SOURCE_DIR}/session-abi-check.mjs
                 ${CMAKE_CROSSCOMPILING_EMULATOR} $<TARGET_FILE:felitronics_session_abi_probe>)
@@ -312,6 +323,10 @@ if(FELITRONICS_BUILD_TESTS)
     target_link_libraries(felitronics_session_abi_v1_tests PRIVATE felitronics::session felitronics::toml felitronics::test_support)
     target_include_directories(felitronics_session_abi_v1_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
     add_test(NAME felitronics_session_abi_v1_tests COMMAND felitronics_session_abi_v1_tests)
+    add_executable(felitronics_session_master_abi_tests tests/SessionMasterAbiTests.cpp $<TARGET_OBJECTS:felitronics_session_facade>)
+    target_link_libraries(felitronics_session_master_abi_tests PRIVATE felitronics::session felitronics::toml felitronics::test_support)
+    target_include_directories(felitronics_session_master_abi_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    add_test(NAME felitronics_session_master_abi_tests COMMAND felitronics_session_master_abi_tests)
     foreach(operation command load import)
         add_test(NAME felitronics_session_abi_poison_${operation}_tests
             COMMAND felitronics_session_abi_v1_tests ${operation})

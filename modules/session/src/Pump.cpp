@@ -7,6 +7,7 @@
 #include "LiveMeasurements.h"
 #include "SourceMeasurements.h"
 #include "QueryState.h"
+#include "MasterJob.h"
 #include "Rules.h"
 
 #include <felitronics/session/Config.h>
@@ -22,10 +23,9 @@ double weight (toml::embedded::View v) noexcept
 {
     if (const auto d = v.decimal()) return d->toDouble();
     if (const auto i = v.integer()) return double (*i);
-    detail::storageOverflow(); // the build gate requires every weight
+    detail::storageOverflow();
 }
 }
-
 bool OwnedFact::assign (const text::Fact& fact) noexcept
 {
     if (fact.argCount > text::Fact::kMaxArgs) return false;
@@ -69,7 +69,7 @@ text::Fact OwnedFact::view() const noexcept
 
 std::uint64_t Session::stepBytes() noexcept { return 0; }
 JobId Session::measurementJob() const noexcept { return measurementJob_; }
-bool Session::hasWork() const noexcept { return measurementJob_ != 0 || job_ != 0 || needlesJob_ != 0; }
+bool Session::hasWork() const noexcept { return measurementJob_ != 0 || job_ != 0 || needlesJob_ != 0 || crestJoin_; }
 std::span<const Notification> Session::events() const noexcept { return { events_, eventCount_ }; }
 void Session::emit (Notification event) noexcept
 {
@@ -85,7 +85,16 @@ Phase Session::jobProgress (JobId job) const noexcept
 }
 void Session::emit (Notification event, const Phase& progress) noexcept
 {
-    if (event.kind == EventKind::Measurement) invalidateQueryCache (event.payload.measurement.analyzer);
+    if (event.kind == EventKind::Measurement)
+    {
+        invalidateQueryCache (event.payload.measurement.analyzer);
+        if (event.payload.measurement.analyzer == Analyzer::Crest
+            && event.payload.measurement.status == MeasurementStatus::Unavailable)
+            settleMasterCrest (event.payload.measurement.reason);
+        else if (event.payload.measurement.analyzer == Analyzer::Crest
+                 && event.payload.measurement.status == MeasurementStatus::Ready)
+        { crestJoin_ = masterCount_ != 0; crestJoinIndex_ = 0; }
+    }
     else if (event.kind == EventKind::Reading)
     {
         invalidateQueryCache (Analyzer::Loudness);
@@ -100,7 +109,7 @@ void Session::emit (Notification event, const Phase& progress) noexcept
     event.completedWork = progress.completedUnits;
     event.totalWork = progress.totalUnits;
 
-    events_[eventCount_++] = event; // at most three per unit, or one per command
+    events_[eventCount_++] = event; // three per ordinary unit; a master completion has five extra slots
 }
 
 void Session::dropJob (JobId job) noexcept
@@ -122,8 +131,10 @@ void Session::dropJob (JobId job) noexcept
                 result.status = MeasurementStatus::Cancelled;
                 result.reason = MeasurementReason::Cancelled;
             }
-        // A master cannot silently restart a dependency the user just stopped.
-        if (job_ != 0 && masterRequiresTempo() && ! tempoForDevice().ready)
+        if (measurementResults_[std::size_t (Analyzer::Crest)].status == MeasurementStatus::Ready)
+        { crestJoin_ = masterCount_ != 0; crestJoinIndex_ = 0; }
+        else settleMasterCrest (MeasurementReason::Cancelled);
+        if (job_ != 0 && ! masterJob_ && masterRequiresTempo() && ! tempoForDevice().ready)
         {
             mastering_ = false; job_ = 0; jobRecipe_ = {};
             masterUnit_ = 0; masterProgress_ = {};
@@ -131,6 +142,10 @@ void Session::dropJob (JobId job) noexcept
     }
     else
     {
+        if (masterJob_) masterJob_->search.cancel();
+        masterJob_.reset(); masterJobBytes_ = 0;
+        masterSummary_ = {}; masterTraceCursor_ = 0; masterTraceActive_ = false;
+        if (masterRows_ && masterCount_ < masterRoom_) masterRows_[masterCount_] = {};
         mastering_ = false;
         job_ = 0;
         jobRecipe_ = {};
@@ -182,63 +197,149 @@ Stepped Session::step (std::uint32_t budget) noexcept
         if (job_ != 0)
         {
             event.jobId = job_;
-            if (masterRequiresTempo() && ! tempoForDevice().ready)
+            if (! masterJob_)
             {
-                const auto masterJob = job_;
-                if (measurementJob_ == 0 && detail::Driver::continueMeasurement (*this) == 0)
-                    contract (masterJob);
-                else if (! sourceMeasurements_ || sourceMeasurements_->cursor > sourceMeasurements_->order.size()
-                         || sourceMeasurements_->stage > 5)
-                    contract (masterJob);
+                if (masterRequiresTempo() && ! tempoForDevice().ready)
+                {
+                    const auto masterJob = job_;
+                    if (measurementJob_ == 0 && detail::Driver::continueMeasurement (*this) == 0)
+                        contract (masterJob);
+                    else if (! sourceMeasurements_ || sourceMeasurements_->cursor > sourceMeasurements_->order.size()
+                             || sourceMeasurements_->stage > 5)
+                        contract (masterJob);
+                    else
+                    {
+                        auto& run = *sourceMeasurements_;
+                        if (run.cursor < 8 && run.stage == 0)
+                        {
+                            run.tempoReturnCursor = run.cursor;
+                            run.cursor = 8;
+                        }
+                        stepSourceMeasurements();
+                        if (job_ == masterJob)
+                        {
+                            auto& p = masterProgress_;
+                            p.name = PhaseName::Analyzers; p.pass = 0; p.totalPasses = passes;
+                            if (p.completedUnits < 4294967294u) ++p.completedUnits;
+                            p.totalUnits = std::max (p.totalUnits, p.completedUnits + 1u);
+                            p.fraction = measureWeight * double (p.completedUnits) /
+                                (double (p.totalUnits) * (double (passes) * passWeight + measureWeight));
+                            event.kind = EventKind::Phase; event.jobId = masterJob; event.payload.phase = p; emit (event);
+                        }
+                    }
+                    ++units;
+                    continue;
+                }
+                if (masterProgress_.name == PhaseName::Analyzers)
+                    jobRecipe_ = { project_, source_.hash, config::Config::versions().sound };
+                ++masterUnit_;
+                const bool end = masterUnit_ > passes;
+                masterProgress_ = { end ? PhaseName::Remeasure : PhaseName::Pass,
+                    end ? 1.0 : double (masterUnit_) * passWeight / (double (passes) * passWeight + measureWeight),
+                    version, end ? 0 : masterUnit_, passes, masterUnit_, passes + 1 };
+                event.payload.phase = masterProgress_;
+                emit (event);
+                const bool ended = ! end || detail::Driver::mastered (*this, event.jobId);
+                if (! ended) contract (event.jobId);
                 else
                 {
-                    auto& run = *sourceMeasurements_;
-                    // Complete an in-flight optional first. At its next stage boundary,
-                    // do tempo before the other optionals, then resume their cursor.
-                    if (run.cursor < 8 && run.stage == 0)
+                    event.kind = EventKind::Fact;
+                    (void) event.payload.fact.assign (end ? text::Fact::of (text::FactId::MasterReady)
+                        : text::Fact::of (text::FactId::MasterPass, text::Arg::count (masterUnit_)));
+                    emit (event, masterProgress_);
+                    if (end)
                     {
-                        run.tempoReturnCursor = run.cursor;
-                        run.cursor = 8;
-                    }
-                    stepSourceMeasurements();
-                    if (job_ == masterJob)
-                    {
-                        auto& p = masterProgress_;
-                        p.name = PhaseName::Analyzers; p.pass = 0; p.totalPasses = passes;
-                        if (p.completedUnits < 4294967294u) ++p.completedUnits;
-                        p.totalUnits = std::max (p.totalUnits, p.completedUnits + 1u);
-                        p.fraction = measureWeight * double (p.completedUnits) /
-                            (double (p.totalUnits) * (double (passes) * passWeight + measureWeight));
-                        event.kind = EventKind::Phase; event.jobId = masterJob; event.payload.phase = p; emit (event);
+                        event.kind = EventKind::Done;
+                        event.payload.done.masterId = event.jobId;
+                        emit (event, masterProgress_);
                     }
                 }
                 ++units;
                 continue;
             }
-            if (masterProgress_.name == PhaseName::Analyzers)
-                jobRecipe_ = { project_, source_.hash, config::Config::versions().sound };
+            const auto beforePass = masterJob_->search.startedPasses();
+            const auto outcome = masterTraceActive_ ? mastering::StepResult::Done : masterJob_->step (1024);
             ++masterUnit_;
-            const bool end = masterUnit_ > passes;
-            masterProgress_ = { end ? PhaseName::Remeasure : PhaseName::Pass,
-                end ? 1.0 : double (masterUnit_) * passWeight / (double (passes) * passWeight + measureWeight),
-                version, end ? 0 : masterUnit_, passes, masterUnit_, passes + 1 };
+            const bool end = outcome != mastering::StepResult::More;
+            const auto total = std::uint32_t (std::min<std::uint64_t> (
+                4294967295u, (source_.frames / 1024u + 2u * std::uint64_t (masterJob_->frames) / 1024u + 64u) * 12u));
+            masterProgress_ = { end ? PhaseName::Final : PhaseName::Pass,
+                end ? 1.0 : std::min (0.99, double (masterUnit_) / double (std::max (1u, total))),
+                config::Config::versions().all, std::uint32_t (masterJob_->search.startedPasses()), 12,
+                masterUnit_, total };
             event.payload.phase = masterProgress_;
             emit (event);
-            const bool ended = ! end || detail::Driver::mastered (*this, event.jobId);
-            if (! ended) contract (event.jobId);
-            else
+            if (masterJob_->search.startedPasses() != beforePass)
             {
                 event.kind = EventKind::Fact;
-                (void) event.payload.fact.assign (end ? text::Fact::of (text::FactId::MasterReady)
-                    : text::Fact::of (text::FactId::MasterPass, text::Arg::count (masterUnit_)));
+                (void) event.payload.fact.assign (text::Fact::of (text::FactId::MasterPass,
+                    text::Arg::count (masterJob_->search.startedPasses())));
                 emit (event, masterProgress_);
-                if (end)
+            }
+            if (end)
+            {
+                auto& rows = masterRows_[masterCount_];
+                const auto& solution = masterJob_->result();
+                const auto trace = std::span<LandingTraceBucket> (rows.traces.get(), rows.traceCapacity);
+                const auto clip = std::span<LandingTraceBucket> (rows.traces.get() + rows.traceCapacity, rows.traceCapacity);
+                if (! masterTraceActive_)
                 {
-                    event.kind = EventKind::Done;
-                    event.payload.done.masterId = event.jobId;
+                    if (! LandingOps::summarize (solution, { rows.passes.get(), 12 }, masterSummary_))
+                    { contract (event.jobId); ++units; continue; }
+                    masterTraceCursor_ = 0; masterTraceActive_ = true;
+                }
+                const auto beforeTrace = masterTraceCursor_;
+                const bool tracesDone = LandingOps::stepTraces (solution, trace, clip,
+                    masterJob_->deliveryRate, masterSummary_, masterTraceCursor_, 1024);
+                if (! tracesDone)
+                {
+                    if (beforeTrace == masterTraceCursor_) contract (event.jobId);
+                    ++units; continue;
+                }
+                const auto completedJob = job_;
+                if (! detail::Driver::mastered (*this, completedJob)) { contract (completedJob); ++units; continue; }
+                masters_[masterCount_ - 1].report = masterJob_->reportResult();
+                // A crest joined inside the job is complete: mask copied, five cost bands scanned. Marked so a later
+                // join (a cancelled or finished source measurement) passes over it instead of publishing it again.
+                if (masters_[masterCount_ - 1].report->crest.status == MeasurementStatus::Ready)
+                { rows.crestMaskCopied = std::size_t (masters_[masterCount_ - 1].report->crest.blocks); rows.crestCostBand = 5; }
+                masterSummary_.deliverable = masterSummary_.deliverable
+                    && masters_[masterCount_ - 1].report->deliverable;
+                masters_[masterCount_ - 1].landing = masterSummary_;
+                if (const auto& cost = masters_[masterCount_ - 1].report->cost)
+                {
+                    event.kind = EventKind::Fact;
+                    (void) event.payload.fact.assign (MasterReportText::shape (*cost)); emit (event, masterProgress_);
+                    if (cost->crestFullDb.value)
+                    { (void) event.payload.fact.assign (MasterReportText::impact (*cost)); emit (event, masterProgress_); }
+                    if (cost->pumpingRmsDb.value)
+                    { (void) event.payload.fact.assign (MasterReportText::pumping (*cost)); emit (event, masterProgress_); }
+                    (void) event.payload.fact.assign (MasterReportText::tonal()); emit (event, masterProgress_);
+                }
+                if (masterSummary_.deliverable && outcome == mastering::StepResult::Done)
+                {
+                    // The job's own resolved depth: the recipe was handed to masters_ above and jobRecipe_ is empty.
+                    masterAudioBits_ = masterJob_->ready.deliveryBits;
+                    masterAudio_ = { masterJob_->takeOutput(), std::uint64_t (masterJob_->frames),
+                        std::uint32_t (masterJob_->channels), masterJob_->deliveryRate };
+                    pendingMaster_ = { source_.hash, revision_, completedJob, completedJob };
+                }
+                masterJob_.reset(); masterJobBytes_ = 0;
+                masterSummary_ = {}; masterTraceCursor_ = 0; masterTraceActive_ = false;
+                if (masters_[masterCount_ - 1].landing->deliverable)
+                {
+                    event.kind = EventKind::Fact;
+                    (void) event.payload.fact.assign (text::Fact::of (text::FactId::MasterReady));
                     emit (event, masterProgress_);
                 }
+                event.kind = EventKind::Done;
+                event.payload.done.masterId = completedJob;
+                emit (event, masterProgress_);
             }
+        }
+        else if (crestJoin_)
+        {
+            stepMasterCrestJoin();
         }
         else if (needlesJob_ != 0)
         {

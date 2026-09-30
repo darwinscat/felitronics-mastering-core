@@ -138,6 +138,10 @@ analysis::BandCrestResult MeasurementCrest::view (const MeasurementResult& resul
 {
     analysis::BandCrestResult out;
     if (result.analyzer != Analyzer::Crest) return out;
+    // The effective mask threshold and sample hop do not recover the requested settings.
+    // Absent optional metadata remains unpairable without rejecting older snapshots.
+    out.parameters.hopMs = std::numeric_limits<double>::quiet_NaN();
+    out.parameters.programmeFloorDb = std::numeric_limits<double>::quiet_NaN();
     out.frames = result.framesRead;
     for (const auto& a : result.arrays)
     {
@@ -155,6 +159,8 @@ analysis::BandCrestResult MeasurementCrest::view (const MeasurementResult& resul
         else if (n.name == "invalidReason" && v >= 0 && v <= 2) out.reason = analysis::BandCrestInvalid (int (v));
         else if (n.name == "programmeMeanSquareDb") out.programmeMeanSquareDb = v;
         else if (n.name == "activityFloorDb") out.activityFloorDb = v;
+        else if (n.name == "configuredHopMs") out.parameters.hopMs = v;
+        else if (n.name == "configuredProgrammeFloorDb") out.parameters.programmeFloorDb = v;
         else if (n.name == "bandShareFloorDb") out.parameters.bandShareFloorDb = v;
         else for (unsigned b = 0; b < 3; ++b)
         {
@@ -162,8 +168,6 @@ analysis::BandCrestResult MeasurementCrest::view (const MeasurementResult& resul
             if (n.name == names[b]) out.parameters.bandEdgeHz[b] = v;
         }
     }
-    if (out.sampleRate > 0) out.parameters.hopMs = double (out.hopSamples) * 1000 / out.sampleRate;
-    out.parameters.programmeFloorDb = out.activityFloorDb;
     return out;
 }
 } // namespace felitronics::session

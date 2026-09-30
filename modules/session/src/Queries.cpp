@@ -4,6 +4,7 @@
 #include "BuildContract.h"
 #include "QueryState.h"
 #include <felitronics/session/Session.h>
+#include <felitronics/session/Landing.h>
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -19,10 +20,33 @@ std::uint64_t boundary (std::uint64_t length, std::uint64_t i, std::uint64_t cou
 { return (length / count) * i + ((length % count) * i) / count; }
 bool sameNumber (double a, double b) noexcept
 { return std::bit_cast<std::uint64_t> (a) == std::bit_cast<std::uint64_t> (b); }
+bool masterKind (QueryKind kind) noexcept
+{ return kind == QueryKind::LimiterGr || kind == QueryKind::PeakClipGr || kind == QueryKind::MasterWaveform; }
+const Kept* masterFor (std::span<const Kept> masters, std::uint32_t id) noexcept
+{
+    for (const Kept& master : masters)
+        if (master.id == id) return &master;
+    return nullptr;
+}
+const LandingTrace* masterTrace (const Kept& master, QueryKind kind) noexcept
+{
+    if (! master.landing) return nullptr;
+    const auto& trace = kind == QueryKind::LimiterGr
+        ? master.landing->limiterTrace : master.landing->peakClipTrace;
+    if (trace) return &*trace;
+    return nullptr;
+}
 QueryStatus validate (const MeasurementQuery& q, const Source& source) noexcept
 {
-    if (unsigned (q.kind) > unsigned (QueryKind::Stereo) || ! std::isfinite (q.crossoverHz)
+    if (unsigned (q.kind) > unsigned (QueryKind::MasterWaveform) || ! std::isfinite (q.crossoverHz)
         || (! sameNumber (q.crossoverHz, 120) && ! sameNumber (q.crossoverHz, 150)) || ! std::isfinite (q.fromHz) || ! std::isfinite (q.toHz)) return QueryStatus::Contract;
+    if (masterKind (q.kind))
+    {
+        if (q.audioId == 0 || q.masterId == 0) return QueryStatus::Contract;
+        if (q.columns == 0 || q.columns > kQueryColumns) return QueryStatus::ColumnLimit;
+        return QueryStatus::Ready;
+    }
+    if (q.masterId != 0) return QueryStatus::Contract;
     if (q.audioId == 0 || q.audioId != source.hash) return QueryStatus::StaleSource;
     if (q.columns == 0 || q.columns > kQueryColumns) return QueryStatus::ColumnLimit;
     if (q.fromFrame > q.toFrame || q.toFrame > source.frames) return QueryStatus::InvalidRange;
@@ -43,6 +67,7 @@ Analyzer analyzer (const MeasurementQuery& q) noexcept
         case QueryKind::Momentary: case QueryKind::ShortTerm: return Analyzer::Loudness;
         case QueryKind::Clipping: return Analyzer::Clipping;
         case QueryKind::Stereo: return Analyzer::Stereo;
+        case QueryKind::LimiterGr: case QueryKind::PeakClipGr: case QueryKind::MasterWaveform: break;
     }
     detail::storageOverflow();
 }
@@ -60,6 +85,7 @@ std::uint32_t stride (QueryKind kind) noexcept
         case QueryKind::Momentary: case QueryKind::ShortTerm: return 3;
         case QueryKind::Clipping: return 6;
         case QueryKind::Stereo: return 6;
+        case QueryKind::LimiterGr: case QueryKind::PeakClipGr: case QueryKind::MasterWaveform: return 7;
     }
     detail::storageOverflow();
 }
@@ -70,7 +96,7 @@ std::uint64_t maxRows (const MeasurementQuery& q) noexcept
 }
 bool equal (const MeasurementQuery& a, const MeasurementQuery& b) noexcept
 {
-    return a.kind == b.kind && a.audioId == b.audioId && a.fromFrame == b.fromFrame && a.toFrame == b.toFrame
+    return a.kind == b.kind && a.audioId == b.audioId && a.masterId == b.masterId && a.fromFrame == b.fromFrame && a.toFrame == b.toFrame
         && a.columns == b.columns && sameNumber (a.crossoverHz, b.crossoverHz) && sameNumber (a.fromHz, b.fromHz) && sameNumber (a.toHz, b.toHz);
 }
 std::uint64_t freshness (const MeasurementResult& r) noexcept
@@ -219,6 +245,37 @@ QueryDemand Session::queryStorage (const MeasurementQuery& q) const noexcept
     if (checkFloatingPointEnvironment() != Status::Ok) return { QueryStatus::FloatingPointEnvironment, 0, 0, 0 };
     const auto status = validate (q, source_);
     if (status != QueryStatus::Ready) return { status, 0, 0 };
+    if (masterKind (q.kind))
+    {
+        const Kept* master = masterFor (masters(), q.masterId);
+        if (! master) return { QueryStatus::Unavailable, 0, 0, 0 };
+        if (master->recipe.source != q.audioId) return { QueryStatus::StaleSource, 0, 0, 0 };
+        if (q.kind == QueryKind::MasterWaveform)
+        {
+            if (! master->report || ! master->report->cost || master->report->cost->waveform.empty())
+                return { QueryStatus::Unavailable, 0, 0, 0 };
+            const auto& cost = *master->report->cost;
+            if (q.fromFrame > q.toFrame || q.toFrame > cost.masterFrames) return { QueryStatus::InvalidRange, 0, 0, 0 };
+            if (q.fromFrame == q.toFrame) return { QueryStatus::Empty, 0, 0, 0 };
+            std::uint64_t buckets = 0;
+            for (std::size_t i = 0; i < cost.waveform.size(); i += 1u + (cost.waveform.size() > 1 && cost.waveform[1].channel == 1 ? 1u : 0u))
+                if (cost.waveform[i].fromFrame < q.toFrame && cost.waveform[i].toFrame > q.fromFrame) ++buckets;
+            const auto channels = cost.waveform.size() > 1 && cost.waveform[1].channel == 1 ? 2u : 1u;
+            const auto bytes = std::uint64_t (std::min<std::uint64_t> (q.columns, buckets) * channels) * 7u * sizeof (double) + 128u;
+            return { QueryStatus::Ready, 2u * bytes, bytes, bytes - 128u };
+        }
+        const LandingTrace* trace = masterTrace (*master, q.kind);
+        if (! trace) return { QueryStatus::Unavailable, 0, 0, 0 };
+        if (q.fromFrame < trace->fromFrame || q.fromFrame > q.toFrame || q.toFrame > trace->toFrame)
+            return { QueryStatus::InvalidRange, 0, 0, 0 };
+        if (q.fromFrame == q.toFrame) return { QueryStatus::Empty, 0, 0, 0 };
+        if (! trace->complete) return { QueryStatus::Pending, 0, 0, 0 };
+        const auto [first, last] = LandingOps::bucketRange (*trace, q.fromFrame, q.toFrame);
+        const std::uint64_t columns = std::min<std::uint64_t> (q.columns, last - first);
+        const std::uint64_t rowBytes = columns * 7u * sizeof (double);
+        const std::uint64_t block = rowBytes + 128u;
+        return { QueryStatus::Ready, 2u * block, block, rowBytes };
+    }
     const auto& r = measurementResults_[std::size_t (analyzer (q))];
     if (q.kind == QueryKind::Waveform)
     {
@@ -240,8 +297,71 @@ QueryResult Session::query (const MeasurementQuery& q) noexcept
     if (checkFloatingPointEnvironment() != Status::Ok)
     { QueryView v; v.request = q; v.status = QueryStatus::FloatingPointEnvironment; v.reason = MeasurementReason::Unsupported; return QueryResult::copy (v); }
     // Invalid enum cannot reach stride/analyzer dispatch.
-    if (unsigned (q.kind) > unsigned (QueryKind::Stereo))
+    if (unsigned (q.kind) > unsigned (QueryKind::MasterWaveform))
     { QueryView v; v.request = q; v.status = QueryStatus::Contract; v.reason = MeasurementReason::Unsupported; return QueryResult::copy (v); }
+    if (masterKind (q.kind))
+    {
+        QueryView v; v.request = q; v.audioId = q.audioId; v.revision = revision_; v.stride = 7;
+        const auto need = queryStorage (q);
+        v.status = need.status;
+        v.reason = need.status == QueryStatus::Ready ? MeasurementReason::None : MeasurementReason::Unsupported;
+        if (need.status != QueryStatus::Ready) return QueryResult::copy (v);
+        Checked request; request.bytes = need.bytes; request.largestBlockBytes = need.largestBlockBytes;
+        if (demand (request).rejection != Rejection::None)
+        { v.status = QueryStatus::Memory; v.reason = MeasurementReason::Memory; return QueryResult::copy (v); }
+        if (q.kind == QueryKind::MasterWaveform)
+        {
+            const auto& cost = *masterFor (masters(), q.masterId)->report->cost;
+            const auto channels = cost.waveform.size() > 1 && cost.waveform[1].channel == 1 ? 2u : 1u;
+            std::uint64_t first = 0, last = 0;
+            const auto bucketCount = cost.waveform.size() / channels;
+            while (first < bucketCount && cost.waveform[std::size_t (first * channels)].toFrame <= q.fromFrame) ++first;
+            last = first;
+            while (last < bucketCount && cost.waveform[std::size_t (last * channels)].fromFrame < q.toFrame) ++last;
+            const auto groups = std::min<std::uint64_t> (q.columns, last - first);
+            v.sampleRate = cost.masterRateHz; v.channels = channels; v.measurementKey = q.masterId;
+            v.total = (last - first) * channels; v.stored = groups * channels;
+            v.complete = true; v.reason = MeasurementReason::None;
+            std::unique_ptr<double[]> rows (new double[std::size_t (v.stored * v.stride)]);
+            for (std::uint64_t group = 0; group < groups; ++group)
+            {
+                const auto begin = first + boundary (last - first, group, groups);
+                const auto end = first + boundary (last - first, group + 1u, groups);
+                for (std::uint32_t ch = 0; ch < channels; ++ch)
+                {
+                    const auto& head = cost.waveform[std::size_t (begin * channels + ch)];
+                    const auto& tail = cost.waveform[std::size_t ((end - 1u) * channels + ch)];
+                    double lo = head.minimum, hi = head.maximum, energy = 0; std::uint64_t finite = 0;
+                    for (auto i = begin; i < end; ++i)
+                    {
+                        const auto& bucket = cost.waveform[std::size_t (i * channels + ch)];
+                        lo = std::min (lo, bucket.minimum); hi = std::max (hi, bucket.maximum);
+                        energy += bucket.rms * bucket.rms * double (bucket.finite);
+                        finite += bucket.finite;
+                    }
+                    const double row[] { double (head.fromFrame), double (tail.toFrame), double (ch), lo, hi,
+                        finite ? std::sqrt (energy / double (finite)) : missing, double (finite) };
+                    std::copy_n (row, 7, rows.get() + std::size_t ((group * channels + ch) * 7u));
+                }
+            }
+            v.values = { rows.get(), std::size_t (v.stored * v.stride) };
+            return QueryResult::copy (v);
+        }
+        const LandingTrace* trace = masterTrace (*masterFor (masters(), q.masterId), q.kind);
+        const auto [first, last] = LandingOps::bucketRange (*trace, q.fromFrame, q.toFrame);
+        v.sampleRate = trace->sampleRateHz;
+        v.measurementKey = q.masterId;
+        v.total = last - first;
+        v.stored = std::min<std::uint64_t> (q.columns, v.total);
+        v.complete = trace->complete && v.stored == v.total;
+        if (! trace->valid) v.reason = MeasurementReason::NonFinite;
+        std::unique_ptr<double[]> rows (new double[std::size_t (v.stored * v.stride)]);
+        if (LandingOps::query (*trace, q.fromFrame, q.toFrame, q.columns,
+                               { rows.get(), std::size_t (v.stored * v.stride) }) != v.stored)
+            detail::storageOverflow();
+        v.values = { rows.get(), std::size_t (v.stored * v.stride) };
+        return QueryResult::copy (v);
+    }
     auto v = header (q, source_, revision_, measurementKey_);
     const auto need = queryStorage (q); v.status = need.status;
     v.reason = need.status == QueryStatus::Empty ? MeasurementReason::None : MeasurementReason::Unsupported;
@@ -300,11 +420,77 @@ QueryResult Session::query (const MeasurementQuery& q) noexcept
         case QueryKind::Clipping: clips (v, rows.get(), result); break;
         case QueryKind::Stereo: stereo (v, rows.get(), result, source_.frames); break;
         case QueryKind::Waveform: break;
+        case QueryKind::LimiterGr: case QueryKind::PeakClipGr: case QueryKind::MasterWaveform: break;
     }
     v.values = { rows.get(), std::size_t (v.stored * v.stride) };
     if (! queryCache_) queryCache_.reset (new detail::QueryCache);
     auto& entry = queryCache_->entries[queryCache_->next]; queryCache_->next = (queryCache_->next + 1u) % 2u;
     entry.request = q; entry.key = key; entry.result = QueryResult::copy (v); entry.bytes = QueryResult::storageFor (v);
     return QueryResult::copy (v);
+}
+QueryDemand Session::masterWaveformChunkStorage (const MeasurementQuery& q, const Pcm& chunk) const noexcept
+{
+    if (checkFloatingPointEnvironment() != Status::Ok)
+        return { QueryStatus::FloatingPointEnvironment, 0, 0, 0 };
+    const auto checked = validate (q, source_);
+    if (checked != QueryStatus::Ready) return { checked, 0, 0, 0 };
+    if (q.kind != QueryKind::MasterWaveform || q.fromFrame >= q.toFrame
+        || q.toFrame - q.fromFrame != chunk.frames || chunk.frames > 65536u)
+        return { QueryStatus::InvalidRange, 0, 0, 0 };
+    const auto* master = masterFor (masters(), q.masterId);
+    if (! master || ! master->report || ! master->report->cost)
+        return { QueryStatus::Unavailable, 0, 0, 0 };
+    if (master->recipe.source != q.audioId) return { QueryStatus::StaleSource, 0, 0, 0 };
+    const auto& cost = *master->report->cost;
+    const auto masterChannels = cost.waveform.size() > 1 && cost.waveform[1].channel == 1 ? 2u : 1u;
+    if (q.toFrame > cost.masterFrames || chunk.sampleRate != cost.masterRateHz
+        || chunk.channelCount != masterChannels)
+        return { QueryStatus::Contract, 0, 0, 0 };
+    const auto columns = std::min<std::uint64_t> (q.columns, chunk.frames);
+    const auto rowBytes = columns * chunk.channelCount * 7u * sizeof (double);
+    const auto block = rowBytes + 128u;
+    return { QueryStatus::Ready, 2u * block, block, rowBytes };
+}
+QueryResult Session::masterWaveformChunk (const MeasurementQuery& q, const Pcm& chunk) noexcept
+{
+    QueryView view; view.request = q; view.audioId = q.audioId; view.revision = revision_;
+    view.status = masterWaveformChunkStorage (q, chunk).status;
+    view.reason = view.status == QueryStatus::Ready ? MeasurementReason::None : MeasurementReason::Unsupported;
+    view.stride = 7;
+    if (view.status != QueryStatus::Ready) return QueryResult::copy (view);
+    if (! chunk.channels || ! chunk.channels[0] || (chunk.channelCount == 2 && ! chunk.channels[1]))
+    { view.status = QueryStatus::Contract; view.reason = MeasurementReason::Unsupported; return QueryResult::copy (view); }
+    const auto need = masterWaveformChunkStorage (q, chunk);
+    Checked storage; storage.bytes = need.bytes; storage.largestBlockBytes = need.largestBlockBytes;
+    if (demand (storage).rejection != Rejection::None)
+    { view.status = QueryStatus::Memory; view.reason = MeasurementReason::Memory; return QueryResult::copy (view); }
+    view.sampleRate = chunk.sampleRate; view.channels = chunk.channelCount; view.measurementKey = q.masterId;
+    const auto columns = std::min<std::uint64_t> (q.columns, chunk.frames);
+    view.total = view.stored = columns * chunk.channelCount;
+    view.complete = true; view.pcmFramesRead = chunk.frames;
+    std::unique_ptr<double[]> rows (new double[std::size_t (view.stored * view.stride)]);
+    for (std::uint64_t i = 0; i < columns; ++i)
+    {
+        const auto first = boundary (chunk.frames, i, columns);
+        const auto last = boundary (chunk.frames, i + 1u, columns);
+        for (std::uint32_t ch = 0; ch < chunk.channelCount; ++ch)
+        {
+            double lo = 0, hi = 0, sum = 0; std::uint64_t finite = 0;
+            for (auto frame = first; frame < last; ++frame)
+            {
+                const double x = chunk.channels[ch][std::size_t (frame)];
+                if (! std::isfinite (x)) continue;
+                if (finite == 0) { lo = x; hi = x; }
+                else { lo = std::min (lo, x); hi = std::max (hi, x); }
+                sum += x * x; ++finite;
+            }
+            const double row[] { double (q.fromFrame + first), double (q.fromFrame + last), double (ch),
+                finite ? lo : missing, finite ? hi : missing,
+                finite ? std::sqrt (sum / double (finite)) : missing, double (finite) };
+            std::copy_n (row, 7, rows.get() + std::size_t ((i * chunk.channelCount + ch) * 7u));
+        }
+    }
+    view.values = { rows.get(), std::size_t (view.stored * view.stride) };
+    return QueryResult::copy (view);
 }
 } // namespace felitronics::session

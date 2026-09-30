@@ -67,6 +67,24 @@
       "NeedNotAbove3",
       "Memory"
     ],
+    "LandingStatus": [
+      "Solved",
+      "TargetUnreachable",
+      "PassLimit",
+      "TargetBetweenAchievable",
+      "Unavailable",
+      "Cancelled",
+      "TechnicalFailure"
+    ],
+    "LandingReason": [
+      "None",
+      "ExcessSubBass",
+      "SharpPeaks",
+      "DarkMix",
+      "LoudnessDemand",
+      "GainRange",
+      "TruePeak"
+    ],
     "QueryKind": [
       "Waveform",
       "LowSpectrum",
@@ -74,7 +92,10 @@
       "Momentary",
       "ShortTerm",
       "Clipping",
-      "Stereo"
+      "Stereo",
+      "LimiterGr",
+      "PeakClipGr",
+      "MasterWaveform"
     ],
     "QueryStatus": [
       "Ready",
@@ -300,14 +321,184 @@
       "fields": {
         "project": "Project",
         "source": "uint64",
-        "sound": "uint64"
+        "sound": "uint64",
+        "readyHash": "uint64",
+        "deliveryRateHz": "uint32",
+        "readyVersion": "uint32"
       }
     },
     "Kept": {
       "cpp": "Kept",
       "fields": {
         "id": "uint32",
-        "recipe": "Recipe"
+        "landing": "LandingSummary?",
+        "recipe": "Recipe",
+        "report": "MasterReport?"
+      }
+    },
+    "MasterCrest": {
+      "cpp": "MasterCrest",
+      "fields": {
+        "status": "MeasurementStatus",
+        "reason": "MeasurementReason",
+        "version": "uint32",
+        "sampleRateHz": "uint32",
+        "hopFrames": "uint32",
+        "blockHops": "uint32",
+        "edgeLowHz": "double",
+        "edgeMidHz": "double",
+        "edgeHighHz": "double",
+        "frames": "uint64",
+        "blocks": "uint64",
+        "complete": "bool",
+        "sourceRateCheck": "bool",
+        "rows": "double[]",
+        "sourceMask": "double[]"
+      }
+    },
+    "MasterHint": {
+      "cpp": "MasterHint",
+      "fields": {
+        "reason": "LandingReason",
+        "evidence": "double",
+        "percent": "bool"
+      }
+    },
+    "MasterSection": {
+      "cpp": "MasterSection",
+      "fields": {
+        "fromFrame": "uint64",
+        "toFrame": "uint64",
+        "sourceLufs": "double",
+        "masterLufs": "double",
+        "shiftLu": "double",
+        "compared": "bool"
+      }
+    },
+    "MasterCostValue": {
+      "cpp": "MasterCostValue",
+      "fields": {
+        "reason": "MeasurementReason",
+        "value": "double?",
+        "compared": "uint64"
+      }
+    },
+    "MasterWaveformBucket": {
+      "cpp": "MasterWaveformBucket",
+      "fields": {
+        "fromFrame": "uint64",
+        "toFrame": "uint64",
+        "channel": "uint32",
+        "minimum": "double",
+        "maximum": "double",
+        "rms": "double",
+        "finite": "uint64"
+      }
+    },
+    "MasterCost": {
+      "cpp": "MasterCost",
+      "fields": {
+        "crestLowDb": "MasterCostValue",
+        "crestLowMidDb": "MasterCostValue",
+        "crestHighMidDb": "MasterCostValue",
+        "crestHighDb": "MasterCostValue",
+        "crestFullDb": "MasterCostValue",
+        "shapeP95Lu": "MasterCostValue",
+        "largestSectionShiftLu": "MasterCostValue",
+        "pumpingRmsDb": "MasterCostValue",
+        "limiterP50Db": "MasterCostValue",
+        "limiterP95Db": "MasterCostValue",
+        "limiterActiveShare": "MasterCostValue",
+        "activeWindowShare": "MasterCostValue",
+        "worstSectionIndex": "uint32?",
+        "k2Reason": "MeasurementReason",
+        "sourceRateHz": "uint32",
+        "masterRateHz": "uint32",
+        "sourceFrames": "uint64",
+        "masterFrames": "uint64",
+        "sections": "MasterSection[]",
+        "waveform": "MasterWaveformBucket[]"
+      }
+    },
+    "MasterReport": {
+      "cpp": "MasterReport",
+      "fields": {
+        "status": "MeasurementStatus",
+        "reason": "MeasurementReason",
+        "targetLufs": "double",
+        "ceilingDbTp": "double",
+        "achievedLufs": "double?",
+        "truePeakDbTp": "double?",
+        "lraLu": "double?",
+        "plrDb": "double?",
+        "lraReason": "MeasurementReason",
+        "plrReason": "MeasurementReason",
+        "gainFromSourceDb": "double?",
+        "missLu": "double?",
+        "peakSafe": "bool",
+        "deliverable": "bool",
+        "targetMet": "bool",
+        "checkPasses": "uint32",
+        "crest": "MasterCrest",
+        "firstHint": "MasterHint?",
+        "secondHint": "MasterHint?",
+        "cost": "MasterCost?"
+      }
+    },
+    "LandingPass": {
+      "cpp": "LandingPass",
+      "fields": {
+        "gainDb": "double",
+        "ceilingDbTp": "double",
+        "achievedLufs": "double",
+        "truePeakDbTp": "double",
+        "limiterMaxReductionDb": "double",
+        "ceilingSafe": "bool"
+      }
+    },
+    "LandingTraceBucket": {
+      "cpp": "LandingTraceBucket",
+      "fields": {
+        "minDb": "double",
+        "maxDb": "double",
+        "meanDb": "double",
+        "samples": "uint64",
+        "nonFinite": "uint64"
+      }
+    },
+    "LandingTrace": {
+      "cpp": "LandingTrace",
+      "fields": {
+        "fromFrame": "uint64",
+        "toFrame": "uint64",
+        "sampleRateHz": "uint32",
+        "columns": "uint32",
+        "complete": "bool",
+        "valid": "bool",
+        "samples": "uint64",
+        "nonFinite": "uint64",
+        "rows": "LandingTraceBucket[]"
+      }
+    },
+    "LandingSummary": {
+      "cpp": "LandingSummary",
+      "fields": {
+        "status": "LandingStatus",
+        "mainReason": "LandingReason",
+        "secondReason": "LandingReason",
+        "deliverable": "bool",
+        "achievedLufs": "double?",
+        "missLu": "double?",
+        "distanceLu": "double?",
+        "truePeakDbTp": "double?",
+        "sourceSubBassShare": "double?",
+        "sourcePresenceShare": "double?",
+        "limiterMeanReductionDb": "double?",
+        "passes": "uint32",
+        "workUnits": "uint64",
+        "log": "LandingPass[]",
+        "limiterTrace": "LandingTrace?",
+        "peakClipTrace": "LandingTrace?"
       }
     },
     "Source": {
@@ -391,7 +582,19 @@
         "measurementRowsIncluded": "bool",
         "tempoChoice": "TempoChoice",
         "measurementsFromSidecar": "bool",
-        "sourceMissingAudio": "bool"
+        "sourceMissingAudio": "bool",
+        "canMaster": "bool",
+        "pendingMaster": "MasterToken",
+        "pendingMasterBytes": "bytes"
+      }
+    },
+    "MasterToken": {
+      "cpp": "MasterToken",
+      "fields": {
+        "source": "uint64",
+        "revision": "uint64",
+        "job": "uint32",
+        "master": "uint32"
       }
     },
     "Version": {
@@ -528,7 +731,8 @@
         "requestId": "uint64",
         "crossoverHz": "double",
         "fromHz": "double",
-        "toHz": "double"
+        "toHz": "double",
+        "masterId": "uint32"
       }
     },
     "QueryView": {
@@ -980,7 +1184,10 @@
       "NewerDefaults",
       "RateAboveLimit",
       "Memory",
-      "Contract"
+      "Contract",
+      "OutputPending",
+      "MandatoryUnavailable",
+      "DeliveryFormat"
     ],
     "ErrorCode": [
       "Trap",
@@ -1001,9 +1208,64 @@
     ]
   },
   "wireTypeOverrides": {
-    "measurements": "ReadonlyArray<SessionMeasurementResult>"
+    "measurements": "ReadonlyArray<SessionMeasurementResult>",
+    "masters": "ReadonlyArray<SessionKept>"
+  },
+  "transportRecordViews": {
+    "SessionMasterCrest": {
+      "from": "MasterCrest",
+      "fields": { "rows": "ScalarRow", "sourceMask": "ScalarRow" }
+    },
+    "SessionMasterReport": {
+      "from": "MasterReport",
+      "fields": { "crest": "SessionMasterCrest" }
+    },
+    "SessionKept": {
+      "from": "Kept",
+      "fields": { "report": "SessionMasterReport | null" }
+    }
   },
   "optionalFields": {
+    "Recipe": {
+      "readyHash": {
+        "default": "std::uint64_t {}",
+        "description": "No ready input fingerprint in baseline recipes."
+      },
+      "deliveryRateHz": {
+        "default": "std::uint32_t {}",
+        "description": "The baseline recipe did not record a delivery rate."
+      },
+      "readyVersion": {
+        "default": "std::uint32_t {}",
+        "description": "The baseline recipe did not record ready input."
+      }
+    },
+    "LandingSummary": {
+      "limiterTrace": {
+        "default": "std::optional<LandingTrace> {}",
+        "description": "No limiter time series was published."
+      },
+      "peakClipTrace": {
+        "default": "std::optional<LandingTrace> {}",
+        "description": "No K13 clipper time series was published."
+      }
+    },
+    "Kept": {
+      "landing": {
+        "default": "std::optional<LandingSummary> {}",
+        "description": "No landing result was published in the v1 snapshot."
+      },
+      "report": {
+        "default": "std::optional<MasterReport> {}",
+        "description": "No measured master report was published in the v1 snapshot."
+      }
+    },
+    "MasterReport": {
+      "cost": {
+        "default": "std::optional<MasterCost> {}",
+        "description": "No post-master cost was published in the v1 snapshot."
+      }
+    },
     "Snapshot": {
       "measurementStorage": {
         "default": "MeasurementStorage {}",
@@ -1076,9 +1338,25 @@
       "sourceMissingAudio": {
         "default": "false",
         "description": "Historical loaded sources have PCM."
+      },
+      "canMaster": {
+        "default": "false",
+        "description": "No known master command availability."
+      },
+      "pendingMaster": {
+        "default": "MasterToken {}",
+        "description": "No pending PCM transfer."
+      },
+      "pendingMasterBytes": {
+        "default": "0.0",
+        "description": "No pending PCM bytes."
       }
     },
     "MeasurementQuery": {
+      "masterId": {
+        "default": "std::uint32_t {}",
+        "description": "No master selected in baseline source queries."
+      },
       "crossoverHz": {
         "default": "120.0",
         "description": "120 Hz."
@@ -1335,6 +1613,24 @@
       "correlation",
       "rms",
       "reason"
+    ],
+    "LimiterGr": [
+      "firstFrame",
+      "lastFrame",
+      "minDb",
+      "maxDb",
+      "meanDb",
+      "samples",
+      "nonFinite"
+    ],
+    "PeakClipGr": [
+      "firstFrame",
+      "lastFrame",
+      "minDb",
+      "maxDb",
+      "meanDb",
+      "samples",
+      "nonFinite"
     ]
   }
 }

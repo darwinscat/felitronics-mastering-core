@@ -8,6 +8,7 @@
 #include <felitronics/mastering/Progress.h>
 
 #include <algorithm>
+#include <climits>
 #include <cstddef>
 #include <cstdint>
 #include <felitronics/storage/Buffer.h>
@@ -67,6 +68,7 @@ public:
         // because validating first means returning before the disarm, which leaves the previous
         // preparation standing and answering process() calls. This is Saturator's idiom, made general.
         block_ = 0;                              // 0 == unprepared; render() refuses on it Validating one argument,
+        active_ = false;
         // storing it, and then refusing on the next left the new WIDTH standing beside the old buffer —
         // and render() sizes its scratch pointers from the width. ASan: heap-buffer-overflow, a WRITE
         // four bytes past a 1024-byte region, after prepare(1, 256) then prepare(2, 0).
@@ -129,6 +131,16 @@ public:
     bool render (MasteringChain& chain, const float* const* in, float* const* out,
                  int numChannels, int frames, MasteringChainTaps& taps, TapSink&& sink, ProgressClock* clock)
     {
+        if (! begin (chain, in, out, numChannels, frames, taps)) return false;
+        while (active_ && ! done_)
+            if (step (chain, taps, sink, LLONG_MAX, frames, clock) == StepResult::Failed) return false;
+        return finish();
+    }
+
+    [[nodiscard]] bool begin (MasteringChain& chain, const float* const* in, float* const* out,
+                              int numChannels, int frames, MasteringChainTaps& taps) noexcept
+    {
+        active_ = false;
         if (block_ < 1) return false;                   // a refused prepare() leaves it unusable
         if (! chain.isPrepared() || numChannels != chain.numChannels()) return false;
         if (numChannels < 1 || numChannels > maxCh_ || scratch_.empty()) return false;
@@ -149,52 +161,90 @@ public:
         }
 
         chain.reset();
-        const long long D     = chain.latencySamples();
-        const long long total = (long long) frames + D;
+        chain_ = &chain;
+        in_ = in; out_ = out; frames_ = frames; nch_ = numChannels;
+        delay_ = chain.latencySamples();
+        cursor_ = tapPos_ = 0;
+        done_ = frames_ + delay_ == 0;
+        active_ = true;
+        return true;
+    }
+
+    template <class TapSink>
+    [[nodiscard]] StepResult step (MasteringChain& chain, MasteringChainTaps& taps, TapSink&& sink,
+                                   long long budget, long long available, ProgressClock* clock = nullptr) noexcept
+    {
+        if (! active_ || chain_ != &chain || budget < 0 || available < 0 || available > frames_) return StepResult::Failed;
+        if (done_) return StepResult::Done;
+        if (budget == 0) return StepResult::More;
+        const long long total = (long long) frames_ + delay_;
 
         float* sp[core::kMaxChannels] {};
-        for (int c = 0; c < numChannels; ++c)
+        for (int c = 0; c < nch_; ++c)
             sp[c] = scratch_.data() + (std::size_t) c * (std::size_t) block_;
 
-        long long tapPos = 0;
-        for (long long off = 0; off < total; )
+        while (budget > 0 && cursor_ < total)
         {
-            const int m = (int) std::min<long long> (clock != nullptr ? clock->piece (block_) : block_, total - off);
+            if (cursor_ < frames_ && cursor_ >= available) break;
+            if (cursor_ >= frames_ && available < frames_) break;
+            long long limit = std::min<long long> (budget, total - cursor_);
+            limit = std::min<long long> (limit, clock != nullptr ? clock->piece (block_) : block_);
+            if (cursor_ < frames_) limit = std::min<long long> (limit, available - cursor_);
+            const int m = (int) limit;
+            if (m <= 0) break;
 
             // Read the whole slice into scratch BEFORE writing anything back, so `in == out` is safe
             // even at D == 0. Past the end of the input the chain is fed zeros — which is what "flush"
             // means here, and why there is no separate tail code path to get wrong.
-            for (int c = 0; c < numChannels; ++c)
+            for (int c = 0; c < nch_; ++c)
                 for (int i = 0; i < m; ++i)
                 {
-                    const long long s = off + i;
-                    sp[c][i] = (s < (long long) frames) ? in[c][s] : 0.0f;
+                    const long long s = cursor_ + i;
+                    sp[c][i] = (s < (long long) frames_) ? in_[c][s] : 0.0f;
                 }
 
-            if (! chain.process (sp, numChannels, m, taps)) return false;
+            if (! chain.process (sp, nch_, m, taps)) return StepResult::Failed;
 
             // Streaming sample (off + i) carries input sample (off + i - D). Everything before 0 is the
             // chain's own priming and is dropped; everything from `frames` on is past the end.
-            for (int c = 0; c < numChannels; ++c)
+            for (int c = 0; c < nch_; ++c)
                 for (int i = 0; i < m; ++i)
                 {
-                    const long long o = off + i - D;
-                    if (o >= 0 && o < (long long) frames) out[c][o] = sp[c][i];
+                    const long long o = cursor_ + i - delay_;
+                    if (o >= 0 && o < (long long) frames_) out_[c][o] = sp[c][i];
                 }
 
             // AFTER the write-back, so a sink that looks at `out` sees this block's audio, and with the
             // tap position of the block that was just produced rather than of the next one.
-            sink (taps, tapPos);
-            tapPos += taps.framesWritten;
-            off += m;
-            if (clock != nullptr && ! clock->advance (m)) return false;
+            sink (taps, tapPos_);
+            tapPos_ += taps.framesWritten;
+            cursor_ += m;
+            budget -= m;
+            if (clock != nullptr && ! clock->advance (m)) return StepResult::Failed;
         }
+        done_ = cursor_ == total;
+        return done_ ? StepResult::Done : StepResult::More;
+    }
+
+    [[nodiscard]] bool finish() noexcept
+    {
+        if (! active_ || ! done_) return false;
+        active_ = false;
         return true;
     }
+
+    void cancel() noexcept { active_ = false; }
+    long long processedFrames() const noexcept { return cursor_; }
 
 private:
     storage::Buffer<float> scratch_;
     int maxCh_ = 0, block_ = 0;
+    const float* const* in_ = nullptr;
+    float* const* out_ = nullptr;
+    int nch_ = 0, frames_ = 0;
+    long long delay_ = 0, cursor_ = 0, tapPos_ = 0;
+    bool active_ = false, done_ = false;
+    MasteringChain* chain_ = nullptr;
 };
 
 //==============================================================================

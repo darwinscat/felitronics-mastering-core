@@ -61,6 +61,24 @@ inline constexpr FactShape kFacts[] = {
     { FactId::MachineDifferences, "machineDifferences", { { { "count", ArgKind::Count, {} } } }, 1 },
     { FactId::DefaultsConverted, "defaultsConverted", { { { "version", ArgKind::UserText, {} } } }, 1 },
     { FactId::SameCoreMachineDifferences, "sameCoreMachineDifferences", { { { "count", ArgKind::Count, {} } } }, 1 },
+    { FactId::MasterLandingMiss, "masterLandingMiss", { { { "achieved", ArgKind::Value, {} }, { "target", ArgKind::Value, {} }, { "gap", ArgKind::Value, {} } } }, 3 },
+    { FactId::MasterHintSubBass, "masterHintSubBass", { { { "share", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterHintPeaks, "masterHintPeaks", { { { "reduction", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterHintDark, "masterHintDark", { { { "share", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterHintDemand, "masterHintDemand", { { { "gap", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterHintGainRange, "masterHintGainRange", { { { "gain", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterHintTruePeak, "masterHintTruePeak", { { { "peak", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterCrestSourceRate, "masterCrestSourceRate", { { { "rate", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterCrestPending, "masterCrestPending", {}, 0 },
+    { FactId::MasterCrestUnavailable, "masterCrestUnavailable", {}, 0 },
+    { FactId::MasterReportUnavailable, "masterReportUnavailable", {}, 0 },
+    { FactId::MasterCrestDelivered, "masterCrestDelivered", { { { "rate", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterLandingAbove, "masterLandingAbove", { { { "achieved", ArgKind::Value, {} }, { "target", ArgKind::Value, {} }, { "gap", ArgKind::Value, {} } } }, 3 },
+    { FactId::MasterCostShape, "masterCostShape", { { { "shift", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterCostCrest, "masterCostCrest", { { { "loss", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterCostPumping, "masterCostPumping", { { { "level", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterCostK2Deferred, "masterCostK2Deferred", {}, 0 },
+    { FactId::MasterCostUnavailable, "masterCostUnavailable", {}, 0 },
     // A command's rejection (Commands.h), one per code; the four a field refuses name it.
     { FactId::RejectedFloatingPointEnvironment, "rejectedFloatingPointEnvironment", {}, 0 },
     { FactId::RejectedNoSource, "rejectedNoSource", {}, 0 },
@@ -93,6 +111,10 @@ inline constexpr FactShape kFacts[] = {
     { FactId::RejectedRateAboveLimit, "rejectedRateAboveLimit", {}, 0 },
     { FactId::RejectedMemory, "rejectedMemory", {}, 0 },
     { FactId::RejectedContract, "rejectedContract", {}, 0 },
+    { FactId::RejectedOutputPending, "rejectedOutputPending", {}, 0 },
+    { FactId::RejectedMandatoryUnavailable, "rejectedMandatoryUnavailable", {}, 0 },
+    { FactId::RejectedDeliveryFormat, "rejectedDeliveryFormat",
+      { { { "bits", ArgKind::Count, {} }, { "rate", ArgKind::Value, {} } } }, 2 },
     { FactId::Measurement1, "measurement1", {}, 0 },
     { FactId::Measurement2, "measurement2", {}, 0 },
     { FactId::MasterPass, "masterPass", { { { "pass", ArgKind::Count, {} } } }, 1 },
@@ -254,6 +276,9 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Rejection::ProjectCore: return FactId::RejectedProjectCore;
         case Rejection::RateAboveLimit: return FactId::RejectedRateAboveLimit;
         case Rejection::Contract: return FactId::RejectedContract;
+        case Rejection::OutputPending: return FactId::RejectedOutputPending;
+        case Rejection::MandatoryUnavailable: return FactId::RejectedMandatoryUnavailable;
+        case Rejection::DeliveryFormat: return FactId::RejectedDeliveryFormat;
         case Rejection::Memory: return FactId::RejectedMemory;
         case Rejection::NewerDefaults: return FactId::RejectedNewerDefaults;
     }

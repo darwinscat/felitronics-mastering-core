@@ -33,6 +33,7 @@
 #include <cstdint>
 #include <algorithm>
 #include <memory>
+#include <cmath>
 
 #if defined(__EMSCRIPTEN__)
   #include <emscripten/emscripten.h>
@@ -47,6 +48,7 @@ using felitronics::session::Status;
 using felitronics::session::Wire;
 using felitronics::session::CodecStatus;
 using felitronics::session::Rejection;
+using felitronics::session::command::MasterReady;
 
 static_assert (FC_SESSION_COMMAND_JSON_BYTES == felitronics::session::kCommandJsonBytes);
 static_assert (FC_SESSION_ANSWER_BYTES == felitronics::session::kAnswerBytes);
@@ -218,6 +220,108 @@ felitronics::session::Capabilities unpack (const fc_session_capabilities& caps) 
 {
     return { caps.heapCeilingBytes, caps.maxRateHz, caps.offeredDevices, caps.largestFreeBlockBytes };
 }
+
+// The existing fc_master records are the complete, versioned ready DSP input.
+// Keep this mapping at the C boundary; the session owns only C++ job values.
+bool masterReady (const fc_master_config& c, const fc_master_params& p,
+                  const felitronics::session::Source& source, MasterReady& ready) noexcept
+{
+    namespace eq = felitronics::eq;
+    namespace dynamics = felitronics::dynamics;
+    namespace saturation = felitronics::saturation;
+    namespace dither = felitronics::dither;
+    static_assert (FC_MAX_EQ_BANDS == eq::EqEngine::kMaxBands);
+    static_assert (FC_MAX_EQ_LANES == eq::kNumLanes);
+    if (c.header.abiVersion != FC_MASTER_ABI_VERSION || c.header.structSize != sizeof (c)
+        || p.header.abiVersion != FC_MASTER_ABI_VERSION || p.header.structSize != sizeof (p)
+        || ! std::isfinite (c.sampleRate) || ! std::isfinite (c.deliveryRate)
+        || ! std::isfinite (c.compressorLookaheadMs) || ! std::isfinite (c.limiterLookaheadMs)
+        || ! std::isfinite (c.sidechainHpfHz) || c.channels != std::int32_t (source.channels)
+        || std::fabs (c.sampleRate - double (source.sampleRate)) > 0.0) return false;
+    // The session refuses any rate but 0 and the target's, openly. A finite rate that is not a whole number of hertz
+    // below 2^32 is no target's rate either: it arrives as 2^32 - 1, which no target delivers.
+    const bool whole = c.deliveryRate >= 0.0 && c.deliveryRate < 4294967295.0
+        && ! (std::fabs (c.deliveryRate - std::floor (c.deliveryRate)) > 0.0);
+    ready.version = 1;
+    ready.deliveryRateHz = whole ? std::uint32_t (c.deliveryRate) : 4294967295u;
+    auto& t = ready.topology;
+    t.internalBlock = c.internalBlock; t.eq = c.eq != 0; t.monoBass = c.monoBass != 0;
+    t.stereoAir = c.stereoAir != 0; t.compressor = c.compressor != 0; t.clipper = c.clipper != 0;
+    t.limiter = c.limiter != 0; t.dither = c.dither != 0;
+    t.compressorLookaheadMs = c.compressorLookaheadMs; t.limiterLookaheadMs = c.limiterLookaheadMs;
+    t.oversampleFactor = c.oversampleFactor; t.tapsPerPhase = c.tapsPerPhase;
+    t.sidechainHpfHz = c.sidechainHpfHz;
+    auto& q = ready.params;
+    if (! std::isfinite (p.inputGainDb) || ! std::isfinite (p.preLimiterGainDb)) return false;
+    q.inputGainDb = p.inputGainDb; q.preLimiterGainDb = p.preLimiterGainDb;
+    for (int b = 0; b < FC_MAX_EQ_BANDS; ++b)
+    {
+        const auto& src = p.eqBands[b]; auto& dst = q.eqBands[b];
+        if (src.type < FC_FILTER_BELL || src.type > FC_FILTER_TILT
+            || ! std::isfinite (src.dyn.rangeDb) || ! std::isfinite (src.dyn.thrDb)
+            || ! std::isfinite (src.dyn.atk) || ! std::isfinite (src.dyn.rel)) return false;
+        dst.on = src.on != 0; dst.type = static_cast<eq::FilterType> (src.type);
+        dst.swept = src.swept != 0; dst.bypass = src.bypass != 0;
+        dst.dyn.on = src.dyn.on != 0; dst.dyn.rangeDb = src.dyn.rangeDb;
+        dst.dyn.thrDb = src.dyn.thrDb; dst.dyn.thrAuto = src.dyn.thrAuto != 0;
+        dst.dyn.atk = src.dyn.atk; dst.dyn.rel = src.dyn.rel;
+        for (int l = 0; l < FC_MAX_EQ_LANES; ++l)
+        {
+            const auto& sl = src.lanes[l]; auto& dl = dst.lanes[l];
+            if (! std::isfinite (sl.freq) || ! std::isfinite (sl.q) || ! std::isfinite (sl.gainDb)) return false;
+            dl.on = sl.on != 0; dl.freq = sl.freq; dl.Q = sl.q; dl.gainDb = sl.gainDb;
+            dl.slope = sl.slope; dl.bypass = sl.bypass != 0;
+        }
+    }
+    if (! std::isfinite (p.monoBass.frequencyHz) || ! std::isfinite (p.monoBass.lowWidth)) return false;
+    q.monoBass.enabled = p.monoBass.enabled != 0;
+    q.monoBass.frequencyHz = p.monoBass.frequencyHz; q.monoBass.lowWidth = p.monoBass.lowWidth;
+    if (p.compressor.detector < FC_DETECTOR_PEAK || p.compressor.detector > FC_DETECTOR_RMS
+        || p.compressor.link < FC_LINK_MAX || p.compressor.link > FC_LINK_MEAN_POWER
+        || p.compressor.mode < FC_COMP_DOWN_COMPRESS || p.compressor.mode > FC_COMP_DOWN_EXPAND
+        || ! std::isfinite (p.compressor.rmsWindowMs) || ! std::isfinite (p.compressor.thresholdDb)
+        || ! std::isfinite (p.compressor.ratio) || ! std::isfinite (p.compressor.kneeDb)
+        || ! std::isfinite (p.compressor.rangeDb) || ! std::isfinite (p.compressor.attackMs)
+        || ! std::isfinite (p.compressor.releaseMs) || ! std::isfinite (p.compressor.makeupDb)) return false;
+    q.compressor.detector = static_cast<dynamics::Detector> (p.compressor.detector);
+    q.compressor.link = static_cast<dynamics::LinkMode> (p.compressor.link);
+    q.compressor.rmsWindowMs = p.compressor.rmsWindowMs;
+    q.compressor.mode = static_cast<dynamics::Mode> (p.compressor.mode);
+    q.compressor.thresholdDb = p.compressor.thresholdDb; q.compressor.ratio = p.compressor.ratio;
+    q.compressor.kneeDb = p.compressor.kneeDb; q.compressor.rangeDb = p.compressor.rangeDb;
+    q.compressor.attackMs = p.compressor.attackMs; q.compressor.releaseMs = p.compressor.releaseMs;
+    q.compressor.makeupDb = p.compressor.makeupDb; q.compressor.autoMakeup = p.compressor.autoMakeup != 0;
+    if (p.clipper.shape < FC_SHAPE_TANH || p.clipper.shape > FC_SHAPE_ASYM
+        || ! std::isfinite (p.clipper.driveDb) || ! std::isfinite (p.clipper.bias)
+        || ! std::isfinite (p.clipper.mix) || ! std::isfinite (p.clipper.outputDb)
+        || ! std::isfinite (p.clipper.autoComp) || ! std::isfinite (p.clipper.dcBlockHz)) return false;
+    q.clipper.shape = static_cast<saturation::WaveShaper::Shape> (p.clipper.shape);
+    q.clipper.driveDb = p.clipper.driveDb; q.clipper.bias = p.clipper.bias;
+    q.clipper.mix = p.clipper.mix; q.clipper.outputDb = p.clipper.outputDb;
+    q.clipper.autoComp = p.clipper.autoComp; q.clipper.dcBlockHz = p.clipper.dcBlockHz;
+    if (! std::isfinite (p.limiter.ceilingDbTp) || ! std::isfinite (p.limiter.releaseMs)
+        || ! std::isfinite (p.limiterSlowReleaseMs) || ! std::isfinite (p.peakClipperOverCeilingDb)
+        || ! std::isfinite (p.peakClipperKneeDb) || ! std::isfinite (p.stereoAirHz)
+        || ! std::isfinite (p.stereoAirDb) || ! std::isfinite (p.compressorMix)
+        || p.dither.shaping < FC_SHAPING_NONE || p.dither.shaping > FC_SHAPING_PSYCHO) return false;
+    q.limiter.ceilingDbTp = p.limiter.ceilingDbTp; q.limiter.releaseMs = p.limiter.releaseMs;
+    q.limiter.dualRelease = p.limiterDualRelease != 0; q.limiter.slowReleaseMs = p.limiterSlowReleaseMs;
+    q.limiter.peakClip = p.peakClipper != 0; q.limiter.overCeilingDb = p.peakClipperOverCeilingDb;
+    q.limiter.kneeDb = p.peakClipperKneeDb;
+    q.stereoAir.enabled = p.stereoAir != 0;
+    q.stereoAir.frequencyHz = float (p.stereoAirHz); q.stereoAir.gainDb = float (p.stereoAirDb);
+    q.dither.bits = p.dither.bits; q.dither.shaping = static_cast<dither::NoiseShaping> (p.dither.shaping);
+    // The session refuses any depth but 0 and the target's, openly. A value one byte cannot hold is no target's depth
+    // either: it arrives as 255, never as its low byte (272 is not 16).
+    ready.deliveryBits = p.dither.bits >= 0 && p.dither.bits <= 255 ? std::uint8_t (p.dither.bits) : std::uint8_t (255);
+    q.dither.seed = (std::uint64_t (p.dither.seedHi) << 32) | p.dither.seedLo;
+    q.dither.autoBlank = p.dither.autoBlank != 0; q.dither.autoBlankSamples = p.dither.autoBlankSamples;
+    q.compressorMix = p.compressorMix;
+    q.bypassEq = p.bypassEq != 0; q.bypassMonoBass = p.bypassMonoBass != 0;
+    q.bypassCompressor = p.bypassCompressor != 0; q.bypassClipper = p.bypassClipper != 0;
+    q.bypassLimiter = p.bypassLimiter != 0; q.bypassDither = p.bypassDither != 0;
+    return true;
+}
 std::uint64_t joined (std::uint32_t low, std::uint32_t high) noexcept { return (std::uint64_t (high) << 32) | low; }
 fc_session_status answerOut (char* out, std::uint32_t capacity, std::uint32_t* written) noexcept
 {
@@ -258,6 +362,23 @@ fc_session_status storageOut (const Session& session, const felitronics::session
     out->rejection = std::uint32_t (priced.rejection);
     out->bytes = double (priced.bytes); out->largestBlockBytes = double (priced.largestBlockBytes);
     out->liveBytes = session.liveBytes(); return FC_SESSION_OK;
+}
+
+fc_session_status masterInputs (const fc_master_config* config, const fc_master_params* params) noexcept
+{
+    if (const auto st = pointer (config, sizeof (*config), alignof (fc_master_config)); st != FC_SESSION_OK) return st;
+    if (const auto st = pointer (params, sizeof (*params), alignof (fc_master_params)); st != FC_SESSION_OK) return st;
+    return FC_SESSION_OK;
+}
+fc_session_status tokenInput (const fc_session_master_token* token) noexcept
+{
+    if (const auto st = pointer (token, sizeof (*token), alignof (fc_session_master_token)); st != FC_SESSION_OK) return st;
+    return token->size == sizeof (*token) ? FC_SESSION_OK : FC_SESSION_ERR_CONTRACT;
+}
+felitronics::session::MasterToken unpack (const fc_session_master_token& token) noexcept
+{
+    return { joined (token.source_low, token.source_high), joined (token.revision_low, token.revision_high),
+        token.job, token.master };
 }
 
 } // namespace
@@ -526,6 +647,75 @@ FC_EXPORT fc_session_status fc_session_query_copy (fc_session session, const cha
     if (n.status != CodecStatus::Ok) return status (n.status);
     written->jsonBytes = n.jsonBytes; written->rowBytes = n.rowBytes; return FC_SESSION_OK;
 }
+FC_EXPORT fc_session_status fc_session_master_waveform_chunk_bytes (fc_session session, const char* request,
+    std::uint32_t request_bytes, std::uint32_t channels, std::uint32_t frames, std::uint32_t rate,
+    fc_session_storage* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = record (out); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = pointer (request, request_bytes, 1, true); st != FC_SESSION_OK) return st;
+    if (overlap (out, sizeof (*out), request, request_bytes)) return FC_SESSION_ERR_OVERLAP;
+    return storageOut (*slot->session, Wire::masterWaveformChunkStorage (*slot->session,
+        { request, request_bytes }, { nullptr, channels, frames, rate }), out);
+}
+FC_EXPORT fc_session_status fc_session_master_waveform_chunk_size (fc_session session, const char* request,
+    std::uint32_t request_bytes, std::uint32_t channels, std::uint32_t frames, std::uint32_t rate,
+    fc_session_sizes* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = record (out); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = pointer (request, request_bytes, 1, true); st != FC_SESSION_OK) return st;
+    if (overlap (out, sizeof (*out), request, request_bytes)) return FC_SESSION_ERR_OVERLAP;
+    const auto n = Wire::masterWaveformChunkBuffers (*slot->session, { request, request_bytes },
+        { nullptr, channels, frames, rate });
+    if (n.status != CodecStatus::Ok) return status (n.status);
+    out->jsonBytes = n.jsonBytes; out->rowBytes = n.rowBytes; return FC_SESSION_OK;
+}
+FC_EXPORT fc_session_status fc_session_master_waveform_chunk_copy (fc_session session, const char* request,
+    std::uint32_t request_bytes, const float* const* pcm, std::uint32_t channels, std::uint32_t frames,
+    std::uint32_t rate, char* json, std::uint32_t json_capacity, double* rows,
+    std::uint32_t row_capacity, fc_session_sizes* written)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = pointer (json, json_capacity, 1); st != FC_SESSION_OK) return st;
+    if (const auto st = pointer (rows, row_capacity, 8, true); st != FC_SESSION_OK) return st;
+    if (row_capacity % sizeof (double) != 0) return FC_SESSION_ERR_ALIGNMENT;
+    if (const auto st = record (written); st != FC_SESSION_OK) return st;
+    auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = pointer (request, request_bytes, 1, true); st != FC_SESSION_OK) return st;
+    if (const auto st = pointer (pcm, std::uint64_t (channels) * sizeof (*pcm), alignof (const float*), channels == 0);
+        st != FC_SESSION_OK) return st;
+    if (channels <= 2)
+        for (std::uint32_t c = 0; c < channels; ++c)
+            if (const auto st = pointer (pcm[c], std::uint64_t (frames) * sizeof (float), alignof (float), frames == 0);
+                st != FC_SESSION_OK) return st;
+    if (overlap (json, json_capacity, rows, row_capacity) || overlap (json, json_capacity, written, sizeof (*written))
+        || overlap (rows, row_capacity, written, sizeof (*written)) || overlap (request, request_bytes, json, json_capacity)
+        || overlap (request, request_bytes, rows, row_capacity) || overlap (request, request_bytes, written, sizeof (*written))
+        || overlap (pcm, std::uint64_t (channels) * sizeof (*pcm), json, json_capacity)
+        || overlap (pcm, std::uint64_t (channels) * sizeof (*pcm), rows, row_capacity)
+        || overlap (pcm, std::uint64_t (channels) * sizeof (*pcm), written, sizeof (*written))) return FC_SESSION_ERR_OVERLAP;
+    if (channels <= 2)
+        for (std::uint32_t c = 0; c < channels; ++c)
+            if (overlap (pcm[c], std::uint64_t (frames) * sizeof (float), json, json_capacity)
+                || overlap (pcm[c], std::uint64_t (frames) * sizeof (float), rows, row_capacity)
+                || overlap (pcm[c], std::uint64_t (frames) * sizeof (float), written, sizeof (*written)))
+                return FC_SESSION_ERR_OVERLAP;
+    // The retained master PCM may be this chunk's input, but never an output.
+    const auto retained = slot->session->viewMaster (slot->session->pendingMaster());
+    if (overlap (json, json_capacity, retained.data(), retained.size_bytes())
+        || overlap (rows, row_capacity, retained.data(), retained.size_bytes())
+        || overlap (written, sizeof (*written), retained.data(), retained.size_bytes())) return FC_SESSION_ERR_OVERLAP;
+    const auto n = Wire::masterWaveformChunk (*slot->session, { request, request_bytes },
+        { pcm, channels, frames, rate }, { json, json_capacity }, { rows, row_capacity / sizeof (double) });
+    if (n.status != CodecStatus::Ok) return status (n.status);
+    written->jsonBytes = n.jsonBytes; written->rowBytes = n.rowBytes; return FC_SESSION_OK;
+}
 
 FC_EXPORT fc_session_status fc_session_set_capacity (fc_session session, const fc_session_capacity* capacity)
 {
@@ -676,4 +866,188 @@ FC_EXPORT fc_session_status fc_session_attach_audio (fc_session session, std::ui
     if (g_callState == kPoisoned) return FC_SESSION_ERR_POISONED;
     if (st != CodecStatus::Ok) return status (st);
     std::copy_n (reply, size, answer); *written = size; return FC_SESSION_OK;
+}
+
+FC_EXPORT fc_session_status fc_session_master_bytes (fc_session session, std::uint32_t source_low,
+    std::uint32_t source_high, std::uint32_t revision_low, std::uint32_t revision_high,
+    const fc_master_config* topology, const fc_master_params* params, fc_session_storage* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = record (out); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = masterInputs (topology, params); st != FC_SESSION_OK) return st;
+    if (joined (source_low, source_high) != slot->session->source().hash
+        || joined (revision_low, revision_high) != slot->session->revision()) return FC_SESSION_ERR_STALE;
+    if (overlap (out, sizeof (*out), topology, sizeof (*topology))
+        || overlap (out, sizeof (*out), params, sizeof (*params))) return FC_SESSION_ERR_OVERLAP;
+    felitronics::session::command::Master request;
+    request.source = joined (source_low, source_high); request.revision = joined (revision_low, revision_high);
+    if (! masterReady (*topology, *params, slot->session->source(), request.ready)) return FC_SESSION_ERR_CONTRACT;
+    return storageOut (*slot->session, slot->session->storageFor (request), out);
+}
+
+FC_EXPORT fc_session_status fc_session_master (fc_session session, std::uint32_t command_low,
+    std::uint32_t command_high, std::uint32_t source_low, std::uint32_t source_high,
+    std::uint32_t revision_low, std::uint32_t revision_high,
+    const fc_master_config* topology, const fc_master_params* params,
+    char* answer, std::uint32_t capacity, std::uint32_t* written)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = answerOut (answer, capacity, written); st != FC_SESSION_OK) return st;
+    auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = masterInputs (topology, params); st != FC_SESSION_OK) return st;
+    if (joined (source_low, source_high) != slot->session->source().hash
+        || joined (revision_low, revision_high) != slot->session->revision()) return FC_SESSION_ERR_STALE;
+    if (overlap (answer, capacity, written, sizeof (*written))
+        || overlap (topology, sizeof (*topology), answer, capacity)
+        || overlap (params, sizeof (*params), answer, capacity)
+        || overlap (topology, sizeof (*topology), written, sizeof (*written))
+        || overlap (params, sizeof (*params), written, sizeof (*written))) return FC_SESSION_ERR_OVERLAP;
+    if (capacity < FC_SESSION_ANSWER_BYTES) return FC_SESSION_ERR_TOO_SMALL;
+    felitronics::session::command::Master request;
+    request.id = joined (command_low, command_high);
+    request.source = joined (source_low, source_high); request.revision = joined (revision_low, revision_high);
+    if (! masterReady (*topology, *params, slot->session->source(), request.ready)) return FC_SESSION_ERR_CONTRACT;
+    char reply[FC_SESSION_ANSWER_BYTES]; std::uint32_t size = 0;
+    const auto st = Wire::master (*slot->session, request, reply, size);
+    if (g_callState == kPoisoned) return FC_SESSION_ERR_POISONED;
+    if (st != CodecStatus::Ok) return status (st);
+    std::copy_n (reply, size, answer); *written = size; return FC_SESSION_OK;
+}
+
+FC_EXPORT fc_session_status fc_session_master_audio_size (fc_session session,
+    const fc_session_master_token* token, double* bytes, std::uint32_t* frames,
+    std::uint32_t* channels, std::uint32_t* rate)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = pointer (bytes, sizeof (*bytes), alignof (double)); st != FC_SESSION_OK) return st;
+    for (auto* output : { frames, channels, rate })
+        if (const auto st = pointer (output, sizeof (*output), alignof (std::uint32_t)); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = tokenInput (token); st != FC_SESSION_OK) return st;
+    if (overlap (bytes, sizeof (*bytes), token, sizeof (*token))
+        || overlap (frames, sizeof (*frames), token, sizeof (*token))
+        || overlap (channels, sizeof (*channels), token, sizeof (*token))
+        || overlap (rate, sizeof (*rate), token, sizeof (*token))
+        || overlap (bytes, sizeof (*bytes), frames, sizeof (*frames))
+        || overlap (bytes, sizeof (*bytes), channels, sizeof (*channels))
+        || overlap (bytes, sizeof (*bytes), rate, sizeof (*rate))
+        || overlap (frames, sizeof (*frames), channels, sizeof (*channels))
+        || overlap (frames, sizeof (*frames), rate, sizeof (*rate))
+        || overlap (channels, sizeof (*channels), rate, sizeof (*rate))) return FC_SESSION_ERR_OVERLAP;
+    const auto owned = slot->session->viewMaster (unpack (*token));
+    if (owned.empty()) return FC_SESSION_ERR_STALE;
+    if (overlap (bytes, sizeof (*bytes), owned.data(), owned.size_bytes())
+        || overlap (frames, sizeof (*frames), owned.data(), owned.size_bytes())
+        || overlap (channels, sizeof (*channels), owned.data(), owned.size_bytes())
+        || overlap (rate, sizeof (*rate), owned.data(), owned.size_bytes())) return FC_SESSION_ERR_OVERLAP;
+    const auto shape = slot->session->masterAudioShape (unpack (*token));
+    *bytes = double (owned.size_bytes());
+    *frames = std::uint32_t (shape.frames);
+    *channels = shape.channels;
+    *rate = shape.sampleRate;
+    return FC_SESSION_OK;
+}
+
+FC_EXPORT fc_session_status fc_session_master_audio_copy (fc_session session,
+    const fc_session_master_token* token, float* output, std::uint32_t sample_capacity)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = pointer (output, std::uint64_t (sample_capacity) * sizeof (float), alignof (float)); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = tokenInput (token); st != FC_SESSION_OK) return st;
+    if (overlap (output, std::uint64_t (sample_capacity) * sizeof (float), token, sizeof (*token))) return FC_SESSION_ERR_OVERLAP;
+    const auto retained = slot->session->viewMaster (unpack (*token));
+    if (overlap (output, std::uint64_t (sample_capacity) * sizeof (float), retained.data(), retained.size_bytes()))
+        return FC_SESSION_ERR_OVERLAP;
+    const auto state = slot->session->copyMaster (unpack (*token), { output, sample_capacity });
+    if (state == felitronics::session::MasterTransferStatus::TooSmall) return FC_SESSION_ERR_TOO_SMALL;
+    return state == felitronics::session::MasterTransferStatus::Ok ? FC_SESSION_OK : FC_SESSION_ERR_STALE;
+}
+
+FC_EXPORT fc_session_status fc_session_master_audio_release (fc_session session, const fc_session_master_token* token)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = tokenInput (token); st != FC_SESSION_OK) return st;
+    return slot->session->releaseMaster (unpack (*token)) == felitronics::session::MasterTransferStatus::Ok
+        ? FC_SESSION_OK : FC_SESSION_ERR_STALE;
+}
+
+FC_EXPORT fc_session_status fc_session_master_audio_view (fc_session session,
+    const fc_session_master_token* token, const float** output, std::uint32_t* samples)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = pointer (output, sizeof (*output), alignof (const float*)); st != FC_SESSION_OK) return st;
+    if (const auto st = pointer (samples, sizeof (*samples), alignof (std::uint32_t)); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = tokenInput (token); st != FC_SESSION_OK) return st;
+    if (overlap (output, sizeof (*output), samples, sizeof (*samples))
+        || overlap (output, sizeof (*output), token, sizeof (*token))
+        || overlap (samples, sizeof (*samples), token, sizeof (*token))) return FC_SESSION_ERR_OVERLAP;
+    const auto view = slot->session->viewMaster (unpack (*token));
+    if (view.empty()) return FC_SESSION_ERR_STALE;
+    if (overlap (output, sizeof (*output), view.data(), view.size_bytes())
+        || overlap (samples, sizeof (*samples), view.data(), view.size_bytes())) return FC_SESSION_ERR_OVERLAP;
+    if (view.size() > UINT32_MAX) return FC_SESSION_ERR_CONTRACT;
+    *output = view.data(); *samples = std::uint32_t (view.size()); return FC_SESSION_OK;
+}
+
+FC_EXPORT fc_session_status fc_session_master_wav_size (fc_session session,
+    const fc_session_master_token* token, double* bytes, std::uint32_t* bits)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = pointer (bytes, sizeof (*bytes), alignof (double)); st != FC_SESSION_OK) return st;
+    if (const auto st = pointer (bits, sizeof (*bits), alignof (std::uint32_t)); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = tokenInput (token); st != FC_SESSION_OK) return st;
+    if (overlap (bytes, sizeof (*bytes), bits, sizeof (*bits))
+        || overlap (bytes, sizeof (*bytes), token, sizeof (*token))
+        || overlap (bits, sizeof (*bits), token, sizeof (*token))) return FC_SESSION_ERR_OVERLAP;
+    const auto identity = unpack (*token);
+    if (slot->session->masterAudioBytes (identity) == 0) return FC_SESSION_ERR_STALE;
+    const auto pcm = slot->session->viewMaster (identity);
+    if (overlap (bytes, sizeof (*bytes), pcm.data(), pcm.size_bytes())
+        || overlap (bits, sizeof (*bits), pcm.data(), pcm.size_bytes())) return FC_SESSION_ERR_OVERLAP;
+    const auto plan = slot->session->masterWavPlan (identity);
+    if (! plan) return FC_SESSION_ERR_CONTRACT;
+    *bytes = double (plan.bytes); *bits = plan.bits;
+    return FC_SESSION_OK;
+}
+
+FC_EXPORT fc_session_status fc_session_master_wav_copy (fc_session session,
+    const fc_session_master_token* token, std::uint32_t offset_low, std::uint32_t offset_high,
+    std::uint8_t* output, std::uint32_t capacity, std::uint32_t* written)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = pointer (output, capacity, alignof (std::uint8_t)); st != FC_SESSION_OK) return st;
+    if (const auto st = pointer (written, sizeof (*written), alignof (std::uint32_t)); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (const auto st = tokenInput (token); st != FC_SESSION_OK) return st;
+    if (overlap (output, capacity, written, sizeof (*written))
+        || overlap (output, capacity, token, sizeof (*token))
+        || overlap (written, sizeof (*written), token, sizeof (*token))) return FC_SESSION_ERR_OVERLAP;
+    if (capacity == 0 || capacity > 65536u) return FC_SESSION_ERR_CONTRACT;
+    const auto identity = unpack (*token);
+    if (slot->session->masterAudioBytes (identity) == 0) return FC_SESSION_ERR_STALE;
+    const auto plan = slot->session->masterWavPlan (identity);
+    if (! plan) return FC_SESSION_ERR_CONTRACT;
+    const auto offset = joined (offset_low, offset_high);
+    if (offset >= plan.bytes) return FC_SESSION_ERR_CONTRACT;
+    const auto count = std::uint32_t (std::min<std::uint64_t> (capacity, plan.bytes - offset));
+    const auto pcm = slot->session->viewMaster (identity);
+    if (overlap (output, count, pcm.data(), pcm.size_bytes())
+        || overlap (written, sizeof (*written), pcm.data(), pcm.size_bytes())) return FC_SESSION_ERR_OVERLAP;
+    const auto state = slot->session->copyMasterWav (identity, offset, { output, count });
+    if (state != felitronics::session::MasterTransferStatus::Ok) return FC_SESSION_ERR_CONTRACT;
+    *written = count;
+    return FC_SESSION_OK;
 }

@@ -196,10 +196,13 @@ if (args[0] === '--generate') {
     assert(probe.includes('function fc_session_future_measure double(fc_session,const double*)'), 'a double-returning entry point is frozen');
     assert.throws(() => generate(`${header}\nconst char* fc_session_future_name (fc_session session);\n`), /cannot read: fc_session_future_name/);
     // The status union follows the header: an appended status is on the wire at once, a hand list in the schema is refused.
-    const appended = generate(header.replace(/(FC_SESSION_ERR_NOT_PLACED\s*=\s*18)/, '$1,\n    FC_SESSION_ERR_FUTURE = 19'));
-    assert(appended.includes('"wire union SessionStatus 19"') && generate().includes('"wire union SessionStatus 18"')
-        && !generate().includes('"wire union SessionStatus 19"'), 'the wire status union is the header\'s');
-    assert.throws(() => statusValues(header.replace(/FC_SESSION_ERR_NOT_PLACED\s*=\s*18/, 'FC_SESSION_ERR_NOT_PLACED')), /explicit number/);
+    // Appended after the header's LAST status, whichever that is today.
+    const last = Math.max(...statusValues(header).map(Number));
+    const lastStatus = new RegExp(`(FC_SESSION_\\w+\\s*=\\s*${last})(\\s*\\})`);
+    const appended = generate(header.replace(lastStatus, `$1,\n    FC_SESSION_ERR_FUTURE = ${last + 1}$2`));
+    assert(appended.includes(`"wire union SessionStatus ${last + 1}"`) && generate().includes(`"wire union SessionStatus ${last}"`)
+        && !generate().includes(`"wire union SessionStatus ${last + 1}"`), 'the wire status union is the header\'s');
+    assert.throws(() => statusValues(header.replace(new RegExp(`(FC_SESSION_\\w+)\\s*=\\s*${last}\\b`), '$1')), /explicit number/);
     // A wire record mirroring a C struct carries each of its fields: dropping one is refused.
     const dropped = structuredClone(schemaNow); delete dropped.wireRecords.SessionCapabilities.largestFreeBlockBytes;
     assert.throws(() => mirrors(header, dropped), /does not mirror fc_session_capabilities/);

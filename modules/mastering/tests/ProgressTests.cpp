@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <random>
 #include <string>
 #include <vector>
@@ -422,7 +423,7 @@ static void testAStopEndsTheWorkThere()
 
 static void testDelivered()
 {
-    group ("DeliveredMastering 44.1 -> 48 kHz: the conversion is a stage, the bits are kept, a stop there moves nothing");
+    group ("DeliveredMastering 44.1 -> 48 kHz: SRC and render share each pass, and cancellation replays");
     const double a = 44100.0, b = 48000.0;
     const long long n = (long long) (5.0 * a);
     const auto in = programme (a, (int) n, 0.25);
@@ -441,10 +442,10 @@ static void testDelivered()
     const LoudnessSolution heard = dm.solve (solver, chain, renderer, params, ph.in, kNch, n, ph.out, d, req, r.callback());
     ok (plain.passes >= 1 && sameBits (plainOut, heardOut) && sameSolution (plain, heard), "solve: bit for bit");
     const long long D = chain.latencySamples();
-    auto framesOf = [&] (const Stage& s) { return s.stage == ProgressStage::Convert ? n : d; };
-    auto unitsOf  = [&] (const Stage& s) { return s.stage == ProgressStage::Convert ? n : 2 * d + D; };
+    auto framesOf = [&] (const Stage&) { return d; };
+    auto unitsOf  = [&] (const Stage&) { return n + 2 * d + D; };
     const auto st = checkShape ("delivered solve", r.seen, framesOf, unitsOf);
-    ok (! st.empty() && st[0].stage == ProgressStage::Convert, "solve: the conversion is the first stage");
+    ok (! st.empty() && st[0].stage == ProgressStage::SearchPass, "solve: the first pass includes source conversion");
     checkRenders ("delivered solve", r.seen, st, heard, req.maxPasses);
 
     int wrong = 0;
@@ -452,11 +453,27 @@ static void testDelivered()
     {
         Recorder s; s.stopAt = (long long) at;
         const LoudnessSolution stopped = dm.solve (solver, chain, renderer, params, ph.in, kNch, n, ph.out, d, req, s.callback());
-        if (stopped.status != MasteringSolveStatus::Cancelled || stopped.passes != 0 || s.seen.size() != at + 1) ++wrong;
+        if (stopped.status != MasteringSolveStatus::Cancelled || s.seen.size() != at + 1) ++wrong;
         const LoudnessSolution again = dm.solve (solver, chain, renderer, params, ph.in, kNch, n, ph.out, d, req);
         if (! sameBits (heardOut, plainOut) || ! sameSolution (again, plain)) ++wrong;
     }
-    ok (wrong == 0, "solve: a stop while converting is Cancelled with no render begun, and the next solve is the same bits");
+    ok (wrong == 0, "solve: a stop within the first pass is Cancelled, and the next solve is the same bits");
+
+    // A completed first conversion owns the source count even if the next pass stops early.
+    std::vector<float> poisoned = in;
+    poisoned[0] = std::numeric_limits<float>::quiet_NaN();
+    Planes pn (poisoned, n, heardOut, d);
+    long long second = -1;
+    for (std::size_t i = 0; i < r.seen.size(); ++i)
+        if (r.seen[i].e.stage == ProgressStage::SearchPass && r.seen[i].e.pass == 2
+            && r.seen[i].e.fraction > 0.0 && r.seen[i].e.fraction < 0.1)
+        { second = (long long) i; break; }
+    Recorder interrupted; interrupted.stopAt = second;
+    const LoudnessSolution stoppedSecond = dm.solve (solver, chain, renderer, params, pn.in, kNch, n,
+                                                    pn.out, d, req, interrupted.callback());
+    ok (plain.passes >= 2 && second >= 0 && stoppedSecond.status == MasteringSolveStatus::Cancelled
+        && dm.nonFiniteInputSamples() == 1u,
+        "a second-pass cancellation keeps the first completed conversion's source count");
 
     double lraPlain = -1.0, lraHeard = -2.0;
     Recorder q;

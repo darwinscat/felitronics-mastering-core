@@ -12,10 +12,11 @@ namespace felitronics::analysis
 // that scan: reserve uninitialized scalar storage, reset counts, and initialize each observation as
 // it arrives. The filter, accumulation order, gates and damage handling match the core meter.
 // Storage geometry remains core's; live/direct and kernel parity tests pin every numerical boundary.
-class StreamingLoudnessMeter
+template <class MathPolicy = core::DetMath>
+class BasicStreamingLoudnessMeter
 {
 public:
-    using Math = core::DetMath;
+    using Math = MathPolicy;
     struct Storage : DeterministicLoudnessMeter::Storage
     {
         std::uint64_t bytes() const noexcept
@@ -90,6 +91,89 @@ public:
         return { blockE.data(), (std::size_t) blockCount };
     }
     int gatingBlockCount() const noexcept { return blockCount; }
+    // The whole-call accessors above remain the numerical oracle. These saved scans
+    // use the same gates and accumulation order with a bounded number of bins per call.
+    void beginIntegratedScan() noexcept
+    { scanIndex_ = 0; scanPhase_ = 0; scanSum_ = 0.0; scanCount_ = 0; }
+    bool stepIntegratedScan (int limit, double& value, int& used) noexcept
+    {
+        used = 0;
+        const double absT = Math::pow10 ((-70.0 + 0.691) / 10.0);
+        for (; used < limit; ++used)
+        {
+            if (scanIndex_ == blockCount)
+            {
+                if (scanPhase_ == 0)
+                {
+                    if (scanCount_ == 0) { value = -120.0; return true; }
+                    scanThreshold_ = 0.1 * (scanSum_ / scanCount_);
+                    scanPhase_ = 1; scanIndex_ = 0; scanSum_ = 0.0; scanCount_ = 0;
+                }
+                else { value = scanCount_ > 0 ? lufsOf (scanSum_ / scanCount_) : -120.0; return true; }
+            }
+            const double e = blockE[(std::size_t) scanIndex_++];
+            if (std::isfinite (e) && e > absT && (scanPhase_ == 0 || e > scanThreshold_))
+                { scanSum_ += e; ++scanCount_; }
+        }
+        return false;
+    }
+    void beginRangeScan() noexcept
+    { scanIndex_ = 0; scanPhase_ = 0; scanSum_ = 0.0; scanCount_ = 0; rangeTotal_ = 0;
+      rangeCum_ = 0; rangeLowBin_ = -1; }
+    bool stepRangeScan (int limit, double& value, int& used) noexcept
+    {
+        used = 0;
+        const double absT = Math::pow10 ((-70.0 + 0.691) / 10.0);
+        for (; used < limit; ++used)
+        {
+            if (scanPhase_ == 0 && scanIndex_ == stCount)
+            {
+                if (scanCount_ == 0) { value = 0.0; return true; }
+                scanThreshold_ = 0.01 * (scanSum_ / scanCount_);
+                scanPhase_ = 1; scanIndex_ = 0;
+            }
+            if (scanPhase_ == 1)
+            {
+                rangeHist_[(std::size_t) scanIndex_++] = 0;
+                if (scanIndex_ == (int) rangeHist_.size()) { scanPhase_ = 2; scanIndex_ = 0; }
+                continue;
+            }
+            if (scanPhase_ == 2 && scanIndex_ == stCount)
+            {
+                if (rangeTotal_ < 2) { value = 0.0; return true; }
+                rangeLowRank_ = (int) ((double) (rangeTotal_ - 1) * 0.10 + 0.5);
+                rangeHighRank_ = (int) ((double) (rangeTotal_ - 1) * 0.95 + 0.5);
+                scanPhase_ = 3; scanIndex_ = 0;
+            }
+            if (scanPhase_ == 3)
+            {
+                rangeCum_ += rangeHist_[(std::size_t) scanIndex_];
+                if (rangeCum_ > rangeLowRank_ && rangeLowBin_ < 0) rangeLowBin_ = scanIndex_;
+                if (rangeCum_ > rangeHighRank_)
+                {
+                    // Preserve the whole-call subtraction order and rounding.
+                    value = (-70.0 + (double) scanIndex_ * 0.1)
+                          - (-70.0 + (double) rangeLowBin_ * 0.1);
+                    ++used;
+                    return true;
+                }
+                ++scanIndex_;
+                continue;
+            }
+            const double e = stE[(std::size_t) scanIndex_++];
+            if (std::isfinite (e) && e >= absT)
+            {
+                if (scanPhase_ == 0) { scanSum_ += e; ++scanCount_; }
+                else if (e >= scanThreshold_)
+                {
+                    int b = (int) ((lufsOf (e) + 70.0) * 10.0);
+                    b = b < 0 ? 0 : (b >= (int) rangeHist_.size() ? (int) rangeHist_.size() - 1 : b);
+                    ++rangeHist_[(std::size_t) b]; ++rangeTotal_;
+                }
+            }
+        }
+        return false;
+    }
 private:
     static constexpr int kMaxChannels      = core::kMaxChannels;
     static constexpr int kSubHopsPerHop    = 10;
@@ -198,5 +282,11 @@ private:
     std::uint64_t nonFiniteSubHops_ = 0;
     storage::Buffer<double> stE;
     int stCount = 0;
+    int scanIndex_ = 0, scanPhase_ = 0, scanCount_ = 0;
+    double scanSum_ = 0.0, scanThreshold_ = 0.0;
+    std::array<int, 1000> rangeHist_ {};
+    int rangeTotal_ = 0, rangeCum_ = 0, rangeLowRank_ = 0, rangeHighRank_ = 0, rangeLowBin_ = -1;
 };
+using StreamingLoudnessMeter = BasicStreamingLoudnessMeter<core::DetMath>;
+using SystemStreamingLoudnessMeter = BasicStreamingLoudnessMeter<core::SystemMath>;
 } // namespace felitronics::analysis

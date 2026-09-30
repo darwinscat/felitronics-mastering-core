@@ -59,7 +59,7 @@ Answer Session::loadMeasured (CommandId id, const MeasuredSource& facts) noexcep
     measurementWorkspace_.reset(); liveMeasurements_.reset(); sourceMeasurements_.reset();
     clearNeedles(); needlesSource_ = needlesKey_ = 0; needlesNeedDb_.reset(); needlesCeilingDb_.reset();
     needlesProgress_ = {}; needlesDemand_ = {};
-    masters_.reset(); masterCount_ = masterRoom_ = 0; mastering_ = false; job_ = 0; jobRecipe_ = {};
+    clearMasters();
     for (auto& owner : measurementOwners_) owner = {};
     measurementOwnedBytes_ = 0; measurementStorage_ = {};
     name_ = std::move (name);

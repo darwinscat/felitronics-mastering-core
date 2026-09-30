@@ -44,7 +44,7 @@ if(PROJECT_IS_TOP_LEVEL)
     include(FetchContent)
     set(FELITRONICS_MASTERING_FCORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-core" CACHE PATH
         "Local felitronics-core checkout (used if present); else the pinned release is fetched")
-    set(FELITRONICS_MASTERING_FCORE_TAG "v0.55.0" CACHE STRING
+    set(FELITRONICS_MASTERING_FCORE_TAG "v0.56.0" CACHE STRING
         "felitronics-core git tag to fetch when no local checkout is present")
     if(FELITRONICS_MASTERING_FCORE_DIR AND EXISTS "${FELITRONICS_MASTERING_FCORE_DIR}/CMakeLists.txt")
         message(STATUS "felitronics-core: local checkout — ${FELITRONICS_MASTERING_FCORE_DIR}")
@@ -88,7 +88,7 @@ endif()
 if(NOT TARGET felitronics::core OR NOT TARGET felitronics::test_support
    OR NOT EXISTS "${felitronics_core_SOURCE_DIR}/cmake/FelitronicsPolicy.cmake")
     message(FATAL_ERROR
-        "felitronics-mastering-core needs felitronics-core v0.55.0 or later, made available BEFORE this "
+        "felitronics-mastering-core needs felitronics-core v0.56.0 or later, made available BEFORE this "
         "repository (FetchContent_MakeAvailable(felitronics_core) first), so ONE core is resolved by the "
         "product that owns the graph.")
 endif()
@@ -99,8 +99,29 @@ if(TARGET felitronics::mastering OR TARGET felitronics::analysis_offline)
     message(FATAL_ERROR
         "this felitronics-core (${felitronics_core_SOURCE_DIR}) still defines felitronics::mastering / "
         "felitronics::analysis_offline, which live here now: felitronics-mastering-core needs felitronics-core "
-        "v0.55.0 or later. Point FELITRONICS_MASTERING_FCORE_DIR at such a checkout, or remove the sibling "
+        "v0.56.0 or later. Point FELITRONICS_MASTERING_FCORE_DIR at such a checkout, or remove the sibling "
         "checkout to fetch FELITRONICS_MASTERING_FCORE_TAG.")
+endif()
+
+# The core is resolved above for a top-level build and by the parent for an embedded build. PRESENCE checks only, at
+# configure time and before any consumer compiles: the K13 limiter tap the traces read, and the WAV writer the session's
+# WAV export is checked against. What they DO is proven by bytes — felitronics_mastering_limiter_trace_tests and
+# felitronics_session_wav_tests against the installed core — not by pinning the files' text, which would refuse a
+# release that only reworded a comment; the version floor below is what names the release.
+set(FELITRONICS_MASTERING_CORE_LIMITER_HEADER
+    "${felitronics_core_SOURCE_DIR}/modules/limiter/include/felitronics/limiter/TruePeakLimiter.h")
+if(NOT EXISTS "${FELITRONICS_MASTERING_CORE_LIMITER_HEADER}")
+    message(FATAL_ERROR "felitronics-mastering-core requires felitronics-core with the K13 limiter tap")
+endif()
+file(STRINGS "${FELITRONICS_MASTERING_CORE_LIMITER_HEADER}" FELITRONICS_MASTERING_CORE_TAP_DECL
+    REGEX "^[ \t]*float\\* peakClipReductionDb[ \t]*=[ \t]*nullptr;")
+if(NOT FELITRONICS_MASTERING_CORE_TAP_DECL)
+    message(FATAL_ERROR
+        "felitronics-mastering-core requires felitronics-core with the K13 limiter tap; "
+        "the resolved core at ${felitronics_core_SOURCE_DIR} lacks peakClipReductionDb")
+endif()
+if(NOT EXISTS "${felitronics_core_SOURCE_DIR}/modules/io/include/felitronics/io/Wav.h")
+    message(FATAL_ERROR "felitronics-mastering-core requires the released felitronics-core WAV implementation")
 endif()
 
 # Core's build policy — FP contraction (law 10), the MSVC stack + UTF-8, the emscripten physics, the
@@ -123,6 +144,9 @@ get_directory_property(FELITRONICS_MASTERING_FCORE_VERSION DIRECTORY "${felitron
 if(NOT FELITRONICS_MASTERING_FCORE_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
     message(FATAL_ERROR "cannot read felitronics-core's release from ${felitronics_core_SOURCE_DIR} "
                         "(its project() line gave '${FELITRONICS_MASTERING_FCORE_VERSION}')")
+endif()
+if(FELITRONICS_MASTERING_FCORE_VERSION VERSION_LESS "0.56.0")
+    message(FATAL_ERROR "felitronics-mastering-core requires felitronics-core v0.56.0 or later")
 endif()
 
 # felitronics-toml, by the same rule: made available before this repository by whoever owns the graph (above, when

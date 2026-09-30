@@ -10,6 +10,7 @@ import {fixtures, fixtureRoot} from './fixtures.mjs';
 import {parse} from './grammar.mjs';
 import {runWasm, arrayEncodings} from './wasm.mjs';
 import {lfBytes, recordings} from './recordings.mjs';
+import {childTimeout} from './child-timeout.mjs';
 import {createHash} from 'node:crypto';
 
 const root = fileURLToPath(new URL('scenarios/', import.meta.url));
@@ -91,16 +92,11 @@ function validate(name, bytes) {
     assert.equal(answers.filter(a => a.kind === 'rejected').length, expected.rejections ?? 0, `${name}: unexpected command refusal`);
     assert.ok(trace.some(r => r.kind === 'snapshot'), `${name}: no final snapshot`);
 }
-// ONE BUDGET PER CHILD PROCESS, and one place that sets it. 30 s is ample for every scenario on an optimised build (the
+// ONE BUDGET PER CHILD PROCESS, read by child-timeout.mjs as wav-contract.mjs reads its own. 30 s is ample for every scenario on an optimised build (the
 // longest takes about a second) and a hang still ends quickly there. A sanitized build runs the same scenarios an order
 // of magnitude slower, so tools/CMakeLists.txt raises it for that tier through FC_SESSION_CONTRACT_TIMEOUT_MS. Each
 // child's output fits the buffer with room: the largest scenario writes under 7 MB.
-function childTimeout(value) {
-    if (value === undefined) return 30000;
-    if (!/^[1-9][0-9]{3,8}$/.test(value)) throw new Error(`FC_SESSION_CONTRACT_TIMEOUT_MS must be whole milliseconds, 1000 or more: ${value}`);
-    return Number(value);
-}
-const timeout = childTimeout(process.env.FC_SESSION_CONTRACT_TIMEOUT_MS), maxBuffer = 64 * 1024 * 1024;
+const timeout = childTimeout(30000), maxBuffer = 64 * 1024 * 1024;
 function nativeRun(cli, ...args) {
     const p = spawnSync(cli, args, {maxBuffer, timeout});
     if (p.status !== 0) throw new Error(`native ${args.join(' ')}: exit ${p.status}: ${p.error ?? ''}${p.stderr}`);
