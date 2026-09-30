@@ -1495,7 +1495,8 @@
       "OutputPending",
       "MandatoryUnavailable",
       "DeliveryFormat",
-      "PlanPending"
+      "PlanPending",
+      "RetiredDefaults"
     ],
     "ErrorCode": [
       "Trap",
