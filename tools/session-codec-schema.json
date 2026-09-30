@@ -126,6 +126,11 @@
       "Measured",
       "Quiet"
     ],
+    "TickFrom": [
+      "Machine",
+      "Hand",
+      "Touched"
+    ],
     "HpfCut": [
       "Note",
       "Floor",
@@ -796,7 +801,9 @@
         "heldBack": "HeldBack",
         "needs": "uint32",
         "target": "uint8",
-        "measured": "uint8"
+        "measured": "uint8",
+        "on": "bool",
+        "tick": "TickFrom"
       }
     },
     "DevicePlans": {

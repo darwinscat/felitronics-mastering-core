@@ -585,10 +585,82 @@ void aChangeOfTargetResetsEdits()
     ok (s.apply (command::SetTarget { 8, "lp" }).rejection == Rejection::None && s.snapshot().view().handFieldCount == 0
         && same (s.project().devices.low.machine.db, 0.5), "the change sent: every device edit reset, lp's own low shelf placed");
 }
+// THE OWNER'S RULE: a person's edit always sounds. A device's tick is the person's when they set one; otherwise on when
+// any of its fields carries their value; otherwise the machine's.
+void aTouchedDeviceSounds()
+{
+    felitronics::test::group ("a person's edit always sounds: a touched knob ticks its device; their own un-tick wins; untouched, the machine's tick");
+    const auto r = detail::rules();
+    // Every device with a tick and a knob, walked by the one list: machine off, one knob touched.
+    bool touched = true, unticked = true, machine = true;
+    Devices devices;
+    detail::eachDevice (devices, [&] (Device, auto& layers)
+    {
+        using Fields = std::remove_cvref_t<decltype (layers.machine)>;
+        if constexpr (requires { layers.machine.on; })
+        {
+            for (const bool machineOn : { false, true })
+            {
+                layers.machine.on = machineOn; layers.hand = {};
+                machine = machine && detail::settingsOf (r, layers).on == machineOn && detail::tickFrom (r, layers) == TickFrom::Machine;
+                std::size_t fields = 0;
+                detail::DeviceOf<Fields>::each (r, [&] (std::uint8_t, const detail::FieldRule&, const auto&) { ++fields; }, layers.machine);
+                for (std::size_t touch = 1; touch < fields; ++touch)
+                {
+                    layers.hand = {};
+                    detail::DeviceOf<Fields>::each (r, [&] (std::uint8_t i, const detail::FieldRule&, auto& hand, const auto& value)
+                    { if (i == touch) hand = value; }, layers.hand, layers.machine);
+                    touched = touched && detail::settingsOf (r, layers).on && detail::tickFrom (r, layers) == TickFrom::Touched
+                           && detail::settingsOf (r, layers, false).on == machineOn;
+                    layers.hand.on = false;
+                    unticked = unticked && ! detail::settingsOf (r, layers).on && detail::tickFrom (r, layers) == TickFrom::Hand;
+                    layers.hand.on = true;
+                    unticked = unticked && detail::settingsOf (r, layers).on && detail::tickFrom (r, layers) == TickFrom::Hand;
+                }
+            }
+        }
+    });
+    ok (touched, "every device: any knob a person touched ticks it on, whatever the machine's tick (equal to the machine's value too)");
+    ok (unticked, "a person's own tick — off or on — wins over their knobs");
+    ok (machine, "with nothing touched the tick is the machine's");
+
+    // THE PLAN'S EXAMPLE: `[tilt] db.hand = 3`, no tick written, sounds.
+    auto sp = placedShort(); auto& s = *sp;
+    const auto flat = s.snapshot();
+    const auto example = projectText (version (Session::version()), "\n[tilt]\ndb.hand = 3\n");
+    ok (s.apply (command::ImportProject { 2, example }).rejection == Rejection::None && ! s.project().devices.tilt.machine.on
+        && ! s.project().devices.tilt.hand.on, "PRECONDITION: the project carries the knob alone; the machine's tilt is off");
+    const auto v = s.snapshot();
+    const auto top = [] (const Snapshot& snap) { return snap.view().eqCurve[kEqCurvePoints - 1].db; };
+    ok (std::abs (top (v) - top (flat) - 3.0) < 0.2, "it sounds: the curve's top is up by the 3 dB");
+    ok (v.view().plan.devices.tilt.on && v.view().plan.devices.tilt.tick == TickFrom::Touched,
+        "and the snapshot says the tick is on, and that a touched knob made it so");
+    TiltFields<Touched> off; off.on = false;
+    ok (s.apply (command::EditDevice { 3, off }).rejection == Rejection::None, "the person un-ticks it");
+    const auto silent = s.snapshot();
+    ok (std::abs (top (silent) - top (flat)) < 1e-9 && ! silent.view().plan.devices.tilt.on && silent.view().plan.devices.tilt.tick == TickFrom::Hand
+        && same (*s.project().devices.tilt.hand.db, 3.0), "silent, the 3 dB kept on the knob: the person's own tick");
+    TiltFields<Mark> tick; tick.on = true;
+    ok (s.apply (command::RevertEdits { 4, tick }).rejection == Rejection::None && s.snapshot().view().plan.devices.tilt.on,
+        "the tick reverted, the knob sounds again");
+    // A person's glue knob alone makes the glue compress — and so reads the tempo, like a ticked one.
+    GlueFields<Touched> glue; glue.upToDb = 1.0;
+    ok (s.apply (command::EditDevice { 5, glue }).rejection == Rejection::None
+        && (s.snapshot().view().plan.needs & detail::bitOf (Analyzer::Tempo)) != 0 && s.snapshot().view().plan.devices.glue.tick == TickFrom::Touched,
+        "a touched glue knob compresses, and the plan reads the tempo for it");
+    const auto all = s.snapshot();
+    ok (all.view().plan.devices.limiter.on && all.view().plan.devices.limiter.tick == TickFrom::Machine
+        && all.view().plan.devices.hpf.on && all.view().plan.devices.hpf.tick == TickFrom::Machine
+        && ! all.view().plan.devices.saturation.on, "untouched devices show the machine's tick; the limiter is always on");
+    ok (s.apply (command::SetTarget { 6, "lp" }).rejection == Rejection::None && ! s.snapshot().view().plan.devices.tilt.on
+        && s.snapshot().view().plan.devices.tilt.tick == TickFrom::Machine && s.snapshot().view().plan.devices.low.on,
+        "a change of target resets the edits and the ticks they gave; vinyl's low is the machine's");
+}
 } // namespace
 
 int main()
 {
+    aTouchedDeviceSounds();
     everyDeviceIsPlannedAsBefore();
     theEqStage();
     thePlansKey();

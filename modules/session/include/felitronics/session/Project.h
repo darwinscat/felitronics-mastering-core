@@ -122,6 +122,12 @@ template <template <class> class F> struct LowFields
     F<double> db {};
 };
 
+// WHERE A DEVICE'S TICK COMES FROM — a person's edit always sounds. Their own tick when they set one, on or off (Hand);
+// otherwise ON when any of the device's fields carries their value (Touched: `[tilt] db.hand = 3` sounds with no tick
+// written); otherwise the machine's (Machine). What sounds is the machine's layer with a person's fields over it and this
+// tick; a change of target resets a person's layer, and with it the tick it gave.
+enum class TickFrom : std::uint8_t { Machine, Hand, Touched };
+
 // The devices, in the order Devices below holds them (and a device edit's alternatives, Commands.h, are listed).
 enum class Device : std::uint8_t { Hpf, MonoBass, Glue, Saturation, Tilt, Limiter, Dither, Low };
 
