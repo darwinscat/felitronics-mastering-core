@@ -332,9 +332,12 @@ outputStep = 0.1
 autoComp = 0
 dcBlockHz = 0
 
-# TILT — a manual device with one knob, in dB: the machine does not touch timbre (a tilt taken from a measurement is a
-# genre trap). band: the core's EQ band it writes; freqHz: its pivot; normal: where the value turns red; hard: the ends of
-# the travel; step: the knob's step.
+# TILT — a manual device with one knob, in dB, and its tick: the machine does not touch timbre (a tilt taken from a
+# measurement is a genre trap) — it leaves the tick off and the knob at 0. The geometry (technical decision 3О10): the
+# core's tilt about freqHz — a low shelf of −dB and a high shelf of +dB at the pivot, so the low end goes down by the
+# knob, the top up by it, the ends 2·dB apart and the pivot unmoved. domain: what a command and a project accept (±6 dB);
+# band: the core's EQ band it writes; normal: where the value turns red; hard: the ends of the slider's travel; step: the
+# knob's step — travel and step are hints, a value between steps or past the travel is taken as written.
 [tilt]
 domain = [-6, 6]
 band = 1
@@ -344,9 +347,11 @@ hard = [-3, 3]
 step = 0.1
 
 # LOW — a separate device on every target, with one dB knob and an on tick. The machine enables it only
-# when the target carries lowDb, its correction for the medium (today lp, +0.5 dB); otherwise off at 0 dB.
-# Hand edits apply whether the panel is visible or hidden.
-# band: the core's EQ band; freqHz, q: the shelf's corner and Q; normal, hard, step: as for tilt.
+# when the target carries lowDb, its correction for the medium (today lp, +0.5 dB) — and not on an input too quiet to
+# measure ([input] quiet), where it places no device; otherwise off at 0 dB. Hand edits apply whether the panel is
+# visible or hidden. A STATIC shelf (technical decision 3О10): no dynamics, no trial render, nothing taken from a
+# measurement.
+# band: the core's EQ band; freqHz, q: the shelf's corner and Q; domain, normal, hard, step: as for tilt.
 [low]
 domain = [-6, 6]
 band = 2

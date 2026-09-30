@@ -183,8 +183,8 @@ template <class D, class V> void eachDevice (D& devices, V&& v)
 // THE CONFIG'S DEFAULTS of every device for the target in row `row` and a source of `channels` channels (0: none) — the
 // numbers the machine starts from: [stages] for the ticks, the target's row for what the target decides (the high-pass's
 // slope and floor, the mono-bass crossover, the needles off where the target has no peak clipper, the dither at its bit
-// depth, the low shelf's gain, the glue of [glue] byTarget) and each device's section for the rest. Tilt starts at 0 dB:
-// the machine does not touch timbre. They are the defaults layer, not a decision taken from a measurement: the planner
+// depth, the low shelf's gain, the glue of [glue] byTarget) and each device's section for the rest. Tilt starts off at
+// 0 dB: the machine does not touch timbre. They are the defaults layer, not a decision taken from a measurement: the planner
 // (src/Planner.h) proposes the machine's layer from them, and a project file writes a machine value only where it differs
 // from them.
 void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices) noexcept;

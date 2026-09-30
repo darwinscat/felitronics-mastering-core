@@ -216,7 +216,8 @@ void theEqStage()
                         detail::placeMachine (in, p.devices);
                         p.devices.hpf.hand.fq = fq; p.devices.hpf.hand.slope = slope;
                         p.devices.hpf.hand.on = (slope / 6) % 5 != 0;
-                        p.devices.tilt.hand.db = tilt; p.devices.low.machine.db = low; p.devices.low.machine.on = slope % 12 == 0;
+                        p.devices.tilt.hand.db = tilt; p.devices.tilt.hand.on = (slope / 6) % 3 != 0;
+                        p.devices.low.machine.db = low; p.devices.low.machine.on = slope % 12 == 0;
                         EqPoint now[kEqCurvePoints], before[kEqCurvePoints];
                         detail::eqCurve (p, r, rate, now);
                         previous::previousEqCurve (p, r, rate, before);
@@ -230,7 +231,7 @@ void theEqStage()
     Project p;
     detail::PlanInputs in; in.rules = r; in.row = r.defaultRow; in.channels = 2; in.sampleRate = 48000;
     detail::placeMachine (in, p.devices);
-    p.devices.tilt.hand.db = 1.25; p.devices.low.hand = { true, -2.5 };
+    p.devices.tilt.hand = { true, 1.25 }; p.devices.low.hand = { true, -2.5 };
     detail::EqStage base; detail::writeEq (p.devices, r, base);
     const auto changedBands = [&] (const detail::EqStage& other)
     {

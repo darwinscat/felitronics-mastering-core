@@ -264,7 +264,7 @@ Dither is offered through 16 bits, and mono bass except on a mono source; the sh
 - **The machine's layer** is the planner's (below, "The plan of the devices"): each device proposes its fields from
   the config for the target and the source — the ticks from `[stages]`, what the target decides (the high-pass's slope
   and floor, the mono-bass crossover, no needles where the target has no peak clipper, the dither at its bit depth, the
-  low shelf's gain, the glue its row names) and each device's own section for the rest; tilt starts flat — and from
+  low shelf's gain, the glue its row names) and each device's own section for the rest; tilt starts off and flat — and from
   what it measures. The devices are placed when the first measurement ends — by the pump, and by a sidecar's facts —
   and again on a change of target after that; before it they are unplaced — every field of the machine's layer at its
   type's zero, and the state says so. A load unplaces them again.
@@ -339,6 +339,17 @@ findings typed; `PlanText` gives their report lines. `felitronics_session_hpf_mo
 the cutoff to core's own response on every target, slope and rate, and — through the pump on synthetic mixes — a
 detector that never errs upward and a loss that tells centred, partial and inverted bass apart, opposite polarity above
 the crossover not counting.
+
+**Tilt and low** (technical decision 3О10) are two devices of the person's taste in that one stage. The machine never
+ticks tilt and leaves it at 0 dB; it ticks low only for a target's correction for its medium (`lowDb`: vinyl's
++0.5 dB) — a number of the target, not a measurement — and not on an input too quiet to measure, where the number
+stays on the knob. Tilt is the core's tilt about 1 kHz: the low end down by the knob, the top up by it, the ends 2·dB
+apart, the pivot unmoved; low is a static shelf at 80 Hz, Q 0.6 — no dynamics, nothing swept or split. Both knobs take
+±6 dB as written — between steps and past the slider's travel — and the band carries the value bit for bit: inside the
+domain nothing in the engine clamps. `felitronics_session_tilt_low_tests` holds the machine's layer on every target and
+input, the domain's ends, the geometry against core's response, the three EQ devices together (each tick taking out its
+own contribution; the engine fed the written bands giving, sample for sample, the sound of the decided filters), and a
+person's layer kept hidden, saved and imported until a change of target resets it.
 
 **One need, one measurement.** The source's measurements serve every target: a change of target or of a person's
 layer measures nothing again, and the needles run again only for a new ceiling (another target with the same numbers
