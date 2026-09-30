@@ -129,15 +129,19 @@ struct HpfFinding
 //   Unmeasured   the loss could not be weighed (too little bass sounding, or no low-end reading): left out
 //   MonoSource   a mono input has no side to fold
 //   Quiet        an input too quiet to measure
-//   Incomplete   the low-end reading holds only a first part of the piece (its blocks are capped, about 10.9 minutes): no
-//                verdict is taken from a part — left out, with that reason
-enum class MonoBassVerdict : std::uint8_t { On, Partial, AntiPhase, Unmeasured, MonoSource, Quiet, Incomplete };
+// Mono bass stands unless a MEASURED loss rules against it. Where the low-end reading holds only a first part of the
+// piece (its blocks are capped, about 10.9 minutes) the loss is weighed over that part and the device placed by it;
+// `coveredSeconds` says how much of the piece the weighing covered.
+enum class MonoBassVerdict : std::uint8_t { On, Partial, AntiPhase, Unmeasured, MonoSource, Quiet };
 struct MonoBassFinding
 {
     MonoBassVerdict verdict = MonoBassVerdict::Unmeasured;
     double crossoverHz = 0.0;                  // the crossover it was weighed at: the target's
     std::optional<double> lossDb;              // the measured loss, dB
     double soundingSeconds = 0.0;              // how long the bass sounds, in the blocks it was weighed over
+    // Set where the reading holds only the beginning of the piece: the seconds it covers, of `pieceSeconds`.
+    std::optional<double> coveredSeconds;
+    double pieceSeconds = 0.0;
     // The project's mono bass is on where the machine would leave it out (a person switched it on): the warning beside
     // the tick and in the report.
     bool againstMachine = false;
@@ -233,6 +237,10 @@ struct PlanText
 {
     [[nodiscard]] static text::Fact hpf (const HpfFinding& finding) noexcept;
     [[nodiscard]] static std::optional<text::Fact> monoBass (const MonoBassFinding& finding) noexcept;
+    // Beside it: the polarity warning where the fold sounds at a person's or a file's crossover against an opposite-
+    // polarity verdict, and the part of the piece the loss was weighed over where the reading does not hold it whole.
+    [[nodiscard]] static std::optional<text::Fact> monoBassPolarity (const MonoBassFinding& finding) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> monoBassCoverage (const MonoBassFinding& finding) noexcept;
     // The glue's refusal and its clamps, each with its reason: unavailable without a P95; the release on the fallback
     // tempo; the release held at a limit.
     [[nodiscard]] static std::optional<text::Fact> glue (const GlueFinding& finding) noexcept;
@@ -505,7 +513,8 @@ private:
     bool machineFromFile_ = false;
     // A master asked for with measurements its devices read still running: its recipe's project is the one captured then
     // (the target, its numbers, a person's layer), and the needles are measured at that project's ceiling until the
-    // wait ends or the master is dropped. (A version-0 master is counted, not rendered: the render from the planner's
+    // wait ends or the master is dropped — cancelled, stopped with its measurement, ended by a contract fault, or
+    // ended by a load or loadMeasured, which clear it with every other master state. (A version-0 master is counted, not rendered: the render from the planner's
     // devices — through writeEq and writeDynamics, so the tick rule holds — is the next step's.)
     bool jobWaiting_ = false;
     // Derived at placement and after accepted commands; owned snapshots copy these points.

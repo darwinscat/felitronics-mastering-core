@@ -164,8 +164,7 @@
       "AntiPhase",
       "Unmeasured",
       "MonoSource",
-      "Quiet",
-      "Incomplete"
+      "Quiet"
     ]
   },
   "records": {
@@ -908,6 +907,8 @@
         "crossoverHz": "double",
         "lossDb": "double?",
         "soundingSeconds": "double",
+        "coveredSeconds": "double?",
+        "pieceSeconds": "double",
         "againstMachine": "bool",
         "sounding": "Sounding",
         "soundingHz": "double"

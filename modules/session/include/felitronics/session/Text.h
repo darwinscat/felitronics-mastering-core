@@ -142,7 +142,7 @@ enum class FactId : std::uint16_t
     HpfOff = 48,             // the high-pass is out of the chain
     MonoBassByHand = 49,     // mono bass below {crossover}: a person's value
     MonoBassKept = 50,       // mono bass below {crossover}: a project file's machine layer
-    MonoBassIncomplete = 51, // mono bass left out: the low-end reading covers only a first part of the piece
+    MonoBassPartWeighed = 51, // mono bass was weighed over the first {covered} of the piece's {whole}
 
     // A command's rejection, by its code — what was refused and why. The three a field refuses name it: {field}.
     RejectedFloatingPointEnvironment = 101,

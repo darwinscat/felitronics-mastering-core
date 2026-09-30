@@ -124,8 +124,7 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (MonoBassVerdict::Unmeasured) == 3);
         static_assert (unsigned (MonoBassVerdict::MonoSource) == 4);
         static_assert (unsigned (MonoBassVerdict::Quiet) == 5);
-        static_assert (unsigned (MonoBassVerdict::Incomplete) == 6);
-        return 6;
+        return 5;
     }
     else if constexpr (std::is_same_v<T, Needles>)
     {
@@ -361,7 +360,6 @@ constexpr void checkEnum (MonoBassVerdict value) noexcept
         case MonoBassVerdict::Unmeasured: break;
         case MonoBassVerdict::MonoSource: break;
         case MonoBassVerdict::Quiet: break;
-        case MonoBassVerdict::Incomplete: break;
     }
 }
 
@@ -1214,13 +1212,17 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, MonoBassFinding>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.againstMachine)>, bool>);
         v.field ("againstMachine", x.againstMachine);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.coveredSeconds)>, std::optional<double>>);
+        v.field ("coveredSeconds", x.coveredSeconds);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.crossoverHz)>, double>);
         v.field ("crossoverHz", x.crossoverHz);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.lossDb)>, std::optional<double>>);
         v.field ("lossDb", x.lossDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.pieceSeconds)>, double>);
+        v.field ("pieceSeconds", x.pieceSeconds);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sounding)>, Sounding>);
         v.field ("sounding", x.sounding);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.soundingHz)>, double>);

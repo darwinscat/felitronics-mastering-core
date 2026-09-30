@@ -327,8 +327,8 @@ path without needles), a stopped source measurement has not. So no plan waits fo
 ends with a reason, or waits for a person's `continueMeasurement`, which a hidden panel's master sends by itself. A
 needed tempo goes ahead of the optional findings in the source's second phase, and the needles are measured at the
 ceiling of the project being planned — a waiting master's own, until what it reads has ended or the master is dropped:
-cancelled, stopped with the source's measurement it waited for, or ended by a contract fault, it hands the needles back
-to the project's own ceiling, so the project's plan does not wait for needles nobody measures. A master stopped with the
+cancelled, stopped with the source's measurement it waited for, ended by a contract fault, or cleared by a `load` or
+`loadMeasured` (which end every master state, the wait included), it hands the needles back to the project's own ceiling, so the project's plan does not wait for needles nobody measures. A master stopped with the
 measurement says so under its own job's id (fact `cancelled`), beside the measurement's `measurementStopped`.
 
 **A finding is the planner's proposal; a sentence states what sounds.** `plan.hpf` and `plan.monoBass` hold what the
@@ -338,7 +338,8 @@ project's device: a person's layer over a machine's layer that a project file ma
 its proposal is what sounds: a person's cutoff is `hpfByHand` with that cutoff and no claim about the note, a file's
 `hpfKept`, an unticked high-pass `hpfOff`; mono bass at another crossover or width is `monoBassByHand` / `monoBassKept`,
 "will take N dB" is said only of the fold as proposed, the opposite-polarity warning of that fold left out or switched
-on against the machine, and nothing of a loss that does not happen. (The full wording of a person's layer is the next
+on against the machine — and beside the by-hand sentence where a person's crossover sounds against that verdict
+(`PlanText::monoBassPolarity`) — and nothing of a loss that does not happen. (The full wording of a person's layer is the next
 slice's.) The chain's topology follows the same effective settings — the tick rule, `settingsOf` — never `[stages]`,
 which is only the defaults layer a project file is written against: the planner decides every tick it has a rule for
 (mono bass by its loss, whatever `[stages] monoBass` says). `writeEq` and `writeDynamics` are those settings as the chain
@@ -358,9 +359,10 @@ by the harm itself: the loss the low end takes folded to mono, 10·log10((mid + 
 run at the target's crossover (120 Hz, vinyl 150) where the bass sounds (within 20 dB of the level the loudest 5 % reach,
 3 s at least). Under 1 dB it is placed; from 1 to 3 dB, both included, placed with the number; above 3 dB left out —
 and a person may switch it on, with `plan.monoBass.againstMachine` for the warning. A loss it cannot weigh is its own
-reason, and it is left out: the machine does not fold what it did not weigh. Nor does it weigh a part: the run keeps
-65536 blocks of 10 ms (10.9 minutes), and a piece longer than that has only its beginning in them — `Incomplete`, left
-out, with its own sentence (`monoBassIncomplete`). `plan.hpf` and `plan.monoBass` carry the
+reason, and it is left out: the machine does not fold what it did not weigh. The run keeps 65536 blocks of 10 ms
+(10.9 minutes), and a piece longer than that has only its beginning in them: the loss is weighed over that part and
+mono bass placed by it — it stands unless a measured loss rules against it — with `coveredSeconds` of `pieceSeconds`
+in the finding and the sentence `monoBassPartWeighed` (`PlanText::monoBassCoverage`) saying what the weighing covered. `plan.hpf` and `plan.monoBass` carry the
 findings typed; `PlanText` gives their report lines. `felitronics_session_hpf_mono_tests` holds each boundary to the bit,
 the cutoff to core's own response on every target, slope and rate, and — through the pump on synthetic mixes — a
 detector that never errs upward and a loss that tells centred, partial and inverted bass apart, opposite polarity above
@@ -800,7 +802,7 @@ The generated `Query*Row` tuples in `snapshot.d.ts` give column names. Their num
 | kind | row meaning |
 |---|---|
 | Waveform | `[firstFrame,lastFrame,axis,min,max,peak,envelope,rms,lowEnergy,middleEnergy,highEnergy,finiteFrames,reason]`; axes 0=L, 1=R, 2=Mid=(L+R)/2, 3=Side=(L-R)/2; mono has only 0 and 2. Amplitudes are linear, energies are sums of squares. Peak preserves either signed extremum; envelope is the maximum absolute box mean near 8 kHz. Bands use complementary 250/2500 Hz one-pole drawing filters and are not LR4 measurements. |
-| LowSpectrum / LowSide | `[Hz,density,reason]` / `[Hz,sideFraction,reason]`; the requested Hz grid includes both endpoints (one column uses `fromHz`). LowSpectrum's quantity is the request's `spectrum`: `0` (the default, and what a request without the field gets) is DENSITY — the band's energy per hertz of its width, the tilt-free curve; `1` is ENERGY — the band's whole energy, what a bar per band shows, above the density by 10·log10(band width in Hz) dB (about 2 dB at 20 Hz and 11.6 dB at 250 Hz), row `[Hz,energy,reason]`. The retained full-source LowEnd measurement is selected by exact `crossoverHz` 120 or 150. These kinds require the whole-source frame range and a finite grid within Nyquist. |
+| LowSpectrum / LowSide | `[Hz,density,reason]` / `[Hz,sideFraction,reason]`; the requested Hz grid includes both endpoints (one column uses `fromHz`). LowSpectrum's quantity is the request's `spectrum`: `0` (the default, and what a request without the field gets) is DENSITY — the band's energy per hertz of its width, the tilt-free curve; `1` is ENERGY — the band's whole energy, what a bar per band shows, above the density by 10·log10(band width in Hz) dB (0.8 dB at the lowest band — 1.19 Hz wide at 20.6 Hz — and 11.6 dB at 250 Hz), row `[Hz,energy,reason]`. The retained full-source LowEnd measurement is selected by exact `crossoverHz` 120 or 150. These kinds require the whole-source frame range and a finite grid within Nyquist. |
 | Momentary / ShortTerm | `[sourceFrame,LUFS,reason]` from the retained live grid, decimated to the requested maximum row count. `sourceFrame` is the window end: `(fromFrame,toFrame]` selects readings for the half-open audio range `[fromFrame,toFrame)`, including a reading at the source end. With a `masterId` (and the master's source `audioId`) the curve is that MASTER's: the job's own meter over the delivered audio, a row per 100 ms on the delivered-frame grid, named and reasoned the same way (the rows before a whole window are `TooShort`) — bit for bit what the delivered audio gives measured as a source; `sampleRate` is the delivery rate. |
 | Clipping | `[firstFrame,frameCount,channel,sign,level,evidence]` for retained runs intersecting the range; `total` counts all matches, `stored` is capped by `columns`, and `complete` reports truncation. |
 | Stereo | `[firstFrame,lastFrame,width,correlation,rms,reason]` from retained source stereo columns intersecting the requested range. Bounds name each retained column's actual source interval; `total` counts intersecting columns and `complete` is false when the column limit omits some. |

@@ -464,48 +464,47 @@ void aPersonsKnobs()
 
 void aPieceLongerThanTheReading()
 {
-    felitronics::test::group ("a piece longer than the low-end reading holds is not judged on its first part: mono bass left out, with that reason");
-    // The reading as the run publishes it: every block kept and the loss weighed; one block of the piece not kept and
-    // the very same blocks are a part — no verdict from them.
+    felitronics::test::group ("a piece longer than the low-end reading holds: mono bass is weighed over the part it holds, and says so");
+    // Mono bass stands unless a MEASURED loss rules against it: the part the run holds is weighed, the device placed by
+    // it, and the finding says how much of the piece that was.
     Readings r;
     for (int i = 0; i < 2000; ++i) r.block (1.0, 0.001);
-    auto p = plan (r.inputs ("allStreaming", 20));
-    ok (p.found.monoBass.verdict == MonoBassVerdict::On && p.devices.monoBass.machine.on, "PRECONDITION: the whole piece in the reading — weighed, placed");
-    r.blocksNotKept = 1;
-    p = plan (r.inputs ("allStreaming", 20));
-    ok (p.found.monoBass.verdict == MonoBassVerdict::Incomplete && ! p.devices.monoBass.machine.on && p.plans.monoBass.heldBack == HeldBack::Unmeasured
-        && ! p.found.monoBass.lossDb, "one block of the piece past the reading: not weighed, left out, no loss stated");
-    auto finding = p.found.monoBass; finding.sounding = Sounding::Off;
-    const auto fact = PlanText::monoBass (finding);
+    auto p = plan (r.inputs ("allStreaming", 30));
+    ok (p.found.monoBass.verdict == MonoBassVerdict::On && p.devices.monoBass.machine.on && ! p.found.monoBass.coveredSeconds
+        && ! PlanText::monoBassCoverage (p.found.monoBass), "PRECONDITION: the whole piece in the reading — weighed, placed, nothing to add");
+    r.blocksNotKept = 1000;
+    p = plan (r.inputs ("allStreaming", 30));
+    ok (p.found.monoBass.verdict == MonoBassVerdict::On && p.devices.monoBass.machine.on && p.plans.monoBass.heldBack == HeldBack::None
+        && p.found.monoBass.lossDb && p.found.monoBass.coveredSeconds && same (*p.found.monoBass.coveredSeconds, 20.0) && same (p.found.monoBass.pieceSeconds, 30.0),
+        "a third of the piece past the reading: the first 20 s of 30 are weighed, and mono bass stands");
+    const auto fact = PlanText::monoBassCoverage (p.found.monoBass);
     const auto said = fact ? text::Text::text (*fact, text::Lang::Ru) + " / " + text::Text::text (*fact, text::Lang::En) : std::string {};
-    ok (fact && fact->id == text::FactId::MonoBassIncomplete && said.find ('{') == std::string::npos, "with its own reason: " + said);
-    finding.sounding = Sounding::Proposal;
-    ok (! PlanText::monoBass (finding), "and nothing is said of it where a person switched the fold on");
-    // The inverted bass of a long piece is not called safe either — nor harmful: it is not weighed.
+    ok (fact && fact->id == text::FactId::MonoBassPartWeighed && fact->argCount == 2 && same (fact->args[0].number, 20.0) && same (fact->args[1].number, 30.0)
+        && said.find ("20") != std::string::npos && said.find ("30") != std::string::npos && said.find ('{') == std::string::npos,
+        "and the finding says what the weighing covered: " + said);
+    // A measured loss above 3 dB rules against it on a part as on a whole.
     Readings inverted;
     for (int i = 0; i < 2000; ++i) inverted.block (0.001, 1.0);
     inverted.blocksNotKept = 100;
-    ok (plan (inverted.inputs ("allStreaming", 20)).found.monoBass.verdict == MonoBassVerdict::Incomplete, "a part with inverted bass: the same — no verdict from a part");
+    const auto q = plan (inverted.inputs ("allStreaming", 21));
+    ok (q.found.monoBass.verdict == MonoBassVerdict::AntiPhase && ! q.devices.monoBass.machine.on && q.found.monoBass.coveredSeconds,
+        "a part with the bass in opposite polarity: left out by the measured loss, the coverage stated beside it");
 
     // Through the pump, at 8 kHz so that twelve minutes are light: the run keeps 65536 blocks of 10 ms — 10.9 minutes.
-    const auto measured = [] (unsigned seconds)
-    {
-        constexpr unsigned rate = 8000;
-        std::vector<float> pcm (std::size_t (rate) * seconds);
-        for (std::size_t i = 0; i < pcm.size(); ++i) pcm[i] = float (0.3 * felitronics::core::det::sin (2 * kPi * 55.0 * double (i % (rate * 4u)) / rate));
-        const float* planes[] { pcm.data(), pcm.data() };
-        auto s = Session::create().session;
-        ok (s->apply (command::Load { 1, { planes, 2, pcm.size(), rate }, {} }).rejection == Rejection::None, "PRECONDITION: the long piece loads");
-        for (unsigned i = 0; i < 40000000 && s->state() == State::Loaded; ++i) (void) s->step (16);
-        return s;
-    };
-    // (A piece the reading holds whole is every other mix of this suite: weighed, and placed.)
-    const auto longer = measured (700);
-    const auto b = longer->snapshot();
-    ok (b.view().plan.monoBass.verdict == MonoBassVerdict::Incomplete && ! b.view().project.devices.monoBass.machine.on
-        && b.view().plan.devices.monoBass.heldBack == HeldBack::Unmeasured
-        && PlanText::monoBass (b.view().plan.monoBass)->id == text::FactId::MonoBassIncomplete,
-        "eleven minutes forty: the reading holds its first 10.9 — mono bass is left out and says why");
+    constexpr unsigned rate = 8000, seconds = 700;
+    std::vector<float> pcm (std::size_t (rate) * seconds);
+    for (std::size_t i = 0; i < pcm.size(); ++i) pcm[i] = float (0.3 * felitronics::core::det::sin (2 * kPi * 55.0 * double (i % (rate * 4u)) / rate));
+    const float* planes[] { pcm.data(), pcm.data() };
+    auto s = Session::create().session;
+    ok (s->apply (command::Load { 1, { planes, 2, pcm.size(), rate }, {} }).rejection == Rejection::None, "PRECONDITION: the long piece loads");
+    for (unsigned i = 0; i < 40000000 && s->state() == State::Loaded; ++i) (void) s->step (16);
+    const auto b = s->snapshot();
+    const auto& found = b.view().plan.monoBass;
+    const auto covered = PlanText::monoBassCoverage (found);
+    ok (found.verdict == MonoBassVerdict::On && b.view().project.devices.monoBass.machine.on && found.coveredSeconds
+        && std::fabs (*found.coveredSeconds - 655.36) < 0.01 && same (found.pieceSeconds, 700.0) && covered && covered->id == text::FactId::MonoBassPartWeighed,
+        "eleven minutes forty of centred bass: weighed over the first " + std::to_string (found.coveredSeconds.value_or (0.0)) + " s, and mono bass stands — "
+        + (covered ? text::Text::text (*covered, text::Lang::Ru) : std::string {}));
 }
 
 void aSentenceStatesWhatSounds()
@@ -554,6 +553,7 @@ void aSentenceStatesWhatSounds()
     ok (v.view().plan.monoBass.sounding == Sounding::Hand && same (v.view().plan.monoBass.soundingHz, 200.0) && same (v.view().plan.monoBass.crossoverHz, 120.0)
         && mono && mono->id == text::FactId::MonoBassByHand && same (mono->args[0].number, 200.0),
         "the loss was weighed at 120 Hz: the sentence names the 200 Hz that sounds and no loss — " + (mono ? said (*mono) : std::string {}));
+    ok (! PlanText::monoBassPolarity (v.view().plan.monoBass), "and no polarity warning: the bass is not in opposite polarity");
     MonoBassFields<Touched> out; out.on = false;
     (void) s.apply (command::EditDevice { 8, out });
     v = s.snapshot();
@@ -569,8 +569,21 @@ void aSentenceStatesWhatSounds()
     (void) a.s->apply (command::EditDevice { 3, on });
     const auto after = a.s->snapshot();
     ok (after.view().plan.monoBass.sounding == Sounding::Proposal && after.view().plan.monoBass.againstMachine
-        && PlanText::monoBass (after.view().plan.monoBass)->id == text::FactId::MonoBassAntiPhase,
-        "switched on against the machine at its own crossover: the warning stands");
+        && PlanText::monoBass (after.view().plan.monoBass)->id == text::FactId::MonoBassAntiPhase && ! PlanText::monoBassPolarity (after.view().plan.monoBass),
+        "switched on against the machine at its own crossover: the warning stands, once");
+    // ...and at a crossover of the person's: the sentence names it, and the polarity warning stands beside it.
+    MonoBassFields<Touched> moved; moved.fq = 200.0;
+    (void) a.s->apply (command::EditDevice { 4, moved });
+    const auto byHand = a.s->snapshot();
+    const auto main = PlanText::monoBass (byHand.view().plan.monoBass), warning = PlanText::monoBassPolarity (byHand.view().plan.monoBass);
+    ok (byHand.view().plan.monoBass.sounding == Sounding::Hand && main && main->id == text::FactId::MonoBassByHand
+        && warning && warning->id == text::FactId::MonoBassAntiPhase,
+        "at a person's 200 Hz against the machine: the by-hand sentence, and the polarity warning beside it — "
+        + (warning ? text::Text::text (*warning, text::Lang::Ru) : std::string {}));
+    MonoBassFields<Touched> silenced; silenced.on = false;
+    (void) a.s->apply (command::EditDevice { 5, silenced });
+    ok (! PlanText::monoBassPolarity (a.s->snapshot().view().plan.monoBass)
+        && PlanText::monoBass (a.s->snapshot().view().plan.monoBass)->id == text::FactId::MonoBassAntiPhase, "unticked again: the one warning, as the reason it is out");
 
     // A machine layer kept from a project file that the planner would place otherwise.
     auto f = measure (Mix (20).tone (55.0, 0.3, 0.2).tone (440.0, 0.1));

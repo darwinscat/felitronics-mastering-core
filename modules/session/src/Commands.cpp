@@ -601,6 +601,7 @@ Answer Session::apply (const Request& request) noexcept
         // liveBytes() counts the installed row owners separately while this job is active.
         masterJobBytes_ = plan.bytes - plan.retainedRowBytes;
         job_ = ++lastJob_;
+        jobWaiting_ = false;                                        // a ready master renders at once: it waits for nothing
         jobRecipe_ = { project_, source_.hash, config::Config::versions().sound,
             detail::MasterJob::fingerprint (plan.ready), plan.deliveryRate, plan.ready.version };
         rows.crestMasterId = job_;

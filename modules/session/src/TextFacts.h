@@ -105,7 +105,7 @@ inline constexpr FactShape kFacts[] = {
     { FactId::HpfOff, "hpfOff", {}, 0 },
     { FactId::MonoBassByHand, "monoBassByHand", { { { "crossover", ArgKind::Value, {} } } }, 1 },
     { FactId::MonoBassKept, "monoBassKept", { { { "crossover", ArgKind::Value, {} } } }, 1 },
-    { FactId::MonoBassIncomplete, "monoBassIncomplete", {}, 0 },
+    { FactId::MonoBassPartWeighed, "monoBassPartWeighed", { { { "covered", ArgKind::Value, {} }, { "whole", ArgKind::Value, {} } } }, 2 },
     // A command's rejection (Commands.h), one per code; the four a field refuses name it.
     { FactId::RejectedFloatingPointEnvironment, "rejectedFloatingPointEnvironment", {}, 0 },
     { FactId::RejectedNoSource, "rejectedNoSource", {}, 0 },
