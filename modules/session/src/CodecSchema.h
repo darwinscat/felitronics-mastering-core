@@ -41,6 +41,15 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (Device::Low) == 7);
         return 7;
     }
+    else if constexpr (std::is_same_v<T, HeldBack>)
+    {
+        static_assert (unsigned (HeldBack::None) == 0);
+        static_assert (unsigned (HeldBack::Shell) == 1);
+        static_assert (unsigned (HeldBack::Source) == 2);
+        static_assert (unsigned (HeldBack::Target) == 3);
+        static_assert (unsigned (HeldBack::Unmeasured) == 4);
+        return 4;
+    }
     else if constexpr (std::is_same_v<T, LandingReason>)
     {
         static_assert (unsigned (LandingReason::None) == 0);
@@ -104,6 +113,15 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (PhaseName::Lra) == 6);
         static_assert (unsigned (PhaseName::Final) == 7);
         return 7;
+    }
+    else if constexpr (std::is_same_v<T, PlanStatus>)
+    {
+        static_assert (unsigned (PlanStatus::None) == 0);
+        static_assert (unsigned (PlanStatus::Pending) == 1);
+        static_assert (unsigned (PlanStatus::Stopped) == 2);
+        static_assert (unsigned (PlanStatus::Ready) == 3);
+        static_assert (unsigned (PlanStatus::Unavailable) == 4);
+        return 4;
     }
     else if constexpr (std::is_same_v<T, QueryKind>)
     {
@@ -179,6 +197,18 @@ constexpr void checkEnum (Device value) noexcept
         case Device::Limiter: break;
         case Device::Dither: break;
         case Device::Low: break;
+    }
+}
+
+constexpr void checkEnum (HeldBack value) noexcept
+{
+    switch (value)
+    {
+        case HeldBack::None: break;
+        case HeldBack::Shell: break;
+        case HeldBack::Source: break;
+        case HeldBack::Target: break;
+        case HeldBack::Unmeasured: break;
     }
 }
 
@@ -264,6 +294,18 @@ constexpr void checkEnum (PhaseName value) noexcept
     }
 }
 
+constexpr void checkEnum (PlanStatus value) noexcept
+{
+    switch (value)
+    {
+        case PlanStatus::None: break;
+        case PlanStatus::Pending: break;
+        case PlanStatus::Stopped: break;
+        case PlanStatus::Ready: break;
+        case PlanStatus::Unavailable: break;
+    }
+}
+
 constexpr void checkEnum (QueryKind value) noexcept
 {
     switch (value)
@@ -314,7 +356,39 @@ constexpr void checkEnum (State value) noexcept
 template <class V, class T> void describe (V& v, T& x) noexcept
 {
     using U = std::remove_cv_t<T>;
-    if constexpr (std::is_same_v<U, Devices>)
+    if constexpr (std::is_same_v<U, DevicePlan>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.heldBack)>, HeldBack>);
+        v.field ("heldBack", x.heldBack);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.measured)>, std::uint8_t>);
+        v.field ("measured", x.measured);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.needs)>, std::uint32_t>);
+        v.field ("needs", x.needs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.target)>, std::uint8_t>);
+        v.field ("target", x.target);
+    }
+    else if constexpr (std::is_same_v<U, DevicePlans>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.dither)>, DevicePlan>);
+        v.field ("dither", x.dither);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.glue)>, DevicePlan>);
+        v.field ("glue", x.glue);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.hpf)>, DevicePlan>);
+        v.field ("hpf", x.hpf);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.limiter)>, DevicePlan>);
+        v.field ("limiter", x.limiter);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.low)>, DevicePlan>);
+        v.field ("low", x.low);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.monoBass)>, DevicePlan>);
+        v.field ("monoBass", x.monoBass);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.saturation)>, DevicePlan>);
+        v.field ("saturation", x.saturation);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.tilt)>, DevicePlan>);
+        v.field ("tilt", x.tilt);
+    }
+    else if constexpr (std::is_same_v<U, Devices>)
     {
         [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.dither)>, Layers<DitherFields>>);
@@ -970,6 +1044,30 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.weightsVersion)>, std::uint64_t>);
         v.field ("weightsVersion", x.weightsVersion);
     }
+    else if constexpr (std::is_same_v<U, PlanView>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.awaited)>, std::optional<Analyzer>>);
+        v.field ("awaited", x.awaited);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.awaitedBy)>, std::optional<Device>>);
+        v.field ("awaitedBy", x.awaitedBy);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.awaitedFraction)>, double>);
+        v.field ("awaitedFraction", x.awaitedFraction);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.devices)>, DevicePlans>);
+        v.field ("devices", x.devices);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.fromFile)>, bool>);
+        v.field ("fromFile", x.fromFile);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.key)>, std::uint64_t>);
+        v.field ("key", x.key);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.needs)>, std::uint32_t>);
+        v.field ("needs", x.needs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.readOnly)>, bool>);
+        v.field ("readOnly", x.readOnly);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.status)>, PlanStatus>);
+        v.field ("status", x.status);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.waiting)>, std::uint32_t>);
+        v.field ("waiting", x.waiting);
+    }
     else if constexpr (std::is_same_v<U, Project>)
     {
         [[maybe_unused]] auto& [f0, f1, f2, f3, f4] = x;
@@ -1086,7 +1184,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, SnapshotView>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32, f33, f34, f35, f36, f37, f38, f39, f40, f41] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32, f33, f34, f35, f36, f37, f38, f39, f40, f41, f42] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.canContinueMeasurement)>, bool>);
         v.optionalField ("canContinueMeasurement", x.canContinueMeasurement, false);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.canMaster)>, bool>);
@@ -1151,6 +1249,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.optionalField ("pendingMaster", x.pendingMaster, MasterToken {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.pendingMasterBytes)>, double>);
         v.optionalField ("pendingMasterBytes", x.pendingMasterBytes, 0.0);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.plan)>, PlanView>);
+        v.optionalField ("plan", x.plan, PlanView {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.project)>, Project>);
         v.field ("project", x.project);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.revision)>, std::uint64_t>);

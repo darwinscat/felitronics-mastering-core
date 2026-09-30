@@ -7,6 +7,7 @@
 
 namespace felitronics::session::detail
 {
+struct PlanInputs;
 struct ImportedProject
 {
     // The candidate, comparison rows and original label are inline; committing copies into the
@@ -21,5 +22,7 @@ struct ImportedProject
     char originalDefaults[7] {};
 };
 [[nodiscard]] Checked importBytes (std::string_view bytes) noexcept;
-[[nodiscard]] ImportedProject readProject (std::string_view bytes, std::uint32_t channels, std::uint32_t offeredDevices, std::uint32_t sourceRate) noexcept;
+// The document read by schema, and its machine layer compared with the planner's for its target on this source
+// (`inputs`, whose target is the document's).
+[[nodiscard]] ImportedProject readProject (std::string_view bytes, const PlanInputs& inputs) noexcept;
 }

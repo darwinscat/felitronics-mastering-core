@@ -786,7 +786,7 @@ void everyRejectionIsAFact()
     // rejections a field makes.
     bool table = true, spoken = true;
     std::string misses;
-    const auto last = (std::size_t) session::Rejection::DeliveryFormat;
+    const auto last = (std::size_t) session::Rejection::PlanPending;
     for (std::size_t code = 1; code <= last; ++code)
     {
         const auto r = (session::Rejection) code;
@@ -1055,6 +1055,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
                           : kind == text::ArgKind::Count ? Arg::count (21)
                           : kind == text::ArgKind::Midi ? Arg::midi (40)
                           : kind == text::ArgKind::Term ? Arg::term (shape.args[i].group == "field" ? text::Term::FieldHpfSlope
+                                                                     : shape.args[i].group == "device" ? text::Term::DeviceGlue
                                                                                                    : text::Term::PlatformDesktop)
                           : Arg::text ("take 3.wav");
             }
@@ -1074,7 +1075,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0xf41f82e8c27955b5ull;   // with RejectedDeliveryFormat (134): {bits} {rate}
+    constexpr std::uint64_t kPinned = 0x9c2823f9a6933743ull;   // with PlanWaiting (29) and RejectedPlanPending (135)
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");

@@ -109,6 +109,20 @@
       "Contract",
       "Cancelled",
       "FloatingPointEnvironment"
+    ],
+    "PlanStatus": [
+      "None",
+      "Pending",
+      "Stopped",
+      "Ready",
+      "Unavailable"
+    ],
+    "HeldBack": [
+      "None",
+      "Shell",
+      "Source",
+      "Target",
+      "Unmeasured"
     ]
   },
   "records": {
@@ -585,7 +599,8 @@
         "sourceMissingAudio": "bool",
         "canMaster": "bool",
         "pendingMaster": "MasterToken",
-        "pendingMasterBytes": "bytes"
+        "pendingMasterBytes": "bytes",
+        "plan": "PlanView"
       }
     },
     "MasterToken": {
@@ -754,12 +769,49 @@
         "pcmFramesRead": "uint64",
         "values": "double[]"
       }
+    },
+    "DevicePlan": {
+      "cpp": "DevicePlan",
+      "fields": {
+        "heldBack": "HeldBack",
+        "needs": "uint32",
+        "target": "uint8",
+        "measured": "uint8"
+      }
+    },
+    "DevicePlans": {
+      "cpp": "DevicePlans",
+      "fields": {
+        "hpf": "DevicePlan",
+        "monoBass": "DevicePlan",
+        "glue": "DevicePlan",
+        "saturation": "DevicePlan",
+        "tilt": "DevicePlan",
+        "limiter": "DevicePlan",
+        "dither": "DevicePlan",
+        "low": "DevicePlan"
+      }
+    },
+    "PlanView": {
+      "cpp": "PlanView",
+      "fields": {
+        "status": "PlanStatus",
+        "key": "uint64",
+        "needs": "uint32",
+        "waiting": "uint32",
+        "awaited": "Analyzer?",
+        "awaitedBy": "Device?",
+        "awaitedFraction": "double",
+        "readOnly": "bool",
+        "fromFile": "bool",
+        "devices": "DevicePlans"
+      }
     }
   },
   "wireAliases": {
     "CommandAnswer": "AcceptedAnswer | RejectedAnswer | ContractAnswer",
     "SessionEvent": "PhaseEvent | FactEvent | ReadingEvent | DoneEvent | RejectedEvent | ErrorEvent | MeasurementEvent",
-    "SessionCommand": "SetTargetCommand | SetManualCommand | EditTargetCommand | EditDeviceCommand | RevertEditsCommand | MasterCommand | CancelCommand | ForgetCommand | ContinueMeasurementCommand",
+    "SessionCommand": "SetTargetCommand | SetManualCommand | EditTargetCommand | EditDeviceCommand | RevertEditsCommand | MasterCommand | CancelCommand | ForgetCommand | ContinueMeasurementCommand | AdoptMachineCommand",
     "EditDeviceCommand": "EditDeviceHpfCommand | EditDeviceMonoBassCommand | EditDeviceGlueCommand | EditDeviceSaturationCommand | EditDeviceTiltCommand | EditDeviceLimiterCommand | EditDeviceDitherCommand | EditDeviceLowCommand",
     "RevertEditsCommand": "RevertEditsHpfCommand | RevertEditsMonoBassCommand | RevertEditsGlueCommand | RevertEditsSaturationCommand | RevertEditsTiltCommand | RevertEditsLimiterCommand | RevertEditsDitherCommand | RevertEditsLowCommand",
     "SessionMeasurementArray": "Omit<MeasurementArray, \"values\"> & { readonly values: ScalarRow }",
@@ -1142,6 +1194,10 @@
     "ContinueMeasurementCommand": {
       "kind": "\"continueMeasurement\"",
       "commandId": "string"
+    },
+    "AdoptMachineCommand": {
+      "kind": "\"adoptMachine\"",
+      "commandId": "string"
     }
   },
   "binaryRows": [
@@ -1187,7 +1243,8 @@
       "Contract",
       "OutputPending",
       "MandatoryUnavailable",
-      "DeliveryFormat"
+      "DeliveryFormat",
+      "PlanPending"
     ],
     "ErrorCode": [
       "Trap",
@@ -1350,6 +1407,10 @@
       "pendingMasterBytes": {
         "default": "0.0",
         "description": "No pending PCM bytes."
+      },
+      "plan": {
+        "default": "PlanView {}",
+        "description": "No plan: the devices are not placed."
       }
     },
     "MeasurementQuery": {

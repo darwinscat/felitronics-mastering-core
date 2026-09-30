@@ -117,6 +117,7 @@ enum class FactId : std::uint16_t
     MasterCostPumping = 26,
     MasterCostK2Deferred = 27,
     MasterCostUnavailable = 28,
+    PlanWaiting = 29,        // a master waits: {device} reads {analyzer}, measured to {progress}
 
     // A command's rejection, by its code — what was refused and why. The three a field refuses name it: {field}.
     RejectedFloatingPointEnvironment = 101,
@@ -154,6 +155,7 @@ enum class FactId : std::uint16_t
     RejectedOutputPending = 132,
     RejectedMandatoryUnavailable = 133,
     RejectedDeliveryFormat = 134,  // {bits} {rate}: the target's bit depth and delivery rate
+    RejectedPlanPending = 135,
 
     Measurement1 = 200,
     Measurement2 = 201,
@@ -219,6 +221,9 @@ enum class Term : std::uint16_t
     StatusReady, StatusUnsupported, StatusShort, StatusNonFinite, StatusCapacity, StatusNoSignal, StatusMemory,
     AnalyzerWaveform,
     AnalyzerTempo,
+    // The needles job, and the devices by the labels a person knows them by (a plan's waited-for measurement names both).
+    AnalyzerNeedles,
+    DeviceHpf, DeviceMonoBass, DeviceGlue, DeviceSaturation, DeviceTilt, DeviceLimiter, DeviceDither, DeviceLow,
 
 };
 

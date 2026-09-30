@@ -297,11 +297,14 @@ for (let repeat = 0; repeat < 2; ++repeat) {
     ok(Number.isNaN(values[16]) && values[25] === 3, 'mono right axis is absent with a reason');
 }
 M.HEAPU32[querySizes >>> 2] = 12;
-ok(M._fc_session_summary_size(session, querySizes) === STATUS.OK && M.HEAPU32[(querySizes + 8) >>> 2] === 0, 'summary omits large measurement rows');
+ok(M._fc_session_summary_size(session, querySizes) === STATUS.OK && M.HEAPU32[(querySizes + 8) >>> 2] === 128 * 16,
+   'summary omits large measurement rows: its only rows are the placed devices\' EQ curve');
 for (const p of [queryInput, querySizes, queryWritten, queryJson, queryRows]) M._free(p);
-ok(cmd(session, {kind:'editDevice', commandId:'2', device:7, fields:{on:true, db:1.25}}).code === 3, 'device edits wait for placement');
+ok(snapshot.devicesPlaced === true && snapshot.plan.readOnly === false && snapshot.plan.waiting === 0,
+   'the real measurement ends with the devices placed by the planner, nothing left to wait for');
+ok(cmd(session, {kind:'editDevice', commandId:'2', device:7, fields:{on:true, db:1.25}}).kind === 'accepted', 'the placed devices take an edit');
 ok(cmd(session, {kind:'setManual', commandId:'2', on:true}).kind === 'accepted', 'manual command');
-ok(M._fc_session_export_project_size(session, resultSize) === STATUS.ERR_NOT_PLACED, 'unplaced defaults cannot be exported');
+ok(M._fc_session_export_project_size(session, resultSize) === STATUS.OK, 'the placed project is exportable');
 const crest = snapshot.measurements.find(r => r.analyzer === 9);
 ok(crest?.arrays.some(a => a.name === 'blocks' && a.stored > 0), 'shipped facade transfers owned source crest rows');
 ok(cmd(session, {kind:'setTarget', commandId:'5', target:'lp'}).kind === 'accepted', 'target command needs only a target');

@@ -244,6 +244,8 @@ void roundTrip()
 
     auto a = s->snapshot(), b = restored->snapshot();
     SnapshotView av = a.view(), bv = b.view(); av.revision = bv.revision;
+    ok (! av.plan.fromFile && bv.plan.fromFile && av.plan.key == bv.plan.key, "the restored machine layer is the file's, on the same plan");
+    av.plan.fromFile = true;
     ok (json (av) == json (bv), "both complete project layers and measured state survive round trip");
 
     const auto inlineFile = "manual = true\ncore = \"" + version (Session::version()) + "\"\ndefaults = \""

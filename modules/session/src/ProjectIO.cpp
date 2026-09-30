@@ -3,6 +3,7 @@
 
 #include "BuildGuards.h"
 #include "ProjectIO.h"
+#include "Planner.h"
 #include "Devices.h"
 #include "Grid.h"
 #include "JsonCodec.h"
@@ -208,7 +209,8 @@ std::string_view ProjectText::view() const noexcept { return { data.get(), size 
 Checked Session::exportProjectBytes() const noexcept
 {
     if (checkFloatingPointEnvironment() != Status::Ok) return { Rejection::FloatingPointEnvironment, kNoField, 0 };
-    if (! placed()) return { state_ == State::Empty ? Rejection::NoSource : Rejection::NotPlaced, kNoField, 0 };
+    // The machine's layer is written once the first measurement ends — exportable while what the devices read still ends.
+    if (! devicesPlaced_) return { state_ == State::Empty ? Rejection::NoSource : Rejection::NotPlaced, kNoField, 0 };
     Writer w; w.project (project_, detail::rules(), source_.channels);
     return { Rejection::None, kNoField, w.size };
 }
@@ -252,8 +254,9 @@ Checked importBytes (std::string_view bytes) noexcept
     const auto total = std::uint64_t (library.parse) + library.read + owned;
     return { Rejection::None, kNoField, total, 0.0, total };
 }
-ImportedProject readProject (std::string_view bytes, std::uint32_t channels, std::uint32_t offeredDevices, std::uint32_t sourceRate) noexcept
+ImportedProject readProject (std::string_view bytes, const PlanInputs& inputs) noexcept
 {
+    const auto channels = inputs.channels, offeredDevices = inputs.offered, sourceRate = inputs.sampleRate;
     ImportedProject out;
     auto parsed = toml::parse (bytes);
     if (const auto* error = std::get_if<toml::Error> (&parsed))
@@ -341,8 +344,12 @@ ImportedProject readProject (std::string_view bytes, std::uint32_t channels, std
     }
     if (out.answer.rejection != Rejection::None) return out;
     out.foreignCore = ! sameVersion (out.project.core, Session::version());
+    // The planner's machine layer for the file's target on this source: what the machine would decide now.
+    PlanInputs now = inputs;
+    now.row = out.project.target;
+    now.targetEdit = out.project.targetEdit;
     Devices decided;
-    placeMachine (rules, out.project.target, channels, decided, offeredDevices);
+    placeMachine (now, decided);
     eachDevice (out.project.devices, [&] (Device device, const auto& layers)
     {
         using Of = DeviceOf<std::remove_cvref_t<decltype (layers.machine)>>;

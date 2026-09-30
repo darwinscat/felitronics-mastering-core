@@ -64,6 +64,7 @@ int replayAfterPoison()
     auto replayed = restored.session->snapshot();
     auto expected = savedSnapshot->view();
     expected.masterProgress = {}; // work progress is not project state
+    expected.plan.fromFile = true; // a replayed machine layer is the saved file's
     ok (encoded (expected) == encoded (replayed.view()), "replay restores state, target, manual mode and every field of both layers");
     ok (restored.session->exportProject().view() == savedProject->view(), "replay preserves the exact project text");
     ok (restored.session->revision() != original->revision() && restored.session->masters().empty(), "revisions and retained masters are not replayed");

@@ -23,10 +23,10 @@
 // So the machine's layer, a person's edits and the mask of a revert cannot disagree on a field's name or type: they are
 // one list. A master is made from the machine's layer with a person's touched fields over it.
 //
-// THE MACHINE'S LAYER starts from the config's defaults for the target and source (src/Devices.h), placed when the first
-// measurement ends and at its types' zeros before. No planner reads the measurements here: nothing in it is a decision
-// taken from one, and mono bass — which the defaults leave off — is off. An imported layer from any core
-// retains its saved values and provenance; its differences from this placement are exposed by the snapshot.
+// THE MACHINE'S LAYER is the planner's (src/Planner.h): each device proposes its fields from the target, the source and
+// what it may measure, starting from the config's defaults (src/Devices.h). It is placed when the first measurement ends
+// and again on a change of target, and it is at its types' zeros before. An imported layer from any core retains its
+// saved values; where the planner would decide otherwise is exposed by the snapshot, and adoptMachine takes it.
 //
 // The units, knob domains and slider hints are the config's (modules/session/config/engine.toml, the section of each device);
 // they are not repeated here.

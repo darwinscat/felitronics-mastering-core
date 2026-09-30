@@ -25,9 +25,10 @@ using namespace felitronics::session;
 using felitronics::test::ok;
 using detail::Driver;
 using text::FactId;
+// A usable loudness and true peak whose loudness need on the default target is at most 3 dB: no needles to measure.
 constexpr MeasurementValue kEventReadyNumbers[] {
     { "integratedLufs", -18.0, MeasurementReason::None, 0 },
-    { "truePeakDb", -1.0, MeasurementReason::None, 0 }
+    { "truePeakDb", -3.0, MeasurementReason::None, 0 }
 };
 // Test-only corruption reaches the guards without depending on real driver failures.
 struct felitronics::session::detail::Inspector
@@ -43,6 +44,9 @@ struct felitronics::session::detail::Inspector
         result.status = MeasurementStatus::Ready;
         result.reason = MeasurementReason::None;
         result.numbers = kEventReadyNumbers;
+        // What a finished loudness does (Driver::retain): the needles for the project's ceiling, and the plan again.
+        s.requestNeedles();
+        s.replan();
     }
     static std::uint64_t sequence (const Session& s) { return s.sequence_; }
     static void fillBatch (Session& s, std::size_t count) { for (std::size_t i = 0; i < count; ++i) s.emit ({}); }
@@ -233,7 +237,9 @@ void tableBetweenSteps()
             const auto project = s->exportProject();
             const Request requests[] = { audio.load(), command::SetTarget { 13, "allStreaming" },
                 command::EditTarget { 14, { -13.0, {} } }, command::EditDevice { 15, hpf }, command::RevertEdits { 16, mask },
-                command::SetManual { 17, false }, command::Master { 18 }, command::Cancel { 19, job }, command::Forget { 20, kept }, command::ImportProject { 21, project.view() }, command::ContinueMeasurement { 23 } };
+                command::SetManual { 17, false }, command::Master { 18 }, command::Cancel { 19, job }, command::Forget { 20, kept }, command::ImportProject { 21, project.view() }, command::ContinueMeasurement { 23 },
+                command::AdoptMachine { 24 } };
+            static_assert (std::size (requests) == kCommands, "a request of every command");
             ok (std::size_t (s->column()) == col, "pump establishes the table column");
             const auto answer = apply (*s, requests[std::size_t (row.command)]);
             const auto expected = row.command == Command::Cancel && job == 0 ? Rejection::NoJob : row.cell[col];

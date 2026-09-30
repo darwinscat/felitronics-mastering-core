@@ -8,6 +8,7 @@
 #include "SourceMeasurements.h"
 #include "QueryState.h"
 #include "MasterJob.h"
+#include "Planner.h"
 #include "Rules.h"
 
 #include <felitronics/session/Config.h>
@@ -112,6 +113,19 @@ void Session::emit (Notification event, const Phase& progress) noexcept
     events_[eventCount_++] = event; // three per ordinary unit; a master completion has five extra slots
 }
 
+void Session::preferTempo() noexcept
+{
+    if (! sourceMeasurements_) return;
+    auto& run = *sourceMeasurements_;
+    constexpr unsigned tempo = unsigned (detail::SourceMeasurements::order.size()) - 1u;
+    static_assert (detail::SourceMeasurements::order[tempo] == Analyzer::Tempo, "tempo is the source job's last analyzer");
+    if (run.cursor >= run.firstCount && run.cursor < tempo && run.stage == 0
+        && measurementResults_[std::size_t (Analyzer::Tempo)].status == MeasurementStatus::Pending)
+    {
+        run.tempoReturnCursor = run.cursor;
+        run.cursor = tempo;
+    }
+}
 void Session::dropJob (JobId job) noexcept
 {
     if (job == needlesJob_ && job != 0)
@@ -134,9 +148,10 @@ void Session::dropJob (JobId job) noexcept
         if (measurementResults_[std::size_t (Analyzer::Crest)].status == MeasurementStatus::Ready)
         { crestJoin_ = masterCount_ != 0; crestJoinIndex_ = 0; }
         else settleMasterCrest (MeasurementReason::Cancelled);
-        if (job_ != 0 && ! masterJob_ && masterRequiresTempo() && ! tempoForDevice().ready)
+        // A master waiting for a measurement of the source's job stops with it: it cannot end without it.
+        if (job_ != 0 && jobWaiting_ && (planWaiting (jobRecipe_.project) & ~detail::bitOf (Analyzer::Excursions)) != 0)
         {
-            mastering_ = false; job_ = 0; jobRecipe_ = {};
+            mastering_ = false; job_ = 0; jobRecipe_ = {}; jobWaiting_ = false;
             masterUnit_ = 0; masterProgress_ = {};
         }
     }
@@ -149,6 +164,7 @@ void Session::dropJob (JobId job) noexcept
         mastering_ = false;
         job_ = 0;
         jobRecipe_ = {};
+        jobWaiting_ = false;
         masterUnit_ = 0;
         masterProgress_ = {};
     }
@@ -199,39 +215,50 @@ Stepped Session::step (std::uint32_t budget) noexcept
             event.jobId = job_;
             if (! masterJob_)
             {
-                if (masterRequiresTempo() && ! tempoForDevice().ready)
+                // WAITING: the recipe was captured when the master was asked for; what its devices read ends first —
+                // the needles at its own ceiling, then what the source's job measures (tempo ahead of the optional
+                // analyzers). A needed measurement that cannot run is a contract fault, never a master that waits for ever.
+                const auto waits = jobWaiting_ ? planWaiting (jobRecipe_.project) : 0u;
+                if (waits != 0)
                 {
                     const auto masterJob = job_;
-                    if (measurementJob_ == 0 && detail::Driver::continueMeasurement (*this) == 0)
+                    if ((waits & detail::bitOf (Analyzer::Excursions)) != 0)
+                    {
+                        if (needlesJob_ == 0) requestNeedles();
+                        if (needlesJob_ != 0) stepNeedles();
+                        else if ((planWaiting (jobRecipe_.project) & detail::bitOf (Analyzer::Excursions)) != 0) contract (masterJob);
+                    }
+                    else if (measurementJob_ == 0 && detail::Driver::continueMeasurement (*this) == 0)
                         contract (masterJob);
                     else if (! sourceMeasurements_ || sourceMeasurements_->cursor > sourceMeasurements_->order.size()
                              || sourceMeasurements_->stage > 5)
                         contract (masterJob);
                     else
                     {
-                        auto& run = *sourceMeasurements_;
-                        if (run.cursor < 8 && run.stage == 0)
-                        {
-                            run.tempoReturnCursor = run.cursor;
-                            run.cursor = 8;
-                        }
+                        preferTempo();
                         stepSourceMeasurements();
-                        if (job_ == masterJob)
-                        {
-                            auto& p = masterProgress_;
-                            p.name = PhaseName::Analyzers; p.pass = 0; p.totalPasses = passes;
-                            if (p.completedUnits < 4294967294u) ++p.completedUnits;
-                            p.totalUnits = std::max (p.totalUnits, p.completedUnits + 1u);
-                            p.fraction = measureWeight * double (p.completedUnits) /
-                                (double (p.totalUnits) * (double (passes) * passWeight + measureWeight));
-                            event.kind = EventKind::Phase; event.jobId = masterJob; event.payload.phase = p; emit (event);
-                        }
                     }
+                    if (job_ == masterJob)
+                    {
+                        auto& p = masterProgress_;
+                        p.name = PhaseName::Analyzers; p.pass = 0; p.totalPasses = passes;
+                        if (p.completedUnits < 4294967294u) ++p.completedUnits;
+                        p.totalUnits = std::max (p.totalUnits, p.completedUnits + 1u);
+                        p.fraction = measureWeight * double (p.completedUnits) /
+                            (double (p.totalUnits) * (double (passes) * passWeight + measureWeight));
+                        event.kind = EventKind::Phase; event.jobId = masterJob; event.payload.phase = p; emit (event);
+                    }
+                    replan();
                     ++units;
                     continue;
                 }
-                if (masterProgress_.name == PhaseName::Analyzers)
-                    jobRecipe_ = { project_, source_.hash, config::Config::versions().sound };
+                if (jobWaiting_)
+                {
+                    // What the recipe's devices read has ended: the needles go back to the project's own ceiling,
+                    // where it is another than the recipe's (a cancelled job at the same ceiling is not built again).
+                    jobWaiting_ = false;
+                    if (! planInputs (project_).needlesCurrent) requestNeedles();
+                }
                 ++masterUnit_;
                 const bool end = masterUnit_ > passes;
                 masterProgress_ = { end ? PhaseName::Remeasure : PhaseName::Pass,
@@ -357,7 +384,12 @@ Stepped Session::step (std::uint32_t budget) noexcept
         {
             if (sourceMeasurements_->cursor > sourceMeasurements_->order.size() || sourceMeasurements_->stage > 5)
                 contract (measurementJob_);
-            else stepSourceMeasurements();
+            else
+            {
+                // The measurements the devices read go ahead of the optional findings: a needed tempo first.
+                if ((plan_.waiting & detail::bitOf (Analyzer::Tempo)) != 0) preferTempo();
+                stepSourceMeasurements();
+            }
         }
         else if (measurementsFromSidecar_ && measurementJob_ != 0)
         {
@@ -368,6 +400,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
         else contract (measurementJob_);
         ++units;
     }
+    replan();
     return { hasWork() ? StepState::More : StepState::Done, units, false };
 }
 } // namespace felitronics::session

@@ -326,17 +326,18 @@ fc_session_status innerPoison = FC_SESSION_OK;
 void poisonDuringWork (std::string_view which)
 {
     fc_session h = 0; ok (create (full, &h) == FC_SESSION_OK, "poison work session");
-    (void) measuredLoad (h); std::uint32_t stepped = 0; do { (void) fc_session_step (h, 16, &stepped); } while (stepped == FC_SESSION_MORE);
+    (void) measuredLoad (h);
     if (which == "import")
     {
+        // Before the first measurement ends nothing is placed: an import is refused before it could allocate.
         char answer[FC_SESSION_ANSWER_BYTES]; std::uint32_t written = 0;
         const auto before = alloc::count.load();
         const auto status = fc_session_import_project (h, 1, 0, "", 0, answer, sizeof (answer), &written);
         const auto spent = alloc::count.load() - before;
         ok (status == FC_SESSION_OK && contains ({ answer, written }, "\"code\":3") && spent == 0,
             "unplaced import refuses before an allocation or reentry is possible");
-        (void) fc_session_destroy (h); return;
     }
+    std::uint32_t stepped = 0; do { (void) fc_session_step (h, 16, &stepped); } while (stepped == FC_SESSION_MORE);
     std::uint32_t size = 0; (void) fc_session_export_project_size (h, &size);
     std::string project (size, ' '); (void) fc_session_export_project_copy (h, project.data(), size, &size);
     char output[FC_SESSION_ANSWER_BYTES]; std::fill (std::begin (output), std::end (output), '?');
@@ -367,9 +368,11 @@ void scenario()
     do { ok (fc_session_step (h, 1, &more) == FC_SESSION_OK, "one bounded unit"); } while (more == FC_SESSION_MORE);
     const auto saved = snapshot (h);
     ok (contains (saved, "\"state\":3"), "completed source measurements reach Measured2");
-    ok (contains (command (h, R"({"kind":"editDevice","commandId":"2","device":0,"fields":{"fq":32}})"), "\"code\":3"), "measurements do not unlock device edits before placement");
+    ok (contains (saved, "\"devicesPlaced\":true") && contains (saved, "\"status\":3,\"waiting\":0"),
+        "the real measurement ends with the devices placed by the planner and nothing left to wait for");
+    ok (contains (command (h, R"({"kind":"editDevice","commandId":"2","device":0,"fields":{"fq":32}})"), "accepted"), "the placed devices take an edit");
     std::uint32_t size = 0;
-    ok (fc_session_export_project_size (h, &size) == FC_SESSION_ERR_NOT_PLACED, "unplaced defaults cannot be exported as decisions");
+    ok (fc_session_export_project_size (h, &size) == FC_SESSION_OK && size > 0, "the placed project is exportable");
     ok (contains (command (h, R"({"kind":"editTarget","commandId":"3","fields":{"lufs":-14}})"), "accepted"), "target editing stays available");
     ok (contains (command (h, R"({"kind":"master","commandId":"4"})"), "accepted"), "usable LUFS and true peak permit Master");
     bool done = false;
@@ -565,6 +568,9 @@ void freezeRegressions()
     }
     do { (void) fc_session_step (h, 16, &written); } while (written == FC_SESSION_MORE);
     (void) measuredLoad (h);
+    constexpr char project[] = "invalid TOML";
+    ok (fc_session_import_project_bytes (h, project, sizeof (project) - 1, &price) == FC_SESSION_OK
+        && price.rejection == std::uint32_t (Rejection::NotPlaced), "unplaced import preflight precedes parsing and allocation");
     do { (void) fc_session_step (h, 16, &written); } while (written == FC_SESSION_MORE);
     constexpr char master[] = R"({"kind":"master","commandId":"8"})";
     ok (fc_session_command_bytes (h, master, sizeof (master) - 1, &price) == FC_SESSION_OK && price.rejection == 0 && price.bytes > 0,
@@ -574,9 +580,8 @@ void freezeRegressions()
     ok (fc_session_set_capacity (h, &restored) == FC_SESSION_OK && contains (command (h, master), "\"code\":30"), "fragmented master refused");
     ok (fc_session_command_bytes (h, master, sizeof (master) - 1, &price) == FC_SESSION_OK && price.bytes == masterPrice.bytes,
         "demand remains available under insufficient capacity");
-    constexpr char project[] = "invalid TOML";
     ok (fc_session_import_project_bytes (h, project, sizeof (project) - 1, &price) == FC_SESSION_OK
-        && price.rejection == std::uint32_t (Rejection::NotPlaced), "unplaced import preflight precedes parsing and allocation");
+        && price.rejection == 0 && price.bytes > 0, "placed import preflight prices the text before reading it");
     price.size = sizeof (price) + 1;
     ok (fc_session_command_bytes (0, nullptr, 1, &price) == FC_SESSION_ERR_STRUCT_TOO_LARGE, "demand output size before handle");
     restored.size = sizeof (restored) - 1;

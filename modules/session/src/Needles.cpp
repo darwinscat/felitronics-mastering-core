@@ -83,17 +83,11 @@ void Session::needlesChanged() noexcept
 void Session::requestNeedles() noexcept
 {
     const auto& loudness = measurementResults_[std::size_t (Analyzer::Loudness)];
-    const auto lufs = reading (loudness, "integratedLufs");
     const auto peak = reading (loudness, "truePeakDb");
-    std::optional<double> need, ceiling;
-    if (lufs && peak)
-    {
-        const auto target = detail::rules().row (project_.target);
-        const double targetLufs = project_.targetEdit.lufs ? *project_.targetEdit.lufs : target.lufs.toDouble();
-        const double targetTp = project_.targetEdit.tp ? *project_.targetEdit.tp : target.tp.toDouble();
-        need = (*peak - *lufs) - (targetTp - targetLufs);
-        ceiling = *peak - *need;
-    }
+    // The need of the project a waiting master captured, until it has what it reads; the project's own after.
+    const auto need = needlesNeed (jobWaiting_ ? jobRecipe_.project : project_);
+    std::optional<double> ceiling;
+    if (need) ceiling = *peak - *need;
     if (ceiling && needlesSource_ == source_.hash && needlesCeilingDb_ == ceiling
         && (needlesJob_ != 0 || measurementResults_[slot].status == MeasurementStatus::Ready)) return;
     clearNeedles();

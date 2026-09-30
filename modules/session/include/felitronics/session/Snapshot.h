@@ -51,6 +51,7 @@ struct SnapshotView
     bool canMaster = false;
     MasterToken pendingMaster {};
     double pendingMasterBytes = 0.0;
+    PlanView plan {};
 };
 class Codec;
 // An immutable, owned value. view() remains valid until this value is moved or destroyed,
