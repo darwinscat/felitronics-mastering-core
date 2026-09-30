@@ -353,7 +353,11 @@ Observation lowNote (const ObservationInputs& in, std::string_view kind, std::st
     }
     o.value = *midi.value;
     o.second = *hz.value;
-    return found (in, o, 1.0, 0.0);
+    // The lowest band carries its sureness: an unsure one is shown, doubtful — half as confident as the doubtful line.
+    const auto sure = read (r, "lowestOccupiedSure");
+    const bool doubtful = kind == "lowestLowBand" && sure.value && ! (*sure.value > 0.5);
+    const double doubtfulBelow = number (in.rules.engine.find ("observations").find ("doubtfulBelow"));
+    return found (in, o, doubtful ? 0.5 * doubtfulBelow : 1.0, 0.0);
 }
 
 Observation infraLow (const ObservationInputs& in) noexcept
@@ -664,7 +668,8 @@ std::optional<text::Fact> ObservationText::fact (ObservationKind kind, const Obs
             return Fact::of (FactId::SourceWall, Arg::value (o.value / 1000.0, Unit::KHz, 1), Arg::value (o.second, Unit::Db, 0));
         case ObservationKind::LoudestLowNote: return Fact::of (FactId::LoudestLowNote, Arg::midi (std::int64_t (o.value)));
         case ObservationKind::LowestLowBand:
-            return Fact::of (FactId::SourceLowestBand, Arg::midi (std::int64_t (o.value)), Arg::value (o.second, Unit::Hz, 1));
+            return Fact::of (o.doubtful ? FactId::SourceLowestBandUnsure : FactId::SourceLowestBand, Arg::midi (std::int64_t (o.value)),
+                             Arg::value (o.second, Unit::Hz, 1));
         case ObservationKind::InfraLow:
             return Fact::of (FactId::SourceInfraLow, Arg::value (100.0 * o.value, Unit::Percent, 1), Arg::value (o.second, Unit::Hz, 0));
         case ObservationKind::WideBass:       return Fact::of (FactId::WideBass, Arg::value (100.0 * o.value, Unit::Percent, 0));

@@ -266,6 +266,7 @@ enum class FactId : std::uint16_t
     SourceSibilanceAt = 433,   // ...the loudest at {first}, {second} and {third}
     SourceHum = 434,           // hum: a line at {hz}, {prominence} above the background
     SourceHumWandered = 435,   // possible hum: a line near {hz} that does not hold its frequency
+    SourceLowestBandUnsure = 436, // the lowest occupied band: {note} ({hz}), unsure — under the margin a sure note stands
 
 };
 

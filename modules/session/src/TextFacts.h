@@ -222,6 +222,7 @@ inline constexpr FactShape kFacts[] = {
     { FactId::SourceSibilanceAt, "sourceSibilanceAt", { { { "excess", ArgKind::Value, {} }, { "rate", ArgKind::Value, {} }, { "first", ArgKind::Value, {} }, { "second", ArgKind::Value, {} }, { "third", ArgKind::Value, {} } } }, 5 },
     { FactId::SourceHum, "sourceHum", { { { "hz", ArgKind::Value, {} }, { "prominence", ArgKind::Value, {} } } }, 2 },
     { FactId::SourceHumWandered, "sourceHumWandered", { { { "hz", ArgKind::Value, {} }, { "prominence", ArgKind::Value, {} } } }, 2 },
+    { FactId::SourceLowestBandUnsure, "sourceLowestBandUnsure", { { { "note", ArgKind::Midi, {} }, { "hz", ArgKind::Value, {} } } }, 2 },
 
 };
 inline constexpr std::size_t kFactCount = sizeof (kFacts) / sizeof (kFacts[0]);

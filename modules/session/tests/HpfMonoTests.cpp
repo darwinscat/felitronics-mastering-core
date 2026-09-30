@@ -629,6 +629,52 @@ void everyTargetFromOneMeasurement()
 }
 } // namespace
 
+// THE LOWEST OCCUPIED BAND, AS THE LOW END'S READING — published with its sureness, never withheld for it: the shell shows
+// "35 Hz, unsure" where the reading is under the margin, and the planner's rule (an unsure band: the floor) is its own.
+std::optional<double> lowNumber (const Measured& m, std::string_view name, MeasurementReason* reason = nullptr)
+{
+    const auto snapshot = m.s->snapshot();
+    const auto& r = snapshot.view().measurements[std::size_t (Analyzer::LowEnd)];
+    for (const auto& v : r.numbers)
+        if (v.name == name)
+        {
+            if (reason) *reason = v.reason;
+            return v.value;
+        }
+    if (reason) *reason = MeasurementReason::Unsupported;
+    return std::nullopt;
+}
+void theLowestBandWithItsSureness()
+{
+    felitronics::test::group ("the lowest occupied band is published with its sureness — an unsure one is shown as unsure, not withheld");
+    // A steady bass at 55 Hz and, 19 dB under it, a steady D1 (36.7 Hz): on in every frame, but just over the duty line.
+    Mix faint (20); faint.tone (55.0, 0.3).tone (36.71, 0.3 * felitronics::core::det::pow10 (-19.0 / 20.0));
+    Mix clear (20); clear.tone (55.0, 0.3).tone (36.71, 0.3 * felitronics::core::det::pow10 (-8.0 / 20.0));
+    const auto unsure = measure (faint), sure = measure (clear);
+    MeasurementReason why {};
+    const auto margin = lowNumber (unsure, "lowestOccupiedMarginDb", &why);
+    const auto hz = lowNumber (unsure, "lowestOccupiedHz"), flag = lowNumber (unsure, "lowestOccupiedSure");
+    ok (margin && *margin < 2.0 && *margin > 0.0 && hz && *hz > 35.0 && *hz < 38.0 && why == MeasurementReason::None,
+        "D1 19 dB under the bass: its band is published — " + std::to_string (hz.value_or (0.0)) + " Hz, " + std::to_string (margin.value_or (-1.0))
+        + " dB over the duty line (under the 2 dB a sure note stands)");
+    ok (flag && same (*flag, 0.0) && lowNumber (unsure, "lowestOccupiedResolved") && same (*lowNumber (unsure, "lowestOccupiedResolved"), 1.0),
+        "and says it is unsure, resolved");
+    ok (unsure.plan.hpf.cut == HpfCut::Unsure && same (unsure.plan.hpf.cutoffHz, 32.0),
+        "the planner's rule is its own: an unsure lowest band gives the floor");
+    const auto seen = unsure.s->snapshot().view().observations.lowestLowBand;
+    const auto said = ObservationText::fact (ObservationKind::LowestLowBand, seen);
+    ok (seen.status == ObservationStatus::Found && seen.doubtful && said && said->id == text::FactId::SourceLowestBandUnsure
+        && text::Text::text (*said, text::Lang::Ru).find ("неуверенно") != std::string::npos,
+        "the observation shows it, unsure: " + (said ? text::Text::text (*said, text::Lang::Ru) : std::string()));
+    const auto clearly = sure.s->snapshot().view().observations.lowestLowBand;
+    ok (clearly.status == ObservationStatus::Found && ! clearly.doubtful
+        && ObservationText::fact (ObservationKind::LowestLowBand, clearly)->id == text::FactId::SourceLowestBand,
+        "and a sure one plainly");
+    const auto sureFlag = lowNumber (sure, "lowestOccupiedSure"), sureMargin = lowNumber (sure, "lowestOccupiedMarginDb");
+    ok (sureFlag && same (*sureFlag, 1.0) && sureMargin && *sureMargin >= 2.0 && lowNumber (sure, "lowestOccupiedHz"),
+        "D1 8 dB under: published and sure (" + std::to_string (sureMargin.value_or (-1.0)) + " dB)");
+}
+
 int main()
 {
     theSureLowestNote();
@@ -642,5 +688,6 @@ int main()
     aPieceLongerThanTheReading();
     aSentenceStatesWhatSounds();
     everyTargetFromOneMeasurement();
+    theLowestBandWithItsSureness();
     return felitronics::test::report();
 }
