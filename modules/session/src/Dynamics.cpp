@@ -160,7 +160,8 @@ GlueFinding glueFinding (const PlanInputs& in, const Devices& devices) noexcept
     const auto curve = glueFor (in.rules, f.upToDb);
     f.state = GlueState::Active;
     f.ratio = curve.ratio;
-    f.thresholdDb = *levels.p95Db + curve.threshOffsetDb;
+    // The calibrated place of the loud places on the detector's scale, then the travel's offset from it.
+    f.thresholdDb = *levels.p95Db + number (in.rules.engine.find ("glue").find ("detectorOverP95Db")) + curve.threshOffsetDb;
     f.kneeDb = curve.kneeDb;
     f.attackMs = curve.attackMs;
     if (const auto* tempo = resultOf (in, Analyzer::Tempo))

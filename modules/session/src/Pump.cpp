@@ -148,11 +148,19 @@ void Session::dropJob (JobId job) noexcept
         if (measurementResults_[std::size_t (Analyzer::Crest)].status == MeasurementStatus::Ready)
         { crestJoin_ = masterCount_ != 0; crestJoinIndex_ = 0; }
         else settleMasterCrest (MeasurementReason::Cancelled);
-        // A master waiting for a measurement of the source's job stops with it: it cannot end without it.
+        // A master waiting for a measurement of the source's job stops with it: it cannot end without it — and says
+        // so under its own job's id, the measurement's stop being another job's fact.
         if (job_ != 0 && jobWaiting_ && (planWaiting (jobRecipe_.project) & ~detail::bitOf (Analyzer::Excursions)) != 0)
         {
+            Notification event;
+            event.jobId = job_;
+            event.kind = EventKind::Fact;
+            (void) event.payload.fact.assign (text::Fact::of (text::FactId::Cancelled));
+            const auto progress = masterProgress_;
             mastering_ = false; job_ = 0; jobRecipe_ = {}; jobWaiting_ = false;
             masterUnit_ = 0; masterProgress_ = {};
+            emit (event, progress);
+            needlesAfterDroppedMaster();
         }
     }
     else
@@ -167,7 +175,15 @@ void Session::dropJob (JobId job) noexcept
         jobWaiting_ = false;
         masterUnit_ = 0;
         masterProgress_ = {};
+        needlesAfterDroppedMaster();
     }
+}
+// A WAITING MASTER HELD THE NEEDLES AT ITS OWN CEILING (requestNeedles reads the recipe it captured). Dropped — by its
+// own cancel, with a stopped measurement, or by a contract fault — it leaves them there, and the project's plan would
+// wait for ever for needles nobody measures: they go back to the project's ceiling, as they do when a wait ends.
+void Session::needlesAfterDroppedMaster() noexcept
+{
+    if (source_.channels != 0 && ! planInputs (project_).needlesCurrent) requestNeedles();
 }
 
 Stepped Session::step (std::uint32_t budget) noexcept

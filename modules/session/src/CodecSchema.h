@@ -124,7 +124,8 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (MonoBassVerdict::Unmeasured) == 3);
         static_assert (unsigned (MonoBassVerdict::MonoSource) == 4);
         static_assert (unsigned (MonoBassVerdict::Quiet) == 5);
-        return 5;
+        static_assert (unsigned (MonoBassVerdict::Incomplete) == 6);
+        return 6;
     }
     else if constexpr (std::is_same_v<T, Needles>)
     {
@@ -184,6 +185,14 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (QueryStatus::Cancelled) == 9);
         static_assert (unsigned (QueryStatus::FloatingPointEnvironment) == 10);
         return 10;
+    }
+    else if constexpr (std::is_same_v<T, Sounding>)
+    {
+        static_assert (unsigned (Sounding::Proposal) == 0);
+        static_assert (unsigned (Sounding::Hand) == 1);
+        static_assert (unsigned (Sounding::File) == 2);
+        static_assert (unsigned (Sounding::Off) == 3);
+        return 3;
     }
     else if constexpr (std::is_same_v<T, SpectrumQuantity>)
     {
@@ -352,6 +361,7 @@ constexpr void checkEnum (MonoBassVerdict value) noexcept
         case MonoBassVerdict::Unmeasured: break;
         case MonoBassVerdict::MonoSource: break;
         case MonoBassVerdict::Quiet: break;
+        case MonoBassVerdict::Incomplete: break;
     }
 }
 
@@ -426,6 +436,17 @@ constexpr void checkEnum (QueryStatus value) noexcept
         case QueryStatus::Contract: break;
         case QueryStatus::Cancelled: break;
         case QueryStatus::FloatingPointEnvironment: break;
+    }
+}
+
+constexpr void checkEnum (Sounding value) noexcept
+{
+    switch (value)
+    {
+        case Sounding::Proposal: break;
+        case Sounding::Hand: break;
+        case Sounding::File: break;
+        case Sounding::Off: break;
     }
 }
 
@@ -627,7 +648,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, HpfFinding>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.cut)>, HpfCut>);
         v.field ("cut", x.cut);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.cutoffHz)>, double>);
@@ -638,6 +659,10 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("noteLossDb", x.noteLossDb);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.noteMidi)>, std::optional<std::int32_t>>);
         v.field ("noteMidi", x.noteMidi);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sounding)>, Sounding>);
+        v.field ("sounding", x.sounding);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.soundingHz)>, double>);
+        v.field ("soundingHz", x.soundingHz);
     }
     else if constexpr (std::is_same_v<U, Kept>)
     {
@@ -1189,13 +1214,17 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, MonoBassFinding>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.againstMachine)>, bool>);
         v.field ("againstMachine", x.againstMachine);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.crossoverHz)>, double>);
         v.field ("crossoverHz", x.crossoverHz);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.lossDb)>, std::optional<double>>);
         v.field ("lossDb", x.lossDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sounding)>, Sounding>);
+        v.field ("sounding", x.sounding);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.soundingHz)>, double>);
+        v.field ("soundingHz", x.soundingHz);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.soundingSeconds)>, double>);
         v.field ("soundingSeconds", x.soundingSeconds);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.verdict)>, MonoBassVerdict>);

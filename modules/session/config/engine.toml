@@ -273,18 +273,28 @@ trustedConfidence = "high"
 #   byDepth    even steps of (1 − 1/ratio), the share of the overshoot the compressor removes; the ratio's law alone;
 #   linear     even steps of the number itself;
 #   geometric  even steps of the ratio between neighbours — time is heard logarithmically.
-# The threshold stands threshOffset(g) dB from the P95 (below it: the P95 overshoots it by −threshOffset), so the static
-# curve — the core's own, soft knee included — takes kneeOver(−threshOffset(g); knee(g)) · (1 − 1/ratio(g)) dB at the P95.
+# The threshold stands threshOffset(g) dB from the loud places — the P95 plus detectorOverP95Db, below — (under them: they
+# overshoot it by −threshOffset), so the static curve — the core's own, soft knee included — takes
+# kneeOver(−threshOffset(g); knee(g)) · (1 − 1/ratio(g)) dB there.
 # That loss grows with g without a break, and THE KNOB'S N IS THE g AT WHICH IT EQUALS N: N = 2.6 stands at g = 0.677
-# (ratio 1.74, threshold 6.1 dB under the P95, attack 17.8 ms, knee 5.3 dB), N = 3 at g = 0.728, N = 6 at g = 1.029 — just
+# (ratio 1.74, threshold 6.1 dB under the loud places, attack 17.8 ms, knee 5.3 dB), N = 3 at g = 0.728, N = 6 at g = 1.029 — just
 # past the old right end (2.7 and −9, "where the old version reached with two knobs together"), by the same laws. The
 # compressor stays soft: above 3 it is only denser. divisor divides the beat: release = 60000 / bpm / divisor(g), kept
 # within [compressor.limits] release — 250 ms at g = 0 and 63 ms at g = 1 at 120 BPM.
+# detectorOverP95Db — THE CALIBRATION of the scale to music (architecture В11). The P95 is a short-term LOUDNESS, in
+#   LUFS; the compressor's detector is a 5 ms RMS in dBFS with an attack, and what it takes on the loud places is not the
+#   static curve read at that number. The threshold therefore stands detectorOverP95Db above P95 + threshOffset(g): one
+#   offset, chosen so that the knob IS the gain reduction really taken on the loud places — its P95 over the programme,
+#   the median of the owner's 11 mixes. Measured (2026-09-30): the median equals the knob at an offset of 1.57 dB for
+#   1.25, 1.52 for 2.6 and 1.54 for 3 (1.86 for 0.5, 1.74 for 6); with 1.5 the median is 1.27, 2.61 and 3.02 dB, the
+#   single mixes 1.02…1.55, 2.19…3.04 and 2.56…3.48 (at 0 it was 1.68, 3.24 and 3.70). The report states what each
+#   master's compressor really took.
 [glue]
 domain = [0, 6]
 default = 0
 whenTicked = 0.5
 byTarget = { cd = 2.6 }
+detectorOverP95Db = 1.5
 ratio = { from = 1.0, to = 2.7, law = "byDepth" }
 threshOffset = { from = 0, to = -9, law = "linear" }
 attack = { from = 30, to = 12, law = "linear" }
@@ -369,10 +379,12 @@ step = 0.1
 [eq]
 curve = { warnDb = 2, scaleDb = 3, fieldDb = 4 }
 
-# WHICH STAGES SOUND BY DEFAULT — the defaults layer of the ticks, under the machine's decisions and a person's edits (mono
-# bass waits for its loss to be weighed: the machine places it where it measures no harm; a glue of 0 keeps the compressor
-# out of the chain whatever its tick). clipper is the
-# saturator's stage; the peak clipper is inside the limiter. The limiter is always on, and the schema refuses false.
+# THE DEFAULTS LAYER OF THE TICKS — what a project file is written against (it states a machine value only where it
+# differs from these) and what stands before anything is measured. It is NOT the chain's topology: what sounds is the
+# effective tick — a person's, else the machine's — and the planner decides every tick it has a rule for whatever stands
+# here: the high-pass always; mono bass by the loss it weighs (monoBass = false is only "not yet weighed"); the glue by
+# [glue] byTarget, and a glue of 0 keeps the compressor out whatever its tick. clipper is the saturator's stage; the peak
+# clipper is inside the limiter. The limiter is always on, and the schema refuses false.
 [stages]
 eq = true
 monoBass = false

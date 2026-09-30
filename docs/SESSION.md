@@ -262,7 +262,7 @@ The machine enables low only for a target with `lowDb` (today `lp`, +0.5 dB); ot
 Dither is offered through 16 bits, and mono bass except on a mono source; the shell may exclude any device.
 
 - **The machine's layer** is the planner's (below, "The plan of the devices"): each device proposes its fields from
-  the config for the target and the source — the ticks from `[stages]`, what the target decides (the high-pass's slope
+  the config for the target and the source — what the target decides (the high-pass's slope
   and floor, the mono-bass crossover, no needles where the target has no peak clipper, the dither at its bit depth, the
   low shelf's gain, the glue its row names) and each device's own section for the rest; tilt starts off and flat — and from
   what it measures. The devices are placed when the first measurement ends — by the pump, and by a sidecar's facts —
@@ -326,7 +326,24 @@ when it is Ready or Unavailable; a cancelled needles job has ended too (it is no
 path without needles), a stopped source measurement has not. So no plan waits for ever: every need is either measured,
 ends with a reason, or waits for a person's `continueMeasurement`, which a hidden panel's master sends by itself. A
 needed tempo goes ahead of the optional findings in the source's second phase, and the needles are measured at the
-ceiling of the project being planned — a waiting master's own, until what it reads has ended.
+ceiling of the project being planned — a waiting master's own, until what it reads has ended or the master is dropped:
+cancelled, stopped with the source's measurement it waited for, or ended by a contract fault, it hands the needles back
+to the project's own ceiling, so the project's plan does not wait for needles nobody measures. A master stopped with the
+measurement says so under its own job's id (fact `cancelled`), beside the measurement's `measurementStopped`.
+
+**A finding is the planner's proposal; a sentence states what sounds.** `plan.hpf` and `plan.monoBass` hold what the
+machine proposes and what it stood on — its cutoff and the note behind it, the loss at its crossover. What sounds is the
+project's device: a person's layer over a machine's layer that a project file may have written. Each finding says which
+(`sounding`: `Proposal`, `Hand`, `File`, `Off`, with `soundingHz`), and `PlanText` gives the planner's reasons only where
+its proposal is what sounds: a person's cutoff is `hpfByHand` with that cutoff and no claim about the note, a file's
+`hpfKept`, an unticked high-pass `hpfOff`; mono bass at another crossover or width is `monoBassByHand` / `monoBassKept`,
+"will take N dB" is said only of the fold as proposed, the opposite-polarity warning of that fold left out or switched
+on against the machine, and nothing of a loss that does not happen. (The full wording of a person's layer is the next
+slice's.) The chain's topology follows the same effective settings — the tick rule, `settingsOf` — never `[stages]`,
+which is only the defaults layer a project file is written against: the planner decides every tick it has a rule for
+(mono bass by its loss, whatever `[stages] monoBass` says). `writeEq` and `writeDynamics` are those settings as the chain
+gets them; the render of a session-decided master goes through them (the next task) — today a version-0 master is
+counted, not rendered.
 
 **The high-pass and mono bass** (owner decisions 3.2–3.5) are the first devices that decide from a measurement, both
 from the first phase's low-end runs, with no trial render. The high-pass stands always — every target, a quiet input
@@ -340,7 +357,9 @@ by the harm itself: the loss the low end takes folded to mono, 10·log10((mid + 
 run at the target's crossover (120 Hz, vinyl 150) where the bass sounds (within 20 dB of the level the loudest 5 % reach,
 3 s at least). Under 1 dB it is placed; from 1 to 3 dB, both included, placed with the number; above 3 dB left out —
 and a person may switch it on, with `plan.monoBass.againstMachine` for the warning. A loss it cannot weigh is its own
-reason, and it is left out: the machine does not fold what it did not weigh. `plan.hpf` and `plan.monoBass` carry the
+reason, and it is left out: the machine does not fold what it did not weigh. Nor does it weigh a part: the run keeps
+65536 blocks of 10 ms (10.9 minutes), and a piece longer than that has only its beginning in them — `Incomplete`, left
+out, with its own sentence (`monoBassIncomplete`). `plan.hpf` and `plan.monoBass` carry the
 findings typed; `PlanText` gives their report lines. `felitronics_session_hpf_mono_tests` holds each boundary to the bit,
 the cutoff to core's own response on every target, slope and rate, and — through the pump on synthetic mixes — a
 detector that never errs upward and a loss that tells centred, partial and inverted bass apart, opposite polarity above
@@ -365,10 +384,14 @@ peak are read plus that gain, so one mix exported louder or quieter gets the sam
 true peak to the bit for a level that is a power of two; the P95 within the programme report's own 0.1 LU bin, since
 that report reads its percentiles off bins of the file's level).
 The glue's knob, "up to N dB", is the loss on the loud places: the travel `g` at which the core's own static curve
-(`dynamics::GainComputer`, soft knee included) takes exactly N dB at the P95, found on that curve by bisection — one
+(`dynamics::GainComputer`, soft knee included) takes exactly N dB at the loud places (the P95 and the calibration over it, below), found on that curve by bisection — one
 smooth formula over 0…6 dB (`[glue]`: the ratio by depth, the threshold offset, knee and attack linear, the release's
 beat divisor geometric), nothing rounded, no clamp reached inside the domain; 2.6 dB is ratio 1.74 with the threshold
-6.1 dB under the P95, 6 dB ratio 2.84 and 9.3 dB under. It is not a ceiling on the live reduction. The slider's 0…3 dB
+6.1 dB under the loud places, 6 dB ratio 2.84 and 9.3 dB under. It is not a ceiling on the live reduction. THE SCALE IS CALIBRATED TO MUSIC (`[glue] detectorOverP95Db`, 1.5 dB): the
+P95 is a short-term loudness, the detector a 5 ms RMS with an attack, so the threshold stands that offset above
+P95 + the travel's offset — chosen so that the gain reduction really taken on the loud places (its P95 over the
+programme, the median of the owner's 11 mixes) is the knob: 1.27 dB at 1.25, 2.61 at 2.6, 3.02 at 3, single mixes within
+about ±0.45 dB; uncalibrated it was 1.68, 3.24 and 3.70. The slider's 0…3 dB
 is a hint; the core takes 0…6 as written, the machine sets it on cd alone, 2.6 (the schema refuses a machine value
 above `knobMaxDb`), and a tick without a knob starts at 0.5. The release is a beat over the divisor, from the tempo
 where its label is high (the detector's confidence of 0.5 and up), from 120 BPM otherwise — a tempo that ended
@@ -501,10 +524,15 @@ and prints declared/actual tightness for a realistic project. It also proves an 
 allocation laws belong to felitronics-toml's storage suite. If the environment cannot serve the published demand,
 allocation has no recovery path.
 
-The core carries the **current and previous defaults tables**. Today the current label is `2026-09` and the previous
-slot is empty. A carried label uses its compiled defaults. Labels are strictly `YYYY-MM`, with months `01` through `12`.
-A label older than every carried version is converted: written numbers are retained and omitted fields take current
-defaults. Fact `DefaultsConverted` (9) owns the original label and reports the conversion in both catalog languages.
+The core carries the **current and previous defaults tables**. Today the current label is `2026-10` and the previous
+slot is empty: carrying a "previous" table starts with the first defaults version a shell saved projects with, and none
+has saved one with `2026-09`. A carried label uses its compiled defaults. Labels are strictly `YYYY-MM`, with months
+`01` through `12`. A label older than every carried version is CONVERTED: a person's values and the target's numbers
+are kept, and the machine's layer is placed again by the planner for the file's target on this source — the file's
+machine numbers were written against defaults no longer carried, so a field it left out cannot be told from one that
+meant the old default, and a mixture is not passed off as the file's. The converted layer is this core's:
+`plan.fromFile` is false, there are no `machineDifferences` and nothing to adopt. Fact `DefaultsConverted` (9) owns
+the original label and says so in both catalog languages.
 Export uses the current label; a converted project round trips without a second conversion warning. A newer label
 is refused as `NewerDefaults` (28, fact 128); a malformed label is `UnknownDefaults`. A future uncarried label between
 the retained versions is also `UnknownDefaults`. All these refusals leave state and revision unchanged.

@@ -507,6 +507,55 @@ void noPlanWaitsForEver()
         ok (stepUntil (s, [&] { return s.snapshot().view().plan.status == PlanStatus::Ready; })
             && ! sameCeiling (s.snapshot().view().needlesCeilingDb, asked), "then the needles are measured at the new target's ceiling");
     }
+    {
+        // The same wait, and the master cancelled instead of ending: the needles it held at its ceiling go back to the
+        // project's, or the project's plan would wait for needles nobody measures.
+        auto sp = fresh(); auto& s = *sp;
+        (void) s.apply (audio.load (1));
+        ok (stepUntil (s, [&] { return s.state() == State::Measured2 && s.needlesJob() == 0; }), "PRECONDITION: measured");
+        command::EditTarget tp { 2, {} }; tp.fields.tp = -3.0;
+        (void) s.apply (tp);
+        const auto asked = s.snapshot().view().needlesCeilingDb;
+        const auto master = s.apply (command::Master { 3 });
+        ok (master.rejection == Rejection::None && detail::Inspector::jobWaiting (s), "PRECONDITION: a hidden master waits for the needles at its ceiling");
+        ok (s.apply (command::SetTarget { 4, "club" }).rejection == Rejection::None && sameCeiling (s.snapshot().view().needlesCeilingDb, asked),
+            "PRECONDITION: a new target leaves them at the master's ceiling");
+        ok (s.apply (command::Cancel { 5, master.job }).rejection == Rejection::None && s.job() == 0, "the waiting master is cancelled");
+        auto v = s.snapshot();
+        ok (! sameCeiling (v.view().needlesCeilingDb, asked) && (s.needlesJob() != 0 || v.view().plan.waiting == 0),
+            "and the needles are asked for again, at the project's own ceiling");
+        ok (stepUntil (s, [&] { return s.snapshot().view().plan.status == PlanStatus::Ready; }) && s.needlesJob() == 0,
+            "the plan becomes ready: nothing waits for ever");
+        (void) s.apply (command::SetManual { 6, true });
+        HpfFields<Touched> hpf; hpf.fq = 41.0;
+        ok (s.apply (command::EditDevice { 7, hpf }).rejection == Rejection::None && s.apply (command::Master { 8 }).rejection == Rejection::None,
+            "a device edit is taken and, with the panel open, a master too");
+    }
+    {
+        // A master waiting for the tempo, and the source's measurement stopped under it: the master stops with it, says
+        // so under its own id, and leaves the needles at the project's ceiling.
+        auto sp = fresh(); auto& s = *sp;
+        (void) s.apply (command::SetTarget { 1, "cd" });
+        (void) s.apply (audio.load (2));
+        ok (stepUntil (s, [&] { return s.state() != State::Loaded; }) && s.state() == State::Measured1, "PRECONDITION: the first measurement ends, the tempo still to come");
+        const auto master = s.apply (command::Master { 3 });
+        ok (master.rejection == Rejection::None && detail::Inspector::jobWaiting (s), "PRECONDITION: a hidden master waits for the tempo cd's glue reads");
+        const auto asked = s.snapshot().view().needlesCeilingDb;
+        ok (s.apply (command::SetTarget { 4, "club" }).rejection == Rejection::None, "PRECONDITION: the project moves to another target");
+        const auto measurement = s.measurementJob();
+        ok (measurement != 0 && s.apply (command::Cancel { 5, measurement }).rejection == Rejection::None && s.job() == 0 && s.state() == State::MeasurementStopped,
+            "the measurement is stopped, and the master with it");
+        bool said = false, stopped = false;
+        for (const auto& e : s.events())
+        {
+            said = said || (e.kind == EventKind::Fact && e.jobId == master.job && e.payload.fact.view().id == text::FactId::Cancelled);
+            stopped = stopped || (e.kind == EventKind::Fact && e.jobId == measurement && e.payload.fact.view().id == text::FactId::MeasurementStopped);
+        }
+        ok (said && stopped, "the master's own job says it was cancelled, beside the measurement's stop");
+        ok (stepUntil (s, [&] { return s.needlesJob() == 0; }) && ! sameCeiling (s.snapshot().view().needlesCeilingDb, asked)
+            && (s.snapshot().view().plan.waiting & detail::bitOf (Analyzer::Excursions)) == 0,
+            "and the needles are measured at the project's ceiling: its plan waits for none");
+    }
 }
 
 void oneNeedOneMeasurement()

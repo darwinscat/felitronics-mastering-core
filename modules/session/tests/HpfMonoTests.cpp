@@ -45,6 +45,7 @@ struct Readings
     double hop = 65536;
     std::vector<double> bands = std::vector<double> (47 * 16, 0.0);
     std::vector<double> blocks;
+    std::uint64_t blocksNotKept = 0;           // blocks of the piece past what the run holds: a reading of a first part
     MeasurementValue lowNumbers[4] {};
     MeasurementArray lowArrays[2] {};
     MeasurementValue loudness[2] {};
@@ -83,7 +84,8 @@ struct Readings
         lowNumbers[1] = { "sampleRate", double (rate), MeasurementReason::None, 0 };
         lowNumbers[2] = { "peakMidi", 40.0, MeasurementReason::None, 0 };
         lowNumbers[3] = { "crossoverHz", crossover, MeasurementReason::None, 0 };
-        lowArrays[0] = { "blocks", { 0, 480, std::uint64_t (seconds * rate), rate }, 8, blocks.size() / 8, blocks.size() / 8, true, blocks };
+        lowArrays[0] = { "blocks", { 0, 480, std::uint64_t (seconds * rate), rate }, 8, blocks.size() / 8 + blocksNotKept, blocks.size() / 8,
+                         blocksNotKept == 0, blocks };
         lowArrays[1] = { "bands", { 0, 0, std::uint64_t (seconds * rate), rate }, 16, 47, 47, true, bands };
         auto& r = results[std::size_t (crossover == 150 ? Analyzer::LowEnd150 : Analyzer::LowEnd)];
         r.status = MeasurementStatus::Ready; r.reason = MeasurementReason::None;
@@ -415,6 +417,130 @@ void aPersonsKnobs()
         && stage.bands[detail::eqBand (Device::Hpf)].lanes[0].slope == 24, "the high-pass band is what the knob says, bit for bit");
 }
 
+void aPieceLongerThanTheReading()
+{
+    felitronics::test::group ("a piece longer than the low-end reading holds is not judged on its first part: mono bass left out, with that reason");
+    // The reading as the run publishes it: every block kept and the loss weighed; one block of the piece not kept and
+    // the very same blocks are a part — no verdict from them.
+    Readings r;
+    for (int i = 0; i < 2000; ++i) r.block (1.0, 0.001);
+    auto p = plan (r.inputs ("allStreaming", 20));
+    ok (p.found.monoBass.verdict == MonoBassVerdict::On && p.devices.monoBass.machine.on, "PRECONDITION: the whole piece in the reading — weighed, placed");
+    r.blocksNotKept = 1;
+    p = plan (r.inputs ("allStreaming", 20));
+    ok (p.found.monoBass.verdict == MonoBassVerdict::Incomplete && ! p.devices.monoBass.machine.on && p.plans.monoBass.heldBack == HeldBack::Unmeasured
+        && ! p.found.monoBass.lossDb, "one block of the piece past the reading: not weighed, left out, no loss stated");
+    auto finding = p.found.monoBass; finding.sounding = Sounding::Off;
+    const auto fact = PlanText::monoBass (finding);
+    const auto said = fact ? text::Text::text (*fact, text::Lang::Ru) + " / " + text::Text::text (*fact, text::Lang::En) : std::string {};
+    ok (fact && fact->id == text::FactId::MonoBassIncomplete && said.find ('{') == std::string::npos, "with its own reason: " + said);
+    finding.sounding = Sounding::Proposal;
+    ok (! PlanText::monoBass (finding), "and nothing is said of it where a person switched the fold on");
+    // The inverted bass of a long piece is not called safe either — nor harmful: it is not weighed.
+    Readings inverted;
+    for (int i = 0; i < 2000; ++i) inverted.block (0.001, 1.0);
+    inverted.blocksNotKept = 100;
+    ok (plan (inverted.inputs ("allStreaming", 20)).found.monoBass.verdict == MonoBassVerdict::Incomplete, "a part with inverted bass: the same — no verdict from a part");
+
+    // Through the pump, at 8 kHz so that twelve minutes are light: the run keeps 65536 blocks of 10 ms — 10.9 minutes.
+    const auto measured = [] (unsigned seconds)
+    {
+        constexpr unsigned rate = 8000;
+        std::vector<float> pcm (std::size_t (rate) * seconds);
+        for (std::size_t i = 0; i < pcm.size(); ++i) pcm[i] = float (0.3 * felitronics::core::det::sin (2 * kPi * 55.0 * double (i % (rate * 4u)) / rate));
+        const float* planes[] { pcm.data(), pcm.data() };
+        auto s = Session::create().session;
+        ok (s->apply (command::Load { 1, { planes, 2, pcm.size(), rate }, {} }).rejection == Rejection::None, "PRECONDITION: the long piece loads");
+        for (unsigned i = 0; i < 40000000 && s->state() == State::Loaded; ++i) (void) s->step (16);
+        return s;
+    };
+    // (A piece the reading holds whole is every other mix of this suite: weighed, and placed.)
+    const auto longer = measured (700);
+    const auto b = longer->snapshot();
+    ok (b.view().plan.monoBass.verdict == MonoBassVerdict::Incomplete && ! b.view().project.devices.monoBass.machine.on
+        && b.view().plan.devices.monoBass.heldBack == HeldBack::Unmeasured
+        && PlanText::monoBass (b.view().plan.monoBass)->id == text::FactId::MonoBassIncomplete,
+        "eleven minutes forty: the reading holds its first 10.9 — mono bass is left out and says why");
+}
+
+void aSentenceStatesWhatSounds()
+{
+    felitronics::test::group ("a sentence states what sounds: the planner's reasons only where its proposal sounds");
+    const auto said = [] (const text::Fact& f) { return text::Text::text (f, text::Lang::Ru) + " / " + text::Text::text (f, text::Lang::En); };
+    // A sure 55 Hz note, the bass partly in opposite polarity: the machine cuts from the note and folds the bass.
+    auto m = measure (Mix (20).tone (55.0, 0.3, 0.2).tone (440.0, 0.1));
+    auto& s = *m.s;
+    auto v = s.snapshot();
+    const double proposed = v.view().plan.hpf.cutoffHz;
+    ok (v.view().plan.hpf.cut == HpfCut::Note && v.view().plan.hpf.sounding == Sounding::Proposal && same (v.view().plan.hpf.soundingHz, proposed)
+        && PlanText::hpf (v.view().plan.hpf).id == text::FactId::HpfNote
+        && v.view().plan.monoBass.verdict == MonoBassVerdict::Partial && v.view().plan.monoBass.sounding == Sounding::Proposal
+        && PlanText::monoBass (v.view().plan.monoBass)->id == text::FactId::MonoBassPartial,
+        "PRECONDITION: the machine's own devices sound, and its sentences are said: " + said (PlanText::hpf (v.view().plan.hpf)));
+
+    HpfFields<Touched> low; low.fq = 20.0;
+    ok (s.apply (command::EditDevice { 3, low }).rejection == Rejection::None, "a person sets the cutoff to 20 Hz");
+    v = s.snapshot();
+    auto fact = PlanText::hpf (v.view().plan.hpf);
+    ok (v.view().plan.hpf.sounding == Sounding::Hand && same (v.view().plan.hpf.soundingHz, 20.0) && same (v.view().plan.hpf.cutoffHz, proposed)
+        && v.view().plan.hpf.cut == HpfCut::Note && fact.id == text::FactId::HpfByHand && fact.argCount == 1 && same (fact.args[0].number, 20.0)
+        && said (fact).find ("20") != std::string::npos && said (fact).find ('{') == std::string::npos,
+        "the finding still holds the proposal (" + std::to_string (proposed) + " Hz from the note) and says a person's 20 Hz sounds; the sentence names 20 Hz and claims nothing of the note: " + said (fact));
+    HpfFields<Touched> same20; same20.fq = proposed;
+    (void) s.apply (command::EditDevice { 4, same20 });
+    v = s.snapshot();
+    ok (v.view().plan.hpf.sounding == Sounding::Proposal && PlanText::hpf (v.view().plan.hpf).id == text::FactId::HpfNote,
+        "a person's value equal to the proposal: the proposal sounds, and its reasons are true of the sound");
+    HpfFields<Touched> steep; steep.slope = 48;
+    (void) s.apply (command::EditDevice { 5, steep });
+    v = s.snapshot();
+    ok (v.view().plan.hpf.sounding == Sounding::Hand && PlanText::hpf (v.view().plan.hpf).id == text::FactId::HpfByHand,
+        "another slope at the same cutoff takes another share of the note: a person's");
+    HpfFields<Touched> off; off.on = false;
+    (void) s.apply (command::EditDevice { 6, off });
+    v = s.snapshot();
+    fact = PlanText::hpf (v.view().plan.hpf);
+    ok (v.view().plan.hpf.sounding == Sounding::Off && fact.id == text::FactId::HpfOff && fact.argCount == 0, "unticked: " + said (fact));
+
+    MonoBassFields<Touched> wide; wide.fq = 200.0;
+    ok (s.apply (command::EditDevice { 7, wide }).rejection == Rejection::None, "a person moves the mono-bass crossover to 200 Hz");
+    v = s.snapshot();
+    auto mono = PlanText::monoBass (v.view().plan.monoBass);
+    ok (v.view().plan.monoBass.sounding == Sounding::Hand && same (v.view().plan.monoBass.soundingHz, 200.0) && same (v.view().plan.monoBass.crossoverHz, 120.0)
+        && mono && mono->id == text::FactId::MonoBassByHand && same (mono->args[0].number, 200.0),
+        "the loss was weighed at 120 Hz: the sentence names the 200 Hz that sounds and no loss — " + (mono ? said (*mono) : std::string {}));
+    MonoBassFields<Touched> out; out.on = false;
+    (void) s.apply (command::EditDevice { 8, out });
+    v = s.snapshot();
+    ok (v.view().plan.monoBass.sounding == Sounding::Off && ! PlanText::monoBass (v.view().plan.monoBass),
+        "unticked by a person where the machine folds: nothing is said of a loss that does not happen");
+
+    // Opposite polarity: left out by the machine, with its warning — which stays true of the fold a person switches on.
+    auto a = measure (Mix (20).tone (55.0, 0.3, -1.0));
+    auto before = a.s->snapshot();
+    ok (before.view().plan.monoBass.sounding == Sounding::Off && PlanText::monoBass (before.view().plan.monoBass)->id == text::FactId::MonoBassAntiPhase,
+        "left out for opposite polarity: the reason is said");
+    MonoBassFields<Touched> on; on.on = true;
+    (void) a.s->apply (command::EditDevice { 3, on });
+    const auto after = a.s->snapshot();
+    ok (after.view().plan.monoBass.sounding == Sounding::Proposal && after.view().plan.monoBass.againstMachine
+        && PlanText::monoBass (after.view().plan.monoBass)->id == text::FactId::MonoBassAntiPhase,
+        "switched on against the machine at its own crossover: the warning stands");
+
+    // A machine layer kept from a project file that the planner would place otherwise.
+    auto f = measure (Mix (20).tone (55.0, 0.3, 0.2).tone (440.0, 0.1));
+    std::string project (f.s->exportProject().view());
+    const auto section = project.find ("[hpf]"), line = project.find ("fq.machine = ", section);
+    if (section != std::string::npos && line != std::string::npos) project.replace (line, project.find ('\n', line) - line, "fq.machine = 47.5");
+    ok (f.s->apply (command::ImportProject { 3, project }).rejection == Rejection::None, "PRECONDITION: a project whose machine cutoff is 47.5 Hz imports");
+    const auto kept = f.s->snapshot();
+    fact = PlanText::hpf (kept.view().plan.hpf);
+    ok (kept.view().plan.fromFile && kept.view().plan.hpf.sounding == Sounding::File && same (kept.view().plan.hpf.soundingHz, 47.5)
+        && fact.id == text::FactId::HpfKept && same (fact.args[0].number, 47.5), "the file's cutoff sounds, and is named as the file's: " + said (fact));
+    (void) f.s->apply (command::AdoptMachine { 4 });
+    ok (f.s->snapshot().view().plan.hpf.sounding == Sounding::Proposal, "adopting the planner's layer makes its proposal the sound again");
+}
+
 void everyTargetFromOneMeasurement()
 {
     felitronics::test::group ("one measured source serves every target: no measurement again, each its own floor, slope, loss and crossover");
@@ -454,6 +580,8 @@ int main()
     whereTheBassSounds();
     throughThePump();
     aPersonsKnobs();
+    aPieceLongerThanTheReading();
+    aSentenceStatesWhatSounds();
     everyTargetFromOneMeasurement();
     return felitronics::test::report();
 }

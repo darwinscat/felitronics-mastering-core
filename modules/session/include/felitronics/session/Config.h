@@ -254,6 +254,7 @@ struct Glue
     std::vector<GlueAtTarget> byTarget;        // in the document's order
     GlueRamp ratio, threshOffset, attack, knee, divisor;
     double knobMinDb = 0.0, knobMaxDb = 0.0, knobStepDb = 0.0;
+    double detectorOverP95Db = 0.0;            // the threshold's calibration: dB above P95 + threshOffset
 };
 
 enum class SaturationShape : std::uint8_t { Tanh, Atan, Cubic, Asym };

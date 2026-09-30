@@ -11,8 +11,10 @@
 // shaper, and the search, which moves only the gain before the limiter, recalibrates neither.
 //
 // THE GLUE'S KNOB, "up to N dB", is the loss on the loud places: the travel g at which the core's own static curve
-// (dynamics::GainComputer, its soft knee included) takes exactly N dB at the P95 — one smooth formula over the whole
-// domain ([glue] in engine.toml), found on that curve by bisection. THE SATURATION'S KNOB is the drive the input would
+// (dynamics::GainComputer, its soft knee included) takes exactly N dB at the loud places — one smooth formula over the
+// whole domain ([glue] in engine.toml), found on that curve by bisection. The loud places stand, on the detector's
+// scale, [glue] detectorOverP95Db above the short-term P95: the calibration that makes the knob the gain reduction
+// music really gets there (the median of the owner's mixes), not only the curve's. THE SATURATION'S KNOB is the drive the input would
 // get at 0 dBTP: the shaper is driven at k = 10^(drive/20) − 1, so its gain is what is aligned.
 
 #include "Planner.h"
@@ -32,9 +34,9 @@ struct GlueCurve
     double travel = 0.0, ratio = 1.0, threshOffsetDb = 0.0, kneeDb = 0.0, attackMs = 0.0, divisor = 1.0;
 };
 [[nodiscard]] GlueCurve glueAt (const Rules& rules, double travel) noexcept;
-// What the core's static curve takes at the P95 with those values, dB: the knob's N at that travel.
+// What the core's static curve takes at the loud places with those values, dB: the knob's N at that travel.
 [[nodiscard]] double glueStaticLossDb (const GlueCurve& curve) noexcept;
-// The values at a knob of `upToDb`: the travel whose static loss at the P95 is `upToDb`.
+// The values at a knob of `upToDb`: the travel whose static loss at the loud places is `upToDb`.
 [[nodiscard]] GlueCurve glueFor (const Rules& rules, double upToDb) noexcept;
 
 // The input's levels in the normalised system, where they were measured: the gain to [input] referenceLufs, the
