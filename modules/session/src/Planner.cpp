@@ -374,8 +374,12 @@ std::uint32_t needs (const PlanInputs& in, const Devices& devices, bool withHand
     eachPlan (devices, plans, [&] (Device, const auto& layers, DevicePlan& plan)
     {
         using Fields = std::remove_cvref_t<decltype (layers.machine)>;
-        plan.needs = Planned<Fields>::needs (in, settingsOf (in.rules, layers, withHand));
+        const auto settings = settingsOf (in.rules, layers, withHand);
+        plan.needs = Planned<Fields>::needs (in, settings);
         all |= plan.needs;
+        plan.tick = withHand ? tickFrom (in.rules, layers) : TickFrom::Machine;
+        if constexpr (requires { settings.on; }) plan.on = settings.on;
+        else plan.on = true;
     });
     return all;
 }

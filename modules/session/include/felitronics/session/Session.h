@@ -135,6 +135,10 @@ struct DevicePlan
     std::uint32_t needs = 0;               // the analyzers it reads for what the project makes it do, a bit per Analyzer
     std::uint8_t target = 0;
     std::uint8_t measured = 0;
+    // The tick as it sounds, and where it came from — so a shell draws it without deciding. The limiter has no tick:
+    // always on, the machine's.
+    bool on = false;
+    TickFrom tick = TickFrom::Machine;
 };
 
 // Every device's plan, in the order of Device.

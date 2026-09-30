@@ -278,6 +278,12 @@ Dither is offered through 16 bits, and mono bass except on a mono source; the sh
   edits and dither edits. The machine decides again for the new target. The shell owns the warning
   “your N edits will be reset”: it reads `snapshot().view().handFieldCount` before sending the command.
   The command answer and events are unchanged. New dither edits above 16 bits still return `NotOffered`.
+- **A person's edit always sounds.** A device's tick is the person's own when they set one, on or off; otherwise it is
+  on when any of the device's fields carries their value — a knob turned is a device wanted, so a project with
+  `[tilt] db.hand = 3` and no tick written sounds; otherwise it is the machine's. Every reader of what sounds goes
+  through the one rule (`settingsOf` in `src/Devices.h`): the EQ stage and its curve, the plan's needs, a recipe. The
+  snapshot says it per device (`plan.devices.<device>.on` and `.tick`: Machine, Hand or Touched), so a shell draws the
+  tick without deciding. A change of target resets the edits, and with them the ticks they gave.
 - **`setManual(bool)`** changes only panel visibility. Device edits stay effective in either mode, including in a
   master recipe. `snapshot().view().handFieldCount` counts touched device fields, including false ticks and values
   equal to the machine, for the hidden-panel marker. Target-number edits are separate. `revertEdits` and

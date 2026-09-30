@@ -185,6 +185,13 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (State::MeasurementStopped) == 4);
         return 4;
     }
+    else if constexpr (std::is_same_v<T, TickFrom>)
+    {
+        static_assert (unsigned (TickFrom::Machine) == 0);
+        static_assert (unsigned (TickFrom::Hand) == 1);
+        static_assert (unsigned (TickFrom::Touched) == 2);
+        return 2;
+    }
     else static_assert (std::is_same_v<T, void>, "enum missing from codec description");
 }
 
@@ -407,20 +414,34 @@ constexpr void checkEnum (State value) noexcept
     }
 }
 
+constexpr void checkEnum (TickFrom value) noexcept
+{
+    switch (value)
+    {
+        case TickFrom::Machine: break;
+        case TickFrom::Hand: break;
+        case TickFrom::Touched: break;
+    }
+}
+
 template <class V, class T> void describe (V& v, T& x) noexcept
 {
     using U = std::remove_cv_t<T>;
     if constexpr (std::is_same_v<U, DevicePlan>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.heldBack)>, HeldBack>);
         v.field ("heldBack", x.heldBack);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.measured)>, std::uint8_t>);
         v.field ("measured", x.measured);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.needs)>, std::uint32_t>);
         v.field ("needs", x.needs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.on)>, bool>);
+        v.field ("on", x.on);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.target)>, std::uint8_t>);
         v.field ("target", x.target);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.tick)>, TickFrom>);
+        v.field ("tick", x.tick);
     }
     else if constexpr (std::is_same_v<U, DevicePlans>)
     {

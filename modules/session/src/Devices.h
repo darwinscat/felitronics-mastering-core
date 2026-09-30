@@ -153,17 +153,39 @@ template <template <class> class F> struct DeviceOf<LowFields<F>>
     }
 };
 
-// A DEVICE'S SETTINGS in the project — what sounds: the machine's layer with a person's touched fields over it (the
-// machine's alone where `withHand` is false).
+// WHERE A DEVICE'S TICK COMES FROM (the owner's rule: a person's edit always sounds). The person's own tick when they
+// set one — on or off; otherwise ON when any of the device's fields carries a person's value (a knob turned is a
+// device wanted: `[tilt] db.hand = 3` sounds with no tick written); otherwise the machine's.
+template <template <template <class> class> class F>
+TickFrom tickFrom (const Rules& rules, const Layers<F>& layers) noexcept
+{
+    if constexpr (requires { layers.hand.on; })
+    {
+        if (layers.hand.on) return TickFrom::Hand;
+        bool touched = false;
+        DeviceOf<F<Value>>::each (rules, [&] (std::uint8_t, const FieldRule&, const auto& hand) { touched = touched || hand.has_value(); },
+                                  layers.hand);
+        return touched ? TickFrom::Touched : TickFrom::Machine;
+    }
+    else
+        return TickFrom::Machine;
+}
+
+// A DEVICE'S SETTINGS in the project — what sounds: the machine's layer with a person's touched fields over it, its tick
+// by tickFrom() (the machine's layer alone where `withHand` is false).
 template <template <template <class> class> class F>
 F<Value> settingsOf (const Rules& rules, const Layers<F>& layers, bool withHand = true) noexcept
 {
     F<Value> out = layers.machine;
     if (withHand)
+    {
         DeviceOf<F<Value>>::each (rules, [] (std::uint8_t, const FieldRule&, auto& value, const auto& hand)
         {
             if (hand) value = *hand;
         }, out, layers.hand);
+        if constexpr (requires { out.on; })
+            if (tickFrom (rules, layers) == TickFrom::Touched) out.on = true;
+    }
     return out;
 }
 
