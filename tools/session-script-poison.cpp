@@ -15,7 +15,7 @@
 [[noreturn]] void sessionScriptPoison (void (*continuation)())
 {
     std::set_terminate (continuation);
-    const fc_session_capabilities caps { sizeof (fc_session_capabilities), 67108864, 96000, FC_SESSION_DEVICES_ALL, 67108864 };
+    const fc_session_capabilities caps { sizeof (fc_session_capabilities), 67108864, 96000, FC_SESSION_DEVICES_ALL, 67108864, 0 };
     const auto version = felitronics::session::config::Config::versions().all;
     fc_session handle = 0;
     alloc::onNext = +[] () noexcept { std::terminate(); };

@@ -716,10 +716,10 @@ void everyMessageRenders()
 
     const Fact wide = Fact::of (FactId::WideBass, Arg::value (18.2, Unit::Percent, 0));
     same (render (wide, Lang::Ru),
-          "бас широкий (бока 18" + NB + "%) — моно-бас соберёт его, на наушниках станет уже; если ширина нужна — выключите моно-бас в Настройках",
-          "ru wideBass, the owner's words");
+          "бас широкий (бока 18" + NB + "%) — моно-бас соберёт его, если включён; на наушниках станет уже",
+          "ru wideBass, the owner's words (PLAN: mono bass gathers it IF IT IS ON — the sentence claims nothing of a fold that is out)");
     same (render (wide, Lang::En),
-          "the bass is wide (side 18%) — mono-bass will gather it, and on headphones it will sound narrower; if you need the width, switch mono-bass off in Settings",
+          "the bass is wide (side 18%) — mono bass will gather it if it is on; on headphones it will sound narrower",
           "en wideBass");
 
     const Fact web = Fact::of (FactId::RateAboveLimit, Arg::value (176.4, Unit::KHz, 1), Arg::value (96.0, Unit::KHz, 0),
@@ -730,6 +730,21 @@ void everyMessageRenders()
     same (render (web, Lang::En), "This file is 176.4\u00A0kHz. Above 96\u00A0kHz is for the desktop version.", "en select: web");
     same (render (desktop, Lang::Ru), "Файл — 384\u00A0кГц. Всё, что выше 192\u00A0кГц, движок не принимает.", "ru select: desktop");
     same (render (desktop, Lang::En), "This file is 384\u00A0kHz. The engine takes nothing above 192\u00A0kHz.", "en select: desktop");
+
+    // The warning before a change of target (owner decision, 28.09), the count in brackets in the owner's words: Russian
+    // keeps the plural noun for every count (21 edits are not one), English has its singular for one.
+    struct Edits { std::int64_t n; std::string_view ru, en; };
+    const Edits edits[] = {
+        { 1, "Ручные правки приборов (1) будут сброшены.", "The manual device edit (1) will be reset." },
+        { 3, "Ручные правки приборов (3) будут сброшены.", "Manual device edits (3) will be reset." },
+        { 5, "Ручные правки приборов (5) будут сброшены.", "Manual device edits (5) will be reset." },
+        { 21, "Ручные правки приборов (21) будут сброшены.", "Manual device edits (21) will be reset." },
+    };
+    for (const Edits& e : edits)
+    {
+        same (render (Fact::of (FactId::TargetChangeResetsEdits, Arg::count (e.n)), Lang::Ru), e.ru, "ru targetChangeResetsEdits");
+        same (render (Fact::of (FactId::TargetChangeResetsEdits, Arg::count (e.n)), Lang::En), e.en, "en targetChangeResetsEdits");
+    }
 
     // No fallback: a language the catalog does not declare renders the message's id, in every language but ru and en.
     bool ids = true;
@@ -786,7 +801,7 @@ void everyRejectionIsAFact()
     // rejections a field makes.
     bool table = true, spoken = true;
     std::string misses;
-    const auto last = (std::size_t) session::Rejection::DeliveryFormat;
+    const auto last = (std::size_t) session::Rejection::PlanPending;
     for (std::size_t code = 1; code <= last; ++code)
     {
         const auto r = (session::Rejection) code;
@@ -825,7 +840,7 @@ void everyRejectionIsAFact()
         inRange = inRange && ((std::size_t) shape.id < 100 || ((std::size_t) shape.id > 100 && (std::size_t) shape.id <= 100 + last)
             || ((std::size_t) shape.id >= 200 && (std::size_t) shape.id <= 207)
             || ((std::size_t) shape.id >= 300 && (std::size_t) shape.id <= 305)
-            || ((std::size_t) shape.id >= 400 && (std::size_t) shape.id <= 418));
+            || ((std::size_t) shape.id >= 400 && (std::size_t) shape.id <= 436));
     ok (inRange, "rejections, phases and session errors occupy only their own declared ranges");
 
     // THE FIELDS, held against the state machine's own walk of them (src/Devices.h).
@@ -1055,6 +1070,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
                           : kind == text::ArgKind::Count ? Arg::count (21)
                           : kind == text::ArgKind::Midi ? Arg::midi (40)
                           : kind == text::ArgKind::Term ? Arg::term (shape.args[i].group == "field" ? text::Term::FieldHpfSlope
+                                                                     : shape.args[i].group == "device" ? text::Term::DeviceGlue
                                                                                                    : text::Term::PlatformDesktop)
                           : Arg::text ("take 3.wav");
             }
@@ -1074,7 +1090,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0xf41f82e8c27955b5ull;   // with RejectedDeliveryFormat (134): {bits} {rate}
+    constexpr std::uint64_t kPinned = 0xe23df8564b622cc9ull;   // …, the observations (52–80, 419–436), the target-change warning (81), what departs from vinyl (82–87) and the clipper's cut off the peaks
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");

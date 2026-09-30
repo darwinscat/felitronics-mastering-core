@@ -63,8 +63,8 @@ tiltDb.ru = "Баланс тона"
 tiltDb.en = "Tone balance"
 limiterNeedles.ru = "Резать иглы"
 limiterNeedles.en = "Cut needles"
-limiterNeedlesDb.ru = "Порог игл"
-limiterNeedlesDb.en = "Needle threshold"
+limiterNeedlesDb.ru = "Срез с пиков"
+limiterNeedlesDb.en = "Cut off the peaks"
 lowDb.ru = "Низ"
 lowDb.en = "Low"
 audio.ru = "Звук"
@@ -111,8 +111,8 @@ en = "Loudest bass note: {note}"
 
 # Phase 1's warning of a wide bass: its side share. The owner's wording.
 [messages.wideBass]
-ru = "бас широкий (бока {side}) — моно-бас соберёт его, на наушниках станет уже; если ширина нужна — выключите моно-бас в Настройках"
-en = "the bass is wide (side {side}) — mono-bass will gather it, and on headphones it will sound narrower; if you need the width, switch mono-bass off in Settings"
+ru = "бас широкий (бока {side}) — моно-бас соберёт его, если включён; на наушниках станет уже"
+en = "the bass is wide (side {side}) — mono bass will gather it if it is on; on headphones it will sound narrower"
 
 # A file above the highest rate this platform takes. The web version sends it to the desktop version.
 [messages.rateAboveLimit]
@@ -231,6 +231,278 @@ en = "The required loudness and true-peak measurements are unavailable for maste
 [messages.rejectedDeliveryFormat]
 ru = "Формат доставки задаёт цель: её мастер записывается только в {bits}-битном PCM с частотой {rate}."
 en = "The target sets the delivery format: its master is written only as {bits}-bit PCM at {rate}."
+
+[messages.rejectedPlanPending]
+ru = "Панель приборов открыта, а замеры, от которых зависят её числа, ещё идут: мастер станет доступен, когда они закончатся."
+en = "The device panel is open and the measurements its numbers depend on are still running: the master becomes available once they end."
+
+[messages.hpfNote]
+ru = "ФВЧ {cutoff}: по нижней ноте {note} ({hz}), на ней срезается {loss}."
+en = "HPF {cutoff}: from the lowest note {note} ({hz}), which loses {loss}."
+
+[messages.hpfFloor]
+ru = "ФВЧ {cutoff}: пол цели срезает нижнюю ноту {note} ({hz}) на {loss} — больше, чем позволила бы сама нота."
+en = "HPF {cutoff}: the target's floor takes {loss} of the lowest note {note} ({hz}) — more than the note alone would allow."
+
+[messages.hpfBelowFloor]
+ru = "ФВЧ {cutoff}: нижняя нота {note} ({hz}) ниже пола — подрезана на {loss}. Опустить срез можно ручкой ФВЧ."
+en = "HPF {cutoff}: the lowest note {note} ({hz}) is below the floor — it loses {loss}. The HPF knob can take the cutoff lower."
+
+[messages.hpfTop]
+ru = "Срез ФВЧ упёрся в {cutoff}: нижняя нота {note} ({hz}) выше."
+en = "The HPF cutoff stopped at {cutoff}: the lowest note {note} ({hz}) is higher."
+
+[messages.hpfUnsure]
+ru = "ФВЧ {cutoff}: самая нижняя полоса определена неуверенно — стоит пол цели."
+en = "HPF {cutoff}: the lowest band is not certain — the target's floor applies."
+
+[messages.hpfShort]
+ru = "ФВЧ {cutoff}: файл короче {seconds} — нижнюю ноту не ищем, стоит пол цели."
+en = "HPF {cutoff}: the file is shorter than {seconds}, so the lowest note is not sought — the target's floor applies."
+
+[messages.hpfQuiet]
+ru = "ФВЧ {cutoff}: вход слишком тихий, чтобы искать нижнюю ноту, — стоит пол цели."
+en = "HPF {cutoff}: the input is too quiet to look for the lowest note — the target's floor applies."
+
+[messages.hpfUnmeasured]
+ru = "ФВЧ {cutoff}: низ не измерен — стоит пол цели."
+en = "HPF {cutoff}: the low end was not measured — the target's floor applies."
+
+[messages.monoBassPartial]
+ru = "Бас частично в противофазе: моно-бас отнимет {loss} низа."
+en = "The bass is partly in opposite polarity: mono bass will take {loss} of the low end."
+
+[messages.monoBassAntiPhase]
+ru = "Бас в противофазе — моно-бас съест {loss} низа; проверьте полярность канала."
+en = "The bass is in opposite polarity — mono bass would take {loss} of the low end; please check the polarity of a channel."
+
+[messages.monoBassUnmeasured]
+ru = "Моно-бас не включён: баса слишком мало, чтобы измерить противофазу."
+en = "Mono bass is off: there is too little bass to measure its polarity."
+
+[messages.hpfByHand]
+ru = "ФВЧ {cutoff}: задан вручную."
+en = "HPF {cutoff}: set by hand."
+
+[messages.hpfKept]
+ru = "ФВЧ {cutoff}: значение из файла проекта."
+en = "HPF {cutoff}: the value comes from the project file."
+
+[messages.hpfOff]
+ru = "ФВЧ выключен."
+en = "HPF is off."
+
+[messages.monoBassByHand]
+ru = "Моно-бас ниже {crossover}: задан вручную."
+en = "Mono bass below {crossover}: set by hand."
+
+[messages.monoBassKept]
+ru = "Моно-бас ниже {crossover}: значение из файла проекта."
+en = "Mono bass below {crossover}: the value comes from the project file."
+
+[messages.monoBassPartWeighed]
+ru = "Противофаза баса взвешена по первым {covered} записи из {whole}."
+en = "The bass polarity was weighed over the first {covered} of the recording's {whole}."
+
+# The limiter's line: its ceiling and what the peak clipper inside it does with the needles, as it sounds. {cut} is the
+# most the clipper takes off the peaks; the limiter takes the rest.
+[messages.limiterShort]
+ru = "Лимитер: потолок {ceiling}. Иглы короткие (90 % не длиннее {p90}, бас в дозе {bass}, PLR {plr}) — клиппер срезает с пиков до {cut}, остальное берёт лимитер."
+en = "Limiter: ceiling {ceiling}. The needles are short (90 % no longer than {p90}, bass share of the dose {bass}, PLR {plr}) — the peak clipper cuts up to {cut} off the peaks, the limiter takes the rest."
+
+[messages.limiterBetween]
+ru = "Лимитер: потолок {ceiling}. Иглы средние (90 % не длиннее {p90}, бас в дозе {bass}, PLR {plr}) — клиппер осторожно срезает с пиков до {cut}, остальное берёт лимитер."
+en = "Limiter: ceiling {ceiling}. The needles are neither short nor long (90 % no longer than {p90}, bass share of the dose {bass}, PLR {plr}) — the peak clipper cuts with care, up to {cut} off the peaks, the limiter takes the rest."
+
+[messages.limiterManual]
+ru = "Лимитер: потолок {ceiling}. Иглы срезаются по ручной настройке — с пиков до {cut}, остальное берёт лимитер."
+en = "Limiter: ceiling {ceiling}. The needles are cut by a manual setting — up to {cut} off the peaks, the limiter takes the rest."
+
+[messages.limiterNeedlesOff]
+ru = "Лимитер: потолок {ceiling}. Клиппер игл выключен."
+en = "Limiter: ceiling {ceiling}. The peak clipper is off."
+
+[messages.limiterLittleNeed]
+ru = "Лимитер: потолок {ceiling}. Иглы не режутся: нужда {need} — не больше {little}."
+en = "Limiter: ceiling {ceiling}. The needles are not cut: the need is {need}, no more than {little}."
+
+[messages.limiterNoExcursions]
+ru = "Лимитер: потолок {ceiling}. Иглы не режутся: пиков выше потолка нет."
+en = "Limiter: ceiling {ceiling}. The needles are not cut: no peak stands above the ceiling."
+
+[messages.limiterUnmeasured]
+ru = "Лимитер: потолок {ceiling}. Иглы не режутся: они не измерены."
+en = "Limiter: ceiling {ceiling}. The needles are not cut: they were not measured."
+
+[messages.limiterClipped]
+ru = "Лимитер: потолок {ceiling}. Иглы не режутся: источник клипован (клипов в минуту: {rate}) — клиппер добавил бы искажений."
+en = "Limiter: ceiling {ceiling}. The needles are not cut: the source is clipped (clips per minute: {rate}) — a clipper would add distortion."
+
+[messages.limiterLowPlr]
+ru = "Лимитер: потолок {ceiling}. Иглы не режутся: PLR входа {plr} — меньше {bound}, материал уже ограничен."
+en = "Limiter: ceiling {ceiling}. The needles are not cut: the input's PLR is {plr}, under {bound} — the material is already limited."
+
+[messages.limiterBass]
+ru = "Лимитер: потолок {ceiling}. Иглы не режутся: в выбросах много баса (доля в дозе {bass})."
+en = "Limiter: ceiling {ceiling}. The needles are not cut: the excursions carry much bass ({bass} of the dose)."
+
+[messages.limiterLong]
+ru = "Лимитер: потолок {ceiling}. Иглы не режутся: выбросы длинные (90 % не длиннее {p90})."
+en = "Limiter: ceiling {ceiling}. The needles are not cut: the excursions are long (90 % no longer than {p90})."
+
+[messages.limiterNoClipper]
+ru = "Лимитер: потолок {ceiling}. Иглы не режутся: у этой цели клиппера игл нет."
+en = "Limiter: ceiling {ceiling}. The needles are not cut: this target has no peak clipper."
+
+[messages.limiterQuiet]
+ru = "Лимитер: потолок {ceiling}. Иглы не режутся: вход слишком тихий для замера."
+en = "Limiter: ceiling {ceiling}. The needles are not cut: the input is too quiet to measure."
+
+[messages.limiterPending]
+ru = "Лимитер: потолок {ceiling}. Иглы ещё измеряются."
+en = "Limiter: ceiling {ceiling}. The needles are still being measured."
+
+[messages.limiterPlain]
+ru = "Лимитер: потолок {ceiling}."
+en = "Limiter: ceiling {ceiling}."
+
+# Beside a manual cut that cuts where the machine would not: the machine's reason. The numbers are the finding's.
+[messages.needlesAgainstMachine]
+select = "why"
+ru.shell = "Машина бы не резала: клиппер игл здесь недоступен."
+ru.target = "Машина бы не резала: у этой цели клиппера игл нет."
+ru.quiet = "Машина бы не резала: вход слишком тихий для замера."
+ru.noReadings = "Машина бы не резала: громкость и пик входа не измерены."
+ru.littleNeed = "Машина бы не резала: нужда невелика."
+ru.unmeasured = "Машина бы не резала: иглы не измерены."
+ru.noExcursions = "Машина бы не резала: пиков выше потолка нет."
+ru.clipped = "Машина бы не резала: источник клипован — клиппер добавил бы искажений."
+ru.lowPlr = "Машина бы не резала: материал уже ограничен (PLR входа мал)."
+ru.bass = "Машина бы не резала: в выбросах много баса."
+ru.long = "Машина бы не резала: выбросы длинные."
+en.shell = "The machine would not cut: the peak clipper is not available here."
+en.target = "The machine would not cut: this target has no peak clipper."
+en.quiet = "The machine would not cut: the input is too quiet to measure."
+en.noReadings = "The machine would not cut: the input's loudness and peak were not measured."
+en.littleNeed = "The machine would not cut: the need is small."
+en.unmeasured = "The machine would not cut: the needles were not measured."
+en.noExcursions = "The machine would not cut: no peak stands above the ceiling."
+en.clipped = "The machine would not cut: the source is clipped — a clipper would add distortion."
+en.lowPlr = "The machine would not cut: the material is already limited (the input's PLR is small)."
+en.bass = "The machine would not cut: the excursions carry much bass."
+en.long = "The machine would not cut: the excursions are long."
+
+# The medium's rules on a target cut to vinyl: a person may break them, and is told what the cutting room may do.
+[messages.vinylCeiling]
+ru = "Для винила потолок обычно не выше {medium}: резчик может вернуть лак. Сейчас потолок {ceiling}."
+en = "For vinyl the ceiling usually stands no higher than {medium}: the cutting engineer may send the lacquer back. The ceiling is now {ceiling}."
+
+[messages.vinylNeedles]
+ru = "Для винила иглы обычно не режут: резчик может вернуть лак."
+en = "For vinyl the needles are usually not cut: the cutting engineer may send the lacquer back."
+
+[messages.vinylTop]
+ru = "Верх выше {hz} на виниле обычно режет резчик — учтите."
+en = "On vinyl the cutting engineer usually rolls off the top above {hz} — keep it in mind."
+
+# The dither, by the delivery's format alone.
+[messages.ditherOn]
+ru = "Дизер включён: доставка {bits} бит."
+en = "Dither is on: {bits}-bit delivery."
+
+[messages.ditherOffByHand]
+ru = "Дизер выключен вручную: доставка {bits} бит округляется без шума."
+en = "Dither is switched off by hand: the {bits}-bit delivery is rounded without noise."
+
+[messages.ditherOff]
+ru = "Дизер выключен: доставка {bits} бит округляется без шума."
+en = "Dither is off: the {bits}-bit delivery is rounded without noise."
+
+[messages.ditherNotApplied]
+ru = "Дизер не применяется: доставка {bits} бит, а он нужен только до {upTo} бит."
+en = "Dither does not apply: the delivery is {bits}-bit, and it is needed only up to {upTo} bits."
+
+[messages.ditherKept]
+ru = "Дизер не применяется при доставке {bits} бит (он нужен только до {upTo} бит); ручная галка сохранена, но не действует."
+en = "Dither does not apply to a {bits}-bit delivery (it is needed only up to {upTo} bits); the tick set by hand is kept and has no effect."
+
+# A master for vinyl: what it is ready for, what the file shows and what only the cutting room can check.
+[messages.masterVinylReady]
+ru = "Мастер готов к нарезке: кардинальных правок (моно-бас, инфранизы, пики) не потребует. RIAA и уровень по длине стороны — за резчиком."
+en = "The master is ready for cutting: it will need no cardinal corrections (mono bass, infra-low, peaks). RIAA and the level for the side's length are the cutting engineer's."
+
+[messages.masterVinylDeparts]
+ru = "Готовность к нарезке не подтверждена: настройки отступают от правил винила (моно-бас, ФВЧ, потолок или иглы)."
+en = "Readiness for cutting is not confirmed: the settings depart from the rules of vinyl (mono bass, the high-pass, the ceiling or the needles)."
+
+[messages.masterVinylChecked]
+ru = "Проверено по файлу: бас в моно ниже {crossover}, инфраниз срезан от {cutoff}, True Peak {peak} — не выше {ceiling}."
+en = "Checked on the file: the bass is mono below {crossover}, the infra-low is cut from {cutoff}, True Peak {peak} is no higher than {ceiling}."
+
+[messages.masterVinylUncheckable]
+ru = "По файлу не проверяется: длина стороны, свистящие на резце, искажения к центру пластинки. Это не сертификат."
+en = "A file cannot show: the side's length, sibilance at the cutter, distortion towards the centre of the disc. This is not a certificate."
+
+[messages.masterVinylNoFold]
+ru = "Моно-бас выключен, а для винила бас ниже {medium} сводят в моно."
+en = "Mono bass is off, while for vinyl the bass below {medium} is folded to mono."
+
+[messages.masterVinylFoldDeparts]
+ru = "Бас сведён в моно ниже {crossover} при ширине {width}; для винила — ниже {medium} при ширине не больше {mediumWidth}."
+en = "The bass is folded to mono below {crossover} at a width of {width}; for vinyl it is below {medium} at a width of no more than {mediumWidth}."
+
+[messages.masterVinylNoHighPass]
+ru = "ФВЧ выключен, а для винила инфраниз срезают от {medium} с крутизной не меньше {mediumSlope} дБ/окт."
+en = "The high-pass is off, while for vinyl the infra-low is cut from {medium} at no less than {mediumSlope} dB/oct."
+
+[messages.masterVinylHighPassDeparts]
+ru = "ФВЧ срезает от {cutoff} с крутизной {slope} дБ/окт; для винила — от {medium} и не положе {mediumSlope} дБ/окт."
+en = "The high-pass cuts from {cutoff} at {slope} dB/oct; for vinyl it cuts from {medium} and no gentler than {mediumSlope} dB/oct."
+
+[messages.masterVinylCeilingDeparts]
+ru = "Потолок {ceiling}, а для винила — не выше {medium}."
+en = "The ceiling is {ceiling}, while for vinyl it stands no higher than {medium}."
+
+[messages.masterVinylNeedlesDeparts]
+ru = "Клиппер срезает с пиков до {cut}, а для винила иглы не режут."
+en = "The peak clipper cuts up to {cut} off the peaks, while for vinyl the needles are not cut."
+
+[messages.masterQuietInput]
+ru = "Вход очень тихий ({lufs}): подняли на {gain}, шум поднялся вместе с музыкой. Кроме ФВЧ на полу цели и дизера формата, машина приборов не ставила — на таком уровне замер ненадёжен; включить их можно вручную."
+en = "The input is very quiet ({lufs}): it was raised by {gain}, and the noise rose with the music. Apart from the high-pass at the target's floor and the format's dither the machine placed no device — at this level a measurement is unreliable; they can be switched on by hand."
+
+[messages.targetChangeResetsEdits]
+plural = "count"
+ru.one = "Ручные правки приборов ({count}) будут сброшены."
+ru.few = "Ручные правки приборов ({count}) будут сброшены."
+ru.many = "Ручные правки приборов ({count}) будут сброшены."
+ru.other = "Ручные правки приборов ({count}) будут сброшены."
+en.one = "The manual device edit ({count}) will be reset."
+en.other = "Manual device edits ({count}) will be reset."
+
+[messages.glueUnavailable]
+ru = "Клей недоступен: громкие места песни не измерены (нет P95 кратковременной громкости). Мастер будет сделан без клея; значение «до {upTo}» сохранено."
+en = "Glue is unavailable: the song's loud places were not measured (no short-term loudness P95). The master will be made without glue; the value “up to {upTo}” is kept."
+
+[messages.glueTempoFallback]
+ru = "Темп не измерен уверенно — восстановление клея рассчитано на {bpm}."
+en = "The tempo was not measured with confidence — the glue release is set for {bpm}."
+
+[messages.glueReleaseHeld]
+ru = "Восстановление клея — {release}: темп просил {asked}, это за пределом прибора."
+en = "Glue release is {release}: the tempo asked for {asked}, which is outside the device's range."
+
+[messages.masterGlue]
+ru = "Клей снял {usual} на громких местах, самое большее — {largest}."
+en = "Glue took {usual} off the loud places, {largest} at most."
+
+[messages.masterSaturation]
+ru = "Сатурация срезала пики до {largest} (обычно {usual})."
+en = "Saturation cut peaks by up to {largest} (usually {usual})."
+
+[messages.planWaiting]
+ru = "Мастер ждёт замер «{analyzer}» для прибора «{device}»: {progress}"
+en = "The master is waiting for the {analyzer} measurement for {device}: {progress}"
 
 [messages.masterReady]
 ru = "Мастер готов."
@@ -375,8 +647,8 @@ en.one = "The machine would decide differently today in {count} place. The saved
 en.other = "The machine would decide differently today in {count} places. The saved machine layer is retained."
 
 [messages.defaultsConverted]
-ru = "Проект с версией умолчаний {version} сконвертирован. Записанные числа сохранены; для отсутствующих полей использованы текущие умолчания."
-en = "The project from defaults version {version} was converted. Written numbers were kept; omitted fields use the current defaults."
+ru = "Проект с версией умолчаний {version} сконвертирован: значения, заданные вручную, и числа цели сохранены; машинные значения выставлены заново по текущим правилам."
+en = "The project from defaults version {version} was converted: the values set by hand and the target's numbers were kept; the machine's values were placed again by the current rules."
 
 [messages.rejectedNewerDefaults]
 ru = "Проект использует более новую версию умолчаний, которой нет в этом ядре."
@@ -552,6 +824,79 @@ en = "Unused low bits in the source: {bits}."
 ru = "В низких частотах обнаружена противоположная полярность каналов."
 en = "Opposite channel polarity was detected in the low frequencies."
 
+# The observations: what the measurements found in the file — facts with their numbers, never a verdict of taste.
+[messages.sourceClips]
+ru = "Клипов в исходной записи: {count}."
+en = "Clips in the source: {count}."
+
+[messages.sourceClipsAt1]
+ru = "Клипов в исходной записи: {count} — на {first}; похоже на склейку."
+en = "Clips in the source: {count} — at {first}; it looks like an edit."
+
+[messages.sourceClipsAt2]
+ru = "Клипов в исходной записи: {count} — на {first} и {second}; похоже на склейку."
+en = "Clips in the source: {count} — at {first} and {second}; it looks like an edit."
+
+[messages.sourceClipsAt3]
+ru = "Клипов в исходной записи: {count}; первые — на {first}, {second} и {third}."
+en = "Clips in the source: {count}; the first at {first}, {second} and {third}."
+
+[messages.sourceClipped]
+ru = "Исходная запись клипована: клипов {count}, в минуту — {rate}. Клиппер игл добавил бы искажений; это лечится в сведении."
+en = "The source is clipped: {count} clips, {rate} a minute. A peak clipper would add distortion; this is cured in the mix."
+
+[messages.sourceDualMono]
+ru = "Каналы стерео-файла одинаковы: это моно."
+en = "The channels of the stereo file are equal: it is mono."
+
+[messages.sourceEdgeSilence]
+ru = "Тишина по краям: {leading} в начале, {trailing} в конце."
+en = "Silence at the edges: {leading} at the start, {trailing} at the end."
+
+[messages.sourceShort]
+ru = "Запись короткая ({seconds}): у записей короче {limit} нижняя нота не ищется."
+en = "The recording is short ({seconds}): under {limit} the lowest note is not sought."
+
+[messages.sourceLimited]
+ru = "Материал уже ограничен: PLR {plr} — меньше {bound}."
+en = "The material is already limited: PLR {plr}, under {bound}."
+
+[messages.sourceLimitedClipped]
+ru = "Материал уже ограничен: исходная запись клипована (PLR {plr})."
+en = "The material is already limited: the source is clipped (PLR {plr})."
+
+[messages.sourceWall]
+ru = "Спектр обрывается на {cutoff} (падение {drop}) — похоже на след сжатия с потерями."
+en = "The spectrum ends at {cutoff} (a drop of {drop}) — it looks like the trace of lossy compression."
+
+[messages.sourceLowestBand]
+ru = "Самая нижняя занятая полоса: {note} ({hz})."
+en = "The lowest occupied band: {note} ({hz})."
+
+[messages.sourceLowestBandUnsure]
+ru = "Самая нижняя занятая полоса: {note} ({hz}), неуверенно."
+en = "The lowest occupied band: {note} ({hz}), unsure."
+
+[messages.sourceInfraLow]
+ru = "Инфраниз: {share} энергии — ниже {hz}."
+en = "Infra-low: {share} of the energy lies below {hz}."
+
+[messages.sourceSibilance]
+ru = "Свистящие: всплески в их полосе на {excess} выше своего фона, в минуту — {rate}."
+en = "Sibilance: the bursts in its band stand {excess} above their own baseline, {rate} a minute."
+
+[messages.sourceSibilanceAt]
+ru = "Свистящие: всплески в их полосе на {excess} выше своего фона, в минуту — {rate}; самые громкие — на {first}, {second} и {third}."
+en = "Sibilance: the bursts in its band stand {excess} above their own baseline, {rate} a minute; the loudest at {first}, {second} and {third}."
+
+[messages.sourceHum]
+ru = "Гул: линия {hz}, на {prominence} выше фона."
+en = "Hum: a line at {hz}, {prominence} above the background."
+
+[messages.sourceHumWandered]
+ru = "Возможный гул: линия около {hz} (на {prominence} выше фона) не держит частоту."
+en = "Possible hum: a line near {hz} ({prominence} above the background) does not hold its frequency."
+
 [terms.analyzer.waveform]
 ru = "Данные волны"
 en = "Waveform data"
@@ -559,3 +904,52 @@ en = "Waveform data"
 [terms.analyzer.tempo]
 ru = "Темп"
 en = "Tempo"
+
+[terms.analyzer.needles]
+ru = "Иглы"
+en = "Needles"
+
+# The devices, by the labels of their cards.
+[terms.device]
+hpf.ru = "ФВЧ"
+hpf.en = "HPF"
+monoBass.ru = "Моно-бас"
+monoBass.en = "Mono bass"
+glue.ru = "Клей"
+glue.en = "Glue"
+saturation.ru = "Сатурация"
+saturation.en = "Saturation"
+tilt.ru = "Наклон"
+tilt.en = "Tilt"
+limiter.ru = "Лимитер"
+limiter.en = "Limiter"
+dither.ru = "Дизер"
+dither.en = "Dither"
+low.ru = "Низ"
+low.en = "Low"
+
+# Why the machine's peak clipper does not cut — the words of the reasons; the warning beside a manual cut is whole
+# sentences of its own (messages.needlesAgainstMachine).
+[terms.needlesWhy]
+shell.ru = "недоступен"
+shell.en = "not available"
+target.ru = "цель без клиппера игл"
+target.en = "target without a peak clipper"
+quiet.ru = "тихий вход"
+quiet.en = "quiet input"
+noReadings.ru = "вход не измерен"
+noReadings.en = "input not measured"
+littleNeed.ru = "малая нужда"
+littleNeed.en = "little need"
+unmeasured.ru = "иглы не измерены"
+unmeasured.en = "needles not measured"
+noExcursions.ru = "пиков выше потолка нет"
+noExcursions.en = "no peaks above the ceiling"
+clipped.ru = "источник клипован"
+clipped.en = "clipped source"
+lowPlr.ru = "материал уже ограничен"
+lowPlr.en = "already limited"
+bass.ru = "много баса в выбросах"
+bass.en = "bassy excursions"
+long.ru = "длинные выбросы"
+long.en = "long excursions"

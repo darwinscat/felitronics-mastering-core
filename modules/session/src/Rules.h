@@ -36,9 +36,11 @@ struct TargetRow
     std::string_view key;
     Decimal lufs {}, tp {}, monoBass {}, hpfFloor {};
     std::int32_t hpfSlope = 0;                 // hpfSlopeDbPerOct
+    Decimal noteLossDb {};                     // what the high-pass may take at the lowest note, dB
     std::int32_t bitDepth = 0;
     std::int32_t sampleRate = 0;               // delivery rate, Hz; 0 keeps the source's
     bool noClipper = false;
+    bool vinyl = false;                        // the master goes to a cutting lathe: its tp is the medium's ceiling
     std::optional<Decimal> lowDb;
     std::optional<Decimal> glue;               // [glue] byTarget, on the knob, when it names this target
 };
@@ -50,7 +52,6 @@ struct Rules
     std::uint16_t defaultRow = 0;              // `default`
     Knob lufs {}, tp {};                       // [edit] lufs, tp
     Knob hpfFq {};                             // [hpf] hzMin…hzMax, slider hints
-    Decimal hpfDefault {};                     // [hpf] hzDefault
     Knob monoBassFq {}, monoBassWidth {};      // [monoBass] frequencyRange / frequencyStep, lowWidthRange / lowWidthStep
     Decimal monoBassWidthDefault {};           // [monoBass] lowWidth
     Knob glue {};                              // [glue] knobMinDb…knobMaxDb by knobStepDb: "up to N dB"
@@ -59,7 +60,7 @@ struct Rules
     Decimal driveDefault {}, mixDefault {}, outputDefault {};   // [saturation] driveDb, mix, outputDb
     Knob tilt {}, low {};                 // [tilt] hard / step, [low] hard / step
     Knob needles {};                           // [limiter.peakClipper] manualMinDb…manualMaxDb by manualStepDb
-    Decimal needlesDefault {};                 // [limiter.peakClipper] betweenOverDb: where the manual threshold starts
+    Decimal needlesDefault {};                 // [limiter.peakClipper] betweenCutDb: where the manual cut starts
     bool eq = false, monoBass = false, compressor = false, clipper = false, dither = false;   // [stages]
     std::int32_t ditherUpToBits = 0;           // [dither] onUpToBits
 
@@ -77,12 +78,5 @@ struct Rules
 // The rules of the config compiled into the library (src/Config.cpp).
 [[nodiscard]] Rules rules() noexcept;
 
-// Compiled defaults retained for project import. The previous slot stays empty until a second version ships.
-struct DefaultsTables
-{
-    Rules current;
-    std::optional<Rules> previous;
-};
-[[nodiscard]] DefaultsTables carriedDefaults() noexcept;
 
 } // namespace felitronics::session::detail

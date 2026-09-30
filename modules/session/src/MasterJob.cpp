@@ -3,11 +3,14 @@
 
 #include "BuildGuards.h"
 #include "MasterJob.h"
+#include "Chain.h"
 #include "MeasurementPlan.h"
 #include "Cost.h"
+#include "Limiter.h"
 #include <felitronics/analysis/BandCrestResult.h>
 #include "Rules.h"
 #include <felitronics/session/Session.h>
+#include <felitronics/core/DetMath.h>
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -142,7 +145,7 @@ std::uint64_t MasterJob::fingerprint (const command::MasterReady& ready) noexcep
     return h.value;
 }
 
-MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noexcept
+MasterPlan MasterJob::plan (const Session& s, const command::Master& input, const Project& project) noexcept
 {
     MasterPlan result;
     if (input.source != 0 && input.source != s.source_.hash) return result;
@@ -155,7 +158,7 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
     for (const auto& value : s.measurementResults_[std::size_t (Analyzer::Loudness)].numbers)
         if (value.name == "integratedLufs" && value.value) sourceLufs = *value.value;
     const auto ruleset = rules();
-    const auto target = ruleset.row (s.project_.target);
+    const auto target = ruleset.row (project.target);
     // THE DELIVERY FORMAT IS THE TARGET'S (PLAN: rate, bit depth and dither come from the target). Its rate — the
     // source's when the target keeps it (sampleRate 0) — and its depth: 0 names each, the same value restates it,
     // and any other value is refused before anything is priced or allocated.
@@ -164,8 +167,8 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
     if ((input.ready.deliveryBits != 0 && input.ready.deliveryBits != deliveryBits)
         || (input.ready.deliveryRateHz != 0 && input.ready.deliveryRateHz != deliveryRate))
     { result.rejection = Rejection::DeliveryFormat; return result; }
-    const double targetLufs = s.project_.targetEdit.lufs.value_or (target.lufs.toDouble());
-    const double targetTp = s.project_.targetEdit.tp.value_or (target.tp.toDouble());
+    const double targetLufs = project.targetEdit.lufs.value_or (target.lufs.toDouble());
+    const double targetTp = project.targetEdit.tp.value_or (target.tp.toDouble());
     const auto engine = ruleset.engine;
     const double reference = number (engine.find ("input").find ("referenceLufs"));
     const double tolerance = number (engine.find ("landing").find ("toleranceLu"));
@@ -180,6 +183,43 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
     if (! std::isfinite (normalization) || std::fabs (normalization) > 60.0)
     { result.rejection = Rejection::MandatoryUnavailable; return result; }
     result.ready = input.ready;
+    // A master the session decides: the whole plan as the chain gets it, from the project's devices.
+    if (input.ready.version == 0)
+    {
+        const auto inputs = s.planInputs (project);
+        writeChain (inputs, project.devices, result.ready);
+        result.ready.deliveryRateHz = input.ready.deliveryRateHz;
+        result.ready.deliveryBits = input.ready.deliveryBits;
+        // What the chain comes to for the target's medium, and the input's quietness: the report's, said of the chain
+        // as it is written — the high-pass is the EQ stage's first band, the fold the mono-bass stage.
+        const auto& t = result.ready.topology;
+        const auto& p = result.ready.params;
+        const auto& hpf = p.eqBands[0];
+        MasterMedium medium;
+        medium.vinyl = target.vinyl;
+        medium.crossoverHz = t.monoBass ? double (p.monoBass.frequencyHz) : 0.0;
+        medium.cutoffHz = t.eq && hpf.on ? hpf.lanes[0].freq : 0.0;
+        medium.lowWidth = t.monoBass ? double (p.monoBass.lowWidth) : 0.0;
+        medium.slopeDbPerOct = t.eq && hpf.on ? hpf.lanes[0].slope : 0;
+        medium.ceilingDbTp = targetTp;
+        medium.overDb = p.limiter.peakClip ? limiterFinding (inputs, project.devices).overDb : 0.0;   // the amount off the peaks
+        medium.ruleCrossoverHz = target.monoBass.toDouble();
+        medium.ruleLowWidth = ruleset.monoBassWidthDefault.toDouble();
+        medium.ruleCutoffHz = target.hpfFloor.toDouble();
+        medium.ruleSlopeDbPerOct = target.hpfSlope;
+        medium.ruleCeilingDbTp = target.tp.toDouble();
+        const bool folded = s.source_.channels == 1
+            || (t.monoBass && medium.crossoverHz >= medium.ruleCrossoverHz && medium.lowWidth <= medium.ruleLowWidth);
+        const bool cut = t.eq && hpf.on && medium.cutoffHz >= medium.ruleCutoffHz && medium.slopeDbPerOct >= medium.ruleSlopeDbPerOct;
+        medium.foldDeparts = target.vinyl && ! folded;
+        medium.cutDeparts = target.vinyl && ! cut;
+        medium.ceilingDeparts = target.vinyl && ! (targetTp <= medium.ruleCeilingDbTp);
+        medium.needlesDeparts = target.vinyl && p.limiter.peakClip;
+        medium.ready = target.vinyl && ! medium.foldDeparts && ! medium.cutDeparts && ! medium.ceilingDeparts && ! medium.needlesDeparts;
+        medium.quietInput = quietInput (inputs);
+        medium.inputLufs = sourceLufs;
+        result.medium = medium;
+    }
     if (! validParams (result.ready.params))
     { result.rejection = Rejection::NotFinite; return result; }
     result.deliveryRate = deliveryRate;
@@ -212,6 +252,7 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
     result.costScratchCapacity = std::max ({ result.costCapacity,
         std::size_t (s.source_.frames / sourceHop + 1u), result.crestCapacity });
     result.waveformCapacity = std::size_t (std::min (result.frames, 2048)) * s.source_.channels;
+    result.axesCapacity = std::size_t (std::min (result.frames, 2048));
     result.request.targetLufs = targetLufs;
     result.sourceLufs = sourceLufs;
     result.request.maxTruePeakDbTp = targetTp;
@@ -255,9 +296,12 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
         rate, double (result.frames), costMeterStorage);
     const auto costMeterBytes = result.costMeterAdmitted ? costMeterStorage.bytes() : 0u;
     const std::uint64_t crestRows = std::uint64_t (result.crestCapacity) * 15u * sizeof (double);
-    const std::uint64_t costRows = std::uint64_t (result.costCapacity) * (sizeof (double) + sizeof (MasterSection))
+    // Two loudness series (short-term and momentary), the sections, the scratch, the waveform's buckets twice: the
+    // L/R rows a snapshot carries and the four axes a query answers.
+    const std::uint64_t axesRows = std::uint64_t (result.axesCapacity) * sizeof (analysis::WaveformColumn);
+    const std::uint64_t costRows = std::uint64_t (result.costCapacity) * (2u * sizeof (double) + sizeof (MasterSection))
         + std::uint64_t (result.costScratchCapacity) * sizeof (double)
-        + std::uint64_t (result.waveformCapacity) * sizeof (MasterWaveformBucket);
+        + std::uint64_t (result.waveformCapacity) * sizeof (MasterWaveformBucket) + axesRows;
     result.retainedRowBytes = 12u * sizeof (LandingPass)
         + 2u * std::uint64_t (result.traceBuckets) * sizeof (LandingTraceBucket) + crestRows + costRows;
     const auto impactChainBytes = convert ? mastering::MasteringChain::prepareBytes (
@@ -269,7 +313,7 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input) noex
     result.largestBlock = std::max ({ outputBytes, chainBytes, solverBytes, converterBytes,
         renderStorage.bytes(), search.workspaceBytes, std::uint64_t (sizeof (MasterJob)),
         crestRows, costMeterBytes, std::uint64_t (result.costCapacity) * sizeof (MasterSection),
-        std::uint64_t (result.waveformCapacity) * sizeof (MasterWaveformBucket),
+        std::uint64_t (result.waveformCapacity) * sizeof (MasterWaveformBucket), axesRows,
         std::uint64_t (result.costScratchCapacity) * sizeof (double),
         crest.ok ? crest.bytes() : 0u, impactChainBytes, impactScratchBytes });
     std::uint64_t total = 0;
@@ -299,6 +343,7 @@ bool MasterJob::begin (const Session& s, const MasterPlan& plan)
     session = &s;
     crestParams = plan.crestParams;
     ready = plan.ready;
+    medium = plan.medium;
     sourceLufs = plan.sourceLufs;
     targetLufs = plan.request.targetLufs;
     targetTp = plan.request.maxTruePeakDbTp;
@@ -315,6 +360,7 @@ bool MasterJob::begin (const Session& s, const MasterPlan& plan)
                             plan.ready.topology.internalBlock, plan.ready.topology.oversampleFactor)) return false;
     costMeterReady = plan.costMeterAdmitted
         && costMeter.prepareForSamples (double (deliveryRate), channels, double (frames));
+    costAxesReady = costAxes.prepare (deliveryRate, unsigned (channels));
     const bool convert = deliveryRate != s.source_.sampleRate;
     if (convert && ! converter.prepare (double (s.source_.sampleRate), double (deliveryRate), channels, block)) return false;
     if (convert) impactScratch.reset (new float[std::size_t (channels) * block]);
@@ -341,8 +387,11 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         const auto result = search.step (budget);
         if (result == StepResult::More) return result;
         const auto& solved = search.result();
+        clipCounted = result == StepResult::Done && ready.topology.clipper && ! ready.params.bypassClipper
+            && chain.clipperPeaks (number (rules().engine.find ("saturation").find ("cut").find ("loudShare")), clipPeaks);
         report.targetLufs = targetLufs;
         report.ceilingDbTp = targetTp;
+        report.medium = medium;
         report.targetMet = solved.status == mastering::MasteringSolveStatus::Solved;
         if (solved.measured.loudnessValid && std::isfinite (solved.measured.integratedLufs)
             && std::isfinite (solved.measured.truePeakDbTp))
@@ -567,10 +616,21 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
                     w.rms += x * x; ++w.finite;
                 }
             }
+            // The same bucket as the source's waveform has a column: closed on its last frame.
+            if (costAxesReady && rows.axes)
+            {
+                costAxes.add (planes[0][std::size_t (i)], channels == 2 ? double (planes[1][std::size_t (i)]) : 0.0);
+                if (frame + 1u == rows.waveform[std::size_t (bucket * std::uint64_t (channels))].toFrame && bucket < rows.axesCapacity)
+                { rows.axes[std::size_t (bucket)] = costAxes.take(); rows.axesRows = std::size_t (bucket) + 1u; }
+            }
         }
         costCursor += n;
         if (costMeterReady && costCursor % costHop == 0 && costStored < rows.costCapacity)
+        {
+            if (rows.costMomentary) rows.costMomentary[std::size_t (costStored)] = costMeter.momentaryLufs();
             rows.costSeries[std::size_t (costStored++)] = costMeter.shortTermLufs();
+            rows.loudnessRows = costStored; rows.loudnessHop = costHop;
+        }
         if (costCursor == std::uint64_t (frames)) stage = Stage::CostFinish;
         return StepResult::More;
     }
@@ -594,6 +654,26 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
             costResult.limiterActiveShare = { MeasurementReason::None,
                 solution.limiterActive.stats.activeFraction, solution.limiterActive.stats.frames };
         else costResult.limiterActiveShare.reason = MeasurementReason::Unsupported;
+        // WHAT THE GLUE AND THE SATURATION DID, each on its own stage (owner decisions 3.8, 3.9): the compressor's gain
+        // reduction — its P95 over the programme's 4 ms windows and its largest sample — and the soft clipper's cut of
+        // peaks against its own gain on a quiet sound. A stage out of the chain has no number.
+        const bool compressing = ready.topology.compressor && ! ready.params.bypassCompressor;
+        const auto& glue = solution.measured.compressor;
+        if (compressing && glue.valid && std::isfinite (glue.maxDb) && solution.grQuantile (mastering::GrStage::Compressor, .95, quantile))
+        {
+            costResult.glueP95Db = { MeasurementReason::None, quantile, glue.frames };
+            costResult.glueMaxDb = { MeasurementReason::None, glue.maxDb, glue.frames };
+        }
+        else costResult.glueP95Db.reason = costResult.glueMaxDb.reason = compressing ? MeasurementReason::Unsupported : MeasurementReason::NoSignal;
+        const bool shaping = ready.topology.clipper && ! ready.params.bypassClipper;
+        if (clipCounted && clipPeaks.quietGain > 0.0 && clipPeaks.loudLeastRatio > 0.0 && clipPeaks.loudUsualRatio > 0.0)
+        {
+            costResult.saturationCutMaxDb = { MeasurementReason::None,
+                20.0 * core::det::log10 (clipPeaks.quietGain / clipPeaks.loudLeastRatio), clipPeaks.loudQuanta };
+            costResult.saturationCutUsualDb = { MeasurementReason::None,
+                20.0 * core::det::log10 (clipPeaks.quietGain / clipPeaks.loudUsualRatio), clipPeaks.loudQuanta };
+        }
+        else costResult.saturationCutMaxDb.reason = costResult.saturationCutUsualDb.reason = shaping ? MeasurementReason::Unsupported : MeasurementReason::NoSignal;
         costPumpScan.start (solution.limiterTrace, deliveryRate, costRules);
         stage = Stage::CostWave;
         return StepResult::More;

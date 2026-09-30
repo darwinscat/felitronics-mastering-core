@@ -33,6 +33,8 @@
 #include <felitronics/toml/Embedded.h>
 
 #include "Devices.h"
+#include "Planner.h"
+#include "Needles.h"
 #include "Driver.h"
 #include "Grid.h"
 #include "Rules.h"
@@ -53,9 +55,11 @@
 
 using namespace felitronics::session;
 
+// A usable loudness and true peak whose loudness need on the default target is at most 3 dB: the needles are not
+// measured, so the plan ends with them.
 constexpr MeasurementValue kReadyMasterNumbers[] {
     { "integratedLufs", -18.0, MeasurementReason::None, 0 },
-    { "truePeakDb", -1.0, MeasurementReason::None, 0 }
+    { "truePeakDb", -3.0, MeasurementReason::None, 0 }
 };
 
 // The state suite's own seam into a session (Session.h names it a friend; the library defines none): a session whose
@@ -69,6 +73,22 @@ struct felitronics::session::detail::Inspector
         auto& result = s.measurementResults_[std::size_t (Analyzer::Loudness)];
         result.status = MeasurementStatus::Ready;
         result.numbers = kReadyMasterNumbers;
+        // What a finished loudness does (Driver::retain): the needles for the project's ceiling, and the plan again.
+        s.requestNeedles();
+        s.replan();
+    }
+    // The measurements a plan waits for end without a value: the tempo, and the needles job at its ceiling.
+    static void endWithoutValue (Session& s) noexcept
+    {
+        auto& tempo = s.measurementResults_[std::size_t (Analyzer::Tempo)];
+        tempo.status = MeasurementStatus::Unavailable; tempo.reason = MeasurementReason::NoSignal;
+        if (s.needlesJob_ != 0)
+        {
+            s.needlesJob_ = 0; s.needlesWork_.reset();
+            auto& needles = s.measurementResults_[std::size_t (Analyzer::Excursions)];
+            needles.status = MeasurementStatus::Unavailable; needles.reason = MeasurementReason::NoSignal;
+        }
+        s.replan();
     }
 };
 using felitronics::test::ok;
@@ -80,7 +100,8 @@ namespace config = felitronics::session::config;
 namespace
 {
 constexpr const char* kCommandNames[] = { "load", "setTarget", "editTarget", "editDevice", "revertEdits", "setManual",
-                                          "master", "cancel", "forget", "importProject", "continueMeasurement" };
+                                          "master", "cancel", "forget", "importProject", "continueMeasurement", "adoptMachine" };
+static_assert (std::size (kCommandNames) == kCommands, "a name for every command");
 constexpr const char* kColumnNames[] = { "Empty", "Loaded", "Measured1", "Measured2", "Mastering1", "Mastering2", "Stopped", "StoppedMeasured", "MasteringStopped",
     "Measured1Unplaced", "Measured2Unplaced", "Mastering1Unplaced", "Mastering2Unplaced", "StoppedMeasuredUnplaced", "MasteringStoppedUnplaced" };
 constexpr const char* kEventNames[] = { "Measured1", "Measured2", "Mastered" };
@@ -318,6 +339,7 @@ Request validRequest (Command c, const Situation& x, CommandId id)
         case Command::Forget:      return command::Forget { id, x.kept };
         case Command::ContinueMeasurement: return command::ContinueMeasurement { id };
         case Command::ImportProject: return command::ImportProject { id, x.projectText.view() };
+        case Command::AdoptMachine: return command::AdoptMachine { id };
     }
     return command::Master { id };
 }
@@ -360,8 +382,8 @@ void theDefaultsAtCreate()
         "and after a change of target while the first measurement runs");
     ok (Driver::measured1 (*s, s->measurementJob(), s->source().hash), "the first measurement ends");
     const auto& d = s->project().devices;
-    // allStreaming: 24 Hz floor under the 30 Hz default, 24 dB/oct, mono bass at 120 Hz, a peak clipper, 24-bit delivery.
-    ok (same (d.hpf.machine.fq, 30.0) && d.hpf.machine.slope == 24 && d.hpf.machine.on, "the high-pass: 30 Hz, 24 dB/oct, on");
+    // allStreaming: the 32 Hz floor (no low end measured here), 24 dB/oct, mono bass at 120 Hz, a peak clipper, 24-bit delivery.
+    ok (same (d.hpf.machine.fq, 32.0) && d.hpf.machine.slope == 24 && d.hpf.machine.on, "the high-pass: 32 Hz, 24 dB/oct, on");
     ok (same (d.monoBass.machine.fq, 120.0) && same (d.monoBass.machine.width, 0.0), "mono bass: 120 Hz, width 0");
     ok (d.limiter.machine.needles == Needles::Auto && same (d.limiter.machine.needlesDb, 1.5), "the needles: auto, 1.5 dB");
     ok (! d.dither.machine.on && ! d.low.machine.on, "no dither at 24 bits, no low shelf off vinyl");
@@ -387,11 +409,13 @@ void everyCellOfTheTable()
             const std::string what = std::string (kCommandNames[c]) + " in " + kColumnNames[col];
             if (cell == Rejection::None)
             {
+                // adoptMachine with no difference to take is accepted as an empty edit is: without a revision.
+                const std::uint64_t moves = Command (c) == Command::AdoptMachine && s.snapshot().view().machineDifferences.empty() ? 0 : 1;
                 const std::uint64_t before = s.revision();
                 const Answer a = s.apply (r);
-                ok (a.rejection == Rejection::None && a.revision == before + 1 && s.revision() == before + 1
+                ok (a.rejection == Rejection::None && a.revision == before + moves && s.revision() == before + moves
                         && a.command == 1000 + c,
-                    what + ": accepted, the revision moved by one, the id given back (" + nameOf (a.rejection) + ")");
+                    what + ": accepted, the revision moved by " + std::to_string (moves) + ", the id given back (" + nameOf (a.rejection) + ")");
             }
             else
                 rejectedWhole (s, r, cell, kNoField, what);
@@ -443,13 +467,15 @@ void placement()
     ok (sameMachine (s.project().devices, Devices {}), "the devices unplaced while the first measurement runs");
     ok (Driver::measured1 (s, s.measurementJob(), s.source().hash) && s.state() == State::Measured1, "the first measurement ends: Measured1");
     Devices expected {};
-    detail::placeMachine (detail::rules(), s.project().target, s.source().channels, expected);
+    detail::PlanInputs in;
+    in.rules = detail::rules(); in.row = s.project().target; in.channels = s.source().channels; in.sampleRate = s.source().sampleRate;
+    detail::placeMachine (in, expected);
     ok (sameMachine (expected, s.project().devices) && ! sameMachine (Devices {}, s.project().devices),
         "the devices placed then, on the config's numbers for the target and the source — and nothing placed them before");
     const Answer a = s.apply (editOf (hpfFq (36.0)));
     ok (a.rejection == Rejection::None && s.project().devices.hpf.hand.fq && same (*s.project().devices.hpf.hand.fq, 36.0),
         "after it an edit is taken, into a person's layer");
-    ok (same (s.project().devices.hpf.machine.fq, 30.0), "and the machine's layer is as it was");
+    ok (same (s.project().devices.hpf.machine.fq, 32.0), "and the machine's layer is as it was");
     ok (accepted (s, revertOf (fq)) && ! s.project().devices.hpf.hand.fq, "a revert takes it back");
 
     Situation y = situation (Column::Measured1, false);
@@ -463,7 +489,7 @@ void aChangeOfTarget()
     Situation x = situation (Column::Measured1);
     Session& s = *x.s;
     command::EditTarget lufs { 1, {} };
-    lufs.fields.lufs = -12.5;
+    lufs.fields.lufs = -13.5;             // a loudness need of 2.5 dB: no needles to measure, the plan stays Ready
     MonoBassFields<Touched> width {};
     width.width = 0.5;
     ok (accepted (s, lufs) && accepted (s, editOf (hpfFq (36.0))) && accepted (s, editOf (width)), "PRECONDITION: three edits");
@@ -491,6 +517,9 @@ void aChangeOfTarget()
         "and the machine dithers cd's 16 bits and glues it up to 2.6 dB");
     DitherFields<Touched> dither {};
     dither.on = false;
+    rejectedWhole (s, editOf (dither), Rejection::NotPlaced, kNoField,
+                   "cd's glue reads the tempo and its peak clipper the needles: the panel is read-only until they end");
+    detail::Inspector::endWithoutValue (s);
     ok (accepted (s, editOf (dither)), "the dither is offered at 16 bits");
     rejectedWhole (s, command::SetTarget { 5, "nowhere" }, Rejection::UnknownTarget, kNoField, "an unknown target");
     ok (accepted (s, command::SetTarget { 7, "allStreaming" }) && ! s.project().devices.dither.hand.on,
@@ -845,17 +874,22 @@ void memoryIsDeclared()
                                                   + std::to_string (spent.requests) + ")");
         }
     }
-    // The frozen v1 master command still reserves only a kept metadata slot.
+    // A master the session decides declares its whole job before anything is done — the kept slot, its retained rows
+    // and the render — as a master with a ready chain does.
     {
         Situation x = situation (Column::Measured1);
         Audio mono = makeAudio (1, 1000);
         const command::Load l = loadOf (mono, 1, "a name longer than any small-string buffer.wav");
         ok (x.s->check (l).bytes > 1000 * sizeof (float) + l.meta.name.size(), "a load declares samples, name and the complete measurement");
-        ok (x.s->check (command::Master { 1 }).bytes == 2 * sizeof (Kept), "the legacy master declares metadata room");
-        ok (accepted (*x.s, command::Master { 2 }) && accepted (*x.s, command::Cancel { 3, x.s->job() }),
-            "a master asked and cancelled");
+        const auto first = x.s->check (command::Master { 1 });
+        ok (first.rejection == Rejection::None && first.bytes > 2 * sizeof (Kept), "a decided master declares its job, not only its kept slot");
+        Answer asked;
+        const budget::Spent spent = budget::spend ([&] { asked = x.s->apply (command::Master { 2 }); });
+        ok (asked.rejection == Rejection::None && budget::covers (first.bytes, spent) && spent.requests > 0,
+            "and what it asks the heap for is inside the declaration — " + budget::describe (first.bytes, spent));
+        ok (accepted (*x.s, command::Cancel { 3, x.s->job() }), "a master asked and cancelled");
         const auto declared = x.s->check (command::Master { 4 });
-        ok (declared.bytes == 0, "the next legacy master reuses its metadata room");
+        ok (declared.rejection == Rejection::None && declared.bytes < first.bytes, "the next one reuses the kept room and declares the rest");
         const budget::Spent again = budget::spend ([&] { (void) x.s->apply (command::Master { 5 }); });
         const budget::Spent done = budget::spend ([&] { (void) Driver::mastered (*x.s, x.s->job()); });
         ok (budget::covers (declared.bytes, again) && done.requests == 0 && x.s->masters().size() == 2,
@@ -965,7 +999,7 @@ void theRulesAreTheSchemas()
     ok (knob (r.lufs, c.targets.editLufs.from, c.targets.editLufs.to, c.targets.editLufs.step)
             && knob (r.tp, c.targets.editTp.from, c.targets.editTp.to, c.targets.editTp.step), "[edit] lufs, tp");
     const auto& e = c.engine;
-    ok (knob (r.hpfFq, e.hpf.hzMin, e.hpf.hzMax, 1.0) && is (r.hpfDefault, e.hpf.hzDefault), "[hpf]: whole hertz from hzMin to hzMax, hzDefault");
+    ok (knob (r.hpfFq, e.hpf.hzMin, e.hpf.hzMax, 1.0), "[hpf]: whole hertz from hzMin to hzMax");
     for (std::int32_t slope = -6; slope <= 96; ++slope)
         if (r.slope (slope) != (slope >= 6 && slope <= 96 && slope % 6 == 0))
             ok (false, "[hpf] slopes: " + std::to_string (slope));
@@ -981,7 +1015,7 @@ void theRulesAreTheSchemas()
     ok (knob (r.tilt, e.tilt.hard.min, e.tilt.hard.max, e.tilt.step)
             && knob (r.low, e.low.hard.min, e.low.hard.max, e.low.step), "[tilt], [low]");
     const auto& pc = e.limiter.peakClipper;
-    ok (knob (r.needles, pc.manualMinDb, pc.manualMaxDb, pc.manualStepDb) && is (r.needlesDefault, pc.betweenOverDb), "[limiter.peakClipper]");
+    ok (knob (r.needles, pc.manualMinDb, pc.manualMaxDb, pc.manualStepDb) && is (r.needlesDefault, pc.betweenCutDb), "[limiter.peakClipper]");
     ok (r.eq == e.stages.eq && r.monoBass == e.stages.monoBass && r.compressor == e.stages.compressor
             && r.clipper == e.stages.clipper && r.dither == e.stages.dither && r.ditherUpToBits == e.dither.onUpToBits,
         "[stages], [dither]");
@@ -1017,7 +1051,9 @@ void theMachinePlacesWhatAPersonCouldSet()
         for (const std::uint32_t channels : { 1u, 2u })
         {
             Devices d {};
-            detail::placeMachine (r, row, channels, d);
+            detail::PlanInputs in;
+            in.rules = r; in.row = row; in.channels = channels; in.sampleRate = 48000;
+            detail::placeMachine (in, d);
             const std::string where = std::string (r.row (row).key) + (channels == 1 ? " (mono)" : " (stereo)");
             detail::eachDevice (d, [&] (Device device, const auto& layers)
             {

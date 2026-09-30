@@ -63,7 +63,7 @@ struct Target
     std::int32_t sampleRate = 0;               // 0: the source's rate
     std::int32_t bitDepth = 0;
     bool noClipper = false;                    // optional in the document: false when absent
-    bool hpfAlways = false;                    // optional: false when absent
+    bool vinyl = false;                        // optional: false when absent — the master goes to a cutting lathe
     bool sourceRatePass = false;               // optional: false when absent
     std::optional<double> lowDb;
     std::optional<Album> album;
@@ -106,7 +106,6 @@ struct Input
     double quietWarningLufs = 0.0;             // quiet.warningLufs
     double quietGainOnlyLufs = 0.0;            // quiet.gainOnlyLufs
     double shortSeconds = 0.0;
-    double shortConfidence = 0.0;
 };
 
 struct Landing
@@ -122,16 +121,18 @@ struct PeakClipper
     double littleNeedDb = 0.0;
     double shortP90Ms = 0.0, shortBassShare = 0.0, shortPlrDb = 0.0;
     double longP90Ms = 0.0, longBassShare = 0.0, longPlrDb = 0.0;
-    double shortOverDb = 0.0, betweenOverDb = 0.0;
+    double clippedPerMinute = 0.0;             // confirmed clips a minute from which the source is clipped
+    double shortCutDb = 0.0, betweenCutDb = 0.0;  // at most this much off the peaks, by class; the limiter does the rest
     double bassBelowHz = 0.0;
     double densityMinusDb = 0.0, densityWithinDb = 0.0;
     double kneeDb = 0.0;
-    double manualMinDb = 0.0, manualMaxDb = 0.0, manualStepDb = 0.0;   // the manual threshold starts at betweenOverDb
+    double manualMinDb = 0.0, manualMaxDb = 0.0, manualStepDb = 0.0;   // the manual cut starts at betweenCutDb
 };
 
 struct Limiter
 {
     double ceilingMarginDb = 0.0;
+    double lookaheadMs = 0.0;
     double releaseMs = 0.0;
     bool dualRelease = false;
     double slowReleaseMs = 0.0;
@@ -179,12 +180,11 @@ struct Hpf
     std::int32_t band = 0;
     double hzMin = 0.0;
     double hzMax = 0.0;
-    double hzDefault = 0.0;
     std::vector<std::int32_t> slopes;
     std::vector<std::int32_t> slopesNormal;
     std::int32_t slopeDefault = 0;
-    double nothingBelowNoteInfraLowBelow = 0.0;   // nothingBelowNote.infraLowBelow
-    double nothingBelowNoteDcOffsetBelow = 0.0;   // nothingBelowNote.dcOffsetBelow — observations.dcOffset.from
+    double noteAboveHz = 0.0;                  // note.aboveHz
+    double noteSoundingAtLeastS = 0.0;         // note.soundingAtLeastS
     HpfComfort comfort;
     double curveTopDb = 0.0, curveBottomDb = 0.0, curveStepDb = 0.0, curveHeadroomDb = 0.0;
     std::vector<HpfMark> marks;
@@ -204,6 +204,8 @@ struct MonoBass
     double lowWidthStep = 0.0;
     Span frequencyRange;
     double frequencyStep = 0.0;
+    double lossWarnFromDb = 0.0, lossOffAboveDb = 0.0;              // loss.warnFromDb, loss.offAboveDb
+    double lossSoundingWithinDb = 0.0, lossSoundingAtLeastS = 0.0;  // loss.soundingWithinDb, loss.soundingAtLeastS
     Zone clubZone;                             // zones.club
     Zone vinylZone;                            // zones.vinyl
 };
@@ -224,9 +226,9 @@ struct Compressor
     double makeupDb = 0.0;
     bool autoMakeup = false;
     double mix = 0.0;
+    double lookaheadMs = 0.0;
+    double sidechainHpfHz = 0.0;               // 0: self-keyed
     ThresholdFrom thresholdFrom = ThresholdFrom::ShortTermP95;
-    double roundToMs = 0.0;
-    double roundToDb = 0.0;
     Span limitThreshOffset, limitAttack, limitRelease, limitKnee;   // [compressor.limits]
     double tempoBpmWhenUnsure = 0.0;                                 // [compressor.tempo] bpmWhenUnsure
     ConfidenceLabel tempoTrustedConfidence = ConfidenceLabel::High;  // [compressor.tempo] trustedConfidence
@@ -241,8 +243,8 @@ struct GlueRamp
     Law law = Law::Linear;
 };
 
-// The glue's numbers are on its knob, "up to N dB" — `default`, `whenTicked`, `byTarget`; `step` and the ramps are its
-// travel, the compressor's internal mapping.
+// The glue's numbers are on its knob, "up to N dB" — `default`, `whenTicked`, `byTarget`; the ramps are its travel, the
+// compressor's internal mapping.
 struct GlueAtTarget
 {
     std::string target;
@@ -255,9 +257,9 @@ struct Glue
     double defaultUpToDb = 0.0;                // `default`
     double whenTickedUpToDb = 0.0;             // `whenTicked`
     std::vector<GlueAtTarget> byTarget;        // in the document's order
-    double step = 0.0;
     GlueRamp ratio, threshOffset, attack, knee, divisor;
     double knobMinDb = 0.0, knobMaxDb = 0.0, knobStepDb = 0.0;
+    double detectorOverP95Db = 0.0;            // the threshold's calibration: dB above P95 + threshOffset
 };
 
 enum class SaturationShape : std::uint8_t { Tanh, Atan, Cubic, Asym };
@@ -278,6 +280,7 @@ struct Saturation
     double outputStep = 0.0;
     double autoComp = 0.0;
     double dcBlockHz = 0.0;
+    double cutLoudShare = 0.0;                 // cut.loudShare: the loud places of the measured peak cut
 };
 
 struct Tilt
@@ -320,6 +323,17 @@ struct Dither
     std::int32_t onUpToBits = 0;
     NoiseShaping shaping = NoiseShaping::Weighted;
     std::int32_t shapingUpToBits = 0;
+    std::uint64_t seed = 0;                    // written as sixteen hexadecimal digits
+    bool autoBlank = false;
+    std::int32_t autoBlankSamples = 0;
+};
+
+// [chain]: the chain's fixed geometry — the internal quantum and the oversampling of the saturation and the limiter.
+struct Chain
+{
+    std::int32_t internalBlock = 0;
+    std::int32_t oversampleFactor = 0;
+    std::int32_t tapsPerPhase = 0;
 };
 
 struct DeEsser
@@ -387,6 +401,7 @@ struct Observations
     double wideBassSideFractionAtLeast = 0.0;                                     // wideBass
     double polarityCorrelationBelow = 0.0, polarityRawSideFractionAbove = 0.0;    // polarity
     double alreadyLimitedPlrBelowDb = 0.0;                                        // alreadyLimited
+    double vinylTopAboveHz = 0.0;                                                 // vinylTop
     Kinds kinds;
     Sibilance sibilance;
 };
@@ -469,6 +484,7 @@ struct Engine
     Tilt tilt;
     Low low;
     Eq eq;
+    Chain chain;
     Stages stages;
     Dither dither;
     DeEsser deEsser;
@@ -512,6 +528,7 @@ enum class Refusal : std::uint8_t
     OutsideLaw,    // a ramp's ends outside its law's domain, or a law the field does not take
     AboveNyquist,  // a frequency at or above half the rate the signal it filters is sampled at
     AnalyzerRefuses,// the analyzer this block feeds refuses it — its own storageFor() — at a source rate the product accepts
+                   // (and the chain its [chain] geometry: MasteringChain::admits)
     EmptyKey       // a row of [targets] under an empty key: a target is named by its key, and "" names none
 };
 

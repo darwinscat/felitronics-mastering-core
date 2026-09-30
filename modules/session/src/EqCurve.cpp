@@ -3,6 +3,7 @@
 #include "BuildGuards.h"
 #include "EqCurve.h"
 #include "BuildContract.h"
+#include "Devices.h"
 #include <felitronics/core/DetMath.h>
 #include <algorithm>
 #include <cmath>
@@ -197,37 +198,93 @@ struct BiquadCoeffs
             return high ? highShelf (f0, fs, gainLin) : lowShelf (f0, fs, gainLin);
         return c;
     }
+// The high-pass cascade of order slope/6 at `fc`, into `bands` from `count` on (up to 9 sections).
+void highPassSections (double fc, std::int32_t slope, double rate, BiquadCoeffs* bands, std::size_t& count) noexcept
+{
+    const int order = int (slope / 6);
+    if (order % 2) bands[count++] = highpass1 (fc, rate);
+    const int pairs = order / 2;
+    for (int k = 1; k <= pairs; ++k)
+        bands[count++] = highpass (fc, rate, 1 / (2 * core::det::sin ((2.0 * (pairs - k) + 1) * kPi / (2 * order))));
 }
-void eqCurve (const Project& project, const Rules& rules, double rate, std::span<EqPoint> output) noexcept
+eq::BandParams band (eq::FilterType type, bool on, double hz) noexcept
+{
+    eq::BandParams b;
+    b.on = on;
+    b.type = type;
+    b.lanes[0].freq = hz;
+    return b;
+}
+} // namespace
+
+int eqBand (Device device) noexcept
+{
+    switch (device)
+    {
+        case Device::Hpf:  return 0;
+        case Device::Tilt: return 1;
+        case Device::Low:  return 2;
+        case Device::MonoBass:
+        case Device::Glue:
+        case Device::Saturation:
+        case Device::Limiter:
+        case Device::Dither: return -1;
+    }
+    storageOverflow();
+}
+
+void writeEq (const Devices& devices, const Rules& rules, EqStage& stage) noexcept
+{
+    const auto hpf = settingsOf (rules, devices.hpf);
+    auto& h = stage.bands[eqBand (Device::Hpf)];
+    h = band (eq::FilterType::HighPass, hpf.on, hpf.fq);
+    h.lanes[0].slope = hpf.slope;
+
+    const auto tilt = settingsOf (rules, devices.tilt);
+    auto& t = stage.bands[eqBand (Device::Tilt)];
+    t = band (eq::FilterType::Tilt, tilt.on && ! sameNumber (tilt.db, 0), number (rules.engine.find ("tilt").find ("freqHz")));
+    t.lanes[0].gainDb = tilt.db;
+
+    const auto low = settingsOf (rules, devices.low);
+    const auto config = rules.engine.find ("low");
+    auto& l = stage.bands[eqBand (Device::Low)];
+    l = band (eq::FilterType::LowShelf, low.on && ! sameNumber (low.db, 0), number (config.find ("freqHz")));
+    l.lanes[0].Q = number (config.find ("q"));
+    l.lanes[0].gainDb = low.db;
+}
+
+void eqCurve (std::span<const eq::BandParams> written, double rate, std::span<EqPoint> output) noexcept
 {
     BiquadCoeffs bands[11];
     std::size_t count = 0;
-    const auto& hpf = project.devices.hpf;
-    const auto& tilt = project.devices.tilt;
-    const auto& low = project.devices.low;
     const auto frequency = [&] (double hz) { return std::clamp (hz, 10.0, 0.49 * rate); };
-    if (hpf.hand.on.value_or (hpf.machine.on))
+    for (const auto& b : written)
     {
-        const double fq = frequency (hpf.hand.fq.value_or (hpf.machine.fq));
-        const int order = hpf.hand.slope.value_or (hpf.machine.slope) / 6;
-        if (order % 2) bands[count++] = highpass1 (fq, rate);
-        const int pairs = order / 2;
-        for (int k = 1; k <= pairs; ++k)
-            bands[count++] = highpass (fq, rate, 1 / (2 * core::det::sin ((2.0 * (pairs - k) + 1) * kPi / (2 * order))));
-    }
-    const double tiltDb = tilt.hand.db.value_or (tilt.machine.db);
-    if (tilt.hand.on.value_or (tilt.machine.on) && ! sameNumber (tiltDb, 0))
-    {
-        const double fq = frequency (number (rules.engine.find ("tilt").find ("freqHz")));
-        bands[count++] = lowShelf (fq, rate, core::det::pow10 (-tiltDb / 20));
-        bands[count++] = highShelf (fq, rate, core::det::pow10 (tiltDb / 20));
-    }
-    const double lowDb = low.hand.db.value_or (low.machine.db);
-    if (low.hand.on.value_or (low.machine.on) && ! sameNumber (lowDb, 0))
-    {
-        const auto config = rules.engine.find ("low");
-        bands[count++] = shelf (frequency (number (config.find ("freqHz"))), rate,
-                               core::det::pow10 (lowDb / 20), number (config.find ("q")), false);
+        if (! b.on) continue;
+        const auto& lane = b.lanes[0];
+        switch (b.type)
+        {
+            case eq::FilterType::HighPass:
+                highPassSections (frequency (lane.freq), lane.slope, rate, bands, count);
+                break;
+            case eq::FilterType::Tilt:
+            {
+                const double fq = frequency (lane.freq);
+                bands[count++] = lowShelf (fq, rate, core::det::pow10 (-lane.gainDb / 20));
+                bands[count++] = highShelf (fq, rate, core::det::pow10 (lane.gainDb / 20));
+                break;
+            }
+            case eq::FilterType::LowShelf:
+                bands[count++] = shelf (frequency (lane.freq), rate, core::det::pow10 (lane.gainDb / 20), lane.Q, false);
+                break;
+            case eq::FilterType::Bell:
+            case eq::FilterType::HighShelf:
+            case eq::FilterType::LowPass:
+            case eq::FilterType::BandPass:
+            case eq::FilterType::Notch:
+            case eq::FilterType::AllPass:
+                storageOverflow();
+        }
     }
     const double last = std::min (20000.0, rate * 0.49);
     const double octaves = core::det::log2 (last / 20);
@@ -238,5 +295,37 @@ void eqCurve (const Project& project, const Rules& rules, double rate, std::span
         for (std::size_t b = 0; b < count; ++b) db += bands[b].db (2 * kPi * hz / rate);
         output[i] = { hz, db };
     }
+}
+
+void eqCurve (const Project& project, const Rules& rules, double rate, std::span<EqPoint> output) noexcept
+{
+    EqStage stage;
+    writeEq (project.devices, rules, stage);
+    eqCurve (stage.bands, rate, output);
+}
+
+double highPassLossDb (double fc, std::int32_t slope, double rate, double hz) noexcept
+{
+    BiquadCoeffs sections[9];
+    std::size_t count = 0;
+    highPassSections (std::clamp (fc, 10.0, 0.49 * rate), slope, rate, sections, count);
+    double db = 0;
+    for (std::size_t i = 0; i < count; ++i) db += sections[i].db (2 * kPi * hz / rate);
+    return -db;
+}
+
+double highPassCutoffFor (double hz, double lossDb, std::int32_t slope, double rate) noexcept
+{
+    // The loss at `hz` grows with the cutoff: below the answer it takes less, above it more. At the lowest cutoff the
+    // engine designs it may take the loss already — then that cutoff is the answer.
+    double lo = 10.0, hi = std::max (lo, std::min (hz, 0.49 * rate));
+    if (highPassLossDb (lo, slope, rate, hz) >= lossDb) return lo;
+    for (int i = 0; i < 200; ++i)
+    {
+        const double mid = lo + (hi - lo) * 0.5;
+        if (! (mid > lo && mid < hi)) break;
+        if (highPassLossDb (mid, slope, rate, hz) < lossDb) lo = mid; else hi = mid;
+    }
+    return lo;
 }
 }

@@ -159,6 +159,7 @@ public:
         }
     }
 private:
+    friend class WaveformStream;
     struct Box { double values[4]; };
     struct BoxCount { unsigned values[4]; };
     void sample (double left, double right, Filters& filters, WaveformColumn& out, Box& box, BoxCount& counts, bool keep) const noexcept
@@ -199,6 +200,48 @@ private:
     BoxCount boxCount_ {};
 };
 // A non-owning producer can be released at any point; its source-owned index and cursor survive.
+// THE SAME ARITHMETIC FOR A STREAM CUT WHERE THE CALLER SAYS — a master's retained columns — with no pyramid, no
+// checkpoint and nothing allocated: every frame goes through the index's own sample step and its own envelope boxes
+// (boxes stand on the absolute frame grid, so a column cut inside a box closes it and the next column opens its own —
+// what the index's exact edges do), and take() hands over the column gathered since the last one. The filters run on
+// across columns, from rest at the stream's first frame. `firstFrame` is that frame's place on the grid: 0 for a whole
+// programme, the chunk's start for a chunk — whose band split then settles over its first milliseconds.
+class WaveformStream
+{
+public:
+    [[nodiscard]] bool prepare (std::uint32_t rate, unsigned channels, std::uint64_t firstFrame = 0) noexcept
+    {
+        if (rate < 8000 || rate > 768000 || channels < 1 || channels > 2) return false;
+        constexpr double twoPi = 6.283185307179586476925286766559;
+        core_.channels_ = channels;
+        core_.lowA_ = (twoPi * 250.0) / (double (rate) + twoPi * 250.0);
+        core_.upperA_ = (twoPi * 2500.0) / (double (rate) + twoPi * 2500.0);
+        boxFrames_ = std::max (1u, (rate + 4000u) / 8000u);
+        frame_ = firstFrame; filters_ = {}; column_ = {}; box_ = {}; count_ = {};
+        return true;
+    }
+    void add (double left, double right) noexcept
+    {
+        core_.sample (left, right, filters_, column_, box_, count_, true);
+        if (++frame_ % boxFrames_ == 0) WaveformIndex::flushBox (column_, box_, count_);
+    }
+    [[nodiscard]] WaveformColumn take() noexcept
+    {
+        WaveformIndex::flushBox (column_, box_, count_);
+        const auto out = column_;
+        column_ = {};
+        return out;
+    }
+    [[nodiscard]] bool axisPresent (unsigned axis) const noexcept { return core_.axisPresent (axis); }
+private:
+    WaveformIndex core_;                       // its coefficients and its sample step; no storage is ever prepared
+    WaveformIndex::Filters filters_ {};
+    WaveformColumn column_ {};
+    WaveformIndex::Box box_ {};
+    WaveformIndex::BoxCount count_ {};
+    std::uint64_t frame_ = 0;
+    std::uint32_t boxFrames_ = 1;
+};
 class WaveformBuilder
 {
 public:

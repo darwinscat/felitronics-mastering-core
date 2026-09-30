@@ -2125,6 +2125,159 @@ void testEqEngineReuseIsBitIdentical()
     }
 }
 
+//==============================================================================
+// WHAT THE SOFT CLIPPER DID TO PEAKS (ClipperPeaks): measured on the stage, against the gain it gives a quiet sound.
+namespace
+{
+mastering::MasteringChainConfig clipperAlone()
+{
+    mastering::MasteringChainConfig c;
+    c.eq = c.compressor = c.limiter = c.dither = false;
+    c.clipper = true;
+    return c;
+}
+// A 1 kHz tone in stretches of `quanta` internal quanta each, one amplitude per stretch, through a chain of the soft
+// clipper alone; the stage's peaks read back.
+struct ClipRun { bool counted = false; mastering::ClipperPeaks peaks {}; double quietGain = 1.0; };
+ClipRun clipRun (const saturation::Saturator::Params& clipper, const std::vector<std::pair<float, int>>& stretches,
+                 double loudShare = 0.05, bool bypass = false)
+{
+    const auto cfg = clipperAlone();
+    mastering::MasteringChain chain;
+    mastering::MasteringChainParams prm;
+    prm.clipper = clipper; prm.bypassClipper = bypass;
+    chain.setParams (prm);
+    felitronics::test::run (chain.prepare (48000.0, 2, cfg));
+    long long at = 0;
+    std::vector<float> l ((std::size_t) cfg.internalBlock), r (l.size());
+    for (const auto& [amplitude, quanta] : stretches)
+        for (int q = 0; q < quanta; ++q)
+        {
+            for (int i = 0; i < cfg.internalBlock; ++i, ++at)
+            {
+                l[(std::size_t) i] = amplitude * (float) std::sin (2.0 * kPi * 1000.0 * (double) at / 48000.0);
+                r[(std::size_t) i] = 0.5f * l[(std::size_t) i];
+            }
+            float* io[] { l.data(), r.data() };
+            felitronics::test::run (chain.process (io, 2, cfg.internalBlock));
+        }
+    ClipRun out;
+    out.counted = chain.clipperPeaks (loudShare, out.peaks);
+    out.quietGain = chain.clipperQuietGain();
+    return out;
+}
+double cutDb (double quietGain, double ratio) { return 20.0 * std::log10 (quietGain / ratio); }
+} // namespace
+
+static void testClipperPeaks()
+{
+    group ("the soft clipper's peaks — measured on the stage, against its gain on a quiet sound");
+    using Shape = saturation::WaveShaper::Shape;
+
+    // THE QUIET GAIN is the stage's own: a tone far under the bend comes out multiplied by it, whatever the shape, the
+    // drive, the compensation, the mix and the trim.
+    double worst = 0.0;
+    for (const Shape shape : { Shape::Tanh, Shape::Atan, Shape::Cubic, Shape::Asym })
+        for (const float comp : { 0.0f, 0.5f, 1.0f })
+            for (const float mix : { 1.0f, 0.4f })
+                for (const float trim : { 0.0f, -6.0f })
+                    for (const float drive : { 3.0f, 9.0f })
+                    {
+                        saturation::Saturator::Params p;
+                        p.shape = shape; p.driveDb = drive; p.autoComp = comp; p.mix = mix; p.outputDb = trim;
+                        p.bias = shape == Shape::Asym ? 0.2f : 0.0f; p.dcBlockHz = 0.0f;
+                        const auto run = clipRun (p, { { 1.0e-3f, 40 } }, 1.0);
+                        if (! run.counted) { worst = 1.0e9; continue; }
+                        worst = std::max (worst, std::fabs (cutDb (run.quietGain, run.peaks.loudUsualRatio)));
+                    }
+    ok (worst < 0.01, "a quiet tone leaves the stage at clipperQuietGain(): 96 settings, the worst "
+        + std::to_string (worst) + " dB away");
+
+    saturation::Saturator::Params p;
+    p.shape = Shape::Tanh; p.autoComp = 0.0f; p.mix = 1.0f; p.outputDb = 0.0f; p.bias = 0.0f; p.dcBlockHz = 0.0f;
+    const auto curve = [] (double k, double a) { return 20.0 * std::log10 (k * a / std::tanh (k * a)); };
+    const std::vector<std::pair<float, int>> programme { { 0.1f, 800 }, { 0.3f, 140 }, { 0.8f, 60 } };
+
+    // THE LOUD PLACES: six in a hundred quanta at 0.8 — the loudest twentieth lies inside them, and both numbers are
+    // the curve's own at that peak.
+    double previousLargest = 0.0, previousUsual = 0.0;
+    bool grows = true, exact = true;
+    for (const float drive : { 0.0f, 3.0f, 6.0f, 12.0f })
+    {
+        p.driveDb = drive;
+        const auto run = clipRun (p, programme);
+        const double k = std::pow (10.0, (double) drive / 20.0) - 1.0;
+        const double largest = cutDb (run.peaks.quietGain, run.peaks.loudLeastRatio);
+        const double usual = cutDb (run.peaks.quietGain, run.peaks.loudUsualRatio);
+        const double want = drive > 0.0f ? curve (k, 0.8) : 0.0;
+        exact = exact && run.counted && std::fabs (largest - want) < 0.1 && std::fabs (usual - want) < 0.1
+             && run.peaks.loudQuanta >= 50 && run.peaks.loudQuanta <= 62 && run.peaks.quanta >= 990;
+        grows = grows && (drive <= 0.0f || (largest > previousLargest && usual > previousUsual)) && largest >= usual - 1.0e-9;
+        previousLargest = largest; previousUsual = usual;
+        std::printf ("    drive %4.1f dB: largest %.3f dB, usual %.3f dB (the curve at 0.8: %.3f), %llu of %llu quanta loud\n",
+            (double) drive, largest, usual, want, (unsigned long long) run.peaks.loudQuanta, (unsigned long long) run.peaks.quanta);
+    }
+    ok (exact, "drive 0/3/6/12: the largest and the usual cut are the curve's at the loud stretch's peak, within 0.1 dB");
+    ok (grows, "and both grow with the drive, the largest never under the usual");
+
+    // ONE HIT moves the largest cut and leaves the usual one where it was.
+    p.driveDb = 6.0f;
+    const auto plain = clipRun (p, programme);
+    auto struck = programme; struck.push_back ({ 1.6f, 1 });
+    const auto hit = clipRun (p, struck);
+    const double plainUsual = cutDb (plain.peaks.quietGain, plain.peaks.loudUsualRatio);
+    const double hitUsual = cutDb (hit.peaks.quietGain, hit.peaks.loudUsualRatio);
+    const double hitLargest = cutDb (hit.peaks.quietGain, hit.peaks.loudLeastRatio);
+    ok (hitLargest > cutDb (plain.peaks.quietGain, plain.peaks.loudLeastRatio) + 1.0 && std::fabs (hitUsual - plainUsual) < 0.05,
+        "one quantum at twice the peak: the largest cut follows it (" + std::to_string (hitLargest)
+        + " dB), the usual one stays (" + std::to_string (plainUsual) + " -> " + std::to_string (hitUsual) + " dB)");
+
+    // THE TRIM is the stage's gain, not a cut: it moves the ratio and the quiet gain together. THE MIX is measured.
+    auto trimmed = p; trimmed.outputDb = -6.0f;
+    const auto low = clipRun (trimmed, programme);
+    ok (std::fabs (cutDb (low.peaks.quietGain, low.peaks.loudUsualRatio) - plainUsual) < 1.0e-3
+        && std::fabs (20.0 * std::log10 (low.peaks.loudUsualRatio / plain.peaks.loudUsualRatio) + 6.0) < 1.0e-3,
+        "output -6 dB: the peaks leave 6 dB lower, and the cut is the same");
+    auto dry = p; dry.mix = 0.0f;
+    const auto none = clipRun (dry, programme);
+    auto half = p; half.mix = 0.5f;
+    const double halfUsual = cutDb (clipRun (half, programme).peaks.quietGain, clipRun (half, programme).peaks.loudUsualRatio);
+    ok (none.counted && std::fabs (cutDb (none.peaks.quietGain, none.peaks.loudLeastRatio)) < 1.0e-3
+        && halfUsual > 0.05 && halfUsual < plainUsual - 0.05,
+        "mix 0 cuts nothing, mix 0.5 less than mix 1 (" + std::to_string (halfUsual) + " of " + std::to_string (plainUsual) + " dB)");
+
+    // THE SHARE picks the places: the whole programme's middle quantum is a quiet one.
+    const auto all = clipRun (p, programme, 1.0);
+    ok (all.counted && all.peaks.loudQuanta == all.peaks.quanta
+        && std::fabs (cutDb (all.peaks.quietGain, all.peaks.loudUsualRatio) - curve (std::pow (10.0, 0.3) - 1.0, 0.1)) < 0.05,
+        "a share of 1 is every counted quantum, and its usual cut the quiet stretch's");
+
+    // REFUSALS: no stage, a stage bypassed throughout, silence, a share outside (0, 1] — and reset() clears.
+    mastering::ClipperPeaks refused; refused.quanta = 7;
+    mastering::MasteringChain bare;
+    auto without = clipperAlone(); without.clipper = false;
+    felitronics::test::run (bare.prepare (48000.0, 2, without));
+    ok (! bare.clipperPeaks (0.05, refused) && refused.quanta == 0 && core::exactlyEqual (bare.clipperQuietGain(), 1.0),
+        "no clipper: refused, the result cleared, the quiet gain 1");
+    ok (! clipRun (p, programme, 0.05, true).counted, "a clipper bypassed throughout counted nothing");
+    ok (! clipRun (p, { { 0.0f, 50 }, { 1.0e-4f, 50 } }).counted, "a programme under -72 dBFS counted nothing");
+    ok (! clipRun (p, programme, 0.0).counted && ! clipRun (p, programme, 1.5).counted
+        && ! clipRun (p, programme, std::numeric_limits<double>::quiet_NaN()).counted, "a share outside (0, 1] is refused");
+    {
+        mastering::MasteringChain chain;
+        mastering::MasteringChainParams prm; prm.clipper = p;
+        chain.setParams (prm);
+        felitronics::test::run (chain.prepare (48000.0, 2, clipperAlone()));
+        std::vector<float> l (256, 0.5f), r (256, -0.5f);
+        float* io[] { l.data(), r.data() };
+        for (int q = 0; q < 20; ++q) felitronics::test::run (chain.process (io, 2, 256));
+        mastering::ClipperPeaks before, after;
+        const bool counted = chain.clipperPeaks (0.05, before);
+        chain.reset();
+        ok (counted && before.quanta > 0 && ! chain.clipperPeaks (0.05, after), "reset() clears the counters");
+    }
+}
+
 int main()
 {
     std::printf ("felitronics::mastering — chain acceptance\n");
@@ -2144,5 +2297,6 @@ int main()
     testGateCountsItsSubstitutions();
     testDemand();
     testEqEngineReuseIsBitIdentical();
+    testClipperPeaks();
     return felitronics::test::report();
 }

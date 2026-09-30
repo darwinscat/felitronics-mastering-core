@@ -10,6 +10,7 @@
 
 #include "Devices.h"
 #include "Driver.h"
+#include "Planner.h"
 #include "Grid.h"
 #include "Rules.h"
 #include "BuildContract.h"
@@ -238,20 +239,20 @@ Checked Session::storageFor (const Request& request) const noexcept
         // 3. NAMES: the source's audio (a sidecar source has none before attachAudio), then an id for the job, never 0
         // and never one issued before.
         if (! samples_) return rejected (Rejection::NoAudio);
+        // With the panel open a master the session decides waits until what its devices read has ended; with the panel
+        // hidden it is taken, and waits for it itself — resuming a stopped measurement takes a job id of its own.
+        const bool decided = master->ready.version == 0;
+        if (decided && project_.manual && plan_.waiting != 0) return rejected (Rejection::PlanPending);
+        const bool resumes = decided && (plan_.waiting & ~detail::bitOf (Analyzer::Excursions)) != 0 && measurementJob_ == 0;
         if (lastJob_ == std::numeric_limits<JobId>::max()
-            || (master->ready.version == 0 && masterRequiresTempo() && ! tempoForDevice().ready
-                && measurementJob_ == 0 && lastJob_ == std::numeric_limits<JobId>::max() - 1u))
+            || (resumes && lastJob_ == std::numeric_limits<JobId>::max() - 1u))
             return rejected (Rejection::NoJobId);
-        if (master->ready.version == 0)
-        {
-            const auto bytes = masterRoom_ > masterCount_ ? 0u : std::uint64_t (masterCount_ + 1) * sizeof (Kept)
-                + (masterRows_ ? std::uint64_t (masterCount_ + 1) * sizeof (detail::MasterRows) + 4096u : 0u);
-            return storage (bytes, bytes);
-        }
-        const auto plan = detail::MasterJob::plan (*this, *master);
+        // The job's demand, whole, before anything is done: a ready chain's, or the chain the project's devices come to
+        // as the measurements stand (a waiting master's tempo and needles move parameters, never the chain's geometry).
+        const auto plan = detail::MasterJob::plan (*this, *master, project_);
         if (plan.rejection != Rejection::None) return rejected (plan.rejection);
         const bool room = masterRoom_ > masterCount_;
-        const auto roomBytes = (room ? 0u : std::uint64_t (masterCount_ + 1) * sizeof (Kept))
+        const auto roomBytes = (room ? 0u : std::uint64_t (masterCount_ + 1) * sizeof (Kept) * (capabilities_.leanSummary ? 2u : 1u))
             + std::uint64_t (std::max (masterRoom_, masterCount_ + 1)) * sizeof (detail::MasterRows) + 4096u;
         if (roomBytes > 9007199254740991ull - plan.bytes) return rejected (Rejection::TooLong);
         return storage (plan.bytes + roomBytes, std::max (plan.largestBlock, roomBytes));
@@ -349,7 +350,7 @@ Answer Session::apply (const Request& request) noexcept
     if (checked.rejection == Rejection::None)
         if (const auto* input = std::get_if<command::ImportProject> (&request))
         {
-            imported = detail::readProject (input->bytes, source_.channels, capabilities_.offeredDevices, source_.sampleRate);
+            imported = detail::readProject (input->bytes, planInputs (project_));
             answer = imported.answer;
             answer.command = input->id;
         }
@@ -368,6 +369,7 @@ Answer Session::apply (const Request& request) noexcept
         });
     if (const auto* revert = std::get_if<command::RevertEdits> (&request))
         empty = onActive (revert->fields, [&] (const auto& mask) { return ! anyMarked (rules, mask); });
+    if (std::holds_alternative<command::AdoptMachine> (request)) empty = differenceCount_ == 0;
     if (empty) { answer.revision = revision_; return answer; }
     if (const auto* load = std::get_if<command::Load> (&request))
     {
@@ -423,6 +425,7 @@ Answer Session::apply (const Request& request) noexcept
         measurementStorage_ = plan.storage;
         project_.core = version();
         differenceCount_ = 0;
+        machineFromFile_ = false;
         project_.manual = false;
         devicesPlaced_ = cached && previousPlacement;
         project_.devices = {};                                      // unplaced: both layers, until the new source is measured
@@ -451,7 +454,7 @@ Answer Session::apply (const Request& request) noexcept
             if (state_ == State::Measured2 || (sourceMeasurements_ && sourceMeasurements_->finished)) measurementJob_ = 0;
             for (auto& r : measurementResults_)
                 if (r.analyzer != Analyzer::Excursions && r.status == MeasurementStatus::Cancelled) { r.status = MeasurementStatus::Pending; r.reason = MeasurementReason::Pending; }
-            if (placed()) detail::placeMachine (rules, project_.target, source_.channels, project_.devices, capabilities_.offeredDevices);
+            if (devicesPlaced_) place (project_);
             // The PCM's results stay. Forensics also reads the file's bit depth: under another depth its unused low bits
             // are recomputed from the retained grid, and it is another result, under its own key, published as one.
             if (source_.bitDepth != previousBitDepth)
@@ -480,8 +483,9 @@ Answer Session::apply (const Request& request) noexcept
         differenceCount_ = 0;
         project_.targetEdit = {};                                   // the new target's numbers, silently
         clearHands (project_.devices);
+        machineFromFile_ = false;
         // Placed devices are placed again for the new target; unplaced ones wait for the first measurement's end.
-        if (placed()) detail::placeMachine (rules, row, source_.channels, project_.devices, capabilities_.offeredDevices);
+        if (devicesPlaced_) place (project_);
     }
     else if (const auto* edit = std::get_if<command::EditTarget> (&request))
     {
@@ -520,42 +524,14 @@ Answer Session::apply (const Request& request) noexcept
     }
     else if (const auto* master = std::get_if<command::Master> (&request))
     {
-        if (master->ready.version == 0)
-        {
-            if (masterRoom_ == masterCount_)
-            {
-                std::unique_ptr<Kept[]> room (new Kept[masterCount_ + 1]);
-                std::copy (masters_.get(), masters_.get() + masterCount_, room.get());
-                if (masterRows_)
-                {
-                    std::unique_ptr<detail::MasterRows[]> rowRoom (new detail::MasterRows[masterCount_ + 1]);
-                    for (std::size_t i = 0; i < masterCount_; ++i) rowRoom[i] = std::move (masterRows_[i]);
-                    masterRows_ = std::move (rowRoom);
-                }
-                masters_ = std::move (room);
-                masterRoom_ = masterCount_ + 1;
-            }
-            job_ = ++lastJob_;
-            const bool waitTempo = masterRequiresTempo() && ! tempoForDevice().ready;
-            jobRecipe_ = waitTempo ? Recipe {} : Recipe { project_, source_.hash, config::Config::versions().sound };
-            mastering_ = true;
-            masterUnit_ = 0;
-            const auto passes = std::uint32_t (*rules.engine.find ("progress").find ("master").find ("expectedPasses").integer());
-            const auto chunks = (source_.frames + 1023u) / 1024u;
-            const auto waitUnits = std::uint32_t (std::min<std::uint64_t> (3u * chunks + 64u, 4294967295u));
-            masterProgress_ = { waitTempo ? PhaseName::Analyzers : PhaseName::Pass, 0.0,
-                config::Config::versions().all, 0, passes, 0, waitTempo ? waitUnits : passes + 1u };
-            answer.job = job_;
-        }
-        else
-        {
-        const auto plan = detail::MasterJob::plan (*this, *master);
+        const auto plan = detail::MasterJob::plan (*this, *master, project_);
         if (masterRoom_ == masterCount_)                            // the room check() counted, as one exact array
         {
             std::unique_ptr<Kept[]> room (new Kept[masterCount_ + 1]);
             std::copy (masters_.get(), masters_.get() + masterCount_, room.get());
             masters_ = std::move (room);
             masterRoom_ = masterCount_ + 1;
+            if (capabilities_.leanSummary) { leanMasters_.reset(); leanMasters_.reset (new Kept[masterRoom_]); }
         }
         {
             std::unique_ptr<detail::MasterRows[]> rowRoom (new detail::MasterRows[masterRoom_]);
@@ -563,42 +539,25 @@ Answer Session::apply (const Request& request) noexcept
                 for (std::size_t i = 0; i < masterCount_; ++i) rowRoom[i] = std::move (masterRows_[i]);
             masterRows_ = std::move (rowRoom);
         }
-        auto& rows = masterRows_[masterCount_];
-        rows.passes.reset (new LandingPass[12]);
-        rows.traces.reset (new LandingTraceBucket[std::size_t (2 * plan.traceBuckets)]);
-        rows.traceCapacity = std::uint32_t (plan.traceBuckets);
-        if (plan.crestCapacity != 0) rows.crest.reset (new double[plan.crestCapacity * 15u]);
-        rows.crestCapacity = plan.crestCapacity;
-        if (plan.costCapacity != 0)
-        {
-            rows.costSeries.reset (new double[plan.costCapacity]);
-            rows.sections.reset (new MasterSection[plan.costCapacity]);
-        }
-        if (plan.costScratchCapacity != 0) rows.costScratch.reset (new double[plan.costScratchCapacity]);
-        if (plan.waveformCapacity != 0) rows.waveform.reset (new MasterWaveformBucket[plan.waveformCapacity]);
-        rows.costCapacity = plan.costCapacity;
-        rows.costScratchCapacity = plan.costScratchCapacity;
-        rows.waveformCapacity = plan.waveformCapacity;
-        masterJob_.reset (new detail::MasterJob);
-        if (! masterJob_->begin (*this, plan)) detail::storageOverflow();
-        // liveBytes() counts the installed row owners separately while this job is active.
-        masterJobBytes_ = plan.bytes - plan.retainedRowBytes;
         job_ = ++lastJob_;
-        jobRecipe_ = { project_, source_.hash, config::Config::versions().sound,
-            detail::MasterJob::fingerprint (plan.ready), plan.deliveryRate, plan.ready.version };
-        rows.crestMasterId = job_;
-        rows.crestSource = jobRecipe_.source;
-        rows.crestSourceKey = measurementKey_;
-        rows.crestReadyHash = jobRecipe_.readyHash;
-        rows.crestSound = jobRecipe_.sound;
-        rows.crestDeliveryRate = jobRecipe_.deliveryRateHz;
-        rows.crestParams = plan.crestParams;
         mastering_ = true;
         masterUnit_ = 0;
         masterSummary_ = {}; masterTraceCursor_ = 0; masterTraceActive_ = false;
-        masterProgress_ = { PhaseName::Pass, 0.0, config::Config::versions().all, 0, 12, 0, 12 };
-        answer.job = job_;
+        // THE RECIPE is the project as it is now — the target, its numbers, a person's layer — whatever changes while
+        // the measurements its devices read end. A master the session decides waits for them (the panel hidden: with
+        // it open the command was refused); a ready one renders at once.
+        jobWaiting_ = master->ready.version == 0 && plan_.waiting != 0;
+        jobRecipe_ = Recipe { project_, source_.hash, config::Config::versions().sound };
+        jobRecipe_.readyVersion = plan.ready.version;
+        if (jobWaiting_)
+        {
+            const auto passes = std::uint32_t (*rules.engine.find ("progress").find ("master").find ("expectedPasses").integer());
+            const auto chunks = (source_.frames + 1023u) / 1024u;
+            const auto waitUnits = std::uint32_t (std::min<std::uint64_t> (3u * chunks + 64u, 4294967295u));
+            masterProgress_ = { PhaseName::Analyzers, 0.0, config::Config::versions().all, 0, passes, 0, waitUnits };
         }
+        else startMaster (plan);
+        answer.job = job_;
     }
     else if (std::holds_alternative<command::ContinueMeasurement> (request))
     {
@@ -640,19 +599,22 @@ Answer Session::apply (const Request& request) noexcept
         --masterCount_;
         if (crestJoin_ && index < crestJoinIndex_) --crestJoinIndex_;
     }
+    else if (std::holds_alternative<command::AdoptMachine> (request))
+    {
+        // The machine's layer is placed by this release from here on, as at every other placement.
+        project_.core = version();
+        place (project_);
+        machineFromFile_ = false;
+        differenceCount_ = 0;
+    }
     else if (std::holds_alternative<command::ImportProject> (request))
     {
         project_ = imported.project;
+        // The file's machine layer is the file's (an import opens only the current defaults label): the planner's
+        // differences are shown beside it, and its opinion replaces the layer only by adoptMachine.
+        machineFromFile_ = true;
         differenceCount_ = imported.differenceCount;
         std::copy_n (imported.differences, differenceCount_, differences_);
-        if (imported.convertedDefaults)
-        {
-            Notification event;
-            event.kind = EventKind::Fact;
-            (void) event.payload.fact.assign (text::Fact::of (text::FactId::DefaultsConverted,
-                text::Arg::text ({ imported.originalDefaults, sizeof (imported.originalDefaults) })));
-            emit (event);
-        }
         if (imported.foreignCore || differenceCount_ != 0)
         {
             Notification event;
@@ -664,6 +626,7 @@ Answer Session::apply (const Request& request) noexcept
     }
     if (std::holds_alternative<command::SetTarget> (request) || std::holds_alternative<command::EditTarget> (request)
         || std::holds_alternative<command::ImportProject> (request)) requestNeedles();
+    replan();
     refreshEqCurve();
     answer.revision = ++revision_;
     for (std::size_t i = 0; i < eventCount_; ++i)
@@ -672,6 +635,52 @@ Answer Session::apply (const Request& request) noexcept
         if (events_[i].kind == EventKind::Measurement) events_[i].payload.measurement.revision = revision_;
     }
     return answer;
+}
+
+//==============================================================================
+// THE MASTER'S JOB — its retained rows and its work, installed for the master being made (job_): at once for a master
+// that waits for nothing, when its wait ends for one that did. check() — or the pump, when a wait ends — has stated
+// the demand; this asks the heap for it.
+void Session::startMaster (const detail::MasterPlan& plan) noexcept
+{
+    auto& rows = masterRows_[masterCount_];
+    rows = {};
+    rows.passes.reset (new LandingPass[12]);
+    rows.traces.reset (new LandingTraceBucket[std::size_t (2 * plan.traceBuckets)]);
+    rows.traceCapacity = std::uint32_t (plan.traceBuckets);
+    if (plan.crestCapacity != 0) rows.crest.reset (new double[plan.crestCapacity * 15u]);
+    rows.crestCapacity = plan.crestCapacity;
+    if (plan.costCapacity != 0)
+    {
+        rows.costSeries.reset (new double[plan.costCapacity]);
+        rows.sections.reset (new MasterSection[plan.costCapacity]);
+    }
+    if (plan.costScratchCapacity != 0) rows.costScratch.reset (new double[plan.costScratchCapacity]);
+    if (plan.waveformCapacity != 0) rows.waveform.reset (new MasterWaveformBucket[plan.waveformCapacity]);
+    if (plan.costCapacity != 0) rows.costMomentary.reset (new double[plan.costCapacity]);
+    if (plan.axesCapacity != 0) rows.axes.reset (new analysis::WaveformColumn[plan.axesCapacity]);
+    rows.axesCapacity = plan.axesCapacity;
+    rows.costCapacity = plan.costCapacity;
+    rows.costScratchCapacity = plan.costScratchCapacity;
+    rows.waveformCapacity = plan.waveformCapacity;
+    masterJob_.reset (new detail::MasterJob);
+    if (! masterJob_->begin (*this, plan)) detail::storageOverflow();
+    // liveBytes() counts the installed row owners separately while this job is active.
+    masterJobBytes_ = plan.bytes - plan.retainedRowBytes;
+    jobWaiting_ = false;
+    jobRecipe_.readyHash = detail::MasterJob::fingerprint (plan.ready);
+    jobRecipe_.deliveryRateHz = plan.deliveryRate;
+    jobRecipe_.readyVersion = plan.ready.version;
+    rows.crestMasterId = job_;
+    rows.crestSource = jobRecipe_.source;
+    rows.crestSourceKey = measurementKey_;
+    rows.crestReadyHash = jobRecipe_.readyHash;
+    rows.crestSound = jobRecipe_.sound;
+    rows.crestDeliveryRate = jobRecipe_.deliveryRateHz;
+    rows.crestParams = plan.crestParams;
+    masterUnit_ = 0;
+    masterSummary_ = {}; masterTraceCursor_ = 0; masterTraceActive_ = false;
+    masterProgress_ = { PhaseName::Pass, 0.0, config::Config::versions().all, 0, 12, 0, 12 };
 }
 
 //==============================================================================
@@ -704,7 +713,8 @@ bool Driver::retain (Session& session, JobId job, const MeasurementResult& resul
     event.payload.measurement = { result.analyzer, result.status, result.reason, result.key, session.source_.hash,
                                   session.revision_, result.framesRead, result.total, result.stored, result.complete };
     session.emit (event);
-    if (result.analyzer == Analyzer::Loudness && session.placed()) session.requestNeedles();
+    if (result.analyzer == Analyzer::Loudness && session.devicesPlaced_) session.requestNeedles();
+    session.replan();
     return true;
 }
 JobId Driver::continueMeasurement (Session& session) noexcept
@@ -716,6 +726,7 @@ JobId Driver::continueMeasurement (Session& session) noexcept
     for (auto& r : session.measurementResults_)
         if (r.analyzer != Analyzer::Excursions && r.status == MeasurementStatus::Cancelled) { r.status = MeasurementStatus::Pending; r.reason = MeasurementReason::Pending; }
     ++session.revision_;
+    session.replan();
     return session.measurementJob_;
 }
 bool Driver::allowed (const Session& session, Event event) noexcept
@@ -730,9 +741,10 @@ bool Driver::measured1 (Session& session, JobId job, std::uint64_t source) noexc
     session.state_ = State::Measured1;
     session.devicesPlaced_ = true;
     session.measurementUnit_ = 5;
-    detail::placeMachine (detail::rules(), session.project_.target, session.source_.channels, session.project_.devices, session.capabilities_.offeredDevices);
-    session.refreshEqCurve();
+    session.place (session.project_);
     session.requestNeedles();
+    session.replan();
+    session.refreshEqCurve();
     ++session.revision_;
     return true;
 }
@@ -743,6 +755,13 @@ bool Driver::measured2 (Session& session, JobId job, std::uint64_t source) noexc
     if (Session::checkFloatingPointEnvironment() != Status::Ok || ! allowed (session, Event::Measured2)) return false;
     session.state_ = State::Measured2;
     session.measurementJob_ = 0;
+    // The second measurement has ended: nothing of the source's job is left to end. The pump arrives here with every
+    // result ended; a fixture's seam may not have run an analyzer at all, and a result that can no longer end would be
+    // one a plan waits for for ever.
+    for (const auto analyzer : detail::SourceMeasurements::order)
+        if (auto& r = session.measurementResults_[std::size_t (analyzer)]; r.status == MeasurementStatus::Pending)
+        { r.status = MeasurementStatus::Unavailable; r.reason = MeasurementReason::NotImplemented; }
+    session.replan();
     ++session.revision_;
     return true;
 }
@@ -753,9 +772,14 @@ bool Driver::mastered (Session& session, JobId job) noexcept
     if (Session::checkFloatingPointEnvironment() != Status::Ok || ! allowed (session, Event::Mastered)) return false;
     detail::debugBound (session.masterRoom_ > session.masterCount_);
     session.masters_[session.masterCount_++] = { session.job_, session.jobRecipe_, {}, {} };   // into the room master() took
+    // A fixture's seam may end a master whose job never ran: the job goes with it.
+    if (session.job_ != 0 && session.masterJob_ && ! session.masterTraceActive_)
+    { session.masterJob_.reset(); session.masterJobBytes_ = 0; }
     session.mastering_ = false;
     session.job_ = 0;
     session.jobRecipe_ = {};
+    session.jobWaiting_ = false;
+    session.replan();
     ++session.revision_;
     return true;
 }

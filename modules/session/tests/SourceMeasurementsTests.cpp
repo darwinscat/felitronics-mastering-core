@@ -118,9 +118,13 @@ void fixture (unsigned channels, unsigned rate, unsigned frames, int piece, bool
         for (const auto& n : r.numbers) if (n.value) (void) same (*n.value, *n.value);
         for (const auto& a : r.arrays) for (const auto v : a.values) (void) same (v, v);
     }
-    ok (! snapshot.view().devicesPlaced, "snapshot explicitly separates device placement from measurements");
     ok (s.state() == (frames >= rate * 4 / 10 ? State::Measured2 : State::Loaded), "phase two needs usable loudness and true peak plus terminal optional statuses");
-    ok (s.check (command::EditDevice { 2, HpfFields<Touched> {} }).rejection == Rejection::NotPlaced, "real measurements do not substitute defaults for device placement");
+    const bool measured = s.state() == State::Measured2;
+    ok (snapshot.view().devicesPlaced == measured
+        && snapshot.view().plan.status == (measured ? PlanStatus::Ready : PlanStatus::Unavailable),
+        "the planner places the devices when the first measurement ends; without a usable loudness there is no plan");
+    ok (s.check (command::EditDevice { 2, HpfFields<Touched> {} }).rejection == (measured ? Rejection::None : Rejection::NotPlaced),
+        "device edits are taken once the plan is ready, and not before");
     if (s.state() == State::Measured2) ok (s.check (command::Master { 3 }).rejection == Rejection::None, "Master remains available after optional outcomes");
     else ok (s.check (command::Master { 3 }).rejection == Rejection::NotMeasured, "missing mandatory readings block Master");
     const auto plan = detail::MeasurementPlan::storageFor (pcm, detail::MeasurementPlan::parametersFor (pcm));
@@ -388,19 +392,18 @@ void cachedSourceAndCommands()
     ok (s.apply (load).rejection == Rejection::None, "load quantized source with 16-bit metadata");
     drive (s);
     const auto before = s.snapshot();
-    ok (before.view().mandatoryMeasurementsReady && ! before.view().devicesPlaced
+    ok (before.view().mandatoryMeasurementsReady && before.view().devicesPlaced
         && before.view().measurements[std::size_t (Analyzer::Excursions)].status == MeasurementStatus::Ready,
-        "real measurement reaches mandatory readiness and completes required needles without placement");
+        "real measurement reaches mandatory readiness, completes the needles the limiter reads, and places the devices");
     const auto forensics = std::size_t (Analyzer::Forensics);
     ok (*value (before.view().measurements[forensics], "grid.alwaysZeroLowBits[0]").value == 0,
         "16-bit PCM initially has no unused low bits");
     for (const Request request : { Request (command::EditDevice { 7, HpfFields<Touched> {} }),
-                                  Request (command::RevertEdits { 8, HpfFields<Mark> {} }),
-                                  Request (command::ImportProject { 9, {} }) })
+                                  Request (command::RevertEdits { 8, HpfFields<Mark> {} }) })
     {
         const auto cell = Table::commands[request.index()].cell[std::size_t (s.column())];
-        ok (cell == Rejection::NotPlaced && s.check (request).rejection == cell && s.apply (request).rejection == cell,
-            "the public table itself refuses device operations after a real unplaced measurement");
+        ok (cell == Rejection::None && s.check (request).rejection == cell && s.apply (request).rejection == cell,
+            "the public table takes device operations after a real measurement placed the devices");
     }
     load.meta.bitDepth = 24;
     const auto spent = budget::spend ([&] { (void) s.apply (load); });
@@ -464,32 +467,45 @@ void cachedSourceAndCommands()
 }
 void unplacedCommandsDuringWork()
 {
-    std::vector<float> pcm (48000, .1f); const float* planes[] { pcm.data(), pcm.data() };
+    // cd's glue reads the tempo, which the source's second phase measures: after the first measurement the plan waits
+    // for it, and the table's Unplaced columns take no device operation.
+    constexpr unsigned rate = 48000, frames = rate * 12;
+    std::vector<float> pcm (frames);
+    for (unsigned i = 0; i < frames; ++i) pcm[i] = i % 24000 < 300 ? .2f : 0.0f;
+    const float* planes[] { pcm.data(), pcm.data() };
     auto made = Session::create(); auto& s = *made.session;
-    (void) s.apply (command::Load { 1, { planes, 2, pcm.size(), 48000 }, {} });
+    (void) s.apply (command::SetTarget { 1, "cd" });
+    (void) s.apply (command::Load { 2, { planes, 2, pcm.size(), rate }, {} });
     while (s.state() == State::Loaded && s.measurementJob()) (void) s.step (1);
     const auto refused = [&] (Column column)
     {
-        ok (s.column() == column, "the real pump exposes placement in its table column");
+        ok (s.column() == column, "the real pump exposes the plan in its table column");
         for (const Request request : { Request (command::EditDevice { 2, HpfFields<Touched> {} }),
                                       Request (command::RevertEdits { 3, HpfFields<Mark> {} }),
-                                      Request (command::ImportProject { 4, {} }) })
+                                      Request (command::ImportProject { 4, {} }),
+                                      Request (command::AdoptMachine { 5 }) })
         {
             const auto cell = Table::commands[request.index()].cell[std::size_t (column)];
             const auto result = s.apply (request);
             ok (cell == Rejection::NotPlaced && result.rejection == cell, "all unplaced command refusals come from the published table");
         }
     };
+    ok (s.snapshot().view().plan.status == PlanStatus::Pending && s.snapshot().view().plan.awaited == Analyzer::Tempo
+        && s.snapshot().view().plan.awaitedBy == Device::Glue, "the plan waits for the tempo the glue reads");
     refused (Column::Measured1Unplaced);
-    ok (s.apply (command::Master { 5 }).rejection == Rejection::None, "a real measured source can master before placement");
+    const auto master = s.apply (command::Master { 5 });
+    ok (master.rejection == Rejection::None, "with the panel hidden a master is taken while the plan waits");
     refused (Column::Mastering1Unplaced);
-    (void) s.apply (command::Cancel { 6, s.measurementJob() });
-    refused (Column::MasteringStoppedUnplaced);
-    (void) s.apply (command::Cancel { 7, s.job() });
+    (void) s.apply (command::Cancel { 6, master.job });
+    refused (Column::Measured1Unplaced);
+    (void) s.apply (command::Cancel { 7, s.measurementJob() });
+    ok (s.snapshot().view().plan.status == PlanStatus::Stopped, "a stopped tempo stops the plan, which says so");
     refused (Column::StoppedMeasuredUnplaced);
     ok (s.apply (command::ContinueMeasurement { 8 }).rejection == Rejection::None, "unplaced stopped measurement can continue");
     refused (Column::Measured1Unplaced);
     drive (s);
+    ok (s.column() == Column::Measured2 && s.snapshot().view().plan.status == PlanStatus::Ready,
+        "once the tempo has ended the devices are placed");
 }
 void tempoFinishCanStopAndContinue()
 {
@@ -614,7 +630,8 @@ void masterTempoDependencyPolicy()
         auto made = Session::create(); auto& s = *made.session; start (s);
         const auto master = s.apply (command::Master { 3 });
         (void) s.step (1);
-        ok (master.rejection == Rejection::None && s.snapshot().view().masterProgress.pass == 1
+        ok (master.rejection == Rejection::None && s.job() == master.job
+            && s.snapshot().view().masterProgress.name == PhaseName::Pass
             && ! s.snapshot().view().tempoChoice.ready,
             "non-CD target without active glue starts rendering without tempo");
     }
@@ -739,6 +756,59 @@ void deviceTempoPolicy()
     ok (unavailable.ready && ! unavailable.measured && same (unavailable.bpm, 120.0)
         && unavailable.reason == MeasurementReason::Memory, "unavailable tempo uses the fallback with its cause");
 }
+// THE WHOLE FILE'S SPECTRAL WALL: a band-limited source (a sum of partials below 15 kHz, one channel quieter, as a lossy
+// encoder leaves it), measured through the session, publishes the analyzer's aggregate wall — every field, bit for bit
+// against the analyzer run directly — beside the two channels' walls.
+void wholeFileWall()
+{
+    constexpr unsigned rate = 48000, frames = rate * 6;
+    std::vector<float> left (frames), right (frames);
+    std::uint64_t seed = 0x9E3779B97F4A7C15ull;
+    for (int k = 0; k < 400; ++k)
+    {
+        seed = seed * 6364136223846793005ull + 1442695040888963407ull;
+        const double hz = 40.0 + double (seed >> 40) / double (1u << 24) * 14900.0;
+        const double phase = double (seed & 0xFFFF) / 65536.0 * 6.283185307179586;
+        for (unsigned i = 0; i < frames; ++i)
+        {
+            const double x = 0.002 * felitronics::core::det::sin (6.283185307179586 * hz * double (i) / rate + phase);
+            left[i] += float (x); right[i] += float (0.5 * x);
+        }
+    }
+    const float* planes[] { left.data(), right.data() };
+    const Pcm pcm { planes, 2, frames, rate };
+    auto made = Session::create(); auto& s = *made.session;
+    ok (s.apply (command::Load { 1, pcm, {} }).rejection == Rejection::None, "the band-limited source loads");
+    drive (s);
+    const auto snapshot = s.snapshot();
+    const auto& result = snapshot.view().measurements[std::size_t (Analyzer::Forensics)];
+    const auto plan = detail::MeasurementPlan::storageFor (pcm, detail::MeasurementPlan::parametersFor (pcm));
+    detail::MeasurementWorkspace direct;
+    ok (direct.prepare (Analyzer::Forensics, pcm, plan), "the forensics analyzer prepares with the session's parameters");
+    for (std::size_t start = 0; start < frames;)
+    {
+        const auto n = std::min<std::size_t> (1024, frames - start);
+        const float* part[] { left.data() + start, right.data() + start };
+        ok (direct.forensics->process (part, 2, int (n)), "direct forensics processes");
+        start += n;
+    }
+    (void) direct.forensics->finish();
+    const auto w = direct.forensics->wall();
+    const auto has = [&] (std::string_view name) { for (const auto& v : result.numbers) if (v.name == name) return true; return false; };
+    ok (has ("wall.cutoffHz") && has ("wall.valid") && has ("wall.cutoffHz[0]") && has ("wall.cutoffHz[1]"),
+        "the forensics result names the whole file's wall beside each channel's");
+    ok (w.valid && std::abs (w.cutoffHz - 15000.0) < 500.0 && same (*value (result, "wall.cutoffHz").value, w.cutoffHz),
+        "the whole file's wall: the band limit near 15 kHz, the analyzer's own number (" + std::to_string (w.cutoffHz) + " Hz)");
+    const std::pair<std::string_view, double> fields[] { { "wall.valid", double (w.valid) }, { "wall.reason", double (w.reason) },
+        { "wall.sharp", double (w.sharp) }, { "wall.nearNyquist", double (w.nearNyquist) }, { "wall.cutoffFractionOfNyquist", w.cutoffFractionOfNyquist },
+        { "wall.steepestHz", w.steepestHz }, { "wall.transitionEndHz", w.transitionEndHz }, { "wall.transitionHz", w.transitionHz },
+        { "wall.dropDb", w.dropDb }, { "wall.strictDropDb", w.strictDropDb }, { "wall.localDropDb", w.localDropDb },
+        { "wall.steepnessDbPerOctave", w.steepnessDbPerOctave }, { "wall.emptyAboveHz", w.emptyAboveHz },
+        { "wall.framesUsed", double (w.framesUsed) }, { "wall.framesHoled", double (w.framesHoled) } };
+    bool all = true;
+    for (const auto& [name, expected] : fields) all = all && value (result, name).value && same (*value (result, name).value, expected);
+    ok (all, "every field of the whole file's wall is the analyzer's, bit for bit");
+}
 int main()
 {
     fixture (2, 48000, 192000, 317, true);
@@ -747,6 +817,7 @@ int main()
     fixture (2, 8000, 8000, 319, false);
     optionalFailure(); missingMandatory(); driftingHum(); truncatedLists(); finiteSourceOverflow(); cachedSourceAndCommands(); unplacedCommandsDuringWork();
     tempoFinishCanStopAndContinue(); masterWaitsForTempo(); masterTempoDependencyPolicy(); longTempoParity(); deviceTempoPolicy();
+    wholeFileWall();
     ok (! detail::SourceWarnings::wideBass (.059999999) && detail::SourceWarnings::wideBass (.06), "wide bass includes exactly six percent");
     ok (detail::SourceWarnings::quiet (-40) == text::FactId::Value && detail::SourceWarnings::quiet (-40.0001) == text::FactId::SourceQuiet
         && detail::SourceWarnings::quiet (-55) == text::FactId::SourceQuiet && detail::SourceWarnings::quiet (-55.0001) == text::FactId::SourceGainOnly,

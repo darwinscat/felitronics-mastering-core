@@ -25,9 +25,10 @@ using namespace felitronics::session;
 using felitronics::test::ok;
 using detail::Driver;
 using text::FactId;
+// A usable loudness and true peak whose loudness need on the default target is at most 3 dB: no needles to measure.
 constexpr MeasurementValue kEventReadyNumbers[] {
     { "integratedLufs", -18.0, MeasurementReason::None, 0 },
-    { "truePeakDb", -1.0, MeasurementReason::None, 0 }
+    { "truePeakDb", -3.0, MeasurementReason::None, 0 }
 };
 // Test-only corruption reaches the guards without depending on real driver failures.
 struct felitronics::session::detail::Inspector
@@ -43,6 +44,9 @@ struct felitronics::session::detail::Inspector
         result.status = MeasurementStatus::Ready;
         result.reason = MeasurementReason::None;
         result.numbers = kEventReadyNumbers;
+        // What a finished loudness does (Driver::retain): the needles for the project's ceiling, and the plan again.
+        s.requestNeedles();
+        s.replan();
     }
     static std::uint64_t sequence (const Session& s) { return s.sequence_; }
     static void fillBatch (Session& s, std::size_t count) { for (std::size_t i = 0; i < count; ++i) s.emit ({}); }
@@ -159,7 +163,8 @@ std::vector<Notification> scenario (std::uint32_t chunk, bool cancel)
     if (! snapshot (*s).view().mandatoryMeasurementsReady) detail::Inspector::mandatory (*s);
     auto saved = snapshot (*s);
     const auto job = apply (*s, command::Master { 2 }).job;
-    ok (snapshot (*s).view().masterProgress.totalUnits == 4, "legacy progress bound is available before the first step");
+    ok (snapshot (*s).view().masterProgress.totalUnits == 12 && snapshot (*s).view().masterProgress.totalPasses == 12,
+        "the master's progress bound is available before the first step");
     if (cancel)
     {
         (void) step (*s, 1); collect();
@@ -185,7 +190,9 @@ void pump()
     ok (eventsHash (one) == eventsHash (bulk) && eventsHash (one) == eventsHash (again), "complete event sequence is invariant across runs and pump slicing");
     ok (eventsHash (cancelled) == eventsHash (cancelledAgain), "cancelled scenario sequence is invariant across runs and slicing");
     ok (one.size() > 22 && cancelled.size() > one.size(), "measurement publishes live work and cancellation adds events");
-    ok (eventsHash (one) == 0xbb6a23cf576083a0ull && eventsHash (cancelled) == 0x88c168dd3c1699fdull, "event fixtures pin every active payload field");
+    // The phases carry the config's version (weightsVersion): a new config moves these pins — and the master is rendered
+    // (a master the session decides runs its job: its passes, its cost and its facts are events of the scenario).
+    ok (eventsHash (one) == 0x61500c6de9e9dd95ull && eventsHash (cancelled) == 0x1fd78c28c6526518ull, "event fixtures pin every active payload field");
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     Audio audio; auto s = fresh();
     const auto old = apply (*s, audio.load()).job;
@@ -233,7 +240,9 @@ void tableBetweenSteps()
             const auto project = s->exportProject();
             const Request requests[] = { audio.load(), command::SetTarget { 13, "allStreaming" },
                 command::EditTarget { 14, { -13.0, {} } }, command::EditDevice { 15, hpf }, command::RevertEdits { 16, mask },
-                command::SetManual { 17, false }, command::Master { 18 }, command::Cancel { 19, job }, command::Forget { 20, kept }, command::ImportProject { 21, project.view() }, command::ContinueMeasurement { 23 } };
+                command::SetManual { 17, false }, command::Master { 18 }, command::Cancel { 19, job }, command::Forget { 20, kept }, command::ImportProject { 21, project.view() }, command::ContinueMeasurement { 23 },
+                command::AdoptMachine { 24 } };
+            static_assert (std::size (requests) == kCommands, "a request of every command");
             ok (std::size_t (s->column()) == col, "pump establishes the table column");
             const auto answer = apply (*s, requests[std::size_t (row.command)]);
             const auto expected = row.command == Command::Cancel && job == 0 ? Rejection::NoJob : row.cell[col];

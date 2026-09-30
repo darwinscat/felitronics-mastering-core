@@ -97,7 +97,8 @@ enum class FactId : std::uint16_t
     WideBass = 6,            // the bass is wide (side {side}) — the warning of phase 1
     RateAboveLimit = 7,      // the file's rate {rate} is above what this platform takes, {limit} (select on platform)
     MachineDifferences = 8,  // {count}: the saved machine layer is retained
-    DefaultsConverted = 9,   // {version}: the project was converted from older defaults
+    DefaultsConverted = 9,   // {version}: the project was converted from older defaults — emitted by nothing since an
+                             // import accepts only the current defaults label; the id and its message stay
     SameCoreMachineDifferences = 10, // {count}: same-core differences usually indicate a hand-edited file
     MasterLandingMiss = 11,
     MasterHintSubBass = 12,
@@ -117,6 +118,72 @@ enum class FactId : std::uint16_t
     MasterCostPumping = 26,
     MasterCostK2Deferred = 27,
     MasterCostUnavailable = 28,
+    PlanWaiting = 29,        // a master waits: {device} reads {analyzer}, measured to {progress}
+    // What the high-pass and mono bass found (PlanView::hpf, ::monoBass; PlanText).
+    HpfNote = 30,            // {cutoff} from the lowest note {note} at {hz}, taking {loss} of it
+    HpfBelowFloor = 31,      // {cutoff}, the floor: the lowest note {note} at {hz} is below it, cut by {loss}
+    HpfTop = 32,             // {cutoff}, the top: the lowest note {note} at {hz} is higher
+    HpfUnsure = 33,          // {cutoff}, the floor: no sure lowest note
+    HpfShort = 34,           // {cutoff}, the floor: a programme shorter than {seconds} is not searched
+    HpfQuiet = 35,           // {cutoff}, the floor: the input is too quiet to search
+    HpfUnmeasured = 36,      // {cutoff}, the floor: the low end was not measured
+    MonoBassPartial = 37,    // bass partly in opposite polarity: mono bass takes {loss} of the low end
+    MonoBassAntiPhase = 38,  // bass in opposite polarity: mono bass would take {loss}; check a channel's polarity
+    MonoBassUnmeasured = 39, // mono bass left out: the loss could not be weighed
+    HpfFloor = 40,           // {cutoff}, the floor: it takes {loss} of the lowest note {note} at {hz}, more than the note allows
+    // What the glue comes to (PlanView::glue; PlanText) and what the glue and the saturation did (MasterCost; MasterReportText).
+    GlueUnavailable = 41,    // the glue is out — no short-term P95 to stand its threshold on; the knob's {upTo} is kept
+    GlueTempoFallback = 42,  // the glue's release is set for {bpm}: the tempo was not measured with confidence
+    GlueReleaseHeld = 43,    // the glue's release is held at {release}: the tempo asked for {asked}
+    MasterGlue = 44,         // the glue took {usual} on the loud places, {largest} at most
+    MasterSaturation = 45,   // the saturation cut peaks by up to {largest}, usually {usual}
+    // A device sounding otherwise than the planner proposes: named as what it is, without the planner's reasons.
+    HpfByHand = 46,          // the high-pass at {cutoff}: a person's value
+    HpfKept = 47,            // the high-pass at {cutoff}: a project file's machine layer
+    HpfOff = 48,             // the high-pass is out of the chain
+    MonoBassByHand = 49,     // mono bass below {crossover}: a person's value
+    MonoBassKept = 50,       // mono bass below {crossover}: a project file's machine layer
+    MonoBassPartWeighed = 51, // mono bass was weighed over the first {covered} of the piece's {whole}
+    // What the limiter comes to (PlanView::limiter; PlanText): its ceiling and what the peak clipper does, as it sounds.
+    LimiterShort = 52,       // ceiling {ceiling}; short needles ({p90}, {bass}, {plr}) are clipped down to {over} above it
+    LimiterBetween = 53,     // ...needles neither short nor ruled out: clipped with care, down to {over}
+    LimiterManual = 54,      // ...clipped by hand, down to {over} above the ceiling
+    LimiterNeedlesOff = 55,  // ...the peak clipper is switched off
+    LimiterLittleNeed = 56,  // ...not cut: the need {need} is no more than {little}
+    LimiterNoExcursions = 57, // ...not cut: no peak stands above the ceiling
+    LimiterUnmeasured = 58,  // ...not cut: the needles were not measured
+    LimiterClipped = 59,     // ...not cut: the source is clipped, {rate} clips a minute
+    LimiterLowPlr = 60,      // ...not cut: the input's PLR {plr} is under {bound}
+    LimiterBass = 61,        // ...not cut: the excursions carry much bass, {bass} of the dose
+    LimiterLong = 62,        // ...not cut: the excursions are long, 90 % within {p90}
+    LimiterNoClipper = 63,   // ...not cut: the target has no peak clipper
+    LimiterQuiet = 64,       // ...not cut: the input is too quiet to measure
+    LimiterPending = 65,     // ...the needles are still being measured
+    LimiterPlain = 66,       // the ceiling alone
+    NeedlesAgainstMachine = 67, // beside a manual threshold: the machine would not cut — {why} (select)
+    VinylCeiling = 68,       // for vinyl the ceiling usually stands no higher than {medium}; it is {ceiling}
+    VinylNeedles = 69,       // for vinyl the needles are usually not cut
+    VinylTop = 70,           // on vinyl the top above {hz} is usually rolled off in the cutting room
+    // What the dither comes to (PlanView::dither; PlanText).
+    DitherOn = 71,           // on: a {bits}-bit delivery
+    DitherOffByHand = 72,    // switched off by a person: the {bits}-bit delivery is rounded without noise
+    DitherOff = 73,          // off: the {bits}-bit delivery is rounded without noise
+    DitherNotApplied = 74,   // does not apply: a {bits}-bit delivery, dither only up to {upTo} bits
+    DitherKept = 75,         // ...and a person's tick is kept without effect
+    // A master's medium and input (MasterReportText), published with the master.
+    MasterVinylReady = 76,   // ready for cutting: no cardinal corrections; RIAA and the level are the cutter's
+    MasterVinylDeparts = 77, // readiness is not confirmed: the settings depart from the rules of vinyl
+    MasterVinylChecked = 78, // checked on the file: mono below {crossover}, infra-low cut from {cutoff}, {peak} ≤ {ceiling}
+    MasterVinylUncheckable = 79, // what a file cannot tell: the side's length, sibilance at the cutter, the centre
+    MasterQuietInput = 80,   // a very quiet input ({lufs}) raised by {gain}: no device but the high-pass and the dither
+    TargetChangeResetsEdits = 81, // before a change of target: {count} device edits by hand will be reset
+    // Each rule of vinyl a master departs from (MasterReportText::vinylDepartures), the chain's number beside the rule's.
+    MasterVinylNoFold = 82,  // mono bass off: for vinyl the bass below {medium} is folded
+    MasterVinylFoldDeparts = 83, // mono below {crossover} at width {width}: for vinyl below {medium}, width ≤ {mediumWidth}
+    MasterVinylNoHighPass = 84, // high-pass off: for vinyl the infra-low is cut from {medium} at ≥ {mediumSlope} dB/oct
+    MasterVinylHighPassDeparts = 85, // high-pass from {cutoff} at {slope} dB/oct: for vinyl from {medium} at ≥ {mediumSlope}
+    MasterVinylCeilingDeparts = 86, // the ceiling {ceiling} above the medium's {medium}
+    MasterVinylNeedlesDeparts = 87, // the needles cut from {over} above the ceiling: vinyl is cut without the clipper
 
     // A command's rejection, by its code — what was refused and why. The three a field refuses name it: {field}.
     RejectedFloatingPointEnvironment = 101,
@@ -154,6 +221,7 @@ enum class FactId : std::uint16_t
     RejectedOutputPending = 132,
     RejectedMandatoryUnavailable = 133,
     RejectedDeliveryFormat = 134,  // {bits} {rate}: the target's bit depth and delivery rate
+    RejectedPlanPending = 135,
 
     Measurement1 = 200,
     Measurement2 = 201,
@@ -189,6 +257,25 @@ enum class FactId : std::uint16_t
     SourceDc = 416,
     SourceUnusedBits = 417,
     SourcePolarity = 418,
+    // The observations (Observations, Session.h; ObservationText): what the measurements found in the file.
+    SourceClips = 419,         // {count} clips in the source
+    SourceClipsAt1 = 420,      // ...at {first}: it looks like an edit
+    SourceClipsAt2 = 421,      // ...at {first} and {second}
+    SourceClipsAt3 = 422,      // ...the first at {first}, {second} and {third}
+    SourceClipped = 423,       // the source is clipped: {count} clips, {rate} a minute
+    SourceDualMono = 424,      // the channels of the stereo file are equal
+    SourceEdgeSilence = 425,   // silence at the edges: {leading} at the start, {trailing} at the end
+    SourceShort = 426,         // a short recording ({seconds}): under {limit} the lowest note is not sought
+    SourceLimited = 427,       // already limited: PLR {plr}, under {bound}
+    SourceLimitedClipped = 428, // already limited: the source is clipped (PLR {plr})
+    SourceWall = 429,          // the spectrum ends at {cutoff}, a drop of {drop}
+    SourceLowestBand = 430,    // the lowest occupied band: {note} ({hz})
+    SourceInfraLow = 431,      // {share} of the energy lies below {hz}
+    SourceSibilance = 432,     // sibilance: bursts {excess} above their baseline, {rate} a minute
+    SourceSibilanceAt = 433,   // ...the loudest at {first}, {second} and {third}
+    SourceHum = 434,           // hum: a line at {hz}, {prominence} above the background
+    SourceHumWandered = 435,   // possible hum: a line near {hz} that does not hold its frequency
+    SourceLowestBandUnsure = 436, // the lowest occupied band: {note} ({hz}), unsure — under the margin a sure note stands
 
 };
 
@@ -219,6 +306,12 @@ enum class Term : std::uint16_t
     StatusReady, StatusUnsupported, StatusShort, StatusNonFinite, StatusCapacity, StatusNoSignal, StatusMemory,
     AnalyzerWaveform,
     AnalyzerTempo,
+    // The needles job, and the devices by the labels a person knows them by (a plan's waited-for measurement names both).
+    AnalyzerNeedles,
+    DeviceHpf, DeviceMonoBass, DeviceGlue, DeviceSaturation, DeviceTilt, DeviceLimiter, DeviceDither, DeviceLow,
+    // Why the machine's peak clipper does not cut (NeedlesWhy, Session.h), for the warning beside a manual threshold.
+    NeedlesWhyShell, NeedlesWhyTarget, NeedlesWhyQuiet, NeedlesWhyNoReadings, NeedlesWhyLittleNeed, NeedlesWhyUnmeasured,
+    NeedlesWhyNoExcursions, NeedlesWhyClipped, NeedlesWhyLowPlr, NeedlesWhyBass, NeedlesWhyLong,
 
 };
 
@@ -261,6 +354,7 @@ struct Fact
     [[nodiscard]] static Fact of (FactId id, const Arg& a, const Arg& b) noexcept;
     [[nodiscard]] static Fact of (FactId id, const Arg& a, const Arg& b, const Arg& c) noexcept;
     [[nodiscard]] static Fact of (FactId id, const Arg& a, const Arg& b, const Arg& c, const Arg& d) noexcept;
+    [[nodiscard]] static Fact of (FactId id, const Arg& a, const Arg& b, const Arg& c, const Arg& d, const Arg& e) noexcept;
 };
 
 //==============================================================================

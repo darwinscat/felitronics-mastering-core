@@ -18,16 +18,20 @@
 #   monoBass          the mono-bass crossover, Hz. Mono bass is always placed — the machine leaves it out for bass in
 #                     opposite polarity and on an input too quiet to measure ([input] in engine.toml), and a person may
 #                     switch it off. Within the knob's domain ([monoBass] in engine.toml).
-#   hpfFloor          the lowest cutoff the high-pass may take, Hz: cutoff = max(the cutoff the lowest note allows,
-#                     this); a note that is unsure or below it gives this. Within the knob's domain ([hpf]).
+#   hpfFloor          the lowest cutoff the machine's high-pass takes, Hz: cutoff = max(the cutoff the lowest note allows,
+#                     this); a note that is unsure or below it gives this (owner decision 3.3: 32 Hz on every target — a
+#                     cut below 32 Hz is too little for a mix made outside a studio; a professional has the knob, whose
+#                     domain reaches down to 0 Hz exclusive). Within the knob's domain ([hpf]).
 #   hpfSlopeDbPerOct  the machine's high-pass slope, dB/oct — from the target, never from a trial render. One of the
 #                     knob's slopes ([hpf]).
 #   noteLossDb        how much the high-pass may take at the lowest note found, dB.
 #   sampleRate        delivery rate, Hz; 0 keeps the source's rate.
 #   bitDepth          delivery bit depth: 16 or 24. The dither follows it ([dither] in engine.toml: 16 bits only).
-#   noClipper         optional, false when absent: the peak clipper inside the limiter is off for this target.
-#   hpfAlways         optional, false when absent: the high-pass is placed even when there is nothing below the lowest
-#                     note (elsewhere "nothing below it" leaves the high-pass out).
+#   noClipper         optional, false when absent: the machine's peak clipper inside the limiter is off for this target.
+#                     A person may switch it on, with a warning beside the knob.
+#   vinyl             optional, false when absent: the master goes to a cutting lathe. The row's tp is then the medium's
+#                     ceiling — the machine never stands above it, and a person who raises it is obeyed and warned — and
+#                     the report says what the master is ready for and what only the cutting room can check.
 #   sourceRatePass    optional, false when absent: when the delivery rate is not the source's, the landing is followed
 #                     by one more pass at the source's rate, so the per-band crest of the master is compared with the
 #                     source at the source's own rate. The landing itself is not repeated.
@@ -54,46 +58,46 @@ main = ["allStreaming", "lp", "cdDynamic", "cd", "bandcamp", "club"]
 [targets]
 # One master for every streaming platform. It does not take the strictest ceiling of the platforms below:
 # spotifyLoud keeps its −11 LUFS / −2 dBTP as a target of its own.
-allStreaming = { group = "streaming", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
+allStreaming = { group = "streaming", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
 # A dynamic CD. Dynamic masters sit at −11…−14 LUFS, most often −12…−13: mastering practice, not a standard.
-cdDynamic    = { group = "delivery", lufs = -12, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 44100, bitDepth = 16, sourceRatePass = true }
+cdDynamic    = { group = "delivery", lufs = -12, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 44100, bitDepth = 16, sourceRatePass = true }
 # A club master. Club tracks are observed at −10…−6 LUFS, most often −8: not an official standard. The high-pass takes
 # only 0.3 dB at the lowest note here, on a hypothesis: a club system reproduces the fundamental, where everywhere else
 # 20 Hz is heard through its harmonics. And the high-pass is always placed, as on vinyl: it protects the club's
 # subwoofers from infrasonic bursts, which a share of the whole programme does not see. Mono bass is not the reason —
 # it folds the side only.
-club         = { group = "delivery", lufs = -8, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 0.3, sampleRate = 0, bitDepth = 24, hpfAlways = true }
+club         = { group = "delivery", lufs = -8, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 0.3, sampleRate = 0, bitDepth = 24 }
 # Vinyl. No peak clipper and a ceiling of −3 dBTP for the cutting lathe; mono bass up to 150 Hz, where cutting rooms put
 # their elliptical filter (100…150 Hz); the high-pass is always placed, never below 32 Hz and at a gentle 12 dB/oct;
 # a +0.5 dB low shelf. Never RIAA, never upsampled, never dithered to 16 bits.
-lp           = { group = "delivery", lufs = -14, tp = -3, monoBass = 150, hpfFloor = 32, hpfSlopeDbPerOct = 12, noteLossDb = 1, sampleRate = 0, bitDepth = 24, noClipper = true, hpfAlways = true, lowDb = 0.5 }
-spotify      = { group = "streaming", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
-spotifyLoud  = { group = "streaming", lufs = -11, tp = -2, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
-appleMusic   = { group = "streaming", lufs = -16, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
-youtube      = { group = "streaming", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 48000, bitDepth = 24 }
+lp           = { group = "delivery", lufs = -14, tp = -3, monoBass = 150, hpfFloor = 32, hpfSlopeDbPerOct = 12, noteLossDb = 1, sampleRate = 0, bitDepth = 24, noClipper = true, vinyl = true, lowDb = 0.5 }
+spotify      = { group = "streaming", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
+spotifyLoud  = { group = "streaming", lufs = -11, tp = -2, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
+appleMusic   = { group = "streaming", lufs = -16, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
+youtube      = { group = "streaming", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 48000, bitDepth = 24 }
 # YouTube Music: −7 LUFS is MEASURED (the "Stats for nerds" target reads −7.0), not a published specification. Heavily
 # compressed — for a release meant for this platform alone.
-youtubeMusic = { group = "streaming", lufs = -7, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 48000, bitDepth = 24 }
-amazon       = { group = "streaming", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
-tidal        = { group = "streaming", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
-deezer       = { group = "streaming", lufs = -15, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
-soundcloud   = { group = "streaming", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
+youtubeMusic = { group = "streaming", lufs = -7, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 48000, bitDepth = 24 }
+amazon       = { group = "streaming", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
+tidal        = { group = "streaming", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
+deezer       = { group = "streaming", lufs = -15, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
+soundcloud   = { group = "streaming", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
 # AES TD1008: the track loudness is the target; the album loudness is there for album mastering, which the web shell
 # does not offer.
-td1008       = { group = "streaming", lufs = -16, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24, album = { lufs = -14, desktopOnly = true } }
-ebu          = { group = "streaming", lufs = -23, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
-distrokid    = { group = "aggregator", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
-cdbaby       = { group = "aggregator", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
-tunecore     = { group = "aggregator", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
-amuse        = { group = "aggregator", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
-feiyr        = { group = "aggregator", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
-routenote    = { group = "aggregator", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
-horusmusic   = { group = "aggregator", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
-dittomusic   = { group = "aggregator", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
+td1008       = { group = "streaming", lufs = -16, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24, album = { lufs = -14, desktopOnly = true } }
+ebu          = { group = "streaming", lufs = -23, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
+distrokid    = { group = "aggregator", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
+cdbaby       = { group = "aggregator", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
+tunecore     = { group = "aggregator", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
+amuse        = { group = "aggregator", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
+feiyr        = { group = "aggregator", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
+routenote    = { group = "aggregator", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
+horusmusic   = { group = "aggregator", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
+dittomusic   = { group = "aggregator", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
 # A loud CD.
-cd           = { group = "delivery", lufs = -9, tp = -0.3, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 44100, bitDepth = 16, sourceRatePass = true }
+cd           = { group = "delivery", lufs = -9, tp = -0.3, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 44100, bitDepth = 16, sourceRatePass = true }
 # Bandcamp does not normalise loudness (confirmed by Bandcamp): a delivery preset, not a platform target.
-bandcamp     = { group = "delivery", lufs = -10, tp = -1, monoBass = 120, hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
+bandcamp     = { group = "delivery", lufs = -10, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
 
 # THE HAND EDIT OF A TARGET'S TWO NUMBERS. A person may change the loudness and the ceiling of the chosen target in
 # place: from…to is the knob's travel, step its step, green the range drawn green — broadcast and streaming loudness

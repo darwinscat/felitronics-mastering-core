@@ -16,6 +16,7 @@
 #include <felitronics/stereo/MonoBass.h>
 
 #include <algorithm>
+#include <bit>
 #include <cmath>
 #include <cstdint>
 #include <memory>
@@ -200,6 +201,25 @@ struct MasteringChainTaps
     int framesWritten = 0;
     int osWritten     = 0;
     int bandQuantaWritten = 0;
+};
+
+// WHAT THE SOFT CLIPPER DID TO PEAKS, measured on the stage itself: the peak of its input against the peak of its
+// output, internal quantum by internal quantum, after the stage's own mix and output trim — not the fall of the chain's
+// true peak, which is the limiter's work. The stage is a gain as well as a bend (a peak-normalised shaper lifts what
+// is under full scale), so a ratio alone says nothing about peaks: `quietGain` is what the settled stage multiplies
+// a sound too quiet to bend by, and a peak was CUT by `quietGain / ratio` — how much less it got than that.
+//
+// THE LOUD PLACES are the quanta with the highest input peaks: whole bins of the input's peak, from the top down,
+// until they hold at least `loudShare` of the quanta counted. `loudLeastRatio` is the smallest out/in ratio among
+// them — the largest cut — and `loudUsualRatio` the ratio of the middle one of them, in the order of their input
+// peaks (the mean ratio of the bin it fell in: the cut grows with the input's peak, so that is the median cut).
+// Quanta whose input peak is under -72 dBFS are not counted, and neither is a quantum the stage was bypassed or
+// fading on. One hit moves the largest cut and leaves the usual one where it was.
+struct ClipperPeaks
+{
+    std::uint64_t quanta = 0, loudQuanta = 0;
+    double quietGain = 1.0;
+    double loudLeastRatio = 0.0, loudUsualRatio = 0.0;
 };
 
 // What the chain ACTUALLY applied, after every stage's own clamps and refusals. `configure` in the
@@ -518,6 +538,59 @@ public:
     std::int64_t peakClipRunSamplesTotal()    const noexcept { return cfg_.limiter ? lim_.clipRunOsTotal() : 0; }
     std::int64_t peakClipLongestRunSamples()  const noexcept { return cfg_.limiter ? lim_.clipLongestRunOs() : 0; }
 
+    // WHAT THE SOFT CLIPPER DID TO PEAKS since the last reset() (see ClipperPeaks). FALSE, with `out` cleared, without
+    // the stage, for a share outside (0, 1], and when no quantum was counted. Reads the counters only: no state moves,
+    // and the audio never depended on them.
+    bool clipperPeaks (double loudShare, ClipperPeaks& out) const noexcept
+    {
+        out = {};
+        if (! cfg_.clipper || ! (loudShare > 0.0) || ! (loudShare <= 1.0)) return false;
+        std::uint64_t total = 0;
+        for (const auto& b : clipBins_) total += b.count;
+        if (total == 0) return false;
+        const auto want = std::max<std::uint64_t> (1u, (std::uint64_t) std::ceil (loudShare * (double) total));
+        int low = kClipPeakBins;
+        std::uint64_t loud = 0;
+        while (low > 0 && loud < want) loud += clipBins_[(std::size_t) --low].count;
+        double least = 0.0, usual = 0.0;
+        bool any = false;
+        std::uint64_t seen = 0;
+        const std::uint64_t middle = (loud + 1u) / 2u;
+        for (int b = low; b < kClipPeakBins; ++b)
+        {
+            const auto& bin = clipBins_[(std::size_t) b];
+            if (bin.count == 0) continue;
+            if (! any || (double) bin.leastRatio < least) least = (double) bin.leastRatio;
+            any = true;
+            if (seen < middle && seen + bin.count >= middle) usual = bin.ratioSum / (double) bin.count;
+            seen += bin.count;
+        }
+        out.quanta = total; out.loudQuanta = loud;
+        out.quietGain = clipperQuietGain();
+        out.loudLeastRatio = least; out.loudUsualRatio = usual;
+        return true;
+    }
+
+    // What the settled soft clipper multiplies a sound too quiet to bend by: the dry share, and the wet one at the
+    // shaper's slope at zero under its drive compensation, times the output trim — `Saturator`'s own design
+    // arithmetic on the parameters in force, with its clamps (MasteringChainTests measures the stage against it).
+    // 1 without the stage.
+    double clipperQuietGain() const noexcept
+    {
+        if (! cfg_.clipper) return 1.0;
+        const auto finite = [] (float v, float fallback) noexcept { return std::isfinite (v) ? v : fallback; };
+        const auto& p = params_.clipper;
+        saturation::WaveShaper shaper;
+        shaper.setShape (p.shape);
+        shaper.setBias (finite (p.bias, 0.0f));
+        shaper.setDrive ((float) (core::dbToGain (finite (p.driveDb, 3.0f)) - 1.0));
+        const float slope = shaper.slopeAtZero();
+        const float comp = (float) std::pow ((double) std::max (1.0e-6f, slope),
+                                             (double) -std::clamp (finite (p.autoComp, 0.5f), 0.0f, 1.0f));
+        const double mix = (double) std::clamp (finite (p.mix, 1.0f), 0.0f, 1.0f);
+        return core::dbToGain (finite (p.outputDb, 0.0f)) * ((1.0 - mix) + mix * (double) comp * (double) slope);
+    }
+
     // FALSE, with `out` untouched, exactly where prepare() refuses the same arguments — it IS prepare()'s
     // gate, and every stage's gate under it. Allocates nothing on any path.
     [[nodiscard]] static bool storageFor (double sampleRate, int numChannels,
@@ -831,6 +904,7 @@ public:
         std::fill (fifo_.begin(), fifo_.end(), 0.0f);
         pos_ = 0;
         nonFiniteIn_ = 0;
+        for (auto& b : clipBins_) b = {};
         if (eq_) eq_->reset();
         for (auto& d : dyn_) d.reset();
         if (cfg_.monoBass || cfg_.stereoAir) monoBass_.reset();
@@ -1253,8 +1327,10 @@ private:
                 for (int c = 0; c < nch_; ++c) std::copy_n (alignClip_.delayed (c), K_, ch[c]);
             else
             {
+                const bool whole = clipFade_.mode == Fader::Wet;
                 stageRefused_ |= ! sat_.process (ch, nch_, K_);
-                if (clipFade_.mode != Fader::Wet) blend (clipFade_, ch, alignClip_, clipWarm_);
+                if (! whole) blend (clipFade_, ch, alignClip_, clipWarm_);
+                else countClipperPeaks ((const float* const*) ch);
             }
         }
 
@@ -1619,6 +1695,41 @@ private:
     int   fadeLen_ = 0, clipWarm_ = 0, limWarm_ = 0;
     bool  fadersSnap_ = true;
     bool  fresh_ = true;                     // no quantum has run since reset(): a parameter write SNAPS
+
+    // The soft clipper's peaks, quantum by quantum (see ClipperPeaks): a bin per step of the input's peak, read off the
+    // float itself — its exponent and the top bits of its mantissa, 32 steps an octave over 16 octaves, 2^-12 to 2^4 —
+    // so the counting takes no logarithm and is the same on every platform. Counters only, cleared by reset().
+    static constexpr int kClipPeakLowExp = -12, kClipPeakOctaves = 16, kClipPeakSteps = 32;
+    static constexpr int kClipPeakBins = kClipPeakOctaves * kClipPeakSteps;
+    struct ClipPeakBin { std::uint32_t count = 0; float leastRatio = 0.0f; double ratioSum = 0.0; };
+    ClipPeakBin clipBins_[kClipPeakBins] {};
+
+    // One whole quantum of the stage: the peak of its input as the aligner holds it — delayed by the stage's own
+    // latency, so sample for sample against the output — and the peak of what it put out.
+    void countClipperPeaks (const float* const* out) noexcept
+    {
+        float in = 0.0f, after = 0.0f;
+        for (int c = 0; c < nch_; ++c)
+        {
+            const float* dry = alignClip_.delayed (c);
+            for (int i = 0; i < K_; ++i)
+            {
+                const float a = std::fabs (dry[i]), b = std::fabs (out[c][i]);
+                if (a > in) in = a;
+                if (b > after) after = b;
+            }
+        }
+        if (! (in >= 0x1p-12f) || ! std::isfinite (in) || ! std::isfinite (after)) return;
+        const auto bits = std::bit_cast<std::uint32_t> (in);
+        const int octave = (int) (bits >> 23) - 127 - kClipPeakLowExp;
+        const int bin = octave >= kClipPeakOctaves ? kClipPeakBins - 1
+                      : octave * kClipPeakSteps + (int) ((bits >> 18) & (std::uint32_t) (kClipPeakSteps - 1));
+        auto& b = clipBins_[(std::size_t) bin];
+        const double ratio = (double) after / (double) in;
+        if (b.count == 0 || (float) ratio < b.leastRatio) b.leastRatio = (float) ratio;
+        b.ratioSum += ratio;
+        if (b.count != 0xffffffffu) ++b.count;
+    }
 
     storage::Buffer<float> fifo_, keyBuf_;
 

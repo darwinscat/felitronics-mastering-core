@@ -237,7 +237,7 @@ void abiQueries()
     const float* planes[] { left.data(), right.data() };
     auto native = Session::create();
     ok (native.session->apply (command::Load { 1, { planes, 2, frames, 48000 }, {} }).rejection == Rejection::None, "native fixture load");
-    fc_session_capabilities caps { sizeof (caps), 1073741824, 96000, 255, 1073741824 };
+    fc_session_capabilities caps { sizeof (caps), 1073741824, 96000, 255, 1073741824, 0 };
     const auto version = config::Config::versions().all; fc_session handle = 0;
     ok (fc_session_create (&caps, std::uint32_t (version), std::uint32_t (version >> 32u), &handle) == FC_SESSION_OK, "C fixture create");
     std::vector<char> answer (kAnswerBytes); std::uint32_t written = 0;
@@ -351,7 +351,7 @@ void reviewRegressions()
     const float* planes[] { left.data(), right.data() };
     auto made = Session::create(); auto& native = *made.session;
     ok (native.apply (command::Load { 1, { planes, 2, frames, 48000 }, {} }).rejection == Rejection::None, "regression native load");
-    fc_session_capabilities caps { sizeof (caps), 1073741824, 96000, 255, 1073741824 };
+    fc_session_capabilities caps { sizeof (caps), 1073741824, 96000, 255, 1073741824, 0 };
     const auto version = config::Config::versions().all; fc_session handle = 0;
     ok (fc_session_create (&caps, std::uint32_t (version), std::uint32_t (version >> 32u), &handle) == FC_SESSION_OK, "regression C create");
     std::vector<char> answer (kAnswerBytes); std::uint32_t written = 0;

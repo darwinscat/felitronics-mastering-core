@@ -100,6 +100,66 @@ text::Fact MasterReportText::pumping (const MasterCost& cost) noexcept
 }
 text::Fact MasterReportText::tonal() noexcept
 { return text::Fact::of (text::FactId::MasterCostK2Deferred); }
+std::optional<text::Fact> MasterReportText::glue (const MasterCost& cost) noexcept
+{
+    if (! cost.glueP95Db.value || ! cost.glueMaxDb.value) return std::nullopt;
+    return text::Fact::of (text::FactId::MasterGlue, text::Arg::value (*cost.glueP95Db.value, text::Unit::Db, 1),
+        text::Arg::value (*cost.glueMaxDb.value, text::Unit::Db, 1));
+}
+std::optional<text::Fact> MasterReportText::saturation (const MasterCost& cost) noexcept
+{
+    if (! cost.saturationCutMaxDb.value || ! cost.saturationCutUsualDb.value) return std::nullopt;
+    return text::Fact::of (text::FactId::MasterSaturation, text::Arg::value (*cost.saturationCutMaxDb.value, text::Unit::Db, 1),
+        text::Arg::value (*cost.saturationCutUsualDb.value, text::Unit::Db, 1));
+}
+std::optional<text::Fact> MasterReportText::vinyl (const MasterReport& report) noexcept
+{
+    if (! report.medium || ! report.medium->vinyl || ! report.deliverable) return std::nullopt;
+    return text::Fact::of (report.medium->ready ? text::FactId::MasterVinylReady : text::FactId::MasterVinylDeparts);
+}
+std::optional<text::Fact> MasterReportText::vinylChecked (const MasterReport& report) noexcept
+{
+    if (! report.medium || ! report.medium->vinyl || ! report.medium->ready || ! report.deliverable || ! report.truePeakDbTp)
+        return std::nullopt;
+    return text::Fact::of (text::FactId::MasterVinylChecked, text::Arg::value (report.medium->crossoverHz, text::Unit::Hz, 0),
+        text::Arg::value (report.medium->cutoffHz, text::Unit::Hz, 0), text::Arg::value (*report.truePeakDbTp, text::Unit::DbTp, 1),
+        text::Arg::value (report.ceilingDbTp, text::Unit::DbTp, 1));
+}
+std::array<std::optional<text::Fact>, 4> MasterReportText::vinylDepartures (const MasterReport& report) noexcept
+{
+    using text::Arg; using text::Fact; using text::FactId; using text::Unit;
+    std::array<std::optional<Fact>, 4> said {};
+    if (! report.medium || ! report.medium->vinyl || ! report.deliverable) return said;
+    const auto& m = *report.medium;
+    const auto hz = [] (double v) { return Arg::value (v, Unit::Hz, 0); };
+    const auto width = [] (double v) { return Arg::value (100.0 * v, Unit::Percent, 0); };
+    const auto slope = [] (std::int32_t v) { return Arg::count (v); };
+    // An off stage has no number of its own: its line names the rule alone.
+    if (m.foldDeparts)
+        said[0] = m.crossoverHz > 0.0
+            ? Fact::of (FactId::MasterVinylFoldDeparts, hz (m.crossoverHz), width (m.lowWidth), hz (m.ruleCrossoverHz), width (m.ruleLowWidth))
+            : Fact::of (FactId::MasterVinylNoFold, hz (m.ruleCrossoverHz));
+    if (m.cutDeparts)
+        said[1] = m.cutoffHz > 0.0
+            ? Fact::of (FactId::MasterVinylHighPassDeparts, hz (m.cutoffHz), slope (m.slopeDbPerOct), hz (m.ruleCutoffHz), slope (m.ruleSlopeDbPerOct))
+            : Fact::of (FactId::MasterVinylNoHighPass, hz (m.ruleCutoffHz), slope (m.ruleSlopeDbPerOct));
+    if (m.ceilingDeparts)
+        said[2] = Fact::of (FactId::MasterVinylCeilingDeparts, Arg::value (m.ceilingDbTp, Unit::DbTp, 1), Arg::value (m.ruleCeilingDbTp, Unit::DbTp, 1));
+    if (m.needlesDeparts)
+        said[3] = Fact::of (FactId::MasterVinylNeedlesDeparts, Arg::value (m.overDb, Unit::Db, 1));
+    return said;
+}
+std::optional<text::Fact> MasterReportText::vinylUncheckable (const MasterReport& report) noexcept
+{
+    if (! report.medium || ! report.medium->vinyl || ! report.deliverable) return std::nullopt;
+    return text::Fact::of (text::FactId::MasterVinylUncheckable);
+}
+std::optional<text::Fact> MasterReportText::quietInput (const MasterReport& report) noexcept
+{
+    if (! report.medium || ! report.medium->quietInput || ! report.deliverable || ! report.gainFromSourceDb) return std::nullopt;
+    return text::Fact::of (text::FactId::MasterQuietInput, text::Arg::value (report.medium->inputLufs, text::Unit::Lufs, 1),
+        text::Arg::value (*report.gainFromSourceDb, text::Unit::Db, 1, text::Sign::Always));
+}
 LandingPlan LandingOps::plan (const config::Engine& engine, bool sourceLoudnessValid,
                          double sourceLufs, double targetLufs, double targetTruePeakDbTp,
                          double sourceRate, double deliveryRate) noexcept

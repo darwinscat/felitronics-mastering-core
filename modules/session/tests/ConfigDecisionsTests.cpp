@@ -47,13 +47,17 @@ struct Golden
 };
 constexpr Golden kGolden[] = {
     { "2026-09", 0xf49360664b45a789ull },
+    // the high-pass always, from 32 Hz and the sure lowest note; mono bass by its loss; the glue calibrated on the P95; the
+    // chain's geometry, the dither's noise and the clipped-source bound stated; the lp row marked as cut to vinyl; the peak
+    // clipper's numbers an amount off the peaks (3 dB short, 1.5 between), no longer a threshold above the ceiling
+    { "2026-10", 0x4b75e7500af2e07eull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
-// floor 24 Hz (vinyl 32) and slope 24 dB/oct (vinyl 12), the loss at the lowest note 1 dB (club 0.3), the delivery;
-// vinyl alone without a peak clipper and with a +0.5 dB low shelf; vinyl and club with the high-pass always (on club it
-// guards the subwoofers from infrasonic bursts a share of the whole programme does not see); cd and cdDynamic alone with a
-// pass at the source's rate; TD1008's −14 LUFS album loudness, desktop only.
+// floor 32 Hz on every target (decision 3.3; the high-pass stands always) and slope 24 dB/oct (vinyl 12), the loss at the
+// lowest note 1 dB (club 0.3), the delivery; vinyl alone without a peak clipper, marked as cut to a lathe (its tp the
+// medium's ceiling) and with a +0.5 dB low shelf; cd and
+// cdDynamic alone with a pass at the source's rate; TD1008's −14 LUFS album loudness, desktop only.
 struct Row
 {
     std::string_view key;
@@ -62,7 +66,8 @@ struct Row
     std::int32_t slope;
     double noteLossDb;
     std::int32_t sampleRate, bitDepth;
-    bool noClipper, hpfAlways, sourceRatePass;
+    bool noClipper, sourceRatePass;
+    bool vinyl;             // cut to a lathe: the row's tp is the medium's ceiling
     double lowDb;           // 0: none
     double albumLufs;            // 0: none; every album is desktop only
 };
@@ -70,32 +75,32 @@ constexpr auto S = config::Group::Streaming;
 constexpr auto D = config::Group::Delivery;
 constexpr auto A = config::Group::Aggregator;
 constexpr Row kRows[] = {
-    //  key            group lufs   tp    mono  floor slope loss  rate   bits  noClip always srcPass shelf album
-    { "allStreaming",  S,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "cdDynamic",     D,   -12,  -1,   120,  24,  24,   1,    44100, 16,  false, false, true,   0,    0 },
-    { "club",          D,   -8,   -1,   120,  24,  24,   0.3,  0,     24,  false, true,  false,  0,    0 },
-    { "lp",            D,   -14,  -3,   150,  32,  12,   1,    0,     24,  true,  true,  false,  0.5,  0 },
-    { "spotify",       S,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "spotifyLoud",   S,   -11,  -2,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "appleMusic",    S,   -16,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "youtube",       S,   -14,  -1,   120,  24,  24,   1,    48000, 24,  false, false, false,  0,    0 },
-    { "youtubeMusic",  S,   -7,   -1,   120,  24,  24,   1,    48000, 24,  false, false, false,  0,    0 },
-    { "amazon",        S,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "tidal",         S,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "deezer",        S,   -15,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "soundcloud",    S,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "td1008",        S,   -16,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    -14 },
-    { "ebu",           S,   -23,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "distrokid",     A,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "cdbaby",        A,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "tunecore",      A,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "amuse",         A,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "feiyr",         A,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "routenote",     A,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "horusmusic",    A,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "dittomusic",    A,   -14,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
-    { "cd",            D,   -9,   -0.3, 120,  24,  24,   1,    44100, 16,  false, false, true,   0,    0 },
-    { "bandcamp",      D,   -10,  -1,   120,  24,  24,   1,    0,     24,  false, false, false,  0,    0 },
+    //  key           group lufs  tp    mono  floor slope loss rate   bits noClip srcPass vinyl shelf album
+    { "allStreaming",  S, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "cdDynamic",     D, -12,  -1,   120,  32,  24,  1,    44100, 16,  false, true,  false, 0,    0 },
+    { "club",          D, -8,   -1,   120,  32,  24,  0.3,  0,     24,  false, false, false, 0,    0 },
+    { "lp",            D, -14,  -3,   150,  32,  12,  1,    0,     24,  true,  false, true,  0.5,  0 },
+    { "spotify",       S, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "spotifyLoud",   S, -11,  -2,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "appleMusic",    S, -16,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "youtube",       S, -14,  -1,   120,  32,  24,  1,    48000, 24,  false, false, false, 0,    0 },
+    { "youtubeMusic",  S, -7,   -1,   120,  32,  24,  1,    48000, 24,  false, false, false, 0,    0 },
+    { "amazon",        S, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "tidal",         S, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "deezer",        S, -15,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "soundcloud",    S, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "td1008",        S, -16,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    -14 },
+    { "ebu",           S, -23,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "distrokid",     A, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "cdbaby",        A, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "tunecore",      A, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "amuse",         A, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "feiyr",         A, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "routenote",     A, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "horusmusic",    A, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "dittomusic",    A, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "cd",            D, -9,   -0.3, 120,  32,  24,  1,    44100, 16,  false, true,  false, 0,    0 },
+    { "bandcamp",      D, -10,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
 };
 
 // Every decision the config departs from, by name; empty when it holds them all.
@@ -124,8 +129,8 @@ std::vector<std::string> departures (const config::Config& c)
         need (x.sampleRate == r.sampleRate, at + ".sampleRate");
         need (x.bitDepth == r.bitDepth, at + ".bitDepth");
         need (x.noClipper == r.noClipper, at + ".noClipper");
-        need (x.hpfAlways == r.hpfAlways, at + ".hpfAlways");
         need (x.sourceRatePass == r.sourceRatePass, at + ".sourceRatePass");
+        need (x.vinyl == r.vinyl, at + ".vinyl");
         need (same (r.lowDb, 0.0) ? ! x.lowDb.has_value() : x.lowDb.has_value() && same (*x.lowDb, r.lowDb),
               at + ".lowDb");
         need (same (r.albumLufs, 0.0) ? ! x.album.has_value()
@@ -148,7 +153,12 @@ std::vector<std::string> departures (const config::Config& c)
     need (same (e.hpf.comfort.lowHz, 24.0) && same (e.hpf.comfort.highHz, 42.0), "the high-pass comfort window is 24–42 Hz");
     need (same (e.hpf.comfort.warningLowHz, 20.0) && same (e.hpf.comfort.warningHighHz, 50.0),
           "the high-pass field warns towards 20 and 50 Hz");
-    need (same (e.hpf.nothingBelowNoteInfraLowBelow, 0.01), "no high-pass when the infra-low share is under 1 % (and no DC)");
+    need (same (e.hpf.noteAboveHz, 20.0) && same (e.hpf.noteSoundingAtLeastS, 3.0) && same (e.input.shortSeconds, 10.0)
+          && same (e.lowEnd.occupiedFromDuty, 0.10) && same (e.lowEnd.occupiedMarginWhenOnDb, 2.0),
+          "a sure lowest note: 2 dB over the occupancy line, 10 % of the frames, above 20 Hz, 3 s in all; not sought under 10 s");
+    need (same (e.monoBass.lossWarnFromDb, 1.0) && same (e.monoBass.lossOffAboveDb, 3.0),
+          "mono bass by its loss: placed under 1 dB, with a warning from 1 to 3 dB, left out above 3 dB");
+    need (! e.stages.monoBass, "mono bass is placed by its weighed loss, never before it");
     need (same (e.observations.wideBassSideFractionAtLeast, 0.06) && e.observations.kinds.wideBass == config::Kind::Warning,
           "wide bass: one threshold, 6 % of side, and it is a warning");
     need (same (e.lowEnd.run.crossoverHz, 120.0), "the low end is measured at 120 Hz");
@@ -160,6 +170,7 @@ std::vector<std::string> departures (const config::Config& c)
           "the glue knob runs 0…3 dB in steps of 0.1");
     need (same (e.glue.defaultUpToDb, 0.0), "no glue by default: a target without its own takes the compressor out");
     need (same (e.glue.whenTickedUpToDb, 0.5), "ticked on untouched, the glue is up to 0.5 dB");
+    need (same (e.glue.detectorOverP95Db, 1.5), "the glue's threshold is calibrated 1.5 dB over the P95: the knob is the reduction the loud places really get");
     const config::MonoBass& m = e.monoBass;
     need (same (m.lowWidth, 0.0), "mono bass is full mono below its crossover");
     need (same (m.lowWidthRange.min, 0.0) && same (m.lowWidthRange.max, 1.0) && same (m.lowWidthStep, 0.05),
@@ -168,8 +179,16 @@ std::vector<std::string> departures (const config::Config& c)
           "the mono-bass crossover knob runs 60…300 Hz in steps of 1");
     const config::PeakClipper& p = e.limiter.peakClipper;
     need (same (p.littleNeedDb, 3.0), "needles are not measured at a need of 3 dB or less");
-    need (same (p.shortOverDb, 3.0) && same (p.betweenOverDb, 1.5), "the peak clipper: 3 dB above the ceiling, 1.5 between");
+    need (same (p.shortCutDb, 3.0) && same (p.betweenCutDb, 1.5), "the peak clipper: up to 3 dB off the peaks short, 1.5 between");
     need (same (p.shortPlrDb, 10.0) && same (p.longPlrDb, 8.0), "the peak clipper's PLR bounds: 10 and 8 dB");
+    need (same (p.shortP90Ms, 2.0) && same (p.longP90Ms, 8.0) && same (p.shortBassShare, 0.25) && same (p.longBassShare, 0.5),
+          "the needles' classes: short to 2 ms and a bass share of 0.25, long from 8 ms or 0.5");
+    need (same (p.clippedPerMinute, 10.0), "a source is clipped from 10 confirmed clips a minute");
+    need (same (p.kneeDb, 0.0), "the peak clipper is a hard clip");
+    need (e.dither.seed == 0x853c49e6748fea9bull && e.dither.autoBlank && e.dither.autoBlankSamples == 4096
+          && e.dither.shaping == config::NoiseShaping::Weighted,
+          "the dither: weighted TPDF from the fixed seed, blanked after 4096 zero samples");
+    need (same (e.observations.vinylTopAboveHz, 16000.0), "the vinyl note about the top: above 16 kHz");
     need (e.stages.limiter, "the limiter is always on");
     need (e.dither.onUpToBits == 16, "dither at 16 bits only");
     need (! e.deEsser.offered && ! e.deEsser.automatic && same (e.deEsser.manualDepthDb, -6.0),
@@ -221,8 +240,12 @@ void aDepartureIsNamed()
         { false, "passes = 12", "passes = 11", "the landing: one budget of 12 passes" },
         { true, "noteLossDb = 0.3", "noteLossDb = 0.5", "targets.club.noteLossDb" },
         { true, "lufs = -7,", "lufs = -8,", "targets.youtubeMusic.lufs" },
-        { true, "noteLossDb = 0.3, sampleRate = 0, bitDepth = 24, hpfAlways = true }",
-          "noteLossDb = 0.3, sampleRate = 0, bitDepth = 24 }", "targets.club.hpfAlways" },
+        { true, "hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 0.3", "hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 0.3",
+          "targets.club.hpfFloor" },
+        { false, "note = { aboveHz = 20, soundingAtLeastS = 3 }", "note = { aboveHz = 20, soundingAtLeastS = 2 }",
+          "a sure lowest note: 2 dB over the occupancy line, 10 % of the frames, above 20 Hz, 3 s in all; not sought under 10 s" },
+        { false, "offAboveDb = 3,", "offAboveDb = 4,", "mono bass by its loss: placed under 1 dB, with a warning from 1 to 3 dB, left out above 3 dB" },
+        { false, "eq = true\nmonoBass = false", "eq = true\nmonoBass = true", "mono bass is placed by its weighed loss, never before it" },
         { true, "sampleRate = 48000, bitDepth = 24 }\n# YouTube Music", "sampleRate = 22050, bitDepth = 24 }\n# YouTube Music",
           "targets.youtube.sampleRate" },
         { false, "default = 0\nwhenTicked", "default = 0.3\nwhenTicked", "no glue by default: a target without its own takes the compressor out" },

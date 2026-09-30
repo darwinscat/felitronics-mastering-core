@@ -8,8 +8,10 @@
 #include <felitronics/mastering/LandingSearch.h>
 #include <felitronics/analysis/BandCrest.h>
 #include <felitronics/analysis/StreamingLoudnessMeter.h>
+#include <felitronics/analysis/WaveformIndex.h>
 #include "Cost.h"
 #include <memory>
+#include <optional>
 
 namespace felitronics::session
 {
@@ -25,12 +27,14 @@ struct MasterPlan
     int frames = 0, traceBuckets = 0;
     std::size_t crestCapacity = 0, costCapacity = 0, costScratchCapacity = 0;
     std::size_t waveformCapacity = 0;
+    std::size_t axesCapacity = 0;
     std::uint64_t costHop = 0;
     analysis::BandCrestParams crestParams {};
     double sourceLufs = 0;
     std::uint64_t bytes = 0, largestBlock = 0;
     std::uint64_t retainedRowBytes = 0;
     bool costMeterAdmitted = false;
+    std::optional<MasterMedium> medium;        // a version-0 master's medium and input, from the chain it will run
 };
 
 struct MasterRows
@@ -52,11 +56,21 @@ struct MasterRows
     std::unique_ptr<MasterSection[]> sections;
     std::unique_ptr<MasterWaveformBucket[]> waveform;
     std::size_t costCapacity = 0, costScratchCapacity = 0, waveformCapacity = 0;
+    // THE MASTER'S OWN LOUDNESS CURVES, a reading per hop of the delivered audio as the meter gave it: costSeries is the
+    // short-term one (the cost's shape reads it), costMomentary the momentary; loudnessRows of each are written.
+    std::unique_ptr<double[]> costMomentary;
+    std::uint64_t loudnessRows = 0, loudnessHop = 0;
+    // The waveform's buckets again, as the source's waveform has them: four axes, envelope and band energies.
+    std::unique_ptr<analysis::WaveformColumn[]> axes;
+    std::size_t axesCapacity = 0, axesRows = 0;
 };
 
 struct MasterJob final
 {
-    static MasterPlan plan (const Session& session, const command::Master& input) noexcept;
+    // THE PLAN OF A MASTER of `project` on the session's source — its chain, its landing request and what it asks the
+    // heap for, or the rejection it gets; nothing is allocated. A version-1 input carries its chain ready; a version-0
+    // one takes it from the project's devices (src/Chain.h), on the measurements as they stand.
+    static MasterPlan plan (const Session& session, const command::Master& input, const Project& project) noexcept;
     static std::uint64_t fingerprint (const command::MasterReady& ready) noexcept;
     bool begin (const Session& session, const MasterPlan& plan);
     mastering::StepResult step (long long budget) noexcept;
@@ -73,6 +87,8 @@ struct MasterJob final
     mastering::LandingSearch search { solver };
     analysis::BandCrest crest;
     analysis::StreamingLoudnessMeter costMeter;
+    analysis::WaveformStream costAxes;
+    bool costAxesReady = false;
     std::unique_ptr<float[]> output;
     std::unique_ptr<float[]> impactScratch;
     const float* sourcePlanes[2] {};
@@ -94,6 +110,10 @@ struct MasterJob final
     PumpScan costPumpScan;
     CostRules costRules;
     MasterCost costResult;
+    // The soft clipper's peaks as the search's last render left them: read when the search ends, before the chain is
+    // prepared again for the source-rate check.
+    mastering::ClipperPeaks clipPeaks {};
+    bool clipCounted = false;
     std::uint64_t costFinishCursor = 0, activeJudged = 0, activeCount = 0;
     std::uint32_t costComparable = 0;
     std::size_t costWorst = 0;
@@ -103,6 +123,7 @@ struct MasterJob final
     analysis::BandCrestParams crestParams {};
     double sourceLufs = 0, targetLufs = 0, targetTp = 0;
     command::MasterReady ready {};
+    std::optional<MasterMedium> medium;
     MasterReport report {};
 };
 } // namespace detail

@@ -45,12 +45,25 @@ struct SnapshotView
     State measurementResumeState = State::Empty;
     bool mandatoryMeasurementsReady = false, devicesPlaced = false;
     bool measurementRowsIncluded = true;
+    // False in a lean summary (Capabilities::leanSummary): every master without its traces, crest rows and mask and
+    // waveform buckets — QueryKind::MasterReport gives one whole.
+    bool masterRowsIncluded = true;
     TempoChoice tempoChoice {};
     bool measurementsFromSidecar = false;
     bool sourceMissingAudio = false;
     bool canMaster = false;
     MasterToken pendingMaster {};
     double pendingMasterBytes = 0.0;
+    PlanView plan {};
+    Observations observations {};
+};
+// THE SNAPSHOT'S OWN SENTENCES, as ObservationText and PlanText give theirs from what the snapshot carries.
+// targetChange: the warning a shell shows in its confirmation BEFORE it sends SetTarget (owner decision, 28.09: a change
+// of target always resets the person's device edits) — "manual device edits (N) will be reset", N the handFieldCount;
+// nothing when no field carries a person's value. The shell sends SetTarget on confirmation; a cancel sends nothing.
+struct SnapshotText
+{
+    [[nodiscard]] static std::optional<text::Fact> targetChange (const SnapshotView& view) noexcept;
 };
 class Codec;
 // An immutable, owned value. view() remains valid until this value is moved or destroyed,

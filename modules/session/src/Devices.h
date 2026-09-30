@@ -153,6 +153,42 @@ template <template <class> class F> struct DeviceOf<LowFields<F>>
     }
 };
 
+// WHERE A DEVICE'S TICK COMES FROM (the owner's rule: a person's edit always sounds). The person's own tick when they
+// set one — on or off; otherwise ON when any of the device's fields carries a person's value (a knob turned is a
+// device wanted: `[tilt] db.hand = 3` sounds with no tick written); otherwise the machine's.
+template <template <template <class> class> class F>
+TickFrom tickFrom (const Rules& rules, const Layers<F>& layers) noexcept
+{
+    if constexpr (requires { layers.hand.on; })
+    {
+        if (layers.hand.on) return TickFrom::Hand;
+        bool touched = false;
+        DeviceOf<F<Value>>::each (rules, [&] (std::uint8_t, const FieldRule&, const auto& hand) { touched = touched || hand.has_value(); },
+                                  layers.hand);
+        return touched ? TickFrom::Touched : TickFrom::Machine;
+    }
+    else
+        return TickFrom::Machine;
+}
+
+// A DEVICE'S SETTINGS in the project — what sounds: the machine's layer with a person's touched fields over it, its tick
+// by tickFrom() (the machine's layer alone where `withHand` is false).
+template <template <template <class> class> class F>
+F<Value> settingsOf (const Rules& rules, const Layers<F>& layers, bool withHand = true) noexcept
+{
+    F<Value> out = layers.machine;
+    if (withHand)
+    {
+        DeviceOf<F<Value>>::each (rules, [] (std::uint8_t, const FieldRule&, auto& value, const auto& hand)
+        {
+            if (hand) value = *hand;
+        }, out, layers.hand);
+        if constexpr (requires { out.on; })
+            if (tickFrom (rules, layers) == TickFrom::Touched) out.on = true;
+    }
+    return out;
+}
+
 // Every device's layers, in the order of Device: v(device, layers).
 template <class D, class V> void eachDevice (D& devices, V&& v)
 {
@@ -166,18 +202,15 @@ template <class D, class V> void eachDevice (D& devices, V&& v)
     v (Device::Low, devices.low);
 }
 
-// THE MACHINE'S LAYER of every device for the target in row `row` and a source of `channels` channels (0: none) — the
-// numbers the devices start from, from the config: [stages] for the ticks, the target's row for what the target decides
-// (the high-pass's slope and floor, the mono-bass crossover, the needles off where the target has no peak clipper, the
-// dither at its bit depth, the low shelf's gain, the glue of [glue] byTarget) and each device's section for the rest.
-// Tilt starts at 0 dB: the machine does not touch timbre. These are the config's defaults, not a decision taken from a
-// measurement — no planner reads the measurements here, so mono bass, which [stages] leaves off, is off. The session
-// places the devices on these numbers when the first measurement ends, and a change of target after that places them
-// again.
+// THE CONFIG'S DEFAULTS of every device for the target in row `row` and a source of `channels` channels (0: none) — the
+// numbers the machine starts from: [stages] for the ticks before anything is measured (the planner then decides every
+// tick it has a rule for — mono bass by its loss whatever [stages] says), the target's row for what the target decides (the high-pass's
+// slope and floor, the mono-bass crossover, the needles off where the target has no peak clipper, the dither at its bit
+// depth, the low shelf's gain, the glue of [glue] byTarget) and each device's section for the rest. Tilt starts off at
+// 0 dB: the machine does not touch timbre. They are the defaults layer, not a decision taken from a measurement: the planner
+// (src/Planner.h) proposes the machine's layer from them, and a project file writes a machine value only where it differs
+// from them.
 void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices) noexcept;
-
-// The current planner places defaults; file omissions are filled independently of planner decisions.
-void placeMachine (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices, std::uint32_t offeredDevices = 255u) noexcept;
 
 // Is `device` offered for the target in row `row` and a source of `channels` channels?
 // Dither where the target's bit depth is one it serves; mono bass except on a mono source (it has no

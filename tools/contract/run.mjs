@@ -77,8 +77,20 @@ function validate(name, bytes) {
         assert.deepEqual(value, check.value, `${name}: ${JSON.stringify(check)}`);
     }
     for (const [a, b] of expected.equal ?? []) assert.deepEqual(select(a), select(b), `${name}: refusal must leave snapshot unchanged`);
+    // Retained is the same values: a row descriptor is compared by the bytes it addresses, not by where the transport
+    // placed them (rows added ahead of it — a placed project's EQ curve — move its offset, not its content).
     for (const {a, b, path} of expected.samePath ?? []) {
-        const value = spec => path.split('.').reduce((v, key) => v[key], JSON.parse(select(spec).raw));
+        const value = spec => {
+            const record = select(spec);
+            const addressed = v => {
+                if (!v || typeof v !== 'object') return v;
+                if (['byteOffset', 'length', 'stride'].every(k => Object.hasOwn(v, k)))
+                    return {length: v.length, stride: v.stride,
+                            bytes: record.rows.slice(v.byteOffset * 2, (v.byteOffset + v.length * v.stride * 8) * 2)};
+                return Array.isArray(v) ? v.map(addressed) : Object.fromEntries(Object.entries(v).map(([k, x]) => [k, addressed(x)]));
+            };
+            return addressed(path.split('.').reduce((v, key) => v[key], JSON.parse(record.raw)));
+        };
         assert.deepEqual(value(a), value(b), `${name}: ${path} must be retained`);
     }
     if (expected.projects) {

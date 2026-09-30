@@ -13,6 +13,7 @@
 
 #include "FpProbes.h"
 #include "Rules.h"
+#include "Dynamics.h"
 #include "MeasurementPlan.h"
 #include "MeasurementWorkspace.h"
 #include "LiveMeasurements.h"
@@ -89,9 +90,12 @@ double Session::liveBytes() const noexcept
         if (masterRows_[i].sections) rows += std::uint64_t (masterRows_[i].costCapacity) * sizeof (MasterSection);
         if (masterRows_[i].costScratch) rows += std::uint64_t (masterRows_[i].costScratchCapacity) * sizeof (double);
         if (masterRows_[i].waveform) rows += std::uint64_t (masterRows_[i].waveformCapacity) * sizeof (MasterWaveformBucket);
+        if (masterRows_[i].costMomentary) rows += std::uint64_t (masterRows_[i].costCapacity) * sizeof (double);
+        if (masterRows_[i].axes) rows += std::uint64_t (masterRows_[i].axesCapacity) * sizeof (analysis::WaveformColumn);
     }
     return double (createBytes (capabilities_) + (samples_ ? source_.frames * source_.channels * sizeof (float) : 0)
                    + source_.name.size() + masterRoom_ * (sizeof (Kept) + sizeof (detail::MasterRows))
+                   + (leanMasters_ ? masterRoom_ * sizeof (Kept) : 0)
                    + rows + masterJobBytes_ + (masterAudio_.samples ? masterAudio_.frames * masterAudio_.channels * sizeof (float) : 0)
                    + measurementOwnedBytes_
                    + (sourceMeasurements_ ? sizeof (detail::SourceMeasurements) + sourceMeasurements_->bytes : 0)
@@ -106,6 +110,7 @@ void Session::clearMasters() noexcept
     mastering_ = false;
     job_ = 0;
     jobRecipe_ = {};
+    jobWaiting_ = false;                       // a load ends a waiting master too: the needles are the new project's
     masterJob_.reset();
     masterJobBytes_ = 0;
     masterSummary_ = {}; masterTraceCursor_ = 0; masterTraceActive_ = false;
@@ -113,6 +118,7 @@ void Session::clearMasters() noexcept
     masterAudioBits_ = 0;
     pendingMaster_ = {};
     masters_.reset();
+    leanMasters_.reset();
     masterRows_.reset();
     masterCount_ = masterRoom_ = 0;
     crestJoinIndex_ = 0;
@@ -248,7 +254,7 @@ Checked Session::demand (const Checked& storage) const noexcept
 Session::~Session() = default;
 
 State Session::state() const noexcept { return state_; }
-bool Session::placed() const noexcept { return devicesPlaced_; }
+bool Session::placed() const noexcept { return devicesPlaced_ && plan_.status == PlanStatus::Ready; }
 bool Session::mandatoryReady() const noexcept
 {
     const auto& r = measurementResults_[std::size_t (Analyzer::Loudness)];
@@ -262,35 +268,9 @@ bool Session::mandatoryReady() const noexcept
         }
     return lufs && peak;
 }
-bool Session::masterRequiresTempo() const noexcept
-{
-    const auto target = detail::rules().row (project_.target).key;
-    if (target == "cd" || target == "cdDynamic") return true;
-    if ((capabilities_.offeredDevices & (1u << unsigned (Device::Glue))) == 0) return false;
-    const auto& glue = project_.devices.glue;
-    return glue.hand.on.value_or (glue.machine.on)
-        && glue.hand.upToDb.value_or (glue.machine.upToDb) > 0.0;
-}
 TempoChoice Session::tempoForDevice() const noexcept
 {
-    const auto& result = measurementResults_[std::size_t (Analyzer::Tempo)];
-    if (result.status == MeasurementStatus::Pending || result.status == MeasurementStatus::Cancelled)
-        return { false, false, 0.0, result.reason };
-    double bpm = 0.0; bool hasBpm = false, high = false;
-    if (result.status == MeasurementStatus::Ready)
-        for (const auto& value : result.numbers) if (value.value)
-        {
-            if (value.name == "headlineBpm") { bpm = *value.value; hasBpm = true; }
-            else if (value.name == "headlineLabel")
-                high = std::bit_cast<std::uint64_t> (*value.value)
-                    == std::bit_cast<std::uint64_t> (double (tempo::ConfidenceLabel::High));
-        }
-    if (result.status == MeasurementStatus::Ready && hasBpm && high && std::isfinite (bpm) && bpm > 0)
-        return { true, true, bpm, MeasurementReason::None };
-    const auto configured = detail::rules().engine.find ("compressor").find ("tempo").find ("bpmWhenUnsure");
-    const double fallback = configured.decimal() ? configured.decimal()->toDouble() : double (*configured.integer());
-    const auto reason = result.status == MeasurementStatus::Ready ? MeasurementReason::NoSignal : result.reason;
-    return { true, false, fallback, reason };
+    return detail::tempoChoice (detail::rules(), measurementResults_[std::size_t (Analyzer::Tempo)]);
 }
 bool Session::mastering() const noexcept { return mastering_; }
 std::uint64_t Session::revision() const noexcept { return revision_; }
