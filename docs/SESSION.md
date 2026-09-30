@@ -379,7 +379,7 @@ Files and browser storage belong to the shell. The writer reads no filesystem an
 
 ```toml
 defaults = "2026-09"
-core = "0.2.2"
+core = "0.3.0"
 manual = true
 
 [target]
