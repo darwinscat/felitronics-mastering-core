@@ -1643,8 +1643,9 @@ void theObservations()
         };
         const auto longHead = edges (3.0, 0.0), shortHead = edges (0.1, 0.0), measuredLong = edges (3.0, 1.0);
         const auto said = ObservationText::fact (ObservationKind::EdgeSilence, measuredLong);
+        const auto unsaid = ObservationText::fact (ObservationKind::EdgeSilence, longHead);
         ok (longHead.status == ObservationStatus::NotMeasured && longHead.reason == MeasurementReason::NonFinite
-            && shortHead.status == ObservationStatus::NotMeasured && ! ObservationText::fact (ObservationKind::EdgeSilence, longHead)
+            && shortHead.status == ObservationStatus::NotMeasured && unsaid && unsaid->id == text::FactId::ObservationUnmeasured
             && measuredLong.status == ObservationStatus::Found && same (measuredLong.value, 3.0) && same (measuredLong.second, 0.0) && said && whole (*said),
             "an edge not measured is not \"0.0 s\": the edges are not measured, a short head is not \"not found\"; both read — "
             + (said ? ru (*said) : std::string()));
@@ -1700,6 +1701,115 @@ void theObservations()
     }
 }
 
+// Two facts are one line: the same id, and the same words in both declared languages.
+bool sameLine (const text::Fact& a, const text::Fact& b) { return a.id == b.id && ru (a) == ru (b) && en (a) == en (b); }
+// The snapshot's lines are ObservationText's, kind by kind in the order of ObservationKind: every kind that has a line,
+// and nothing else. `lines`: how many kinds have one.
+bool linesAreTheText (const SnapshotView& v, std::size_t& lines)
+{
+    std::size_t i = 0;
+    bool same = true;
+    for (unsigned k = 0; k < kObservationKinds; ++k)
+        if (const auto said = ObservationText::fact (ObservationKind (k), ObservationText::of (v.observations, ObservationKind (k))))
+        {
+            same = same && i < v.observationFacts.count && v.observationFacts.items[i].kind == ObservationKind (k)
+                && sameLine (v.observationFacts.items[i].fact, *said);
+            ++i;
+        }
+    lines = i;
+    return same && i == v.observationFacts.count;
+}
+bool hasLine (const SnapshotView& v, ObservationKind kind)
+{
+    for (std::size_t i = 0; i < v.observationFacts.count; ++i)
+        if (v.observationFacts.items[i].kind == kind) return true;
+    return false;
+}
+
+void theObservationsSpeakForThemselves()
+{
+    felitronics::test::group ("the observations speak for themselves: the snapshot carries each one's line as ObservationText states it");
+    {
+        // Not measured: its name and why — for every kind and every reason, in both declared languages.
+        Seen x;
+        x.ended (Analyzer::Loudness, MeasurementReason::NoSignal);
+        const auto quiet = ObservationText::fact (ObservationKind::TooQuiet, x.seen().tooQuiet);
+        ok (quiet && quiet->id == text::FactId::ObservationUnmeasured && quiet->argCount == 2 && quiet->args[0].termId == text::Term::ObservationTooQuiet
+            && quiet->args[1].termId == text::Term::ReasonNoSignal && whole (*quiet),
+            "a loudness that ended without a value: " + (quiet ? ru (*quiet) + " / " + en (*quiet) : std::string()));
+        bool every = true;
+        std::vector<std::string> names;
+        for (unsigned k = 0; k < kObservationKinds; ++k)
+            for (unsigned r = unsigned (MeasurementReason::Pending); r <= unsigned (MeasurementReason::Memory); ++r)
+            {
+                Observation o; o.status = ObservationStatus::NotMeasured; o.reason = MeasurementReason (r);
+                const auto f = ObservationText::fact (ObservationKind (k), o);
+                every = every && f && whole (*f) && f->args[0].termId == text::Term (unsigned (text::Term::ObservationClipping) + k);
+                if (f && r == unsigned (MeasurementReason::Pending)) names.push_back (ru (*f) + en (*f));
+            }
+        std::sort (names.begin(), names.end());
+        ok (every && names.size() == kObservationKinds && std::adjacent_find (names.begin(), names.end()) == names.end(),
+            "every kind not measured, for every reason, is a whole line in Russian and English — and each kind by its own name");
+        Observation none; none.status = ObservationStatus::NotFound; none.reason = MeasurementReason::None;
+        ok (! ObservationText::fact (ObservationKind::Clipping, none), "measured and not found: no line");
+    }
+    {
+        auto s = Session::create().session;
+        ok (s->snapshot().view().observationFacts.count == 0, "before a source the snapshot carries no observation line");
+        const Mix mix (1.0f, 4);
+        (void) s->apply (command::SetTarget { 1, "allStreaming" });
+        ok (s->apply (mix.load (2)).rejection == Rejection::None, "PRECONDITION: the mix loads");
+        std::size_t lines = 0;
+        const auto loaded = s->snapshot();
+        const auto& first = loaded.view().observationFacts;
+        const auto quietLine = std::find_if (first.items.begin(), first.items.begin() + first.count,
+                                             [] (const ObservationFact& f) { return f.kind == ObservationKind::TooQuiet; });
+        ok (linesAreTheText (loaded.view(), lines) && lines == kObservationKinds && quietLine != first.items.begin() + first.count
+            && quietLine->fact.id == text::FactId::ObservationUnmeasured && quietLine->fact.args[1].termId == text::Term::ReasonPending,
+            "loaded, the loudness not ended: every kind has its line, and \"too quiet\" says it is not measured yet — " + (quietLine != first.items.begin() + first.count ? ru (quietLine->fact) : std::string()));
+        drive (*s);
+        const auto done = s->snapshot();
+        const auto& v = done.view();
+        ok (linesAreTheText (v, lines) && lines > 0 && lines < kObservationKinds && v.observations.tooQuiet.status == ObservationStatus::NotFound
+            && ! hasLine (v, ObservationKind::TooQuiet) && hasLine (v, ObservationKind::TooShort),
+            "measured: the lines are ObservationText's, kind by kind — " + std::to_string (lines) + " of 17 have one; not quiet, so no line of it");
+        ok (v.observations.loudestLowNote.style == ObservationStyle::Reading && v.observations.wideBass.style == ObservationStyle::Warning
+            && v.observations.clipping.style == ObservationStyle::Error && v.observations.lowestLowBand.style == ObservationStyle::Note,
+            "the loudest low note is a reading; nothing else in the style table moved (wide bass a warning, clipping an error)");
+        // A new source: the lines follow its measurement.
+        const Mix quiet (0.03f, 4);
+        ok (s->apply (quiet.load (3)).rejection == Rejection::None, "PRECONDITION: a quieter mix loads");
+        drive (*s);
+        const auto again = s->snapshot();
+        std::size_t linesAgain = 0;
+        ok (linesAreTheText (again.view(), linesAgain) && again.view().observations.tooQuiet.status == ObservationStatus::Found
+            && hasLine (again.view(), ObservationKind::TooQuiet),
+            "a new measurement: the lines follow it — the quieter mix's own line among them");
+        // Across the wire: kind and fact, whole; an unknown fact id or kind is refused.
+        std::string json (std::size_t (Codec::encodedBytes (again.view()).bytes), '\0');
+        Snapshot restored;
+        ok (Codec::encode (again.view(), json) == CodecStatus::Ok && Codec::decode (json, restored) == CodecStatus::Ok, "PRECONDITION: encoded and decoded");
+        bool carried = restored.view().observationFacts.count == again.view().observationFacts.count && linesAgain != 0;
+        for (std::size_t i = 0; carried && i < linesAgain; ++i)
+            carried = restored.view().observationFacts.items[i].kind == again.view().observationFacts.items[i].kind
+                   && sameLine (restored.view().observationFacts.items[i].fact, again.view().observationFacts.items[i].fact);
+        const auto at = json.find ("\"observationFacts\":[{\"fact\":{\"FactId\":");
+        ok (carried && at != std::string::npos, "the lines cross the wire whole, kind and fact");
+        if (at != std::string::npos)
+        {
+            const auto id = json.find (':', json.find ("FactId", at)) + 1, idEnd = json.find (',', id);
+            auto badFact = json; badFact.replace (id, idEnd - id, "999");
+            const auto kindAt = json.find ("]},\"kind\":", at) + 10, kindEnd = json.find ('}', kindAt);
+            auto badKind = json; badKind.replace (kindAt, kindEnd - kindAt, "17");
+            auto goodKind = json; goodKind.replace (kindAt, kindEnd - kindAt, "16");
+            Snapshot refused;
+            ok (Codec::decode (badFact, refused) == CodecStatus::Invalid && Codec::decode (badKind, refused) == CodecStatus::Invalid
+                && Codec::decode (goodKind, refused) == CodecStatus::Ok,
+                "an unknown fact id (999) or kind (17) is refused; the last kind (16) is read");
+        }
+    }
+}
+
 void theNeedlesAreThePlansNeedles()
 {
     felitronics::test::group ("\"the same ceiling\" is decided by the bits in both rules: requestNeedles and the plan agree");
@@ -1743,6 +1853,7 @@ int main()
     vinylAndQuietMastered();
     theDitherSounding();
     theObservations();
+    theObservationsSpeakForThemselves();
     theNeedlesAreThePlansNeedles();
     return felitronics::test::report();
 }

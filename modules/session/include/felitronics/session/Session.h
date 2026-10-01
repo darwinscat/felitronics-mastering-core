@@ -339,8 +339,8 @@ struct PlanView
 // first edition.
 //   status      Found; NotFound — measured, and it is not there; NotMeasured — the measurement it stands on has not
 //               ended, or ended without a value (`reason` says how). The three are never folded into one.
-//   style       error, warning or note ([observations.kinds]): the nature of the finding, not its size. It styles a
-//               finding and decides nothing.
+//   style       error, warning, note or reading ([observations.kinds]): the nature of the finding, not its size — a
+//               reading is a number the file shows, not a finding at all. It styles a finding and decides nothing.
 //   confidence  0…1, how firmly it is measured; `doubtful` under [observations] doubtfulBelow — shown all the same.
 //   severity    0…1, how much it matters for the master. Both rise along the config's ramps; a kind without a ramp
 //               has confidence 1 where found and severity 0.
@@ -378,7 +378,7 @@ enum class ObservationKind : std::uint8_t
 };
 inline constexpr std::size_t kObservationKinds = 17;
 enum class ObservationStatus : std::uint8_t { NotMeasured, NotFound, Found };
-enum class ObservationStyle : std::uint8_t { Error, Warning, Note };
+enum class ObservationStyle : std::uint8_t { Error, Warning, Note, Reading };
 enum class HandledBy : std::uint8_t { Nothing, Hpf, MonoBass, Person };
 struct Observation
 {
@@ -400,11 +400,20 @@ struct Observations
     Observation spectralWall, loudestLowNote, lowestLowBand, infraLow, wideBass, polarity, sibilance;
     Observation hum, humWandered;
 };
-// An observation as a fact — its sentence with its numbers and units, for one that was found; nothing otherwise.
+// ONE OBSERVATION'S LINE: the fact ObservationText states, and the kind it is said of.
+struct ObservationFact
+{
+    ObservationKind kind = ObservationKind::Clipping;
+    text::Fact fact {};
+};
+// An observation as a fact — its sentence with its numbers and units, for one that was found; for one not measured,
+// its name and why (ObservationUnmeasured); nothing for one measured and not found.
+// facts(): every kind's line, in the order of ObservationKind, each as fact() states it — the lines a snapshot carries.
 struct ObservationText
 {
     [[nodiscard]] static const Observation& of (const Observations& all, ObservationKind kind) noexcept;
     [[nodiscard]] static std::optional<text::Fact> fact (ObservationKind kind, const Observation& observation) noexcept;
+    [[nodiscard]] static BoundedList<ObservationFact, kObservationKinds> facts (const Observations& all) noexcept;
 };
 
 // THE FINDINGS AS FACTS — the report's lines, typed: what the high-pass stood on, and, where mono bass has something to

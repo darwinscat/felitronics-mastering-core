@@ -276,6 +276,7 @@ enum class FactId : std::uint16_t
     SourceHum = 434,           // hum: a line at {hz}, {prominence} above the background
     SourceHumWandered = 435,   // possible hum: a line near {hz} that does not hold its frequency
     SourceLowestBandUnsure = 436, // the lowest occupied band: {note} ({hz}), unsure — under the margin a sure note stands
+    ObservationUnmeasured = 437, // {name}: not measured — {reason}
 
 };
 
@@ -316,6 +317,15 @@ enum class Term : std::uint16_t
     // (SaturationType, Project.h — Atan, Cubic and Asym are the config's only and have no words).
     FieldSaturationType,
     SaturationTypeTanh, SaturationTypeTube, SaturationTypeTransistor, SaturationTypeTransformer, SaturationTypeTape,
+    // The observations by name, in the order of ObservationKind (Session.h); what deals with one, in the order of
+    // HandledBy; and why one was not measured — every MeasurementReason but None (Measurements.h), in its order.
+    ObservationClipping, ObservationDcOffset, ObservationBitsUnused, ObservationDualMono, ObservationEdgeSilence,
+    ObservationTooQuiet, ObservationTooShort, ObservationAlreadyLimited, ObservationSpectralWall, ObservationLoudestLowNote,
+    ObservationLowestLowBand, ObservationInfraLow, ObservationWideBass, ObservationPolarity, ObservationSibilance,
+    ObservationHum, ObservationHumWandered,
+    HandledNothing, HandledHpf, HandledMonoBass, HandledPerson,
+    ReasonPending, ReasonCancelled, ReasonUnsupported, ReasonTooShort, ReasonNonFinite, ReasonCapacity, ReasonNoSignal,
+    ReasonNotImplemented, ReasonNeedNotAbove3, ReasonMemory,
 
 };
 

@@ -165,6 +165,27 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (NeedlesWhy::Long) == 12);
         return 12;
     }
+    else if constexpr (std::is_same_v<T, ObservationKind>)
+    {
+        static_assert (unsigned (ObservationKind::Clipping) == 0);
+        static_assert (unsigned (ObservationKind::DcOffset) == 1);
+        static_assert (unsigned (ObservationKind::BitsUnused) == 2);
+        static_assert (unsigned (ObservationKind::DualMono) == 3);
+        static_assert (unsigned (ObservationKind::EdgeSilence) == 4);
+        static_assert (unsigned (ObservationKind::TooQuiet) == 5);
+        static_assert (unsigned (ObservationKind::TooShort) == 6);
+        static_assert (unsigned (ObservationKind::AlreadyLimited) == 7);
+        static_assert (unsigned (ObservationKind::SpectralWall) == 8);
+        static_assert (unsigned (ObservationKind::LoudestLowNote) == 9);
+        static_assert (unsigned (ObservationKind::LowestLowBand) == 10);
+        static_assert (unsigned (ObservationKind::InfraLow) == 11);
+        static_assert (unsigned (ObservationKind::WideBass) == 12);
+        static_assert (unsigned (ObservationKind::Polarity) == 13);
+        static_assert (unsigned (ObservationKind::Sibilance) == 14);
+        static_assert (unsigned (ObservationKind::Hum) == 15);
+        static_assert (unsigned (ObservationKind::HumWandered) == 16);
+        return 16;
+    }
     else if constexpr (std::is_same_v<T, ObservationStatus>)
     {
         static_assert (unsigned (ObservationStatus::NotMeasured) == 0);
@@ -177,7 +198,8 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (ObservationStyle::Error) == 0);
         static_assert (unsigned (ObservationStyle::Warning) == 1);
         static_assert (unsigned (ObservationStyle::Note) == 2);
-        return 2;
+        static_assert (unsigned (ObservationStyle::Reading) == 3);
+        return 3;
     }
     else if constexpr (std::is_same_v<T, PhaseName>)
     {
@@ -472,6 +494,30 @@ constexpr void checkEnum (NeedlesWhy value) noexcept
     }
 }
 
+constexpr void checkEnum (ObservationKind value) noexcept
+{
+    switch (value)
+    {
+        case ObservationKind::Clipping: break;
+        case ObservationKind::DcOffset: break;
+        case ObservationKind::BitsUnused: break;
+        case ObservationKind::DualMono: break;
+        case ObservationKind::EdgeSilence: break;
+        case ObservationKind::TooQuiet: break;
+        case ObservationKind::TooShort: break;
+        case ObservationKind::AlreadyLimited: break;
+        case ObservationKind::SpectralWall: break;
+        case ObservationKind::LoudestLowNote: break;
+        case ObservationKind::LowestLowBand: break;
+        case ObservationKind::InfraLow: break;
+        case ObservationKind::WideBass: break;
+        case ObservationKind::Polarity: break;
+        case ObservationKind::Sibilance: break;
+        case ObservationKind::Hum: break;
+        case ObservationKind::HumWandered: break;
+    }
+}
+
 constexpr void checkEnum (ObservationStatus value) noexcept
 {
     switch (value)
@@ -489,6 +535,7 @@ constexpr void checkEnum (ObservationStyle value) noexcept
         case ObservationStyle::Error: break;
         case ObservationStyle::Warning: break;
         case ObservationStyle::Note: break;
+        case ObservationStyle::Reading: break;
     }
 }
 
@@ -1506,6 +1553,14 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.value)>, double>);
         v.field ("value", x.value);
     }
+    else if constexpr (std::is_same_v<U, ObservationFact>)
+    {
+        [[maybe_unused]] auto& [f0, f1] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.fact)>, text::Fact>);
+        v.field ("fact", x.fact);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.kind)>, ObservationKind>);
+        v.field ("kind", x.kind);
+    }
     else if constexpr (std::is_same_v<U, Observations>)
     {
         [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16] = x;
@@ -1744,7 +1799,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, SnapshotView>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32, f33, f34, f35, f36, f37, f38, f39, f40, f41, f42, f43, f44] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32, f33, f34, f35, f36, f37, f38, f39, f40, f41, f42, f43, f44, f45] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.canContinueMeasurement)>, bool>);
         v.optionalField ("canContinueMeasurement", x.canContinueMeasurement, false);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.canMaster)>, bool>);
@@ -1805,6 +1860,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.optionalField ("needlesRunsTruncated", x.needlesRunsTruncated, false);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.needlesSource)>, std::uint64_t>);
         v.optionalField ("needlesSource", x.needlesSource, std::uint64_t {});
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.observationFacts)>, BoundedList<ObservationFact, 17>>);
+        v.optionalField ("observationFacts", x.observationFacts, BoundedList<ObservationFact, 17> {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.observations)>, Observations>);
         v.optionalField ("observations", x.observations, Observations {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.offeredDevices)>, std::uint32_t>);

@@ -538,7 +538,8 @@ vinylTop = { aboveHz = 16000 }
 
 # The kind of a finding is its nature, not its size: clipping is always an error — even a short clip is a defect; a DC
 # offset, lost bits, a too-quiet export, bass in opposite polarity and wide bass need attention; the rest describe the
-# file. The kind styles a finding and decides nothing.
+# file — and the loudest bass note is a reading, a number the file shows rather than a finding (owner decision: it does
+# not tint the Low end block). The kind styles a finding and decides nothing.
 [observations.kinds]
 clipping = "error"
 dcOffset = "warning"
@@ -548,7 +549,7 @@ edgeSilence = "note"
 hum = "note"
 humWandered = "note"
 spectralWall = "note"
-loudestLowNote = "note"
+loudestLowNote = "reading"
 sibilance = "note"
 lowestLowBand = "note"
 infraLow = "note"

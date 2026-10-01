@@ -204,13 +204,33 @@
     "ObservationStyle": [
       "Error",
       "Warning",
-      "Note"
+      "Note",
+      "Reading"
     ],
     "HandledBy": [
       "Nothing",
       "Hpf",
       "MonoBass",
       "Person"
+    ],
+    "ObservationKind": [
+      "Clipping",
+      "DcOffset",
+      "BitsUnused",
+      "DualMono",
+      "EdgeSilence",
+      "TooQuiet",
+      "TooShort",
+      "AlreadyLimited",
+      "SpectralWall",
+      "LoudestLowNote",
+      "LowestLowBand",
+      "InfraLow",
+      "WideBass",
+      "Polarity",
+      "Sibilance",
+      "Hum",
+      "HumWandered"
     ]
   },
   "records": {
@@ -697,7 +717,8 @@
         "pendingMaster": "MasterToken",
         "pendingMasterBytes": "bytes",
         "plan": "PlanView",
-        "observations": "Observations"
+        "observations": "Observations",
+        "observationFacts": "ObservationFact[<=17]"
       }
     },
     "MasterToken": {
@@ -945,6 +966,13 @@
       "cpp": "PlanFact",
       "fields": {
         "device": "Device",
+        "fact": "Fact"
+      }
+    },
+    "ObservationFact": {
+      "cpp": "ObservationFact",
+      "fields": {
+        "kind": "ObservationKind",
         "fact": "Fact"
       }
     },
@@ -1730,6 +1758,10 @@
       "observations": {
         "default": "Observations {}",
         "description": "No observations: nothing measured."
+      },
+      "observationFacts": {
+        "default": "BoundedList<ObservationFact, 17> {}",
+        "description": "No observation lines: a snapshot before the observations spoke for themselves."
       }
     },
     "MeasurementQuery": {

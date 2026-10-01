@@ -439,7 +439,12 @@ and whether that device is in the chain. They change nothing: no observation swi
 place ("found 2 clips: 0:12, 1:47 — it looks like an edit"); ten a minute is a clipped source. The lowest occupied band
 is the low end's reading published with its sureness (`lowestOccupiedSure`, `lowestOccupiedResolved` beside it): an
 unsure one is shown as unsure, never withheld, while the high-pass takes the floor for it. `ObservationText::fact` gives
-a found one's sentence.
+a found one's sentence, and a not-measured one's name and reason (`ObservationUnmeasured`); a kind measured and not
+found has none. The style is error, warning, note or reading (`[observations.kinds]`): the loudest low note is a reading,
+a number the file shows, not a finding. **The observations speak for themselves**: `observationFacts` carries every
+kind's line as `ObservationText::facts` states it — `{kind, fact}`, in the order of `ObservationKind`, empty before a
+source — so a shell shows them without composing one; the names, the handling and the reasons are catalogue terms
+(`terms.observation`, `terms.handledBy`, `terms.measurementReason`).
 
 **Tilt and low** (technical decision 3О10) are two devices of the person's taste in that one stage. The machine never
 ticks tilt and leaves it at 0 dB; it ticks low only for a target's correction for its medium (`lowDb`: vinyl's
