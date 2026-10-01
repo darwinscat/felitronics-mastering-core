@@ -174,12 +174,17 @@ void theLandingsFacts()
     // The verdict: the miss's status said against the tolerance, beside the miss's numbers. The tolerance is the shipped
     // engine's landing.toleranceLu (LandingPlanTests pins it).
     constexpr double kTolerance = 0.1;
-    const auto status = kept (view.view(), made.id)->landing->status;
-    const auto verdict = MasterReportText::landing (report, status, kTolerance);
+    const auto& summary = *kept (view.view(), made.id)->landing;
+    const auto status = summary.status;
+    const auto verdict = MasterReportText::landing (report, summary, kTolerance);
     const auto both = [] (const text::Fact& f) { return text::Text::text (f, text::Lang::Ru) + " / " + text::Text::text (f, text::Lang::En); };
-    ok (status != LandingStatus::Solved && verdict && published (*verdict) && verdict->argCount == 1
-        && same (verdict->args[0].number, kTolerance) && verdict->args[0].unit == text::Unit::Lu,
-        "the miss's verdict is published with the master, against the tolerance: " + (verdict ? both (*verdict) : std::string {}));
+    // A between verdict names its two levels (the summary's, from the solver); the others stand against the tolerance.
+    const bool numbers = status == LandingStatus::TargetBetweenAchievable
+        ? verdict && verdict->argCount == 2 && summary.belowLufs && summary.aboveLufs && same (verdict->args[0].number, *summary.belowLufs)
+            && same (verdict->args[1].number, *summary.aboveLufs) && verdict->args[0].unit == text::Unit::Lufs
+        : verdict && verdict->argCount >= 1 && same (verdict->args[0].number, kTolerance) && verdict->args[0].unit == text::Unit::Lu;
+    ok (status != LandingStatus::Solved && verdict && published (*verdict) && numbers,
+        "the miss's verdict is published with the master, with its numbers: " + (verdict ? both (*verdict) : std::string {}));
 
     auto met = loaded (audio.planes, 2, audio.frames, audio.rate);
     const auto landed = master (*met, 3);
@@ -205,7 +210,7 @@ void theLandingsFacts()
         }
         return n;
     };
-    const auto solved = MasterReportText::landing (metReport, kept (metView.view(), landed.id)->landing->status, kTolerance);
+    const auto solved = MasterReportText::landing (metReport, *kept (metView.view(), landed.id)->landing, kTolerance);
     ok (solved && solved->id == text::FactId::MasterLandingSolved && metReport.achievedLufs
         && same (solved->args[0].number, *metReport.achievedLufs) && same (solved->args[1].number, metReport.targetLufs)
         && same (solved->args[2].number, kTolerance) && in (landed, *solved) == 1,
@@ -236,28 +241,53 @@ void theVerdictPerStatus()
         return a.find ('{') == std::string::npos && b.find ('{') == std::string::npos && a.size() > 20 && b.size() > 20
             && a != text::Text::key (f.id) && b != text::Text::key (f.id);
     };
-    const auto solved = MasterReportText::landing (r, LandingStatus::Solved, 0.1);
+    const auto at = [] (LandingStatus status)
+    {
+        LandingSummary s; s.status = status;
+        if (status == LandingStatus::TargetBetweenAchievable) { s.belowLufs = -14.46; s.aboveLufs = -13.52; }
+        return s;
+    };
+    const auto solved = MasterReportText::landing (r, at (LandingStatus::Solved), 0.1);
     ok (solved && solved->id == text::FactId::MasterLandingSolved && solved->argCount == 3
+        && text::Text::text (*solved, text::Lang::Ru).find ("(допуск ±0,1") != std::string::npos
         && same (solved->args[0].number, -14.04) && solved->args[0].unit == text::Unit::Lufs
         && same (solved->args[1].number, -14.0) && solved->args[1].unit == text::Unit::Lufs
         && same (solved->args[2].number, 0.1) && solved->args[2].unit == text::Unit::Lu && whole (*solved),
         "solved: the achieved number against the target and the tolerance — " + (solved ? text::Text::text (*solved, text::Lang::Ru) : std::string {}));
-    bool misses = true; std::string said;
-    for (const auto& [status, id] : { std::pair { LandingStatus::TargetUnreachable, text::FactId::MasterLandingUnreachable },
-                                      std::pair { LandingStatus::PassLimit, text::FactId::MasterLandingPassLimit },
-                                      std::pair { LandingStatus::TargetBetweenAchievable, text::FactId::MasterLandingBetween } })
+    const auto pass = MasterReportText::landing (r, at (LandingStatus::PassLimit), 0.1);
+    ok (pass && pass->id == text::FactId::MasterLandingPassLimit && pass->argCount == 1 && same (pass->args[0].number, 0.1)
+        && pass->args[0].unit == text::Unit::Lu && whole (*pass), "pass limit: against the tolerance");
+    const auto between = MasterReportText::landing (r, at (LandingStatus::TargetBetweenAchievable), 0.1);
+    LandingSummary bare; bare.status = LandingStatus::TargetBetweenAchievable;
+    ok (between && between->id == text::FactId::MasterLandingBetween && between->argCount == 2
+        && same (between->args[0].number, -14.46) && same (between->args[1].number, -13.52) && whole (*between)
+        && text::Text::text (*between, text::Lang::Ru).find ("ближайшие уровни \xE2\x88\x92" "14,5") != std::string::npos
+        && ! MasterReportText::landing (r, bare, 0.1),
+        "between: the two nearest levels, the summary's — and no line without them: "
+            + (between ? text::Text::text (*between, text::Lang::Ru) : std::string {}));
+    // Unreachable: the limit the solver named, carried by the summary — each its own words; none named, the general line.
+    bool named = true; std::string said; std::string previous;
+    for (const auto& [binding, term] : { std::pair { LandingConstraint::TruePeakCeiling, text::Term::LandingLimitTruePeak },
+                                         std::pair { LandingConstraint::LimiterGainReduction, text::Term::LandingLimitLimiter },
+                                         std::pair { LandingConstraint::PeakToLoudness, text::Term::LandingLimitPlr },
+                                         std::pair { LandingConstraint::LoudnessRange, text::Term::LandingLimitLra },
+                                         std::pair { LandingConstraint::GainRange, text::Term::LandingLimitGain },
+                                         std::pair { LandingConstraint::None, text::Term::LandingLimitNone } })
     {
-        const auto f = MasterReportText::landing (r, status, 0.1);
-        misses = misses && f && f->id == id && f->argCount == 1 && same (f->args[0].number, 0.1) && f->args[0].unit == text::Unit::Lu && whole (*f);
-        if (f) said += "\n        " + text::Text::text (*f, text::Lang::Ru);
+        auto s = at (LandingStatus::TargetUnreachable); s.binding = binding;
+        const auto f = MasterReportText::landing (r, s, 0.1);
+        const auto line = f ? text::Text::text (*f, text::Lang::Ru) : std::string {};
+        named = named && f && f->id == text::FactId::MasterLandingUnreachable && f->argCount == 2 && same (f->args[0].number, 0.1)
+            && f->args[1].kind == text::ArgKind::Term && f->args[1].termId == term && whole (*f) && line != previous;
+        previous = line; said += "\n        " + line;
     }
-    ok (misses, "unreachable, pass limit, between: each its own line, against the tolerance" + said);
-    const auto failed = MasterReportText::landing (MasterReport {}, LandingStatus::TechnicalFailure, 0.1);
+    ok (named, "unreachable: the limit that held it, each its own line" + said);
+    const auto failed = MasterReportText::landing (MasterReport {}, at (LandingStatus::TechnicalFailure), 0.1);
     ok (failed && failed->id == text::FactId::MasterLandingFailed && failed->argCount == 0 && whole (*failed),
         "a technical failure says so: " + (failed ? text::Text::text (*failed, text::Lang::Ru) : std::string {}));
     MasterReport unmeasured; unmeasured.targetLufs = -14.0;
-    ok (! MasterReportText::landing (r, LandingStatus::Unavailable, 0.1) && ! MasterReportText::landing (r, LandingStatus::Cancelled, 0.1)
-        && ! MasterReportText::landing (unmeasured, LandingStatus::Solved, 0.1),
+    ok (! MasterReportText::landing (r, at (LandingStatus::Unavailable), 0.1) && ! MasterReportText::landing (r, at (LandingStatus::Cancelled), 0.1)
+        && ! MasterReportText::landing (unmeasured, at (LandingStatus::Solved), 0.1),
         "an unavailable or cancelled landing says no verdict, nor a solved one without a measured loudness");
 }
 

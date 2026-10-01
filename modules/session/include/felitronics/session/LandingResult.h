@@ -24,6 +24,12 @@ enum class LandingReason : std::uint8_t
 {
     None, ExcessSubBass, SharpPeaks, DarkMix, LoudnessDemand, GainRange, TruePeak
 };
+// The limit that held an unreachable landing short of its target: the landing's solver names it where it decides the
+// verdict (mastering::LoudnessSolution::binding). None for every other status, and where the solver named none.
+enum class LandingConstraint : std::uint8_t
+{
+    None, TruePeakCeiling, LimiterGainReduction, PeakToLoudness, LoudnessRange, GainRange
+};
 struct LandingPass
 {
     double gainDb = 0.0, ceilingDbTp = 0.0, achievedLufs = 0.0, truePeakDbTp = 0.0;
@@ -46,6 +52,9 @@ struct LandingSummary
 {
     LandingStatus status = LandingStatus::Unavailable;
     LandingReason mainReason = LandingReason::None, secondReason = LandingReason::None;
+    LandingConstraint binding = LandingConstraint::None;   // TargetUnreachable: the limit that held it
+    // TargetBetweenAchievable: the two achievable levels the target fell between, the quieter first. Absent otherwise.
+    std::optional<double> belowLufs, aboveLufs;
     bool deliverable = false;
     std::optional<double> achievedLufs, missLu, distanceLu, truePeakDbTp;
     std::optional<double> sourceSubBassShare, sourcePresenceShare, limiterMeanReductionDb;
@@ -167,9 +176,10 @@ struct MasterReportText
 {
     [[nodiscard]] static std::optional<text::Fact> miss (const MasterReport& report) noexcept;
     // The landing's verdict: one fact per status — solved (the achieved number against the target and the tolerance),
-    // unreachable, pass limit, between (each against the tolerance; the numbers are the miss's line), technical failure.
-    // Nothing for an unavailable or cancelled landing, or a solved one without a measured loudness.
-    [[nodiscard]] static std::optional<text::Fact> landing (const MasterReport& report, LandingStatus status,
+    // unreachable (against the tolerance, naming the summary's binding), pass limit (against the tolerance), between
+    // (the summary's two nearest levels), technical failure. Nothing for an unavailable or cancelled landing, a solved
+    // one without a measured loudness, or a between one without its two levels.
+    [[nodiscard]] static std::optional<text::Fact> landing (const MasterReport& report, const LandingSummary& landing,
                                                             double toleranceLu) noexcept;
     [[nodiscard]] static std::optional<text::Fact> hint (const MasterHint& hint) noexcept;
     [[nodiscard]] static text::Fact crest (const MasterCrest& crest) noexcept;

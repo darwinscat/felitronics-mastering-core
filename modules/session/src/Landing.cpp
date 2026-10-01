@@ -49,20 +49,37 @@ std::optional<text::Fact> MasterReportText::miss (const MasterReport& report) no
         text::Arg::value (report.targetLufs, text::Unit::Lufs, 1),
         text::Arg::value (std::fabs (*report.missLu), text::Unit::Lu, 1));
 }
-std::optional<text::Fact> MasterReportText::landing (const MasterReport& report, LandingStatus status,
+std::optional<text::Fact> MasterReportText::landing (const MasterReport& report, const LandingSummary& landing,
                                                      double toleranceLu) noexcept
 {
-    using text::Arg; using text::Fact; using text::FactId; using text::Unit;
+    using text::Arg; using text::Fact; using text::FactId; using text::Term; using text::Unit;
     const auto tolerance = Arg::value (toleranceLu, Unit::Lu, 1);
-    switch (status)
+    const auto limit = [] (LandingConstraint c) noexcept
+    {
+        switch (c)
+        {
+            case LandingConstraint::TruePeakCeiling: return Term::LandingLimitTruePeak;
+            case LandingConstraint::LimiterGainReduction: return Term::LandingLimitLimiter;
+            case LandingConstraint::PeakToLoudness: return Term::LandingLimitPlr;
+            case LandingConstraint::LoudnessRange: return Term::LandingLimitLra;
+            case LandingConstraint::GainRange: return Term::LandingLimitGain;
+            case LandingConstraint::None: break;
+        }
+        return Term::LandingLimitNone;
+    };
+    switch (landing.status)
     {
         case LandingStatus::Solved:
             if (report.status != MeasurementStatus::Ready || ! report.achievedLufs) return std::nullopt;
             return Fact::of (FactId::MasterLandingSolved, Arg::value (*report.achievedLufs, Unit::Lufs, 1),
                              Arg::value (report.targetLufs, Unit::Lufs, 1), tolerance);
-        case LandingStatus::TargetUnreachable: return Fact::of (FactId::MasterLandingUnreachable, tolerance);
+        case LandingStatus::TargetUnreachable:
+            return Fact::of (FactId::MasterLandingUnreachable, tolerance, Arg::term (limit (landing.binding)));
         case LandingStatus::PassLimit: return Fact::of (FactId::MasterLandingPassLimit, tolerance);
-        case LandingStatus::TargetBetweenAchievable: return Fact::of (FactId::MasterLandingBetween, tolerance);
+        case LandingStatus::TargetBetweenAchievable:
+            if (! landing.belowLufs || ! landing.aboveLufs) return std::nullopt;
+            return Fact::of (FactId::MasterLandingBetween, Arg::value (*landing.belowLufs, Unit::Lufs, 1),
+                             Arg::value (*landing.aboveLufs, Unit::Lufs, 1));
         case LandingStatus::TechnicalFailure: return Fact::of (FactId::MasterLandingFailed);
         case LandingStatus::Unavailable:
         case LandingStatus::Cancelled: break;
@@ -223,7 +240,7 @@ std::array<std::optional<text::Fact>, 4> MasterReportText::vinylDepartures (cons
     if (m.ceilingDeparts)
         said[2] = Fact::of (FactId::MasterVinylCeilingDeparts, Arg::value (m.ceilingDbTp, Unit::DbTp, 1), Arg::value (m.ruleCeilingDbTp, Unit::DbTp, 1));
     if (m.needlesDeparts)
-        said[3] = Fact::of (FactId::MasterVinylNeedlesDeparts, Arg::value (m.overDb, Unit::Db, 1, text::Sign::Negative, text::Bound::AtMost));
+        said[3] = Fact::of (FactId::MasterVinylNeedlesDeparts, Arg::value (m.overDb, Unit::Db, 1));
     return said;
 }
 std::optional<text::Fact> MasterReportText::vinylUncheckable (const MasterReport& report) noexcept
@@ -329,6 +346,25 @@ bool LandingOps::summarize (const mastering::LoudnessSolution& solution,
     };
     next.mainReason = reason (solution.mainReason);
     next.secondReason = reason (solution.secondReason);
+    // What held an unreachable landing, as the solver named it where it decided the verdict; nothing for another status.
+    if (next.status == LandingStatus::TargetUnreachable)
+        switch (solution.binding)
+        {
+            case mastering::MasteringConstraint::TruePeakCeiling: next.binding = LandingConstraint::TruePeakCeiling; break;
+            case mastering::MasteringConstraint::LimiterGainReduction: next.binding = LandingConstraint::LimiterGainReduction; break;
+            case mastering::MasteringConstraint::PeakToLoudness: next.binding = LandingConstraint::PeakToLoudness; break;
+            case mastering::MasteringConstraint::LoudnessRange: next.binding = LandingConstraint::LoudnessRange; break;
+            case mastering::MasteringConstraint::GainRange: next.binding = LandingConstraint::GainRange; break;
+            case mastering::MasteringConstraint::None:
+            case mastering::MasteringConstraint::CompressorGainReduction: break;
+        }
+    // The two levels a target fell between, as the solver measured them where it found the bracket.
+    if (next.status == LandingStatus::TargetBetweenAchievable)
+    {
+        if (! std::isfinite (solution.achievedBelowLufs) || ! std::isfinite (solution.achievedAboveLufs)) return false;
+        next.belowLufs = std::fmin (solution.achievedBelowLufs, solution.achievedAboveLufs);
+        next.aboveLufs = std::fmax (solution.achievedBelowLufs, solution.achievedAboveLufs);
+    }
     next.deliverable = solution.deliverable;
     next.passes = (std::uint32_t) solution.passes;
     next.workUnits = solution.workUnits;

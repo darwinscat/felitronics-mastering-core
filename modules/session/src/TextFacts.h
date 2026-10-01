@@ -145,9 +145,10 @@ inline constexpr FactShape kFacts[] = {
     { FactId::MasterVinylCeilingDeparts, "masterVinylCeilingDeparts", { { { "ceiling", ArgKind::Value, {} }, { "medium", ArgKind::Value, {} } } }, 2 },
     { FactId::MasterVinylNeedlesDeparts, "masterVinylNeedlesDeparts", { { { "cut", ArgKind::Value, {} } } }, 1 },
     { FactId::MasterLandingSolved, "masterLandingSolved", { { { "achieved", ArgKind::Value, {} }, { "target", ArgKind::Value, {} }, { "tolerance", ArgKind::Value, {} } } }, 3 },
-    { FactId::MasterLandingUnreachable, "masterLandingUnreachable", { { { "tolerance", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterLandingUnreachable, "masterLandingUnreachable",
+      { { { "tolerance", ArgKind::Value, {} }, { "limit", ArgKind::Term, "landingLimit" } } }, 2 },
     { FactId::MasterLandingPassLimit, "masterLandingPassLimit", { { { "tolerance", ArgKind::Value, {} } } }, 1 },
-    { FactId::MasterLandingBetween, "masterLandingBetween", { { { "tolerance", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterLandingBetween, "masterLandingBetween", { { { "below", ArgKind::Value, {} }, { "above", ArgKind::Value, {} } } }, 2 },
     { FactId::MasterLandingFailed, "masterLandingFailed", {}, 0 },
     { FactId::MasterCostSection, "masterCostSection", { { { "shift", ArgKind::Value, {} }, { "from", ArgKind::Value, {} }, { "to", ArgKind::Value, {} } } }, 3 },
     { FactId::MasterCostSections, "masterCostSections", { { { "count", ArgKind::Count, {} } } }, 1 },
@@ -251,16 +252,19 @@ inline constexpr FactShape kFacts[] = {
     { FactId::SourceLossy, "sourceLossy", { { { "hz", ArgKind::Value, {} } } }, 1 },
     { FactId::SourceInfraLowNote, "sourceInfraLowNote", { { { "hz", ArgKind::Value, {} } } }, 1 },
     { FactId::SourceInfraLowWarning, "sourceInfraLowWarning", { { { "share", ArgKind::Value, {} }, { "hz", ArgKind::Value, {} } } }, 2 },
+    { FactId::SourceDcNoteStereo, "sourceDcNoteStereo", { { { "left", ArgKind::Value, {} }, { "right", ArgKind::Value, {} } } }, 2 },
+    { FactId::SourceDcStereo, "sourceDcStereo", { { { "left", ArgKind::Value, {} }, { "right", ArgKind::Value, {} } } }, 2 },
     // The plan's advice and the targets' notes.
     { FactId::HpfBelowComfort, "hpfBelowComfort", { { { "cutoff", ArgKind::Value, {} }, { "low", ArgKind::Value, {} }, { "high", ArgKind::Value, {} } } }, 3 },
     { FactId::HpfAboveComfort, "hpfAboveComfort", { { { "cutoff", ArgKind::Value, {} }, { "low", ArgKind::Value, {} }, { "high", ArgKind::Value, {} } } }, 3 },
     { FactId::HpfSlopeGentle, "hpfSlopeGentle", { { { "slope", ArgKind::Count, {} }, { "gentlest", ArgKind::Count, {} } } }, 2 },
     { FactId::HpfSlopeSteep, "hpfSlopeSteep", { { { "slope", ArgKind::Count, {} }, { "steepest", ArgKind::Count, {} } } }, 2 },
     { FactId::EqOvershoot, "eqOvershoot", { { { "db", ArgKind::Value, {} }, { "hz", ArgKind::Value, {} } } }, 2 },
-    { FactId::MonoBassOutsideZones, "monoBassOutsideZones", { { { "crossover", ArgKind::Value, {} }, { "clubFrom", ArgKind::Value, {} }, { "clubTo", ArgKind::Value, {} }, { "vinylFrom", ArgKind::Value, {} }, { "vinylTo", ArgKind::Value, {} } } }, 5 },
+    { FactId::MonoBassOutsideZones, "monoBassOutsideZones", { { { "crossover", ArgKind::Value, {} }, { "clubTo", ArgKind::Value, {} }, { "vinylTo", ArgKind::Value, {} } } }, 3 },
     { FactId::TargetMeasured, "targetMeasured", { { { "lufs", ArgKind::Value, {} } } }, 1 },
     { FactId::TargetPractice, "targetPractice", { { { "lufs", ArgKind::Value, {} } } }, 1 },
     { FactId::TargetNoNormalisation, "targetNoNormalisation", {}, 0 },
+    { FactId::MonoBassBelowZones, "monoBassBelowZones", { { { "crossover", ArgKind::Value, {} }, { "clubFrom", ArgKind::Value, {} }, { "vinylFrom", ArgKind::Value, {} } } }, 3 },
 
 };
 inline constexpr std::size_t kFactCount = sizeof (kFacts) / sizeof (kFacts[0]);
@@ -400,6 +404,12 @@ inline constexpr TermShape kTerms[] = {
     { Term::TempoLow, "tempoConfidence", "low" },
     { Term::TempoMedium, "tempoConfidence", "medium" },
     { Term::TempoHigh, "tempoConfidence", "high" },
+    { Term::LandingLimitNone, "landingLimit", "unnamed" },
+    { Term::LandingLimitTruePeak, "landingLimit", "truePeak" },
+    { Term::LandingLimitLimiter, "landingLimit", "limiter" },
+    { Term::LandingLimitPlr, "landingLimit", "plr" },
+    { Term::LandingLimitLra, "landingLimit", "lra" },
+    { Term::LandingLimitGain, "landingLimit", "gain" },
 };
 inline constexpr std::size_t kTermCount = sizeof (kTerms) / sizeof (kTerms[0]);
 

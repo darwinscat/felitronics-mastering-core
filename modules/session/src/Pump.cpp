@@ -359,7 +359,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
                     const auto tolerance = detail::rules().engine.find ("landing").find ("toleranceLu");
                     const double toleranceLu = tolerance.decimal() ? tolerance.decimal()->toDouble()
                                                                    : double (tolerance.integer().value_or (0));
-                    if (const auto verdict = MasterReportText::landing (report, masterSummary_.status, toleranceLu))
+                    if (const auto verdict = MasterReportText::landing (report, masterSummary_, toleranceLu))
                     { (void) event.payload.fact.assign (*verdict); emit (event, masterProgress_); }
                     if (const auto miss = MasterReportText::miss (report))
                     { (void) event.payload.fact.assign (*miss); emit (event, masterProgress_); }

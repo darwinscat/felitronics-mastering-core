@@ -188,10 +188,10 @@ enum class FactId : std::uint16_t
     MasterVinylNeedlesDeparts = 87, // the clipper is set to cut at most {cut}: vinyl is cut without the clipper
     // The landing's verdict (MasterReportText::landing), one per status, published with the master. A miss names its
     // numbers in MasterLandingMiss/Above above; its status line says why, against the tolerance.
-    MasterLandingSolved = 88,      // the master reached {achieved} against {target}, within the tolerance {tolerance}
-    MasterLandingUnreachable = 89, // no closer than {tolerance} to the target without breaking a constraint
+    MasterLandingSolved = 88,      // the master reached {achieved} against {target} (tolerance ±{tolerance})
+    MasterLandingUnreachable = 89, // no closer than ±{tolerance} to the target: {limit} holds it (select; the solver's binding)
     MasterLandingPassLimit = 90,   // the passes ran out before the master came within {tolerance} of the target
-    MasterLandingBetween = 91,     // the target lies between two neighbouring reachable levels, none within {tolerance}
+    MasterLandingBetween = 91,     // the target falls between the nearest levels {below} and {above}, both beyond the tolerance
     MasterLandingFailed = 92,      // the master stopped on a technical failure
     // The master's cost line by line (MasterReportText), each published where its numbers were measured.
     MasterCostSection = 93,        // the largest section shift: {shift} at {from}–{to}
@@ -301,18 +301,23 @@ enum class FactId : std::uint16_t
     SourceLossy = 443,         // the source went through mp3/AAC (the top cut at {hz}): master from a lossless source
     SourceInfraLowNote = 444,  // a little energy below {hz}: the master's high-pass removes it
     SourceInfraLowWarning = 445, // a notable part of the energy ({share}) below {hz}: the high-pass cuts it, check what it is
+    // A DC offset of a stereo source, each channel's as the readings print it (a mono source keeps SourceDcNote/SourceDc).
+    SourceDcNoteStereo = 446,  // L {left}, R {right} as a note: the master's high-pass removes it, check the mix chain
+    SourceDcStereo = 447,      // L {left}, R {right} as a warning or an error
     // The plan's advice (PlanText): a device's value as it sounds, against the norm the config draws on its knob.
     HpfBelowComfort = 500,     // the high-pass at {cutoff} is below the comfort window {low}–{high}
     HpfAboveComfort = 501,     // the high-pass at {cutoff} is above the comfort window {low}–{high}
     HpfSlopeGentle = 502,      // a slope of {slope} dB/oct is gentler than the usual, {gentlest} dB/oct and up
     HpfSlopeSteep = 503,       // a slope of {slope} dB/oct is steeper than the usual, {steepest} dB/oct at most
     EqOvershoot = 504,         // the EQ curve is beyond the norm: {db} at {hz}
-    MonoBassOutsideZones = 505, // no destination asks for mono bass below {crossover}: club {clubFrom}–{clubTo}, vinyl …
+    MonoBassOutsideZones = 505, // mono bass at {crossover}, above what a club ({clubTo}) and vinyl ({vinylTo}) need
     // The target's note (SnapshotText::targetNote): where its loudness comes from, where that is not a platform's
     // published number or a standard.
     TargetMeasured = 506,      // {lufs} is measured on the platform, not a published specification
     TargetPractice = 507,      // {lufs} is mastering practice, not a standard
     TargetNoNormalisation = 508, // the destination does not normalise loudness: a delivery preset
+    // Mono bass's crossover below every zone (MonoBassOutsideZones is the one above them).
+    MonoBassBelowZones = 509,  // mono bass at {crossover}, below what a club ({clubFrom}) and vinyl ({vinylFrom}) ask for
 
 };
 
@@ -370,6 +375,8 @@ enum class Term : std::uint16_t
     ReadingStereoWindows, ReadingCrestBlocksLow, ReadingCrestBlocksLowMid, ReadingCrestBlocksHighMid, ReadingCrestBlocksHigh,
     ReadingCrestBlocksFull, ReadingTarget, ReadingCeiling, ReadingGain, ReadingPasses, ReadingCheckPasses,
     TempoUndetermined, TempoLow, TempoMedium, TempoHigh,
+    // What held a landing short of its target (LandingConstraint, the solver's binding): MasterLandingUnreachable selects.
+    LandingLimitNone, LandingLimitTruePeak, LandingLimitLimiter, LandingLimitPlr, LandingLimitLra, LandingLimitGain,
 
 };
 

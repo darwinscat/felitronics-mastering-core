@@ -868,8 +868,8 @@ void everyRejectionIsAFact()
         inRange = inRange && ((std::size_t) shape.id < 100 || ((std::size_t) shape.id > 100 && (std::size_t) shape.id <= 100 + last)
             || ((std::size_t) shape.id >= 200 && (std::size_t) shape.id <= 207)
             || ((std::size_t) shape.id >= 300 && (std::size_t) shape.id <= 305)
-            || ((std::size_t) shape.id >= 400 && (std::size_t) shape.id <= 445)
-            || ((std::size_t) shape.id >= 500 && (std::size_t) shape.id <= 508));
+            || ((std::size_t) shape.id >= 400 && (std::size_t) shape.id <= 447)
+            || ((std::size_t) shape.id >= 500 && (std::size_t) shape.id <= 509));
     ok (inRange, "rejections, phases and session errors occupy only their own declared ranges");
 
     // THE FIELDS, held against the state machine's own walk of them (src/Devices.h).
@@ -1119,7 +1119,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0x90fa97574f353015ull;   // …, the plan's advice and the targets' notes (500–508), the observations (52–80, 419–436), the target-change warning (81), what departs from vinyl (82–87), the clipper's cut off the peaks and an observation not measured (437), the landing's verdict (88–92), the clipper's cut as a cap, DefaultsConverted (9) retired, the cost's lines (93–97), the readings' names and the tempo's confidence (438), the owner's observation words and the clipper's "will take" (439–445, 52–54, 87, 424)
+    constexpr std::uint64_t kPinned = 0x296927d907b83545ull;   // …, the plan's advice and the targets' notes (500–508), the observations (52–80, 419–436), the target-change warning (81), what departs from vinyl (82–87), the clipper's cut off the peaks and an observation not measured (437), the landing's verdict (88–92), the clipper's cut as a cap, DefaultsConverted (9) retired, the cost's lines (93–97), the readings' names and the tempo's confidence (438), the owner's observation words and the clipper's "will take" (439–445, 52–54, 87, 424), the owner's wording 3b/3c — the master's outcome (88, 89 naming its limit, 91 its two levels), the advice beyond the norm (502, 503, 505, 509), the cap in words (52–54, 87) and DC per channel (446, 447)
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");

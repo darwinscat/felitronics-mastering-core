@@ -340,14 +340,17 @@ is not Ready states that fact alone, or nothing. A shell shows them as they are 
 numbers it does not have. Each is written as an event's fact is (`WireFact`); the contract scenario `plan-pending`
 records a waiting plan, the master it refuses, and its reasons once Ready.
 
-**The advice beside a knob is a fact too** (facts 500–505, `PlanText::hpfCutoffAdvice`, `hpfSlopeAdvice`,
+**The advice beside a knob is a fact too** (facts 500–505 and 509, `PlanText::hpfCutoffAdvice`, `hpfSlopeAdvice`,
 `monoBassAdvice`, `eqAdvice`): the value as it sounds — a person's or the machine's — against the norm engine.toml draws on
 the knob, so a hand edit that leaves the norm gets its advice in the next snapshot. The high-pass's cutoff below or above
 `[hpf] comfort` (24–42 Hz, strictly, the window named in the fact) and its slope gentler or steeper than `slopesNormal`
 (a slope between two normal ones is inside; `plan.hpf.soundingSlope` carries the slope that sounds); mono bass's
-crossover outside every zone of `[monoBass.zones]` (ends inside); the EQ curve of the shelves as they sound (tilt and
+crossover outside every zone of `[monoBass.zones]` (ends inside) — above them `MonoBassOutsideZones` (505, against the
+club's and vinyl's upper ends), below them `MonoBassBelowZones` (509, against their lower ends); the EQ curve of the shelves as they sound (tilt and
 low, never the high-pass) past `[eq] curve.warnDb`, at the point of the largest |dB|, said of the shelf that gives the
-larger part there. Nothing for a device out of the chain. `kPlanFacts` is 18. **The target's note** (facts 506–508,
+larger part there. Nothing for a device out of the chain. `kPlanFacts` is 18. The machine's own plan never raises the
+"beyond the norm" advice (502–505, 509) — `theMachineKeepsItsOwnNorm` plans every target on every input the suite
+measures and holds it; the comfort window (500, 501) is a hint the machine's floor may leave. **The target's note** (facts 506–508,
 `SnapshotText::targetNote`, the snapshot's `targetNote` beside `target`): where the target's loudness comes from, where
 targets.toml `[notes]` says it is not a platform's published number or a standard — measured (youtubeMusic), practice
 (cdDynamic, club), no normalisation (bandcamp). `[notes]` is shown, not sounding: it moves `all`, never `sound`.
@@ -401,8 +404,8 @@ The two numbers (`shortCutDb`, `betweenCutDb`) are AMOUNTS (owner, 30.09): the c
 peaks and the limiter does the rest, so its threshold stands max(0, need − cut) above the ceiling, the need the input's
 (`plan.limiter.needDb`); a person's `manual X` is X dB off the peaks the same way. The finding carries the amount
 (`overDb`, `proposedOverDb`), the chain the threshold; its line (`LimiterShort`/`Between`/`Manual`, and a vinyl master's
-`MasterVinylNeedlesDeparts`) prints the amount as a cap, `Bound::AtMost` ("≤ 1.5 dB": "the clipper will take ≤ 1.5 dB
-off the peaks, the limiter the rest", owner wording 01.10), since the landing's drive decides how much the clipper really takes — and `LimiterLittleNeed` names the need as the one at the target. Where the need is not known, or need − cut lies beyond the
+`MasterVinylNeedlesDeparts`) names the amount as a cap in its own words, the number exact ("the clipper will take no
+more than 1.5 dB off the peaks, the limiter will take the rest", owner wording 01.10 — never "no more than ≤ …"), since the landing's drive decides how much the clipper really takes — and `LimiterLittleNeed` names the need as the one at the target. Where the need is not known, or need − cut lies beyond the
 limiter's working range (12 dB), no threshold keeps to the amount and the clipper stays off. The landing then moves the
 peaks by its own gain and pass ceiling; a rendered master's clipper reduction stays within the amount plus that drift
 (`theClipperCutsItsAmount`: about 1.4–2.0 dB on the suite's mix).
@@ -464,6 +467,9 @@ less the low bits always zero) is nothing at 24 bits, a warning at 23 to 17 and 
 note from 2 %, a warning from 5 %; the hum is a note, a warning from half its severity (−50 dB against the programme)
 when it is confident. A size raises a style, never lowers it, and never raises a doubtful finding; where the size chose
 the style the line says so (`SourceDcNote`, `SourceTruncatedBits`/`SourceShallowMix`, `SourceInfraLowNote`/`Warning`).
+A stereo source's DC line names both channels, signed, as the readings print them — `SourceDcNoteStereo`/`SourceDcStereo`
+(446/447, "L {left}, R {right}"; the observation's `second`/`third`, `places` the channels read); a mono source keeps its
+one number (`SourceDcNote`/`SourceDc`).
 The hum is not measured only where the detector could not listen (too short, every frame holed, too coarse a
 resolution, or a base line heard in too little quiet to tell whether it stands still); where it listened — a programme
 never quiet, a comb without its base, a quiet stretch without a base line — and no steady line stood out, it is not
@@ -812,7 +818,10 @@ sets the source normalization toward −18 LUFS separately from the adjustable p
 change requests one extra source-rate impact pass outside the twelve landing renders.
 
 `LandingSummary` carries status, achieved LUFS, signed miss, absolute distance, reference true peak, measured
-source and limiter hints, work units and the ordered pass log. Its limiter and K13 clipper traces share
+source and limiter hints, work units and the ordered pass log — and, where the solver decided them, `binding` (the
+`LandingConstraint` that held an unreachable landing, the solver's `LoudnessSolution::binding`) and `belowLufs`/`aboveLufs`
+(the two levels a between landing's target fell between, quieter first). The decoder refuses a limit on another status
+and levels out of order or on another status; older snapshots decode without them. Its limiter and K13 clipper traces share
 the delivered-frame grid and carry min/max/mean reduction, finite counts, validity and completion. Limiter
 GR follows the audio receiving gain after lookahead; K13 reduction follows the detector's input time.
 `Kept::landing` and the appended trace fields are optional in the generated session codec so older v1
@@ -1566,9 +1575,13 @@ remaining loudness distance with units. `MasterReportText` renders the miss and 
 ru-first/en facts. PassLimit means the twelve-pass budget ended; it makes no claim of physical impossibility.
 The landing's verdict is a fact too, one per status, published with the master ahead of the miss
 (`MasterReportText::landing`): solved says the achieved loudness against the target and the landing's tolerance
-(`MasterLandingSolved`, 88) — never "hit" without numbers; unreachable, pass limit and between say why against the
-tolerance (89–91), the achieved number and the gap being the miss's own line (`MasterLandingMiss`/`Above`, 11/23); a
-technical failure says so (92). Unavailable and cancelled landings say none. The crest's line
+(`MasterLandingSolved`, 88, "(tolerance ±0.1 LU)") — never "hit" without numbers; unreachable names the limit that held
+it (89, a select on `landingLimit`: the true-peak ceiling, the limiter's GR limit, the PLR floor, the LRA loss limit, the
+chain's gain bound — `LandingSummary::binding`; "one of the constraints" where the solver named none) against the
+tolerance; pass limit says the budget ended against it (90); between names the two nearest levels, both beyond the
+tolerance (91, `belowLufs`/`aboveLufs`); the achieved number and the gap stay the miss's own line
+(`MasterLandingMiss`/`Above`, 11/23); a technical failure says so (92). The product landing the session runs ends Solved,
+PassLimit or between — never unreachable — so 89 speaks for a solver that names its binding. Unavailable and cancelled landings say none. The crest's line
 (`MasterReportText::crest`) goes out once: with the report when the job settles the crest (joined inside the job, or
 unavailable), or from the late join when it was still pending.
 

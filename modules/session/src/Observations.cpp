@@ -221,6 +221,7 @@ Observation dcOffset (const ObservationInputs& in) noexcept
     auto o = start (in, "dcOffset", HandledBy::Hpf, false);
     const auto* r = resultOf (in, Analyzer::Clipping);
     std::optional<double> largest;
+    double signedOffset[2] { 0.0, 0.0 };
     auto reason = MeasurementReason::Unsupported;
     // Every channel is read, or the offset is not measured: a channel without its number is not a channel without DC.
     for (unsigned c = 0; c < in.channels && c < 2; ++c)
@@ -228,8 +229,14 @@ Observation dcOffset (const ObservationInputs& in) noexcept
         const auto dc = read (r, Channelled ("dcOffset", c).view());
         if (! dc.value) { reason = dc.reason; largest.reset(); break; }
         largest = std::max (largest.value_or (0.0), std::fabs (*dc.value));
+        signedOffset[c] = *dc.value;
     }
     if (! largest) return unmeasured (o, r ? reason : MeasurementReason::Pending);
+    // Each channel's offset, signed, as the readings print it: `places` channels read, the left in `second`, the right in
+    // `third` — so the line names both of a stereo source, as the page's reading does.
+    o.places = std::min<std::uint32_t> (in.channels, 2u);
+    o.second = signedOffset[0];
+    o.third = o.places == 2 ? signedOffset[1] : 0.0;
     const auto config = in.rules.engine.find ("observations").find ("dcOffset");
     const double from = number (config.find ("from")), fullAt = number (config.find ("fullAt"));
     o.value = *largest;
@@ -781,7 +788,13 @@ std::optional<text::Fact> ObservationText::fact (ObservationKind kind, const Obs
             return Fact::of (FactId::SourceClips, count (o.value));
         // The style chose the words where the size chose the style: a DC offset as a note, the depth as an error.
         case ObservationKind::DcOffset:
-            return Fact::of (o.style == ObservationStyle::Note ? FactId::SourceDcNote : FactId::SourceDc, Arg::value (o.value, Unit::None, 4));
+        {
+            const bool note = o.style == ObservationStyle::Note;
+            if (o.places == 2)
+                return Fact::of (note ? FactId::SourceDcNoteStereo : FactId::SourceDcStereo,
+                                 Arg::value (o.second, Unit::None, 4), Arg::value (o.third, Unit::None, 4));
+            return Fact::of (note ? FactId::SourceDcNote : FactId::SourceDc, Arg::value (o.value, Unit::None, 4));
+        }
         case ObservationKind::BitsUnused:
             if (o.style == ObservationStyle::Error) return Fact::of (FactId::SourceShallowMix, count (o.value), count (o.third));
             return Fact::of (FactId::SourceTruncatedBits, count (o.value));
