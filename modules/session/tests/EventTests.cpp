@@ -9,11 +9,14 @@
 #include "FpEnvironmentControl.h"
 #include "JsonNumber.h"
 #include "SnapshotStorage.h"
+#include "TextNumber.h"
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Snapshot.h>
 #include <felitronics_test.h>
 #include <felitronics/eq/EqBand.h>
+#include <algorithm>
 #include <bit>
+#include <iterator>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -117,6 +120,37 @@ std::uint64_t digest (std::uint64_t hash, std::uint64_t n)
     for (unsigned i = 0; i < 8; ++i) hash = (hash ^ ((n >> (i * 8)) & 255)) * 0x100000001B3ull;
     return hash;
 }
+// THE MASTER'S MEASURED NUMBERS — the facts a master's completion publishes from its rendered PCM: the landing (11, 23,
+// 88–92), the hints (12–17), the crest (18–22), the cost (24–28, 93–97), the stages (44, 45) and the medium (76–79,
+// 82–87). That PCM comes from DSP outside the det-math zone (felitronics-core's limiter and saturator call libm), so
+// its last bits are the platform's — tools/contract/run.mjs compares such numbers within a tolerance for the same
+// reason. A cross-platform pin takes each Value argument of these facts as the catalogue prints it: the core's own
+// digits (gridDigits) at the argument's declared precision. Every other argument, and every non-Value argument of
+// these, is hashed bit for bit. (80 and 81 sit in the range but speak of the source and of edits, not of the master.)
+constexpr FactId kMastersMeasurement[] {
+    FactId::MasterLandingMiss, FactId::MasterHintSubBass, FactId::MasterHintPeaks, FactId::MasterHintDark,
+    FactId::MasterHintDemand, FactId::MasterHintGainRange, FactId::MasterHintTruePeak, FactId::MasterCrestSourceRate,
+    FactId::MasterCrestPending, FactId::MasterCrestUnavailable, FactId::MasterReportUnavailable,
+    FactId::MasterCrestDelivered, FactId::MasterLandingAbove, FactId::MasterCostShape, FactId::MasterCostCrest,
+    FactId::MasterCostPumping, FactId::MasterCostK2Deferred, FactId::MasterCostUnavailable, FactId::MasterGlue,
+    FactId::MasterSaturation, FactId::MasterVinylReady, FactId::MasterVinylDeparts, FactId::MasterVinylChecked,
+    FactId::MasterVinylUncheckable, FactId::MasterVinylNoFold, FactId::MasterVinylFoldDeparts,
+    FactId::MasterVinylNoHighPass, FactId::MasterVinylHighPassDeparts, FactId::MasterVinylCeilingDeparts,
+    FactId::MasterVinylNeedlesDeparts, FactId::MasterLandingSolved, FactId::MasterLandingUnreachable,
+    FactId::MasterLandingPassLimit, FactId::MasterLandingBetween, FactId::MasterLandingFailed, FactId::MasterCostSection,
+    FactId::MasterCostSections, FactId::MasterCostLimiter, FactId::MasterCostActive, FactId::MasterCostBands };
+bool fromMastersMeasurement (FactId id) noexcept
+{ return std::find (std::begin (kMastersMeasurement), std::end (kMastersMeasurement), id) != std::end (kMastersMeasurement); }
+std::uint64_t printed (std::uint64_t hash, const text::Arg& arg)
+{
+    text::detail::Digits digits;
+    if (! text::detail::gridDigits (arg.number, arg.precision, digits)) return digest (hash, std::bit_cast<std::uint64_t> (arg.number));
+    hash = digest (hash, digits.negative ? 1u : 0u);
+    for (const char c : digits.integer()) hash = digest (hash, static_cast<unsigned char> (c));
+    hash = digest (hash, std::uint64_t ('.'));
+    for (const char c : digits.fraction()) hash = digest (hash, static_cast<unsigned char> (c));
+    return hash;
+}
 std::uint64_t eventsHash (const std::vector<Notification>& events)
 {
     std::uint64_t hash = 0xCBF29CE484222325ull;
@@ -132,6 +166,7 @@ std::uint64_t eventsHash (const std::vector<Notification>& events)
         if (e.kind == EventKind::Fact)
         {
             const auto fact = e.payload.fact.view();
+            const bool master = fromMastersMeasurement (fact.id);
             hash = digest (hash, std::uint16_t (fact.id)); hash = digest (hash, fact.argCount);
             for (unsigned i = 0; i < fact.argCount; ++i)
             {
@@ -139,7 +174,7 @@ std::uint64_t eventsHash (const std::vector<Notification>& events)
                 hash = digest (hash, std::uint8_t (arg.kind)); hash = digest (hash, std::uint8_t (arg.unit));
                 hash = digest (hash, arg.precision); hash = digest (hash, std::uint8_t (arg.sign));
                 hash = digest (hash, std::uint8_t (arg.bound)); hash = digest (hash, std::uint16_t (arg.termId));
-                hash = digest (hash, std::bit_cast<std::uint64_t> (arg.number));
+                hash = master && arg.kind == text::ArgKind::Value ? printed (hash, arg) : digest (hash, std::bit_cast<std::uint64_t> (arg.number));
                 hash = digest (hash, std::uint64_t (arg.integer)); hash = digest (hash, arg.userText.size());
                 for (const char c : arg.userText) hash = digest (hash, static_cast<unsigned char> (c));
             }
@@ -197,8 +232,10 @@ void pump()
     // The cost's lines beside shape, impact and pumping (MasterCostSection … MasterCostBands, 93–97) moved them last:
     // without those lines, the sequence renumbered, the events are the ones before them — the old pins. The targets' notes
     // ([notes], targets.toml) moved the config's version and nothing else: every phase carries it, so with the previous
-    // version put back the events are the ones before the notes, bit for bit — the old pins b5fbcdc6218fc72d /
-    // 25eeb7e1f596ed41, and without the cost's lines theirs.
+    // version put back the events are the ones before the notes, bit for bit — the old pins, and without the cost's lines
+    // theirs. Every pin here hashes the master's measured numbers as printed (kMastersMeasurement): restated so, on the
+    // Mac where the raw-bit pins held, the raw ones were b5fbcdc6218fc72d / 25eeb7e1f596ed41 (the previous version),
+    // e2e6c8ac47d9417e / 3797697993fa2f96 (and without the cost's lines) and cadd3454090dbdba / 18b6d1ba59ebfabd.
     const auto previousVersion = [] (std::vector<Notification> events)
     {
         // The canonical document without its [notes] table: the config before them.
@@ -212,7 +249,7 @@ void pump()
                 e.payload.phase.weightsVersion = before->all;
         return events;
     };
-    ok (eventsHash (previousVersion (one)) == 0xb5fbcdc6218fc72dull && eventsHash (previousVersion (cancelled)) == 0x25eeb7e1f596ed41ull,
+    ok (eventsHash (previousVersion (one)) == 0x1360564337f13165ull && eventsHash (previousVersion (cancelled)) == 0xd42f45d0b39fdc01ull,
         "the targets' notes move only the config's version the phases carry: with the previous one, the previous pins");
     const auto withoutCostLines = [] (const std::vector<Notification>& events)
     {
@@ -227,15 +264,44 @@ void pump()
         }
         return kept;
     };
-    ok (eventsHash (withoutCostLines (previousVersion (one))) == 0xe2e6c8ac47d9417eull
-        && eventsHash (withoutCostLines (previousVersion (cancelled))) == 0x3797697993fa2f96ull
+    ok (eventsHash (withoutCostLines (previousVersion (one))) == 0x2ddbf194be1a8c26ull
+        && eventsHash (withoutCostLines (previousVersion (cancelled))) == 0xfb06ff940f07c896ull
         && withoutCostLines (one).size() < one.size(),
-        "the cost's new lines are the only new events: without them the old pins e2e6c8ac47d9417e / 3797697993fa2f96 hold");
+        "the cost's new lines are the only new events: without them the old pins 2ddbf194be1a8c26 / fb06ff940f07c896 hold");
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
-    ok (eventsHash (one) == 0xcadd3454090dbdbaull && eventsHash (cancelled) == 0x18b6d1ba59ebfabdull,
+    ok (eventsHash (one) == 0xe78c2952b4e0ce6aull && eventsHash (cancelled) == 0x6a47b5e6591fff91ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
+    std::printf ("event fingerprints, previous version: %016llx %016llx; and without the cost's lines: %016llx %016llx\n",
+        (unsigned long long) eventsHash (previousVersion (one)), (unsigned long long) eventsHash (previousVersion (cancelled)),
+        (unsigned long long) eventsHash (withoutCostLines (previousVersion (one))),
+        (unsigned long long) eventsHash (withoutCostLines (previousVersion (cancelled))));
+    // The rule's controls, on the landing's achieved level (one digit): moved by its printed step it moves the pin; moved
+    // below its precision it does not; the same argument on a fact outside the list is still hashed bit for bit.
+    const auto solved = std::find_if (one.begin(), one.end(), [] (const Notification& e)
+        { return e.kind == EventKind::Fact && e.payload.fact.view().id == FactId::MasterLandingSolved; });
+    ok (solved != one.end() && fromMastersMeasurement (FactId::MasterLandingSolved) && ! fromMastersMeasurement (FactId::WideBass),
+        "the scenario's master publishes its landing, a fact of the master's measurement; the wide-bass warning is not one");
+    if (solved != one.end())
+    {
+        const auto index = std::size_t (solved - one.begin());
+        const auto changed = [&] (FactId id, double delta)
+        {
+            auto events = one;
+            auto fact = events[index].payload.fact.view();
+            fact.id = id;
+            fact.args[0].number += delta;
+            ok (events[index].payload.fact.assign (fact), "the control's fact is stored");
+            return events;
+        };
+        ok (eventsHash (changed (FactId::MasterLandingSolved, 0.1)) != eventsHash (one),
+            "a master's number moved by its printed step (0.1 LUFS at one digit) moves the pin");
+        ok (eventsHash (changed (FactId::MasterLandingSolved, 1e-9)) == eventsHash (one),
+            "a master's number moved below its printed precision does not: its last bits are the platform's");
+        ok (eventsHash (changed (FactId::WideBass, 1e-9)) != eventsHash (changed (FactId::WideBass, 0.0)),
+            "the same argument on a fact outside the master's measurement is hashed bit for bit");
+    }
     Audio audio; auto s = fresh();
     const auto old = apply (*s, audio.load()).job;
     const auto source = s->source().hash;

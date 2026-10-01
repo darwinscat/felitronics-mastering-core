@@ -1157,11 +1157,11 @@ void readTargets (Doc& d, Reader& in, Targets& o, const Engine& e)
     }
     in.table ("notes", Need::Required, [&] (Reader& t)
     {
-        for (const auto& e : t.data().entries())
+        for (const auto& entry : t.data().entries())
         {
-            TargetNoteRow n { e.key, TargetNote::Measured };
-            if (! d.name (t, e.key, n.note, kTargetNotes)) continue;
-            if (o.find (e.key) == nullptr) d.refuse (t, e.key, Refusal::NotATarget);
+            TargetNoteRow n { entry.key, TargetNote::Measured };
+            if (! d.name (t, entry.key, n.note, kTargetNotes)) continue;
+            if (o.find (entry.key) == nullptr) d.refuse (t, entry.key, Refusal::NotATarget);
             else o.notes.push_back (std::move (n));
         }
     });

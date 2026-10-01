@@ -65,25 +65,28 @@ inline void restoreFpEnvironment (const SavedFpEnvironment& s) noexcept
 
 // WHETHER A SETTER TOOK EFFECT, read by the test's own arithmetic — a platform may accept a request and ignore it (the
 // wasm tier's fesetround returns 0 for a mode it cannot honour), and a refusal test on an environment that never changed
-// would be a test of nothing. The same known-answer computations as the library's probes, compiled here.
+// would be a test of nothing. The same known-answer computations as the library's probes, compiled here. Each result is
+// stored to a volatile: without -frounding-math a compiler may treat the arithmetic as free of the environment and run
+// it later — after the caller restored the environment, where it reads the default (gcc 14 -O3 did that to a probe
+// whose answer the caller read only after restoreFpEnvironment).
 inline bool flushesNow() noexcept
 {
     volatile double d = 0x1p-1022;
-    const double r = d * 0.5;
+    volatile double r = d * 0.5;
     return ! (r > 0.0);
 }
 inline bool readsSubnormalsAsZeroNow() noexcept
 {
     volatile double d = 0x1p-1074;
-    const double r = d * 0x1p60;
+    volatile double r = d * 0x1p60;
     return ! (r > 0.0);
 }
 inline bool roundsToNearestNow() noexcept
 {
     volatile double one = 1.0;
     volatile double q = 0x1.8p-53;
-    const double up = one + q;
-    const double down = -one - q;
+    volatile double up = one + q;
+    volatile double down = -one - q;
     return up > 1.0 && down < -1.0;
 }
 
