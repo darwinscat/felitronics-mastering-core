@@ -81,6 +81,12 @@ const SURFACE = {
 SURFACE[2] = SURFACE[1];
 // Version 3 (v0.5.0) appends the saturation type, the clipper shapes 4-7 and the plan's facts, and no entry point.
 SURFACE[3] = SURFACE[1];
+// NOT YET RELEASED — the batch after v0.5.0, carried by this tree's module while it still answers 3: the pure kit's
+// entry points. The release that publishes them moves FC_SESSION_ABI_VERSION by the batch rule and lists them as
+// SURFACE[4] = [...SURFACE[3], ...UNRELEASED]; until then a module answering 3 is held to version 3's surface plus these.
+const UNRELEASED = ['_fc_kit_text', '_fc_kit_parse', '_fc_kit_travel', '_fc_kit_position', '_fc_kit_value_at',
+    '_fc_kit_heat', '_fc_kit_mono_zones', '_fc_kit_mono_zones_at', '_fc_kit_eq_curve', '_fc_kit_low_end_curve'];
+const UNRELEASED_ON = 3;
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
 const RUNTIME = ['_malloc', '_free', 'HEAPU32'];
@@ -93,7 +99,7 @@ for (const other of ['_fc_probe_abi_version', '_fc_tempo_abi_version', '_fc_mast
 if (typeof M._fc_session_abi_version !== 'function') distrust(`${modPath} has no fc_session_abi_version`);
 const version = M._fc_session_abi_version();
 if (version !== VERSION) distrust(`${modPath}: fc_session_abi_version() answers ${version}, the header declares ${VERSION}`);
-const surface = SURFACE[version];
+const surface = SURFACE[version] && [...SURFACE[version], ...(version === UNRELEASED_ON ? UNRELEASED : [])];
 if (! surface) distrust(`FC_SESSION_ABI_VERSION is ${version} and this file lists no surface for it — append one on purpose`);
 
 let checks = 0, bad = 0;
@@ -1247,6 +1253,80 @@ for (const p of growth) M._free(p);
     console.log(`lean-summary: 1 master — summary ${light.jsonBytes} + ${light.rowBytes} B, snapshot ${whole.jsonBytes} + ${whole.rowBytes} B, report query ${report?.wroteJson} + ${report?.wroteRows} B`);
     ok(M._fc_session_destroy(leanSession) === STATUS.OK, 'lean session destroyed');
     M._free(leanCaps);
+}
+// THE PURE KIT — the corpus modules/session/tests/KitTests.cpp hashes natively (corpusHash), given to this module through
+// the same fc_kit_* entry points in the same order and hashed the same way: one FNV-1a 64 value on both sides is
+// native == wasm, byte for byte (the texts, the parsed values, the travels and heats, the zones, the EQ curves to the last
+// bit, the low-end curve).
+{
+    const KIT_PINNED = 0x3cb684b9f79574b1n;
+    const FACTS = [
+        '{"FactId":3,"args":[{"kind":2,"unit":0,"precision":0,"sign":0,"bound":0,"termId":0,"number":0,"integer":"7","userText":""}]}',
+        '{"FactId":504,"args":[{"kind":1,"unit":2,"precision":1,"sign":1,"bound":0,"termId":0,"number":2.375,"integer":"0","userText":""},{"kind":1,"unit":7,"precision":0,"sign":0,"bound":0,"termId":0,"number":62.5,"integer":"0","userText":""}]}',
+        '{"FactId":5,"args":[{"kind":4,"unit":0,"precision":0,"sign":0,"bound":0,"termId":0,"number":0,"integer":"28","userText":""}]}',
+        '{"FactId":112,"args":[{"kind":3,"unit":0,"precision":0,"sign":0,"bound":0,"termId":3,"number":0,"integer":"0","userText":""}]}'];
+    const LANGS = ['en', 'ru'];
+    const PARSES = [['-14.05', 'en', 3, 0], ['\u221214,05', 'ru', 3, 0], ['14', 'en', 3, 0], ['-0.04', 'en', 4, 0], ['0.25', 'ru', 4, 0],
+        ['30.5', 'en', 5, 48000], ['30,4', 'ru', 5, 0], ['24', 'en', 6, 0], ['25', 'en', 6, 0], ['0.325', 'en', 8, 0], ['abc', 'en', 9, 0],
+        ['1,5', 'de', 13, 0]];
+    const KNOBS = [[3, -20], [3, -14], [3, -9], [4, -1.5], [5, 22], [5, 46], [13, 2.25], [9, 1.2], [16, -4]];
+    const ZONE_PROBES = [70, 100, 120, 150, 250];
+    const EQ_PARAMS = [[1, 30, 24, 1, 2, 0, 0], [1, 25, 12, 1, -3, 1, 4.5]];
+    const EQ_RATES = [48000, 44100];
+    const LOW_CENTRES = [20, 30, 40, 50, 60], LOW_ENERGIES = [0.01, 0, 1, 0.0001, 0.5];
+    const MASK = (1n << 64n) - 1n;
+    let h = 0xcbf29ce484222325n;
+    const byte = b => { h = ((h ^ BigInt(b & 255)) * 0x100000001b3n) & MASK; };
+    const cell = new Float64Array(1), cellBytes = new Uint8Array(cell.buffer);
+    const number = v => { cell[0] = v; for (const b of cellBytes) byte(b); };
+    const word = v => { for (let i = 0; i < 4; ++i) byte(v >>> (8 * i)); };
+    const S = M._malloc(8192);
+    const u8 = () => new Uint8Array(M.HEAPU32.buffer);
+    const f64 = (at, n) => new Float64Array(M.HEAPU32.buffer, at, n);
+    const u32 = at => M.HEAPU32[at >>> 2];
+    const setU32 = (at, v) => { M.HEAPU32[at >>> 2] = v; };
+    const put = (text, at) => { const bytes = new TextEncoder().encode(text); u8().set(bytes, at); return bytes.length; };
+    const IN = S, LANG = S + 1024, WORD = S + 1040, VALUE = S + 1048, SMALL = S + 1056, TEXT = S + 1280, CURVE = S + 2048,
+          PEAK = S + 4096, PARAMS = S + 4160, CENTRES = S + 4224, ENERGIES = S + 4288, POINTS = S + 4352;
+    for (const fact of FACTS)
+        for (const lang of LANGS) {
+            const n = put(fact, IN); put(lang, LANG); setU32(WORD, 0);
+            byte(M._fc_kit_text(IN, n, LANG, 2, TEXT, 512, WORD));
+            const w = u32(WORD); word(w); for (const b of u8().slice(TEXT, TEXT + w)) byte(b);
+        }
+    for (const [typed, lang, field, rate] of PARSES) {
+        const n = put(typed, IN); put(lang, LANG); f64(VALUE, 1)[0] = -1; setU32(WORD, 9);
+        byte(M._fc_kit_parse(IN, n, LANG, 2, field, rate, VALUE, WORD));
+        byte(u32(WORD)); number(f64(VALUE, 1)[0]);
+    }
+    for (const [field, value] of KNOBS) {
+        f64(SMALL, 3).fill(0);
+        byte(M._fc_kit_position(field, value, SMALL)); number(f64(SMALL, 1)[0]);
+        byte(M._fc_kit_value_at(field, 0.37, SMALL)); number(f64(SMALL, 1)[0]);
+        byte(M._fc_kit_heat(field, value, SMALL)); for (const v of f64(SMALL, 3)) number(v);
+    }
+    f64(SMALL, 4).fill(0);
+    byte(M._fc_kit_mono_zones(SMALL)); for (const v of f64(SMALL, 4)) number(v);
+    for (const hz of ZONE_PROBES) { setU32(WORD, 0); byte(M._fc_kit_mono_zones_at(hz, WORD)); word(u32(WORD)); }
+    for (const params of EQ_PARAMS)
+        for (const rate of EQ_RATES) {
+            f64(PARAMS, 7).set(params); f64(CURVE, 256).fill(0); f64(PEAK, 4).fill(0);
+            byte(M._fc_kit_eq_curve(PARAMS, rate, CURVE, PEAK));
+            for (const v of f64(CURVE, 256)) number(v);
+            for (const v of f64(PEAK, 4)) number(v);
+        }
+    f64(CENTRES, 5).set(LOW_CENTRES); f64(ENERGIES, 5).set(LOW_ENERGIES); f64(POINTS, 10).fill(0); setU32(WORD, 0);
+    byte(M._fc_kit_low_end_curve(CENTRES, ENERGIES, 5, 25, 55, POINTS, 5, WORD));
+    { const w = u32(WORD); word(w); for (const v of f64(POINTS, 2 * w)) number(v); }
+    ok(h === KIT_PINNED, `the pure kit's corpus hashes to the value KitTests.cpp pins natively (${h.toString(16)})`);
+    put(FACTS[0], IN); put('ru', LANG);
+    ok(M._fc_kit_text(IN, FACTS[0].length, LANG, 2, TEXT, 512, WORD) === STATUS.OK
+       && new TextDecoder().decode(u8().slice(TEXT, TEXT + u32(WORD))).includes('7'), 'a fact renders in Russian on the module');
+    put('xx', LANG);
+    ok(M._fc_kit_text(IN, FACTS[0].length, LANG, 2, TEXT, 512, WORD) === STATUS.ERR_CONTRACT, 'an unknown language is a contract fault');
+    ok(M._fc_kit_travel(3, 0) === STATUS.ERR_NULL && M._fc_kit_travel(3, SMALL + 4) === STATUS.ERR_ALIGNMENT
+       && M._fc_kit_travel(3, M.HEAPU32.buffer.byteLength - 16) === STATUS.ERR_SPAN, 'the kit guards its outputs as every entry point does');
+    M._free(S);
 }
 for (const p of [masterConfig, masterParams, masterDemand, masterToken, audioBytes, audioFrames, audioChannels, audioRate,
                  viewOut, sampleOut]) M._free(p);

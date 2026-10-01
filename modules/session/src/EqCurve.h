@@ -33,6 +33,9 @@ struct EqStage
 // tick rule (settingsOf). A device that is off, or a shelf at 0 dB, writes its band off. The other bands are left as
 // they are. (The summed curve is drawn from it today; the render of a session-decided master goes through it next.)
 void writeEq (const Devices& devices, const Rules& rules, EqStage& stage) noexcept;
+// ...from the three EQ devices' settings as they sound (what settingsOf gives; the pure kit's preview passes them as given).
+void writeEq (const HpfFields<Value>& hpf, const TiltFields<Value>& tilt, const LowFields<Value>& low, const Rules& rules,
+              EqStage& stage) noexcept;
 
 // The summed response of `bands` at `rate`: kEqCurvePoints logarithmic points from 20 Hz to min(20 kHz, 0.49 · rate).
 void eqCurve (std::span<const eq::BandParams> bands, double rate, std::span<EqPoint> output) noexcept;
@@ -43,6 +46,8 @@ void eqCurve (const Project& project, const Rules& rules, double rate, std::span
 // THE EQ CURVE AGAINST ITS NORM (EqFinding, Session.h): the shelves the project's devices write — tilt's and low's, as
 // they sound — summed on the snapshot's kEqCurvePoints at `rate`, against [eq] curve.warnDb.
 [[nodiscard]] EqFinding eqFinding (const Devices& devices, const Rules& rules, double rate) noexcept;
+// ...of the shelves a written stage holds.
+[[nodiscard]] EqFinding eqFinding (const EqStage& stage, const Rules& rules, double rate) noexcept;
 
 // THE HIGH-PASS AS THE CHAIN RUNS IT — the same cascade the band above describes (cutoff `fc`, `slope` dB/oct, at `rate`,
 // the cutoff clamped as the engine clamps it). The loss it takes at `hz`, dB, positive; and the cutoff at which it takes

@@ -12,12 +12,12 @@ const clean = text => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/
 const normalize = text => text.replace(/\s+/g, ' ').replace(/\s*([*,()])\s*/g, '$1').trim();
 const header = clean(read('tools/fc_session_abi.h'));
 const publicHeaders = ['Commands', 'Project', 'Events', 'Snapshot', 'Session', 'Text', 'Measurements', 'Queries'];
-// EVERY ENTRY POINT, whatever it returns: each `fc_session_*(` the header declares must be read as a declaration, or the
-// generator refuses — an entry point the probe skipped would never be frozen.
+// EVERY ENTRY POINT, whatever it returns: each `fc_session_*(` and `fc_kit_*(` (the pure kit's) the header declares must
+// be read as a declaration, or the generator refuses — an entry point the probe skipped would never be frozen.
 function entryPoints(text) {
-    const found = [...text.matchAll(/\b(\w+)\s+(fc_session_\w+)\s*\(([^;]+)\);/g)];
+    const found = [...text.matchAll(/\b(\w+)\s+(fc_(?:session|kit)_\w+)\s*\(([^;]+)\);/g)];
     const read = new Set(found.map(m => m[2]));
-    const missed = [...new Set([...text.matchAll(/\b(fc_session_\w+)\s*\(/g)].map(m => m[1]))].filter(name => !read.has(name));
+    const missed = [...new Set([...text.matchAll(/\b(fc_(?:session|kit)_\w+)\s*\(/g)].map(m => m[1]))].filter(name => !read.has(name));
     if (missed.length) throw Error(`entry points the manifest generator cannot read: ${missed.join(', ')}`);
     return found.map(m => ({ name: m[2], returns: m[1],
         args: m[3].trim() === 'void' ? [] : m[3].split(',').map(a => normalize(a.replace(/\b\w+\s*$/, ''))) }));

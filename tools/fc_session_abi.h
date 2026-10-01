@@ -382,6 +382,70 @@ fc_session_status fc_session_master_wav_copy (fc_session session, const fc_sessi
                                              uint32_t offset_low, uint32_t offset_high,
                                              uint8_t* output, uint32_t capacity, uint32_t* written);
 
+// ====================================================================================
+// THE PURE KIT — stateless answers for a shell's UI thread (felitronics/session/Kit.h)
+// ====================================================================================
+// The same module instantiated a second time on the page's main thread answers these within one frame, without the
+// worker: a fact as text, what a person typed into a field, a knob's travel and heat, mono bass's zones, an EQ curve
+// preview and a low-end curve. No handle — no session is needed or touched — and no state: each call is a pure function
+// of its arguments and the compiled-in config and catalogue, and forwards to felitronics::session::Kit, whose header
+// carries the rules. The conventions are the session's: the poison, the argument order above, statuses for refusals
+// (an unknown field or language, a non-finite or out-of-domain argument, a fact that is not one: CONTRACT; the calling
+// thread's floating-point environment: FP_ENVIRONMENT), caller buffers, nothing allocated, nothing kept.
+// A FIELD is its text::Term id — the id a refusal already names it by. A LANGUAGE is its code ("ru"), as Text::langOf
+// reads it. Doubles cross as doubles (alignment 8); a count of points is per point, two doubles each (hz, then the dB).
+#define FC_SESSION_KIT_FIELD_TARGET_LUFS 3u
+#define FC_SESSION_KIT_FIELD_TARGET_TP 4u
+#define FC_SESSION_KIT_FIELD_HPF_FQ 5u
+#define FC_SESSION_KIT_FIELD_HPF_SLOPE 6u
+#define FC_SESSION_KIT_FIELD_MONO_BASS_FQ 7u
+#define FC_SESSION_KIT_FIELD_MONO_BASS_WIDTH 8u
+#define FC_SESSION_KIT_FIELD_GLUE_UP_TO_DB 9u
+#define FC_SESSION_KIT_FIELD_SATURATION_DRIVE 10u
+#define FC_SESSION_KIT_FIELD_SATURATION_MIX 11u
+#define FC_SESSION_KIT_FIELD_SATURATION_OUTPUT 12u
+#define FC_SESSION_KIT_FIELD_TILT_DB 13u
+#define FC_SESSION_KIT_FIELD_LIMITER_NEEDLES_DB 15u
+#define FC_SESSION_KIT_FIELD_LOW_DB 16u
+#define FC_SESSION_KIT_PARSE_ACCEPTED 0u
+#define FC_SESSION_KIT_PARSE_NOT_A_NUMBER 1u
+#define FC_SESSION_KIT_PARSE_OUT_OF_DOMAIN 2u
+#define FC_SESSION_KIT_TRAVEL_VALUES 3u
+#define FC_SESSION_KIT_HEAT_VALUES 3u
+#define FC_SESSION_KIT_ZONES 2u
+#define FC_SESSION_KIT_EQ_PARAMS 7u
+#define FC_SESSION_KIT_EQ_POINTS 128u
+#define FC_SESSION_KIT_EQ_PEAK_VALUES 4u
+
+// A published fact ({"FactId":…,"args":[…]}, as a snapshot, an event or a plan carries it) in a language, as UTF-8
+// without a terminator. A null output is allowed with capacity 0; TOO_SMALL writes the bytes needed to *written.
+fc_session_status fc_kit_text (const char* fact, uint32_t fact_bytes, const char* lang, uint32_t lang_bytes,
+                              char* output, uint32_t capacity, uint32_t* written);
+// What a person typed into a field: OK with *refusal FC_SESSION_KIT_PARSE_* and, when accepted, *value the number to send.
+// source_rate is the source's, Hz (the high-pass's cutoff stays below its Nyquist); 0 when there is no source.
+fc_session_status fc_kit_parse (const char* typed, uint32_t typed_bytes, const char* lang, uint32_t lang_bytes,
+                               uint32_t field, uint32_t source_rate, double* value, uint32_t* refusal);
+// A knob's travel: out[FC_SESSION_KIT_TRAVEL_VALUES] = from, to, step.
+fc_session_status fc_kit_travel (uint32_t field, double* out);
+// Where a value stands along the travel, 0 … 1; and the value at a position, on the knob's grid.
+fc_session_status fc_kit_position (uint32_t field, double value, double* out);
+fc_session_status fc_kit_value_at (uint32_t field, double position, double* out);
+// out[FC_SESSION_KIT_HEAT_VALUES] = heat 0 … 1, side −1 / 0 / +1, and 1 when the knob has a window (0: heat and side are 0).
+fc_session_status fc_kit_heat (uint32_t field, double value, double* out);
+// Mono bass's zones, club then vinyl: out[2 * FC_SESSION_KIT_ZONES] = fromHz, toHz each. And the zones holding hz, as bits.
+fc_session_status fc_kit_mono_zones (double* out);
+fc_session_status fc_kit_mono_zones_at (double hz, uint32_t* out);
+// The EQ curve three EQ knobs would draw. params[FC_SESSION_KIT_EQ_PARAMS] = hpf on (0/1), cutoff Hz, slope dB/oct (whole),
+// tilt on, tilt dB, low on, low dB; rate a whole number of Hz. curve[2 * FC_SESSION_KIT_EQ_POINTS] = hz, dB per point;
+// peak[FC_SESSION_KIT_EQ_PEAK_VALUES] = the shelves' peak hz, its dB, 1 when beyond warnDb, the device bit that gives most of it
+// (FC_SESSION_DEVICE_TILT or FC_SESSION_DEVICE_LOW_SHELF).
+fc_session_status fc_kit_eq_curve (const double* params, double rate, double* curve, double* peak);
+// A low-end curve from `bands` band centres and energies: the bands in from_hz … to_hz as (hz, dB) points into output,
+// capacity in points. *written is the points written — 0 for fewer than two — or, with TOO_SMALL, the points needed.
+fc_session_status fc_kit_low_end_curve (const double* centre_hz, const double* energy, uint32_t bands,
+                                       double from_hz, double to_hz, double* output, uint32_t capacity,
+                                       uint32_t* written);
+
 #ifdef __cplusplus
 }   // extern "C"
 #endif

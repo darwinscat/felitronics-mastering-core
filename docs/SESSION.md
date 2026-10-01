@@ -1191,6 +1191,31 @@ Controls reject an extra export and verify a real allocation trap followed by pe
 checks all six event kinds and nonempty binary rows against the generated declarations. Full native/wasm scenario
 parity is a separate contract suite.
 
+### The pure kit — `fc_kit_*`
+
+Some answers a shell needs within one frame, on its UI thread, without a round trip to the worker that runs the session
+(architecture §4.5): a published fact as text in the page's language, what a person typed into a knob's field, where a
+value stands along the knob's travel and how far it is from the knob's comfortable window, mono bass's purpose zones, the
+EQ curve a set of knob values would draw, a low-end curve from band energies. `felitronics::session::Kit`
+(`include/felitronics/session/Kit.h`) answers them: static, stateless, allocation-free functions over the caller's spans,
+each delegating to the code the session itself uses — `Text::write` behind the codec's own fact reader, `Text::parse` on
+the commands' domains (`Knob::accepts`, `Rules::slope`) and the config's grid, the config's travels, green windows
+(`[edit] lufs/tp green`), comfort (`[hpf] comfort`) and normal ranges (`[tilt]`/`[low] normal`, out to `hard`), the
+zones (`[monoBass.zones]`), the EQ stage's `writeEq` / `eqCurve` / `eqFinding`, det-math's `log10`. The plan's comfort and
+zones advice reads its comparison from `Kit::heat` and `Kit::monoZonesAt`, so a knob's colour and the advice beside it
+cannot disagree. A field is its `text::Term` id (`FieldTargetLufs` … `FieldLowDb`), the id a refusal already names it by.
+
+The C boundary carries them as `fc_kit_text`, `fc_kit_parse`, `fc_kit_travel`, `fc_kit_position`, `fc_kit_value_at`,
+`fc_kit_heat`, `fc_kit_mono_zones`, `fc_kit_mono_zones_at`, `fc_kit_eq_curve` and `fc_kit_low_end_curve` in the same
+fcsession module, which a page instantiates a second time on its main thread: no handle, the poison, the argument order
+and the statuses of every `fc_session_*` call, a language by its code. The kit holds no session state — it reads only the
+compiled-in config and catalogue — so neither contract's scenarios move; the WAV recording records the module's hash and
+the heap it observed, which every change of the module moves. `felitronics_session_kit_tests` holds each answer to the
+session's own path and each export to its C++ call, and pins one hash of a corpus of answers that
+`tools/wasm/session-check.mjs` reproduces on the wasm module (native == wasm, byte for byte). The entry points are in the
+ABI manifest and on the module's export list; `session-check.mjs` lists them as not yet released, under version 3, until
+the release that publishes them moves `FC_SESSION_ABI_VERSION`.
+
 ## The native CLI — `fcore_session`
 
 `fcore_session version` prints the two releases and the ABI version; `fcore_session config targets|engine` prints a
