@@ -480,7 +480,9 @@ A stereo source's DC line names both channels, signed, as the readings print the
 (446/447, "L {left}, R {right}"; the observation's `second`/`third`, `places` the channels read); a mono source keeps its
 one number (`SourceDcNote`/`SourceDc`).
 The hum is not measured only where the detector could not listen (too short, every frame holed, too coarse a
-resolution, or a base line heard in too little quiet to tell whether it stands still); where it listened — a programme
+resolution, or a base line heard in too little quiet to tell whether it stands still), or where the session refused the
+analyzer before any work (no price for the programme, the memory) — then with that refusal's own reason, never "too
+short"; where it listened — a programme
 never quiet, a comb without its base, a quiet stretch without a base line — and no steady line stood out, it is not
 found. **The observations speak for themselves**: `observationFacts` carries every
 kind's line as `ObservationText::facts` states it — `{kind, fact}`, in the order of `ObservationKind`, empty before a
@@ -826,12 +828,14 @@ change requests one extra source-rate impact pass outside the twelve landing ren
 `LandingSummary` carries status, achieved LUFS, signed miss, absolute distance, reference true peak, measured
 source and limiter hints, work units and the ordered pass log — and, where the solver decided them, `binding` (the
 `LandingConstraint` that held an unreachable landing, the solver's `LoudnessSolution::binding`) and `belowLufs`/`aboveLufs`
-(the two levels a between landing's target fell between, quieter first). The decoder refuses a limit on another status
-and levels out of order or on another status; older snapshots decode without them. Its limiter and K13 clipper traces share
+(the two levels a between landing's target fell between, quieter first; were a solver's side not a number, the verdict
+stands without them and the master is still delivered — a target that cannot be hit always returns the file). The decoder refuses a limit on another status
+and levels out of order or on another status; the keys are always present, null where the status has none, and a
+missing one is a decode error. Its limiter and K13 clipper traces share
 the delivered-frame grid and carry min/max/mean reduction, finite counts, validity and completion. Limiter
 GR follows the audio receiving gain after lookahead; K13 reduction follows the detector's input time.
-`Kept::landing` and the appended trace fields are optional in the generated session codec so older v1
-snapshots decode without them. `Snapshot` owns the pass rows and both trace row arrays.
+`Kept::landing` and the trace fields are nullable and always present in the generated session codec: a missing key
+is a decode error, and a snapshot is never persisted. `Snapshot` owns the pass rows and both trace row arrays.
 
 `Session::step(budget)` runs live loudness, source clipping, the programme report, waveform, source analyzers, needles, and mastering. The budget counts **work units**, never milliseconds. A call
 consumes at most `min(budget, 16)` units, reports the number consumed, and returns `More` while any job remains or
@@ -956,7 +960,7 @@ unfinished range is `Cancelled`. A row's reason distinguishes absent mono axes (
 **The lean summary.** A summary still carries every kept master whole, and a master is heavy: its two reduction
 traces, its crest rows and its waveform buckets are megabytes of JSON — 1.28 MB with one 12-second master, 8.6 MB with
 seven. A shell that sets `Capabilities::leanSummary` (C: `leanSummary = 1`, a field appended to
-`fc_session_capabilities`; a version-1 record of 32 bytes leaves it 0 and gets the summary it always got, byte for byte)
+`fc_session_capabilities`, 0 or 1)
 gets summaries without those rows: each master keeps its scalars — id, recipe, landing status, passes and readings, the
 report's readings and hints, every cost value — with its pass log and its cost sections; its traces are absent, its
 crest rows, mask and waveform buckets empty, and the summary says `masterRowsIncluded=false` (62 KB with one master,
@@ -1212,8 +1216,9 @@ lower number is a change. The generated `snapshot.d.ts` and `snapshot.mjs` state
 (`SessionCapabilities`) must carry each of its fields. The manifest itself only grows from its declared base: its line
 `base v0.6.0` names the release it starts from, and on a pull request CI compares it with the base branch's
 (`tools/session-abi-append-only.mjs`). Under the same declared base a removed or edited line is red; a manifest that
-declares an older base, or drops the declaration, is red; one that declares a newer base starts the surface anew, once —
-after it lands both sides declare it and append-only holds again.
+declares any other base is red unless the pair is in the script's own list of authorised resets — the owner's decision,
+which a pull request cannot grant itself by editing the manifest. The list holds exactly one: v0.6.0 over a base branch
+whose manifest declares none. It passes once — after it lands both sides declare it and append-only holds again.
 
 **The one reset: v0.6.0 (`FC_SESSION_ABI_VERSION` 4, owner, 2026-10-01).** No project, snapshot or file of an older
 version exists anywhere, the page has no project export, and the core's one consumer (the site) vendors the exact core —
@@ -1288,10 +1293,11 @@ minimum supported rate. The schema checks travel within domains, defaults within
 sums. Project numeric fields use ordinary TOML numbers when its decimal subset can represent them exactly; other
 finite binary64 values use quoted shortest round-trip decimals, parsed with the same exact numeric reader as JSON.
 
-The C v1 records `fc_session_capabilities`, `fc_session_sizes`, `fc_session_capacity` and `fc_session_storage` start
-with the caller's `sizeof`. Their v1 prefixes are 32, 12, 24 and 32 bytes; fields may only be appended. Sizes below the
-v1 prefix and beyond the current build have distinct statuses. Future suffix fields must define their absent-field
-meaning for v1 callers. Demand queries for commands, loads and imports use the session's own `storageFor`; capacity
+The C records `fc_session_capabilities`, `fc_session_sizes`, `fc_session_capacity`, `fc_session_storage` and
+`fc_session_measurement_storage` start with the caller's `sizeof`. Their base sizes at v0.6.0 are 40, 12, 24, 32 and 88
+bytes — the capabilities with `leanSummary` (a 32-byte record is too small, owner 2026-10-01), the measurement demand
+without the retired slots; fields may only be appended. Sizes below the base and beyond the current build have distinct
+statuses. A field appended later must define its absent-field meaning for callers of the base. Demand queries for commands, loads and imports use the session's own `storageFor`; capacity
 may be updated between calls as a heap ceiling and largest free block. Live bytes plus demand and the largest allocation
 are checked before work. Nonallocating commands remain available when capacity is reduced.
 
@@ -1360,7 +1366,7 @@ snapshot
 
 The seventeen scenarios cover load/measure, whole refusal in a forbidden state, cancel during measurement and mastering,
 reset every device edit on a target change, poison/replay, interleaved sessions, memory refusal, project round trip,
-knob domains and no-op edits, and a saved machine layer from an older core. Device edits work with manual mode hidden;
+knob domains and no-op edits, and a project whose machine layer differs from today's planner. Device edits work with manual mode hidden;
 `low` is edited and reset across target changes, with the hand-edit count returning to zero. Domain checks include
 fractional values beyond slider travel, Nyquist refusal, invalid slopes, and an empty edit/revert preserving the whole snapshot.
 Memory coverage supplies a zero `heapCeilingBytes`: create refuses before allocating a session or starting work;
@@ -1494,8 +1500,8 @@ other findings remain separate. Uncertain lowest-note evidence requests the safe
 Every snapshot and event field is required on decode: a snapshot never persists (the page and the core ship together),
 so a missing key is a decode error, and a field that is semantically optional is nullable and present. Only a request's
 own optional fields keep a declared default — a query's `masterId`, `crossoverHz`, `fromHz`, `toHz` and `spectrum`, an
-edit's or a revert's tick and type — and `SessionCapabilities.leanSummary`, the field appended to the size-prefixed C
-struct (law 12: a boundary struct grows by appending, and its shorter size states the field's default).
+edit's or a revert's tick and type. `SessionCapabilities.leanSummary` is required: the C struct's base is the whole
+40-byte record (owner, 2026-10-01), so no shorter record states a default for it.
 
 The table distinguishes measured sources whose devices are not placed or whose plan waits, including master and
 stopped overlays. Mastering depends on measurements (and, with the panel open, on the plan); edit, revert, import and
@@ -1540,7 +1546,7 @@ landing has at most twelve measured passes. A safe miss retains the best verifie
 reason. Unavailable mandatory readings or an unsafe true peak yield no transferable PCM. Optional
 source analyzers continue independently. `canMaster` in the snapshot reports state and mandatory
 readiness; capacity is reported by the preflight demand. The snapshot also exposes the pending transfer
-token and PCM byte count. Appended fields decode as absent on older v1 snapshots.
+token and PCM byte count. Every field is present on decode; a missing key is a decode error.
 
 One session owns at most one pending delivery PCM. Its `MasterToken` names source, completion revision,
 job, and master; every transfer checks all four. The retained master list owns recipe and compact pass,
@@ -1650,7 +1656,7 @@ reference measurement, not this ordered shape measure.
 
 Glue P95 uses the same 4-ms window distribution of the compressor's trace, and glue maximum its largest tap
 sample; the saturation's two cuts come from the soft clipper's own peak counters (see Glue and saturation). Each is
-`NoSignal` when its stage is absent or bypassed, and older snapshots decode them as `NotImplemented`.
+`NoSignal` when its stage is absent or bypassed; a snapshot without them is a decode error.
 Limiter P50/P95 use the solver's 4-ms window distribution. The active fraction uses its input-gated
 tap statistics; `activeWindowShare` separately counts source momentary windows passing the relative
 activity floor. Pumping is RMS of the limiter's retained mean GR buckets after a second-order

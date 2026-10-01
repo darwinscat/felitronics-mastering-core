@@ -10,6 +10,7 @@
 #include "Grid.h"
 #include "BuildContract.h"
 
+#include <felitronics/analysis/HumDetector.h>
 #include <felitronics/analysis/SourceForensics.h>
 #include <felitronics/core/DetMath.h>
 
@@ -589,6 +590,8 @@ Observation sibilance (const ObservationInputs& in) noexcept
 //   ShorterThanWindow       not one window of programme                                            -> TooShort
 //   AllFramesHoled          every frame carried a non-finite sample                                -> NonFinite
 //   InsufficientResolution  (and a report not prepared or not finished)                            -> Unsupported
+// An analyzer the session refused before any work (no price for the programme, the memory) carries no verdict at all: the
+// hum is not measured with the refusal's own reason.
 // A line in any channel is the hum; without one, the programme is not found only when every channel answered — a channel
 // that could not listen is not a channel without hum — and is otherwise not measured, with that channel's reason. The
 // wandering lines are read from the channels that listened and judged (Ok, CandidateNotStationary) only.
@@ -599,6 +602,15 @@ enum : unsigned
     kHumOk = 0, kHumShorterThanWindow = 4, kHumAllFramesHoled = 5, kHumNoQuietStretch = 6, kHumSingleQuietStretch = 7,
     kHumStretchesTooShort = 8, kHumNotStationary = 9, kHumCombWithoutBase = 10
 };
+// The codes are the detector's own: a renumbered HumReason fails here, not as a silently wrong verdict.
+static_assert (kHumOk == unsigned (analysis::HumReason::Ok) && kHumShorterThanWindow == unsigned (analysis::HumReason::ShorterThanWindow)
+               && kHumAllFramesHoled == unsigned (analysis::HumReason::AllFramesHoled)
+               && kHumNoQuietStretch == unsigned (analysis::HumReason::NoQuietStretch)
+               && kHumSingleQuietStretch == unsigned (analysis::HumReason::SingleQuietStretch)
+               && kHumStretchesTooShort == unsigned (analysis::HumReason::StretchesTooShort)
+               && kHumNotStationary == unsigned (analysis::HumReason::CandidateNotStationary)
+               && kHumCombWithoutBase == unsigned (analysis::HumReason::CombWithoutBase),
+               "the hum codes are analysis::HumReason's");
 std::optional<MeasurementReason> unanswered (unsigned code, bool baseHeard) noexcept
 {
     switch (code)
@@ -617,6 +629,8 @@ Observation hum (const ObservationInputs& in, bool wandered) noexcept
     const auto* r = resultOf (in, Analyzer::Hum);
     if (! r || r->status == MeasurementStatus::Pending || r->status == MeasurementStatus::Cancelled)
         return unmeasured (o, r ? r->reason : MeasurementReason::Pending);
+    // Refused before any work (no price for the programme, the memory): no channel said anything — the refusal's reason.
+    if (r->status == MeasurementStatus::Unavailable && r->numbers.empty()) return unmeasured (o, r->reason);
     const auto config = in.rules.engine.find ("observations");
     const auto humConfig = config.find ("hum");
     const double from = number (humConfig.find ("fromProminenceDb")), fullAt = number (humConfig.find ("fullAtProminenceDb"));

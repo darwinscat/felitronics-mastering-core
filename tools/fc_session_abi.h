@@ -46,7 +46,6 @@
 //                and their tick; the dead entries left the manifest (no project, snapshot or file of an older version
 //                exists, and the one consumer vendors the exact core) — live ids keep their numbers.
 #define FC_SESSION_ABI_VERSION 4u
-#define FC_SESSION_CAPABILITIES_V1_BYTES 32u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u
 #define FC_SESSION_STORAGE_V1_BYTES 32u
@@ -137,7 +136,7 @@ typedef enum fc_session_status
 // STRUCT LAYOUTS are measured by a compiled probe, never inferred from source. Capabilities are
 // input from the shell. heapCeilingBytes is an exact integer >= 0 and < 2^53; maxRateHz >= 8000.
 // offeredDevices is a bit set of FC_SESSION_DEVICE_*. The session enforces all three, in C++ too.
-// leanSummary (appended; a record of FC_SESSION_CAPABILITIES_V1_BYTES leaves it 0) is 0 or 1. With 1,
+// leanSummary is 0 or 1. With 1,
 // fc_session_summary_* leave every master's heavy rows out — the limiter and peak-clip traces, the crest rows and mask,
 // the waveform buckets — and say so (masterRowsIncluded false); a master's scalars, pass log and cost sections stay.
 // One master whole is a query, kind MasterReport. fc_session_snapshot_* is the same either way.
@@ -158,12 +157,13 @@ typedef struct fc_session_sizes
     uint32_t rowBytes;
 } fc_session_sizes;
 
-// All boundary structs are size-prefixed: capabilities (32), sizes (12), capacity (24), storage (32).
+// All boundary structs are size-prefixed: capabilities (40), sizes (12), capacity (24), storage (32), measurement
+// storage (88) — each its base size at v0.6.0.
 // Set size to the caller's sizeof before EVERY call, including output queries. It is preserved.
-// Fields are append-only. Future builds accept older supported sizes, write only that prefix,
-// and document the v1 default of each absent later field. A new field never changes the
-// meaning of a v1 prefix; appended reserved fields default to zero and are ignored. V1 has no optional suffix fields:
-// size < the v1 size is STRUCT_TOO_SMALL; size > this build's size is STRUCT_TOO_LARGE.
+// Fields are append-only. A build accepts every size from a record's base size up to its own, writes only that prefix,
+// and documents the default of each absent later field. A new field never changes the meaning of a base prefix;
+// appended reserved fields default to zero and are ignored. Today every record is its base size:
+// size < the base size is STRUCT_TOO_SMALL; size > this build's size is STRUCT_TOO_LARGE.
 // No C++ implementation records or binary row structs cross this C boundary.
 typedef struct fc_session_capacity
 {
@@ -184,14 +184,13 @@ typedef struct fc_session_storage
 // Detailed source measurement demand. Counts include one retained result copy and its codec buffers.
 // Codec buffers are the snapshot transport's JSON metadata plus binary f64 rows. A C++ plain-JSON
 // export has a separate exact Codec::encodedBytes query; it is not reserved for every web measurement.
-// Reserved slots preserve the earlier record layout; always zero. Needles have a separate job demand.
+// Needles have a separate job demand.
 typedef struct fc_session_measurement_storage
 {
     uint32_t size;
     uint32_t rejection;
     double sourceBytes;
     double resultBytes;
-    double reservedBytes;
     double workspaceBytes;
     double copyBytes;
     double codecBytes;
@@ -200,7 +199,6 @@ typedef struct fc_session_measurement_storage
     double workPeakBytes;
     double peakBytes;
     double largestBlockBytes;
-    uint32_t reserved;
 } fc_session_measurement_storage;
 
 typedef enum fc_session_step_state

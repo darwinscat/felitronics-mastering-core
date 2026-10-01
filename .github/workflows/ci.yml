@@ -160,7 +160,8 @@ jobs:
         # tools/session-abi-check.mjs compares the compiled surface with tools/session-abi-v1.txt, so a pull request that
         # edits a frozen line in the manifest together with the surface passes it. This compares the manifest with the
         # base branch's: under the same declared base (`base v…`) a removed or edited line is red, additions anywhere are
-        # not; a newer declared base starts the surface anew once, an older or dropped one is red. Its control runs here
+        # not; another declared base is red unless the script lists it as an authorised reset (only v0.6.0 over an
+        # undeclared base), which starts the surface anew once. Its control runs here
         # and in ctest (felitronics_session_abi_manifest_append_only_control).
         if: github.event_name == 'pull_request'
         env:

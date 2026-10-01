@@ -1738,12 +1738,11 @@
         "defaultJson": "false",
         "description": "Absent: the type is not reverted."
       }
-    },
+    }
+  },
+  "wireFieldNotes": {
     "SessionCapabilities": {
-      "leanSummary": {
-        "defaultJson": "0",
-        "description": "0: the summary carries every master's rows, as a version-1 record of 32 bytes asks."
-      }
+      "leanSummary": "0: the summary carries every master's rows; 1: it leaves each master's heavy rows out (masterRowsIncluded false)."
     }
   },
   "queryRows": {

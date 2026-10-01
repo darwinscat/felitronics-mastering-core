@@ -168,7 +168,10 @@ fc_session_status pointer (const void* p, std::uint64_t bytes, std::size_t align
     if (! inHeap (p, bytes)) return FC_SESSION_ERR_SPAN;
     return FC_SESSION_OK;
 }
-constexpr std::uint32_t minimumSize (const fc_session_capabilities*) noexcept { return FC_SESSION_CAPABILITIES_V1_BYTES; }
+// The capabilities' base is the whole record at v0.6.0, leanSummary included (owner, 2026-10-01). A field appended later
+// keeps the base at 40: this assertion makes that a decision, not an accident of sizeof.
+static_assert (sizeof (fc_session_capabilities) == 40u, "fc_session_capabilities grew: state its base size of 40 here");
+constexpr std::uint32_t minimumSize (const fc_session_capabilities*) noexcept { return sizeof (fc_session_capabilities); }
 constexpr std::uint32_t minimumSize (const fc_session_sizes*) noexcept { return FC_SESSION_SIZES_V1_BYTES; }
 constexpr std::uint32_t minimumSize (const fc_session_capacity*) noexcept { return FC_SESSION_CAPACITY_V1_BYTES; }
 constexpr std::uint32_t minimumSize (const fc_session_storage*) noexcept { return FC_SESSION_STORAGE_V1_BYTES; }
@@ -796,7 +799,6 @@ FC_EXPORT fc_session_status fc_session_measurement_bytes (fc_session session, st
     out->rejection = std::uint32_t (priced.rejection);
     out->sourceBytes = demand.sourceBytes;
     out->resultBytes = demand.resultBytes;
-    out->reservedBytes = 0;
     out->workspaceBytes = demand.workspaceBytes;
     out->copyBytes = demand.copyBytes;
     out->codecBytes = demand.codecBytes;
@@ -805,7 +807,6 @@ FC_EXPORT fc_session_status fc_session_measurement_bytes (fc_session session, st
     out->workPeakBytes = demand.workPeakBytes;
     out->peakBytes = demand.peakBytes;
     out->largestBlockBytes = demand.largestBlockBytes;
-    out->reserved = 0;
     return FC_SESSION_OK;
 }
 

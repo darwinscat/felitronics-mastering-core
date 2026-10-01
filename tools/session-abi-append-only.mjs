@@ -6,11 +6,12 @@
 // the surface. This holds the manifest to its base branch's: every base line must still be there (as often as it was), in
 // any order, and lines may be added anywhere. A removed or edited line — a comment included — is refused.
 //
-// The manifest declares the release its surface starts from in one line, `base v<major>.<minor>.<patch>` (v0.6.0 is the
-// one declared reset, docs/SESSION.md "ABI"). Append-only holds between two manifests that declare the same base. A
-// proposed manifest that declares a NEWER base than the base branch's (or the first declaration, over a manifest that has
-// none) starts the surface anew, once: from then on both declare it and append-only holds again. A proposed manifest that
-// declares an OLDER base, or none over a base that has one, is refused. CI runs it on pull requests.
+// The manifest declares the release its surface starts from in one line, `base v<major>.<minor>.<patch>`. Append-only
+// holds between two manifests that declare the same base. A different base is accepted only as one of the AUTHORISED
+// RESETS below — the owner's decision written into this script, never one a pull request grants itself by editing the
+// manifest: today exactly one, v0.6.0 over a base branch whose manifest declares none (docs/SESSION.md "ABI"). It passes
+// once: from then on both declare v0.6.0 and append-only holds again. Any other newer base, an older one, or none over a
+// base that has one, is refused. CI runs it on pull requests.
 //
 //   node tools/session-abi-append-only.mjs <base manifest> <proposed manifest>
 //   node tools/session-abi-append-only.mjs --self-test
@@ -40,13 +41,18 @@ function declaredBase(text) {
 }
 const order = (a, b) => a === null ? (b === null ? 0 : -1) : b === null ? 1 : a[0] - b[0] || a[1] - b[1] || a[2] - b[2];
 const named = v => v === null ? 'no base' : `base v${v.join('.')}`;
+// The authorised resets, [base branch's declaration, proposed declaration]. A new reset is a new entry here, by the owner.
+const RESETS = [[null, [0, 6, 0]]];
+const authorised = (from, to) => RESETS.some(([a, b]) => order(a, from) === 0 && order(b, to) === 0);
 // { ok, reason, gone }: the verdict on a proposed manifest against its base branch's.
 function verdict(base, proposed) {
     let from, to;
     try { from = declaredBase(base); to = declaredBase(proposed); } catch (e) { return { ok: false, reason: e.message, gone: [] }; }
     const cmp = order(to, from);
     if (cmp < 0) return { ok: false, reason: `the proposed manifest declares ${named(to)}, older than the base branch's ${named(from)}`, gone: [] };
-    if (cmp > 0) return { ok: true, reason: `the proposed manifest starts a new ${named(to)} (the base branch's: ${named(from)})`, gone: [] };
+    if (cmp > 0) return authorised(from, to)
+        ? { ok: true, reason: `the proposed manifest starts the authorised new ${named(to)} (the base branch's: ${named(from)})`, gone: [] }
+        : { ok: false, reason: `the proposed manifest declares ${named(to)} over the base branch's ${named(from)}, which is not an authorised reset`, gone: [] };
     const gone = removed(base, proposed);
     return gone.length
         ? { ok: false, reason: `the frozen session ABI manifest may only grow — ${gone.length} base line(s) removed or edited`, gone }
@@ -80,21 +86,30 @@ if (args[0] === '--self-test') {
     assert.deepEqual(verdict(base, lockstep).gone, ['define FC_SESSION_STEP_UNITS=16'], 'a lockstep edit of a frozen value is refused');
     // A duplicated line counts: removing one of two copies is refused.
     assert.deepEqual(removed(`${base}\n${lines[1]}\n`, base), [lines[1]], 'each copy of a line is kept');
-    // THE DECLARED BASE. A removal under the same base is refused (above); under a newer base the surface starts anew.
+    // THE DECLARED BASE. A removal under the same base is refused (above); only an authorised reset starts the surface anew.
+    assert.deepEqual(at, [0, 6, 0], 'the committed manifest declares the authorised base v0.6.0');
     const cut = lines.filter(line => line !== 'define FC_SESSION_STEP_UNITS=16').join('\n');
-    const newer = [at[0], at[1] + 1, 0], older = at[1] > 0 ? [at[0], at[1] - 1, 0] : [at[0] - 1, 0, 0];
-    assert.equal(verdict(base, cut).ok, false, 'a removal under the same base is refused');
-    assert.equal(verdict(base, withBase(cut, newer)).ok, true, 'a removal under a newer declared base is accepted');
-    assert.equal(verdict(withBase(base, null), cut).ok, true, 'the first declaration over an undeclared manifest is accepted');
+    const next = [0, 6, 1], minor = [0, 7, 0], older = [0, 5, 0], undeclared = withBase(base, null);
+    assert.equal(verdict(base, cut).ok, false, 'redeclaring the same base with a removal is refused');
+    assert.equal(verdict(undeclared, base).ok, true, 'v0.6.0 over an undeclared base passes');
+    assert.equal(verdict(undeclared, cut).ok, true, 'v0.6.0 over an undeclared base starts anew, removals included');
+    assert.equal(verdict(base, base).ok, true, 'once both declare v0.6.0 the unchanged manifest passes');
+    assert.equal(verdict(base, cut).ok, false, 'once both declare v0.6.0 append-only holds again');
+    for (const v of [next, minor]) {
+        assert.equal(verdict(base, withBase(base, v)).ok, false, `${named(v)} over v0.6.0 without removals is refused`);
+        assert.equal(verdict(base, withBase(cut, v)).ok, false, `${named(v)} over v0.6.0 with a removal is refused`);
+        assert.equal(verdict(undeclared, withBase(base, v)).ok, false, `${named(v)} over an undeclared base is refused`);
+        assert.equal(verdict(undeclared, withBase(cut, v)).ok, false, `${named(v)} with a removal over an undeclared base is refused`);
+        assert.equal(verdict(withBase(base, v), withBase(base, v)).ok, true, `the same ${named(v)} on both sides holds append-only`);
+        assert.equal(verdict(withBase(base, v), withBase(cut, v)).ok, false, `a removal under the same ${named(v)} is refused`);
+    }
     assert.equal(verdict(base, withBase(base, older)).ok, false, 'a proposed manifest declaring an older base is refused');
-    assert.equal(verdict(base, withBase(base, null)).ok, false, 'a proposed manifest dropping the declaration is refused');
-    assert.equal(verdict(withBase(base, newer), withBase(base, newer)).ok, true, 'the same newer base on both sides passes');
-    assert.equal(verdict(withBase(base, newer), withBase(cut, newer)).ok, false, 'once both declare the newer base, append-only holds again');
-    assert.equal(verdict(withBase(base, null), withBase(cut, null)).ok, false, 'two undeclared manifests hold append-only');
+    assert.equal(verdict(base, undeclared).ok, false, 'a proposed manifest dropping the declaration is refused');
+    assert.equal(verdict(undeclared, withBase(cut, null)).ok, false, 'two undeclared manifests hold append-only');
     assert.throws(() => declaredBase(`${base}\nbase v9.0.0\n`), /exactly one line/, 'two declarations are refused');
     assert.throws(() => declaredBase(withBase(base, null).replace(/^/, 'base 0.6\n')), /exactly one line/, 'a malformed declaration is refused');
     console.log(`session ABI manifest control: additions, insertions and reordering pass; ${red} removals and edits of all ${lines.length} lines are refused; `
-        + 'a newer declared base starts anew once, an older or dropped one is refused, the same base holds append-only');
+        + 'only the authorised reset (v0.6.0 over an undeclared base) starts anew, once; any other newer, older or dropped base is refused');
 } else {
     if (args.length !== 2) {
         console.error('usage: session-abi-append-only.mjs <base manifest> <proposed manifest> | --self-test');
