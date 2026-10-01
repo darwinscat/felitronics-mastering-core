@@ -207,6 +207,15 @@ en = "{field}: this knob has no such value."
 ru = "{field}: значение вне допустимого диапазона."
 en = "{field}: the value is outside the accepted domain."
 
+# The same two refusals said with their numbers, where the answer has them: the value refused, the domain it left.
+[messages.rejectedOutOfDomainValue]
+ru = "{field}: {value} — вне допустимого диапазона, от {low} до {high}."
+en = "{field}: {value} is outside the accepted range, {low} to {high}."
+
+[messages.rejectedNotOneOfValue]
+ru = "{field}: у этой ручки нет значения {value}."
+en = "{field}: this knob has no value {value}."
+
 [messages.rejectedBadChannels]
 ru = "Движок принимает звук в одном или двух каналах, а в этом файле их другое число."
 en = "The engine takes audio in one or two channels; this file has another number of them."

@@ -282,6 +282,11 @@ Dither is offered through 16 bits, and mono bass except on a mono source; the sh
   columns), whether the panel is visible or hidden. Values must be
   finite and inside the knob's domain; travel and step guide the slider. Values between steps or outside travel are
   accepted within the domain. A number is kept with −0 written as +0, so equal values give identical project bits.
+- **`editTarget(lufs, tp)`** sets a person's target numbers; a field's **null clears it** (owner, 01.10): the person's
+  number goes and the field is the target row's again, per field (`command::EditTarget::clear`). An absent key leaves the
+  field; an edit that sets and clears nothing is accepted without a revision; a field both set and cleared (C++ only —
+  the wire has one value per key) is `Contract` on that field. The project writes only the numbers a person holds, so a
+  cleared field leaves its `lufs.hand`/`tp.hand` line, and the replay gives the same project.
 - **`setTarget(name)`** replaces the target's numbers silently and always resets every device edit, including hidden
   edits and dither edits. The machine decides again for the new target. The warning before it is the core's fact:
   `SnapshotText::targetChange (snapshot().view())` gives `targetChangeResetsEdits` — "Manual device edits (N) will be
@@ -349,16 +354,20 @@ numbers it does not have. Each is written as an event's fact is (`WireFact`); th
 records a waiting plan, the master it refuses, and its reasons once Ready.
 
 **The advice beside a knob is a fact too** (facts 500–505 and 509, `PlanText::hpfCutoffAdvice`, `hpfSlopeAdvice`,
-`monoBassAdvice`, `eqAdvice`): the value as it sounds — a person's or the machine's — against the norm engine.toml draws on
-the knob, so a hand edit that leaves the norm gets its advice in the next snapshot. The high-pass's cutoff below or above
+`monoBassAdvice`, `eqAdvice`): a person's value as it sounds against the norm engine.toml draws on the knob, so a hand
+edit that leaves the norm gets its advice in the next snapshot. **Advice only where a hand acted** (owner, 01.10): the
+machine's own value — proposed now, or kept from a file's machine layer — is its proposal, inside its own rule, and is
+never advised against; each piece of advice is said only where a person set the value it judges (500/501 the cutoff,
+502/503 the slope, 505/509 the crossover, 504 a shelf of tilt or low), so a slope by hand says nothing of the machine's
+cutoff beside it. The high-pass's cutoff below or above
 `[hpf] comfort` (24–42 Hz, strictly, the window named in the fact) and its slope gentler or steeper than `slopesNormal`
 (a slope between two normal ones is inside; `plan.hpf.soundingSlope` carries the slope that sounds); mono bass's
 crossover outside every zone of `[monoBass.zones]` (ends inside) — above them `MonoBassOutsideZones` (505, against the
 club's and vinyl's upper ends), below them `MonoBassBelowZones` (509, against their lower ends); the EQ curve of the shelves as they sound (tilt and
 low, never the high-pass) past `[eq] curve.warnDb`, at the point of the largest |dB|, said of the shelf that gives the
-larger part there. Nothing for a device out of the chain. `kPlanFacts` is 18. The machine's own plan never raises the
-"beyond the norm" advice (502–505, 509) — `theMachineKeepsItsOwnNorm` plans every target on every input the suite
-measures and holds it; the comfort window (500, 501) is a hint the machine's floor may leave. **The target's note** (facts 506–508,
+larger part there. Nothing for a device out of the chain. `kPlanFacts` is 18. The machine's own plan raises none of the
+advice (500–505, 509) — by the rule above, and `theMachineKeepsItsOwnNorm` plans every target on every input the suite
+measures and holds it. **The target's note** (facts 506–508,
 `SnapshotText::targetNote`, the snapshot's `targetNote` beside `target`): where the target's loudness comes from, where
 targets.toml `[notes]` says it is not a platform's published number or a standard — measured (youtubeMusic), practice
 (cdDynamic, club), no normalisation (bandcamp). `[notes]` is shown, not sounding: it moves `all`, never `sound`.
@@ -775,7 +784,12 @@ main thread.
   100 + its code, a sentence in every declared language that says what was refused and why; the three a field refuses
   (not finite, not one of its values, outside its domain) name the field — a term for each field a check can
   refuse: the target's two numbers, every device's knob and choice, a load's audio. `Text::rejected(answer, request)`
-  builds it from a refused answer, reading the field off the request. The mapping is a switch over every code with no
+  builds it from a refused answer, reading the field off the request. Where the answer carries the refused number
+  (`Answer::value`, and for `OutOfDomain` the domain the check read, `low`/`high` — the knob's bounds, or 0 and half the
+  source's rate for a Nyquist domain) the field is said with them: `RejectedOutOfDomainValue` (180, {field} {value} {low}
+  {high}, each number at the places it has) and `RejectedNotOneOfValue` (181, a slope the knob does not take); an
+  import's refusal names the field alone. The wire's rejected answer carries this fact last (`fact`, a `WireFact` as
+  events carry it), and a contract answer carries `RejectedContract` (131): a shell maps no index to a word. The mapping is a switch over every code with no
   default, so a code the state machine adds and nobody maps is an error in this repository's builds (`-Wswitch`,
   `-Werror`); the suite holds the table code by code, the field terms position by position against `src/Devices.h`'s
   walk of the fields (a term exactly where a check can refuse), and renders the answers of a real session.
@@ -1178,7 +1192,8 @@ still apply. Convert, Lra and Final are appended to `PhaseName` at 5, 6 and 7 an
 
 For example, `{"kind":"editDevice","commandId":"17","device":0,"fields":{"fq":32}}` edits the HPF frequency.
 Command identities are decimal strings. Fields can arrive in any order; unknown, missing, duplicate or malformed
-fields produce a `rejected` answer naming the field. Edits omit untouched knobs or use null. `load` metadata requires
+fields produce a `rejected` answer naming the field, with its fact (`fact`, last). Device edits omit untouched knobs or use
+null; in `editTarget` a null clears the field (the target row's number again) and an absent key leaves it. `load` metadata requires
 `name`, `fileRate`, `bitDepth`, and `rateKnown`. Load and import carry command identities as low/high uint32 arguments.
 The page reserves `FC_SESSION_ANSWER_BYTES` before commands run; a short output cannot execute a command and then
 lose its answer. `written` excludes a terminator. A domain rejection is an OK transport call with a rejected answer;
@@ -1605,7 +1620,10 @@ chain's gain bound — `LandingSummary::binding`; "one of the constraints" where
 tolerance; pass limit says the budget ended against it (90); between names the two nearest levels, both beyond the
 tolerance (91, `belowLufs`/`aboveLufs`); the achieved number and the gap stay the miss's own line
 (`MasterLandingMiss`/`Above`, 11/23); a technical failure says so (92). The product landing the session runs ends Solved,
-PassLimit or between — never unreachable — so 89 speaks for a solver that names its binding. Unavailable and cancelled landings say none. The crest's line
+PassLimit or between with its master delivered (a loudness it cannot hit always returns the file at the closest level it
+found, owner 01.10), or unreachable with the true-peak ceiling named when measured renders exist and none kept under the
+ceiling (89; possible only for a caller's chain without the limiter) — that one delivers nothing, since no render kept
+the target's ceiling. Unavailable and cancelled landings say none. The crest's line
 (`MasterReportText::crest`) goes out once: with the report when the job settles the crest (joined inside the job, or
 unavailable), or from the late join when it was still pending.
 

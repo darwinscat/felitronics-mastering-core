@@ -865,6 +865,7 @@ void everyRejectionIsAFact()
     bool inRange = true;
     for (const auto& shape : detail::kFacts)
         inRange = inRange && ((std::size_t) shape.id < 100 || ((std::size_t) shape.id > 100 && (std::size_t) shape.id <= 100 + last)
+            || ((std::size_t) shape.id >= 180 && (std::size_t) shape.id <= 181)
             || ((std::size_t) shape.id >= 200 && (std::size_t) shape.id <= 207)
             || ((std::size_t) shape.id >= 300 && (std::size_t) shape.id <= 305)
             || ((std::size_t) shape.id >= 400 && (std::size_t) shape.id <= 447)
@@ -904,7 +905,8 @@ void everyRejectionIsAFact()
     const float* three[3] = { samples, samples, samples };
     const Real reals[] = {
         { session::command::EditTarget { 1, tooLoud }, session::Rejection::OutOfDomain,
-          "Потолок: значение вне допустимого диапазона.", "Ceiling: the value is outside the accepted domain." },
+          "Потолок: 99\xC2\xA0" "dBTP — вне допустимого диапазона, от −6\xC2\xA0" "dBTP до −0,1\xC2\xA0" "dBTP.",
+          "Ceiling: 99\xC2\xA0" "dBTP is outside the accepted range, −6\xC2\xA0" "dBTP to −0.1\xC2\xA0" "dBTP." },
         { session::command::EditTarget { 2, notANumber }, session::Rejection::NotFinite,
           "Потолок: не число — принимается только конечное значение.", "Ceiling: not a number — only a finite value is taken." },
         { session::command::SetTarget { 3, "nowhere" }, session::Rejection::UnknownTarget, "Такой цели нет.", "There is no such target." },
@@ -933,6 +935,11 @@ void everyRejectionIsAFact()
     const session::Answer accepted = s.apply (on);
     ok (accepted.rejection == session::Rejection::None && ! Text::rejected (accepted, on).has_value(),
         "an accepted answer is no rejection: no fact");
+    session::command::EditTarget twice { 11, {} };
+    twice.fields.lufs = -14.0; twice.clear.lufs = true;
+    const session::Answer malformed = s.apply (twice);
+    ok (malformed.rejection == session::Rejection::Contract && malformed.field == 0 && ! malformed.value,
+        "a target field both set and cleared is malformed, before its number is read");
     session::Answer odd;
     odd.rejection = session::Rejection::OutOfDomain;
     odd.field = 7;
@@ -1118,7 +1125,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0x84945d5615e78bffull;   // …, the plan's advice and the targets' notes (500–508), the observations (52–80, 419–436), the target-change warning (81), what departs from vinyl (82–87), the clipper's cut off the peaks and an observation not measured (437), the landing's verdict (88–92), the clipper's cut as a cap, the cost's lines (93–97), the readings' names and the tempo's confidence (438), the owner's observation words and the clipper's "will take" (439–445, 52–54, 87, 424), the owner's wording 3b/3c — the master's outcome (88, 89 naming its limit, 91 its two levels), the advice beyond the norm (502, 503, 505, 509), the cap in words (52–54, 87), DC per channel (446, 447) and the core stamp's facts gone (10, 127; v0.6.0)
+    constexpr std::uint64_t kPinned = 0x8c0b0d166a1cef3aull;   // …, the plan's advice and the targets' notes (500–508), the observations (52–80, 419–436), the target-change warning (81), what departs from vinyl (82–87), the clipper's cut off the peaks and an observation not measured (437), the landing's verdict (88–92), the clipper's cut as a cap, the cost's lines (93–97), the readings' names and the tempo's confidence (438), the owner's observation words and the clipper's "will take" (439–445, 52–54, 87, 424), the owner's wording 3b/3c — the master's outcome (88, 89 naming its limit, 91 its two levels), the advice beyond the norm (502, 503, 505, 509), the cap in words (52–54, 87), DC per channel (446, 447) and the core stamp's facts gone (10, 127; v0.6.0), a field's refusal with its numbers (180, 181)
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");

@@ -2186,8 +2186,28 @@ void theAdviceIsAFact()
         return edit (s, hpf);
     };
     const auto machineHz = s.snapshot().view().plan.hpf.soundingHz;
-    ok (noAdvice() == (machineHz >= 24.0 && machineHz <= 42.0), "the machine's own plan: advice only outside the norm — "
+    ok (noAdvice(), "the machine's own plan raises no advice, wherever its cutoff sits (owner, 01.10) — "
         + std::to_string (machineHz) + " Hz at its slope");
+    // THE RULE ITSELF, on the finding: a machine value — proposed now, or kept from a file — is never advised against,
+    // however far outside the window; the same value set by a person is.
+    {
+        HpfFinding hpf; hpf.soundingHz = 50.0; hpf.soundingSlope = 6;
+        MonoBassFinding mono; mono.soundingHz = 250.0;
+        bool machineSilent = true, handSpeaks = true;
+        for (const auto by : { Sounding::Proposal, Sounding::File, Sounding::Off })
+        {
+            hpf.sounding = by; mono.sounding = by;
+            machineSilent = machineSilent && ! PlanText::hpfCutoffAdvice (hpf) && ! PlanText::hpfSlopeAdvice (hpf)
+                && ! PlanText::monoBassAdvice (mono);
+        }
+        hpf.sounding = Sounding::Hand; mono.sounding = Sounding::Hand;
+        const auto cut = PlanText::hpfCutoffAdvice (hpf), slope = PlanText::hpfSlopeAdvice (hpf);
+        const auto zone = PlanText::monoBassAdvice (mono);
+        handSpeaks = cut && cut->id == text::FactId::HpfAboveComfort && slope && slope->id == text::FactId::HpfSlopeGentle
+            && zone && zone->id == text::FactId::MonoBassOutsideZones;
+        ok (machineSilent, "a machine value outside the window (a cutoff at 50 Hz, 6 dB/oct, mono bass at 250 Hz): no advice");
+        ok (handSpeaks, "the same values set by a person: 501, 502 and 505");
+    }
     // THE HIGH-PASS: the cutoff against the comfort window (strictly), the slope against the normal ones.
     ok (hpfAt (20.0, 24), "PRECONDITION: a hand high-pass at 20 Hz");
     const auto below = advice (500);
@@ -2208,6 +2228,20 @@ void theAdviceIsAFact()
     ok (hpfAt (20.0, 48) && advice (500) && advice (503), "a cutoff and a slope both outside: both whys");
     ok (hpfAt (20.0, 48, false) && noAdvice(), "a high-pass out of the chain: no advice, whatever its knob");
     ok (hpfAt (32.0, 24), "PRECONDITION: the high-pass back in the norm");
+    // Per value: a person's slope says nothing of the cutoff beside it, and back. The cutoff's hand goes (revertEdits on
+    // fq alone) while the slope's stays: no cutoff advice, whatever the machine's cutoff.
+    {
+        HpfFields<Touched> hand; hand.on = true; hand.fq = 20.0; hand.slope = 6;
+        HpfFields<Mark> fq; fq.fq = true;
+        const bool both = edit (s, hand) && advice (500) && advice (502);
+        const bool reverted = s.apply (command::RevertEdits { 900, fq }).rejection == Rejection::None;
+        ok (both && reverted && ! advice (500) && ! advice (501) && advice (502),
+            "a slope by hand with the machine's cutoff: the slope's advice alone");
+        HpfFields<Mark> slope; slope.slope = true;
+        ok (hpfAt (20.0, 6) && s.apply (command::RevertEdits { 901, slope }).rejection == Rejection::None
+            && advice (500) && ! advice (502) && ! advice (503), "a cutoff by hand with the machine's slope: the cutoff's alone");
+        ok (hpfAt (32.0, 24), "PRECONDITION: the high-pass back in the norm");
+    }
     // MONO BASS: the crossover outside every destination's zone, both ends of a zone inside.
     const auto monoAt = [&] (double fq) { MonoBassFields<Touched> mono; mono.on = true; mono.fq = fq; return edit (s, mono); };
     const auto outside = (monoAt (70.0), advice (505));
@@ -2269,8 +2303,8 @@ void theAdviceIsAFact()
 // its warning, mono bass outside every destination's zone) is said of a person's value — the machine's own plan never
 // raises it. Every target of targets.toml, on every input the suite measures: the contract's fixture inputs
 // (tools/contract/fixtures/inputs.json, "measure" and "measure-stereo", built here by the same formula) and the synthetic
-// mixes of this file. The comfort window of the high-pass (500, 501) is a hint, not a norm: the machine's floor may sit
-// outside it by an owner decision, and theAdviceIsAFact holds it.
+// mixes of this file. The comfort window of the high-pass (500, 501) is in the list too: the machine's floor may sit
+// outside it by an owner decision, and its advice is still a person's alone (owner, 01.10).
 struct Input
 {
     std::string name;
@@ -2313,7 +2347,8 @@ Input mixInput (const char* name, float scale, double clicks, std::uint32_t chan
 void theMachineKeepsItsOwnNorm()
 {
     felitronics::test::group ("the machine's own plan raises no advice beyond the norm — every target, every input the suite has");
-    constexpr std::uint16_t kBeyondNorm[] = { std::uint16_t (text::FactId::HpfSlopeGentle), std::uint16_t (text::FactId::HpfSlopeSteep),
+    constexpr std::uint16_t kBeyondNorm[] = { std::uint16_t (text::FactId::HpfBelowComfort), std::uint16_t (text::FactId::HpfAboveComfort),
+        std::uint16_t (text::FactId::HpfSlopeGentle), std::uint16_t (text::FactId::HpfSlopeSteep),
         std::uint16_t (text::FactId::EqOvershoot), std::uint16_t (text::FactId::MonoBassOutsideZones),
         std::uint16_t (text::FactId::MonoBassBelowZones) };
     std::vector<Input> inputs;

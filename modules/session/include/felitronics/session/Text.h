@@ -83,7 +83,8 @@ enum class Plural : std::uint8_t { Zero, One, Two, Few, Many, Other };
 // stable: a fact is stored and compared by its id, so an id is never reused for another message, and each kind of fact
 // has a range of its own:
 //     1 –  99   readings and the landing
-//   100 – 199   a command's rejection: 100 + its Rejection code (Commands.h), one fact per code
+//   100 – 199   a command's rejection: 100 + its Rejection code (Commands.h), one fact per code; from 180, a field's
+//               rejection said with its numbers (the value refused, and the domain it left)
 //   200 – 299   the phases of the work
 //   300 – 399   the session's errors
 //   400 – 499   the measurements and the observations
@@ -233,6 +234,10 @@ enum class FactId : std::uint16_t
     RejectedMandatoryUnavailable = 133,
     RejectedDeliveryFormat = 134,  // {bits} {rate}: the target's bit depth and delivery rate
     RejectedPlanPending = 135,
+    // A field's rejection with its numbers, where the answer carries them (Answer::value, low, high): the refused value
+    // against the domain the check read, and a value a knob does not take.
+    RejectedOutOfDomainValue = 180, // {field} {value} {low} {high}
+    RejectedNotOneOfValue = 181,    // {field} {value}
 
     Measurement1 = 200,
     Measurement2 = 201,

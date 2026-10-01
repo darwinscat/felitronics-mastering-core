@@ -190,6 +190,10 @@ inline constexpr FactShape kFacts[] = {
     { FactId::RejectedDeliveryFormat, "rejectedDeliveryFormat",
       { { { "bits", ArgKind::Count, {} }, { "rate", ArgKind::Value, {} } } }, 2 },
     { FactId::RejectedPlanPending, "rejectedPlanPending", {}, 0 },
+    { FactId::RejectedOutOfDomainValue, "rejectedOutOfDomainValue", { { { "field", ArgKind::Term, "field" },
+      { "value", ArgKind::Value, {} }, { "low", ArgKind::Value, {} }, { "high", ArgKind::Value, {} } } }, 4 },
+    { FactId::RejectedNotOneOfValue, "rejectedNotOneOfValue",
+      { { { "field", ArgKind::Term, "field" }, { "value", ArgKind::Count, {} } } }, 2 },
     { FactId::Measurement1, "measurement1", {}, 0 },
     { FactId::Measurement2, "measurement2", {}, 0 },
     { FactId::MasterPass, "masterPass", { { { "pass", ArgKind::Count, {} } } }, 1 },
@@ -519,6 +523,16 @@ static_assert (tablesInOrder(), "kFacts and kTerms ascend by id");
 {
     return field == 0 ? std::optional<Term> (Term::FieldTargetLufs)
          : field == 1 ? std::optional<Term> (Term::FieldTargetTp) : std::nullopt;
+}
+
+// The unit a field's number is said in, where a refusal says it (Text::rejected).
+[[nodiscard]] constexpr Unit fieldUnit (Term field) noexcept
+{
+    if (field == Term::FieldTargetLufs) return Unit::Lufs;
+    if (field == Term::FieldTargetTp) return Unit::DbTp;
+    if (field == Term::FieldHpfFq || field == Term::FieldMonoBassFq) return Unit::Hz;
+    if (field == Term::FieldMonoBassWidth || field == Term::FieldSaturationMix || field == Term::FieldHpfSlope) return Unit::None;
+    return Unit::Db;
 }
 
 [[nodiscard]] constexpr std::optional<Term> deviceFieldTerm (Device device, std::uint8_t field) noexcept

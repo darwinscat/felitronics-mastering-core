@@ -6,10 +6,10 @@
     "components": [
       "felitronics-mastering-core 0.6.0",
       "felitronics-core 0.57.0",
-      "fc_session_abi 4"
+      "fc_session_abi 5"
     ],
     "configVersion": "64a77734238d01bc",
-    "codecSchemaSha256": "8df75d7d9c7637dec65f84f4ae82f2251028c0464343526e31c36865b2dbb643"
+    "codecSchemaSha256": "1cfda4d474485f29d70f2c94ee0bdc878721436c5e7070438b015515f112aed7"
   },
   "scenarios": {
     "cancel": {
@@ -19,13 +19,13 @@
     },
     "domains": {
       "scriptSha256": "2d0075d8cb41564684c376109d10c42735f56f3d8de9c38033a37d5e05a69e9e",
-      "sha256": "993dc368dd41b30718e88f1d3973655ad558aa042a81d07d42561a852621adfd",
-      "bytes": 113342
+      "sha256": "12915e2bf17c13f5500acc914cf01b0040b7b718c03dd7346c0f3f972ab6e37c",
+      "bytes": 114174
     },
     "forbidden": {
       "scriptSha256": "b70c3284cde1eb850616aaae369d6577ef04e34d4174d15a4f982d99fcb03ae1",
-      "sha256": "f54c894d853bbe67330e0044c079df11b6a9db219cc99b4450d37f7f38997b2d",
-      "bytes": 68061
+      "sha256": "bbcf2c8f4d31f7495789609340c4a49e40d9f42e759a0b4287d10d7af566350a",
+      "bytes": 68137
     },
     "load-measure": {
       "scriptSha256": "11ee269a9e1561e38169429d6c4bdbaeff7cb81660b7c9ab9392cb041389bd92",
@@ -34,13 +34,13 @@
     },
     "machine-layer": {
       "scriptSha256": "185e043f0aa777ace351ad34289baf724a410e0af117ddefb60baacecc1039c2",
-      "sha256": "ee0404e07616a9d6467faf317a8b7a083ff88918e151a4c3854052667f6a23e7",
-      "bytes": 83933
+      "sha256": "b567efb0fd7dd834d1d2be1e377feaeab844140bbc188d4ccce49595598941ee",
+      "bytes": 82877
     },
     "measurement": {
       "scriptSha256": "bcde2dcc70541554c86691bbf5fa4b85cad78afc3d22cee5f3881dd6bc991c25",
-      "sha256": "d50e91e66c6ddbbdb32061b9c4f0d5f4309d8f06bb74e8c8817aa7a0532d1735",
-      "bytes": 1821426
+      "sha256": "7fa97fecaca25cf01b38d410aff047f116e7c93cac9559a682b5d7217cbb1e06",
+      "bytes": 1821464
     },
     "measurement-needles": {
       "scriptSha256": "bb90c60827f9678441f73f5249ecaa7fcb8ff8408b7c2d3e110c2be61056db40",
@@ -49,8 +49,8 @@
     },
     "measurement-nonfinite": {
       "scriptSha256": "e7e40a625e38327fb63ca26c9126d9e5cd2ec3fed8bb62803966f6b1fbdfd03a",
-      "sha256": "0dde4e66ddf0696dadb12dae300afe56f25e544612c5e188c423491e5f046575",
-      "bytes": 1723716
+      "sha256": "87c9c01372f3e0d44895731b969edcd026c925fb7a851159843ba25e1a8791ab",
+      "bytes": 1723879
     },
     "measurement-poison": {
       "scriptSha256": "e539113d1b14a519306ad640dd0f67d309ddf227816219a7bc97e52de62676ea",
@@ -64,13 +64,13 @@
     },
     "measurement-sidecar": {
       "scriptSha256": "5404c1c7d1eda5106be368cc003c641215bc908145b9adceb28264a7d82ebc7d",
-      "sha256": "2b74115957201fee9a3ae95caa627cbc063d23d1e78f79bcbb1cd7e28398048d",
-      "bytes": 4150898
+      "sha256": "a8c6245f361908473521b2e5aa5669ac197d79bd71cb2facaa42994d5a4c4861",
+      "bytes": 4150974
     },
     "measurement-silence": {
       "scriptSha256": "bdbdda5b3c53edc514a6224a1780f9e1300c3e3f41935192892b21143f01ea11",
-      "sha256": "e1dca98a61c50706f278adb8a4cda5a86e39411e96e12d946160f35d6237ed48",
-      "bytes": 1716328
+      "sha256": "7aee9cb8e707a3749e60d0f77d3ee542bc50a65f6024fc5e93c535c25e4a6672",
+      "bytes": 1716366
     },
     "memory": {
       "scriptSha256": "a7ea5ae0d8ed5b03b9362cad25a0c4d20446992908f37eb3cda8448537bb6fc9",
@@ -79,8 +79,8 @@
     },
     "plan-pending": {
       "scriptSha256": "cc4b1db5d383b8c2362934e11281afc9b74b3f53da9bf11c205d19f2fee09dd6",
-      "sha256": "c37180929e3e95eaafe8757d661fe63c4195b261fe318f50ac701d1bab0a5556",
-      "bytes": 5913660
+      "sha256": "f3945c9e7255c4f2b2559803e7d6b7dc68d851441af1297b1b17befa733d728f",
+      "bytes": 5913698
     },
     "project-roundtrip": {
       "scriptSha256": "c208a2b366ebfd0433ae784ebb551ef893a7ce071ba3cbec7f400529ca8d062c",
@@ -94,8 +94,8 @@
     },
     "saturation-type": {
       "scriptSha256": "f9c9a6d63f72d52e1d437e5a6890183cd85353069577395875229366307194eb",
-      "sha256": "9a50bc9c690bf25c9b27727e7b7ade51bc31ddbfadd30421b939ff7cf7145620",
-      "bytes": 5267916
+      "sha256": "c7afce549cfc3ceb3fad214631f28b5d07a73ca490d4d141ec8554243a305b8e",
+      "bytes": 5268079
     },
     "target-edits": {
       "scriptSha256": "0585d7fbb0e8a118ce67b1f9d300f6f4aa319188024aac4ffa5eccb2e8a35d86",

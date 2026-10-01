@@ -434,8 +434,10 @@ struct ObservationText
 struct PlanText
 {
     [[nodiscard]] static text::Fact hpf (const HpfFinding& finding) noexcept;
-    // THE ADVICE BESIDE A KNOB — the value as it sounds, a person's or the machine's, against the norm engine.toml draws
-    // on the knob; nothing for a device out of the chain or a value inside the norm. The high-pass's cutoff below [hpf]
+    // THE ADVICE BESIDE A KNOB — a person's value as it sounds against the norm engine.toml draws on the knob; nothing
+    // for the machine's own value (Sounding::Proposal, or File: its proposal, inside its own rule — owner, 01.10), for a
+    // device out of the chain or for a value inside the norm. The plan says each piece of advice only where a person set
+    // the value it judges (the cutoff, the slope, the crossover, a shelf). The high-pass's cutoff below [hpf]
     // comfort.lowHz or above comfort.highHz (strictly), with the window; its slope gentler than the gentlest of
     // slopesNormal or steeper than the steepest (a slope between two normal ones is inside the norm). Mono bass's
     // crossover outside every zone of [monoBass.zones], both ends inside. The EQ curve beyond [eq] curve.warnDb.

@@ -337,7 +337,9 @@ int main()
     LoudnessSolution limited;
     const bool ended = run (one, 71, -6.0, 1, limited);
     test::ok (ended ? limited.passes == 1 && limited.logCount == 1 && limited.deliverable
-                    : limited.status == MasteringSolveStatus::Unavailable,
+                    : ! limited.deliverable && (limited.status == MasteringSolveStatus::Unavailable
+                        || (limited.status == MasteringSolveStatus::TargetUnreachable
+                            && limited.binding == MasteringConstraint::TruePeakCeiling)),
               "a one-render budget cannot hide a final render or deliver an unsafe candidate");
 
     Rig miss;
