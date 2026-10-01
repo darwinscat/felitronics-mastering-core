@@ -63,6 +63,9 @@ struct SnapshotView
     // the source, with the core's unit and precision, in the order of ReadingKind. Empty before a source; a new
     // measurement states them anew.
     BoundedList<ReadingFact, kSourceReadings> readings {};
+    // THE TARGET'S NOTE, beside `target`, as SnapshotText::targetNote states it: where the target's loudness comes from,
+    // where targets.toml [notes] says it is not a platform's published number or a standard. Nothing for another target.
+    std::optional<text::Fact> targetNote;
 };
 // THE SNAPSHOT'S OWN SENTENCES, as ObservationText and PlanText give theirs from what the snapshot carries.
 // targetChange: the warning a shell shows in its confirmation BEFORE it sends SetTarget (owner decision, 28.09: a change
@@ -71,6 +74,10 @@ struct SnapshotView
 struct SnapshotText
 {
     [[nodiscard]] static std::optional<text::Fact> targetChange (const SnapshotView& view) noexcept;
+    // The note of the target whose key is `target` (targets.toml [notes]): measured — its loudness is read off the
+    // platform, not published; practice — mastering practice, not a standard; noNormalisation — the destination does
+    // not normalise loudness. The first two name the target's own loudness. Nothing for a target without a note.
+    [[nodiscard]] static std::optional<text::Fact> targetNote (std::string_view target) noexcept;
 };
 class Codec;
 // An immutable, owned value. view() remains valid until this value is moved or destroyed,

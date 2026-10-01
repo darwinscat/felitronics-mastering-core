@@ -82,6 +82,8 @@ template <class E> struct Name
 };
 constexpr Name<Group> kGroups[] = { { "streaming", Group::Streaming }, { "delivery", Group::Delivery },
                                     { "aggregator", Group::Aggregator } };
+constexpr Name<TargetNote> kTargetNotes[] = { { "measured", TargetNote::Measured }, { "practice", TargetNote::Practice },
+                                              { "noNormalisation", TargetNote::NoNormalisation } };
 constexpr Name<Detector> kDetectors[] = { { "peak", Detector::Peak }, { "rms", Detector::Rms } };
 constexpr Name<Link> kLinks[] = { { "max", Link::Max }, { "meanPower", Link::MeanPower } };
 constexpr Name<CompressorMode> kModes[] = { { "downCompress", CompressorMode::DownCompress },
@@ -1153,6 +1155,16 @@ void readTargets (Doc& d, Reader& in, Targets& o, const Engine& e)
             if (o.find (o.main[i]) == nullptr) d.refuseItem (in, "main", i, Refusal::NotATarget);
         d.unique (in, "main", o.main);
     }
+    in.table ("notes", Need::Required, [&] (Reader& t)
+    {
+        for (const auto& e : t.data().entries())
+        {
+            TargetNoteRow n { e.key, TargetNote::Measured };
+            if (! d.name (t, e.key, n.note, kTargetNotes)) continue;
+            if (o.find (e.key) == nullptr) d.refuse (t, e.key, Refusal::NotATarget);
+            else o.notes.push_back (std::move (n));
+        }
+    });
 }
 
 //==============================================================================

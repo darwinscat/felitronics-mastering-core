@@ -646,21 +646,26 @@ text::Term termOf (Device device) noexcept
 }
 } // namespace
 
-void stateReasons (PlanView& plan) noexcept
+void stateReasons (PlanView& plan, const EqFinding& eq) noexcept
 {
     state (plan, Device::Hpf, PlanText::hpf (plan.hpf));
+    state (plan, Device::Hpf, PlanText::hpfCutoffAdvice (plan.hpf));
+    state (plan, Device::Hpf, PlanText::hpfSlopeAdvice (plan.hpf));
     state (plan, Device::MonoBass, PlanText::monoBass (plan.monoBass));
     state (plan, Device::MonoBass, PlanText::monoBassPolarity (plan.monoBass));
     state (plan, Device::MonoBass, PlanText::monoBassCoverage (plan.monoBass));
+    state (plan, Device::MonoBass, PlanText::monoBassAdvice (plan.monoBass));
     state (plan, Device::Glue, PlanText::glue (plan.glue));
     state (plan, Device::Glue, PlanText::glueTempo (plan.glue));
     state (plan, Device::Glue, PlanText::glueRelease (plan.glue));
+    if (eq.device == Device::Tilt) state (plan, Device::Tilt, PlanText::eqAdvice (eq));
     state (plan, Device::Limiter, PlanText::limiter (plan.limiter));
     state (plan, Device::Limiter, PlanText::needlesAgainstMachine (plan.limiter));
     state (plan, Device::Limiter, PlanText::vinylCeiling (plan.limiter));
     state (plan, Device::Limiter, PlanText::vinylNeedles (plan.limiter));
     state (plan, Device::Limiter, PlanText::vinylTop (plan.limiter));
     state (plan, Device::Dither, PlanText::dither (plan.dither));
+    if (eq.device == Device::Low) state (plan, Device::Low, PlanText::eqAdvice (eq));
 }
 
 void stateWaiting (PlanView& plan) noexcept
@@ -701,6 +706,7 @@ void Session::replan() noexcept
         }, layers.machine, layers.hand);
     });
     const bool observe = key.h != plan_.key || planRuns_ == 0;
+    EqFinding eq;
     if (observe)
     {
         ++planRuns_;
@@ -729,6 +735,7 @@ void Session::replan() noexcept
             };
             const auto hpf = detail::settingsOf (in.rules, project_.devices.hpf);
             plan_.hpf.soundingHz = hpf.fq;
+            plan_.hpf.soundingSlope = hpf.slope;
             plan_.hpf.sounding = sounding (Device::Hpf, hpf.on,
                 detail::same (hpf.fq, proposed.hpf.machine.fq) && hpf.slope == proposed.hpf.machine.slope,
                 project_.devices.hpf.hand.fq.has_value() || project_.devices.hpf.hand.slope.has_value());
@@ -737,6 +744,7 @@ void Session::replan() noexcept
             plan_.monoBass.sounding = sounding (Device::MonoBass, mono.on,
                 detail::same (mono.fq, proposed.monoBass.machine.fq) && detail::same (mono.width, proposed.monoBass.machine.width),
                 project_.devices.monoBass.hand.fq.has_value() || project_.devices.monoBass.hand.width.has_value());
+            eq = detail::eqFinding (project_.devices, in.rules, double (in.sampleRate));
             plan_.inputGainDb = detail::inputLevels (in).gainDb;
             plan_.glue = detail::glueFinding (in, project_.devices);
             plan_.saturation = detail::saturationFinding (in, project_.devices);
@@ -755,7 +763,7 @@ void Session::replan() noexcept
             plan_.awaitedBy = awaited.device;
         }
         plan_.readOnly = plan_.status != PlanStatus::Ready;
-        if (plan_.status == PlanStatus::Ready) detail::stateReasons (plan_);
+        if (plan_.status == PlanStatus::Ready) detail::stateReasons (plan_, eq);
     }
     if (observe)
     {
@@ -814,6 +822,57 @@ text::Fact PlanText::hpf (const HpfFinding& f) noexcept
         case HpfCut::Unmeasured: return Fact::of (FactId::HpfUnmeasured, cutoff);
     }
     detail::storageOverflow();
+}
+std::optional<text::Fact> PlanText::hpfCutoffAdvice (const HpfFinding& f) noexcept
+{
+    using text::Arg; using text::Fact; using text::FactId; using text::Unit;
+    if (f.sounding == Sounding::Off) return std::nullopt;
+    const auto comfort = detail::rules().engine.find ("hpf").find ("comfort");
+    const double low = detail::configured (comfort.find ("lowHz")), high = detail::configured (comfort.find ("highHz"));
+    const auto window = [&] (FactId id)
+    {
+        return Fact::of (id, Arg::value (f.soundingHz, Unit::Hz, 1), Arg::value (low, Unit::None, 0), Arg::value (high, Unit::Hz, 0));
+    };
+    if (f.soundingHz < low) return window (FactId::HpfBelowComfort);
+    if (f.soundingHz > high) return window (FactId::HpfAboveComfort);
+    return std::nullopt;
+}
+std::optional<text::Fact> PlanText::hpfSlopeAdvice (const HpfFinding& f) noexcept
+{
+    using text::Arg; using text::Fact; using text::FactId;
+    if (f.sounding == Sounding::Off) return std::nullopt;
+    // slopesNormal is ascending (the schema holds it): its first is the gentlest, its last the steepest.
+    std::optional<std::int64_t> gentlest, steepest;
+    for (const auto item : detail::rules().engine.find ("hpf").find ("slopesNormal"))
+    {
+        const auto slope = item.integer();
+        if (! slope) continue;
+        if (! gentlest) gentlest = *slope;
+        steepest = *slope;
+    }
+    if (! gentlest || ! steepest) return std::nullopt;
+    if (f.soundingSlope < *gentlest) return Fact::of (FactId::HpfSlopeGentle, Arg::count (f.soundingSlope), Arg::count (*gentlest));
+    if (f.soundingSlope > *steepest) return Fact::of (FactId::HpfSlopeSteep, Arg::count (f.soundingSlope), Arg::count (*steepest));
+    return std::nullopt;
+}
+std::optional<text::Fact> PlanText::monoBassAdvice (const MonoBassFinding& f) noexcept
+{
+    using text::Arg; using text::Fact; using text::FactId; using text::Unit;
+    if (f.sounding == Sounding::Off) return std::nullopt;
+    const auto zones = detail::rules().engine.find ("monoBass").find ("zones");
+    const auto club = zones.find ("club"), vinyl = zones.find ("vinyl");
+    const double clubFrom = detail::configured (club.find ("fromHz")), clubTo = detail::configured (club.find ("toHz"));
+    const double vinylFrom = detail::configured (vinyl.find ("fromHz")), vinylTo = detail::configured (vinyl.find ("toHz"));
+    const auto inside = [&] (double from, double to) { return f.soundingHz >= from && f.soundingHz <= to; };
+    if (inside (clubFrom, clubTo) || inside (vinylFrom, vinylTo)) return std::nullopt;
+    return Fact::of (FactId::MonoBassOutsideZones, Arg::value (f.soundingHz, Unit::Hz, 0), Arg::value (clubFrom, Unit::None, 0),
+        Arg::value (clubTo, Unit::Hz, 0), Arg::value (vinylFrom, Unit::None, 0), Arg::value (vinylTo, Unit::Hz, 0));
+}
+std::optional<text::Fact> PlanText::eqAdvice (const EqFinding& f) noexcept
+{
+    if (! f.over) return std::nullopt;
+    return text::Fact::of (text::FactId::EqOvershoot, text::Arg::value (f.db, text::Unit::Db, 1, text::Sign::Always),
+        text::Arg::value (f.hz, text::Unit::Hz, 0));
 }
 std::optional<text::Fact> PlanText::monoBass (const MonoBassFinding& f) noexcept
 {

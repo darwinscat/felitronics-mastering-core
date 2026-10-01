@@ -121,6 +121,7 @@ struct HpfFinding
     std::optional<double> noteLossDb;          // what the machine's high-pass takes there, dB, positive
     Sounding sounding = Sounding::Proposal;    // whether that cutoff, at the target's slope, is what sounds
     double soundingHz = 0.0;                   // the cutoff that sounds (meaningless when Off)
+    std::int32_t soundingSlope = 0;            // ...and the slope that sounds, dB/oct (meaningless when Off)
 };
 
 // WHAT MONO BASS FOUND (owner decision 3.5) — the loss of the low end when it folds to mono, (L+R)/2, below the target's
@@ -273,15 +274,27 @@ struct DitherFinding
     bool keptWithoutEffect = false;            // it does not apply, and a person's tick is kept: nothing sounds of it
 };
 
+// WHERE THE EQ CURVE LEAVES ITS NORM ([eq] curve.warnDb of engine.toml) — judged on the shelves as they sound, tilt's and
+// low's, summed at the source's rate on the snapshot's 128 points; the high-pass is not judged by it (a filter's slope goes
+// down by definition: its own norm is its comfort window and its normal slopes). The point of the largest |dB|, the
+// first where two are equal; `over` where that exceeds warnDb; `device` the shelf that gives the larger part of it there
+// (tilt where both give as much).
+struct EqFinding
+{
+    bool over = false;
+    double hz = 0.0, db = 0.0;
+    Device device = Device::Tilt;
+};
+
 // ONE OF THE PLAN'S REASONS: a fact PlanText states, and the device it is said of.
 struct PlanFact
 {
     Device device = Device::Hpf;
     text::Fact fact {};
 };
-// Every line PlanText can state of one plan — the high-pass's one, mono bass's three, the glue's three, the limiter's
-// five, the dither's one — and the waiting fact.
-inline constexpr std::size_t kPlanFacts = 14;
+// Every line PlanText can state of one plan — the high-pass's one and its two pieces of advice, mono bass's three and
+// its advice, the glue's three, the EQ curve's advice, the limiter's five, the dither's one — and the waiting fact.
+inline constexpr std::size_t kPlanFacts = 18;
 
 struct PlanView
 {
@@ -316,9 +329,10 @@ struct PlanView
     DitherFinding dither {};
     // THE PLAN'S REASONS, as PlanText states them — so a shell shows each device's reasons without composing one. A Ready
     // plan states every line PlanText gives for it, in the order of Device and, within a device, of PlanText's members:
-    // the high-pass; mono bass, its polarity warning, the part of the piece it was weighed over; the glue's refusal, its
-    // fallback tempo, its held release; the limiter, the warning beside a manual threshold, vinyl's ceiling, needles and
-    // top; the dither. Where the plan names what a master waits for (awaited and awaitedBy), the waiting fact
+    // the high-pass, its cutoff and its slope against the norm; mono bass, its polarity warning, the part of the piece it
+    // was weighed over, its crossover outside every destination's zone; the glue's refusal, its fallback tempo, its held
+    // release; the EQ curve beyond its norm, said of tilt; the limiter, the warning beside a manual threshold, vinyl's
+    // ceiling, needles and top; the dither; the EQ curve beyond its norm, said of low. Where the plan names what a master waits for (awaited and awaitedBy), the waiting fact
     // (PlanWaiting, said of awaitedBy, its progress awaitedFraction) comes last — and a plan that is not Ready states that
     // fact alone, or nothing. A new plan states its reasons anew; the waiting fact follows the progress between plans.
     BoundedList<PlanFact, kPlanFacts> facts {};
@@ -414,6 +428,15 @@ struct ObservationText
 struct PlanText
 {
     [[nodiscard]] static text::Fact hpf (const HpfFinding& finding) noexcept;
+    // THE ADVICE BESIDE A KNOB — the value as it sounds, a person's or the machine's, against the norm engine.toml draws
+    // on the knob; nothing for a device out of the chain or a value inside the norm. The high-pass's cutoff below [hpf]
+    // comfort.lowHz or above comfort.highHz (strictly), with the window; its slope gentler than the gentlest of
+    // slopesNormal or steeper than the steepest (a slope between two normal ones is inside the norm). Mono bass's
+    // crossover outside every zone of [monoBass.zones], both ends inside. The EQ curve beyond [eq] curve.warnDb.
+    [[nodiscard]] static std::optional<text::Fact> hpfCutoffAdvice (const HpfFinding& finding) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> hpfSlopeAdvice (const HpfFinding& finding) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> monoBassAdvice (const MonoBassFinding& finding) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> eqAdvice (const EqFinding& finding) noexcept;
     [[nodiscard]] static std::optional<text::Fact> monoBass (const MonoBassFinding& finding) noexcept;
     // Beside it: the polarity warning where the fold sounds at a person's or a file's crossover against an opposite-
     // polarity verdict, and the part of the piece the loss was weighed over where the reading does not hold it whole.

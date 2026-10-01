@@ -914,7 +914,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, HpfFinding>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.cut)>, HpfCut>);
         v.field ("cut", x.cut);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.cutoffHz)>, double>);
@@ -929,6 +929,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("sounding", x.sounding);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.soundingHz)>, double>);
         v.field ("soundingHz", x.soundingHz);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.soundingSlope)>, std::int32_t>);
+        v.optionalField ("soundingSlope", x.soundingSlope, std::int32_t {});
     }
     else if constexpr (std::is_same_v<U, Kept>)
     {
@@ -1713,7 +1715,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("devices", x.devices);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.dither)>, DitherFinding>);
         v.field ("dither", x.dither);
-        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.facts)>, BoundedList<PlanFact, 14>>);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.facts)>, BoundedList<PlanFact, 18>>);
         v.field ("facts", x.facts);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.fromFile)>, bool>);
         v.field ("fromFile", x.fromFile);
@@ -1882,7 +1884,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, SnapshotView>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32, f33, f34, f35, f36, f37, f38, f39, f40, f41, f42, f43, f44, f45, f46] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32, f33, f34, f35, f36, f37, f38, f39, f40, f41, f42, f43, f44, f45, f46, f47] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.canContinueMeasurement)>, bool>);
         v.optionalField ("canContinueMeasurement", x.canContinueMeasurement, false);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.canMaster)>, bool>);
@@ -1975,6 +1977,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("state", x.state);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.target)>, std::string_view>);
         v.field ("target", x.target);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.targetNote)>, std::optional<text::Fact>>);
+        v.optionalField ("targetNote", x.targetNote, std::optional<text::Fact> {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.tempoChoice)>, TempoChoice>);
         v.optionalField ("tempoChoice", x.tempoChoice, TempoChoice {});
     }

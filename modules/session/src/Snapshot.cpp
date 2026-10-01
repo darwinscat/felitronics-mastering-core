@@ -250,6 +250,7 @@ SnapshotView Session::buildView() const noexcept
     v.observations = observations_;
     if (source_.channels != 0) v.observationFacts = ObservationText::facts (observations_);
     v.target = targetName();
+    v.targetNote = SnapshotText::targetNote (v.target);
     v.source = source_;
     v.measurementStorage = measurementStorage_;
     v.needlesJob = needlesJob_;
@@ -279,5 +280,18 @@ std::optional<text::Fact> SnapshotText::targetChange (const SnapshotView& view) 
 {
     if (view.handFieldCount == 0) return std::nullopt;
     return text::Fact::of (text::FactId::TargetChangeResetsEdits, text::Arg::count (view.handFieldCount));
+}
+std::optional<text::Fact> SnapshotText::targetNote (std::string_view target) noexcept
+{
+    using text::Arg; using text::Fact; using text::FactId; using text::Unit;
+    const auto rules = detail::rules();
+    const auto row = rules.find (target);
+    const auto note = rules.targets.find ("notes").find (target).string();
+    if (! row || ! note) return std::nullopt;
+    const auto lufs = Arg::value (rules.row (*row).lufs.toDouble(), Unit::Lufs, 1);
+    if (*note == "measured") return Fact::of (FactId::TargetMeasured, lufs);
+    if (*note == "practice") return Fact::of (FactId::TargetPractice, lufs);
+    if (*note == "noNormalisation") return Fact::of (FactId::TargetNoNormalisation);
+    return std::nullopt;
 }
 } // namespace felitronics::session

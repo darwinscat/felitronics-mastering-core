@@ -195,7 +195,25 @@ void pump()
     // (a master the session decides runs its job: its passes, its cost and its facts are events of the scenario). The
     // landing's verdict (MasterLandingSolved) moved them last: without it, the old pins 691c5c5e4b8a17c7 / 7923d108f8d47dbc.
     // The cost's lines beside shape, impact and pumping (MasterCostSection … MasterCostBands, 93–97) moved them last:
-    // without those lines, the sequence renumbered, the events are the ones before them — the old pins.
+    // without those lines, the sequence renumbered, the events are the ones before them — the old pins. The targets' notes
+    // ([notes], targets.toml) moved the config's version and nothing else: every phase carries it, so with the previous
+    // version put back the events are the ones before the notes, bit for bit — the old pins b5fbcdc6218fc72d /
+    // 25eeb7e1f596ed41, and without the cost's lines theirs.
+    const auto previousVersion = [] (std::vector<Notification> events)
+    {
+        // The canonical document without its [notes] table: the config before them.
+        auto targets = config::Config::text (config::Document::Targets);
+        const auto from = targets.rfind ("\n[notes]\n");
+        const auto to = from == std::string::npos ? from : targets.find ("\n[", from + 1);
+        if (from != std::string::npos) targets.erase (from, (to == std::string::npos ? targets.size() : to) - from);
+        const auto before = config::Config::versionsOf (targets, config::Config::text (config::Document::Engine));
+        for (auto& e : events)
+            if (e.kind == EventKind::Phase && e.payload.phase.weightsVersion == config::Config::versions().all && before)
+                e.payload.phase.weightsVersion = before->all;
+        return events;
+    };
+    ok (eventsHash (previousVersion (one)) == 0xb5fbcdc6218fc72dull && eventsHash (previousVersion (cancelled)) == 0x25eeb7e1f596ed41ull,
+        "the targets' notes move only the config's version the phases carry: with the previous one, the previous pins");
     const auto withoutCostLines = [] (const std::vector<Notification>& events)
     {
         std::vector<Notification> kept;
@@ -209,12 +227,13 @@ void pump()
         }
         return kept;
     };
-    ok (eventsHash (withoutCostLines (one)) == 0xe2e6c8ac47d9417eull && eventsHash (withoutCostLines (cancelled)) == 0x3797697993fa2f96ull
+    ok (eventsHash (withoutCostLines (previousVersion (one))) == 0xe2e6c8ac47d9417eull
+        && eventsHash (withoutCostLines (previousVersion (cancelled))) == 0x3797697993fa2f96ull
         && withoutCostLines (one).size() < one.size(),
         "the cost's new lines are the only new events: without them the old pins e2e6c8ac47d9417e / 3797697993fa2f96 hold");
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
-    ok (eventsHash (one) == 0xb5fbcdc6218fc72dull && eventsHash (cancelled) == 0x25eeb7e1f596ed41ull,
+    ok (eventsHash (one) == 0xcadd3454090dbdbaull && eventsHash (cancelled) == 0x18b6d1ba59ebfabdull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     Audio audio; auto s = fresh();

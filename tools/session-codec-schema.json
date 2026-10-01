@@ -753,7 +753,8 @@
         "plan": "PlanView",
         "observations": "Observations",
         "observationFacts": "ObservationFact[<=17]",
-        "readings": "ReadingFact[<=26]"
+        "readings": "ReadingFact[<=26]",
+        "targetNote": "Fact?"
       }
     },
     "MasterToken": {
@@ -994,7 +995,7 @@
         "saturation": "SaturationFinding",
         "limiter": "LimiterFinding",
         "dither": "DitherFinding",
-        "facts": "PlanFact[<=14]"
+        "facts": "PlanFact[<=18]"
       }
     },
     "PlanFact": {
@@ -1027,7 +1028,8 @@
         "noteHz": "double?",
         "noteLossDb": "double?",
         "sounding": "Sounding",
-        "soundingHz": "double"
+        "soundingHz": "double",
+        "soundingSlope": "int32"
       }
     },
     "MonoBassFinding": {
@@ -1630,6 +1632,12 @@
     }
   },
   "optionalFields": {
+    "HpfFinding": {
+      "soundingSlope": {
+        "default": "std::int32_t {}",
+        "description": "A plan before the sounding slope was published."
+      }
+    },
     "SaturationFieldsValue": {
       "type": {
         "default": "SaturationType::Tanh",
@@ -1812,6 +1820,10 @@
       "readings": {
         "default": "BoundedList<ReadingFact, 26> {}",
         "description": "No source readings: a snapshot before the readings were facts."
+      },
+      "targetNote": {
+        "default": "std::optional<text::Fact> {}",
+        "description": "No target note: a snapshot before the targets' notes."
       }
     },
     "MeasurementQuery": {

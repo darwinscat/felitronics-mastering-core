@@ -304,7 +304,7 @@ void theSchemaAdmitsWhatTheAnalyzersAdmit()
 // measured after the master, development, the name of the defaults — and, while no shell offers the de-esser, its block
 // and the bursts only it reads (but not deEsser.offered itself: offering it brings them in).
 constexpr std::string_view kTargetsPresentation[] = {
-    "main", "edit.lufs.from", "edit.lufs.to", "edit.lufs.green", "edit.tp.from", "edit.tp.to", "edit.tp.green",
+    "main", "notes", "edit.lufs.from", "edit.lufs.to", "edit.lufs.green", "edit.tp.from", "edit.tp.to", "edit.tp.green",
 };
 constexpr std::string_view kEnginePresentation[] = {
     "defaults", "limiter.peakClipper.densityMinusDb", "limiter.peakClipper.densityWithinDb", "hpf.slopesNormal",

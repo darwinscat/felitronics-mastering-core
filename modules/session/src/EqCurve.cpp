@@ -304,6 +304,28 @@ void eqCurve (const Project& project, const Rules& rules, double rate, std::span
     eqCurve (stage.bands, rate, output);
 }
 
+EqFinding eqFinding (const Devices& devices, const Rules& rules, double rate) noexcept
+{
+    EqStage stage;
+    writeEq (devices, rules, stage);
+    EqPoint tilt[kEqCurvePoints], low[kEqCurvePoints];
+    eqCurve (std::span<const eq::BandParams> (&stage.bands[eqBand (Device::Tilt)], 1), rate, tilt);
+    eqCurve (std::span<const eq::BandParams> (&stage.bands[eqBand (Device::Low)], 1), rate, low);
+    EqFinding f;
+    double largest = -1.0;
+    for (std::size_t i = 0; i < kEqCurvePoints; ++i)
+    {
+        const double db = tilt[i].db + low[i].db;
+        if (! (std::abs (db) > largest)) continue;
+        largest = std::abs (db);
+        f.hz = tilt[i].hz;
+        f.db = db;
+        f.device = std::abs (low[i].db) > std::abs (tilt[i].db) ? Device::Low : Device::Tilt;
+    }
+    f.over = largest > number (rules.engine.find ("eq").find ("curve").find ("warnDb"));
+    return f;
+}
+
 double highPassLossDb (double fc, std::int32_t slope, double rate, double hz) noexcept
 {
     BiquadCoeffs sections[9];
