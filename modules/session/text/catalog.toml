@@ -320,27 +320,28 @@ en = "Mono bass below {crossover}: the value comes from the project file."
 ru = "Противофаза баса взвешена по первым {covered} записи из {whole}."
 en = "The bass polarity was weighed over the first {covered} of the recording's {whole}."
 
-# The limiter's line: its ceiling and what the peak clipper inside it does with the needles, as it sounds. {cut} is the
-# most the clipper takes off the peaks; the limiter takes the rest.
+# The limiter's line: its ceiling and what the peak clipper inside it does with the needles, as it sounds. {cut} is a
+# cap, printed as one ("≤ 1.5 dB"): the most the clipper may take off the peaks — how much it takes is the landing's to
+# decide; the limiter takes the rest.
 [messages.limiterShort]
-ru = "Лимитер: потолок {ceiling}. Иглы короткие (90 % не длиннее {p90}, бас в дозе {bass}, PLR {plr}) — клиппер срезает с пиков до {cut}, остальное берёт лимитер."
-en = "Limiter: ceiling {ceiling}. The needles are short (90 % no longer than {p90}, bass share of the dose {bass}, PLR {plr}) — the peak clipper cuts up to {cut} off the peaks, the limiter takes the rest."
+ru = "Лимитер: потолок {ceiling}. Иглы короткие (90 % не длиннее {p90}, бас в дозе {bass}, PLR {plr}) — клиппер срезает с пиков {cut}, сколько именно — решит посадка; остальное берёт лимитер."
+en = "Limiter: ceiling {ceiling}. The needles are short (90 % no longer than {p90}, bass share of the dose {bass}, PLR {plr}) — the peak clipper cuts {cut} off the peaks, the landing decides how much; the limiter takes the rest."
 
 [messages.limiterBetween]
-ru = "Лимитер: потолок {ceiling}. Иглы средние (90 % не длиннее {p90}, бас в дозе {bass}, PLR {plr}) — клиппер осторожно срезает с пиков до {cut}, остальное берёт лимитер."
-en = "Limiter: ceiling {ceiling}. The needles are neither short nor long (90 % no longer than {p90}, bass share of the dose {bass}, PLR {plr}) — the peak clipper cuts with care, up to {cut} off the peaks, the limiter takes the rest."
+ru = "Лимитер: потолок {ceiling}. Иглы средние (90 % не длиннее {p90}, бас в дозе {bass}, PLR {plr}) — клиппер осторожно срезает с пиков {cut}, сколько именно — решит посадка; остальное берёт лимитер."
+en = "Limiter: ceiling {ceiling}. The needles are neither short nor long (90 % no longer than {p90}, bass share of the dose {bass}, PLR {plr}) — the peak clipper cuts with care, {cut} off the peaks, the landing decides how much; the limiter takes the rest."
 
 [messages.limiterManual]
-ru = "Лимитер: потолок {ceiling}. Иглы срезаются по ручной настройке — с пиков до {cut}, остальное берёт лимитер."
-en = "Limiter: ceiling {ceiling}. The needles are cut by a manual setting — up to {cut} off the peaks, the limiter takes the rest."
+ru = "Лимитер: потолок {ceiling}. Иглы срезаются по ручной настройке — с пиков {cut}, сколько именно — решит посадка; остальное берёт лимитер."
+en = "Limiter: ceiling {ceiling}. The needles are cut by a manual setting — {cut} off the peaks, the landing decides how much; the limiter takes the rest."
 
 [messages.limiterNeedlesOff]
 ru = "Лимитер: потолок {ceiling}. Клиппер игл выключен."
 en = "Limiter: ceiling {ceiling}. The peak clipper is off."
 
 [messages.limiterLittleNeed]
-ru = "Лимитер: потолок {ceiling}. Иглы не режутся: нужда {need} — не больше {little}."
-en = "Limiter: ceiling {ceiling}. The needles are not cut: the need is {need}, no more than {little}."
+ru = "Лимитер: потолок {ceiling}. Иглы не режутся: нужда при цели около {need} — не больше {little}."
+en = "Limiter: ceiling {ceiling}. The needles are not cut: the need at the target is about {need}, no more than {little}."
 
 [messages.limiterNoExcursions]
 ru = "Лимитер: потолок {ceiling}. Иглы не режутся: пиков выше потолка нет."
@@ -480,8 +481,8 @@ ru = "Потолок {ceiling}, а для винила — не выше {medium
 en = "The ceiling is {ceiling}, while for vinyl it stands no higher than {medium}."
 
 [messages.masterVinylNeedlesDeparts]
-ru = "Клиппер срезает с пиков до {cut}, а для винила иглы не режут."
-en = "The peak clipper cuts up to {cut} off the peaks, while for vinyl the needles are not cut."
+ru = "Клиппер настроен срезать с пиков {cut}, а для винила иглы не режут."
+en = "The peak clipper is set to cut {cut} off the peaks, while for vinyl the needles are not cut."
 
 [messages.masterQuietInput]
 ru = "Вход очень тихий ({lufs}): подняли на {gain}, шум поднялся вместе с музыкой. Кроме ФВЧ на полу цели и дизера формата, машина приборов не ставила — на таком уровне замер ненадёжен; включить их можно вручную."
@@ -661,10 +662,6 @@ ru.many = "Сейчас машина решила бы иначе в {count} м�
 ru.other = "Сейчас машина решила бы иначе в {count} местах. Слой машины сохранён."
 en.one = "The machine would decide differently today in {count} place. The saved machine layer is retained."
 en.other = "The machine would decide differently today in {count} places. The saved machine layer is retained."
-
-[messages.defaultsConverted]
-ru = "Проект с версией умолчаний {version} сконвертирован: значения, заданные вручную, и числа цели сохранены; машинные значения выставлены заново по текущим правилам."
-en = "The project from defaults version {version} was converted: the values set by hand and the target's numbers were kept; the machine's values were placed again by the current rules."
 
 [messages.rejectedNewerDefaults]
 ru = "Проект использует более новую версию умолчаний, которой нет в этом ядре."
@@ -1047,3 +1044,25 @@ memory.en = "insufficient memory"
 [messages.observationUnmeasured]
 ru = "{name}: не измерено — {reason}."
 en = "{name}: not measured — {reason}."
+
+# The landing's verdict, one line per status, published with the master. A miss says its numbers in masterLandingMiss
+# or masterLandingAbove; the status line beside it says why, against the landing's tolerance.
+[messages.masterLandingSolved]
+ru = "Мастер вышел на {achieved} при цели {target} — в пределах допуска {tolerance}."
+en = "The master reached {achieved} against a target of {target}, within the tolerance of {tolerance}."
+
+[messages.masterLandingUnreachable]
+ru = "Ближе допуска {tolerance} к цели не подойти, не нарушив одного из ограничений."
+en = "The master cannot come within {tolerance} of the target without breaking one of its constraints."
+
+[messages.masterLandingPassLimit]
+ru = "Проходы кончились раньше, чем мастер подошёл к цели ближе допуска {tolerance}."
+en = "The passes ran out before the master came within {tolerance} of the target."
+
+[messages.masterLandingBetween]
+ru = "Цель лежит между двумя соседними достижимыми уровнями; ни один из них не подходит к ней ближе допуска {tolerance}."
+en = "The target lies between two neighbouring reachable levels; neither comes within {tolerance} of it."
+
+[messages.masterLandingFailed]
+ru = "Мастер остановился из-за технического сбоя."
+en = "The master stopped on a technical failure."

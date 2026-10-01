@@ -97,8 +97,8 @@ enum class FactId : std::uint16_t
     WideBass = 6,            // the bass is wide (side {side}) — the warning of phase 1
     RateAboveLimit = 7,      // the file's rate {rate} is above what this platform takes, {limit} (select on platform)
     MachineDifferences = 8,  // {count}: the saved machine layer is retained
-    DefaultsConverted = 9,   // {version}: the project was converted from older defaults — emitted by nothing since an
-                             // import accepts only the current defaults label; the id and its message stay
+    DefaultsConverted = 9,   // RETIRED: no message and no shape — nothing converts a project (an import accepts only the
+                             // current defaults label), so nothing states it. The id stays reserved and is never reused.
     SameCoreMachineDifferences = 10, // {count}: same-core differences usually indicate a hand-edited file
     MasterLandingMiss = 11,
     MasterHintSubBass = 12,
@@ -145,11 +145,11 @@ enum class FactId : std::uint16_t
     MonoBassKept = 50,       // mono bass below {crossover}: a project file's machine layer
     MonoBassPartWeighed = 51, // mono bass was weighed over the first {covered} of the piece's {whole}
     // What the limiter comes to (PlanView::limiter; PlanText): its ceiling and what the peak clipper does, as it sounds.
-    LimiterShort = 52,       // ceiling {ceiling}; short needles ({p90}, {bass}, {plr}) are clipped down to {over} above it
-    LimiterBetween = 53,     // ...needles neither short nor ruled out: clipped with care, down to {over}
-    LimiterManual = 54,      // ...clipped by hand, down to {over} above the ceiling
+    LimiterShort = 52,       // ceiling {ceiling}; short needles ({p90}, {bass}, {plr}): the clipper cuts at most {cut}
+    LimiterBetween = 53,     // ...needles neither short nor ruled out: cut with care, at most {cut}
+    LimiterManual = 54,      // ...cut by hand, at most {cut} — a cap ({cut} is Bound::AtMost): the landing decides how much
     LimiterNeedlesOff = 55,  // ...the peak clipper is switched off
-    LimiterLittleNeed = 56,  // ...not cut: the need {need} is no more than {little}
+    LimiterLittleNeed = 56,  // ...not cut: the need at the aim, {need}, is no more than {little}
     LimiterNoExcursions = 57, // ...not cut: no peak stands above the ceiling
     LimiterUnmeasured = 58,  // ...not cut: the needles were not measured
     LimiterClipped = 59,     // ...not cut: the source is clipped, {rate} clips a minute
@@ -183,7 +183,14 @@ enum class FactId : std::uint16_t
     MasterVinylNoHighPass = 84, // high-pass off: for vinyl the infra-low is cut from {medium} at ≥ {mediumSlope} dB/oct
     MasterVinylHighPassDeparts = 85, // high-pass from {cutoff} at {slope} dB/oct: for vinyl from {medium} at ≥ {mediumSlope}
     MasterVinylCeilingDeparts = 86, // the ceiling {ceiling} above the medium's {medium}
-    MasterVinylNeedlesDeparts = 87, // the needles cut from {over} above the ceiling: vinyl is cut without the clipper
+    MasterVinylNeedlesDeparts = 87, // the clipper is set to cut at most {cut}: vinyl is cut without the clipper
+    // The landing's verdict (MasterReportText::landing), one per status, published with the master. A miss names its
+    // numbers in MasterLandingMiss/Above above; its status line says why, against the tolerance.
+    MasterLandingSolved = 88,      // the master reached {achieved} against {target}, within the tolerance {tolerance}
+    MasterLandingUnreachable = 89, // no closer than {tolerance} to the target without breaking a constraint
+    MasterLandingPassLimit = 90,   // the passes ran out before the master came within {tolerance} of the target
+    MasterLandingBetween = 91,     // the target lies between two neighbouring reachable levels, none within {tolerance}
+    MasterLandingFailed = 92,      // the master stopped on a technical failure
 
     // A command's rejection, by its code — what was refused and why. The three a field refuses name it: {field}.
     RejectedFloatingPointEnvironment = 101,

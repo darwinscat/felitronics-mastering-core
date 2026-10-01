@@ -171,6 +171,16 @@ void theLandingsFacts()
     }
     ok (before == 0, "the landing's line comes ahead of the cost's");
 
+    // The verdict: the miss's status said against the tolerance, beside the miss's numbers. The tolerance is the shipped
+    // engine's landing.toleranceLu (LandingPlanTests pins it).
+    constexpr double kTolerance = 0.1;
+    const auto status = kept (view.view(), made.id)->landing->status;
+    const auto verdict = MasterReportText::landing (report, status, kTolerance);
+    const auto both = [] (const text::Fact& f) { return text::Text::text (f, text::Lang::Ru) + " / " + text::Text::text (f, text::Lang::En); };
+    ok (status != LandingStatus::Solved && verdict && published (*verdict) && verdict->argCount == 1
+        && same (verdict->args[0].number, kTolerance) && verdict->args[0].unit == text::Unit::Lu,
+        "the miss's verdict is published with the master, against the tolerance: " + (verdict ? both (*verdict) : std::string {}));
+
     auto met = loaded (audio.planes, 2, audio.frames, audio.rate);
     const auto landed = master (*met, 3);
     bool silent = true;
@@ -179,7 +189,76 @@ void theLandingsFacts()
         const auto id = std::uint16_t (e.payload.fact.view().id);
         silent = silent && id != 11 && id != 23 && ! (id >= 12 && id <= 17);
     }
-    ok (kept (met->snapshot().view(), landed.id)->report->targetMet && silent, "a master that lands says neither");
+    const auto metView = met->snapshot();
+    const auto& metReport = *kept (metView.view(), landed.id)->report;
+    ok (metReport.targetMet && silent, "a master that lands says neither");
+    const auto in = [] (const Mastered& m, const text::Fact& fact)
+    {
+        unsigned n = 0;
+        for (const auto& e : m.facts)
+        {
+            const auto& f = e.payload.fact.view();
+            bool equal = e.jobId == m.id && f.id == fact.id && f.argCount == fact.argCount;
+            for (std::size_t i = 0; equal && i < f.argCount; ++i)
+                equal = same (f.args[i].number, fact.args[i].number) && f.args[i].unit == fact.args[i].unit;
+            n += equal ? 1u : 0u;
+        }
+        return n;
+    };
+    const auto solved = MasterReportText::landing (metReport, kept (metView.view(), landed.id)->landing->status, kTolerance);
+    ok (solved && solved->id == text::FactId::MasterLandingSolved && metReport.achievedLufs
+        && same (solved->args[0].number, *metReport.achievedLufs) && same (solved->args[1].number, metReport.targetLufs)
+        && same (solved->args[2].number, kTolerance) && in (landed, *solved) == 1,
+        "a master that lands says so with its numbers — achieved, target, tolerance: " + (solved ? both (*solved) : std::string {}));
+
+    // The crest joined inside the job (the source measured whole before the master): its line comes with the report,
+    // once, from MasterReportText::crest.
+    unsigned crestLines = 0;
+    for (const auto& e : landed.facts)
+    {
+        const auto id = e.payload.fact.view().id;
+        crestLines += e.jobId == landed.id && (id == text::FactId::MasterCrestSourceRate || id == text::FactId::MasterCrestPending
+            || id == text::FactId::MasterCrestUnavailable || id == text::FactId::MasterCrestDelivered) ? 1u : 0u;
+    }
+    const auto crestLine = MasterReportText::crest (metReport.crest);
+    ok (metReport.crest.status == MeasurementStatus::Ready && crestLines == 1 && in (landed, crestLine) == 1,
+        "a crest ready before the master ends: its line comes with the report, once — " + both (crestLine));
+}
+
+void theVerdictPerStatus()
+{
+    felitronics::test::group ("(c2) the landing's verdict: one fact per status, with its numbers");
+    MasterReport r;
+    r.status = MeasurementStatus::Ready; r.targetLufs = -14.0; r.achievedLufs = -14.04; r.missLu = -0.04;
+    const auto whole = [] (const text::Fact& f)
+    {
+        const auto a = text::Text::text (f, text::Lang::Ru), b = text::Text::text (f, text::Lang::En);
+        return a.find ('{') == std::string::npos && b.find ('{') == std::string::npos && a.size() > 20 && b.size() > 20
+            && a != text::Text::key (f.id) && b != text::Text::key (f.id);
+    };
+    const auto solved = MasterReportText::landing (r, LandingStatus::Solved, 0.1);
+    ok (solved && solved->id == text::FactId::MasterLandingSolved && solved->argCount == 3
+        && same (solved->args[0].number, -14.04) && solved->args[0].unit == text::Unit::Lufs
+        && same (solved->args[1].number, -14.0) && solved->args[1].unit == text::Unit::Lufs
+        && same (solved->args[2].number, 0.1) && solved->args[2].unit == text::Unit::Lu && whole (*solved),
+        "solved: the achieved number against the target and the tolerance — " + (solved ? text::Text::text (*solved, text::Lang::Ru) : std::string {}));
+    bool misses = true; std::string said;
+    for (const auto& [status, id] : { std::pair { LandingStatus::TargetUnreachable, text::FactId::MasterLandingUnreachable },
+                                      std::pair { LandingStatus::PassLimit, text::FactId::MasterLandingPassLimit },
+                                      std::pair { LandingStatus::TargetBetweenAchievable, text::FactId::MasterLandingBetween } })
+    {
+        const auto f = MasterReportText::landing (r, status, 0.1);
+        misses = misses && f && f->id == id && f->argCount == 1 && same (f->args[0].number, 0.1) && f->args[0].unit == text::Unit::Lu && whole (*f);
+        if (f) said += "\n        " + text::Text::text (*f, text::Lang::Ru);
+    }
+    ok (misses, "unreachable, pass limit, between: each its own line, against the tolerance" + said);
+    const auto failed = MasterReportText::landing (MasterReport {}, LandingStatus::TechnicalFailure, 0.1);
+    ok (failed && failed->id == text::FactId::MasterLandingFailed && failed->argCount == 0 && whole (*failed),
+        "a technical failure says so: " + (failed ? text::Text::text (*failed, text::Lang::Ru) : std::string {}));
+    MasterReport unmeasured; unmeasured.targetLufs = -14.0;
+    ok (! MasterReportText::landing (r, LandingStatus::Unavailable, 0.1) && ! MasterReportText::landing (r, LandingStatus::Cancelled, 0.1)
+        && ! MasterReportText::landing (unmeasured, LandingStatus::Solved, 0.1),
+        "an unavailable or cancelled landing says no verdict, nor a solved one without a measured loudness");
 }
 
 void theSpectrumsQuantity()
@@ -587,6 +666,7 @@ int main()
 {
     std::printf ("felitronics::session — a master read by queries, and the lean summary\n");
     theLandingsFacts();
+    theVerdictPerStatus();
     theSpectrumsQuantity();
     theMastersLoudness();
     theMastersAxes();

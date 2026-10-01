@@ -249,6 +249,54 @@ bool joinedOnce (std::string& why)
     why = std::to_string (facts) + " facts, revision " + std::to_string (revision) + " -> " + std::to_string (s.revision());
     return facts == 0 && s.revision() == revision && k1 == k1After;
 }
+// The crest still pending when the master ends: the report says no crest line, and the late join says it once — its
+// final word, never "pending".
+bool lateCrestSaidOnce (std::string& why)
+{
+    constexpr std::uint32_t rate = 48000;
+    const std::size_t frames = std::size_t (rate) * 4u;
+    std::vector<float> left (frames), right (frames);
+    for (std::size_t i = 0; i < frames; ++i)
+    {
+        left[i] = float (int ((i * 17u) % 251u) - 125) / 512.0f;
+        right[i] = float (int ((i * 19u + 7u) % 251u) - 125) / 512.0f;
+    }
+    const float* planes[2] { left.data(), right.data() };
+    auto made = session::Session::create();
+    if (made.status != session::Status::Ok) { why = "create"; return false; }
+    auto& s = *made.session;
+    if (s.apply (session::command::Load { 1, { planes, 2, frames, rate }, { "late.wav", rate, true, 24 } }).rejection
+        != session::Rejection::None) { why = "load"; return false; }
+    for (unsigned i = 0; i < 200000 && (s.state() == session::State::Loaded || ! s.snapshot().view().mandatoryMeasurementsReady); ++i)
+        (void) s.step (16);
+    session::command::Master request { 2 };
+    request.ready.version = 1;
+    request.ready.topology.eq = request.ready.topology.compressor = request.ready.topology.clipper = false;
+    request.ready.topology.dither = false;
+    request.source = s.source().hash; request.revision = s.revision();
+    if (s.apply (request).rejection != session::Rejection::None) { why = "master"; return false; }
+    std::vector<std::pair<std::uint64_t, session::text::FactId>> facts;
+    const auto collect = [&]
+    {
+        for (const auto& e : s.events())
+            if (e.kind == session::EventKind::Fact) facts.push_back ({ e.jobId, e.payload.fact.view().id });
+    };
+    for (unsigned i = 0; i < 400000 && s.job() != 0; ++i) { (void) s.step (73); collect(); }
+    if (s.job() != 0 || s.masters().size() != 1 || ! s.masters()[0].report
+        || s.masters()[0].report->crest.status != session::MeasurementStatus::Pending)
+    { why = "PRECONDITION: the master ends while the source crest is pending"; return false; }
+    for (unsigned i = 0; i < 400000 && s.masters()[0].report->crest.status == session::MeasurementStatus::Pending; ++i)
+    { (void) s.step (16); collect(); }
+    for (unsigned i = 0; i < 64; ++i) { (void) s.step (16); collect(); }
+    using session::text::FactId;
+    unsigned lines = 0; FactId last = FactId::Value;
+    for (const auto& [job, id] : facts)
+        if (job == s.masters()[0].id && (id == FactId::MasterCrestSourceRate || id == FactId::MasterCrestPending
+            || id == FactId::MasterCrestUnavailable || id == FactId::MasterCrestDelivered)) { ++lines; last = id; }
+    why = std::to_string (lines) + " crest lines, the last " + std::to_string (unsigned (last));
+    return lines == 1 && last != FactId::MasterCrestPending
+        && s.masters()[0].report->crest.status == session::MeasurementStatus::Ready;
+}
 bool directMeter (const Case& c)
 {
     const auto& report = *c.session->masters()[0].report;
@@ -880,5 +928,7 @@ int main()
         "a source measurement cancelled and resumed before the join runs leaves the late crest pending, then joins");
     std::string once;
     ok (joinedOnce (once), "a crest joined inside the job is not joined or published again (" + once + ")");
+    std::string lateOnce;
+    ok (lateCrestSaidOnce (lateOnce), "a crest pending when the master ends is said once, by the late join (" + lateOnce + ")");
     return felitronics::test::report();
 }

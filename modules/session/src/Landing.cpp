@@ -49,6 +49,26 @@ std::optional<text::Fact> MasterReportText::miss (const MasterReport& report) no
         text::Arg::value (report.targetLufs, text::Unit::Lufs, 1),
         text::Arg::value (std::fabs (*report.missLu), text::Unit::Lu, 1));
 }
+std::optional<text::Fact> MasterReportText::landing (const MasterReport& report, LandingStatus status,
+                                                     double toleranceLu) noexcept
+{
+    using text::Arg; using text::Fact; using text::FactId; using text::Unit;
+    const auto tolerance = Arg::value (toleranceLu, Unit::Lu, 1);
+    switch (status)
+    {
+        case LandingStatus::Solved:
+            if (report.status != MeasurementStatus::Ready || ! report.achievedLufs) return std::nullopt;
+            return Fact::of (FactId::MasterLandingSolved, Arg::value (*report.achievedLufs, Unit::Lufs, 1),
+                             Arg::value (report.targetLufs, Unit::Lufs, 1), tolerance);
+        case LandingStatus::TargetUnreachable: return Fact::of (FactId::MasterLandingUnreachable, tolerance);
+        case LandingStatus::PassLimit: return Fact::of (FactId::MasterLandingPassLimit, tolerance);
+        case LandingStatus::TargetBetweenAchievable: return Fact::of (FactId::MasterLandingBetween, tolerance);
+        case LandingStatus::TechnicalFailure: return Fact::of (FactId::MasterLandingFailed);
+        case LandingStatus::Unavailable:
+        case LandingStatus::Cancelled: break;
+    }
+    return std::nullopt;
+}
 std::optional<text::Fact> MasterReportText::hint (const MasterHint& hint) noexcept
 {
     if (! std::isfinite (hint.evidence)) return {};
@@ -146,7 +166,7 @@ std::array<std::optional<text::Fact>, 4> MasterReportText::vinylDepartures (cons
     if (m.ceilingDeparts)
         said[2] = Fact::of (FactId::MasterVinylCeilingDeparts, Arg::value (m.ceilingDbTp, Unit::DbTp, 1), Arg::value (m.ruleCeilingDbTp, Unit::DbTp, 1));
     if (m.needlesDeparts)
-        said[3] = Fact::of (FactId::MasterVinylNeedlesDeparts, Arg::value (m.overDb, Unit::Db, 1));
+        said[3] = Fact::of (FactId::MasterVinylNeedlesDeparts, Arg::value (m.overDb, Unit::Db, 1, text::Sign::Negative, text::Bound::AtMost));
     return said;
 }
 std::optional<text::Fact> MasterReportText::vinylUncheckable (const MasterReport& report) noexcept

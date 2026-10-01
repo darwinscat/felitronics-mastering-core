@@ -17,6 +17,8 @@
 //
 // ADDING A FACT: a FactId in <felitronics/session/Text.h> with the next number of its range, its row here (in id order),
 // and its message in every language the catalog declares — the build is red until all three agree.
+// RETIRING A FACT: its row here and its message go; its FactId stays (the ABI manifest freezes it), marked retired, and
+// no other fact ever takes its number. A retired id renders as its number and the snapshot decoder refuses it.
 
 #include <felitronics/session/Text.h>
 
@@ -59,7 +61,7 @@ inline constexpr FactShape kFacts[] = {
       { { { "rate", ArgKind::Value, {} }, { "limit", ArgKind::Value, {} }, { "platform", ArgKind::Term, "platform" } } },
       3 },
     { FactId::MachineDifferences, "machineDifferences", { { { "count", ArgKind::Count, {} } } }, 1 },
-    { FactId::DefaultsConverted, "defaultsConverted", { { { "version", ArgKind::UserText, {} } } }, 1 },
+    // DefaultsConverted (9) is retired: no row, no message; the id stays reserved.
     { FactId::SameCoreMachineDifferences, "sameCoreMachineDifferences", { { { "count", ArgKind::Count, {} } } }, 1 },
     { FactId::MasterLandingMiss, "masterLandingMiss", { { { "achieved", ArgKind::Value, {} }, { "target", ArgKind::Value, {} }, { "gap", ArgKind::Value, {} } } }, 3 },
     { FactId::MasterHintSubBass, "masterHintSubBass", { { { "share", ArgKind::Value, {} } } }, 1 },
@@ -142,6 +144,11 @@ inline constexpr FactShape kFacts[] = {
     { FactId::MasterVinylHighPassDeparts, "masterVinylHighPassDeparts", { { { "cutoff", ArgKind::Value, {} }, { "slope", ArgKind::Count, {} }, { "medium", ArgKind::Value, {} }, { "mediumSlope", ArgKind::Count, {} } } }, 4 },
     { FactId::MasterVinylCeilingDeparts, "masterVinylCeilingDeparts", { { { "ceiling", ArgKind::Value, {} }, { "medium", ArgKind::Value, {} } } }, 2 },
     { FactId::MasterVinylNeedlesDeparts, "masterVinylNeedlesDeparts", { { { "cut", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterLandingSolved, "masterLandingSolved", { { { "achieved", ArgKind::Value, {} }, { "target", ArgKind::Value, {} }, { "tolerance", ArgKind::Value, {} } } }, 3 },
+    { FactId::MasterLandingUnreachable, "masterLandingUnreachable", { { { "tolerance", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterLandingPassLimit, "masterLandingPassLimit", { { { "tolerance", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterLandingBetween, "masterLandingBetween", { { { "tolerance", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterLandingFailed, "masterLandingFailed", {}, 0 },
     // A command's rejection (Commands.h), one per code; the four a field refuses name it.
     { FactId::RejectedFloatingPointEnvironment, "rejectedFloatingPointEnvironment", {}, 0 },
     { FactId::RejectedNoSource, "rejectedNoSource", {}, 0 },

@@ -162,6 +162,11 @@ struct MasterReport
 struct MasterReportText
 {
     [[nodiscard]] static std::optional<text::Fact> miss (const MasterReport& report) noexcept;
+    // The landing's verdict: one fact per status — solved (the achieved number against the target and the tolerance),
+    // unreachable, pass limit, between (each against the tolerance; the numbers are the miss's line), technical failure.
+    // Nothing for an unavailable or cancelled landing, or a solved one without a measured loudness.
+    [[nodiscard]] static std::optional<text::Fact> landing (const MasterReport& report, LandingStatus status,
+                                                            double toleranceLu) noexcept;
     [[nodiscard]] static std::optional<text::Fact> hint (const MasterHint& hint) noexcept;
     [[nodiscard]] static text::Fact crest (const MasterCrest& crest) noexcept;
     [[nodiscard]] static text::Fact shape (const MasterCost& cost) noexcept;

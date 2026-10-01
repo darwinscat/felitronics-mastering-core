@@ -192,10 +192,11 @@ void pump()
     ok (eventsHash (cancelled) == eventsHash (cancelledAgain), "cancelled scenario sequence is invariant across runs and slicing");
     ok (one.size() > 22 && cancelled.size() > one.size(), "measurement publishes live work and cancellation adds events");
     // The phases carry the config's version (weightsVersion): a new config moves these pins — and the master is rendered
-    // (a master the session decides runs its job: its passes, its cost and its facts are events of the scenario).
+    // (a master the session decides runs its job: its passes, its cost and its facts are events of the scenario). The
+    // landing's verdict (MasterLandingSolved) moved them last: without it, the old pins 691c5c5e4b8a17c7 / 7923d108f8d47dbc.
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
-    ok (eventsHash (one) == 0x691c5c5e4b8a17c7ull && eventsHash (cancelled) == 0x7923d108f8d47dbcull,
+    ok (eventsHash (one) == 0xe2e6c8ac47d9417eull && eventsHash (cancelled) == 0x3797697993fa2f96ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     Audio audio; auto s = fresh();
