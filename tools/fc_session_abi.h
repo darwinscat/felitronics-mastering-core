@@ -44,7 +44,9 @@
 //                clipper shapes 4-7, tube to tape); the plan's reasons on the wire (PlanView::facts, PlanFact).
 //   4            v0.6.0, THE MANIFEST'S NEW BASE (owner, 2026-10-01): the pure kit (fc_kit_*), the EQ bands (device 8)
 //                and their tick; the dead entries left the manifest (no project, snapshot or file of an older version
-//                exists, and the one consumer vendors the exact core) — live ids keep their numbers.
+//                exists, and the one consumer vendors the exact core) — live ids keep their numbers; two compatibility
+//                slots left the C boundary: the measurement storage's reserved fields (88 bytes now) and the 32-byte
+//                capabilities record (its base is 40, leanSummary included).
 #define FC_SESSION_ABI_VERSION 4u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u
