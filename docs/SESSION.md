@@ -537,12 +537,13 @@ is invented and the master is made without it. `plan.glue` carries the state and
 chain gets — ratio, threshold (in the normalised input's dB), knee, attack, and once the tempo is decided the tempo,
 the release asked for and the release given; `PlanText::glue`, `::glueTempo` and `::glueRelease` give the refusal, the
 fallback tempo and a release held at a limit as facts.
-The saturation is the chain's tanh stage (`MasteringChainParams::clipper`) — not the peak clipper inside the limiter,
+The saturation is the chain's shaper stage (`MasteringChainParams::clipper`) — not the peak clipper inside the limiter,
 which is the limiter's. The machine never sets it. The knob is the drive the input would get at 0 dBTP: the core drives
 the shaper at k = 10^(drive/20) − 1, so the stage gets `20·log10(1 + (10^(knob/20) − 1)·10^(−peak/20))` for the
 normalised true peak — no trial render; the compensation is 0, mix and output as set (`plan.saturation`). Its TYPE is
 the shaper's curve (`SaturationFields::type`, felitronics-core's `WaveShaper::Shape`): the machine's layer holds the
-config's `[saturation] shape`, tanh, and never another; a person picks tanh, tube, transistor, transformer or tape, and
+config's `[saturation] shape`, tape (owner, 01.10; tanh before), and never another — so a hand drive with no type
+picked sounds tape; a person picks tanh, tube, transistor, transformer or tape, and
 an edit or a file that gives atan, cubic or asym by hand is refused `NotOneOf` (those stay the config's, for research).
 WHAT EACH DID is measured on its own stage and reported in the master's cost: `glueP95Db` and `glueMaxDb`, the
 compressor's gain reduction over the programme's 4 ms windows and its largest sample; `saturationCutMaxDb` and

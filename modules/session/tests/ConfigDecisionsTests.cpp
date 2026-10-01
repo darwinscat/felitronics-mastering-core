@@ -52,7 +52,8 @@ constexpr Golden kGolden[] = {
     // clipper's numbers an amount off the peaks (3 dB short, 1.5 between), no longer a threshold above the ceiling
     // ...and the EQ bands' numbers ([bands], 01.10): numbers added, none changed — a person's only, at 0 dB no band, so
     // every 2026-10 project sounds as it did
-    { "2026-10", 0x263a831c5d710e11ull },
+    // ...and the saturation's type tape (owner, 01.10), updated in place: no 2026-10 project had been saved
+    { "2026-10", 0x64c9517ff8baf81cull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass

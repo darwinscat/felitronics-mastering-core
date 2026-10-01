@@ -1,7 +1,7 @@
 {
   "checks": [
     {"kind":"snapshot","session":"main","index":0,"path":"state","value":3},
-    {"kind":"snapshot","session":"main","index":0,"path":"project.devices.saturation.machine.type","value":0},
+    {"kind":"snapshot","session":"main","index":0,"path":"project.devices.saturation.machine.type","value":7},
     {"kind":"snapshot","session":"main","index":0,"path":"project.devices.saturation.hand.type","value":null},
     {"kind":"snapshot","session":"main","index":1,"path":"project.devices.saturation.hand","value":{"drive":6,"mix":null,"on":true,"output":null,"type":7}},
     {"kind":"snapshot","session":"main","index":1,"path":"handFieldCount","value":3},
