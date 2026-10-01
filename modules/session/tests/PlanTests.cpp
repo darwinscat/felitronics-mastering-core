@@ -160,8 +160,8 @@ void everyDeviceIsPlannedAsBefore()
                 Devices now, before;
                 detail::eachDevice (now, [] (Device, auto& layers)
                 {
-                    if constexpr (requires { layers.hand.on; }) layers.hand.on = true;
-                    else if constexpr (requires { layers.hand.body; }) layers.hand.body = 1.5;
+                    if constexpr (requires { layers.hand.body; }) layers.hand.body = 1.5;
+                    else if constexpr (requires { layers.hand.on; }) layers.hand.on = true;
                     else layers.hand.needles = Needles::Manual;
                 });
                 before = now;
@@ -176,6 +176,7 @@ void everyDeviceIsPlannedAsBefore()
                 expected.hpf.machine.fq = target.hpfFloor.toDouble();
                 expected.monoBass.machine.on = false;
                 expected.glue.machine.on = false;      // decision 3.8а: no P95, no glue — cd's 2.6 dB stays on the knob
+                expected.bands.machine.on = true;      // the EQ bands' tick (01.10): the machine's is always on
                 asBefore = asBefore && sameDevices (now, expected);
                 Devices proposed; DevicePlans plans; detail::PlanFindings found;
                 detail::propose (in, proposed, plans, found);
@@ -845,10 +846,16 @@ void aTouchedDeviceSounds()
             {
                 layers.machine.on = machineOn; layers.hand = {};
                 machine = machine && detail::settingsOf (r, layers).on == machineOn && detail::tickFrom (r, layers) == TickFrom::Machine;
-                std::size_t fields = 0;
-                detail::DeviceOf<Fields>::each (r, [&] (std::uint8_t, const detail::FieldRule&, const auto&) { ++fields; }, layers.machine);
-                for (std::size_t touch = 1; touch < fields; ++touch)
+                // The tick's place: first, or after the knobs where it was appended (the EQ bands).
+                std::size_t fields = 0, tick = 0;
+                detail::DeviceOf<Fields>::each (r, [&] (std::uint8_t i, const detail::FieldRule&, const auto& hand)
                 {
+                    ++fields;
+                    if (static_cast<const void*> (&hand) == static_cast<const void*> (&layers.hand.on)) tick = i;
+                }, layers.hand);
+                for (std::size_t touch = 0; touch < fields; ++touch)
+                {
+                    if (touch == tick) continue;
                     layers.hand = {};
                     detail::DeviceOf<Fields>::each (r, [&] (std::uint8_t i, const detail::FieldRule&, auto& hand, const auto& value)
                     { if (i == touch) hand = value; }, layers.hand, layers.machine);

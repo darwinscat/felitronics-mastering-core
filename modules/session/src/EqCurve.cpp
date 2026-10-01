@@ -292,13 +292,13 @@ void writeEq (const HpfFields<Value>& hpf, const TiltFields<Value>& tilt, const 
     l.lanes[0].gainDb = low.db;
 
     // The EQ bands: a band at 0 dB is no band — its slot as the stage holds it untouched, so the chain gets exactly what
-    // it got before the device was there.
+    // it got before the device was there. The device off writes all five slots so, its gains kept in the project.
     const double gains[] { bands.body, bands.mud, bands.forward, bands.brightness, bands.air };
     static_assert (std::size (gains) == std::size (kBandNames));
     for (std::size_t i = 0; i < std::size (gains); ++i)
     {
         auto& b = stage.bands[bandsSlot (rules, i)];
-        if (sameNumber (gains[i], 0)) { b = {}; continue; }
+        if (! bands.on || sameNumber (gains[i], 0)) { b = {}; continue; }
         const auto move = rules.engine.find ("bands").find (kBandNames[i]);
         const auto type = move.find ("type").string();
         if (! type) storageOverflow();

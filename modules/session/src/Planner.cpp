@@ -437,7 +437,9 @@ void propose (const PlanInputs& in, Devices& machine, DevicePlans& plans, PlanFi
         if (! offeredByShell (in, device))
         {
             plan.heldBack = HeldBack::Shell;
-            if constexpr (requires { layers.machine.on; }) layers.machine.on = false;
+            // The EQ bands' machine tick stays on (the machine never bypasses them; at 0 dB they write nothing), so a
+            // project file's [bands] defaults agree with it: the plan says they do not sound.
+            if constexpr (requires { layers.machine.on; } && ! requires { layers.machine.body; }) layers.machine.on = false;
             if constexpr (requires { layers.machine.needles; }) layers.machine.needles = Needles::Off;
         }
     });
@@ -460,12 +462,13 @@ std::uint32_t needs (const PlanInputs& in, const Devices& devices, bool withHand
         // The tick as it SOUNDS: a device the target, the source or the shell rules out is out of the chain whatever
         // tick the project keeps for it (a person's dither tick above the depth that is dithered).
         const bool possible = offeredByShell (in, device) && offered (in.rules, in.row, in.channels, device);
-        if constexpr (requires { settings.on; }) plan.on = settings.on && possible;
-        // The EQ bands have no tick: they sound where any band is not at 0 dB.
-        else if constexpr (requires { settings.body; })
-            plan.on = possible && ! (detail::same (settings.body, 0.0) && detail::same (settings.mud, 0.0)
-                                     && detail::same (settings.forward, 0.0) && detail::same (settings.brightness, 0.0)
-                                     && detail::same (settings.air, 0.0));
+        // The EQ bands sound where they are on and any band is not at 0 dB.
+        if constexpr (requires { settings.body; })
+            plan.on = settings.on && possible
+                && ! (detail::same (settings.body, 0.0) && detail::same (settings.mud, 0.0)
+                      && detail::same (settings.forward, 0.0) && detail::same (settings.brightness, 0.0)
+                      && detail::same (settings.air, 0.0));
+        else if constexpr (requires { settings.on; }) plan.on = settings.on && possible;
         else plan.on = true;
     });
     return all;

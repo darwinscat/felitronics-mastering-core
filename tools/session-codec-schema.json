@@ -466,7 +466,8 @@
         "mud": "double",
         "forward": "double",
         "brightness": "double",
-        "air": "double"
+        "air": "double",
+        "on": "bool"
       }
     },
     "BandsFieldsTouched": {
@@ -476,7 +477,8 @@
         "mud": "double?",
         "forward": "double?",
         "brightness": "double?",
-        "air": "double?"
+        "air": "double?",
+        "on": "bool?"
       }
     },
     "BandsFieldsLayers": {
@@ -1486,7 +1488,8 @@
       "mud?": "WireNumber | null",
       "forward?": "WireNumber | null",
       "brightness?": "WireNumber | null",
-      "air?": "WireNumber | null"
+      "air?": "WireNumber | null",
+      "on?": "boolean | null"
     },
     "RevertEditsHpfCommand": {
       "kind": "\"revertEdits\"",
@@ -1583,7 +1586,8 @@
       "mud?": "boolean",
       "forward?": "boolean",
       "brightness?": "boolean",
-      "air?": "boolean"
+      "air?": "boolean",
+      "on?": "boolean"
     },
     "SessionCapabilities": {
       "heapCeilingBytes": "number",
@@ -1708,8 +1712,20 @@
     },
     "Devices": {
       "bands": {
-        "default": "Layers<BandsFields> {}",
-        "description": "A project before the EQ bands: every band at 0 dB, nothing by hand."
+        "default": "[] { Layers<BandsFields> before; before.machine.on = true; return before; }()",
+        "description": "A project before the EQ bands: every band at 0 dB, the device on, nothing by hand."
+      }
+    },
+    "BandsFieldsValue": {
+      "on": {
+        "default": "true",
+        "description": "A project before the EQ bands' tick: the device was on."
+      }
+    },
+    "BandsFieldsTouched": {
+      "on": {
+        "default": "std::optional<bool> {}",
+        "description": "A project before the EQ bands' tick: no tick by hand."
       }
     },
     "DevicePlans": {
@@ -1954,6 +1970,18 @@
     }
   },
   "optionalWireFields": {
+    "EditDeviceBandsFields": {
+      "on?": {
+        "defaultJson": "null",
+        "description": "Absent or null: the tick is not edited."
+      }
+    },
+    "RevertEditsBandsFields": {
+      "on?": {
+        "defaultJson": "false",
+        "description": "Absent: the tick is not reverted."
+      }
+    },
     "EditDeviceSaturationFields": {
       "type?": {
         "defaultJson": "null",

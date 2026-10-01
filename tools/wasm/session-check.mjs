@@ -1321,8 +1321,8 @@ for (const p of growth) M._free(p);
     { const w = u32(WORD); word(w); for (const v of f64(POINTS, 2 * w)) number(v); }
     ok(h === KIT_PINNED, `the pure kit's corpus hashes to the value KitTests.cpp pins natively (${h.toString(16)})`);
     {
-        // The EQ bands' curve: five gains of 0 dB answer fc_kit_eq_curve's bytes; a gain moves the curve; mud above 0 dB
-        // is a contract fault. Twelve doubles past the corpus's buffers.
+        // The EQ bands' curve: five gains of 0 dB answer fc_kit_eq_curve's bytes, and so do gains ticked off; a gain moves
+        // the curve; mud above 0 dB is a contract fault. Thirteen doubles past the corpus's buffers.
         const BANDS = S + 4608;
         let same = true, moved = false;
         for (const params of EQ_PARAMS)
@@ -1330,16 +1330,21 @@ for (const p of growth) M._free(p);
                 f64(BANDS, 7).set(params);
                 same = same && M._fc_kit_eq_curve(BANDS, rate, CURVE, PEAK) === STATUS.OK;
                 const plain = [...f64(CURVE, 256)], plainPeak = [...f64(PEAK, 4)];
-                f64(BANDS, 12).set([...params, 0, 0, 0, 0, 0]);
-                same = same && M._fc_kit_eq_curve_bands(BANDS, rate, CURVE, PEAK) === STATUS.OK
-                    && f64(CURVE, 256).every((v, i) => Object.is(v, plain[i])) && f64(PEAK, 4).every((v, i) => Object.is(v, plainPeak[i]));
-                f64(BANDS, 12).set([...params, 3, 0, 0, 0, 0]);
+                for (const bands of [[0, 0, 0, 0, 0, 1], [3, -1.5, 2, -2, 1, 0]]) {
+                    f64(BANDS, 13).set([...params, ...bands]);
+                    same = same && M._fc_kit_eq_curve_bands(BANDS, rate, CURVE, PEAK) === STATUS.OK
+                        && f64(CURVE, 256).every((v, i) => Object.is(v, plain[i])) && f64(PEAK, 4).every((v, i) => Object.is(v, plainPeak[i]));
+                }
+                f64(BANDS, 13).set([...params, 3, 0, 0, 0, 0, 1]);
                 moved = moved || (M._fc_kit_eq_curve_bands(BANDS, rate, CURVE, PEAK) === STATUS.OK
                     && f64(CURVE, 256).some((v, i) => i % 2 === 1 && v - plain[i] > 2.9));
             }
-        f64(BANDS, 12).set([1, 30, 24, 1, 2, 0, 0, 0, 0.5, 0, 0, 0]);
-        ok(same && moved && M._fc_kit_eq_curve_bands(BANDS, 48000, CURVE, PEAK) === STATUS.ERR_CONTRACT,
-           'fc_kit_eq_curve_bands: at 0 dB the bytes of fc_kit_eq_curve, +3 dB of body lifts the curve, mud above 0 dB refused');
+        f64(BANDS, 13).set([1, 30, 24, 1, 2, 0, 0, 0, 0.5, 0, 0, 0, 0]);
+        const mudUp = M._fc_kit_eq_curve_bands(BANDS, 48000, CURVE, PEAK);
+        f64(BANDS, 13).set([1, 30, 24, 1, 2, 0, 0, 1, 0, 0, 0, 0, 0.5]);
+        ok(same && moved && mudUp === STATUS.ERR_CONTRACT && M._fc_kit_eq_curve_bands(BANDS, 48000, CURVE, PEAK) === STATUS.ERR_CONTRACT,
+           'fc_kit_eq_curve_bands: at 0 dB or ticked off the bytes of fc_kit_eq_curve, +3 dB of body lifts the curve, mud above 0 dB '
+           + 'refused even ticked off, a tick neither 0 nor 1 a contract fault');
     }
     put(FACTS[0], IN); put('ru', LANG);
     ok(M._fc_kit_text(IN, FACTS[0].length, LANG, 2, TEXT, 512, WORD) === STATUS.OK

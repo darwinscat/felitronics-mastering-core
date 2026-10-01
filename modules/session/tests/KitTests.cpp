@@ -416,21 +416,29 @@ void theAbiAnswersAsTheCall()
             std::copy (std::begin (params), std::end (params), gains);
             const double set[] { 2.5, -1.5, 3.0, -2.0, 1.0 };
             std::copy (std::begin (set), std::end (set), gains + FC_SESSION_KIT_EQ_PARAMS);
+            double unticked[FC_SESSION_KIT_EQ_BANDS_PARAMS] {}, ua[2 * FC_SESSION_KIT_EQ_POINTS], pu[FC_SESSION_KIT_EQ_PEAK_VALUES];
+            std::copy (std::begin (gains), std::end (gains), unticked);
+            gains[FC_SESSION_KIT_EQ_BANDS_PARAMS - 1] = 1;
             double a[2 * FC_SESSION_KIT_EQ_POINTS], b[2 * FC_SESSION_KIT_EQ_POINTS], c[2 * FC_SESSION_KIT_EQ_POINTS];
             double pa[FC_SESSION_KIT_EQ_PEAK_VALUES], pb[FC_SESSION_KIT_EQ_PEAK_VALUES], pc[FC_SESSION_KIT_EQ_PEAK_VALUES];
             KitEq e; e.hpf = { params[0] > 0, params[1], std::int32_t (params[2]) }; e.tilt = { params[3] > 0, params[4] }; e.low = { params[5] > 0, params[6] };
-            e.bands = { 2.5, -1.5, 3.0, -2.0, 1.0 };
+            e.bands = { 2.5, -1.5, 3.0, -2.0, 1.0, true };
             EqPoint want[kEqCurvePoints];
             const auto w = Kit::eqCurve (e, rate, want);
             bands = bands && fc_kit_eq_curve (params, rate, a, pa) == FC_SESSION_OK && fc_kit_eq_curve_bands (flat, rate, b, pb) == FC_SESSION_OK
                 && fc_kit_eq_curve_bands (gains, rate, c, pc) == FC_SESSION_OK && w.status == CodecStatus::Ok
-                && std::memcmp (a, b, sizeof a) == 0 && std::memcmp (pa, pb, sizeof pa) == 0 && std::memcmp (pa, pc, sizeof pa) == 0;
+                && std::memcmp (a, b, sizeof a) == 0 && std::memcmp (pa, pb, sizeof pa) == 0 && std::memcmp (pa, pc, sizeof pa) == 0
+                && fc_kit_eq_curve_bands (unticked, rate, ua, pu) == FC_SESSION_OK && std::memcmp (a, ua, sizeof a) == 0
+                && std::memcmp (pa, pu, sizeof pa) == 0;
             for (std::size_t i = 0; i < kEqCurvePoints; ++i) bands = bands && sameBits (c[2 * i], want[i].hz) && sameBits (c[2 * i + 1], want[i].db);
         }
-    double mudUp[FC_SESSION_KIT_EQ_BANDS_PARAMS] = { 1, 30, 24, 1, 2, 0, 0, 0, 0.5, 0, 0, 0 };
+    double mudUp[FC_SESSION_KIT_EQ_BANDS_PARAMS] = { 1, 30, 24, 1, 2, 0, 0, 0, 0.5, 0, 0, 0, 0 };
+    double halfBands[FC_SESSION_KIT_EQ_BANDS_PARAMS] = { 1, 30, 24, 1, 2, 0, 0, 1, 0, 0, 0, 0, 0.5 };
     double curveB[2 * FC_SESSION_KIT_EQ_POINTS], peakB[FC_SESSION_KIT_EQ_PEAK_VALUES];
-    ok (bands && fc_kit_eq_curve_bands (mudUp, 48000, curveB, peakB) == FC_SESSION_ERR_CONTRACT,
-        "fc_kit_eq_curve_bands: at 0 dB fc_kit_eq_curve's answer, with gains the kit's curve, the peak still the shelves'; mud above 0 refused");
+    ok (bands && fc_kit_eq_curve_bands (mudUp, 48000, curveB, peakB) == FC_SESSION_ERR_CONTRACT
+        && fc_kit_eq_curve_bands (halfBands, 48000, curveB, peakB) == FC_SESSION_ERR_CONTRACT,
+        "fc_kit_eq_curve_bands: at 0 dB fc_kit_eq_curve's answer, with gains the kit's curve, ticked off with gains no band, the peak "
+        "still the shelves'; mud above 0 refused even ticked off, a tick neither 0 nor 1 a contract fault");
     double curve[2 * FC_SESSION_KIT_EQ_POINTS], peak[FC_SESSION_KIT_EQ_PEAK_VALUES];
     const double halfTick[FC_SESSION_KIT_EQ_PARAMS] = { 0.5, 30, 24, 1, 2, 0, 0 };
     ok (fc_kit_eq_curve (halfTick, 48000, curve, peak) == FC_SESSION_ERR_CONTRACT, "a tick that is neither 0 nor 1 is a contract fault");

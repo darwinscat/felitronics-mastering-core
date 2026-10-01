@@ -771,7 +771,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, BandsFields<Touched>>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.air)>, std::optional<double>>);
         v.field ("air", x.air);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.body)>, std::optional<double>>);
@@ -782,10 +782,12 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("forward", x.forward);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.mud)>, std::optional<double>>);
         v.field ("mud", x.mud);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.on)>, std::optional<bool>>);
+        v.optionalField ("on", x.on, std::optional<bool> {});
     }
     else if constexpr (std::is_same_v<U, BandsFields<Value>>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.air)>, double>);
         v.field ("air", x.air);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.body)>, double>);
@@ -796,6 +798,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("forward", x.forward);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.mud)>, double>);
         v.field ("mud", x.mud);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.on)>, bool>);
+        v.optionalField ("on", x.on, true);
     }
     else if constexpr (std::is_same_v<U, DevicePlan>)
     {
@@ -839,7 +843,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     {
         [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.bands)>, Layers<BandsFields>>);
-        v.optionalField ("bands", x.bands, Layers<BandsFields> {});
+        v.optionalField ("bands", x.bands, [] { Layers<BandsFields> before; before.machine.on = true; return before; }());
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.dither)>, Layers<DitherFields>>);
         v.field ("dither", x.dither);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.glue)>, Layers<GlueFields>>);

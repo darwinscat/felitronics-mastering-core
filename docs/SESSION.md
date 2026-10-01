@@ -262,7 +262,11 @@ The machine enables low only for a target with `lowDb` (today `lp`, +0.5 dB); ot
 The EQ bands (device 8, `[bands]`) are five static bands of the EQ stage — body (bell, 160 Hz), mud (bell, 300 Hz, a cut
 only), forward (bell, 3 kHz), brightness (high shelf, 8 kHz) and air (high shelf, 12 kHz), each its own band of the stage
 (3–7) — and a person's only: the machine leaves every band at 0 dB, a band at 0 dB is no band (its slot as the stage held
-it before the device), and there is no tick — the plan says the device sounds where any band is not 0. No norm advice
+it before the device). Its tick (`on`, field 5, appended after the gains) takes the whole device in or out with the gains
+kept: the machine's layer is always on (even where the shell does not offer the bands), a person may untick it, and off
+writes all five slots as no band — the stage, the curve and the master of a project without the bands, bit for bit. The
+plan says the device sounds where it is on and any band is not 0; an older snapshot or project file decodes with the
+machine's on and no tick by hand. No norm advice
 and no dynamics this release; the curve's `[eq] curve.warnDb` judges the shelves of tilt and low only
 (`felitronics_session_eq_bands_tests`).
 Dither is offered through 16 bits, and mono bass except on a mono source; the shell may exclude any device.

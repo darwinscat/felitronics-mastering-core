@@ -26,6 +26,7 @@
 #include <cstring>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -130,6 +131,7 @@ std::unique_ptr<Session> placed (std::uint32_t offered = kAllDevices)
 eq::BandParams bandOf (std::size_t i, double db)
 {
     BandsFields<Value> fields;
+    fields.on = true;
     gainAt (fields, i) = db;
     detail::EqStage stage;
     detail::writeEq (HpfFields<Value> {}, TiltFields<Value> {}, LowFields<Value> {}, fields, detail::rules(), stage);
@@ -316,17 +318,20 @@ void aBandAtZeroIsNoBand()
 {
     felitronics::test::group ("a band at 0 dB is no band: the stage the previous writeEq wrote, and the master made without the device");
     const auto r = detail::rules();
-    // THE STAGE against the previous code: every band of the 24, field by field, for devices with and without hands.
+    // THE STAGE against the previous code: every band of the 24, field by field, for devices with and without hands — and
+    // for the bands ticked off by hand with gains that would sound.
     bool asBefore = true;
-    for (const bool hands : { false, true })
+    for (const int hands : { 0, 1, 2 })
     {
         Devices devices;
         devices.hpf.machine = { true, 31.5, 24 };
         devices.low.machine = { true, 0.5 };
-        if (hands)
+        devices.bands.machine.on = true;
+        if (hands > 0)
         {
             devices.tilt.hand.on = true; devices.tilt.hand.db = 1.25;
-            for (std::size_t i = 0; i < 5; ++i) gainAt (devices.bands.hand, i) = i % 2 ? -0.0 : 0.0;
+            for (std::size_t i = 0; i < 5; ++i) gainAt (devices.bands.hand, i) = hands == 2 ? (i == 1 ? -1.5 : 2.5) : i % 2 ? -0.0 : 0.0;
+            if (hands == 2) devices.bands.hand.on = false;
         }
         detail::EqStage now, before;
         detail::writeEq (devices, r, now);
@@ -344,7 +349,8 @@ void aBandAtZeroIsNoBand()
                     && x.lanes[l].slope == y.lanes[l].slope && x.lanes[l].bypass == y.lanes[l].bypass;
         }
     }
-    ok (asBefore, "every band of the stage, every field, bit for bit what the previous writeEq wrote — bands at +0 and −0 dB included");
+    ok (asBefore, "every band of the stage, every field, bit for bit what the previous writeEq wrote — bands at +0 and −0 dB "
+                  "included, and the bands ticked off with gains");
     // THE MASTER: a session with every band set to 0 dB by hand renders the master of a session without the device.
     const auto master = [] (bool bandsByHand, double body)
     {
@@ -418,6 +424,130 @@ void theProjectFile()
     auto older = placed();
     ok (older->apply (command::ImportProject { 5, old }).rejection == Rejection::None && ! older->project().devices.bands.hand.body
         && ! older->project().devices.bands.hand.air, "a file from before the bands imports with none set");
+    BandsFields<Touched> off; off.on = false;
+    ok (s.apply (command::EditDevice { 6, off }).rejection == Rejection::None, "PRECONDITION: the bands ticked off");
+    const auto unticked = s.exportProject();
+    ok (unticked.view().find ("[bands]\nbody.hand = 1.5\nair.hand = -2\non.hand = false\n") != std::string_view::npos,
+        "the file writes the tick after the gains");
+    auto again = placed();
+    ok (again->apply (command::ImportProject { 7, unticked.view() }).rejection == Rejection::None
+        && again->project().devices.bands.hand.on == std::optional<bool> (false) && sameBits (*again->project().devices.bands.hand.body, 1.5)
+        && ! again->snapshot().view().plan.devices.bands.on, "an import keeps the tick off and the gains under it");
+    ok (! copy->project().devices.bands.hand.on && copy->project().devices.bands.machine.on && copy->snapshot().view().plan.devices.bands.on,
+        "a file from before the tick imports with the machine's on: its gains sound");
+}
+
+// The snapshot's JSON after `edit` on a placed session.
+std::string gainsOffSnapshot (Session& s, const BandsFields<Touched>& edit)
+{
+    ok (s.apply (command::EditDevice { 30, edit }).rejection == Rejection::None, "PRECONDITION: the edit lands");
+    const auto v = s.snapshot();
+    const auto need = Codec::encodedBytes (v.view());
+    std::string out (std::size_t (need.bytes), '\0');
+    ok (Codec::encode (v.view(), out) == CodecStatus::Ok, "PRECONDITION: the snapshot encodes");
+    return out;
+}
+
+// Every `"on":<value>` member of the flat object that opens at or after `from` erased (with its comma): a ce92e20 record.
+std::size_t eraseOn (std::string& json, std::size_t from)
+{
+    const auto open = json.find ('{', from), close = json.find ('}', open);
+    const auto at = json.find ("\"on\":", open);
+    if (at == std::string::npos || at > close) return 0;
+    auto end = json.find_first_of (",}", at);
+    auto begin = at;
+    if (json[begin - 1] == ',') --begin; else if (json[end] == ',') ++end;
+    json.erase (begin, end - begin);
+    return 1;
+}
+
+void theTick()
+{
+    felitronics::test::group ("the tick: off takes the whole device out with its gains kept, on again sounds them, a revert gives the machine's on");
+    const auto r = detail::rules();
+    // THE CURVE: the bands off with gains are the curve without them; on, the gains move it.
+    Project plain;
+    plain.devices.hpf.hand = { true, 30.0, 24 }; plain.devices.tilt.hand = { true, 1.0 };
+    plain.devices.bands.machine.on = true;
+    Project with = plain;
+    for (std::size_t i = 0; i < 5; ++i) gainAt (with.devices.bands.hand, i) = i == 1 ? -1.5 : 2.5;
+    with.devices.bands.hand.on = false;
+    EqPoint a[kEqCurvePoints], b[kEqCurvePoints];
+    detail::eqCurve (with, r, 48000, a); detail::eqCurve (plain, r, 48000, b);
+    bool sameCurve = true, moved = false;
+    for (std::size_t i = 0; i < kEqCurvePoints; ++i) sameCurve = sameCurve && sameBits (a[i].db, b[i].db) && sameBits (a[i].hz, b[i].hz);
+    with.devices.bands.hand.on = true;
+    detail::eqCurve (with, r, 48000, a);
+    for (std::size_t i = 0; i < kEqCurvePoints; ++i) moved = moved || ! sameBits (a[i].db, b[i].db);
+    ok (sameCurve && moved, "off with gains: the curve without the bands, bit for bit; on again: the gains move it");
+    // THE KIT: off with gains draws what gains of 0 draw; a gain outside its domain is refused whatever the tick.
+    KitEq off;
+    off.hpf = detail::settingsOf (r, plain.devices.hpf); off.tilt = detail::settingsOf (r, plain.devices.tilt);
+    off.bands = detail::settingsOf (r, with.devices.bands); off.bands.on = false;
+    KitEq none = off;
+    for (std::size_t i = 0; i < 5; ++i) gainAt (none.bands, i) = 0.0;
+    EqPoint kitOff[kEqCurvePoints], kitNone[kEqCurvePoints];
+    bool kitSame = Kit::eqCurve (off, 48000, kitOff).status == CodecStatus::Ok && Kit::eqCurve (none, 48000, kitNone).status == CodecStatus::Ok;
+    for (std::size_t i = 0; i < kEqCurvePoints; ++i) kitSame = kitSame && sameBits (kitOff[i].db, kitNone[i].db) && sameBits (kitOff[i].db, b[i].db);
+    KitEq bad = off; bad.bands.mud = 0.5;
+    ok (kitSame && Kit::eqCurve (bad, 48000, kitOff).status == CodecStatus::Invalid,
+        "the kit: off with gains draws no band, and a gain outside its domain is still no preview");
+    // THE MASTER: off with gains is, sample for sample, the master without the bands; on again, the gains sound as set.
+    const auto master = [] (Session& s, CommandId id)
+    {
+        ok (s.apply (command::Master { id }).rejection == Rejection::None, "PRECONDITION: a master is asked");
+        for (unsigned i = 0; i < 4000000 && s.job(); ++i) (void) s.step (16);
+        const auto pcm = s.viewMaster (s.pendingMaster());
+        return std::vector<float> (pcm.begin(), pcm.end());
+    };
+    BandsFields<Touched> gains; gains.body = 3.0; gains.mud = -1.5; gains.air = 2.0;
+    BandsFields<Touched> gainsOff = gains; gainsOff.on = false;
+    BandsFields<Touched> on; on.on = true;
+    auto bare = placed(), set = placed(), toggled = placed();
+    const auto without = master (*bare, 20);
+    ok (set->apply (command::EditDevice { 20, gains }).rejection == Rejection::None, "PRECONDITION: the gains set");
+    const auto sounding = master (*set, 21);
+    ok (toggled->apply (command::EditDevice { 20, gainsOff }).rejection == Rejection::None, "PRECONDITION: the gains set, the tick off");
+    const auto bandsPlan = toggled->snapshot().view().plan.devices.bands;
+    const auto silent = master (*toggled, 21);
+    ok (! bandsPlan.on && bandsPlan.tick == TickFrom::Hand && ! without.empty() && silent.size() == without.size()
+        && std::memcmp (silent.data(), without.data(), without.size() * sizeof (float)) == 0,
+        "off with gains: the plan says it does not sound, and the master is the one without the bands, sample for sample");
+    auto back = placed();
+    ok (back->apply (command::EditDevice { 20, gainsOff }).rejection == Rejection::None && ! back->snapshot().view().plan.devices.bands.on
+        && back->apply (command::EditDevice { 21, on }).rejection == Rejection::None && sameBits (*back->project().devices.bands.hand.body, 3.0)
+        && back->snapshot().view().plan.devices.bands.on, "PRECONDITION: off, then on again, the gains kept");
+    const auto again = master (*back, 22);
+    ok (again.size() == sounding.size() && std::memcmp (again.data(), sounding.data(), sounding.size() * sizeof (float)) == 0
+        && std::memcmp (again.data(), without.data(), without.size() * sizeof (float)) != 0,
+        "on again: the master is the one the gains make without a tick ever written");
+    // THE REVERT: the tick goes back to the machine's, which is on.
+    BandsFields<Mark> tick; tick.on = true;
+    BandsFields<Touched> justOff; justOff.on = false;
+    auto reverted = placed();
+    ok (reverted->apply (command::EditDevice { 20, justOff }).rejection == Rejection::None
+        && reverted->snapshot().view().plan.devices.bands.tick == TickFrom::Hand, "PRECONDITION: the tick off by hand");
+    ok (reverted->apply (command::RevertEdits { 21, tick }).rejection == Rejection::None && ! reverted->project().devices.bands.hand.on
+        && reverted->snapshot().view().plan.devices.bands.tick == TickFrom::Machine
+        && detail::settingsOf (r, reverted->project().devices.bands).on, "a revert of the tick gives the machine's: on");
+    ok (toggled->apply (command::RevertEdits { 24, tick }).rejection == Rejection::None && ! toggled->project().devices.bands.hand.on
+        && toggled->snapshot().view().plan.devices.bands.on, "...and with gains by hand, they sound");
+    // A SNAPSHOT FROM BEFORE THE TICK (ce92e20: no "on" in [bands]) decodes with the machine's on and no tick by hand.
+    const auto view = gainsOffSnapshot (*placed(), gainsOff);
+    std::string old = view;
+    std::size_t erased = 0;
+    for (auto at = old.find ("\"bands\":{\"hand\":{"); at != std::string::npos; at = old.find ("\"bands\":{\"hand\":{", at + 1))
+    {
+        erased += eraseOn (old, at + 9);
+        erased += eraseOn (old, old.find ("\"machine\":{", at));
+    }
+    Snapshot decoded;
+    ok (erased >= 2 && Codec::decode (old, decoded) == CodecStatus::Ok && decoded.view().project.devices.bands.machine.on
+        && ! decoded.view().project.devices.bands.hand.on && sameBits (*decoded.view().project.devices.bands.hand.body, 3.0),
+        "a snapshot without the tick decodes: the machine's on, no tick by hand, the gains as written");
+    Snapshot current;
+    ok (Codec::decode (view, current) == CodecStatus::Ok && current.view().project.devices.bands.hand.on == std::optional<bool> (false),
+        "CONTROL: the snapshot with the tick decodes it off");
 }
 } // namespace
 
@@ -431,5 +561,6 @@ int main()
     aBandAtZeroIsNoBand();
     theKitAndTheNorm();
     theProjectFile();
+    theTick();
     return felitronics::test::report();
 }
