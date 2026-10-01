@@ -99,8 +99,8 @@ command-table cell between steps, stale completions, snapshot ownership, codec r
 `exportProject()` writes canonical TOML: defaults and core versions, target by name, manual mode, and only machine
 values that differ from defaults and touched human fields. `importProject()` uses felitronics-toml's schema reader,
 refuses unknown or invalid data with a position, and declares its size-based memory bound before parsing. The file's
-machine layer is always preserved with its original core stamp. Today's decisions appear beside it as a count fact and
-owned snapshot comparison rows, including for the same core. A fresh session plus the same source, measurement and project text restores the
+machine layer is always preserved. Today's decisions appear beside it as a count fact and owned snapshot comparison
+rows. A fresh session plus the same source, measurement and project text restores the
 project after facade poison or heap compaction. Revisions, job ids and kept masters are outside the project.
 
 What is fixed is the ground it stands on:

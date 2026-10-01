@@ -579,10 +579,6 @@ void readSaturation (Doc& d, Reader& in, Saturation& o)
     const R mix = readDomain (d, in, "mixDomain", o.mixDomain, R { 0.0, 1.0 });
     d.pair (in, "mixRange", o.mixRange, mix);
     in.required ("mix", o.mix, mix);
-    in.required ("outputStep", o.outputStep, R { 0.01, 6.0 });
-    const R output = readDomain (d, in, "outputDomain", o.outputDomain, R { -6.0, 0.0 });
-    d.pair (in, "outputRange", o.outputRange, output);
-    in.required ("outputDb", o.outputDb, output);
     in.required ("autoComp", o.autoComp, share());       // the core's domain
     in.required ("dcBlockHz", o.dcBlockHz, R { 0.0, 200.0 });
     in.table ("cut", Need::Required, [&] (Reader& t)

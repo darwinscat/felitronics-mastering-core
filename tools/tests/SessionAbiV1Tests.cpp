@@ -223,9 +223,7 @@ void directCapabilities()
     std::string machine (saved.view()); const auto hand = machine.find ("on.hand");
     ok (hand != machine.npos, "project control contains an authored activation");
     if (hand != machine.npos) machine.replace (hand, 7, "on.machine");
-    const auto core = machine.find ("core = \""); const auto end = machine.find ('"', core + 8);
-    machine.replace (core + 8, end - core - 8, "99.0.0");
-    ok (r.importProject (7, machine).rejection == Rejection::NotOffered, "a foreign core's project cannot activate an unoffered machine");
+    ok (r.importProject (7, machine).rejection == Rejection::NotOffered, "a file's machine layer cannot activate an unoffered device");
 }
 void guards()
 {

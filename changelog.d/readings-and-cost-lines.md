@@ -15,6 +15,6 @@
   (94), the limiter's median and P95 over the active windows (95), the shares it worked in and that were active (96),
   the impact loss of the four bands (97, also with a late crest join). Russian first, then English.
 - **On the wire** a reading is `{"fact": WireFact, "kind": n}`; the schema learns the enum `ReadingKind`, and both
-  lists are optional. The decoder refuses an unknown kind. `BoundedList` moves to `Measurements.h` (no change of shape).
+  lists are on the wire like any field. The decoder refuses an unknown kind. `BoundedList` moves to `Measurements.h` (no change of shape).
 - The recordings move by the new lists and facts alone, with their hashes and the memory counts. The event pins move by
   the five cost lines alone (without them the old pins hold, checked). No ABI or version change.

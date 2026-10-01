@@ -14,6 +14,6 @@
   says `loudestLowNote = "reading"` (owner decision: the loudest bass note is a number the file shows, it does not tint
   the Low end block). Nothing else in the style table moves.
 - **On the wire** a line is `{"fact": WireFact, "kind": n}`; the schema learns the enum `ObservationKind`, and
-  `observationFacts` is optional (a snapshot without it decodes as no lines). The decoder refuses an unknown fact id or
+  `observationFacts` is a field like any other. The decoder refuses an unknown fact id or
   kind. The config's version moves with `engine.toml`: the recordings move with it, with the snapshot JSON and the
   memory counts, and by nothing else.

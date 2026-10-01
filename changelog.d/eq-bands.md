@@ -12,16 +12,16 @@
   untick writes all five slots as no band, so the stage, `eqCurve` and the master are those of a project without the
   bands, bit for bit; ticked on again, the same gains sound. The plan's `bands.on` is true where the device is on and any
   band is not 0. `EditDevice` / `RevertEdits` take `on` (a revert gives the machine's on); the project file writes
-  `on.hand` after the gains; the codec decodes an older snapshot or project with the machine's on and no tick by hand.
+  `on.hand` after the gains.
 - **Everything a device gets**: `EditDevice` / `RevertEdits` alternatives (a gain outside its domain refused
   `OutOfDomain` on its own field, named by the new terms `FieldBandsBody` … `FieldBandsAir`; the device's term
   `DeviceBands`, ru «Полосы EQ»: «Тело», «Грязь», «Вперёд», «Яркость», «Воздух»), the project file's `[bands]`, the
-  codec (`Devices.bands`, `DevicePlans.bands`, defaults for older snapshots), the summed `eqCurve` and the kit's curve.
+  codec (`Devices.bands`, `DevicePlans.bands`), the summed `eqCurve` and the kit's curve.
 - **Capabilities**: `FC_SESSION_DEVICE_EQ_BANDS` (256); `FC_SESSION_DEVICES_ALL` keeps the eight devices before it, so a
   shell that does not know the bands is not offered them. C++ `kAllDevices` is all nine.
 - **Kit**: the five gains are kit fields (`FC_SESSION_KIT_FIELD_BANDS_*`, travel, parse, no heat window);
   `fc_kit_eq_curve_bands` takes `FC_SESSION_KIT_EQ_BANDS_PARAMS` (13) — the seven of `fc_kit_eq_curve`, the five
-  gains and the bands' tick (0/1; off draws no band, the gains still checked against their domain). Appended to the v1 manifest; `FC_SESSION_ABI_VERSION` is unchanged (the release moves it).
+  gains and the bands' tick (0/1; off draws no band, the gains still checked against their domain). In the v0.6.0 manifest base (`FC_SESSION_ABI_VERSION` 4).
 - **The glue's P95 point**: `GlueFinding::p95DetectorDb`, the input's short-term P95 on the detector's scale (P95 +
   `[glue] detectorOverP95Db`) — the level the threshold stands on and where the static curve takes `upToDb`, for the
   transfer curve's dot. Set whenever the threshold is.

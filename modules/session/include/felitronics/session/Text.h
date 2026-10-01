@@ -98,10 +98,7 @@ enum class FactId : std::uint16_t
     LoudestLowNote = 5,      // the loudest note of the low end: {note}
     WideBass = 6,            // the bass is wide (side {side}) — the warning of phase 1
     RateAboveLimit = 7,      // the file's rate {rate} is above what this platform takes, {limit} (select on platform)
-    MachineDifferences = 8,  // {count}: the saved machine layer is retained
-    DefaultsConverted = 9,   // RETIRED: no message and no shape — nothing converts a project (an import accepts only the
-                             // current defaults label), so nothing states it. The id stays reserved and is never reused.
-    SameCoreMachineDifferences = 10, // {count}: same-core differences usually indicate a hand-edited file
+    MachineDifferences = 8,  // {count}: where today's planner differs from the file's machine layer, which is kept
     MasterLandingMiss = 11,
     MasterHintSubBass = 12,
     MasterHintPeaks = 13,
@@ -227,7 +224,6 @@ enum class FactId : std::uint16_t
     RejectedProjectType = 124,
     RejectedProjectUnknownKey = 125,
     RejectedUnknownDefaults = 126,
-    RejectedProjectCore = 127,
     RejectedNewerDefaults = 128,
     RejectedRateAboveLimit = 129,
     RejectedMemory = 130,
@@ -338,7 +334,6 @@ enum class Term : std::uint16_t
     FieldGlueUpToDb = 9,
     FieldSaturationDrive = 10,
     FieldSaturationMix = 11,
-    FieldSaturationOutput = 12,
     FieldTiltDb = 13,
     FieldLimiterNeedles = 14,
     FieldLimiterNeedlesDb = 15,

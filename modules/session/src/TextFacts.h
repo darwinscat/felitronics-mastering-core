@@ -17,8 +17,9 @@
 //
 // ADDING A FACT: a FactId in <felitronics/session/Text.h> with the next number of its range, its row here (in id order),
 // and its message in every language the catalog declares — the build is red until all three agree.
-// RETIRING A FACT: its row here and its message go; its FactId stays (the ABI manifest freezes it), marked retired, and
-// no other fact ever takes its number. A retired id renders as its number and the snapshot decoder refuses it.
+// A FACT THAT LEAVES: its row here, its message and its FactId go, and no other fact ever takes its number (the ids are
+// append-only from the ABI manifest's declared base). An id that names nothing renders as its number and the snapshot
+// decoder refuses it.
 
 #include <felitronics/session/Text.h>
 
@@ -61,8 +62,6 @@ inline constexpr FactShape kFacts[] = {
       { { { "rate", ArgKind::Value, {} }, { "limit", ArgKind::Value, {} }, { "platform", ArgKind::Term, "platform" } } },
       3 },
     { FactId::MachineDifferences, "machineDifferences", { { { "count", ArgKind::Count, {} } } }, 1 },
-    // DefaultsConverted (9) is retired: no row, no message; the id stays reserved.
-    { FactId::SameCoreMachineDifferences, "sameCoreMachineDifferences", { { { "count", ArgKind::Count, {} } } }, 1 },
     { FactId::MasterLandingMiss, "masterLandingMiss", { { { "achieved", ArgKind::Value, {} }, { "target", ArgKind::Value, {} }, { "gap", ArgKind::Value, {} } } }, 3 },
     { FactId::MasterHintSubBass, "masterHintSubBass", { { { "share", ArgKind::Value, {} } } }, 1 },
     { FactId::MasterHintPeaks, "masterHintPeaks", { { { "reduction", ArgKind::Value, {} } } }, 1 },
@@ -182,7 +181,6 @@ inline constexpr FactShape kFacts[] = {
     { FactId::RejectedProjectType, "rejectedProjectType", {}, 0 },
     { FactId::RejectedProjectUnknownKey, "rejectedProjectUnknownKey", {}, 0 },
     { FactId::RejectedUnknownDefaults, "rejectedUnknownDefaults", {}, 0 },
-    { FactId::RejectedProjectCore, "rejectedProjectCore", {}, 0 },
     { FactId::RejectedNewerDefaults, "rejectedNewerDefaults", {}, 0 },
     { FactId::RejectedRateAboveLimit, "rejectedRateAboveLimit", {}, 0 },
     { FactId::RejectedMemory, "rejectedMemory", {}, 0 },
@@ -288,7 +286,6 @@ inline constexpr TermShape kTerms[] = {
     { Term::FieldGlueUpToDb, "field", "glueUpToDb" },
     { Term::FieldSaturationDrive, "field", "saturationDrive" },
     { Term::FieldSaturationMix, "field", "saturationMix" },
-    { Term::FieldSaturationOutput, "field", "saturationOutput" },
     { Term::FieldTiltDb, "field", "tiltDb" },
     { Term::FieldLimiterNeedles, "field", "limiterNeedles" },
     { Term::FieldLimiterNeedlesDb, "field", "limiterNeedlesDb" },
@@ -435,10 +432,11 @@ inline constexpr std::size_t kTermCount = sizeof (kTerms) / sizeof (kTerms[0]);
         if ((i > 0 && (std::size_t) kFacts[i].id <= (std::size_t) kFacts[i - 1].id) || kFacts[i].argCount > Fact::kMaxArgs)
             return false;
     for (std::size_t i = 0; i < kTermCount; ++i)
-        if ((std::size_t) kTerms[i].id != i + 1) return false;
+        if ((std::size_t) kTerms[i].id <= (i > 0 ? (std::size_t) kTerms[i - 1].id : 0)) return false;
     return true;
 }
-static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in order, from 1, with no gap");
+// Both ascend by id; an id may name nothing (a fact or term left, the ids after it keep their numbers).
+static_assert (tablesInOrder(), "kFacts and kTerms ascend by id");
 
 // The shape of a fact, or null for an id the table does not have: a binary search over the ascending ids.
 [[nodiscard]] constexpr const FactShape* shapeOf (FactId id) noexcept
@@ -455,8 +453,15 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
 }
 [[nodiscard]] constexpr const TermShape* shapeOf (Term id) noexcept
 {
-    const auto i = (std::size_t) id;
-    return i >= 1 && i <= kTermCount ? &kTerms[i - 1] : nullptr;
+    std::size_t low = 0, high = kTermCount;
+    while (low < high)
+    {
+        const std::size_t middle = low + (high - low) / 2;
+        if (kTerms[middle].id == id) return &kTerms[middle];
+        if ((std::size_t) kTerms[middle].id < (std::size_t) id) low = middle + 1;
+        else high = middle;
+    }
+    return nullptr;
 }
 
 //==============================================================================
@@ -494,7 +499,6 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Rejection::ProjectType: return FactId::RejectedProjectType;
         case Rejection::ProjectUnknownKey: return FactId::RejectedProjectUnknownKey;
         case Rejection::UnknownDefaults: return FactId::RejectedUnknownDefaults;
-        case Rejection::ProjectCore: return FactId::RejectedProjectCore;
         case Rejection::RateAboveLimit: return FactId::RejectedRateAboveLimit;
         case Rejection::Contract: return FactId::RejectedContract;
         case Rejection::OutputPending: return FactId::RejectedOutputPending;
@@ -530,8 +534,8 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Device::Hpf: return at ({ Term {}, Term::FieldHpfFq, Term::FieldHpfSlope });
         case Device::MonoBass: return at ({ Term {}, Term::FieldMonoBassFq, Term::FieldMonoBassWidth });
         case Device::Glue: return at ({ Term {}, Term::FieldGlueUpToDb });
-        case Device::Saturation: return at ({ Term {}, Term::FieldSaturationDrive, Term::FieldSaturationMix,
-                                              Term::FieldSaturationOutput, Term::FieldSaturationType });
+        case Device::Saturation: return at ({ Term {}, Term::FieldSaturationDrive, Term::FieldSaturationMix, Term {},
+                                              Term::FieldSaturationType });
         case Device::Tilt: return at ({ Term {}, Term::FieldTiltDb });
         case Device::Limiter: return at ({ Term::FieldLimiterNeedles, Term::FieldLimiterNeedlesDb });
         case Device::Dither: return at ({ Term {} });

@@ -25,8 +25,8 @@
 //
 // THE MACHINE'S LAYER is the planner's (src/Planner.h): each device proposes its fields from the target, the source and
 // what it may measure, starting from the config's defaults (src/Devices.h). It is placed when the first measurement ends
-// and again on a change of target, and it is at its types' zeros before. An imported layer from any core retains its
-// saved values; where the planner would decide otherwise is exposed by the snapshot, and adoptMachine takes it.
+// and again on a change of target, and it is at its types' zeros before. An imported layer retains its saved
+// values; where the planner would decide otherwise is exposed by the snapshot, and adoptMachine takes it.
 //
 // The units, knob domains and slider hints are the config's (modules/session/config/engine.toml, the section of each device);
 // they are not repeated here.
@@ -91,15 +91,14 @@ template <template <class> class F> struct GlueFields
 // Tube, Transistor, Transformer, Tape. Atan, Cubic and Asym stay the config's (research): a hand edit refuses them.
 enum class SaturationType : std::uint8_t { Tanh, Atan, Cubic, Asym, Tube, Transistor, Transformer, Tape };
 
-// [saturation]: the drive, dB from the programme's peak; the mix, 0…1; the output, dB; the type (a person's choice only:
+// [saturation]: the drive, dB from the programme's peak; the mix, 0…1; the type (a person's choice only:
 // the machine never picks one).
 template <template <class> class F> struct SaturationFields
 {
     F<bool> on {};
     F<double> drive {};
     F<double> mix {};
-    F<double> output {};
-    F<SaturationType> type {};
+    F<SaturationType> type {};   // field 4 (3, the output, left in v0.6.0: the landing undid any trim)
 };
 
 // [tilt]: the tilt, dB.
@@ -179,12 +178,10 @@ struct MachineDifference
     std::uint8_t field = 0;
     double fileValue = 0.0, coreValue = 0.0;
 };
-inline constexpr std::size_t kDeviceFields = 26;
+inline constexpr std::size_t kDeviceFields = 25;
 
 struct Project
 {
-    // The release that placed the machine layer. Import preserves it until a new placement.
-    Version core {};
     // The target: a row of [targets] in targets.toml, counted in the order the rows are written (the session's
     // targetName() gives its key), and a person's edits of its numbers.
     std::uint16_t target = 0;

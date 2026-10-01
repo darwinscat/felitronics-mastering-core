@@ -60,7 +60,6 @@ void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channel
     sat.on = rules.clipper;
     sat.drive = number (rules.driveDefault);
     sat.mix = number (rules.mixDefault);
-    sat.output = number (rules.outputDefault);
     // The machine never picks a type: its layer holds the config's, which the build checked is one of the eight.
     const auto type = saturationTypeNamed (rules.shapeDefault);
     if (! type) storageOverflow();

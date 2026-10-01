@@ -241,7 +241,7 @@ void writeDynamics (const PlanInputs& in, const Devices& devices, mastering::Mas
     s.driveDb = float (shaped.driveDb.value_or (0.0));
     s.bias = float (number (saturation.find ("bias")));
     s.mix = float (settings.mix);
-    s.outputDb = float (settings.output);
+    s.outputDb = 0.0f;   // neutral: the landing sets the level before the limiter, so a trim here would be undone
     s.autoComp = float (number (saturation.find ("autoComp")));
     s.dcBlockHz = float (number (saturation.find ("dcBlockHz")));
     params.bypassClipper = ! shaped.active;

@@ -130,10 +130,9 @@ std::unique_ptr<Session> placedShort()
     ok (s->column() == Column::Measured2 && s->snapshot().view().plan.status == PlanStatus::Ready, "PRECONDITION: placed, the plan ready");
     return s;
 }
-std::string version (Version v) { return std::to_string (v.major) + '.' + std::to_string (v.minor) + '.' + std::to_string (v.patch); }
-std::string projectText (std::string_view core, std::string_view sections)
+std::string projectText (std::string_view sections)
 {
-    return "defaults = \"" + std::string (*detail::rules().engine.find ("defaults").string()) + "\"\ncore = \"" + std::string (core)
+    return "defaults = \"" + std::string (*detail::rules().engine.find ("defaults").string())
          + "\"\nmanual = false\n\n[target]\nname = \"allStreaming\"\n" + std::string (sections);
 }
 bool factIn (const Session& s, text::FactId id, std::int64_t count)
@@ -768,12 +767,10 @@ void oneNeedOneMeasurement()
 
 void anImportKeepsTheFilesMachine()
 {
-    felitronics::test::group ("an import keeps the file's machine layer, same core or another; adoptMachine takes the planner's; a person's layer stays");
-    for (const bool foreign : { false, true })
+    felitronics::test::group ("an import keeps the file's machine layer; adoptMachine takes the planner's; a person's layer stays");
     {
         auto sp = placedShort(); auto& s = *sp;
-        const auto core = foreign ? std::string ("0.0.1") : version (Session::version());
-        const auto file = projectText (core, "\n[hpf]\nfq.machine = 36\n\n[tilt]\ndb.hand = 1.25\n");
+        const auto file = projectText ("\n[hpf]\nfq.machine = 36\n\n[tilt]\ndb.hand = 1.25\n");
         const auto revision = s.revision();
         ok (s.apply (command::ImportProject { 2, file }).rejection == Rejection::None && s.revision() == revision + 1, "the file imports");
         const auto v = s.snapshot();
@@ -781,8 +778,7 @@ void anImportKeepsTheFilesMachine()
         ok (v.view().machineDifferences.size() == 1 && v.view().machineDifferences[0].device == Device::Hpf
             && v.view().machineDifferences[0].field == 1 && same (v.view().machineDifferences[0].fileValue, 36.0)
             && same (v.view().machineDifferences[0].coreValue, 32.0), "the planner's decision beside it: one difference, the high-pass at its 32 Hz floor");
-        ok (factIn (s, foreign ? text::FactId::MachineDifferences : text::FactId::SameCoreMachineDifferences, 1),
-            foreign ? "another core: the difference is announced" : "the same core: announced as a hand-edited file");
+        ok (factIn (s, text::FactId::MachineDifferences, 1), "the difference is announced");
         Answer adopt;
         const auto spent = declared::spend ([&] { adopt = s.apply (command::AdoptMachine { 3 }); });
         ok (adopt.rejection == Rejection::None && s.revision() == revision + 2, "adoptMachine is taken");
@@ -850,12 +846,12 @@ void aTouchedDeviceSounds()
                 std::size_t fields = 0, tick = 0;
                 detail::DeviceOf<Fields>::each (r, [&] (std::uint8_t i, const detail::FieldRule&, const auto& hand)
                 {
-                    ++fields;
+                    fields = std::size_t (i) + 1;
                     if (static_cast<const void*> (&hand) == static_cast<const void*> (&layers.hand.on)) tick = i;
                 }, layers.hand);
                 for (std::size_t touch = 0; touch < fields; ++touch)
                 {
-                    if (touch == tick) continue;
+                    if (touch == tick || (std::is_same_v<Fields, SaturationFields<Value>> && touch == 3)) continue;   // 3 names nothing
                     layers.hand = {};
                     detail::DeviceOf<Fields>::each (r, [&] (std::uint8_t i, const detail::FieldRule&, auto& hand, const auto& value)
                     { if (i == touch) hand = value; }, layers.hand, layers.machine);
@@ -876,7 +872,7 @@ void aTouchedDeviceSounds()
     // THE PLAN'S EXAMPLE: `[tilt] db.hand = 3`, no tick written, sounds.
     auto sp = placedShort(); auto& s = *sp;
     const auto flat = s.snapshot();
-    const auto example = projectText (version (Session::version()), "\n[tilt]\ndb.hand = 3\n");
+    const auto example = projectText ("\n[tilt]\ndb.hand = 3\n");
     ok (s.apply (command::ImportProject { 2, example }).rejection == Rejection::None && ! s.project().devices.tilt.machine.on
         && ! s.project().devices.tilt.hand.on, "PRECONDITION: the project carries the knob alone; the machine's tilt is off");
     const auto v = s.snapshot();

@@ -69,7 +69,6 @@ const Knob* knobOf (const Rules& r, Term field) noexcept
     if (field == Term::FieldGlueUpToDb) return &r.glue;
     if (field == Term::FieldSaturationDrive) return &r.drive;
     if (field == Term::FieldSaturationMix) return &r.mix;
-    if (field == Term::FieldSaturationOutput) return &r.output;
     if (field == Term::FieldTiltDb) return &r.tilt;
     if (field == Term::FieldLimiterNeedlesDb) return &r.needles;
     if (field == Term::FieldLowDb) return &r.low;

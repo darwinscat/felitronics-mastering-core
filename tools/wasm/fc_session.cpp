@@ -1080,7 +1080,6 @@ static_assert (FC_SESSION_KIT_FIELD_MONO_BASS_WIDTH == unsigned (text::Term::Fie
 static_assert (FC_SESSION_KIT_FIELD_GLUE_UP_TO_DB == unsigned (text::Term::FieldGlueUpToDb));
 static_assert (FC_SESSION_KIT_FIELD_SATURATION_DRIVE == unsigned (text::Term::FieldSaturationDrive));
 static_assert (FC_SESSION_KIT_FIELD_SATURATION_MIX == unsigned (text::Term::FieldSaturationMix));
-static_assert (FC_SESSION_KIT_FIELD_SATURATION_OUTPUT == unsigned (text::Term::FieldSaturationOutput));
 static_assert (FC_SESSION_KIT_FIELD_TILT_DB == unsigned (text::Term::FieldTiltDb));
 static_assert (FC_SESSION_KIT_FIELD_LIMITER_NEEDLES_DB == unsigned (text::Term::FieldLimiterNeedlesDb));
 static_assert (FC_SESSION_KIT_FIELD_LOW_DB == unsigned (text::Term::FieldLowDb));

@@ -38,7 +38,7 @@ struct MeasurementQuery
     std::uint32_t columns = 512;
     std::uint64_t requestId = 0;
     double crossoverHz = 120, fromHz = 20, toHz = 250;
-    std::uint32_t masterId = 0; // required for LimiterGr and PeakClipGr; absent in baseline source queries
+    std::uint32_t masterId = 0; // required for LimiterGr and PeakClipGr; absent in a source query
     SpectrumQuantity spectrum = SpectrumQuantity::Density;   // LowSpectrum alone reads it
 };
 struct QueryView

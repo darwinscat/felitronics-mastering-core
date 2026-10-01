@@ -158,10 +158,8 @@ Rules readRules (View targets, View engine) noexcept
     const View sat = engine.find ("saturation");
     r.knob (sat.find ("driveRange"), sat.find ("driveStep"), sat.find ("driveDomain"), out.drive);
     r.knob (sat.find ("mixRange"), sat.find ("mixStep"), sat.find ("mixDomain"), out.mix);
-    r.knob (sat.find ("outputRange"), sat.find ("outputStep"), sat.find ("outputDomain"), out.output);
     r.read (sat.find ("driveDb"), out.driveDefault);
     r.read (sat.find ("mix"), out.mixDefault);
-    r.read (sat.find ("outputDb"), out.outputDefault);
     if (const auto shape = sat.find ("shape").string()) out.shapeDefault = *shape;
 
     const View tilt = engine.find ("tilt");

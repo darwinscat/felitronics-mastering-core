@@ -265,9 +265,7 @@ only), forward (bell, 3 kHz), brightness (high shelf, 8 kHz) and air (high shelf
 it before the device). Its tick (`on`, field 5, appended after the gains) takes the whole device in or out with the gains
 kept: the machine's layer is always on (even where the shell does not offer the bands), a person may untick it, and off
 writes all five slots as no band — the stage, the curve and the master of a project without the bands, bit for bit. The
-plan says the device sounds where it is on and any band is not 0; an older snapshot or project file decodes with the
-machine's on and no tick by hand. No norm advice
-and no dynamics this release; the curve's `[eq] curve.warnDb` judges the shelves of tilt and low only
+plan says the device sounds where it is on and any band is not 0. No norm advice and no dynamics this release; the curve's `[eq] curve.warnDb` judges the shelves of tilt and low only
 (`felitronics_session_eq_bands_tests`).
 Dither is offered through 16 bits, and mono bass except on a mono source; the shell may exclude any device.
 
@@ -540,7 +538,7 @@ fallback tempo and a release held at a limit as facts.
 The saturation is the chain's shaper stage (`MasteringChainParams::clipper`) — not the peak clipper inside the limiter,
 which is the limiter's. The machine never sets it. The knob is the drive the input would get at 0 dBTP: the core drives
 the shaper at k = 10^(drive/20) − 1, so the stage gets `20·log10(1 + (10^(knob/20) − 1)·10^(−peak/20))` for the
-normalised true peak — no trial render; the compensation is 0, mix and output as set (`plan.saturation`). Its TYPE is
+normalised true peak — no trial render; the compensation is 0, the mix as set, the shaper's output at 0 dB (`plan.saturation`). Its TYPE is
 the shaper's curve (`SaturationFields::type`, felitronics-core's `WaveShaper::Shape`): the machine's layer holds the
 config's `[saturation] shape`, tape (owner, 01.10; tanh before), and never another — so a hand drive with no type
 picked sounds tape; a person picks tanh, tube, transistor, transformer or tape, and
@@ -599,8 +597,7 @@ placed project is exportable while what its devices read still ends: its machine
 Files and browser storage belong to the shell. The writer reads no filesystem and the session reads no file itself.
 
 ```toml
-defaults = "2026-09"
-core = "0.5.0"
+defaults = "2026-10"
 manual = true
 
 [target]
@@ -668,20 +665,17 @@ another one, so the core carries no code for older labels). Any other label — 
 planner, included — is refused whole as `UnknownDefaults` (fact 126), as is a malformed one; a newer label is
 `NewerDefaults` (28, fact 128). These refusals follow the schema read, in its fixed order, and leave state and revision
 unchanged. `ProjectTests.cpp:defaultsVersions` names `2026-10` and turns red if it stops opening with its own machine
-layer. Fact `DefaultsConverted` (9) is retired: nothing converts, so its row and message are gone; the id stays
-reserved (the ABI manifest freezes it, and no other fact takes it), renders as its number and is refused by the
-snapshot decoder. Export uses the current label.
+layer. Export uses the current label. The file carries no core stamp: a `core` key is an unknown key
+(`ProjectUnknownKey`).
 
 After defaults selection, the file's complete machine layer always wins (omitted fields mean defaults),
-with the person's touched layer over it — on the same core and on another. The planner decides again beside it, for
-the file's target on this source; `plan.fromFile` says the layer is the file's, and `adoptMachine` takes the planner's
-decisions in its place, the person's layer kept. `MachineDifferences` (8) publishes the
-count for a foreign core, including zero; `SameCoreMachineDifferences` (10) publishes nonzero same-core differences
-and politely explains that these usually indicate a project file edited by hand. Both facts render in Russian and English.
+with the person's touched layer over it. The planner decides again beside it, for the file's target on this source;
+`plan.fromFile` says the layer is the file's, and `adoptMachine` takes the planner's decisions in its place, the
+person's layer kept. `MachineDifferences` (8) publishes the count of differences between the file's machine layer and
+today's planner, however they arose, when there are any; it renders in Russian and English.
 `snapshot().view().machineDifferences` holds ordered `(device, field, fileValue, coreValue)` rows. Flags use 0/1,
 choices their enum numbers, and knobs their doubles. Owned snapshots, the codec and its generated `.d.ts` carry them.
-Export preserves the stamp of the core whose machine decisions the file carries. A target change explicitly places
-today's machine, stamps this core and clears the comparison. Hand edits and panel visibility do not replace it.
+A target change explicitly places today's machine and clears the comparison. Hand edits and panel visibility do not replace it.
 
 The page draws **`snapshot().view().eqCurve`**: the summed high-pass + tilt + low response using hand-over-machine
 values, independent of panel visibility. It is empty before placement, then contains 128 logarithmic `(hz, db)` points
@@ -1214,8 +1208,22 @@ floors rather than values — a boundary struct's size and `FC_SESSION_ABI_VERSI
 of additions that lands together in one release moves it up by one and adds one row to the header's VERSION HISTORY; a
 lower number is a change. The generated `snapshot.d.ts` and `snapshot.mjs` state the version read from the header. The wire's
 `SessionStatus` union is read from `fc_session_status` by both generators, and a wire record that mirrors a C struct
-(`SessionCapabilities`) must carry each of its fields. The manifest itself only grows: on a pull request CI compares it
-with the base branch's (`tools/session-abi-append-only.mjs`), and a removed or edited line is red.
+(`SessionCapabilities`) must carry each of its fields. The manifest itself only grows from its declared base: its line
+`base v0.6.0` names the release it starts from, and on a pull request CI compares it with the base branch's
+(`tools/session-abi-append-only.mjs`). Under the same declared base a removed or edited line is red; a manifest that
+declares an older base, or drops the declaration, is red; one that declares a newer base starts the surface anew, once —
+after it lands both sides declare it and append-only holds again.
+
+**The one reset: v0.6.0 (`FC_SESSION_ABI_VERSION` 4, owner, 2026-10-01).** No project, snapshot or file of an older
+version exists anywhere, the page has no project export, and the core's one consumer (the site) vendors the exact core —
+so the manifest starts from a new base instead of carrying entries for data that never existed. What left it: the
+project file's core stamp (`Project.core`, the `Version` record, `Rejection::ProjectCore` 27 and its fact 127), the
+facts `DefaultsConverted` (9) and `SameCoreMachineDifferences` (10) — `MachineDifferences` (8) is the one fact for the
+differences between a file's machine layer and today's planner, however they arose — and the saturation's output knob
+(`SaturationFields.output`, field 3; the term `FieldSaturationOutput` 12 and its kit constant): the landing sets the gain
+before the limiter, so any trim was undone. Live ids keep their numbers — 27, 9, 10, 127, 12 and the saturation's
+field 3 now name nothing — and the snapshot and event fixtures in the manifest are the current ones. The base also takes
+the capabilities struct at its current 40 bytes (`leanSummary` at 32) and the version floor at 4.
 
 `tools/wasm/build.sh` builds `fcsession` from the facade and `modules/session/sources.txt`, audits the exact export list,
 compares node/web wasm bytes, checks for threads, and runs a node scenario through the ABI and generated types.
@@ -1259,7 +1267,7 @@ C++, the way a desktop application does.
 Knob travel and step describe the shell's slider. Commands and project import accept the domains below, including
 values between steps and beyond travel. An empty edit or revert is accepted with unchanged revision. Device edits
 require placement and an offered device. Panel visibility does not gate them. Low is offered on every target,
-saved machine layers are retained for every core stamp, and any defaults label but the current one is refused.
+a file's machine layer is retained, and any defaults label but the current one is refused.
 
 | Knob | Accepted domain | Reason |
 | --- | --- | --- |
@@ -1269,7 +1277,7 @@ saved machine layers are retained for every core stamp, and any defaults label b
 | HPF slope | Multiples of 6, 6 through 96 dB/oct | Device, orders 1–16 |
 | Mono-bass frequency / width | 60–300 Hz / 0–1 | Product / device |
 | Glue | 0–6 dB | Product |
-| Saturation drive / mix / output | 0–12 dB / 0–1 / −6–0 dB | Product / device / product |
+| Saturation drive / mix | 0–12 dB / 0–1 | Product / device |
 | Saturation type (by hand) | tanh, tube, transistor, transformer, tape | Product |
 | Tilt / low | −6–6 dB | Product |
 | Needles above ceiling | 0–6 dB | Product |
@@ -1482,13 +1490,11 @@ mean power minus 42 dB. Building the mask reads saved powers, never PCM a second
 Only measurement statuses and mandatory input warnings are emitted here; device decisions and
 other findings remain separate. Uncertain lowest-note evidence requests the safe target HPF floor.
 
-Snapshot fields appended after frozen v1 are optional on decode. Their defaults are declared in
-`tools/session-codec-schema.json` and emitted in the generated declarations: no results, zero byte counts
-and identities, null need/ceiling, zero progress in Stream, false flags and Empty resume state.
-Missing readiness or placement flags convey no known readiness or placement. Present fields still require
-valid types; required frozen fields stay required. Appended event metadata and reading fields are also
-optional in transport declarations with documented conservative defaults. The generator refuses an
-appended field without a decode default. The frozen snapshot and event fixtures hold backward acceptance.
+Every snapshot and event field is required on decode: a snapshot never persists (the page and the core ship together),
+so a missing key is a decode error, and a field that is semantically optional is nullable and present. Only a request's
+own optional fields keep a declared default — a query's `masterId`, `crossoverHz`, `fromHz`, `toHz` and `spectrum`, an
+edit's or a revert's tick and type — and `SessionCapabilities.leanSummary`, the field appended to the size-prefixed C
+struct (law 12: a boundary struct grows by appending, and its shorter size states the field's default).
 
 The table distinguishes measured sources whose devices are not placed or whose plan waits, including master and
 stopped overlays. Mastering depends on measurements (and, with the panel open, on the plan); edit, revert, import and

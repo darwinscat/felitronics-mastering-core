@@ -6,7 +6,6 @@
 #include "Devices.h"
 #include "FpEnvironmentControl.h"
 #include "Grid.h"
-#include "SnapshotV1Fixture.h"
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/toml/Toml.h>
 #include <felitronics_test.h>
@@ -35,14 +34,14 @@ std::string version (Version v)
 {
     return std::to_string (v.major) + '.' + std::to_string (v.minor) + '.' + std::to_string (v.patch);
 }
-std::string header (bool manual = true, std::string_view core = {})
+std::string header (bool manual = true)
 {
-    return "defaults = \"" + std::string (*detail::rules().engine.find ("defaults").string()) + "\"\ncore = \""
-         + (core.empty() ? version (Session::version()) : std::string (core)) + "\"\nmanual = " + (manual ? "true\n" : "false\n");
+    return "defaults = \"" + std::string (*detail::rules().engine.find ("defaults").string()) + "\"\nmanual = "
+         + (manual ? "true\n" : "false\n");
 }
-std::string project (bool manual = true, std::string_view core = {})
+std::string project (bool manual = true)
 {
-    return header (manual, core) + "\n[target]\nname = \"allStreaming\"\n";
+    return header (manual) + "\n[target]\nname = \"allStreaming\"\n";
 }
 std::unique_ptr<Session> fresh (unsigned units = 10)
 {
@@ -132,7 +131,7 @@ void sparseSections()
     const auto hand = project() + "\n[hpf]\nfq.hand = 32\n";
     ok (import (*s, hand).rejection == Rejection::None && exported (*s) == hand,
         "an equal touched hand alone retains exactly its device section");
-    const auto machine = project (false, "0.0.1") + "\n[hpf]\nfq.machine = 36\n";
+    const auto machine = project (false) + "\n[hpf]\nfq.machine = 36\n";
     ok (import (*s, machine).rejection == Rejection::None && exported (*s) == machine,
         "a machine difference alone retains exactly its device section");
 }
@@ -150,7 +149,7 @@ void defaultsVersions()
         "the carried defaults version is accepted as it is");
     // THE CURRENT LABEL IS THE ONLY ONE THAT OPENS (owner, 30.09), with the file's machine layer as the file's and its
     // differences shown beside it.
-    ok (import (*s, withDefaults (project (true, "0.0.1") + "\n[hpf]\nfq.machine = 37\n", "2026-10")).rejection == Rejection::None
+    ok (import (*s, withDefaults (project (true) + "\n[hpf]\nfq.machine = 37\n", "2026-10")).rejection == Rejection::None
         && s->snapshot().view().plan.fromFile && detail::same (s->project().devices.hpf.machine.fq, 37.0)
         && s->events().size() == 1 && s->events()[0].payload.fact.view().id == text::FactId::MachineDifferences,
         "2026-10: the file's machine cutoff of 37 Hz is kept, as the file's, with its comparison");
@@ -159,7 +158,7 @@ void defaultsVersions()
     const auto open = exported (*s);
     const auto revision = s->revision();
     for (const auto older : { "2026-09", "2020-01", "2025-12", "2026-01" })
-        for (const auto& body : { project (true, "0.0.1") + "lufs.hand = -12.5\n\n[hpf]\nfq.machine = 37\nfq.hand = 40\n",
+        for (const auto& body : { project (true) + "lufs.hand = -12.5\n\n[hpf]\nfq.machine = 37\nfq.hand = 40\n",
                                   project() + "\n[hpf]\nfq.hand = 36\n", project (false) })
         {
             const auto file = withDefaults (body, older);
@@ -228,9 +227,10 @@ void roundTrip()
     av.plan.fromFile = true;
     ok (json (av) == json (bv), "both complete project layers and measured state survive round trip");
 
-    const auto inlineFile = "manual = true\ncore = \"" + version (Session::version()) + "\"\ndefaults = \""
+    const auto inlineFile = "manual = true\ndefaults = \""
         + std::string (*detail::rules().engine.find ("defaults").string()) + "\"\n"
-        "saturation = { mix = { hand = 0.50 }, output = { hand = -0.0 } }\n"
+        "saturation = { mix = { hand = 0.50 } }\n"
+        "tilt = { db = { hand = -0.0 } }\n"
         "hpf = { fq = { hand = 36 }, on = { hand = false } }\n"
         "target = { tp = { hand = -1 }, name = \"allStreaming\", lufs = { hand = -12.50 } }\n";
     ok (import (*restored, inlineFile).rejection == Rejection::None, "hand-written inline tables in another order import");
@@ -238,11 +238,13 @@ void roundTrip()
     (void) expected->apply (command::SetManual { 1, true });
     (void) expected->apply (command::EditTarget { 2, { -12.5, -1.0 } });
     HpfFields<Touched> hpf; hpf.on = false; hpf.fq = 36;
-    SaturationFields<Touched> sat; sat.mix = 0.5; sat.output = -0.0;
+    SaturationFields<Touched> sat; sat.mix = 0.5;
     (void) expected->apply (command::EditDevice { 3, hpf });
     (void) expected->apply (command::EditDevice { 4, sat });
+    TiltFields<Touched> tilt; tilt.db = -0.0;
+    (void) expected->apply (command::EditDevice { 5, tilt });
     ok (exported (*restored) == exported (*expected), "inline spelling and commands materialize the same project");
-    ok (exported (*restored).find ("output.hand = 0\n") != std::string::npos, "negative zero prints as zero");
+    ok (exported (*restored).find ("db.hand = 0\n") != std::string::npos, "negative zero prints as zero");
     ok (import (*restored, project (false)).rejection == Rejection::None && ! restored->project().manual,
         "manual false imports without depending on the current manual mode");
 }
@@ -255,7 +257,7 @@ void domainsAndExactNumbers()
         { "hpf", "fq", "20000.25", "24000" }, { "hpf", "slope", "96", "102" },
         { "monoBass", "fq", "120.25", "300.1" }, { "monoBass", "width", "0.333333333", "1.01" },
         { "glue", "upToDb", "5.25", "6.01" }, { "saturation", "drive", "1.25", "12.01" },
-        { "saturation", "mix", "0.123456789", "-0.01" }, { "saturation", "output", "-1.25", "0.01" },
+        { "saturation", "mix", "0.123456789", "-0.01" },
         { "tilt", "db", "5.25", "6.01" }, { "low", "db", "-5.25", "-6.01" },
         { "limiter", "needlesDb", "5.25", "6.01" }
     };
@@ -292,7 +294,7 @@ void domainsAndExactNumbers()
 void refusals()
 {
     auto s = fresh();
-    (void) import (*s, project (true, "0.0.1") + "\n[hpf]\nfq.machine = 36\nfq.hand = 40\n");
+    (void) import (*s, project (true) + "\n[hpf]\nfq.machine = 36\nfq.hand = 40\n");
     (void) s->apply (command::Master { 19 });
     (void) s->step (1);
     refused (*s, project() + "\n[unknown]\n", Rejection::ProjectUnknownKey, "unknown");
@@ -307,7 +309,8 @@ void refusals()
     refused (*s, header() + "target = { name = \"unknown\" }\n", Rejection::UnknownTarget, "\"unknown\"");
     auto old = project(); old.replace (old.find ("defaults = "), old.find ('\n'), "defaults = \"missing\"");
     refused (*s, old, Rejection::UnknownDefaults, "\"missing\"");
-    refused (*s, project (true, "01.2.3"), Rejection::ProjectCore, "\"01.2.3\"");
+    refused (*s, "core = \"0.6.0\"\n" + project(), Rejection::ProjectUnknownKey, "core");
+    refused (*s, project() + "\n[saturation]\noutput.hand = -1\n", Rejection::ProjectUnknownKey, "output");
     ok (import (*s, project() + "\n[hpf]\nfq.machine = 36\n").rejection == Rejection::None, "saved machine and hidden hand are accepted");
     refused (*s, header() + "[target]\n", Rejection::ProjectMissing);
     refused (*s, project() + "\n[hpf\n", Rejection::ProjectSyntax);
@@ -322,21 +325,21 @@ void refusals()
     // Positions count Unicode characters; the prefix comment has a multibyte value.
     refused (*s, project() + "\n[hpf]\n\"fq\" = { hand = \"\xC3\xA9\", nope = 1 }\n", Rejection::ProjectType, "\"\xC3\xA9\"");
 }
-void foreignMachine()
+void filesMachine()
 {
     auto s = fresh();
-    const auto input = project (true, "0.0.1") + "\n[hpf]\nfq.machine = 36\nfq.hand = 36\n"
+    const auto input = project (true) + "\n[hpf]\nfq.machine = 36\nfq.hand = 36\n"
         "\n[limiter]\nneedles.machine = \"manual\"\n";
-    ok (import (*s, input).rejection == Rejection::None, "another core's complete machine layer is taken");
+    ok (import (*s, input).rejection == Rejection::None, "the file's complete machine layer is taken");
     const auto saved = exported (*s);
-    ok (saved.find ("core = \"0.0.1\"") != std::string::npos
-        && saved.find ("fq.machine = 36\nfq.hand = 36\n") != std::string::npos, "origin and author ordering survive export");
+    ok (saved.find ("core") == std::string::npos && saved.find ("fq.machine = 36\nfq.hand = 36\n") != std::string::npos,
+        "author ordering survives export, and the file carries no core stamp");
     auto held = s->snapshot();
     ok (held.view().machineDifferences.size() == 2, "snapshot exposes every machine difference");
     const auto first = held.view().machineDifferences[0];
     ok (first.device == Device::Hpf && first.field == 1 && detail::same (first.fileValue, 36)
         && detail::same (first.coreValue, s->project().devices.hpf.machine.fq) == false, "difference names device, field, file and core values");
-    ok (s->events().size() == 1 && s->events()[0].kind == EventKind::Fact, "foreign import publishes its fact immediately");
+    ok (s->events().size() == 1 && s->events()[0].kind == EventKind::Fact, "an import with differences publishes its fact immediately");
     const auto fact = s->events()[0].payload.fact.view();
     ok (fact.id == text::FactId::MachineDifferences && fact.args[0].integer == 2, "fact carries the difference count");
     for (const auto lang : { text::Lang::Ru, text::Lang::En })
@@ -357,7 +360,7 @@ void foreignMachine()
         "machine differences cross the same codec with exact owned storage");
     auto replay = fresh();
     ok (import (*replay, saved).rejection == Rejection::None && exported (*replay) == saved,
-        "a foreign machine layer remains replayable after exporting it");
+        "the file's machine layer remains replayable after exporting it");
     const auto job = s->apply (command::Master { 8 }).job;
     const auto recipe = s->jobRecipe();
     ok (import (*s, project()).rejection == Rejection::None && s->job() == job
@@ -368,13 +371,12 @@ void foreignMachine()
     (void) s->apply (command::SetManual { 9, false });
     ok (s->snapshot().view().machineDifferences.size() == 2, "switching off manual leaves the saved machine layer");
     (void) s->apply (command::SetTarget { 10, "lp" });
-    ok (s->snapshot().view().machineDifferences.empty() && version (s->project().core) == version (Session::version()),
-        "a new target places the current machine and clears the old comparison");
+    ok (s->snapshot().view().machineDifferences.empty(), "a new target places the current machine and clears the old comparison");
     s.reset();
     ok (json (held.view()) == encoded, "retained comparison survives commands and session destruction");
-    auto same = project (false, "0.0.1");
-    ok (import (*replay, same).rejection == Rejection::None && replay->snapshot().view().machineDifferences.empty()
-        && replay->events()[0].payload.fact.view().args[0].integer == 0, "a foreign core with no differences still publishes count zero");
+    ok (import (*replay, project (false)).rejection == Rejection::None && replay->snapshot().view().machineDifferences.empty()
+        && std::none_of (replay->events().begin(), replay->events().end(), [] (const Notification& e) { return e.kind == EventKind::Fact; }),
+        "a file with no differences publishes no fact");
 }
 void numbers()
 {
@@ -481,39 +483,60 @@ void demandsAndOrder()
             "hostile project import is covered by its declared demand and changes nothing");
     }
 }
-void olderSnapshot()
+// Every object member of a JSON document, once per path (an array's elements share the first one's path): the bytes from
+// its key to its value's end. The encoder writes no whitespace, so neither does this read any.
+struct Member { std::string path; std::size_t from, to; };
+std::size_t valueEnd (std::string_view d, std::size_t i, const std::string& path, std::vector<Member>& out, std::set<std::string>& seen)
 {
+    if (d[i] == '"')
+    {
+        for (++i; d[i] != '"'; ++i) if (d[i] == '\\') ++i;
+        return i + 1;
+    }
+    if (d[i] == '[')
+    {
+        for (++i; d[i] != ']';) { i = valueEnd (d, i, path + "[]", out, seen); if (d[i] == ',') ++i; }
+        return i + 1;
+    }
+    if (d[i] == '{')
+    {
+        for (++i; d[i] != '}';)
+        {
+            const auto from = i, colon = d.find ("\":", i + 1);
+            const auto member = path + "." + std::string (d.substr (from + 1, colon - from - 1));
+            i = valueEnd (d, colon + 2, member, out, seen);
+            if (seen.insert (member).second) out.push_back ({ member, from, i });
+            if (d[i] == ',') ++i;
+        }
+        return i + 1;
+    }
+    return d.find_first_of (",]}", i);
+}
+// Snapshots never persist (the page and the core ship together): a snapshot without any one of its keys is refused,
+// a semantically optional one (null when absent) included.
+void everySnapshotKeyRequired()
+{
+    auto s = fresh();
+    (void) s->apply (command::SetTarget { 2, "lp" });
+    const auto whole = json (s->snapshot().view());
     Snapshot out;
-    const auto need = Codec::decodedBytes (snapshotV1);
-    CodecStatus status {};
-    const auto spent = declared::spend ([&] { status = Codec::decode (snapshotV1, out); });
-    ok (need.status == CodecStatus::Ok && status == CodecStatus::Ok && declared::covers (need.bytes, spent),
-        "a frozen v1 snapshot decodes within its declared storage");
-    if (status != CodecStatus::Ok) return;
-    const auto& v = out.view();
-    ok (! v.mandatoryMeasurementsReady && ! v.devicesPlaced && ! v.canContinueMeasurement
-        && ! v.needlesRunsTruncated && v.measurementResumeState == State::Empty,
-        "absent appended flags use conservative false/Empty defaults");
-    ok (v.measurements.empty() && v.measurementStorage.peakBytes == 0 && v.needlesJob == 0 && v.needlesSource == 0
-        && ! v.needlesNeedDb && ! v.needlesCeilingDb && v.needlesBytes == 0 && v.needlesLargestBlockBytes == 0
-        && v.needlesProgress.name == PhaseName::Stream && v.needlesProgress.totalUnits == 0,
-        "all other fields appended since frozen v1 have zero, empty or null defaults");
-    ok (v.eqCurve.size() == 2 && v.handFieldCount == 2, "historical rows and fields retain their values");
-    auto partial = std::string (snapshotV1);
-    partial.insert (1, "\"mandatoryMeasurementsReady\":true,");
-    ok (Codec::decode (partial, out) == CodecStatus::Ok && out.view().mandatoryMeasurementsReady && ! out.view().devicesPlaced,
-        "present appended flags survive default initialization of absent peers");
-    auto invalid = std::string (snapshotV1);
-    invalid.insert (1, "\"devicesPlaced\":null,");
-    const auto rejected = declared::spend ([&] { status = Codec::decode (invalid, out); });
-    ok (status == CodecStatus::Invalid && rejected.bytes == 0 && out.view().mandatoryMeasurementsReady,
-        "an optional field with an invalid present value rejects before allocation and preserves output");
-    ok (Codec::decode (snapshotV1, out) == CodecStatus::Ok && ! out.view().mandatoryMeasurementsReady,
-        "decoding an older snapshot replaces previous values with documented defaults");
+    ok (Codec::decode (whole, out) == CodecStatus::Ok, "PRECONDITION: the whole snapshot decodes");
+    std::vector<Member> members;
+    std::set<std::string> seen;
+    (void) valueEnd (whole, 0, "", members, seen);
+    std::string decoded;
+    for (const auto& m : members)
+    {
+        auto cut = whole;
+        if (cut[m.to] == ',') cut.erase (m.from, m.to + 1 - m.from); else cut.erase (m.from - 1, m.to - m.from + 1);
+        if (Codec::decode (cut, out) == CodecStatus::Ok) decoded += " " + m.path;
+    }
+    ok (members.size() > 100 && decoded.empty(),
+        "a snapshot without any one of its " + std::to_string (members.size()) + " keys is refused; decoded without:" + decoded);
 }
 }
 int main()
 {
-    sparseSections(); defaultsVersions(); roundTrip(); domainsAndExactNumbers(); refusals(); foreignMachine(); numbers(); slicing(); demandsAndOrder(); olderSnapshot();
+    sparseSections(); defaultsVersions(); roundTrip(); domainsAndExactNumbers(); refusals(); filesMachine(); numbers(); slicing(); demandsAndOrder(); everySnapshotKeyRequired();
     return felitronics::test::report();
 }

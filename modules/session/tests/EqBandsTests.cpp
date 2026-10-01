@@ -419,11 +419,6 @@ void theProjectFile()
     ok (copy->apply (command::ImportProject { 4, saved.view() }).rejection == Rejection::None
         && sameBits (*copy->project().devices.bands.hand.body, 1.5) && sameBits (*copy->project().devices.bands.hand.air, -2.0)
         && ! copy->project().devices.bands.hand.mud, "an import keeps them exactly");
-    std::string old (saved.view());
-    old.erase (old.find ("[bands]"), std::string ("[bands]\nbody.hand = 1.5\nair.hand = -2\n").size());
-    auto older = placed();
-    ok (older->apply (command::ImportProject { 5, old }).rejection == Rejection::None && ! older->project().devices.bands.hand.body
-        && ! older->project().devices.bands.hand.air, "a file from before the bands imports with none set");
     BandsFields<Touched> off; off.on = false;
     ok (s.apply (command::EditDevice { 6, off }).rejection == Rejection::None, "PRECONDITION: the bands ticked off");
     const auto unticked = s.exportProject();
@@ -434,7 +429,7 @@ void theProjectFile()
         && again->project().devices.bands.hand.on == std::optional<bool> (false) && sameBits (*again->project().devices.bands.hand.body, 1.5)
         && ! again->snapshot().view().plan.devices.bands.on, "an import keeps the tick off and the gains under it");
     ok (! copy->project().devices.bands.hand.on && copy->project().devices.bands.machine.on && copy->snapshot().view().plan.devices.bands.on,
-        "a file from before the tick imports with the machine's on: its gains sound");
+        "a file with gains and no tick by hand imports with the machine's on: its gains sound");
 }
 
 // The snapshot's JSON after `edit` on a placed session.
@@ -448,18 +443,6 @@ std::string gainsOffSnapshot (Session& s, const BandsFields<Touched>& edit)
     return out;
 }
 
-// Every `"on":<value>` member of the flat object that opens at or after `from` erased (with its comma): a ce92e20 record.
-std::size_t eraseOn (std::string& json, std::size_t from)
-{
-    const auto open = json.find ('{', from), close = json.find ('}', open);
-    const auto at = json.find ("\"on\":", open);
-    if (at == std::string::npos || at > close) return 0;
-    auto end = json.find_first_of (",}", at);
-    auto begin = at;
-    if (json[begin - 1] == ',') --begin; else if (json[end] == ',') ++end;
-    json.erase (begin, end - begin);
-    return 1;
-}
 
 void theTick()
 {
@@ -532,22 +515,10 @@ void theTick()
         && detail::settingsOf (r, reverted->project().devices.bands).on, "a revert of the tick gives the machine's: on");
     ok (toggled->apply (command::RevertEdits { 24, tick }).rejection == Rejection::None && ! toggled->project().devices.bands.hand.on
         && toggled->snapshot().view().plan.devices.bands.on, "...and with gains by hand, they sound");
-    // A SNAPSHOT FROM BEFORE THE TICK (ce92e20: no "on" in [bands]) decodes with the machine's on and no tick by hand.
     const auto view = gainsOffSnapshot (*placed(), gainsOff);
-    std::string old = view;
-    std::size_t erased = 0;
-    for (auto at = old.find ("\"bands\":{\"hand\":{"); at != std::string::npos; at = old.find ("\"bands\":{\"hand\":{", at + 1))
-    {
-        erased += eraseOn (old, at + 9);
-        erased += eraseOn (old, old.find ("\"machine\":{", at));
-    }
-    Snapshot decoded;
-    ok (erased >= 2 && Codec::decode (old, decoded) == CodecStatus::Ok && decoded.view().project.devices.bands.machine.on
-        && ! decoded.view().project.devices.bands.hand.on && sameBits (*decoded.view().project.devices.bands.hand.body, 3.0),
-        "a snapshot without the tick decodes: the machine's on, no tick by hand, the gains as written");
     Snapshot current;
     ok (Codec::decode (view, current) == CodecStatus::Ok && current.view().project.devices.bands.hand.on == std::optional<bool> (false),
-        "CONTROL: the snapshot with the tick decodes it off");
+        "the snapshot carries the tick: it decodes off");
 }
 } // namespace
 
