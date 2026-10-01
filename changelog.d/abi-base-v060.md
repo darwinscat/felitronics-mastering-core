@@ -2,14 +2,15 @@
 
 - **The manifest's new base** (owner, 01.10). `tools/session-abi-v1.txt` declares `base v0.6.0`;
   `tools/session-abi-append-only.mjs` holds append-only between manifests that declare the same base, refuses an older
-  or dropped declaration, and accepts a newer one once. `FC_SESSION_ABI_VERSION` is 4: the pure kit, the EQ bands and
+  or dropped declaration, and accepts a new one only from its own list of authorised resets (v0.6.0 over an
+  undeclared manifest, once). `FC_SESSION_ABI_VERSION` is 4: the pure kit, the EQ bands and
   their tick join version 4's surface. No project, snapshot or file of an older version exists, and the one consumer
   vendors the exact core, so the entries for such data leave. Live ids keep their numbers.
 - **No decode defaults for snapshots and events.** Every snapshot and event field is required on decode (a missing key
   is `Invalid`); a semantically optional field stays nullable and present. The generator no longer asks a field appended
   to a frozen record for a default. Only a request's own optional fields (the query's `masterId`, `crossoverHz`,
-  `fromHz`, `toHz`, `spectrum`; an edit's or a revert's tick and type) and `SessionCapabilities.leanSummary` (law 12, the
-  size-prefixed struct) keep one. The bands' machine layer is the planner's alone.
+  `fromHz`, `toHz`, `spectrum`; an edit's or a revert's tick and type) keep one; `SessionCapabilities.leanSummary` is
+  required, as the 40-byte C record is. The bands' machine layer is the planner's alone.
 - **The project file has no core stamp.** `core = …` is neither written nor read (a `core` key is `ProjectUnknownKey`);
   `Project.core`, `Rejection::ProjectCore` (27) and its fact 127 are gone, and an adopt no longer stamps anything.
   `MachineDifferences` (8) is the one fact for the differences between the file's machine layer and today's planner,

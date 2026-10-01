@@ -225,6 +225,22 @@ int main()
                   && betweenOk && between.binding == LandingConstraint::None && between.belowLufs == -14.46 && between.aboveLufs == -13.52
                   && unnamedOk && unnamed.binding == LandingConstraint::None,
                   "summarize carries the solver's binding for an unreachable landing alone, and the bracket for a between one");
+        // A between side that is not a number — no known path makes one (LandingSearchTests) — never stops the delivery:
+        // the verdict stands without its levels and the master is returned (owner, 2026-10-01).
+        bool levelless = true;
+        for (const double side : { std::numeric_limits<double>::quiet_NaN(), -std::numeric_limits<double>::infinity() })
+            for (const bool above : { false, true })
+            {
+                mastering::LoudnessSolution blind = bracket;
+                (above ? blind.achievedAboveLufs : blind.achievedBelowLufs) = side;
+                blind.deliverable = true; blind.achievedLufs = -13.9; blind.missLu = 0.1; blind.distanceLu = 0.1;
+                blind.measured.truePeakDbTp = -1.2;
+                LandingSummary summary;
+                levelless = levelless && LandingOps::summarize (blind, none, summary)
+                    && summary.status == LandingStatus::TargetBetweenAchievable && ! summary.belowLufs && ! summary.aboveLufs
+                    && summary.deliverable && summary.achievedLufs == -13.9 && summary.truePeakDbTp == -1.2;
+            }
+        test::ok (levelless, "a between verdict with a side that is not a number is kept without its levels, and the master delivered");
     }
 
     test::group ("adapter copies a completed trace and refuses stale second results");

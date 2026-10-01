@@ -122,9 +122,11 @@ const constants = await import(pathToFileURL(join(dirname(resolve(modPath)), 'sn
 ok(constants.FC_SESSION_CONFIG_VERSION === configConstant && constants.FC_SESSION_ABI_VERSION === VERSION, 'runtime constants agree with declarations');
 const configLow = Number.parseInt(configConstant.slice(8), 16);
 const configHigh = Number.parseInt(configConstant.slice(0, 8), 16);
-const caps = M._malloc(32);
+// fc_session_capabilities: 40 bytes, its base at v0.6.0 — leanSummary (at 32) included and 0.
+const caps = M._malloc(40);
 new DataView(M.HEAPU32.buffer).setFloat64(caps + 8, 256 * 1024 * 1024, true);
-M.HEAPU32[caps >>> 2] = 32;
+M.HEAPU32[caps >>> 2] = 40;
+M.HEAPU32[(caps + 32) >>> 2] = 0;
 new DataView(M.HEAPU32.buffer).setFloat64(caps + 24, 256 * 1024 * 1024, true);
 M.HEAPU32[(caps + 16) >>> 2] = 48000;
 M.HEAPU32[(caps + 20) >>> 2] = macro('FC_SESSION_DEVICES_ALL');
@@ -1174,13 +1176,12 @@ for (const p of growth) M._free(p);
         }
         return copy;
     };
-    // The grown record: the version-1 prefix of 32 bytes, then leanSummary at 32 — 40 bytes (tools/session-abi-check.mjs
-    // measures both from the compiled header).
+    // leanSummary at 32 of the 40-byte record (tools/session-abi-check.mjs measures both from the compiled header).
     const leanCapsBytes = 40, leanAt = 32, leanCaps = M._malloc(leanCapsBytes);
-    heapBytes().copyWithin(leanCaps, caps, caps + 32);
+    heapBytes().copyWithin(leanCaps, caps, caps + leanCapsBytes);
     M.HEAPU32[leanCaps >>> 2] = leanCapsBytes;
     M.HEAPU32[(leanCaps + leanAt) >>> 2] = 1;
-    ok(M._fc_session_create(leanCaps, configLow, configHigh, resultSize) === STATUS.OK, 'a lean session is created from the grown capabilities record');
+    ok(M._fc_session_create(leanCaps, configLow, configHigh, resultSize) === STATUS.OK, 'a lean session is created from the capabilities record');
     const leanSession = M.HEAPU32[resultSize >>> 2];
     M.HEAPU32[(leanCaps + leanAt) >>> 2] = 2;
     ok(M._fc_session_create(leanCaps, configLow, configHigh, resultSize) === STATUS.ERR_CAPABILITIES, 'a leanSummary that is neither 0 nor 1 is refused');

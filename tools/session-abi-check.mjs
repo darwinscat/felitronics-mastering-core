@@ -11,6 +11,9 @@ const read = path => readFileSync(new URL(path, root), 'utf8');
 const clean = text => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 const normalize = text => text.replace(/\s+/g, ' ').replace(/\s*([*,()])\s*/g, '$1').trim();
 const header = clean(read('tools/fc_session_abi.h'));
+// A struct's fields, one per declarator: `uint32_t source_low, source_high;` is two fields of type uint32_t.
+const structFields = body => [...body.matchAll(/([^;]+?)\s+(\w+(?:\s*,\s*\w+)*)\s*;/g)]
+    .flatMap(f => f[2].split(',').map(name => ({ type: normalize(f[1]), name: name.trim() })));
 const publicHeaders = ['Commands', 'Project', 'Events', 'Snapshot', 'Session', 'Text', 'Measurements', 'Queries'];
 // EVERY ENTRY POINT, whatever it returns: each `fc_session_*(` and `fc_kit_*(` (the pure kit's) the header declares must
 // be read as a declaration, or the generator refuses — an entry point the probe skipped would never be frozen.
@@ -40,7 +43,7 @@ function mirrors(text, schema) {
         const record = schema.wireRecords[`Session${pascal(m[1])}`];
         if (!record) continue;
         // The same names, in any order: a TypeScript interface has no layout (offsets are the C lines' business).
-        const fields = [...m[2].matchAll(/([^;]+?)\s+(\w+)\s*;/g)].map(f => f[2]).filter(f => f !== 'size').sort();
+        const fields = structFields(m[2]).map(f => f.name).filter(f => f !== 'size').sort();
         const wire = Object.keys(record).map(f => f.replace(/\?$/, '')).sort();
         if (fields.join() !== wire.join())
             throw Error(`wire record Session${pascal(m[1])} [${wire}] does not mirror fc_session_${m[1]} [${fields}]`);
@@ -69,9 +72,9 @@ function generate(text = header) {
     for (const m of text.matchAll(/typedef struct (\w+)\s*\{([^}]+)\}/g)) {
         number(`sizeof ${m[1]}`, `sizeof(${m[1]})`);
         number(`alignof ${m[1]}`, `alignof(${m[1]})`);
-        for (const f of m[2].matchAll(/([^;]+?)\s+(\w+)\s*;/g)) {
-            literal(`field ${m[1]}.${f[2]} ${normalize(f[1])}`);
-            number(`offset ${m[1]}.${f[2]}`, `offsetof(${m[1]},${f[2]})`);
+        for (const f of structFields(m[2])) {
+            literal(`field ${m[1]}.${f.name} ${f.type}`);
+            number(`offset ${m[1]}.${f.name}`, `offsetof(${m[1]},${f.name})`);
         }
     }
     const schema = JSON.parse(read('tools/session-codec-schema.json'));
@@ -197,6 +200,10 @@ if (args[0] === '--generate') {
     const probe = generate(`${header}\ndouble fc_session_future_measure (fc_session session, const double* at);\n`);
     assert(probe.includes('function fc_session_future_measure double(fc_session,const double*)'), 'a double-returning entry point is frozen');
     assert.throws(() => generate(`${header}\nconst char* fc_session_future_name (fc_session session);\n`), /cannot read: fc_session_future_name/);
+    // A declaration with several declarators is one field each, every one with its own type and offset.
+    for (const name of ['source_low', 'source_high', 'revision_low', 'revision_high', 'job', 'master'])
+        assert(probe.includes(`"field fc_session_master_token.${name} uint32_t"`) && probe.includes(`offset fc_session_master_token.${name}=`),
+            `each declarator of fc_session_master_token is a field: ${name}`);
     // The status union follows the header: an appended status is on the wire at once, a hand list in the schema is refused.
     // Appended after the header's LAST status, whichever that is today.
     const last = Math.max(...statusValues(header).map(Number));

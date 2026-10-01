@@ -358,10 +358,13 @@ bool LandingOps::summarize (const mastering::LoudnessSolution& solution,
             case mastering::MasteringConstraint::None:
             case mastering::MasteringConstraint::CompressorGainReduction: break;
         }
-    // The two levels a target fell between, as the solver measured them where it found the bracket.
-    if (next.status == LandingStatus::TargetBetweenAchievable)
+    // The two levels a target fell between, as the solver measured them where it found the bracket. Both are numbers on
+    // every known path (LandingSearch takes a side only from a finite, ceiling-safe pass); were one not, the verdict
+    // stands without its levels and the master is still delivered — a target that cannot be hit always returns the file
+    // (owner, 2026-10-01).
+    if (next.status == LandingStatus::TargetBetweenAchievable
+        && std::isfinite (solution.achievedBelowLufs) && std::isfinite (solution.achievedAboveLufs))
     {
-        if (! std::isfinite (solution.achievedBelowLufs) || ! std::isfinite (solution.achievedAboveLufs)) return false;
         next.belowLufs = std::fmin (solution.achievedBelowLufs, solution.achievedAboveLufs);
         next.aboveLufs = std::fmax (solution.achievedBelowLufs, solution.achievedAboveLufs);
     }

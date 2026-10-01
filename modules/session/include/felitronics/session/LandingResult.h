@@ -53,7 +53,8 @@ struct LandingSummary
     LandingStatus status = LandingStatus::Unavailable;
     LandingReason mainReason = LandingReason::None, secondReason = LandingReason::None;
     LandingConstraint binding = LandingConstraint::None;   // TargetUnreachable: the limit that held it
-    // TargetBetweenAchievable: the two achievable levels the target fell between, the quieter first. Absent otherwise.
+    // TargetBetweenAchievable: the two achievable levels the target fell between, the quieter first. Absent otherwise,
+    // and absent when the solver gave a side that is not a number: the verdict and the delivered master stand.
     std::optional<double> belowLufs, aboveLufs;
     bool deliverable = false;
     std::optional<double> achievedLufs, missLu, distanceLu, truePeakDbTp;

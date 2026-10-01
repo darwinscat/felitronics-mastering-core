@@ -8,8 +8,10 @@
 
 #include <cmath>
 #include <climits>
+#include <cstdio>
 #include <cstring>
 #include <limits>
+#include <string>
 #include <vector>
 
 using namespace felitronics;
@@ -459,6 +461,36 @@ int main()
               && unstated.status == MasteringSolveStatus::InvalidRequest
               && negative.status == MasteringSolveStatus::InvalidRequest,
               "an unstated or negative ceiling margin is refused before the search begins");
+
+    test::group ("landing search: a target between two achievable levels names both as numbers and still delivers");
+    {
+        // A tolerance finer than the search's own gain resolution closes the bracket with the target still between its
+        // sides — LoudnessSolverTests' way to build the status on demand. Whatever the target, the two sides are numbers
+        // and the file is delivered: a target that cannot be hit still returns the master (owner, 2026-10-01).
+        int between = 0; bool finite = true, delivered = true;
+        std::string seen;
+        for (const double target : { -20.0, -18.0, -16.0, -14.0, -12.0, -10.0, -8.0 })
+        {
+            Rig r;
+            if (! test::run (r.prepare())) return test::report();
+            LoudnessRequest req;
+            req.ceilingMarginDb = 0.15;   // Session's engine.toml [limiter] ceilingMarginDb
+            req.targetLufs = target; req.maxTruePeakDbTp = -1.0; req.toleranceLu = 1.0e-9; req.maxPasses = 12;
+            LandingSearch search (r.solver);
+            StepResult state = search.begin (r.chain, r.renderer, r.params, r.input, kFrames, kRate, r.out, 1, kFrames, req)
+                ? StepResult::More : StepResult::Failed;
+            for (int guard = 0; state == StepResult::More && guard < 2000000; ++guard) state = search.step (LLONG_MAX);
+            const LoudnessSolution& answer = search.result();
+            seen += " " + std::to_string ((int) answer.status);
+            if (answer.status != MasteringSolveStatus::TargetBetweenAchievable) continue;
+            ++between;
+            finite = finite && std::isfinite (answer.achievedBelowLufs) && std::isfinite (answer.achievedAboveLufs);
+            delivered = delivered && state == StepResult::Done && answer.deliverable;
+        }
+        std::printf ("        statuses by target:%s\n", seen.c_str());
+        test::ok (between > 0 && finite && delivered,
+                  "every between verdict carries two finite levels and a delivered file (statuses:" + seen + ")");
+    }
 
     return test::report();
 }
