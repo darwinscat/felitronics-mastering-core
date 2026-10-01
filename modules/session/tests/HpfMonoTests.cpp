@@ -8,7 +8,7 @@
 // (18 and 36 dB/oct, a cutoff above 50 Hz, not rounded); and, through the real pump on synthetic mixes, a detector that
 // never errs upward and a loss that tells normal, partial and inverted bass apart — once for every target.
 
-#include "DeclaredBudget.h"
+#include "../../../tests/DeclaredBudget.h"
 #include "Devices.h"
 #include "EqCurve.h"
 #include "Grid.h"
@@ -28,7 +28,7 @@
 
 using namespace felitronics::session;
 using felitronics::test::ok;
-namespace budget = felitronics::session::testing;
+namespace declared = felitronics::declared;
 namespace eq = felitronics::eq;
 
 namespace
@@ -302,7 +302,7 @@ void whereTheBassSounds()
     Readings holes;
     for (int i = 0; i < 512; ++i) holes.block (1.0, 0.0, 480, false);
     ok (plan (holes.inputs ("allStreaming", 60)).found.monoBass.verdict == MonoBassVerdict::Unmeasured, "blocks with holes are not weighed");
-    const auto spent = budget::spend ([&] { (void) plan (loud.inputs ("allStreaming", 60)); });
+    const auto spent = declared::spend ([&] { (void) plan (loud.inputs ("allStreaming", 60)); });
     ok (spent.requests == 0, "the planner asks the heap for nothing");
 }
 

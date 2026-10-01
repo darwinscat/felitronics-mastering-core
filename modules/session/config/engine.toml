@@ -333,6 +333,9 @@ knobStepDb = 0.1
 # driveRange 0…12 dB: above twelve tanh squares music rather than densifying it; driveStep 0.5 dB: less is not heard, more
 #   is a jerk. outputRange −6…0: the saturator gives downwards, the limiter gives upwards. mix 0…1.
 # autoComp 0 is written over the core's default 0.5: the output is then tanh(k·s)/tanh(k), normalised to its own k.
+# shape: the machine's type, one of the core's eight (tanh, atan, cubic, asym, tube, transistor, transformer, tape); the
+#   machine never picks another. A person picks the type by hand among tanh, tube, transistor, transformer and tape;
+#   atan, cubic and asym stay here, for research. tanh is the default, so nothing sounds new unless a person picks a type.
 # bias and dcBlockHz are read by the core for the asym shape only. Below a drive of 0.00087 dB (the core's number) every
 # value is one setting.
 # cut (owner decision 3.9): what the stage took off the peaks is measured ON THE STAGE — the peak of its input against the

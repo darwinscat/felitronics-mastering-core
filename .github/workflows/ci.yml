@@ -334,6 +334,15 @@ jobs:
           node tools/lint/check-session-laws.mjs --build build
           tools/lint/session-controls/run.sh build
 
+      - name: The bricks never include the session — the lint, its self-test, and its controls planted in the tree
+        # tools/lint/check-brick-includes.mjs: no file under modules/mastering, analysis_offline, tempo or storage
+        # includes a session header or source, or links the session's target — the line the repository is to be split
+        # along. --controls plants one violation in a real file of every brick and requires each to be found.
+        run: |
+          node tools/lint/check-brick-includes.mjs --self-test
+          node tools/lint/check-brick-includes.mjs --controls
+          node tools/lint/check-brick-includes.mjs
+
   # The wasm-audio tier for THIS repository's suite (core's preset flags and toolchain pin), its artifact
   # gates, and every native-vs-wasm comparison of the C ABIs. ubuntu, NOT macos, and for the comparisons
   # that is load-bearing: Apple's libm and musl (what emscripten compiles in) return different doubles from

@@ -36,6 +36,17 @@ struct Fill
         else { T v {}; value (v); x = v; }
     }
     template <class T> void value (std::span<const T>&) {}
+    void value (text::Fact& f)
+    {
+        double number = 0.0; value (number);
+        f = text::Fact::of (text::FactId::PlanWaiting, text::Arg::value (number, text::Unit::Percent, 1, text::Sign::Always, text::Bound::AtMost),
+            text::Arg::term (text::Term::DeviceGlue), text::Arg::midi (40), text::Arg::count (-5), text::Arg::text (""));
+    }
+    template <class T, std::size_t N> void value (BoundedList<T, N>& x)
+    {
+        x = {};
+        if (mode != 0) { x.count = 1; value (x.items[0]); }
+    }
     template <class T, class D> void optionalField (std::string_view name, T& x, const D&) { field (name, x); }
     template <class T> void field (std::string_view, T& x) { value (x); }
 };

@@ -37,7 +37,7 @@ Items 1–3 of the task and every bullet of its checks section, one check per ro
 | A11 | Panel open: Master is refused whole (`PlanPending`, revision unchanged, the refusal published and rendered as text) until the tempo that the target's glue reads is measured | `PlanTests.cpp:theOpenPanelWaits`; `SourceMeasurementsTests.cpp:masterWaitsForTempo` | HELD |
 | A12 | Panel open: Master waits in the same way for the needles (K10) at the ceiling | `PlanTests.cpp:theNeedlesAreWaitedForAtTheirCeiling` | HELD |
 | A13 | Master waits only for what this target needs: no tempo when the glue does not compress, and hum does not hold the button | `PlanTests.cpp:aTargetWithoutGlueDoesNotWaitForTempo`, `theOpenPanelWaits`; `SourceMeasurementsTests.cpp:masterTempoDependencyPolicy` | HELD |
-| A14 | The button shows the progress of the awaited measurement (fact `PlanWaiting`) | `PlanTests.cpp:theOpenPanelWaits`, `theNeedlesAreWaitedForAtTheirCeiling` | HELD |
+| A14 | The button shows the progress of the awaited measurement (fact `PlanWaiting`) | `PlanTests.cpp:theOpenPanelWaits`, `theNeedlesAreWaitedForAtTheirCeiling`, `aWaitingPlanStatesItsWaitAlone` (the plan states the fact itself, `plan.facts`); contract `plan-pending` | HELD |
 | A15 | Dimmed panel: read-only while the first measurement runs | `PlanTests.cpp:theOpenPanelWaits` (`plan.readOnly`) | HELD |
 | A16 | Dimmed panel: read-only after a change of target while the new target's needles run | `PlanTests.cpp:oneNeedOneMeasurement` (`plan.readOnly` and `PlanStatus::Pending` while club's needles run, neither after) | HELD (B1) |
 | A17 | Panel hidden: Master is taken at once and waits by itself | `PlanTests.cpp:aHiddenMasterKeepsWhatWasAsked`; `SourceMeasurementsTests.cpp:masterWaitsForTempo` | HELD |
@@ -162,7 +162,7 @@ LowEnd and PeakExcursions tests are cited nowhere in this table as proof of a de
     `ctest --test-dir build -R '^felitronics_session_scenario_tests$' --output-on-failure`.
   - Wasm: `tools/wasm/build.sh` (with `FELITRONICS_CORE_DIR` and `FELITRONICS_TOML_DIR` set), which runs
     `node tools/wasm/scenario-parity.mjs <out>/session-scenario.txt`.
-  - What the run prints (release 0.4.0, felitronics-core 0.56.0, defaults `2026-10`): the input
+  - What the run prints (release 0.5.0, felitronics-core 0.57.0, defaults `2026-10`): the input
     `source=f58fa8f9570118b5 frames=480000 rate=48000`, the sound version `4b75e7500af2e07e`, the config version
     `f9f2047c6ce25e5f`, and `plan=6164a1b0451facbc facts=75c44fa6bf018042 pcm=0682cfd85ae4b5a8 wav=e30bbbfe627809f9`.
 - **A5. HELD, private.** The replay of the 11 finished measurements is private and held outside this repository.

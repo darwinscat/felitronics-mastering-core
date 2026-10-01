@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
-#include "DeclaredBudget.h"
+#include "../../../tests/DeclaredBudget.h"
 #include "MeasurementPlan.h"
 #include "MeasurementWorkspace.h"
 #include "QueryState.h"
@@ -22,7 +22,7 @@
 using namespace felitronics::session;
 using namespace felitronics::analysis;
 using felitronics::test::ok;
-namespace budget = felitronics::session::testing;
+namespace declared = felitronics::declared;
 
 bool same (double a, double b);
 
@@ -58,7 +58,7 @@ void capacityBoundary()
     for (unsigned stage = 0; stage < 3; ++stage)
     {
         const auto before = measured.session->liveBytes();
-        const auto spent = budget::spend ([&] { (void) measured.session->step (1); });
+        const auto spent = declared::spend ([&] { (void) measured.session->step (1); });
         ok (measured.session->liveBytes() - before >= double (spent.bytes),
             "each admitted workspace retains every raw allocation byte, including MSVC Debug overhead");
         std::printf ("unlimited preparation=%u retained=%.0f raw=%lld\n", stage, measured.session->liveBytes() - before, spent.bytes);
@@ -75,7 +75,7 @@ void capacityBoundary()
         const auto raw = price.workspace + price.rowValues * sizeof (double);
         const auto before = s.liveBytes();
         (void) s.setCapacity ({ before + double (raw), before + double (raw) });
-        const auto spent = budget::spend ([&] { (void) s.step (1); });
+        const auto spent = declared::spend ([&] { (void) s.step (1); });
         ok (spent.bytes == 0 && s.liveBytes() == before && s.events().size() == 2 && s.events()[0].kind == EventKind::Error
             && s.events()[0].payload.error.code == ErrorCode::Memory && s.events()[0].payload.error.recover == Recover::Continue
             && s.events()[1].kind == EventKind::Phase, "preparation refuses a capacity without allocator allowance before allocating");
@@ -348,14 +348,14 @@ void run (std::uint32_t rate, unsigned channels, unsigned frames, unsigned shape
         auto made = Session::create(); auto& s = *made.session;
         const auto declaration = s.measurementStorage (audio);
         Answer answer;
-        auto allocated = budget::spend ([&] { answer = s.apply (command::Load {1, audio, {}}); });
+        auto allocated = declared::spend ([&] { answer = s.apply (command::Load {1, audio, {}}); });
         ok (answer.rejection == Rejection::None, "live PCM loaded");
         std::uint64_t bytes = std::uint64_t (allocated.bytes), points = 0, runs = 0, seq = 0;
         unsigned steps = 0; bool cancelled = false; double slowest = 0;
         while (s.measurementJob() != 0)
         {
             const auto before = std::chrono::steady_clock::now();
-            allocated = budget::spend ([&] { (void) s.step (mode == 0 ? 16u : mode == 2 ? 1u + steps % 7u : 1u); });
+            allocated = declared::spend ([&] { (void) s.step (mode == 0 ? 16u : mode == 2 ? 1u + steps % 7u : 1u); });
             slowest = std::max (slowest, std::chrono::duration<double, std::milli> (std::chrono::steady_clock::now() - before).count());
             bytes += std::uint64_t (allocated.bytes);
             for (const auto& event : s.events())

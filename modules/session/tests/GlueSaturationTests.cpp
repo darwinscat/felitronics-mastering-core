@@ -802,6 +802,101 @@ void theReport()
         && bareCost->saturationCutUsualDb.reason == MeasurementReason::NoSignal && silent,
         "with both stages out of the chain the report has no number for them — NoSignal — and no line");
 }
+void theType()
+{
+    felitronics::test::group ("the saturation's type: a person's pick among five over the machine's tanh — the chain, the report, "
+                              "the project file; a refused type changes nothing, a change of target takes it back");
+    const Mix mix;
+    auto sp = measured (mix, "allStreaming"); auto& s = *sp;
+    const auto& sat = s.project().devices.saturation;
+    ok (sat.machine.type == SaturationType::Tanh && ! sat.hand.type, "the machine's type is the config's, tanh; nothing by hand");
+    SaturationFields<Touched> knob; knob.on = true; knob.drive = 6.0;
+    ok (s.apply (command::EditDevice { 3, knob }).rejection == Rejection::None, "PRECONDITION: saturation at 6 dB");
+
+    // REFUSED: atan, cubic and asym are the config's only (research), and past tape is no type — the command is refused
+    // whole, at the type's place, and the drive it carried is not taken either.
+    bool refused = true;
+    std::string said;
+    for (const auto t : { SaturationType::Atan, SaturationType::Cubic, SaturationType::Asym, SaturationType (8) })
+    {
+        const auto revision = s.revision();
+        SaturationFields<Touched> pick; pick.type = t; pick.drive = 3.0;
+        const command::EditDevice request { 4, pick };
+        const auto answer = s.apply (request);
+        refused = refused && answer.rejection == Rejection::NotOneOf && answer.field == 4 && s.revision() == revision
+               && ! sat.hand.type && sat.hand.drive == 6.0;
+        if (const auto fact = text::Text::rejected (answer, request)) said = text::Text::text (*fact, text::Lang::Ru);
+    }
+    ok (refused && said.find ("Тип сатурации") != std::string::npos,
+        "atan, cubic, asym and one past tape: NotOneOf at field 4, the revision and the drive unmoved — " + said);
+
+    // PICKED: the type is the stage the chain runs, and what the report says it cut is measured on THAT stage.
+    const auto pick = [&] (SaturationType t)
+    {
+        SaturationFields<Touched> edit; edit.type = t;
+        felitronics::test::run (s.apply (command::EditDevice { 5, edit }).rejection == Rejection::None);
+        const auto snapshot = s.snapshot();
+        mastering::MasteringChainParams params;
+        detail::writeDynamics (inputsOf (s, snapshot), s.project().devices, params);
+        return params;
+    };
+    const auto share = loudShare();
+    const auto gainOf = [&] { return *s.snapshot().view().plan.inputGainDb; };
+    const auto tanh = pick (SaturationType::Tanh);
+    const auto tanhStage = stage (mix, tanh, gainOf(), share);
+    bool each = tanh.clipper.shape == felitronics::saturation::WaveShaper::Shape::Tanh;
+    for (const auto t : { SaturationType::Tube, SaturationType::Transistor, SaturationType::Transformer })
+        each = each && int (pick (t).clipper.shape) == int (t) && sat.hand.type == t;
+    const auto tape = pick (SaturationType::Tape);
+    const auto tapeStage = stage (mix, tape, gainOf(), share);
+    const double tanhCut = cutDb (tanhStage.peaks.quietGain, tanhStage.peaks.loudLeastRatio);
+    const double tapeCut = cutDb (tapeStage.peaks.quietGain, tapeStage.peaks.loudLeastRatio);
+    ok (each && tape.clipper.shape == felitronics::saturation::WaveShaper::Shape::Tape && ! tape.bypassClipper
+        && tanhStage.counted && tapeStage.counted && std::fabs (tapeCut - tanhCut) > 1.0e-3,
+        "tanh, tube, transistor, transformer, tape: each is the clipper's shape; tape's stage cuts " + std::to_string (tapeCut)
+        + " dB at most where tanh's cuts " + std::to_string (tanhCut));
+
+    command::Master request { 6 };
+    request.ready.version = 1;
+    request.ready.topology = twoStages (true);
+    request.ready.params = tape;
+    request.source = s.source().hash; request.revision = s.revision();
+    ok (s.apply (request).rejection == Rejection::None, "PRECONDITION: a master with the tape type is taken");
+    const auto facts = finish (s);
+    const auto* cost = s.masters().size() == 1 && s.masters()[0].report && s.masters()[0].report->cost ? &*s.masters()[0].report->cost : nullptr;
+    std::string line;
+    for (const auto& f : facts) if (f.id == text::FactId::MasterSaturation) line = text::Text::text (f, text::Lang::Ru);
+    ok (cost && cost->saturationCutMaxDb.value && same (*cost->saturationCutMaxDb.value, tapeCut)
+        && cost->saturationCutUsualDb.value
+        && same (*cost->saturationCutUsualDb.value, cutDb (tapeStage.peaks.quietGain, tapeStage.peaks.loudUsualRatio))
+        && line.find ("срезала пики до") != std::string::npos,
+        "the master's report measures the tape stage, the same words for every type: " + line);
+
+    // THE FILE: the pick is written as the person's, the machine's tanh is not written; another session reads it back.
+    const auto file = s.exportProject();
+    const std::string written (file.view());
+    auto other = measured (mix, "allStreaming");
+    ok (file.rejection == Rejection::None && written.find ("type.hand = \"tape\"") != std::string::npos
+        && written.find ("type.machine") == std::string::npos
+        && other->importProject (7, written).rejection == Rejection::None
+        && other->project().devices.saturation.hand.type == SaturationType::Tape
+        && other->project().devices.saturation.machine.type == SaturationType::Tanh,
+        "the project file carries type.hand = \"tape\" and reads back as the person's tape over the machine's tanh");
+    const auto at = written.find ("type.hand = \"tape\"");
+    auto atan = written; atan.replace (at, 18, "type.hand = \"atan\"");
+    auto third = measured (mix, "allStreaming");
+    const auto answer = third->importProject (8, atan);
+    ok (answer.rejection == Rejection::NotOneOf && answer.device == Device::Saturation && answer.field == 4
+        && ! third->project().devices.saturation.hand.type, "a file with atan by hand is refused, at the saturation's type");
+
+    // A CHANGE OF TARGET takes the pick back with every other edit, and the warning before it counts it.
+    const auto view = s.snapshot();
+    const auto warned = SnapshotText::targetChange (view.view());
+    ok (view.view().handFieldCount == 3 && warned && warned->args[0].integer == 3,
+        "the warning before a change of target counts the type among the three edits (on, drive, type)");
+    ok (s.apply (command::SetTarget { 9, "cd" }).rejection == Rejection::None && ! sat.hand.type && sat.machine.type == SaturationType::Tanh,
+        "after the change the type is the machine's tanh again");
+}
 } // namespace
 
 int main()
@@ -817,5 +912,6 @@ int main()
     theCalibration();
     theCut();
     theReport();
+    theType();
     return felitronics::test::report();
 }

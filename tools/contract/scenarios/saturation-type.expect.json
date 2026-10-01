@@ -1,0 +1,25 @@
+{
+  "checks": [
+    {"kind":"snapshot","session":"main","index":0,"path":"state","value":3},
+    {"kind":"snapshot","session":"main","index":0,"path":"project.devices.saturation.machine.type","value":0},
+    {"kind":"snapshot","session":"main","index":0,"path":"project.devices.saturation.hand.type","value":null},
+    {"kind":"snapshot","session":"main","index":1,"path":"project.devices.saturation.hand","value":{"drive":6,"mix":null,"on":true,"output":null,"type":7}},
+    {"kind":"snapshot","session":"main","index":1,"path":"handFieldCount","value":3},
+    {"kind":"answer","session":"main","index":2,"path":"code","value":13},
+    {"kind":"answer","session":"main","index":2,"path":"field","value":4},
+    {"kind":"snapshot","session":"main","index":3,"path":"masters.length","value":1},
+    {"kind":"snapshot","session":"main","index":3,"path":"masters.0.report.cost.saturationCutMaxDb.reason","value":0},
+    {"kind":"snapshot","session":"main","index":3,"path":"masters.0.report.cost.saturationCutUsualDb.reason","value":0},
+    {"kind":"snapshot","session":"main","index":4,"path":"project.devices.saturation.hand.type","value":null},
+    {"kind":"snapshot","session":"main","index":4,"path":"handFieldCount","value":0},
+    {"kind":"snapshot","session":"main","index":5,"path":"project.devices.saturation.hand.type","value":7}
+  ],
+  "equal": [
+    [{"kind":"snapshot","session":"main","index":1},{"kind":"snapshot","session":"main","index":2}]
+  ],
+  "parity": {"tolerance": 1e-5},
+  "projects": 2,
+  "minEvents": 1000,
+  "eventKinds": ["phase","measurement","fact","rejected","done"],
+  "rejections": 1
+}

@@ -2,7 +2,7 @@
 # Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 cmake_minimum_required(VERSION 3.22)
-project(felitronics_mastering_core VERSION 0.4.0 LANGUAGES CXX)
+project(felitronics_mastering_core VERSION 0.5.0 LANGUAGES CXX)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -44,7 +44,7 @@ if(PROJECT_IS_TOP_LEVEL)
     include(FetchContent)
     set(FELITRONICS_MASTERING_FCORE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-core" CACHE PATH
         "Local felitronics-core checkout (used if present); else the pinned release is fetched")
-    set(FELITRONICS_MASTERING_FCORE_TAG "v0.56.0" CACHE STRING
+    set(FELITRONICS_MASTERING_FCORE_TAG "v0.57.0" CACHE STRING
         "felitronics-core git tag to fetch when no local checkout is present")
     if(FELITRONICS_MASTERING_FCORE_DIR AND EXISTS "${FELITRONICS_MASTERING_FCORE_DIR}/CMakeLists.txt")
         message(STATUS "felitronics-core: local checkout — ${FELITRONICS_MASTERING_FCORE_DIR}")
@@ -88,7 +88,7 @@ endif()
 if(NOT TARGET felitronics::core OR NOT TARGET felitronics::test_support
    OR NOT EXISTS "${felitronics_core_SOURCE_DIR}/cmake/FelitronicsPolicy.cmake")
     message(FATAL_ERROR
-        "felitronics-mastering-core needs felitronics-core v0.56.0 or later, made available BEFORE this "
+        "felitronics-mastering-core needs felitronics-core v0.57.0 or later, made available BEFORE this "
         "repository (FetchContent_MakeAvailable(felitronics_core) first), so ONE core is resolved by the "
         "product that owns the graph.")
 endif()
@@ -99,7 +99,7 @@ if(TARGET felitronics::mastering OR TARGET felitronics::analysis_offline)
     message(FATAL_ERROR
         "this felitronics-core (${felitronics_core_SOURCE_DIR}) still defines felitronics::mastering / "
         "felitronics::analysis_offline, which live here now: felitronics-mastering-core needs felitronics-core "
-        "v0.56.0 or later. Point FELITRONICS_MASTERING_FCORE_DIR at such a checkout, or remove the sibling "
+        "v0.57.0 or later. Point FELITRONICS_MASTERING_FCORE_DIR at such a checkout, or remove the sibling "
         "checkout to fetch FELITRONICS_MASTERING_FCORE_TAG.")
 endif()
 
@@ -145,8 +145,8 @@ if(NOT FELITRONICS_MASTERING_FCORE_VERSION MATCHES "^[0-9]+\\.[0-9]+\\.[0-9]+$")
     message(FATAL_ERROR "cannot read felitronics-core's release from ${felitronics_core_SOURCE_DIR} "
                         "(its project() line gave '${FELITRONICS_MASTERING_FCORE_VERSION}')")
 endif()
-if(FELITRONICS_MASTERING_FCORE_VERSION VERSION_LESS "0.56.0")
-    message(FATAL_ERROR "felitronics-mastering-core requires felitronics-core v0.56.0 or later")
+if(FELITRONICS_MASTERING_FCORE_VERSION VERSION_LESS "0.57.0")
+    message(FATAL_ERROR "felitronics-mastering-core requires felitronics-core v0.57.0 or later")
 endif()
 
 # felitronics-toml, by the same rule: made available before this repository by whoever owns the graph (above, when

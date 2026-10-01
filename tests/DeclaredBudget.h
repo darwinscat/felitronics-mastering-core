@@ -3,13 +3,16 @@
 
 #pragma once
 
-// THE DECLARED BUDGET — law 11d as felitronics::session keeps it: MEMORY IS DECLARED BEFORE THE WORK. Before a call
+// THE DECLARED BUDGET — law 11d as felitronics::session keeps it, and the bricks under it (a landing search, a resumable
+// render) with it: MEMORY IS DECLARED BEFORE THE WORK. Before a call
 // runs, the session states what that call will ask the heap for; after it ran, the allocation counter says what it
 // asked for; declared >= requested, or the check is red. A shell that reads the declaration and finds its heap too
 // small can refuse the call before it is made — on the wasm tier an allocation that cannot be served is not a refusal
 // but the end of the module — and that is only worth anything if the declaration is never short.
 //
-// One call is declared, Session::create(). The harness does not depend on which call it holds: a declared call is a
+// A shared test header: modules/mastering's suites use it as modules/session's do, and it includes nothing of either
+// (tools/lint/check-brick-includes.mjs holds the bricks to never including the session). One call is declared,
+// Session::create(). The harness does not depend on which call it holds: a declared call is a
 // demand, and each demand is one line in its suite through spend() and covers().
 //
 // INCLUDING THIS HEADER INSTALLS THE COUNTER (it includes core's test_support/alloc_counter.h, which replaces every
@@ -26,7 +29,7 @@
 #include <algorithm>
 #include <string>
 
-namespace felitronics::session::testing
+namespace felitronics::declared
 {
 
 // What one piece of work asked the heap for: the number of requests and their bytes, as the counter's `rawBytes` —
@@ -78,4 +81,4 @@ inline std::string describe (std::uint64_t declared, const Spent& s)
          + std::to_string (s.requests) + " allocation(s)";
 }
 
-} // namespace felitronics::session::testing
+} // namespace felitronics::declared

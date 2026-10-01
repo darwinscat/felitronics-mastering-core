@@ -49,7 +49,7 @@ The laws are felitronics-core's (`docs/DSP-ARCHITECTURE.md` §2), numbered as th
 | **9** no `long double` | yes | core's long-double lint reads every `modules/*/include` and `modules/*/src`, this module's included, and the wasm tier's artifact gate reads every emitted object |
 | **10** FP contraction is stated | yes — **as `off`** | the target's own flags in one `SHELL:` group, the compile line read back (this build's and a consumer's), the hostile-flags tests, the library's probes asked from a contracting caller, and the source lint's pragma and attribute rules. Core states `on` for its tree; the session's numbers are compared across rows, native and wasm, and baseline wasm has no fused multiply-add, so a contracting native build would disagree with the module. The library's flags reach its own objects only: a program that links it compiles **every** translation unit with the same FP flags (below, "What the flags do not reach"). The sign and payload of a NaN, and the floating-point exception masks and flags, are outside every check here, as core's law 10 leaves them |
 | **11**, **11b** a request that cannot be honoured is refused whole; checks in a fixed order | yes | `create()` checks the floating-point environment and the config it reads, then allocates: a refused create requested nothing (`felitronics_session_tests`). Every command runs the checks `Commands.h` declares, in their order — the thread's floating-point environment, then the table — before changing session state. Import adds the ordered document checks below. A rejection publishes its event and advances `seq`; the session’s state and revision do not change. A `load` runs its checks, then disarms, then writes (check → disarm → write), so a rejected load, too, leaves state and revision unchanged while publishing its rejection: `felitronics_session_state_tests` compares the whole session before and after every rejection it produces, produces every rejection code, and holds the order with requests wrong in several ways. The C boundary's checks run in its header's order and a refused call writes nothing and allocates nothing (`felitronics_session_abi_tests`). `fcore_session` reads and checks a whole script before it creates a session |
-| **11d** memory is declared before the work | yes | `Session::createBytes()` is the demand of `create()`, counted by the expression that sizes the request, and `Session::check()` gives the demand of every command before it runs — computed by the same function `apply()` runs first; the declared-budget harness (`modules/session/tests/DeclaredBudget.h`, on core's one allocation counter) holds `create()` and every command to *declared ≥ requested* (exactly equal, where the request is one exact allocation), holds `check()`, typed-command refusals and every transition to nothing requested; import parsing and its refusals are covered by the library storage declaration in `felitronics_session_project_tests`, and is itself shown to fail on a sample that under-declares. The event suite also holds `stepBytes()`, `snapshotBytes()`, snapshot copy, and codec size queries and work to their declared demands (below). The demand is checked in C++ and `fc_session_create_bytes` publishes creation demand before creation. The shell supplies a heap ceiling; live declared bytes plus each allocating command's demand must fit before work begins. The C boundary adds nothing to it (its table is static) and keeps the poison |
+| **11d** memory is declared before the work | yes | `Session::createBytes()` is the demand of `create()`, counted by the expression that sizes the request, and `Session::check()` gives the demand of every command before it runs — computed by the same function `apply()` runs first; the declared-budget harness (`tests/DeclaredBudget.h`, on core's one allocation counter) holds `create()` and every command to *declared ≥ requested* (exactly equal, where the request is one exact allocation), holds `check()`, typed-command refusals and every transition to nothing requested; import parsing and its refusals are covered by the library storage declaration in `felitronics_session_project_tests`, and is itself shown to fail on a sample that under-declares. The event suite also holds `stepBytes()`, `snapshotBytes()`, snapshot copy, and codec size queries and work to their declared demands (below). The demand is checked in C++ and `fc_session_create_bytes` publishes creation demand before creation. The shell supplies a heap ceiling; live declared bytes plus each allocating command's demand must fit before work begins. The C boundary adds nothing to it (its table is static) and keeps the poison |
 
 Not listed, and why: **3** (float in the hot path) — there is no hot path; **11c** (a pause is silence) — there are no
 clock-only calls; **11e** (a restart adopts an accepted publication) — the session publishes and adopts nothing.
@@ -333,6 +333,13 @@ cancelled, stopped with the source's measurement it waited for, ended by a contr
 `loadMeasured` (which end every master state, the wait included), it hands the needles back to the project's own ceiling, so the project's plan does not wait for needles nobody measures. A master stopped with the
 measurement says so under its own job's id (fact `cancelled`), beside the measurement's `measurementStopped`.
 
+**The plan states its reasons.** `plan.facts` carries every line `PlanText` gives for a Ready plan — `{device, fact}`,
+in the order of `Device` and, within a device, of `PlanText`'s members — and, last, the waiting fact `planWaiting` (the
+device, the measurement, `awaitedFraction` as its percent) wherever the plan names what a master waits for; a plan that
+is not Ready states that fact alone, or nothing. A shell shows them as they are and composes none: some carry config
+numbers it does not have. Each is written as an event's fact is (`WireFact`); the contract scenario `plan-pending`
+records a waiting plan, the master it refuses, and its reasons once Ready.
+
 **A finding is the planner's proposal; a sentence states what sounds.** `plan.hpf` and `plan.monoBass` hold what the
 machine proposes and what it stood on — its cutoff and the note behind it, the loss at its crossover. What sounds is the
 project's device: a person's layer over a machine's layer that a project file may have written. Each finding says which
@@ -475,7 +482,10 @@ fallback tempo and a release held at a limit as facts.
 The saturation is the chain's tanh stage (`MasteringChainParams::clipper`) — not the peak clipper inside the limiter,
 which is the limiter's. The machine never sets it. The knob is the drive the input would get at 0 dBTP: the core drives
 the shaper at k = 10^(drive/20) − 1, so the stage gets `20·log10(1 + (10^(knob/20) − 1)·10^(−peak/20))` for the
-normalised true peak — no trial render; the compensation is 0, mix and output as set (`plan.saturation`).
+normalised true peak — no trial render; the compensation is 0, mix and output as set (`plan.saturation`). Its TYPE is
+the shaper's curve (`SaturationFields::type`, felitronics-core's `WaveShaper::Shape`): the machine's layer holds the
+config's `[saturation] shape`, tanh, and never another; a person picks tanh, tube, transistor, transformer or tape, and
+an edit or a file that gives atan, cubic or asym by hand is refused `NotOneOf` (those stay the config's, for research).
 WHAT EACH DID is measured on its own stage and reported in the master's cost: `glueP95Db` and `glueMaxDb`, the
 compressor's gain reduction over the programme's 4 ms windows and its largest sample; `saturationCutMaxDb` and
 `saturationCutUsualDb`, the soft clipper's cut of peaks — `MasteringChain::clipperPeaks`: the peak of the stage's
@@ -531,7 +541,7 @@ Files and browser storage belong to the shell. The writer reads no filesystem an
 
 ```toml
 defaults = "2026-09"
-core = "0.4.0"
+core = "0.5.0"
 manual = true
 
 [target]
@@ -1172,6 +1182,7 @@ saved machine layers are retained for every core stamp, and any defaults label b
 | Mono-bass frequency / width | 60–300 Hz / 0–1 | Product / device |
 | Glue | 0–6 dB | Product |
 | Saturation drive / mix / output | 0–12 dB / 0–1 / −6–0 dB | Product / device / product |
+| Saturation type (by hand) | tanh, tube, transistor, transformer, tape | Product |
 | Tilt / low | −6–6 dB | Product |
 | Needles above ceiling | 0–6 dB | Product |
 

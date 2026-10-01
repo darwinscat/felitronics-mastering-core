@@ -56,7 +56,7 @@ echo "emcc: $(emcc --version | head -1)"
 
 CORE="${FELITRONICS_CORE_DIR:-$ROOT/../felitronics-core}"
 [ -f "$CORE/modules/core/include/felitronics/core/DetMath.h" ] \
-    || { echo "no felitronics-core at $CORE — set FELITRONICS_CORE_DIR to a checkout (v0.56.0 or later)"; exit 1; }
+    || { echo "no felitronics-core at $CORE — set FELITRONICS_CORE_DIR to a checkout (v0.57.0 or later)"; exit 1; }
 CORE="$(cd "$CORE" && pwd)"
 # A core that still carries these modules would put a SECOND copy of every header here on the include path,
 # and which one a TU compiled would depend on the order of the -I flags below. The CMake refuses such a core
@@ -535,8 +535,8 @@ read -r SV_MAJOR SV_MINOR SV_PATCH <<< "$(project_version "$ROOT/CMakeLists.txt"
 read -r CV_MAJOR CV_MINOR CV_PATCH <<< "$(project_version "$CORE/CMakeLists.txt" felitronics_core)" || true
 [ -n "${SV_PATCH:-}" ] || { echo "*** no project(felitronics_mastering_core VERSION x.y.z ...) line in $ROOT/CMakeLists.txt"; exit 1; }
 [ -n "${CV_PATCH:-}" ] || { echo "*** no project(felitronics_core VERSION x.y.z ...) line in $CORE/CMakeLists.txt"; exit 1; }
-if [ "$CV_MAJOR" -eq 0 ] && [ "$CV_MINOR" -lt 56 ]; then
-    echo "*** felitronics-core must be v0.56.0 or later"; exit 1
+if [ "$CV_MAJOR" -eq 0 ] && [ "$CV_MINOR" -lt 57 ]; then
+    echo "*** felitronics-core must be v0.57.0 or later"; exit 1
 fi
 echo
 echo "--- fc_session: felitronics-mastering-core $SV_MAJOR.$SV_MINOR.$SV_PATCH over felitronics-core $CV_MAJOR.$CV_MINOR.$CV_PATCH"

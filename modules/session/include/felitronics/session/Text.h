@@ -312,6 +312,10 @@ enum class Term : std::uint16_t
     // Why the machine's peak clipper does not cut (NeedlesWhy, Session.h), for the warning beside a manual threshold.
     NeedlesWhyShell, NeedlesWhyTarget, NeedlesWhyQuiet, NeedlesWhyNoReadings, NeedlesWhyLittleNeed, NeedlesWhyUnmeasured,
     NeedlesWhyNoExcursions, NeedlesWhyClipped, NeedlesWhyLowPlr, NeedlesWhyBass, NeedlesWhyLong,
+    // The saturation's type, a person's choice: the field a refusal names, and the five types the page offers
+    // (SaturationType, Project.h — Atan, Cubic and Asym are the config's only and have no words).
+    FieldSaturationType,
+    SaturationTypeTanh, SaturationTypeTube, SaturationTypeTransistor, SaturationTypeTransformer, SaturationTypeTape,
 
 };
 

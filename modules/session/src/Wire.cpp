@@ -142,28 +142,7 @@ void problemAnswer (Writer& w, CommandId id, std::uint64_t revision, const Probl
     w.field ("revision", revision); w.field ("code", std::string_view ("contract"));
     w.field ("reason", p.reason); w.field ("field", std::string_view (p.name, p.size)); end (w);
 }
-void fact (Writer& w, const OwnedFact& owned) noexcept
-{
-    const auto f = owned.view();
-    begin (w); w.field ("FactId", unsigned (f.id));
-    w.text (",\"args\":[");
-    for (unsigned i = 0; i < f.argCount; ++i)
-    {
-        if (i) w.put (',');
-        const auto& a = f.args[i]; begin (w); w.field ("kind", unsigned (a.kind));
-        w.field ("unit", unsigned (a.unit)); w.field ("precision", unsigned (a.precision));
-        w.field ("sign", unsigned (a.sign)); w.field ("bound", unsigned (a.bound));
-        w.field ("termId", unsigned (a.termId)); w.field ("number", a.number);
-        // Signed count identities also cross JSON as decimal strings, without loss.
-        w.text (",\"integer\":\"");
-        if (a.integer < 0) w.put ('-');
-        const auto magnitude = a.integer < 0 ? std::uint64_t (-(a.integer + 1)) + 1 : std::uint64_t (a.integer);
-        Writer digits; char buf[24]; digits.output = buf; digits.value (magnitude);
-        w.text ({ buf + 1, std::size_t (digits.size - 2) }); w.put ('"');
-        w.field ("userText", a.userText); end (w);
-    }
-    w.text ("]}");
-}
+void fact (Writer& w, const OwnedFact& owned) noexcept { w.value (owned.view()); }
 void eventList (Writer& w, std::span<const Notification> events) noexcept
 {
     w.put ('['); bool first = true;

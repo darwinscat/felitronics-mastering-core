@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
-#include "DeclaredBudget.h"
+#include "../../../tests/DeclaredBudget.h"
 #include "Driver.h"
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/analysis/PeakExcursions.h>
@@ -15,7 +15,7 @@
 using namespace felitronics::session;
 using Excursions = felitronics::analysis::PeakExcursions;
 using felitronics::test::ok;
-namespace budget = felitronics::session::testing;
+namespace declared = felitronics::declared;
 namespace
 {
 constexpr auto slot = std::size_t (Analyzer::Excursions);
@@ -105,9 +105,9 @@ void parity (bool fixture)
             const auto demand=s.needlesStorage(ceiling);
             const auto before=s.snapshot();
             ok(demand.rejection==Rejection::None && before.view().needlesBytes==double(demand.bytes),"job demand is published before preparation");
-            const auto prepared=budget::spend([&]{(void)s.step(1);});
-            ok(budget::covers(demand.bytes,prepared),"declared job bytes cover preparation and MSVC debug proxies/padding");
-            const auto processed=budget::spend([&]{finish(s);});
+            const auto prepared=declared::spend([&]{(void)s.step(1);});
+            ok(declared::covers(demand.bytes,prepared),"declared job bytes cover preparation and MSVC debug proxies/padding");
+            const auto processed=declared::spend([&]{finish(s);});
             ok(processed.bytes==0,"all reads, finish and ownership publication allocate zero");
             std::printf("needles %u Hz/%u ch: declared %llu allocated %lld, finish %lld\n",rate,channels,(unsigned long long)demand.bytes,prepared.bytes,processed.bytes);
             const auto saved=s.snapshot(); const auto& r=saved.view().measurements[slot];
@@ -130,16 +130,16 @@ void parity (bool fixture)
                 std::printf("codec %s\n",text.c_str());
             }
             Snapshot copied; const auto copyPrice=s.snapshotBytes();
-            const auto copy=budget::spend([&]{copied=s.snapshot();});
+            const auto copy=declared::spend([&]{copied=s.snapshot();});
             ok(std::uint64_t(copy.bytes)==copyPrice,"owned snapshot requests exactly its declared arrays and names");
             const auto size=Codec::encodedBytes(saved.view()); std::string json(std::size_t(size.bytes),'\0');
             ok(size.status==CodecStatus::Ok && Codec::encode(saved.view(),json)==CodecStatus::Ok,"needles result encodes");
             Snapshot decoded;
             const auto decodedPrice=Codec::decodedBytes(json);
             CodecStatus decodedStatus {};
-            const auto decodedSpent=budget::spend([&]{decodedStatus=Codec::decode(json,decoded);});
+            const auto decodedSpent=declared::spend([&]{decodedStatus=Codec::decode(json,decoded);});
             ok(decodedStatus==CodecStatus::Ok,"codec restores needles");
-            ok(budget::covers(decodedPrice.bytes,decodedSpent),"codec allocation declaration covers owned output");
+            ok(declared::covers(decodedPrice.bytes,decodedSpent),"codec allocation declaration covers owned output");
             compare(decoded.view().measurements[slot],a);
         }
     }
@@ -170,13 +170,13 @@ void lifecycle()
     ok(saved.view().needlesSource==source && same(number(saved.view().measurements[slot],"thresholdDbTp"),-9),"saved snapshot survives target and source replacement");
     target(s,-10); const auto bytes=s.needlesStorage(-10); const auto revision=s.revision();
     (void)s.setCapacity({s.liveBytes()+double(bytes.bytes)-1,9007199254740991.0});
-    const auto spent=budget::spend([&]{(void)s.step(1);});
+    const auto spent=declared::spend([&]{(void)s.step(1);});
     ok(spent.bytes==0 && s.needlesJob()==0 && s.source().channels==2,"memory refusal occurs before analyzer or output allocation");
     ok(s.events().size()==2 && s.events()[0].payload.error.code==ErrorCode::Memory
        && s.events()[0].payload.error.needBytes>s.capabilities().heapCeilingBytes
        && s.snapshot().view().measurements[slot].reason==MeasurementReason::Memory && s.revision()>revision,"memory event gives exact needBytes and an explicit unavailable result");
     (void)s.setCapacity({}); target(s,-10); (void)s.setCapacity({9007199254740991.0,double(bytes.largestBlockBytes)-1});
-    const auto fragmented=budget::spend([&]{(void)s.step(1);});
+    const auto fragmented=declared::spend([&]{(void)s.step(1);});
     ok(fragmented.bytes==0 && s.events()[0].payload.error.code==ErrorCode::Memory,"largest-block refusal precedes preparation");
     (void)s.setCapacity({}); target(s,-201);
     ok(s.needlesJob()==0 && s.snapshot().view().measurements[slot].reason==MeasurementReason::Unsupported,"out-of-analyzer-domain ceiling is honest and does no work");
@@ -198,7 +198,7 @@ void measured2Cancellation()
         && s.needlesJob() == job && s.revision() == revision, "wrong ID cannot cancel phase-two needles");
     ok (s.check (command::Cancel { 4, job }).rejection == Rejection::None, "phase-two needles cancellation preflight");
     Answer answer;
-    const auto spent = budget::spend ([&] { answer = s.apply (command::Cancel { 4, job }); });
+    const auto spent = declared::spend ([&] { answer = s.apply (command::Cancel { 4, job }); });
     const auto stopped = s.snapshot();
     ok (answer.rejection == Rejection::None && spent.bytes == 0 && s.needlesJob() == 0 && s.measurementJob() == 0
         && s.state() == State::Measured2 && s.source().hash == source, "cancel phase-two needles without allocation or source loss");

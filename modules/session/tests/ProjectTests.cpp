@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
-#include "DeclaredBudget.h"
+#include "../../../tests/DeclaredBudget.h"
 #include "Advance.h"
 #include "Devices.h"
 #include "FpEnvironmentControl.h"
@@ -22,6 +22,7 @@
 using namespace felitronics::session;
 using felitronics::test::ok;
 namespace budget = felitronics::session::testing;
+namespace declared = felitronics::declared;
 namespace
 {
 struct Audio
@@ -62,10 +63,10 @@ std::string json (const SnapshotView& v)
 std::string exported (Session& s)
 {
     Checked need;
-    auto spent = budget::spend ([&] { need = s.exportProjectBytes(); });
+    auto spent = declared::spend ([&] { need = s.exportProjectBytes(); });
     ok (spent.bytes == 0 && need.rejection == Rejection::None, "export demand allocates nothing");
     ProjectText out;
-    spent = budget::spend ([&] { out = s.exportProject(); });
+    spent = declared::spend ([&] { out = s.exportProject(); });
     ok (out.rejection == Rejection::None && need.bytes == std::uint64_t (spent.bytes)
         && out.size == need.bytes, "export allocates exactly its declared bytes, without a terminator");
     return std::string (out.view());
@@ -74,12 +75,12 @@ Answer import (Session& s, const std::string& input, const char* evidence = null
 {
     Checked need;
     const command::ImportProject request { 927, input };
-    auto spent = budget::spend ([&] { need = s.check (request); });
+    auto spent = declared::spend ([&] { need = s.check (request); });
     ok (spent.bytes == 0, "import preflight allocates nothing");
     Answer answer;
-    spent = budget::spend ([&] { answer = s.importProject (request.id, request.bytes); });
-    ok (answer.command == request.id && budget::covers (need.bytes, spent), budget::describe (need.bytes, spent));
-    if (spent.bytes > 0) ok (! budget::covers (std::uint64_t (spent.bytes - 1), spent), "under-declared import demand turns the harness red");
+    spent = declared::spend ([&] { answer = s.importProject (request.id, request.bytes); });
+    ok (answer.command == request.id && declared::covers (need.bytes, spent), declared::describe (need.bytes, spent));
+    if (spent.bytes > 0) ok (! declared::covers (std::uint64_t (spent.bytes - 1), spent), "under-declared import demand turns the harness red");
     if (evidence)
         std::printf ("import budget %s: text=%zu declared=%llu actual=%lld ratio=%.4f\n", evidence, input.size(),
                      static_cast<unsigned long long> (need.bytes), spent.bytes, double (need.bytes) / double (spent.bytes));
@@ -351,7 +352,7 @@ void foreignMachine()
     Snapshot decoded;
     const auto need = Codec::decodedBytes (encoded);
     CodecStatus status;
-    const auto spent = budget::spend ([&] { status = Codec::decode (encoded, decoded); });
+    const auto spent = declared::spend ([&] { status = Codec::decode (encoded, decoded); });
     ok (status == CodecStatus::Ok && need.bytes == std::uint64_t (spent.bytes) && json (decoded.view()) == encoded,
         "machine differences cross the same codec with exact owned storage");
     auto replay = fresh();
@@ -485,8 +486,8 @@ void olderSnapshot()
     Snapshot out;
     const auto need = Codec::decodedBytes (snapshotV1);
     CodecStatus status {};
-    const auto spent = budget::spend ([&] { status = Codec::decode (snapshotV1, out); });
-    ok (need.status == CodecStatus::Ok && status == CodecStatus::Ok && budget::covers (need.bytes, spent),
+    const auto spent = declared::spend ([&] { status = Codec::decode (snapshotV1, out); });
+    ok (need.status == CodecStatus::Ok && status == CodecStatus::Ok && declared::covers (need.bytes, spent),
         "a frozen v1 snapshot decodes within its declared storage");
     if (status != CodecStatus::Ok) return;
     const auto& v = out.view();
@@ -504,7 +505,7 @@ void olderSnapshot()
         "present appended flags survive default initialization of absent peers");
     auto invalid = std::string (snapshotV1);
     invalid.insert (1, "\"devicesPlaced\":null,");
-    const auto rejected = budget::spend ([&] { status = Codec::decode (invalid, out); });
+    const auto rejected = declared::spend ([&] { status = Codec::decode (invalid, out); });
     ok (status == CodecStatus::Invalid && rejected.bytes == 0 && out.view().mandatoryMeasurementsReady,
         "an optional field with an invalid present value rejects before allocation and preserves output");
     ok (Codec::decode (snapshotV1, out) == CodecStatus::Ok && ! out.view().mandatoryMeasurementsReady,

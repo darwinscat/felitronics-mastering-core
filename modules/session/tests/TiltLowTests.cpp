@@ -7,7 +7,7 @@
 // static shelf at 80 Hz, Q 0.6; the three EQ devices together, each moving its own contribution, the curve what the
 // engine runs from the bands written; a person's layer kept hidden, saved and imported, reset by a change of target.
 
-#include "DeclaredBudget.h"
+#include "../../../tests/DeclaredBudget.h"
 #include "Devices.h"
 #include "EqCurve.h"
 #include "Grid.h"

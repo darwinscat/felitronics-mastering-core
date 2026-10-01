@@ -6,7 +6,7 @@
 // plan's key and cache; what a master waits for with the panel open and hidden; the recipe captured when it is asked
 // for; the machine layer an import keeps and adoptMachine replaces; a change of target; and no plan that waits for ever.
 
-#include "DeclaredBudget.h"
+#include "../../../tests/DeclaredBudget.h"
 #include "Advance.h"
 #include "Devices.h"
 #include "EqCurve.h"
@@ -29,6 +29,7 @@
 using namespace felitronics::session;
 using felitronics::test::ok;
 namespace budget = felitronics::session::testing;
+namespace declared = felitronics::declared;
 
 struct felitronics::session::detail::Inspector
 {
@@ -356,6 +357,134 @@ void thePlansKey()
     ok (s.apply (command::SetTarget { 8, "lp" }).rejection == Rejection::None && runs() == r0 + 4, "so is the target");
 }
 
+// THE PLAN'S REASONS as PlanText states them of the plan's own findings, member by member — what PlanView::facts must
+// carry, and nothing else.
+std::vector<PlanFact> reasonsOf (const PlanView& p)
+{
+    std::vector<PlanFact> out;
+    const auto add = [&] (Device d, const std::optional<text::Fact>& f) { if (f) out.push_back ({ d, *f }); };
+    if (p.status == PlanStatus::Ready)
+    {
+        add (Device::Hpf, PlanText::hpf (p.hpf));
+        add (Device::MonoBass, PlanText::monoBass (p.monoBass));
+        add (Device::MonoBass, PlanText::monoBassPolarity (p.monoBass));
+        add (Device::MonoBass, PlanText::monoBassCoverage (p.monoBass));
+        add (Device::Glue, PlanText::glue (p.glue));
+        add (Device::Glue, PlanText::glueTempo (p.glue));
+        add (Device::Glue, PlanText::glueRelease (p.glue));
+        add (Device::Limiter, PlanText::limiter (p.limiter));
+        add (Device::Limiter, PlanText::needlesAgainstMachine (p.limiter));
+        add (Device::Limiter, PlanText::vinylCeiling (p.limiter));
+        add (Device::Limiter, PlanText::vinylNeedles (p.limiter));
+        add (Device::Limiter, PlanText::vinylTop (p.limiter));
+        add (Device::Dither, PlanText::dither (p.dither));
+    }
+    return out;
+}
+bool sameFact (const text::Fact& a, const text::Fact& b)
+{
+    bool eq = a.id == b.id && a.argCount == b.argCount;
+    for (unsigned i = 0; eq && i < a.argCount; ++i)
+    {
+        const auto& x = a.args[i]; const auto& y = b.args[i];
+        eq = x.kind == y.kind && x.unit == y.unit && x.precision == y.precision && x.sign == y.sign && x.bound == y.bound
+          && x.termId == y.termId && sameBits (x.number, y.number) && x.integer == y.integer && x.userText == y.userText;
+    }
+    return eq;
+}
+// The plan states PlanText's lines for it, in order, and — where it waits — the waiting fact after them.
+bool statesItsReasons (const PlanView& p)
+{
+    auto expected = reasonsOf (p);
+    if (p.awaited && p.awaitedBy)
+    {
+        const auto device = text::Term (unsigned (text::Term::DeviceHpf) + unsigned (*p.awaitedBy));
+        const auto analyzer = *p.awaited == Analyzer::Tempo ? text::Term::AnalyzerTempo : text::Term::AnalyzerNeedles;
+        expected.push_back ({ *p.awaitedBy, text::Fact::of (text::FactId::PlanWaiting, text::Arg::term (device),
+            text::Arg::term (analyzer), text::Arg::value (100.0 * p.awaitedFraction, text::Unit::Percent, 0)) });
+    }
+    bool eq = p.facts.count == expected.size();
+    for (std::size_t i = 0; eq && i < expected.size(); ++i)
+        eq = p.facts.items[i].device == expected[i].device && sameFact (p.facts.items[i].fact, expected[i].fact);
+    return eq;
+}
+bool states (const PlanView& p, Device device, text::FactId id)
+{
+    for (unsigned i = 0; i < p.facts.count; ++i)
+        if (p.facts.items[i].device == device && p.facts.items[i].fact.id == id) return true;
+    return false;
+}
+std::string ids (const PlanView& p)
+{
+    std::string out;
+    for (unsigned i = 0; i < p.facts.count; ++i)
+        out += (i ? " " : "") + std::to_string (unsigned (p.facts.items[i].device)) + ":" + std::to_string (unsigned (p.facts.items[i].fact.id));
+    return "[" + out + "]";
+}
+
+void thePlanStatesItsReasons()
+{
+    felitronics::test::group ("the plan states each device's reasons as PlanText does, and a new plan states its own");
+    auto sp = placedShort(); auto& s = *sp;
+    auto plan = [&] { return s.snapshot().view().plan; };
+    ok (statesItsReasons (plan()) && plan().facts.count != 0 && states (plan(), Device::Hpf, PlanText::hpf (plan().hpf).id)
+        && states (plan(), Device::Limiter, PlanText::limiter (plan().limiter).id) && states (plan(), Device::Dither, PlanText::dither (plan().dither).id),
+        "a Ready plan states the high-pass's, the limiter's and the dither's lines: " + ids (plan()));
+    ok (s.apply (command::SetManual { 2, true }).rejection == Rejection::None, "PRECONDITION: the panel opens");
+    HpfFields<Touched> hpf; hpf.on = true; hpf.fq = 40.0;
+    ok (s.apply (command::EditDevice { 3, hpf }).rejection == Rejection::None, "PRECONDITION: a person's high-pass");
+    ok (statesItsReasons (plan()) && states (plan(), Device::Hpf, text::FactId::HpfByHand), "hpf: a person's value, as PlanText says it: " + ids (plan()));
+    MonoBassFields<Touched> mono; mono.on = true; mono.fq = 100.0;
+    ok (s.apply (command::EditDevice { 4, mono }).rejection == Rejection::None, "PRECONDITION: a person's mono bass");
+    ok (statesItsReasons (plan()) && states (plan(), Device::MonoBass, text::FactId::MonoBassByHand), "mono bass: " + ids (plan()));
+    GlueFields<Touched> glue; glue.on = true; glue.upToDb = 1.0;
+    ok (s.apply (command::EditDevice { 5, glue }).rejection == Rejection::None, "PRECONDITION: a person's glue");
+    ok (statesItsReasons (plan()) && states (plan(), Device::Glue, text::FactId::GlueUnavailable), "glue, with no P95 to stand on: " + ids (plan()));
+    LimiterFields<Touched> limiter; limiter.needles = Needles::Manual; limiter.needlesDb = 1.0;
+    ok (s.apply (command::EditDevice { 6, limiter }).rejection == Rejection::None, "PRECONDITION: a person's peak clipper");
+    ok (statesItsReasons (plan()) && states (plan(), Device::Limiter, text::FactId::LimiterManual)
+        && states (plan(), Device::Limiter, text::FactId::NeedlesAgainstMachine), "limiter and needles, against the machine: " + ids (plan()));
+    ok (s.apply (command::SetTarget { 7, "lp" }).rejection == Rejection::None, "PRECONDITION: a target cut to vinyl");
+    command::EditTarget raised { 8, {} }; raised.fields.tp = -1.0;
+    ok (s.apply (raised).rejection == Rejection::None, "PRECONDITION: a person's ceiling above vinyl's");
+    ok (statesItsReasons (plan()) && states (plan(), Device::Limiter, text::FactId::VinylTop) && states (plan(), Device::Limiter, text::FactId::VinylCeiling)
+        && ! states (plan(), Device::Hpf, text::FactId::HpfByHand) && ! states (plan(), Device::Glue, text::FactId::GlueUnavailable),
+        "vinyl: the medium's lines, and nothing left of the plan before: " + ids (plan()));
+    ok (s.apply (command::SetTarget { 9, "cd" }).rejection == Rejection::None, "PRECONDITION: a 16-bit delivery");
+    DitherFields<Touched> dither; dither.on = false;
+    ok (s.apply (command::EditDevice { 10, dither }).rejection == Rejection::None, "PRECONDITION: a person switches the dither off");
+    ok (statesItsReasons (plan()) && states (plan(), Device::Dither, text::FactId::DitherOffByHand) && ! states (plan(), Device::Limiter, text::FactId::VinylTop),
+        "dither: " + ids (plan()));
+}
+
+void aWaitingPlanStatesItsWaitAlone()
+{
+    felitronics::test::group ("a plan that waits states the wait alone, its progress as it moves; then its reasons");
+    Clicks audio;
+    auto sp = fresh(); auto& s = *sp;
+    (void) s.apply (command::SetTarget { 1, "cd" });
+    (void) s.apply (audio.load (2));
+    (void) s.apply (command::SetManual { 3, true });
+    ok (stepUntil (s, [&] { return s.state() != State::Loaded; }) && s.state() == State::Measured1, "PRECONDITION: the first measurement ends");
+    auto p = s.snapshot().view().plan;
+    ok (p.status == PlanStatus::Pending && p.awaited == Analyzer::Tempo && p.awaitedBy == Device::Glue, "PRECONDITION: the plan waits for the tempo");
+    ok (p.facts.count == 1 && p.facts.items[0].device == Device::Glue && p.facts.items[0].fact.id == text::FactId::PlanWaiting
+        && statesItsReasons (p), "a Pending plan states none of its reasons, only what the master waits for: " + ids (p));
+    bool followed = true, moved = false;
+    ok (stepUntil (s, [&]
+    {
+        const auto view = s.snapshot();
+        const auto& now = view.view().plan;
+        followed = followed && statesItsReasons (now);
+        moved = moved || (now.awaited && now.awaitedFraction > 0);
+        return now.waiting == 0;
+    }), "the tempo ends");
+    ok (followed && moved, "the waiting fact follows the progress, one at a time");
+    p = s.snapshot().view().plan;
+    ok (p.status == PlanStatus::Ready && ! states (p, Device::Glue, text::FactId::PlanWaiting) && statesItsReasons (p) && p.facts.count != 0,
+        "then the plan states its reasons and no wait: " + ids (p));
+}
+
 void theOpenPanelWaits()
 {
     felitronics::test::group ("with the panel open a master waits for what its devices read, and says what and how far");
@@ -651,7 +780,7 @@ void anImportKeepsTheFilesMachine()
         ok (factIn (s, foreign ? text::FactId::MachineDifferences : text::FactId::SameCoreMachineDifferences, 1),
             foreign ? "another core: the difference is announced" : "the same core: announced as a hand-edited file");
         Answer adopt;
-        const auto spent = budget::spend ([&] { adopt = s.apply (command::AdoptMachine { 3 }); });
+        const auto spent = declared::spend ([&] { adopt = s.apply (command::AdoptMachine { 3 }); });
         ok (adopt.rejection == Rejection::None && s.revision() == revision + 2, "adoptMachine is taken");
         ok (spent.requests == 0, "and asks the heap for nothing");
         const auto adopted = s.snapshot();
@@ -796,6 +925,8 @@ int main()
     theEqStage();
     thePlansKey();
     theOpenPanelWaits();
+    thePlanStatesItsReasons();
+    aWaitingPlanStatesItsWaitAlone();
     aTargetWithoutGlueDoesNotWaitForTempo();
     theNeedlesAreWaitedForAtTheirCeiling();
     aHiddenMasterKeepsWhatWasAsked();
