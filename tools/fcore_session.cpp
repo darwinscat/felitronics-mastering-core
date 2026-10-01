@@ -121,7 +121,6 @@ const char* nameOf (felitronics::session::Rejection r)
         case Rejection::ProjectType: return "ProjectType";
         case Rejection::ProjectUnknownKey: return "ProjectUnknownKey";
         case Rejection::UnknownDefaults: return "UnknownDefaults";
-        case Rejection::ProjectCore: return "ProjectCore";
         case Rejection::NewerDefaults: return "NewerDefaults";
         case Rejection::RateAboveLimit: return "RateAboveLimit";
         case Rejection::Contract:                 return "Contract";

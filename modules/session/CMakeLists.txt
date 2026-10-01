@@ -301,6 +301,15 @@ if(FELITRONICS_BUILD_TESTS)
     endif()
     add_test(NAME felitronics_session_tilt_low_tests COMMAND felitronics_session_tilt_low_tests)
 
+    add_executable(felitronics_session_eq_bands_tests tests/EqBandsTests.cpp)
+    target_link_libraries(felitronics_session_eq_bands_tests PRIVATE felitronics::session felitronics::toml felitronics::core felitronics::test_support felitronics::analysis_offline felitronics::tempo)
+    target_include_directories(felitronics_session_eq_bands_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_features(felitronics_session_eq_bands_tests PRIVATE cxx_std_20)
+    if(NOT MSVC)
+        target_compile_options(felitronics_session_eq_bands_tests PRIVATE -ffp-contract=off)
+    endif()
+    add_test(NAME felitronics_session_eq_bands_tests COMMAND felitronics_session_eq_bands_tests)
+
     add_executable(felitronics_session_glue_saturation_tests tests/GlueSaturationTests.cpp)
     target_link_libraries(felitronics_session_glue_saturation_tests PRIVATE felitronics::session felitronics::toml felitronics::core felitronics::test_support felitronics::analysis_offline felitronics::tempo)
     target_include_directories(felitronics_session_glue_saturation_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
@@ -320,6 +329,7 @@ if(FELITRONICS_BUILD_TESTS)
         target_compile_options(felitronics_session_plan_sound_tests PRIVATE -ffp-contract=off)
     endif()
     add_test(NAME felitronics_session_plan_sound_tests COMMAND felitronics_session_plan_sound_tests)
+    add_test(NAME felitronics_session_machine_norm_tests COMMAND felitronics_session_plan_sound_tests machine-norm)
     # The shipped targets with lp's `vinyl` taken away and its `noClipper` kept: the medium's warnings key on the medium,
     # and no shipped row tells the two apart.
     file(READ ${CMAKE_CURRENT_SOURCE_DIR}/config/targets.toml planSoundTargets)
@@ -557,7 +567,7 @@ if(FELITRONICS_BUILD_TESTS)
     if(NOT EMSCRIPTEN)
         set(FELITRONICS_SESSION_CONFIG_CONTROLS
             "unknown_key|engine|releaseMs = 50|releseMs = 50|releseMs|UnknownKey limiter.releseMs"
-            "out_of_range|engine|hzMax = 50|hzMax = 4000|4000|OutOfRange hpf.hzMax"
+            "out_of_range|engine|hzMax = 80|hzMax = 4000|4000|OutOfRange hpf.hzMax"
             "wrong_type|targets|default = \"allStreaming\"|default = 14|14|WrongType default"
             "crest_corners|engine|bandEdgesHz = [120, 2000, 6000]|bandEdgesHz = []|[]|Refused crest.bandEdgesHz"
             "geometric_offset|engine|to = -9, law = \"linear\"|to = -9, law = \"geometric\"|\"geometric\"|Refused glue.threshOffset.law"
@@ -804,7 +814,6 @@ add_custom_command(OUTPUT ${FELITRONICS_SESSION_TYPES}
     DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/version.txt
             ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec.cmake
             ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-codec-schema.json
-            ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-abi-v1.txt
             ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/fc_session_abi.h
             ${CMAKE_CURRENT_SOURCE_DIR}/../../tools/session-runtime.mjs.in
             ${CMAKE_CURRENT_SOURCE_DIR}/src/CodecSchema.h VERBATIM)

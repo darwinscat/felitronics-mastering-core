@@ -4,8 +4,8 @@
 // THE SCENARIO, END TO END (docs/DECIDE-COVERAGE.md, gaps A1–A3). One synthetic source, independent sessions: load →
 // measure → plan → a person's hand (tilt +1.25 dB, low shelf +0.75 dB, a louder target) → master → export → import into
 // another session → master. The two masters are one master: the same snapshot JSON, recipe, facts, defaults and sound
-// versions, PCM and WAV bytes. Then, on the same file: a same-core and a foreign-core import both keep the file's machine
-// layer and sound alike; AdoptMachine and a master give the fresh session's master; step budgets of 1, 7 and a large one
+// versions, PCM and WAV bytes. Then, on the same file with a machine opinion of its own: the import keeps the
+// file's machine layer; AdoptMachine and a master give the fresh session's master; step budgets of 1, 7 and a large one
 // give the same bytes; a cancelled waiting master and a stale needles job publish nothing; import → master → release,
 // repeated, with refusals between, leaves the session's live bytes where the first cycle left them.
 //
@@ -147,11 +147,10 @@ bool sameSound (const Made& a, const Made& b)
         if (std::bit_cast<std::uint32_t> (a.pcm[i]) != std::bit_cast<std::uint32_t> (b.pcm[i])) return false;
     return true;
 }
-bool sameCore (Version a, Version b) { return a.major == b.major && a.minor == b.minor && a.patch == b.patch; }
 bool sameRecipe (const Recipe& a, const Recipe& b)
 {
     return a.source == b.source && a.sound == b.sound && a.readyHash == b.readyHash && a.deliveryRateHz == b.deliveryRateHz
-        && a.readyVersion == b.readyVersion && a.project.target == b.project.target && sameCore (a.project.core, b.project.core);
+        && a.readyVersion == b.readyVersion && a.project.target == b.project.target;
 }
 
 // The whole snapshot as the wire carries it, but for the revision and the kept masters' ids (counts of commands and of
@@ -213,8 +212,8 @@ Reference theScenario()
     const auto first = master (a, 6, kLarge);
     ok (first.made && ! first.facts.empty() && first.rate == Mix::rate, "the first master is made, with its report's facts");
     const auto file = exported (a);
-    ok (header (file, "core") == version (Session::version()) && ! header (file, "defaults").empty(),
-        "the file stamps this core and the defaults (" + header (file, "defaults") + ")");
+    ok (header (file, "core").empty() && ! header (file, "defaults").empty(),
+        "the file stamps the defaults (" + header (file, "defaults") + ") and no core");
 
     // THE SECOND SESSION: its own load and measurement, the file, a master.
     auto bp = measured (mix, kLarge); auto& b = *bp;
@@ -231,12 +230,11 @@ Reference theScenario()
     ok (first.facts == second.facts, "the same facts (" + std::to_string (first.facts.size()) + ")");
     const auto snapshot = json (b);
     ok (json (a) == snapshot && ! snapshot.empty(), "the same snapshot JSON, the kept master's report in it");
-    ok (header (exported (b), "defaults") == header (file, "defaults") && header (exported (b), "core") == header (file, "core"),
-        "the same defaults and core in the second session's file");
+    ok (header (exported (b), "defaults") == header (file, "defaults"), "the same defaults in the second session's file");
 
-    // PARITY LINES (tools/wasm/scenario-parity.mjs). The plan is the file without its core stamp, and the ready recipe.
+    // PARITY LINES (tools/wasm/scenario-parity.mjs). The plan is the project file and the ready recipe.
     Fnv plan, facts, pcm, wav;
-    plan.text (withHeader (file, "core", "")); plan.word (first.kept.recipe.readyHash, 8);
+    plan.text (file); plan.word (first.kept.recipe.readyHash, 8);
     for (const auto& f : first.facts) { facts.text (f); facts.byte ('\n'); }
     for (const float x : first.pcm) pcm.word (std::bit_cast<std::uint32_t> (x), 4);
     for (const auto x : first.wav) wav.byte (x);
@@ -272,41 +270,31 @@ Reference theScenario()
     return { file, first, snapshot, a.snapshot().view().needlesCeilingDb };
 }
 
-// The file's machine layer, carried by a same-core file and by a foreign one: a high-pass from 36 Hz where this planner
-// places it at its 32 Hz floor.
+// The file's machine layer: a high-pass from 36 Hz where this planner places it at its 32 Hz floor.
 void theFilesMachine (const Reference& ref)
 {
-    felitronics::test::group ("the file's machine layer: kept by a same-core and a foreign-core import alike; adoptMachine gives the fresh session's master");
+    felitronics::test::group ("the file's machine layer: kept by an import; adoptMachine gives the fresh session's master");
     const Mix mix;
     const auto altered = ref.file + "\n[hpf]\nfq.machine = 36\n";
-    const auto foreign = withHeader (altered, "core", "0.0.1");
-    const auto opened = [&] (const std::string& file, const char* what)
+    auto sp = measured (mix, kLarge); auto& other = *sp;
+    const bool taken = other.apply (command::ImportProject { 3, altered }).rejection == Rejection::None && pump (other, kLarge);
     {
-        auto s = measured (mix, kLarge);
-        const bool taken = s->apply (command::ImportProject { 3, file }).rejection == Rejection::None && pump (*s, kLarge);
-        const auto v = s->snapshot();
+        const auto v = other.snapshot();
         const auto& differences = v.view().machineDifferences;
-        ok (taken && s->project().devices.hpf.machine.fq == 36.0 && v.view().plan.fromFile && differences.size() == 1
+        ok (taken && other.project().devices.hpf.machine.fq == 36.0 && v.view().plan.fromFile && differences.size() == 1
             && differences[0].device == Device::Hpf && differences[0].fileValue == 36.0 && differences[0].coreValue == 32.0,
-            std::string (what) + ": the file's 36 Hz kept, this planner's 32 Hz shown beside it");
-        return s;
-    };
-    auto sp = opened (altered, "a same-core file"); auto& same = *sp;
-    auto cp = opened (foreign, "a foreign-core file"); auto& other = *cp;
-    const auto sameMaster = master (same, 4, kLarge);
-    const auto otherMaster = master (other, 4, kLarge);
-    ok (sameSound (sameMaster, otherMaster) && sameMaster.kept.recipe.readyHash == otherMaster.kept.recipe.readyHash,
-        "both files sound alike: the same PCM and WAV bytes");
-    ok (! sameSound (sameMaster, ref.first), "and the file's machine sounds: its master is not the planner's");
+            "the file's 36 Hz kept, this planner's 32 Hz shown beside it");
+    }
+    const auto fileMaster = master (other, 4, kLarge);
+    ok (! sameSound (fileMaster, ref.first), "the file's machine sounds: its master is not the planner's");
     ok (other.apply (command::AdoptMachine { 5 }).rejection == Rejection::None && other.project().devices.hpf.machine.fq == 32.0
         && other.snapshot().view().machineDifferences.empty() && other.project().devices.tilt.hand.db
         && *other.project().devices.tilt.hand.db == 1.25, "adoptMachine takes the planner's 32 Hz and keeps the person's 1.25 dB");
     const auto adopted = master (other, 6, kLarge);
     ok (sameSound (adopted, ref.first) && adopted.kept.recipe.readyHash == ref.first.kept.recipe.readyHash && adopted.facts == ref.first.facts,
         "its master sounds as the fresh session's: PCM, WAV, the ready recipe and the facts");
-    ok (sameRecipe (adopted.kept.recipe, ref.first.kept.recipe) && header (exported (other), "core") == version (Session::version()),
-        "and it is the fresh session's master: the machine layer this core placed is stamped with this core (recipe "
-        + version (adopted.kept.recipe.project.core) + ", file " + header (exported (other), "core") + ")");
+    ok (sameRecipe (adopted.kept.recipe, ref.first.kept.recipe) && exported (other) == ref.file,
+        "and it is the fresh session's master, and the fresh session's file");
 }
 
 // Pump slicing: budgets of 1 and 7 units a call give the large budget's session and master.

@@ -82,6 +82,8 @@ template <class E> struct Name
 };
 constexpr Name<Group> kGroups[] = { { "streaming", Group::Streaming }, { "delivery", Group::Delivery },
                                     { "aggregator", Group::Aggregator } };
+constexpr Name<TargetNote> kTargetNotes[] = { { "measured", TargetNote::Measured }, { "practice", TargetNote::Practice },
+                                              { "noNormalisation", TargetNote::NoNormalisation } };
 constexpr Name<Detector> kDetectors[] = { { "peak", Detector::Peak }, { "rms", Detector::Rms } };
 constexpr Name<Link> kLinks[] = { { "max", Link::Max }, { "meanPower", Link::MeanPower } };
 constexpr Name<CompressorMode> kModes[] = { { "downCompress", CompressorMode::DownCompress },
@@ -95,9 +97,11 @@ constexpr Name<SaturationShape> kShapes[] = { { "tanh", SaturationShape::Tanh },
                                               { "cubic", SaturationShape::Cubic }, { "asym", SaturationShape::Asym },
                                               { "tube", SaturationShape::Tube }, { "transistor", SaturationShape::Transistor },
                                               { "transformer", SaturationShape::Transformer }, { "tape", SaturationShape::Tape } };
+constexpr Name<BandType> kBandTypes[] = { { "bell", BandType::Bell }, { "highShelf", BandType::HighShelf } };
 constexpr Name<NoiseShaping> kShapings[] = { { "none", NoiseShaping::None }, { "weighted", NoiseShaping::Weighted },
                                              { "psycho", NoiseShaping::Psycho } };
-constexpr Name<Kind> kKinds[] = { { "error", Kind::Error }, { "warning", Kind::Warning }, { "note", Kind::Note } };
+constexpr Name<Kind> kKinds[] = { { "error", Kind::Error }, { "warning", Kind::Warning }, { "note", Kind::Note },
+                                   { "reading", Kind::Reading } };
 
 // Exact equality of two doubles, each the correctly rounded value of a decimal of a document, without -Wfloat-equal's
 // objection.
@@ -403,6 +407,12 @@ void readHpf (Doc& d, Reader& in, Hpf& o, std::vector<std::int32_t>& bands)
     const bool lo = in.required ("hzMin", o.hzMin, hpfDomain());
     const bool hi = in.required ("hzMax", o.hzMax, hpfDomain());
     d.below (in, lo && hi, o.hzMin, o.hzMax, "hzMax");
+    // The machine's top lies on the travel: above its start, at most its end — a person can set what the machine can.
+    if (in.required ("machineTopHz", o.machineTopHz, hpfDomain()))
+    {
+        d.below (in, lo, o.hzMin, o.machineTopHz, "machineTopHz");
+        if (hi && o.hzMax < o.machineTopHz) d.refuse (in, "machineTopHz", Refusal::OutOfOrder);
+    }
     const R travel = lo && hi && o.hzMin < o.hzMax ? R { o.hzMin, o.hzMax } : R { 1.0, 200.0 };
     if (in.required ("slopes", o.slopes, I { 6, 96 }))
     {
@@ -575,10 +585,6 @@ void readSaturation (Doc& d, Reader& in, Saturation& o)
     const R mix = readDomain (d, in, "mixDomain", o.mixDomain, R { 0.0, 1.0 });
     d.pair (in, "mixRange", o.mixRange, mix);
     in.required ("mix", o.mix, mix);
-    in.required ("outputStep", o.outputStep, R { 0.01, 6.0 });
-    const R output = readDomain (d, in, "outputDomain", o.outputDomain, R { -6.0, 0.0 });
-    d.pair (in, "outputRange", o.outputRange, output);
-    in.required ("outputDb", o.outputDb, output);
     in.required ("autoComp", o.autoComp, share());       // the core's domain
     in.required ("dcBlockHz", o.dcBlockHz, R { 0.0, 200.0 });
     in.table ("cut", Need::Required, [&] (Reader& t)
@@ -611,6 +617,29 @@ void readLow (Doc& d, Reader& in, Low& o, std::vector<std::int32_t>& bands)
     in.required ("q", o.q, R { 0.1, 10.0 });
     readMoveTravel (d, in, o.normal, o.hard, o.domain);
     in.required ("step", o.step, R { 0.01, 3.0 });
+}
+
+// One of [bands]: its own band of the stage, a bell or a high shelf at freqHz with q, and a knob whose travel lies within
+// its domain, which holds the neutral 0.
+void readEqMove (Doc& d, Reader& in, EqMove& o, std::vector<std::int32_t>& bands)
+{
+    d.band (in, o.band, bands);
+    d.name (in, "type", o.type, kBandTypes);
+    in.required ("freqHz", o.freqHz, R { 20.0, 20000.0 });
+    in.required ("q", o.q, R { 0.1, 10.0 });
+    const R bounds = readDomain (d, in, "domain", o.domain, R { -6.0, 6.0 });
+    if (o.domain.min > 0.0 || o.domain.max < 0.0) d.outOfRange (in, "domain");
+    d.pair (in, "hard", o.hard, bounds);
+    in.required ("step", o.step, R { 0.01, 3.0 });
+}
+
+void readBands (Doc& d, Reader& in, Bands& o, std::vector<std::int32_t>& bands)
+{
+    in.table ("body", Need::Required, [&] (Reader& t) { readEqMove (d, t, o.body, bands); });
+    in.table ("mud", Need::Required, [&] (Reader& t) { readEqMove (d, t, o.mud, bands); });
+    in.table ("forward", Need::Required, [&] (Reader& t) { readEqMove (d, t, o.forward, bands); });
+    in.table ("brightness", Need::Required, [&] (Reader& t) { readEqMove (d, t, o.brightness, bands); });
+    in.table ("air", Need::Required, [&] (Reader& t) { readEqMove (d, t, o.air, bands); });
 }
 
 void readStages (Doc& d, Reader& in, Stages& o)
@@ -803,12 +832,21 @@ void readObservations (Doc& d, Reader& in, Observations& o)
         const bool f = t.required ("from", o.dcOffsetFrom, share());
         const bool a = t.required ("fullAt", o.dcOffsetFullAt, share());
         d.below (t, f && a, o.dcOffsetFrom, o.dcOffsetFullAt, "fullAt");
+        // The style by size: a warning from warningFrom, an error from errorFrom — in that order.
+        const bool w = t.required ("warningFrom", o.dcOffsetWarningFrom, share());
+        const bool e = t.required ("errorFrom", o.dcOffsetErrorFrom, share());
+        d.below (t, w && e, o.dcOffsetWarningFrom, o.dcOffsetErrorFrom, "errorFrom");
     });
     in.table ("bitsUnused", Need::Required, [&] (Reader& t)
     {
-        const bool f = t.required ("fromBits", o.bitsUnusedFromBits, I { 0, 32 });
-        const bool a = t.required ("fullAtBits", o.bitsUnusedFullAtBits, I { 0, 32 });
-        if (f && a && ! (o.bitsUnusedFromBits < o.bitsUnusedFullAtBits)) d.refuse (t, "fullAtBits", Refusal::OutOfOrder);
+        // Bits short of the full depth: found from fromBitsShort, full at fullAtBitsShort, an error from errorFromBitsShort.
+        t.required ("depthBits", o.bitsUnusedDepthBits, I { 1, 32 });
+        const bool f = t.required ("fromBitsShort", o.bitsUnusedFromBitsShort, I { 1, 32 });
+        const bool a = t.required ("fullAtBitsShort", o.bitsUnusedFullAtBitsShort, I { 1, 32 });
+        if (f && a && ! (o.bitsUnusedFromBitsShort < o.bitsUnusedFullAtBitsShort)) d.refuse (t, "fullAtBitsShort", Refusal::OutOfOrder);
+        if (t.required ("errorFromBitsShort", o.bitsUnusedErrorFromBitsShort, I { 1, 32 }) && f
+            && o.bitsUnusedErrorFromBitsShort < o.bitsUnusedFromBitsShort)
+            d.refuse (t, "errorFromBitsShort", Refusal::OutOfOrder);
     });
     in.table ("edgeSilence", Need::Required, [&] (Reader& t)
     {
@@ -821,7 +859,10 @@ void readObservations (Doc& d, Reader& in, Observations& o)
         const bool f = t.required ("fromProminenceDb", o.humFromProminenceDb, R { 0.0, 120.0 });
         const bool a = t.required ("fullAtProminenceDb", o.humFullAtProminenceDb, R { 0.0, 120.0 });
         d.below (t, f && a, o.humFromProminenceDb, o.humFullAtProminenceDb, "fullAtProminenceDb");
-        fullAtAlone (t, "fullAtPowerAgainstProgramme", o.humFullAtPowerAgainstProgramme, share());
+        const bool pf = t.required ("fromPowerDb", o.humFromPowerDb, R { -200.0, 0.0 });
+        const bool pa = t.required ("fullAtPowerDb", o.humFullAtPowerDb, R { -200.0, 0.0 });
+        d.below (t, pf && pa, o.humFromPowerDb, o.humFullAtPowerDb, "fullAtPowerDb");
+        t.required ("warningFromSeverity", o.humWarningFromSeverity, share());
     });
     in.table ("humWandered", Need::Required, [&] (Reader& t)
     {
@@ -845,19 +886,32 @@ void readObservations (Doc& d, Reader& in, Observations& o)
         const bool l = t.required ("low", o.infraLowLow, share());
         const bool h = t.required ("high", o.infraLowHigh, share());
         d.below (t, l && h, o.infraLowLow, o.infraLowHigh, "high");
+        // A warning from warningFrom: from where the finding is found on.
+        if (t.required ("warningFrom", o.infraLowWarningFrom, share()) && l && o.infraLowWarningFrom < o.infraLowLow)
+            d.refuse (t, "warningFrom", Refusal::OutOfOrder);
     });
     in.table ("wideBass", Need::Required, [&] (Reader& t)
     {
-        fullAtAlone (t, "sideFractionAtLeast", o.wideBassSideFractionAtLeast, share());   // at 0 every file has wide bass
+        const bool f = t.required ("sideFractionAtLeast", o.wideBassSideFractionAtLeast, share());
+        if (f && ! (o.wideBassSideFractionAtLeast > 0.0)) d.outOfRange (t, "sideFractionAtLeast");   // at 0 every file has wide bass
+        const bool a = t.required ("fullAt", o.wideBassFullAt, share());
+        d.below (t, f && a, o.wideBassSideFractionAtLeast, o.wideBassFullAt, "fullAt");
     });
     in.table ("polarity", Need::Required, [&] (Reader& t)
     {
         t.required ("correlationBelow", o.polarityCorrelationBelow, R { -1.0, 1.0 });
         t.required ("rawSideFractionAbove", o.polarityRawSideFractionAbove, share());
+        // The severity by the low band's correlation, from 0 down: full below zero.
+        if (t.required ("fullAtLowCorrelation", o.polarityFullAtLowCorrelation, R { -1.0, 1.0 }) && ! (o.polarityFullAtLowCorrelation < 0.0))
+            d.outOfRange (t, "fullAtLowCorrelation");
     });
     in.table ("alreadyLimited", Need::Required, [&] (Reader& t)
     {
-        t.required ("plrBelowDb", o.alreadyLimitedPlrBelowDb, R { 0.0, 40.0 });
+        const bool b = t.required ("plrBelowDb", o.alreadyLimitedPlrBelowDb, R { 0.0, 40.0 });
+        // The severity rises as the PLR falls: full at a PLR under the bound.
+        if (t.required ("fullAtPlrDb", o.alreadyLimitedFullAtPlrDb, R { 0.0, 40.0 }) && b
+            && ! (o.alreadyLimitedFullAtPlrDb < o.alreadyLimitedPlrBelowDb))
+            d.refuse (t, "fullAtPlrDb", Refusal::OutOfOrder);
     });
     in.table ("vinylTop", Need::Required, [&] (Reader& t)
     {
@@ -1020,6 +1074,7 @@ void readEngine (Doc& d, Reader& in, Engine& o, const std::vector<std::string>* 
     {
         readLow (d, t, o.low, bands);
     });
+    in.table ("bands", Need::Required, [&] (Reader& t) { readBands (d, t, o.bands, bands); });
     in.table ("eq", Need::Required, [&] (Reader& t)
     {
         t.table ("curve", Need::Required, [&] (Reader& c)
@@ -1152,6 +1207,16 @@ void readTargets (Doc& d, Reader& in, Targets& o, const Engine& e)
             if (o.find (o.main[i]) == nullptr) d.refuseItem (in, "main", i, Refusal::NotATarget);
         d.unique (in, "main", o.main);
     }
+    in.table ("notes", Need::Required, [&] (Reader& t)
+    {
+        for (const auto& entry : t.data().entries())
+        {
+            TargetNoteRow n { entry.key, TargetNote::Measured };
+            if (! d.name (t, entry.key, n.note, kTargetNotes)) continue;
+            if (o.find (entry.key) == nullptr) d.refuse (t, entry.key, Refusal::NotATarget);
+            else o.notes.push_back (std::move (n));
+        }
+    });
 }
 
 //==============================================================================

@@ -49,6 +49,43 @@ std::optional<text::Fact> MasterReportText::miss (const MasterReport& report) no
         text::Arg::value (report.targetLufs, text::Unit::Lufs, 1),
         text::Arg::value (std::fabs (*report.missLu), text::Unit::Lu, 1));
 }
+std::optional<text::Fact> MasterReportText::landing (const MasterReport& report, const LandingSummary& landing,
+                                                     double toleranceLu) noexcept
+{
+    using text::Arg; using text::Fact; using text::FactId; using text::Term; using text::Unit;
+    const auto tolerance = Arg::value (toleranceLu, Unit::Lu, 1);
+    const auto limit = [] (LandingConstraint c) noexcept
+    {
+        switch (c)
+        {
+            case LandingConstraint::TruePeakCeiling: return Term::LandingLimitTruePeak;
+            case LandingConstraint::LimiterGainReduction: return Term::LandingLimitLimiter;
+            case LandingConstraint::PeakToLoudness: return Term::LandingLimitPlr;
+            case LandingConstraint::LoudnessRange: return Term::LandingLimitLra;
+            case LandingConstraint::GainRange: return Term::LandingLimitGain;
+            case LandingConstraint::None: break;
+        }
+        return Term::LandingLimitNone;
+    };
+    switch (landing.status)
+    {
+        case LandingStatus::Solved:
+            if (report.status != MeasurementStatus::Ready || ! report.achievedLufs) return std::nullopt;
+            return Fact::of (FactId::MasterLandingSolved, Arg::value (*report.achievedLufs, Unit::Lufs, 1),
+                             Arg::value (report.targetLufs, Unit::Lufs, 1), tolerance);
+        case LandingStatus::TargetUnreachable:
+            return Fact::of (FactId::MasterLandingUnreachable, tolerance, Arg::term (limit (landing.binding)));
+        case LandingStatus::PassLimit: return Fact::of (FactId::MasterLandingPassLimit, tolerance);
+        case LandingStatus::TargetBetweenAchievable:
+            if (! landing.belowLufs || ! landing.aboveLufs) return std::nullopt;
+            return Fact::of (FactId::MasterLandingBetween, Arg::value (*landing.belowLufs, Unit::Lufs, 1),
+                             Arg::value (*landing.aboveLufs, Unit::Lufs, 1));
+        case LandingStatus::TechnicalFailure: return Fact::of (FactId::MasterLandingFailed);
+        case LandingStatus::Unavailable:
+        case LandingStatus::Cancelled: break;
+    }
+    return std::nullopt;
+}
 std::optional<text::Fact> MasterReportText::hint (const MasterHint& hint) noexcept
 {
     if (! std::isfinite (hint.evidence)) return {};
@@ -100,6 +137,63 @@ text::Fact MasterReportText::pumping (const MasterCost& cost) noexcept
 }
 text::Fact MasterReportText::tonal() noexcept
 { return text::Fact::of (text::FactId::MasterCostK2Deferred); }
+std::optional<text::Fact> MasterReportText::section (const MasterCost& cost) noexcept
+{
+    if (! cost.largestSectionShiftLu.value || ! cost.worstSectionIndex || *cost.worstSectionIndex >= cost.sections.size()
+        || cost.sourceRateHz == 0) return std::nullopt;
+    const auto& worst = cost.sections[*cost.worstSectionIndex];
+    const auto at = [&] (std::uint64_t frame) { return text::Arg::value (double (frame) / double (cost.sourceRateHz), text::Unit::S, 0); };
+    return text::Fact::of (text::FactId::MasterCostSection,
+        text::Arg::value (*cost.largestSectionShiftLu.value, text::Unit::Lu, 1, text::Sign::Always), at (worst.fromFrame), at (worst.toFrame));
+}
+std::optional<text::Fact> MasterReportText::sections (const MasterCost& cost) noexcept
+{
+    if (cost.sections.empty()) return std::nullopt;
+    std::int64_t compared = 0;
+    for (const auto& one : cost.sections) compared += one.compared ? 1 : 0;
+    return text::Fact::of (text::FactId::MasterCostSections, text::Arg::count (compared));
+}
+std::optional<text::Fact> MasterReportText::limiter (const MasterCost& cost) noexcept
+{
+    if (! cost.limiterP50Db.value || ! cost.limiterP95Db.value) return std::nullopt;
+    return text::Fact::of (text::FactId::MasterCostLimiter, text::Arg::value (*cost.limiterP50Db.value, text::Unit::Db, 1),
+        text::Arg::value (*cost.limiterP95Db.value, text::Unit::Db, 1));
+}
+std::optional<text::Fact> MasterReportText::active (const MasterCost& cost) noexcept
+{
+    if (! cost.limiterActiveShare.value || ! cost.activeWindowShare.value) return std::nullopt;
+    return text::Fact::of (text::FactId::MasterCostActive,
+        text::Arg::value (100.0 * *cost.limiterActiveShare.value, text::Unit::Percent, 0),
+        text::Arg::value (100.0 * *cost.activeWindowShare.value, text::Unit::Percent, 0));
+}
+std::optional<text::Fact> MasterReportText::bands (const MasterCost& cost) noexcept
+{
+    if (! cost.crestLowDb.value || ! cost.crestLowMidDb.value || ! cost.crestHighMidDb.value || ! cost.crestHighDb.value)
+        return std::nullopt;
+    const auto db = [] (double v) { return text::Arg::value (v, text::Unit::Db, 1); };
+    return text::Fact::of (text::FactId::MasterCostBands, db (*cost.crestLowDb.value), db (*cost.crestLowMidDb.value),
+        db (*cost.crestHighMidDb.value), db (*cost.crestHighDb.value));
+}
+BoundedList<ReadingFact, kMasterReadings> MasterReportText::readings (const MasterReport& report, std::uint32_t passes) noexcept
+{
+    using text::Arg; using text::Fact; using text::FactId; using text::Unit;
+    BoundedList<ReadingFact, kMasterReadings> out;
+    const auto put = [&] (ReadingKind kind, std::optional<double> v, Unit unit, text::Sign sign = text::Sign::Negative) noexcept
+    {
+        if (v && std::isfinite (*v) && out.count < kMasterReadings)
+            out.items[out.count++] = { kind, Fact::of (FactId::Value, Arg::value (*v, unit, unit == Unit::None ? 0 : 1, sign)) };
+    };
+    put (ReadingKind::Integrated, report.achievedLufs, Unit::Lufs);
+    put (ReadingKind::TruePeak, report.truePeakDbTp, Unit::DbTp);
+    put (ReadingKind::Lra, report.lraLu, Unit::Lu);
+    put (ReadingKind::Plr, report.plrDb, Unit::Db);
+    put (ReadingKind::Target, report.targetLufs, Unit::Lufs);
+    put (ReadingKind::Ceiling, report.ceilingDbTp, Unit::DbTp);
+    put (ReadingKind::Gain, report.gainFromSourceDb, Unit::Db, text::Sign::Always);
+    put (ReadingKind::Passes, double (passes), Unit::None);
+    put (ReadingKind::CheckPasses, double (report.checkPasses), Unit::None);
+    return out;
+}
 std::optional<text::Fact> MasterReportText::glue (const MasterCost& cost) noexcept
 {
     if (! cost.glueP95Db.value || ! cost.glueMaxDb.value) return std::nullopt;
@@ -252,6 +346,28 @@ bool LandingOps::summarize (const mastering::LoudnessSolution& solution,
     };
     next.mainReason = reason (solution.mainReason);
     next.secondReason = reason (solution.secondReason);
+    // What held an unreachable landing, as the solver named it where it decided the verdict; nothing for another status.
+    if (next.status == LandingStatus::TargetUnreachable)
+        switch (solution.binding)
+        {
+            case mastering::MasteringConstraint::TruePeakCeiling: next.binding = LandingConstraint::TruePeakCeiling; break;
+            case mastering::MasteringConstraint::LimiterGainReduction: next.binding = LandingConstraint::LimiterGainReduction; break;
+            case mastering::MasteringConstraint::PeakToLoudness: next.binding = LandingConstraint::PeakToLoudness; break;
+            case mastering::MasteringConstraint::LoudnessRange: next.binding = LandingConstraint::LoudnessRange; break;
+            case mastering::MasteringConstraint::GainRange: next.binding = LandingConstraint::GainRange; break;
+            case mastering::MasteringConstraint::None:
+            case mastering::MasteringConstraint::CompressorGainReduction: break;
+        }
+    // The two levels a target fell between, as the solver measured them where it found the bracket. Both are numbers on
+    // every known path (LandingSearch takes a side only from a finite, ceiling-safe pass); were one not, the verdict
+    // stands without its levels and the master is still delivered — a target that cannot be hit always returns the file
+    // (owner, 2026-10-01).
+    if (next.status == LandingStatus::TargetBetweenAchievable
+        && std::isfinite (solution.achievedBelowLufs) && std::isfinite (solution.achievedAboveLufs))
+    {
+        next.belowLufs = std::fmin (solution.achievedBelowLufs, solution.achievedAboveLufs);
+        next.aboveLufs = std::fmax (solution.achievedBelowLufs, solution.achievedAboveLufs);
+    }
     next.deliverable = solution.deliverable;
     next.passes = (std::uint32_t) solution.passes;
     next.workUnits = solution.workUnits;

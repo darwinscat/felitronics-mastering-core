@@ -442,6 +442,11 @@ struct Reader
             {
                 if (storage.landingPasses - beforePasses > 12
                     || x.passes != storage.landingPasses - beforePasses) good = false;
+                // A named limit belongs to an unreachable landing; the two levels to a between one, both, in order.
+                if (x.binding != LandingConstraint::None && x.status != LandingStatus::TargetUnreachable) good = false;
+                if ((x.belowLufs || x.aboveLufs)
+                    && (x.status != LandingStatus::TargetBetweenAchievable || ! x.belowLufs || ! x.aboveLufs
+                        || ! std::isfinite (*x.belowLufs) || ! std::isfinite (*x.aboveLufs) || *x.belowLufs > *x.aboveLufs)) good = false;
             }
             else if constexpr (std::is_same_v<T, LandingTrace>)
             {

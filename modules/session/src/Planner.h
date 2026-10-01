@@ -45,7 +45,8 @@ struct PlanInputs
     TargetFields<Touched> targetEdit {};                // ...and a person's edits of its numbers
     std::uint32_t channels = 0, sampleRate = 0;         // the source's shape; 0 channels before a source
     std::uint64_t frames = 0;
-    std::uint32_t offered = 255u;                       // Capabilities::offeredDevices, a bit per Device
+    std::uint32_t bitDepth = 0;                         // the source's container bits; 0 when it has none (a lossy file)
+    std::uint32_t offered = kAllDevices;                // Capabilities::offeredDevices, a bit per Device
     std::span<const MeasurementResult> measurements;    // every analyzer's result, by Analyzer; empty before a source
     // The needles are measured at a ceiling the target's numbers set: the retained result is this project's only when
     // it was measured at this project's ceiling. Another target's result has not ended for this one.
@@ -98,7 +99,8 @@ struct Awaited
 
 // THE PLAN'S REASONS (PlanView::facts), stated by PlanText and nothing else: every line it gives for a Ready plan, and
 // the waiting fact the plan's awaited, awaitedBy and awaitedFraction name — which replaces the one stated before it.
-void stateReasons (PlanView& plan) noexcept;
+// `eq` is the EQ curve against its norm (eqFinding, EqCurve.h), which the plan does not carry.
+void stateReasons (PlanView& plan, const EqFinding& eq) noexcept;
 void stateWaiting (PlanView& plan) noexcept;
 
 // A device's plan in `plans`, by its place in the order of Device.

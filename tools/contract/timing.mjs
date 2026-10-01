@@ -25,9 +25,9 @@ const u32 = p => M.HEAPU32[p >>> 2];
 const put = (p, v) => { M.HEAPU32[p >>> 2] = v; };
 const f64 = p => new DataView(M.HEAPU32.buffer).getFloat64(p, true);
 const put64 = (p, v) => new DataView(M.HEAPU32.buffer).setFloat64(p, v, true);
-const caps = alloc(macro('CAPABILITIES_V1_BYTES')), handle = alloc(4);
-put(caps, macro('CAPABILITIES_V1_BYTES')); put64(caps + 8, 1024 * 1024 * 1024);
-put(caps + 16, 96000); put(caps + 20, macro('DEVICES_ALL')); put64(caps + 24, 1024 * 1024 * 1024);
+const caps = alloc(40), handle = alloc(4);   // fc_session_capabilities: 40 bytes, leanSummary (at 32) 0
+put(caps, 40); put64(caps + 8, 1024 * 1024 * 1024);
+put(caps + 16, 96000); put(caps + 20, macro('DEVICES_ALL')); put64(caps + 24, 1024 * 1024 * 1024); put(caps + 32, 0);
 const version = runtime.FC_SESSION_CONFIG_VERSION;
 ok('create', caps, Number.parseInt(version.slice(8), 16), Number.parseInt(version.slice(0, 8), 16), handle);
 const session = u32(handle);

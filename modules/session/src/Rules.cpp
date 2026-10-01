@@ -13,6 +13,7 @@
 #include <felitronics/toml/Toml.h>
 
 #include <cstdint>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <string_view>
@@ -140,6 +141,7 @@ Rules readRules (View targets, View engine) noexcept
     const View hpf = engine.find ("hpf");
     r.read (hpf.find ("hzMin"), out.hpfFq.from);
     r.read (hpf.find ("hzMax"), out.hpfFq.to);
+    r.read (hpf.find ("machineTopHz"), out.hpfTop);
     r.read (hpf.find ("hzStep"), out.hpfFq.step);
     r.domain (hpf.find ("frequencyDomain"), out.hpfFq);
     const View mono = engine.find ("monoBass");
@@ -157,16 +159,20 @@ Rules readRules (View targets, View engine) noexcept
     const View sat = engine.find ("saturation");
     r.knob (sat.find ("driveRange"), sat.find ("driveStep"), sat.find ("driveDomain"), out.drive);
     r.knob (sat.find ("mixRange"), sat.find ("mixStep"), sat.find ("mixDomain"), out.mix);
-    r.knob (sat.find ("outputRange"), sat.find ("outputStep"), sat.find ("outputDomain"), out.output);
     r.read (sat.find ("driveDb"), out.driveDefault);
     r.read (sat.find ("mix"), out.mixDefault);
-    r.read (sat.find ("outputDb"), out.outputDefault);
     if (const auto shape = sat.find ("shape").string()) out.shapeDefault = *shape;
 
     const View tilt = engine.find ("tilt");
     r.knob (tilt.find ("hard"), tilt.find ("step"), tilt.find ("domain"), out.tilt);
     const View shelf = engine.find ("low");
     r.knob (shelf.find ("hard"), shelf.find ("step"), shelf.find ("domain"), out.low);
+    const View bands = engine.find ("bands");
+    for (std::size_t i = 0; i < std::size (kBandNames); ++i)
+    {
+        const View band = bands.find (kBandNames[i]);
+        r.knob (band.find ("hard"), band.find ("step"), band.find ("domain"), out.bands[i]);
+    }
 
     const View clipper = engine.find ("limiter").find ("peakClipper");
     r.read (clipper.find ("manualMinDb"), out.needles.from);

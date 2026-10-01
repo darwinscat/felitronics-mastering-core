@@ -22,12 +22,14 @@ hashes, component, config and codec versions, file hashes, and the rebuild
 command. Rebuild after an intentional contract change:
 
 ```sh
-node tools/contract/run.mjs build/tools/fcore_session build/measure-08-wasm-artifacts/fcsession.node.js --rebuild-recordings
+node tools/contract/run.mjs build/tools/fcore_session tools/wasm/build/fcsession.node.js --rebuild-recordings
 ```
 
 Normal verification omits the rebuild flag. `--native-only` runs on a host
 without Emscripten; `--controls` also proves reordered events, corrupted fields and rows,
-and stale fixtures fail. `tools/wasm/build.sh` builds the production and checked
+and stale fixtures fail. The wasm modules must be one `tools/wasm/build.sh` run from the sources checked out:
+the check refuses a production module or its `contract-trap/` copy that `contract-modules.sha256` does not name,
+and a stamp made from other sources (`module-stamp.mjs`). `tools/wasm/build.sh` builds the production and checked
 Wasm modules and a separate poisonable contract control. The four appended v1
 ABI functions load measured facts and attach the matching audio.
 

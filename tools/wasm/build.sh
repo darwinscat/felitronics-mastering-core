@@ -58,6 +58,9 @@ CORE="${FELITRONICS_CORE_DIR:-$ROOT/../felitronics-core}"
 [ -f "$CORE/modules/core/include/felitronics/core/DetMath.h" ] \
     || { echo "no felitronics-core at $CORE — set FELITRONICS_CORE_DIR to a checkout (v0.57.0 or later)"; exit 1; }
 CORE="$(cd "$CORE" && pwd)"
+# The sources this run compiles, digested BEFORE it compiles them: the stamp written last (below) names this digest, so
+# an edit made while the build runs leaves a stamp the contract check refuses instead of one that vouches for it.
+SOURCES_DIGEST="$(node "$ROOT/tools/contract/module-stamp.mjs" --sources)"
 # A core that still carries these modules would put a SECOND copy of every header here on the include path,
 # and which one a TU compiled would depend on the order of the -I flags below. The CMake refuses such a core
 # for the same reason; so does this.
@@ -637,7 +640,7 @@ SNAMES=$(export_names "${SFILES[@]}")
 SFOUND=$(printf '%s\n' "$SNAMES" | grep -c . || true)
 check_exports "$SFOUND" "${SFILES[@]}"
 check_return_types 'std::uint32_t|fc_session_status' "${SFILES[@]}"
-SEXACT="_fc_session_abi_version _fc_session_attach_audio _fc_session_attach_audio_bytes _fc_session_command _fc_session_command_bytes _fc_session_config_version _fc_session_create _fc_session_create_bytes _fc_session_destroy _fc_session_events_copy _fc_session_events_size _fc_session_export_project_copy _fc_session_export_project_size _fc_session_import_project _fc_session_import_project_bytes _fc_session_load _fc_session_load_bytes _fc_session_load_measured _fc_session_load_measured_bytes _fc_session_master _fc_session_master_audio_copy _fc_session_master_audio_release _fc_session_master_audio_size _fc_session_master_audio_view _fc_session_master_bytes _fc_session_master_wav_copy _fc_session_master_wav_size _fc_session_master_waveform_chunk_bytes _fc_session_master_waveform_chunk_copy _fc_session_master_waveform_chunk_size _fc_session_measurement_bytes _fc_session_needles_bytes _fc_session_query_bytes _fc_session_query_copy _fc_session_query_size _fc_session_set_capacity _fc_session_snapshot_copy _fc_session_snapshot_size _fc_session_step _fc_session_summary_copy _fc_session_summary_size"
+SEXACT="_fc_kit_eq_curve _fc_kit_eq_curve_bands _fc_kit_heat _fc_kit_low_end_curve _fc_kit_mono_zones _fc_kit_mono_zones_at _fc_kit_parse _fc_kit_position _fc_kit_text _fc_kit_travel _fc_kit_value_at _fc_session_abi_version _fc_session_attach_audio _fc_session_attach_audio_bytes _fc_session_command _fc_session_command_bytes _fc_session_config_version _fc_session_create _fc_session_create_bytes _fc_session_destroy _fc_session_events_copy _fc_session_events_size _fc_session_export_project_copy _fc_session_export_project_size _fc_session_import_project _fc_session_import_project_bytes _fc_session_load _fc_session_load_bytes _fc_session_load_measured _fc_session_load_measured_bytes _fc_session_master _fc_session_master_audio_copy _fc_session_master_audio_release _fc_session_master_audio_size _fc_session_master_audio_view _fc_session_master_bytes _fc_session_master_wav_copy _fc_session_master_wav_size _fc_session_master_waveform_chunk_bytes _fc_session_master_waveform_chunk_copy _fc_session_master_waveform_chunk_size _fc_session_measurement_bytes _fc_session_needles_bytes _fc_session_query_bytes _fc_session_query_copy _fc_session_query_size _fc_session_set_capacity _fc_session_snapshot_copy _fc_session_snapshot_size _fc_session_step _fc_session_summary_copy _fc_session_summary_size"
 [ "$(printf '%s\n' "$SNAMES" | LC_ALL=C sort | paste -sd' ' -)" = "$SEXACT" ] \
     || { echo "*** fc_session exports differ from the frozen v1 list and its declared additions"; exit 1; }
 SEXPORTS="$(printf '%s\n' "$SNAMES" | paste -sd, -),_malloc,_free"
@@ -790,3 +793,8 @@ TOML_DESCRIBED="$(describe "$TOML")"
 echo
 echo "=== built from"
 cat "$OUT/BUILD-INFO"
+# ONE BUILD: the production module and its contract-trap copy, each pair as this run wrote it, and the sources digest
+# taken before it compiled. tools/contract/run.mjs refuses a pair the stamp does not name (tools/contract/module-stamp.mjs).
+node "$ROOT/tools/contract/module-stamp.mjs" "$OUT" "$SOURCES_DIGEST"
+node "$ROOT/tools/contract/module-stamp.mjs" "$OUT/checked" "$SOURCES_DIGEST"
+echo "stamped: $OUT/contract-modules.sha256, $OUT/checked/contract-modules.sha256"

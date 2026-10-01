@@ -66,7 +66,7 @@ Answer Session::loadMeasured (CommandId id, const MeasuredSource& facts) noexcep
     source_ = { facts.channels, facts.sampleRate, facts.frames, facts.sourceHash, facts.fileRate, facts.rateKnown,
                 std::uint8_t (facts.bitDepth), { name_.get(), facts.name.size() } };
     measurementKey_ = facts.sourceHash;
-    project_.core = version(); project_.manual = false; project_.devices = {};
+    project_.manual = false; project_.devices = {};
     devicesPlaced_ = false; differenceCount_ = 0;
     measurementJob_ = 0; measurementUnit_ = masterUnit_ = 0; measurementProgress_ = {}; masterProgress_ = {};
     measurementsFromSidecar_ = true;

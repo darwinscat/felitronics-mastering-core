@@ -17,6 +17,9 @@
 //
 // ADDING A FACT: a FactId in <felitronics/session/Text.h> with the next number of its range, its row here (in id order),
 // and its message in every language the catalog declares — the build is red until all three agree.
+// A FACT THAT LEAVES: its row here, its message and its FactId go, and no other fact ever takes its number (the ids are
+// append-only from the ABI manifest's declared base). An id that names nothing renders as its number and the snapshot
+// decoder refuses it.
 
 #include <felitronics/session/Text.h>
 
@@ -59,8 +62,6 @@ inline constexpr FactShape kFacts[] = {
       { { { "rate", ArgKind::Value, {} }, { "limit", ArgKind::Value, {} }, { "platform", ArgKind::Term, "platform" } } },
       3 },
     { FactId::MachineDifferences, "machineDifferences", { { { "count", ArgKind::Count, {} } } }, 1 },
-    { FactId::DefaultsConverted, "defaultsConverted", { { { "version", ArgKind::UserText, {} } } }, 1 },
-    { FactId::SameCoreMachineDifferences, "sameCoreMachineDifferences", { { { "count", ArgKind::Count, {} } } }, 1 },
     { FactId::MasterLandingMiss, "masterLandingMiss", { { { "achieved", ArgKind::Value, {} }, { "target", ArgKind::Value, {} }, { "gap", ArgKind::Value, {} } } }, 3 },
     { FactId::MasterHintSubBass, "masterHintSubBass", { { { "share", ArgKind::Value, {} } } }, 1 },
     { FactId::MasterHintPeaks, "masterHintPeaks", { { { "reduction", ArgKind::Value, {} } } }, 1 },
@@ -142,6 +143,17 @@ inline constexpr FactShape kFacts[] = {
     { FactId::MasterVinylHighPassDeparts, "masterVinylHighPassDeparts", { { { "cutoff", ArgKind::Value, {} }, { "slope", ArgKind::Count, {} }, { "medium", ArgKind::Value, {} }, { "mediumSlope", ArgKind::Count, {} } } }, 4 },
     { FactId::MasterVinylCeilingDeparts, "masterVinylCeilingDeparts", { { { "ceiling", ArgKind::Value, {} }, { "medium", ArgKind::Value, {} } } }, 2 },
     { FactId::MasterVinylNeedlesDeparts, "masterVinylNeedlesDeparts", { { { "cut", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterLandingSolved, "masterLandingSolved", { { { "achieved", ArgKind::Value, {} }, { "target", ArgKind::Value, {} }, { "tolerance", ArgKind::Value, {} } } }, 3 },
+    { FactId::MasterLandingUnreachable, "masterLandingUnreachable",
+      { { { "tolerance", ArgKind::Value, {} }, { "limit", ArgKind::Term, "landingLimit" } } }, 2 },
+    { FactId::MasterLandingPassLimit, "masterLandingPassLimit", { { { "tolerance", ArgKind::Value, {} } } }, 1 },
+    { FactId::MasterLandingBetween, "masterLandingBetween", { { { "below", ArgKind::Value, {} }, { "above", ArgKind::Value, {} } } }, 2 },
+    { FactId::MasterLandingFailed, "masterLandingFailed", {}, 0 },
+    { FactId::MasterCostSection, "masterCostSection", { { { "shift", ArgKind::Value, {} }, { "from", ArgKind::Value, {} }, { "to", ArgKind::Value, {} } } }, 3 },
+    { FactId::MasterCostSections, "masterCostSections", { { { "count", ArgKind::Count, {} } } }, 1 },
+    { FactId::MasterCostLimiter, "masterCostLimiter", { { { "median", ArgKind::Value, {} }, { "p95", ArgKind::Value, {} } } }, 2 },
+    { FactId::MasterCostActive, "masterCostActive", { { { "limiter", ArgKind::Value, {} }, { "active", ArgKind::Value, {} } } }, 2 },
+    { FactId::MasterCostBands, "masterCostBands", { { { "low", ArgKind::Value, {} }, { "lowMid", ArgKind::Value, {} }, { "highMid", ArgKind::Value, {} }, { "high", ArgKind::Value, {} } } }, 4 },
     // A command's rejection (Commands.h), one per code; the four a field refuses name it.
     { FactId::RejectedFloatingPointEnvironment, "rejectedFloatingPointEnvironment", {}, 0 },
     { FactId::RejectedNoSource, "rejectedNoSource", {}, 0 },
@@ -169,7 +181,6 @@ inline constexpr FactShape kFacts[] = {
     { FactId::RejectedProjectType, "rejectedProjectType", {}, 0 },
     { FactId::RejectedProjectUnknownKey, "rejectedProjectUnknownKey", {}, 0 },
     { FactId::RejectedUnknownDefaults, "rejectedUnknownDefaults", {}, 0 },
-    { FactId::RejectedProjectCore, "rejectedProjectCore", {}, 0 },
     { FactId::RejectedNewerDefaults, "rejectedNewerDefaults", {}, 0 },
     { FactId::RejectedRateAboveLimit, "rejectedRateAboveLimit", {}, 0 },
     { FactId::RejectedMemory, "rejectedMemory", {}, 0 },
@@ -230,6 +241,28 @@ inline constexpr FactShape kFacts[] = {
     { FactId::SourceHum, "sourceHum", { { { "hz", ArgKind::Value, {} }, { "prominence", ArgKind::Value, {} } } }, 2 },
     { FactId::SourceHumWandered, "sourceHumWandered", { { { "hz", ArgKind::Value, {} }, { "prominence", ArgKind::Value, {} } } }, 2 },
     { FactId::SourceLowestBandUnsure, "sourceLowestBandUnsure", { { { "note", ArgKind::Midi, {} }, { "hz", ArgKind::Value, {} } } }, 2 },
+    { FactId::ObservationUnmeasured, "observationUnmeasured", { { { "name", ArgKind::Term, "observation" }, { "reason", ArgKind::Term, "measurementReason" } } }, 2 },
+    { FactId::TempoConfidence, "tempoConfidence", { { { "confidence", ArgKind::Term, "tempoConfidence" } } }, 1 },
+    { FactId::SourceDcNote, "sourceDcNote", { { { "offset", ArgKind::Value, {} } } }, 1 },
+    { FactId::SourceTruncatedBits, "sourceTruncatedBits", { { { "bits", ArgKind::Count, {} } } }, 1 },
+    { FactId::SourceShallowMix, "sourceShallowMix", { { { "bits", ArgKind::Count, {} }, { "depth", ArgKind::Count, {} } } }, 2 },
+    { FactId::SourceLimitedBus, "sourceLimitedBus", { { { "plr", ArgKind::Value, {} } } }, 1 },
+    { FactId::SourceLossy, "sourceLossy", { { { "hz", ArgKind::Value, {} } } }, 1 },
+    { FactId::SourceInfraLowNote, "sourceInfraLowNote", { { { "hz", ArgKind::Value, {} } } }, 1 },
+    { FactId::SourceInfraLowWarning, "sourceInfraLowWarning", { { { "share", ArgKind::Value, {} }, { "hz", ArgKind::Value, {} } } }, 2 },
+    { FactId::SourceDcNoteStereo, "sourceDcNoteStereo", { { { "left", ArgKind::Value, {} }, { "right", ArgKind::Value, {} } } }, 2 },
+    { FactId::SourceDcStereo, "sourceDcStereo", { { { "left", ArgKind::Value, {} }, { "right", ArgKind::Value, {} } } }, 2 },
+    // The plan's advice and the targets' notes.
+    { FactId::HpfBelowComfort, "hpfBelowComfort", { { { "cutoff", ArgKind::Value, {} }, { "low", ArgKind::Value, {} }, { "high", ArgKind::Value, {} } } }, 3 },
+    { FactId::HpfAboveComfort, "hpfAboveComfort", { { { "cutoff", ArgKind::Value, {} }, { "low", ArgKind::Value, {} }, { "high", ArgKind::Value, {} } } }, 3 },
+    { FactId::HpfSlopeGentle, "hpfSlopeGentle", { { { "slope", ArgKind::Count, {} }, { "gentlest", ArgKind::Count, {} } } }, 2 },
+    { FactId::HpfSlopeSteep, "hpfSlopeSteep", { { { "slope", ArgKind::Count, {} }, { "steepest", ArgKind::Count, {} } } }, 2 },
+    { FactId::EqOvershoot, "eqOvershoot", { { { "db", ArgKind::Value, {} }, { "hz", ArgKind::Value, {} } } }, 2 },
+    { FactId::MonoBassOutsideZones, "monoBassOutsideZones", { { { "crossover", ArgKind::Value, {} }, { "clubTo", ArgKind::Value, {} }, { "vinylTo", ArgKind::Value, {} } } }, 3 },
+    { FactId::TargetMeasured, "targetMeasured", { { { "lufs", ArgKind::Value, {} } } }, 1 },
+    { FactId::TargetPractice, "targetPractice", { { { "lufs", ArgKind::Value, {} } } }, 1 },
+    { FactId::TargetNoNormalisation, "targetNoNormalisation", {}, 0 },
+    { FactId::MonoBassBelowZones, "monoBassBelowZones", { { { "crossover", ArgKind::Value, {} }, { "clubFrom", ArgKind::Value, {} }, { "vinylFrom", ArgKind::Value, {} } } }, 3 },
 
 };
 inline constexpr std::size_t kFactCount = sizeof (kFacts) / sizeof (kFacts[0]);
@@ -253,7 +286,6 @@ inline constexpr TermShape kTerms[] = {
     { Term::FieldGlueUpToDb, "field", "glueUpToDb" },
     { Term::FieldSaturationDrive, "field", "saturationDrive" },
     { Term::FieldSaturationMix, "field", "saturationMix" },
-    { Term::FieldSaturationOutput, "field", "saturationOutput" },
     { Term::FieldTiltDb, "field", "tiltDb" },
     { Term::FieldLimiterNeedles, "field", "limiterNeedles" },
     { Term::FieldLimiterNeedlesDb, "field", "limiterNeedlesDb" },
@@ -303,6 +335,84 @@ inline constexpr TermShape kTerms[] = {
     { Term::SaturationTypeTransistor, "saturationType", "transistor" },
     { Term::SaturationTypeTransformer, "saturationType", "transformer" },
     { Term::SaturationTypeTape, "saturationType", "tape" },
+    { Term::ObservationClipping, "observation", "clipping" },
+    { Term::ObservationDcOffset, "observation", "dcOffset" },
+    { Term::ObservationBitsUnused, "observation", "bitsUnused" },
+    { Term::ObservationDualMono, "observation", "dualMono" },
+    { Term::ObservationEdgeSilence, "observation", "edgeSilence" },
+    { Term::ObservationTooQuiet, "observation", "tooQuiet" },
+    { Term::ObservationTooShort, "observation", "tooShort" },
+    { Term::ObservationAlreadyLimited, "observation", "alreadyLimited" },
+    { Term::ObservationSpectralWall, "observation", "spectralWall" },
+    { Term::ObservationLoudestLowNote, "observation", "loudestLowNote" },
+    { Term::ObservationLowestLowBand, "observation", "lowestLowBand" },
+    { Term::ObservationInfraLow, "observation", "infraLow" },
+    { Term::ObservationWideBass, "observation", "wideBass" },
+    { Term::ObservationPolarity, "observation", "polarity" },
+    { Term::ObservationSibilance, "observation", "sibilance" },
+    { Term::ObservationHum, "observation", "hum" },
+    { Term::ObservationHumWandered, "observation", "humWandered" },
+    { Term::HandledNothing, "handledBy", "nothing" },
+    { Term::HandledHpf, "handledBy", "hpf" },
+    { Term::HandledMonoBass, "handledBy", "monoBass" },
+    { Term::HandledPerson, "handledBy", "person" },
+    { Term::ReasonPending, "measurementReason", "pending" },
+    { Term::ReasonCancelled, "measurementReason", "cancelled" },
+    { Term::ReasonUnsupported, "measurementReason", "unsupported" },
+    { Term::ReasonTooShort, "measurementReason", "tooShort" },
+    { Term::ReasonNonFinite, "measurementReason", "nonFinite" },
+    { Term::ReasonCapacity, "measurementReason", "capacity" },
+    { Term::ReasonNoSignal, "measurementReason", "noSignal" },
+    { Term::ReasonNotImplemented, "measurementReason", "notImplemented" },
+    { Term::ReasonNeedNotAbove3, "measurementReason", "needNotAbove3" },
+    { Term::ReasonMemory, "measurementReason", "memory" },
+    { Term::ReadingIntegrated, "reading", "integrated" },
+    { Term::ReadingTruePeak, "reading", "truePeak" },
+    { Term::ReadingLra, "reading", "lra" },
+    { Term::ReadingPlr, "reading", "plr" },
+    { Term::ReadingDcOffset, "reading", "dcOffset" },
+    { Term::ReadingDcOffsetLeft, "reading", "dcOffsetLeft" },
+    { Term::ReadingDcOffsetRight, "reading", "dcOffsetRight" },
+    { Term::ReadingLowestBand, "reading", "lowestBand" },
+    { Term::ReadingPcmBits, "reading", "pcmBits" },
+    { Term::ReadingCorrelation, "reading", "correlation" },
+    { Term::ReadingBurstsMid, "reading", "burstsMid" },
+    { Term::ReadingBurstsSide, "reading", "burstsSide" },
+    { Term::ReadingHum, "reading", "hum" },
+    { Term::ReadingTempo, "reading", "tempo" },
+    { Term::ReadingTempoConfidence, "reading", "tempoConfidence" },
+    { Term::ReadingClipRuns, "reading", "clipRuns" },
+    { Term::ReadingLongestRun, "reading", "longestRun" },
+    { Term::ReadingClippedSamples, "reading", "clippedSamples" },
+    { Term::ReadingSamplePeak, "reading", "samplePeak" },
+    { Term::ReadingLowSide, "reading", "lowSide" },
+    { Term::ReadingStereoWindows, "reading", "stereoWindows" },
+    { Term::ReadingCrestBlocksLow, "reading", "crestBlocksLow" },
+    { Term::ReadingCrestBlocksLowMid, "reading", "crestBlocksLowMid" },
+    { Term::ReadingCrestBlocksHighMid, "reading", "crestBlocksHighMid" },
+    { Term::ReadingCrestBlocksHigh, "reading", "crestBlocksHigh" },
+    { Term::ReadingCrestBlocksFull, "reading", "crestBlocksFull" },
+    { Term::ReadingTarget, "reading", "target" },
+    { Term::ReadingCeiling, "reading", "ceiling" },
+    { Term::ReadingGain, "reading", "gain" },
+    { Term::ReadingPasses, "reading", "passes" },
+    { Term::ReadingCheckPasses, "reading", "checkPasses" },
+    { Term::TempoUndetermined, "tempoConfidence", "undetermined" },
+    { Term::TempoLow, "tempoConfidence", "low" },
+    { Term::TempoMedium, "tempoConfidence", "medium" },
+    { Term::TempoHigh, "tempoConfidence", "high" },
+    { Term::LandingLimitNone, "landingLimit", "unnamed" },
+    { Term::LandingLimitTruePeak, "landingLimit", "truePeak" },
+    { Term::LandingLimitLimiter, "landingLimit", "limiter" },
+    { Term::LandingLimitPlr, "landingLimit", "plr" },
+    { Term::LandingLimitLra, "landingLimit", "lra" },
+    { Term::LandingLimitGain, "landingLimit", "gain" },
+    { Term::DeviceBands, "device", "bands" },
+    { Term::FieldBandsBody, "field", "bandsBody" },
+    { Term::FieldBandsMud, "field", "bandsMud" },
+    { Term::FieldBandsForward, "field", "bandsForward" },
+    { Term::FieldBandsBrightness, "field", "bandsBrightness" },
+    { Term::FieldBandsAir, "field", "bandsAir" },
 };
 inline constexpr std::size_t kTermCount = sizeof (kTerms) / sizeof (kTerms[0]);
 
@@ -322,10 +432,11 @@ inline constexpr std::size_t kTermCount = sizeof (kTerms) / sizeof (kTerms[0]);
         if ((i > 0 && (std::size_t) kFacts[i].id <= (std::size_t) kFacts[i - 1].id) || kFacts[i].argCount > Fact::kMaxArgs)
             return false;
     for (std::size_t i = 0; i < kTermCount; ++i)
-        if ((std::size_t) kTerms[i].id != i + 1) return false;
+        if ((std::size_t) kTerms[i].id <= (i > 0 ? (std::size_t) kTerms[i - 1].id : 0)) return false;
     return true;
 }
-static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in order, from 1, with no gap");
+// Both ascend by id; an id may name nothing (a fact or term left, the ids after it keep their numbers).
+static_assert (tablesInOrder(), "kFacts and kTerms ascend by id");
 
 // The shape of a fact, or null for an id the table does not have: a binary search over the ascending ids.
 [[nodiscard]] constexpr const FactShape* shapeOf (FactId id) noexcept
@@ -342,8 +453,15 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
 }
 [[nodiscard]] constexpr const TermShape* shapeOf (Term id) noexcept
 {
-    const auto i = (std::size_t) id;
-    return i >= 1 && i <= kTermCount ? &kTerms[i - 1] : nullptr;
+    std::size_t low = 0, high = kTermCount;
+    while (low < high)
+    {
+        const std::size_t middle = low + (high - low) / 2;
+        if (kTerms[middle].id == id) return &kTerms[middle];
+        if ((std::size_t) kTerms[middle].id < (std::size_t) id) low = middle + 1;
+        else high = middle;
+    }
+    return nullptr;
 }
 
 //==============================================================================
@@ -381,7 +499,6 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Rejection::ProjectType: return FactId::RejectedProjectType;
         case Rejection::ProjectUnknownKey: return FactId::RejectedProjectUnknownKey;
         case Rejection::UnknownDefaults: return FactId::RejectedUnknownDefaults;
-        case Rejection::ProjectCore: return FactId::RejectedProjectCore;
         case Rejection::RateAboveLimit: return FactId::RejectedRateAboveLimit;
         case Rejection::Contract: return FactId::RejectedContract;
         case Rejection::OutputPending: return FactId::RejectedOutputPending;
@@ -417,12 +534,14 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Device::Hpf: return at ({ Term {}, Term::FieldHpfFq, Term::FieldHpfSlope });
         case Device::MonoBass: return at ({ Term {}, Term::FieldMonoBassFq, Term::FieldMonoBassWidth });
         case Device::Glue: return at ({ Term {}, Term::FieldGlueUpToDb });
-        case Device::Saturation: return at ({ Term {}, Term::FieldSaturationDrive, Term::FieldSaturationMix,
-                                              Term::FieldSaturationOutput, Term::FieldSaturationType });
+        case Device::Saturation: return at ({ Term {}, Term::FieldSaturationDrive, Term::FieldSaturationMix, Term {},
+                                              Term::FieldSaturationType });
         case Device::Tilt: return at ({ Term {}, Term::FieldTiltDb });
         case Device::Limiter: return at ({ Term::FieldLimiterNeedles, Term::FieldLimiterNeedlesDb });
         case Device::Dither: return at ({ Term {} });
         case Device::Low: return at ({ Term {}, Term::FieldLowDb });
+        case Device::Bands: return at ({ Term::FieldBandsBody, Term::FieldBandsMud, Term::FieldBandsForward,
+                                         Term::FieldBandsBrightness, Term::FieldBandsAir, Term {} });
     }
     return std::nullopt;
 }

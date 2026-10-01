@@ -162,7 +162,9 @@ void theCutoffOnTheChainsResponse()
 {
     felitronics::test::group ("the cutoff: the loss the target allows at the note on the chain's own response, the 32 Hz floor, the 50 Hz top");
     const auto r = detail::rules();
-    bool exact = true, stops = true, floors = true, unrounded = true;
+    // The machine's top is 50 Hz, never the knob's travel, which goes to 80 (owner, 01.10).
+    ok (same (r.hpfTop.toDouble(), 50.0) && same (r.hpfFq.to.toDouble(), 80.0), "PRECONDITION: the machine's top 50 Hz, the knob's travel 80");
+    bool exact = true, stops = true, floors = true, unrounded = true, underTop = true;
     std::string worst;
     for (std::uint16_t row = 0; row < r.rows; ++row)
     {
@@ -190,8 +192,10 @@ void theCutoffOnTheChainsResponse()
                     stops = stops && same (p.devices.hpf.machine.fq, 50.0) && atNote < loss;
                 else stops = false;
                 stops = stops && p.devices.hpf.machine.on && p.devices.hpf.machine.slope == slope;
+                underTop = underTop && p.devices.hpf.machine.fq <= 50.0 && f.cutoffHz <= 50.0;
             }
     }
+    ok (underTop, "the machine's cutoff is never above 50 Hz, on every target, note and rate — the knob's 80 is a person's");
     ok (floors, "the floor is 32 Hz on every target");
     ok (exact, "a note that decides: core's own high-pass takes exactly the target's loss there (1 dB, club 0.3), on every target, slope and rate" + (worst.empty() ? "" : " — not " + worst));
     ok (unrounded, "the cutoff is not rounded to the hertz");
@@ -210,7 +214,8 @@ void theCutoffOnTheChainsResponse()
     Readings high; high.occupy (43, 0.5, 60, 6);              // 98 Hz: the cutoff it allows is above the top
     const auto top = plan (high.inputs ("allStreaming", 60)).found.hpf;
     ok (top.cut == HpfCut::Top && same (top.cutoffHz, 50.0), "a note whose cutoff is above 50 Hz: the top");
-    ok (text::Text::text (PlanText::hpf (top), text::Lang::Ru).find ("упёрся") != std::string::npos, "and the report says it stopped there");
+    const auto topText = text::Text::text (PlanText::hpf (top), text::Lang::Ru);
+    ok (topText.find ("упёрся в 50,0") != std::string::npos, "and the report says it stopped there, at the machine's top: " + topText);
 }
 
 void quietAndUnmeasured()
@@ -453,6 +458,15 @@ void aPersonsKnobs()
     {
         HpfFields<Touched> hpf; hpf.fq = fq; hpf.slope = slope;
         ok (s.apply (command::EditDevice { 6, hpf }).rejection != Rejection::None, std::string ("refused: ") + why);
+    }
+    // The knob travels to 80 Hz (owner, 01.10): a person's 70 Hz, past the machine's top, is taken and is what sounds.
+    HpfFields<Touched> seventy; seventy.fq = 70.0; seventy.slope = 24;
+    ok (s.apply (command::EditDevice { 6, seventy }).rejection == Rejection::None && same (*s.project().devices.hpf.hand.fq, 70.0),
+        "70 Hz by hand: taken");
+    {
+        detail::EqStage at70; detail::writeEq (s.project().devices, detail::rules(), at70);
+        ok (same (at70.bands[detail::eqBand (Device::Hpf)].lanes[0].freq, 70.0) && s.project().devices.hpf.machine.fq <= 50.0,
+            "and the band sounds at 70 Hz; the machine's own cutoff stays at or under its 50 Hz top");
     }
     HpfFields<Touched> edge; edge.fq = std::nextafter (24000.0, 0.0); edge.slope = 24;
     ok (s.apply (command::EditDevice { 7, edge }).rejection == Rejection::None, "a hair under half the rate: taken");

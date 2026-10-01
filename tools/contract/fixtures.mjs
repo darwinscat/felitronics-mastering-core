@@ -35,7 +35,7 @@ export function fixtures(root = fixtureRoot, rebuild = false) {
         }
         if (spec.project) {
             const p = spec.project;
-            const bytes = Buffer.from(`defaults = "${p.defaults}"\ncore = "${p.core}"\nmanual = ${p.manual}\n\n[target]\nname = "${p.target}"\n\n[hpf]\nfq.machine = ${p.hpfFrequency}\n\n[low]\non.machine = true\ndb.machine = ${p.lowDb}\n`);
+            const bytes = Buffer.from(`defaults = "${p.defaults}"\nmanual = ${p.manual}\n\n[target]\nname = "${p.target}"\n\n[hpf]\nfq.machine = ${p.hpfFrequency}\n\n[low]\non.machine = true\ndb.machine = ${p.lowDb}\n`);
             manifest.files[`${name}.toml`] = {inputHash, sha256:hash(bytes), rebuild:manifest.rebuild};
             if (rebuild) writeFileSync(join(root, `${name}.toml`), bytes);
             continue;

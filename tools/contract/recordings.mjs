@@ -18,7 +18,7 @@ export function lfBytes(path) {
     if (bytes.includes(13)) throw new Error(`${path} has CR line endings; the contract hashes it as bytes and .gitattributes checks it out LF — check it out again`);
     return bytes;
 }
-const rebuild = 'node tools/contract/run.mjs build/tools/fcore_session build/measure-08-wasm-artifacts/fcsession.node.js --rebuild-recordings';
+const rebuild = 'node tools/contract/run.mjs build/tools/fcore_session tools/wasm/build/fcsession.node.js --rebuild-recordings';
 function select(bytes) {
     const rows = bytes.toString('utf8').trimEnd().split('\n').map(line => {
         const [session, kind, raw, binary = ''] = line.split('\t'); return {session, kind, raw, rows:binary};

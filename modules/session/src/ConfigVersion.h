@@ -76,6 +76,7 @@ inline void feedNumber (Fnv& f, double x) noexcept
 // WHAT CANNOT CHANGE A MASTER, by key path: left out of `sound`. A path covers everything under it.
 inline constexpr std::string_view kTargetsPresentation[] = {
     "main",                                            // the order of the list
+    "notes",                                           // the note shown beside a target
     "edit.lufs.from", "edit.lufs.to", "edit.lufs.green",   // the hand edit's travels and green ranges; a master holds its
     "edit.tp.from", "edit.tp.to", "edit.tp.green",         // own numbers, whatever the travel (the steps stay in)
 };

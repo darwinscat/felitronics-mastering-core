@@ -83,8 +83,10 @@ floating-point environment is not IEEE-754's default, and it holds:
 
 `manual` controls only panel visibility: hand edits remain effective while hidden, and `handFieldCount` in the snapshot
 counts touched device fields for the page's marker. Tilt and low are separate devices on every target. The machine
-places low off at 0 dB except where a target carries `lowDb` (today `lp`, +0.5 dB). The page draws the snapshot's
-`eqCurve`, the summed high-pass + tilt + low response in Hz/dB, carried through the one codec generator into `.d.ts`.
+places low off at 0 dB except where a target carries `lowDb` (today `lp`, +0.5 dB). The EQ bands — body, mud, forward,
+brightness, air — are a person's only, at 0 dB from the machine, on by its tick; a person's untick takes all five out of
+the chain with their gains kept. The page draws the snapshot's
+`eqCurve`, the summed high-pass + tilt + low + bands response in Hz/dB, carried through the one codec generator into `.d.ts`.
 
 The session also exposes `step(workUnits)`, copyable event deltas and owned immutable snapshots. The deterministic
 stub runs two five-unit measurement phases and a master with config-weighted pass progress. Cheap commands and
@@ -97,8 +99,8 @@ command-table cell between steps, stale completions, snapshot ownership, codec r
 `exportProject()` writes canonical TOML: defaults and core versions, target by name, manual mode, and only machine
 values that differ from defaults and touched human fields. `importProject()` uses felitronics-toml's schema reader,
 refuses unknown or invalid data with a position, and declares its size-based memory bound before parsing. The file's
-machine layer is always preserved with its original core stamp. Today's decisions appear beside it as a count fact and
-owned snapshot comparison rows, including for the same core. A fresh session plus the same source, measurement and project text restores the
+machine layer is always preserved. Today's decisions appear beside it as a count fact and owned snapshot comparison
+rows. A fresh session plus the same source, measurement and project text restores the
 project after facade poison or heap compaction. Revisions, job ids and kept masters are outside the project.
 
 What is fixed is the ground it stands on:

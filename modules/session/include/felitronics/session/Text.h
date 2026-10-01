@@ -86,6 +86,8 @@ enum class Plural : std::uint8_t { Zero, One, Two, Few, Many, Other };
 //   100 – 199   a command's rejection: 100 + its Rejection code (Commands.h), one fact per code
 //   200 – 299   the phases of the work
 //   300 – 399   the session's errors
+//   400 – 499   the measurements and the observations
+//   500 – 599   the plan's advice and the targets' notes
 // The arguments each fact takes, by name and kind, are src/TextFacts.h's, and the build holds the catalog to them.
 enum class FactId : std::uint16_t
 {
@@ -96,10 +98,7 @@ enum class FactId : std::uint16_t
     LoudestLowNote = 5,      // the loudest note of the low end: {note}
     WideBass = 6,            // the bass is wide (side {side}) — the warning of phase 1
     RateAboveLimit = 7,      // the file's rate {rate} is above what this platform takes, {limit} (select on platform)
-    MachineDifferences = 8,  // {count}: the saved machine layer is retained
-    DefaultsConverted = 9,   // {version}: the project was converted from older defaults — emitted by nothing since an
-                             // import accepts only the current defaults label; the id and its message stay
-    SameCoreMachineDifferences = 10, // {count}: same-core differences usually indicate a hand-edited file
+    MachineDifferences = 8,  // {count}: where today's planner differs from the file's machine layer, which is kept
     MasterLandingMiss = 11,
     MasterHintSubBass = 12,
     MasterHintPeaks = 13,
@@ -145,11 +144,11 @@ enum class FactId : std::uint16_t
     MonoBassKept = 50,       // mono bass below {crossover}: a project file's machine layer
     MonoBassPartWeighed = 51, // mono bass was weighed over the first {covered} of the piece's {whole}
     // What the limiter comes to (PlanView::limiter; PlanText): its ceiling and what the peak clipper does, as it sounds.
-    LimiterShort = 52,       // ceiling {ceiling}; short needles ({p90}, {bass}, {plr}) are clipped down to {over} above it
-    LimiterBetween = 53,     // ...needles neither short nor ruled out: clipped with care, down to {over}
-    LimiterManual = 54,      // ...clipped by hand, down to {over} above the ceiling
+    LimiterShort = 52,       // ceiling {ceiling}; short needles ({p90}, {bass}, {plr}): the clipper cuts at most {cut}
+    LimiterBetween = 53,     // ...needles neither short nor ruled out: cut with care, at most {cut}
+    LimiterManual = 54,      // ...cut by hand, at most {cut} — a cap ({cut} is Bound::AtMost): the landing decides how much
     LimiterNeedlesOff = 55,  // ...the peak clipper is switched off
-    LimiterLittleNeed = 56,  // ...not cut: the need {need} is no more than {little}
+    LimiterLittleNeed = 56,  // ...not cut: the need at the aim, {need}, is no more than {little}
     LimiterNoExcursions = 57, // ...not cut: no peak stands above the ceiling
     LimiterUnmeasured = 58,  // ...not cut: the needles were not measured
     LimiterClipped = 59,     // ...not cut: the source is clipped, {rate} clips a minute
@@ -183,7 +182,20 @@ enum class FactId : std::uint16_t
     MasterVinylNoHighPass = 84, // high-pass off: for vinyl the infra-low is cut from {medium} at ≥ {mediumSlope} dB/oct
     MasterVinylHighPassDeparts = 85, // high-pass from {cutoff} at {slope} dB/oct: for vinyl from {medium} at ≥ {mediumSlope}
     MasterVinylCeilingDeparts = 86, // the ceiling {ceiling} above the medium's {medium}
-    MasterVinylNeedlesDeparts = 87, // the needles cut from {over} above the ceiling: vinyl is cut without the clipper
+    MasterVinylNeedlesDeparts = 87, // the clipper is set to cut at most {cut}: vinyl is cut without the clipper
+    // The landing's verdict (MasterReportText::landing), one per status, published with the master. A miss names its
+    // numbers in MasterLandingMiss/Above above; its status line says why, against the tolerance.
+    MasterLandingSolved = 88,      // the master reached {achieved} against {target} (tolerance ±{tolerance})
+    MasterLandingUnreachable = 89, // no closer than ±{tolerance} to the target: {limit} holds it (select; the solver's binding)
+    MasterLandingPassLimit = 90,   // the passes ran out before the master came within {tolerance} of the target
+    MasterLandingBetween = 91,     // the target falls between the nearest levels {below} and {above}, both beyond the tolerance
+    MasterLandingFailed = 92,      // the master stopped on a technical failure
+    // The master's cost line by line (MasterReportText), each published where its numbers were measured.
+    MasterCostSection = 93,        // the largest section shift: {shift} at {from}–{to}
+    MasterCostSections = 94,       // sections compared: {count}
+    MasterCostLimiter = 95,        // the limiter's reduction over the active windows: median {median}, P95 {p95}
+    MasterCostActive = 96,         // the limiter works in {limiter} of the windows; {active} of the windows are active
+    MasterCostBands = 97,          // the impact loss by band: low {low}, low-mid {lowMid}, high-mid {highMid}, high {high}
 
     // A command's rejection, by its code — what was refused and why. The three a field refuses name it: {field}.
     RejectedFloatingPointEnvironment = 101,
@@ -212,7 +224,6 @@ enum class FactId : std::uint16_t
     RejectedProjectType = 124,
     RejectedProjectUnknownKey = 125,
     RejectedUnknownDefaults = 126,
-    RejectedProjectCore = 127,
     RejectedNewerDefaults = 128,
     RejectedRateAboveLimit = 129,
     RejectedMemory = 130,
@@ -276,6 +287,33 @@ enum class FactId : std::uint16_t
     SourceHum = 434,           // hum: a line at {hz}, {prominence} above the background
     SourceHumWandered = 435,   // possible hum: a line near {hz} that does not hold its frequency
     SourceLowestBandUnsure = 436, // the lowest occupied band: {note} ({hz}), unsure — under the margin a sure note stands
+    ObservationUnmeasured = 437, // {name}: not measured — {reason}
+    TempoConfidence = 438,     // a reading: how sure the tempo is — {confidence}
+    // The observations' own words where the owner gave them (01.10): a style by size says its own line.
+    SourceDcNote = 439,        // a DC offset ({offset}) as a note: the master's high-pass removes it, check the mix chain
+    SourceTruncatedBits = 440, // the effective depth {bits}: truncated somewhere in the mix chain
+    SourceShallowMix = 441,    // a {bits}-bit mix: mix down at {depth} bits
+    SourceLimitedBus = 442,    // the mix is limited already (PLR {plr}): send a version without the bus limiter
+    SourceLossy = 443,         // the source went through mp3/AAC (the top cut at {hz}): master from a lossless source
+    SourceInfraLowNote = 444,  // a little energy below {hz}: the master's high-pass removes it
+    SourceInfraLowWarning = 445, // a notable part of the energy ({share}) below {hz}: the high-pass cuts it, check what it is
+    // A DC offset of a stereo source, each channel's as the readings print it (a mono source keeps SourceDcNote/SourceDc).
+    SourceDcNoteStereo = 446,  // L {left}, R {right} as a note: the master's high-pass removes it, check the mix chain
+    SourceDcStereo = 447,      // L {left}, R {right} as a warning or an error
+    // The plan's advice (PlanText): a device's value as it sounds, against the norm the config draws on its knob.
+    HpfBelowComfort = 500,     // the high-pass at {cutoff} is below the comfort window {low}–{high}
+    HpfAboveComfort = 501,     // the high-pass at {cutoff} is above the comfort window {low}–{high}
+    HpfSlopeGentle = 502,      // a slope of {slope} dB/oct is gentler than the usual, {gentlest} dB/oct and up
+    HpfSlopeSteep = 503,       // a slope of {slope} dB/oct is steeper than the usual, {steepest} dB/oct at most
+    EqOvershoot = 504,         // the EQ curve is beyond the norm: {db} at {hz}
+    MonoBassOutsideZones = 505, // mono bass at {crossover}, above what a club ({clubTo}) and vinyl ({vinylTo}) need
+    // The target's note (SnapshotText::targetNote): where its loudness comes from, where that is not a platform's
+    // published number or a standard.
+    TargetMeasured = 506,      // {lufs} is measured on the platform, not a published specification
+    TargetPractice = 507,      // {lufs} is mastering practice, not a standard
+    TargetNoNormalisation = 508, // the destination does not normalise loudness: a delivery preset
+    // Mono bass's crossover below every zone (MonoBassOutsideZones is the one above them).
+    MonoBassBelowZones = 509,  // mono bass at {crossover}, below what a club ({clubFrom}) and vinyl ({vinylFrom}) ask for
 
 };
 
@@ -296,7 +334,6 @@ enum class Term : std::uint16_t
     FieldGlueUpToDb = 9,
     FieldSaturationDrive = 10,
     FieldSaturationMix = 11,
-    FieldSaturationOutput = 12,
     FieldTiltDb = 13,
     FieldLimiterNeedles = 14,
     FieldLimiterNeedlesDb = 15,
@@ -316,6 +353,27 @@ enum class Term : std::uint16_t
     // (SaturationType, Project.h — Atan, Cubic and Asym are the config's only and have no words).
     FieldSaturationType,
     SaturationTypeTanh, SaturationTypeTube, SaturationTypeTransistor, SaturationTypeTransformer, SaturationTypeTape,
+    // The observations by name, in the order of ObservationKind (Session.h); what deals with one, in the order of
+    // HandledBy; and why one was not measured — every MeasurementReason but None (Measurements.h), in its order.
+    ObservationClipping, ObservationDcOffset, ObservationBitsUnused, ObservationDualMono, ObservationEdgeSilence,
+    ObservationTooQuiet, ObservationTooShort, ObservationAlreadyLimited, ObservationSpectralWall, ObservationLoudestLowNote,
+    ObservationLowestLowBand, ObservationInfraLow, ObservationWideBass, ObservationPolarity, ObservationSibilance,
+    ObservationHum, ObservationHumWandered,
+    HandledNothing, HandledHpf, HandledMonoBass, HandledPerson,
+    ReasonPending, ReasonCancelled, ReasonUnsupported, ReasonTooShort, ReasonNonFinite, ReasonCapacity, ReasonNoSignal,
+    ReasonNotImplemented, ReasonNeedNotAbove3, ReasonMemory,
+    // The readings by name, in the order of ReadingKind (Measurements.h); how sure a tempo is, in the order of the tempo
+    // detector's ConfidenceLabel (undetermined, low, medium, high).
+    ReadingIntegrated, ReadingTruePeak, ReadingLra, ReadingPlr, ReadingDcOffset, ReadingDcOffsetLeft, ReadingDcOffsetRight,
+    ReadingLowestBand, ReadingPcmBits, ReadingCorrelation, ReadingBurstsMid, ReadingBurstsSide, ReadingHum, ReadingTempo,
+    ReadingTempoConfidence, ReadingClipRuns, ReadingLongestRun, ReadingClippedSamples, ReadingSamplePeak, ReadingLowSide,
+    ReadingStereoWindows, ReadingCrestBlocksLow, ReadingCrestBlocksLowMid, ReadingCrestBlocksHighMid, ReadingCrestBlocksHigh,
+    ReadingCrestBlocksFull, ReadingTarget, ReadingCeiling, ReadingGain, ReadingPasses, ReadingCheckPasses,
+    TempoUndetermined, TempoLow, TempoMedium, TempoHigh,
+    // What held a landing short of its target (LandingConstraint, the solver's binding): MasterLandingUnreachable selects.
+    LandingLimitNone, LandingLimitTruePeak, LandingLimitLimiter, LandingLimitPlr, LandingLimitLra, LandingLimitGain,
+    // The EQ bands: the device, and its five gains as the fields a refusal names, in the order Project.h writes them.
+    DeviceBands, FieldBandsBody, FieldBandsMud, FieldBandsForward, FieldBandsBrightness, FieldBandsAir,
 
 };
 

@@ -51,7 +51,6 @@
   "saved-machine": {
     "project": {
       "defaults": "2026-10",
-      "core": "0.2.1",
       "manual": false,
       "target": "allStreaming",
       "hpfFrequency": 41.125,
