@@ -537,7 +537,7 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Device::Dither: return at ({ Term {} });
         case Device::Low: return at ({ Term {}, Term::FieldLowDb });
         case Device::Bands: return at ({ Term::FieldBandsBody, Term::FieldBandsMud, Term::FieldBandsForward,
-                                         Term::FieldBandsBrightness, Term::FieldBandsAir });
+                                         Term::FieldBandsBrightness, Term::FieldBandsAir, Term {} });
     }
     return std::nullopt;
 }

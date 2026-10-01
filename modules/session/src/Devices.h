@@ -181,7 +181,7 @@ template <template <class> class F> struct DeviceOf<BandsFields<F>>
 {
     static constexpr Device device = Device::Bands;
     static constexpr std::string_view name = "bands";
-    static constexpr std::string_view fields[] = { "body", "mud", "forward", "brightness", "air" };
+    static constexpr std::string_view fields[] = { "body", "mud", "forward", "brightness", "air", "on" };
     static auto& layers (Devices& d) noexcept { return d.bands; }
     static const auto& layers (const Devices& d) noexcept { return d.bands; }
     template <class V, class... S> static void each (const Rules& r, V&& v, S&&... s)
@@ -191,6 +191,7 @@ template <template <class> class F> struct DeviceOf<BandsFields<F>>
         v (2, knobRule (r.bands[2]), s.forward...);
         v (3, knobRule (r.bands[3]), s.brightness...);
         v (4, knobRule (r.bands[4]), s.air...);
+        v (5, flagRule(), s.on...);
     }
 };
 
@@ -249,7 +250,7 @@ template <class D, class V> void eachDevice (D& devices, V&& v)
 // tick it has a rule for — mono bass by its loss whatever [stages] says), the target's row for what the target decides (the high-pass's
 // slope and floor, the mono-bass crossover, the needles off where the target has no peak clipper, the dither at its bit
 // depth, the low shelf's gain, the glue of [glue] byTarget) and each device's section for the rest. Tilt starts off at
-// 0 dB, and the EQ bands at 0 dB: the machine does not touch timbre. They are the defaults layer, not a decision taken
+// 0 dB, and the EQ bands on at 0 dB: the machine does not touch timbre, and never takes the bands out of the chain. They are the defaults layer, not a decision taken
 // from a measurement: the planner (src/Planner.h) proposes the machine's layer from them, and a project file writes a
 // machine value only where it differs from them.
 void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channels, Devices& devices) noexcept;

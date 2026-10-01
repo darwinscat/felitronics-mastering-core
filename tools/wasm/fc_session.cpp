@@ -1234,7 +1234,7 @@ FC_EXPORT fc_session_status fc_kit_mono_zones_at (double hz, std::uint32_t* out)
 
 namespace
 {
-// The EQ curve from `count` params: the seven of fc_kit_eq_curve, and with twelve the EQ bands' five gains.
+// The EQ curve from `count` params: the seven of fc_kit_eq_curve, and with thirteen the EQ bands' five gains and tick.
 fc_session_status kitEqCurve (const double* params, std::uint32_t count, double rate, double* curve, double* peak)
 {
     constexpr std::uint64_t curveBytes = 2 * FC_SESSION_KIT_EQ_POINTS * sizeof (double), peakBytes = FC_SESSION_KIT_EQ_PEAK_VALUES * sizeof (double);
@@ -1254,6 +1254,7 @@ fc_session_status kitEqCurve (const double* params, std::uint32_t count, double 
     eq.tilt.db = params[4]; eq.low.db = params[6];
     if (count == FC_SESSION_KIT_EQ_BANDS_PARAMS)
     {
+        if (! tick (params[12], eq.bands.on)) return FC_SESSION_ERR_CONTRACT;
         eq.bands.body = params[7]; eq.bands.mud = params[8]; eq.bands.forward = params[9];
         eq.bands.brightness = params[10]; eq.bands.air = params[11];
     }

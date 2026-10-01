@@ -98,8 +98,8 @@ struct KitZones
     std::array<KitZoneSpan, kKitZones> zones {};
 };
 
-// The EQ devices' knobs as they sound (Project.h's own field types): a preview of the EQ stage's curve. The EQ bands
-// default to 0 dB, no band.
+// The EQ devices' knobs as they sound (Project.h's own field types): a preview of the EQ stage's curve. Every tick
+// defaults to off, the EQ bands' among them: a curve with the bands sets bands.on.
 struct KitEq
 {
     HpfFields<Value> hpf {};

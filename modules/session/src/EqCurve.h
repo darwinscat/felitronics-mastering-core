@@ -37,7 +37,8 @@ struct EqStage
 // they are. (The summed curve is drawn from it today; the render of a session-decided master goes through it next.)
 void writeEq (const Devices& devices, const Rules& rules, EqStage& stage) noexcept;
 // ...from the four EQ devices' settings as they sound (what settingsOf gives; the pure kit's preview passes them as given).
-// A band of the EQ bands at 0 dB leaves its slot as the default band, off: the stage the chain got before the device.
+// A band of the EQ bands at 0 dB leaves its slot as the default band, off: the stage the chain got before the device;
+// the EQ bands off leave all five so.
 void writeEq (const HpfFields<Value>& hpf, const TiltFields<Value>& tilt, const LowFields<Value>& low,
               const BandsFields<Value>& bands, const Rules& rules, EqStage& stage) noexcept;
 

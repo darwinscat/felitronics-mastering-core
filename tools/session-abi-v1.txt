@@ -765,7 +765,7 @@ define FC_SESSION_KIT_EQ_PEAK_VALUES=4
 # The EQ bands (device 8, FC_SESSION_DEVICE_EQ_BANDS), appended after v0.5.0.
 function fc_kit_eq_curve_bands fc_session_status(const double*,double,double*,double*)
 define FC_SESSION_DEVICE_EQ_BANDS=256
-define FC_SESSION_KIT_EQ_BANDS_PARAMS=12
+define FC_SESSION_KIT_EQ_BANDS_PARAMS=13
 enum felitronics::session::Device::Bands=8
 enum felitronics::session::text::Term::DeviceBands=133
 enum felitronics::session::text::Term::FieldBandsBody=134
@@ -811,3 +811,9 @@ field-id Bands.mud=1
 field-id Bands.forward=2
 field-id Bands.brightness=3
 field-id Bands.air=4
+# The EQ bands' tick (on, appended after the five gains: field 5; FC_SESSION_KIT_EQ_BANDS_PARAMS 13 with it).
+codec BandsFieldsValue.on bool
+codec BandsFieldsTouched.on bool?
+wire EditDeviceBandsFields.on? boolean | null
+wire RevertEditsBandsFields.on? boolean
+field-id Bands.on=5

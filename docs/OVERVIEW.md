@@ -84,7 +84,8 @@ floating-point environment is not IEEE-754's default, and it holds:
 `manual` controls only panel visibility: hand edits remain effective while hidden, and `handFieldCount` in the snapshot
 counts touched device fields for the page's marker. Tilt and low are separate devices on every target. The machine
 places low off at 0 dB except where a target carries `lowDb` (today `lp`, +0.5 dB). The EQ bands — body, mud, forward,
-brightness, air — are a person's only, at 0 dB from the machine. The page draws the snapshot's
+brightness, air — are a person's only, at 0 dB from the machine, on by its tick; a person's untick takes all five out of
+the chain with their gains kept. The page draws the snapshot's
 `eqCurve`, the summed high-pass + tilt + low + bands response in Hz/dB, carried through the one codec generator into `.d.ts`.
 
 The session also exposes `step(workUnits)`, copyable event deltas and owned immutable snapshots. The deterministic

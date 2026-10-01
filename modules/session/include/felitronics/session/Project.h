@@ -130,7 +130,9 @@ template <template <class> class F> struct LowFields
 };
 
 // [bands]: the five static EQ bands' gains, dB — a person's only: the machine leaves them at 0 (it does not touch timbre).
-// No tick: a band at 0 dB is neutral and out of the EQ stage; the device sounds where any band is not 0.
+// A band at 0 dB is neutral and out of the EQ stage. The tick (`on`, appended after the gains) takes the whole device in
+// or out of the chain with its gains kept: the machine's layer always has it on, a person may untick it. The device
+// sounds where it is on and any band is not 0.
 template <template <class> class F> struct BandsFields
 {
     F<double> body {};
@@ -138,6 +140,7 @@ template <template <class> class F> struct BandsFields
     F<double> forward {};
     F<double> brightness {};
     F<double> air {};
+    F<bool> on {};
 };
 
 // WHERE A DEVICE'S TICK COMES FROM — a person's edit always sounds. Their own tick when they set one, on or off (Hand);
@@ -176,7 +179,7 @@ struct MachineDifference
     std::uint8_t field = 0;
     double fileValue = 0.0, coreValue = 0.0;
 };
-inline constexpr std::size_t kDeviceFields = 25;
+inline constexpr std::size_t kDeviceFields = 26;
 
 struct Project
 {

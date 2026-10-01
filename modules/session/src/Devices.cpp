@@ -81,8 +81,9 @@ void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channel
     shelf.on = rules.eq && target.lowDb.has_value();
     shelf.db = target.lowDb ? number (*target.lowDb) : 0.0;
 
-    // The EQ bands are a person's: the machine leaves every one at 0 dB.
+    // The EQ bands are a person's: the machine leaves every one at 0 dB, and the device on (it never bypasses it).
     devices.bands.machine = {};
+    devices.bands.machine.on = true;
 }
 
 } // namespace felitronics::session::detail
