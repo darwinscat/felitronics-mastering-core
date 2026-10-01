@@ -193,7 +193,7 @@ LowEnd and PeakExcursions tests are cited nowhere in this table as proof of a de
   defaults `2026-09` (before the core had its planner) is not opened: an import accepts only the current defaults
   label, any other is refused whole as `UnknownDefaults` and nothing changes. On the current label the import rule
   stands: the machine layer comes from the file, the differences are shown beside it, a new machine opinion only by
-  `adoptMachine`. Nothing converts any more; `DefaultsConverted` keeps its id.
+  `adoptMachine`. Nothing converts any more; `DefaultsConverted` is retired — no message, its id 9 reserved.
   Held by `ProjectTests.cpp:defaultsVersions` (row A4).
 - **Q2. `needAfter` in the structure row. SETTLED by the owner, 30.09: not carried.** The needles' classes use the
   input's need (`LimiterFinding.needDb`) and the limiter holds the ceiling; no need is measured after the chain.

@@ -881,7 +881,8 @@ text::Fact PlanText::limiter (const LimiterFinding& f) noexcept
     // What sounds: the peak clipper cutting — by a person's threshold, or by the machine's class.
     if (f.cutting)
     {
-        const auto cut = Arg::value (f.overDb, Unit::Db, 1);
+        // A cap, not an amount: the clipper may take this much off the peaks; how much it takes is the landing's.
+        const auto cut = Arg::value (f.overDb, Unit::Db, 1, text::Sign::Negative, text::Bound::AtMost);
         if (f.mode == Needles::Manual) return Fact::of (FactId::LimiterManual, ceiling, cut);
         return Fact::of (f.proposed == NeedlesClass::Short ? FactId::LimiterShort : FactId::LimiterBetween,
                          ceiling, cut, p90, bass, db (f.plrDb));

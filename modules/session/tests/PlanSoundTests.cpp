@@ -406,6 +406,12 @@ void thePersonsThreshold()
         const auto betweenLine = PlanText::limiter (detail::limiterFinding (cut.in, cut.machine()));
         ok (shortLine.id == text::FactId::LimiterShort && betweenLine.id == text::FactId::LimiterBetween && whole (shortLine) && whole (betweenLine),
             "and the two classes that cut:\n        " + ru (shortLine) + "\n        " + ru (betweenLine));
+        // The cut is a cap the landing spends as it needs, never the amount it takes: {cut} is Bound::AtMost, printed "≤".
+        const auto en = [] (const text::Fact& f) { return text::Text::text (f, text::Lang::En); };
+        ok (shortLine.args[1].bound == text::Bound::AtMost && betweenLine.args[1].bound == text::Bound::AtMost
+            && ru (shortLine).find ("\xE2\x89\xA4") != std::string::npos && en (shortLine).find ("\xE2\x89\xA4") != std::string::npos
+            && ru (betweenLine).find ("\xE2\x89\xA4") != std::string::npos && en (betweenLine).find ("\xE2\x89\xA4") != std::string::npos,
+            "the clipper's cut is a cap, not an amount:\n        " + en (shortLine) + "\n        " + en (betweenLine));
     }
 }
 
@@ -1295,6 +1301,8 @@ void vinylAndQuietMastered()
         ok (only (ceiling, 2, text::FactId::MasterVinylCeilingDeparts, { -2.9, -3.0 }), "the ceiling alone: " + lineOf (ceiling));
         const auto needles = departures ([] (Project& p) { p.devices.limiter.hand.needles = Needles::Manual; p.devices.limiter.hand.needlesDb = 2.0; });
         ok (only (needles, 3, text::FactId::MasterVinylNeedlesDeparts, { 2.0 }), "the needles alone: " + lineOf (needles));
+        ok (needles[3] && needles[3]->args[0].bound == text::Bound::AtMost && ru (*needles[3]).find ("\xE2\x89\xA4") != std::string::npos,
+            "and the clipper's setting is named as a cap: " + lineOf (needles));
         const auto noFold = departures ([] (Project& p) { p.devices.monoBass.hand.on = false; });
         const auto lowFold = departures ([] (Project& p) { p.devices.monoBass.hand.fq = 120.0; });
         const auto wideFold = departures ([] (Project& p) { p.devices.monoBass.hand.width = 0.5; });

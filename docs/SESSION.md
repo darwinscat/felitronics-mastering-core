@@ -388,7 +388,9 @@ peakClipper] clippedPerMinute`); between, with care, up to 1.5 dB. A need of 3 d
 The two numbers (`shortCutDb`, `betweenCutDb`) are AMOUNTS (owner, 30.09): the clipper takes at most that much off the
 peaks and the limiter does the rest, so its threshold stands max(0, need − cut) above the ceiling, the need the input's
 (`plan.limiter.needDb`); a person's `manual X` is X dB off the peaks the same way. The finding carries the amount
-(`overDb`, `proposedOverDb`), the chain the threshold. Where the need is not known, or need − cut lies beyond the
+(`overDb`, `proposedOverDb`), the chain the threshold; its line (`LimiterShort`/`Between`/`Manual`, and a vinyl master's
+`MasterVinylNeedlesDeparts`) prints the amount as a cap, `Bound::AtMost` ("≤ 1.5 dB"), since the landing's drive
+decides how much the clipper really takes — and `LimiterLittleNeed` names the need as the one at the target. Where the need is not known, or need − cut lies beyond the
 limiter's working range (12 dB), no threshold keeps to the amount and the clipper stays off. The landing then moves the
 peaks by its own gain and pass ceiling; a rendered master's clipper reduction stays within the amount plus that drift
 (`theClipperCutsItsAmount`: about 1.4–2.0 dB on the suite's mix).
@@ -614,8 +616,9 @@ another one, so the core carries no code for older labels). Any other label — 
 planner, included — is refused whole as `UnknownDefaults` (fact 126), as is a malformed one; a newer label is
 `NewerDefaults` (28, fact 128). These refusals follow the schema read, in its fixed order, and leave state and revision
 unchanged. `ProjectTests.cpp:defaultsVersions` names `2026-10` and turns red if it stops opening with its own machine
-layer. Fact `DefaultsConverted` (9) keeps its id and message (append-only, released in v0.3.0) and is emitted by
-nothing. Export uses the current label.
+layer. Fact `DefaultsConverted` (9) is retired: nothing converts, so its row and message are gone; the id stays
+reserved (the ABI manifest freezes it, and no other fact takes it), renders as its number and is refused by the
+snapshot decoder. Export uses the current label.
 
 After defaults selection, the file's complete machine layer always wins (omitted fields mean defaults),
 with the person's touched layer over it — on the same core and on another. The planner decides again beside it, for
@@ -1501,6 +1504,13 @@ can keep the PCM when its reference true peak is safe; a missing mandatory readi
 The two optional hint records expose measured sub-bass or presence share, limiter peak reduction, gain or
 remaining loudness distance with units. `MasterReportText` renders the miss and mix suggestions as typed,
 ru-first/en facts. PassLimit means the twelve-pass budget ended; it makes no claim of physical impossibility.
+The landing's verdict is a fact too, one per status, published with the master ahead of the miss
+(`MasterReportText::landing`): solved says the achieved loudness against the target and the landing's tolerance
+(`MasterLandingSolved`, 88) — never "hit" without numbers; unreachable, pass limit and between say why against the
+tolerance (89–91), the achieved number and the gap being the miss's own line (`MasterLandingMiss`/`Above`, 11/23); a
+technical failure says so (92). Unavailable and cancelled landings say none. The crest's line
+(`MasterReportText::crest`) goes out once: with the report when the job settles the crest (joined inside the job, or
+unavailable), or from the late join when it was still pending.
 
 `MasterCrest` stores five peak-amplitude/mean-square-power pairs per block, in Low, LowMid, HighMid, High,
 Full order, plus five source activity values per block as zero/one values. Version, sample rate, hop

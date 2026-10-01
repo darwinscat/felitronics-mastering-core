@@ -14,8 +14,8 @@
   "scenarios": {
     "cancel": {
       "scriptSha256": "a57cec10fe182d0641e1195130f802e0a9b7d25d64741c34d95e0f4778387fe9",
-      "sha256": "6ce55eb504447108653c46fecf7efdbd5cc0749b0fce45745a24b701b192fe51",
-      "bytes": 3597330
+      "sha256": "fed911d0529ad85d503d1f881d4b0d6355c6f87206468a68d0815c9b911f34e8",
+      "bytes": 3598379
     },
     "domains": {
       "scriptSha256": "2d0075d8cb41564684c376109d10c42735f56f3d8de9c38033a37d5e05a69e9e",
@@ -64,8 +64,8 @@
     },
     "measurement-sidecar": {
       "scriptSha256": "5404c1c7d1eda5106be368cc003c641215bc908145b9adceb28264a7d82ebc7d",
-      "sha256": "29bec828a006587590709818a41883ef1261392afa12f40872a7d76db3bc172b",
-      "bytes": 4127038
+      "sha256": "260b59114e10ff623440ebec18832f0b17736031be3633a2025fef54cf9dd5aa",
+      "bytes": 4127955
     },
     "measurement-silence": {
       "scriptSha256": "bdbdda5b3c53edc514a6224a1780f9e1300c3e3f41935192892b21143f01ea11",
@@ -79,8 +79,8 @@
     },
     "plan-pending": {
       "scriptSha256": "cc4b1db5d383b8c2362934e11281afc9b74b3f53da9bf11c205d19f2fee09dd6",
-      "sha256": "ade4f4fda68e597b50a84dd82441cc12d6c1b24292d5b7c393c3d6fed67ed01c",
-      "bytes": 5886348
+      "sha256": "0a153b5cdde3f54ddc14b62698109cb51618cf8c5dffa1064f6b3849dadfde92",
+      "bytes": 5887396
     },
     "project-roundtrip": {
       "scriptSha256": "c208a2b366ebfd0433ae784ebb551ef893a7ce071ba3cbec7f400529ca8d062c",
@@ -94,8 +94,8 @@
     },
     "saturation-type": {
       "scriptSha256": "f9c9a6d63f72d52e1d437e5a6890183cd85353069577395875229366307194eb",
-      "sha256": "1a7565482c10245cb11c86ce82e9988ecdab689f3679f2c1ee8fe5aee1a2a81e",
-      "bytes": 5243311
+      "sha256": "b066d4dcde00378bb3d4085186d364b38f920a292266208dd3e9173c5bfa4941",
+      "bytes": 5244361
     },
     "target-edits": {
       "scriptSha256": "0585d7fbb0e8a118ce67b1f9d300f6f4aa319188024aac4ffa5eccb2e8a35d86",

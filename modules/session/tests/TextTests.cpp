@@ -857,6 +857,12 @@ void everyRejectionIsAFact()
         "None is no rejection, and a code past the last is none this library knows");
     ok (unsigned (FactId::MachineDifferences) == 8 && unsigned (FactId::DefaultsConverted) == 9,
         "project readings use the next free ids in 1-99");
+    // A retired fact: no shape, no message — nothing can state it, the snapshot decoder refuses it, and it renders as its
+    // number — while its id stays reserved (the ABI manifest freezes it; no other fact takes 9).
+    ok (detail::shapeOf (FactId::DefaultsConverted) == nullptr && Text::key (FactId::DefaultsConverted).empty()
+        && Text::text (Fact::of (FactId::DefaultsConverted), Lang::Ru) == "#9"
+        && Text::text (Fact::of (FactId::DefaultsConverted), Lang::En) == "#9",
+        "DefaultsConverted (9) is retired: no shape, no message, its id reserved");
     bool inRange = true;
     for (const auto& shape : detail::kFacts)
         inRange = inRange && ((std::size_t) shape.id < 100 || ((std::size_t) shape.id > 100 && (std::size_t) shape.id <= 100 + last)
@@ -1112,7 +1118,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0xfc6de5d659c53037ull;   // …, the observations (52–80, 419–436), the target-change warning (81), what departs from vinyl (82–87), the clipper's cut off the peaks and an observation not measured (437)
+    constexpr std::uint64_t kPinned = 0xff3a2e9a342348f8ull;   // …, the observations (52–80, 419–436), the target-change warning (81), what departs from vinyl (82–87), the clipper's cut off the peaks and an observation not measured (437), the landing's verdict (88–92), the clipper's cut as a cap, DefaultsConverted (9) retired
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");

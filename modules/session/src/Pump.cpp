@@ -348,17 +348,31 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 masterSummary_.deliverable = masterSummary_.deliverable
                     && masters_[masterCount_ - 1].report->deliverable;
                 masters_[masterCount_ - 1].landing = masterSummary_;
-                // The landing's own line and what stood behind a miss: the report's facts, the core's to say — a shell
-                // composes none of them from the report's fields.
+                // The landing's verdict, its own line and what stood behind a miss: the report's facts, the core's to
+                // say — a shell composes none of them from the report's fields.
                 {
                     const auto& report = *masters_[masterCount_ - 1].report;
                     event.kind = EventKind::Fact;
+                    // The tolerance the job landed to: the config's, as MasterJob::plan read it into the request.
+                    const auto tolerance = detail::rules().engine.find ("landing").find ("toleranceLu");
+                    const double toleranceLu = tolerance.decimal() ? tolerance.decimal()->toDouble()
+                                                                   : double (tolerance.integer().value_or (0));
+                    if (const auto verdict = MasterReportText::landing (report, masterSummary_.status, toleranceLu))
+                    { (void) event.payload.fact.assign (*verdict); emit (event, masterProgress_); }
                     if (const auto miss = MasterReportText::miss (report))
                     { (void) event.payload.fact.assign (*miss); emit (event, masterProgress_); }
                     for (const auto* hint : { &report.firstHint, &report.secondHint })
                         if (*hint)
                             if (const auto said = MasterReportText::hint (**hint))
                             { (void) event.payload.fact.assign (*said); emit (event, masterProgress_); }
+                }
+                // The crest's line, once: here when the report settles it (joined inside the job, or unavailable); a
+                // crest still pending is said by the late join (stepMasterCrestJoin), which passes over a settled one.
+                if (masters_[masterCount_ - 1].report->crest.status != MeasurementStatus::Pending)
+                {
+                    event.kind = EventKind::Fact;
+                    (void) event.payload.fact.assign (MasterReportText::crest (masters_[masterCount_ - 1].report->crest));
+                    emit (event, masterProgress_);
                 }
                 if (const auto& cost = masters_[masterCount_ - 1].report->cost)
                 {
