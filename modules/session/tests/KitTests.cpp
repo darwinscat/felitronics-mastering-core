@@ -148,9 +148,8 @@ void textIsTextWrite()
         Fact::of (FactId::LandingPass, Arg::count (2), Arg::count (5)),
         Fact::of (FactId::LandingConverged, Arg::count (1)),
         Fact::of (FactId::LandingConverged, Arg::count (22)),
-        Fact::of (FactId::LimiterManual, Arg::value (-1, Unit::DbTp, 1), Arg::value (1.5, Unit::Db, 1, text::Sign::Negative, text::Bound::AtMost)),
-        Fact::of (FactId::MonoBassOutsideZones, Arg::value (65, Unit::Hz, 0), Arg::value (80, Unit::None, 0), Arg::value (120, Unit::Hz, 0),
-                  Arg::value (120, Unit::None, 0), Arg::value (200, Unit::Hz, 0)),
+        Fact::of (FactId::LimiterManual, Arg::value (-1, Unit::DbTp, 1), Arg::value (1.5, Unit::Db, 1)),
+        Fact::of (FactId::MonoBassOutsideZones, Arg::value (250, Unit::Hz, 0), Arg::value (120, Unit::Hz, 0), Arg::value (200, Unit::Hz, 0)),
         Fact::of (FactId::RejectedOutOfDomain, Arg::term (Term::FieldHpfFq)),
     };
     for (std::size_t i = 0; i < 4; ++i) ok (wire (kFactValues[i]) == kFacts[i], "the corpus's wire fact " + std::to_string (i) + " is the codec's");
@@ -210,13 +209,22 @@ void parseReadsTheField()
     ok (refused ("1e300", Lang::En, Term::FieldTargetLufs, KitRefusal::NotANumber), "an exponent is no number a person types");
     ok (Kit::parse ("1", Lang::En, Term::FieldAudio, 0).status == CodecStatus::Invalid
         && Kit::parse ("1", Lang::En, Term::PlatformWeb, 0).status == CodecStatus::Invalid, "a field the kit has no knob for is Invalid");
+    // The probe runs only where the mode was set (FpEnvironmentControl.h): the wasm tier has no rounding modes, and a
+    // refusal test on an environment that never changed would test nothing.
     const auto saved = fpenv::saveFpEnvironment();
-    const bool set = fpenv::setRounding (fpenv::kRoundUpward);
-    const auto p = Kit::parse ("1", Lang::En, Term::FieldGlueUpToDb, 0);
-    const auto h = Kit::heat (Term::FieldTargetLufs, -14);
-    fpenv::restoreFpEnvironment (saved);
-    ok (set && p.status == CodecStatus::FloatingPointEnvironment && h.status == CodecStatus::FloatingPointEnvironment,
-        "rounding upward on the calling thread: refused, as every computing call of the session");
+    if (fpenv::setRounding (fpenv::kRoundUpward))
+    {
+        const auto p = Kit::parse ("1", Lang::En, Term::FieldGlueUpToDb, 0);
+        const auto h = Kit::heat (Term::FieldTargetLufs, -14);
+        fpenv::restoreFpEnvironment (saved);
+        ok (p.status == CodecStatus::FloatingPointEnvironment && h.status == CodecStatus::FloatingPointEnvironment,
+            "rounding upward on the calling thread: refused, as every computing call of the session");
+    }
+    else
+    {
+        fpenv::restoreFpEnvironment (saved);
+        std::printf ("    rounding upward: not probed — this platform cannot set the mode\n");
+    }
 }
 
 void travelAndHeat()

@@ -208,6 +208,64 @@ int main()
               && ! optionalDecoded.view().masters[0].landing->peakClipTrace,
               "older landing JSON decodes both appended trace fields as absent");
 
+    test::group ("the landing carries what held it and the levels it fell between, across the wire");
+    {
+        LandingSummary carried = landing; carried.status = LandingStatus::TargetBetweenAchievable;
+        carried.belowLufs = -14.46; carried.aboveLufs = -13.52; kept.landing = carried;
+        const auto need = Codec::encodedBytes (view);
+        std::string json ((std::size_t) need.bytes, '\0');
+        Snapshot back;
+        const bool round = Codec::encode (view, { json.data(), json.size() }) == CodecStatus::Ok
+            && Codec::decode (json, back) == CodecStatus::Ok && back.view().masters.size() == 1 && back.view().masters[0].landing
+            && back.view().masters[0].landing->belowLufs == -14.46 && back.view().masters[0].landing->aboveLufs == -13.52
+            && back.view().masters[0].landing->binding == LandingConstraint::None;
+        // An older snapshot, without the three appended fields: decoded as none named and no levels.
+        std::string older = json;
+        unsigned erased = 0;
+        for (const char* field : { "\"binding\":", "\"belowLufs\":", "\"aboveLufs\":" })
+            if (const auto at = older.find (field); at != std::string::npos)
+                if (const auto comma = older.find (',', at); comma != std::string::npos) { older.erase (at, comma + 1 - at); ++erased; }
+        Snapshot olderBack;
+        const bool olderOk = erased == 3 && older.find ("Lufs\":-14.46") == std::string::npos && Codec::decode (older, olderBack) == CodecStatus::Ok
+            && olderBack.view().masters[0].landing && ! olderBack.view().masters[0].landing->belowLufs
+            && olderBack.view().masters[0].landing->binding == LandingConstraint::None;
+        // A named limit on a landing that is not unreachable, or levels out of order, is no landing.
+        carried.binding = LandingConstraint::GainRange; kept.landing = carried;
+        std::string named ((std::size_t) Codec::encodedBytes (view).bytes, '\0');
+        Snapshot refusedNamed;
+        const bool namedRefused = Codec::encode (view, { named.data(), named.size() }) == CodecStatus::Ok
+            && Codec::decode (named, refusedNamed) == CodecStatus::Invalid;
+        carried.binding = LandingConstraint::None; carried.belowLufs = -13.0; kept.landing = carried;
+        std::string disordered ((std::size_t) Codec::encodedBytes (view).bytes, '\0');
+        Snapshot refusedOrder;
+        const bool orderRefused = Codec::encode (view, { disordered.data(), disordered.size() }) == CodecStatus::Ok
+            && Codec::decode (disordered, refusedOrder) == CodecStatus::Invalid;
+        test::ok (round && olderOk && namedRefused && orderRefused,
+                  "the two levels round-trip; an older landing decodes without them; a misplaced limit or levels out of order refuse");
+        kept.landing = landing;
+
+        // Where the verdict is decided: the solver's binding and its bracket, carried by summarize — nothing invented.
+        mastering::LoudnessSolution unreachable;
+        unreachable.status = mastering::MasteringSolveStatus::TargetUnreachable;
+        unreachable.binding = mastering::MasteringConstraint::GainRange;
+        LandingPass none[1] {};
+        LandingSummary held;
+        const bool heldOk = LandingOps::summarize (unreachable, none, held);
+        mastering::LoudnessSolution bracket;
+        bracket.status = mastering::MasteringSolveStatus::TargetBetweenAchievable;
+        bracket.binding = mastering::MasteringConstraint::TruePeakCeiling;
+        bracket.achievedBelowLufs = -14.46; bracket.achievedAboveLufs = -13.52;
+        LandingSummary between;
+        const bool betweenOk = LandingOps::summarize (bracket, none, between);
+        unreachable.binding = mastering::MasteringConstraint::None;
+        LandingSummary unnamed;
+        const bool unnamedOk = LandingOps::summarize (unreachable, none, unnamed);
+        test::ok (heldOk && held.binding == LandingConstraint::GainRange && ! held.belowLufs
+                  && betweenOk && between.binding == LandingConstraint::None && between.belowLufs == -14.46 && between.aboveLufs == -13.52
+                  && unnamedOk && unnamed.binding == LandingConstraint::None,
+                  "summarize carries the solver's binding for an unreachable landing alone, and the bracket for a between one");
+    }
+
     test::group ("adapter copies a completed trace and refuses stale second results");
     mastering::LoudnessSolution solution;
     solution.status = mastering::MasteringSolveStatus::PassLimit;

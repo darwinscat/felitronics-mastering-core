@@ -869,10 +869,14 @@ std::optional<text::Fact> PlanText::monoBassAdvice (const MonoBassFinding& f) no
     const auto club = zones.find ("club"), vinyl = zones.find ("vinyl");
     const double clubFrom = detail::configured (club.find ("fromHz")), clubTo = detail::configured (club.find ("toHz"));
     const double vinylFrom = detail::configured (vinyl.find ("fromHz")), vinylTo = detail::configured (vinyl.find ("toHz"));
-    // The zones the kit draws are the zones the advice reads (Kit.h): one comparison.
+    // The zones the kit draws are the zones the advice reads (Kit.h): one comparison. Outside every zone the crossover
+    // is either below the lowest start or above the highest end — each side its own line, with the zones' ends it passed.
     if (Kit::monoZonesAt (f.soundingHz) != 0) return std::nullopt;
-    return Fact::of (FactId::MonoBassOutsideZones, Arg::value (f.soundingHz, Unit::Hz, 0), Arg::value (clubFrom, Unit::None, 0),
-        Arg::value (clubTo, Unit::Hz, 0), Arg::value (vinylFrom, Unit::None, 0), Arg::value (vinylTo, Unit::Hz, 0));
+    if (f.soundingHz < std::min (clubFrom, vinylFrom))
+        return Fact::of (FactId::MonoBassBelowZones, Arg::value (f.soundingHz, Unit::Hz, 0), Arg::value (clubFrom, Unit::Hz, 0),
+            Arg::value (vinylFrom, Unit::Hz, 0));
+    return Fact::of (FactId::MonoBassOutsideZones, Arg::value (f.soundingHz, Unit::Hz, 0), Arg::value (clubTo, Unit::Hz, 0),
+        Arg::value (vinylTo, Unit::Hz, 0));
 }
 std::optional<text::Fact> PlanText::eqAdvice (const EqFinding& f) noexcept
 {
@@ -946,8 +950,9 @@ text::Fact PlanText::limiter (const LimiterFinding& f) noexcept
     // What sounds: the peak clipper cutting — by a person's threshold, or by the machine's class.
     if (f.cutting)
     {
-        // A cap, not an amount: the clipper may take this much off the peaks; how much it takes is the landing's.
-        const auto cut = Arg::value (f.overDb, Unit::Db, 1, text::Sign::Negative, text::Bound::AtMost);
+        // A cap, not an amount: the clipper may take this much off the peaks; how much it takes is the landing's. The
+        // message says "no more than" in its own words, so the number is exact — never "no more than ≤ …".
+        const auto cut = Arg::value (f.overDb, Unit::Db, 1);
         if (f.mode == Needles::Manual) return Fact::of (FactId::LimiterManual, ceiling, cut);
         return Fact::of (f.proposed == NeedlesClass::Short ? FactId::LimiterShort : FactId::LimiterBetween,
                          ceiling, cut, p90, bass, db (f.plrDb));

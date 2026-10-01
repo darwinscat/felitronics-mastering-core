@@ -79,6 +79,16 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (HpfCut::Unmeasured) == 7);
         return 7;
     }
+    else if constexpr (std::is_same_v<T, LandingConstraint>)
+    {
+        static_assert (unsigned (LandingConstraint::None) == 0);
+        static_assert (unsigned (LandingConstraint::TruePeakCeiling) == 1);
+        static_assert (unsigned (LandingConstraint::LimiterGainReduction) == 2);
+        static_assert (unsigned (LandingConstraint::PeakToLoudness) == 3);
+        static_assert (unsigned (LandingConstraint::LoudnessRange) == 4);
+        static_assert (unsigned (LandingConstraint::GainRange) == 5);
+        return 5;
+    }
     else if constexpr (std::is_same_v<T, LandingReason>)
     {
         static_assert (unsigned (LandingReason::None) == 0);
@@ -416,6 +426,19 @@ constexpr void checkEnum (HpfCut value) noexcept
         case HpfCut::Short: break;
         case HpfCut::Quiet: break;
         case HpfCut::Unmeasured: break;
+    }
+}
+
+constexpr void checkEnum (LandingConstraint value) noexcept
+{
+    switch (value)
+    {
+        case LandingConstraint::None: break;
+        case LandingConstraint::TruePeakCeiling: break;
+        case LandingConstraint::LimiterGainReduction: break;
+        case LandingConstraint::PeakToLoudness: break;
+        case LandingConstraint::LoudnessRange: break;
+        case LandingConstraint::GainRange: break;
     }
 }
 
@@ -962,9 +985,15 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, LandingSummary>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.aboveLufs)>, std::optional<double>>);
+        v.optionalField ("aboveLufs", x.aboveLufs, std::optional<double> {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.achievedLufs)>, std::optional<double>>);
         v.field ("achievedLufs", x.achievedLufs);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.belowLufs)>, std::optional<double>>);
+        v.optionalField ("belowLufs", x.belowLufs, std::optional<double> {});
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.binding)>, LandingConstraint>);
+        v.optionalField ("binding", x.binding, LandingConstraint::None);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.deliverable)>, bool>);
         v.field ("deliverable", x.deliverable);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.distanceLu)>, std::optional<double>>);

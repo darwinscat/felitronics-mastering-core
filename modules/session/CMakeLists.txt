@@ -320,6 +320,7 @@ if(FELITRONICS_BUILD_TESTS)
         target_compile_options(felitronics_session_plan_sound_tests PRIVATE -ffp-contract=off)
     endif()
     add_test(NAME felitronics_session_plan_sound_tests COMMAND felitronics_session_plan_sound_tests)
+    add_test(NAME felitronics_session_machine_norm_tests COMMAND felitronics_session_plan_sound_tests machine-norm)
     # The shipped targets with lp's `vinyl` taken away and its `noClipper` kept: the medium's warnings key on the medium,
     # and no shipped row tells the two apart.
     file(READ ${CMAKE_CURRENT_SOURCE_DIR}/config/targets.toml planSoundTargets)

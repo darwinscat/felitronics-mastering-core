@@ -95,6 +95,14 @@
       "GainRange",
       "TruePeak"
     ],
+    "LandingConstraint": [
+      "None",
+      "TruePeakCeiling",
+      "LimiterGainReduction",
+      "PeakToLoudness",
+      "LoudnessRange",
+      "GainRange"
+    ],
     "QueryKind": [
       "Waveform",
       "LowSpectrum",
@@ -649,6 +657,9 @@
         "status": "LandingStatus",
         "mainReason": "LandingReason",
         "secondReason": "LandingReason",
+        "binding": "LandingConstraint",
+        "belowLufs": "double?",
+        "aboveLufs": "double?",
         "deliverable": "bool",
         "achievedLufs": "double?",
         "missLu": "double?",
@@ -1665,6 +1676,18 @@
       }
     },
     "LandingSummary": {
+      "binding": {
+        "default": "LandingConstraint::None",
+        "description": "The landing did not name the limit that held it."
+      },
+      "belowLufs": {
+        "default": "std::optional<double> {}",
+        "description": "The landing did not carry the levels its target fell between."
+      },
+      "aboveLufs": {
+        "default": "std::optional<double> {}",
+        "description": "The landing did not carry the levels its target fell between."
+      },
       "limiterTrace": {
         "default": "std::optional<LandingTrace> {}",
         "description": "No limiter time series was published."

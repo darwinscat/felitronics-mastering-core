@@ -406,12 +406,17 @@ void thePersonsThreshold()
         const auto betweenLine = PlanText::limiter (detail::limiterFinding (cut.in, cut.machine()));
         ok (shortLine.id == text::FactId::LimiterShort && betweenLine.id == text::FactId::LimiterBetween && whole (shortLine) && whole (betweenLine),
             "and the two classes that cut:\n        " + ru (shortLine) + "\n        " + ru (betweenLine));
-        // The cut is a cap the landing spends as it needs, never the amount it takes: {cut} is Bound::AtMost, printed "≤".
+        // The cut is a cap the landing spends as it needs, never the amount it takes: the message says so in its own
+        // words ("не больше" / "no more than"), so {cut} is Bound::Exact — the line never reads "no more than ≤ …".
         const auto en = [] (const text::Fact& f) { return text::Text::text (f, text::Lang::En); };
-        ok (shortLine.args[1].bound == text::Bound::AtMost && betweenLine.args[1].bound == text::Bound::AtMost
-            && ru (shortLine).find ("\xE2\x89\xA4") != std::string::npos && en (shortLine).find ("\xE2\x89\xA4") != std::string::npos
-            && ru (betweenLine).find ("\xE2\x89\xA4") != std::string::npos && en (betweenLine).find ("\xE2\x89\xA4") != std::string::npos,
-            "the clipper's cut is a cap, not an amount:\n        " + en (shortLine) + "\n        " + en (betweenLine));
+        const auto capped = [&] (const text::Fact& f)
+        {
+            return f.args[1].bound == text::Bound::Exact && ru (f).find ("не больше ") != std::string::npos
+                && en (f).find ("no more than ") != std::string::npos && ru (f).find ("\xE2\x89\xA4") == std::string::npos
+                && en (f).find ("\xE2\x89\xA4") == std::string::npos;
+        };
+        ok (capped (shortLine) && capped (betweenLine),
+            "the clipper's cut is a cap, said in words, the number exact:\n        " + ru (shortLine) + "\n        " + ru (betweenLine));
     }
 }
 
@@ -1301,8 +1306,9 @@ void vinylAndQuietMastered()
         ok (only (ceiling, 2, text::FactId::MasterVinylCeilingDeparts, { -2.9, -3.0 }), "the ceiling alone: " + lineOf (ceiling));
         const auto needles = departures ([] (Project& p) { p.devices.limiter.hand.needles = Needles::Manual; p.devices.limiter.hand.needlesDb = 2.0; });
         ok (only (needles, 3, text::FactId::MasterVinylNeedlesDeparts, { 2.0 }), "the needles alone: " + lineOf (needles));
-        ok (needles[3] && needles[3]->args[0].bound == text::Bound::AtMost && ru (*needles[3]).find ("\xE2\x89\xA4") != std::string::npos,
-            "and the clipper's setting is named as a cap: " + lineOf (needles));
+        ok (needles[3] && needles[3]->args[0].bound == text::Bound::Exact && ru (*needles[3]).find ("не больше ") != std::string::npos
+            && ru (*needles[3]).find ("\xE2\x89\xA4") == std::string::npos,
+            "and the clipper's setting is named as a cap, in words: " + lineOf (needles));
         const auto noFold = departures ([] (Project& p) { p.devices.monoBass.hand.on = false; });
         const auto lowFold = departures ([] (Project& p) { p.devices.monoBass.hand.fq = 120.0; });
         const auto wideFold = departures ([] (Project& p) { p.devices.monoBass.hand.width = 0.5; });
@@ -1731,9 +1737,32 @@ void theOwnersTable()
         const auto small = dc (0.0099), one = dc (0.01), large = dc (0.0999), ten = dc (-0.1);
         const auto note = lineOf (ObservationKind::DcOffset, small), warn = lineOf (ObservationKind::DcOffset, one);
         ok (small.style == ObservationStyle::Note && one.style == ObservationStyle::Warning && large.style == ObservationStyle::Warning
-            && ten.style == ObservationStyle::Error && note.first == text::FactId::SourceDcNote && warn.first == text::FactId::SourceDc
+            && ten.style == ObservationStyle::Error && note.first == text::FactId::SourceDcNoteStereo && warn.first == text::FactId::SourceDcStereo
             && note.second.find ("ФВЧ мастера её уберёт") != std::string::npos,
             "DC under 1 % a note, from 1 % a warning, from 10 % (either sign) an error; the note says — " + note.second);
+        // Both channels, signed, as the readings print them: the line names the left's and the right's offset.
+        const auto both = [&] (double left, double right)
+        {
+            x.clipping[1] = { "dcOffset[0]", left, none, 0 };
+            x.clipping[2] = { "dcOffset[1]", right, none, 0 };
+            x.ready (Analyzer::Clipping, { x.clipping, 3 });
+            return x.seen().dcOffset;
+        };
+        const auto pair = both (-0.0042, 0.0071), loud = both (0.002, -0.15);
+        const auto pairLine = lineOf (ObservationKind::DcOffset, pair), loudLine = lineOf (ObservationKind::DcOffset, loud);
+        const auto pairFact = ObservationText::fact (ObservationKind::DcOffset, pair);
+        ok (pairLine.first == text::FactId::SourceDcNoteStereo && pairFact && pairFact->argCount == 2
+            && same (pairFact->args[0].number, -0.0042) && same (pairFact->args[1].number, 0.0071)
+            && pairLine.second.find ("L \xE2\x88\x92" "0,0042, R 0,0071") != std::string::npos
+            && loudLine.first == text::FactId::SourceDcStereo && loudLine.second.find ("R \xE2\x88\x92" "0,1500") != std::string::npos
+            && same (loud.value, 0.15) && loud.style == ObservationStyle::Error,
+            "a stereo offset names both channels, signed; the larger sizes it — " + pairLine.second + " / " + loudLine.second);
+        // A mono source keeps its one-number line.
+        x.in.channels = 1;
+        const auto mono = both (0.005, 0.0);
+        const auto monoLine = lineOf (ObservationKind::DcOffset, mono);
+        x.in.channels = 2;
+        ok (monoLine.first == text::FactId::SourceDcNote && mono.places == 1, "a mono offset: its one number — " + monoLine.second);
     }
     {
         // The effective depth: 24 nothing, 23…17 a warning, 16 and less an error; a 32-bit container carrying 24 nothing.
@@ -2136,7 +2165,7 @@ void theAdviceIsAFact()
     };
     const auto noAdvice = [&]
     {
-        for (std::uint16_t id = 500; id <= 505; ++id) if (advice (id)) return false;
+        for (std::uint16_t id = 500; id <= 509; ++id) if (advice (id)) return false;
         return true;
     };
     const auto at = [] (const std::optional<PlanFact>& f, std::size_t i) { return f ? f->fact.args[i].number : -1.0; };
@@ -2171,11 +2200,16 @@ void theAdviceIsAFact()
     // MONO BASS: the crossover outside every destination's zone, both ends of a zone inside.
     const auto monoAt = [&] (double fq) { MonoBassFields<Touched> mono; mono.on = true; mono.fq = fq; return edit (s, mono); };
     const auto outside = (monoAt (70.0), advice (505));
-    ok (outside && outside->device == Device::MonoBass && at (outside, 0) == 70.0 && at (outside, 1) == 80.0 && at (outside, 2) == 120.0
-        && at (outside, 3) == 120.0 && at (outside, 4) == 200.0,
-        "a crossover below every zone: no destination asks for it — " + (outside ? ru (outside->fact) : std::string ("none")));
-    ok (monoAt (250.0) && advice (505) && monoAt (100.0) && ! advice (505) && monoAt (80.0) && ! advice (505)
-        && monoAt (200.0) && ! advice (505) && monoAt (160.0) && ! advice (505), "above every zone: the fact; inside one, its ends included: none");
+    const auto belowAll = (monoAt (70.0), advice (509));
+    ok (belowAll && ! advice (505) && belowAll->device == Device::MonoBass && at (belowAll, 0) == 70.0 && at (belowAll, 1) == 80.0
+        && at (belowAll, 2) == 120.0,
+        "a crossover below every zone: lower than a club or vinyl asks for — " + (belowAll ? ru (belowAll->fact) : std::string ("none")));
+    const auto aboveAll = (monoAt (250.0), advice (505));
+    ok (aboveAll && ! advice (509) && at (aboveAll, 0) == 250.0 && at (aboveAll, 1) == 120.0 && at (aboveAll, 2) == 200.0
+        && ru (aboveAll->fact).find ("выше, чем нужно и клубу") != std::string::npos,
+        "above every zone: higher than a club and vinyl need — " + (aboveAll ? ru (aboveAll->fact) : std::string ("none")));
+    ok (monoAt (100.0) && ! advice (505) && ! advice (509) && monoAt (80.0) && ! advice (509) && monoAt (200.0) && ! advice (505)
+        && monoAt (160.0) && ! advice (505), "inside a zone, its ends included: none");
     ok (monoAt (120.0), "PRECONDITION: mono bass back at a zone");
     // THE EQ CURVE: the shelves as they sound, against [eq] curve.warnDb, at the point of the largest |dB|.
     HpfFields<Touched> off; off.on = false;
@@ -2220,8 +2254,113 @@ void theAdviceIsAFact()
     ok (carried && again.view().plan.facts.count > 2, "the codec carries the advice, the sounding slope and the target's note whole");
 }
 
-int main()
+// THE MACHINE KEEPS ITS OWN NORM: the advice "beyond the norm" (a high-pass slope outside slopesNormal, an EQ curve past
+// its warning, mono bass outside every destination's zone) is said of a person's value — the machine's own plan never
+// raises it. Every target of targets.toml, on every input the suite measures: the contract's fixture inputs
+// (tools/contract/fixtures/inputs.json, "measure" and "measure-stereo", built here by the same formula) and the synthetic
+// mixes of this file. The comfort window of the high-pass (500, 501) is a hint, not a norm: the machine's floor may sit
+// outside it by an owner decision, and theAdviceIsAFact holds it.
+struct Input
 {
+    std::string name;
+    std::uint32_t channels = 0, frames = 0, rate = 0;
+    std::vector<float> samples;
+    const float* planes[2] { nullptr, nullptr };
+    void point() { for (std::uint32_t c = 0; c < channels; ++c) planes[c] = samples.data() + std::size_t (c) * frames; }
+};
+Input contractInput (const char* name, std::uint32_t rate, std::uint32_t channels, std::uint32_t frames, std::uint32_t period, double scale)
+{
+    // fixtures.mjs: sample i of the planar block is ((i % frames + floor (i / frames) * 7) % period - period / 2) * scale,
+    // in 16-bit units.
+    Input in { name, channels, frames, rate, std::vector<float> (std::size_t (channels) * frames) };
+    for (std::size_t i = 0; i < in.samples.size(); ++i)
+    {
+        const double v = (double ((i % frames + (i / frames) * 7) % period) - double (period) / 2.0) * scale;
+        in.samples[i] = float (v / 32768.0);
+    }
+    in.point();
+    return in;
+}
+// `wide`: a 70 Hz bass under the mix, the right channel's an eighth of a cycle late — a wide low end the machine folds.
+Input mixInput (const char* name, float scale, double clicks, std::uint32_t channels, bool wide = false)
+{
+    namespace det = felitronics::core::det;
+    const Mix mix (scale, 8, clicks);
+    Input in { name, channels, mix.frames, Mix::rate, std::vector<float> (std::size_t (channels) * mix.frames) };
+    std::copy (mix.left.begin(), mix.left.end(), in.samples.begin());
+    if (channels == 2) std::copy (mix.right.begin(), mix.right.end(), in.samples.begin() + mix.frames);
+    for (std::uint32_t i = 0; wide && channels == 2 && i < mix.frames; ++i)
+    {
+        const double t = double (i) / Mix::rate;
+        in.samples[i] += float (0.2 * det::sin (2 * kPi * 70.0 * t));
+        in.samples[std::size_t (mix.frames) + i] += float (0.2 * det::sin (2 * kPi * 70.0 * t + 0.25 * kPi));
+    }
+    in.point();
+    return in;
+}
+
+void theMachineKeepsItsOwnNorm()
+{
+    felitronics::test::group ("the machine's own plan raises no advice beyond the norm — every target, every input the suite has");
+    constexpr std::uint16_t kBeyondNorm[] = { std::uint16_t (text::FactId::HpfSlopeGentle), std::uint16_t (text::FactId::HpfSlopeSteep),
+        std::uint16_t (text::FactId::EqOvershoot), std::uint16_t (text::FactId::MonoBassOutsideZones),
+        std::uint16_t (text::FactId::MonoBassBelowZones) };
+    std::vector<Input> inputs;
+    inputs.push_back (contractInput ("contract measure", 48000, 1, 384000, 128, 128));
+    inputs.push_back (contractInput ("contract measure-stereo", 48000, 2, 192000, 128, 128));
+    inputs.push_back (mixInput ("mix", 1.0f, 0.35, 2));
+    inputs.push_back (mixInput ("mix quiet", 0.05f, 0.35, 2));
+    inputs.push_back (mixInput ("mix hot", 2.0f, 0.35, 2));
+    inputs.push_back (mixInput ("mix without needles", 1.0f, 0.0, 2));
+    inputs.push_back (mixInput ("mix mono", 1.0f, 0.35, 1));
+    inputs.push_back (mixInput ("mix with a wide bass", 1.0f, 0.35, 2, true));
+    const auto& rules = detail::rules();
+    unsigned plans = 0, hpfSounds = 0, monoSounds = 0, monoBeyondVinyl = 0;
+    std::string raised;
+    bool ready = rules.rows > 20;
+    for (const auto& in : inputs)
+    {
+        auto s = Session::create().session;
+        CommandId id = 1;
+        (void) s->apply (command::SetTarget { id++, rules.row (0).key });
+        const command::Load load { id++, { in.planes, in.channels, in.frames, in.rate }, { "input.wav", in.rate, true, 24 } };
+        if (s->apply (load).rejection != Rejection::None) { ready = false; raised += "\n        " + in.name + ": not loaded"; continue; }
+        for (std::uint16_t row = 0; row < rules.rows; ++row)
+        {
+            const auto key = rules.row (row).key;
+            (void) s->apply (command::SetTarget { id++, key });
+            drive (*s);
+            const auto snap = s->snapshot();
+            const auto& plan = snap.view().plan;
+            if (plan.status != PlanStatus::Ready) { ready = false; raised += "\n        " + in.name + " / " + std::string (key) + ": no plan"; continue; }
+            ++plans;
+            hpfSounds += plan.hpf.sounding != Sounding::Off ? 1u : 0u;
+            monoSounds += plan.monoBass.sounding != Sounding::Off ? 1u : 0u;
+            monoBeyondVinyl += plan.monoBass.sounding != Sounding::Off && ! rules.row (row).vinyl ? 1u : 0u;
+            for (std::size_t i = 0; i < plan.facts.count; ++i)
+                for (const auto beyond : kBeyondNorm)
+                    if (std::uint16_t (plan.facts.items[i].fact.id) == beyond)
+                        raised += "\n        " + in.name + " / " + std::string (key) + ": " + ru (plan.facts.items[i].fact);
+        }
+    }
+    // Not vacuous: the high-pass sounds on every plan, mono bass on some beyond vinyl's — the advice has a machine value
+    // to judge on every target.
+    ok (ready && plans == inputs.size() * rules.rows && hpfSounds == plans && monoBeyondVinyl >= rules.rows - 1u,
+        "PRECONDITION: every input planned on every target (" + std::to_string (plans) + " plans; the high-pass sounds on "
+        + std::to_string (hpfSounds) + ", mono bass on " + std::to_string (monoSounds) + ")" + (ready ? std::string {} : raised));
+    ok (raised.empty(), "no plan of the machine's own says its choice is beyond the norm" + raised);
+}
+
+int main (int argc, char** argv)
+{
+    // The guard over every target and input is its own ctest (felitronics_session_machine_norm_tests): a long enumeration
+    // the slow checked build may leave out.
+    if (argc > 1 && std::string_view (argv[1]) == "machine-norm")
+    {
+        std::printf ("felitronics::session — the machine's own plan keeps its own norm\n");
+        theMachineKeepsItsOwnNorm();
+        return felitronics::test::report();
+    }
     std::printf ("felitronics::session — the limiter, the dither and the whole plan sounding\n");
     theClasses();
     theCutIsAnAmount();
