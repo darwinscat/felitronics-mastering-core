@@ -71,7 +71,7 @@
     {
       "session": "main",
       "kind": "answer",
-      "raw": "{\"kind\":\"rejected\",\"commandId\":\"6\",\"revision\":\"6\",\"code\":14,\"needBytes\":0,\"field\":1,\"device\":-1,\"line\":0,\"column\":0}",
+      "raw": "{\"kind\":\"rejected\",\"commandId\":\"6\",\"revision\":\"6\",\"code\":14,\"needBytes\":0,\"field\":1,\"device\":-1,\"line\":0,\"column\":0,\"fact\":{\"FactId\":180,\"args\":[{\"kind\":3,\"unit\":0,\"precision\":0,\"sign\":0,\"bound\":0,\"termId\":5,\"number\":0,\"integer\":\"0\",\"userText\":\"\"},{\"kind\":1,\"unit\":7,\"precision\":0,\"sign\":0,\"bound\":0,\"termId\":0,\"number\":22050,\"integer\":\"0\",\"userText\":\"\"},{\"kind\":1,\"unit\":7,\"precision\":0,\"sign\":0,\"bound\":0,\"termId\":0,\"number\":0,\"integer\":\"0\",\"userText\":\"\"},{\"kind\":1,\"unit\":7,\"precision\":0,\"sign\":0,\"bound\":0,\"termId\":0,\"number\":22050,\"integer\":\"0\",\"userText\":\"\"}]}}",
       "rows": ""
     },
     {
@@ -89,7 +89,7 @@
     {
       "session": "main",
       "kind": "answer",
-      "raw": "{\"kind\":\"rejected\",\"commandId\":\"7\",\"revision\":\"6\",\"code\":13,\"needBytes\":0,\"field\":2,\"device\":-1,\"line\":0,\"column\":0}",
+      "raw": "{\"kind\":\"rejected\",\"commandId\":\"7\",\"revision\":\"6\",\"code\":13,\"needBytes\":0,\"field\":2,\"device\":-1,\"line\":0,\"column\":0,\"fact\":{\"FactId\":181,\"args\":[{\"kind\":3,\"unit\":0,\"precision\":0,\"sign\":0,\"bound\":0,\"termId\":6,\"number\":0,\"integer\":\"0\",\"userText\":\"\"},{\"kind\":2,\"unit\":0,\"precision\":0,\"sign\":0,\"bound\":0,\"termId\":0,\"number\":0,\"integer\":\"7\",\"userText\":\"\"}]}}",
       "rows": ""
     },
     {

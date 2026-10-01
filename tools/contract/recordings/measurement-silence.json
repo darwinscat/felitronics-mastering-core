@@ -113,7 +113,7 @@
     {
       "session": "main",
       "kind": "answer",
-      "raw": "{\"kind\":\"rejected\",\"commandId\":\"2\",\"revision\":\"14\",\"code\":4,\"needBytes\":0,\"field\":255,\"device\":-1,\"line\":0,\"column\":0}",
+      "raw": "{\"kind\":\"rejected\",\"commandId\":\"2\",\"revision\":\"14\",\"code\":4,\"needBytes\":0,\"field\":255,\"device\":-1,\"line\":0,\"column\":0,\"fact\":{\"FactId\":104,\"args\":[]}}",
       "rows": ""
     },
     {

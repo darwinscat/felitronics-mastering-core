@@ -89,7 +89,7 @@
     {
       "session": "main",
       "kind": "answer",
-      "raw": "{\"kind\":\"rejected\",\"commandId\":\"4\",\"revision\":\"13\",\"code\":35,\"needBytes\":0,\"field\":255,\"device\":-1,\"line\":0,\"column\":0}",
+      "raw": "{\"kind\":\"rejected\",\"commandId\":\"4\",\"revision\":\"13\",\"code\":35,\"needBytes\":0,\"field\":255,\"device\":-1,\"line\":0,\"column\":0,\"fact\":{\"FactId\":135,\"args\":[]}}",
       "rows": ""
     },
     {

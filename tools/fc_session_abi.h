@@ -47,7 +47,10 @@
 //                exists, and the one consumer vendors the exact core) — live ids keep their numbers; two compatibility
 //                slots left the C boundary: the measurement storage's reserved fields (88 bytes now) and the 32-byte
 //                capabilities record (its base is 40, leanSummary included).
-#define FC_SESSION_ABI_VERSION 4u
+//   5            v0.7.0, slice 5: a rejected answer carries its fact last (RejectedAnswer.fact, ContractAnswer.fact — the
+//                field, its refused number and the domain it left, facts 180 and 181); a null in editTarget clears the
+//                field (the target row's number again).
+#define FC_SESSION_ABI_VERSION 5u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u
 #define FC_SESSION_STORAGE_V1_BYTES 32u

@@ -666,26 +666,29 @@ text::Term termOf (Device device) noexcept
 }
 } // namespace
 
-void stateReasons (PlanView& plan, const EqFinding& eq) noexcept
+void stateReasons (PlanView& plan, const EqFinding& eq, const AdviceHands& hands) noexcept
 {
+    // A piece of advice is said of the value a person set — the cutoff, the slope, the crossover, the shelves — and of
+    // nothing the machine chose: a slope by hand says nothing of the machine's cutoff beside it.
+    const auto byHand = [] (bool hand, std::optional<text::Fact> said) { return hand ? said : std::nullopt; };
     state (plan, Device::Hpf, PlanText::hpf (plan.hpf));
-    state (plan, Device::Hpf, PlanText::hpfCutoffAdvice (plan.hpf));
-    state (plan, Device::Hpf, PlanText::hpfSlopeAdvice (plan.hpf));
+    state (plan, Device::Hpf, byHand (hands.hpfFq, PlanText::hpfCutoffAdvice (plan.hpf)));
+    state (plan, Device::Hpf, byHand (hands.hpfSlope, PlanText::hpfSlopeAdvice (plan.hpf)));
     state (plan, Device::MonoBass, PlanText::monoBass (plan.monoBass));
     state (plan, Device::MonoBass, PlanText::monoBassPolarity (plan.monoBass));
     state (plan, Device::MonoBass, PlanText::monoBassCoverage (plan.monoBass));
-    state (plan, Device::MonoBass, PlanText::monoBassAdvice (plan.monoBass));
+    state (plan, Device::MonoBass, byHand (hands.monoBassFq, PlanText::monoBassAdvice (plan.monoBass)));
     state (plan, Device::Glue, PlanText::glue (plan.glue));
     state (plan, Device::Glue, PlanText::glueTempo (plan.glue));
     state (plan, Device::Glue, PlanText::glueRelease (plan.glue));
-    if (eq.device == Device::Tilt) state (plan, Device::Tilt, PlanText::eqAdvice (eq));
+    if (eq.device == Device::Tilt) state (plan, Device::Tilt, byHand (hands.eqShelves, PlanText::eqAdvice (eq)));
     state (plan, Device::Limiter, PlanText::limiter (plan.limiter));
     state (plan, Device::Limiter, PlanText::needlesAgainstMachine (plan.limiter));
     state (plan, Device::Limiter, PlanText::vinylCeiling (plan.limiter));
     state (plan, Device::Limiter, PlanText::vinylNeedles (plan.limiter));
     state (plan, Device::Limiter, PlanText::vinylTop (plan.limiter));
     state (plan, Device::Dither, PlanText::dither (plan.dither));
-    if (eq.device == Device::Low) state (plan, Device::Low, PlanText::eqAdvice (eq));
+    if (eq.device == Device::Low) state (plan, Device::Low, byHand (hands.eqShelves, PlanText::eqAdvice (eq)));
 }
 
 void stateWaiting (PlanView& plan) noexcept
@@ -783,7 +786,14 @@ void Session::replan() noexcept
             plan_.awaitedBy = awaited.device;
         }
         plan_.readOnly = plan_.status != PlanStatus::Ready;
-        if (plan_.status == PlanStatus::Ready) detail::stateReasons (plan_, eq);
+        const auto& d = project_.devices;
+        detail::AdviceHands hands;
+        hands.hpfFq = d.hpf.hand.fq.has_value();
+        hands.hpfSlope = d.hpf.hand.slope.has_value();
+        hands.monoBassFq = d.monoBass.hand.fq.has_value();
+        hands.eqShelves = d.tilt.hand.on.has_value() || d.tilt.hand.db.has_value() || d.low.hand.on.has_value()
+            || d.low.hand.db.has_value();
+        if (plan_.status == PlanStatus::Ready) detail::stateReasons (plan_, eq, hands);
     }
     if (observe)
     {
@@ -847,7 +857,9 @@ text::Fact PlanText::hpf (const HpfFinding& f) noexcept
 std::optional<text::Fact> PlanText::hpfCutoffAdvice (const HpfFinding& f) noexcept
 {
     using text::Arg; using text::Fact; using text::FactId; using text::Unit;
-    if (f.sounding == Sounding::Off) return std::nullopt;
+    // Advice on a person's value only (owner, 01.10): the machine's cutoff — proposed now or kept from a file — is its
+    // own rule's, and the comfort window says nothing against it.
+    if (f.sounding != Sounding::Hand) return std::nullopt;
     const auto comfort = detail::rules().engine.find ("hpf").find ("comfort");
     const double low = detail::configured (comfort.find ("lowHz")), high = detail::configured (comfort.find ("highHz"));
     const auto window = [&] (FactId id)
@@ -863,7 +875,7 @@ std::optional<text::Fact> PlanText::hpfCutoffAdvice (const HpfFinding& f) noexce
 std::optional<text::Fact> PlanText::hpfSlopeAdvice (const HpfFinding& f) noexcept
 {
     using text::Arg; using text::Fact; using text::FactId;
-    if (f.sounding == Sounding::Off) return std::nullopt;
+    if (f.sounding != Sounding::Hand) return std::nullopt;
     // slopesNormal is ascending (the schema holds it): its first is the gentlest, its last the steepest.
     std::optional<std::int64_t> gentlest, steepest;
     const auto slopes = detail::rules().engine.find ("hpf").find ("slopesNormal");
@@ -882,7 +894,7 @@ std::optional<text::Fact> PlanText::hpfSlopeAdvice (const HpfFinding& f) noexcep
 std::optional<text::Fact> PlanText::monoBassAdvice (const MonoBassFinding& f) noexcept
 {
     using text::Arg; using text::Fact; using text::FactId; using text::Unit;
-    if (f.sounding == Sounding::Off) return std::nullopt;
+    if (f.sounding != Sounding::Hand) return std::nullopt;
     const auto zones = detail::rules().engine.find ("monoBass").find ("zones");
     const auto club = zones.find ("club"), vinyl = zones.find ("vinyl");
     const double clubFrom = detail::configured (club.find ("fromHz")), clubTo = detail::configured (club.find ("toHz"));

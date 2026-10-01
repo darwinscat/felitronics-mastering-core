@@ -131,7 +131,7 @@ public:
         params_ = params; params_.inputGainDb += request.normalizationGainDb;
         request_ = request; clock_ = ProgressClock (progress);
         working_.activityThresholdDb = best_.activityThresholdDb = request.activityThresholdDb;
-        haveBest_ = havePrevious_ = haveBelow_ = haveAbove_ = false;
+        haveBest_ = havePrevious_ = haveBelow_ = haveAbove_ = haveUnsafe_ = false;
         passes_ = 0; sourceCursor_ = 0; verifyCursor_ = 0; bestPass_ = 0; restoring_ = false;
         work_ = 0; bestError_ = std::numeric_limits<double>::infinity();
         lowState_.fill (0.0); low2State_.fill (0.0); low8State_.fill (0.0);
@@ -352,6 +352,7 @@ private:
         const bool valid = measurement_.loudnessValid && std::isfinite (measurement_.integratedLufs);
         if (! valid && measurement_.samplePeakDb <= -180.0) return fail (MasteringSolveStatus::Unavailable);
         const bool safe = valid && measurement_.truePeakDbTp <= request_.maxTruePeakDbTp;
+        haveUnsafe_ = haveUnsafe_ || (valid && ! safe);
         const double err = valid ? std::fabs (measurement_.integratedLufs - request_.targetLufs)
                                  : std::numeric_limits<double>::infinity();
         const double level = measurement_.integratedLufs;
@@ -438,7 +439,17 @@ private:
 
     StepResult finishSearch()
     {
-        if (! haveBest_) return fail (MasteringSolveStatus::Unavailable);
+        if (! haveBest_)
+        {
+            // MEASURED RENDERS, NONE UNDER THE CEILING: the target is out of reach and the true-peak ceiling is what
+            // holds it — said as such, with its binding. Nothing is delivered: no render kept the promise, and a file
+            // above the target's ceiling is not offered (deliverable stays a ceiling-safe landing). Renders that could
+            // not be measured at all prove nothing about the target: Unavailable.
+            if (! haveUnsafe_) return fail (MasteringSolveStatus::Unavailable);
+            best_.binding = MasteringConstraint::TruePeakCeiling;
+            best_.alsoViolated = constraintBit (MasteringConstraint::TruePeakCeiling);
+            return fail (MasteringSolveStatus::TargetUnreachable);
+        }
         best_.passes = passes_; best_.logCount = passes_;
         for (int i = 0; i < passes_; ++i) best_.log[i] = records_[(std::size_t) i];
         best_.status = bestError_ <= request_.toleranceLu ? MasteringSolveStatus::Solved : MasteringSolveStatus::PassLimit;
@@ -527,6 +538,7 @@ private:
     double retainedRateFloor_ = 0.0;
     int retainedFramesUpper_ = 0, retainedChannelsUpper_ = 0, retainedBucketsUpper_ = 0;
     bool haveBest_ = false, havePrevious_ = false, haveBelow_ = false, haveAbove_ = false;
+    bool haveUnsafe_ = false;   // a measured render above the ceiling: the no-safe-render ending names its binding
     bool restoring_ = false;
     Phase phase_ = Phase::Idle;
 };

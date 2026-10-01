@@ -197,7 +197,7 @@
     {
       "session": "main",
       "kind": "answer",
-      "raw": "{\"kind\":\"rejected\",\"commandId\":\"3\",\"revision\":\"17\",\"code\":30,\"needBytes\":29173620,\"field\":255,\"device\":-1,\"line\":0,\"column\":0}",
+      "raw": "{\"kind\":\"rejected\",\"commandId\":\"3\",\"revision\":\"17\",\"code\":30,\"needBytes\":29173620,\"field\":255,\"device\":-1,\"line\":0,\"column\":0,\"fact\":{\"FactId\":130,\"args\":[]}}",
       "rows": ""
     },
     {

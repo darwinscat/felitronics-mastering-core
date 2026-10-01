@@ -250,6 +250,18 @@ int main()
         && ! unsafe.masters().back().landing->deliverable && unsafe.pendingMaster().master == 0
         && ! unsafe.masterWavPlan (unsafe.pendingMaster()),
         "true-peak violation across all candidates yields no transferable PCM");
+    // ...and the verdict says why (slice 5): the target out of reach, the true-peak ceiling holding it — fact 89 with its
+    // limit — where it used to say nothing at all (Unavailable).
+    if (! unsafe.masters().empty() && unsafe.masters().back().landing && unsafe.masters().back().report)
+    {
+        const auto& lost = *unsafe.masters().back().landing;
+        const auto verdict = MasterReportText::landing (*unsafe.masters().back().report, lost, 0.1);
+        ok (lost.status == LandingStatus::TargetUnreachable && lost.binding == LandingConstraint::TruePeakCeiling
+            && verdict && verdict->id == text::FactId::MasterLandingUnreachable && verdict->argCount == 2
+            && verdict->args[1].termId == text::Term::LandingLimitTruePeak,
+            "no render under the ceiling: unreachable, the true-peak ceiling named, fact 89");
+    }
+    else ok (false, "PRECONDITION: the unsafe master keeps its landing and report");
     std::printf ("wav-outcomes=cancel:false,refusal:false,unavailable:false,miss:true,unsafe:false\n");
     return felitronics::test::report();
 }

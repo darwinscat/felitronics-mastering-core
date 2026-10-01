@@ -279,9 +279,10 @@ void zonesAndAdvice()
     bool hpf = true, mono = true;
     for (double hz = 10; hz <= 320; hz += 0.5)
     {
-        HpfFinding h; h.sounding = Sounding::Proposal; h.soundingHz = hz;
+        // A person's value: the advice speaks of nothing else (owner, 01.10).
+        HpfFinding h; h.sounding = Sounding::Hand; h.soundingHz = hz;
         hpf = hpf && PlanText::hpfCutoffAdvice (h).has_value() == (Kit::heat (Term::FieldHpfFq, hz).side != 0);
-        MonoBassFinding m; m.sounding = Sounding::Proposal; m.soundingHz = hz;
+        MonoBassFinding m; m.sounding = Sounding::Hand; m.soundingHz = hz;
         mono = mono && PlanText::monoBassAdvice (m).has_value() == (Kit::monoZonesAt (hz) == 0u);
     }
     ok (hpf, "the high-pass's comfort advice is said exactly where the knob's heat has a side");

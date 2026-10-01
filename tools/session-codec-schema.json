@@ -1219,7 +1219,8 @@
       "field": "number",
       "device": "number",
       "line": "number",
-      "column": "number"
+      "column": "number",
+      "fact": "WireFact"
     },
     "ContractAnswer": {
       "kind": "\"rejected\"",
@@ -1227,7 +1228,8 @@
       "revision": "string",
       "code": "\"contract\"",
       "reason": "\"unknown\" | \"missing\" | \"duplicate\" | \"invalid\"",
-      "field": "string"
+      "field": "string",
+      "fact": "WireFact"
     },
     "WireFact": {
       "FactId": "number",

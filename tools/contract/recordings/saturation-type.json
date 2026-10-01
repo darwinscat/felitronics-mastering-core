@@ -107,7 +107,7 @@
     {
       "session": "main",
       "kind": "answer",
-      "raw": "{\"kind\":\"rejected\",\"commandId\":\"3\",\"revision\":\"17\",\"code\":13,\"needBytes\":0,\"field\":4,\"device\":-1,\"line\":0,\"column\":0}",
+      "raw": "{\"kind\":\"rejected\",\"commandId\":\"3\",\"revision\":\"17\",\"code\":13,\"needBytes\":0,\"field\":4,\"device\":-1,\"line\":0,\"column\":0,\"fact\":{\"FactId\":113,\"args\":[{\"kind\":3,\"unit\":0,\"precision\":0,\"sign\":0,\"bound\":0,\"termId\":55,\"number\":0,\"integer\":\"0\",\"userText\":\"\"}]}}",
       "rows": ""
     },
     {

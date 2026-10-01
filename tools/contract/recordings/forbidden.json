@@ -17,7 +17,7 @@
     {
       "session": "main",
       "kind": "answer",
-      "raw": "{\"kind\":\"rejected\",\"commandId\":\"1\",\"revision\":\"0\",\"code\":2,\"needBytes\":0,\"field\":255,\"device\":-1,\"line\":0,\"column\":0}",
+      "raw": "{\"kind\":\"rejected\",\"commandId\":\"1\",\"revision\":\"0\",\"code\":2,\"needBytes\":0,\"field\":255,\"device\":-1,\"line\":0,\"column\":0,\"fact\":{\"FactId\":102,\"args\":[]}}",
       "rows": ""
     },
     {
@@ -41,7 +41,7 @@
     {
       "session": "main",
       "kind": "answer",
-      "raw": "{\"kind\":\"rejected\",\"commandId\":\"3\",\"revision\":\"1\",\"code\":3,\"needBytes\":0,\"field\":255,\"device\":-1,\"line\":0,\"column\":0}",
+      "raw": "{\"kind\":\"rejected\",\"commandId\":\"3\",\"revision\":\"1\",\"code\":3,\"needBytes\":0,\"field\":255,\"device\":-1,\"line\":0,\"column\":0,\"fact\":{\"FactId\":103,\"args\":[]}}",
       "rows": ""
     },
     {

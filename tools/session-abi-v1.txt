@@ -1796,3 +1796,26 @@ row QueryPeakClipGr element=f64 byteOrder=little columns=firstFrame,lastFrame,mi
 row QueryMasterWaveform element=f64 byteOrder=little columns=firstFrame,lastFrame,channel,minimum,maximum,rms,finiteFrames stride=7 bytes=56
 row QueryMasterAxes element=f64 byteOrder=little columns=firstFrame,lastFrame,axis,minimum,maximum,peak,envelope,rms,lowEnergy,middleEnergy,highEnergy,finiteFrames,reason stride=13 bytes=104
 row QueryLowSpectrumEnergy element=f64 byteOrder=little columns=hz,energy,reason stride=3 bytes=24
+
+# Slice 5 (owner, 01.10): a rejected answer carries its fact last (the field, its refused number, the domain it left —
+# 180, 181 — and every other code's own fact); a null in editTarget clears the field (fixtures 39-42, after the import).
+enum felitronics::session::text::FactId::RejectedOutOfDomainValue=180
+enum felitronics::session::text::FactId::RejectedNotOneOfValue=181
+wire RejectedAnswer.fact WireFact
+wire ContractAnswer.fact WireFact
+{"kind":"rejected","commandId":"9007199254740994","revision":"1","code":2,"needBytes":0,"field":255,"device":-1,"line":0,"column":0,"fact":{"FactId":102,"args":[]}}
+{"kind":"rejected","commandId":"9007199254740995","revision":"1","code":"contract","reason":"unknown","field":"unknown","fact":{"FactId":131,"args":[]}}
+{"kind":"rejected","commandId":"33","revision":"25","code":11,"needBytes":0,"field":255,"device":-1,"line":0,"column":0,"fact":{"FactId":111,"args":[]}}
+{"kind":"rejected","commandId":"34","revision":"25","code":"contract","reason":"unknown","field":"unknown","fact":{"FactId":131,"args":[]}}
+{"kind":"rejected","commandId":"0","revision":"25","code":"contract","reason":"missing","field":"commandId","fact":{"FactId":131,"args":[]}}
+{"kind":"rejected","commandId":"36","revision":"25","code":"contract","reason":"duplicate","field":"on","fact":{"FactId":131,"args":[]}}
+{"kind":"rejected","commandId":"37","revision":"25","code":"contract","reason":"invalid","field":"on","fact":{"FactId":131,"args":[]}}
+{"kind":"rejected","commandId":"38","revision":"25","code":22,"needBytes":0,"field":255,"device":-1,"line":1,"column":9,"fact":{"FactId":122,"args":[]}}
+{"kind":"accepted","commandId":"39","revision":"26","jobId":0}
+json command-effect-27 {"target":"lp","manual":false,"targetEdit":{"lufs":-13.25,"tp":-1.25},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"type":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null},"bands":{"air":null,"body":null,"brightness":null,"forward":null,"mud":null,"on":null}}
+{"kind":"accepted","commandId":"40","revision":"27","jobId":0}
+json command-effect-28 {"target":"lp","manual":false,"targetEdit":{"lufs":null,"tp":-1.25},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"type":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null},"bands":{"air":null,"body":null,"brightness":null,"forward":null,"mud":null,"on":null}}
+{"kind":"accepted","commandId":"41","revision":"28","jobId":0}
+json command-effect-29 {"target":"lp","manual":false,"targetEdit":{"lufs":null,"tp":null},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"type":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null},"bands":{"air":null,"body":null,"brightness":null,"forward":null,"mud":null,"on":null}}
+{"kind":"rejected","commandId":"42","revision":"28","code":14,"needBytes":0,"field":1,"device":-1,"line":0,"column":0,"fact":{"FactId":180,"args":[{"kind":3,"unit":0,"precision":0,"sign":0,"bound":0,"termId":4,"number":0,"integer":"0","userText":""},{"kind":1,"unit":3,"precision":0,"sign":0,"bound":0,"termId":0,"number":99,"integer":"0","userText":""},{"kind":1,"unit":3,"precision":0,"sign":0,"bound":0,"termId":0,"number":-6,"integer":"0","userText":""},{"kind":1,"unit":3,"precision":1,"sign":0,"bound":0,"termId":0,"number":-0.1000000000000000055511151231257827021181583404541015625,"integer":"0","userText":""}]}}
+json command-effect-30 {"target":"lp","manual":false,"targetEdit":{"lufs":null,"tp":null},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"type":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null},"bands":{"air":null,"body":null,"brightness":null,"forward":null,"mud":null,"on":null}}

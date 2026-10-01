@@ -41,7 +41,7 @@
     {
       "session": "side",
       "kind": "answer",
-      "raw": "{\"kind\":\"rejected\",\"commandId\":\"2\",\"revision\":\"1\",\"code\":17,\"needBytes\":0,\"field\":255,\"device\":-1,\"line\":0,\"column\":0}",
+      "raw": "{\"kind\":\"rejected\",\"commandId\":\"2\",\"revision\":\"1\",\"code\":17,\"needBytes\":0,\"field\":255,\"device\":-1,\"line\":0,\"column\":0,\"fact\":{\"FactId\":117,\"args\":[]}}",
       "rows": ""
     },
     {
@@ -59,7 +59,7 @@
     {
       "session": "side",
       "kind": "answer",
-      "raw": "{\"kind\":\"rejected\",\"commandId\":\"3\",\"revision\":\"1\",\"code\":31,\"needBytes\":0,\"field\":255,\"device\":-1,\"line\":0,\"column\":0}",
+      "raw": "{\"kind\":\"rejected\",\"commandId\":\"3\",\"revision\":\"1\",\"code\":31,\"needBytes\":0,\"field\":255,\"device\":-1,\"line\":0,\"column\":0,\"fact\":{\"FactId\":131,\"args\":[]}}",
       "rows": ""
     },
     {

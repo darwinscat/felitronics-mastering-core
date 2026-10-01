@@ -59,7 +59,7 @@
     {
       "session": "main",
       "kind": "answer",
-      "raw": "{\"kind\":\"rejected\",\"commandId\":\"2\",\"revision\":\"6\",\"code\":12,\"needBytes\":0,\"field\":255,\"device\":-1,\"line\":0,\"column\":0}",
+      "raw": "{\"kind\":\"rejected\",\"commandId\":\"2\",\"revision\":\"6\",\"code\":12,\"needBytes\":0,\"field\":255,\"device\":-1,\"line\":0,\"column\":0,\"fact\":{\"FactId\":112,\"args\":[{\"kind\":3,\"unit\":0,\"precision\":0,\"sign\":0,\"bound\":0,\"termId\":17,\"number\":0,\"integer\":\"0\",\"userText\":\"\"}]}}",
       "rows": ""
     },
     {
