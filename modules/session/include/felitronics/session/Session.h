@@ -273,15 +273,6 @@ struct DitherFinding
     bool keptWithoutEffect = false;            // it does not apply, and a person's tick is kept: nothing sounds of it
 };
 
-// A LIST HELD IN PLACE: room for N values, the first `count` of them meaningful — no heap, copied whole with what holds
-// it. The wire carries the `count` values as an array (tools/session-codec-schema.json writes the type `T[<=N]`).
-template <class T, std::size_t N> struct BoundedList
-{
-    static_assert (N <= 255, "count is one byte");
-    std::array<T, N> items {};
-    std::uint8_t count = 0;
-};
-
 // ONE OF THE PLAN'S REASONS: a fact PlanText states, and the device it is said of.
 struct PlanFact
 {

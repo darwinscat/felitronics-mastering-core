@@ -447,6 +447,17 @@ a number the file shows, not a finding. **The observations speak for themselves*
 kind's line as `ObservationText::facts` states it — `{kind, fact}`, in the order of `ObservationKind`, empty before a
 source — so a shell shows them without composing one; the names, the handling and the reasons are catalogue terms
 (`terms.observation`, `terms.handledBy`, `terms.measurementReason`).
+**The readings are facts** too, one table per place keyed by `ReadingKind` (appended, 31 kinds): each entry is
+`{kind, fact}`, the fact `Value` — one number with the core's unit and precision. The snapshot's `readings` (at most 26)
+are the source's — integrated loudness, true peak, LRA, PLR, DC offset per channel, the lowest occupied band, the exact
+PCM bits, correlation, burst events Mid and Side, hum, tempo and its confidence (`TempoConfidence`, 438, a word of
+`terms.tempoConfidence`), the clipping's runs, longest run, clipped samples and sample peak, the low end's side share,
+the stereo windows and the crest's active blocks per band — as `ReadingText::source` states them from the measurement,
+following each new source. A master's `MasterReport::readings` (at most 9) — achieved loudness, true peak, LRA, PLR,
+target, ceiling, gain, the landing's passes and the check passes — are `MasterReportText::readings`, stated when the job
+settles the report. A kind not measured has no entry; the need is not a reading. The quantities' names are
+`terms.reading`, in the order of `ReadingKind` (`ReadingText::name`). On the wire a reading is `{"fact", "kind"}`, both
+lists are optional, and the decoder refuses an unknown kind.
 
 **Tilt and low** (technical decision 3О10) are two devices of the person's taste in that one stage. The machine never
 ticks tilt and leaves it at 0 dB; it ticks low only for a target's correction for its medium (`lowDb`: vinyl's
@@ -735,7 +746,7 @@ main thread.
   its caller keeps alive while it is rendered.
 
 The facts' ids are stable and fall in ranges (`Text.h`): 1–99 readings and the landing, 100–199 a command's rejection,
-200–299 the phases of the work and 300–399 the session's errors. Adding a fact is three edits: its id in
+200–299 the phases of the work, 300–399 the session's errors and 400–499 the source: its measurement's state, its observations and its readings' words. Adding a fact is three edits: its id in
 `Text.h`, in its range, its row in `src/TextFacts.h`, in id order, and its message in every declared language — the
 build is red until the three agree.
 
@@ -1567,6 +1578,13 @@ Butterworth 1-Hz high-pass and 8-Hz low-pass in sequence, excluding the first tw
 unavailable below 40 buckets per second or without valid GR. Trace bucket count follows duration:
 `clamp(ceil(seconds / 0.004), 1000, 65536)`, then is capped by delivered frame count. The true
 bucket rate is therefore part of the retained trace; a wide bucket can make pumping unavailable.
+
+The cost speaks line by line (`MasterReportText`), published with the report beside shape, impact and pumping, each
+line only where its numbers were measured: the largest section shift and where it lies (`MasterCostSection`, 93, only
+when a section is named), the sections compared (94), the limiter's median and P95 over the active windows (95), the
+share of windows it works in and the share that are active (96), and the impact loss of the four bands (97) — that one
+also from a late crest join when the crest was still pending at the report. A number missing is a line missing, never a
+zero.
 
 The master keeps at most 2048 waveform buckets per channel, each with actual delivered-frame bounds,
 minimum, maximum, RMS and finite count. `QueryKind::MasterWaveform` returns intersecting retained

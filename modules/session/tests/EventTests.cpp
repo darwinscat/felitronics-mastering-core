@@ -194,9 +194,27 @@ void pump()
     // The phases carry the config's version (weightsVersion): a new config moves these pins — and the master is rendered
     // (a master the session decides runs its job: its passes, its cost and its facts are events of the scenario). The
     // landing's verdict (MasterLandingSolved) moved them last: without it, the old pins 691c5c5e4b8a17c7 / 7923d108f8d47dbc.
+    // The cost's lines beside shape, impact and pumping (MasterCostSection … MasterCostBands, 93–97) moved them last:
+    // without those lines, the sequence renumbered, the events are the ones before them — the old pins.
+    const auto withoutCostLines = [] (const std::vector<Notification>& events)
+    {
+        std::vector<Notification> kept;
+        std::uint64_t dropped = 0;
+        for (auto e : events)
+        {
+            const auto id = e.kind == EventKind::Fact ? unsigned (e.payload.fact.view().id) : 0u;
+            if (id >= 93u && id <= 97u) { ++dropped; continue; }
+            e.seq -= dropped;
+            kept.push_back (e);
+        }
+        return kept;
+    };
+    ok (eventsHash (withoutCostLines (one)) == 0xe2e6c8ac47d9417eull && eventsHash (withoutCostLines (cancelled)) == 0x3797697993fa2f96ull
+        && withoutCostLines (one).size() < one.size(),
+        "the cost's new lines are the only new events: without them the old pins e2e6c8ac47d9417e / 3797697993fa2f96 hold");
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
-    ok (eventsHash (one) == 0xe2e6c8ac47d9417eull && eventsHash (cancelled) == 0x3797697993fa2f96ull,
+    ok (eventsHash (one) == 0xb5fbcdc6218fc72dull && eventsHash (cancelled) == 0x25eeb7e1f596ed41ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     Audio audio; auto s = fresh();

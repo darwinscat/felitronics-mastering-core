@@ -409,6 +409,69 @@ bool memoryLifecycle (Case& c)
 }
 }
 
+// THE COST'S LINES AND THE MASTER'S READINGS, on a report built by hand: each line where its numbers were measured and
+// nothing where one is missing; each reading with its unit and precision, rendered as the catalogue says.
+void costLinesAndReadings()
+{
+    using session::MasterReportText; using session::text::FactId; using session::text::Lang;
+    const auto ru = [] (const session::text::Fact& f) { return session::text::Text::text (f, Lang::Ru); };
+    const auto en = [] (const session::text::Fact& f) { return session::text::Text::text (f, Lang::En); };
+    session::MasterCost cost;
+    ok (! MasterReportText::section (cost) && ! MasterReportText::sections (cost) && ! MasterReportText::limiter (cost)
+        && ! MasterReportText::active (cost) && ! MasterReportText::bands (cost),
+        "nothing measured: none of the cost's new lines");
+    const session::MasterSection rows[] { { 0, 144000, -20.0, -14.0, 0.4, true }, { 144000, 336000, -18.0, -13.26, -1.26, true },
+                                          { 336000, 384000, -60.0, -60.0, 0.0, false } };
+    cost.sections = rows; cost.worstSectionIndex = 1u; cost.sourceRateHz = 48000;
+    cost.largestSectionShiftLu.value = -1.26;
+    cost.limiterP50Db.value = 0.84; cost.limiterP95Db.value = 2.36;
+    cost.limiterActiveShare.value = 0.254; cost.activeWindowShare.value = 0.9;
+    cost.crestLowDb.value = 0.52; cost.crestLowMidDb.value = 1.04; cost.crestHighMidDb.value = 1.56; cost.crestHighDb.value = 2.08;
+    const auto section = MasterReportText::section (cost), sections = MasterReportText::sections (cost);
+    const auto limiter = MasterReportText::limiter (cost), active = MasterReportText::active (cost), bands = MasterReportText::bands (cost);
+    ok (section && section->id == FactId::MasterCostSection
+        && ru (*section) == "Наибольший сдвиг секции: −1,3 LU на отрезке 3 с–7 с."
+        && en (*section) == "The largest section shift is −1.3 LU, at 3 s–7 s.",
+        "the worst section: its shift, and where it lies in the source, in seconds — " + (section ? ru (*section) : std::string()));
+    ok (sections && sections->id == FactId::MasterCostSections && en (*sections) == "Sections compared: 2."
+        && ru (*sections) == "Сопоставлено секций: 2.", "the sections compared: those with a comparison, not every section");
+    ok (limiter && ru (*limiter) == "Срез лимитера в активных окнах: медиана 0,8 дБ, P95 2,4 дБ."
+        && en (*limiter) == "Limiter reduction over the active windows: median 0.8 dB, P95 2.4 dB.",
+        "the limiter's median and P95 over the active windows — " + (limiter ? ru (*limiter) : std::string()));
+    ok (active && ru (*active) == "Лимитер работает в 25 % окон; активных окон — 90 %."
+        && en (*active) == "The limiter works in 25% of the windows; 90% of the windows are active.",
+        "the shares, in whole percent — " + (active ? ru (*active) : std::string()));
+    ok (bands && ru (*bands) == "Потеря удара по полосам: низ 0,5 дБ, нижняя середина 1,0 дБ, верхняя середина 1,6 дБ, верх 2,1 дБ."
+        && en (*bands) == "Impact loss by band: low 0.5 dB, low-mid 1.0 dB, high-mid 1.6 dB, high 2.1 dB.",
+        "the impact loss of the four bands below the full band — " + (bands ? ru (*bands) : std::string()));
+    auto partial = cost;
+    partial.limiterP95Db.value.reset(); partial.activeWindowShare.value.reset(); partial.crestHighDb.value.reset();
+    partial.largestSectionShiftLu.value.reset();
+    ok (! MasterReportText::limiter (partial) && ! MasterReportText::active (partial) && ! MasterReportText::bands (partial)
+        && ! MasterReportText::section (partial) && MasterReportText::sections (partial),
+        "a number not measured takes its line away, and only its own");
+
+    session::MasterReport report;
+    report.achievedLufs = -14.04; report.truePeakDbTp = -1.26; report.targetLufs = -14.0; report.ceilingDbTp = -1.0;
+    report.gainFromSourceDb = 3.46; report.checkPasses = 1;
+    const auto readings = MasterReportText::readings (report, 4);
+    const session::ReadingKind kinds[] { session::ReadingKind::Integrated, session::ReadingKind::TruePeak, session::ReadingKind::Target,
+        session::ReadingKind::Ceiling, session::ReadingKind::Gain, session::ReadingKind::Passes, session::ReadingKind::CheckPasses };
+    bool inOrder = readings.count == std::size (kinds);
+    for (std::size_t i = 0; inOrder && i < readings.count; ++i)
+        inOrder = readings.items[i].kind == kinds[i] && readings.items[i].fact.id == FactId::Value && readings.items[i].fact.argCount == 1;
+    ok (inOrder, "the master's readings in the order of ReadingKind; LRA and PLR not measured have none");
+    if (inOrder)
+    {
+        const auto& r = readings.items;
+        ok (ru (r[0].fact) == "−14,0 LUFS" && en (r[0].fact) == "−14.0 LUFS" && ru (r[1].fact) == "−1,3 dBTP"
+            && ru (r[3].fact) == "−1,0 dBTP" && ru (r[4].fact) == "+3,5 дБ" && en (r[4].fact) == "+3.5 dB"
+            && en (r[5].fact) == "4" && en (r[6].fact) == "1",
+            "each reading as the catalogue writes it: the decimal comma in Russian, the gain signed, the passes whole — "
+            + ru (r[0].fact) + " · " + ru (r[4].fact));
+    }
+}
+
 int main()
 {
     Case normalFirst, normalLate, fractionalFirst, fractionalLate;
@@ -423,6 +486,39 @@ int main()
         ok (source.activityFloorDb > source.parameters.programmeFloorDb + 1.0
             && source.parameters.programmeFloorDb == -70.0,
             "configured crest floor survives separately from the effective activity threshold");
+        // The master's readings come with its report, as MasterReportText states them from the report and the landing's
+        // passes; they cross the wire whole, and an unknown kind is refused.
+        const auto& kept = normalFirst.session->masters()[0];
+        const auto again = session::MasterReportText::readings (*kept.report, kept.landing->passes);
+        bool same = kept.report->readings.count == again.count && again.count >= 6;
+        for (std::size_t i = 0; same && i < again.count; ++i)
+            same = kept.report->readings.items[i].kind == again.items[i].kind
+                && std::bit_cast<std::uint64_t> (kept.report->readings.items[i].fact.args[0].number)
+                   == std::bit_cast<std::uint64_t> (again.items[i].fact.args[0].number);
+        const auto& first = kept.report->readings.items[0];
+        ok (same && first.kind == session::ReadingKind::Integrated && kept.report->achievedLufs
+            && std::bit_cast<std::uint64_t> (first.fact.args[0].number) == std::bit_cast<std::uint64_t> (*kept.report->achievedLufs)
+            && first.fact.args[0].unit == session::text::Unit::Lufs && first.fact.args[0].precision == 1,
+            "the master's readings come with its report: the achieved loudness first, LUFS to a tenth");
+        std::string json (std::size_t (session::Codec::encodedBytes (snapshot.view()).bytes), '\0');
+        session::Snapshot restored;
+        const bool coded = session::Codec::encode (snapshot.view(), json) == session::CodecStatus::Ok
+            && session::Codec::decode (json, restored) == session::CodecStatus::Ok && ! restored.view().masters.empty()
+            && restored.view().masters[0].report;
+        bool carried = coded && restored.view().masters[0].report->readings.count == kept.report->readings.count;
+        for (std::size_t i = 0; carried && i < kept.report->readings.count; ++i)
+            carried = restored.view().masters[0].report->readings.items[i].kind == kept.report->readings.items[i].kind
+                && session::text::Text::text (restored.view().masters[0].report->readings.items[i].fact, session::text::Lang::Ru)
+                   == session::text::Text::text (kept.report->readings.items[i].fact, session::text::Lang::Ru);
+        const auto at = json.find ("\"readings\":[{\"fact\":{\"FactId\":");
+        ok (carried && at != std::string::npos, "the master's readings cross the wire whole");
+        if (at != std::string::npos)
+        {
+            const auto kindAt = json.find ("]},\"kind\":", at) + 10, kindEnd = json.find ('}', kindAt);
+            auto badKind = json; badKind.replace (kindAt, kindEnd - kindAt, "31");
+            session::Snapshot refused;
+            ok (session::Codec::decode (badKind, refused) == session::CodecStatus::Invalid, "a master's unknown reading kind (31) is refused");
+        }
     }
     ok (run (normalLate, 48000, 48000, false, false, false, 4, 0, nullptr, 512.0f)
         && lateCrestAfterRelease (normalLate),
@@ -930,5 +1026,6 @@ int main()
     ok (joinedOnce (once), "a crest joined inside the job is not joined or published again (" + once + ")");
     std::string lateOnce;
     ok (lateCrestSaidOnce (lateOnce), "a crest pending when the master ends is said once, by the late join (" + lateOnce + ")");
+    costLinesAndReadings();
     return felitronics::test::report();
 }

@@ -261,6 +261,7 @@ SnapshotView Session::buildView() const noexcept
     v.needlesLargestBlockBytes = double (needlesDemand_.largestBlockBytes);
     v.needlesRunsTruncated = needlesResult_ && needlesResult_->runsTruncated;
     if (source_.channels != 0) v.measurements = measurementResults_;
+    if (source_.channels != 0) v.readings = ReadingText::source (measurementResults_, source_.channels);
     v.job = job_;
     v.measurementJob = measurementJob_;
     v.jobRecipe = jobRecipe_;

@@ -120,6 +120,63 @@ text::Fact MasterReportText::pumping (const MasterCost& cost) noexcept
 }
 text::Fact MasterReportText::tonal() noexcept
 { return text::Fact::of (text::FactId::MasterCostK2Deferred); }
+std::optional<text::Fact> MasterReportText::section (const MasterCost& cost) noexcept
+{
+    if (! cost.largestSectionShiftLu.value || ! cost.worstSectionIndex || *cost.worstSectionIndex >= cost.sections.size()
+        || cost.sourceRateHz == 0) return std::nullopt;
+    const auto& worst = cost.sections[*cost.worstSectionIndex];
+    const auto at = [&] (std::uint64_t frame) { return text::Arg::value (double (frame) / double (cost.sourceRateHz), text::Unit::S, 0); };
+    return text::Fact::of (text::FactId::MasterCostSection,
+        text::Arg::value (*cost.largestSectionShiftLu.value, text::Unit::Lu, 1, text::Sign::Always), at (worst.fromFrame), at (worst.toFrame));
+}
+std::optional<text::Fact> MasterReportText::sections (const MasterCost& cost) noexcept
+{
+    if (cost.sections.empty()) return std::nullopt;
+    std::int64_t compared = 0;
+    for (const auto& one : cost.sections) compared += one.compared ? 1 : 0;
+    return text::Fact::of (text::FactId::MasterCostSections, text::Arg::count (compared));
+}
+std::optional<text::Fact> MasterReportText::limiter (const MasterCost& cost) noexcept
+{
+    if (! cost.limiterP50Db.value || ! cost.limiterP95Db.value) return std::nullopt;
+    return text::Fact::of (text::FactId::MasterCostLimiter, text::Arg::value (*cost.limiterP50Db.value, text::Unit::Db, 1),
+        text::Arg::value (*cost.limiterP95Db.value, text::Unit::Db, 1));
+}
+std::optional<text::Fact> MasterReportText::active (const MasterCost& cost) noexcept
+{
+    if (! cost.limiterActiveShare.value || ! cost.activeWindowShare.value) return std::nullopt;
+    return text::Fact::of (text::FactId::MasterCostActive,
+        text::Arg::value (100.0 * *cost.limiterActiveShare.value, text::Unit::Percent, 0),
+        text::Arg::value (100.0 * *cost.activeWindowShare.value, text::Unit::Percent, 0));
+}
+std::optional<text::Fact> MasterReportText::bands (const MasterCost& cost) noexcept
+{
+    if (! cost.crestLowDb.value || ! cost.crestLowMidDb.value || ! cost.crestHighMidDb.value || ! cost.crestHighDb.value)
+        return std::nullopt;
+    const auto db = [] (double v) { return text::Arg::value (v, text::Unit::Db, 1); };
+    return text::Fact::of (text::FactId::MasterCostBands, db (*cost.crestLowDb.value), db (*cost.crestLowMidDb.value),
+        db (*cost.crestHighMidDb.value), db (*cost.crestHighDb.value));
+}
+BoundedList<ReadingFact, kMasterReadings> MasterReportText::readings (const MasterReport& report, std::uint32_t passes) noexcept
+{
+    using text::Arg; using text::Fact; using text::FactId; using text::Unit;
+    BoundedList<ReadingFact, kMasterReadings> out;
+    const auto put = [&] (ReadingKind kind, std::optional<double> v, Unit unit, text::Sign sign = text::Sign::Negative) noexcept
+    {
+        if (v && std::isfinite (*v) && out.count < kMasterReadings)
+            out.items[out.count++] = { kind, Fact::of (FactId::Value, Arg::value (*v, unit, unit == Unit::None ? 0 : 1, sign)) };
+    };
+    put (ReadingKind::Integrated, report.achievedLufs, Unit::Lufs);
+    put (ReadingKind::TruePeak, report.truePeakDbTp, Unit::DbTp);
+    put (ReadingKind::Lra, report.lraLu, Unit::Lu);
+    put (ReadingKind::Plr, report.plrDb, Unit::Db);
+    put (ReadingKind::Target, report.targetLufs, Unit::Lufs);
+    put (ReadingKind::Ceiling, report.ceilingDbTp, Unit::DbTp);
+    put (ReadingKind::Gain, report.gainFromSourceDb, Unit::Db, text::Sign::Always);
+    put (ReadingKind::Passes, double (passes), Unit::None);
+    put (ReadingKind::CheckPasses, double (report.checkPasses), Unit::None);
+    return out;
+}
 std::optional<text::Fact> MasterReportText::glue (const MasterCost& cost) noexcept
 {
     if (! cost.glueP95Db.value || ! cost.glueMaxDb.value) return std::nullopt;

@@ -231,6 +231,39 @@
       "Sibilance",
       "Hum",
       "HumWandered"
+    ],
+    "ReadingKind": [
+      "Integrated",
+      "TruePeak",
+      "Lra",
+      "Plr",
+      "DcOffset",
+      "DcOffsetLeft",
+      "DcOffsetRight",
+      "LowestBand",
+      "PcmBits",
+      "Correlation",
+      "BurstsMid",
+      "BurstsSide",
+      "Hum",
+      "Tempo",
+      "TempoConfidence",
+      "ClipRuns",
+      "LongestRun",
+      "ClippedSamples",
+      "SamplePeak",
+      "LowSide",
+      "StereoWindows",
+      "CrestBlocksLow",
+      "CrestBlocksLowMid",
+      "CrestBlocksHighMid",
+      "CrestBlocksHigh",
+      "CrestBlocksFull",
+      "Target",
+      "Ceiling",
+      "Gain",
+      "Passes",
+      "CheckPasses"
     ]
   },
   "records": {
@@ -571,7 +604,8 @@
         "firstHint": "MasterHint?",
         "secondHint": "MasterHint?",
         "cost": "MasterCost?",
-        "medium": "MasterMedium?"
+        "medium": "MasterMedium?",
+        "readings": "ReadingFact[<=9]"
       }
     },
     "LandingPass": {
@@ -718,7 +752,8 @@
         "pendingMasterBytes": "bytes",
         "plan": "PlanView",
         "observations": "Observations",
-        "observationFacts": "ObservationFact[<=17]"
+        "observationFacts": "ObservationFact[<=17]",
+        "readings": "ReadingFact[<=26]"
       }
     },
     "MasterToken": {
@@ -966,6 +1001,13 @@
       "cpp": "PlanFact",
       "fields": {
         "device": "Device",
+        "fact": "Fact"
+      }
+    },
+    "ReadingFact": {
+      "cpp": "ReadingFact",
+      "fields": {
+        "kind": "ReadingKind",
         "fact": "Fact"
       }
     },
@@ -1642,6 +1684,10 @@
       "medium": {
         "default": "std::optional<MasterMedium> {}",
         "description": "No medium report: a ready chain a shell supplied, or an older snapshot."
+      },
+      "readings": {
+        "default": "BoundedList<ReadingFact, 9> {}",
+        "description": "No master readings: a report before the readings were facts, or one the job did not finish."
       }
     },
     "MasterCost": {
@@ -1762,6 +1808,10 @@
       "observationFacts": {
         "default": "BoundedList<ObservationFact, 17> {}",
         "description": "No observation lines: a snapshot before the observations spoke for themselves."
+      },
+      "readings": {
+        "default": "BoundedList<ReadingFact, 26> {}",
+        "description": "No source readings: a snapshot before the readings were facts."
       }
     },
     "MeasurementQuery": {
