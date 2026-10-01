@@ -7,8 +7,7 @@
   exactly: the nearest levels are A and B, both beyond the tolerance" (args `below`, `above`; the tolerance argument goes).
 - **The landing carries what decided it**: `LandingSummary` gains `binding` (`LandingConstraint`, the solver's
   `LoudnessSolution::binding`, set for an unreachable landing only) and `belowLufs`/`aboveLufs` (the solver's bracket, for
-  a between landing only). The codec schema appends the three fields with their defaults, so older snapshots decode; the
-  decoder refuses a limit on another status and levels out of order. `MasterReportText::landing` takes the summary.
+  a between landing only). The decoder refuses a limit on another status and levels out of order. `MasterReportText::landing` takes the summary.
 - **The advice beyond the norm** (owner wording 01.10): the high-pass slope gentler or steeper than usual (502, 503) and
   mono bass above every destination's zone (505, now `crossover`, `clubTo`, `vinylTo`). A crossover below every zone is its
   own fact, `MonoBassBelowZones` (509: `crossover`, `clubFrom`, `vinylFrom`).

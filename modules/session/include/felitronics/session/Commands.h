@@ -84,8 +84,7 @@ enum class Rejection : std::uint8_t
     ProjectType,                // a field has another TOML type
     ProjectUnknownKey,          // an unknown section, knob or author suffix
     UnknownDefaults,            // malformed defaults label, or an older label this core does not carry
-    ProjectCore,                // core must be a canonical major.minor.patch version
-    NewerDefaults,              // defaults are newer than the current compiled table
+    NewerDefaults = 28,         // defaults are newer than the current compiled table (explicit: live codes keep their numbers)
     RateAboveLimit,             // above the shell's maxRateHz
     Memory,                     // live bytes plus demand exceeds capacity, or a block cannot fit
     Contract,                   // malformed command or metadata at the protocol boundary

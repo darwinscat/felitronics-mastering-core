@@ -173,7 +173,7 @@ void theSchemaRefuses()
     mustRefuse (T, "\"cd\", \"bandcamp\"", "\"cd\", \"cd\"", "\"cd\", \"club\"", Fault::Refused, "main[4]", Refusal::Duplicate);
     mustRefuse (E, "targets = [\"allStreaming\", \"cdDynamic\"]", "targets = [\"allStreaming\", \"allStreaming\"]",
                 "\"allStreaming\"]", Fault::Refused, "blindTest.targets[1]", Refusal::Duplicate);
-    mustRefuse (E, "{ key = \"bass5\", hz = 31 }", "{ key = \"bass4\", hz = 31 }", "\"bass4\"", Fault::Refused, "hpf.marks[2].key",
+    mustRefuse (E, "{ key = \"bass5\", hz = 30.87 }", "{ key = \"bass4\", hz = 30.87 }", "\"bass4\"", Fault::Refused, "hpf.marks[2].key",
                 Refusal::Duplicate);
     mustRefuse (E, "band = 2", "band = 1", "1", Fault::Refused, "low.band", Refusal::Duplicate);
     // ...order: ranges and the classes of the peak clipper.

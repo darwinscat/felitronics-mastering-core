@@ -168,8 +168,8 @@ skipBlocks = 0
 # curveTopDb, curveBottomDb, curveStepDb, curveHeadroomDb: the scale of the high-pass curve, dB — a filter's slope goes
 #   down by definition, so it is not judged by the ±2 dB of the other curves.
 # marks: labels on the frequency axis of the curve, where the low end of instruments lives; behind the curve the spectrum
-#   of THIS mix is drawn. What a cutoff costs there: at 32 Hz and 24 dB/oct, 0.6 dB at 41 Hz, 3.6 dB at 31 Hz, 11.8 dB at
-#   23 Hz.
+#   of THIS mix is drawn. What a cutoff costs there: at 32 Hz and 24 dB/oct, 0.5 dB at 41.2 Hz (E1), 3.7 dB at 30.87 Hz
+#   (B0), 5.9 dB at 28 Hz (the 808's mark, there so its label fits on the plot).
 [hpf]
 frequencyDomain = "sourceNyquist"
 slopeDomain = [6, 96]
@@ -189,9 +189,9 @@ curveStepDb = 6
 curveHeadroomDb = 3
 marks = [
     { key = "kick", hz = 50 },
-    { key = "bass4", hz = 41 },
-    { key = "bass5", hz = 31 },
-    { key = "sub808", hz = 23 },
+    { key = "bass4", hz = 41.2 },
+    { key = "bass5", hz = 30.87 },
+    { key = "sub808", hz = 28 },
 ]
 
 # MONO BASS (owner decisions 3.5) — always placed, at the target's crossover (targets.toml): it is there for subwoofers and
@@ -331,7 +331,7 @@ knobStepDb = 0.1
 #   +6 dB, knob 3, the worst sample): absolute drive 2.94e−2 apart, "knob minus peak" 6.12e−2, the shaper's gain 2.12e−3.
 #   At knob 0 the drive is 0 whatever the peak; without a measured true peak a non-zero knob is not offered.
 # driveRange 0…12 dB: above twelve tanh squares music rather than densifying it; driveStep 0.5 dB: less is not heard, more
-#   is a jerk. outputRange −6…0: the saturator gives downwards, the limiter gives upwards. mix 0…1.
+#   is a jerk. mix 0…1. No output knob: the landing sets the level before the limiter, so a trim would be undone.
 # autoComp 0 is written over the core's default 0.5: the output is then tanh(k·s)/tanh(k), normalised to its own k.
 # shape: the machine's type, one of the core's eight (tanh, atan, cubic, asym, tube, transistor, transformer, tape); the
 #   machine never picks another. A person picks the type by hand among tanh, tube, transistor, transformer and tape;
@@ -340,15 +340,14 @@ knobStepDb = 0.1
 # bias and dcBlockHz are read by the core for the asym shape only. Below a drive of 0.00087 dB (the core's number) every
 # value is one setting.
 # cut (owner decision 3.9): what the stage took off the peaks is measured ON THE STAGE — the peak of its input against the
-#   peak of its output, quantum by quantum, after its mix and its output knob — never the fall of the whole chain's true
+#   peak of its output, quantum by quantum, after its mix — never the fall of the whole chain's true
 #   peak (that is the limiter's and the peak clipper's work). A peak-normalised shaper lifts everything under full scale,
-#   so the ratio alone is a gain: a peak was cut by how much less it got than a sound too quiet to bend gets (the output
-#   knob moves both alike and cancels; the mix is in both). The report gives the largest cut and the usual one over the
+#   so the ratio alone is a gain: a peak was cut by how much less it got than a sound too quiet to bend gets (the mix is
+#   in both). The report gives the largest cut and the usual one over the
 #   loud places — the loudShare of the quanta with the highest input peaks: their largest, and their median.
 [saturation]
 driveDomain = [0, 12]
 mixDomain = [0, 1]
-outputDomain = [-6, 0]
 shape = "tape"
 driveDb = 0
 driveRange = [0, 12]
@@ -357,9 +356,6 @@ bias = 0
 mix = 1
 mixRange = [0, 1]
 mixStep = 0.05
-outputDb = 0
-outputRange = [-6, 0]
-outputStep = 0.1
 autoComp = 0
 dcBlockHz = 0
 cut = { loudShare = 0.05 }

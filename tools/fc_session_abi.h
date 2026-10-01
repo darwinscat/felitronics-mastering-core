@@ -29,8 +29,9 @@
 // each batch of additions that lands together in one release — entry points, fields, values — moves the number up by
 // one and adds one row below, so a page's "module version >= page version" gate is its protection against calling an
 // export the module lacks. The generated snapshot.d.ts and snapshot.mjs state the number read from this line. The
-// manifest's `define FC_SESSION_ABI_VERSION=1` is therefore checked as "at least 1", like a boundary struct's size;
-// a lower number is a change. The manifest itself only grows: CI refuses a pull request that removes or edits a line.
+// manifest's `define FC_SESSION_ABI_VERSION=4` is therefore checked as "at least 4", like a boundary struct's size;
+// a lower number is a change. The manifest itself only grows from its declared base (`base v0.6.0`): CI refuses a pull
+// request that removes or edits a line under the same base, or declares an older one.
 //
 //   fc_session   the surface
 //   ----------   ------------------------------------------------------------------------------------------------
@@ -41,7 +42,10 @@
 //                a master's Momentary/ShortTerm and the spectrum choice; the plan's and the landing's snapshot fields.
 //   3            v0.5.0: the saturation's type (SaturationType, a snapshot and command field, and the master parameters'
 //                clipper shapes 4-7, tube to tape); the plan's reasons on the wire (PlanView::facts, PlanFact).
-#define FC_SESSION_ABI_VERSION 3u
+//   4            v0.6.0, THE MANIFEST'S NEW BASE (owner, 2026-10-01): the pure kit (fc_kit_*), the EQ bands (device 8)
+//                and their tick; the dead entries left the manifest (no project, snapshot or file of an older version
+//                exists, and the one consumer vendors the exact core) — live ids keep their numbers.
+#define FC_SESSION_ABI_VERSION 4u
 #define FC_SESSION_CAPABILITIES_V1_BYTES 32u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u
@@ -406,7 +410,6 @@ fc_session_status fc_session_master_wav_copy (fc_session session, const fc_sessi
 #define FC_SESSION_KIT_FIELD_GLUE_UP_TO_DB 9u
 #define FC_SESSION_KIT_FIELD_SATURATION_DRIVE 10u
 #define FC_SESSION_KIT_FIELD_SATURATION_MIX 11u
-#define FC_SESSION_KIT_FIELD_SATURATION_OUTPUT 12u
 #define FC_SESSION_KIT_FIELD_TILT_DB 13u
 #define FC_SESSION_KIT_FIELD_LIMITER_NEEDLES_DB 15u
 #define FC_SESSION_KIT_FIELD_LOW_DB 16u

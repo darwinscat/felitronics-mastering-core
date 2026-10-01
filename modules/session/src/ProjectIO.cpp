@@ -23,10 +23,6 @@ namespace
 using toml::Need;
 using detail::Rules;
 
-bool sameVersion (Version a, Version b) noexcept
-{
-    return a.major == b.major && a.minor == b.minor && a.patch == b.patch;
-}
 bool defaultsLabel (std::string_view text) noexcept
 {
     if (text.size() != 7 || text[4] != '-') return false;
@@ -34,25 +30,6 @@ bool defaultsLabel (std::string_view text) noexcept
         if (i != 4 && (text[i] < '0' || text[i] > '9')) return false;
     return text.substr (5) >= "01" && text.substr (5) <= "12";
 }
-bool readVersion (std::string_view text, Version& out) noexcept
-{
-    std::size_t pos = 0;
-    for (auto* part : { &out.major, &out.minor, &out.patch })
-    {
-        const std::size_t start = pos;
-        *part = 0;
-        while (pos < text.size() && text[pos] >= '0' && text[pos] <= '9')
-        {
-            const auto digit = std::uint32_t (text[pos++] - '0');
-            if (*part > (std::numeric_limits<std::uint32_t>::max() - digit) / 10) return false;
-            *part = *part * 10 + digit;
-        }
-        if (pos == start || (pos > start + 1 && text[start] == '0')) return false;
-        if (part != &out.patch && (pos == text.size() || text[pos++] != '.')) return false;
-    }
-    return pos == text.size();
-}
-
 // One walk sizes and writes the canonical document. No temporary TOML tree or string is allocated.
 struct Writer
 {
@@ -111,8 +88,7 @@ struct Writer
     void project (const Project& p, const Rules& rules, std::uint32_t channels) noexcept
     {
         text ("defaults = "); string (*rules.engine.find ("defaults").string());
-        text ("\ncore = \""); value (p.core.major); put ('.'); value (p.core.minor); put ('.'); value (p.core.patch);
-        text ("\"\nmanual = "); value (p.manual);
+        text ("\nmanual = "); value (p.manual);
         text ("\n\n[target]\nname = "); string (rules.row (p.target).key); put ('\n');
         if (p.targetEdit.lufs) line ("lufs", "hand", *p.targetEdit.lufs);
         if (p.targetEdit.tp) line ("tp", "hand", *p.targetEdit.tp);
@@ -254,7 +230,7 @@ Checked importBytes (std::string_view bytes) noexcept
 {
     // readProject visits each table/field once. A custom refusal follows a successful conversion,
     // so it is the only problem at that key. Only missing required paths need extra report slots.
-    constexpr std::string_view required[] { "defaults", "core", "manual", "target", "target.name" };
+    constexpr std::string_view required[] { "defaults", "manual", "target", "target.name" };
     const auto library = toml::storageFor (bytes, toml::ReadStorage { required });
     constexpr auto limit = std::numeric_limits<std::size_t>::max();
     const auto owned = ImportedProject::storageBytes();
@@ -278,11 +254,10 @@ ImportedProject readProject (std::string_view bytes, const PlanInputs& inputs) n
     const auto& root = *std::get_if<toml::Table> (&parsed);
     const Rules rules = detail::rules();
     const auto currentLabel = *rules.engine.find ("defaults").string();
-    std::string defaults, core, target;
+    std::string defaults, target;
     const auto report = toml::read (root, [&] (toml::Reader& in)
     {
         (void) in.required ("defaults", defaults);
-        (void) in.required ("core", core);
         (void) in.required ("manual", out.project.manual);
         (void) in.table ("target", Need::Required, [&] (toml::Reader& t)
         {
@@ -338,14 +313,12 @@ ImportedProject readProject (std::string_view bytes, const PlanInputs& inputs) n
     else if (defaults != currentLabel)
         fail (Rejection::UnknownDefaults, root.find ("defaults")->position);
     if (out.answer.rejection != Rejection::None) return out;
-    if (! readVersion (core, out.project.core)) fail (Rejection::ProjectCore, root.find ("core")->position);
-    else if (! rules.find (target))
+    if (! rules.find (target))
     {
         const auto& t = *std::get_if<toml::Table> (&root.find ("target")->data);
         fail (Rejection::UnknownTarget, t.find ("name")->position);
     }
     if (out.answer.rejection != Rejection::None) return out;
-    out.foreignCore = ! sameVersion (out.project.core, Session::version());
     // The planner's machine layer for the file's target on this source: what the machine would decide now.
     PlanInputs now = inputs;
     now.row = out.project.target;

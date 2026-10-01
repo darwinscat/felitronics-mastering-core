@@ -190,8 +190,7 @@ bool handsEmpty (const Devices& d)
 
 bool sameProject (const Project& a, const Project& b)
 {
-    return a.core.major == b.core.major && a.core.minor == b.core.minor && a.core.patch == b.core.patch
-        && a.target == b.target && same (a.targetEdit.lufs, b.targetEdit.lufs) && same (a.targetEdit.tp, b.targetEdit.tp)
+    return a.target == b.target && same (a.targetEdit.lufs, b.targetEdit.lufs) && same (a.targetEdit.tp, b.targetEdit.tp)
         && a.manual == b.manual && sameLayers (a.devices.hpf, b.devices.hpf)
         && sameLayers (a.devices.monoBass, b.devices.monoBass) && sameLayers (a.devices.glue, b.devices.glue)
         && sameLayers (a.devices.saturation, b.devices.saturation) && sameLayers (a.devices.tilt, b.devices.tilt)
@@ -609,15 +608,8 @@ void negativeZero()
     TiltFields<Touched> minus {}, plus {};
     minus.db = -0.0;
     plus.db = 0.0;
-    SaturationFields<Touched> outMinus {}, outPlus {};
-    outMinus.output = -0.0;   // the output's travel ends at 0
-    outPlus.output = 0.0;
-    ok (accepted (*x.s, editOf (minus)) && accepted (*x.s, editOf (outMinus)) && accepted (*y.s, editOf (plus))
-            && accepted (*y.s, editOf (outPlus)),
-        "tilt and the saturator's output edited to -0 in one session, to +0 in the other");
-    ok (std::bit_cast<std::uint64_t> (*x.s->project().devices.tilt.hand.db) == 0
-            && std::bit_cast<std::uint64_t> (*x.s->project().devices.saturation.hand.output) == 0,
-        "-0 is kept as +0");
+    ok (accepted (*x.s, editOf (minus)) && accepted (*y.s, editOf (plus)), "tilt edited to -0 in one session, to +0 in the other");
+    ok (std::bit_cast<std::uint64_t> (*x.s->project().devices.tilt.hand.db) == 0, "-0 is kept as +0");
     ok (sameProject (x.s->project(), y.s->project()), "and the two projects are one, bit for bit");
     const Answer a = x.s->apply (command::Master { 1 });
     const Answer b = y.s->apply (command::Master { 1 });
@@ -1010,8 +1002,7 @@ void theRulesAreTheSchemas()
         "[glue]: the knob, up to N dB, and its default");
     const auto& sat = e.saturation;
     ok (knob (r.drive, sat.driveRange.min, sat.driveRange.max, sat.driveStep) && knob (r.mix, sat.mixRange.min, sat.mixRange.max, sat.mixStep)
-            && knob (r.output, sat.outputRange.min, sat.outputRange.max, sat.outputStep) && is (r.driveDefault, sat.driveDb)
-            && is (r.mixDefault, sat.mix) && is (r.outputDefault, sat.outputDb), "[saturation]");
+            && is (r.driveDefault, sat.driveDb) && is (r.mixDefault, sat.mix), "[saturation]");
     ok (knob (r.tilt, e.tilt.hard.min, e.tilt.hard.max, e.tilt.step)
             && knob (r.low, e.low.hard.min, e.low.hard.max, e.low.step), "[tilt], [low]");
     const auto& pc = e.limiter.peakClipper;
@@ -1089,11 +1080,11 @@ void everyFieldIsWalked()
     const detail::Rules r = detail::rules();
     auto count = [&] (const auto& mask)
     {
-        std::size_t n = 0;
+        std::size_t n = 0, next = 0;
         detail::DeviceOf<std::remove_cvref_t<decltype (mask)>>::each (r, [&] (std::uint8_t i, const detail::FieldRule&, bool)
         {
-            ok (i == n, "the fields are walked in the order written");
-            ++n;
+            ok (i >= next, "the fields are walked in the order written, by ascending id");
+            next = std::size_t (i) + 1; ++n;
         }, mask);
         // A mask is one bool per field and nothing else, so its size counts the fields Project.h writes.
         return n == sizeof (mask);

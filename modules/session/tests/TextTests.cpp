@@ -826,6 +826,7 @@ void everyRejectionIsAFact()
     const auto last = (std::size_t) session::Rejection::PlanPending;
     for (std::size_t code = 1; code <= last; ++code)
     {
+        if (code == 27) { ok (! detail::factOf ((session::Rejection) code), "27 is no code (left in v0.6.0)"); continue; }
         const auto r = (session::Rejection) code;
         const std::optional<FactId> id = detail::factOf (r);
         const detail::FactShape* shape = id ? detail::shapeOf (*id) : nullptr;
@@ -855,14 +856,12 @@ void everyRejectionIsAFact()
     ok (spoken, "and every one renders a whole sentence in ru and in en");
     ok (! detail::factOf (session::Rejection::None) && ! detail::factOf ((session::Rejection) (last + 1)),
         "None is no rejection, and a code past the last is none this library knows");
-    ok (unsigned (FactId::MachineDifferences) == 8 && unsigned (FactId::DefaultsConverted) == 9,
-        "project readings use the next free ids in 1-99");
-    // A retired fact: no shape, no message — nothing can state it, the snapshot decoder refuses it, and it renders as its
-    // number — while its id stays reserved (the ABI manifest freezes it; no other fact takes 9).
-    ok (detail::shapeOf (FactId::DefaultsConverted) == nullptr && Text::key (FactId::DefaultsConverted).empty()
-        && Text::text (Fact::of (FactId::DefaultsConverted), Lang::Ru) == "#9"
-        && Text::text (Fact::of (FactId::DefaultsConverted), Lang::En) == "#9",
-        "DefaultsConverted (9) is retired: no shape, no message, its id reserved");
+    ok (unsigned (FactId::MachineDifferences) == 8, "the project's reading keeps its id");
+    // Ids that name nothing (left in v0.6.0; live ids keep their numbers): no shape, no message, rendered as the number.
+    for (const unsigned gone : { 9u, 10u, 127u })
+        ok (detail::shapeOf (FactId (gone)) == nullptr && Text::key (FactId (gone)).empty()
+            && Text::text (Fact::of (FactId (gone)), Lang::En) == "#" + std::to_string (gone),
+            "fact " + std::to_string (gone) + " names nothing");
     bool inRange = true;
     for (const auto& shape : detail::kFacts)
         inRange = inRange && ((std::size_t) shape.id < 100 || ((std::size_t) shape.id > 100 && (std::size_t) shape.id <= 100 + last)
@@ -1119,7 +1118,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0x296927d907b83545ull;   // …, the plan's advice and the targets' notes (500–508), the observations (52–80, 419–436), the target-change warning (81), what departs from vinyl (82–87), the clipper's cut off the peaks and an observation not measured (437), the landing's verdict (88–92), the clipper's cut as a cap, DefaultsConverted (9) retired, the cost's lines (93–97), the readings' names and the tempo's confidence (438), the owner's observation words and the clipper's "will take" (439–445, 52–54, 87, 424), the owner's wording 3b/3c — the master's outcome (88, 89 naming its limit, 91 its two levels), the advice beyond the norm (502, 503, 505, 509), the cap in words (52–54, 87) and DC per channel (446, 447)
+    constexpr std::uint64_t kPinned = 0x84945d5615e78bffull;   // …, the plan's advice and the targets' notes (500–508), the observations (52–80, 419–436), the target-change warning (81), what departs from vinyl (82–87), the clipper's cut off the peaks and an observation not measured (437), the landing's verdict (88–92), the clipper's cut as a cap, the cost's lines (93–97), the readings' names and the tempo's confidence (438), the owner's observation words and the clipper's "will take" (439–445, 52–54, 87, 424), the owner's wording 3b/3c — the master's outcome (88, 89 naming its limit, 91 its two levels), the advice beyond the norm (502, 503, 505, 509), the cap in words (52–54, 87), DC per channel (446, 447) and the core stamp's facts gone (10, 127; v0.6.0)
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");

@@ -81,13 +81,10 @@ const SURFACE = {
 SURFACE[2] = SURFACE[1];
 // Version 3 (v0.5.0) appends the saturation type, the clipper shapes 4-7 and the plan's facts, and no entry point.
 SURFACE[3] = SURFACE[1];
-// NOT YET RELEASED — the batch after v0.5.0, carried by this tree's module while it still answers 3: the pure kit's
-// entry points, the EQ bands' curve among them. The release that publishes them moves FC_SESSION_ABI_VERSION by the batch rule and lists them as
-// SURFACE[4] = [...SURFACE[3], ...UNRELEASED]; until then a module answering 3 is held to version 3's surface plus these.
-const UNRELEASED = ['_fc_kit_text', '_fc_kit_parse', '_fc_kit_travel', '_fc_kit_position', '_fc_kit_value_at',
+// Version 4 (v0.6.0, the ABI manifest's new base) adds the pure kit's entry points, the EQ bands' curve among them.
+SURFACE[4] = [...SURFACE[3], '_fc_kit_text', '_fc_kit_parse', '_fc_kit_travel', '_fc_kit_position', '_fc_kit_value_at',
     '_fc_kit_heat', '_fc_kit_mono_zones', '_fc_kit_mono_zones_at', '_fc_kit_eq_curve', '_fc_kit_low_end_curve',
     '_fc_kit_eq_curve_bands'];
-const UNRELEASED_ON = 3;
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
 const RUNTIME = ['_malloc', '_free', 'HEAPU32'];
@@ -100,7 +97,7 @@ for (const other of ['_fc_probe_abi_version', '_fc_tempo_abi_version', '_fc_mast
 if (typeof M._fc_session_abi_version !== 'function') distrust(`${modPath} has no fc_session_abi_version`);
 const version = M._fc_session_abi_version();
 if (version !== VERSION) distrust(`${modPath}: fc_session_abi_version() answers ${version}, the header declares ${VERSION}`);
-const surface = SURFACE[version] && [...SURFACE[version], ...(version === UNRELEASED_ON ? UNRELEASED : [])];
+const surface = SURFACE[version];
 if (! surface) distrust(`FC_SESSION_ABI_VERSION is ${version} and this file lists no surface for it — append one on purpose`);
 
 let checks = 0, bad = 0;

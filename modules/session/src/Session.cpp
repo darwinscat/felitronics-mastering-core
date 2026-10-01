@@ -72,7 +72,6 @@ Created Session::create (const Capabilities& caps, std::uint64_t configVersion) 
     c.session = std::unique_ptr<Session> (new Session);
     c.session->capabilities_ = caps;
     c.session->project_.target = detail::rules().defaultRow;
-    c.session->project_.core = version();
     return c;
 }
 const Capabilities& Session::capabilities() const noexcept { return capabilities_; }

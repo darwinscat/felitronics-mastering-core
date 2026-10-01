@@ -57,8 +57,6 @@ saturationDrive.ru = "Драйв сатурации"
 saturationDrive.en = "Saturation drive"
 saturationMix.ru = "Микс сатурации"
 saturationMix.en = "Saturation mix"
-saturationOutput.ru = "Выход сатурации"
-saturationOutput.en = "Saturation output"
 saturationType.ru = "Тип сатурации"
 saturationType.en = "Saturation type"
 tiltDb.ru = "Баланс тона"
@@ -660,10 +658,6 @@ en = "The project contains an unknown section, field or author suffix."
 ru = "В этом ядре нет версии умолчаний, указанной в проекте."
 en = "This core does not carry the project’s defaults version."
 
-[messages.rejectedProjectCore]
-ru = "Версия ядра в проекте должна иметь вид major.minor.patch."
-en = "The project’s core version must have the form major.minor.patch."
-
 [messages.machineDifferences]
 plural = "count"
 ru.one = "Сейчас машина решила бы иначе в {count} месте. Слой машины сохранён."
@@ -700,16 +694,6 @@ en = "Finalizing"
 [messages.rejectedContract]
 ru = "Неверный формат команды."
 en = "The command format is invalid."
-
-[messages.sameCoreMachineDifferences]
-plural = "count"
-ru.one = "Сейчас машина решила бы иначе в {count} месте. При той же версии ядра это обычно означает, что файл проекта правили вручную; сохранённые решения остаются."
-ru.few = "Сейчас машина решила бы иначе в {count} местах. При той же версии ядра это обычно означает, что файл проекта правили вручную; сохранённые решения остаются."
-ru.many = "Сейчас машина решила бы иначе в {count} местах. При той же версии ядра это обычно означает, что файл проекта правили вручную; сохранённые решения остаются."
-ru.other = "Сейчас машина решила бы иначе в {count} местах. При той же версии ядра это обычно означает, что файл проекта правили вручную; сохранённые решения остаются."
-en.one = "The machine would decide differently in {count} place today. With the same core version, this usually means the project file was edited by hand; the saved decisions are kept."
-en.other = "The machine would decide differently in {count} places today. With the same core version, this usually means the project file was edited by hand; the saved decisions are kept."
-
 
 [messages.measurementPending]
 ru = "Замер ожидается."

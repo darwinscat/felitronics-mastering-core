@@ -92,10 +92,10 @@ struct Faked
         return d;
     }
     Devices glued (double upToDb) const { auto d = machine(); d.glue.hand.on = true; d.glue.hand.upToDb = upToDb; return d; }
-    Devices shaped (double drive, double mix = 1.0, double output = 0.0) const
+    Devices shaped (double drive, double mix = 1.0) const
     {
         auto d = machine();
-        d.saturation.hand.on = true; d.saturation.hand.drive = drive; d.saturation.hand.mix = mix; d.saturation.hand.output = output;
+        d.saturation.hand.on = true; d.saturation.hand.drive = drive; d.saturation.hand.mix = mix;
         return d;
     }
 };
@@ -358,9 +358,9 @@ void aPersonsKnob()
         && same (*s.project().devices.glue.hand.upToDb, 6.0), "6.01 and −0.01 dB are refused, the value kept");
 
     GlueFields<Touched> glue; glue.upToDb = 4.5;
-    SaturationFields<Touched> sat; sat.on = true; sat.drive = 6.0; sat.mix = 0.5; sat.output = -3.0;
+    SaturationFields<Touched> sat; sat.on = true; sat.drive = 6.0; sat.mix = 0.5;
     ok (s.apply (command::EditDevice { 7, glue }).rejection == Rejection::None && s.apply (command::EditDevice { 8, sat }).rejection == Rejection::None,
-        "PRECONDITION: glue 4.5 dB, saturation 6 dB at mix 0.5 and −3 dB out");
+        "PRECONDITION: glue 4.5 dB, saturation 6 dB at mix 0.5");
     const auto hidden = s.snapshot();
     ok (hidden.view().plan.glue.state == GlueState::Active && same (hidden.view().plan.glue.upToDb, 4.5) && hidden.view().plan.glue.releaseMs
         && hidden.view().plan.saturation.active && same (hidden.view().plan.saturation.knobDb, 6.0),
@@ -374,7 +374,7 @@ void aPersonsKnob()
     ok (copy->apply (command::ImportProject { 10, saved.view() }).rejection == Rejection::None, "PRECONDITION: the saved project imports");
     const auto& d = copy->project().devices;
     ok (d.glue.hand.on && *d.glue.hand.on && same (*d.glue.hand.upToDb, 4.5) && *d.saturation.hand.on && same (*d.saturation.hand.drive, 6.0)
-        && same (*d.saturation.hand.mix, 0.5) && same (*d.saturation.hand.output, -3.0)
+        && same (*d.saturation.hand.mix, 0.5)
         && same (*copy->snapshot().view().plan.glue.ratio, *hidden.view().plan.glue.ratio), "a saved project keeps them, and they sound the same");
     ok (s.apply (command::SetTarget { 11, "cd" }).rejection == Rejection::None && ! s.project().devices.glue.hand.upToDb
         && ! s.project().devices.saturation.hand.on && same (s.snapshot().view().plan.glue.upToDb, 2.6),
@@ -491,7 +491,7 @@ void theTempo()
 
 void theSaturation()
 {
-    felitronics::test::group ("the saturation: the chain's tanh stage, its drive the knob's at the input's true peak; mix and output as set");
+    felitronics::test::group ("the saturation: the chain's tanh stage, its drive the knob's at the input's true peak; mix as set, the output neutral");
     namespace det = felitronics::core::det;
     bool aligned = true, written = true;
     for (const double peak : { -12.0, -6.0, -1.0, 0.0, 2.0 })
@@ -516,10 +516,10 @@ void theSaturation()
 
     const Faked f ("allStreaming", -18.0, -6.0, -12.0);
     mastering::MasteringChainParams params;
-    detail::writeDynamics (f.in, f.shaped (6.0, 0.0, -6.0), params);
-    const bool dryLow = ! params.bypassClipper && sameF (params.clipper.mix, 0.0f) && sameF (params.clipper.outputDb, -6.0f);
-    detail::writeDynamics (f.in, f.shaped (6.0, 1.0, 0.0), params);
-    ok (dryLow && sameF (params.clipper.mix, 1.0f) && sameF (params.clipper.outputDb, 0.0f), "mix 0 and 1, output −6 and 0 dB are written as set");
+    detail::writeDynamics (f.in, f.shaped (6.0, 0.0), params);
+    const bool dry = ! params.bypassClipper && sameF (params.clipper.mix, 0.0f) && sameF (params.clipper.outputDb, 0.0f);
+    detail::writeDynamics (f.in, f.shaped (6.0, 1.0), params);
+    ok (dry && sameF (params.clipper.mix, 1.0f) && sameF (params.clipper.outputDb, 0.0f), "mix 0 and 1 are written as set, the shaper's output at 0 dB");
     detail::writeDynamics (f.in, f.shaped (0.0), params);
     auto unticked = f.shaped (6.0); unticked.saturation.hand.on = false;
     const bool zero = params.bypassClipper && ! detail::saturationFinding (f.in, f.shaped (0.0)).active;
@@ -692,9 +692,9 @@ void theCut()
     const Mix mix;
     auto sp = measured (mix, "allStreaming"); auto& s = *sp;
     const double share = loudShare();
-    const auto run = [&] (double drive, double mixed, double output)
+    const auto run = [&] (double drive, double mixed)
     {
-        SaturationFields<Touched> sat; sat.on = true; sat.drive = drive; sat.mix = mixed; sat.output = output;
+        SaturationFields<Touched> sat; sat.on = true; sat.drive = drive; sat.mix = mixed;
         felitronics::test::run (s.apply (command::EditDevice { 3, sat }).rejection == Rejection::None);
         const auto snapshot = s.snapshot();
         mastering::MasteringChainParams params;
@@ -703,13 +703,13 @@ void theCut()
     };
     const auto largest = [] (const Staged& o) { return cutDb (o.peaks.quietGain, o.peaks.loudLeastRatio); };
     const auto usual = [] (const Staged& o) { return cutDb (o.peaks.quietGain, o.peaks.loudUsualRatio); };
-    const auto off = run (0.0, 1.0, 0.0);
+    const auto off = run (0.0, 1.0);
     ok (! off.counted, "drive 0: the stage is bypassed and nothing is counted");
     double previousLargest = 0.0, previousUsual = 0.0, stepLargest = 0.0, stepUsual = 0.0, worstTurn = 0.0;
     bool grows = true, even = true;
     for (int drive = 1; drive <= 12; ++drive)
     {
-        const auto at = run (drive, 1.0, 0.0);
+        const auto at = run (drive, 1.0);
         const double n = largest (at), m = usual (at);
         grows = grows && at.counted && n > previousLargest && m > previousUsual && n >= m;
         // A dB of drive moves each number by under two, and by nearly what the dB before moved it: no jump.
@@ -726,10 +726,7 @@ void theCut()
     ok (grows, "drive 1…12 dB: the largest and the usual cut both grow at every dB, the largest never under the usual");
     ok (even && worstTurn < 0.35, "and neither jumps: a dB of the knob moves each by under two, and by within " + std::to_string (worstTurn)
         + " dB of what the dB before moved it");
-    const auto full = run (6.0, 1.0, 0.0), low = run (6.0, 1.0, -6.0), dry = run (6.0, 0.0, 0.0), half = run (6.0, 0.5, 0.0);
-    ok (near (usual (low), usual (full), 1e-3) && near (largest (low), largest (full), 1e-3)
-        && near (20 * std::log10 (low.peaks.loudUsualRatio / full.peaks.loudUsualRatio), -6.0, 1e-3),
-        "output −6 dB: the stage's peaks leave 6 dB lower — measured — and that is its gain, not a cut");
+    const auto full = run (6.0, 1.0), dry = run (6.0, 0.0), half = run (6.0, 0.5);
     ok (dry.counted && near (largest (dry), 0.0, 1e-3) && usual (half) > 0.05 && usual (half) < usual (full),
         "mix 0 cuts nothing; mix 0.5 less than mix 1 (" + std::to_string (usual (half)) + " of " + std::to_string (usual (full)) + " dB)");
 }

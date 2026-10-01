@@ -92,8 +92,9 @@ function generate(text = header) {
     if ('SessionStatus' in schema.wireAliases) throw Error('SessionStatus is generated from fc_session_status; the schema must not list it');
     for (const [name, variants] of Object.entries({ SessionStatus: statusValues(text).join(' | '), ...schema.wireAliases }))
         for (const type of variants.split(' | ')) literal(`wire union ${name} ${type}`);
+    // A null is a number no value takes (a value left; the values after it keep their numbers).
     for (const [name, values] of Object.entries(schema.transportEnums))
-        values.forEach((value, i) => code.push(`static_assert(unsigned(felitronics::session::${name}::${value}) == ${i});`));
+        values.forEach((value, i) => { if (value !== null) code.push(`static_assert(unsigned(felitronics::session::${name}::${value}) == ${i});`); });
     for (const device of schema.enums.Device) {
         const fields = schema.records[`${device}FieldsValue`].fields;
         body.push(`{ ${device}Fields<Value> fields; detail::DeviceOf<decltype(fields)>::each(detail::rules(), [&](std::uint8_t id, const detail::FieldRule&, auto& value) {`);
@@ -114,7 +115,8 @@ function generate(text = header) {
 }
 // Keep documents in the floor readable, but compare paths instead of complete JSON lines.
 // Row offsets may move when fields are added: compare the bytes each descriptor addresses.
-const rawLines = text => text.split(/\r?\n/).filter(l => l && !l.startsWith('#'));
+// The manifest's `base v…` declaration is the append-only gate's (session-abi-append-only.mjs), not a compiled line.
+const rawLines = text => text.split(/\r?\n/).filter(l => l && !l.startsWith('#') && !l.startsWith('base '));
 function lines(text) {
     const result = new Set(), input = rawLines(text);
     const fail = why => { throw Error(`frozen session ABI changed or disappeared: ${why}`); };

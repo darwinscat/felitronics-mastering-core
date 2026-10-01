@@ -20,15 +20,15 @@ Items 1–3 of the task and every bullet of its checks section, one check per ro
 | # | Check | Holder | Status |
 |---|---|---|---|
 | A1 | load → measure → plan → hand → master → export → import → master, run in two independent Sessions as one scenario | Pieces only: `tools/tests/SessionReplayTests.cpp:replayAfterPoison` (load, edits, master, export, a fresh instance, import; state, both layers and the project text are restored, masters are not replayed); `PlanSoundTests.cpp:vinylAndQuietMastered` (export, open in another session, same recipe fingerprint and warnings); the whole: `ScenarioTests.cpp:theScenario` | HELD |
-| A2 | Same-core import keeps the file's machine layer | `PlanTests.cpp:anImportKeepsTheFilesMachine` (foreign = false); `ProjectTests.cpp:roundTrip` | HELD |
-| A3 | New-core import keeps the file's machine layer | `PlanTests.cpp:anImportKeepsTheFilesMachine` (foreign = true); `ProjectTests.cpp:foreignMachine`; `TiltLowTests.cpp:theFilesMachineStays` | HELD |
+| A2 | An import keeps the file's machine layer | `PlanTests.cpp:anImportKeepsTheFilesMachine`; `ProjectTests.cpp:roundTrip` | HELD |
+| A3 | The file carries no core stamp (v0.6.0): a machine layer is the file's however it arose | `ProjectTests.cpp:filesMachine`, `refusals` (a `core` key is unknown); `TiltLowTests.cpp:theFilesMachineStays` | HELD |
 | A4 | New-defaults import | `ProjectTests.cpp:defaultsVersions`: only the current label `2026-10` opens, with the file's machine layer and its differences beside it; any other label (`2026-09`, `2020-01`, a newer or a malformed one) is refused whole with the existing `UnknownDefaults` / `NewerDefaults`, revision and state unchanged; nothing converts | HELD; settled by the owner 30.09, see Q1 |
-| A5 | The comparison is shown beside the file's machine layer: the count fact, file and core values per field, the same-core wording | `PlanTests.cpp:anImportKeepsTheFilesMachine`; `ProjectTests.cpp:foreignMachine`; `TiltLowTests.cpp:theFilesMachineStays`; `HpfMonoTests.cpp:aSentenceStatesWhatSounds` | HELD |
+| A5 | The comparison is shown beside the file's machine layer: the count fact, file and core values per field | `PlanTests.cpp:anImportKeepsTheFilesMachine`; `ProjectTests.cpp:filesMachine`; `TiltLowTests.cpp:theFilesMachineStays`; `HpfMonoTests.cpp:aSentenceStatesWhatSounds` | HELD |
 | A6 | The new machine is adopted only on an explicit command: `AdoptMachine` takes the planner's layer, keeps the hand, allocates nothing, and does nothing when repeated | `PlanTests.cpp:anImportKeepsTheFilesMachine`; the master after adoption: `ScenarioTests.cpp:theFilesMachine` | HELD |
-| A7 | PCM and WAV bytes: the master made after import equals the first one (same core); after `AdoptMachine` it equals a fresh session's master | `ScenarioTests.cpp:theScenario` (same core), `theFilesMachine` (after `AdoptMachine`, the recipe included) | HELD |
+| A7 | PCM and WAV bytes: the master made after import equals the first one; after `AdoptMachine` it equals a fresh session's master | `ScenarioTests.cpp:theScenario`, `theFilesMachine` (after `AdoptMachine`, the recipe included) | HELD |
 | A8 | Parameters and facts after import | `ProjectTests.cpp:roundTrip` (the whole snapshot JSON is equal; export → import → export is byte-identical); `PlanSoundTests.cpp:vinylAndQuietMastered` (recipe fingerprint, warnings); for the master: `ScenarioTests.cpp:theScenario` (recipe, facts, snapshot JSON with the kept report) | HELD |
 | A9 | Version of the sound and of the defaults | `ConfigDecisionsTests.cpp:theSoundIsPinnedToTheDefaults`; `ConfigTests.cpp:theSoundIsWhatCanChangeAMaster`, `theVersionsMoveWithEveryValue`; `ProjectTests.cpp:roundTrip` (the header stamps defaults and core); inside the scenario: `ScenarioTests.cpp:theScenario` | HELD |
-| A10 | No separate C facade for Decide | `tools/session-abi-v1.txt` is append-only, checked by `tools/session-abi-check.mjs` and `tools/session-abi-append-only.mjs`; the manifest has no Decide entry | HELD |
+| A10 | No separate C facade for Decide | `tools/session-abi-v1.txt` is append-only from its declared base, checked by `tools/session-abi-check.mjs` and `tools/session-abi-append-only.mjs`; the manifest has no Decide entry | HELD |
 
 ### Item 2: what Master waits for, and a change of target
 
@@ -143,14 +143,11 @@ LowEnd and PeakExcursions tests are cited nowhere in this table as proof of a de
   two independent Sessions on one synthetic source; load → measure → plan → hand (tilt +1.25 dB, low shelf +0.75 dB, the
   target at −13 LUFS) → master → export → import into the second Session → master. Equal: the snapshot JSON (the
   revision, the kept masters' ids and `fromFile` aside, `fromFile` asserted on its own), the recipe, the facts, the
-  defaults and core in the file, the sound version, PCM and WAV bytes. `theFilesMachine`: a same-core and a foreign-core
-  file with a machine opinion this planner does not hold (a high-pass from 36 Hz) are both kept and sound alike, and not
-  as the planner's; `AdoptMachine` then gives the fresh session's master, recipe included. `theSlicing`: budgets 1 and
+  defaults in the file, the sound version, PCM and WAV bytes. `theFilesMachine`: a file with a machine opinion this
+  planner does not hold (a high-pass from 36 Hz) is kept and does not sound as the planner's; `AdoptMachine` then gives the fresh session's master, recipe included. `theSlicing`: budgets 1 and
   7 give the large budget's master and snapshot. `nothingStale`: a master waiting for the tempo, cancelled, and club's
   needles left before they end publish nothing, and the master after them is the scenario's. The new-defaults import
   waits for Q1 (`ProjectTests.cpp:defaultsVersions` as built).
-  The scenario found one defect, fixed with it: `AdoptMachine` placed the planner's layer but left `project.core` at the
-  file's release, so the adopted master's recipe and the exported file named the old core.
 - **A2. HELD.** The scenario prints `scenario-input`, `scenario-versions` and `scenario-parity` (plan, facts, PCM, WAV
   digests). `tools/wasm/scenario-parity.mjs` holds the native lines; `tools/wasm/build.sh` builds the same test for wasm
   and checks its output with it.
@@ -195,7 +192,7 @@ LowEnd and PeakExcursions tests are cited nowhere in this table as proof of a de
   defaults `2026-09` (before the core had its planner) is not opened: an import accepts only the current defaults
   label, any other is refused whole as `UnknownDefaults` and nothing changes. On the current label the import rule
   stands: the machine layer comes from the file, the differences are shown beside it, a new machine opinion only by
-  `adoptMachine`. Nothing converts any more; `DefaultsConverted` is retired — no message, its id 9 reserved.
+  `adoptMachine`. Nothing converts.
   Held by `ProjectTests.cpp:defaultsVersions` (row A4).
 - **Q2. `needAfter` in the structure row. SETTLED by the owner, 30.09: not carried.** The needles' classes use the
   input's need (`LimiterFinding.needDb`) and the limiter holds the ceiling; no need is measured after the chain.

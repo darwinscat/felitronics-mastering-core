@@ -277,7 +277,7 @@ enum class SaturationShape : std::uint8_t { Tanh, Atan, Cubic, Asym, Tube, Trans
 
 struct Saturation
 {
-    Span driveDomain, mixDomain, outputDomain;
+    Span driveDomain, mixDomain;
     SaturationShape shape = SaturationShape::Tanh;
     double driveDb = 0.0;
     Span driveRange;
@@ -286,9 +286,6 @@ struct Saturation
     double mix = 0.0;
     Span mixRange;
     double mixStep = 0.0;
-    double outputDb = 0.0;
-    Span outputRange;
-    double outputStep = 0.0;
     double autoComp = 0.0;
     double dcBlockHz = 0.0;
     double cutLoudShare = 0.0;                 // cut.loudShare: the loud places of the measured peak cut

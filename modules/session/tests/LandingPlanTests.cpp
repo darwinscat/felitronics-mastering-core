@@ -114,19 +114,6 @@ int main()
               && decoded.view().masters[0].landing && decoded.view().masters[0].landing->passes == 2
               && decoded.view().masters[0].landing->log[1].achievedLufs == -14.5,
               "the generated codec carries status, achieved loudness, work, and the exact pass rows");
-    const std::string added = "\"landing\":null,";
-    Kept oldKept; oldKept.id = 8;
-    view.masters = { &oldKept, 1 };
-    const CodecNeed oldNeed = Codec::encodedBytes (view);
-    std::string oldJson ((std::size_t) oldNeed.bytes, '\0');
-    const CodecStatus oldWritten = Codec::encode (view, { oldJson.data(), oldJson.size() });
-    const std::size_t at = oldJson.find (added);
-    if (at != std::string::npos) oldJson.erase (at, added.size());
-    Snapshot oldDecoded;
-    const CodecStatus oldRead = Codec::decode (oldJson, oldDecoded);
-    test::ok (oldWritten == CodecStatus::Ok && at != std::string::npos && oldRead == CodecStatus::Ok
-              && ! oldDecoded.view().masters[0].landing,
-              "a baseline v1 master without the appended landing field decodes as absent");
 
     test::group ("K13 and limiter rows are owned and share an explicit delivered grid");
     LandingTraceBucket limiterRows[2] { { 0.0, 3.0, 1.5, 4, 0 }, { 0.0, 1.0, 0.25, 4, 0 } };
@@ -191,22 +178,6 @@ int main()
               && LandingOps::query (*saved.limiterTrace, 0, reduced) == 0,
               "unfinished and zero-column requests refuse before row writes");
     landing.limiterTrace.reset(); landing.peakClipTrace.reset(); kept.landing = landing;
-    const auto optionalNeed = Codec::encodedBytes (view);
-    std::string optionalJson ((std::size_t) optionalNeed.bytes, '\0');
-    const auto optionalWrite = Codec::encode (view, { optionalJson.data(), optionalJson.size() });
-    const std::string limiterNull = "\"limiterTrace\":null,";
-    const std::string clipNull = "\"peakClipTrace\":null,";
-    const auto limiterAt = optionalJson.find (limiterNull), clipAt = optionalJson.find (clipNull);
-    if (limiterAt != std::string::npos) optionalJson.erase (limiterAt, limiterNull.size());
-    const auto clipAtAfter = optionalJson.find (clipNull);
-    if (clipAtAfter != std::string::npos) optionalJson.erase (clipAtAfter, clipNull.size());
-    Snapshot optionalDecoded;
-    const auto optionalRead = Codec::decode (optionalJson, optionalDecoded);
-    test::ok (optionalWrite == CodecStatus::Ok && clipAt != std::string::npos && limiterAt != std::string::npos
-              && optionalRead == CodecStatus::Ok && optionalDecoded.view().masters[0].landing
-              && ! optionalDecoded.view().masters[0].landing->limiterTrace
-              && ! optionalDecoded.view().masters[0].landing->peakClipTrace,
-              "older landing JSON decodes both appended trace fields as absent");
 
     test::group ("the landing carries what held it and the levels it fell between, across the wire");
     {
@@ -219,16 +190,6 @@ int main()
             && Codec::decode (json, back) == CodecStatus::Ok && back.view().masters.size() == 1 && back.view().masters[0].landing
             && back.view().masters[0].landing->belowLufs == -14.46 && back.view().masters[0].landing->aboveLufs == -13.52
             && back.view().masters[0].landing->binding == LandingConstraint::None;
-        // An older snapshot, without the three appended fields: decoded as none named and no levels.
-        std::string older = json;
-        unsigned erased = 0;
-        for (const char* field : { "\"binding\":", "\"belowLufs\":", "\"aboveLufs\":" })
-            if (const auto at = older.find (field); at != std::string::npos)
-                if (const auto comma = older.find (',', at); comma != std::string::npos) { older.erase (at, comma + 1 - at); ++erased; }
-        Snapshot olderBack;
-        const bool olderOk = erased == 3 && older.find ("Lufs\":-14.46") == std::string::npos && Codec::decode (older, olderBack) == CodecStatus::Ok
-            && olderBack.view().masters[0].landing && ! olderBack.view().masters[0].landing->belowLufs
-            && olderBack.view().masters[0].landing->binding == LandingConstraint::None;
         // A named limit on a landing that is not unreachable, or levels out of order, is no landing.
         carried.binding = LandingConstraint::GainRange; kept.landing = carried;
         std::string named ((std::size_t) Codec::encodedBytes (view).bytes, '\0');
@@ -240,8 +201,8 @@ int main()
         Snapshot refusedOrder;
         const bool orderRefused = Codec::encode (view, { disordered.data(), disordered.size() }) == CodecStatus::Ok
             && Codec::decode (disordered, refusedOrder) == CodecStatus::Invalid;
-        test::ok (round && olderOk && namedRefused && orderRefused,
-                  "the two levels round-trip; an older landing decodes without them; a misplaced limit or levels out of order refuse");
+        test::ok (round && namedRefused && orderRefused,
+                  "the two levels round-trip; a misplaced limit or levels out of order refuse");
         kept.landing = landing;
 
         // Where the verdict is decided: the solver's binding and its bracket, carried by summarize — nothing invented.

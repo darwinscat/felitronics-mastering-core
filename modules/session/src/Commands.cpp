@@ -426,7 +426,6 @@ Answer Session::apply (const Request& request) noexcept
         }
         measurementKey_ = key;
         measurementStorage_ = plan.storage;
-        project_.core = version();
         differenceCount_ = 0;
         machineFromFile_ = false;
         project_.manual = false;
@@ -482,7 +481,6 @@ Answer Session::apply (const Request& request) noexcept
     {
         const std::uint16_t row = *rules.find (set->target);
         project_.target = row;
-        project_.core = version();
         differenceCount_ = 0;
         project_.targetEdit = {};                                   // the new target's numbers, silently
         clearHands (project_.devices);
@@ -604,8 +602,7 @@ Answer Session::apply (const Request& request) noexcept
     }
     else if (std::holds_alternative<command::AdoptMachine> (request))
     {
-        // The machine's layer is placed by this release from here on, as at every other placement.
-        project_.core = version();
+        // The planner's layer replaces the file's, as at every other placement.
         place (project_);
         machineFromFile_ = false;
         differenceCount_ = 0;
@@ -618,11 +615,11 @@ Answer Session::apply (const Request& request) noexcept
         machineFromFile_ = true;
         differenceCount_ = imported.differenceCount;
         std::copy_n (imported.differences, differenceCount_, differences_);
-        if (imported.foreignCore || differenceCount_ != 0)
+        if (differenceCount_ != 0)
         {
             Notification event;
             event.kind = EventKind::Fact;
-            (void) event.payload.fact.assign (text::Fact::of (imported.foreignCore ? text::FactId::MachineDifferences : text::FactId::SameCoreMachineDifferences,
+            (void) event.payload.fact.assign (text::Fact::of (text::FactId::MachineDifferences,
                 text::Arg::count (std::int64_t (differenceCount_))));
             emit (event);
         }

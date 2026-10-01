@@ -109,7 +109,7 @@ template <template <class> class F> struct DeviceOf<SaturationFields<F>>
 {
     static constexpr Device device = Device::Saturation;
     static constexpr std::string_view name = "saturation";
-    static constexpr std::string_view fields[] = { "on", "drive", "mix", "output", "type" };
+    static constexpr std::string_view fields[] = { "on", "drive", "mix", {}, "type" };   // 3 names nothing
     static auto& layers (Devices& d) noexcept { return d.saturation; }
     static const auto& layers (const Devices& d) noexcept { return d.saturation; }
     template <class V, class... S> static void each (const Rules& r, V&& v, S&&... s)
@@ -117,7 +117,6 @@ template <template <class> class F> struct DeviceOf<SaturationFields<F>>
         v (0, flagRule(), s.on...);
         v (1, knobRule (r.drive), s.drive...);
         v (2, knobRule (r.mix), s.mix...);
-        v (3, knobRule (r.output), s.output...);
         v (4, saturationTypeRule(), s.type...);
     }
 };

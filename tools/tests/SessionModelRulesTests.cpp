@@ -45,21 +45,19 @@ int main (int argc, char** argv) {
     } else if (item == "M2") {
         const auto base = s.exportProject();
         const std::string edited = std::string (base.view()) + "\n[hpf]\nfq.machine = 36\n";
-        require (s.importProject (2, edited).rejection == Rejection::None, "same-core machine edit imports");
+        require (s.importProject (2, edited).rejection == Rejection::None, "a machine edit imports");
         require (s.project().devices.hpf.machine.fq == 36, "file machine wins");
-        require (s.snapshot().view().machineDifferences.size() == 1, "same-core difference row");
-        require (s.events().size() == 1 && s.events()[0].kind == EventKind::Fact && s.events()[0].payload.fact.view().args[0].integer == 1, "same-core count fact");
-        require (s.exportProject().view() == edited, "same-core layer round trips");
+        require (s.snapshot().view().machineDifferences.size() == 1, "one difference row");
+        require (s.events().size() == 1 && s.events()[0].kind == EventKind::Fact && s.events()[0].payload.fact.view().id == text::FactId::MachineDifferences
+            && s.events()[0].payload.fact.view().args[0].integer == 1, "the count fact");
+        require (s.exportProject().view() == edited, "the file's layer round trips");
         if (! s.events().empty()) {
             const auto fact = s.events()[0].payload.fact.view();
             const auto en = text::Text::text (fact, text::Lang::En);
             const auto ru = text::Text::text (fact, text::Lang::Ru);
-            require (en.find ("same core") != std::string::npos && en.find ("edited by hand") != std::string::npos
-                && !ru.empty() && ru.find ('{') == std::string::npos, "same-core fact explains hand-edited files in both languages");
+            require (en.find ("1 place") != std::string::npos && !ru.empty() && ru.find ('{') == std::string::npos,
+                "the count fact speaks both languages");
         }
-        std::string foreign = edited; const auto at = foreign.find ("core = ");
-        foreign.replace (at, foreign.find ('\n', at) - at, "core = \"0.0.1\"");
-        require (s.importProject (3, foreign).rejection == Rejection::None && s.exportProject().view() == foreign, "foreign machine and core stamp round trip");
     } else if (item == "M3") {
         const auto config = config::Config::load();
         for (const auto& target : config.config.targets.targets) {

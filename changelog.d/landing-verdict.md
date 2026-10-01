@@ -12,9 +12,7 @@
 - **The limiter promises no exact cut.** `{cut}` in `limiterShort`, `limiterBetween`, `limiterManual` and
   `masterVinylNeedlesDeparts` is a cap, `Bound::AtMost` ("≤ 1.5 dB"), and the lines say the landing decides how much;
   `limiterLittleNeed` names the need as the one at the target.
-- **`DefaultsConverted` (9) is retired.** Nothing converts a project, so its shape and message are gone; the id stays
-  reserved (the ABI manifest freezes it, no other fact takes it), renders as its number and is refused by the snapshot
-  decoder.
+- **`DefaultsConverted` (9) is gone.** Nothing converts a project, so its shape, message and id are gone.
 - The recordings move by the new facts alone: four contract scenarios gain the verdict and the report-time crest line
   in one event record each (with their hashes in the manifest); the event-test and text-corpus pins and the scenario's
   facts digest move with them. No ABI or version change.

@@ -42,7 +42,8 @@ void print (const std::string& json, const std::vector<double>& rows)
     std::putchar ('\n');
 }
 }
-int sessionWireFixture (bool frozen = false)
+// The ABI probe (`manifest`) prints the same fixtures without the config version, which moves with every config change.
+int sessionWireFixture (bool manifest = false)
 {
     // A size walk must not wrap at wasm32's address limit before the transfer gate can refuse it.
     detail::Writer count;
@@ -74,7 +75,7 @@ int sessionWireFixture (bool frozen = false)
     measurement.reason = MeasurementReason::None; measurement.key = 9007199254740993ull;
     measurement.framesRead = 3072; measurement.total = 3; measurement.stored = 3; measurement.complete = true;
     measurement.arrays = { &array, 1 };
-    if (! frozen) v.measurements = { &measurement, 1 };
+    v.measurements = { &measurement, 1 };
     auto need = Wire::snapshotBytes (v);
     std::string json (need.jsonBytes, ' '); std::vector<double> binary (need.rowBytes / 8);
     if (Wire::snapshot (v, json, binary) != CodecStatus::Ok) return 1;
@@ -83,15 +84,14 @@ int sessionWireFixture (bool frozen = false)
     for (unsigned i = 0; i < 9; ++i) { e[i].seq = 9007199254741000ull + i; e[i].jobId = 42; }
     for (unsigned i = 0; i < 3; ++i) { e[i].kind = EventKind::Phase; e[i].payload.phase.name = PhaseName (5 + i); }
     e[3].kind = EventKind::Fact;
-    (void) e[3].payload.fact.assign (text::Fact::of (text::FactId::DefaultsConverted, text::Arg::text ("line\nvoice"),
+    (void) e[3].payload.fact.assign (text::Fact::of (text::FactId::Value, text::Arg::text ("line\nvoice"),
         text::Arg::count (std::numeric_limits<std::int64_t>::min()), text::Arg::value (-14.0, text::Unit::Lufs, 1)));
     e[4].kind = EventKind::Reading;
     e[4].payload.reading.momentary[0] = points[0]; e[4].payload.reading.momentaryCount = 1;
     e[4].payload.reading.shortTerm[0] = points[1]; e[4].payload.reading.shortTermCount = 1;
     e[4].payload.reading.runs[0] = runs[0]; e[4].payload.reading.runCount = 1;
-    if (! frozen)
+    e[4].payload.reading.clipCount = 1;
     {
-        e[4].payload.reading.clipCount = 1;
         const double clip[] { 7, 2, 0, 1, 0.5, 1 };
         std::copy_n (clip, 6, e[4].payload.reading.clips);
     }
@@ -102,11 +102,11 @@ int sessionWireFixture (bool frozen = false)
     e[8].kind = EventKind::Measurement;
     e[8].payload.measurement = { Analyzer::Waveform, MeasurementStatus::Ready, MeasurementReason::None,
                                 measurement.key, 7, 8, 3072, 3, 3, true };
-    const std::span<const Notification> batch { e, frozen ? 8u : 9u };
+    const std::span<const Notification> batch { e, 9u };
     need = Wire::eventsBytes (batch); json.resize (need.jsonBytes); binary.resize (need.rowBytes / 8);
     if (Wire::events (batch, json, binary) != CodecStatus::Ok) return 2;
     print (json, binary);
-    if (! frozen) std::printf ("%016llx\n", static_cast<unsigned long long> (config::Config::versions().all));
+    if (! manifest) std::printf ("%016llx\n", static_cast<unsigned long long> (config::Config::versions().all));
     auto made = Session::create();
     if (! made.session) return 5;
     char reply[kAnswerBytes]; std::uint32_t size = 0;
@@ -139,7 +139,7 @@ int sessionWireFixture (bool frozen = false)
         R"({"kind":"editDevice","commandId":"13","device":0,"fields":{"on":true,"fq":36,"slope":24}})",
         R"({"kind":"editDevice","commandId":"14","device":1,"fields":{"on":true,"fq":120,"width":0.5}})",
         R"({"kind":"editDevice","commandId":"15","device":2,"fields":{"on":true,"upToDb":1.5}})",
-        R"({"kind":"editDevice","commandId":"16","device":3,"fields":{"on":true,"drive":1,"mix":0.5,"output":-1}})",
+        R"({"kind":"editDevice","commandId":"16","device":3,"fields":{"on":true,"drive":1,"mix":0.5}})",
         R"({"kind":"editDevice","commandId":"17","device":4,"fields":{"on":true,"db":1.25}})",
         R"({"kind":"editDevice","commandId":"18","device":5,"fields":{"needles":1,"needlesDb":2}})",
         R"({"kind":"editDevice","commandId":"19","device":6,"fields":{"on":true}})",
@@ -147,7 +147,7 @@ int sessionWireFixture (bool frozen = false)
         R"({"kind":"revertEdits","commandId":"21","device":0,"fields":{"on":true,"fq":true,"slope":true}})",
         R"({"kind":"revertEdits","commandId":"22","device":1,"fields":{"on":true,"fq":true,"width":true}})",
         R"({"kind":"revertEdits","commandId":"23","device":2,"fields":{"on":true,"upToDb":true}})",
-        R"({"kind":"revertEdits","commandId":"24","device":3,"fields":{"on":true,"drive":true,"mix":true,"output":true}})",
+        R"({"kind":"revertEdits","commandId":"24","device":3,"fields":{"on":true,"drive":true,"mix":true}})",
         R"({"kind":"revertEdits","commandId":"25","device":4,"fields":{"on":true,"db":true}})",
         R"({"kind":"revertEdits","commandId":"26","device":5,"fields":{"needles":true,"needlesDb":true}})",
         R"({"kind":"revertEdits","commandId":"27","device":6,"fields":{"on":true}})",

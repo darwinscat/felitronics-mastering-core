@@ -59,8 +59,8 @@ struct Rules
     Decimal monoBassWidthDefault {};           // [monoBass] lowWidth
     Knob glue {};                              // [glue] knobMinDb…knobMaxDb by knobStepDb: "up to N dB"
     Decimal glueDefault {};                    // [glue] default, on the knob
-    Knob drive {}, mix {}, output {};          // [saturation] driveRange, mixRange, outputRange, by their steps
-    Decimal driveDefault {}, mixDefault {}, outputDefault {};   // [saturation] driveDb, mix, outputDb
+    Knob drive {}, mix {};                     // [saturation] driveRange, mixRange, by their steps
+    Decimal driveDefault {}, mixDefault {};   // [saturation] driveDb, mix
     std::string_view shapeDefault;             // [saturation] shape: the machine's type (Devices.h names them)
     Knob tilt {}, low {};                 // [tilt] hard / step, [low] hard / step
     Knob bands[5] {};                          // [bands] body, mud, forward, brightness, air: hard / step / domain
