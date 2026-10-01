@@ -1362,7 +1362,7 @@ tools/wasm/build.sh
 node tools/contract/run.mjs build-release/tools/fcore_session tools/wasm/build/fcsession.node.js
 node tools/contract/run.mjs build-release/tools/fcore_session --native-only
 node tools/contract/run.mjs build-release/tools/fcore_session tools/wasm/build/fcsession.node.js --controls
-node tools/contract/run.mjs build/tools/fcore_session build/measure-08-wasm-artifacts/fcsession.node.js --rebuild-recordings
+node tools/contract/run.mjs build/tools/fcore_session tools/wasm/build/fcsession.node.js --rebuild-recordings
 ```
 
 What the comparison proves, and what it does not: the brain answers byte for byte the same natively and in wasm, and

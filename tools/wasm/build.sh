@@ -58,6 +58,9 @@ CORE="${FELITRONICS_CORE_DIR:-$ROOT/../felitronics-core}"
 [ -f "$CORE/modules/core/include/felitronics/core/DetMath.h" ] \
     || { echo "no felitronics-core at $CORE — set FELITRONICS_CORE_DIR to a checkout (v0.57.0 or later)"; exit 1; }
 CORE="$(cd "$CORE" && pwd)"
+# The sources this run compiles, digested BEFORE it compiles them: the stamp written last (below) names this digest, so
+# an edit made while the build runs leaves a stamp the contract check refuses instead of one that vouches for it.
+SOURCES_DIGEST="$(node "$ROOT/tools/contract/module-stamp.mjs" --sources)"
 # A core that still carries these modules would put a SECOND copy of every header here on the include path,
 # and which one a TU compiled would depend on the order of the -I flags below. The CMake refuses such a core
 # for the same reason; so does this.
@@ -790,3 +793,8 @@ TOML_DESCRIBED="$(describe "$TOML")"
 echo
 echo "=== built from"
 cat "$OUT/BUILD-INFO"
+# ONE BUILD: the production module and its contract-trap copy, each pair as this run wrote it, and the sources digest
+# taken before it compiled. tools/contract/run.mjs refuses a pair the stamp does not name (tools/contract/module-stamp.mjs).
+node "$ROOT/tools/contract/module-stamp.mjs" "$OUT" "$SOURCES_DIGEST"
+node "$ROOT/tools/contract/module-stamp.mjs" "$OUT/checked" "$SOURCES_DIGEST"
+echo "stamped: $OUT/contract-modules.sha256, $OUT/checked/contract-modules.sha256"

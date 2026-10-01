@@ -432,6 +432,7 @@ jobs:
             tools/wasm/build/fcsession.node.*
             tools/wasm/build/snapshot.*
             tools/wasm/build/contract-trap/fcsession.node.*
+            tools/wasm/build/contract-modules.sha256
           retention-days: 1
       - name: fc_session — the module a page loads, checked on the artifact
         # felitronics_session_abi_tests runs fc_session.cpp natively and on this tier; what they cannot see is the
