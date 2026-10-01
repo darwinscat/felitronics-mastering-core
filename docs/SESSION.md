@@ -168,10 +168,10 @@ every stage a device writes is named, the limiter's second release included.
   the documents and require the gate to go red at that spot, after it passed the copy without the plant; the config
   suite plants over sixty more in-process, every input a review found the schema accepting among them.
 - **The owner's decisions are held apart** (`tests/ConfigDecisionsTests.cpp`): every target row field by field and the
-  engine's decided numbers — the landing's one budget, tolerance and true-peak aim, the high-pass knob's travel and slopes and comfort window, the
+  engine's decided numbers — the landing's one budget, tolerance and true-peak aim, the high-pass knob's travel (15…80 Hz) and the machine's 50 Hz top apart, its slopes and comfort window, the
   wide-bass warning, the quiet thresholds, the peak clipper's classes, the glue slider (0…3 dB, step 0.1; accepted domain 0…6 dB) with its default of none, 0.5 dB when ticked and 2.6 dB on cd, the mono-bass block, the delivery rates, and the rest. The schema would admit another number where the physics allows;
   this suite says which number was decided, so changing one is a deliberate edit of it. Its controls plant departures
-  the schema admits (a high-pass top of 51 or 60 Hz, a slope of 36, another series, another target number or rate, glue
+  the schema admits (a machine high-pass top of 51 or 80 Hz, a knob travel to 50 or 81 Hz, a slope of 36, another series, another target number or rate, glue
   by default, a wider mono bass) and require them named.
 - **Its versions** (`Config::versions()`): 64-bit FNV-1a hashes of both documents' NORMALISED data — every number as the
   bits of its correctly rounded double (−0 as +0), every table walked in the byte order of its keys, order kept in
@@ -381,7 +381,8 @@ derivation of a master's chain from a project, and a master the session decides 
 **The high-pass and mono bass** (owner decisions 3.2–3.5) are the first devices that decide from a measurement, both
 from the first phase's low-end runs, with no trial render. The high-pass stands always — every target, a quiet input
 included — at a cutoff of max(what the sure lowest note allows, the target's floor, 32 Hz everywhere), never above the
-50 Hz top. The lowest band of the 120 Hz run that was on at all decides, alone: it is a sure note when it is on in 10 %
+machine's 50 Hz top (`[hpf] machineTopHz`). A person's knob travels further, to 80 Hz (`hzMax`, owner 01.10: a voice with
+a guitar from a microphone), and its field is red from 50 Hz on (`comfort.warningHighHz`). The lowest band of the 120 Hz run that was on at all decides, alone: it is a sure note when it is on in 10 %
 of the frames, stands 2 dB over the duty line, lies above 20 Hz and sounds 3 s in all — and if it is not (a rare 808, one
 thump), the cutoff is the floor: the detector never takes a higher band as the note; a programme under 10 s is not searched, and a note that is not
 sure — or a lowest band that fails — gives the floor, never a higher band. The cutoff the note allows is found on the

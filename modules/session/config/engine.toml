@@ -148,23 +148,26 @@ skipBlocks = 0
 # window). It stands on every target and every input, a quiet one included; there is no "nothing below the note" any more
 # (owner decision 3.3: a mix made outside a studio always has mud down there, and cutting below 32 Hz too much is better
 # than too little).
-# The cutoff is max(the cutoff the lowest note allows, the target's floor), never above hzMax: the note allows the cutoff
-# at which the high-pass the chain runs — the core's matched Butterworth cascade of the target's slope, at the source's
-# rate — takes exactly the target's noteLossDb at the note. It is found on that response, not on the analogue formula, and
+# The cutoff is max(the cutoff the lowest note allows, the target's floor), never above machineTopHz: the note allows the
+# cutoff at which the high-pass the chain runs — the core's matched Butterworth cascade of the target's slope, at the
+# source's rate — takes exactly the target's noteLossDb at the note. It is found on that response, not on the analogue formula, and
 # it is not rounded to the hertz (technical decision 3О4). A floor above it takes more of the note, and the report says
-# how much; "the cutoff hit 50 Hz: the lowest note is higher" when hzMax stops it.
+# how much; "the cutoff hit 50 Hz: the lowest note is higher" when machineTopHz stops it.
 # note (owner decision 3.2): the lowest note is sure when its band is occupied ([lowEnd] occupiedFromDuty, 10 %), stands
 #   [lowEnd] occupiedMarginWhenOnDb (2 dB) above the duty line, lies above aboveHz (not DC, not rumble) and sounds at least
 #   soundingAtLeastS in all — its frames times the analyzer's hop. A programme shorter than [input] shortSeconds is not
 #   searched. A note that is not sure gives the floor.
 # band: the core's EQ band the high-pass writes.
-# hzMin…hzMax: slider travel; frequencyDomain checks the actual source Nyquist limit; hzMax is also the machine's top.
+# hzMin…hzMax: slider travel — to 80 Hz for a person (owner, 01.10: a voice with a guitar from a microphone takes a cut
+#   that high); frequencyDomain checks the actual source Nyquist limit.
+# machineTopHz: the machine's top — the machine's cutoff never goes above it, whatever the note; at most hzMax.
 # slopes: slider choices, ascending; slopeDomain and slopeMultiple accept every filter order 1–16 — 18 and 36 included, as
 #   written, never read as the nearest choice. slopesNormal: not a warning (48 warns of ringing); slopeDefault: the manual
 #   default, named as a number so that the order of the list cannot change the sound.
 # comfort: the knob's field is neutral from lowHz to highHz and shades through a warning towards warningLowHz below and
-#   warningHighHz above — one window, a hint to the knob, changing neither the machine nor the travel. Below 20 Hz there
-#   is nothing to cut; above 42 Hz the cutoff takes music, not rubbish (at 50 Hz and 24 dB/oct, 8.4 dB at 40 Hz).
+#   warningHighHz above, red past them (50 to 80 Hz of the travel is red) — one window, a hint to the knob, changing
+#   neither the machine nor the travel. Below 20 Hz there is nothing to cut; above 42 Hz the cutoff takes music, not
+#   rubbish (at 50 Hz and 24 dB/oct, 8.4 dB at 40 Hz).
 # curveTopDb, curveBottomDb, curveStepDb, curveHeadroomDb: the scale of the high-pass curve, dB — a filter's slope goes
 #   down by definition, so it is not judged by the ±2 dB of the other curves.
 # marks: labels on the frequency axis of the curve, where the low end of instruments lives; behind the curve the spectrum
@@ -177,7 +180,8 @@ slopeMultiple = 6
 hzStep = 1
 band = 0
 hzMin = 15
-hzMax = 50
+hzMax = 80
+machineTopHz = 50
 slopes = [12, 24, 48]
 slopesNormal = [12, 24]
 slopeDefault = 24

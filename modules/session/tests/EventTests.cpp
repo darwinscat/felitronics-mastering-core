@@ -240,7 +240,8 @@ void pump()
     // and switch nothing — and with them the config's version alone: with its previous rows put back as well, the
     // previous pins hold. The saturation's type moved to tape (01.10): the machine's drive is 0, so only the version moved; and so
     // when the saturation's output left (v0.6.0): it was 0 dB, neutral; and the
-    // marks moved to E1, B0 and 28 Hz (01.10): labels on the plot.
+    // marks moved to E1, B0 and 28 Hz (01.10): labels on the plot. The high-pass knob's travel went to 80 Hz with the
+    // machine's top kept at 50 as its own key (01.10): no machine cutoff moved, only the version.
     const auto previousVersion = [] (std::vector<Notification> events)
     {
         // The canonical document without its [notes] table: the config before them.
@@ -267,7 +268,8 @@ void pump()
             { "mixStep = 0.05\nautoComp", "mixStep = 0.05\noutputDb = 0\noutputRange = [-6, 0]\noutputStep = 0.1\nautoComp" },
             { "{ key = \"bass4\", hz = 41.2 }", "{ key = \"bass4\", hz = 41 }" },
             { "{ key = \"bass5\", hz = 30.87 }", "{ key = \"bass5\", hz = 31 }" },
-            { "{ key = \"sub808\", hz = 28 }", "{ key = \"sub808\", hz = 23 }" } };
+            { "{ key = \"sub808\", hz = 28 }", "{ key = \"sub808\", hz = 23 }" },
+            { "hzMax = 80\nmachineTopHz = 50\n", "hzMax = 50\n" } };
         for (const auto& [now, then] : rows)
             if (const auto at = engine.find (now); at != std::string::npos) engine.replace (at, now.size(), then);
         // ...and without the EQ bands' tables, which came after.
@@ -303,7 +305,7 @@ void pump()
         "the cost's new lines are the only new events: without them the old pins 2ddbf194be1a8c26 / fb06ff940f07c896 hold");
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
-    ok (eventsHash (one) == 0x7baec131e9524ffeull && eventsHash (cancelled) == 0x7e3e107561f3f601ull,
+    ok (eventsHash (one) == 0xbaa032c003dd9298ull && eventsHash (cancelled) == 0x8acd343b5c25ba11ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, previous version: %016llx %016llx; and without the cost's lines: %016llx %016llx\n",

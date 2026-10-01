@@ -567,7 +567,7 @@ if(FELITRONICS_BUILD_TESTS)
     if(NOT EMSCRIPTEN)
         set(FELITRONICS_SESSION_CONFIG_CONTROLS
             "unknown_key|engine|releaseMs = 50|releseMs = 50|releseMs|UnknownKey limiter.releseMs"
-            "out_of_range|engine|hzMax = 50|hzMax = 4000|4000|OutOfRange hpf.hzMax"
+            "out_of_range|engine|hzMax = 80|hzMax = 4000|4000|OutOfRange hpf.hzMax"
             "wrong_type|targets|default = \"allStreaming\"|default = 14|14|WrongType default"
             "crest_corners|engine|bandEdgesHz = [120, 2000, 6000]|bandEdgesHz = []|[]|Refused crest.bandEdgesHz"
             "geometric_offset|engine|to = -9, law = \"linear\"|to = -9, law = \"geometric\"|\"geometric\"|Refused glue.threshOffset.law"

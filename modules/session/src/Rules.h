@@ -55,6 +55,7 @@ struct Rules
     std::uint16_t defaultRow = 0;              // `default`
     Knob lufs {}, tp {};                       // [edit] lufs, tp
     Knob hpfFq {};                             // [hpf] hzMin…hzMax, slider hints
+    Decimal hpfTop {};                         // [hpf] machineTopHz: the machine's cutoff never goes above it
     Knob monoBassFq {}, monoBassWidth {};      // [monoBass] frequencyRange / frequencyStep, lowWidthRange / lowWidthStep
     Decimal monoBassWidthDefault {};           // [monoBass] lowWidth
     Knob glue {};                              // [glue] knobMinDb…knobMaxDb by knobStepDb: "up to N dB"

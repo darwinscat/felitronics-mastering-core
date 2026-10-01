@@ -188,7 +188,8 @@ struct Hpf
     double hzStep = 0.0;
     std::int32_t band = 0;
     double hzMin = 0.0;
-    double hzMax = 0.0;
+    double hzMax = 0.0;                        // the knob's travel ends here
+    double machineTopHz = 0.0;                 // the machine's cutoff never goes above it
     std::vector<std::int32_t> slopes;
     std::vector<std::int32_t> slopesNormal;
     std::int32_t slopeDefault = 0;

@@ -195,13 +195,13 @@ namespace
 template <class Fields> struct Planned;
 
 // [hpf] (owner decisions 3.2–3.4): on always; the cutoff max(what the sure lowest note allows, the target's floor), never
-// above the machine's top; the slope the target's.
+// above the machine's top ([hpf] machineTopHz — not the knob's travel, which goes higher); the slope the target's.
 template <> struct Planned<HpfFields<Value>>
 {
     static void propose (const PlanInputs& in, HpfFields<Value>& m, DevicePlan& plan, PlanFindings& found) noexcept
     {
         const TargetRow target = in.rules.row (in.row);
-        const double floor = target.hpfFloor.toDouble(), top = in.rules.hpfFq.to.toDouble();
+        const double floor = target.hpfFloor.toDouble(), top = in.rules.hpfTop.toDouble();
         plan.target |= fieldBit (in.rules, m, m.slope);
         HpfFinding& f = found.hpf;
         f = {};
