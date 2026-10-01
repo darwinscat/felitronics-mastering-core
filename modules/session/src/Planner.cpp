@@ -846,7 +846,8 @@ std::optional<text::Fact> PlanText::hpfSlopeAdvice (const HpfFinding& f) noexcep
     if (f.sounding == Sounding::Off) return std::nullopt;
     // slopesNormal is ascending (the schema holds it): its first is the gentlest, its last the steepest.
     std::optional<std::int64_t> gentlest, steepest;
-    for (const auto item : detail::rules().engine.find ("hpf").find ("slopesNormal"))
+    const auto slopes = detail::rules().engine.find ("hpf").find ("slopesNormal");
+    for (const auto item : slopes)
     {
         const auto slope = item.integer();
         if (! slope) continue;

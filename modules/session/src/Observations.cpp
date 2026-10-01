@@ -792,11 +792,11 @@ BoundedList<ReadingFact, kSourceReadings> ReadingText::source (std::span<const M
     const auto events = [&] (unsigned axis) noexcept -> std::optional<double>
     {
         const auto invalid = number (bursts, detail::Channelled ("eventsInvalidReason", axis).view());
-        if (! invalid || *invalid != 0.0) return std::nullopt;
+        if (! invalid || ! core::exactlyEqual (*invalid, 0.0)) return std::nullopt;
         return number (bursts, detail::Channelled ("eventCount", axis).view());
     };
     value (ReadingKind::BurstsMid, events (0), Unit::None, 0);
-    if (const auto absent = number (bursts, "sideAbsent"); absent && *absent == 0.0)
+    if (const auto absent = number (bursts, "sideAbsent"); absent && core::exactlyEqual (*absent, 0.0))
         value (ReadingKind::BurstsSide, events (1), Unit::None, 0);
     // The first channel whose mains fundamental the detector observed.
     const auto* hum = of (Analyzer::Hum);
@@ -805,7 +805,7 @@ BoundedList<ReadingFact, kSourceReadings> ReadingText::source (std::span<const M
         const auto valid = number (hum, detail::Channelled ("valid", c).view());
         const auto observed = number (hum, detail::Channelled ("fundamentalObserved", c).view());
         const auto hz = number (hum, detail::Channelled ("fundamentalHz", c).view());
-        if (valid && *valid == 1.0 && observed && *observed == 1.0 && hz)
+        if (valid && core::exactlyEqual (*valid, 1.0) && observed && core::exactlyEqual (*observed, 1.0) && hz)
         { value (ReadingKind::Hum, hz, Unit::Hz, 1); break; }
     }
     // The headline tempo, and how sure the detector is of it (its ConfidenceLabel, 0 … 3).
@@ -835,13 +835,13 @@ BoundedList<ReadingFact, kSourceReadings> ReadingText::source (std::span<const M
     // The crest measurement's active blocks, band by band (five columns: low, low-mid, high-mid, high, full).
     const auto* crest = of (Analyzer::Crest);
     if (const auto* active = detail::arrayOf (crest, "active"); active && active->columns == 5)
-        if (const auto invalid = number (crest, "invalidReason"); invalid && *invalid == 0.0)
+        if (const auto invalid = number (crest, "invalidReason"); invalid && core::exactlyEqual (*invalid, 0.0))
         {
             const auto rows = std::min<std::size_t> (std::size_t (active->stored), active->values.size() / 5u);
             for (unsigned band = 0; band < 5; ++band)
             {
                 std::uint64_t count = 0;
-                for (std::size_t i = 0; i < rows; ++i) count += active->values[i * 5u + band] == 1.0 ? 1u : 0u;
+                for (std::size_t i = 0; i < rows; ++i) count += core::exactlyEqual (active->values[i * 5u + band], 1.0) ? 1u : 0u;
                 put (ReadingKind (unsigned (ReadingKind::CrestBlocksLow) + band),
                      Fact::of (FactId::Value, Arg::value (double (count), Unit::None, 0)));
             }
