@@ -273,14 +273,17 @@ bool run (unsigned sourceRate, unsigned deliveryRate, unsigned channels, unsigne
             { "replacement.wav", sourceRate, true, 24 } };
         if (! measure (s, next, f) || s.masters().size() != 0 || s.pendingMaster().master != 0
             || ! external[0].samples || ! external[1].samples || ! select (deliveryRate, 19)) return false;
-        const auto warmLive = std::uint64_t (s.liveBytes());
+        // The load emptied the masters' room: the first master grows it by one slot (a Kept and its rows' record, under
+        // 1 KiB), kept after the forget; every later cycle reuses that slot and grows nothing.
+        auto warmLive = std::uint64_t (s.liveBytes()) + sizeof (Kept) + 1024u;
         for (unsigned cycle = 0; cycle < 3; ++cycle)
         {
             auto warm = request; warm.id = 30u + cycle * 2u;
             if (! master (s, warm, f, external, true)) return false;
             const auto held = s.masters().back().id;
             if (s.apply (command::Forget { warm.id + 1u, held }).rejection != Rejection::None
-                || s.liveBytes() > double (warmLive + 4096u)) return false;
+                || s.liveBytes() > double (warmLive)) return false;
+            if (cycle == 0) warmLive = std::uint64_t (s.liveBytes());
         }
         if (external.size() != 5 || ! external[0].samples || ! external[1].samples) return false;
     }

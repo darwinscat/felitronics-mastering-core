@@ -29,8 +29,9 @@
 // each batch of additions that lands together in one release — entry points, fields, values — moves the number up by
 // one and adds one row below, so a page's "module version >= page version" gate is its protection against calling an
 // export the module lacks. The generated snapshot.d.ts and snapshot.mjs state the number read from this line. The
-// manifest's `define FC_SESSION_ABI_VERSION=1` is therefore checked as "at least 1", like a boundary struct's size;
-// a lower number is a change. The manifest itself only grows: CI refuses a pull request that removes or edits a line.
+// manifest's `define FC_SESSION_ABI_VERSION=4` is therefore checked as "at least 4", like a boundary struct's size;
+// a lower number is a change. The manifest itself only grows from its declared base (`base v0.6.0`): CI refuses a pull
+// request that removes or edits a line under the same base, or declares an older one.
 //
 //   fc_session   the surface
 //   ----------   ------------------------------------------------------------------------------------------------
@@ -41,8 +42,12 @@
 //                a master's Momentary/ShortTerm and the spectrum choice; the plan's and the landing's snapshot fields.
 //   3            v0.5.0: the saturation's type (SaturationType, a snapshot and command field, and the master parameters'
 //                clipper shapes 4-7, tube to tape); the plan's reasons on the wire (PlanView::facts, PlanFact).
-#define FC_SESSION_ABI_VERSION 3u
-#define FC_SESSION_CAPABILITIES_V1_BYTES 32u
+//   4            v0.6.0, THE MANIFEST'S NEW BASE (owner, 2026-10-01): the pure kit (fc_kit_*), the EQ bands (device 8)
+//                and their tick; the dead entries left the manifest (no project, snapshot or file of an older version
+//                exists, and the one consumer vendors the exact core) — live ids keep their numbers; two compatibility
+//                slots left the C boundary: the measurement storage's reserved fields (88 bytes now) and the 32-byte
+//                capabilities record (its base is 40, leanSummary included).
+#define FC_SESSION_ABI_VERSION 4u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u
 #define FC_SESSION_STORAGE_V1_BYTES 32u
@@ -59,6 +64,9 @@
 #define FC_SESSION_DEVICE_DITHER 64u
 #define FC_SESSION_DEVICE_LOW_SHELF 128u
 #define FC_SESSION_DEVICES_ALL 255u
+// Appended after v0.5.0: the EQ bands (five static bands a person turns). FC_SESSION_DEVICES_ALL keeps the eight devices
+// before it, so a shell that does not know the bands is not offered them; a shell that draws them adds this bit.
+#define FC_SESSION_DEVICE_EQ_BANDS 256u
 
 // HOW MANY SESSIONS ONE MODULE INSTANCE HOLDS AT ONCE (law 5: the capacity is stated, not discovered). A create past it
 // answers FC_SESSION_ERR_EXHAUSTED.
@@ -130,7 +138,7 @@ typedef enum fc_session_status
 // STRUCT LAYOUTS are measured by a compiled probe, never inferred from source. Capabilities are
 // input from the shell. heapCeilingBytes is an exact integer >= 0 and < 2^53; maxRateHz >= 8000.
 // offeredDevices is a bit set of FC_SESSION_DEVICE_*. The session enforces all three, in C++ too.
-// leanSummary (appended; a record of FC_SESSION_CAPABILITIES_V1_BYTES leaves it 0) is 0 or 1. With 1,
+// leanSummary is 0 or 1. With 1,
 // fc_session_summary_* leave every master's heavy rows out — the limiter and peak-clip traces, the crest rows and mask,
 // the waveform buckets — and say so (masterRowsIncluded false); a master's scalars, pass log and cost sections stay.
 // One master whole is a query, kind MasterReport. fc_session_snapshot_* is the same either way.
@@ -151,12 +159,13 @@ typedef struct fc_session_sizes
     uint32_t rowBytes;
 } fc_session_sizes;
 
-// All boundary structs are size-prefixed: capabilities (32), sizes (12), capacity (24), storage (32).
+// All boundary structs are size-prefixed: capabilities (40), sizes (12), capacity (24), storage (32), measurement
+// storage (88) — each its base size at v0.6.0.
 // Set size to the caller's sizeof before EVERY call, including output queries. It is preserved.
-// Fields are append-only. Future builds accept older supported sizes, write only that prefix,
-// and document the v1 default of each absent later field. A new field never changes the
-// meaning of a v1 prefix; appended reserved fields default to zero and are ignored. V1 has no optional suffix fields:
-// size < the v1 size is STRUCT_TOO_SMALL; size > this build's size is STRUCT_TOO_LARGE.
+// Fields are append-only. A build accepts every size from a record's base size up to its own, writes only that prefix,
+// and documents the default of each absent later field. A new field never changes the meaning of a base prefix;
+// appended reserved fields default to zero and are ignored. Today every record is its base size:
+// size < the base size is STRUCT_TOO_SMALL; size > this build's size is STRUCT_TOO_LARGE.
 // No C++ implementation records or binary row structs cross this C boundary.
 typedef struct fc_session_capacity
 {
@@ -177,14 +186,13 @@ typedef struct fc_session_storage
 // Detailed source measurement demand. Counts include one retained result copy and its codec buffers.
 // Codec buffers are the snapshot transport's JSON metadata plus binary f64 rows. A C++ plain-JSON
 // export has a separate exact Codec::encodedBytes query; it is not reserved for every web measurement.
-// Reserved slots preserve the earlier record layout; always zero. Needles have a separate job demand.
+// Needles have a separate job demand.
 typedef struct fc_session_measurement_storage
 {
     uint32_t size;
     uint32_t rejection;
     double sourceBytes;
     double resultBytes;
-    double reservedBytes;
     double workspaceBytes;
     double copyBytes;
     double codecBytes;
@@ -193,7 +201,6 @@ typedef struct fc_session_measurement_storage
     double workPeakBytes;
     double peakBytes;
     double largestBlockBytes;
-    uint32_t reserved;
 } fc_session_measurement_storage;
 
 typedef enum fc_session_step_state
@@ -381,6 +388,80 @@ fc_session_status fc_session_master_wav_size (fc_session session, const fc_sessi
 fc_session_status fc_session_master_wav_copy (fc_session session, const fc_session_master_token* token,
                                              uint32_t offset_low, uint32_t offset_high,
                                              uint8_t* output, uint32_t capacity, uint32_t* written);
+
+// ====================================================================================
+// THE PURE KIT — stateless answers for a shell's UI thread (felitronics/session/Kit.h)
+// ====================================================================================
+// The same module instantiated a second time on the page's main thread answers these within one frame, without the
+// worker: a fact as text, what a person typed into a field, a knob's travel and heat, mono bass's zones, an EQ curve
+// preview and a low-end curve. No handle — no session is needed or touched — and no state: each call is a pure function
+// of its arguments and the compiled-in config and catalogue, and forwards to felitronics::session::Kit, whose header
+// carries the rules. The conventions are the session's: the poison, the argument order above, statuses for refusals
+// (an unknown field or language, a non-finite or out-of-domain argument, a fact that is not one: CONTRACT; the calling
+// thread's floating-point environment: FP_ENVIRONMENT), caller buffers, nothing allocated, nothing kept.
+// A FIELD is its text::Term id — the id a refusal already names it by. A LANGUAGE is its code ("ru"), as Text::langOf
+// reads it. Doubles cross as doubles (alignment 8); a count of points is per point, two doubles each (hz, then the dB).
+#define FC_SESSION_KIT_FIELD_TARGET_LUFS 3u
+#define FC_SESSION_KIT_FIELD_TARGET_TP 4u
+#define FC_SESSION_KIT_FIELD_HPF_FQ 5u
+#define FC_SESSION_KIT_FIELD_HPF_SLOPE 6u
+#define FC_SESSION_KIT_FIELD_MONO_BASS_FQ 7u
+#define FC_SESSION_KIT_FIELD_MONO_BASS_WIDTH 8u
+#define FC_SESSION_KIT_FIELD_GLUE_UP_TO_DB 9u
+#define FC_SESSION_KIT_FIELD_SATURATION_DRIVE 10u
+#define FC_SESSION_KIT_FIELD_SATURATION_MIX 11u
+#define FC_SESSION_KIT_FIELD_TILT_DB 13u
+#define FC_SESSION_KIT_FIELD_LIMITER_NEEDLES_DB 15u
+#define FC_SESSION_KIT_FIELD_LOW_DB 16u
+#define FC_SESSION_KIT_PARSE_ACCEPTED 0u
+#define FC_SESSION_KIT_PARSE_NOT_A_NUMBER 1u
+#define FC_SESSION_KIT_PARSE_OUT_OF_DOMAIN 2u
+#define FC_SESSION_KIT_TRAVEL_VALUES 3u
+#define FC_SESSION_KIT_HEAT_VALUES 3u
+#define FC_SESSION_KIT_ZONES 2u
+#define FC_SESSION_KIT_EQ_PARAMS 7u
+#define FC_SESSION_KIT_EQ_POINTS 128u
+#define FC_SESSION_KIT_EQ_PEAK_VALUES 4u
+// Appended with the EQ bands: their five gains as kit fields, and the curve with them (fc_kit_eq_curve_bands).
+#define FC_SESSION_KIT_FIELD_BANDS_BODY 134u
+#define FC_SESSION_KIT_FIELD_BANDS_MUD 135u
+#define FC_SESSION_KIT_FIELD_BANDS_FORWARD 136u
+#define FC_SESSION_KIT_FIELD_BANDS_BRIGHTNESS 137u
+#define FC_SESSION_KIT_FIELD_BANDS_AIR 138u
+#define FC_SESSION_KIT_EQ_BANDS_PARAMS 13u
+
+// A published fact ({"FactId":…,"args":[…]}, as a snapshot, an event or a plan carries it) in a language, as UTF-8
+// without a terminator. A null output is allowed with capacity 0; TOO_SMALL writes the bytes needed to *written.
+fc_session_status fc_kit_text (const char* fact, uint32_t fact_bytes, const char* lang, uint32_t lang_bytes,
+                              char* output, uint32_t capacity, uint32_t* written);
+// What a person typed into a field: OK with *refusal FC_SESSION_KIT_PARSE_* and, when accepted, *value the number to send.
+// source_rate is the source's, Hz (the high-pass's cutoff stays below its Nyquist); 0 when there is no source.
+fc_session_status fc_kit_parse (const char* typed, uint32_t typed_bytes, const char* lang, uint32_t lang_bytes,
+                               uint32_t field, uint32_t source_rate, double* value, uint32_t* refusal);
+// A knob's travel: out[FC_SESSION_KIT_TRAVEL_VALUES] = from, to, step.
+fc_session_status fc_kit_travel (uint32_t field, double* out);
+// Where a value stands along the travel, 0 … 1; and the value at a position, on the knob's grid.
+fc_session_status fc_kit_position (uint32_t field, double value, double* out);
+fc_session_status fc_kit_value_at (uint32_t field, double position, double* out);
+// out[FC_SESSION_KIT_HEAT_VALUES] = heat 0 … 1, side −1 / 0 / +1, and 1 when the knob has a window (0: heat and side are 0).
+fc_session_status fc_kit_heat (uint32_t field, double value, double* out);
+// Mono bass's zones, club then vinyl: out[2 * FC_SESSION_KIT_ZONES] = fromHz, toHz each. And the zones holding hz, as bits.
+fc_session_status fc_kit_mono_zones (double* out);
+fc_session_status fc_kit_mono_zones_at (double hz, uint32_t* out);
+// The EQ curve three EQ knobs would draw. params[FC_SESSION_KIT_EQ_PARAMS] = hpf on (0/1), cutoff Hz, slope dB/oct (whole),
+// tilt on, tilt dB, low on, low dB; rate a whole number of Hz. curve[2 * FC_SESSION_KIT_EQ_POINTS] = hz, dB per point;
+// peak[FC_SESSION_KIT_EQ_PEAK_VALUES] = the shelves' peak hz, its dB, 1 when beyond warnDb, the device bit that gives most of it
+// (FC_SESSION_DEVICE_TILT or FC_SESSION_DEVICE_LOW_SHELF).
+fc_session_status fc_kit_eq_curve (const double* params, double rate, double* curve, double* peak);
+// ...with the EQ bands: params[FC_SESSION_KIT_EQ_BANDS_PARAMS] = the seven above, then the bands' gains in dB — body, mud,
+// forward, brightness, air (0: no band) — then the bands' tick, on (0/1): off draws no band whatever the gains, which
+// must still be in their domain. curve and peak as above; the peak is still the shelves' (tilt's and low's).
+fc_session_status fc_kit_eq_curve_bands (const double* params, double rate, double* curve, double* peak);
+// A low-end curve from `bands` band centres and energies: the bands in from_hz … to_hz as (hz, dB) points into output,
+// capacity in points. *written is the points written — 0 for fewer than two — or, with TOO_SMALL, the points needed.
+fc_session_status fc_kit_low_end_curve (const double* centre_hz, const double* energy, uint32_t bands,
+                                       double from_hz, double to_hz, double* output, uint32_t capacity,
+                                       uint32_t* written);
 
 #ifdef __cplusplus
 }   // extern "C"

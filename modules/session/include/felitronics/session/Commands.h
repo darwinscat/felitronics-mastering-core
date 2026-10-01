@@ -84,8 +84,7 @@ enum class Rejection : std::uint8_t
     ProjectType,                // a field has another TOML type
     ProjectUnknownKey,          // an unknown section, knob or author suffix
     UnknownDefaults,            // malformed defaults label, or an older label this core does not carry
-    ProjectCore,                // core must be a canonical major.minor.patch version
-    NewerDefaults,              // defaults are newer than the current compiled table
+    NewerDefaults = 28,         // defaults are newer than the current compiled table (explicit: live codes keep their numbers)
     RateAboveLimit,             // above the shell's maxRateHz
     Memory,                     // live bytes plus demand exceeds capacity, or a block cannot fit
     Contract,                   // malformed command or metadata at the protocol boundary
@@ -104,10 +103,12 @@ inline constexpr std::uint8_t kNoField = 0xFF;
 
 // A DEVICE'S EDIT: which device (the alternative, in the order of Device) and the fields a person touched.
 using DeviceEdit = std::variant<HpfFields<Touched>, MonoBassFields<Touched>, GlueFields<Touched>, SaturationFields<Touched>,
-                                TiltFields<Touched>, LimiterFields<Touched>, DitherFields<Touched>, LowFields<Touched>>;
+                                TiltFields<Touched>, LimiterFields<Touched>, DitherFields<Touched>, LowFields<Touched>,
+                                BandsFields<Touched>>;
 // ...and the fields a revert takes back.
 using DeviceMask = std::variant<HpfFields<Mark>, MonoBassFields<Mark>, GlueFields<Mark>, SaturationFields<Mark>,
-                                TiltFields<Mark>, LimiterFields<Mark>, DitherFields<Mark>, LowFields<Mark>>;
+                                TiltFields<Mark>, LimiterFields<Mark>, DitherFields<Mark>, LowFields<Mark>,
+                                BandsFields<Mark>>;
 
 // The lowest sample rate a load takes: felitronics-core's (core::kMinSampleRate) — below it the loudness weighting is past
 // Nyquist, and what arrives there is a rate in kilohertz or a corrupt header. The highest is the shell's to say.

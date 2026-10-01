@@ -3,7 +3,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync, readdirSync, mkdtempSync, cpSync, rmSync, appendFileSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
-import {join, resolve, basename} from 'node:path';
+import {join, resolve, basename, dirname} from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {fixtures, fixtureRoot} from './fixtures.mjs';
@@ -11,6 +11,7 @@ import {parse} from './grammar.mjs';
 import {runWasm, arrayEncodings} from './wasm.mjs';
 import {lfBytes, recordings} from './recordings.mjs';
 import {childTimeout} from './child-timeout.mjs';
+import {checkStamp, stampName, stampedModules} from './module-stamp.mjs';
 import {createHash} from 'node:crypto';
 
 const root = fileURLToPath(new URL('scenarios/', import.meta.url));
@@ -181,6 +182,7 @@ async function main() {
     const nativeOnly = args.includes('--native-only'), controls = args.includes('--controls');
     const reorder = args.includes('--reorder'), rewrite = args.includes('--rebuild-recordings');
     const modulePath = nativeOnly ? null : resolve(args.find(a => !a.startsWith('--')) ?? '');
+    if (!nativeOnly) checkStamp(modulePath);
     const start = performance.now(); fixtures(); grammarTest(cli);
     const names = scenarioFiles(readdirSync(root));
     const siteTraces = new Map();
@@ -228,8 +230,18 @@ async function main() {
                 assert.throws(() => lfBytes(crlf), /has CR line endings/);
                 writeFileSync(crlf, lf); assert.deepEqual(lfBytes(crlf), lf);
             }
+            // The module pair the recordings come from: a copy passes, then one module rebuilt alone, a stamp made from
+            // other sources, and modules no stamp vouches for are each refused.
+            const copy = join(temp, 'modules'), copied = join(copy, 'fcsession.node.js');
+            for (const m of [stampName, ...stampedModules]) cpSync(join(dirname(modulePath), m), join(copy, m));
+            checkStamp(copied);
+            assert.throws(() => checkStamp(copied, '0'.repeat(64)), /made from other sources/);
+            appendFileSync(join(copy, 'contract-trap/fcsession.node.wasm'), '\0');
+            assert.throws(() => checkStamp(copied), /contract-trap\/fcsession\.node\.wasm beside .* is not the module/);
+            rmSync(join(copy, stampName));
+            assert.throws(() => checkStamp(copied), /no contract-modules\.sha256 beside/);
         } finally { rmSync(temp, {recursive:true, force:true}); }
-        console.log('contract controls: event order, scalar field, binary rows, changed inputs, damaged PCM and CRLF copies of hashed text refused');
+        console.log('contract controls: event order, scalar field, binary rows, changed inputs, damaged PCM, CRLF copies of hashed text, a module rebuilt alone and a stamp from other sources refused');
     }
     console.log(`contract: ${names.length} scenarios passed in ${((performance.now() - start) / 1000).toFixed(3)} s`);
 }

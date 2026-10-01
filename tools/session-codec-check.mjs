@@ -60,7 +60,9 @@ const extra = structuredClone(fixtures[0]); extra.truePeakDb = 0;
 assert(!accepts(extra, 'Snapshot'));
 const missing = structuredClone(fixtures[0]); delete missing.source;
 assert(!accepts(missing, 'Snapshot'));
-const oldSnapshot = structuredClone(fixtures[0]);
-for (const key of Object.keys(schema.optionalFields.Snapshot)) delete oldSnapshot[key];
-assert(accepts(oldSnapshot, 'Snapshot'), 'older v1 snapshots may omit every appended field');
+// Snapshots never persist: every field is on the wire, and a snapshot without any one of them is refused.
+for (const key of Object.keys(fixtures[0])) {
+    const short = structuredClone(fixtures[0]); delete short[key];
+    assert(!accepts(short, 'Snapshot'), `a snapshot without ${key} is refused`);
+}
 console.log(`encoded fixtures match declarations: ${fixtures.length} fixtures, ${records.size} records, all wire mappings and refusal controls`);

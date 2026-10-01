@@ -50,7 +50,13 @@ constexpr Golden kGolden[] = {
     // the high-pass always, from 32 Hz and the sure lowest note; mono bass by its loss; the glue calibrated on the P95; the
     // chain's geometry, the dither's noise and the clipped-source bound stated; the lp row marked as cut to vinyl; the peak
     // clipper's numbers an amount off the peaks (3 dB short, 1.5 between), no longer a threshold above the ceiling
-    { "2026-10", 0x4b75e7500af2e07eull },
+    // ...and the EQ bands' numbers ([bands], 01.10): numbers added, none changed — a person's only, at 0 dB no band, so
+    // every 2026-10 project sounds as it did
+    // ...and the saturation's type tape (owner, 01.10), and its output knob gone (v0.6.0; it was 0 dB, neutral), updated in
+    // place: no 2026-10 project had been saved
+    // ...and the high-pass's machine top its own key (machineTopHz = 50, owner, 01.10) apart from the knob's travel, now to
+    // 80 Hz: no machine cutoff moves; updated in place, as above
+    { "2026-10", 0x6fdf2af99bf12945ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -147,7 +153,8 @@ std::vector<std::string> departures (const config::Config& c)
     need (e.landing.passes == 12, "the landing: one budget of 12 passes");
     need (e.landing.truePeakAimDb == 0.05 && e.limiter.ceilingMarginDb == 0.15,
           "the true-peak aim and initial limiter margin are separate decisions");
-    need (same (e.hpf.hzMax, 50.0), "the high-pass tops out at 50 Hz, the machine's and the knob's");
+    need (same (e.hpf.machineTopHz, 50.0), "the machine's high-pass tops out at 50 Hz");
+    need (same (e.hpf.hzMax, 80.0), "a person's high-pass knob travels to 80 Hz (owner, 01.10)");
     need (same (e.hpf.hzMin, 15.0), "the high-pass knob starts at 15 Hz");
     need (e.hpf.slopes == std::vector<std::int32_t> { 12, 24, 48 }, "the high-pass slopes are 12, 24 and 48 dB/oct");
     need (same (e.hpf.comfort.lowHz, 24.0) && same (e.hpf.comfort.highHz, 42.0), "the high-pass comfort window is 24–42 Hz");
@@ -234,8 +241,10 @@ void aDepartureIsNamed()
     ok (departures (Config::load().config).empty(), "PRECONDITION: the embedded config departs from nothing");
     struct Departure { bool inTargets; std::string_view from, to, decision; };
     const Departure plants[] = {
-        { false, "hzMax = 50", "hzMax = 51", "the high-pass tops out at 50 Hz, the machine's and the knob's" },
-        { false, "hzMax = 50", "hzMax = 60", "the high-pass tops out at 50 Hz, the machine's and the knob's" },
+        { false, "machineTopHz = 50", "machineTopHz = 51", "the machine's high-pass tops out at 50 Hz" },
+        { false, "machineTopHz = 50", "machineTopHz = 80", "the machine's high-pass tops out at 50 Hz" },
+        { false, "hzMax = 80", "hzMax = 50", "a person's high-pass knob travels to 80 Hz (owner, 01.10)" },
+        { false, "hzMax = 80", "hzMax = 81", "a person's high-pass knob travels to 80 Hz (owner, 01.10)" },
         { false, "slopes = [12, 24, 48]", "slopes = [12, 24, 36]", "the high-pass slopes are 12, 24 and 48 dB/oct" },
         { false, "passes = 12", "passes = 11", "the landing: one budget of 12 passes" },
         { true, "noteLossDb = 0.3", "noteLossDb = 0.5", "targets.club.noteLossDb" },

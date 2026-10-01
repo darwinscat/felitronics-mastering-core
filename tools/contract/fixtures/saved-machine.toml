@@ -1,5 +1,4 @@
 defaults = "2026-10"
-core = "0.2.1"
 manual = false
 
 [target]

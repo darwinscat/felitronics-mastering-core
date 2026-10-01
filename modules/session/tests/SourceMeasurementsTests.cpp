@@ -415,8 +415,12 @@ void cachedSourceAndCommands()
         "cached 24-bit metadata refreshes unused bits from the retained PCM grid");
     bool unusedBitsFact = false;
     for (const auto& e : s.events())
-        if (e.kind == EventKind::Fact && e.payload.fact.view().id == text::FactId::SourceUnusedBits)
-            unusedBitsFact = e.payload.fact.view().args[0].integer == 8;
+        if (e.kind == EventKind::Fact)
+        {
+            const auto id = e.payload.fact.view().id;
+            unusedBitsFact = unusedBitsFact || id == text::FactId::SourceUnusedBits || id == text::FactId::SourceTruncatedBits
+                          || id == text::FactId::SourceShallowMix;
+        }
     ok (! unusedBitsFact, "metadata refresh changes retained evidence without emitting a late finding");
     // The same PCM under another depth is another forensics result: a key of its own (the PCM key stays for the
     // rest), and a Measurement event that says so, under the reload's revision.

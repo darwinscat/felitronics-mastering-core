@@ -794,6 +794,28 @@ template <class Mask> bool fieldTermsMatch (session::Device device, std::string&
     return match;
 }
 
+// The words an observation is named by, what deals with it and why it was not measured: every term of the three groups,
+// in both declared languages — the handling's terms too, which no fact takes yet (a shell labels by them).
+void theObservationsHaveTheirWords()
+{
+    felitronics::test::group ("the observations' words: their names, their handling and the reasons, in Russian and English");
+    const auto terms = detail::catalogRoot().find ("terms");
+    std::size_t names = 0, handling = 0, reasons = 0;
+    bool worded = true;
+    for (const auto& t : detail::kTerms)
+    {
+        if (t.group != "observation" && t.group != "handledBy" && t.group != "measurementReason") continue;
+        names += t.group == "observation"; handling += t.group == "handledBy"; reasons += t.group == "measurementReason";
+        for (const char* lang : { "ru", "en" })
+        {
+            const auto word = terms.find (t.group).find (t.key).find (lang).string();
+            worded = worded && word && ! word->empty();
+        }
+    }
+    ok (worded && names == 17 && handling == 4 && reasons == 10,
+        "17 names, 4 handlings (nothing, HPF, mono bass, by hand) and 10 reasons, each worded in Russian and English");
+}
+
 void everyRejectionIsAFact()
 {
     felitronics::test::group ("a command's rejection: every code a fact of its own, in ru and en; a refused field named");
@@ -804,6 +826,7 @@ void everyRejectionIsAFact()
     const auto last = (std::size_t) session::Rejection::PlanPending;
     for (std::size_t code = 1; code <= last; ++code)
     {
+        if (code == 27) { ok (! detail::factOf ((session::Rejection) code), "27 is no code (left in v0.6.0)"); continue; }
         const auto r = (session::Rejection) code;
         const std::optional<FactId> id = detail::factOf (r);
         const detail::FactShape* shape = id ? detail::shapeOf (*id) : nullptr;
@@ -833,14 +856,19 @@ void everyRejectionIsAFact()
     ok (spoken, "and every one renders a whole sentence in ru and in en");
     ok (! detail::factOf (session::Rejection::None) && ! detail::factOf ((session::Rejection) (last + 1)),
         "None is no rejection, and a code past the last is none this library knows");
-    ok (unsigned (FactId::MachineDifferences) == 8 && unsigned (FactId::DefaultsConverted) == 9,
-        "project readings use the next free ids in 1-99");
+    ok (unsigned (FactId::MachineDifferences) == 8, "the project's reading keeps its id");
+    // Ids that name nothing (left in v0.6.0; live ids keep their numbers): no shape, no message, rendered as the number.
+    for (const unsigned gone : { 9u, 10u, 127u })
+        ok (detail::shapeOf (FactId (gone)) == nullptr && Text::key (FactId (gone)).empty()
+            && Text::text (Fact::of (FactId (gone)), Lang::En) == "#" + std::to_string (gone),
+            "fact " + std::to_string (gone) + " names nothing");
     bool inRange = true;
     for (const auto& shape : detail::kFacts)
         inRange = inRange && ((std::size_t) shape.id < 100 || ((std::size_t) shape.id > 100 && (std::size_t) shape.id <= 100 + last)
             || ((std::size_t) shape.id >= 200 && (std::size_t) shape.id <= 207)
             || ((std::size_t) shape.id >= 300 && (std::size_t) shape.id <= 305)
-            || ((std::size_t) shape.id >= 400 && (std::size_t) shape.id <= 436));
+            || ((std::size_t) shape.id >= 400 && (std::size_t) shape.id <= 447)
+            || ((std::size_t) shape.id >= 500 && (std::size_t) shape.id <= 509));
     ok (inRange, "rejections, phases and session errors occupy only their own declared ranges");
 
     // THE FIELDS, held against the state machine's own walk of them (src/Devices.h).
@@ -1090,7 +1118,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0xe23df8564b622cc9ull;   // …, the observations (52–80, 419–436), the target-change warning (81), what departs from vinyl (82–87) and the clipper's cut off the peaks
+    constexpr std::uint64_t kPinned = 0x84945d5615e78bffull;   // …, the plan's advice and the targets' notes (500–508), the observations (52–80, 419–436), the target-change warning (81), what departs from vinyl (82–87), the clipper's cut off the peaks and an observation not measured (437), the landing's verdict (88–92), the clipper's cut as a cap, the cost's lines (93–97), the readings' names and the tempo's confidence (438), the owner's observation words and the clipper's "will take" (439–445, 52–54, 87, 424), the owner's wording 3b/3c — the master's outcome (88, 89 naming its limit, 91 its two levels), the advice beyond the norm (502, 503, 505, 509), the cap in words (52–54, 87), DC per channel (446, 447) and the core stamp's facts gone (10, 127; v0.6.0)
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");
@@ -1114,6 +1142,7 @@ int main (int argc, char** argv)
     pluralsAreCldrsOnThePrintedNumber();
     everyMessageRenders();
     everyRejectionIsAFact();
+    theObservationsHaveTheirWords();
     typedNumbersAreParsed();
     theDemandCoversWhatTextAsksFor();
     theCorpusIsTheSameBytesOnEveryRow();

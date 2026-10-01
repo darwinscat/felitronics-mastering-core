@@ -57,8 +57,6 @@ saturationDrive.ru = "Драйв сатурации"
 saturationDrive.en = "Saturation drive"
 saturationMix.ru = "Микс сатурации"
 saturationMix.en = "Saturation mix"
-saturationOutput.ru = "Выход сатурации"
-saturationOutput.en = "Saturation output"
 saturationType.ru = "Тип сатурации"
 saturationType.en = "Saturation type"
 tiltDb.ru = "Баланс тона"
@@ -71,6 +69,16 @@ lowDb.ru = "Низ"
 lowDb.en = "Low"
 audio.ru = "Звук"
 audio.en = "Audio"
+bandsBody.ru = "Тело"
+bandsBody.en = "Body"
+bandsMud.ru = "Грязь"
+bandsMud.en = "Mud"
+bandsForward.ru = "Вперёд"
+bandsForward.en = "Forward"
+bandsBrightness.ru = "Яркость"
+bandsBrightness.en = "Brightness"
+bandsAir.ru = "Воздух"
+bandsAir.en = "Air"
 
 # The saturation's types a person may pick, as the page names them (the core's shapes: tanh, tube, transistor,
 # transformer, tape). The owner's run-through may rename them; the report's words do not depend on the type.
@@ -321,26 +329,27 @@ ru = "Противофаза баса взвешена по первым {covere
 en = "The bass polarity was weighed over the first {covered} of the recording's {whole}."
 
 # The limiter's line: its ceiling and what the peak clipper inside it does with the needles, as it sounds. {cut} is the
-# most the clipper takes off the peaks; the limiter takes the rest.
+# cap as a plain number — the message itself says "no more than": the most the clipper may take off the peaks; how much
+# it takes is the landing's to decide, the limiter takes the rest.
 [messages.limiterShort]
-ru = "Лимитер: потолок {ceiling}. Иглы короткие (90 % не длиннее {p90}, бас в дозе {bass}, PLR {plr}) — клиппер срезает с пиков до {cut}, остальное берёт лимитер."
-en = "Limiter: ceiling {ceiling}. The needles are short (90 % no longer than {p90}, bass share of the dose {bass}, PLR {plr}) — the peak clipper cuts up to {cut} off the peaks, the limiter takes the rest."
+ru = "Лимитер: потолок {ceiling}. Иглы короткие (90 % не длиннее {p90}, бас в дозе {bass}, PLR {plr}) — клиппер снимет с пиков не больше {cut}, остальное возьмёт лимитер."
+en = "Limiter: ceiling {ceiling}. The needles are short (90 % no longer than {p90}, bass share of the dose {bass}, PLR {plr}) — the peak clipper will take no more than {cut} off the peaks, the limiter will take the rest."
 
 [messages.limiterBetween]
-ru = "Лимитер: потолок {ceiling}. Иглы средние (90 % не длиннее {p90}, бас в дозе {bass}, PLR {plr}) — клиппер осторожно срезает с пиков до {cut}, остальное берёт лимитер."
-en = "Limiter: ceiling {ceiling}. The needles are neither short nor long (90 % no longer than {p90}, bass share of the dose {bass}, PLR {plr}) — the peak clipper cuts with care, up to {cut} off the peaks, the limiter takes the rest."
+ru = "Лимитер: потолок {ceiling}. Иглы средние (90 % не длиннее {p90}, бас в дозе {bass}, PLR {plr}) — клиппер осторожно снимет с пиков не больше {cut}, остальное возьмёт лимитер."
+en = "Limiter: ceiling {ceiling}. The needles are neither short nor long (90 % no longer than {p90}, bass share of the dose {bass}, PLR {plr}) — the peak clipper will carefully take no more than {cut} off the peaks, the limiter will take the rest."
 
 [messages.limiterManual]
-ru = "Лимитер: потолок {ceiling}. Иглы срезаются по ручной настройке — с пиков до {cut}, остальное берёт лимитер."
-en = "Limiter: ceiling {ceiling}. The needles are cut by a manual setting — up to {cut} off the peaks, the limiter takes the rest."
+ru = "Лимитер: потолок {ceiling}. Иглы срезаются по ручной настройке — клиппер снимет с пиков не больше {cut}, остальное возьмёт лимитер."
+en = "Limiter: ceiling {ceiling}. The needles are cut by a manual setting — the peak clipper will take no more than {cut} off the peaks, the limiter will take the rest."
 
 [messages.limiterNeedlesOff]
 ru = "Лимитер: потолок {ceiling}. Клиппер игл выключен."
 en = "Limiter: ceiling {ceiling}. The peak clipper is off."
 
 [messages.limiterLittleNeed]
-ru = "Лимитер: потолок {ceiling}. Иглы не режутся: нужда {need} — не больше {little}."
-en = "Limiter: ceiling {ceiling}. The needles are not cut: the need is {need}, no more than {little}."
+ru = "Лимитер: потолок {ceiling}. Иглы не режутся: нужда при цели около {need} — не больше {little}."
+en = "Limiter: ceiling {ceiling}. The needles are not cut: the need at the target is about {need}, no more than {little}."
 
 [messages.limiterNoExcursions]
 ru = "Лимитер: потолок {ceiling}. Иглы не режутся: пиков выше потолка нет."
@@ -480,8 +489,8 @@ ru = "Потолок {ceiling}, а для винила — не выше {medium
 en = "The ceiling is {ceiling}, while for vinyl it stands no higher than {medium}."
 
 [messages.masterVinylNeedlesDeparts]
-ru = "Клиппер срезает с пиков до {cut}, а для винила иглы не режут."
-en = "The peak clipper cuts up to {cut} off the peaks, while for vinyl the needles are not cut."
+ru = "Клиппер настроен снимать с пиков не больше {cut}, а для винила иглы не режут."
+en = "The peak clipper is set to take no more than {cut} off the peaks, while for vinyl the needles are not cut."
 
 [messages.masterQuietInput]
 ru = "Вход очень тихий ({lufs}): подняли на {gain}, шум поднялся вместе с музыкой. Кроме ФВЧ на полу цели и дизера формата, машина приборов не ставила — на таком уровне замер ненадёжен; включить их можно вручную."
@@ -649,10 +658,6 @@ en = "The project contains an unknown section, field or author suffix."
 ru = "В этом ядре нет версии умолчаний, указанной в проекте."
 en = "This core does not carry the project’s defaults version."
 
-[messages.rejectedProjectCore]
-ru = "Версия ядра в проекте должна иметь вид major.minor.patch."
-en = "The project’s core version must have the form major.minor.patch."
-
 [messages.machineDifferences]
 plural = "count"
 ru.one = "Сейчас машина решила бы иначе в {count} месте. Слой машины сохранён."
@@ -661,10 +666,6 @@ ru.many = "Сейчас машина решила бы иначе в {count} м�
 ru.other = "Сейчас машина решила бы иначе в {count} местах. Слой машины сохранён."
 en.one = "The machine would decide differently today in {count} place. The saved machine layer is retained."
 en.other = "The machine would decide differently today in {count} places. The saved machine layer is retained."
-
-[messages.defaultsConverted]
-ru = "Проект с версией умолчаний {version} сконвертирован: значения, заданные вручную, и числа цели сохранены; машинные значения выставлены заново по текущим правилам."
-en = "The project from defaults version {version} was converted: the values set by hand and the target's numbers were kept; the machine's values were placed again by the current rules."
 
 [messages.rejectedNewerDefaults]
 ru = "Проект использует более новую версию умолчаний, которой нет в этом ядре."
@@ -693,16 +694,6 @@ en = "Finalizing"
 [messages.rejectedContract]
 ru = "Неверный формат команды."
 en = "The command format is invalid."
-
-[messages.sameCoreMachineDifferences]
-plural = "count"
-ru.one = "Сейчас машина решила бы иначе в {count} месте. При той же версии ядра это обычно означает, что файл проекта правили вручную; сохранённые решения остаются."
-ru.few = "Сейчас машина решила бы иначе в {count} местах. При той же версии ядра это обычно означает, что файл проекта правили вручную; сохранённые решения остаются."
-ru.many = "Сейчас машина решила бы иначе в {count} местах. При той же версии ядра это обычно означает, что файл проекта правили вручную; сохранённые решения остаются."
-ru.other = "Сейчас машина решила бы иначе в {count} местах. При той же версии ядра это обычно означает, что файл проекта правили вручную; сохранённые решения остаются."
-en.one = "The machine would decide differently in {count} place today. With the same core version, this usually means the project file was edited by hand; the saved decisions are kept."
-en.other = "The machine would decide differently in {count} places today. With the same core version, this usually means the project file was edited by hand; the saved decisions are kept."
-
 
 [messages.measurementPending]
 ru = "Замер ожидается."
@@ -832,6 +823,15 @@ en = "The source is very quiet ({lufs}); the gain and ceiling fallback applies."
 ru = "В исходной записи есть постоянное смещение ({offset})."
 en = "The source has a DC offset ({offset})."
 
+# A stereo source's DC offset, each channel's as the readings print it: as a warning or an error, and as a note.
+[messages.sourceDcStereo]
+ru = "В исходной записи есть постоянное смещение: L {left}, R {right}."
+en = "The source has a DC offset: L {left}, R {right}."
+
+[messages.sourceDcNoteStereo]
+ru = "Постоянная составляющая: L {left}, R {right}; ФВЧ мастера её уберёт — но стоит проверить цепочку сведения."
+en = "A DC offset: L {left}, R {right}; the master's high-pass will remove it — but the mix chain is worth checking."
+
 [messages.sourceUnusedBits]
 ru = "В исходной записи не используются младшие биты: {bits}."
 en = "Unused low bits in the source: {bits}."
@@ -862,8 +862,8 @@ ru = "Исходная запись клипована: клипов {count}, в
 en = "The source is clipped: {count} clips, {rate} a minute. A peak clipper would add distortion; this is cured in the mix."
 
 [messages.sourceDualMono]
-ru = "Каналы стерео-файла одинаковы: это моно."
-en = "The channels of the stereo file are equal: it is mono."
+ru = "Левый и правый каналы одинаковы — это моно в стерео-файле; если задумано стерео, проверьте экспорт."
+en = "The left and right channels are identical — this is mono in a stereo file; if stereo was intended, please check the export."
 
 [messages.sourceEdgeSilence]
 ru = "Тишина по краям: {leading} в начале, {trailing} в конце."
@@ -943,6 +943,8 @@ dither.ru = "Дизер"
 dither.en = "Dither"
 low.ru = "Низ"
 low.en = "Low"
+bands.ru = "Полосы EQ"
+bands.en = "EQ bands"
 
 # Why the machine's peak clipper does not cut — the words of the reasons; the warning beside a manual cut is whole
 # sentences of its own (messages.needlesAgainstMachine).
@@ -969,3 +971,320 @@ bass.ru = "много баса в выбросах"
 bass.en = "bassy excursions"
 long.ru = "длинные выбросы"
 long.en = "long excursions"
+
+# The observations by name — the label a finding's line stands under, and the name an observation not measured is said
+# by (messages.observationUnmeasured puts it first: "{name}: …", so no case of it is ever needed).
+[terms.observation]
+clipping.ru = "Клиппинг"
+clipping.en = "Clipping"
+dcOffset.ru = "DC-смещение"
+dcOffset.en = "DC offset"
+bitsUnused.ru = "Неиспользуемые биты"
+bitsUnused.en = "Unused bits"
+dualMono.ru = "Двойное моно"
+dualMono.en = "Dual mono"
+edgeSilence.ru = "Тишина по краям"
+edgeSilence.en = "Silence at the edges"
+tooQuiet.ru = "Слишком тихо"
+tooQuiet.en = "Too quiet"
+tooShort.ru = "Слишком коротко"
+tooShort.en = "Too short"
+alreadyLimited.ru = "Уже ограничено"
+alreadyLimited.en = "Already limited"
+spectralWall.ru = "Обрыв спектра"
+spectralWall.en = "Spectral cutoff"
+loudestLowNote.ru = "Самая громкая нота баса"
+loudestLowNote.en = "Loudest bass note"
+lowestLowBand.ru = "Самая нижняя занятая полоса"
+lowestLowBand.en = "Lowest occupied band"
+infraLow.ru = "Инфраниз"
+infraLow.en = "Infra-low"
+wideBass.ru = "Широкий бас"
+wideBass.en = "Wide bass"
+polarity.ru = "Полярность"
+polarity.en = "Polarity"
+sibilance.ru = "Свистящие"
+sibilance.en = "Sibilance"
+hum.ru = "Гул"
+hum.en = "Hum"
+humWandered.ru = "Плавающий гул"
+humWandered.en = "Wandering hum"
+
+# What deals with an observation (HandledBy): nothing — it describes the file; the high-pass or mono bass in the chain; or
+# a person — nothing in the chain cures it, a new mix or export does.
+[terms.handledBy]
+nothing.ru = "ничего"
+nothing.en = "nothing"
+hpf.ru = "ФВЧ"
+hpf.en = "HPF"
+monoBass.ru = "моно-бас"
+monoBass.en = "mono bass"
+person.ru = "вручную"
+person.en = "by hand"
+
+# Why an observation was not measured — the reason its measurement gave (MeasurementReason).
+[terms.measurementReason]
+pending.ru = "замер ещё не закончен"
+pending.en = "the measurement has not finished yet"
+cancelled.ru = "замер остановлен"
+cancelled.en = "the measurement was stopped"
+unsupported.ru = "параметры звука не подходят"
+unsupported.en = "unsupported audio parameters"
+tooShort.ru = "запись слишком короткая"
+tooShort.en = "the recording is too short"
+nonFinite.ru = "встретилось неконечное число"
+nonFinite.en = "a non-finite value occurred"
+capacity.ru = "достигнута ёмкость списка"
+capacity.en = "list capacity reached"
+noSignal.ru = "нет подходящего сигнала"
+noSignal.en = "no suitable signal"
+notImplemented.ru = "замер пока недоступен в движке"
+notImplemented.en = "the measurement is not yet available in the engine"
+needNotAbove3.ru = "иглы не понадобились"
+needNotAbove3.en = "the needles were not needed"
+memory.ru = "недостаточно памяти"
+memory.en = "insufficient memory"
+
+# An observation whose measurement did not give its number: its name, and why.
+[messages.observationUnmeasured]
+ru = "{name}: не измерено — {reason}."
+en = "{name}: not measured — {reason}."
+
+# The landing's verdict, one line per status, published with the master. A miss says its numbers in masterLandingMiss
+# or masterLandingAbove; the status line beside it says why, against the landing's tolerance.
+[messages.masterLandingSolved]
+ru = "Мастер вышел на {achieved} при цели {target} (допуск ±{tolerance})."
+en = "The master reached {achieved} against a target of {target} (tolerance ±{tolerance})."
+
+# The limit that held the master short, as the landing's solver named it (its binding); "unnamed" where it named none.
+[messages.masterLandingUnreachable]
+select = "limit"
+ru.unnamed = "Ближе допуска ±{tolerance} к цели не подойти, не нарушив одного из ограничений."
+ru.truePeak = "Мастер упирается в потолок истинного пика: ближе допуска ±{tolerance} к цели не подойти."
+ru.limiter = "Мастер упирается в предел работы лимитера: ближе допуска ±{tolerance} к цели не подойти."
+ru.plr = "Мастер упирается в нижнюю границу PLR: ближе допуска ±{tolerance} к цели не подойти."
+ru.lra = "Мастер упирается в предел потери LRA: ближе допуска ±{tolerance} к цели не подойти."
+ru.gain = "Мастер упирается в предел усиления цепочки: ближе допуска ±{tolerance} к цели не подойти."
+en.unnamed = "The master cannot come within ±{tolerance} of the target without breaking one of its constraints."
+en.truePeak = "The master runs into the true-peak ceiling: it cannot come within ±{tolerance} of the target."
+en.limiter = "The master runs into the limiter's gain-reduction limit: it cannot come within ±{tolerance} of the target."
+en.plr = "The master runs into the PLR floor: it cannot come within ±{tolerance} of the target."
+en.lra = "The master runs into the LRA loss limit: it cannot come within ±{tolerance} of the target."
+en.gain = "The master runs into the chain's gain bound: it cannot come within ±{tolerance} of the target."
+
+[messages.masterLandingPassLimit]
+ru = "Проходы кончились раньше, чем мастер подошёл к цели ближе допуска {tolerance}."
+en = "The passes ran out before the master came within {tolerance} of the target."
+
+[messages.masterLandingBetween]
+ru = "Точно в цель не попасть: ближайшие уровни {below} и {above}, оба дальше допуска."
+en = "The target cannot be hit exactly: the nearest levels are {below} and {above}, both beyond the tolerance."
+
+[messages.masterLandingFailed]
+ru = "Мастер остановился из-за технического сбоя."
+en = "The master stopped on a technical failure."
+
+# The readings by name (ReadingKind): the label a number the core publishes stands under — the source's, or a master's.
+# A label, never a sentence: the number is its own fact (messages.value), formatted by the table.
+[terms.reading]
+integrated.ru = "Интегральная громкость"
+integrated.en = "Integrated loudness"
+truePeak.ru = "Истинный пик"
+truePeak.en = "True peak"
+lra.ru = "LRA"
+lra.en = "LRA"
+plr.ru = "PLR"
+plr.en = "PLR"
+dcOffset.ru = "DC-смещение"
+dcOffset.en = "DC offset"
+dcOffsetLeft.ru = "DC-смещение, левый канал"
+dcOffsetLeft.en = "DC offset, left"
+dcOffsetRight.ru = "DC-смещение, правый канал"
+dcOffsetRight.en = "DC offset, right"
+lowestBand.ru = "Нижняя занятая полоса"
+lowestBand.en = "Lowest occupied band"
+pcmBits.ru = "Точных бит PCM"
+pcmBits.en = "Exact PCM bits"
+correlation.ru = "Корреляция каналов"
+correlation.en = "Stereo correlation"
+burstsMid.ru = "Всплески (Mid)"
+burstsMid.en = "Burst events (Mid)"
+burstsSide.ru = "Всплески (Side)"
+burstsSide.en = "Burst events (Side)"
+hum.ru = "Частота сетевого фона"
+hum.en = "Mains hum frequency"
+tempo.ru = "Темп"
+tempo.en = "Tempo"
+tempoConfidence.ru = "Уверенность в темпе"
+tempoConfidence.en = "Tempo confidence"
+clipRuns.ru = "Серии клиппинга"
+clipRuns.en = "Clipped runs"
+longestRun.ru = "Самая длинная серия, сэмплов"
+longestRun.en = "Longest run, samples"
+clippedSamples.ru = "Клиппированных сэмплов"
+clippedSamples.en = "Clipped samples"
+samplePeak.ru = "Пик по сэмплам"
+samplePeak.en = "Sample peak"
+lowSide.ru = "Доля Side в низах"
+lowSide.en = "Side share of the low end"
+stereoWindows.ru = "Окна стерео-измерения"
+stereoWindows.en = "Stereo windows"
+crestBlocksLow.ru = "Активные блоки удара: низ"
+crestBlocksLow.en = "Active impact blocks: low"
+crestBlocksLowMid.ru = "Активные блоки удара: нижняя середина"
+crestBlocksLowMid.en = "Active impact blocks: low-mid"
+crestBlocksHighMid.ru = "Активные блоки удара: верхняя середина"
+crestBlocksHighMid.en = "Active impact blocks: high-mid"
+crestBlocksHigh.ru = "Активные блоки удара: верх"
+crestBlocksHigh.en = "Active impact blocks: high"
+crestBlocksFull.ru = "Активные блоки удара: вся полоса"
+crestBlocksFull.en = "Active impact blocks: full band"
+target.ru = "Цель"
+target.en = "Target"
+ceiling.ru = "Потолок"
+ceiling.en = "Ceiling"
+gain.ru = "Применённое усиление"
+gain.en = "Gain applied"
+passes.ru = "Проходы посадки"
+passes.en = "Landing passes"
+checkPasses.ru = "Проверочные проходы"
+checkPasses.en = "Check passes"
+
+# How sure the tempo detector is of its headline tempo (its ConfidenceLabel).
+[terms.tempoConfidence]
+undetermined.ru = "не определена"
+undetermined.en = "undetermined"
+low.ru = "низкая"
+low.en = "low"
+medium.ru = "средняя"
+medium.en = "medium"
+high.ru = "высокая"
+high.en = "high"
+
+# What held a landing short of its target — the landing's solver's binding constraint, as a noun phrase.
+[terms.landingLimit]
+unnamed.ru = "одно из ограничений"
+unnamed.en = "one of the constraints"
+truePeak.ru = "потолок истинного пика"
+truePeak.en = "the true-peak ceiling"
+limiter.ru = "предел работы лимитера"
+limiter.en = "the limiter's gain-reduction limit"
+plr.ru = "нижняя граница PLR"
+plr.en = "the PLR floor"
+lra.ru = "предел потери LRA"
+lra.en = "the LRA loss limit"
+gain.ru = "предел усиления цепочки"
+gain.en = "the chain's gain bound"
+
+# A reading that is a word: how sure the tempo is.
+[messages.tempoConfidence]
+ru = "{confidence}"
+en = "{confidence}"
+
+# The observations in the owner's words (01.10), where a finding's size chose its style. A DC offset as a note:
+[messages.sourceDcNote]
+ru = "Постоянная составляющая ({offset}); ФВЧ мастера её уберёт — но стоит проверить цепочку сведения."
+en = "A DC offset ({offset}); the master's high-pass will remove it — but the mix chain is worth checking."
+
+# The effective depth short of full, as a warning: the depth the audio was truncated to.
+[messages.sourceTruncatedBits]
+plural = "bits"
+ru.one = "Где-то в цепочке сведения усечение до {bits} бита."
+ru.few = "Где-то в цепочке сведения усечение до {bits} бит."
+ru.many = "Где-то в цепочке сведения усечение до {bits} бит."
+ru.other = "Где-то в цепочке сведения усечение до {bits} бита."
+en.one = "Somewhere in the mix chain the audio was truncated to {bits} bit."
+en.other = "Somewhere in the mix chain the audio was truncated to {bits} bits."
+
+# ...and as an error: a mix of {bits} bits, to be mixed down again at {depth}, the full depth.
+[messages.sourceShallowMix]
+plural = "depth"
+ru.one = "{bits}-битный микс — сведите в {depth} бит."
+ru.few = "{bits}-битный микс — сведите в {depth} бита."
+ru.many = "{bits}-битный микс — сведите в {depth} бит."
+ru.other = "{bits}-битный микс — сведите в {depth} бита."
+en.one = "A {bits}-bit mix — please mix it down at {depth} bit."
+en.other = "A {bits}-bit mix — please mix it down at {depth} bits."
+
+[messages.sourceLimitedBus]
+ru = "Микс уже сжат лимитером (PLR {plr}) — мастеринг не вернёт динамику; пришлите версию без лимитера на шине."
+en = "The mix is already squeezed by a limiter (PLR {plr}) — mastering will not bring the dynamics back; please send a version without the limiter on the bus."
+
+[messages.sourceLossy]
+ru = "Похоже, исходник прошёл через mp3/AAC (верх обрезан на {hz}) — мастерьте с исходника без потерь."
+en = "The source seems to have gone through mp3/AAC (the top is cut at {hz}) — please master from a lossless source."
+
+# The infra-low share as a note, then as a warning.
+[messages.sourceInfraLowNote]
+ru = "Немного энергии ниже {hz} — ФВЧ мастера её уберёт."
+en = "A little energy below {hz} — the master's high-pass will remove it."
+
+[messages.sourceInfraLowWarning]
+ru = "Заметная часть энергии ниже {hz} ({share}) — ФВЧ её срежет, громкость и баланс микса изменятся; проверьте, что там: рокот, ветер, гул сабов."
+en = "A notable part of the energy lies below {hz} ({share}) — the high-pass will cut it, and the mix's loudness and balance will change; please check what is there: rumble, wind, sub boom."
+
+# The master's cost line by line, each published where its numbers were measured: the section that moved most (its shift
+# and where it lies), how many sections were compared, the limiter's reduction and how much of the programme it worked
+# in, and the impact loss in each band below the full band's.
+[messages.masterCostSection]
+ru = "Наибольший сдвиг секции: {shift} на отрезке {from}–{to}."
+en = "The largest section shift is {shift}, at {from}–{to}."
+
+[messages.masterCostSections]
+ru = "Сопоставлено секций: {count}."
+en = "Sections compared: {count}."
+
+[messages.masterCostLimiter]
+ru = "Срез лимитера в активных окнах: медиана {median}, P95 {p95}."
+en = "Limiter reduction over the active windows: median {median}, P95 {p95}."
+
+[messages.masterCostActive]
+ru = "Лимитер работает в {limiter} окон; активных окон — {active}."
+en = "The limiter works in {limiter} of the windows; {active} of the windows are active."
+
+[messages.masterCostBands]
+ru = "Потеря удара по полосам: низ {low}, нижняя середина {lowMid}, верхняя середина {highMid}, верх {high}."
+en = "Impact loss by band: low {low}, low-mid {lowMid}, high-mid {highMid}, high {high}."
+
+# The plan's advice: a device's value as it sounds, against the norm drawn on its knob.
+[messages.hpfBelowComfort]
+ru = "ФВЧ {cutoff} ниже комфортного окна {low}–{high}: так низко он только страхует от постоянной составляющей и не чистит низ."
+en = "HPF {cutoff} is below the comfort window {low}–{high}: this low it only guards against DC and does not clean the low end."
+
+[messages.hpfAboveComfort]
+ru = "ФВЧ {cutoff} выше комфортного окна {low}–{high}: он забирает уже музыку, а не мусор."
+en = "HPF {cutoff} is above the comfort window {low}–{high}: it takes music, not rubbish."
+
+[messages.hpfSlopeGentle]
+ru = "Крутизна ФВЧ {slope} дБ/окт мягче обычной (от {gentlest}): он плохо чистит низ и пологим склоном задевает музыку выше среза."
+en = "An HPF slope of {slope} dB/oct is gentler than usual (from {gentlest}): it cleans the low end poorly, and its shallow slope reaches into the music above the cutoff."
+
+[messages.hpfSlopeSteep]
+ru = "Крутизна ФВЧ {slope} дБ/окт круче обычной (до {steepest}): после среза он звенит — крутой фильтр даёт выброс на частоте среза."
+en = "An HPF slope of {slope} dB/oct is steeper than usual (up to {steepest}): it rings after the cutoff — a steep filter overshoots at the cutoff frequency."
+
+[messages.eqOvershoot]
+ru = "Кривая EQ за пределами нормы: {db} на {hz}."
+en = "The EQ curve is beyond the norm: {db} at {hz}."
+
+[messages.monoBassOutsideZones]
+ru = "Моно-бас на {crossover} выше, чем нужно и клубу ({clubTo}), и винилу ({vinylTo})."
+en = "Mono bass at {crossover} is higher than both a club ({clubTo}) and vinyl ({vinylTo}) need."
+
+# The target's note: where its loudness comes from, where that is not a platform's published number or a standard.
+[messages.targetMeasured]
+ru = "{lufs} измерено на самой платформе, это не опубликованная спецификация."
+en = "{lufs} is measured on the platform itself, not a published specification."
+
+[messages.targetPractice]
+ru = "{lufs} — практика мастеринга, а не стандарт."
+en = "{lufs} is mastering practice, not a standard."
+
+[messages.targetNoNormalisation]
+ru = "Платформа не нормализует громкость: это пресет доставки, а не цель платформы."
+en = "The platform does not normalise loudness: a delivery preset, not a platform target."
+
+# Mono bass's crossover below every destination's zone: lower than a club or vinyl asks for.
+[messages.monoBassBelowZones]
+ru = "Моно-бас на {crossover} ниже, чем просят и клуб (от {clubFrom}), и винил (от {vinylFrom})."
+en = "Mono bass at {crossover} is lower than both a club (from {clubFrom}) and vinyl (from {vinylFrom}) ask for."

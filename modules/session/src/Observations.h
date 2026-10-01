@@ -26,6 +26,7 @@ struct ObservationInputs
     std::span<const MeasurementResult> measurements;    // every analyzer's result, by Analyzer; empty before a source
     std::uint32_t channels = 0, sampleRate = 0;
     std::uint64_t frames = 0;
+    std::uint32_t bitDepth = 0;                         // the source's container bits; 0 when it has none (a lossy file)
     // The devices that deal with a finding, as the project stands: the high-pass and mono bass in the chain.
     bool hpfOn = false, monoBassOn = false;
 };

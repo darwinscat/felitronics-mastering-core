@@ -156,11 +156,13 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
-      - name: The frozen session ABI manifest only grows — against the pull request's base
+      - name: The frozen session ABI manifest only grows from its declared base — against the pull request's base
         # tools/session-abi-check.mjs compares the compiled surface with tools/session-abi-v1.txt, so a pull request that
         # edits a frozen line in the manifest together with the surface passes it. This compares the manifest with the
-        # base branch's: a removed or edited line is red, additions anywhere are not. Its control runs here and in ctest
-        # (felitronics_session_abi_manifest_append_only_control).
+        # base branch's: under the same declared base (`base v…`) a removed or edited line is red, additions anywhere are
+        # not; another declared base is red unless the script lists it as an authorised reset (only v0.6.0 over an
+        # undeclared base), which starts the surface anew once. Its control runs here
+        # and in ctest (felitronics_session_abi_manifest_append_only_control).
         if: github.event_name == 'pull_request'
         env:
           BASE_REF: ${{ github.base_ref }}
@@ -432,6 +434,7 @@ jobs:
             tools/wasm/build/fcsession.node.*
             tools/wasm/build/snapshot.*
             tools/wasm/build/contract-trap/fcsession.node.*
+            tools/wasm/build/contract-modules.sha256
           retention-days: 1
       - name: fc_session — the module a page loads, checked on the artifact
         # felitronics_session_abi_tests runs fc_session.cpp natively and on this tier; what they cannot see is the

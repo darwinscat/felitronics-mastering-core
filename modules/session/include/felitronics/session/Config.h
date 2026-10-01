@@ -85,6 +85,14 @@ struct Edit
     double step = 0.0;
 };
 
+// The note beside a target ([notes]): where its loudness comes from.
+enum class TargetNote : std::uint8_t { Measured, Practice, NoNormalisation };
+struct TargetNoteRow
+{
+    std::string key;                           // a row of [targets]
+    TargetNote note = TargetNote::Measured;
+};
+
 struct Targets
 {
     std::string defaultTarget;                 // `default`
@@ -92,6 +100,7 @@ struct Targets
     std::vector<Target> targets;               // in the document's order
     Edit editLufs;                             // [edit] lufs
     Edit editTp;                               // [edit] tp
+    std::vector<TargetNoteRow> notes;          // [notes], in the byte order of their keys
 
     // The row whose key is `key`, or null.
     [[nodiscard]] const Target* find (std::string_view key) const noexcept;
@@ -179,7 +188,8 @@ struct Hpf
     double hzStep = 0.0;
     std::int32_t band = 0;
     double hzMin = 0.0;
-    double hzMax = 0.0;
+    double hzMax = 0.0;                        // the knob's travel ends here
+    double machineTopHz = 0.0;                 // the machine's cutoff never goes above it
     std::vector<std::int32_t> slopes;
     std::vector<std::int32_t> slopesNormal;
     std::int32_t slopeDefault = 0;
@@ -268,7 +278,7 @@ enum class SaturationShape : std::uint8_t { Tanh, Atan, Cubic, Asym, Tube, Trans
 
 struct Saturation
 {
-    Span driveDomain, mixDomain, outputDomain;
+    Span driveDomain, mixDomain;
     SaturationShape shape = SaturationShape::Tanh;
     double driveDb = 0.0;
     Span driveRange;
@@ -277,9 +287,6 @@ struct Saturation
     double mix = 0.0;
     Span mixRange;
     double mixStep = 0.0;
-    double outputDb = 0.0;
-    Span outputRange;
-    double outputStep = 0.0;
     double autoComp = 0.0;
     double dcBlockHz = 0.0;
     double cutLoudShare = 0.0;                 // cut.loudShare: the loud places of the measured peak cut
@@ -304,6 +311,26 @@ struct Low
     Span normal;
     Span hard;
     double step = 0.0;
+};
+
+// [bands]: the five static EQ bands a person turns (the machine leaves them at 0): each its own band of the EQ stage, a
+// bell or a high shelf at freqHz with q, its gain's domain, its knob's travel `hard` and step.
+enum class BandType : std::uint8_t { Bell, HighShelf };
+
+struct EqMove
+{
+    std::int32_t band = 0;
+    BandType type = BandType::Bell;
+    double freqHz = 0.0;
+    double q = 0.0;
+    Span domain;
+    Span hard;
+    double step = 0.0;
+};
+
+struct Bands
+{
+    EqMove body, mud, forward, brightness, air;
 };
 
 struct Eq
@@ -360,7 +387,7 @@ struct StereoBursts
     std::int32_t eventCapacity = 0;
 };
 
-enum class Kind : std::uint8_t { Error, Warning, Note };
+enum class Kind : std::uint8_t { Error, Warning, Note, Reading };
 
 // [observations.kinds]: the kind of every finding the session publishes.
 struct Kinds
@@ -392,17 +419,20 @@ struct Observations
     double doubtfulBelow = 0.0;
     double clippingFullAtShareOfProgramme = 0.0;                                  // clipping
     double dcOffsetFrom = 0.0, dcOffsetFullAt = 0.0;                              // dcOffset
-    std::int32_t bitsUnusedFromBits = 0, bitsUnusedFullAtBits = 0;                // bitsUnused
+    double dcOffsetWarningFrom = 0.0, dcOffsetErrorFrom = 0.0;
+    std::int32_t bitsUnusedDepthBits = 0;                                         // bitsUnused
+    std::int32_t bitsUnusedFromBitsShort = 0, bitsUnusedFullAtBitsShort = 0, bitsUnusedErrorFromBitsShort = 0;
     double edgeSilenceFromSeconds = 0.0, edgeSilenceFullAtSeconds = 0.0;          // edgeSilence
     double humFromProminenceDb = 0.0, humFullAtProminenceDb = 0.0;                // hum
-    double humFullAtPowerAgainstProgramme = 0.0;
+    double humFromPowerDb = 0.0, humFullAtPowerDb = 0.0, humWarningFromSeverity = 0.0;
     double humWanderedConfidenceCeiling = 0.0;                                    // humWandered
     double spectralWallFullAtDropDb = 0.0;                                        // spectralWall
     double spectralWallFromFractionBelowNyquist = 0.0, spectralWallFullAtFractionBelowNyquist = 0.0;
-    double infraLowLow = 0.0, infraLowHigh = 0.0;                                 // infraLow
-    double wideBassSideFractionAtLeast = 0.0;                                     // wideBass
+    double infraLowLow = 0.0, infraLowHigh = 0.0, infraLowWarningFrom = 0.0;      // infraLow
+    double wideBassSideFractionAtLeast = 0.0, wideBassFullAt = 0.0;               // wideBass
     double polarityCorrelationBelow = 0.0, polarityRawSideFractionAbove = 0.0;    // polarity
-    double alreadyLimitedPlrBelowDb = 0.0;                                        // alreadyLimited
+    double polarityFullAtLowCorrelation = 0.0;
+    double alreadyLimitedPlrBelowDb = 0.0, alreadyLimitedFullAtPlrDb = 0.0;       // alreadyLimited
     double vinylTopAboveHz = 0.0;                                                 // vinylTop
     Kinds kinds;
     Sibilance sibilance;
@@ -485,6 +515,7 @@ struct Engine
     Saturation saturation;
     Tilt tilt;
     Low low;
+    Bands bands;
     Eq eq;
     Chain chain;
     Stages stages;
@@ -557,7 +588,7 @@ struct Problem
 // The same on every platform, and computed from the data compiled into the library without allocating.
 //   all    every key of both documents: which config this is.
 //   sound  what can change a master; when it is not sure, a key stays in. It leaves out only: what is shown (the main
-//          list and the order of the target rows, the hand edit's travels and green ranges, the red and comfort zones —
+//          list and the order of the target rows, the targets' notes, the hand edit's travels and green ranges, the red and comfort zones —
 //          hpf.comfort, tilt.normal, low.normal, hpf.slopesNormal — the curve scales and marks, the knob scale's
 //          zones); what prints a finding or a warning without switching a device (every observation threshold but
 //          observations.polarity, which keeps mono bass out; the peak clipper's density figures); what is measured

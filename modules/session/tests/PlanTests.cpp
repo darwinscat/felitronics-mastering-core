@@ -130,10 +130,9 @@ std::unique_ptr<Session> placedShort()
     ok (s->column() == Column::Measured2 && s->snapshot().view().plan.status == PlanStatus::Ready, "PRECONDITION: placed, the plan ready");
     return s;
 }
-std::string version (Version v) { return std::to_string (v.major) + '.' + std::to_string (v.minor) + '.' + std::to_string (v.patch); }
-std::string projectText (std::string_view core, std::string_view sections)
+std::string projectText (std::string_view sections)
 {
-    return "defaults = \"" + std::string (*detail::rules().engine.find ("defaults").string()) + "\"\ncore = \"" + std::string (core)
+    return "defaults = \"" + std::string (*detail::rules().engine.find ("defaults").string())
          + "\"\nmanual = false\n\n[target]\nname = \"allStreaming\"\n" + std::string (sections);
 }
 bool factIn (const Session& s, text::FactId id, std::int64_t count)
@@ -152,13 +151,16 @@ void everyDeviceIsPlannedAsBefore()
     int cases = 0; bool asBefore = true, facts = true;
     for (std::uint16_t row = 0; row < r.rows; ++row)
         for (const std::uint32_t channels : { 1u, 2u })
-            for (std::uint32_t offered = 0; offered <= 255u; ++offered)
+            for (std::uint32_t eight = 0; eight <= 255u; ++eight)
             {
+                // Every set of the first eight devices, the EQ bands' bit with the high-pass's: both ways, at the old count.
+                const std::uint32_t offered = eight | ((eight & 1u) << unsigned (Device::Bands));
                 // Hands in every device, so the shell's refusal is seen taking them away.
                 Devices now, before;
                 detail::eachDevice (now, [] (Device, auto& layers)
                 {
-                    if constexpr (requires { layers.hand.on; }) layers.hand.on = true;
+                    if constexpr (requires { layers.hand.body; }) layers.hand.body = 1.5;
+                    else if constexpr (requires { layers.hand.on; }) layers.hand.on = true;
                     else layers.hand.needles = Needles::Manual;
                 });
                 before = now;
@@ -173,6 +175,7 @@ void everyDeviceIsPlannedAsBefore()
                 expected.hpf.machine.fq = target.hpfFloor.toDouble();
                 expected.monoBass.machine.on = false;
                 expected.glue.machine.on = false;      // decision 3.8а: no P95, no glue — cd's 2.6 dB stays on the knob
+                expected.bands.machine.on = true;      // the EQ bands' tick (01.10): the machine's is always on
                 asBefore = asBefore && sameDevices (now, expected);
                 Devices proposed; DevicePlans plans; detail::PlanFindings found;
                 detail::propose (in, proposed, plans, found);
@@ -764,12 +767,10 @@ void oneNeedOneMeasurement()
 
 void anImportKeepsTheFilesMachine()
 {
-    felitronics::test::group ("an import keeps the file's machine layer, same core or another; adoptMachine takes the planner's; a person's layer stays");
-    for (const bool foreign : { false, true })
+    felitronics::test::group ("an import keeps the file's machine layer; adoptMachine takes the planner's; a person's layer stays");
     {
         auto sp = placedShort(); auto& s = *sp;
-        const auto core = foreign ? std::string ("0.0.1") : version (Session::version());
-        const auto file = projectText (core, "\n[hpf]\nfq.machine = 36\n\n[tilt]\ndb.hand = 1.25\n");
+        const auto file = projectText ("\n[hpf]\nfq.machine = 36\n\n[tilt]\ndb.hand = 1.25\n");
         const auto revision = s.revision();
         ok (s.apply (command::ImportProject { 2, file }).rejection == Rejection::None && s.revision() == revision + 1, "the file imports");
         const auto v = s.snapshot();
@@ -777,8 +778,7 @@ void anImportKeepsTheFilesMachine()
         ok (v.view().machineDifferences.size() == 1 && v.view().machineDifferences[0].device == Device::Hpf
             && v.view().machineDifferences[0].field == 1 && same (v.view().machineDifferences[0].fileValue, 36.0)
             && same (v.view().machineDifferences[0].coreValue, 32.0), "the planner's decision beside it: one difference, the high-pass at its 32 Hz floor");
-        ok (factIn (s, foreign ? text::FactId::MachineDifferences : text::FactId::SameCoreMachineDifferences, 1),
-            foreign ? "another core: the difference is announced" : "the same core: announced as a hand-edited file");
+        ok (factIn (s, text::FactId::MachineDifferences, 1), "the difference is announced");
         Answer adopt;
         const auto spent = declared::spend ([&] { adopt = s.apply (command::AdoptMachine { 3 }); });
         ok (adopt.rejection == Rejection::None && s.revision() == revision + 2, "adoptMachine is taken");
@@ -842,10 +842,16 @@ void aTouchedDeviceSounds()
             {
                 layers.machine.on = machineOn; layers.hand = {};
                 machine = machine && detail::settingsOf (r, layers).on == machineOn && detail::tickFrom (r, layers) == TickFrom::Machine;
-                std::size_t fields = 0;
-                detail::DeviceOf<Fields>::each (r, [&] (std::uint8_t, const detail::FieldRule&, const auto&) { ++fields; }, layers.machine);
-                for (std::size_t touch = 1; touch < fields; ++touch)
+                // The tick's place: first, or after the knobs where it was appended (the EQ bands).
+                std::size_t fields = 0, tick = 0;
+                detail::DeviceOf<Fields>::each (r, [&] (std::uint8_t i, const detail::FieldRule&, const auto& hand)
                 {
+                    fields = std::size_t (i) + 1;
+                    if (static_cast<const void*> (&hand) == static_cast<const void*> (&layers.hand.on)) tick = i;
+                }, layers.hand);
+                for (std::size_t touch = 0; touch < fields; ++touch)
+                {
+                    if (touch == tick || (std::is_same_v<Fields, SaturationFields<Value>> && touch == 3)) continue;   // 3 names nothing
                     layers.hand = {};
                     detail::DeviceOf<Fields>::each (r, [&] (std::uint8_t i, const detail::FieldRule&, auto& hand, const auto& value)
                     { if (i == touch) hand = value; }, layers.hand, layers.machine);
@@ -866,7 +872,7 @@ void aTouchedDeviceSounds()
     // THE PLAN'S EXAMPLE: `[tilt] db.hand = 3`, no tick written, sounds.
     auto sp = placedShort(); auto& s = *sp;
     const auto flat = s.snapshot();
-    const auto example = projectText (version (Session::version()), "\n[tilt]\ndb.hand = 3\n");
+    const auto example = projectText ("\n[tilt]\ndb.hand = 3\n");
     ok (s.apply (command::ImportProject { 2, example }).rejection == Rejection::None && ! s.project().devices.tilt.machine.on
         && ! s.project().devices.tilt.hand.on, "PRECONDITION: the project carries the knob alone; the machine's tilt is off");
     const auto v = s.snapshot();

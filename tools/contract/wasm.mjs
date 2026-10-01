@@ -35,9 +35,10 @@ export async function runWasm(modulePath, scriptPath, {reorder = false, corruptR
     const double = pointer => new DataView(M.HEAPU32.buffer).getFloat64(pointer, true);
     const putDouble = (pointer, value) => new DataView(M.HEAPU32.buffer).setFloat64(pointer, value, true);
     function capabilities(alloc, ceiling) {
-        const p = alloc(macro('CAPABILITIES_V1_BYTES'));
-        write(p, macro('CAPABILITIES_V1_BYTES')); putDouble(p + 8, ceiling);
-        write(p + 16, 96000); write(p + 20, macro('DEVICES_ALL')); putDouble(p + 24, ceiling);
+        // fc_session_capabilities: 40 bytes, leanSummary (at 32) 0.
+        const p = alloc(40);
+        write(p, 40); putDouble(p + 8, ceiling);
+        write(p + 16, 96000); write(p + 20, macro('DEVICES_ALL')); putDouble(p + 24, ceiling); write(p + 32, 0);
         return p;
     }
     function copy(what, alloc) {

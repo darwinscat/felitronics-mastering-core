@@ -11,13 +11,16 @@ const read = path => readFileSync(new URL(path, root), 'utf8');
 const clean = text => text.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '');
 const normalize = text => text.replace(/\s+/g, ' ').replace(/\s*([*,()])\s*/g, '$1').trim();
 const header = clean(read('tools/fc_session_abi.h'));
+// A struct's fields, one per declarator: `uint32_t source_low, source_high;` is two fields of type uint32_t.
+const structFields = body => [...body.matchAll(/([^;]+?)\s+(\w+(?:\s*,\s*\w+)*)\s*;/g)]
+    .flatMap(f => f[2].split(',').map(name => ({ type: normalize(f[1]), name: name.trim() })));
 const publicHeaders = ['Commands', 'Project', 'Events', 'Snapshot', 'Session', 'Text', 'Measurements', 'Queries'];
-// EVERY ENTRY POINT, whatever it returns: each `fc_session_*(` the header declares must be read as a declaration, or the
-// generator refuses — an entry point the probe skipped would never be frozen.
+// EVERY ENTRY POINT, whatever it returns: each `fc_session_*(` and `fc_kit_*(` (the pure kit's) the header declares must
+// be read as a declaration, or the generator refuses — an entry point the probe skipped would never be frozen.
 function entryPoints(text) {
-    const found = [...text.matchAll(/\b(\w+)\s+(fc_session_\w+)\s*\(([^;]+)\);/g)];
+    const found = [...text.matchAll(/\b(\w+)\s+(fc_(?:session|kit)_\w+)\s*\(([^;]+)\);/g)];
     const read = new Set(found.map(m => m[2]));
-    const missed = [...new Set([...text.matchAll(/\b(fc_session_\w+)\s*\(/g)].map(m => m[1]))].filter(name => !read.has(name));
+    const missed = [...new Set([...text.matchAll(/\b(fc_(?:session|kit)_\w+)\s*\(/g)].map(m => m[1]))].filter(name => !read.has(name));
     if (missed.length) throw Error(`entry points the manifest generator cannot read: ${missed.join(', ')}`);
     return found.map(m => ({ name: m[2], returns: m[1],
         args: m[3].trim() === 'void' ? [] : m[3].split(',').map(a => normalize(a.replace(/\b\w+\s*$/, ''))) }));
@@ -40,7 +43,7 @@ function mirrors(text, schema) {
         const record = schema.wireRecords[`Session${pascal(m[1])}`];
         if (!record) continue;
         // The same names, in any order: a TypeScript interface has no layout (offsets are the C lines' business).
-        const fields = [...m[2].matchAll(/([^;]+?)\s+(\w+)\s*;/g)].map(f => f[2]).filter(f => f !== 'size').sort();
+        const fields = structFields(m[2]).map(f => f.name).filter(f => f !== 'size').sort();
         const wire = Object.keys(record).map(f => f.replace(/\?$/, '')).sort();
         if (fields.join() !== wire.join())
             throw Error(`wire record Session${pascal(m[1])} [${wire}] does not mirror fc_session_${m[1]} [${fields}]`);
@@ -69,9 +72,9 @@ function generate(text = header) {
     for (const m of text.matchAll(/typedef struct (\w+)\s*\{([^}]+)\}/g)) {
         number(`sizeof ${m[1]}`, `sizeof(${m[1]})`);
         number(`alignof ${m[1]}`, `alignof(${m[1]})`);
-        for (const f of m[2].matchAll(/([^;]+?)\s+(\w+)\s*;/g)) {
-            literal(`field ${m[1]}.${f[2]} ${normalize(f[1])}`);
-            number(`offset ${m[1]}.${f[2]}`, `offsetof(${m[1]},${f[2]})`);
+        for (const f of structFields(m[2])) {
+            literal(`field ${m[1]}.${f.name} ${f.type}`);
+            number(`offset ${m[1]}.${f.name}`, `offsetof(${m[1]},${f.name})`);
         }
     }
     const schema = JSON.parse(read('tools/session-codec-schema.json'));
@@ -92,8 +95,9 @@ function generate(text = header) {
     if ('SessionStatus' in schema.wireAliases) throw Error('SessionStatus is generated from fc_session_status; the schema must not list it');
     for (const [name, variants] of Object.entries({ SessionStatus: statusValues(text).join(' | '), ...schema.wireAliases }))
         for (const type of variants.split(' | ')) literal(`wire union ${name} ${type}`);
+    // A null is a number no value takes (a value left; the values after it keep their numbers).
     for (const [name, values] of Object.entries(schema.transportEnums))
-        values.forEach((value, i) => code.push(`static_assert(unsigned(felitronics::session::${name}::${value}) == ${i});`));
+        values.forEach((value, i) => { if (value !== null) code.push(`static_assert(unsigned(felitronics::session::${name}::${value}) == ${i});`); });
     for (const device of schema.enums.Device) {
         const fields = schema.records[`${device}FieldsValue`].fields;
         body.push(`{ ${device}Fields<Value> fields; detail::DeviceOf<decltype(fields)>::each(detail::rules(), [&](std::uint8_t id, const detail::FieldRule&, auto& value) {`);
@@ -114,7 +118,8 @@ function generate(text = header) {
 }
 // Keep documents in the floor readable, but compare paths instead of complete JSON lines.
 // Row offsets may move when fields are added: compare the bytes each descriptor addresses.
-const rawLines = text => text.split(/\r?\n/).filter(l => l && !l.startsWith('#'));
+// The manifest's `base v…` declaration is the append-only gate's (session-abi-append-only.mjs), not a compiled line.
+const rawLines = text => text.split(/\r?\n/).filter(l => l && !l.startsWith('#') && !l.startsWith('base '));
 function lines(text) {
     const result = new Set(), input = rawLines(text);
     const fail = why => { throw Error(`frozen session ABI changed or disappeared: ${why}`); };
@@ -195,6 +200,10 @@ if (args[0] === '--generate') {
     const probe = generate(`${header}\ndouble fc_session_future_measure (fc_session session, const double* at);\n`);
     assert(probe.includes('function fc_session_future_measure double(fc_session,const double*)'), 'a double-returning entry point is frozen');
     assert.throws(() => generate(`${header}\nconst char* fc_session_future_name (fc_session session);\n`), /cannot read: fc_session_future_name/);
+    // A declaration with several declarators is one field each, every one with its own type and offset.
+    for (const name of ['source_low', 'source_high', 'revision_low', 'revision_high', 'job', 'master'])
+        assert(probe.includes(`"field fc_session_master_token.${name} uint32_t"`) && probe.includes(`offset fc_session_master_token.${name}=`),
+            `each declarator of fc_session_master_token is a field: ${name}`);
     // The status union follows the header: an appended status is on the wire at once, a hand list in the schema is refused.
     // Appended after the header's LAST status, whichever that is today.
     const last = Math.max(...statusValues(header).map(Number));

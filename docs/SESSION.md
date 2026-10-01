@@ -168,10 +168,10 @@ every stage a device writes is named, the limiter's second release included.
   the documents and require the gate to go red at that spot, after it passed the copy without the plant; the config
   suite plants over sixty more in-process, every input a review found the schema accepting among them.
 - **The owner's decisions are held apart** (`tests/ConfigDecisionsTests.cpp`): every target row field by field and the
-  engine's decided numbers — the landing's one budget, tolerance and true-peak aim, the high-pass knob's travel and slopes and comfort window, the
+  engine's decided numbers — the landing's one budget, tolerance and true-peak aim, the high-pass knob's travel (15…80 Hz) and the machine's 50 Hz top apart, its slopes and comfort window, the
   wide-bass warning, the quiet thresholds, the peak clipper's classes, the glue slider (0…3 dB, step 0.1; accepted domain 0…6 dB) with its default of none, 0.5 dB when ticked and 2.6 dB on cd, the mono-bass block, the delivery rates, and the rest. The schema would admit another number where the physics allows;
   this suite says which number was decided, so changing one is a deliberate edit of it. Its controls plant departures
-  the schema admits (a high-pass top of 51 or 60 Hz, a slope of 36, another series, another target number or rate, glue
+  the schema admits (a machine high-pass top of 51 or 80 Hz, a knob travel to 50 or 81 Hz, a slope of 36, another series, another target number or rate, glue
   by default, a wider mono bass) and require them named.
 - **Its versions** (`Config::versions()`): 64-bit FNV-1a hashes of both documents' NORMALISED data — every number as the
   bits of its correctly rounded double (−0 as +0), every table walked in the byte order of its keys, order kept in
@@ -257,8 +257,16 @@ field a value), a person's layer (a field a value only where touched — a touch
 number is the machine's) and a revert's mask (a field yes or no). Commands name fields through typed structs: an edit is the
 device's struct, a variant whose alternative is the device. TOML keys are bound at the serialization boundary. The devices are the high-pass, mono bass, the glue (its
 knob, "up to N dB", as the config writes every glue number),
-saturation, tilt, the limiter's needles, dither and low. Tilt and low are separate devices on every target.
+saturation, tilt, the limiter's needles, dither, low and the EQ bands. Tilt and low are separate devices on every target.
 The machine enables low only for a target with `lowDb` (today `lp`, +0.5 dB); otherwise low starts off at 0 dB.
+The EQ bands (device 8, `[bands]`) are five static bands of the EQ stage — body (bell, 160 Hz), mud (bell, 300 Hz, a cut
+only), forward (bell, 3 kHz), brightness (high shelf, 8 kHz) and air (high shelf, 12 kHz), each its own band of the stage
+(3–7) — and a person's only: the machine leaves every band at 0 dB, a band at 0 dB is no band (its slot as the stage held
+it before the device). Its tick (`on`, field 5, appended after the gains) takes the whole device in or out with the gains
+kept: the machine's layer is always on (even where the shell does not offer the bands), a person may untick it, and off
+writes all five slots as no band — the stage, the curve and the master of a project without the bands, bit for bit. The
+plan says the device sounds where it is on and any band is not 0. No norm advice and no dynamics this release; the curve's `[eq] curve.warnDb` judges the shelves of tilt and low only
+(`felitronics_session_eq_bands_tests`).
 Dither is offered through 16 bits, and mono bass except on a mono source; the shell may exclude any device.
 
 - **The machine's layer** is the planner's (below, "The plan of the devices"): each device proposes its fields from
@@ -308,8 +316,8 @@ Dither is offered through 16 bits, and mono bass except on a mono source; the sh
 
 ### The plan of the devices
 
-`src/Planner.h`. **The planner is the one place the machine decides.** Each of the eight devices — the high-pass, mono
-bass, glue, saturation, tilt, the limiter with its needles, dither and low — is a `Planned<>` of its fields: it
+`src/Planner.h`. **The planner is the one place the machine decides.** Each of the nine devices — the high-pass, mono
+bass, glue, saturation, tilt, the limiter with its needles, dither, low and the EQ bands — is a `Planned<>` of its fields: it
 *proposes* its machine fields from what it may read (the target and its edited numbers, the source's shape, the devices
 the shell offers, the measurements) and says where each came from (its target, a measurement, or the config's default)
 and what held it back (the shell, the source, the target, a measurement that ended without a value); and it says what
@@ -340,6 +348,21 @@ is not Ready states that fact alone, or nothing. A shell shows them as they are 
 numbers it does not have. Each is written as an event's fact is (`WireFact`); the contract scenario `plan-pending`
 records a waiting plan, the master it refuses, and its reasons once Ready.
 
+**The advice beside a knob is a fact too** (facts 500–505 and 509, `PlanText::hpfCutoffAdvice`, `hpfSlopeAdvice`,
+`monoBassAdvice`, `eqAdvice`): the value as it sounds — a person's or the machine's — against the norm engine.toml draws on
+the knob, so a hand edit that leaves the norm gets its advice in the next snapshot. The high-pass's cutoff below or above
+`[hpf] comfort` (24–42 Hz, strictly, the window named in the fact) and its slope gentler or steeper than `slopesNormal`
+(a slope between two normal ones is inside; `plan.hpf.soundingSlope` carries the slope that sounds); mono bass's
+crossover outside every zone of `[monoBass.zones]` (ends inside) — above them `MonoBassOutsideZones` (505, against the
+club's and vinyl's upper ends), below them `MonoBassBelowZones` (509, against their lower ends); the EQ curve of the shelves as they sound (tilt and
+low, never the high-pass) past `[eq] curve.warnDb`, at the point of the largest |dB|, said of the shelf that gives the
+larger part there. Nothing for a device out of the chain. `kPlanFacts` is 18. The machine's own plan never raises the
+"beyond the norm" advice (502–505, 509) — `theMachineKeepsItsOwnNorm` plans every target on every input the suite
+measures and holds it; the comfort window (500, 501) is a hint the machine's floor may leave. **The target's note** (facts 506–508,
+`SnapshotText::targetNote`, the snapshot's `targetNote` beside `target`): where the target's loudness comes from, where
+targets.toml `[notes]` says it is not a platform's published number or a standard — measured (youtubeMusic), practice
+(cdDynamic, club), no normalisation (bandcamp). `[notes]` is shown, not sounding: it moves `all`, never `sound`.
+
 **A finding is the planner's proposal; a sentence states what sounds.** `plan.hpf` and `plan.monoBass` hold what the
 machine proposes and what it stood on — its cutoff and the note behind it, the loss at its crossover. What sounds is the
 project's device: a person's layer over a machine's layer that a project file may have written. Each finding says which
@@ -358,7 +381,8 @@ derivation of a master's chain from a project, and a master the session decides 
 **The high-pass and mono bass** (owner decisions 3.2–3.5) are the first devices that decide from a measurement, both
 from the first phase's low-end runs, with no trial render. The high-pass stands always — every target, a quiet input
 included — at a cutoff of max(what the sure lowest note allows, the target's floor, 32 Hz everywhere), never above the
-50 Hz top. The lowest band of the 120 Hz run that was on at all decides, alone: it is a sure note when it is on in 10 %
+machine's 50 Hz top (`[hpf] machineTopHz`). A person's knob travels further, to 80 Hz (`hzMax`, owner 01.10: a voice with
+a guitar from a microphone), and its field is red from 50 Hz on (`comfort.warningHighHz`). The lowest band of the 120 Hz run that was on at all decides, alone: it is a sure note when it is on in 10 %
 of the frames, stands 2 dB over the duty line, lies above 20 Hz and sounds 3 s in all — and if it is not (a rare 808, one
 thump), the cutoff is the floor: the detector never takes a higher band as the note; a programme under 10 s is not searched, and a note that is not
 sure — or a lowest band that fails — gives the floor, never a higher band. The cutoff the note allows is found on the
@@ -388,7 +412,9 @@ peakClipper] clippedPerMinute`); between, with care, up to 1.5 dB. A need of 3 d
 The two numbers (`shortCutDb`, `betweenCutDb`) are AMOUNTS (owner, 30.09): the clipper takes at most that much off the
 peaks and the limiter does the rest, so its threshold stands max(0, need − cut) above the ceiling, the need the input's
 (`plan.limiter.needDb`); a person's `manual X` is X dB off the peaks the same way. The finding carries the amount
-(`overDb`, `proposedOverDb`), the chain the threshold. Where the need is not known, or need − cut lies beyond the
+(`overDb`, `proposedOverDb`), the chain the threshold; its line (`LimiterShort`/`Between`/`Manual`, and a vinyl master's
+`MasterVinylNeedlesDeparts`) names the amount as a cap in its own words, the number exact ("the clipper will take no
+more than 1.5 dB off the peaks, the limiter will take the rest", owner wording 01.10 — never "no more than ≤ …"), since the landing's drive decides how much the clipper really takes — and `LimiterLittleNeed` names the need as the one at the target. Where the need is not known, or need − cut lies beyond the
 limiter's working range (12 dB), no threshold keeps to the amount and the clipper stays off. The landing then moves the
 peaks by its own gain and pass ceiling; a rendered master's clipper reduction stays within the amount plus that drift
 (`theClipperCutsItsAmount`: about 1.4–2.0 dB on the suite's mix).
@@ -439,7 +465,40 @@ and whether that device is in the chain. They change nothing: no observation swi
 place ("found 2 clips: 0:12, 1:47 — it looks like an edit"); ten a minute is a clipped source. The lowest occupied band
 is the low end's reading published with its sureness (`lowestOccupiedSure`, `lowestOccupiedResolved` beside it): an
 unsure one is shown as unsure, never withheld, while the high-pass takes the floor for it. `ObservationText::fact` gives
-a found one's sentence.
+a found one's sentence, and a not-measured one's name and reason (`ObservationUnmeasured`); a kind measured and not
+found has none. The style is error, warning, note or reading (`[observations.kinds]`): the loudest low note and the lowest
+occupied band are readings, numbers the file shows, not findings. **The owner's table (01.10)**: clipping and opposite
+polarity are errors; lost bits, a dual-mono file, an input already limited (PLR under 10.5 dB), a spectral wall at 88 % of
+Nyquist or lower (a lossy source), wide bass and a quiet input are warnings. Four kinds also take their style by size —
+`sized()` in `src/Observations.cpp`, the one place, with the thresholds in their own `[observations]` rows: a DC offset
+is a note under 1 % of full scale, a warning from 1 % and an error from 10 %; the EFFECTIVE depth (the container's bits
+less the low bits always zero) is nothing at 24 bits, a warning at 23 to 17 and an error at 16 and less; infra-low is a
+note from 2 %, a warning from 5 %; the hum is a note, a warning from half its severity (−50 dB against the programme)
+when it is confident. A size raises a style, never lowers it, and never raises a doubtful finding; where the size chose
+the style the line says so (`SourceDcNote`, `SourceTruncatedBits`/`SourceShallowMix`, `SourceInfraLowNote`/`Warning`).
+A stereo source's DC line names both channels, signed, as the readings print them — `SourceDcNoteStereo`/`SourceDcStereo`
+(446/447, "L {left}, R {right}"; the observation's `second`/`third`, `places` the channels read); a mono source keeps its
+one number (`SourceDcNote`/`SourceDc`).
+The hum is not measured only where the detector could not listen (too short, every frame holed, too coarse a
+resolution, or a base line heard in too little quiet to tell whether it stands still), or where the session refused the
+analyzer before any work (no price for the programme, the memory) — then with that refusal's own reason, never "too
+short"; where it listened — a programme
+never quiet, a comb without its base, a quiet stretch without a base line — and no steady line stood out, it is not
+found. **The observations speak for themselves**: `observationFacts` carries every
+kind's line as `ObservationText::facts` states it — `{kind, fact}`, in the order of `ObservationKind`, empty before a
+source — so a shell shows them without composing one; the names, the handling and the reasons are catalogue terms
+(`terms.observation`, `terms.handledBy`, `terms.measurementReason`).
+**The readings are facts** too, one table per place keyed by `ReadingKind` (appended, 31 kinds): each entry is
+`{kind, fact}`, the fact `Value` — one number with the core's unit and precision. The snapshot's `readings` (at most 26)
+are the source's — integrated loudness, true peak, LRA, PLR, DC offset per channel, the lowest occupied band, the exact
+PCM bits, correlation, burst events Mid and Side, hum, tempo and its confidence (`TempoConfidence`, 438, a word of
+`terms.tempoConfidence`), the clipping's runs, longest run, clipped samples and sample peak, the low end's side share,
+the stereo windows and the crest's active blocks per band — as `ReadingText::source` states them from the measurement,
+following each new source. A master's `MasterReport::readings` (at most 9) — achieved loudness, true peak, LRA, PLR,
+target, ceiling, gain, the landing's passes and the check passes — are `MasterReportText::readings`, stated when the job
+settles the report. A kind not measured has no entry; the need is not a reading. The quantities' names are
+`terms.reading`, in the order of `ReadingKind` (`ReadingText::name`). On the wire a reading is `{"fact", "kind"}`, both
+lists are optional, and the decoder refuses an unknown kind.
 
 **Tilt and low** (technical decision 3О10) are two devices of the person's taste in that one stage. The machine never
 ticks tilt and leaves it at 0 dB; it ticks low only for a target's correction for its medium (`lowDb`: vinyl's
@@ -479,12 +538,13 @@ is invented and the master is made without it. `plan.glue` carries the state and
 chain gets — ratio, threshold (in the normalised input's dB), knee, attack, and once the tempo is decided the tempo,
 the release asked for and the release given; `PlanText::glue`, `::glueTempo` and `::glueRelease` give the refusal, the
 fallback tempo and a release held at a limit as facts.
-The saturation is the chain's tanh stage (`MasteringChainParams::clipper`) — not the peak clipper inside the limiter,
+The saturation is the chain's shaper stage (`MasteringChainParams::clipper`) — not the peak clipper inside the limiter,
 which is the limiter's. The machine never sets it. The knob is the drive the input would get at 0 dBTP: the core drives
 the shaper at k = 10^(drive/20) − 1, so the stage gets `20·log10(1 + (10^(knob/20) − 1)·10^(−peak/20))` for the
-normalised true peak — no trial render; the compensation is 0, mix and output as set (`plan.saturation`). Its TYPE is
+normalised true peak — no trial render; the compensation is 0, the mix as set, the shaper's output at 0 dB (`plan.saturation`). Its TYPE is
 the shaper's curve (`SaturationFields::type`, felitronics-core's `WaveShaper::Shape`): the machine's layer holds the
-config's `[saturation] shape`, tanh, and never another; a person picks tanh, tube, transistor, transformer or tape, and
+config's `[saturation] shape`, tape (owner, 01.10; tanh before), and never another — so a hand drive with no type
+picked sounds tape; a person picks tanh, tube, transistor, transformer or tape, and
 an edit or a file that gives atan, cubic or asym by hand is refused `NotOneOf` (those stay the config's, for research).
 WHAT EACH DID is measured on its own stage and reported in the master's cost: `glueP95Db` and `glueMaxDb`, the
 compressor's gain reduction over the programme's 4 ms windows and its largest sample; `saturationCutMaxDb` and
@@ -540,8 +600,7 @@ placed project is exportable while what its devices read still ends: its machine
 Files and browser storage belong to the shell. The writer reads no filesystem and the session reads no file itself.
 
 ```toml
-defaults = "2026-09"
-core = "0.5.0"
+defaults = "2026-10"
 manual = true
 
 [target]
@@ -609,19 +668,17 @@ another one, so the core carries no code for older labels). Any other label — 
 planner, included — is refused whole as `UnknownDefaults` (fact 126), as is a malformed one; a newer label is
 `NewerDefaults` (28, fact 128). These refusals follow the schema read, in its fixed order, and leave state and revision
 unchanged. `ProjectTests.cpp:defaultsVersions` names `2026-10` and turns red if it stops opening with its own machine
-layer. Fact `DefaultsConverted` (9) keeps its id and message (append-only, released in v0.3.0) and is emitted by
-nothing. Export uses the current label.
+layer. Export uses the current label. The file carries no core stamp: a `core` key is an unknown key
+(`ProjectUnknownKey`).
 
 After defaults selection, the file's complete machine layer always wins (omitted fields mean defaults),
-with the person's touched layer over it — on the same core and on another. The planner decides again beside it, for
-the file's target on this source; `plan.fromFile` says the layer is the file's, and `adoptMachine` takes the planner's
-decisions in its place, the person's layer kept. `MachineDifferences` (8) publishes the
-count for a foreign core, including zero; `SameCoreMachineDifferences` (10) publishes nonzero same-core differences
-and politely explains that these usually indicate a project file edited by hand. Both facts render in Russian and English.
+with the person's touched layer over it. The planner decides again beside it, for the file's target on this source;
+`plan.fromFile` says the layer is the file's, and `adoptMachine` takes the planner's decisions in its place, the
+person's layer kept. `MachineDifferences` (8) publishes the count of differences between the file's machine layer and
+today's planner, however they arose, when there are any; it renders in Russian and English.
 `snapshot().view().machineDifferences` holds ordered `(device, field, fileValue, coreValue)` rows. Flags use 0/1,
 choices their enum numbers, and knobs their doubles. Owned snapshots, the codec and its generated `.d.ts` carry them.
-Export preserves the stamp of the core whose machine decisions the file carries. A target change explicitly places
-today's machine, stamps this core and clears the comparison. Hand edits and panel visibility do not replace it.
+A target change explicitly places today's machine and clears the comparison. Hand edits and panel visibility do not replace it.
 
 The page draws **`snapshot().view().eqCurve`**: the summed high-pass + tilt + low response using hand-over-machine
 values, independent of panel visibility. It is empty before placement, then contains 128 logarithmic `(hz, db)` points
@@ -727,7 +784,7 @@ main thread.
   its caller keeps alive while it is rendered.
 
 The facts' ids are stable and fall in ranges (`Text.h`): 1–99 readings and the landing, 100–199 a command's rejection,
-200–299 the phases of the work and 300–399 the session's errors. Adding a fact is three edits: its id in
+200–299 the phases of the work, 300–399 the session's errors and 400–499 the source: its measurement's state, its observations and its readings' words. Adding a fact is three edits: its id in
 `Text.h`, in its range, its row in `src/TextFacts.h`, in id order, and its message in every declared language — the
 build is red until the three agree.
 
@@ -769,11 +826,16 @@ sets the source normalization toward −18 LUFS separately from the adjustable p
 change requests one extra source-rate impact pass outside the twelve landing renders.
 
 `LandingSummary` carries status, achieved LUFS, signed miss, absolute distance, reference true peak, measured
-source and limiter hints, work units and the ordered pass log. Its limiter and K13 clipper traces share
+source and limiter hints, work units and the ordered pass log — and, where the solver decided them, `binding` (the
+`LandingConstraint` that held an unreachable landing, the solver's `LoudnessSolution::binding`) and `belowLufs`/`aboveLufs`
+(the two levels a between landing's target fell between, quieter first; were a solver's side not a number, the verdict
+stands without them and the master is still delivered — a target that cannot be hit always returns the file). The decoder refuses a limit on another status
+and levels out of order or on another status; the keys are always present, null where the status has none, and a
+missing one is a decode error. Its limiter and K13 clipper traces share
 the delivered-frame grid and carry min/max/mean reduction, finite counts, validity and completion. Limiter
 GR follows the audio receiving gain after lookahead; K13 reduction follows the detector's input time.
-`Kept::landing` and the appended trace fields are optional in the generated session codec so older v1
-snapshots decode without them. `Snapshot` owns the pass rows and both trace row arrays.
+`Kept::landing` and the trace fields are nullable and always present in the generated session codec: a missing key
+is a decode error, and a snapshot is never persisted. `Snapshot` owns the pass rows and both trace row arrays.
 
 `Session::step(budget)` runs live loudness, source clipping, the programme report, waveform, source analyzers, needles, and mastering. The budget counts **work units**, never milliseconds. A call
 consumes at most `min(budget, 16)` units, reports the number consumed, and returns `More` while any job remains or
@@ -898,7 +960,7 @@ unfinished range is `Cancelled`. A row's reason distinguishes absent mono axes (
 **The lean summary.** A summary still carries every kept master whole, and a master is heavy: its two reduction
 traces, its crest rows and its waveform buckets are megabytes of JSON — 1.28 MB with one 12-second master, 8.6 MB with
 seven. A shell that sets `Capabilities::leanSummary` (C: `leanSummary = 1`, a field appended to
-`fc_session_capabilities`; a version-1 record of 32 bytes leaves it 0 and gets the summary it always got, byte for byte)
+`fc_session_capabilities`, 0 or 1)
 gets summaries without those rows: each master keeps its scalars — id, recipe, landing status, passes and readings, the
 report's readings and hints, every cost value — with its pass log and its cost sections; its traces are absent, its
 crest rows, mask and waveform buckets empty, and the summary says `masterRowsIncluded=false` (62 KB with one master,
@@ -1151,14 +1213,54 @@ floors rather than values — a boundary struct's size and `FC_SESSION_ABI_VERSI
 of additions that lands together in one release moves it up by one and adds one row to the header's VERSION HISTORY; a
 lower number is a change. The generated `snapshot.d.ts` and `snapshot.mjs` state the version read from the header. The wire's
 `SessionStatus` union is read from `fc_session_status` by both generators, and a wire record that mirrors a C struct
-(`SessionCapabilities`) must carry each of its fields. The manifest itself only grows: on a pull request CI compares it
-with the base branch's (`tools/session-abi-append-only.mjs`), and a removed or edited line is red.
+(`SessionCapabilities`) must carry each of its fields. The manifest itself only grows from its declared base: its line
+`base v0.6.0` names the release it starts from, and on a pull request CI compares it with the base branch's
+(`tools/session-abi-append-only.mjs`). Under the same declared base a removed or edited line is red; a manifest that
+declares any other base is red unless the pair is in the script's own list of authorised resets — the owner's decision,
+which a pull request cannot grant itself by editing the manifest. The list holds exactly one: v0.6.0 over a base branch
+whose manifest declares none. It passes once — after it lands both sides declare it and append-only holds again.
+
+**The one reset: v0.6.0 (`FC_SESSION_ABI_VERSION` 4, owner, 2026-10-01).** No project, snapshot or file of an older
+version exists anywhere, the page has no project export, and the core's one consumer (the site) vendors the exact core —
+so the manifest starts from a new base instead of carrying entries for data that never existed. What left it: the
+project file's core stamp (`Project.core`, the `Version` record, `Rejection::ProjectCore` 27 and its fact 127), the
+facts `DefaultsConverted` (9) and `SameCoreMachineDifferences` (10) — `MachineDifferences` (8) is the one fact for the
+differences between a file's machine layer and today's planner, however they arose — and the saturation's output knob
+(`SaturationFields.output`, field 3; the term `FieldSaturationOutput` 12 and its kit constant): the landing sets the gain
+before the limiter, so any trim was undone. Live ids keep their numbers — 27, 9, 10, 127, 12 and the saturation's
+field 3 now name nothing — and the snapshot and event fixtures in the manifest are the current ones. The base also takes
+the capabilities struct at its current 40 bytes (`leanSummary` at 32) and the version floor at 4.
 
 `tools/wasm/build.sh` builds `fcsession` from the facade and `modules/session/sources.txt`, audits the exact export list,
 compares node/web wasm bytes, checks for threads, and runs a node scenario through the ABI and generated types.
 Controls reject an extra export and verify a real allocation trap followed by permanent poison. The wire fixture
 checks all six event kinds and nonempty binary rows against the generated declarations. Full native/wasm scenario
 parity is a separate contract suite.
+
+### The pure kit — `fc_kit_*`
+
+Some answers a shell needs within one frame, on its UI thread, without a round trip to the worker that runs the session
+(architecture §4.5): a published fact as text in the page's language, what a person typed into a knob's field, where a
+value stands along the knob's travel and how far it is from the knob's comfortable window, mono bass's purpose zones, the
+EQ curve a set of knob values would draw, a low-end curve from band energies. `felitronics::session::Kit`
+(`include/felitronics/session/Kit.h`) answers them: static, stateless, allocation-free functions over the caller's spans,
+each delegating to the code the session itself uses — `Text::write` behind the codec's own fact reader, `Text::parse` on
+the commands' domains (`Knob::accepts`, `Rules::slope`) and the config's grid, the config's travels, green windows
+(`[edit] lufs/tp green`), comfort (`[hpf] comfort`) and normal ranges (`[tilt]`/`[low] normal`, out to `hard`), the
+zones (`[monoBass.zones]`), the EQ stage's `writeEq` / `eqCurve` / `eqFinding`, det-math's `log10`. The plan's comfort and
+zones advice reads its comparison from `Kit::heat` and `Kit::monoZonesAt`, so a knob's colour and the advice beside it
+cannot disagree. A field is its `text::Term` id (`FieldTargetLufs` … `FieldLowDb`), the id a refusal already names it by.
+
+The C boundary carries them as `fc_kit_text`, `fc_kit_parse`, `fc_kit_travel`, `fc_kit_position`, `fc_kit_value_at`,
+`fc_kit_heat`, `fc_kit_mono_zones`, `fc_kit_mono_zones_at`, `fc_kit_eq_curve` and `fc_kit_low_end_curve` in the same
+fcsession module, which a page instantiates a second time on its main thread: no handle, the poison, the argument order
+and the statuses of every `fc_session_*` call, a language by its code. The kit holds no session state — it reads only the
+compiled-in config and catalogue — so neither contract's scenarios move; the WAV recording records the module's hash and
+the heap it observed, which every change of the module moves. `felitronics_session_kit_tests` holds each answer to the
+session's own path and each export to its C++ call, and pins one hash of a corpus of answers that
+`tools/wasm/session-check.mjs` reproduces on the wasm module (native == wasm, byte for byte). The entry points are in the
+ABI manifest and on the module's export list; `session-check.mjs` lists them as not yet released, under version 3, until
+the release that publishes them moves `FC_SESSION_ABI_VERSION`.
 
 ## The native CLI — `fcore_session`
 
@@ -1171,7 +1273,7 @@ C++, the way a desktop application does.
 Knob travel and step describe the shell's slider. Commands and project import accept the domains below, including
 values between steps and beyond travel. An empty edit or revert is accepted with unchanged revision. Device edits
 require placement and an offered device. Panel visibility does not gate them. Low is offered on every target,
-saved machine layers are retained for every core stamp, and any defaults label but the current one is refused.
+a file's machine layer is retained, and any defaults label but the current one is refused.
 
 | Knob | Accepted domain | Reason |
 | --- | --- | --- |
@@ -1181,7 +1283,7 @@ saved machine layers are retained for every core stamp, and any defaults label b
 | HPF slope | Multiples of 6, 6 through 96 dB/oct | Device, orders 1–16 |
 | Mono-bass frequency / width | 60–300 Hz / 0–1 | Product / device |
 | Glue | 0–6 dB | Product |
-| Saturation drive / mix / output | 0–12 dB / 0–1 / −6–0 dB | Product / device / product |
+| Saturation drive / mix | 0–12 dB / 0–1 | Product / device |
 | Saturation type (by hand) | tanh, tube, transistor, transformer, tape | Product |
 | Tilt / low | −6–6 dB | Product |
 | Needles above ceiling | 0–6 dB | Product |
@@ -1191,10 +1293,11 @@ minimum supported rate. The schema checks travel within domains, defaults within
 sums. Project numeric fields use ordinary TOML numbers when its decimal subset can represent them exactly; other
 finite binary64 values use quoted shortest round-trip decimals, parsed with the same exact numeric reader as JSON.
 
-The C v1 records `fc_session_capabilities`, `fc_session_sizes`, `fc_session_capacity` and `fc_session_storage` start
-with the caller's `sizeof`. Their v1 prefixes are 32, 12, 24 and 32 bytes; fields may only be appended. Sizes below the
-v1 prefix and beyond the current build have distinct statuses. Future suffix fields must define their absent-field
-meaning for v1 callers. Demand queries for commands, loads and imports use the session's own `storageFor`; capacity
+The C records `fc_session_capabilities`, `fc_session_sizes`, `fc_session_capacity`, `fc_session_storage` and
+`fc_session_measurement_storage` start with the caller's `sizeof`. Their base sizes at v0.6.0 are 40, 12, 24, 32 and 88
+bytes — the capabilities with `leanSummary` (a 32-byte record is too small, owner 2026-10-01), the measurement demand
+without the retired slots; fields may only be appended. Sizes below the base and beyond the current build have distinct
+statuses. A field appended later must define its absent-field meaning for callers of the base. Demand queries for commands, loads and imports use the session's own `storageFor`; capacity
 may be updated between calls as a heap ceiling and largest free block. Live bytes plus demand and the largest allocation
 are checked before work. Nonallocating commands remain available when capacity is reduced.
 
@@ -1263,7 +1366,7 @@ snapshot
 
 The seventeen scenarios cover load/measure, whole refusal in a forbidden state, cancel during measurement and mastering,
 reset every device edit on a target change, poison/replay, interleaved sessions, memory refusal, project round trip,
-knob domains and no-op edits, and a saved machine layer from an older core. Device edits work with manual mode hidden;
+knob domains and no-op edits, and a project whose machine layer differs from today's planner. Device edits work with manual mode hidden;
 `low` is edited and reset across target changes, with the hand-edit count returning to zero. Domain checks include
 fractional values beyond slider travel, Nyquist refusal, invalid slopes, and an empty edit/revert preserving the whole snapshot.
 Memory coverage supplies a zero `heapCeilingBytes`: create refuses before allocating a session or starting work;
@@ -1285,7 +1388,7 @@ tools/wasm/build.sh
 node tools/contract/run.mjs build-release/tools/fcore_session tools/wasm/build/fcsession.node.js
 node tools/contract/run.mjs build-release/tools/fcore_session --native-only
 node tools/contract/run.mjs build-release/tools/fcore_session tools/wasm/build/fcsession.node.js --controls
-node tools/contract/run.mjs build/tools/fcore_session build/measure-08-wasm-artifacts/fcsession.node.js --rebuild-recordings
+node tools/contract/run.mjs build/tools/fcore_session tools/wasm/build/fcsession.node.js --rebuild-recordings
 ```
 
 What the comparison proves, and what it does not: the brain answers byte for byte the same natively and in wasm, and
@@ -1394,13 +1497,11 @@ mean power minus 42 dB. Building the mask reads saved powers, never PCM a second
 Only measurement statuses and mandatory input warnings are emitted here; device decisions and
 other findings remain separate. Uncertain lowest-note evidence requests the safe target HPF floor.
 
-Snapshot fields appended after frozen v1 are optional on decode. Their defaults are declared in
-`tools/session-codec-schema.json` and emitted in the generated declarations: no results, zero byte counts
-and identities, null need/ceiling, zero progress in Stream, false flags and Empty resume state.
-Missing readiness or placement flags convey no known readiness or placement. Present fields still require
-valid types; required frozen fields stay required. Appended event metadata and reading fields are also
-optional in transport declarations with documented conservative defaults. The generator refuses an
-appended field without a decode default. The frozen snapshot and event fixtures hold backward acceptance.
+Every snapshot and event field is required on decode: a snapshot never persists (the page and the core ship together),
+so a missing key is a decode error, and a field that is semantically optional is nullable and present. Only a request's
+own optional fields keep a declared default — a query's `masterId`, `crossoverHz`, `fromHz`, `toHz` and `spectrum`, an
+edit's or a revert's tick and type. `SessionCapabilities.leanSummary` is required: the C struct's base is the whole
+40-byte record (owner, 2026-10-01), so no shorter record states a default for it.
 
 The table distinguishes measured sources whose devices are not placed or whose plan waits, including master and
 stopped overlays. Mastering depends on measurements (and, with the panel open, on the plan); edit, revert, import and
@@ -1445,7 +1546,7 @@ landing has at most twelve measured passes. A safe miss retains the best verifie
 reason. Unavailable mandatory readings or an unsafe true peak yield no transferable PCM. Optional
 source analyzers continue independently. `canMaster` in the snapshot reports state and mandatory
 readiness; capacity is reported by the preflight demand. The snapshot also exposes the pending transfer
-token and PCM byte count. Appended fields decode as absent on older v1 snapshots.
+token and PCM byte count. Every field is present on decode; a missing key is a decode error.
 
 One session owns at most one pending delivery PCM. Its `MasterToken` names source, completion revision,
 job, and master; every transfer checks all four. The retained master list owns recipe and compact pass,
@@ -1496,6 +1597,17 @@ can keep the PCM when its reference true peak is safe; a missing mandatory readi
 The two optional hint records expose measured sub-bass or presence share, limiter peak reduction, gain or
 remaining loudness distance with units. `MasterReportText` renders the miss and mix suggestions as typed,
 ru-first/en facts. PassLimit means the twelve-pass budget ended; it makes no claim of physical impossibility.
+The landing's verdict is a fact too, one per status, published with the master ahead of the miss
+(`MasterReportText::landing`): solved says the achieved loudness against the target and the landing's tolerance
+(`MasterLandingSolved`, 88, "(tolerance ±0.1 LU)") — never "hit" without numbers; unreachable names the limit that held
+it (89, a select on `landingLimit`: the true-peak ceiling, the limiter's GR limit, the PLR floor, the LRA loss limit, the
+chain's gain bound — `LandingSummary::binding`; "one of the constraints" where the solver named none) against the
+tolerance; pass limit says the budget ended against it (90); between names the two nearest levels, both beyond the
+tolerance (91, `belowLufs`/`aboveLufs`); the achieved number and the gap stay the miss's own line
+(`MasterLandingMiss`/`Above`, 11/23); a technical failure says so (92). The product landing the session runs ends Solved,
+PassLimit or between — never unreachable — so 89 speaks for a solver that names its binding. Unavailable and cancelled landings say none. The crest's line
+(`MasterReportText::crest`) goes out once: with the report when the job settles the crest (joined inside the job, or
+unavailable), or from the late join when it was still pending.
 
 `MasterCrest` stores five peak-amplitude/mean-square-power pairs per block, in Low, LowMid, HighMid, High,
 Full order, plus five source activity values per block as zero/one values. Version, sample rate, hop
@@ -1544,7 +1656,7 @@ reference measurement, not this ordered shape measure.
 
 Glue P95 uses the same 4-ms window distribution of the compressor's trace, and glue maximum its largest tap
 sample; the saturation's two cuts come from the soft clipper's own peak counters (see Glue and saturation). Each is
-`NoSignal` when its stage is absent or bypassed, and older snapshots decode them as `NotImplemented`.
+`NoSignal` when its stage is absent or bypassed; a snapshot without them is a decode error.
 Limiter P50/P95 use the solver's 4-ms window distribution. The active fraction uses its input-gated
 tap statistics; `activeWindowShare` separately counts source momentary windows passing the relative
 activity floor. Pumping is RMS of the limiter's retained mean GR buckets after a second-order
@@ -1552,6 +1664,13 @@ Butterworth 1-Hz high-pass and 8-Hz low-pass in sequence, excluding the first tw
 unavailable below 40 buckets per second or without valid GR. Trace bucket count follows duration:
 `clamp(ceil(seconds / 0.004), 1000, 65536)`, then is capped by delivered frame count. The true
 bucket rate is therefore part of the retained trace; a wide bucket can make pumping unavailable.
+
+The cost speaks line by line (`MasterReportText`), published with the report beside shape, impact and pumping, each
+line only where its numbers were measured: the largest section shift and where it lies (`MasterCostSection`, 93, only
+when a section is named), the sections compared (94), the limiter's median and P95 over the active windows (95), the
+share of windows it works in and the share that are active (96), and the impact loss of the four bands (97) — that one
+also from a late crest join when the crest was still pending at the report. A number missing is a line missing, never a
+zero.
 
 The master keeps at most 2048 waveform buckets per channel, each with actual delivered-frame bounds,
 minimum, maximum, RMS and finite count. `QueryKind::MasterWaveform` returns intersecting retained

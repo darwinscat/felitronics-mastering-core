@@ -40,7 +40,8 @@
       "Tilt",
       "Limiter",
       "Dither",
-      "Low"
+      "Low",
+      "Bands"
     ],
     "Analyzer": [
       "Loudness",
@@ -94,6 +95,14 @@
       "LoudnessDemand",
       "GainRange",
       "TruePeak"
+    ],
+    "LandingConstraint": [
+      "None",
+      "TruePeakCeiling",
+      "LimiterGainReduction",
+      "PeakToLoudness",
+      "LoudnessRange",
+      "GainRange"
     ],
     "QueryKind": [
       "Waveform",
@@ -204,13 +213,66 @@
     "ObservationStyle": [
       "Error",
       "Warning",
-      "Note"
+      "Note",
+      "Reading"
     ],
     "HandledBy": [
       "Nothing",
       "Hpf",
       "MonoBass",
       "Person"
+    ],
+    "ObservationKind": [
+      "Clipping",
+      "DcOffset",
+      "BitsUnused",
+      "DualMono",
+      "EdgeSilence",
+      "TooQuiet",
+      "TooShort",
+      "AlreadyLimited",
+      "SpectralWall",
+      "LoudestLowNote",
+      "LowestLowBand",
+      "InfraLow",
+      "WideBass",
+      "Polarity",
+      "Sibilance",
+      "Hum",
+      "HumWandered"
+    ],
+    "ReadingKind": [
+      "Integrated",
+      "TruePeak",
+      "Lra",
+      "Plr",
+      "DcOffset",
+      "DcOffsetLeft",
+      "DcOffsetRight",
+      "LowestBand",
+      "PcmBits",
+      "Correlation",
+      "BurstsMid",
+      "BurstsSide",
+      "Hum",
+      "Tempo",
+      "TempoConfidence",
+      "ClipRuns",
+      "LongestRun",
+      "ClippedSamples",
+      "SamplePeak",
+      "LowSide",
+      "StereoWindows",
+      "CrestBlocksLow",
+      "CrestBlocksLowMid",
+      "CrestBlocksHighMid",
+      "CrestBlocksHigh",
+      "CrestBlocksFull",
+      "Target",
+      "Ceiling",
+      "Gain",
+      "Passes",
+      "CheckPasses"
     ]
   },
   "records": {
@@ -294,7 +356,6 @@
         "on": "bool",
         "drive": "double",
         "mix": "double",
-        "output": "double",
         "type": "SaturationType"
       }
     },
@@ -304,7 +365,6 @@
         "on": "bool?",
         "drive": "double?",
         "mix": "double?",
-        "output": "double?",
         "type": "SaturationType?"
       }
     },
@@ -397,6 +457,35 @@
         "hand": "LowFieldsTouched"
       }
     },
+    "BandsFieldsValue": {
+      "cpp": "BandsFields<Value>",
+      "fields": {
+        "body": "double",
+        "mud": "double",
+        "forward": "double",
+        "brightness": "double",
+        "air": "double",
+        "on": "bool"
+      }
+    },
+    "BandsFieldsTouched": {
+      "cpp": "BandsFields<Touched>",
+      "fields": {
+        "body": "double?",
+        "mud": "double?",
+        "forward": "double?",
+        "brightness": "double?",
+        "air": "double?",
+        "on": "bool?"
+      }
+    },
+    "BandsFieldsLayers": {
+      "cpp": "Layers<BandsFields>",
+      "fields": {
+        "machine": "BandsFieldsValue",
+        "hand": "BandsFieldsTouched"
+      }
+    },
     "Devices": {
       "cpp": "Devices",
       "fields": {
@@ -407,7 +496,8 @@
         "tilt": "TiltFieldsLayers",
         "limiter": "LimiterFieldsLayers",
         "dither": "DitherFieldsLayers",
-        "low": "LowFieldsLayers"
+        "low": "LowFieldsLayers",
+        "bands": "BandsFieldsLayers"
       }
     },
     "Project": {
@@ -416,8 +506,7 @@
         "target": "uint16",
         "targetEdit": "TargetFieldsTouched",
         "manual": "bool",
-        "devices": "Devices",
-        "core": "Version"
+        "devices": "Devices"
       }
     },
     "Recipe": {
@@ -551,7 +640,8 @@
         "firstHint": "MasterHint?",
         "secondHint": "MasterHint?",
         "cost": "MasterCost?",
-        "medium": "MasterMedium?"
+        "medium": "MasterMedium?",
+        "readings": "ReadingFact[<=9]"
       }
     },
     "LandingPass": {
@@ -595,6 +685,9 @@
         "status": "LandingStatus",
         "mainReason": "LandingReason",
         "secondReason": "LandingReason",
+        "binding": "LandingConstraint",
+        "belowLufs": "double?",
+        "aboveLufs": "double?",
         "deliverable": "bool",
         "achievedLufs": "double?",
         "missLu": "double?",
@@ -697,7 +790,10 @@
         "pendingMaster": "MasterToken",
         "pendingMasterBytes": "bytes",
         "plan": "PlanView",
-        "observations": "Observations"
+        "observations": "Observations",
+        "observationFacts": "ObservationFact[<=17]",
+        "readings": "ReadingFact[<=26]",
+        "targetNote": "Fact?"
       }
     },
     "MasterToken": {
@@ -707,14 +803,6 @@
         "revision": "uint64",
         "job": "uint32",
         "master": "uint32"
-      }
-    },
-    "Version": {
-      "cpp": "Version",
-      "fields": {
-        "major": "uint32",
-        "minor": "uint32",
-        "patch": "uint32"
       }
     },
     "MachineDifference": {
@@ -890,7 +978,8 @@
         "tilt": "DevicePlan",
         "limiter": "DevicePlan",
         "dither": "DevicePlan",
-        "low": "DevicePlan"
+        "low": "DevicePlan",
+        "bands": "DevicePlan"
       }
     },
     "GlueFinding": {
@@ -906,7 +995,8 @@
         "releaseAskedMs": "double?",
         "releaseMs": "double?",
         "releaseClamped": "bool",
-        "tempoMeasured": "bool"
+        "tempoMeasured": "bool",
+        "p95DetectorDb": "double?"
       }
     },
     "SaturationFinding": {
@@ -938,13 +1028,27 @@
         "saturation": "SaturationFinding",
         "limiter": "LimiterFinding",
         "dither": "DitherFinding",
-        "facts": "PlanFact[<=14]"
+        "facts": "PlanFact[<=18]"
       }
     },
     "PlanFact": {
       "cpp": "PlanFact",
       "fields": {
         "device": "Device",
+        "fact": "Fact"
+      }
+    },
+    "ReadingFact": {
+      "cpp": "ReadingFact",
+      "fields": {
+        "kind": "ReadingKind",
+        "fact": "Fact"
+      }
+    },
+    "ObservationFact": {
+      "cpp": "ObservationFact",
+      "fields": {
+        "kind": "ObservationKind",
         "fact": "Fact"
       }
     },
@@ -957,7 +1061,8 @@
         "noteHz": "double?",
         "noteLossDb": "double?",
         "sounding": "Sounding",
-        "soundingHz": "double"
+        "soundingHz": "double",
+        "soundingSlope": "int32"
       }
     },
     "MonoBassFinding": {
@@ -1082,8 +1187,8 @@
     "CommandAnswer": "AcceptedAnswer | RejectedAnswer | ContractAnswer",
     "SessionEvent": "PhaseEvent | FactEvent | ReadingEvent | DoneEvent | RejectedEvent | ErrorEvent | MeasurementEvent",
     "SessionCommand": "SetTargetCommand | SetManualCommand | EditTargetCommand | EditDeviceCommand | RevertEditsCommand | MasterCommand | CancelCommand | ForgetCommand | ContinueMeasurementCommand | AdoptMachineCommand",
-    "EditDeviceCommand": "EditDeviceHpfCommand | EditDeviceMonoBassCommand | EditDeviceGlueCommand | EditDeviceSaturationCommand | EditDeviceTiltCommand | EditDeviceLimiterCommand | EditDeviceDitherCommand | EditDeviceLowCommand",
-    "RevertEditsCommand": "RevertEditsHpfCommand | RevertEditsMonoBassCommand | RevertEditsGlueCommand | RevertEditsSaturationCommand | RevertEditsTiltCommand | RevertEditsLimiterCommand | RevertEditsDitherCommand | RevertEditsLowCommand",
+    "EditDeviceCommand": "EditDeviceHpfCommand | EditDeviceMonoBassCommand | EditDeviceGlueCommand | EditDeviceSaturationCommand | EditDeviceTiltCommand | EditDeviceLimiterCommand | EditDeviceDitherCommand | EditDeviceLowCommand | EditDeviceBandsCommand",
+    "RevertEditsCommand": "RevertEditsHpfCommand | RevertEditsMonoBassCommand | RevertEditsGlueCommand | RevertEditsSaturationCommand | RevertEditsTiltCommand | RevertEditsLimiterCommand | RevertEditsDitherCommand | RevertEditsLowCommand | RevertEditsBandsCommand",
     "SessionMeasurementArray": "Omit<MeasurementArray, \"values\"> & { readonly values: ScalarRow }",
     "SessionMeasurementResult": "Omit<MeasurementResult, \"arrays\"> & { readonly arrays: ReadonlyArray<SessionMeasurementArray> }",
     "QueryResponse": "SessionQueryView"
@@ -1319,7 +1424,6 @@
       "on?": "boolean | null",
       "drive?": "WireNumber | null",
       "mix?": "WireNumber | null",
-      "output?": "WireNumber | null",
       "type?": "SaturationType | null"
     },
     "EditDeviceTiltCommand": {
@@ -1360,6 +1464,20 @@
     "EditDeviceLowFields": {
       "on?": "boolean | null",
       "db?": "WireNumber | null"
+    },
+    "EditDeviceBandsCommand": {
+      "kind": "\"editDevice\"",
+      "commandId": "string",
+      "device": "8",
+      "fields": "EditDeviceBandsFields"
+    },
+    "EditDeviceBandsFields": {
+      "body?": "WireNumber | null",
+      "mud?": "WireNumber | null",
+      "forward?": "WireNumber | null",
+      "brightness?": "WireNumber | null",
+      "air?": "WireNumber | null",
+      "on?": "boolean | null"
     },
     "RevertEditsHpfCommand": {
       "kind": "\"revertEdits\"",
@@ -1403,7 +1521,6 @@
       "on?": "boolean",
       "drive?": "boolean",
       "mix?": "boolean",
-      "output?": "boolean",
       "type?": "boolean"
     },
     "RevertEditsTiltCommand": {
@@ -1444,6 +1561,20 @@
     "RevertEditsLowFields": {
       "on?": "boolean",
       "db?": "boolean"
+    },
+    "RevertEditsBandsCommand": {
+      "kind": "\"revertEdits\"",
+      "commandId": "string",
+      "device": "8",
+      "fields": "RevertEditsBandsFields"
+    },
+    "RevertEditsBandsFields": {
+      "body?": "boolean",
+      "mud?": "boolean",
+      "forward?": "boolean",
+      "brightness?": "boolean",
+      "air?": "boolean",
+      "on?": "boolean"
     },
     "SessionCapabilities": {
       "heapCeilingBytes": "number",
@@ -1509,7 +1640,7 @@
       "ProjectType",
       "ProjectUnknownKey",
       "UnknownDefaults",
-      "ProjectCore",
+      null,
       "NewerDefaults",
       "RateAboveLimit",
       "Memory",
@@ -1560,182 +1691,10 @@
     }
   },
   "optionalFields": {
-    "SaturationFieldsValue": {
-      "type": {
-        "default": "SaturationType::Tanh",
-        "description": "A project before the saturation types: the shaper was tanh."
-      }
-    },
-    "SaturationFieldsTouched": {
-      "type": {
-        "default": "std::optional<SaturationType> {}",
-        "description": "A project before the saturation types: no type picked by hand."
-      }
-    },
-    "Recipe": {
-      "readyHash": {
-        "default": "std::uint64_t {}",
-        "description": "No ready input fingerprint in baseline recipes."
-      },
-      "deliveryRateHz": {
-        "default": "std::uint32_t {}",
-        "description": "The baseline recipe did not record a delivery rate."
-      },
-      "readyVersion": {
-        "default": "std::uint32_t {}",
-        "description": "The baseline recipe did not record ready input."
-      }
-    },
-    "LandingSummary": {
-      "limiterTrace": {
-        "default": "std::optional<LandingTrace> {}",
-        "description": "No limiter time series was published."
-      },
-      "peakClipTrace": {
-        "default": "std::optional<LandingTrace> {}",
-        "description": "No K13 clipper time series was published."
-      }
-    },
-    "Kept": {
-      "landing": {
-        "default": "std::optional<LandingSummary> {}",
-        "description": "No landing result was published in the v1 snapshot."
-      },
-      "report": {
-        "default": "std::optional<MasterReport> {}",
-        "description": "No measured master report was published in the v1 snapshot."
-      }
-    },
-    "MasterReport": {
-      "cost": {
-        "default": "std::optional<MasterCost> {}",
-        "description": "No post-master cost was published in the v1 snapshot."
-      },
-      "medium": {
-        "default": "std::optional<MasterMedium> {}",
-        "description": "No medium report: a ready chain a shell supplied, or an older snapshot."
-      }
-    },
-    "MasterCost": {
-      "glueP95Db": {
-        "default": "MasterCostValue {}",
-        "description": "No glue reading: not implemented in that snapshot."
-      },
-      "glueMaxDb": {
-        "default": "MasterCostValue {}",
-        "description": "No glue reading: not implemented in that snapshot."
-      },
-      "saturationCutMaxDb": {
-        "default": "MasterCostValue {}",
-        "description": "No saturation reading: not implemented in that snapshot."
-      },
-      "saturationCutUsualDb": {
-        "default": "MasterCostValue {}",
-        "description": "No saturation reading: not implemented in that snapshot."
-      }
-    },
-    "Snapshot": {
-      "measurementStorage": {
-        "default": "MeasurementStorage {}",
-        "description": "Zero byte counts."
-      },
-      "measurements": {
-        "default": "std::span<const MeasurementResult> {}",
-        "description": "No published measurements."
-      },
-      "needlesJob": {
-        "default": "JobId {}",
-        "description": "No needles job."
-      },
-      "needlesSource": {
-        "default": "std::uint64_t {}",
-        "description": "No needles source identity."
-      },
-      "needlesNeedDb": {
-        "default": "std::optional<double> {}",
-        "description": "Unknown loudness need (null)."
-      },
-      "needlesCeilingDb": {
-        "default": "std::optional<double> {}",
-        "description": "Unknown needles ceiling (null)."
-      },
-      "needlesProgress": {
-        "default": "Phase {}",
-        "description": "Stream phase with all progress values zero."
-      },
-      "needlesBytes": {
-        "default": "0.0",
-        "description": "Zero declared needles bytes."
-      },
-      "needlesLargestBlockBytes": {
-        "default": "0.0",
-        "description": "Zero declared needles block size."
-      },
-      "needlesRunsTruncated": {
-        "default": "false",
-        "description": "No known truncation."
-      },
-      "canContinueMeasurement": {
-        "default": "false",
-        "description": "No known resumable measurement."
-      },
-      "measurementResumeState": {
-        "default": "State::Empty",
-        "description": "No known state to resume."
-      },
-      "mandatoryMeasurementsReady": {
-        "default": "false",
-        "description": "Mandatory readiness is unknown."
-      },
-      "devicesPlaced": {
-        "default": "false",
-        "description": "Device placement is unknown."
-      },
-      "measurementRowsIncluded": {
-        "default": "true",
-        "description": "true; historical snapshots include their retained measurement rows."
-      },
-      "masterRowsIncluded": {
-        "default": "true",
-        "description": "true; a snapshot without the field carries every master's rows."
-      },
-      "tempoChoice": {
-        "default": "TempoChoice {}",
-        "description": "No device tempo decision before the session finishes the tempo measurement."
-      },
-      "measurementsFromSidecar": {
-        "default": "false",
-        "description": "Historical sessions measured from PCM."
-      },
-      "sourceMissingAudio": {
-        "default": "false",
-        "description": "Historical loaded sources have PCM."
-      },
-      "canMaster": {
-        "default": "false",
-        "description": "No known master command availability."
-      },
-      "pendingMaster": {
-        "default": "MasterToken {}",
-        "description": "No pending PCM transfer."
-      },
-      "pendingMasterBytes": {
-        "default": "0.0",
-        "description": "No pending PCM bytes."
-      },
-      "plan": {
-        "default": "PlanView {}",
-        "description": "No plan: the devices are not placed."
-      },
-      "observations": {
-        "default": "Observations {}",
-        "description": "No observations: nothing measured."
-      }
-    },
     "MeasurementQuery": {
       "masterId": {
         "default": "std::uint32_t {}",
-        "description": "No master selected in baseline source queries."
+        "description": "No master: a source query; LimiterGr and PeakClipGr name one."
       },
       "crossoverHz": {
         "default": "120.0",
@@ -1751,17 +1710,23 @@
       },
       "spectrum": {
         "default": "SpectrumQuantity::Density",
-        "description": "Density: what LowSpectrum answered before the field existed."
-      }
-    },
-    "QueryView": {
-      "master": {
-        "default": "std::optional<Kept> {}",
-        "description": "No master record: every kind but MasterReport."
+        "description": "Density; LowSpectrum alone reads it."
       }
     }
   },
   "optionalWireFields": {
+    "EditDeviceBandsFields": {
+      "on?": {
+        "defaultJson": "null",
+        "description": "Absent or null: the tick is not edited."
+      }
+    },
+    "RevertEditsBandsFields": {
+      "on?": {
+        "defaultJson": "false",
+        "description": "Absent: the tick is not reverted."
+      }
+    },
     "EditDeviceSaturationFields": {
       "type?": {
         "defaultJson": "null",
@@ -1773,206 +1738,11 @@
         "defaultJson": "false",
         "description": "Absent: the type is not reverted."
       }
-    },
+    }
+  },
+  "wireFieldNotes": {
     "SessionCapabilities": {
-      "leanSummary": {
-        "defaultJson": "0",
-        "description": "0: the summary carries every master's rows, as a version-1 record of 32 bytes asks."
-      }
-    },
-    "ReadingPayload": {
-      "grid": {
-        "defaultJson": "{\"firstFrame\":\"0\",\"stepFrames\":\"0\",\"framesRead\":\"0\",\"sampleRate\":0}",
-        "description": "Unknown grid; all coordinates and rate are zero."
-      },
-      "momentaryReason": {
-        "defaultJson": "0",
-        "description": "Pending."
-      },
-      "shortTermReason": {
-        "defaultJson": "0",
-        "description": "Pending."
-      },
-      "clips": {
-        "defaultJson": "{\"byteOffset\":0,\"length\":0,\"stride\":6}",
-        "description": "Empty six-column clip rows."
-      },
-      "totalRuns": {
-        "defaultJson": "\"0\"",
-        "description": "Unknown total, zero."
-      },
-      "storedRuns": {
-        "defaultJson": "\"0\"",
-        "description": "No stored runs, zero."
-      },
-      "tailFrames": {
-        "defaultJson": "\"0\"",
-        "description": "Unknown tail coverage, zero."
-      },
-      "runsComplete": {
-        "defaultJson": "false",
-        "description": "Completeness is unknown."
-      },
-      "finished": {
-        "defaultJson": "false",
-        "description": "Completion is unknown."
-      }
-    },
-    "PhaseEvent": {
-      "source": {
-        "defaultJson": "\"0\"",
-        "description": "Unknown source identity."
-      },
-      "revision": {
-        "defaultJson": "\"0\"",
-        "description": "Unknown revision."
-      },
-      "phase": {
-        "defaultJson": "0",
-        "description": "Unknown phase; Stream (0)."
-      },
-      "completedWork": {
-        "defaultJson": "0",
-        "description": "No known completed work."
-      },
-      "totalWork": {
-        "defaultJson": "0",
-        "description": "Unknown total work."
-      },
-      "state": {
-        "defaultJson": "0",
-        "description": "Unknown state; Empty (0)."
-      }
-    },
-    "FactEvent": {
-      "source": {
-        "defaultJson": "\"0\"",
-        "description": "Unknown source identity."
-      },
-      "revision": {
-        "defaultJson": "\"0\"",
-        "description": "Unknown revision."
-      },
-      "phase": {
-        "defaultJson": "0",
-        "description": "Unknown phase; Stream (0)."
-      },
-      "completedWork": {
-        "defaultJson": "0",
-        "description": "No known completed work."
-      },
-      "totalWork": {
-        "defaultJson": "0",
-        "description": "Unknown total work."
-      },
-      "state": {
-        "defaultJson": "0",
-        "description": "Unknown state; Empty (0)."
-      }
-    },
-    "ReadingEvent": {
-      "source": {
-        "defaultJson": "\"0\"",
-        "description": "Unknown source identity."
-      },
-      "revision": {
-        "defaultJson": "\"0\"",
-        "description": "Unknown revision."
-      },
-      "phase": {
-        "defaultJson": "0",
-        "description": "Unknown phase; Stream (0)."
-      },
-      "completedWork": {
-        "defaultJson": "0",
-        "description": "No known completed work."
-      },
-      "totalWork": {
-        "defaultJson": "0",
-        "description": "Unknown total work."
-      },
-      "state": {
-        "defaultJson": "0",
-        "description": "Unknown state; Empty (0)."
-      }
-    },
-    "DoneEvent": {
-      "source": {
-        "defaultJson": "\"0\"",
-        "description": "Unknown source identity."
-      },
-      "revision": {
-        "defaultJson": "\"0\"",
-        "description": "Unknown revision."
-      },
-      "phase": {
-        "defaultJson": "0",
-        "description": "Unknown phase; Stream (0)."
-      },
-      "completedWork": {
-        "defaultJson": "0",
-        "description": "No known completed work."
-      },
-      "totalWork": {
-        "defaultJson": "0",
-        "description": "Unknown total work."
-      },
-      "state": {
-        "defaultJson": "0",
-        "description": "Unknown state; Empty (0)."
-      }
-    },
-    "RejectedEvent": {
-      "source": {
-        "defaultJson": "\"0\"",
-        "description": "Unknown source identity."
-      },
-      "revision": {
-        "defaultJson": "\"0\"",
-        "description": "Unknown revision."
-      },
-      "phase": {
-        "defaultJson": "0",
-        "description": "Unknown phase; Stream (0)."
-      },
-      "completedWork": {
-        "defaultJson": "0",
-        "description": "No known completed work."
-      },
-      "totalWork": {
-        "defaultJson": "0",
-        "description": "Unknown total work."
-      },
-      "state": {
-        "defaultJson": "0",
-        "description": "Unknown state; Empty (0)."
-      }
-    },
-    "ErrorEvent": {
-      "source": {
-        "defaultJson": "\"0\"",
-        "description": "Unknown source identity."
-      },
-      "revision": {
-        "defaultJson": "\"0\"",
-        "description": "Unknown revision."
-      },
-      "phase": {
-        "defaultJson": "0",
-        "description": "Unknown phase; Stream (0)."
-      },
-      "completedWork": {
-        "defaultJson": "0",
-        "description": "No known completed work."
-      },
-      "totalWork": {
-        "defaultJson": "0",
-        "description": "Unknown total work."
-      },
-      "state": {
-        "defaultJson": "0",
-        "description": "Unknown state; Empty (0)."
-      }
+      "leanSummary": "0: the summary carries every master's rows; 1: it leaves each master's heavy rows out (masterRowsIncluded false)."
     }
   },
   "queryRows": {

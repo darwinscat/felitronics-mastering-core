@@ -20,15 +20,15 @@ Items 1–3 of the task and every bullet of its checks section, one check per ro
 | # | Check | Holder | Status |
 |---|---|---|---|
 | A1 | load → measure → plan → hand → master → export → import → master, run in two independent Sessions as one scenario | Pieces only: `tools/tests/SessionReplayTests.cpp:replayAfterPoison` (load, edits, master, export, a fresh instance, import; state, both layers and the project text are restored, masters are not replayed); `PlanSoundTests.cpp:vinylAndQuietMastered` (export, open in another session, same recipe fingerprint and warnings); the whole: `ScenarioTests.cpp:theScenario` | HELD |
-| A2 | Same-core import keeps the file's machine layer | `PlanTests.cpp:anImportKeepsTheFilesMachine` (foreign = false); `ProjectTests.cpp:roundTrip` | HELD |
-| A3 | New-core import keeps the file's machine layer | `PlanTests.cpp:anImportKeepsTheFilesMachine` (foreign = true); `ProjectTests.cpp:foreignMachine`; `TiltLowTests.cpp:theFilesMachineStays` | HELD |
+| A2 | An import keeps the file's machine layer | `PlanTests.cpp:anImportKeepsTheFilesMachine`; `ProjectTests.cpp:roundTrip` | HELD |
+| A3 | The file carries no core stamp (v0.6.0): a machine layer is the file's however it arose | `ProjectTests.cpp:filesMachine`, `refusals` (a `core` key is unknown); `TiltLowTests.cpp:theFilesMachineStays` | HELD |
 | A4 | New-defaults import | `ProjectTests.cpp:defaultsVersions`: only the current label `2026-10` opens, with the file's machine layer and its differences beside it; any other label (`2026-09`, `2020-01`, a newer or a malformed one) is refused whole with the existing `UnknownDefaults` / `NewerDefaults`, revision and state unchanged; nothing converts | HELD; settled by the owner 30.09, see Q1 |
-| A5 | The comparison is shown beside the file's machine layer: the count fact, file and core values per field, the same-core wording | `PlanTests.cpp:anImportKeepsTheFilesMachine`; `ProjectTests.cpp:foreignMachine`; `TiltLowTests.cpp:theFilesMachineStays`; `HpfMonoTests.cpp:aSentenceStatesWhatSounds` | HELD |
+| A5 | The comparison is shown beside the file's machine layer: the count fact, file and core values per field | `PlanTests.cpp:anImportKeepsTheFilesMachine`; `ProjectTests.cpp:filesMachine`; `TiltLowTests.cpp:theFilesMachineStays`; `HpfMonoTests.cpp:aSentenceStatesWhatSounds` | HELD |
 | A6 | The new machine is adopted only on an explicit command: `AdoptMachine` takes the planner's layer, keeps the hand, allocates nothing, and does nothing when repeated | `PlanTests.cpp:anImportKeepsTheFilesMachine`; the master after adoption: `ScenarioTests.cpp:theFilesMachine` | HELD |
-| A7 | PCM and WAV bytes: the master made after import equals the first one (same core); after `AdoptMachine` it equals a fresh session's master | `ScenarioTests.cpp:theScenario` (same core), `theFilesMachine` (after `AdoptMachine`, the recipe included) | HELD |
+| A7 | PCM and WAV bytes: the master made after import equals the first one; after `AdoptMachine` it equals a fresh session's master | `ScenarioTests.cpp:theScenario`, `theFilesMachine` (after `AdoptMachine`, the recipe included) | HELD |
 | A8 | Parameters and facts after import | `ProjectTests.cpp:roundTrip` (the whole snapshot JSON is equal; export → import → export is byte-identical); `PlanSoundTests.cpp:vinylAndQuietMastered` (recipe fingerprint, warnings); for the master: `ScenarioTests.cpp:theScenario` (recipe, facts, snapshot JSON with the kept report) | HELD |
 | A9 | Version of the sound and of the defaults | `ConfigDecisionsTests.cpp:theSoundIsPinnedToTheDefaults`; `ConfigTests.cpp:theSoundIsWhatCanChangeAMaster`, `theVersionsMoveWithEveryValue`; `ProjectTests.cpp:roundTrip` (the header stamps defaults and core); inside the scenario: `ScenarioTests.cpp:theScenario` | HELD |
-| A10 | No separate C facade for Decide | `tools/session-abi-v1.txt` is append-only, checked by `tools/session-abi-check.mjs` and `tools/session-abi-append-only.mjs`; the manifest has no Decide entry | HELD |
+| A10 | No separate C facade for Decide | `tools/session-abi-v1.txt` is append-only from its declared base, checked by `tools/session-abi-check.mjs` and `tools/session-abi-append-only.mjs`; the manifest has no Decide entry | HELD |
 
 ### Item 2: what Master waits for, and a change of target
 
@@ -79,7 +79,7 @@ Items 1–3 of the task and every bullet of its checks section, one check per ro
 | A43 | 18 and 36 dB/oct | `HpfMonoTests.cpp:aPersonsKnobs`; `StateTests.cpp:theKnobs` (6 to 96 in steps of 6 accepted; 0, 7, 95 and 102 refused) | HELD |
 | A44 | Frequencies outside the slider's travel | `HpfMonoTests.cpp:aPersonsKnobs` (above 50 Hz); `ProjectTests.cpp:domainsAndExactNumbers` (20000.25 Hz, the source's Nyquist); `TiltLowTests.cpp:theKnobs` | HELD |
 | A45 | Domain errors | `StateTests.cpp:theKnobs`, `theOrderOfTheChecks`; `ProjectTests.cpp:domainsAndExactNumbers`, `refusals`; `GlueSaturationTests.cpp:aPersonsKnob`; `TiltLowTests.cpp:theKnobs` | HELD |
-| A46 | High-pass at 32 Hz on every target | `HpfMonoTests.cpp:everyTargetFromOneMeasurement`, `theCutoffOnTheChainsResponse`; `ConfigDecisionsTests.cpp:theConfigHoldsTheDecisions` | HELD |
+| A46 | High-pass at 32 Hz on every target; the machine never above its 50 Hz top while the knob travels to 80 | `HpfMonoTests.cpp:everyTargetFromOneMeasurement`, `theCutoffOnTheChainsResponse` (every target, note and rate at or under 50 Hz), `aPersonsKnobs` (70 Hz by hand sounds); `KitTests.cpp` (travel 15…80, red from 50); `ConfigDecisionsTests.cpp:theConfigHoldsTheDecisions` | HELD |
 | A47 | High-pass on a short file (under 10 s: the floor, no note detection) | `HpfMonoTests.cpp:theSureLowestNote` | HELD |
 | A48 | Mono bass: the loss thresholds of 1 and 3 dB | `HpfMonoTests.cpp:theLossOfTheLowEnd` (to the bit), `whereTheBassSounds`, `throughThePump` | HELD |
 | A49 | Every needles class | `PlanSoundTests.cpp:theClasses` | HELD |
@@ -123,12 +123,14 @@ what the core should hold.
 | findings | Note, duty, infra-low, wide bass, polarity, confidence | `HpfMonoTests.cpp:theSureLowestNote` (2 dB, 10 %, 3 s), `theLowestBandWithItsSureness`, `theCutoffOnTheChainsResponse` (a note under the floor, `hpfBelowFloor`), `theLossOfTheLowEnd` (wide bass at 6 % warns; the polarity advice above 3 dB), `throughThePump`; `PlanSoundTests.cpp:theObservations` (no wide bass and no polarity finding on a mono file) | HELD; infra-low as its own finding is OBSOLETE (3.3) |
 | glue | Off, step, the knob's curve; P95 plus calibration | `GlueSaturationTests.cpp:theCurve`, `aPersonsKnob` (a tick starts at 0.5 dB; 0…6), `theCalibration`, `oneSystemOfLevels`; `StateTests.cpp:theKnobs` | HELD |
 | k13-evidence | Need, PLR, bass, duration; the K13 bounds are inclusive | `PlanSoundTests.cpp:theClasses` (every boundary, the order of reasons), `theNeedAndTheMeasurement` (a need of 3 dB or less is not measured; "not measured" differs from "none") | HELD |
-| observations | Severity, confidence, the order of facts | `PlanSoundTests.cpp:theObservations` (found, not found and not measured are kept apart; strict thresholds; a doubtful wandering hum; the order is file → spectrum → hum) | HELD; severity as a verdict is OBSOLETE (3.13) |
+| observations | Severity, confidence, the order of facts | `PlanSoundTests.cpp:theObservations` (found, not found and not measured are kept apart; strict thresholds; a doubtful wandering hum; the order is file → spectrum → hum), `theObservationsSpeakForThemselves` (the snapshot's `observationFacts` are `ObservationText`'s lines kind by kind, a not-measured kind says why; the loudest low note is a reading); `TextTests.cpp:theObservationsHaveTheirWords`; the readings: `PlanSoundTests.cpp:theReadingsAreFacts` (the snapshot's `readings` are `ReadingText::source`'s, each `Value` with its unit and precision, named by `terms.reading`, following a new source, whole across the wire, an unknown kind refused), `MasterReportTests.cpp:costLinesAndReadings` (the master's readings with the report; each cost line, 93–97, only where its numbers were measured) | HELD; severity as a verdict is OBSOLETE (3.13) |
 | rules-corpus | The private Decide replay of 11 finished measurements | held outside this repository (gap A5) | HELD, private |
 | stereo-bass | The 3 % and 6 % thresholds, targets, the polarity veto, override, quiet input | `HpfMonoTests.cpp:theLossOfTheLowEnd` (1 and 3 dB to the bit; 6 % width warns; weighed at 150 Hz on vinyl, 120 Hz elsewhere), `aPersonsKnobs` (override), `quietAndUnmeasured`, `everyTargetFromOneMeasurement` | HELD; no current decision names a 3 % threshold (decision 3.5 weighs the loss), so do not carry it |
 | structure | The whole chain, needAfter, veto, gain-only on a quiet input | `PlanSoundTests.cpp:theTopologyFollowsTheTicks`, `theRenderIsThePreviousPaths`, `aQuietInput` (strictly under −55 LUFS: gain, ceiling, dither, HPF), `vinylAndQuietMastered`; the needles veto: `theClasses`, `vinylOnThePlanner` | HELD; `needAfter` is not carried, see Q2 |
 | verify | The choice of slope, off or mono; its price; the veto at each boundary | `HpfMonoTests.cpp:theCutoffOnTheChainsResponse` (the loss at the note on the chain's own response), `theLossOfTheLowEnd`; `PlanSoundTests.cpp:vinylAndQuietMastered` (HPF off, from 25 Hz or at 6 dB/oct removes the "ready for cutting" line) | HELD |
 | w41-vinyl | LP consistency between bench and decision | `PlanSoundTests.cpp:vinylOnThePlanner`, `vinylAndQuietMastered`; `StateTests.cpp:aChangeOfTarget` (the lp layer); `TiltLowTests.cpp:theMachine` (+0.5 dB); `HpfMonoTests.cpp:theLossOfTheLowEnd` (150 Hz) | HELD |
+| device-advice | HPF beyond the norm (cutoff below/above the comfort window, slope too gentle/steep), EQ overshoot past warnDb, mono bass outside every zone, the target's note (measured, practice, no normalisation) | `PlanSoundTests.cpp:theAdviceIsAFact` (each why from a hand value, none inside the window or a zone, edges included, none for a device off; the overshoot at the curve's own point, said of tilt or low; the notes by target; the codec round trip) | HELD |
+| pure-kit | The shell's one-frame answers without the worker (G6): a fact as text, a typed number for a field, a knob's travel and heat, mono bass's zones, the EQ curve preview and its overshoot against warnDb, the low-end dB curve | `KitTests.cpp:textIsTextWrite`, `parseReadsTheField`, `travelAndHeat`, `zonesAndAdvice` (the comfort and zones advice read the kit's comparison), `eqPreview` (the project path's curve and finding, bit for bit), `lowEndCurve`, `theAbiAnswersAsTheCall`, `theCorpusIsTheWasmModulesBytes` with `tools/wasm/session-check.mjs` (one hash native and wasm) | HELD |
 
 Count: 13 held (decide misses only its cross-row determinism, which is A2). 1 gap: rules-corpus, which is private.
 LowEnd and PeakExcursions tests are cited nowhere in this table as proof of a decision.
@@ -141,14 +143,11 @@ LowEnd and PeakExcursions tests are cited nowhere in this table as proof of a de
   two independent Sessions on one synthetic source; load → measure → plan → hand (tilt +1.25 dB, low shelf +0.75 dB, the
   target at −13 LUFS) → master → export → import into the second Session → master. Equal: the snapshot JSON (the
   revision, the kept masters' ids and `fromFile` aside, `fromFile` asserted on its own), the recipe, the facts, the
-  defaults and core in the file, the sound version, PCM and WAV bytes. `theFilesMachine`: a same-core and a foreign-core
-  file with a machine opinion this planner does not hold (a high-pass from 36 Hz) are both kept and sound alike, and not
-  as the planner's; `AdoptMachine` then gives the fresh session's master, recipe included. `theSlicing`: budgets 1 and
+  defaults in the file, the sound version, PCM and WAV bytes. `theFilesMachine`: a file with a machine opinion this
+  planner does not hold (a high-pass from 36 Hz) is kept and does not sound as the planner's; `AdoptMachine` then gives the fresh session's master, recipe included. `theSlicing`: budgets 1 and
   7 give the large budget's master and snapshot. `nothingStale`: a master waiting for the tempo, cancelled, and club's
   needles left before they end publish nothing, and the master after them is the scenario's. The new-defaults import
   waits for Q1 (`ProjectTests.cpp:defaultsVersions` as built).
-  The scenario found one defect, fixed with it: `AdoptMachine` placed the planner's layer but left `project.core` at the
-  file's release, so the adopted master's recipe and the exported file named the old core.
 - **A2. HELD.** The scenario prints `scenario-input`, `scenario-versions` and `scenario-parity` (plan, facts, PCM, WAV
   digests). `tools/wasm/scenario-parity.mjs` holds the native lines; `tools/wasm/build.sh` builds the same test for wasm
   and checks its output with it.
@@ -162,9 +161,9 @@ LowEnd and PeakExcursions tests are cited nowhere in this table as proof of a de
     `ctest --test-dir build -R '^felitronics_session_scenario_tests$' --output-on-failure`.
   - Wasm: `tools/wasm/build.sh` (with `FELITRONICS_CORE_DIR` and `FELITRONICS_TOML_DIR` set), which runs
     `node tools/wasm/scenario-parity.mjs <out>/session-scenario.txt`.
-  - What the run prints (release 0.5.0, felitronics-core 0.57.0, defaults `2026-10`): the input
-    `source=f58fa8f9570118b5 frames=480000 rate=48000`, the sound version `4b75e7500af2e07e`, the config version
-    `f9f2047c6ce25e5f`, and `plan=6164a1b0451facbc facts=75c44fa6bf018042 pcm=0682cfd85ae4b5a8 wav=e30bbbfe627809f9`.
+  - What the run prints (release 0.6.0, felitronics-core 0.57.0, defaults `2026-10`): the input
+    `source=f58fa8f9570118b5 frames=480000 rate=48000`, the sound version `6fdf2af99bf12945`, the config version
+    `64a77734238d01bc`, and `plan=f7b4068cb9e6c42b facts=34186a7c88300845 pcm=0682cfd85ae4b5a8 wav=e30bbbfe627809f9`.
 - **A5. HELD, private.** The replay of the 11 finished measurements is private and held outside this repository.
 
 ### B. Behaviour
@@ -193,7 +192,7 @@ LowEnd and PeakExcursions tests are cited nowhere in this table as proof of a de
   defaults `2026-09` (before the core had its planner) is not opened: an import accepts only the current defaults
   label, any other is refused whole as `UnknownDefaults` and nothing changes. On the current label the import rule
   stands: the machine layer comes from the file, the differences are shown beside it, a new machine opinion only by
-  `adoptMachine`. Nothing converts any more; `DefaultsConverted` keeps its id.
+  `adoptMachine`. Nothing converts.
   Held by `ProjectTests.cpp:defaultsVersions` (row A4).
 - **Q2. `needAfter` in the structure row. SETTLED by the owner, 30.09: not carried.** The needles' classes use the
   input's need (`LimiterFinding.needDb`) and the limiter holds the ceiling; no need is measured after the chain.

@@ -8,6 +8,7 @@
 #include "BuildGuards.h"
 
 #include "Planner.h"
+#include <felitronics/session/Kit.h>
 #include "Devices.h"
 #include "Grid.h"
 #include "Rules.h"
@@ -194,13 +195,13 @@ namespace
 template <class Fields> struct Planned;
 
 // [hpf] (owner decisions 3.2–3.4): on always; the cutoff max(what the sure lowest note allows, the target's floor), never
-// above the machine's top; the slope the target's.
+// above the machine's top ([hpf] machineTopHz — not the knob's travel, which goes higher); the slope the target's.
 template <> struct Planned<HpfFields<Value>>
 {
     static void propose (const PlanInputs& in, HpfFields<Value>& m, DevicePlan& plan, PlanFindings& found) noexcept
     {
         const TargetRow target = in.rules.row (in.row);
-        const double floor = target.hpfFloor.toDouble(), top = in.rules.hpfFq.to.toDouble();
+        const double floor = target.hpfFloor.toDouble(), top = in.rules.hpfTop.toDouble();
         plan.target |= fieldBit (in.rules, m, m.slope);
         HpfFinding& f = found.hpf;
         f = {};
@@ -388,6 +389,13 @@ template <> struct Planned<LowFields<Value>>
     static std::uint32_t needs (const PlanInputs&, const LowFields<Value>&) noexcept { return 0; }
 };
 
+// [bands]: a person's only — the machine leaves every band at 0 dB (it does not touch timbre in this release).
+template <> struct Planned<BandsFields<Value>>
+{
+    static void propose (const PlanInputs&, BandsFields<Value>&, DevicePlan&, PlanFindings&) noexcept {}
+    static std::uint32_t needs (const PlanInputs&, const BandsFields<Value>&) noexcept { return 0; }
+};
+
 // Every device's plan and fields, in the order of Device: v(device, layers, plan).
 template <class D, class P, class V> void eachPlan (D& devices, P& plans, V&& v)
 {
@@ -399,6 +407,7 @@ template <class D, class P, class V> void eachPlan (D& devices, P& plans, V&& v)
     v (Device::Limiter, devices.limiter, plans.limiter);
     v (Device::Dither, devices.dither, plans.dither);
     v (Device::Low, devices.low, plans.low);
+    v (Device::Bands, devices.bands, plans.bands);
 }
 } // namespace
 
@@ -428,7 +437,9 @@ void propose (const PlanInputs& in, Devices& machine, DevicePlans& plans, PlanFi
         if (! offeredByShell (in, device))
         {
             plan.heldBack = HeldBack::Shell;
-            if constexpr (requires { layers.machine.on; }) layers.machine.on = false;
+            // The EQ bands' machine tick stays on (the machine never bypasses them; at 0 dB they write nothing), so a
+            // project file's [bands] defaults agree with it: the plan says they do not sound.
+            if constexpr (requires { layers.machine.on; } && ! requires { layers.machine.body; }) layers.machine.on = false;
             if constexpr (requires { layers.machine.needles; }) layers.machine.needles = Needles::Off;
         }
     });
@@ -451,7 +462,13 @@ std::uint32_t needs (const PlanInputs& in, const Devices& devices, bool withHand
         // The tick as it SOUNDS: a device the target, the source or the shell rules out is out of the chain whatever
         // tick the project keeps for it (a person's dither tick above the depth that is dithered).
         const bool possible = offeredByShell (in, device) && offered (in.rules, in.row, in.channels, device);
-        if constexpr (requires { settings.on; }) plan.on = settings.on && possible;
+        // The EQ bands sound where they are on and any band is not at 0 dB.
+        if constexpr (requires { settings.body; })
+            plan.on = settings.on && possible
+                && ! (detail::same (settings.body, 0.0) && detail::same (settings.mud, 0.0)
+                      && detail::same (settings.forward, 0.0) && detail::same (settings.brightness, 0.0)
+                      && detail::same (settings.air, 0.0));
+        else if constexpr (requires { settings.on; }) plan.on = settings.on && possible;
         else plan.on = true;
     });
     return all;
@@ -489,7 +506,7 @@ Awaited awaited (std::uint32_t waitingFor, const DevicePlans& plans) noexcept
         for (unsigned a = 0; a < kAnalyzers && ! out.analyzer; ++a)
             if ((waitingFor & bitOf (Analyzer (a))) != 0) out.analyzer = Analyzer (a);
     if (out.analyzer)
-        for (unsigned d = 0; d <= unsigned (Device::Low) && ! out.device; ++d)
+        for (unsigned d = 0; d <= unsigned (Device::Bands) && ! out.device; ++d)
             if ((planOf (plans, Device (d)).needs & bitOf (*out.analyzer)) != 0) out.device = Device (d);
     return out;
 }
@@ -508,6 +525,7 @@ template <class P> auto& planIn (P& plans, Device device) noexcept
         case Device::Limiter:    return plans.limiter;
         case Device::Dither:     return plans.dither;
         case Device::Low:        return plans.low;
+        case Device::Bands:      return plans.bands;
     }
     storageOverflow();
 }
@@ -567,6 +585,7 @@ detail::PlanInputs Session::planInputs (const Project& project) const noexcept
     in.channels = source_.channels;
     in.sampleRate = source_.sampleRate;
     in.frames = source_.frames;
+    in.bitDepth = source_.bitDepth;
     in.offered = capabilities_.offeredDevices;
     if (source_.channels != 0) in.measurements = measurementResults_;
     const auto need = needlesNeed (project);
@@ -641,26 +660,32 @@ text::Term termOf (Device device) noexcept
         case Device::Limiter:    return Term::DeviceLimiter;
         case Device::Dither:     return Term::DeviceDither;
         case Device::Low:        return Term::DeviceLow;
+        case Device::Bands:      return Term::DeviceBands;
     }
     storageOverflow();
 }
 } // namespace
 
-void stateReasons (PlanView& plan) noexcept
+void stateReasons (PlanView& plan, const EqFinding& eq) noexcept
 {
     state (plan, Device::Hpf, PlanText::hpf (plan.hpf));
+    state (plan, Device::Hpf, PlanText::hpfCutoffAdvice (plan.hpf));
+    state (plan, Device::Hpf, PlanText::hpfSlopeAdvice (plan.hpf));
     state (plan, Device::MonoBass, PlanText::monoBass (plan.monoBass));
     state (plan, Device::MonoBass, PlanText::monoBassPolarity (plan.monoBass));
     state (plan, Device::MonoBass, PlanText::monoBassCoverage (plan.monoBass));
+    state (plan, Device::MonoBass, PlanText::monoBassAdvice (plan.monoBass));
     state (plan, Device::Glue, PlanText::glue (plan.glue));
     state (plan, Device::Glue, PlanText::glueTempo (plan.glue));
     state (plan, Device::Glue, PlanText::glueRelease (plan.glue));
+    if (eq.device == Device::Tilt) state (plan, Device::Tilt, PlanText::eqAdvice (eq));
     state (plan, Device::Limiter, PlanText::limiter (plan.limiter));
     state (plan, Device::Limiter, PlanText::needlesAgainstMachine (plan.limiter));
     state (plan, Device::Limiter, PlanText::vinylCeiling (plan.limiter));
     state (plan, Device::Limiter, PlanText::vinylNeedles (plan.limiter));
     state (plan, Device::Limiter, PlanText::vinylTop (plan.limiter));
     state (plan, Device::Dither, PlanText::dither (plan.dither));
+    if (eq.device == Device::Low) state (plan, Device::Low, PlanText::eqAdvice (eq));
 }
 
 void stateWaiting (PlanView& plan) noexcept
@@ -701,6 +726,7 @@ void Session::replan() noexcept
         }, layers.machine, layers.hand);
     });
     const bool observe = key.h != plan_.key || planRuns_ == 0;
+    EqFinding eq;
     if (observe)
     {
         ++planRuns_;
@@ -729,6 +755,7 @@ void Session::replan() noexcept
             };
             const auto hpf = detail::settingsOf (in.rules, project_.devices.hpf);
             plan_.hpf.soundingHz = hpf.fq;
+            plan_.hpf.soundingSlope = hpf.slope;
             plan_.hpf.sounding = sounding (Device::Hpf, hpf.on,
                 detail::same (hpf.fq, proposed.hpf.machine.fq) && hpf.slope == proposed.hpf.machine.slope,
                 project_.devices.hpf.hand.fq.has_value() || project_.devices.hpf.hand.slope.has_value());
@@ -737,6 +764,7 @@ void Session::replan() noexcept
             plan_.monoBass.sounding = sounding (Device::MonoBass, mono.on,
                 detail::same (mono.fq, proposed.monoBass.machine.fq) && detail::same (mono.width, proposed.monoBass.machine.width),
                 project_.devices.monoBass.hand.fq.has_value() || project_.devices.monoBass.hand.width.has_value());
+            eq = detail::eqFinding (project_.devices, in.rules, double (in.sampleRate));
             plan_.inputGainDb = detail::inputLevels (in).gainDb;
             plan_.glue = detail::glueFinding (in, project_.devices);
             plan_.saturation = detail::saturationFinding (in, project_.devices);
@@ -755,7 +783,7 @@ void Session::replan() noexcept
             plan_.awaitedBy = awaited.device;
         }
         plan_.readOnly = plan_.status != PlanStatus::Ready;
-        if (plan_.status == PlanStatus::Ready) detail::stateReasons (plan_);
+        if (plan_.status == PlanStatus::Ready) detail::stateReasons (plan_, eq);
     }
     if (observe)
     {
@@ -765,6 +793,7 @@ void Session::replan() noexcept
         seen.rules = in.rules;
         seen.measurements = in.measurements;
         seen.channels = in.channels; seen.sampleRate = in.sampleRate; seen.frames = in.frames;
+        seen.bitDepth = in.bitDepth;
         seen.hpfOn = devicesPlaced_ && plan_.devices.hpf.on;
         seen.monoBassOn = devicesPlaced_ && plan_.devices.monoBass.on;
         detail::observe (seen, observations_);
@@ -814,6 +843,64 @@ text::Fact PlanText::hpf (const HpfFinding& f) noexcept
         case HpfCut::Unmeasured: return Fact::of (FactId::HpfUnmeasured, cutoff);
     }
     detail::storageOverflow();
+}
+std::optional<text::Fact> PlanText::hpfCutoffAdvice (const HpfFinding& f) noexcept
+{
+    using text::Arg; using text::Fact; using text::FactId; using text::Unit;
+    if (f.sounding == Sounding::Off) return std::nullopt;
+    const auto comfort = detail::rules().engine.find ("hpf").find ("comfort");
+    const double low = detail::configured (comfort.find ("lowHz")), high = detail::configured (comfort.find ("highHz"));
+    const auto window = [&] (FactId id)
+    {
+        return Fact::of (id, Arg::value (f.soundingHz, Unit::Hz, 1), Arg::value (low, Unit::None, 0), Arg::value (high, Unit::Hz, 0));
+    };
+    // The knob's heat states the side: the advice and the knob's colour are one comparison (Kit.h).
+    const auto side = Kit::heat (text::Term::FieldHpfFq, f.soundingHz).side;
+    if (side < 0) return window (FactId::HpfBelowComfort);
+    if (side > 0) return window (FactId::HpfAboveComfort);
+    return std::nullopt;
+}
+std::optional<text::Fact> PlanText::hpfSlopeAdvice (const HpfFinding& f) noexcept
+{
+    using text::Arg; using text::Fact; using text::FactId;
+    if (f.sounding == Sounding::Off) return std::nullopt;
+    // slopesNormal is ascending (the schema holds it): its first is the gentlest, its last the steepest.
+    std::optional<std::int64_t> gentlest, steepest;
+    const auto slopes = detail::rules().engine.find ("hpf").find ("slopesNormal");
+    for (const auto item : slopes)
+    {
+        const auto slope = item.integer();
+        if (! slope) continue;
+        if (! gentlest) gentlest = *slope;
+        steepest = *slope;
+    }
+    if (! gentlest || ! steepest) return std::nullopt;
+    if (f.soundingSlope < *gentlest) return Fact::of (FactId::HpfSlopeGentle, Arg::count (f.soundingSlope), Arg::count (*gentlest));
+    if (f.soundingSlope > *steepest) return Fact::of (FactId::HpfSlopeSteep, Arg::count (f.soundingSlope), Arg::count (*steepest));
+    return std::nullopt;
+}
+std::optional<text::Fact> PlanText::monoBassAdvice (const MonoBassFinding& f) noexcept
+{
+    using text::Arg; using text::Fact; using text::FactId; using text::Unit;
+    if (f.sounding == Sounding::Off) return std::nullopt;
+    const auto zones = detail::rules().engine.find ("monoBass").find ("zones");
+    const auto club = zones.find ("club"), vinyl = zones.find ("vinyl");
+    const double clubFrom = detail::configured (club.find ("fromHz")), clubTo = detail::configured (club.find ("toHz"));
+    const double vinylFrom = detail::configured (vinyl.find ("fromHz")), vinylTo = detail::configured (vinyl.find ("toHz"));
+    // The zones the kit draws are the zones the advice reads (Kit.h): one comparison. Outside every zone the crossover
+    // is either below the lowest start or above the highest end — each side its own line, with the zones' ends it passed.
+    if (Kit::monoZonesAt (f.soundingHz) != 0) return std::nullopt;
+    if (f.soundingHz < std::min (clubFrom, vinylFrom))
+        return Fact::of (FactId::MonoBassBelowZones, Arg::value (f.soundingHz, Unit::Hz, 0), Arg::value (clubFrom, Unit::Hz, 0),
+            Arg::value (vinylFrom, Unit::Hz, 0));
+    return Fact::of (FactId::MonoBassOutsideZones, Arg::value (f.soundingHz, Unit::Hz, 0), Arg::value (clubTo, Unit::Hz, 0),
+        Arg::value (vinylTo, Unit::Hz, 0));
+}
+std::optional<text::Fact> PlanText::eqAdvice (const EqFinding& f) noexcept
+{
+    if (! f.over) return std::nullopt;
+    return text::Fact::of (text::FactId::EqOvershoot, text::Arg::value (f.db, text::Unit::Db, 1, text::Sign::Always),
+        text::Arg::value (f.hz, text::Unit::Hz, 0));
 }
 std::optional<text::Fact> PlanText::monoBass (const MonoBassFinding& f) noexcept
 {
@@ -881,6 +968,8 @@ text::Fact PlanText::limiter (const LimiterFinding& f) noexcept
     // What sounds: the peak clipper cutting — by a person's threshold, or by the machine's class.
     if (f.cutting)
     {
+        // A cap, not an amount: the clipper may take this much off the peaks; how much it takes is the landing's. The
+        // message says "no more than" in its own words, so the number is exact — never "no more than ≤ …".
         const auto cut = Arg::value (f.overDb, Unit::Db, 1);
         if (f.mode == Needles::Manual) return Fact::of (FactId::LimiterManual, ceiling, cut);
         return Fact::of (f.proposed == NeedlesClass::Short ? FactId::LimiterShort : FactId::LimiterBetween,

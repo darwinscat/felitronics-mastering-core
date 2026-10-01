@@ -25,6 +25,7 @@
 #include <bit>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -91,10 +92,10 @@ struct Faked
         return d;
     }
     Devices glued (double upToDb) const { auto d = machine(); d.glue.hand.on = true; d.glue.hand.upToDb = upToDb; return d; }
-    Devices shaped (double drive, double mix = 1.0, double output = 0.0) const
+    Devices shaped (double drive, double mix = 1.0) const
     {
         auto d = machine();
-        d.saturation.hand.on = true; d.saturation.hand.drive = drive; d.saturation.hand.mix = mix; d.saturation.hand.output = output;
+        d.saturation.hand.on = true; d.saturation.hand.drive = drive; d.saturation.hand.mix = mix;
         return d;
     }
 };
@@ -244,10 +245,13 @@ void theCurve()
     const Faked f ("allStreaming", -18.0, -3.0, -12.0);
     // The loud places on the detector's scale: the P95 and the calibration over it.
     const double over = config::Config::load().config.engine.glue.detectorOverP95Db, loud = -12.0 + over;
-    bool exact = true, placed = true;
+    bool exact = true, placed = true, dot = true;
     for (const double n : { 0.5, 1.25, 2.6, 3.0, 6.0 })
     {
         const auto found = detail::glueFinding (f.in, f.glued (n));
+        // The transfer curve's point the page draws: the P95 on the detector's scale, where the curve takes the knob.
+        dot = dot && found.p95DetectorDb && same (*found.p95DetectorDb, loud) && near (coreLossAt (found, *found.p95DetectorDb), n, 1e-9)
+            && same (*found.thresholdDb, *found.p95DetectorDb + detail::glueFor (r, n).threshOffsetDb);
         const double loss = found.state == GlueState::Active ? coreLossAt (found, loud) : -1.0;
         exact = exact && found.state == GlueState::Active && same (found.upToDb, n) && near (loss, n, 1e-9);
         placed = placed && found.thresholdDb && same (*found.thresholdDb, -12.0 + over + detail::glueFor (r, n).threshOffsetDb);
@@ -256,10 +260,11 @@ void theCurve()
     }
     ok (exact, "up to 0.5 / 1.25 / 2.6 / 3 / 6 dB: the core's gain computer takes exactly that at the loud places, within 1e-9 dB");
     ok (placed && same (over, 1.5), "the loud places stand the calibrated 1.5 dB over the short-term P95: the threshold is P95 + 1.5 + the travel's offset, to the bit");
+    ok (dot, "p95DetectorDb is that level, P95 + 1.5, the threshold's own base: the core's static curve takes upToDb there, within 1e-9 dB");
 
     const auto out = detail::glueFinding (f.in, f.glued (0.0));
     auto unticked = f.glued (2.0); unticked.glue.hand.on = false;
-    ok (out.state == GlueState::Out && ! out.ratio && detail::glueFinding (f.in, unticked).state == GlueState::Out
+    ok (out.state == GlueState::Out && ! out.ratio && ! out.p95DetectorDb && detail::glueFinding (f.in, unticked).state == GlueState::Out
         && detail::glueFinding (f.in, f.machine()).state == GlueState::Out,
         "at 0 dB, unticked, and as the machine leaves it off cd, the compressor is out of the chain");
 
@@ -353,9 +358,9 @@ void aPersonsKnob()
         && same (*s.project().devices.glue.hand.upToDb, 6.0), "6.01 and −0.01 dB are refused, the value kept");
 
     GlueFields<Touched> glue; glue.upToDb = 4.5;
-    SaturationFields<Touched> sat; sat.on = true; sat.drive = 6.0; sat.mix = 0.5; sat.output = -3.0;
+    SaturationFields<Touched> sat; sat.on = true; sat.drive = 6.0; sat.mix = 0.5;
     ok (s.apply (command::EditDevice { 7, glue }).rejection == Rejection::None && s.apply (command::EditDevice { 8, sat }).rejection == Rejection::None,
-        "PRECONDITION: glue 4.5 dB, saturation 6 dB at mix 0.5 and −3 dB out");
+        "PRECONDITION: glue 4.5 dB, saturation 6 dB at mix 0.5");
     const auto hidden = s.snapshot();
     ok (hidden.view().plan.glue.state == GlueState::Active && same (hidden.view().plan.glue.upToDb, 4.5) && hidden.view().plan.glue.releaseMs
         && hidden.view().plan.saturation.active && same (hidden.view().plan.saturation.knobDb, 6.0),
@@ -369,7 +374,7 @@ void aPersonsKnob()
     ok (copy->apply (command::ImportProject { 10, saved.view() }).rejection == Rejection::None, "PRECONDITION: the saved project imports");
     const auto& d = copy->project().devices;
     ok (d.glue.hand.on && *d.glue.hand.on && same (*d.glue.hand.upToDb, 4.5) && *d.saturation.hand.on && same (*d.saturation.hand.drive, 6.0)
-        && same (*d.saturation.hand.mix, 0.5) && same (*d.saturation.hand.output, -3.0)
+        && same (*d.saturation.hand.mix, 0.5)
         && same (*copy->snapshot().view().plan.glue.ratio, *hidden.view().plan.glue.ratio), "a saved project keeps them, and they sound the same");
     ok (s.apply (command::SetTarget { 11, "cd" }).rejection == Rejection::None && ! s.project().devices.glue.hand.upToDb
         && ! s.project().devices.saturation.hand.on && same (s.snapshot().view().plan.glue.upToDb, 2.6),
@@ -486,7 +491,7 @@ void theTempo()
 
 void theSaturation()
 {
-    felitronics::test::group ("the saturation: the chain's tanh stage, its drive the knob's at the input's true peak; mix and output as set");
+    felitronics::test::group ("the saturation: the chain's tanh stage, its drive the knob's at the input's true peak; mix as set, the output neutral");
     namespace det = felitronics::core::det;
     bool aligned = true, written = true;
     for (const double peak : { -12.0, -6.0, -1.0, 0.0, 2.0 })
@@ -502,19 +507,19 @@ void theSaturation()
             mastering::MasteringChainParams params;
             params.inputGainDb = 1.25; params.preLimiterGainDb = -2.5;
             detail::writeDynamics (f.in, d, params);
-            written = written && ! params.bypassClipper && params.bypassCompressor && params.clipper.shape == felitronics::saturation::WaveShaper::Shape::Tanh
+            written = written && ! params.bypassClipper && params.bypassCompressor && params.clipper.shape == felitronics::saturation::WaveShaper::Shape::Tape
                 && sameF (params.clipper.driveDb, float (*found.driveDb)) && sameF (params.clipper.autoComp, 0.0f) && sameF (params.clipper.mix, 1.0f)
                 && sameF (params.clipper.outputDb, 0.0f) && sameF (params.clipper.bias, 0.0f) && same (params.inputGainDb, 1.25) && same (params.preLimiterGainDb, -2.5);
         }
     ok (aligned, "drive 3 / 6 / 12 dB at peaks from −12 to +2 dBTP: the shaper's gain at the peak is the knob's, k·peak = 10^(knob/20) − 1");
-    ok (written, "the clipper stage gets it — tanh, the compensation 0 — and neither gain of the chain is touched: the normalising gain is the search's, once");
+    ok (written, "the clipper stage gets it — tape, the machine's type, the compensation 0 — and neither gain of the chain is touched: the normalising gain is the search's, once");
 
     const Faked f ("allStreaming", -18.0, -6.0, -12.0);
     mastering::MasteringChainParams params;
-    detail::writeDynamics (f.in, f.shaped (6.0, 0.0, -6.0), params);
-    const bool dryLow = ! params.bypassClipper && sameF (params.clipper.mix, 0.0f) && sameF (params.clipper.outputDb, -6.0f);
-    detail::writeDynamics (f.in, f.shaped (6.0, 1.0, 0.0), params);
-    ok (dryLow && sameF (params.clipper.mix, 1.0f) && sameF (params.clipper.outputDb, 0.0f), "mix 0 and 1, output −6 and 0 dB are written as set");
+    detail::writeDynamics (f.in, f.shaped (6.0, 0.0), params);
+    const bool dry = ! params.bypassClipper && sameF (params.clipper.mix, 0.0f) && sameF (params.clipper.outputDb, 0.0f);
+    detail::writeDynamics (f.in, f.shaped (6.0, 1.0), params);
+    ok (dry && sameF (params.clipper.mix, 1.0f) && sameF (params.clipper.outputDb, 0.0f), "mix 0 and 1 are written as set, the shaper's output at 0 dB");
     detail::writeDynamics (f.in, f.shaped (0.0), params);
     auto unticked = f.shaped (6.0); unticked.saturation.hand.on = false;
     const bool zero = params.bypassClipper && ! detail::saturationFinding (f.in, f.shaped (0.0)).active;
@@ -687,9 +692,9 @@ void theCut()
     const Mix mix;
     auto sp = measured (mix, "allStreaming"); auto& s = *sp;
     const double share = loudShare();
-    const auto run = [&] (double drive, double mixed, double output)
+    const auto run = [&] (double drive, double mixed)
     {
-        SaturationFields<Touched> sat; sat.on = true; sat.drive = drive; sat.mix = mixed; sat.output = output;
+        SaturationFields<Touched> sat; sat.on = true; sat.drive = drive; sat.mix = mixed;
         felitronics::test::run (s.apply (command::EditDevice { 3, sat }).rejection == Rejection::None);
         const auto snapshot = s.snapshot();
         mastering::MasteringChainParams params;
@@ -698,13 +703,13 @@ void theCut()
     };
     const auto largest = [] (const Staged& o) { return cutDb (o.peaks.quietGain, o.peaks.loudLeastRatio); };
     const auto usual = [] (const Staged& o) { return cutDb (o.peaks.quietGain, o.peaks.loudUsualRatio); };
-    const auto off = run (0.0, 1.0, 0.0);
+    const auto off = run (0.0, 1.0);
     ok (! off.counted, "drive 0: the stage is bypassed and nothing is counted");
     double previousLargest = 0.0, previousUsual = 0.0, stepLargest = 0.0, stepUsual = 0.0, worstTurn = 0.0;
     bool grows = true, even = true;
     for (int drive = 1; drive <= 12; ++drive)
     {
-        const auto at = run (drive, 1.0, 0.0);
+        const auto at = run (drive, 1.0);
         const double n = largest (at), m = usual (at);
         grows = grows && at.counted && n > previousLargest && m > previousUsual && n >= m;
         // A dB of drive moves each number by under two, and by nearly what the dB before moved it: no jump.
@@ -721,10 +726,7 @@ void theCut()
     ok (grows, "drive 1…12 dB: the largest and the usual cut both grow at every dB, the largest never under the usual");
     ok (even && worstTurn < 0.35, "and neither jumps: a dB of the knob moves each by under two, and by within " + std::to_string (worstTurn)
         + " dB of what the dB before moved it");
-    const auto full = run (6.0, 1.0, 0.0), low = run (6.0, 1.0, -6.0), dry = run (6.0, 0.0, 0.0), half = run (6.0, 0.5, 0.0);
-    ok (near (usual (low), usual (full), 1e-3) && near (largest (low), largest (full), 1e-3)
-        && near (20 * std::log10 (low.peaks.loudUsualRatio / full.peaks.loudUsualRatio), -6.0, 1e-3),
-        "output −6 dB: the stage's peaks leave 6 dB lower — measured — and that is its gain, not a cut");
+    const auto full = run (6.0, 1.0), dry = run (6.0, 0.0), half = run (6.0, 0.5);
     ok (dry.counted && near (largest (dry), 0.0, 1e-3) && usual (half) > 0.05 && usual (half) < usual (full),
         "mix 0 cuts nothing; mix 0.5 less than mix 1 (" + std::to_string (usual (half)) + " of " + std::to_string (usual (full)) + " dB)");
 }
@@ -804,14 +806,20 @@ void theReport()
 }
 void theType()
 {
-    felitronics::test::group ("the saturation's type: a person's pick among five over the machine's tanh — the chain, the report, "
+    felitronics::test::group ("the saturation's type: a person's pick among five over the machine's tape — the chain, the report, "
                               "the project file; a refused type changes nothing, a change of target takes it back");
     const Mix mix;
     auto sp = measured (mix, "allStreaming"); auto& s = *sp;
     const auto& sat = s.project().devices.saturation;
-    ok (sat.machine.type == SaturationType::Tanh && ! sat.hand.type, "the machine's type is the config's, tanh; nothing by hand");
+    ok (sat.machine.type == SaturationType::Tape && ! sat.hand.type, "the machine's type is the config's, tape; nothing by hand");
     SaturationFields<Touched> knob; knob.on = true; knob.drive = 6.0;
     ok (s.apply (command::EditDevice { 3, knob }).rejection == Rejection::None, "PRECONDITION: saturation at 6 dB");
+    // A hand drive with no type picked runs the machine's type (owner, 01.10: tape).
+    mastering::MasteringChainParams unpicked;
+    {
+        const auto snapshot = s.snapshot();
+        detail::writeDynamics (inputsOf (s, snapshot), s.project().devices, unpicked);
+    }
 
     // REFUSED: atan, cubic and asym are the config's only (research), and past tape is no type — the command is refused
     // whole, at the type's place, and the drive it carried is not taken either.
@@ -849,6 +857,13 @@ void theType()
         each = each && int (pick (t).clipper.shape) == int (t) && sat.hand.type == t;
     const auto tape = pick (SaturationType::Tape);
     const auto tapeStage = stage (mix, tape, gainOf(), share);
+    const auto unpickedStage = stage (mix, unpicked, gainOf(), share);
+    const auto bits = [] (const std::vector<float>& a, const std::vector<float>& b)
+    { return a.size() == b.size() && std::memcmp (a.data(), b.data(), a.size() * sizeof (float)) == 0; };
+    ok (unpicked.clipper.shape == felitronics::saturation::WaveShaper::Shape::Tape && ! unpicked.bypassClipper
+        && bits (unpickedStage.left, tapeStage.left) && bits (unpickedStage.right, tapeStage.right)
+        && ! bits (unpickedStage.left, tanhStage.left),
+        "a hand drive with no type picked sounds tape: its stage is bit for bit the tape pick's, and not the tanh's");
     const double tanhCut = cutDb (tanhStage.peaks.quietGain, tanhStage.peaks.loudLeastRatio);
     const double tapeCut = cutDb (tapeStage.peaks.quietGain, tapeStage.peaks.loudLeastRatio);
     ok (each && tape.clipper.shape == felitronics::saturation::WaveShaper::Shape::Tape && ! tape.bypassClipper
@@ -872,17 +887,18 @@ void theType()
         && line.find ("срезала пики до") != std::string::npos,
         "the master's report measures the tape stage, the same words for every type: " + line);
 
-    // THE FILE: the pick is written as the person's, the machine's tanh is not written; another session reads it back.
+    // THE FILE: the pick is written as the person's, the machine's tape is not written; another session reads it back.
+    (void) pick (SaturationType::Tanh);
     const auto file = s.exportProject();
     const std::string written (file.view());
     auto other = measured (mix, "allStreaming");
-    ok (file.rejection == Rejection::None && written.find ("type.hand = \"tape\"") != std::string::npos
+    ok (file.rejection == Rejection::None && written.find ("type.hand = \"tanh\"") != std::string::npos
         && written.find ("type.machine") == std::string::npos
         && other->importProject (7, written).rejection == Rejection::None
-        && other->project().devices.saturation.hand.type == SaturationType::Tape
-        && other->project().devices.saturation.machine.type == SaturationType::Tanh,
-        "the project file carries type.hand = \"tape\" and reads back as the person's tape over the machine's tanh");
-    const auto at = written.find ("type.hand = \"tape\"");
+        && other->project().devices.saturation.hand.type == SaturationType::Tanh
+        && other->project().devices.saturation.machine.type == SaturationType::Tape,
+        "the project file carries type.hand = \"tanh\" and reads back as the person's tanh over the machine's tape");
+    const auto at = written.find ("type.hand = \"tanh\"");
     auto atan = written; atan.replace (at, 18, "type.hand = \"atan\"");
     auto third = measured (mix, "allStreaming");
     const auto answer = third->importProject (8, atan);
@@ -894,8 +910,8 @@ void theType()
     const auto warned = SnapshotText::targetChange (view.view());
     ok (view.view().handFieldCount == 3 && warned && warned->args[0].integer == 3,
         "the warning before a change of target counts the type among the three edits (on, drive, type)");
-    ok (s.apply (command::SetTarget { 9, "cd" }).rejection == Rejection::None && ! sat.hand.type && sat.machine.type == SaturationType::Tanh,
-        "after the change the type is the machine's tanh again");
+    ok (s.apply (command::SetTarget { 9, "cd" }).rejection == Rejection::None && ! sat.hand.type && sat.machine.type == SaturationType::Tape,
+        "after the change the type is the machine's tape again");
 }
 } // namespace
 

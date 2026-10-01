@@ -48,11 +48,11 @@ using detail::FieldRule;
 using detail::Rules;
 
 static_assert (std::variant_size_v<Request> == kCommands, "one Request alternative per command");
-static_assert (std::variant_size_v<DeviceEdit> == 8 && std::variant_size_v<DeviceMask> == 8, "one alternative per device");
+static_assert (std::variant_size_v<DeviceEdit> == 9 && std::variant_size_v<DeviceMask> == 9, "one alternative per device");
 static_assert (std::is_same_v<std::variant_alternative_t<std::size_t (Command::Forget), Request>, command::Forget>
                && std::is_same_v<std::variant_alternative_t<std::size_t (Command::Load), Request>, command::Load>,
                "Request's alternatives are in the order of Command");
-static_assert (std::is_same_v<std::variant_alternative_t<std::size_t (Device::Low), DeviceEdit>, LowFields<Touched>>
+static_assert (std::is_same_v<std::variant_alternative_t<std::size_t (Device::Bands), DeviceEdit>, BandsFields<Touched>>
                && std::is_same_v<std::variant_alternative_t<std::size_t (Device::Hpf), DeviceMask>, HpfFields<Mark>>,
                "a device edit's alternatives are in the order of Device");
 
@@ -426,7 +426,6 @@ Answer Session::apply (const Request& request) noexcept
         }
         measurementKey_ = key;
         measurementStorage_ = plan.storage;
-        project_.core = version();
         differenceCount_ = 0;
         machineFromFile_ = false;
         project_.manual = false;
@@ -482,7 +481,6 @@ Answer Session::apply (const Request& request) noexcept
     {
         const std::uint16_t row = *rules.find (set->target);
         project_.target = row;
-        project_.core = version();
         differenceCount_ = 0;
         project_.targetEdit = {};                                   // the new target's numbers, silently
         clearHands (project_.devices);
@@ -604,8 +602,7 @@ Answer Session::apply (const Request& request) noexcept
     }
     else if (std::holds_alternative<command::AdoptMachine> (request))
     {
-        // The machine's layer is placed by this release from here on, as at every other placement.
-        project_.core = version();
+        // The planner's layer replaces the file's, as at every other placement.
         place (project_);
         machineFromFile_ = false;
         differenceCount_ = 0;
@@ -618,11 +615,11 @@ Answer Session::apply (const Request& request) noexcept
         machineFromFile_ = true;
         differenceCount_ = imported.differenceCount;
         std::copy_n (imported.differences, differenceCount_, differences_);
-        if (imported.foreignCore || differenceCount_ != 0)
+        if (differenceCount_ != 0)
         {
             Notification event;
             event.kind = EventKind::Fact;
-            (void) event.payload.fact.assign (text::Fact::of (imported.foreignCore ? text::FactId::MachineDifferences : text::FactId::SameCoreMachineDifferences,
+            (void) event.payload.fact.assign (text::Fact::of (text::FactId::MachineDifferences,
                 text::Arg::count (std::int64_t (differenceCount_))));
             emit (event);
         }

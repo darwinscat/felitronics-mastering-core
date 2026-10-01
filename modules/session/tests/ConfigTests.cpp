@@ -145,7 +145,7 @@ void theSchemaRefuses()
     mustRefuse (E, "dualRelease = false", "dualRelease = 0", "0", Fault::WrongType, "limiter.dualRelease");
 
     // Out of a domain: its own, an item of an array, and a range another key states (the edit travel, the knob).
-    mustAccept (E, "hzMax = 50", "hzMax = 500");
+    mustAccept (E, "hzMax = 80", "hzMax = 500");
     mustRefuse (E, "passes = 12", "passes = 0", "0", Fault::OutOfRange, "landing.passes");
     mustAccept (T, "lufs = -23", "lufs = -30");
     mustRefuse (T, "monoBass = 150", "monoBass = 400", "400", Fault::OutOfRange, "targets.lp.monoBass");
@@ -155,10 +155,11 @@ void theSchemaRefuses()
                 "4000", Fault::OutOfRange, "targets.youtube.sampleRate");
     mustRefuse (E, "clipping = { fullAtShareOfProgramme = 0.001 }", "clipping = { fullAtShareOfProgramme = 0 }", "0 }",
                 Fault::OutOfRange, "observations.clipping.fullAtShareOfProgramme");
-    mustRefuse (E, "fullAtDropDb = 60", "fullAtDropDb = 24", "24", Fault::OutOfRange, "observations.spectralWall.fullAtDropDb");
+    mustRefuse (E, "fullAtDropDb = 40", "fullAtDropDb = 24", "24", Fault::OutOfRange, "observations.spectralWall.fullAtDropDb");
 
     // Fractional cutoff and slider bounds are valid independently of the slider step.
-    mustAccept (E, "hzMax = 50", "hzMax = 50.5");
+    mustAccept (E, "hzMax = 80", "hzMax = 80.5");
+    mustAccept (E, "machineTopHz = 50", "machineTopHz = 50.5");
     mustAccept (E, "hzMin = 15", "hzMin = 15.5");
 
     // Refusals across keys: names — the one a row goes by among them, which an empty key cannot be.
@@ -173,16 +174,20 @@ void theSchemaRefuses()
     mustRefuse (T, "\"cd\", \"bandcamp\"", "\"cd\", \"cd\"", "\"cd\", \"club\"", Fault::Refused, "main[4]", Refusal::Duplicate);
     mustRefuse (E, "targets = [\"allStreaming\", \"cdDynamic\"]", "targets = [\"allStreaming\", \"allStreaming\"]",
                 "\"allStreaming\"]", Fault::Refused, "blindTest.targets[1]", Refusal::Duplicate);
-    mustRefuse (E, "{ key = \"bass5\", hz = 31 }", "{ key = \"bass4\", hz = 31 }", "\"bass4\"", Fault::Refused, "hpf.marks[2].key",
+    mustRefuse (E, "{ key = \"bass5\", hz = 30.87 }", "{ key = \"bass4\", hz = 30.87 }", "\"bass4\"", Fault::Refused, "hpf.marks[2].key",
                 Refusal::Duplicate);
     mustRefuse (E, "band = 2", "band = 1", "1", Fault::Refused, "low.band", Refusal::Duplicate);
     // ...order: ranges and the classes of the peak clipper.
     mustRefuse (E, "infraLowCrossoverHz = 30", "infraLowCrossoverHz = 120", "120", Fault::Refused, "lowEnd.infraLowCrossoverHz",
                 Refusal::OutOfOrder);
-    mustRefuse (E, "dcOffset = { from = 0.001, fullAt = 0.01 }", "dcOffset = { from = 0.001, fullAt = 0.001 }", "0.001 }",
+    mustRefuse (E, "from = 0.001, fullAt = 0.01,", "from = 0.001, fullAt = 0.001,", "0.001, warningFrom",
                 Fault::Refused, "observations.dcOffset.fullAt", Refusal::OutOfOrder);
-    mustRefuse (E, "bitsUnused = { fromBits = 1, fullAtBits = 8 }", "bitsUnused = { fromBits = 1, fullAtBits = 1 }", "1 }",
-                Fault::Refused, "observations.bitsUnused.fullAtBits", Refusal::OutOfOrder);
+    mustRefuse (E, "warningFrom = 0.01, errorFrom = 0.1 }", "warningFrom = 0.01, errorFrom = 0.01 }", "0.01 }",
+                Fault::Refused, "observations.dcOffset.errorFrom", Refusal::OutOfOrder);
+    mustRefuse (E, "fromBitsShort = 1, fullAtBitsShort = 8,", "fromBitsShort = 1, fullAtBitsShort = 1,", "1, errorFromBitsShort",
+                Fault::Refused, "observations.bitsUnused.fullAtBitsShort", Refusal::OutOfOrder);
+    mustRefuse (E, "plrBelowDb = 10.5, fullAtPlrDb = 7 }", "plrBelowDb = 10.5, fullAtPlrDb = 11 }", "11 }",
+                Fault::Refused, "observations.alreadyLimited.fullAtPlrDb", Refusal::OutOfOrder);
     mustRefuse (E, "witnessQuantiles = [0.5, 0.9]", "witnessQuantiles = [0.9, 0.5]", "0.5]", Fault::Refused,
                 "deEsser.witnessQuantiles[1]", Refusal::OutOfOrder);
     mustRefuse (E, "shortP90Ms = 2", "shortP90Ms = 8", "8\nlongBassShare", Fault::Refused, "limiter.peakClipper.longP90Ms",
@@ -191,7 +196,17 @@ void theSchemaRefuses()
     mustRefuse (E, "slowReleaseMs = 200", "slowReleaseMs = 20", "20", Fault::Refused, "limiter.slowReleaseMs", Refusal::OutOfOrder);
     mustRefuse (E, "warningLowHz = 20, warningHighHz = 50", "warningLowHz = 20, warningHighHz = 40", "40", Fault::Refused,
                 "hpf.comfort.warningHighHz", Refusal::OutOfOrder);
-    mustRefuse (E, "hzMin = 15", "hzMin = 50", "50\nslopes", Fault::Refused, "hpf.hzMax", Refusal::OutOfOrder);
+    mustRefuse (E, "hzMin = 15", "hzMin = 80", "80\nmachineTopHz", Fault::Refused, "hpf.hzMax", Refusal::OutOfOrder);
+    // The machine's top lies on the knob's travel: above its start, at most its end, a finite number, and there.
+    mustAccept (E, "machineTopHz = 50", "machineTopHz = 80");
+    mustRefuse (E, "machineTopHz = 50", "machineTopHz = 81", "81", Fault::Refused, "hpf.machineTopHz", Refusal::OutOfOrder);
+    mustRefuse (E, "machineTopHz = 50", "machineTopHz = 15", "15", Fault::Refused, "hpf.machineTopHz", Refusal::OutOfOrder);
+    mustRefuse (E, "hzMin = 15", "hzMin = 60", "50\nslopes", Fault::Refused, "hpf.machineTopHz", Refusal::OutOfOrder);
+    mustRefuse (E, "hzMax = 80", "hzMax = 49", "50\nslopes", Fault::Refused, "hpf.machineTopHz", Refusal::OutOfOrder);
+    mustRefuse (E, "machineTopHz = 50", "machineTopHz = nan", "nan", Fault::Syntax, "");   // UnsupportedValue: never a number
+    mustRefuse (E, "machineTopHz = 50", "machineTopHz = inf", "inf", Fault::Syntax, "");
+    mustRefuse (E, "machineTopHz = 50", "machineTopHz = \"50\"", "\"50\"", Fault::WrongType, "hpf.machineTopHz");
+    mustRefuse (E, "hzMax = 80\nmachineTopHz = 50\n", "hzMax = 80\n", "[hpf]", Fault::Missing, "hpf.machineTopHz");
     // ...a crest of exactly three corners, and the printed quantiles that the fields' names state.
     mustRefuse (E, "bandEdgesHz = [120, 2000, 6000]", "bandEdgesHz = []", "[]", Fault::Refused, "crest.bandEdgesHz", Refusal::NotOneOf);
     mustRefuse (E, "printedQuantiles = [0.5, 0.95]", "printedQuantiles = [0.1, 0.9]", "[0.1", Fault::Refused, "cost.printedQuantiles",
@@ -304,7 +319,7 @@ void theSchemaAdmitsWhatTheAnalyzersAdmit()
 // measured after the master, development, the name of the defaults — and, while no shell offers the de-esser, its block
 // and the bursts only it reads (but not deEsser.offered itself: offering it brings them in).
 constexpr std::string_view kTargetsPresentation[] = {
-    "main", "edit.lufs.from", "edit.lufs.to", "edit.lufs.green", "edit.tp.from", "edit.tp.to", "edit.tp.green",
+    "main", "notes", "edit.lufs.from", "edit.lufs.to", "edit.lufs.green", "edit.tp.from", "edit.tp.to", "edit.tp.green",
 };
 constexpr std::string_view kEnginePresentation[] = {
     "defaults", "limiter.peakClipper.densityMinusDb", "limiter.peakClipper.densityWithinDb", "hpf.slopesNormal",
@@ -441,7 +456,7 @@ void theSoundIsWhatCanChangeAMaster()
           "the hand edit's step, which the targets' numbers sit on", true },
         { config::Document::Engine, "clipping = { fullAtShareOfProgramme = 0.001 }", "clipping = { fullAtShareOfProgramme = 0.002 }",
           "a report-only observation threshold (clipping's full weight)", false },
-        { config::Document::Engine, "wideBass = { sideFractionAtLeast = 0.06 }", "wideBass = { sideFractionAtLeast = 0.07 }",
+        { config::Document::Engine, "wideBass = { sideFractionAtLeast = 0.06, fullAt = 0.3 }", "wideBass = { sideFractionAtLeast = 0.07, fullAt = 0.3 }",
           "the wide-bass warning: mono bass is placed whatever it says", false },
         { config::Document::Engine, "polarity = { correlationBelow = 0,", "polarity = { correlationBelow = 0.1,",
           "observations.polarity: a finding — mono bass is decided by the loss of its own band", false },

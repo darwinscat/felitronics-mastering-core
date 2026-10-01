@@ -5,6 +5,7 @@
 
 
 #include <felitronics/session/Text.h>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -85,6 +86,58 @@ struct TempoChoice
     bool ready = false, measured = false;
     double bpm = 0.0;
     MeasurementReason reason = MeasurementReason::Pending;
+};
+// A LIST HELD IN PLACE: room for N values, the first `count` of them meaningful — no heap, copied whole with what holds
+// it. The wire carries the `count` values as an array (tools/session-codec-schema.json writes the type `T[<=N]`).
+template <class T, std::size_t N> struct BoundedList
+{
+    static_assert (N <= 255, "count is one byte");
+    std::array<T, N> items {};
+    std::uint8_t count = 0;
+};
+
+// THE READINGS — the numbers a shell shows about the sound, each a fact: FactId::Value with the core's unit and
+// precision (a word, for the tempo's confidence: FactId::TempoConfidence), keyed by its kind; the quantity's name is the
+// catalogue's term ReadingText::name gives (terms.reading, in the order of ReadingKind). Two places carry them, each one
+// ordered list: the snapshot, the source's (ReadingText::source, following the measurement), and a master's report,
+// the master's (MasterReportText::readings). A kind is in a list where its number was measured and absent otherwise;
+// a list names a quantity once. Append-only: a new kind takes the next number.
+//   Integrated … Plr        loudness: LUFS, dBTP, LU, dB — the source's, or the master's achieved
+//   DcOffset…               the DC offset, a share of full scale, signed: one channel (DcOffset), or left and right
+//   LowestBand              the lowest occupied band's centre, Hz
+//   PcmBits                 the most exact PCM bits a channel's grid holds
+//   Correlation             the stereo correlation over the programme (absent for one channel)
+//   BurstsMid, BurstsSide   the burst events of the mid and of the side (sibilance); the side absent for one channel
+//   Hum                     the first channel's observed mains fundamental, Hz
+//   Tempo, TempoConfidence  the headline tempo, BPM, and how sure it is (a word)
+//   ClipRuns … SamplePeak   the clipped runs, the longest run and the clipped samples (both summed or most over the
+//                           channels, as named), the sample peak, dBFS
+//   LowSide                 the side's share of the low end
+//   StereoWindows           the stereo measurement's windows
+//   CrestBlocks…            the crest measurement's active blocks per band: low, low-mid, high-mid, high, full
+//   Target, Ceiling         the master's target loudness and the ceiling it was held to
+//   Gain, Passes, CheckPasses   the gain from the source, the landing's passes and the passes that checked it
+enum class ReadingKind : std::uint8_t
+{
+    Integrated, TruePeak, Lra, Plr, DcOffset, DcOffsetLeft, DcOffsetRight, LowestBand, PcmBits, Correlation,
+    BurstsMid, BurstsSide, Hum, Tempo, TempoConfidence, ClipRuns, LongestRun, ClippedSamples, SamplePeak, LowSide,
+    StereoWindows, CrestBlocksLow, CrestBlocksLowMid, CrestBlocksHighMid, CrestBlocksHigh, CrestBlocksFull,
+    Target, Ceiling, Gain, Passes, CheckPasses
+};
+inline constexpr std::size_t kReadingKinds = 31;
+// The room of each place: the source's kinds (DcOffset and its two channels never together) and the master's.
+inline constexpr std::size_t kSourceReadings = 26, kMasterReadings = 9;
+struct ReadingFact
+{
+    ReadingKind kind = ReadingKind::Integrated;
+    text::Fact fact {};
+};
+struct ReadingText
+{
+    [[nodiscard]] static text::Term name (ReadingKind kind) noexcept;
+    // The source's readings from its measurement results (indexed by Analyzer), for a source of `channels`.
+    [[nodiscard]] static BoundedList<ReadingFact, kSourceReadings> source (std::span<const MeasurementResult> measurements,
+                                                                          std::uint32_t channels) noexcept;
 };
 class MeasurementText final
 {

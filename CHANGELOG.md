@@ -2,6 +2,257 @@
 
 # Changelog
 
+## v0.6.0 — 2026-10-01
+
+### The session ABI starts a new base at v0.6.0
+
+- **The manifest's new base** (owner, 01.10). `tools/session-abi-v1.txt` declares `base v0.6.0`;
+  `tools/session-abi-append-only.mjs` holds append-only between manifests that declare the same base, refuses an older
+  or dropped declaration, and accepts a new one only from its own list of authorised resets (v0.6.0 over an
+  undeclared manifest, once). `FC_SESSION_ABI_VERSION` is 4: the pure kit, the EQ bands and
+  their tick join version 4's surface. No project, snapshot or file of an older version exists, and the one consumer
+  vendors the exact core, so the entries for such data leave. Live ids keep their numbers.
+- **No decode defaults for snapshots and events.** Every snapshot and event field is required on decode (a missing key
+  is `Invalid`); a semantically optional field stays nullable and present. The generator no longer asks a field appended
+  to a frozen record for a default. Only a request's own optional fields (the query's `masterId`, `crossoverHz`,
+  `fromHz`, `toHz`, `spectrum`; an edit's or a revert's tick and type) keep one; `SessionCapabilities.leanSummary` is
+  required, as the 40-byte C record is. The bands' machine layer is the planner's alone.
+- **The project file has no core stamp.** `core = …` is neither written nor read (a `core` key is `ProjectUnknownKey`);
+  `Project.core`, `Rejection::ProjectCore` (27) and its fact 127 are gone, and an adopt no longer stamps anything.
+  `MachineDifferences` (8) is the one fact for the differences between the file's machine layer and today's planner,
+  published when there are any; `SameCoreMachineDifferences` (10) and `DefaultsConverted` (9) are gone.
+- **The saturation's output knob is gone** (owner, 01.10): the landing sets the gain before the limiter, so any trim was
+  undone. `SaturationFields.output` (field 3), its config (`outputDomain`, `outputDb`, `outputRange`, `outputStep`), the
+  term `FieldSaturationOutput` (12) and `FC_SESSION_KIT_FIELD_SATURATION_OUTPUT` leave; the shaper's output stays at
+  0 dB in the chain. The mix and mono bass's width stay. A `[saturation] output` key is `ProjectUnknownKey`.
+- **Config**: the sound version of the `2026-10` defaults moves with the four removed keys (updated in place; the output
+  was 0 dB, neutral, so no master moves). The recordings move with the config's version, the facts and the snapshot.
+- **The high-pass curve's marks** (owner, 01.10): `bass4` at 41.2 Hz (E1), `bass5` at 30.87 Hz (B0), `sub808` at 28 Hz
+  (its label fits on the plot); `kick` stays at 50. Labels only: the config's version moves, the sound version does not.
+
+### contract — the site recordings come from one clean wasm build
+
+- **Nine site recordings corrected** (`domains`, `load-measure`, `machine-layer`, `measurement-poison`, `memory`,
+  `project-roundtrip`, `recovery`, `target-edits`, `two-sessions`): every scenario that places or poisons runs on the
+  `contract-trap` module, and the committed recordings had been made with a trap module left from an older build. Its
+  wasm32 memory budget was 80 bytes short — `measurementStorage.workspaceBytes` and `largestBlockBytes`, and
+  `peakBytes`/`workPeakBytes` where the workspace sets the peak. Nothing else moved; these numbers are masked in the
+  native/wasm comparison, so only the byte-for-byte recording check saw it, and only on a clean build.
+- **`tools/wasm/build.sh` stamps what it built**: `contract-modules.sha256` beside the modules (production and
+  `contract-trap`, for the release and the checked tier) names each module's sha256 and a digest of the sources, taken
+  before the compile. `tools/contract/run.mjs` refuses a module pair the stamp does not name and a stamp made from other
+  sources, with planted controls under `--controls`. The rebuild hint in the manifest now names
+  `tools/wasm/build/fcsession.node.js`, the directory build.sh writes.
+
+### session — the device cards' advice and the targets' notes are facts
+
+- **The advice beside a knob.** `plan.facts` states, from the value as it sounds (hand over machine): the high-pass
+  cutoff below or above the comfort window `[hpf] comfort` (`hpfBelowComfort` 500, `hpfAboveComfort` 501, with the
+  window), its slope gentler or steeper than `slopesNormal` (`hpfSlopeGentle` 502, `hpfSlopeSteep` 503), the EQ curve of
+  the shelves past `[eq] curve.warnDb` (`eqOvershoot` 504, "{db} at {hz}", said of tilt or low), mono bass outside every
+  `[monoBass.zones]` zone (`monoBassOutsideZones` 505). `kPlanFacts` grows to 18; `plan.hpf.soundingSlope` is new.
+- **The target's note.** targets.toml gains `[notes]` (measured, practice, noNormalisation; presentation — `sound` does
+  not move, `all` does); the snapshot carries `targetNote` beside `target` (`targetMeasured` 506, `targetPractice` 507,
+  `targetNoNormalisation` 508). Fact range 500–599 declared for the plan's advice and the targets' notes.
+
+### session · tools — the EQ bands by hand, the glue's P95 point
+
+- **The EQ bands** (`Device::Bands`, appended as device 8; `BandsFields`: `body`, `mud`, `forward`, `brightness`,
+  `air`, dB): five static bands of the one EQ stage from the new `[bands]` config section — body a 160 Hz bell (Q 0.7),
+  mud a 300 Hz bell (Q 0.8, a cut only: −6…0 dB), forward a 3 kHz bell (Q 0.7), brightness and air high shelves at 8 and
+  12 kHz (Q 0.6) — in bands 3–7, each knob ±3 dB by 0.1 dB within a ±6 dB domain. A person's only: the machine leaves
+  them at 0 dB on every target; a band at 0 dB is no band, so a master without them is the master made before (bit for
+  bit, held against the previous `writeEq`). No dynamics and no norm advice yet; the curve's `warnDb` still judges tilt
+  and low only.
+- **The EQ bands' tick** (`BandsFields::on`, appended after the gains as field 5): the whole device in or out of the
+  chain with its gains kept. The machine's layer is always on (also where the shell does not offer the bands); a person's
+  untick writes all five slots as no band, so the stage, `eqCurve` and the master are those of a project without the
+  bands, bit for bit; ticked on again, the same gains sound. The plan's `bands.on` is true where the device is on and any
+  band is not 0. `EditDevice` / `RevertEdits` take `on` (a revert gives the machine's on); the project file writes
+  `on.hand` after the gains.
+- **Everything a device gets**: `EditDevice` / `RevertEdits` alternatives (a gain outside its domain refused
+  `OutOfDomain` on its own field, named by the new terms `FieldBandsBody` … `FieldBandsAir`; the device's term
+  `DeviceBands`, ru «Полосы EQ»: «Тело», «Грязь», «Вперёд», «Яркость», «Воздух»), the project file's `[bands]`, the
+  codec (`Devices.bands`, `DevicePlans.bands`), the summed `eqCurve` and the kit's curve.
+- **Capabilities**: `FC_SESSION_DEVICE_EQ_BANDS` (256); `FC_SESSION_DEVICES_ALL` keeps the eight devices before it, so a
+  shell that does not know the bands is not offered them. C++ `kAllDevices` is all nine.
+- **Kit**: the five gains are kit fields (`FC_SESSION_KIT_FIELD_BANDS_*`, travel, parse, no heat window);
+  `fc_kit_eq_curve_bands` takes `FC_SESSION_KIT_EQ_BANDS_PARAMS` (13) — the seven of `fc_kit_eq_curve`, the five
+  gains and the bands' tick (0/1; off draws no band, the gains still checked against their domain). In the v0.6.0 manifest base (`FC_SESSION_ABI_VERSION` 4).
+- **The glue's P95 point**: `GlueFinding::p95DetectorDb`, the input's short-term P95 on the detector's scale (P95 +
+  `[glue] detectorOverP95Db`) — the level the threshold stands on and where the static curve takes `upToDb`, for the
+  transfer curve's dot. Set whenever the threshold is.
+- **Config**: the sound version of the `2026-10` defaults moves with the added `[bands]` numbers (none changed; a
+  2026-10 project has no band and sounds as before).
+
+### session — the high-pass knob travels to 80 Hz; the machine's top stays 50 Hz
+
+- **Owner, 01.10.** `[hpf] hzMax` is the knob's travel alone and goes to 80 Hz (a voice with a guitar from a microphone
+  takes a cut that high); the new `[hpf] machineTopHz = 50` is the machine's top. `HpfCut::Top`, its cutoff and the
+  report's "the cutoff stopped at 50 Hz" read the machine's top; no machine cutoff moves. The schema holds the new key
+  required, finite and on the travel (above `hzMin`, at most `hzMax`). The comfort window is unchanged, so the knob's
+  field is red from 50 to 80 Hz. A hand's cutoff keeps its domain (above 0, under the source's Nyquist).
+- **Moved records:** the 2026-10 sound version (updated in place) and the pure kit's corpus pin (`KitTests.cpp`,
+  `tools/wasm/session-check.mjs`): the high-pass travel's end and the positions along it.
+
+### session — the master report states its verdict, its crest and honest bounds
+
+- **The landing's verdict is a fact.** `MasterReportText::landing` states one fact per landing status, published with
+  the master ahead of the miss: solved says the achieved loudness against the target and the landing's tolerance
+  (`MasterLandingSolved`, 88 — never "hit" without numbers); unreachable, pass limit and between say why against the
+  tolerance (`MasterLandingUnreachable` 89, `MasterLandingPassLimit` 90, `MasterLandingBetween` 91), the achieved number
+  and the gap staying the miss's own line (`MasterLandingMiss`/`Above`, 11/23); a technical failure says so
+  (`MasterLandingFailed`, 92). An unavailable or cancelled landing says none. A shell composes no verdict of its own.
+- **The crest's line goes out once, from one source.** `MasterReportText::crest` is now published with the report when
+  the job settles the crest (joined inside the job, or unavailable); a crest still pending is said by the late join, as
+  before, and a settled one is never said twice.
+- **The limiter promises no exact cut.** `{cut}` in `limiterShort`, `limiterBetween`, `limiterManual` and
+  `masterVinylNeedlesDeparts` is a cap, `Bound::AtMost` ("≤ 1.5 dB"), and the lines say the landing decides how much;
+  `limiterLittleNeed` names the need as the one at the target.
+- **`DefaultsConverted` (9) is gone.** Nothing converts a project, so its shape, message and id are gone.
+- The recordings move by the new facts alone: four contract scenarios gain the verdict and the report-time crest line
+  in one event record each (with their hashes in the manifest); the event-test and text-corpus pins and the scenario's
+  facts digest move with them. No ABI or version change.
+
+### session — the observations speak for themselves; the loudest bass note is a reading
+
+- **The snapshot carries each observation's line.** `SnapshotView::observationFacts` (a
+  `BoundedList<ObservationFact, 17>`: the kind and its fact, held in place, no heap) carries what
+  `ObservationText::facts` states of `observations`, in the order of `ObservationKind` — so a shell shows every finding
+  without composing a sentence. One source: `ObservationText::facts` calls `ObservationText::fact` for each kind, and
+  nothing else composes them. A kind found says its fact as before; a kind **not measured** now says so, and why —
+  the new fact `ObservationUnmeasured` (437, "{name}: not measured — {reason}"); a kind measured and not found says
+  nothing. Empty before a source; a new measurement states the lines anew.
+- **The observations' words in the catalogue**, Russian first, then English: the 17 names (`terms.observation`), the
+  handling (`terms.handledBy`: nothing, HPF, mono bass, by hand) and why a kind was not measured
+  (`terms.measurementReason`: every `MeasurementReason` but `None`).
+- **A reading style.** `ObservationStyle` (and the config's `Kind`) gain `Reading`, appended; `[observations.kinds]`
+  says `loudestLowNote = "reading"` (owner decision: the loudest bass note is a number the file shows, it does not tint
+  the Low end block). Nothing else in the style table moves.
+- **On the wire** a line is `{"fact": WireFact, "kind": n}`; the schema learns the enum `ObservationKind`, and
+  `observationFacts` is a field like any other. The decoder refuses an unknown fact id or
+  kind. The config's version moves with `engine.toml`: the recordings move with it, with the snapshot JSON and the
+  memory counts, and by nothing else.
+
+### session — the owner's observation table: styles by nature and by size, severities, his words, and the hum not measured only where it could not listen
+
+- **Styles** (`[observations.kinds]`, owner decision 01.10): polarity is an error; a dual-mono file, an input already
+  limited and a spectral wall are warnings; the lowest occupied band is a reading. Four kinds take their style by size
+  too — one function, `sized()`, with the thresholds in their own `[observations]` rows: `dcOffset` (a note under 1 % of
+  full scale, a warning from `warningFrom` 0.01, an error from `errorFrom` 0.1), `bitsUnused` (judged by the effective
+  depth, the container's bits less the low bits always zero: nothing at `depthBits` 24, a warning from `fromBitsShort`
+  1 short, an error from `errorFromBitsShort` 8 short — every 16-bit mix), `infraLow` (a note from 2 %, a warning from
+  `warningFrom` 0.05) and `hum` (a note, a warning from `warningFromSeverity` 0.5 when not doubtful). A size raises a
+  style, never lowers it, and never raises a doubtful finding. `ObservationInputs` and `PlanInputs` carry the source's
+  `bitDepth`.
+- **Thresholds and severities**: `alreadyLimited` found under a PLR of 10.5 dB (was 8), its severity rising to full at
+  `fullAtPlrDb` 7; `spectralWall` from 0.12 under Nyquist (was 0.2), its confidence full at a 40 dB drop (was 60);
+  `wideBass` severity from 6 % to `fullAt` 30 %; `polarity` severity by the low band's correlation, 1 − 2 × its side share,
+  from 0 to `fullAtLowCorrelation` −0.5; `hum` severity in dB of the line against the programme, `fromPowerDb` −60 to
+  `fullAtPowerDb` −40 (replaces `fullAtPowerAgainstProgramme`). The config schema reads and orders every new key.
+- **The hum's statuses**: a programme the detector listened to and found no steady line in is NOT FOUND — never quiet
+  (`NoQuietStretch`), a comb without its base (`CombWithoutBase`), one quiet stretch or stretches too short with no base
+  line in them. Not measured is left for what could not be measured: `ShorterThanWindow` → TooShort, `AllFramesHoled` →
+  NonFinite, `InsufficientResolution` (and an unprepared report) → Unsupported, and a base line heard in too little quiet
+  to tell whether it stands still → NoSignal. A line in any channel is the hum; without one, a channel that could not
+  listen keeps the programme not measured. Wandering lines are read only from channels that judged.
+- **New facts**, appended (439–445): `SourceDcNote`, `SourceTruncatedBits`, `SourceShallowMix`, `SourceLimitedBus`,
+  `SourceLossy`, `SourceInfraLowNote`, `SourceInfraLowWarning` — the owner's words, Russian first. `SourceDualMono`
+  says his sentence; `SourceUnusedBits`, `SourceLimited`, `SourceWall` and `SourceInfraLow` stay in the table, no longer
+  said. The limiter's lines (`LimiterShort`/`Between`/`Manual`) and `MasterVinylNeedlesDeparts` read "the clipper will
+  take {cut} off the peaks, the limiter the rest" — `{cut}` stays `Bound::AtMost`.
+- **Builds**: the kit's slope check calls `std::floor` (on the object list everywhere) instead of `std::trunc`, which the
+  Windows object gate refused; a kit test's `std::string_view` takes a `std::size_t` count (wasm32 `-Wshorten-64-to-32`).
+- The config's version moves with `engine.toml`; with the previous observation rows put back the event pins are the
+  previous ones, bit for bit. The recordings move with it.
+
+### session — the owner's wording for the master's outcome and the advice beyond the norm; the landing names what held it; the machine keeps its own norm
+
+- **The master's outcome** (owner wording 01.10): `MasterLandingSolved` (88) reads "the master reached X against a target
+  of Y (tolerance ±Z)". `MasterLandingUnreachable` (89) names the limit that held it — a select on the new term group
+  `landingLimit` (true-peak ceiling, limiter GR limit, PLR floor, LRA loss limit, the chain's gain bound, or "one of the
+  constraints" where none was named). `MasterLandingBetween` (91) names the two nearest levels: "the target cannot be hit
+  exactly: the nearest levels are A and B, both beyond the tolerance" (args `below`, `above`; the tolerance argument goes).
+- **The landing carries what decided it**: `LandingSummary` gains `binding` (`LandingConstraint`, the solver's
+  `LoudnessSolution::binding`, set for an unreachable landing only) and `belowLufs`/`aboveLufs` (the solver's bracket, for
+  a between landing only). The decoder refuses a limit on another status and levels out of order. `MasterReportText::landing` takes the summary.
+- **The advice beyond the norm** (owner wording 01.10): the high-pass slope gentler or steeper than usual (502, 503) and
+  mono bass above every destination's zone (505, now `crossover`, `clubTo`, `vinylTo`). A crossover below every zone is its
+  own fact, `MonoBassBelowZones` (509: `crossover`, `clubFrom`, `vinylFrom`).
+- **The limiter's cap in words**: `LimiterShort`/`Between`/`Manual` and `MasterVinylNeedlesDeparts` say "no more than
+  {cut}" themselves, so `{cut}` is `Bound::Exact` — the line never reads "no more than ≤ …".
+- **DC offset per channel**: a stereo source's DC line names both channels, signed, like the reading —
+  `SourceDcNoteStereo` (446) and `SourceDcStereo` (447), "L {left}, R {right}"; the observation carries them in
+  `second`/`third` with `places` the channels read. A mono source keeps `SourceDcNote`/`SourceDc`.
+- **Guard**: `theMachineKeepsItsOwnNorm` plans every target on the contract's fixture inputs and the suite's synthetic
+  mixes and holds that the machine's own plan raises none of 502–505 and 509.
+
+### session · tools — the pure kit: stateless answers for a shell's UI thread
+
+- **`felitronics::session::Kit`** (`Kit.h`): a published fact as text (`Text::write` behind the codec's fact reader); a
+  typed number read for a field (`Text::parse`, a bare number negative on a travel below zero, the knob's grid in decimal
+  digits, the command's domain; the slope a whole multiple of 6); a knob's travel, position ↔ value on its grid, and heat
+  against the config's window (`[edit]` green, `[hpf] comfort`, `[tilt]`/`[low] normal`); mono bass's zones; the EQ curve
+  preview with the shelves' peak against `warnDb` (the EQ stage's own `writeEq` / `eqCurve` / `eqFinding`); a low-end dB
+  curve from band energies. Allocation-free, no state.
+- **C ABI** `fc_kit_text`, `fc_kit_parse`, `fc_kit_travel`, `fc_kit_position`, `fc_kit_value_at`, `fc_kit_heat`,
+  `fc_kit_mono_zones`, `fc_kit_mono_zones_at`, `fc_kit_eq_curve`, `fc_kit_low_end_curve` and the `FC_SESSION_KIT_*`
+  constants, appended to the v1 manifest; exported by the fcsession module. `FC_SESSION_ABI_VERSION` is unchanged (the
+  release moves it).
+- The plan's comfort and zones advice reads the kit's comparison; no fact, snapshot or sound changes.
+
+### session — the readings are facts; the master's cost says its details
+
+- **The readings are facts.** One table per place, keyed by `ReadingKind` (appended enum, 31 kinds): the snapshot's
+  `readings` (`BoundedList<ReadingFact, 26>`) — the source's integrated loudness, true peak, LRA, PLR, DC offset per
+  channel, lowest occupied band, exact PCM bits, correlation, burst events Mid/Side, hum, tempo and its confidence, the
+  clipping's runs, longest run, clipped samples and sample peak, the low end's side share, the stereo windows and the
+  crest's active blocks per band — stated by `ReadingText::source` from the measurement and following it; and a
+  master's `MasterReport::readings` (`BoundedList<ReadingFact, 9>`) — achieved loudness, true peak, LRA, PLR, target,
+  ceiling, gain, the landing's passes and the check passes — stated by `MasterReportText::readings` when the job settles
+  the report. Each is `FactId::Value` with the core's unit and precision; the tempo's confidence is the new fact
+  `TempoConfidence` (438) with a word of `terms.tempoConfidence`. The quantities' names are `terms.reading`, in the
+  order of `ReadingKind` (`ReadingText::name`). A kind not measured has no entry. The need is not a reading.
+- **The master's cost line by line.** Published with the report beside shape, impact and pumping, each only where its
+  numbers were measured: the largest section shift and where it lies (`MasterCostSection`, 93), the sections compared
+  (94), the limiter's median and P95 over the active windows (95), the shares it worked in and that were active (96),
+  the impact loss of the four bands (97, also with a late crest join). Russian first, then English.
+- **On the wire** a reading is `{"fact": WireFact, "kind": n}`; the schema learns the enum `ReadingKind`, and both
+  lists are on the wire like any field. The decoder refuses an unknown kind. `BoundedList` moves to `Measurements.h` (no change of shape).
+- The recordings move by the new lists and facts alone, with their hashes and the memory counts. The event pins move by
+  the five cost lines alone (without them the old pins hold, checked). No ABI or version change.
+
+### session — pre-release review fixes
+
+- **The hum is not "too short" when the analyzer never ran.** A hum analyzer the session refused before any work (no
+  price for the programme, or memory it may not take) carries no number; the hum and the wandering hum are now not
+  measured with that refusal's own reason (`Memory`, `Unsupported`) instead of `TooShort`. The observation's codes are
+  tied to `analysis::HumReason` by `static_assert`.
+- **A between landing always delivers its master.** A `TargetBetweenAchievable` landing whose solver side were not a
+  number keeps its verdict without `belowLufs`/`aboveLufs` and returns the file, instead of failing the job as a
+  contract breach. No known path makes such a side: `LandingSearch` takes a side only from a finite, ceiling-safe pass
+  (`felitronics_mastering_landing_search_tests` drives a between verdict and checks both).
+- **The ABI gate's reset is authorised, not self-declared.** `tools/session-abi-append-only.mjs` accepts a new declared
+  base only from its own list of authorised resets — exactly v0.6.0 over a manifest that declares none; any other base
+  (v0.6.1, a removal under a fresh base) is refused. `tools/session-abi-v1.txt` now holds the full compiled surface of
+  the v0.6.0 base (lines only added), and the manifest generator reads `uint32_t a, b;` as two fields, each with its
+  own offset.
+- **Two compatibility slots leave the C boundary** (owner, 01.10). `fc_session_measurement_storage` loses
+  `reservedBytes` and `reserved`: 88 bytes, `workspaceBytes` at 24 and every later field 8 bytes earlier.
+  `fc_session_capabilities`' base size is 40 with `leanSummary`: a 32-byte record is `STRUCT_TOO_SMALL` like any record
+  below its base, and `FC_SESSION_CAPABILITIES_V1_BYTES` is gone. A build still accepts sizes from a record's base up to
+  its own.
+- **Docs**: the header and `docs/SESSION.md` state every record's base size; the `[bands]` comment in `engine.toml`
+  describes the device's tick.
+
+### session — the machine's saturation type is tape
+
+- **The saturation's default type** (`[saturation] shape`) is `tape`, no longer `tanh` (owner, 01.10). The machine
+  never raises the drive, so the type is heard once a person does: a hand drive with no type picked now sounds tape. A
+  person still picks tanh, tube, transistor, transformer or tape by hand.
+- **Config**: the sound version of the `2026-10` defaults moves with the shape (updated in place, before the first
+  release that carries it).
+
 ## v0.5.0 — 2026-10-01
 
 ### session — the plan states its reasons; a contract with the panel open while the plan waits

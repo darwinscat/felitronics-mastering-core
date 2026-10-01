@@ -140,6 +140,7 @@ const FELITRONICS_ALLOWED = new Set([
 
     'felitronics/session/Project.h',
     'felitronics/session/Text.h',
+    'felitronics/session/Kit.h',                // the pure kit: stateless declarations, scanned as every public header
     // felitronics-toml (resolved in the checkout the build uses): its parser and canonical writer, over <algorithm>,
     // <cfloat>, <cmath>, <cstddef>, <cstdint>, <limits>, <optional>, <string>, <string_view>, <utility>, <variant> and
     // <vector> — no file, locale, libc number conversion, exception or RTTI, by its own contract; the schema's Reader

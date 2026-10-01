@@ -36,3 +36,4 @@ src/SourceResults.cpp
 src/SourceMeasurements.cpp
 src/Waveform.cpp
 src/Queries.cpp
+src/Kit.cpp

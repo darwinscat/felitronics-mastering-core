@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <bit>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
 #include <cstring>
 #include <limits>
@@ -148,7 +149,7 @@ void capabilities()
     }
     auto invalid = full; invalid.maxRateHz = 7999;
     ok (create (invalid, &h) == FC_SESSION_ERR_CAPABILITIES, "invalid max rate");
-    invalid = full; invalid.offeredDevices = 256;
+    invalid = full; invalid.offeredDevices = FC_SESSION_DEVICES_ALL | FC_SESSION_DEVICE_EQ_BANDS | 512u;
     ok (create (invalid, &h) == FC_SESSION_ERR_CAPABILITIES, "unknown device bit");
     auto tight = full; tight.heapCeilingBytes = bytes + 1;
     ok (create (tight, &h) == FC_SESSION_OK, "tiny command budget session");
@@ -223,9 +224,7 @@ void directCapabilities()
     std::string machine (saved.view()); const auto hand = machine.find ("on.hand");
     ok (hand != machine.npos, "project control contains an authored activation");
     if (hand != machine.npos) machine.replace (hand, 7, "on.machine");
-    const auto core = machine.find ("core = \""); const auto end = machine.find ('"', core + 8);
-    machine.replace (core + 8, end - core - 8, "99.0.0");
-    ok (r.importProject (7, machine).rejection == Rejection::NotOffered, "a foreign core's project cannot activate an unoffered machine");
+    ok (r.importProject (7, machine).rejection == Rejection::NotOffered, "a file's machine layer cannot activate an unoffered device");
 }
 void guards()
 {
@@ -485,42 +484,16 @@ void freezeRegressions()
 {
     felitronics::test::group ("v1 freeze: size prefixes, live demand, protocol events, first-fault order, export reasons");
     fc_session h = 0; ok (create (full, &h) == FC_SESSION_OK, "freeze session");
-    // The record has grown past version 1: a version-1 shell's 32 bytes are still a whole record, less is too small,
-    // more than this build knows too large.
-    for (const auto size : { 0u, unsigned (FC_SESSION_CAPABILITIES_V1_BYTES - 1u), unsigned (sizeof (full) + 1) })
+    // The capabilities' base is the whole record, leanSummary included (owner, 2026-10-01): 32 bytes — the layout before
+    // leanSummary — are too small like any size below a record's base; more than this build knows is too large.
+    for (const auto size : { 0u, 32u, unsigned (sizeof (full) - 1u), unsigned (sizeof (full) + 1) })
     {
         auto caps = full; caps.size = size; fc_session out = 777; double bytes = 777;
-        const auto want = size < FC_SESSION_CAPABILITIES_V1_BYTES ? FC_SESSION_ERR_STRUCT_TOO_SMALL : FC_SESSION_ERR_STRUCT_TOO_LARGE;
+        const auto want = size < sizeof (full) ? FC_SESSION_ERR_STRUCT_TOO_SMALL : FC_SESSION_ERR_STRUCT_TOO_LARGE;
         ok (create (caps, &out) == want && out == 777 && fc_session_create_bytes (&caps, &bytes) == want && bytes == 777,
-            "capabilities size is checked without writes");
+            "capabilities size " + std::to_string (size) + " is checked without writes");
     }
     {
-        // A VERSION-1 RECORD, as a v0.3.0 shell lays it out: 32 bytes and its output right behind them. The appended
-        // field is not there to read — what lies after the record is the caller's — and the session is not lean.
-        alignas (8) unsigned char packed[FC_SESSION_CAPABILITIES_V1_BYTES + 8] {};
-        auto v1 = full; v1.size = FC_SESSION_CAPABILITIES_V1_BYTES;
-        std::memcpy (packed, &v1, FC_SESSION_CAPABILITIES_V1_BYTES);
-        const std::uint32_t planted = 1u; std::memcpy (packed + FC_SESSION_CAPABILITIES_V1_BYTES, &planted, sizeof planted);
-        double need = 0;
-        auto* record = reinterpret_cast<fc_session_capabilities*> (packed);
-        auto* behind = reinterpret_cast<double*> (packed + FC_SESSION_CAPABILITIES_V1_BYTES);
-        ok (fc_session_create_bytes (record, behind) == FC_SESSION_OK && *behind > 0,
-            "a 32-byte capabilities record with its output right behind it is taken: the record ends where it says");
-        std::memcpy (packed + FC_SESSION_CAPABILITIES_V1_BYTES, &planted, sizeof planted);
-        fc_session v1Session = 0;
-        ok (fc_session_create_bytes (record, &need) == FC_SESSION_OK && create (*record, &v1Session) == FC_SESSION_OK,
-            "and creates a session");
-        fc_session_sizes summarySizes { sizeof (fc_session_sizes), 0, 0 };
-        std::string summary;
-        if (fc_session_summary_size (v1Session, &summarySizes) == FC_SESSION_OK)
-        {
-            summary.assign (summarySizes.jsonBytes, '\0');
-            std::vector<double> rows (summarySizes.rowBytes / sizeof (double) + 1u);
-            if (fc_session_summary_copy (v1Session, summary.data(), summarySizes.jsonBytes, rows.data(), summarySizes.rowBytes) != FC_SESSION_OK) summary.clear();
-        }
-        ok (summary.find ("\"masterRowsIncluded\":true") != std::string::npos,
-            "whose summaries are whole: the 1 lying behind the record is not the record's");
-        ok (fc_session_destroy (v1Session) == FC_SESSION_OK, "which is destroyed");
         auto lean = full; lean.leanSummary = 1; fc_session leanSession = 0;
         ok (create (lean, &leanSession) == FC_SESSION_OK && fc_session_destroy (leanSession) == FC_SESSION_OK, "leanSummary 1 is taken");
         auto odd = full; odd.leanSummary = 2; fc_session out = 777; double bytes = 777;
@@ -588,7 +561,9 @@ void freezeRegressions()
     ok (fc_session_needles_bytes (h, -201, &needlesPrice) == FC_SESSION_OK
         && needlesPrice.rejection == std::uint32_t (Rejection::OutOfDomain), "unsupported ceiling is refused in preflight");
     ok (fc_session_needles_bytes (0, -6, nullptr) == FC_SESSION_ERR_NULL, "needles demand validates output before handle");
-    ok (detailPrice.reservedBytes == 0 && detailPrice.reserved == 0, "retired index slots retain C layout with zero values");
+    ok (sizeof (fc_session_measurement_storage) == 88u && offsetof (fc_session_measurement_storage, workspaceBytes) == 24u
+        && offsetof (fc_session_measurement_storage, largestBlockBytes) == 80u,
+        "the measurement demand record carries no retired slots: 88 bytes, workspaceBytes right after resultBytes");
     ok (fc_session_export_project_size (h, &written) == FC_SESSION_ERR_NOT_PLACED
         && fc_session_export_project_copy (h, json, sizeof (json), &written) == FC_SESSION_ERR_NOT_PLACED, "export retains NotPlaced");
     for (const auto malformed : { "{", R"({"kind":"master"})", R"({"kind":"master","commandId":"5","unknown":1})" })

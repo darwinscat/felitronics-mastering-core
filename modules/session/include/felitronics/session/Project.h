@@ -25,8 +25,8 @@
 //
 // THE MACHINE'S LAYER is the planner's (src/Planner.h): each device proposes its fields from the target, the source and
 // what it may measure, starting from the config's defaults (src/Devices.h). It is placed when the first measurement ends
-// and again on a change of target, and it is at its types' zeros before. An imported layer from any core retains its
-// saved values; where the planner would decide otherwise is exposed by the snapshot, and adoptMachine takes it.
+// and again on a change of target, and it is at its types' zeros before. An imported layer retains its saved
+// values; where the planner would decide otherwise is exposed by the snapshot, and adoptMachine takes it.
 //
 // The units, knob domains and slider hints are the config's (modules/session/config/engine.toml, the section of each device);
 // they are not repeated here.
@@ -91,15 +91,14 @@ template <template <class> class F> struct GlueFields
 // Tube, Transistor, Transformer, Tape. Atan, Cubic and Asym stay the config's (research): a hand edit refuses them.
 enum class SaturationType : std::uint8_t { Tanh, Atan, Cubic, Asym, Tube, Transistor, Transformer, Tape };
 
-// [saturation]: the drive, dB from the programme's peak; the mix, 0…1; the output, dB; the type (a person's choice only:
+// [saturation]: the drive, dB from the programme's peak; the mix, 0…1; the type (a person's choice only:
 // the machine never picks one).
 template <template <class> class F> struct SaturationFields
 {
     F<bool> on {};
     F<double> drive {};
     F<double> mix {};
-    F<double> output {};
-    F<SaturationType> type {};
+    F<SaturationType> type {};   // field 4 (3, the output, left in v0.6.0: the landing undid any trim)
 };
 
 // [tilt]: the tilt, dB.
@@ -129,6 +128,20 @@ template <template <class> class F> struct LowFields
     F<double> db {};
 };
 
+// [bands]: the five static EQ bands' gains, dB — a person's only: the machine leaves them at 0 (it does not touch timbre).
+// A band at 0 dB is neutral and out of the EQ stage. The tick (`on`, appended after the gains) takes the whole device in
+// or out of the chain with its gains kept: the machine's layer always has it on, a person may untick it. The device
+// sounds where it is on and any band is not 0.
+template <template <class> class F> struct BandsFields
+{
+    F<double> body {};
+    F<double> mud {};
+    F<double> forward {};
+    F<double> brightness {};
+    F<double> air {};
+    F<bool> on {};
+};
+
 // WHERE A DEVICE'S TICK COMES FROM — a person's edit always sounds. Their own tick when they set one, on or off (Hand);
 // otherwise ON when any of the device's fields carries their value (Touched: `[tilt] db.hand = 3` sounds with no tick
 // written); otherwise the machine's (Machine). What sounds is the machine's layer with a person's fields over it and this
@@ -136,7 +149,7 @@ template <template <class> class F> struct LowFields
 enum class TickFrom : std::uint8_t { Machine, Hand, Touched };
 
 // The devices, in the order Devices below holds them (and a device edit's alternatives, Commands.h, are listed).
-enum class Device : std::uint8_t { Hpf, MonoBass, Glue, Saturation, Tilt, Limiter, Dither, Low };
+enum class Device : std::uint8_t { Hpf, MonoBass, Glue, Saturation, Tilt, Limiter, Dither, Low, Bands };
 
 // A device's two layers: the machine's, complete, and a person's, only what was touched.
 template <template <template <class> class> class Fields> struct Layers
@@ -155,6 +168,7 @@ struct Devices
     Layers<LimiterFields> limiter;
     Layers<DitherFields> dither;
     Layers<LowFields> low;
+    Layers<BandsFields> bands;
 };
 
 // Values use the field's native numeric domain: flags 0/1, choices their enum value.
@@ -164,12 +178,10 @@ struct MachineDifference
     std::uint8_t field = 0;
     double fileValue = 0.0, coreValue = 0.0;
 };
-inline constexpr std::size_t kDeviceFields = 20;
+inline constexpr std::size_t kDeviceFields = 25;
 
 struct Project
 {
-    // The release that placed the machine layer. Import preserves it until a new placement.
-    Version core {};
     // The target: a row of [targets] in targets.toml, counted in the order the rows are written (the session's
     // targetName() gives its key), and a person's edits of its numbers.
     std::uint16_t target = 0;

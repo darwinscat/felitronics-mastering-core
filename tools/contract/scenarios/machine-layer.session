@@ -1,4 +1,4 @@
-# Restore a saved machine layer from an older core, with nonempty difference rows.
+# Restore a saved machine layer that differs from the planner's, with nonempty difference rows.
 create main 67108864
 load 1 mono
 step 5 work units

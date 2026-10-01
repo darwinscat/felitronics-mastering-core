@@ -171,7 +171,8 @@ GlueFinding glueFinding (const PlanInputs& in, const Devices& devices) noexcept
     f.state = GlueState::Active;
     f.ratio = curve.ratio;
     // The calibrated place of the loud places on the detector's scale, then the travel's offset from it.
-    f.thresholdDb = *levels.p95Db + number (in.rules.engine.find ("glue").find ("detectorOverP95Db")) + curve.threshOffsetDb;
+    f.p95DetectorDb = *levels.p95Db + number (in.rules.engine.find ("glue").find ("detectorOverP95Db"));
+    f.thresholdDb = *f.p95DetectorDb + curve.threshOffsetDb;
     f.kneeDb = curve.kneeDb;
     f.attackMs = curve.attackMs;
     if (const auto* tempo = resultOf (in, Analyzer::Tempo))
@@ -240,7 +241,7 @@ void writeDynamics (const PlanInputs& in, const Devices& devices, mastering::Mas
     s.driveDb = float (shaped.driveDb.value_or (0.0));
     s.bias = float (number (saturation.find ("bias")));
     s.mix = float (settings.mix);
-    s.outputDb = float (settings.output);
+    s.outputDb = 0.0f;   // neutral: the landing sets the level before the limiter, so a trim here would be undone
     s.autoComp = float (number (saturation.find ("autoComp")));
     s.dcBlockHz = float (number (saturation.find ("dcBlockHz")));
     params.bypassClipper = ! shaped.active;

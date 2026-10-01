@@ -19,6 +19,9 @@ namespace felitronics::session::detail
 
 using Decimal = toml::Decimal;
 
+// The EQ bands' keys under [bands], in the order Project.h writes BandsFields (and Rules::bands holds their knobs).
+inline constexpr std::string_view kBandNames[] = { "body", "mud", "forward", "brightness", "air" };
+
 // A knob: independent slider hints and an accepted domain.
 struct Knob
 {
@@ -52,14 +55,16 @@ struct Rules
     std::uint16_t defaultRow = 0;              // `default`
     Knob lufs {}, tp {};                       // [edit] lufs, tp
     Knob hpfFq {};                             // [hpf] hzMin…hzMax, slider hints
+    Decimal hpfTop {};                         // [hpf] machineTopHz: the machine's cutoff never goes above it
     Knob monoBassFq {}, monoBassWidth {};      // [monoBass] frequencyRange / frequencyStep, lowWidthRange / lowWidthStep
     Decimal monoBassWidthDefault {};           // [monoBass] lowWidth
     Knob glue {};                              // [glue] knobMinDb…knobMaxDb by knobStepDb: "up to N dB"
     Decimal glueDefault {};                    // [glue] default, on the knob
-    Knob drive {}, mix {}, output {};          // [saturation] driveRange, mixRange, outputRange, by their steps
-    Decimal driveDefault {}, mixDefault {}, outputDefault {};   // [saturation] driveDb, mix, outputDb
+    Knob drive {}, mix {};                     // [saturation] driveRange, mixRange, by their steps
+    Decimal driveDefault {}, mixDefault {};   // [saturation] driveDb, mix
     std::string_view shapeDefault;             // [saturation] shape: the machine's type (Devices.h names them)
     Knob tilt {}, low {};                 // [tilt] hard / step, [low] hard / step
+    Knob bands[5] {};                          // [bands] body, mud, forward, brightness, air: hard / step / domain
     Knob needles {};                           // [limiter.peakClipper] manualMinDb…manualMaxDb by manualStepDb
     Decimal needlesDefault {};                 // [limiter.peakClipper] betweenCutDb: where the manual cut starts
     bool eq = false, monoBass = false, compressor = false, clipper = false, dither = false;   // [stages]

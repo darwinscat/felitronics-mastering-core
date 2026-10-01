@@ -406,6 +406,17 @@ void thePersonsThreshold()
         const auto betweenLine = PlanText::limiter (detail::limiterFinding (cut.in, cut.machine()));
         ok (shortLine.id == text::FactId::LimiterShort && betweenLine.id == text::FactId::LimiterBetween && whole (shortLine) && whole (betweenLine),
             "and the two classes that cut:\n        " + ru (shortLine) + "\n        " + ru (betweenLine));
+        // The cut is a cap the landing spends as it needs, never the amount it takes: the message says so in its own
+        // words ("не больше" / "no more than"), so {cut} is Bound::Exact — the line never reads "no more than ≤ …".
+        const auto en = [] (const text::Fact& f) { return text::Text::text (f, text::Lang::En); };
+        const auto capped = [&] (const text::Fact& f)
+        {
+            return f.args[1].bound == text::Bound::Exact && ru (f).find ("не больше ") != std::string::npos
+                && en (f).find ("no more than ") != std::string::npos && ru (f).find ("\xE2\x89\xA4") == std::string::npos
+                && en (f).find ("\xE2\x89\xA4") == std::string::npos;
+        };
+        ok (capped (shortLine) && capped (betweenLine),
+            "the clipper's cut is a cap, said in words, the number exact:\n        " + ru (shortLine) + "\n        " + ru (betweenLine));
     }
 }
 
@@ -1295,6 +1306,9 @@ void vinylAndQuietMastered()
         ok (only (ceiling, 2, text::FactId::MasterVinylCeilingDeparts, { -2.9, -3.0 }), "the ceiling alone: " + lineOf (ceiling));
         const auto needles = departures ([] (Project& p) { p.devices.limiter.hand.needles = Needles::Manual; p.devices.limiter.hand.needlesDb = 2.0; });
         ok (only (needles, 3, text::FactId::MasterVinylNeedlesDeparts, { 2.0 }), "the needles alone: " + lineOf (needles));
+        ok (needles[3] && needles[3]->args[0].bound == text::Bound::Exact && ru (*needles[3]).find ("не больше ") != std::string::npos
+            && ru (*needles[3]).find ("\xE2\x89\xA4") == std::string::npos,
+            "and the clipper's setting is named as a cap, in words: " + lineOf (needles));
         const auto noFold = departures ([] (Project& p) { p.devices.monoBass.hand.on = false; });
         const auto lowFold = departures ([] (Project& p) { p.devices.monoBass.hand.fq = 120.0; });
         const auto wideFold = departures ([] (Project& p) { p.devices.monoBass.hand.width = 0.5; });
@@ -1431,6 +1445,7 @@ struct Seen
         for (std::size_t i = 0; i < kAnalyzers; ++i)
         { results[i].analyzer = Analyzer (i); results[i].status = MeasurementStatus::Pending; results[i].reason = MeasurementReason::Pending; }
         in.rules = detail::rules(); in.measurements = results; in.channels = 2; in.sampleRate = 48000; in.frames = 48000ull * 60ull;
+        in.bitDepth = 24;
     }
     Seen (const Seen&) = delete;
     void ready (Analyzer a, std::span<const MeasurementValue> numbers, std::span<const MeasurementArray> arrays = {})
@@ -1527,14 +1542,14 @@ void theObservations()
         {
             x.forensics[0] = { "wall.valid", valid, MeasurementReason::None, 0 };
             x.forensics[1] = { "wall.cutoffHz", cutoffReason == MeasurementReason::None ? std::optional<double> (fraction * 24000.0) : std::nullopt, cutoffReason, 0 };
-            x.forensics[2] = { "wall.dropDb", 48.0, MeasurementReason::None, 0 };
+            x.forensics[2] = { "wall.dropDb", 32.0, MeasurementReason::None, 0 };
             x.forensics[3] = { "wall.cutoffFractionOfNyquist", fraction, MeasurementReason::None, 0 };
             x.ready (Analyzer::Forensics, { x.forensics, 4 });
             return x.seen().spectralWall;
         };
-        const auto lossy = wall (1.0, 0.667), high = wall (1.0, 0.85), none = wall (0.0, 1.0, MeasurementReason::NoSignal), shortFile = wall (0.0, 1.0, MeasurementReason::TooShort);
+        const auto lossy = wall (1.0, 0.667), high = wall (1.0, 0.89), none = wall (0.0, 1.0, MeasurementReason::NoSignal), shortFile = wall (0.0, 1.0, MeasurementReason::TooShort);
         const auto said = ObservationText::fact (ObservationKind::SpectralWall, lossy);
-        ok (lossy.status == ObservationStatus::Found && near (lossy.confidence, (48.0 - 24.0) / (60.0 - 24.0), 1e-12) && high.status == ObservationStatus::NotFound
+        ok (lossy.status == ObservationStatus::Found && near (lossy.confidence, (32.0 - 24.0) / (40.0 - 24.0), 1e-12) && high.status == ObservationStatus::NotFound
             && none.status == ObservationStatus::NotFound && shortFile.status == ObservationStatus::NotMeasured && said && whole (*said),
             "a wall at 16 kHz is found, one near Nyquist is not, no wall is not found, a file too short is not measured — " + (said ? ru (*said) : std::string()));
     }
@@ -1604,9 +1619,20 @@ void theObservations()
         ok (wanders.hum.status == ObservationStatus::NotFound && wanders.humWandered.status == ObservationStatus::Found
             && same (wanders.humWandered.value, 60.3) && wanders.humWandered.doubtful && said && whole (*said),
             "a line the detector measured and would not call stationary — its result refused as a whole — is a wandering hum, doubtful: " + (said ? ru (*said) : std::string()));
-        ok (deaf.hum.status == ObservationStatus::NotMeasured && deaf.humWandered.status == ObservationStatus::NotMeasured
-            && deaf.hum.reason == MeasurementReason::NoSignal,
-            "no quiet stretch to listen in: not measured — never \"no hum\"");
+        // Owner decision 01.10: the detector listened through a programme that is never quiet — no steady line stood out.
+        ok (deaf.hum.status == ObservationStatus::NotFound && deaf.humWandered.status == ObservationStatus::NotFound,
+            "no quiet stretch: the detector listened and no line stood out — not found, not \"not measured\"");
+        // Refused before any work (no price for this programme, or memory the session may not take): the result carries
+        // no number at all, so the hum is not measured with the result's own reason — never "too short" for a long file.
+        for (const auto reason : { MeasurementReason::Memory, MeasurementReason::Unsupported })
+        {
+            auto& r = x.results[std::size_t (Analyzer::Hum)];
+            r.status = MeasurementStatus::Unavailable; r.reason = reason; r.numbers = {}; r.arrays = {};
+            const auto o = x.seen();
+            ok (o.hum.status == ObservationStatus::NotMeasured && o.hum.reason == reason
+                && o.humWandered.status == ObservationStatus::NotMeasured && o.humWandered.reason == reason,
+                "the hum analyzer refused before work: not measured with the refusal's reason, not \"too short\"");
+        }
         x.in.channels = 1;
         x.ended (Analyzer::LowEnd, MeasurementReason::NoSignal);
         x.ended (Analyzer::Stereo, MeasurementReason::NoSignal);
@@ -1643,8 +1669,9 @@ void theObservations()
         };
         const auto longHead = edges (3.0, 0.0), shortHead = edges (0.1, 0.0), measuredLong = edges (3.0, 1.0);
         const auto said = ObservationText::fact (ObservationKind::EdgeSilence, measuredLong);
+        const auto unsaid = ObservationText::fact (ObservationKind::EdgeSilence, longHead);
         ok (longHead.status == ObservationStatus::NotMeasured && longHead.reason == MeasurementReason::NonFinite
-            && shortHead.status == ObservationStatus::NotMeasured && ! ObservationText::fact (ObservationKind::EdgeSilence, longHead)
+            && shortHead.status == ObservationStatus::NotMeasured && unsaid && unsaid->id == text::FactId::ObservationUnmeasured
             && measuredLong.status == ObservationStatus::Found && same (measuredLong.value, 3.0) && same (measuredLong.second, 0.0) && said && whole (*said),
             "an edge not measured is not \"0.0 s\": the edges are not measured, a short head is not \"not found\"; both read — "
             + (said ? ru (*said) : std::string()));
@@ -1700,6 +1727,413 @@ void theObservations()
     }
 }
 
+// THE OWNER'S TABLE (01.10): the styles, the styles by size and the severities, each threshold from both sides.
+void theOwnersTable()
+{
+    felitronics::test::group ("the owner's observation table: a style by nature, by size where approved; severities along their ramps");
+    const auto none = MeasurementReason::None;
+    const auto lineOf = [] (ObservationKind kind, const Observation& o)
+    { const auto f = ObservationText::fact (kind, o); return f ? std::pair { f->id, ru (*f) } : std::pair { text::FactId::Value, std::string() }; };
+    {
+        // The DC offset: a note under 1 % of full scale, a warning from 1 %, an error from 10 %.
+        Seen x;
+        const auto dc = [&] (double offset)
+        {
+            x.clipping[0] = { "runCount", 0.0, none, 0 };
+            x.clipping[1] = { "dcOffset[0]", offset, none, 0 };
+            x.clipping[2] = { "dcOffset[1]", 0.0, none, 0 };
+            x.ready (Analyzer::Clipping, { x.clipping, 3 });
+            return x.seen().dcOffset;
+        };
+        const auto small = dc (0.0099), one = dc (0.01), large = dc (0.0999), ten = dc (-0.1);
+        const auto note = lineOf (ObservationKind::DcOffset, small), warn = lineOf (ObservationKind::DcOffset, one);
+        ok (small.style == ObservationStyle::Note && one.style == ObservationStyle::Warning && large.style == ObservationStyle::Warning
+            && ten.style == ObservationStyle::Error && note.first == text::FactId::SourceDcNoteStereo && warn.first == text::FactId::SourceDcStereo
+            && note.second.find ("ФВЧ мастера её уберёт") != std::string::npos,
+            "DC under 1 % a note, from 1 % a warning, from 10 % (either sign) an error; the note says — " + note.second);
+        // Both channels, signed, as the readings print them: the line names the left's and the right's offset.
+        const auto both = [&] (double left, double right)
+        {
+            x.clipping[1] = { "dcOffset[0]", left, none, 0 };
+            x.clipping[2] = { "dcOffset[1]", right, none, 0 };
+            x.ready (Analyzer::Clipping, { x.clipping, 3 });
+            return x.seen().dcOffset;
+        };
+        const auto pair = both (-0.0042, 0.0071), loud = both (0.002, -0.15);
+        const auto pairLine = lineOf (ObservationKind::DcOffset, pair), loudLine = lineOf (ObservationKind::DcOffset, loud);
+        const auto pairFact = ObservationText::fact (ObservationKind::DcOffset, pair);
+        ok (pairLine.first == text::FactId::SourceDcNoteStereo && pairFact && pairFact->argCount == 2
+            && same (pairFact->args[0].number, -0.0042) && same (pairFact->args[1].number, 0.0071)
+            && pairLine.second.find ("L \xE2\x88\x92" "0,0042, R 0,0071") != std::string::npos
+            && loudLine.first == text::FactId::SourceDcStereo && loudLine.second.find ("R \xE2\x88\x92" "0,1500") != std::string::npos
+            && same (loud.value, 0.15) && loud.style == ObservationStyle::Error,
+            "a stereo offset names both channels, signed; the larger sizes it — " + pairLine.second + " / " + loudLine.second);
+        // A mono source keeps its one-number line.
+        x.in.channels = 1;
+        const auto mono = both (0.005, 0.0);
+        const auto monoLine = lineOf (ObservationKind::DcOffset, mono);
+        x.in.channels = 2;
+        ok (monoLine.first == text::FactId::SourceDcNote && mono.places == 1, "a mono offset: its one number — " + monoLine.second);
+    }
+    {
+        // The effective depth: 24 nothing, 23…17 a warning, 16 and less an error; a 32-bit container carrying 24 nothing.
+        Seen x;
+        const auto bits = [&] (std::uint32_t container, double unused)
+        {
+            x.in.bitDepth = container;
+            x.forensics[0] = { "grid.alwaysZeroLowBits[0]", unused, none, 0 };
+            x.forensics[1] = { "grid.alwaysZeroLowBits[1]", unused + 1.0, none, 0 };
+            x.ready (Analyzer::Forensics, { x.forensics, 2 });
+            return x.seen().bitsUnused;
+        };
+        const auto full = bits (24, 0), d23 = bits (24, 1), d17 = bits (24, 7), d16 = bits (24, 8), cd = bits (16, 0), wide = bits (32, 8), lossy = bits (0, 0);
+        const auto truncated = lineOf (ObservationKind::BitsUnused, d23), shallow = lineOf (ObservationKind::BitsUnused, cd);
+        ok (full.status == ObservationStatus::NotFound && d23.status == ObservationStatus::Found && same (d23.value, 23.0)
+            && d23.style == ObservationStyle::Warning && d17.style == ObservationStyle::Warning && d16.style == ObservationStyle::Error
+            && cd.style == ObservationStyle::Error && same (cd.value, 16.0) && near (d16.severity, 1.0, 0.0) && same (d23.severity, 0.0)
+            && wide.status == ObservationStatus::NotFound && lossy.status == ObservationStatus::NotMeasured
+            && truncated.first == text::FactId::SourceTruncatedBits && truncated.second.find ("до 23 бит") != std::string::npos
+            && shallow.first == text::FactId::SourceShallowMix && shallow.second.find ("16-битный микс — сведите в 24 бита") != std::string::npos,
+            "depth 24 nothing; 23 and 17 a warning; 16 — of a 24-bit or a 16-bit file — an error; 32 carrying 24 nothing; no container not "
+            "measured — " + truncated.second + " / " + shallow.second);
+    }
+    {
+        // The infra-low share: under 2 % nothing, 2…5 % a note, from 5 % a warning.
+        Seen x;
+        const auto infra = [&] (double share)
+        {
+            x.infra[0] = { "infraLowShare", share, none, 0 };
+            x.infra[1] = { "crossoverHz", 30.0, none, 0 };
+            x.ready (Analyzer::InfraLow, { x.infra, 2 });
+            return x.seen().infraLow;
+        };
+        const auto under = infra (0.0199), from = infra (0.02), below5 = infra (0.0499), at5 = infra (0.05);
+        const auto note = lineOf (ObservationKind::InfraLow, from), warn = lineOf (ObservationKind::InfraLow, at5);
+        ok (under.status == ObservationStatus::NotFound && from.style == ObservationStyle::Note && below5.style == ObservationStyle::Note
+            && at5.style == ObservationStyle::Warning && note.first == text::FactId::SourceInfraLowNote
+            && warn.first == text::FactId::SourceInfraLowWarning && warn.second.find ("(5,0") != std::string::npos,
+            "infra-low from 2 % a note, from 5 % a warning — " + note.second + " / " + warn.second);
+    }
+    {
+        // Already limited: found under a PLR of 10.5 dB, a warning, the severity full at 7 dB.
+        Seen x;
+        const auto limited = [&] (double plr)
+        {
+            x.loudness[0] = { "integratedLufs", -10.0, none, 0 };
+            x.loudness[1] = { "truePeakDb", -10.0 + plr, none, 0 };
+            x.ready (Analyzer::Loudness, { x.loudness, 2 });
+            x.clipping[0] = { "runCount", 0.0, none, 0 };
+            x.ready (Analyzer::Clipping, { x.clipping, 1 });
+            return x.seen().alreadyLimited;
+        };
+        const auto at = limited (10.5), under = limited (10.25), half = limited (8.75), dense = limited (6.0);
+        const auto said = lineOf (ObservationKind::AlreadyLimited, half);
+        ok (at.status == ObservationStatus::NotFound && under.status == ObservationStatus::Found && under.style == ObservationStyle::Warning
+            && under.hypothesis && near (under.severity, 0.25 / 3.5, 1e-12) && near (half.severity, 0.5, 1e-12) && same (dense.severity, 1.0)
+            && said.first == text::FactId::SourceLimitedBus && said.second.find ("без лимитера на шине") != std::string::npos,
+            "a PLR of 10.5 dB is not limited, a hair under is a warning; the severity half at 8.75 dB and full at 7 — " + said.second);
+    }
+    {
+        // The spectral wall: a warning from 12 % under Nyquist, confidence full at a 40 dB drop.
+        Seen x;
+        const auto wall = [&] (double fraction, double drop)
+        {
+            x.forensics[0] = { "wall.valid", 1.0, none, 0 };
+            x.forensics[1] = { "wall.cutoffHz", fraction * 24000.0, none, 0 };
+            x.forensics[2] = { "wall.dropDb", drop, none, 0 };
+            x.forensics[3] = { "wall.cutoffFractionOfNyquist", fraction, none, 0 };
+            x.ready (Analyzer::Forensics, { x.forensics, 4 });
+            return x.seen().spectralWall;
+        };
+        const auto at87 = wall (0.87, 40.0), at89 = wall (0.89, 40.0), deep = wall (0.667, 60.0);
+        const auto said = lineOf (ObservationKind::SpectralWall, deep);
+        ok (at87.status == ObservationStatus::Found && at87.style == ObservationStyle::Warning && same (at87.confidence, 1.0)
+            && at89.status == ObservationStatus::NotFound && said.first == text::FactId::SourceLossy && said.second.find ("16,0") != std::string::npos,
+            "a wall at 87 % of Nyquist is a warning, at 89 % nothing; a 40 dB drop is fully confident — " + said.second);
+    }
+    {
+        // Wide bass, polarity and a dual-mono file: their styles and severities.
+        Seen x;
+        const auto low = [&] (double lowSide, double correlation, double rawSide)
+        {
+            x.lowEnd[0] = { "lowSideFraction", lowSide, none, 0 };
+            x.lowEnd[1] = { "crossoverHz", 120.0, none, 0 };
+            x.lowEnd[2] = { "rawSideFraction", rawSide, none, 0 };
+            x.ready (Analyzer::LowEnd, { x.lowEnd, 3 });
+            x.stereo[0] = { "correlation", correlation, none, 0 };
+            x.stereo[1] = { "dualMono", 0.0, none, 0 };
+            x.ready (Analyzer::Stereo, { x.stereo, 2 });
+            return x.seen();
+        };
+        const auto at6 = low (0.06, 0.5, 0.1), at18 = low (0.18, 0.5, 0.1), at30 = low (0.3, 0.5, 0.1);
+        ok (at6.wideBass.style == ObservationStyle::Warning && same (at6.wideBass.severity, 0.0) && near (at18.wideBass.severity, 0.5, 1e-12)
+            && same (at30.wideBass.severity, 1.0), "wide bass a warning, its severity 0 at 6 %, half at 18 %, full at 30 %");
+        const auto edge = low (0.5, -0.1, 0.1), quarter = low (0.625, -0.1, 0.1), opposite = low (0.8, -0.1, 0.1);
+        ok (edge.polarity.status == ObservationStatus::Found && edge.polarity.style == ObservationStyle::Error
+            && same (edge.polarity.severity, 0.0) && near (quarter.polarity.severity, 0.5, 1e-12) && same (opposite.polarity.severity, 1.0),
+            "opposite polarity an error, its severity by the low band's correlation: 0 at 0, half at −0.25, full at −0.5 and below");
+        x.stereo[1] = { "dualMono", 1.0, none, 0 };
+        const auto dual = x.seen().dualMono;
+        const auto said = lineOf (ObservationKind::DualMono, dual);
+        ok (dual.style == ObservationStyle::Warning && same (dual.severity, 0.0) && said.second.find ("проверьте экспорт") != std::string::npos,
+            "a dual-mono file a warning, severity 0 — " + said.second);
+    }
+    {
+        // The hum: the severity in dB from −60 to −40; a note, a warning from half its severity when confident. And the
+        // detector's verdicts: listened and found nothing is not found; could not listen is not measured, with why.
+        Seen x;
+        x.programme[0] = { "programmeMeanSquare", 1.0, none, 0 };
+        x.ready (Analyzer::Programme, { x.programme, 1 });
+        const auto hum = [&] (double reason, double prominence, double power, bool baseHeard = false)
+        {
+            const bool ok0 = reason < 0.5;
+            x.hum[0] = { "reason[0]", reason, none, 0 };
+            x.hum[1] = { "reason[1]", reason, none, 0 };
+            x.hum[2] = { "prominenceDb[0]", ok0 ? std::optional<double> (prominence) : std::nullopt, ok0 ? none : MeasurementReason::NoSignal, 0 };
+            x.hum[3] = { "fundamentalHz[0]", ok0 ? std::optional<double> (50.0) : std::nullopt, ok0 ? none : MeasurementReason::NoSignal, 0 };
+            x.hum[4] = { "tonePower[0]", ok0 ? std::optional<double> (power) : std::nullopt, ok0 ? none : MeasurementReason::NoSignal, 0 };
+            x.candidateRows.assign (36 * 4, 0.0);
+            for (std::size_t row = 0; row < 4; ++row) x.candidateRows[row * 36] = double (row / 2);
+            if (baseHeard) x.candidateRows[2] = 1.0;
+            x.candidates = { "candidates", { 0, 0, x.in.frames, 48000 }, 36, 4, 4, true, x.candidateRows };
+            auto& r = x.results[std::size_t (Analyzer::Hum)];
+            r.status = ok0 ? MeasurementStatus::Ready : MeasurementStatus::Unavailable; r.reason = ok0 ? none : MeasurementReason::NoSignal;
+            r.numbers = { x.hum, 5 }; r.arrays = { &x.candidates, 1 };
+            return x.seen().hum;
+        };
+        const auto quietLine = hum (0.0, 40.0, 1e-6), loud = hum (0.0, 40.0, 1e-4), over = hum (0.0, 40.0, 1e-3);
+        const auto under50 = hum (0.0, 40.0, 0.5e-5), over50 = hum (0.0, 40.0, 2e-5), unsure = hum (0.0, 22.0, 2e-5);
+        ok (same (quietLine.severity, 0.0) && near (loud.severity, 1.0, 1e-12) && same (over.severity, 1.0)
+            && near (over50.severity, 0.5 + 10.0 * felitronics::core::det::log10 (2.0) / 20.0, 1e-12)
+            && under50.style == ObservationStyle::Note && over50.style == ObservationStyle::Warning
+            && unsure.doubtful && unsure.style == ObservationStyle::Note,
+            "hum severity 0 at −60 dB, full at −40 dB; a note under −50 dB, a warning over it — but not when doubtful");
+        const auto noQuiet = hum (6.0, 0.0, 0.0), comb = hum (10.0, 0.0, 0.0), single = hum (7.0, 0.0, 0.0), singleHeard = hum (7.0, 0.0, 0.0, true);
+        const auto tooFew = hum (8.0, 0.0, 0.0, true), shortFile = hum (4.0, 0.0, 0.0), holed = hum (5.0, 0.0, 0.0), coarse = hum (3.0, 0.0, 0.0);
+        ok (noQuiet.status == ObservationStatus::NotFound && comb.status == ObservationStatus::NotFound && single.status == ObservationStatus::NotFound
+            && singleHeard.status == ObservationStatus::NotMeasured && singleHeard.reason == MeasurementReason::NoSignal
+            && tooFew.status == ObservationStatus::NotMeasured && tooFew.reason == MeasurementReason::NoSignal
+            && shortFile.reason == MeasurementReason::TooShort && holed.reason == MeasurementReason::NonFinite
+            && coarse.reason == MeasurementReason::Unsupported && coarse.status == ObservationStatus::NotMeasured,
+            "never quiet, a comb without its base, one quiet stretch with no base line: not found; a base line heard in too little "
+            "quiet: not measured (no signal); too short, all frames holed, too coarse: not measured, each with its reason");
+    }
+}
+
+// Two facts are one line: the same id, and the same words in both declared languages.
+bool sameLine (const text::Fact& a, const text::Fact& b) { return a.id == b.id && ru (a) == ru (b) && en (a) == en (b); }
+// The snapshot's lines are ObservationText's, kind by kind in the order of ObservationKind: every kind that has a line,
+// and nothing else. `lines`: how many kinds have one.
+bool linesAreTheText (const SnapshotView& v, std::size_t& lines)
+{
+    std::size_t i = 0;
+    bool same = true;
+    for (unsigned k = 0; k < kObservationKinds; ++k)
+        if (const auto said = ObservationText::fact (ObservationKind (k), ObservationText::of (v.observations, ObservationKind (k))))
+        {
+            same = same && i < v.observationFacts.count && v.observationFacts.items[i].kind == ObservationKind (k)
+                && sameLine (v.observationFacts.items[i].fact, *said);
+            ++i;
+        }
+    lines = i;
+    return same && i == v.observationFacts.count;
+}
+bool hasLine (const SnapshotView& v, ObservationKind kind)
+{
+    for (std::size_t i = 0; i < v.observationFacts.count; ++i)
+        if (v.observationFacts.items[i].kind == kind) return true;
+    return false;
+}
+
+void theObservationsSpeakForThemselves()
+{
+    felitronics::test::group ("the observations speak for themselves: the snapshot carries each one's line as ObservationText states it");
+    {
+        // Not measured: its name and why — for every kind and every reason, in both declared languages.
+        Seen x;
+        x.ended (Analyzer::Loudness, MeasurementReason::NoSignal);
+        const auto quiet = ObservationText::fact (ObservationKind::TooQuiet, x.seen().tooQuiet);
+        ok (quiet && quiet->id == text::FactId::ObservationUnmeasured && quiet->argCount == 2 && quiet->args[0].termId == text::Term::ObservationTooQuiet
+            && quiet->args[1].termId == text::Term::ReasonNoSignal && whole (*quiet),
+            "a loudness that ended without a value: " + (quiet ? ru (*quiet) + " / " + en (*quiet) : std::string()));
+        bool every = true;
+        std::vector<std::string> names;
+        for (unsigned k = 0; k < kObservationKinds; ++k)
+            for (unsigned r = unsigned (MeasurementReason::Pending); r <= unsigned (MeasurementReason::Memory); ++r)
+            {
+                Observation o; o.status = ObservationStatus::NotMeasured; o.reason = MeasurementReason (r);
+                const auto f = ObservationText::fact (ObservationKind (k), o);
+                every = every && f && whole (*f) && f->args[0].termId == text::Term (unsigned (text::Term::ObservationClipping) + k);
+                if (f && r == unsigned (MeasurementReason::Pending)) names.push_back (ru (*f) + en (*f));
+            }
+        std::sort (names.begin(), names.end());
+        ok (every && names.size() == kObservationKinds && std::adjacent_find (names.begin(), names.end()) == names.end(),
+            "every kind not measured, for every reason, is a whole line in Russian and English — and each kind by its own name");
+        Observation none; none.status = ObservationStatus::NotFound; none.reason = MeasurementReason::None;
+        ok (! ObservationText::fact (ObservationKind::Clipping, none), "measured and not found: no line");
+    }
+    {
+        auto s = Session::create().session;
+        ok (s->snapshot().view().observationFacts.count == 0, "before a source the snapshot carries no observation line");
+        const Mix mix (1.0f, 4);
+        (void) s->apply (command::SetTarget { 1, "allStreaming" });
+        ok (s->apply (mix.load (2)).rejection == Rejection::None, "PRECONDITION: the mix loads");
+        std::size_t lines = 0;
+        const auto loaded = s->snapshot();
+        const auto& first = loaded.view().observationFacts;
+        const auto quietLine = std::find_if (first.items.begin(), first.items.begin() + first.count,
+                                             [] (const ObservationFact& f) { return f.kind == ObservationKind::TooQuiet; });
+        ok (linesAreTheText (loaded.view(), lines) && lines == kObservationKinds && quietLine != first.items.begin() + first.count
+            && quietLine->fact.id == text::FactId::ObservationUnmeasured && quietLine->fact.args[1].termId == text::Term::ReasonPending,
+            "loaded, the loudness not ended: every kind has its line, and \"too quiet\" says it is not measured yet — " + (quietLine != first.items.begin() + first.count ? ru (quietLine->fact) : std::string()));
+        drive (*s);
+        const auto done = s->snapshot();
+        const auto& v = done.view();
+        ok (linesAreTheText (v, lines) && lines > 0 && lines < kObservationKinds && v.observations.tooQuiet.status == ObservationStatus::NotFound
+            && ! hasLine (v, ObservationKind::TooQuiet) && hasLine (v, ObservationKind::TooShort),
+            "measured: the lines are ObservationText's, kind by kind — " + std::to_string (lines) + " of 17 have one; not quiet, so no line of it");
+        ok (v.observations.loudestLowNote.style == ObservationStyle::Reading && v.observations.wideBass.style == ObservationStyle::Warning
+            && v.observations.clipping.style == ObservationStyle::Error && v.observations.lowestLowBand.style == ObservationStyle::Reading,
+            "the loudest low note and the lowest band are readings; wide bass a warning, clipping an error");
+        // A new source: the lines follow its measurement.
+        const Mix quiet (0.03f, 4);
+        ok (s->apply (quiet.load (3)).rejection == Rejection::None, "PRECONDITION: a quieter mix loads");
+        drive (*s);
+        const auto again = s->snapshot();
+        std::size_t linesAgain = 0;
+        ok (linesAreTheText (again.view(), linesAgain) && again.view().observations.tooQuiet.status == ObservationStatus::Found
+            && hasLine (again.view(), ObservationKind::TooQuiet),
+            "a new measurement: the lines follow it — the quieter mix's own line among them");
+        // Across the wire: kind and fact, whole; an unknown fact id or kind is refused.
+        std::string json (std::size_t (Codec::encodedBytes (again.view()).bytes), '\0');
+        Snapshot restored;
+        ok (Codec::encode (again.view(), json) == CodecStatus::Ok && Codec::decode (json, restored) == CodecStatus::Ok, "PRECONDITION: encoded and decoded");
+        bool carried = restored.view().observationFacts.count == again.view().observationFacts.count && linesAgain != 0;
+        for (std::size_t i = 0; carried && i < linesAgain; ++i)
+            carried = restored.view().observationFacts.items[i].kind == again.view().observationFacts.items[i].kind
+                   && sameLine (restored.view().observationFacts.items[i].fact, again.view().observationFacts.items[i].fact);
+        const auto at = json.find ("\"observationFacts\":[{\"fact\":{\"FactId\":");
+        ok (carried && at != std::string::npos, "the lines cross the wire whole, kind and fact");
+        if (at != std::string::npos)
+        {
+            const auto id = json.find (':', json.find ("FactId", at)) + 1, idEnd = json.find (',', id);
+            auto badFact = json; badFact.replace (id, idEnd - id, "999");
+            const auto kindAt = json.find ("]},\"kind\":", at) + 10, kindEnd = json.find ('}', kindAt);
+            auto badKind = json; badKind.replace (kindAt, kindEnd - kindAt, "17");
+            auto goodKind = json; goodKind.replace (kindAt, kindEnd - kindAt, "16");
+            Snapshot refused;
+            ok (Codec::decode (badFact, refused) == CodecStatus::Invalid && Codec::decode (badKind, refused) == CodecStatus::Invalid
+                && Codec::decode (goodKind, refused) == CodecStatus::Ok,
+                "an unknown fact id (999) or kind (17) is refused; the last kind (16) is read");
+        }
+    }
+}
+
+// The reading of `kind` in a list, or nothing; a number of a measurement result, by name.
+template <std::size_t N> const ReadingFact* readingOf (const BoundedList<ReadingFact, N>& list, ReadingKind kind)
+{
+    for (std::size_t i = 0; i < list.count; ++i)
+        if (list.items[i].kind == kind) return &list.items[i];
+    return nullptr;
+}
+std::optional<double> numberOf (const MeasurementResult& r, std::string_view name)
+{
+    for (const auto& v : r.numbers)
+        if (v.name == name) return v.value;
+    return std::nullopt;
+}
+// A reading as the table declares it: FactId::Value with one number of `unit` at `precision`.
+bool isValue (const ReadingFact* r, text::Unit unit, std::uint8_t precision)
+{
+    return r && r->fact.id == text::FactId::Value && r->fact.argCount == 1 && r->fact.args[0].kind == text::ArgKind::Value
+        && r->fact.args[0].unit == unit && r->fact.args[0].precision == precision
+        && ! ru (r->fact).empty() && ru (r->fact).find ('{') == std::string::npos && en (r->fact).find ('{') == std::string::npos
+        && ru (r->fact) != std::string (text::Text::key (r->fact.id));
+}
+
+void theReadingsAreFacts()
+{
+    felitronics::test::group ("the readings are facts: the source's numbers in the snapshot, each with the core's unit and precision");
+    {
+        // A reading renders as the catalogue says: the number, its unit and the language's decimal sign; its name is
+        // the catalogue's term of its kind.
+        auto s = Session::create().session;
+        ok (s->snapshot().view().readings.count == 0, "before a source the snapshot carries no reading");
+        const Mix mix (1.0f, 4);
+        (void) s->apply (command::SetTarget { 1, "allStreaming" });
+        ok (s->apply (mix.load (2)).rejection == Rejection::None, "PRECONDITION: the mix loads");
+        ok (! readingOf (s->snapshot().view().readings, ReadingKind::Integrated), "loaded, the loudness not ended: no integrated reading");
+        drive (*s);
+        const auto done = s->snapshot();
+        const auto& v = done.view();
+        const auto& loudness = v.measurements[std::size_t (Analyzer::Loudness)];
+        const auto& clipping = v.measurements[std::size_t (Analyzer::Clipping)];
+        const auto* lufs = readingOf (v.readings, ReadingKind::Integrated);
+        const auto* peak = readingOf (v.readings, ReadingKind::TruePeak);
+        const auto* left = readingOf (v.readings, ReadingKind::DcOffsetLeft);
+        const auto* runs = readingOf (v.readings, ReadingKind::ClipRuns);
+        const auto* samplePeak = readingOf (v.readings, ReadingKind::SamplePeak);
+        const auto measuredLufs = numberOf (loudness, "integratedLufs");
+        ok (isValue (lufs, text::Unit::Lufs, 1) && isValue (peak, text::Unit::DbTp, 1) && measuredLufs
+            && sameBits (lufs->fact.args[0].number, *measuredLufs)
+            && sameBits (peak->fact.args[0].number, numberOf (loudness, "truePeakDb").value_or (0.0)),
+            "the integrated loudness and the true peak are the loudness measurement's numbers, LUFS and dBTP to a tenth — " + ru (lufs ? lufs->fact : text::Fact {}));
+        ok (isValue (left, text::Unit::None, 4) && isValue (readingOf (v.readings, ReadingKind::DcOffsetRight), text::Unit::None, 4)
+            && ! readingOf (v.readings, ReadingKind::DcOffset)
+            && sameBits (left->fact.args[0].number, numberOf (clipping, "dcOffset[0]").value_or (1.0))
+            && isValue (runs, text::Unit::None, 0) && isValue (samplePeak, text::Unit::DbFs, 1)
+            && isValue (readingOf (v.readings, ReadingKind::Correlation), text::Unit::None, 2)
+            && isValue (readingOf (v.readings, ReadingKind::LongestRun), text::Unit::None, 0)
+            && isValue (readingOf (v.readings, ReadingKind::ClippedSamples), text::Unit::None, 0)
+            && isValue (readingOf (v.readings, ReadingKind::StereoWindows), text::Unit::None, 0),
+            "a stereo source: the DC offset of each channel (no one-channel line), the clipping's numbers, the correlation and the stereo windows");
+        bool ascending = v.readings.count > 0, master = false;
+        for (std::size_t i = 0; i < v.readings.count; ++i)
+        {
+            ascending = ascending && (i == 0 || v.readings.items[i - 1].kind < v.readings.items[i].kind);
+            master = master || v.readings.items[i].kind >= ReadingKind::Target;
+        }
+        ok (ascending && ! master, "one list, in the order of ReadingKind, each kind once — and no master's reading in the source's");
+        const auto lufsRu = lufs ? ru (lufs->fact) : std::string(), lufsEn = lufs ? en (lufs->fact) : std::string();
+        ok (lufsRu.find (',') != std::string::npos && lufsRu.find ('.') == std::string::npos && lufsEn.find ('.') != std::string::npos
+            && lufsRu.ends_with (" LUFS") && lufsEn.ends_with (" LUFS")
+            && ReadingText::name (ReadingKind::Integrated) == text::Term::ReadingIntegrated
+            && ReadingText::name (ReadingKind::CheckPasses) == text::Term::ReadingCheckPasses,
+            "Russian writes the decimal comma, English the point, both the unit the table gives: " + lufsRu + " / " + lufsEn);
+        // A new source: the readings follow its measurement.
+        const Mix quiet (0.03f, 4);
+        ok (s->apply (quiet.load (3)).rejection == Rejection::None, "PRECONDITION: a quieter mix loads");
+        ok (! readingOf (s->snapshot().view().readings, ReadingKind::Integrated), "the new source loaded: the old source's readings are gone");
+        drive (*s);
+        const auto again = s->snapshot();
+        const auto* quieter = readingOf (again.view().readings, ReadingKind::Integrated);
+        const auto quieterLufs = numberOf (again.view().measurements[std::size_t (Analyzer::Loudness)], "integratedLufs");
+        ok (quieter && lufs && quieterLufs && sameBits (quieter->fact.args[0].number, *quieterLufs)
+            && quieter->fact.args[0].number < lufs->fact.args[0].number - 20.0,
+            "a new measurement: the readings follow it — the quieter mix's own loudness");
+        // Across the wire: kind and fact, whole; an unknown kind is refused.
+        std::string json (std::size_t (Codec::encodedBytes (again.view()).bytes), '\0');
+        Snapshot restored;
+        ok (Codec::encode (again.view(), json) == CodecStatus::Ok && Codec::decode (json, restored) == CodecStatus::Ok, "PRECONDITION: encoded and decoded");
+        bool carried = restored.view().readings.count == again.view().readings.count && again.view().readings.count != 0;
+        for (std::size_t i = 0; carried && i < again.view().readings.count; ++i)
+            carried = restored.view().readings.items[i].kind == again.view().readings.items[i].kind
+                   && sameLine (restored.view().readings.items[i].fact, again.view().readings.items[i].fact)
+                   && sameBits (restored.view().readings.items[i].fact.args[0].number, again.view().readings.items[i].fact.args[0].number);
+        const auto at = json.find ("\"readings\":[{\"fact\":{\"FactId\":");
+        ok (carried && at != std::string::npos, "the readings cross the wire whole, kind and fact");
+        if (at != std::string::npos)
+        {
+            const auto kindAt = json.find ("]},\"kind\":", at) + 10, kindEnd = json.find ('}', kindAt);
+            auto badKind = json; badKind.replace (kindAt, kindEnd - kindAt, "31");
+            auto goodKind = json; goodKind.replace (kindAt, kindEnd - kindAt, "30");
+            Snapshot refused;
+            ok (Codec::decode (badKind, refused) == CodecStatus::Invalid && Codec::decode (goodKind, refused) == CodecStatus::Ok,
+                "an unknown reading kind (31) is refused; the last kind (30) is read");
+        }
+    }
+}
+
 void theNeedlesAreThePlansNeedles()
 {
     felitronics::test::group ("\"the same ceiling\" is decided by the bits in both rules: requestNeedles and the plan agree");
@@ -1725,8 +2159,219 @@ void theNeedlesAreThePlansNeedles()
 }
 } // namespace
 
-int main()
+void theAdviceIsAFact()
 {
+    felitronics::test::group ("the advice beside a knob is a fact of the plan — the value as it sounds against the norm; the target's note");
+    const Mix mix;
+    auto sp = measured (mix, "allStreaming"); auto& s = *sp;
+    ok (s.apply (command::SetManual { 3, true }).rejection == Rejection::None && s.snapshot().view().plan.status == PlanStatus::Ready,
+        "PRECONDITION: the panel open, the plan ready");
+    const auto advice = [&] (std::uint16_t id) -> std::optional<PlanFact>
+    {
+        const auto snap = s.snapshot();
+        const auto& facts = snap.view().plan.facts;
+        for (std::size_t i = 0; i < facts.count; ++i)
+            if (std::uint16_t (facts.items[i].fact.id) == id) return facts.items[i];
+        return std::nullopt;
+    };
+    const auto noAdvice = [&]
+    {
+        for (std::uint16_t id = 500; id <= 509; ++id) if (advice (id)) return false;
+        return true;
+    };
+    const auto at = [] (const std::optional<PlanFact>& f, std::size_t i) { return f ? f->fact.args[i].number : -1.0; };
+    const auto hpfAt = [&] (double fq, std::int32_t slope, bool on = true)
+    {
+        HpfFields<Touched> hpf; hpf.on = on; hpf.fq = fq; hpf.slope = slope;
+        return edit (s, hpf);
+    };
+    const auto machineHz = s.snapshot().view().plan.hpf.soundingHz;
+    ok (noAdvice() == (machineHz >= 24.0 && machineHz <= 42.0), "the machine's own plan: advice only outside the norm — "
+        + std::to_string (machineHz) + " Hz at its slope");
+    // THE HIGH-PASS: the cutoff against the comfort window (strictly), the slope against the normal ones.
+    ok (hpfAt (20.0, 24), "PRECONDITION: a hand high-pass at 20 Hz");
+    const auto below = advice (500);
+    ok (below && below->device == Device::Hpf && at (below, 0) == 20.0 && at (below, 1) == 24.0 && at (below, 2) == 42.0
+        && ru (below->fact).find ("24–42") != std::string::npos && ! advice (501) && ! advice (502) && ! advice (503),
+        "below the window: its why, with the window — " + (below ? ru (below->fact) + " / " + en (below->fact) : std::string ("none")));
+    ok (hpfAt (45.0, 24) && advice (501) && at (advice (501), 0) == 45.0 && ! advice (500),
+        "above the window: its why — " + (advice (501) ? ru (advice (501)->fact) : std::string ("none")));
+    ok (hpfAt (24.0, 24) && noAdvice() && hpfAt (42.0, 24) && noAdvice() && hpfAt (30.0, 12) && noAdvice(),
+        "inside the window, both edges included, at a normal slope: none");
+    const auto gentle = (hpfAt (30.0, 6), advice (502));
+    ok (gentle && gentle->fact.args[0].integer == 6 && gentle->fact.args[1].integer == 12 && ! advice (500) && ! advice (501),
+        "a slope gentler than the gentlest normal one: its why — " + (gentle ? ru (gentle->fact) : std::string ("none")));
+    const auto steep = (hpfAt (30.0, 48), advice (503));
+    ok (steep && steep->fact.args[0].integer == 48 && steep->fact.args[1].integer == 24,
+        "a slope steeper than the steepest normal one: its why — " + (steep ? ru (steep->fact) : std::string ("none")));
+    ok (hpfAt (30.0, 18) && noAdvice(), "a slope between two normal ones is inside the norm");
+    ok (hpfAt (20.0, 48) && advice (500) && advice (503), "a cutoff and a slope both outside: both whys");
+    ok (hpfAt (20.0, 48, false) && noAdvice(), "a high-pass out of the chain: no advice, whatever its knob");
+    ok (hpfAt (32.0, 24), "PRECONDITION: the high-pass back in the norm");
+    // MONO BASS: the crossover outside every destination's zone, both ends of a zone inside.
+    const auto monoAt = [&] (double fq) { MonoBassFields<Touched> mono; mono.on = true; mono.fq = fq; return edit (s, mono); };
+    const auto outside = (monoAt (70.0), advice (505));
+    const auto belowAll = (monoAt (70.0), advice (509));
+    ok (belowAll && ! advice (505) && belowAll->device == Device::MonoBass && at (belowAll, 0) == 70.0 && at (belowAll, 1) == 80.0
+        && at (belowAll, 2) == 120.0,
+        "a crossover below every zone: lower than a club or vinyl asks for — " + (belowAll ? ru (belowAll->fact) : std::string ("none")));
+    const auto aboveAll = (monoAt (250.0), advice (505));
+    ok (aboveAll && ! advice (509) && at (aboveAll, 0) == 250.0 && at (aboveAll, 1) == 120.0 && at (aboveAll, 2) == 200.0
+        && ru (aboveAll->fact).find ("выше, чем нужно и клубу") != std::string::npos,
+        "above every zone: higher than a club and vinyl need — " + (aboveAll ? ru (aboveAll->fact) : std::string ("none")));
+    ok (monoAt (100.0) && ! advice (505) && ! advice (509) && monoAt (80.0) && ! advice (509) && monoAt (200.0) && ! advice (505)
+        && monoAt (160.0) && ! advice (505), "inside a zone, its ends included: none");
+    ok (monoAt (120.0), "PRECONDITION: mono bass back at a zone");
+    // THE EQ CURVE: the shelves as they sound, against [eq] curve.warnDb, at the point of the largest |dB|.
+    HpfFields<Touched> off; off.on = false;
+    TiltFields<Touched> tilt; tilt.on = true; tilt.db = 3.0;
+    ok (edit (s, off) && edit (s, tilt), "PRECONDITION: the high-pass off, tilt by hand at +3 dB");
+    const auto snap = s.snapshot();
+    EqPoint peak {};
+    for (const auto& p : snap.view().eqCurve) if (std::abs (p.db) > std::abs (peak.db)) peak = p;
+    const auto over = advice (504);
+    ok (over && over->device == Device::Tilt && sameBits (at (over, 0), peak.db) && sameBits (at (over, 1), peak.hz) && std::abs (peak.db) > 2.0,
+        "the summed shelves leave ±2 dB: the overshoot, with the curve's own point — " + (over ? ru (over->fact) + " / " + en (over->fact) : std::string ("none")));
+    TiltFields<Touched> mild; mild.on = true; mild.db = 1.5;
+    ok (edit (s, mild) && ! advice (504), "tilt at 1.5 dB stays inside: none");
+    TiltFields<Touched> flat; flat.on = true; flat.db = 0.0;
+    LowFields<Touched> low; low.on = true; low.db = 2.5;
+    const auto lowOver = (edit (s, flat), edit (s, low), advice (504));
+    ok (lowOver && lowOver->device == Device::Low && at (lowOver, 0) > 2.0, "the low shelf alone past it: said of low — "
+        + (lowOver ? ru (lowOver->fact) : std::string ("none")));
+    // THE TARGET'S NOTE, from targets.toml [notes], beside the snapshot's target.
+    const auto note = [] (std::string_view key) { return SnapshotText::targetNote (key); };
+    ok (note ("youtubeMusic") && note ("youtubeMusic")->id == text::FactId::TargetMeasured && note ("youtubeMusic")->args[0].number == -7.0
+        && note ("club") && note ("club")->id == text::FactId::TargetPractice && note ("club")->args[0].number == -8.0
+        && note ("cdDynamic") && note ("cdDynamic")->id == text::FactId::TargetPractice
+        && note ("bandcamp") && note ("bandcamp")->id == text::FactId::TargetNoNormalisation
+        && ! note ("allStreaming") && ! note ("spotify") && ! note ("td1008") && ! note ("nowhere"),
+        "measured, practice, no normalisation — and nothing for a platform's published number or a standard: "
+            + ru (*note ("youtubeMusic")) + " / " + ru (*note ("club")) + " / " + ru (*note ("bandcamp")));
+    ok (! s.snapshot().view().targetNote, "allStreaming's snapshot carries no note");
+    auto tp = measured (mix, "youtubeMusic"); auto& t = *tp;
+    HpfFields<Touched> hand; hand.fq = 20.0; hand.slope = 48;
+    ok (t.apply (command::SetManual { 3, true }).rejection == Rejection::None && edit (t, hand), "PRECONDITION: youtubeMusic, a hand high-pass");
+    // Across the wire: the advice, the sounding slope and the note, whole.
+    const auto again = t.snapshot();
+    std::string json (std::size_t (Codec::encodedBytes (again.view()).bytes), '\0');
+    Snapshot restored;
+    ok (Codec::encode (again.view(), json) == CodecStatus::Ok && Codec::decode (json, restored) == CodecStatus::Ok, "PRECONDITION: encoded and decoded");
+    bool carried = restored.view().plan.facts.count == again.view().plan.facts.count && again.view().targetNote && restored.view().targetNote
+        && sameLine (*restored.view().targetNote, *again.view().targetNote) && restored.view().plan.hpf.soundingSlope == 48;
+    for (std::size_t i = 0; carried && i < again.view().plan.facts.count; ++i)
+        carried = restored.view().plan.facts.items[i].device == again.view().plan.facts.items[i].device
+               && sameLine (restored.view().plan.facts.items[i].fact, again.view().plan.facts.items[i].fact);
+    ok (carried && again.view().plan.facts.count > 2, "the codec carries the advice, the sounding slope and the target's note whole");
+}
+
+// THE MACHINE KEEPS ITS OWN NORM: the advice "beyond the norm" (a high-pass slope outside slopesNormal, an EQ curve past
+// its warning, mono bass outside every destination's zone) is said of a person's value — the machine's own plan never
+// raises it. Every target of targets.toml, on every input the suite measures: the contract's fixture inputs
+// (tools/contract/fixtures/inputs.json, "measure" and "measure-stereo", built here by the same formula) and the synthetic
+// mixes of this file. The comfort window of the high-pass (500, 501) is a hint, not a norm: the machine's floor may sit
+// outside it by an owner decision, and theAdviceIsAFact holds it.
+struct Input
+{
+    std::string name;
+    std::uint32_t channels = 0, frames = 0, rate = 0;
+    std::vector<float> samples;
+    const float* planes[2] { nullptr, nullptr };
+    void point() { for (std::uint32_t c = 0; c < channels; ++c) planes[c] = samples.data() + std::size_t (c) * frames; }
+};
+Input contractInput (const char* name, std::uint32_t rate, std::uint32_t channels, std::uint32_t frames, std::uint32_t period, double scale)
+{
+    // fixtures.mjs: sample i of the planar block is ((i % frames + floor (i / frames) * 7) % period - period / 2) * scale,
+    // in 16-bit units.
+    Input in { name, channels, frames, rate, std::vector<float> (std::size_t (channels) * frames) };
+    for (std::size_t i = 0; i < in.samples.size(); ++i)
+    {
+        const double v = (double ((i % frames + (i / frames) * 7) % period) - double (period) / 2.0) * scale;
+        in.samples[i] = float (v / 32768.0);
+    }
+    in.point();
+    return in;
+}
+// `wide`: a 70 Hz bass under the mix, the right channel's an eighth of a cycle late — a wide low end the machine folds.
+Input mixInput (const char* name, float scale, double clicks, std::uint32_t channels, bool wide = false)
+{
+    namespace det = felitronics::core::det;
+    const Mix mix (scale, 8, clicks);
+    Input in { name, channels, mix.frames, Mix::rate, std::vector<float> (std::size_t (channels) * mix.frames) };
+    std::copy (mix.left.begin(), mix.left.end(), in.samples.begin());
+    if (channels == 2) std::copy (mix.right.begin(), mix.right.end(), in.samples.begin() + mix.frames);
+    for (std::uint32_t i = 0; wide && channels == 2 && i < mix.frames; ++i)
+    {
+        const double t = double (i) / Mix::rate;
+        in.samples[i] += float (0.2 * det::sin (2 * kPi * 70.0 * t));
+        in.samples[std::size_t (mix.frames) + i] += float (0.2 * det::sin (2 * kPi * 70.0 * t + 0.25 * kPi));
+    }
+    in.point();
+    return in;
+}
+
+void theMachineKeepsItsOwnNorm()
+{
+    felitronics::test::group ("the machine's own plan raises no advice beyond the norm — every target, every input the suite has");
+    constexpr std::uint16_t kBeyondNorm[] = { std::uint16_t (text::FactId::HpfSlopeGentle), std::uint16_t (text::FactId::HpfSlopeSteep),
+        std::uint16_t (text::FactId::EqOvershoot), std::uint16_t (text::FactId::MonoBassOutsideZones),
+        std::uint16_t (text::FactId::MonoBassBelowZones) };
+    std::vector<Input> inputs;
+    inputs.push_back (contractInput ("contract measure", 48000, 1, 384000, 128, 128));
+    inputs.push_back (contractInput ("contract measure-stereo", 48000, 2, 192000, 128, 128));
+    inputs.push_back (mixInput ("mix", 1.0f, 0.35, 2));
+    inputs.push_back (mixInput ("mix quiet", 0.05f, 0.35, 2));
+    inputs.push_back (mixInput ("mix hot", 2.0f, 0.35, 2));
+    inputs.push_back (mixInput ("mix without needles", 1.0f, 0.0, 2));
+    inputs.push_back (mixInput ("mix mono", 1.0f, 0.35, 1));
+    inputs.push_back (mixInput ("mix with a wide bass", 1.0f, 0.35, 2, true));
+    const auto& rules = detail::rules();
+    unsigned plans = 0, hpfSounds = 0, monoSounds = 0, monoBeyondVinyl = 0;
+    std::string raised;
+    bool ready = rules.rows > 20;
+    for (const auto& in : inputs)
+    {
+        auto s = Session::create().session;
+        CommandId id = 1;
+        (void) s->apply (command::SetTarget { id++, rules.row (0).key });
+        const command::Load load { id++, { in.planes, in.channels, in.frames, in.rate }, { "input.wav", in.rate, true, 24 } };
+        if (s->apply (load).rejection != Rejection::None) { ready = false; raised += "\n        " + in.name + ": not loaded"; continue; }
+        for (std::uint16_t row = 0; row < rules.rows; ++row)
+        {
+            const auto key = rules.row (row).key;
+            (void) s->apply (command::SetTarget { id++, key });
+            drive (*s);
+            const auto snap = s->snapshot();
+            const auto& plan = snap.view().plan;
+            if (plan.status != PlanStatus::Ready) { ready = false; raised += "\n        " + in.name + " / " + std::string (key) + ": no plan"; continue; }
+            ++plans;
+            hpfSounds += plan.hpf.sounding != Sounding::Off ? 1u : 0u;
+            monoSounds += plan.monoBass.sounding != Sounding::Off ? 1u : 0u;
+            monoBeyondVinyl += plan.monoBass.sounding != Sounding::Off && ! rules.row (row).vinyl ? 1u : 0u;
+            for (std::size_t i = 0; i < plan.facts.count; ++i)
+                for (const auto beyond : kBeyondNorm)
+                    if (std::uint16_t (plan.facts.items[i].fact.id) == beyond)
+                        raised += "\n        " + in.name + " / " + std::string (key) + ": " + ru (plan.facts.items[i].fact);
+        }
+    }
+    // Not vacuous: the high-pass sounds on every plan, mono bass on some beyond vinyl's — the advice has a machine value
+    // to judge on every target.
+    ok (ready && plans == inputs.size() * rules.rows && hpfSounds == plans && monoBeyondVinyl >= rules.rows - 1u,
+        "PRECONDITION: every input planned on every target (" + std::to_string (plans) + " plans; the high-pass sounds on "
+        + std::to_string (hpfSounds) + ", mono bass on " + std::to_string (monoSounds) + ")" + (ready ? std::string {} : raised));
+    ok (raised.empty(), "no plan of the machine's own says its choice is beyond the norm" + raised);
+}
+
+int main (int argc, char** argv)
+{
+    // The guard over every target and input is its own ctest (felitronics_session_machine_norm_tests): a long enumeration
+    // the slow checked build may leave out.
+    if (argc > 1 && std::string_view (argv[1]) == "machine-norm")
+    {
+        std::printf ("felitronics::session — the machine's own plan keeps its own norm\n");
+        theMachineKeepsItsOwnNorm();
+        return felitronics::test::report();
+    }
     std::printf ("felitronics::session — the limiter, the dither and the whole plan sounding\n");
     theClasses();
     theCutIsAnAmount();
@@ -1743,6 +2388,10 @@ int main()
     vinylAndQuietMastered();
     theDitherSounding();
     theObservations();
+    theOwnersTable();
+    theObservationsSpeakForThemselves();
+    theReadingsAreFacts();
     theNeedlesAreThePlansNeedles();
+    theAdviceIsAFact();
     return felitronics::test::report();
 }
