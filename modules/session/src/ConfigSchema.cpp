@@ -806,12 +806,21 @@ void readObservations (Doc& d, Reader& in, Observations& o)
         const bool f = t.required ("from", o.dcOffsetFrom, share());
         const bool a = t.required ("fullAt", o.dcOffsetFullAt, share());
         d.below (t, f && a, o.dcOffsetFrom, o.dcOffsetFullAt, "fullAt");
+        // The style by size: a warning from warningFrom, an error from errorFrom — in that order.
+        const bool w = t.required ("warningFrom", o.dcOffsetWarningFrom, share());
+        const bool e = t.required ("errorFrom", o.dcOffsetErrorFrom, share());
+        d.below (t, w && e, o.dcOffsetWarningFrom, o.dcOffsetErrorFrom, "errorFrom");
     });
     in.table ("bitsUnused", Need::Required, [&] (Reader& t)
     {
-        const bool f = t.required ("fromBits", o.bitsUnusedFromBits, I { 0, 32 });
-        const bool a = t.required ("fullAtBits", o.bitsUnusedFullAtBits, I { 0, 32 });
-        if (f && a && ! (o.bitsUnusedFromBits < o.bitsUnusedFullAtBits)) d.refuse (t, "fullAtBits", Refusal::OutOfOrder);
+        // Bits short of the full depth: found from fromBitsShort, full at fullAtBitsShort, an error from errorFromBitsShort.
+        t.required ("depthBits", o.bitsUnusedDepthBits, I { 1, 32 });
+        const bool f = t.required ("fromBitsShort", o.bitsUnusedFromBitsShort, I { 1, 32 });
+        const bool a = t.required ("fullAtBitsShort", o.bitsUnusedFullAtBitsShort, I { 1, 32 });
+        if (f && a && ! (o.bitsUnusedFromBitsShort < o.bitsUnusedFullAtBitsShort)) d.refuse (t, "fullAtBitsShort", Refusal::OutOfOrder);
+        if (t.required ("errorFromBitsShort", o.bitsUnusedErrorFromBitsShort, I { 1, 32 }) && f
+            && o.bitsUnusedErrorFromBitsShort < o.bitsUnusedFromBitsShort)
+            d.refuse (t, "errorFromBitsShort", Refusal::OutOfOrder);
     });
     in.table ("edgeSilence", Need::Required, [&] (Reader& t)
     {
@@ -824,7 +833,10 @@ void readObservations (Doc& d, Reader& in, Observations& o)
         const bool f = t.required ("fromProminenceDb", o.humFromProminenceDb, R { 0.0, 120.0 });
         const bool a = t.required ("fullAtProminenceDb", o.humFullAtProminenceDb, R { 0.0, 120.0 });
         d.below (t, f && a, o.humFromProminenceDb, o.humFullAtProminenceDb, "fullAtProminenceDb");
-        fullAtAlone (t, "fullAtPowerAgainstProgramme", o.humFullAtPowerAgainstProgramme, share());
+        const bool pf = t.required ("fromPowerDb", o.humFromPowerDb, R { -200.0, 0.0 });
+        const bool pa = t.required ("fullAtPowerDb", o.humFullAtPowerDb, R { -200.0, 0.0 });
+        d.below (t, pf && pa, o.humFromPowerDb, o.humFullAtPowerDb, "fullAtPowerDb");
+        t.required ("warningFromSeverity", o.humWarningFromSeverity, share());
     });
     in.table ("humWandered", Need::Required, [&] (Reader& t)
     {
@@ -848,19 +860,32 @@ void readObservations (Doc& d, Reader& in, Observations& o)
         const bool l = t.required ("low", o.infraLowLow, share());
         const bool h = t.required ("high", o.infraLowHigh, share());
         d.below (t, l && h, o.infraLowLow, o.infraLowHigh, "high");
+        // A warning from warningFrom: from where the finding is found on.
+        if (t.required ("warningFrom", o.infraLowWarningFrom, share()) && l && o.infraLowWarningFrom < o.infraLowLow)
+            d.refuse (t, "warningFrom", Refusal::OutOfOrder);
     });
     in.table ("wideBass", Need::Required, [&] (Reader& t)
     {
-        fullAtAlone (t, "sideFractionAtLeast", o.wideBassSideFractionAtLeast, share());   // at 0 every file has wide bass
+        const bool f = t.required ("sideFractionAtLeast", o.wideBassSideFractionAtLeast, share());
+        if (f && ! (o.wideBassSideFractionAtLeast > 0.0)) d.outOfRange (t, "sideFractionAtLeast");   // at 0 every file has wide bass
+        const bool a = t.required ("fullAt", o.wideBassFullAt, share());
+        d.below (t, f && a, o.wideBassSideFractionAtLeast, o.wideBassFullAt, "fullAt");
     });
     in.table ("polarity", Need::Required, [&] (Reader& t)
     {
         t.required ("correlationBelow", o.polarityCorrelationBelow, R { -1.0, 1.0 });
         t.required ("rawSideFractionAbove", o.polarityRawSideFractionAbove, share());
+        // The severity by the low band's correlation, from 0 down: full below zero.
+        if (t.required ("fullAtLowCorrelation", o.polarityFullAtLowCorrelation, R { -1.0, 1.0 }) && ! (o.polarityFullAtLowCorrelation < 0.0))
+            d.outOfRange (t, "fullAtLowCorrelation");
     });
     in.table ("alreadyLimited", Need::Required, [&] (Reader& t)
     {
-        t.required ("plrBelowDb", o.alreadyLimitedPlrBelowDb, R { 0.0, 40.0 });
+        const bool b = t.required ("plrBelowDb", o.alreadyLimitedPlrBelowDb, R { 0.0, 40.0 });
+        // The severity rises as the PLR falls: full at a PLR under the bound.
+        if (t.required ("fullAtPlrDb", o.alreadyLimitedFullAtPlrDb, R { 0.0, 40.0 }) && b
+            && ! (o.alreadyLimitedFullAtPlrDb < o.alreadyLimitedPlrBelowDb))
+            d.refuse (t, "fullAtPlrDb", Refusal::OutOfOrder);
     });
     in.table ("vinylTop", Need::Required, [&] (Reader& t)
     {

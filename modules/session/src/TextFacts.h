@@ -244,6 +244,13 @@ inline constexpr FactShape kFacts[] = {
     { FactId::SourceLowestBandUnsure, "sourceLowestBandUnsure", { { { "note", ArgKind::Midi, {} }, { "hz", ArgKind::Value, {} } } }, 2 },
     { FactId::ObservationUnmeasured, "observationUnmeasured", { { { "name", ArgKind::Term, "observation" }, { "reason", ArgKind::Term, "measurementReason" } } }, 2 },
     { FactId::TempoConfidence, "tempoConfidence", { { { "confidence", ArgKind::Term, "tempoConfidence" } } }, 1 },
+    { FactId::SourceDcNote, "sourceDcNote", { { { "offset", ArgKind::Value, {} } } }, 1 },
+    { FactId::SourceTruncatedBits, "sourceTruncatedBits", { { { "bits", ArgKind::Count, {} } } }, 1 },
+    { FactId::SourceShallowMix, "sourceShallowMix", { { { "bits", ArgKind::Count, {} }, { "depth", ArgKind::Count, {} } } }, 2 },
+    { FactId::SourceLimitedBus, "sourceLimitedBus", { { { "plr", ArgKind::Value, {} } } }, 1 },
+    { FactId::SourceLossy, "sourceLossy", { { { "hz", ArgKind::Value, {} } } }, 1 },
+    { FactId::SourceInfraLowNote, "sourceInfraLowNote", { { { "hz", ArgKind::Value, {} } } }, 1 },
+    { FactId::SourceInfraLowWarning, "sourceInfraLowWarning", { { { "share", ArgKind::Value, {} }, { "hz", ArgKind::Value, {} } } }, 2 },
     // The plan's advice and the targets' notes.
     { FactId::HpfBelowComfort, "hpfBelowComfort", { { { "cutoff", ArgKind::Value, {} }, { "low", ArgKind::Value, {} }, { "high", ArgKind::Value, {} } } }, 3 },
     { FactId::HpfAboveComfort, "hpfAboveComfort", { { { "cutoff", ArgKind::Value, {} }, { "low", ArgKind::Value, {} }, { "high", ArgKind::Value, {} } } }, 3 },

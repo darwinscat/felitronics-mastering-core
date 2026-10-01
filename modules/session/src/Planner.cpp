@@ -568,6 +568,7 @@ detail::PlanInputs Session::planInputs (const Project& project) const noexcept
     in.channels = source_.channels;
     in.sampleRate = source_.sampleRate;
     in.frames = source_.frames;
+    in.bitDepth = source_.bitDepth;
     in.offered = capabilities_.offeredDevices;
     if (source_.channels != 0) in.measurements = measurementResults_;
     const auto need = needlesNeed (project);
@@ -774,6 +775,7 @@ void Session::replan() noexcept
         seen.rules = in.rules;
         seen.measurements = in.measurements;
         seen.channels = in.channels; seen.sampleRate = in.sampleRate; seen.frames = in.frames;
+        seen.bitDepth = in.bitDepth;
         seen.hpfOn = devicesPlaced_ && plan_.devices.hpf.on;
         seen.monoBassOn = devicesPlaced_ && plan_.devices.monoBass.on;
         detail::observe (seen, observations_);

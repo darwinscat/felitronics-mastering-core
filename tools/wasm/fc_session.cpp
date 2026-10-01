@@ -1240,7 +1240,7 @@ FC_EXPORT fc_session_status fc_kit_eq_curve (const double* params, double rate, 
     const auto tick = [&] (double v, bool& on) { on = same (v, 1.0); return same (v, 0.0) || on; };
     felitronics::session::KitEq eq;
     if (! tick (params[0], eq.hpf.on) || ! tick (params[3], eq.tilt.on) || ! tick (params[5], eq.low.on)
-        || ! (std::fabs (params[2]) < 2147483648.0) || ! same (std::trunc (params[2]), params[2])) return FC_SESSION_ERR_CONTRACT;
+        || ! (std::fabs (params[2]) < 2147483648.0) || ! same (std::floor (params[2]), params[2])) return FC_SESSION_ERR_CONTRACT;
     eq.hpf.fq = params[1]; eq.hpf.slope = std::int32_t (params[2]);
     eq.tilt.db = params[4]; eq.low.db = params[6];
     // The points land straight in the caller's doubles: an EqPoint is two of them (the snapshot's row says so).

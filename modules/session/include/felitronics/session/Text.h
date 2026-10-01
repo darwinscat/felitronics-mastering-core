@@ -293,6 +293,14 @@ enum class FactId : std::uint16_t
     SourceLowestBandUnsure = 436, // the lowest occupied band: {note} ({hz}), unsure — under the margin a sure note stands
     ObservationUnmeasured = 437, // {name}: not measured — {reason}
     TempoConfidence = 438,     // a reading: how sure the tempo is — {confidence}
+    // The observations' own words where the owner gave them (01.10): a style by size says its own line.
+    SourceDcNote = 439,        // a DC offset ({offset}) as a note: the master's high-pass removes it, check the mix chain
+    SourceTruncatedBits = 440, // the effective depth {bits}: truncated somewhere in the mix chain
+    SourceShallowMix = 441,    // a {bits}-bit mix: mix down at {depth} bits
+    SourceLimitedBus = 442,    // the mix is limited already (PLR {plr}): send a version without the bus limiter
+    SourceLossy = 443,         // the source went through mp3/AAC (the top cut at {hz}): master from a lossless source
+    SourceInfraLowNote = 444,  // a little energy below {hz}: the master's high-pass removes it
+    SourceInfraLowWarning = 445, // a notable part of the energy ({share}) below {hz}: the high-pass cuts it, check what it is
     // The plan's advice (PlanText): a device's value as it sounds, against the norm the config draws on its knob.
     HpfBelowComfort = 500,     // the high-pass at {cutoff} is below the comfort window {low}–{high}
     HpfAboveComfort = 501,     // the high-pass at {cutoff} is above the comfort window {low}–{high}

@@ -161,7 +161,7 @@ void textIsTextWrite()
             const auto json = wire (fact);
             char out[1024];
             const auto answer = Kit::text (json, lang, out);
-            same = same && answer.status == CodecStatus::Ok && std::string_view (out, answer.count) == rendered (fact, lang);
+            same = same && answer.status == CodecStatus::Ok && std::string_view (out, std::size_t (answer.count)) == rendered (fact, lang);
         }
     ok (same, "every fact of the corpus, in ru and in en, renders as Text::write renders it");
     char tiny[4];

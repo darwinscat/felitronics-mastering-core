@@ -401,17 +401,20 @@ struct Observations
     double doubtfulBelow = 0.0;
     double clippingFullAtShareOfProgramme = 0.0;                                  // clipping
     double dcOffsetFrom = 0.0, dcOffsetFullAt = 0.0;                              // dcOffset
-    std::int32_t bitsUnusedFromBits = 0, bitsUnusedFullAtBits = 0;                // bitsUnused
+    double dcOffsetWarningFrom = 0.0, dcOffsetErrorFrom = 0.0;
+    std::int32_t bitsUnusedDepthBits = 0;                                         // bitsUnused
+    std::int32_t bitsUnusedFromBitsShort = 0, bitsUnusedFullAtBitsShort = 0, bitsUnusedErrorFromBitsShort = 0;
     double edgeSilenceFromSeconds = 0.0, edgeSilenceFullAtSeconds = 0.0;          // edgeSilence
     double humFromProminenceDb = 0.0, humFullAtProminenceDb = 0.0;                // hum
-    double humFullAtPowerAgainstProgramme = 0.0;
+    double humFromPowerDb = 0.0, humFullAtPowerDb = 0.0, humWarningFromSeverity = 0.0;
     double humWanderedConfidenceCeiling = 0.0;                                    // humWandered
     double spectralWallFullAtDropDb = 0.0;                                        // spectralWall
     double spectralWallFromFractionBelowNyquist = 0.0, spectralWallFullAtFractionBelowNyquist = 0.0;
-    double infraLowLow = 0.0, infraLowHigh = 0.0;                                 // infraLow
-    double wideBassSideFractionAtLeast = 0.0;                                     // wideBass
+    double infraLowLow = 0.0, infraLowHigh = 0.0, infraLowWarningFrom = 0.0;      // infraLow
+    double wideBassSideFractionAtLeast = 0.0, wideBassFullAt = 0.0;               // wideBass
     double polarityCorrelationBelow = 0.0, polarityRawSideFractionAbove = 0.0;    // polarity
-    double alreadyLimitedPlrBelowDb = 0.0;                                        // alreadyLimited
+    double polarityFullAtLowCorrelation = 0.0;
+    double alreadyLimitedPlrBelowDb = 0.0, alreadyLimitedFullAtPlrDb = 0.0;       // alreadyLimited
     double vinylTopAboveHz = 0.0;                                                 // vinylTop
     Kinds kinds;
     Sibilance sibilance;

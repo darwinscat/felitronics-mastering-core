@@ -401,8 +401,8 @@ The two numbers (`shortCutDb`, `betweenCutDb`) are AMOUNTS (owner, 30.09): the c
 peaks and the limiter does the rest, so its threshold stands max(0, need − cut) above the ceiling, the need the input's
 (`plan.limiter.needDb`); a person's `manual X` is X dB off the peaks the same way. The finding carries the amount
 (`overDb`, `proposedOverDb`), the chain the threshold; its line (`LimiterShort`/`Between`/`Manual`, and a vinyl master's
-`MasterVinylNeedlesDeparts`) prints the amount as a cap, `Bound::AtMost` ("≤ 1.5 dB"), since the landing's drive
-decides how much the clipper really takes — and `LimiterLittleNeed` names the need as the one at the target. Where the need is not known, or need − cut lies beyond the
+`MasterVinylNeedlesDeparts`) prints the amount as a cap, `Bound::AtMost` ("≤ 1.5 dB": "the clipper will take ≤ 1.5 dB
+off the peaks, the limiter the rest", owner wording 01.10), since the landing's drive decides how much the clipper really takes — and `LimiterLittleNeed` names the need as the one at the target. Where the need is not known, or need − cut lies beyond the
 limiter's working range (12 dB), no threshold keeps to the amount and the clipper stays off. The landing then moves the
 peaks by its own gain and pass ceiling; a rendered master's clipper reduction stays within the amount plus that drift
 (`theClipperCutsItsAmount`: about 1.4–2.0 dB on the suite's mix).
@@ -454,8 +454,20 @@ place ("found 2 clips: 0:12, 1:47 — it looks like an edit"); ten a minute is a
 is the low end's reading published with its sureness (`lowestOccupiedSure`, `lowestOccupiedResolved` beside it): an
 unsure one is shown as unsure, never withheld, while the high-pass takes the floor for it. `ObservationText::fact` gives
 a found one's sentence, and a not-measured one's name and reason (`ObservationUnmeasured`); a kind measured and not
-found has none. The style is error, warning, note or reading (`[observations.kinds]`): the loudest low note is a reading,
-a number the file shows, not a finding. **The observations speak for themselves**: `observationFacts` carries every
+found has none. The style is error, warning, note or reading (`[observations.kinds]`): the loudest low note and the lowest
+occupied band are readings, numbers the file shows, not findings. **The owner's table (01.10)**: clipping and opposite
+polarity are errors; lost bits, a dual-mono file, an input already limited (PLR under 10.5 dB), a spectral wall at 88 % of
+Nyquist or lower (a lossy source), wide bass and a quiet input are warnings. Four kinds also take their style by size —
+`sized()` in `src/Observations.cpp`, the one place, with the thresholds in their own `[observations]` rows: a DC offset
+is a note under 1 % of full scale, a warning from 1 % and an error from 10 %; the EFFECTIVE depth (the container's bits
+less the low bits always zero) is nothing at 24 bits, a warning at 23 to 17 and an error at 16 and less; infra-low is a
+note from 2 %, a warning from 5 %; the hum is a note, a warning from half its severity (−50 dB against the programme)
+when it is confident. A size raises a style, never lowers it, and never raises a doubtful finding; where the size chose
+the style the line says so (`SourceDcNote`, `SourceTruncatedBits`/`SourceShallowMix`, `SourceInfraLowNote`/`Warning`).
+The hum is not measured only where the detector could not listen (too short, every frame holed, too coarse a
+resolution, or a base line heard in too little quiet to tell whether it stands still); where it listened — a programme
+never quiet, a comb without its base, a quiet stretch without a base line — and no steady line stood out, it is not
+found. **The observations speak for themselves**: `observationFacts` carries every
 kind's line as `ObservationText::facts` states it — `{kind, fact}`, in the order of `ObservationKind`, empty before a
 source — so a shell shows them without composing one; the names, the handling and the reasons are catalogue terms
 (`terms.observation`, `terms.handledBy`, `terms.measurementReason`).
