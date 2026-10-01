@@ -1948,6 +1948,107 @@ void theNeedlesAreThePlansNeedles()
 }
 } // namespace
 
+void theAdviceIsAFact()
+{
+    felitronics::test::group ("the advice beside a knob is a fact of the plan — the value as it sounds against the norm; the target's note");
+    const Mix mix;
+    auto sp = measured (mix, "allStreaming"); auto& s = *sp;
+    ok (s.apply (command::SetManual { 3, true }).rejection == Rejection::None && s.snapshot().view().plan.status == PlanStatus::Ready,
+        "PRECONDITION: the panel open, the plan ready");
+    const auto advice = [&] (std::uint16_t id) -> std::optional<PlanFact>
+    {
+        const auto snap = s.snapshot();
+        const auto& facts = snap.view().plan.facts;
+        for (std::size_t i = 0; i < facts.count; ++i)
+            if (std::uint16_t (facts.items[i].fact.id) == id) return facts.items[i];
+        return std::nullopt;
+    };
+    const auto noAdvice = [&]
+    {
+        for (std::uint16_t id = 500; id <= 505; ++id) if (advice (id)) return false;
+        return true;
+    };
+    const auto at = [] (const std::optional<PlanFact>& f, std::size_t i) { return f ? f->fact.args[i].number : -1.0; };
+    const auto hpfAt = [&] (double fq, std::int32_t slope, bool on = true)
+    {
+        HpfFields<Touched> hpf; hpf.on = on; hpf.fq = fq; hpf.slope = slope;
+        return edit (s, hpf);
+    };
+    const auto machineHz = s.snapshot().view().plan.hpf.soundingHz;
+    ok (noAdvice() == (machineHz >= 24.0 && machineHz <= 42.0), "the machine's own plan: advice only outside the norm — "
+        + std::to_string (machineHz) + " Hz at its slope");
+    // THE HIGH-PASS: the cutoff against the comfort window (strictly), the slope against the normal ones.
+    ok (hpfAt (20.0, 24), "PRECONDITION: a hand high-pass at 20 Hz");
+    const auto below = advice (500);
+    ok (below && below->device == Device::Hpf && at (below, 0) == 20.0 && at (below, 1) == 24.0 && at (below, 2) == 42.0
+        && ru (below->fact).find ("24–42") != std::string::npos && ! advice (501) && ! advice (502) && ! advice (503),
+        "below the window: its why, with the window — " + (below ? ru (below->fact) + " / " + en (below->fact) : std::string ("none")));
+    ok (hpfAt (45.0, 24) && advice (501) && at (advice (501), 0) == 45.0 && ! advice (500),
+        "above the window: its why — " + (advice (501) ? ru (advice (501)->fact) : std::string ("none")));
+    ok (hpfAt (24.0, 24) && noAdvice() && hpfAt (42.0, 24) && noAdvice() && hpfAt (30.0, 12) && noAdvice(),
+        "inside the window, both edges included, at a normal slope: none");
+    const auto gentle = (hpfAt (30.0, 6), advice (502));
+    ok (gentle && gentle->fact.args[0].integer == 6 && gentle->fact.args[1].integer == 12 && ! advice (500) && ! advice (501),
+        "a slope gentler than the gentlest normal one: its why — " + (gentle ? ru (gentle->fact) : std::string ("none")));
+    const auto steep = (hpfAt (30.0, 48), advice (503));
+    ok (steep && steep->fact.args[0].integer == 48 && steep->fact.args[1].integer == 24,
+        "a slope steeper than the steepest normal one: its why — " + (steep ? ru (steep->fact) : std::string ("none")));
+    ok (hpfAt (30.0, 18) && noAdvice(), "a slope between two normal ones is inside the norm");
+    ok (hpfAt (20.0, 48) && advice (500) && advice (503), "a cutoff and a slope both outside: both whys");
+    ok (hpfAt (20.0, 48, false) && noAdvice(), "a high-pass out of the chain: no advice, whatever its knob");
+    ok (hpfAt (32.0, 24), "PRECONDITION: the high-pass back in the norm");
+    // MONO BASS: the crossover outside every destination's zone, both ends of a zone inside.
+    const auto monoAt = [&] (double fq) { MonoBassFields<Touched> mono; mono.on = true; mono.fq = fq; return edit (s, mono); };
+    const auto outside = (monoAt (70.0), advice (505));
+    ok (outside && outside->device == Device::MonoBass && at (outside, 0) == 70.0 && at (outside, 1) == 80.0 && at (outside, 2) == 120.0
+        && at (outside, 3) == 120.0 && at (outside, 4) == 200.0,
+        "a crossover below every zone: no destination asks for it — " + (outside ? ru (outside->fact) : std::string ("none")));
+    ok (monoAt (250.0) && advice (505) && monoAt (100.0) && ! advice (505) && monoAt (80.0) && ! advice (505)
+        && monoAt (200.0) && ! advice (505) && monoAt (160.0) && ! advice (505), "above every zone: the fact; inside one, its ends included: none");
+    ok (monoAt (120.0), "PRECONDITION: mono bass back at a zone");
+    // THE EQ CURVE: the shelves as they sound, against [eq] curve.warnDb, at the point of the largest |dB|.
+    HpfFields<Touched> off; off.on = false;
+    TiltFields<Touched> tilt; tilt.on = true; tilt.db = 3.0;
+    ok (edit (s, off) && edit (s, tilt), "PRECONDITION: the high-pass off, tilt by hand at +3 dB");
+    const auto snap = s.snapshot();
+    EqPoint peak {};
+    for (const auto& p : snap.view().eqCurve) if (std::abs (p.db) > std::abs (peak.db)) peak = p;
+    const auto over = advice (504);
+    ok (over && over->device == Device::Tilt && sameBits (at (over, 0), peak.db) && sameBits (at (over, 1), peak.hz) && std::abs (peak.db) > 2.0,
+        "the summed shelves leave ±2 dB: the overshoot, with the curve's own point — " + (over ? ru (over->fact) + " / " + en (over->fact) : std::string ("none")));
+    TiltFields<Touched> mild; mild.on = true; mild.db = 1.5;
+    ok (edit (s, mild) && ! advice (504), "tilt at 1.5 dB stays inside: none");
+    TiltFields<Touched> flat; flat.on = true; flat.db = 0.0;
+    LowFields<Touched> low; low.on = true; low.db = 2.5;
+    const auto lowOver = (edit (s, flat), edit (s, low), advice (504));
+    ok (lowOver && lowOver->device == Device::Low && at (lowOver, 0) > 2.0, "the low shelf alone past it: said of low — "
+        + (lowOver ? ru (lowOver->fact) : std::string ("none")));
+    // THE TARGET'S NOTE, from targets.toml [notes], beside the snapshot's target.
+    const auto note = [] (std::string_view key) { return SnapshotText::targetNote (key); };
+    ok (note ("youtubeMusic") && note ("youtubeMusic")->id == text::FactId::TargetMeasured && note ("youtubeMusic")->args[0].number == -7.0
+        && note ("club") && note ("club")->id == text::FactId::TargetPractice && note ("club")->args[0].number == -8.0
+        && note ("cdDynamic") && note ("cdDynamic")->id == text::FactId::TargetPractice
+        && note ("bandcamp") && note ("bandcamp")->id == text::FactId::TargetNoNormalisation
+        && ! note ("allStreaming") && ! note ("spotify") && ! note ("td1008") && ! note ("nowhere"),
+        "measured, practice, no normalisation — and nothing for a platform's published number or a standard: "
+            + ru (*note ("youtubeMusic")) + " / " + ru (*note ("club")) + " / " + ru (*note ("bandcamp")));
+    ok (! s.snapshot().view().targetNote, "allStreaming's snapshot carries no note");
+    auto tp = measured (mix, "youtubeMusic"); auto& t = *tp;
+    HpfFields<Touched> hand; hand.fq = 20.0; hand.slope = 48;
+    ok (t.apply (command::SetManual { 3, true }).rejection == Rejection::None && edit (t, hand), "PRECONDITION: youtubeMusic, a hand high-pass");
+    // Across the wire: the advice, the sounding slope and the note, whole.
+    const auto again = t.snapshot();
+    std::string json (std::size_t (Codec::encodedBytes (again.view()).bytes), '\0');
+    Snapshot restored;
+    ok (Codec::encode (again.view(), json) == CodecStatus::Ok && Codec::decode (json, restored) == CodecStatus::Ok, "PRECONDITION: encoded and decoded");
+    bool carried = restored.view().plan.facts.count == again.view().plan.facts.count && again.view().targetNote && restored.view().targetNote
+        && sameLine (*restored.view().targetNote, *again.view().targetNote) && restored.view().plan.hpf.soundingSlope == 48;
+    for (std::size_t i = 0; carried && i < again.view().plan.facts.count; ++i)
+        carried = restored.view().plan.facts.items[i].device == again.view().plan.facts.items[i].device
+               && sameLine (restored.view().plan.facts.items[i].fact, again.view().plan.facts.items[i].fact);
+    ok (carried && again.view().plan.facts.count > 2, "the codec carries the advice, the sounding slope and the target's note whole");
+}
+
 int main()
 {
     std::printf ("felitronics::session — the limiter, the dither and the whole plan sounding\n");
@@ -1969,5 +2070,6 @@ int main()
     theObservationsSpeakForThemselves();
     theReadingsAreFacts();
     theNeedlesAreThePlansNeedles();
+    theAdviceIsAFact();
     return felitronics::test::report();
 }

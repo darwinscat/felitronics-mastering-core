@@ -244,6 +244,16 @@ inline constexpr FactShape kFacts[] = {
     { FactId::SourceLowestBandUnsure, "sourceLowestBandUnsure", { { { "note", ArgKind::Midi, {} }, { "hz", ArgKind::Value, {} } } }, 2 },
     { FactId::ObservationUnmeasured, "observationUnmeasured", { { { "name", ArgKind::Term, "observation" }, { "reason", ArgKind::Term, "measurementReason" } } }, 2 },
     { FactId::TempoConfidence, "tempoConfidence", { { { "confidence", ArgKind::Term, "tempoConfidence" } } }, 1 },
+    // The plan's advice and the targets' notes.
+    { FactId::HpfBelowComfort, "hpfBelowComfort", { { { "cutoff", ArgKind::Value, {} }, { "low", ArgKind::Value, {} }, { "high", ArgKind::Value, {} } } }, 3 },
+    { FactId::HpfAboveComfort, "hpfAboveComfort", { { { "cutoff", ArgKind::Value, {} }, { "low", ArgKind::Value, {} }, { "high", ArgKind::Value, {} } } }, 3 },
+    { FactId::HpfSlopeGentle, "hpfSlopeGentle", { { { "slope", ArgKind::Count, {} }, { "gentlest", ArgKind::Count, {} } } }, 2 },
+    { FactId::HpfSlopeSteep, "hpfSlopeSteep", { { { "slope", ArgKind::Count, {} }, { "steepest", ArgKind::Count, {} } } }, 2 },
+    { FactId::EqOvershoot, "eqOvershoot", { { { "db", ArgKind::Value, {} }, { "hz", ArgKind::Value, {} } } }, 2 },
+    { FactId::MonoBassOutsideZones, "monoBassOutsideZones", { { { "crossover", ArgKind::Value, {} }, { "clubFrom", ArgKind::Value, {} }, { "clubTo", ArgKind::Value, {} }, { "vinylFrom", ArgKind::Value, {} }, { "vinylTo", ArgKind::Value, {} } } }, 5 },
+    { FactId::TargetMeasured, "targetMeasured", { { { "lufs", ArgKind::Value, {} } } }, 1 },
+    { FactId::TargetPractice, "targetPractice", { { { "lufs", ArgKind::Value, {} } } }, 1 },
+    { FactId::TargetNoNormalisation, "targetNoNormalisation", {}, 0 },
 
 };
 inline constexpr std::size_t kFactCount = sizeof (kFacts) / sizeof (kFacts[0]);

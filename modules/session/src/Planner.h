@@ -98,7 +98,8 @@ struct Awaited
 
 // THE PLAN'S REASONS (PlanView::facts), stated by PlanText and nothing else: every line it gives for a Ready plan, and
 // the waiting fact the plan's awaited, awaitedBy and awaitedFraction name — which replaces the one stated before it.
-void stateReasons (PlanView& plan) noexcept;
+// `eq` is the EQ curve against its norm (eqFinding, EqCurve.h), which the plan does not carry.
+void stateReasons (PlanView& plan, const EqFinding& eq) noexcept;
 void stateWaiting (PlanView& plan) noexcept;
 
 // A device's plan in `plans`, by its place in the order of Device.

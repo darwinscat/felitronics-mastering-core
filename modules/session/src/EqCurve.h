@@ -40,6 +40,10 @@ void eqCurve (std::span<const eq::BandParams> bands, double rate, std::span<EqPo
 // ...of the bands the project's EQ devices write.
 void eqCurve (const Project& project, const Rules& rules, double rate, std::span<EqPoint> output) noexcept;
 
+// THE EQ CURVE AGAINST ITS NORM (EqFinding, Session.h): the shelves the project's devices write — tilt's and low's, as
+// they sound — summed on the snapshot's kEqCurvePoints at `rate`, against [eq] curve.warnDb.
+[[nodiscard]] EqFinding eqFinding (const Devices& devices, const Rules& rules, double rate) noexcept;
+
 // THE HIGH-PASS AS THE CHAIN RUNS IT — the same cascade the band above describes (cutoff `fc`, `slope` dB/oct, at `rate`,
 // the cutoff clamped as the engine clamps it). The loss it takes at `hz`, dB, positive; and the cutoff at which it takes
 // exactly `lossDb` at `hz`, found on that response by bisection — never below the lowest cutoff the engine designs, where

@@ -99,6 +99,18 @@ cd           = { group = "delivery", lufs = -9, tp = -0.3, monoBass = 120, hpfFl
 # Bandcamp does not normalise loudness (confirmed by Bandcamp): a delivery preset, not a platform target.
 bandcamp     = { group = "delivery", lufs = -10, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
 
+# THE TARGETS' NOTES — where a target's loudness comes from, where that is not a platform's published number or a
+# standard; a shell shows the note beside the target (SnapshotText::targetNote). A target without a row has no note.
+#   measured         read off the platform, not published (YouTube Music's "Stats for nerds")
+#   practice         what masters of this kind are observed at: mastering practice, not a standard
+#   noNormalisation  the destination does not normalise loudness: a delivery preset, not a platform target
+# What is shown, not what sounds: left out of the sound version. Every key names a row of [targets].
+[notes]
+cdDynamic = "practice"
+club = "practice"
+youtubeMusic = "measured"
+bandcamp = "noNormalisation"
+
 # THE HAND EDIT OF A TARGET'S TWO NUMBERS. A person may change the loudness and the ceiling of the chosen target in
 # place: from…to is the knob's travel, step its step, green the range drawn green — broadcast and streaming loudness
 # for lufs, a ceiling that leaves a codec its headroom for tp. Travel and step guide the slider; every target default

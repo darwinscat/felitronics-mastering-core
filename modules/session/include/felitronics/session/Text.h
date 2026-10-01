@@ -86,6 +86,8 @@ enum class Plural : std::uint8_t { Zero, One, Two, Few, Many, Other };
 //   100 – 199   a command's rejection: 100 + its Rejection code (Commands.h), one fact per code
 //   200 – 299   the phases of the work
 //   300 – 399   the session's errors
+//   400 – 499   the measurements and the observations
+//   500 – 599   the plan's advice and the targets' notes
 // The arguments each fact takes, by name and kind, are src/TextFacts.h's, and the build holds the catalog to them.
 enum class FactId : std::uint16_t
 {
@@ -291,6 +293,18 @@ enum class FactId : std::uint16_t
     SourceLowestBandUnsure = 436, // the lowest occupied band: {note} ({hz}), unsure — under the margin a sure note stands
     ObservationUnmeasured = 437, // {name}: not measured — {reason}
     TempoConfidence = 438,     // a reading: how sure the tempo is — {confidence}
+    // The plan's advice (PlanText): a device's value as it sounds, against the norm the config draws on its knob.
+    HpfBelowComfort = 500,     // the high-pass at {cutoff} is below the comfort window {low}–{high}
+    HpfAboveComfort = 501,     // the high-pass at {cutoff} is above the comfort window {low}–{high}
+    HpfSlopeGentle = 502,      // a slope of {slope} dB/oct is gentler than the usual, {gentlest} dB/oct and up
+    HpfSlopeSteep = 503,       // a slope of {slope} dB/oct is steeper than the usual, {steepest} dB/oct at most
+    EqOvershoot = 504,         // the EQ curve is beyond the norm: {db} at {hz}
+    MonoBassOutsideZones = 505, // no destination asks for mono bass below {crossover}: club {clubFrom}–{clubTo}, vinyl …
+    // The target's note (SnapshotText::targetNote): where its loudness comes from, where that is not a platform's
+    // published number or a standard.
+    TargetMeasured = 506,      // {lufs} is measured on the platform, not a published specification
+    TargetPractice = 507,      // {lufs} is mastering practice, not a standard
+    TargetNoNormalisation = 508, // the destination does not normalise loudness: a delivery preset
 
 };
 

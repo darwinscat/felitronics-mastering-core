@@ -1171,3 +1171,41 @@ en = "The limiter works in {limiter} of the windows; {active} of the windows are
 [messages.masterCostBands]
 ru = "Потеря удара по полосам: низ {low}, нижняя середина {lowMid}, верхняя середина {highMid}, верх {high}."
 en = "Impact loss by band: low {low}, low-mid {lowMid}, high-mid {highMid}, high {high}."
+
+# The plan's advice: a device's value as it sounds, against the norm drawn on its knob.
+[messages.hpfBelowComfort]
+ru = "ФВЧ {cutoff} ниже комфортного окна {low}–{high}: так низко он только страхует от постоянной составляющей и не чистит низ."
+en = "HPF {cutoff} is below the comfort window {low}–{high}: this low it only guards against DC and does not clean the low end."
+
+[messages.hpfAboveComfort]
+ru = "ФВЧ {cutoff} выше комфортного окна {low}–{high}: он забирает уже музыку, а не мусор."
+en = "HPF {cutoff} is above the comfort window {low}–{high}: it takes music, not rubbish."
+
+[messages.hpfSlopeGentle]
+ru = "Крутизна ФВЧ {slope} дБ/окт мягче обычной, от {gentlest} дБ/окт: он хуже чистит и глубже всех заходит в музыку."
+en = "An HPF slope of {slope} dB/oct is gentler than the usual {gentlest} dB/oct and up: it cleans less and reaches furthest into the music."
+
+[messages.hpfSlopeSteep]
+ru = "Крутизна ФВЧ {slope} дБ/окт круче обычной, до {steepest} дБ/окт: после среза он звенит."
+en = "An HPF slope of {slope} dB/oct is steeper than the usual {steepest} dB/oct at most: it rings after the cutoff."
+
+[messages.eqOvershoot]
+ru = "Кривая EQ за пределами нормы: {db} на {hz}."
+en = "The EQ curve is beyond the norm: {db} at {hz}."
+
+[messages.monoBassOutsideZones]
+ru = "Моно-бас ниже {crossover} не просит ни одно назначение: клуб сводит низ в моно на {clubFrom}–{clubTo}, винил — на {vinylFrom}–{vinylTo}."
+en = "No destination asks for mono bass below {crossover}: a club folds the low end to mono at {clubFrom}–{clubTo}, vinyl at {vinylFrom}–{vinylTo}."
+
+# The target's note: where its loudness comes from, where that is not a platform's published number or a standard.
+[messages.targetMeasured]
+ru = "{lufs} измерено на самой платформе, это не опубликованная спецификация."
+en = "{lufs} is measured on the platform itself, not a published specification."
+
+[messages.targetPractice]
+ru = "{lufs} — практика мастеринга, а не стандарт."
+en = "{lufs} is mastering practice, not a standard."
+
+[messages.targetNoNormalisation]
+ru = "Платформа не нормализует громкость: это пресет доставки, а не цель платформы."
+en = "The platform does not normalise loudness: a delivery preset, not a platform target."

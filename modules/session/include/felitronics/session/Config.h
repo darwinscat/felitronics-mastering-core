@@ -85,6 +85,14 @@ struct Edit
     double step = 0.0;
 };
 
+// The note beside a target ([notes]): where its loudness comes from.
+enum class TargetNote : std::uint8_t { Measured, Practice, NoNormalisation };
+struct TargetNoteRow
+{
+    std::string key;                           // a row of [targets]
+    TargetNote note = TargetNote::Measured;
+};
+
 struct Targets
 {
     std::string defaultTarget;                 // `default`
@@ -92,6 +100,7 @@ struct Targets
     std::vector<Target> targets;               // in the document's order
     Edit editLufs;                             // [edit] lufs
     Edit editTp;                               // [edit] tp
+    std::vector<TargetNoteRow> notes;          // [notes], in the byte order of their keys
 
     // The row whose key is `key`, or null.
     [[nodiscard]] const Target* find (std::string_view key) const noexcept;
@@ -557,7 +566,7 @@ struct Problem
 // The same on every platform, and computed from the data compiled into the library without allocating.
 //   all    every key of both documents: which config this is.
 //   sound  what can change a master; when it is not sure, a key stays in. It leaves out only: what is shown (the main
-//          list and the order of the target rows, the hand edit's travels and green ranges, the red and comfort zones —
+//          list and the order of the target rows, the targets' notes, the hand edit's travels and green ranges, the red and comfort zones —
 //          hpf.comfort, tilt.normal, low.normal, hpf.slopesNormal — the curve scales and marks, the knob scale's
 //          zones); what prints a finding or a warning without switching a device (every observation threshold but
 //          observations.polarity, which keeps mono bass out; the peak clipper's density figures); what is measured

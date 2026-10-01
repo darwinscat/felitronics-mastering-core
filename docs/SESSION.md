@@ -340,6 +340,18 @@ is not Ready states that fact alone, or nothing. A shell shows them as they are 
 numbers it does not have. Each is written as an event's fact is (`WireFact`); the contract scenario `plan-pending`
 records a waiting plan, the master it refuses, and its reasons once Ready.
 
+**The advice beside a knob is a fact too** (facts 500–505, `PlanText::hpfCutoffAdvice`, `hpfSlopeAdvice`,
+`monoBassAdvice`, `eqAdvice`): the value as it sounds — a person's or the machine's — against the norm engine.toml draws on
+the knob, so a hand edit that leaves the norm gets its advice in the next snapshot. The high-pass's cutoff below or above
+`[hpf] comfort` (24–42 Hz, strictly, the window named in the fact) and its slope gentler or steeper than `slopesNormal`
+(a slope between two normal ones is inside; `plan.hpf.soundingSlope` carries the slope that sounds); mono bass's
+crossover outside every zone of `[monoBass.zones]` (ends inside); the EQ curve of the shelves as they sound (tilt and
+low, never the high-pass) past `[eq] curve.warnDb`, at the point of the largest |dB|, said of the shelf that gives the
+larger part there. Nothing for a device out of the chain. `kPlanFacts` is 18. **The target's note** (facts 506–508,
+`SnapshotText::targetNote`, the snapshot's `targetNote` beside `target`): where the target's loudness comes from, where
+targets.toml `[notes]` says it is not a platform's published number or a standard — measured (youtubeMusic), practice
+(cdDynamic, club), no normalisation (bandcamp). `[notes]` is shown, not sounding: it moves `all`, never `sound`.
+
 **A finding is the planner's proposal; a sentence states what sounds.** `plan.hpf` and `plan.monoBass` hold what the
 machine proposes and what it stood on — its cutoff and the note behind it, the loss at its crossover. What sounds is the
 project's device: a person's layer over a machine's layer that a project file may have written. Each finding says which
