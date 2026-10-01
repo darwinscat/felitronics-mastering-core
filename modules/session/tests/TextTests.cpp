@@ -794,6 +794,28 @@ template <class Mask> bool fieldTermsMatch (session::Device device, std::string&
     return match;
 }
 
+// The words an observation is named by, what deals with it and why it was not measured: every term of the three groups,
+// in both declared languages — the handling's terms too, which no fact takes yet (a shell labels by them).
+void theObservationsHaveTheirWords()
+{
+    felitronics::test::group ("the observations' words: their names, their handling and the reasons, in Russian and English");
+    const auto terms = detail::catalogRoot().find ("terms");
+    std::size_t names = 0, handling = 0, reasons = 0;
+    bool worded = true;
+    for (const auto& t : detail::kTerms)
+    {
+        if (t.group != "observation" && t.group != "handledBy" && t.group != "measurementReason") continue;
+        names += t.group == "observation"; handling += t.group == "handledBy"; reasons += t.group == "measurementReason";
+        for (const char* lang : { "ru", "en" })
+        {
+            const auto word = terms.find (t.group).find (t.key).find (lang).string();
+            worded = worded && word && ! word->empty();
+        }
+    }
+    ok (worded && names == 17 && handling == 4 && reasons == 10,
+        "17 names, 4 handlings (nothing, HPF, mono bass, by hand) and 10 reasons, each worded in Russian and English");
+}
+
 void everyRejectionIsAFact()
 {
     felitronics::test::group ("a command's rejection: every code a fact of its own, in ru and en; a refused field named");
@@ -840,7 +862,7 @@ void everyRejectionIsAFact()
         inRange = inRange && ((std::size_t) shape.id < 100 || ((std::size_t) shape.id > 100 && (std::size_t) shape.id <= 100 + last)
             || ((std::size_t) shape.id >= 200 && (std::size_t) shape.id <= 207)
             || ((std::size_t) shape.id >= 300 && (std::size_t) shape.id <= 305)
-            || ((std::size_t) shape.id >= 400 && (std::size_t) shape.id <= 436));
+            || ((std::size_t) shape.id >= 400 && (std::size_t) shape.id <= 437));
     ok (inRange, "rejections, phases and session errors occupy only their own declared ranges");
 
     // THE FIELDS, held against the state machine's own walk of them (src/Devices.h).
@@ -1090,7 +1112,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0xe23df8564b622cc9ull;   // …, the observations (52–80, 419–436), the target-change warning (81), what departs from vinyl (82–87) and the clipper's cut off the peaks
+    constexpr std::uint64_t kPinned = 0xfc6de5d659c53037ull;   // …, the observations (52–80, 419–436), the target-change warning (81), what departs from vinyl (82–87), the clipper's cut off the peaks and an observation not measured (437)
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");
@@ -1114,6 +1136,7 @@ int main (int argc, char** argv)
     pluralsAreCldrsOnThePrintedNumber();
     everyMessageRenders();
     everyRejectionIsAFact();
+    theObservationsHaveTheirWords();
     typedNumbersAreParsed();
     theDemandCoversWhatTextAsksFor();
     theCorpusIsTheSameBytesOnEveryRow();

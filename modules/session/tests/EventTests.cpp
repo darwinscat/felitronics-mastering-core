@@ -193,7 +193,10 @@ void pump()
     ok (one.size() > 22 && cancelled.size() > one.size(), "measurement publishes live work and cancellation adds events");
     // The phases carry the config's version (weightsVersion): a new config moves these pins — and the master is rendered
     // (a master the session decides runs its job: its passes, its cost and its facts are events of the scenario).
-    ok (eventsHash (one) == 0x61500c6de9e9dd95ull && eventsHash (cancelled) == 0x1fd78c28c6526518ull, "event fixtures pin every active payload field");
+    char hashes[48];
+    std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
+    ok (eventsHash (one) == 0x691c5c5e4b8a17c7ull && eventsHash (cancelled) == 0x7923d108f8d47dbcull,
+        "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     Audio audio; auto s = fresh();
     const auto old = apply (*s, audio.load()).job;

@@ -56,6 +56,9 @@ struct SnapshotView
     double pendingMasterBytes = 0.0;
     PlanView plan {};
     Observations observations {};
+    // THE OBSERVATIONS' LINES, as ObservationText::facts states them from `observations` — so a shell shows each one
+    // without composing it: every kind found or not measured, in the order of ObservationKind. Empty before a source.
+    BoundedList<ObservationFact, kObservationKinds> observationFacts {};
 };
 // THE SNAPSHOT'S OWN SENTENCES, as ObservationText and PlanText give theirs from what the snapshot carries.
 // targetChange: the warning a shell shows in its confirmation BEFORE it sends SetTarget (owner decision, 28.09: a change

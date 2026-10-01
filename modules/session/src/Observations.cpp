@@ -87,7 +87,8 @@ ObservationStyle styleOf (const ObservationInputs& in, std::string_view kind) no
 {
     const auto name = in.rules.engine.find ("observations").find ("kinds").find (kind).string();
     if (! name) storageOverflow();
-    return *name == "error" ? ObservationStyle::Error : *name == "warning" ? ObservationStyle::Warning : ObservationStyle::Note;
+    return *name == "error" ? ObservationStyle::Error : *name == "warning" ? ObservationStyle::Warning
+         : *name == "reading" ? ObservationStyle::Reading : ObservationStyle::Note;
 }
 Observation start (const ObservationInputs& in, std::string_view kind, HandledBy handledBy, bool hypothesis) noexcept
 {
@@ -649,9 +650,49 @@ const Observation& ObservationText::of (const Observations& all, ObservationKind
     detail::storageOverflow();
 }
 
+namespace
+{
+// The kind's name, and a reason's words: the terms are in the order of ObservationKind and of MeasurementReason.
+text::Term nameOf (ObservationKind kind) noexcept
+{
+    static_assert (unsigned (text::Term::ObservationHumWandered) - unsigned (text::Term::ObservationClipping) + 1u == kObservationKinds);
+    return text::Term (unsigned (text::Term::ObservationClipping) + unsigned (kind));
+}
+text::Term reasonOf (MeasurementReason reason) noexcept
+{
+    switch (reason)
+    {
+        case MeasurementReason::None:           break;
+        case MeasurementReason::Pending:        return text::Term::ReasonPending;
+        case MeasurementReason::Cancelled:      return text::Term::ReasonCancelled;
+        case MeasurementReason::Unsupported:    return text::Term::ReasonUnsupported;
+        case MeasurementReason::TooShort:       return text::Term::ReasonTooShort;
+        case MeasurementReason::NonFinite:      return text::Term::ReasonNonFinite;
+        case MeasurementReason::Capacity:       return text::Term::ReasonCapacity;
+        case MeasurementReason::NoSignal:       return text::Term::ReasonNoSignal;
+        case MeasurementReason::NotImplemented: return text::Term::ReasonNotImplemented;
+        case MeasurementReason::NeedNotAbove3:  return text::Term::ReasonNeedNotAbove3;
+        case MeasurementReason::Memory:         return text::Term::ReasonMemory;
+    }
+    // Not measured always carries a reason (Observations.cpp's unmeasured()).
+    detail::storageOverflow();
+}
+}
+
+BoundedList<ObservationFact, kObservationKinds> ObservationText::facts (const Observations& all) noexcept
+{
+    BoundedList<ObservationFact, kObservationKinds> lines;
+    for (std::size_t k = 0; k < kObservationKinds; ++k)
+        if (const auto said = fact (ObservationKind (k), of (all, ObservationKind (k))))
+            lines.items[lines.count++] = { ObservationKind (k), *said };
+    return lines;
+}
+
 std::optional<text::Fact> ObservationText::fact (ObservationKind kind, const Observation& o) noexcept
 {
     using text::Arg; using text::Fact; using text::FactId; using text::Unit;
+    if (o.status == ObservationStatus::NotMeasured)
+        return Fact::of (FactId::ObservationUnmeasured, Arg::term (nameOf (kind)), Arg::term (reasonOf (o.reason)));
     if (o.status != ObservationStatus::Found) return std::nullopt;
     const auto at = [] (double s) { return Arg::value (s, Unit::S, 0); };
     const auto count = [] (double n) { return Arg::count (std::int64_t (n)); };

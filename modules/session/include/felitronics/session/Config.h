@@ -360,7 +360,7 @@ struct StereoBursts
     std::int32_t eventCapacity = 0;
 };
 
-enum class Kind : std::uint8_t { Error, Warning, Note };
+enum class Kind : std::uint8_t { Error, Warning, Note, Reading };
 
 // [observations.kinds]: the kind of every finding the session publishes.
 struct Kinds

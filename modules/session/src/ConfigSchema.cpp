@@ -97,7 +97,8 @@ constexpr Name<SaturationShape> kShapes[] = { { "tanh", SaturationShape::Tanh },
                                               { "transformer", SaturationShape::Transformer }, { "tape", SaturationShape::Tape } };
 constexpr Name<NoiseShaping> kShapings[] = { { "none", NoiseShaping::None }, { "weighted", NoiseShaping::Weighted },
                                              { "psycho", NoiseShaping::Psycho } };
-constexpr Name<Kind> kKinds[] = { { "error", Kind::Error }, { "warning", Kind::Warning }, { "note", Kind::Note } };
+constexpr Name<Kind> kKinds[] = { { "error", Kind::Error }, { "warning", Kind::Warning }, { "note", Kind::Note },
+                                   { "reading", Kind::Reading } };
 
 // Exact equality of two doubles, each the correctly rounded value of a decimal of a document, without -Wfloat-equal's
 // objection.
