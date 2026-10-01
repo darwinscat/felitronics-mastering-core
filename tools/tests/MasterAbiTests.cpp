@@ -439,7 +439,14 @@ int main()
         ok (fc_master_configure (h, &bad, &r) == FC_ERR_ENUM, "one past the last compressor mode");
         bad = p; bad.compressor.link = 2;
         ok (fc_master_configure (h, &bad, &r) == FC_ERR_ENUM, "one past the last link mode");
-        bad = p; bad.clipper.shape = 4;
+        bool shapesTaken = true;
+        for (const int shape : { FC_SHAPE_TUBE, FC_SHAPE_TRANSISTOR, FC_SHAPE_TRANSFORMER, FC_SHAPE_TAPE })
+        {
+            bad = p; bad.clipper.shape = shape;
+            shapesTaken = shapesTaken && fc_master_configure (h, &bad, &r) == FC_OK;
+        }
+        ok (shapesTaken, "the four shapes of felitronics-core v0.57.0 (tube, transistor, transformer, tape) are taken");
+        bad = p; bad.clipper.shape = FC_SHAPE_TAPE + 1;
         ok (fc_master_configure (h, &bad, &r) == FC_ERR_ENUM, "one past the last clipper shape");
         bad = p; bad.dither.shaping = 3;
         ok (fc_master_configure (h, &bad, &r) == FC_ERR_ENUM, "one past the last noise shaping");

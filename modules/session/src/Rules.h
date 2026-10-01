@@ -58,6 +58,7 @@ struct Rules
     Decimal glueDefault {};                    // [glue] default, on the knob
     Knob drive {}, mix {}, output {};          // [saturation] driveRange, mixRange, outputRange, by their steps
     Decimal driveDefault {}, mixDefault {}, outputDefault {};   // [saturation] driveDb, mix, outputDb
+    std::string_view shapeDefault;             // [saturation] shape: the machine's type (Devices.h names them)
     Knob tilt {}, low {};                 // [tilt] hard / step, [low] hard / step
     Knob needles {};                           // [limiter.peakClipper] manualMinDb…manualMaxDb by manualStepDb
     Decimal needlesDefault {};                 // [limiter.peakClipper] betweenCutDb: where the manual cut starts

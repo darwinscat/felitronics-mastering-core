@@ -231,6 +231,18 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (QueryStatus::FloatingPointEnvironment) == 10);
         return 10;
     }
+    else if constexpr (std::is_same_v<T, SaturationType>)
+    {
+        static_assert (unsigned (SaturationType::Tanh) == 0);
+        static_assert (unsigned (SaturationType::Atan) == 1);
+        static_assert (unsigned (SaturationType::Cubic) == 2);
+        static_assert (unsigned (SaturationType::Asym) == 3);
+        static_assert (unsigned (SaturationType::Tube) == 4);
+        static_assert (unsigned (SaturationType::Transistor) == 5);
+        static_assert (unsigned (SaturationType::Transformer) == 6);
+        static_assert (unsigned (SaturationType::Tape) == 7);
+        return 7;
+    }
     else if constexpr (std::is_same_v<T, Sounding>)
     {
         static_assert (unsigned (Sounding::Proposal) == 0);
@@ -541,6 +553,21 @@ constexpr void checkEnum (QueryStatus value) noexcept
         case QueryStatus::Contract: break;
         case QueryStatus::Cancelled: break;
         case QueryStatus::FloatingPointEnvironment: break;
+    }
+}
+
+constexpr void checkEnum (SaturationType value) noexcept
+{
+    switch (value)
+    {
+        case SaturationType::Tanh: break;
+        case SaturationType::Atan: break;
+        case SaturationType::Cubic: break;
+        case SaturationType::Asym: break;
+        case SaturationType::Tube: break;
+        case SaturationType::Transistor: break;
+        case SaturationType::Transformer: break;
+        case SaturationType::Tape: break;
     }
 }
 
@@ -1535,9 +1562,17 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.weightsVersion)>, std::uint64_t>);
         v.field ("weightsVersion", x.weightsVersion);
     }
+    else if constexpr (std::is_same_v<U, PlanFact>)
+    {
+        [[maybe_unused]] auto& [f0, f1] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.device)>, Device>);
+        v.field ("device", x.device);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.fact)>, text::Fact>);
+        v.field ("fact", x.fact);
+    }
     else if constexpr (std::is_same_v<U, PlanView>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.awaited)>, std::optional<Analyzer>>);
         v.field ("awaited", x.awaited);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.awaitedBy)>, std::optional<Device>>);
@@ -1548,6 +1583,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("devices", x.devices);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.dither)>, DitherFinding>);
         v.field ("dither", x.dither);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.facts)>, BoundedList<PlanFact, 14>>);
+        v.field ("facts", x.facts);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.fromFile)>, bool>);
         v.field ("fromFile", x.fromFile);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.glue)>, GlueFinding>);
@@ -1667,7 +1704,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, SaturationFields<Touched>>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.drive)>, std::optional<double>>);
         v.field ("drive", x.drive);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.mix)>, std::optional<double>>);
@@ -1676,10 +1713,12 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("on", x.on);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.output)>, std::optional<double>>);
         v.field ("output", x.output);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.type)>, std::optional<SaturationType>>);
+        v.optionalField ("type", x.type, std::optional<SaturationType> {});
     }
     else if constexpr (std::is_same_v<U, SaturationFields<Value>>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.drive)>, double>);
         v.field ("drive", x.drive);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.mix)>, double>);
@@ -1688,6 +1727,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("on", x.on);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.output)>, double>);
         v.field ("output", x.output);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.type)>, SaturationType>);
+        v.optionalField ("type", x.type, SaturationType::Tanh);
     }
     else if constexpr (std::is_same_v<U, SaturationFinding>)
     {

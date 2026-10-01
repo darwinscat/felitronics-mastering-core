@@ -79,6 +79,8 @@ const SURFACE = {
 };
 // Version 2 (v0.4.0) appends a capabilities field, query kinds and snapshot fields, and no entry point.
 SURFACE[2] = SURFACE[1];
+// Version 3 (v0.5.0) appends the saturation type, the clipper shapes 4-7 and the plan's facts, and no entry point.
+SURFACE[3] = SURFACE[1];
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
 const RUNTIME = ['_malloc', '_free', 'HEAPU32'];

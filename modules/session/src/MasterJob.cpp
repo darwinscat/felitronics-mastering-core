@@ -42,7 +42,7 @@ bool validParams (const mastering::MasteringChainParams& p) noexcept
     if (int (p.compressor.detector) < 0 || int (p.compressor.detector) > 1
         || int (p.compressor.link) < 0 || int (p.compressor.link) > 1
         || int (p.compressor.mode) < 0 || int (p.compressor.mode) > 2
-        || int (p.clipper.shape) < 0 || int (p.clipper.shape) > 3
+        || int (p.clipper.shape) < 0 || int (p.clipper.shape) > int (saturation::WaveShaper::Shape::Tape)
         || int (p.dither.shaping) < 0 || int (p.dither.shaping) > 2
         || ! std::isfinite (p.inputGainDb) || ! std::isfinite (p.preLimiterGainDb)
         || ! std::isfinite (p.monoBass.frequencyHz) || ! std::isfinite (p.monoBass.lowWidth)

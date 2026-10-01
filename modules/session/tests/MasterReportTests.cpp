@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
-#include "DeclaredBudget.h"
+#include "../../../tests/DeclaredBudget.h"
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/session/Config.h>
 #include <felitronics/analysis/BandCrestResult.h>
@@ -21,7 +21,7 @@
 
 using namespace felitronics;
 using felitronics::test::ok;
-namespace budget = felitronics::session::testing;
+namespace declared = felitronics::declared;
 
 namespace
 {
@@ -91,12 +91,12 @@ bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool pr
     const auto checked = s.check (c.request);
     if (checked.rejection != session::Rejection::None) return false;
     session::Answer start;
-    const auto spent = budget::spend ([&] { start = s.apply (c.request); });
-    if (start.rejection != session::Rejection::None || ! budget::covers (checked.bytes, spent)) return false;
+    const auto spent = declared::spend ([&] { start = s.apply (c.request); });
+    if (start.rejection != session::Rejection::None || ! declared::covers (checked.bytes, spent)) return false;
     std::uint64_t largestStep = 0;
     for (unsigned i = 0; i < 400000 && s.job() != 0; ++i)
     {
-        const auto stepSpent = budget::spend ([&] { (void) s.step (i % 3u == 0 ? 1u : i % 3u == 1 ? 7u : 73u); });
+        const auto stepSpent = declared::spend ([&] { (void) s.step (i % 3u == 0 ? 1u : i % 3u == 1 ? 7u : 73u); });
         largestStep = std::max (largestStep, std::uint64_t (stepSpent.bytes));
     }
     if (s.job() != 0 || largestStep > checked.bytes || s.masters().size() != 1
@@ -310,23 +310,23 @@ bool memoryLifecycle (Case& c)
             const auto before = s.revision();
             if (s.setCapacity ({ double (ceiling - 1u), double (ceiling) }) != session::Status::Ok) return false;
             session::Answer refused;
-            const auto spent = budget::spend ([&] { refused = s.apply (request); });
+            const auto spent = declared::spend ([&] { refused = s.apply (request); });
             if (refused.rejection != session::Rejection::Memory || spent.requests != 0
                 || s.revision() != before || s.liveBytes() != double (initial)) return false;
             if (s.setCapacity ({ 9007199254740991.0, double (declared.largestBlockBytes - 1u) })
                 != session::Status::Ok) return false;
-            const auto blockSpent = budget::spend ([&] { refused = s.apply (request); });
+            const auto blockSpent = declared::spend ([&] { refused = s.apply (request); });
             if (refused.rejection != session::Rejection::Memory || blockSpent.requests != 0
                 || s.revision() != before) return false;
             if (s.setCapacity ({}) != session::Status::Ok) return false;
         }
         std::uint64_t peakLive = initial;
-        budget::LifecycleBudget allocation { declared.bytes, declared.largestBlockBytes };
+        declared::LifecycleBudget allocation { declared.bytes, declared.largestBlockBytes };
         bool covered = true;
         const auto charge = [&] (auto&& work)
         {
             const auto before = std::uint64_t (s.liveBytes());
-            const auto spent = budget::spend (work);
+            const auto spent = declared::spend (work);
             const auto after = std::uint64_t (s.liveBytes());
             if (spent.bytes < 0) { covered = false; return; }
             peakLive = std::max ({ peakLive, before, after });
@@ -394,8 +394,8 @@ int main()
     ok (run (fractionalLate, 22050, 48000, false, false, false, 8)
         && lateCrestAfterRelease (fractionalLate),
         "22.05 kHz late crest joins after PCM release on the same sample grid");
-    budget::LifecycleBudget shortDeclaration { 96, 96 };
-    ok (budget::covers (96, { 1, 64 }) && shortDeclaration.charge ({ 1, 64 })
+    declared::LifecycleBudget shortDeclaration { 96, 96 };
+    ok (declared::covers (96, { 1, 64 }) && shortDeclaration.charge ({ 1, 64 })
         && ! shortDeclaration.charge ({ 1, 64 }),
         "lifecycle control rejects aggregate demand that separate call checks miss");
     Case gain;
@@ -419,8 +419,8 @@ int main()
         ok (largest < 0.01, "gain-only crest comparison does not invent impact loss");
         const auto snapshotBytes = session::Snapshot::storageFor (sourceSnapshot.view());
         session::Snapshot copy;
-        const auto spent = budget::spend ([&] { copy = gain.session->snapshot(); });
-        ok (budget::covers (snapshotBytes, spent)
+        const auto spent = declared::spend ([&] { copy = gain.session->snapshot(); });
+        ok (declared::covers (snapshotBytes, spent)
             && copy.view().masters[0].report->crest.rows.size() == crest.rows.size()
             && copy.view().masters[0].report->cost
             && ! copy.view().masters[0].report->cost->waveform.empty(),
@@ -432,10 +432,10 @@ int main()
             && session::Codec::encode (copy.view(), json) == session::CodecStatus::Ok
             ? session::Codec::decodedBytes ({ json.data(), json.size() }) : session::CodecNeed {};
         session::CodecStatus status = session::CodecStatus::Invalid;
-        const auto decodedSpent = budget::spend ([&] {
+        const auto decodedSpent = declared::spend ([&] {
             status = session::Codec::decode ({ json.data(), json.size() }, decoded);
         });
-        ok (status == session::CodecStatus::Ok && budget::covers (decodedNeed.bytes, decodedSpent)
+        ok (status == session::CodecStatus::Ok && declared::covers (decodedNeed.bytes, decodedSpent)
             && decoded.view().masters[0].report->crest.rows.size() == crest.rows.size()
             && decoded.view().masters[0].report->deliverable == gain.session->masters()[0].report->deliverable
             && decoded.view().masters[0].report->cost
@@ -454,7 +454,7 @@ int main()
         }
         session::Snapshot invalid;
         session::CodecStatus invalidStatus = session::CodecStatus::Ok;
-        const auto invalidSpent = budget::spend ([&] {
+        const auto invalidSpent = declared::spend ([&] {
             invalidStatus = session::Codec::decode (malformed, invalid);
         });
         ok (key != std::string::npos && invalidStatus == session::CodecStatus::Invalid
@@ -469,7 +469,7 @@ int main()
             : shiftedWave.find (waveFrom, waveAt + waveStart.size());
         if (waveFromAt != std::string::npos)
             shiftedWave[waveFromAt + waveFrom.size() - 2u] = '1';
-        const auto waveSpent = budget::spend ([&] {
+        const auto waveSpent = declared::spend ([&] {
             invalidStatus = session::Codec::decode (shiftedWave, invalid);
         });
         ok (waveAt != std::string::npos && waveFromAt != std::string::npos
@@ -483,7 +483,7 @@ int main()
         const auto at = incoherent.find (field);
         if (at != std::string::npos)
             incoherent.replace (at, field.size(), std::string ("\"targetMet\":") + (met ? "false" : "true"));
-        const auto mismatchSpent = budget::spend ([&] {
+        const auto mismatchSpent = declared::spend ([&] {
             invalidStatus = session::Codec::decode (incoherent, invalid);
         });
         ok (at != std::string::npos && invalidStatus == session::CodecStatus::Invalid
@@ -596,7 +596,7 @@ int main()
         for (unsigned i = 0; i < 200000 && ! joinedEvent; ++i)
         {
             session::Stepped joined;
-            const auto spent = budget::spend ([&] { joined = lateReady.session->step (1); });
+            const auto spent = declared::spend ([&] { joined = lateReady.session->step (1); });
             joinAllocated = joinAllocated || spent.requests != 0;
             joinOverran = joinOverran || joined.units > 1;
             for (const auto& event : lateReady.session->events())

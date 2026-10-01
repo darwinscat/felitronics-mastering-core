@@ -20,7 +20,7 @@
 //   * A MASTER KEEPS ITS RECIPE while the project moves on; a load disarms whatever ran on the old source.
 //   * THE NUMBERS THE COMMANDS READ IN PLACE are the schema's, number by number, and the reading says when it is not.
 
-#include "DeclaredBudget.h"   // installs the allocation counter: EVERY form of `new`, over-aligned included
+#include "../../../tests/DeclaredBudget.h"   // installs the allocation counter: EVERY form of `new`, over-aligned included
 #include "FpEnvironmentControl.h"
 #include <felitronics/session/Snapshot.h>
 
@@ -93,7 +93,7 @@ struct felitronics::session::detail::Inspector
 };
 using felitronics::test::ok;
 using felitronics::session::detail::Driver;
-namespace budget = felitronics::session::testing;
+namespace declared = felitronics::declared;
 namespace fpenv = felitronics::session::testing;
 namespace config = felitronics::session::config;
 
@@ -351,7 +351,7 @@ void rejectedWhole (Session& s, const Request& r, Rejection want, std::uint8_t f
     const Seen before = seen (s);
     const Checked checked = s.check (r);
     Answer a;
-    const budget::Spent spent = budget::spend ([&] { a = s.apply (r); });
+    const declared::Spent spent = declared::spend ([&] { a = s.apply (r); });
     ok (a.rejection == want, what + ": rejected as " + nameOf (want) + " (got " + nameOf (a.rejection) + ")");
     ok (a.field == field, what + ": on field " + std::to_string (field) + " (got " + std::to_string (a.field) + ")");
     ok (checked.rejection == want && checked.field == field && checked.bytes == 0,
@@ -434,7 +434,7 @@ void everyCellOfTheEvents()
             Session& s = *x.s;
             const Seen before = seen (s);
             bool done = false;
-            const budget::Spent spent = budget::spend ([&]
+            const declared::Spent spent = declared::spend ([&]
             {
                 done = e == 0 ? Driver::measured1 (s, s.measurementJob(), s.source().hash)
                      : e == 1 ? Driver::measured2 (s, s.measurementJob(), s.source().hash)
@@ -860,13 +860,13 @@ void memoryIsDeclared()
         Session& s = *x.s;
         const Request r = validRequest (c.command, x, 1);
         Checked declared;
-        const budget::Spent checking = budget::spend ([&] { declared = s.check (r); });
+        const declared::Spent checking = declared::spend ([&] { declared = s.check (r); });
         Answer a;
-        const budget::Spent spent = budget::spend ([&] { a = s.apply (r); });
+        const declared::Spent spent = declared::spend ([&] { a = s.apply (r); });
         const std::string what = kCommandNames[std::size_t (c.command)];
         ok (checking.requests == 0, what + ": check() asks the heap for nothing");
         ok (a.rejection == Rejection::None, what + ": PRECONDITION: accepted");
-        ok (budget::covers (declared.bytes, spent), what + ": declared >= requested — " + budget::describe (declared.bytes, spent));
+        ok (declared::covers (declared.bytes, spent), what + ": declared >= requested — " + declared::describe (declared.bytes, spent));
         if (c.requests >= 0)
         {
             ok (spent.bytes == (long long) declared.bytes, what + ": and exactly the declaration");
@@ -884,18 +884,18 @@ void memoryIsDeclared()
         const auto first = x.s->check (command::Master { 1 });
         ok (first.rejection == Rejection::None && first.bytes > 2 * sizeof (Kept), "a decided master declares its job, not only its kept slot");
         Answer asked;
-        const budget::Spent spent = budget::spend ([&] { asked = x.s->apply (command::Master { 2 }); });
-        ok (asked.rejection == Rejection::None && budget::covers (first.bytes, spent) && spent.requests > 0,
-            "and what it asks the heap for is inside the declaration — " + budget::describe (first.bytes, spent));
+        const declared::Spent spent = declared::spend ([&] { asked = x.s->apply (command::Master { 2 }); });
+        ok (asked.rejection == Rejection::None && declared::covers (first.bytes, spent) && spent.requests > 0,
+            "and what it asks the heap for is inside the declaration — " + declared::describe (first.bytes, spent));
         ok (accepted (*x.s, command::Cancel { 3, x.s->job() }), "a master asked and cancelled");
         const auto declared = x.s->check (command::Master { 4 });
         ok (declared.rejection == Rejection::None && declared.bytes < first.bytes, "the next one reuses the kept room and declares the rest");
-        const budget::Spent again = budget::spend ([&] { (void) x.s->apply (command::Master { 5 }); });
-        const budget::Spent done = budget::spend ([&] { (void) Driver::mastered (*x.s, x.s->job()); });
-        ok (budget::covers (declared.bytes, again) && done.requests == 0 && x.s->masters().size() == 2,
+        const declared::Spent again = declared::spend ([&] { (void) x.s->apply (command::Master { 5 }); });
+        const declared::Spent done = declared::spend ([&] { (void) Driver::mastered (*x.s, x.s->job()); });
+        ok (declared::covers (declared.bytes, again) && done.requests == 0 && x.s->masters().size() == 2,
             "the repeated preparation is covered and its ending asks nothing");
     }
-    const budget::Spent reading = budget::spend ([] { (void) detail::rules(); });
+    const declared::Spent reading = declared::spend ([] { (void) detail::rules(); });
     ok (reading.requests == 0, "reading the config in place asks for nothing");
 }
 

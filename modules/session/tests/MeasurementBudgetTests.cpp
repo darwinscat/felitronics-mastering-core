@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
-#include "DeclaredBudget.h"
+#include "../../../tests/DeclaredBudget.h"
 #include "MeasurementPlan.h"
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/session/Wire.h>
@@ -11,7 +11,7 @@
 
 using namespace felitronics::session;
 using felitronics::test::ok;
-namespace budget = felitronics::session::testing;
+namespace declared = felitronics::declared;
 
 int main (int argc, char** argv)
 {
@@ -31,13 +31,13 @@ int main (int argc, char** argv)
     const command::Load load { 1, audio, {} };
     const auto loadPrice = s.check (load);
     Answer loaded;
-    auto spent = budget::spend ([&] { loaded = s.apply (load); });
-    ok (loaded.rejection == Rejection::None && budget::covers (loadPrice.bytes, spent), "load fits its declaration");
+    auto spent = declared::spend ([&] { loaded = s.apply (load); });
+    ok (loaded.rejection == Rejection::None && declared::covers (loadPrice.bytes, spent), "load fits its declaration");
     std::uint64_t allocated = std::uint64_t (spent.bytes);
     unsigned calls = 0;
     while (s.measurementJob() != 0 || s.needlesJob() != 0)
     {
-        spent = budget::spend ([&] { (void) s.step (16); });
+        spent = declared::spend ([&] { (void) s.step (16); });
         allocated += std::uint64_t (spent.bytes);
         bool memory = false;
         for (const auto& event : s.events())
@@ -47,8 +47,8 @@ int main (int argc, char** argv)
     }
     ok (price.peakBytes >= double (allocated), "whole declaration covers load and every execution allocation");
     Snapshot snapshot;
-    spent = budget::spend ([&] { snapshot = s.snapshot(); });
-    ok (budget::covers (std::uint64_t (price.copyBytes), spent), "detached snapshot fits the copy reserve");
+    spent = declared::spend ([&] { snapshot = s.snapshot(); });
+    ok (declared::covers (std::uint64_t (price.copyBytes), spent), "detached snapshot fits the copy reserve");
     const auto copied = spent.bytes;
     const auto encoded = Codec::encodedBytes (snapshot.view());
     const auto wire = Wire::snapshotBytes (snapshot.view());
@@ -56,17 +56,17 @@ int main (int argc, char** argv)
         && double (std::uint64_t (wire.jsonBytes) + wire.rowBytes) <= price.codecBytes, "transferable rows and exact scalar JSON fit the serialization reserve");
     std::unique_ptr<char[]> wireJson;
     std::unique_ptr<double[]> wireRows;
-    spent = budget::spend ([&]
+    spent = declared::spend ([&]
     {
         wireJson.reset (new char[wire.jsonBytes]);
         wireRows.reset (new double[wire.rowBytes / sizeof (double)]);
     });
-    ok (budget::covers (std::uint64_t (price.codecBytes), spent)
+    ok (declared::covers (std::uint64_t (price.codecBytes), spent)
         && Wire::snapshot (snapshot.view(), { wireJson.get(), wire.jsonBytes }, { wireRows.get(), wire.rowBytes / sizeof (double) }) == CodecStatus::Ok,
         "web serialization writes within its declared buffers");
     std::string json;
-    spent = budget::spend ([&] { json.resize (std::size_t (encoded.bytes)); });
-    ok (budget::covers (encoded.bytes + 1u + 64u, spent)
+    spent = declared::spend ([&] { json.resize (std::size_t (encoded.bytes)); });
+    ok (declared::covers (encoded.bytes + 1u + 64u, spent)
         && Codec::encode (snapshot.view(), json) == CodecStatus::Ok, "optional plain JSON export uses its exact size query plus string allocator padding");
     ok (snapshot.view().measurements[2].complete && snapshot.view().measurements[1].total >= snapshot.view().measurements[1].stored,
         "full report and honest clipping counters survive preparation release");
@@ -77,18 +77,18 @@ int main (int argc, char** argv)
     // Capacity refusal, same-source reuse and replacement are independent of the measurement duration.
     (void) s.setCapacity ({});
     const auto repeated = s.check (load);
-    spent = budget::spend ([&] { loaded = s.apply (load); });
-    ok (loaded.rejection == Rejection::None && spent.bytes == 0 && budget::covers (repeated.bytes, spent), "same source reuses every allocation");
+    spent = declared::spend ([&] { loaded = s.apply (load); });
+    ok (loaded.rejection == Rejection::None && spent.bytes == 0 && declared::covers (repeated.bytes, spent), "same source reuses every allocation");
     const auto replacement = s.measurementStorage (audio);
     ok (replacement.loadPeakBytes < s.liveBytes() + 2 * price.sourceBytes + price.allocatorBytes,
         "replacement does not count old and new PCM copies together");
     (void) s.setCapacity ({ s.liveBytes(), 0 });
     pcm[0] = -0.1f;
-    spent = budget::spend ([&] { loaded = s.apply (load); });
+    spent = declared::spend ([&] { loaded = s.apply (load); });
     ok (loaded.rejection == Rejection::Memory && spent.bytes == 0, "refused replacement allocates nothing and preserves the old source");
     (void) s.setCapacity ({});
     const auto nextPrice = s.check (load);
-    spent = budget::spend ([&] { loaded = s.apply (load); });
-    ok (loaded.rejection == Rejection::None && budget::covers (nextPrice.bytes, spent), "new-source replacement fits its declared overlap");
+    spent = declared::spend ([&] { loaded = s.apply (load); });
+    ok (loaded.rejection == Rejection::None && declared::covers (nextPrice.bytes, spent), "new-source replacement fits its declared overlap");
     return felitronics::test::report();
 }

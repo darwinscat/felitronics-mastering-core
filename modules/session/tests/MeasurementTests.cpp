@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
-#include "DeclaredBudget.h"
+#include "../../../tests/DeclaredBudget.h"
 #include "MeasurementPlan.h"
 #include "MeasurementWorkspace.h"
 #include "Driver.h"
@@ -13,7 +13,7 @@
 #include <vector>
 
 using namespace felitronics::session;
-namespace budget = felitronics::session::testing;
+namespace declared = felitronics::declared;
 using felitronics::test::ok;
 
 std::string encode (const SnapshotView& view)
@@ -36,8 +36,8 @@ void ownership()
     ok (s.check (longNameLoad).bytes == demand.bytes + 8u * (longName.size() - load.meta.name.size()),
         "load includes the resident name, its snapshot copy and JSON escaping");
     Answer answer;
-    auto spent = budget::spend ([&] { answer = s.apply (load); });
-    ok (answer.rejection == Rejection::None && budget::covers (demand.bytes, spent), "load declares the whole measurement before copying PCM");
+    auto spent = declared::spend ([&] { answer = s.apply (load); });
+    ok (answer.rejection == Rejection::None && declared::covers (demand.bytes, spent), "load declares the whole measurement before copying PCM");
     const auto original = s.snapshot();
     auto values = std::make_unique<double[]> (3);
     values[0] = 0.25; values[1] = 0.5; values[2] = 0.75;
@@ -53,12 +53,12 @@ void ownership()
     result.framesRead = 4096;
     bool retained = false;
     const auto price = OwnedMeasurements::storageFor ({ &result, 1 });
-    spent = budget::spend ([&] { retained = detail::Driver::retain (s, answer.job, result); });
-    ok (retained && budget::covers (price, spent) && price == std::uint64_t (spent.bytes), "retaining an analyzer result requests exactly its own data");
+    spent = declared::spend ([&] { retained = detail::Driver::retain (s, answer.job, result); });
+    ok (retained && declared::covers (price, spent) && price == std::uint64_t (spent.bytes), "retaining an analyzer result requests exactly its own data");
     const auto event = s.events().back();
     Snapshot saved;
     const auto copyPrice = s.snapshotBytes();
-    spent = budget::spend ([&] { saved = s.snapshot(); });
+    spent = declared::spend ([&] { saved = s.snapshot(); });
     ok (copyPrice == std::uint64_t (spent.bytes), "snapshot copy includes all nested measurement arrays and text");
     name.assign (name.size(), 'x'); values.reset();
     (void) s.step (2);
@@ -72,7 +72,7 @@ void ownership()
     ok (! detail::Driver::retain (s, answer.job, result), "stale analyzer completion cannot overwrite a continued source");
     const auto beforeReuse = s.liveBytes();
     load.id = 3;
-    spent = budget::spend ([&] { answer = s.apply (load); });
+    spent = declared::spend ([&] { answer = s.apply (load); });
     ok (answer.rejection == Rejection::None && spent.bytes == 9 && s.liveBytes() == beforeReuse,
         "identical input reuses PCM and results, allocating only the new source name");
     ok (s.snapshot().view().measurements[7].arrays[0].values[2] == 0.75, "cached result survived its analyzer scratch");
@@ -83,7 +83,7 @@ void ownership()
     const auto whole = encode (s.snapshot().view());
     (void) s.setCapacity ({ s.liveBytes(), 0 });
     load.id = 5; pcm[0] = 0.5f;
-    spent = budget::spend ([&] { answer = s.apply (load); });
+    spent = declared::spend ([&] { answer = s.apply (load); });
     ok (answer.rejection == Rejection::Memory && spent.bytes == 0 && s.revision() == revision
         && s.measurementJob() == job && encode (s.snapshot().view()) == whole, "small budget preserves the complete source, revision, job and results");
     (void) s.setCapacity ({});
@@ -100,13 +100,13 @@ void ownership()
     Snapshot decoded;
     const auto decodePrice = Codec::decodedBytes (json);
     CodecStatus status {};
-    spent = budget::spend ([&] { status = Codec::decode (json, decoded); });
-    ok (status == CodecStatus::Ok && budget::covers (decodePrice.bytes, spent) && encode (decoded.view()) == json,
+    spent = declared::spend ([&] { status = Codec::decode (json, decoded); });
+    ok (status == CodecStatus::Ok && declared::covers (decodePrice.bytes, spent) && encode (decoded.view()) == json,
         "nested result codec round-trips with a declared allocation budget");
     auto broken = json;
     const auto at = broken.find ("\"stored\":\"3\"");
     if (at != std::string::npos) broken.replace (at, 12, "\"stored\":\"9\"");
-    spent = budget::spend ([&] { status = Codec::decode (broken, decoded); });
+    spent = declared::spend ([&] { status = Codec::decode (broken, decoded); });
     ok (status == CodecStatus::Invalid && spent.bytes == 0, "inconsistent result counts refuse before allocation");
     for (unsigned reason = 0; reason <= unsigned (MeasurementReason::NotImplemented); ++reason)
     {
@@ -136,8 +136,8 @@ void allLowEndReadings()
         ok (demand.available && demand.workspace > 0 && demand.result > 0 && demand.rowValues > 0,
             "each low-end reading has preparation, retained rows and result storage");
         bool prepared = false;
-        const auto spent = budget::spend ([&] { prepared = work.prepare (id, load.pcm, plan); });
-        ok (prepared && budget::covers (demand.workspace + 256u * 64u, spent), "all three low-end preparations coexist within their demand");
+        const auto spent = declared::spend ([&] { prepared = work.prepare (id, load.pcm, plan); });
+        ok (prepared && declared::covers (demand.workspace + 256u * 64u, spent), "all three low-end preparations coexist within their demand");
         std::string name = "crossoverHz"; double rows[] { frequencies[i], double (i + 1) };
         MeasurementValue value { name, frequencies[i], MeasurementReason::None, 0 };
         MeasurementArray array { "bands", { 0, 1024, pcm.size(), 48000 }, 2, 1, 1, true, rows };
@@ -145,8 +145,8 @@ void allLowEndReadings()
         result.reason = MeasurementReason::None; result.complete = true; result.framesRead = pcm.size();
         result.key = s.snapshot().view().measurements[index].key; result.numbers = { &value, 1 }; result.arrays = { &array, 1 };
         bool retained = false;
-        const auto retainedBytes = budget::spend ([&] { retained = detail::Driver::retain (s, answer.job, result); });
-        ok (retained && budget::covers (demand.result, retainedBytes), "each low-end reading is independently retained within its result demand");
+        const auto retainedBytes = declared::spend ([&] { retained = detail::Driver::retain (s, answer.job, result); });
+        ok (retained && declared::covers (demand.result, retainedBytes), "each low-end reading is independently retained within its result demand");
         rows[0] = -1; name.assign (name.size(), 'x');
     }
     const std::array instruments { work.lowEnd.get(), work.lowEnd150.get(), work.infraLow.get() };
@@ -194,13 +194,13 @@ void nativePrices()
         for (std::size_t i = 0; i < kAnalyzers; ++i)
         {
             bool prepared = false;
-            const auto spent = budget::spend ([&] { prepared = work.prepare (Analyzer (i), pcm, plan); });
+            const auto spent = declared::spend ([&] { prepared = work.prepare (Analyzer (i), pcm, plan); });
             const auto declared = plan.analyzers[i].workspace + 256u * 64u;
             allocated += std::uint64_t (spent.bytes);
             for (const auto id : detail::MeasurementPlan::streaming)
                 if (Analyzer (i) == id) streamingAllocated += std::uint64_t (spent.bytes);
-            ok (prepared == plan.analyzers[i].available && budget::covers (declared, spent), "native storageFor covers object construction and preparation, including allocator overhead");
-            const auto again = budget::spend ([&] { (void) work.prepare (Analyzer (i), pcm, plan); });
+            ok (prepared == plan.analyzers[i].available && declared::covers (declared, spent), "native storageFor covers object construction and preparation, including allocator overhead");
+            const auto again = declared::spend ([&] { (void) work.prepare (Analyzer (i), pcm, plan); });
             ok (again.bytes == 0, "a paused analyzer keeps its preparation");
             work.release (Analyzer (i));
         }

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
-#include "../../modules/session/tests/DeclaredBudget.h"
+#include "../../tests/DeclaredBudget.h"
 #include "../../modules/session/src/JsonCodec.h"
 #include "../../modules/session/src/QueryState.h"
 #include "../../modules/session/src/MeasurementPlan.h"
@@ -17,7 +17,7 @@
 
 using namespace felitronics::session;
 using felitronics::test::ok;
-namespace budget = felitronics::session::testing;
+namespace declared = felitronics::declared;
 struct felitronics::session::detail::Inspector
 {
     static std::uint64_t frames (const Session& s) { return s.waveform_->index.framesSeen(); }
@@ -58,8 +58,8 @@ QueryResult ask (Session& s, const MeasurementQuery& q)
 {
     QueryResult answer;
     const auto need = s.queryStorage (q);
-    const auto spent = budget::spend ([&] { answer = s.query (q); });
-    ok (budget::covers (need.bytes, spent), budget::describe (need.bytes, spent).c_str());
+    const auto spent = declared::spend ([&] { answer = s.query (q); });
+    ok (declared::covers (need.bytes, spent), declared::describe (need.bytes, spent).c_str());
     hash (answer.view()); return answer;
 }
 void source (std::vector<float>& left, std::vector<float>& right)
@@ -79,8 +79,8 @@ void nativeQueries()
     auto made = Session::create(); auto& s = *made.session;
     const command::Load load { 1, { planes, 2, frames, 48000 }, {} };
     const auto allocation = s.check (load);
-    const auto spent = budget::spend ([&] { ok (s.apply (load).rejection == Rejection::None, "load"); });
-    ok (budget::covers (allocation.bytes, spent), "load is declared including waveform controls");
+    const auto spent = declared::spend ([&] { ok (s.apply (load).rejection == Rejection::None, "load"); });
+    ok (declared::covers (allocation.bytes, spent), "load is declared including waveform controls");
     MeasurementQuery q; q.audioId = s.source().hash; q.toFrame = frames; q.columns = 17; q.requestId = 9007199254740993ull;
     ok (s.queryStorage (q).bytes == 0, "unbuilt waveform demand is allocation free");
     auto pending = ask (s, q); ok (pending.view().status == QueryStatus::Pending && pending.view().values.empty(), "overview explicitly pending before construction");
@@ -260,13 +260,13 @@ void abiQueries()
             ok (fc_session_query_size (handle, request.data(), std::uint32_t (request.size()), &size) == FC_SESSION_OK, "C query buffer bounds");
             std::vector<char> text (size.jsonBytes, '!'); std::vector<double> rows (size.rowBytes / 8u, -777);
             fc_session_status shortStatus {};
-            const auto rejected = budget::spend ([&]
+            const auto rejected = declared::spend ([&]
             { shortStatus = fc_session_query_copy (handle, request.data(), std::uint32_t (request.size()), text.data(), 1, rows.data(), size.rowBytes, &actual); });
             ok (shortStatus == FC_SESSION_ERR_TOO_SMALL, "short query buffer");
             ok (rejected.bytes == 0 && text[0] == '!' && (rows.empty() || same (rows[0], -777)) && actual.jsonBytes == 777, "entry refusal allocates and writes nothing");
-            const auto spent = budget::spend ([&]
+            const auto spent = declared::spend ([&]
             { ok (fc_session_query_copy (handle, request.data(), std::uint32_t (request.size()), text.data(), size.jsonBytes, rows.data(), size.rowBytes, &actual) == FC_SESSION_OK, "C query copy"); });
-            ok (budget::covers (std::uint64_t (demand.bytes), spent), "C query declaration covers counters");
+            ok (declared::covers (std::uint64_t (demand.bytes), spent), "C query declaration covers counters");
             const auto value = native.session->query (q);
             const auto exact = Wire::queryBytes (value.view());
             std::vector<char> expected (exact.jsonBytes); std::vector<double> expectedRows (exact.rowBytes / 8u);
@@ -335,10 +335,10 @@ CQuery queryC (fc_session handle, const MeasurementQuery& q)
     ok (fc_session_query_size (handle, request.data(), std::uint32_t (request.size()), &size) == FC_SESSION_OK, "regression C size");
     std::vector<char> text (size.jsonBytes);
     CQuery out; out.rows.resize (size.rowBytes / sizeof (double));
-    const auto spent = budget::spend ([&]
+    const auto spent = declared::spend ([&]
     { ok (fc_session_query_copy (handle, request.data(), std::uint32_t (request.size()), text.data(), size.jsonBytes,
         out.rows.data(), size.rowBytes, &actual) == FC_SESSION_OK, "regression C copy"); });
-    ok (budget::covers (std::uint64_t (demand.bytes), spent), "regression C allocation declared");
+    ok (declared::covers (std::uint64_t (demand.bytes), spent), "regression C allocation declared");
     out.metadata.assign (text.data(), actual.jsonBytes);
     out.rows.resize (actual.rowBytes / sizeof (double));
     return out;

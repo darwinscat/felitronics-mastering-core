@@ -1,0 +1,37 @@
+{
+  "checks": [
+    {"kind":"snapshot","session":"main","index":0,"path":"state","value":2},
+    {"kind":"snapshot","session":"main","index":0,"path":"plan.status","value":1},
+    {"kind":"snapshot","session":"main","index":0,"path":"plan.awaited","value":11},
+    {"kind":"snapshot","session":"main","index":0,"path":"plan.awaitedBy","value":2},
+    {"kind":"snapshot","session":"main","index":0,"path":"plan.readOnly","value":true},
+    {"kind":"snapshot","session":"main","index":0,"path":"canMaster","value":false},
+    {"kind":"snapshot","session":"main","index":0,"path":"plan.facts.length","value":1},
+    {"kind":"snapshot","session":"main","index":0,"path":"plan.facts.0.device","value":2},
+    {"kind":"snapshot","session":"main","index":0,"path":"plan.facts.0.fact.FactId","value":29},
+    {"kind":"snapshot","session":"main","index":0,"path":"plan.facts.0.fact.args.0.termId","value":38},
+    {"kind":"snapshot","session":"main","index":0,"path":"plan.facts.0.fact.args.1.termId","value":34},
+    {"kind":"answer","session":"main","index":3,"path":"kind","value":"rejected"},
+    {"kind":"answer","session":"main","index":3,"path":"code","value":35},
+    {"kind":"snapshot","session":"main","index":2,"path":"plan.status","value":1},
+    {"kind":"snapshot","session":"main","index":2,"path":"plan.awaitedFraction","value":0.584},
+    {"kind":"snapshot","session":"main","index":2,"path":"plan.facts.length","value":1},
+    {"kind":"snapshot","session":"main","index":2,"path":"plan.facts.0.fact.args.2.number","value":58.4},
+    {"kind":"snapshot","session":"main","index":3,"path":"plan.status","value":3},
+    {"kind":"snapshot","session":"main","index":3,"path":"plan.awaited","value":null},
+    {"kind":"snapshot","session":"main","index":3,"path":"canMaster","value":true},
+    {"kind":"snapshot","session":"main","index":3,"path":"plan.facts.length","value":4},
+    {"kind":"snapshot","session":"main","index":3,"path":"plan.facts.0.fact.FactId","value":34},
+    {"kind":"snapshot","session":"main","index":3,"path":"plan.facts.1.fact.FactId","value":42},
+    {"kind":"snapshot","session":"main","index":3,"path":"plan.facts.2.fact.FactId","value":56},
+    {"kind":"snapshot","session":"main","index":3,"path":"plan.facts.3.fact.FactId","value":71},
+    {"kind":"answer","session":"main","index":4,"path":"kind","value":"accepted"},
+    {"kind":"snapshot","session":"main","index":4,"path":"masters.length","value":1}
+  ],
+  "equal": [
+    [{"kind":"snapshot","session":"main","index":0},{"kind":"snapshot","session":"main","index":1}]
+  ],
+  "minEvents": 1000,
+  "eventKinds": ["phase","measurement","fact","rejected","done"],
+  "rejections": 1
+}

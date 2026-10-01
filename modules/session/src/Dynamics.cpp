@@ -22,6 +22,16 @@
 
 namespace felitronics::session::detail
 {
+// A project's saturation type IS the core's shape: the same order, the same values (felitronics-core v0.57.0).
+static_assert (int (SaturationType::Tanh) == int (saturation::WaveShaper::Shape::Tanh)
+               && int (SaturationType::Atan) == int (saturation::WaveShaper::Shape::Atan)
+               && int (SaturationType::Cubic) == int (saturation::WaveShaper::Shape::Cubic)
+               && int (SaturationType::Asym) == int (saturation::WaveShaper::Shape::Asym)
+               && int (SaturationType::Tube) == int (saturation::WaveShaper::Shape::Tube)
+               && int (SaturationType::Transistor) == int (saturation::WaveShaper::Shape::Transistor)
+               && int (SaturationType::Transformer) == int (saturation::WaveShaper::Shape::Transformer)
+               && int (SaturationType::Tape) == int (saturation::WaveShaper::Shape::Tape));
+
 namespace
 {
 using View = toml::embedded::View;
@@ -225,9 +235,8 @@ void writeDynamics (const PlanInputs& in, const Devices& devices, mastering::Mas
     const auto shaped = saturationFinding (in, devices);
     auto& s = params.clipper;
     s = {};
-    const auto shape = text (saturation.find ("shape"));
-    s.shape = shape == "tanh" ? saturation::WaveShaper::Shape::Tanh : shape == "atan" ? saturation::WaveShaper::Shape::Atan
-            : shape == "cubic" ? saturation::WaveShaper::Shape::Cubic : saturation::WaveShaper::Shape::Asym;
+    // The type as it sounds: a person's pick over the machine's, which is the config's [saturation] shape.
+    s.shape = saturation::WaveShaper::Shape (settings.type);
     s.driveDb = float (shaped.driveDb.value_or (0.0));
     s.bias = float (number (saturation.find ("bias")));
     s.mix = float (settings.mix);

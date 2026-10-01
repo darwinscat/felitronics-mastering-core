@@ -262,7 +262,9 @@ struct Glue
     double detectorOverP95Db = 0.0;            // the threshold's calibration: dB above P95 + threshOffset
 };
 
-enum class SaturationShape : std::uint8_t { Tanh, Atan, Cubic, Asym };
+// felitronics-core's WaveShaper::Shape, in its order and values (Tube … Tape since v0.57.0). The machine's type; a person
+// picks among Tanh, Tube, Transistor, Transformer and Tape only (Project.h, SaturationType).
+enum class SaturationShape : std::uint8_t { Tanh, Atan, Cubic, Asym, Tube, Transistor, Transformer, Tape };
 
 struct Saturation
 {

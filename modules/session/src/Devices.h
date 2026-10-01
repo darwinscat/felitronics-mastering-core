@@ -14,6 +14,9 @@
 #include <felitronics/session/Project.h>
 
 #include <cstdint>
+#include <iterator>
+#include <optional>
+#include <string_view>
 
 namespace felitronics::session::detail
 {
@@ -22,7 +25,7 @@ namespace felitronics::session::detail
 // of [hpf], or one of the Needles modes.
 struct FieldRule
 {
-    enum class Kind : std::uint8_t { Flag, Knob, Slope, Needles };
+    enum class Kind : std::uint8_t { Flag, Knob, Slope, Needles, SaturationType };
     Kind kind = Kind::Flag;
     Knob knob {};
 };
@@ -30,6 +33,26 @@ inline FieldRule flagRule() noexcept { return {}; }
 inline FieldRule knobRule (const Knob& k) noexcept { return { FieldRule::Kind::Knob, k }; }
 inline FieldRule slopeRule() noexcept { return { FieldRule::Kind::Slope, {} }; }
 inline FieldRule needlesRule() noexcept { return { FieldRule::Kind::Needles, {} }; }
+inline FieldRule saturationTypeRule() noexcept { return { FieldRule::Kind::SaturationType, {} }; }
+
+// The saturation types a person may pick (the page offers them): Tanh and the four of felitronics-core v0.57.0. Atan,
+// Cubic and Asym are the config's only — a research setting, never a hand choice.
+[[nodiscard]] constexpr bool handSaturationType (SaturationType t) noexcept
+{
+    return t == SaturationType::Tanh || t == SaturationType::Tube || t == SaturationType::Transistor
+        || t == SaturationType::Transformer || t == SaturationType::Tape;
+}
+
+// The types' names, in the config and in a project file: [saturation] shape, `type.hand = "tape"`.
+inline constexpr std::string_view kSaturationTypeNames[] = { "tanh", "atan", "cubic", "asym", "tube", "transistor",
+                                                             "transformer", "tape" };
+static_assert (std::size (kSaturationTypeNames) == std::size_t (SaturationType::Tape) + 1);
+[[nodiscard]] constexpr std::optional<SaturationType> saturationTypeNamed (std::string_view name) noexcept
+{
+    for (std::size_t i = 0; i < std::size (kSaturationTypeNames); ++i)
+        if (kSaturationTypeNames[i] == name) return SaturationType (i);
+    return std::nullopt;
+}
 
 // DeviceOf<a device's fields, in any form>:
 //   device        which device
@@ -86,7 +109,7 @@ template <template <class> class F> struct DeviceOf<SaturationFields<F>>
 {
     static constexpr Device device = Device::Saturation;
     static constexpr std::string_view name = "saturation";
-    static constexpr std::string_view fields[] = { "on", "drive", "mix", "output" };
+    static constexpr std::string_view fields[] = { "on", "drive", "mix", "output", "type" };
     static auto& layers (Devices& d) noexcept { return d.saturation; }
     static const auto& layers (const Devices& d) noexcept { return d.saturation; }
     template <class V, class... S> static void each (const Rules& r, V&& v, S&&... s)
@@ -95,6 +118,7 @@ template <template <class> class F> struct DeviceOf<SaturationFields<F>>
         v (1, knobRule (r.drive), s.drive...);
         v (2, knobRule (r.mix), s.mix...);
         v (3, knobRule (r.output), s.output...);
+        v (4, saturationTypeRule(), s.type...);
     }
 };
 

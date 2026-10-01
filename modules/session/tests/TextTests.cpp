@@ -30,7 +30,7 @@
 //   * THE SAME BYTES ON EVERY ROW: one FNV-1a hash of a corpus of renderings — every fact in every language, numbers from
 //     a fixed generator in every language and unit, every note — pinned, so native rows and the wasm tier agree.
 
-#include "DeclaredBudget.h"   // installs the allocation counter: EVERY form of `new`
+#include "../../../tests/DeclaredBudget.h"   // installs the allocation counter: EVERY form of `new`
 #include "ConfigTestSupport.h"
 #include "FpEnvironmentControl.h"
 
@@ -61,7 +61,7 @@
 
 namespace text = felitronics::session::text;
 namespace detail = felitronics::session::text::detail;
-namespace budget = felitronics::session::testing;
+namespace declared = felitronics::declared;
 namespace fpenv = felitronics::session::testing;
 using felitronics::test::ok;
 using text::Arg;
@@ -1013,20 +1013,20 @@ void theDemandCoversWhatTextAsksFor()
         for (const Lang l : kAll)
         {
             std::size_t n = 0;
-            const budget::Spent sized = budget::spend ([&] { n = Text::size (f, l); });
+            const declared::Spent sized = declared::spend ([&] { n = Text::size (f, l); });
             std::array<char, 1024> buffer {};
             std::size_t written = 0;
-            const budget::Spent wrote = budget::spend ([&] { written = Text::write (f, l, buffer); });
+            const declared::Spent wrote = declared::spend ([&] { written = Text::write (f, l, buffer); });
             quiet = quiet && sized.requests == 0 && wrote.requests == 0 && written == n;
             const std::uint64_t declared = Text::textBytes (f, l);
             std::string out;
-            const budget::Spent spent = budget::spend ([&] { out = Text::text (f, l); });
-            covered = covered && budget::covers (declared, spent) && out.size() == n && std::string_view (buffer.data(), n) == out;
-            if (! budget::covers (declared, spent)) worst = budget::describe (declared, spent);
+            const declared::Spent spent = declared::spend ([&] { out = Text::text (f, l); });
+            covered = covered && declared::covers (declared, spent) && out.size() == n && std::string_view (buffer.data(), n) == out;
+            if (! declared::covers (declared, spent)) worst = declared::describe (declared, spent);
             if (spent.bytes > 0)
             {
                 seen = true;
-                caught = caught && ! budget::covers (declared - 80, spent);   // the STL's 64 and one 16-byte step short
+                caught = caught && ! declared::covers (declared - 80, spent);   // the STL's 64 and one 16-byte step short
             }
         }
     ok (quiet, "size() and write() asked the heap for nothing, and write() wrote size() bytes");

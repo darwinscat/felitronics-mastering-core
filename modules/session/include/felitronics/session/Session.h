@@ -11,6 +11,7 @@
 #include <felitronics/session/LandingResult.h>
 #include <felitronics/session/Queries.h>
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <optional>
@@ -272,6 +273,25 @@ struct DitherFinding
     bool keptWithoutEffect = false;            // it does not apply, and a person's tick is kept: nothing sounds of it
 };
 
+// A LIST HELD IN PLACE: room for N values, the first `count` of them meaningful — no heap, copied whole with what holds
+// it. The wire carries the `count` values as an array (tools/session-codec-schema.json writes the type `T[<=N]`).
+template <class T, std::size_t N> struct BoundedList
+{
+    static_assert (N <= 255, "count is one byte");
+    std::array<T, N> items {};
+    std::uint8_t count = 0;
+};
+
+// ONE OF THE PLAN'S REASONS: a fact PlanText states, and the device it is said of.
+struct PlanFact
+{
+    Device device = Device::Hpf;
+    text::Fact fact {};
+};
+// Every line PlanText can state of one plan — the high-pass's one, mono bass's three, the glue's three, the limiter's
+// five, the dither's one — and the waiting fact.
+inline constexpr std::size_t kPlanFacts = 14;
+
 struct PlanView
 {
     PlanStatus status = PlanStatus::None;
@@ -303,6 +323,14 @@ struct PlanView
     SaturationFinding saturation {};
     LimiterFinding limiter {};
     DitherFinding dither {};
+    // THE PLAN'S REASONS, as PlanText states them — so a shell shows each device's reasons without composing one. A Ready
+    // plan states every line PlanText gives for it, in the order of Device and, within a device, of PlanText's members:
+    // the high-pass; mono bass, its polarity warning, the part of the piece it was weighed over; the glue's refusal, its
+    // fallback tempo, its held release; the limiter, the warning beside a manual threshold, vinyl's ceiling, needles and
+    // top; the dither. Where the plan names what a master waits for (awaited and awaitedBy), the waiting fact
+    // (PlanWaiting, said of awaitedBy, its progress awaitedFraction) comes last — and a plan that is not Ready states that
+    // fact alone, or nothing. A new plan states its reasons anew; the waiting fact follows the progress between plans.
+    BoundedList<PlanFact, kPlanFacts> facts {};
 };
 
 // THE OBSERVATIONS (owner decision 3.13) — what the measurements found in the FILE, each a fact with its numbers and

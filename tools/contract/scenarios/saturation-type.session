@@ -1,0 +1,18 @@
+create main 134217728
+load 1 measure
+drive 5000 work units
+snapshot
+command {"kind":"editDevice","commandId":"2","device":3,"fields":{"on":true,"drive":6,"type":7}}
+snapshot
+command {"kind":"editDevice","commandId":"3","device":3,"fields":{"type":1,"drive":3}}
+snapshot
+export project saved
+command {"kind":"master","commandId":"4"}
+drive 100000 work units
+snapshot
+summary
+command {"kind":"setTarget","commandId":"5","target":"cd"}
+snapshot
+import project 6 saved
+export project restored
+snapshot

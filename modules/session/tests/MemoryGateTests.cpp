@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
-#include "DeclaredBudget.h"
+#include "../../../tests/DeclaredBudget.h"
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/session/Wire.h>
 #include <felitronics_test.h>
@@ -15,7 +15,7 @@
 
 using namespace felitronics::session;
 using felitronics::test::ok;
-namespace budget = felitronics::session::testing;
+namespace declared = felitronics::declared;
 
 namespace
 {
@@ -33,17 +33,17 @@ bool measure (Session& s, const command::Load& load, Figures& f)
     // The counter totals a call's allocations; one load can ask for several blocks.
     // Assert the block price separately against the known full PCM allocation.
     if (quoted.largestBlockBytes < std::uint64_t (load.pcm.frames) * load.pcm.channelCount * sizeof (float)) return false;
-    budget::LifecycleBudget demand { quoted.bytes, quoted.bytes };
+    declared::LifecycleBudget demand { quoted.bytes, quoted.bytes };
     auto localPeak = before;
     Answer answer;
-    const auto first = budget::spend ([&] { answer = s.apply (load); });
+    const auto first = declared::spend ([&] { answer = s.apply (load); });
     if (answer.rejection != Rejection::None || ! demand.charge (first))
     { std::fprintf (stderr, "measure load %u %lld demand=%llu largest=%llu\n", unsigned (answer.rejection), first.bytes,
         (unsigned long long) quoted.bytes, (unsigned long long) quoted.largestBlockBytes); return false; }
     localPeak = std::max (localPeak, std::uint64_t (s.liveBytes()));
     for (unsigned i = 0; i < 200000 && (s.measurementJob() || s.needlesJob()); ++i)
     {
-        const auto spent = budget::spend ([&] { (void) s.step (i % 3u == 0 ? 1u : i % 3u == 1 ? 7u : 16u); });
+        const auto spent = declared::spend ([&] { (void) s.step (i % 3u == 0 ? 1u : i % 3u == 1 ? 7u : 16u); });
         if (! demand.charge (spent))
         { std::fprintf (stderr, "measure step %u allocated=%llu demand=%llu spent=%lld\n", i,
               (unsigned long long) demand.allocated, (unsigned long long) quoted.bytes, spent.bytes); return false; }
@@ -77,14 +77,14 @@ bool master (Session& s, command::Master request, Figures& f,
     // The source remains resident. The search owns only one full output PCM, even with SRC.
     if (quoted.bytes < outputBytes || quoted.largestBlockBytes < outputBytes
         || before + quoted.bytes < inputBytes + outputBytes) { std::fprintf (stderr, "master pcm price\n"); return false; }
-    budget::LifecycleBudget demand { quoted.bytes, quoted.bytes };
+    declared::LifecycleBudget demand { quoted.bytes, quoted.bytes };
     auto localPeak = before;
     Answer answer;
-    if (! demand.charge (budget::spend ([&] { answer = s.apply (request); }))
+    if (! demand.charge (declared::spend ([&] { answer = s.apply (request); }))
         || answer.rejection != Rejection::None) { std::fprintf (stderr, "master start %u\n", unsigned (answer.rejection)); return false; }
     for (unsigned i = 0; i < 400000 && s.job(); ++i)
     {
-        const auto spent = budget::spend ([&] { (void) s.step (i % 3u == 0 ? 1u : i % 3u == 1 ? 7u : 16u); });
+        const auto spent = declared::spend ([&] { (void) s.step (i % 3u == 0 ? 1u : i % 3u == 1 ? 7u : 16u); });
         if (! demand.charge (spent)) { std::fprintf (stderr, "master step budget %u %lld of %llu\n", i, spent.bytes, (unsigned long long) quoted.bytes); return false; }
         localPeak = std::max (localPeak, std::uint64_t (s.liveBytes()));
     }
@@ -101,18 +101,18 @@ bool master (Session& s, command::Master request, Figures& f,
 
     const auto snapshotPrice = s.snapshotBytes();
     Snapshot detached;
-    const auto snapshotSpent = budget::spend ([&] { detached = s.snapshot(); });
-    if (! budget::covers (snapshotPrice, snapshotSpent)) { std::fprintf (stderr, "master snapshot\n"); return false; }
+    const auto snapshotSpent = declared::spend ([&] { detached = s.snapshot(); });
+    if (! declared::covers (snapshotPrice, snapshotSpent)) { std::fprintf (stderr, "master snapshot\n"); return false; }
     const auto wire = Wire::snapshotBytes (detached.view());
     if (wire.status != CodecStatus::Ok) { std::fprintf (stderr, "master wire size\n"); return false; }
     std::unique_ptr<char[]> json;
     std::unique_ptr<double[]> rows;
-    const auto transferSpent = budget::spend ([&]
+    const auto transferSpent = declared::spend ([&]
     {
         json.reset (new char[wire.jsonBytes]);
         rows.reset (new double[wire.rowBytes / sizeof (double)]);
     });
-    if (! budget::covers (std::uint64_t (wire.jsonBytes) + wire.rowBytes, transferSpent)
+    if (! declared::covers (std::uint64_t (wire.jsonBytes) + wire.rowBytes, transferSpent)
         || Wire::snapshot (detached.view(), { json.get(), wire.jsonBytes },
             { rows.get(), wire.rowBytes / sizeof (double) }) != CodecStatus::Ok) { std::fprintf (stderr, "master wire copy\n"); return false; }
     f.allocated += std::uint64_t (snapshotSpent.bytes + transferSpent.bytes);
@@ -126,7 +126,7 @@ bool master (Session& s, command::Master request, Figures& f,
     if (! plan || plan.frames != shape.frames) { std::fprintf (stderr, "master wav plan\n"); return false; }
     std::uint8_t wav[4096] {};
     bool wavCopied = true;
-    const auto wavSpent = budget::spend ([&]
+    const auto wavSpent = declared::spend ([&]
     {
         for (std::uint64_t at = 0; at < plan.bytes; at += sizeof (wav))
             if (s.copyMasterWav (token, at, { wav, std::size_t (std::min<std::uint64_t> (sizeof (wav), plan.bytes - at)) })
@@ -138,7 +138,7 @@ bool master (Session& s, command::Master request, Figures& f,
     {
         MasterAudio taken;
         MasterTransferStatus moved = MasterTransferStatus::Unknown;
-        const auto movedSpent = budget::spend ([&] { moved = s.takeMaster (token, taken); });
+        const auto movedSpent = declared::spend ([&] { moved = s.takeMaster (token, taken); });
         if (moved != MasterTransferStatus::Ok || movedSpent.requests != 0 || ! taken.samples
             || taken.frames != shape.frames) { std::fprintf (stderr, "master transfer\n"); return false; }
         const auto first = taken.samples[0];
@@ -149,7 +149,7 @@ bool master (Session& s, command::Master request, Figures& f,
     else
     {
         MasterTransferStatus released = MasterTransferStatus::Unknown;
-        const auto releaseSpent = budget::spend ([&] { released = s.releaseMaster (token); });
+        const auto releaseSpent = declared::spend ([&] { released = s.releaseMaster (token); });
         if (released != MasterTransferStatus::Ok || releaseSpent.requests != 0 || s.pendingMaster().master)
             return false;
     }
@@ -164,17 +164,17 @@ bool cancelled (Session& s, command::Master request, Figures& f)
     if (quoted.rejection != Rejection::None) return false;
     const auto before = std::uint64_t (s.liveBytes());
     auto localPeak = before;
-    budget::LifecycleBudget demand { quoted.bytes, quoted.bytes };
+    declared::LifecycleBudget demand { quoted.bytes, quoted.bytes };
     Answer answer;
-    if (! demand.charge (budget::spend ([&] { answer = s.apply (request); }))
+    if (! demand.charge (declared::spend ([&] { answer = s.apply (request); }))
         || answer.rejection != Rejection::None) return false;
     for (unsigned i = 0; i < 21 && s.job(); ++i)
     {
-        if (! demand.charge (budget::spend ([&] { (void) s.step (1); }))) return false;
+        if (! demand.charge (declared::spend ([&] { (void) s.step (1); }))) return false;
         localPeak = std::max (localPeak, std::uint64_t (s.liveBytes()));
     }
     Answer stop;
-    if (! demand.charge (budget::spend ([&]
+    if (! demand.charge (declared::spend ([&]
         { stop = s.apply (command::Cancel { request.id + 1u, answer.job }); }))
         || stop.rejection != Rejection::None || s.job() || s.pendingMaster().master
         || localPeak > before + quoted.bytes) return false;
@@ -197,8 +197,8 @@ bool run (unsigned sourceRate, unsigned deliveryRate, unsigned channels, unsigne
     }
     const float* planes[] { left.data(), channels == 2 ? right.data() : nullptr };
     Created made;
-    const auto created = budget::spend ([&] { made = Session::create(); });
-    if (made.status != Status::Ok || ! budget::covers (Session::createBytes(), created)) return false;
+    const auto created = declared::spend ([&] { made = Session::create(); });
+    if (made.status != Status::Ok || ! declared::covers (Session::createBytes(), created)) return false;
     f.declared += Session::createBytes();
     f.allocated += std::uint64_t (created.bytes);
     auto& s = *made.session;
@@ -206,8 +206,8 @@ bool run (unsigned sourceRate, unsigned deliveryRate, unsigned channels, unsigne
     if (! measure (s, load, f)) { std::fprintf (stderr, "measure failed %u %u\n", sourceRate, channels); return false; }
     Answer reused;
     const auto reusePrice = s.check (load);
-    const auto reuseSpent = budget::spend ([&] { reused = s.apply (load); });
-    if (reused.rejection != Rejection::None || ! budget::covers (reusePrice.bytes, reuseSpent)
+    const auto reuseSpent = declared::spend ([&] { reused = s.apply (load); });
+    if (reused.rejection != Rejection::None || ! declared::covers (reusePrice.bytes, reuseSpent)
         || std::uint64_t (reuseSpent.bytes) >= std::uint64_t (frames) * channels * sizeof (float))
     { std::fprintf (stderr, "reuse failed %u %lld\n", unsigned (reused.rejection), reuseSpent.requests); return false; }
     f.declared += reusePrice.bytes;
@@ -258,10 +258,10 @@ bool run (unsigned sourceRate, unsigned deliveryRate, unsigned channels, unsigne
         Answer rejected;
         const auto before = std::uint64_t (s.liveBytes());
         if (s.setCapacity ({ double (before + price.bytes - 1u), double (price.largestBlockBytes) }) != Status::Ok) return false;
-        const auto heapSpent = budget::spend ([&] { rejected = s.apply (small); });
+        const auto heapSpent = declared::spend ([&] { rejected = s.apply (small); });
         if (rejected.rejection != Rejection::Memory || heapSpent.requests != 0) return false;
         if (s.setCapacity ({ double (before + price.bytes), double (price.largestBlockBytes - 1u) }) != Status::Ok) return false;
-        const auto blockSpent = budget::spend ([&] { rejected = s.apply (small); });
+        const auto blockSpent = declared::spend ([&] { rejected = s.apply (small); });
         if (rejected.rejection != Rejection::Memory || blockSpent.requests != 0) return false;
         if (s.setCapacity ({ double (before + price.bytes), double (price.largestBlockBytes) }) != Status::Ok
             || ! master (s, small, f, external, false)) return false;
@@ -288,7 +288,7 @@ bool run (unsigned sourceRate, unsigned deliveryRate, unsigned channels, unsigne
     float invalid = std::numeric_limits<float>::quiet_NaN();
     const float* invalidPlanes[] { &invalid, &invalid };
     Answer refused;
-    const auto rejectionSpent = budget::spend ([&]
+    const auto rejectionSpent = declared::spend ([&]
     {
         refused = s.apply (command::Load { 17, { invalidPlanes, channels, 1, sourceRate }, {} });
     });

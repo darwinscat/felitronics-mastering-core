@@ -18,7 +18,7 @@
 //     that waited for its measurements is the master asked for after them; and its memory is declared before the work,
 //     on the waiting path too.
 
-#include "DeclaredBudget.h"
+#include "../../../tests/DeclaredBudget.h"
 #include "Chain.h"
 #include "Devices.h"
 #include "Driver.h"
@@ -48,7 +48,7 @@
 
 using namespace felitronics::session;
 using felitronics::test::ok;
-namespace budget = felitronics::session::testing;
+namespace declared = felitronics::declared;
 namespace mastering = felitronics::mastering;
 
 // The needles' identity as the session keeps it: the ceiling they were measured at, set by hand to a value no pump
@@ -1077,7 +1077,7 @@ void aMasterThatWaited()
             std::string (target) + ": PRECONDITION: the plan waits for " + (needles ? "the needles at its ceiling" : "the tempo"));
         const auto declared = early->check (command::Master { 3 });
         Answer asked;
-        const auto atOnce = budget::spend ([&] { asked = early->apply (command::Master { 3 }); });
+        const auto atOnce = declared::spend ([&] { asked = early->apply (command::Master { 3 }); });
         ok (early->state() == State::Measured1 && waitingFor != 0 && asked.rejection == Rejection::None
             && early->snapshot().view().masterProgress.name == PhaseName::Analyzers && early->jobRecipe().readyHash == 0,
             std::string (target) + ": taken with the panel hidden while its devices' measurements run — it waits, its chain not fixed yet");
@@ -1087,12 +1087,12 @@ void aMasterThatWaited()
         for (unsigned i = 0; i < 4000000 && early->job() != 0; ++i)
         {
             const bool wasWaiting = early->jobRecipe().readyHash == 0;
-            const auto work = budget::spend ([&] { (void) early->step (1); });
+            const auto work = declared::spend ([&] { (void) early->step (1); });
             if (wasWaiting && early->job() != 0 && early->jobRecipe().readyHash != 0) startedAt = std::uint64_t (work.bytes);
             else if (! wasWaiting) largest = std::max (largest, std::uint64_t (work.bytes));
             for (const auto& e : early->events()) if (e.kind == EventKind::Fact) facts.push_back (e.payload.fact.view());
         }
-        ok (declared.rejection == Rejection::None && budget::covers (declared.bytes, atOnce) && startedAt > 0
+        ok (declared.rejection == Rejection::None && declared::covers (declared.bytes, atOnce) && startedAt > 0
             && std::uint64_t (atOnce.bytes) + startedAt <= declared.bytes && largest <= declared.bytes,
             "  its memory is declared before the work: " + std::to_string (declared.bytes) + " B declared, " + std::to_string (atOnce.bytes)
             + " asked by the command and " + std::to_string (startedAt) + " when the wait ended");
@@ -1122,13 +1122,13 @@ void theMemoryOfAMaster()
     auto sp = measured (large, "cd"); auto& s = *sp;
     const auto declaredLarge = s.check (command::Master { 3 });
     Answer asked;
-    const auto spentLarge = budget::spend ([&] { asked = s.apply (command::Master { 3 }); });
+    const auto spentLarge = declared::spend ([&] { asked = s.apply (command::Master { 3 }); });
     std::uint64_t largest = 0;
     for (unsigned i = 0; i < 2000 && s.job() != 0; ++i)
-        largest = std::max (largest, std::uint64_t (budget::spend ([&] { (void) s.step (1); }).bytes));
-    ok (declaredLarge.rejection == Rejection::None && asked.rejection == Rejection::None && budget::covers (declaredLarge.bytes, spentLarge)
+        largest = std::max (largest, std::uint64_t (declared::spend ([&] { (void) s.step (1); }).bytes));
+    ok (declaredLarge.rejection == Rejection::None && asked.rejection == Rejection::None && declared::covers (declaredLarge.bytes, spentLarge)
         && largest <= declaredLarge.bytes && spentLarge.requests > 0,
-        "a twelve-second master on cd: " + budget::describe (declaredLarge.bytes, spentLarge) + ", and no step asks for more");
+        "a twelve-second master on cd: " + declared::describe (declaredLarge.bytes, spentLarge) + ", and no step asks for more");
     const double liveWhileRunning = s.liveBytes();
     ok (s.apply (command::Cancel { 4, asked.job }).rejection == Rejection::None && s.job() == 0 && s.liveBytes() < liveWhileRunning,
         "cancelled mid-render: the job's memory is given back");
@@ -1136,17 +1136,17 @@ void theMemoryOfAMaster()
     ok (s.apply (small.load (5)).rejection == Rejection::None, "PRECONDITION: a three-second source replaces it");
     drive (s);
     const auto declaredSmall = s.check (command::Master { 6 });
-    const auto spentSmall = budget::spend ([&] { asked = s.apply (command::Master { 6 }); });
+    const auto spentSmall = declared::spend ([&] { asked = s.apply (command::Master { 6 }); });
     largest = 0;
     for (unsigned i = 0; i < 4000000 && s.job() != 0; ++i)
-        largest = std::max (largest, std::uint64_t (budget::spend ([&] { (void) s.step (1); }).bytes));
+        largest = std::max (largest, std::uint64_t (declared::spend ([&] { (void) s.step (1); }).bytes));
     ok (declaredSmall.rejection == Rejection::None && asked.rejection == Rejection::None && declaredSmall.bytes < declaredLarge.bytes
-        && budget::covers (declaredSmall.bytes, spentSmall) && largest <= declaredSmall.bytes && s.masters().size() == 1,
-        "then a three-second one: " + budget::describe (declaredSmall.bytes, spentSmall) + " — smaller, covered to its end");
+        && declared::covers (declaredSmall.bytes, spentSmall) && largest <= declaredSmall.bytes && s.masters().size() == 1,
+        "then a three-second one: " + declared::describe (declaredSmall.bytes, spentSmall) + " — smaller, covered to its end");
     // The output is pending: the next master is refused whole — nothing allocated, nothing changed — until it is taken.
     const auto before = s.revision();
     Answer refused;
-    const auto spentRefused = budget::spend ([&] { refused = s.apply (command::Master { 7 }); });
+    const auto spentRefused = declared::spend ([&] { refused = s.apply (command::Master { 7 }); });
     ok (refused.rejection == Rejection::OutputPending && spentRefused.requests == 0 && s.revision() == before && s.job() == 0
         && s.masters().size() == 1 && s.pendingMaster().master == s.masters()[0].id,
         "with its audio not yet taken the next master is refused whole: no allocation, no revision, the finished one intact");
@@ -1155,7 +1155,7 @@ void theMemoryOfAMaster()
     // A heap that cannot hold the job refuses it before anything is asked for.
     const auto need = s.check (command::Master { 8 });
     ok (s.setCapacity ({ s.liveBytes() + double (need.bytes) - 1.0, 9007199254740991.0 }) == Status::Ok, "PRECONDITION: a heap one byte short");
-    const auto spentShort = budget::spend ([&] { refused = s.apply (command::Master { 8 }); });
+    const auto spentShort = declared::spend ([&] { refused = s.apply (command::Master { 8 }); });
     ok (refused.rejection == Rejection::Memory && spentShort.requests == 0 && s.job() == 0 && s.masters().size() == 1,
         "one byte short of its demand: refused with Memory before the first allocation");
 

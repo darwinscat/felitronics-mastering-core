@@ -4,7 +4,7 @@
 #include <felitronics/mastering/LandingSearch.h>
 #include <felitronics/mastering/DeliveredMastering.h>
 #include <felitronics_test.h>
-#include "../../session/tests/DeclaredBudget.h"
+#include "../../../tests/DeclaredBudget.h"
 
 #include <cmath>
 #include <climits>
@@ -296,7 +296,7 @@ int main()
                                                     recycleRequest.grTraceBuckets);
         StepResult state = StepResult::More;
         bool admitted = false;
-        const auto spent = session::testing::spend ([&]
+        const auto spent = felitronics::declared::spend ([&]
         {
             admitted = recycled.begin (lifecycle.chain, lifecycle.renderer, lifecycle.params,
                 lifecycle.input, frames, kRate, lifecycle.out, 1, frames, recycleRequest);
@@ -307,12 +307,12 @@ int main()
             }
         });
         lifecycleBudget = lifecycleBudget && quote.ok && admitted
-            && session::testing::covers (quote.maxLiveBytes, spent)
+            && felitronics::declared::covers (quote.maxLiveBytes, spent)
             && quote.largestBlockBytes >= quote.sourceBytes
             && quote.largestBlockBytes >= quote.outputBytes
             && (cycle == 0 ? state == StepResult::Failed : state == StepResult::Done);
         lifecycleDetail += " cycle " + std::to_string (cycle) + ": "
-            + session::testing::describe (quote.maxLiveBytes, spent)
+            + felitronics::declared::describe (quote.maxLiveBytes, spent)
             + ", admitted=" + std::to_string (admitted)
             + ", state=" + std::to_string ((int) state)
             + ", status=" + std::to_string ((int) recycled.result().status)
