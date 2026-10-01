@@ -209,8 +209,8 @@ CodecStatus buffers (const TransferNeed& n, std::span<char> json, std::span<doub
 }
 TransferNeed Wire::snapshotBytes (const SnapshotView& v) noexcept
 {
-    const auto check = Codec::encodedBytes (v);
-    if (check.status != CodecStatus::Ok) return { check.status, 0, 0 };
+    // One walk: what the text walk alone refused is asked first, then the view is sized as the write walks it.
+    if (const auto status = detail::snapshotEncodable (v); status != CodecStatus::Ok) return { status, 0, 0 };
     Writer w; w.binaryRows = true; w.value (v); return need (w);
 }
 CodecStatus Wire::snapshot (const SnapshotView& v, std::span<char> json, std::span<double> rows) noexcept

@@ -49,7 +49,8 @@
 //                capabilities record (its base is 40, leanSummary included).
 //   5            v0.7.0, slice 5: a rejected answer carries its fact last (RejectedAnswer.fact, ContractAnswer.fact — the
 //                field, its refused number and the domain it left, facts 180 and 181); a null in editTarget clears the
-//                field (the target row's number again).
+//                field (the target row's number again); fc_kit_saturation_curve; the plan's limiter settings and dither
+//                shaping, a glue out of the chain with its numbers, and the snapshot's eqOnlyCurve.
 #define FC_SESSION_ABI_VERSION 5u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u
@@ -432,6 +433,8 @@ fc_session_status fc_session_master_wav_copy (fc_session session, const fc_sessi
 #define FC_SESSION_KIT_FIELD_BANDS_BRIGHTNESS 137u
 #define FC_SESSION_KIT_FIELD_BANDS_AIR 138u
 #define FC_SESSION_KIT_EQ_BANDS_PARAMS 13u
+// Appended with slice 5: the saturation's transfer curve (fc_kit_saturation_curve), its points.
+#define FC_SESSION_KIT_SATURATION_POINTS 129u
 
 // A published fact ({"FactId":…,"args":[…]}, as a snapshot, an event or a plan carries it) in a language, as UTF-8
 // without a terminator. A null output is allowed with capacity 0; TOO_SMALL writes the bytes needed to *written.
@@ -465,6 +468,11 @@ fc_session_status fc_kit_eq_curve_bands (const double* params, double rate, doub
 fc_session_status fc_kit_low_end_curve (const double* centre_hz, const double* energy, uint32_t bands,
                                        double from_hz, double to_hz, double* output, uint32_t capacity,
                                        uint32_t* written);
+// The saturation's transfer curve: type a saturation type a person may pick (its number in a project: 0 tanh, 4 tube,
+// 5 transistor, 6 transformer, 7 tape), drive_db the shaper's own drive (the plan's saturation.driveDb; the knob's value
+// for an input peaking at 0 dBTP), mix 0 … 1. curve[2 * FC_SESSION_KIT_SATURATION_POINTS] = input, output per point, the
+// inputs from −1 to +1 of full scale a 64th apart — the chain's saturator settled on a held level.
+fc_session_status fc_kit_saturation_curve (uint32_t type, double drive_db, double mix, double* curve);
 
 #ifdef __cplusplus
 }   // extern "C"

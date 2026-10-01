@@ -120,6 +120,9 @@ struct KitCount
     std::uint64_t count = 0;       // bytes or points written — or, with TooSmall, needed
 };
 
+// The saturation's transfer curve: this many inputs, from −1 to +1 of full scale a 64th apart (Kit::saturationCurve).
+inline constexpr std::size_t kKitSaturationPoints = 129;
+
 class Kit final
 {
 public:
@@ -164,6 +167,20 @@ public:
     // finite and positive, energies finite and not negative, the two spans of one length, fromHz ≤ toHz.
     [[nodiscard]] static KitCount lowEndCurve (std::span<const double> centreHz, std::span<const double> energy,
                                                double fromHz, double toHz, std::span<double> out) noexcept;
+
+    // THE SATURATION'S TRANSFER CURVE — what the chain's saturator makes of a level: kKitSaturationPoints inputs from −1
+    // to +1 of full scale, a 64th apart, each with its output, two doubles per point into `out` (the input, then the
+    // output — the snapshot's row layout); `count` is in points. The stage's own arithmetic, settled on these settings:
+    // the core's WaveShaper (felitronics-core's saturation kernel) at the type and at k = 10^(driveDb/20) − 1 — driveDb
+    // as the float the stage takes — with [saturation] bias, the stage's drive compensation slopeAtZero^−autoComp at
+    // [saturation] autoComp, and its dry/wet blend at `mix`, no trim (the chain sets none). driveDb is the shaper's own
+    // drive: the plan's saturation.driveDb where the device sounds; the knob's value is the drive for an input that peaks
+    // at 0 dBTP. The transformer and tape are drawn as their static cores: the transformer's flux follows the signal's
+    // history and the tape's emphasis its frequency, not the level alone (at a held level tape is its core). A type a
+    // person may pick — tanh, tube, transistor, transformer, tape; driveDb finite and not negative, its gain finite as a
+    // float; mix inside the knob's domain. The kernel's tanh is the system's, as the chain's is: a drawing, platform-bound
+    // like the sound it draws.
+    [[nodiscard]] static KitCount saturationCurve (SaturationType type, double driveDb, double mix, std::span<double> out) noexcept;
 };
 
 } // namespace felitronics::session

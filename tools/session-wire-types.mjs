@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
-// Check encoded data against the generated declaration grammar; no second copy of the types.
-export function types(source) {
+// Check encoded data against the generated declaration grammar; no second copy of the types. `appended` names fields
+// ("Record.field") that a record may lack — the fields appended after the data was frozen; every other is required.
+export function types(source, appended = new Set()) {
     source = source.replace(/\/\*[\s\S]*?\*\//g, '');
     const aliases = new Map([...source.matchAll(/export type (\w+) = ([^;]+);/g)].map(m => [m[1], m[2].trim()]));
     const records = new Map([...source.matchAll(/export interface (\w+) \{([^}]+)\}/g)].map(m =>
@@ -16,7 +17,8 @@ export function types(source) {
             const fields = [...records.get(derived[1]).filter(([name]) => name !== derived[2]),
                             [derived[3], false, derived[4]]];
             return Object.keys(value).every(key => fields.some(([name]) => name === key))
-                && fields.every(([name, optional, t]) => Object.hasOwn(value, name) ? accepts(value[name], t) : optional);
+                && fields.every(([name, optional, t]) => Object.hasOwn(value, name) ? accepts(value[name], t)
+                    : optional || appended.has(`${derived[1]}.${name}`));
         }
         if (type.includes(' | ')) return type.split(' | ').some(t => accepts(value, t));
         if (type.startsWith('ReadonlyArray<')) return Array.isArray(value) && value.every(v => accepts(v, type.slice(14, -1)));
@@ -24,7 +26,8 @@ export function types(source) {
             if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
             const fields = records.get(type);
             return Object.keys(value).every(key => fields.some(([name]) => name === key))
-                && fields.every(([name, optional, t]) => Object.hasOwn(value, name) ? accepts(value[name], t) : optional);
+                && fields.every(([name, optional, t]) => Object.hasOwn(value, name) ? accepts(value[name], t)
+                    : optional || appended.has(`${type}.${name}`));
         }
         if (type === 'null') return value === null;
         if (['number', 'string', 'boolean'].includes(type)) return typeof value === type;

@@ -11,7 +11,9 @@
 // shaper, and sounds the same. What each did is measured on its own stage and reported — never the chain's true peak.
 
 #include "Devices.h"
+#include "Chain.h"
 #include "Dynamics.h"
+#include "Limiter.h"
 #include "Grid.h"
 #include "Planner.h"
 #include <felitronics/session/Config.h>
@@ -264,7 +266,7 @@ void theCurve()
 
     const auto out = detail::glueFinding (f.in, f.glued (0.0));
     auto unticked = f.glued (2.0); unticked.glue.hand.on = false;
-    ok (out.state == GlueState::Out && ! out.ratio && ! out.p95DetectorDb && detail::glueFinding (f.in, unticked).state == GlueState::Out
+    ok (out.state == GlueState::Out && detail::glueFinding (f.in, unticked).state == GlueState::Out
         && detail::glueFinding (f.in, f.machine()).state == GlueState::Out,
         "at 0 dB, unticked, and as the machine leaves it off cd, the compressor is out of the chain");
 
@@ -915,6 +917,74 @@ void theType()
 }
 } // namespace
 
+void limiterAndDitherAsTheChainGetsThem()
+{
+    felitronics::test::group ("the plan carries the limiter's release, slow release, lookahead and oversampling, and the dither's shaping, as the chain gets them");
+    const auto& e = config::Config::load().config.engine;
+    bool same16 = true;
+    for (const char* target : { "cd", "allStreaming", "vinyl" })
+    {
+        const Faked f (target, -18.0, -3.0, -12.0);
+        const auto d = f.machine();
+        const auto lim = detail::limiterFinding (f.in, d);
+        const auto dit = detail::ditherFinding (f.in, d);
+        command::MasterReady ready;
+        detail::writeChain (f.in, d, ready);
+        const auto& l = ready.params.limiter;
+        same16 = same16 && same (lim.releaseMs, l.releaseMs) && lim.dualRelease == l.dualRelease && same (lim.slowReleaseMs, l.slowReleaseMs)
+            && same (lim.lookaheadMs, ready.topology.limiterLookaheadMs) && same (lim.releaseMs, e.limiter.releaseMs)
+            && same (lim.lookaheadMs, e.limiter.lookaheadMs)
+            && lim.oversampling == mastering::MasteringChain::tapOversampleFactorFor (ready.topology) && lim.oversampling >= 2
+            && int (dit.shaping) == int (ready.params.dither.shaping);
+        std::printf ("    %s: release %.0f ms, slow %.0f ms (%s), lookahead %.2f ms, oversampling %dx; dither at %d bits, shaping %u\n", target,
+            lim.releaseMs, lim.slowReleaseMs, lim.dualRelease ? "on" : "off", lim.lookaheadMs, int (lim.oversampling), int (dit.bits), unsigned (dit.shaping));
+    }
+    ok (same16, "cd, all streaming, vinyl: the plan's numbers are the ones the chain is written with, and the effective oversampling");
+    const Faked cd ("cd", -18.0, -3.0, -12.0), stream ("allStreaming", -18.0, -3.0, -12.0);
+    const auto cdDither = detail::ditherFinding (cd.in, cd.machine()), streamDither = detail::ditherFinding (stream.in, stream.machine());
+    ok (cdDither.bits <= 16 && cdDither.shaping == DitherShaping::Weighted && (streamDither.bits <= 16 || streamDither.shaping == DitherShaping::None),
+        "16 bits take the config's weighted shaping; above shapingUpToBits there is none");
+}
+
+void outStatesItsNumbers()
+{
+    felitronics::test::group ("a glue out of the chain states its numbers all the same — off, at 0 dB — and stays out (slice 5)");
+    const auto r = detail::rules();
+    const double fallback = config::Config::load().config.engine.compressor.tempoBpmWhenUnsure;
+    const auto check = [&] (const detail::PlanInputs& in, const Devices& d, double knob, std::optional<double> p95, std::optional<double> bpm, bool measured)
+    {
+        const auto f = detail::glueFinding (in, d);
+        const auto curve = detail::glueFor (r, knob);
+        const double over = config::Config::load().config.engine.glue.detectorOverP95Db;
+        bool good = f.state == GlueState::Out && same (f.upToDb, knob) && f.ratio && same (*f.ratio, curve.ratio)
+            && f.kneeDb && same (*f.kneeDb, curve.kneeDb) && f.attackMs && same (*f.attackMs, curve.attackMs);
+        good = good && (p95 ? f.p95DetectorDb && same (*f.p95DetectorDb, *p95 + over) && f.thresholdDb
+                                && same (*f.thresholdDb, *p95 + over + curve.threshOffsetDb)
+                            : ! f.p95DetectorDb && ! f.thresholdDb);
+        const double asked = bpm ? 60000.0 / *bpm / curve.divisor : 0.0;
+        good = good && bpm && f.bpm && same (*f.bpm, *bpm) && f.tempoMeasured == measured && f.releaseAskedMs && same (*f.releaseAskedMs, asked)
+            && f.releaseMs && *f.releaseMs > 0.0;
+        mastering::MasteringChainParams params;
+        detail::writeDynamics (in, d, params);
+        return good && params.bypassCompressor && ! PlanText::glue (f);
+    };
+    const Faked measured ("allStreaming", -18.0, -3.0, -12.0, Tempo::High, 128.0);
+    const Faked pending ("allStreaming", -18.0, -3.0, -12.0, Tempo::Pending);
+    const Faked noP95 ("cd", -18.0, -3.0, std::nullopt, Tempo::Pending);
+    auto unticked = pending.glued (2.0); unticked.glue.hand.on = false;
+    // The P95 on the normalised input: the gain to [input] referenceLufs from the faked −18 LUFS, added.
+    const double p95 = -12.0 + config::Config::load().config.engine.input.referenceLufs + 18.0;
+    ok (check (measured.in, measured.glued (0.0), 0.0, p95, 128.0, true),
+        "ticked at 0 dB: the travel's start — its ratio, knee and attack, the threshold on the P95, the release from the measured tempo");
+    ok (check (pending.in, unticked, 2.0, p95, fallback, false),
+        "unticked at 2 dB, its tempo never measured: the knob's numbers, and the release at the fallback tempo");
+    ok (check (noP95.in, noP95.machine(), 2.6, std::nullopt, fallback, false),
+        "the machine's cd glue left off for want of a P95: ratio, knee, attack and release, and no threshold — none is invented");
+    const auto active = detail::glueFinding (pending.in, pending.glued (2.0));
+    ok (active.state == GlueState::Active && ! active.releaseMs && ! active.bpm,
+        "a glue in the chain whose tempo is pending still waits for it: no fallback release");
+}
+
 int main()
 {
     std::printf ("felitronics::session — glue and saturation from the normalised input\n");
@@ -929,5 +999,7 @@ int main()
     theCut();
     theReport();
     theType();
+    outStatesItsNumbers();
+    limiterAndDitherAsTheChainGetsThem();
     return felitronics::test::report();
 }

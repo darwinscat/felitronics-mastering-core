@@ -66,6 +66,10 @@ struct SnapshotView
     // THE TARGET'S NOTE, beside `target`, as SnapshotText::targetNote states it: where the target's loudness comes from,
     // where targets.toml [notes] says it is not a platform's published number or a standard. Nothing for another target.
     std::optional<text::Fact> targetNote;
+    // THE EQ-ONLY CURVE: the EQ stage without the high-pass — tilt, low and the EQ bands as they sound — on eqCurve's
+    // points, summed as eqCurve is; so a shell draws the tone apart from the filter without subtracting one. Empty until
+    // placement, as eqCurve.
+    std::span<const EqPoint> eqOnlyCurve;
 };
 // THE SNAPSHOT'S OWN SENTENCES, as ObservationText and PlanText give theirs from what the snapshot carries.
 // targetChange: the warning a shell shows in its confirmation BEFORE it sends SetTarget (owner decision, 28.09: a change

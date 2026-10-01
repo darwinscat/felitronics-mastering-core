@@ -436,7 +436,10 @@ bits in both rules that read it (`requestNeedles` and `needlesCurrent`). The dit
 at 16 bits it is in the chain — weighted TPDF, seed `0x853c49e6748fea9b`, blanked after 4096 zero samples, a stated
 version of the sound (`[dither]`) — unless a person switches it off (the delivery is then rounded to its grid without
 noise); above 16 bits there is none, and a person's tick, which only a project file can bring, is kept and does nothing
-(`plan.dither.keptWithoutEffect`, `PlanText::dither`). The delivery is quantised once, in the chain: its WAV adds no
+(`plan.dither.keptWithoutEffect`, `PlanText::dither`); `plan.dither.shaping` is the shaping it runs with at the
+delivery's depth (`DitherShaping`, the core's order). The plan states the limiter's own settings as the chain is written
+with them (slice 5): `plan.limiter.releaseMs`, `dualRelease`, `slowReleaseMs`, `lookaheadMs` and `oversampling` — the
+factor as the limiter takes it; writeLimiter reads the release and the dither's shaping from the finding. The delivery is quantised once, in the chain: its WAV adds no
 second noise. On a target cut to vinyl (`vinyl = true`, lp) the machine never stands above the target's own ceiling
 (−3 dBTP) and never cuts needles; a person's ceiling above it and a person's needles sound, with the medium's warnings
 (`PlanText::vinylCeiling`, `vinylNeedles`) and no refusal, and the plan carries the constant note that the cutting room
@@ -545,7 +548,10 @@ the glue is unavailable to the machine and to a person alike: the machine's tick
 a person's tick and value are kept and shown, `plan.glue.state` is `Unavailable`, the chain gets no compressor, no P95
 is invented and the master is made without it. `plan.glue` carries the state and, where it compresses, the values the
 chain gets — ratio, threshold (in the normalised input's dB), knee, attack, and once the tempo is decided the tempo,
-the release asked for and the release given; `PlanText::glue`, `::glueTempo` and `::glueRelease` give the refusal, the
+the release asked for and the release given. Out of the chain — unticked, or at 0 dB — it carries the same numbers for the
+knob as it stands (slice 5), which no compressor gets: the ratio, knee and attack always, the threshold and its P95 point
+where there is a P95, and the release at the decided tempo or, since nothing measures the tempo of a glue out of the
+chain, at 120 BPM (`tempoMeasured` false); unavailable, none; `PlanText::glue`, `::glueTempo` and `::glueRelease` give the refusal, the
 fallback tempo and a release held at a limit as facts.
 The saturation is the chain's shaper stage (`MasteringChainParams::clipper`) — not the peak clipper inside the limiter,
 which is the limiter's. The machine never sets it. The knob is the drive the input would get at 0 dBTP: the core drives
@@ -696,6 +702,18 @@ core's matched filters with deterministic math; the event suite compares their r
 all high-pass slopes. Low keeps EQ band 2, 80 Hz and Q 0.6; tilt keeps band 1 and its 1 kHz pivot.
 The one codec generator carries `eqCurve` into `snapshot.d.ts`; `SessionSnapshot.eqCurve` describes transferable
 little-endian f64 rows, columns `[hz, db]`, stride 2. `handFieldCount` is a JSON number in both snapshot forms.
+**`eqOnlyCurve`** (slice 5) is the same stage with the high-pass's band out — tilt, low and the EQ bands — on the same
+points and summed the same way, so a page draws the tone apart from the filter without subtracting a Butterworth of its
+own; the same row form, empty with `eqCurve`. An owned snapshot holds both curves in one block.
+
+**The snapshot is sized in one walk** (slice 5). `Wire::snapshotBytes` used to run `Codec::encodedBytes` — the whole
+view with every row printed as decimal text — only to learn whether the view encodes, then walk it again with binary
+rows: two passes, the first the costly one (168.8 ms on a 3-minute stereo source with one master, 0.94 ms per second of
+audio). It now asks `detail::snapshotEncodable` what only the text walk refused — the floating-point environment, the
+view's invariants and a machine difference's device out of range; every other check is the same in both walks — and
+walks once: 10.2 ms on the same snapshot, the bytes written unchanged (both contracts).
+`felitronics_session_master_query_tests` holds the sizes and statuses to the previous function, copied, on a session
+and on five broken views, and `felitronics_session_snapshot_sizing` its cost to under half the previous one's.
 
 Recovery and heap compaction use the same operation: create a new session, load the same source, advance measurement
 to the same measured state, then import the last exported project. The project includes target, manual mode and both
@@ -1266,8 +1284,20 @@ zones (`[monoBass.zones]`), the EQ stage's `writeEq` / `eqCurve` / `eqFinding`, 
 zones advice reads its comparison from `Kit::heat` and `Kit::monoZonesAt`, so a knob's colour and the advice beside it
 cannot disagree. A field is its `text::Term` id (`FieldTargetLufs` … `FieldLowDb`), the id a refusal already names it by.
 
+**The saturation's transfer curve** (`Kit::saturationCurve`, `fc_kit_saturation_curve`, slice 5): 129 inputs from −1 to +1
+of full scale a 64th apart, each with what the chain's saturator settled on a held level gives for it — the stage's own
+design arithmetic, `mastering::MasteringChain::clipperDesign` (the one `clipperQuietGain` reads), on the parameters the
+session writes the stage with (`detail::clipperParams`, writeDynamics's): the core's WaveShaper at the type and
+k = 10^(drive/20) − 1, the config's bias, its drive compensation, the dry/wet blend, no trim. For the five types a person may
+pick; the transformer and tape as their static cores (the flux follows history, the emphasis frequency; at a held level
+tape is its core). The drive is the shaper's own — the plan's `saturation.driveDb`, or the knob for an input peaking at
+0 dBTP. Its tanh is the platform's, as the chain's is, so the curve is not in the pinned corpus: the kit suite holds it to
+the core's WaveShaper bit for bit and the running stage, held at each level, to within 1e-4; the wasm check to
+JavaScript's tanh within 1e-5.
+
 The C boundary carries them as `fc_kit_text`, `fc_kit_parse`, `fc_kit_travel`, `fc_kit_position`, `fc_kit_value_at`,
-`fc_kit_heat`, `fc_kit_mono_zones`, `fc_kit_mono_zones_at`, `fc_kit_eq_curve` and `fc_kit_low_end_curve` in the same
+`fc_kit_heat`, `fc_kit_mono_zones`, `fc_kit_mono_zones_at`, `fc_kit_eq_curve`, `fc_kit_low_end_curve` and
+`fc_kit_saturation_curve` in the same
 fcsession module, which a page instantiates a second time on its main thread: no handle, the poison, the argument order
 and the statuses of every `fc_session_*` call, a language by its code. The kit holds no session state — it reads only the
 compiled-in config and catalogue — so neither contract's scenarios move; the WAV recording records the module's hash and

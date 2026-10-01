@@ -59,6 +59,11 @@ struct InputLevels
 [[nodiscard]] GlueFinding glueFinding (const PlanInputs& in, const Devices& devices) noexcept;
 [[nodiscard]] SaturationFinding saturationFinding (const PlanInputs& in, const Devices& devices) noexcept;
 
+// THE CLIPPER'S PARAMETERS — the chain's saturator stage at a type, the shaper's drive and a mix, with [saturation]
+// bias, autoComp and dcBlockHz and no trim (the landing sets the level before the limiter, so a trim would be undone).
+// writeDynamics writes the stage with it, and the kit draws its curve from it (Kit::saturationCurve).
+[[nodiscard]] saturation::Saturator::Params clipperParams (const Rules& rules, SaturationType type, double driveDb,
+                                                           double mix) noexcept;
 // THE WRITE: the compressor and the clipper (the chain's tanh saturator stage) of `params`, their bypasses and the
 // compressor's mix, from the findings above — every field of both stages named, so the sound depends on no default of the
 // core's. A glue that is out, unavailable or still waiting for its tempo, and a saturation that is off, are bypassed.

@@ -129,6 +129,18 @@ bool read (std::string_view json, Storage& storage, SnapshotView& view) noexcept
 }
 } // namespace
 
+namespace detail
+{
+CodecStatus snapshotEncodable (const SnapshotView& v) noexcept
+{
+    if (Session::checkFloatingPointEnvironment() != Status::Ok) return CodecStatus::FloatingPointEnvironment;
+    if (! valid (v)) return CodecStatus::Invalid;
+    for (const auto& d : v.machineDifferences)
+        if (unsigned (d.device) > enumLast<Device>()) return CodecStatus::Invalid;
+    return CodecStatus::Ok;
+}
+} // namespace detail
+
 CodecNeed Codec::encodedBytes (const SnapshotView& view) noexcept
 {
     if (Session::checkFloatingPointEnvironment() != Status::Ok) return { CodecStatus::FloatingPointEnvironment, 0 };

@@ -16,6 +16,7 @@
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/eq/EqEngine.h>
 #include <felitronics/core/DetMath.h>
+#include <felitronics/session/Wire.h>
 #include <felitronics_test.h>
 #include <algorithm>
 #include <bit>
@@ -315,6 +316,43 @@ void aQuietInput()
 }
 } // namespace
 
+void theEqOnlyCurve()
+{
+    felitronics::test::group ("the snapshot's EQ-only curve: the EQ stage without the high-pass, beside the whole curve");
+    auto sp = placed(); auto& s = *sp;
+    HpfFields<Touched> hpf; hpf.on = true; hpf.fq = 60.0; hpf.slope = 24;
+    TiltFields<Touched> tilt; tilt.on = true; tilt.db = 1.25;
+    LowFields<Touched> low; low.on = true; low.db = -0.75;
+    ok (s.apply (command::EditDevice { 3, hpf }).rejection == Rejection::None && s.apply (command::EditDevice { 4, tilt }).rejection == Rejection::None
+        && s.apply (command::EditDevice { 5, low }).rejection == Rejection::None, "PRECONDITION: the high-pass, tilt and low are edited");
+    const auto snapshot = s.snapshot();
+    const auto& v = snapshot.view();
+    const auto r = detail::rules();
+    const double rate = double (s.source().sampleRate);
+    Project noHpf = s.project(); noHpf.devices.hpf.hand.on = false; noHpf.devices.hpf.machine.on = false;
+    std::vector<EqPoint> want (kEqCurvePoints); detail::eqCurve (noHpf, r, rate, want);
+    bool same = v.eqOnlyCurve.size() == kEqCurvePoints && v.eqCurve.size() == kEqCurvePoints;
+    bool differs = false;
+    for (std::size_t i = 0; same && i < kEqCurvePoints; ++i)
+    {
+        same = same && sameBits (v.eqOnlyCurve[i].hz, v.eqCurve[i].hz) && sameBits (v.eqOnlyCurve[i].hz, want[i].hz)
+            && sameBits (v.eqOnlyCurve[i].db, want[i].db);
+        differs = differs || ! sameBits (v.eqOnlyCurve[i].db, v.eqCurve[i].db);
+    }
+    ok (same && differs, "on the whole curve's points: the project's curve with its high-pass out, bit for bit — and not the whole curve");
+    std::uint32_t json = 0;
+    const auto need = Wire::snapshotBytes (v);
+    std::vector<char> text (need.jsonBytes); std::vector<double> rows (need.rowBytes / sizeof (double));
+    ok (need.status == CodecStatus::Ok && Wire::snapshot (v, text, rows) == CodecStatus::Ok
+        && std::string_view (text.data(), text.size()).find ("\"eqOnlyCurve\":{\"byteOffset\":") != std::string_view::npos
+        && (json = need.jsonBytes) > 0, "it crosses the wire as a binary row, as the whole curve does");
+    const auto stored = Snapshot::storageFor (v);
+    const auto copied = s.snapshotBytes();
+    ok (stored == copied && stored >= std::uint64_t (2 * kEqCurvePoints * sizeof (EqPoint)), "and the snapshot's price counts it");
+    auto fresh = Session::create().session;
+    ok (fresh->snapshot().view().eqOnlyCurve.empty() && fresh->snapshot().view().eqCurve.empty(), "before placement there is no curve of either kind");
+}
+
 int main()
 {
     theMachine();
@@ -324,5 +362,6 @@ int main()
     aPersonsLayer();
     theFilesMachineStays();
     aQuietInput();
+    theEqOnlyCurve();
     return felitronics::test::report();
 }
