@@ -361,6 +361,9 @@ Stepped Session::step (std::uint32_t budget) noexcept
                                                                    : double (tolerance.integer().value_or (0));
                     if (const auto verdict = MasterReportText::landing (report, masterSummary_, toleranceLu))
                     { (void) event.payload.fact.assign (*verdict); emit (event, masterProgress_); }
+                    // Delivered above the ceiling (no render stayed under it): the mark, beside the verdict.
+                    if (const auto above = MasterReportText::peaksAboveCeiling (report))
+                    { (void) event.payload.fact.assign (*above); emit (event, masterProgress_); }
                     if (const auto miss = MasterReportText::miss (report))
                     { (void) event.payload.fact.assign (*miss); emit (event, masterProgress_); }
                     for (const auto* hint : { &report.firstHint, &report.secondHint })

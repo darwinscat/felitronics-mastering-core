@@ -35,11 +35,11 @@ struct Rig
     Rig() : source ((std::size_t) kFrames), output ((std::size_t) kFrames)
     { input[0] = source.data(); out[0] = output.data(); }
 
-    bool prepare()
+    bool prepare (bool limiter = true)
     {
         MasteringChainConfig config;
         config.eq = false; config.monoBass = false; config.compressor = false;
-        config.clipper = false; config.limiter = true; config.dither = true;
+        config.clipper = false; config.limiter = limiter; config.dither = true;
         if (! chain.prepare (kRate, 1, config) || ! renderer.prepare (1, 257)
             || ! solver.prepare (kRate, 1, 257, chain.internalBlock(), chain.tapOversampleFactor())) return false;
         params.limiter.ceilingDbTp = -1.0;
@@ -337,16 +337,41 @@ int main()
     LoudnessSolution limited;
     const bool ended = run (one, 71, -6.0, 1, limited);
     test::ok (ended ? limited.passes == 1 && limited.logCount == 1 && limited.deliverable
-                    : ! limited.deliverable && (limited.status == MasteringSolveStatus::Unavailable
-                        || (limited.status == MasteringSolveStatus::TargetUnreachable
-                            && limited.binding == MasteringConstraint::TruePeakCeiling)),
-              "a one-render budget cannot hide a final render or deliver an unsafe candidate");
+                      && (limited.measured.truePeakDbTp <= -1.0
+                          || (limited.peaksAboveCeiling && limited.status == MasteringSolveStatus::TargetUnreachable))
+                    : ! limited.deliverable && limited.status == MasteringSolveStatus::Unavailable,
+              "a one-render budget cannot hide a final render; a render above the ceiling is delivered only marked");
+
+    // NO RENDER UNDER THE CEILING (owner, 01.10): without a limiter a loud target keeps every render above it — the
+    // file is still delivered, the gentlest render measured (the smallest overshoot), verified and marked.
+    Rig open;
+    if (! test::run (open.prepare (false))) return test::report();
+    LoudnessSolution over;
+    const bool overEnded = run (open, 409, -3.0, 12, over);
+    bool everyAbove = over.logCount > 1, gentlest = true;
+    for (int i = 0; i < over.logCount; ++i)
+    {
+        everyAbove = everyAbove && over.log[i].truePeakDbTp > -1.0
+            && (over.log[i].violated & constraintBit (MasteringConstraint::TruePeakCeiling)) != 0;
+        gentlest = gentlest && over.measured.truePeakDbTp <= over.log[i].truePeakDbTp;
+    }
+    // Here the gentlest is the first render, so the reserved last pass restores it (a real, logged render).
+    bool restored = false;
+    for (int i = 0; i + 1 < over.logCount; ++i)
+        restored = restored || core::exactlyEqual (over.log[i].truePeakDbTp, over.measured.truePeakDbTp);
+    restored = restored && over.logCount == 12
+        && core::exactlyEqual (over.log[over.logCount - 1].truePeakDbTp, over.measured.truePeakDbTp);
+    test::ok (overEnded && over.deliverable && over.peaksAboveCeiling
+              && over.status == MasteringSolveStatus::TargetUnreachable
+              && over.binding == MasteringConstraint::TruePeakCeiling && over.measured.truePeakDbTp > -1.0
+              && everyAbove && gentlest && restored && std::isfinite (over.achievedLufs) && over.passes <= 12,
+              "no render under the ceiling: the gentlest measured render is delivered, marked above the ceiling");
 
     Rig miss;
     if (! test::run (miss.prepare())) return test::report();
     LoudnessSolution high;
     const bool highEnded = run (miss, 409, 10.0, 12, high);
-    test::ok (highEnded && high.deliverable && high.passes == 12 && high.logCount == 12
+    test::ok (highEnded && high.deliverable && ! high.peaksAboveCeiling && high.passes == 12 && high.logCount == 12
               && high.status != MasteringSolveStatus::Solved && high.measured.truePeakDbTp <= -1.0,
               "an over-loud target spends the full budget and keeps its best safe miss");
     bool restoredInBudget = false;

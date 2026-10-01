@@ -413,8 +413,10 @@ void theShimQuotesTheCoreBudget()
     //
     // The headline number as a LITERAL, so a mutant that carried the byte count through a float — where
     // 352688184 is not representable — fails here even if every relative comparison above still held.
-    ok (fc_probe_hum_storage_bytes (16u, 768000.0) == 352688184.0 + (double) felitronics::analysis::HumDetector::constructBytes(),
-        "hum_storage_bytes(16, 768000) is 352688184 payload bytes plus construction");
+    // (352688184 before the hum's still-frame pool: + 16 channels x 266 stretch bins x 8 B = 34048, and each channel's
+    // state one count longer, + 16 x 8 B.)
+    ok (fc_probe_hum_storage_bytes (16u, 768000.0) == 352722360.0 + (double) felitronics::analysis::HumDetector::constructBytes(),
+        "hum_storage_bytes(16, 768000) is 352722360 payload bytes plus construction");
     // And the modes must not be interchangeable, or a copy-paste between the five would be invisible.
     // ALL TEN PAIRS, not a hand-picked three: "the five are distinct" is a claim about every pair, and three
     // inequalities do not make it. A query wired to the wrong analyzer has to be visible whichever two got
@@ -469,12 +471,14 @@ void theShimQuotesTheCoreBudget()
     // whichever way it narrows. With N = 2^15 (the AUTO order at these rates) and bin = fs / N:
     //   bandHi    = ceil ((60.5 * 8 + 3 * bin + 10) / bin)   1995 at 8130, 1994 at 8130.5 and 8131
     //   stretchHi = ceil ((120 + 13 + bin) / bin)             538 at 8130 and 8130.5, 537 at 8131
-    // so each half-hertz step drops one double (8 B) from a different row. (The witness was 1000 / 1000.5 Hz
-    // before the 8000 Hz floor, below it now.)
-    ok (fc_probe_hum_storage_bytes (1u, 8130.0) == 1110784.0 + (double) felitronics::analysis::HumDetector::constructBytes(),
-        "hum(1, 8130) is 1110784 payload bytes plus construction — the rate is read as given");
-    ok (fc_probe_hum_storage_bytes (1u, 8130.5) == 1110776.0 + (double) felitronics::analysis::HumDetector::constructBytes() && fc_probe_hum_storage_bytes (1u, 8131.0) == 1110768.0 + (double) felitronics::analysis::HumDetector::constructBytes(),
-        "hum(1, 8130.5) is 1110776 payload bytes plus construction: a FRACTIONAL rate survives");
+    // so each half-hertz step drops a different row's width: one double (8 B) of the band, then one of the stretch's
+    // width — which two rows carry, the active stretch and the still-frame pool (16 B). stretchLo is 148 at all three,
+    // so the stretch's width is 391, 391, 390. (The witness was 1000 / 1000.5 Hz before the 8000 Hz floor, below it now;
+    // 1110784, 1110776, 1110768 before the still-frame pool's 391, 391, 390 doubles and the channel state's one count, 8 B.)
+    ok (fc_probe_hum_storage_bytes (1u, 8130.0) == 1113920.0 + (double) felitronics::analysis::HumDetector::constructBytes(),
+        "hum(1, 8130) is 1113920 payload bytes plus construction — the rate is read as given");
+    ok (fc_probe_hum_storage_bytes (1u, 8130.5) == 1113912.0 + (double) felitronics::analysis::HumDetector::constructBytes() && fc_probe_hum_storage_bytes (1u, 8131.0) == 1113896.0 + (double) felitronics::analysis::HumDetector::constructBytes(),
+        "hum(1, 8130.5) is 1113912 payload bytes plus construction: a FRACTIONAL rate survives");
 }
 
 // ---- refused geometries ---------------------------------------------------------------------------

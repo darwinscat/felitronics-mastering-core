@@ -197,6 +197,8 @@ enum class FactId : std::uint16_t
     MasterCostLimiter = 95,        // the limiter's reduction over the active windows: median {median}, P95 {p95}
     MasterCostActive = 96,         // the limiter works in {limiter} of the windows; {active} of the windows are active
     MasterCostBands = 97,          // the impact loss by band: low {low}, low-mid {lowMid}, high-mid {highMid}, high {high}
+    // No render under the ceiling: the master delivered is the gentlest, its true peak {truePeak} above the {ceiling}.
+    MasterPeaksAboveCeiling = 98,
 
     // A command's rejection, by its code — what was refused and why. The three a field refuses name it: {field}.
     RejectedFloatingPointEnvironment = 101,

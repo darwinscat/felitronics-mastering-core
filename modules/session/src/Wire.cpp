@@ -364,11 +364,11 @@ template <class F> auto parseCommand (std::string_view json, F&& finish) noexcep
             {
                 const auto input = fields.take (key, false);
                 if (input.empty()) return;
-                Reader r { input, fields.storage, 0, true, {}, 0, 0, false };
-                if (r.literal ("null")) clear = true;
-                else r.value (value);
-                r.space();
-                if (! r.good || r.pos != input.size()) p.set ("invalid", key);
+                Reader reader { input, fields.storage, 0, true, {}, 0, 0, false };
+                if (reader.literal ("null")) clear = true;
+                else reader.value (value);
+                reader.space();
+                if (! reader.good || reader.pos != input.size()) p.set ("invalid", key);
             };
             field ("lufs", r.fields.lufs, r.clear.lufs); field ("tp", r.fields.tp, r.clear.tp);
             request = r;

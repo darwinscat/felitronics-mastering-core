@@ -989,6 +989,7 @@ for (let i = 0; i < 40000; ++i) {
     if (M._fc_session_step(unsafeSession, 16, resultSize) !== STATUS.OK) break;
 }
 const unsafeLanding = unsafeComplete?.masters?.at(-1)?.landing;
+const unsafeReport = unsafeComplete?.masters?.at(-1)?.report;
 const ut = unsafeComplete?.pendingMaster ?? {};
 const uts = BigInt(ut.source ?? '0'), utr = BigInt(ut.revision ?? '0');
 for (const [i, value] of [28, lo(uts), hi(uts), lo(utr), hi(utr), ut.job ?? 0, ut.master ?? 0].entries())
@@ -996,9 +997,11 @@ for (const [i, value] of [28, lo(uts), hi(uts), lo(utr), hi(utr), ut.job ?? 0, u
 const unsafeWavStatus = M._fc_session_master_wav_size(unsafeSession, masterToken, wavSize, wavBits);
 ok(unsafeLoadAnswer?.kind === 'accepted' && unsafeTargetAnswer?.kind === 'accepted'
     && unsafeStartStatus === STATUS.OK && unsafeStartAnswer?.kind === 'accepted'
-    && unsafeLanding && ! unsafeLanding.deliverable && unsafeComplete.pendingMaster.master === 0
-    && unsafeWavStatus === STATUS.ERR_STALE,
-   'unsafe landing retains measurements but refuses WAV transfer');
+    && unsafeLanding?.deliverable && unsafeLanding.peaksAboveCeiling && unsafeLanding.status === 1
+    && unsafeReport?.deliverable && unsafeReport.peaksAboveCeiling && ! unsafeReport.peakSafe
+    && unsafeReport.truePeakDbTp > unsafeReport.ceilingDbTp
+    && unsafeComplete.pendingMaster.master > 0 && unsafeWavStatus === STATUS.OK,
+   'no render under the ceiling: the gentlest is delivered, marked above the ceiling, and its WAV transfers');
 contractRecord.scenarios.unsafe = {source:{pcmSha256:unsafePcmSha256,
     generator:{frames:unsafeFrames, channels:2, value:0.003, last:1}, metadataJson:unsafeMetaJson,
     metadataSha256:sha256(encoder.encode(unsafeMetaJson))}, inputs:unsafeInputs,

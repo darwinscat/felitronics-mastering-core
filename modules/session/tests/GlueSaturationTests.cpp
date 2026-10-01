@@ -82,7 +82,12 @@ struct Faked
             case Tempo::Cancelled:   tr.status = MeasurementStatus::Cancelled; tr.reason = MeasurementReason::Cancelled; break;
             case Tempo::Unavailable: tr.status = MeasurementStatus::Unavailable; tr.reason = MeasurementReason::TooShort; break;
         }
-        in.rules = detail::rules(); in.row = *in.rules.find (target); in.channels = 2; in.sampleRate = 48000; in.frames = 48000 * 60;
+        // A target the rules do not hold is the fixture's own error, said here — not an empty optional read as a row
+        // (gcc 14 on arm64 read one as a row past the table, and the config read trapped).
+        in.rules = detail::rules();
+        const auto row = in.rules.find (target);
+        felitronics::test::ok (row.has_value(), "PRECONDITION: the rules hold the target " + std::string (target));
+        in.row = row.value_or (std::uint16_t (0)); in.channels = 2; in.sampleRate = 48000; in.frames = 48000 * 60;
         in.measurements = results;
     }
     Faked (const Faked&) = delete;
@@ -922,7 +927,7 @@ void limiterAndDitherAsTheChainGetsThem()
     felitronics::test::group ("the plan carries the limiter's release, slow release, lookahead and oversampling, and the dither's shaping, as the chain gets them");
     const auto& e = config::Config::load().config.engine;
     bool same16 = true;
-    for (const char* target : { "cd", "allStreaming", "vinyl" })
+    for (const char* target : { "cd", "allStreaming", "lp" })
     {
         const Faked f (target, -18.0, -3.0, -12.0);
         const auto d = f.machine();
@@ -939,7 +944,7 @@ void limiterAndDitherAsTheChainGetsThem()
         std::printf ("    %s: release %.0f ms, slow %.0f ms (%s), lookahead %.2f ms, oversampling %dx; dither at %d bits, shaping %u\n", target,
             lim.releaseMs, lim.slowReleaseMs, lim.dualRelease ? "on" : "off", lim.lookaheadMs, int (lim.oversampling), int (dit.bits), unsigned (dit.shaping));
     }
-    ok (same16, "cd, all streaming, vinyl: the plan's numbers are the ones the chain is written with, and the effective oversampling");
+    ok (same16, "cd, all streaming, lp (vinyl): the plan's numbers are the ones the chain is written with, and the effective oversampling");
     const Faked cd ("cd", -18.0, -3.0, -12.0), stream ("allStreaming", -18.0, -3.0, -12.0);
     const auto cdDither = detail::ditherFinding (cd.in, cd.machine()), streamDither = detail::ditherFinding (stream.in, stream.machine());
     ok (cdDither.bits <= 16 && cdDither.shaping == DitherShaping::Weighted && (streamDither.bits <= 16 || streamDither.shaping == DitherShaping::None),

@@ -175,7 +175,8 @@ int main()
     const auto& miss = s.masters().back();
     ok (demanding.rejection == Rejection::None && missStart.rejection == Rejection::None
         && miss.landing && miss.landing->status == LandingStatus::PassLimit
-        && miss.landing->deliverable && miss.landing->passes == 12
+        && miss.landing->deliverable && ! miss.landing->peaksAboveCeiling && miss.landing->passes == 12
+        && miss.report && ! miss.report->peaksAboveCeiling && ! MasterReportText::peaksAboveCeiling (*miss.report)
         && miss.landing->truePeakDbTp && *miss.landing->truePeakDbTp <= -6.0
         && s.pendingMaster().master == miss.id && s.masterWavPlan (s.pendingMaster()),
         "an unreachable loudness goal retains the best ceiling-safe PCM after twelve passes");
@@ -245,23 +246,54 @@ int main()
     unsafeReady.ready.params.inputGainDb = 59.0 - (-18.0 - inputLufs);
     const auto unsafeStart = unsafe.apply (unsafeReady);
     for (unsigned i = 0; i < 40000 && unsafe.job() != 0; ++i) (void) unsafe.step (16);
-    ok (unsafeTarget.rejection == Rejection::None && unsafeStart.rejection == Rejection::None
-        && unsafe.masters().size() == 1 && unsafe.masters().back().landing
-        && ! unsafe.masters().back().landing->deliverable && unsafe.pendingMaster().master == 0
-        && ! unsafe.masterWavPlan (unsafe.pendingMaster()),
-        "true-peak violation across all candidates yields no transferable PCM");
+    // No render under the ceiling (owner, 01.10): the file is still delivered — the render that overshoots the ceiling
+    // least, the gentlest measured — and its true peak above the ceiling is what the master says.
+    const bool unsafeKept = unsafeTarget.rejection == Rejection::None && unsafeStart.rejection == Rejection::None
+        && unsafe.masters().size() == 1 && unsafe.masters().back().landing && unsafe.masters().back().report;
+    ok (unsafeKept && unsafe.masters().back().landing->deliverable && unsafe.masters().back().report->deliverable
+        && unsafe.pendingMaster().master == unsafe.masters().back().id && unsafe.masterWavPlan (unsafe.pendingMaster())
+        && unsafe.masters().back().report->truePeakDbTp
+        && *unsafe.masters().back().report->truePeakDbTp > unsafe.masters().back().report->ceilingDbTp,
+        "no render under the ceiling still yields transferable PCM, its true peak above the ceiling");
+    if (unsafeKept && unsafe.masters().back().landing->truePeakDbTp)
+    {
+        const auto masters = unsafe.masters();
+        const auto& kept = *masters.back().landing;
+        bool allAbove = ! kept.log.empty(), gentlest = true;
+        for (const auto& pass : kept.log)
+        {
+            allAbove = allAbove && ! pass.ceilingSafe;
+            gentlest = gentlest && *kept.truePeakDbTp <= pass.truePeakDbTp;
+        }
+        ok (allAbove && gentlest, "the delivered render is the gentlest measured: no pass overshoots the ceiling less");
+    }
+    else ok (false, "PRECONDITION: the unsafe master keeps a measured true peak");
+    // ...marked: the landing and the report carry it, the report's two numbers say it, fact 98 names both; the miss's
+    // line (which says the true peak held) is not said of it, and a safe master is not marked.
+    if (unsafeKept)
+    {
+        const auto masters = unsafe.masters();
+        const auto& report = *masters.back().report;
+        const auto above = MasterReportText::peaksAboveCeiling (report);
+        ok (masters.back().landing->peaksAboveCeiling && report.peaksAboveCeiling && ! report.peakSafe
+            && above && above->id == text::FactId::MasterPeaksAboveCeiling && above->argCount == 2
+            && report.truePeakDbTp && above->args[0].number == *report.truePeakDbTp
+            && above->args[1].number == report.ceilingDbTp && ! MasterReportText::miss (report),
+            "the master above the ceiling is marked: the landing, the report, fact 98 with its true peak and ceiling");
+    }
     // ...and the verdict says why (slice 5): the target out of reach, the true-peak ceiling holding it — fact 89 with its
     // limit — where it used to say nothing at all (Unavailable).
     if (! unsafe.masters().empty() && unsafe.masters().back().landing && unsafe.masters().back().report)
     {
-        const auto& lost = *unsafe.masters().back().landing;
-        const auto verdict = MasterReportText::landing (*unsafe.masters().back().report, lost, 0.1);
+        const auto masters = unsafe.masters();
+        const auto& lost = *masters.back().landing;
+        const auto verdict = MasterReportText::landing (*masters.back().report, lost, 0.1);
         ok (lost.status == LandingStatus::TargetUnreachable && lost.binding == LandingConstraint::TruePeakCeiling
             && verdict && verdict->id == text::FactId::MasterLandingUnreachable && verdict->argCount == 2
             && verdict->args[1].termId == text::Term::LandingLimitTruePeak,
             "no render under the ceiling: unreachable, the true-peak ceiling named, fact 89");
     }
     else ok (false, "PRECONDITION: the unsafe master keeps its landing and report");
-    std::printf ("wav-outcomes=cancel:false,refusal:false,unavailable:false,miss:true,unsafe:false\n");
+    std::printf ("wav-outcomes=cancel:false,refusal:false,unavailable:false,miss:true,unsafe:true\n");
     return felitronics::test::report();
 }

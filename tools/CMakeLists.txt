@@ -337,6 +337,14 @@ if(FELITRONICS_BUILD_TESTS)
     add_executable(felitronics_session_master_abi_tests tests/SessionMasterAbiTests.cpp $<TARGET_OBJECTS:felitronics_session_facade>)
     target_link_libraries(felitronics_session_master_abi_tests PRIVATE felitronics::session felitronics::toml felitronics::test_support)
     target_include_directories(felitronics_session_master_abi_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+    # FCORE_NO_FP_CONTRACT IS LOAD-BEARING HERE TOO. This unit runs its own LandingSearch beside the library's, so it
+    # instantiates the same inline mastering code, and one inline function must be compiled one way in every unit that
+    # emits it: the linker keeps ONE of the weak copies for the whole binary. Under the directory's -ffp-contract=on,
+    # gcc 14 fused multiply-adds into this unit's copies on arm64; the linker kept them, so the library's landing
+    # measured its passes with fused arithmetic in some functions and not in others, its verify re-measured the render
+    # differently, and the delivery was refused (7 checks red on gcc 14 arm64 only: x86-64 has no FMA in its baseline,
+    # gcc 13 does not contract under `on`). The library's own -ffp-contract=off, here as there.
+    target_compile_options(felitronics_session_master_abi_tests PRIVATE ${FCORE_NO_FP_CONTRACT})
     add_test(NAME felitronics_session_master_abi_tests COMMAND felitronics_session_master_abi_tests)
     foreach(operation command load import)
         add_test(NAME felitronics_session_abi_poison_${operation}_tests

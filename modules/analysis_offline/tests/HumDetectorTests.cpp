@@ -442,12 +442,13 @@ int main()
 
         // the same numbers reach Storage, and Storage is published before anything is allocated
         const auto st = HumDetector::storageFor (kSr, 2, p);
-        ok (st.ok && st.bandDoubles == 2702 && st.stretchDoubles == 532 && st.floorDoubles == 23,
+        ok (st.ok && st.bandDoubles == 2702 && st.stretchDoubles == 532 && st.stillDoubles == 532 && st.floorDoubles == 23,
             "storage: published from the same geometry (" + std::to_string (st.bandDoubles) + " band doubles)");
         ok (st.stretchEntries == 512 && st.harmonicEntries == 32 && st.channelEntries == 2,
             "storage: stretch, harmonic and channel rows are sized by the parameters");
         ok (st.bytes() >= st.frames.bytes()
-                            + (std::uint64_t) sizeof (double) * (st.bandDoubles + st.stretchDoubles + st.floorDoubles),
+                            + (std::uint64_t) sizeof (double) * (st.bandDoubles + st.stretchDoubles + st.stillDoubles
+                                                                 + st.floorDoubles),
             "storage: the total covers the producer's budget plus every double row it publishes");
 
         // refusals
@@ -1624,6 +1625,48 @@ int main()
             serialise (d, 1, p.maxHarmonic, reused);
             ok (reused == fresh, "replay: a reused object's WHOLE report is bit-identical to a fresh one");
         }
+    }
+
+    //---------------------------------------------------------------------------------------------------
+    // 14. HUM IS A LINE HEARD IN THE QUIET PASSAGES TOO (owner, 01.10): a mains line does not stop when the music
+    //     does; a line present only while the music plays is music. Five passages of four hops each: a quiet intro,
+    //     a passage where a loud 50 Hz line (with its comb) plays over the quiet, a loud broadband break, the line
+    //     again, a quiet outro. The line's bands are out of the quiet gate, so the two line passages read as quiet
+    //     beside the intro and the outro — which is how a 60 Hz musical tone was reported as hum.
+    {
+        constexpr std::size_t kPart = 4 * kHop;
+        const auto mix = [&] (double introLine)
+        {
+            Sig m (1, 5 * kPart);
+            m.noise (0, 2 * kPart, 3.0e-4, 211u);
+            m.noise (2 * kPart, 3 * kPart, 0.3, 212u);                 // the break: ~ -15 dBFS, broadband
+            m.noise (3 * kPart, 5 * kPart, 3.0e-4, 213u);
+            for (int h = 1; h <= 4; ++h)
+            {
+                const double a = 0.25 / (double) (h * h), f = 50.0 * (double) h;
+                m.tone (kPart, 2 * kPart, f, a);                       // under the music: loud, its comb with it
+                m.tone (3 * kPart, 4 * kPart, f, a, 0.7);
+                if (introLine > 0.0)
+                {
+                    m.tone (0, kPart, f, introLine / (double) (h * h), 0.3);
+                    m.tone (4 * kPart, 5 * kPart, f, introLine / (double) (h * h), 1.1);
+                }
+            }
+            return m;
+        };
+        HumDetectorParams p;
+        HumDetector music, loudThrough, humThrough;
+        const HumReport onlyWithMusic = once (mix (0.0), p, music);
+        ok (onlyWithMusic.mains == HumMains::None && ! onlyWithMusic.valid
+            && onlyWithMusic.reason == HumReason::LineOnlyWithMusic,
+            "quiet passages: a 50 Hz line only under the music is music, not hum (mains "
+            + std::to_string ((int) onlyWithMusic.mains) + ", reason " + std::to_string ((int) onlyWithMusic.reason) + ")");
+        const HumReport through = once (mix (0.25), p, loudThrough);
+        ok (through.valid && through.mains == HumMains::Hz50,
+            "quiet passages: the same line through the quiet intro and outro is hum");
+        const HumReport faint = once (mix (1.0e-3), p, humThrough);
+        ok (faint.valid && faint.mains == HumMains::Hz50,
+            "quiet passages: the line through the intro and outro at a hum's level, loud under the music, is hum");
     }
 
     return felitronics::test::report();

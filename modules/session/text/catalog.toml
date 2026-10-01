@@ -1255,6 +1255,10 @@ en = "The limiter works in {limiter} of the windows; {active} of the windows are
 ru = "Потеря удара по полосам: низ {low}, нижняя середина {lowMid}, верхняя середина {highMid}, верх {high}."
 en = "Impact loss by band: low {low}, low-mid {lowMid}, high-mid {highMid}, high {high}."
 
+[messages.masterPeaksAboveCeiling]
+ru = "Пики выше потолка: истинный пик мастера {truePeak} при потолке {ceiling}. Под потолком не вышел ни один вариант — отдан тот, что превышает его меньше всех."
+en = "Peaks above the ceiling: the master's true peak is {truePeak} against a ceiling of {ceiling}. No render stayed under the ceiling, so the one that exceeds it least is delivered."
+
 # The plan's advice: a device's value as it sounds, against the norm drawn on its knob.
 [messages.hpfBelowComfort]
 ru = "ФВЧ {cutoff} ниже комфортного окна {low}–{high}: так низко он только страхует от постоянной составляющей и не чистит низ."

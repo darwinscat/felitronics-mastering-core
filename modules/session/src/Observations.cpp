@@ -584,6 +584,7 @@ Observation sibilance (const ObservationInputs& in) noexcept
 //   CandidateNotStationary  a line was measured and did not stand still (humWandered's evidence)   -> answered
 //   NoQuietStretch          the programme is never quiet, and a line is heard only in the quiet    -> answered, no line
 //   CombWithoutBase         harmonics of the mains without their base: no base line                -> answered, no line
+//   LineOnlyWithMusic       a steady line that stops where the whole programme is quiet: music      -> answered, no line
 //   SingleQuietStretch,     too little quiet to tell a steady line from a passing one: answered    -> answered, no line,
 //   StretchesTooShort       where no base line showed at all; where one did, whether it stands     or NoSignal
 //                           still cannot be told
@@ -600,7 +601,7 @@ Observation sibilance (const ObservationInputs& in) noexcept
 enum : unsigned
 {
     kHumOk = 0, kHumShorterThanWindow = 4, kHumAllFramesHoled = 5, kHumNoQuietStretch = 6, kHumSingleQuietStretch = 7,
-    kHumStretchesTooShort = 8, kHumNotStationary = 9, kHumCombWithoutBase = 10
+    kHumStretchesTooShort = 8, kHumNotStationary = 9, kHumCombWithoutBase = 10, kHumOnlyWithMusic = 11
 };
 // The codes are the detector's own: a renumbered HumReason fails here, not as a silently wrong verdict.
 static_assert (kHumOk == unsigned (analysis::HumReason::Ok) && kHumShorterThanWindow == unsigned (analysis::HumReason::ShorterThanWindow)
@@ -609,13 +610,15 @@ static_assert (kHumOk == unsigned (analysis::HumReason::Ok) && kHumShorterThanWi
                && kHumSingleQuietStretch == unsigned (analysis::HumReason::SingleQuietStretch)
                && kHumStretchesTooShort == unsigned (analysis::HumReason::StretchesTooShort)
                && kHumNotStationary == unsigned (analysis::HumReason::CandidateNotStationary)
-               && kHumCombWithoutBase == unsigned (analysis::HumReason::CombWithoutBase),
+               && kHumCombWithoutBase == unsigned (analysis::HumReason::CombWithoutBase)
+               && kHumOnlyWithMusic == unsigned (analysis::HumReason::LineOnlyWithMusic),
                "the hum codes are analysis::HumReason's");
 std::optional<MeasurementReason> unanswered (unsigned code, bool baseHeard) noexcept
 {
     switch (code)
     {
-        case kHumOk: case kHumNotStationary: case kHumNoQuietStretch: case kHumCombWithoutBase: return std::nullopt;
+        case kHumOk: case kHumNotStationary: case kHumNoQuietStretch: case kHumCombWithoutBase: case kHumOnlyWithMusic:
+            return std::nullopt;
         case kHumSingleQuietStretch: case kHumStretchesTooShort:
             return baseHeard ? std::optional<MeasurementReason> (MeasurementReason::NoSignal) : std::nullopt;
         case kHumShorterThanWindow: return MeasurementReason::TooShort;
