@@ -25,6 +25,7 @@
 #include <bit>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -506,12 +507,12 @@ void theSaturation()
             mastering::MasteringChainParams params;
             params.inputGainDb = 1.25; params.preLimiterGainDb = -2.5;
             detail::writeDynamics (f.in, d, params);
-            written = written && ! params.bypassClipper && params.bypassCompressor && params.clipper.shape == felitronics::saturation::WaveShaper::Shape::Tanh
+            written = written && ! params.bypassClipper && params.bypassCompressor && params.clipper.shape == felitronics::saturation::WaveShaper::Shape::Tape
                 && sameF (params.clipper.driveDb, float (*found.driveDb)) && sameF (params.clipper.autoComp, 0.0f) && sameF (params.clipper.mix, 1.0f)
                 && sameF (params.clipper.outputDb, 0.0f) && sameF (params.clipper.bias, 0.0f) && same (params.inputGainDb, 1.25) && same (params.preLimiterGainDb, -2.5);
         }
     ok (aligned, "drive 3 / 6 / 12 dB at peaks from −12 to +2 dBTP: the shaper's gain at the peak is the knob's, k·peak = 10^(knob/20) − 1");
-    ok (written, "the clipper stage gets it — tanh, the compensation 0 — and neither gain of the chain is touched: the normalising gain is the search's, once");
+    ok (written, "the clipper stage gets it — tape, the machine's type, the compensation 0 — and neither gain of the chain is touched: the normalising gain is the search's, once");
 
     const Faked f ("allStreaming", -18.0, -6.0, -12.0);
     mastering::MasteringChainParams params;
@@ -808,14 +809,20 @@ void theReport()
 }
 void theType()
 {
-    felitronics::test::group ("the saturation's type: a person's pick among five over the machine's tanh — the chain, the report, "
+    felitronics::test::group ("the saturation's type: a person's pick among five over the machine's tape — the chain, the report, "
                               "the project file; a refused type changes nothing, a change of target takes it back");
     const Mix mix;
     auto sp = measured (mix, "allStreaming"); auto& s = *sp;
     const auto& sat = s.project().devices.saturation;
-    ok (sat.machine.type == SaturationType::Tanh && ! sat.hand.type, "the machine's type is the config's, tanh; nothing by hand");
+    ok (sat.machine.type == SaturationType::Tape && ! sat.hand.type, "the machine's type is the config's, tape; nothing by hand");
     SaturationFields<Touched> knob; knob.on = true; knob.drive = 6.0;
     ok (s.apply (command::EditDevice { 3, knob }).rejection == Rejection::None, "PRECONDITION: saturation at 6 dB");
+    // A hand drive with no type picked runs the machine's type (owner, 01.10: tape).
+    mastering::MasteringChainParams unpicked;
+    {
+        const auto snapshot = s.snapshot();
+        detail::writeDynamics (inputsOf (s, snapshot), s.project().devices, unpicked);
+    }
 
     // REFUSED: atan, cubic and asym are the config's only (research), and past tape is no type — the command is refused
     // whole, at the type's place, and the drive it carried is not taken either.
@@ -853,6 +860,13 @@ void theType()
         each = each && int (pick (t).clipper.shape) == int (t) && sat.hand.type == t;
     const auto tape = pick (SaturationType::Tape);
     const auto tapeStage = stage (mix, tape, gainOf(), share);
+    const auto unpickedStage = stage (mix, unpicked, gainOf(), share);
+    const auto bits = [] (const std::vector<float>& a, const std::vector<float>& b)
+    { return a.size() == b.size() && std::memcmp (a.data(), b.data(), a.size() * sizeof (float)) == 0; };
+    ok (unpicked.clipper.shape == felitronics::saturation::WaveShaper::Shape::Tape && ! unpicked.bypassClipper
+        && bits (unpickedStage.left, tapeStage.left) && bits (unpickedStage.right, tapeStage.right)
+        && ! bits (unpickedStage.left, tanhStage.left),
+        "a hand drive with no type picked sounds tape: its stage is bit for bit the tape pick's, and not the tanh's");
     const double tanhCut = cutDb (tanhStage.peaks.quietGain, tanhStage.peaks.loudLeastRatio);
     const double tapeCut = cutDb (tapeStage.peaks.quietGain, tapeStage.peaks.loudLeastRatio);
     ok (each && tape.clipper.shape == felitronics::saturation::WaveShaper::Shape::Tape && ! tape.bypassClipper
@@ -876,17 +890,18 @@ void theType()
         && line.find ("срезала пики до") != std::string::npos,
         "the master's report measures the tape stage, the same words for every type: " + line);
 
-    // THE FILE: the pick is written as the person's, the machine's tanh is not written; another session reads it back.
+    // THE FILE: the pick is written as the person's, the machine's tape is not written; another session reads it back.
+    (void) pick (SaturationType::Tanh);
     const auto file = s.exportProject();
     const std::string written (file.view());
     auto other = measured (mix, "allStreaming");
-    ok (file.rejection == Rejection::None && written.find ("type.hand = \"tape\"") != std::string::npos
+    ok (file.rejection == Rejection::None && written.find ("type.hand = \"tanh\"") != std::string::npos
         && written.find ("type.machine") == std::string::npos
         && other->importProject (7, written).rejection == Rejection::None
-        && other->project().devices.saturation.hand.type == SaturationType::Tape
-        && other->project().devices.saturation.machine.type == SaturationType::Tanh,
-        "the project file carries type.hand = \"tape\" and reads back as the person's tape over the machine's tanh");
-    const auto at = written.find ("type.hand = \"tape\"");
+        && other->project().devices.saturation.hand.type == SaturationType::Tanh
+        && other->project().devices.saturation.machine.type == SaturationType::Tape,
+        "the project file carries type.hand = \"tanh\" and reads back as the person's tanh over the machine's tape");
+    const auto at = written.find ("type.hand = \"tanh\"");
     auto atan = written; atan.replace (at, 18, "type.hand = \"atan\"");
     auto third = measured (mix, "allStreaming");
     const auto answer = third->importProject (8, atan);
@@ -898,8 +913,8 @@ void theType()
     const auto warned = SnapshotText::targetChange (view.view());
     ok (view.view().handFieldCount == 3 && warned && warned->args[0].integer == 3,
         "the warning before a change of target counts the type among the three edits (on, drive, type)");
-    ok (s.apply (command::SetTarget { 9, "cd" }).rejection == Rejection::None && ! sat.hand.type && sat.machine.type == SaturationType::Tanh,
-        "after the change the type is the machine's tanh again");
+    ok (s.apply (command::SetTarget { 9, "cd" }).rejection == Rejection::None && ! sat.hand.type && sat.machine.type == SaturationType::Tape,
+        "after the change the type is the machine's tape again");
 }
 } // namespace
 

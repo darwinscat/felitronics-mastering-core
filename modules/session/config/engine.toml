@@ -320,9 +320,9 @@ knobMinDb = 0
 knobMaxDb = 3
 knobStepDb = 0.1
 
-# SATURATION — the peak-normalised tanh saturator, the chain's clipper stage. A taste of the manual mode: the machine never
+# SATURATION — the peak-normalised saturator, the chain's clipper stage. A taste of the manual mode: the machine never
 # sets it, and it does not shorten needles (the peak clipper inside the limiter does).
-# shape: tanh (the core also has atan, cubic and asym).
+# shape: tape (owner, 01.10; tanh before).
 # THE DRIVE KNOB IS A DISTANCE FROM THE PROGRAMME'S PEAK, not absolute decibels: the knob is the drive the programme would
 #   get normalised to 0 dBTP, so one number gives one result on a quiet and a loud copy of one file (between different
 #   files it aligns only the peak — how much reaches the bend is each music's own). The conversion is not arithmetic: the
@@ -335,7 +335,8 @@ knobStepDb = 0.1
 # autoComp 0 is written over the core's default 0.5: the output is then tanh(k·s)/tanh(k), normalised to its own k.
 # shape: the machine's type, one of the core's eight (tanh, atan, cubic, asym, tube, transistor, transformer, tape); the
 #   machine never picks another. A person picks the type by hand among tanh, tube, transistor, transformer and tape;
-#   atan, cubic and asym stay here, for research. tanh is the default, so nothing sounds new unless a person picks a type.
+#   atan, cubic and asym stay here, for research. tape is the default (owner, 01.10): the machine never raises the drive,
+#   so the type is heard once a person does.
 # bias and dcBlockHz are read by the core for the asym shape only. Below a drive of 0.00087 dB (the core's number) every
 # value is one setting.
 # cut (owner decision 3.9): what the stage took off the peaks is measured ON THE STAGE — the peak of its input against the
@@ -348,7 +349,7 @@ knobStepDb = 0.1
 driveDomain = [0, 12]
 mixDomain = [0, 1]
 outputDomain = [-6, 0]
-shape = "tanh"
+shape = "tape"
 driveDb = 0
 driveRange = [0, 12]
 driveStep = 0.5
