@@ -1836,3 +1836,9 @@ codec LimiterFinding.lookaheadMs double
 codec LimiterFinding.oversampling int32
 codec DitherFinding.shaping DitherShaping
 binary SessionSnapshot.eqOnlyCurve
+
+# Slice 5, part C (owner, 01.10): no render under the true-peak ceiling still delivers the file — the gentlest render,
+# marked: the landing summary and the master report carry the mark (appended plain), fact 98 says the peak and the ceiling.
+enum felitronics::session::text::FactId::MasterPeaksAboveCeiling=98
+codec MasterReport.peaksAboveCeiling bool
+codec LandingSummary.peaksAboveCeiling bool

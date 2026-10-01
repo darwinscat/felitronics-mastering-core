@@ -646,7 +646,8 @@
         "secondHint": "MasterHint?",
         "cost": "MasterCost?",
         "medium": "MasterMedium?",
-        "readings": "ReadingFact[<=9]"
+        "readings": "ReadingFact[<=9]",
+        "peaksAboveCeiling": "bool"
       }
     },
     "LandingPass": {
@@ -705,7 +706,8 @@
         "workUnits": "uint64",
         "log": "LandingPass[]",
         "limiterTrace": "LandingTrace?",
-        "peakClipTrace": "LandingTrace?"
+        "peakClipTrace": "LandingTrace?",
+        "peaksAboveCeiling": "bool"
       }
     },
     "Source": {

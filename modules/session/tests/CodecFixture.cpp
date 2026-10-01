@@ -70,7 +70,7 @@ int main()
         {
             kept[0].landing->passes = 1;
             kept[0].landing->log = pass;
-            kept[0].landing->deliverable = false;
+            kept[0].landing->deliverable = false; kept[0].landing->peaksAboveCeiling = false;
             LandingTrace trace;
             trace.toFrame = 1; trace.sampleRateHz = 48000; trace.columns = 1;
             trace.samples = 4; trace.complete = trace.valid = true; trace.rows = { &traceRow, 1 };
@@ -86,7 +86,7 @@ int main()
             report.lraLu = 2.0; report.lraReason = MeasurementReason::None;
             report.plrDb = 8.0; report.plrReason = MeasurementReason::None;
             report.gainFromSourceDb = 1.0; report.missLu = 0.0;
-            report.peakSafe = true; report.deliverable = false;
+            report.peakSafe = true; report.deliverable = false; report.peaksAboveCeiling = false;
             report.targetMet = kept[0].landing->status == LandingStatus::Solved;
             report.checkPasses = 0;
             report.crest.status = MeasurementStatus::Ready;

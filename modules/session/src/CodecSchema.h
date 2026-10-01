@@ -1052,7 +1052,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, LandingSummary>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.aboveLufs)>, std::optional<double>>);
         v.field ("aboveLufs", x.aboveLufs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.achievedLufs)>, std::optional<double>>);
@@ -1079,6 +1079,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("passes", x.passes);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.peakClipTrace)>, std::optional<LandingTrace>>);
         v.field ("peakClipTrace", x.peakClipTrace);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.peaksAboveCeiling)>, bool>);
+        v.field ("peaksAboveCeiling", x.peaksAboveCeiling);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.secondReason)>, LandingReason>);
         v.field ("secondReason", x.secondReason);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.sourcePresenceShare)>, std::optional<double>>);
@@ -1394,7 +1396,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, MasterReport>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.achievedLufs)>, std::optional<double>>);
         v.field ("achievedLufs", x.achievedLufs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ceilingDbTp)>, double>);
@@ -1421,6 +1423,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("missLu", x.missLu);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.peakSafe)>, bool>);
         v.field ("peakSafe", x.peakSafe);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.peaksAboveCeiling)>, bool>);
+        v.field ("peaksAboveCeiling", x.peaksAboveCeiling);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.plrDb)>, std::optional<double>>);
         v.field ("plrDb", x.plrDb);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.plrReason)>, MeasurementReason>);

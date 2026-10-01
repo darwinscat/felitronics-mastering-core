@@ -1622,6 +1622,11 @@ void theObservations()
         // Owner decision 01.10: the detector listened through a programme that is never quiet — no steady line stood out.
         ok (deaf.hum.status == ObservationStatus::NotFound && deaf.humWandered.status == ObservationStatus::NotFound,
             "no quiet stretch: the detector listened and no line stood out — not found, not \"not measured\"");
+        // Owner decision 01.10: a steady line that stops where the whole programme is quiet is music — the detector
+        // listened and judged it: no hum, no wandering one, not "not measured".
+        const auto music = hum (MeasurementStatus::Unavailable, 11.0, 0.0, false);
+        ok (music.hum.status == ObservationStatus::NotFound && music.humWandered.status == ObservationStatus::NotFound,
+            "a line only under the music: the detector judged it music — the hum not found");
         // Refused before any work (no price for this programme, or memory the session may not take): the result carries
         // no number at all, so the hum is not measured with the result's own reason — never "too short" for a long file.
         for (const auto reason : { MeasurementReason::Memory, MeasurementReason::Unsupported })

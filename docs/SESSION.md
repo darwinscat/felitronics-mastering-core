@@ -496,7 +496,9 @@ resolution, or a base line heard in too little quiet to tell whether it stands s
 analyzer before any work (no price for the programme, the memory) — then with that refusal's own reason, never "too
 short"; where it listened — a programme
 never quiet, a comb without its base, a quiet stretch without a base line — and no steady line stood out, it is not
-found. **The observations speak for themselves**: `observationFacts` carries every
+found. A hum is a line heard in the quiet passages too (owner, 01.10): a steady line that is absent from the frames where
+the whole programme is quiet — its own bands included — plays only with the music, and the detector says so
+(`HumReason::LineOnlyWithMusic`, 11): answered, the hum not found. **The observations speak for themselves**: `observationFacts` carries every
 kind's line as `ObservationText::facts` states it — `{kind, fact}`, in the order of `ObservationKind`, empty before a
 source — so a shell shows them without composing one; the names, the handling and the reasons are catalogue terms
 (`terms.observation`, `terms.handledBy`, `terms.measurementReason`).
@@ -844,9 +846,11 @@ The mastering render's source-rate conversion, chain latency, drain, and prepara
 
 `LandingSearch` keeps one search across calls. It first surveys source spectrum and crest in bounded units, then
 renders and measures within one budget of up to twelve passes. A measured hit stops immediately. Every render is
-logged; an exhausted budget returns the closest ceiling-safe PCM and its measured miss, or `Unavailable` when none is
-safe. Source and output are the only full PCM buffers. If a previous candidate wins, a counted pass restores it; the
-last pass is reserved for that render once a safe candidate exists. The search can pause during SRC, rendering,
+logged; an exhausted budget returns the closest ceiling-safe PCM and its measured miss. When measured renders exist and
+none is safe it returns the gentlest — the smallest overshoot of the ceiling — as `TargetUnreachable` bound by the
+ceiling and marked `peaksAboveCeiling`; `Unavailable` only when no render could be measured. Source and output are the
+only full PCM buffers. If a previous candidate wins, a counted pass restores it; the last pass is reserved for that
+render once a candidate exists (a safe one, or else the gentlest above the ceiling). The search can pause during SRC, rendering,
 metering, band statistics, integrated gates, the LRA scan, restoration and independent remeasurement.
 `TargetLoudnessSolver::solve()` drives this same path when `LoudnessRequest::productLanding` is set. Its older
 request policy remains available for existing callers. The request-aware `TargetLoudnessSolver::solveCallBytes(req)`
@@ -1588,7 +1592,8 @@ Ready preflight requires retained PCM and finite completed integrated loudness a
 the chain, renderer, converter when needed, solver, search workspace, output PCM, compact rows, and
 allocator margin before any job allocation. `step` advances the search by bounded work units; one
 landing has at most twelve measured passes. A safe miss retains the best verified output and its typed
-reason. Unavailable mandatory readings or an unsafe true peak yield no transferable PCM. Optional
+reason. Unavailable mandatory readings yield no transferable PCM; a true peak above the ceiling does only where no render
+kept under it, the gentlest delivered and marked `peaksAboveCeiling`. Optional
 source analyzers continue independently. `canMaster` in the snapshot reports state and mandatory
 readiness; capacity is reported by the preflight demand. The snapshot also exposes the pending transfer
 token and PCM byte count. Every field is present on decode; a missing key is a decode error.
@@ -1652,8 +1657,14 @@ tolerance (91, `belowLufs`/`aboveLufs`); the achieved number and the gap stay th
 (`MasterLandingMiss`/`Above`, 11/23); a technical failure says so (92). The product landing the session runs ends Solved,
 PassLimit or between with its master delivered (a loudness it cannot hit always returns the file at the closest level it
 found, owner 01.10), or unreachable with the true-peak ceiling named when measured renders exist and none kept under the
-ceiling (89; possible only for a caller's chain without the limiter) — that one delivers nothing, since no render kept
-the target's ceiling. Unavailable and cancelled landings say none. The crest's line
+ceiling (89; possible only for a caller's chain without the limiter). That one delivers its file too (owner, 01.10): the
+render that overshoots the ceiling least, the gentlest measured, verified like any other and marked —
+`LandingSummary::peaksAboveCeiling` and `MasterReport::peaksAboveCeiling` (with `peakSafe` false and `truePeakDbTp` above
+`ceilingDbTp`), and `MasterPeaksAboveCeiling` (98) beside the verdict, naming the true peak and the ceiling; the miss's
+line, which says the true peak held, is not said of it. Delivered means under the ceiling except in exactly this marked
+case: the decoder holds a deliverable report to `peakSafe` or the mark, the mark to a deliverable report above its
+ceiling and not met, and a marked landing to a deliverable `TargetUnreachable` bound by the ceiling. Unavailable and
+cancelled landings say none. The crest's line
 (`MasterReportText::crest`) goes out once: with the report when the job settles the crest (joined inside the job, or
 unavailable), or from the late join when it was still pending.
 
