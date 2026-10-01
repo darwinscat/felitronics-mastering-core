@@ -257,8 +257,14 @@ field a value), a person's layer (a field a value only where touched — a touch
 number is the machine's) and a revert's mask (a field yes or no). Commands name fields through typed structs: an edit is the
 device's struct, a variant whose alternative is the device. TOML keys are bound at the serialization boundary. The devices are the high-pass, mono bass, the glue (its
 knob, "up to N dB", as the config writes every glue number),
-saturation, tilt, the limiter's needles, dither and low. Tilt and low are separate devices on every target.
+saturation, tilt, the limiter's needles, dither, low and the EQ bands. Tilt and low are separate devices on every target.
 The machine enables low only for a target with `lowDb` (today `lp`, +0.5 dB); otherwise low starts off at 0 dB.
+The EQ bands (device 8, `[bands]`) are five static bands of the EQ stage — body (bell, 160 Hz), mud (bell, 300 Hz, a cut
+only), forward (bell, 3 kHz), brightness (high shelf, 8 kHz) and air (high shelf, 12 kHz), each its own band of the stage
+(3–7) — and a person's only: the machine leaves every band at 0 dB, a band at 0 dB is no band (its slot as the stage held
+it before the device), and there is no tick — the plan says the device sounds where any band is not 0. No norm advice
+and no dynamics this release; the curve's `[eq] curve.warnDb` judges the shelves of tilt and low only
+(`felitronics_session_eq_bands_tests`).
 Dither is offered through 16 bits, and mono bass except on a mono source; the shell may exclude any device.
 
 - **The machine's layer** is the planner's (below, "The plan of the devices"): each device proposes its fields from
@@ -308,8 +314,8 @@ Dither is offered through 16 bits, and mono bass except on a mono source; the sh
 
 ### The plan of the devices
 
-`src/Planner.h`. **The planner is the one place the machine decides.** Each of the eight devices — the high-pass, mono
-bass, glue, saturation, tilt, the limiter with its needles, dither and low — is a `Planned<>` of its fields: it
+`src/Planner.h`. **The planner is the one place the machine decides.** Each of the nine devices — the high-pass, mono
+bass, glue, saturation, tilt, the limiter with its needles, dither, low and the EQ bands — is a `Planned<>` of its fields: it
 *proposes* its machine fields from what it may read (the target and its edited numbers, the source's shape, the devices
 the shell offers, the measurements) and says where each came from (its target, a measurement, or the config's default)
 and what held it back (the shell, the source, the target, a measurement that ended without a value); and it says what

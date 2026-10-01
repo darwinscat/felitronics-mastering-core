@@ -13,6 +13,7 @@
 #include <felitronics/toml/Toml.h>
 
 #include <cstdint>
+#include <iterator>
 #include <limits>
 #include <optional>
 #include <string_view>
@@ -167,6 +168,12 @@ Rules readRules (View targets, View engine) noexcept
     r.knob (tilt.find ("hard"), tilt.find ("step"), tilt.find ("domain"), out.tilt);
     const View shelf = engine.find ("low");
     r.knob (shelf.find ("hard"), shelf.find ("step"), shelf.find ("domain"), out.low);
+    const View bands = engine.find ("bands");
+    for (std::size_t i = 0; i < std::size (kBandNames); ++i)
+    {
+        const View band = bands.find (kBandNames[i]);
+        r.knob (band.find ("hard"), band.find ("step"), band.find ("domain"), out.bands[i]);
+    }
 
     const View clipper = engine.find ("limiter").find ("peakClipper");
     r.read (clipper.find ("manualMinDb"), out.needles.from);

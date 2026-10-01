@@ -7,6 +7,7 @@
 #include <felitronics/core/DetMath.h>
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <limits>
 
 namespace felitronics::session::detail
@@ -123,6 +124,32 @@ struct BiquadCoeffs
         c.b2 = c.b0;
         return c;
     }
+    // The matched bell (peaking) of felitronics-core's MatchedBiquad.h: a cut is the boost of the same size inverted, so
+    // -G and +G dB at one Q are mirror images.
+    BiquadCoeffs peaking (double f0, double fs, double Q, double gainLin) noexcept
+    {
+        if (gainLin < 1.0 && gainLin > 0.0)
+        {
+            const BiquadCoeffs b = peaking (f0, fs, Q, 1.0 / gainLin);
+            const double inv = 1.0 / b.b0;
+            return { inv, b.a1 * inv, b.a2 * inv, b.b1 * inv, b.b2 * inv };
+        }
+        BiquadCoeffs c;
+        const double w0 = 2.0 * kPi * f0 / fs;
+        matchedPoles (w0, Q, c.a1, c.a2);
+        const double s = core::det::sin (w0 * 0.5);
+        const double phi1 = s * s, phi0 = 1.0 - phi1, phi2 = 4.0 * phi0 * phi1;
+        const double t0 = 1.0 + c.a1 + c.a2, t1 = 1.0 - c.a1 + c.a2;
+        const double A0 = t0 * t0, A1 = t1 * t1, A2 = -4.0 * c.a2;
+        const double G2 = gainLin * gainLin;
+        const double B0 = A0;
+        const double R1 = (A0 * phi0 + A1 * phi1 + A2 * phi2) * G2;
+        const double R2 = (-A0 + A1 + 4.0 * (phi0 - phi1) * A2) * G2;
+        const double B2 = (R1 - R2 * phi1 - B0) / (4.0 * phi1 * phi1);
+        const double B1 = R2 + B0 + 4.0 * (phi1 - phi0) * B2;
+        solveNumerator (B0, B1, B2, c);
+        return c;
+    }
     BiquadCoeffs highpass1 (double f0, double fs) noexcept
     {
         BiquadCoeffs c;
@@ -224,6 +251,7 @@ int eqBand (Device device) noexcept
         case Device::Hpf:  return 0;
         case Device::Tilt: return 1;
         case Device::Low:  return 2;
+        case Device::Bands:
         case Device::MonoBass:
         case Device::Glue:
         case Device::Saturation:
@@ -233,13 +261,21 @@ int eqBand (Device device) noexcept
     storageOverflow();
 }
 
-void writeEq (const Devices& devices, const Rules& rules, EqStage& stage) noexcept
+int bandsSlot (const Rules& rules, std::size_t i) noexcept
 {
-    writeEq (settingsOf (rules, devices.hpf), settingsOf (rules, devices.tilt), settingsOf (rules, devices.low), rules, stage);
+    const auto slot = rules.engine.find ("bands").find (kBandNames[i]).find ("band").integer();
+    if (! slot || *slot < 0 || *slot >= eq::EqEngine::kMaxBands) storageOverflow();
+    return int (*slot);
 }
 
-void writeEq (const HpfFields<Value>& hpf, const TiltFields<Value>& tilt, const LowFields<Value>& low, const Rules& rules,
-              EqStage& stage) noexcept
+void writeEq (const Devices& devices, const Rules& rules, EqStage& stage) noexcept
+{
+    writeEq (settingsOf (rules, devices.hpf), settingsOf (rules, devices.tilt), settingsOf (rules, devices.low),
+             settingsOf (rules, devices.bands), rules, stage);
+}
+
+void writeEq (const HpfFields<Value>& hpf, const TiltFields<Value>& tilt, const LowFields<Value>& low,
+              const BandsFields<Value>& bands, const Rules& rules, EqStage& stage) noexcept
 {
     auto& h = stage.bands[eqBand (Device::Hpf)];
     h = band (eq::FilterType::HighPass, hpf.on, hpf.fq);
@@ -254,11 +290,28 @@ void writeEq (const HpfFields<Value>& hpf, const TiltFields<Value>& tilt, const 
     l = band (eq::FilterType::LowShelf, low.on && ! sameNumber (low.db, 0), number (config.find ("freqHz")));
     l.lanes[0].Q = number (config.find ("q"));
     l.lanes[0].gainDb = low.db;
+
+    // The EQ bands: a band at 0 dB is no band — its slot as the stage holds it untouched, so the chain gets exactly what
+    // it got before the device was there.
+    const double gains[] { bands.body, bands.mud, bands.forward, bands.brightness, bands.air };
+    static_assert (std::size (gains) == std::size (kBandNames));
+    for (std::size_t i = 0; i < std::size (gains); ++i)
+    {
+        auto& b = stage.bands[bandsSlot (rules, i)];
+        if (sameNumber (gains[i], 0)) { b = {}; continue; }
+        const auto move = rules.engine.find ("bands").find (kBandNames[i]);
+        const auto type = move.find ("type").string();
+        if (! type) storageOverflow();
+        b = band (*type == "highShelf" ? eq::FilterType::HighShelf : eq::FilterType::Bell, true, number (move.find ("freqHz")));
+        b.lanes[0].Q = number (move.find ("q"));
+        b.lanes[0].gainDb = gains[i];
+    }
 }
 
 void eqCurve (std::span<const eq::BandParams> written, double rate, std::span<EqPoint> output) noexcept
 {
-    BiquadCoeffs bands[11];
+    // The high-pass's cascade (at most 8 sections at 96 dB/oct), tilt's two shelves, low's shelf, the five bands.
+    BiquadCoeffs bands[16];
     std::size_t count = 0;
     const auto frequency = [&] (double hz) { return std::clamp (hz, 10.0, 0.49 * rate); };
     for (const auto& b : written)
@@ -281,7 +334,11 @@ void eqCurve (std::span<const eq::BandParams> written, double rate, std::span<Eq
                 bands[count++] = shelf (frequency (lane.freq), rate, core::det::pow10 (lane.gainDb / 20), lane.Q, false);
                 break;
             case eq::FilterType::Bell:
+                bands[count++] = peaking (frequency (lane.freq), rate, lane.Q, core::det::pow10 (lane.gainDb / 20));
+                break;
             case eq::FilterType::HighShelf:
+                bands[count++] = shelf (frequency (lane.freq), rate, core::det::pow10 (lane.gainDb / 20), lane.Q, true);
+                break;
             case eq::FilterType::LowPass:
             case eq::FilterType::BandPass:
             case eq::FilterType::Notch:

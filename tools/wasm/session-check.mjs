@@ -82,10 +82,11 @@ SURFACE[2] = SURFACE[1];
 // Version 3 (v0.5.0) appends the saturation type, the clipper shapes 4-7 and the plan's facts, and no entry point.
 SURFACE[3] = SURFACE[1];
 // NOT YET RELEASED — the batch after v0.5.0, carried by this tree's module while it still answers 3: the pure kit's
-// entry points. The release that publishes them moves FC_SESSION_ABI_VERSION by the batch rule and lists them as
+// entry points, the EQ bands' curve among them. The release that publishes them moves FC_SESSION_ABI_VERSION by the batch rule and lists them as
 // SURFACE[4] = [...SURFACE[3], ...UNRELEASED]; until then a module answering 3 is held to version 3's surface plus these.
 const UNRELEASED = ['_fc_kit_text', '_fc_kit_parse', '_fc_kit_travel', '_fc_kit_position', '_fc_kit_value_at',
-    '_fc_kit_heat', '_fc_kit_mono_zones', '_fc_kit_mono_zones_at', '_fc_kit_eq_curve', '_fc_kit_low_end_curve'];
+    '_fc_kit_heat', '_fc_kit_mono_zones', '_fc_kit_mono_zones_at', '_fc_kit_eq_curve', '_fc_kit_low_end_curve',
+    '_fc_kit_eq_curve_bands'];
 const UNRELEASED_ON = 3;
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
@@ -1319,6 +1320,27 @@ for (const p of growth) M._free(p);
     byte(M._fc_kit_low_end_curve(CENTRES, ENERGIES, 5, 25, 55, POINTS, 5, WORD));
     { const w = u32(WORD); word(w); for (const v of f64(POINTS, 2 * w)) number(v); }
     ok(h === KIT_PINNED, `the pure kit's corpus hashes to the value KitTests.cpp pins natively (${h.toString(16)})`);
+    {
+        // The EQ bands' curve: five gains of 0 dB answer fc_kit_eq_curve's bytes; a gain moves the curve; mud above 0 dB
+        // is a contract fault. Twelve doubles past the corpus's buffers.
+        const BANDS = S + 4608;
+        let same = true, moved = false;
+        for (const params of EQ_PARAMS)
+            for (const rate of EQ_RATES) {
+                f64(BANDS, 7).set(params);
+                same = same && M._fc_kit_eq_curve(BANDS, rate, CURVE, PEAK) === STATUS.OK;
+                const plain = [...f64(CURVE, 256)], plainPeak = [...f64(PEAK, 4)];
+                f64(BANDS, 12).set([...params, 0, 0, 0, 0, 0]);
+                same = same && M._fc_kit_eq_curve_bands(BANDS, rate, CURVE, PEAK) === STATUS.OK
+                    && f64(CURVE, 256).every((v, i) => Object.is(v, plain[i])) && f64(PEAK, 4).every((v, i) => Object.is(v, plainPeak[i]));
+                f64(BANDS, 12).set([...params, 3, 0, 0, 0, 0]);
+                moved = moved || (M._fc_kit_eq_curve_bands(BANDS, rate, CURVE, PEAK) === STATUS.OK
+                    && f64(CURVE, 256).some((v, i) => i % 2 === 1 && v - plain[i] > 2.9));
+            }
+        f64(BANDS, 12).set([1, 30, 24, 1, 2, 0, 0, 0, 0.5, 0, 0, 0]);
+        ok(same && moved && M._fc_kit_eq_curve_bands(BANDS, 48000, CURVE, PEAK) === STATUS.ERR_CONTRACT,
+           'fc_kit_eq_curve_bands: at 0 dB the bytes of fc_kit_eq_curve, +3 dB of body lifts the curve, mud above 0 dB refused');
+    }
     put(FACTS[0], IN); put('ru', LANG);
     ok(M._fc_kit_text(IN, FACTS[0].length, LANG, 2, TEXT, 512, WORD) === STATUS.OK
        && new TextDecoder().decode(u8().slice(TEXT, TEXT + u32(WORD))).includes('7'), 'a fact renders in Russian on the module');

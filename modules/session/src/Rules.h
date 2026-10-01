@@ -19,6 +19,9 @@ namespace felitronics::session::detail
 
 using Decimal = toml::Decimal;
 
+// The EQ bands' keys under [bands], in the order Project.h writes BandsFields (and Rules::bands holds their knobs).
+inline constexpr std::string_view kBandNames[] = { "body", "mud", "forward", "brightness", "air" };
+
 // A knob: independent slider hints and an accepted domain.
 struct Knob
 {
@@ -60,6 +63,7 @@ struct Rules
     Decimal driveDefault {}, mixDefault {}, outputDefault {};   // [saturation] driveDb, mix, outputDb
     std::string_view shapeDefault;             // [saturation] shape: the machine's type (Devices.h names them)
     Knob tilt {}, low {};                 // [tilt] hard / step, [low] hard / step
+    Knob bands[5] {};                          // [bands] body, mud, forward, brightness, air: hard / step / domain
     Knob needles {};                           // [limiter.peakClipper] manualMinDb…manualMaxDb by manualStepDb
     Decimal needlesDefault {};                 // [limiter.peakClipper] betweenCutDb: where the manual cut starts
     bool eq = false, monoBass = false, compressor = false, clipper = false, dither = false;   // [stages]

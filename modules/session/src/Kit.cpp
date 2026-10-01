@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <iterator>
 #include <limits>
 #include <optional>
 
@@ -47,10 +48,19 @@ void span (View v, double& min, double& max) noexcept
     else { min = number (v.find ("min")); max = number (v.find ("max")); }
 }
 
+// Every gain of the EQ bands finite and in its command's domain.
+bool bandsAccepted (const BandsFields<Value>& bands, const Rules& r) noexcept
+{
+    const double gains[] { bands.body, bands.mud, bands.forward, bands.brightness, bands.air };
+    for (std::size_t i = 0; i < std::size (gains); ++i)
+        if (! std::isfinite (gains[i]) || ! r.bands[i].accepts (gains[i], 0)) return false;
+    return true;
+}
+
 // The knob a field turns — the one the commands check that field with — or null.
 const Knob* knobOf (const Rules& r, Term field) noexcept
 {
-    // An if-chain, not a switch: Term names every word of the catalogue, and the kit answers for twelve of them.
+    // An if-chain, not a switch: Term names every word of the catalogue, and the kit answers for seventeen of them.
     if (field == Term::FieldTargetLufs) return &r.lufs;
     if (field == Term::FieldTargetTp) return &r.tp;
     if (field == Term::FieldHpfFq) return &r.hpfFq;
@@ -63,6 +73,11 @@ const Knob* knobOf (const Rules& r, Term field) noexcept
     if (field == Term::FieldTiltDb) return &r.tilt;
     if (field == Term::FieldLimiterNeedlesDb) return &r.needles;
     if (field == Term::FieldLowDb) return &r.low;
+    if (field == Term::FieldBandsBody) return &r.bands[0];
+    if (field == Term::FieldBandsMud) return &r.bands[1];
+    if (field == Term::FieldBandsForward) return &r.bands[2];
+    if (field == Term::FieldBandsBrightness) return &r.bands[3];
+    if (field == Term::FieldBandsAir) return &r.bands[4];
     return nullptr;
 }
 
@@ -291,13 +306,13 @@ KitEqPreview Kit::eqCurve (const KitEq& eq, double rate, std::span<EqPoint> out)
     const Rules rules = detail::rules();
     if (! rateOk (rate) || ! std::isfinite (eq.hpf.fq) || ! rules.hpfFq.accepts (eq.hpf.fq, std::uint32_t (rate))
         || ! rules.slope (eq.hpf.slope) || ! std::isfinite (eq.tilt.db) || ! rules.tilt.accepts (eq.tilt.db, 0)
-        || ! std::isfinite (eq.low.db) || ! rules.low.accepts (eq.low.db, 0))
+        || ! std::isfinite (eq.low.db) || ! rules.low.accepts (eq.low.db, 0) || ! bandsAccepted (eq.bands, rules))
     {
         preview.status = CodecStatus::Invalid;
         return preview;
     }
     detail::EqStage stage;
-    detail::writeEq (eq.hpf, eq.tilt, eq.low, rules, stage);
+    detail::writeEq (eq.hpf, eq.tilt, eq.low, eq.bands, rules, stage);
     detail::eqCurve (stage.bands, rate, out.first (kEqCurvePoints));
     preview.finding = detail::eqFinding (stage, rules, rate);
     return preview;

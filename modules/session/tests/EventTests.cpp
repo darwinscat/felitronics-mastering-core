@@ -262,6 +262,12 @@ void pump()
             { "polarity = \"error\"", "polarity = \"warning\"" }, { "alreadyLimited = \"warning\"", "alreadyLimited = \"note\"" } };
         for (const auto& [now, then] : rows)
             if (const auto at = engine.find (now); at != std::string::npos) engine.replace (at, now.size(), then);
+        // ...and without the EQ bands' tables, which came after.
+        for (auto at = engine.find ("\n[bands"); at != std::string::npos; at = engine.find ("\n[bands"))
+        {
+            const auto next = engine.find ("\n[", at + 1);
+            engine.erase (at, (next == std::string::npos ? engine.size() : next) - at);
+        }
         const auto before = config::Config::versionsOf (targets, engine);
         for (auto& e : events)
             if (e.kind == EventKind::Phase && e.payload.phase.weightsVersion == config::Config::versions().all && before)
@@ -289,7 +295,7 @@ void pump()
         "the cost's new lines are the only new events: without them the old pins 2ddbf194be1a8c26 / fb06ff940f07c896 hold");
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
-    ok (eventsHash (one) == 0x6186163f9087fbb6ull && eventsHash (cancelled) == 0xc0c11257914aaf59ull,
+    ok (eventsHash (one) == 0xb040430aaac4caa6ull && eventsHash (cancelled) == 0x2b7e29821ac922d9ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, previous version: %016llx %016llx; and without the cost's lines: %016llx %016llx\n",

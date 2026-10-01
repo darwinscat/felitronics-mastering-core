@@ -29,6 +29,7 @@ bool offered (const Rules& rules, std::uint16_t row, std::uint32_t channels, Dev
         case Device::Saturation:
         case Device::Tilt:
         case Device::Low:
+        case Device::Bands:
         case Device::Limiter:  return true;
     }
     storageOverflow();
@@ -79,6 +80,9 @@ void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channel
     auto& shelf = devices.low.machine;
     shelf.on = rules.eq && target.lowDb.has_value();
     shelf.db = target.lowDb ? number (*target.lowDb) : 0.0;
+
+    // The EQ bands are a person's: the machine leaves every one at 0 dB.
+    devices.bands.machine = {};
 }
 
 } // namespace felitronics::session::detail

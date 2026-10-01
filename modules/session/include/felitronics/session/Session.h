@@ -39,12 +39,14 @@ enum class Status : std::uint8_t
     Memory = 4,
 };
 
-// Shell input; exact byte counts are doubles strictly below 2^53. Device bits follow Device.
+// Shell input; exact byte counts are doubles strictly below 2^53. Device bits follow Device: kAllDevices is every one —
+// a shell that predates a device does not set its bit and is not offered it.
+inline constexpr std::uint32_t kAllDevices = (1u << (unsigned (Device::Bands) + 1u)) - 1u;
 struct Capabilities
 {
     double heapCeilingBytes = 9007199254740991.0;
     std::uint32_t maxRateHz = 4294967295u;
-    std::uint32_t offeredDevices = 255u;
+    std::uint32_t offeredDevices = kAllDevices;
     double largestFreeBlockBytes = 9007199254740991.0;
     // The summary without the masters' heavy rows: each master keeps its scalars, its pass log and its cost sections;
     // its limiter and peak-clip traces, crest rows and mask and waveform buckets are left out
@@ -171,7 +173,7 @@ struct DevicePlan
 // Every device's plan, in the order of Device.
 struct DevicePlans
 {
-    DevicePlan hpf, monoBass, glue, saturation, tilt, limiter, dither, low;
+    DevicePlan hpf, monoBass, glue, saturation, tilt, limiter, dither, low, bands;
 };
 
 // WHAT THE GLUE COMES TO (owner decisions 3.8, 3.8а) — the knob "up to N dB" as the compressor gets it:
@@ -190,6 +192,10 @@ struct GlueFinding
     std::optional<double> bpm, releaseAskedMs, releaseMs;
     bool releaseClamped = false;               // the release asked for was outside the limits: releaseMs is the limit
     bool tempoMeasured = false;                // the release follows the measured tempo, not the fallback
+    // Active: the input's short-term P95 on the detector's scale, the normalised input's dB — the level the threshold
+    // stands on ([glue] detectorOverP95Db above the P95) and where the static curve takes upToDb: a transfer curve's
+    // point for the knob.
+    std::optional<double> p95DetectorDb;
 };
 
 // WHAT THE SATURATION COMES TO (owner decision 3.9): active when ticked above 0 dB; the shaper's drive is the knob's at

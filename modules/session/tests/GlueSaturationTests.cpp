@@ -244,10 +244,13 @@ void theCurve()
     const Faked f ("allStreaming", -18.0, -3.0, -12.0);
     // The loud places on the detector's scale: the P95 and the calibration over it.
     const double over = config::Config::load().config.engine.glue.detectorOverP95Db, loud = -12.0 + over;
-    bool exact = true, placed = true;
+    bool exact = true, placed = true, dot = true;
     for (const double n : { 0.5, 1.25, 2.6, 3.0, 6.0 })
     {
         const auto found = detail::glueFinding (f.in, f.glued (n));
+        // The transfer curve's point the page draws: the P95 on the detector's scale, where the curve takes the knob.
+        dot = dot && found.p95DetectorDb && same (*found.p95DetectorDb, loud) && near (coreLossAt (found, *found.p95DetectorDb), n, 1e-9)
+            && same (*found.thresholdDb, *found.p95DetectorDb + detail::glueFor (r, n).threshOffsetDb);
         const double loss = found.state == GlueState::Active ? coreLossAt (found, loud) : -1.0;
         exact = exact && found.state == GlueState::Active && same (found.upToDb, n) && near (loss, n, 1e-9);
         placed = placed && found.thresholdDb && same (*found.thresholdDb, -12.0 + over + detail::glueFor (r, n).threshOffsetDb);
@@ -256,10 +259,11 @@ void theCurve()
     }
     ok (exact, "up to 0.5 / 1.25 / 2.6 / 3 / 6 dB: the core's gain computer takes exactly that at the loud places, within 1e-9 dB");
     ok (placed && same (over, 1.5), "the loud places stand the calibrated 1.5 dB over the short-term P95: the threshold is P95 + 1.5 + the travel's offset, to the bit");
+    ok (dot, "p95DetectorDb is that level, P95 + 1.5, the threshold's own base: the core's static curve takes upToDb there, within 1e-9 dB");
 
     const auto out = detail::glueFinding (f.in, f.glued (0.0));
     auto unticked = f.glued (2.0); unticked.glue.hand.on = false;
-    ok (out.state == GlueState::Out && ! out.ratio && detail::glueFinding (f.in, unticked).state == GlueState::Out
+    ok (out.state == GlueState::Out && ! out.ratio && ! out.p95DetectorDb && detail::glueFinding (f.in, unticked).state == GlueState::Out
         && detail::glueFinding (f.in, f.machine()).state == GlueState::Out,
         "at 0 dB, unticked, and as the machine leaves it off cd, the compressor is out of the chain");
 

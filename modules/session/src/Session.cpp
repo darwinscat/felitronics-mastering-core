@@ -60,7 +60,7 @@ Status Session::checkCreate (const Capabilities& caps, std::uint64_t configVersi
     if (const auto st = checkFloatingPointEnvironment(); st != Status::Ok) return st;
     if (configVersion != config::Config::versions().all) return Status::ConfigVersion;
     if (! validBytes (caps.heapCeilingBytes) || ! validBytes (caps.largestFreeBlockBytes)
-        || caps.maxRateHz < kMinSampleRate || (caps.offeredDevices & ~255u) != 0) return Status::Capabilities;
+        || caps.maxRateHz < kMinSampleRate || (caps.offeredDevices & ~kAllDevices) != 0) return Status::Capabilities;
     return double (createBytes (caps)) > caps.heapCeilingBytes || double (createBytes (caps)) > caps.largestFreeBlockBytes ? Status::Memory : Status::Ok;
 }
 Created Session::create() noexcept { return create ({}, config::Config::versions().all); }

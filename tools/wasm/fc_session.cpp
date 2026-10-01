@@ -1084,6 +1084,13 @@ static_assert (FC_SESSION_KIT_FIELD_SATURATION_OUTPUT == unsigned (text::Term::F
 static_assert (FC_SESSION_KIT_FIELD_TILT_DB == unsigned (text::Term::FieldTiltDb));
 static_assert (FC_SESSION_KIT_FIELD_LIMITER_NEEDLES_DB == unsigned (text::Term::FieldLimiterNeedlesDb));
 static_assert (FC_SESSION_KIT_FIELD_LOW_DB == unsigned (text::Term::FieldLowDb));
+static_assert (FC_SESSION_KIT_FIELD_BANDS_BODY == unsigned (text::Term::FieldBandsBody));
+static_assert (FC_SESSION_KIT_FIELD_BANDS_MUD == unsigned (text::Term::FieldBandsMud));
+static_assert (FC_SESSION_KIT_FIELD_BANDS_FORWARD == unsigned (text::Term::FieldBandsForward));
+static_assert (FC_SESSION_KIT_FIELD_BANDS_BRIGHTNESS == unsigned (text::Term::FieldBandsBrightness));
+static_assert (FC_SESSION_KIT_FIELD_BANDS_AIR == unsigned (text::Term::FieldBandsAir));
+static_assert (FC_SESSION_DEVICE_EQ_BANDS == 1u << unsigned (felitronics::session::Device::Bands));
+static_assert ((FC_SESSION_DEVICES_ALL | FC_SESSION_DEVICE_EQ_BANDS) == felitronics::session::kAllDevices);
 static_assert (FC_SESSION_KIT_PARSE_ACCEPTED == unsigned (felitronics::session::KitRefusal::None));
 static_assert (FC_SESSION_KIT_PARSE_NOT_A_NUMBER == unsigned (felitronics::session::KitRefusal::NotANumber));
 static_assert (FC_SESSION_KIT_PARSE_OUT_OF_DOMAIN == unsigned (felitronics::session::KitRefusal::OutOfDomain));
@@ -1225,16 +1232,18 @@ FC_EXPORT fc_session_status fc_kit_mono_zones_at (double hz, std::uint32_t* out)
     return FC_SESSION_OK;
 }
 
-FC_EXPORT fc_session_status fc_kit_eq_curve (const double* params, double rate, double* curve, double* peak)
+namespace
 {
-    const CallGuard call;
-    if (call.refused()) return FC_SESSION_ERR_POISONED;
+// The EQ curve from `count` params: the seven of fc_kit_eq_curve, and with twelve the EQ bands' five gains.
+fc_session_status kitEqCurve (const double* params, std::uint32_t count, double rate, double* curve, double* peak)
+{
     constexpr std::uint64_t curveBytes = 2 * FC_SESSION_KIT_EQ_POINTS * sizeof (double), peakBytes = FC_SESSION_KIT_EQ_PEAK_VALUES * sizeof (double);
     if (const auto st = doublesOut (curve, 2 * FC_SESSION_KIT_EQ_POINTS); st != FC_SESSION_OK) return st;
     if (const auto st = doublesOut (peak, FC_SESSION_KIT_EQ_PEAK_VALUES); st != FC_SESSION_OK) return st;
-    if (const auto st = pointer (params, FC_SESSION_KIT_EQ_PARAMS * sizeof (double), alignof (double)); st != FC_SESSION_OK) return st;
-    if (overlap (curve, curveBytes, peak, peakBytes) || overlap (params, FC_SESSION_KIT_EQ_PARAMS * sizeof (double), curve, curveBytes)
-        || overlap (params, FC_SESSION_KIT_EQ_PARAMS * sizeof (double), peak, peakBytes)) return FC_SESSION_ERR_OVERLAP;
+    const std::uint64_t paramBytes = count * sizeof (double);
+    if (const auto st = pointer (params, paramBytes, alignof (double)); st != FC_SESSION_OK) return st;
+    if (overlap (curve, curveBytes, peak, peakBytes) || overlap (params, paramBytes, curve, curveBytes)
+        || overlap (params, paramBytes, peak, peakBytes)) return FC_SESSION_ERR_OVERLAP;
     // A tick is 0 or 1 and a slope a whole number of dB/oct inside int32, or the record is no record of the three knobs.
     const auto same = [] (double a, double b) { return a <= b && a >= b; };
     const auto tick = [&] (double v, bool& on) { on = same (v, 1.0); return same (v, 0.0) || on; };
@@ -1243,6 +1252,11 @@ FC_EXPORT fc_session_status fc_kit_eq_curve (const double* params, double rate, 
         || ! (std::fabs (params[2]) < 2147483648.0) || ! same (std::floor (params[2]), params[2])) return FC_SESSION_ERR_CONTRACT;
     eq.hpf.fq = params[1]; eq.hpf.slope = std::int32_t (params[2]);
     eq.tilt.db = params[4]; eq.low.db = params[6];
+    if (count == FC_SESSION_KIT_EQ_BANDS_PARAMS)
+    {
+        eq.bands.body = params[7]; eq.bands.mud = params[8]; eq.bands.forward = params[9];
+        eq.bands.brightness = params[10]; eq.bands.air = params[11];
+    }
     // The points land straight in the caller's doubles: an EqPoint is two of them (the snapshot's row says so).
     static_assert (sizeof (felitronics::session::EqPoint) == 2 * sizeof (double));
     felitronics::session::EqPoint points[FC_SESSION_KIT_EQ_POINTS];
@@ -1253,6 +1267,21 @@ FC_EXPORT fc_session_status fc_kit_eq_curve (const double* params, double rate, 
     peak[3] = answer.finding.device == felitronics::session::Device::Low ? double (FC_SESSION_DEVICE_LOW_SHELF)
                                                                           : double (FC_SESSION_DEVICE_TILT);
     return FC_SESSION_OK;
+}
+} // namespace
+
+FC_EXPORT fc_session_status fc_kit_eq_curve (const double* params, double rate, double* curve, double* peak)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    return kitEqCurve (params, FC_SESSION_KIT_EQ_PARAMS, rate, curve, peak);
+}
+
+FC_EXPORT fc_session_status fc_kit_eq_curve_bands (const double* params, double rate, double* curve, double* peak)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    return kitEqCurve (params, FC_SESSION_KIT_EQ_BANDS_PARAMS, rate, curve, peak);
 }
 
 FC_EXPORT fc_session_status fc_kit_low_end_curve (const double* centre_hz, const double* energy, std::uint32_t bands,

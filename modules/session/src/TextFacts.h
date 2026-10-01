@@ -410,6 +410,12 @@ inline constexpr TermShape kTerms[] = {
     { Term::LandingLimitPlr, "landingLimit", "plr" },
     { Term::LandingLimitLra, "landingLimit", "lra" },
     { Term::LandingLimitGain, "landingLimit", "gain" },
+    { Term::DeviceBands, "device", "bands" },
+    { Term::FieldBandsBody, "field", "bandsBody" },
+    { Term::FieldBandsMud, "field", "bandsMud" },
+    { Term::FieldBandsForward, "field", "bandsForward" },
+    { Term::FieldBandsBrightness, "field", "bandsBrightness" },
+    { Term::FieldBandsAir, "field", "bandsAir" },
 };
 inline constexpr std::size_t kTermCount = sizeof (kTerms) / sizeof (kTerms[0]);
 
@@ -530,6 +536,8 @@ static_assert (tablesInOrder(), "kFacts ascends by id; kTerms lists every id in 
         case Device::Limiter: return at ({ Term::FieldLimiterNeedles, Term::FieldLimiterNeedlesDb });
         case Device::Dither: return at ({ Term {} });
         case Device::Low: return at ({ Term {}, Term::FieldLowDb });
+        case Device::Bands: return at ({ Term::FieldBandsBody, Term::FieldBandsMud, Term::FieldBandsForward,
+                                         Term::FieldBandsBrightness, Term::FieldBandsAir });
     }
     return std::nullopt;
 }

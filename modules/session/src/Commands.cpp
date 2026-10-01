@@ -48,11 +48,11 @@ using detail::FieldRule;
 using detail::Rules;
 
 static_assert (std::variant_size_v<Request> == kCommands, "one Request alternative per command");
-static_assert (std::variant_size_v<DeviceEdit> == 8 && std::variant_size_v<DeviceMask> == 8, "one alternative per device");
+static_assert (std::variant_size_v<DeviceEdit> == 9 && std::variant_size_v<DeviceMask> == 9, "one alternative per device");
 static_assert (std::is_same_v<std::variant_alternative_t<std::size_t (Command::Forget), Request>, command::Forget>
                && std::is_same_v<std::variant_alternative_t<std::size_t (Command::Load), Request>, command::Load>,
                "Request's alternatives are in the order of Command");
-static_assert (std::is_same_v<std::variant_alternative_t<std::size_t (Device::Low), DeviceEdit>, LowFields<Touched>>
+static_assert (std::is_same_v<std::variant_alternative_t<std::size_t (Device::Bands), DeviceEdit>, BandsFields<Touched>>
                && std::is_same_v<std::variant_alternative_t<std::size_t (Device::Hpf), DeviceMask>, HpfFields<Mark>>,
                "a device edit's alternatives are in the order of Device");
 
