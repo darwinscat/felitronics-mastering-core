@@ -8,6 +8,7 @@
 #include "BuildGuards.h"
 
 #include "Planner.h"
+#include <felitronics/session/Kit.h>
 #include "Devices.h"
 #include "Grid.h"
 #include "Rules.h"
@@ -833,8 +834,10 @@ std::optional<text::Fact> PlanText::hpfCutoffAdvice (const HpfFinding& f) noexce
     {
         return Fact::of (id, Arg::value (f.soundingHz, Unit::Hz, 1), Arg::value (low, Unit::None, 0), Arg::value (high, Unit::Hz, 0));
     };
-    if (f.soundingHz < low) return window (FactId::HpfBelowComfort);
-    if (f.soundingHz > high) return window (FactId::HpfAboveComfort);
+    // The knob's heat states the side: the advice and the knob's colour are one comparison (Kit.h).
+    const auto side = Kit::heat (text::Term::FieldHpfFq, f.soundingHz).side;
+    if (side < 0) return window (FactId::HpfBelowComfort);
+    if (side > 0) return window (FactId::HpfAboveComfort);
     return std::nullopt;
 }
 std::optional<text::Fact> PlanText::hpfSlopeAdvice (const HpfFinding& f) noexcept
@@ -863,8 +866,8 @@ std::optional<text::Fact> PlanText::monoBassAdvice (const MonoBassFinding& f) no
     const auto club = zones.find ("club"), vinyl = zones.find ("vinyl");
     const double clubFrom = detail::configured (club.find ("fromHz")), clubTo = detail::configured (club.find ("toHz"));
     const double vinylFrom = detail::configured (vinyl.find ("fromHz")), vinylTo = detail::configured (vinyl.find ("toHz"));
-    const auto inside = [&] (double from, double to) { return f.soundingHz >= from && f.soundingHz <= to; };
-    if (inside (clubFrom, clubTo) || inside (vinylFrom, vinylTo)) return std::nullopt;
+    // The zones the kit draws are the zones the advice reads (Kit.h): one comparison.
+    if (Kit::monoZonesAt (f.soundingHz) != 0) return std::nullopt;
     return Fact::of (FactId::MonoBassOutsideZones, Arg::value (f.soundingHz, Unit::Hz, 0), Arg::value (clubFrom, Unit::None, 0),
         Arg::value (clubTo, Unit::Hz, 0), Arg::value (vinylFrom, Unit::None, 0), Arg::value (vinylTo, Unit::Hz, 0));
 }

@@ -729,3 +729,36 @@ json command-effect-25 {"target":"lp","manual":false,"targetEdit":{"lufs":null,"
 {"kind":"rejected","commandId":"37","revision":"25","code":"contract","reason":"invalid","field":"on"}
 json command-effect-26 {"target":"lp","manual":false,"targetEdit":{"lufs":null,"tp":null},"hpf":{"fq":null,"on":null,"slope":null},"monoBass":{"fq":null,"on":null,"width":null},"glue":{"on":null,"upToDb":null},"saturation":{"drive":null,"mix":null,"on":null,"output":null},"tilt":{"db":null,"on":null},"limiter":{"needles":null,"needlesDb":null},"dither":{"on":null},"low":{"db":null,"on":null}}
 {"kind":"rejected","commandId":"38","revision":"25","code":22,"needBytes":0,"field":255,"device":-1,"line":1,"column":9}
+# The pure kit (fc_kit_*): stateless answers for a shell's UI thread, appended after v0.5.0.
+function fc_kit_text fc_session_status(const char*,uint32_t,const char*,uint32_t,char*,uint32_t,uint32_t*)
+function fc_kit_parse fc_session_status(const char*,uint32_t,const char*,uint32_t,uint32_t,uint32_t,double*,uint32_t*)
+function fc_kit_travel fc_session_status(uint32_t,double*)
+function fc_kit_position fc_session_status(uint32_t,double,double*)
+function fc_kit_value_at fc_session_status(uint32_t,double,double*)
+function fc_kit_heat fc_session_status(uint32_t,double,double*)
+function fc_kit_mono_zones fc_session_status(double*)
+function fc_kit_mono_zones_at fc_session_status(double,uint32_t*)
+function fc_kit_eq_curve fc_session_status(const double*,double,double*,double*)
+function fc_kit_low_end_curve fc_session_status(const double*,const double*,uint32_t,double,double,double*,uint32_t,uint32_t*)
+define FC_SESSION_KIT_FIELD_TARGET_LUFS=3
+define FC_SESSION_KIT_FIELD_TARGET_TP=4
+define FC_SESSION_KIT_FIELD_HPF_FQ=5
+define FC_SESSION_KIT_FIELD_HPF_SLOPE=6
+define FC_SESSION_KIT_FIELD_MONO_BASS_FQ=7
+define FC_SESSION_KIT_FIELD_MONO_BASS_WIDTH=8
+define FC_SESSION_KIT_FIELD_GLUE_UP_TO_DB=9
+define FC_SESSION_KIT_FIELD_SATURATION_DRIVE=10
+define FC_SESSION_KIT_FIELD_SATURATION_MIX=11
+define FC_SESSION_KIT_FIELD_SATURATION_OUTPUT=12
+define FC_SESSION_KIT_FIELD_TILT_DB=13
+define FC_SESSION_KIT_FIELD_LIMITER_NEEDLES_DB=15
+define FC_SESSION_KIT_FIELD_LOW_DB=16
+define FC_SESSION_KIT_PARSE_ACCEPTED=0
+define FC_SESSION_KIT_PARSE_NOT_A_NUMBER=1
+define FC_SESSION_KIT_PARSE_OUT_OF_DOMAIN=2
+define FC_SESSION_KIT_TRAVEL_VALUES=3
+define FC_SESSION_KIT_HEAT_VALUES=3
+define FC_SESSION_KIT_ZONES=2
+define FC_SESSION_KIT_EQ_PARAMS=7
+define FC_SESSION_KIT_EQ_POINTS=128
+define FC_SESSION_KIT_EQ_PEAK_VALUES=4

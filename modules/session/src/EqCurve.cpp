@@ -235,17 +235,20 @@ int eqBand (Device device) noexcept
 
 void writeEq (const Devices& devices, const Rules& rules, EqStage& stage) noexcept
 {
-    const auto hpf = settingsOf (rules, devices.hpf);
+    writeEq (settingsOf (rules, devices.hpf), settingsOf (rules, devices.tilt), settingsOf (rules, devices.low), rules, stage);
+}
+
+void writeEq (const HpfFields<Value>& hpf, const TiltFields<Value>& tilt, const LowFields<Value>& low, const Rules& rules,
+              EqStage& stage) noexcept
+{
     auto& h = stage.bands[eqBand (Device::Hpf)];
     h = band (eq::FilterType::HighPass, hpf.on, hpf.fq);
     h.lanes[0].slope = hpf.slope;
 
-    const auto tilt = settingsOf (rules, devices.tilt);
     auto& t = stage.bands[eqBand (Device::Tilt)];
     t = band (eq::FilterType::Tilt, tilt.on && ! sameNumber (tilt.db, 0), number (rules.engine.find ("tilt").find ("freqHz")));
     t.lanes[0].gainDb = tilt.db;
 
-    const auto low = settingsOf (rules, devices.low);
     const auto config = rules.engine.find ("low");
     auto& l = stage.bands[eqBand (Device::Low)];
     l = band (eq::FilterType::LowShelf, low.on && ! sameNumber (low.db, 0), number (config.find ("freqHz")));
@@ -308,6 +311,11 @@ EqFinding eqFinding (const Devices& devices, const Rules& rules, double rate) no
 {
     EqStage stage;
     writeEq (devices, rules, stage);
+    return eqFinding (stage, rules, rate);
+}
+
+EqFinding eqFinding (const EqStage& stage, const Rules& rules, double rate) noexcept
+{
     EqPoint tilt[kEqCurvePoints], low[kEqCurvePoints];
     eqCurve (std::span<const eq::BandParams> (&stage.bands[eqBand (Device::Tilt)], 1), rate, tilt);
     eqCurve (std::span<const eq::BandParams> (&stage.bands[eqBand (Device::Low)], 1), rate, low);

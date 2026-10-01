@@ -27,6 +27,7 @@
 #include "fc_session_abi.h"
 
 #include <felitronics/session/Config.h>
+#include <felitronics/session/Kit.h>
 #include <felitronics/session/Session.h>
 #include <felitronics/session/Wire.h>
 
@@ -1060,4 +1061,216 @@ FC_EXPORT fc_session_status fc_session_master_wav_copy (fc_session session,
     if (state != felitronics::session::MasterTransferStatus::Ok) return FC_SESSION_ERR_CONTRACT;
     *written = count;
     return FC_SESSION_OK;
+}
+
+//==============================================================================
+// THE PURE KIT (fc_session_abi.h, "THE PURE KIT"): no handle, no state — the poison, the checks of what a page hands
+// over in the header's order, and felitronics::session::Kit's answer, mapped. Nothing here computes.
+namespace
+{
+using felitronics::session::Kit;
+namespace text = felitronics::session::text;
+
+static_assert (FC_SESSION_KIT_FIELD_TARGET_LUFS == unsigned (text::Term::FieldTargetLufs));
+static_assert (FC_SESSION_KIT_FIELD_TARGET_TP == unsigned (text::Term::FieldTargetTp));
+static_assert (FC_SESSION_KIT_FIELD_HPF_FQ == unsigned (text::Term::FieldHpfFq));
+static_assert (FC_SESSION_KIT_FIELD_HPF_SLOPE == unsigned (text::Term::FieldHpfSlope));
+static_assert (FC_SESSION_KIT_FIELD_MONO_BASS_FQ == unsigned (text::Term::FieldMonoBassFq));
+static_assert (FC_SESSION_KIT_FIELD_MONO_BASS_WIDTH == unsigned (text::Term::FieldMonoBassWidth));
+static_assert (FC_SESSION_KIT_FIELD_GLUE_UP_TO_DB == unsigned (text::Term::FieldGlueUpToDb));
+static_assert (FC_SESSION_KIT_FIELD_SATURATION_DRIVE == unsigned (text::Term::FieldSaturationDrive));
+static_assert (FC_SESSION_KIT_FIELD_SATURATION_MIX == unsigned (text::Term::FieldSaturationMix));
+static_assert (FC_SESSION_KIT_FIELD_SATURATION_OUTPUT == unsigned (text::Term::FieldSaturationOutput));
+static_assert (FC_SESSION_KIT_FIELD_TILT_DB == unsigned (text::Term::FieldTiltDb));
+static_assert (FC_SESSION_KIT_FIELD_LIMITER_NEEDLES_DB == unsigned (text::Term::FieldLimiterNeedlesDb));
+static_assert (FC_SESSION_KIT_FIELD_LOW_DB == unsigned (text::Term::FieldLowDb));
+static_assert (FC_SESSION_KIT_PARSE_ACCEPTED == unsigned (felitronics::session::KitRefusal::None));
+static_assert (FC_SESSION_KIT_PARSE_NOT_A_NUMBER == unsigned (felitronics::session::KitRefusal::NotANumber));
+static_assert (FC_SESSION_KIT_PARSE_OUT_OF_DOMAIN == unsigned (felitronics::session::KitRefusal::OutOfDomain));
+static_assert (FC_SESSION_KIT_ZONES == felitronics::session::kKitZones);
+static_assert (FC_SESSION_KIT_EQ_POINTS == felitronics::session::kEqCurvePoints);
+
+// A field id the kit can be asked about: a Term's 16 bits. Which of them it answers is the kit's.
+bool fieldOf (std::uint32_t field, text::Term& out) noexcept
+{
+    if (field > 0xFFFFu) return false;
+    out = text::Term (field);
+    return true;
+}
+
+bool langOf (const char* lang, std::uint32_t bytes, text::Lang& out) noexcept
+{
+    const auto found = text::Text::langOf ({ lang, bytes });
+    if (! found) return false;
+    out = *found;
+    return true;
+}
+
+fc_session_status doublesOut (const double* out, std::uint64_t count) noexcept
+{
+    return pointer (out, count * sizeof (double), alignof (double));
+}
+} // namespace
+
+FC_EXPORT fc_session_status fc_kit_text (const char* fact, std::uint32_t fact_bytes, const char* lang, std::uint32_t lang_bytes,
+                                        char* output, std::uint32_t capacity, std::uint32_t* written)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = pointer (output, capacity, 1, true); st != FC_SESSION_OK) return st;
+    if (const auto st = pointer (written, sizeof (*written), alignof (std::uint32_t)); st != FC_SESSION_OK) return st;
+    if (const auto st = pointer (fact, fact_bytes, 1, true); st != FC_SESSION_OK) return st;
+    if (const auto st = pointer (lang, lang_bytes, 1, true); st != FC_SESSION_OK) return st;
+    if (overlap (output, capacity, written, sizeof (*written)) || overlap (fact, fact_bytes, output, capacity)
+        || overlap (fact, fact_bytes, written, sizeof (*written)) || overlap (lang, lang_bytes, output, capacity)
+        || overlap (lang, lang_bytes, written, sizeof (*written))) return FC_SESSION_ERR_OVERLAP;
+    text::Lang language {};
+    if (! langOf (lang, lang_bytes, language)) return FC_SESSION_ERR_CONTRACT;
+    const auto answer = Kit::text ({ fact, fact_bytes }, language, { output, capacity });
+    if (answer.status == CodecStatus::Ok || answer.status == CodecStatus::TooSmall) *written = std::uint32_t (answer.count);
+    return status (answer.status);
+}
+
+FC_EXPORT fc_session_status fc_kit_parse (const char* typed, std::uint32_t typed_bytes, const char* lang, std::uint32_t lang_bytes,
+                                         std::uint32_t field, std::uint32_t source_rate, double* value, std::uint32_t* refusal)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = doublesOut (value, 1); st != FC_SESSION_OK) return st;
+    if (const auto st = pointer (refusal, sizeof (*refusal), alignof (std::uint32_t)); st != FC_SESSION_OK) return st;
+    if (const auto st = pointer (typed, typed_bytes, 1, true); st != FC_SESSION_OK) return st;
+    if (const auto st = pointer (lang, lang_bytes, 1, true); st != FC_SESSION_OK) return st;
+    if (overlap (value, sizeof (*value), refusal, sizeof (*refusal)) || overlap (typed, typed_bytes, value, sizeof (*value))
+        || overlap (typed, typed_bytes, refusal, sizeof (*refusal)) || overlap (lang, lang_bytes, value, sizeof (*value))
+        || overlap (lang, lang_bytes, refusal, sizeof (*refusal))) return FC_SESSION_ERR_OVERLAP;
+    text::Lang language {};
+    text::Term term {};
+    if (! langOf (lang, lang_bytes, language) || ! fieldOf (field, term)) return FC_SESSION_ERR_CONTRACT;
+    const auto answer = Kit::parse ({ typed, typed_bytes }, language, term, source_rate);
+    if (answer.status != CodecStatus::Ok) return status (answer.status);
+    *refusal = unsigned (answer.refusal);
+    *value = answer.refusal == felitronics::session::KitRefusal::None ? answer.value : 0.0;
+    return FC_SESSION_OK;
+}
+
+FC_EXPORT fc_session_status fc_kit_travel (std::uint32_t field, double* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = doublesOut (out, FC_SESSION_KIT_TRAVEL_VALUES); st != FC_SESSION_OK) return st;
+    text::Term term {};
+    if (! fieldOf (field, term)) return FC_SESSION_ERR_CONTRACT;
+    const auto answer = Kit::travel (term);
+    if (answer.status != CodecStatus::Ok) return status (answer.status);
+    out[0] = answer.from; out[1] = answer.to; out[2] = answer.step;
+    return FC_SESSION_OK;
+}
+
+FC_EXPORT fc_session_status fc_kit_position (std::uint32_t field, double value, double* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = doublesOut (out, 1); st != FC_SESSION_OK) return st;
+    text::Term term {};
+    if (! fieldOf (field, term)) return FC_SESSION_ERR_CONTRACT;
+    const auto answer = Kit::position (term, value);
+    if (answer.status != CodecStatus::Ok) return status (answer.status);
+    *out = answer.value;
+    return FC_SESSION_OK;
+}
+
+FC_EXPORT fc_session_status fc_kit_value_at (std::uint32_t field, double position, double* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = doublesOut (out, 1); st != FC_SESSION_OK) return st;
+    text::Term term {};
+    if (! fieldOf (field, term)) return FC_SESSION_ERR_CONTRACT;
+    const auto answer = Kit::valueAt (term, position);
+    if (answer.status != CodecStatus::Ok) return status (answer.status);
+    *out = answer.value;
+    return FC_SESSION_OK;
+}
+
+FC_EXPORT fc_session_status fc_kit_heat (std::uint32_t field, double value, double* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = doublesOut (out, FC_SESSION_KIT_HEAT_VALUES); st != FC_SESSION_OK) return st;
+    text::Term term {};
+    if (! fieldOf (field, term)) return FC_SESSION_ERR_CONTRACT;
+    const auto answer = Kit::heat (term, value);
+    if (answer.status != CodecStatus::Ok) return status (answer.status);
+    out[0] = answer.heat; out[1] = double (answer.side); out[2] = answer.window ? 1.0 : 0.0;
+    return FC_SESSION_OK;
+}
+
+FC_EXPORT fc_session_status fc_kit_mono_zones (double* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = doublesOut (out, 2 * FC_SESSION_KIT_ZONES); st != FC_SESSION_OK) return st;
+    const auto answer = Kit::monoZones();
+    if (answer.status != CodecStatus::Ok) return status (answer.status);
+    for (std::size_t i = 0; i < FC_SESSION_KIT_ZONES; ++i) { out[2 * i] = answer.zones[i].fromHz; out[2 * i + 1] = answer.zones[i].toHz; }
+    return FC_SESSION_OK;
+}
+
+FC_EXPORT fc_session_status fc_kit_mono_zones_at (double hz, std::uint32_t* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = pointer (out, sizeof (*out), alignof (std::uint32_t)); st != FC_SESSION_OK) return st;
+    *out = Kit::monoZonesAt (hz);
+    return FC_SESSION_OK;
+}
+
+FC_EXPORT fc_session_status fc_kit_eq_curve (const double* params, double rate, double* curve, double* peak)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    constexpr std::uint64_t curveBytes = 2 * FC_SESSION_KIT_EQ_POINTS * sizeof (double), peakBytes = FC_SESSION_KIT_EQ_PEAK_VALUES * sizeof (double);
+    if (const auto st = doublesOut (curve, 2 * FC_SESSION_KIT_EQ_POINTS); st != FC_SESSION_OK) return st;
+    if (const auto st = doublesOut (peak, FC_SESSION_KIT_EQ_PEAK_VALUES); st != FC_SESSION_OK) return st;
+    if (const auto st = pointer (params, FC_SESSION_KIT_EQ_PARAMS * sizeof (double), alignof (double)); st != FC_SESSION_OK) return st;
+    if (overlap (curve, curveBytes, peak, peakBytes) || overlap (params, FC_SESSION_KIT_EQ_PARAMS * sizeof (double), curve, curveBytes)
+        || overlap (params, FC_SESSION_KIT_EQ_PARAMS * sizeof (double), peak, peakBytes)) return FC_SESSION_ERR_OVERLAP;
+    // A tick is 0 or 1 and a slope a whole number of dB/oct inside int32, or the record is no record of the three knobs.
+    const auto same = [] (double a, double b) { return a <= b && a >= b; };
+    const auto tick = [&] (double v, bool& on) { on = same (v, 1.0); return same (v, 0.0) || on; };
+    felitronics::session::KitEq eq;
+    if (! tick (params[0], eq.hpf.on) || ! tick (params[3], eq.tilt.on) || ! tick (params[5], eq.low.on)
+        || ! (std::fabs (params[2]) < 2147483648.0) || ! same (std::trunc (params[2]), params[2])) return FC_SESSION_ERR_CONTRACT;
+    eq.hpf.fq = params[1]; eq.hpf.slope = std::int32_t (params[2]);
+    eq.tilt.db = params[4]; eq.low.db = params[6];
+    // The points land straight in the caller's doubles: an EqPoint is two of them (the snapshot's row says so).
+    static_assert (sizeof (felitronics::session::EqPoint) == 2 * sizeof (double));
+    felitronics::session::EqPoint points[FC_SESSION_KIT_EQ_POINTS];
+    const auto answer = Kit::eqCurve (eq, rate, points);
+    if (answer.status != CodecStatus::Ok) return status (answer.status);
+    for (std::size_t i = 0; i < FC_SESSION_KIT_EQ_POINTS; ++i) { curve[2 * i] = points[i].hz; curve[2 * i + 1] = points[i].db; }
+    peak[0] = answer.finding.hz; peak[1] = answer.finding.db; peak[2] = answer.finding.over ? 1.0 : 0.0;
+    peak[3] = answer.finding.device == felitronics::session::Device::Low ? double (FC_SESSION_DEVICE_LOW_SHELF)
+                                                                          : double (FC_SESSION_DEVICE_TILT);
+    return FC_SESSION_OK;
+}
+
+FC_EXPORT fc_session_status fc_kit_low_end_curve (const double* centre_hz, const double* energy, std::uint32_t bands,
+                                                 double from_hz, double to_hz, double* output, std::uint32_t capacity,
+                                                 std::uint32_t* written)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    const std::uint64_t outBytes = std::uint64_t (capacity) * 2 * sizeof (double), inBytes = std::uint64_t (bands) * sizeof (double);
+    if (const auto st = pointer (output, outBytes, alignof (double), true); st != FC_SESSION_OK) return st;
+    if (const auto st = pointer (written, sizeof (*written), alignof (std::uint32_t)); st != FC_SESSION_OK) return st;
+    if (const auto st = pointer (centre_hz, inBytes, alignof (double), true); st != FC_SESSION_OK) return st;
+    if (const auto st = pointer (energy, inBytes, alignof (double), true); st != FC_SESSION_OK) return st;
+    if (overlap (output, outBytes, written, sizeof (*written)) || overlap (centre_hz, inBytes, output, outBytes)
+        || overlap (centre_hz, inBytes, written, sizeof (*written)) || overlap (energy, inBytes, output, outBytes)
+        || overlap (energy, inBytes, written, sizeof (*written))) return FC_SESSION_ERR_OVERLAP;
+    const auto answer = Kit::lowEndCurve ({ centre_hz, bands }, { energy, bands }, from_hz, to_hz,
+        { output, std::size_t (capacity) * 2 });
+    if (answer.status == CodecStatus::Ok || answer.status == CodecStatus::TooSmall) *written = std::uint32_t (answer.count);
+    return status (answer.status);
 }

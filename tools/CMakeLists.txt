@@ -289,6 +289,17 @@ if(FELITRONICS_BUILD_TESTS)
     target_compile_options(felitronics_session_query_tests PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
     add_test(NAME felitronics_session_query_tests COMMAND felitronics_session_query_tests)
 
+    # THE PURE KIT: each answer the session's own code's, the fc_kit_* ABI the C++ call's, and the corpus hash
+    # tools/wasm/session-check.mjs holds the wasm module to.
+    add_executable(felitronics_session_kit_tests ${PROJECT_SOURCE_DIR}/modules/session/tests/KitTests.cpp
+        $<TARGET_OBJECTS:felitronics_session_facade>)
+    target_link_libraries(felitronics_session_kit_tests PRIVATE felitronics::session felitronics::toml felitronics::core felitronics::test_support)
+    target_include_directories(felitronics_session_kit_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}
+        ${PROJECT_SOURCE_DIR}/modules/session/src ${PROJECT_SOURCE_DIR}/modules/session/tests)
+    target_compile_features(felitronics_session_kit_tests PRIVATE cxx_std_20)
+    target_compile_options(felitronics_session_kit_tests PRIVATE $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
+    add_test(NAME felitronics_session_kit_tests COMMAND felitronics_session_kit_tests)
+
     add_executable(felitronics_session_abi_tests tests/SessionAbiTests.cpp $<TARGET_OBJECTS:felitronics_session_replay_facade>)
     target_link_libraries(felitronics_session_abi_tests PRIVATE felitronics::session felitronics::test_support)
     target_include_directories(felitronics_session_abi_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
