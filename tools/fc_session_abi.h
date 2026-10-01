@@ -59,6 +59,9 @@
 #define FC_SESSION_DEVICE_DITHER 64u
 #define FC_SESSION_DEVICE_LOW_SHELF 128u
 #define FC_SESSION_DEVICES_ALL 255u
+// Appended after v0.5.0: the EQ bands (five static bands a person turns). FC_SESSION_DEVICES_ALL keeps the eight devices
+// before it, so a shell that does not know the bands is not offered them; a shell that draws them adds this bit.
+#define FC_SESSION_DEVICE_EQ_BANDS 256u
 
 // HOW MANY SESSIONS ONE MODULE INSTANCE HOLDS AT ONCE (law 5: the capacity is stated, not discovered). A create past it
 // answers FC_SESSION_ERR_EXHAUSTED.
@@ -416,6 +419,13 @@ fc_session_status fc_session_master_wav_copy (fc_session session, const fc_sessi
 #define FC_SESSION_KIT_EQ_PARAMS 7u
 #define FC_SESSION_KIT_EQ_POINTS 128u
 #define FC_SESSION_KIT_EQ_PEAK_VALUES 4u
+// Appended with the EQ bands: their five gains as kit fields, and the curve with them (fc_kit_eq_curve_bands).
+#define FC_SESSION_KIT_FIELD_BANDS_BODY 134u
+#define FC_SESSION_KIT_FIELD_BANDS_MUD 135u
+#define FC_SESSION_KIT_FIELD_BANDS_FORWARD 136u
+#define FC_SESSION_KIT_FIELD_BANDS_BRIGHTNESS 137u
+#define FC_SESSION_KIT_FIELD_BANDS_AIR 138u
+#define FC_SESSION_KIT_EQ_BANDS_PARAMS 12u
 
 // A published fact ({"FactId":…,"args":[…]}, as a snapshot, an event or a plan carries it) in a language, as UTF-8
 // without a terminator. A null output is allowed with capacity 0; TOO_SMALL writes the bytes needed to *written.
@@ -440,6 +450,9 @@ fc_session_status fc_kit_mono_zones_at (double hz, uint32_t* out);
 // peak[FC_SESSION_KIT_EQ_PEAK_VALUES] = the shelves' peak hz, its dB, 1 when beyond warnDb, the device bit that gives most of it
 // (FC_SESSION_DEVICE_TILT or FC_SESSION_DEVICE_LOW_SHELF).
 fc_session_status fc_kit_eq_curve (const double* params, double rate, double* curve, double* peak);
+// ...with the EQ bands: params[FC_SESSION_KIT_EQ_BANDS_PARAMS] = the seven above, then the bands' gains in dB — body, mud,
+// forward, brightness, air (0: no band). curve and peak as above; the peak is still the shelves' (tilt's and low's).
+fc_session_status fc_kit_eq_curve_bands (const double* params, double rate, double* curve, double* peak);
 // A low-end curve from `bands` band centres and energies: the bands in from_hz … to_hz as (hz, dB) points into output,
 // capacity in points. *written is the points written — 0 for fewer than two — or, with TOO_SMALL, the points needed.
 fc_session_status fc_kit_low_end_curve (const double* centre_hz, const double* energy, uint32_t bands,

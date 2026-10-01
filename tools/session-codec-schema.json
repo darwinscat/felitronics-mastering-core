@@ -40,7 +40,8 @@
       "Tilt",
       "Limiter",
       "Dither",
-      "Low"
+      "Low",
+      "Bands"
     ],
     "Analyzer": [
       "Loudness",
@@ -458,6 +459,33 @@
         "hand": "LowFieldsTouched"
       }
     },
+    "BandsFieldsValue": {
+      "cpp": "BandsFields<Value>",
+      "fields": {
+        "body": "double",
+        "mud": "double",
+        "forward": "double",
+        "brightness": "double",
+        "air": "double"
+      }
+    },
+    "BandsFieldsTouched": {
+      "cpp": "BandsFields<Touched>",
+      "fields": {
+        "body": "double?",
+        "mud": "double?",
+        "forward": "double?",
+        "brightness": "double?",
+        "air": "double?"
+      }
+    },
+    "BandsFieldsLayers": {
+      "cpp": "Layers<BandsFields>",
+      "fields": {
+        "machine": "BandsFieldsValue",
+        "hand": "BandsFieldsTouched"
+      }
+    },
     "Devices": {
       "cpp": "Devices",
       "fields": {
@@ -468,7 +496,8 @@
         "tilt": "TiltFieldsLayers",
         "limiter": "LimiterFieldsLayers",
         "dither": "DitherFieldsLayers",
-        "low": "LowFieldsLayers"
+        "low": "LowFieldsLayers",
+        "bands": "BandsFieldsLayers"
       }
     },
     "Project": {
@@ -958,7 +987,8 @@
         "tilt": "DevicePlan",
         "limiter": "DevicePlan",
         "dither": "DevicePlan",
-        "low": "DevicePlan"
+        "low": "DevicePlan",
+        "bands": "DevicePlan"
       }
     },
     "GlueFinding": {
@@ -974,7 +1004,8 @@
         "releaseAskedMs": "double?",
         "releaseMs": "double?",
         "releaseClamped": "bool",
-        "tempoMeasured": "bool"
+        "tempoMeasured": "bool",
+        "p95DetectorDb": "double?"
       }
     },
     "SaturationFinding": {
@@ -1165,8 +1196,8 @@
     "CommandAnswer": "AcceptedAnswer | RejectedAnswer | ContractAnswer",
     "SessionEvent": "PhaseEvent | FactEvent | ReadingEvent | DoneEvent | RejectedEvent | ErrorEvent | MeasurementEvent",
     "SessionCommand": "SetTargetCommand | SetManualCommand | EditTargetCommand | EditDeviceCommand | RevertEditsCommand | MasterCommand | CancelCommand | ForgetCommand | ContinueMeasurementCommand | AdoptMachineCommand",
-    "EditDeviceCommand": "EditDeviceHpfCommand | EditDeviceMonoBassCommand | EditDeviceGlueCommand | EditDeviceSaturationCommand | EditDeviceTiltCommand | EditDeviceLimiterCommand | EditDeviceDitherCommand | EditDeviceLowCommand",
-    "RevertEditsCommand": "RevertEditsHpfCommand | RevertEditsMonoBassCommand | RevertEditsGlueCommand | RevertEditsSaturationCommand | RevertEditsTiltCommand | RevertEditsLimiterCommand | RevertEditsDitherCommand | RevertEditsLowCommand",
+    "EditDeviceCommand": "EditDeviceHpfCommand | EditDeviceMonoBassCommand | EditDeviceGlueCommand | EditDeviceSaturationCommand | EditDeviceTiltCommand | EditDeviceLimiterCommand | EditDeviceDitherCommand | EditDeviceLowCommand | EditDeviceBandsCommand",
+    "RevertEditsCommand": "RevertEditsHpfCommand | RevertEditsMonoBassCommand | RevertEditsGlueCommand | RevertEditsSaturationCommand | RevertEditsTiltCommand | RevertEditsLimiterCommand | RevertEditsDitherCommand | RevertEditsLowCommand | RevertEditsBandsCommand",
     "SessionMeasurementArray": "Omit<MeasurementArray, \"values\"> & { readonly values: ScalarRow }",
     "SessionMeasurementResult": "Omit<MeasurementResult, \"arrays\"> & { readonly arrays: ReadonlyArray<SessionMeasurementArray> }",
     "QueryResponse": "SessionQueryView"
@@ -1444,6 +1475,19 @@
       "on?": "boolean | null",
       "db?": "WireNumber | null"
     },
+    "EditDeviceBandsCommand": {
+      "kind": "\"editDevice\"",
+      "commandId": "string",
+      "device": "8",
+      "fields": "EditDeviceBandsFields"
+    },
+    "EditDeviceBandsFields": {
+      "body?": "WireNumber | null",
+      "mud?": "WireNumber | null",
+      "forward?": "WireNumber | null",
+      "brightness?": "WireNumber | null",
+      "air?": "WireNumber | null"
+    },
     "RevertEditsHpfCommand": {
       "kind": "\"revertEdits\"",
       "commandId": "string",
@@ -1527,6 +1571,19 @@
     "RevertEditsLowFields": {
       "on?": "boolean",
       "db?": "boolean"
+    },
+    "RevertEditsBandsCommand": {
+      "kind": "\"revertEdits\"",
+      "commandId": "string",
+      "device": "8",
+      "fields": "RevertEditsBandsFields"
+    },
+    "RevertEditsBandsFields": {
+      "body?": "boolean",
+      "mud?": "boolean",
+      "forward?": "boolean",
+      "brightness?": "boolean",
+      "air?": "boolean"
     },
     "SessionCapabilities": {
       "heapCeilingBytes": "number",
@@ -1643,6 +1700,24 @@
     }
   },
   "optionalFields": {
+    "GlueFinding": {
+      "p95DetectorDb": {
+        "default": "std::optional<double> {}",
+        "description": "A plan before the P95's level on the detector's scale was published."
+      }
+    },
+    "Devices": {
+      "bands": {
+        "default": "Layers<BandsFields> {}",
+        "description": "A project before the EQ bands: every band at 0 dB, nothing by hand."
+      }
+    },
+    "DevicePlans": {
+      "bands": {
+        "default": "DevicePlan {}",
+        "description": "A plan before the EQ bands."
+      }
+    },
     "HpfFinding": {
       "soundingSlope": {
         "default": "std::int32_t {}",

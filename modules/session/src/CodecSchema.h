@@ -39,7 +39,8 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (Device::Limiter) == 5);
         static_assert (unsigned (Device::Dither) == 6);
         static_assert (unsigned (Device::Low) == 7);
-        return 7;
+        static_assert (unsigned (Device::Bands) == 8);
+        return 8;
     }
     else if constexpr (std::is_same_v<T, GlueState>)
     {
@@ -376,6 +377,7 @@ constexpr void checkEnum (Device value) noexcept
         case Device::Limiter: break;
         case Device::Dither: break;
         case Device::Low: break;
+        case Device::Bands: break;
     }
 }
 
@@ -759,7 +761,43 @@ constexpr void checkEnum (TickFrom value) noexcept
 template <class V, class T> void describe (V& v, T& x) noexcept
 {
     using U = std::remove_cv_t<T>;
-    if constexpr (std::is_same_v<U, DevicePlan>)
+    if constexpr (std::is_same_v<U, Layers<BandsFields>>)
+    {
+        [[maybe_unused]] auto& [f0, f1] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.hand)>, BandsFields<Touched>>);
+        v.field ("hand", x.hand);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.machine)>, BandsFields<Value>>);
+        v.field ("machine", x.machine);
+    }
+    else if constexpr (std::is_same_v<U, BandsFields<Touched>>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.air)>, std::optional<double>>);
+        v.field ("air", x.air);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.body)>, std::optional<double>>);
+        v.field ("body", x.body);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.brightness)>, std::optional<double>>);
+        v.field ("brightness", x.brightness);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.forward)>, std::optional<double>>);
+        v.field ("forward", x.forward);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.mud)>, std::optional<double>>);
+        v.field ("mud", x.mud);
+    }
+    else if constexpr (std::is_same_v<U, BandsFields<Value>>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.air)>, double>);
+        v.field ("air", x.air);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.body)>, double>);
+        v.field ("body", x.body);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.brightness)>, double>);
+        v.field ("brightness", x.brightness);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.forward)>, double>);
+        v.field ("forward", x.forward);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.mud)>, double>);
+        v.field ("mud", x.mud);
+    }
+    else if constexpr (std::is_same_v<U, DevicePlan>)
     {
         [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.heldBack)>, HeldBack>);
@@ -777,7 +815,9 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, DevicePlans>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.bands)>, DevicePlan>);
+        v.optionalField ("bands", x.bands, DevicePlan {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.dither)>, DevicePlan>);
         v.field ("dither", x.dither);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.glue)>, DevicePlan>);
@@ -797,7 +837,9 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, Devices>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.bands)>, Layers<BandsFields>>);
+        v.optionalField ("bands", x.bands, Layers<BandsFields> {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.dither)>, Layers<DitherFields>>);
         v.field ("dither", x.dither);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.glue)>, Layers<GlueFields>>);
@@ -883,13 +925,15 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, GlueFinding>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.attackMs)>, std::optional<double>>);
         v.field ("attackMs", x.attackMs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.bpm)>, std::optional<double>>);
         v.field ("bpm", x.bpm);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.kneeDb)>, std::optional<double>>);
         v.field ("kneeDb", x.kneeDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.p95DetectorDb)>, std::optional<double>>);
+        v.optionalField ("p95DetectorDb", x.p95DetectorDb, std::optional<double> {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ratio)>, std::optional<double>>);
         v.field ("ratio", x.ratio);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.releaseAskedMs)>, std::optional<double>>);

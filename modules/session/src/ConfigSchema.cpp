@@ -97,6 +97,7 @@ constexpr Name<SaturationShape> kShapes[] = { { "tanh", SaturationShape::Tanh },
                                               { "cubic", SaturationShape::Cubic }, { "asym", SaturationShape::Asym },
                                               { "tube", SaturationShape::Tube }, { "transistor", SaturationShape::Transistor },
                                               { "transformer", SaturationShape::Transformer }, { "tape", SaturationShape::Tape } };
+constexpr Name<BandType> kBandTypes[] = { { "bell", BandType::Bell }, { "highShelf", BandType::HighShelf } };
 constexpr Name<NoiseShaping> kShapings[] = { { "none", NoiseShaping::None }, { "weighted", NoiseShaping::Weighted },
                                              { "psycho", NoiseShaping::Psycho } };
 constexpr Name<Kind> kKinds[] = { { "error", Kind::Error }, { "warning", Kind::Warning }, { "note", Kind::Note },
@@ -616,6 +617,29 @@ void readLow (Doc& d, Reader& in, Low& o, std::vector<std::int32_t>& bands)
     in.required ("step", o.step, R { 0.01, 3.0 });
 }
 
+// One of [bands]: its own band of the stage, a bell or a high shelf at freqHz with q, and a knob whose travel lies within
+// its domain, which holds the neutral 0.
+void readEqMove (Doc& d, Reader& in, EqMove& o, std::vector<std::int32_t>& bands)
+{
+    d.band (in, o.band, bands);
+    d.name (in, "type", o.type, kBandTypes);
+    in.required ("freqHz", o.freqHz, R { 20.0, 20000.0 });
+    in.required ("q", o.q, R { 0.1, 10.0 });
+    const R bounds = readDomain (d, in, "domain", o.domain, R { -6.0, 6.0 });
+    if (o.domain.min > 0.0 || o.domain.max < 0.0) d.outOfRange (in, "domain");
+    d.pair (in, "hard", o.hard, bounds);
+    in.required ("step", o.step, R { 0.01, 3.0 });
+}
+
+void readBands (Doc& d, Reader& in, Bands& o, std::vector<std::int32_t>& bands)
+{
+    in.table ("body", Need::Required, [&] (Reader& t) { readEqMove (d, t, o.body, bands); });
+    in.table ("mud", Need::Required, [&] (Reader& t) { readEqMove (d, t, o.mud, bands); });
+    in.table ("forward", Need::Required, [&] (Reader& t) { readEqMove (d, t, o.forward, bands); });
+    in.table ("brightness", Need::Required, [&] (Reader& t) { readEqMove (d, t, o.brightness, bands); });
+    in.table ("air", Need::Required, [&] (Reader& t) { readEqMove (d, t, o.air, bands); });
+}
+
 void readStages (Doc& d, Reader& in, Stages& o)
 {
     in.required ("eq", o.eq);
@@ -1048,6 +1072,7 @@ void readEngine (Doc& d, Reader& in, Engine& o, const std::vector<std::string>* 
     {
         readLow (d, t, o.low, bands);
     });
+    in.table ("bands", Need::Required, [&] (Reader& t) { readBands (d, t, o.bands, bands); });
     in.table ("eq", Need::Required, [&] (Reader& t)
     {
         t.table ("curve", Need::Required, [&] (Reader& c)

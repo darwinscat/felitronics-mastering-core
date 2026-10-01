@@ -152,13 +152,16 @@ void everyDeviceIsPlannedAsBefore()
     int cases = 0; bool asBefore = true, facts = true;
     for (std::uint16_t row = 0; row < r.rows; ++row)
         for (const std::uint32_t channels : { 1u, 2u })
-            for (std::uint32_t offered = 0; offered <= 255u; ++offered)
+            for (std::uint32_t eight = 0; eight <= 255u; ++eight)
             {
+                // Every set of the first eight devices, the EQ bands' bit with the high-pass's: both ways, at the old count.
+                const std::uint32_t offered = eight | ((eight & 1u) << unsigned (Device::Bands));
                 // Hands in every device, so the shell's refusal is seen taking them away.
                 Devices now, before;
                 detail::eachDevice (now, [] (Device, auto& layers)
                 {
                     if constexpr (requires { layers.hand.on; }) layers.hand.on = true;
+                    else if constexpr (requires { layers.hand.body; }) layers.hand.body = 1.5;
                     else layers.hand.needles = Needles::Manual;
                 });
                 before = now;

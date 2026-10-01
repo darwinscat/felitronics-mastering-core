@@ -148,7 +148,7 @@ void capabilities()
     }
     auto invalid = full; invalid.maxRateHz = 7999;
     ok (create (invalid, &h) == FC_SESSION_ERR_CAPABILITIES, "invalid max rate");
-    invalid = full; invalid.offeredDevices = 256;
+    invalid = full; invalid.offeredDevices = FC_SESSION_DEVICES_ALL | FC_SESSION_DEVICE_EQ_BANDS | 512u;
     ok (create (invalid, &h) == FC_SESSION_ERR_CAPABILITIES, "unknown device bit");
     auto tight = full; tight.heapCeilingBytes = bytes + 1;
     ok (create (tight, &h) == FC_SESSION_OK, "tiny command budget session");

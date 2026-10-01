@@ -129,6 +129,17 @@ template <template <class> class F> struct LowFields
     F<double> db {};
 };
 
+// [bands]: the five static EQ bands' gains, dB — a person's only: the machine leaves them at 0 (it does not touch timbre).
+// No tick: a band at 0 dB is neutral and out of the EQ stage; the device sounds where any band is not 0.
+template <template <class> class F> struct BandsFields
+{
+    F<double> body {};
+    F<double> mud {};
+    F<double> forward {};
+    F<double> brightness {};
+    F<double> air {};
+};
+
 // WHERE A DEVICE'S TICK COMES FROM — a person's edit always sounds. Their own tick when they set one, on or off (Hand);
 // otherwise ON when any of the device's fields carries their value (Touched: `[tilt] db.hand = 3` sounds with no tick
 // written); otherwise the machine's (Machine). What sounds is the machine's layer with a person's fields over it and this
@@ -136,7 +147,7 @@ template <template <class> class F> struct LowFields
 enum class TickFrom : std::uint8_t { Machine, Hand, Touched };
 
 // The devices, in the order Devices below holds them (and a device edit's alternatives, Commands.h, are listed).
-enum class Device : std::uint8_t { Hpf, MonoBass, Glue, Saturation, Tilt, Limiter, Dither, Low };
+enum class Device : std::uint8_t { Hpf, MonoBass, Glue, Saturation, Tilt, Limiter, Dither, Low, Bands };
 
 // A device's two layers: the machine's, complete, and a person's, only what was touched.
 template <template <template <class> class> class Fields> struct Layers
@@ -155,6 +166,7 @@ struct Devices
     Layers<LimiterFields> limiter;
     Layers<DitherFields> dither;
     Layers<LowFields> low;
+    Layers<BandsFields> bands;
 };
 
 // Values use the field's native numeric domain: flags 0/1, choices their enum value.
@@ -164,7 +176,7 @@ struct MachineDifference
     std::uint8_t field = 0;
     double fileValue = 0.0, coreValue = 0.0;
 };
-inline constexpr std::size_t kDeviceFields = 20;
+inline constexpr std::size_t kDeviceFields = 25;
 
 struct Project
 {

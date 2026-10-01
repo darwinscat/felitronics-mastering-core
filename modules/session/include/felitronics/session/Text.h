@@ -377,6 +377,8 @@ enum class Term : std::uint16_t
     TempoUndetermined, TempoLow, TempoMedium, TempoHigh,
     // What held a landing short of its target (LandingConstraint, the solver's binding): MasterLandingUnreachable selects.
     LandingLimitNone, LandingLimitTruePeak, LandingLimitLimiter, LandingLimitPlr, LandingLimitLra, LandingLimitGain,
+    // The EQ bands: the device, and its five gains as the fields a refusal names, in the order Project.h writes them.
+    DeviceBands, FieldBandsBody, FieldBandsMud, FieldBandsForward, FieldBandsBrightness, FieldBandsAir,
 
 };
 

@@ -315,6 +315,26 @@ struct Low
     double step = 0.0;
 };
 
+// [bands]: the five static EQ bands a person turns (the machine leaves them at 0): each its own band of the EQ stage, a
+// bell or a high shelf at freqHz with q, its gain's domain, its knob's travel `hard` and step.
+enum class BandType : std::uint8_t { Bell, HighShelf };
+
+struct EqMove
+{
+    std::int32_t band = 0;
+    BandType type = BandType::Bell;
+    double freqHz = 0.0;
+    double q = 0.0;
+    Span domain;
+    Span hard;
+    double step = 0.0;
+};
+
+struct Bands
+{
+    EqMove body, mud, forward, brightness, air;
+};
+
 struct Eq
 {
     double curveWarnDb = 0.0;                  // curve.warnDb
@@ -497,6 +517,7 @@ struct Engine
     Saturation saturation;
     Tilt tilt;
     Low low;
+    Bands bands;
     Eq eq;
     Chain chain;
     Stages stages;

@@ -3,12 +3,13 @@
 #pragma once
 
 // THE ONE EQ STAGE THE EQ DEVICES SHARE (internal to modules/session) — the chain's EQ, MasteringChainParams::eqBands. The
-// high-pass, tilt and low are three devices and one stage: each owns its own band of it, by the fixed table of eqBand(),
-// and writes only that band, so none overwrites another's and one's tick bypasses nothing but its own. The curve the
-// snapshot shows is drawn FROM THE BANDS WRITTEN, by the designs felitronics-core's EqEngine runs for them (designBand:
-// the high-pass's Butterworth cascade, tilt's two shelves, the resonant low shelf) at the rate the chain processes at, so
-// the curve is what sounds — the EQ-stage test holds the curve to core's response and to the engine's own output. A new EQ
-// device takes a band of its own here; a type no EQ device writes is refused by the curve (a contract fault).
+// high-pass, tilt, low and the EQ bands are four devices and one stage: each owns its own bands of it, by the fixed table
+// of eqBand() and the slots [bands] names, and writes only those, so none overwrites another's and one's tick bypasses
+// nothing but its own. The curve the snapshot shows is drawn FROM THE BANDS WRITTEN, by the designs felitronics-core's
+// EqEngine runs for them (designBand: the high-pass's Butterworth cascade, tilt's two shelves, the resonant low shelf, the
+// bands' bells and high shelves) at the rate the chain processes at, so the curve is what sounds — the EQ-stage tests hold
+// the curve to core's response and to the engine's own output. A new EQ device takes bands of its own here; a type no EQ
+// device writes is refused by the curve (a contract fault).
 
 #include "Rules.h"
 
@@ -26,16 +27,19 @@ struct EqStage
     eq::BandParams bands[eq::EqEngine::kMaxBands] {};
 };
 
-// The band a device owns, or −1 for a device that writes none: the high-pass 0, tilt 1, low 2.
+// The band a device owns, or −1 for a device that writes none or several: the high-pass 0, tilt 1, low 2. The EQ bands
+// device writes five, each the band [bands] gives it (bandsSlot: i in the order of kBandNames).
 [[nodiscard]] int eqBand (Device device) noexcept;
+[[nodiscard]] int bandsSlot (const Rules& rules, std::size_t i) noexcept;
 
 // Every EQ device writes its band from its settings in the project — the machine's layer with a person's over it, by the
 // tick rule (settingsOf). A device that is off, or a shelf at 0 dB, writes its band off. The other bands are left as
 // they are. (The summed curve is drawn from it today; the render of a session-decided master goes through it next.)
 void writeEq (const Devices& devices, const Rules& rules, EqStage& stage) noexcept;
-// ...from the three EQ devices' settings as they sound (what settingsOf gives; the pure kit's preview passes them as given).
-void writeEq (const HpfFields<Value>& hpf, const TiltFields<Value>& tilt, const LowFields<Value>& low, const Rules& rules,
-              EqStage& stage) noexcept;
+// ...from the four EQ devices' settings as they sound (what settingsOf gives; the pure kit's preview passes them as given).
+// A band of the EQ bands at 0 dB leaves its slot as the default band, off: the stage the chain got before the device.
+void writeEq (const HpfFields<Value>& hpf, const TiltFields<Value>& tilt, const LowFields<Value>& low,
+              const BandsFields<Value>& bands, const Rules& rules, EqStage& stage) noexcept;
 
 // The summed response of `bands` at `rate`: kEqCurvePoints logarithmic points from 20 Hz to min(20 kHz, 0.49 · rate).
 void eqCurve (std::span<const eq::BandParams> bands, double rate, std::span<EqPoint> output) noexcept;

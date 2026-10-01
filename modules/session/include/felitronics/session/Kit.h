@@ -76,7 +76,7 @@ struct KitTravel
 //   the target's loudness and ceiling   [edit] lufs/tp green, out to the knob's travel (targets.toml)
 //   the high-pass's cutoff              [hpf] comfort lowHz…highHz, out to warningLowHz / warningHighHz
 //   tilt and low                        [tilt]/[low] normal, out to hard
-// A knob without a window answers window = false, heat 0, side 0.
+// A knob without a window answers window = false, heat 0, side 0 — the EQ bands' gains among them (no norm this release).
 struct KitHeat
 {
     CodecStatus status = CodecStatus::Ok;
@@ -98,12 +98,14 @@ struct KitZones
     std::array<KitZoneSpan, kKitZones> zones {};
 };
 
-// The three EQ devices' knobs as they sound (Project.h's own field types): a preview of the EQ stage's curve.
+// The EQ devices' knobs as they sound (Project.h's own field types): a preview of the EQ stage's curve. The EQ bands
+// default to 0 dB, no band.
 struct KitEq
 {
     HpfFields<Value> hpf {};
     TiltFields<Value> tilt {};
     LowFields<Value> low {};
+    BandsFields<Value> bands {};
 };
 
 struct KitEqPreview
@@ -150,7 +152,7 @@ public:
     [[nodiscard]] static KitZones monoZones() noexcept;
     [[nodiscard]] static std::uint32_t monoZonesAt (double hz) noexcept;
 
-    // THE EQ CURVE the three EQ devices would draw at `rate` (a whole number of hertz, at least kMinSampleRate): the
+    // THE EQ CURVE the EQ devices would draw at `rate` (a whole number of hertz, at least kMinSampleRate): the
     // stage written from `eq` as writeEq writes it from a project, summed on kEqCurvePoints into `out` as the snapshot's
     // eqCurve is, and the shelves' peak against warnDb as eqFinding states it. Each knob must lie in its command's
     // domain (the cutoff below rate / 2), else Invalid.

@@ -389,6 +389,13 @@ template <> struct Planned<LowFields<Value>>
     static std::uint32_t needs (const PlanInputs&, const LowFields<Value>&) noexcept { return 0; }
 };
 
+// [bands]: a person's only — the machine leaves every band at 0 dB (it does not touch timbre in this release).
+template <> struct Planned<BandsFields<Value>>
+{
+    static void propose (const PlanInputs&, BandsFields<Value>&, DevicePlan&, PlanFindings&) noexcept {}
+    static std::uint32_t needs (const PlanInputs&, const BandsFields<Value>&) noexcept { return 0; }
+};
+
 // Every device's plan and fields, in the order of Device: v(device, layers, plan).
 template <class D, class P, class V> void eachPlan (D& devices, P& plans, V&& v)
 {
@@ -400,6 +407,7 @@ template <class D, class P, class V> void eachPlan (D& devices, P& plans, V&& v)
     v (Device::Limiter, devices.limiter, plans.limiter);
     v (Device::Dither, devices.dither, plans.dither);
     v (Device::Low, devices.low, plans.low);
+    v (Device::Bands, devices.bands, plans.bands);
 }
 } // namespace
 
@@ -453,6 +461,11 @@ std::uint32_t needs (const PlanInputs& in, const Devices& devices, bool withHand
         // tick the project keeps for it (a person's dither tick above the depth that is dithered).
         const bool possible = offeredByShell (in, device) && offered (in.rules, in.row, in.channels, device);
         if constexpr (requires { settings.on; }) plan.on = settings.on && possible;
+        // The EQ bands have no tick: they sound where any band is not at 0 dB.
+        else if constexpr (requires { settings.body; })
+            plan.on = possible && ! (detail::same (settings.body, 0.0) && detail::same (settings.mud, 0.0)
+                                     && detail::same (settings.forward, 0.0) && detail::same (settings.brightness, 0.0)
+                                     && detail::same (settings.air, 0.0));
         else plan.on = true;
     });
     return all;
@@ -490,7 +503,7 @@ Awaited awaited (std::uint32_t waitingFor, const DevicePlans& plans) noexcept
         for (unsigned a = 0; a < kAnalyzers && ! out.analyzer; ++a)
             if ((waitingFor & bitOf (Analyzer (a))) != 0) out.analyzer = Analyzer (a);
     if (out.analyzer)
-        for (unsigned d = 0; d <= unsigned (Device::Low) && ! out.device; ++d)
+        for (unsigned d = 0; d <= unsigned (Device::Bands) && ! out.device; ++d)
             if ((planOf (plans, Device (d)).needs & bitOf (*out.analyzer)) != 0) out.device = Device (d);
     return out;
 }
@@ -509,6 +522,7 @@ template <class P> auto& planIn (P& plans, Device device) noexcept
         case Device::Limiter:    return plans.limiter;
         case Device::Dither:     return plans.dither;
         case Device::Low:        return plans.low;
+        case Device::Bands:      return plans.bands;
     }
     storageOverflow();
 }
@@ -643,6 +657,7 @@ text::Term termOf (Device device) noexcept
         case Device::Limiter:    return Term::DeviceLimiter;
         case Device::Dither:     return Term::DeviceDither;
         case Device::Low:        return Term::DeviceLow;
+        case Device::Bands:      return Term::DeviceBands;
     }
     storageOverflow();
 }
