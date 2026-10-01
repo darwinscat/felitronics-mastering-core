@@ -868,7 +868,7 @@ void everyRejectionIsAFact()
         inRange = inRange && ((std::size_t) shape.id < 100 || ((std::size_t) shape.id > 100 && (std::size_t) shape.id <= 100 + last)
             || ((std::size_t) shape.id >= 200 && (std::size_t) shape.id <= 207)
             || ((std::size_t) shape.id >= 300 && (std::size_t) shape.id <= 305)
-            || ((std::size_t) shape.id >= 400 && (std::size_t) shape.id <= 437));
+            || ((std::size_t) shape.id >= 400 && (std::size_t) shape.id <= 438));
     ok (inRange, "rejections, phases and session errors occupy only their own declared ranges");
 
     // THE FIELDS, held against the state machine's own walk of them (src/Devices.h).
@@ -1118,7 +1118,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0xff3a2e9a342348f8ull;   // …, the observations (52–80, 419–436), the target-change warning (81), what departs from vinyl (82–87), the clipper's cut off the peaks and an observation not measured (437), the landing's verdict (88–92), the clipper's cut as a cap, DefaultsConverted (9) retired
+    constexpr std::uint64_t kPinned = 0xe8c3fba0a0a92176ull;   // …, the observations (52–80, 419–436), the target-change warning (81), what departs from vinyl (82–87), the clipper's cut off the peaks and an observation not measured (437), the landing's verdict (88–92), the clipper's cut as a cap, DefaultsConverted (9) retired, the cost's lines (93–97), the readings' names and the tempo's confidence (438)
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");

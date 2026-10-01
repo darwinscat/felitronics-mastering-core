@@ -740,4 +740,112 @@ std::optional<text::Fact> ObservationText::fact (ObservationKind kind, const Obs
     }
     detail::storageOverflow();
 }
+
+text::Term ReadingText::name (ReadingKind kind) noexcept
+{
+    static_assert (unsigned (text::Term::ReadingCheckPasses) - unsigned (text::Term::ReadingIntegrated) + 1u == kReadingKinds);
+    return text::Term (unsigned (text::Term::ReadingIntegrated) + unsigned (kind));
+}
+
+BoundedList<ReadingFact, kSourceReadings> ReadingText::source (std::span<const MeasurementResult> measurements,
+                                                               std::uint32_t channels) noexcept
+{
+    using text::Arg; using text::Fact; using text::FactId; using text::Unit;
+    BoundedList<ReadingFact, kSourceReadings> out;
+    const auto of = [&] (Analyzer analyzer) noexcept -> const MeasurementResult*
+    { return std::size_t (analyzer) < measurements.size() ? &measurements[std::size_t (analyzer)] : nullptr; };
+    // A number of an ended, ready result: present and finite, or nothing.
+    const auto number = [] (const MeasurementResult* r, std::string_view name) noexcept { return detail::read (r, name).value; };
+    const auto put = [&] (ReadingKind kind, const Fact& fact) noexcept
+    {
+        detail::debugBound (out.count < kSourceReadings);
+        if (out.count < kSourceReadings) out.items[out.count++] = { kind, fact };
+    };
+    const auto value = [&] (ReadingKind kind, std::optional<double> v, Unit unit, std::uint8_t precision) noexcept
+    { if (v) put (kind, Fact::of (FactId::Value, Arg::value (*v, unit, precision))); };
+    const unsigned stereo = channels >= 2 ? 2u : 1u;
+    const auto* loudness = of (Analyzer::Loudness);
+    const auto* programme = of (Analyzer::Programme);
+    const auto* clipping = of (Analyzer::Clipping);
+    value (ReadingKind::Integrated, number (loudness, "integratedLufs"), Unit::Lufs, 1);
+    value (ReadingKind::TruePeak, number (loudness, "truePeakDb"), Unit::DbTp, 1);
+    value (ReadingKind::Lra, number (programme, "lraLu"), Unit::Lu, 1);
+    value (ReadingKind::Plr, number (programme, "plrDb"), Unit::Db, 1);
+    // The offset of each channel, signed, as the DC observation reads it: one channel's, or the left's and the right's.
+    if (channels == 1) value (ReadingKind::DcOffset, number (clipping, detail::Channelled ("dcOffset", 0).view()), Unit::None, 4);
+    else if (channels >= 2)
+    {
+        value (ReadingKind::DcOffsetLeft, number (clipping, detail::Channelled ("dcOffset", 0).view()), Unit::None, 4);
+        value (ReadingKind::DcOffsetRight, number (clipping, detail::Channelled ("dcOffset", 1).view()), Unit::None, 4);
+    }
+    const auto* lowEnd = of (Analyzer::LowEnd);
+    value (ReadingKind::LowestBand, number (lowEnd, "lowestOccupiedHz"), Unit::Hz, 1);
+    // The most exact PCM bits a channel's grid holds — a channel off the PCM grid has no number.
+    std::optional<double> bits;
+    for (unsigned c = 0; c < stereo; ++c)
+        if (const auto b = number (of (Analyzer::Forensics), detail::Channelled ("grid.minExactPcmBits", c).view()))
+            bits = std::max (bits.value_or (*b), *b);
+    value (ReadingKind::PcmBits, bits, Unit::None, 0);
+    if (channels >= 2) value (ReadingKind::Correlation, number (of (Analyzer::Stereo), "correlation"), Unit::None, 2);
+    // The burst events of an axis whose events are valid; the side's where a side is present.
+    const auto* bursts = of (Analyzer::StereoBursts);
+    const auto events = [&] (unsigned axis) noexcept -> std::optional<double>
+    {
+        const auto invalid = number (bursts, detail::Channelled ("eventsInvalidReason", axis).view());
+        if (! invalid || *invalid != 0.0) return std::nullopt;
+        return number (bursts, detail::Channelled ("eventCount", axis).view());
+    };
+    value (ReadingKind::BurstsMid, events (0), Unit::None, 0);
+    if (const auto absent = number (bursts, "sideAbsent"); absent && *absent == 0.0)
+        value (ReadingKind::BurstsSide, events (1), Unit::None, 0);
+    // The first channel whose mains fundamental the detector observed.
+    const auto* hum = of (Analyzer::Hum);
+    for (unsigned c = 0; c < stereo; ++c)
+    {
+        const auto valid = number (hum, detail::Channelled ("valid", c).view());
+        const auto observed = number (hum, detail::Channelled ("fundamentalObserved", c).view());
+        const auto hz = number (hum, detail::Channelled ("fundamentalHz", c).view());
+        if (valid && *valid == 1.0 && observed && *observed == 1.0 && hz)
+        { value (ReadingKind::Hum, hz, Unit::Hz, 1); break; }
+    }
+    // The headline tempo, and how sure the detector is of it (its ConfidenceLabel, 0 … 3).
+    const auto* tempo = of (Analyzer::Tempo);
+    if (const auto bpm = number (tempo, "headlineBpm"); bpm && *bpm > 0.0) value (ReadingKind::Tempo, bpm, Unit::Bpm, 0);
+    if (const auto label = number (tempo, "headlineLabel"))
+        for (unsigned l = 0; l < 4; ++l)
+            if (core::exactlyEqual (*label, double (l)))
+                put (ReadingKind::TempoConfidence, Fact::of (FactId::TempoConfidence,
+                     Arg::term (text::Term (unsigned (text::Term::TempoUndetermined) + l))));
+    // The clipping: the runs, the longest run of a channel, the clipped samples of every channel, the sample peak.
+    value (ReadingKind::ClipRuns, number (clipping, "runCount"), Unit::None, 0);
+    std::optional<double> longest, clipped;
+    for (unsigned c = 0; c < stereo && c < channels; ++c)
+    {
+        const auto run = number (clipping, detail::Channelled ("longestRun", c).view());
+        const auto samples = number (clipping, detail::Channelled ("clippedSamples", c).view());
+        if (! run || ! samples) { longest.reset(); clipped.reset(); break; }
+        longest = std::max (longest.value_or (*run), *run);
+        clipped = clipped.value_or (0.0) + *samples;
+    }
+    value (ReadingKind::LongestRun, longest, Unit::None, 0);
+    value (ReadingKind::ClippedSamples, clipped, Unit::None, 0);
+    value (ReadingKind::SamplePeak, number (clipping, "samplePeakDb"), Unit::DbFs, 1);
+    if (const auto side = number (lowEnd, "lowSideFraction")) value (ReadingKind::LowSide, 100.0 * *side, Unit::Percent, 0);
+    value (ReadingKind::StereoWindows, number (of (Analyzer::Stereo), "columns"), Unit::None, 0);
+    // The crest measurement's active blocks, band by band (five columns: low, low-mid, high-mid, high, full).
+    const auto* crest = of (Analyzer::Crest);
+    if (const auto* active = detail::arrayOf (crest, "active"); active && active->columns == 5)
+        if (const auto invalid = number (crest, "invalidReason"); invalid && *invalid == 0.0)
+        {
+            const auto rows = std::min<std::size_t> (std::size_t (active->stored), active->values.size() / 5u);
+            for (unsigned band = 0; band < 5; ++band)
+            {
+                std::uint64_t count = 0;
+                for (std::size_t i = 0; i < rows; ++i) count += active->values[i * 5u + band] == 1.0 ? 1u : 0u;
+                put (ReadingKind (unsigned (ReadingKind::CrestBlocksLow) + band),
+                     Fact::of (FactId::Value, Arg::value (double (count), Unit::None, 0)));
+            }
+        }
+    return out;
+}
 } // namespace felitronics::session

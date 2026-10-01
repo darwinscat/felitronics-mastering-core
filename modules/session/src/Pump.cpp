@@ -348,6 +348,8 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 masterSummary_.deliverable = masterSummary_.deliverable
                     && masters_[masterCount_ - 1].report->deliverable;
                 masters_[masterCount_ - 1].landing = masterSummary_;
+                masters_[masterCount_ - 1].report->readings
+                    = MasterReportText::readings (*masters_[masterCount_ - 1].report, masterSummary_.passes);
                 // The landing's verdict, its own line and what stood behind a miss: the report's facts, the core's to
                 // say — a shell composes none of them from the report's fields.
                 {
@@ -378,10 +380,18 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 {
                     event.kind = EventKind::Fact;
                     (void) event.payload.fact.assign (MasterReportText::shape (*cost)); emit (event, masterProgress_);
+                    // Each of the cost's other lines where its numbers were measured, beside the one it details.
+                    const auto say = [&] (const std::optional<text::Fact>& said) noexcept
+                    { if (said) { (void) event.payload.fact.assign (*said); emit (event, masterProgress_); } };
+                    say (MasterReportText::section (*cost));
+                    say (MasterReportText::sections (*cost));
                     if (cost->crestFullDb.value)
                     { (void) event.payload.fact.assign (MasterReportText::impact (*cost)); emit (event, masterProgress_); }
+                    say (MasterReportText::bands (*cost));
                     if (cost->pumpingRmsDb.value)
                     { (void) event.payload.fact.assign (MasterReportText::pumping (*cost)); emit (event, masterProgress_); }
+                    say (MasterReportText::limiter (*cost));
+                    say (MasterReportText::active (*cost));
                     (void) event.payload.fact.assign (MasterReportText::tonal()); emit (event, masterProgress_);
                     if (const auto glue = MasterReportText::glue (*cost))
                     { (void) event.payload.fact.assign (*glue); emit (event, masterProgress_); }

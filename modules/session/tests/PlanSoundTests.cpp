@@ -1818,6 +1818,111 @@ void theObservationsSpeakForThemselves()
     }
 }
 
+// The reading of `kind` in a list, or nothing; a number of a measurement result, by name.
+template <std::size_t N> const ReadingFact* readingOf (const BoundedList<ReadingFact, N>& list, ReadingKind kind)
+{
+    for (std::size_t i = 0; i < list.count; ++i)
+        if (list.items[i].kind == kind) return &list.items[i];
+    return nullptr;
+}
+std::optional<double> numberOf (const MeasurementResult& r, std::string_view name)
+{
+    for (const auto& v : r.numbers)
+        if (v.name == name) return v.value;
+    return std::nullopt;
+}
+// A reading as the table declares it: FactId::Value with one number of `unit` at `precision`.
+bool isValue (const ReadingFact* r, text::Unit unit, std::uint8_t precision)
+{
+    return r && r->fact.id == text::FactId::Value && r->fact.argCount == 1 && r->fact.args[0].kind == text::ArgKind::Value
+        && r->fact.args[0].unit == unit && r->fact.args[0].precision == precision
+        && ! ru (r->fact).empty() && ru (r->fact).find ('{') == std::string::npos && en (r->fact).find ('{') == std::string::npos
+        && ru (r->fact) != std::string (text::Text::key (r->fact.id));
+}
+
+void theReadingsAreFacts()
+{
+    felitronics::test::group ("the readings are facts: the source's numbers in the snapshot, each with the core's unit and precision");
+    {
+        // A reading renders as the catalogue says: the number, its unit and the language's decimal sign; its name is
+        // the catalogue's term of its kind.
+        auto s = Session::create().session;
+        ok (s->snapshot().view().readings.count == 0, "before a source the snapshot carries no reading");
+        const Mix mix (1.0f, 4);
+        (void) s->apply (command::SetTarget { 1, "allStreaming" });
+        ok (s->apply (mix.load (2)).rejection == Rejection::None, "PRECONDITION: the mix loads");
+        ok (! readingOf (s->snapshot().view().readings, ReadingKind::Integrated), "loaded, the loudness not ended: no integrated reading");
+        drive (*s);
+        const auto done = s->snapshot();
+        const auto& v = done.view();
+        const auto& loudness = v.measurements[std::size_t (Analyzer::Loudness)];
+        const auto& clipping = v.measurements[std::size_t (Analyzer::Clipping)];
+        const auto* lufs = readingOf (v.readings, ReadingKind::Integrated);
+        const auto* peak = readingOf (v.readings, ReadingKind::TruePeak);
+        const auto* left = readingOf (v.readings, ReadingKind::DcOffsetLeft);
+        const auto* runs = readingOf (v.readings, ReadingKind::ClipRuns);
+        const auto* samplePeak = readingOf (v.readings, ReadingKind::SamplePeak);
+        const auto measuredLufs = numberOf (loudness, "integratedLufs");
+        ok (isValue (lufs, text::Unit::Lufs, 1) && isValue (peak, text::Unit::DbTp, 1) && measuredLufs
+            && sameBits (lufs->fact.args[0].number, *measuredLufs)
+            && sameBits (peak->fact.args[0].number, numberOf (loudness, "truePeakDb").value_or (0.0)),
+            "the integrated loudness and the true peak are the loudness measurement's numbers, LUFS and dBTP to a tenth — " + ru (lufs ? lufs->fact : text::Fact {}));
+        ok (isValue (left, text::Unit::None, 4) && isValue (readingOf (v.readings, ReadingKind::DcOffsetRight), text::Unit::None, 4)
+            && ! readingOf (v.readings, ReadingKind::DcOffset)
+            && sameBits (left->fact.args[0].number, numberOf (clipping, "dcOffset[0]").value_or (1.0))
+            && isValue (runs, text::Unit::None, 0) && isValue (samplePeak, text::Unit::DbFs, 1)
+            && isValue (readingOf (v.readings, ReadingKind::Correlation), text::Unit::None, 2)
+            && isValue (readingOf (v.readings, ReadingKind::LongestRun), text::Unit::None, 0)
+            && isValue (readingOf (v.readings, ReadingKind::ClippedSamples), text::Unit::None, 0)
+            && isValue (readingOf (v.readings, ReadingKind::StereoWindows), text::Unit::None, 0),
+            "a stereo source: the DC offset of each channel (no one-channel line), the clipping's numbers, the correlation and the stereo windows");
+        bool ascending = v.readings.count > 0, master = false;
+        for (std::size_t i = 0; i < v.readings.count; ++i)
+        {
+            ascending = ascending && (i == 0 || v.readings.items[i - 1].kind < v.readings.items[i].kind);
+            master = master || v.readings.items[i].kind >= ReadingKind::Target;
+        }
+        ok (ascending && ! master, "one list, in the order of ReadingKind, each kind once — and no master's reading in the source's");
+        const auto lufsRu = lufs ? ru (lufs->fact) : std::string(), lufsEn = lufs ? en (lufs->fact) : std::string();
+        ok (lufsRu.find (',') != std::string::npos && lufsRu.find ('.') == std::string::npos && lufsEn.find ('.') != std::string::npos
+            && lufsRu.ends_with (" LUFS") && lufsEn.ends_with (" LUFS")
+            && ReadingText::name (ReadingKind::Integrated) == text::Term::ReadingIntegrated
+            && ReadingText::name (ReadingKind::CheckPasses) == text::Term::ReadingCheckPasses,
+            "Russian writes the decimal comma, English the point, both the unit the table gives: " + lufsRu + " / " + lufsEn);
+        // A new source: the readings follow its measurement.
+        const Mix quiet (0.03f, 4);
+        ok (s->apply (quiet.load (3)).rejection == Rejection::None, "PRECONDITION: a quieter mix loads");
+        ok (! readingOf (s->snapshot().view().readings, ReadingKind::Integrated), "the new source loaded: the old source's readings are gone");
+        drive (*s);
+        const auto again = s->snapshot();
+        const auto* quieter = readingOf (again.view().readings, ReadingKind::Integrated);
+        const auto quieterLufs = numberOf (again.view().measurements[std::size_t (Analyzer::Loudness)], "integratedLufs");
+        ok (quieter && lufs && quieterLufs && sameBits (quieter->fact.args[0].number, *quieterLufs)
+            && quieter->fact.args[0].number < lufs->fact.args[0].number - 20.0,
+            "a new measurement: the readings follow it — the quieter mix's own loudness");
+        // Across the wire: kind and fact, whole; an unknown kind is refused.
+        std::string json (std::size_t (Codec::encodedBytes (again.view()).bytes), '\0');
+        Snapshot restored;
+        ok (Codec::encode (again.view(), json) == CodecStatus::Ok && Codec::decode (json, restored) == CodecStatus::Ok, "PRECONDITION: encoded and decoded");
+        bool carried = restored.view().readings.count == again.view().readings.count && again.view().readings.count != 0;
+        for (std::size_t i = 0; carried && i < again.view().readings.count; ++i)
+            carried = restored.view().readings.items[i].kind == again.view().readings.items[i].kind
+                   && sameLine (restored.view().readings.items[i].fact, again.view().readings.items[i].fact)
+                   && sameBits (restored.view().readings.items[i].fact.args[0].number, again.view().readings.items[i].fact.args[0].number);
+        const auto at = json.find ("\"readings\":[{\"fact\":{\"FactId\":");
+        ok (carried && at != std::string::npos, "the readings cross the wire whole, kind and fact");
+        if (at != std::string::npos)
+        {
+            const auto kindAt = json.find ("]},\"kind\":", at) + 10, kindEnd = json.find ('}', kindAt);
+            auto badKind = json; badKind.replace (kindAt, kindEnd - kindAt, "31");
+            auto goodKind = json; goodKind.replace (kindAt, kindEnd - kindAt, "30");
+            Snapshot refused;
+            ok (Codec::decode (badKind, refused) == CodecStatus::Invalid && Codec::decode (goodKind, refused) == CodecStatus::Ok,
+                "an unknown reading kind (31) is refused; the last kind (30) is read");
+        }
+    }
+}
+
 void theNeedlesAreThePlansNeedles()
 {
     felitronics::test::group ("\"the same ceiling\" is decided by the bits in both rules: requestNeedles and the plan agree");
@@ -1862,6 +1967,7 @@ int main()
     theDitherSounding();
     theObservations();
     theObservationsSpeakForThemselves();
+    theReadingsAreFacts();
     theNeedlesAreThePlansNeedles();
     return felitronics::test::report();
 }

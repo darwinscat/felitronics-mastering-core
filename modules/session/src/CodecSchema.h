@@ -253,6 +253,41 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (QueryStatus::FloatingPointEnvironment) == 10);
         return 10;
     }
+    else if constexpr (std::is_same_v<T, ReadingKind>)
+    {
+        static_assert (unsigned (ReadingKind::Integrated) == 0);
+        static_assert (unsigned (ReadingKind::TruePeak) == 1);
+        static_assert (unsigned (ReadingKind::Lra) == 2);
+        static_assert (unsigned (ReadingKind::Plr) == 3);
+        static_assert (unsigned (ReadingKind::DcOffset) == 4);
+        static_assert (unsigned (ReadingKind::DcOffsetLeft) == 5);
+        static_assert (unsigned (ReadingKind::DcOffsetRight) == 6);
+        static_assert (unsigned (ReadingKind::LowestBand) == 7);
+        static_assert (unsigned (ReadingKind::PcmBits) == 8);
+        static_assert (unsigned (ReadingKind::Correlation) == 9);
+        static_assert (unsigned (ReadingKind::BurstsMid) == 10);
+        static_assert (unsigned (ReadingKind::BurstsSide) == 11);
+        static_assert (unsigned (ReadingKind::Hum) == 12);
+        static_assert (unsigned (ReadingKind::Tempo) == 13);
+        static_assert (unsigned (ReadingKind::TempoConfidence) == 14);
+        static_assert (unsigned (ReadingKind::ClipRuns) == 15);
+        static_assert (unsigned (ReadingKind::LongestRun) == 16);
+        static_assert (unsigned (ReadingKind::ClippedSamples) == 17);
+        static_assert (unsigned (ReadingKind::SamplePeak) == 18);
+        static_assert (unsigned (ReadingKind::LowSide) == 19);
+        static_assert (unsigned (ReadingKind::StereoWindows) == 20);
+        static_assert (unsigned (ReadingKind::CrestBlocksLow) == 21);
+        static_assert (unsigned (ReadingKind::CrestBlocksLowMid) == 22);
+        static_assert (unsigned (ReadingKind::CrestBlocksHighMid) == 23);
+        static_assert (unsigned (ReadingKind::CrestBlocksHigh) == 24);
+        static_assert (unsigned (ReadingKind::CrestBlocksFull) == 25);
+        static_assert (unsigned (ReadingKind::Target) == 26);
+        static_assert (unsigned (ReadingKind::Ceiling) == 27);
+        static_assert (unsigned (ReadingKind::Gain) == 28);
+        static_assert (unsigned (ReadingKind::Passes) == 29);
+        static_assert (unsigned (ReadingKind::CheckPasses) == 30);
+        return 30;
+    }
     else if constexpr (std::is_same_v<T, SaturationType>)
     {
         static_assert (unsigned (SaturationType::Tanh) == 0);
@@ -600,6 +635,44 @@ constexpr void checkEnum (QueryStatus value) noexcept
         case QueryStatus::Contract: break;
         case QueryStatus::Cancelled: break;
         case QueryStatus::FloatingPointEnvironment: break;
+    }
+}
+
+constexpr void checkEnum (ReadingKind value) noexcept
+{
+    switch (value)
+    {
+        case ReadingKind::Integrated: break;
+        case ReadingKind::TruePeak: break;
+        case ReadingKind::Lra: break;
+        case ReadingKind::Plr: break;
+        case ReadingKind::DcOffset: break;
+        case ReadingKind::DcOffsetLeft: break;
+        case ReadingKind::DcOffsetRight: break;
+        case ReadingKind::LowestBand: break;
+        case ReadingKind::PcmBits: break;
+        case ReadingKind::Correlation: break;
+        case ReadingKind::BurstsMid: break;
+        case ReadingKind::BurstsSide: break;
+        case ReadingKind::Hum: break;
+        case ReadingKind::Tempo: break;
+        case ReadingKind::TempoConfidence: break;
+        case ReadingKind::ClipRuns: break;
+        case ReadingKind::LongestRun: break;
+        case ReadingKind::ClippedSamples: break;
+        case ReadingKind::SamplePeak: break;
+        case ReadingKind::LowSide: break;
+        case ReadingKind::StereoWindows: break;
+        case ReadingKind::CrestBlocksLow: break;
+        case ReadingKind::CrestBlocksLowMid: break;
+        case ReadingKind::CrestBlocksHighMid: break;
+        case ReadingKind::CrestBlocksHigh: break;
+        case ReadingKind::CrestBlocksFull: break;
+        case ReadingKind::Target: break;
+        case ReadingKind::Ceiling: break;
+        case ReadingKind::Gain: break;
+        case ReadingKind::Passes: break;
+        case ReadingKind::CheckPasses: break;
     }
 }
 
@@ -1213,7 +1286,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, MasterReport>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.achievedLufs)>, std::optional<double>>);
         v.field ("achievedLufs", x.achievedLufs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ceilingDbTp)>, double>);
@@ -1244,6 +1317,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("plrDb", x.plrDb);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.plrReason)>, MeasurementReason>);
         v.field ("plrReason", x.plrReason);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.readings)>, BoundedList<ReadingFact, 9>>);
+        v.optionalField ("readings", x.readings, BoundedList<ReadingFact, 9> {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.reason)>, MeasurementReason>);
         v.field ("reason", x.reason);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.secondHint)>, std::optional<MasterHint>>);
@@ -1715,6 +1790,14 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.values)>, std::span<const double>>);
         v.field ("values", x.values);
     }
+    else if constexpr (std::is_same_v<U, ReadingFact>)
+    {
+        [[maybe_unused]] auto& [f0, f1] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.fact)>, text::Fact>);
+        v.field ("fact", x.fact);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.kind)>, ReadingKind>);
+        v.field ("kind", x.kind);
+    }
     else if constexpr (std::is_same_v<U, ReadingPoint>)
     {
         [[maybe_unused]] auto& [f0, f1] = x;
@@ -1799,7 +1882,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, SnapshotView>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32, f33, f34, f35, f36, f37, f38, f39, f40, f41, f42, f43, f44, f45] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32, f33, f34, f35, f36, f37, f38, f39, f40, f41, f42, f43, f44, f45, f46] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.canContinueMeasurement)>, bool>);
         v.optionalField ("canContinueMeasurement", x.canContinueMeasurement, false);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.canMaster)>, bool>);
@@ -1874,6 +1957,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.optionalField ("plan", x.plan, PlanView {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.project)>, Project>);
         v.field ("project", x.project);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.readings)>, BoundedList<ReadingFact, 26>>);
+        v.optionalField ("readings", x.readings, BoundedList<ReadingFact, 26> {});
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.revision)>, std::uint64_t>);
         v.field ("revision", x.revision);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.runs)>, std::span<const ReadingRun>>);

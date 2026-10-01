@@ -158,6 +158,10 @@ struct MasterReport
     std::optional<MasterHint> firstHint, secondHint;
     std::optional<MasterCost> cost;
     std::optional<MasterMedium> medium;        // a master the session decided; absent for a ready chain a shell supplied
+    // THE MASTER'S READINGS (ReadingKind), as MasterReportText::readings states them when the job settles the report:
+    // the achieved loudness, true peak, LRA and PLR where measured, the target, the ceiling, the gain where measured,
+    // the landing's passes and the check passes. Empty for a report the job did not finish.
+    BoundedList<ReadingFact, kMasterReadings> readings {};
 };
 struct MasterReportText
 {
@@ -173,6 +177,18 @@ struct MasterReportText
     [[nodiscard]] static text::Fact impact (const MasterCost& cost) noexcept;
     [[nodiscard]] static text::Fact pumping (const MasterCost& cost) noexcept;
     [[nodiscard]] static text::Fact tonal() noexcept;
+    // The cost's lines beside shape, impact and pumping, each nothing where its numbers were not measured: the section
+    // that moved most (its shift, and where it lies in the source, seconds), how many sections were compared, the
+    // limiter's median and P95 reduction over the active windows, the shares it worked in and that were active, and the
+    // impact loss of the four bands below the full band.
+    [[nodiscard]] static std::optional<text::Fact> section (const MasterCost& cost) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> sections (const MasterCost& cost) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> limiter (const MasterCost& cost) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> active (const MasterCost& cost) noexcept;
+    [[nodiscard]] static std::optional<text::Fact> bands (const MasterCost& cost) noexcept;
+    // The master's readings: the report's numbers and the landing's passes (`passes`), in the order of ReadingKind.
+    [[nodiscard]] static BoundedList<ReadingFact, kMasterReadings> readings (const MasterReport& report,
+                                                                            std::uint32_t passes) noexcept;
     // What the glue and the saturation did; nothing for a stage that was out of the chain.
     [[nodiscard]] static std::optional<text::Fact> glue (const MasterCost& cost) noexcept;
     [[nodiscard]] static std::optional<text::Fact> saturation (const MasterCost& cost) noexcept;

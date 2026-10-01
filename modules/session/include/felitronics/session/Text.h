@@ -191,6 +191,12 @@ enum class FactId : std::uint16_t
     MasterLandingPassLimit = 90,   // the passes ran out before the master came within {tolerance} of the target
     MasterLandingBetween = 91,     // the target lies between two neighbouring reachable levels, none within {tolerance}
     MasterLandingFailed = 92,      // the master stopped on a technical failure
+    // The master's cost line by line (MasterReportText), each published where its numbers were measured.
+    MasterCostSection = 93,        // the largest section shift: {shift} at {from}–{to}
+    MasterCostSections = 94,       // sections compared: {count}
+    MasterCostLimiter = 95,        // the limiter's reduction over the active windows: median {median}, P95 {p95}
+    MasterCostActive = 96,         // the limiter works in {limiter} of the windows; {active} of the windows are active
+    MasterCostBands = 97,          // the impact loss by band: low {low}, low-mid {lowMid}, high-mid {highMid}, high {high}
 
     // A command's rejection, by its code — what was refused and why. The three a field refuses name it: {field}.
     RejectedFloatingPointEnvironment = 101,
@@ -284,6 +290,7 @@ enum class FactId : std::uint16_t
     SourceHumWandered = 435,   // possible hum: a line near {hz} that does not hold its frequency
     SourceLowestBandUnsure = 436, // the lowest occupied band: {note} ({hz}), unsure — under the margin a sure note stands
     ObservationUnmeasured = 437, // {name}: not measured — {reason}
+    TempoConfidence = 438,     // a reading: how sure the tempo is — {confidence}
 
 };
 
@@ -333,6 +340,14 @@ enum class Term : std::uint16_t
     HandledNothing, HandledHpf, HandledMonoBass, HandledPerson,
     ReasonPending, ReasonCancelled, ReasonUnsupported, ReasonTooShort, ReasonNonFinite, ReasonCapacity, ReasonNoSignal,
     ReasonNotImplemented, ReasonNeedNotAbove3, ReasonMemory,
+    // The readings by name, in the order of ReadingKind (Measurements.h); how sure a tempo is, in the order of the tempo
+    // detector's ConfidenceLabel (undetermined, low, medium, high).
+    ReadingIntegrated, ReadingTruePeak, ReadingLra, ReadingPlr, ReadingDcOffset, ReadingDcOffsetLeft, ReadingDcOffsetRight,
+    ReadingLowestBand, ReadingPcmBits, ReadingCorrelation, ReadingBurstsMid, ReadingBurstsSide, ReadingHum, ReadingTempo,
+    ReadingTempoConfidence, ReadingClipRuns, ReadingLongestRun, ReadingClippedSamples, ReadingSamplePeak, ReadingLowSide,
+    ReadingStereoWindows, ReadingCrestBlocksLow, ReadingCrestBlocksLowMid, ReadingCrestBlocksHighMid, ReadingCrestBlocksHigh,
+    ReadingCrestBlocksFull, ReadingTarget, ReadingCeiling, ReadingGain, ReadingPasses, ReadingCheckPasses,
+    TempoUndetermined, TempoLow, TempoMedium, TempoHigh,
 
 };
 

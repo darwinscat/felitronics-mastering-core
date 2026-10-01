@@ -156,6 +156,8 @@ void Session::stepMasterCrestJoin() noexcept
         {
             (void) event.payload.fact.assign (MasterReportText::impact (*master.report->cost));
             emit (event);
+            if (const auto bands = MasterReportText::bands (*master.report->cost))
+            { (void) event.payload.fact.assign (*bands); emit (event); }
         }
         ++crestJoinIndex_;
     };

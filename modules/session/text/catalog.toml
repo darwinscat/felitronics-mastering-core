@@ -1066,3 +1066,108 @@ en = "The target lies between two neighbouring reachable levels; neither comes w
 [messages.masterLandingFailed]
 ru = "Мастер остановился из-за технического сбоя."
 en = "The master stopped on a technical failure."
+
+# The readings by name (ReadingKind): the label a number the core publishes stands under — the source's, or a master's.
+# A label, never a sentence: the number is its own fact (messages.value), formatted by the table.
+[terms.reading]
+integrated.ru = "Интегральная громкость"
+integrated.en = "Integrated loudness"
+truePeak.ru = "Истинный пик"
+truePeak.en = "True peak"
+lra.ru = "LRA"
+lra.en = "LRA"
+plr.ru = "PLR"
+plr.en = "PLR"
+dcOffset.ru = "DC-смещение"
+dcOffset.en = "DC offset"
+dcOffsetLeft.ru = "DC-смещение, левый канал"
+dcOffsetLeft.en = "DC offset, left"
+dcOffsetRight.ru = "DC-смещение, правый канал"
+dcOffsetRight.en = "DC offset, right"
+lowestBand.ru = "Нижняя занятая полоса"
+lowestBand.en = "Lowest occupied band"
+pcmBits.ru = "Точных бит PCM"
+pcmBits.en = "Exact PCM bits"
+correlation.ru = "Корреляция каналов"
+correlation.en = "Stereo correlation"
+burstsMid.ru = "Всплески (Mid)"
+burstsMid.en = "Burst events (Mid)"
+burstsSide.ru = "Всплески (Side)"
+burstsSide.en = "Burst events (Side)"
+hum.ru = "Частота сетевого фона"
+hum.en = "Mains hum frequency"
+tempo.ru = "Темп"
+tempo.en = "Tempo"
+tempoConfidence.ru = "Уверенность в темпе"
+tempoConfidence.en = "Tempo confidence"
+clipRuns.ru = "Серии клиппинга"
+clipRuns.en = "Clipped runs"
+longestRun.ru = "Самая длинная серия, сэмплов"
+longestRun.en = "Longest run, samples"
+clippedSamples.ru = "Клиппированных сэмплов"
+clippedSamples.en = "Clipped samples"
+samplePeak.ru = "Пик по сэмплам"
+samplePeak.en = "Sample peak"
+lowSide.ru = "Доля Side в низах"
+lowSide.en = "Side share of the low end"
+stereoWindows.ru = "Окна стерео-измерения"
+stereoWindows.en = "Stereo windows"
+crestBlocksLow.ru = "Активные блоки удара: низ"
+crestBlocksLow.en = "Active impact blocks: low"
+crestBlocksLowMid.ru = "Активные блоки удара: нижняя середина"
+crestBlocksLowMid.en = "Active impact blocks: low-mid"
+crestBlocksHighMid.ru = "Активные блоки удара: верхняя середина"
+crestBlocksHighMid.en = "Active impact blocks: high-mid"
+crestBlocksHigh.ru = "Активные блоки удара: верх"
+crestBlocksHigh.en = "Active impact blocks: high"
+crestBlocksFull.ru = "Активные блоки удара: вся полоса"
+crestBlocksFull.en = "Active impact blocks: full band"
+target.ru = "Цель"
+target.en = "Target"
+ceiling.ru = "Потолок"
+ceiling.en = "Ceiling"
+gain.ru = "Применённое усиление"
+gain.en = "Gain applied"
+passes.ru = "Проходы посадки"
+passes.en = "Landing passes"
+checkPasses.ru = "Проверочные проходы"
+checkPasses.en = "Check passes"
+
+# How sure the tempo detector is of its headline tempo (its ConfidenceLabel).
+[terms.tempoConfidence]
+undetermined.ru = "не определена"
+undetermined.en = "undetermined"
+low.ru = "низкая"
+low.en = "low"
+medium.ru = "средняя"
+medium.en = "medium"
+high.ru = "высокая"
+high.en = "high"
+
+# A reading that is a word: how sure the tempo is.
+[messages.tempoConfidence]
+ru = "{confidence}"
+en = "{confidence}"
+
+# The master's cost line by line, each published where its numbers were measured: the section that moved most (its shift
+# and where it lies), how many sections were compared, the limiter's reduction and how much of the programme it worked
+# in, and the impact loss in each band below the full band's.
+[messages.masterCostSection]
+ru = "Наибольший сдвиг секции: {shift} на отрезке {from}–{to}."
+en = "The largest section shift is {shift}, at {from}–{to}."
+
+[messages.masterCostSections]
+ru = "Сопоставлено секций: {count}."
+en = "Sections compared: {count}."
+
+[messages.masterCostLimiter]
+ru = "Срез лимитера в активных окнах: медиана {median}, P95 {p95}."
+en = "Limiter reduction over the active windows: median {median}, P95 {p95}."
+
+[messages.masterCostActive]
+ru = "Лимитер работает в {limiter} окон; активных окон — {active}."
+en = "The limiter works in {limiter} of the windows; {active} of the windows are active."
+
+[messages.masterCostBands]
+ru = "Потеря удара по полосам: низ {low}, нижняя середина {lowMid}, верхняя середина {highMid}, верх {high}."
+en = "Impact loss by band: low {low}, low-mid {lowMid}, high-mid {highMid}, high {high}."

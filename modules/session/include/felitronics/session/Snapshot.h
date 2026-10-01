@@ -59,6 +59,10 @@ struct SnapshotView
     // THE OBSERVATIONS' LINES, as ObservationText::facts states them from `observations` — so a shell shows each one
     // without composing it: every kind found or not measured, in the order of ObservationKind. Empty before a source.
     BoundedList<ObservationFact, kObservationKinds> observationFacts {};
+    // THE SOURCE'S READINGS, as ReadingText::source states them from `measurements`: each number a shell shows about
+    // the source, with the core's unit and precision, in the order of ReadingKind. Empty before a source; a new
+    // measurement states them anew.
+    BoundedList<ReadingFact, kSourceReadings> readings {};
 };
 // THE SNAPSHOT'S OWN SENTENCES, as ObservationText and PlanText give theirs from what the snapshot carries.
 // targetChange: the warning a shell shows in its confirmation BEFORE it sends SetTarget (owner decision, 28.09: a change
