@@ -15,7 +15,25 @@ const snapshot = JSON.parse(snapshotJson), events = JSON.parse(eventsJson);
 assert(accepts(snapshot, 'SessionSnapshot'));
 assert(accepts(events, 'ReadonlyArray<SessionEvent>'));
 const frozen = readFileSync(new URL('./session-abi-v1.txt', import.meta.url), 'utf8').split(/\r?\n/);
-assert(accepts(JSON.parse(frozen.find(line => line.startsWith('{"') && !line.startsWith('{"kind"'))), 'SessionSnapshot'), 'the manifest base snapshot is accepted by the generated declaration');
+// THE BASE SNAPSHOT IS OLDER THAN THE FIELDS APPENDED AFTER THE BASE. The manifest's base ends with its section "The
+// rest of the compiled surface at the v0.6.0 base"; each field appended since is frozen by a `codec Record.field` line
+// after that section, and the base snapshot lacks exactly those. Snapshots are never persisted (law 12): an appended
+// field is a plain field, with no decode default, and the base is held to what it carries — each of its fields still in
+// the declaration, with its type — while a field of the base stays required.
+const baseAt = frozen.findIndex(line => line.startsWith('{"') && !line.startsWith('{"kind"'));
+const restAt = frozen.findIndex(line => line.startsWith('# The rest of the compiled surface at the v0.6.0 base'));
+assert(restAt > baseAt, 'the manifest declares where its v0.6.0 base ends');
+const baseEnd = frozen.findIndex((line, i) => i > restAt && line.startsWith('#'));
+const appended = new Set((baseEnd < 0 ? [] : frozen.slice(baseEnd)).flatMap(line => {
+    const m = /^codec (\w+)\.(\w+) /.exec(line);
+    return !m ? [] : m[1] === 'Snapshot' ? [`Snapshot.${m[2]}`, `SessionSnapshot.${m[2]}`] : [`${m[1]}.${m[2]}`];
+}));
+const acceptsBase = types(source, appended), base = JSON.parse(frozen[baseAt]);
+assert(acceptsBase(base, 'SessionSnapshot'), 'the manifest base snapshot is accepted by the generated declaration');
+const withoutBaseField = structuredClone(base); delete withoutBaseField.handFieldCount;
+const withoutBaseRecordField = structuredClone(base); delete withoutBaseRecordField.plan.limiter.ceilingDbTp;
+assert(!acceptsBase(withoutBaseField, 'SessionSnapshot') && !acceptsBase(withoutBaseRecordField, 'SessionSnapshot'),
+    'a field the base carries is still required of it, at the top and in a nested record');
 assert(accepts(JSON.parse(frozen.find(line => line.startsWith('['))), 'ReadonlyArray<SessionEvent>'), 'the manifest base events are accepted by the generated declaration');
 assert.equal(snapshot.sourceBytes, Number.MAX_SAFE_INTEGER);
 assert.equal(snapshot.integratedLufs, '-Infinity');

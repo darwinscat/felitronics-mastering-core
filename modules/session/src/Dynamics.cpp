@@ -164,28 +164,40 @@ GlueFinding glueFinding (const PlanInputs& in, const Devices& devices) noexcept
     GlueFinding f;
     const bool offeredByShell = (in.offered & (1u << unsigned (Device::Glue))) != 0;
     f.upToDb = glueKnob (in.rules, devices.glue);
-    if (! offeredByShell || ! settingsOf (in.rules, devices.glue).on || ! (f.upToDb > 0.0)) return f;
+    const bool ticked = offeredByShell && settingsOf (in.rules, devices.glue).on && f.upToDb > 0.0;
     const auto levels = inputLevels (in);
-    if (! levels.p95Db) { f.state = GlueState::Unavailable; return f; }
+    if (ticked && ! levels.p95Db) { f.state = GlueState::Unavailable; return f; }
+    // In the chain, or out of it — unticked, at 0 dB, not offered — the knob's numbers as it stands (slice 5): what the
+    // compressor gets, or would get, from it. Out of the chain they reach no compressor (writeDynamics reads Active).
+    f.state = ticked ? GlueState::Active : GlueState::Out;
     const auto curve = glueFor (in.rules, f.upToDb);
-    f.state = GlueState::Active;
     f.ratio = curve.ratio;
-    // The calibrated place of the loud places on the detector's scale, then the travel's offset from it.
-    f.p95DetectorDb = *levels.p95Db + number (in.rules.engine.find ("glue").find ("detectorOverP95Db"));
-    f.thresholdDb = *f.p95DetectorDb + curve.threshOffsetDb;
     f.kneeDb = curve.kneeDb;
     f.attackMs = curve.attackMs;
+    // The calibrated place of the loud places on the detector's scale, then the travel's offset from it.
+    if (levels.p95Db)
+    {
+        f.p95DetectorDb = *levels.p95Db + number (in.rules.engine.find ("glue").find ("detectorOverP95Db"));
+        f.thresholdDb = *f.p95DetectorDb + curve.threshOffsetDb;
+    }
+    // The release follows the tempo once it is decided. Nothing measures the tempo of a glue out of the chain: its
+    // release is stated at [compressor.tempo] bpmWhenUnsure until a tempo is decided; a glue in the chain waits for it.
+    std::optional<TempoChoice> choice;
     if (const auto* tempo = resultOf (in, Analyzer::Tempo))
-        if (const auto choice = tempoChoice (in.rules, *tempo); choice.ready)
-        {
-            const double wanted = 60000.0 / choice.bpm / curve.divisor;
-            const double release = clampTo (in.rules.engine.find ("compressor").find ("limits"), "release", wanted);
-            f.bpm = choice.bpm;
-            f.releaseAskedMs = wanted;
-            f.releaseMs = release;
-            f.releaseClamped = ! same (release, wanted);
-            f.tempoMeasured = choice.measured;
-        }
+        if (const auto c = tempoChoice (in.rules, *tempo); c.ready) choice = c;
+    if (! choice && f.state == GlueState::Out)
+        choice = TempoChoice { true, false, number (in.rules.engine.find ("compressor").find ("tempo").find ("bpmWhenUnsure")),
+                               MeasurementReason::Pending };
+    if (choice)
+    {
+        const double wanted = 60000.0 / choice->bpm / curve.divisor;
+        const double release = clampTo (in.rules.engine.find ("compressor").find ("limits"), "release", wanted);
+        f.bpm = choice->bpm;
+        f.releaseAskedMs = wanted;
+        f.releaseMs = release;
+        f.releaseClamped = ! same (release, wanted);
+        f.tempoMeasured = choice->measured;
+    }
     return f;
 }
 
@@ -202,6 +214,20 @@ SaturationFinding saturationFinding (const PlanInputs& in, const Devices& device
     // The shaper's gain aligned: the knob is the drive at 0 dBTP, k = 10^(drive/20) − 1 scaled by the peak.
     f.driveDb = 20 * core::det::log10 (1 + (core::det::pow10 (settings.drive / 20) - 1) * core::det::pow10 (-*levels.truePeakDb / 20));
     return f;
+}
+
+saturation::Saturator::Params clipperParams (const Rules& rules, SaturationType type, double driveDb, double mix) noexcept
+{
+    const auto saturation = rules.engine.find ("saturation");
+    saturation::Saturator::Params s {};
+    s.shape = saturation::WaveShaper::Shape (type);
+    s.driveDb = float (driveDb);
+    s.bias = float (number (saturation.find ("bias")));
+    s.mix = float (mix);
+    s.outputDb = 0.0f;   // neutral: the landing sets the level before the limiter, so a trim here would be undone
+    s.autoComp = float (number (saturation.find ("autoComp")));
+    s.dcBlockHz = float (number (saturation.find ("dcBlockHz")));
+    return s;
 }
 
 void writeDynamics (const PlanInputs& in, const Devices& devices, mastering::MasteringChainParams& params) noexcept
@@ -231,19 +257,10 @@ void writeDynamics (const PlanInputs& in, const Devices& devices, mastering::Mas
         c.releaseMs = *glue.releaseMs;
     }
 
-    const auto saturation = in.rules.engine.find ("saturation");
     const auto settings = settingsOf (in.rules, devices.saturation);
     const auto shaped = saturationFinding (in, devices);
-    auto& s = params.clipper;
-    s = {};
     // The type as it sounds: a person's pick over the machine's, which is the config's [saturation] shape.
-    s.shape = saturation::WaveShaper::Shape (settings.type);
-    s.driveDb = float (shaped.driveDb.value_or (0.0));
-    s.bias = float (number (saturation.find ("bias")));
-    s.mix = float (settings.mix);
-    s.outputDb = 0.0f;   // neutral: the landing sets the level before the limiter, so a trim here would be undone
-    s.autoComp = float (number (saturation.find ("autoComp")));
-    s.dcBlockHz = float (number (saturation.find ("dcBlockHz")));
+    params.clipper = clipperParams (in.rules, settings.type, shaped.driveDb.value_or (0.0), settings.mix);
     params.bypassClipper = ! shaped.active;
 }
 } // namespace felitronics::session::detail

@@ -186,13 +186,18 @@ struct GlueFinding
 {
     GlueState state = GlueState::Out;
     double upToDb = 0.0;                       // the knob as it sounds ([glue] whenTicked when ticked on untouched)
-    std::optional<double> ratio, thresholdDb, kneeDb, attackMs;   // Active; the threshold in the normalised input's dB
+    // The knob's numbers — Active, and Out as well (unticked, at 0 dB: what the compressor would get from the knob as it
+    // stands, which no compressor gets); none where Unavailable. The ratio, knee and attack always; the threshold, in the
+    // normalised input's dB, where the input has a short-term P95.
+    std::optional<double> ratio, thresholdDb, kneeDb, attackMs;
     // ...and once the tempo is decided — the measured one, or [compressor.tempo] bpmWhenUnsure: the tempo, the release
-    // it asks for (a beat over the travel's divisor) and the release the compressor gets, inside [compressor.limits].
+    // it asks for (a beat over the travel's divisor) and the release the compressor gets, inside [compressor.limits]. A
+    // glue in the chain waits for its tempo; nothing measures the tempo of one out of it, whose release is stated at
+    // bpmWhenUnsure until a tempo is decided.
     std::optional<double> bpm, releaseAskedMs, releaseMs;
     bool releaseClamped = false;               // the release asked for was outside the limits: releaseMs is the limit
     bool tempoMeasured = false;                // the release follows the measured tempo, not the fallback
-    // Active: the input's short-term P95 on the detector's scale, the normalised input's dB — the level the threshold
+    // Active or Out: the input's short-term P95 on the detector's scale, the normalised input's dB — the level the threshold
     // stands on ([glue] detectorOverP95Db above the P95) and where the static curve takes upToDb: a transfer curve's
     // point for the knob.
     std::optional<double> p95DetectorDb;
@@ -266,7 +271,19 @@ struct LimiterFinding
     bool ceilingAboveMedium = false;           // a person's ceiling stands above it
     bool needlesAgainstMedium = false;         // the peak clipper cuts on a target that has none
     double vinylTopHz = 0.0;                   // the constant note: above this the cutting room usually rolls off
+    // THE LIMITER'S OWN SETTINGS, as the chain is written with them ([limiter] and [chain] of engine.toml): its release,
+    // ms; whether a second, slower envelope runs beside it, and that one's release, ms (stated either way); its
+    // lookahead, ms; and the oversampling its detector and gain run at, as the limiter takes the factor (a requested 1
+    // becomes 2).
+    double releaseMs = 0.0;
+    bool dualRelease = false;
+    double slowReleaseMs = 0.0;
+    double lookaheadMs = 0.0;
+    std::int32_t oversampling = 0;
 };
+
+// THE DITHER'S NOISE SHAPING — the core's dither::NoiseShaping, in its order: none (flat), weighted, psychoacoustic.
+enum class DitherShaping : std::uint8_t { None, Weighted, Psychoacoustic };
 
 // WHAT THE DITHER COMES TO — by the delivery's format alone: at [dither] onUpToBits or less it is in the chain unless a
 // person switched it off (the delivery is then rounded to its grid without noise); above that there is no dither at
@@ -278,6 +295,8 @@ struct DitherFinding
     bool on = false;                           // it is in the chain
     bool offByHand = false;                    // it applies, and a person switched it off
     bool keptWithoutEffect = false;            // it does not apply, and a person's tick is kept: nothing sounds of it
+    // The shaping the dither runs with at the delivery's depth: [dither] shaping up to shapingUpToBits, none above.
+    DitherShaping shaping = DitherShaping::None;
 };
 
 // WHERE THE EQ CURVE LEAVES ITS NORM ([eq] curve.warnDb of engine.toml) — judged on the shelves as they sound, tilt's and
@@ -743,6 +762,7 @@ private:
     // Derived at placement and after accepted commands; owned snapshots copy these points.
     void refreshEqCurve() noexcept;
     EqPoint eqCurve_[kEqCurvePoints] {};
+    EqPoint eqOnlyCurve_[kEqCurvePoints] {};
     // OWNED BUFFERS, EACH ONE EXACT REQUEST — not std::vector: a debugging standard library (MSVC's at
     // _ITERATOR_DEBUG_LEVEL 1 or 2) gives every vector a heap-allocated proxy of its own, which no declared demand
     // counts. The source: its samples planar, channel after channel (source_.channels × source_.frames), and the name

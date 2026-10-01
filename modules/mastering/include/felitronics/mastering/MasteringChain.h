@@ -571,24 +571,48 @@ public:
         return true;
     }
 
+    // THE SETTLED SOFT CLIPPER'S DESIGN — `Saturator`'s own design arithmetic on its parameters, with its clamps: its
+    // WaveShaper at the shape, bias and k = 10^(driveDb/20) − 1, its drive compensation slopeAtZero^−autoComp, its
+    // dry/wet share and its output trim. The one arithmetic clipperQuietGain() and clipperTransfer() read.
+    struct ClipperDesign
+    {
+        saturation::WaveShaper shaper {};
+        float comp = 1.0f, mix = 1.0f;
+        double trim = 1.0;
+    };
+    static ClipperDesign clipperDesign (const saturation::Saturator::Params& p) noexcept
+    {
+        const auto finite = [] (float v, float fallback) noexcept { return std::isfinite (v) ? v : fallback; };
+        ClipperDesign d;
+        d.shaper.setShape (p.shape);
+        d.shaper.setBias (finite (p.bias, 0.0f));
+        d.shaper.setDrive ((float) (core::dbToGain (finite (p.driveDb, 3.0f)) - 1.0));
+        d.comp = (float) std::pow ((double) std::max (1.0e-6f, d.shaper.slopeAtZero()),
+                                   (double) -std::clamp (finite (p.autoComp, 0.5f), 0.0f, 1.0f));
+        d.mix = std::clamp (finite (p.mix, 1.0f), 0.0f, 1.0f);
+        d.trim = core::dbToGain (finite (p.outputDb, 0.0f));
+        return d;
+    }
+    // What the settled stage gives for a level held long enough to leave its oversampler: the shaper's output,
+    // compensated, the linear dry/wet and the trim — its base-rate step in its own floats. The level alone decides it
+    // for the static shapes; the transformer's flux follows the signal's history and the tape's emphasis its
+    // frequency, so for those two it is their static core (at a held level tape is exactly that).
+    static float clipperTransfer (const ClipperDesign& d, float level) noexcept
+    {
+        const float wet = d.comp * d.shaper.processSample (level);
+        return (float) d.trim * ((1.0f - d.mix) * level + d.mix * wet);
+    }
+
     // What the settled soft clipper multiplies a sound too quiet to bend by: the dry share, and the wet one at the
-    // shaper's slope at zero under its drive compensation, times the output trim — `Saturator`'s own design
-    // arithmetic on the parameters in force, with its clamps (MasteringChainTests measures the stage against it).
-    // 1 without the stage.
+    // shaper's slope at zero under its drive compensation, times the output trim — clipperDesign() on the parameters
+    // in force (MasteringChainTests measures the stage against it). 1 without the stage.
     double clipperQuietGain() const noexcept
     {
         if (! cfg_.clipper) return 1.0;
-        const auto finite = [] (float v, float fallback) noexcept { return std::isfinite (v) ? v : fallback; };
-        const auto& p = params_.clipper;
-        saturation::WaveShaper shaper;
-        shaper.setShape (p.shape);
-        shaper.setBias (finite (p.bias, 0.0f));
-        shaper.setDrive ((float) (core::dbToGain (finite (p.driveDb, 3.0f)) - 1.0));
-        const float slope = shaper.slopeAtZero();
-        const float comp = (float) std::pow ((double) std::max (1.0e-6f, slope),
-                                             (double) -std::clamp (finite (p.autoComp, 0.5f), 0.0f, 1.0f));
-        const double mix = (double) std::clamp (finite (p.mix, 1.0f), 0.0f, 1.0f);
-        return core::dbToGain (finite (p.outputDb, 0.0f)) * ((1.0 - mix) + mix * (double) comp * (double) slope);
+        const auto d = clipperDesign (params_.clipper);
+        const float slope = d.shaper.slopeAtZero();
+        const double mix = (double) d.mix;
+        return d.trim * ((1.0 - mix) + mix * (double) d.comp * (double) slope);
     }
 
     // FALSE, with `out` untouched, exactly where prepare() refuses the same arguments — it IS prepare()'s

@@ -85,8 +85,8 @@ SURFACE[3] = SURFACE[1];
 SURFACE[4] = [...SURFACE[3], '_fc_kit_text', '_fc_kit_parse', '_fc_kit_travel', '_fc_kit_position', '_fc_kit_value_at',
     '_fc_kit_heat', '_fc_kit_mono_zones', '_fc_kit_mono_zones_at', '_fc_kit_eq_curve', '_fc_kit_low_end_curve',
     '_fc_kit_eq_curve_bands'];
-// Version 5 (slice 5) appends the rejected answer's fact and the target field's clear, and no entry point.
-SURFACE[5] = SURFACE[4];
+// Version 5 (slice 5) appends the rejected answer's fact, the target field's clear and the saturation's transfer curve.
+SURFACE[5] = [...SURFACE[4], '_fc_kit_saturation_curve'];
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
 const RUNTIME = ['_malloc', '_free', 'HEAPU32'];
@@ -309,8 +309,8 @@ for (let repeat = 0; repeat < 2; ++repeat) {
     ok(Number.isNaN(values[16]) && values[25] === 3, 'mono right axis is absent with a reason');
 }
 M.HEAPU32[querySizes >>> 2] = 12;
-ok(M._fc_session_summary_size(session, querySizes) === STATUS.OK && M.HEAPU32[(querySizes + 8) >>> 2] === 128 * 16,
-   'summary omits large measurement rows: its only rows are the placed devices\' EQ curve');
+ok(M._fc_session_summary_size(session, querySizes) === STATUS.OK && M.HEAPU32[(querySizes + 8) >>> 2] === 2 * 128 * 16,
+   'summary omits large measurement rows: its only rows are the placed devices\' two EQ curves, the whole and the EQ-only');
 for (const p of [queryInput, querySizes, queryWritten, queryJson, queryRows]) M._free(p);
 ok(snapshot.devicesPlaced === true && snapshot.plan.readOnly === false && snapshot.plan.waiting === 0,
    'the real measurement ends with the devices placed by the planner, nothing left to wait for');
@@ -1345,6 +1345,26 @@ for (const p of growth) M._free(p);
         ok(same && moved && mudUp === STATUS.ERR_CONTRACT && M._fc_kit_eq_curve_bands(BANDS, 48000, CURVE, PEAK) === STATUS.ERR_CONTRACT,
            'fc_kit_eq_curve_bands: at 0 dB or ticked off the bytes of fc_kit_eq_curve, +3 dB of body lifts the curve, mud above 0 dB '
            + 'refused even ticked off, a tick neither 0 nor 1 a contract fault');
+    }
+    {
+        // The saturation's transfer curve (slice 5): 129 inputs from -1 to +1 a 64th apart beside the chain's shaper. Its
+        // tanh is the platform's, as the chain's is — so not in the pinned corpus: tanh's curve within 1e-5 of JavaScript's
+        // tanh(kx)/tanh(k) at k = 10^(drive/20) - 1 ([saturation] autoComp 0: no compensation), tape's curve tanh's bits.
+        const SAT = S + 4800, N = 129;
+        let grid = true, tanh = true, tape = true;
+        for (const drive of [1.5, 6, 12]) {
+            f64(SAT, 2 * N).fill(0);
+            tanh = tanh && M._fc_kit_saturation_curve(0, drive, 1, SAT) === STATUS.OK;
+            const curve = [...f64(SAT, 2 * N)], k = Math.fround(10 ** (drive / 20) - 1);
+            for (let i = 0; i < N; ++i) {
+                grid = grid && Object.is(curve[2 * i], -1 + i / 64);
+                tanh = tanh && Math.abs(curve[2 * i + 1] - Math.tanh(k * curve[2 * i]) / Math.tanh(k)) < 1e-5;
+            }
+            tape = tape && M._fc_kit_saturation_curve(7, drive, 1, SAT) === STATUS.OK && f64(SAT, 2 * N).every((v, i) => Object.is(v, curve[i]));
+        }
+        ok(grid && tanh && tape && M._fc_kit_saturation_curve(1, 3, 1, SAT) === STATUS.ERR_CONTRACT
+           && M._fc_kit_saturation_curve(256, 3, 1, SAT) === STATUS.ERR_CONTRACT && M._fc_kit_saturation_curve(0, -1, 1, SAT) === STATUS.ERR_CONTRACT,
+           'fc_kit_saturation_curve: the grid, tanh\'s curve, tape as tanh at a held level; atan, a number past the types, a negative drive refused');
     }
     put(FACTS[0], IN); put('ru', LANG);
     ok(M._fc_kit_text(IN, FACTS[0].length, LANG, 2, TEXT, 512, WORD) === STATUS.OK

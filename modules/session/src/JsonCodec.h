@@ -21,6 +21,11 @@ inline constexpr bool maskValue (double value) noexcept
     const auto bits = std::bit_cast<std::uint64_t> (value);
     return (bits & 0x7fffffffffffffffull) == 0u || bits == std::bit_cast<std::uint64_t> (1.0);
 }
+// WHAT THE TEXT WALK REFUSES OF A SNAPSHOT that the walk with binary rows does not: the thread's floating-point
+// environment, the view's own invariants, and a machine difference's device out of range (text writes it as an enum,
+// a binary row as a number). Every other check is the same in both walks. So a binary-row transfer is sized by this and
+// one walk — never by printing every row as text first (Wire::snapshotBytes).
+[[nodiscard]] CodecStatus snapshotEncodable (const SnapshotView& view) noexcept;
 // The same walk sizes and writes. It never allocates, including in a debug standard library.
 struct Writer
 {
