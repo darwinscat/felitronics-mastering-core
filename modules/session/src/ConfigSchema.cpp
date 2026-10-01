@@ -407,6 +407,12 @@ void readHpf (Doc& d, Reader& in, Hpf& o, std::vector<std::int32_t>& bands)
     const bool lo = in.required ("hzMin", o.hzMin, hpfDomain());
     const bool hi = in.required ("hzMax", o.hzMax, hpfDomain());
     d.below (in, lo && hi, o.hzMin, o.hzMax, "hzMax");
+    // The machine's top lies on the travel: above its start, at most its end — a person can set what the machine can.
+    if (in.required ("machineTopHz", o.machineTopHz, hpfDomain()))
+    {
+        d.below (in, lo, o.hzMin, o.machineTopHz, "machineTopHz");
+        if (hi && o.hzMax < o.machineTopHz) d.refuse (in, "machineTopHz", Refusal::OutOfOrder);
+    }
     const R travel = lo && hi && o.hzMin < o.hzMax ? R { o.hzMin, o.hzMax } : R { 1.0, 200.0 };
     if (in.required ("slopes", o.slopes, I { 6, 96 }))
     {

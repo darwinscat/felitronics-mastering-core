@@ -79,7 +79,7 @@ Items 1–3 of the task and every bullet of its checks section, one check per ro
 | A43 | 18 and 36 dB/oct | `HpfMonoTests.cpp:aPersonsKnobs`; `StateTests.cpp:theKnobs` (6 to 96 in steps of 6 accepted; 0, 7, 95 and 102 refused) | HELD |
 | A44 | Frequencies outside the slider's travel | `HpfMonoTests.cpp:aPersonsKnobs` (above 50 Hz); `ProjectTests.cpp:domainsAndExactNumbers` (20000.25 Hz, the source's Nyquist); `TiltLowTests.cpp:theKnobs` | HELD |
 | A45 | Domain errors | `StateTests.cpp:theKnobs`, `theOrderOfTheChecks`; `ProjectTests.cpp:domainsAndExactNumbers`, `refusals`; `GlueSaturationTests.cpp:aPersonsKnob`; `TiltLowTests.cpp:theKnobs` | HELD |
-| A46 | High-pass at 32 Hz on every target | `HpfMonoTests.cpp:everyTargetFromOneMeasurement`, `theCutoffOnTheChainsResponse`; `ConfigDecisionsTests.cpp:theConfigHoldsTheDecisions` | HELD |
+| A46 | High-pass at 32 Hz on every target; the machine never above its 50 Hz top while the knob travels to 80 | `HpfMonoTests.cpp:everyTargetFromOneMeasurement`, `theCutoffOnTheChainsResponse` (every target, note and rate at or under 50 Hz), `aPersonsKnobs` (70 Hz by hand sounds); `KitTests.cpp` (travel 15…80, red from 50); `ConfigDecisionsTests.cpp:theConfigHoldsTheDecisions` | HELD |
 | A47 | High-pass on a short file (under 10 s: the floor, no note detection) | `HpfMonoTests.cpp:theSureLowestNote` | HELD |
 | A48 | Mono bass: the loss thresholds of 1 and 3 dB | `HpfMonoTests.cpp:theLossOfTheLowEnd` (to the bit), `whereTheBassSounds`, `throughThePump` | HELD |
 | A49 | Every needles class | `PlanSoundTests.cpp:theClasses` | HELD |

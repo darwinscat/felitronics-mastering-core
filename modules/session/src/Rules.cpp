@@ -141,6 +141,7 @@ Rules readRules (View targets, View engine) noexcept
     const View hpf = engine.find ("hpf");
     r.read (hpf.find ("hzMin"), out.hpfFq.from);
     r.read (hpf.find ("hzMax"), out.hpfFq.to);
+    r.read (hpf.find ("machineTopHz"), out.hpfTop);
     r.read (hpf.find ("hzStep"), out.hpfFq.step);
     r.domain (hpf.find ("frequencyDomain"), out.hpfFq);
     const View mono = engine.find ("monoBass");

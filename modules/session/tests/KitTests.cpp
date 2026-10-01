@@ -233,6 +233,9 @@ void travelAndHeat()
     const auto t = Kit::travel (Term::FieldTargetLufs);
     ok (t.status == CodecStatus::Ok && sameBits (t.from, -25) && sameBits (t.to, -5) && sameBits (t.step, 0.1), "the loudness travel is [edit] lufs");
     ok (Kit::travel (Term::FieldHpfSlope).status == CodecStatus::Invalid, "a slope is a choice, not a travel");
+    const auto hpf = Kit::travel (Term::FieldHpfFq);
+    ok (hpf.status == CodecStatus::Ok && sameBits (hpf.from, 15) && sameBits (hpf.to, 80) && sameBits (hpf.step, 1),
+        "the high-pass knob travels from 15 to 80 Hz by the hertz (owner, 01.10), past the machine's 50 Hz top");
     ok (sameBits (Kit::position (Term::FieldTargetLufs, -15).value, 0.5) && sameBits (Kit::position (Term::FieldTargetLufs, -30).value, 0.0)
         && sameBits (Kit::position (Term::FieldTargetLufs, 0).value, 1.0), "a position along the travel, past an end at that end");
     ok (sameBits (Kit::valueAt (Term::FieldTargetLufs, 0.5).value, -15.0) && sameBits (Kit::valueAt (Term::FieldTargetLufs, 0.123).value, -22.5)
@@ -257,8 +260,9 @@ void travelAndHeat()
     ok (heat (Term::FieldTargetLufs, -20, 0.5, -1) && heat (Term::FieldTargetLufs, -25, 1, -1) && heat (Term::FieldTargetLufs, -40, 1, -1)
         && heat (Term::FieldTargetLufs, -9, 0.5, 1), "outside it, the share of the way to the travel's end");
     ok (heat (Term::FieldTargetTp, -1.5, 0, 0) && heat (Term::FieldTargetTp, -3, 0.5, -1), "the ceiling's green window");
-    ok (heat (Term::FieldHpfFq, 30, 0, 0) && heat (Term::FieldHpfFq, 22, 0.5, -1) && heat (Term::FieldHpfFq, 46, 0.5, 1) && heat (Term::FieldHpfFq, 60, 1, 1),
-        "the high-pass's comfort window, out to its warnings");
+    ok (heat (Term::FieldHpfFq, 30, 0, 0) && heat (Term::FieldHpfFq, 22, 0.5, -1) && heat (Term::FieldHpfFq, 46, 0.5, 1) && heat (Term::FieldHpfFq, 60, 1, 1)
+        && heat (Term::FieldHpfFq, 50, 1, 1) && heat (Term::FieldHpfFq, 70, 1, 1) && heat (Term::FieldHpfFq, 80, 1, 1),
+        "the high-pass's comfort window, out to its warnings; red from 50 Hz to the travel's 80 (owner, 01.10)");
     ok (heat (Term::FieldTiltDb, 0, 0, 0) && heat (Term::FieldTiltDb, 2.25, 0.5, 1) && heat (Term::FieldLowDb, -3, 1, -1), "tilt and low: normal, out to hard");
     const auto none = Kit::heat (Term::FieldGlueUpToDb, 1.2);
     ok (none.status == CodecStatus::Ok && ! none.window && sameBits (none.heat, 0) && none.side == 0, "the glue has no window");
@@ -456,7 +460,7 @@ void theCorpusIsTheWasmModulesBytes()
 {
     felitronics::test::group ("native == wasm: the corpus session-check.mjs gives the module hashes to one value");
     // tools/wasm/session-check.mjs, "the pure kit", holds the wasm module to this same value.
-    constexpr std::uint64_t kPinned = 0x3cb684b9f79574b1ull;
+    constexpr std::uint64_t kPinned = 0x7607472f9fe4c104ull;
     const auto h = corpusHash();
     std::printf ("    kit corpus: %016llx\n", static_cast<unsigned long long> (h));
     ok (h == kPinned, "the kit corpus hashes to the pinned value");
