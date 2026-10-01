@@ -1439,6 +1439,7 @@ struct Seen
         for (std::size_t i = 0; i < kAnalyzers; ++i)
         { results[i].analyzer = Analyzer (i); results[i].status = MeasurementStatus::Pending; results[i].reason = MeasurementReason::Pending; }
         in.rules = detail::rules(); in.measurements = results; in.channels = 2; in.sampleRate = 48000; in.frames = 48000ull * 60ull;
+        in.bitDepth = 24;
     }
     Seen (const Seen&) = delete;
     void ready (Analyzer a, std::span<const MeasurementValue> numbers, std::span<const MeasurementArray> arrays = {})
@@ -1535,14 +1536,14 @@ void theObservations()
         {
             x.forensics[0] = { "wall.valid", valid, MeasurementReason::None, 0 };
             x.forensics[1] = { "wall.cutoffHz", cutoffReason == MeasurementReason::None ? std::optional<double> (fraction * 24000.0) : std::nullopt, cutoffReason, 0 };
-            x.forensics[2] = { "wall.dropDb", 48.0, MeasurementReason::None, 0 };
+            x.forensics[2] = { "wall.dropDb", 32.0, MeasurementReason::None, 0 };
             x.forensics[3] = { "wall.cutoffFractionOfNyquist", fraction, MeasurementReason::None, 0 };
             x.ready (Analyzer::Forensics, { x.forensics, 4 });
             return x.seen().spectralWall;
         };
-        const auto lossy = wall (1.0, 0.667), high = wall (1.0, 0.85), none = wall (0.0, 1.0, MeasurementReason::NoSignal), shortFile = wall (0.0, 1.0, MeasurementReason::TooShort);
+        const auto lossy = wall (1.0, 0.667), high = wall (1.0, 0.89), none = wall (0.0, 1.0, MeasurementReason::NoSignal), shortFile = wall (0.0, 1.0, MeasurementReason::TooShort);
         const auto said = ObservationText::fact (ObservationKind::SpectralWall, lossy);
-        ok (lossy.status == ObservationStatus::Found && near (lossy.confidence, (48.0 - 24.0) / (60.0 - 24.0), 1e-12) && high.status == ObservationStatus::NotFound
+        ok (lossy.status == ObservationStatus::Found && near (lossy.confidence, (32.0 - 24.0) / (40.0 - 24.0), 1e-12) && high.status == ObservationStatus::NotFound
             && none.status == ObservationStatus::NotFound && shortFile.status == ObservationStatus::NotMeasured && said && whole (*said),
             "a wall at 16 kHz is found, one near Nyquist is not, no wall is not found, a file too short is not measured — " + (said ? ru (*said) : std::string()));
     }
@@ -1612,9 +1613,9 @@ void theObservations()
         ok (wanders.hum.status == ObservationStatus::NotFound && wanders.humWandered.status == ObservationStatus::Found
             && same (wanders.humWandered.value, 60.3) && wanders.humWandered.doubtful && said && whole (*said),
             "a line the detector measured and would not call stationary — its result refused as a whole — is a wandering hum, doubtful: " + (said ? ru (*said) : std::string()));
-        ok (deaf.hum.status == ObservationStatus::NotMeasured && deaf.humWandered.status == ObservationStatus::NotMeasured
-            && deaf.hum.reason == MeasurementReason::NoSignal,
-            "no quiet stretch to listen in: not measured — never \"no hum\"");
+        // Owner decision 01.10: the detector listened through a programme that is never quiet — no steady line stood out.
+        ok (deaf.hum.status == ObservationStatus::NotFound && deaf.humWandered.status == ObservationStatus::NotFound,
+            "no quiet stretch: the detector listened and no line stood out — not found, not \"not measured\"");
         x.in.channels = 1;
         x.ended (Analyzer::LowEnd, MeasurementReason::NoSignal);
         x.ended (Analyzer::Stereo, MeasurementReason::NoSignal);
@@ -1709,6 +1710,176 @@ void theObservations()
     }
 }
 
+// THE OWNER'S TABLE (01.10): the styles, the styles by size and the severities, each threshold from both sides.
+void theOwnersTable()
+{
+    felitronics::test::group ("the owner's observation table: a style by nature, by size where approved; severities along their ramps");
+    const auto none = MeasurementReason::None;
+    const auto lineOf = [] (ObservationKind kind, const Observation& o)
+    { const auto f = ObservationText::fact (kind, o); return f ? std::pair { f->id, ru (*f) } : std::pair { text::FactId::Value, std::string() }; };
+    {
+        // The DC offset: a note under 1 % of full scale, a warning from 1 %, an error from 10 %.
+        Seen x;
+        const auto dc = [&] (double offset)
+        {
+            x.clipping[0] = { "runCount", 0.0, none, 0 };
+            x.clipping[1] = { "dcOffset[0]", offset, none, 0 };
+            x.clipping[2] = { "dcOffset[1]", 0.0, none, 0 };
+            x.ready (Analyzer::Clipping, { x.clipping, 3 });
+            return x.seen().dcOffset;
+        };
+        const auto small = dc (0.0099), one = dc (0.01), large = dc (0.0999), ten = dc (-0.1);
+        const auto note = lineOf (ObservationKind::DcOffset, small), warn = lineOf (ObservationKind::DcOffset, one);
+        ok (small.style == ObservationStyle::Note && one.style == ObservationStyle::Warning && large.style == ObservationStyle::Warning
+            && ten.style == ObservationStyle::Error && note.first == text::FactId::SourceDcNote && warn.first == text::FactId::SourceDc
+            && note.second.find ("ФВЧ мастера её уберёт") != std::string::npos,
+            "DC under 1 % a note, from 1 % a warning, from 10 % (either sign) an error; the note says — " + note.second);
+    }
+    {
+        // The effective depth: 24 nothing, 23…17 a warning, 16 and less an error; a 32-bit container carrying 24 nothing.
+        Seen x;
+        const auto bits = [&] (std::uint32_t container, double unused)
+        {
+            x.in.bitDepth = container;
+            x.forensics[0] = { "grid.alwaysZeroLowBits[0]", unused, none, 0 };
+            x.forensics[1] = { "grid.alwaysZeroLowBits[1]", unused + 1.0, none, 0 };
+            x.ready (Analyzer::Forensics, { x.forensics, 2 });
+            return x.seen().bitsUnused;
+        };
+        const auto full = bits (24, 0), d23 = bits (24, 1), d17 = bits (24, 7), d16 = bits (24, 8), cd = bits (16, 0), wide = bits (32, 8), lossy = bits (0, 0);
+        const auto truncated = lineOf (ObservationKind::BitsUnused, d23), shallow = lineOf (ObservationKind::BitsUnused, cd);
+        ok (full.status == ObservationStatus::NotFound && d23.status == ObservationStatus::Found && same (d23.value, 23.0)
+            && d23.style == ObservationStyle::Warning && d17.style == ObservationStyle::Warning && d16.style == ObservationStyle::Error
+            && cd.style == ObservationStyle::Error && same (cd.value, 16.0) && near (d16.severity, 1.0, 0.0) && same (d23.severity, 0.0)
+            && wide.status == ObservationStatus::NotFound && lossy.status == ObservationStatus::NotMeasured
+            && truncated.first == text::FactId::SourceTruncatedBits && truncated.second.find ("до 23 бит") != std::string::npos
+            && shallow.first == text::FactId::SourceShallowMix && shallow.second.find ("16-битный микс — сведите в 24 бита") != std::string::npos,
+            "depth 24 nothing; 23 and 17 a warning; 16 — of a 24-bit or a 16-bit file — an error; 32 carrying 24 nothing; no container not "
+            "measured — " + truncated.second + " / " + shallow.second);
+    }
+    {
+        // The infra-low share: under 2 % nothing, 2…5 % a note, from 5 % a warning.
+        Seen x;
+        const auto infra = [&] (double share)
+        {
+            x.infra[0] = { "infraLowShare", share, none, 0 };
+            x.infra[1] = { "crossoverHz", 30.0, none, 0 };
+            x.ready (Analyzer::InfraLow, { x.infra, 2 });
+            return x.seen().infraLow;
+        };
+        const auto under = infra (0.0199), from = infra (0.02), below5 = infra (0.0499), at5 = infra (0.05);
+        const auto note = lineOf (ObservationKind::InfraLow, from), warn = lineOf (ObservationKind::InfraLow, at5);
+        ok (under.status == ObservationStatus::NotFound && from.style == ObservationStyle::Note && below5.style == ObservationStyle::Note
+            && at5.style == ObservationStyle::Warning && note.first == text::FactId::SourceInfraLowNote
+            && warn.first == text::FactId::SourceInfraLowWarning && warn.second.find ("(5,0") != std::string::npos,
+            "infra-low from 2 % a note, from 5 % a warning — " + note.second + " / " + warn.second);
+    }
+    {
+        // Already limited: found under a PLR of 10.5 dB, a warning, the severity full at 7 dB.
+        Seen x;
+        const auto limited = [&] (double plr)
+        {
+            x.loudness[0] = { "integratedLufs", -10.0, none, 0 };
+            x.loudness[1] = { "truePeakDb", -10.0 + plr, none, 0 };
+            x.ready (Analyzer::Loudness, { x.loudness, 2 });
+            x.clipping[0] = { "runCount", 0.0, none, 0 };
+            x.ready (Analyzer::Clipping, { x.clipping, 1 });
+            return x.seen().alreadyLimited;
+        };
+        const auto at = limited (10.5), under = limited (10.25), half = limited (8.75), dense = limited (6.0);
+        const auto said = lineOf (ObservationKind::AlreadyLimited, half);
+        ok (at.status == ObservationStatus::NotFound && under.status == ObservationStatus::Found && under.style == ObservationStyle::Warning
+            && under.hypothesis && near (under.severity, 0.25 / 3.5, 1e-12) && near (half.severity, 0.5, 1e-12) && same (dense.severity, 1.0)
+            && said.first == text::FactId::SourceLimitedBus && said.second.find ("без лимитера на шине") != std::string::npos,
+            "a PLR of 10.5 dB is not limited, a hair under is a warning; the severity half at 8.75 dB and full at 7 — " + said.second);
+    }
+    {
+        // The spectral wall: a warning from 12 % under Nyquist, confidence full at a 40 dB drop.
+        Seen x;
+        const auto wall = [&] (double fraction, double drop)
+        {
+            x.forensics[0] = { "wall.valid", 1.0, none, 0 };
+            x.forensics[1] = { "wall.cutoffHz", fraction * 24000.0, none, 0 };
+            x.forensics[2] = { "wall.dropDb", drop, none, 0 };
+            x.forensics[3] = { "wall.cutoffFractionOfNyquist", fraction, none, 0 };
+            x.ready (Analyzer::Forensics, { x.forensics, 4 });
+            return x.seen().spectralWall;
+        };
+        const auto at87 = wall (0.87, 40.0), at89 = wall (0.89, 40.0), deep = wall (0.667, 60.0);
+        const auto said = lineOf (ObservationKind::SpectralWall, deep);
+        ok (at87.status == ObservationStatus::Found && at87.style == ObservationStyle::Warning && same (at87.confidence, 1.0)
+            && at89.status == ObservationStatus::NotFound && said.first == text::FactId::SourceLossy && said.second.find ("16,0") != std::string::npos,
+            "a wall at 87 % of Nyquist is a warning, at 89 % nothing; a 40 dB drop is fully confident — " + said.second);
+    }
+    {
+        // Wide bass, polarity and a dual-mono file: their styles and severities.
+        Seen x;
+        const auto low = [&] (double lowSide, double correlation, double rawSide)
+        {
+            x.lowEnd[0] = { "lowSideFraction", lowSide, none, 0 };
+            x.lowEnd[1] = { "crossoverHz", 120.0, none, 0 };
+            x.lowEnd[2] = { "rawSideFraction", rawSide, none, 0 };
+            x.ready (Analyzer::LowEnd, { x.lowEnd, 3 });
+            x.stereo[0] = { "correlation", correlation, none, 0 };
+            x.stereo[1] = { "dualMono", 0.0, none, 0 };
+            x.ready (Analyzer::Stereo, { x.stereo, 2 });
+            return x.seen();
+        };
+        const auto at6 = low (0.06, 0.5, 0.1), at18 = low (0.18, 0.5, 0.1), at30 = low (0.3, 0.5, 0.1);
+        ok (at6.wideBass.style == ObservationStyle::Warning && same (at6.wideBass.severity, 0.0) && near (at18.wideBass.severity, 0.5, 1e-12)
+            && same (at30.wideBass.severity, 1.0), "wide bass a warning, its severity 0 at 6 %, half at 18 %, full at 30 %");
+        const auto edge = low (0.5, -0.1, 0.1), quarter = low (0.625, -0.1, 0.1), opposite = low (0.8, -0.1, 0.1);
+        ok (edge.polarity.status == ObservationStatus::Found && edge.polarity.style == ObservationStyle::Error
+            && same (edge.polarity.severity, 0.0) && near (quarter.polarity.severity, 0.5, 1e-12) && same (opposite.polarity.severity, 1.0),
+            "opposite polarity an error, its severity by the low band's correlation: 0 at 0, half at −0.25, full at −0.5 and below");
+        x.stereo[1] = { "dualMono", 1.0, none, 0 };
+        const auto dual = x.seen().dualMono;
+        const auto said = lineOf (ObservationKind::DualMono, dual);
+        ok (dual.style == ObservationStyle::Warning && same (dual.severity, 0.0) && said.second.find ("проверьте экспорт") != std::string::npos,
+            "a dual-mono file a warning, severity 0 — " + said.second);
+    }
+    {
+        // The hum: the severity in dB from −60 to −40; a note, a warning from half its severity when confident. And the
+        // detector's verdicts: listened and found nothing is not found; could not listen is not measured, with why.
+        Seen x;
+        x.programme[0] = { "programmeMeanSquare", 1.0, none, 0 };
+        x.ready (Analyzer::Programme, { x.programme, 1 });
+        const auto hum = [&] (double reason, double prominence, double power, bool baseHeard = false)
+        {
+            const bool ok0 = reason < 0.5;
+            x.hum[0] = { "reason[0]", reason, none, 0 };
+            x.hum[1] = { "reason[1]", reason, none, 0 };
+            x.hum[2] = { "prominenceDb[0]", ok0 ? std::optional<double> (prominence) : std::nullopt, ok0 ? none : MeasurementReason::NoSignal, 0 };
+            x.hum[3] = { "fundamentalHz[0]", ok0 ? std::optional<double> (50.0) : std::nullopt, ok0 ? none : MeasurementReason::NoSignal, 0 };
+            x.hum[4] = { "tonePower[0]", ok0 ? std::optional<double> (power) : std::nullopt, ok0 ? none : MeasurementReason::NoSignal, 0 };
+            x.candidateRows.assign (36 * 4, 0.0);
+            for (std::size_t row = 0; row < 4; ++row) x.candidateRows[row * 36] = double (row / 2);
+            if (baseHeard) x.candidateRows[2] = 1.0;
+            x.candidates = { "candidates", { 0, 0, x.in.frames, 48000 }, 36, 4, 4, true, x.candidateRows };
+            auto& r = x.results[std::size_t (Analyzer::Hum)];
+            r.status = ok0 ? MeasurementStatus::Ready : MeasurementStatus::Unavailable; r.reason = ok0 ? none : MeasurementReason::NoSignal;
+            r.numbers = { x.hum, 5 }; r.arrays = { &x.candidates, 1 };
+            return x.seen().hum;
+        };
+        const auto quietLine = hum (0.0, 40.0, 1e-6), loud = hum (0.0, 40.0, 1e-4), over = hum (0.0, 40.0, 1e-3);
+        const auto under50 = hum (0.0, 40.0, 0.5e-5), over50 = hum (0.0, 40.0, 2e-5), unsure = hum (0.0, 22.0, 2e-5);
+        ok (same (quietLine.severity, 0.0) && near (loud.severity, 1.0, 1e-12) && same (over.severity, 1.0)
+            && near (over50.severity, 0.5 + 10.0 * felitronics::core::det::log10 (2.0) / 20.0, 1e-12)
+            && under50.style == ObservationStyle::Note && over50.style == ObservationStyle::Warning
+            && unsure.doubtful && unsure.style == ObservationStyle::Note,
+            "hum severity 0 at −60 dB, full at −40 dB; a note under −50 dB, a warning over it — but not when doubtful");
+        const auto noQuiet = hum (6.0, 0.0, 0.0), comb = hum (10.0, 0.0, 0.0), single = hum (7.0, 0.0, 0.0), singleHeard = hum (7.0, 0.0, 0.0, true);
+        const auto tooFew = hum (8.0, 0.0, 0.0, true), shortFile = hum (4.0, 0.0, 0.0), holed = hum (5.0, 0.0, 0.0), coarse = hum (3.0, 0.0, 0.0);
+        ok (noQuiet.status == ObservationStatus::NotFound && comb.status == ObservationStatus::NotFound && single.status == ObservationStatus::NotFound
+            && singleHeard.status == ObservationStatus::NotMeasured && singleHeard.reason == MeasurementReason::NoSignal
+            && tooFew.status == ObservationStatus::NotMeasured && tooFew.reason == MeasurementReason::NoSignal
+            && shortFile.reason == MeasurementReason::TooShort && holed.reason == MeasurementReason::NonFinite
+            && coarse.reason == MeasurementReason::Unsupported && coarse.status == ObservationStatus::NotMeasured,
+            "never quiet, a comb without its base, one quiet stretch with no base line: not found; a base line heard in too little "
+            "quiet: not measured (no signal); too short, all frames holed, too coarse: not measured, each with its reason");
+    }
+}
+
 // Two facts are one line: the same id, and the same words in both declared languages.
 bool sameLine (const text::Fact& a, const text::Fact& b) { return a.id == b.id && ru (a) == ru (b) && en (a) == en (b); }
 // The snapshot's lines are ObservationText's, kind by kind in the order of ObservationKind: every kind that has a line,
@@ -1782,8 +1953,8 @@ void theObservationsSpeakForThemselves()
             && ! hasLine (v, ObservationKind::TooQuiet) && hasLine (v, ObservationKind::TooShort),
             "measured: the lines are ObservationText's, kind by kind — " + std::to_string (lines) + " of 17 have one; not quiet, so no line of it");
         ok (v.observations.loudestLowNote.style == ObservationStyle::Reading && v.observations.wideBass.style == ObservationStyle::Warning
-            && v.observations.clipping.style == ObservationStyle::Error && v.observations.lowestLowBand.style == ObservationStyle::Note,
-            "the loudest low note is a reading; nothing else in the style table moved (wide bass a warning, clipping an error)");
+            && v.observations.clipping.style == ObservationStyle::Error && v.observations.lowestLowBand.style == ObservationStyle::Reading,
+            "the loudest low note and the lowest band are readings; wide bass a warning, clipping an error");
         // A new source: the lines follow its measurement.
         const Mix quiet (0.03f, 4);
         ok (s->apply (quiet.load (3)).rejection == Rejection::None, "PRECONDITION: a quieter mix loads");
@@ -2067,6 +2238,7 @@ int main()
     vinylAndQuietMastered();
     theDitherSounding();
     theObservations();
+    theOwnersTable();
     theObservationsSpeakForThemselves();
     theReadingsAreFacts();
     theNeedlesAreThePlansNeedles();

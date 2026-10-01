@@ -497,81 +497,85 @@ eventCapacity = 16384
 # doubtfulBelow: a finding less confident than this is doubtful — still shown, behind a button and on a tier of its own.
 # clipping: full weight when a thousandth of the programme is clipped (14 000 samples on a five-minute mix). The source's
 #   clipping is not something a device cures; a new mix does.
-# dcOffset: 0.001 is −60 dBFS, below which an offset eats no headroom; 0.01 is −40 dBFS and eats 1 % of the travel.
-# bitsUnused: how many low bits are always zero — "24 bits carrying 16" is eight.
+# dcOffset: 0.001 is −60 dBFS, below which an offset eats no headroom; 0.01 is −40 dBFS and eats 1 % of the travel. Its
+#   style by size (owner decision 01.10): under warningFrom (1 % of full scale) a note — the master's high-pass removes it,
+#   but the mix chain is worth a look; from warningFrom a warning; from errorFrom (10 %) an error.
+# bitsUnused (owner decision 01.10): judged by the EFFECTIVE depth — the container's bits less the low bits that are
+#   always zero ("24 bits carrying 16" is a depth of 16). A depth of depthBits (24) or more is nothing; from fromBitsShort
+#   bits short of it (23 bits) a warning — somewhere in the mix chain the audio was truncated; from errorFromBitsShort
+#   (8 short: 16 bits and less) an error — a 16-bit mix, to be mixed down again at 24. The severity rises from
+#   fromBitsShort to full at fullAtBitsShort. A float file off the PCM grid has no depth: not applicable.
 # edgeSilence: half a second is heard at a playlist's joint; ten is a forgotten tail.
 # hum: a finding needs a live line and 10 dB, the core's own minProminenceDb below which it publishes no line. Its
 #   severity is the line's power against the programme's mean power (the numerator over the quiet parts, the denominator
-#   over all of it): a sine of amplitude A carries A²/2, so a −60 dBFS line under a −14 dBFS RMS programme gives 1.26e−5,
-#   and full severity at 1e−4 is a line near −51 dBFS, heard in the pauses at once.
+#   over all of it), in dB: 0 at fromPowerDb (−60 dB), full at fullAtPowerDb (−40 dB), straight in dB between (owner
+#   decision 01.10: 2 dB a tenth). A sine of amplitude A carries A²/2, so a −60 dBFS line under a −14 dBFS RMS programme
+#   is −49 dB. A note — a warning from warningFromSeverity (0.5, −50 dB) when the line is confident, not doubtful.
 # humWandered: a wandering line is never more confident than this — half of doubtfulBelow, so it always reads doubtful.
-# spectralWall: confidence by the depth of the drop, from the core's minDropDb; severity by how far below Nyquist, from 0.2,
-#   since the core calls a wall "at Nyquist" from 80 % up. 128 kbit/s walls at 16 kHz sit 0.27…0.33 below Nyquist; full
-#   severity at 0.5 is 96…112 kbit/s. MP3 320 and AAC 256 (walls at 19…20 kHz) do not become a finding at all.
+# spectralWall: confidence by the depth of the drop, from the core's minDropDb to full at fullAtDropDb (40 dB, owner
+#   decision 01.10); severity by how far below Nyquist, from fromFractionBelowNyquist (0.12: a wall at 88 % of Nyquist or
+#   lower — 19.4 kHz at 44.1 kHz), since the core calls a wall "at Nyquist" from 80 % up. 128 kbit/s walls at 16 kHz sit
+#   0.27…0.33 below Nyquist; full severity at 0.5 is 96…112 kbit/s. A warning: the source went through mp3 or AAC.
 # infraLow: the infra-low finding's weight, from a share of `low` to `high` (hypotheses; the reference mixes top out at
-#   1.632 %, so they cannot calibrate it).
+#   1.632 %, so they cannot calibrate it). Its style by size (owner decision 01.10): a note from `low` (2 %) — the master's
+#   high-pass removes it; a warning from warningFrom (5 %) — the high-pass cuts a part large enough to move the mix's
+#   loudness and balance.
 # wideBass (an owner decision): side at or above this share of the energy below the main measurement's crossover
 #   ([lowEnd.run], 120 Hz) is wide bass — a WARNING of the first phase, before the master: mono bass will gather it and
 #   headphones will hear it narrower, and whoever needs the width switches mono bass off. The one threshold, with no
 #   knob: a person has the tick. Below it there is no line of its own; the mono-bass report says how much side it
-#   gathered.
+#   gathered. Its severity rises from that share (6 %) to full at fullAt (30 %, owner decision 01.10).
 # polarity: bass in opposite polarity when the stereo correlation is below correlationBelow or the raw side share is above
-#   rawSideFractionAbove.
-# alreadyLimited: the programme is limited already when its PLR is below plrBelowDb (a hypothesis), or when it is clipped.
+#   rawSideFractionAbove. Its severity (owner decision 01.10) by the LOW band's correlation, (M² − S²) / (M² + S²) =
+#   1 − 2 × the side share below the crossover: 0 at 0, full at fullAtLowCorrelation (−0.5) and below.
+# alreadyLimited: the programme is limited already when its PLR is below plrBelowDb (10.5 dB, owner decision 01.10; a
+#   hypothesis), or when it is clipped. Its severity rises as the PLR falls, from plrBelowDb to full at fullAtPlrDb (7 dB).
 # tooShort: a programme shorter than [input] shortSeconds is a sketch — said once, as a finding.
 # vinylTop (owner decision 3.12): on a target cut to vinyl the report always carries one note, with no threshold and no
 #   measurement behind it — above aboveHz the cutting engineer usually rolls the top off; keep it in mind.
 [observations]
 doubtfulBelow = 0.5
 clipping = { fullAtShareOfProgramme = 0.001 }
-dcOffset = { from = 0.001, fullAt = 0.01 }
-bitsUnused = { fromBits = 1, fullAtBits = 8 }
+dcOffset = { from = 0.001, fullAt = 0.01, warningFrom = 0.01, errorFrom = 0.1 }
+bitsUnused = { depthBits = 24, fromBitsShort = 1, fullAtBitsShort = 8, errorFromBitsShort = 8 }
 edgeSilence = { fromSeconds = 0.5, fullAtSeconds = 10 }
-hum = { fromProminenceDb = 10, fullAtProminenceDb = 40, fullAtPowerAgainstProgramme = 0.0001 }
+hum = { fromProminenceDb = 10, fullAtProminenceDb = 40, fromPowerDb = -60, fullAtPowerDb = -40, warningFromSeverity = 0.5 }
 humWandered = { confidenceCeiling = 0.25 }
-spectralWall = { fullAtDropDb = 60, fromFractionBelowNyquist = 0.2, fullAtFractionBelowNyquist = 0.5 }
-infraLow = { low = 0.02, high = 0.05 }
-wideBass = { sideFractionAtLeast = 0.06 }
-polarity = { correlationBelow = 0, rawSideFractionAbove = 0.5 }
-alreadyLimited = { plrBelowDb = 8 }
+spectralWall = { fullAtDropDb = 40, fromFractionBelowNyquist = 0.12, fullAtFractionBelowNyquist = 0.5 }
+infraLow = { low = 0.02, high = 0.05, warningFrom = 0.05 }
+wideBass = { sideFractionAtLeast = 0.06, fullAt = 0.3 }
+polarity = { correlationBelow = 0, rawSideFractionAbove = 0.5, fullAtLowCorrelation = -0.5 }
+alreadyLimited = { plrBelowDb = 10.5, fullAtPlrDb = 7 }
 vinylTop = { aboveHz = 16000 }
 
-# The kind of a finding is its nature, not its size: clipping is always an error — even a short clip is a defect; a DC
-# offset, lost bits, a too-quiet export, bass in opposite polarity and wide bass need attention; the rest describe the
-# file — and the loudest bass note is a reading, a number the file shows rather than a finding (owner decision: it does
-# not tint the Low end block). The kind styles a finding and decides nothing.
+# The kind of a finding is its nature (owner decision 01.10, row by row): clipping and bass in opposite polarity are errors
+# — a defect a master cannot cure; lost bits, a too-quiet export, a dual-mono file, an already limited mix, a lossy source
+# and wide bass need attention; the rest describe the file — and the loudest bass note and the lowest band are readings,
+# numbers the file shows rather than findings (they do not tint the Low end block). Where the owner approved it, the style
+# also follows the SIZE: a DC offset (a note, a warning from 1 %, an error from 10 % of full scale), the effective depth (a
+# warning, an error at 16 bits and less), the infra-low share (a note, a warning from 5 %) and the hum (a note, a warning
+# from half its severity when confident) — the thresholds are their own tables' warningFrom / errorFrom keys above, and
+# this table is the style a finding starts from. A size only raises a style, never lowers it, and never raises a doubtful
+# finding. The kind styles a finding and decides nothing.
 [observations.kinds]
 clipping = "error"
-dcOffset = "warning"
+dcOffset = "note"
 bitsUnused = "warning"
-dualMono = "note"
+dualMono = "warning"
 edgeSilence = "note"
 hum = "note"
 humWandered = "note"
-spectralWall = "note"
+spectralWall = "warning"
 loudestLowNote = "reading"
 sibilance = "note"
-lowestLowBand = "note"
+lowestLowBand = "reading"
 infraLow = "note"
 wideBass = "warning"
-polarity = "warning"
-alreadyLimited = "note"
+polarity = "error"
+alreadyLimited = "warning"
 tooQuiet = "warning"
 tooShort = "note"
 
-# SIBILANCE, measured on the bursts above and shown as a finding whatever the de-esser (owner decision 3.13). All hypotheses.
-# minHops…maxHops: 5…15 hops (50…150 ms) tell syllables from needles and steps.
-# fromShareOverDomeDb, fullAtShareOverDomeDb: the band's share RELATIVE to the published LR4 domeShare, from −2 dB, full at
-#   −0.5 dB.
-# sideBelowMidDb: side at least this far below mid where an event is eligible on both axes; nearMonoShare: "almost mono"
-#   is at least this share of hops whose side is exactly zero.
-# fromPerMinute, fullAtPerMinute: the confidence grows from 10 to 30 events per judged minute.
-# periodicToleranceHops, periodicMultiples: periodic mass lies within ±1 hop of the modal interval and of its multiples; it
-#   damps the confidence from periodicFrom to periodicFullAt — a hi-hat grid is not proof of speech.
-# blindAtDuty: bursts in at least this share of the time mean the detector is blind, not that the file is clean.
-# severityFromDb, severityFullAtDb: the severity grows with the excess; it takes no part in the device's decision.
-# excessQuantile, shareQuantile, sideMidQuantile, loudestMoments: the finding's excess and share are p90, its side against
-#   mid the median, and it names its three loudest moments.
 [observations.sibilance]
 minHops = 5
 maxHops = 15

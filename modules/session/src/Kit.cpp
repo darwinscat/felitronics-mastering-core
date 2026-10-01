@@ -170,7 +170,7 @@ KitParsed Kit::parse (std::string_view typed, text::Lang lang, Term field, std::
     if (knob == nullptr)
     {
         // The slope: a whole number of dB/oct, as written — never moved to the nearest choice (engine.toml [hpf]).
-        if (! (std::fabs (*read) < 2147483648.0) || ! detail::same (std::trunc (*read), *read)
+        if (! (std::fabs (*read) < 2147483648.0) || ! detail::same (std::floor (*read), *read)
             || ! rules.slope (std::int32_t (*read))) return out;
         out.refusal = KitRefusal::None;
         out.value = detail::kept (*read);

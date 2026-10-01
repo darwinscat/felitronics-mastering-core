@@ -120,6 +120,22 @@ Observation& found (const ObservationInputs& in, Observation& o, double confiden
     o.doubtful = o.confidence < number (in.rules.engine.find ("observations").find ("doubtfulBelow"));
     return o;
 }
+// THE STYLE BY SIZE (owner decision 01.10) — the one place a finding's size moves its style. A finding starts from its
+// kind's style ([observations.kinds]); found and not doubtful, it turns a warning from `warningFrom` of its size on and
+// an error from `errorFrom` on — a kind passes the steps its own table writes, and only those. A size raises a style,
+// never lowers it.
+struct Steps
+{
+    std::optional<double> warningFrom, errorFrom;
+};
+Observation& sized (Observation& o, double size, Steps steps) noexcept
+{
+    if (o.status != ObservationStatus::Found || o.doubtful) return o;
+    const bool belowWarning = o.style == ObservationStyle::Note || o.style == ObservationStyle::Reading;
+    if (steps.errorFrom && size >= *steps.errorFrom) o.style = ObservationStyle::Error;
+    else if (steps.warningFrom && size >= *steps.warningFrom && belowWarning) o.style = ObservationStyle::Warning;
+    return o;
+}
 double seconds (const ObservationInputs& in) noexcept
 {
     return in.sampleRate != 0 ? double (in.frames) / double (in.sampleRate) : 0.0;
@@ -218,7 +234,8 @@ Observation dcOffset (const ObservationInputs& in) noexcept
     const double from = number (config.find ("from")), fullAt = number (config.find ("fullAt"));
     o.value = *largest;
     if (*largest < from) return absent (o);
-    return found (in, o, 1.0, ramp (*largest, from, fullAt));
+    found (in, o, 1.0, ramp (*largest, from, fullAt));
+    return sized (o, *largest, { number (config.find ("warningFrom")), number (config.find ("errorFrom")) });
 }
 
 Observation bitsUnused (const ObservationInputs& in) noexcept
@@ -234,11 +251,19 @@ Observation bitsUnused (const ObservationInputs& in) noexcept
         fewest = fewest ? std::min (*fewest, *bits.value) : *bits.value;
     }
     if (! fewest) return unmeasured (o, r ? reason : MeasurementReason::Pending);
+    // The EFFECTIVE depth: the container's bits less the low bits always zero — the channel that uses the most. A file
+    // without a container depth has no unused bits to read (the forensics publish them unsupported), and no depth.
+    if (in.bitDepth == 0) return unmeasured (o, MeasurementReason::Unsupported);
     const auto config = in.rules.engine.find ("observations").find ("bitsUnused");
-    const double from = number (config.find ("fromBits")), fullAt = number (config.find ("fullAtBits"));
-    o.value = *fewest;
-    if (*fewest < from) return absent (o);
-    return found (in, o, 1.0, ramp (*fewest, from, fullAt));
+    const double depth = double (in.bitDepth) - *fewest;
+    const double shortOf = number (config.find ("depthBits")) - depth;
+    const double from = number (config.find ("fromBitsShort")), fullAt = number (config.find ("fullAtBitsShort"));
+    o.value = depth;
+    o.second = double (in.bitDepth);
+    o.third = number (config.find ("depthBits"));
+    if (shortOf < from) return absent (o);
+    found (in, o, 1.0, ramp (shortOf, from, fullAt));
+    return sized (o, shortOf, { {}, number (config.find ("errorFromBitsShort")) });
 }
 
 Observation dualMono (const ObservationInputs& in) noexcept
@@ -308,7 +333,8 @@ Observation alreadyLimited (const ObservationInputs& in) noexcept
     const auto lufs = read (loudness, "integratedLufs"), peak = read (loudness, "truePeakDb");
     if (! lufs.value || ! peak.value) return unmeasured (o, ! lufs.value ? lufs.reason : peak.reason);
     o.value = *peak.value - *lufs.value;
-    o.second = number (in.rules.engine.find ("observations").find ("alreadyLimited").find ("plrBelowDb"));
+    const auto config = in.rules.engine.find ("observations").find ("alreadyLimited");
+    o.second = number (config.find ("plrBelowDb"));
     const auto runs = read (resultOf (in, Analyzer::Clipping), "runCount");
     const double length = seconds (in);
     const bool clipped = runs.value && length > 0.0 && regularlyClipped (in.rules, *runs.value * 60.0 / length);
@@ -318,7 +344,8 @@ Observation alreadyLimited (const ObservationInputs& in) noexcept
     if (! dense && ! (length > 0.0)) return unmeasured (o, MeasurementReason::Pending);
     if (! dense && ! clipped) return absent (o);
     o.third = ! dense && clipped ? 1.0 : 0.0;
-    return found (in, o, 1.0, 0.0);
+    // The severity rises as the PLR falls under the bound, full at fullAtPlrDb.
+    return found (in, o, 1.0, ramp (o.second - o.value, 0.0, o.second - number (config.find ("fullAtPlrDb"))));
 }
 
 //==============================================================================
@@ -383,7 +410,8 @@ Observation infraLow (const ObservationInputs& in) noexcept
     o.value = *share.value;
     o.second = *crossover.value;
     if (*share.value < low) return absent (o);
-    return found (in, o, 1.0, ramp (*share.value, low, high));
+    found (in, o, 1.0, ramp (*share.value, low, high));
+    return sized (o, *share.value, { number (config.find ("warningFrom")), {} });
 }
 
 Observation wideBass (const ObservationInputs& in) noexcept
@@ -401,8 +429,10 @@ Observation wideBass (const ObservationInputs& in) noexcept
     }
     o.value = *side.value;
     o.second = *crossover.value;
-    if (*side.value < number (in.rules.engine.find ("observations").find ("wideBass").find ("sideFractionAtLeast"))) return absent (o);
-    return found (in, o, 1.0, 0.0);
+    const auto config = in.rules.engine.find ("observations").find ("wideBass");
+    const double atLeast = number (config.find ("sideFractionAtLeast"));
+    if (*side.value < atLeast) return absent (o);
+    return found (in, o, 1.0, ramp (*side.value, atLeast, number (config.find ("fullAt"))));
 }
 
 Observation polarity (const ObservationInputs& in) noexcept
@@ -425,7 +455,15 @@ Observation polarity (const ObservationInputs& in) noexcept
     const bool opposite = *correlation.value < number (config.find ("correlationBelow"))
                        || *rawSide.value > number (config.find ("rawSideFractionAbove"));
     if (! opposite) return absent (o);
-    return found (in, o, 1.0, 0.0);
+    // How much it matters: the LOW band's correlation, (M² − S²) / (M² + S²) = 1 − 2 × its side share — 0 at 0, full at
+    // fullAtLowCorrelation and below. A low band not read weighs nothing; the finding stands on its own rule.
+    double severity = 0.0;
+    if (const auto lowSide = read (resultOf (in, Analyzer::LowEnd), "lowSideFraction"); lowSide.value)
+    {
+        o.third = 1.0 - 2.0 * *lowSide.value;
+        severity = ramp (-o.third, 0.0, -number (config.find ("fullAtLowCorrelation")));
+    }
+    return found (in, o, 1.0, severity);
 }
 
 // SIBILANCE ([observations.sibilance], all hypotheses) — on the mid axis of the sibilance-band bursts: the bursts
@@ -532,12 +570,40 @@ Observation sibilance (const ObservationInputs& in) noexcept
 //==============================================================================
 // THE HUM
 
-// THE HUM, by the detector's own verdict per channel (analysis::HumReason): a channel it judged — valid, or a mains line
-// measured that did not stand still (CandidateNotStationary) — has an answer; one it could not judge (too short, no quiet
-// stretch to listen in, a comb without its base, …) has none, and a programme with no channel judged is not measured.
+// THE HUM, by the detector's own verdict per channel (analysis::HumReason). Not measured means only that the detector
+// could not listen; where it listened and no steady line stood out, the hum is not found. A channel's verdict:
+//   Ok                      listened: a stationary line, or none                                   -> answered
+//   CandidateNotStationary  a line was measured and did not stand still (humWandered's evidence)   -> answered
+//   NoQuietStretch          the programme is never quiet, and a line is heard only in the quiet    -> answered, no line
+//   CombWithoutBase         harmonics of the mains without their base: no base line                -> answered, no line
+//   SingleQuietStretch,     too little quiet to tell a steady line from a passing one: answered    -> answered, no line,
+//   StretchesTooShort       where no base line showed at all; where one did, whether it stands     or NoSignal
+//                           still cannot be told
+//   ShorterThanWindow       not one window of programme                                            -> TooShort
+//   AllFramesHoled          every frame carried a non-finite sample                                -> NonFinite
+//   InsufficientResolution  (and a report not prepared or not finished)                            -> Unsupported
+// A line in any channel is the hum; without one, the programme is not found only when every channel answered — a channel
+// that could not listen is not a channel without hum — and is otherwise not measured, with that channel's reason. The
+// wandering lines are read from the channels that listened and judged (Ok, CandidateNotStationary) only.
 //   hum          the stationary line the detector accepted with the greatest prominence
 //   humWandered  a candidate whose base line was found and prominent and that did not stand still
-enum : unsigned { kHumOk = 0, kHumShorterThanWindow = 4, kHumNotStationary = 9 };
+enum : unsigned
+{
+    kHumOk = 0, kHumShorterThanWindow = 4, kHumAllFramesHoled = 5, kHumNoQuietStretch = 6, kHumSingleQuietStretch = 7,
+    kHumStretchesTooShort = 8, kHumNotStationary = 9, kHumCombWithoutBase = 10
+};
+std::optional<MeasurementReason> unanswered (unsigned code, bool baseHeard) noexcept
+{
+    switch (code)
+    {
+        case kHumOk: case kHumNotStationary: case kHumNoQuietStretch: case kHumCombWithoutBase: return std::nullopt;
+        case kHumSingleQuietStretch: case kHumStretchesTooShort:
+            return baseHeard ? std::optional<MeasurementReason> (MeasurementReason::NoSignal) : std::nullopt;
+        case kHumShorterThanWindow: return MeasurementReason::TooShort;
+        case kHumAllFramesHoled:    return MeasurementReason::NonFinite;
+        default:                    return MeasurementReason::Unsupported;
+    }
+}
 Observation hum (const ObservationInputs& in, bool wandered) noexcept
 {
     auto o = start (in, wandered ? "humWandered" : "hum", HandledBy::Person, false);
@@ -547,47 +613,54 @@ Observation hum (const ObservationInputs& in, bool wandered) noexcept
     const auto config = in.rules.engine.find ("observations");
     const auto humConfig = config.find ("hum");
     const double from = number (humConfig.find ("fromProminenceDb")), fullAt = number (humConfig.find ("fullAtProminenceDb"));
+    const auto* candidates = carriedArray (r, "candidates");
+    const bool rows36 = candidates && candidates->columns == 36;
+    const auto rows = rows36 ? std::min<std::size_t> (std::size_t (candidates->stored), candidates->values.size() / 36) : 0;
     std::optional<double> hz, prominence, power;
-    bool judged = false, tooShort = true;
+    bool judged[2] {};
+    std::optional<MeasurementReason> firstReason;
     for (unsigned c = 0; c < in.channels && c < 2; ++c)
     {
         const auto reason = carried (r, Channelled ("reason", c).view());
         const auto code = reason ? unsigned (*reason) : kHumShorterThanWindow;
-        judged = judged || code == kHumOk || code == kHumNotStationary;
-        tooShort = tooShort && code == kHumShorterThanWindow;
+        // Did this channel's base line show on the pooled spectrum (a candidate's baseFound, its channel in column 0)?
+        bool heard = false;
+        for (std::size_t i = 0; i < rows; ++i)
+            heard = heard || (core::exactlyEqual (candidates->values[i * 36], double (c)) && candidates->values[i * 36 + 2] > 0.5);
+        if (const auto missing = unanswered (code, heard); missing && ! firstReason) firstReason = missing;
+        judged[c] = code == kHumOk || code == kHumNotStationary;
         if (wandered || code != kHumOk) continue;
         const auto p = carried (r, Channelled ("prominenceDb", c).view());
         const auto f = carried (r, Channelled ("fundamentalHz", c).view()), t = carried (r, Channelled ("tonePower", c).view());
         if (p && f && (! prominence || *p > *prominence)) { prominence = p; hz = f; power = t; }
     }
-    if (! judged) return unmeasured (o, tooShort ? MeasurementReason::TooShort : MeasurementReason::NoSignal);
-    if (const auto* candidates = carriedArray (r, "candidates"); wandered && candidates && candidates->columns == 36)
-    {
-        const auto rows = std::min<std::size_t> (std::size_t (candidates->stored), candidates->values.size() / 36);
+    if (wandered)
         for (std::size_t i = 0; i < rows; ++i)
         {
             const double* v = candidates->values.data() + i * 36;
+            const bool listened = (core::exactlyEqual (v[0], 0.0) && judged[0]) || (core::exactlyEqual (v[0], 1.0) && judged[1]);
             // base.found, base.prominent; not stationary and not passed.
-            if (v[18] > 0.5 && v[19] > 0.5 && ! (v[16] > 0.5) && ! (v[17] > 0.5) && std::isfinite (v[26])
+            if (listened && v[18] > 0.5 && v[19] > 0.5 && ! (v[16] > 0.5) && ! (v[17] > 0.5) && std::isfinite (v[26])
                 && (! prominence || v[26] > *prominence))
             { prominence = v[26]; hz = v[22]; power = v[23]; }
         }
-    }
-    if (! prominence || *prominence < from) return absent (o);
+    if (! prominence || *prominence < from)
+        return firstReason ? unmeasured (o, *firstReason) : absent (o);
     o.value = *hz;
     o.second = *prominence;
-    // The line's power against the programme's mean power.
+    // The line's power against the programme's mean power, in dB: 0 at fromPowerDb, full at fullAtPowerDb.
     double severity = 0.0;
     const auto programme = read (resultOf (in, Analyzer::Programme), "programmeMeanSquare");
     if (power && *power > 0.0 && programme.value && *programme.value > 0.0)
     {
-        const double against = *power / *programme.value;
-        o.third = 10.0 * core::det::log10 (against);
-        severity = ramp (against, 0.0, number (humConfig.find ("fullAtPowerAgainstProgramme")));
+        o.third = 10.0 * core::det::log10 (*power / *programme.value);
+        severity = ramp (o.third, number (humConfig.find ("fromPowerDb")), number (humConfig.find ("fullAtPowerDb")));
     }
     double confidence = ramp (*prominence, from, fullAt);
     if (wandered) confidence = std::min (confidence, number (config.find ("humWandered").find ("confidenceCeiling")));
-    return found (in, o, confidence, severity);
+    found (in, o, confidence, severity);
+    // A confident hum turns a warning from warningFromSeverity; a wandering one is always doubtful and stays a note.
+    return wandered ? o : sized (o, severity, { number (humConfig.find ("warningFromSeverity")), {} });
 }
 } // namespace
 
@@ -706,8 +779,12 @@ std::optional<text::Fact> ObservationText::fact (ObservationKind kind, const Obs
             if (o.places == 2) return Fact::of (FactId::SourceClipsAt2, count (o.value), at (o.at1), at (o.at2));
             if (o.places == 1) return Fact::of (FactId::SourceClipsAt1, count (o.value), at (o.at1));
             return Fact::of (FactId::SourceClips, count (o.value));
-        case ObservationKind::DcOffset:       return Fact::of (FactId::SourceDc, Arg::value (o.value, Unit::None, 4));
-        case ObservationKind::BitsUnused:     return Fact::of (FactId::SourceUnusedBits, count (o.value));
+        // The style chose the words where the size chose the style: a DC offset as a note, the depth as an error.
+        case ObservationKind::DcOffset:
+            return Fact::of (o.style == ObservationStyle::Note ? FactId::SourceDcNote : FactId::SourceDc, Arg::value (o.value, Unit::None, 4));
+        case ObservationKind::BitsUnused:
+            if (o.style == ObservationStyle::Error) return Fact::of (FactId::SourceShallowMix, count (o.value), count (o.third));
+            return Fact::of (FactId::SourceTruncatedBits, count (o.value));
         case ObservationKind::DualMono:       return Fact::of (FactId::SourceDualMono);
         case ObservationKind::EdgeSilence:
             return Fact::of (FactId::SourceEdgeSilence, Arg::value (o.value, Unit::S, 1), Arg::value (o.second, Unit::S, 1));
@@ -717,15 +794,15 @@ std::optional<text::Fact> ObservationText::fact (ObservationKind kind, const Obs
             return Fact::of (FactId::SourceShort, Arg::value (o.value, Unit::S, 1), Arg::value (o.second, Unit::S, 0));
         case ObservationKind::AlreadyLimited:
             if (o.third > 0.5) return Fact::of (FactId::SourceLimitedClipped, Arg::value (o.value, Unit::Db, 1));
-            return Fact::of (FactId::SourceLimited, Arg::value (o.value, Unit::Db, 1), Arg::value (o.second, Unit::Db, 1));
-        case ObservationKind::SpectralWall:
-            return Fact::of (FactId::SourceWall, Arg::value (o.value / 1000.0, Unit::KHz, 1), Arg::value (o.second, Unit::Db, 0));
+            return Fact::of (FactId::SourceLimitedBus, Arg::value (o.value, Unit::Db, 1));
+        case ObservationKind::SpectralWall:   return Fact::of (FactId::SourceLossy, Arg::value (o.value / 1000.0, Unit::KHz, 1));
         case ObservationKind::LoudestLowNote: return Fact::of (FactId::LoudestLowNote, Arg::midi (std::int64_t (o.value)));
         case ObservationKind::LowestLowBand:
             return Fact::of (o.doubtful ? FactId::SourceLowestBandUnsure : FactId::SourceLowestBand, Arg::midi (std::int64_t (o.value)),
                              Arg::value (o.second, Unit::Hz, 1));
         case ObservationKind::InfraLow:
-            return Fact::of (FactId::SourceInfraLow, Arg::value (100.0 * o.value, Unit::Percent, 1), Arg::value (o.second, Unit::Hz, 0));
+            if (o.style == ObservationStyle::Note) return Fact::of (FactId::SourceInfraLowNote, Arg::value (o.second, Unit::Hz, 0));
+            return Fact::of (FactId::SourceInfraLowWarning, Arg::value (100.0 * o.value, Unit::Percent, 1), Arg::value (o.second, Unit::Hz, 0));
         case ObservationKind::WideBass:       return Fact::of (FactId::WideBass, Arg::value (100.0 * o.value, Unit::Percent, 0));
         case ObservationKind::Polarity:       return Fact::of (FactId::SourcePolarity);
         case ObservationKind::Sibilance:

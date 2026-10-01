@@ -324,16 +324,16 @@ en = "The bass polarity was weighed over the first {covered} of the recording's 
 # cap, printed as one ("≤ 1.5 dB"): the most the clipper may take off the peaks — how much it takes is the landing's to
 # decide; the limiter takes the rest.
 [messages.limiterShort]
-ru = "Лимитер: потолок {ceiling}. Иглы короткие (90 % не длиннее {p90}, бас в дозе {bass}, PLR {plr}) — клиппер срезает с пиков {cut}, сколько именно — решит посадка; остальное берёт лимитер."
-en = "Limiter: ceiling {ceiling}. The needles are short (90 % no longer than {p90}, bass share of the dose {bass}, PLR {plr}) — the peak clipper cuts {cut} off the peaks, the landing decides how much; the limiter takes the rest."
+ru = "Лимитер: потолок {ceiling}. Иглы короткие (90 % не длиннее {p90}, бас в дозе {bass}, PLR {plr}) — клиппер снимет с пиков {cut}, остальное возьмёт лимитер."
+en = "Limiter: ceiling {ceiling}. The needles are short (90 % no longer than {p90}, bass share of the dose {bass}, PLR {plr}) — the peak clipper will take {cut} off the peaks, the limiter will take the rest."
 
 [messages.limiterBetween]
-ru = "Лимитер: потолок {ceiling}. Иглы средние (90 % не длиннее {p90}, бас в дозе {bass}, PLR {plr}) — клиппер осторожно срезает с пиков {cut}, сколько именно — решит посадка; остальное берёт лимитер."
-en = "Limiter: ceiling {ceiling}. The needles are neither short nor long (90 % no longer than {p90}, bass share of the dose {bass}, PLR {plr}) — the peak clipper cuts with care, {cut} off the peaks, the landing decides how much; the limiter takes the rest."
+ru = "Лимитер: потолок {ceiling}. Иглы средние (90 % не длиннее {p90}, бас в дозе {bass}, PLR {plr}) — клиппер осторожно снимет с пиков {cut}, остальное возьмёт лимитер."
+en = "Limiter: ceiling {ceiling}. The needles are neither short nor long (90 % no longer than {p90}, bass share of the dose {bass}, PLR {plr}) — the peak clipper will carefully take {cut} off the peaks, the limiter will take the rest."
 
 [messages.limiterManual]
-ru = "Лимитер: потолок {ceiling}. Иглы срезаются по ручной настройке — с пиков {cut}, сколько именно — решит посадка; остальное берёт лимитер."
-en = "Limiter: ceiling {ceiling}. The needles are cut by a manual setting — {cut} off the peaks, the landing decides how much; the limiter takes the rest."
+ru = "Лимитер: потолок {ceiling}. Иглы срезаются по ручной настройке — клиппер снимет с пиков {cut}, остальное возьмёт лимитер."
+en = "Limiter: ceiling {ceiling}. The needles are cut by a manual setting — the peak clipper will take {cut} off the peaks, the limiter will take the rest."
 
 [messages.limiterNeedlesOff]
 ru = "Лимитер: потолок {ceiling}. Клиппер игл выключен."
@@ -481,8 +481,8 @@ ru = "Потолок {ceiling}, а для винила — не выше {medium
 en = "The ceiling is {ceiling}, while for vinyl it stands no higher than {medium}."
 
 [messages.masterVinylNeedlesDeparts]
-ru = "Клиппер настроен срезать с пиков {cut}, а для винила иглы не режут."
-en = "The peak clipper is set to cut {cut} off the peaks, while for vinyl the needles are not cut."
+ru = "Клиппер настроен снимать с пиков {cut}, а для винила иглы не режут."
+en = "The peak clipper is set to take {cut} off the peaks, while for vinyl the needles are not cut."
 
 [messages.masterQuietInput]
 ru = "Вход очень тихий ({lufs}): подняли на {gain}, шум поднялся вместе с музыкой. Кроме ФВЧ на полу цели и дизера формата, машина приборов не ставила — на таком уровне замер ненадёжен; включить их можно вручную."
@@ -859,8 +859,8 @@ ru = "Исходная запись клипована: клипов {count}, в
 en = "The source is clipped: {count} clips, {rate} a minute. A peak clipper would add distortion; this is cured in the mix."
 
 [messages.sourceDualMono]
-ru = "Каналы стерео-файла одинаковы: это моно."
-en = "The channels of the stereo file are equal: it is mono."
+ru = "Левый и правый каналы одинаковы — это моно в стерео-файле; если задумано стерео, проверьте экспорт."
+en = "The left and right channels are identical — this is mono in a stereo file; if stereo was intended, please check the export."
 
 [messages.sourceEdgeSilence]
 ru = "Тишина по краям: {leading} в начале, {trailing} в конце."
@@ -1148,6 +1148,48 @@ high.en = "high"
 [messages.tempoConfidence]
 ru = "{confidence}"
 en = "{confidence}"
+
+# The observations in the owner's words (01.10), where a finding's size chose its style. A DC offset as a note:
+[messages.sourceDcNote]
+ru = "Постоянная составляющая ({offset}); ФВЧ мастера её уберёт — но стоит проверить цепочку сведения."
+en = "A DC offset ({offset}); the master's high-pass will remove it — but the mix chain is worth checking."
+
+# The effective depth short of full, as a warning: the depth the audio was truncated to.
+[messages.sourceTruncatedBits]
+plural = "bits"
+ru.one = "Где-то в цепочке сведения усечение до {bits} бита."
+ru.few = "Где-то в цепочке сведения усечение до {bits} бит."
+ru.many = "Где-то в цепочке сведения усечение до {bits} бит."
+ru.other = "Где-то в цепочке сведения усечение до {bits} бита."
+en.one = "Somewhere in the mix chain the audio was truncated to {bits} bit."
+en.other = "Somewhere in the mix chain the audio was truncated to {bits} bits."
+
+# ...and as an error: a mix of {bits} bits, to be mixed down again at {depth}, the full depth.
+[messages.sourceShallowMix]
+plural = "depth"
+ru.one = "{bits}-битный микс — сведите в {depth} бит."
+ru.few = "{bits}-битный микс — сведите в {depth} бита."
+ru.many = "{bits}-битный микс — сведите в {depth} бит."
+ru.other = "{bits}-битный микс — сведите в {depth} бита."
+en.one = "A {bits}-bit mix — please mix it down at {depth} bit."
+en.other = "A {bits}-bit mix — please mix it down at {depth} bits."
+
+[messages.sourceLimitedBus]
+ru = "Микс уже сжат лимитером (PLR {plr}) — мастеринг не вернёт динамику; пришлите версию без лимитера на шине."
+en = "The mix is already squeezed by a limiter (PLR {plr}) — mastering will not bring the dynamics back; please send a version without the limiter on the bus."
+
+[messages.sourceLossy]
+ru = "Похоже, исходник прошёл через mp3/AAC (верх обрезан на {hz}) — мастерьте с исходника без потерь."
+en = "The source seems to have gone through mp3/AAC (the top is cut at {hz}) — please master from a lossless source."
+
+# The infra-low share as a note, then as a warning.
+[messages.sourceInfraLowNote]
+ru = "Немного энергии ниже {hz} — ФВЧ мастера её уберёт."
+en = "A little energy below {hz} — the master's high-pass will remove it."
+
+[messages.sourceInfraLowWarning]
+ru = "Заметная часть энергии ниже {hz} ({share}) — ФВЧ её срежет, громкость и баланс микса изменятся; проверьте, что там: рокот, ветер, гул сабов."
+en = "A notable part of the energy lies below {hz} ({share}) — the high-pass will cut it, and the mix's loudness and balance will change; please check what is there: rumble, wind, sub boom."
 
 # The master's cost line by line, each published where its numbers were measured: the section that moved most (its shift
 # and where it lies), how many sections were compared, the limiter's reduction and how much of the programme it worked

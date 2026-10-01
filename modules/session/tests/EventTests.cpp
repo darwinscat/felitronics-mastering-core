@@ -236,6 +236,9 @@ void pump()
     // theirs. Every pin here hashes the master's measured numbers as printed (kMastersMeasurement): restated so, on the
     // Mac where the raw-bit pins held, the raw ones were b5fbcdc6218fc72d / 25eeb7e1f596ed41 (the previous version),
     // e2e6c8ac47d9417e / 3797697993fa2f96 (and without the cost's lines) and cadd3454090dbdba / 18b6d1ba59ebfabd.
+    // The owner's observation table (01.10) moved the engine's [observations] — thresholds and styles that print findings
+    // and switch nothing — and with them the config's version alone: with its previous rows put back as well, the
+    // previous pins hold.
     const auto previousVersion = [] (std::vector<Notification> events)
     {
         // The canonical document without its [notes] table: the config before them.
@@ -243,7 +246,23 @@ void pump()
         const auto from = targets.rfind ("\n[notes]\n");
         const auto to = from == std::string::npos ? from : targets.find ("\n[", from + 1);
         if (from != std::string::npos) targets.erase (from, (to == std::string::npos ? targets.size() : to) - from);
-        const auto before = config::Config::versionsOf (targets, config::Config::text (config::Document::Engine));
+        // ...and the engine with the observation rows before the owner's table.
+        auto engine = config::Config::text (config::Document::Engine);
+        const std::pair<std::string_view, std::string_view> rows[] = {
+            { "from = 0.001, fullAt = 0.01, warningFrom = 0.01, errorFrom = 0.1 }", "from = 0.001, fullAt = 0.01 }" },
+            { "depthBits = 24, fromBitsShort = 1, fullAtBitsShort = 8, errorFromBitsShort = 8 }", "fromBits = 1, fullAtBits = 8 }" },
+            { "fromPowerDb = -60, fullAtPowerDb = -40, warningFromSeverity = 0.5 }", "fullAtPowerAgainstProgramme = 0.0001 }" },
+            { "fullAtDropDb = 40, fromFractionBelowNyquist = 0.12,", "fullAtDropDb = 60, fromFractionBelowNyquist = 0.2," },
+            { "high = 0.05, warningFrom = 0.05 }", "high = 0.05 }" },
+            { "sideFractionAtLeast = 0.06, fullAt = 0.3 }", "sideFractionAtLeast = 0.06 }" },
+            { "rawSideFractionAbove = 0.5, fullAtLowCorrelation = -0.5 }", "rawSideFractionAbove = 0.5 }" },
+            { "plrBelowDb = 10.5, fullAtPlrDb = 7 }", "plrBelowDb = 8 }" },
+            { "dcOffset = \"note\"", "dcOffset = \"warning\"" }, { "dualMono = \"warning\"", "dualMono = \"note\"" },
+            { "spectralWall = \"warning\"", "spectralWall = \"note\"" }, { "lowestLowBand = \"reading\"", "lowestLowBand = \"note\"" },
+            { "polarity = \"error\"", "polarity = \"warning\"" }, { "alreadyLimited = \"warning\"", "alreadyLimited = \"note\"" } };
+        for (const auto& [now, then] : rows)
+            if (const auto at = engine.find (now); at != std::string::npos) engine.replace (at, now.size(), then);
+        const auto before = config::Config::versionsOf (targets, engine);
         for (auto& e : events)
             if (e.kind == EventKind::Phase && e.payload.phase.weightsVersion == config::Config::versions().all && before)
                 e.payload.phase.weightsVersion = before->all;
@@ -270,7 +289,7 @@ void pump()
         "the cost's new lines are the only new events: without them the old pins 2ddbf194be1a8c26 / fb06ff940f07c896 hold");
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
-    ok (eventsHash (one) == 0xe78c2952b4e0ce6aull && eventsHash (cancelled) == 0x6a47b5e6591fff91ull,
+    ok (eventsHash (one) == 0x6186163f9087fbb6ull && eventsHash (cancelled) == 0xc0c11257914aaf59ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, previous version: %016llx %016llx; and without the cost's lines: %016llx %016llx\n",

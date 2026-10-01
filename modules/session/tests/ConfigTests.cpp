@@ -155,7 +155,7 @@ void theSchemaRefuses()
                 "4000", Fault::OutOfRange, "targets.youtube.sampleRate");
     mustRefuse (E, "clipping = { fullAtShareOfProgramme = 0.001 }", "clipping = { fullAtShareOfProgramme = 0 }", "0 }",
                 Fault::OutOfRange, "observations.clipping.fullAtShareOfProgramme");
-    mustRefuse (E, "fullAtDropDb = 60", "fullAtDropDb = 24", "24", Fault::OutOfRange, "observations.spectralWall.fullAtDropDb");
+    mustRefuse (E, "fullAtDropDb = 40", "fullAtDropDb = 24", "24", Fault::OutOfRange, "observations.spectralWall.fullAtDropDb");
 
     // Fractional cutoff and slider bounds are valid independently of the slider step.
     mustAccept (E, "hzMax = 50", "hzMax = 50.5");
@@ -179,10 +179,14 @@ void theSchemaRefuses()
     // ...order: ranges and the classes of the peak clipper.
     mustRefuse (E, "infraLowCrossoverHz = 30", "infraLowCrossoverHz = 120", "120", Fault::Refused, "lowEnd.infraLowCrossoverHz",
                 Refusal::OutOfOrder);
-    mustRefuse (E, "dcOffset = { from = 0.001, fullAt = 0.01 }", "dcOffset = { from = 0.001, fullAt = 0.001 }", "0.001 }",
+    mustRefuse (E, "from = 0.001, fullAt = 0.01,", "from = 0.001, fullAt = 0.001,", "0.001, warningFrom",
                 Fault::Refused, "observations.dcOffset.fullAt", Refusal::OutOfOrder);
-    mustRefuse (E, "bitsUnused = { fromBits = 1, fullAtBits = 8 }", "bitsUnused = { fromBits = 1, fullAtBits = 1 }", "1 }",
-                Fault::Refused, "observations.bitsUnused.fullAtBits", Refusal::OutOfOrder);
+    mustRefuse (E, "warningFrom = 0.01, errorFrom = 0.1 }", "warningFrom = 0.01, errorFrom = 0.01 }", "0.01 }",
+                Fault::Refused, "observations.dcOffset.errorFrom", Refusal::OutOfOrder);
+    mustRefuse (E, "fromBitsShort = 1, fullAtBitsShort = 8,", "fromBitsShort = 1, fullAtBitsShort = 1,", "1, errorFromBitsShort",
+                Fault::Refused, "observations.bitsUnused.fullAtBitsShort", Refusal::OutOfOrder);
+    mustRefuse (E, "plrBelowDb = 10.5, fullAtPlrDb = 7 }", "plrBelowDb = 10.5, fullAtPlrDb = 11 }", "11 }",
+                Fault::Refused, "observations.alreadyLimited.fullAtPlrDb", Refusal::OutOfOrder);
     mustRefuse (E, "witnessQuantiles = [0.5, 0.9]", "witnessQuantiles = [0.9, 0.5]", "0.5]", Fault::Refused,
                 "deEsser.witnessQuantiles[1]", Refusal::OutOfOrder);
     mustRefuse (E, "shortP90Ms = 2", "shortP90Ms = 8", "8\nlongBassShare", Fault::Refused, "limiter.peakClipper.longP90Ms",
@@ -441,7 +445,7 @@ void theSoundIsWhatCanChangeAMaster()
           "the hand edit's step, which the targets' numbers sit on", true },
         { config::Document::Engine, "clipping = { fullAtShareOfProgramme = 0.001 }", "clipping = { fullAtShareOfProgramme = 0.002 }",
           "a report-only observation threshold (clipping's full weight)", false },
-        { config::Document::Engine, "wideBass = { sideFractionAtLeast = 0.06 }", "wideBass = { sideFractionAtLeast = 0.07 }",
+        { config::Document::Engine, "wideBass = { sideFractionAtLeast = 0.06, fullAt = 0.3 }", "wideBass = { sideFractionAtLeast = 0.07, fullAt = 0.3 }",
           "the wide-bass warning: mono bass is placed whatever it says", false },
         { config::Document::Engine, "polarity = { correlationBelow = 0,", "polarity = { correlationBelow = 0.1,",
           "observations.polarity: a finding — mono bass is decided by the loss of its own band", false },
