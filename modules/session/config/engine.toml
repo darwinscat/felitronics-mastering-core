@@ -71,7 +71,9 @@ lookaheadMs = 1
 #   target's headroom (ceiling minus loudness) — is at most this, the needles are not measured and are left to the
 #   limiter. Above it they are measured on the INPUT, with the ceiling at "input peak − need" (analysis::PeakExcursions),
 #   and their class sets how much the clipper cuts off the peaks — at most that much, the limiter does the rest: the
-#   threshold stands max(0, need − cut) above the ceiling (owner, 30.09):
+#   threshold stands max(0, need − cut) above the ceiling (owner, 30.09) — a forecast; the master's threshold is worked
+#   out from the peak the landing's first pass measures at the limiter's input, for the gain and ceiling it settles on,
+#   so the clipper takes at most the cut at any gain:
 #     short    p90 of the run length ≤ shortP90Ms, bass share of the dose ≤ shortBassShare, PLR ≥ shortPlrDb, the source
 #              not clipped: up to shortCutDb off the peaks;
 #     long     bass share ≥ longBassShare, or p90 ≥ longP90Ms, or PLR < longPlrDb, or a clipped source: the clipper is
@@ -88,8 +90,8 @@ lookaheadMs = 1
 #   (up to 3 and 1.5 dB off the peaks), the two PLR bounds (10 and 8 dB), "need ≤ 3 dB: do not measure" and the ten clips
 #   a minute; bassBelowHz and the density are hypotheses.
 # kneeDb: 0 — a hard clip.
-# manualMinDb…manualMaxDb, manualStepDb: the manual cut's travel (a hypothesis) and step — 0.1 dB (owner, 02.10). The
-#   manual cut starts at betweenCutDb, the "between" class, inside manualDomain.
+# manualMinDb…manualMaxDb, manualStepDb: the manual cut's travel — 0 to 6 dB, the whole domain — and step, 0.1 dB (owner,
+#   02.10). The manual cut starts at betweenCutDb, the "between" class, inside manualDomain.
 [limiter.peakClipper]
 manualDomain = [0, 6]
 littleNeedDb = 3
@@ -107,7 +109,7 @@ densityMinusDb = 3
 densityWithinDb = 0.3
 kneeDb = 0
 manualMinDb = 0
-manualMaxDb = 3
+manualMaxDb = 6
 manualStepDb = 0.1
 
 # THE LOW END (analysis::LowEnd), first phase. The file is measured once, for every target at once — the bass width at

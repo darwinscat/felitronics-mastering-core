@@ -471,8 +471,8 @@ void theAbiAnswersAsTheCall()
     double mono[3] {}, needles[3] {};
     ok (fc_kit_travel (std::uint32_t (Term::FieldMonoBassFq), mono) == FC_SESSION_OK && sameBits (mono[0], 60) && sameBits (mono[1], 300)
         && sameBits (mono[2], 5), "mono bass below: 60 to 300 Hz by 5 Hz (owner, 02.10)");
-    ok (fc_kit_travel (std::uint32_t (Term::FieldLimiterNeedlesDb), needles) == FC_SESSION_OK && sameBits (needles[0], 0) && sameBits (needles[1], 3)
-        && sameBits (needles[2], 0.1), "cut off the peaks: 0 to 3 dB by 0.1 dB (owner, 02.10)");
+    ok (fc_kit_travel (std::uint32_t (Term::FieldLimiterNeedlesDb), needles) == FC_SESSION_OK && sameBits (needles[0], 0) && sameBits (needles[1], 6)
+        && sameBits (needles[2], 0.1), "cut off the peaks: 0 to 6 dB by 0.1 dB (owner, 02.10)");
     bool knobs = true;
     for (const auto& k : kKnobs)
     {

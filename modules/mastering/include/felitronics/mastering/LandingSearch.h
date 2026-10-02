@@ -131,7 +131,7 @@ public:
         params_ = params; params_.inputGainDb += request.normalizationGainDb;
         request_ = request; clock_ = ProgressClock (progress);
         working_.activityThresholdDb = best_.activityThresholdDb = request.activityThresholdDb;
-        haveBest_ = havePrevious_ = haveBelow_ = haveAbove_ = haveUnsafe_ = false;
+        haveBest_ = havePrevious_ = haveBelow_ = haveAbove_ = haveUnsafe_ = peakProbe_ = false;
         passes_ = 0; sourceCursor_ = 0; verifyCursor_ = 0; bestPass_ = 0; restoring_ = false;
         work_ = 0; bestError_ = std::numeric_limits<double>::infinity();
         lowState_.fill (0.0); low2State_.fill (0.0); low8State_.fill (0.0);
@@ -324,6 +324,9 @@ public:
 
     void cancel() noexcept { (void) fail (MasteringSolveStatus::Cancelled); }
     const LoudnessSolution& result() const noexcept { return best_; }
+    // The peak at the limiter's input, at a gain of 0, the delivered render's clipper was set from: the one the first
+    // pass measured where the clipper rides it, else the caller's (MasteringChainParams::peakClipPeakDb).
+    double peakClipPeakDb() const noexcept { return params_.peakClipPeakDb; }
     int startedPasses() const noexcept { return passes_; }
     std::uint64_t completedWork() const noexcept { return work_; }
     bool active() const noexcept { return phase_ != Phase::Idle && phase_ != Phase::Done && phase_ != Phase::Failed; }
@@ -352,6 +355,24 @@ private:
         }
         const bool valid = measurement_.loudnessValid && std::isfinite (measurement_.integratedLufs);
         if (! valid && measurement_.samplePeakDb <= -180.0) return fail (MasteringSolveStatus::Unavailable);
+        // THE PEAK CLIPPER'S PEAK, MEASURED (MasteringChainParams::peakClipCutDb): the first pass renders with the
+        // caller's forecast of the peak at the limiter's input; it measures the real one, on the limiter's own
+        // oversampler, before the clip. The stages before the gain node do not depend on the gain, the ceiling or the
+        // threshold, so that peak less this pass's gain is the peak at a gain of 0 for every later render, and the
+        // clipper's threshold worked out from it takes no more than the cut off it. This pass cut by the forecast: it
+        // steers the search like any other and is never a candidate, so no render with the forecast is delivered or
+        // restored. A clipper landing that its first pass would have finished pays one render more.
+        if (! peakProbe_ && params_.limiter.peakClip && std::isfinite (params_.peakClipCutDb)
+            && std::isfinite (params_.peakClipPeakDb) && std::isfinite (measurement_.limiterMaxReconstructedPeakDb)
+            && measurement_.limiterMaxReconstructedPeakDb > -180.0)
+        {
+            peakProbe_ = true;
+            params_.peakClipPeakDb = measurement_.limiterMaxReconstructedPeakDb - params_.preLimiterGainDb;
+            if (passes_ >= request_.maxPasses) return fail (MasteringSolveStatus::Unavailable);
+            chooseNext (valid);
+            phase_ = Phase::PassBegin;
+            return StepResult::More;
+        }
         const bool safe = valid && measurement_.truePeakDbTp <= request_.maxTruePeakDbTp;
         const double err = valid ? std::fabs (measurement_.integratedLufs - request_.targetLufs)
                                  : std::numeric_limits<double>::infinity();
@@ -556,6 +577,7 @@ private:
     bool haveBest_ = false, havePrevious_ = false, haveBelow_ = false, haveAbove_ = false;
     bool haveUnsafe_ = false;   // `best_` holds the gentlest measured render above the ceiling (while `haveBest_` is not)
     bool restoring_ = false;
+    bool peakProbe_ = false;   // the first pass measured the peak the clipper's threshold is worked out from
     Phase phase_ = Phase::Idle;
 };
 

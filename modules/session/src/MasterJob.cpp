@@ -136,7 +136,7 @@ std::uint64_t MasterJob::fingerprint (const command::MasterReady& ready) noexcep
     h.f32 (p.clipper.dcBlockHz);
     h.f64 (p.limiter.ceilingDbTp); h.f64 (p.limiter.releaseMs); h.flag (p.limiter.dualRelease);
     h.f64 (p.limiter.slowReleaseMs); h.flag (p.limiter.peakClip);
-    h.f64 (p.limiter.overCeilingDb); h.f64 (p.limiter.kneeDb);
+    h.f64 (p.limiter.overCeilingDb); h.f64 (p.limiter.kneeDb); h.f64 (p.peakClipCutDb); h.f64 (p.peakClipPeakDb);
     h.i32 (p.dither.bits); h.i32 (int (p.dither.shaping)); h.u64 (p.dither.seed);
     h.flag (p.dither.autoBlank); h.i32 (p.dither.autoBlankSamples);
     h.flag (p.bypassEq); h.flag (p.bypassMonoBass); h.flag (p.bypassCompressor);
@@ -476,6 +476,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
             winning.inputGainDb += search.result().normalizationGainDb;
             winning.preLimiterGainDb = search.result().preLimiterGainDb;
             winning.limiter.ceilingDbTp = search.result().ceilingDbTp;
+            winning.peakClipPeakDb = search.peakClipPeakDb();   // the peak its first pass measured
             chain.setParams (winning);
             chain.reset();
             impactDelay = chain.latencySamples();
