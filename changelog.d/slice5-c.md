@@ -16,8 +16,12 @@
   otherwise quiet programme count as quiet — a 60 Hz musical tone was reported as hum. The detector now pools the
   frames where the whole programme is quiet, the candidate bands included, and a stationary line must show there too
   wherever that pool holds two frames: otherwise `valid = false, LineOnlyWithMusic` (11), which the session answers as
-  the hum not found. A line through the quiet intro and outro, loud or faint, is still hum; where no frame is that quiet,
-  nothing contradicts the line and it stands. The detector holds one more row of the stretch's width per channel.
+  the hum not found. Only those frames INSIDE the programme speak — strictly between its first and last frame above
+  the gate — so a dithered lead-in, a tail after the hum's source stops or room tone at an edge never vetoes a hum loud
+  enough to keep every frame it plays in above the gate; a pause inside the song does. A line through the pause, loud or
+  faint, is still hum; where no still frame lies inside, nothing contradicts the line and it stands. The span is kept
+  in the one walk over the frames: the detector holds two more rows of the stretch's width per channel (the pool and
+  the still frames waiting for the next programme frame).
 
 ### ci · tests — gcc 14 on arm64
 

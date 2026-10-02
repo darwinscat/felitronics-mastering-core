@@ -43,6 +43,14 @@ namespace felitronics::analysis
 //      every frame above the threshold, or a line that never stops — nothing contradicts the line and it stands.
 //      The test is the line's absence where everything was quiet, so a hum faint enough to sit under the threshold
 //      is in the still pool and is heard there.
+//      LIMIT, NAMED (owner, 01.10): only still frames INSIDE the programme speak — strictly between the first and the
+//      last frame that carries programme above the gate (finite, not exact silence, not still). A hum louder than the
+//      gate keeps every frame it plays in out of the pool by construction, so a dithered lead-in before the first
+//      note, a tail after the hum's source stops or room tone at an edge — still, and without the hum — would
+//      otherwise veto a loud real hum. A pause inside the song still does: there the line stopped with the music.
+//      The span is tracked in the one walk over the frames: still frames after the last programme frame wait in a
+//      pending row of the stretch's width, which the next programme frame adds to the pool and the end discards;
+//      still frames before the first programme frame are not pooled at all. One more row per channel, no second pass.
 //   2. THE POSITION, MEASURED INSIDE THE BIN. A peak is accepted only if its INTERPOLATED position is within
 //      `toleranceHz` (0.5 Hz) of 50 or 60. 0.5 Hz is what mains asks for and what the notes cannot have: a stiff
 //      grid holds +-0.05 Hz and excurses to +-0.2 Hz, while the nearest note is 1.0 Hz away. It is also what
@@ -525,7 +533,9 @@ private:
     struct ChannelState
     {
         std::int64_t frames = 0, finiteFrames = 0, holedFrames = 0, quietFrames = 0, silentFrames = 0;
-        std::int64_t stillFrames = 0;                  // quiet frames whose candidate bands are quiet too (point 5)
+        std::int64_t stillFrames = 0;                  // still frames INSIDE the programme, pooled (point 5)
+        std::int64_t pendingStill = 0;                 // still frames since the last programme frame, not yet pooled
+        bool programmeSeen = false;                    // a frame carried programme above the gate (point 5's span)
         std::int64_t stretchCount = 0;                 // absolute: keeps counting past the list's capacity
         std::int64_t eligibleStretches = 0;            // ... of which hold minFramesPerObservation frames
         std::int64_t stretchFrames = 0;
@@ -549,6 +559,7 @@ public:
         std::size_t bandDoubles     = 0;   // double, bandBins * channels
         std::size_t stretchDoubles  = 0;   // double, stretchBins * channels — ONE active buffer per channel
         std::size_t stillDoubles    = 0;   // double, stretchBins * channels — the still frames' pool (point 5)
+        std::size_t pendingDoubles  = 0;   // double, stretchBins * channels — still frames awaiting the span's end
         std::size_t stretchEntries  = 0;   // HumStretch, maxStretches * channels
         std::size_t harmonicEntries = 0;   // HumHarmonic, maxHarmonic * kCandidates * channels
         std::size_t channelEntries  = 0;   // ChannelState, channels
@@ -559,7 +570,8 @@ public:
         std::uint64_t bytes() const noexcept
         {
             return frames.bytes()
-                 + (std::uint64_t) sizeof (double) * (bandDoubles + stretchDoubles + stillDoubles + floorDoubles)
+                 + (std::uint64_t) sizeof (double) * (bandDoubles + stretchDoubles + stillDoubles + pendingDoubles
+                                                      + floorDoubles)
                  + (std::uint64_t) sizeof (HumStretch) * stretchEntries
                  + (std::uint64_t) sizeof (HumHarmonic) * harmonicEntries
                  + (std::uint64_t) sizeof (ChannelState) * channelEntries
@@ -581,6 +593,7 @@ public:
         s.bandDoubles     = (std::size_t) g.bandBins * ch;
         s.stretchDoubles  = (std::size_t) g.stretchBins * ch;
         s.stillDoubles    = (std::size_t) g.stretchBins * ch;
+        s.pendingDoubles  = (std::size_t) g.stretchBins * ch;
         s.stretchEntries  = (std::size_t) p.maxStretches * ch;
         s.harmonicEntries = (std::size_t) p.maxHarmonic * (std::size_t) kCandidates * ch;
         s.channelEntries  = ch;
@@ -628,6 +641,7 @@ public:
         band_.assign (st.bandDoubles, 0.0);
         stretchBuf_.assign (st.stretchDoubles, 0.0);
         stillBuf_.assign (st.stillDoubles, 0.0);
+        pendingBuf_.assign (st.pendingDoubles, 0.0);
         stretches_.assign (st.stretchEntries, HumStretch {});
         harmonics_.assign (st.harmonicEntries, HumHarmonic {});
         chans_.assign (st.channelEntries, ChannelState {});
@@ -646,6 +660,7 @@ public:
         for (auto& v : band_) v = 0.0;
         for (auto& v : stretchBuf_) v = 0.0;
         for (auto& v : stillBuf_) v = 0.0;
+        for (auto& v : pendingBuf_) v = 0.0;
         for (auto& s : stretches_) s = HumStretch {};
         for (auto& h : harmonics_) h = HumHarmonic {};
         for (auto& c : chans_) c = ChannelState {};
@@ -909,6 +924,7 @@ private:
         tr.quiet = (std::uint8_t) (quiet ? 1 : 0);
         if (! quiet)
         {
+            if (! silent) heardProgramme (c);                 // above the gate even without its candidate bands
             if (s.stretchOpen) closeStretch (c);
             pushTrace (tr);
             return;
@@ -936,13 +952,19 @@ private:
         tr.bandSum = frameBandSum;
         double* sb = stretchBuf_.data() + (std::size_t) c * (std::size_t) geom_.stretchBins;
         for (int k = geom_.stretchLo; k <= geom_.stretchHi; ++k) sb[k - geom_.stretchLo] += p[k];
-        // A STILL frame: the candidate bands are under the gate too, so nothing plays — not even a line (point 5).
+        // A STILL frame: the candidate bands are under the gate too, so nothing plays — not even a line (point 5). It
+        // waits for the next programme frame, which proves it lies inside the programme; one before the first programme
+        // frame never will. A quiet frame whose candidate bands lift it over the gate carries programme: a line plays.
         if (ms + candidateMeasure (p) < quietLin_)
         {
-            double* still = stillBuf_.data() + (std::size_t) c * (std::size_t) geom_.stretchBins;
-            for (int k = geom_.stretchLo; k <= geom_.stretchHi; ++k) still[k - geom_.stretchLo] += p[k];
-            ++s.stillFrames;
+            if (s.programmeSeen)
+            {
+                double* pending = pendingBuf_.data() + (std::size_t) c * (std::size_t) geom_.stretchBins;
+                for (int k = geom_.stretchLo; k <= geom_.stretchHi; ++k) pending[k - geom_.stretchLo] += p[k];
+                ++s.pendingStill;
+            }
         }
+        else heardProgramme (c);
 
         // per-FRAME estimates of the four fixed hypotheses: the intra-stretch stillness evidence, and the
         // spread gate a pair of averaged stretches cannot see (two symmetric sweeps average to the same 50.0)
@@ -991,6 +1013,20 @@ private:
             if (last >= exclude_[(std::size_t) i].lo && last <= exclude_[(std::size_t) i].hi) lastExcluded = true;
         if (! lastExcluded) total += p[last];
         return total;
+    }
+
+    // A frame that carries programme above the gate closes point 5's span up to here: the still frames that waited
+    // since the last one lie inside the programme, and join the pool — added row by row in ascending bins, once.
+    void heardProgramme (int c) noexcept
+    {
+        ChannelState& s = chans_[(std::size_t) c];
+        s.programmeSeen = true;
+        if (s.pendingStill == 0) return;
+        double* still = stillBuf_.data() + (std::size_t) c * (std::size_t) geom_.stretchBins;
+        double* pending = pendingBuf_.data() + (std::size_t) c * (std::size_t) geom_.stretchBins;
+        for (int i = 0; i < geom_.stretchBins; ++i) { still[i] += pending[i]; pending[i] = 0.0; }
+        s.stillFrames += s.pendingStill;
+        s.pendingStill = 0;
     }
 
     // What quietMeasure leaves out above bin 1: the merged candidate bands, folded the same way (each interior bin
@@ -1320,7 +1356,7 @@ private:
     double quietLin_ = 0.0, promLin_ = 1.0, levelLin_ = 0.0, harmTolHz_ = 0.0;
     int channels_ = 0, excludeUsed_ = 0;
     std::int64_t traceCount_ = 0;
-    storage::Buffer<double> band_, stretchBuf_, stillBuf_;
+    storage::Buffer<double> band_, stretchBuf_, stillBuf_, pendingBuf_;
     mutable storage::Buffer<double> floorScratch_;
     storage::Buffer<HumStretch> stretches_;
     storage::Buffer<HumHarmonic> harmonics_;
