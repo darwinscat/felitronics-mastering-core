@@ -19,8 +19,8 @@
 //     under flush-to-zero, denormals-are-zero and every rounding mode, set the way a host sets them;
 //   * CLDR PLURAL CATEGORIES on the printed number: all twelve languages against ICU 78's own answers on numbers of every
 //     category, each language's set reached exactly; and through whole messages in ru and en;
-//   * every message of the catalog rendered in ru and en; a language the catalog does not declare renders the id; an
-//     argument that does not match its declaration renders `{name}`;
+//   * every message of the catalog rendered in ru and en; a language the catalog does not declare renders the id; a
+//     fact whose arguments do not match its declaration is incomplete and renders nothing, never its template;
 //   * A COMMAND'S REJECTION: every code of the state machine is the fact 100 + its code, a sentence in ru and en, with
 //     the refused field named — the field terms held position by position against src/Devices.h's walk — and real
 //     answers of a real session rendered;
@@ -669,6 +669,30 @@ void pluralsAreCldrsOnThePrintedNumber()
 
 std::string render (const Fact& f, Lang lang) { return Text::text (f, lang); }
 
+// A fact with every argument its declaration names, of its kind: a term of the declared group (the field, the device
+// and the platform the corpus has always taken; the group's first term for any other).
+Fact wholeOf (const detail::FactShape& shape)
+{
+    Fact f = Fact::of (shape.id);
+    for (std::size_t i = 0; i < shape.argCount; ++i)
+    {
+        const auto kind = shape.args[i].kind;
+        text::Term term = text::Term::PlatformDesktop;
+        if (shape.args[i].group == "field") term = text::Term::FieldHpfSlope;
+        else if (shape.args[i].group == "device") term = text::Term::DeviceGlue;
+        else if (shape.args[i].group != "platform")
+            for (const auto& t : detail::kTerms)
+                if (t.group == shape.args[i].group) { term = t.id; break; }
+        f.args[i] = kind == text::ArgKind::Value ? Arg::value (-3.25, Unit::Db, 1, Sign::Always)
+                  : kind == text::ArgKind::Count ? Arg::count (21)
+                  : kind == text::ArgKind::Midi ? Arg::midi (40)
+                  : kind == text::ArgKind::Term ? Arg::term (term)
+                  : Arg::text ("take 3.wav");
+    }
+    f.argCount = (std::uint8_t) shape.argCount;
+    return f;
+}
+
 void everyMessageRenders()
 {
     felitronics::test::group ("every message of the catalog, in ru and en; no fallback, no guess");
@@ -751,22 +775,32 @@ void everyMessageRenders()
     for (const Lang l : kAll)
         if (l != Lang::Ru && l != Lang::En)
             for (const auto& shape : detail::kFacts)
-                ids = ids && render (Fact::of (shape.id), l) == shape.key;
+                ids = ids && render (wholeOf (shape), l) == shape.key;
     ok (ids, "every message in every undeclared language is its id — never English");
     same (render (wide, Lang::De), "wideBass", "de: wideBass is its id");
     same (render (wide, (Lang) 40), "wideBass", "a language that is not one of the twelve: the id");
     same (render (Fact::of ((FactId) 999), Lang::En), "#999", "an id this library does not have: its number");
     ok (Text::key (FactId::LandingConverged) == "landingConverged" && Text::key ((FactId) 0).empty(), "Text::key");
 
-    // No guess: an argument that does not match its declaration is shown as its placeholder.
-    same (render (Fact::of (FactId::LandingPass, Arg::count (3)), Lang::Ru), "Посадка · проход 3 из {passes}", "a missing argument");
-    same (render (Fact::of (FactId::Value, Arg::count (5)), Lang::En), "{value}", "an argument of another kind");
-    same (render (Fact::of (FactId::Value, Arg::value (1.0, Unit::Db, 12)), Lang::En), "{value}", "a precision above nine");
-    same (render (Fact::of (FactId::Value, Arg::value (1.0, (Unit) 77, 1)), Lang::En), "{value}", "a unit that does not exist");
-    same (render (Fact::of (FactId::LandingConverged, Arg::value (2.0, Unit::None, 0)), Lang::En), "landingConverged",
-          "a plural whose number is of another kind cannot choose: the id");
-    same (render (Fact::of (FactId::RateAboveLimit, Arg::value (1.0, Unit::KHz, 0), Arg::value (1.0, Unit::KHz, 0),
-                            Arg::term ((text::Term) 42)), Lang::En), "rateAboveLimit", "a select on a term that does not exist: the id");
+    // No guess and no template: a fact whose arguments do not match its declaration is incomplete and renders nothing.
+    const auto refused = [] (const Fact& f, const char* what)
+    {
+        char out[64] = { 'x' };
+        ok (! Text::complete (f) && Text::size (f, Lang::Ru) == 0 && Text::size (f, Lang::En) == 0
+            && Text::write (f, Lang::En, out) == 0 && out[0] == 'x' && Text::text (f, Lang::Ru).empty(),
+            std::string ("incomplete, rendered as nothing: ") + what);
+    };
+    refused (Fact::of (FactId::LandingPass, Arg::count (3)), "a missing argument");
+    refused (Fact::of (FactId::RejectedNotFinite), "a field's rejection without its field");
+    refused (Fact::of (FactId::RejectedNoSource, Arg::count (1)), "an argument too many");
+    refused (Fact::of (FactId::Value, Arg::count (5)), "an argument of another kind");
+    refused (Fact::of (FactId::Value, Arg::value (1.0, Unit::Db, 12)), "a precision above nine");
+    refused (Fact::of (FactId::Value, Arg::value (1.0, (Unit) 77, 1)), "a unit that does not exist");
+    refused (Fact::of (FactId::LandingConverged, Arg::value (2.0, Unit::None, 0)), "a plural whose number is of another kind");
+    refused (Fact::of (FactId::RateAboveLimit, Arg::value (1.0, Unit::KHz, 0), Arg::value (1.0, Unit::KHz, 0),
+                       Arg::term ((text::Term) 42)), "a select on a term that does not exist");
+    ok (Text::complete (Fact::of (FactId::LandingPass, Arg::count (3), Arg::count (5))) && Text::complete (Fact::of ((FactId) 999)),
+        "a fact with exactly its arguments is complete, and so is an id this library does not have (its number)");
 }
 
 //==============================================================================
@@ -944,8 +978,16 @@ void everyRejectionIsAFact()
     odd.rejection = session::Rejection::OutOfDomain;
     odd.field = 7;
     const auto unnamed = Text::rejected (odd, session::command::EditTarget { 10, {} });
-    ok (unnamed && Text::text (*unnamed, Lang::En) == "{field}: the value is outside the accepted domain.",
-        "a field the tables do not name leaves the argument out, visibly: {field}");
+    ok (unnamed && unnamed->id == FactId::RejectedContract && Text::complete (*unnamed)
+        && Text::text (*unnamed, Lang::En) == "The command format is invalid.",
+        "a field the tables do not name is the command's refusal, whole — never {field}");
+    // A master refused on its own numbers (a ready chain's NaN, the WAV contract's refusal: code 12, field 255).
+    session::Answer master;
+    master.rejection = session::Rejection::NotFinite;
+    const auto masterFact = Text::rejected (master, session::command::Master { 12 });
+    ok (masterFact && masterFact->id == FactId::RejectedContract && Text::complete (*masterFact)
+        && Text::text (*masterFact, Lang::Ru) == "Неверный формат команды.",
+        "a master's not-finite refusal names no field, and says the command's refusal whole");
 }
 
 //==============================================================================
@@ -1093,23 +1135,13 @@ void theCorpusIsTheSameBytesOnEveryRow()
     const Unit units[] = { Unit::None, Unit::Percent, Unit::Db, Unit::DbTp, Unit::DbFs, Unit::Lufs, Unit::Lu, Unit::Hz,
                            Unit::KHz, Unit::Ms, Unit::S, Unit::Bpm };
     std::uint64_t state = 1;
+    bool whole = true;
     for (const Lang l : kAll)
     {
         for (const auto& shape : detail::kFacts)
         {
-            Fact f = Fact::of (shape.id);
-            for (std::size_t i = 0; i < shape.argCount; ++i)
-            {
-                const auto kind = shape.args[i].kind;
-                f.args[i] = kind == text::ArgKind::Value ? Arg::value (-3.25, Unit::Db, 1, Sign::Always)
-                          : kind == text::ArgKind::Count ? Arg::count (21)
-                          : kind == text::ArgKind::Midi ? Arg::midi (40)
-                          : kind == text::ArgKind::Term ? Arg::term (shape.args[i].group == "field" ? text::Term::FieldHpfSlope
-                                                                     : shape.args[i].group == "device" ? text::Term::DeviceGlue
-                                                                                                   : text::Term::PlatformDesktop)
-                          : Arg::text ("take 3.wav");
-            }
-            f.argCount = (std::uint8_t) shape.argCount;
+            const Fact f = wholeOf (shape);
+            whole = whole && Text::complete (f);
             eat (Text::text (f, l));
         }
         for (int n = 0; n < 1500; ++n)
@@ -1125,7 +1157,8 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0xba1c905421a97ca2ull;   // …, the plan's advice and the targets' notes (500–508), the observations (52–80, 419–436), the target-change warning (81), what departs from vinyl (82–87), the clipper's cut off the peaks and an observation not measured (437), the landing's verdict (88–92), the clipper's cut as a cap, the cost's lines (93–97), the readings' names and the tempo's confidence (438), the owner's observation words and the clipper's "will take" (439–445, 52–54, 87, 424), the owner's wording 3b/3c — the master's outcome (88, 89 naming its limit, 91 its two levels), the advice beyond the norm (502, 503, 505, 509), the cap in words (52–54, 87), DC per channel (446, 447) and the core stamp's facts gone (10, 127; v0.6.0), a field's refusal with its numbers (180, 181), the master delivered above its ceiling (98)
+    constexpr std::uint64_t kPinned = 0x36ade63c3a3fff2full;   // …, the plan's advice and the targets' notes (500–508), the observations (52–80, 419–436), the target-change warning (81), what departs from vinyl (82–87), the clipper's cut off the peaks and an observation not measured (437), the landing's verdict (88–92), the clipper's cut as a cap, the cost's lines (93–97), the readings' names and the tempo's confidence (438), the owner's observation words and the clipper's "will take" (439–445, 52–54, 87, 424), the owner's wording 3b/3c — the master's outcome (88, 89 naming its limit, 91 its two levels), the advice beyond the norm (502, 503, 505, 509), the cap in words (52–54, 87), DC per channel (446, 447) and the core stamp's facts gone (10, 127; v0.6.0), a field's refusal with its numbers (180, 181), the master delivered above its ceiling (98), every fact complete — a term of its own group, the renderer refusing a hole (v0.7.1)
+    ok (whole, "every fact of the corpus is complete: each renders its message, none a hole");
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);
     ok (h == kPinned, "the corpus hashes to " + std::string (hex) + " over " + std::to_string (bytes) + " bytes — pinned");
