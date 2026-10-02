@@ -736,14 +736,15 @@ void stateReasons (PlanView& plan, const EqFinding& eq, const AdviceHands& hands
     state (plan, Device::Glue, PlanText::glue (plan.glue));
     state (plan, Device::Glue, PlanText::glueTempo (plan.glue));
     state (plan, Device::Glue, PlanText::glueRelease (plan.glue));
-    if (eq.device == Device::Tilt) state (plan, Device::Tilt, byHand (hands.eqShelves, PlanText::eqAdvice (eq)));
+    if (eq.device == Device::Tilt) state (plan, Device::Tilt, byHand (hands.eqKnobs, PlanText::eqAdvice (eq)));
     state (plan, Device::Limiter, PlanText::limiter (plan.limiter));
     state (plan, Device::Limiter, PlanText::needlesAgainstMachine (plan.limiter));
     state (plan, Device::Limiter, PlanText::vinylCeiling (plan.limiter));
     state (plan, Device::Limiter, PlanText::vinylNeedles (plan.limiter));
     state (plan, Device::Limiter, PlanText::vinylTop (plan.limiter));
     state (plan, Device::Dither, PlanText::dither (plan.dither));
-    if (eq.device == Device::Low) state (plan, Device::Low, byHand (hands.eqShelves, PlanText::eqAdvice (eq)));
+    if (eq.device == Device::Low) state (plan, Device::Low, byHand (hands.eqKnobs, PlanText::eqAdvice (eq)));
+    if (eq.device == Device::Bands) state (plan, Device::Bands, byHand (hands.eqKnobs, PlanText::eqAdvice (eq)));
 }
 
 bool anyPending (const DevicePlans& plans) noexcept
@@ -867,8 +868,11 @@ void Session::replan() noexcept
         hands.hpfFq = d.hpf.hand.fq.has_value();
         hands.hpfSlope = d.hpf.hand.slope.has_value();
         hands.monoBassFq = d.monoBass.hand.fq.has_value();
-        hands.eqShelves = d.tilt.hand.on.has_value() || d.tilt.hand.db.has_value() || d.low.hand.on.has_value()
-            || d.low.hand.db.has_value();
+        // The EQ curve's advice is the summed curve's: a hand on any of its knobs — tilt's, low's, a band's — raises it.
+        const auto& b = d.bands.hand;
+        hands.eqKnobs = d.tilt.hand.on.has_value() || d.tilt.hand.db.has_value() || d.low.hand.on.has_value()
+            || d.low.hand.db.has_value() || b.on.has_value() || b.body.has_value() || b.mud.has_value() || b.forward.has_value()
+            || b.brightness.has_value() || b.air.has_value();
         if (plan_.status == PlanStatus::Ready) detail::stateReasons (plan_, eq, hands);
     }
     if (observe)
@@ -1032,6 +1036,9 @@ std::optional<text::Fact> PlanText::glue (const GlueFinding& f) noexcept
 std::optional<text::Fact> PlanText::glueTempo (const GlueFinding& f) noexcept
 {
     if (f.state != GlueState::Active || ! f.bpm || f.tempoMeasured) return std::nullopt;
+    if (f.tempoUnsureBpm)
+        return text::Fact::of (text::FactId::GlueTempoUnsure, text::Arg::value (*f.tempoUnsureBpm, text::Unit::Bpm, 1),
+            text::Arg::value (*f.bpm, text::Unit::Bpm, 0));
     return text::Fact::of (text::FactId::GlueTempoFallback, text::Arg::value (*f.bpm, text::Unit::Bpm, 0));
 }
 std::optional<text::Fact> PlanText::glueRelease (const GlueFinding& f) noexcept

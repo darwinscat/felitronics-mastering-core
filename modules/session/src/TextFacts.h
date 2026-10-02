@@ -156,6 +156,7 @@ inline constexpr FactShape kFacts[] = {
     { FactId::MasterCostBands, "masterCostBands", { { { "low", ArgKind::Value, {} }, { "lowMid", ArgKind::Value, {} }, { "highMid", ArgKind::Value, {} }, { "high", ArgKind::Value, {} } } }, 4 },
     { FactId::MasterPeaksAboveCeiling, "masterPeaksAboveCeiling",
       { { { "truePeak", ArgKind::Value, {} }, { "ceiling", ArgKind::Value, {} } } }, 2 },
+    { FactId::GlueTempoUnsure, "glueTempoUnsure", { { { "measured", ArgKind::Value, {} }, { "bpm", ArgKind::Value, {} } } }, 2 },
     // A command's rejection (Commands.h), one per code; the four a field refuses name it.
     { FactId::RejectedFloatingPointEnvironment, "rejectedFloatingPointEnvironment", {}, 0 },
     { FactId::RejectedNoSource, "rejectedNoSource", {}, 0 },

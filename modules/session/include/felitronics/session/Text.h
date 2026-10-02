@@ -199,6 +199,8 @@ enum class FactId : std::uint16_t
     MasterCostBands = 97,          // the impact loss by band: low {low}, low-mid {lowMid}, high-mid {highMid}, high {high}
     // No render under the ceiling: the master delivered is the gentlest, its true peak {truePeak} above the {ceiling}.
     MasterPeaksAboveCeiling = 98,
+    // The glue's release is set for {bpm}: the tempo was measured, {measured}, with too little confidence to follow.
+    GlueTempoUnsure = 99,
 
     // A command's rejection, by its code — what was refused and why. The three a field refuses name it: {field}.
     RejectedFloatingPointEnvironment = 101,

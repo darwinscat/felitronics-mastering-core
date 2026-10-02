@@ -21,6 +21,9 @@ namespace
 // Q from the checked config. Trigonometric arguments stay within 2*pi, far inside det::tan's
 // argument limit; pow10 sees +/-0.3, and response log10 sees positive power floored at 1e-24.
 constexpr double kPi = 3.1415926535897932384626433832795;
+// The tilt is the gentle one (owner, 02.10): core's Tilt at slope 6 builds it from two first-order shelves, the 6 dB
+// between its ends spread over decades; pivot and ends as before.
+constexpr std::int32_t kTiltSlope = 6;
 bool sameNumber (double a, double b) noexcept { return a <= b && a >= b; }
 double number (toml::embedded::View v) noexcept
 {
@@ -157,6 +160,26 @@ struct BiquadCoeffs
         c.b0 = nrm; c.b1 = -nrm; c.b2 = 0.0; c.a1 = (K - 1.0) * nrm; c.a2 = 0.0;
         return c;
     }
+    // The first-order shelves of felitronics-core's MatchedBiquad.h (lowShelf1 / highShelf1): the gentle tilt's two halves.
+    BiquadCoeffs lowShelf1 (double f0, double fs, double gainLin) noexcept
+    {
+        BiquadCoeffs c;
+        f0 = std::min (f0, 0.495 * fs);
+        const double xn2 = (0.5 * fs / f0) * (0.5 * fs / f0);
+        const double hN  = std::sqrt (gainLin * (xn2 + gainLin) / (gainLin * xn2 + 1.0));
+        const double r   = std::sqrt ((gainLin * xn2 + 1.0) / (xn2 - 1.0)) / core::det::tan (kPi * f0 / fs);
+        const double inv = 1.0 / (1.0 + r);
+        c.b0 = (gainLin + hN * r) * inv;
+        c.b1 = (gainLin - hN * r) * inv;
+        c.b2 = 0.0; c.a1 = (1.0 - r) * inv; c.a2 = 0.0;
+        return c;
+    }
+    BiquadCoeffs highShelf1 (double f0, double fs, double gainLin) noexcept
+    {
+        BiquadCoeffs c = lowShelf1 (f0, fs, 1.0 / gainLin);
+        c.b0 *= gainLin; c.b1 *= gainLin;
+        return c;
+    }
     BiquadCoeffs highShelf (double f0, double fs, double gainLin) noexcept
     {
         BiquadCoeffs c;
@@ -284,6 +307,7 @@ void writeEq (const HpfFields<Value>& hpf, const TiltFields<Value>& tilt, const 
     auto& t = stage.bands[eqBand (Device::Tilt)];
     t = band (eq::FilterType::Tilt, tilt.on && ! sameNumber (tilt.db, 0), number (rules.engine.find ("tilt").find ("freqHz")));
     t.lanes[0].gainDb = tilt.db;
+    t.lanes[0].slope = kTiltSlope;
 
     const auto config = rules.engine.find ("low");
     auto& l = stage.bands[eqBand (Device::Low)];
@@ -325,9 +349,11 @@ void eqCurve (std::span<const eq::BandParams> written, double rate, std::span<Eq
                 break;
             case eq::FilterType::Tilt:
             {
+                // As core's designBand: slope 6 the first-order shelves, any other slope the 2-pole ones.
                 const double fq = frequency (lane.freq);
-                bands[count++] = lowShelf (fq, rate, core::det::pow10 (-lane.gainDb / 20));
-                bands[count++] = highShelf (fq, rate, core::det::pow10 (lane.gainDb / 20));
+                const bool gentle = lane.slope == kTiltSlope;
+                bands[count++] = (gentle ? lowShelf1 : lowShelf) (fq, rate, core::det::pow10 (-lane.gainDb / 20));
+                bands[count++] = (gentle ? highShelf1 : highShelf) (fq, rate, core::det::pow10 (lane.gainDb / 20));
                 break;
             }
             case eq::FilterType::LowShelf:
@@ -381,19 +407,25 @@ EqFinding eqFinding (const Devices& devices, const Rules& rules, double rate) no
 
 EqFinding eqFinding (const EqStage& stage, const Rules& rules, double rate) noexcept
 {
-    EqPoint tilt[kEqCurvePoints], low[kEqCurvePoints];
-    eqCurve (std::span<const eq::BandParams> (&stage.bands[eqBand (Device::Tilt)], 1), rate, tilt);
-    eqCurve (std::span<const eq::BandParams> (&stage.bands[eqBand (Device::Low)], 1), rate, low);
+    // The curve the page draws and fills red (eqOnlyCurve): every band of the stage but the high-pass's slot 0 — tilt's,
+    // low's and the five EQ bands' (slots 3 on) — summed as eqCurve sums the stage, so the point judged is the point drawn,
+    // to the last bit. Then each device's own part at that point: tilt's, low's, and the rest — the EQ bands' together.
+    if (eqBand (Device::Hpf) != 0 || eqBand (Device::Tilt) != 1 || eqBand (Device::Low) != 2) storageOverflow();
+    const std::span<const eq::BandParams> all (stage.bands);
+    EqPoint drawn[kEqCurvePoints], tilt[kEqCurvePoints], low[kEqCurvePoints];
+    eqCurve (all.subspan (1), rate, drawn);
+    eqCurve (all.subspan (1, 1), rate, tilt);
+    eqCurve (all.subspan (2, 1), rate, low);
     EqFinding f;
     double largest = -1.0;
     for (std::size_t i = 0; i < kEqCurvePoints; ++i)
     {
-        const double db = tilt[i].db + low[i].db;
-        if (! (std::abs (db) > largest)) continue;
-        largest = std::abs (db);
-        f.hz = tilt[i].hz;
-        f.db = db;
-        f.device = std::abs (low[i].db) > std::abs (tilt[i].db) ? Device::Low : Device::Tilt;
+        if (! (std::abs (drawn[i].db) > largest)) continue;
+        largest = std::abs (drawn[i].db);
+        f.hz = drawn[i].hz;
+        f.db = drawn[i].db;
+        const double t = std::abs (tilt[i].db), l = std::abs (low[i].db), b = std::abs (drawn[i].db - tilt[i].db - low[i].db);
+        f.device = b > t && b > l ? Device::Bands : l > t ? Device::Low : Device::Tilt;
     }
     f.over = largest > number (rules.engine.find ("eq").find ("curve").find ("warnDb"));
     return f;

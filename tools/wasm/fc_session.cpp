@@ -1265,8 +1265,9 @@ fc_session_status kitEqCurve (const double* params, std::uint32_t count, double 
     if (answer.status != CodecStatus::Ok) return status (answer.status);
     for (std::size_t i = 0; i < FC_SESSION_KIT_EQ_POINTS; ++i) { curve[2 * i] = points[i].hz; curve[2 * i + 1] = points[i].db; }
     peak[0] = answer.finding.hz; peak[1] = answer.finding.db; peak[2] = answer.finding.over ? 1.0 : 0.0;
-    peak[3] = answer.finding.device == felitronics::session::Device::Low ? double (FC_SESSION_DEVICE_LOW_SHELF)
-                                                                          : double (FC_SESSION_DEVICE_TILT);
+    peak[3] = answer.finding.device == felitronics::session::Device::Low     ? double (FC_SESSION_DEVICE_LOW_SHELF)
+            : answer.finding.device == felitronics::session::Device::Bands   ? double (FC_SESSION_DEVICE_EQ_BANDS)
+                                                                             : double (FC_SESSION_DEVICE_TILT);
     return FC_SESSION_OK;
 }
 } // namespace
