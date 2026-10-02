@@ -16,6 +16,7 @@
 #include "Dynamics.h"
 #include "EqCurve.h"
 #include "Limiter.h"
+#include "MeasurementPlan.h"
 #include "Needles.h"
 #include "Observations.h"
 #include "SourceMeasurements.h"
@@ -50,12 +51,32 @@ template <class Fields, class M> std::uint8_t fieldBit (const Rules& rules, cons
 }
 
 bool offeredByShell (const PlanInputs& in, Device device) noexcept { return (in.offered & (1u << unsigned (device))) != 0; }
+// The source's low-end run measured at `hz` — the main run's crossover (lowEnd.run.crossoverHz) or 150 — if there is one.
+std::optional<Analyzer> lowEndRunAt (const PlanInputs& in, double hz) noexcept
+{
+    const Pcm pcm { nullptr, in.channels, in.frames, in.sampleRate };
+    const auto params = MeasurementPlan::parametersFor (pcm);
+    if (same (params.lowEnd.crossoverHz, hz)) return Analyzer::LowEnd;
+    if (same (params.lowEnd150.crossoverHz, hz)) return Analyzer::LowEnd150;
+    return std::nullopt;
+}
+// Has a result a device reads not ended yet — the source's run still to come, or stopped?
+bool pendingResult (const MeasurementResult* r) noexcept { return r && ! ended (*r); }
 
 double configured (toml::embedded::View v) noexcept
 {
     if (const auto d = v.decimal()) return d->toDouble();
     if (const auto i = v.integer()) return double (*i);
     storageOverflow();
+}
+bool shortInput (const PlanInputs& in) noexcept
+{
+    return double (in.frames) < configured (in.rules.engine.find ("input").find ("shortSeconds")) * double (in.sampleRate);
+}
+// Is the input long enough to hold the bass mono bass weighs ([monoBass] loss.soundingAtLeastS)?
+bool longEnoughToWeigh (const PlanInputs& in) noexcept
+{
+    return double (in.frames) >= configured (in.rules.engine.find ("monoBass").find ("loss").find ("soundingAtLeastS")) * double (in.sampleRate);
 }
 const MeasurementResult* resultOf (const PlanInputs& in, Analyzer analyzer) noexcept
 {
@@ -210,7 +231,16 @@ template <> struct Planned<HpfFields<Value>>
         const double rate = double (in.sampleRate);
         if (! lowEnd || ! (rate > 0)) f.cut = HpfCut::Unmeasured;
         else if (quiet (in)) f.cut = HpfCut::Quiet;
-        else if (double (in.frames) < configured (in.rules.engine.find ("input").find ("shortSeconds")) * rate) f.cut = HpfCut::Short;
+        else if (shortInput (in)) f.cut = HpfCut::Short;
+        else if (pendingResult (lowEnd))
+        {
+            // Not measured yet: the floor holds the place, no bit says where it came from — the field is pending.
+            f.cut = HpfCut::Unmeasured;
+            m.fq = kept (f.cutoffHz);
+            plan.pending |= fieldBit (in.rules, m, m.fq);
+            plan.heldBack = HeldBack::Pending;
+            return;
+        }
         else if (lowEnd->status != MeasurementStatus::Ready) f.cut = HpfCut::Unmeasured;
         else if (const auto note = sureLowestNote (in, *lowEnd); ! note) f.cut = HpfCut::Unsure;
         else
@@ -227,7 +257,13 @@ template <> struct Planned<HpfFields<Value>>
         plan.target |= f.cut == HpfCut::Note || f.cut == HpfCut::Top ? std::uint8_t (0) : fieldBit (in.rules, m, m.fq);
         if (f.cut == HpfCut::Unmeasured) plan.heldBack = HeldBack::Unmeasured;
     }
-    static std::uint32_t needs (const PlanInputs&, const HpfFields<Value>&) noexcept { return 0; }
+    // The machine's cutoff reads the low end — where it searches at all: a ticked device the shell offers, on an input
+    // neither too quiet nor too short.
+    static std::uint32_t needs (const PlanInputs& in, const HpfFields<Value>& hpf) noexcept
+    {
+        return hpf.on && offeredByShell (in, Device::Hpf) && in.sampleRate != 0 && ! quiet (in) && ! shortInput (in)
+            ? bitOf (Analyzer::LowEnd) : 0u;
+    }
 };
 
 // [monoBass] (owner decision 3.5): at the target's crossover, placed by the loss the low end takes folded to mono.
@@ -245,9 +281,19 @@ template <> struct Planned<MonoBassFields<Value>>
             if (const auto* r = resultOf (in, analyzer); r)
                 if (const auto at = scalar (*r, "crossoverHz"); at && same (*at, m.fq)) lowEnd = r;
         std::optional<Weighed> weighed;
+        const auto run = lowEndRunAt (in, m.fq);
         if (! offered (in.rules, in.row, in.channels, Device::MonoBass)) f.verdict = MonoBassVerdict::MonoSource;
         else if (in.measurements.empty()) f.verdict = MonoBassVerdict::Unmeasured;
         else if (quiet (in)) f.verdict = MonoBassVerdict::Quiet;
+        else if (run && longEnoughToWeigh (in) && pendingResult (resultOf (in, *run)))
+        {
+            // Not measured yet: left out until the run at the target's crossover ends, the tick pending.
+            f.verdict = MonoBassVerdict::Unmeasured;
+            m.on = false;
+            plan.pending |= fieldBit (in.rules, m, m.on);
+            plan.heldBack = HeldBack::Pending;
+            return;
+        }
         else if (weighed = lowEnd ? weighMonoLoss (in, *lowEnd) : std::nullopt; ! weighed) f.verdict = MonoBassVerdict::Unmeasured;
         else
         {
@@ -267,7 +313,16 @@ template <> struct Planned<MonoBassFields<Value>>
             case MonoBassVerdict::MonoSource: m.on = false; plan.heldBack = HeldBack::Source; break;
         }
     }
-    static std::uint32_t needs (const PlanInputs&, const MonoBassFields<Value>&) noexcept { return 0; }
+    // The machine's tick is weighed on the low-end run at the target's crossover — whatever the tick is now, which that
+    // run decides: a device offered for the source and by the shell, on an input not too quiet and long enough to hold
+    // the bass it weighs ([monoBass] loss.soundingAtLeastS).
+    static std::uint32_t needs (const PlanInputs& in, const MonoBassFields<Value>&) noexcept
+    {
+        if (! offeredByShell (in, Device::MonoBass) || ! offered (in.rules, in.row, in.channels, Device::MonoBass) || quiet (in)
+            || ! longEnoughToWeigh (in)) return 0u;
+        const auto run = lowEndRunAt (in, in.rules.row (in.row).monoBass.toDouble());
+        return run ? bitOf (*run) : 0u;
+    }
 };
 
 // [glue] (owner decisions 3.8, 3.8а): ticked, "up to N dB", only where [glue] byTarget names the target (cd) — and not
@@ -691,6 +746,25 @@ void stateReasons (PlanView& plan, const EqFinding& eq, const AdviceHands& hands
     if (eq.device == Device::Low) state (plan, Device::Low, byHand (hands.eqShelves, PlanText::eqAdvice (eq)));
 }
 
+bool anyPending (const DevicePlans& plans) noexcept
+{
+    bool any = false;
+    for (unsigned d = 0; d <= unsigned (Device::Bands); ++d) any = any || planOf (plans, Device (d)).pending != 0;
+    return any;
+}
+void stateUnmeasured (PlanView& plan) noexcept
+{
+    // A card whose machine fields are not measured yet says so — the core's words, naming what it waits for.
+    for (unsigned d = 0; d <= unsigned (Device::Bands); ++d)
+    {
+        const auto& device = planOf (plan.devices, Device (d));
+        if (device.pending == 0) continue;
+        std::optional<text::Term> analyzer;
+        for (unsigned a = 0; a < kAnalyzers && ! analyzer; ++a)
+            if ((device.needs & plan.waiting & bitOf (Analyzer (a))) != 0) analyzer = termOf (Analyzer (a));
+        if (analyzer) state (plan, Device (d), text::Fact::of (text::FactId::DeviceUnmeasured, text::Arg::term (*analyzer)));
+    }
+}
 void stateWaiting (PlanView& plan) noexcept
 {
     // The progress moves between plans: the waiting fact stated before gives way to the one the plan names now.
@@ -785,7 +859,9 @@ void Session::replan() noexcept
             plan_.awaited = awaited.analyzer;
             plan_.awaitedBy = awaited.device;
         }
-        plan_.readOnly = plan_.status != PlanStatus::Ready;
+        // Placed devices take edits, a field the machine has not measured yet included (owner, 02.10).
+        plan_.readOnly = ! devicesPlaced_;
+        if (plan_.status == PlanStatus::Pending || plan_.status == PlanStatus::Stopped) detail::stateUnmeasured (plan_);
         const auto& d = project_.devices;
         detail::AdviceHands hands;
         hands.hpfFq = d.hpf.hand.fq.has_value();

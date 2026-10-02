@@ -2,7 +2,7 @@ create main 134217728
 command {"kind":"setTarget","commandId":"1","target":"cd"}
 load 2 measure
 command {"kind":"setManual","commandId":"3","on":true}
-drive 2800 work units
+drive 900 work units
 snapshot
 command {"kind":"master","commandId":"4"}
 snapshot
