@@ -90,6 +90,9 @@ SURFACE[5] = [...SURFACE[4], '_fc_kit_saturation_curve'];
 // Version 6 (v0.9.0) appends the glue's gain-reduction query and the master's loudness curves in the source's frames,
 // and no entry point.
 SURFACE[6] = SURFACE[5];
+// Version 7 (v0.10.0) appends the glue's unsure tempo, fact 99, and the EQ bands as the norm's peak device, and no
+// entry point.
+SURFACE[7] = SURFACE[6];
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
 const RUNTIME = ['_malloc', '_free', 'HEAPU32'];
@@ -1295,7 +1298,7 @@ for (const p of growth) M._free(p);
 // native == wasm, byte for byte (the texts, the parsed values, the travels and heats, the zones, the EQ curves to the last
 // bit, the low-end curve).
 {
-    const KIT_PINNED = 0x7607472f9fe4c104n;
+    const KIT_PINNED = 0x6343e0c5c05c0bb1n;
     const FACTS = [
         '{"FactId":3,"args":[{"kind":2,"unit":0,"precision":0,"sign":0,"bound":0,"termId":0,"number":0,"integer":"7","userText":""}]}',
         '{"FactId":504,"args":[{"kind":1,"unit":2,"precision":1,"sign":1,"bound":0,"termId":0,"number":2.375,"integer":"0","userText":""},{"kind":1,"unit":7,"precision":0,"sign":0,"bound":0,"termId":0,"number":62.5,"integer":"0","userText":""}]}',

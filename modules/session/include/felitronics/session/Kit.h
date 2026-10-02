@@ -112,7 +112,7 @@ struct KitEq
 struct KitEqPreview
 {
     CodecStatus status = CodecStatus::Ok;
-    EqFinding finding {};          // the shelves' peak against [eq] curve.warnDb, as the plan's EqOvershoot reads it
+    EqFinding finding {};          // the peak of the curve without the high-pass against [eq] curve.warnDb, as the plan's EqOvershoot reads it
 };
 
 struct KitCount

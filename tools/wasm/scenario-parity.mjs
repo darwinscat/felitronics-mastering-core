@@ -16,7 +16,7 @@ assert.match(output, /ALL TESTS PASSED/);
 // Native AppleClang Release, arm64.
 const native = {
     input: 'source=f58fa8f9570118b5 frames=480000 rate=48000',
-    parity: 'plan=f7b4068cb9e6c42b facts=34186a7c88300845 pcm=0682cfd85ae4b5a8 wav=e30bbbfe627809f9',
+    parity: 'plan=3a7d801bc533f152 facts=f74faa729c8be195 pcm=224d8a0bcf638677 wav=f85d83d3aef074f4',
 };
 for (const [name, want] of Object.entries(native)) {
     const lines = [...output.matchAll(new RegExp(`^scenario-${name} (.+)$`, 'gm'))];

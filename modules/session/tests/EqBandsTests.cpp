@@ -346,11 +346,12 @@ void aBandAtZeroIsNoBand()
             for (std::size_t l = 0; l < std::size (x.lanes); ++l)
                 asBefore = asBefore && x.lanes[l].on == y.lanes[l].on && sameBits (x.lanes[l].freq, y.lanes[l].freq)
                     && sameBits (x.lanes[l].Q, y.lanes[l].Q) && sameBits (x.lanes[l].gainDb, y.lanes[l].gainDb)
-                    && x.lanes[l].slope == y.lanes[l].slope && x.lanes[l].bypass == y.lanes[l].bypass;
+                    && x.lanes[l].slope == (b == detail::eqBand (Device::Tilt) && l == 0 ? 6 : y.lanes[l].slope)
+                    && x.lanes[l].bypass == y.lanes[l].bypass;
         }
     }
     ok (asBefore, "every band of the stage, every field, bit for bit what the previous writeEq wrote — bands at +0 and −0 dB "
-                  "included, and the bands ticked off with gains");
+                  "included, and the bands ticked off with gains; the tilt's slope 6 (the gentle tilt, owner 02.10) the one change");
     // THE MASTER: a session with every band set to 0 dB by hand renders the master of a session without the device.
     const auto master = [] (bool bandsByHand, double body)
     {
@@ -401,11 +402,44 @@ void theKitAndTheNorm()
     ok (typed.status == CodecStatus::Ok && typed.refusal == KitRefusal::None && same (typed.value, 1.3), "a typed gain lands on the 0.1 dB grid");
     const auto hot = Kit::heat (text::Term::FieldBandsForward, 3.0);
     ok (hot.window && hot.side == 1 && same (hot.heat, 1.0), "a band is coloured as tilt is (owner, 02.10): at its travel's end, full heat");
-    // THE NORM: [eq] curve.warnDb judges the shelves (tilt's and low's) only — the bands at their ends say nothing.
+    // THE NORM (owner, 02.10: where the curve is red, the line is there): [eq] curve.warnDb judges the curve eqOnlyCurve
+    // draws — tilt, low and the bands — at the very point drawn, and names the device that gives most of it.
+    const auto judged = [&] (const Devices& devices, Device device)
+    {
+        Project p;
+        p.devices = devices;
+        EqPoint drawn[kEqCurvePoints];
+        detail::eqOnlyCurve (p, r, 48000, drawn);
+        std::size_t at = 0;
+        for (std::size_t i = 1; i < kEqCurvePoints; ++i) if (std::abs (drawn[i].db) > std::abs (drawn[at].db)) at = i;
+        const auto f = detail::eqFinding (devices, r, 48000);
+        return f.over && std::abs (drawn[at].db) > 2.0 && sameBits (f.hz, drawn[at].hz) && sameBits (f.db, drawn[at].db) && f.device == device;
+    };
     Devices loud;
     for (std::size_t i = 0; i < 5; ++i) gainAt (loud.bands.hand, i) = i == 1 ? -6.0 : 6.0;
-    const auto finding = detail::eqFinding (loud, r, 48000);
-    ok (! finding.over && same (finding.db, 0.0), "the bands at ±6 dB move no beyond-the-norm finding");
+    Devices owners;
+    owners.tilt.hand = { true, 1.5 };
+    owners.bands.hand.body = -2.8; owners.bands.hand.brightness = 3.0;
+    Devices shelves;
+    shelves.tilt.hand = { true, 3.0 };
+    ok (judged (loud, Device::Bands) && judged (owners, Device::Bands) && judged (shelves, Device::Tilt),
+        "beyond the norm on the drawn curve: the bands at ±6 dB and tilt +1.5 with body −2.8 and brightness +3 (the bands' "
+        "part the larger), tilt +3 alone (tilt's)");
+    // THE LINE: a hand on a band alone raises it, said of the bands — the owner's rows that stayed silent.
+    const auto raised = [] (double body, double brightness)
+    {
+        auto sp = placed();
+        BandsFields<Touched> f; f.body = body; f.brightness = brightness;
+        if (sp->apply (command::EditDevice { 3, f }).rejection != Rejection::None) return false;
+        const auto snap = sp->snapshot();
+        const auto& plan = snap.view().plan;
+        bool found = false;
+        for (std::size_t i = 0; i < plan.facts.count; ++i)
+            found = found || (plan.facts.items[i].device == Device::Bands && plan.facts.items[i].fact.id == text::FactId::EqOvershoot);
+        return found;
+    };
+    ok (raised (-2.8, 0.0) && raised (-2.8, 3.0) && ! raised (-1.5, 1.5),
+        "body −2.8, and body −2.8 with brightness +3: the EQ curve's line on the bands; inside the norm, none");
 }
 
 void theProjectFile()

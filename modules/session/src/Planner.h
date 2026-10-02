@@ -104,7 +104,7 @@ struct Awaited
 // own value is its proposal, inside its own rule, and a file's machine layer is the machine's too.
 struct AdviceHands
 {
-    bool hpfFq = false, hpfSlope = false, monoBassFq = false, eqShelves = false;
+    bool hpfFq = false, hpfSlope = false, monoBassFq = false, eqKnobs = false;
 };
 void stateReasons (PlanView& plan, const EqFinding& eq, const AdviceHands& hands) noexcept;
 void stateWaiting (PlanView& plan) noexcept;

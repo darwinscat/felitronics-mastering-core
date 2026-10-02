@@ -50,6 +50,8 @@ struct InputLevels
 // The tempo a device may use: the measured one when its label is [compressor.tempo] trustedConfidence; the fallback when
 // the measurement ended otherwise; not ready while it runs or is stopped.
 [[nodiscard]] TempoChoice tempoChoice (const Rules& rules, const MeasurementResult& tempo) noexcept;
+// The tempo a ready result heard — its finite, positive headline BPM, whatever its label; none otherwise.
+[[nodiscard]] std::optional<double> tempoHeard (const MeasurementResult& tempo) noexcept;
 
 // The glue knob as it sounds: a person's value, or the machine's — and [glue] whenTicked when a person ticked the glue on
 // without touching a knob the machine left at 0.

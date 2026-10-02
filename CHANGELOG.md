@@ -2,6 +2,37 @@
 
 # Changelog
 
+## v0.10.0 — 2026-10-02
+
+### session — the EQ curve's line wherever it is red; a tempo heard is named (02.10)
+
+- **Beyond the norm, on the curve drawn** (owner, 02.10): `EqFinding` judges the curve `eqOnlyCurve` draws — tilt, low
+  and the five EQ bands, the high-pass out — at the very point drawn, no longer the shelves alone; `device` is the one
+  that gives most of it there, now Tilt, Low or Bands. Fact 504 (`EqOvershoot`) is raised by a hand on any EQ knob, a
+  band's included, and said of that device — so tilt +1.5 with body −2.8 and brightness +3, or body −2.8 alone, now
+  has its line, said of the bands. The kit's preview follows: `fc_kit_eq_curve` / `fc_kit_eq_curve_bands` give the
+  peak of the same curve, its device bit `FC_SESSION_DEVICE_EQ_BANDS` where the bands give most.
+- **A tempo heard with low confidence is named** (owner, 02.10): where the detector gives a tempo under
+  `[compressor.tempo] trustedConfidence`, the release still follows `bpmWhenUnsure` (the threshold is unchanged), and
+  the glue's line is the new fact 99 `GlueTempoUnsure` — «Темп {measured} измерен неуверенно — восстановление клея
+  остаётся рассчитанным на {bpm}.» / “The tempo {measured} was measured with low confidence — the glue release stays
+  set for {bpm}.” `GlueFinding.tempoUnsureBpm` (appended) carries the number. `tempoChoice.reason` is `None` for such
+  a result — the measurement is whole, the rule declined it; `NoSignal` only where a ready result gave no tempo.
+- No sound moves. The text corpus pin moves (one message more).
+
+### session — the gentle tilt (02.10)
+
+- **Tilt sounds on first-order shelves** (owner, 02.10): the tilt's band now asks felitronics-core for slope 6, its
+  first-order tilt (`matched::lowShelf1` / `highShelf1`, in the felitronics-core release that ships them), and the
+  curve the page draws (`eqCurve`, `eqOnlyCurve`, the EQ preview `fc_kit_eq_curve` and its finding) computes the same
+  shelves with the deterministic maths. Pivot (1 kHz), knob range and meaning stay: low end −dB, top +dB, ends 2·dB
+  apart. At +3 dB: 125 Hz −2.91 · 250 −2.64 · 500 −1.79 · 1k 0 · 2k +1.79 · 4k +2.65 · 8k +2.91 — was −3.00 · −2.98 ·
+  −2.64 · 0 · +2.64 · +2.98 · +3.00, the whole 6 dB inside 500 Hz…2 kHz.
+- The machine never sets a tilt, so no machine decision moves; a master with a hand tilt sounds different, and the EQ
+  curves and findings with a tilt move. No config value changed, so neither config version nor sound version moves.
+  The kit corpus pin (`KitTests.cpp`, `tools/wasm/session-check.mjs`) moves to the new curves.
+- **On felitronics-core v0.59.0** (its first-order shelves). **`FC_SESSION_ABI_VERSION` 7.**
+
 ## v0.9.0 — 2026-10-02
 
 ### session — a master's loudness curves in the source's frames; the glue's gain reduction over time

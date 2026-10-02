@@ -463,10 +463,30 @@ void theTempo()
         && config::Config::load().config.engine.compressor.tempoTrustedConfidence == config::ConfidenceLabel::High
         && same (config::Config::load().config.engine.compressor.tempoBpmWhenUnsure, 120.0),
         "the high label is a confidence of 0.5 and up — the detector's own threshold — and the fallback is the config's 120");
-    const auto fallback = PlanText::glueTempo (guess);
+    const auto fallback = PlanText::glueTempo (none);
     const auto said = fallback ? text::Text::text (*fallback, text::Lang::Ru) : std::string {};
     ok (fallback && fallback->id == text::FactId::GlueTempoFallback && said.find ("120") != std::string::npos && said.find ('{') == std::string::npos,
         "and the fallback is said: " + said);
+    // A tempo heard under the trusted label (owner, 02.10 — Cold Gaze of Eternity: 140.3 BPM at medium): the release stays
+    // at 120, the line names the tempo heard and its low confidence, and the choice names no failure — the result is whole.
+    {
+        const Faked f ("allStreaming", -18.0, -3.0, -12.0, Tempo::Medium, 140.3);
+        const auto heard = detail::glueFinding (f.in, f.glued (2.6));
+        const auto choice = detail::tempoChoice (r, f.results[std::size_t (Analyzer::Tempo)]);
+        const auto line = PlanText::glueTempo (heard);
+        const auto en = line ? text::Text::text (*line, text::Lang::En) : std::string {};
+        const auto ru = line ? text::Text::text (*line, text::Lang::Ru) : std::string {};
+        ok (heard.tempoUnsureBpm && same (*heard.tempoUnsureBpm, 140.3) && heard.bpm && same (*heard.bpm, 120.0) && ! heard.tempoMeasured
+            && choice.ready && ! choice.measured && same (choice.bpm, 120.0) && choice.reason == MeasurementReason::None
+            && line && line->id == text::FactId::GlueTempoUnsure && en.find ("140.3") != std::string::npos
+            && en.find ("120") != std::string::npos && ru.find ("140,3") != std::string::npos && ru.find ("120") != std::string::npos
+            && en.find ('{') == std::string::npos && ru.find ('{') == std::string::npos,
+            "a tempo heard at medium: the release at 120, the reason no failure, and said — " + ru + " / " + en);
+        ok (! sure.tempoUnsureBpm && ! none.tempoUnsureBpm && none.bpm && fallback && fallback->id == text::FactId::GlueTempoFallback
+            && detail::tempoChoice (r, Faked ("allStreaming", -18.0, -3.0, -12.0, Tempo::Unavailable).results[std::size_t (Analyzer::Tempo)]).reason
+                   == MeasurementReason::TooShort,
+            "a tempo followed, and none heard: no number to name — the fallback line and the measurement's own reason");
+    }
     const auto pending = release (Tempo::Pending, 100.0), cancelled = release (Tempo::Cancelled, 100.0);
     ok (pending.state == GlueState::Active && pending.ratio && ! pending.releaseMs && ! pending.bpm && cancelled.state == GlueState::Active && ! cancelled.releaseMs,
         "while the tempo runs, or is stopped, the glue has its curve and no release yet");
