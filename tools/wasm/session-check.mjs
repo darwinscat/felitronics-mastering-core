@@ -1292,7 +1292,7 @@ for (const p of growth) M._free(p);
 // native == wasm, byte for byte (the texts, the parsed values, the travels and heats, the zones, the EQ curves to the last
 // bit, the low-end curve).
 {
-    const KIT_PINNED = 0x7607472f9fe4c104n;
+    const KIT_PINNED = 0x6343e0c5c05c0bb1n;
     const FACTS = [
         '{"FactId":3,"args":[{"kind":2,"unit":0,"precision":0,"sign":0,"bound":0,"termId":0,"number":0,"integer":"7","userText":""}]}',
         '{"FactId":504,"args":[{"kind":1,"unit":2,"precision":1,"sign":1,"bound":0,"termId":0,"number":2.375,"integer":"0","userText":""},{"kind":1,"unit":7,"precision":0,"sign":0,"bound":0,"termId":0,"number":62.5,"integer":"0","userText":""}]}',

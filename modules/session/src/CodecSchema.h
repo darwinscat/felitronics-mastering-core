@@ -954,7 +954,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, GlueFinding>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.attackMs)>, std::optional<double>>);
         v.field ("attackMs", x.attackMs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.bpm)>, std::optional<double>>);
@@ -975,6 +975,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("state", x.state);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.tempoMeasured)>, bool>);
         v.field ("tempoMeasured", x.tempoMeasured);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.tempoUnsureBpm)>, std::optional<double>>);
+        v.field ("tempoUnsureBpm", x.tempoUnsureBpm);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.thresholdDb)>, std::optional<double>>);
         v.field ("thresholdDb", x.thresholdDb);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.upToDb)>, double>);

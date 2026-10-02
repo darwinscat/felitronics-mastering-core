@@ -1007,7 +1007,8 @@
         "releaseMs": "double?",
         "releaseClamped": "bool",
         "tempoMeasured": "bool",
-        "p95DetectorDb": "double?"
+        "p95DetectorDb": "double?",
+        "tempoUnsureBpm": "double?"
       }
     },
     "SaturationFinding": {

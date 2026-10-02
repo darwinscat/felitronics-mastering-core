@@ -226,12 +226,25 @@ void theEqStage()
                         p.devices.low.machine.db = low; p.devices.low.machine.on = slope % 12 == 0;
                         EqPoint now[kEqCurvePoints], before[kEqCurvePoints];
                         detail::eqCurve (p, r, rate, now);
-                        previous::previousEqCurve (p, r, rate, before);
+                        // The tilt became the gentle one after the planner (owner, 02.10): with a tilt sounding, the
+                        // previous path draws the rest and the gentle tilt's own curve is added (TiltLowTests holds it).
+                        const bool tilted = *p.devices.tilt.hand.on && tilt != 0;
+                        Project rest = p;
+                        rest.devices.tilt.hand.on = false;
+                        previous::previousEqCurve (tilted ? rest : p, r, rate, before);
+                        EqPoint gentle[kEqCurvePoints] {};
+                        if (tilted)
+                        {
+                            detail::EqStage stage;
+                            detail::writeEq (p.devices, r, stage);
+                            detail::eqCurve (std::span<const eq::BandParams> (&stage.bands[detail::eqBand (Device::Tilt)], 1), rate, gentle);
+                        }
                         for (std::size_t i = 0; i < kEqCurvePoints; ++i)
-                            identical = identical && sameBits (now[i].hz, before[i].hz) && sameBits (now[i].db, before[i].db);
+                            identical = identical && sameBits (now[i].hz, before[i].hz)
+                                     && (tilted ? std::abs (now[i].db - (before[i].db + gentle[i].db)) < 1e-9 : sameBits (now[i].db, before[i].db));
                         ++curves;
                     }
-    ok (identical, std::to_string (curves) + " curves from the written bands equal the previous path's, bit for bit");
+    ok (identical, std::to_string (curves) + " curves from the written bands equal the previous path's, bit for bit — with a tilt, the previous rest plus the gentle tilt");
 
     // 2. Each device writes its own band and no other.
     Project p;
@@ -267,6 +280,7 @@ void theEqStage()
     hpfBand.on = p.devices.hpf.machine.on; hpfBand.type = eq::FilterType::HighPass;
     hpfBand.lanes[0].freq = p.devices.hpf.machine.fq; hpfBand.lanes[0].slope = p.devices.hpf.machine.slope;
     tiltBand.on = true; tiltBand.type = eq::FilterType::Tilt; tiltBand.lanes[0].freq = cfg.config.engine.tilt.freqHz; tiltBand.lanes[0].gainDb = 1.25;
+    tiltBand.lanes[0].slope = 6;   // the gentle tilt: core's first-order shelves
     lowBand.on = true; lowBand.type = eq::FilterType::LowShelf; lowBand.lanes[0].freq = cfg.config.engine.low.freqHz;
     lowBand.lanes[0].Q = cfg.config.engine.low.q; lowBand.lanes[0].gainDb = -2.5;
     ok (base.bands[detail::eqBand (Device::Hpf)] == hpfBand && base.bands[detail::eqBand (Device::Tilt)] == tiltBand

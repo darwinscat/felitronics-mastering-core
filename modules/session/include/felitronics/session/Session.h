@@ -208,6 +208,9 @@ struct GlueFinding
     // stands on ([glue] detectorOverP95Db above the P95) and where the static curve takes upToDb: a transfer curve's
     // point for the knob.
     std::optional<double> p95DetectorDb;
+    // The tempo the detector gave and the rule did not follow — its label under [compressor.tempo] trustedConfidence: the
+    // release stays at bpmWhenUnsure, and the number is said beside it. None where the tempo was followed or gave none.
+    std::optional<double> tempoUnsureBpm;
 };
 
 // WHAT THE SATURATION COMES TO (owner decision 3.9): active when ticked above 0 dB; the shaper's drive is the knob's at
@@ -306,11 +309,12 @@ struct DitherFinding
     DitherShaping shaping = DitherShaping::None;
 };
 
-// WHERE THE EQ CURVE LEAVES ITS NORM ([eq] curve.warnDb of engine.toml) — judged on the shelves as they sound, tilt's and
-// low's, summed at the source's rate on the snapshot's 128 points; the high-pass is not judged by it (a filter's slope goes
-// down by definition: its own norm is its comfort window and its normal slopes). The point of the largest |dB|, the
-// first where two are equal; `over` where that exceeds warnDb; `device` the shelf that gives the larger part of it there
-// (tilt where both give as much).
+// WHERE THE EQ CURVE LEAVES ITS NORM ([eq] curve.warnDb of engine.toml) — judged on the curve eqOnlyCurve draws: tilt, low
+// and the EQ bands as they sound, summed at the source's rate on the snapshot's 128 points (owner, 02.10: where the curve is
+// red, the line is there); the high-pass is not judged by it (a filter's slope goes down by definition: its own norm is its
+// comfort window and its normal slopes). The point of the largest |dB|, the first where two are equal; `over` where that
+// exceeds warnDb; `device` the one that gives the largest part of it there — Tilt, Low or Bands (the five together), tilt
+// before low before the bands where they give as much.
 struct EqFinding
 {
     bool over = false;

@@ -503,7 +503,9 @@ void theAbiAnswersAsTheCall()
             const auto w = Kit::eqCurve (e, rate, want);
             eq = eq && fc_kit_eq_curve (params, rate, curve, peak) == FC_SESSION_OK && sameBits (peak[0], w.finding.hz) && sameBits (peak[1], w.finding.db)
                 && sameBits (peak[2], w.finding.over ? 1.0 : 0.0)
-                && sameBits (peak[3], w.finding.device == Device::Low ? double (FC_SESSION_DEVICE_LOW_SHELF) : double (FC_SESSION_DEVICE_TILT));
+                && sameBits (peak[3], w.finding.device == Device::Low     ? double (FC_SESSION_DEVICE_LOW_SHELF)
+                                    : w.finding.device == Device::Bands   ? double (FC_SESSION_DEVICE_EQ_BANDS)
+                                                                          : double (FC_SESSION_DEVICE_TILT));
             for (std::size_t i = 0; i < kEqCurvePoints; ++i) eq = eq && sameBits (curve[2 * i], want[i].hz) && sameBits (curve[2 * i + 1], want[i].db);
         }
     ok (eq, "fc_kit_eq_curve");
@@ -529,7 +531,10 @@ void theAbiAnswersAsTheCall()
             const auto w = Kit::eqCurve (e, rate, want);
             bands = bands && fc_kit_eq_curve (params, rate, a, pa) == FC_SESSION_OK && fc_kit_eq_curve_bands (flat, rate, b, pb) == FC_SESSION_OK
                 && fc_kit_eq_curve_bands (gains, rate, c, pc) == FC_SESSION_OK && w.status == CodecStatus::Ok
-                && std::memcmp (a, b, sizeof a) == 0 && std::memcmp (pa, pb, sizeof pa) == 0 && std::memcmp (pa, pc, sizeof pa) == 0
+                && std::memcmp (a, b, sizeof a) == 0 && std::memcmp (pa, pb, sizeof pa) == 0 && sameBits (pc[0], w.finding.hz)
+                && sameBits (pc[1], w.finding.db) && sameBits (pc[2], w.finding.over ? 1.0 : 0.0)
+                && sameBits (pc[3], w.finding.device == Device::Bands ? double (FC_SESSION_DEVICE_EQ_BANDS)
+                                    : w.finding.device == Device::Low ? double (FC_SESSION_DEVICE_LOW_SHELF) : double (FC_SESSION_DEVICE_TILT))
                 && fc_kit_eq_curve_bands (unticked, rate, ua, pu) == FC_SESSION_OK && std::memcmp (a, ua, sizeof a) == 0
                 && std::memcmp (pa, pu, sizeof pa) == 0;
             for (std::size_t i = 0; i < kEqCurvePoints; ++i) bands = bands && sameBits (c[2 * i], want[i].hz) && sameBits (c[2 * i + 1], want[i].db);
@@ -540,7 +545,7 @@ void theAbiAnswersAsTheCall()
     ok (bands && fc_kit_eq_curve_bands (mudUp, 48000, curveB, peakB) == FC_SESSION_ERR_CONTRACT
         && fc_kit_eq_curve_bands (halfBands, 48000, curveB, peakB) == FC_SESSION_ERR_CONTRACT,
         "fc_kit_eq_curve_bands: at 0 dB fc_kit_eq_curve's answer, with gains the kit's curve, ticked off with gains no band, the peak "
-        "still the shelves'; mud above 0 refused even ticked off, a tick neither 0 nor 1 a contract fault");
+        "the drawn curve's, the bands in it; mud above 0 refused even ticked off, a tick neither 0 nor 1 a contract fault");
     double curve[2 * FC_SESSION_KIT_EQ_POINTS], peak[FC_SESSION_KIT_EQ_PEAK_VALUES];
     const double halfTick[FC_SESSION_KIT_EQ_PARAMS] = { 0.5, 30, 24, 1, 2, 0, 0 };
     ok (fc_kit_eq_curve (halfTick, 48000, curve, peak) == FC_SESSION_ERR_CONTRACT, "a tick that is neither 0 nor 1 is a contract fault");
@@ -572,7 +577,7 @@ void theCorpusIsTheWasmModulesBytes()
 {
     felitronics::test::group ("native == wasm: the corpus session-check.mjs gives the module hashes to one value");
     // tools/wasm/session-check.mjs, "the pure kit", holds the wasm module to this same value.
-    constexpr std::uint64_t kPinned = 0x7607472f9fe4c104ull;
+    constexpr std::uint64_t kPinned = 0x6343e0c5c05c0bb1ull;
     const auto h = corpusHash();
     std::printf ("    kit corpus: %016llx\n", static_cast<unsigned long long> (h));
     ok (h == kPinned, "the kit corpus hashes to the pinned value");
