@@ -85,7 +85,7 @@ SURFACE[3] = SURFACE[1];
 SURFACE[4] = [...SURFACE[3], '_fc_kit_text', '_fc_kit_parse', '_fc_kit_travel', '_fc_kit_position', '_fc_kit_value_at',
     '_fc_kit_heat', '_fc_kit_mono_zones', '_fc_kit_mono_zones_at', '_fc_kit_eq_curve', '_fc_kit_low_end_curve',
     '_fc_kit_eq_curve_bands'];
-// Version 5 (slice 5) appends the rejected answer's fact, the target field's clear and the saturation's transfer curve.
+// Version 5 (v0.7.0) appends the rejected answer's fact, the target field's clear and the saturation's transfer curve.
 SURFACE[5] = [...SURFACE[4], '_fc_kit_saturation_curve'];
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
