@@ -171,6 +171,17 @@ void textIsTextWrite()
     char out[256];
     ok (Kit::text ("{\"FactId\":9,\"args\":[]}", Lang::En, out).status == CodecStatus::Invalid, "a retired id is no fact");
     ok (Kit::text ("not json", Lang::En, out).status == CodecStatus::Invalid, "garbage is no fact");
+    out[0] = 'x';
+    const auto incomplete = [&out] (const Fact& f)
+    {
+        const auto answer = Kit::text (wire (f), Lang::En, out);
+        return answer.status == CodecStatus::Invalid && answer.count == 0 && out[0] == 'x';
+    };
+    ok (Kit::text ("{\"FactId\":112,\"args\":[]}", Lang::En, out).status == CodecStatus::Invalid && out[0] == 'x'
+        && incomplete (Fact::of (FactId::RejectedNotFinite)) && incomplete (Fact::of (FactId::LandingPass, Arg::count (3)))
+        && incomplete (Fact::of (FactId::RejectedNoSource, Arg::count (1)))
+        && incomplete (Fact::of (FactId::RejectedNotFinite, Arg::count (3))),
+        "a fact short of an argument, with one too many or of another kind is refused, nothing written — never its template");
     ok (Kit::text (std::string (kFacts[0]) + " x", Lang::En, out).status == CodecStatus::Invalid, "trailing bytes are refused");
 }
 

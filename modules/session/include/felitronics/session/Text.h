@@ -408,9 +408,9 @@ struct Arg
 };
 
 // A fact: its id and its arguments, in the order src/TextFacts.h declares them for that id. A value: copying one
-// allocates nothing. A fact whose arguments do not match its declaration renders each mismatched placeholder as
-// `{name}`, visibly, rather than a guess — and renders its id when the mismatched argument is the one its plural or
-// select message chooses by, since then no variant can be chosen.
+// allocates nothing. A fact whose arguments do not match its declaration — one missing, one too many, one of another
+// kind or with a field the renderer does not know — is INCOMPLETE (Text::complete) and renders nothing: never its
+// template with a placeholder showing.
 struct Fact
 {
     static constexpr std::size_t kMaxArgs = 6;
@@ -443,9 +443,15 @@ struct Text
     [[nodiscard]] static std::uint64_t textBytes (const Fact& fact, Lang lang) noexcept;
 
     // The same rendering without the heap. size(): its length in bytes. write(): the bytes into `out`, and how many; a
-    // buffer shorter than size() gets nothing and the answer 0 (refused whole). Both allocate nothing.
+    // buffer shorter than size() gets nothing and the answer 0 (refused whole). Both allocate nothing. An incomplete
+    // fact renders nothing — size() and write() 0, text() empty — and complete() tells it from a rendering.
     [[nodiscard]] static std::size_t size (const Fact& fact, Lang lang) noexcept;
     [[nodiscard]] static std::size_t write (const Fact& fact, Lang lang, std::span<char> out) noexcept;
+
+    // Does the fact carry exactly the arguments src/TextFacts.h declares for its id — their count, each one's kind,
+    // and fields the renderer knows (a unit, a precision of 0 … 9, a term of the declared group)? An id this library
+    // does not have needs none: it renders as its number.
+    [[nodiscard]] static bool complete (const Fact& fact) noexcept;
 
     // The plural category of a number argument as `lang` prints it — the category a plural message selects on it with.
     // Other for an argument that is not a number (a Value or a Count), and for a value that prints as absent.
@@ -475,7 +481,8 @@ struct Text
     // THE FACT OF A REJECTION — what a shell shows for a refused command: the rejection's fact (100 + its code), and,
     // where the rejection is a field's, that field as a Term — read off the request the answer is for: the target's
     // number (editTarget), the device's knob (editDevice, revertEdits: the request's device and the answer's field), a
-    // load's audio. nullopt for an accepted answer, or a code this library does not know.
+    // load's audio. A field's rejection whose field no table names (a master's own numbers) is the command's refusal,
+    // fact 131, whole. nullopt for an accepted answer, or a code this library does not know.
     [[nodiscard]] static std::optional<Fact> rejected (const Answer& answer, const Request& request) noexcept;
 };
 
