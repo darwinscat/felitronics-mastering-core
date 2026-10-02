@@ -627,9 +627,7 @@ void readEqMove (Doc& d, Reader& in, EqMove& o, std::vector<std::int32_t>& bands
     d.name (in, "type", o.type, kBandTypes);
     in.required ("freqHz", o.freqHz, R { 20.0, 20000.0 });
     in.required ("q", o.q, R { 0.1, 10.0 });
-    const R bounds = readDomain (d, in, "domain", o.domain, R { -6.0, 6.0 });
-    if (o.domain.min > 0.0 || o.domain.max < 0.0) d.outOfRange (in, "domain");
-    d.pair (in, "hard", o.hard, bounds);
+    readMoveTravel (d, in, o.normal, o.hard, o.domain);
     in.required ("step", o.step, R { 0.01, 3.0 });
 }
 

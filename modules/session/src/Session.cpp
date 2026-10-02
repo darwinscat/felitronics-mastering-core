@@ -93,6 +93,7 @@ double Session::liveBytes() const noexcept
         if (masterRows_[i].waveform) rows += std::uint64_t (masterRows_[i].waveformCapacity) * sizeof (MasterWaveformBucket);
         if (masterRows_[i].costMomentary) rows += std::uint64_t (masterRows_[i].costCapacity) * sizeof (double);
         if (masterRows_[i].axes) rows += std::uint64_t (masterRows_[i].axesCapacity) * sizeof (analysis::WaveformColumn);
+        if (masterRows_[i].glueRows) rows += std::uint64_t (masterRows_[i].traceCapacity) * sizeof (LandingTraceBucket);
     }
     return double (createBytes (capabilities_) + (samples_ ? source_.frames * source_.channels * sizeof (float) : 0)
                    + source_.name.size() + masterRoom_ * (sizeof (Kept) + sizeof (detail::MasterRows))

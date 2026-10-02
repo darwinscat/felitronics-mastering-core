@@ -54,7 +54,7 @@
 //                delivered when none keeps the ceiling, marked (LandingSummary/MasterReport.peaksAboveCeiling, fact 98).
 //                Not on this surface, in the same release: the C++ Answer's value, low and high, and the hum
 //                detector's LineOnlyWithMusic (11), which the session answers as the hum not found.
-#define FC_SESSION_ABI_VERSION 5u
+#define FC_SESSION_ABI_VERSION 6u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u
 #define FC_SESSION_STORAGE_V1_BYTES 32u

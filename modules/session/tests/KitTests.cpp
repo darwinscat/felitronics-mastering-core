@@ -277,6 +277,12 @@ void travelAndHeat()
         && heat (Term::FieldHpfFq, 50, 1, 1) && heat (Term::FieldHpfFq, 70, 1, 1) && heat (Term::FieldHpfFq, 80, 1, 1),
         "the high-pass's comfort window, out to its warnings; red from 50 Hz to the travel's 80 (owner, 01.10)");
     ok (heat (Term::FieldTiltDb, 0, 0, 0) && heat (Term::FieldTiltDb, 2.25, 0.5, 1) && heat (Term::FieldLowDb, -3, 1, -1), "tilt and low: normal, out to hard");
+    // The five EQ bands are coloured as tilt and low are (owner, 02.10): ±1.5 dB normal, out to their travel's ends.
+    ok (heat (Term::FieldBandsBody, 0, 0, 0) && heat (Term::FieldBandsBody, 2.25, 0.5, 1) && heat (Term::FieldBandsBody, -3, 1, -1)
+        && heat (Term::FieldBandsForward, 1.5, 0, 0) && heat (Term::FieldBandsBrightness, -2.25, 0.5, -1) && heat (Term::FieldBandsAir, 3, 1, 1),
+        "the bands body, forward, brightness and air: normal within ±1.5 dB, out to ±3");
+    ok (heat (Term::FieldBandsMud, 0, 0, 0) && heat (Term::FieldBandsMud, -2.25, 0.5, -1) && heat (Term::FieldBandsMud, -3, 1, -1),
+        "the mud band, a cut alone: normal down to −1.5 dB, out to −3");
     const auto none = Kit::heat (Term::FieldGlueUpToDb, 1.2);
     ok (none.status == CodecStatus::Ok && ! none.window && sameBits (none.heat, 0) && none.side == 0, "the glue has no window");
 }
@@ -461,6 +467,12 @@ void theAbiAnswersAsTheCall()
         && fc_kit_parse ("1", 1, "en", 2, 0x10003u, 0, &value, &refusal) == FC_SESSION_ERR_CONTRACT, "a field the kit has no knob for");
     alignas (8) unsigned char raw[16] {};
     ok (fc_kit_parse ("1", 1, "en", 2, 9, 0, reinterpret_cast<double*> (raw + 4), &refusal) == FC_SESSION_ERR_ALIGNMENT, "a misaligned value");
+    // The owner's steps (02.10): the mono bass crossover by 5 Hz, the peaks' cut by 0.1 dB.
+    double mono[3] {}, needles[3] {};
+    ok (fc_kit_travel (std::uint32_t (Term::FieldMonoBassFq), mono) == FC_SESSION_OK && sameBits (mono[0], 60) && sameBits (mono[1], 300)
+        && sameBits (mono[2], 5), "mono bass below: 60 to 300 Hz by 5 Hz (owner, 02.10)");
+    ok (fc_kit_travel (std::uint32_t (Term::FieldLimiterNeedlesDb), needles) == FC_SESSION_OK && sameBits (needles[0], 0) && sameBits (needles[1], 3)
+        && sameBits (needles[2], 0.1), "cut off the peaks: 0 to 3 dB by 0.1 dB (owner, 02.10)");
     bool knobs = true;
     for (const auto& k : kKnobs)
     {
