@@ -140,7 +140,7 @@ static_assert (sizeof (saturation::Saturator::Params)  == 28);
 static_assert (sizeof (limiter::TruePeakLimiterParams) == 56);   // + dualRelease, slowReleaseMs (v6); + peakClip, overCeilingDb, kneeDb (v11)
 static_assert (sizeof (dither::DitherParams)           == 24);
 static_assert (sizeof (MasteringChainConfig)           == 48);
-static_assert (sizeof (MasteringChainParams)           == 6600);   // + compressorMix (v3), peak clipper (v11), air shelf (v12) — see below
+static_assert (sizeof (MasteringChainParams)           == 6616);   // + compressorMix (v3), peak clipper (v11), air shelf (v12), the clipper's cut and peak (unmapped) — see below
 static_assert (sizeof (MasteringChainResolved)         == 112);    // + compressorMix (v3), + peakClipperThresholdDbTp (v11), + the air-shelf pair (v12)
 
 // THE PIN THAT WORKS THROUGH INHERITANCE. A structured binding cannot decompose a type whose base has
@@ -219,11 +219,14 @@ static_assert (! BraceInit<dynamics::CompressorParams,
 
     // `p_mix` and `r_mix` arrived with compressorMix as a build break here, and are mapped since ABI v3 — `toCore` and
     // `fromCore` below, at the end of `fc_master_params` and `fc_master_resolved`.
+    // `p_cut` and `p_peak` (peakClipCutDb, peakClipPeakDb: the session's threshold worked out from the peak at the
+    // limiter's input) are NOT mapped, and the ABI does not grow for them: every params object here is value-initialised,
+    // so they stay NaN and this ABI's threshold stands where its caller puts it — the renders it made before, bit for bit.
     MasteringChainParams prm {};
     auto& [p_in, p_pre, p_eq, p_mb, p_air, p_comp, p_clip, p_lim, p_dith,
-           p_bE, p_bM, p_bC, p_bK, p_bL, p_bD, p_mix] = prm;
+           p_bE, p_bM, p_bC, p_bK, p_bL, p_bD, p_mix, p_cut, p_peak] = prm;
     (void) p_in; (void) p_pre; (void) p_eq; (void) p_mb; (void) p_air; (void) p_comp; (void) p_clip; (void) p_lim;
-    (void) p_dith; (void) p_bE; (void) p_bM; (void) p_bC; (void) p_bK; (void) p_bL; (void) p_bD; (void) p_mix;
+    (void) p_dith; (void) p_bE; (void) p_bM; (void) p_bC; (void) p_bK; (void) p_bL; (void) p_bD; (void) p_mix; (void) p_cut; (void) p_peak;
 
     MasteringChainResolved res {};
     auto& [r_lat, r_blk, r_clook, r_clip, r_lim, r_llook, r_os, r_ctap, r_ltap,

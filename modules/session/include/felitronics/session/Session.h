@@ -250,7 +250,8 @@ enum class NeedlesWhy : std::uint8_t
 
 // WHAT THE LIMITER COMES TO — always in the chain, with no tick; its setting is the ceiling, and its one knob is the
 // peak clipper's: decide by itself (the class above), cut as much as a person sets, or not at all. It cuts AT MOST that
-// amount off the peaks, the limiter does the rest: its threshold stands max(0, needDb − amount) above the ceiling.
+// amount off the peaks, the limiter does the rest: its threshold stands max(0, needDb − amount) above the ceiling as a
+// forecast; the master's is worked out from the peak the landing measures at the limiter's input, at any landing gain.
 struct LimiterFinding
 {
     // The ceiling the master holds: the target's, or a person's edit of it, dBTP.
