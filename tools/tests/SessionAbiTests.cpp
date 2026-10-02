@@ -53,6 +53,9 @@ fc_session_status createSession (fc_session* out)
 
 long long requestsNow() { return felitronics::test::alloc::count.load(); }
 long long bytesNow()    { return felitronics::test::alloc::bytes.load(); }
+// Bytes exactly as they reached the allocator. `bytes` takes MSVC x64's container padding (39 B) off every request of
+// 4135 B or more, as if each were a vector's; a plain `new T` carries none, so a block's own size is read here.
+long long rawBytesNow() { return felitronics::test::alloc::rawBytes.load(); }
 
 void theVersion()
 {
@@ -85,9 +88,9 @@ void createAndDestroy()
 {
     felitronics::test::group ("create and destroy; what a create allocates is the session's declared demand");
     fc_session h = 0;
-    const long long r0 = requestsNow(), b0 = bytesNow();
+    const long long r0 = requestsNow(), b0 = bytesNow(), raw0 = rawBytesNow();
     const fc_session_status created = createSession (&h);
-    const long long requests = requestsNow() - r0, bytes = bytesNow() - b0;
+    const long long requests = requestsNow() - r0, bytes = bytesNow() - b0, raw = rawBytesNow() - raw0;
     ok (created == FC_SESSION_OK && h != 0u, "a session, under a handle that is not 0");
     const auto declared = (long long) felitronics::session::Session::createBytes();
     ok (requests >= 1 && bytes > 0, "the create was seen asking the heap (" + std::to_string (bytes) + " bytes)");
@@ -97,14 +100,16 @@ void createAndDestroy()
     // carries a 2 KiB redzone in it. A create whose block does not fit is an mmap and a munmap each time: the walk
     // through a slot's 16.7 million generations (felitronics_session_abi_generation_tests) then takes hours under the
     // sanitizers instead of minutes — slice 5's session object grew to 129320 B and the CI row ran out of time. A create
-    // is the session object and its step's events (Session::createBytes); both are held here, on every build.
+    // is the session object and its step's events (Session::createBytes); both are held here, on every build, in the
+    // bytes the allocator was asked for (the raw count: two plain objects, no container padding on any platform).
     constexpr std::size_t kAsanLargestClass = std::size_t (1) << 17, kAsanLargeRedzone = 2048;
     const std::size_t sessionBlock = sizeof (felitronics::session::Session),
                       eventsBlock = sizeof (std::array<felitronics::session::Notification, felitronics::session::kEventBatch>);
     ok (sessionBlock + kAsanLargeRedzone <= kAsanLargestClass && eventsBlock + kAsanLargeRedzone <= kAsanLargestClass
-        && requests == 2 && (long long) (sessionBlock + eventsBlock) == bytes,
+        && requests == 2 && (long long) (sessionBlock + eventsBlock) == raw,
         "a create asks for two blocks, the session (" + std::to_string (sessionBlock) + " B) and its events ("
-        + std::to_string (eventsBlock) + " B), each inside AddressSanitizer's largest primary size class with its redzone");
+        + std::to_string (eventsBlock) + " B), each inside AddressSanitizer's largest primary size class with its redzone"
+        + " (asked: " + std::to_string (requests) + " requests, " + std::to_string (raw) + " B)");
     ok (fc_session_destroy (h) == FC_SESSION_OK, "destroyed");
     ok (fc_session_destroy (h) == FC_SESSION_ERR_HANDLE, "the destroyed handle is refused");
     ok (fc_session_destroy (0u) == FC_SESSION_ERR_HANDLE, "0 is never a handle");
