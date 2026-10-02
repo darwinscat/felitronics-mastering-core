@@ -74,9 +74,10 @@ struct EqPoint { double hz = 0.0, db = 0.0; };
 inline constexpr std::size_t kEqCurvePoints = 128;
 
 // THE PLAN OF THE DEVICES (src/Planner.h): where the machine's placement for this source and target stands. The machine's
-// layer is written as soon as the first measurement ends (and again on a change of target); what a device then still
-// reads — the tempo the glue's release follows, the needles the limiter's peak clipper is classed by — ends later, and
-// until it has, the panel shows the machine's layer read-only.
+// layer is written as soon as the first measurement ends — the loudness and the true peak — (and again on a change of
+// target, and for the fields a measurement decides when it ends); what a device then still reads — the low end the
+// high-pass's cutoff and mono bass's tick are decided by, the tempo the glue's release follows, the needles the
+// limiter's peak clipper is classed by — ends later. The panel takes edits meanwhile; the plan is not Ready until then.
 //   None         nothing to plan: no source, or its first measurement has not ended
 //   Pending      a measurement the target's devices read is still running
 //   Stopped      ...and it was stopped: continueMeasurement resumes it (a master resumes it by itself)
@@ -93,7 +94,9 @@ enum class PlanStatus : std::uint8_t { None, Pending, Stopped, Ready, Unavailabl
 //   Measured    a measurement ruled against it (mono bass: bass in opposite polarity)
 //   Quiet       the input is too quiet to measure: below [input] quiet.gainOnlyLufs the machine places no device
 //               (but for the high-pass, at its floor, and the dither of the delivery's format)
-enum class HeldBack : std::uint8_t { None, Shell, Source, Target, Unmeasured, Measured, Quiet };
+//   Pending     a measurement it reads has not ended yet: its fields in DevicePlan::pending are "not measured yet" —
+//               the machine fills them when it ends (owner, 02.10)
+enum class HeldBack : std::uint8_t { None, Shell, Source, Target, Unmeasured, Measured, Quiet, Pending };
 
 // A FINDING IS THE PLANNER'S PROPOSAL AND WHAT IT STOOD ON — the machine's own cutoff, the loss at the machine's
 // crossover. WHAT SOUNDS is the project's device, a person's layer over a machine's that a project file may have
@@ -168,6 +171,10 @@ struct DevicePlan
     // always on, the machine's.
     bool on = false;
     TickFrom tick = TickFrom::Machine;
+    // The machine fields with no value yet, a bit per field as `target`: a measurement they are decided by has not ended.
+    // The layer holds a placeholder there (the high-pass's floor, mono bass off) that a shell draws as "not measured
+    // yet", with no number; the machine fills the field when the measurement ends, a person's value over it untouched.
+    std::uint8_t pending = 0;
 };
 
 // Every device's plan, in the order of Device.
@@ -337,7 +344,8 @@ struct PlanView
     std::optional<Analyzer> awaited;
     std::optional<Device> awaitedBy;
     double awaitedFraction = 0.0;
-    // The panel takes no device edit: the plan is not Ready (the table's Unplaced columns).
+    // The panel takes no device edit: the devices are not placed. Once they are, a person may edit any field — one the
+    // machine has not measured yet included (DevicePlan::pending; owner, 02.10).
     bool readOnly = true;
     // The machine's layer is an imported project's, kept as the file wrote it; machineDifferences says where the
     // planner would decide otherwise now, and adoptMachine takes its decisions.
@@ -685,8 +693,8 @@ private:
     [[nodiscard]] Answer reject (Answer answer) noexcept;
 
     // Are the devices placed — the machine's layer written for this source and target, and every measurement the
-    // target's devices read ended (PlanStatus::Ready)? The table's placed columns; the Unplaced ones show the panel
-    // read-only.
+    // target's devices read ended (PlanStatus::Ready)? The table's placed columns; the Unplaced ones are the same states
+    // while a measurement the devices read still runs: edits are taken there, an import and adoptMachine are not.
     [[nodiscard]] bool placed() const noexcept;
 
     void emit (Notification event) noexcept;
@@ -722,7 +730,8 @@ private:
     void replan() noexcept;
     // A needed tempo goes ahead of the optional analyzers the source's job has left, at an analyzer's boundary; the job
     // returns to them after it, repeating nothing.
-    void preferTempo() noexcept;
+    void preferTempo (std::uint32_t waiting) noexcept;
+    void placeAgain (Analyzer ended) noexcept;
     // The loudness need `project`'s target sets the input — the needles are measured at the input's peak less it.
     [[nodiscard]] std::optional<double> needlesNeed (const Project& project) const noexcept;
     void clearNeedles() noexcept;
@@ -764,6 +773,7 @@ private:
     // ended by a load or loadMeasured, which clear it with every other master state. When the wait ends the master's
     // chain is taken from that project's devices (src/Chain.h) and its job starts.
     bool jobWaiting_ = false;
+    bool jobMachineFromFile_ = false;          // the waiting master's recipe kept a file's machine layer: never placed again
     // Derived at placement and after accepted commands; owned snapshots copy these points.
     void refreshEqCurve() noexcept;
     EqPoint eqCurve_[kEqCurvePoints] {};

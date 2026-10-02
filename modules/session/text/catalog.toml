@@ -266,8 +266,8 @@ ru = "Формат доставки задаёт цель: её мастер з�
 en = "The target sets the delivery format: its master is written only as {bits}-bit PCM at {rate}."
 
 [messages.rejectedPlanPending]
-ru = "Панель приборов открыта, а замеры, от которых зависят её числа, ещё идут: мастер станет доступен, когда они закончатся."
-en = "The device panel is open and the measurements its numbers depend on are still running: the master becomes available once they end."
+ru = "Замеры, от которых зависят числа приборов, ещё идут — это станет доступно, когда они закончатся."
+en = "The measurements the devices' numbers depend on are still running — this becomes available once they end."
 
 [messages.hpfNote]
 ru = "ФВЧ {cutoff}: по нижней ноте {note} ({hz}), на ней срезается {loss}."
@@ -537,6 +537,10 @@ en = "Saturation cut peaks by up to {largest} (usually {usual})."
 [messages.planWaiting]
 ru = "Мастер ждёт замер «{analyzer}» для прибора «{device}»: {progress}"
 en = "The master is waiting for the {analyzer} measurement for {device}: {progress}"
+
+[messages.deviceUnmeasured]
+ru = "Ещё не измерено: машина поставит значение, когда закончится замер «{analyzer}». Крутить можно уже сейчас — тронутое останется Вашим."
+en = "Not measured yet: the machine sets the value when the {analyzer} measurement ends. It can be turned now — what is touched stays yours."
 
 [messages.masterReady]
 ru = "Мастер готов."

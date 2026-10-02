@@ -236,6 +236,10 @@ void pump()
     // theirs. Every pin here hashes the master's measured numbers as printed (kMastersMeasurement): restated so, on the
     // Mac where the raw-bit pins held, the raw ones were b5fbcdc6218fc72d / 25eeb7e1f596ed41 (the previous version),
     // e2e6c8ac47d9417e / 3797697993fa2f96 (and without the cost's lines) and cadd3454090dbdba / 18b6d1ba59ebfabd.
+    // The first measurement ending at the loudness and the true peak (owner, 02.10) moved the stream itself, not a
+    // version: Measured1 and its needles come before the low-end runs, the master asked there waits for the low end its
+    // devices read, and the bar is weighted. No transform restates the stream before it; the three pairs were then
+    // 1360564337f13165 / d42f45d0b39fdc01, 2ddbf194be1a8c26 / fb06ff940f07c896 and baa032c003dd9298 / 8acd343b5c25ba11.
     // The owner's observation table (01.10) moved the engine's [observations] — thresholds and styles that print findings
     // and switch nothing — and with them the config's version alone: with its previous rows put back as well, the
     // previous pins hold. The saturation's type moved to tape (01.10): the machine's drive is 0, so only the version moved; and so
@@ -284,7 +288,7 @@ void pump()
                 e.payload.phase.weightsVersion = before->all;
         return events;
     };
-    ok (eventsHash (previousVersion (one)) == 0x1360564337f13165ull && eventsHash (previousVersion (cancelled)) == 0xd42f45d0b39fdc01ull,
+    ok (eventsHash (previousVersion (one)) == 0x3364122daef3c888ull && eventsHash (previousVersion (cancelled)) == 0x2970fc91c0e9df58ull,
         "the targets' notes move only the config's version the phases carry: with the previous one, the previous pins");
     const auto withoutCostLines = [] (const std::vector<Notification>& events)
     {
@@ -299,13 +303,13 @@ void pump()
         }
         return kept;
     };
-    ok (eventsHash (withoutCostLines (previousVersion (one))) == 0x2ddbf194be1a8c26ull
-        && eventsHash (withoutCostLines (previousVersion (cancelled))) == 0xfb06ff940f07c896ull
+    ok (eventsHash (withoutCostLines (previousVersion (one))) == 0x1b992fb95619145full
+        && eventsHash (withoutCostLines (previousVersion (cancelled))) == 0x8c67215e2008a463ull
         && withoutCostLines (one).size() < one.size(),
-        "the cost's new lines are the only new events: without them the old pins 2ddbf194be1a8c26 / fb06ff940f07c896 hold");
+        "the cost's new lines are the only new events: without them the pins 1b992fb95619145f / 8c67215e2008a463 hold");
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
-    ok (eventsHash (one) == 0xbaa032c003dd9298ull && eventsHash (cancelled) == 0x8acd343b5c25ba11ull,
+    ok (eventsHash (one) == 0x2ec2e567f503e2a9ull && eventsHash (cancelled) == 0x22427ed714b9b890ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, previous version: %016llx %016llx; and without the cost's lines: %016llx %016llx\n",

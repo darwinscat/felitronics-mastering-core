@@ -113,13 +113,15 @@ void Session::emit (Notification event, const Phase& progress) noexcept
     (*events_)[eventCount_++] = event; // three per ordinary unit; a master completion has ten extra slots
 }
 
-void Session::preferTempo() noexcept
+void Session::preferTempo (std::uint32_t waiting) noexcept
 {
     if (! sourceMeasurements_) return;
     auto& run = *sourceMeasurements_;
     constexpr unsigned tempo = unsigned (detail::SourceMeasurements::order.size()) - 1u;
     static_assert (detail::SourceMeasurements::order[tempo] == Analyzer::Tempo, "tempo is the source job's last analyzer");
-    if (run.cursor >= run.firstCount && run.cursor < tempo && run.stage == 0
+    // Never ahead of a run the devices read themselves (the low end): only ahead of a finding.
+    if (run.firstPublished && run.cursor >= run.firstCount && run.cursor < tempo && run.stage == 0
+        && (waiting & detail::bitOf (run.order[run.cursor])) == 0
         && measurementResults_[std::size_t (Analyzer::Tempo)].status == MeasurementStatus::Pending)
     {
         run.tempoReturnCursor = run.cursor;
@@ -177,6 +179,16 @@ void Session::dropJob (JobId job) noexcept
         masterProgress_ = {};
         needlesAfterDroppedMaster();
     }
+}
+// WHEN A SOURCE MEASUREMENT ENDS the machine's layer is placed again: a field it decides — the high-pass's cutoff,
+// mono bass's tick — is "not measured yet" until it ends, and the machine fills it then (owner, 02.10). A person's
+// layer stays (placement writes the machine's alone); a file's machine layer is the file's (law 14). A waiting master's
+// recipe is placed again with it, on its own target, until its wait ends: it sounds as one asked after the measurement.
+void Session::placeAgain (Analyzer ended) noexcept
+{
+    if (ended == Analyzer::Excursions || ended == Analyzer::Waveform) return;
+    if (devicesPlaced_ && ! machineFromFile_) { place (project_); refreshEqCurve(); }
+    if (job_ != 0 && jobWaiting_ && ! jobMachineFromFile_) place (jobRecipe_.project);
 }
 // A WAITING MASTER HELD THE NEEDLES AT ITS OWN CEILING (requestNeedles reads the recipe it captured). Dropped — by its
 // own cancel, with a stopped measurement, or by a contract fault — it leaves them there, and the project's plan would
@@ -250,7 +262,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
                         contract (masterJob);
                     else
                     {
-                        preferTempo();
+                        preferTempo (waits);
                         stepSourceMeasurements();
                     }
                     if (job_ == masterJob)
@@ -456,7 +468,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
             else
             {
                 // The measurements the devices read go ahead of the optional findings: a needed tempo first.
-                if ((plan_.waiting & detail::bitOf (Analyzer::Tempo)) != 0) preferTempo();
+                if ((plan_.waiting & detail::bitOf (Analyzer::Tempo)) != 0) preferTempo (plan_.waiting);
                 stepSourceMeasurements();
             }
         }

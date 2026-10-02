@@ -321,6 +321,8 @@ enum class FactId : std::uint16_t
     TargetNoNormalisation = 508, // the destination does not normalise loudness: a delivery preset
     // Mono bass's crossover below every zone (MonoBassOutsideZones is the one above them).
     MonoBassBelowZones = 509,  // mono bass at {crossover}, below what a club ({clubFrom}) and vinyl ({vinylFrom}) ask for
+    // A device's card while a field of its machine layer waits for a measurement (DevicePlan::pending): not measured yet.
+    DeviceUnmeasured = 510,    // not measured yet: the machine sets it when {analyzer} ends
 
 };
 

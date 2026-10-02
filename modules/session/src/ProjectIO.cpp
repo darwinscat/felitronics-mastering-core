@@ -197,6 +197,8 @@ Checked Session::exportProjectBytes() const noexcept
     if (checkFloatingPointEnvironment() != Status::Ok) return { Rejection::FloatingPointEnvironment, kNoField, 0 };
     // The machine's layer is written once the first measurement ends — exportable while what the devices read still ends.
     if (! devicesPlaced_) return { state_ == State::Empty ? Rejection::NoSource : Rejection::NotPlaced, kNoField, 0 };
+    // ...and once no field of it is a placeholder for a measurement still to end (owner, 02.10).
+    if (detail::anyPending (plan_.devices)) return { Rejection::PlanPending, kNoField, 0 };
     Writer w; w.project (project_, detail::rules(), source_.channels);
     return { Rejection::None, kNoField, w.size };
 }
@@ -319,12 +321,21 @@ ImportedProject readProject (std::string_view bytes, const PlanInputs& inputs) n
         fail (Rejection::UnknownTarget, t.find ("name")->position);
     }
     if (out.answer.rejection != Rejection::None) return out;
-    // The planner's machine layer for the file's target on this source: what the machine would decide now.
+    // The planner's machine layer for the file's target on this source: what the machine would decide now — whole, or
+    // the file waits: a field it has not measured yet for that target is no opinion to compare the file's against.
     PlanInputs now = inputs;
     now.row = out.project.target;
     now.targetEdit = out.project.targetEdit;
     Devices decided;
-    placeMachine (now, decided);
+    DevicePlans plans;
+    PlanFindings found;
+    propose (now, decided, plans, found);
+    if (anyPending (plans))
+    {
+        const auto& t = *std::get_if<toml::Table> (&root.find ("target")->data);
+        fail (Rejection::PlanPending, t.find ("name")->position);
+        return out;
+    }
     eachDevice (out.project.devices, [&] (Device device, const auto& layers)
     {
         using Of = DeviceOf<std::remove_cvref_t<decltype (layers.machine)>>;

@@ -73,7 +73,8 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (HeldBack::Unmeasured) == 4);
         static_assert (unsigned (HeldBack::Measured) == 5);
         static_assert (unsigned (HeldBack::Quiet) == 6);
-        return 6;
+        static_assert (unsigned (HeldBack::Pending) == 7);
+        return 7;
     }
     else if constexpr (std::is_same_v<T, HpfCut>)
     {
@@ -430,6 +431,7 @@ constexpr void checkEnum (HeldBack value) noexcept
         case HeldBack::Unmeasured: break;
         case HeldBack::Measured: break;
         case HeldBack::Quiet: break;
+        case HeldBack::Pending: break;
     }
 }
 
@@ -820,7 +822,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, DevicePlan>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.heldBack)>, HeldBack>);
         v.field ("heldBack", x.heldBack);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.measured)>, std::uint8_t>);
@@ -829,6 +831,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("needs", x.needs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.on)>, bool>);
         v.field ("on", x.on);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.pending)>, std::uint8_t>);
+        v.field ("pending", x.pending);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.target)>, std::uint8_t>);
         v.field ("target", x.target);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.tick)>, TickFrom>);

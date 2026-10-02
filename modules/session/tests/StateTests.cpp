@@ -73,6 +73,10 @@ struct felitronics::session::detail::Inspector
         auto& result = s.measurementResults_[std::size_t (Analyzer::Loudness)];
         result.status = MeasurementStatus::Ready;
         result.numbers = kReadyMasterNumbers;
+        // The low-end runs the high-pass and mono bass read end without a value — the placed columns stand for a plan
+        // with nothing left to wait for of the source's runs (the needles and the tempo are endWithoutValue's).
+        for (const auto a : { Analyzer::LowEnd, Analyzer::LowEnd150 })
+        { s.measurementResults_[std::size_t (a)].status = MeasurementStatus::Unavailable; s.measurementResults_[std::size_t (a)].reason = MeasurementReason::NoSignal; }
         // What a finished loudness does (Driver::retain): the needles for the project's ceiling, and the plan again.
         s.requestNeedles();
         s.replan();
@@ -516,8 +520,8 @@ void aChangeOfTarget()
         "and the machine dithers cd's 16 bits and glues it up to 2.6 dB");
     DitherFields<Touched> dither {};
     dither.on = false;
-    rejectedWhole (s, editOf (dither), Rejection::NotPlaced, kNoField,
-                   "cd's glue reads the tempo and its peak clipper the needles: the panel is read-only until they end");
+    ok (s.snapshot().view().plan.status == PlanStatus::Pending && ! s.snapshot().view().plan.readOnly && accepted (s, editOf (dither)),
+        "cd's glue reads the tempo and its peak clipper the needles: the plan waits for them, the panel takes edits meanwhile (owner, 02.10)");
     detail::Inspector::endWithoutValue (s);
     ok (accepted (s, editOf (dither)), "the dither is offered at 16 bits");
     rejectedWhole (s, command::SetTarget { 5, "nowhere" }, Rejection::UnknownTarget, kNoField, "an unknown target");

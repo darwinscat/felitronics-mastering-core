@@ -1842,3 +1842,9 @@ binary SessionSnapshot.eqOnlyCurve
 enum felitronics::session::text::FactId::MasterPeaksAboveCeiling=98
 codec MasterReport.peaksAboveCeiling bool
 codec LandingSummary.peaksAboveCeiling bool
+
+# Master as soon as the loudness and the true peak are known (owner, 02.10): a device field the machine has not measured
+# yet is the plan's (DevicePlan.pending, appended plain; HeldBack Pending), fact 510 the card's words.
+enum felitronics::session::HeldBack::Pending=7
+enum felitronics::session::text::FactId::DeviceUnmeasured=510
+codec DevicePlan.pending uint8
