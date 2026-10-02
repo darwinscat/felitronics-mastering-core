@@ -303,9 +303,9 @@ M._free(scratch);
 
 // the canonical zero, and the headline number, IN THIS TIER — wasm32 sizes its own structs
 for (const m of MODES) ok(Object.is(query[m](2, 0), 0), `${m}: a refused geometry quotes +0.0, not -0.0 or NaN`);
-// (352688184 and 1110776 before the hum detector's still-frame pool and its per-channel count.)
-ok(query.hum(16, 768000) === 352722360, `hum(16, 768000) is 352722360 here too, not ${query.hum(16, 768000)}`);
-ok(query.hum(1, 8130.5) === 1113912, `hum(1, 8130.5) is 1113912 here too — a fractional rate survives the boundary`);
+// (352688184 and 1110776 before the hum detector's still-frame pool, its pending row and their per-channel state.)
+ok(query.hum(16, 768000) === 352756664, `hum(16, 768000) is 352756664 here too, not ${query.hum(16, 768000)}`);
+ok(query.hum(1, 8130.5) === 1117056, `hum(1, 8130.5) is 1117056 here too — a fractional rate survives the boundary`);
 for (const m of MODES)
     ok(query[m](2, 8000 - 2 ** -40) === 0 && query[m](2, 44.1) === 0,
        `${m}: one ulp under the 8000 Hz floor and 44.1 are refused here too`);

@@ -498,7 +498,9 @@ short"; where it listened — a programme
 never quiet, a comb without its base, a quiet stretch without a base line — and no steady line stood out, it is not
 found. A hum is a line heard in the quiet passages too (owner, 01.10): a steady line that is absent from the frames where
 the whole programme is quiet — its own bands included — plays only with the music, and the detector says so
-(`HumReason::LineOnlyWithMusic`, 11): answered, the hum not found. **The observations speak for themselves**: `observationFacts` carries every
+(`HumReason::LineOnlyWithMusic`, 11): answered, the hum not found. Only such frames inside the programme speak —
+strictly between its first and last frame above the gate — so a dithered lead-in, a tail or room tone at an edge never
+vetoes a hum loud enough to keep every frame it plays in above the gate. **The observations speak for themselves**: `observationFacts` carries every
 kind's line as `ObservationText::facts` states it — `{kind, fact}`, in the order of `ObservationKind`, empty before a
 source — so a shell shows them without composing one; the names, the handling and the reasons are catalogue terms
 (`terms.observation`, `terms.handledBy`, `terms.measurementReason`).

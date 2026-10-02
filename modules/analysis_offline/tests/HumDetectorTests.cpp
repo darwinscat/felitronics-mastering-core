@@ -153,6 +153,14 @@ struct Sig
     }
     // White noise over [from, to): the 3 kHz fixture's draws — one per design sample per channel, in that order,
     // exactly as they were drawn when the suite ran at 3 kHz — interpolated x4 by `upsample`.
+    // TPDF dither at 16 bits: two uniform half-LSB draws per sample, ~-98 dBFS — never an exact zero.
+    void tpdf (std::size_t from, std::size_t to, unsigned seed)
+    {
+        std::mt19937 rng (seed);
+        std::uniform_real_distribution<double> u (-0.5, 0.5);
+        for (std::size_t i = from; i < std::min (to, len()); ++i)
+            for (auto& c : ch) c[i] += (float) ((u (rng) + u (rng)) / 32768.0);
+    }
     void noise (std::size_t from, std::size_t to, double amp, unsigned seed)
     {
         const std::size_t hi2 = std::min (to, len());
@@ -442,13 +450,14 @@ int main()
 
         // the same numbers reach Storage, and Storage is published before anything is allocated
         const auto st = HumDetector::storageFor (kSr, 2, p);
-        ok (st.ok && st.bandDoubles == 2702 && st.stretchDoubles == 532 && st.stillDoubles == 532 && st.floorDoubles == 23,
+        ok (st.ok && st.bandDoubles == 2702 && st.stretchDoubles == 532 && st.stillDoubles == 532 && st.pendingDoubles == 532
+            && st.floorDoubles == 23,
             "storage: published from the same geometry (" + std::to_string (st.bandDoubles) + " band doubles)");
         ok (st.stretchEntries == 512 && st.harmonicEntries == 32 && st.channelEntries == 2,
             "storage: stretch, harmonic and channel rows are sized by the parameters");
         ok (st.bytes() >= st.frames.bytes()
                             + (std::uint64_t) sizeof (double) * (st.bandDoubles + st.stretchDoubles + st.stillDoubles
-                                                                 + st.floorDoubles),
+                                                                 + st.pendingDoubles + st.floorDoubles),
             "storage: the total covers the producer's budget plus every double row it publishes");
 
         // refusals
@@ -1629,44 +1638,85 @@ int main()
 
     //---------------------------------------------------------------------------------------------------
     // 14. HUM IS A LINE HEARD IN THE QUIET PASSAGES TOO (owner, 01.10): a mains line does not stop when the music
-    //     does; a line present only while the music plays is music. Five passages of four hops each: a quiet intro,
-    //     a passage where a loud 50 Hz line (with its comb) plays over the quiet, a loud broadband break, the line
-    //     again, a quiet outro. The line's bands are out of the quiet gate, so the two line passages read as quiet
-    //     beside the intro and the outro — which is how a 60 Hz musical tone was reported as hum.
+    //     does; a line present only while the music plays is music. Six passages of four hops each: the song starts
+    //     (loud, broadband), a passage where a loud 50 Hz line (with its comb) plays over the quiet, a PAUSE inside the
+    //     song, a loud break, the line again, the song ends. The line's bands are out of the quiet gate, so the line
+    //     passages read as quiet — which is how a 60 Hz musical tone was reported as hum. Only the pause, inside the
+    //     programme, can say the line stops with the music (the header's point 5 and its limit).
     {
         constexpr std::size_t kPart = 4 * kHop;
-        const auto mix = [&] (double introLine)
+        const auto line = [] (Sig& m, std::size_t from, std::size_t to, double amp, double phase)
         {
-            Sig m (1, 5 * kPart);
-            m.noise (0, 2 * kPart, 3.0e-4, 211u);
-            m.noise (2 * kPart, 3 * kPart, 0.3, 212u);                 // the break: ~ -15 dBFS, broadband
-            m.noise (3 * kPart, 5 * kPart, 3.0e-4, 213u);
-            for (int h = 1; h <= 4; ++h)
-            {
-                const double a = 0.25 / (double) (h * h), f = 50.0 * (double) h;
-                m.tone (kPart, 2 * kPart, f, a);                       // under the music: loud, its comb with it
-                m.tone (3 * kPart, 4 * kPart, f, a, 0.7);
-                if (introLine > 0.0)
-                {
-                    m.tone (0, kPart, f, introLine / (double) (h * h), 0.3);
-                    m.tone (4 * kPart, 5 * kPart, f, introLine / (double) (h * h), 1.1);
-                }
-            }
+            for (int h = 1; h <= 4; ++h) m.tone (from, to, 50.0 * (double) h, amp / (double) (h * h), phase);
+        };
+        const auto song = [&] (double pauseLine)
+        {
+            Sig m (1, 6 * kPart);
+            m.noise (0, kPart, 0.3, 211u);                             // the song: ~ -15 dBFS, broadband
+            m.noise (kPart, 3 * kPart, 3.0e-4, 212u);
+            m.noise (3 * kPart, 4 * kPart, 0.3, 213u);                 // the break
+            m.noise (4 * kPart, 5 * kPart, 3.0e-4, 214u);
+            m.noise (5 * kPart, 6 * kPart, 0.3, 215u);
+            line (m, kPart, 2 * kPart, 0.25, 0.0);                     // under the music: loud, its comb with it
+            line (m, 4 * kPart, 5 * kPart, 0.25, 0.7);
+            if (pauseLine > 0.0) line (m, 2 * kPart, 3 * kPart, pauseLine, 0.3);
             return m;
         };
         HumDetectorParams p;
-        HumDetector music, loudThrough, humThrough;
-        const HumReport onlyWithMusic = once (mix (0.0), p, music);
+        HumDetector music, loudThrough, humThrough, edges;
+        const HumReport onlyWithMusic = once (song (0.0), p, music);
         ok (onlyWithMusic.mains == HumMains::None && ! onlyWithMusic.valid
             && onlyWithMusic.reason == HumReason::LineOnlyWithMusic,
-            "quiet passages: a 50 Hz line only under the music is music, not hum (mains "
+            "quiet passages: a 50 Hz line that stops in a pause inside the song is music, not hum (mains "
             + std::to_string ((int) onlyWithMusic.mains) + ", reason " + std::to_string ((int) onlyWithMusic.reason) + ")");
-        const HumReport through = once (mix (0.25), p, loudThrough);
+        const HumReport through = once (song (0.25), p, loudThrough);
         ok (through.valid && through.mains == HumMains::Hz50,
-            "quiet passages: the same line through the quiet intro and outro is hum");
-        const HumReport faint = once (mix (1.0e-3), p, humThrough);
+            "quiet passages: the same line through the pause — no still frame inside the song — is hum");
+        const HumReport faint = once (song (1.0e-3), p, humThrough);
         ok (faint.valid && faint.mains == HumMains::Hz50,
-            "quiet passages: the line through the intro and outro at a hum's level, loud under the music, is hum");
+            "quiet passages: the line through the pause at a hum's level, loud under the music, is hum");
+        // Quiet only at the programme's edges — an intro and an outro without the line, nothing still inside: nothing
+        // inside contradicts the line, and it stands.
+        Sig ends (1, 5 * kPart);
+        ends.noise (0, 2 * kPart, 3.0e-4, 216u);
+        ends.noise (2 * kPart, 3 * kPart, 0.3, 217u);
+        ends.noise (3 * kPart, 5 * kPart, 3.0e-4, 218u);
+        line (ends, kPart, 2 * kPart, 0.25, 0.0);
+        line (ends, 3 * kPart, 4 * kPart, 0.25, 0.7);
+        const HumReport atEdges = once (ends, p, edges);
+        ok (atEdges.valid && atEdges.mains == HumMains::Hz50,
+            "quiet passages: still frames only before the first and after the last loud frame veto nothing — the line stands");
+    }
+
+    //---------------------------------------------------------------------------------------------------
+    // 15. A HEAD OR A TAIL OF DITHERED SILENCE NEVER VETOES A HUM (owner, 01.10, the limit of point 5). A -40 dBFS
+    //     hum with its comb through the whole programme keeps every frame it plays in above the gate, so it can never
+    //     be in the still pool; a dithered lead-in or tail (not exact zeros, so not excluded as silence) is still and
+    //     holds no hum. Three frames of it — two are what a pool needs to speak (a 2 s lead-in is under one window
+    //     here and at 48 kHz, so it could not); the hum must still be reported.
+    {
+        constexpr std::size_t kEdge = kN + 2 * kHop;                    // three whole frames
+        const auto hummed = [&] (bool head)
+        {
+            Sig m (1, kEdge + kLen);
+            const std::size_t at = head ? kEdge : 0, end = at + kLen;
+            m.noise (at + kQuietA0, at + kQuietA1, 3.0e-4, 241u);
+            m.noise (at + kLoud0, at + kLoud1, 0.3, 242u);
+            m.noise (at + kQuietB0, at + kQuietB1, 3.0e-4, 243u);
+            for (int h = 1; h <= 4; ++h) m.tone (at, end, 50.0 * (double) h, 1.0e-2 / (double) (h * h), 0.2);
+            if (head) m.tpdf (0, kEdge, 244u); else m.tpdf (end, end + kEdge, 245u);
+            return m;
+        };
+        HumDetectorParams p;
+        HumDetector headed, tailed;
+        const HumReport lead = once (hummed (true), p, headed);
+        ok (lead.valid && lead.mains == HumMains::Hz50,
+            "a dithered lead-in before a -40 dBFS hum vetoes nothing: hum (mains " + std::to_string ((int) lead.mains)
+            + ", reason " + std::to_string ((int) lead.reason) + ")");
+        const HumReport tail = once (hummed (false), p, tailed);
+        ok (tail.valid && tail.mains == HumMains::Hz50,
+            "a dithered tail after a -40 dBFS hum vetoes nothing: hum (mains " + std::to_string ((int) tail.mains)
+            + ", reason " + std::to_string ((int) tail.reason) + ")");
     }
 
     return felitronics::test::report();
