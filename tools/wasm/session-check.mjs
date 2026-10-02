@@ -90,6 +90,9 @@ SURFACE[5] = [...SURFACE[4], '_fc_kit_saturation_curve'];
 // Version 6 (v0.9.0) appends the glue's gain-reduction query and the master's loudness curves in the source's frames,
 // and no entry point.
 SURFACE[6] = SURFACE[5];
+// Version 7 (v0.10.0) appends the glue's unsure tempo, fact 99, and the EQ bands as the norm's peak device, and no
+// entry point.
+SURFACE[7] = SURFACE[6];
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
 const RUNTIME = ['_malloc', '_free', 'HEAPU32'];
