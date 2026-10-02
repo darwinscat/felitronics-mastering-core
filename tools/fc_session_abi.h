@@ -50,7 +50,10 @@
 //   5            v0.7.0, slice 5: a rejected answer carries its fact last (RejectedAnswer.fact, ContractAnswer.fact — the
 //                field, its refused number and the domain it left, facts 180 and 181); a null in editTarget clears the
 //                field (the target row's number again); fc_kit_saturation_curve; the plan's limiter settings and dither
-//                shaping, a glue out of the chain with its numbers, and the snapshot's eqOnlyCurve.
+//                shaping, a glue out of the chain with its numbers, and the snapshot's eqOnlyCurve; the gentlest render
+//                delivered when none keeps the ceiling, marked (LandingSummary/MasterReport.peaksAboveCeiling, fact 98).
+//                Not on this surface, in the same release: the C++ Answer's value, low and high, and the hum
+//                detector's LineOnlyWithMusic (11), which the session answers as the hum not found.
 #define FC_SESSION_ABI_VERSION 5u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u
