@@ -14,10 +14,9 @@
 #include <felitronics/session/Text.h>
 #include <felitronics/core/DetMath.h>
 #include <felitronics_test.h>
-#include "JsonCodec.h"
+#include "PreviousSnapshotBytes.h"
 #include <algorithm>
 #include <bit>
-#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -28,6 +27,7 @@
 #include <vector>
 
 using namespace felitronics::session;
+using namespace felitronics::session::previous;
 using felitronics::test::ok;
 namespace declared = felitronics::declared;
 
@@ -694,33 +694,9 @@ void theLeanSummary()
 }
 } // namespace
 
-// THE SNAPSHOT SIZED IN ONE PASS (slice 5). Wire::snapshotBytes used to run the text codec over the whole view —
-// Codec::encodedBytes, every row as decimal text — only to learn whether the view encodes, and then size it again with
-// binary rows. It now checks what that pass checked and walks the view once, as the write does. The oracle is the
-// previous function, copied from src/Wire.cpp as it was, never the changed code.
-TransferNeed previousSnapshotBytes (const SnapshotView& v)
-{
-    const auto check = Codec::encodedBytes (v);
-    if (check.status != CodecStatus::Ok) return { check.status, 0, 0 };
-    detail::Writer w; w.binaryRows = true; w.value (v);
-    if (! w.good || w.size > 4294967295ull || w.rowSize > 4294967295ull / sizeof (double)) return { CodecStatus::Invalid, 0, 0 };
-    return { CodecStatus::Ok, std::uint32_t (w.size), std::uint32_t (w.rowSize * sizeof (double)) };
-}
-bool sameNeed (const TransferNeed& a, const TransferNeed& b)
-{
-    return a.status == b.status && a.jsonBytes == b.jsonBytes && a.rowBytes == b.rowBytes;
-}
-// A view with many reading points: the rows the text pass had to print one by one.
-struct Wide
-{
-    std::vector<ReadingPoint> points;
-    SnapshotView view {};
-    explicit Wide (std::size_t count) : points (count)
-    {
-        for (std::size_t i = 0; i < count; ++i) points[i] = { i * 4800u, -23.0 + 1e-3 * double (i % 9973) + 1.0 / 3.0 };
-        view.momentary = points; view.shortTerm = points;
-    }
-};
+// THE SNAPSHOT SIZED IN ONE PASS (slice 5): the same sizes and statuses as the previous function, copied
+// (tests/PreviousSnapshotBytes.h). Its cost is felitronics_session_snapshot_sizing's, a target of its own: a clock is
+// not for a unit built with the session's own flags.
 void theSnapshotSizedInOnePass()
 {
     const Audio audio (4);
@@ -754,38 +730,8 @@ void theSnapshotSizedInOnePass()
         "a stray device in a machine difference, text that is not UTF-8, a byte count that is not a number, an index past 2^53, "
         "a state out of range: Invalid, as before");
 }
-// ...and in one pass: on 200 000 reading points in each of two rows the size costs less than half the previous path's.
-// A ratio of two timings in one process, the best of seven each — the previous path took more than the whole write.
-void theSnapshotSizeCostsOnePass()
+int main()
 {
-    const Wide wide (200000);
-    const auto best = [&] (auto&& f)
-    {
-        double fastest = 1e300;
-        for (int i = 0; i < 7; ++i)
-        {
-            const auto t0 = std::chrono::steady_clock::now();
-            f();
-            fastest = std::min (fastest, std::chrono::duration<double> (std::chrono::steady_clock::now() - t0).count());
-        }
-        return fastest;
-    };
-    TransferNeed a {}, b {};
-    const double now = best ([&] { a = Wire::snapshotBytes (wide.view); });
-    const double before = best ([&] { b = previousSnapshotBytes (wide.view); });
-    std::printf ("    sizing 2 x 200000 reading points: %.3f ms, the previous path %.3f ms\n", now * 1e3, before * 1e3);
-    ok (sameNeed (a, b) && a.status == CodecStatus::Ok && now < 0.5 * before,
-        "the snapshot is sized in one pass: under half the previous path's time, to the same sizes");
-}
-
-int main (int argc, char** argv)
-{
-    if (argc > 1 && std::string_view (argv[1]) == "--sizing")
-    {
-        std::printf ("felitronics::session — the snapshot sized in one pass\n");
-        theSnapshotSizeCostsOnePass();
-        return felitronics::test::report();
-    }
     std::printf ("felitronics::session — a master read by queries, and the lean summary\n");
     theLandingsFacts();
     theVerdictPerStatus();

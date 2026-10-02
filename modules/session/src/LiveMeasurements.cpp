@@ -275,9 +275,10 @@ void Session::stepMeasurements() noexcept
     // Publications from this unit describe its completed work, including the last reading/report.
     for (auto i = firstEvent; i < eventCount_; ++i)
     {
-        events_[i].phase = measurementProgress_.name;
-        events_[i].completedWork = measurementProgress_.completedUnits;
-        events_[i].totalWork = measurementProgress_.totalUnits;
+        auto& e = (*events_)[i];
+        e.phase = measurementProgress_.name;
+        e.completedWork = measurementProgress_.completedUnits;
+        e.totalWork = measurementProgress_.totalUnits;
     }
     event.kind = EventKind::Phase; event.payload.phase = measurementProgress_; emit (event);
 }

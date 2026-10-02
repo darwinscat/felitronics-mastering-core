@@ -45,6 +45,12 @@
 - The appended plan and snapshot fields are plain — no decode default. `tools/session-wire-check.mjs` holds the manifest's
   base snapshot to the fields it carries and lets it lack the fields frozen after the base's section, by name.
 - `FC_SESSION_ABI_VERSION` stays 5 (this release's batch): `SURFACE[5]` gains `_fc_kit_saturation_curve`.
+- **A session is two blocks: the session object and its step's events** (`Session::createBytes` declares both). The
+  event batch was most of the object, and slice 5 grew the object to 129320 B — past AddressSanitizer's largest primary
+  size class with its 2 KiB redzone, so under the sanitizers every create became an mmap and the ABI suite's walk through
+  16.7 million handle generations outran CI's hour. Each block now fits it (`felitronics_session_abi_tests` holds both).
+- The snapshot sizing's timing test is a target of its own (`felitronics_session_snapshot_sizing_tests`), built without
+  the session's flags: `<chrono>` under `/EHs-c- /we4530` is C4530 on MSVC.
 
 ### session · mastering — no render under the ceiling still delivers the file, marked
 

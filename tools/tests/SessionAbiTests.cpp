@@ -33,6 +33,7 @@
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Session.h>
 
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -92,6 +93,18 @@ void createAndDestroy()
     ok (requests >= 1 && bytes > 0, "the create was seen asking the heap (" + std::to_string (bytes) + " bytes)");
     ok (bytes <= declared, "requested " + std::to_string (bytes) + " <= Session::createBytes() " + std::to_string (declared)
                            + " — the facade's table is static and adds nothing to the session's demand");
+    // EACH BLOCK FITS ADDRESSSANITIZER'S PRIMARY ALLOCATOR. Its largest size class is 128 KiB, and a block past 64 KiB
+    // carries a 2 KiB redzone in it. A create whose block does not fit is an mmap and a munmap each time: the walk
+    // through a slot's 16.7 million generations (felitronics_session_abi_generation_tests) then takes hours under the
+    // sanitizers instead of minutes — slice 5's session object grew to 129320 B and the CI row ran out of time. A create
+    // is the session object and its step's events (Session::createBytes); both are held here, on every build.
+    constexpr std::size_t kAsanLargestClass = std::size_t (1) << 17, kAsanLargeRedzone = 2048;
+    const std::size_t sessionBlock = sizeof (felitronics::session::Session),
+                      eventsBlock = sizeof (std::array<felitronics::session::Notification, felitronics::session::kEventBatch>);
+    ok (sessionBlock + kAsanLargeRedzone <= kAsanLargestClass && eventsBlock + kAsanLargeRedzone <= kAsanLargestClass
+        && requests == 2 && (long long) (sessionBlock + eventsBlock) == bytes,
+        "a create asks for two blocks, the session (" + std::to_string (sessionBlock) + " B) and its events ("
+        + std::to_string (eventsBlock) + " B), each inside AddressSanitizer's largest primary size class with its redzone");
     ok (fc_session_destroy (h) == FC_SESSION_OK, "destroyed");
     ok (fc_session_destroy (h) == FC_SESSION_ERR_HANDLE, "the destroyed handle is refused");
     ok (fc_session_destroy (0u) == FC_SESSION_ERR_HANDLE, "0 is never a handle");

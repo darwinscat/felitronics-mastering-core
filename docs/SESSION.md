@@ -716,8 +716,16 @@ rows: two passes, the first the costly one (168.8 ms on a 3-minute stereo source
 audio). It now asks `detail::snapshotEncodable` what only the text walk refused — the floating-point environment, the
 view's invariants and a machine difference's device out of range; every other check is the same in both walks — and
 walks once: 10.2 ms on the same snapshot, the bytes written unchanged (both contracts).
-`felitronics_session_master_query_tests` holds the sizes and statuses to the previous function, copied, on a session
-and on five broken views, and `felitronics_session_snapshot_sizing` its cost to under half the previous one's.
+`felitronics_session_master_query_tests` holds the sizes and statuses to the previous function, copied
+(`tests/PreviousSnapshotBytes.h`), on a session and on five broken views, and `felitronics_session_snapshot_sizing` its
+cost to under half the previous one's — a target of its own, built without the session's flags (a clock under
+`/EHs-c- /we4530` is C4530 on MSVC).
+
+**A create asks for two blocks** — the session object and its step's events (`Session::createBytes` is their sum, exact).
+The event batch (62 events of every payload kind, 113 KB) is most of a session; held apart, the object stays small. Each
+block fits AddressSanitizer's largest primary size class with its redzone (128 KiB less 2 KiB), which
+`felitronics_session_abi_tests` holds: past it every create is an mmap and a munmap, and the walk through a slot's 16.7
+million generations takes hours under the sanitizers instead of minutes (slice 5's object reached 129320 B in one block).
 
 Recovery and heap compaction use the same operation: create a new session, load the same source, advance measurement
 to the same measured state, then import the last exported project. The project includes target, manual mode and both

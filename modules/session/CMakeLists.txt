@@ -391,8 +391,16 @@ if(FELITRONICS_BUILD_TESTS)
     target_compile_options(felitronics_session_master_query_tests PRIVATE ${FELITRONICS_SESSION_COMPILE_OPTIONS})
     target_include_directories(felitronics_session_master_query_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     add_test(NAME felitronics_session_master_query_tests COMMAND felitronics_session_master_query_tests)
-    # A ratio of two timings: its own test, so a slow checking build (SAFE_HEAP) may leave it out.
-    add_test(NAME felitronics_session_snapshot_sizing COMMAND felitronics_session_master_query_tests --sizing)
+    # A ratio of two timings: its own test, so a slow checking build (SAFE_HEAP) may leave it out — and its own target,
+    # built as the live tests are, without the session's flags: <chrono> under /EHs-c- /we4530 is C4530 on MSVC.
+    add_executable(felitronics_session_snapshot_sizing_tests tests/SnapshotSizingTests.cpp)
+    target_link_libraries(felitronics_session_snapshot_sizing_tests PRIVATE felitronics::session felitronics::test_support)
+    target_include_directories(felitronics_session_snapshot_sizing_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    target_compile_features(felitronics_session_snapshot_sizing_tests PRIVATE cxx_std_20)
+    if(NOT MSVC)
+        target_compile_options(felitronics_session_snapshot_sizing_tests PRIVATE -ffp-contract=off)
+    endif()
+    add_test(NAME felitronics_session_snapshot_sizing COMMAND felitronics_session_snapshot_sizing_tests)
     add_executable(felitronics_session_memory_gate_tests tests/MemoryGateTests.cpp)
     target_link_libraries(felitronics_session_memory_gate_tests PRIVATE felitronics::session felitronics::test_support)
     target_compile_features(felitronics_session_memory_gate_tests PRIVATE cxx_std_20)
