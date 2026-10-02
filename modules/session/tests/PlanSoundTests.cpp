@@ -801,11 +801,15 @@ command::MasterReady composed (const Session& s, const Snapshot& snapshot, std::
         }
     }
     // At most the cut off the peaks, which the need stands that far above the ceiling; off where no threshold can keep to it.
+    // The chain is given the cut and the forecast peak at the limiter's input — the input's PLR over engine.toml [input]
+    // referenceLufs, −18 — and works the threshold out from the peak the landing measures.
     const double over = cuts ? std::max (0.0, need - cut) : 1.5;
     cuts = cuts && over <= 12.0;
     p.limiter.ceilingDbTp = ceiling;
     p.limiter.releaseMs = 50.0; p.limiter.dualRelease = false; p.limiter.slowReleaseMs = 200.0;
     p.limiter.peakClip = cuts; p.limiter.overCeilingDb = cuts ? over : 1.5; p.limiter.kneeDb = 0.0;
+    p.peakClipCutDb = cuts ? cut : std::numeric_limits<double>::quiet_NaN();
+    p.peakClipPeakDb = cuts ? plr - 18.0 : std::numeric_limits<double>::quiet_NaN();
     t.limiter = true;
     // The dither: at 16 bits, unless a person switched it off.
     const bool dithered = target.bitDepth <= 16 && detail::settingsOf (rules, project.devices.dither).on;
@@ -932,29 +936,44 @@ void theRenderIsThePreviousPaths()
     }
 }
 
-// A RENDERED MASTER'S CLIPPER TAKES ITS AMOUNT: on the mix (a need of about 4.5 dB), a manual 1 dB and the machine's
-// short class (3 dB), each mastered to the end; the peak clipper's own reduction trace, over the whole delivery, stays
-// within the amount where the need puts the peaks, plus what the landing itself moves them by. Before, the 1 dB was a
-// threshold 1 dB above the ceiling and took about 5.5 dB.
+// A RENDERED MASTER'S CLIPPER TAKES ITS AMOUNT, WHATEVER GAIN THE LANDING SETTLES ON: on the mix, the machine's short
+// class (3 dB) and a manual 1 dB at the streaming target (a need of about 4.5 dB), and a manual 2 dB at -9 LUFS / -1 dBTP,
+// where the limiter takes dB off the loudness and the landing adds gain well past the plain one; each mastered to the
+// end. The peak clipper's own reduction trace, over the whole delivery, stays within the amount — the threshold is
+// worked out from the peak the landing measured at the limiter's input, for the gain it settles on. Before, the
+// threshold stood where the input's forecast put it at the plain gain, and every dB the landing added on top went into
+// the clipper too: the 2 dB took 5.7 at -9 LUFS (as the page saw); riding the forecast alone still took 2.36.
 void theClipperCutsItsAmount()
 {
-    felitronics::test::group ("a rendered master: the peak clipper takes no more than its amount off the peaks");
+    felitronics::test::group ("a rendered master: the peak clipper takes no more than its amount off the peaks, at any landing gain");
     const Mix mix;
-    const double tolerance = 0.5;
-    for (const double manualCut : { 0.0, 1.0 })
+    // The threshold is worked out from the peak the first pass measured at the limiter's input, and every later render
+    // scales that input by its own gain in float: what is left is float rounding of the gain node and the oversampler's
+    // sums, about 1e-5 dB. A thousandth is two orders above it and two below the tenth the card prints.
+    const double tolerance = 0.001;
+    struct Case { double manualCut; std::optional<double> lufs, tp; };
+    for (const Case& c : { Case { 0.0, {}, {} }, Case { 1.0, {}, {} }, Case { 2.0, -9.0, -1.0 } })
     {
         auto s = measured (mix, "allStreaming");
-        const double need = s->snapshot().view().plan.limiter.needDb.value_or (0.0);
         double amount = 3.0;
-        if (manualCut > 0.0)
+        if (c.manualCut > 0.0 || c.lufs)
         {
-            LimiterFields<Touched> limiter; limiter.needles = Needles::Manual; limiter.needlesDb = manualCut;
-            ok (s->apply (command::SetManual { 30, true }).rejection == Rejection::None
-                && s->apply (command::EditDevice { 31, DeviceEdit (limiter) }).rejection == Rejection::None
-                && s->apply (command::SetManual { 32, false }).rejection == Rejection::None, "PRECONDITION: the manual cut is taken");
-            amount = manualCut;
+            bool taken = s->apply (command::SetManual { 30, true }).rejection == Rejection::None;
+            if (c.manualCut > 0.0)
+            {
+                LimiterFields<Touched> limiter; limiter.needles = Needles::Manual; limiter.needlesDb = c.manualCut;
+                taken = taken && s->apply (command::EditDevice { 31, DeviceEdit (limiter) }).rejection == Rejection::None;
+                amount = c.manualCut;
+            }
+            if (c.lufs)
+            {
+                command::EditTarget target { 32, {} }; target.fields.lufs = *c.lufs; target.fields.tp = *c.tp;
+                taken = taken && s->apply (target).rejection == Rejection::None;
+            }
+            ok (taken && s->apply (command::SetManual { 33, false }).rejection == Rejection::None, "PRECONDITION: the edits are taken");
         }
         const auto plan = s->snapshot().view().plan.limiter;
+        const double need = plan.needDb.value_or (0.0);
         ok (plan.cutting && same (plan.overDb, amount) && need > amount + 1.0,
             "PRECONDITION: the clipper cuts " + std::to_string (amount) + " dB on a need of " + std::to_string (need) + " dB");
         ok (s->apply (command::Master { 90 }).rejection == Rejection::None, "PRECONDITION: the master starts");
@@ -962,16 +981,16 @@ void theClipperCutsItsAmount()
         const auto& trace = done.kept.landing ? done.kept.landing->peakClipTrace : std::optional<LandingTrace> {};
         double deepest = 0.0;
         if (trace) for (const auto& row : trace->rows) deepest = std::max (deepest, row.maxDb);
-        // The need stands the peaks that far above the target's ceiling at the plain gain, the first pass's. The landing
-        // then moves them further by its own: the gain it adds for what the limiter takes off the loudness, and the pass
-        // ceiling it lowers under the target's (its margin and the inter-sample overshoot). That drift is the landing's,
-        // not the class's, and is read from its log.
+        // How far the landing's drive moved past the plain one: the gain it added, and the pass ceiling it lowered under
+        // the target's. Where it moved a dB or more, a threshold that stood still would have cut that much more.
         const auto& log = done.kept.landing ? done.kept.landing->log : std::span<const LandingPass> {};
         const double drift = log.empty() ? 0.0 : (log.back().gainDb - log.front().gainDb) + (plan.ceilingDbTp - log.back().ceilingDbTp);
-        ok (done.made && trace && trace->valid && ! trace->rows.empty() && ! log.empty() && deepest > 0.0 && deepest <= amount + drift + tolerance,
-            std::string (manualCut > 0.0 ? "a manual " : "the machine's short class, ") + std::to_string (amount) + " dB: the clipper took at most "
-            + std::to_string (deepest) + " dB off the peaks — the amount, the landing's drift of " + std::to_string (drift) + " dB and "
-            + std::to_string (tolerance) + " for the chain before it — " + landed (done));
+        if (c.lufs) ok (drift > 1.0, "PRECONDITION: at " + std::to_string (*c.lufs) + " LUFS the landing drives "
+                        + std::to_string (drift) + " dB past the plain gain");
+        ok (done.made && trace && trace->valid && ! trace->rows.empty() && ! log.empty() && deepest > 0.0 && deepest <= amount + tolerance,
+            std::string (c.manualCut > 0.0 ? "a manual " : "the machine's short class, ") + std::to_string (amount) + " dB: the clipper took at most "
+            + std::to_string (deepest) + " dB off the peaks, the landing's drift of " + std::to_string (drift) + " dB notwithstanding, in "
+            + std::to_string (log.size()) + " passes — " + landed (done));
     }
 }
 

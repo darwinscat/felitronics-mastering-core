@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <string_view>
 
@@ -230,10 +231,23 @@ void writeLimiter (const PlanInputs& in, const Devices& devices, mastering::Mast
     // not known, or that threshold lies beyond the limiter's working range, no threshold it can take keeps to the
     // amount: the clipper stays off. With it off the threshold is not read; it is stated all the same, as it always was:
     // the "between" class's number.
+    // That threshold is a forecast for one gain, the landing's first, and from the input's true peak. A landing settles
+    // elsewhere (it adds the gain the limiter takes off the loudness, it lowers its pass ceiling), and the stages before
+    // the limiter move the peaks. So the chain is given the cut and the peak instead (MasteringChainParams::peakClipCutDb,
+    // peakClipPeakDb) and works the threshold out for the gain and the ceiling it renders at; the landing replaces the
+    // forecast peak with the one its first pass measured at the limiter's input. The forecast: the input's PLR over the
+    // loudness it is normalised to, referenceLufs — the need plus the target's headroom, need + ceiling − targetLufs.
     const double threshold = finding.needDb ? std::max (0.0, *finding.needDb - finding.overDb) : 0.0;
     l.peakClip = finding.cutting && finding.needDb && threshold <= limiter::TruePeakLimiter::kMaxOverCeilingDb;
     l.overCeilingDb = l.peakClip ? threshold : number (clipper.find ("betweenCutDb"));
     l.kneeDb = number (clipper.find ("kneeDb"));
+    const auto target = in.rules.row (in.row);
+    const double targetLufs = in.targetEdit.lufs ? *in.targetEdit.lufs : target.lufs.toDouble();
+    // Stated only where the clipper sounds; NaN leaves the chain the threshold above, which it does not read then.
+    const double none = std::numeric_limits<double>::quiet_NaN();
+    params.peakClipCutDb = l.peakClip ? finding.overDb : none;
+    params.peakClipPeakDb = l.peakClip
+        ? (*finding.needDb + finding.ceilingDbTp - targetLufs) + number (in.rules.engine.find ("input").find ("referenceLufs")) : none;
     params.bypassLimiter = false;
 
     const auto dither = in.rules.engine.find ("dither");
