@@ -373,6 +373,60 @@ void scenario()
     std::uint32_t size = 0;
     ok (fc_session_export_project_size (h, &size) == FC_SESSION_OK && size > 0, "the placed project is exportable");
     ok (contains (command (h, R"({"kind":"editTarget","commandId":"3","fields":{"lufs":-14}})"), "accepted"), "target editing stays available");
+    {
+        // A NULL CLEARS A TARGET FIELD (owner, 01.10): the person's number goes, the row's comes back; the project — the
+        // journal — writes the field no more, and its replay gives the same project.
+        const auto exported = [&]
+        {
+            std::uint32_t n = 0; (void) fc_session_export_project_size (h, &n);
+            std::string text (n, ' '); (void) fc_session_export_project_copy (h, text.data(), n, &n); return text;
+        };
+        const auto revisionOf = [] (const std::string& answer)
+        {
+            const auto at = answer.find ("\"revision\":\""); return at == answer.npos ? std::string {} : answer.substr (at + 12, answer.find ('"', at + 12) - at - 12);
+        };
+        const auto edited = exported();
+        const auto before = command (h, R"({"kind":"editTarget","commandId":"30","fields":{"tp":-2}})");
+        const auto cleared = command (h, R"({"kind":"editTarget","commandId":"31","fields":{"lufs":null}})");
+        const auto after = exported();
+        const auto view = snapshot (h);
+        ok (contains (edited, "lufs.hand = -14") && contains (before, "accepted") && contains (cleared, "accepted")
+            && revisionOf (cleared) != revisionOf (before) && ! contains (after, "lufs.hand") && contains (after, "tp.hand = -2")
+            && contains (view, "\"targetEdit\":{\"lufs\":null,\"tp\":-2}"),
+            "a null takes the person's loudness off the target, the ceiling stays: " + after.substr (0, 200));
+        char reply[FC_SESSION_ANSWER_BYTES]; std::uint32_t n = 0;
+        const bool replayed = fc_session_import_project (h, 32, 0, after.data(), std::uint32_t (after.size()), reply, sizeof (reply), &n)
+            == FC_SESSION_OK && contains ({ reply, n }, "accepted");
+        ok (replayed && exported() == after && contains (snapshot (h), "\"targetEdit\":{\"lufs\":null,\"tp\":-2}"),
+            "the project without the cleared field replays to the same project");
+        const auto both = command (h, R"({"kind":"editTarget","commandId":"33","fields":{"tp":null}})");
+        const auto none = command (h, R"({"kind":"editTarget","commandId":"34","fields":{}})");
+        ok (contains (both, "accepted") && contains (snapshot (h), "\"targetEdit\":{\"lufs\":null,\"tp\":null}")
+            && revisionOf (none) == revisionOf (both) && ! contains (exported(), ".hand = -2"),
+            "a cleared ceiling is the row's again; an empty edit changes nothing");
+        ok (contains (command (h, R"({"kind":"editTarget","commandId":"35","fields":{"lufs":-14}})"), "accepted"),
+            "PRECONDITION: the loudness by hand again");
+    }
+    {
+        // A REJECTED ANSWER CARRIES ITS FACT, filled by the core: the field named, its refused number and the domain it
+        // left (180), a value a knob does not take (181), and every other code's own fact; the contract's too (131).
+        const auto domain = command (h, R"({"kind":"editTarget","commandId":"36","fields":{"tp":5}})");
+        const auto nyquist = command (h, R"({"kind":"editDevice","commandId":"37","device":0,"fields":{"fq":30000}})");
+        const auto slope = command (h, R"({"kind":"editDevice","commandId":"38","device":0,"fields":{"slope":7}})");
+        const auto forget = command (h, R"({"kind":"forget","commandId":"39","masterId":99})");
+        const auto contract = command (h, R"({"kind":"nothing","commandId":"40"})");
+        ok (contains (domain, "\"code\":14") && contains (domain, "\"fact\":{\"FactId\":180,") && contains (domain, "\"number\":5,")
+            && contains (domain, "\"number\":-6,") && contains (domain, "\"number\":-0.1"),
+            "out of its domain: the field, the value and the domain's bounds — " + domain);
+        ok (contains (nyquist, "\"FactId\":180,") && contains (nyquist, "\"number\":30000,") && contains (nyquist, "\"number\":0,"),
+            "a Nyquist domain: 0 and half the source's rate — " + nyquist);
+        ok (contains (slope, "\"code\":13") && contains (slope, "\"FactId\":181,") && contains (slope, "\"integer\":\"7\""),
+            "a slope the knob does not take: the field and the value — " + slope);
+        ok (contains (forget, "\"kind\":\"rejected\"") && contains (forget, "\"fact\":{\"FactId\":1"),
+            "a refusal without a field: its code's fact — " + forget);
+        ok (contains (contract, "\"code\":\"contract\"") && contains (contract, "\"fact\":{\"FactId\":131,\"args\":[]}"),
+            "a malformed command: the contract's fact — " + contract);
+    }
     ok (contains (command (h, R"({"kind":"master","commandId":"4"})"), "accepted"), "usable LUFS and true peak permit Master");
     bool done = false;
     do { (void) fc_session_step (h, 1, &more); done = done || contains (events (h), "\"kind\":\"done\""); } while (more == FC_SESSION_MORE);

@@ -40,7 +40,7 @@ assert.equal(line(native, 'session-master-wav'), line(wasm, 'session-master-wav'
 assert.equal(line(native, 'session-master-input'), line(wasm, 'session-master-input'), 'native/wasm synthetic input');
 assert.equal(line(native, 'session-master-wav-header'), line(wasm, 'session-master-wav-header'), 'native/wasm WAV header');
 assert.equal(line(jobNative, 'wav-outcomes'), line(jobWasm, 'wav-outcomes'), 'native/wasm cancel/refusal/miss outcomes');
-assert.equal(line(jobNative, 'wav-outcomes'), 'cancel:false,refusal:false,unavailable:false,miss:true,unsafe:false');
+assert.equal(line(jobNative, 'wav-outcomes'), 'cancel:false,refusal:false,unavailable:false,miss:true,unsafe:true');
 // The delivery format is the target's: [target, dither.bits asked, deliveryRate asked, PCM bits and rate delivered].
 const deliveryCases = [['cd', 0, 0, 16, 44100], ['cd', 16, 44100, 16, 44100], ['cdDynamic', 0, 0, 16, 44100],
                        ['allStreaming', 0, 0, 24, 48000], ['spotify', 24, 48000, 24, 48000]];
@@ -143,7 +143,9 @@ assert.equal(scenarios.unavailable.answer.kind, 'rejected');
 assert.equal(scenarios.miss.measurements.status, 2);
 assert.equal(scenarios.miss.measurements.passes, 12);
 assert.ok(Number.isFinite(scenarios.miss.measurements.missLu));
-assert.equal(scenarios.unsafe.measurements.deliverable, false);
+// No render under the ceiling still delivers the file, marked (owner, 01.10).
+assert.equal(scenarios.unsafe.measurements.deliverable, true);
+assert.equal(scenarios.unsafe.measurements.peaksAboveCeiling, true);
 assert.equal(sha(Buffer.from(JSON.stringify(scenarios.cancel.command))), scenarios.cancel.commandSha256);
 assert.equal(sha(Buffer.from(JSON.stringify(scenarios.miss.target))), scenarios.miss.targetSha256);
 assert.equal(sha(Buffer.from(JSON.stringify(scenarios.unsafe.target))), scenarios.unsafe.targetSha256);

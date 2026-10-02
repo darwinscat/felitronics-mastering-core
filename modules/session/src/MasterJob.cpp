@@ -409,9 +409,11 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
             { report.lraLu = solved.measured.loudnessRangeLu; report.lraReason = MeasurementReason::None; }
             else report.lraReason = solved.measured.nonFiniteSubHops != 0
                 ? MeasurementReason::NonFinite : MeasurementReason::TooShort;
-            report.peakSafe = solved.measured.truePeakDbTp <= targetTp
-                && solved.measured.droppedBlocks == 0 && solved.measured.nonFiniteSubHops == 0;
-            report.deliverable = solved.deliverable && report.peakSafe;
+            const bool whole = solved.measured.droppedBlocks == 0 && solved.measured.nonFiniteSubHops == 0;
+            report.peakSafe = solved.measured.truePeakDbTp <= targetTp && whole;
+            // Delivered: under the ceiling — or, where no render was (owner, 01.10), the gentlest one, marked.
+            report.peaksAboveCeiling = solved.peaksAboveCeiling && whole && solved.measured.truePeakDbTp > targetTp;
+            report.deliverable = solved.deliverable && (report.peakSafe || report.peaksAboveCeiling);
         }
         else report.reason = solved.measured.nonFiniteSubHops != 0 ? MeasurementReason::NonFinite
                            : solved.measured.gatingBlocks == 0 ? MeasurementReason::NoSignal

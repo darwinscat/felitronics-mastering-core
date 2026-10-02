@@ -134,10 +134,18 @@ jobs:
 
   # The newest GCC: ubuntu-latest defaults to g++-13, and gcc is what rejects -Wfloat-equal on a literal where
   # clang does not — the header-hygiene TU here is only as strict as the compiler that builds it.
+  # On arm64 too: gcc 14 is the first gcc that contracts under -ffp-contract=on (gcc 13 treats it as off), and arm64 has
+  # the FMA that x86-64's baseline lacks — the one row where a unit that compiles the library's inline code with a mode
+  # other than the library's own shows (felitronics_session_master_abi_tests failed 7 checks there and nowhere else).
   gcc14:
-    name: ubuntu-gcc-14
-    runs-on: ubuntu-latest
+    # The x86-64 row keeps its name (a required check may name it).
+    name: ${{ matrix.os == 'ubuntu-latest' && 'ubuntu-gcc-14' || 'ubuntu-arm64-gcc-14' }}
+    runs-on: ${{ matrix.os }}
     timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
     steps:
       - uses: actions/checkout@v7
       - name: Install g++-14

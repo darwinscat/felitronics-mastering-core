@@ -8,6 +8,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string_view>
 #include <variant>
 
@@ -138,7 +139,9 @@ namespace command
 struct Load        { CommandId id = 0; Pcm pcm {}; SourceMeta meta {}; };
 // Replaces the target's numbers, resets every device edit, and places the machine's layer again when ready.
 struct SetTarget   { CommandId id = 0; std::string_view target; };
-struct EditTarget  { CommandId id = 0; TargetFields<Touched> fields {}; };
+// A person's target numbers: a value sets the field; a marked `clear` takes the person's number off it, so the field is
+// the target row's again (owner, 01.10; on the wire, the field's null). A field both set and cleared is malformed.
+struct EditTarget  { CommandId id = 0; TargetFields<Touched> fields {}; TargetFields<Mark> clear {}; };
 struct EditDevice  { CommandId id = 0; DeviceEdit fields {}; };
 struct RevertEdits { CommandId id = 0; DeviceMask fields {}; };
 struct SetManual   { CommandId id = 0; bool on = false; };
@@ -182,6 +185,10 @@ struct Answer
                                                // (the target's: lufs 0, tp 1; a device's: as its Fields lists them)
     std::uint8_t targetBits = 0;               // DeliveryFormat: the target's bit depth and rate (the source's when the
     std::uint32_t targetRate = 0;              // target keeps it), the one format its master takes
+    // A field's command refused on its number: the value refused (OutOfDomain; NotOneOf where the field is a number, a
+    // slope), and for OutOfDomain the domain it left, as the check read it — the knob's bounds, or for a Nyquist domain
+    // 0 and half the source's rate (both open). Absent for an import's refusal and for every other code.
+    std::optional<double> value, low, high;
 };
 
 // WHAT A REQUEST WOULD DO, BEFORE IT IS DONE — Session::check(): the answer it would get, and the bytes it would ask the

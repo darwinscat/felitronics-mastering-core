@@ -21,6 +21,11 @@ inline constexpr bool maskValue (double value) noexcept
     const auto bits = std::bit_cast<std::uint64_t> (value);
     return (bits & 0x7fffffffffffffffull) == 0u || bits == std::bit_cast<std::uint64_t> (1.0);
 }
+// WHAT THE TEXT WALK REFUSES OF A SNAPSHOT that the walk with binary rows does not: the thread's floating-point
+// environment, the view's own invariants, and a machine difference's device out of range (text writes it as an enum,
+// a binary row as a number). Every other check is the same in both walks. So a binary-row transfer is sized by this and
+// one walk — never by printing every row as text first (Wire::snapshotBytes).
+[[nodiscard]] CodecStatus snapshotEncodable (const SnapshotView& view) noexcept;
 // The same walk sizes and writes. It never allocates, including in a debug standard library.
 struct Writer
 {
@@ -444,6 +449,9 @@ struct Reader
                     || x.passes != storage.landingPasses - beforePasses) good = false;
                 // A named limit belongs to an unreachable landing; the two levels to a between one, both, in order.
                 if (x.binding != LandingConstraint::None && x.status != LandingStatus::TargetUnreachable) good = false;
+                // Peaks above the ceiling mark a delivered landing that no render under the ceiling held.
+                if (x.peaksAboveCeiling && (! x.deliverable || x.status != LandingStatus::TargetUnreachable
+                    || x.binding != LandingConstraint::TruePeakCeiling)) good = false;
                 if ((x.belowLufs || x.aboveLufs)
                     && (x.status != LandingStatus::TargetBetweenAchievable || ! x.belowLufs || ! x.aboveLufs
                         || ! std::isfinite (*x.belowLufs) || ! std::isfinite (*x.aboveLufs) || *x.belowLufs > *x.aboveLufs)) good = false;
@@ -488,8 +496,11 @@ struct Reader
                     || x.checkPasses > 1
                     || (x.status == MeasurementStatus::Ready
                         && (! x.achievedLufs || ! x.truePeakDbTp || ! x.missLu || ! x.gainFromSourceDb))
-                    || (x.deliverable && (x.status != MeasurementStatus::Ready || ! x.peakSafe))
+                    // Delivered: under the ceiling, or above it and marked (no render stayed under it).
+                    || (x.deliverable && (x.status != MeasurementStatus::Ready || ! (x.peakSafe || x.peaksAboveCeiling)))
                     || (x.peakSafe && (! x.truePeakDbTp || *x.truePeakDbTp > x.ceilingDbTp))
+                    || (x.peaksAboveCeiling && (x.peakSafe || ! x.deliverable || x.targetMet || ! x.truePeakDbTp
+                        || *x.truePeakDbTp <= x.ceilingDbTp))
                     || (x.crest.status == MeasurementStatus::Ready
                         && x.checkPasses != (x.crest.sourceRateCheck ? 1u : 0u))
                     || (x.status == MeasurementStatus::Ready ? x.reason != MeasurementReason::None
@@ -566,6 +577,7 @@ struct Reader
             else if constexpr (std::is_same_v<T, Kept>)
             {
                 if (x.report && (! x.landing || x.report->deliverable != x.landing->deliverable
+                    || x.report->peaksAboveCeiling != x.landing->peaksAboveCeiling
                     || x.report->targetMet != (x.landing->status == LandingStatus::Solved))) good = false;
             }
             else if constexpr (std::is_same_v<T, SnapshotView>)

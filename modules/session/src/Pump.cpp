@@ -71,7 +71,7 @@ text::Fact OwnedFact::view() const noexcept
 std::uint64_t Session::stepBytes() noexcept { return 0; }
 JobId Session::measurementJob() const noexcept { return measurementJob_; }
 bool Session::hasWork() const noexcept { return measurementJob_ != 0 || job_ != 0 || needlesJob_ != 0 || crestJoin_; }
-std::span<const Notification> Session::events() const noexcept { return { events_, eventCount_ }; }
+std::span<const Notification> Session::events() const noexcept { return { events_->data(), eventCount_ }; }
 void Session::emit (Notification event) noexcept
 {
     emit (event, event.kind == EventKind::Phase ? event.payload.phase : jobProgress (event.jobId));
@@ -110,7 +110,7 @@ void Session::emit (Notification event, const Phase& progress) noexcept
     event.completedWork = progress.completedUnits;
     event.totalWork = progress.totalUnits;
 
-    events_[eventCount_++] = event; // three per ordinary unit; a master completion has ten extra slots
+    (*events_)[eventCount_++] = event; // three per ordinary unit; a master completion has ten extra slots
 }
 
 void Session::preferTempo() noexcept
@@ -361,6 +361,9 @@ Stepped Session::step (std::uint32_t budget) noexcept
                                                                    : double (tolerance.integer().value_or (0));
                     if (const auto verdict = MasterReportText::landing (report, masterSummary_, toleranceLu))
                     { (void) event.payload.fact.assign (*verdict); emit (event, masterProgress_); }
+                    // Delivered above the ceiling (no render stayed under it): the mark, beside the verdict.
+                    if (const auto above = MasterReportText::peaksAboveCeiling (report))
+                    { (void) event.payload.fact.assign (*above); emit (event, masterProgress_); }
                     if (const auto miss = MasterReportText::miss (report))
                     { (void) event.payload.fact.assign (*miss); emit (event, masterProgress_); }
                     for (const auto* hint : { &report.firstHint, &report.secondHint })

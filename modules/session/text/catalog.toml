@@ -207,6 +207,15 @@ en = "{field}: this knob has no such value."
 ru = "{field}: значение вне допустимого диапазона."
 en = "{field}: the value is outside the accepted domain."
 
+# The same two refusals said with their numbers, where the answer has them: the value refused, the domain it left.
+[messages.rejectedOutOfDomainValue]
+ru = "{field}: {value} — вне допустимого диапазона, от {low} до {high}."
+en = "{field}: {value} is outside the accepted range, {low} to {high}."
+
+[messages.rejectedNotOneOfValue]
+ru = "{field}: у этой ручки нет значения {value}."
+en = "{field}: this knob has no value {value}."
+
 [messages.rejectedBadChannels]
 ru = "Движок принимает звук в одном или двух каналах, а в этом файле их другое число."
 en = "The engine takes audio in one or two channels; this file has another number of them."
@@ -1245,6 +1254,10 @@ en = "The limiter works in {limiter} of the windows; {active} of the windows are
 [messages.masterCostBands]
 ru = "Потеря удара по полосам: низ {low}, нижняя середина {lowMid}, верхняя середина {highMid}, верх {high}."
 en = "Impact loss by band: low {low}, low-mid {lowMid}, high-mid {highMid}, high {high}."
+
+[messages.masterPeaksAboveCeiling]
+ru = "Пики выше потолка: истинный пик мастера {truePeak} при потолке {ceiling}. Под потолком не вышел ни один вариант — отдан тот, что превышает его меньше всех."
+en = "Peaks above the ceiling: the master's true peak is {truePeak} against a ceiling of {ceiling}. No render stayed under the ceiling, so the one that exceeds it least is delivered."
 
 # The plan's advice: a device's value as it sounds, against the norm drawn on its knob.
 [messages.hpfBelowComfort]

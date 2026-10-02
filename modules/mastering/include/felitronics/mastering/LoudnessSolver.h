@@ -871,7 +871,10 @@ struct LoudnessSolution
 
     double preLimiterGainDb = 0.0;              // what was applied to produce the delivered render
     double ceilingDbTp      = 0.0;              // ... and the ceiling the limiter was actually given
-    bool deliverable = false;                   // true only for a verified, ceiling-safe landing
+    bool deliverable = false;                   // true only for a verified landing: ceiling-safe, or marked below
+    // No render under the ceiling: the delivered one is the gentlest measured, its true peak above the ceiling
+    // (TargetUnreachable, binding TruePeakCeiling). Only `LandingSearch` delivers such a render.
+    bool peaksAboveCeiling = false;
     double achievedLufs = std::numeric_limits<double>::quiet_NaN();
     double missLu = std::numeric_limits<double>::quiet_NaN();
     double distanceLu = std::numeric_limits<double>::quiet_NaN();

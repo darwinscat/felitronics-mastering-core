@@ -29,10 +29,28 @@ namespace felitronics::analysis
 // clamp against a square wave ("one PCM, two histories", ClipDetector.h:62). What the instrument CAN do is
 // refuse to guess, and say why.
 //
-// THE FOUR THINGS THAT SEPARATE HUM FROM A BASS NOTE — and the hostile notes are close: G1 = 49.0 Hz sits 1.0 Hz
+// THE FIVE THINGS THAT SEPARATE HUM FROM A BASS NOTE — and the hostile notes are close: G1 = 49.0 Hz sits 1.0 Hz
 // from 50, A#1 = 58.3 Hz and B1 = 61.7 Hz sit 1.7 Hz from 60.
 //   1. HUM IS THERE IN THE QUIET. Frames are selected by their own loudness (below `quietThresholdDb`), so the
 //      evidence comes from where the programme is not.
+//   5. ...AND A LINE THAT STOPS WHERE THE PROGRAMME FALLS QUIET IS MUSIC (owner, 01.10). The gate of (1) leaves the
+//      candidate bands out (below: a hum must not censor itself), so a passage where a loud 50 or 60 Hz line plays
+//      over an otherwise quiet programme reads as quiet too — that is how a 60 Hz musical tone was reported as hum.
+//      A mains line does not stop when the music does. So the frames where EVERYTHING is quiet — the candidate bands
+//      included, under the same `quietThresholdDb` — are pooled apart ("still" frames), and a line that passed
+//      every test above must also show in that pool wherever it holds `minFramesPerObservation` frames:
+//      `valid = false, LineOnlyWithMusic` when it does not. Where no frame is still — a hum loud enough to keep
+//      every frame above the threshold, or a line that never stops — nothing contradicts the line and it stands.
+//      The test is the line's absence where everything was quiet, so a hum faint enough to sit under the threshold
+//      is in the still pool and is heard there.
+//      LIMIT, NAMED (owner, 01.10): only still frames INSIDE the programme speak — strictly between the first and the
+//      last frame that carries programme above the gate (finite, not exact silence, not still). A hum louder than the
+//      gate keeps every frame it plays in out of the pool by construction, so a dithered lead-in before the first
+//      note, a tail after the hum's source stops or room tone at an edge — still, and without the hum — would
+//      otherwise veto a loud real hum. A pause inside the song still does: there the line stopped with the music.
+//      The span is tracked in the one walk over the frames: still frames after the last programme frame wait in a
+//      pending row of the stretch's width, which the next programme frame adds to the pool and the end discards;
+//      still frames before the first programme frame are not pooled at all. One more row per channel, no second pass.
 //   2. THE POSITION, MEASURED INSIDE THE BIN. A peak is accepted only if its INTERPOLATED position is within
 //      `toleranceHz` (0.5 Hz) of 50 or 60. 0.5 Hz is what mains asks for and what the notes cannot have: a stiff
 //      grid holds +-0.05 Hz and excurses to +-0.2 Hz, while the nearest note is 1.0 Hz away. It is also what
@@ -257,6 +275,8 @@ enum class HumReason : std::uint8_t
     StretchesTooShort      = 8,  // < 2 stretches hold minFramesPerObservation frames: see the header
     CandidateNotStationary = 9,  // a mains-compatible line WAS measured and did not stand still — not "clean"
     CombWithoutBase        = 10,  // >= 2 consistent harmonics of 50 or 60 Hz, none of them h = 1 or h = 2
+    LineOnlyWithMusic      = 11,  // a stationary mains-compatible line, absent where the whole programme is quiet:
+                                  // music, not hum (see the header's point 5)
 };
 
 // One measured spectral line. Evidence, never a verdict.
@@ -311,6 +331,9 @@ struct HumCandidate
     double  maxIntraStretchSpreadHz = 0.0;
     bool    stationary = false;
     bool    passed = false;
+    // Point 5 of the header: the frames where the whole programme is quiet, the candidate bands included, did not
+    // show this stationary line — it stops where the music does. `passed` is false then.
+    bool    onlyWithMusic = false;
 };
 
 struct HumReport
@@ -510,6 +533,9 @@ private:
     struct ChannelState
     {
         std::int64_t frames = 0, finiteFrames = 0, holedFrames = 0, quietFrames = 0, silentFrames = 0;
+        std::int64_t stillFrames = 0;                  // still frames INSIDE the programme, pooled (point 5)
+        std::int64_t pendingStill = 0;                 // still frames since the last programme frame, not yet pooled
+        bool programmeSeen = false;                    // a frame carried programme above the gate (point 5's span)
         std::int64_t stretchCount = 0;                 // absolute: keeps counting past the list's capacity
         std::int64_t eligibleStretches = 0;            // ... of which hold minFramesPerObservation frames
         std::int64_t stretchFrames = 0;
@@ -532,6 +558,8 @@ public:
         SpectrumFrames::Storage frames {};
         std::size_t bandDoubles     = 0;   // double, bandBins * channels
         std::size_t stretchDoubles  = 0;   // double, stretchBins * channels — ONE active buffer per channel
+        std::size_t stillDoubles    = 0;   // double, stretchBins * channels — the still frames' pool (point 5)
+        std::size_t pendingDoubles  = 0;   // double, stretchBins * channels — still frames awaiting the span's end
         std::size_t stretchEntries  = 0;   // HumStretch, maxStretches * channels
         std::size_t harmonicEntries = 0;   // HumHarmonic, maxHarmonic * kCandidates * channels
         std::size_t channelEntries  = 0;   // ChannelState, channels
@@ -542,7 +570,8 @@ public:
         std::uint64_t bytes() const noexcept
         {
             return frames.bytes()
-                 + (std::uint64_t) sizeof (double) * (bandDoubles + stretchDoubles + floorDoubles)
+                 + (std::uint64_t) sizeof (double) * (bandDoubles + stretchDoubles + stillDoubles + pendingDoubles
+                                                      + floorDoubles)
                  + (std::uint64_t) sizeof (HumStretch) * stretchEntries
                  + (std::uint64_t) sizeof (HumHarmonic) * harmonicEntries
                  + (std::uint64_t) sizeof (ChannelState) * channelEntries
@@ -563,6 +592,8 @@ public:
         const std::size_t ch = (std::size_t) maxChannels;
         s.bandDoubles     = (std::size_t) g.bandBins * ch;
         s.stretchDoubles  = (std::size_t) g.stretchBins * ch;
+        s.stillDoubles    = (std::size_t) g.stretchBins * ch;
+        s.pendingDoubles  = (std::size_t) g.stretchBins * ch;
         s.stretchEntries  = (std::size_t) p.maxStretches * ch;
         s.harmonicEntries = (std::size_t) p.maxHarmonic * (std::size_t) kCandidates * ch;
         s.channelEntries  = ch;
@@ -609,6 +640,8 @@ public:
 
         band_.assign (st.bandDoubles, 0.0);
         stretchBuf_.assign (st.stretchDoubles, 0.0);
+        stillBuf_.assign (st.stillDoubles, 0.0);
+        pendingBuf_.assign (st.pendingDoubles, 0.0);
         stretches_.assign (st.stretchEntries, HumStretch {});
         harmonics_.assign (st.harmonicEntries, HumHarmonic {});
         chans_.assign (st.channelEntries, ChannelState {});
@@ -626,6 +659,8 @@ public:
         frames_.reset();
         for (auto& v : band_) v = 0.0;
         for (auto& v : stretchBuf_) v = 0.0;
+        for (auto& v : stillBuf_) v = 0.0;
+        for (auto& v : pendingBuf_) v = 0.0;
         for (auto& s : stretches_) s = HumStretch {};
         for (auto& h : harmonics_) h = HumHarmonic {};
         for (auto& c : chans_) c = ChannelState {};
@@ -889,6 +924,7 @@ private:
         tr.quiet = (std::uint8_t) (quiet ? 1 : 0);
         if (! quiet)
         {
+            if (! silent) heardProgramme (c);                 // above the gate even without its candidate bands
             if (s.stretchOpen) closeStretch (c);
             pushTrace (tr);
             return;
@@ -916,6 +952,19 @@ private:
         tr.bandSum = frameBandSum;
         double* sb = stretchBuf_.data() + (std::size_t) c * (std::size_t) geom_.stretchBins;
         for (int k = geom_.stretchLo; k <= geom_.stretchHi; ++k) sb[k - geom_.stretchLo] += p[k];
+        // A STILL frame: the candidate bands are under the gate too, so nothing plays — not even a line (point 5). It
+        // waits for the next programme frame, which proves it lies inside the programme; one before the first programme
+        // frame never will. A quiet frame whose candidate bands lift it over the gate carries programme: a line plays.
+        if (ms + candidateMeasure (p) < quietLin_)
+        {
+            if (s.programmeSeen)
+            {
+                double* pending = pendingBuf_.data() + (std::size_t) c * (std::size_t) geom_.stretchBins;
+                for (int k = geom_.stretchLo; k <= geom_.stretchHi; ++k) pending[k - geom_.stretchLo] += p[k];
+                ++s.pendingStill;
+            }
+        }
+        else heardProgramme (c);
 
         // per-FRAME estimates of the four fixed hypotheses: the intra-stretch stillness evidence, and the
         // spread gate a pair of averaged stretches cannot see (two symmetric sweeps average to the same 50.0)
@@ -963,6 +1012,39 @@ private:
         for (int i = 0; i < excludeUsed_; ++i)
             if (last >= exclude_[(std::size_t) i].lo && last <= exclude_[(std::size_t) i].hi) lastExcluded = true;
         if (! lastExcluded) total += p[last];
+        return total;
+    }
+
+    // A frame that carries programme above the gate closes point 5's span up to here: the still frames that waited
+    // since the last one lie inside the programme, and join the pool — added row by row in ascending bins, once.
+    void heardProgramme (int c) noexcept
+    {
+        ChannelState& s = chans_[(std::size_t) c];
+        s.programmeSeen = true;
+        if (s.pendingStill == 0) return;
+        double* still = stillBuf_.data() + (std::size_t) c * (std::size_t) geom_.stretchBins;
+        double* pending = pendingBuf_.data() + (std::size_t) c * (std::size_t) geom_.stretchBins;
+        for (int i = 0; i < geom_.stretchBins; ++i) { still[i] += pending[i]; pending[i] = 0.0; }
+        s.stillFrames += s.pendingStill;
+        s.pendingStill = 0;
+    }
+
+    // What quietMeasure leaves out above bin 1: the merged candidate bands, folded the same way (each interior bin
+    // worth 2, N/2 once), so the two add up to the frame's mean square without DC. Ascending, one fixed recurrence.
+    double candidateMeasure (const double* p) const noexcept
+    {
+        const int last = geom_.bins - 1;
+        double sum = 0.0, total = 0.0;
+        for (int e = 0; e < excludeUsed_; ++e)
+        {
+            const BinRange& r = exclude_[(std::size_t) e];
+            for (int k = std::max (r.lo, 2); k <= std::min (r.hi, last - 1); ++k) sum += p[k];
+        }
+        total = 2.0 * sum;
+        bool lastExcluded = false;
+        for (int i = 0; i < excludeUsed_; ++i)
+            if (last >= exclude_[(std::size_t) i].lo && last <= exclude_[(std::size_t) i].hi) lastExcluded = true;
+        if (lastExcluded) total += p[last];
         return total;
     }
 
@@ -1211,7 +1293,16 @@ private:
             k.stationary = hs.stretchObs >= 2
                         && k.stretchSpreadHz <= cfg_.toleranceHz
                         && k.frameSpreadHz <= cfg_.toleranceHz;
-            k.passed = k.stationary;
+            // Point 5: a stationary line must also show where the whole programme is quiet, wherever that holds
+            // enough frames to show a line at all.
+            if (k.stationary && s.stillFrames >= (std::int64_t) cfg_.minFramesPerObservation)
+            {
+                const double* still = stillBuf_.data() + (std::size_t) c * (std::size_t) geom_.stretchBins;
+                k.onlyWithMusic = ! locate (still, geom_.stretchLo, geom_.stretchHi, hypCentreHz (cand, k.baseHarmonic),
+                                            (double) k.baseHarmonic * cfg_.toleranceHz, cfg_.searchHz,
+                                            (double) s.stillFrames).accepted;
+            }
+            k.passed = k.stationary && ! k.onlyWithMusic;
         }
 
         // the validity ladder — first match wins
@@ -1228,13 +1319,18 @@ private:
         // `valid = true, mains = None` that way and all three read as clean: hum drifting 0.56 Hz between
         // stretches, hum present in one of two quiet stretches, and a line swept inside the tolerance band.
         // The evidence stays published in `candidate()`; the verdict does not.
-        bool anyFound = false, anyPassed = false;
+        // A line that stood still but stops where the programme falls quiet is music (point 5) — unless another line
+        // wandered, which is the doubtful evidence this ladder keeps.
+        bool anyFound = false, anyPassed = false, anyWandered = false;
         for (int cand = 0; cand < kCandidates; ++cand)
         {
-            anyFound = anyFound || s.cand[(std::size_t) cand].baseFound;
-            anyPassed = anyPassed || s.cand[(std::size_t) cand].passed;
+            const HumCandidate& k = s.cand[(std::size_t) cand];
+            anyFound = anyFound || k.baseFound;
+            anyPassed = anyPassed || k.passed;
+            anyWandered = anyWandered || (k.baseFound && ! k.stationary);
         }
-        if (anyFound && ! anyPassed)             { s.reason = HumReason::CandidateNotStationary; return; }
+        if (anyFound && ! anyPassed)
+        { s.reason = anyWandered ? HumReason::CandidateNotStationary : HumReason::LineOnlyWithMusic; return; }
         if (! anyFound
             && (s.cand[0].combWithoutBase || s.cand[1].combWithoutBase))
                                                  { s.reason = HumReason::CombWithoutBase; return; }
@@ -1260,7 +1356,7 @@ private:
     double quietLin_ = 0.0, promLin_ = 1.0, levelLin_ = 0.0, harmTolHz_ = 0.0;
     int channels_ = 0, excludeUsed_ = 0;
     std::int64_t traceCount_ = 0;
-    storage::Buffer<double> band_, stretchBuf_;
+    storage::Buffer<double> band_, stretchBuf_, stillBuf_, pendingBuf_;
     mutable storage::Buffer<double> floorScratch_;
     storage::Buffer<HumStretch> stretches_;
     storage::Buffer<HumHarmonic> harmonics_;

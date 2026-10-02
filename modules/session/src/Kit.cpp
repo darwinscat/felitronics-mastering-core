@@ -8,6 +8,8 @@
 #include <felitronics/session/Kit.h>
 
 #include "BuildContract.h"
+#include "Devices.h"
+#include "Dynamics.h"
 #include "EqCurve.h"
 #include "Grid.h"
 #include "JsonCodec.h"
@@ -315,6 +317,27 @@ KitEqPreview Kit::eqCurve (const KitEq& eq, double rate, std::span<EqPoint> out)
     detail::eqCurve (stage.bands, rate, out.first (kEqCurvePoints));
     preview.finding = detail::eqFinding (stage, rules, rate);
     return preview;
+}
+
+KitCount Kit::saturationCurve (SaturationType type, double driveDb, double mix, std::span<double> out) noexcept
+{
+    if (! environmentOk()) return { CodecStatus::FloatingPointEnvironment, 0 };
+    const Rules rules = detail::rules();
+    if (std::uint8_t (type) > std::uint8_t (SaturationType::Tape) || ! detail::handSaturationType (type)
+        || ! std::isfinite (driveDb) || driveDb < 0.0 || ! std::isfinite (mix) || ! rules.mix.accepts (mix, 0))
+        return { CodecStatus::Invalid, 0 };
+    // The stage as the chain writes it, designed as the stage designs itself: one source for both (src/Dynamics.h,
+    // mastering::MasteringChain::clipperDesign). A drive whose gain is no float has no curve.
+    const auto design = mastering::MasteringChain::clipperDesign (detail::clipperParams (rules, type, driveDb, mix));
+    if (! std::isfinite (design.shaper.drive())) return { CodecStatus::Invalid, 0 };
+    if (out.size() / 2 < kKitSaturationPoints) return { CodecStatus::TooSmall, kKitSaturationPoints };
+    for (std::size_t i = 0; i < kKitSaturationPoints; ++i)
+    {
+        const double x = -1.0 + double (i) / 64.0;
+        out[2 * i] = x;
+        out[2 * i + 1] = double (mastering::MasteringChain::clipperTransfer (design, float (x)));
+    }
+    return { CodecStatus::Ok, kKitSaturationPoints };
 }
 
 KitCount Kit::lowEndCurve (std::span<const double> centreHz, std::span<const double> energy, double fromHz, double toHz,

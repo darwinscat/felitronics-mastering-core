@@ -29,7 +29,9 @@ bool valid (const SnapshotView& v) noexcept
             const LandingSummary& landing = *master.landing;
             if (landing.passes > 12 || landing.log.size() != landing.passes
                 || (landing.deliverable && (! landing.achievedLufs || ! landing.missLu
-                    || ! landing.distanceLu || ! landing.truePeakDbTp))) return false;
+                    || ! landing.distanceLu || ! landing.truePeakDbTp))
+                || (landing.peaksAboveCeiling && (! landing.deliverable || landing.status != LandingStatus::TargetUnreachable
+                    || landing.binding != LandingConstraint::TruePeakCeiling))) return false;
             for (const auto& trace : { landing.limiterTrace, landing.peakClipTrace })
                 if (trace)
                 {
@@ -55,13 +57,17 @@ bool valid (const SnapshotView& v) noexcept
         const auto& r = *master.report;
         const auto& c = r.crest;
         if (! master.landing || r.deliverable != master.landing->deliverable
+            || r.peaksAboveCeiling != master.landing->peaksAboveCeiling
             || r.targetMet != (master.landing->status == LandingStatus::Solved)
             || ! std::isfinite (r.targetLufs) || ! std::isfinite (r.ceilingDbTp)
             || r.checkPasses > 1
             || (r.status == MeasurementStatus::Ready
                 && (! r.achievedLufs || ! r.truePeakDbTp || ! r.missLu || ! r.gainFromSourceDb))
-            || (r.deliverable && (r.status != MeasurementStatus::Ready || ! r.peakSafe))
+            // Delivered: under the ceiling, or above it and marked (no render stayed under it, owner 01.10).
+            || (r.deliverable && (r.status != MeasurementStatus::Ready || ! (r.peakSafe || r.peaksAboveCeiling)))
             || (r.peakSafe && (! r.truePeakDbTp || *r.truePeakDbTp > r.ceilingDbTp))
+            || (r.peaksAboveCeiling && (r.peakSafe || ! r.deliverable || r.targetMet || ! r.truePeakDbTp
+                || *r.truePeakDbTp <= r.ceilingDbTp))
             || (c.status == MeasurementStatus::Ready
                 && r.checkPasses != (c.sourceRateCheck ? 1u : 0u))
             || (r.status == MeasurementStatus::Ready ? r.reason != MeasurementReason::None
@@ -128,6 +134,18 @@ bool read (std::string_view json, Storage& storage, SnapshotView& view) noexcept
     return reader.good && reader.pos == json.size() && valid (view);
 }
 } // namespace
+
+namespace detail
+{
+CodecStatus snapshotEncodable (const SnapshotView& v) noexcept
+{
+    if (Session::checkFloatingPointEnvironment() != Status::Ok) return CodecStatus::FloatingPointEnvironment;
+    if (! valid (v)) return CodecStatus::Invalid;
+    for (const auto& d : v.machineDifferences)
+        if (unsigned (d.device) > enumLast<Device>()) return CodecStatus::Invalid;
+    return CodecStatus::Ok;
+}
+} // namespace detail
 
 CodecNeed Codec::encodedBytes (const SnapshotView& view) noexcept
 {

@@ -282,6 +282,11 @@ Dither is offered through 16 bits, and mono bass except on a mono source; the sh
   columns), whether the panel is visible or hidden. Values must be
   finite and inside the knob's domain; travel and step guide the slider. Values between steps or outside travel are
   accepted within the domain. A number is kept with −0 written as +0, so equal values give identical project bits.
+- **`editTarget(lufs, tp)`** sets a person's target numbers; a field's **null clears it** (owner, 01.10): the person's
+  number goes and the field is the target row's again, per field (`command::EditTarget::clear`). An absent key leaves the
+  field; an edit that sets and clears nothing is accepted without a revision; a field both set and cleared (C++ only —
+  the wire has one value per key) is `Contract` on that field. The project writes only the numbers a person holds, so a
+  cleared field leaves its `lufs.hand`/`tp.hand` line, and the replay gives the same project.
 - **`setTarget(name)`** replaces the target's numbers silently and always resets every device edit, including hidden
   edits and dither edits. The machine decides again for the new target. The warning before it is the core's fact:
   `SnapshotText::targetChange (snapshot().view())` gives `targetChangeResetsEdits` — "Manual device edits (N) will be
@@ -349,16 +354,20 @@ numbers it does not have. Each is written as an event's fact is (`WireFact`); th
 records a waiting plan, the master it refuses, and its reasons once Ready.
 
 **The advice beside a knob is a fact too** (facts 500–505 and 509, `PlanText::hpfCutoffAdvice`, `hpfSlopeAdvice`,
-`monoBassAdvice`, `eqAdvice`): the value as it sounds — a person's or the machine's — against the norm engine.toml draws on
-the knob, so a hand edit that leaves the norm gets its advice in the next snapshot. The high-pass's cutoff below or above
+`monoBassAdvice`, `eqAdvice`): a person's value as it sounds against the norm engine.toml draws on the knob, so a hand
+edit that leaves the norm gets its advice in the next snapshot. **Advice only where a hand acted** (owner, 01.10): the
+machine's own value — proposed now, or kept from a file's machine layer — is its proposal, inside its own rule, and is
+never advised against; each piece of advice is said only where a person set the value it judges (500/501 the cutoff,
+502/503 the slope, 505/509 the crossover, 504 a shelf of tilt or low), so a slope by hand says nothing of the machine's
+cutoff beside it. The high-pass's cutoff below or above
 `[hpf] comfort` (24–42 Hz, strictly, the window named in the fact) and its slope gentler or steeper than `slopesNormal`
 (a slope between two normal ones is inside; `plan.hpf.soundingSlope` carries the slope that sounds); mono bass's
 crossover outside every zone of `[monoBass.zones]` (ends inside) — above them `MonoBassOutsideZones` (505, against the
 club's and vinyl's upper ends), below them `MonoBassBelowZones` (509, against their lower ends); the EQ curve of the shelves as they sound (tilt and
 low, never the high-pass) past `[eq] curve.warnDb`, at the point of the largest |dB|, said of the shelf that gives the
-larger part there. Nothing for a device out of the chain. `kPlanFacts` is 18. The machine's own plan never raises the
-"beyond the norm" advice (502–505, 509) — `theMachineKeepsItsOwnNorm` plans every target on every input the suite
-measures and holds it; the comfort window (500, 501) is a hint the machine's floor may leave. **The target's note** (facts 506–508,
+larger part there. Nothing for a device out of the chain. `kPlanFacts` is 18. The machine's own plan raises none of the
+advice (500–505, 509) — by the rule above, and `theMachineKeepsItsOwnNorm` plans every target on every input the suite
+measures and holds it. **The target's note** (facts 506–508,
 `SnapshotText::targetNote`, the snapshot's `targetNote` beside `target`): where the target's loudness comes from, where
 targets.toml `[notes]` says it is not a platform's published number or a standard — measured (youtubeMusic), practice
 (cdDynamic, club), no normalisation (bandcamp). `[notes]` is shown, not sounding: it moves `all`, never `sound`.
@@ -427,7 +436,10 @@ bits in both rules that read it (`requestNeedles` and `needlesCurrent`). The dit
 at 16 bits it is in the chain — weighted TPDF, seed `0x853c49e6748fea9b`, blanked after 4096 zero samples, a stated
 version of the sound (`[dither]`) — unless a person switches it off (the delivery is then rounded to its grid without
 noise); above 16 bits there is none, and a person's tick, which only a project file can bring, is kept and does nothing
-(`plan.dither.keptWithoutEffect`, `PlanText::dither`). The delivery is quantised once, in the chain: its WAV adds no
+(`plan.dither.keptWithoutEffect`, `PlanText::dither`); `plan.dither.shaping` is the shaping it runs with at the
+delivery's depth (`DitherShaping`, the core's order). The plan states the limiter's own settings as the chain is written
+with them (slice 5): `plan.limiter.releaseMs`, `dualRelease`, `slowReleaseMs`, `lookaheadMs` and `oversampling` — the
+factor as the limiter takes it; writeLimiter reads the release and the dither's shaping from the finding. The delivery is quantised once, in the chain: its WAV adds no
 second noise. On a target cut to vinyl (`vinyl = true`, lp) the machine never stands above the target's own ceiling
 (−3 dBTP) and never cuts needles; a person's ceiling above it and a person's needles sound, with the medium's warnings
 (`PlanText::vinylCeiling`, `vinylNeedles`) and no refusal, and the plan carries the constant note that the cutting room
@@ -484,7 +496,11 @@ resolution, or a base line heard in too little quiet to tell whether it stands s
 analyzer before any work (no price for the programme, the memory) — then with that refusal's own reason, never "too
 short"; where it listened — a programme
 never quiet, a comb without its base, a quiet stretch without a base line — and no steady line stood out, it is not
-found. **The observations speak for themselves**: `observationFacts` carries every
+found. A hum is a line heard in the quiet passages too (owner, 01.10): a steady line that is absent from the frames where
+the whole programme is quiet — its own bands included — plays only with the music, and the detector says so
+(`HumReason::LineOnlyWithMusic`, 11): answered, the hum not found. Only such frames inside the programme speak —
+strictly between its first and last frame above the gate — so a dithered lead-in, a tail or room tone at an edge never
+vetoes a hum loud enough to keep every frame it plays in above the gate. **The observations speak for themselves**: `observationFacts` carries every
 kind's line as `ObservationText::facts` states it — `{kind, fact}`, in the order of `ObservationKind`, empty before a
 source — so a shell shows them without composing one; the names, the handling and the reasons are catalogue terms
 (`terms.observation`, `terms.handledBy`, `terms.measurementReason`).
@@ -536,7 +552,10 @@ the glue is unavailable to the machine and to a person alike: the machine's tick
 a person's tick and value are kept and shown, `plan.glue.state` is `Unavailable`, the chain gets no compressor, no P95
 is invented and the master is made without it. `plan.glue` carries the state and, where it compresses, the values the
 chain gets — ratio, threshold (in the normalised input's dB), knee, attack, and once the tempo is decided the tempo,
-the release asked for and the release given; `PlanText::glue`, `::glueTempo` and `::glueRelease` give the refusal, the
+the release asked for and the release given. Out of the chain — unticked, or at 0 dB — it carries the same numbers for the
+knob as it stands (slice 5), which no compressor gets: the ratio, knee and attack always, the threshold and its P95 point
+where there is a P95, and the release at the decided tempo or, since nothing measures the tempo of a glue out of the
+chain, at 120 BPM (`tempoMeasured` false); unavailable, none; `PlanText::glue`, `::glueTempo` and `::glueRelease` give the refusal, the
 fallback tempo and a release held at a limit as facts.
 The saturation is the chain's shaper stage (`MasteringChainParams::clipper`) — not the peak clipper inside the limiter,
 which is the limiter's. The machine never sets it. The knob is the drive the input would get at 0 dBTP: the core drives
@@ -687,6 +706,26 @@ core's matched filters with deterministic math; the event suite compares their r
 all high-pass slopes. Low keeps EQ band 2, 80 Hz and Q 0.6; tilt keeps band 1 and its 1 kHz pivot.
 The one codec generator carries `eqCurve` into `snapshot.d.ts`; `SessionSnapshot.eqCurve` describes transferable
 little-endian f64 rows, columns `[hz, db]`, stride 2. `handFieldCount` is a JSON number in both snapshot forms.
+**`eqOnlyCurve`** (slice 5) is the same stage with the high-pass's band out — tilt, low and the EQ bands — on the same
+points and summed the same way, so a page draws the tone apart from the filter without subtracting a Butterworth of its
+own; the same row form, empty with `eqCurve`. An owned snapshot holds both curves in one block.
+
+**The snapshot is sized in one walk** (slice 5). `Wire::snapshotBytes` used to run `Codec::encodedBytes` — the whole
+view with every row printed as decimal text — only to learn whether the view encodes, then walk it again with binary
+rows: two passes, the first the costly one (168.8 ms on a 3-minute stereo source with one master, 0.94 ms per second of
+audio). It now asks `detail::snapshotEncodable` what only the text walk refused — the floating-point environment, the
+view's invariants and a machine difference's device out of range; every other check is the same in both walks — and
+walks once: 10.2 ms on the same snapshot, the bytes written unchanged (both contracts).
+`felitronics_session_master_query_tests` holds the sizes and statuses to the previous function, copied
+(`tests/PreviousSnapshotBytes.h`), on a session and on five broken views, and `felitronics_session_snapshot_sizing` its
+cost to under half the previous one's — a target of its own, built without the session's flags (a clock under
+`/EHs-c- /we4530` is C4530 on MSVC).
+
+**A create asks for two blocks** — the session object and its step's events (`Session::createBytes` is their sum, exact).
+The event batch (62 events of every payload kind, 113 KB) is most of a session; held apart, the object stays small. Each
+block fits AddressSanitizer's largest primary size class with its redzone (128 KiB less 2 KiB), which
+`felitronics_session_abi_tests` holds: past it every create is an mmap and a munmap, and the walk through a slot's 16.7
+million generations takes hours under the sanitizers instead of minutes (slice 5's object reached 129320 B in one block).
 
 Recovery and heap compaction use the same operation: create a new session, load the same source, advance measurement
 to the same measured state, then import the last exported project. The project includes target, manual mode and both
@@ -775,7 +814,12 @@ main thread.
   100 + its code, a sentence in every declared language that says what was refused and why; the three a field refuses
   (not finite, not one of its values, outside its domain) name the field — a term for each field a check can
   refuse: the target's two numbers, every device's knob and choice, a load's audio. `Text::rejected(answer, request)`
-  builds it from a refused answer, reading the field off the request. The mapping is a switch over every code with no
+  builds it from a refused answer, reading the field off the request. Where the answer carries the refused number
+  (`Answer::value`, and for `OutOfDomain` the domain the check read, `low`/`high` — the knob's bounds, or 0 and half the
+  source's rate for a Nyquist domain) the field is said with them: `RejectedOutOfDomainValue` (180, {field} {value} {low}
+  {high}, each number at the places it has) and `RejectedNotOneOfValue` (181, a slope the knob does not take); an
+  import's refusal names the field alone. The wire's rejected answer carries this fact last (`fact`, a `WireFact` as
+  events carry it), and a contract answer carries `RejectedContract` (131): a shell maps no index to a word. The mapping is a switch over every code with no
   default, so a code the state machine adds and nobody maps is an error in this repository's builds (`-Wswitch`,
   `-Werror`); the suite holds the table code by code, the field terms position by position against `src/Devices.h`'s
   walk of the fields (a term exactly where a check can refuse), and renders the answers of a real session.
@@ -812,9 +856,11 @@ The mastering render's source-rate conversion, chain latency, drain, and prepara
 
 `LandingSearch` keeps one search across calls. It first surveys source spectrum and crest in bounded units, then
 renders and measures within one budget of up to twelve passes. A measured hit stops immediately. Every render is
-logged; an exhausted budget returns the closest ceiling-safe PCM and its measured miss, or `Unavailable` when none is
-safe. Source and output are the only full PCM buffers. If a previous candidate wins, a counted pass restores it; the
-last pass is reserved for that render once a safe candidate exists. The search can pause during SRC, rendering,
+logged; an exhausted budget returns the closest ceiling-safe PCM and its measured miss. When measured renders exist and
+none is safe it returns the gentlest — the smallest overshoot of the ceiling — as `TargetUnreachable` bound by the
+ceiling and marked `peaksAboveCeiling`; `Unavailable` only when no render could be measured. Source and output are the
+only full PCM buffers. If a previous candidate wins, a counted pass restores it; the last pass is reserved for that
+render once a candidate exists (a safe one, or else the gentlest above the ceiling). The search can pause during SRC, rendering,
 metering, band statistics, integrated gates, the LRA scan, restoration and independent remeasurement.
 `TargetLoudnessSolver::solve()` drives this same path when `LoudnessRequest::productLanding` is set. Its older
 request policy remains available for existing callers. The request-aware `TargetLoudnessSolver::solveCallBytes(req)`
@@ -1178,7 +1224,8 @@ still apply. Convert, Lra and Final are appended to `PhaseName` at 5, 6 and 7 an
 
 For example, `{"kind":"editDevice","commandId":"17","device":0,"fields":{"fq":32}}` edits the HPF frequency.
 Command identities are decimal strings. Fields can arrive in any order; unknown, missing, duplicate or malformed
-fields produce a `rejected` answer naming the field. Edits omit untouched knobs or use null. `load` metadata requires
+fields produce a `rejected` answer naming the field, with its fact (`fact`, last). Device edits omit untouched knobs or use
+null; in `editTarget` a null clears the field (the target row's number again) and an absent key leaves it. `load` metadata requires
 `name`, `fileRate`, `bitDepth`, and `rateKnown`. Load and import carry command identities as low/high uint32 arguments.
 The page reserves `FC_SESSION_ANSWER_BYTES` before commands run; a short output cannot execute a command and then
 lose its answer. `written` excludes a terminator. A domain rejection is an OK transport call with a rejected answer;
@@ -1251,8 +1298,20 @@ zones (`[monoBass.zones]`), the EQ stage's `writeEq` / `eqCurve` / `eqFinding`, 
 zones advice reads its comparison from `Kit::heat` and `Kit::monoZonesAt`, so a knob's colour and the advice beside it
 cannot disagree. A field is its `text::Term` id (`FieldTargetLufs` … `FieldLowDb`), the id a refusal already names it by.
 
+**The saturation's transfer curve** (`Kit::saturationCurve`, `fc_kit_saturation_curve`, slice 5): 129 inputs from −1 to +1
+of full scale a 64th apart, each with what the chain's saturator settled on a held level gives for it — the stage's own
+design arithmetic, `mastering::MasteringChain::clipperDesign` (the one `clipperQuietGain` reads), on the parameters the
+session writes the stage with (`detail::clipperParams`, writeDynamics's): the core's WaveShaper at the type and
+k = 10^(drive/20) − 1, the config's bias, its drive compensation, the dry/wet blend, no trim. For the five types a person may
+pick; the transformer and tape as their static cores (the flux follows history, the emphasis frequency; at a held level
+tape is its core). The drive is the shaper's own — the plan's `saturation.driveDb`, or the knob for an input peaking at
+0 dBTP. Its tanh is the platform's, as the chain's is, so the curve is not in the pinned corpus: the kit suite holds it to
+the core's WaveShaper bit for bit and the running stage, held at each level, to within 1e-4; the wasm check to
+JavaScript's tanh within 1e-5.
+
 The C boundary carries them as `fc_kit_text`, `fc_kit_parse`, `fc_kit_travel`, `fc_kit_position`, `fc_kit_value_at`,
-`fc_kit_heat`, `fc_kit_mono_zones`, `fc_kit_mono_zones_at`, `fc_kit_eq_curve` and `fc_kit_low_end_curve` in the same
+`fc_kit_heat`, `fc_kit_mono_zones`, `fc_kit_mono_zones_at`, `fc_kit_eq_curve`, `fc_kit_low_end_curve` and
+`fc_kit_saturation_curve` in the same
 fcsession module, which a page instantiates a second time on its main thread: no handle, the poison, the argument order
 and the statuses of every `fc_session_*` call, a language by its code. The kit holds no session state — it reads only the
 compiled-in config and catalogue — so neither contract's scenarios move; the WAV recording records the module's hash and
@@ -1543,7 +1602,8 @@ Ready preflight requires retained PCM and finite completed integrated loudness a
 the chain, renderer, converter when needed, solver, search workspace, output PCM, compact rows, and
 allocator margin before any job allocation. `step` advances the search by bounded work units; one
 landing has at most twelve measured passes. A safe miss retains the best verified output and its typed
-reason. Unavailable mandatory readings or an unsafe true peak yield no transferable PCM. Optional
+reason. Unavailable mandatory readings yield no transferable PCM; a true peak above the ceiling does only where no render
+kept under it, the gentlest delivered and marked `peaksAboveCeiling`. Optional
 source analyzers continue independently. `canMaster` in the snapshot reports state and mandatory
 readiness; capacity is reported by the preflight demand. The snapshot also exposes the pending transfer
 token and PCM byte count. Every field is present on decode; a missing key is a decode error.
@@ -1605,7 +1665,16 @@ chain's gain bound — `LandingSummary::binding`; "one of the constraints" where
 tolerance; pass limit says the budget ended against it (90); between names the two nearest levels, both beyond the
 tolerance (91, `belowLufs`/`aboveLufs`); the achieved number and the gap stay the miss's own line
 (`MasterLandingMiss`/`Above`, 11/23); a technical failure says so (92). The product landing the session runs ends Solved,
-PassLimit or between — never unreachable — so 89 speaks for a solver that names its binding. Unavailable and cancelled landings say none. The crest's line
+PassLimit or between with its master delivered (a loudness it cannot hit always returns the file at the closest level it
+found, owner 01.10), or unreachable with the true-peak ceiling named when measured renders exist and none kept under the
+ceiling (89; possible only for a caller's chain without the limiter). That one delivers its file too (owner, 01.10): the
+render that overshoots the ceiling least, the gentlest measured, verified like any other and marked —
+`LandingSummary::peaksAboveCeiling` and `MasterReport::peaksAboveCeiling` (with `peakSafe` false and `truePeakDbTp` above
+`ceilingDbTp`), and `MasterPeaksAboveCeiling` (98) beside the verdict, naming the true peak and the ceiling; the miss's
+line, which says the true peak held, is not said of it. Delivered means under the ceiling except in exactly this marked
+case: the decoder holds a deliverable report to `peakSafe` or the mark, the mark to a deliverable report above its
+ceiling and not met, and a marked landing to a deliverable `TargetUnreachable` bound by the ceiling. Unavailable and
+cancelled landings say none. The crest's line
 (`MasterReportText::crest`) goes out once: with the report when the job settles the crest (joined inside the job, or
 unavailable), or from the late join when it was still pending.
 

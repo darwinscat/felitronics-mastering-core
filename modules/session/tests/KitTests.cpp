@@ -16,6 +16,8 @@
 #include <felitronics/session/Kit.h>
 #include <felitronics/session/Text.h>
 #include <felitronics_test.h>
+#include <felitronics/saturation/Saturator.h>
+#include <felitronics/core/Math.h>
 
 #include <bit>
 #include <cmath>
@@ -279,9 +281,10 @@ void zonesAndAdvice()
     bool hpf = true, mono = true;
     for (double hz = 10; hz <= 320; hz += 0.5)
     {
-        HpfFinding h; h.sounding = Sounding::Proposal; h.soundingHz = hz;
+        // A person's value: the advice speaks of nothing else (owner, 01.10).
+        HpfFinding h; h.sounding = Sounding::Hand; h.soundingHz = hz;
         hpf = hpf && PlanText::hpfCutoffAdvice (h).has_value() == (Kit::heat (Term::FieldHpfFq, hz).side != 0);
-        MonoBassFinding m; m.sounding = Sounding::Proposal; m.soundingHz = hz;
+        MonoBassFinding m; m.sounding = Sounding::Hand; m.soundingHz = hz;
         mono = mono && PlanText::monoBassAdvice (m).has_value() == (Kit::monoZonesAt (hz) == 0u);
     }
     ok (hpf, "the high-pass's comfort advice is said exactly where the knob's heat has a side");
@@ -339,6 +342,78 @@ void lowEndCurve()
     ok (Kit::lowEndCurve (kLowCentres, negative, 25, 55, out).status == CodecStatus::Invalid, "a negative energy is refused");
     ok (Kit::lowEndCurve (std::span<const double> (kLowCentres, 4), kLowEnergies, 25, 55, out).status == CodecStatus::Invalid, "spans of two lengths");
     ok (Kit::lowEndCurve (kLowCentres, kLowEnergies, 55, 25, out).status == CodecStatus::Invalid, "from above to");
+}
+
+void saturationCurve()
+{
+    felitronics::test::group ("the saturation's transfer curve: the chain's shaper, on the level alone");
+    const auto sat = detail::rules().engine.find ("saturation");
+    const auto read = [] (felitronics::toml::embedded::View v)
+    { return v.decimal() ? v.decimal()->toDouble() : double (*v.integer()); };
+    const float bias = float (read (sat.find ("bias"))), autoComp = float (read (sat.find ("autoComp")));
+    const float dcBlockHz = float (read (sat.find ("dcBlockHz")));
+    using Shape = felitronics::saturation::WaveShaper::Shape;
+    const SaturationType hand[] { SaturationType::Tanh, SaturationType::Tube, SaturationType::Transistor,
+                                  SaturationType::Transformer, SaturationType::Tape };
+    double out[2 * kKitSaturationPoints];
+    // The oracle: the core's WaveShaper set as the stage sets it (Saturator::design), the stage's base-rate blend.
+    bool kernel = true, grid = true;
+    for (const auto type : hand)
+        for (const double drive : { 0.0, 1.5, 6.0, 12.0, 30.0 })
+            for (const double mix : { 1.0, 0.35 })
+            {
+                const auto c = Kit::saturationCurve (type, drive, mix, out);
+                felitronics::saturation::WaveShaper w;
+                w.setShape (Shape (type)); w.setBias (bias);
+                w.setDrive (float (felitronics::core::dbToGain (float (drive)) - 1.0));
+                const float comp = float (std::pow (double (std::max (1.0e-6f, w.slopeAtZero())), double (-autoComp)));
+                kernel = kernel && c.status == CodecStatus::Ok && c.count == kKitSaturationPoints;
+                for (std::size_t i = 0; i < kKitSaturationPoints; ++i)
+                {
+                    const double x = -1.0 + double (i) / 64.0;
+                    const float m = float (mix), xf = float (x);
+                    const float y = 1.0f * ((1.0f - m) * xf + m * (comp * w.processSample (xf)));
+                    grid = grid && sameBits (out[2 * i], x);
+                    kernel = kernel && sameBits (out[2 * i + 1], double (y));
+                }
+            }
+    ok (grid, "129 inputs from −1 to +1 of full scale, a 64th apart, each beside its output");
+    ok (kernel, "each output is the core's WaveShaper at k = 10^(drive/20) − 1 with the config's bias, its drive compensation and the "
+                "dry/wet blend, bit for bit — five types, five drives, two mixes");
+    // The running stage, as the chain sets it, settles on the curve: a level held long enough leaves the oversampler, and
+    // what the stage gives for it is the curve's output. Not the transformer: its flux follows the signal's history.
+    bool settles = true;
+    for (const auto type : { SaturationType::Tanh, SaturationType::Tube, SaturationType::Transistor, SaturationType::Tape })
+        for (const double drive : { 3.0, 9.0 })
+        {
+            (void) Kit::saturationCurve (type, drive, 1.0, out);
+            for (const std::size_t i : { std::size_t (0), std::size_t (32), std::size_t (80), std::size_t (112), std::size_t (128) })
+            {
+                felitronics::saturation::Saturator stage;
+                settles = settles && stage.prepare (48000, 512, 1, 4, 64);
+                felitronics::saturation::Saturator::Params p;
+                p.shape = Shape (type); p.driveDb = float (drive); p.bias = bias; p.mix = 1.0f; p.outputDb = 0.0f;
+                p.autoComp = autoComp; p.dcBlockHz = dcBlockHz;
+                stage.setParams (p);
+                std::vector<float> held (4096, float (out[2 * i]));
+                float* io[] { held.data() };
+                settles = settles && stage.process (io, 1, int (held.size())) && std::fabs (double (held.back()) - out[2 * i + 1]) < 1e-4;
+            }
+        }
+    ok (settles, "the chain's saturator, held at a level, settles on the curve's output — tanh, tube, transistor, tape");
+    ok (Kit::saturationCurve (SaturationType::Atan, 3, 1, out).status == CodecStatus::Invalid
+        && Kit::saturationCurve (SaturationType::Cubic, 3, 1, out).status == CodecStatus::Invalid
+        && Kit::saturationCurve (SaturationType::Asym, 3, 1, out).status == CodecStatus::Invalid
+        && Kit::saturationCurve (SaturationType (9), 3, 1, out).status == CodecStatus::Invalid,
+        "atan, cubic and asym are the config's alone, and 9 is no type: refused");
+    ok (Kit::saturationCurve (SaturationType::Tape, -0.5, 1, out).status == CodecStatus::Invalid
+        && Kit::saturationCurve (SaturationType::Tape, std::numeric_limits<double>::quiet_NaN(), 1, out).status == CodecStatus::Invalid
+        && Kit::saturationCurve (SaturationType::Tape, 1000, 1, out).status == CodecStatus::Invalid
+        && Kit::saturationCurve (SaturationType::Tape, 3, 1.5, out).status == CodecStatus::Invalid
+        && Kit::saturationCurve (SaturationType::Tape, 3, -0.1, out).status == CodecStatus::Invalid,
+        "a negative or non-finite drive, one whose gain overflows a float, a mix outside its knob: refused");
+    const auto shortOut = Kit::saturationCurve (SaturationType::Tape, 3, 1, std::span<double> (out, 2 * kKitSaturationPoints - 1));
+    ok (shortOut.status == CodecStatus::TooSmall && shortOut.count == kKitSaturationPoints, "a short buffer: TooSmall and the points");
 }
 
 void theAbiAnswersAsTheCall()
@@ -454,6 +529,20 @@ void theAbiAnswersAsTheCall()
     for (std::uint32_t i = 0; i < 2 * count; ++i) low = low && sameBits (points[i], want[i]);
     ok (low && fc_kit_low_end_curve (kLowCentres, kLowEnergies, 5, 25, 55, points, 2, &count) == FC_SESSION_ERR_TOO_SMALL && count == 3,
         "fc_kit_low_end_curve, and TOO_SMALL with the points needed");
+    double satCurve[2 * FC_SESSION_KIT_SATURATION_POINTS], satWant[2 * kKitSaturationPoints];
+    bool sat = true;
+    for (const std::uint32_t type : { 0u, 4u, 5u, 6u, 7u })
+    {
+        const auto w2 = Kit::saturationCurve (SaturationType (type), 4.5, 0.8, satWant);
+        sat = sat && w2.status == CodecStatus::Ok && fc_kit_saturation_curve (type, 4.5, 0.8, satCurve) == FC_SESSION_OK;
+        for (std::size_t i = 0; i < 2 * kKitSaturationPoints; ++i) sat = sat && sameBits (satCurve[i], satWant[i]);
+    }
+    ok (sat && fc_kit_saturation_curve (1, 4.5, 0.8, satCurve) == FC_SESSION_ERR_CONTRACT
+        && fc_kit_saturation_curve (256, 4.5, 0.8, satCurve) == FC_SESSION_ERR_CONTRACT
+        && fc_kit_saturation_curve (7, -1, 0.8, satCurve) == FC_SESSION_ERR_CONTRACT
+        && fc_kit_saturation_curve (7, 4.5, 0.8, nullptr) == FC_SESSION_ERR_NULL,
+        "fc_kit_saturation_curve: the kit's curve for the five types; atan, a number past the types, a negative drive refused, "
+        "a null curve too");
 }
 
 void theCorpusIsTheWasmModulesBytes()
@@ -476,6 +565,7 @@ int main()
     zonesAndAdvice();
     eqPreview();
     lowEndCurve();
+    saturationCurve();
     theAbiAnswersAsTheCall();
     theCorpusIsTheWasmModulesBytes();
     return felitronics::test::report();

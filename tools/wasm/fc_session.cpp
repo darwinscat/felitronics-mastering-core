@@ -1285,6 +1285,19 @@ FC_EXPORT fc_session_status fc_kit_eq_curve_bands (const double* params, double 
     return kitEqCurve (params, FC_SESSION_KIT_EQ_BANDS_PARAMS, rate, curve, peak);
 }
 
+FC_EXPORT fc_session_status fc_kit_saturation_curve (std::uint32_t type, double drive_db, double mix, double* curve)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    static_assert (FC_SESSION_KIT_SATURATION_POINTS == felitronics::session::kKitSaturationPoints);
+    if (const auto st = doublesOut (curve, 2 * FC_SESSION_KIT_SATURATION_POINTS); st != FC_SESSION_OK) return st;
+    // A number past the enumeration is no type: refused as the kit refuses a type no person may pick.
+    if (type > 255u) return FC_SESSION_ERR_CONTRACT;
+    const auto answer = Kit::saturationCurve (felitronics::session::SaturationType (type), drive_db, mix,
+                                              { curve, 2 * std::size_t (FC_SESSION_KIT_SATURATION_POINTS) });
+    return status (answer.status);
+}
+
 FC_EXPORT fc_session_status fc_kit_low_end_curve (const double* centre_hz, const double* energy, std::uint32_t bands,
                                                  double from_hz, double to_hz, double* output, std::uint32_t capacity,
                                                  std::uint32_t* written)

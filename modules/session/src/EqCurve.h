@@ -47,6 +47,8 @@ void eqCurve (std::span<const eq::BandParams> bands, double rate, std::span<EqPo
 
 // ...of the bands the project's EQ devices write.
 void eqCurve (const Project& project, const Rules& rules, double rate, std::span<EqPoint> output) noexcept;
+// The same curve with the high-pass's band out: tilt, low and the EQ bands (SnapshotView::eqOnlyCurve).
+void eqOnlyCurve (const Project& project, const Rules& rules, double rate, std::span<EqPoint> output) noexcept;
 
 // THE EQ CURVE AGAINST ITS NORM (EqFinding, Session.h): the shelves the project's devices write — tilt's and low's, as
 // they sound — summed on the snapshot's kEqCurvePoints at `rate`, against [eq] curve.warnDb.

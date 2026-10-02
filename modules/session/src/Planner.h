@@ -99,8 +99,14 @@ struct Awaited
 
 // THE PLAN'S REASONS (PlanView::facts), stated by PlanText and nothing else: every line it gives for a Ready plan, and
 // the waiting fact the plan's awaited, awaitedBy and awaitedFraction name — which replaces the one stated before it.
-// `eq` is the EQ curve against its norm (eqFinding, EqCurve.h), which the plan does not carry.
-void stateReasons (PlanView& plan, const EqFinding& eq) noexcept;
+// `eq` is the EQ curve against its norm (eqFinding, EqCurve.h), which the plan does not carry. `hands` says which of the
+// judged values a person set: the advice beside a knob is raised on a person's value only (owner, 01.10) — the machine's
+// own value is its proposal, inside its own rule, and a file's machine layer is the machine's too.
+struct AdviceHands
+{
+    bool hpfFq = false, hpfSlope = false, monoBassFq = false, eqShelves = false;
+};
+void stateReasons (PlanView& plan, const EqFinding& eq, const AdviceHands& hands) noexcept;
 void stateWaiting (PlanView& plan) noexcept;
 
 // A device's plan in `plans`, by its place in the order of Device.

@@ -2,6 +2,100 @@
 
 # Changelog
 
+## v0.7.0 — 2026-10-02
+
+### session · mastering — refusals carry their facts, a null clears a target field, advice only for a person's value, the no-safe-render landing names its limit
+
+- **A rejected answer carries its fact.** The wire's rejected answer appends `fact` (a `WireFact`, as events carry it)
+  after `code`/`field`/`device`/`line`/`column`, and a contract answer carries `RejectedContract` (131). A field refused on
+  its number is said with it: `RejectedOutOfDomainValue` (180: the field, the value, the domain's two bounds — the knob's,
+  or 0 and half the source's rate for a Nyquist domain) and `RejectedNotOneOfValue` (181: a slope the knob does not
+  take). `Answer` gains `value`, `low`, `high`. ru and en in the catalogue. `FC_SESSION_ABI_VERSION` 5.
+- **`editTarget` with a null clears the field** (owner, 01.10): the person's number goes and the target row's sounds
+  again, per field (`command::EditTarget::clear`). Before, a null was read as an untouched field and ignored. The project
+  writes only the numbers a person holds, so the replay gives the same project. A field both set and cleared is
+  `Contract`. The frozen wire fixture 29 now sends an empty edit (same answer, same effect); the null's own fixtures are
+  appended after the import.
+- **Advice beside a knob only for a person's value** (owner, 01.10): the high-pass's comfort window (500, 501), its slope
+  (502, 503), mono bass's zones (505, 509) and the EQ shelves' norm (504) are said only where a person set the value
+  each judges; the machine's own value — proposed now, or kept from a file — never raises them.
+- **A landing whose measured renders all break the true-peak ceiling** (a caller's chain without the limiter) now ends
+  `TargetUnreachable` with `binding = TruePeakCeiling` and says fact 89 with its limit, where it ended `Unavailable` and
+  said nothing. It still delivers no file: no render kept the target's ceiling. Every loudness the product landing cannot
+  hit (PassLimit, between) already returns its master at the closest level found.
+
+### session · mastering — the plan states the glue out of the chain, the limiter's settings and the dither's shaping; the EQ-only curve; the saturation's curve in the kit; the snapshot sized in one walk
+
+- **A glue out of the chain states its numbers** (unticked, or at 0 dB): `plan.glue` carries the ratio, knee and attack of
+  the knob as it stands, the threshold and `p95DetectorDb` where the input has a P95, and the release at the decided
+  tempo — or at `[compressor.tempo] bpmWhenUnsure`, since nothing measures the tempo of a glue out of the chain. It stays
+  out: `state` is `Out` and no compressor gets them. A glue in the chain still waits for its tempo; an unavailable one
+  states none.
+- **The plan carries the limiter's own settings and the dither's shaping**: `LimiterFinding.releaseMs`, `dualRelease`,
+  `slowReleaseMs`, `lookaheadMs`, `oversampling` (the factor as the limiter takes it) and `DitherFinding.shaping`
+  (`DitherShaping`: none, weighted, psychoacoustic). writeLimiter reads the release and the shaping from the finding.
+- **`eqOnlyCurve`** in the snapshot: the EQ stage without the high-pass (tilt, low, the EQ bands) on `eqCurve`'s points — a
+  binary row like it, empty before placement.
+- **`Kit::saturationCurve` / `fc_kit_saturation_curve`**: the saturation's transfer curve — 129 inputs from −1 to +1 and
+  the chain's saturator settled on each, for the five types a person may pick, from the stage's own design arithmetic
+  (`MasteringChain::clipperDesign`, which `clipperQuietGain` now reads too) on the parameters the session writes the stage
+  with (`detail::clipperParams`). `FC_SESSION_KIT_SATURATION_POINTS` 129.
+- **`Wire::snapshotBytes` walks the view once**: it no longer prints every row as text first; the bytes written are the
+  same. On a 3-minute stereo source with one master: 168.8 ms → 10.2 ms.
+- The appended plan and snapshot fields are plain — no decode default. `tools/session-wire-check.mjs` holds the manifest's
+  base snapshot to the fields it carries and lets it lack the fields frozen after the base's section, by name.
+- `FC_SESSION_ABI_VERSION` stays 5 (this release's batch): `SURFACE[5]` gains `_fc_kit_saturation_curve`.
+- **A session is two blocks: the session object and its step's events** (`Session::createBytes` declares both). The
+  event batch was most of the object, and slice 5 grew the object to 129320 B — past AddressSanitizer's largest primary
+  size class with its 2 KiB redzone, so under the sanitizers every create became an mmap and the ABI suite's walk through
+  16.7 million handle generations outran CI's hour. Each block now fits it (`felitronics_session_abi_tests` holds both).
+- The snapshot sizing's timing test is a target of its own (`felitronics_session_snapshot_sizing_tests`), built without
+  the session's flags: `<chrono>` under `/EHs-c- /we4530` is C4530 on MSVC.
+
+### session · mastering — no render under the ceiling still delivers the file, marked
+
+- **A landing whose measured renders all break the true-peak ceiling delivers its file** (owner, 01.10; a caller's chain
+  without the limiter): `LandingSearch` keeps the gentlest render measured — the smallest overshoot of the ceiling, the
+  nearer loudness on a tie — restores it on the reserved last pass when the search ended elsewhere, verifies it and
+  delivers it. The verdict stays fact 89 with the true-peak ceiling named; the master is marked: `LandingSummary` and
+  `MasterReport` gain `peaksAboveCeiling` (appended, plain fields), and `MasterPeaksAboveCeiling` (98, ru/en) says the
+  true peak and the ceiling beside the verdict. The miss's line (which says the true peak held) is not said of it.
+  Delivered means under the ceiling except in exactly this marked case — the decoder's invariants say so. A ceiling-safe
+  landing is unchanged.
+
+### analysis · session — hum is a line heard in the quiet passages too
+
+- **A line present only while the music plays is music, not hum** (owner, 01.10). `HumDetector`'s quiet gate leaves the
+  candidate bands out (so a hum cannot censor itself), which let a passage where a loud 50/60 Hz line plays over an
+  otherwise quiet programme count as quiet — a 60 Hz musical tone was reported as hum. The detector now pools the
+  frames where the whole programme is quiet, the candidate bands included, and a stationary line must show there too
+  wherever that pool holds two frames: otherwise `valid = false, LineOnlyWithMusic` (11), which the session answers as
+  the hum not found. Only those frames INSIDE the programme speak — strictly between its first and last frame above
+  the gate — so a dithered lead-in, a tail after the hum's source stops or room tone at an edge never vetoes a hum loud
+  enough to keep every frame it plays in above the gate; a pause inside the song does. A line through the pause, loud or
+  faint, is still hum; where no still frame lies inside, nothing contradicts the line and it stands. The span is kept
+  in the one walk over the frames: the detector holds two more rows of the stretch's width per channel (the pool and
+  the still frames waiting for the next programme frame).
+
+### ci · tests — gcc 14 on arm64
+
+- **`felitronics_session_master_abi_tests` compiles with `-ffp-contract=off`, as the library does.** The unit runs its
+  own `LandingSearch`, so it emits the same inline mastering code as the library; under the directory's
+  `-ffp-contract=on`, gcc 14 — the first gcc that contracts under `on` (gcc 13 treats it as off) — fused multiply-adds
+  into its copies on arm64, the linker kept those for the whole binary, and the library's landing re-measured its
+  render differently and refused it: 7 checks red on gcc 14 arm64 only. The gcc 14 CI row now runs on
+  `ubuntu-24.04-arm` too (`ubuntu-arm64-gcc-14`; the x86-64 row keeps its name).
+- Two faults that row found on the way: a lambda's `Reader r` shadowing the command `r` in `Wire.cpp` (gcc's
+  `-Wshadow`, an error), and a glue test asking the rules for a target named `vinyl` — the target is `lp` — whose empty
+  `optional` was read as a row; the fixture now says an unknown target as a failed precondition.
+
+### build — felitronics-core v0.58.0 is the pin
+
+- **The pin moves to felitronics-core v0.58.0** (`FELITRONICS_MASTERING_FCORE_TAG`); the floor stays v0.57.0 (CMake,
+  `tools/wasm/build.sh`): v0.58.0 adds the `codecgrid` module and `fftpffft`'s `PffftComplexFft`, and nothing here uses
+  either. No sound moves: the contract recordings move in their version fields only, every audio row and WAV byte
+  as it was.
+
 ## v0.6.0 — 2026-10-01
 
 ### The session ABI starts a new base at v0.6.0
