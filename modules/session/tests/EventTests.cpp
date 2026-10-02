@@ -273,7 +273,8 @@ void pump()
             { "{ key = \"bass4\", hz = 41.2 }", "{ key = \"bass4\", hz = 41 }" },
             { "{ key = \"bass5\", hz = 30.87 }", "{ key = \"bass5\", hz = 31 }" },
             { "{ key = \"sub808\", hz = 28 }", "{ key = \"sub808\", hz = 23 }" },
-            { "hzMax = 80\nmachineTopHz = 50\n", "hzMax = 50\n" } };
+            { "hzMax = 80\nmachineTopHz = 50\n", "hzMax = 50\n" },
+            { "frequencyStep = 5\n", "frequencyStep = 1\n" }, { "manualStepDb = 0.1\n", "manualStepDb = 0.5\n" } };
         for (const auto& [now, then] : rows)
             if (const auto at = engine.find (now); at != std::string::npos) engine.replace (at, now.size(), then);
         // ...and without the EQ bands' tables, which came after.
@@ -309,7 +310,7 @@ void pump()
         "the cost's new lines are the only new events: without them the pins 1b992fb95619145f / 8c67215e2008a463 hold");
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
-    ok (eventsHash (one) == 0x2ec2e567f503e2a9ull && eventsHash (cancelled) == 0x22427ed714b9b890ull,
+    ok (eventsHash (one) == 0x75e8e34d409157bcull && eventsHash (cancelled) == 0xadb9f9bb31f42180ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, previous version: %016llx %016llx; and without the cost's lines: %016llx %016llx\n",

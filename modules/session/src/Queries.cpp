@@ -25,14 +25,36 @@ bool sameNumber (double a, double b) noexcept
 bool masterKind (QueryKind kind) noexcept
 {
     return kind == QueryKind::LimiterGr || kind == QueryKind::PeakClipGr || kind == QueryKind::MasterWaveform
-        || kind == QueryKind::MasterAxes || kind == QueryKind::MasterReport;
+        || kind == QueryKind::MasterAxes || kind == QueryKind::MasterReport || kind == QueryKind::GlueGr;
 }
 bool loudnessKind (QueryKind kind) noexcept { return kind == QueryKind::Momentary || kind == QueryKind::ShortTerm; }
 // A master's query: a kind only a master answers, or a loudness curve asked of one (masterId).
 bool ofMaster (const MeasurementQuery& q) noexcept { return masterKind (q.kind) || (loudnessKind (q.kind) && q.masterId != 0); }
-// The rows of a master's loudness curve whose windows end in (from, to]: row k ends at frame (k + 1)·hop.
-std::pair<std::uint64_t, std::uint64_t> loudnessRange (std::uint64_t rows, std::uint64_t hop, std::uint64_t from, std::uint64_t to) noexcept
-{ return { std::min (rows, from / hop), std::min (rows, to / hop) }; }
+// A MASTER'S LOUDNESS ROWS IN THE SOURCE'S FRAMES. Row k of the master's curve ends at delivered frame (k + 1)·hop.
+// The delivered audio keeps the source's time: the renderer cuts the chain's latency off and keeps the length, and a
+// converted delivery starts its frame n at source time n / deliveryRate, within half a delivered sample. So the row is
+// named by the source frame of the same moment, round ((k + 1)·hop·sourceRate / deliveryRate) in integers: the
+// delivered frame itself at equal rates, and the source's own row when both rates are whole multiples of 100 Hz (the
+// hop is 100 ms of either).
+struct LoudnessGrid
+{
+    std::uint64_t rows = 0, hop = 0, sourceRate = 1, deliveryRate = 1;
+    std::uint64_t named (std::uint64_t row) const noexcept
+    { return ((row + 1u) * hop * sourceRate + deliveryRate / 2u) / deliveryRate; }
+    // The rows named at or before `frame`.
+    std::uint64_t upTo (std::uint64_t frame) const noexcept
+    {
+        std::uint64_t lo = 0, hi = rows;
+        while (lo < hi)
+        {
+            const auto mid = lo + (hi - lo) / 2u;
+            if (named (mid) <= frame) lo = mid + 1u; else hi = mid;
+        }
+        return lo;
+    }
+};
+LoudnessGrid loudnessGrid (const detail::MasterRows& held, const MasterCost& cost) noexcept
+{ return { held.loudnessRows, held.loudnessHop, cost.sourceRateHz, cost.masterRateHz }; }
 // A master whole, as one snapshot's worth: what a MasterReport answer owns.
 struct ReportBytes { std::uint64_t bytes = 0, largest = 0, rowBytes = 0; };
 ReportBytes reportBytes (const Kept& master) noexcept
@@ -62,8 +84,10 @@ const Kept* masterFor (std::span<const Kept> masters, std::uint32_t id) noexcept
         if (master.id == id) return &master;
     return nullptr;
 }
-const LandingTrace* masterTrace (const Kept& master, QueryKind kind) noexcept
+// The glue's trace is kept with the master's rows, and only where the glue compressed; the other two with its landing.
+const LandingTrace* masterTrace (const Kept& master, const detail::MasterRows* rows, QueryKind kind) noexcept
 {
+    if (kind == QueryKind::GlueGr) return rows && rows->glueTrace ? &*rows->glueTrace : nullptr;
     if (! master.landing) return nullptr;
     const auto& trace = kind == QueryKind::LimiterGr
         ? master.landing->limiterTrace : master.landing->peakClipTrace;
@@ -72,7 +96,7 @@ const LandingTrace* masterTrace (const Kept& master, QueryKind kind) noexcept
 }
 QueryStatus validate (const MeasurementQuery& q, const Source& source) noexcept
 {
-    if (unsigned (q.kind) > unsigned (QueryKind::MasterReport) || unsigned (q.spectrum) > unsigned (SpectrumQuantity::Energy)
+    if (unsigned (q.kind) > unsigned (QueryKind::GlueGr) || unsigned (q.spectrum) > unsigned (SpectrumQuantity::Energy)
         || ! std::isfinite (q.crossoverHz)
         || (! sameNumber (q.crossoverHz, 120) && ! sameNumber (q.crossoverHz, 150)) || ! std::isfinite (q.fromHz) || ! std::isfinite (q.toHz)) return QueryStatus::Contract;
     if (ofMaster (q))
@@ -104,7 +128,7 @@ Analyzer analyzer (const MeasurementQuery& q) noexcept
         case QueryKind::Clipping: return Analyzer::Clipping;
         case QueryKind::Stereo: return Analyzer::Stereo;
         case QueryKind::LimiterGr: case QueryKind::PeakClipGr: case QueryKind::MasterWaveform:
-        case QueryKind::MasterAxes: case QueryKind::MasterReport: break;
+        case QueryKind::MasterAxes: case QueryKind::MasterReport: case QueryKind::GlueGr: break;
     }
     detail::storageOverflow();
 }
@@ -122,7 +146,7 @@ std::uint32_t stride (QueryKind kind) noexcept
         case QueryKind::Momentary: case QueryKind::ShortTerm: return 3;
         case QueryKind::Clipping: return 6;
         case QueryKind::Stereo: return 6;
-        case QueryKind::LimiterGr: case QueryKind::PeakClipGr: case QueryKind::MasterWaveform: return 7;
+        case QueryKind::LimiterGr: case QueryKind::PeakClipGr: case QueryKind::MasterWaveform: case QueryKind::GlueGr: return 7;
         case QueryKind::MasterAxes: return kWaveformStride;
         case QueryKind::MasterReport: return 0;
     }
@@ -325,10 +349,14 @@ QueryDemand Session::queryStorage (const MeasurementQuery& q) const noexcept
             if (! masterRows_ || ! master->report || ! master->report->cost) return { QueryStatus::Unavailable, 0, 0, 0 };
             const auto& rows = masterRows_[index];
             const auto& series = q.kind == QueryKind::Momentary ? rows.costMomentary : rows.costSeries;
-            if (! series || rows.loudnessRows == 0 || rows.loudnessHop == 0) return { QueryStatus::Unavailable, 0, 0, 0 };
-            if (q.fromFrame > q.toFrame || q.toFrame > master->report->cost->masterFrames) return { QueryStatus::InvalidRange, 0, 0, 0 };
+            const auto& cost = *master->report->cost;
+            if (! series || rows.loudnessRows == 0 || rows.loudnessHop == 0 || cost.sourceRateHz == 0 || cost.masterRateHz == 0)
+                return { QueryStatus::Unavailable, 0, 0, 0 };
+            // The range is the source's, as the source's own curve takes it.
+            if (q.fromFrame > q.toFrame || q.toFrame > cost.sourceFrames) return { QueryStatus::InvalidRange, 0, 0, 0 };
             if (q.fromFrame == q.toFrame) return { QueryStatus::Empty, 0, 0, 0 };
-            const auto [first, end] = loudnessRange (rows.loudnessRows, rows.loudnessHop, q.fromFrame, q.toFrame);
+            const auto grid = loudnessGrid (rows, cost);
+            const auto first = grid.upTo (q.fromFrame), end = grid.upTo (q.toFrame);
             const auto bytes = std::min<std::uint64_t> (q.columns, end - first) * 3u * sizeof (double) + 128u;
             return { QueryStatus::Ready, 2u * bytes, bytes, bytes - 128u };
         }
@@ -350,7 +378,7 @@ QueryDemand Session::queryStorage (const MeasurementQuery& q) const noexcept
             const auto bytes = std::min<std::uint64_t> (q.columns, buckets) * perColumn * sizeof (double) + 128u;
             return { QueryStatus::Ready, 2u * bytes, bytes, bytes - 128u };
         }
-        const LandingTrace* trace = masterTrace (*master, q.kind);
+        const LandingTrace* trace = masterTrace (*master, masterRows_ ? &masterRows_[index] : nullptr, q.kind);
         if (! trace) return { QueryStatus::Unavailable, 0, 0, 0 };
         if (q.fromFrame < trace->fromFrame || q.fromFrame > q.toFrame || q.toFrame > trace->toFrame)
             return { QueryStatus::InvalidRange, 0, 0, 0 };
@@ -383,7 +411,7 @@ QueryResult Session::query (const MeasurementQuery& q) noexcept
     if (checkFloatingPointEnvironment() != Status::Ok)
     { QueryView v; v.request = q; v.status = QueryStatus::FloatingPointEnvironment; v.reason = MeasurementReason::Unsupported; return QueryResult::copy (v); }
     // Invalid enum cannot reach stride/analyzer dispatch.
-    if (unsigned (q.kind) > unsigned (QueryKind::MasterReport))
+    if (unsigned (q.kind) > unsigned (QueryKind::GlueGr))
     { QueryView v; v.request = q; v.status = QueryStatus::Contract; v.reason = MeasurementReason::Unsupported; return QueryResult::copy (v); }
     if (ofMaster (q))
     {
@@ -391,6 +419,11 @@ QueryResult Session::query (const MeasurementQuery& q) noexcept
         const auto need = queryStorage (q);
         v.status = need.status;
         v.reason = need.status == QueryStatus::Ready ? MeasurementReason::None : MeasurementReason::Unsupported;
+        // A master of this source without the glue's trace is one whose glue did not compress: no signal, as its
+        // report says of the glue's numbers.
+        if (need.status == QueryStatus::Unavailable && q.kind == QueryKind::GlueGr)
+            if (const Kept* known = masterFor (masters(), q.masterId); known && known->recipe.source == q.audioId)
+                v.reason = MeasurementReason::NoSignal;
         if (need.status != QueryStatus::Ready) return QueryResult::copy (v);
         Checked request; request.bytes = need.bytes; request.largestBlockBytes = need.largestBlockBytes;
         if (demand (request).rejection != Rejection::None)
@@ -408,12 +441,14 @@ QueryResult Session::query (const MeasurementQuery& q) noexcept
         }
         if (loudnessKind (q.kind))
         {
-            // The master's own curve, a row per hop as the job's meter read it — named and reasoned as the source's are.
+            // The master's own curve, a row per hop as the job's meter read it — named in the source's frames and
+            // reasoned as the source's rows are.
             const auto& held = masterRows_[index];
             const auto* series = (q.kind == QueryKind::Momentary ? held.costMomentary : held.costSeries).get();
             const auto hop = held.loudnessHop;
-            const auto [first, end] = loudnessRange (held.loudnessRows, hop, q.fromFrame, q.toFrame);
-            v.sampleRate = kept.report->cost->masterRateHz; v.channels = source_.channels; v.measurementKey = q.masterId;
+            const auto grid = loudnessGrid (held, *kept.report->cost);
+            const auto first = grid.upTo (q.fromFrame), end = grid.upTo (q.toFrame);
+            v.sampleRate = kept.report->cost->sourceRateHz; v.channels = source_.channels; v.measurementKey = q.masterId;
             v.total = end - first; v.stored = std::min (v.total, std::uint64_t (q.columns));
             v.complete = v.stored == v.total; v.reason = MeasurementReason::None;
             if (v.stored == 0) return QueryResult::copy (v);
@@ -422,12 +457,12 @@ QueryResult Session::query (const MeasurementQuery& q) noexcept
             for (std::uint64_t i = 0; i < v.stored; ++i)
             {
                 const auto at = first + (v.stored == 1 ? 0 : boundary (v.total - 1u, i, v.stored - 1u));
-                const auto frame = (at + 1u) * hop;
+                const auto delivered = (at + 1u) * hop;
                 const double read = series[std::size_t (at)];
-                const auto why = frame < window ? MeasurementReason::TooShort
+                const auto why = delivered < window ? MeasurementReason::TooShort
                     : std::isnan (read) ? MeasurementReason::NonFinite
                     : read <= -120.0 ? MeasurementReason::NoSignal : MeasurementReason::None;
-                const double row[] { double (frame), why == MeasurementReason::None ? read
+                const double row[] { double (grid.named (at)), why == MeasurementReason::None ? read
                     : why == MeasurementReason::NoSignal ? -std::numeric_limits<double>::infinity() : missing, double (why) };
                 std::copy_n (row, 3, rows.get() + std::size_t (3u * i));
             }
@@ -493,7 +528,7 @@ QueryResult Session::query (const MeasurementQuery& q) noexcept
             v.values = { rows.get(), std::size_t (v.stored * v.stride) };
             return QueryResult::copy (v);
         }
-        const LandingTrace* trace = masterTrace (kept, q.kind);
+        const LandingTrace* trace = masterTrace (kept, masterRows_ ? &masterRows_[index] : nullptr, q.kind);
         const auto [first, last] = LandingOps::bucketRange (*trace, q.fromFrame, q.toFrame);
         v.sampleRate = trace->sampleRateHz;
         v.measurementKey = q.masterId;
@@ -557,7 +592,7 @@ QueryResult Session::query (const MeasurementQuery& q) noexcept
         case QueryKind::Stereo: stereo (v, rows.get(), result, source_.frames); break;
         case QueryKind::Waveform: break;
         case QueryKind::LimiterGr: case QueryKind::PeakClipGr: case QueryKind::MasterWaveform:
-        case QueryKind::MasterAxes: case QueryKind::MasterReport: break;
+        case QueryKind::MasterAxes: case QueryKind::MasterReport: case QueryKind::GlueGr: break;
     }
     v.values = { rows.get(), std::size_t (v.stored * v.stride) };
     if (! queryCache_) queryCache_.reset (new detail::QueryCache);

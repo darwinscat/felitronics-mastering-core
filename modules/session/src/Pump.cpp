@@ -343,8 +343,10 @@ Stepped Session::step (std::uint32_t budget) noexcept
                     masterTraceCursor_ = 0; masterTraceActive_ = true;
                 }
                 const auto beforeTrace = masterTraceCursor_;
-                const bool tracesDone = LandingOps::stepTraces (solution, trace, clip,
-                    masterJob_->deliveryRate, masterSummary_, masterTraceCursor_, 1024);
+                // The glue's trace, where it compresses, in the same bounded copies as the limiter's and the clipper's.
+                const auto glueRows = std::span<LandingTraceBucket> (rows.glueRows.get(), rows.glueRows ? rows.traceCapacity : 0u);
+                const bool tracesDone = LandingOps::stepTraces (solution, trace, clip, glueRows,
+                    masterJob_->deliveryRate, masterSummary_, rows.glueTrace, masterTraceCursor_, 1024);
                 if (! tracesDone)
                 {
                     if (beforeTrace == masterTraceCursor_) contract (event.jobId);

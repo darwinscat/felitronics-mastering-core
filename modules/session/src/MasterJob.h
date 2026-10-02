@@ -34,6 +34,7 @@ struct MasterPlan
     std::uint64_t bytes = 0, largestBlock = 0;
     std::uint64_t retainedRowBytes = 0;
     bool costMeterAdmitted = false;
+    bool glueTrace = false;                    // the glue compresses: its gain reduction is kept, a trace beside the limiter's
     std::optional<MasterMedium> medium;        // a version-0 master's medium and input, from the chain it will run
 };
 
@@ -63,6 +64,10 @@ struct MasterRows
     // The waveform's buckets again, as the source's waveform has them: four axes, envelope and band energies.
     std::unique_ptr<analysis::WaveformColumn[]> axes;
     std::size_t axesCapacity = 0, axesRows = 0;
+    // THE GLUE'S GAIN REDUCTION OVER TIME (QueryKind::GlueGr): the delivered render's compressor trace, on the limiter
+    // trace's buckets (traceCapacity of them). Only a master whose glue compresses has the rows; the others have none.
+    std::unique_ptr<LandingTraceBucket[]> glueRows;
+    std::optional<LandingTrace> glueTrace;
 };
 
 struct MasterJob final

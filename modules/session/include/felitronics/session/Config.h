@@ -324,6 +324,7 @@ struct EqMove
     double freqHz = 0.0;
     double q = 0.0;
     Span domain;
+    Span normal;          // where the value turns red, within hard (a hint, as tilt's)
     Span hard;
     double step = 0.0;
 };
