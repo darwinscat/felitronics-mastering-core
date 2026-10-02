@@ -2,6 +2,44 @@
 
 # Changelog
 
+## v0.9.0 — 2026-10-02
+
+### session — a master's loudness curves in the source's frames; the glue's gain reduction over time
+
+- **`Momentary` and `ShortTerm` with a `masterId` are asked and named in the source's frames**: the source's own
+  request with a `masterId` added answers the master's curve at the source's rows, so on A/B the master's curve lies
+  under the original's. The range is refused past the source's end and `sampleRate` is the source's rate. At the
+  source's rate nothing changes (the delivered audio is the source's length, the chain's latency cut off, delivered
+  frame n is source frame n). A converted master (a target with its own `sampleRate`) used to answer in delivered
+  frames; a row ending at delivered frame e is now named `round(e·source/delivery)` — the source's own row on rates
+  that are whole multiples of 100 Hz. The readings are unchanged: the job's meter over the delivered audio, kept with
+  the master and in its declared memory.
+- **`QueryKind::GlueGr`** (appended, 12): the glue's — the compressor's — gain reduction over time from the delivered
+  render, rows as `LimiterGr`'s (`[firstFrame,lastFrame,minDb,maxDb,meanDb,samples,nonFinite]`) on its very buckets.
+  The trace is the one the landing search already took from the compressor's tap on every render; the session now
+  keeps it with the master (a third bucket row in the master's declared memory, only where the glue compressed), so
+  no output sample moves. A master whose glue did not compress answers `Unavailable` with reason `NoSignal`.
+- **`FC_SESSION_ABI_VERSION` 6**: a shell that reads the new query kind and the master's curves in the source's frames knows them by this version.
+
+### session — the owner's knob steps (02.10)
+
+- **Mono bass "below"** (the crossover knob, `[monoBass] frequencyStep`) steps by 5 Hz, was 1; **"cut off the peaks"**
+  (`[limiter.peakClipper] manualStepDb`) by 0.1 dB, was 0.5 — what `fc_kit_travel` gives a slider. A step is in the
+  sound version (a typed value is placed on the knob's grid), so the `2026-10` defaults' sound version moves, updated in
+  place as before (no project of those defaults was ever saved); no machine value and no WAV byte moves.
+- The contract recordings are re-recorded from one clean `tools/wasm/build.sh`: the config's version, the measurement
+  keys and the recipe's sound version move with the steps, the codec schema's hash with `GlueGr`, and the declared bytes
+  of a master by 64 on wasm32 (the master's rows now own the glue's trace). The WAV bytes do not move
+  (`9a601c4c5e044b00`).
+
+### session — the EQ bands' knobs are coloured as tilt's and low's (owner, 02.10)
+
+- `fc_kit_heat` answers `window = true` for the five band gains (fields 134–138, body, mud, forward, brightness, air):
+  each `[bands.*]` entry has a `normal`, read as tilt's and low's are, out to its travel. `[eq]` holds no band norm, so
+  the window is tilt's and low's ±1.5 dB; the mud band, a cut alone (travel −3…0), is normal down to −1.5 dB. A window
+  is a hint: it is left out of the sound version (like `tilt.normal`) and no master moves; the config's `all` version
+  and so the recorded `weightsVersion` and config version move.
+
 ## v0.8.0 — 2026-10-02
 
 ### session — Master as soon as the loudness and the true peak are known; edits before the machine has measured
