@@ -22,8 +22,10 @@
 //
 //   Empty      nothing loaded; a target and the manual mode can be chosen already.
 //   Loaded     a source is loaded and its first measurement has not ended. The devices are not placed: their panel is closed.
-//   Measured1  the first measurement ended: the planner places the devices (src/Planner.h) and a master can be made.
-//              Device edits are taken once what the devices read has ended — the plan Ready (the Unplaced columns).
+//   Measured1  the first measurement — the loudness and the true peak — ended: the planner places the devices
+//              (src/Planner.h), a person may edit them and a master can be made (owner, 02.10). What the devices still
+//              read (the low end, the needles, the tempo) ends later: a field it decides is "not measured yet" until then,
+//              and the machine fills it, never a field a person touched. The open panel's master waits for it.
 //   Measured2  the second measurement ended too.
 //   MeasurementStopped retains audio, results and cursor; ContinueMeasurement restores the previous phase.
 //   Mastering  a master is being made, on Measured1 or on Measured2 — the second measurement may end meanwhile. It
@@ -92,7 +94,8 @@ enum class Rejection : std::uint8_t
     OutputPending,              // the previous master still owns transferable PCM
     MandatoryUnavailable,       // the source LUFS or true peak is not usable
     DeliveryFormat,             // a master's delivery rate or bits are not the target's, its only format
-    PlanPending,                // the panel is open and a measurement the devices read has not ended (PlanView::waiting)
+    PlanPending,                // a measurement the devices read has not ended: the panel's master (PlanView::waiting);
+                                // a project export or import while a device field is not measured yet (DevicePlan::pending)
 };
 
 using CommandId = std::uint64_t;   // the shell's own number for a request, given back in its answer
@@ -204,8 +207,8 @@ struct Checked
 };
 
 // A session's situation: measurement state, master overlay and device placement. The measured columns stand for devices
-// placed with their plan Ready; the Unplaced ones for the same states before the devices are placed, or while a
-// measurement they read still runs (PlanStatus Pending or Stopped) — the panel shows the machine's layer read-only.
+// placed with their plan Ready; the Unplaced ones for the same states while a measurement the devices read still runs
+// (PlanStatus Pending or Stopped): edits are taken there (owner, 02.10), an import and adoptMachine wait for the plan.
 enum class Column : std::uint8_t
 {
     Empty, Loaded, Measured1, Measured2, Mastering1, Mastering2, Stopped, StoppedMeasured, MasteringStopped,
@@ -245,8 +248,8 @@ struct Table
         { Command::Load,        {    None,     None,        None,     None,     None,      None, None, None, None, None, None, None, None, None, None } },
         { Command::SetTarget,   {    None,     None,        None,     None,     None,      None, None, None, None, None, None, None, None, None, None } },
         { Command::EditTarget,  {    None,     None,        None,     None,     None,      None, None, None, None, None, None, None, None, None, None } },
-        { Command::EditDevice,  {    NoSource, NotPlaced,   None,     None,     None,      None, NotPlaced, None, None, NotPlaced, NotPlaced, NotPlaced, NotPlaced, NotPlaced, NotPlaced } },
-        { Command::RevertEdits, {    NoSource, NotPlaced,   None,     None,     None,      None, NotPlaced, None, None, NotPlaced, NotPlaced, NotPlaced, NotPlaced, NotPlaced, NotPlaced } },
+        { Command::EditDevice,  {    NoSource, NotPlaced,   None,     None,     None,      None, NotPlaced, None, None, None, None, None, None, None, None } },
+        { Command::RevertEdits, {    NoSource, NotPlaced,   None,     None,     None,      None, NotPlaced, None, None, None, None, None, None, None, None } },
         { Command::SetManual,   {    None,     None,        None,     None,     None,      None, None, None, None, None, None, None, None, None, None } },
         { Command::Master,      {    NoSource, NotMeasured, None,     None,     Busy,      Busy, NotMeasured, None, Busy, None, None, Busy, Busy, None, Busy } },
         { Command::Cancel,      {    NoJob,    None,        None,     None,     None,      None, None, None, None, None, None, None, None, None, None } },
@@ -256,8 +259,9 @@ struct Table
         { Command::AdoptMachine, { NoSource, NotPlaced,   None,     None,     None,      None, NotPlaced, None, None, NotPlaced, NotPlaced, NotPlaced, NotPlaced, NotPlaced, NotPlaced } },
     };
 
-    // Import: entry, state, size (no input read), then TOML syntax, schema in canonical field order,
-    // defaults version, core version, target name, offered-device constraints. The saved machine layer is kept; where the
+    // Import: entry, state, no device field not measured yet (PlanPending), size (no input read), then TOML syntax,
+    // schema in canonical field order, defaults version, core version, target name, the file's target with no field
+    // not measured yet on this source (PlanPending, at the target's name), offered-device constraints. The saved machine layer is kept; where the
     // planner would decide otherwise for the file's target on this source is reported, and adoptMachine takes it.
     // The file supplies manual mode; the current mode is not a prerequisite for restoring a project.
 
@@ -265,8 +269,8 @@ struct Table
     // ContinueMeasurement restores the previous measurement phase with a fresh job identity.
     // Cancelling a master ends its overlay and preserves the measurement state.
     // THE SESSION'S OWN TRANSITIONS — where each may happen (true), and what it does:
-    //   Measured1  the first measurement ended: Loaded becomes Measured1 and the planner places the devices — the pump
-    //              and a fixture's seam alike
+    //   Measured1  the first measurement (the loudness and the true peak) ended: Loaded becomes Measured1 and the
+    //              planner places the devices — the pump and a fixture's seam alike
     //   Measured2  the second ended: Measured1 becomes Measured2, with a master being made or not
     //   Mastered   the master being made is done: it is kept, and the overlay ends
     struct EventRow
