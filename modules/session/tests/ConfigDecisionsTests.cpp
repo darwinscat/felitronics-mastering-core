@@ -58,7 +58,9 @@ constexpr Golden kGolden[] = {
     // 80 Hz: no machine cutoff moves; updated in place, as above
     // ...and two knobs' steps (owner, 02.10): the mono-bass crossover by 5 Hz, the cut off the peaks by 0.1 dB. A step is
     // in the sound because a typed value is placed on its grid; no machine value moves; updated in place, as above
-    { "2026-10", 0xdea59597eb8ec0c8ull },
+    // ...and the cut off the peaks' travel to 6 dB, the whole of its domain (owner, 02.10): a person's knob only, no machine
+    // value moves; updated in place, as above
+    { "2026-10", 0x71b944c40d573c58ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -199,8 +201,8 @@ std::vector<std::string> departures (const config::Config& c)
           "the needles' classes: short to 2 ms and a bass share of 0.25, long from 8 ms or 0.5");
     need (same (p.clippedPerMinute, 10.0), "a source is clipped from 10 confirmed clips a minute");
     need (same (p.kneeDb, 0.0), "the peak clipper is a hard clip");
-    need (same (p.manualMinDb, 0.0) && same (p.manualMaxDb, 3.0) && same (p.manualStepDb, 0.1),
-          "the manual cut off the peaks runs 0…3 dB in steps of 0.1 (owner, 02.10)");
+    need (same (p.manualMinDb, 0.0) && same (p.manualMaxDb, 6.0) && same (p.manualStepDb, 0.1),
+          "the manual cut off the peaks runs 0…6 dB in steps of 0.1 (owner, 02.10)");
     need (e.dither.seed == 0x853c49e6748fea9bull && e.dither.autoBlank && e.dither.autoBlankSamples == 4096
           && e.dither.shaping == config::NoiseShaping::Weighted,
           "the dither: weighted TPDF from the fixed seed, blanked after 4096 zero samples");

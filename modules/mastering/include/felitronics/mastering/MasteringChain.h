@@ -19,6 +19,7 @@
 #include <bit>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <felitronics/storage/Buffer.h>
 #include <felitronics/storage/VectorBytes.h>
@@ -116,6 +117,18 @@ struct MasteringChainParams
     // LAST in the struct, so a positional aggregate initialiser written against the older layout still
     // means what it meant.
     double compressorMix = 1.0;
+
+    // THE PEAK CLIPPER TAKES AT MOST ITS CUT OFF THE PEAK THE LIMITER'S INPUT REACHES. Both NaN, the default, leave
+    // `limiter.overCeilingDb` exactly as given. Both finite, the chain works the threshold out itself, for the gain and
+    // the ceiling it renders at: `peakClipPeakDb` is the highest peak the limiter's own oversampler sees with
+    // `preLimiterGainDb` at 0 (in dB, `limiter.ceilingDbTp`'s scale), `peakClipCutDb` the most the clipper may take off
+    // it, and the limiter is given max(0, peakClipPeakDb + preLimiterGainDb − ceilingDbTp − peakClipCutDb) above its
+    // ceiling — the same cut at any gain a landing settles on. Where that lies beyond
+    // `TruePeakLimiter::kMaxOverCeilingDb`, no threshold the limiter takes keeps to the cut: the clipper is off for that
+    // render. A caller states the peak as a forecast; `LandingSearch` replaces it with the peak its first pass
+    // measured (`LoudnessSolution::peakClipPeakDb`). Appended after `compressorMix` for the same reason it is last.
+    double peakClipCutDb  = std::numeric_limits<double>::quiet_NaN();
+    double peakClipPeakDb = std::numeric_limits<double>::quiet_NaN();
 };
 
 //==============================================================================
@@ -1683,8 +1696,21 @@ private:
         setRamp (mix_, mixOf (p.compressorMix));
 
         if (cfg_.clipper) sat_.setParams (p.clipper);
-        if (cfg_.limiter) lim_.setParams (p.limiter);
+        if (cfg_.limiter) lim_.setParams (limiterParamsOf (p));
         if (cfg_.dither)  dith_.setParams (p.dither);
+    }
+
+    // The limiter's parameters with the peak clipper's threshold worked out from the peak and the cut — see
+    // `peakClipCutDb`. Additions only: no libm, and nothing a contraction could fuse.
+    static limiter::TruePeakLimiterParams limiterParamsOf (const MasteringChainParams& p) noexcept
+    {
+        limiter::TruePeakLimiterParams l = p.limiter;
+        if (! std::isfinite (p.peakClipCutDb) || ! std::isfinite (p.peakClipPeakDb) || ! l.peakClip) return l;
+        const double gain = std::isfinite (p.preLimiterGainDb) ? std::clamp (p.preLimiterGainDb, -kMaxGainDb, kMaxGainDb) : 0.0;
+        const double over = ((p.peakClipPeakDb + gain) - l.ceilingDbTp) - p.peakClipCutDb;
+        if (! std::isfinite (over) || over > limiter::TruePeakLimiter::kMaxOverCeilingDb) { l.peakClip = false; return l; }
+        l.overCeilingDb = std::max (0.0, over);
+        return l;
     }
 
     static float gainOf (double db) noexcept
