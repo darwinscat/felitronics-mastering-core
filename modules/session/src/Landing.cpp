@@ -438,13 +438,29 @@ bool LandingOps::stepTraces (const mastering::LoudnessSolution& solution,
                             std::uint32_t deliveryRateHz, LandingSummary& out,
                             std::uint32_t& cursor, std::uint32_t budget) noexcept
 {
+    std::optional<LandingTrace> none;
+    return stepTraces (solution, limiterRows, peakClipRows, {}, deliveryRateHz, out, none, cursor, budget);
+}
+
+bool LandingOps::stepTraces (const mastering::LoudnessSolution& solution,
+                            std::span<LandingTraceBucket> limiterRows,
+                            std::span<LandingTraceBucket> peakClipRows,
+                            std::span<LandingTraceBucket> compressorRows,
+                            std::uint32_t deliveryRateHz, LandingSummary& out,
+                            std::optional<LandingTrace>& compressor,
+                            std::uint32_t& cursor, std::uint32_t budget) noexcept
+{
     const auto& limiter = solution.limiterTrace;
     const auto& clipper = solution.peakClipTrace;
+    const auto& glue = solution.compressorTrace;
+    const bool third = ! compressorRows.empty();
     if (deliveryRateHz == 0 || limiter.buckets < 0 || limiter.buckets != clipper.buckets
         || limiter.programmeFrames != clipper.programmeFrames
         || limiter.bucket.size() != (std::size_t) limiter.buckets
         || clipper.bucket.size() != (std::size_t) clipper.buckets
         || limiterRows.size() < limiter.bucket.size() || peakClipRows.size() < clipper.bucket.size()
+        || (third && (glue.buckets != limiter.buckets || glue.programmeFrames != limiter.programmeFrames
+                      || glue.bucket.size() != (std::size_t) glue.buckets || compressorRows.size() < glue.bucket.size()))
         || cursor > limiter.bucket.size() || budget == 0) return false;
     const auto n = limiter.bucket.size();
     if (cursor == 0 && n > 0)
@@ -464,8 +480,9 @@ bool LandingOps::stepTraces (const mastering::LoudnessSolution& solution,
         };
         out.limiterTrace = start (limiter, limiterRows);
         out.peakClipTrace = start (clipper, peakClipRows);
+        if (third) compressor = start (glue, compressorRows);
     }
-    if (n > 0 && (! out.limiterTrace || ! out.peakClipTrace)) return false;
+    if (n > 0 && (! out.limiterTrace || ! out.peakClipTrace || (third && ! compressor))) return false;
     const auto end = std::min<std::size_t> (n, std::size_t (cursor) + budget);
     while (cursor < end)
     {
@@ -480,6 +497,7 @@ bool LandingOps::stepTraces (const mastering::LoudnessSolution& solution,
         };
         copy (limiter, limiterRows, *out.limiterTrace);
         copy (clipper, peakClipRows, *out.peakClipTrace);
+        if (third) copy (glue, compressorRows, *compressor);
         ++cursor;
     }
     return cursor == n;

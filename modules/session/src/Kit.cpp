@@ -115,6 +115,17 @@ std::optional<Window> windowOf (const Rules& r, Term field) noexcept
         span (device.find ("hard"), w.outLow, w.outHigh);
         return w;
     }
+    // The five EQ bands, coloured as tilt and low are: their normal, out to their travel's ends.
+    constexpr std::pair<Term, std::string_view> bands[] { { Term::FieldBandsBody, "body" }, { Term::FieldBandsMud, "mud" },
+        { Term::FieldBandsForward, "forward" }, { Term::FieldBandsBrightness, "brightness" }, { Term::FieldBandsAir, "air" } };
+    for (const auto& [term, name] : bands)
+        if (field == term)
+        {
+            const View device = r.engine.find ("bands").find (name);
+            span (device.find ("normal"), w.low, w.high);
+            span (device.find ("hard"), w.outLow, w.outHigh);
+            return w;
+        }
     return std::nullopt;
 }
 

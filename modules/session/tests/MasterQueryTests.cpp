@@ -82,12 +82,18 @@ std::unique_ptr<Session> loaded (const float* const* planes, unsigned channels, 
 
 // A master of the session's source through a limiter and nothing else; its delivered audio copied out and released.
 struct Mastered { MasterId id = 0; std::vector<float> audio; MasterAudioShape shape {}; std::vector<Notification> facts; Checked declared {}; declared::Spent spent {}; };
-Mastered master (Session& s, CommandId id)
+// glue: the compressor in the chain and compressing (a low threshold, a firm ratio); otherwise out of it.
+Mastered master (Session& s, CommandId id, bool glue = false)
 {
     command::Master request { id };
     request.ready.version = 1;
     request.ready.topology.eq = request.ready.topology.compressor = request.ready.topology.clipper = request.ready.topology.dither = false;
     request.ready.topology.limiter = true;
+    if (glue)
+    {
+        request.ready.topology.compressor = true; request.ready.params.bypassCompressor = false;
+        request.ready.params.compressor.thresholdDb = -30.0; request.ready.params.compressor.ratio = 4.0;
+    }
     request.source = s.source().hash; request.revision = s.revision();
     Mastered out;
     out.declared = s.check (request);
@@ -397,6 +403,85 @@ void theMastersLoudness()
     ok (refused.view().values.empty() && refused.view().stored == 0, "a refusal after a good answer is clean");
     const auto sourceOnly = s.query (ask (QueryKind::ShortTerm, s, 0, audio.frames, 64));
     ok (sourceOnly.view().status == QueryStatus::Ready && sourceOnly.view().measurementKey != made.id, "without a master id the curve is the source's, as before");
+}
+
+void theMastersLoudnessOnTheSourceGrid()
+{
+    felitronics::test::group ("(d2) a converted master's curves in the source's frames: the source's request with a master id lies under it");
+    // 44.1 kHz in, 48 kHz delivered (youtube): the delivered frames are not the source's.
+    const Audio audio (8, 44100);
+    auto sp = loaded (audio.planes, 2, audio.frames, audio.rate, false, "youtube"); auto& s = *sp;
+    const auto made = master (s, 3);
+    ok (made.shape.sampleRate == 48000 && made.shape.frames == 384000u, "PRECONDITION: delivered at 48 kHz, 384000 frames");
+    const float* planes[] { made.audio.data(), made.audio.data() + made.shape.frames };
+    auto op = loaded (planes, made.shape.channels, made.shape.frames, made.shape.sampleRate); auto& oracle = *op;
+    bool covered = true;
+    for (const auto kind : { QueryKind::Momentary, QueryKind::ShortTerm })
+    {
+        const char* name = kind == QueryKind::Momentary ? "momentary" : "short-term";
+        const auto mine = answered (s, ask (kind, s, 0, audio.frames, 2048, made.id), covered);
+        const auto source = s.query (ask (kind, s, 0, audio.frames, 2048));
+        const auto theirs = oracle.query (ask (kind, oracle, 0, made.shape.frames, 2048));
+        const auto& v = mine.view(); const auto& o = theirs.view(); const auto& src = source.view();
+        bool frames = v.stored == src.stored && v.stored > 0, readings = v.stored <= o.stored;
+        for (std::uint64_t i = 0; frames && i < v.stored; ++i)
+            frames = same (v.values[std::size_t (3u * i)], src.values[std::size_t (3u * i)]);
+        for (std::uint64_t i = 0; readings && i < v.stored; ++i)
+            readings = same (v.values[std::size_t (3u * i + 1u)], o.values[std::size_t (3u * i + 1u)])
+                && same (v.values[std::size_t (3u * i + 2u)], o.values[std::size_t (3u * i + 2u)])
+                && same (v.values[std::size_t (3u * i)] * 48000.0, o.values[std::size_t (3u * i)] * 44100.0);
+        ok (v.status == QueryStatus::Ready && v.complete && v.sampleRate == 44100 && frames,
+            std::string (name) + ": " + std::to_string (v.stored) + " rows named by the source's frames, row for row the source's own rows, the rate the source's");
+        ok (readings, std::string (name) + ": each reading the delivered audio's own measured as a source, renamed into the source's frame of the same moment");
+        const auto part = answered (s, ask (kind, s, 44100, 220500, 16, made.id), covered);
+        const auto partSource = s.query (ask (kind, s, 44100, 220500, 16));
+        bool partFrames = part.view().stored == 16 && part.view().total == partSource.view().total && partSource.view().stored == 16;
+        for (std::uint64_t i = 0; partFrames && i < 16; ++i)
+            partFrames = same (part.view().values[std::size_t (3u * i)], partSource.view().values[std::size_t (3u * i)]);
+        ok (part.view().status == QueryStatus::Ready && partFrames, std::string (name) + ": a part of it, thinned to 16 columns, at the source's own picks");
+    }
+    ok (covered, "each answer inside its declared memory");
+    ok (s.query (ask (QueryKind::ShortTerm, s, 0, audio.frames + 1u, 64, made.id)).view().status == QueryStatus::InvalidRange,
+        "past the source's end is refused, though the delivered audio is longer");
+}
+
+// The glue's gain reduction, per bucket on the limiter's grid, from the delivered render.
+void theGluesGainReduction()
+{
+    felitronics::test::group ("(d3) GlueGr: the compressor's gain reduction over time, on LimiterGr's grid");
+    const Audio audio (8);
+    auto sp = loaded (audio.planes, 2, audio.frames, audio.rate); auto& s = *sp;
+    const auto glued = master (s, 3, true);
+    const auto plain = master (s, 4);
+    ok (declared::covers (glued.declared.bytes, glued.spent), "the glued master's retained trace inside its declared memory");
+    bool covered = true;
+    const auto gr = answered (s, ask (QueryKind::GlueGr, s, 0, glued.shape.frames, 64, glued.id), covered);
+    const auto lim = s.query (ask (QueryKind::LimiterGr, s, 0, glued.shape.frames, 64, glued.id));
+    const auto& v = gr.view(); const auto& l = lim.view();
+    bool grid = v.stored == l.stored && v.total == l.total && v.stored == 64;
+    double largest = 0;
+    for (std::uint64_t i = 0; grid && i < v.stored; ++i)
+    {
+        grid = same (v.values[std::size_t (7u * i)], l.values[std::size_t (7u * i)])
+            && same (v.values[std::size_t (7u * i + 1u)], l.values[std::size_t (7u * i + 1u)]);
+        largest = std::max (largest, v.values[std::size_t (7u * i + 3u)]);
+    }
+    ok (v.status == QueryStatus::Ready && v.stride == 7 && v.reason == MeasurementReason::None && v.measurementKey == glued.id
+        && v.sampleRate == glued.shape.sampleRate && grid, "64 columns, bucket for bucket the limiter's bounds");
+    const auto report = s.query (ask (QueryKind::MasterReport, s, 0, 0, 1, glued.id));
+    const auto& cost = report.view().master->report->cost;
+    ok (cost && cost->glueMaxDb.value && largest > 0 && same (largest, *cost->glueMaxDb.value),
+        "its largest bucket is the report's glueMaxDb, the same tap of the same render");
+    const auto zoom = answered (s, ask (QueryKind::GlueGr, s, 96000, 192000, 8, glued.id), covered);
+    const auto zoomLim = s.query (ask (QueryKind::LimiterGr, s, 96000, 192000, 8, glued.id));
+    ok (zoom.view().status == QueryStatus::Ready && zoom.view().total == zoomLim.view().total && zoom.view().stored == 8,
+        "a zoom selects the same buckets the limiter's does");
+    ok (covered, "each answer inside its declared memory");
+    const auto none = s.query (ask (QueryKind::GlueGr, s, 0, plain.shape.frames, 64, plain.id));
+    ok (none.view().status == QueryStatus::Unavailable && none.view().reason == MeasurementReason::NoSignal && none.view().values.empty(),
+        "a master without a compressing glue: Unavailable, NoSignal, no rows");
+    ok (s.query (ask (QueryKind::GlueGr, s, 0, glued.shape.frames, 64, glued.id + 9u)).view().reason == MeasurementReason::Unsupported,
+        "no such master: Unavailable, Unsupported, as every master kind");
 }
 
 void theMastersAxes()
@@ -737,6 +822,8 @@ int main()
     theVerdictPerStatus();
     theSpectrumsQuantity();
     theMastersLoudness();
+    theMastersLoudnessOnTheSourceGrid();
+    theGluesGainReduction();
     theMastersAxes();
     theLeanSummary();
     theSnapshotSizedInOnePass();

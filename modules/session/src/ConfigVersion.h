@@ -92,6 +92,7 @@ inline constexpr std::string_view kEnginePresentation[] = {
     "saturation.cut",                                  // measured after the master
     "tilt.normal",                                     // where a knob's value turns red
     "low.normal",
+    "bands.body.normal", "bands.mud.normal", "bands.forward.normal", "bands.brightness.normal", "bands.air.normal",
     "eq",                                              // the summed curve's colours and scale
     // The observations weight and print findings; none of these switches a device — polarity included: mono bass is
     // decided by the loss of its own band, never by the programme's correlation.

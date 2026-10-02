@@ -46,6 +46,15 @@ public:
                                          std::span<LandingTraceBucket> peakClipRows,
                                          std::uint32_t deliveryRateHz, LandingSummary& out,
                                          std::uint32_t& cursor, std::uint32_t budget) noexcept;
+    // The same copies with the compressor's trace a third, into `compressorRows` and `compressor`, on the limiter's
+    // buckets. Empty `compressorRows`: no third trace — the call above.
+    [[nodiscard]] static bool stepTraces (const mastering::LoudnessSolution& solution,
+                                         std::span<LandingTraceBucket> limiterRows,
+                                         std::span<LandingTraceBucket> peakClipRows,
+                                         std::span<LandingTraceBucket> compressorRows,
+                                         std::uint32_t deliveryRateHz, LandingSummary& out,
+                                         std::optional<LandingTrace>& compressor,
+                                         std::uint32_t& cursor, std::uint32_t budget) noexcept;
     // Seven f64 columns: [firstFrame,lastFrame,minDb,maxDb,meanDb,samples,nonFinite].
     // Selects retained buckets intersecting the requested delivered-frame range. Their original
     // bounds remain in the response, including buckets that cross either edge of the request.

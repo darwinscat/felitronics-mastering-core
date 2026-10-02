@@ -88,8 +88,8 @@ lookaheadMs = 1
 #   (up to 3 and 1.5 dB off the peaks), the two PLR bounds (10 and 8 dB), "need ≤ 3 dB: do not measure" and the ten clips
 #   a minute; bassBelowHz and the density are hypotheses.
 # kneeDb: 0 — a hard clip.
-# manualMinDb…manualMaxDb, manualStepDb: the manual cut's travel and step (a hypothesis). The manual cut starts at
-#   betweenCutDb, the "between" class, inside manualDomain.
+# manualMinDb…manualMaxDb, manualStepDb: the manual cut's travel (a hypothesis) and step — 0.1 dB (owner, 02.10). The
+#   manual cut starts at betweenCutDb, the "between" class, inside manualDomain.
 [limiter.peakClipper]
 manualDomain = [0, 6]
 littleNeedDb = 3
@@ -108,7 +108,7 @@ densityWithinDb = 0.3
 kneeDb = 0
 manualMinDb = 0
 manualMaxDb = 3
-manualStepDb = 0.5
+manualStepDb = 0.1
 
 # THE LOW END (analysis::LowEnd), first phase. The file is measured once, for every target at once — the bass width at
 # 120 and at 150 Hz, the crossovers of the targets — and a change of target measures nothing again.
@@ -212,7 +212,7 @@ marks = [
 #   when it sounds at least soundingAtLeastS in all. Less than that, or a low end that could not be measured, is its own
 #   reason, and the machine leaves mono bass out: it does not fold what it could not weigh.
 # lowWidth: the width below the crossover — 0, full mono; lowWidthRange, lowWidthStep: its knob's travel and step.
-# frequencyRange, frequencyStep: the crossover knob's travel and step (a step of 5 Hz feels like a jerk).
+# frequencyRange, frequencyStep: the crossover knob's travel and step — 5 Hz (owner, 02.10).
 [monoBass]
 frequencyDomain = [60, 300]
 lowWidthDomain = [0, 1]
@@ -220,7 +220,7 @@ lowWidth = 0
 lowWidthRange = [0, 1]
 lowWidthStep = 0.05
 frequencyRange = [60, 300]
-frequencyStep = 1
+frequencyStep = 5
 loss = { warnFromDb = 1, offAboveDb = 3, soundingWithinDb = 20, soundingAtLeastS = 3 }
 
 # The knob's scale shows two regions, each with a physical reason rather than a taste; the map is static — it follows
@@ -398,13 +398,15 @@ step = 0.1
 # revert gives the machine's 0 back. The device's tick (on, field 5) takes all five in or out with the gains kept: the
 # machine's is always on, a person may untick it. No dynamics yet, and no advice beyond a norm.
 # Per band: band, the core's EQ band; type, "bell" or "highShelf"; freqHz, q, the filter's centre or corner and its Q;
-# domain, the gain a command accepts; hard, the knob's travel; step, its grid.
+# domain, the gain a command accepts; normal, where the value turns red, within the travel — ±1.5 dB as tilt and low
+# (owner, 02.10; the mud band, a cut alone, down to −1.5); hard, the knob's travel; step, its grid.
 [bands.body]
 band = 3
 type = "bell"
 freqHz = 160
 q = 0.7
 domain = [-6, 6]
+normal = [-1.5, 1.5]
 hard = [-3, 3]
 step = 0.1
 
@@ -414,6 +416,7 @@ type = "bell"
 freqHz = 300
 q = 0.8
 domain = [-6, 0]
+normal = [-1.5, 0.0]
 hard = [-3, 0]
 step = 0.1
 
@@ -423,6 +426,7 @@ type = "bell"
 freqHz = 3000
 q = 0.7
 domain = [-6, 6]
+normal = [-1.5, 1.5]
 hard = [-3, 3]
 step = 0.1
 
@@ -432,6 +436,7 @@ type = "highShelf"
 freqHz = 8000
 q = 0.6
 domain = [-6, 6]
+normal = [-1.5, 1.5]
 hard = [-3, 3]
 step = 0.1
 
@@ -441,6 +446,7 @@ type = "highShelf"
 freqHz = 12000
 q = 0.6
 domain = [-6, 6]
+normal = [-1.5, 1.5]
 hard = [-3, 3]
 step = 0.1
 
