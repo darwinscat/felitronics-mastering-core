@@ -130,7 +130,13 @@ jobs:
           # LSan is Linux-only; this row is where leaks fail the build.
           ASAN_OPTIONS: halt_on_error=1:detect_leaks=1:strict_string_checks=1:detect_stack_use_after_return=1
           UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
-        run: ctest --test-dir build-san --output-on-failure --no-tests=error -j "$(nproc)"
+          # A pull request and a push run the fast set here; the night (and on demand) runs every test under ASan. The
+          # slow set is every test over ~100 s under the sanitizers (measured on PR #32): each still runs on every pull
+          # request in the plain rows, and a release runs it under ASan on kozmo@deb before the tag. The ABI source
+          # controls never run here — they compile deliberately broken sources, which a sanitizer adds nothing to; the
+          # Windows row runs them.
+          SLOW: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '' || '|felitronics_session_abi_generation_tests|felitronics_loudness_solver_tests|felitronics_session_plan_sound_tests|felitronics_session_measurement_budget_600s|felitronics_delivered_ceiling_tests|felitronics_session_hpf_mono_tests|felitronics_session_abi_manifest_control|felitronics_session_memory_gate_long|felitronics_clip_detector_tests|felitronics_session_plan_tests|felitronics_session_glue_saturation_tests|felitronics_mastering_progress_tests|felitronics_session_master_query_tests|felitronics_session_object_control_facade_renamed|felitronics_session_master_report_tests|felitronics_session_scenario_tests|felitronics_mastering_split_invariance_tests' }}
+        run: ctest --test-dir build-san --output-on-failure --no-tests=error -j "$(nproc)" -E "^(felitronics_session_abi_source_controls${SLOW})$"
 
   # The newest GCC: ubuntu-latest defaults to g++-13, and gcc is what rejects -Wfloat-equal on a literal where
   # clang does not — the header-hygiene TU here is only as strict as the compiler that builds it.
@@ -383,6 +389,24 @@ jobs:
           source "$HOME/emsdk/emsdk_env.sh"
           echo "EMSDK=$EMSDK" >> "$GITHUB_ENV"
           echo "PATH=$PATH"   >> "$GITHUB_ENV"
+      - name: Compiler cache — ccache under emcc
+        # build.sh compiles the session's sources again for every module, one source at a time: a module whose compile
+        # flags another already used is all cache hits, and a run starts from the last cache of its core row. The
+        # compiler is named by the pinned SDK, not its mtime — emsdk is installed afresh each run.
+        run: |
+          sudo apt-get install -y -qq ccache >/dev/null
+          {
+            echo "EM_COMPILER_WRAPPER=ccache"
+            echo "CCACHE_DIR=$HOME/.ccache"
+            echo "CCACHE_MAXSIZE=4G"
+            echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
+            echo "CCACHE_COMPILERCHECK=string:emsdk-6.0.9"
+          } >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-wasm-${{ matrix.core }}-${{ github.sha }}
+          restore-keys: ccache-wasm-${{ matrix.core }}-
       - name: Configure + build the tier
         run: cmake --preset wasm-audio $CORE_TAG && cmake --build --preset wasm-audio -j "$(nproc)"
       - name: Run the suite in node
@@ -880,6 +904,9 @@ jobs:
   # pin, same core, and the same strictness: --no-tests=error, so a suite that went missing is red.
   wasm-checked:
     name: wasm-audio checked tier + three-tier parity (core ${{ matrix.core }})
+    # The night's and on demand only: ~50 minutes, the longest row a pull request waited on. A release runs this tier
+    # on kozmo@deb before the tag.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     timeout-minutes: 60
     strategy:
