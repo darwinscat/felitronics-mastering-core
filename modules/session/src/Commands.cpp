@@ -674,8 +674,9 @@ Answer Session::apply (const Request& request) noexcept
     answer.revision = ++revision_;
     for (std::size_t i = 0; i < eventCount_; ++i)
     {
-        events_[i].revision = revision_;
-        if (events_[i].kind == EventKind::Measurement) events_[i].payload.measurement.revision = revision_;
+        auto& e = (*events_)[i];
+        e.revision = revision_;
+        if (e.kind == EventKind::Measurement) e.payload.measurement.revision = revision_;
     }
     return answer;
 }

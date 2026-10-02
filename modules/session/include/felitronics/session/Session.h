@@ -740,7 +740,12 @@ private:
     LandingSummary masterSummary_ {};
     std::uint32_t masterTraceCursor_ = 0;
     bool masterTraceActive_ = false;
-    Notification events_[kEventBatch] {};
+    // THE STEP'S EVENTS — a block of their own, allocated with the session (createBytes declares both): the batch is
+    // most of what a session holds (62 events of every payload kind), and the session object stays small. Each block a
+    // create asks for fits AddressSanitizer's largest primary size class with its redzone (128 KiB less 2 KiB): past
+    // it every create is an mmap, and the ABI suite's walk through a slot's 16.7 million generations takes hours under
+    // the sanitizers instead of minutes (felitronics_session_abi_tests holds both blocks to it).
+    std::unique_ptr<std::array<Notification, kEventBatch>> events_;
     std::size_t eventCount_ = 0;
     std::uint64_t sequence_ = 0;
 
