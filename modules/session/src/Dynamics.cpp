@@ -132,23 +132,28 @@ InputLevels inputLevels (const PlanInputs& in) noexcept
     return out;
 }
 
+std::optional<double> tempoHeard (const MeasurementResult& result) noexcept
+{
+    if (result.status != MeasurementStatus::Ready) return std::nullopt;
+    for (const auto& value : result.numbers)
+        if (value.value && value.name == "headlineBpm" && std::isfinite (*value.value) && *value.value > 0) return *value.value;
+    return std::nullopt;
+}
+
 TempoChoice tempoChoice (const Rules& rules, const MeasurementResult& result) noexcept
 {
     if (result.status == MeasurementStatus::Pending || result.status == MeasurementStatus::Cancelled)
         return { false, false, 0.0, result.reason };
-    double bpm = 0.0; bool hasBpm = false, high = false;
+    bool high = false;
     if (result.status == MeasurementStatus::Ready)
-        for (const auto& value : result.numbers) if (value.value)
-        {
-            if (value.name == "headlineBpm") { bpm = *value.value; hasBpm = true; }
-            else if (value.name == "headlineLabel")
-                high = std::bit_cast<std::uint64_t> (*value.value)
-                    == std::bit_cast<std::uint64_t> (double (tempo::ConfidenceLabel::High));
-        }
-    if (result.status == MeasurementStatus::Ready && hasBpm && high && std::isfinite (bpm) && bpm > 0)
-        return { true, true, bpm, MeasurementReason::None };
+        for (const auto& value : result.numbers) if (value.value && value.name == "headlineLabel")
+            high = std::bit_cast<std::uint64_t> (*value.value) == std::bit_cast<std::uint64_t> (double (tempo::ConfidenceLabel::High));
+    const auto heard = tempoHeard (result);
+    if (heard && high) return { true, true, *heard, MeasurementReason::None };
+    // The fallback. A tempo heard but not trusted has no failure to name: the measurement is whole, the rule declined it
+    // (reason None, measured false). NoSignal only where a ready result gave no tempo at all.
     const double fallback = number (rules.engine.find ("compressor").find ("tempo").find ("bpmWhenUnsure"));
-    const auto reason = result.status == MeasurementStatus::Ready ? MeasurementReason::NoSignal : result.reason;
+    const auto reason = result.status != MeasurementStatus::Ready ? result.reason : heard ? MeasurementReason::None : MeasurementReason::NoSignal;
     return { true, false, fallback, reason };
 }
 
@@ -183,8 +188,13 @@ GlueFinding glueFinding (const PlanInputs& in, const Devices& devices) noexcept
     // The release follows the tempo once it is decided. Nothing measures the tempo of a glue out of the chain: its
     // release is stated at [compressor.tempo] bpmWhenUnsure until a tempo is decided; a glue in the chain waits for it.
     std::optional<TempoChoice> choice;
+    std::optional<double> unsure;
     if (const auto* tempo = resultOf (in, Analyzer::Tempo))
-        if (const auto c = tempoChoice (in.rules, *tempo); c.ready) choice = c;
+        if (const auto c = tempoChoice (in.rules, *tempo); c.ready)
+        {
+            choice = c;
+            if (! c.measured) unsure = tempoHeard (*tempo);
+        }
     if (! choice && f.state == GlueState::Out)
         choice = TempoChoice { true, false, number (in.rules.engine.find ("compressor").find ("tempo").find ("bpmWhenUnsure")),
                                MeasurementReason::Pending };
@@ -197,6 +207,7 @@ GlueFinding glueFinding (const PlanInputs& in, const Devices& devices) noexcept
         f.releaseMs = release;
         f.releaseClamped = ! same (release, wanted);
         f.tempoMeasured = choice->measured;
+        f.tempoUnsureBpm = unsure;
     }
     return f;
 }

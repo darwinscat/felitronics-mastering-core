@@ -54,7 +54,7 @@
 //                delivered when none keeps the ceiling, marked (LandingSummary/MasterReport.peaksAboveCeiling, fact 98).
 //                Not on this surface, in the same release: the C++ Answer's value, low and high, and the hum
 //                detector's LineOnlyWithMusic (11), which the session answers as the hum not found.
-#define FC_SESSION_ABI_VERSION 6u
+#define FC_SESSION_ABI_VERSION 7u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u
 #define FC_SESSION_STORAGE_V1_BYTES 32u
@@ -461,12 +461,13 @@ fc_session_status fc_kit_mono_zones (double* out);
 fc_session_status fc_kit_mono_zones_at (double hz, uint32_t* out);
 // The EQ curve three EQ knobs would draw. params[FC_SESSION_KIT_EQ_PARAMS] = hpf on (0/1), cutoff Hz, slope dB/oct (whole),
 // tilt on, tilt dB, low on, low dB; rate a whole number of Hz. curve[2 * FC_SESSION_KIT_EQ_POINTS] = hz, dB per point;
-// peak[FC_SESSION_KIT_EQ_PEAK_VALUES] = the shelves' peak hz, its dB, 1 when beyond warnDb, the device bit that gives most of it
-// (FC_SESSION_DEVICE_TILT or FC_SESSION_DEVICE_LOW_SHELF).
+// peak[FC_SESSION_KIT_EQ_PEAK_VALUES] = the peak of the curve without the high-pass (tilt, low, the EQ bands): hz, its dB, 1 when
+// beyond warnDb, the device bit that gives most of it (FC_SESSION_DEVICE_TILT, FC_SESSION_DEVICE_LOW_SHELF or
+// FC_SESSION_DEVICE_EQ_BANDS).
 fc_session_status fc_kit_eq_curve (const double* params, double rate, double* curve, double* peak);
 // ...with the EQ bands: params[FC_SESSION_KIT_EQ_BANDS_PARAMS] = the seven above, then the bands' gains in dB — body, mud,
 // forward, brightness, air (0: no band) — then the bands' tick, on (0/1): off draws no band whatever the gains, which
-// must still be in their domain. curve and peak as above; the peak is still the shelves' (tilt's and low's).
+// must still be in their domain. curve and peak as above, the bands in the peak.
 fc_session_status fc_kit_eq_curve_bands (const double* params, double rate, double* curve, double* peak);
 // A low-end curve from `bands` band centres and energies: the bands in from_hz … to_hz as (hz, dB) points into output,
 // capacity in points. *written is the points written — 0 for fewer than two — or, with TOO_SMALL, the points needed.

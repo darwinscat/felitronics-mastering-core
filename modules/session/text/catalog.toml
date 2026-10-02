@@ -522,6 +522,10 @@ en = "Glue is unavailable: the song's loud places were not measured (no short-te
 ru = "Темп не измерен уверенно — восстановление клея рассчитано на {bpm}."
 en = "The tempo was not measured with confidence — the glue release is set for {bpm}."
 
+[messages.glueTempoUnsure]
+ru = "Темп {measured} измерен неуверенно — восстановление клея остаётся рассчитанным на {bpm}."
+en = "The tempo {measured} was measured with low confidence — the glue release stays set for {bpm}."
+
 [messages.glueReleaseHeld]
 ru = "Восстановление клея — {release}: темп просил {asked}, это за пределом прибора."
 en = "Glue release is {release}: the tempo asked for {asked}, which is outside the device's range."

@@ -50,10 +50,10 @@ void eqCurve (const Project& project, const Rules& rules, double rate, std::span
 // The same curve with the high-pass's band out: tilt, low and the EQ bands (SnapshotView::eqOnlyCurve).
 void eqOnlyCurve (const Project& project, const Rules& rules, double rate, std::span<EqPoint> output) noexcept;
 
-// THE EQ CURVE AGAINST ITS NORM (EqFinding, Session.h): the shelves the project's devices write — tilt's and low's, as
-// they sound — summed on the snapshot's kEqCurvePoints at `rate`, against [eq] curve.warnDb.
+// THE EQ CURVE AGAINST ITS NORM (EqFinding, Session.h): the curve eqOnlyCurve draws — tilt, low and the EQ bands, as they
+// sound, the high-pass out — on the snapshot's kEqCurvePoints at `rate`, against [eq] curve.warnDb.
 [[nodiscard]] EqFinding eqFinding (const Devices& devices, const Rules& rules, double rate) noexcept;
-// ...of the shelves a written stage holds.
+// ...of the bands a written stage holds.
 [[nodiscard]] EqFinding eqFinding (const EqStage& stage, const Rules& rules, double rate) noexcept;
 
 // THE HIGH-PASS AS THE CHAIN RUNS IT — the same cascade the band above describes (cutoff `fc`, `slope` dB/oct, at `rate`,

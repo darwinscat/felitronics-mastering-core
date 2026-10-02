@@ -642,7 +642,7 @@ void eqSnapshot()
             eq::BandParams h, t, l;
             h.on = t.on = l.on = true;
             h.type = eq::FilterType::HighPass; h.lanes[0].freq = 36.25; h.lanes[0].slope = slope;
-            t.type = eq::FilterType::Tilt; t.lanes[0].freq = engine.tilt.freqHz; t.lanes[0].gainDb = -1.25;
+            t.type = eq::FilterType::Tilt; t.lanes[0].freq = engine.tilt.freqHz; t.lanes[0].gainDb = -1.25; t.lanes[0].slope = 6;
             l.type = eq::FilterType::LowShelf; l.lanes[0].freq = engine.low.freqHz; l.lanes[0].Q = engine.low.q; l.lanes[0].gainDb = *low.db;
             bool agrees = true, grid = true; double previous = 0;
             for (const auto& p : v.eqCurve)

@@ -3,8 +3,8 @@
 
 // TILT AND LOW — two devices, one EQ stage (technical decision 3О10): the machine's layer on every target and on a quiet
 // input (tilt never, low only as vinyl's +0.5 dB); the knobs' ±6 dB domain with 0 and 1.25 dB exact and values past the
-// slider's travel taken as written; the geometry — tilt about 1 kHz, −dB below and +dB above, the ends 2·dB apart; low a
-// static shelf at 80 Hz, Q 0.6; the three EQ devices together, each moving its own contribution, the curve what the
+// slider's travel taken as written; the geometry — tilt about 1 kHz, −dB below and +dB above, the ends 2·dB apart, on two
+// first-order shelves (the gentle tilt); low a static shelf at 80 Hz, Q 0.6; the three EQ devices together, each moving its own contribution, the curve what the
 // engine runs from the bands written; a person's layer kept hidden, saved and imported, reset by a change of target.
 
 #include "../../../tests/DeclaredBudget.h"
@@ -75,7 +75,8 @@ double coreDb (const eq::BandParams& band, double rate, double hz)
 }
 eq::BandParams tiltBand (double db, const config::Engine& e)
 {
-    eq::BandParams b; b.on = true; b.type = eq::FilterType::Tilt; b.lanes[0].freq = e.tilt.freqHz; b.lanes[0].gainDb = db; return b;
+    eq::BandParams b; b.on = true; b.type = eq::FilterType::Tilt; b.lanes[0].freq = e.tilt.freqHz; b.lanes[0].gainDb = db; b.lanes[0].slope = 6;
+    return b;
 }
 eq::BandParams lowBand (double db, const config::Engine& e)
 {
@@ -177,6 +178,44 @@ void theGeometry()
     ok (ends, "tilt: the low end down by the knob, the top up by it, 2·dB between them");
     ok (pivot, "and the pivot at 1 kHz unmoved");
     ok (shelf, "low: the whole gain below 80 Hz, the corner's gain what Q 0.6 states, none at the top — core's shelf, point by point");
+}
+
+void theGentleTilt()
+{
+    felitronics::test::group ("the gentle tilt: two first-order shelves about 1 kHz; at +3 dB 125 Hz −2.91 · 250 −2.64 · 500 −1.79 · 1k 0 · 2k +1.79 · 4k +2.65 · 8k +2.91");
+    const auto r = detail::rules();
+    Project p;
+    p.devices.tilt.hand = { true, 3.0 };
+    detail::EqStage stage;
+    detail::writeEq (p.devices, r, stage);
+    const auto& written = stage.bands[detail::eqBand (Device::Tilt)];
+    ok (written.type == eq::FilterType::Tilt && written.lanes[0].slope == 6, "the tilt's band asks core for its first-order shelves: slope 6");
+    // What the engine plays, at the octaves around the pivot (48 kHz).
+    const double octaves[][2] { { 125, -2.91 }, { 250, -2.64 }, { 500, -1.79 }, { 1000, 0 }, { 2000, 1.79 }, { 4000, 2.65 }, { 8000, 2.91 } };
+    bool played = true;
+    for (const auto& [hz, db] : octaves) played = played && std::abs (coreDb (written, 48000, hz) - db) < 0.01;
+    ok (played, "the band written plays the gentle tilt: 6 dB between the ends, spread over decades, not inside 500 Hz…2 kHz");
+    // The curve the page draws: the analog first-order pair — low shelf (x² + G)/(x² + 1/G) at G = 10^(−3/20), high shelf
+    // A²·(x² + 1/A)/(x² + A) at A = 10^(3/20), x = f / 1 kHz — at every point up to 8 kHz, and core's response everywhere.
+    const double A = std::pow (10.0, 3.0 / 20);
+    const auto analogDb = [&] (double hz)
+    {
+        const double x2 = (hz / 1000) * (hz / 1000);
+        return 10 * std::log10 ((x2 + 1 / A) / (x2 + A)) + 10 * std::log10 (A * A * (x2 + 1 / A) / (x2 + A));
+    };
+    bool analog = true, core = true;
+    for (const double rate : { 48000.0, 96000.0 })
+    {
+        EqPoint curve[kEqCurvePoints];
+        detail::eqCurve (p, r, rate, curve);
+        for (const auto& point : curve)
+        {
+            if (point.hz <= 8000) analog = analog && std::abs (point.db - analogDb (point.hz)) < 0.01;
+            core = core && std::abs (point.db - coreDb (written, rate, point.hz)) < 1e-6;
+        }
+    }
+    ok (analog, "the curve: the analog first-order pair, within 0.01 dB up to 8 kHz");
+    ok (core, "and core's response of the band written, point by point");
 }
 
 void threeDevicesOneStage()
@@ -358,6 +397,7 @@ int main()
     theMachine();
     theKnobs();
     theGeometry();
+    theGentleTilt();
     threeDevicesOneStage();
     aPersonsLayer();
     theFilesMachineStays();
