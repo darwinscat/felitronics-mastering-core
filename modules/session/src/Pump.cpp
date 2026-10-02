@@ -120,7 +120,7 @@ void Session::preferTempo (std::uint32_t waiting) noexcept
     constexpr unsigned tempo = unsigned (detail::SourceMeasurements::order.size()) - 1u;
     static_assert (detail::SourceMeasurements::order[tempo] == Analyzer::Tempo, "tempo is the source job's last analyzer");
     // Never ahead of a run the devices read themselves (the low end): only ahead of a finding.
-    if (run.firstPublished && run.cursor >= run.firstCount && run.cursor < tempo && run.stage == 0
+    if (run.firstPublished && run.cursor < tempo && run.stage == 0
         && (waiting & detail::bitOf (run.order[run.cursor])) == 0
         && measurementResults_[std::size_t (Analyzer::Tempo)].status == MeasurementStatus::Pending)
     {
