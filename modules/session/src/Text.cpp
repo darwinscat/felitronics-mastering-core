@@ -7,9 +7,9 @@
 // formatted in place. One walk serves both size() and write(): it counts, or it copies, so the two cannot disagree.
 //
 // What the build's gate has proved (src/TextSchema.cpp) is relied on, and what it cannot prove is not: a fact built
-// with arguments that do not match its declaration prints `{name}` where each of them goes — or its id, when the
-// mismatched argument is the one a plural or select chooses by — and a message the catalog does not have prints its id,
-// never another language's.
+// with arguments that do not match its declaration — one missing, one too many, one of another kind or with a field the
+// renderer does not know — is incomplete and prints nothing (Text::complete), never its template; and a message the
+// catalog does not have prints its id, never another language's.
 //
 // No floating-point operation decides what is printed: the digits are std::to_chars's shortest decimal rounded in
 // characters and integers (src/TextNumber.cpp) and the signs are read from the bits, so the thread's floating-point
@@ -184,6 +184,15 @@ bool fits (const Arg& a, const detail::ArgShape& shape) noexcept
     return false;
 }
 
+// Does the fact carry exactly the arguments its declaration names, each fitting it?
+bool whole (const Fact& fact, const detail::FactShape& shape) noexcept
+{
+    if (fact.argCount != shape.argCount || fact.argCount > Fact::kMaxArgs) return false;
+    for (std::size_t i = 0; i < shape.argCount; ++i)
+        if (! fits (fact.args[i], shape.args[i])) return false;
+    return true;
+}
+
 // The fact's argument at `index`, if the fact has it and it fits.
 const Arg* argAt (const Fact& fact, const detail::FactShape& shape, std::size_t index) noexcept
 {
@@ -194,13 +203,7 @@ const Arg* argAt (const Fact& fact, const detail::FactShape& shape, std::size_t 
 void putArg (Sink& s, const Fact& fact, const detail::FactShape& shape, std::size_t index, Lang lang) noexcept
 {
     const Arg* a = argAt (fact, shape, index);
-    if (a == nullptr)
-    {
-        s.put ("{");
-        s.put (shape.args[index].name);
-        s.put ("}");
-        return;
-    }
+    if (a == nullptr) return;   // not reached: render() takes only a whole fact
     switch (a->kind)
     {
         case ArgKind::Value: putValue (s, *a, lang); return;
@@ -278,6 +281,7 @@ void render (Sink& s, const Fact& fact, Lang lang) noexcept
         s.put (d.integer());
         return;
     }
+    if (! whole (fact, *shape)) return;   // incomplete: nothing, never the template with a hole in it
     const std::string_view message = known (lang) ? chosenText (fact, *shape, lang) : std::string_view {};
     if (message.empty()) { s.put (shape->key); return; }
     for (std::size_t at = 0; at < message.size();)
@@ -419,6 +423,12 @@ std::uint64_t Text::textBytes (const Fact& fact, Lang lang) noexcept
     return ((std::uint64_t) size (fact, lang) + 1 + 15) / 16 * 16 + 64;
 }
 
+bool Text::complete (const Fact& fact) noexcept
+{
+    const detail::FactShape* shape = detail::shapeOf (fact.id);
+    return shape == nullptr || whole (fact, *shape);
+}
+
 Plural Text::category (const Arg& number, Lang lang) noexcept
 {
     return known (lang) ? categoryOf (number, lang) : Plural::Other;
@@ -466,9 +476,10 @@ std::optional<Fact> Text::rejected (const Answer& answer, const Request& request
     // The delivery format a target takes: its bit depth and rate, read off the answer.
     if (answer.rejection == Rejection::DeliveryFormat)
         return Fact::of (*id, Arg::count (answer.targetBits), Arg::value (double (answer.targetRate), Unit::Hz, 0));
-    // A field's rejection: the field, read off the request the answer is for. None found — a field the tables do not
-    // name — leaves the argument out, and the message shows {field}. Where the answer carries the refused number (and
-    // the domain it left), the field is said with them, each at the places it has (Answer::value, low, high).
+    // A field's rejection: the field, read off the request the answer is for. None found — a master's own numbers, a
+    // field the tables do not name — is said as the command's refusal (fact 131, no argument): never a fact short of
+    // the field its message needs. Where the answer carries the refused number (and the domain it left), the field is
+    // said with them, each at the places it has (Answer::value, low, high).
     std::optional<Term> field;
     if (std::holds_alternative<command::EditTarget> (request)) field = detail::targetFieldTerm (answer.field);
     else if (const auto* device = std::get_if<command::EditDevice> (&request))
@@ -498,7 +509,7 @@ std::optional<Fact> Text::rejected (const Answer& answer, const Request& request
     }
     if (field && answer.value && answer.rejection == Rejection::NotOneOf)
         return Fact::of (FactId::RejectedNotOneOfValue, Arg::term (*field), Arg::count (std::int64_t (*answer.value)));
-    return field ? Fact::of (*id, Arg::term (*field)) : Fact::of (*id);
+    return field ? Fact::of (*id, Arg::term (*field)) : Fact::of (FactId::RejectedContract);
 }
 
 std::string detail::argText (const Arg& arg, Lang lang)
