@@ -17,6 +17,11 @@ on:
 permissions:
   contents: read
 
+# A newer push to a pull request cancels the run it replaces; main and the night always finish.
+concurrency:
+  group: ci-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build-test:
     name: ${{ matrix.os }}
@@ -30,6 +35,25 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest, ubuntu-24.04-arm]
     steps:
       - uses: actions/checkout@v7
+      - name: Compiler cache — ccache
+        if: runner.os != 'Windows'
+        shell: bash
+        env: { HOMEBREW_NO_AUTO_UPDATE: 1 }
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then brew install -q ccache >/dev/null; else sudo apt-get install -y -qq ccache >/dev/null; fi
+          {
+            echo "CMAKE_C_COMPILER_LAUNCHER=ccache"
+            echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache"
+            echo "CCACHE_DIR=$HOME/.ccache"
+            echo "CCACHE_MAXSIZE=2G"
+            echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
+          } >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        if: runner.os != 'Windows'
+        with:
+          path: ~/.ccache
+          key: ccache-native-${{ matrix.os }}-${{ github.sha }}
+          restore-keys: ccache-native-${{ matrix.os }}-
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DFELITRONICS_MASTERING_BUILD_TESTS=ON
       - name: Build
@@ -98,6 +122,25 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
+      - name: Compiler cache — ccache
+        if: runner.os != 'Windows'
+        shell: bash
+        env: { HOMEBREW_NO_AUTO_UPDATE: 1 }
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then brew install -q ccache >/dev/null; else sudo apt-get install -y -qq ccache >/dev/null; fi
+          {
+            echo "CMAKE_C_COMPILER_LAUNCHER=ccache"
+            echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache"
+            echo "CCACHE_DIR=$HOME/.ccache"
+            echo "CCACHE_MAXSIZE=2G"
+            echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
+          } >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        if: runner.os != 'Windows'
+        with:
+          path: ~/.ccache
+          key: ccache-core-main-${{ github.sha }}
+          restore-keys: ccache-core-main-
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DFELITRONICS_MASTERING_BUILD_TESTS=ON -DFELITRONICS_MASTERING_FCORE_TAG=main
       - name: Build
@@ -118,6 +161,25 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
+      - name: Compiler cache — ccache
+        if: runner.os != 'Windows'
+        shell: bash
+        env: { HOMEBREW_NO_AUTO_UPDATE: 1 }
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then brew install -q ccache >/dev/null; else sudo apt-get install -y -qq ccache >/dev/null; fi
+          {
+            echo "CMAKE_C_COMPILER_LAUNCHER=ccache"
+            echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache"
+            echo "CCACHE_DIR=$HOME/.ccache"
+            echo "CCACHE_MAXSIZE=2G"
+            echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
+          } >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        if: runner.os != 'Windows'
+        with:
+          path: ~/.ccache
+          key: ccache-sanitizers-${{ github.sha }}
+          restore-keys: ccache-sanitizers-
       - name: Configure (ASan + UBSan, hard-fail on any UB)
         run: >
           cmake -S . -B build-san -DCMAKE_BUILD_TYPE=RelWithDebInfo
@@ -154,6 +216,25 @@ jobs:
         os: [ubuntu-latest, ubuntu-24.04-arm]
     steps:
       - uses: actions/checkout@v7
+      - name: Compiler cache — ccache
+        if: runner.os != 'Windows'
+        shell: bash
+        env: { HOMEBREW_NO_AUTO_UPDATE: 1 }
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then brew install -q ccache >/dev/null; else sudo apt-get install -y -qq ccache >/dev/null; fi
+          {
+            echo "CMAKE_C_COMPILER_LAUNCHER=ccache"
+            echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache"
+            echo "CCACHE_DIR=$HOME/.ccache"
+            echo "CCACHE_MAXSIZE=2G"
+            echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
+          } >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        if: runner.os != 'Windows'
+        with:
+          path: ~/.ccache
+          key: ccache-gcc14-${{ matrix.os }}-${{ github.sha }}
+          restore-keys: ccache-gcc14-${{ matrix.os }}-
       - name: Install g++-14
         run: sudo apt-get update && sudo apt-get install -y g++-14
       - name: Configure
@@ -364,11 +445,83 @@ jobs:
   # that is load-bearing: Apple's libm and musl (what emscripten compiles in) return different doubles from
   # tan() at 88.2 and 192 kHz, so an arm64-macOS reference would diverge from wasm for a reason that is not a
   # regression. glibc agrees with musl at every rate measured. docs/WASM-SPIKE.md has the numbers.
-  wasm:
-    name: wasm-audio tier + native-vs-wasm parity (core ${{ matrix.core }})
+  wasm-tier:
+    name: wasm-audio tier — the suite in node (core ${{ matrix.core }})
     runs-on: ubuntu-latest
-    # About 60 minutes since slice 3 (tools/wasm/build.sh alone takes ~31 of them, serial emcc): the two build.sh
-    # passes of session-check and the WAV contract's are the long tail. The checked tier runs beside it (wasm-checked).
+    # The tier's own build, its suite in node and the audits of what it emitted — beside the modules' row (wasm), which
+    # builds tools/wasm/build.sh and runs every native-vs-wasm comparison.
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # Nightly (and on demand) also against core's CURRENT main: the pinned row proves the pin, and a core
+        # change that moves a byte on one road and not the other would otherwise wait for the next pin bump.
+        core: ${{ fromJSON((github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '["pin","main"]' || '["pin"]') }}
+    env:
+      CORE_TAG: ${{ matrix.core == 'main' && '-DFELITRONICS_MASTERING_FCORE_TAG=main' || '' }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install emsdk 6.0.9
+        # From upstream, pinned on the CLONE as well as the SDK version, as in core's CI.
+        run: |
+          git clone --depth 1 --branch 6.0.9 https://github.com/emscripten-core/emsdk.git "$HOME/emsdk"
+          "$HOME/emsdk/emsdk" install 6.0.9
+          "$HOME/emsdk/emsdk" activate 6.0.9
+          source "$HOME/emsdk/emsdk_env.sh"
+          echo "EMSDK=$EMSDK" >> "$GITHUB_ENV"
+          echo "PATH=$PATH"   >> "$GITHUB_ENV"
+      - name: Compiler cache — ccache under emcc
+        # build.sh compiles the session's sources again for every module, one source at a time: a module whose compile
+        # flags another already used is all cache hits, and a run starts from the last cache of its core row. The
+        # compiler is named by the pinned SDK, not its mtime — emsdk is installed afresh each run.
+        run: |
+          sudo apt-get install -y -qq ccache >/dev/null
+          {
+            echo "EM_COMPILER_WRAPPER=ccache"
+            echo "CCACHE_DIR=$HOME/.ccache"
+            echo "CCACHE_MAXSIZE=4G"
+            echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE"
+            echo "CCACHE_COMPILERCHECK=string:emsdk-6.0.9"
+          } >> "$GITHUB_ENV"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.ccache
+          key: ccache-wasm-tier-${{ matrix.core }}-${{ github.sha }}
+          restore-keys: ccache-wasm-tier-${{ matrix.core }}-
+      - name: Configure + build the tier
+        run: cmake --preset wasm-audio $CORE_TAG && cmake --build --preset wasm-audio -j "$(nproc)"
+      - name: Run the suite in node
+        env:
+          # A pull request and a push skip the suite's tests over a minute in node (measured on PR #33); each runs in
+          # every native row, and the night (and on demand) runs them here too.
+          SLOW: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && '' || '^(felitronics_session_abi_generation_tests|felitronics_loudness_solver_tests|felitronics_session_object_gate|felitronics_session_object_control_facade_third_global|felitronics_session_abi_manifest_control|felitronics_session_object_control_facade_renamed|felitronics_session_plan_sound_tests|felitronics_session_measurement_budget_600s|felitronics_session_hpf_mono_tests|felitronics_delivered_ceiling_tests)$' }}
+        run: ctest --preset wasm-audio -j "$(nproc)" --no-tests=error ${SLOW:+-E "$SLOW"}
+      - name: No threads — audited on EVERY emitted .wasm
+        run: |
+          CORE="$(sed -n 's/^FELITRONICS_MASTERING_CORE_SOURCE_DIR:INTERNAL=//p' build-wasm-audio/CMakeCache.txt)"
+          node "$CORE/tools/wasm/check-no-threads.mjs" --all build-wasm-audio
+      - name: No threading header in a public module header
+        # The .wasm audit cannot see std::mutex: it lives inside libc++-noexcept.a and its stub succeeds.
+        run: |
+          if grep -rnE '^[[:space:]]*#[[:space:]]*include[[:space:]]*<(thread|mutex|shared_mutex|condition_variable|future|latch|barrier|semaphore|stop_token)>' modules/*/include; then
+            echo "^^ the wasm-audio tier is single-threaded by contract (felitronics-core DSP-ARCHITECTURE.md 2)"; exit 1
+          fi
+          echo "no threading headers in public module headers"
+      - name: No long double arithmetic in any emitted object — law 9, from the ARTIFACT
+        run: |
+          NM="$EMSDK/upstream/bin/llvm-nm"
+          if find build-wasm-audio -name '*.o' -print0 \
+             | xargs -0 "$NM" --undefined-only --print-file-name \
+             | grep -E ' U (__(add|sub|mul|div|neg|extend[sd]f|trunc|fix|float|eq|ne|lt|le|gt|ge|unord)tf[0-9a-z]*|(sqrt|pow|exp|log|sin|cos|tan|fabs|floor|ceil|fmod|hypot|fma)l)$'; then
+            echo "^^ a wasm32 long double operation is a compiler-rt libcall — law 9."; exit 1
+          fi
+          echo "no long double arithmetic in any emitted object"
+
+  wasm:
+    name: wasm modules + native-vs-wasm parity (core ${{ matrix.core }})
+    runs-on: ubuntu-latest
+    # tools/wasm/build.sh and every native-vs-wasm comparison; the tier and its suite run beside it (wasm-tier), the checked
+    # tier at night (wasm-checked). build.sh was ~31 minutes of serial emcc until ccache (9 cold on PR #33).
     timeout-minutes: 90
     strategy:
       fail-fast: false
@@ -405,32 +558,8 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.ccache
-          key: ccache-wasm-${{ matrix.core }}-${{ github.sha }}
-          restore-keys: ccache-wasm-${{ matrix.core }}-
-      - name: Configure + build the tier
-        run: cmake --preset wasm-audio $CORE_TAG && cmake --build --preset wasm-audio -j "$(nproc)"
-      - name: Run the suite in node
-        run: ctest --preset wasm-audio -j "$(nproc)" --no-tests=error
-      - name: No threads — audited on EVERY emitted .wasm
-        run: |
-          CORE="$(sed -n 's/^FELITRONICS_MASTERING_CORE_SOURCE_DIR:INTERNAL=//p' build-wasm-audio/CMakeCache.txt)"
-          node "$CORE/tools/wasm/check-no-threads.mjs" --all build-wasm-audio
-      - name: No threading header in a public module header
-        # The .wasm audit cannot see std::mutex: it lives inside libc++-noexcept.a and its stub succeeds.
-        run: |
-          if grep -rnE '^[[:space:]]*#[[:space:]]*include[[:space:]]*<(thread|mutex|shared_mutex|condition_variable|future|latch|barrier|semaphore|stop_token)>' modules/*/include; then
-            echo "^^ the wasm-audio tier is single-threaded by contract (felitronics-core DSP-ARCHITECTURE.md 2)"; exit 1
-          fi
-          echo "no threading headers in public module headers"
-      - name: No long double arithmetic in any emitted object — law 9, from the ARTIFACT
-        run: |
-          NM="$EMSDK/upstream/bin/llvm-nm"
-          if find build-wasm-audio -name '*.o' -print0 \
-             | xargs -0 "$NM" --undefined-only --print-file-name \
-             | grep -E ' U (__(add|sub|mul|div|neg|extend[sd]f|trunc|fix|float|eq|ne|lt|le|gt|ge|unord)tf[0-9a-z]*|(sqrt|pow|exp|log|sin|cos|tan|fabs|floor|ceil|fmod|hypot|fma)l)$'; then
-            echo "^^ a wasm32 long double operation is a compiler-rt libcall — law 9."; exit 1
-          fi
-          echo "no long double arithmetic in any emitted object"
+          key: ccache-wasm-modules-${{ matrix.core }}-${{ github.sha }}
+          restore-keys: ccache-wasm-modules-${{ matrix.core }}-
       - name: The native references — the CLIs every comparison below diffs against
         # Configured once, here, and the core it fetched is the core the wasm modules are built against in the
         # next step: two fetches of one tag are one tree, but "the same core" should be a fact of the run, not
