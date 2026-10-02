@@ -269,6 +269,7 @@ inline constexpr FactShape kFacts[] = {
     { FactId::TargetPractice, "targetPractice", { { { "lufs", ArgKind::Value, {} } } }, 1 },
     { FactId::TargetNoNormalisation, "targetNoNormalisation", {}, 0 },
     { FactId::MonoBassBelowZones, "monoBassBelowZones", { { { "crossover", ArgKind::Value, {} }, { "clubFrom", ArgKind::Value, {} }, { "vinylFrom", ArgKind::Value, {} } } }, 3 },
+    { FactId::DeviceUnmeasured, "deviceUnmeasured", { { { "analyzer", ArgKind::Term, "analyzer" } } }, 1 },
 
 };
 inline constexpr std::size_t kFactCount = sizeof (kFacts) / sizeof (kFacts[0]);

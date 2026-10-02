@@ -346,6 +346,24 @@ struct Mix
     }
 };
 struct Measured { std::unique_ptr<Session> s; PlanView plan; };
+// Until the low-end runs the devices read have ended: the devices are placed at the loudness and the true peak, and their
+// low-end fields are "not measured yet" until then.
+void untilTheLowEnd (Session& s, unsigned limit)
+{
+    unsigned i = 0;
+    for (; i < limit && s.state() == State::Loaded; ++i) (void) s.step (16);
+    bool low = false, low150 = false;
+    for (; i < limit && ! (low && low150); ++i)
+    {
+        if (s.step (16).state == StepState::Done) break;
+        for (const auto& n : s.events())
+            if (n.kind == EventKind::Measurement && n.payload.measurement.status != MeasurementStatus::Pending)
+            {
+                low = low || n.payload.measurement.analyzer == Analyzer::LowEnd;
+                low150 = low150 || n.payload.measurement.analyzer == Analyzer::LowEnd150;
+            }
+    }
+}
 Measured measure (const Mix& m, const char* target = "allStreaming")
 {
     Measured out { Session::create().session, {} };
@@ -353,7 +371,7 @@ Measured measure (const Mix& m, const char* target = "allStreaming")
     const float* planes[] { m.left.data(), m.right.data() };
     (void) s.apply (command::SetTarget { 1, target });
     ok (s.apply (command::Load { 2, { planes, 2, m.left.size(), Mix::rate }, {} }).rejection == Rejection::None, "PRECONDITION: the mix loads");
-    for (unsigned i = 0; i < 2000000 && s.state() == State::Loaded; ++i) (void) s.step (16);
+    untilTheLowEnd (s, 2000000);
     out.plan = s.snapshot().view().plan;
     return out;
 }
@@ -511,7 +529,7 @@ void aPieceLongerThanTheReading()
     const float* planes[] { pcm.data(), pcm.data() };
     auto s = Session::create().session;
     ok (s->apply (command::Load { 1, { planes, 2, pcm.size(), rate }, {} }).rejection == Rejection::None, "PRECONDITION: the long piece loads");
-    for (unsigned i = 0; i < 40000000 && s->state() == State::Loaded; ++i) (void) s->step (16);
+    untilTheLowEnd (*s, 40000000);
     const auto b = s->snapshot();
     const auto& found = b.view().plan.monoBass;
     const auto covered = PlanText::monoBassCoverage (found);
@@ -689,6 +707,185 @@ void theLowestBandWithItsSureness()
         "D1 8 dB under: published and sure (" + std::to_string (sureMargin.value_or (-1.0)) + " dB)");
 }
 
+//==============================================================================
+// MASTER AS SOON AS THE LOUDNESS AND THE TRUE PEAK ARE KNOWN (owner, 02.10): the devices are placed then; a field whose
+// measurement has not ended is the machine's "not measured yet"; a person may edit it; a hidden panel's master waits in
+// its job for what its devices read and sounds as one asked after everything ended.
+
+struct Early { std::unique_ptr<Session> s; };
+Early loadMix (const Mix& m, const char* target)
+{
+    Early out { Session::create().session };
+    const float* planes[] { m.left.data(), m.right.data() };
+    (void) out.s->apply (command::SetTarget { 1, target });
+    ok (out.s->apply (command::Load { 2, { planes, 2, m.left.size(), Mix::rate }, {} }).rejection == Rejection::None, "PRECONDITION: the mix loads");
+    return out;
+}
+template <class P> bool pumpUntil (Session& s, P&& done, unsigned limit = 4000000)
+{
+    for (unsigned i = 0; i < limit; ++i)
+    {
+        if (done()) return true;
+        if (s.step (1).state == StepState::Done && ! done()) return false;
+    }
+    return done();
+}
+std::vector<std::uint8_t> wavOf (Session& s)
+{
+    const auto token = s.pendingMaster();
+    const auto plan = s.masterWavPlan (token);
+    std::vector<std::uint8_t> bytes (std::size_t (plan.bytes));
+    for (std::size_t at = 0; at < bytes.size(); at += 65536u)
+    {
+        const auto n = std::min<std::size_t> (65536u, bytes.size() - at);
+        if (s.copyMasterWav (token, at, std::span<std::uint8_t> (bytes.data() + at, n)) != MasterTransferStatus::Ok) return {};
+    }
+    return bytes;
+}
+bool hasFact (const PlanView& plan, Device device, text::FactId id)
+{
+    for (std::size_t i = 0; i < plan.facts.count; ++i)
+        if (plan.facts.items[i].device == device && plan.facts.items[i].fact.id == id) return true;
+    return false;
+}
+
+void masterAtLoudnessAndPeak()
+{
+    felitronics::test::group ("the devices are placed once the loudness and the true peak are known; what they still read is \"not measured yet\"");
+    const auto mix = Mix (20).tone (55.0, 0.3).tone (440.0, 0.1);
+    auto e = loadMix (mix, "allStreaming"); auto& s = *e.s;
+    ok (pumpUntil (s, [&] { return s.state() != State::Loaded; }), "PRECONDITION: the first measurement ends");
+    auto v = s.snapshot();
+    const auto& lowEnd = v.view().measurements[std::size_t (Analyzer::LowEnd)];
+    ok (v.view().state == State::Measured1 && v.view().mandatoryMeasurementsReady && lowEnd.status == MeasurementStatus::Pending,
+        "Measured1 comes with the loudness and the true peak, before the low end is measured");
+    const auto& plan = v.view().plan;
+    constexpr std::uint8_t hpfFq = 1u << 1, monoBassOn = 1u << 0;       // fields in the order Project.h writes them
+    ok (plan.status == PlanStatus::Pending && ! plan.readOnly && plan.devices.hpf.heldBack == HeldBack::Pending
+        && plan.devices.hpf.pending == hpfFq && plan.devices.monoBass.heldBack == HeldBack::Pending
+        && plan.devices.monoBass.pending == monoBassOn
+        && (plan.devices.hpf.needs & detail::bitOf (Analyzer::LowEnd)) != 0,
+        "the high-pass's cutoff and mono bass's tick wait for the low end: not measured yet, and the panel takes edits");
+    ok (hasFact (plan, Device::Hpf, text::FactId::DeviceUnmeasured) && hasFact (plan, Device::MonoBass, text::FactId::DeviceUnmeasured),
+        "the card's words are the core's fact");
+    ok (s.apply (command::SetManual { 3, true }).rejection == Rejection::None
+        && s.apply (command::Master { 4 }).rejection == Rejection::PlanPending, "with the panel open the master waits for what the devices read");
+    ok (s.apply (command::SetManual { 5, false }).rejection == Rejection::None, "PRECONDITION: the panel hidden again");
+    MonoBassFields<Touched> width; width.width = 0.25;
+    HpfFields<Touched> slope; slope.slope = 12;
+    ok (s.apply (command::EditDevice { 6, width }).rejection == Rejection::None
+        && s.apply (command::EditDevice { 7, slope }).rejection == Rejection::None, "a person edits before the machine has measured");
+    HpfFields<Mark> back; back.slope = true;
+    ok (s.apply (command::RevertEdits { 8, back }).rejection == Rejection::None
+        && s.apply (command::EditDevice { 9, slope }).rejection == Rejection::None, "and reverts and edits again");
+    ok (pumpUntil (s, [&] { return s.snapshot().view().plan.status == PlanStatus::Ready; }), "the plan ends");
+    v = s.snapshot();
+    const auto& d = v.view().project.devices;
+    ok (v.view().plan.hpf.cut == HpfCut::Note && ! same (d.hpf.machine.fq, 32.0) && d.monoBass.machine.on
+        && v.view().plan.devices.hpf.pending == 0 && v.view().plan.devices.monoBass.pending == 0
+        && d.monoBass.hand.width && same (*d.monoBass.hand.width, 0.25) && d.hpf.hand.slope && *d.hpf.hand.slope == 12,
+        "the machine fills its untouched fields when its measurement ends, and never moves a touched one");
+}
+
+void aHiddenMasterAtLoudnessAndPeakSoundsAsLate()
+{
+    felitronics::test::group ("a hidden panel's master asked at the loudness and the true peak sounds as one asked after everything ended");
+    const auto mix = Mix (20).tone (55.0, 0.3).tone (440.0, 0.1);
+    auto early = loadMix (mix, "allStreaming"); auto& a = *early.s;
+    ok (pumpUntil (a, [&] { return a.state() != State::Loaded; }), "PRECONDITION: the first measurement ends");
+    ok (a.snapshot().view().measurements[std::size_t (Analyzer::LowEnd)].status == MeasurementStatus::Pending
+        && a.apply (command::Master { 3 }).rejection == Rejection::None, "the master is taken before the low end is measured");
+    ok (pumpUntil (a, [&] { return a.job() == 0; }) && a.masters().size() == 1, "and ends");
+    auto late = loadMix (mix, "allStreaming"); auto& b = *late.s;
+    ok (pumpUntil (b, [&] { return b.state() == State::Measured2 && b.needlesJob() == 0; }), "PRECONDITION: everything measured");
+    ok (b.apply (command::Master { 3 }).rejection == Rejection::None && pumpUntil (b, [&] { return b.job() == 0; }), "the late master ends");
+    const auto x = a.masters().size() == 1 ? wavOf (a) : std::vector<std::uint8_t> {}, y = wavOf (b);
+    ok (! x.empty() && x == y, "the same WAV, byte for byte (" + std::to_string (x.size()) + " and " + std::to_string (y.size())
+        + " bytes; pending " + std::to_string (a.pendingMaster().master) + ", " + std::to_string (b.pendingMaster().master) + ")");
+    ok (a.masters().size() == 1 && b.masters().size() == 1
+        && a.masters()[0].recipe.project.devices.hpf.machine.fq == b.masters()[0].recipe.project.devices.hpf.machine.fq
+        && a.masters()[0].recipe.project.devices.monoBass.machine.on, "its recipe carries the machine's measured fields");
+}
+
+void theDeviceRunsGoFirst()
+{
+    felitronics::test::group ("the low-end runs the target's devices read go first; nothing is measured twice");
+    const auto mix = Mix (20).tone (55.0, 0.3).tone (440.0, 0.1);
+    for (const char* target : { "allStreaming", "lp", "cd" })
+    {
+        auto e = loadMix (mix, target); auto& s = *e.s;
+        std::vector<Analyzer> order;
+        std::vector<double> share (kAnalyzers, 0.0);
+        double before = 0, fraction = 0;
+        bool twice = false;
+        for (unsigned i = 0; i < 4000000 && ! (s.state() == State::Measured2 && s.needlesJob() == 0); ++i)
+        {
+            if (s.step (1).state == StepState::Done) break;
+            for (const auto& n : s.events())
+            {
+                if (n.kind == EventKind::Phase && n.payload.phase.name == PhaseName::Analyzers && n.jobId == s.snapshot().view().measurementJob)
+                    fraction = n.payload.phase.fraction;
+                if (n.kind != EventKind::Measurement || n.payload.measurement.status == MeasurementStatus::Pending
+                    || n.payload.measurement.analyzer == Analyzer::Excursions || n.payload.measurement.analyzer == Analyzer::Loudness
+                    || n.payload.measurement.analyzer == Analyzer::Clipping || n.payload.measurement.analyzer == Analyzer::Programme
+                    || n.payload.measurement.analyzer == Analyzer::Waveform) continue;
+                twice = twice || std::find (order.begin(), order.end(), n.payload.measurement.analyzer) != order.end();
+                order.push_back (n.payload.measurement.analyzer);
+            }
+            if (! order.empty() && share[std::size_t (order.back())] == 0.0 && fraction > before)
+            { share[std::size_t (order.back())] = fraction - before; before = fraction; }
+        }
+        const auto at = [&] (Analyzer a) { return std::size_t (std::find (order.begin(), order.end(), a) - order.begin()); };
+        const bool lp = std::string (target) == "lp";
+        const auto deviceRuns = lp ? std::max (at (Analyzer::LowEnd), at (Analyzer::LowEnd150)) : at (Analyzer::LowEnd);
+        bool first = true;
+        for (const auto a : { Analyzer::InfraLow, Analyzer::Forensics, Analyzer::Stereo, Analyzer::Crest, Analyzer::Hum, Analyzer::StereoBursts })
+            first = first && deviceRuns < at (a);
+        if (! lp) first = first && deviceRuns < at (Analyzer::LowEnd150);
+        ok (order.size() == 9 && ! twice && first, std::string (target) + ": the devices' runs first, each analyzer once");
+        if (std::string (target) == "cd")
+            ok (at (Analyzer::Tempo) < at (Analyzer::LowEnd150) && at (Analyzer::LowEnd) < at (Analyzer::Tempo),
+                "cd: the tempo its glue reads goes ahead of the findings, never ahead of the low end its devices read");
+        if (! lp && std::string (target) != "cd")
+            ok (share[std::size_t (Analyzer::Stereo)] > 0 && share[std::size_t (Analyzer::Crest)] > 10 * share[std::size_t (Analyzer::Stereo)],
+                std::string (target) + ": the bar moves by the configured weights (stereo " + std::to_string (share[std::size_t (Analyzer::Stereo)])
+                + ", crest " + std::to_string (share[std::size_t (Analyzer::Crest)]) + ")");
+    }
+    // A change of target while the first low-end run measures: the new target's run follows it, once.
+    auto e = loadMix (mix, "allStreaming"); auto& s = *e.s;
+    ok (pumpUntil (s, [&] { return s.state() != State::Loaded; }), "PRECONDITION: placed");
+    ok (s.apply (command::SetTarget { 3, "lp" }).rejection == Rejection::None, "the target changes to lp while the low end measures");
+    ok (pumpUntil (s, [&] { return s.snapshot().view().plan.status == PlanStatus::Ready; })
+        && s.snapshot().view().measurements[std::size_t (Analyzer::InfraLow)].status == MeasurementStatus::Pending
+        && s.snapshot().view().measurements[std::size_t (Analyzer::LowEnd150)].status == MeasurementStatus::Ready,
+        "its crossover's run ends before any finding is measured");
+}
+
+void noFileCarriesAPlaceholder()
+{
+    felitronics::test::group ("a file never carries a field not measured yet, and an import never meets an incomplete machine");
+    const auto mix = Mix (20).tone (55.0, 0.3).tone (440.0, 0.1);
+    auto e = loadMix (mix, "allStreaming"); auto& s = *e.s;
+    ok (pumpUntil (s, [&] { return s.state() != State::Loaded; }) && s.snapshot().view().plan.devices.hpf.pending != 0,
+        "PRECONDITION: placed, the high-pass's cutoff not measured yet");
+    ok (s.exportProjectBytes().rejection == Rejection::PlanPending && s.exportProject().rejection == Rejection::PlanPending,
+        "an export waits while a device field is not measured yet: no placeholder is written as the machine's opinion");
+    ok (pumpUntil (s, [&] { return s.snapshot().view().plan.status == PlanStatus::Ready; })
+        && s.snapshot().view().measurements[std::size_t (Analyzer::LowEnd150)].status == MeasurementStatus::Pending,
+        "PRECONDITION: allStreaming's plan ready, the 150 Hz run lp's mono bass reads still to come");
+    const auto saved = s.exportProject();
+    ok (saved.rejection == Rejection::None, "with nothing pending the project exports");
+    std::string text (saved.view());
+    const auto at = text.find ("\"allStreaming\"");
+    ok (at != std::string::npos, "PRECONDITION: the file names its target");
+    text.replace (at, std::string ("\"allStreaming\"").size(), "\"lp\"");
+    const auto revision = s.revision();
+    ok (s.importProject (3, text).rejection == Rejection::PlanPending && s.revision() == revision && s.project().target != detail::rules().find ("lp").value_or (0),
+        "an lp file while lp's run is still to come: refused whole, nothing changed");
+    ok (pumpUntil (s, [&] { return s.snapshot().view().measurements[std::size_t (Analyzer::LowEnd150)].status != MeasurementStatus::Pending; })
+        && s.importProject (4, text).rejection == Rejection::None, "once it has ended the same file opens");
+}
+
 int main()
 {
     theSureLowestNote();
@@ -703,5 +900,9 @@ int main()
     aSentenceStatesWhatSounds();
     everyTargetFromOneMeasurement();
     theLowestBandWithItsSureness();
+    masterAtLoudnessAndPeak();
+    aHiddenMasterAtLoudnessAndPeakSoundsAsLate();
+    theDeviceRunsGoFirst();
+    noFileCarriesAPlaceholder();
     return felitronics::test::report();
 }

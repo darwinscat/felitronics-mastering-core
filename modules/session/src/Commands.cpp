@@ -215,7 +215,11 @@ Checked Session::storageFor (const Request& request) const noexcept
     const Rules rules = detail::rules();
 
     if (const auto* imported = std::get_if<command::ImportProject> (&request))
+    {
+        // 3. NAMES: a placement with no field still to be measured — the file's own target is asked in apply().
+        if (detail::anyPending (plan_.devices)) return rejected (Rejection::PlanPending);
         return detail::importBytes (imported->bytes);
+    }
     if (const auto* load = std::get_if<command::Load> (&request))
     {
         if (lastJob_ == std::numeric_limits<JobId>::max()) return rejected (Rejection::NoJobId);
@@ -591,6 +595,7 @@ Answer Session::apply (const Request& request) noexcept
         // the measurements its devices read end. A master the session decides waits for them (the panel hidden: with
         // it open the command was refused); a ready one renders at once.
         jobWaiting_ = master->ready.version == 0 && plan_.waiting != 0;
+        jobMachineFromFile_ = machineFromFile_;
         jobRecipe_ = Recipe { project_, source_.hash, config::Config::versions().sound };
         jobRecipe_.readyVersion = plan.ready.version;
         if (jobWaiting_)
@@ -758,6 +763,7 @@ bool Driver::retain (Session& session, JobId job, const MeasurementResult& resul
                                   session.revision_, result.framesRead, result.total, result.stored, result.complete };
     session.emit (event);
     if (result.analyzer == Analyzer::Loudness && session.devicesPlaced_) session.requestNeedles();
+    if (result.status != MeasurementStatus::Pending) session.placeAgain (result.analyzer);
     session.replan();
     return true;
 }

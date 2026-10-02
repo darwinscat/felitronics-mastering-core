@@ -1,6 +1,6 @@
 {
   "checks": [
-    {"kind":"snapshot","index":0,"path":"state","value":1},
+    {"kind":"snapshot","index":0,"path":"state","value":2},
     {"kind":"snapshot","index":0,"path":"measurements.0.status","value":1},
     {"kind":"snapshot","index":0,"path":"measurements.4.status","value":0},
     {"kind":"snapshot","index":1,"path":"state","value":4},

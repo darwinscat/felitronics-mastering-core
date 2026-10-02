@@ -240,7 +240,9 @@ void Session::stepSourceMeasurements() noexcept
         if (dc >= threshold) warn (text::Fact::of (text::FactId::SourceDc, text::Arg::value (dc, text::Unit::None, 4)));
         return;
     }
-    // Phase completion is a consequence of results, not a count of calls to step().
+    // Phase completion is a consequence of results, not a count of calls to step(). The first measurement — the
+    // loudness and the true peak — has ended once the source's own runs begin: the needles are asked, then the devices
+    // placed, a field that waits for one of the runs below "not measured yet" until it ends (placeAgain).
     if (run.cursor == run.firstCount && ! run.firstPublished)
     {
         if (! run.firstReady) { run.firstReady = true; requestNeedles(); return; }
@@ -303,6 +305,7 @@ void Session::stepSourceMeasurements() noexcept
         event.kind = EventKind::Fact;
         (void) event.payload.fact.assign (text::Fact::of (text::FactId::AnalyzerStatus, text::Arg::term (analyzers[run.cursor]), text::Arg::term (status))); emit (event);
         workspace.release (id); ++run.cursor; run.stage = 0; run.frames = run.copied = 0;
+        placeAgain (id);
         if (id == Analyzer::Tempo && run.tempoReturnCursor < run.order.size())
         { run.cursor = run.tempoReturnCursor; run.tempoReturnCursor = unsigned (run.order.size()); run.tempoPublishedEarly = true; }
     };
@@ -310,7 +313,36 @@ void Session::stepSourceMeasurements() noexcept
     const auto chunks = (source_.frames + 1023u) / 1024u;
     const auto done = std::uint64_t (run.cursor) * (chunks + 4) + run.frames / 1024;
     const auto total = run.order.size() * (chunks + 4);
-    measurementProgress_ = { PhaseName::Analyzers, total ? double (done) / double (total) : 0,
+    // THE BAR by [progress.analysis.weights]: the analyzers that ended, and the share of the current one read, of the sum
+    // of all nine. The infra-low run is the low end's geometry at another crossover: it weighs lowEnd120.
+    const auto weights = detail::rules().engine.find ("progress").find ("analysis").find ("weights");
+    const auto weightOf = [&] (Analyzer a)
+    {
+        switch (a)
+        {
+            case Analyzer::LowEnd: case Analyzer::InfraLow: return configured (weights.find ("lowEnd120"));
+            case Analyzer::LowEnd150: return configured (weights.find ("lowEnd150"));
+            case Analyzer::Forensics: return configured (weights.find ("forensics"));
+            case Analyzer::Stereo: return configured (weights.find ("stereo"));
+            case Analyzer::Crest: return configured (weights.find ("crest"));
+            case Analyzer::Hum: return configured (weights.find ("hum"));
+            case Analyzer::StereoBursts: return configured (weights.find ("stereoBursts"));
+            case Analyzer::Tempo: return configured (weights.find ("tempo"));
+            case Analyzer::Loudness: case Analyzer::Clipping: case Analyzer::Programme: case Analyzer::Waveform:
+            case Analyzer::Excursions: break;
+        }
+        detail::storageOverflow();
+    };
+    double weighed = 0, weightTotal = 0;
+    for (const auto a : run.order)
+    {
+        const auto w = weightOf (a); weightTotal += w;
+        const auto status = measurementResults_[std::size_t (a)].status;
+        if (status != MeasurementStatus::Pending && status != MeasurementStatus::Cancelled) weighed += w;
+    }
+    if (source_.frames != 0 && measurementResults_[index].status == MeasurementStatus::Pending)
+        weighed += weightOf (id) * double (run.frames) / double (source_.frames);
+    measurementProgress_ = { PhaseName::Analyzers, weightTotal > 0 ? weighed / weightTotal : 0,
         config::Config::versions().all, 0, 0, std::uint32_t (std::min<std::uint64_t> (done, 4294967295u)),
         std::uint32_t (std::min<std::uint64_t> (total, 4294967295u)) };
     if (run.stage == 0)

@@ -108,6 +108,11 @@ struct AdviceHands
 };
 void stateReasons (PlanView& plan, const EqFinding& eq, const AdviceHands& hands) noexcept;
 void stateWaiting (PlanView& plan) noexcept;
+// Does any device hold a machine field not measured yet (DevicePlan::pending)? Then no project file is written or read:
+// a file would carry a placeholder as the machine's opinion, an import would be compared against an incomplete one.
+[[nodiscard]] bool anyPending (const DevicePlans& plans) noexcept;
+// A pending plan's card lines: every device with fields not measured yet (DevicePlan::pending) — what it waits for.
+void stateUnmeasured (PlanView& plan) noexcept;
 
 // A device's plan in `plans`, by its place in the order of Device.
 [[nodiscard]] DevicePlan& planOf (DevicePlans& plans, Device device) noexcept;

@@ -149,7 +149,8 @@
       "Target",
       "Unmeasured",
       "Measured",
-      "Quiet"
+      "Quiet",
+      "Pending"
     ],
     "Sounding": [
       "Proposal",
@@ -973,7 +974,8 @@
         "target": "uint8",
         "measured": "uint8",
         "on": "bool",
-        "tick": "TickFrom"
+        "tick": "TickFrom",
+        "pending": "uint8"
       }
     },
     "DevicePlans": {

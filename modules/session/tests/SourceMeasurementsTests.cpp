@@ -277,11 +277,13 @@ void optionalFailure()
     auto made = Session::create(); auto& s = *made.session;
     (void) s.apply (command::Load { 1, { planes, 2, pcm.size(), 48000 }, {} });
     while (detail::Inspector::live (s) < 9) (void) s.step (1);
-    while (! detail::Inspector::run (s).initialWarnings) (void) s.step (1);
+    // The devices are placed at the loudness and the true peak; the needles they ask for run ahead of the source's runs.
+    while (s.state() == State::Loaded) (void) s.step (1);
+    while (s.needlesJob() != 0) (void) s.step (1);
     (void) s.setCapacity ({ s.liveBytes(), 0 });
     while (detail::Inspector::run (s).cursor == 0) (void) s.step (1);
     (void) s.setCapacity ({});
-    while (s.state() == State::Loaded) (void) s.step (1);
+    while (detail::Inspector::run (s).cursor < 5) (void) s.step (1);
     (void) s.setCapacity ({ s.liveBytes(), 0 });
     while (detail::Inspector::run (s).cursor == 5) (void) s.step (1);
     (void) s.setCapacity ({}); drive (s);
@@ -472,7 +474,7 @@ void cachedSourceAndCommands()
 void unplacedCommandsDuringWork()
 {
     // cd's glue reads the tempo, which the source's second phase measures: after the first measurement the plan waits
-    // for it, and the table's Unplaced columns take no device operation.
+    // for it. The table's Unplaced columns take a person's edits (owner, 02.10), neither an import nor adoptMachine.
     constexpr unsigned rate = 48000, frames = rate * 12;
     std::vector<float> pcm (frames);
     for (unsigned i = 0; i < frames; ++i) pcm[i] = i % 24000 < 300 ? .2f : 0.0f;
@@ -491,7 +493,9 @@ void unplacedCommandsDuringWork()
         {
             const auto cell = Table::commands[request.index()].cell[std::size_t (column)];
             const auto result = s.apply (request);
-            ok (cell == Rejection::NotPlaced && result.rejection == cell, "all unplaced command refusals come from the published table");
+            const bool edit = std::holds_alternative<command::EditDevice> (request) || std::holds_alternative<command::RevertEdits> (request);
+            ok ((edit ? cell == Rejection::None : cell == Rejection::NotPlaced) && result.rejection == cell,
+                "unplaced columns: edits taken, an import and adoptMachine refused, as the published table says");
         }
     };
     ok (s.snapshot().view().plan.status == PlanStatus::Pending && s.snapshot().view().plan.awaited == Analyzer::Tempo
@@ -627,6 +631,8 @@ void masterTempoDependencyPolicy()
         ok (s.apply (command::SetTarget { 2, "club" }).rejection == Rejection::None,
             "non-CD target selected");
         while (s.state() == State::Loaded) (void) s.step (16);
+        // The high-pass's cutoff reads the low end: past it, only the tempo is left of what a device could read.
+        while (s.snapshot().view().measurements[std::size_t (Analyzer::LowEnd)].status == MeasurementStatus::Pending) (void) s.step (16);
         ok (s.state() == State::Measured1 && ! s.snapshot().view().tempoChoice.ready,
             "dependency fixture enters phase two with pending tempo");
     };

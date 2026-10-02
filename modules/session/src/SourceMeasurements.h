@@ -31,7 +31,10 @@ struct SourceMeasurements
 {
     static constexpr std::array order { Analyzer::LowEnd, Analyzer::LowEnd150, Analyzer::InfraLow,
         Analyzer::Forensics, Analyzer::Stereo, Analyzer::Crest, Analyzer::Hum, Analyzer::StereoBursts, Analyzer::Tempo };
-    static constexpr unsigned firstCount = 5;
+    // The first measurement is the loudness and the true peak (owner, 02.10): it ends before any of these runs. The two
+    // low-end runs a target's devices read (the high-pass the 120 Hz one, mono bass the one at the target's crossover:
+    // 120 or 150) lead the order, so a change of target finds its run next or done; the findings follow.
+    static constexpr unsigned firstCount = 0;
     std::unique_ptr<MeasurementStore> results[kAnalyzers];
     std::uint64_t bytes = 0, frames = 0, copied = 0, work = 0;
     unsigned cursor = 0, stage = 0, facts = 0;

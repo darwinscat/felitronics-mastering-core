@@ -396,13 +396,28 @@ bool sameFact (const text::Fact& a, const text::Fact& b)
     return eq;
 }
 // The plan states PlanText's lines for it, in order, and — where it waits — the waiting fact after them.
+text::Term analyzerTerm (Analyzer a)
+{
+    return a == Analyzer::Tempo ? text::Term::AnalyzerTempo : a == Analyzer::LowEnd ? text::Term::AnalyzerLowEnd
+         : a == Analyzer::LowEnd150 ? text::Term::AnalyzerLowEnd150 : text::Term::AnalyzerNeedles;
+}
 bool statesItsReasons (const PlanView& p)
 {
     auto expected = reasonsOf (p);
+    // A plan that waits says, on each card whose machine fields are not measured yet, what they wait for (owner, 02.10).
+    if (p.status == PlanStatus::Pending || p.status == PlanStatus::Stopped)
+        for (unsigned d = 0; d <= unsigned (Device::Bands); ++d)
+        {
+            const auto& plan = detail::planOf (p.devices, Device (d));
+            if (plan.pending == 0) continue;
+            for (const auto a : { Analyzer::LowEnd, Analyzer::LowEnd150 })
+                if ((plan.needs & p.waiting & detail::bitOf (a)) != 0)
+                { expected.push_back ({ Device (d), text::Fact::of (text::FactId::DeviceUnmeasured, text::Arg::term (analyzerTerm (a))) }); break; }
+        }
     if (p.awaited && p.awaitedBy)
     {
         const auto device = text::Term (unsigned (text::Term::DeviceHpf) + unsigned (*p.awaitedBy));
-        const auto analyzer = *p.awaited == Analyzer::Tempo ? text::Term::AnalyzerTempo : text::Term::AnalyzerNeedles;
+        const auto analyzer = analyzerTerm (*p.awaited);
         expected.push_back ({ *p.awaitedBy, text::Fact::of (text::FactId::PlanWaiting, text::Arg::term (device),
             text::Arg::term (analyzer), text::Arg::value (100.0 * p.awaitedFraction, text::Unit::Percent, 0)) });
     }
@@ -471,8 +486,8 @@ void aWaitingPlanStatesItsWaitAlone()
     ok (stepUntil (s, [&] { return s.state() != State::Loaded; }) && s.state() == State::Measured1, "PRECONDITION: the first measurement ends");
     auto p = s.snapshot().view().plan;
     ok (p.status == PlanStatus::Pending && p.awaited == Analyzer::Tempo && p.awaitedBy == Device::Glue, "PRECONDITION: the plan waits for the tempo");
-    ok (p.facts.count == 1 && p.facts.items[0].device == Device::Glue && p.facts.items[0].fact.id == text::FactId::PlanWaiting
-        && statesItsReasons (p), "a Pending plan states none of its reasons, only what the master waits for: " + ids (p));
+    ok (p.facts.count != 0 && p.facts.items[p.facts.count - 1].device == Device::Glue && p.facts.items[p.facts.count - 1].fact.id == text::FactId::PlanWaiting
+        && statesItsReasons (p), "a Pending plan states none of its reasons: its cards not measured yet, then what the master waits for: " + ids (p));
     bool followed = true, moved = false;
     ok (stepUntil (s, [&]
     {
@@ -499,9 +514,9 @@ void theOpenPanelWaits()
     ok (stepUntil (s, [&] { return s.state() != State::Loaded; }) && s.state() == State::Measured1, "PRECONDITION: the first measurement ends");
     auto v = s.snapshot();
     ok (v.view().plan.status == PlanStatus::Pending && v.view().plan.awaited == Analyzer::Tempo && v.view().plan.awaitedBy == Device::Glue
-        && v.view().plan.readOnly && ! v.view().canMaster && v.view().devicesPlaced == false
+        && ! v.view().plan.readOnly && ! v.view().canMaster && v.view().devicesPlaced == false
         && same (v.view().project.devices.glue.machine.upToDb, 2.6),
-        "cd's glue reads the tempo: the machine layer is shown read-only, and the master button waits for the tempo the glue reads");
+        "cd's glue reads the tempo: the panel takes edits meanwhile (owner, 02.10), and the master button waits for the tempo the glue reads");
     const auto revision = s.revision();
     ok (s.check (command::Master { 4 }).rejection == Rejection::PlanPending && s.apply (command::Master { 4 }).rejection == Rejection::PlanPending
         && s.revision() == revision && s.job() == 0, "a master asked for anyway is refused whole: PlanPending");
@@ -511,7 +526,7 @@ void theOpenPanelWaits()
     Answer refused; refused.rejection = Rejection::PlanPending;
     const auto fact = text::Text::rejected (refused, command::Master { 4 });
     const auto shown = fact ? text::Text::text (*fact, text::Lang::Ru) : std::string {};
-    ok (shown.find ("Панель") != std::string::npos, "the refusal speaks: " + shown);
+    ok (shown.find ("Замеры") != std::string::npos, "the refusal speaks: " + shown);
     double furthest = 0; bool hum = false;
     ok (stepUntil (s, [&]
     {
@@ -545,7 +560,9 @@ void aTargetWithoutGlueDoesNotWaitForTempo()
     auto sp = fresh(); auto& s = *sp;
     (void) s.apply (command::SetTarget { 1, "cdDynamic" });
     (void) s.apply (audio.load (2));
-    ok (stepUntil (s, [&] { return s.state() != State::Loaded; }) && s.state() == State::Measured1, "PRECONDITION: the first measurement ends");
+    ok (stepUntil (s, [&] { return s.state() != State::Loaded
+        && s.snapshot().view().measurements[std::size_t (Analyzer::LowEnd)].status != MeasurementStatus::Pending; })
+        && s.state() == State::Measured1, "PRECONDITION: the first measurement ends, and the low end the high-pass reads");
     const auto v = s.snapshot();
     ok (! v.view().tempoChoice.ready && v.view().plan.status == PlanStatus::Ready && v.view().plan.waiting == 0,
         "with the tempo still to measure, cdDynamic's plan is ready: its glue does not compress");
@@ -585,7 +602,8 @@ void aHiddenMasterKeepsWhatWasAsked()
     Clicks audio;
     auto sp = fresh(); auto& s = *sp;
     (void) s.apply (audio.load (1));
-    ok (stepUntil (s, [&] { return s.state() == State::Measured1 && s.needlesJob() == 0; }), "PRECONDITION: the first measurement ends");
+    ok (stepUntil (s, [&] { return s.state() == State::Measured1 && s.needlesJob() == 0 && s.snapshot().view().plan.status == PlanStatus::Ready; }),
+        "PRECONDITION: the first measurement ends, and the low end the high-pass and mono bass read");
     ok (s.snapshot().view().plan.status == PlanStatus::Ready, "PRECONDITION: placed on allStreaming");
     GlueFields<Touched> glue; glue.on = true; glue.upToDb = 1.0;
     ok (s.apply (command::EditDevice { 2, glue }).rejection == Rejection::None, "a person's glue");
@@ -750,8 +768,8 @@ void oneNeedOneMeasurement()
     ok (s.apply (command::SetTarget { 3, "club" }).rejection == Rejection::None && s.needlesJob() != 0 && s.measurementJob() == 0,
         "club's ceiling is another: its needles run, and the source is not measured again");
     const auto running = s.snapshot();
-    ok (running.view().plan.readOnly && running.view().plan.status == PlanStatus::Pending,
-        "while the new target's needles run the panel is read-only and the plan pending");
+    ok (! running.view().plan.readOnly && running.view().plan.status == PlanStatus::Pending,
+        "while the new target's needles run the plan is pending, the panel takes edits meanwhile");
     ok (stepUntil (s, [&] { return s.needlesJob() == 0; }), "they end");
     ok (! s.snapshot().view().plan.readOnly && s.snapshot().view().plan.status == PlanStatus::Ready,
         "and then the panel takes edits again: the plan is ready");

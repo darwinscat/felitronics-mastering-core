@@ -1084,7 +1084,7 @@ void aMasterThatWaited()
         for (unsigned i = 0; i < 4000000 && early->state() == State::Loaded; ++i) (void) early->step (1);
         if (needles) ok (early->apply (command::SetTarget { 9, target }).rejection == Rejection::None, "PRECONDITION: the target changes to club");
         const auto waitingFor = early->snapshot().view().plan.waiting;
-        ok (waitingFor == detail::bitOf (needles ? Analyzer::Excursions : Analyzer::Tempo),
+        ok ((waitingFor & detail::bitOf (needles ? Analyzer::Excursions : Analyzer::Tempo)) != 0,
             std::string (target) + ": PRECONDITION: the plan waits for " + (needles ? "the needles at its ceiling" : "the tempo"));
         const auto declared = early->check (command::Master { 3 });
         Answer asked;
