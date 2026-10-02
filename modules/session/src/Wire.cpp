@@ -5,6 +5,7 @@
 #include "BuildContract.h"
 #include "JsonCodec.h"
 #include "Devices.h"
+#include <felitronics/session/Text.h>
 #include <felitronics/session/Wire.h>
 #include <algorithm>
 #include <limits>
@@ -121,7 +122,9 @@ template <std::size_t I = 0, class V, class F> bool deviceFields (unsigned devic
 }
 void begin (Writer& w) noexcept { w.put ('{'); w.first = true; }
 void end (Writer& w) noexcept { w.put ('}'); }
-void answer (Writer& w, const Answer& a) noexcept
+// A rejection carries its fact last (text::Text::rejected): the field named, its refused number and the domain it left
+// filled by the core, so a shell maps no index to a word. The request is the one the answer is for.
+void answer (Writer& w, const Answer& a, const Request& request) noexcept
 {
     begin (w);
     w.field ("kind", std::string_view (a.rejection == Rejection::None ? "accepted" : "rejected"));
@@ -133,6 +136,7 @@ void answer (Writer& w, const Answer& a) noexcept
         w.field ("field", unsigned (a.field));
         w.field ("device", a.device ? int (*a.device) : -1);
         w.field ("line", a.position.line); w.field ("column", a.position.column);
+        w.field ("fact", text::Text::rejected (a, request));
     }
     end (w);
 }
@@ -140,7 +144,8 @@ void problemAnswer (Writer& w, CommandId id, std::uint64_t revision, const Probl
 {
     begin (w); w.field ("kind", std::string_view ("rejected")); w.field ("commandId", id);
     w.field ("revision", revision); w.field ("code", std::string_view ("contract"));
-    w.field ("reason", p.reason); w.field ("field", std::string_view (p.name, p.size)); end (w);
+    w.field ("reason", p.reason); w.field ("field", std::string_view (p.name, p.size));
+    w.field ("fact", text::Fact::of (text::FactId::RejectedContract)); end (w);
 }
 void fact (Writer& w, const OwnedFact& owned) noexcept { w.value (owned.view()); }
 void eventList (Writer& w, std::span<const Notification> events) noexcept
@@ -204,8 +209,8 @@ CodecStatus buffers (const TransferNeed& n, std::span<char> json, std::span<doub
 }
 TransferNeed Wire::snapshotBytes (const SnapshotView& v) noexcept
 {
-    const auto check = Codec::encodedBytes (v);
-    if (check.status != CodecStatus::Ok) return { check.status, 0, 0 };
+    // One walk: what the text walk alone refused is asked first, then the view is sized as the write walks it.
+    if (const auto status = detail::snapshotEncodable (v); status != CodecStatus::Ok) return { status, 0, 0 };
     Writer w; w.binaryRows = true; w.value (v); return need (w);
 }
 CodecStatus Wire::snapshot (const SnapshotView& v, std::span<char> json, std::span<double> rows) noexcept
@@ -353,7 +358,19 @@ template <class F> auto parseCommand (std::string_view json, F&& finish) noexcep
         Object fields (root.take ("fields"), p);
         if (kind == "editTarget")
         {
-            command::EditTarget r { id }; fields.get ("lufs", r.fields.lufs, false); fields.get ("tp", r.fields.tp, false);
+            // A number sets the field; null clears it (the target row's number again); an absent key leaves it.
+            command::EditTarget r { id };
+            const auto field = [&] (std::string_view key, std::optional<double>& value, bool& clear)
+            {
+                const auto input = fields.take (key, false);
+                if (input.empty()) return;
+                Reader reader { input, fields.storage, 0, true, {}, 0, 0, false };
+                if (reader.literal ("null")) clear = true;
+                else reader.value (value);
+                reader.space();
+                if (! reader.good || reader.pos != input.size()) p.set ("invalid", key);
+            };
+            field ("lufs", r.fields.lufs, r.clear.lufs); field ("tp", r.fields.tp, r.clear.tp);
             request = r;
         }
         else
@@ -394,7 +411,7 @@ CodecStatus writeCommand (Session& session, CommandId id, const Request& request
         const auto refused = session.rejectProtocol (id);
         problemAnswer (w, refused.command, refused.revision, p);
     }
-    else answer (w, session.apply (request));
+    else answer (w, session.apply (request), request);
     written = std::uint32_t (w.size); return CodecStatus::Ok;
 }
 Checked commandStorage (const Session& session, const Request& request, const Problem& p) noexcept
@@ -448,7 +465,7 @@ CodecStatus Wire::loadMeasured (Session& session, CommandId id, std::string_view
     return measured (facts, [&] (const MeasuredSource& value, bool valid)
     {
         Writer w; w.output = output.data();
-        answer (w, valid ? session.loadMeasured (id, value) : session.rejectProtocol (id));
+        answer (w, valid ? session.loadMeasured (id, value) : session.rejectProtocol (id), command::Load { id });
         written = std::uint32_t (w.size); return CodecStatus::Ok;
     });
 }
@@ -457,7 +474,7 @@ CodecStatus Wire::attachAudio (Session& session, CommandId id, const Pcm& pcm,
 {
     if (output.size() < kAnswerBytes) return CodecStatus::TooSmall;
     if (Session::checkFloatingPointEnvironment() != Status::Ok) return CodecStatus::FloatingPointEnvironment;
-    Writer w; w.output = output.data(); answer (w, session.attachAudio (id, pcm));
+    Writer w; w.output = output.data(); answer (w, session.attachAudio (id, pcm), command::Load { id, pcm });
     written = std::uint32_t (w.size); return CodecStatus::Ok;
 }
 Checked Wire::importStorage (const Session& session, std::string_view project) noexcept
@@ -477,7 +494,7 @@ CodecStatus Wire::master (Session& session, const command::Master& request,
     if (output.size() < kAnswerBytes) return CodecStatus::TooSmall;
     if (Session::checkFloatingPointEnvironment() != Status::Ok) return CodecStatus::FloatingPointEnvironment;
     Writer w; w.output = output.data();
-    answer (w, session.apply (request));
+    answer (w, session.apply (request), request);
     written = std::uint32_t (w.size);
     return CodecStatus::Ok;
 }
@@ -494,7 +511,8 @@ CodecStatus Wire::importProject (Session& session, CommandId id, std::string_vie
 {
     if (output.size() < kAnswerBytes) return CodecStatus::TooSmall;
     if (Session::checkFloatingPointEnvironment() != Status::Ok) return CodecStatus::FloatingPointEnvironment;
-    Writer w; w.output = output.data(); answer (w, session.importProject (id, project));
+    Writer w; w.output = output.data();
+    answer (w, session.importProject (id, project), command::ImportProject { id, project });
     written = std::uint32_t (w.size); return CodecStatus::Ok;
 }
 }

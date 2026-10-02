@@ -175,8 +175,26 @@ LimiterFinding limiterFinding (const PlanInputs& in, const Devices& devices) noe
     f.ceilingAboveMedium = target.vinyl && f.ceilingDbTp > f.mediumCeilingDbTp;
     f.needlesAgainstMedium = target.vinyl && f.cutting;
     f.vinylTopHz = target.vinyl ? number (in.rules.engine.find ("observations").find ("vinylTop").find ("aboveHz")) : 0.0;
+
+    // The limiter's own settings, as writeLimiter and the chain's topology take them.
+    const auto limiter = in.rules.engine.find ("limiter");
+    const auto chain = in.rules.engine.find ("chain");
+    f.releaseMs = number (limiter.find ("releaseMs"));
+    f.dualRelease = limiter.find ("dualRelease").boolean().value_or (false);
+    f.slowReleaseMs = number (limiter.find ("slowReleaseMs"));
+    f.lookaheadMs = number (limiter.find ("lookaheadMs"));
+    limiter::TruePeakLimiterConfig taken;
+    taken.lookaheadMs = f.lookaheadMs;
+    taken.oversampleFactor = int (number (chain.find ("oversampleFactor")));
+    taken.tapsPerPhase = int (number (chain.find ("tapsPerPhase")));
+    f.oversampling = std::int32_t (limiter::TruePeakLimiter::oversampleFactorFor (taken));
     return f;
 }
+
+// The plan's shaping IS the core's: the same order, the same values.
+static_assert (int (DitherShaping::None) == int (dither::NoiseShaping::None)
+               && int (DitherShaping::Weighted) == int (dither::NoiseShaping::Weighted)
+               && int (DitherShaping::Psychoacoustic) == int (dither::NoiseShaping::Psychoacoustic));
 
 DitherFinding ditherFinding (const PlanInputs& in, const Devices& devices) noexcept
 {
@@ -187,6 +205,12 @@ DitherFinding ditherFinding (const PlanInputs& in, const Devices& devices) noexc
     f.on = f.applies && ticked;
     f.offByHand = f.applies && ! ticked && devices.dither.hand.on.has_value();
     f.keptWithoutEffect = ! f.applies && devices.dither.hand.on.has_value();
+    const auto dither = in.rules.engine.find ("dither");
+    const auto shaping = dither.find ("shaping").string();
+    const auto shapingUpTo = dither.find ("shapingUpToBits").integer();
+    if (! shaping || ! shapingUpTo) storageOverflow();
+    f.shaping = f.bits > *shapingUpTo || *shaping == "none" ? DitherShaping::None
+              : *shaping == "weighted" ? DitherShaping::Weighted : DitherShaping::Psychoacoustic;
     return f;
 }
 
@@ -198,9 +222,9 @@ void writeLimiter (const PlanInputs& in, const Devices& devices, mastering::Mast
     auto& l = params.limiter;
     l = {};
     l.ceilingDbTp = finding.ceilingDbTp;
-    l.releaseMs = number (limiter.find ("releaseMs"));
-    l.dualRelease = limiter.find ("dualRelease").boolean().value_or (false);
-    l.slowReleaseMs = number (limiter.find ("slowReleaseMs"));
+    l.releaseMs = finding.releaseMs;
+    l.dualRelease = finding.dualRelease;
+    l.slowReleaseMs = finding.slowReleaseMs;
     // The clipper cuts AT MOST its amount off the peaks and the limiter does the rest (owner, 30.09): the input's need
     // stands the peaks that far above the ceiling, so the threshold is max(0, need − cut) above it. Where the need is
     // not known, or that threshold lies beyond the limiter's working range, no threshold it can take keeps to the
@@ -214,14 +238,10 @@ void writeLimiter (const PlanInputs& in, const Devices& devices, mastering::Mast
 
     const auto dither = in.rules.engine.find ("dither");
     const auto sounding = ditherFinding (in, devices);
-    const auto shaping = dither.find ("shaping").string();
-    const auto shapingUpTo = dither.find ("shapingUpToBits").integer();
-    if (! shaping || ! shapingUpTo) storageOverflow();
     auto& d = params.dither;
     d = {};
     d.bits = sounding.bits;
-    d.shaping = sounding.bits > *shapingUpTo || *shaping == "none" ? dither::NoiseShaping::None
-              : *shaping == "weighted" ? dither::NoiseShaping::Weighted : dither::NoiseShaping::Psychoacoustic;
+    d.shaping = dither::NoiseShaping (sounding.shaping);
     d.seed = seedOf (dither.find ("seed"));
     d.autoBlank = dither.find ("autoBlank").boolean().value_or (false);
     d.autoBlankSamples = int (number (dither.find ("autoBlankSamples")));

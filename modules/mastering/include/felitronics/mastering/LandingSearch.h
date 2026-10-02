@@ -131,7 +131,7 @@ public:
         params_ = params; params_.inputGainDb += request.normalizationGainDb;
         request_ = request; clock_ = ProgressClock (progress);
         working_.activityThresholdDb = best_.activityThresholdDb = request.activityThresholdDb;
-        haveBest_ = havePrevious_ = haveBelow_ = haveAbove_ = false;
+        haveBest_ = havePrevious_ = haveBelow_ = haveAbove_ = haveUnsafe_ = false;
         passes_ = 0; sourceCursor_ = 0; verifyCursor_ = 0; bestPass_ = 0; restoring_ = false;
         work_ = 0; bestError_ = std::numeric_limits<double>::infinity();
         lowState_.fill (0.0); low2State_.fill (0.0); low8State_.fill (0.0);
@@ -300,7 +300,8 @@ public:
         {
             if (! core::exactlyEqual (verifyTp_, best_.measured.truePeakDbTp)
                 || ! core::exactlyEqual (verifyLufs_, best_.measured.integratedLufs)
-                || verifyTp_ > request_.maxTruePeakDbTp || solver_.pass_->lm.droppedBlocks() != 0
+                || (! best_.peaksAboveCeiling && verifyTp_ > request_.maxTruePeakDbTp)
+                || solver_.pass_->lm.droppedBlocks() != 0
                 || solver_.pass_->lm.nonFiniteSubHops() != 0)
                 return fail (MasteringSolveStatus::Unavailable);
             if (! clock_.finish()) return fail (MasteringSolveStatus::Cancelled);
@@ -344,7 +345,7 @@ private:
         {
             if (! core::exactlyEqual (measurement_.integratedLufs, best_.measured.integratedLufs)
                 || ! core::exactlyEqual (measurement_.truePeakDbTp, best_.measured.truePeakDbTp)
-                || measurement_.truePeakDbTp > request_.maxTruePeakDbTp)
+                || (haveBest_ && measurement_.truePeakDbTp > request_.maxTruePeakDbTp))
                 return fail (MasteringSolveStatus::Unavailable);
             restoring_ = false; bestPass_ = passes_;
             return finishSearch();
@@ -354,6 +355,20 @@ private:
         const bool safe = valid && measurement_.truePeakDbTp <= request_.maxTruePeakDbTp;
         const double err = valid ? std::fabs (measurement_.integratedLufs - request_.targetLufs)
                                  : std::numeric_limits<double>::infinity();
+        // THE GENTLEST RENDER ABOVE THE CEILING, held in `best_` while no render is under it (owner, 01.10: the file is
+        // delivered even then, marked): the smallest overshoot of the ceiling, the nearer loudness on an equal one. The
+        // first ceiling-safe render replaces it below (`nearer` holds for any render while `haveBest_` is false).
+        if (! haveBest_ && valid && ! safe
+            && (! haveUnsafe_ || measurement_.truePeakDbTp < best_.measured.truePeakDbTp
+                || (core::exactlyEqual (measurement_.truePeakDbTp, best_.measured.truePeakDbTp) && err < bestError_)))
+        {
+            working_.measured = measurement_;
+            working_.preLimiterGainDb = gain_; working_.ceilingDbTp = ceiling_;
+            std::swap (working_, best_);
+            bestError_ = err; bestPass_ = passes_;
+            bestGain_ = gain_; bestCeiling_ = ceiling_;
+            haveUnsafe_ = true;
+        }
         const double level = measurement_.integratedLufs;
         const double previousLevel = best_.measured.integratedLufs;
         const bool bothBelow = haveBest_ && level <= request_.targetLufs && previousLevel <= request_.targetLufs;
@@ -386,10 +401,10 @@ private:
         const bool success = safe && err <= request_.toleranceLu;
         const bool exhausted = passes_ >= request_.maxPasses;
         if (success || exhausted) return finishSearch();
-        // Reserve the last pass for restoration once a safe candidate exists.
-        // It is a real render and is logged within the caller's one pass budget.
+        // Reserve the last pass for restoration once a candidate exists — a safe one, or else the gentlest above the
+        // ceiling. It is a real render and is logged within the caller's one pass budget.
         // When this pass IS that candidate, `out` already holds it: finish without rendering it twice.
-        if (haveBest_ && passes_ == request_.maxPasses - 1)
+        if ((haveBest_ || haveUnsafe_) && passes_ == request_.maxPasses - 1)
         {
             if (bestPass_ == passes_) return finishSearch();
             gain_ = bestGain_; ceiling_ = bestCeiling_;
@@ -438,10 +453,22 @@ private:
 
     StepResult finishSearch()
     {
-        if (! haveBest_) return fail (MasteringSolveStatus::Unavailable);
+        // Renders that could not be measured at all prove nothing about the target: Unavailable.
+        if (! haveBest_ && ! haveUnsafe_) return fail (MasteringSolveStatus::Unavailable);
         best_.passes = passes_; best_.logCount = passes_;
         for (int i = 0; i < passes_; ++i) best_.log[i] = records_[(std::size_t) i];
-        best_.status = bestError_ <= request_.toleranceLu ? MasteringSolveStatus::Solved : MasteringSolveStatus::PassLimit;
+        if (! haveBest_)
+        {
+            // MEASURED RENDERS, NONE UNDER THE CEILING: the target is out of reach and the true-peak ceiling is what
+            // holds it — said as such, with its binding. The file is still delivered (owner, 01.10): the gentlest render
+            // measured, the smallest overshoot, verified like any other and marked `peaksAboveCeiling`.
+            best_.status = MasteringSolveStatus::TargetUnreachable;
+            best_.binding = MasteringConstraint::TruePeakCeiling;
+            best_.alsoViolated = constraintBit (MasteringConstraint::TruePeakCeiling);
+            best_.peaksAboveCeiling = true;
+        }
+        else best_.status = bestError_ <= request_.toleranceLu ? MasteringSolveStatus::Solved
+                                                               : MasteringSolveStatus::PassLimit;
         if (best_.status == MasteringSolveStatus::PassLimit && haveBelow_ && haveAbove_
             && core::exactlyEqual (belowCeiling_, aboveCeiling_)
             && std::fabs (aboveGain_ - belowGain_) <= 0.001)
@@ -481,7 +508,7 @@ private:
 
     StepResult fail (MasteringSolveStatus status) noexcept
     {
-        best_.status = status; best_.deliverable = false;
+        best_.status = status; best_.deliverable = false; best_.peaksAboveCeiling = false;
         best_.passes = passes_; best_.logCount = passes_;
         for (int i = 0; i < passes_; ++i) best_.log[i] = records_[(std::size_t) i];
         best_.workUnits = work_;
@@ -527,6 +554,7 @@ private:
     double retainedRateFloor_ = 0.0;
     int retainedFramesUpper_ = 0, retainedChannelsUpper_ = 0, retainedBucketsUpper_ = 0;
     bool haveBest_ = false, havePrevious_ = false, haveBelow_ = false, haveAbove_ = false;
+    bool haveUnsafe_ = false;   // `best_` holds the gentlest measured render above the ceiling (while `haveBest_` is not)
     bool restoring_ = false;
     Phase phase_ = Phase::Idle;
 };

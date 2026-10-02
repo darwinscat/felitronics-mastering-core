@@ -40,7 +40,8 @@ bool MasterCrestGrid::compatible (const MasterCrest& master,
 }
 std::optional<text::Fact> MasterReportText::miss (const MasterReport& report) noexcept
 {
-    if (report.status != MeasurementStatus::Ready || ! report.deliverable || report.targetMet
+    // A master above its ceiling is said by its own line (peaksAboveCeiling): these two say the true peak held.
+    if (report.status != MeasurementStatus::Ready || ! report.deliverable || report.targetMet || report.peaksAboveCeiling
         || ! report.achievedLufs || ! report.missLu || ! std::isfinite (*report.missLu)
         || std::fabs (*report.missLu) <= 0.0) return {};
     return text::Fact::of (*report.missLu < 0 ? text::FactId::MasterLandingMiss
@@ -85,6 +86,12 @@ std::optional<text::Fact> MasterReportText::landing (const MasterReport& report,
         case LandingStatus::Cancelled: break;
     }
     return std::nullopt;
+}
+std::optional<text::Fact> MasterReportText::peaksAboveCeiling (const MasterReport& report) noexcept
+{
+    if (! report.peaksAboveCeiling || ! report.truePeakDbTp) return std::nullopt;
+    return text::Fact::of (text::FactId::MasterPeaksAboveCeiling, text::Arg::value (*report.truePeakDbTp, text::Unit::DbTp, 2),
+                           text::Arg::value (report.ceilingDbTp, text::Unit::DbTp, 2));
 }
 std::optional<text::Fact> MasterReportText::hint (const MasterHint& hint) noexcept
 {
@@ -379,6 +386,7 @@ bool LandingOps::summarize (const mastering::LoudnessSolution& solution,
         next.missLu = solution.missLu;
         next.distanceLu = solution.distanceLu;
         next.truePeakDbTp = solution.measured.truePeakDbTp;
+        next.peaksAboveCeiling = solution.peaksAboveCeiling;
     }
     if (std::isfinite (solution.sourceSubBassShare)) next.sourceSubBassShare = solution.sourceSubBassShare;
     if (std::isfinite (solution.sourcePresenceShare)) next.sourcePresenceShare = solution.sourcePresenceShare;

@@ -120,6 +120,42 @@ template <class T> Rejection fieldCheck (const Rules& rules, const FieldRule& ru
     }
 }
 
+// THE NUMBERS A FIELD'S REFUSAL IS SAID WITH (Answer::value, low, high): the value the request gave the field the
+// check refused, and for OutOfDomain the domain that check read — the same knob, the same source rate.
+void refusedNumbers (const Rules& rules, const Request& request, std::uint32_t rate, Answer& answer) noexcept
+{
+    if (answer.rejection != Rejection::OutOfDomain && answer.rejection != Rejection::NotOneOf) return;
+    const auto against = [&] (const detail::Knob& knob, double x) noexcept
+    {
+        if (answer.rejection != Rejection::OutOfDomain) return;
+        switch (knob.domain)
+        {
+            case detail::Knob::Domain::Bounded: answer.low = knob.minimum.toDouble(); answer.high = knob.maximum.toDouble(); break;
+            case detail::Knob::Domain::SourceNyquist: answer.low = 0.0; answer.high = double (rate) * 0.5; break;
+            case detail::Knob::Domain::Finite: return;   // a finite number is never out of this domain
+        }
+        answer.value = x;
+    };
+    if (const auto* edit = std::get_if<command::EditTarget> (&request))
+    {
+        if (answer.field == 0 && edit->fields.lufs) against (rules.lufs, *edit->fields.lufs);
+        if (answer.field == 1 && edit->fields.tp) against (rules.tp, *edit->fields.tp);
+    }
+    else if (const auto* device = std::get_if<command::EditDevice> (&request))
+        onActive (device->fields, [&] (const auto& fields)
+        {
+            using Of = detail::DeviceOf<std::remove_cvref_t<decltype (fields)>>;
+            Of::each (rules, [&] (std::uint8_t i, const FieldRule& rule, const auto& v)
+            {
+                using T = typename std::remove_cvref_t<decltype (v)>::value_type;
+                if (i != answer.field || ! v) return;
+                if constexpr (std::is_same_v<T, double>) against (rule.knob, *v);
+                else if constexpr (std::is_same_v<T, std::int32_t>)
+                { if (answer.rejection == Rejection::NotOneOf) answer.value = double (*v); }
+            }, fields);
+        });
+}
+
 Checked storage (std::uint64_t bytes, std::uint64_t block) noexcept { return { Rejection::None, kNoField, bytes, 0, block }; }
 
 Checked rejected (Rejection r, std::uint8_t field = kNoField) noexcept { return { r, field, 0 }; }
@@ -215,6 +251,8 @@ Checked Session::storageFor (const Request& request) const noexcept
     {
         // 5. FIELDS
         const TargetFields<Touched>& f = edit->fields;
+        if (f.lufs && edit->clear.lufs) return rejected (Rejection::Contract, 0);
+        if (f.tp && edit->clear.tp) return rejected (Rejection::Contract, 1);
         if (f.lufs)
             if (const Rejection r = knobCheck (rules.lufs, *f.lufs, source_.sampleRate); r != Rejection::None) return rejected (r, 0);
         if (f.tp)
@@ -343,6 +381,7 @@ Answer Session::apply (const Request& request) noexcept
     answer.rejection = checked.rejection;
     answer.field = checked.field;
     answer.needBytes = checked.needBytes;
+    refusedNumbers (detail::rules(), request, source_.sampleRate, answer);
     if (checked.rejection == Rejection::DeliveryFormat)
     {
         const auto row = detail::rules().row (project_.target);
@@ -361,7 +400,8 @@ Answer Session::apply (const Request& request) noexcept
 
     const Rules rules = detail::rules();
     bool empty = false;
-    if (const auto* edit = std::get_if<command::EditTarget> (&request)) empty = ! edit->fields.lufs && ! edit->fields.tp;
+    if (const auto* edit = std::get_if<command::EditTarget> (&request))
+        empty = ! edit->fields.lufs && ! edit->fields.tp && ! edit->clear.lufs && ! edit->clear.tp;
     if (const auto* edit = std::get_if<command::EditDevice> (&request))
         empty = onActive (edit->fields, [&] (const auto& fields)
         {
@@ -492,6 +532,9 @@ Answer Session::apply (const Request& request) noexcept
     {
         if (edit->fields.lufs) project_.targetEdit.lufs = detail::kept (*edit->fields.lufs);
         if (edit->fields.tp) project_.targetEdit.tp = detail::kept (*edit->fields.tp);
+        // A cleared field is the target row's again: the person's number goes, and with it the line a project writes.
+        if (edit->clear.lufs) project_.targetEdit.lufs.reset();
+        if (edit->clear.tp) project_.targetEdit.tp.reset();
     }
     else if (const auto* device = std::get_if<command::EditDevice> (&request))
     {
@@ -631,8 +674,9 @@ Answer Session::apply (const Request& request) noexcept
     answer.revision = ++revision_;
     for (std::size_t i = 0; i < eventCount_; ++i)
     {
-        events_[i].revision = revision_;
-        if (events_[i].kind == EventKind::Measurement) events_[i].payload.measurement.revision = revision_;
+        auto& e = (*events_)[i];
+        e.revision = revision_;
+        if (e.kind == EventKind::Measurement) e.payload.measurement.revision = revision_;
     }
     return answer;
 }

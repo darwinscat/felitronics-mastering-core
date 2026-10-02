@@ -162,6 +162,11 @@
       "Active",
       "Unavailable"
     ],
+    "DitherShaping": [
+      "None",
+      "Weighted",
+      "Psychoacoustic"
+    ],
     "TickFrom": [
       "Machine",
       "Hand",
@@ -641,7 +646,8 @@
         "secondHint": "MasterHint?",
         "cost": "MasterCost?",
         "medium": "MasterMedium?",
-        "readings": "ReadingFact[<=9]"
+        "readings": "ReadingFact[<=9]",
+        "peaksAboveCeiling": "bool"
       }
     },
     "LandingPass": {
@@ -700,7 +706,8 @@
         "workUnits": "uint64",
         "log": "LandingPass[]",
         "limiterTrace": "LandingTrace?",
-        "peakClipTrace": "LandingTrace?"
+        "peakClipTrace": "LandingTrace?",
+        "peaksAboveCeiling": "bool"
       }
     },
     "Source": {
@@ -793,7 +800,8 @@
         "observations": "Observations",
         "observationFacts": "ObservationFact[<=17]",
         "readings": "ReadingFact[<=26]",
-        "targetNote": "Fact?"
+        "targetNote": "Fact?",
+        "eqOnlyCurve": "EqPoint[]"
       }
     },
     "MasterToken": {
@@ -1102,7 +1110,12 @@
         "mediumCeilingDbTp": "double",
         "ceilingAboveMedium": "bool",
         "needlesAgainstMedium": "bool",
-        "vinylTopHz": "double"
+        "vinylTopHz": "double",
+        "releaseMs": "double",
+        "dualRelease": "bool",
+        "slowReleaseMs": "double",
+        "lookaheadMs": "double",
+        "oversampling": "int32"
       }
     },
     "DitherFinding": {
@@ -1112,7 +1125,8 @@
         "applies": "bool",
         "on": "bool",
         "offByHand": "bool",
-        "keptWithoutEffect": "bool"
+        "keptWithoutEffect": "bool",
+        "shaping": "DitherShaping"
       }
     },
     "MasterMedium": {
@@ -1219,7 +1233,8 @@
       "field": "number",
       "device": "number",
       "line": "number",
-      "column": "number"
+      "column": "number",
+      "fact": "WireFact"
     },
     "ContractAnswer": {
       "kind": "\"rejected\"",
@@ -1227,7 +1242,8 @@
       "revision": "string",
       "code": "\"contract\"",
       "reason": "\"unknown\" | \"missing\" | \"duplicate\" | \"invalid\"",
-      "field": "string"
+      "field": "string",
+      "fact": "WireFact"
     },
     "WireFact": {
       "FactId": "number",
@@ -1609,7 +1625,8 @@
     "shortTerm",
     "runs",
     "machineDifferences",
-    "eqCurve"
+    "eqCurve",
+    "eqOnlyCurve"
   ],
   "transportEnums": {
     "Rejection": [

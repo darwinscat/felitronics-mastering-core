@@ -22,6 +22,7 @@
 #include <felitronics/session/Text.h>
 
 #include "TextFacts.h"
+#include "Grid.h"
 #include "BuildContract.h"
 #include "TextNumber.h"
 #include "TextSchema.h"
@@ -466,7 +467,8 @@ std::optional<Fact> Text::rejected (const Answer& answer, const Request& request
     if (answer.rejection == Rejection::DeliveryFormat)
         return Fact::of (*id, Arg::count (answer.targetBits), Arg::value (double (answer.targetRate), Unit::Hz, 0));
     // A field's rejection: the field, read off the request the answer is for. None found — a field the tables do not
-    // name — leaves the argument out, and the message shows {field}.
+    // name — leaves the argument out, and the message shows {field}. Where the answer carries the refused number (and
+    // the domain it left), the field is said with them, each at the places it has (Answer::value, low, high).
     std::optional<Term> field;
     if (std::holds_alternative<command::EditTarget> (request)) field = detail::targetFieldTerm (answer.field);
     else if (const auto* device = std::get_if<command::EditDevice> (&request))
@@ -476,6 +478,26 @@ std::optional<Fact> Text::rejected (const Answer& answer, const Request& request
     else if (std::holds_alternative<command::Load> (request)) field = Term::FieldAudio;
     else if (std::holds_alternative<command::ImportProject> (request))
         field = answer.device ? detail::deviceFieldTerm (*answer.device, answer.field) : detail::targetFieldTerm (answer.field);
+    if (field && answer.value && answer.rejection == Rejection::OutOfDomain && answer.low && answer.high)
+    {
+        const Unit unit = detail::fieldUnit (*field);
+        const auto exact = [unit] (double x) noexcept
+        {
+            // The fewest places that give the number back (Grid.h's decimalOf, trailing zeros dropped); nine at most.
+            std::uint8_t places = 9;
+            if (const auto d = session::detail::decimalOf (x))
+            {
+                auto mantissa = d->mantissa;
+                places = d->scale;
+                while (places > 0 && mantissa % 10 == 0) { mantissa /= 10; --places; }
+            }
+            return Arg::value (x, unit, places);
+        };
+        return Fact::of (FactId::RejectedOutOfDomainValue, Arg::term (*field), exact (*answer.value), exact (*answer.low),
+                         exact (*answer.high));
+    }
+    if (field && answer.value && answer.rejection == Rejection::NotOneOf)
+        return Fact::of (FactId::RejectedNotOneOfValue, Arg::term (*field), Arg::count (std::int64_t (*answer.value)));
     return field ? Fact::of (*id, Arg::term (*field)) : Fact::of (*id);
 }
 

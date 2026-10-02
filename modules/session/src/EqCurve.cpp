@@ -364,6 +364,14 @@ void eqCurve (const Project& project, const Rules& rules, double rate, std::span
     eqCurve (stage.bands, rate, output);
 }
 
+void eqOnlyCurve (const Project& project, const Rules& rules, double rate, std::span<EqPoint> output) noexcept
+{
+    EqStage stage;
+    writeEq (project.devices, rules, stage);
+    stage.bands[eqBand (Device::Hpf)].on = false;
+    eqCurve (stage.bands, rate, output);
+}
+
 EqFinding eqFinding (const Devices& devices, const Rules& rules, double rate) noexcept
 {
     EqStage stage;

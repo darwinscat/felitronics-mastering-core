@@ -39,7 +39,7 @@ std::uint64_t Snapshot::storageFor (const SnapshotView& v) noexcept
         }
     return detail::snapshotStorage (v.target.size(), v.source.name.size(), v.masters.size_bytes(),
                                     v.momentary.size_bytes(), v.shortTerm.size_bytes(), v.runs.size_bytes())
-         + std::uint64_t (v.machineDifferences.size_bytes()) + std::uint64_t (v.eqCurve.size_bytes())
+         + std::uint64_t (v.machineDifferences.size_bytes()) + std::uint64_t (v.eqCurve.size_bytes()) + std::uint64_t (v.eqOnlyCurve.size_bytes())
          + OwnedMeasurements::storageFor (v.measurements) + landingBytes;
 }
 Snapshot Snapshot::copy (const SnapshotView& v) noexcept
@@ -148,11 +148,14 @@ Snapshot Snapshot::copy (const SnapshotView& v) noexcept
         std::copy (v.machineDifferences.begin(), v.machineDifferences.end(), out.differences_.get());
         out.view_.machineDifferences = { out.differences_.get(), v.machineDifferences.size() };
     }
-    if (! v.eqCurve.empty())
+    // Both curves in one block, the whole curve first — as the codec reads them back.
+    if (const auto curves = v.eqCurve.size() + v.eqOnlyCurve.size(); curves != 0)
     {
-        out.eqCurve_.reset (new EqPoint[v.eqCurve.size()]);
+        out.eqCurve_.reset (new EqPoint[curves]);
         std::copy (v.eqCurve.begin(), v.eqCurve.end(), out.eqCurve_.get());
+        std::copy (v.eqOnlyCurve.begin(), v.eqOnlyCurve.end(), out.eqCurve_.get() + v.eqCurve.size());
         out.view_.eqCurve = { out.eqCurve_.get(), v.eqCurve.size() };
+        out.view_.eqOnlyCurve = { out.eqCurve_.get() + v.eqCurve.size(), v.eqOnlyCurve.size() };
     }
     if (points != 0)
     {
@@ -217,7 +220,9 @@ Snapshot Session::snapshot() const noexcept
 }
 void Session::refreshEqCurve() noexcept
 {
-    if (devicesPlaced_) detail::eqCurve (project_, detail::rules(), double (source_.sampleRate), eqCurve_);
+    if (! devicesPlaced_) return;
+    detail::eqCurve (project_, detail::rules(), double (source_.sampleRate), eqCurve_);
+    detail::eqOnlyCurve (project_, detail::rules(), double (source_.sampleRate), eqOnlyCurve_);
 }
 SnapshotView Session::buildView() const noexcept
 {
@@ -245,7 +250,7 @@ SnapshotView Session::buildView() const noexcept
         Of::each (rules, [&] (std::uint8_t, const detail::FieldRule&, const auto& hand)
         { if (hand) ++v.handFieldCount; }, layers.hand);
     });
-    if (devicesPlaced_) v.eqCurve = eqCurve_;
+    if (devicesPlaced_) { v.eqCurve = eqCurve_; v.eqOnlyCurve = eqOnlyCurve_; }
     v.plan = plan_;
     v.observations = observations_;
     if (source_.channels != 0) v.observationFacts = ObservationText::facts (observations_);

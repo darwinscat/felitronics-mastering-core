@@ -63,6 +63,9 @@ struct LandingSummary
     std::uint64_t workUnits = 0;
     std::span<const LandingPass> log;
     std::optional<LandingTrace> limiterTrace, peakClipTrace;
+    // No render under the ceiling: the delivered master is the gentlest measured, its true peak above the ceiling
+    // (deliverable, TargetUnreachable, binding TruePeakCeiling). False on every other landing.
+    bool peaksAboveCeiling = false;
 };
 
 // The delivered meter and the source-rate crest check answer different questions. Rows are linear
@@ -172,6 +175,9 @@ struct MasterReport
     // the achieved loudness, true peak, LRA and PLR where measured, the target, the ceiling, the gain where measured,
     // the landing's passes and the check passes. Empty for a report the job did not finish.
     BoundedList<ReadingFact, kMasterReadings> readings {};
+    // The landing's mark (LandingSummary::peaksAboveCeiling): a delivered master whose true peak stands above the
+    // ceiling — peakSafe false, truePeakDbTp above ceilingDbTp — because no render stayed under it.
+    bool peaksAboveCeiling = false;
 };
 struct MasterReportText
 {
@@ -183,6 +189,8 @@ struct MasterReportText
     [[nodiscard]] static std::optional<text::Fact> landing (const MasterReport& report, const LandingSummary& landing,
                                                             double toleranceLu) noexcept;
     [[nodiscard]] static std::optional<text::Fact> hint (const MasterHint& hint) noexcept;
+    // A master delivered above its ceiling (peaksAboveCeiling): its true peak and the ceiling. Nothing otherwise.
+    [[nodiscard]] static std::optional<text::Fact> peaksAboveCeiling (const MasterReport& report) noexcept;
     [[nodiscard]] static text::Fact crest (const MasterCrest& crest) noexcept;
     [[nodiscard]] static text::Fact shape (const MasterCost& cost) noexcept;
     [[nodiscard]] static text::Fact impact (const MasterCost& cost) noexcept;

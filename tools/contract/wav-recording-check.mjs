@@ -45,8 +45,9 @@ assert.equal(sha(Buffer.from(JSON.stringify(scenarios.cancel.command))), scenari
 assert.equal(wire(scenarios.cancel.snapshot).pendingMaster.master, 0);
 assert.equal(scenarios.unavailable.answer.kind, 'rejected');
 assert.equal(wire(scenarios.unavailable.snapshot).pendingMaster.master, 0);
-assert.equal(scenarios.unsafe.measurements.deliverable, false);
-assert.equal(wire(scenarios.unsafe.snapshot).pendingMaster.master, 0);
+assert.equal(scenarios.unsafe.measurements.deliverable, true);
+assert.equal(scenarios.unsafe.measurements.peaksAboveCeiling, true);
+assert.ok(wire(scenarios.unsafe.snapshot).pendingMaster.master > 0);
 assert.ok(wire(scenarios.safe.readyEvents).length > 0);
 assert.ok(wire(scenarios.safe.complete).pendingMaster.master > 0);
 assert.equal(scenarios.safe.export.bits, 24);

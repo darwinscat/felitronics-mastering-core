@@ -45,7 +45,8 @@ bool validBytes (double bytes) noexcept
 // one Session costs.
 std::uint64_t Session::createBytes (const Capabilities&) noexcept
 {
-    return (std::uint64_t) sizeof (Session);
+    // The session object and its step's events: the two blocks create() asks for.
+    return (std::uint64_t) sizeof (Session) + (std::uint64_t) sizeof (std::array<Notification, kEventBatch>);
 }
 
 Status Session::checkFloatingPointEnvironment() noexcept
@@ -70,6 +71,7 @@ Created Session::create (const Capabilities& caps, std::uint64_t configVersion) 
     c.status = checkCreate (caps, configVersion);
     if (c.status != Status::Ok) return c;
     c.session = std::unique_ptr<Session> (new Session);
+    c.session->events_.reset (new std::array<Notification, kEventBatch> {});
     c.session->capabilities_ = caps;
     c.session->project_.target = detail::rules().defaultRow;
     return c;

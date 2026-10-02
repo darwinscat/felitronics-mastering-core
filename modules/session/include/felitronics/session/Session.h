@@ -186,13 +186,18 @@ struct GlueFinding
 {
     GlueState state = GlueState::Out;
     double upToDb = 0.0;                       // the knob as it sounds ([glue] whenTicked when ticked on untouched)
-    std::optional<double> ratio, thresholdDb, kneeDb, attackMs;   // Active; the threshold in the normalised input's dB
+    // The knob's numbers — Active, and Out as well (unticked, at 0 dB: what the compressor would get from the knob as it
+    // stands, which no compressor gets); none where Unavailable. The ratio, knee and attack always; the threshold, in the
+    // normalised input's dB, where the input has a short-term P95.
+    std::optional<double> ratio, thresholdDb, kneeDb, attackMs;
     // ...and once the tempo is decided — the measured one, or [compressor.tempo] bpmWhenUnsure: the tempo, the release
-    // it asks for (a beat over the travel's divisor) and the release the compressor gets, inside [compressor.limits].
+    // it asks for (a beat over the travel's divisor) and the release the compressor gets, inside [compressor.limits]. A
+    // glue in the chain waits for its tempo; nothing measures the tempo of one out of it, whose release is stated at
+    // bpmWhenUnsure until a tempo is decided.
     std::optional<double> bpm, releaseAskedMs, releaseMs;
     bool releaseClamped = false;               // the release asked for was outside the limits: releaseMs is the limit
     bool tempoMeasured = false;                // the release follows the measured tempo, not the fallback
-    // Active: the input's short-term P95 on the detector's scale, the normalised input's dB — the level the threshold
+    // Active or Out: the input's short-term P95 on the detector's scale, the normalised input's dB — the level the threshold
     // stands on ([glue] detectorOverP95Db above the P95) and where the static curve takes upToDb: a transfer curve's
     // point for the knob.
     std::optional<double> p95DetectorDb;
@@ -266,7 +271,19 @@ struct LimiterFinding
     bool ceilingAboveMedium = false;           // a person's ceiling stands above it
     bool needlesAgainstMedium = false;         // the peak clipper cuts on a target that has none
     double vinylTopHz = 0.0;                   // the constant note: above this the cutting room usually rolls off
+    // THE LIMITER'S OWN SETTINGS, as the chain is written with them ([limiter] and [chain] of engine.toml): its release,
+    // ms; whether a second, slower envelope runs beside it, and that one's release, ms (stated either way); its
+    // lookahead, ms; and the oversampling its detector and gain run at, as the limiter takes the factor (a requested 1
+    // becomes 2).
+    double releaseMs = 0.0;
+    bool dualRelease = false;
+    double slowReleaseMs = 0.0;
+    double lookaheadMs = 0.0;
+    std::int32_t oversampling = 0;
 };
+
+// THE DITHER'S NOISE SHAPING — the core's dither::NoiseShaping, in its order: none (flat), weighted, psychoacoustic.
+enum class DitherShaping : std::uint8_t { None, Weighted, Psychoacoustic };
 
 // WHAT THE DITHER COMES TO — by the delivery's format alone: at [dither] onUpToBits or less it is in the chain unless a
 // person switched it off (the delivery is then rounded to its grid without noise); above that there is no dither at
@@ -278,6 +295,8 @@ struct DitherFinding
     bool on = false;                           // it is in the chain
     bool offByHand = false;                    // it applies, and a person switched it off
     bool keptWithoutEffect = false;            // it does not apply, and a person's tick is kept: nothing sounds of it
+    // The shaping the dither runs with at the delivery's depth: [dither] shaping up to shapingUpToBits, none above.
+    DitherShaping shaping = DitherShaping::None;
 };
 
 // WHERE THE EQ CURVE LEAVES ITS NORM ([eq] curve.warnDb of engine.toml) — judged on the shelves as they sound, tilt's and
@@ -434,8 +453,10 @@ struct ObservationText
 struct PlanText
 {
     [[nodiscard]] static text::Fact hpf (const HpfFinding& finding) noexcept;
-    // THE ADVICE BESIDE A KNOB — the value as it sounds, a person's or the machine's, against the norm engine.toml draws
-    // on the knob; nothing for a device out of the chain or a value inside the norm. The high-pass's cutoff below [hpf]
+    // THE ADVICE BESIDE A KNOB — a person's value as it sounds against the norm engine.toml draws on the knob; nothing
+    // for the machine's own value (Sounding::Proposal, or File: its proposal, inside its own rule — owner, 01.10), for a
+    // device out of the chain or for a value inside the norm. The plan says each piece of advice only where a person set
+    // the value it judges (the cutoff, the slope, the crossover, a shelf). The high-pass's cutoff below [hpf]
     // comfort.lowHz or above comfort.highHz (strictly), with the window; its slope gentler than the gentlest of
     // slopesNormal or steeper than the steepest (a slope between two normal ones is inside the norm). Mono bass's
     // crossover outside every zone of [monoBass.zones], both ends inside. The EQ curve beyond [eq] curve.warnDb.
@@ -719,7 +740,12 @@ private:
     LandingSummary masterSummary_ {};
     std::uint32_t masterTraceCursor_ = 0;
     bool masterTraceActive_ = false;
-    Notification events_[kEventBatch] {};
+    // THE STEP'S EVENTS — a block of their own, allocated with the session (createBytes declares both): the batch is
+    // most of what a session holds (62 events of every payload kind), and the session object stays small. Each block a
+    // create asks for fits AddressSanitizer's largest primary size class with its redzone (128 KiB less 2 KiB): past
+    // it every create is an mmap, and the ABI suite's walk through a slot's 16.7 million generations takes hours under
+    // the sanitizers instead of minutes (felitronics_session_abi_tests holds both blocks to it).
+    std::unique_ptr<std::array<Notification, kEventBatch>> events_;
     std::size_t eventCount_ = 0;
     std::uint64_t sequence_ = 0;
 
@@ -741,6 +767,7 @@ private:
     // Derived at placement and after accepted commands; owned snapshots copy these points.
     void refreshEqCurve() noexcept;
     EqPoint eqCurve_[kEqCurvePoints] {};
+    EqPoint eqOnlyCurve_[kEqCurvePoints] {};
     // OWNED BUFFERS, EACH ONE EXACT REQUEST — not std::vector: a debugging standard library (MSVC's at
     // _ITERATOR_DEBUG_LEVEL 1 or 2) gives every vector a heap-allocated proxy of its own, which no declared demand
     // counts. The source: its samples planar, channel after channel (source_.channels × source_.frames), and the name

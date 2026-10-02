@@ -133,6 +133,24 @@ int sessionWireFixture (bool manifest = false)
     if (job != 0 && (! detail::Driver::measured1 (*made.session, job, source)
         || ! detail::Driver::measured2 (*made.session, job, source))) return 10;
     unsigned fixture = 0;
+    const auto run = [&] (const char* request)
+    {
+        if (Wire::command (*made.session, request, reply, size) != CodecStatus::Ok) return false;
+        std::printf ("%.*s\n", int (size), reply);
+        const auto& project = made.session->project();
+        writer = {}; writer.output = effect; writer.put ('{');
+        writer.field ("target", made.session->targetName()); writer.field ("manual", project.manual);
+        writer.field ("targetEdit", project.targetEdit);
+        detail::eachDevice (project.devices, [&] (Device, const auto& layer) {
+            using Of = detail::DeviceOf<std::remove_cvref_t<decltype (layer.hand)>>;
+            writer.field (Of::name, layer.hand);
+        });
+        writer.put ('}');
+        std::printf ("json command-effect-%u %.*s\n", fixture++, int (writer.size), effect);
+        return true;
+    };
+    // Fixture 29 is an edit that touches nothing: accepted, the revision kept. (At the v0.6.0 base it sent two nulls,
+    // which then touched nothing; a null clears a field since slice 5 — its own fixtures follow the import below.)
     for (const auto request : {
         R"({"kind":"setTarget","commandId":"11","target":"cd"})",
         R"({"kind":"editTarget","commandId":"12","fields":{"lufs":-13.25,"tp":-1.25}})",
@@ -152,7 +170,7 @@ int sessionWireFixture (bool manifest = false)
         R"({"kind":"revertEdits","commandId":"26","device":5,"fields":{"needles":true,"needlesDb":true}})",
         R"({"kind":"revertEdits","commandId":"27","device":6,"fields":{"on":true}})",
         R"({"kind":"revertEdits","commandId":"28","device":7,"fields":{"on":true,"db":true}})",
-        R"({"kind":"editTarget","commandId":"29","fields":{"lufs":null,"tp":null}})",
+        R"({"kind":"editTarget","commandId":"29","fields":{}})",
         R"({"kind":"setTarget","commandId":"30","target":"lp"})",
         R"({"kind":"master","commandId":"31"})",
         R"({"kind":"cancel","commandId":"32","jobId":2})",
@@ -161,21 +179,16 @@ int sessionWireFixture (bool manifest = false)
         R"({"kind":"master"})",
         R"({"kind":"setManual","commandId":"36","on":true,"on":false})",
         R"({"kind":"setManual","commandId":"37","on":1})" })
-    {
-        if (Wire::command (*made.session, request, reply, size) != CodecStatus::Ok) return 8;
-        std::printf ("%.*s\n", int (size), reply);
-        const auto& project = made.session->project();
-        writer = {}; writer.output = effect; writer.put ('{');
-        writer.field ("target", made.session->targetName()); writer.field ("manual", project.manual);
-        writer.field ("targetEdit", project.targetEdit);
-        detail::eachDevice (project.devices, [&] (Device, const auto& layer) {
-            using Of = detail::DeviceOf<std::remove_cvref_t<decltype (layer.hand)>>;
-            writer.field (Of::name, layer.hand);
-        });
-        writer.put ('}');
-        std::printf ("json command-effect-%u %.*s\n", fixture++, int (writer.size), effect);
-    }
+        if (! run (request)) return 8;
     if (Wire::importProject (*made.session, 38, "invalid TOML", reply, size) != CodecStatus::Ok) return 9;
     std::printf ("%.*s\n", int (size), reply);
+    // A NULL CLEARS A TARGET FIELD (slice 5, owner 01.10): both set, the loudness cleared, the ceiling cleared; and a
+    // field refused on its number, answered with its fact.
+    for (const auto request : {
+        R"({"kind":"editTarget","commandId":"39","fields":{"lufs":-13.25,"tp":-1.25}})",
+        R"({"kind":"editTarget","commandId":"40","fields":{"lufs":null}})",
+        R"({"kind":"editTarget","commandId":"41","fields":{"tp":null}})",
+        R"({"kind":"editTarget","commandId":"42","fields":{"tp":99}})" })
+        if (! run (request)) return 11;
     return 0;
 }

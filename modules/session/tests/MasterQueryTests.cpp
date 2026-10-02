@@ -14,6 +14,7 @@
 #include <felitronics/session/Text.h>
 #include <felitronics/core/DetMath.h>
 #include <felitronics_test.h>
+#include "PreviousSnapshotBytes.h"
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -26,6 +27,7 @@
 #include <vector>
 
 using namespace felitronics::session;
+using namespace felitronics::session::previous;
 using felitronics::test::ok;
 namespace declared = felitronics::declared;
 
@@ -692,6 +694,42 @@ void theLeanSummary()
 }
 } // namespace
 
+// THE SNAPSHOT SIZED IN ONE PASS (slice 5): the same sizes and statuses as the previous function, copied
+// (tests/PreviousSnapshotBytes.h). Its cost is felitronics_session_snapshot_sizing's, a target of its own: a clock is
+// not for a unit built with the session's own flags.
+void theSnapshotSizedInOnePass()
+{
+    const Audio audio (4);
+    auto s = loaded (audio.planes, 2, audio.frames, audio.rate);
+    (void) master (*s, 3);
+    const auto full = s->snapshot();
+    const auto summary = s->summary();
+    bool same = sameNeed (Wire::snapshotBytes (full.view()), previousSnapshotBytes (full.view()))
+             && sameNeed (Wire::snapshotBytes (summary.view()), previousSnapshotBytes (summary.view()))
+             && sameNeed (Wire::snapshotBytes (*s), previousSnapshotBytes (full.view()))
+             && Wire::snapshotBytes (full.view()).status == CodecStatus::Ok && ! full.view().masters.empty();
+    ok (same, "a measured and mastered session, whole and summed up: the same sizes as the previous path");
+
+    // What only the text pass caught is still caught: each view below is refused by both, the same way.
+    const Wide wide (64);
+    const MachineDifference stray[] { { Device (200), 0, 1.0, 2.0 } };
+    auto badDevice = wide.view; badDevice.machineDifferences = stray;
+    auto badText = wide.view; badText.target = std::string_view ("\xff\xfe", 2);
+    auto badBytes = wide.view; badBytes.measurementStorage.sourceBytes = std::numeric_limits<double>::quiet_NaN();
+    auto badIndex = wide.view;
+    std::vector<ReadingPoint> far (wide.points); far[3].index = 9007199254740992ull;
+    badIndex.momentary = far;
+    auto badState = wide.view; badState.state = State (99);
+    bool refused = true;
+    for (const auto* v : { &badDevice, &badText, &badBytes, &badIndex, &badState })
+    {
+        const auto a = Wire::snapshotBytes (*v), b = previousSnapshotBytes (*v);
+        refused = refused && sameNeed (a, b) && a.status == CodecStatus::Invalid;
+    }
+    ok (refused && sameNeed (Wire::snapshotBytes (wide.view), previousSnapshotBytes (wide.view)),
+        "a stray device in a machine difference, text that is not UTF-8, a byte count that is not a number, an index past 2^53, "
+        "a state out of range: Invalid, as before");
+}
 int main()
 {
     std::printf ("felitronics::session — a master read by queries, and the lean summary\n");
@@ -701,5 +739,6 @@ int main()
     theMastersLoudness();
     theMastersAxes();
     theLeanSummary();
+    theSnapshotSizedInOnePass();
     return felitronics::test::report();
 }
