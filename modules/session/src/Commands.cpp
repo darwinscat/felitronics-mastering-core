@@ -697,6 +697,7 @@ void Session::startMaster (const detail::MasterPlan& plan) noexcept
     rows.passes.reset (new LandingPass[12]);
     rows.traces.reset (new LandingTraceBucket[std::size_t (2 * plan.traceBuckets)]);
     rows.traceCapacity = std::uint32_t (plan.traceBuckets);
+    if (plan.glueTrace) rows.glueRows.reset (new LandingTraceBucket[std::size_t (plan.traceBuckets)]);
     if (plan.crestCapacity != 0) rows.crest.reset (new double[plan.crestCapacity * 15u]);
     rows.crestCapacity = plan.crestCapacity;
     if (plan.costCapacity != 0)

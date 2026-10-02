@@ -10,15 +10,18 @@ class Snapshot;
 inline constexpr std::uint32_t kQueryColumns = 2048, kWaveformStride = 13;
 inline constexpr std::uint64_t kQueryValues = std::uint64_t (kQueryColumns) * 4u * kWaveformStride;
 // The kinds, in the order they were published. WHAT A MASTER ANSWERS (masterId, and audioId the source it was made from):
-//   LimiterGr, PeakClipGr   the retained reduction traces
+//   LimiterGr, PeakClipGr   the retained reduction traces, on the delivered-frame grid
+//   GlueGr                  the glue's (the compressor's) gain reduction from the delivered render, rows as LimiterGr's on
+//                           its buckets; a master whose glue did not compress answers Unavailable, reason NoSignal
 //   MasterWaveform          its retained buckets, L and R: [from,to,channel,min,max,rms,finite]
 //   MasterAxes              the same buckets as the source's Waveform answers — four axes (L, R, Mid, Side), rows of
 //                           kWaveformStride: [from,to,axis,min,max,peak,envelope,rms,low,middle,high,finite,reason]
 //   Momentary, ShortTerm    with a masterId: the master's own loudness curves, [frame,value,reason], a row per 100 ms of
-//                           the delivered audio, named by the frame its window ends at; without one, the source's
+//                           the delivered audio, asked and named in the SOURCE's frames (the frame of the same moment
+//                           its window ends at) — the source's own request plus a masterId; without one, the source's
 //   MasterReport            the master whole — the record a full snapshot carries for it, rows included (QueryView::master)
 enum class QueryKind : std::uint8_t { Waveform, LowSpectrum, LowSide, Momentary, ShortTerm, Clipping, Stereo, LimiterGr, PeakClipGr, MasterWaveform,
-                                      MasterAxes, MasterReport };
+                                      MasterAxes, MasterReport, GlueGr };
 // WHAT LowSpectrum ANSWERS per band of the retained low-end measurement, interpolated between the bands' centres:
 //   Density   the band's energy per hertz (its energy over its width in Hz) — the tilt-free quantity: level across
 //             bands that widen with frequency; the default, and what LowSpectrum answered before this field existed
@@ -38,7 +41,7 @@ struct MeasurementQuery
     std::uint32_t columns = 512;
     std::uint64_t requestId = 0;
     double crossoverHz = 120, fromHz = 20, toHz = 250;
-    std::uint32_t masterId = 0; // required for LimiterGr and PeakClipGr; absent in a source query
+    std::uint32_t masterId = 0; // required by every master kind; with Momentary/ShortTerm the master's curve; 0 is a source query
     SpectrumQuantity spectrum = SpectrumQuantity::Density;   // LowSpectrum alone reads it
 };
 struct QueryView

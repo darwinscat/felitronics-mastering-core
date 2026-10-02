@@ -56,7 +56,9 @@ constexpr Golden kGolden[] = {
     // place: no 2026-10 project had been saved
     // ...and the high-pass's machine top its own key (machineTopHz = 50, owner, 01.10) apart from the knob's travel, now to
     // 80 Hz: no machine cutoff moves; updated in place, as above
-    { "2026-10", 0x6fdf2af99bf12945ull },
+    // ...and two knobs' steps (owner, 02.10): the mono-bass crossover by 5 Hz, the cut off the peaks by 0.1 dB. A step is
+    // in the sound because a typed value is placed on its grid; no machine value moves; updated in place, as above
+    { "2026-10", 0xdea59597eb8ec0c8ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -182,8 +184,13 @@ std::vector<std::string> departures (const config::Config& c)
     need (same (m.lowWidth, 0.0), "mono bass is full mono below its crossover");
     need (same (m.lowWidthRange.min, 0.0) && same (m.lowWidthRange.max, 1.0) && same (m.lowWidthStep, 0.05),
           "the mono-bass width knob runs 0…1 in steps of 0.05");
-    need (same (m.frequencyRange.min, 60.0) && same (m.frequencyRange.max, 300.0) && same (m.frequencyStep, 1.0),
-          "the mono-bass crossover knob runs 60…300 Hz in steps of 1");
+    need (same (m.frequencyRange.min, 60.0) && same (m.frequencyRange.max, 300.0) && same (m.frequencyStep, 5.0),
+          "the mono-bass crossover knob runs 60…300 Hz in steps of 5 (owner, 02.10)");
+    const auto& b = e.bands;
+    need (same (b.body.normal.min, -1.5) && same (b.body.normal.max, 1.5) && same (b.forward.normal.min, -1.5) && same (b.forward.normal.max, 1.5)
+          && same (b.brightness.normal.min, -1.5) && same (b.brightness.normal.max, 1.5) && same (b.air.normal.min, -1.5) && same (b.air.normal.max, 1.5)
+          && same (b.mud.normal.min, -1.5) && same (b.mud.normal.max, 0.0),
+          "the EQ bands turn red past ±1.5 dB, as tilt and low (owner, 02.10); the mud band, a cut alone, below −1.5");
     const config::PeakClipper& p = e.limiter.peakClipper;
     need (same (p.littleNeedDb, 3.0), "needles are not measured at a need of 3 dB or less");
     need (same (p.shortCutDb, 3.0) && same (p.betweenCutDb, 1.5), "the peak clipper: up to 3 dB off the peaks short, 1.5 between");
@@ -192,6 +199,8 @@ std::vector<std::string> departures (const config::Config& c)
           "the needles' classes: short to 2 ms and a bass share of 0.25, long from 8 ms or 0.5");
     need (same (p.clippedPerMinute, 10.0), "a source is clipped from 10 confirmed clips a minute");
     need (same (p.kneeDb, 0.0), "the peak clipper is a hard clip");
+    need (same (p.manualMinDb, 0.0) && same (p.manualMaxDb, 3.0) && same (p.manualStepDb, 0.1),
+          "the manual cut off the peaks runs 0…3 dB in steps of 0.1 (owner, 02.10)");
     need (e.dither.seed == 0x853c49e6748fea9bull && e.dither.autoBlank && e.dither.autoBlankSamples == 4096
           && e.dither.shaping == config::NoiseShaping::Weighted,
           "the dither: weighted TPDF from the fixed seed, blanked after 4096 zero samples");

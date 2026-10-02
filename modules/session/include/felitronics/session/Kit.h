@@ -76,7 +76,8 @@ struct KitTravel
 //   the target's loudness and ceiling   [edit] lufs/tp green, out to the knob's travel (targets.toml)
 //   the high-pass's cutoff              [hpf] comfort lowHz…highHz, out to warningLowHz / warningHighHz
 //   tilt and low                        [tilt]/[low] normal, out to hard
-// A knob without a window answers window = false, heat 0, side 0 — the EQ bands' gains among them (no norm this release).
+//   the five EQ bands' gains            [bands.*] normal, out to hard (owner, 02.10: coloured as tilt and low)
+// A knob without a window answers window = false, heat 0, side 0.
 struct KitHeat
 {
     CodecStatus status = CodecStatus::Ok;

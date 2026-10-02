@@ -399,7 +399,8 @@ void theKitAndTheNorm()
         && same (body.from, -3.0) && same (body.to, 3.0), "the knobs' travel: mud −3…0, the others ±3, by 0.1 dB");
     const auto typed = Kit::parse ("1,26", text::Lang::Ru, text::Term::FieldBandsBody, 0);
     ok (typed.status == CodecStatus::Ok && typed.refusal == KitRefusal::None && same (typed.value, 1.3), "a typed gain lands on the 0.1 dB grid");
-    ok (! Kit::heat (text::Term::FieldBandsForward, 3.0).window, "no norm window this release: no heat");
+    const auto hot = Kit::heat (text::Term::FieldBandsForward, 3.0);
+    ok (hot.window && hot.side == 1 && same (hot.heat, 1.0), "a band is coloured as tilt is (owner, 02.10): at its travel's end, full heat");
     // THE NORM: [eq] curve.warnDb judges the shelves (tilt's and low's) only — the bands at their ends say nothing.
     Devices loud;
     for (std::size_t i = 0; i < 5; ++i) gainAt (loud.bands.hand, i) = i == 1 ? -6.0 : 6.0;

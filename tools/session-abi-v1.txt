@@ -1848,3 +1848,6 @@ codec LandingSummary.peaksAboveCeiling bool
 enum felitronics::session::HeldBack::Pending=7
 enum felitronics::session::text::FactId::DeviceUnmeasured=510
 codec DevicePlan.pending uint8
+# The glue's gain reduction over time (02.10): a master's compressor trace from the delivered render, on LimiterGr's buckets.
+enum felitronics::session::QueryKind::GlueGr=12
+row QueryGlueGr element=f64 byteOrder=little columns=firstFrame,lastFrame,minDb,maxDb,meanDb,samples,nonFinite stride=7 bytes=56
