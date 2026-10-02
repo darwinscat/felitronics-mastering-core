@@ -128,7 +128,9 @@ class Kit final
 public:
     // A FACT IN A LANGUAGE: `wireFact` is a fact as the session publishes it ({"FactId":…,"args":[…]} — a snapshot's, an
     // event's, a plan's), read by the codec's own fact reader; the UTF-8 written is Text::write's. TooSmall with the size
-    // when `out` is shorter. No terminator is written.
+    // when `out` is shorter. No terminator is written. Invalid, nothing written, for a fact that is not
+    // Text::complete — short of an argument its message needs, one too many, one of another kind — as for a malformed
+    // one.
     [[nodiscard]] static KitCount text (std::string_view wireFact, text::Lang lang, std::span<char> out) noexcept;
 
     // WHAT A PERSON TYPED into a field: Text::parse in `lang` (its decimal sign or ".", the minus signs, no grouping);

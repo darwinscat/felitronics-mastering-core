@@ -772,9 +772,9 @@ main thread.
   undeclared language, a unit without a pattern, a breaking space before a unit and an absent sign of "1" in a copy, and
   require the gate to go red at the spot; the suite plants forty-six more in-process.
 - **No fallback, no guess.** A message the catalog does not have in a language — every message, in a language it does
-  not declare — renders as its id (`Text::key`), never in another language. An argument that does not match its fact's
-  declaration renders as `{name}`; a plural or a select whose own argument does not match cannot choose, and renders the
-  id.
+  not declare — renders as its id (`Text::key`), never in another language. A fact whose arguments do not match its
+  declaration — one missing, one too many, one of another kind — is incomplete (`Text::complete`): it renders nothing,
+  and `fc_kit_text` refuses it with `FC_SESSION_ERR_CONTRACT`, never printing its template.
 - **Numbers by rules of its own**, stated in `Text.h` and held by `felitronics_session_text_tests`: a double is read as
   its shortest round-trip decimal — `std::to_chars`'s shortest form, which the standard specifies exactly, so every
   standard library gives the same digits, with no locale — and that decimal is rounded to the grid of `precision`

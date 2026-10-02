@@ -440,7 +440,9 @@ fc_session_status fc_session_master_wav_copy (fc_session session, const fc_sessi
 #define FC_SESSION_KIT_SATURATION_POINTS 129u
 
 // A published fact ({"FactId":…,"args":[…]}, as a snapshot, an event or a plan carries it) in a language, as UTF-8
-// without a terminator. A null output is allowed with capacity 0; TOO_SMALL writes the bytes needed to *written.
+// without a terminator. A null output is allowed with capacity 0; TOO_SMALL writes the bytes needed to *written. A fact
+// that does not carry exactly the arguments its message needs (one missing, one too many, one of another kind) is
+// FC_SESSION_ERR_CONTRACT, as a malformed one is: nothing written, *written untouched — never the raw template.
 fc_session_status fc_kit_text (const char* fact, uint32_t fact_bytes, const char* lang, uint32_t lang_bytes,
                               char* output, uint32_t capacity, uint32_t* written);
 // What a person typed into a field: OK with *refusal FC_SESSION_KIT_PARSE_* and, when accepted, *value the number to send.

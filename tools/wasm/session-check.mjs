@@ -1132,6 +1132,35 @@ contractRecord.scenarios.lateCrest = {source:{pcmSha256:latePcmSha256, metadataJ
     sourceEvent:lateSourceEvent, joinEvent:lateJoinEvent, joined:lateJoinedWire};
 for (const p of lateGrowth) M._free(p);
 ok(M._fc_session_destroy(lateSession) === STATUS.OK, 'late crest scenario session destroyed');
+// Every fact the WAV contract's scenarios carry — answers, events, snapshots — renders whole on the kit, in ru and
+// in en: a fact short of an argument its message needs is refused rather than printed as its template.
+{
+    const facts = new Set();
+    const visit = value => {
+        if (typeof value === 'string') {
+            if (value[0] === '{' || value[0] === '[') { let parsed; try { parsed = JSON.parse(value); } catch { return; } visit(parsed); }
+        } else if (Array.isArray(value)) value.forEach(visit);
+        else if (value && typeof value === 'object') {
+            if ('FactId' in value) facts.add(JSON.stringify({FactId:value.FactId, args:value.args}));
+            Object.values(value).forEach(visit);
+        }
+    };
+    visit(contractRecord.scenarios);
+    const OUT = 4096, at = M._malloc(OUT + 64), lang = at + OUT, written = at + OUT + 16;
+    const broken = [];
+    for (const fact of facts) {
+        const bytes = encoder.encode(fact), input = M._malloc(bytes.length);
+        new Uint8Array(M.HEAPU32.buffer).set(bytes, input);
+        for (const code of ['ru', 'en']) {
+            new Uint8Array(M.HEAPU32.buffer).set(encoder.encode(code), lang);
+            if (M._fc_kit_text(input, bytes.length, lang, 2, at, OUT, written) !== STATUS.OK) broken.push(`${code} ${fact}`);
+        }
+        M._free(input);
+    }
+    M._free(at);
+    ok(facts.size > 0 && broken.length === 0, `every fact the WAV contract's scenarios carry (${facts.size}) renders whole in ru and en`
+        + (broken.length ? ` — not: ${broken.join('; ')}` : ''));
+}
 console.log(`wav-record=${JSON.stringify(contractRecord)}`);
 for (const p of growth) M._free(p);
 

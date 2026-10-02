@@ -167,6 +167,9 @@ KitCount Kit::text (std::string_view wireFact, text::Lang lang, std::span<char> 
     reader.value (fact);
     reader.space();
     if (! reader.good || reader.pos != wireFact.size()) return { CodecStatus::Invalid, 0 };
+    // A fact short of an argument its message needs, or with one of another kind, is no fact: refused, never its
+    // template.
+    if (! text::Text::complete (fact)) return { CodecStatus::Invalid, 0 };
     const std::size_t size = text::Text::size (fact, lang);
     if (out.size() < size) return { CodecStatus::TooSmall, size };
     return { CodecStatus::Ok, text::Text::write (fact, lang, out) };
