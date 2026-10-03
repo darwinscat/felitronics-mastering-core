@@ -60,7 +60,10 @@ constexpr Golden kGolden[] = {
     // in the sound because a typed value is placed on its grid; no machine value moves; updated in place, as above
     // ...and the cut off the peaks' travel to 6 dB, the whole of its domain (owner, 02.10): a person's knob only, no machine
     // value moves; updated in place, as above
-    { "2026-10", 0x71b944c40d573c58ull },
+    // ...and felitronics-bands' bands.toml a document of the walk (v0.13.0): the filters of tilt, low and the five bands
+    // (type, hz, q) left engine.toml for it with the same numbers — no master moves, the walk does; it was
+    // 71b944c40d573c58; updated in place, as above
+    { "2026-10", 0x485f7b6eeac75749ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass

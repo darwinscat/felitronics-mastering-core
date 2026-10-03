@@ -62,12 +62,12 @@ void writeEq (const HpfFields<Value>& hpf, const TiltFields<Value>& tilt, const 
     h.lanes[0].slope = hpf.slope;
 
     auto& t = stage.bands[eqBand (Device::Tilt)];
-    t = band (eq::FilterType::Tilt, tilt.on && ! sameNumber (tilt.db, 0), number (rules.engine.find ("tilt").find ("freqHz")));
+    t = band (eq::FilterType::Tilt, tilt.on && ! sameNumber (tilt.db, 0), number (rules.geometry.find ("tilt").find ("hz")));
     t.lanes[0].gainDb = tilt.db;
 
-    const auto config = rules.engine.find ("low");
+    const auto config = rules.geometry.find ("low");   // the geometry: felitronics-bands, the numbers engine.toml held
     auto& l = stage.bands[eqBand (Device::Low)];
-    l = band (eq::FilterType::LowShelf, low.on && ! sameNumber (low.db, 0), number (config.find ("freqHz")));
+    l = band (eq::FilterType::LowShelf, low.on && ! sameNumber (low.db, 0), number (config.find ("hz")));
     l.lanes[0].Q = number (config.find ("q"));
     l.lanes[0].gainDb = low.db;
 }

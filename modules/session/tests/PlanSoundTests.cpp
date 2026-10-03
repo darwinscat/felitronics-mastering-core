@@ -556,7 +556,7 @@ void vinylOnThePlanner()
     {
         // A target without the clipper that is no vinyl: a person's needles there are not against a medium.
         Faked plain ("lp", -30.0, -6.0);
-        plain.in.rules = detail::readRules (felitronics::session::test::embedded::noVinyl.root(), plain.in.rules.engine);
+        plain.in.rules = detail::readRules (felitronics::session::test::embedded::noVinyl.root(), plain.in.rules.engine, plain.in.rules.geometry);
         plain.in.row = *plain.in.rules.find ("lp");
         auto hand = plain.machine(), onVinyl = lp.machine();
         hand.limiter.hand.needles = onVinyl.limiter.hand.needles = Needles::Manual;

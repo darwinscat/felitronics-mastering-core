@@ -244,15 +244,15 @@ inline void previousEqCurve (const Project& project, const Rules& rules, double 
     const double tiltDb = tilt.hand.db.value_or (tilt.machine.db);
     if (tilt.hand.on.value_or (tilt.machine.on) && ! sameNumber (tiltDb, 0))
     {
-        const double fq = frequency (number (rules.engine.find ("tilt").find ("freqHz")));
+        const double fq = frequency (number (rules.geometry.find ("tilt").find ("hz")));
         bands[count++] = lowShelf (fq, rate, core::det::pow10 (-tiltDb / 20));
         bands[count++] = highShelf (fq, rate, core::det::pow10 (tiltDb / 20));
     }
     const double lowDb = low.hand.db.value_or (low.machine.db);
     if (low.hand.on.value_or (low.machine.on) && ! sameNumber (lowDb, 0))
     {
-        const auto config = rules.engine.find ("low");
-        bands[count++] = shelf (frequency (number (config.find ("freqHz"))), rate,
+        const auto config = rules.geometry.find ("low");   // the geometry: felitronics-bands, the numbers engine.toml held
+        bands[count++] = shelf (frequency (number (config.find ("hz"))), rate,
                                core::det::pow10 (lowDb / 20), number (config.find ("q")), false);
     }
     const double last = std::min (20000.0, rate * 0.49);

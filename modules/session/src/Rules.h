@@ -51,6 +51,7 @@ struct TargetRow
 struct Rules
 {
     toml::embedded::View targets, engine;      // the two documents
+    toml::embedded::View geometry;             // felitronics-bands' bands.toml [bands]: each EQ device's type, hz, q
     std::uint16_t rows = 0;                    // [targets]
     std::uint16_t defaultRow = 0;              // `default`
     Knob lufs {}, tp {};                       // [edit] lufs, tp
@@ -79,7 +80,7 @@ struct Rules
 };
 
 // Read two build-checked documents without allocations.
-[[nodiscard]] Rules readRules (toml::embedded::View targets, toml::embedded::View engine) noexcept;
+[[nodiscard]] Rules readRules (toml::embedded::View targets, toml::embedded::View engine, toml::embedded::View bands) noexcept;
 
 // The rules of the config compiled into the library (src/Config.cpp).
 [[nodiscard]] Rules rules() noexcept;

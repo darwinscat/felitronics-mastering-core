@@ -44,6 +44,9 @@
 #
 # AND A felitronics-toml CHECKOUT, for fcsession's config: FELITRONICS_TOML_DIR when that is set (CI passes the one its
 # CMake configure resolved), the sibling ../felitronics-toml otherwise — the same rule, for the same reason.
+#
+# AND A felitronics-bands CHECKOUT, for the named EQ bands' geometry and names: FELITRONICS_BANDS_DIR when that is set (CI
+# passes the one its CMake configure resolved), the sibling ../felitronics-bands otherwise.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -595,6 +598,11 @@ read -r TV_MAJOR TV_MINOR TV_PATCH <<< "$(sed -nE '/^project\(felitronics_toml/,
 [ -n "${TV_PATCH:-}" ] && { [ "$TV_MAJOR" -gt 0 ] || [ "$TV_MINOR" -ge 3 ]; } \
     || { echo "*** felitronics-toml at $TOML is not v0.3.0 or later (${TV_MAJOR:-?}.${TV_MINOR:-?}.${TV_PATCH:-?})"; exit 1; }
 echo "--- fc_session config: felitronics-toml $TV_MAJOR.$TV_MINOR.$TV_PATCH at $TOML"
+BANDS="${FELITRONICS_BANDS_DIR:-$ROOT/../felitronics-bands}"
+[ -f "$BANDS/bands.toml" ] && [ -f "$BANDS/languages.toml" ] \
+    || { echo "no felitronics-bands at $BANDS — set FELITRONICS_BANDS_DIR to a checkout"; exit 1; }
+BANDS="$(cd "$BANDS" && pwd)"
+echo "--- fc_session config: felitronics-bands at $BANDS"
 
 SGEN="$OUT/session-config"
 mkdir -p "$SGEN/embedded"
@@ -608,6 +616,15 @@ for doc in catalog format; do
     node "$SGEN/toml2cpp.js" "$ROOT/modules/session/text/$doc.toml" "$SGEN/embedded/$doc.h" \
          felitronics::session::text::embedded "$doc"
 done
+# felitronics-bands: bands.toml beside the config, each text/<code>.toml as embedded/band-text/<code>.h, and the header
+# that finds a language's (modules/session/band-texts.cmake — the one the CMake build runs).
+node "$SGEN/toml2cpp.js" "$BANDS/bands.toml" "$SGEN/embedded/bands.h" felitronics::session::config::embedded bands
+mkdir -p "$SGEN/embedded/band-text"
+for f in "$BANDS"/text/*.toml; do
+    code="$(basename "$f" .toml)"
+    node "$SGEN/toml2cpp.js" "$f" "$SGEN/embedded/band-text/$code.h" felitronics::session::text::embedded::bandText "$code"
+done
+cmake -DBANDS="$BANDS" -DOUTPUT="$SGEN/embedded/band-texts.h" -P "$ROOT/modules/session/band-texts.cmake"
 # The analyzers' include roots too (INC): the schema asks them what they admit (their storageFor). The gate compiles the
 # library's schema with this front end as well — src/BuildGuards.h, its first include, refuses any other.
 SFRONT=(-std=c++20 "${SESSION_FLAGS[@]}"
@@ -619,7 +636,7 @@ SFRONT=(-std=c++20 "${SESSION_FLAGS[@]}"
 em++ "${SFRONT[@]}" -O1 "$ROOT/modules/session/tests/ConfigCheck.cpp" "$ROOT/modules/session/src/ConfigSchema.cpp" \
      "$ROOT/modules/session/src/BuildContract.cpp" \
      -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -o "$SGEN/config_check.js"
-node "$SGEN/config_check.js" --expect "$ROOT/modules/session/config/targets.toml" "$ROOT/modules/session/config/engine.toml" "$SGEN/embedded" \
+node "$SGEN/config_check.js" --expect "$ROOT/modules/session/config/targets.toml" "$ROOT/modules/session/config/engine.toml" "$BANDS/bands.toml" "$SGEN/embedded" \
     || { echo "*** the session's config breaks its schema — see above"; exit 1; }
 echo "--- fc_session config: read by schema, no problem"
 cmake -DOUTPUT="$OUT/snapshot.d.ts" -DVERSION_FILE="$SGEN/embedded/version.txt" -P "$ROOT/tools/session-codec.cmake"
@@ -629,7 +646,7 @@ node "$ROOT/tools/session-abi-check.mjs" node "$SGEN/abi-probe.js"
 node "$ROOT/tools/session-abi-check.mjs" --self-test
 em++ "${SFRONT[@]}" -O1 "$ROOT/modules/session/tests/TextCheck.cpp" "$ROOT/modules/session/src/TextSchema.cpp" \
      -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 -o "$SGEN/text_check.js"
-node "$SGEN/text_check.js" "$ROOT/modules/session/text/catalog.toml" "$ROOT/modules/session/text/format.toml" \
+node "$SGEN/text_check.js" "$ROOT/modules/session/text/catalog.toml" "$ROOT/modules/session/text/format.toml" "$BANDS" \
     || { echo "*** the session's text catalog or formatting table breaks its gate — see above"; exit 1; }
 echo "--- fc_session text: the catalog and the formatting table checked, no problem"
 

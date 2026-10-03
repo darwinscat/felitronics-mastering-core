@@ -37,7 +37,10 @@ desktop.en = "desktop version"
 
 # The fields a command's check can refuse, as the label a person knows the knob by — the site's own labels where it has
 # one (Громкость / Loudness, Потолок / Ceiling, Срез ФВЧ / HPF corner, Моно ниже / Mono bass below, Компрессор (клей) /
-# Compressor (glue), Наклон / Tilt). A message puts the label first: "{field}: …", so no case of it is ever needed.
+# Compressor (glue)). A message puts the label first: "{field}: …", so no case of it is ever needed. The seven named EQ
+# bands — tilt, low, body, mud, forward, brightness, air, as fields (tiltDb, lowDb, bandsBody, …) and as devices (tilt,
+# low) — are not written here: their names are felitronics-bands' text/<lang>.toml, one per band (src/TextFacts.h marks
+# the terms), and the text's gate refuses a copy of one here.
 [terms.field]
 targetLufs.ru = "Громкость"
 targetLufs.en = "Loudness"
@@ -59,26 +62,12 @@ saturationMix.ru = "Микс сатурации"
 saturationMix.en = "Saturation mix"
 saturationType.ru = "Тип сатурации"
 saturationType.en = "Saturation type"
-tiltDb.ru = "Наклон"
-tiltDb.en = "Tilt"
 limiterNeedles.ru = "Резать иглы"
 limiterNeedles.en = "Cut needles"
 limiterNeedlesDb.ru = "Срез с пиков"
 limiterNeedlesDb.en = "Cut off the peaks"
-lowDb.ru = "Низ"
-lowDb.en = "Low"
 audio.ru = "Звук"
 audio.en = "Audio"
-bandsBody.ru = "Тело"
-bandsBody.en = "Body"
-bandsMud.ru = "Грязь"
-bandsMud.en = "Mud"
-bandsForward.ru = "Вперёд"
-bandsForward.en = "Forward"
-bandsBrightness.ru = "Яркость"
-bandsBrightness.en = "Brightness"
-bandsAir.ru = "Воздух"
-bandsAir.en = "Air"
 
 # The saturation's types a person may pick, as the page names them (the core's shapes: tanh, tube, transistor,
 # transformer, tape). The owner's run-through may rename them; the report's words do not depend on the type.
@@ -942,7 +931,8 @@ en = "Tempo"
 ru = "Иглы"
 en = "Needles"
 
-# The devices, by the labels of their cards.
+# The devices, by the labels of their cards (tilt and low: felitronics-bands' names, as above; "EQ bands" is the device of
+# the five, not a band, and stays here).
 [terms.device]
 hpf.ru = "ФВЧ"
 hpf.en = "HPF"
@@ -952,14 +942,10 @@ glue.ru = "Клей"
 glue.en = "Glue"
 saturation.ru = "Сатурация"
 saturation.en = "Saturation"
-tilt.ru = "Наклон"
-tilt.en = "Tilt"
 limiter.ru = "Лимитер"
 limiter.en = "Limiter"
 dither.ru = "Дизер"
 dither.en = "Dither"
-low.ru = "Низ"
-low.en = "Low"
 bands.ru = "Полосы EQ"
 bands.en = "EQ bands"
 
