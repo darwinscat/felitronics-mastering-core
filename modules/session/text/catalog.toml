@@ -83,6 +83,19 @@ transformer.en = "Transformer"
 tape.ru = "Ленточная"
 tape.en = "Tape"
 
+# The BS.1116 impairment scale, as the damage's line names the worst window's grade (5 down to 1).
+[terms.damageGrade]
+imperceptible.ru = "не слышно"
+imperceptible.en = "imperceptible"
+perceptible.ru = "слышно, но не мешает"
+perceptible.en = "perceptible but not annoying"
+slightlyAnnoying.ru = "слегка мешает"
+slightlyAnnoying.en = "slightly annoying"
+annoying.ru = "мешает"
+annoying.en = "annoying"
+veryAnnoying.ru = "сильно мешает"
+veryAnnoying.en = "very annoying"
+
 # ── messages ──
 
 # A reading alone: the number with its unit, signs and bound, as the table writes it.
@@ -530,6 +543,28 @@ en = "Saturation cut peaks by up to {largest} (usually {usual})."
 [messages.planWaiting]
 ru = "Мастер ждёт замер «{analyzer}» для прибора «{device}»: {progress}"
 en = "The master is waiting for the {analyzer} measurement for {device}: {progress}"
+
+# The damage the processing did, heard: PEAQ of the master against the same chain with its dynamics at rest, in windows
+# — the worst window's grade, where it starts, the share of the track heard; and the loudness range, input against master.
+[messages.masterDamage]
+ru = "Порча: {grade} (худшее место — с {from}); слышна в {share} трека."
+en = "Damage: {grade} (the worst place starts at {from}); heard in {share} of the track."
+
+[messages.masterDamageInaudible]
+ru = "Порча: не слышно — ни одно место трека не ниже этой оценки."
+en = "Damage: imperceptible — no place in the track is graded lower."
+
+[messages.masterDamageUnmeasured]
+ru = "Порча не оценена: {reason}."
+en = "Damage not graded: {reason}."
+
+[messages.masterLraChange]
+ru = "LRA: у входа {source}, у мастера {master} — {change} ({changeLu})."
+en = "LRA: {source} at the input, {master} in the master — {change} ({changeLu})."
+
+[messages.masterLraUnmeasured]
+ru = "Изменение LRA не измерено: {reason}."
+en = "The LRA change was not measured: {reason}."
 
 [messages.deviceUnmeasured]
 ru = "Ещё не измерено: машина поставит значение, когда закончится замер «{analyzer}». Крутить можно уже сейчас — тронутое останется Вашим."

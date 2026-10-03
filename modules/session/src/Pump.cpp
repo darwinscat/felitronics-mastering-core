@@ -317,10 +317,12 @@ Stepped Session::step (std::uint32_t budget) noexcept
             const bool end = outcome != mastering::StepResult::More;
             const auto total = std::uint32_t (std::min<std::uint64_t> (
                 4294967295u, (source_.frames / 1024u + 2u * std::uint64_t (masterJob_->frames) / 1024u + 64u) * 12u));
-            masterProgress_ = { end ? PhaseName::Final : PhaseName::Pass,
+            // The phase the job is in (the damage's two walks are phases of their own; everything else of a master is its
+            // passes) and how far its current walk over the file has come — a new count for each walk.
+            masterProgress_ = { end ? PhaseName::Final : masterJob_->phaseName(),
                 end ? 1.0 : std::min (0.99, double (masterUnit_) / double (std::max (1u, total))),
                 config::Config::versions().all, std::uint32_t (masterJob_->search.startedPasses()), 12,
-                masterUnit_, total };
+                masterUnit_, total, end ? std::nullopt : masterJob_->stepFraction() };
             event.payload.phase = masterProgress_;
             emit (event);
             if (masterJob_->search.startedPasses() != beforePass)
@@ -418,6 +420,13 @@ Stepped Session::step (std::uint32_t budget) noexcept
                     if (const auto saturation = MasterReportText::saturation (*cost))
                     { (void) event.payload.fact.assign (*saturation); emit (event, masterProgress_); }
                 }
+                // The damage the processing did, heard, and the loudness range's change: two lines, each its own or why not.
+                {
+                    const auto& damage = masters_[masterCount_ - 1].report->damage;
+                    event.kind = EventKind::Fact;
+                    (void) event.payload.fact.assign (MasterReportText::damage (damage)); emit (event, masterProgress_);
+                    (void) event.payload.fact.assign (MasterReportText::lra (damage)); emit (event, masterProgress_);
+                }
                 // The medium's lines and a very quiet input's: what the master is ready for, what the file shows of
                 // it and what it cannot show.
                 {
@@ -480,7 +489,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
         else if (measurementsFromSidecar_ && measurementJob_ != 0)
         {
             measurementJob_ = 0;
-            measurementProgress_ = { PhaseName::Analyzers, 1.0, config::Config::versions().all, 0, 0, 1, 1 };
+            measurementProgress_ = { PhaseName::Analyzers, 1.0, config::Config::versions().all, 0, 0, 1, 1, std::nullopt };
             ++revision_;
         }
         else contract (measurementJob_);

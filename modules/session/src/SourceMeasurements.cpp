@@ -264,7 +264,7 @@ void Session::stepSourceMeasurements() noexcept
                 detail::debugBound (result.status == MeasurementStatus::Ready || result.status == MeasurementStatus::Unavailable);
         run.finished = true;
         const auto job = measurementJob_;
-        measurementProgress_ = { PhaseName::Analyzers, 1.0, config::Config::versions().all, 0, 0, 1, 1 };
+        measurementProgress_ = { PhaseName::Analyzers, 1.0, config::Config::versions().all, 0, 0, 1, 1, std::nullopt };
         if (mandatoryReady() && detail::Driver::measured2 (*this, job, source_.hash))
         {
             event.kind = EventKind::Fact;
@@ -344,7 +344,7 @@ void Session::stepSourceMeasurements() noexcept
         weighed += weightOf (id) * double (run.frames) / double (source_.frames);
     measurementProgress_ = { PhaseName::Analyzers, weightTotal > 0 ? weighed / weightTotal : 0,
         config::Config::versions().all, 0, 0, std::uint32_t (std::min<std::uint64_t> (done, 4294967295u)),
-        std::uint32_t (std::min<std::uint64_t> (total, 4294967295u)) };
+        std::uint32_t (std::min<std::uint64_t> (total, 4294967295u)), std::nullopt };
     if (run.stage == 0)
     {
         const auto plan = detail::MeasurementPlan::storageFor (pcm, params); const auto& price = plan.analyzers[index];

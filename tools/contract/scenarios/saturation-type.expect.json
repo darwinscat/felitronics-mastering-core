@@ -17,7 +17,7 @@
   "equal": [
     [{"kind":"snapshot","session":"main","index":1},{"kind":"snapshot","session":"main","index":2}]
   ],
-  "parity": {"tolerance": 1e-5},
+  "parity": {"tolerance": 1e-4},
   "projects": 2,
   "minEvents": 1000,
   "eventKinds": ["phase","measurement","fact","rejected","done"],

@@ -213,6 +213,45 @@ std::optional<text::Fact> MasterReportText::saturation (const MasterCost& cost) 
     return text::Fact::of (text::FactId::MasterSaturation, text::Arg::value (*cost.saturationCutMaxDb.value, text::Unit::Db, 1),
         text::Arg::value (*cost.saturationCutUsualDb.value, text::Unit::Db, 1));
 }
+namespace
+{
+text::Term reasonTerm (MeasurementReason reason) noexcept
+{
+    switch (reason)
+    {
+        case MeasurementReason::Pending:        return text::Term::ReasonPending;
+        case MeasurementReason::Cancelled:      return text::Term::ReasonCancelled;
+        case MeasurementReason::TooShort:       return text::Term::ReasonTooShort;
+        case MeasurementReason::NonFinite:      return text::Term::ReasonNonFinite;
+        case MeasurementReason::Capacity:       return text::Term::ReasonCapacity;
+        case MeasurementReason::NoSignal:       return text::Term::ReasonNoSignal;
+        case MeasurementReason::NotImplemented: return text::Term::ReasonNotImplemented;
+        case MeasurementReason::NeedNotAbove3:  return text::Term::ReasonNeedNotAbove3;
+        case MeasurementReason::Memory:         return text::Term::ReasonMemory;
+        case MeasurementReason::None:
+        case MeasurementReason::Unsupported:    break;
+    }
+    return text::Term::ReasonUnsupported;
+}
+} // namespace
+text::Fact MasterReportText::damage (const MasterDamage& d) noexcept
+{
+    if (d.status != MeasurementStatus::Ready || d.grade < 1 || d.grade > 5 || ! d.worstFromSeconds || ! d.audibleShare)
+        return text::Fact::of (text::FactId::MasterDamageUnmeasured, text::Arg::term (reasonTerm (d.reason)));
+    if (d.grade == 5) return text::Fact::of (text::FactId::MasterDamageInaudible);
+    const auto grade = text::Term (unsigned (text::Term::DamageGradeImperceptible) + (5u - d.grade));
+    return text::Fact::of (text::FactId::MasterDamage, text::Arg::term (grade),
+        text::Arg::value (*d.worstFromSeconds, text::Unit::S, 0), text::Arg::value (100.0 * *d.audibleShare, text::Unit::Percent, 0));
+}
+text::Fact MasterReportText::lra (const MasterDamage& d) noexcept
+{
+    if (! d.sourceLraLu || ! d.masterLraLu || ! d.lraChangeLu || ! d.lraChangePercent)
+        return text::Fact::of (text::FactId::MasterLraUnmeasured, text::Arg::term (reasonTerm (d.lraReason)));
+    return text::Fact::of (text::FactId::MasterLraChange, text::Arg::value (*d.sourceLraLu, text::Unit::Lu, 1),
+        text::Arg::value (*d.masterLraLu, text::Unit::Lu, 1),
+        text::Arg::value (*d.lraChangePercent, text::Unit::Percent, 0, text::Sign::Always),
+        text::Arg::value (*d.lraChangeLu, text::Unit::Lu, 1, text::Sign::Always));
+}
 std::optional<text::Fact> MasterReportText::vinyl (const MasterReport& report) noexcept
 {
     if (! report.medium || ! report.medium->vinyl || ! report.deliverable) return std::nullopt;

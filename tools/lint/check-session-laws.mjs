@@ -159,6 +159,7 @@ const FELITRONICS_ALLOWED = new Set([
     'felitronics/analysis/ClipDetector.h', // deterministic analyzer storage declarations
     'felitronics/analysis/SourceForensics.h', // deterministic analyzer storage declarations
     'felitronics/analysis/StereoColumns.h', // deterministic analyzer storage declarations
+    'felitronics/analysis/Peaq.h', // PEAQ Basic: core::det, the core FFT and fixed sums; refuses a unit without its flags' marker
     'felitronics/analysis/WaveformIndex.h',      // source-owned deterministic pyramid and bounded checkpoint replay
     'felitronics/analysis/WaveformPeaks.h', // deterministic analyzer storage declarations
     'felitronics/analysis/HumDetector.h', // deterministic analyzer storage declarations
