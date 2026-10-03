@@ -37,7 +37,7 @@ desktop.en = "desktop version"
 
 # The fields a command's check can refuse, as the label a person knows the knob by — the site's own labels where it has
 # one (Громкость / Loudness, Потолок / Ceiling, Срез ФВЧ / HPF corner, Моно ниже / Mono bass below, Компрессор (клей) /
-# Compressor (glue), Баланс тона). A message puts the label first: "{field}: …", so no case of it is ever needed.
+# Compressor (glue), Наклон / Tilt). A message puts the label first: "{field}: …", so no case of it is ever needed.
 [terms.field]
 targetLufs.ru = "Громкость"
 targetLufs.en = "Loudness"
@@ -59,8 +59,8 @@ saturationMix.ru = "Микс сатурации"
 saturationMix.en = "Saturation mix"
 saturationType.ru = "Тип сатурации"
 saturationType.en = "Saturation type"
-tiltDb.ru = "Баланс тона"
-tiltDb.en = "Tone balance"
+tiltDb.ru = "Наклон"
+tiltDb.en = "Tilt"
 limiterNeedles.ru = "Резать иглы"
 limiterNeedles.en = "Cut needles"
 limiterNeedlesDb.ru = "Срез с пиков"

@@ -154,7 +154,7 @@ public:
         // happens or does not.
         {
             const long long worst = (long long) block_ + (long long) chain.internalBlock() - 1;
-            if ((taps.compressorGrDb != nullptr || taps.preLimiter != nullptr)
+            if ((taps.compressorGrDb != nullptr || taps.preLimiter != nullptr || taps.clipperShaveDb != nullptr)
                 && (long long) taps.frameCapacity < worst) return false;
             if ((taps.limiterGrDb != nullptr || taps.limiterPeakLin != nullptr)
                 && (long long) taps.osCapacity < worst * (long long) chain.tapOversampleFactor()) return false;

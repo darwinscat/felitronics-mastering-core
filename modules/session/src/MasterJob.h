@@ -35,6 +35,7 @@ struct MasterPlan
     std::uint64_t retainedRowBytes = 0;
     bool costMeterAdmitted = false;
     bool glueTrace = false;                    // the glue compresses: its gain reduction is kept, a trace beside the limiter's
+    bool saturationTrace = false;              // the soft clipper shapes: its shave of the peaks is kept, the same way
     std::optional<MasterMedium> medium;        // a version-0 master's medium and input, from the chain it will run
 };
 
@@ -68,6 +69,10 @@ struct MasterRows
     // trace's buckets (traceCapacity of them). Only a master whose glue compresses has the rows; the others have none.
     std::unique_ptr<LandingTraceBucket[]> glueRows;
     std::optional<LandingTrace> glueTrace;
+    // WHAT THE SATURATION TOOK OFF THE PEAKS OVER TIME (QueryKind::SaturationShave): the delivered render's soft-clipper
+    // shave, on the same buckets. Only a master whose soft clipper shapes has the rows.
+    std::unique_ptr<LandingTraceBucket[]> saturationRows;
+    std::optional<LandingTrace> saturationTrace;
 };
 
 struct MasterJob final

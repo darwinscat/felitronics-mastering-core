@@ -1569,16 +1569,16 @@ int main()
         // 4·32, up ring 2·32, down ring 2·128 floats = 2304 B, plus two int cursors = 2312 B — and one shared scratch of
         // 1024·4 floats = 16 384 B: 2·2312 + 16 384 = 21 008 B. It drains from a fixed array, so there is no drain term
         // (the solve used to carry a 392 B TruePeakMeter and a 512 B drain buffer).
-        // And three traces of 1000 x 40 B: 120 000 B.
+        // And four traces of 1000 x 40 B (the saturation's shave the fourth): 160 000 B.
         ok (lra.callBytes == 3296u + felitronics::storage::kLoudnessProxies * felitronics::storage::kVectorProxyBytes, "the measure_lra budget is 3296 payload bytes plus three meter proxies");
         // And, since the quantile read-back (`fc_solution_gr_quantile`), the window histograms the solution keeps —
         // three of them since the active-window statistics. THE FIGURE IS PRINTED rather than spelled: the literal
         // that used to stand here (727 960 B) described the two-histogram build and would have gone on reading as a
         // measurement.
-        ok (solve.callBytes == 896u + 21008u + 120000u + kGrWindowBytes
+        ok (solve.callBytes == 896u + 21008u + 160000u + kGrWindowBytes
                 + felitronics::mastering::TargetLoudnessSolver::meterConstructBytes()
                 + felitronics::mastering::TargetLoudnessSolver::solveProxyBytes() + kSolutionReturnBytes,
-            "the solve budget is meter + reference true-peak meter + three traces + three window histograms = "
+            "the solve budget is meter + reference true-peak meter + four traces + three window histograms = "
             + std::to_string (solve.callBytes) + " B");
 
         long long before = alloc::bytes.load();
@@ -1615,13 +1615,13 @@ int main()
         ok (fc_master_need (h, FC_NEED_MEASURE_LRA, 143999, &under3) == FC_OK && under3.callBytes == 0,
             "one frame under 3 s: nothing is");
         // A solve builds its meters whatever the length — the range rule is NOT the solve's. 1 s still costs
-        // meter + reference true-peak meter + three traces: 8·(24 + 28) + 21 008 + 120 000 = 141 424 B, the
+        // meter + reference true-peak meter + four traces: 8·(24 + 28) + 21 008 + 160 000 = 181 424 B, the
         // short-term term being the one the LRA cadence moved (one sample per hop, not one per ten). A length the solve
         // refuses costs 0. THE TOTAL IS PRINTED rather than spelled: the literal that used to close this line
         // (727 696 B) was parameterised on one side and written out on the other, so it went on reading as a
         // measurement after the histograms moved it.
         fc_need s1 {}, s0 {}; FC_INIT (s1); FC_INIT (s0);
-        ok (fc_master_need (h, FC_NEED_SOLVE, 48000, &s1) == FC_OK && s1.callBytes == 141424u + kGrWindowBytes + felitronics::mastering::TargetLoudnessSolver::meterConstructBytes()
+        ok (fc_master_need (h, FC_NEED_SOLVE, 48000, &s1) == FC_OK && s1.callBytes == 181424u + kGrWindowBytes + felitronics::mastering::TargetLoudnessSolver::meterConstructBytes()
                 + felitronics::mastering::TargetLoudnessSolver::solveProxyBytes() + kSolutionReturnBytes,
             "a 1 s solve is budgeted in full: " + std::to_string (s1.callBytes) + " B");
         ok (fc_master_need (h, FC_NEED_SOLVE, 0, &s0) == FC_OK && s0.callBytes == kSolutionReturnBytes,
@@ -2323,7 +2323,7 @@ int main()
             // this was found.
             ok (fc_master_need (hb, FC_NEED_SOLVE, 48000u, &nd) == FC_OK
                 && nd.facadeBytes == kSolutionRecordRest
-                                      + 3u * sizeof (GainReductionTrace)
+                                      + 4u * sizeof (GainReductionTrace)
                                       + 3u * sizeof (QuantileHistogram)
                                       + sizeof (felitronics::mastering::ActiveGainReductionStats)
                                       + sizeof (std::vector<felitronics::mastering::BandGrResult>)
@@ -2333,13 +2333,13 @@ int main()
                 // is padded to 8 before the u64 on wasm32, where it is 12 bytes.
                 && sizeof (GainReductionTrace)
                     == ((24u + sizeof (GainReductionTrace::bucket) + 7u) / 8u * 8u + 8u + 1u + 7u) / 8u * 8u,
-                "a solution record costs " + std::to_string (kSolutionRecordRest) + " B plus three traces of "
+                "a solution record costs " + std::to_string (kSolutionRecordRest) + " B plus four traces of "
                 + std::to_string (sizeof (GainReductionTrace)) + " B, three window histograms of "
                 + std::to_string (sizeof (QuantileHistogram)) + " B and the gated active-window summary of "
                 + std::to_string (sizeof (felitronics::mastering::ActiveGainReductionStats))
                 + " B, no store included (" + std::to_string (nd.facadeBytes)
                 + "; expected " + std::to_string (kSolutionRecordRest
-                                      + 3u * sizeof (GainReductionTrace)
+                                      + 4u * sizeof (GainReductionTrace)
                                       + 3u * sizeof (QuantileHistogram)
                                       + sizeof (felitronics::mastering::ActiveGainReductionStats)
                                       + sizeof (std::vector<felitronics::mastering::BandGrResult>)
@@ -2543,8 +2543,8 @@ int main()
                 && same.solverPrepared == base.solverPrepared && same._pad0 == 0,
                 "at the default 1000 buckets it is FC_NEED_SOLVE's budget, field for field");
             req.grTraceBuckets = 65536;
-            ok (fc_master_need_solve (h, &req, n, &big) == FC_OK && big.callBytes == base.callBytes + 3u * (65536u - 1000u) * 40u,
-                "65 536 buckets: three traces of 65 536 x 40 B in place of 1000 x 40 B");
+            ok (fc_master_need_solve (h, &req, n, &big) == FC_OK && big.callBytes == base.callBytes + 4u * (65536u - 1000u) * 40u,
+                "65 536 buckets: four traces of 65 536 x 40 B in place of 1000 x 40 B");
             req.grTraceBuckets = 0;
             ok (fc_master_need_solve (h, &req, n, &zero) == FC_OK && zero.callBytes == kSolutionReturnBytes, "a count the core refuses: only result construction and return");
             req.grTraceBuckets = 4096;
