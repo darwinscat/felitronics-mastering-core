@@ -36,7 +36,9 @@ struct Case
 };
 bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool processed,
           bool waitForCrest = true, bool demanding = false, unsigned seconds = 4,
-          unsigned silentSeconds = 0, const char* target = nullptr, float divisor = 4096.0f)
+          unsigned silentSeconds = 0, const char* target = nullptr, float divisor = 4096.0f,
+          std::vector<session::Notification>* events = nullptr, bool fine = false, bool tones = false,
+          bool idleLimiter = false)
 {
     c.rate = sourceRate; c.delivery = deliveryRate;
     const std::size_t frames = std::size_t (sourceRate) * seconds;
@@ -45,6 +47,18 @@ bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool pr
     {
         c.left[i] = float (int ((i * 17u) % 251u) - 125) / divisor;
         c.right[i] = float (int ((i * 19u + 7u) % 251u) - 125) / divisor;
+        if (tones)
+        {
+            // Band-limited and dynamic, for PEAQ: four partials up to 9.9 kHz (its bandwidth reads above 8.1 kHz, and
+            // nothing reaches 21.6 kHz), struck every half second and decaying — the glue and the limiter have work.
+            const double t = double (i) / double (sourceRate), beat = t - 0.5 * std::floor (t / 0.5);
+            const double env = std::exp (-6.0 * beat) * 0.5;
+            const double tw = 6.283185307179586 * t;
+            const double x = env * (std::sin (220.0 * tw) + 0.5 * std::sin (1100.0 * tw) + 0.3 * std::sin (3300.0 * tw)
+                                    + 0.2 * std::sin (9900.0 * tw));
+            c.left[i] = float (x);
+            c.right[i] = float (0.9 * x + 0.05 * std::sin (440.0 * tw) * env);
+        }
         if (i < std::size_t (sourceRate) * silentSeconds) c.left[i] = c.right[i] = 0.0f;
     }
     if (! demanding) c.right.back() -= 0.15f;
@@ -63,6 +77,9 @@ bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool pr
             != session::MeasurementStatus::Ready)) return false;
     if (demanding && s.apply (session::command::EditTarget { 9, { -5.0, -6.0 } }).rejection
         != session::Rejection::None) return false;
+    // A target well under the programme: the landing lowers it, and the limiter never reaches its ceiling.
+    if (idleLimiter && s.apply (session::command::EditTarget { 9, { -24.0, -1.0 } }).rejection
+        != session::Rejection::None) return false;
     // The delivery rate is the target's: a changed rate names a target that delivers it (youtube at 48 kHz with the
     // allStreaming numbers, cdDynamic at 44.1 kHz), and the request restates that rate.
     if (! target && deliveryRate != 0 && deliveryRate != sourceRate)
@@ -76,7 +93,7 @@ bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool pr
     c.request.ready.topology.eq = processed;
     c.request.ready.topology.compressor = processed;
     c.request.ready.topology.clipper = processed;
-    c.request.ready.topology.limiter = processed || demanding;
+    c.request.ready.topology.limiter = processed || demanding || idleLimiter;
     c.request.ready.topology.dither = false;
     if (processed)
     {
@@ -96,8 +113,9 @@ bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool pr
     std::uint64_t largestStep = 0;
     for (unsigned i = 0; i < 400000 && s.job() != 0; ++i)
     {
-        const auto stepSpent = declared::spend ([&] { (void) s.step (i % 3u == 0 ? 1u : i % 3u == 1 ? 7u : 73u); });
+        const auto stepSpent = declared::spend ([&] { (void) s.step (fine ? 1u : i % 3u == 0 ? 1u : i % 3u == 1 ? 7u : 73u); });
         largestStep = std::max (largestStep, std::uint64_t (stepSpent.bytes));
+        if (events) for (const auto& e : s.events()) events->push_back (e);
     }
     if (s.job() != 0 || largestStep > checked.bytes || s.masters().size() != 1
         || ! s.masters()[0].report || ! s.masters()[0].landing) return false;
@@ -472,8 +490,131 @@ void costLinesAndReadings()
     }
 }
 
+// THE DAMAGE (MasterReport.damage): PEAQ of the master against the same chain with its dynamics at rest, in windows; the
+// loudness range input against master; and the current walk's share of the file in every master phase that walks.
+std::vector<session::text::FactId> factsOf (const std::vector<session::Notification>& events)
+{
+    std::vector<session::text::FactId> out;
+    for (const auto& e : events)
+        if (e.kind == session::EventKind::Fact) out.push_back (e.payload.fact.view().id);
+    return out;
+}
+bool has (const std::vector<session::text::FactId>& facts, session::text::FactId id)
+{ return std::find (facts.begin(), facts.end(), id) != facts.end(); }
+void damage()
+{
+    using session::text::FactId;
+    // A master whose chain does nothing (no EQ, glue, saturation, limiter or dither): the reference is the master to the
+    // rounding of a gain — PEAQ's Transparent, grade 5, nothing heard; the line says so.
+    {
+        Case c; std::vector<session::Notification> events;
+        const bool made = run (c, 48000, 48000, false, true, false, 4, 0, nullptr, 4096.0f, &events, false, true);
+        ok (made, "a master of a chain that does nothing is delivered");
+        if (made)
+        {
+            const auto& d = c.session->masters()[0].report->damage;
+            std::printf ("damage at rest: status %d verdict %d grade %u odg %.6f windows %u gain %.3f\n", int (d.status),
+                int (d.verdict), d.grade, d.worstOdg.value_or (-99.0), d.windows, d.referenceGainDb.value_or (-99.0));
+            ok (d.status == session::MeasurementStatus::Ready && d.verdict == session::DamageVerdict::Transparent
+                && d.grade == 5 && d.worstOdg && *d.worstOdg == 0.0 && d.windows == 1 && d.audibleWindows == 0
+                && d.audibleShare && *d.audibleShare == 0.0 && d.worstFromSeconds && *d.worstFromSeconds == 0.0
+                && d.windowSeconds == 10.0 && d.hopSeconds == 5.0,
+                "a chain at rest is Transparent: grade 5, ODG 0, no window heard (one 10 s window over 4 s)");
+            ok (has (factsOf (events), FactId::MasterDamageInaudible) && ! has (factsOf (events), FactId::MasterDamage),
+                "a damage nobody hears is said as such");
+        }
+    }
+    // The limiter in the chain (its oversampled true-peak path, its lookahead) at rest: a target far under the programme.
+    // The reference takes the same path, so the two are equal to a gain's rounding — Transparent, not PEAQ's -2 on the
+    // structure a path of other filters and delays would leave.
+    {
+        Case c; std::vector<session::Notification> events;
+        const bool made = run (c, 48000, 48000, false, true, false, 4, 0, nullptr, 4096.0f, &events, false, true, true);
+        ok (made, "a master with its limiter at rest is delivered");
+        if (made)
+        {
+            const auto& d = c.session->masters()[0].report->damage;
+            std::printf ("damage, limiter at rest: verdict %d grade %u odg %.6f\n", int (d.verdict), d.grade, d.worstOdg.value_or (-99.0));
+            ok (d.status == session::MeasurementStatus::Ready && d.verdict == session::DamageVerdict::Transparent && d.grade == 5,
+                "a limiter that never reaches its ceiling leaves the master Transparent against its reference");
+        }
+    }
+    // A master that works — glue at -30 dB 2.5:1, the soft clipper half wet, the limiter landing it: graded, the worst
+    // window named with its grade on the BS.1116 scale. The numbers are this source's, pinned (native and wasm alike).
+    {
+        Case c; std::vector<session::Notification> events;
+        const bool made = run (c, 48000, 48000, true, true, true, 4, 0, nullptr, 4096.0f, &events, false, true);
+        ok (made, "a processed master is delivered");
+        if (made)
+        {
+            const auto& d = c.session->masters()[0].report->damage;
+            std::printf ("damage processed: status %d verdict %d grade %u odg %.6f di %.6f windows %u audible %u gain %.3f\n",
+                int (d.status), int (d.verdict), d.grade, d.worstOdg.value_or (-99.0), d.worstDi.value_or (-99.0), d.windows,
+                d.audibleWindows, d.referenceGainDb.value_or (-99.0));
+            ok (d.status == session::MeasurementStatus::Ready && d.verdict == session::DamageVerdict::Graded && d.worstOdg
+                && *d.worstOdg < 0.0 && d.grade >= 1 && d.grade <= 5 && d.worstDi && d.windows == 1,
+                "a master whose dynamics work is graded");
+            const double odg = d.worstOdg.value_or (0.0);
+            const unsigned grade = odg >= -0.5 ? 5u : odg >= -1.5 ? 4u : odg >= -2.5 ? 3u : odg >= -3.5 ? 2u : 1u;
+            ok (d.grade == grade && d.audibleWindows == (grade < 5u ? 1u : 0u),
+                "the grade is the BS.1116 scale's for the worst window's ODG (edges -0.5, -1.5, -2.5, -3.5)");
+            const auto facts = factsOf (events);
+            ok (grade < 5u ? has (facts, FactId::MasterDamage) : has (facts, FactId::MasterDamageInaudible),
+                "the damage's line comes with the master");
+        }
+    }
+    // The loudness range of a programme too short to have one: the line says why, and no number is made up.
+    {
+        Case c; std::vector<session::Notification> events;
+        const bool made = run (c, 48000, 48000, true, false, false, 2, 0, nullptr, 4096.0f, &events);
+        ok (made, "a 2 s master is delivered");
+        if (made)
+        {
+            const auto& d = c.session->masters()[0].report->damage;
+            ok (! d.masterLraLu && ! d.lraChangeLu && ! d.lraChangePercent && d.lraReason == session::MeasurementReason::TooShort,
+                "a programme too short for a loudness range: its change is absent, the reason TooShort");
+            ok (has (factsOf (events), FactId::MasterLraUnmeasured), "the loudness range's line says why it was not measured");
+            const auto said = session::MasterReportText::lra (d);
+            ok (said.id == FactId::MasterLraUnmeasured && said.args[0].termId == session::text::Term::ReasonTooShort,
+                "...with the reason as its term");
+        }
+    }
+    // The current walk's share of the file, in every phase of a master that walks: 0..1, counting up within a walk, a new
+    // walk starting again from near 0; the damage's two walks are phases of their own; the end and the waits have none.
+    {
+        Case c; std::vector<session::Notification> events;
+        const bool made = run (c, 48000, 48000, true, true, false, 4, 0, nullptr, 4096.0f, &events, true);
+        ok (made, "a master stepped one unit at a time is delivered");
+        bool inRange = true, rising = true, reference = false, graded = false, finalHasNone = true, passes = false;
+        double last = -1.0;
+        auto lastName = session::PhaseName::Stream;
+        for (const auto& e : events)
+        {
+            if (e.kind != session::EventKind::Phase) continue;
+            const auto& p = e.payload.phase;
+            // The master's phases: the measurement's and the needles' (Stream, Report, Analyzers) are not walked here.
+            if (p.name == session::PhaseName::Stream || p.name == session::PhaseName::Report
+                || p.name == session::PhaseName::Analyzers) continue;
+            if (p.name == session::PhaseName::Final) { finalHasNone = finalHasNone && ! p.stepFraction; continue; }
+            if (! p.stepFraction) { last = -1.0; continue; }
+            const double f = *p.stepFraction;
+            inRange = inRange && f >= 0.0 && f <= 1.0;
+            if (p.name != lastName) last = -1.0;
+            // Within a walk it never goes back; a fall is a new walk, and a new walk starts at its beginning.
+            if (f < last) rising = rising && f < 0.05;
+            last = f; lastName = p.name;
+            reference = reference || (p.name == session::PhaseName::Reference && f > 0.9);
+            graded = graded || (p.name == session::PhaseName::Damage && f > 0.9);
+            passes = passes || (p.name == session::PhaseName::Pass && f > 0.9);
+        }
+        ok (made && inRange && rising && reference && graded && passes && finalHasNone,
+            "stepFraction walks 0..1 within each walk, Reference and Damage are phases with their own walk, Final has none");
+    }
+}
+
 int main()
 {
+    damage();
     Case normalFirst, normalLate, fractionalFirst, fractionalLate;
     ok (run (normalFirst, 48000, 48000, false, true, false, 4, 0, nullptr, 512.0f)
         && referenceCrest (normalFirst) && crestK1Ready (normalFirst),

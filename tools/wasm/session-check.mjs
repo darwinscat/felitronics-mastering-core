@@ -95,6 +95,10 @@ SURFACE[6] = SURFACE[5];
 SURFACE[7] = SURFACE[6];
 // Version 8 appends the saturation's shave of the peaks (QueryKind::SaturationShave), and no entry point.
 SURFACE[8] = SURFACE[7];
+// Version 9 (v0.14.0) appends the master's damage (MasterReport.damage: PEAQ against the chain at rest, in windows, and
+// the loudness range's change), facts 600-604 and their grades, the phases Reference and Damage, and Phase.stepFraction —
+// and no entry point.
+SURFACE[9] = SURFACE[8];
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
 const RUNTIME = ['_malloc', '_free', 'HEAPU32'];

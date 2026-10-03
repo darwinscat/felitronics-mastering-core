@@ -3,13 +3,16 @@
 
 #include "../../../tests/DeclaredBudget.h"
 #include "Driver.h"
+#include "Damage.h"
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/analysis/ReferenceTruePeakMeter.h>
 #include <felitronics_test.h>
 #include <algorithm>
+#include <bit>
 #include <cstdint>
 #include <cstdio>
 #include <limits>
+#include <string>
 #include <vector>
 
 using namespace felitronics::session;
@@ -27,8 +30,46 @@ struct Inspector
 };
 }
 
+// THE DAMAGE'S RESAMPLER (src/Damage.h): a source at 44.1 or 96 kHz reaches PEAQ's 48 kHz through a kernel of
+// deterministic math, so its bits are pinned here — this suite runs natively and as wasm (tools/wasm/build.sh), and both
+// must give the pinned digest; the exact count comes out, whatever the blocks.
+void damageResampler()
+{
+    using felitronics::session::detail::DamageResampler;
+    for (const auto [rate, pinned] : { std::pair<std::uint32_t, std::uint64_t> { 44100u, 0xc9374b7a9f34ac0bull }, { 96000u, 0x159a0496d7b104ddull } })
+    {
+        const auto shape = DamageResampler::shapeFor (rate, 32);
+        DamageResampler r;
+        const long long in = 3 * (long long) rate / 10, out = DamageResampler::outFrames (shape, in);
+        std::vector<float> a ((std::size_t) in), b ((std::size_t) in), ya ((std::size_t) out + 64u), yb ((std::size_t) out + 64u);
+        for (long long i = 0; i < in; ++i)
+        {
+            a[(std::size_t) i] = float (int ((i * 17) % 251) - 125) / 512.0f;
+            b[(std::size_t) i] = float (int ((i * 29 + 3) % 113) - 56) / 256.0f;
+        }
+        bool ready = shape.ok && r.prepare (shape, 2);
+        long long done = 0, read = 0;
+        while (ready && done < out)
+        {
+            const int n = int (std::min<long long> (997, in - read));
+            const float* src[2] { a.data() + read, b.data() + read };
+            float* dst[2] { ya.data() + done, yb.data() + done };
+            done += n > 0 ? r.push (src, n, dst, out - done) : r.push (nullptr, 997, dst, out - done);
+            read += n;
+        }
+        std::uint64_t h = 0xCBF29CE484222325ull;
+        for (long long i = 0; i < out; ++i)
+            for (const float v : { ya[(std::size_t) i], yb[(std::size_t) i] })
+                for (unsigned k = 0; k < 4; ++k) h = (h ^ ((std::bit_cast<std::uint32_t> (v) >> (8u * k)) & 0xFFu)) * 0x100000001B3ull;
+        std::printf ("damage resampler %u -> 48000: %lld frames, digest %016llx\n", rate, out, (unsigned long long) h);
+        ok (ready && done == out && h == pinned, "the damage's resampler from " + std::to_string (rate)
+            + " Hz gives the exact count and the pinned bits, native and wasm alike");
+    }
+}
+
 int main()
 {
+    damageResampler();
     constexpr std::uint32_t rate = 48000;
     std::vector<float> left (2u * rate), right (2u * rate);
     for (std::size_t i = 0; i < left.size(); ++i)

@@ -193,6 +193,9 @@ zone modules/session/include/felitronics/session/Kit.h the pure kit's public dec
 zone modules/session/src/MasterJob.h bounded product landing owner
 zone modules/session/src/MasterJob.cpp bounded product landing preflight and preparation
 entry modules/session/src/MasterJob.cpp bounded product landing preflight and preparation
+zone modules/session/src/Damage.h the damage of a master: PEAQ against the chain at rest, and the 48 kHz resampler
+zone modules/session/src/Damage.cpp the damage of a master: PEAQ against the chain at rest, and the 48 kHz resampler
+entry modules/session/src/Damage.cpp the damage of a master: PEAQ against the chain at rest, and the 48 kHz resampler
 zone modules/session/src/Cost.h measured post-master price declarations
 zone modules/session/src/Cost.cpp deterministic CVaR, shape and pumping measurements
 entry modules/session/src/Cost.cpp deterministic CVaR, shape and pumping measurements

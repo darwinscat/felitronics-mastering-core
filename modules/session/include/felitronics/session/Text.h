@@ -89,6 +89,7 @@ enum class Plural : std::uint8_t { Zero, One, Two, Few, Many, Other };
 //   300 – 399   the session's errors
 //   400 – 499   the measurements and the observations
 //   500 – 599   the plan's advice and the targets' notes
+//   600 – 699   the master's report, continued (1 – 99 is full): the damage the processing did and the loudness range
 // The arguments each fact takes, by name and kind, are src/TextFacts.h's, and the build holds the catalog to them.
 enum class FactId : std::uint16_t
 {
@@ -326,6 +327,15 @@ enum class FactId : std::uint16_t
     // A device's card while a field of its machine layer waits for a measurement (DevicePlan::pending): not measured yet.
     DeviceUnmeasured = 510,    // not measured yet: the machine sets it when {analyzer} ends
 
+    // The damage the processing did, heard (MasterDamage): the worst window's {grade}, where it starts ({from}) and the
+    // {share} of the track heard below imperceptible; nothing heard anywhere; not graded, and why ({reason}).
+    MasterDamage = 600,
+    MasterDamageInaudible = 601,
+    MasterDamageUnmeasured = 602,
+    // The loudness range: the input's {source}, the master's {master}, the change as a share ({change}) and in LU
+    // ({changeLu}); or why it was not measured ({reason}).
+    MasterLraChange = 603,
+    MasterLraUnmeasured = 604,
 };
 
 // THE TERMS — words an argument of kind Term names: one value of a group of the catalog's [terms]. Printed as the
@@ -385,6 +395,9 @@ enum class Term : std::uint16_t
     LandingLimitNone, LandingLimitTruePeak, LandingLimitLimiter, LandingLimitPlr, LandingLimitLra, LandingLimitGain,
     // The EQ bands: the device, and its five gains as the fields a refusal names, in the order Project.h writes them.
     DeviceBands, FieldBandsBody, FieldBandsMud, FieldBandsForward, FieldBandsBrightness, FieldBandsAir,
+    // The BS.1116 impairment grades the damage's line names, 5 down to 1.
+    DamageGradeImperceptible, DamageGradePerceptible, DamageGradeSlightlyAnnoying, DamageGradeAnnoying,
+    DamageGradeVeryAnnoying,
 
 };
 

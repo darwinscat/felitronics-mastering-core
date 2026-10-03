@@ -287,6 +287,9 @@ void pump()
             { "manualMaxDb = 6\n", "manualMaxDb = 3\n" } };
         for (const auto& [now, then] : rows)
             if (const auto at = engine.find (now); at != std::string::npos) engine.replace (at, now.size(), then);
+        // ...and without the damage's table ([cost.damage], v0.14.0), which came after.
+        if (const auto at = engine.find ("\n[cost.damage]\n"); at != std::string::npos)
+            engine.erase (at, engine.find ("\n[", at + 1) - at);
         // ...and without the EQ bands' tables, which came after.
         for (auto at = engine.find ("\n[bands"); at != std::string::npos; at = engine.find ("\n[bands"))
         {
@@ -299,9 +302,41 @@ void pump()
                 e.payload.phase.weightsVersion = before->all;
         return events;
     };
+    // THE DAMAGE (v0.14.0) is two walks after the cost — the reference's loudness and PEAQ's — and two lines at the end.
+    // Restated without it: the unit that published the cost ended the job (its phase Final, at 1.0), the two walks (the
+    // unit that began them among them) are gone with their phases, the trace units after the end count that many units fewer, and
+    // the damage's and the loudness range's lines (600-604) leave. Then every event is the one before, bit for bit.
+    const auto withoutDamage = [] (const std::vector<Notification>& events)
+    {
+        std::size_t walk = events.size();
+        for (std::size_t i = 0; i < events.size() && walk == events.size(); ++i)
+            if (events[i].kind == EventKind::Phase && events[i].payload.phase.name == PhaseName::Reference) walk = i;
+        if (walk == events.size()) return events;
+        // The unit that began the walks reads as the first of them (a phase is said after its unit's step); the one before
+        // it published the cost.
+        std::size_t published = walk, end = walk;
+        while (published > 0 && ! (events[published - 1].kind == EventKind::Phase && events[published - 1].payload.phase.name == PhaseName::Pass)) --published;
+        --published;
+        while (end < events.size() && ! (events[end].kind == EventKind::Phase && events[end].payload.phase.name == PhaseName::Final)) ++end;
+        const auto units = events[end].payload.phase.completedUnits - events[published].payload.phase.completedUnits;
+        std::vector<Notification> kept;
+        std::uint64_t dropped = 0;
+        for (std::size_t i = 0; i < events.size(); ++i)
+        {
+            auto e = events[i];
+            const auto id = e.kind == EventKind::Fact ? unsigned (e.payload.fact.view().id) : 0u;
+            if ((i > published && i <= end) || (id >= 600u && id <= 604u)) { ++dropped; continue; }
+            if (i == published) { e.payload.phase.name = PhaseName::Final; e.payload.phase.fraction = 1.0; }
+            if (i > end && e.kind == EventKind::Phase && e.payload.phase.name == PhaseName::Final) e.payload.phase.completedUnits -= units;
+            e.seq -= dropped;
+            kept.push_back (e);
+        }
+        return kept;
+    };
     // The saturation's shave (03.10) is a fourth trace a render steps through, so a pass has more work units and the
     // phases' units, fractions and count moved; every other event is as it was (checked with the phases left out).
-    ok (eventsHash (previousVersion (one)) == 0x1555a30af9dc5110ull && eventsHash (previousVersion (cancelled)) == 0x8d434eb2d9dff1ddull,
+    ok (eventsHash (previousVersion (withoutDamage (one))) == 0x1555a30af9dc5110ull
+        && eventsHash (previousVersion (withoutDamage (cancelled))) == 0x8d434eb2d9dff1ddull,
         "the targets' notes move only the config's version the phases carry: with the previous one, the previous pins");
     const auto withoutCostLines = [] (const std::vector<Notification>& events)
     {
@@ -316,15 +351,17 @@ void pump()
         }
         return kept;
     };
-    ok (eventsHash (withoutCostLines (previousVersion (one))) == 0xfd8d2c4110c6c94full
-        && eventsHash (withoutCostLines (previousVersion (cancelled))) == 0x002799982f8522aaull
+    ok (eventsHash (withoutCostLines (previousVersion (withoutDamage (one)))) == 0xfd8d2c4110c6c94full
+        && eventsHash (withoutCostLines (previousVersion (withoutDamage (cancelled)))) == 0x002799982f8522aaull
         && withoutCostLines (one).size() < one.size(),
         "the cost's new lines are the only new events: without them the pins fd8d2c4110c6c94f / 002799982f8522aa hold");
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     // The three broadcast targets (v0.13.0) moved the config version the phases carry and nothing else (the previous
-    // version's pins above hold); these were 1fdc6e0971f677c0 / 19c7710590fbdf2d.
-    ok (eventsHash (one) == 0x9d7c29a5f4147512ull && eventsHash (cancelled) == 0x903fef3e11059149ull,
+    // version's pins above hold); these were 1fdc6e0971f677c0 / 19c7710590fbdf2d. The damage (v0.14.0) — its two walks,
+    // its two lines and [cost.damage] in the config — moved them again, and nothing else (withoutDamage above gives the
+    // previous pins back); these were 9d7c29a5f4147512 / 903fef3e11059149.
+    ok (eventsHash (one) == 0x18f2e8ec10de3109ull && eventsHash (cancelled) == 0xc7472519359a835dull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, previous version: %016llx %016llx; and without the cost's lines: %016llx %016llx\n",

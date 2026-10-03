@@ -156,6 +156,31 @@ struct MasterMedium
     double ruleCrossoverHz = 0.0, ruleLowWidth = 0.0, ruleCutoffHz = 0.0, ruleCeilingDbTp = 0.0;
     std::int32_t ruleSlopeDbPerOct = 0;        // the medium's rules, where vinyl
 };
+// THE DAMAGE THE PROCESSING DID, HEARD, AND WHAT BECAME OF THE MACRODYNAMICS. PEAQ of the master against the same chain
+// with its dynamics at rest ([cost.damage] in engine.toml says how), graded in windows on the BS.1116 scale; and the
+// loudness range of the input against the master's.
+struct MasterDamage
+{
+    MeasurementStatus status = MeasurementStatus::Unavailable;   // Ready when at least one window was graded
+    MeasurementReason reason = MeasurementReason::NotImplemented;
+    // The worst window's verdict (Graded or Transparent); where no window was graded, why (NoSignal, NonFinite,
+    // Undefined, OutOfRange), NotRun where PEAQ did not run.
+    DamageVerdict verdict = DamageVerdict::NotRun;
+    std::uint32_t grade = 0;                   // the worst window's BS.1116 grade, 5..1; 0 where none was graded
+    std::optional<double> worstOdg, worstDi;   // the worst window's ODG (0 for Transparent) and the network's DI
+    std::optional<double> worstFromSeconds;    // where the worst window starts
+    std::uint32_t windows = 0;                 // windows graded (Graded or Transparent)
+    std::uint32_t audibleWindows = 0;          // ...of them below grade 5
+    std::uint32_t ungradedWindows = 0;         // windows PEAQ could not grade (NoSignal, Undefined)
+    std::optional<double> audibleShare;        // audibleWindows / windows
+    double windowSeconds = 0, hopSeconds = 0;
+    std::optional<double> referenceGainDb;     // the gain that brought the reference to the master's loudness
+    // The loudness range: the input's (the source's programme report), the master's (the report's lraLu), the change
+    // (master minus input) in LU and as a share of the input's, negative where range was lost. lraReason says why a number
+    // is absent: the master's or the input's own reason, NoSignal for a percentage of an input with no range.
+    std::optional<double> sourceLraLu, masterLraLu, lraChangeLu, lraChangePercent;
+    MeasurementReason lraReason = MeasurementReason::NotImplemented;
+};
 struct MasterReport
 {
     MeasurementStatus status = MeasurementStatus::Unavailable;
@@ -178,6 +203,7 @@ struct MasterReport
     // The landing's mark (LandingSummary::peaksAboveCeiling): a delivered master whose true peak stands above the
     // ceiling — peakSafe false, truePeakDbTp above ceilingDbTp — because no render stayed under it.
     bool peaksAboveCeiling = false;
+    MasterDamage damage {};
 };
 struct MasterReportText
 {
@@ -221,6 +247,10 @@ struct MasterReportText
     // the order fold, high-pass, ceiling, needles; nothing for a rule it keeps.
     [[nodiscard]] static std::array<std::optional<text::Fact>, 4> vinylDepartures (const MasterReport& report) noexcept;
     [[nodiscard]] static std::optional<text::Fact> quietInput (const MasterReport& report) noexcept;
+    // The damage's line: the worst window's grade, where it starts and the share heard — or that nothing was heard, or
+    // why nothing was graded. And the loudness range's: the input's, the master's and the change, or why not measured.
+    [[nodiscard]] static text::Fact damage (const MasterDamage& damage) noexcept;
+    [[nodiscard]] static text::Fact lra (const MasterDamage& damage) noexcept;
 };
 // THE RECIPE OF A MASTER — what a master is made from, captured when it is asked for: the project as it was then (the
 // machine's layer included), the source it renders and the config's sound version. Two masters with equal recipes,

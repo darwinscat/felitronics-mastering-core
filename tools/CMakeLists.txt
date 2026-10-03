@@ -21,7 +21,7 @@ target_compile_options(fcore_measure PRIVATE ${FCORE_NO_FP_CONTRACT})
 # that are not 48 kHz. Built contract-off like fcore_measure: tools/wasm/build.sh compiles this same file for wasm and
 # CI diffs the two outputs.
 add_executable(fcore_peaq fcore_peaq.cpp)
-target_link_libraries(fcore_peaq PRIVATE felitronics::analysis_offline felitronics::io)
+target_link_libraries(fcore_peaq PRIVATE felitronics::peaq felitronics::io)
 target_compile_features(fcore_peaq PRIVATE cxx_std_20)
 target_compile_options(fcore_peaq PRIVATE ${FCORE_NO_FP_CONTRACT})
 

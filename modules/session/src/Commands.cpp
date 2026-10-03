@@ -490,7 +490,7 @@ Answer Session::apply (const Request& request) noexcept
         state_ = State::Loaded;
         measurementJob_ = ++lastJob_;
         measurementUnit_ = masterUnit_ = 0;
-        measurementProgress_ = { PhaseName::Stream, 0.0, config::Config::versions().all, 0, 0, 0, 10 };
+        measurementProgress_ = { PhaseName::Stream, 0.0, config::Config::versions().all, 0, 0, 0, 10, std::nullopt };
         masterProgress_ = {};
         if (cached)
         {
@@ -603,7 +603,7 @@ Answer Session::apply (const Request& request) noexcept
             const auto passes = std::uint32_t (*rules.engine.find ("progress").find ("master").find ("expectedPasses").integer());
             const auto chunks = (source_.frames + 1023u) / 1024u;
             const auto waitUnits = std::uint32_t (std::min<std::uint64_t> (3u * chunks + 64u, 4294967295u));
-            masterProgress_ = { PhaseName::Analyzers, 0.0, config::Config::versions().all, 0, passes, 0, waitUnits };
+            masterProgress_ = { PhaseName::Analyzers, 0.0, config::Config::versions().all, 0, passes, 0, waitUnits, std::nullopt };
         }
         else startMaster (plan);
         answer.job = job_;
@@ -731,7 +731,7 @@ void Session::startMaster (const detail::MasterPlan& plan) noexcept
     rows.crestParams = plan.crestParams;
     masterUnit_ = 0;
     masterSummary_ = {}; masterTraceCursor_ = 0; masterTraceActive_ = false;
-    masterProgress_ = { PhaseName::Pass, 0.0, config::Config::versions().all, 0, 12, 0, 12 };
+    masterProgress_ = { PhaseName::Pass, 0.0, config::Config::versions().all, 0, 12, 0, 12, std::nullopt };
 }
 
 //==============================================================================

@@ -328,6 +328,15 @@ public:
     // pass measured where the clipper rides it, else the caller's (MasteringChainParams::peakClipPeakDb).
     double peakClipPeakDb() const noexcept { return params_.peakClipPeakDb; }
     int startedPasses() const noexcept { return passes_; }
+    // THE CURRENT WALK OVER THE FILE, 0..1, a new count for each: the source's statistics, every landing pass (its clock's
+    // units), the delivered render's check. Negative outside a walk (idle, done, failed).
+    double walkFraction() const noexcept
+    {
+        if (phase_ == Phase::SourceStats)
+            return sourceFrames_ > 0 ? (double) sourceCursor_ / (double) sourceFrames_ : 0.0;
+        if (phase_ == Phase::Idle || phase_ == Phase::Done || phase_ == Phase::Failed) return -1.0;
+        return clock_.walked();
+    }
     std::uint64_t completedWork() const noexcept { return work_; }
     bool active() const noexcept { return phase_ != Phase::Idle && phase_ != Phase::Done && phase_ != Phase::Failed; }
 

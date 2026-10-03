@@ -1858,3 +1858,47 @@ codec GlueFinding.tempoUnsureBpm double?
 # LimiterGr's buckets.
 enum felitronics::session::QueryKind::SaturationShave=13
 row QuerySaturationShave element=f64 byteOrder=little columns=firstFrame,lastFrame,minDb,maxDb,meanDb,samples,nonFinite stride=7 bytes=56
+# The master's damage (03.10, v0.14.0): PEAQ of the master against the same chain with its dynamics at rest, in
+# windows, on the BS.1116 scale, and the loudness range input against master (MasterReport.damage, appended plain);
+# facts 600-604 say them, the grades are terms; the damage's two walks are phases of their own, and Phase.stepFraction
+# is the current walk over the file.
+enum felitronics::session::DamageVerdict::NotRun=0
+enum felitronics::session::DamageVerdict::Graded=1
+enum felitronics::session::DamageVerdict::Transparent=2
+enum felitronics::session::DamageVerdict::NoSignal=3
+enum felitronics::session::DamageVerdict::NonFinite=4
+enum felitronics::session::DamageVerdict::Undefined=5
+enum felitronics::session::DamageVerdict::OutOfRange=6
+enum felitronics::session::PhaseName::Reference=8
+enum felitronics::session::PhaseName::Damage=9
+enum felitronics::session::text::FactId::MasterDamage=600
+enum felitronics::session::text::FactId::MasterDamageInaudible=601
+enum felitronics::session::text::FactId::MasterDamageUnmeasured=602
+enum felitronics::session::text::FactId::MasterLraChange=603
+enum felitronics::session::text::FactId::MasterLraUnmeasured=604
+enum felitronics::session::text::Term::DamageGradeImperceptible=139
+enum felitronics::session::text::Term::DamageGradePerceptible=140
+enum felitronics::session::text::Term::DamageGradeSlightlyAnnoying=141
+enum felitronics::session::text::Term::DamageGradeAnnoying=142
+enum felitronics::session::text::Term::DamageGradeVeryAnnoying=143
+codec Phase.stepFraction double?
+codec MasterReport.damage MasterDamage
+codec MasterDamage.status MeasurementStatus
+codec MasterDamage.reason MeasurementReason
+codec MasterDamage.verdict DamageVerdict
+codec MasterDamage.grade uint32
+codec MasterDamage.worstOdg double?
+codec MasterDamage.worstDi double?
+codec MasterDamage.worstFromSeconds double?
+codec MasterDamage.windows uint32
+codec MasterDamage.audibleWindows uint32
+codec MasterDamage.ungradedWindows uint32
+codec MasterDamage.audibleShare double?
+codec MasterDamage.windowSeconds double
+codec MasterDamage.hopSeconds double
+codec MasterDamage.referenceGainDb double?
+codec MasterDamage.sourceLraLu double?
+codec MasterDamage.masterLraLu double?
+codec MasterDamage.lraChangeLu double?
+codec MasterDamage.lraChangePercent double?
+codec MasterDamage.lraReason MeasurementReason

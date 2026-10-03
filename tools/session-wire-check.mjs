@@ -34,7 +34,8 @@ const withoutBaseField = structuredClone(base); delete withoutBaseField.handFiel
 const withoutBaseRecordField = structuredClone(base); delete withoutBaseRecordField.plan.limiter.ceilingDbTp;
 assert(!acceptsBase(withoutBaseField, 'SessionSnapshot') && !acceptsBase(withoutBaseRecordField, 'SessionSnapshot'),
     'a field the base carries is still required of it, at the top and in a nested record');
-assert(accepts(JSON.parse(frozen.find(line => line.startsWith('['))), 'ReadonlyArray<SessionEvent>'), 'the manifest base events are accepted by the generated declaration');
+// The base events lack the event fields appended since, as the base snapshot does (Phase.stepFraction, v0.14.0).
+assert(acceptsBase(JSON.parse(frozen.find(line => line.startsWith('['))), 'ReadonlyArray<SessionEvent>'), 'the manifest base events are accepted by the generated declaration');
 assert.equal(snapshot.sourceBytes, Number.MAX_SAFE_INTEGER);
 assert.equal(snapshot.integratedLufs, '-Infinity');
 function rows(row, hex) {

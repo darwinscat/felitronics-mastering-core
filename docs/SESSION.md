@@ -932,6 +932,11 @@ stereoBursts, tempo; so a 0.13 s stereo pass moves the bar a sliver and the 3 s 
 finishes at one. `weightsVersion` is the config's complete version, which includes progress weights. Fractions are
 estimates; the interface permits them to move backwards. The human pass label uses only `pass`; `totalPasses` belongs
 to the diagnostic journal. Completed and total work units are deterministic inputs for a shell's time estimate.
+`stepFraction` (v0.14.0) is the current walk over the file, 0..1, a new count for every walk: the measurement's stream;
+a master's source statistics, each landing pass (its own units), the delivered render's check, the crest's impact render
+and the cost's read (all `Pass`), and the damage's two walks, `Reference` (both chains' loudness) and `Damage` (PEAQ). It
+is absent — not 0 — where the phase walks nothing: the report, the analyzers' and the needles' phases, a master's wait,
+the bookkeeping between walks and `Final`. The number of walks is not known ahead and is not promised.
 
 `events()` views the latest `apply()` or `step()` batch. The caller copies or consumes it before the next such call;
 queries leave it intact. Each `Notification` is an independent value with `seq`, `jobId`, source hash, revision, state, phase, deterministic work, `kind`, and the payload
@@ -1683,6 +1688,23 @@ The same recording includes a late source crest completion after WAV release and
 with the source completion and master-keyed join events and snapshots on both sides of the join.
 
 ## Measured ready-master report
+
+THE DAMAGE (`MasterReport.damage`, v0.14.0, `[cost.damage]` in engine.toml): PEAQ Basic (`analysis::Peaq`) of the
+master against the same chain with its dynamics at rest, graded in windows (10 s every 5 s; a programme shorter than a
+window is one window) on the BS.1116 scale by ODG (grade 5 from -0.5, 4 from -1.5, 3 from -2.5, 2 from -3.5, 1 below).
+The reference is the master's own topology without the dither, so the same stages, oversamplers, delays and order: the
+glue in its exact bypass (ratio 1), and the chain fed `referenceBelowDb` lower at the input gain, so the saturation runs
+in its small-signal line and the limiter and its needles never reach the ceiling. The master is rendered once more
+without its dither beside it, so a chain at rest leaves the two equal to a gain's rounding — PEAQ's Transparent, grade
+5. Both chains run at 48 kHz from the source (through a resampler of deterministic math where the source is not at
+48 kHz: native and wasm agree to the bit; core's delivery resampler designs its kernel with the platform's libm), and
+one gain, from both integrated loudnesses (the reference's measured lifted back, as the meter's absolute gate is not
+scale-free), brings the reference to the master's. Reported: the worst window's verdict, grade, ODG, DI and start, the
+windows graded, heard (below grade 5) and ungraded, the share heard, the gain; and the loudness range of the input
+(the source's programme report) against the master's, its change in LU and as a share of the input's, or the reason
+either is absent. Two facts say them (600-604). Cost, 60 s of 48 kHz stereo on an M-series Mac: the master job 1.4 s,
+the damage 3.7 s more (both chains' loudness 0.9 s, the graded walk 2.8 s of which PEAQ's two windows in flight about
+1.9 s).
 
 Each completed ready master carries an optional `MasterReport` beside its recipe and landing. Its LUFS,
 reference true peak, PLR and suitable LRA are the solver's completed measurement of the selected delivered
