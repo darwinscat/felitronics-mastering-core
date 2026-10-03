@@ -169,6 +169,15 @@ struct MasteringChainParams
 //                            offset is NOT just the stages in front: the trace is written where the gain
 //                            is decided, on the oversampled copy, so it also lags by the UP leg of the
 //                            limiter's own oversampler. `resolved()` computes it; do not re-derive it.
+//   * `clipperShaveDb[j]`  — what the soft clipper took off the peaks of the quantum frame j belongs to, in dB, >= 0:
+//                            the peak of the stage's input (as its aligner holds it, delayed by the stage's own
+//                            latency, so a peak and its shaved self are in the same quantum) times
+//                            `clipperQuietGain()`, against the peak of its output — the pair `ClipperPeaks` counts,
+//                            floored at 0. Every frame of a quantum carries that quantum's value. 0 where nothing
+//                            was measured: no stage, a bypassed or fading one, an input peak under 2^-12 (-72 dBFS).
+//                            Its frame j is chain input sample `j - (compressorLookahead + clipperLatency)` of
+//                            `resolved()` — the clipper's output time, the same as `preLimiter`'s. (No field of its
+//                            own there: `MasteringChainResolved`'s layout is frozen by the `fc_master` C ABI.)
 //
 // A render feeds `frames` of programme and then `latencySamples()` zeros, so the tap frames that carry
 // real programme are the ones whose INPUT index is below `frames` — which is the window a statistic
@@ -214,6 +223,10 @@ struct MasteringChainTaps
     int framesWritten = 0;
     int osWritten     = 0;
     int bandQuantaWritten = 0;
+
+    // Per BASEBAND frame, covered by `frameCapacity` like the two at the top. Appended last, so a positional
+    // initialiser written against the older layout still means what it meant.
+    float*        clipperShaveDb = nullptr;
 };
 
 // WHAT THE SOFT CLIPPER DID TO PEAKS, measured on the stage itself: the peak of its input against the peak of its
@@ -1096,7 +1109,7 @@ public:
         // below and is then written past its end.
         const long long willRun    = ((long long) pos_ + (long long) numSamples) / (long long) K_;
         const long long willFrames = willRun * (long long) K_;
-        if ((taps.compressorGrDb != nullptr || taps.preLimiter != nullptr)
+        if ((taps.compressorGrDb != nullptr || taps.preLimiter != nullptr || taps.clipperShaveDb != nullptr)
             && (long long) taps.frameCapacity < willFrames) return false;
         if ((taps.limiterGrDb != nullptr || taps.limiterPeakLin != nullptr || taps.peakClipReductionDb != nullptr)
             && (long long) taps.osCapacity < willFrames * (long long) osFactor_) return false;
@@ -1111,7 +1124,7 @@ public:
         // hours of audio at 48 kHz, which an offline whole-file call can reach.
         const bool wantTaps = (taps.compressorGrDb != nullptr || taps.preLimiter != nullptr
                                || taps.limiterGrDb != nullptr || taps.limiterPeakLin != nullptr || taps.peakClipReductionDb != nullptr
-                               || taps.bandDeltaDb != nullptr);
+                               || taps.bandDeltaDb != nullptr || taps.clipperShaveDb != nullptr);
         tap_ = wantTaps ? &taps : nullptr;       // read by runQuantum(); cleared before returning
 
         for (int off = 0; off < numSamples; )
@@ -1361,15 +1374,19 @@ private:
             alignClip_.advance ((const float* const*) ch, nch_, K_, sat_.latencySamples());
             if (bypassChanged_.clipper) steer (clipFade_, params_.bypassClipper, [this] { sat_.reset(); });
             if (clipFade_.mode == Fader::Dry)
+            {
                 for (int c = 0; c < nch_; ++c) std::copy_n (alignClip_.delayed (c), K_, ch[c]);
+                writeClipperShave (0.0f);
+            }
             else
             {
                 const bool whole = clipFade_.mode == Fader::Wet;
                 stageRefused_ |= ! sat_.process (ch, nch_, K_);
-                if (! whole) blend (clipFade_, ch, alignClip_, clipWarm_);
+                if (! whole) { blend (clipFade_, ch, alignClip_, clipWarm_); writeClipperShave (0.0f); }
                 else countClipperPeaks ((const float* const*) ch);
             }
         }
+        else writeClipperShave (0.0f);   // absent stage: it took nothing
 
         // --- the pre-limiter tap, taken BEFORE the gain node -------------------------------------
         // This is the whole point of the tap: `p` is everything the chain does that does NOT depend on
@@ -1769,7 +1786,15 @@ private:
                 if (b > after) after = b;
             }
         }
-        if (! (in >= 0x1p-12f) || ! std::isfinite (in) || ! std::isfinite (after)) return;
+        if (! (in >= 0x1p-12f) || ! std::isfinite (in) || ! std::isfinite (after)) { writeClipperShave (0.0f); return; }
+        if (tap_ != nullptr && tap_->clipperShaveDb != nullptr)
+        {
+            // In and out at the base rate, the stage's own input and output: the oversampled copies live inside the
+            // Saturator, and the limiter behind reconstructs its own peaks from this very output.
+            const double lifted = clipperQuietGain() * (double) in;
+            writeClipperShave (after > 0.0f && lifted > (double) after
+                ? (float) (20.0 * core::det::log10 (lifted / (double) after)) : 0.0f);
+        }
         const auto bits = std::bit_cast<std::uint32_t> (in);
         const int octave = (int) (bits >> 23) - 127 - kClipPeakLowExp;
         const int bin = octave >= kClipPeakOctaves ? kClipPeakBins - 1
@@ -1779,6 +1804,13 @@ private:
         if (b.count == 0 || (float) ratio < b.leastRatio) b.leastRatio = (float) ratio;
         b.ratioSum += ratio;
         if (b.count != 0xffffffffu) ++b.count;
+    }
+
+    // The quantum's clipperShaveDb, on every frame of it, when a caller asked for the tap.
+    void writeClipperShave (float db) noexcept
+    {
+        if (tap_ != nullptr && tap_->clipperShaveDb != nullptr)
+            std::fill_n (tap_->clipperShaveDb + (std::size_t) tap_->framesWritten, K_, db);
     }
 
     storage::Buffer<float> fifo_, keyBuf_;

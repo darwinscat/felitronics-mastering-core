@@ -13,6 +13,11 @@ inline constexpr std::uint64_t kQueryValues = std::uint64_t (kQueryColumns) * 4u
 //   LimiterGr, PeakClipGr   the retained reduction traces, on the delivered-frame grid
 //   GlueGr                  the glue's (the compressor's) gain reduction from the delivered render, rows as LimiterGr's on
 //                           its buckets; a master whose glue did not compress answers Unavailable, reason NoSignal
+//   SaturationShave         what the saturation (the soft clipper) took off the peaks, in dB >= 0, from the delivered
+//                           render, rows as LimiterGr's on its buckets: per internal quantum of the chain, the stage's
+//                           input peak times its clean gain over its output peak (ClipperPeaks' pair), floored at 0 —
+//                           a bucket's maxDb its largest quantum's, meanDb the frames' mean. A master whose soft clipper
+//                           did not shape answers Unavailable, reason NoSignal
 //   MasterWaveform          its retained buckets, L and R: [from,to,channel,min,max,rms,finite]
 //   MasterAxes              the same buckets as the source's Waveform answers — four axes (L, R, Mid, Side), rows of
 //                           kWaveformStride: [from,to,axis,min,max,peak,envelope,rms,low,middle,high,finite,reason]
@@ -21,7 +26,7 @@ inline constexpr std::uint64_t kQueryValues = std::uint64_t (kQueryColumns) * 4u
 //                           its window ends at) — the source's own request plus a masterId; without one, the source's
 //   MasterReport            the master whole — the record a full snapshot carries for it, rows included (QueryView::master)
 enum class QueryKind : std::uint8_t { Waveform, LowSpectrum, LowSide, Momentary, ShortTerm, Clipping, Stereo, LimiterGr, PeakClipGr, MasterWaveform,
-                                      MasterAxes, MasterReport, GlueGr };
+                                      MasterAxes, MasterReport, GlueGr, SaturationShave };
 // WHAT LowSpectrum ANSWERS per band of the retained low-end measurement, interpolated between the bands' centres:
 //   Density   the band's energy per hertz (its energy over its width in Hz) — the tilt-free quantity: level across
 //             bands that widen with frequency; the default, and what LowSpectrum answered before this field existed

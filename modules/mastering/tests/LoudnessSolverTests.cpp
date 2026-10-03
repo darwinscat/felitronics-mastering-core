@@ -853,7 +853,7 @@ void testTheTraceBucketsAreTheRequests()
         Programme dst; dst.ch = src.ch; dst.bind();
         LoudnessRequest req; req.targetLufs = -12.0; req.maxTruePeakDbTp = -1.0; req.maxPasses = 3; req.grTraceBuckets = b;
         const std::uint64_t budget = TargetLoudnessSolver::solveBytes (kFs, 2, frames, b);
-        const long long traces = 3LL * (long long) b * (long long) sizeof (GainReductionTraceBucket);
+        const long long traces = 4LL * (long long) b * (long long) sizeof (GainReductionTraceBucket);
         const long long before = alloc::bytes.load();
         const auto sol = rig.solver.solve (rig.chain, rig.renderer, rig.params, src.in(), dst.out(), 2, frames, req);
         const long long got = alloc::bytes.load() - before;
@@ -861,7 +861,7 @@ void testTheTraceBucketsAreTheRequests()
                   && sol.limiterTrace.bucket.size() == (std::size_t) b,
                   "grTraceBuckets " + std::to_string (b) + " over " + std::to_string (frames) + " frames: a render, " + std::to_string (b) + " buckets per stage");
         test::ok (got == (long long) (budget + 2u * TargetLoudnessSolver::solutionConstructBytes()),
-                  "and the solve reuses one meter set, three window histograms, and three traces of " + std::to_string (traces / 3) + " B each ("
+                  "and the solve reuses one meter set, three window histograms, and four traces of " + std::to_string (traces / 4) + " B each ("
                   + std::to_string (got) + " B over " + std::to_string (sol.passes) + " passes)");
     }
 
@@ -930,7 +930,7 @@ void testAStoppedOrRefusedSolveHoldsItsTracesOnce()
     test::group ("a solve stopped at any event, or refused after a render, allocates its traces once and returns them");
     const int frames = 65536, B = 65536;
     const std::uint64_t budget = TargetLoudnessSolver::solveBytes (kFs, 1, frames, B);
-    const long long traces = 3LL * (long long) GainReductionTrace::bytesFor (B, frames);
+    const long long traces = 4LL * (long long) GainReductionTrace::bytesFor (B, frames);
     // THE PIN IS THE PART THAT DOES NOT MOVE. Three literals stood here — the budget, the traces and the
     // histograms — and two of the three are functions of things this test is not about: the bucket count and
     // how many distributions a solution keeps. The gated third histogram moved two of them at once, which reads as
@@ -938,7 +938,7 @@ void testAStoppedOrRefusedSolveHoldsItsTracesOnce()
     // so that is the literal, and the rest is spelled through the same expressions the budget is made of.
     test::ok (budget == 19168u + (std::uint64_t) traces + (std::uint64_t) kGrWindowBytes
                   + TargetLoudnessSolver::meterConstructBytes() + TargetLoudnessSolver::solveProxyBytes()
-              && traces == 7864320LL,
+              && traces == 10485760LL,
               "PRECONDITION: mono, 65536 frames and buckets: a budget of "
               + std::to_string (budget) + " B = 19 168 B of meter payloads + the traces " + std::to_string (traces)
               + " B + the window histograms " + std::to_string (kGrWindowBytes) + " B + Debug proxies");
@@ -3924,16 +3924,16 @@ static void testTheBudgetsRefuseWhatTheCallsRefuse()
     test::ok (TargetLoudnessSolver::solveBytes (48000.0, 0, 48000, kB) == 0 && TargetLoudnessSolver::solveBytes (48000.0, -1, 48000, kB) == 0
               && TargetLoudnessSolver::solveBytes (48000.0, past, 48000, kB) == 0,
               "solveBytes: 0 for a channel count solve() refuses");
-    // Three traces of 1000 x 40 B.
+    // Four traces of 1000 x 40 B: the compressor's, the limiter's, the peak clipper's and the saturation's shave.
     test::ok (sizeof (GainReductionTraceBucket) == 40u, "a trace bucket is 40 B");
     // THE FIGURE IS PRINTED, NOT SPELLED. It used to read "727 696 B" in the text while the comparison beside it
     // was parameterised by `kGrWindowBytes` — so the gated third histogram moved the assertion and left the sentence
     // describing a number that no longer existed. A test may not carry a number its own run does not produce.
     test::ok (TargetLoudnessSolver::solveBytes (48000.0, 2, 48000, kB)
-                  == 416u + 21008u + 120000u + (std::uint64_t) kGrWindowBytes
+                  == 416u + 21008u + 160000u + (std::uint64_t) kGrWindowBytes
                    + TargetLoudnessSolver::meterConstructBytes() + TargetLoudnessSolver::solveProxyBytes(),
               "and " + std::to_string (TargetLoudnessSolver::solveBytes (48000.0, 2, 48000, kB))
-              + " B for 1 s of stereo at the default 1000 buckets — meter, reference true-peak meter, three "
+              + " B for 1 s of stereo at the default 1000 buckets — meter, reference true-peak meter, four "
                 "traces and the three window histograms (the ABI suite's oracle)");
     // A prepare() refused on its bin width (400 dB at 1e-7 dB is 4e9 bins, past the 4e6 ceiling) allocates NOTHING —
     // which is what its budget says. The diverse-testing round found the tap buffers assigned before that refusal, and
@@ -3957,7 +3957,7 @@ static void testTheBudgetsRefuseWhatTheCallsRefuse()
     // §3.1 asks for, so 10 doubles became 28 — the 20 hops, plus the same margin of 8 that stood there before.
     test::ok (ReferenceTruePeakMeter::storageFor (96000.0, 96000, 2).bytes() == 21008u && ReferenceTruePeakMeter::storageFor (192000.0, 192000, 2).bytes() == 21008u,
               "the reference true-peak meter is 21 008 B at 96 and at 192 kHz too");
-    const std::uint64_t oneSecond = 416u + 21008u + 120000u + (std::uint64_t) kGrWindowBytes
+    const std::uint64_t oneSecond = 416u + 21008u + 160000u + (std::uint64_t) kGrWindowBytes
                                   + TargetLoudnessSolver::meterConstructBytes() + TargetLoudnessSolver::solveProxyBytes();
     test::ok (TargetLoudnessSolver::solveBytes (96000.0, 2, 96000, kB) == oneSecond
               && TargetLoudnessSolver::solveBytes (192000.0, 2, 192000, kB) == oneSecond,

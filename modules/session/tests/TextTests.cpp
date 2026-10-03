@@ -548,6 +548,12 @@ void theTableFormatsEveryLanguage()
     same (arg (Arg::term (text::Term::PlatformDesktop), Lang::Ru), "десктоп-версия", "ru: a term's word");
     same (arg (Arg::term (text::Term::PlatformWeb), Lang::En), "web version", "en: a term's word");
     same (arg (Arg::term (text::Term::PlatformWeb), Lang::De), "platform.web", "de, undeclared: the term's id");
+    // The tilt has one name everywhere (owner, 03.10): its knob, as a refused field, is the device's own word.
+    for (const Lang lang : { Lang::Ru, Lang::En })
+        same (arg (Arg::term (text::Term::FieldTiltDb), lang), arg (Arg::term (text::Term::DeviceTilt), lang),
+              codeOf (lang) + ": the tilt's field is named as the device is");
+    same (arg (Arg::term (text::Term::FieldTiltDb), Lang::Ru), "Наклон", "ru: Наклон");
+    same (arg (Arg::term (text::Term::FieldTiltDb), Lang::En), "Tilt", "en: Tilt");
     same (arg (Arg::text ("mix {final}.wav"), Lang::Ru), "mix {final}.wav", "a user's text is never read: its braces stay");
 }
 

@@ -256,7 +256,8 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (QueryKind::MasterAxes) == 10);
         static_assert (unsigned (QueryKind::MasterReport) == 11);
         static_assert (unsigned (QueryKind::GlueGr) == 12);
-        return 12;
+        static_assert (unsigned (QueryKind::SaturationShave) == 13);
+        return 13;
     }
     else if constexpr (std::is_same_v<T, QueryStatus>)
     {
@@ -663,6 +664,7 @@ constexpr void checkEnum (QueryKind value) noexcept
         case QueryKind::MasterAxes: break;
         case QueryKind::MasterReport: break;
         case QueryKind::GlueGr: break;
+        case QueryKind::SaturationShave: break;
     }
 }
 
