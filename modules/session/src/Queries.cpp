@@ -25,7 +25,8 @@ bool sameNumber (double a, double b) noexcept
 bool masterKind (QueryKind kind) noexcept
 {
     return kind == QueryKind::LimiterGr || kind == QueryKind::PeakClipGr || kind == QueryKind::MasterWaveform
-        || kind == QueryKind::MasterAxes || kind == QueryKind::MasterReport || kind == QueryKind::GlueGr;
+        || kind == QueryKind::MasterAxes || kind == QueryKind::MasterReport || kind == QueryKind::GlueGr
+        || kind == QueryKind::SaturationShave;
 }
 bool loudnessKind (QueryKind kind) noexcept { return kind == QueryKind::Momentary || kind == QueryKind::ShortTerm; }
 // A master's query: a kind only a master answers, or a loudness curve asked of one (masterId).
@@ -84,10 +85,12 @@ const Kept* masterFor (std::span<const Kept> masters, std::uint32_t id) noexcept
         if (master.id == id) return &master;
     return nullptr;
 }
-// The glue's trace is kept with the master's rows, and only where the glue compressed; the other two with its landing.
+// The glue's trace is kept with the master's rows, and only where the glue compressed; the saturation's shave the same
+// way, only where the soft clipper shapes; the other two with its landing.
 const LandingTrace* masterTrace (const Kept& master, const detail::MasterRows* rows, QueryKind kind) noexcept
 {
     if (kind == QueryKind::GlueGr) return rows && rows->glueTrace ? &*rows->glueTrace : nullptr;
+    if (kind == QueryKind::SaturationShave) return rows && rows->saturationTrace ? &*rows->saturationTrace : nullptr;
     if (! master.landing) return nullptr;
     const auto& trace = kind == QueryKind::LimiterGr
         ? master.landing->limiterTrace : master.landing->peakClipTrace;
@@ -96,7 +99,7 @@ const LandingTrace* masterTrace (const Kept& master, const detail::MasterRows* r
 }
 QueryStatus validate (const MeasurementQuery& q, const Source& source) noexcept
 {
-    if (unsigned (q.kind) > unsigned (QueryKind::GlueGr) || unsigned (q.spectrum) > unsigned (SpectrumQuantity::Energy)
+    if (unsigned (q.kind) > unsigned (QueryKind::SaturationShave) || unsigned (q.spectrum) > unsigned (SpectrumQuantity::Energy)
         || ! std::isfinite (q.crossoverHz)
         || (! sameNumber (q.crossoverHz, 120) && ! sameNumber (q.crossoverHz, 150)) || ! std::isfinite (q.fromHz) || ! std::isfinite (q.toHz)) return QueryStatus::Contract;
     if (ofMaster (q))
@@ -128,7 +131,8 @@ Analyzer analyzer (const MeasurementQuery& q) noexcept
         case QueryKind::Clipping: return Analyzer::Clipping;
         case QueryKind::Stereo: return Analyzer::Stereo;
         case QueryKind::LimiterGr: case QueryKind::PeakClipGr: case QueryKind::MasterWaveform:
-        case QueryKind::MasterAxes: case QueryKind::MasterReport: case QueryKind::GlueGr: break;
+        case QueryKind::MasterAxes: case QueryKind::MasterReport: case QueryKind::GlueGr:
+        case QueryKind::SaturationShave: break;
     }
     detail::storageOverflow();
 }
@@ -146,7 +150,8 @@ std::uint32_t stride (QueryKind kind) noexcept
         case QueryKind::Momentary: case QueryKind::ShortTerm: return 3;
         case QueryKind::Clipping: return 6;
         case QueryKind::Stereo: return 6;
-        case QueryKind::LimiterGr: case QueryKind::PeakClipGr: case QueryKind::MasterWaveform: case QueryKind::GlueGr: return 7;
+        case QueryKind::LimiterGr: case QueryKind::PeakClipGr: case QueryKind::MasterWaveform: case QueryKind::GlueGr:
+        case QueryKind::SaturationShave: return 7;
         case QueryKind::MasterAxes: return kWaveformStride;
         case QueryKind::MasterReport: return 0;
     }
@@ -411,7 +416,7 @@ QueryResult Session::query (const MeasurementQuery& q) noexcept
     if (checkFloatingPointEnvironment() != Status::Ok)
     { QueryView v; v.request = q; v.status = QueryStatus::FloatingPointEnvironment; v.reason = MeasurementReason::Unsupported; return QueryResult::copy (v); }
     // Invalid enum cannot reach stride/analyzer dispatch.
-    if (unsigned (q.kind) > unsigned (QueryKind::GlueGr))
+    if (unsigned (q.kind) > unsigned (QueryKind::SaturationShave))
     { QueryView v; v.request = q; v.status = QueryStatus::Contract; v.reason = MeasurementReason::Unsupported; return QueryResult::copy (v); }
     if (ofMaster (q))
     {
@@ -420,8 +425,8 @@ QueryResult Session::query (const MeasurementQuery& q) noexcept
         v.status = need.status;
         v.reason = need.status == QueryStatus::Ready ? MeasurementReason::None : MeasurementReason::Unsupported;
         // A master of this source without the glue's trace is one whose glue did not compress: no signal, as its
-        // report says of the glue's numbers.
-        if (need.status == QueryStatus::Unavailable && q.kind == QueryKind::GlueGr)
+        // report says of the glue's numbers; without the saturation's shave, one whose soft clipper did not shape.
+        if (need.status == QueryStatus::Unavailable && (q.kind == QueryKind::GlueGr || q.kind == QueryKind::SaturationShave))
             if (const Kept* known = masterFor (masters(), q.masterId); known && known->recipe.source == q.audioId)
                 v.reason = MeasurementReason::NoSignal;
         if (need.status != QueryStatus::Ready) return QueryResult::copy (v);
@@ -592,7 +597,8 @@ QueryResult Session::query (const MeasurementQuery& q) noexcept
         case QueryKind::Stereo: stereo (v, rows.get(), result, source_.frames); break;
         case QueryKind::Waveform: break;
         case QueryKind::LimiterGr: case QueryKind::PeakClipGr: case QueryKind::MasterWaveform:
-        case QueryKind::MasterAxes: case QueryKind::MasterReport: case QueryKind::GlueGr: break;
+        case QueryKind::MasterAxes: case QueryKind::MasterReport: case QueryKind::GlueGr:
+        case QueryKind::SaturationShave: break;
     }
     v.values = { rows.get(), std::size_t (v.stored * v.stride) };
     if (! queryCache_) queryCache_.reset (new detail::QueryCache);

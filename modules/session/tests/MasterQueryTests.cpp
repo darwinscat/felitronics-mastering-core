@@ -21,6 +21,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -82,8 +83,10 @@ std::unique_ptr<Session> loaded (const float* const* planes, unsigned channels, 
 
 // A master of the session's source through a limiter and nothing else; its delivered audio copied out and released.
 struct Mastered { MasterId id = 0; std::vector<float> audio; MasterAudioShape shape {}; std::vector<Notification> facts; Checked declared {}; declared::Spent spent {}; };
-// glue: the compressor in the chain and compressing (a low threshold, a firm ratio); otherwise out of it.
-Mastered master (Session& s, CommandId id, bool glue = false)
+// glue: the compressor in the chain and compressing (a low threshold, a firm ratio); otherwise out of it. shaper: the
+// soft clipper (the saturation) in the chain with those parameters; otherwise out of it.
+using ShaperParams = decltype (felitronics::mastering::MasteringChainParams::clipper);
+Mastered master (Session& s, CommandId id, bool glue = false, const ShaperParams* shaper = nullptr)
 {
     command::Master request { id };
     request.ready.version = 1;
@@ -93,6 +96,11 @@ Mastered master (Session& s, CommandId id, bool glue = false)
     {
         request.ready.topology.compressor = true; request.ready.params.bypassCompressor = false;
         request.ready.params.compressor.thresholdDb = -30.0; request.ready.params.compressor.ratio = 4.0;
+    }
+    if (shaper)
+    {
+        request.ready.topology.clipper = true; request.ready.params.bypassClipper = false;
+        request.ready.params.clipper = *shaper;
     }
     request.source = s.source().hash; request.revision = s.revision();
     Mastered out;
@@ -484,6 +492,91 @@ void theGluesGainReduction()
         "no such master: Unavailable, Unsupported, as every master kind");
 }
 
+// What the saturation took off the peaks, per bucket on the limiter's grid, from the delivered render: a 1 kHz sine,
+// -60 dBFS for two seconds, then -6 dBFS for two, through a tanh at 18 dB of drive, half drive compensation, 80 % wet,
+// 2 dB down at its output.
+void theSaturationsShave()
+{
+    felitronics::test::group ("(d4) SaturationShave: what the saturation took off the peaks, on LimiterGr's grid");
+    namespace det = felitronics::core::det;
+    constexpr unsigned rate = 48000, frames = 4 * rate;
+    constexpr double quiet = 0.001, hot = 0.5, driveDb = 18.0, wet = 0.8;
+    std::vector<float> tone (frames);
+    // 48 samples a period, a sample on every crest: the input's peak in a quantum is the amplitude itself.
+    for (unsigned i = 0; i < frames; ++i) tone[i] = float ((i < frames / 2 ? quiet : hot) * det::sin (2 * kPi * 1000.0 * i / rate));
+    const float* planes[] { tone.data(), tone.data() };
+    auto sp = loaded (planes, 2, frames, rate); auto& s = *sp;
+    ShaperParams tanh {};
+    tanh.shape = felitronics::saturation::WaveShaper::Shape::Tanh;
+    tanh.driveDb = float (driveDb); tanh.mix = float (wet); tanh.outputDb = -2.0f; tanh.autoComp = 0.5f;
+    ShaperParams tape = tanh;
+    tape.shape = felitronics::saturation::WaveShaper::Shape::Tape;
+    const auto shaped = master (s, 3, false, &tanh);
+    const auto taped = master (s, 4, false, &tape);
+    const auto plain = master (s, 5);
+    ok (declared::covers (shaped.declared.bytes, shaped.spent), "the shaped master's retained trace inside its declared memory");
+    bool covered = true;
+    constexpr std::uint32_t columns = 64;
+    const auto shave = answered (s, ask (QueryKind::SaturationShave, s, 0, shaped.shape.frames, columns, shaped.id), covered);
+    const auto lim = s.query (ask (QueryKind::LimiterGr, s, 0, shaped.shape.frames, columns, shaped.id));
+    const auto& v = shave.view(); const auto& l = lim.view();
+    bool grid = v.stored == l.stored && v.total == l.total && v.stored == columns;
+    for (std::uint64_t i = 0; grid && i < v.stored; ++i)
+        grid = same (v.values[std::size_t (7u * i)], l.values[std::size_t (7u * i)])
+            && same (v.values[std::size_t (7u * i + 1u)], l.values[std::size_t (7u * i + 1u)]);
+    ok (v.status == QueryStatus::Ready && v.stride == 7 && v.reason == MeasurementReason::None && v.measurementKey == shaped.id
+        && v.sampleRate == shaped.shape.sampleRate && grid, "64 columns, bucket for bucket the limiter's bounds");
+    // THE CURVATURE'S LOSS, by hand from the parameters: the shape is tanh(k·x)/tanh(k) with k = 10^(drive/20) − 1, its
+    // slope at zero k/tanh(k), the drive compensation that slope^−0.5. A sound too small to bend gets
+    // (1 − wet) + wet·comp·slope of itself, the crest A gets (1 − wet)·A + wet·comp·tanh(k·A)/tanh(k) (the trim on both
+    // sides). A is the hot amplitude brought to the input's reference loudness first ([input] referenceLufs, -18), as
+    // every stage hears the source.
+    const double k = std::pow (10.0, driveDb / 20.0) - 1.0, slope = k / std::tanh (k), comp = 1.0 / std::sqrt (slope);
+    const double crest = hot * std::pow (10.0, (-18.0 - s.snapshot().view().integratedLufs) / 20.0);
+    const double expected = 20.0 * std::log10 (((1.0 - wet) + wet * comp * slope) * crest
+                                               / ((1.0 - wet) * crest + wet * comp * std::tanh (k * crest) / std::tanh (k)));
+    // Buckets wholly inside each half; the two at the step and the first are left out (a quantum straddles the step).
+    const auto range = [] (const QueryView& r, std::uint64_t from, std::uint64_t to, std::size_t column, bool largest)
+    {
+        if (r.values.size() < std::size_t (7u * to)) return std::numeric_limits<double>::quiet_NaN();   // no rows: fails
+        double x = largest ? 0.0 : 1e9;
+        for (std::uint64_t i = from; i < to; ++i)
+        {
+            const double y = r.values[std::size_t (7u * i + column)];
+            x = largest ? std::max (x, y) : std::min (x, y);
+        }
+        return x;
+    };
+    const double hotLeast = range (v, columns / 2 + 1, columns, 2, false), hotMost = range (v, columns / 2 + 1, columns, 3, true);
+    const double quietMost = range (v, 1, columns / 2 - 1, 3, true);
+    std::printf ("    tanh: crest %.4f, expected %.4f dB, hot buckets %.4f..%.4f dB; below the knee at most %.6f dB\n",
+                 crest, expected, hotLeast, hotMost, quietMost);
+    ok (expected > 1.0 && std::fabs (hotLeast - expected) < 0.01 && std::fabs (hotMost - expected) < 0.01,
+        "a hot sine through a driven tanh: every hot bucket within 0.01 dB of the curvature's loss");
+    ok (quietMost < 0.01, "the same sine 54 dB lower, under the knee: under 0.01 dB — the trim and the dry share are no shave");
+    const auto report = s.query (ask (QueryKind::MasterReport, s, 0, 0, 1, shaped.id));
+    const auto& cost = report.view().master->report->cost;
+    const double largest = range (v, 0, columns, 3, true);
+    ok (cost && cost->saturationCutMaxDb.value && std::fabs (largest - *cost->saturationCutMaxDb.value) < 1e-4,
+        "its largest bucket is the report's saturationCutMaxDb, the same quanta of the same render");
+    const auto tapeShave = answered (s, ask (QueryKind::SaturationShave, s, 0, taped.shape.frames, columns, taped.id), covered);
+    const double tapeQuiet = range (tapeShave.view(), 1, columns / 2 - 1, 3, true);
+    const double tapeHot = range (tapeShave.view(), columns / 2 + 1, columns, 2, false);
+    std::printf ("    tape: hot buckets at least %.4f dB; below the knee at most %.6f dB\n", tapeHot, tapeQuiet);
+    ok (tapeShave.view().status == QueryStatus::Ready && tapeHot > 0.5 && tapeQuiet < 0.01,
+        "tape, its emphasis filters around the bend: the hot half shaved, the quiet half under 0.01 dB");
+    const auto zoom = answered (s, ask (QueryKind::SaturationShave, s, 96000, 192000, 8, shaped.id), covered);
+    const auto zoomLim = s.query (ask (QueryKind::LimiterGr, s, 96000, 192000, 8, shaped.id));
+    ok (zoom.view().status == QueryStatus::Ready && zoom.view().total == zoomLim.view().total && zoom.view().stored == 8,
+        "a zoom selects the same buckets the limiter's does");
+    ok (covered, "each answer inside its declared memory");
+    const auto none = s.query (ask (QueryKind::SaturationShave, s, 0, plain.shape.frames, columns, plain.id));
+    ok (none.view().status == QueryStatus::Unavailable && none.view().reason == MeasurementReason::NoSignal && none.view().values.empty(),
+        "a master without the saturation: Unavailable, NoSignal, no rows");
+    ok (s.query (ask (QueryKind::SaturationShave, s, 0, shaped.shape.frames, columns, shaped.id + 9u)).view().reason
+        == MeasurementReason::Unsupported, "no such master: Unavailable, Unsupported, as every master kind");
+}
+
 void theMastersAxes()
 {
     felitronics::test::group ("(e) a master's waveform in the source's four axes — Mid and Side, envelope, band energies");
@@ -824,6 +917,7 @@ int main()
     theMastersLoudness();
     theMastersLoudnessOnTheSourceGrid();
     theGluesGainReduction();
+    theSaturationsShave();
     theMastersAxes();
     theLeanSummary();
     theSnapshotSizedInOnePass();
