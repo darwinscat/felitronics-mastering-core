@@ -97,6 +97,16 @@ if(FELITRONICS_BUILD_TESTS)
     target_link_libraries(felitronics_source_forensics_tests PRIVATE felitronics::analysis_offline felitronics::test_support)
     target_compile_features(felitronics_source_forensics_tests PRIVATE cxx_std_20)
     add_test(NAME felitronics_source_forensics_tests COMMAND felitronics_source_forensics_tests)
+    # Peaq — PEAQ Basic (ITU-R BS.1387): the model's parts by hand, five synthetic pairs against GstPEAQ's numbers on
+    # the same files (`felitronics_peaq_tests --write <dir>` writes them), pins, verdicts and the analyzer contract.
+    # Contract-off like the tool and the wasm module whose bits it pins.
+    add_executable(felitronics_peaq_tests tests/PeaqTests.cpp)
+    target_link_libraries(felitronics_peaq_tests PRIVATE felitronics::analysis_offline felitronics::io felitronics::test_support)
+    target_compile_features(felitronics_peaq_tests PRIVATE cxx_std_20)
+    if(NOT MSVC)
+        target_compile_options(felitronics_peaq_tests PRIVATE -ffp-contract=off)
+    endif()
+    add_test(NAME felitronics_peaq_tests COMMAND felitronics_peaq_tests)
     # Split invariance across ALL of the above through ONE harness (tests/split_invariance.h, shared with the
     # mastering module's suite): one call against fixed blocks and ragged cuts with zero-length calls, a clock-only
     # gap where the contract has one, a second maxBlock, and a finish on a prefix — every published output compared
