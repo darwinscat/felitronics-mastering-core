@@ -16,6 +16,7 @@
 #                 first module with a COMPILED library behind it: the sources modules/session/sources.txt lists, with the
 #                 flags modules/session/build-flags.txt states and the library's releases, and its config embedded as
 #                 the CMake build embeds it. See the fc_session section.
+#   fcpeaq.*    — never shipped: tools/fcore_peaq.cpp for node, so CI can diff PEAQ's output against the native CLI's.
 #   tierup/     — never shipped: fctempo, fcprobe and fcsession linked again with their function names, so the build
 #                 proves the tempo detector's hot loops survived the optimiser (tools/wasm/tierup-check.mjs).
 #
@@ -370,6 +371,15 @@ node "$CORE/tools/wasm/check-no-threads.mjs" "$OUT/fctempo.web.wasm" "$OUT/fctem
 echo
 echo "=== size (fc_tempo, and what it saves a page that wants only a tempo)"
 sizes fctempo.web.wasm fctempo.web.mjs fcprobe.web.wasm
+
+# fcpeaq.node.js — tools/fcore_peaq.cpp, the PEAQ CLI itself, compiled for wasm and run by node on the host's files
+# (NODERAWFS). Never shipped: it exists so CI can diff its stdout against the native fcore_peaq's — analysis::Peaq
+# promises the same bits on both rows, and this is where the promise is checked. The probe's front flags (contract off,
+# no fast math, SIMD128), plus core's io for the WAV reader.
+echo
+echo "--- fc_peaq node (the PEAQ CLI, diffed against native fcore_peaq)"
+em++ "${FRONT[@]}" -I"$CORE/modules/io/include" -O3 -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 \
+     "$ROOT/tools/fcore_peaq.cpp" -o "$OUT/fcpeaq.node.js"
 
 #==================================================================================================
 # THE FIRST ANALYSIS — the tempo detector's hot loops must be functions of their own in every module that carries it
