@@ -98,6 +98,10 @@ dittomusic   = { group = "aggregator", lufs = -14, tp = -1, monoBass = 120, hpfF
 cd           = { group = "delivery", lufs = -9, tp = -0.3, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 44100, bitDepth = 16, sourceRatePass = true }
 # Bandcamp does not normalise loudness (confirmed by Bandcamp): a delivery preset, not a platform target.
 bandcamp     = { group = "delivery", lufs = -10, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
+# Broadcast loudness standards beside EBU R128, appended last so no saved target index moves: ATSC A/85 (US), ARIB TR-B32 (Japan), Free TV OP-59 (Australia).
+atsc         = { group = "streaming", lufs = -24, tp = -2, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
+arib         = { group = "streaming", lufs = -24, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
+op59         = { group = "streaming", lufs = -24, tp = -2, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
 
 # THE TARGETS' NOTES — where a target's loudness comes from, where that is not a platform's published number or a
 # standard; a shell shows the note beside the target (SnapshotText::targetNote). A target without a row has no note.
