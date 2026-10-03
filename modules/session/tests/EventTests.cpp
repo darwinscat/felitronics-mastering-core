@@ -246,6 +246,11 @@ void pump()
     // when the saturation's output left (v0.6.0): it was 0 dB, neutral; and the
     // marks moved to E1, B0 and 28 Hz (01.10): labels on the plot. The high-pass knob's travel went to 80 Hz with the
     // machine's top kept at 50 as its own key (01.10): no machine cutoff moved, only the version.
+    // felitronics-bands' bands.toml joined the config's versions as a third document (v0.13.0) and the filters of tilt,
+    // low and the bands left engine.toml for it, numbers unchanged: the walk itself moved, so no restatement of the
+    // documents gives the earlier versions back, and every pin below was restated with the version alone moved (the
+    // session contract's recordings: only the config version differs). They were e3fe0c1834432729 / 73daef62819ace2d,
+    // 72cb5738dfba2526 / be7e8b4fc0f9c662 and d31d41642d55ec9f / 3a855b6bfad8bc51.
     const auto previousVersion = [] (std::vector<Notification> events)
     {
         // The canonical document without its [notes] table: the config before them.
@@ -253,6 +258,10 @@ void pump()
         const auto from = targets.rfind ("\n[notes]\n");
         const auto to = from == std::string::npos ? from : targets.find ("\n[", from + 1);
         if (from != std::string::npos) targets.erase (from, (to == std::string::npos ? targets.size() : to) - from);
+        // ...and without the three broadcast targets (atsc, arib, op59, v0.13.0), which came after.
+        for (const std::string_view key : { "\natsc ", "\narib ", "\nop59 " })
+            if (const auto at = targets.find (key); at != std::string::npos)
+                targets.erase (at, targets.find ('\n', at + 1) - at);
         // ...and the engine with the observation rows before the owner's table.
         auto engine = config::Config::text (config::Document::Engine);
         const std::pair<std::string_view, std::string_view> rows[] = {
@@ -292,7 +301,7 @@ void pump()
     };
     // The saturation's shave (03.10) is a fourth trace a render steps through, so a pass has more work units and the
     // phases' units, fractions and count moved; every other event is as it was (checked with the phases left out).
-    ok (eventsHash (previousVersion (one)) == 0xe3fe0c1834432729ull && eventsHash (previousVersion (cancelled)) == 0x73daef62819ace2dull,
+    ok (eventsHash (previousVersion (one)) == 0x1555a30af9dc5110ull && eventsHash (previousVersion (cancelled)) == 0x8d434eb2d9dff1ddull,
         "the targets' notes move only the config's version the phases carry: with the previous one, the previous pins");
     const auto withoutCostLines = [] (const std::vector<Notification>& events)
     {
@@ -307,13 +316,15 @@ void pump()
         }
         return kept;
     };
-    ok (eventsHash (withoutCostLines (previousVersion (one))) == 0x72cb5738dfba2526ull
-        && eventsHash (withoutCostLines (previousVersion (cancelled))) == 0xbe7e8b4fc0f9c662ull
+    ok (eventsHash (withoutCostLines (previousVersion (one))) == 0xfd8d2c4110c6c94full
+        && eventsHash (withoutCostLines (previousVersion (cancelled))) == 0x002799982f8522aaull
         && withoutCostLines (one).size() < one.size(),
-        "the cost's new lines are the only new events: without them the pins 72cb5738dfba2526 / be7e8b4fc0f9c662 hold");
+        "the cost's new lines are the only new events: without them the pins fd8d2c4110c6c94f / 002799982f8522aa hold");
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
-    ok (eventsHash (one) == 0xd31d41642d55ec9full && eventsHash (cancelled) == 0x3a855b6bfad8bc51ull,
+    // The three broadcast targets (v0.13.0) moved the config version the phases carry and nothing else (the previous
+    // version's pins above hold); these were 1fdc6e0971f677c0 / 19c7710590fbdf2d.
+    ok (eventsHash (one) == 0x9d7c29a5f4147512ull && eventsHash (cancelled) == 0x903fef3e11059149ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, previous version: %016llx %016llx; and without the cost's lines: %016llx %016llx\n",

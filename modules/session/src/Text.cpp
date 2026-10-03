@@ -27,7 +27,8 @@
 #include "TextNumber.h"
 #include "TextSchema.h"
 #include "embedded/catalog.h"   // generated at build time from modules/session/text/catalog.toml
-#include "embedded/format.h"    // ... and from modules/session/text/format.toml
+#include "embedded/format.h"    // ... from modules/session/text/format.toml
+#include "embedded/band-texts.h" // ... and from felitronics-bands' text/<lang>.toml (modules/session/band-texts.cmake)
 
 #include <felitronics/toml/Embedded.h>
 
@@ -46,6 +47,7 @@ namespace detail
 {
 felitronics::toml::embedded::View catalogRoot() noexcept { return embedded::catalog.root(); }
 felitronics::toml::embedded::View formatRoot() noexcept { return embedded::format.root(); }
+felitronics::toml::embedded::View bandTextRoot (std::string_view code) noexcept { return embedded::bandText::of (code); }
 } // namespace detail
 
 namespace
@@ -158,7 +160,9 @@ void putNote (Sink& s, std::int64_t note, Lang lang) noexcept
 
 void putTerm (Sink& s, const detail::TermShape& t, Lang lang) noexcept
 {
-    const View word = detail::catalogRoot().find ("terms").find (t.group).find (t.key).find (detail::kLangCodes[(std::size_t) lang]);
+    const std::string_view code = detail::kLangCodes[(std::size_t) lang];
+    const View word = t.band.empty() ? detail::catalogRoot().find ("terms").find (t.group).find (t.key).find (code)
+                                     : embedded::bandText::of (code).find (t.band).find ("name");
     if (Text::speaks (lang)) s.put (textOf (word));
     else { s.put (t.group); s.put ("."); s.put (t.key); }
 }

@@ -102,7 +102,7 @@ const FACADE_ABI = 'tools/fc_session_abi.h';
 // the build embeds (felitronics_toml_embed) and checks before the library is built.
 const NOT_CODE = new Set([`${MODULE}/CMakeLists.txt`, SOURCES_FILE, `${MODULE}/build-flags.txt`,
                           `${MODULE}/config/targets.toml`, `${MODULE}/config/engine.toml`,
-                          `${MODULE}/text/catalog.toml`, `${MODULE}/text/format.toml`]);
+                          `${MODULE}/text/catalog.toml`, `${MODULE}/text/format.toml`, `${MODULE}/band-texts.cmake`]);
 const CONFIG_TU = `${MODULE}/src/Config.cpp`;
 const TEXT_TU = `${MODULE}/src/Text.cpp`;
 const CODE_EXT = /\.(h|hh|hpp|hxx|inl|ipp|tpp|inc|cpp|cc|cxx)$/;
@@ -182,9 +182,11 @@ const ALLOWANCES = new Map([
     // (felitronics_toml_embed; tools/wasm/build.sh runs the same tool) — constexpr data of felitronics-toml's embedded
     // types, admitted by name and not scanned: they live in the build tree, and what they compile to is read-only data
     // the object-file gate reads.
-    [CONFIG_TU, { directives: [], generated: new Set(['embedded/engine.h', 'embedded/targets.h', 'embedded/versions.h']) }],
+    [CONFIG_TU, { directives: [], generated: new Set(['embedded/bands.h', 'embedded/engine.h', 'embedded/targets.h', 'embedded/versions.h']) }],
     // The text compiled in, the same way: the two headers the build generates from modules/session/text/*.toml.
-    [TEXT_TU, { directives: [], generated: new Set(['embedded/catalog.h', 'embedded/format.h']) }],
+    // ...and felitronics-bands' names of the EQ bands: embedded/band-texts.h (modules/session/band-texts.cmake) finds a
+    // language's embedded text/<code>.toml.
+    [TEXT_TU, { directives: [], generated: new Set(['embedded/catalog.h', 'embedded/format.h', 'embedded/band-texts.h']) }],
     // The C boundary: the export macro build.sh's export scanner reads, the emscripten headers and one platform branch
     // (natively there is no linear memory to bound an out-pointer by), and its two quoted includes, by name.
     [FACADE_TU, {

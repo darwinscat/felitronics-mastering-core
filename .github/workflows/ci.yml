@@ -572,7 +572,8 @@ jobs:
         run: |
           export FELITRONICS_CORE_DIR="$(sed -n 's/^FELITRONICS_MASTERING_CORE_SOURCE_DIR:INTERNAL=//p' build-native/CMakeCache.txt)"
           export FELITRONICS_TOML_DIR="$(sed -n 's/^FELITRONICS_MASTERING_TOML_SOURCE_DIR:INTERNAL=//p' build-native/CMakeCache.txt)"
-          test -n "$FELITRONICS_CORE_DIR" && test -n "$FELITRONICS_TOML_DIR"
+          export FELITRONICS_BANDS_DIR="$(sed -n 's/^FELITRONICS_MASTERING_BANDS_SOURCE_DIR:INTERNAL=//p' build-native/CMakeCache.txt)"
+          test -n "$FELITRONICS_CORE_DIR" && test -n "$FELITRONICS_TOML_DIR" && test -n "$FELITRONICS_BANDS_DIR"
           ./tools/wasm/build.sh
       - name: Session contract — native vs wasm, all scenarios and refusal controls
         run: node tools/contract/run.mjs build-native/tools/fcore_session tools/wasm/build/fcsession.node.js --controls

@@ -292,11 +292,13 @@ struct Saturation
     double cutLoudShare = 0.0;                 // cut.loudShare: the loud places of the measured peak cut
 };
 
+// Tilt, low and the five bands: the knob is engine.toml's; the filter — freqHz, q, type — is felitronics-bands' bands.toml
+// (hz, q, type), the one table of the named bands every Felitronics product reads, bound here by the same schema.
 struct Tilt
 {
     Span domain;
     std::int32_t band = 0;
-    double freqHz = 0.0;
+    double freqHz = 0.0;                       // bands.toml [bands.tilt] hz
     Span normal;
     Span hard;
     double step = 0.0;
@@ -306,7 +308,7 @@ struct Low
 {
     Span domain;
     std::int32_t band = 0;
-    double freqHz = 0.0;
+    double freqHz = 0.0;                       // bands.toml [bands.low] hz, q
     double q = 0.0;
     Span normal;
     Span hard;
@@ -314,7 +316,7 @@ struct Low
 };
 
 // [bands]: the five static EQ bands a person turns (the machine leaves them at 0): each its own band of the EQ stage, a
-// bell or a high shelf at freqHz with q, its gain's domain, its knob's travel `hard` and step.
+// bell or a high shelf at freqHz with q (bands.toml), its gain's domain, its knob's travel `hard` and step.
 enum class BandType : std::uint8_t { Bell, HighShelf };
 
 struct EqMove
@@ -534,7 +536,7 @@ struct Engine
 // PROBLEMS — data, never text: which document, what is wrong, where (line and column, 1-based, the column counted in
 // characters), the key path in TOML spelling, and a stable name. The message a person reads is a shell's to write.
 
-enum class Document : std::uint8_t { Targets, Engine };
+enum class Document : std::uint8_t { Targets, Engine, Bands };   // Bands: felitronics-bands' bands.toml
 
 enum class Fault : std::uint8_t
 {
@@ -576,12 +578,13 @@ struct Problem
     std::string path;
     const char* code = "";                     // the fault's name, the parser's code for Syntax, the refusal's for Refused
 
-    [[nodiscard]] static const char* name (Document document) noexcept;   // "targets", "engine"
+    [[nodiscard]] static const char* name (Document document) noexcept;   // "targets", "engine", "bands"
     [[nodiscard]] static const char* name (Fault fault) noexcept;
     [[nodiscard]] static const char* name (Refusal refusal) noexcept;
 };
 
-// THE CONFIG'S VERSIONS — 64-bit FNV-1a hashes of the documents' NORMALISED data, targets then engine. Every number is
+// THE CONFIG'S VERSIONS — 64-bit FNV-1a hashes of the documents' NORMALISED data, targets, engine, then felitronics-bands'
+// bands.toml (sound, every key of it). Every number is
 // the bits of its correctly rounded double, −0 read as +0 (so 50, 50.0 and 50.00 are one value); every table is walked in
 // the byte order of its keys (so the order keys are written in, and whether a table is inline, is no data), except the
 // rows of [targets], whose written order `all` keeps (it is the order a shell lists them in); order counts in arrays,
@@ -617,8 +620,9 @@ struct Config
     // THE CONFIG THIS LIBRARY WAS BUILT WITH, bound by schema. Allocates; reads no file.
     [[nodiscard]] static Loaded load();
 
-    // The same schema over two documents a caller hands in — a tool, a test. A document that does not parse is one
-    // Syntax problem and binds nothing; the other is still read.
+    // The same schema over the documents a caller hands in — a tool, a test. A document that does not parse is one
+    // Syntax problem and binds nothing; the others are still read. Without bandsToml, the bands.toml compiled in.
+    [[nodiscard]] static Loaded bind (std::string_view targetsToml, std::string_view engineToml, std::string_view bandsToml);
     [[nodiscard]] static Loaded bind (std::string_view targetsToml, std::string_view engineToml);
 
     // An embedded document as TOML, through felitronics-toml's canonical writer: the same data always gives the same
@@ -628,8 +632,10 @@ struct Config
     // The config's versions (above), from the data compiled into the library; allocates nothing.
     [[nodiscard]] static Versions versions() noexcept;
 
-    // The versions of two documents given as text — the source files, say — by the same walk; nullopt when either does
-    // not parse. For the library's own sources they equal versions().
+    // The versions of the documents given as text — the source files, say — by the same walk; nullopt when one does not
+    // parse. For the library's own sources they equal versions(). Without bandsToml, the bands.toml compiled in.
+    [[nodiscard]] static std::optional<Versions> versionsOf (std::string_view targetsToml, std::string_view engineToml,
+                                                             std::string_view bandsToml);
     [[nodiscard]] static std::optional<Versions> versionsOf (std::string_view targetsToml, std::string_view engineToml);
 };
 

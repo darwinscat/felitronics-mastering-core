@@ -4,7 +4,7 @@
 #pragma once
 
 // THE CONFIG'S VERSIONS, ONE WALK FOR TWO TREES (internal to modules/session; Config.h has the public face). A 64-bit FNV-1a
-// hash of both documents' NORMALISED data, targets then engine. The same bytes are fed from the data compiled into the
+// hash of the documents' NORMALISED data, targets, engine, then felitronics-bands' bands.toml. The same bytes are fed from the data compiled into the
 // library (toml::embedded::View — Config::versions(), no allocation, which is why the C ABI can answer it) and from a
 // document parsed from text (toml::Table — Config::versionsOf(), how the source files are hashed).
 //
@@ -271,8 +271,9 @@ inline bool deEsserOffered (const toml::Table& engine) noexcept
     return b == nullptr || *b;
 }
 
-// Both documents, targets first, each behind a tag of its own.
-template <class Tree> std::uint64_t version (const Tree& targets, const Tree& engine, bool sound) noexcept
+// The three documents, targets first, each behind a tag of its own. felitronics-bands' bands.toml — the filters of tilt,
+// low and the EQ bands — is sound, every key of it, in both versions.
+template <class Tree> std::uint64_t version (const Tree& targets, const Tree& engine, const Tree& bands, bool sound) noexcept
 {
     const bool deEsser = deEsserOffered (engine);
     const Skip targetsSkip = sound ? Skip { kTargetsPresentation, std::size (kTargetsPresentation), nullptr, 0, {} }
@@ -287,6 +288,8 @@ template <class Tree> std::uint64_t version (const Tree& targets, const Tree& en
     feed (f, targets, path, targetsSkip);
     f.byte ('E');
     feed (f, engine, path, engineSkip);
+    f.byte ('B');
+    feed (f, bands, path, Skip {});
     return f.value();
 }
 

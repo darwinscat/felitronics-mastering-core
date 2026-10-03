@@ -18,9 +18,11 @@ namespace felitronics::session::config::detail
 // The source numbers the documents' positions carry.
 inline constexpr std::uint32_t kTargetsSource = 1;
 inline constexpr std::uint32_t kEngineSource = 2;
+inline constexpr std::uint32_t kBandsSource = 3;
 
-// Both documents by schema — the engine first, then the targets, whose rows are checked against the engine's knobs. A
-// null document (one that did not parse) binds nothing, and the checks that need it are left out.
-[[nodiscard]] Loaded bindTables (const toml::Table* targets, const toml::Table* engine);
+// The three documents by schema — the engine first, then the targets, whose rows are checked against the engine's knobs,
+// then felitronics-bands' bands.toml, the filters of the engine's EQ devices. A null document (one that did not parse)
+// binds nothing, and the checks that need it are left out.
+[[nodiscard]] Loaded bindTables (const toml::Table* targets, const toml::Table* engine, const toml::Table* bands);
 
 } // namespace felitronics::session::config::detail
