@@ -378,7 +378,7 @@ sizes fctempo.web.wasm fctempo.web.mjs fcprobe.web.wasm
 # no fast math, SIMD128), plus core's io for the WAV reader.
 echo
 echo "--- fc_peaq node (the PEAQ CLI, diffed against native fcore_peaq)"
-em++ "${FRONT[@]}" -I"$CORE/modules/io/include" -O3 -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 \
+em++ "${FRONT[@]}" -DFELITRONICS_PEAQ_FLAGS=1 -I"$CORE/modules/io/include" -O3 -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 \
      "$ROOT/tools/fcore_peaq.cpp" -o "$OUT/fcpeaq.node.js"
 
 #==================================================================================================

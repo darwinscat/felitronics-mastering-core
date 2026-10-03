@@ -3,6 +3,19 @@
 
 #pragma once
 
+// THE BUILD THIS HEADER NEEDS. Its numbers are diffed bit for bit between rows, and a fused multiply-add or a
+// reassociated sum is another number: every translation unit that includes it must be compiled with
+// -ffp-contract=off -fno-fast-math (MSVC: /fp:precise, no /fp:contract). The target felitronics::peaq carries those
+// flags as INTERFACE options, together with FELITRONICS_PEAQ_FLAGS; a unit that includes this header without linking
+// it does not compile. (The preprocessor cannot see contraction on clang or gcc — hence the marker; fast-math it can
+// see, and core/DetMath.h refuses it.)
+#if ! defined (FELITRONICS_PEAQ_FLAGS)
+    #error "felitronics/analysis/Peaq.h: link felitronics::peaq, which compiles this unit with -ffp-contract=off -fno-fast-math (tools/wasm/build.sh passes the same flags and -DFELITRONICS_PEAQ_FLAGS)"
+#endif
+#if defined (_MSC_VER) && ! defined (__clang__) && (defined (_M_FP_CONTRACT) || defined (_M_FP_FAST))
+    #error "felitronics/analysis/Peaq.h must be compiled with /fp:precise and without /fp:contract"
+#endif
+
 #include <felitronics/core/DetMath.h>
 #include <felitronics/core/OfflineFft.h>
 #include <felitronics/storage/VectorBytes.h>
@@ -52,9 +65,13 @@ namespace felitronics::analysis
 // per channel and averaged, except MFPD and ADB, which take the binaural maximum per band (4.7).
 //
 // THE ORACLE. Where the text leaves a choice, the choice was checked against GstPEAQ (M. Holters, LGPL — run as a
-// black box, its source neither copied nor read): the tail frame, the start of the delayed averaging, the bandwidth
-// of a silent frame and the EHS lags each say so where they are made. On 147 pairs (drum loops at 48 damage levels,
-// 99 masters of this core at nine loudness targets) the grade agrees with it to 0.0003 on average, 0.0044 at worst.
+// black box, its source neither copied nor read): the tail frame, the start of the delayed averaging, the loudness
+// threshold, the EHS lines, lags and mean removal each say so where they are made. Where the text decides, the text
+// wins, and where GstPEAQ then differs the place says by how much: the bandwidth of a frame in which both programmes
+// are digitally silent, and the loudness threshold of a pair whose loud passages never overlap (GstPEAQ: nan). On the
+// 158 pairs it grades (drum loops at 48 damage levels, 99 masters of this core at nine loudness targets, 11 synthetic
+// pairs built for one reading each) the grade agrees with it to 0.0015 on average, 0.032 at worst (a snare loop with
+// silent frames: the bandwidth above).
 //
 // DETERMINISM. Every elementary function is core::det's (or built here from IEEE-exact operations: atan, below), the
 // FFT is core::offline::fftInplace, every sum runs in a fixed order, and the units that compile this header build
@@ -72,10 +89,21 @@ namespace felitronics::analysis
 // averages them.
 //
 // TRANSPARENT INPUT. On a test that is the reference itself, or differs from it far below the mask, the formula of
-// EHS still normalises the error spectrum's autocorrelation and reads a structure in numerical noise (an oracle
-// implementation scores such a pair at ODG -2). PEAQ was never asked that question. So when the noise-to-mask ratio
-// of the whole programme is below kTransparentNmrDb, the verdict is Transparent and the reported grade is 0; the
-// network's own answer stays readable as modelOdg.
+// EHS still normalises the error spectrum's autocorrelation and reads a structure in numerical noise (GstPEAQ and this
+// model both score a real master that left its programme alone at ODG -2.1..-2.2). PEAQ was never asked that
+// question. So when EVERY channel's noise-to-mask ratio is below kTransparentNmrDb AND every channel's waveform error
+// is below kTransparentResidualDb of its energy, the verdict is Transparent and the reported grade is 0; the
+// network's own answer stays readable as modelOdg. Per channel, because the MOV is the mean of the channels' dB and an
+// untouched channel would average a damaged one away; the waveform term, because the model compares magnitude
+// spectra and a channel with its polarity flipped reads no noise at all. An Undefined MOV wins over this rule.
+//
+// THE INPUT RANGE. Samples beyond kMaxAbsSample (+18 dBFS) make the verdict OutOfRange: the model is not defined there
+// (see the constant).
+//
+// CONFORMANCE (7.4) IS NOT PROVEN. The Recommendation asks |delta DI| < 0.02 on its 16 test items (Table 22: acodsna
+// 1.304 ... scodclv 1.689) and says they are available for download; no open copy was found (the Recommendation's
+// page and the ITU-R software pages, 03.10.2026), so this implementation has not been run on them. What stands
+// instead is the oracle agreement below and the hand checks of the suite.
 //==============================================================================
 
 inline constexpr int kPeaqBands = 109;
@@ -97,11 +125,13 @@ enum class PeaqVerdict : int
 {
     NotRun = 0,        // finish() has not run since prepare()/reset()
     Graded = 1,        // odg is the network's grade
-    Transparent = 2,   // the whole-programme NMR is below kTransparentNmrDb: odg = 0, modelOdg keeps the network's
+    Transparent = 2,   // EVERY channel's NMR under kTransparentNmrDb and its waveform error under
+                       // kTransparentResidualDb: odg = 0, modelOdg keeps the network's
     NoSignal = 3,      // no frame inside the data boundary (a silent reference, or a programme shorter than a frame)
     NonFinite = 4,     // a non-finite sample arrived (it was analysed as zero): nothing is graded
-    Undefined = 5      // a MOV averaged over no frame at all, so it is NaN and so is the grade: a reference that never
+    Undefined = 5,     // a MOV averaged over no frame at all, so it is NaN and so is the grade: a reference that never
                        // reaches 346 lines (8.1 kHz), a programme shorter than 0.5 s, nothing above the EHS energy floor
+    OutOfRange = 6     // a sample beyond Peaq::kMaxAbsSample, where the model is no longer defined: nothing is graded
 };
 
 struct PeaqResult
@@ -115,6 +145,9 @@ struct PeaqResult
     long long firstFrame = -1;      // the data boundary, in frames (inclusive); -1 when there is none
     long long lastFrame = -1;
     long long nonFiniteSamples = 0;
+    long long outOfRangeSamples = 0;  // |sample| > Peaq::kMaxAbsSample
+    std::array<double, 2> channelNmrDb { 0.0, 0.0 };        // Total NMR of each channel (the MOV is their mean)
+    std::array<double, 2> channelResidualDb { 0.0, 0.0 };   // 10 log10 of sum (test - ref)^2 / sum ref^2, per channel
     bool graded() const noexcept { return verdict == PeaqVerdict::Graded || verdict == PeaqVerdict::Transparent; }
 };
 
@@ -224,7 +257,14 @@ public:
     static constexpr int kBands = kPeaqBands;
     static constexpr int kMaxChannels = 2;
     static constexpr double kListeningLevelDb = 92.0;    // 2.1.3: SPL of a full-scale sine when the level is unknown
-    static constexpr double kTransparentNmrDb = -90.0;   // see TRANSPARENT INPUT above
+    static constexpr double kTransparentNmrDb = -90.0;   // see TRANSPARENT INPUT above: every channel under it ...
+    static constexpr double kTransparentResidualDb = -40.0;  // ... and every channel's waveform error this far down
+    // THE RANGE THE MODEL IS DEFINED ON. Full scale plays at 92 dB SPL; past about +28 dB the upper spreading slope
+    // (eq. 15: -24 - 230/fc + 0.2 L) turns positive, the spreading sums grow without bound, and at 1e19 the noise-to-
+    // mask ratio reads +531 dB while at 1e37 it is NaN. A sample past +18 dBFS makes the verdict OutOfRange.
+    static constexpr double kMaxAbsSample = 8.0;
+    // 4.6: a frame is disturbed when some band's noise-to-mask ratio is >= 1.5 dB.
+    static bool disturbedFrame (double nmrMaxLinear) noexcept { return nmrMaxLinear >= core::det::pow10 (0.15); }
     static constexpr int kDelayFrames = 24;              // 5.2.4.1: ceil(0.5 s * 48000 / 1024)
     static constexpr int kLoudnessDelayFrames = 3;       // 5.2.4.2: ceil(0.05 s * 48000 / 1024)
     static constexpr int kEhsLags = 256;                 // 4.8.1: largest power of two below 768 / 2
@@ -291,6 +331,7 @@ public:
         frames_ = 0;
         finished_ = false;
         nonFinite_ = 0;
+        outOfRange_ = 0;
         boundaryFirst_ = -1;
         boundaryLast_ = -1;
         result_ = PeaqResult {};
@@ -319,6 +360,10 @@ public:
                 double xr = (double) ref[c][i], xt = (double) test[c][i];
                 if (! std::isfinite (xr)) { xr = 0.0; ++nonFinite_; }
                 if (! std::isfinite (xt)) { xt = 0.0; ++nonFinite_; }
+                if (std::fabs (xr) > kMaxAbsSample || std::fabs (xt) > kMaxAbsSample) ++outOfRange_;
+                const double err = xt - xr;
+                at (chanBase (c) + kEnergy)[0] += xr * xr;
+                at (chanBase (c) + kEnergy)[1] += err * err;
                 arena_[ringRef (c) + slot] = xr;
                 arena_[ringTest (c) + slot] = xt;
                 watchBoundary (c, xr);
@@ -423,7 +468,8 @@ private:
         kPd = kEeT + (std::size_t) kBands,                // this frame's detection probabilities per band
         kQd = kPd + (std::size_t) kBands,
         kLast5 = kQd + (std::size_t) kBands,              // the data boundary's five-sample window (+1: its cursor)
-        kChanSize = kLast5 + 6u
+        kEnergy = kLast5 + 6u,                            // sum of ref^2 and of (test - ref)^2 over the programme
+        kChanSize = kEnergy + 2u
     };
 
     static Layout layoutFor (int channels, long long frames) noexcept
@@ -635,6 +681,21 @@ private:
         for (int i = 0; i < B; ++i) out[i] = det::pow (es[i], 2.5) / ns[i];
     }
 
+    // The windowed, scaled power spectrum of one programme's frame (eqs. 2-6), lines 0..1024.
+    void transform (const double* ring, std::size_t start, double* x2) noexcept
+    {
+        const double* win = at (l_.window);
+        const std::size_t mask = (std::size_t) (kFrame - 1);
+        for (int j = 0; j < kFrame; ++j)
+            fft_[(std::size_t) j] = { win[j] * ring[(start + (std::size_t) j) & mask], 0.0 };
+        core::offline::fftInplace (fft_, -1);
+        for (int k = 0; k < kBins; ++k)
+        {
+            const double re = fft_[(std::size_t) k].real(), im = fft_[(std::size_t) k].imag();
+            x2[k] = re * re + im * im;
+        }
+    }
+
     void analyseFrame (long long clock) noexcept
     {
         namespace det = core::det;
@@ -661,7 +722,6 @@ private:
             if (enR >= 8000.0 || enT >= 8000.0) energetic = true;
         }
 
-        const double* win = at (l_.window);
         const double* w2 = at (l_.w2);
         const double* pthres = at (l_.pthres);
         double* x2R = at (l_.x2R); double* x2T = at (l_.x2T);
@@ -679,21 +739,13 @@ private:
             const double* rr = at (ringRef (c));
             const double* rt = at (ringTest (c));
 
-            // 2.1.3: both programmes through one complex transform (reference real, test imaginary).
-            for (int j = 0; j < kFrame; ++j)
-            {
-                const std::size_t idx = (start + (std::size_t) j) & mask;
-                fft_[(std::size_t) j] = { win[j] * rr[idx], win[j] * rt[idx] };
-            }
-            core::offline::fftInplace (fft_, -1);
+            // 2.1.3: one transform per programme. Not both through one complex transform (reference real, test
+            // imaginary): unpacking that leaves rounding of one programme in the other's bins, so a test identical to
+            // its reference read an error spectrum 150 dB down instead of none at all.
+            transform (rr, start, x2R);
+            transform (rt, start, x2T);
             for (int k = 0; k < kBins; ++k)
             {
-                const std::complex<double> z = fft_[(std::size_t) k];
-                const std::complex<double> w = fft_[(std::size_t) ((kFrame - k) & (kFrame - 1))];
-                const double rRe = 0.5 * (z.real() + w.real()), rIm = 0.5 * (z.imag() - w.imag());
-                const double tRe = 0.5 * (z.imag() + w.imag()), tIm = 0.5 * (w.real() - z.real());
-                x2R[k] = rRe * rRe + rIm * rIm;
-                x2T[k] = tRe * tRe + tIm * tIm;
                 feR[k] = x2R[k] * w2[k];
                 feT[k] = x2T[k] * w2[k];
                 const double d = core::DetMath::sqrt (feR[k]) - core::DetMath::sqrt (feT[k]);     // eq. 62: magnitudes
@@ -800,19 +852,19 @@ private:
                 }
             }
 
-            // 4.4.1: bandwidths, on the unweighted spectra (levels compared as powers: +10 dB and +5 dB). The levels
-            // carry a floor of -300 dB (kEps): in a frame of digital silence every level is -inf, "-inf >= 10 + -inf"
-            // is not a measurement, and the frame has no bandwidth (0, so 4.4.2 does not count it). GstPEAQ, used
-            // as the oracle, reads it the same way; with the bare comparison such frames counted as 921 lines.
-            constexpr double kEps = 1e-30;
+            // 4.4.1: bandwidths, on the unweighted spectra, levels compared as powers (+10 dB = x10, +5 dB = x3.16).
+            // A line of zero power has the level -inf, and the comparisons keep IEEE's meaning of it: when the test's
+            // top lines are digitally silent, ZeroThreshold is -inf and "-inf >= 10 + -inf" holds — a frame of
+            // silence, or one where the test drops out under a playing reference, reads 921 and 921 lines. The text
+            // gives no other value to a zero level. GstPEAQ, the oracle, floors the levels instead and does not count
+            // such frames: on two drum loops with silent frames, 0.15 and 1.0 lines of mean bandwidth apart.
             double zt = x2T[921];
             for (int k = 921; k < 1024; ++k) zt = std::max (zt, x2T[k]);
-            zt = zt + kEps;
             int bwr = 0, bwt = 0;
             for (int k = 920; k >= 0; --k)
-                if (x2R[k] + kEps >= 10.0 * zt) { bwr = k + 1; break; }
+                if (x2R[k] >= 10.0 * zt) { bwr = k + 1; break; }
             for (int k = bwr - 1; k >= 0; --k)
-                if (x2T[k] + kEps >= fivedB_ * zt) { bwt = k + 1; break; }
+                if (x2T[k] >= fivedB_ * zt) { bwt = k + 1; break; }
 
             // 4.7: detection probability per band (eqs. 72-78).
             {
@@ -915,8 +967,15 @@ private:
     // the unweighted powers are used). Its normalised autocorrelation runs over vectors of 256 at lags 0..255 —
     // the text's own example: "the first value ... aligning Ft[0] with F0[0] and the last by aligning Ft[0] with
     // F0[255]" (Kabal took 1..256). Then the mean is removed, a normalised Hann window applied, a 256-point power
-    // spectrum taken, and the largest value after the first valley kept. Both readings were checked against GstPEAQ:
-    // these agree with it to 0.0008 in EHS on 48 pairs, lines-from-0 or lags 1..256 to 0.002.
+    // spectrum taken, and the largest value after the first valley kept. Checked against GstPEAQ, mean |delta EHS|:
+    // these readings 0.0008 on 48 drum pairs, 0.0003 on 96 masters, 0.034 on three tonal pairs (EHS 1.8-5.6); lines
+    // from 0 or lags 1..256: 0.002 on the drums, 0.13 on the tonal pairs.
+    // THE ORDER OF MEAN AND WINDOW. The text: the correlations are "windowed with a normalized Hann window and, after
+    // removing the DC component by subtracting the average value, a power spectrum is computed". Windowing first and
+    // then removing the mean of the windowed vector leaves the window's own main lobe at lines 1-2, right after the
+    // "first valley" at line 0, and the peak search returns it: EHS of 125 on ordinary drum pairs where GstPEAQ reads
+    // 0.1, against Table 13's scaling range of 0.074..13.9 — the network was trained on a mean removed before the
+    // window (Kabal E.2 reads it so too). The mean is removed before.
     double errorHarmonicStructure (const double* x2R, const double* x2T) noexcept
     {
         namespace det = core::det;
@@ -983,7 +1042,9 @@ private:
         PeaqResult r;
         r.frames = frames_;
         r.nonFiniteSamples = nonFinite_;
+        r.outOfRangeSamples = outOfRange_;
         if (nonFinite_ > 0) { r.verdict = PeaqVerdict::NonFinite; result_ = r; return; }
+        if (outOfRange_ > 0) { r.verdict = PeaqVerdict::OutOfRange; result_ = r; return; }
         if (boundaryFirst_ < 0 || frames_ == 0) { r.verdict = PeaqVerdict::NoSignal; result_ = r; return; }
         const long long f0 = boundaryFirst_ <= kFrame - 1 ? 0 : (boundaryFirst_ - (kFrame - 1) + kHop - 1) / kHop;
         const long long f1 = std::min (frames_ - 1, boundaryLast_ / kHop);
@@ -993,12 +1054,23 @@ private:
         // 5.2.4.1: "the first 0.5 s of the measurement" — counted from the start of the programme, not from the data
         // boundary (Kabal counts from the boundary; GstPEAQ, the oracle, from the start, and so does the text).
         const long long fDelay = std::max (f0, (long long) kDelayFrames);
+        // 4.3 and 5.2.4.2: the noise loudness counts from 50 ms after "the overall loudness of one of the audio channels
+        // has once reached NThres = 0.1 sone for both test and Reference Signal". Read as two marks per channel —
+        // the frame where the reference first reaches it and the frame where the test does, whenever each happens —
+        // and the later of the two; the earliest channel wins. (Requiring both in the same frame would leave a pair
+        // whose loud passages do not overlap with no noise loudness at all.)
         long long fLoud = f1 + 1;
-        for (long long f = f0; f <= f1 && fLoud > f1; ++f)
-            for (int c = 0; c < channels_; ++c)
-                if (hist (f, c, kNtotRef) >= 0.1 && hist (f, c, kNtotTest) >= 0.1) { fLoud = f + kLoudnessDelayFrames; break; }
+        for (int c = 0; c < channels_; ++c)
+        {
+            long long firstR = -1, firstT = -1;
+            for (long long f = f0; f <= f1 && (firstR < 0 || firstT < 0); ++f)
+            {
+                if (firstR < 0 && hist (f, c, kNtotRef) >= 0.1) firstR = f;
+                if (firstT < 0 && hist (f, c, kNtotTest) >= 0.1) firstT = f;
+            }
+            if (firstR >= 0 && firstT >= 0) fLoud = std::min (fLoud, std::max (firstR, firstT) + kLoudnessDelayFrames);
+        }
         const long long fNl = std::max (fDelay, fLoud);
-        const double relDistThreshold = det::pow10 (0.15);
 
         std::array<double, kPeaqMovCount> mov {};
         for (int c = 0; c < channels_; ++c)
@@ -1009,7 +1081,7 @@ private:
             {
                 if (hist (f, c, kBwRef) > 346.0) { bwR = bwR + hist (f, c, kBwRef); bwT = bwT + hist (f, c, kBwTest); ++nBw; }
                 nmr = nmr + hist (f, c, kNmrAvg);
-                if (hist (f, c, kNmrMax) > relDistThreshold) rel = rel + 1.0;
+                if (disturbedFrame (hist (f, c, kNmrMax))) rel = rel + 1.0;
                 if (fhist (f, 2) > 0.0) { ehs = ehs + hist (f, c, kEhs); ++nEhs; }
             }
             const double nAll = (double) (f1 - f0 + 1);
@@ -1057,6 +1129,10 @@ private:
                 rel / nAll
             };
             for (int i = 0; i < kPeaqMovCount; ++i) mov[(std::size_t) i] = mov[(std::size_t) i] + per[i];
+            r.channelNmrDb[(std::size_t) c] = per[(int) PeaqMov::TotalNmr];
+            const double eR = at (chanBase (c) + kEnergy)[0], eE = at (chanBase (c) + kEnergy)[1];
+            r.channelResidualDb[(std::size_t) c] = eE == 0.0 ? -std::numeric_limits<double>::infinity()
+                                                 : (eR > 0.0 ? 10.0 * det::log10 (eE / eR) : std::numeric_limits<double>::infinity());
         }
         for (double& v : mov) v = v / (double) channels_;
 
@@ -1076,11 +1152,18 @@ private:
         r.mov = mov;
         r.distortionIndex = distortionIndex (mov);
         r.modelOdg = odgFromDi (r.distortionIndex);
-        bool defined = true;
-        for (double v : mov) defined = defined && ! std::isnan (v);
-        if (mov[(std::size_t) PeaqMov::TotalNmr] < kTransparentNmrDb) { r.verdict = PeaqVerdict::Transparent; r.odg = 0.0; }
-        else if (! defined)                                           { r.verdict = PeaqVerdict::Undefined; r.odg = r.modelOdg; }
-        else                                                          { r.verdict = PeaqVerdict::Graded; r.odg = r.modelOdg; }
+        bool defined = std::isfinite (r.distortionIndex);
+        for (double v : mov) defined = defined && std::isfinite (v);
+        // TRANSPARENT holds per channel: one untouched channel must not average away a damaged one (a right channel
+        // at 0.7x beside an untouched left reads -90.9 dB as a mean). And the waveform error must be small too: the
+        // model compares magnitude spectra, so a channel with its polarity flipped reads no noise at all.
+        bool transparent = true;
+        for (int c = 0; c < channels_; ++c)
+            transparent = transparent && r.channelNmrDb[(std::size_t) c] < kTransparentNmrDb
+                                      && r.channelResidualDb[(std::size_t) c] < kTransparentResidualDb;
+        if (! defined)        { r.verdict = PeaqVerdict::Undefined; r.odg = r.modelOdg; }
+        else if (transparent) { r.verdict = PeaqVerdict::Transparent; r.odg = 0.0; }
+        else                  { r.verdict = PeaqVerdict::Graded; r.odg = r.modelOdg; }
         result_ = r;
     }
 
@@ -1091,7 +1174,7 @@ private:
     double aL_ = 0.0, aLe_ = 0.0, fivedB_ = 0.0;
     int channels_ = 0;
     long long maxSamples_ = 0, capacityFrames_ = 0;
-    long long total_ = 0, frames_ = 0, nonFinite_ = 0;
+    long long total_ = 0, frames_ = 0, nonFinite_ = 0, outOfRange_ = 0;
     long long boundaryFirst_ = -1, boundaryLast_ = -1;
     bool prepared_ = false, finished_ = false;
     PeaqResult result_ {};
