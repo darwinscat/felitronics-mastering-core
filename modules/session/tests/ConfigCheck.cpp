@@ -7,10 +7,10 @@
 // library it gates. It reads files, which the session may not (docs/SESSION.md, law 6), so it lives beside the suites,
 // outside the module's laws.
 //
-//   config_check <targets.toml> <engine.toml>
+//   config_check <targets.toml> <engine.toml> <bands.toml>   (bands.toml: felitronics-bands')
 //       Reads both documents by schema and prints every problem as `<file>:<line>:<column>: error: <fault> <key path>`,
 //       the format compilers and IDEs understand. A problem is a red build, at its line.
-//   config_check --expect <targets.toml> <engine.toml> <directory>
+//   config_check --expect <targets.toml> <engine.toml> <bands.toml> <directory>
 //       Writes what `fcore_session config` must print for these sources: <directory>/targets.toml and engine.toml, each
 //       document through felitronics-toml's canonical writer, and version.txt and sound-version.txt, their versions.
 //
@@ -51,11 +51,12 @@ bool writeFile (const std::string& path, const std::string& text)
     return std::fclose (f) == 0 && wrote;
 }
 
-int report (const config::Loaded& loaded, const char* targetsPath, const char* enginePath)
+int report (const config::Loaded& loaded, const char* targetsPath, const char* enginePath, const char* bandsPath)
 {
     for (const config::Problem& p : loaded.problems)
     {
-        const char* file = p.document == config::Document::Targets ? targetsPath : enginePath;
+        const char* file = p.document == config::Document::Targets ? targetsPath
+                         : p.document == config::Document::Engine  ? enginePath : bandsPath;
         const bool coded = p.fault == config::Fault::Syntax || p.fault == config::Fault::Refused;
         std::fprintf (stderr, "%s:%u:%u: error: %s%s%s%s%s\n", file, (unsigned) p.line, (unsigned) p.column,
                       Problem::name (p.fault), p.path.empty() ? "" : " ", p.path.c_str(), coded ? " — " : "",
@@ -88,31 +89,33 @@ std::string hex (std::uint64_t v)
 
 int main (int argc, char** argv)
 {
-    const bool expect = argc == 5 && std::strcmp (argv[1], "--expect") == 0;
-    if (argc != 3 && ! expect)
+    const bool expect = argc == 6 && std::strcmp (argv[1], "--expect") == 0;
+    if (argc != 4 && ! expect)
     {
-        std::fprintf (stderr, "usage: %s <targets.toml> <engine.toml>\n"
-                              "       %s --expect <targets.toml> <engine.toml> <directory>\n", argv[0], argv[0]);
+        std::fprintf (stderr, "usage: %s <targets.toml> <engine.toml> <bands.toml>\n"
+                              "       %s --expect <targets.toml> <engine.toml> <bands.toml> <directory>\n", argv[0], argv[0]);
         return 2;
     }
     const char* targetsPath = argv[expect ? 2 : 1];
     const char* enginePath = argv[expect ? 3 : 2];
-    std::string targets, engine;
+    const char* bandsPath = argv[expect ? 4 : 3];
+    std::string targets, engine, bands;
     if (! readFile (targetsPath, targets)) { std::fprintf (stderr, "config_check: cannot read %s\n", targetsPath); return 2; }
     if (! readFile (enginePath, engine)) { std::fprintf (stderr, "config_check: cannot read %s\n", enginePath); return 2; }
-    const int checked = report (Config::bind (targets, engine), targetsPath, enginePath);
+    if (! readFile (bandsPath, bands)) { std::fprintf (stderr, "config_check: cannot read %s\n", bandsPath); return 2; }
+    const int checked = report (Config::bind (targets, engine, bands), targetsPath, enginePath, bandsPath);
     if (! expect || checked != 0) return checked;
 
     std::string targetsText, engineText;
     if (! canonical (targetsPath, targets, targetsText) || ! canonical (enginePath, engine, engineText)) return 2;
-    const auto v = Config::versionsOf (targets, engine);
+    const auto v = Config::versionsOf (targets, engine, bands);
     if (! v) return 2;   // canonical() above has already parsed both and said why
-    const std::string dir = argv[4];
+    const std::string dir = argv[5];
     if (! writeFile (dir + "/targets.toml", targetsText) || ! writeFile (dir + "/engine.toml", engineText)
         || ! writeFile (dir + "/versions.h", "#pragma once\n#include <cstdint>\nnamespace felitronics::session::config::embedded {\ninline constexpr std::uint64_t allVersion = 0x" + hex (v->all).substr (0, 16) + "ull;\ninline constexpr std::uint64_t soundVersion = 0x" + hex (v->sound).substr (0, 16) + "ull;\n}\n")
         || ! writeFile (dir + "/version.txt", hex (v->all)) || ! writeFile (dir + "/sound-version.txt", hex (v->sound)))
     {
-        std::fprintf (stderr, "config_check: cannot write into %s\n", argv[4]);
+        std::fprintf (stderr, "config_check: cannot write into %s\n", argv[5]);
         return 2;
     }
     return 0;

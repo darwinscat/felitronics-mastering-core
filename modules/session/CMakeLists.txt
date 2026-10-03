@@ -26,17 +26,39 @@ target_link_libraries(felitronics_session PUBLIC felitronics::mastering)
 # the config feeds, which admit its blocks themselves (their storageFor, called by the schema; header-only). And THE TEXT
 # (<felitronics/session/Text.h>): text/catalog.toml, the messages, and text/format.toml, the one formatting table,
 # embedded the same way for src/Text.cpp.
+# THE NAMED BANDS come from felitronics-bands (resolved by the root CMakeLists.txt), never from a copy here: bands.toml, the
+# geometry of tilt, low and the five bands (type, hz, q), is the config's third document — read by schema with the other
+# two, in its versions, and what the chain is built with; text/<code>.toml, each band's name, is what the text prints for
+# the field and device terms TextFacts.h marks with a band (band-texts.cmake writes the header that finds a language).
 set(FELITRONICS_SESSION_CONFIG ${CMAKE_CURRENT_SOURCE_DIR}/config)
 set(FELITRONICS_SESSION_TEXT ${CMAKE_CURRENT_SOURCE_DIR}/text)
+set(FELITRONICS_SESSION_BANDS ${FELITRONICS_MASTERING_BANDS_SOURCE_DIR})
+set(BANDS ${FELITRONICS_SESSION_BANDS})
+set(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/band-texts.h)
+include(${CMAKE_CURRENT_SOURCE_DIR}/band-texts.cmake)
+unset(BANDS)
+unset(OUTPUT)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${FELITRONICS_SESSION_BANDS}/text)
+set(FELITRONICS_SESSION_BAND_TEXTS "")
+foreach(code IN LISTS FELITRONICS_SESSION_BAND_LANGS)
+    list(APPEND FELITRONICS_SESSION_BAND_TEXTS ${FELITRONICS_SESSION_BANDS}/text/${code}.toml)
+endforeach()
 function(felitronics_session_config_inputs target)
     felitronics_toml_embed(${target} INPUT config/targets.toml
                            NAMESPACE felitronics::session::config::embedded NAME targets HEADER embedded/targets.h)
     felitronics_toml_embed(${target} INPUT config/engine.toml
                            NAMESPACE felitronics::session::config::embedded NAME engine HEADER embedded/engine.h)
+    felitronics_toml_embed(${target} INPUT ${FELITRONICS_SESSION_BANDS}/bands.toml
+                           NAMESPACE felitronics::session::config::embedded NAME bands HEADER embedded/bands.h)
     felitronics_toml_embed(${target} INPUT text/catalog.toml
                            NAMESPACE felitronics::session::text::embedded NAME catalog HEADER embedded/catalog.h)
     felitronics_toml_embed(${target} INPUT text/format.toml
                            NAMESPACE felitronics::session::text::embedded NAME format HEADER embedded/format.h)
+    foreach(code IN LISTS FELITRONICS_SESSION_BAND_LANGS)
+        felitronics_toml_embed(${target} INPUT ${FELITRONICS_SESSION_BANDS}/text/${code}.toml
+                               NAMESPACE felitronics::session::text::embedded::bandText NAME ${code}
+                               HEADER embedded/band-text/${code}.h)
+    endforeach()
     target_link_libraries(${target} PRIVATE felitronics::analysis_offline felitronics::tempo)
     target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/session-version)
     target_sources(${target} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/versions.h)
@@ -146,10 +168,10 @@ add_custom_command(OUTPUT ${FELITRONICS_SESSION_CONFIG_STAMP}
                           ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/versions.h
                           ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded/version.txt
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded
-    COMMAND ${FELITRONICS_SESSION_CONFIG_GATE} --expect ${FELITRONICS_SESSION_CONFIG}/targets.toml ${FELITRONICS_SESSION_CONFIG}/engine.toml ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded
+    COMMAND ${FELITRONICS_SESSION_CONFIG_GATE} --expect ${FELITRONICS_SESSION_CONFIG}/targets.toml ${FELITRONICS_SESSION_CONFIG}/engine.toml ${FELITRONICS_SESSION_BANDS}/bands.toml ${CMAKE_CURRENT_BINARY_DIR}/session-version/embedded
     COMMAND ${CMAKE_COMMAND} -E touch ${FELITRONICS_SESSION_CONFIG_STAMP}
     DEPENDS ${FELITRONICS_SESSION_CONFIG_GATE_DEPENDS}
-            ${FELITRONICS_SESSION_CONFIG}/targets.toml ${FELITRONICS_SESSION_CONFIG}/engine.toml
+            ${FELITRONICS_SESSION_CONFIG}/targets.toml ${FELITRONICS_SESSION_CONFIG}/engine.toml ${FELITRONICS_SESSION_BANDS}/bands.toml
             ${CMAKE_CURRENT_SOURCE_DIR}/src/ConfigSchema.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/ConfigBind.h
             ${CMAKE_CURRENT_SOURCE_DIR}/src/ConfigVersion.h ${CMAKE_CURRENT_SOURCE_DIR}/src/Grid.h
             ${CMAKE_CURRENT_SOURCE_DIR}/include/felitronics/session/Config.h
@@ -187,10 +209,11 @@ else()
 endif()
 set(FELITRONICS_SESSION_TEXT_STAMP ${CMAKE_CURRENT_BINARY_DIR}/felitronics_session_text.checked)
 add_custom_command(OUTPUT ${FELITRONICS_SESSION_TEXT_STAMP}
-    COMMAND ${FELITRONICS_SESSION_TEXT_GATE} ${FELITRONICS_SESSION_TEXT}/catalog.toml ${FELITRONICS_SESSION_TEXT}/format.toml
+    COMMAND ${FELITRONICS_SESSION_TEXT_GATE} ${FELITRONICS_SESSION_TEXT}/catalog.toml ${FELITRONICS_SESSION_TEXT}/format.toml ${FELITRONICS_SESSION_BANDS}
     COMMAND ${CMAKE_COMMAND} -E touch ${FELITRONICS_SESSION_TEXT_STAMP}
     DEPENDS ${FELITRONICS_SESSION_TEXT_GATE_DEPENDS}
             ${FELITRONICS_SESSION_TEXT}/catalog.toml ${FELITRONICS_SESSION_TEXT}/format.toml
+            ${FELITRONICS_SESSION_BANDS}/languages.toml ${FELITRONICS_SESSION_BAND_TEXTS}
             ${CMAKE_CURRENT_SOURCE_DIR}/src/TextSchema.cpp ${CMAKE_CURRENT_SOURCE_DIR}/src/TextSchema.h
             ${CMAKE_CURRENT_SOURCE_DIR}/src/TextFacts.h ${CMAKE_CURRENT_SOURCE_DIR}/include/felitronics/session/Text.h
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/TextCheck.cpp
@@ -501,10 +524,13 @@ if(FELITRONICS_BUILD_TESTS)
                            NAMESPACE felitronics::session::config::testcopy NAME targets HEADER testcopy/targets.h)
     felitronics_toml_embed(felitronics_session_config_tests INPUT config/engine.toml
                            NAMESPACE felitronics::session::config::testcopy NAME engine HEADER testcopy/engine.h)
+    felitronics_toml_embed(felitronics_session_config_tests INPUT ${FELITRONICS_SESSION_BANDS}/bands.toml
+                           NAMESPACE felitronics::session::config::testcopy NAME bands HEADER testcopy/bands.h)
     target_include_directories(felitronics_session_config_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     add_test(NAME felitronics_session_config_tests
              COMMAND felitronics_session_config_tests ${FELITRONICS_SESSION_CONFIG}/targets.toml
-                                                      ${FELITRONICS_SESSION_CONFIG}/engine.toml)
+                                                      ${FELITRONICS_SESSION_CONFIG}/engine.toml
+                                                      ${FELITRONICS_SESSION_BANDS}/bands.toml)
 
     # THE OWNER'S DECISIONS, apart from the schema: every target row field by field and the engine's decided numbers, and
     # the version of the sound pinned to the name of the defaults — so changing a decision, or a sound number without
@@ -537,7 +563,8 @@ if(FELITRONICS_BUILD_TESTS)
     endif()
     add_test(NAME felitronics_session_text_tests
              COMMAND felitronics_session_text_tests ${FELITRONICS_SESSION_TEXT}/catalog.toml
-                                                    ${FELITRONICS_SESSION_TEXT}/format.toml)
+                                                    ${FELITRONICS_SESSION_TEXT}/format.toml
+                                                    ${FELITRONICS_SESSION_BANDS})
 
     # THE TEXT'S GATE, PROVEN ABLE TO FAIL (tests/text-must-fail.cmake): a copy of the two documents passes, then one
     # mistake planted in it must turn the gate red at the mistake's line and column. Not on the wasm tier: the in-process
@@ -552,7 +579,11 @@ if(FELITRONICS_BUILD_TESTS)
             "undeclared_language|catalog|en = \"Loudest bass note: {note}\"|en = \"Loudest bass note: {note}\"\nde = \"Tiefster Ton: {note}\"|de =|UnknownKey messages.loudestLowNote.de"
             "unit_without_pattern|format|tr = \"{n}\\u00A0dBTP\"|# tr removed|[units.dbtp]|Missing units.dbtp.tr"
             "breaking_space|format|en = \"{n}\\u00A0LUFS\"|en = \"{n} LUFS\"|\"{n} LUFS\"|Refused units.lufs.en — BreakingSpace"
-            "absent_digit|format|absent = \"—\"\nnotes = [\"C\", \"C♯\", \"D\", \"D♯\", \"E\", \"F\", \"F♯\", \"G\", \"G♯\", \"A\", \"A♯\", \"B\"]\n\n# ── units|absent = \"1\"\nnotes = [\"C\", \"C♯\", \"D\", \"D♯\", \"E\", \"F\", \"F♯\", \"G\", \"G♯\", \"A\", \"A♯\", \"B\"]\n\n# ── units|\"1\"|Refused numbers.tr.absent — NotASign")
+            "absent_digit|format|absent = \"—\"\nnotes = [\"C\", \"C♯\", \"D\", \"D♯\", \"E\", \"F\", \"F♯\", \"G\", \"G♯\", \"A\", \"A♯\", \"B\"]\n\n# ── units|absent = \"1\"\nnotes = [\"C\", \"C♯\", \"D\", \"D♯\", \"E\", \"F\", \"F♯\", \"G\", \"G♯\", \"A\", \"A♯\", \"B\"]\n\n# ── units|\"1\"|Refused numbers.tr.absent — NotASign"
+            "band_name_in_catalog|catalog|bands.ru = \"Полосы EQ\"|tilt.ru = \"Наклон\"\nbands.ru = \"Полосы EQ\"|tilt.ru|Refused terms.device.tilt — FromBands"
+            "band_field_in_catalog|catalog|audio.ru = \"Звук\"|bandsAir.en = \"Air\"\naudio.ru = \"Звук\"|bandsAir.en|Refused terms.field.bandsAir — FromBands"
+            "band_without_name|bands/text/en|name = \"Air\"|# the name removed|[air]|Missing air.name"
+            "band_languages_differ|bands/languages|languages = [\"ru\", \"en\"]|languages = [\"ru\"]|[\"ru\"]|Refused languages — LanguagesDiffer")
         foreach(ctl IN LISTS FELITRONICS_SESSION_TEXT_CONTROLS)
             string(REPLACE "|" ";" f "${ctl}")
             list(GET f 0 name)
@@ -564,7 +595,7 @@ if(FELITRONICS_BUILD_TESTS)
             add_test(NAME felitronics_session_text_control_${name}
                      COMMAND ${CMAKE_COMMAND}
                              -DCHECK=$<TARGET_FILE:felitronics_session_text_check>
-                             -DTEXT=${FELITRONICS_SESSION_TEXT}
+                             -DTEXT=${FELITRONICS_SESSION_TEXT} -DBANDS=${FELITRONICS_SESSION_BANDS}
                              -DWORK=${CMAKE_CURRENT_BINARY_DIR}/text-controls/${name}
                              -DDOC=${doc} "-DFROM=${from}" "-DTO=${to}" "-DAT=${at}" "-DEXPECT=${expect}"
                              -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/text-must-fail.cmake)
@@ -582,7 +613,13 @@ if(FELITRONICS_BUILD_TESTS)
             "wrong_type|targets|default = \"allStreaming\"|default = 14|14|WrongType default"
             "crest_corners|engine|bandEdgesHz = [120, 2000, 6000]|bandEdgesHz = []|[]|Refused crest.bandEdgesHz"
             "geometric_offset|engine|to = -9, law = \"linear\"|to = -9, law = \"geometric\"|\"geometric\"|Refused glue.threshOffset.law"
-            "shaping_above_dither|engine|shapingUpToBits = 16|shapingUpToBits = 24|24|Refused dither.shapingUpToBits")
+            "shaping_above_dither|engine|shapingUpToBits = 16|shapingUpToBits = 24|24|Refused dither.shapingUpToBits"
+            "tilt_pivot_in_engine|engine|[tilt]\n|[tilt]\nfreqHz = 1000\n|freqHz|UnknownKey tilt.freqHz"
+            "band_q_in_engine|engine|[bands.body]\n|[bands.body]\nq = 0.7\n|q = 0.7|UnknownKey bands.body.q"
+            "band_type_in_engine|engine|[bands.air]\n|[bands.air]\ntype = \"highShelf\"\n|type|UnknownKey bands.air.type"
+            "band_unknown_to_bands|engine|[bands.air]|[bands.treble]|treble|UnknownKey bands.treble"
+            "band_unknown_to_engine|bands|[bands.air]|[bands.treble]|treble|UnknownKey bands.treble"
+            "band_type_for_device|bands|type = \"lowShelf\"|type = \"bell\"|\"bell\"|Refused bands.low.type — NotOneOf")
         foreach(ctl IN LISTS FELITRONICS_SESSION_CONFIG_CONTROLS)
             string(REPLACE "|" ";" f "${ctl}")
             list(GET f 0 name)
@@ -594,7 +631,7 @@ if(FELITRONICS_BUILD_TESTS)
             add_test(NAME felitronics_session_config_control_${name}
                      COMMAND ${CMAKE_COMMAND}
                              -DCHECK=$<TARGET_FILE:felitronics_session_config_check>
-                             -DCONFIG=${FELITRONICS_SESSION_CONFIG}
+                             -DCONFIG=${FELITRONICS_SESSION_CONFIG} -DBANDS=${FELITRONICS_SESSION_BANDS}
                              -DWORK=${CMAKE_CURRENT_BINARY_DIR}/config-controls/${name}
                              -DDOC=${doc} "-DFROM=${from}" "-DTO=${to}" "-DAT=${at}" "-DEXPECT=${expect}"
                              -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/config-must-fail.cmake)

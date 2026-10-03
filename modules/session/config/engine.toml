@@ -368,14 +368,15 @@ cut = { loudShare = 0.05 }
 
 # TILT — a manual device with one knob, in dB, and its tick: the machine does not touch timbre (a tilt taken from a
 # measurement is a genre trap) — it leaves the tick off and the knob at 0. The geometry (technical decision 3О10): the
-# core's tilt about freqHz — a low shelf of −dB and a high shelf of +dB at the pivot, so the low end goes down by the
-# knob, the top up by it, the ends 2·dB apart and the pivot unmoved. domain: what a command and a project accept (±6 dB);
+# core's tilt about the pivot — a low shelf of −dB and a high shelf of +dB there, so the low end goes down by the knob,
+# the top up by it, the ends 2·dB apart and the pivot unmoved. The pivot itself, like every filter of tilt, low and the
+# bands (type, hz, q), is felitronics-bands' bands.toml, keyed tilt, low, body, mud, forward, brightness, air — never
+# written here (the config's schema refuses it). domain: what a command and a project accept (±6 dB);
 # band: the core's EQ band it writes; normal: where the value turns red; hard: the ends of the slider's travel; step: the
 # knob's step — travel and step are hints, a value between steps or past the travel is taken as written.
 [tilt]
 domain = [-6, 6]
 band = 1
-freqHz = 1000
 normal = [-1.5, 1.5]
 hard = [-3, 3]
 step = 0.1
@@ -385,12 +386,10 @@ step = 0.1
 # measure ([input] quiet), where it places no device; otherwise off at 0 dB. Hand edits apply whether the panel is
 # visible or hidden. A STATIC shelf (technical decision 3О10): no dynamics, no trial render, nothing taken from a
 # measurement.
-# band: the core's EQ band; freqHz, q: the shelf's corner and Q; domain, normal, hard, step: as for tilt.
+# band: the core's EQ band; domain, normal, hard, step: as for tilt; the shelf's corner and Q: bands.toml.
 [low]
 domain = [-6, 6]
 band = 2
-freqHz = 80
-q = 0.6
 normal = [-1.5, 1.5]
 hard = [-3, 3]
 step = 0.1
@@ -399,14 +398,11 @@ step = 0.1
 # every band at 0 dB, since it does not touch timbre in this release. A band at 0 dB is neutral and out of the stage, and a
 # revert gives the machine's 0 back. The device's tick (on, field 5) takes all five in or out with the gains kept: the
 # machine's is always on, a person may untick it. No dynamics yet, and no advice beyond a norm.
-# Per band: band, the core's EQ band; type, "bell" or "highShelf"; freqHz, q, the filter's centre or corner and its Q;
+# Per band: band, the core's EQ band (the filter — a bell or a high shelf, its centre or corner and Q — is bands.toml's);
 # domain, the gain a command accepts; normal, where the value turns red, within the travel — ±1.5 dB as tilt and low
 # (owner, 02.10; the mud band, a cut alone, down to −1.5); hard, the knob's travel; step, its grid.
 [bands.body]
 band = 3
-type = "bell"
-freqHz = 160
-q = 0.7
 domain = [-6, 6]
 normal = [-1.5, 1.5]
 hard = [-3, 3]
@@ -414,9 +410,6 @@ step = 0.1
 
 [bands.mud]
 band = 4
-type = "bell"
-freqHz = 300
-q = 0.8
 domain = [-6, 0]
 normal = [-1.5, 0.0]
 hard = [-3, 0]
@@ -424,9 +417,6 @@ step = 0.1
 
 [bands.forward]
 band = 5
-type = "bell"
-freqHz = 3000
-q = 0.7
 domain = [-6, 6]
 normal = [-1.5, 1.5]
 hard = [-3, 3]
@@ -434,9 +424,6 @@ step = 0.1
 
 [bands.brightness]
 band = 6
-type = "highShelf"
-freqHz = 8000
-q = 0.6
 domain = [-6, 6]
 normal = [-1.5, 1.5]
 hard = [-3, 3]
@@ -444,9 +431,6 @@ step = 0.1
 
 [bands.air]
 band = 7
-type = "highShelf"
-freqHz = 12000
-q = 0.6
 domain = [-6, 6]
 normal = [-1.5, 1.5]
 hard = [-3, 3]

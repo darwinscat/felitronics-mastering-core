@@ -3,7 +3,8 @@
 #
 # ONE CONTROL OF THE TEXT'S GATE: a planted mistake must turn it red, at the mistake. Run by ctest
 # (modules/session/CMakeLists.txt):
-#   cmake -DCHECK=<text_check> -DTEXT=<dir of catalog.toml, format.toml> -DWORK=<scratch dir> -DDOC=<catalog|format>
+#   cmake -DCHECK=<text_check> -DTEXT=<dir of catalog.toml, format.toml> -DBANDS=<felitronics-bands checkout>
+#         -DWORK=<scratch dir> -DDOC=<catalog|format|bands/languages|bands/text/<code>>
 #         -DFROM=<text> -DTO=<text> -DAT=<text> -DEXPECT=<fault, key path and rule> -P text-must-fail.cmake
 #
 # Both documents are copied to WORK, and the gate must pass on the copies first — so the only difference between the run
@@ -11,7 +12,7 @@
 # gate must exit 1 and print `<WORK>/<DOC>.toml:<line>:<column>: error: <EXPECT>`, where line and column are those of AT
 # in the planted document — AT occurs there exactly once: the key, the quote of the value or the [header] the problem
 # points at. A FROM or an AT that is not in the document exactly once is a control that has rotted.
-foreach(var CHECK TEXT WORK DOC FROM TO AT EXPECT)
+foreach(var CHECK TEXT BANDS WORK DOC FROM TO AT EXPECT)
     if(NOT DEFINED ${var})
         message(FATAL_ERROR "text-must-fail.cmake: ${var} is not set")
     endif()
@@ -20,10 +21,11 @@ endforeach()
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
 file(COPY "${TEXT}/catalog.toml" "${TEXT}/format.toml" DESTINATION "${WORK}")
+file(COPY "${BANDS}/languages.toml" "${BANDS}/text" DESTINATION "${WORK}/bands")
 
 # The gate prints UTF-8 (its rules follow an em dash); on Windows execute_process would decode it with the console's code
 # page unless told.
-execute_process(COMMAND "${CHECK}" "${WORK}/catalog.toml" "${WORK}/format.toml"
+execute_process(COMMAND "${CHECK}" "${WORK}/catalog.toml" "${WORK}/format.toml" "${WORK}/bands"
                 RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err ENCODING UTF8)
 if(NOT rc EQUAL 0)
     message(FATAL_ERROR "PRECONDITION: the gate must pass on the unplanted copies; it exited ${rc}:\n${err}")
@@ -61,7 +63,7 @@ math(EXPR line "${line} + 1")
 string(FIND "${before}" "\n" lastNewline REVERSE)
 math(EXPR column "${at} - ${lastNewline}")
 
-execute_process(COMMAND "${CHECK}" "${WORK}/catalog.toml" "${WORK}/format.toml"
+execute_process(COMMAND "${CHECK}" "${WORK}/catalog.toml" "${WORK}/format.toml" "${WORK}/bands"
                 RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err ENCODING UTF8)
 set(want "${WORK}/${DOC}.toml:${line}:${column}: error: ${EXPECT}")
 if(NOT rc EQUAL 1)

@@ -305,14 +305,14 @@ void writeEq (const HpfFields<Value>& hpf, const TiltFields<Value>& tilt, const 
     h.lanes[0].slope = hpf.slope;
 
     auto& t = stage.bands[eqBand (Device::Tilt)];
-    t = band (eq::FilterType::Tilt, tilt.on && ! sameNumber (tilt.db, 0), number (rules.engine.find ("tilt").find ("freqHz")));
+    t = band (eq::FilterType::Tilt, tilt.on && ! sameNumber (tilt.db, 0), number (rules.geometry.find ("tilt").find ("hz")));
     t.lanes[0].gainDb = tilt.db;
     t.lanes[0].slope = kTiltSlope;
 
-    const auto config = rules.engine.find ("low");
+    const auto shelf = rules.geometry.find ("low");
     auto& l = stage.bands[eqBand (Device::Low)];
-    l = band (eq::FilterType::LowShelf, low.on && ! sameNumber (low.db, 0), number (config.find ("freqHz")));
-    l.lanes[0].Q = number (config.find ("q"));
+    l = band (eq::FilterType::LowShelf, low.on && ! sameNumber (low.db, 0), number (shelf.find ("hz")));
+    l.lanes[0].Q = number (shelf.find ("q"));
     l.lanes[0].gainDb = low.db;
 
     // The EQ bands: a band at 0 dB is no band — its slot as the stage holds it untouched, so the chain gets exactly what
@@ -323,11 +323,11 @@ void writeEq (const HpfFields<Value>& hpf, const TiltFields<Value>& tilt, const 
     {
         auto& b = stage.bands[bandsSlot (rules, i)];
         if (! bands.on || sameNumber (gains[i], 0)) { b = {}; continue; }
-        const auto move = rules.engine.find ("bands").find (kBandNames[i]);
-        const auto type = move.find ("type").string();
+        const auto filter = rules.geometry.find (kBandNames[i]);   // felitronics-bands' geometry of the band
+        const auto type = filter.find ("type").string();
         if (! type) storageOverflow();
-        b = band (*type == "highShelf" ? eq::FilterType::HighShelf : eq::FilterType::Bell, true, number (move.find ("freqHz")));
-        b.lanes[0].Q = number (move.find ("q"));
+        b = band (*type == "highShelf" ? eq::FilterType::HighShelf : eq::FilterType::Bell, true, number (filter.find ("hz")));
+        b.lanes[0].Q = number (filter.find ("q"));
         b.lanes[0].gainDb = gains[i];
     }
 }

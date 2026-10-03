@@ -116,11 +116,12 @@ void readRow (View rowView, View byTarget, TargetRow& out) noexcept
 }
 } // namespace
 
-Rules readRules (View targets, View engine) noexcept
+Rules readRules (View targets, View engine, View geometry) noexcept
 {
     Rules out;
     out.targets = targets;
     out.engine = engine;
+    out.geometry = geometry;
     Reading r;
 
     // A document holds at most felitronics-toml's kMaxEntries keys, [targets] itself among them, so every row's index fits
