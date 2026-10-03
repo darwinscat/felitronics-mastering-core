@@ -290,7 +290,9 @@ void pump()
                 e.payload.phase.weightsVersion = before->all;
         return events;
     };
-    ok (eventsHash (previousVersion (one)) == 0x3364122daef3c888ull && eventsHash (previousVersion (cancelled)) == 0x2970fc91c0e9df58ull,
+    // The saturation's shave (03.10) is a fourth trace a render steps through, so a pass has more work units and the
+    // phases' units, fractions and count moved; every other event is as it was (checked with the phases left out).
+    ok (eventsHash (previousVersion (one)) == 0xe3fe0c1834432729ull && eventsHash (previousVersion (cancelled)) == 0x73daef62819ace2dull,
         "the targets' notes move only the config's version the phases carry: with the previous one, the previous pins");
     const auto withoutCostLines = [] (const std::vector<Notification>& events)
     {
@@ -305,13 +307,13 @@ void pump()
         }
         return kept;
     };
-    ok (eventsHash (withoutCostLines (previousVersion (one))) == 0x1b992fb95619145full
-        && eventsHash (withoutCostLines (previousVersion (cancelled))) == 0x8c67215e2008a463ull
+    ok (eventsHash (withoutCostLines (previousVersion (one))) == 0x72cb5738dfba2526ull
+        && eventsHash (withoutCostLines (previousVersion (cancelled))) == 0xbe7e8b4fc0f9c662ull
         && withoutCostLines (one).size() < one.size(),
-        "the cost's new lines are the only new events: without them the pins 1b992fb95619145f / 8c67215e2008a463 hold");
+        "the cost's new lines are the only new events: without them the pins 72cb5738dfba2526 / be7e8b4fc0f9c662 hold");
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
-    ok (eventsHash (one) == 0x9620e30fd6123e2aull && eventsHash (cancelled) == 0x03779d96a86e9b88ull,
+    ok (eventsHash (one) == 0xd31d41642d55ec9full && eventsHash (cancelled) == 0x3a855b6bfad8bc51ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, previous version: %016llx %016llx; and without the cost's lines: %016llx %016llx\n",

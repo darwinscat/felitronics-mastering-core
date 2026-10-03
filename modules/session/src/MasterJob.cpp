@@ -304,8 +304,11 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         + std::uint64_t (result.waveformCapacity) * sizeof (MasterWaveformBucket) + axesRows;
     // The glue's trace beside the limiter's and the clipper's where the glue compresses (the report's own test).
     result.glueTrace = result.ready.topology.compressor && ! result.ready.params.bypassCompressor;
+    // And the saturation's shave where the soft clipper shapes (the report's own test for its cut).
+    result.saturationTrace = result.ready.topology.clipper && ! result.ready.params.bypassClipper;
     result.retainedRowBytes = 12u * sizeof (LandingPass)
-        + (result.glueTrace ? 3u : 2u) * std::uint64_t (result.traceBuckets) * sizeof (LandingTraceBucket) + crestRows + costRows;
+        + (2u + (result.glueTrace ? 1u : 0u) + (result.saturationTrace ? 1u : 0u)) * std::uint64_t (result.traceBuckets)
+            * sizeof (LandingTraceBucket) + crestRows + costRows;
     const auto impactChainBytes = convert ? mastering::MasteringChain::prepareBytes (
         double (s.source_.sampleRate), int (s.source_.channels), result.ready.topology) : 0u;
     const auto impactScratchBytes = convert ? std::uint64_t (s.source_.channels) * 1024u * sizeof (float) : 0u;

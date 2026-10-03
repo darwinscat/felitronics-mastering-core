@@ -117,7 +117,8 @@
       "MasterWaveform",
       "MasterAxes",
       "MasterReport",
-      "GlueGr"
+      "GlueGr",
+      "SaturationShave"
     ],
     "SpectrumQuantity": [
       "Density",
@@ -1715,7 +1716,7 @@
     "MeasurementQuery": {
       "masterId": {
         "default": "std::uint32_t {}",
-        "description": "No master: a source query. LimiterGr, PeakClipGr, GlueGr, MasterWaveform, MasterAxes and MasterReport name one; Momentary and ShortTerm with one answer that master's curves, in the source's frames."
+        "description": "No master: a source query. LimiterGr, PeakClipGr, GlueGr, SaturationShave, MasterWaveform, MasterAxes and MasterReport name one; Momentary and ShortTerm with one answer that master's curves, in the source's frames."
       },
       "crossoverHz": {
         "default": "120.0",
@@ -1832,6 +1833,15 @@
       "nonFinite"
     ],
     "GlueGr": [
+      "firstFrame",
+      "lastFrame",
+      "minDb",
+      "maxDb",
+      "meanDb",
+      "samples",
+      "nonFinite"
+    ],
+    "SaturationShave": [
       "firstFrame",
       "lastFrame",
       "minDb",

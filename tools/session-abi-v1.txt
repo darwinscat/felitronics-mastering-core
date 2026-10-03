@@ -1854,3 +1854,7 @@ row QueryGlueGr element=f64 byteOrder=little columns=firstFrame,lastFrame,minDb,
 # The glue's tempo heard with too little confidence (02.10): the number named beside the fallback, in a line of its own.
 enum felitronics::session::text::FactId::GlueTempoUnsure=99
 codec GlueFinding.tempoUnsureBpm double?
+# What the saturation took off the peaks over time (03.10): a master's soft-clipper shave from the delivered render, on
+# LimiterGr's buckets.
+enum felitronics::session::QueryKind::SaturationShave=13
+row QuerySaturationShave element=f64 byteOrder=little columns=firstFrame,lastFrame,minDb,maxDb,meanDb,samples,nonFinite stride=7 bytes=56
