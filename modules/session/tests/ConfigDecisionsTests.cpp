@@ -63,7 +63,9 @@ constexpr Golden kGolden[] = {
     // ...and felitronics-bands' bands.toml a document of the walk (v0.13.0): the filters of tilt, low and the five bands
     // (type, hz, q) left engine.toml for it with the same numbers — no master moves, the walk does; it was
     // 71b944c40d573c58; updated in place, as above
-    { "2026-10", 0x485f7b6eeac75749ull },
+    // ...and three broadcast targets beside ebu (v0.13.0): atsc, arib, op59 — new rows, no existing target's master
+    // moves; it was 485f7b6eeac75749; updated in place, as above
+    { "2026-10", 0xfb0cedc4f4311049ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -114,6 +116,9 @@ constexpr Row kRows[] = {
     { "dittomusic",    A, -14,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
     { "cd",            D, -9,   -0.3, 120,  32,  24,  1,    44100, 16,  false, true,  false, 0,    0 },
     { "bandcamp",      D, -10,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "atsc",          S, -24,  -2,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "arib",          S, -24,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    { "op59",          S, -24,  -2,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
 };
 
 // Every decision the config departs from, by name; empty when it holds them all.

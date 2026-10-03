@@ -258,6 +258,10 @@ void pump()
         const auto from = targets.rfind ("\n[notes]\n");
         const auto to = from == std::string::npos ? from : targets.find ("\n[", from + 1);
         if (from != std::string::npos) targets.erase (from, (to == std::string::npos ? targets.size() : to) - from);
+        // ...and without the three broadcast targets (atsc, arib, op59, v0.13.0), which came after.
+        for (const std::string_view key : { "\natsc ", "\narib ", "\nop59 " })
+            if (const auto at = targets.find (key); at != std::string::npos)
+                targets.erase (at, targets.find ('\n', at + 1) - at);
         // ...and the engine with the observation rows before the owner's table.
         auto engine = config::Config::text (config::Document::Engine);
         const std::pair<std::string_view, std::string_view> rows[] = {
@@ -318,7 +322,9 @@ void pump()
         "the cost's new lines are the only new events: without them the pins fd8d2c4110c6c94f / 002799982f8522aa hold");
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
-    ok (eventsHash (one) == 0x1fdc6e0971f677c0ull && eventsHash (cancelled) == 0x19c7710590fbdf2dull,
+    // The three broadcast targets (v0.13.0) moved the config version the phases carry and nothing else (the previous
+    // version's pins above hold); these were 1fdc6e0971f677c0 / 19c7710590fbdf2d.
+    ok (eventsHash (one) == 0x9d7c29a5f4147512ull && eventsHash (cancelled) == 0x903fef3e11059149ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, previous version: %016llx %016llx; and without the cost's lines: %016llx %016llx\n",
