@@ -36,7 +36,8 @@
 namespace felitronics::session::text::detail
 {
 
-enum class Document : std::uint8_t { Catalog, Format };
+enum class Document : std::uint8_t { Catalog, Format, BandLanguages, BandText };   // the last two: felitronics-bands'
+                                                                                    // languages.toml, text/<code>.toml
 
 enum class Fault : std::uint8_t
 {
@@ -56,18 +57,33 @@ struct Problem
     std::uint32_t column = 0;
     std::string path;
     const char* code = "";         // the parser's code for Syntax, the rule for Refused
+    std::string_view lang {};      // BandText: the language whose file it is
 
-    [[nodiscard]] static const char* name (Document document) noexcept;   // "catalog", "format"
+    [[nodiscard]] static const char* name (Document document) noexcept;   // "catalog", "format", "bandLanguages", "bandText"
     [[nodiscard]] static const char* name (Fault fault) noexcept;
 };
 
 // Both documents, whole; no problem when they hold. A document that does not parse is one Syntax problem, and the checks
-// that need it are left out.
+// that need it are left out. The catalog writes no term TextFacts.h gives a band (FromBands).
 [[nodiscard]] std::vector<Problem> checkText (std::string_view catalogToml, std::string_view formatToml);
+
+// THE BANDS' NAMES, from felitronics-bands: its languages.toml lists exactly the catalog's languages (LanguagesDiffer), and
+// the text of each — `texts`, one per language of languages.toml, the code and the file's TOML — gives every band a term
+// names a `name`, a non-empty string with no brace. A text missing for a language of languages.toml is Missing there.
+struct BandText
+{
+    std::string_view code;
+    std::string_view toml;
+};
+[[nodiscard]] std::vector<Problem> checkBands (std::string_view catalogToml, std::string_view languagesToml,
+                                               const std::vector<BandText>& texts);
+// The codes languages.toml lists, in order (nothing when it does not parse or holds no such list): which files to read.
+[[nodiscard]] std::vector<std::string> bandLanguages (std::string_view languagesToml);
 
 // The two documents compiled into the library (src/Text.cpp): what the tests hold to the sources.
 [[nodiscard]] felitronics::toml::embedded::View catalogRoot() noexcept;
 [[nodiscard]] felitronics::toml::embedded::View formatRoot() noexcept;
+[[nodiscard]] felitronics::toml::embedded::View bandTextRoot (std::string_view code) noexcept;   // nothing when none
 
 // One argument alone, as a message would place it, in any of the twelve languages — whether the catalog declares it or
 // not: how the tests reach the formatting table's rows the catalog does not use yet (src/Text.cpp).

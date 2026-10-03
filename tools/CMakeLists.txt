@@ -429,8 +429,10 @@ if(FELITRONICS_BUILD_TESTS)
             OUTPUT ${FCORE_SESSION_CONFIG_EXPECT}/targets.toml ${FCORE_SESSION_CONFIG_EXPECT}/engine.toml
                    ${FCORE_SESSION_CONFIG_EXPECT}/version.txt ${FCORE_SESSION_CONFIG_EXPECT}/sound-version.txt
             COMMAND felitronics_session_config_check --expect ${FCORE_SESSION_CONFIG}/targets.toml
-                    ${FCORE_SESSION_CONFIG}/engine.toml ${FCORE_SESSION_CONFIG_EXPECT}
+                    ${FCORE_SESSION_CONFIG}/engine.toml ${FELITRONICS_MASTERING_BANDS_SOURCE_DIR}/bands.toml
+                    ${FCORE_SESSION_CONFIG_EXPECT}
             DEPENDS felitronics_session_config_check ${FCORE_SESSION_CONFIG}/targets.toml ${FCORE_SESSION_CONFIG}/engine.toml
+                    ${FELITRONICS_MASTERING_BANDS_SOURCE_DIR}/bands.toml
             COMMENT "fcore_session: what `config` must print"
             VERBATIM)
         add_custom_target(fcore_session_config_expect ALL DEPENDS

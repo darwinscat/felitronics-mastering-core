@@ -14,6 +14,7 @@
 #include <felitronics/session/Text.h>
 #include <felitronics/toml/Toml.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -33,10 +34,11 @@ struct Checker
 {
     Document document;
     std::vector<Problem>& out;
+    std::string_view lang {};
 
     void report (Fault fault, const toml::Position& at, std::string path, const char* code = "")
     {
-        out.push_back ({ document, fault, at.line, at.column, std::move (path), code });
+        out.push_back ({ document, fault, at.line, at.column, std::move (path), code, lang });
     }
 };
 
@@ -254,7 +256,7 @@ void checkCatalog (Checker& c, const toml::Table& root)
             if (g == nullptr) continue;
             for (const TermShape& t : kTerms)
             {
-                if (t.group != group) continue;
+                if (t.group != group || ! t.band.empty()) continue;   // a band's name is felitronics-bands'
                 const std::string termPath = join (groupPath, t.key);
                 const toml::Table* words = requireTable (c, *g, t.key, groupPath);
                 if (words == nullptr) continue;
@@ -264,12 +266,15 @@ void checkCatalog (Checker& c, const toml::Table& root)
                                   join (termPath, kLangCodes[(std::size_t) lang]), "Brace");
                 unknownKeys (c, *words, termPath, [&] (std::string_view key) { return declares (langs, key); });
             }
-            unknownKeys (c, *g, groupPath, [&] (std::string_view key)
+            // A key no term has is read by nothing; a band's term written here is a copy of felitronics-bands' name.
+            for (const toml::Entry& e : g->entries())
             {
+                const TermShape* term = nullptr;
                 for (const TermShape& t : kTerms)
-                    if (t.group == group && t.key == key) return true;
-                return false;
-            });
+                    if (t.group == group && t.key == e.key) term = &t;
+                if (term == nullptr) c.report (Fault::UnknownKey, e.keyPosition, join (groupPath, e.key));
+                else if (! term->band.empty()) c.report (Fault::Refused, e.keyPosition, join (groupPath, e.key), "FromBands");
+            }
         }
         unknownKeys (c, *terms, "terms", [] (std::string_view key)
         {
@@ -438,7 +443,14 @@ void checkDocument (Document document, std::string_view text, std::vector<Proble
 
 const char* Problem::name (Document document) noexcept
 {
-    return document == Document::Catalog ? "catalog" : "format";
+    switch (document)
+    {
+        case Document::Catalog: return "catalog";
+        case Document::Format: return "format";
+        case Document::BandLanguages: return "bandLanguages";
+        case Document::BandText: return "bandText";
+    }
+    return "";
 }
 
 const char* Problem::name (Fault fault) noexcept
@@ -460,6 +472,92 @@ std::vector<Problem> checkText (std::string_view catalogToml, std::string_view f
     std::vector<Problem> out;
     checkDocument (Document::Catalog, catalogToml, out, checkCatalog);
     checkDocument (Document::Format, formatToml, out, checkFormat);
+    return out;
+}
+
+namespace
+{
+// The strings of `languages` in a parsed document, in order; what is not a string is left out (and reported, given c).
+std::vector<std::string> languagesOf (const toml::Table& root, Checker* c)
+{
+    std::vector<std::string> codes;
+    const toml::Value* v = root.find ("languages");
+    const auto* items = v != nullptr ? std::get_if<toml::Array> (&v->data) : nullptr;
+    if (c != nullptr && v == nullptr) c->report (Fault::Missing, root.position, "languages");
+    else if (c != nullptr && items == nullptr) c->report (Fault::WrongType, v->position, "languages");
+    if (items == nullptr) return codes;
+    for (const toml::Value& item : *items)
+        if (const std::string* code = stringOf (&item)) codes.push_back (*code);
+        else if (c != nullptr) c->report (Fault::WrongType, item.position, "languages");
+    return codes;
+}
+
+bool sameSet (const std::vector<std::string>& a, const std::vector<std::string>& b)
+{
+    const auto within = [] (const std::vector<std::string>& x, const std::vector<std::string>& y)
+    {
+        for (const auto& s : x)
+            if (std::find (y.begin(), y.end(), s) == y.end()) return false;
+        return true;
+    };
+    return within (a, b) && within (b, a);
+}
+} // namespace
+
+std::vector<std::string> bandLanguages (std::string_view languagesToml)
+{
+    const auto parsed = toml::parse (languagesToml);
+    const auto* root = std::get_if<toml::Table> (&parsed);
+    return root != nullptr ? languagesOf (*root, nullptr) : std::vector<std::string> {};
+}
+
+std::vector<Problem> checkBands (std::string_view catalogToml, std::string_view languagesToml, const std::vector<BandText>& texts)
+{
+    std::vector<Problem> out;
+    const auto catalog = toml::parse (catalogToml);
+    const auto* catalogRoot = std::get_if<toml::Table> (&catalog);
+    if (catalogRoot == nullptr) return out;   // checkText's to report
+    const std::vector<std::string> spoken = languagesOf (*catalogRoot, nullptr);
+
+    Checker c { Document::BandLanguages, out };
+    const auto parsed = toml::parse (languagesToml);
+    if (const auto* e = std::get_if<toml::Error> (&parsed))
+    {
+        out.push_back ({ Document::BandLanguages, Fault::Syntax, e->line, e->column, "", toml::codeName (e->code) });
+        return out;
+    }
+    const toml::Table& root = *std::get_if<toml::Table> (&parsed);
+    const std::vector<std::string> codes = languagesOf (root, &c);
+    if (const toml::Value* v = root.find ("languages"); v != nullptr && ! sameSet (codes, spoken))
+        c.report (Fault::Refused, v->position, "languages", "LanguagesDiffer");
+    unknownKeys (c, root, "", [] (std::string_view key) { return key == "languages"; });
+
+    for (const std::string& code : codes)
+    {
+        const BandText* text = nullptr;
+        for (const BandText& t : texts)
+            if (t.code == code) text = &t;
+        if (text == nullptr) { c.report (Fault::Missing, root.position, join ("languages", code)); continue; }
+        Checker b { Document::BandText, out, text->code };
+        const auto doc = toml::parse (text->toml);
+        if (const auto* e = std::get_if<toml::Error> (&doc))
+        {
+            b.report (Fault::Syntax, { e->line, e->column }, "", toml::codeName (e->code));
+            continue;
+        }
+        const toml::Table& bands = *std::get_if<toml::Table> (&doc);
+        for (std::size_t i = 0; i < kTermCount; ++i)
+        {
+            const std::string_view band = kTerms[i].band;
+            bool first = ! band.empty();
+            for (std::size_t j = 0; j < i && first; ++j) first = kTerms[j].band != band;
+            if (! first) continue;
+            const toml::Table* entry = requireTable (b, bands, band, "");
+            if (entry == nullptr) continue;
+            if (const std::string* name = requireString (b, *entry, "name", std::string (band)); name != nullptr && braced (*name))
+                b.report (Fault::Refused, entry->find ("name")->position, join (std::string (band), "name"), "Brace");
+        }
+    }
     return out;
 }
 

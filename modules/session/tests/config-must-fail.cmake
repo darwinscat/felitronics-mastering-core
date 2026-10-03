@@ -3,14 +3,15 @@
 #
 # ONE CONTROL OF THE CONFIG CHECK: a planted mistake must turn it red, at the mistake. Run by ctest
 # (modules/session/CMakeLists.txt):
-#   cmake -DCHECK=<config_check> -DCONFIG=<dir of targets.toml, engine.toml> -DWORK=<scratch dir> -DDOC=<targets|engine>
+#   cmake -DCHECK=<config_check> -DCONFIG=<dir of targets.toml, engine.toml> -DBANDS=<dir of bands.toml>
+#         -DWORK=<scratch dir> -DDOC=<targets|engine|bands>
 #         -DFROM=<text> -DTO=<text> -DAT=<text> -DEXPECT=<fault and key path> -P config-must-fail.cmake
 #
 # Both documents are copied to WORK, and the check must pass on the copies first — so the only difference between the
 # run that passes and the run that must fail is the plant. Then the one occurrence of FROM in DOC is replaced by TO, and
 # the check must exit 1 and print `<WORK>/<DOC>.toml:<line>:<column>: error: <EXPECT>`, where line and column are those
 # of AT, searched from the plant onwards. A FROM that is not in the document exactly once is a control that has rotted.
-foreach(var CHECK CONFIG WORK DOC FROM TO AT EXPECT)
+foreach(var CHECK CONFIG BANDS WORK DOC FROM TO AT EXPECT)
     if(NOT DEFINED ${var})
         message(FATAL_ERROR "config-must-fail.cmake: ${var} is not set")
     endif()
@@ -18,9 +19,9 @@ endforeach()
 
 file(REMOVE_RECURSE "${WORK}")
 file(MAKE_DIRECTORY "${WORK}")
-file(COPY "${CONFIG}/targets.toml" "${CONFIG}/engine.toml" DESTINATION "${WORK}")
+file(COPY "${CONFIG}/targets.toml" "${CONFIG}/engine.toml" "${BANDS}/bands.toml" DESTINATION "${WORK}")
 
-execute_process(COMMAND "${CHECK}" "${WORK}/targets.toml" "${WORK}/engine.toml"
+execute_process(COMMAND "${CHECK}" "${WORK}/targets.toml" "${WORK}/engine.toml" "${WORK}/bands.toml"
                 RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err)
 if(NOT rc EQUAL 0)
     message(FATAL_ERROR "PRECONDITION: the check must pass on the unplanted copies; it exited ${rc}:\n${err}")
@@ -57,7 +58,7 @@ math(EXPR line "${line} + 1")
 string(FIND "${before}" "\n" lastNewline REVERSE)
 math(EXPR column "${at} - ${lastNewline}")
 
-execute_process(COMMAND "${CHECK}" "${WORK}/targets.toml" "${WORK}/engine.toml"
+execute_process(COMMAND "${CHECK}" "${WORK}/targets.toml" "${WORK}/engine.toml" "${WORK}/bands.toml"
                 RESULT_VARIABLE rc OUTPUT_VARIABLE out ERROR_VARIABLE err)
 set(want "${WORK}/${DOC}.toml:${line}:${column}: error: ${EXPECT}")
 if(NOT rc EQUAL 1)

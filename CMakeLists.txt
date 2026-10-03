@@ -2,7 +2,7 @@
 # Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 cmake_minimum_required(VERSION 3.22)
-project(felitronics_mastering_core VERSION 0.12.0 LANGUAGES CXX)
+project(felitronics_mastering_core VERSION 0.13.0 LANGUAGES CXX)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
@@ -18,8 +18,9 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 #                                                     felitronics::analysis, headers <felitronics/analysis/...>)
 #   tempo             felitronics::tempo              the tempo of a programme and the tempo over time     core
 #                                                     (a port of the site's dsp/tempo.js)
-#   session           felitronics::session            the mastering session, the object a shell talks to.  felitronics-toml
-#                                                     COMPILED, with its own flags                        (build time)
+#   session           felitronics::session            the mastering session, the object a shell talks to.  felitronics-toml,
+#                                                     COMPILED, with its own flags                        felitronics-bands
+#                                                                                                         (build time)
 #
 # tools/ (top-level builds only): the C ABIs (fc_master, fc_probe, fc_tempo, fc_session), their native CLIs
 # (fcore_master, fcore_measure, fcore_session) and suites, and tools/wasm/build.sh, which builds the wasm modules.
@@ -32,6 +33,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 #   FetchContent_Declare(felitronics_mastering_core GIT_REPOSITORY <url> GIT_TAG <tag>)
 #   FetchContent_MakeAvailable(felitronics_mastering_core)
 #   target_link_libraries(app PRIVATE felitronics::mastering felitronics::analysis_offline felitronics::session)
+# felitronics-bands (the named EQ bands: geometry and names, data only) is fetched by its pinned tag when the product has
+# not declared it first; a product that names bands itself declares felitronics_bands before this, so both read one copy.
 # ----------------------------------------------------------------------------------------------------
 
 option(FELITRONICS_MASTERING_BUILD_TESTS "Build felitronics-mastering-core self-tests" "${PROJECT_IS_TOP_LEVEL}")
@@ -80,7 +83,34 @@ if(PROJECT_IS_TOP_LEVEL)
             GIT_SHALLOW    TRUE)
     endif()
     FetchContent_MakeAvailable(felitronics_toml)
+
+    # felitronics-bands — the named EQ bands every Felitronics product shares: bands.toml (each band's type, hz, q),
+    # languages.toml and text/<lang>.toml (each band's name). Data, no CMake: the session embeds the files at build time
+    # (modules/session/CMakeLists.txt). Resolved as above: a sibling checkout when there is one, the pinned tag otherwise.
+    set(FELITRONICS_MASTERING_BANDS_DIR "${CMAKE_CURRENT_SOURCE_DIR}/../felitronics-bands" CACHE PATH
+        "Local felitronics-bands checkout (used if present); else the pinned release is fetched")
+    if(FELITRONICS_MASTERING_BANDS_DIR AND EXISTS "${FELITRONICS_MASTERING_BANDS_DIR}/bands.toml")
+        message(STATUS "felitronics-bands: local checkout — ${FELITRONICS_MASTERING_BANDS_DIR}")
+        FetchContent_Declare(felitronics_bands SOURCE_DIR "${FELITRONICS_MASTERING_BANDS_DIR}")
+    endif()
 endif()
+
+# felitronics-bands by its pinned tag, unless whoever owns the graph declared it first (FetchContent: the first
+# declaration wins) — the local checkout above, or a product that names the bands itself.
+set(FELITRONICS_MASTERING_BANDS_TAG "v0.1.0" CACHE STRING "felitronics-bands git tag to fetch when nothing else declared it")
+include(FetchContent)
+FetchContent_Declare(felitronics_bands
+    GIT_REPOSITORY https://github.com/darwinscat/felitronics-bands.git
+    GIT_TAG        ${FELITRONICS_MASTERING_BANDS_TAG}
+    GIT_SHALLOW    TRUE)
+FetchContent_MakeAvailable(felitronics_bands)
+if(NOT EXISTS "${felitronics_bands_SOURCE_DIR}/bands.toml" OR NOT EXISTS "${felitronics_bands_SOURCE_DIR}/languages.toml")
+    message(FATAL_ERROR "felitronics-bands at '${felitronics_bands_SOURCE_DIR}' has no bands.toml and languages.toml")
+endif()
+message(STATUS "felitronics-bands: ${felitronics_bands_SOURCE_DIR}")
+# The checkout tools/wasm/build.sh must embed — the one this build embedded (CI reads it back like the toml one).
+set(FELITRONICS_MASTERING_BANDS_SOURCE_DIR "${felitronics_bands_SOURCE_DIR}" CACHE INTERNAL
+    "the felitronics-bands checkout this build resolved")
 
 # Consumed, not top-level: core must already be there. A nested fetch here is how a product ends up with
 # two cores at two versions. felitronics::test_support and cmake/FelitronicsPolicy.cmake are also the

@@ -7,7 +7,8 @@
 // the library it gates. It reads files, which the session may not (docs/SESSION.md, law 6), so it lives beside the
 // suites, outside the module's laws.
 //
-//   text_check <catalog.toml> <format.toml>
+//   text_check <catalog.toml> <format.toml> <felitronics-bands checkout>
+// — the checkout's languages.toml and text/<code>.toml give the named bands' words (src/TextSchema.h, checkBands).
 //       Checks both documents and prints every problem as `<file>:<line>:<column>: error: <fault> <key path>[ — <rule>]`,
 //       the format compilers and IDEs understand. A problem is a red build, at its line.
 //
@@ -17,6 +18,7 @@
 
 #include <cstdio>
 #include <string>
+#include <vector>
 
 namespace detail = felitronics::session::text::detail;
 
@@ -36,20 +38,34 @@ bool readFile (const char* path, std::string& out)
 
 int main (int argc, char** argv)
 {
-    if (argc != 3)
+    if (argc != 4)
     {
-        std::fprintf (stderr, "usage: %s <catalog.toml> <format.toml>\n", argv[0]);
+        std::fprintf (stderr, "usage: %s <catalog.toml> <format.toml> <felitronics-bands checkout>\n", argv[0]);
         return 2;
     }
-    std::string catalog, format;
+    std::string catalog, format, languages;
+    const std::string bands = argv[3], languagesPath = bands + "/languages.toml";
     if (! readFile (argv[1], catalog)) { std::fprintf (stderr, "text_check: cannot read %s\n", argv[1]); return 2; }
     if (! readFile (argv[2], format)) { std::fprintf (stderr, "text_check: cannot read %s\n", argv[2]); return 2; }
-    const auto problems = detail::checkText (catalog, format);
+    if (! readFile (languagesPath.c_str(), languages)) { std::fprintf (stderr, "text_check: cannot read %s\n", languagesPath.c_str()); return 2; }
+    const std::vector<std::string> codes = detail::bandLanguages (languages);
+    std::vector<std::string> sources (codes.size());
+    std::vector<detail::BandText> texts;
+    for (std::size_t i = 0; i < codes.size(); ++i)
+    {
+        const std::string path = bands + "/text/" + codes[i] + ".toml";
+        if (! readFile (path.c_str(), sources[i])) { std::fprintf (stderr, "text_check: cannot read %s\n", path.c_str()); return 2; }
+        texts.push_back ({ codes[i], sources[i] });
+    }
+    auto problems = detail::checkText (catalog, format);
+    for (auto& p : detail::checkBands (catalog, languages, texts)) problems.push_back (std::move (p));
     for (const detail::Problem& p : problems)
     {
-        const char* file = p.document == detail::Document::Catalog ? argv[1] : argv[2];
+        std::string file = p.document == detail::Document::Catalog ? argv[1] : p.document == detail::Document::Format ? argv[2]
+                         : p.document == detail::Document::BandLanguages ? languagesPath
+                                                                          : bands + "/text/" + std::string (p.lang) + ".toml";
         const bool coded = p.code[0] != '\0';
-        std::fprintf (stderr, "%s:%u:%u: error: %s%s%s%s%s\n", file, (unsigned) p.line, (unsigned) p.column,
+        std::fprintf (stderr, "%s:%u:%u: error: %s%s%s%s%s\n", file.c_str(), (unsigned) p.line, (unsigned) p.column,
                       detail::Problem::name (p.fault), p.path.empty() ? "" : " ", p.path.c_str(), coded ? " — " : "",
                       p.code);
     }

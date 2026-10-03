@@ -98,6 +98,10 @@ constexpr Name<SaturationShape> kShapes[] = { { "tanh", SaturationShape::Tanh },
                                               { "tube", SaturationShape::Tube }, { "transistor", SaturationShape::Transistor },
                                               { "transformer", SaturationShape::Transformer }, { "tape", SaturationShape::Tape } };
 constexpr Name<BandType> kBandTypes[] = { { "bell", BandType::Bell }, { "highShelf", BandType::HighShelf } };
+// felitronics-bands names tilt's and low's filters too; each device takes exactly the one it is built with.
+enum class Fixed : std::uint8_t { Is };
+constexpr Name<Fixed> kTiltType[] = { { "tilt", Fixed::Is } };
+constexpr Name<Fixed> kLowType[] = { { "lowShelf", Fixed::Is } };
 constexpr Name<NoiseShaping> kShapings[] = { { "none", NoiseShaping::None }, { "weighted", NoiseShaping::Weighted },
                                              { "psycho", NoiseShaping::Psycho } };
 constexpr Name<Kind> kKinds[] = { { "error", Kind::Error }, { "warning", Kind::Warning }, { "note", Kind::Note },
@@ -602,10 +606,11 @@ void readMoveTravel (Doc& d, Reader& in, Span& normal, Span& hard, Span& domain)
     d.pair (in, "normal", normal, h ? R { hard.min, hard.max } : R { -24.0, 24.0 });
 }
 
+// Tilt, low and the five bands: the knob here — its band of the stage, its travel and step; the filter (type, hz, q) is
+// felitronics-bands', read from bands.toml by readBandsGeometry below, and a key of it here is a key nothing reads.
 void readTilt (Doc& d, Reader& in, Tilt& o, std::vector<std::int32_t>& bands)
 {
     d.band (in, o.band, bands);
-    in.required ("freqHz", o.freqHz, R { 20.0, 20000.0 });
     readMoveTravel (d, in, o.normal, o.hard, o.domain);
     in.required ("step", o.step, R { 0.01, 3.0 });
 }
@@ -613,20 +618,14 @@ void readTilt (Doc& d, Reader& in, Tilt& o, std::vector<std::int32_t>& bands)
 void readLow (Doc& d, Reader& in, Low& o, std::vector<std::int32_t>& bands)
 {
     d.band (in, o.band, bands);
-    in.required ("freqHz", o.freqHz, R { 20.0, 20000.0 });
-    in.required ("q", o.q, R { 0.1, 10.0 });
     readMoveTravel (d, in, o.normal, o.hard, o.domain);
     in.required ("step", o.step, R { 0.01, 3.0 });
 }
 
-// One of [bands]: its own band of the stage, a bell or a high shelf at freqHz with q, and a knob whose travel lies within
-// its domain, which holds the neutral 0.
+// One of [bands]: its own band of the stage and a knob whose travel lies within its domain, which holds the neutral 0.
 void readEqMove (Doc& d, Reader& in, EqMove& o, std::vector<std::int32_t>& bands)
 {
     d.band (in, o.band, bands);
-    d.name (in, "type", o.type, kBandTypes);
-    in.required ("freqHz", o.freqHz, R { 20.0, 20000.0 });
-    in.required ("q", o.q, R { 0.1, 10.0 });
     readMoveTravel (d, in, o.normal, o.hard, o.domain);
     in.required ("step", o.step, R { 0.01, 3.0 });
 }
@@ -638,6 +637,37 @@ void readBands (Doc& d, Reader& in, Bands& o, std::vector<std::int32_t>& bands)
     in.table ("forward", Need::Required, [&] (Reader& t) { readEqMove (d, t, o.forward, bands); });
     in.table ("brightness", Need::Required, [&] (Reader& t) { readEqMove (d, t, o.brightness, bands); });
     in.table ("air", Need::Required, [&] (Reader& t) { readEqMove (d, t, o.air, bands); });
+}
+
+// felitronics-bands' bands.toml: [bands.<key>] for exactly the seven keys the engine's devices turn — tilt (type "tilt",
+// the pivot hz), low (type "lowShelf", hz, q) and the five of [bands] (a bell or a high shelf, hz, q). A key of either
+// document the other lacks is a key nothing reads, or one missing: the two sets cannot drift apart.
+void readBandsGeometry (Doc& d, Reader& in, Engine& o)
+{
+    const auto hz = [] (Reader& t, double& out) { t.required ("hz", out, R { 20.0, 20000.0 }); };
+    const auto q = [] (Reader& t, double& out) { t.required ("q", out, R { 0.1, 10.0 }); };
+    const auto move = [&] (Reader& t, EqMove& m)
+    {
+        d.name (t, "type", m.type, kBandTypes);
+        hz (t, m.freqHz);
+        q (t, m.q);
+    };
+    in.table ("bands", Need::Required, [&] (Reader& b)
+    {
+        Fixed fixed {};
+        b.table ("tilt", Need::Required, [&] (Reader& t) { d.name (t, "type", fixed, kTiltType); hz (t, o.tilt.freqHz); });
+        b.table ("low", Need::Required, [&] (Reader& t)
+        {
+            d.name (t, "type", fixed, kLowType);
+            hz (t, o.low.freqHz);
+            q (t, o.low.q);
+        });
+        b.table ("body", Need::Required, [&] (Reader& t) { move (t, o.bands.body); });
+        b.table ("mud", Need::Required, [&] (Reader& t) { move (t, o.bands.mud); });
+        b.table ("forward", Need::Required, [&] (Reader& t) { move (t, o.bands.forward); });
+        b.table ("brightness", Need::Required, [&] (Reader& t) { move (t, o.bands.brightness); });
+        b.table ("air", Need::Required, [&] (Reader& t) { move (t, o.bands.air); });
+    });
 }
 
 void readStages (Doc& d, Reader& in, Stages& o)
@@ -1259,7 +1289,7 @@ Problem syntax (const toml::Error& e, Document document)
 
 namespace detail
 {
-Loaded bindTables (const toml::Table* targetsDocument, const toml::Table* engineDocument)
+Loaded bindTables (const toml::Table* targetsDocument, const toml::Table* engineDocument, const toml::Table* bandsDocument)
 {
     Loaded out;
     std::optional<std::vector<std::string>> targets;
@@ -1280,6 +1310,14 @@ Loaded bindTables (const toml::Table* targetsDocument, const toml::Table* engine
         reader.finish();
         collect (d.report, Document::Targets, out.problems);
     }
+    if (bandsDocument != nullptr)
+    {
+        Doc d;
+        Reader reader (*bandsDocument, d.report);
+        readBandsGeometry (d, reader, out.config.engine);
+        reader.finish();
+        collect (d.report, Document::Bands, out.problems);
+    }
     return out;
 }
 } // namespace detail
@@ -1297,6 +1335,7 @@ const char* Problem::name (Document document) noexcept
     {
         case Document::Targets: return "targets";
         case Document::Engine:  return "engine";
+        case Document::Bands:   return "bands";
     }
     return "unknown";
 }
@@ -1343,28 +1382,38 @@ bool Loaded::ok() const noexcept
     return problems.empty();
 }
 
-Loaded Config::bind (std::string_view targetsToml, std::string_view engineToml)
+Loaded Config::bind (std::string_view targetsToml, std::string_view engineToml, std::string_view bandsToml)
 {
     const toml::ParseResult targets = toml::parse (targetsToml, detail::kTargetsSource);
     const toml::ParseResult engine = toml::parse (engineToml, detail::kEngineSource);
+    const toml::ParseResult bands = toml::parse (bandsToml, detail::kBandsSource);
     const auto* t = std::get_if<toml::Table> (&targets);
     const auto* e = std::get_if<toml::Table> (&engine);
-    Loaded out = detail::bindTables (t, e);
+    const auto* b = std::get_if<toml::Table> (&bands);
+    Loaded out = detail::bindTables (t, e, b);
     // A document that did not parse is one problem; it comes where that document's problems would have.
     if (const auto* error = std::get_if<toml::Error> (&engine))
         out.problems.insert (out.problems.begin(), syntax (*error, Document::Engine));
-    if (const auto* error = std::get_if<toml::Error> (&targets)) out.problems.push_back (syntax (*error, Document::Targets));
+    if (const auto* error = std::get_if<toml::Error> (&targets))
+    {
+        std::size_t at = out.problems.size();
+        while (at > 0 && out.problems[at - 1].document == Document::Bands) --at;
+        out.problems.insert (out.problems.begin() + std::ptrdiff_t (at), syntax (*error, Document::Targets));
+    }
+    if (const auto* error = std::get_if<toml::Error> (&bands)) out.problems.push_back (syntax (*error, Document::Bands));
     return out;
 }
 
-std::optional<Versions> Config::versionsOf (std::string_view targetsToml, std::string_view engineToml)
+std::optional<Versions> Config::versionsOf (std::string_view targetsToml, std::string_view engineToml, std::string_view bandsToml)
 {
     const toml::ParseResult targets = toml::parse (targetsToml);
     const toml::ParseResult engine = toml::parse (engineToml);
+    const toml::ParseResult bands = toml::parse (bandsToml);
     const auto* t = std::get_if<toml::Table> (&targets);
     const auto* e = std::get_if<toml::Table> (&engine);
-    if (t == nullptr || e == nullptr) return std::nullopt;
-    return Versions { detail::version (*t, *e, false), detail::version (*t, *e, true) };
+    const auto* b = std::get_if<toml::Table> (&bands);
+    if (t == nullptr || e == nullptr || b == nullptr) return std::nullopt;
+    return Versions { detail::version (*t, *e, *b, false), detail::version (*t, *e, *b, true) };
 }
 
 } // namespace felitronics::session::config

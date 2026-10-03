@@ -57,6 +57,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace text = felitronics::session::text;
@@ -77,6 +78,8 @@ using text::Unit;
 namespace
 {
 std::string g_catalogText, g_formatText;   // the two source documents, read once in main()
+std::string g_bandLanguages;                // felitronics-bands' languages.toml ...
+std::vector<std::pair<std::string, std::string>> g_bandTexts;   // ... and its text/<code>.toml, code and source
 
 constexpr std::array<Lang, 12> kAll = { Lang::En, Lang::De, Lang::Ru, Lang::Uk, Lang::Cs, Lang::Es,
                                         Lang::Fr, Lang::It, Lang::Pl, Lang::Pt, Lang::Ro, Lang::Tr };
@@ -856,6 +859,60 @@ void theObservationsHaveTheirWords()
         "17 names, 4 handlings (nothing, HPF, mono bass, by hand) and 10 reasons, each worded in Russian and English");
 }
 
+// THE NAMED BANDS' WORDS ARE FELITRONICS-BANDS': a field or device term of tilt, low or the five bands prints the band's name
+// from text/<lang>.toml; the catalog that writes one is refused, and so is a language of the core whose bands text lacks a
+// name, or a languages.toml that is not the catalog's languages.
+void theBandsNamesAreFelitronicsBands()
+{
+    felitronics::test::group ("the named bands' words are felitronics-bands' text/<lang>.toml, never a copy in the catalog");
+    namespace toml = felitronics::toml;
+    std::vector<detail::BandText> texts;
+    for (const auto& [code, source] : g_bandTexts) texts.push_back ({ code, source });
+    const auto clean = detail::checkBands (g_catalogText, g_bandLanguages, texts);
+    ok (! texts.empty() && clean.empty(), "the gate passes felitronics-bands' languages and texts (" + std::to_string (clean.size()) + " problems)");
+    bool embedded = true;
+    for (const auto& [code, source] : g_bandTexts)
+        embedded = embedded && toml::write (toml::embedded::toTable (detail::bandTextRoot (code)))
+                                   == felitronics::session::config::testing::canonicalOf (source);
+    ok (embedded, "each embedded bands text is its text/<code>.toml, byte for byte in canonical form");
+    ok (arg (Arg::term (text::Term::FieldTiltDb), Lang::Ru) == "Наклон" && arg (Arg::term (text::Term::FieldTiltDb), Lang::En) == "Tilt"
+            && arg (Arg::term (text::Term::DeviceLow), Lang::Ru) == "Низ" && arg (Arg::term (text::Term::FieldBandsAir), Lang::En) == "Air"
+            && arg (Arg::term (text::Term::DeviceBands), Lang::En) == "EQ bands",
+        "a band's term prints felitronics-bands' name (Наклон / Tilt, Низ, Air); the EQ bands' device stays the catalog's");
+
+    const auto refused = [] (const std::vector<detail::Problem>& problems, detail::Document document, detail::Fault fault,
+                             std::string_view path, std::string_view code)
+    {
+        for (const auto& p : problems)
+            if (p.document == document && p.fault == fault && p.path == path && std::string_view (p.code) == code) return true;
+        return false;
+    };
+    const auto plantIn = [] (const std::string& source, std::string_view from, std::string_view to)
+    {
+        const auto at = source.find (from);
+        return at == std::string::npos ? std::string {} : source.substr (0, at) + std::string (to) + source.substr (at + from.size());
+    };
+    const std::string tiltBack = plantIn (g_catalogText, "bands.ru = \"Полосы EQ\"", "tilt.ru = \"Наклон\"\nbands.ru = \"Полосы EQ\"");
+    ok (! tiltBack.empty() && refused (detail::checkText (tiltBack, g_formatText), detail::Document::Catalog, detail::Fault::Refused,
+                                       "terms.device.tilt", "FromBands"),
+        "control: tilt's name written back into [terms.device] is refused (FromBands)");
+    const std::string mudBack = plantIn (g_catalogText, "audio.ru = \"Звук\"", "bandsMud.ru = \"Грязь\"\naudio.ru = \"Звук\"");
+    ok (! mudBack.empty() && refused (detail::checkText (mudBack, g_formatText), detail::Document::Catalog, detail::Fault::Refused,
+                                      "terms.field.bandsMud", "FromBands"),
+        "control: the mud band's field name written back into [terms.field] is refused (FromBands)");
+    std::vector<std::string> sources;
+    for (const auto& [code, source] : g_bandTexts) sources.push_back (code == "en" ? plantIn (source, "name = \"Air\"", "# no name") : source);
+    std::vector<detail::BandText> nameless;
+    for (std::size_t i = 0; i < g_bandTexts.size(); ++i) nameless.push_back ({ g_bandTexts[i].first, sources[i] });
+    ok (refused (detail::checkBands (g_catalogText, g_bandLanguages, nameless), detail::Document::BandText, detail::Fault::Missing,
+                 "air.name", ""),
+        "control: a language of the core whose bands text lacks a band's name is refused (Missing air.name)");
+    const std::string ruOnly = plantIn (g_bandLanguages, "[\"ru\", \"en\"]", "[\"ru\"]");
+    ok (! ruOnly.empty() && refused (detail::checkBands (g_catalogText, ruOnly, texts), detail::Document::BandLanguages,
+                                     detail::Fault::Refused, "languages", "LanguagesDiffer"),
+        "control: felitronics-bands' languages other than the catalog's are refused (LanguagesDiffer)");
+}
+
 void everyRejectionIsAFact()
 {
     felitronics::test::group ("a command's rejection: every code a fact of its own, in ru and en; a refused field named");
@@ -1174,13 +1231,21 @@ void theCorpusIsTheSameBytesOnEveryRow()
 int main (int argc, char** argv)
 {
     std::printf ("felitronics session::text tests\n");
-    if (argc != 3 || ! felitronics::session::config::testing::readFile (argv[1], g_catalogText)
-        || ! felitronics::session::config::testing::readFile (argv[2], g_formatText))
+    namespace testing = felitronics::session::config::testing;
+    if (argc != 4 || ! testing::readFile (argv[1], g_catalogText) || ! testing::readFile (argv[2], g_formatText)
+        || ! testing::readFile ((std::string (argv[3]) + "/languages.toml").c_str(), g_bandLanguages))
     {
-        std::printf ("usage: %s <catalog.toml> <format.toml>\n", argv[0]);
+        std::printf ("usage: %s <catalog.toml> <format.toml> <felitronics-bands checkout>\n", argv[0]);
         return 2;
     }
+    for (const std::string& code : detail::bandLanguages (g_bandLanguages))
+    {
+        std::string text;
+        if (! testing::readFile ((std::string (argv[3]) + "/text/" + code + ".toml").c_str(), text)) return 2;
+        g_bandTexts.emplace_back (code, std::move (text));
+    }
     theEmbeddedTextIsTheSource();
+    theBandsNamesAreFelitronicsBands();
     theGateRefusesEachMistake();
     roundingIsOnTheDecimalGrid();
     theTableFormatsEveryLanguage();

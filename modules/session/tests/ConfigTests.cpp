@@ -22,7 +22,8 @@
 #include <felitronics/toml/Toml.h>
 
 #include "ConfigVersion.h"      // the walk Config::versions() is (modules/session/src)
-#include "testcopy/engine.h"    // this suite's own embedding of the two documents, by the same tool from the same files
+#include "testcopy/bands.h"     // this suite's own embedding of the three documents, by the same tool from the same files
+#include "testcopy/engine.h"
 #include "testcopy/targets.h"
 
 #include <algorithm>
@@ -46,7 +47,7 @@ using felitronics::test::ok;
 
 namespace
 {
-std::string g_targetsText, g_engineText;   // the two source documents, read once in main()
+std::string g_targetsText, g_engineText, g_bandsText;   // the source documents (bands.toml: felitronics-bands'), read in main()
 
 void mustAccept (config::Document doc, std::string_view from, std::string_view to)
 {
@@ -71,6 +72,10 @@ void theEmbeddedConfigIsTheSource()
     ok (! engine.empty() && engine == canonicalOf (g_engineText),
         "the embedded engine is engine.toml, byte for byte in canonical form (" + std::to_string (engine.size()) + " bytes)");
     ok (Config::bind (g_targetsText, g_engineText).ok(), "and the source files bind clean through bind() too");
+    const std::string bands = Config::text (config::Document::Bands);
+    ok (! bands.empty() && bands == canonicalOf (g_bandsText),
+        "the embedded bands are felitronics-bands' bands.toml, byte for byte in canonical form (" + std::to_string (bands.size()) + " bytes)");
+    ok (Config::bind (g_targetsText, g_engineText, g_bandsText).ok(), "...and the three source files bind clean");
 }
 
 //==============================================================================
@@ -81,9 +86,9 @@ void theEmbeddedConfigIsTheSource()
 void mustRefuse (config::Document document, std::string_view from, std::string_view to, std::string_view at,
                  config::Fault fault, const std::string& path, config::Refusal refusal = config::Refusal::None)
 {
-    const bool inTargets = document == config::Document::Targets;
+    const bool inTargets = document == config::Document::Targets, inBands = document == config::Document::Bands;
     const bool header = at.size() > 2 && at.front() == '[' && at.back() == ']' && at[1] != ']';
-    Plant p = plant (inTargets ? g_targetsText : g_engineText, from, to, header ? to : at);
+    Plant p = plant (inTargets ? g_targetsText : inBands ? g_bandsText : g_engineText, from, to, header ? to : at);
     if (p.planted && header)
     {
         // The header's own line: the bracketed name also occurs in comments.
@@ -93,7 +98,9 @@ void mustRefuse (config::Document document, std::string_view from, std::string_v
     const std::string what = std::string (Problem::name (fault)) + (refusal != config::Refusal::None
         ? std::string (" ") + Problem::name (refusal) : std::string{}) + " " + path;
     if (! p.planted) { ok (false, what + ": the control has rotted — '" + std::string (from) + "' is not in the document once"); return; }
-    const config::Loaded loaded = inTargets ? Config::bind (p.text, g_engineText) : Config::bind (g_targetsText, p.text);
+    const config::Loaded loaded = inTargets ? Config::bind (p.text, g_engineText, g_bandsText)
+                                : inBands   ? Config::bind (g_targetsText, g_engineText, p.text)
+                                            : Config::bind (g_targetsText, p.text, g_bandsText);
     bool found = false;
     for (const auto& q : loaded.problems)
         found = found || (q.document == document && q.fault == fault && q.path == path && q.refusal == refusal
@@ -127,8 +134,8 @@ void theSchemaRefuses()
     mustRefuse (E, "releaseMs = 50", "releaseMs = 0.99", "0.99", Fault::OutOfRange, "limiter.releaseMs");
     mustRefuse (E, "slowReleaseMs = 200", "slowReleaseMs = 0.99", "0.99", Fault::OutOfRange, "limiter.slowReleaseMs");
     mustAccept (E, "releaseMs = 50", "releaseMs = 1");
-    mustRefuse (E, "[tilt]\ndomain = [-6, 6]\nband = 1\nfreqHz = 1000\nnormal = [-1.5, 1.5]\nhard = [-3, 3]",
-                "[tilt]\ndomain = [1, 6]\nband = 1\nfreqHz = 1000\nnormal = [1, 2]\nhard = [1, 3]",
+    mustRefuse (E, "[tilt]\ndomain = [-6, 6]\nband = 1\nnormal = [-1.5, 1.5]\nhard = [-3, 3]",
+                "[tilt]\ndomain = [1, 6]\nband = 1\nnormal = [1, 2]\nhard = [1, 3]",
                 "[1, 6", Fault::OutOfRange, "tilt.domain");
     mustAccept (E, "aboveHz = 20,", "aboveHz = 20.25,");
     mustAccept (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 2.75 }");
@@ -301,12 +308,12 @@ void theSchemaAdmitsWhatTheAnalyzersAdmit()
     ok (offset && offset->ok(), "shifted slider travel does not reject defaults");
     // Across the documents the engine's step is its own decimal, all nine places: on a low shelf of step 0.100000001 from
     // −3, 0.500000035 is on the grid and 0.5 is not.
-    const auto fine = bindWith ({ { Document::Engine, "q = 0.6\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.1",
-                                    "q = 0.6\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.100000001" },
+    const auto fine = bindWith ({ { Document::Engine, "band = 2\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.1",
+                                    "band = 2\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.100000001" },
                                   { Document::Targets, "lowDb = 0.5", "lowDb = 0.500000035" } });
     ok (fine && fine->ok(), "lowDb 0.500000035 on a step of 0.100000001 from −3: on the grid");
-    const auto coarse = bindWith ({ { Document::Engine, "q = 0.6\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.1",
-                                      "q = 0.6\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.100000001" } }, &targets);
+    const auto coarse = bindWith ({ { Document::Engine, "band = 2\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.1",
+                                      "band = 2\nnormal = [-1.5, 1.5]\nhard = [-3, 3]\nstep = 0.100000001" } }, &targets);
     ok (coarse && coarse->ok(), "defaults need not be on slider steps");
 }
 
@@ -395,10 +402,14 @@ void theVersionsAreNormalised()
     char hex[48];
     std::snprintf (hex, sizeof hex, "%016llx / %016llx", (unsigned long long) v.all, (unsigned long long) v.sound);
     std::printf ("    config versions (all / sound) %s\n", hex);
-    ok (sameVersions (Config::versionsOf (g_targetsText, g_engineText), v),
+    ok (sameVersions (Config::versionsOf (g_targetsText, g_engineText, g_bandsText), v)
+            && sameVersions (Config::versionsOf (g_targetsText, g_engineText), v),
         "versions(), the walk over the embedded data, are the source files' versions");
-    ok (config::detail::version (config::testcopy::targets.root(), config::testcopy::engine.root(), false) == v.all
-            && config::detail::version (config::testcopy::targets.root(), config::testcopy::engine.root(), true) == v.sound,
+    const auto& tc = config::testcopy::targets;
+    const auto& ec = config::testcopy::engine;
+    const auto& bc = config::testcopy::bands;
+    ok (config::detail::version (tc.root(), ec.root(), bc.root(), false) == v.all
+            && config::detail::version (tc.root(), ec.root(), bc.root(), true) == v.sound,
         "...and this suite's own embedding hashes to them by the walk versions() uses");
     ok (v.all != v.sound, "all and sound are two versions");
     ok (! Config::versionsOf ("[[", g_engineText).has_value(), "a document that does not parse has no version");
@@ -526,11 +537,12 @@ void theVersionsMoveWithEveryValue()
     // a string or a key one byte shorter — and hashed by the walk versions() uses.
     const auto& copyTargets = config::testcopy::targets;
     const auto& copyEngine = config::testcopy::engine;
+    const auto& copyBands = config::testcopy::bands;
     std::vector<std::uint64_t> fromNodes;
-    std::size_t numbers = 0, flags = 0, texts = 0;
-    for (int doc = 0; doc < 2; ++doc)
+    std::size_t numbers = 0, flags = 0, texts = 0, bandsKeptSound = 0;
+    for (int doc = 0; doc < 3; ++doc)
     {
-        const toml::embedded::Document& original = doc == 0 ? copyTargets : copyEngine;
+        const toml::embedded::Document& original = doc == 0 ? copyTargets : doc == 1 ? copyEngine : copyBands;
         for (std::uint32_t i = 0; i < original.count; ++i)
             for (int what = 0; what < 2; ++what)   // 0: the value, 1: the key
             {
@@ -544,8 +556,12 @@ void theVersionsMoveWithEveryValue()
                 else continue;
                 const toml::embedded::Document changed { nodes.data(), original.order, original.count, original.pools,
                                                          original.poolCount };
-                fromNodes.push_back (doc == 0 ? config::detail::version (changed.root(), copyEngine.root(), false)
-                                              : config::detail::version (copyTargets.root(), changed.root(), false));
+                const auto t = doc == 0 ? changed.root() : copyTargets.root();
+                const auto e = doc == 1 ? changed.root() : copyEngine.root();
+                const auto b = doc == 2 ? changed.root() : copyBands.root();
+                fromNodes.push_back (config::detail::version (t, e, b, false));
+                // felitronics-bands' geometry is sound, every node of it.
+                if (doc == 2 && config::detail::version (t, e, b, true) == v.sound) ++bandsKeptSound;
             }
     }
     std::printf ("    data: %zu nodes changed one at a time (%zu numbers, %zu flags, %zu strings and keys)\n", fromNodes.size(),
@@ -555,18 +571,45 @@ void theVersionsMoveWithEveryValue()
         "data: every one of them moves all");
     std::sort (fromNodes.begin(), fromNodes.end());
     ok (std::adjacent_find (fromNodes.begin(), fromNodes.end()) == fromNodes.end(), "data: each to a version of its own");
+    ok (bandsKeptSound == 0, "data: every node of bands.toml moves sound (" + std::to_string (bandsKeptSound) + " did not)");
+}
+
+// THE NAMED BANDS ARE FELITRONICS-BANDS': the filters of tilt, low and the five bands are bands.toml's alone — a pivot, a Q
+// or a type written back into engine.toml is a key nothing reads — and the two documents name the same seven bands.
+void theBandsAreFelitronicsBands()
+{
+    felitronics::test::group ("the EQ devices' filters are felitronics-bands' bands.toml, never a copy in engine.toml");
+    using config::Document;
+    using config::Fault;
+    const config::Loaded loaded = Config::load();
+    const config::Engine& e = loaded.config.engine;
+    const auto same = [] (double a, double b) { return ! (a < b) && ! (b < a); };
+    ok (loaded.ok() && same (e.tilt.freqHz, 1000) && same (e.low.freqHz, 80) && same (e.low.q, 0.6) && same (e.bands.body.freqHz, 160)
+            && e.bands.air.type == config::BandType::HighShelf,
+        "the bound engine carries bands.toml's numbers (tilt 1000 Hz, low 80 Hz q 0.6, body 160 Hz, air a high shelf)");
+    mustRefuse (Document::Engine, "[tilt]\n", "[tilt]\nfreqHz = 1000\n", "freqHz", Fault::UnknownKey, "tilt.freqHz");
+    mustRefuse (Document::Engine, "[low]\n", "[low]\nq = 0.6\n", "q = 0.6", Fault::UnknownKey, "low.q");
+    mustRefuse (Document::Engine, "[bands.body]\n", "[bands.body]\nq = 0.7\n", "q = 0.7", Fault::UnknownKey, "bands.body.q");
+    mustRefuse (Document::Engine, "[bands.air]\n", "[bands.air]\ntype = \"highShelf\"\n", "type", Fault::UnknownKey,
+                "bands.air.type");
+    mustRefuse (Document::Engine, "[bands.air]", "[bands.treble]", "treble", Fault::UnknownKey, "bands.treble");
+    mustRefuse (Document::Bands, "[bands.air]", "[bands.treble]", "treble", Fault::UnknownKey, "bands.treble");
+    mustRefuse (Document::Bands, "type = \"lowShelf\"", "type = \"bell\"", "\"bell\"", Fault::Refused, "bands.low.type",
+                config::Refusal::NotOneOf);
 }
 } // namespace
 
 int main (int argc, char** argv)
 {
     std::printf ("felitronics session::config tests\n");
-    if (argc != 3 || ! config::testing::readFile (argv[1], g_targetsText) || ! config::testing::readFile (argv[2], g_engineText))
+    if (argc != 4 || ! config::testing::readFile (argv[1], g_targetsText) || ! config::testing::readFile (argv[2], g_engineText)
+        || ! config::testing::readFile (argv[3], g_bandsText))
     {
-        std::fprintf (stderr, "usage: %s <targets.toml> <engine.toml> — the two source documents, readable\n", argv[0]);
+        std::fprintf (stderr, "usage: %s <targets.toml> <engine.toml> <bands.toml> — the source documents, readable\n", argv[0]);
         return 2;
     }
     theEmbeddedConfigIsTheSource();
+    theBandsAreFelitronicsBands();
     theSchemaRefuses();
     theSchemaAdmitsWhatTheAnalyzersAdmit();
     theVersionsAreNormalised();

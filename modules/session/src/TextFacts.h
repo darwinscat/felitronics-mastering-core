@@ -9,7 +9,8 @@
 //
 //   * kFacts — for each FactId, its key in modules/session/text/catalog.toml and its arguments IN ORDER, each with the
 //     name its placeholder spells ({passes}) and its kind; an argument of kind Term names the term group it takes.
-//   * kTerms — for each Term, its group and its key: terms.<group>.<key> in the catalog.
+//   * kTerms — for each Term, its group and its key: terms.<group>.<key> in the catalog; for a named EQ band, the band's
+//     key in felitronics-bands instead, whose text/<lang>.toml gives its name.
 //   * the twelve languages' codes, the units' keys in modules/session/text/format.toml, and each language's CLDR plural
 //     categories (the gate requires exactly these in a plural message; src/TextNumber.cpp selects among them).
 //   * the placeholder grammar: `{` name `}`, the name an ASCII letter followed by letters and digits. Nothing else in a
@@ -280,6 +281,8 @@ struct TermShape
     Term id {};
     std::string_view group;           // terms.<group>.<key> in the catalog
     std::string_view key;
+    std::string_view band {};         // a named EQ band: its words are felitronics-bands' text/<lang>.toml [<band>] name,
+                                      // and the catalog must not write them
 };
 
 inline constexpr TermShape kTerms[] = {
@@ -294,10 +297,10 @@ inline constexpr TermShape kTerms[] = {
     { Term::FieldGlueUpToDb, "field", "glueUpToDb" },
     { Term::FieldSaturationDrive, "field", "saturationDrive" },
     { Term::FieldSaturationMix, "field", "saturationMix" },
-    { Term::FieldTiltDb, "field", "tiltDb" },
+    { Term::FieldTiltDb, "field", "tiltDb", "tilt" },
     { Term::FieldLimiterNeedles, "field", "limiterNeedles" },
     { Term::FieldLimiterNeedlesDb, "field", "limiterNeedlesDb" },
-    { Term::FieldLowDb, "field", "lowDb" },
+    { Term::FieldLowDb, "field", "lowDb", "low" },
     { Term::FieldAudio, "field", "audio" },
     { Term::AnalyzerLowEnd, "analyzer", "lowEnd" },
     { Term::AnalyzerLowEnd150, "analyzer", "lowEnd150" },
@@ -322,10 +325,10 @@ inline constexpr TermShape kTerms[] = {
     { Term::DeviceMonoBass, "device", "monoBass" },
     { Term::DeviceGlue, "device", "glue" },
     { Term::DeviceSaturation, "device", "saturation" },
-    { Term::DeviceTilt, "device", "tilt" },
+    { Term::DeviceTilt, "device", "tilt", "tilt" },
     { Term::DeviceLimiter, "device", "limiter" },
     { Term::DeviceDither, "device", "dither" },
-    { Term::DeviceLow, "device", "low" },
+    { Term::DeviceLow, "device", "low", "low" },
     { Term::NeedlesWhyShell, "needlesWhy", "shell" },
     { Term::NeedlesWhyTarget, "needlesWhy", "target" },
     { Term::NeedlesWhyQuiet, "needlesWhy", "quiet" },
@@ -416,11 +419,11 @@ inline constexpr TermShape kTerms[] = {
     { Term::LandingLimitLra, "landingLimit", "lra" },
     { Term::LandingLimitGain, "landingLimit", "gain" },
     { Term::DeviceBands, "device", "bands" },
-    { Term::FieldBandsBody, "field", "bandsBody" },
-    { Term::FieldBandsMud, "field", "bandsMud" },
-    { Term::FieldBandsForward, "field", "bandsForward" },
-    { Term::FieldBandsBrightness, "field", "bandsBrightness" },
-    { Term::FieldBandsAir, "field", "bandsAir" },
+    { Term::FieldBandsBody, "field", "bandsBody", "body" },
+    { Term::FieldBandsMud, "field", "bandsMud", "mud" },
+    { Term::FieldBandsForward, "field", "bandsForward", "forward" },
+    { Term::FieldBandsBrightness, "field", "bandsBrightness", "brightness" },
+    { Term::FieldBandsAir, "field", "bandsAir", "air" },
 };
 inline constexpr std::size_t kTermCount = sizeof (kTerms) / sizeof (kTerms[0]);
 
