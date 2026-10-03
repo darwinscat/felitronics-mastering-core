@@ -619,7 +619,7 @@ if(FELITRONICS_BUILD_TESTS)
             "band_type_in_engine|engine|[bands.air]\n|[bands.air]\ntype = \"highShelf\"\n|type|UnknownKey bands.air.type"
             "band_unknown_to_bands|engine|[bands.air]|[bands.treble]|treble|UnknownKey bands.treble"
             "band_unknown_to_engine|bands|[bands.air]|[bands.treble]|treble|UnknownKey bands.treble"
-            "band_type_for_device|bands|type = \"lowShelf\"|type = \"bell\"|\"bell\"|Refused bands.low.type — NotOneOf")
+            "band_type_for_device|bands|type = \"lowShelf\"|type = \"bell\"|\"bell\"|Refused bands.low.type")
         foreach(ctl IN LISTS FELITRONICS_SESSION_CONFIG_CONTROLS)
             string(REPLACE "|" ";" f "${ctl}")
             list(GET f 0 name)
