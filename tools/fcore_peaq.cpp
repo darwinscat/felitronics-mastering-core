@@ -6,20 +6,27 @@
 //   fcore_peaq <ref.wav> <test.wav>
 //   fcore_peaq --f32le <sampleRate> <channels> <ref.f32le> <test.f32le>
 //
-// The two programmes must be time-aligned and have the same channel count (1 or 2) and rate. A rate other than
-// 48 kHz is converted to 48 kHz by core::DeliveryResampler — the same converter, the same plan, for both — before
-// the model sees it. Programmes of different lengths are compared over the shorter one.
+// The two programmes must be time-aligned and have the same channel count (1 or 2), rate and length: a length
+// mismatch is refused, never silently cut to the common part (a test missing its second half would grade the half it
+// kept). A rate other than 48 kHz is converted to 48 kHz by core::DeliveryResampler — the same converter, the same
+// plan, for both — before the model sees it. NOTE: the converter designs its kernel through the system libm, so on a
+// non-48 kHz input the bits may differ between rows (native vs wasm, glibc vs Apple); at 48 kHz they do not.
+//
+// MEMORY. Both programmes are held whole: the WAV file, its decoded doubles and the float planes. The tool estimates
+// that from the file sizes before reading and refuses past kMaxToolBytes (2 GiB) — about 50 minutes of stereo float.
 //
 // Prints the verdict, the reported ODG, the network's ODG and DI, and the eleven MOVs, every number with 17
 // significant digits: the same source compiled for wasm (tools/wasm/build.sh, fcpeaq.node.js) must print the same
 // text, and CI diffs the two.
 //
-// Exit codes: 0 graded (Graded or Transparent), 1 not graded (NoSignal, NonFinite, Undefined), 2 bad arguments or input.
+// Exit codes: 0 graded (Graded or Transparent), 1 not graded (NoSignal, NonFinite, Undefined, OutOfRange), 2 bad
+// arguments or input.
 
 #include <felitronics/analysis/Peaq.h>
 #include <felitronics/core/DeliveryResampler.h>
 #include <felitronics/io/Wav.h>
 
+#include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -29,6 +36,23 @@
 namespace
 {
 using Planar = std::vector<std::vector<float>>;
+constexpr std::uint64_t kMaxToolBytes = 2ull << 30;
+
+// The file's size; a size the platform's `long` cannot hold (past 2 GiB on wasm32) reads as too large. (No buffer on
+// the stack: the wasm build's stack is 64 KiB.)
+std::uint64_t fileBytes (const char* path)
+{
+    std::FILE* f = std::fopen (path, "rb");
+    if (f == nullptr) return 0;
+    const bool sought = std::fseek (f, 0, SEEK_END) == 0;
+    const long n = sought ? std::ftell (f) : -1L;
+    std::fclose (f);
+    return n < 0 ? ~0ull : (std::uint64_t) n;
+}
+
+// The peak the tool will hold for one programme read from `bytes` of file: the file itself, its decoded doubles
+// (at worst 8 per 2-byte sample) and the float planes, plus a 48 kHz copy when it is converted.
+std::uint64_t peakFor (std::uint64_t bytes, bool wav) { return wav ? bytes + 4u * bytes + 2u * bytes + 2u * bytes : 3u * bytes; }
 
 struct Input
 {
@@ -117,6 +141,7 @@ const char* verdictName (felitronics::analysis::PeaqVerdict v)
         case V::NoSignal: return "no-signal";
         case V::NonFinite: return "non-finite";
         case V::Undefined: return "undefined";
+        case V::OutOfRange: return "out-of-range";
         case V::NotRun: break;
     }
     return "not-run";
@@ -127,6 +152,21 @@ int main (int argc, char** argv)
 {
     using namespace felitronics::analysis;
     Input ref, test;
+    {
+        const bool wav = argc == 3;
+        const char* rpath = wav ? argv[1] : (argc == 6 ? argv[4] : nullptr);
+        const char* tpath = wav ? argv[2] : (argc == 6 ? argv[5] : nullptr);
+        if (rpath != nullptr && tpath != nullptr)
+        {
+            const std::uint64_t need = peakFor (fileBytes (rpath), wav) + peakFor (fileBytes (tpath), wav);
+            if (need > kMaxToolBytes)
+            {
+                std::fprintf (stderr, "these programmes need about %.2f GiB in this tool, more than its %.0f GiB limit\n",
+                              (double) need / (double) (1ull << 30), (double) kMaxToolBytes / (double) (1ull << 30));
+                return 2;
+            }
+        }
+    }
     if (argc == 3)
     {
         ref = readWavFile (argv[1]);
@@ -153,10 +193,16 @@ int main (int argc, char** argv)
         return 2;
     }
     if (ref.sr != test.sr) { std::fprintf (stderr, "reference and test need the same sample rate\n"); return 2; }
+    if (ref.ch[0].size() != test.ch[0].size())
+    {
+        std::fprintf (stderr, "reference has %zu samples per channel, test %zu: PEAQ compares aligned programmes of one "
+                              "length — trim or pad them first\n", ref.ch[0].size(), test.ch[0].size());
+        return 2;
+    }
     if (! to48k (ref) || ! to48k (test)) return 2;
 
     const int nch = (int) ref.ch.size();
-    const std::size_t n = ref.ch[0].size() < test.ch[0].size() ? ref.ch[0].size() : test.ch[0].size();
+    const std::size_t n = ref.ch[0].size();
     Peaq peaq;
     if (! peaq.prepare (nch, (long long) n)) { std::fprintf (stderr, "cannot prepare for %zu samples\n", n); return 2; }
     constexpr std::size_t kBlock = 8192;

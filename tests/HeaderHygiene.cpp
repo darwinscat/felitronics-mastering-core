@@ -14,6 +14,7 @@
 #include <felitronics/analysis/HumDetector.h>
 #include <felitronics/analysis/LowEnd.h>
 #include <felitronics/analysis/PeakExcursions.h>
+#include <felitronics/analysis/Peaq.h>   // needs felitronics::peaq's flags, linked by both targets of this TU
 #include <felitronics/analysis/ProgrammeReport.h>
 #include <felitronics/analysis/SourceForensics.h>
 #include <felitronics/analysis/SpectrumFrames.h>
