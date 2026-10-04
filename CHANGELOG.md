@@ -31,6 +31,11 @@
 - **Fixed — the reduction over the budget always prints above it** (`MasterLandingOverBudget` 602, since v0.14.0, and
   the new 615): it was printed to the nearest tenth, so 3.01 over a 3 dB budget read "3.0"; it is rounded up to a tenth
   and kept at least a tenth above the budget's own tenths (3.01 over 3 prints 3.1, 7.26 over 7.25 prints 7.3).
+- **Fixed — a landing pass's loudness is the same bits on every row** (mastering): the solver's pass meter (every pass,
+  the verify, the product landing's search and report) reads the integrated loudness on `core::DetMath`, not the
+  system libm's log10, whose result on gcc + glibc stood an ulp apart from Apple's and emscripten's on some energies
+  (two passes of the `max-mode` scenario's pass log on CI's gcc row). Apple and wasm read the same bits as before: no
+  trace, recording or PCM moves there.
 - **`FC_SESSION_ABI_VERSION` 10**: the manifest appends the enums, facts, terms and codec fields; `SURFACE[10]` adds no
   entry point. Existing targets' sound does not move (the WAV contract's PCM is unchanged); the `2026-10` defaults'
   config and sound versions move with the two rows and the `[landing.max]` table, restated in place (no project of those
