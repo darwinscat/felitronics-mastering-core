@@ -1,9 +1,10 @@
 ### session — the loud target's limiter budget 7.5 dB, a budget in dB with a fraction (owner, 04.10)
 
-- **`[landing] limiterBudget` takes a fraction**: `quietDb`, `middleDb` and `loudDb` are numbers of dB from 1 to 60, a
-  whole number or not (`Config::Landing` holds them as `double`; the order quiet ≤ middle ≤ loud still holds). The
-  verdict that names the budget (`MasterLandingBudget` 600, `MasterLandingOverBudget` 602) prints it with a decimal only
-  where it has one: «7,5 дБ», «7 дБ».
+- **`[landing] limiterBudget` takes a fraction**: `quietDb`, `middleDb` and `loudDb` are numbers of dB from 1 to 60 on a
+  step of a quarter dB — the landing's own resolution of its proof (`NotOnStep` refuses 7.3), checked on the decimals as
+  written (`Config::Landing` holds them as `double`; the order quiet ≤ middle ≤ loud still holds). The verdict that names
+  the budget (`MasterLandingBudget` 600, `MasterLandingOverBudget` 602) prints it whole — up to two decimals, the
+  trailing zeros dropped, decided on its hundredths as an integer: «7 дБ», «7,5 дБ», «7,25 дБ».
 - **The loud step is 7.5 dB, was 10**: `limiterBudget = { quietDb = 4, middleDb = 7, loudDb = 7.5, middleLufs = [-10, -8] }`.
   1058 renders of 23 songs without a budget put the limiter's cost and the PEAQ damage breaking together near 4, 6.5 and
   8 dB of the active P95. Asked for −6 LUFS, the median song at 7.5 dB reaches −7.83 with an ODG of −1.46, 3 of 23

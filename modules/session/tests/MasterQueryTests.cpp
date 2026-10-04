@@ -272,6 +272,23 @@ void theLandingsFacts()
         ok (metReport.achievedLufs && both && ! MasterReportText::gate (metReport, apart, kTolerance),
             "the gate's level and the file's are both said when they part by more than the tolerance, the file louder or quieter");
     }
+    // The limiter's budget printed whole: up to two decimals, the trailing zeros dropped.
+    {
+        LandingSummary held;
+        held.status = LandingStatus::TargetUnreachable; held.binding = LandingConstraint::LimiterGainReduction;
+        const auto said = [&] (double budget, text::Lang lang)
+        {
+            LandingMeasure m; m.limiterBudgetDb = budget;
+            const auto fact = MasterReportText::landing (metReport, held, kTolerance, m);
+            return fact && fact->id == text::FactId::MasterLandingBudget ? text::Text::text (*fact, lang) : std::string {};
+        };
+        const auto ru725 = said (7.25, text::Lang::Ru), en725 = said (7.25, text::Lang::En);
+        const auto ru75 = said (7.5, text::Lang::Ru), ru7 = said (7.0, text::Lang::Ru), en7 = said (7.0, text::Lang::En);
+        ok (ru725.find ("7,25") != std::string::npos && en725.find ("7.25") != std::string::npos
+            && ru75.find ("7,5") != std::string::npos && ru75.find ("7,50") == std::string::npos
+            && ru7.find ("7,0") == std::string::npos && en7.find ("7.0") == std::string::npos && ! ru7.empty(),
+            "the budget is printed whole — 7.25, 7.5, 7 — in ru and en: " + ru725 + " / " + en725);
+    }
     const auto solved = MasterReportText::landing (metReport, *kept (metView.view(), landed.id)->landing, kTolerance);
     ok (solved && solved->id == text::FactId::MasterLandingSolved && metReport.achievedLufs
         && same (solved->args[0].number, *metReport.achievedLufs) && same (solved->args[1].number, metReport.targetLufs)

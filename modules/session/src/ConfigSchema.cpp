@@ -243,6 +243,14 @@ struct Doc
                 refuseItem (in, key, i, Refusal::Duplicate);
     }
 
+    // The limiter's budget is a whole number of quarter dB, as written: the drive the landing resolves its proof to
+    // (LandingSearch kBudgetResolutionDb, 0.25 dB), and two decimals print it whole.
+    void onQuarterDb (Reader& in, std::string_view key)
+    {
+        const auto x = decimalAt (in, key);
+        if (x && ! onGrid (*x, toml::Decimal { 0, 0 }, toml::Decimal { 25, 2 })) refuse (in, key, Refusal::NotOnStep);
+    }
+
     // The analyzer hop sits on its real time quantum.
     void onStep (Reader& in, std::string_view key, const Grid& grid)
     {
@@ -310,6 +318,7 @@ void readLanding (Doc& d, Reader& in, Landing& o)
         const bool quiet = t.required ("quietDb", o.quietBudgetDb, R { 1.0, 60.0 });
         const bool middle = t.required ("middleDb", o.middleBudgetDb, R { 1.0, 60.0 });
         const bool loud = t.required ("loudDb", o.loudBudgetDb, R { 1.0, 60.0 });
+        for (const std::string_view key : { "quietDb", "middleDb", "loudDb" }) d.onQuarterDb (t, key);
         d.notAbove (t, quiet && middle, o.quietBudgetDb, o.middleBudgetDb, "middleDb");   // a louder target, no less budget
         d.notAbove (t, middle && loud, o.middleBudgetDb, o.loudBudgetDb, "loudDb");
         d.pair (t, "middleLufs", o.middleLufs, anyLufs());

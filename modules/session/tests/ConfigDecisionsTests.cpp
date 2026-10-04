@@ -253,7 +253,7 @@ void theConfigHoldsTheDecisions()
 // THE LIMITER'S BUDGET IN dB WITH A FRACTION: the schema takes 1 to 60 dB, a whole number or not, and refuses the rest.
 void theBudgetIsFractional()
 {
-    felitronics::test::group ("the limiter's budget is a number of dB with a fraction, from 1 to 60");
+    felitronics::test::group ("the limiter's budget is a number of dB on a quarter-dB step, from 1 to 60");
     const auto bound = [] (std::string_view from, std::string_view to)
     {
         const Plant p = plant (g_engineText, from, to, to);
@@ -261,7 +261,11 @@ void theBudgetIsFractional()
     };
     const auto shipped = Config::load();
     ok (shipped.ok() && same (shipped.config.engine.landing.loudBudgetDb, 7.5), "the shipped 7.5 dB is taken");
-    ok (bound ("middleDb = 7,", "middleDb = 6.25,") == std::optional<bool> (true), "6.25 dB is taken");
+    ok (bound ("middleDb = 7,", "middleDb = 6.25,") == std::optional<bool> (true)
+        && bound ("loudDb = 7.5,", "loudDb = 7.25,") == std::optional<bool> (true), "6.25 and 7.25 dB are taken");
+    ok (bound ("loudDb = 7.5,", "loudDb = 7.3,") == std::optional<bool> (false)
+        && bound ("middleDb = 7,", "middleDb = 7.125,") == std::optional<bool> (false),
+        "7.3 and 7.125 dB are refused: the budget is a whole number of quarter dB, the landing's own resolution");
     ok (bound ("quietDb = 4,", "quietDb = 0.5,") == std::optional<bool> (false), "0.5 dB is refused: under 1");
     ok (bound ("loudDb = 7.5,", "loudDb = 61,") == std::optional<bool> (false), "61 dB is refused: over 60");
     ok (bound ("middleDb = 7,", "middleDb = 3.5,") == std::optional<bool> (false), "a middle budget under the quiet one is refused");
@@ -297,7 +301,7 @@ void aDepartureIsNamed()
         { false, "onSourceGate = true", "onSourceGate = false", "the landing lands the level on the source's gate (owner, 04.10)" },
         { false, "quietDb = 4,", "quietDb = 5,", "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 7.5 dB louder (owner, 04.10; 7.5 in v0.14.1)" },
         { false, "loudDb = 7.5,", "loudDb = 10,", "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 7.5 dB louder (owner, 04.10; 7.5 in v0.14.1)" },
-        { false, "loudDb = 7.5,", "loudDb = 7.6,", "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 7.5 dB louder (owner, 04.10; 7.5 in v0.14.1)" },
+        { false, "loudDb = 7.5,", "loudDb = 7.75,", "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 7.5 dB louder (owner, 04.10; 7.5 in v0.14.1)" },
         { false, "middleLufs = [-10, -8]", "middleLufs = [-11, -8]",
           "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 7.5 dB louder (owner, 04.10; 7.5 in v0.14.1)" },
         { true, "noteLossDb = 0.3", "noteLossDb = 0.5", "targets.club.noteLossDb" },
