@@ -93,10 +93,6 @@ struct MasterJob final
     std::unique_ptr<float[]> takeOutput() noexcept { return std::move (output); }
     // What the Pump says of the step it is in: the current walk's share of the file — absent where the stage walks nothing.
     std::optional<double> stepFraction() const noexcept;
-    // THE DAMAGE FOLLOWS THE MASTER (Session::startDamage): true when the job ended where its damage can be graded — the
-    // report says Pending, and the session starts the damage's own job with the plan and the delivered parameters.
-    bool damageFollows() const noexcept { return damageFollows_; }
-    const DamagePlan& damagePlanned() const noexcept { return damagePlan; }
     mastering::MasteringChainParams winningParams() const noexcept;
 
     mastering::MasteringChain chain;
@@ -145,7 +141,9 @@ struct MasterJob final
     std::optional<MasterMedium> medium;
     MasterReport report {};
     DamagePlan damagePlan {};
-    bool damageFollows_ = false;
+    // THE DAMAGE FOLLOWS THE MASTER (Session::startDamage): the job ended where its damage can be graded — the report
+    // says Pending, and the session starts the damage's own job with damagePlan and the delivered parameters.
+    bool damageFollows = false;
     void settleLra() noexcept;
 };
 } // namespace detail

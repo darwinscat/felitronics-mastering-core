@@ -1699,19 +1699,22 @@ stepped behind every other work (a master, a crest join, the needles, the source
 (it is no overlay: the session's column is the measured one), and publishes its phases `Reference` and `Damage` with
 `stepFraction`, then `Final`, the damage's line (600, 601 or 602) and the `damage` event with the report's own status and
 reason: `Ready` or `Unavailable`. It is stopped, its report `Cancelled`, by `cancel` of its id (reason `Cancelled`), by a
-new `master` (reason `Superseded`, before the new master allocates), and by `forget` of its master (no line: that master
-is gone); each says its line where its master stays and closes with the `damage` event. `load` and `loadMeasured` drop
+new `master` (reason `Superseded`; the master's demand counts the damage's bytes as freed, and the damage stops before the
+master allocates), and by `forget` of its master (no line: that master is gone); each says its line where its master
+stays, and the `damage` event closes the job — after the cancel's own `Cancelled` fact, which comes first. `load` and `loadMeasured` drop
 it silently with the masters. Its memory is the master's: `MasterJob::plan` prices the job (`DamageJob::bytes` — the
 object, its master chain and the walks' plan) beside the master's, it lives in the room the master's job leaves, and
-`liveBytes()` counts it while it runs. With no job id left for it, the damage is not graded: `Unavailable`, `Capacity`,
+`liveBytes()` counts it while it runs. With no job id left for it, the damage is not graded: `Unavailable`, `NoJobId`,
 and the master's damage line says so.
 
 THE DAMAGE (`MasterReport.damage`, v0.14.0, `[cost.damage]` in engine.toml): PEAQ Basic (`analysis::Peaq`) of the
 master against the same chain with its dynamics at rest, graded in windows (10 s every 5 s; a programme shorter than a
 window is one window) on the BS.1116 scale by ODG (grade 5 from -0.5, 4 from -1.5, 3 from -2.5, 2 from -3.5, 1 below).
 The reference is the master's own topology without the dither, so the same stages, oversamplers, delays and order: the
-glue in its exact bypass (ratio 1), and the chain fed `referenceBelowDb` lower at the input gain, so the saturation runs
-in its small-signal line and the limiter and its needles never reach the ceiling. The master is rendered once more
+glue in its exact bypass (ratio 1), and the chain fed `referenceBelowDb` lower than the input gain the master's chain
+applies — by the input gain, and where its range (`MasteringChain::kMaxGainDb`, 60 dB) stops short, which is any
+master whose input gain is under 0 dB, by a scale of the reference's input for the rest — so the saturation runs in its
+small-signal line and the limiter and its needles never reach the ceiling. The master is rendered once more
 without its dither beside it, so a chain at rest leaves the two equal to a gain's rounding — PEAQ's Transparent, grade
 5. Both chains run at 48 kHz from the source (through a resampler of deterministic math where the source is not at
 48 kHz: native and wasm agree to the bit; core's delivery resampler designs its kernel with the platform's libm), and
@@ -1719,7 +1722,19 @@ one gain, from both integrated loudnesses (the reference's measured lifted back,
 scale-free), brings the reference to the master's. Reported: the worst window's verdict, grade, ODG, DI and start, the
 windows graded, heard (below grade 5) and ungraded, the share heard, the gain; and the loudness range of the input
 (the source's programme report) against the master's, its change in LU and as a share of the input's, or the reason
-either is absent. Two facts say them (600-604). Cost, 60 s of 48 kHz stereo on an M-series Mac: the master is delivered
+either is absent. Two facts say them (600-604). The damage's line names what was graded — the windows graded of all
+(600, 601), the share heard of the graded ones (600) — never the whole track: a window PEAQ cannot grade (silence,
+nothing it reads) is no part of the verdict. The programme report, the input's range, has always ended when a master
+is taken (the first measurement, which a master waits for, ends after it), so the range's change is settled with the
+master and never Pending.
+
+NATIVE AND WASM ON A MASTER WITH A STAGE ON LIBM. The damage's own arithmetic is deterministic (the resampler, PEAQ, the
+meters), but it reads the master's chain, and a stage that calls the platform's libm — the hand-picked saturation
+types outside the det-math zone since v0.6 — renders a last-bit difference between platforms. PEAQ's network amplifies
+it about fiftyfold: the damage's numbers of such a master agree across platforms to a few 1e-5 in ODG and up to about
+1e-3 in DI (DI by 5e-5 on the saturation-type scenario, by 2e-4 with ODG by 3e-5 on the master-report suite's processed
+master), not to the bit, and a grade whose ODG sits at a step's edge (-0.5, -1.5, -2.5, -3.5) may land on either side
+of it on two platforms. The session contract allows 1e-4 for the saturation-type scenario alone (tools/contract/run.mjs). Cost, 60 s of 48 kHz stereo on an M-series Mac: the master is delivered
 after 1.3 s, as without the damage; its job then takes 3.6–3.7 s (both chains' loudness about 0.9 s, the graded walk
 2.8 s, of which PEAQ's two windows in flight about 1.9 s).
 

@@ -354,7 +354,7 @@ void pump()
     // version's pins above hold); these were 1fdc6e0971f677c0 / 19c7710590fbdf2d. The damage (v0.14.0) — its job after the
     // master, its lines and [cost.damage] in the config — moved them again, and nothing else (withoutDamage above gives
     // the previous pins back); these were 9d7c29a5f4147512 / 903fef3e11059149.
-    ok (eventsHash (one) == 0x3d3f4b2a4f4d9da4ull && eventsHash (cancelled) == 0x922ce37845d56947ull,
+    ok (eventsHash (one) == 0x58dbcf8e15479346ull && eventsHash (cancelled) == 0x7f7f2d69c6a378f5ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, previous version: %016llx %016llx; and without the cost's lines: %016llx %016llx\n",

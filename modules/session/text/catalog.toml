@@ -547,12 +547,12 @@ en = "The master is waiting for the {analyzer} measurement for {device}: {progre
 # The damage the processing did, heard: PEAQ of the master against the same chain with its dynamics at rest, in windows
 # — the worst window's grade, where it starts, the share of the track heard; and the loudness range, input against master.
 [messages.masterDamage]
-ru = "Порча: {grade} (худшее место — с {from}); слышна в {share} трека."
-en = "Damage: {grade} (the worst place starts at {from}); heard in {share} of the track."
+ru = "Порча: {grade} — худшее место с отметки {from}; слышна в {share} оценённых окон (оценено окон: {graded} из {windows})."
+en = "Damage: {grade} — the worst place starts at {from}; heard in {share} of the windows graded (windows graded: {graded} of {windows})."
 
 [messages.masterDamageInaudible]
-ru = "Порча: не слышно — ни одно место трека не ниже этой оценки."
-en = "Damage: imperceptible — no place in the track is graded lower."
+ru = "Порча не слышна ни в одном оценённом окне (оценено окон: {graded} из {windows})."
+en = "Damage: imperceptible in every window graded (windows graded: {graded} of {windows})."
 
 [messages.masterDamageUnmeasured]
 ru = "Порча не оценена: {reason}."
@@ -1084,6 +1084,8 @@ memory.ru = "недостаточно памяти"
 memory.en = "insufficient memory"
 superseded.ru = "заказан новый мастер"
 superseded.en = "a new master was asked for"
+noJobId.ru = "для этой задачи не осталось номера"
+noJobId.en = "no job id was left for it"
 
 # An observation whose measurement did not give its number: its name, and why.
 [messages.observationUnmeasured]

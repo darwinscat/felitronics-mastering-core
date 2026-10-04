@@ -145,7 +145,8 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (MeasurementReason::NeedNotAbove3) == 9);
         static_assert (unsigned (MeasurementReason::Memory) == 10);
         static_assert (unsigned (MeasurementReason::Superseded) == 11);
-        return 11;
+        static_assert (unsigned (MeasurementReason::NoJobId) == 12);
+        return 12;
     }
     else if constexpr (std::is_same_v<T, MeasurementStatus>)
     {
@@ -537,6 +538,7 @@ constexpr void checkEnum (MeasurementReason value) noexcept
         case MeasurementReason::NeedNotAbove3: break;
         case MeasurementReason::Memory: break;
         case MeasurementReason::Superseded: break;
+        case MeasurementReason::NoJobId: break;
     }
 }
 

@@ -19,14 +19,18 @@ namespace felitronics::session::detail
 // THE DAMAGE OF A MASTER, HEARD ([cost.damage] in engine.toml): PEAQ Basic of the master against the same chain with its
 // dynamics at rest, in windows. Two chains of one topology — the master's without its dither — run side by side at
 // 48 kHz on the same input block: the master's with the parameters it was delivered with, the reference's with the glue
-// in its exact bypass and the input gain referenceBelowDb lower, so the saturation runs in its small-signal line and the
-// limiter and its needles never reach the ceiling. Same stages, same oversamplers, same delays: a stage at rest leaves the
+// in its exact bypass and the chain fed referenceBelowDb lower — by its input gain, and where that knob's range
+// (MasteringChain::kMaxGainDb) stops short, by a scale of its input for the rest — so the saturation runs in its
+// small-signal line and the limiter and its needles never reach the ceiling. Same stages, same oversamplers, same delays: a stage at rest leaves the
 // two the same to the bit. Two walks over the source: the first measures both integrated loudnesses (the gain that brings
 // the reference to the master's), the second feeds the K PEAQ instances, one per window in flight.
 //
 // The source reaches 48 kHz through DamageResampler where it is not at 48 kHz already: a windowed sinc whose kernel is
 // built from core::det, summed in a fixed order, so native and wasm give the same bits (core's DeliveryResampler designs
 // its kernel with the platform's libm). Its quality is the analysis's, not a delivery's: both chains take its output.
+// From 44.1 kHz it is flat to 16.4 kHz (-0.01 dB), -1 dB at 18.3, -6 dB at 19.9 and -60 dB from 23.3 kHz, nothing above
+// 24 kHz louder than -75 dB; from 96 kHz flat to 17.9 kHz, -6 dB at 21.6 and -60 dB from 25.4 kHz (its 24-25.4 kHz edge
+// folds back at -28 dB or less). PEAQ Basic reads to 18 kHz.
 //
 // Memory: plan() prices everything begin() allocates; step() allocates nothing. Any slicing gives the same bits.
 //==============================================================================
@@ -100,7 +104,6 @@ public:
 private:
     enum class Stage : std::uint8_t { Idle, Loudness, Gate, Grade, Done };
     bool feed (long long budget) noexcept;          // one block of the source through both chains; false on a refusal
-    void grade (int n) noexcept;                     // n delivered frames of both chains into the PEAQ windows
     void closeWindow (int instance) noexcept;
     void fail (MeasurementReason why) noexcept { reason_ = why; stage_ = Stage::Done; }
 
@@ -117,6 +120,8 @@ private:
     std::uint64_t sourceFrames_ = 0, read_ = 0;
     long long emitted_ = 0, delivered_ = 0, chainDelay_ = 0;   // chain frames out, frames past the chain's latency
     double gain_ = 1.0, lift_ = 1.0, masterLufs_ = 0, referenceLufs_ = 0;   // lift_: undoes referenceBelowDb for the meter's gates
+    double inputScale_ = 1.0;                       // what the reference's input gain could not take of referenceBelowDb
+    bool scaled_ = false;
     bool masterGated_ = false;
     Stage stage_ = Stage::Idle;
     MeasurementReason reason_ = MeasurementReason::NotImplemented;
@@ -129,9 +134,10 @@ private:
 
 // THE DAMAGE AS A JOB OF ITS OWN (Session::damageJob): started when its master is delivered, so the master reaches the
 // shell when its own work ends and the grade follows. It owns what the walks need — the master's chain, prepared again
-// by begin() at 48 kHz, and the parameters the master was delivered with — and the master's job, with its buffers, is
-// gone before it is made: it lives in the room that job leaves (MasterJob::plan prices it with the master). bytes() is
-// all it holds: the object, its master chain's construction and the walks' plan.
+// by begin() at 48 kHz, and the parameters the master was delivered with. It is made in the unit that delivers the
+// master, while the master's job still stands, and that job goes in the same unit; MasterJob::plan prices both together,
+// so the moment they coexist is inside the master's demand, and the walks then allocate in the room the master's job
+// left. bytes() is all it holds: the object, its master chain's construction and the walks' plan.
 struct DamageJob
 {
     static std::uint64_t bytes (const DamagePlan& plan) noexcept

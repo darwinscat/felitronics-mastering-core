@@ -68,8 +68,9 @@ bool DamageResampler::prepare (const Shape& s, int channels)
     history_.reset (new double[std::size_t (2 * s.phaseTaps * channels)]);
     s_ = s;
     channels_ = channels;
-    // The prototype at the upsampled rate up·in: a Blackman-windowed sinc cut at 0.45 of the lower Nyquist, gain `up`,
-    // dealt into `up` phases. Every term from core::det and IEEE operations: the same bits everywhere.
+    // The prototype at the upsampled rate up·in: a Blackman-windowed sinc cut at 0.45 of the lower rate (0.9 of its
+    // Nyquist), gain `up`, dealt into `up` phases (the band it leaves: Damage.h). Every term from core::det and IEEE
+    // operations: the same bits everywhere.
     const long long n = (long long) s.kernel;
     const double centre = double (n - 1) / 2.0;
     const double cut = 0.45 / double (std::max (s.up, s.down));
@@ -185,11 +186,11 @@ DamagePlan Damage::plan (std::uint32_t sourceRate, std::uint64_t sourceFrames, i
     const int scratch = p.resample ? DamageResampler::maxOutputs (p.resampler, kBlock) : kBlock;
     const std::uint64_t scratchBytes = 3u * std::uint64_t (channels) * std::uint64_t (scratch) * sizeof (float);
     const std::uint64_t resamplerBytes = p.resample ? p.resampler.bytes (channels) : 0u;
-    // Two chains at 48 kHz (the master's, prepared again, and the reference's), K PEAQ instances sized for a window, two
-    // meters for the programme, the blocks, the kernel; and an allocator's margin for every one of them.
+    // Two chains at 48 kHz (the master's, prepared again, and the reference's), the four PEAQ objects and K of them sized
+    // for a window, two meters for the programme, the blocks, the kernel; and an allocator's margin for every one of them.
     std::uint64_t total = 0;
     if (! add (total, 2u * chainBytes) || ! add (total, mastering::MasteringChain::constructBytes())
-        || ! add (total, std::uint64_t (p.instances) * peaq.firstBytes())
+        || ! add (total, std::uint64_t (p.instances) * peaq.bytes())
         || ! add (total, 4u * analysis::Peaq::constructBytes())
         || ! add (total, 2u * meter.bytes()) || ! add (total, scratchBytes) || ! add (total, resamplerBytes)
         || ! add (total, 16u * 4096u)) return p;
@@ -217,11 +218,18 @@ bool Damage::begin (const DamagePlan& plan, mastering::MasteringChain& master, c
     // The reference: the master's settings with its dynamics at rest — the glue in its exact bypass (ratio 1: a gain of
     // exactly 1.0f, the lookahead kept), the whole chain fed referenceBelowDb lower so the saturation stays in its
     // small-signal line and the limiter and its needles never reach the ceiling.
+    // The input gain's range stops at -kMaxGainDb: what it cannot take of referenceBelowDb, a scale of the reference's
+    // input takes before the chain, so it is the whole referenceBelowDb lower than the gain the master's chain applies.
+    constexpr double range = mastering::MasteringChain::kMaxGainDb;
+    const double applied = std::clamp (winning.inputGainDb, -range, range);
+    const double wanted = applied - plan.rules.referenceBelowDb;
     auto quiet = winning;
     quiet.bypassCompressor = true;
-    quiet.inputGainDb = std::max (winning.inputGainDb - plan.rules.referenceBelowDb, -mastering::MasteringChain::kMaxGainDb);
+    quiet.inputGainDb = std::max (wanted, -range);
+    scaled_ = wanted < quiet.inputGainDb;
+    inputScale_ = scaled_ ? core::det::pow10 ((wanted - quiet.inputGainDb) / 20.0) : 1.0;
     // The meter's absolute gate is not scale-free: the reference is measured lifted back by what it was lowered.
-    lift_ = core::det::pow10 ((winning.inputGainDb - quiet.inputGainDb) / 20.0);
+    lift_ = core::det::pow10 ((applied - wanted) / 20.0);
     master.setParams (winning);
     master.reset();
     reference_.setParams (quiet);
@@ -282,7 +290,12 @@ bool Damage::feed (long long budget) noexcept
         for (int c = 0; c < channels_; ++c) std::fill_n (in[c], got, 0.0f);
     }
     if (got <= 0) return true;
-    for (int c = 0; c < channels_; ++c) { std::copy_n (in[c], got, m[c]); std::copy_n (in[c], got, q[c]); }
+    for (int c = 0; c < channels_; ++c)
+    {
+        std::copy_n (in[c], got, m[c]);
+        if (! scaled_) std::copy_n (in[c], got, q[c]);
+        else for (int i = 0; i < got; ++i) q[c][i] = float (double (in[c][i]) * inputScale_);
+    }
     if (! master_->process (m, channels_, got) || ! reference_.process (q, channels_, got)) return false;
     // OfflineRenderer's alignment, out[n] = y[n + D]: the first D frames out are the chains' latency.
     const int skip = int (std::min<long long> (got, std::max (0LL, chainDelay_ - emitted_)));
@@ -398,6 +411,12 @@ void Damage::publish (MasterDamage& out) const noexcept
     out.ungradedWindows = ungraded_;
     if (std::isfinite (masterLufs_) && std::isfinite (referenceLufs_) && stage_ == Stage::Done && reason_ == MeasurementReason::None)
         out.referenceGainDb = masterLufs_ - referenceLufs_;   // against the reference lifted back (lift_)
+    // A walk that failed grades nothing, whatever windows closed before it failed.
+    if (reason_ != MeasurementReason::None)
+    {
+        out.status = MeasurementStatus::Unavailable; out.reason = reason_; out.verdict = DamageVerdict::NotRun;
+        return;
+    }
     if (windows_ > 0)
     {
         const auto& f = plan_.rules.floors;
@@ -413,7 +432,6 @@ void Damage::publish (MasterDamage& out) const noexcept
         return;
     }
     out.status = MeasurementStatus::Unavailable;
-    if (reason_ != MeasurementReason::None) { out.reason = reason_; out.verdict = DamageVerdict::NotRun; return; }
     if (nonFinite_) { out.reason = MeasurementReason::NonFinite; out.verdict = DamageVerdict::NonFinite; return; }
     // A sample past PEAQ's range (+18 dBFS) — the reference, at the master's loudness without its limiter, can get there.
     if (outOfRange_) { out.reason = MeasurementReason::Unsupported; out.verdict = DamageVerdict::OutOfRange; return; }
