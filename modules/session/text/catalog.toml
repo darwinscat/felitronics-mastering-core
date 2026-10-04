@@ -46,6 +46,8 @@ targetLufs.ru = "Громкость"
 targetLufs.en = "Loudness"
 targetTp.ru = "Потолок"
 targetTp.en = "Ceiling"
+targetLoudnessMode.ru = "Режим громкости"
+targetLoudnessMode.en = "Loudness mode"
 hpfFq.ru = "Срез ФВЧ"
 hpfFq.en = "HPF corner"
 hpfSlope.ru = "Крутизна ФВЧ"
@@ -1133,6 +1135,32 @@ en = "Target {target}, reached {achieved}: no render kept within the limiter's b
 ru = "По громкой части {loud}, по стандарту файла {file}."
 en = "{loud} by the loud part, {file} by the file's standard reading."
 
+# A max mode's verdict (owner, 04.10: loudness by a promise of BS.1116): the mode, the file's loudness and what ended the
+# mode. The damage's own line says the grade.
+[messages.masterMaxBudget]
+ru = "{mode}: {achieved} — дальше лимитеру пришлось бы срезать больше {budget} (P95), это предел режима."
+en = "{mode}: {achieved} — further, the limiter would have to take off more than {budget} (P95), the mode's limit."
+
+[messages.masterMaxGuard]
+ru = "{mode}: {achieved} — страж PEAQ отступил по громкости (шагов назад: {steps}), чтобы порча осталась в обещании режима."
+en = "{mode}: {achieved} — the PEAQ guard stepped the loudness back ({steps} steps) to keep the damage within the mode's promise."
+
+[messages.masterMaxGuardUnmet]
+ru = "{mode}: {achieved} — порча не уложилась в обещание режима и после отступа по громкости (шагов назад: {steps}); выдан самый мягкий из опробованных вариантов."
+en = "{mode}: {achieved} — the damage stayed beyond the mode's promise even with the loudness stepped back ({steps} steps); the gentlest render tried is delivered."
+
+[messages.masterMaxCeiling]
+ru = "{mode}: {achieved} — достигнут потолок поиска режима, бюджет лимитера и порча в пределах обещания."
+en = "{mode}: {achieved} — the mode's search ceiling is reached, within the limiter's budget and the damage promise."
+
+[messages.masterMaxPasses]
+ru = "{mode}: {achieved} — проходы кончились раньше, чем поиск дошёл до предела режима."
+en = "{mode}: {achieved} — the passes ran out before the search reached the mode's limit."
+
+[messages.masterMaxTruePeak]
+ru = "{mode}: {achieved} — ни один вариант не удержался под потолком истинного пика."
+en = "{mode}: {achieved} — no render kept under the true-peak ceiling."
+
 [messages.masterLandingPassLimit]
 ru = "Проходы кончились раньше, чем мастер подошёл к цели ближе допуска {tolerance}."
 en = "The passes ran out before the master came within {tolerance} of the target."
@@ -1223,6 +1251,15 @@ high.ru = "высокая"
 high.en = "high"
 
 # What held a landing short of its target — the landing's solver's binding constraint, as a noun phrase.
+# The loudness modes (LoudnessMode): how a landing takes its loudness — a number, or a promise of BS.1116.
+[terms.loudnessMode]
+manual.ru = "Вручную"
+manual.en = "Manual"
+maxClean.ru = "Максимум · чисто"
+maxClean.en = "Maximum · clean"
+maxDense.ru = "Максимум · плотно"
+maxDense.en = "Maximum · dense"
+
 [terms.landingLimit]
 unnamed.ru = "одно из ограничений"
 unnamed.en = "one of the constraints"

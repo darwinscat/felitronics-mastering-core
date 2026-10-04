@@ -99,6 +99,13 @@ void readRow (View rowView, View byTarget, TargetRow& out) noexcept
     else out.noClipper = false;
     if (const View v = rowView.find ("vinyl")) r.read (v, out.vinyl);
     else out.vinyl = false;
+    out.loudnessMode = LoudnessMode::Manual;
+    if (const View v = rowView.find ("loudnessMode"))
+    {
+        const auto name = v.string().value_or (std::string_view {});
+        out.loudnessMode = name == "maxClean" ? LoudnessMode::MaxClean : name == "maxDense" ? LoudnessMode::MaxDense
+                                                                                             : LoudnessMode::Manual;
+    }
     if (const View v = rowView.find ("lowDb"))
     {
         Decimal d {};

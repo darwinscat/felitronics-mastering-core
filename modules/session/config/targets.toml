@@ -39,6 +39,11 @@
 #                     Enables [low] at this gain; absent means off at 0 dB. The device is offered on every target.
 #   album             optional: the album loudness, { lufs, desktopOnly }. Album mastering is a project of several
 #                     tracks; desktopOnly = true marks a number the web shell does not offer.
+#   loudnessMode      optional, "manual" when absent: how the landing takes its loudness — "manual", the row's lufs
+#                     (or a person's edit of it) as the target; "maxClean" or "maxDense", a max mode ([landing.max] in
+#                     engine.toml): as loud as the mode's limiter budget and PEAQ guard allow, up to the modes' search
+#                     ceiling. A max row's lufs is then no goal: it is the number the manual mode starts from when a
+#                     person switches to it, about what the mode reaches on a wide home mix.
 #
 # Sources: the platforms' published numbers as of September 2026. A platform that publishes no ceiling gets −1 dBTP, the
 # AES TD1008 guidance for lossy delivery. AES TD1008 itself: −16 LUFS for a track, −14 LUFS for an album, the ceiling no
@@ -102,6 +107,11 @@ bandcamp     = { group = "delivery", lufs = -10, tp = -1, monoBass = 120, hpfFlo
 atsc         = { group = "streaming", lufs = -24, tp = -2, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
 arib         = { group = "streaming", lufs = -24, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
 op59         = { group = "streaming", lufs = -24, tp = -2, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }
+# The max modes as targets (owner decision, 04.10), appended last so no saved target index moves: allStreaming's medium
+# (−1 dBTP, the source's rate, 24 bits), its mono bass and high-pass, and the loudness of a promise instead of a number —
+# "clean": the damage not heard (BS.1116 grade 5); "dense": heard, not annoying (grade 4 or better).
+maxClean     = { group = "streaming", lufs = -10, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24, loudnessMode = "maxClean" }
+maxDense     = { group = "streaming", lufs = -8.6, tp = -1, monoBass = 120, hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24, loudnessMode = "maxDense" }
 
 # THE TARGETS' NOTES — where a target's loudness comes from, where that is not a platform's published number or a
 # standard; a shell shows the note beside the target (SnapshotText::targetNote). A target without a row has no note.

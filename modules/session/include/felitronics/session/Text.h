@@ -90,7 +90,7 @@ enum class Plural : std::uint8_t { Zero, One, Two, Few, Many, Other };
 //   400 – 499   the measurements and the observations
 //   500 – 599   the plan's advice and the targets' notes
 //   600 – 699   the landing and the master's report, continued (1 – 99 is full): a landing held short (600 – 602), the
-//               damage the processing did and the loudness range (603 – 607)
+//               damage the processing did and the loudness range (603 – 607), a max mode's verdict (608 – 613)
 // The arguments each fact takes, by name and kind, are src/TextFacts.h's, and the build holds the catalog to them.
 enum class FactId : std::uint16_t
 {
@@ -342,6 +342,13 @@ enum class FactId : std::uint16_t
     // ({changeLu}); or why it was not measured ({reason}).
     MasterLraChange = 606,
     MasterLraUnmeasured = 607,
+    // A max mode's verdict (MasterReportText::max), one per what ended it: {mode} {achieved}, and the budget or the steps.
+    MasterMaxBudget = 608,     // {mode}: {achieved} — further, the limiter would take more than {budget} (P95)
+    MasterMaxGuard = 609,      // {mode}: {achieved} — the PEAQ guard stepped the drive back {steps} times
+    MasterMaxGuardUnmet = 610, // {mode}: {achieved} — no render tried, {steps} steps back, kept the damage promise
+    MasterMaxCeiling = 611,    // {mode}: {achieved} — the search ceiling reached within the budget and the promise
+    MasterMaxPasses = 612,     // {mode}: {achieved} — the passes ran out first
+    MasterMaxTruePeak = 613,   // {mode}: {achieved} — no render kept under the true-peak ceiling
 };
 
 // THE TERMS — words an argument of kind Term names: one value of a group of the catalog's [terms]. Printed as the
@@ -407,6 +414,10 @@ enum class Term : std::uint16_t
     // Why a master's damage was not graded: a new master was asked for while it was (MeasurementReason::Superseded); no
     // job id was left for it (NoJobId).
     ReasonSuperseded, ReasonNoJobId,
+    // The loudness modes, as a max mode's verdict names them.
+    LoudnessModeManual, LoudnessModeMaxClean, LoudnessModeMaxDense,
+    // The target's loudness mode as the field a refusal names (editTarget's third field, a project's target layer).
+    FieldTargetLoudnessMode,
 
 };
 

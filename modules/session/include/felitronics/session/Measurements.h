@@ -33,6 +33,12 @@ enum class MeasurementReason : std::uint8_t
 };
 // What PEAQ (analysis::Peaq, ITU-R BS.1387 Basic) said of a window of a master (MasterDamage): its PeaqVerdict, by number.
 enum class DamageVerdict : std::uint8_t { NotRun, Graded, Transparent, NoSignal, NonFinite, Undefined, OutOfRange };
+// WHAT ENDED A MAX MODE'S LANDING (MasterReport::maxStop): None for a manual one. Budget — the mode's limiter budget held
+// the drive, proven (LandingSearch's proof); Guard — the PEAQ guard stepped the drive back to a render that passed;
+// GuardUnmet — no render the guard tried passed its floor, the gentlest is delivered; SearchCeiling — the landing reached
+// [landing.max] ceilingLufs inside the budget and the floor; Passes — the passes ran out first; TruePeak — no render kept
+// under the ceiling.
+enum class MaxStop : std::uint8_t { None, Budget, Guard, GuardUnmet, SearchCeiling, Passes, TruePeak };
 // A missing number always carries a reason. analyzerReason preserves the instrument's more specific code.
 struct MeasurementValue
 {

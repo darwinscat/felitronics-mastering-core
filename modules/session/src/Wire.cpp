@@ -361,7 +361,7 @@ template <class F> auto parseCommand (std::string_view json, F&& finish) noexcep
         {
             // A number sets the field; null clears it (the target row's number again); an absent key leaves it.
             command::EditTarget r { id };
-            const auto field = [&] (std::string_view key, std::optional<double>& value, bool& clear)
+            const auto field = [&] (std::string_view key, auto& value, bool& clear)
             {
                 const auto input = fields.take (key, false);
                 if (input.empty()) return;
@@ -372,6 +372,7 @@ template <class F> auto parseCommand (std::string_view json, F&& finish) noexcep
                 if (! reader.good || reader.pos != input.size()) p.set ("invalid", key);
             };
             field ("lufs", r.fields.lufs, r.clear.lufs); field ("tp", r.fields.tp, r.clear.tp);
+            field ("loudnessMode", r.fields.loudnessMode, r.clear.loudnessMode);
             request = r;
         }
         else

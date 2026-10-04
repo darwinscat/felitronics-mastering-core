@@ -92,6 +92,14 @@ struct Writer
         text ("\n\n[target]\nname = "); string (rules.row (p.target).key); put ('\n');
         if (p.targetEdit.lufs) line ("lufs", "hand", *p.targetEdit.lufs);
         if (p.targetEdit.tp) line ("tp", "hand", *p.targetEdit.tp);
+        if (p.targetEdit.loudnessMode)
+        {
+            text ("loudnessMode.hand = ");
+            string (*p.targetEdit.loudnessMode == LoudnessMode::MaxClean ? std::string_view ("maxClean")
+                    : *p.targetEdit.loudnessMode == LoudnessMode::MaxDense ? std::string_view ("maxDense")
+                                                                           : std::string_view ("manual"));
+            put ('\n');
+        }
         Devices defaults;
         detail::placeDefaults (rules, p.target, channels, defaults);
         detail::eachDevice (p.devices, [&] (Device, const auto& layers)
@@ -174,6 +182,7 @@ void identifyField (Answer& answer, std::string_view path, const Rules& rules) n
 {
     if (path == "target.lufs.hand") answer.field = 0;
     if (path == "target.tp.hand") answer.field = 1;
+    if (path == "target.loudnessMode.hand") answer.field = 2;
     Devices devices;
     detail::eachDevice (devices, [&] (Device device, const auto& layers)
     {
@@ -274,6 +283,15 @@ ImportedProject readProject (std::string_view bytes, const PlanInputs& inputs) n
             };
             readTarget ("lufs", rules.lufs, out.project.targetEdit.lufs);
             readTarget ("tp", rules.tp, out.project.targetEdit.tp);
+            (void) t.table ("loudnessMode", Need::Optional, [&] (toml::Reader& layer)
+            {
+                std::string name;
+                if (! layer.required ("hand", name)) return;
+                if (name == "manual") out.project.targetEdit.loudnessMode = LoudnessMode::Manual;
+                else if (name == "maxClean") out.project.targetEdit.loudnessMode = LoudnessMode::MaxClean;
+                else if (name == "maxDense") out.project.targetEdit.loudnessMode = LoudnessMode::MaxDense;
+                else layer.refuse ("hand", unsigned (Rejection::NotOneOf));
+            });
         });
         // A missing/unknown target is reported after schema checks; use a known row only for filling defaults.
         out.project.target = rules.find (target).value_or (rules.defaultRow);

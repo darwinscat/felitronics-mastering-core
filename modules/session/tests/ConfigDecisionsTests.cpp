@@ -71,7 +71,9 @@ constexpr Golden kGolden[] = {
     // target the limiter cannot reach within its budget move; it was fb0cedc4f4311049; updated in place, as above
     // ...and the loud target's limiter budget 7.5 dB, was 10 (owner, 04.10, v0.14.1): a master louder than −8 LUFS that
     // its limiter would cut past 7.5 dB moves; it was 14193babae5aa94c; updated in place, as above
-    { "2026-10", 0x406759a3436aec72ull },
+    // ...and the max modes (owner, 04.10, v0.15.0): two target rows appended and [landing.max] — numbers added, none
+    // changed, so every target of manual loudness sounds as before; it was 406759a3436aec72; updated in place, as above
+    { "2026-10", 0x15b627f7db3ad5dcull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -79,6 +81,8 @@ constexpr Golden kGolden[] = {
 // lowest note 1 dB (club 0.3), the delivery; vinyl alone without a peak clipper, marked as cut to a lathe (its tp the
 // medium's ceiling) and with a +0.5 dB low shelf; cd and
 // cdDynamic alone with a pass at the source's rate; TD1008's −14 LUFS album loudness, desktop only.
+using felitronics::session::LoudnessMode;
+
 struct Row
 {
     std::string_view key;
@@ -91,6 +95,7 @@ struct Row
     bool vinyl;             // cut to a lathe: the row's tp is the medium's ceiling
     double lowDb;           // 0: none
     double albumLufs;            // 0: none; every album is desktop only
+    LoudnessMode mode = LoudnessMode::Manual;   // a max row's loudness mode
 };
 constexpr auto S = config::Group::Streaming;
 constexpr auto D = config::Group::Delivery;
@@ -125,6 +130,9 @@ constexpr Row kRows[] = {
     { "atsc",          S, -24,  -2,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
     { "arib",          S, -24,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
     { "op59",          S, -24,  -2,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0 },
+    // the max modes as targets (owner, 04.10, v0.15.0): allStreaming's medium; lufs is where the manual mode starts
+    { "maxClean",      S, -10,  -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0, LoudnessMode::MaxClean },
+    { "maxDense",      S, -8.6, -1,   120,  32,  24,  1,    0,     24,  false, false, false, 0,    0, LoudnessMode::MaxDense },
 };
 
 // Every decision the config departs from, by name; empty when it holds them all.
@@ -155,6 +163,7 @@ std::vector<std::string> departures (const config::Config& c)
         need (x.noClipper == r.noClipper, at + ".noClipper");
         need (x.sourceRatePass == r.sourceRatePass, at + ".sourceRatePass");
         need (x.vinyl == r.vinyl, at + ".vinyl");
+        need (x.loudnessMode == r.mode, at + ".loudnessMode");
         need (same (r.lowDb, 0.0) ? ! x.lowDb.has_value() : x.lowDb.has_value() && same (*x.lowDb, r.lowDb),
               at + ".lowDb");
         need (same (r.albumLufs, 0.0) ? ! x.album.has_value()
@@ -172,6 +181,12 @@ std::vector<std::string> departures (const config::Config& c)
     need (e.landing.truePeakAimDb == 0.05 && e.limiter.ceilingMarginDb == 0.15,
           "the true-peak aim and initial limiter margin are separate decisions");
     need (e.landing.onSourceGate, "the landing lands the level on the source's gate (owner, 04.10)");
+    need (same (e.landing.cleanBudgetDb, 3.0) && same (e.landing.cleanFloorOdg, -0.5),
+          "max clean: the damage not heard — budget 3 dB, the worst ODG above −0.5 (owner, 04.10)");
+    need (same (e.landing.denseBudgetDb, 7.0) && same (e.landing.denseFloorOdg, -1.5),
+          "max dense: heard, not annoying — budget 7 dB, the worst ODG above −1.5 (owner, 04.10)");
+    need (same (e.landing.maxCeilingLufs, -5.0) && same (e.landing.guardStepDb, 1.0) && e.landing.guardSteps == 3,
+          "the max modes search up to −5 LUFS; the guard steps back by 1 dB of drive, at most 3 times");
     need (same (e.landing.quietBudgetDb, 4.0) && same (e.landing.middleBudgetDb, 7.0)
           && same (e.landing.loudBudgetDb, 7.5)
           && same (e.landing.middleLufs.min, -10.0) && same (e.landing.middleLufs.max, -8.0),
@@ -299,6 +314,12 @@ void aDepartureIsNamed()
         { false, "slopes = [12, 24, 48]", "slopes = [12, 24, 36]", "the high-pass slopes are 12, 24 and 48 dB/oct" },
         { false, "passes = 12", "passes = 11", "the landing: one budget of 12 passes" },
         { false, "onSourceGate = true", "onSourceGate = false", "the landing lands the level on the source's gate (owner, 04.10)" },
+        { false, "clean = { budgetDb = 3,", "clean = { budgetDb = 3.5,",
+          "max clean: the damage not heard — budget 3 dB, the worst ODG above −0.5 (owner, 04.10)" },
+        { false, "floorOdg = -1.5 }", "floorOdg = -2 }", "max dense: heard, not annoying — budget 7 dB, the worst ODG above −1.5 (owner, 04.10)" },
+        { false, "guardSteps = 3", "guardSteps = 4",
+          "the max modes search up to −5 LUFS; the guard steps back by 1 dB of drive, at most 3 times" },
+        { true, "loudnessMode = \"maxDense\" }", "loudnessMode = \"maxClean\" }", "targets.maxDense.loudnessMode" },
         { false, "quietDb = 4,", "quietDb = 5,", "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 7.5 dB louder (owner, 04.10; 7.5 in v0.14.1)" },
         { false, "loudDb = 7.5,", "loudDb = 10,", "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 7.5 dB louder (owner, 04.10; 7.5 in v0.14.1)" },
         { false, "loudDb = 7.5,", "loudDb = 7.75,", "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 7.5 dB louder (owner, 04.10; 7.5 in v0.14.1)" },
