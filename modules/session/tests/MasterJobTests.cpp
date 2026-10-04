@@ -25,8 +25,10 @@ struct Inspector
     static bool noMasterOwners (const Session& s) noexcept
     {
         return ! s.masterJob_ && ! s.masterAudio_.samples && ! s.masterRows_ && ! s.masters_
-            && s.masterRoom_ == 0 && s.masterCount_ == 0 && s.masterJobBytes_ == 0;
+            && s.masterRoom_ == 0 && s.masterCount_ == 0 && s.masterJobBytes_ == 0
+            && ! s.damageJob_ && s.damageJobId_ == 0 && s.damageJobBytes_ == 0;
     }
+    static void lastJob (Session& s, JobId last) noexcept { s.lastJob_ = last; }
 };
 }
 
@@ -61,15 +63,58 @@ void damageResampler()
         for (long long i = 0; i < out; ++i)
             for (const float v : { ya[(std::size_t) i], yb[(std::size_t) i] })
                 for (unsigned k = 0; k < 4; ++k) h = (h ^ ((std::bit_cast<std::uint32_t> (v) >> (8u * k)) & 0xFFu)) * 0x100000001B3ull;
-        std::printf ("damage resampler %u -> 48000: %lld frames, digest %016llx\n", rate, out, (unsigned long long) h);
+        char digest[17];
+        std::snprintf (digest, sizeof digest, "%016llx", (unsigned long long) h);
         ok (ready && done == out && h == pinned, "the damage's resampler from " + std::to_string (rate)
-            + " Hz gives the exact count and the pinned bits, native and wasm alike");
+            + " Hz gives the exact count and the pinned bits, native and wasm alike (digest " + digest + ")");
     }
+}
+
+// THE DAMAGE'S JOB WITH NO ID LEFT: the master takes the last id there is; delivered as ever, its damage is not graded —
+// Unavailable, Capacity — and its line says so, with no job and no Damage event.
+void damageWithoutAnId()
+{
+    constexpr std::uint32_t rate = 48000;
+    std::vector<float> left (rate), right (rate);
+    for (std::size_t i = 0; i < left.size(); ++i)
+    {
+        left[i] = float (int ((i * 17u) % 251u) - 125) / 4096.0f;
+        right[i] = float (int ((i * 19u + 7u) % 251u) - 125) / 4096.0f;
+    }
+    const float* planes[] { left.data(), right.data() };
+    auto made = Session::create();
+    auto& s = *made.session;
+    (void) s.apply (command::Load { 1, { planes, 2, left.size(), rate }, { "last.wav", rate, true, 24 } });
+    while (s.step (16).state == StepState::More) {}
+    detail::Inspector::lastJob (s, std::numeric_limits<JobId>::max() - 1u);
+    command::Master ready { 2 };
+    ready.ready.version = 1;
+    ready.ready.topology.eq = ready.ready.topology.compressor = ready.ready.topology.dither = false;
+    ready.source = s.source().hash; ready.revision = s.revision();
+    const auto started = s.apply (ready);
+    bool line = false, damageEvent = false;
+    bool more = true;
+    for (unsigned i = 0; i < 40000 && more; ++i)
+    {
+        more = s.step (1).state == StepState::More;
+        for (const auto& e : s.events())
+        {
+            damageEvent = damageEvent || e.kind == EventKind::Damage;
+            if (e.kind == EventKind::Fact && e.payload.fact.view().id == text::FactId::MasterDamageUnmeasured)
+                line = e.payload.fact.view().args[0].termId == text::Term::ReasonCapacity;
+        }
+    }
+    const auto& d = s.masters().empty() ? MasterDamage {} : s.masters()[0].report->damage;
+    ok (started.job == std::numeric_limits<JobId>::max() && s.masters().size() == 1 && s.pendingMaster().master == started.job
+        && s.damageJob() == 0 && ! damageEvent && line
+        && d.status == MeasurementStatus::Unavailable && d.reason == MeasurementReason::Capacity,
+        "a master with the last job id is delivered; its damage has no job to grade it: Unavailable, Capacity, said so");
 }
 
 int main()
 {
     damageResampler();
+    damageWithoutAnId();
     constexpr std::uint32_t rate = 48000;
     std::vector<float> left (2u * rate), right (2u * rate);
     for (std::size_t i = 0; i < left.size(); ++i)

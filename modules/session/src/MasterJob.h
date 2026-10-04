@@ -38,7 +38,7 @@ struct MasterPlan
     bool glueTrace = false;                    // the glue compresses: its gain reduction is kept, a trace beside the limiter's
     bool saturationTrace = false;              // the soft clipper shapes: its shave of the peaks is kept, the same way
     std::optional<MasterMedium> medium;        // a version-0 master's medium and input, from the chain it will run
-    DamagePlan damage {};                      // the damage's walks, priced, or why they cannot run
+    DamagePlan damage {};                      // the damage's walks, priced (as the job after it), or why they cannot run
 };
 
 struct MasterRows
@@ -91,10 +91,13 @@ struct MasterJob final
     std::size_t copiedCrestRows() const noexcept { return crestCopied; }
     const MasterReport& reportResult() const noexcept { return report; }
     std::unique_ptr<float[]> takeOutput() noexcept { return std::move (output); }
-    // What the Pump says of the step it is in: the phase (the damage's two walks have their own) and the current walk's
-    // share of the file — absent where the stage walks nothing.
-    PhaseName phaseName() const noexcept;
+    // What the Pump says of the step it is in: the current walk's share of the file — absent where the stage walks nothing.
     std::optional<double> stepFraction() const noexcept;
+    // THE DAMAGE FOLLOWS THE MASTER (Session::startDamage): true when the job ended where its damage can be graded — the
+    // report says Pending, and the session starts the damage's own job with the plan and the delivered parameters.
+    bool damageFollows() const noexcept { return damageFollows_; }
+    const DamagePlan& damagePlanned() const noexcept { return damagePlan; }
+    mastering::MasteringChainParams winningParams() const noexcept;
 
     mastering::MasteringChain chain;
     mastering::OfflineRenderer renderer;
@@ -119,7 +122,7 @@ struct MasterJob final
     std::uint64_t initializedWaveBuckets = 0;
     bool costMeterReady = false;
     enum class Stage : std::uint8_t { Search, Prepare, Read, Finish, Copy, CostRead, CostFinish,
-        CostWave, CostPump, CostActive, CostShape, CostWorst, CostCrest, CostPublish, DamageBegin, DamageRun, Done, Failed };
+        CostWave, CostPump, CostActive, CostShape, CostWorst, CostCrest, CostPublish, Done, Failed };
     Stage stage = Stage::Search;
     CrestScan costCrestScan;
     ShapeScan costShapeScan;
@@ -142,8 +145,7 @@ struct MasterJob final
     std::optional<MasterMedium> medium;
     MasterReport report {};
     DamagePlan damagePlan {};
-    Damage damage;
-    mastering::MasteringChainParams winningParams() const noexcept;
+    bool damageFollows_ = false;
     void settleLra() noexcept;
 };
 } // namespace detail

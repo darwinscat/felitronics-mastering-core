@@ -29,6 +29,9 @@ struct SnapshotView
     // Empty until placement; 128 logarithmic points from 20 Hz to min(20 kHz, 0.49 * source rate).
     std::span<const EqPoint> eqCurve;
     Phase measurementProgress {}, masterProgress {};
+    // The damage being graded for a delivered master, a job of its own (Session::damageJob), and its progress.
+    JobId damageJob = 0;
+    Phase damageProgress {};
     double sourceBytes = 0.0;
     double integratedLufs = 0.0;
     std::span<const ReadingPoint> momentary, shortTerm;

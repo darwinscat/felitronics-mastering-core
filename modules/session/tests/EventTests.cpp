@@ -180,6 +180,11 @@ std::uint64_t eventsHash (const std::vector<Notification>& events)
             }
         }
         if (e.kind == EventKind::Done) hash = digest (hash, e.payload.done.masterId);
+        if (e.kind == EventKind::Damage)
+        {
+            hash = digest (hash, e.payload.damage.masterId); hash = digest (hash, std::uint8_t (e.payload.damage.status));
+            hash = digest (hash, std::uint8_t (e.payload.damage.reason));
+        }
         if (e.kind == EventKind::Rejected) { hash = digest (hash, e.payload.rejected.commandId); hash = digest (hash, std::uint8_t (e.payload.rejected.code)); }
     }
     return hash;
@@ -302,32 +307,20 @@ void pump()
                 e.payload.phase.weightsVersion = before->all;
         return events;
     };
-    // THE DAMAGE (v0.14.0) is two walks after the cost — the reference's loudness and PEAQ's — and two lines at the end.
-    // Restated without it: the unit that published the cost ended the job (its phase Final, at 1.0), the two walks (the
-    // unit that began them among them) are gone with their phases, the trace units after the end count that many units fewer, and
-    // the damage's and the loudness range's lines (600-604) leave. Then every event is the one before, bit for bit.
+    // THE DAMAGE (v0.14.0) is a job of its own after the master: its events carry its own id — its phases, its line and
+    // the damage events — and the master says two lines more (600-604). Without them every event is the one before, bit
+    // for bit: the master's job ends where it did.
     const auto withoutDamage = [] (const std::vector<Notification>& events)
     {
-        std::size_t walk = events.size();
-        for (std::size_t i = 0; i < events.size() && walk == events.size(); ++i)
-            if (events[i].kind == EventKind::Phase && events[i].payload.phase.name == PhaseName::Reference) walk = i;
-        if (walk == events.size()) return events;
-        // The unit that began the walks reads as the first of them (a phase is said after its unit's step); the one before
-        // it published the cost.
-        std::size_t published = walk, end = walk;
-        while (published > 0 && ! (events[published - 1].kind == EventKind::Phase && events[published - 1].payload.phase.name == PhaseName::Pass)) --published;
-        --published;
-        while (end < events.size() && ! (events[end].kind == EventKind::Phase && events[end].payload.phase.name == PhaseName::Final)) ++end;
-        const auto units = events[end].payload.phase.completedUnits - events[published].payload.phase.completedUnits;
+        std::vector<JobId> jobs;
+        for (const auto& e : events)
+            if (e.kind == EventKind::Damage) jobs.push_back (e.jobId);
         std::vector<Notification> kept;
         std::uint64_t dropped = 0;
-        for (std::size_t i = 0; i < events.size(); ++i)
+        for (auto e : events)
         {
-            auto e = events[i];
             const auto id = e.kind == EventKind::Fact ? unsigned (e.payload.fact.view().id) : 0u;
-            if ((i > published && i <= end) || (id >= 600u && id <= 604u)) { ++dropped; continue; }
-            if (i == published) { e.payload.phase.name = PhaseName::Final; e.payload.phase.fraction = 1.0; }
-            if (i > end && e.kind == EventKind::Phase && e.payload.phase.name == PhaseName::Final) e.payload.phase.completedUnits -= units;
+            if (std::find (jobs.begin(), jobs.end(), e.jobId) != jobs.end() || (id >= 600u && id <= 604u)) { ++dropped; continue; }
             e.seq -= dropped;
             kept.push_back (e);
         }
@@ -358,10 +351,10 @@ void pump()
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     // The three broadcast targets (v0.13.0) moved the config version the phases carry and nothing else (the previous
-    // version's pins above hold); these were 1fdc6e0971f677c0 / 19c7710590fbdf2d. The damage (v0.14.0) — its two walks,
-    // its two lines and [cost.damage] in the config — moved them again, and nothing else (withoutDamage above gives the
-    // previous pins back); these were 9d7c29a5f4147512 / 903fef3e11059149.
-    ok (eventsHash (one) == 0x18f2e8ec10de3109ull && eventsHash (cancelled) == 0xc7472519359a835dull,
+    // version's pins above hold); these were 1fdc6e0971f677c0 / 19c7710590fbdf2d. The damage (v0.14.0) — its job after the
+    // master, its lines and [cost.damage] in the config — moved them again, and nothing else (withoutDamage above gives
+    // the previous pins back); these were 9d7c29a5f4147512 / 903fef3e11059149.
+    ok (eventsHash (one) == 0x3d3f4b2a4f4d9da4ull && eventsHash (cancelled) == 0x922ce37845d56947ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, previous version: %016llx %016llx; and without the cost's lines: %016llx %016llx\n",

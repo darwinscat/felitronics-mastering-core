@@ -908,7 +908,8 @@ GR follows the audio receiving gain after lookahead; K13 reduction follows the d
 `Kept::landing` and the trace fields are nullable and always present in the generated session codec: a missing key
 is a decode error, and a snapshot is never persisted. `Snapshot` owns the pass rows and both trace row arrays.
 
-`Session::step(budget)` runs live loudness, source clipping, the programme report, waveform, source analyzers, needles, and mastering. The budget counts **work units**, never milliseconds. A call
+`Session::step(budget)` runs live loudness, source clipping, the programme report, waveform, source analyzers, needles,
+mastering, and a delivered master's damage — last, behind every other work. The budget counts **work units**, never milliseconds. A call
 consumes at most `min(budget, 16)` units, reports the number consumed, and returns `More` while any job remains or
 `Done` when none does. Zero units poll without progress. The shell measures its own speed and converts time to
 units. The library has no clock. A measurement unit prepares one instrument, reads at most 1024 source frames,
@@ -934,9 +935,9 @@ estimates; the interface permits them to move backwards. The human pass label us
 to the diagnostic journal. Completed and total work units are deterministic inputs for a shell's time estimate.
 `stepFraction` (v0.14.0) is the current walk over the file, 0..1, a new count for every walk: the measurement's stream;
 a master's source statistics, each landing pass (its own units), the delivered render's check, the crest's impact render
-and the cost's read (all `Pass`), and the damage's two walks, `Reference` (both chains' loudness) and `Damage` (PEAQ). It
-is absent — not 0 — where the phase walks nothing: the report, the analyzers' and the needles' phases, a master's wait,
-the bookkeeping between walks and `Final`. The number of walks is not known ahead and is not promised.
+and the cost's read (all `Pass`), and the damage job's two walks, `Reference` (both chains' loudness) and `Damage`
+(PEAQ). It is absent — not 0 — where the phase walks nothing: the report, the analyzers' and the needles' phases, a
+master's wait, the bookkeeping between walks and `Final`. The number of walks is not known ahead and is not promised.
 
 `events()` views the latest `apply()` or `step()` batch. The caller copies or consumes it before the next such call;
 queries leave it intact. Each `Notification` is an independent value with `seq`, `jobId`, source hash, revision, state, phase, deterministic work, `kind`, and the payload
@@ -1315,7 +1316,7 @@ the capabilities struct at its current 40 bytes (`leanSummary` at 32) and the ve
 `tools/wasm/build.sh` builds `fcsession` from the facade and `modules/session/sources.txt`, audits the exact export list,
 compares node/web wasm bytes, checks for threads, and runs a node scenario through the ABI and generated types.
 Controls reject an extra export and verify a real allocation trap followed by permanent poison. The wire fixture
-checks all six event kinds and nonempty binary rows against the generated declarations. Full native/wasm scenario
+checks the base event kinds and nonempty binary rows against the generated declarations. Full native/wasm scenario
 parity is a separate contract suite.
 
 ### The pure kit — `fc_kit_*`
@@ -1689,6 +1690,22 @@ with the source completion and master-keyed join events and snapshots on both si
 
 ## Measured ready-master report
 
+THE DAMAGE IS GRADED AFTER THE MASTER, BY A JOB OF ITS OWN (v0.14.0). The master's job ends with its cost and
+delivers the master — its events, the PCM, `Done` — with `MasterReport.damage` `Pending` (reason
+`Pending`; its line, fact 602, says so) and the loudness range's line already settled. In the same unit the session
+starts the damage's job (`Session::damageJob()`, the snapshot's `damageJob` and `damageProgress`) under a new job id,
+announced by the `damage` event right after `Done`: `DamageChange { masterId, status Pending, reason Pending }`. It is
+stepped behind every other work (a master, a crest join, the needles, the source's measurement), never blocks a command
+(it is no overlay: the session's column is the measured one), and publishes its phases `Reference` and `Damage` with
+`stepFraction`, then `Final`, the damage's line (600, 601 or 602) and the `damage` event with the report's own status and
+reason: `Ready` or `Unavailable`. It is stopped, its report `Cancelled`, by `cancel` of its id (reason `Cancelled`), by a
+new `master` (reason `Superseded`, before the new master allocates), and by `forget` of its master (no line: that master
+is gone); each says its line where its master stays and closes with the `damage` event. `load` and `loadMeasured` drop
+it silently with the masters. Its memory is the master's: `MasterJob::plan` prices the job (`DamageJob::bytes` — the
+object, its master chain and the walks' plan) beside the master's, it lives in the room the master's job leaves, and
+`liveBytes()` counts it while it runs. With no job id left for it, the damage is not graded: `Unavailable`, `Capacity`,
+and the master's damage line says so.
+
 THE DAMAGE (`MasterReport.damage`, v0.14.0, `[cost.damage]` in engine.toml): PEAQ Basic (`analysis::Peaq`) of the
 master against the same chain with its dynamics at rest, graded in windows (10 s every 5 s; a programme shorter than a
 window is one window) on the BS.1116 scale by ODG (grade 5 from -0.5, 4 from -1.5, 3 from -2.5, 2 from -3.5, 1 below).
@@ -1702,9 +1719,9 @@ one gain, from both integrated loudnesses (the reference's measured lifted back,
 scale-free), brings the reference to the master's. Reported: the worst window's verdict, grade, ODG, DI and start, the
 windows graded, heard (below grade 5) and ungraded, the share heard, the gain; and the loudness range of the input
 (the source's programme report) against the master's, its change in LU and as a share of the input's, or the reason
-either is absent. Two facts say them (600-604). Cost, 60 s of 48 kHz stereo on an M-series Mac: the master job 1.4 s,
-the damage 3.7 s more (both chains' loudness 0.9 s, the graded walk 2.8 s of which PEAQ's two windows in flight about
-1.9 s).
+either is absent. Two facts say them (600-604). Cost, 60 s of 48 kHz stereo on an M-series Mac: the master is delivered
+after 1.3 s, as without the damage; its job then takes 3.6–3.7 s (both chains' loudness about 0.9 s, the graded walk
+2.8 s, of which PEAQ's two windows in flight about 1.9 s).
 
 Each completed ready master carries an optional `MasterReport` beside its recipe and landing. Its LUFS,
 reference true peak, PLR and suitable LRA are the solver's completed measurement of the selected delivered

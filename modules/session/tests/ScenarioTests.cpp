@@ -91,7 +91,7 @@ bool pump (Session& s, std::uint32_t budget, Seen& seen)
 {
     for (unsigned i = 0; i < 50000000u; ++i)
     {
-        if (s.measurementJob() == 0 && s.needlesJob() == 0 && s.job() == 0) return true;
+        if (s.measurementJob() == 0 && s.needlesJob() == 0 && s.job() == 0 && s.damageJob() == 0) return true;
         (void) s.step (budget);
         take (s, seen);
     }

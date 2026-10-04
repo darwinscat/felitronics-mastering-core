@@ -770,6 +770,7 @@ text::Term reasonOf (MeasurementReason reason) noexcept
         case MeasurementReason::NotImplemented: return text::Term::ReasonNotImplemented;
         case MeasurementReason::NeedNotAbove3:  return text::Term::ReasonNeedNotAbove3;
         case MeasurementReason::Memory:         return text::Term::ReasonMemory;
+        case MeasurementReason::Superseded:     return text::Term::ReasonSuperseded;
     }
     // Not measured always carries a reason (Observations.cpp's unmeasured()).
     detail::storageOverflow();

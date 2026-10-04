@@ -23,7 +23,6 @@
 
 #include <array>
 #include <cmath>
-#include <functional>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>

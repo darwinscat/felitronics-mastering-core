@@ -87,7 +87,8 @@
       "NoSignal",
       "NotImplemented",
       "NeedNotAbove3",
-      "Memory"
+      "Memory",
+      "Superseded"
     ],
     "LandingStatus": [
       "Solved",
@@ -841,7 +842,9 @@
         "observationFacts": "ObservationFact[<=17]",
         "readings": "ReadingFact[<=26]",
         "targetNote": "Fact?",
-        "eqOnlyCurve": "EqPoint[]"
+        "eqOnlyCurve": "EqPoint[]",
+        "damageJob": "uint32",
+        "damageProgress": "Phase"
       }
     },
     "MasterToken": {
@@ -951,6 +954,14 @@
         "total": "uint64",
         "stored": "uint64",
         "complete": "bool"
+      }
+    },
+    "DamageChange": {
+      "cpp": "DamageChange",
+      "fields": {
+        "masterId": "uint32",
+        "status": "MeasurementStatus",
+        "reason": "MeasurementReason"
       }
     },
     "MeasuredSource": {
@@ -1241,7 +1252,7 @@
   },
   "wireAliases": {
     "CommandAnswer": "AcceptedAnswer | RejectedAnswer | ContractAnswer",
-    "SessionEvent": "PhaseEvent | FactEvent | ReadingEvent | DoneEvent | RejectedEvent | ErrorEvent | MeasurementEvent",
+    "SessionEvent": "PhaseEvent | FactEvent | ReadingEvent | DoneEvent | RejectedEvent | ErrorEvent | MeasurementEvent | DamageEvent",
     "SessionCommand": "SetTargetCommand | SetManualCommand | EditTargetCommand | EditDeviceCommand | RevertEditsCommand | MasterCommand | CancelCommand | ForgetCommand | ContinueMeasurementCommand | AdoptMachineCommand",
     "EditDeviceCommand": "EditDeviceHpfCommand | EditDeviceMonoBassCommand | EditDeviceGlueCommand | EditDeviceSaturationCommand | EditDeviceTiltCommand | EditDeviceLimiterCommand | EditDeviceDitherCommand | EditDeviceLowCommand | EditDeviceBandsCommand",
     "RevertEditsCommand": "RevertEditsHpfCommand | RevertEditsMonoBassCommand | RevertEditsGlueCommand | RevertEditsSaturationCommand | RevertEditsTiltCommand | RevertEditsLimiterCommand | RevertEditsDitherCommand | RevertEditsLowCommand | RevertEditsBandsCommand",
@@ -1646,6 +1657,18 @@
       "jobId": "number",
       "kind": "\"measurement\"",
       "payload": "MeasurementChange",
+      "source": "string",
+      "revision": "string",
+      "phase": "PhaseName",
+      "completedWork": "string",
+      "totalWork": "string",
+      "state": "State"
+    },
+    "DamageEvent": {
+      "seq": "string",
+      "jobId": "number",
+      "kind": "\"damage\"",
+      "payload": "DamageChange",
       "source": "string",
       "revision": "string",
       "phase": "PhaseName",

@@ -855,8 +855,9 @@ void theObservationsHaveTheirWords()
             worded = worded && word && ! word->empty();
         }
     }
-    ok (worded && names == 17 && handling == 4 && reasons == 10,
-        "17 names, 4 handlings (nothing, HPF, mono bass, by hand) and 10 reasons, each worded in Russian and English");
+    ok (worded && names == 17 && handling == 4 && reasons == 11,
+        "17 names, 4 handlings (nothing, HPF, mono bass, by hand) and 11 reasons (a master's damage superseded among them), "
+        "each worded in Russian and English");
 }
 
 // THE NAMED BANDS' WORDS ARE FELITRONICS-BANDS': a field or device term of tilt, low or the five bands prints the band's name
