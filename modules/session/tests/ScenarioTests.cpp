@@ -91,7 +91,7 @@ bool pump (Session& s, std::uint32_t budget, Seen& seen)
 {
     for (unsigned i = 0; i < 50000000u; ++i)
     {
-        if (s.measurementJob() == 0 && s.needlesJob() == 0 && s.job() == 0 && s.damageJob() == 0) return true;
+        if (s.measurementJob() == 0 && s.needlesJob() == 0 && s.job() == 0 && s.damageJobs().empty()) return true;
         (void) s.step (budget);
         take (s, seen);
     }
@@ -126,6 +126,14 @@ Made master (Session& s, CommandId id, std::uint32_t budget)
     if (s.apply (command::Master { id }).rejection != Rejection::None) return out;
     Seen seen;
     if (! pump (s, budget, seen) || s.masters().empty()) return out;
+    // The damage grade, asked as the page asks it once the master is delivered (command::GradeDamage, v0.16.0), and
+    // graded to its end: its line among the master's facts, as it always was.
+    if (s.masters().back().report && s.masters().back().report->damage.status == MeasurementStatus::Pending)
+    {
+        if (s.apply (command::GradeDamage { id + 500u, s.masters().back().id }).rejection != Rejection::None) return out;
+        take (s, seen);
+        if (! pump (s, budget, seen)) return out;
+    }
     out.facts = std::move (seen.facts);
     out.kept = s.masters().back();
     const auto token = s.pendingMaster();

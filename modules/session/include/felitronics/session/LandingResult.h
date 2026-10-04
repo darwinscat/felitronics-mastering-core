@@ -206,8 +206,8 @@ struct MasterReport
     // ceiling — peakSafe false, truePeakDbTp above ceilingDbTp — because no render stayed under it.
     bool peaksAboveCeiling = false;
     MasterDamage damage {};
-    // The loudness mode this master landed in, and for a max mode what ended it and how many steps back its PEAQ guard
-    // took. In a max mode the damage above is the guard's grade of the delivered render (no damage job follows).
+    // The loudness mode this master landed in, and for a max mode what ended it; guardSteps, the steps back of v0.15.0's
+    // PEAQ guard, is 0 since v0.16.0 (no guard in the loop: a max master's damage is graded as any master's).
     LoudnessMode loudnessMode = LoudnessMode::Manual;
     MaxStop maxStop = MaxStop::None;
     std::uint32_t guardSteps = 0;
@@ -238,11 +238,15 @@ struct MasterReportText
                                                          double toleranceLu) noexcept;
     [[nodiscard]] static std::optional<text::Fact> hint (const MasterHint& hint) noexcept;
     // A max mode's verdict (report.loudnessMode, maxStop): the mode, the file's loudness and what ended the mode — the
-    // mode's limiter budget `budgetDb` where that held it, the guard's steps back where the guard did, the delivered
-    // render's statistic `overBudgetDb` beside the budget where it broke it (LandingSearch::overBudgetDb). Nothing for a
-    // manual master or one not delivered.
-    [[nodiscard]] static std::optional<text::Fact> max (const MasterReport& report, double budgetDb,
-                                                        double overBudgetDb) noexcept;
+    // mode's limiter budget `budgetDb` where that held it, the delivered render's statistic `overBudgetDb` beside the
+    // budget where it broke it (LandingSearch::overBudgetDb); pulled up to the floor, the mode and the level alone.
+    // Nothing for a manual master or one not delivered.
+    [[nodiscard]] static std::optional<text::Fact> max (const MasterReport& report, double budgetDb, double overBudgetDb) noexcept;
+    // A max master pulled up to the floor (MaxStop::Floor): its numbers, for the log only — the mode's budget `budgetDb`,
+    // the floor `floorLufs` and the active-window P95 `p95Db` the limiter took to reach it (printed above the budget,
+    // as 615 prints its excess). The verdict beside it stays the mode and the level alone. Nothing for any other stop.
+    [[nodiscard]] static std::optional<text::Fact> maxFloorDetail (const MasterReport& report, double budgetDb, double p95Db,
+                                                                   double floorLufs) noexcept;
     // A master delivered above its ceiling (peaksAboveCeiling): its true peak and the ceiling. Nothing otherwise.
     [[nodiscard]] static std::optional<text::Fact> peaksAboveCeiling (const MasterReport& report) noexcept;
     [[nodiscard]] static text::Fact crest (const MasterCrest& crest) noexcept;

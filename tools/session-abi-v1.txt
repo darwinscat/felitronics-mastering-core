@@ -1974,3 +1974,32 @@ codec MasterReport.loudnessMode LoudnessMode
 codec MasterReport.maxStop MaxStop
 codec MasterReport.guardSteps uint32
 wire TargetPatch.loudnessMode? LoudnessMode | null
+# The damage grade asked by the shell (04.10, v0.16.0): command::GradeDamage { masterId } grades a master kept as a job of
+# its own — its damage events Pending, then the result; refused when its damage is settled (DamageSettled, fact 136) or
+# a grade of it is already asked (DamageQueued, 137) — one at a time in the order asked; a new master parks the running
+# one, never ends it; forget of its master or a new source ends it (MeasurementReason::MasterForgotten, its term). The
+# snapshot lists every grade not yet ended (Snapshot.damageJobs: job, master, Waiting or Running, progress). A max
+# master is a landing and a delivery (no guard): its damage is graded as any master's, and MaxStop's Guard, GuardUnmet
+# and Unguarded, with facts 609, 610 and 614, are no longer said; a max master the budget holds under [landing.max]
+# floorLufs is pulled up to it (MaxStop::Floor), said as the mode and the level (616), its numbers in a line for the
+# log (617).
+enum felitronics::session::Rejection::DamageSettled=36
+enum felitronics::session::Rejection::DamageQueued=37
+enum felitronics::session::MeasurementReason::MasterForgotten=13
+enum felitronics::session::DamageJobState::Waiting=0
+enum felitronics::session::DamageJobState::Running=1
+enum felitronics::session::text::FactId::RejectedDamageSettled=136
+enum felitronics::session::text::FactId::RejectedDamageQueued=137
+enum felitronics::session::text::Term::ReasonMasterForgotten=150
+enum felitronics::session::MaxStop::Floor=9
+enum felitronics::session::text::FactId::MasterMaxFloor=616
+enum felitronics::session::text::FactId::MasterMaxFloorDetail=617
+codec DamageJobEntry.job uint32
+codec DamageJobEntry.masterId uint32
+codec DamageJobEntry.state DamageJobState
+codec DamageJobEntry.progress Phase
+codec Snapshot.damageJobs DamageJobEntry[]
+wire GradeDamageCommand.kind "gradeDamage"
+wire GradeDamageCommand.commandId string
+wire GradeDamageCommand.masterId number
+wire union SessionCommand GradeDamageCommand

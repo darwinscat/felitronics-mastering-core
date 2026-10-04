@@ -273,6 +273,14 @@ en = "The target sets the delivery format: its master is written only as {bits}-
 ru = "Замеры, от которых зависят числа приборов, ещё идут — это станет доступно, когда они закончатся."
 en = "The measurements the devices' numbers depend on are still running — this becomes available once they end."
 
+[messages.rejectedDamageSettled]
+ru = "Порча этого мастера уже оценена или не может быть оценена — повторная оценка дала бы то же."
+en = "This master's damage is already graded or cannot be graded — grading it again would give the same."
+
+[messages.rejectedDamageQueued]
+ru = "Порча этого мастера уже оценивается или ждёт своей очереди."
+en = "This master's damage is already being graded or waits its turn."
+
 [messages.hpfNote]
 ru = "ФВЧ {cutoff}: по нижней ноте {note} ({hz}), на ней срезается {loss}."
 en = "HPF {cutoff}: from the lowest note {note} ({hz}), which loses {loss}."
@@ -1089,6 +1097,8 @@ superseded.ru = "заказан новый мастер"
 superseded.en = "a new master was asked for"
 noJobId.ru = "для этой задачи не осталось номера"
 noJobId.en = "no job id was left for it"
+masterForgotten.ru = "мастер удалён"
+masterForgotten.en = "the master was deleted"
 
 # An observation whose measurement did not give its number: its name, and why.
 [messages.observationUnmeasured]
@@ -1129,11 +1139,12 @@ en = "Target {target}, reached {achieved}: going further, the limiter would have
 ru = "Цель {target}, сделано {achieved}: ни один вариант не уложился в бюджет лимитера {budget} (P95) — выдан самый мягкий из опробованных, лимитер в нём срезает {taken}."
 en = "Target {target}, reached {achieved}: no render kept within the limiter's budget of {budget} (P95) — the gentlest of those tried is delivered, its limiter takes off {taken}."
 
-# A landing on the source's gate: the level on the loud part, and the file's standard BS.1770 reading, where the two
-# part by more than the tolerance, either way round.
+# A landing on the source's gate: the master's mean level over the blocks the source's gate admits — the programme without
+# its quiet parts, not its loudest place — and the file's standard BS.1770 reading, where the two part by more than the
+# tolerance, either way round.
 [messages.masterLandingGate]
-ru = "По громкой части {loud}, по стандарту файла {file}."
-en = "{loud} by the loud part, {file} by the file's standard reading."
+ru = "Без тихих мест {loud}, по стандарту файла {file}."
+en = "{loud} without the quiet parts, {file} by the file's standard reading."
 
 # A max mode's verdict (owner, 04.10: loudness by a promise of BS.1116): the mode, the file's loudness and what ended the
 # mode. The damage's own line says the grade.
@@ -1167,10 +1178,22 @@ en = "{mode}: {achieved} — no render kept under the true-peak ceiling."
 ru = "{mode}: {achieved} — порчу проверить не удалось: PEAQ не оценил этот файл; бюджет лимитера соблюдён."
 en = "{mode}: {achieved} — the damage could not be checked: PEAQ did not grade this file; the limiter's budget holds."
 
-# A max master delivered over the mode's limiter budget: no render kept it, or the guard's step back broke it.
+# A max master delivered over the mode's limiter budget: no render kept it.
 [messages.masterMaxOverBudget]
 ru = "{mode}: {achieved} — лимитер в выданном варианте срезает {over} (P95), больше бюджета режима {budget}."
 en = "{mode}: {achieved} — the limiter takes off {over} (P95) in the render delivered, more than the mode's budget of {budget}."
+
+# A max master pulled up to [landing.max] floorLufs (owner, 04.10: "always pulled up to −14"): the mode and the level, as a
+# person sees any max result — nothing of a budget.
+[messages.masterMaxFloor]
+ru = "{mode}: {achieved}."
+en = "{mode}: {achieved}."
+
+# ...and its numbers, a line for the log only ("only we read it"): the mode's budget held the landing under the floor, and
+# what the limiter took (P95) to reach it.
+[messages.masterMaxFloorDetail]
+ru = "{mode}: бюджет лимитера {budget} (P95) держал посадку ниже {floor}; поднято до {floor}, лимитер срезает {over} (P95)."
+en = "{mode}: the limiter's budget of {budget} (P95) held the landing under {floor}; brought up to {floor}, the limiter takes off {over} (P95)."
 
 [messages.masterLandingPassLimit]
 ru = "Проходы кончились раньше, чем мастер подошёл к цели ближе допуска {tolerance}."

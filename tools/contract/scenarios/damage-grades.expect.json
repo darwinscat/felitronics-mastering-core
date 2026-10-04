@@ -1,0 +1,26 @@
+{
+  "checks": [
+    {"kind":"answer","session":"main","index":3,"path":"jobId","value":4},
+    {"kind":"answer","session":"main","index":4,"path":"jobId","value":5},
+    {"kind":"answer","session":"main","index":5,"path":"code","value":37},
+    {"kind":"answer","session":"main","index":6,"path":"code","value":36},
+    {"kind":"snapshot","session":"main","index":0,"path":"damageJob","value":0},
+    {"kind":"snapshot","session":"main","index":0,"path":"damageJobs.length","value":2},
+    {"kind":"snapshot","session":"main","index":0,"path":"damageJobs.0.job","value":4},
+    {"kind":"snapshot","session":"main","index":0,"path":"damageJobs.0.masterId","value":2},
+    {"kind":"snapshot","session":"main","index":0,"path":"damageJobs.0.state","value":0},
+    {"kind":"snapshot","session":"main","index":0,"path":"damageJobs.1.job","value":5},
+    {"kind":"snapshot","session":"main","index":0,"path":"damageJobs.1.masterId","value":3},
+    {"kind":"snapshot","session":"main","index":0,"path":"damageJobs.1.state","value":0},
+    {"kind":"snapshot","session":"main","index":0,"path":"masters.0.report.damage.status","value":0},
+    {"kind":"snapshot","session":"main","index":1,"path":"damageJob","value":4},
+    {"kind":"snapshot","session":"main","index":1,"path":"damageJobs.0.state","value":1},
+    {"kind":"snapshot","session":"main","index":1,"path":"damageJobs.1.state","value":0},
+    {"kind":"snapshot","session":"main","index":2,"path":"damageJobs.length","value":0},
+    {"kind":"snapshot","session":"main","index":2,"path":"masters.0.report.damage.status","value":1},
+    {"kind":"snapshot","session":"main","index":2,"path":"masters.1.report.damage.status","value":1}
+  ],
+  "minEvents": 1000,
+  "eventKinds": ["phase","measurement","fact","damage","done"],
+  "rejections": 2
+}

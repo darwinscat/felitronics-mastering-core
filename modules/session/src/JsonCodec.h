@@ -194,6 +194,8 @@ struct Storage
     std::size_t masterSections = 0, masterWaveformRows = 0;
     MasterSection* masterSection = nullptr;
     MasterWaveformBucket* masterWaveformRow = nullptr;
+    std::size_t damageJobs = 0;
+    DamageJobEntry* damageJob = nullptr;
     std::uint64_t bytes() const noexcept
     {
         return std::uint64_t (measurementResults) * sizeof (MeasurementResult)
@@ -204,7 +206,8 @@ struct Storage
              + std::uint64_t (landingTraceRows) * sizeof (LandingTraceBucket)
              + std::uint64_t (masterCrestRows) * sizeof (double)
              + std::uint64_t (masterSections) * sizeof (MasterSection)
-             + std::uint64_t (masterWaveformRows) * sizeof (MasterWaveformBucket);
+             + std::uint64_t (masterWaveformRows) * sizeof (MasterWaveformBucket)
+             + std::uint64_t (damageJobs) * sizeof (DamageJobEntry);
     }
 };
 
@@ -695,6 +698,7 @@ struct Reader
         else if constexpr (std::is_same_v<T, LandingTraceBucket>) { count = &storage.landingTraceRows; out = storage.landingTraceRow; }
         else if constexpr (std::is_same_v<T, MasterSection>) { count = &storage.masterSections; out = storage.masterSection; }
         else if constexpr (std::is_same_v<T, MasterWaveformBucket>) { count = &storage.masterWaveformRows; out = storage.masterWaveformRow; }
+        else if constexpr (std::is_same_v<T, DamageJobEntry>) { count = &storage.damageJobs; out = storage.damageJob; }
         else if constexpr (std::is_same_v<T, ReadingPoint>) { count = &storage.points; out = storage.point; }
         else if constexpr (std::is_same_v<T, ReadingRun>) { count = &storage.runs; out = storage.run; }
         else if constexpr (std::is_same_v<T, EqPoint>) { count = &storage.eqPoints; out = storage.eqPoint; }

@@ -273,9 +273,11 @@ bool run (unsigned sourceRate, unsigned deliveryRate, unsigned channels, unsigne
             { "replacement.wav", sourceRate, true, 24 } };
         if (! measure (s, next, f) || s.masters().size() != 0 || s.pendingMaster().master != 0
             || ! external[0].samples || ! external[1].samples || ! select (deliveryRate, 19)) return false;
-        // The load emptied the masters' room: the first master grows it by one slot (a Kept and its rows' record, under
-        // 1 KiB), kept after the forget; every later cycle reuses that slot and grows nothing.
-        auto warmLive = std::uint64_t (s.liveBytes()) + sizeof (Kept) + 1024u;
+        // The load emptied the masters' room: the first master grows it by one slot (a Kept, its rows' record — the
+        // damage grade's inputs in it, the parameters it was delivered with and the walks' plan, under 1 KiB beside them —
+        // and its entry in the grades' queue), kept after the forget; every later cycle reuses that slot and grows nothing.
+        auto warmLive = std::uint64_t (s.liveBytes()) + sizeof (Kept) + sizeof (DamageJobEntry)
+                      + sizeof (felitronics::mastering::MasteringChainParams) + 2048u;
         for (unsigned cycle = 0; cycle < 3; ++cycle)
         {
             auto warm = request; warm.id = 30u + cycle * 2u;

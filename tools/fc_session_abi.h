@@ -67,7 +67,14 @@
 //                mode in effect in the snapshot (Snapshot.loudnessMode); a max master's report says its mode, what
 //                stopped it and the guard's steps back (MasterReport.loudnessMode, maxStop, guardSteps; facts 608-615,
 //                the loudnessMode terms, the field term FieldTargetLoudnessMode), and its damage is the guard's grading.
-#define FC_SESSION_ABI_VERSION 10u
+//  11            v0.16.0: the damage grade asked by the shell — the command gradeDamage (masterId), its own job and damage
+//                events, refused DamageSettled or DamageQueued (facts 136, 137); grades run one at a time in the order
+//                asked, a new master parks the running one, forget of its master or a new source ends it
+//                (MeasurementReason::MasterForgotten); the snapshot's list of grades (Snapshot.damageJobs, DamageJobEntry,
+//                DamageJobState); a max master without a guard (its damage graded as any master's; MaxStop Guard,
+//                GuardUnmet and Unguarded and facts 609, 610 and 614 no longer said) and pulled up to the modes' floor
+//                (MaxStop::Floor, facts 616 and 617). No entry point.
+#define FC_SESSION_ABI_VERSION 11u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u
 #define FC_SESSION_STORAGE_V1_BYTES 32u

@@ -32,6 +32,9 @@ struct SnapshotView
     // The damage being graded for a delivered master, a job of its own (Session::damageJob), and its progress.
     JobId damageJob = 0;
     Phase damageProgress {};
+    // Every grade not yet ended, in the order they run: the one being graded (Running) first, then those waiting their
+    // turn (Waiting), each with its job, its master and its progress (Session::damageJobs).
+    std::span<const DamageJobEntry> damageJobs;
     // The loudness mode the next master lands in: the person's edit (project.targetEdit) or the target row's.
     LoudnessMode loudnessMode = LoudnessMode::Manual;
     double sourceBytes = 0.0;
@@ -116,6 +119,7 @@ private:
     std::unique_ptr<MasterSection[]> masterSections_;
     std::unique_ptr<MasterWaveformBucket[]> masterWaveform_;
     std::unique_ptr<MachineDifference[]> differences_;
+    std::unique_ptr<DamageJobEntry[]> damageJobs_;
     std::unique_ptr<EqPoint[]> eqCurve_;
     std::unique_ptr<ReadingPoint[]> points_;
     std::unique_ptr<ReadingRun[]> runs_;

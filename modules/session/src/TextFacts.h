@@ -194,6 +194,8 @@ inline constexpr FactShape kFacts[] = {
     { FactId::RejectedDeliveryFormat, "rejectedDeliveryFormat",
       { { { "bits", ArgKind::Count, {} }, { "rate", ArgKind::Value, {} } } }, 2 },
     { FactId::RejectedPlanPending, "rejectedPlanPending", {}, 0 },
+    { FactId::RejectedDamageSettled, "rejectedDamageSettled", {}, 0 },
+    { FactId::RejectedDamageQueued, "rejectedDamageQueued", {}, 0 },
     { FactId::RejectedOutOfDomainValue, "rejectedOutOfDomainValue", { { { "field", ArgKind::Term, "field" },
       { "value", ArgKind::Value, {} }, { "low", ArgKind::Value, {} }, { "high", ArgKind::Value, {} } } }, 4 },
     { FactId::RejectedNotOneOfValue, "rejectedNotOneOfValue",
@@ -302,6 +304,10 @@ inline constexpr FactShape kFacts[] = {
     { FactId::MasterMaxOverBudget, "masterMaxOverBudget",
       { { { "mode", ArgKind::Term, "loudnessMode" }, { "achieved", ArgKind::Value, {} }, { "over", ArgKind::Value, {} },
           { "budget", ArgKind::Value, {} } } }, 4 },
+    { FactId::MasterMaxFloor, "masterMaxFloor", { { { "mode", ArgKind::Term, "loudnessMode" }, { "achieved", ArgKind::Value, {} } } }, 2 },
+    { FactId::MasterMaxFloorDetail, "masterMaxFloorDetail",
+      { { { "mode", ArgKind::Term, "loudnessMode" }, { "budget", ArgKind::Value, {} }, { "floor", ArgKind::Value, {} },
+          { "over", ArgKind::Value, {} } } }, 4 },
 
 };
 inline constexpr std::size_t kFactCount = sizeof (kFacts) / sizeof (kFacts[0]);
@@ -465,6 +471,7 @@ inline constexpr TermShape kTerms[] = {
     { Term::LoudnessModeMaxClean, "loudnessMode", "maxClean" },
     { Term::LoudnessModeMaxDense, "loudnessMode", "maxDense" },
     { Term::FieldTargetLoudnessMode, "field", "targetLoudnessMode" },
+    { Term::ReasonMasterForgotten, "measurementReason", "masterForgotten" },
 };
 inline constexpr std::size_t kTermCount = sizeof (kTerms) / sizeof (kTerms[0]);
 
@@ -557,6 +564,8 @@ static_assert (tablesInOrder(), "kFacts and kTerms ascend by id");
         case Rejection::MandatoryUnavailable: return FactId::RejectedMandatoryUnavailable;
         case Rejection::DeliveryFormat: return FactId::RejectedDeliveryFormat;
         case Rejection::PlanPending: return FactId::RejectedPlanPending;
+        case Rejection::DamageSettled: return FactId::RejectedDamageSettled;
+        case Rejection::DamageQueued: return FactId::RejectedDamageQueued;
         case Rejection::Memory: return FactId::RejectedMemory;
         case Rejection::NewerDefaults: return FactId::RejectedNewerDefaults;
     }

@@ -42,8 +42,8 @@ namespace felitronics::session
 enum class State : std::uint8_t { Empty, Loaded, Measured1, Measured2, MeasurementStopped };
 
 // The commands, in the order of the table's rows and of Request's alternatives.
-enum class Command : std::uint8_t { Load, SetTarget, EditTarget, EditDevice, RevertEdits, SetManual, Master, Cancel, Forget, ImportProject, ContinueMeasurement, AdoptMachine };
-inline constexpr std::size_t kCommands = 12;
+enum class Command : std::uint8_t { Load, SetTarget, EditTarget, EditDevice, RevertEdits, SetManual, Master, Cancel, Forget, ImportProject, ContinueMeasurement, AdoptMachine, GradeDamage };
+inline constexpr std::size_t kCommands = 13;
 
 // The session's own transitions, in the order of the events table's rows.
 enum class Event : std::uint8_t { Measured1, Measured2, Mastered };
@@ -96,6 +96,9 @@ enum class Rejection : std::uint8_t
     DeliveryFormat,             // a master's delivery rate or bits are not the target's, its only format
     PlanPending,                // a measurement the devices read has not ended: the panel's master (PlanView::waiting);
                                 // a project export or import while a device field is not measured yet (DevicePlan::pending)
+    DamageSettled,              // gradeDamage: the master's damage is settled — graded, or not gradable (no plan for its
+                                // source); its result does not change
+    DamageQueued,               // gradeDamage: a grade of this master is being made or waits its turn
 };
 
 using CommandId = std::uint64_t;   // the shell's own number for a request, given back in its answer
@@ -167,12 +170,19 @@ struct ImportProject { CommandId id = 0; std::string_view bytes; };
 // Takes the planner's machine layer for the project as it stands — after an import, the decisions the file's differ
 // from (machineDifferences). A person's layer stays. With nothing to take it is accepted without a revision.
 struct AdoptMachine { CommandId id = 0; };
+// GRADES THE DAMAGE OF A MASTER KEPT — PEAQ of the master against the chain at rest, in windows (src/Damage.h) — as a job
+// of its own: the answer's job id, its damage events (Pending, then the result) and its progress, a row of the snapshot's
+// damageJobs. Grades run one at a time in the order asked, behind every other work; only cancel of its job id, forget of
+// its master or a new source ends one. A master's damage is graded once: a settled one is refused (DamageSettled); one a
+// cancel stopped, or its turn refused for the room it lacked, may be asked again. A grade is a measurement, not an edit:
+// a project's journal does not hold it, and an import grades nothing.
+struct GradeDamage { CommandId id = 0; MasterId master = 0; };
 } // namespace command
 
 // Any request: the alternative is the command, in the order of Command.
 using Request = std::variant<command::Load, command::SetTarget, command::EditTarget, command::EditDevice,
                              command::RevertEdits, command::SetManual, command::Master, command::Cancel, command::Forget, command::ImportProject, command::ContinueMeasurement,
-                             command::AdoptMachine>;
+                             command::AdoptMachine, command::GradeDamage>;
 
 // THE ANSWER — whole: accepted with the revision the command made, or rejected with no state change, but an event.
 struct Answer
@@ -260,6 +270,7 @@ struct Table
         { Command::ImportProject, { NoSource, NotPlaced,   None,     None,     None,      None, NotPlaced, None, None, NotPlaced, NotPlaced, NotPlaced, NotPlaced, NotPlaced, NotPlaced } },
         { Command::ContinueMeasurement, { NoJob, NoJob, NoJob, NoJob, NoJob, NoJob, None, None, None, NoJob, NoJob, NoJob, NoJob, None, None } },
         { Command::AdoptMachine, { NoSource, NotPlaced,   None,     None,     None,      None, NotPlaced, None, None, NotPlaced, NotPlaced, NotPlaced, NotPlaced, NotPlaced, NotPlaced } },
+        { Command::GradeDamage, {    NoSource, NoMaster,    None,     None,     None,      None, NoMaster, None, None, None, None, None, None, None, None } },
     };
 
     // Import: entry, state, no device field not measured yet (PlanPending), size (no input read), then TOML syntax,

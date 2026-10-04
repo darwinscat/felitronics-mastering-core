@@ -73,6 +73,7 @@ const char* nameOf (felitronics::session::Command c)
         case Command::ContinueMeasurement: return "continueMeasurement";
         case Command::ImportProject: return "importProject";
         case Command::AdoptMachine: return "adoptMachine";
+        case Command::GradeDamage: return "gradeDamage";
     }
     return "?";
 }
@@ -129,6 +130,8 @@ const char* nameOf (felitronics::session::Rejection r)
         case Rejection::MandatoryUnavailable: return "MandatoryUnavailable";
         case Rejection::DeliveryFormat: return "DeliveryFormat";
         case Rejection::PlanPending: return "PlanPending";
+        case Rejection::DamageSettled: return "DamageSettled";
+        case Rejection::DamageQueued: return "DamageQueued";
     }
     return "?";
 }

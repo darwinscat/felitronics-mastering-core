@@ -130,11 +130,10 @@ struct Landing
     // it loudDb — the window p95 of its gain reduction, dB, a whole number of quarter dB.
     double quietBudgetDb = 0.0, middleBudgetDb = 0.0, loudBudgetDb = 0.0;
     Span middleLufs;
-    // [landing.max]: the max modes' search ceiling, the guard's step back and its most steps, and each mode's limiter
-    // budget (dB, active-window P95) and PEAQ floor (worst ODG).
-    double maxCeilingLufs = 0.0, guardStepDb = 0.0;
-    std::int32_t guardSteps = 0;
-    double cleanBudgetDb = 0.0, cleanFloorOdg = 0.0, denseBudgetDb = 0.0, denseFloorOdg = 0.0;
+    // [landing.max]: the max modes' search ceiling, the floor no max master lands under, and each mode's limiter budget (dB,
+    // active-window P95, a whole number of quarter dB).
+    double maxCeilingLufs = 0.0, maxFloorLufs = 0.0;
+    double cleanBudgetDb = 0.0, denseBudgetDb = 0.0;
 };
 
 struct PeakClipper

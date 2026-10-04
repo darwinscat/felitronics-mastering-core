@@ -40,6 +40,7 @@ std::uint64_t Snapshot::storageFor (const SnapshotView& v) noexcept
     return detail::snapshotStorage (v.target.size(), v.source.name.size(), v.masters.size_bytes(),
                                     v.momentary.size_bytes(), v.shortTerm.size_bytes(), v.runs.size_bytes())
          + std::uint64_t (v.machineDifferences.size_bytes()) + std::uint64_t (v.eqCurve.size_bytes()) + std::uint64_t (v.eqOnlyCurve.size_bytes())
+         + std::uint64_t (v.damageJobs.size_bytes())
          + OwnedMeasurements::storageFor (v.measurements) + landingBytes;
 }
 Snapshot Snapshot::copy (const SnapshotView& v) noexcept
@@ -147,6 +148,12 @@ Snapshot Snapshot::copy (const SnapshotView& v) noexcept
         out.differences_.reset (new MachineDifference[v.machineDifferences.size()]);
         std::copy (v.machineDifferences.begin(), v.machineDifferences.end(), out.differences_.get());
         out.view_.machineDifferences = { out.differences_.get(), v.machineDifferences.size() };
+    }
+    if (! v.damageJobs.empty())
+    {
+        out.damageJobs_.reset (new DamageJobEntry[v.damageJobs.size()]);
+        std::copy (v.damageJobs.begin(), v.damageJobs.end(), out.damageJobs_.get());
+        out.view_.damageJobs = { out.damageJobs_.get(), v.damageJobs.size() };
     }
     // Both curves in one block, the whole curve first — as the codec reads them back.
     if (const auto curves = v.eqCurve.size() + v.eqOnlyCurve.size(); curves != 0)
@@ -277,6 +284,7 @@ SnapshotView Session::buildView() const noexcept
     v.masterProgress = masterProgress_;
     v.damageJob = damageJobId_;
     v.damageProgress = damageProgress_;
+    v.damageJobs = damageJobs();
     v.loudnessMode = detail::loudnessModeOf (detail::rules(), project_);
     v.integratedLufs = std::numeric_limits<double>::quiet_NaN();
     for (const auto& value : measurementResults_[0].numbers)

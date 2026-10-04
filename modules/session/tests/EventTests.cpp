@@ -403,8 +403,11 @@ void pump()
         "landing fix's pins c53142779e57820f / 4697be12cad5438e hold");
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
-    // The max modes (v0.15.0) move the config's version alone here: with it restated (withoutMax) every pin above holds.
-    ok (eventsHash (one) == 0x4e2da08a96550f34ull && eventsHash (cancelled) == 0x0e3b83171fe48e53ull,
+    // The max modes (v0.15.0) moved the config's version alone here: with it restated (withoutMax) every pin above holds.
+    // The damage's grade is the shell's to ask (command::GradeDamage, v0.16.0): the scenario asks none, so its stream
+    // carries no damage job — the pin without the damage above holds, and this one moves by that job alone; the max modes
+    // by ear (v0.16.0) move the config's version alone (withoutMax restates it).
+    ok (eventsHash (one) == 0xfbc63d0c0c9d3aceull && eventsHash (cancelled) == 0xbbae73dd84474cfeull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",
@@ -482,12 +485,15 @@ void tableBetweenSteps()
             const Request requests[] = { audio.load(), command::SetTarget { 13, "allStreaming" },
                 command::EditTarget { 14, { -13.0, {} } }, command::EditDevice { 15, hpf }, command::RevertEdits { 16, mask },
                 command::SetManual { 17, false }, command::Master { 18 }, command::Cancel { 19, job }, command::Forget { 20, kept }, command::ImportProject { 21, project.view() }, command::ContinueMeasurement { 23 },
-                command::AdoptMachine { 24 } };
+                command::AdoptMachine { 24 }, command::GradeDamage { 25, kept } };
             static_assert (std::size (requests) == kCommands, "a request of every command");
             ok (std::size_t (s->column()) == col, "pump establishes the table column");
             const auto answer = apply (*s, requests[std::size_t (row.command)]);
             const auto expected = row.command == Command::Cancel && job == 0 ? Rejection::NoJob : row.cell[col];
-            ok (answer.rejection == expected, "every command obeys the table and active-job check between pump steps");
+            // A master this fixture keeps was not delivered by a job: past the table, its damage is not gradable.
+            const bool settled = row.command == Command::GradeDamage && expected == Rejection::None
+                && answer.rejection == Rejection::DamageSettled;
+            ok (answer.rejection == expected || settled, "every command obeys the table and active-job check between pump steps");
             if (answer.rejection != Rejection::None) ok (before == encoded (snapshot (*s).view()), "rejection leaves the entire snapshot intact");
         }
 }

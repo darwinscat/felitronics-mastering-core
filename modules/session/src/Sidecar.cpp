@@ -55,7 +55,9 @@ Answer Session::loadMeasured (CommandId id, const MeasuredSource& facts) noexcep
     std::unique_ptr<char[]> name (facts.name.empty() ? nullptr : new char[facts.name.size()]);
     std::copy (facts.name.begin(), facts.name.end(), name.get());
     eventCount_ = 0;
-    // The masters first, the damage's job among them: it reads the source the next line frees.
+    // The masters first, the damage's grades among them — each says it ends with its master (MasterForgotten): they
+    // read the source the next line frees.
+    endAllDamage();
     clearMasters();
     samples_.reset(); waveform_.reset(); queryCache_.reset();
     measurementWorkspace_.reset(); liveMeasurements_.reset(); sourceMeasurements_.reset();
