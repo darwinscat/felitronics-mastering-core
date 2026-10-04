@@ -1024,6 +1024,28 @@ void readCost (Doc& d, Reader& in, Cost& o)
         const bool rate = t.required ("minTraceRateHz", o.pumping.minTraceRateHz, R { 1.0, 10000.0 });
         if (lp && rate && ! (o.pumping.lowPassHz < 0.5 * o.pumping.minTraceRateHz)) d.refuse (t, "lowPassHz", Refusal::AboveNyquist);
     });
+    in.table ("damage", Need::Required, [&] (Reader& t)
+    {
+        Damage& g = o.damage;
+        const bool window = t.required ("windowSeconds", g.windowSeconds, R { 1.0, 60.0 });
+        const bool hop = t.required ("hopSeconds", g.hopSeconds, R { 0.25, 60.0 });
+        // The window is a whole number of hops, one to four: each hop's worth of signal feeds that many windows at once.
+        if (window && hop)
+        {
+            const double k = g.windowSeconds / g.hopSeconds;
+            const double whole = std::floor (k + 0.5);
+            if (! (whole >= 1.0 && whole <= 4.0 && std::fabs (k - whole) <= 1e-9)) d.outOfRange (t, "hopSeconds");
+        }
+        if (t.required ("gradeFloorsOdg", g.gradeFloorsOdg, R { -4.0, 0.0 }))
+        {
+            bool falling = g.gradeFloorsOdg.size() == 4;
+            for (std::size_t i = 1; falling && i < g.gradeFloorsOdg.size(); ++i)
+                falling = g.gradeFloorsOdg[i] < g.gradeFloorsOdg[i - 1];
+            if (! falling) d.refuse (t, "gradeFloorsOdg", Refusal::OutOfOrder);
+        }
+        t.required ("referenceBelowDb", g.referenceBelowDb, R { 20.0, 120.0 });
+        t.required ("resamplerTaps", g.resamplerTaps, I { 8, 256 });
+    });
     in.table ("sections", Need::Required, [&] (Reader& t)
     {
         Sections& s = o.sections;

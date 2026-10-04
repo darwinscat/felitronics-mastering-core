@@ -566,7 +566,7 @@ jobs:
         # of the tag.
         run: |
           cmake -S . -B build-native -DCMAKE_BUILD_TYPE=Release -DFELITRONICS_MASTERING_BUILD_TESTS=ON $CORE_TAG
-          cmake --build build-native -j "$(nproc)" --target fcore_measure fcore_master fcore_session felitronics_session_needles_tests felitronics_session_source_tests felitronics_session_query_tests felitronics_waveform_index_tests felitronics_session_master_job_tests felitronics_session_master_abi_tests felitronics_session_memory_gate_tests
+          cmake --build build-native -j "$(nproc)" --target fcore_measure fcore_master fcore_peaq fcore_session felitronics_session_needles_tests felitronics_session_source_tests felitronics_session_query_tests felitronics_waveform_index_tests felitronics_session_master_job_tests felitronics_session_master_abi_tests felitronics_session_memory_gate_tests
           ctest --test-dir build-native --output-on-failure -R '^felitronics_session_memory_gate_(tests|long)$'
       - name: The wasm modules build (tools/wasm/build.sh)
         run: |
@@ -880,6 +880,24 @@ jobs:
             n=$((n+1))
           done
           echo "bit-identical: $n native-vs-wasm comparisons across the offline analyzers, two rates, two modules"
+
+      - name: PEAQ — fcore_peaq native against the same source in wasm, byte for byte
+        # analysis::Peaq promises the same bits on both rows (core::det, the core FFT, fixed sums, contract off).
+        # fcpeaq.node.js is tools/fcore_peaq.cpp itself, built by tools/wasm/build.sh. 48 kHz only: another rate goes
+        # through core::DeliveryResampler, whose kernel is designed with the system libm and differs between glibc and
+        # musl, so a 44.1 kHz pair is not a byte-diff contract. Two pairs, each with its verdict asserted on both rows: a
+        # master of this core (graded) and the reference against itself (transparent). Every line carries 17
+        # significant digits, so a one-ulp move in any MOV is a diff; a refusal exits non-zero and fails the step.
+        run: |
+          ./build-native/tools/fcore_master render 48000 2 fixture.f32 peaq-master.f32 > /dev/null
+          check() { want=$1; shift
+            ./build-native/tools/fcore_peaq --f32le "$@" > peaq-native.txt
+            node tools/wasm/build/fcpeaq.node.js --f32le "$@" > peaq-wasm.txt
+            grep -qx "verdict $want" peaq-native.txt || { echo "fcore_peaq $*: not $want"; cat peaq-native.txt; exit 1; }
+            diff peaq-native.txt peaq-wasm.txt || { echo "DIFFER: fcore_peaq $*"; exit 1; }; }
+          check graded 48000 2 fixture.f32 peaq-master.f32
+          check transparent 48000 2 fixture.f32 fixture.f32
+          echo "fcore_peaq: 2 pairs, native = wasm byte for byte"
 
       - name: NULL test — the tempo detector, native vs wasm, bit-exact, on BOTH modules that carry it
         # The page's BPM tool reads its tempo from fc_probe_tempo_*, so this is the proof that the module the page

@@ -120,7 +120,7 @@ void Session::requestNeedles() noexcept
             result.status = MeasurementStatus::Pending; result.reason = MeasurementReason::Pending;
             // One preparation, ceil(frames / chunk) reads and one finish. Load already bounds frames.
             const auto chunks = (source_.frames + Excursions::kChunk - 1u) / Excursions::kChunk;
-            needlesProgress_ = { PhaseName::Analyzers, 0, config::Config::versions().all, 0, 0, 0, std::uint32_t (chunks + 2u) };
+            needlesProgress_ = { PhaseName::Analyzers, 0, config::Config::versions().all, 0, 0, 0, std::uint32_t (chunks + 2u), std::nullopt };
         }
     }
     // No event here: a transition in the main pump already uses its three-event allowance.

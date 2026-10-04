@@ -1182,7 +1182,9 @@ void theMemoryOfAMaster()
         "with its audio not yet taken the next master is refused whole: no allocation, no revision, the finished one intact");
     ok (s.releaseMaster (s.pendingMaster()) == MasterTransferStatus::Ok && s.check (command::Master { 8 }).rejection == Rejection::None,
         "and taken again once it is released");
-    // A heap that cannot hold the job refuses it before anything is asked for.
+    // A heap that cannot hold the job refuses it before anything is asked for. The last master's damage ends first: a
+    // master asked while one runs is priced with its bytes freed (MasterJobTests' masterAtTheCeilingWithADamage).
+    for (unsigned i = 0; i < 4000000 && s.damageJob() != 0; ++i) (void) s.step (16);
     const auto need = s.check (command::Master { 8 });
     ok (s.setCapacity ({ s.liveBytes() + double (need.bytes) - 1.0, 9007199254740991.0 }) == Status::Ok, "PRECONDITION: a heap one byte short");
     const auto spentShort = declared::spend ([&] { refused = s.apply (command::Master { 8 }); });

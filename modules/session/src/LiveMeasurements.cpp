@@ -271,7 +271,8 @@ void Session::stepMeasurements() noexcept
     measurementProgress_ = { stream ? PhaseName::Stream : PhaseName::Report,
         stream ? 0.1 * double (live.frames) / double (source_.frames) : live.stage >= 9 ? 0.2 : 0.15,
         config::Config::versions().all, 0, 0, std::uint32_t (std::min<std::uint64_t> (live.work, 4294967295u)),
-        std::uint32_t (std::min<std::uint64_t> (source_.frames + live.clipCapacity + 32, 4294967295u)) };
+        std::uint32_t (std::min<std::uint64_t> (source_.frames + live.clipCapacity + 32, 4294967295u)),
+        stream ? std::optional<double> (double (live.frames) / double (source_.frames)) : std::nullopt };
     // Publications from this unit describe its completed work, including the last reading/report.
     for (auto i = firstEvent; i < eventCount_; ++i)
     {

@@ -253,6 +253,53 @@ bool refusedThroughFacade (fc_session handle, std::uint32_t id, const char* targ
 }
 }
 
+// THE SHELL'S ARITHMETIC IS THE CHECK'S, through the C entry points, while a damage is graded: the storage record's
+// liveBytes - releasedBytes + bytes is the heap a master needs — at that ceiling the master is taken, a byte under it is
+// refused with Memory. A caller of the 32-byte base record gets no releasedBytes: nothing is written past its size.
+void ceilingThroughFacade()
+{
+    const auto handle = create();
+    load (handle, 1);
+    auto* s = contractSession (handle);
+    fc_master_config config {}; fc_master_params params {};
+    ready (config, params);
+    char answer[FC_SESSION_ANSWER_BYTES] {}; std::uint32_t written = 0;
+    const auto master = [&] (std::uint32_t id) {
+        const auto source = s->source().hash, revision = s->revision();
+        return fc_session_master (handle, id, 0, std::uint32_t (source), std::uint32_t (source >> 32),
+            std::uint32_t (revision), std::uint32_t (revision >> 32), &config, &params, answer, sizeof (answer), &written);
+    };
+    const auto price = [&] (fc_session_storage& out) {
+        const auto source = s->source().hash, revision = s->revision();
+        return fc_session_master_bytes (handle, std::uint32_t (source), std::uint32_t (source >> 32),
+            std::uint32_t (revision), std::uint32_t (revision >> 32), &config, &params, &out);
+    };
+    (void) master (2);
+    std::uint32_t step = 0;
+    for (unsigned i = 0; i < 40000 && s->job() != 0; ++i) (void) fc_session_step (handle, 16, &step);
+    for (unsigned i = 0; i < 64 && s->damageJob() != 0; ++i) (void) fc_session_step (handle, 1, &step);
+    (void) s->releaseMaster (s->pendingMaster());
+    fc_session_storage storage { sizeof (fc_session_storage) };
+    fc_session_storage base {}; base.size = FC_SESSION_STORAGE_V1_BYTES; base.releasedBytes = -1.0;
+    const bool priced = price (storage) == FC_SESSION_OK && price (base) == FC_SESSION_OK && storage.rejection == 0;
+    const double need = storage.liveBytes - storage.releasedBytes + storage.bytes;
+    const auto refusal = "\"code\":" + std::to_string (int (Rejection::Memory));
+    fc_session_capacity capacity { sizeof (fc_session_capacity), need - 1.0, storage.largestBlockBytes };
+    (void) fc_session_set_capacity (handle, &capacity);
+    const bool under = master (3) == FC_SESSION_OK && std::string_view (answer, written).find (refusal) != std::string_view::npos
+        && s->damageJob() != 0;
+    capacity.heapCeilingBytes = need;
+    (void) fc_session_set_capacity (handle, &capacity);
+    const bool at = master (4) == FC_SESSION_OK && std::string_view (answer, written).find ("\"accepted\"") != std::string_view::npos
+        && s->job() != 0 && s->damageJob() == 0;
+    ok (priced && storage.releasedBytes > 0.0 && base.releasedBytes == -1.0 && base.bytes == storage.bytes
+        && under && at && s->liveBytes() <= need,
+        "the storage record's liveBytes - releasedBytes + bytes is the master's ceiling while a damage is graded: "
+        + std::to_string (std::uint64_t (need)) + " bytes (" + std::to_string (std::uint64_t (storage.releasedBytes))
+        + " freed first) — taken there, refused a byte under; a base record is not written past its size");
+    ok (fc_session_destroy (handle) == FC_SESSION_OK, "C session releases all storage after the ceiling");
+}
+
 // THE LEAN SUMMARY AND A MASTER BY QUERY, through the C entry points: a shell that sets leanSummary gets summaries without
 // the masters' heavy rows and reads one master whole — and its curves — with fc_session_query_*; the snapshot is whole.
 void leanThroughFacade()
@@ -617,5 +664,6 @@ int main()
         ok (fc_session_destroy (refusing) == FC_SESSION_OK, "C session releases all storage after the refusals");
     }
     leanThroughFacade();
+    ceilingThroughFacade();
     return felitronics::test::report();
 }
