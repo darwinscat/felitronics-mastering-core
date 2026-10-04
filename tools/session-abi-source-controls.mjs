@@ -183,7 +183,9 @@ try {
     for (const [entry, before, after] of [
         ...['command', 'load', 'import_project'].map(entry => [`fc_session_${entry}_bytes`,
             /if \(overlap \(out, out->size, [^;]+;/, '/* overlap control removed */']),
-        ['fc_session_set_capacity', 'auto* slot = lookup (session);', 'if (!capacity) return FC_SESSION_ERR_NULL;\n    auto* slot = lookup (session);']
+        ['fc_session_set_capacity', 'auto* slot = lookup (session);', 'if (!capacity) return FC_SESSION_ERR_NULL;\n    auto* slot = lookup (session);'],
+        // An overlap measured by this build's record instead of the caller's: a 32-byte record beside its input refused.
+        ...['command', 'load_measured'].map(entry => [`fc_session_${entry}_bytes`, /out, out->size/, 'out, sizeof (*out)'])
     ]) {
         const start = originalFacade.indexOf(`FC_EXPORT fc_session_status ${entry} (`);
         const end = originalFacade.indexOf('\n}', start) + 2;

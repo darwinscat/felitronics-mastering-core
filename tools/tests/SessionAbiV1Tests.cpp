@@ -464,7 +464,7 @@ void demandGuards()
     felitronics::test::group ("demand/capacity guard matrix: outputs, handle, input, overlap, session");
     fc_session h = 0; ok (create (full, &h) == FC_SESSION_OK, "matrix session");
     using Query = fc_session_status (*) (fc_session, const char*, std::uint32_t, fc_session_storage*);
-    const Query queries[] { fc_session_command_bytes, fc_session_import_project_bytes,
+    const Query queries[] { fc_session_command_bytes, fc_session_import_project_bytes, fc_session_load_measured_bytes,
         +[] (fc_session session, const char* input, std::uint32_t n, fc_session_storage* out) {
             return fc_session_load_bytes (session, 0, 0, 0, input, n, out);
         } };
@@ -502,6 +502,17 @@ void demandGuards()
         expect (h, reinterpret_cast<const char*> (&out), sizeof (out), &out, FC_SESSION_ERR_OVERLAP);
         expect (h, reinterpret_cast<const char*> (&out) + sizeof (out) - 1, 1, &out, FC_SESSION_ERR_OVERLAP);
         const auto spent = alloc::count.load() - count;
+        // A record of the 32-byte base with its input right after it: neighbours, not an overlap — the build's own
+        // record is larger (releasedBytes appended), the caller's is what counts, and nothing is written past it.
+        alignas (fc_session_storage) unsigned char pair[2 * sizeof (fc_session_storage)] {};
+        auto* base = reinterpret_cast<fc_session_storage*> (pair);
+        base->size = FC_SESSION_STORAGE_V1_BYTES;
+        const char text[] = "{}";
+        std::memcpy (pair + FC_SESSION_STORAGE_V1_BYTES, text, 2);
+        const auto beside = query (h, reinterpret_cast<const char*> (pair + FC_SESSION_STORAGE_V1_BYTES), 2, base);
+        ok (beside != FC_SESSION_ERR_OVERLAP && std::memcmp (pair + FC_SESSION_STORAGE_V1_BYTES, text, 2) == 0,
+            "a 32-byte storage record with its input right after it is no overlap, and nothing is written past it (status "
+            + std::to_string (int (beside)) + ")");
         ok (good, "query combined faults follow the declared refusal order");
         ok (spent == 0 && std::memcmp (&out, unchanged, sizeof (out)) == 0
             && std::all_of (std::begin (raw), std::end (raw), [] (unsigned char c) { return c == 0xA5; }),

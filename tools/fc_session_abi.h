@@ -54,6 +54,11 @@
 //                delivered when none keeps the ceiling, marked (LandingSummary/MasterReport.peaksAboveCeiling, fact 98).
 //                Not on this surface, in the same release: the C++ Answer's value, low and high, and the hum
 //                detector's LineOnlyWithMusic (11), which the session answers as the hum not found.
+//   9            v0.14.0: the master's damage (MasterReport.damage — PEAQ in windows against the chain at rest, the
+//                loudness range's change; facts 600-604, the damageGrade terms), graded after the master by a job of its
+//                own (the damage event, DamageChange; Snapshot.damageJob and damageProgress; the phases Reference and
+//                Damage; MeasurementReason Superseded and NoJobId); Phase.stepFraction; fc_session_storage appends
+//                releasedBytes past its 32-byte base — a shell sends size 40 only to a module whose abi is 9 or more.
 #define FC_SESSION_ABI_VERSION 9u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u
@@ -171,8 +176,9 @@ typedef struct fc_session_sizes
 // Set size to the caller's sizeof before EVERY call, including output queries. It is preserved.
 // Fields are append-only. A build accepts every size from a record's base size up to its own, writes only that prefix,
 // and documents the default of each absent later field. A new field never changes the meaning of a base prefix;
-// appended reserved fields default to zero and are ignored. Today every record is its base size:
-// size < the base size is STRUCT_TOO_SMALL; size > this build's size is STRUCT_TOO_LARGE.
+// appended reserved fields default to zero and are ignored. Today one record has grown past its base: the storage
+// record, 40 bytes since 9 (releasedBytes; a 32-byte caller is not written past its size); every other record is its
+// base size. size < the base size is STRUCT_TOO_SMALL; size > this build's size is STRUCT_TOO_LARGE.
 // No C++ implementation records or binary row structs cross this C boundary.
 typedef struct fc_session_capacity
 {

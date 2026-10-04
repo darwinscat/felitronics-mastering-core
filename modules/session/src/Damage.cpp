@@ -411,6 +411,9 @@ void Damage::publish (MasterDamage& out) const noexcept
     {
         out.status = MeasurementStatus::Unavailable; out.reason = reason_; out.verdict = DamageVerdict::NotRun;
         out.windows = out.audibleWindows = out.ungradedWindows = 0;
+        out.grade = 0;
+        out.worstOdg.reset(); out.worstDi.reset(); out.worstFromSeconds.reset(); out.audibleShare.reset();
+        out.referenceGainDb.reset();
         return;
     }
     out.windows = windows_;

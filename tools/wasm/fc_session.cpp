@@ -821,7 +821,7 @@ FC_EXPORT fc_session_status fc_session_load_measured_bytes (fc_session session, 
     if (const auto st = record (out); st != FC_SESSION_OK) return st;
     const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
     if (const auto st = pointer (facts, facts_bytes, 1, true); st != FC_SESSION_OK) return st;
-    if (overlap (facts, facts_bytes, out, sizeof (*out))) return FC_SESSION_ERR_OVERLAP;
+    if (overlap (facts, facts_bytes, out, out->size)) return FC_SESSION_ERR_OVERLAP;
     return storageOut (*slot->session, Wire::loadMeasuredStorage (*slot->session, { facts, facts_bytes }), out);
 }
 FC_EXPORT fc_session_status fc_session_load_measured (fc_session session, std::uint32_t command_low,

@@ -640,6 +640,25 @@ const staleSizeStatus = M._fc_session_master_wav_size(masterSession, masterToken
 ok(staleSizeStatus === STATUS.ERR_STALE
     && ownedWav.length === wavLength, 'owned WAV persists after the session PCM is released');
 const releasedWire = masterWire('snapshot'), releasedEvents = masterWire('events');
+// THE STORAGE RECORD PAST ITS BASE (ABI 9): the PCM released, the delivered master's damage still graded, a 40-byte record
+// reads the bytes the next master frees first (releasedBytes, at 32), and a 32-byte record is not written past its size.
+{
+    const grading = masterSnapshot(), record = M._malloc(48), now = BigInt(grading.revision);
+    const price = size => {
+        M.HEAPU32[record >>> 2] = size;
+        new DataView(M.HEAPU32.buffer).setFloat64(record + 32, -1, true);
+        const status = M._fc_session_master_bytes(masterSession, lo(sourceId), hi(sourceId), lo(now), hi(now),
+            masterConfig, masterParams, record);
+        const view = new DataView(M.HEAPU32.buffer);
+        return {status, rejection:M.HEAPU32[(record >>> 2) + 1], bytes:view.getFloat64(record + 8, true),
+            released:view.getFloat64(record + 32, true)};
+    };
+    const wide = price(40), base = price(32);
+    M._free(record);
+    ok(grading.damageJob > 0 && wide.status === STATUS.OK && wide.rejection === 0 && wide.released > 0
+        && base.status === STATUS.OK && base.bytes === wide.bytes && base.released === -1,
+        `a 40-byte storage record reads releasedBytes (${wide.released}) while a damage is graded; a 32-byte one ends at its size`);
+}
 const waveRequestBytes = new TextEncoder().encode(JSON.stringify({kind:9, audioId:sourceId.toString(),
     fromFrame:'100', toFrame:'200', columns:10, requestId:'3', crossoverHz:120, fromHz:20,
     toHz:250, masterId:tokenValue.master}));

@@ -36,5 +36,8 @@
   the damage's job takes 3.6–3.7 s after it (the two chains' loudness 0.9 s, the graded walk 2.8 s, PEAQ's two windows
   in flight about 1.9 s of it).
 - **ABI 9**: `FC_SESSION_ABI_VERSION` 9, the manifest appends the records (`MasterDamage`, `DamageChange`), the
-  `damage` event, the snapshot's `damageJob` and `damageProgress`, the enums, the facts and terms; no entry point.
+  `damage` event, the snapshot's `damageJob` and `damageProgress`, the enums, the facts and terms, and
+  `fc_session_storage.releasedBytes` (the record grows from its 32-byte base to 40: the bytes a `master` frees first, so
+  a shell's `liveBytes - releasedBytes + bytes` is the command's own check). A shell sends size 40 only to a module whose
+  abi is 9 or more — an older one refuses it as too large; at size 32 nothing is written past it. No entry point.
 - **`tools/wasm/build.sh`**: BUILD-INFO names the felitronics-bands checkout beside the other three.
