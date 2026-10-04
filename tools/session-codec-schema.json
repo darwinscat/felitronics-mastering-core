@@ -661,7 +661,8 @@
         "achievedLufs": "double",
         "truePeakDbTp": "double",
         "limiterMaxReductionDb": "double",
-        "ceilingSafe": "bool"
+        "ceilingSafe": "bool",
+        "overBudget": "bool"
       }
     },
     "LandingTraceBucket": {

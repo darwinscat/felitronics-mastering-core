@@ -54,9 +54,9 @@ std::optional<text::Fact> MasterReportText::gate (const MasterReport& report, co
                                                   double toleranceLu) noexcept
 {
     if (report.status != MeasurementStatus::Ready || ! report.deliverable || ! report.achievedLufs
-        || ! std::isfinite (measure.landedLufs) || ! (std::fabs (measure.landedLufs - *report.achievedLufs) > toleranceLu))
+        || ! std::isfinite (measure.gateLufs) || ! (std::fabs (measure.gateLufs - *report.achievedLufs) > toleranceLu))
         return std::nullopt;
-    return text::Fact::of (text::FactId::MasterLandingGate, text::Arg::value (measure.landedLufs, text::Unit::Lufs, 1),
+    return text::Fact::of (text::FactId::MasterLandingGate, text::Arg::value (measure.gateLufs, text::Unit::Lufs, 1),
                            text::Arg::value (*report.achievedLufs, text::Unit::Lufs, 1));
 }
 std::optional<text::Fact> MasterReportText::landing (const MasterReport& report, const LandingSummary& landing,
@@ -419,6 +419,7 @@ bool LandingOps::summarize (const mastering::LoudnessSolution& solution,
         row.achievedLufs = source.integratedLufs; row.truePeakDbTp = source.truePeakDbTp;
         row.limiterMaxReductionDb = source.limiterMaxGrDb;
         row.ceilingSafe = (source.violated & mastering::constraintBit (mastering::MasteringConstraint::TruePeakCeiling)) == 0;
+        row.overBudget = (source.violated & mastering::constraintBit (mastering::MasteringConstraint::LimiterGainReduction)) != 0;
     }
     next.log = { rows.data(), (std::size_t) solution.logCount };
     if (haveTraces && limiter.buckets > 0)

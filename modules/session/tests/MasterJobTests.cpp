@@ -27,6 +27,20 @@ struct Inspector
 };
 }
 
+// THE BUDGET'S PROOF, read off the pass log: a render marked over the budget within 0.25 dB of drive above the render
+// delivered (the log's last).
+bool budgetProven (const LandingSummary& l)
+{
+    if (l.log.empty()) return false;
+    const double delivered = l.log.back().gainDb - l.log.back().ceilingDbTp;
+    for (const auto& pass : l.log)
+    {
+        const double drive = pass.gainDb - pass.ceilingDbTp;
+        if (pass.overBudget && drive > delivered && drive - delivered <= 0.25) return true;
+    }
+    return false;
+}
+
 int main()
 {
     constexpr std::uint32_t rate = 48000;
@@ -177,11 +191,33 @@ int main()
         && miss.landing && miss.landing->status == LandingStatus::TargetUnreachable
         && miss.landing->binding == LandingConstraint::LimiterGainReduction
         && miss.landing->deliverable && ! miss.landing->peaksAboveCeiling && miss.landing->passes < 12
+        && budgetProven (*miss.landing)
         && miss.report && miss.report->cost && miss.report->cost->limiterP95Db.value && *miss.report->cost->limiterP95Db.value <= 10.0
         && miss.report && ! miss.report->peaksAboveCeiling && ! MasterReportText::peaksAboveCeiling (*miss.report)
         && miss.landing->truePeakDbTp && *miss.landing->truePeakDbTp <= -6.0
         && s.pendingMaster().master == miss.id && s.masterWavPlan (s.pendingMaster()),
-        "an unreachable loudness goal stops at the limiter's budget of 10 dB, named, its delivered P95 inside it, and retains the best ceiling-safe PCM");
+        "an unreachable loudness goal stops at the limiter's budget of 10 dB, named on its proof — a render marked over it "
+        "within 0.25 dB above the one delivered — its delivered P95 inside it, and retains the best ceiling-safe PCM");
+    {
+        // −6 LUFS under −6 dBTP: the ceiling holds this landing, not the budget — whatever passes went over it.
+        auto ceilingMade = Session::create();
+        auto& c = *ceilingMade.session;
+        (void) c.apply (command::Load { 1, { planes, 2, left.size(), rate }, { "test.wav", rate, true, 24 } });
+        for (unsigned i = 0; i < 20000 && (c.state() == State::Loaded || ! c.snapshot().view().mandatoryMeasurementsReady); ++i)
+            (void) c.step (16);
+        const auto edited = c.apply (command::EditTarget { 2, { -6.0, -6.0 } });
+        auto ceilingReady = ready; ceilingReady.id = 3; ceilingReady.source = c.source().hash; ceilingReady.revision = c.revision();
+        const auto ceilingStart = c.apply (ceilingReady);
+        for (unsigned i = 0; i < 40000 && c.job() != 0; ++i) (void) c.step (16);
+        const bool landed = ! c.masters().empty() && c.masters().back().landing;
+        const auto& l = *c.masters().back().landing;
+        std::printf ("    −6 LUFS under −6 dBTP: status %d binding %d, %.3f LUFS, %u passes\n", landed ? (int) l.status : -1,
+                     landed ? (int) l.binding : -1, landed && l.achievedLufs ? *l.achievedLufs : 0.0, landed ? l.passes : 0u);
+        ok (edited.rejection == Rejection::None && ceilingStart.rejection == Rejection::None && landed && l.deliverable
+            && l.binding != LandingConstraint::LimiterGainReduction && ! budgetProven (l),
+            "−6 LUFS under −6 dBTP is held by the ceiling: no render over the budget stands just above the one delivered, "
+            "and the budget is not named");
+    }
     const auto missToken = s.pendingMaster();
     const auto filePlan = s.masterWavPlan (missToken);
     std::vector<std::uint8_t> file (std::size_t (filePlan.bytes), 0u);

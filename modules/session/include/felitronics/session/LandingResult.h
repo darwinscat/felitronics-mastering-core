@@ -36,6 +36,7 @@ struct LandingPass
     double gainDb = 0.0, ceilingDbTp = 0.0, achievedLufs = 0.0, truePeakDbTp = 0.0;
     double limiterMaxReductionDb = 0.0;
     bool ceilingSafe = false;
+    bool overBudget = false;   // the limiter took more than the landing's budget on this render: no candidate
 };
 struct LandingTraceBucket
 {
@@ -186,6 +187,7 @@ struct MasterReport
 struct LandingMeasure
 {
     double landedLufs = std::numeric_limits<double>::quiet_NaN();
+    double gateLufs = std::numeric_limits<double>::quiet_NaN();   // the level on the source's gate alone (NaN: none)
     double limiterBudgetDb = std::numeric_limits<double>::quiet_NaN();
     double overBudgetDb = std::numeric_limits<double>::quiet_NaN();
 };
@@ -199,8 +201,8 @@ struct MasterReportText
     // between one without its two levels.
     [[nodiscard]] static std::optional<text::Fact> landing (const MasterReport& report, const LandingSummary& landing,
                                                             double toleranceLu, const LandingMeasure& measure = {}) noexcept;
-    // A landing on the source's gate whose level and the file's BS.1770 reading part by more than the tolerance: both.
-    // Said in place of the miss's line. Nothing otherwise.
+    // A landing on the source's gate whose level on that gate and the file's BS.1770 reading part by more than the
+    // tolerance, either way round: both. Said in place of the miss's line. Nothing otherwise.
     [[nodiscard]] static std::optional<text::Fact> gate (const MasterReport& report, const LandingMeasure& measure,
                                                          double toleranceLu) noexcept;
     [[nodiscard]] static std::optional<text::Fact> hint (const MasterHint& hint) noexcept;

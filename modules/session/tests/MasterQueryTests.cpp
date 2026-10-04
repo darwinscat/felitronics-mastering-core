@@ -195,6 +195,15 @@ void theLandingsFacts()
     std::optional<text::Fact> verdict;
     for (const auto& e : made.facts)
         if (e.jobId == made.id && e.payload.fact.view().id == text::FactId::MasterLandingBudget) verdict = e.payload.fact.view();
+    bool marked = false;
+    if (! summary.log.empty())
+        for (const auto& pass : summary.log)
+        {
+            const double drive = pass.gainDb - pass.ceilingDbTp;
+            const double delivered = summary.log.back().gainDb - summary.log.back().ceilingDbTp;
+            marked = marked || (pass.overBudget && drive > delivered && drive - delivered <= 0.25);
+        }
+    ok (marked, "the budget is named on its proof: the pass log marks a render over it within 0.25 dB above the one delivered");
     ok (summary.status == LandingStatus::TargetUnreachable && summary.binding == LandingConstraint::LimiterGainReduction
         && verdict && verdict->argCount == 3 && same (verdict->args[0].number, -5.0) && verdict->args[1].number <= -5.0
         && same (verdict->args[2].number, 10.0) && verdict->args[2].unit == text::Unit::Db
@@ -249,6 +258,22 @@ void theLandingsFacts()
         }
         return n;
     };
+    // The level on the source's gate and the file's reading, said where they part by more than the tolerance — either way.
+    {
+        LandingMeasure apart;
+        const double file = metReport.achievedLufs.value_or (0.0);
+        bool both = true;
+        for (const double gate : { file - 0.5, file + 0.5 })
+        {
+            apart.gateLufs = gate; apart.landedLufs = std::fmax (gate, file);
+            const auto said = MasterReportText::gate (metReport, apart, kTolerance);
+            both = both && said && said->id == text::FactId::MasterLandingGate && same (said->args[0].number, gate)
+                && same (said->args[1].number, file);
+        }
+        apart.gateLufs = file + 0.05;
+        ok (metReport.achievedLufs && both && ! MasterReportText::gate (metReport, apart, kTolerance),
+            "the gate's level and the file's are both said when they part by more than the tolerance, the file louder or quieter");
+    }
     const auto solved = MasterReportText::landing (metReport, *kept (metView.view(), landed.id)->landing, kTolerance);
     ok (solved && solved->id == text::FactId::MasterLandingSolved && metReport.achievedLufs
         && same (solved->args[0].number, *metReport.achievedLufs) && same (solved->args[1].number, metReport.targetLufs)

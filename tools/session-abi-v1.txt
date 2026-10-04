@@ -1863,3 +1863,5 @@ row QuerySaturationShave element=f64 byteOrder=little columns=firstFrame,lastFra
 enum felitronics::session::text::FactId::MasterLandingBudget=600
 enum felitronics::session::text::FactId::MasterLandingGate=601
 enum felitronics::session::text::FactId::MasterLandingOverBudget=602
+# ...and each render of the landing over the limiter's budget, marked in the pass log (appended plain).
+codec LandingPass.overBudget bool

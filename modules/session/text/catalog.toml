@@ -1084,14 +1084,14 @@ en = "Target {target}, reached {achieved}: going further, the limiter would have
 # No render kept the limiter's budget: the gentlest ceiling-safe one is delivered, and what its limiter takes is said
 # beside the budget it broke.
 [messages.masterLandingOverBudget]
-ru = "Цель {target}, сделано {achieved}: ни один вариант не уложился в бюджет лимитера {budget} (P95) — выдан самый мягкий, лимитер в нём срезает {taken}."
-en = "Target {target}, reached {achieved}: no render kept within the limiter's budget of {budget} (P95) — the gentlest is delivered, its limiter takes off {taken}."
+ru = "Цель {target}, сделано {achieved}: ни один вариант не уложился в бюджет лимитера {budget} (P95) — выдан самый мягкий из опробованных, лимитер в нём срезает {taken}."
+en = "Target {target}, reached {achieved}: no render kept within the limiter's budget of {budget} (P95) — the gentlest of those tried is delivered, its limiter takes off {taken}."
 
-# A landing on the source's gate: the level landed on the loud part, and the file's standard BS.1770 reading, where the
-# two part by more than the tolerance.
+# A landing on the source's gate: the level on the loud part, and the file's standard BS.1770 reading, where the two
+# part by more than the tolerance, either way round.
 [messages.masterLandingGate]
-ru = "По громкой части {landed}, по стандарту файла {file}."
-en = "{landed} by the loud part, {file} by the file's standard reading."
+ru = "По громкой части {loud}, по стандарту файла {file}."
+en = "{loud} by the loud part, {file} by the file's standard reading."
 
 [messages.masterLandingPassLimit]
 ru = "Проходы кончились раньше, чем мастер подошёл к цели ближе допуска {tolerance}."

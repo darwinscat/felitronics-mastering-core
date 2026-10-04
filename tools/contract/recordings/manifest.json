@@ -9,13 +9,13 @@
       "fc_session_abi 9"
     ],
     "configVersion": "783a5a7eeec006db",
-    "codecSchemaSha256": "b68ceee56120e7945918f1298143a8746ff72d1f2bfe781e52c5a50b9285cbb4"
+    "codecSchemaSha256": "59eb1682142e92ef7f782fef24504b6cb46f0c300ed3b3f9332bfe745dcc81f3"
   },
   "scenarios": {
     "cancel": {
       "scriptSha256": "a57cec10fe182d0641e1195130f802e0a9b7d25d64741c34d95e0f4778387fe9",
-      "sha256": "f75b527dedbc690b9ef85118cb9606325f8ded456b18f8bf402b76c2ff96ee8f",
-      "bytes": 3623231
+      "sha256": "6d96f45cad9178bd40e32a84116bb48153961af13d7829420e6709e111c5d3a8",
+      "bytes": 3623273
     },
     "domains": {
       "scriptSha256": "2d0075d8cb41564684c376109d10c42735f56f3d8de9c38033a37d5e05a69e9e",
@@ -64,8 +64,8 @@
     },
     "measurement-sidecar": {
       "scriptSha256": "5404c1c7d1eda5106be368cc003c641215bc908145b9adceb28264a7d82ebc7d",
-      "sha256": "e10ebe20ec4c7709961eda1bc181decf70c459c643ec60429a240172a418b4e1",
-      "bytes": 4210068
+      "sha256": "0c6370753df8d663eda5b09fe216e5cec0f69425017b827dc3a98a05e6bc0a7c",
+      "bytes": 4210131
     },
     "measurement-silence": {
       "scriptSha256": "bdbdda5b3c53edc514a6224a1780f9e1300c3e3f41935192892b21143f01ea11",
@@ -79,8 +79,8 @@
     },
     "plan-pending": {
       "scriptSha256": "6c1f1af9db8f07cc5ffd2d7904a012671ce7cd776389a05be91edee4e2815164",
-      "sha256": "e34b3a1d3aad77eebb31ab99830337b61497974c054c2a84c52b15c2627d164d",
-      "bytes": 4140297
+      "sha256": "932ce331491c63aaeb20703f184df5418bcca44c5d7beef4f96845108ee5d8d8",
+      "bytes": 4140486
     },
     "project-roundtrip": {
       "scriptSha256": "c208a2b366ebfd0433ae784ebb551ef893a7ce071ba3cbec7f400529ca8d062c",
@@ -94,8 +94,8 @@
     },
     "saturation-type": {
       "scriptSha256": "f9c9a6d63f72d52e1d437e5a6890183cd85353069577395875229366307194eb",
-      "sha256": "5e7b1dd21023e8439d64dca9e0bdd508d8f0ac44b958ba0defa56ff8a776a5dd",
-      "bytes": 5287700
+      "sha256": "c79ef0dcf694faf7708483a2cafd4ee5a1fd97a9bc78c447e951d2925f42f817",
+      "bytes": 5287952
     },
     "target-edits": {
       "scriptSha256": "0585d7fbb0e8a118ce67b1f9d300f6f4aa319188024aac4ffa5eccb2e8a35d86",
