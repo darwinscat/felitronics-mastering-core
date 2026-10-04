@@ -414,6 +414,18 @@ void maxMasterGuarded()
             && ! MasterReportText::max (manual, 3.0, std::numeric_limits<double>::quiet_NaN()),
         "a max master held by its budget says the mode, the level and the budget; a manual one has no max verdict: "
             + (budget ? text::Text::text (*budget, text::Lang::Ru) : std::string ("none")));
+    // Over the budget (fact 615): the delivered reduction reads above the budget, however close above it — rounded up to
+    // a tenth, at least a tenth above the budget's tenths: 3.01 over 3 prints 3.1, 7.26 over 7.25 prints 7.3.
+    MasterReport broke = held;
+    broke.maxStop = MaxStop::OverBudget;
+    const auto over301 = MasterReportText::max (broke, 3.0, 3.01), over726 = MasterReportText::max (broke, 7.25, 7.26);
+    const auto overEdge = MasterReportText::max (broke, 3.0, std::nextafter (3.0, 4.0));
+    const auto ru301 = over301 ? text::Text::text (*over301, text::Lang::Ru) : std::string {};
+    const auto en726 = over726 ? text::Text::text (*over726, text::Lang::En) : std::string {};
+    const auto ruEdge = overEdge ? text::Text::text (*overEdge, text::Lang::Ru) : std::string {};
+    ok (ru301.find ("срезает 3,1\u00A0дБ") != std::string::npos && en726.find ("takes off 7.3\u00A0dB") != std::string::npos
+            && en726.find ("budget of 7.25\u00A0dB") != std::string::npos && ruEdge.find ("срезает 3,1\u00A0дБ") != std::string::npos,
+        "a max master over its budget says a reduction above the budget: " + ru301 + " / " + en726 + " / " + ruEdge);
 }
 
 // A MAX MASTER, ITS JOB PLANTED OR ITS SOURCE ODD: each step, the report and its verdict, until the job ends.
