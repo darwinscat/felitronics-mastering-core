@@ -45,14 +45,17 @@ shortSeconds = 10
 # The first gain uses the measured input's normalization to referenceLufs and the target's difference from it.
 # LOUDNESS IS A REQUEST, NOT AN ORDER (owner decision, 04.10): better to fall short of the target than to reach it and
 #   make the master unlistenable. A landing held short says so, with both numbers.
-# onSourceGate (owner decision, 04.10): the level landed on the target is the master's over the 400 ms blocks the
-#   SOURCE's BS.1770 gate admitted, not over the master's own gate — the quiet parts the drive lifts do not join the
-#   average, so they do not make the loud part pay for them. The file is still measured by BS.1770, and where that
-#   reading and the level landed part by more than toleranceLu the report says both.
-# limiterBudget (owner decision, 04.10): the most the limiter may take, the P95 of its gain reduction over the
-#   programme's windows — the number the report's limiter line prints — by the loudness of the target, a person's
-#   edited number included: quietDb below middleLufs, middleDb within it (both ends), loudDb above it. A landing that
-#   would need more stops where the budget holds and is delivered short of the target, the budget named.
+# onSourceGate (owner decision, 04.10): the level landed on the target is the louder of the file's BS.1770 reading and
+#   the master's level over the 400 ms blocks the SOURCE's BS.1770 gate admitted, not gated again — the quiet parts the
+#   drive lifts do not join the average, so they do not make the loud part pay for them, and the file never reads louder
+#   than the level landed. The master's blocks take the source's readings by time; rates that are not whole hertz land
+#   on the master's own gate. Where the two part by more than toleranceLu, either way round, the report says both.
+# limiterBudget (owner decision, 04.10): the most the limiter may take, the P95 of its gain reduction over its ACTIVE
+#   windows (input above [cost] limiterActiveInputDb, so silence does not water it down) — the number the report's
+#   limiter line prints — by the loudness of the target, a person's edited number included: quietDb below middleLufs,
+#   middleDb within it (both ends), loudDb above it. A landing that would need more stops where the budget holds and is
+#   delivered short of the target, the budget named — named only where the render delivered stands within 0.25 dB of
+#   drive under one measured over the budget.
 [landing]
 passes = 12 # Owner decision 28.09: one budget, stop on success; a miss is a normal result.
 toleranceLu = 0.1
@@ -694,9 +697,10 @@ noProgrammeDb = -200
 #   so on a programme under −70 LUFS a pure gain moves the range (measured: +6 dB at −59.4 LUFS gave −7 LU).
 # THE LIMITER'S GAIN REDUCTION: its quantiles over grWindowSeconds windows, the core's; the trace's bucket count follows
 #   the duration, clamp(ceil(seconds / grWindowSeconds), grTraceBucketsMin, grTraceBucketsMax) — 4 ms up to about 4.4
-#   minutes, wider after, and then the real window is printed with the numbers. printedQuantiles: p50 and p95, both —
-#   silence lowers the median by half and the p95 by hundredths. The numbers are in the fields' names (p50Db, p95Db), so
-#   this list is a checked claim, not a knob.
+#   minutes, wider after, and then the real window is printed with the numbers. printedQuantiles: p50 and p95, both, over
+#   the ACTIVE windows (limiterActiveInputDb) — the windows the limiter has something to work on, so silence moves
+#   neither; the landing's budget reads the same p95. The numbers are in the fields' names (p50Db, p95Db), so this list
+#   is a checked claim, not a knob.
 # pumping: the limiter's pumping, from its gain-reduction trace through two 2nd-order Butterworth filters, a high-pass at
 #   highPassHz and a low-pass at lowPassHz; the first settleSeconds excluded; not measured when the trace runs slower than
 #   minTraceRateHz (five samples per period of 8 Hz — a hypothesis).

@@ -890,12 +890,9 @@ for (let i = 0; i < 40000; ++i) {
     if (M._fc_session_step(masterSession, 16, resultSize) !== STATUS.OK) break;
 }
 const missLanding = missSnapshot?.masters?.at(-1)?.landing;
-// Held by the limiter's budget, proven (engine.toml [landing] limiterBudget, on the limiter's active windows): the drive
-// that keeps it stands within a quarter dB of the one that breaks it, or the budget held the last drive chosen.
-// TargetUnreachable (1), LimiterGainReduction (2).
-ok(missLanding?.status === 1 && missLanding.binding === 2 && missLanding.deliverable && missLanding.passes <= 12
+ok(missLanding?.status === 2 && missLanding.deliverable && missLanding.passes === 12
     && Number.isFinite(missLanding.missLu) && missLanding.truePeakDbTp <= -6,
-   'safe miss stops at the limiter\'s budget and records its actual loudness miss and true-peak measurement');
+   'safe miss records its actual loudness miss and true-peak measurement');
 const missWire = masterWire('snapshot'), missEvents = masterWire('events');
 let missExport = null;
 if (missSnapshot?.pendingMaster?.master) {

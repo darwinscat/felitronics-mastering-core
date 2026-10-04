@@ -748,6 +748,20 @@ int main()
         test::ok (late.done && late.answer.status != MasteringSolveStatus::Unavailable && std::isfinite (late.landedLufs),
                   "a source whose loud readings end its series still lands and delivers its file");
 
+        // 0.8 s at 22050 Hz delivered at 44.1 kHz: the source's hop is 2210 frames, 100.23 ms, so the master's last blocks
+        // fall past its last reading in time. They take the last reading, as every other block takes its nearest.
+        const int rate22 = 22050;
+        std::vector<float> brief22 ((std::size_t) (rate22 * 8 / 10));
+        for (std::size_t i = 0; i < brief22.size(); ++i)
+            brief22[i] = (float) ((i < (std::size_t) (rate22 / 5) ? 0.5 : 0.1) * std::sin (6.283185307179586 * 1000.0 * (double) i / rate22));
+        LandingSetup tail = onGate; tail.target = -23.0; tail.deliveryRate = 44100;
+        const Landed tailed = land (Programme (brief22, rate22), tail);
+        std::printf ("        0.8 s at 22050 Hz delivered at 44.1 kHz, target −23: status %d, file %.3f, landed %.3f\n",
+                     (int) tailed.answer.status, tailed.answer.achievedLufs, tailed.landedLufs);
+        test::ok (tailed.done && tailed.answer.status == MasteringSolveStatus::Solved
+                  && std::fabs (tailed.answer.achievedLufs - tail.target) <= 0.1,
+                  "the master's blocks past the source's last reading take that reading: the file lands on the target");
+
         // 18 s of a 30 Hz sine, then 2 s of 1 kHz, through a high-pass at 80 Hz, 96 dB/oct: the blocks the source's gate
         // admitted are the sine's, and the high-pass empties them. Their level cannot hold the file's down.
         std::vector<float> subPcm ((std::size_t) (20 * kRate));

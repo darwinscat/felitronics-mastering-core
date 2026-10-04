@@ -274,7 +274,7 @@ inline constexpr FactShape kFacts[] = {
     { FactId::DeviceUnmeasured, "deviceUnmeasured", { { { "analyzer", ArgKind::Term, "analyzer" } } }, 1 },
     { FactId::MasterLandingBudget, "masterLandingBudget",
       { { { "target", ArgKind::Value, {} }, { "achieved", ArgKind::Value, {} }, { "budget", ArgKind::Value, {} } } }, 3 },
-    { FactId::MasterLandingGate, "masterLandingGate", { { { "landed", ArgKind::Value, {} }, { "file", ArgKind::Value, {} } } }, 2 },
+    { FactId::MasterLandingGate, "masterLandingGate", { { { "loud", ArgKind::Value, {} }, { "file", ArgKind::Value, {} } } }, 2 },
     { FactId::MasterLandingOverBudget, "masterLandingOverBudget",
       { { { "target", ArgKind::Value, {} }, { "achieved", ArgKind::Value, {} }, { "budget", ArgKind::Value, {} },
           { "taken", ArgKind::Value, {} } } }, 4 },

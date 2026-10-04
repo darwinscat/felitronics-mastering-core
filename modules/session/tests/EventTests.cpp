@@ -184,19 +184,24 @@ std::uint64_t eventsHash (const std::vector<Notification>& events)
     }
     return hash;
 }
-// The events of every job but the master's (the job that publishes the landing's verdict), renumbered.
+// The events of every job but a master's, renumbered. A master's job is known by what it publishes: a phase of the
+// landing (its passes, the remeasure, the conversion, the range, the final render) or a finished master.
 std::vector<Notification> withoutMaster (const std::vector<Notification>& events)
 {
-    std::uint64_t master = 0;
+    std::vector<std::uint64_t> masters;
     for (const auto& e : events)
-        if (e.kind == EventKind::Fact && (e.payload.fact.view().id == FactId::MasterLandingSolved
-                                          || e.payload.fact.view().id == FactId::MasterLandingUnreachable))
-        { master = e.jobId; break; }
+    {
+        const bool landing = e.kind == EventKind::Phase && e.payload.phase.name != PhaseName::Stream
+            && e.payload.phase.name != PhaseName::Report && e.payload.phase.name != PhaseName::Analyzers;
+        const bool finished = e.kind == EventKind::Done && e.payload.done.masterId != 0;
+        if ((landing || finished) && std::find (masters.begin(), masters.end(), e.jobId) == masters.end())
+            masters.push_back (e.jobId);
+    }
     std::vector<Notification> kept;
     std::uint64_t dropped = 0;
     for (auto e : events)
     {
-        if (master != 0 && e.jobId == master) { ++dropped; continue; }
+        if (std::find (masters.begin(), masters.end(), e.jobId) != masters.end()) { ++dropped; continue; }
         e.seq -= dropped;
         kept.push_back (e);
     }
@@ -245,30 +250,11 @@ void pump()
     ok (eventsHash (one) == eventsHash (bulk) && eventsHash (one) == eventsHash (again), "complete event sequence is invariant across runs and pump slicing");
     ok (eventsHash (cancelled) == eventsHash (cancelledAgain), "cancelled scenario sequence is invariant across runs and slicing");
     ok (one.size() > 22 && cancelled.size() > one.size(), "measurement publishes live work and cancellation adds events");
-    // The phases carry the config's version (weightsVersion): a new config moves these pins — and the master is rendered
-    // (a master the session decides runs its job: its passes, its cost and its facts are events of the scenario). The
-    // landing's verdict (MasterLandingSolved) moved them last: without it, the old pins 691c5c5e4b8a17c7 / 7923d108f8d47dbc.
-    // The cost's lines beside shape, impact and pumping (MasterCostSection … MasterCostBands, 93–97) moved them last:
-    // without those lines, the sequence renumbered, the events are the ones before them — the old pins. The targets' notes
-    // ([notes], targets.toml) moved the config's version and nothing else: every phase carries it, so with the previous
-    // version put back the events of every job but the master's are the ones before the notes, bit for bit. Every pin here hashes the master's measured numbers as printed (kMastersMeasurement): restated so, on the
-    // Mac where the raw-bit pins held, the raw ones were b5fbcdc6218fc72d / 25eeb7e1f596ed41 (the previous version),
-    // e2e6c8ac47d9417e / 3797697993fa2f96 (and without the cost's lines) and cadd3454090dbdba / 18b6d1ba59ebfabd.
-    // The first measurement ending at the loudness and the true peak (owner, 02.10) moved the stream itself, not a
-    // version: Measured1 and its needles come before the low-end runs, the master asked there waits for the low end its
-    // devices read, and the bar is weighted. No transform restates the stream before it; the three pairs were then
-    // 1360564337f13165 / d42f45d0b39fdc01, 2ddbf194be1a8c26 / fb06ff940f07c896 and baa032c003dd9298 / 8acd343b5c25ba11.
-    // The owner's observation table (01.10) moved the engine's [observations] — thresholds and styles that print findings
-    // and switch nothing — and with them the config's version alone: with its previous rows put back as well, the
-    // previous pins hold. The saturation's type moved to tape (01.10): the machine's drive is 0, so only the version moved; and so
-    // when the saturation's output left (v0.6.0): it was 0 dB, neutral; and the
-    // marks moved to E1, B0 and 28 Hz (01.10): labels on the plot. The high-pass knob's travel went to 80 Hz with the
-    // machine's top kept at 50 as its own key (01.10): no machine cutoff moved, only the version.
-    // felitronics-bands' bands.toml joined the config's versions as a third document (v0.13.0) and the filters of tilt,
-    // low and the bands left engine.toml for it, numbers unchanged: the walk itself moved, so no restatement of the
-    // documents gives the earlier versions back, and every pin below was restated with the version alone moved (the
-    // session contract's recordings: only the config version differs). They were e3fe0c1834432729 / 73daef62819ace2d,
-    // 72cb5738dfba2526 / be7e8b4fc0f9c662 and d31d41642d55ec9f / 3a855b6bfad8bc51.
+    // THE PINS. The phases carry the config's version (weightsVersion), so a new config moves the whole-stream pins below,
+    // and a master the session decides is rendered in the scenario, so its passes, cost and facts move with its sound. Of
+    // the master's facts, those of its measurement (kMastersMeasurement) are hashed as printed, every other argument bit
+    // for bit. Two pins hold everything else apart from both: with the config's version put back to the one
+    // previousVersion restates, and with the landing's two keys taken out, every job's events but a master's are pinned.
     const auto previousVersion = [] (std::vector<Notification> events)
     {
         // The canonical document without its [notes] table: the config before them.
@@ -321,13 +307,12 @@ void pump()
                 e.payload.phase.weightsVersion = before->all;
         return events;
     };
-    // The saturation's shave (03.10) is a fourth trace a render steps through, so a pass has more work units and the
-    // phases' units, fractions and count moved; every other event is as it was (checked with the phases left out). The
-    // master's own events follow its sound, so this pin holds the events of every other job.
+    // previousVersion takes out what moved the config's version alone — the targets' notes and the three broadcast
+    // targets, the engine rows it lists, the EQ bands' tables, the landing's two keys — and with that version put back
+    // every job's events but a master's are the ones that config gives.
     ok (eventsHash (withoutMaster (previousVersion (one))) == 0xacc7bec22e8a400full
-        && eventsHash (withoutMaster (previousVersion (cancelled))) == 0xa64979c8efdb4b37ull,
-        "the targets' notes move only the config's version the phases carry: with the previous one, every job's events but "
-        "the master's are the previous ones");
+        && eventsHash (withoutMaster (previousVersion (cancelled))) == 0xacc7bec22e8a400full,
+        "with the config's version previousVersion restates, every job's events but a master's hold their pin");
     // The landing's two keys ([landing] onSourceGate, limiterBudget) move the master and nothing else: with the config's
     // version they leave put back, every other job's events are the ones the config without them gives.
     const auto beforeLanding = [] (std::vector<Notification> events)
@@ -344,7 +329,7 @@ void pump()
     };
     const auto [oneBefore, versionBefore] = beforeLanding (one);
     ok (versionBefore == 0x4d1ce39f8531727aull && eventsHash (withoutMaster (oneBefore)) == 0x229c3d9dc4eb6775ull
-        && eventsHash (withoutMaster (beforeLanding (cancelled).first)) == 0xff5e7a59180cc5dfull,
+        && eventsHash (withoutMaster (beforeLanding (cancelled).first)) == 0x229c3d9dc4eb6775ull,
         "the landing's two keys move the master's events alone: without them the config's version is 4d1ce39f8531727a, and "
         "every other job's events hold");
     char hashes[48];

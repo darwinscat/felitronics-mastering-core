@@ -1722,23 +1722,24 @@ lifts above the master's own relative gate do not join the average, so they no l
 needs alone, and a chain that empties those blocks (a steep high-pass under a sub-bass source) cannot land a file louder
 than the target. The gate is read on the source's momentary series (`Loudness` `momentary`, its own hop at its own
 rate) and the master's blocks take its readings by time through both grids (a hop is ten sub-hops of lround (0.01 fs)
-frames: 1100 frames at 11025 Hz are 99.77 ms, 4410 at 44.1 kHz 100 ms). A source without that series whole (a
-sidecar's facts, rows refused for memory) lands on the master's own gate. `limiterBudget`: the most the limiter may
+frames: 1100 frames at 11025 Hz are 99.77 ms, 4410 at 44.1 kHz 100 ms), a block past the series' last reading taking
+the last. A source without that series whole (a sidecar's facts, rows refused for memory), and a landing whose rates
+are not whole hertz, land on the master's own gate. `limiterBudget`: the most the limiter may
 take, the P95 of its gain reduction over its ACTIVE windows (the windows whose input reached `[cost]
 limiterActiveInputDb`, so silence does not water it down) — the very number `MasterCost::limiterP95Db` prints —
 by the target's loudness, a person's edited number included: 4 dB below −10 LUFS, 7 dB from −10 to −8 (both ends),
 10 dB louder (`detail::limiterBudgetDb`). `LandingSearch` reads it as a budget, not a refusal: a render over it is no
-candidate and is marked in its pass record (`LimiterGainReduction`; the session's pass log carries only the ceiling's
-mark), and the next drive is held under the lowest drive that broke it. The landing ends `TargetUnreachable` with
-`LimiterGainReduction` bound only on proof — a candidate within 0.25 dB of drive under that limit while the target is
-still above, or the limit holding the last drive chosen; otherwise its status is the search's own (a pass limit stays
-`PassLimit`, with its hints). Held so, the file is delivered short of the target: `MasterLandingBudget` (600) says the
+candidate and is marked in its pass record (`LimiterGainReduction`) and in the session's pass log
+(`LandingPass::overBudget`), and the next drive is held under the lowest drive that broke it. The landing ends
+`TargetUnreachable` with `LimiterGainReduction` bound only on proof — the render delivered stands within 0.25 dB of drive
+under the lowest drive marked over the budget while the target is still above; otherwise its status is the search's
+own (a pass limit stays `PassLimit`, with its hints). Held so, the file is delivered short of the target: `MasterLandingBudget` (600) says the
 target, the level landed and the budget («Цель −9,0 LUFS, сделано −9,7 LUFS: дальше лимитеру пришлось бы срезать больше
 7 дБ (P95).»). Where no render kept the budget, the gentlest ceiling-safe one is delivered and `MasterLandingOverBudget`
-(602) says so with its own reduction («…ни один вариант не уложился в бюджет лимитера 7 дБ (P95): выдан самый мягкий,
-лимитер в нём срезает 8,4 дБ.»). Neither has a hint: nothing in the mix is blamed. The file is still certified by
-BS.1770 (`achievedLufs`, `missLu`); where the level landed on the source's gate and that reading part by more than the
-tolerance, `MasterLandingGate` (601) says both («По громкой части −9,0 LUFS, по стандарту файла −9,8 LUFS.») in the
+(602) says so with its own reduction («…ни один вариант не уложился в бюджет лимитера 7 дБ (P95) — выдан самый мягкий
+из опробованных, лимитер в нём срезает 8,4 дБ.»). Neither has a hint: nothing in the mix is blamed. The file is still certified by
+BS.1770 (`achievedLufs`, `missLu`); where the level on the source's gate and that reading part by more than the
+tolerance, either way round, `MasterLandingGate` (601) says both («По громкой части −9,0 LUFS, по стандарту файла −9,8 LUFS.») in the
 miss's place, and the solved verdict (88) names the level landed. `targetMet` follows the status, as before.
 
 `MasterCrest` stores five peak-amplitude/mean-square-power pairs per block, in Low, LowMid, HighMid, High,

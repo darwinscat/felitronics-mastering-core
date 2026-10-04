@@ -1046,7 +1046,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, LandingPass>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.achievedLufs)>, double>);
         v.field ("achievedLufs", x.achievedLufs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ceilingDbTp)>, double>);
@@ -1057,6 +1057,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("gainDb", x.gainDb);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.limiterMaxReductionDb)>, double>);
         v.field ("limiterMaxReductionDb", x.limiterMaxReductionDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.overBudget)>, bool>);
+        v.field ("overBudget", x.overBudget);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.truePeakDbTp)>, double>);
         v.field ("truePeakDbTp", x.truePeakDbTp);
     }
