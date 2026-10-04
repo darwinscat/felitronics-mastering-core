@@ -211,10 +211,14 @@ void damageFailedMidway()
     const auto closed = detail::Inspector::windows (damage);
     detail::Inspector::fail (damage, MeasurementReason::NonFinite);
     for (unsigned i = 0; i < 100000 && ! done; ++i) done = damage.step (1024);
+    // Into a report that held a grade before: publish clears every number of it, not only what a fresh one lacks.
+    out.grade = 3; out.worstOdg = -2.0; out.worstDi = 1.0; out.worstFromSeconds = 5.0; out.audibleShare = 0.5;
+    out.referenceGainDb = -1.0;
     damage.publish (out);
     ok (closed == 3u && done && out.status == MeasurementStatus::Unavailable && out.reason == MeasurementReason::NonFinite
         && out.verdict == DamageVerdict::NotRun && out.windows == 0 && out.audibleWindows == 0 && out.ungradedWindows == 0
-        && out.grade == 0 && ! out.worstOdg && ! out.audibleShare && ! out.referenceGainDb,
+        && out.grade == 0 && ! out.worstOdg && ! out.worstDi && ! out.worstFromSeconds && ! out.audibleShare
+        && ! out.referenceGainDb,
         "a damage walk failed after " + std::to_string (closed) + " windows grades nothing: Unavailable, NonFinite, windows "
         + std::to_string (out.windows) + ", heard " + std::to_string (out.audibleWindows));
 }
