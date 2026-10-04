@@ -200,6 +200,8 @@ struct LandingSetup
     double highPassHz = 0.0;                                              // > 0: a 96 dB/oct high-pass before the limiter
     double initialGainDb = std::numeric_limits<double>::quiet_NaN();
     int maxPasses = 12;
+    double peakClipPeakDb = std::numeric_limits<double>::quiet_NaN();    // finite: the limiter's peak clip on, cut 3 dB
+    bool peakClipMeasured = false;
 };
 
 // Lands `p` through the limiter alone (and the high-pass when asked), delivered at `deliveryRate`.
@@ -219,6 +221,10 @@ Landed land (const Programme& p, const LandingSetup& w)
         || ! solver.prepare (rate, 1, 257, chain.internalBlock(), chain.tapOversampleFactor())
         || (convert && ! converter.prepare (p.rate, rate, 1, 257))) return r;
     params.limiter.ceilingDbTp = w.ceiling;
+    if (std::isfinite (w.peakClipPeakDb))
+    {
+        params.limiter.peakClip = true; params.peakClipCutDb = 3.0; params.peakClipPeakDb = w.peakClipPeakDb;
+    }
     if (w.highPassHz > 0.0)
     {
         auto& hpf = params.eqBands[0];
@@ -234,6 +240,7 @@ Landed land (const Programme& p, const LandingSetup& w)
     req.targetLufs = w.target; req.ceilingMarginDb = 0.15; req.maxTruePeakDbTp = w.ceiling; req.maxPasses = w.maxPasses;
     req.initialGainDb = w.initialGainDb;
     req.productLanding = true;
+    req.peakClipMeasured = w.peakClipMeasured;
     req.landingOnSourceGate = w.onSourceGate;
     if (w.onSourceGate)
     {
@@ -850,6 +857,19 @@ int main()
         test::ok (! negative.done && negative.answer.status == MasteringSolveStatus::InvalidRequest
                   && ! blind.done && blind.answer.status == MasteringSolveStatus::InvalidRequest,
                   "a negative budget is refused, and a landing on the source's gate without the source's series");
+
+        // THE PEAK A LANDING ALREADY MEASURED (LoudnessRequest::peakClipMeasured, v0.15.0): given as measured, the peak
+        // clip's peak costs no pass, so one pass is one render at the given gain, delivered — a max mode's guard
+        // re-renders a step back so; given as a forecast, the first pass only measures it, and one pass is too few.
+        LandingSetup once; once.target = -10.0; once.maxPasses = 1; once.initialGainDb = 6.0; once.peakClipPeakDb = -6.0;
+        LandingSetup onceMeasured = once; onceMeasured.peakClipMeasured = true;
+        const Landed forecast = land (Programme (burstPcm), once), measured = land (Programme (burstPcm), onceMeasured);
+        std::printf ("        one pass, the clip's peak a forecast: status %d; measured: status %d, %d pass, gain %.3f dB\n",
+                     (int) forecast.answer.status, (int) measured.answer.status, measured.answer.passes,
+                     measured.answer.preLimiterGainDb);
+        test::ok (! forecast.done && forecast.answer.status == MasteringSolveStatus::Unavailable && measured.done
+                  && measured.answer.passes == 1 && std::fabs (measured.answer.preLimiterGainDb - 6.0) <= 1.0e-12,
+                  "a peak given as measured spends no pass: one pass renders the given gain and delivers it");
     }
 
     return test::report();

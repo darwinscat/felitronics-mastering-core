@@ -7,6 +7,7 @@
 // The schema proves the shape before compilation. A broken required lookup is a contract trap, not a runtime status.
 // State tests compare these reads with Config::load()'s typed binding.
 
+#include <felitronics/session/Project.h>
 #include <felitronics/toml/Embedded.h>
 #include <felitronics/toml/Toml.h>
 
@@ -44,6 +45,7 @@ struct TargetRow
     std::int32_t sampleRate = 0;               // delivery rate, Hz; 0 keeps the source's
     bool noClipper = false;
     bool vinyl = false;                        // the master goes to a cutting lathe: its tp is the medium's ceiling
+    LoudnessMode loudnessMode = LoudnessMode::Manual;   // loudnessMode: a max row's mode
     std::optional<Decimal> lowDb;
     std::optional<Decimal> glue;               // [glue] byTarget, on the knob, when it names this target
 };
@@ -84,6 +86,12 @@ struct Rules
 
 // The rules of the config compiled into the library (src/Config.cpp).
 [[nodiscard]] Rules rules() noexcept;
+
+// The loudness mode a project's next master lands in: the person's edit, else the target row's.
+[[nodiscard]] inline LoudnessMode loudnessModeOf (const Rules& r, const Project& p) noexcept
+{
+    return p.targetEdit.loudnessMode.value_or (r.row (p.target).loudnessMode);
+}
 
 
 } // namespace felitronics::session::detail

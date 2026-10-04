@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <felitronics/session/Project.h>
+
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -65,6 +67,7 @@ struct Target
     bool noClipper = false;                    // optional in the document: false when absent
     bool vinyl = false;                        // optional: false when absent — the master goes to a cutting lathe
     bool sourceRatePass = false;               // optional: false when absent
+    LoudnessMode loudnessMode = LoudnessMode::Manual;   // optional: manual when absent
     std::optional<double> lowDb;
     std::optional<Album> album;
 };
@@ -127,6 +130,11 @@ struct Landing
     // it loudDb — the window p95 of its gain reduction, dB, a whole number of quarter dB.
     double quietBudgetDb = 0.0, middleBudgetDb = 0.0, loudBudgetDb = 0.0;
     Span middleLufs;
+    // [landing.max]: the max modes' search ceiling, the guard's step back and its most steps, and each mode's limiter
+    // budget (dB, active-window P95) and PEAQ floor (worst ODG).
+    double maxCeilingLufs = 0.0, guardStepDb = 0.0;
+    std::int32_t guardSteps = 0;
+    double cleanBudgetDb = 0.0, cleanFloorOdg = 0.0, denseBudgetDb = 0.0, denseFloorOdg = 0.0;
 };
 
 struct PeakClipper

@@ -338,9 +338,85 @@ void programmeBeforeAnyMaster()
     }
 }
 
+// A MAX MASTER (v0.15.0) grades its landing's render with PEAQ before the file is delivered: that guard runs inside the
+// master's own declaration (its walks priced there as the damage's job, the master's buffers alive beside them), no
+// damage job follows the master, and the report carries the mode, what stopped it and the guard's grade. A step back
+// frees its walk before the next is made, so a guard that took none has asked for no more than the declaration.
+void maxMasterGuarded()
+{
+    std::uint32_t stepsBack = 0;
+    for (const LoudnessMode mode : { LoudnessMode::MaxClean, LoudnessMode::MaxDense })
+    {
+        const std::string name = mode == LoudnessMode::MaxClean ? "maxClean" : "maxDense";
+        const auto pcm = struck (48000, 3.0);
+        auto sp = measuredSession (pcm, 48000);
+        if (! sp) { ok (false, "a session for " + name); continue; }
+        auto& s = *sp;
+        command::EditTarget edit { 2, {} };
+        edit.fields.loudnessMode = mode;
+        const bool edited = s.apply (edit).rejection == Rejection::None && s.snapshot().view().loudnessMode == mode;
+        const auto request = readyMaster (s, 3);
+        const auto quoted = s.check (request);
+        declared::LifecycleBudget demand { quoted.bytes, quoted.largestBlockBytes + 4096u };
+        Answer taken;
+        bool within = demand.charge (declared::spend ([&] { taken = s.apply (request); }));
+        bool damageSeen = false;
+        for (unsigned i = 0; i < 400000 && s.job() != 0; ++i)
+        {
+            within = demand.charge (declared::spend ([&] { (void) s.step (1); })) && within;
+            damageSeen = damageSeen || s.damageJob() != 0;
+        }
+        if (s.masters().empty()) { ok (false, name + ": a master is kept"); continue; }
+        const std::optional<MasterReport> kept = s.masters().back().report;
+        if (! kept) { ok (false, name + ": the master carries its report"); continue; }
+        const MasterReport& r = *kept;
+        ok (edited && quoted.rejection == Rejection::None && taken.rejection == Rejection::None && ! damageSeen
+                && s.damageJob() == 0 && r.loudnessMode == mode && r.maxStop != MaxStop::None
+                && r.damage.status == MeasurementStatus::Ready && r.damage.grade >= 1u && (r.guardSteps > 0 || within),
+            name + ": the guard grades the render before the file, inside the master's declaration (" + std::to_string (demand.allocated)
+            + " of " + std::to_string (quoted.bytes) + " bytes, " + std::to_string (r.guardSteps) + " steps back, stop "
+            + std::to_string (unsigned (r.maxStop)) + "), and no damage job follows");
+        // THE GUARD'S VERDICT ([landing.max] floorOdg: clean -0.5, dense -1.5; guardSteps 3): a guard that stepped back
+        // and stopped delivers a render whose worst window is above the floor; one that ran out of steps delivers the
+        // gentlest it graded, under the floor, and says so.
+        const double floor = mode == LoudnessMode::MaxClean ? -0.5 : -1.5;
+        const bool verdict = r.maxStop == MaxStop::Guard ? r.guardSteps >= 1u && r.damage.worstOdg && *r.damage.worstOdg > floor
+                           : r.maxStop == MaxStop::GuardUnmet ? r.guardSteps == 3u && r.damage.worstOdg && *r.damage.worstOdg <= floor
+                           : r.guardSteps == 0u && (! r.damage.worstOdg || *r.damage.worstOdg > floor);
+        ok (verdict, name + ": the guard's stop agrees with its grade against the floor (worst ODG "
+            + std::to_string (r.damage.worstOdg.value_or (0.0)) + ", " + std::to_string (r.guardSteps) + " steps)");
+        stepsBack += r.guardSteps;
+        // Its verdict names the mode and what ended it, whole, in both languages.
+        const auto said = MasterReportText::max (r, mode == LoudnessMode::MaxClean ? 3.0 : 7.0);
+        const auto wanted = r.maxStop == MaxStop::Guard ? text::FactId::MasterMaxGuard
+                          : r.maxStop == MaxStop::GuardUnmet ? text::FactId::MasterMaxGuardUnmet
+                          : r.maxStop == MaxStop::Budget ? text::FactId::MasterMaxBudget : text::FactId::MasterMaxPasses;
+        ok (said && said->id == wanted && text::Text::complete (*said)
+                && text::Text::text (*said, text::Lang::En).starts_with (mode == LoudnessMode::MaxClean ? "Maximum · clean: " : "Maximum · dense: ")
+                && text::Text::text (*said, text::Lang::Ru).starts_with (mode == LoudnessMode::MaxClean ? "Максимум · чисто: " : "Максимум · плотно: "),
+            name + ": the verdict names the mode and its stop: " + (said ? text::Text::text (*said, text::Lang::En) : std::string ("none")));
+    }
+    ok (stepsBack > 0u, "PRECONDITION: the struck programme steps a guard back (the guard's path is exercised)");
+    // The budget's verdict, word for word: the mode, the file's level and the mode's budget, printed whole.
+    MasterReport held;
+    held.status = MeasurementStatus::Ready; held.deliverable = true; held.achievedLufs = -9.94;
+    held.loudnessMode = LoudnessMode::MaxClean; held.maxStop = MaxStop::Budget;
+    const auto budget = MasterReportText::max (held, 3.0);
+    MasterReport manual = held;
+    manual.loudnessMode = LoudnessMode::Manual;
+    ok (budget && text::Text::text (*budget, text::Lang::Ru)
+                == "Максимум · чисто: −9,9\u00A0LUFS — дальше лимитеру пришлось бы срезать больше 3\u00A0дБ (P95), это предел режима."
+            && text::Text::text (*budget, text::Lang::En)
+                == "Maximum · clean: −9.9\u00A0LUFS — further, the limiter would have to take off more than 3\u00A0dB (P95), the mode's limit."
+            && ! MasterReportText::max (manual, 3.0),
+        "a max master held by its budget says the mode, the level and the budget; a manual one has no max verdict: "
+            + (budget ? text::Text::text (*budget, text::Lang::Ru) : std::string ("none")));
+}
+
 int main()
 {
     damageResampler();
+    maxMasterGuarded();
     damageWithoutAnId();
     damageReferenceBelowTheKnob();
     damageFailedMidway();

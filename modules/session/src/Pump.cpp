@@ -482,7 +482,10 @@ Stepped Session::step (std::uint32_t budget) noexcept
                     const LandingMeasure measure { masterJob_->search.landedLufs(), masterJob_->search.gateLufs(),
                                                    detail::limiterBudgetDb (detail::rules().engine, report.targetLufs),
                                                    masterJob_->search.overBudgetDb() };
-                    if (const auto verdict = MasterReportText::landing (report, masterSummary_, toleranceLu, measure))
+                    // A max mode's verdict names the mode, what ended it and the loudness; the damage line below its grade.
+                    const bool max = report.loudnessMode != LoudnessMode::Manual;
+                    if (const auto verdict = max ? MasterReportText::max (report, detail::maxBudgetDb (detail::rules().engine, report.loudnessMode))
+                                                 : MasterReportText::landing (report, masterSummary_, toleranceLu, measure))
                     { (void) event.payload.fact.assign (*verdict); emit (event, masterProgress_); }
                     // Delivered above the ceiling (no render stayed under it): the mark, beside the verdict.
                     if (const auto above = MasterReportText::peaksAboveCeiling (report))
@@ -490,7 +493,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
                     // Landed on the source's gate and read apart from it by BS.1770: both numbers, in the miss's place.
                     if (const auto gate = MasterReportText::gate (report, measure, toleranceLu))
                     { (void) event.payload.fact.assign (*gate); emit (event, masterProgress_); }
-                    else if (const auto miss = MasterReportText::miss (report))
+                    else if (const auto miss = max ? std::optional<text::Fact> {} : MasterReportText::miss (report))
                     { (void) event.payload.fact.assign (*miss); emit (event, masterProgress_); }
                     for (const auto* hint : { &report.firstHint, &report.secondHint })
                         if (*hint)

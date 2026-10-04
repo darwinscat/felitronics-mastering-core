@@ -116,6 +116,33 @@ std::optional<text::Fact> MasterReportText::landing (const MasterReport& report,
     }
     return std::nullopt;
 }
+std::optional<text::Fact> MasterReportText::max (const MasterReport& report, double budgetDb) noexcept
+{
+    using text::Arg; using text::Fact; using text::FactId; using text::Term; using text::Unit;
+    if (report.loudnessMode == LoudnessMode::Manual || report.status != MeasurementStatus::Ready || ! report.deliverable
+        || ! report.achievedLufs) return std::nullopt;
+    const auto mode = Arg::term (report.loudnessMode == LoudnessMode::MaxClean ? Term::LoudnessModeMaxClean : Term::LoudnessModeMaxDense);
+    const auto achieved = Arg::value (*report.achievedLufs, Unit::Lufs, 1);
+    const auto steps = Arg::count (std::int64_t (report.guardSteps));
+    switch (report.maxStop)
+    {
+        case MaxStop::Budget:
+        {
+            if (! std::isfinite (budgetDb)) return std::nullopt;
+            const auto hundredths = (long long) std::floor (std::clamp (budgetDb, 0.0, 1.0e6) * 100.0 + 0.5);
+            const auto budget = Arg::value (budgetDb, Unit::Db,
+                hundredths % 100 == 0 ? std::uint8_t (0) : hundredths % 10 == 0 ? std::uint8_t (1) : std::uint8_t (2));
+            return Fact::of (FactId::MasterMaxBudget, mode, achieved, budget);
+        }
+        case MaxStop::Guard: return Fact::of (FactId::MasterMaxGuard, mode, achieved, steps);
+        case MaxStop::GuardUnmet: return Fact::of (FactId::MasterMaxGuardUnmet, mode, achieved, steps);
+        case MaxStop::SearchCeiling: return Fact::of (FactId::MasterMaxCeiling, mode, achieved);
+        case MaxStop::Passes: return Fact::of (FactId::MasterMaxPasses, mode, achieved);
+        case MaxStop::TruePeak: return Fact::of (FactId::MasterMaxTruePeak, mode, achieved);
+        case MaxStop::None: break;
+    }
+    return std::nullopt;
+}
 std::optional<text::Fact> MasterReportText::peaksAboveCeiling (const MasterReport& report) noexcept
 {
     if (! report.peaksAboveCeiling || ! report.truePeakDbTp) return std::nullopt;

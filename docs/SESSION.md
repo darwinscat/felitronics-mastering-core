@@ -1806,6 +1806,31 @@ BS.1770 (`achievedLufs`, `missLu`); where the level on the source's gate and tha
 tolerance, either way round, `MasterLandingGate` (601) says both («По громкой части −9,0 LUFS, по стандарту файла −9,8 LUFS.») in the
 miss's place, and the solved verdict (88) names the level landed. `targetMet` follows the status, as before.
 
+THE MAXIMUM LOUDNESS MODES (owner, 04.10, v0.15.0). A target's loudness mode is `manual`, `maxClean` or `maxDense`: a
+row of `targets.toml` may name it (`loudnessMode`; absent, manual), the two max targets appended last name theirs
+(`maxClean` «Максимум · чисто», `maxDense` «Максимум · плотно», the streaming group's medium), and any target takes one
+by hand — `editTarget` `loudnessMode` (0 manual, 1 maxClean, 2 maxDense; null gives the row's back; set and cleared at
+once is `Contract`, a fourth is `NotOneOf`, both naming the field `FieldTargetLoudnessMode`), kept in the project's
+target layer as `loudnessMode.hand = "<name>"` and said in the snapshot as the mode in effect (`Snapshot.loudnessMode`).
+Manual is the landing above, unchanged. A max mode asks for no number: it asks for the loudest master the limiter's
+budget and a PEAQ guard allow. Its landing aims at `[landing.max] ceilingLufs` (−5 LUFS) with the mode's budget —
+`clean.budgetDb` 3 dB, `dense.budgetDb` 7 dB, the same active P95 and the same proof — and a budget that holds it is
+the mode's success, not a miss. Before the file is delivered the guard grades the landing's render with the damage's
+own machine (src/Damage.h: PEAQ Basic against the chain at rest, in windows): its worst window above the mode's floor
+(`clean.floorOdg` −0.5, `dense.floorOdg` −1.5) passes; one at or under it steps the drive back by `guardStepDb` (1 dB)
+at the same ceiling, graded again before anything is rendered, `guardSteps` (3) times at most. The passing render is
+delivered — a step back is rendered once at its drive, the clipper's peak given as the landing measured it
+(`LoudnessRequest::peakClipMeasured`, no pass spent probing it) — and where none passes, the gentlest graded is, and
+says so. A render PEAQ cannot grade (no signal) passes: nothing heard is held against it. The guard's grade IS the
+master's damage (`MasterReport.damage`): no damage job follows a max master. Its walks are priced in the master's
+declaration as the damage's job is, and one lives at a time (a step's walk is freed before the next is made). The
+report says the mode, what ended it and the steps back (`MasterReport.loudnessMode`, `maxStop` — `Budget`, `Guard`,
+`GuardUnmet`, `SearchCeiling`, `Passes`, `TruePeak` — and `guardSteps`), and its verdict takes the landing's place, with
+no miss and no hint (no number was asked): `MasterMaxBudget` (608, the mode, the level and its budget: «Максимум ·
+чисто: −9,9 LUFS — дальше лимитеру пришлось бы срезать больше 3 дБ (P95), это предел режима.»), `MasterMaxGuard` (609,
+the steps back), `MasterMaxGuardUnmet` (610), `MasterMaxCeiling` (611), `MasterMaxPasses` (612), `MasterMaxTruePeak`
+(613). A max row's `lufs` is where its manual mode starts (−10 clean, −8.6 dense): the planner reads it as before.
+
 `MasterCrest` stores five peak-amplitude/mean-square-power pairs per block, in Low, LowMid, HighMid, High,
 Full order, plus five source activity values per block as zero/one values. Version, sample rate, hop
 frames, block hops, three band corners, frame count, block count, completeness and provenance travel with

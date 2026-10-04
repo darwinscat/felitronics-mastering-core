@@ -19,6 +19,7 @@
       "index": 1,
       "path": "project.targetEdit",
       "value": {
+        "loudnessMode": null,
         "lufs": null,
         "tp": null
       },

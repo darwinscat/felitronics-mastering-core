@@ -148,6 +148,7 @@ public:
         working_.activityThresholdDb = best_.activityThresholdDb = request.activityThresholdDb;
         haveBest_ = havePrevious_ = haveBelow_ = haveAbove_ = haveUnsafe_ = peakProbe_ = false;
         passes_ = 0; sourceCursor_ = 0; verifyCursor_ = 0; bestPass_ = 0; restoring_ = false;
+        peakProbe_ = request.peakClipMeasured;
         gateOn_ = request.landingOnSourceGate && gateGrid (request, sourceRate, chain.sampleRate());
         budgetOn_ = ! request.limiterGr.off();
         haveOverBudget_ = false;

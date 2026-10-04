@@ -23,6 +23,8 @@ namespace detail
 // [landing] limiterBudget: the P95 of the limiter's gain reduction a landing at `targetLufs` may take, dB — the
 // target's own number or a person's edit of it, by one rule. NaN where the config does not say it.
 [[nodiscard]] double limiterBudgetDb (toml::embedded::View engine, double targetLufs) noexcept;
+// [landing.max]: a max mode's limiter budget, dB (NaN for the manual mode or where the config does not say it).
+[[nodiscard]] double maxBudgetDb (toml::embedded::View engine, LoudnessMode mode) noexcept;
 
 struct MasterPlan
 {
@@ -44,6 +46,10 @@ struct MasterPlan
     bool saturationTrace = false;              // the soft clipper shapes: its shave of the peaks is kept, the same way
     std::optional<MasterMedium> medium;        // a version-0 master's medium and input, from the chain it will run
     DamagePlan damage {};                      // the damage's walks, priced (as the job after it), or why they cannot run
+    // A max mode ([landing.max]): the mode, its PEAQ floor (worst ODG) and the guard's step back and most steps.
+    LoudnessMode loudnessMode = LoudnessMode::Manual;
+    double guardFloorOdg = 0, guardStepDb = 0;
+    std::int32_t guardSteps = 0;
 };
 
 struct MasterRows
@@ -122,7 +128,7 @@ struct MasterJob final
     std::uint64_t costCursor = 0, costHop = 0, costStored = 0;
     std::uint64_t initializedWaveBuckets = 0;
     bool costMeterReady = false;
-    enum class Stage : std::uint8_t { Search, Prepare, Read, Finish, Copy, CostRead, CostFinish,
+    enum class Stage : std::uint8_t { Search, Guard, GuardRender, Prepare, Read, Finish, Copy, CostRead, CostFinish,
         CostWave, CostPump, CostActive, CostShape, CostWorst, CostCrest, CostPublish, Done, Failed };
     Stage stage = Stage::Search;
     CrestScan costCrestScan;
@@ -150,6 +156,24 @@ struct MasterJob final
     // says Pending, and the session starts the damage's own job with damagePlan and the delivered parameters.
     bool damageFollows = false;
     void settleLra() noexcept;
+    // THE MAX MODE'S GUARD: the mode, its floor and steps; the damage walk that grades a candidate before the file is
+    // delivered — owned while the master's job runs, the very objects a manual master's damage job owns after it, and
+    // priced so (MasterJob::plan); the candidate's gain and ceiling, the steps taken, whether the delivered render is
+    // the candidate, and its grade. The first landing's verdict, for what ended the mode.
+    LoudnessMode mode = LoudnessMode::Manual;
+    double guardFloorOdg = 0, guardStepDb = 0;
+    std::int32_t guardSteps = 0, guardTaken = 0;
+    std::unique_ptr<DamageJob> guard;
+    double candidateGainDb = 0, candidateCeilingDb = 0;
+    bool candidateRendered = true, guardRan = false, guardPassed = false;
+    MasterDamage guardDamage {};
+    mastering::LoudnessRequest landingRequest {};
+    mastering::MasteringSolveStatus firstStatus = mastering::MasteringSolveStatus::NotPrepared;
+    mastering::MasteringConstraint firstBinding = mastering::MasteringConstraint::None;
+    bool firstAboveCeiling = false;
+    void startGuard() noexcept;
+    bool beginStepRender() noexcept;
+    mastering::StepResult settleLanding (mastering::StepResult result) noexcept;
 };
 } // namespace detail
 } // namespace felitronics::session

@@ -863,6 +863,10 @@ struct LoudnessRequest
     // readings by time. It is the caller's for the whole landing; on without a series is InvalidRequest. The delivered
     // file is still certified by BS.1770 (`achievedLufs`, `missLu`); `LandingSearch::landedLufs` is the level landed.
     bool landingOnSourceGate = false;
+    // `productLanding` only: `MasteringChainParams::peakClipPeakDb` is a peak a first pass already measured (the landing
+    // that chose these settings), so no pass is spent probing it — with `maxPasses` 1, one render at the given gain and
+    // ceiling, delivered (a max mode's guard re-renders a step back so).
+    bool peakClipMeasured = false;
     const double* sourceMomentaryLufs = nullptr;
     long long sourceMomentaryCount = 0;
     long long sourceMomentaryHopFrames = 0;

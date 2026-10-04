@@ -82,6 +82,8 @@ template <class E> struct Name
 };
 constexpr Name<Group> kGroups[] = { { "streaming", Group::Streaming }, { "delivery", Group::Delivery },
                                     { "aggregator", Group::Aggregator } };
+constexpr Name<LoudnessMode> kLoudnessModes[] = { { "manual", LoudnessMode::Manual }, { "maxClean", LoudnessMode::MaxClean },
+                                                  { "maxDense", LoudnessMode::MaxDense } };
 constexpr Name<TargetNote> kTargetNotes[] = { { "measured", TargetNote::Measured }, { "practice", TargetNote::Practice },
                                               { "noNormalisation", TargetNote::NoNormalisation } };
 constexpr Name<Detector> kDetectors[] = { { "peak", Detector::Peak }, { "rms", Detector::Rms } };
@@ -322,6 +324,27 @@ void readLanding (Doc& d, Reader& in, Landing& o)
         d.notAbove (t, quiet && middle, o.quietBudgetDb, o.middleBudgetDb, "middleDb");   // a louder target, no less budget
         d.notAbove (t, middle && loud, o.middleBudgetDb, o.loudBudgetDb, "loudDb");
         d.pair (t, "middleLufs", o.middleLufs, anyLufs());
+    });
+    in.table ("max", Need::Required, [&] (Reader& t)
+    {
+        t.required ("ceilingLufs", o.maxCeilingLufs, R { -20.0, 0.0 });
+        t.required ("guardStepDb", o.guardStepDb, R { 0.25, 12.0 });
+        d.onQuarterDb (t, "guardStepDb");
+        t.required ("guardSteps", o.guardSteps, I { 0, 8 });
+        const auto mode = [&] (std::string_view key, double& budget, double& floor)
+        {
+            t.table (key, Need::Required, [&] (Reader& m)
+            {
+                m.required ("budgetDb", budget, R { 1.0, 60.0 });
+                d.onQuarterDb (m, "budgetDb");
+                m.required ("floorOdg", floor, R { -3.9, 0.0 });
+            });
+        };
+        mode ("clean", o.cleanBudgetDb, o.cleanFloorOdg);
+        mode ("dense", o.denseBudgetDb, o.denseFloorOdg);
+        // the denser mode promises no less loudness and no better grade
+        d.notAbove (t, true, o.cleanBudgetDb, o.denseBudgetDb, "dense");
+        d.notAbove (t, true, o.denseFloorOdg, o.cleanFloorOdg, "dense");
     });
 }
 
@@ -1220,6 +1243,9 @@ void readTarget (Doc& d, Reader& row, Target& x, const RowDomains& b)
     d.flag (row, "noClipper", x.noClipper);
     d.flag (row, "vinyl", x.vinyl);
     d.flag (row, "sourceRatePass", x.sourceRatePass);
+    if (row.data().find ("loudnessMode") != nullptr && d.name (row, "loudnessMode", x.loudnessMode, kLoudnessModes)
+        && x.loudnessMode == LoudnessMode::Manual)
+        d.refuse (row, "loudnessMode", Refusal::WrittenDefault);   // written only where it is a max mode
     // A pass at the source's rate exists only where the delivery rate is another.
     if (x.sourceRatePass && x.sampleRate == 0 && row.data().find ("sampleRate") != nullptr)
         d.refuse (row, "sourceRatePass", Refusal::NotApplicable);
