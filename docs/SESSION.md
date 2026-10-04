@@ -436,8 +436,9 @@ detector that never errs upward and a loss that tells centred, partial and inver
 the crossover not counting.
 
 **The limiter, its needles and the dither** (owner decisions 3.6, 3.7, 3.12; technical decision 3О11; `src/Limiter.h`).
-The limiter is always in the chain, with no tick; nothing — no gain reduction, no PLR, no cost — limits how far it goes
-for the loudness, and the ceiling (the target's, or a person's edit of it) alone is hard. Its one knob is the peak
+The limiter is always in the chain, with no tick; the ceiling (the target's, or a person's edit of it) is hard, and how
+far it goes for the loudness is held by its budget — the P95 of its gain reduction on its active windows, by the target's
+loudness (`[landing] limiterBudget`, below) — and by nothing else: no PLR, no other cost. Its one knob is the peak
 clipper's, inside its oversampler: `auto` — the machine classes the needles measured on the input at the ceiling the
 target's numbers give (the input's peak less the need, `(TPin − Iin) − (TPtarget − Itarget)`): short (p90 of the runs
 ≤ 2 ms, bass share of their dose ≤ 0.25, PLR ≥ 10) lose up to 3 dB off their peaks; not cut where p90 ≥ 8 ms, the bass
@@ -1709,28 +1710,36 @@ render that overshoots the ceiling least, the gentlest measured, verified like a
 line, which says the true peak held, is not said of it. Delivered means under the ceiling except in exactly this marked
 case: the decoder holds a deliverable report to `peakSafe` or the mark, the mark to a deliverable report above its
 ceiling and not met, and a marked landing to a deliverable `TargetUnreachable` bound by the ceiling. Unavailable and
-cancelled landings say none.
+cancelled landings say none. The crest's line
+(`MasterReportText::crest`) goes out once: with the report when the job settles the crest (joined inside the job, or
+unavailable), or from the late join when it was still pending.
 
 **Loudness is a request, not an order** (owner, 04.10): better to fall short of the target than to reach it and make the
 master unlistenable. Two parts of `engine.toml [landing]` say so, both in the sound version. `onSourceGate`: the level
-the landing puts on the target is the master's mean block energy over the 400 ms blocks the source's BS.1770 gate
-admitted (absolute, then relative), read on the source's momentary series (`Loudness` `momentary`, block i is reading
-i + 3) and not gated again — the quiet parts the drive lifts above the master's own relative gate do not join the
-average, so they no longer drive the loud part past what it needs alone. A source without that series whole (a
+the landing puts on the target is the louder of the file's BS.1770 reading and the master's mean block energy over the
+400 ms blocks the source's BS.1770 gate admitted (absolute, then relative), not gated again — the quiet parts the drive
+lifts above the master's own relative gate do not join the average, so they no longer drive the loud part past what it
+needs alone, and a chain that empties those blocks (a steep high-pass under a sub-bass source) cannot land a file louder
+than the target. The gate is read on the source's momentary series (`Loudness` `momentary`, its own hop at its own
+rate) and the master's blocks take its readings by time through both grids (a hop is ten sub-hops of lround (0.01 fs)
+frames: 1100 frames at 11025 Hz are 99.77 ms, 4410 at 44.1 kHz 100 ms). A source without that series whole (a
 sidecar's facts, rows refused for memory) lands on the master's own gate. `limiterBudget`: the most the limiter may
-take, the P95 of its gain reduction over the programme's windows — the very number `MasterCost::limiterP95Db` prints —
+take, the P95 of its gain reduction over its ACTIVE windows (the windows whose input reached `[cost]
+limiterActiveInputDb`, so silence does not water it down) — the very number `MasterCost::limiterP95Db` prints —
 by the target's loudness, a person's edited number included: 4 dB below −10 LUFS, 7 dB from −10 to −8 (both ends),
 10 dB louder (`detail::limiterBudgetDb`). `LandingSearch` reads it as a budget, not a refusal: a render over it is no
-candidate and is marked in its pass record (`LimiterGainReduction`), the next drive is held under the lowest drive that
-broke it, and the landing ends `TargetUnreachable` with `LimiterGainReduction` bound, its file delivered short of the
-target — the loudest render that kept the budget, or the gentlest ceiling-safe one where none did. Such a verdict is
-`MasterLandingBudget` (600): the target, the level landed and the budget («Цель −9,0 LUFS, сделано −9,7 LUFS: дальше
-лимитеру пришлось бы срезать больше 7 дБ (P95).»), and no hint: nothing in the mix is blamed. The file is still certified
-by BS.1770 (`achievedLufs`, `missLu`); where the level landed on the source's gate and that reading part by more than
-the tolerance, `MasterLandingGate` (601) says both («По громкой части −9,0 LUFS, по стандарту файла −9,8 LUFS.») in the
-miss's place, and the solved verdict (88) names the level landed. `targetMet` follows the status, as before. The crest's line
-(`MasterReportText::crest`) goes out once: with the report when the job settles the crest (joined inside the job, or
-unavailable), or from the late join when it was still pending.
+candidate and is marked in its pass record (`LimiterGainReduction`; the session's pass log carries only the ceiling's
+mark), and the next drive is held under the lowest drive that broke it. The landing ends `TargetUnreachable` with
+`LimiterGainReduction` bound only on proof — a candidate within 0.25 dB of drive under that limit while the target is
+still above, or the limit holding the last drive chosen; otherwise its status is the search's own (a pass limit stays
+`PassLimit`, with its hints). Held so, the file is delivered short of the target: `MasterLandingBudget` (600) says the
+target, the level landed and the budget («Цель −9,0 LUFS, сделано −9,7 LUFS: дальше лимитеру пришлось бы срезать больше
+7 дБ (P95).»). Where no render kept the budget, the gentlest ceiling-safe one is delivered and `MasterLandingOverBudget`
+(602) says so with its own reduction («…ни один вариант не уложился в бюджет лимитера 7 дБ (P95): выдан самый мягкий,
+лимитер в нём срезает 8,4 дБ.»). Neither has a hint: nothing in the mix is blamed. The file is still certified by
+BS.1770 (`achievedLufs`, `missLu`); where the level landed on the source's gate and that reading part by more than the
+tolerance, `MasterLandingGate` (601) says both («По громкой части −9,0 LUFS, по стандарту файла −9,8 LUFS.») in the
+miss's place, and the solved verdict (88) names the level landed. `targetMet` follows the status, as before.
 
 `MasterCrest` stores five peak-amplitude/mean-square-power pairs per block, in Low, LowMid, HighMid, High,
 Full order, plus five source activity values per block as zero/one values. Version, sample rate, hop

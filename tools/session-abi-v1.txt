@@ -1862,3 +1862,4 @@ row QuerySaturationShave element=f64 byteOrder=little columns=firstFrame,lastFra
 # source's gate beside the file's BS.1770 reading.
 enum felitronics::session::text::FactId::MasterLandingBudget=600
 enum felitronics::session::text::FactId::MasterLandingGate=601
+enum felitronics::session::text::FactId::MasterLandingOverBudget=602

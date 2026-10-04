@@ -106,7 +106,7 @@ for (const item of scenarios.formats) {
 const miss = wire(scenarios.miss.snapshot).masters.at(-1).landing;
 assert.equal(sha(Buffer.from(JSON.stringify(scenarios.miss.target))), scenarios.miss.targetSha256);
 assert.equal(sha(Buffer.from(JSON.stringify(scenarios.unsafe.target))), scenarios.unsafe.targetSha256);
-// Held short by the limiter's budget: TargetUnreachable (1) with LimiterGainReduction (2) bound, within the twelve passes.
+// Held short by the limiter's budget, proven on its active windows: TargetUnreachable (1), LimiterGainReduction (2), within twelve passes.
 assert.equal(miss.status, 1);
 assert.equal(miss.binding, 2);
 assert.ok(miss.passes <= 12);

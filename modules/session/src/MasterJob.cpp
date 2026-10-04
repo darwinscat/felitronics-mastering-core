@@ -279,8 +279,9 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
     // refused for memory) lands on the master's own gate.
     result.request.limiterGr.limitDb = limiterBudgetDb (engine, targetLufs);
     result.request.limiterGr.statistic = mastering::GrStatistic::P95;
+    result.request.limiterActiveInputDb = number (engine.find ("cost").find ("limiterActiveInputDb"));
     const auto onGate = engine.find ("landing").find ("onSourceGate").boolean();
-    if (! onGate || ! std::isfinite (result.request.limiterGr.limitDb))
+    if (! onGate || ! std::isfinite (result.request.limiterGr.limitDb) || ! std::isfinite (result.request.limiterActiveInputDb))
     { result.rejection = Rejection::MandatoryUnavailable; return result; }
     const auto* momentary = findArray (s.measurementResults_[std::size_t (Analyzer::Loudness)], "momentary");
     if (*onGate && momentary && momentary->complete && momentary->stored != 0)
@@ -288,6 +289,7 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         result.request.landingOnSourceGate = true;
         result.request.sourceMomentaryLufs = momentary->values.data();
         result.request.sourceMomentaryCount = (long long) momentary->stored;
+        result.request.sourceMomentaryHopFrames = (long long) momentary->grid.stepFrames;
     }
     result.ready.params.limiter.ceilingDbTp = targetTp - margin;
     result.ready.deliveryBits = deliveryBits;
@@ -680,11 +682,14 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         costResult.waveform = { rows.waveform.get(), rows.waveformCapacity };
         const auto& solution = search.result();
         double quantile = 0;
-        if (solution.grQuantile (mastering::GrStage::Limiter, .5, quantile))
-            costResult.limiterP50Db = { MeasurementReason::None, quantile, solution.measured.limiter.frames };
+        // The limiter's reduction over its ACTIVE windows (input above [cost] limiterActiveInputDb): the statistic the
+        // landing's budget holds, so silence does not water it down.
+        const auto& active = solution.limiterActive.stats;
+        if (active.valid && solution.limiterActiveGrWindows.quantile (.5, quantile))
+            costResult.limiterP50Db = { MeasurementReason::None, quantile, active.frames };
         else costResult.limiterP50Db.reason = MeasurementReason::Unsupported;
-        if (solution.grQuantile (mastering::GrStage::Limiter, .95, quantile))
-            costResult.limiterP95Db = { MeasurementReason::None, quantile, solution.measured.limiter.frames };
+        if (active.valid && solution.limiterActiveGrWindows.quantile (.95, quantile))
+            costResult.limiterP95Db = { MeasurementReason::None, quantile, active.frames };
         else costResult.limiterP95Db.reason = MeasurementReason::Unsupported;
         if (solution.limiterActive.stats.valid)
             costResult.limiterActiveShare = { MeasurementReason::None,

@@ -377,7 +377,8 @@ Stepped Session::step (std::uint32_t budget) noexcept
                     const double toleranceLu = tolerance.decimal() ? tolerance.decimal()->toDouble()
                                                                    : double (tolerance.integer().value_or (0));
                     const LandingMeasure measure { masterJob_->search.landedLufs(),
-                                                   detail::limiterBudgetDb (detail::rules().engine, report.targetLufs) };
+                                                   detail::limiterBudgetDb (detail::rules().engine, report.targetLufs),
+                                                   masterJob_->search.overBudgetDb() };
                     if (const auto verdict = MasterReportText::landing (report, masterSummary_, toleranceLu, measure))
                     { (void) event.payload.fact.assign (*verdict); emit (event, masterProgress_); }
                     // Delivered above the ceiling (no render stayed under it): the mark, beside the verdict.

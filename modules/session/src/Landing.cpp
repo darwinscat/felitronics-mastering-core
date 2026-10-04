@@ -89,8 +89,12 @@ std::optional<text::Fact> MasterReportText::landing (const MasterReport& report,
         case LandingStatus::TargetUnreachable:
             if (landing.binding == LandingConstraint::LimiterGainReduction && std::isfinite (measure.limiterBudgetDb)
                 && report.status == MeasurementStatus::Ready && landed)
-                return Fact::of (FactId::MasterLandingBudget, Arg::value (report.targetLufs, Unit::Lufs, 1),
-                                 Arg::value (*landed, Unit::Lufs, 1), Arg::value (measure.limiterBudgetDb, Unit::Db, 0));
+                return std::isfinite (measure.overBudgetDb)
+                    ? Fact::of (FactId::MasterLandingOverBudget, Arg::value (report.targetLufs, Unit::Lufs, 1),
+                                Arg::value (*landed, Unit::Lufs, 1), Arg::value (measure.limiterBudgetDb, Unit::Db, 0),
+                                Arg::value (measure.overBudgetDb, Unit::Db, 1))
+                    : Fact::of (FactId::MasterLandingBudget, Arg::value (report.targetLufs, Unit::Lufs, 1),
+                                Arg::value (*landed, Unit::Lufs, 1), Arg::value (measure.limiterBudgetDb, Unit::Db, 0));
             return Fact::of (FactId::MasterLandingUnreachable, tolerance, Arg::term (limit (landing.binding)));
         case LandingStatus::PassLimit: return Fact::of (FactId::MasterLandingPassLimit, tolerance);
         case LandingStatus::TargetBetweenAchievable:

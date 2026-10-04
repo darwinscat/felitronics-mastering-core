@@ -275,6 +275,9 @@ inline constexpr FactShape kFacts[] = {
     { FactId::MasterLandingBudget, "masterLandingBudget",
       { { { "target", ArgKind::Value, {} }, { "achieved", ArgKind::Value, {} }, { "budget", ArgKind::Value, {} } } }, 3 },
     { FactId::MasterLandingGate, "masterLandingGate", { { { "landed", ArgKind::Value, {} }, { "file", ArgKind::Value, {} } } }, 2 },
+    { FactId::MasterLandingOverBudget, "masterLandingOverBudget",
+      { { { "target", ArgKind::Value, {} }, { "achieved", ArgKind::Value, {} }, { "budget", ArgKind::Value, {} },
+          { "taken", ArgKind::Value, {} } } }, 4 },
 
 };
 inline constexpr std::size_t kFactCount = sizeof (kFacts) / sizeof (kFacts[0]);

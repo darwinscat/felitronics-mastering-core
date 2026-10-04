@@ -86,12 +86,12 @@ struct Mastered { MasterId id = 0; std::vector<float> audio; MasterAudioShape sh
 // glue: the compressor in the chain and compressing (a low threshold, a firm ratio); otherwise out of it. shaper: the
 // soft clipper (the saturation) in the chain with those parameters; otherwise out of it.
 using ShaperParams = decltype (felitronics::mastering::MasteringChainParams::clipper);
-Mastered master (Session& s, CommandId id, bool glue = false, const ShaperParams* shaper = nullptr)
+Mastered master (Session& s, CommandId id, bool glue = false, const ShaperParams* shaper = nullptr, bool limiter = true)
 {
     command::Master request { id };
     request.ready.version = 1;
     request.ready.topology.eq = request.ready.topology.compressor = request.ready.topology.clipper = request.ready.topology.dither = false;
-    request.ready.topology.limiter = true;
+    request.ready.topology.limiter = limiter;
     if (glue)
     {
         request.ready.topology.compressor = true; request.ready.params.bypassCompressor = false;
@@ -200,6 +200,30 @@ void theLandingsFacts()
         && same (verdict->args[2].number, 10.0) && verdict->args[2].unit == text::Unit::Db
         && both (*verdict).find ('{') == std::string::npos,
         "the miss's verdict is published with the master, with its numbers: " + (verdict ? both (*verdict) : std::string {}));
+
+    // The search's own miss keeps its hints: without the limiter no budget can hold the landing, and −5 LUFS under −6 dBTP
+    // is missed on the true peak — the mix's reasons are said beside it.
+    auto unlimitedSession = loaded (audio.planes, 2, audio.frames, audio.rate);
+    ok (unlimitedSession->apply (command::EditTarget { 3, { -5.0, -6.0 } }).rejection == Rejection::None,
+        "PRECONDITION: the same target, for a chain without the limiter");
+    const auto unlimited = master (*unlimitedSession, 4, false, nullptr, false);
+    const auto unlimitedView = unlimitedSession->snapshot();
+    const auto& unlimitedReport = *kept (unlimitedView.view(), unlimited.id)->report;
+    bool unlimitedHints = (bool) unlimitedReport.firstHint;
+    std::string unlimitedSaid;
+    for (const auto* hint : { &unlimitedReport.firstHint, &unlimitedReport.secondHint })
+        if (*hint)
+        {
+            const auto fact = MasterReportText::hint (**hint);
+            bool out = false;
+            for (const auto& e : unlimited.facts)
+                out = out || (fact && e.jobId == unlimited.id && e.payload.fact.view().id == fact->id);
+            unlimitedHints = unlimitedHints && fact && out;
+            if (fact) unlimitedSaid += text::Text::text (*fact, text::Lang::Ru) + " ";
+        }
+    ok (kept (unlimitedView.view(), unlimited.id)->landing->binding != LandingConstraint::LimiterGainReduction
+        && ! unlimitedReport.targetMet && unlimitedHints,
+        "a miss the budget did not hold publishes its hints: " + unlimitedSaid);
 
     auto met = loaded (audio.planes, 2, audio.frames, audio.rate);
     const auto landed = master (*met, 3);

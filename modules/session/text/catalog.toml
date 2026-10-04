@@ -1081,6 +1081,12 @@ en.gain = "The master runs into the chain's gain bound: it cannot come within ±
 ru = "Цель {target}, сделано {achieved}: дальше лимитеру пришлось бы срезать больше {budget} (P95)."
 en = "Target {target}, reached {achieved}: going further, the limiter would have to take off more than {budget} (P95)."
 
+# No render kept the limiter's budget: the gentlest ceiling-safe one is delivered, and what its limiter takes is said
+# beside the budget it broke.
+[messages.masterLandingOverBudget]
+ru = "Цель {target}, сделано {achieved}: ни один вариант не уложился в бюджет лимитера {budget} (P95) — выдан самый мягкий, лимитер в нём срезает {taken}."
+en = "Target {target}, reached {achieved}: no render kept within the limiter's budget of {budget} (P95) — the gentlest is delivered, its limiter takes off {taken}."
+
 # A landing on the source's gate: the level landed on the loud part, and the file's standard BS.1770 reading, where the
 # two part by more than the tolerance.
 [messages.masterLandingGate]

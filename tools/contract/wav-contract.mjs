@@ -140,7 +140,7 @@ for (const item of scenarios.formatRefusals) {
 assert.equal(scenarios.refusal.answer.kind, 'rejected');
 assert.equal(scenarios.cancel.answer.kind, 'accepted');
 assert.equal(scenarios.unavailable.answer.kind, 'rejected');
-// Held short by the limiter's budget: TargetUnreachable (1) with LimiterGainReduction (2) bound, within the twelve passes.
+// Held short by the limiter's budget, proven on its active windows: TargetUnreachable (1), LimiterGainReduction (2), within twelve passes.
 assert.equal(scenarios.miss.measurements.status, 1);
 assert.equal(scenarios.miss.measurements.binding, 2);
 assert.ok(scenarios.miss.measurements.passes <= 12);

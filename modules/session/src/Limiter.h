@@ -5,8 +5,9 @@
 // THE LIMITER WITH ITS NEEDLES, AND THE DITHER, AS THE CHAIN GETS THEM (internal to modules/session; owner decisions
 // 3.6, 3.7, 3.12, technical decision 3О11).
 //
-// THE LIMITER is always in the chain: no tick, and nothing — no gain reduction, no PLR, no cost — limits how far it goes
-// for the loudness; the ceiling alone is hard. Its one knob is the PEAK CLIPPER's, inside the limiter's oversampler
+// THE LIMITER is always in the chain, with no tick. The ceiling is hard; how far it goes for the loudness is held by its
+// budget ([landing] limiterBudget: the P95 of its gain reduction on its active windows, by the target's loudness) and by
+// nothing else — no PLR, no other cost. Its one knob is the PEAK CLIPPER's, inside the limiter's oversampler
 // (never a stage of its own): decide by itself, cut as much as a person sets, or not at all.
 //
 // DECIDING BY ITSELF, the clipper reads the needles measured on the INPUT at the ceiling the target's numbers give — the
