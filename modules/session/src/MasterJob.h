@@ -177,7 +177,7 @@ struct MasterJob final
     // The loudness mode the job lands in (a max mode's verdict and stop). A max mode's floor ([landing.max] floorLufs) and
     // the landing again on it, with no budget, where the mode's budget held the first one under it (floorPass).
     LoudnessMode mode = LoudnessMode::Manual;
-    double floorLufs = std::numeric_limits<double>::quiet_NaN();
+    double floorLufs = std::numeric_limits<double>::quiet_NaN(), floorFirstLufs = std::numeric_limits<double>::quiet_NaN();
     bool floorPass = false;
     mastering::LoudnessRequest floorRequest {};
     [[nodiscard]] bool beginFloor() noexcept;

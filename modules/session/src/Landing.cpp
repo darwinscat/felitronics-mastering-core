@@ -129,17 +129,17 @@ std::optional<text::Fact> MasterReportText::landing (const MasterReport& report,
     return std::nullopt;
 }
 std::optional<text::Fact> MasterReportText::maxFloorDetail (const MasterReport& report, double budgetDb, double p95Db,
-                                                            double floorLufs) noexcept
+                                                            double floorLufs, double firstLufs) noexcept
 {
     using text::Arg; using text::Fact; using text::FactId; using text::Term; using text::Unit;
     if (report.maxStop != MaxStop::Floor || ! report.deliverable || ! std::isfinite (budgetDb) || ! std::isfinite (p95Db)
-        || ! std::isfinite (floorLufs)) return std::nullopt;
+        || ! std::isfinite (floorLufs) || ! std::isfinite (firstLufs)) return std::nullopt;
     const auto mode = Arg::term (report.loudnessMode == LoudnessMode::MaxClean ? Term::LoudnessModeMaxClean : Term::LoudnessModeMaxDense);
     const auto hundredths = (long long) std::floor (std::clamp (budgetDb, 0.0, 1.0e6) * 100.0 + 0.5);
     const auto budget = Arg::value (budgetDb, Unit::Db,
         hundredths % 100 == 0 ? std::uint8_t (0) : hundredths % 10 == 0 ? std::uint8_t (1) : std::uint8_t (2));
-    return Fact::of (FactId::MasterMaxFloorDetail, mode, budget, Arg::value (floorLufs, Unit::Lufs, 1),
-                     Arg::value (overBudgetShown (p95Db, budgetDb), Unit::Db, 1));
+    return Fact::of (FactId::MasterMaxFloorDetail, mode, Arg::value (firstLufs, Unit::Lufs, 1), Arg::value (floorLufs, Unit::Lufs, 1),
+                     Arg::value (p95Db > budgetDb ? overBudgetShown (p95Db, budgetDb) : p95Db, Unit::Db, 1), budget);
 }
 
 std::optional<text::Fact> MasterReportText::max (const MasterReport& report, double budgetDb, double overBudgetDb) noexcept

@@ -78,9 +78,11 @@ struct MeasurementChange
     std::uint64_t key = 0, source = 0, revision = 0, framesRead = 0, total = 0, stored = 0;
     bool complete = false;
 };
-// THE DAMAGE OF A MASTER, graded after it (MasterReport.damage): a job of its own, started when the master is delivered.
-// Pending when it starts (the master's report says Pending), then once more when it ends — Ready or Unavailable with
-// the report's own status and reason, or Cancelled: by cancel (Cancelled), by a new master (Superseded), by forget.
+// THE DAMAGE OF A MASTER (MasterReport.damage), graded as a job of its own when the shell asks (command::GradeDamage):
+// Pending when it is asked — it waits its turn in the session's queue (Session::damageJobs; a new master parks a running
+// grade and it waits again, never ended by it) — then once more, its last word, when it ends: Ready or Unavailable with
+// the report's own status and reason (Memory where its turn found no room), or Cancelled — by cancel of its job
+// (Cancelled), by forget of its master or a new source (MasterForgotten). Superseded is no longer said.
 struct DamageChange
 {
     MasterId masterId = 0;

@@ -209,9 +209,9 @@ typedef struct fc_session_storage
     double bytes;                   // allocating demand, independent of current capacity
     double largestBlockBytes;       // largest allocation; import uses a conservative bound
     double liveBytes;               // current declared bytes; caller can assess live - released + bytes
-    // Appended (v0.14.0): live bytes the command frees before its first allocation — a master stops the damage being
-    // graded. The heap must hold liveBytes - releasedBytes + bytes, as the command's own check counts it. Written where
-    // the record's size reaches it.
+    // Appended (v0.14.0): live bytes the command frees before its first allocation — the running damage grade's walks: a
+    // master parks it, a cancel of its job or forget of its master ends it. The heap must hold liveBytes - releasedBytes
+    // + bytes, as the command's own check counts it. Written where the record's size reaches it.
     double releasedBytes;
 } fc_session_storage;
 

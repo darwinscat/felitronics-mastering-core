@@ -306,8 +306,8 @@ inline constexpr FactShape kFacts[] = {
           { "budget", ArgKind::Value, {} } } }, 4 },
     { FactId::MasterMaxFloor, "masterMaxFloor", { { { "mode", ArgKind::Term, "loudnessMode" }, { "achieved", ArgKind::Value, {} } } }, 2 },
     { FactId::MasterMaxFloorDetail, "masterMaxFloorDetail",
-      { { { "mode", ArgKind::Term, "loudnessMode" }, { "budget", ArgKind::Value, {} }, { "floor", ArgKind::Value, {} },
-          { "over", ArgKind::Value, {} } } }, 4 },
+      { { { "mode", ArgKind::Term, "loudnessMode" }, { "first", ArgKind::Value, {} }, { "floor", ArgKind::Value, {} },
+          { "taken", ArgKind::Value, {} }, { "budget", ArgKind::Value, {} } } }, 5 },
 
 };
 inline constexpr std::size_t kFactCount = sizeof (kFacts) / sizeof (kFacts[0]);

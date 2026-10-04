@@ -13,9 +13,11 @@
   is its master's own (`MasterRows`: the walks' plan and the parameters it was delivered with). At its turn its walks'
   room is checked against the capacity, and refused there, said: `Unavailable`, `Memory`, its line.
 - **Only its master's cause ends a grade, at once**: `cancel` of its job id (Cancelled: the cancel's fact, its line, the
-  `damage` event; a running grade's walks freed — the cancel's `releasedBytes`), `forget` of its master and a new source
-  (new `MeasurementReason::MasterForgotten`, "the master was deleted", no line; the forget's `releasedBytes` are a running
-  grade's walks), each with one last `damage` event and nothing of it after; the queue moves on.
+  `damage` event; a running grade's walks freed — the cancel's `releasedBytes`) and `forget` of its master (new
+  `MeasurementReason::MasterForgotten`, "the master was deleted", no line; the forget's `releasedBytes` are a running
+  grade's walks), each with one last `damage` event and nothing of it after; the queue moves on. A new source ends every
+  grade too (`MasterForgotten`): the running one's walks are freed in the load, and each grade's last word follows in the
+  next steps, one a unit, before any other work — so no event batch outgrows its bound, however many grades there were.
 - **The max modes by ear** (owner: both went too far while PEAQ heard nothing): the PEAQ guard is out of the master's
   loop — a max master is a landing and a delivery, its damage graded as any master's when the shell asks — and out of the
   config (`floorOdg`, `guardStepDb`, `guardSteps`); `MaxStop` `Guard`, `GuardUnmet`, `Unguarded` and facts 609, 610, 614
@@ -23,9 +25,11 @@
   and 1.75 dB (dense) of the active P95 — the budget-curve ladder's medians: −13.05 / −11.22 LUFS on the home mixes,
   −12.04 / −10.53 on the Cambridge corpus; the max rows' manual starts are −13 and −11.
 - **The max floor at −14 LUFS** (`[landing.max] floorLufs`; owner: "always pulled up to −14"), whichever target the mode
-  sits on: a mix so dense the budget held its file (BS.1770) under it is landed again there, with no budget, and delivered
-  there — new `MaxStop::Floor`, its verdict the mode and the level alone (`MasterMaxFloor`, 616), its numbers in a line
-  for the log only (`MasterMaxFloorDetail`, 617: the budget, the floor, the P95 the limiter took, printed above the budget).
+  sits on: a first landing whose file (BS.1770) stands under it by more than the landing's tolerance is landed again
+  there, with no budget. Delivered on the floor, new `MaxStop::Floor`: its verdict the mode and the level alone
+  (`MasterMaxFloor`, 616), its numbers in a line for the log only (`MasterMaxFloorDetail`, 617: where the first landing
+  stopped, the floor, the P95 the limiter took beside the budget — no claim of what held the first landing). A floor out
+  of reach says what held it (`TruePeak`, `Passes`), never `Floor`.
 - **The gate's level, worded as what it is** (`MasterLandingGate`, 601, both languages): "−9.0 LUFS without the quiet
   parts, −9.8 LUFS by the file's standard reading." — it was "by the loud part", but the number is the master's mean over
   the blocks the source's gate admits, not its loudest place. No argument moves.
