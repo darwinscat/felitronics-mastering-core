@@ -49,7 +49,7 @@
     },
     "measurement": {
       "scriptSha256": "bcde2dcc70541554c86691bbf5fa4b85cad78afc3d22cee5f3881dd6bc991c25",
-      "sha256": "514e5418e86c075c87e83a3404fbef5a15d15afabb1e630fca6384b531fd1d67",
+      "sha256": "ed891c20a73da958283decd9e5ebb3abafc8bd7ad1073046d76b4ae8ed03a047",
       "bytes": 1858656
     },
     "measurement-needles": {
@@ -74,7 +74,7 @@
     },
     "measurement-sidecar": {
       "scriptSha256": "5404c1c7d1eda5106be368cc003c641215bc908145b9adceb28264a7d82ebc7d",
-      "sha256": "90636481fa56858223d3dba59c3f80a6f8f0dfd772c131b83ab3f727d4a9bd8d",
+      "sha256": "64383d8437b77485a9d82b4bd2503dc857dd509ae545da78a3ce0eedebcf4c1b",
       "bytes": 4224571
     },
     "measurement-silence": {
