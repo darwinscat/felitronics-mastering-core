@@ -182,7 +182,7 @@ try {
     console.log('guard control: unmodified suite GREEN before planting mutations');
     for (const [entry, before, after] of [
         ...['command', 'load', 'import_project'].map(entry => [`fc_session_${entry}_bytes`,
-            /if \(overlap \(out, sizeof \(\*out\), [^;]+;/, '/* overlap control removed */']),
+            /if \(overlap \(out, out->size, [^;]+;/, '/* overlap control removed */']),
         ['fc_session_set_capacity', 'auto* slot = lookup (session);', 'if (!capacity) return FC_SESSION_ERR_NULL;\n    auto* slot = lookup (session);']
     ]) {
         const start = originalFacade.indexOf(`FC_EXPORT fc_session_status ${entry} (`);

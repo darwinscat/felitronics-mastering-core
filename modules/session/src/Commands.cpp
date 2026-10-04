@@ -300,7 +300,11 @@ Checked Session::storageFor (const Request& request) const noexcept
         const auto roomBytes = (room ? 0u : std::uint64_t (masterCount_ + 1) * sizeof (Kept) * (capabilities_.leanSummary ? 2u : 1u))
             + std::uint64_t (std::max (masterRoom_, masterCount_ + 1)) * sizeof (detail::MasterRows) + 4096u;
         if (roomBytes > 9007199254740991ull - plan.bytes) return rejected (Rejection::TooLong);
-        return storage (plan.bytes + roomBytes, std::max (plan.largestBlock, roomBytes));
+        // The damage still graded for an earlier master stops before anything is allocated (apply): its job's bytes are
+        // free for this one.
+        auto priced = storage (plan.bytes + roomBytes, std::max (plan.largestBlock, roomBytes));
+        priced.releasedBytes = damageJobBytes_;
+        return priced;
     }
     if (std::holds_alternative<command::ContinueMeasurement> (request))
         return lastJob_ == std::numeric_limits<JobId>::max() ? rejected (Rejection::NoJobId) : Checked {};
@@ -325,9 +329,7 @@ Checked Session::check (const Request& request) const noexcept
 {
     const auto priced = storageFor (request);
     if (priced.rejection != Rejection::None) return priced;
-    // A master stops the damage still graded before it allocates anything (apply, below): what that job holds is free
-    // for it — counted here so, while nothing changes before the answer.
-    const auto checked = demand (priced, std::holds_alternative<command::Master> (request) ? damageJobBytes_ : 0u);
+    const auto checked = demand (priced);
     if (checked.rejection != Rejection::None) return checked;
     if (const auto* load = std::get_if<command::Load> (&request))
     {
@@ -820,6 +822,11 @@ bool Driver::measured2 (Session& session, JobId job, std::uint64_t source) noexc
     // result ended; a fixture's seam may not have run an analyzer at all, and a result that can no longer end would be
     // one a plan waits for for ever.
     for (const auto analyzer : detail::SourceMeasurements::order)
+        if (auto& r = session.measurementResults_[std::size_t (analyzer)]; r.status == MeasurementStatus::Pending)
+        { r.status = MeasurementStatus::Unavailable; r.reason = MeasurementReason::NotImplemented; }
+    // ...and the live ones, which end before the first measurement does: the programme report among them, which a
+    // master's loudness range reads as ended.
+    for (const auto analyzer : { Analyzer::Loudness, Analyzer::Clipping, Analyzer::Programme })
         if (auto& r = session.measurementResults_[std::size_t (analyzer)]; r.status == MeasurementStatus::Pending)
         { r.status = MeasurementStatus::Unavailable; r.reason = MeasurementReason::NotImplemented; }
     session.replan();

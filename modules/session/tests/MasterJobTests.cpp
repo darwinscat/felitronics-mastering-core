@@ -32,6 +32,9 @@ struct Inspector
     }
     static void lastJob (Session& s, JobId last) noexcept { s.lastJob_ = last; }
     static std::uint64_t damageBytes (const Session& s) noexcept { return s.damageJobBytes_; }
+    // A walk that fails midway (a refusal of the chains, the meters or PEAQ — a contract fault no input reaches).
+    static std::uint32_t windows (const Damage& d) noexcept { return d.windows_; }
+    static void fail (Damage& d, MeasurementReason why) noexcept { d.fail (why); }
 };
 }
 
@@ -187,6 +190,35 @@ void damageReferenceBelowTheKnob()
         std::string ("a reference the input gain cannot take 60 dB down is lowered the rest by its input: the same grade (") + said + ")");
 }
 
+// A WALK THAT FAILS GRADES NOTHING: failed after three windows closed, its report is Unavailable with the
+// reason, and no count of windows — not a partial tally beside a status that says nothing was graded.
+void damageFailedMidway()
+{
+    using detail::Damage;
+    const auto pcm = struck (48000, 30.0, 1.5);
+    const std::uint64_t frames = pcm.size() / 2u;
+    const float* planes[] { pcm.data(), pcm.data() + frames };
+    felitronics::mastering::MasteringChainConfig topology;
+    topology.eq = topology.compressor = topology.clipper = topology.dither = false;
+    auto plan = Damage::plan (48000, frames, 2, topology);
+    felitronics::mastering::MasteringChainParams winning;
+    winning.preLimiterGainDb = 1.0;
+    felitronics::mastering::MasteringChain master;
+    Damage damage;
+    MasterDamage out;
+    bool done = ! plan.ok || ! damage.begin (plan, master, winning, planes, frames, 2);
+    for (unsigned i = 0; i < 100000 && ! done && detail::Inspector::windows (damage) < 3u; ++i) done = damage.step (1024);
+    const auto closed = detail::Inspector::windows (damage);
+    detail::Inspector::fail (damage, MeasurementReason::NonFinite);
+    for (unsigned i = 0; i < 100000 && ! done; ++i) done = damage.step (1024);
+    damage.publish (out);
+    ok (closed == 3u && done && out.status == MeasurementStatus::Unavailable && out.reason == MeasurementReason::NonFinite
+        && out.verdict == DamageVerdict::NotRun && out.windows == 0 && out.audibleWindows == 0 && out.ungradedWindows == 0
+        && out.grade == 0 && ! out.worstOdg && ! out.audibleShare && ! out.referenceGainDb,
+        "a damage walk failed after " + std::to_string (closed) + " windows grades nothing: Unavailable, NonFinite, windows "
+        + std::to_string (out.windows) + ", heard " + std::to_string (out.audibleWindows));
+}
+
 // THE DAMAGE'S JOB HOLDS NO MORE THAN IT DECLARED: every byte its job asks for — made in the unit that delivers the
 // master, its walks begun at its first step — within DamageJob::bytes, the bytes it adds to liveBytes(), at 48 kHz and
 // through the resampler from 44.1 kHz.
@@ -237,6 +269,7 @@ void masterAtTheCeilingWithADamage()
     (void) s.setCapacity ({ double (need), double (unlimited.largestBlockBytes) });
     const auto at = s.check (request);
     Answer taken;
+    // Gross: the counter adds every request and subtracts no release, so the damage's freed job hides none of these.
     const auto spent = declared::spend ([&] { taken = s.apply (request); });
     ok (released && s.damageJob() == 0 && damage > 0 && unlimited.rejection == Rejection::None
         && under.rejection == Rejection::Memory && under.needBytes == double (need)
@@ -292,6 +325,7 @@ int main()
     damageResampler();
     damageWithoutAnId();
     damageReferenceBelowTheKnob();
+    damageFailedMidway();
     damageMemoryIsDeclared();
     masterAtTheCeilingWithADamage();
     programmeBeforeAnyMaster();

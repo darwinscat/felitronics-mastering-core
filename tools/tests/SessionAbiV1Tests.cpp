@@ -474,7 +474,7 @@ void demandGuards()
     auto* badOutput = reinterpret_cast<fc_session_storage*> (UINTPTR_MAX - 7);
     for (const auto query : queries)
     {
-        fc_session_storage out { sizeof (fc_session_storage), 777, 888, 999, 111 };
+        fc_session_storage out { sizeof (fc_session_storage), 777, 888, 999, 111, 222 };
         unsigned char unchanged[sizeof (out)]; std::memcpy (unchanged, &out, sizeof (out));
         const auto count = alloc::count.load();
         bool good = true;
@@ -486,11 +486,12 @@ void demandGuards()
         expect (0, nullptr, 1, nullptr, FC_SESSION_ERR_NULL);
         expect (0, nullptr, 1, reinterpret_cast<fc_session_storage*> (raw + 1), FC_SESSION_ERR_ALIGNMENT);
         expect (0, nullptr, 1, badOutput, FC_SESSION_ERR_SPAN);
-        for (const auto size : { 0u, unsigned (sizeof (out) - 1), unsigned (sizeof (out) + 1) })
+        // Under the base (32 bytes; releasedBytes appended past it) and past this build's record.
+        for (const auto size : { 0u, unsigned (FC_SESSION_STORAGE_V1_BYTES - 1u), unsigned (sizeof (out) + 1) })
         {
             out.size = size;
             expect (0, reinterpret_cast<const char*> (&out), sizeof (out), &out,
-                size < sizeof (out) ? FC_SESSION_ERR_STRUCT_TOO_SMALL : FC_SESSION_ERR_STRUCT_TOO_LARGE);
+                size < FC_SESSION_STORAGE_V1_BYTES ? FC_SESSION_ERR_STRUCT_TOO_SMALL : FC_SESSION_ERR_STRUCT_TOO_LARGE);
         }
         out.size = sizeof (out);
         expect (0, nullptr, 1, &out, FC_SESSION_ERR_HANDLE);

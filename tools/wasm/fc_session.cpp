@@ -31,6 +31,7 @@
 #include <felitronics/session/Session.h>
 #include <felitronics/session/Wire.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <algorithm>
 #include <memory>
@@ -372,7 +373,9 @@ fc_session_status storageOut (const Session& session, const felitronics::session
     if (priced.rejection == Rejection::FloatingPointEnvironment) return FC_SESSION_ERR_FP_ENVIRONMENT;
     out->rejection = std::uint32_t (priced.rejection);
     out->bytes = double (priced.bytes); out->largestBlockBytes = double (priced.largestBlockBytes);
-    out->liveBytes = session.liveBytes(); return FC_SESSION_OK;
+    out->liveBytes = session.liveBytes();
+    if (out->size >= offsetof (fc_session_storage, releasedBytes) + sizeof (double)) out->releasedBytes = double (priced.releasedBytes);
+    return FC_SESSION_OK;
 }
 
 fc_session_status masterInputs (const fc_master_config* config, const fc_master_params* params) noexcept
@@ -626,7 +629,7 @@ FC_EXPORT fc_session_status fc_session_query_bytes (fc_session session, const ch
     if (const auto st = record (out); st != FC_SESSION_OK) return st;
     const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
     if (const auto st = pointer (request, request_bytes, 1, true); st != FC_SESSION_OK) return st;
-    if (overlap (out, sizeof (*out), request, request_bytes)) return FC_SESSION_ERR_OVERLAP;
+    if (overlap (out, out->size, request, request_bytes)) return FC_SESSION_ERR_OVERLAP;
     return storageOut (*slot->session, Wire::queryStorage (*slot->session, { request, request_bytes }), out);
 }
 FC_EXPORT fc_session_status fc_session_query_size (fc_session session, const char* request, std::uint32_t request_bytes,
@@ -670,7 +673,7 @@ FC_EXPORT fc_session_status fc_session_master_waveform_chunk_bytes (fc_session s
     if (const auto st = record (out); st != FC_SESSION_OK) return st;
     const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
     if (const auto st = pointer (request, request_bytes, 1, true); st != FC_SESSION_OK) return st;
-    if (overlap (out, sizeof (*out), request, request_bytes)) return FC_SESSION_ERR_OVERLAP;
+    if (overlap (out, out->size, request, request_bytes)) return FC_SESSION_ERR_OVERLAP;
     return storageOut (*slot->session, Wire::masterWaveformChunkStorage (*slot->session,
         { request, request_bytes }, { nullptr, channels, frames, rate }), out);
 }
@@ -747,7 +750,7 @@ FC_EXPORT fc_session_status fc_session_command_bytes (fc_session session, const 
     if (const auto st = record (out); st != FC_SESSION_OK) return st;
     const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
     if (const auto st = pointer (json, json_bytes, 1, true); st != FC_SESSION_OK) return st;
-    if (overlap (out, sizeof (*out), json, json_bytes)) return FC_SESSION_ERR_OVERLAP;
+    if (overlap (out, out->size, json, json_bytes)) return FC_SESSION_ERR_OVERLAP;
     return storageOut (*slot->session, Wire::commandStorage (*slot->session, { json, json_bytes }), out);
 }
 FC_EXPORT fc_session_status fc_session_load_bytes (fc_session session, std::uint32_t channels, std::uint32_t frames,
@@ -759,7 +762,7 @@ FC_EXPORT fc_session_status fc_session_load_bytes (fc_session session, std::uint
     if (const auto st = record (out); st != FC_SESSION_OK) return st;
     const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
     if (const auto st = pointer (meta, meta_bytes, 1, true); st != FC_SESSION_OK) return st;
-    if (overlap (out, sizeof (*out), meta, meta_bytes)) return FC_SESSION_ERR_OVERLAP;
+    if (overlap (out, out->size, meta, meta_bytes)) return FC_SESSION_ERR_OVERLAP;
     return storageOut (*slot->session, Wire::loadStorage (*slot->session, channels, frames, rate, { meta, meta_bytes }), out);
 }
 FC_EXPORT fc_session_status fc_session_import_project_bytes (fc_session session, const char* project,
@@ -770,7 +773,7 @@ FC_EXPORT fc_session_status fc_session_import_project_bytes (fc_session session,
     if (const auto st = record (out); st != FC_SESSION_OK) return st;
     const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
     if (const auto st = pointer (project, project_bytes, 1, true); st != FC_SESSION_OK) return st;
-    if (overlap (out, sizeof (*out), project, project_bytes)) return FC_SESSION_ERR_OVERLAP;
+    if (overlap (out, out->size, project, project_bytes)) return FC_SESSION_ERR_OVERLAP;
     return storageOut (*slot->session, Wire::importStorage (*slot->session, { project, project_bytes }), out);
 }
 
@@ -891,8 +894,8 @@ FC_EXPORT fc_session_status fc_session_master_bytes (fc_session session, std::ui
     if (const auto st = masterInputs (topology, params); st != FC_SESSION_OK) return st;
     if (joined (source_low, source_high) != slot->session->source().hash
         || joined (revision_low, revision_high) != slot->session->revision()) return FC_SESSION_ERR_STALE;
-    if (overlap (out, sizeof (*out), topology, sizeof (*topology))
-        || overlap (out, sizeof (*out), params, sizeof (*params))) return FC_SESSION_ERR_OVERLAP;
+    if (overlap (out, out->size, topology, sizeof (*topology))
+        || overlap (out, out->size, params, sizeof (*params))) return FC_SESSION_ERR_OVERLAP;
     felitronics::session::command::Master request;
     request.source = joined (source_low, source_high); request.revision = joined (revision_low, revision_high);
     if (! masterReady (*topology, *params, slot->session->source(), request.ready)) return FC_SESSION_ERR_CONTRACT;

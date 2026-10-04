@@ -1248,7 +1248,7 @@ still apply. Convert, Lra and Final are appended to `PhaseName` at 5, 6 and 7 an
 | `abi_version`, `config_version` | ABI number; config hash as low/high uint32 halves |
 | `create_bytes`, `create`, `destroy` | Pre-create demand; capability/config creation; generation-checked destruction |
 | `set_capacity` | Update heap ceiling and largest free block between calls |
-| `command_bytes`, `load_bytes`, `import_project_bytes` | Session allocation demand and live bytes before work |
+| `command_bytes`, `load_bytes`, `import_project_bytes` | Session allocation demand, live bytes and the live bytes freed first, before work |
 | `measurement_bytes` | Shape-only detailed measurement demand in an appended size-prefixed record |
 | `command` | Named-field JSON in; accepted/rejected JSON out |
 | `load` | Planar f32 pointers, channels, frames, rate and JSON metadata; owned PCM copy |
@@ -1392,8 +1392,12 @@ The C records `fc_session_capabilities`, `fc_session_sizes`, `fc_session_capacit
 bytes — the capabilities with `leanSummary` (a 32-byte record is too small, owner 2026-10-01), the measurement demand
 without the retired slots; fields may only be appended. Sizes below the base and beyond the current build have distinct
 statuses. A field appended later must define its absent-field meaning for callers of the base. Demand queries for commands, loads and imports use the session's own `storageFor`; capacity
-may be updated between calls as a heap ceiling and largest free block. Live bytes plus demand and the largest allocation
-are checked before work. Nonallocating commands remain available when capacity is reduced.
+may be updated between calls as a heap ceiling and largest free block. Live bytes, less what the command frees before
+its first allocation, plus demand — and the largest allocation — are checked before work: `fc_session_storage` appends
+`releasedBytes` (v0.14.0; `Checked::releasedBytes` in C++), the bytes a `master` frees by stopping the damage being
+graded, so a shell's `liveBytes - releasedBytes + bytes` is exactly what the command's own check holds to the ceiling.
+A caller of the 32-byte base gets no `releasedBytes` and its `liveBytes + bytes` is an upper bound, never short.
+Nonallocating commands remain available when capacity is reduced.
 
 C load frames are uint32 because the wasm heap is limited to 2 GiB; native C++ PCM frames are uint64. Binary rows are
 little-endian IEEE-754 f64, with unsupported byte-order builds refused at compile time. Executed encoder fixtures and
@@ -1734,9 +1738,11 @@ types outside the det-math zone since v0.6 — renders a last-bit difference bet
 it about fiftyfold: the damage's numbers of such a master agree across platforms to a few 1e-5 in ODG and up to about
 1e-3 in DI (DI by 5e-5 on the saturation-type scenario, by 2e-4 with ODG by 3e-5 on the master-report suite's processed
 master), not to the bit, and a grade whose ODG sits at a step's edge (-0.5, -1.5, -2.5, -3.5) may land on either side
-of it on two platforms. The session contract allows 1e-4 for the saturation-type scenario alone (tools/contract/run.mjs). Cost, 60 s of 48 kHz stereo on an M-series Mac: the master is delivered
-after 1.3 s, as without the damage; its job then takes 3.6–3.7 s (both chains' loudness about 0.9 s, the graded walk
-2.8 s, of which PEAQ's two windows in flight about 1.9 s).
+of it on two platforms. The session contract allows 1e-4 for the saturation-type scenario alone (tools/contract/run.mjs).
+
+THE DAMAGE'S COST, 60 s of 48 kHz stereo on an M-series Mac: the master is delivered after 1.3 s, as without the
+damage; its job then takes 3.6–3.7 s (both chains' loudness about 0.9 s, the graded walk 2.8 s, of which PEAQ's two
+windows in flight about 1.9 s).
 
 Each completed ready master carries an optional `MasterReport` beside its recipe and landing. Its LUFS,
 reference true peak, PLR and suitable LRA are the solver's completed measurement of the selected delivered

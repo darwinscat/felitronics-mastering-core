@@ -21,9 +21,10 @@ namespace felitronics::session::detail
 // 48 kHz on the same input block: the master's with the parameters it was delivered with, the reference's with the glue
 // in its exact bypass and the chain fed referenceBelowDb lower — by its input gain, and where that knob's range
 // (MasteringChain::kMaxGainDb) stops short, by a scale of its input for the rest — so the saturation runs in its
-// small-signal line and the limiter and its needles never reach the ceiling. Same stages, same oversamplers, same delays: a stage at rest leaves the
-// two the same to the bit. Two walks over the source: the first measures both integrated loudnesses (the gain that brings
-// the reference to the master's), the second feeds the K PEAQ instances, one per window in flight.
+// small-signal line and the limiter and its needles never reach the ceiling. Same stages, same oversamplers, same
+// delays: a stage at rest leaves the two equal to a gain's rounding (the reference's lowering and lifting back). Two
+// walks over the source: the first measures both integrated loudnesses (the gain that brings the reference to the
+// master's), the second feeds the K PEAQ instances, one per window in flight.
 //
 // The source reaches 48 kHz through DamageResampler where it is not at 48 kHz already: a windowed sinc whose kernel is
 // built from core::det, summed in a fixed order, so native and wasm give the same bits (core's DeliveryResampler designs
@@ -84,6 +85,8 @@ struct DamagePlan
     std::uint64_t bytes = 0, largestBlock = 0;
 };
 
+struct Inspector;   // the suites' seam (MasterJobTests); the library defines none
+
 class Damage
 {
 public:
@@ -102,6 +105,7 @@ public:
     std::optional<double> walk() const noexcept;
     void publish (MasterDamage& out) const noexcept;
 private:
+    friend struct Inspector;
     enum class Stage : std::uint8_t { Idle, Loudness, Gate, Grade, Done };
     bool feed (long long budget) noexcept;          // one block of the source through both chains; false on a refusal
     void closeWindow (int instance) noexcept;
