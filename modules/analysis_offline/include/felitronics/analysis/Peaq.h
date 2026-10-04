@@ -17,6 +17,7 @@
 #endif
 
 #include <felitronics/core/DetMath.h>
+#include <felitronics/core/Math.h>
 #include <felitronics/core/OfflineFft.h>
 #include <felitronics/storage/VectorBytes.h>
 
@@ -1131,7 +1132,7 @@ private:
             for (int i = 0; i < kPeaqMovCount; ++i) mov[(std::size_t) i] = mov[(std::size_t) i] + per[i];
             r.channelNmrDb[(std::size_t) c] = per[(int) PeaqMov::TotalNmr];
             const double eR = at (chanBase (c) + kEnergy)[0], eE = at (chanBase (c) + kEnergy)[1];
-            r.channelResidualDb[(std::size_t) c] = eE == 0.0 ? -std::numeric_limits<double>::infinity()
+            r.channelResidualDb[(std::size_t) c] = core::exactlyEqual (eE, 0.0) ? -std::numeric_limits<double>::infinity()
                                                  : (eR > 0.0 ? 10.0 * det::log10 (eE / eR) : std::numeric_limits<double>::infinity());
         }
         for (double& v : mov) v = v / (double) channels_;

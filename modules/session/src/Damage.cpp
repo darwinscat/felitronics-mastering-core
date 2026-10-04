@@ -5,6 +5,7 @@
 #include "Damage.h"
 #include "Rules.h"
 #include <felitronics/core/DetMath.h>
+#include <felitronics/core/Math.h>
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -77,7 +78,7 @@ bool DamageResampler::prepare (const Shape& s, int channels)
     for (long long k = 0; k < n; ++k)
     {
         const double x = 2.0 * cut * (double (k) - centre);
-        const double sinc = x == 0.0 ? 1.0 : core::det::sin (kPi * x) / (kPi * x);
+        const double sinc = core::exactlyEqual (x, 0.0) ? 1.0 : core::det::sin (kPi * x) / (kPi * x);
         const double a = 2.0 * kPi * double (k) / double (n - 1);
         const double window = 0.42 - 0.5 * core::det::cos (a) + 0.08 * core::det::cos (2.0 * a);
         const double h = double (s.up) * 2.0 * cut * sinc * window;

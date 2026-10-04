@@ -446,7 +446,8 @@ private:
     bool gateGrid (const LoudnessRequest& r, double sourceRate, double chainRate) noexcept
     {
         if (! (sourceRate >= 1.0 && sourceRate <= 1.0e7 && chainRate >= 1.0 && chainRate <= 1.0e7)
-            || std::floor (sourceRate) != sourceRate || std::floor (chainRate) != chainRate
+            || ! core::exactlyEqual (std::floor (sourceRate), sourceRate)
+            || ! core::exactlyEqual (std::floor (chainRate), chainRate)
             || r.sourceMomentaryHopFrames <= 0 || r.sourceMomentaryHopFrames > 100000000LL) return false;
         const auto fsS = (std::uint64_t) sourceRate, fsM = (std::uint64_t) chainRate;
         const auto hopM = (std::uint64_t) (10 * std::max (1L, std::lround (0.01 * chainRate)));
