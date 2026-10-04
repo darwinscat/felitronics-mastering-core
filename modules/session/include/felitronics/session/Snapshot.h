@@ -32,6 +32,8 @@ struct SnapshotView
     // The damage being graded for a delivered master, a job of its own (Session::damageJob), and its progress.
     JobId damageJob = 0;
     Phase damageProgress {};
+    // The loudness mode the next master lands in: the person's edit (project.targetEdit) or the target row's.
+    LoudnessMode loudnessMode = LoudnessMode::Manual;
     double sourceBytes = 0.0;
     double integratedLufs = 0.0;
     std::span<const ReadingPoint> momentary, shortTerm;

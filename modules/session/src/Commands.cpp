@@ -257,6 +257,9 @@ Checked Session::storageFor (const Request& request) const noexcept
         const TargetFields<Touched>& f = edit->fields;
         if (f.lufs && edit->clear.lufs) return rejected (Rejection::Contract, 0);
         if (f.tp && edit->clear.tp) return rejected (Rejection::Contract, 1);
+        if (f.loudnessMode && edit->clear.loudnessMode) return rejected (Rejection::Contract, 2);
+        if (f.loudnessMode && std::uint8_t (*f.loudnessMode) > std::uint8_t (LoudnessMode::MaxDense))
+            return rejected (Rejection::NotOneOf, 2);
         if (f.lufs)
             if (const Rejection r = knobCheck (rules.lufs, *f.lufs, source_.sampleRate); r != Rejection::None) return rejected (r, 0);
         if (f.tp)
@@ -410,7 +413,8 @@ Answer Session::apply (const Request& request) noexcept
     const Rules rules = detail::rules();
     bool empty = false;
     if (const auto* edit = std::get_if<command::EditTarget> (&request))
-        empty = ! edit->fields.lufs && ! edit->fields.tp && ! edit->clear.lufs && ! edit->clear.tp;
+        empty = ! edit->fields.lufs && ! edit->fields.tp && ! edit->fields.loudnessMode && ! edit->clear.lufs
+             && ! edit->clear.tp && ! edit->clear.loudnessMode;
     if (const auto* edit = std::get_if<command::EditDevice> (&request))
         empty = onActive (edit->fields, [&] (const auto& fields)
         {
@@ -544,6 +548,9 @@ Answer Session::apply (const Request& request) noexcept
         // A cleared field is the target row's again: the person's number goes, and with it the line a project writes.
         if (edit->clear.lufs) project_.targetEdit.lufs.reset();
         if (edit->clear.tp) project_.targetEdit.tp.reset();
+        // The loudness mode: set, or cleared to the target row's.
+        if (edit->fields.loudnessMode) project_.targetEdit.loudnessMode = edit->fields.loudnessMode;
+        if (edit->clear.loudnessMode) project_.targetEdit.loudnessMode.reset();
     }
     else if (const auto* device = std::get_if<command::EditDevice> (&request))
     {

@@ -1,0 +1,23 @@
+create main 134217728
+load 1 measure
+drive 5000 work units
+command {"kind":"editTarget","commandId":"2","fields":{"loudnessMode":1}}
+snapshot
+command {"kind":"editTarget","commandId":"3","fields":{"loudnessMode":3}}
+snapshot
+export project saved
+command {"kind":"master","commandId":"4"}
+drive 100000 work units
+snapshot
+summary
+command {"kind":"editTarget","commandId":"5","fields":{"loudnessMode":null}}
+snapshot
+import project 6 saved
+snapshot
+command {"kind":"setTarget","commandId":"7","target":"maxDense"}
+snapshot
+command {"kind":"forget","commandId":"8","masterId":2}
+command {"kind":"master","commandId":"9"}
+drive 100000 work units
+snapshot
+summary

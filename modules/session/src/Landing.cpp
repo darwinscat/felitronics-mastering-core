@@ -11,6 +11,17 @@
 
 namespace felitronics::session
 {
+namespace
+{
+// A REDUCTION OVER THE BUDGET, AS PRINTED (facts 602 and 615, one decimal): rounded UP to a tenth, and at least a tenth
+// above the budget's own tenths, so the printed reduction always reads above the printed budget however close above it
+// the delivered render is — 3.01 over 3 prints 3.1, 7.26 over 7.25 prints 7.3; to the nearest tenth, 3.01 read "3.0".
+double overBudgetShown (double overDb, double budgetDb) noexcept
+{
+    return std::max (std::ceil (overDb * 10.0), std::floor (budgetDb * 10.0) + 1.0) / 10.0;
+}
+}
+
 bool MasterCrestGrid::compatible (const MasterCrest& master,
                                   const analysis::BandCrestResult& source) noexcept
 {
@@ -101,7 +112,8 @@ std::optional<text::Fact> MasterReportText::landing (const MasterReport& report,
                 && report.status == MeasurementStatus::Ready && landed)
                 return std::isfinite (measure.overBudgetDb)
                     ? Fact::of (FactId::MasterLandingOverBudget, Arg::value (report.targetLufs, Unit::Lufs, 1),
-                                Arg::value (*landed, Unit::Lufs, 1), budget(), Arg::value (measure.overBudgetDb, Unit::Db, 1))
+                                Arg::value (*landed, Unit::Lufs, 1), budget(),
+                                Arg::value (overBudgetShown (measure.overBudgetDb, measure.limiterBudgetDb), Unit::Db, 1))
                     : Fact::of (FactId::MasterLandingBudget, Arg::value (report.targetLufs, Unit::Lufs, 1),
                                 Arg::value (*landed, Unit::Lufs, 1), budget());
             return Fact::of (FactId::MasterLandingUnreachable, tolerance, Arg::term (limit (landing.binding)));
@@ -113,6 +125,40 @@ std::optional<text::Fact> MasterReportText::landing (const MasterReport& report,
         case LandingStatus::TechnicalFailure: return Fact::of (FactId::MasterLandingFailed);
         case LandingStatus::Unavailable:
         case LandingStatus::Cancelled: break;
+    }
+    return std::nullopt;
+}
+std::optional<text::Fact> MasterReportText::max (const MasterReport& report, double budgetDb, double overBudgetDb) noexcept
+{
+    using text::Arg; using text::Fact; using text::FactId; using text::Term; using text::Unit;
+    if (report.loudnessMode == LoudnessMode::Manual || report.status != MeasurementStatus::Ready || ! report.deliverable
+        || ! report.achievedLufs) return std::nullopt;
+    const auto mode = Arg::term (report.loudnessMode == LoudnessMode::MaxClean ? Term::LoudnessModeMaxClean : Term::LoudnessModeMaxDense);
+    const auto achieved = Arg::value (*report.achievedLufs, Unit::Lufs, 1);
+    const auto steps = Arg::count (std::int64_t (report.guardSteps));
+    // The budget printed whole: up to two decimals, the trailing zeros dropped, decided on its hundredths as an integer.
+    const auto budget = [budgetDb]
+    {
+        const auto hundredths = (long long) std::floor (std::clamp (budgetDb, 0.0, 1.0e6) * 100.0 + 0.5);
+        return Arg::value (budgetDb, Unit::Db,
+            hundredths % 100 == 0 ? std::uint8_t (0) : hundredths % 10 == 0 ? std::uint8_t (1) : std::uint8_t (2));
+    };
+    switch (report.maxStop)
+    {
+        case MaxStop::Budget:
+            if (! std::isfinite (budgetDb)) return std::nullopt;
+            return Fact::of (FactId::MasterMaxBudget, mode, achieved, budget());
+        case MaxStop::OverBudget:
+            if (! std::isfinite (budgetDb) || ! std::isfinite (overBudgetDb)) return std::nullopt;
+            return Fact::of (FactId::MasterMaxOverBudget, mode, achieved,
+                             Arg::value (overBudgetShown (overBudgetDb, budgetDb), Unit::Db, 1), budget());
+        case MaxStop::Unguarded: return Fact::of (FactId::MasterMaxUnguarded, mode, achieved);
+        case MaxStop::Guard: return Fact::of (FactId::MasterMaxGuard, mode, achieved, steps);
+        case MaxStop::GuardUnmet: return Fact::of (FactId::MasterMaxGuardUnmet, mode, achieved, steps);
+        case MaxStop::SearchCeiling: return Fact::of (FactId::MasterMaxCeiling, mode, achieved);
+        case MaxStop::Passes: return Fact::of (FactId::MasterMaxPasses, mode, achieved);
+        case MaxStop::TruePeak: return Fact::of (FactId::MasterMaxTruePeak, mode, achieved);
+        case MaxStop::None: break;
     }
     return std::nullopt;
 }

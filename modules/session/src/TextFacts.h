@@ -289,6 +289,19 @@ inline constexpr FactShape kFacts[] = {
       { { { "source", ArgKind::Value, {} }, { "master", ArgKind::Value, {} }, { "change", ArgKind::Value, {} },
           { "changeLu", ArgKind::Value, {} } } }, 4 },
     { FactId::MasterLraUnmeasured, "masterLraUnmeasured", { { { "reason", ArgKind::Term, "measurementReason" } } }, 1 },
+    { FactId::MasterMaxBudget, "masterMaxBudget",
+      { { { "mode", ArgKind::Term, "loudnessMode" }, { "achieved", ArgKind::Value, {} }, { "budget", ArgKind::Value, {} } } }, 3 },
+    { FactId::MasterMaxGuard, "masterMaxGuard",
+      { { { "mode", ArgKind::Term, "loudnessMode" }, { "achieved", ArgKind::Value, {} }, { "steps", ArgKind::Count, {} } } }, 3 },
+    { FactId::MasterMaxGuardUnmet, "masterMaxGuardUnmet",
+      { { { "mode", ArgKind::Term, "loudnessMode" }, { "achieved", ArgKind::Value, {} }, { "steps", ArgKind::Count, {} } } }, 3 },
+    { FactId::MasterMaxCeiling, "masterMaxCeiling", { { { "mode", ArgKind::Term, "loudnessMode" }, { "achieved", ArgKind::Value, {} } } }, 2 },
+    { FactId::MasterMaxPasses, "masterMaxPasses", { { { "mode", ArgKind::Term, "loudnessMode" }, { "achieved", ArgKind::Value, {} } } }, 2 },
+    { FactId::MasterMaxTruePeak, "masterMaxTruePeak", { { { "mode", ArgKind::Term, "loudnessMode" }, { "achieved", ArgKind::Value, {} } } }, 2 },
+    { FactId::MasterMaxUnguarded, "masterMaxUnguarded", { { { "mode", ArgKind::Term, "loudnessMode" }, { "achieved", ArgKind::Value, {} } } }, 2 },
+    { FactId::MasterMaxOverBudget, "masterMaxOverBudget",
+      { { { "mode", ArgKind::Term, "loudnessMode" }, { "achieved", ArgKind::Value, {} }, { "over", ArgKind::Value, {} },
+          { "budget", ArgKind::Value, {} } } }, 4 },
 
 };
 inline constexpr std::size_t kFactCount = sizeof (kFacts) / sizeof (kFacts[0]);
@@ -448,6 +461,10 @@ inline constexpr TermShape kTerms[] = {
     { Term::DamageGradeVeryAnnoying, "damageGrade", "veryAnnoying" },
     { Term::ReasonSuperseded, "measurementReason", "superseded" },
     { Term::ReasonNoJobId, "measurementReason", "noJobId" },
+    { Term::LoudnessModeManual, "loudnessMode", "manual" },
+    { Term::LoudnessModeMaxClean, "loudnessMode", "maxClean" },
+    { Term::LoudnessModeMaxDense, "loudnessMode", "maxDense" },
+    { Term::FieldTargetLoudnessMode, "field", "targetLoudnessMode" },
 };
 inline constexpr std::size_t kTermCount = sizeof (kTerms) / sizeof (kTerms[0]);
 
@@ -546,14 +563,15 @@ static_assert (tablesInOrder(), "kFacts and kTerms ascend by id");
     return std::nullopt;
 }
 
-// A FIELD A CHECK REFUSED, as its term: the target's number at `field` (Answer::field: lufs 0, tp 1), or a device's field
+// A FIELD A CHECK REFUSED, as its term: the target's field at `field` (Answer::field: lufs 0, tp 1, loudnessMode 2), or a device's field
 // at `field` in the order Project.h writes it (src/Devices.h walks the same order). A tick is never refused and has
 // none; nor has a position past the device's fields. The suite holds this against src/Devices.h: a term for exactly the
 // fields a check can refuse.
 [[nodiscard]] constexpr std::optional<Term> targetFieldTerm (std::uint8_t field) noexcept
 {
     return field == 0 ? std::optional<Term> (Term::FieldTargetLufs)
-         : field == 1 ? std::optional<Term> (Term::FieldTargetTp) : std::nullopt;
+         : field == 1 ? std::optional<Term> (Term::FieldTargetTp)
+         : field == 2 ? std::optional<Term> (Term::FieldTargetLoudnessMode) : std::nullopt;
 }
 
 // The unit a field's number is said in, where a refusal says it (Text::rejected).
@@ -562,7 +580,9 @@ static_assert (tablesInOrder(), "kFacts and kTerms ascend by id");
     if (field == Term::FieldTargetLufs) return Unit::Lufs;
     if (field == Term::FieldTargetTp) return Unit::DbTp;
     if (field == Term::FieldHpfFq || field == Term::FieldMonoBassFq) return Unit::Hz;
-    if (field == Term::FieldMonoBassWidth || field == Term::FieldSaturationMix || field == Term::FieldHpfSlope) return Unit::None;
+    if (field == Term::FieldMonoBassWidth || field == Term::FieldSaturationMix || field == Term::FieldHpfSlope
+        || field == Term::FieldTargetLoudnessMode)
+        return Unit::None;
     return Unit::Db;
 }
 

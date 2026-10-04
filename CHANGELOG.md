@@ -2,6 +2,47 @@
 
 # Changelog
 
+## v0.15.0 — 2026-10-04
+
+### session · mastering — the maximum loudness modes: Maximum · clean and Maximum · dense (owner, 04.10)
+
+- **A loudness mode per target**: `manual` (every target until now, unchanged), `maxClean` or `maxDense`. A row of
+  `targets.toml` may name it (`loudnessMode`, absent = manual); two targets are appended last, `maxClean` (Maximum ·
+  clean) and `maxDense` (Maximum · dense) (streaming group, the allStreaming medium). Any target takes a mode by hand:
+  `editTarget` `loudnessMode` (null gives the row's back), kept in the project's target layer, said in the snapshot as
+  the mode in effect (`Snapshot.loudnessMode`).
+- **A max mode asks for the loudest master, not a number**: the landing aims at `[landing.max] ceilingLufs` (−5) with
+  the mode's limiter budget (clean 3 dB, dense 7 dB of the active P95), and a budget that holds it is success. Before
+  the file is delivered a PEAQ guard grades the render with the damage's machine: its worst window must stay above the
+  mode's floor (clean ODG −0.5, dense −1.5), or the drive steps back 1 dB at a time, graded before it is rendered,
+  three steps at most; the gentlest graded is delivered where none passes, and says so. A render the guard could not
+  grade (no damage plan for the source's rate, a walk refused or unavailable) is said unchecked, never passed; nothing
+  heard is a pass. The guard's grade is the master's damage: no damage job follows a max master.
+  `LoudnessRequest::peakClipMeasured` renders a step back in one pass with the peak the landing measured, and that pass
+  proves the mode's budget itself: one that breaks it — or a landing no render of which kept it — is delivered as over
+  the budget, never as held by it.
+- **The report and the text**: `MasterReport.loudnessMode`, `maxStop` (`Budget`, `Guard`, `GuardUnmet`,
+  `SearchCeiling`, `Passes`, `TruePeak`, `Unguarded`, `OverBudget`) and `guardSteps`; facts 608–615 (ru/en) name the
+  mode, the level and what ended it, with no miss and no hint; the `loudnessMode` terms and the field term
+  `FieldTargetLoudnessMode`.
+- **Measured** on 11 home mixes and 6 Cambridge-MT mixes (medians): clean −10.12 / −9.64 LUFS at a worst ODG of −0.45 /
+  −0.40, dense −8.81 / −8.03 LUFS at −1.29 / −1.00; the guard stepped back on 5 of the 11 home mixes in each mode, never
+  on a Cambridge mix, and no master ran out of steps. Native and wasm give the same file, stop and grade.
+- **Fixed — the reduction over the budget always prints above it** (`MasterLandingOverBudget` 602, since v0.14.0, and
+  the new 615): it was printed to the nearest tenth, so 3.01 over a 3 dB budget read "3.0"; it is rounded up to a tenth
+  and kept at least a tenth above the budget's own tenths (3.01 over 3 prints 3.1, 7.26 over 7.25 prints 7.3).
+- **Fixed — a landing pass's loudness is the same bits on every row** (mastering): the solver's pass meter (every pass,
+  the verify, the product landing's search and report) reads the integrated loudness on `core::DetMath`, not the
+  system libm's log10, whose result on gcc + glibc stood an ulp apart from Apple's and emscripten's on some energies
+  (two passes of the `max-mode` scenario's pass log on CI's gcc row). The pass meter now gives the same bits on every
+  row; a stored loudness reading may move by an ulp on any row (the WAV contract's manual master reads −8.999992927225106
+  LUFS where it read −8.999992927225104, its PLR with it), and the WAV contract's PCM is unchanged (9a601c4c5e044b00).
+- **`FC_SESSION_ABI_VERSION` 10**: the manifest appends the enums, facts, terms and codec fields; `SURFACE[10]` adds no
+  entry point. Existing targets' sound does not move (the WAV contract's PCM is unchanged); the `2026-10` defaults'
+  config and sound versions move with the two rows and the `[landing.max]` table, restated in place (no project of those
+  defaults has been saved); the event pins, the text corpus and the contract recordings move with them, and a new
+  contract scenario (`max-mode`) masters both modes.
+
 ## v0.14.1 — 2026-10-04
 
 ### session — the loud target's limiter budget 7.5 dB, a budget in dB with a fraction (owner, 04.10)

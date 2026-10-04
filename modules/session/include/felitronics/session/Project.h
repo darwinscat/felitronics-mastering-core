@@ -51,12 +51,17 @@ template <class T> using Mark = bool;
 // or not at all.
 enum class Needles : std::uint8_t { Auto, Manual, Off };
 
+// HOW A LANDING TAKES ITS LOUDNESS: the target's number (Manual), or a max mode — as loud as its promise allows
+// ([landing.max] in engine.toml): MaxClean, the damage not heard; MaxDense, heard but not annoying.
+enum class LoudnessMode : std::uint8_t { Manual, MaxClean, MaxDense };
+
 // THE TARGET'S NUMBERS a person may edit in place ([edit] in targets.toml): the loudness, LUFS, and the true-peak ceiling,
-// dBTP. The other numbers of a target come with its name.
+// dBTP — and the loudness mode (the target row's when untouched). The other numbers of a target come with its name.
 template <template <class> class F> struct TargetFields
 {
     F<double> lufs {};
     F<double> tp {};
+    F<LoudnessMode> loudnessMode {};
 };
 
 // THE DEVICES — eight devices, including the separate tilt and low tasks on every target. A device is a

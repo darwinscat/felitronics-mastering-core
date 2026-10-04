@@ -397,7 +397,7 @@ if(FELITRONICS_BUILD_TESTS)
     add_test(NAME felitronics_session_event_tests COMMAND felitronics_session_event_tests)
 
     add_executable(felitronics_session_master_job_tests tests/MasterJobTests.cpp)
-    target_link_libraries(felitronics_session_master_job_tests PRIVATE felitronics::session felitronics::test_support)
+    target_link_libraries(felitronics_session_master_job_tests PRIVATE felitronics::session felitronics::toml felitronics::test_support)
     target_include_directories(felitronics_session_master_job_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_features(felitronics_session_master_job_tests PRIVATE cxx_std_20)
     target_compile_options(felitronics_session_master_job_tests PRIVATE ${FELITRONICS_SESSION_COMPILE_OPTIONS})

@@ -206,6 +206,11 @@ struct MasterReport
     // ceiling — peakSafe false, truePeakDbTp above ceilingDbTp — because no render stayed under it.
     bool peaksAboveCeiling = false;
     MasterDamage damage {};
+    // The loudness mode this master landed in, and for a max mode what ended it and how many steps back its PEAQ guard
+    // took. In a max mode the damage above is the guard's grade of the delivered render (no damage job follows).
+    LoudnessMode loudnessMode = LoudnessMode::Manual;
+    MaxStop maxStop = MaxStop::None;
+    std::uint32_t guardSteps = 0;
 };
 // What a landing was given and what it put on the target, beside its report: the level it landed where it landed on the
 // source's gate (NaN on its own gate, where the level landed is the report's achievedLufs), the limiter's budget it was
@@ -232,6 +237,12 @@ struct MasterReportText
     [[nodiscard]] static std::optional<text::Fact> gate (const MasterReport& report, const LandingMeasure& measure,
                                                          double toleranceLu) noexcept;
     [[nodiscard]] static std::optional<text::Fact> hint (const MasterHint& hint) noexcept;
+    // A max mode's verdict (report.loudnessMode, maxStop): the mode, the file's loudness and what ended the mode — the
+    // mode's limiter budget `budgetDb` where that held it, the guard's steps back where the guard did, the delivered
+    // render's statistic `overBudgetDb` beside the budget where it broke it (LandingSearch::overBudgetDb). Nothing for a
+    // manual master or one not delivered.
+    [[nodiscard]] static std::optional<text::Fact> max (const MasterReport& report, double budgetDb,
+                                                        double overBudgetDb) noexcept;
     // A master delivered above its ceiling (peaksAboveCeiling): its true peak and the ceiling. Nothing otherwise.
     [[nodiscard]] static std::optional<text::Fact> peaksAboveCeiling (const MasterReport& report) noexcept;
     [[nodiscard]] static text::Fact crest (const MasterCrest& crest) noexcept;
