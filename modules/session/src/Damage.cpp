@@ -5,7 +5,6 @@
 #include "Damage.h"
 #include "Rules.h"
 #include <felitronics/core/DetMath.h>
-#include <felitronics/core/Math.h>
 #include <algorithm>
 #include <cmath>
 #include <limits>
