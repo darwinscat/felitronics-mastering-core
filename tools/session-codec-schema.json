@@ -12,6 +12,22 @@
       "Manual",
       "Off"
     ],
+    "LoudnessMode": [
+      "Manual",
+      "MaxClean",
+      "MaxDense"
+    ],
+    "MaxStop": [
+      "None",
+      "Budget",
+      "Guard",
+      "GuardUnmet",
+      "SearchCeiling",
+      "Passes",
+      "TruePeak",
+      "Unguarded",
+      "OverBudget"
+    ],
     "SaturationType": [
       "Tanh",
       "Atan",
@@ -301,7 +317,8 @@
       "cpp": "TargetFields<Touched>",
       "fields": {
         "lufs": "double?",
-        "tp": "double?"
+        "tp": "double?",
+        "loudnessMode": "LoudnessMode?"
       }
     },
     "HpfFieldsValue": {
@@ -688,7 +705,10 @@
         "medium": "MasterMedium?",
         "readings": "ReadingFact[<=9]",
         "peaksAboveCeiling": "bool",
-        "damage": "MasterDamage"
+        "damage": "MasterDamage",
+        "loudnessMode": "LoudnessMode",
+        "maxStop": "MaxStop",
+        "guardSteps": "uint32"
       }
     },
     "LandingPass": {
@@ -846,7 +866,8 @@
         "targetNote": "Fact?",
         "eqOnlyCurve": "EqPoint[]",
         "damageJob": "uint32",
-        "damageProgress": "Phase"
+        "damageProgress": "Phase",
+        "loudnessMode": "LoudnessMode"
       }
     },
     "MasterToken": {
@@ -1365,7 +1386,8 @@
     },
     "TargetPatch": {
       "lufs?": "WireNumber | null",
-      "tp?": "WireNumber | null"
+      "tp?": "WireNumber | null",
+      "loudnessMode?": "LoudnessMode | null"
     },
     "MasterCommand": {
       "kind": "\"master\"",

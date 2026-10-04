@@ -969,7 +969,7 @@ void everyRejectionIsAFact()
             || ((std::size_t) shape.id >= 300 && (std::size_t) shape.id <= 305)
             || ((std::size_t) shape.id >= 400 && (std::size_t) shape.id <= 447)
             || ((std::size_t) shape.id >= 500 && (std::size_t) shape.id <= 510)
-            || ((std::size_t) shape.id >= 600 && (std::size_t) shape.id <= 607));
+            || ((std::size_t) shape.id >= 600 && (std::size_t) shape.id <= 615));
     ok (inRange, "rejections, phases and session errors occupy only their own declared ranges");
 
     // THE FIELDS, held against the state machine's own walk of them (src/Devices.h).
@@ -984,8 +984,9 @@ void everyRejectionIsAFact()
                       & fieldTermsMatch<session::LowFields<session::Mark>> (session::Device::Low, why);
     ok (fields, "every device: a term exactly for each field a check can refuse, in src/Devices.h's order" + why);
     ok (detail::targetFieldTerm (0) == text::Term::FieldTargetLufs && detail::targetFieldTerm (1) == text::Term::FieldTargetTp
-            && ! detail::targetFieldTerm (2) && ! detail::targetFieldTerm (session::kNoField),
-        "the target's fields: lufs 0, tp 1, nothing else");
+            && detail::targetFieldTerm (2) == text::Term::FieldTargetLoudnessMode && ! detail::targetFieldTerm (3)
+            && ! detail::targetFieldTerm (session::kNoField),
+        "the target's fields: lufs 0, tp 1, loudnessMode 2, nothing else");
 
     // REAL ANSWERS from a real session, turned into facts and rendered.
     auto created = session::Session::create();
@@ -1040,6 +1041,26 @@ void everyRejectionIsAFact()
     const session::Answer malformed = s.apply (twice);
     ok (malformed.rejection == session::Rejection::Contract && malformed.field == 0 && ! malformed.value,
         "a target field both set and cleared is malformed, before its number is read");
+    // The loudness mode (v0.15.0) is the target's third field: set and cleared at once is malformed, a mode past the
+    // three is not one of them, and the refusal names the field.
+    session::command::EditTarget modeTwice { 12, {} };
+    modeTwice.fields.loudnessMode = session::LoudnessMode::MaxClean; modeTwice.clear.loudnessMode = true;
+    const session::Answer modeMalformed = s.apply (modeTwice);
+    session::command::EditTarget modeOdd { 13, {} };
+    modeOdd.fields.loudnessMode = session::LoudnessMode (3);
+    const session::Answer modeRefused = s.apply (modeOdd);
+    const auto modeFact = Text::rejected (modeRefused, modeOdd);
+    ok (modeMalformed.rejection == session::Rejection::Contract && modeMalformed.field == 2
+            && modeRefused.rejection == session::Rejection::NotOneOf && modeRefused.field == 2
+            && modeFact && Text::complete (*modeFact) && Text::text (*modeFact, Lang::En).starts_with ("Loudness mode")
+            && Text::text (*modeFact, Lang::Ru).starts_with ("Режим громкости"),
+        "the loudness mode set and cleared is malformed, a fourth mode is not one of the three, named as its field");
+    session::command::EditTarget modeSet { 14, {} };
+    modeSet.fields.loudnessMode = session::LoudnessMode::MaxDense;
+    session::command::EditTarget modeClear { 15, {} };
+    modeClear.clear.loudnessMode = true;
+    ok (s.apply (modeSet).rejection == session::Rejection::None && s.apply (modeClear).rejection == session::Rejection::None,
+        "a loudness mode is taken, and its null gives the row's mode back");
     session::Answer odd;
     odd.rejection = session::Rejection::OutOfDomain;
     odd.field = 7;
@@ -1223,7 +1244,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0x333ffe8350d7118aull;   // …, the plan's advice and the targets' notes (500–508), the observations (52–80, 419–436), the target-change warning (81), what departs from vinyl (82–87), the clipper's cut off the peaks and an observation not measured (437), the landing's verdict (88–92), the clipper's cut as a cap, the cost's lines (93–97), the readings' names and the tempo's confidence (438), the owner's observation words and the clipper's "will take" (439–445, 52–54, 87, 424), the owner's wording 3b/3c — the master's outcome (88, 89 naming its limit, 91 its two levels), the advice beyond the norm (502, 503, 505, 509), the cap in words (52–54, 87), DC per channel (446, 447) and the core stamp's facts gone (10, 127; v0.6.0), a field's refusal with its numbers (180, 181), the master delivered above its ceiling (98), every fact complete — a term of its own group, the renderer refusing a hole (v0.7.1), a card not measured yet (510), PlanPending said of an export and an import too (135), the glue's tempo heard with low confidence (99), a landing held short — the limiter's budget, the level on the source's gate, no render within the budget (600–602), the master's damage and loudness range with the BS.1116 grades (603–607), the damage's line naming the windows graded (603, 604) and why a damage was not graded: superseded, no job id
+    constexpr std::uint64_t kPinned = 0x2493bd4acab05c75ull;   // …, the plan's advice and the targets' notes (500–508), the observations (52–80, 419–436), the target-change warning (81), what departs from vinyl (82–87), the clipper's cut off the peaks and an observation not measured (437), the landing's verdict (88–92), the clipper's cut as a cap, the cost's lines (93–97), the readings' names and the tempo's confidence (438), the owner's observation words and the clipper's "will take" (439–445, 52–54, 87, 424), the owner's wording 3b/3c — the master's outcome (88, 89 naming its limit, 91 its two levels), the advice beyond the norm (502, 503, 505, 509), the cap in words (52–54, 87), DC per channel (446, 447) and the core stamp's facts gone (10, 127; v0.6.0), a field's refusal with its numbers (180, 181), the master delivered above its ceiling (98), every fact complete — a term of its own group, the renderer refusing a hole (v0.7.1), a card not measured yet (510), PlanPending said of an export and an import too (135), the glue's tempo heard with low confidence (99), a landing held short — the limiter's budget, the level on the source's gate, no render within the budget (600–602), the master's damage and loudness range with the BS.1116 grades (603–607), the damage's line naming the windows graded (603, 604) and why a damage was not graded: superseded, no job id, the max modes' verdicts with their mode terms (608–615) and the loudness mode as a refused field
     ok (whole, "every fact of the corpus is complete: each renders its message, none a hole");
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);

@@ -156,6 +156,26 @@ double limiterBudgetDb (toml::embedded::View engine, double targetLufs) noexcept
     return number (budget.find (targetLufs < low ? "quietDb" : targetLufs <= high ? "middleDb" : "loudDb"));
 }
 
+MaxStop maxStopOf (const MaxStopInputs& in) noexcept
+{
+    using mastering::MasteringSolveStatus; using mastering::MasteringConstraint;
+    if (in.peaksAboveCeiling) return MaxStop::TruePeak;
+    if (in.overBudget) return MaxStop::OverBudget;
+    if (! in.guardGraded) return MaxStop::Unguarded;
+    if (! in.guardPassed) return MaxStop::GuardUnmet;
+    if (in.guardTaken > 0) return MaxStop::Guard;
+    if (in.firstStatus == MasteringSolveStatus::Solved) return MaxStop::SearchCeiling;
+    if (in.firstStatus == MasteringSolveStatus::TargetUnreachable && in.firstBinding == MasteringConstraint::LimiterGainReduction)
+        return MaxStop::Budget;
+    return MaxStop::Passes;
+}
+
+double maxBudgetDb (toml::embedded::View engine, LoudnessMode mode) noexcept
+{
+    if (mode == LoudnessMode::Manual) return std::numeric_limits<double>::quiet_NaN();
+    return number (engine.find ("landing").find ("max").find (mode == LoudnessMode::MaxClean ? "clean" : "dense").find ("budgetDb"));
+}
+
 MasterPlan MasterJob::plan (const Session& s, const command::Master& input, const Project& project) noexcept
 {
     MasterPlan result;
@@ -292,6 +312,23 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         result.request.sourceMomentaryCount = (long long) momentary->stored;
         result.request.sourceMomentaryHopFrames = (long long) momentary->grid.stepFrames;
     }
+    // A MAX MODE ([landing.max]): the landing aims at the modes' search ceiling with the mode's budget in place of the
+    // rule by the target's loudness, starting from the target's own number; the PEAQ guard grades before delivery.
+    result.loudnessMode = loudnessModeOf (ruleset, project);
+    if (result.loudnessMode != LoudnessMode::Manual)
+    {
+        const auto max = engine.find ("landing").find ("max");
+        const auto modeRules = max.find (result.loudnessMode == LoudnessMode::MaxClean ? "clean" : "dense");
+        result.request.targetLufs = number (max.find ("ceilingLufs"));
+        result.request.limiterGr.limitDb = maxBudgetDb (engine, result.loudnessMode);
+        result.guardFloorOdg = number (modeRules.find ("floorOdg"));
+        result.guardStepDb = number (max.find ("guardStepDb"));
+        const auto steps = max.find ("guardSteps").integer();
+        if (! steps || ! std::isfinite (result.request.targetLufs) || ! std::isfinite (result.request.limiterGr.limitDb)
+            || ! std::isfinite (result.guardFloorOdg) || ! std::isfinite (result.guardStepDb))
+        { result.rejection = Rejection::MandatoryUnavailable; return result; }
+        result.guardSteps = std::int32_t (*steps);
+    }
     result.ready.params.limiter.ceilingDbTp = targetTp - margin;
     result.ready.deliveryBits = deliveryBits;
     result.ready.params.dither.bits = deliveryBits;
@@ -387,6 +424,9 @@ bool MasterJob::begin (const Session& s, const MasterPlan& plan)
     ready = plan.ready;
     medium = plan.medium;
     damagePlan = plan.damage;
+    mode = plan.loudnessMode;
+    guardFloorOdg = plan.guardFloorOdg; guardStepDb = plan.guardStepDb; guardSteps = plan.guardSteps;
+    landingRequest = plan.request;
     sourceLufs = plan.sourceLufs;
     targetLufs = plan.request.targetLufs;
     targetTp = plan.request.maxTruePeakDbTp;
@@ -429,78 +469,62 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     {
         const auto result = search.step (budget);
         if (result == StepResult::More) return result;
-        const auto& solved = search.result();
-        clipCounted = result == StepResult::Done && ready.topology.clipper && ! ready.params.bypassClipper
-            && chain.clipperPeaks (number (rules().engine.find ("saturation").find ("cut").find ("loudShare")), clipPeaks);
-        report.targetLufs = targetLufs;
-        report.ceilingDbTp = targetTp;
-        report.medium = medium;
-        report.targetMet = solved.status == mastering::MasteringSolveStatus::Solved;
-        if (solved.measured.loudnessValid && std::isfinite (solved.measured.integratedLufs)
-            && std::isfinite (solved.measured.truePeakDbTp))
+        const auto& first = search.result();
+        firstStatus = first.status; firstBinding = first.binding;
+        // A max mode grades the landing's render before the file is delivered.
+        if (mode != LoudnessMode::Manual && result == StepResult::Done && first.deliverable && damagePlan.ok)
         {
-            report.status = MeasurementStatus::Ready;
-            report.reason = MeasurementReason::None;
-            report.achievedLufs = solved.measured.integratedLufs;
-            report.truePeakDbTp = solved.measured.truePeakDbTp;
-            report.missLu = solved.measured.integratedLufs - targetLufs;
-            report.gainFromSourceDb = solved.measured.integratedLufs - sourceLufs;
-            if (std::isfinite (solved.measured.plrDb))
-            { report.plrDb = solved.measured.plrDb; report.plrReason = MeasurementReason::None; }
-            else report.plrReason = MeasurementReason::NonFinite;
-            if (solved.measured.lraValid && std::isfinite (solved.measured.loudnessRangeLu))
-            { report.lraLu = solved.measured.loudnessRangeLu; report.lraReason = MeasurementReason::None; }
-            else report.lraReason = solved.measured.nonFiniteSubHops != 0
-                ? MeasurementReason::NonFinite : MeasurementReason::TooShort;
-            const bool whole = solved.measured.droppedBlocks == 0 && solved.measured.nonFiniteSubHops == 0;
-            report.peakSafe = solved.measured.truePeakDbTp <= targetTp && whole;
-            // Delivered: under the ceiling — or, where no render was (owner, 01.10), the gentlest one, marked.
-            report.peaksAboveCeiling = solved.peaksAboveCeiling && whole && solved.measured.truePeakDbTp > targetTp;
-            report.deliverable = solved.deliverable && (report.peakSafe || report.peaksAboveCeiling);
+            candidateGainDb = first.preLimiterGainDb; candidateCeilingDb = first.ceilingDbTp;
+            candidateRendered = true;
+            startGuard();
+            return StepResult::More;
         }
-        else report.reason = solved.measured.nonFiniteSubHops != 0 ? MeasurementReason::NonFinite
-                           : solved.measured.gatingBlocks == 0 ? MeasurementReason::NoSignal
-                           : MeasurementReason::TooShort;
-        if (report.status != MeasurementStatus::Ready)
-        { report.lraReason = report.reason; report.plrReason = report.reason; }
-        const auto hint = [&] (mastering::LandingReason reason) noexcept -> std::optional<MasterHint>
+        return settleLanding (result);
+    }
+    if (stage == Stage::Guard)
+    {
+        auto& g = *guard;
+        bool done = false;
+        if (! g.begun)
         {
-            if (reason == mastering::LandingReason::None) return {};
-            MasterHint h; h.reason = LandingReason (reason);
-            switch (reason)
-            {
-                case mastering::LandingReason::ExcessSubBass:
-                    h.evidence = solved.sourceSubBassShare * 100.0; h.percent = true; break;
-                case mastering::LandingReason::SharpPeaks: h.evidence = solved.measured.limiter.maxDb; break;
-                case mastering::LandingReason::DarkMix:
-                    h.evidence = solved.sourcePresenceShare * 100.0; h.percent = true; break;
-                case mastering::LandingReason::LoudnessDemand: h.evidence = solved.distanceLu; break;
-                case mastering::LandingReason::GainRange: h.evidence = solved.preLimiterGainDb; break;
-                case mastering::LandingReason::TruePeak: h.evidence = solved.measured.truePeakDbTp; break;
-                case mastering::LandingReason::None: break;
-            }
-            return std::isfinite (h.evidence) ? std::optional<MasterHint> (h) : std::nullopt;
-        };
-        // Held short by the limiter's budget: the verdict says so, and nothing in the mix is blamed for it.
-        const bool budgetHeld = solved.status == mastering::MasteringSolveStatus::TargetUnreachable
-                             && solved.binding == mastering::MasteringConstraint::LimiterGainReduction;
-        if (! report.targetMet && ! budgetHeld && report.missLu && std::fabs (*report.missLu) > 0.0)
-        {
-            report.firstHint = hint (solved.mainReason);
-            report.secondHint = hint (solved.secondReason);
-            if (! report.firstHint)
-                report.firstHint = MasterHint { LandingReason::LoudnessDemand, std::fabs (*report.missLu), false };
+            g.begun = true;
+            g.refused = ! g.damage.begin (g.plan, g.chain, g.winning, sourcePlanes, sourceFrames, channels);
+            done = g.refused;
         }
-        if (result == StepResult::Failed || ! solved.deliverable)
+        else done = g.damage.step (budget);
+        if (! done) return StepResult::More;
+        MasterDamage d {};
+        if (g.refused) { d.status = MeasurementStatus::Unavailable; d.reason = MeasurementReason::Unsupported; }
+        else g.damage.publish (d);
+        guardRan = true;
+        // THE GUARD'S VERDICT: graded (Ready), the worst window above the mode's floor passes, and so does a render with
+        // nothing heard to hold against it (Ready, no window graded audible). A walk refused or unavailable did not grade
+        // the render: the guard stops there and the damage is said unchecked (MaxStop::Unguarded), never passed.
+        const bool graded = ! g.refused && d.status == MeasurementStatus::Ready;
+        const bool passed = graded && (! d.worstOdg || *d.worstOdg > guardFloorOdg);
+        if (passed || ! graded || guardTaken >= guardSteps)
         {
-            report.crest.status = MeasurementStatus::Unavailable;
-            report.crest.reason = MeasurementReason::NotImplemented;
-            settleLra();
-            stage = Stage::Done;
-            return result;
+            guardGraded = graded;
+            guardPassed = passed;
+            guardDamage = d;
+            guard.reset();
+            if (candidateRendered) return settleLanding (StepResult::Done);
+            if (! beginStepRender()) { stage = Stage::Failed; return StepResult::Failed; }
+            stage = Stage::GuardRender;
+            return StepResult::More;
         }
-        stage = Stage::Prepare;
+        // A step back: the drive less guardStepDb at the same ceiling, graded before it is rendered.
+        ++guardTaken;
+        candidateGainDb -= guardStepDb;
+        candidateRendered = false;
+        startGuard();
         return StepResult::More;
+    }
+    if (stage == Stage::GuardRender)
+    {
+        const auto result = search.step (budget);
+        if (result == StepResult::More) return result;
+        return settleLanding (result);
     }
     if (stage == Stage::Prepare)
     {
@@ -862,8 +886,15 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     {
         report.cost = costResult;
         // The loudness range is the master's own; the damage is graded after it, by a job of its own: Pending until then.
-        settleLra();
-        if (! damagePlan.ok) report.damage.reason = damagePlan.reason;
+        // A max mode's damage is its guard's grade of the delivered render — or, where the guard could not run, the
+        // reason it has none: no job follows a max master.
+        if (mode != LoudnessMode::Manual)
+        {
+            if (guardRan) report.damage = guardDamage;
+            else { report.damage.status = MeasurementStatus::Unavailable; report.damage.reason = damagePlan.reason; }
+            settleLra();
+        }
+        else if (settleLra(), ! damagePlan.ok) report.damage.reason = damagePlan.reason;
         else
         {
             report.damage.status = MeasurementStatus::Pending;
@@ -874,6 +905,126 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         return StepResult::Done;
     }
     return StepResult::Failed;
+}
+
+// THE LANDING SETTLED — the search's render, or in a max mode the one its guard chose: the report's numbers, the hints of a
+// manual miss, and what ended a max mode.
+mastering::StepResult MasterJob::settleLanding (mastering::StepResult result) noexcept
+{
+    using mastering::StepResult;
+    const auto& solved = search.result();
+    clipCounted = result == StepResult::Done && ready.topology.clipper && ! ready.params.bypassClipper
+        && chain.clipperPeaks (number (rules().engine.find ("saturation").find ("cut").find ("loudShare")), clipPeaks);
+    report.targetLufs = targetLufs;
+    report.ceilingDbTp = targetTp;
+    report.medium = medium;
+    report.targetMet = solved.status == mastering::MasteringSolveStatus::Solved;
+    if (solved.measured.loudnessValid && std::isfinite (solved.measured.integratedLufs)
+        && std::isfinite (solved.measured.truePeakDbTp))
+    {
+        report.status = MeasurementStatus::Ready;
+        report.reason = MeasurementReason::None;
+        report.achievedLufs = solved.measured.integratedLufs;
+        report.truePeakDbTp = solved.measured.truePeakDbTp;
+        report.missLu = solved.measured.integratedLufs - targetLufs;
+        report.gainFromSourceDb = solved.measured.integratedLufs - sourceLufs;
+        if (std::isfinite (solved.measured.plrDb))
+        { report.plrDb = solved.measured.plrDb; report.plrReason = MeasurementReason::None; }
+        else report.plrReason = MeasurementReason::NonFinite;
+        if (solved.measured.lraValid && std::isfinite (solved.measured.loudnessRangeLu))
+        { report.lraLu = solved.measured.loudnessRangeLu; report.lraReason = MeasurementReason::None; }
+        else report.lraReason = solved.measured.nonFiniteSubHops != 0
+            ? MeasurementReason::NonFinite : MeasurementReason::TooShort;
+        const bool whole = solved.measured.droppedBlocks == 0 && solved.measured.nonFiniteSubHops == 0;
+        report.peakSafe = solved.measured.truePeakDbTp <= targetTp && whole;
+        // Delivered: under the ceiling — or, where no render was (owner, 01.10), the gentlest one, marked.
+        report.peaksAboveCeiling = solved.peaksAboveCeiling && whole && solved.measured.truePeakDbTp > targetTp;
+        report.deliverable = solved.deliverable && (report.peakSafe || report.peaksAboveCeiling);
+    }
+    else report.reason = solved.measured.nonFiniteSubHops != 0 ? MeasurementReason::NonFinite
+                       : solved.measured.gatingBlocks == 0 ? MeasurementReason::NoSignal
+                       : MeasurementReason::TooShort;
+    if (report.status != MeasurementStatus::Ready)
+    { report.lraReason = report.reason; report.plrReason = report.reason; }
+    const auto hint = [&] (mastering::LandingReason reason) noexcept -> std::optional<MasterHint>
+    {
+        if (reason == mastering::LandingReason::None) return {};
+        MasterHint h; h.reason = LandingReason (reason);
+        switch (reason)
+        {
+            case mastering::LandingReason::ExcessSubBass:
+                h.evidence = solved.sourceSubBassShare * 100.0; h.percent = true; break;
+            case mastering::LandingReason::SharpPeaks: h.evidence = solved.measured.limiter.maxDb; break;
+            case mastering::LandingReason::DarkMix:
+                h.evidence = solved.sourcePresenceShare * 100.0; h.percent = true; break;
+            case mastering::LandingReason::LoudnessDemand: h.evidence = solved.distanceLu; break;
+            case mastering::LandingReason::GainRange: h.evidence = solved.preLimiterGainDb; break;
+            case mastering::LandingReason::TruePeak: h.evidence = solved.measured.truePeakDbTp; break;
+            case mastering::LandingReason::None: break;
+        }
+        return std::isfinite (h.evidence) ? std::optional<MasterHint> (h) : std::nullopt;
+    };
+    // Held short by the limiter's budget: the verdict says so, and nothing in the mix is blamed for it.
+    const bool budgetHeld = solved.status == mastering::MasteringSolveStatus::TargetUnreachable
+                         && solved.binding == mastering::MasteringConstraint::LimiterGainReduction;
+    if (mode == LoudnessMode::Manual && ! report.targetMet && ! budgetHeld && report.missLu && std::fabs (*report.missLu) > 0.0)
+    {
+        report.firstHint = hint (solved.mainReason);
+        report.secondHint = hint (solved.secondReason);
+        if (! report.firstHint)
+            report.firstHint = MasterHint { LandingReason::LoudnessDemand, std::fabs (*report.missLu), false };
+    }
+    report.loudnessMode = mode;
+    if (mode != LoudnessMode::Manual && solved.deliverable)
+    {
+        report.guardSteps = std::uint32_t (guardTaken);
+        // The delivered render's own: above the ceiling, over the budget (the landing's or the step render's proof).
+        report.maxStop = maxStopOf ({ solved.peaksAboveCeiling, std::isfinite (search.overBudgetDb()),
+                                      guardRan && guardGraded, guardPassed, guardTaken, firstStatus, firstBinding });
+    }
+    if (result == StepResult::Failed || ! solved.deliverable)
+    {
+        report.crest.status = MeasurementStatus::Unavailable;
+        report.crest.reason = MeasurementReason::NotImplemented;
+        settleLra();
+        stage = Stage::Done;
+        return result;
+    }
+    stage = Stage::Prepare;
+    return StepResult::More;
+}
+
+// A max mode's guard: a damage walk of the candidate's settings — the delivered parameters with its gain and ceiling.
+void MasterJob::startGuard() noexcept
+{
+    guard.reset();
+    guard.reset (new DamageJob);
+    guard->plan = damagePlan;
+    guard->winning = winningParams();
+    guard->winning.preLimiterGainDb = candidateGainDb;
+    guard->winning.limiter.ceilingDbTp = candidateCeilingDb;
+    stage = Stage::Guard;
+}
+
+// The guard's step back rendered and delivered: one pass at the candidate's gain and ceiling, the needles set from the peak
+// the landing measured, no gate — the landing chose these settings. The mode's budget stays on: a lower drive can drop
+// windows near the limiter's activity threshold out of the active set and raise the P95 of the rest, so the delivered
+// pass proves the budget itself, and one that breaks it is delivered as over the budget (search.overBudgetDb()).
+bool MasterJob::beginStepRender() noexcept
+{
+    auto params = ready.params;
+    params.limiter.ceilingDbTp = candidateCeilingDb;
+    params.peakClipPeakDb = search.peakClipPeakDb();
+    auto request = landingRequest;
+    request.maxPasses = 1;
+    request.initialGainDb = candidateGainDb;
+    request.ceilingMarginDb = std::max (0.0, request.maxTruePeakDbTp - candidateCeilingDb);
+    request.landingOnSourceGate = false;
+    request.peakClipMeasured = true;
+    chain.setParams (params);
+    const bool convert = deliveryRate != sourceRate;
+    return search.begin (chain, renderer, params, sourcePlanes, (long long) sourceFrames, double (sourceRate), outputPlanes,
+                         channels, frames, request, {}, convert ? &converter : nullptr);
 }
 
 // The parameters the delivered render ran with: the request's, with the landing's normalisation, gain and ceiling, and

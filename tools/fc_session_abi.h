@@ -62,7 +62,12 @@
 //                DamageChange; Snapshot.damageJob and damageProgress; the phases Reference and Damage; MeasurementReason
 //                Superseded and NoJobId); Phase.stepFraction; fc_session_storage appends releasedBytes past its 32-byte
 //                base — a shell sends size 40 only to a module whose abi is 9 or more.
-#define FC_SESSION_ABI_VERSION 9u
+//  10            v0.15.0: the maximum loudness modes — a target's loudnessMode (manual, maxClean, maxDense) on its row,
+//                in editTarget (TargetPatch.loudnessMode, null gives the row's back) and a project's target layer, the
+//                mode in effect in the snapshot (Snapshot.loudnessMode); a max master's report says its mode, what
+//                stopped it and the guard's steps back (MasterReport.loudnessMode, maxStop, guardSteps; facts 608-615,
+//                the loudnessMode terms, the field term FieldTargetLoudnessMode), and its damage is the guard's grading.
+#define FC_SESSION_ABI_VERSION 10u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u
 #define FC_SESSION_STORAGE_V1_BYTES 32u

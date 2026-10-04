@@ -1,0 +1,32 @@
+{
+  "checks": [
+    {"kind":"snapshot","session":"main","index":0,"path":"loudnessMode","value":1},
+    {"kind":"snapshot","session":"main","index":0,"path":"project.targetEdit.loudnessMode","value":1},
+    {"kind":"answer","session":"main","index":2,"path":"kind","value":"rejected"},
+    {"kind":"answer","session":"main","index":2,"path":"field","value":"loudnessMode"},
+    {"kind":"snapshot","session":"main","index":2,"path":"masters.length","value":1},
+    {"kind":"snapshot","session":"main","index":2,"path":"masters.0.report.loudnessMode","value":1},
+    {"kind":"snapshot","session":"main","index":2,"path":"masters.0.report.maxStop","value":1},
+    {"kind":"snapshot","session":"main","index":2,"path":"masters.0.report.guardSteps","value":0},
+    {"kind":"snapshot","session":"main","index":2,"path":"masters.0.report.targetLufs","value":-5},
+    {"kind":"snapshot","session":"main","index":2,"path":"masters.0.report.damage.verdict","value":1},
+    {"kind":"snapshot","session":"main","index":2,"path":"damageJob","value":0},
+    {"kind":"snapshot","session":"main","index":3,"path":"loudnessMode","value":0},
+    {"kind":"snapshot","session":"main","index":3,"path":"project.targetEdit.loudnessMode","value":null},
+    {"kind":"snapshot","session":"main","index":4,"path":"loudnessMode","value":1},
+    {"kind":"snapshot","session":"main","index":5,"path":"target","value":"maxDense"},
+    {"kind":"snapshot","session":"main","index":5,"path":"loudnessMode","value":2},
+    {"kind":"snapshot","session":"main","index":5,"path":"project.targetEdit.loudnessMode","value":null},
+    {"kind":"snapshot","session":"main","index":6,"path":"masters.0.report.loudnessMode","value":2},
+    {"kind":"snapshot","session":"main","index":6,"path":"masters.0.report.maxStop","value":5},
+    {"kind":"snapshot","session":"main","index":6,"path":"masters.0.report.damage.verdict","value":1},
+    {"kind":"snapshot","session":"main","index":6,"path":"damageJob","value":0}
+  ],
+  "equal": [
+    [{"kind":"snapshot","session":"main","index":0},{"kind":"snapshot","session":"main","index":1}]
+  ],
+  "projects": 1,
+  "minEvents": 1000,
+  "eventKinds": ["phase","measurement","fact","reading","done"],
+  "rejections": 1
+}

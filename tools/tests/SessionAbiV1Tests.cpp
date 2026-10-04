@@ -392,16 +392,16 @@ void scenario()
         const auto view = snapshot (h);
         ok (contains (edited, "lufs.hand = -14") && contains (before, "accepted") && contains (cleared, "accepted")
             && revisionOf (cleared) != revisionOf (before) && ! contains (after, "lufs.hand") && contains (after, "tp.hand = -2")
-            && contains (view, "\"targetEdit\":{\"lufs\":null,\"tp\":-2}"),
+            && contains (view, "\"targetEdit\":{\"loudnessMode\":null,\"lufs\":null,\"tp\":-2}"),
             "a null takes the person's loudness off the target, the ceiling stays: " + after.substr (0, 200));
         char reply[FC_SESSION_ANSWER_BYTES]; std::uint32_t n = 0;
         const bool replayed = fc_session_import_project (h, 32, 0, after.data(), std::uint32_t (after.size()), reply, sizeof (reply), &n)
             == FC_SESSION_OK && contains ({ reply, n }, "accepted");
-        ok (replayed && exported() == after && contains (snapshot (h), "\"targetEdit\":{\"lufs\":null,\"tp\":-2}"),
+        ok (replayed && exported() == after && contains (snapshot (h), "\"targetEdit\":{\"loudnessMode\":null,\"lufs\":null,\"tp\":-2}"),
             "the project without the cleared field replays to the same project");
         const auto both = command (h, R"({"kind":"editTarget","commandId":"33","fields":{"tp":null}})");
         const auto none = command (h, R"({"kind":"editTarget","commandId":"34","fields":{}})");
-        ok (contains (both, "accepted") && contains (snapshot (h), "\"targetEdit\":{\"lufs\":null,\"tp\":null}")
+        ok (contains (both, "accepted") && contains (snapshot (h), "\"targetEdit\":{\"loudnessMode\":null,\"lufs\":null,\"tp\":null}")
             && revisionOf (none) == revisionOf (both) && ! contains (exported(), ".hand = -2"),
             "a cleared ceiling is the row's again; an empty edit changes nothing");
         ok (contains (command (h, R"({"kind":"editTarget","commandId":"35","fields":{"lufs":-14}})"), "accepted"),

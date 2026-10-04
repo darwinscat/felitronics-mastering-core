@@ -288,6 +288,19 @@ void theLandingsFacts()
             && ru75.find ("7,5") != std::string::npos && ru75.find ("7,50") == std::string::npos
             && ru7.find ("7,0") == std::string::npos && en7.find ("7.0") == std::string::npos && ! ru7.empty(),
             "the budget is printed whole — 7.25, 7.5, 7 — in ru and en: " + ru725 + " / " + en725);
+        // NO RENDER KEPT IT (fact 602): the delivered reduction reads above the budget, however close above it it is —
+        // rounded up to a tenth, at least a tenth above the budget's tenths: 3.01 over 3 prints 3.1, 7.26 over 7.25 7.3.
+        const auto over = [&] (double budget, double taken, text::Lang lang)
+        {
+            LandingMeasure m; m.limiterBudgetDb = budget; m.overBudgetDb = taken;
+            const auto fact = MasterReportText::landing (metReport, held, kTolerance, m);
+            return fact && fact->id == text::FactId::MasterLandingOverBudget ? text::Text::text (*fact, lang) : std::string {};
+        };
+        const auto ru301 = over (3.0, 3.01, text::Lang::Ru), en726 = over (7.25, 7.26, text::Lang::En);
+        const auto ruEdge = over (3.0, std::nextafter (3.0, 4.0), text::Lang::Ru);
+        ok (ru301.find ("срезает 3,1\u00A0дБ") != std::string::npos && en726.find ("7.3\u00A0dB") != std::string::npos
+                && en726.find ("7.25\u00A0dB") != std::string::npos && ruEdge.find ("срезает 3,1\u00A0дБ") != std::string::npos,
+            "the reduction over the budget reads above it: " + ru301 + " / " + en726 + " / " + ruEdge);
     }
     const auto solved = MasterReportText::landing (metReport, *kept (metView.view(), landed.id)->landing, kTolerance);
     ok (solved && solved->id == text::FactId::MasterLandingSolved && metReport.achievedLufs

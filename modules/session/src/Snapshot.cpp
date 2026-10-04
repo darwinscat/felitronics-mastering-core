@@ -277,6 +277,7 @@ SnapshotView Session::buildView() const noexcept
     v.masterProgress = masterProgress_;
     v.damageJob = damageJobId_;
     v.damageProgress = damageProgress_;
+    v.loudnessMode = detail::loudnessModeOf (detail::rules(), project_);
     v.integratedLufs = std::numeric_limits<double>::quiet_NaN();
     for (const auto& value : measurementResults_[0].numbers)
         if (value.name == "integratedLufs" && value.value) v.integratedLufs = *value.value;

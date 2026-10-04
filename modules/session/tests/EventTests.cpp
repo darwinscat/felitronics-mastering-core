@@ -262,7 +262,20 @@ void pump()
     // the master's facts, those of its measurement (kMastersMeasurement) are hashed as printed, every other argument bit
     // for bit. Two pins hold everything else apart from both: with the config's version put back to the one
     // previousVersion restates, and with the landing's two keys taken out, every job's events but a master's are pinned.
-    const auto previousVersion = [] (std::vector<Notification> events)
+    // THE MAX MODES (v0.15.0) came after everything below: the two max targets' rows and the engine's [landing.max]
+    // table. Each restatement takes them out first; a manual master (the scenario's) never reads them.
+    const auto withoutMax = [] (std::string& targets, std::string& engine)
+    {
+        for (const std::string_view key : { "\nmaxClean ", "\nmaxDense " })
+            if (const auto at = targets.find (key); at != std::string::npos)
+                targets.erase (at, targets.find ('\n', at + 1) - at);
+        for (auto at = engine.find ("\n[landing.max"); at != std::string::npos; at = engine.find ("\n[landing.max"))
+        {
+            const auto next = engine.find ("\n[", at + 1);
+            engine.erase (at, (next == std::string::npos ? engine.size() : next) - at);
+        }
+    };
+    const auto previousVersion = [&withoutMax] (std::vector<Notification> events)
     {
         // The canonical document without its [notes] table: the config before them.
         auto targets = config::Config::text (config::Document::Targets);
@@ -311,6 +324,7 @@ void pump()
             const auto next = engine.find ("\n[", at + 1);
             engine.erase (at, (next == std::string::npos ? engine.size() : next) - at);
         }
+        withoutMax (targets, engine);
         const auto before = config::Config::versionsOf (targets, engine);
         for (auto& e : events)
             if (e.kind == EventKind::Phase && e.payload.phase.weightsVersion == config::Config::versions().all && before)
@@ -337,9 +351,11 @@ void pump()
     // The landing's two keys ([landing] onSourceGate, limiterBudget) and the damage's table ([cost.damage]) move the
     // master and nothing else: with the config's version they leave put back, every other job's events are the ones the
     // config without them gives (81133bf's).
-    const auto withoutKeys = [] (std::vector<Notification> events, bool landing, bool damage, bool loudBudget = false)
+    const auto withoutKeys = [&withoutMax] (std::vector<Notification> events, bool landing, bool damage, bool loudBudget = false)
     {
         auto engine = config::Config::text (config::Document::Engine);
+        auto targets = config::Config::text (config::Document::Targets);
+        withoutMax (targets, engine);
         // ...and the loud target's budget at the 10 dB it was before 7.5 (a number only, every master here quieter).
         if (loudBudget)
             if (const auto at = engine.find ("loudDb = 7.5,"); at != std::string::npos) engine.replace (at, 13, "loudDb = 10,");
@@ -350,7 +366,7 @@ void pump()
         if (damage)
             if (const auto at = engine.find ("\n[cost.damage]\n"); at != std::string::npos)
                 engine.erase (at, engine.find ("\n[", at + 1) - at);
-        const auto before = config::Config::versionsOf (config::Config::text (config::Document::Targets), engine);
+        const auto before = config::Config::versionsOf (targets, engine);
         for (auto& e : events)
             if (e.kind == EventKind::Phase && e.payload.phase.weightsVersion == config::Config::versions().all && before)
                 e.payload.phase.weightsVersion = before->all;
@@ -387,7 +403,8 @@ void pump()
         "landing fix's pins c53142779e57820f / 4697be12cad5438e hold");
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
-    ok (eventsHash (one) == 0xda919916fda361b4ull && eventsHash (cancelled) == 0x6ad6ca4f979c36bfull,
+    // The max modes (v0.15.0) move the config's version alone here: with it restated (withoutMax) every pin above holds.
+    ok (eventsHash (one) == 0x4e2da08a96550f34ull && eventsHash (cancelled) == 0x0e3b83171fe48e53ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",
