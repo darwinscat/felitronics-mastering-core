@@ -55,7 +55,8 @@
 //                Not on this surface, in the same release: the C++ Answer's value, low and high, and the hum
 //                detector's LineOnlyWithMusic (11), which the session answers as the hum not found.
 //   9            v0.14.0: a landing held short says so — facts 600 (the limiter's budget that held it), 601 (the level
-//                landed on the source's gate beside the file's BS.1770 reading) and 602 (no render kept the budget).
+//                landed on the source's gate beside the file's BS.1770 reading) and 602 (no render kept the budget), and
+//                each render over the limiter's budget marked in the pass log (LandingPass.overBudget).
 #define FC_SESSION_ABI_VERSION 9u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u

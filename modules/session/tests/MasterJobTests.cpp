@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
+#include <cmath>
 #include <limits>
 #include <vector>
 
@@ -27,18 +28,16 @@ struct Inspector
 };
 }
 
-// THE BUDGET'S PROOF, read off the pass log: a render marked over the budget within 0.25 dB of drive above the render
-// delivered (the log's last).
+// THE BUDGET'S PROOF, read off the pass log: the lowest drive of every render marked over the budget, above the ceiling
+// or not, stands above the render delivered (the log's last) by 0.25 dB at most.
 bool budgetProven (const LandingSummary& l)
 {
     if (l.log.empty()) return false;
     const double delivered = l.log.back().gainDb - l.log.back().ceilingDbTp;
+    double lowest = std::numeric_limits<double>::infinity();
     for (const auto& pass : l.log)
-    {
-        const double drive = pass.gainDb - pass.ceilingDbTp;
-        if (pass.overBudget && drive > delivered && drive - delivered <= 0.25) return true;
-    }
-    return false;
+        if (pass.overBudget) lowest = std::fmin (lowest, pass.gainDb - pass.ceilingDbTp);
+    return lowest > delivered && lowest - delivered <= 0.25;
 }
 
 int main()
@@ -214,7 +213,7 @@ int main()
         std::printf ("    −6 LUFS under −6 dBTP: status %d binding %d, %.3f LUFS, %u passes\n", landed ? (int) l.status : -1,
                      landed ? (int) l.binding : -1, landed && l.achievedLufs ? *l.achievedLufs : 0.0, landed ? l.passes : 0u);
         ok (edited.rejection == Rejection::None && ceilingStart.rejection == Rejection::None && landed && l.deliverable
-            && l.binding != LandingConstraint::LimiterGainReduction && ! budgetProven (l),
+            && l.status == LandingStatus::PassLimit && l.binding != LandingConstraint::LimiterGainReduction && ! budgetProven (l),
             "−6 LUFS under −6 dBTP is held by the ceiling: no render over the budget stands just above the one delivered, "
             "and the budget is not named");
     }
