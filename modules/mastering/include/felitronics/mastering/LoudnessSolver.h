@@ -2343,7 +2343,11 @@ private:
         std::optional<ActiveWindowGrSummariser> limActive;
         std::optional<GainReductionTraceBuilder> compTrace, limTrace, clipTrace, satTrace;
         MasteringChainTaps taps {};
-        analysis::SystemStreamingLoudnessMeter lm;
+        // THE PASS'S LOUDNESS ON DETERMINISTIC MATH (core::DetMath): every landing pass's integrated loudness, the
+        // verify's, and so the product landing's search and its report, are the same bits on every row. On the system
+        // policy the meter's log10 is the libm's, and glibc's disagrees with Apple's and emscripten's by an ulp on some
+        // energies — the max-mode contract scenario read two passes of its pass log an ulp apart on gcc + glibc (v0.15.0).
+        analysis::StreamingLoudnessMeter lm;
         analysis::ReferenceTruePeakMeter tm;
     };
 
@@ -3006,8 +3010,8 @@ private:
     static std::uint64_t passMeterBytes (double sampleRate, int frames) noexcept
     {
         if (! rateAdmitted (sampleRate)) return 0u;
-        analysis::SystemStreamingLoudnessMeter::Storage st;
-        return analysis::SystemStreamingLoudnessMeter::storageFor (
+        analysis::StreamingLoudnessMeter::Storage st;
+        return analysis::StreamingLoudnessMeter::storageFor (
             sampleRate, meterSamples (frames, sampleRate), st) ? st.bytes() : 0u;
     }
 
