@@ -397,9 +397,9 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         || ! add (total, impactChainBytes) || ! add (total, impactScratchBytes)
         || ! add (total, 128u * 4096u))
     { result.rejection = Rejection::TooLong; return result; }
-    // THE DAMAGE'S WALKS (src/Damage.h): a job of their own after the master is delivered, priced here as that job and
-    // admitted with the master — it lives in the room this job leaves; a source they cannot run on still masters, and
-    // its report says why the damage has no grade.
+    // THE DAMAGE'S WALKS (src/Damage.h): a job of their own when the shell asks (command::GradeDamage), priced here as
+    // that job and admitted with the master, so a grade asked right after it finds the room this job leaves (its turn
+    // checks the capacity again); a source they cannot run on still masters, and its report says why it has no grade.
     result.damage = Damage::plan (s.source_.sampleRate, s.source_.frames, int (s.source_.channels), result.ready.topology);
     if (result.damage.ok)
     {
@@ -469,15 +469,18 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         const auto result = search.step (budget);
         if (result == StepResult::More) return result;
         // A MAX MODE NEVER DELIVERS A FILE QUIETER THAN [landing.max] floorLufs (owner, 04.10: "always pulled up to −14"),
-        // whichever target it sits on: a mix so dense the mode's budget held its file under that floor — by its BS.1770
-        // reading, the number a person reads — is landed again on the floor, by that reading, with no budget, and
-        // delivered there (MaxStop::Floor).
+        // whichever target it sits on: a first landing whose file — by its BS.1770 reading, the number a person reads —
+        // stands under that floor by more than the landing's own tolerance ([landing] toleranceLu: a file within it of a
+        // level is on that level, as every landing counts it) is landed again on the floor, by that reading, with no
+        // budget. Whatever held the first landing there (the budget, the passes) does not matter; what the floor pass
+        // delivers is said as what really ended it (settleLanding).
         if (mode != LoudnessMode::Manual && ! floorPass && result == StepResult::Done && search.result().deliverable)
         {
             const double file = search.result().achievedLufs;
             if (std::isfinite (floorLufs) && std::isfinite (file) && file < floorLufs - floorRequest.toleranceLu)
             {
                 floorPass = true;
+                floorFirstLufs = file;
                 if (! beginFloor()) { stage = Stage::Failed; return StepResult::Failed; }
                 return StepResult::More;
             }
@@ -843,7 +846,8 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     if (stage == Stage::CostPublish)
     {
         report.cost = costResult;
-        // The loudness range is the master's own; the damage is graded after it, by a job of its own: Pending until then.
+        // The loudness range is the master's own; the damage is graded by a job of its own when the shell asks
+        // (command::GradeDamage): Pending until then.
         if (settleLra(), ! damagePlan.ok) report.damage.reason = damagePlan.reason;
         else
         {
@@ -925,7 +929,10 @@ mastering::StepResult MasterJob::settleLanding (mastering::StepResult result) no
     }
     report.loudnessMode = mode;
     if (mode != LoudnessMode::Manual && solved.deliverable)
-        report.maxStop = maxStopOf ({ solved.peaksAboveCeiling, std::isfinite (search.overBudgetDb()), floorPass, solved.status,
+        // Floor only where the floor pass delivered on the floor (Solved: within the tolerance); a floor out of reach
+        // says what held it there (the true peak, the passes).
+        report.maxStop = maxStopOf ({ solved.peaksAboveCeiling, std::isfinite (search.overBudgetDb()),
+                                      floorPass && solved.status == mastering::MasteringSolveStatus::Solved, solved.status,
                                       solved.binding });
     if (result == StepResult::Failed || ! solved.deliverable)
     {

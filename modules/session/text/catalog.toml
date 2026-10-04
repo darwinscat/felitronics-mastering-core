@@ -1189,11 +1189,11 @@ en = "{mode}: {achieved} — the limiter takes off {over} (P95) in the render de
 ru = "{mode}: {achieved}."
 en = "{mode}: {achieved}."
 
-# ...and its numbers, a line for the log only ("only we read it"): the mode's budget held the landing under the floor, and
-# what the limiter took (P95) to reach it.
+# ...and its numbers, a line for the log only ("only we read it"): where the first landing stopped (whatever held it), the
+# floor, and what the limiter took (P95) to reach it beside the mode's budget.
 [messages.masterMaxFloorDetail]
-ru = "{mode}: бюджет лимитера {budget} (P95) держал посадку ниже {floor}; поднято до {floor}, лимитер срезает {over} (P95)."
-en = "{mode}: the limiter's budget of {budget} (P95) held the landing under {floor}; brought up to {floor}, the limiter takes off {over} (P95)."
+ru = "{mode}: первая посадка остановилась на {first}, ниже {floor}; поднято до {floor}, лимитер срезает {taken} (P95) при бюджете режима {budget}."
+en = "{mode}: the first landing stopped at {first}, under {floor}; brought up to {floor}, the limiter takes off {taken} (P95) against the mode's budget of {budget}."
 
 [messages.masterLandingPassLimit]
 ru = "Проходы кончились раньше, чем мастер подошёл к цели ближе допуска {tolerance}."

@@ -38,6 +38,8 @@ struct Inspector
     static std::uint64_t damageBytes (const Session& s) noexcept { return s.damageJobBytes_; }
     // A walk that fails midway (a refusal of the chains, the meters or PEAQ — a contract fault no input reaches).
     static std::uint32_t windows (const Damage& d) noexcept { return d.windows_; }
+    // The master's job, for a test that plants its floor pass's request.
+    static MasterJob* job (Session& s) noexcept { return s.masterJob_.get(); }
     static void fail (Damage& d, MeasurementReason why) noexcept { d.fail (why); }
 };
 }
@@ -584,29 +586,48 @@ void damageGrades()
             "a grade whose turn finds no room is refused there, said with Memory and its line; with room again it is "
             "asked once more and graded");
     }
-    // A NEW SOURCE with a grade running and one waiting: each says it ends with its master (MasterForgotten), in the
-    // load's own answer, and nothing of them comes after.
+    // A NEW SOURCE ends every grade (MasterForgotten): the running one's walks freed in the load, each grade's last word
+    // said in the steps that follow, one a unit, before any other work — in queue order, once each, nothing of them after;
+    // and with more grades than an event batch holds (seventy), no batch — the load's own, any step's — outgrows its bound.
+    for (const std::size_t many : { std::size_t (2), std::size_t (70) })
     {
-        auto r = gradeSession (3.0);
+        const std::string name = std::to_string (many) + " grades";
+        auto r = gradeSession (many > 2 ? 1.0 : 3.0);
         auto& s = *r.session;
-        const auto a = deliver (r, 2), b = deliver (r, 3);
-        const auto ja = act (r, command::GradeDamage { 4, a }).job, jb = act (r, command::GradeDamage { 5, b }).job;
-        (void) atPoint (r, 0.5);
+        std::vector<JobId> asked;
+        for (std::size_t k = 0; k < many; ++k)
+        {
+            const auto master = deliver (r, CommandId (100 + 2 * k));
+            asked.push_back (act (r, command::GradeDamage { CommandId (101 + 2 * k), master }).job);
+        }
+        (void) atPoint (r, many > 2 ? 0.0 : 0.5);
         const auto pcm = struck (48000, 2.0, 0.3);
         const std::size_t frames = pcm.size() / 2u;
         const float* planes[] { pcm.data(), pcm.data() + frames };
         const auto from = r.events.size();
-        const auto loaded = act (r, command::Load { 6, { planes, 2, frames, 48000 }, { "next.wav", 48000, true, 24 } });
+        const auto loaded = s.apply (command::Load { 9000, { planes, 2, frames, 48000 }, { "next.wav", 48000, true, 24 } });
+        std::size_t largest = s.events().size();
+        record (r);
+        const bool freed = s.damageJob() == 0 && s.damageJobs().empty();
+        for (unsigned i = 0; i < 400000 && s.step (1).state == StepState::More; ++i)
+        {
+            largest = std::max (largest, s.events().size());
+            record (r);
+        }
+        largest = std::max (largest, s.events().size());
+        record (r);
         std::vector<JobId> ended;
+        bool quiet = true;
         for (std::size_t i = from; i < r.events.size(); ++i)
-            if (r.events[i].kind == EventKind::Damage && r.events[i].payload.damage.reason == MeasurementReason::MasterForgotten)
-                ended.push_back (r.events[i].jobId);
-        const auto afterLoad = r.events.size();
-        (void) runOut (r);
-        ok (loaded.rejection == Rejection::None && ended.size() == 2 && ended[0] == ja && ended[1] == jb
-            && countOf (r.events, ja, afterLoad) == 0u && countOf (r.events, jb, afterLoad) == 0u
-            && s.damageJobs().empty() && s.damageJob() == 0,
-            "a new source ends every grade, running and waiting, each with its last event (MasterForgotten), nothing after");
+            if (std::find (asked.begin(), asked.end(), r.events[i].jobId) != asked.end())
+            {
+                if (r.events[i].kind == EventKind::Damage && r.events[i].payload.damage.reason == MeasurementReason::MasterForgotten
+                    && r.events[i].payload.damage.status == MeasurementStatus::Cancelled) ended.push_back (r.events[i].jobId);
+                else quiet = false;
+            }
+        ok (loaded.rejection == Rejection::None && freed && ended == asked && quiet && largest <= kEventBatch,
+            name + ": a new source ends every grade, its last word once each in queue order, nothing else of them after, no "
+            "batch past its bound (largest " + std::to_string (largest) + " of " + std::to_string (kEventBatch) + ")");
     }
 }
 
@@ -704,13 +725,59 @@ void maxFloor()
             }
         const auto said = verdict ? text::Text::text (verdict->payload.fact.view(), text::Lang::En) : std::string {};
         const auto logged = detail ? text::Text::text (detail->payload.fact.view(), text::Lang::En) : std::string {};
-        const bool atFloor = report && report->achievedLufs && *report->achievedLufs >= -14.0 - 0.2 && *report->achievedLufs <= -14.0 + 0.2;
-        const bool overBudget = detail && detail->payload.fact.view().args[3].number > 0.5;
+        // On the floor within the landing's own tolerance ([landing] toleranceLu), as every landing counts a level.
+        const double tolerance = detail::rules().engine.find ("landing").find ("toleranceLu").decimal()->toDouble() + 1e-9;
+        const bool atFloor = report && report->achievedLufs && std::fabs (*report->achievedLufs + 14.0) <= tolerance;
+        const bool overBudget = detail && detail->payload.fact.view().args[3].number > 0.5
+            && detail->payload.fact.view().args[1].number < -14.0 - tolerance;
         ok (master != 0 && report && report->maxStop == MaxStop::Floor && atFloor && verdict && verdict->payload.fact.view().argCount == 2
                 && said.starts_with ("Maximum · clean: ") && said.find ("budget") == std::string::npos && detail && verdict < detail
-                && overBudget && logged.find ("0.5 dB") != std::string::npos && logged.find ("−14.0 LUFS") != std::string::npos,
+                && overBudget && logged.find ("0.5 dB") != std::string::npos && logged.find ("−14.0 LUFS") != std::string::npos
+                && logged.find ("held") == std::string::npos,
             name + ": a dense mix is pulled up to −14 LUFS (" + std::to_string (report ? report->achievedLufs.value_or (0.0) : 0.0)
             + "), said as the mode and the level — \"" + said + "\" — its numbers for the log: \"" + logged + "\"");
+    }
+    // A FLOOR OUT OF REACH says what held it: the floor pass planted to a single pass ends short of −14 — Passes, not
+    // Floor — with no floor line and no log line of it.
+    {
+        GradeRun r;
+        const auto pcm = clicks (48000, 3.0);
+        r.session = measuredSession (pcm, 48000);
+        auto& s = *r.session;
+        (void) act (r, command::SetTarget { 2, "maxClean" });
+        const auto job = act (r, readyMaster (s, 3)).job;
+        for (unsigned i = 0; i < 400000 && s.job() != 0; ++i)
+        {
+            if (auto* j = detail::Inspector::job (s)) j->floorRequest.maxPasses = 1;
+            (void) s.step (1); record (r);
+        }
+        bool floorLine = false;
+        for (const auto& e : r.events)
+            if (e.jobId == job && e.kind == EventKind::Fact)
+                floorLine = floorLine || e.payload.fact.view().id == text::FactId::MasterMaxFloor
+                         || e.payload.fact.view().id == text::FactId::MasterMaxFloorDetail;
+        const std::optional<MasterReport> report = s.masters().empty() ? std::optional<MasterReport> {} : s.masters().back().report;
+        ok (report && report->maxStop == MaxStop::Passes && report->achievedLufs && *report->achievedLufs < -14.1 && ! floorLine,
+            "a floor pass that cannot reach −14 says what held it (Passes), never Floor, and no floor line (stop "
+            + std::to_string (report ? unsigned (report->maxStop) : 99u) + ")");
+    }
+    // ITS LOG LINE CLAIMS NO BUDGET: where the first landing stopped and the P95 taken beside the mode's budget — above it
+    // printed above it, within it as it is (a first landing held by its passes may need less than the budget).
+    {
+        MasterReport floored;
+        floored.status = MeasurementStatus::Ready; floored.deliverable = true; floored.achievedLufs = -14.02;
+        floored.loudnessMode = LoudnessMode::MaxClean; floored.maxStop = MaxStop::Floor;
+        const auto above = MasterReportText::maxFloorDetail (floored, 0.5, 0.51, -14.0, -15.27);
+        const auto within = MasterReportText::maxFloorDetail (floored, 0.5, 0.3, -14.0, -14.6);
+        MasterReport passes = floored; passes.maxStop = MaxStop::Passes;
+        const auto en = above ? text::Text::text (*above, text::Lang::En) : std::string {};
+        const auto en2 = within ? text::Text::text (*within, text::Lang::En) : std::string {};
+        ok (en == "Maximum · clean: the first landing stopped at −15.3\u00A0LUFS, under −14.0\u00A0LUFS; brought up to −14.0\u00A0LUFS, "
+                  "the limiter takes off 0.6\u00A0dB (P95) against the mode's budget of 0.5\u00A0dB."
+                && en2.find ("takes off 0.3\u00A0dB (P95)") != std::string::npos
+                && ! MasterReportText::maxFloorDetail (passes, 0.5, 0.51, -14.0, -15.27),
+            "the floor's log line says where the first landing stopped and what the limiter took beside the budget, claiming "
+            "no budget held it: \"" + en + "\" / \"" + en2 + "\"");
     }
 }
 

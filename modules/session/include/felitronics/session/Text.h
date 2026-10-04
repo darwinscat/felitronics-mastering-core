@@ -354,7 +354,7 @@ enum class FactId : std::uint16_t
     MasterMaxUnguarded = 614,  // {mode}: {achieved} — the damage could not be checked; the limiter's budget holds
     MasterMaxOverBudget = 615, // {mode}: {achieved} — the limiter takes {over} (P95), more than the mode's {budget}
     MasterMaxFloor = 616,      // {mode}: {achieved} — pulled up to the floor; the mode and the level, nothing more
-    MasterMaxFloorDetail = 617, // for the log: {mode}'s budget {budget} held it under {floor}; brought up, the limiter took {over}
+    MasterMaxFloorDetail = 617, // for the log: the first landing at {first} under {floor}; brought up, the limiter takes {taken}
 };
 
 // THE TERMS — words an argument of kind Term names: one value of a group of the catalog's [terms]. Printed as the
@@ -417,8 +417,9 @@ enum class Term : std::uint16_t
     // The BS.1116 impairment grades the damage's line names, 5 down to 1.
     DamageGradeImperceptible, DamageGradePerceptible, DamageGradeSlightlyAnnoying, DamageGradeAnnoying,
     DamageGradeVeryAnnoying,
-    // Why a master's damage was not graded: a new master was asked for while it was (MeasurementReason::Superseded); no
-    // job id was left for it (NoJobId).
+    // Why a master's damage was not graded: a new master was asked for while it was (MeasurementReason::Superseded, said
+    // up to v0.15.0: a new master parks a grade since); no job id was left for it (NoJobId, up to v0.15.0: gradeDamage is
+    // refused NoJobId since).
     ReasonSuperseded, ReasonNoJobId,
     // The loudness modes, as a max mode's verdict names them.
     LoudnessModeManual, LoudnessModeMaxClean, LoudnessModeMaxDense,

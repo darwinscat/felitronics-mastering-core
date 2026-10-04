@@ -242,11 +242,13 @@ struct MasterReportText
     // budget where it broke it (LandingSearch::overBudgetDb); pulled up to the floor, the mode and the level alone.
     // Nothing for a manual master or one not delivered.
     [[nodiscard]] static std::optional<text::Fact> max (const MasterReport& report, double budgetDb, double overBudgetDb) noexcept;
-    // A max master pulled up to the floor (MaxStop::Floor): its numbers, for the log only — the mode's budget `budgetDb`,
-    // the floor `floorLufs` and the active-window P95 `p95Db` the limiter took to reach it (printed above the budget,
-    // as 615 prints its excess). The verdict beside it stays the mode and the level alone. Nothing for any other stop.
+    // A max master pulled up to the floor (MaxStop::Floor): its numbers, for the log only — where the first landing's file
+    // stopped `firstLufs` (whatever held it: the budget or the passes, not named), the floor `floorLufs`, and the
+    // active-window P95 `p95Db` the limiter took to reach it beside the mode's budget `budgetDb` (above it, printed above
+    // it as 615 prints its excess; within it, as it is). The verdict beside it stays the mode and the level alone.
+    // Nothing for any other stop.
     [[nodiscard]] static std::optional<text::Fact> maxFloorDetail (const MasterReport& report, double budgetDb, double p95Db,
-                                                                   double floorLufs) noexcept;
+                                                                   double floorLufs, double firstLufs) noexcept;
     // A master delivered above its ceiling (peaksAboveCeiling): its true peak and the ceiling. Nothing otherwise.
     [[nodiscard]] static std::optional<text::Fact> peaksAboveCeiling (const MasterReport& report) noexcept;
     [[nodiscard]] static text::Fact crest (const MasterCrest& crest) noexcept;

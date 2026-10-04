@@ -734,9 +734,10 @@ private:
     // first waiting grade when nothing runs — its walks' room checked against the capacity then (refused:
     // MeasurementReason::Memory, said) — in the unit of its first step; a new master parks the running one (its walks
     // freed before the master allocates; it starts again, first, when its turn comes back). A grade ends with its walks
-    // (`stopped` None: their result) or is stopped — by cancel of its job (Cancelled), by forget of its master or a new
-    // source (MasterForgotten, no line: the master is gone), by the room it lacked (Memory) — and says so: its master's
-    // report settles, the damage's line (`line`) and the Damage event, its last word.
+    // (`stopped` None: their result) or is stopped — by cancel of its job (Cancelled), by forget of its master
+    // (MasterForgotten, no line: the master is gone), by the room it lacked (Memory) — and says so: its master's report
+    // settles, the damage's line (`line`) and the Damage event, its last word. A new source ends them all (endAllDamage):
+    // their last words, MasterForgotten, follow in the next steps, one a unit, before any other work.
     [[nodiscard]] bool startDamage() noexcept;
     void stepDamage() noexcept;
     void parkDamage() noexcept;
@@ -865,6 +866,10 @@ private:
     // master kept (`damageRoom_` == masterRoom_), grown with the masters' room.
     std::unique_ptr<DamageJobEntry[]> damageJobs_;
     std::size_t damageRoom_ = 0, damageCount_ = 0;
+    // THE GRADES A NEW SOURCE ENDED, still to say their last word (endAllDamage): the queue's array as the source left it,
+    // said from `farewellCursor_`, one a pump unit, and freed when the last is said.
+    std::unique_ptr<DamageJobEntry[]> damageFarewell_;
+    std::size_t farewellRoom_ = 0, farewellCount_ = 0, farewellCursor_ = 0;
 
 };
 

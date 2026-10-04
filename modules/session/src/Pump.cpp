@@ -72,7 +72,8 @@ text::Fact OwnedFact::view() const noexcept
 std::uint64_t Session::stepBytes() noexcept { return 0; }
 JobId Session::measurementJob() const noexcept { return measurementJob_; }
 bool Session::hasWork() const noexcept
-{ return measurementJob_ != 0 || job_ != 0 || needlesJob_ != 0 || crestJoin_ || damageCount_ != 0; }
+{ return measurementJob_ != 0 || job_ != 0 || needlesJob_ != 0 || crestJoin_ || damageCount_ != 0
+         || farewellCursor_ < farewellCount_; }
 std::span<const Notification> Session::events() const noexcept { return { events_->data(), eventCount_ }; }
 void Session::emit (Notification event) noexcept
 {
@@ -353,11 +354,24 @@ void Session::endDamage (std::size_t index, MeasurementReason stopped, bool line
     --damageCount_;
     damageJobs_[damageCount_] = {};
 }
-// EVERY GRADE ENDS with its masters gone (a new source: the walks re-render from the old one): each says so, in the
-// order they run, before the masters go.
+// EVERY GRADE ENDS with its masters gone (a new source: the walks re-render from the old one). The running one's walks
+// are freed here, in the command; the queue, as it stands, becomes the grades' farewells — each grade's last word, its
+// damage event (Cancelled, MasterForgotten), said in the steps that follow, one a unit, before any other work — so no
+// event batch holds more than its bound however many grades there were, and nothing else of them comes after. A second
+// new source finds the farewells said: a grade needs a master kept, and a master needs units the farewells take first.
 void Session::endAllDamage() noexcept
 {
-    while (damageCount_ != 0) endDamage (0, MeasurementReason::MasterForgotten, false);
+    if (damageCount_ == 0) return;
+    detail::debugBound (farewellCursor_ == farewellCount_);
+    damageJob_.reset();
+    damageJobId_ = 0;
+    damageJobBytes_ = 0;
+    damageProgress_ = {};
+    damageFarewell_ = std::move (damageJobs_);
+    farewellRoom_ = damageRoom_;
+    farewellCount_ = damageCount_;
+    farewellCursor_ = 0;
+    damageRoom_ = damageCount_ = 0;
 }
 
 Stepped Session::step (std::uint32_t budget) noexcept
@@ -399,6 +413,18 @@ Stepped Session::step (std::uint32_t budget) noexcept
     {
         Notification event;
         event.kind = EventKind::Phase;
+        // The grades a new source ended say their last word first, one a unit (endAllDamage): within any unit's bound.
+        if (farewellCursor_ < farewellCount_)
+        {
+            const auto entry = damageFarewell_[farewellCursor_++];
+            event.jobId = entry.job;
+            event.kind = EventKind::Damage;
+            event.payload.damage = { entry.masterId, MeasurementStatus::Cancelled, MeasurementReason::MasterForgotten };
+            emit (event, entry.progress);
+            if (farewellCursor_ == farewellCount_) { damageFarewell_.reset(); farewellRoom_ = farewellCount_ = farewellCursor_ = 0; }
+            ++units;
+            continue;
+        }
         if (job_ != 0)
         {
             event.jobId = job_;
@@ -521,9 +547,8 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 const auto completedJob = job_;
                 if (! detail::Driver::mastered (*this, completedJob)) { contract (completedJob); ++units; continue; }
                 masters_[masterCount_ - 1].report = masterJob_->reportResult();
-                // The damage's job takes what it needs of this job before it goes (its walks allocate when it first steps),
-                // so the damage's line below says Pending — or why it is not graded.
-                // What its damage grade needs, kept with the master for a grade the shell asks (command::GradeDamage).
+                // What its damage grade needs, kept with the master for a grade the shell asks (command::GradeDamage):
+                // the damage's line below says Pending — or why it cannot be graded.
                 if (masterJob_->damageFollows)
                 {
                     rows.damageGradable = true;
@@ -560,7 +585,8 @@ Stepped Session::step (std::uint32_t budget) noexcept
                     // Pulled up to the floor: the numbers behind the plain verdict, a line of its own for the log (617).
                     if (const auto detail = MasterReportText::maxFloorDetail (report,
                             detail::maxBudgetDb (detail::rules().engine, report.loudnessMode),
-                            masterJob_->search.result().limiterActive.stats.p95Db, masterJob_->floorLufs))
+                            masterJob_->search.result().limiterActive.stats.p95Db, masterJob_->floorLufs,
+                            masterJob_->floorFirstLufs))
                     { (void) event.payload.fact.assign (*detail); emit (event, masterProgress_); }
                     // Delivered above the ceiling (no render stayed under it): the mark, beside the verdict.
                     if (const auto above = MasterReportText::peaksAboveCeiling (report))
@@ -605,7 +631,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
                     if (const auto saturation = MasterReportText::saturation (*cost))
                     { (void) event.payload.fact.assign (*saturation); emit (event, masterProgress_); }
                 }
-                // The damage the processing did, heard — Pending here, graded by the damage's own job after the master —
+                // The damage the processing did, heard — Pending here, graded by its own job when the shell asks —
                 // and the loudness range's change: two lines, each its own or why not.
                 {
                     const auto& damage = masters_[masterCount_ - 1].report->damage;
