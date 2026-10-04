@@ -398,6 +398,8 @@ enum class Term : std::uint16_t
     // The BS.1116 impairment grades the damage's line names, 5 down to 1.
     DamageGradeImperceptible, DamageGradePerceptible, DamageGradeSlightlyAnnoying, DamageGradeAnnoying,
     DamageGradeVeryAnnoying,
+    // Why a master's damage was not graded: a new master was asked for while it was (MeasurementReason::Superseded).
+    ReasonSuperseded,
 
 };
 

@@ -228,6 +228,7 @@ text::Term reasonTerm (MeasurementReason reason) noexcept
         case MeasurementReason::NotImplemented: return text::Term::ReasonNotImplemented;
         case MeasurementReason::NeedNotAbove3:  return text::Term::ReasonNeedNotAbove3;
         case MeasurementReason::Memory:         return text::Term::ReasonMemory;
+        case MeasurementReason::Superseded:     return text::Term::ReasonSuperseded;
         case MeasurementReason::None:
         case MeasurementReason::Unsupported:    break;
     }

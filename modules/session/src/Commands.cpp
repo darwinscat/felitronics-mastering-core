@@ -305,8 +305,9 @@ Checked Session::storageFor (const Request& request) const noexcept
     if (std::holds_alternative<command::ContinueMeasurement> (request))
         return lastJob_ == std::numeric_limits<JobId>::max() ? rejected (Rejection::NoJobId) : Checked {};
     if (const auto* cancel = std::get_if<command::Cancel> (&request))
-        return job_ == 0 && measurementJob_ == 0 && needlesJob_ == 0 ? rejected (Rejection::NoJob)
-             : cancel->job != 0 && (cancel->job == job_ || cancel->job == measurementJob_ || cancel->job == needlesJob_)
+        return job_ == 0 && measurementJob_ == 0 && needlesJob_ == 0 && damageJobId_ == 0 ? rejected (Rejection::NoJob)
+             : cancel->job != 0 && (cancel->job == job_ || cancel->job == measurementJob_ || cancel->job == needlesJob_
+                                    || cancel->job == damageJobId_)
                  ? Checked {} : rejected (Rejection::UnknownJob);
     if (const auto* forget = std::get_if<command::Forget> (&request))
     {
@@ -572,6 +573,8 @@ Answer Session::apply (const Request& request) noexcept
     }
     else if (const auto* master = std::get_if<command::Master> (&request))
     {
+        // The damage still graded for an earlier master stops first, and says why: a new master was asked for.
+        if (damageJobId_ != 0) endDamage (MeasurementReason::Superseded, true);
         const auto plan = detail::MasterJob::plan (*this, *master, project_);
         if (masterRoom_ == masterCount_)                            // the room check() counted, as one exact array
         {
@@ -632,6 +635,8 @@ Answer Session::apply (const Request& request) noexcept
     {
         if (pendingMaster_.master == forget->master)
         { masterAudio_ = {}; masterAudioBits_ = 0; pendingMaster_ = {}; }
+        // A master forgotten while its damage is graded: the job stops with it — no line for a master no longer kept.
+        if (damageJob_ && damageJob_->master == forget->master) endDamage (MeasurementReason::Cancelled, false);
         Kept* const first = masters_.get();
         Kept* const last = first + masterCount_;
         Kept* const it = std::find_if (first, last, [&] (const Kept& k) { return k.id == forget->master; });

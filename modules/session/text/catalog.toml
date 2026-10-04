@@ -1082,6 +1082,8 @@ needNotAbove3.ru = "иглы не понадобились"
 needNotAbove3.en = "the needles were not needed"
 memory.ru = "недостаточно памяти"
 memory.en = "insufficient memory"
+superseded.ru = "заказан новый мастер"
+superseded.en = "a new master was asked for"
 
 # An observation whose measurement did not give its number: its name, and why.
 [messages.observationUnmeasured]

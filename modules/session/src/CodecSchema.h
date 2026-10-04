@@ -144,7 +144,8 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (MeasurementReason::NotImplemented) == 8);
         static_assert (unsigned (MeasurementReason::NeedNotAbove3) == 9);
         static_assert (unsigned (MeasurementReason::Memory) == 10);
-        return 10;
+        static_assert (unsigned (MeasurementReason::Superseded) == 11);
+        return 11;
     }
     else if constexpr (std::is_same_v<T, MeasurementStatus>)
     {
@@ -535,6 +536,7 @@ constexpr void checkEnum (MeasurementReason value) noexcept
         case MeasurementReason::NotImplemented: break;
         case MeasurementReason::NeedNotAbove3: break;
         case MeasurementReason::Memory: break;
+        case MeasurementReason::Superseded: break;
     }
 }
 
@@ -852,6 +854,16 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("mud", x.mud);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.on)>, bool>);
         v.field ("on", x.on);
+    }
+    else if constexpr (std::is_same_v<U, DamageChange>)
+    {
+        [[maybe_unused]] auto& [f0, f1, f2] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.masterId)>, std::uint32_t>);
+        v.field ("masterId", x.masterId);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.reason)>, MeasurementReason>);
+        v.field ("reason", x.reason);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.status)>, MeasurementStatus>);
+        v.field ("status", x.status);
     }
     else if constexpr (std::is_same_v<U, DevicePlan>)
     {
@@ -2073,11 +2085,15 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, SnapshotView>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32, f33, f34, f35, f36, f37, f38, f39, f40, f41, f42, f43, f44, f45, f46, f47, f48] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29, f30, f31, f32, f33, f34, f35, f36, f37, f38, f39, f40, f41, f42, f43, f44, f45, f46, f47, f48, f49, f50] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.canContinueMeasurement)>, bool>);
         v.field ("canContinueMeasurement", x.canContinueMeasurement);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.canMaster)>, bool>);
         v.field ("canMaster", x.canMaster);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.damageJob)>, std::uint32_t>);
+        v.field ("damageJob", x.damageJob);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.damageProgress)>, Phase>);
+        v.field ("damageProgress", x.damageProgress);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.devicesPlaced)>, bool>);
         v.field ("devicesPlaced", x.devicesPlaced);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.eqCurve)>, std::span<const EqPoint>>);

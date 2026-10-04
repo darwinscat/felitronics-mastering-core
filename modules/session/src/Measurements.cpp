@@ -55,6 +55,7 @@ text::FactId MeasurementText::fact (MeasurementReason reason) noexcept
         case MeasurementReason::NotImplemented: return text::FactId::MeasurementUnavailable;
         case MeasurementReason::NeedNotAbove3: return text::FactId::NeedlesSkipped;
         case MeasurementReason::Memory: return text::FactId::SessionMemory;
+        case MeasurementReason::Superseded: return text::FactId::MeasurementStopped;   // a master's damage only
     }
     detail::storageOverflow();
 }

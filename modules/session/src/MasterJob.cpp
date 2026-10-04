@@ -337,12 +337,13 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         || ! add (total, impactChainBytes) || ! add (total, impactScratchBytes)
         || ! add (total, 128u * 4096u))
     { result.rejection = Rejection::TooLong; return result; }
-    // THE DAMAGE'S WALKS (src/Damage.h): priced here and admitted with the master; a source they cannot run on still
-    // masters, and its report says why the damage has no grade.
+    // THE DAMAGE'S WALKS (src/Damage.h): a job of their own after the master is delivered, priced here as that job and
+    // admitted with the master — it lives in the room this job leaves; a source they cannot run on still masters, and
+    // its report says why the damage has no grade.
     result.damage = Damage::plan (s.source_.sampleRate, s.source_.frames, int (s.source_.channels), result.ready.topology);
     if (result.damage.ok)
     {
-        if (! add (total, result.damage.bytes)) { result.rejection = Rejection::TooLong; return result; }
+        if (! add (total, DamageJob::bytes (result.damage))) { result.rejection = Rejection::TooLong; return result; }
         result.largestBlock = std::max (result.largestBlock, result.damage.largestBlock);
     }
     result.bytes = total;
@@ -826,23 +827,15 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     if (stage == Stage::CostPublish)
     {
         report.cost = costResult;
-        stage = Stage::DamageBegin;
-        return StepResult::More;
-    }
-    if (stage == Stage::DamageBegin)
-    {
+        // The loudness range is the master's own; the damage is graded after it, by a job of its own: Pending until then.
         settleLra();
         if (! damagePlan.ok) report.damage.reason = damagePlan.reason;
-        else if (damage.begin (damagePlan, chain, winningParams(), sourcePlanes, sourceFrames, channels))
-        { stage = Stage::DamageRun; return StepResult::More; }
-        else report.damage.reason = MeasurementReason::Unsupported;
-        stage = Stage::Done;
-        return StepResult::Done;
-    }
-    if (stage == Stage::DamageRun)
-    {
-        if (! damage.step (budget)) return StepResult::More;
-        damage.publish (report.damage);
+        else
+        {
+            report.damage.status = MeasurementStatus::Pending;
+            report.damage.reason = MeasurementReason::Pending;
+            damageFollows_ = true;
+        }
         stage = Stage::Done;
         return StepResult::Done;
     }
@@ -890,11 +883,6 @@ void MasterJob::settleLra() noexcept
     d.lraReason = MeasurementReason::None;
 }
 
-PhaseName MasterJob::phaseName() const noexcept
-{
-    return stage == Stage::DamageRun ? damage.phase() : PhaseName::Pass;
-}
-
 std::optional<double> MasterJob::stepFraction() const noexcept
 {
     if (stage == Stage::Search)
@@ -908,7 +896,6 @@ std::optional<double> MasterJob::stepFraction() const noexcept
         return total > 0 ? std::optional<double> (double (crestCursor) / double (total)) : std::nullopt;
     }
     if (stage == Stage::CostRead) return frames > 0 ? std::optional<double> (double (costCursor) / double (frames)) : std::nullopt;
-    if (stage == Stage::DamageRun) return damage.walk();
     return std::nullopt;
 }
 } // namespace felitronics::session::detail

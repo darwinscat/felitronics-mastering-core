@@ -438,6 +438,7 @@ inline constexpr TermShape kTerms[] = {
     { Term::DamageGradeSlightlyAnnoying, "damageGrade", "slightlyAnnoying" },
     { Term::DamageGradeAnnoying, "damageGrade", "annoying" },
     { Term::DamageGradeVeryAnnoying, "damageGrade", "veryAnnoying" },
+    { Term::ReasonSuperseded, "measurementReason", "superseded" },
 };
 inline constexpr std::size_t kTermCount = sizeof (kTerms) / sizeof (kTerms[0]);
 

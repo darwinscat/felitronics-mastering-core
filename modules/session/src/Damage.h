@@ -53,7 +53,6 @@ public:
     static int maxOutputs (const Shape& s, int n) noexcept;
     // n input frames (null planes: silence) -> the outputs they complete, trimmed, at most `remaining` of them.
     int push (const float* const* in, int n, float* const* out, long long remaining) noexcept;
-    int delay() const noexcept { return trim_; }
 private:
     Shape s_ {};
     int channels_ = 0, trim_ = 0, pos_ = 0;
@@ -118,7 +117,6 @@ private:
     std::uint64_t sourceFrames_ = 0, read_ = 0;
     long long emitted_ = 0, delivered_ = 0, chainDelay_ = 0;   // chain frames out, frames past the chain's latency
     double gain_ = 1.0, lift_ = 1.0, masterLufs_ = 0, referenceLufs_ = 0;   // lift_: undoes referenceBelowDb for the meter's gates
-    int gateUsed_ = 0;
     bool masterGated_ = false;
     Stage stage_ = Stage::Idle;
     MeasurementReason reason_ = MeasurementReason::NotImplemented;
@@ -127,5 +125,24 @@ private:
     long long worstWindow_ = -1;
     analysis::PeaqResult worst_ {};
     bool nonFinite_ = false, undefined_ = false, outOfRange_ = false;
+};
+
+// THE DAMAGE AS A JOB OF ITS OWN (Session::damageJob): started when its master is delivered, so the master reaches the
+// shell when its own work ends and the grade follows. It owns what the walks need — the master's chain, prepared again
+// by begin() at 48 kHz, and the parameters the master was delivered with — and the master's job, with its buffers, is
+// gone before it is made: it lives in the room that job leaves (MasterJob::plan prices it with the master). bytes() is
+// all it holds: the object, its master chain's construction and the walks' plan.
+struct DamageJob
+{
+    static std::uint64_t bytes (const DamagePlan& plan) noexcept
+    { return sizeof (DamageJob) + mastering::MasteringChain::constructBytes() + plan.bytes; }
+    MasterId master = 0;
+    DamagePlan plan {};
+    mastering::MasteringChainParams winning {};
+    mastering::MasteringChain chain;
+    Damage damage;
+    const float* source[2] {};               // the session's source planes, which the walks read (Damage keeps the array)
+    bool begun = false, refused = false;     // refused: begin() could not prepare the walks
+    std::uint32_t units = 0;
 };
 } // namespace felitronics::session::detail
