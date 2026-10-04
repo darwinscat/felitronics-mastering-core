@@ -65,9 +65,11 @@ std::optional<text::Fact> MasterReportText::landing (const MasterReport& report,
 {
     using text::Arg; using text::Fact; using text::FactId; using text::Term; using text::Unit;
     const auto tolerance = Arg::value (toleranceLu, Unit::Lu, 1);
-    // The limiter's budget as the config states it: a whole number of dB without a decimal, a fraction with one.
+    // The limiter's budget as the config states it, a whole number of quarter dB: its digits up to two, the trailing
+    // zeros dropped — 7, 7.5, 7.25 — read off its hundredths as an integer.
+    const auto hundredths = (long long) std::floor (measure.limiterBudgetDb * 100.0 + 0.5);
     const auto budget = Arg::value (measure.limiterBudgetDb, Unit::Db,
-        core::exactlyEqual (std::floor (measure.limiterBudgetDb), measure.limiterBudgetDb) ? std::uint8_t (0) : std::uint8_t (1));
+        hundredths % 100 == 0 ? std::uint8_t (0) : hundredths % 10 == 0 ? std::uint8_t (1) : std::uint8_t (2));
     // The level landed: on the source's gate where the landing measured it there, else the file's.
     const std::optional<double> landed = std::isfinite (measure.landedLufs) ? std::optional<double> (measure.landedLufs)
                                                                             : report.achievedLufs;
