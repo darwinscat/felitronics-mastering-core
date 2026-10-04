@@ -577,13 +577,14 @@ void damage()
             // input gain is under 0 dB, so 186f9c5 lowered its reference by less (ODG -3.8489970, DI -3.4359317, gain
             // -50.0476 dB there). The limiter's budget (v0.14.0's landing) then holds this demanding master short of its
             // target: its limiter takes about 13 dB, no longer 52 (ODG -3.8374910, DI -3.3489147, gain -52.5884 dB
-            // before it). Its soft clipper is a stage on libm, so ODG and DI agree between native and wasm only
+            // before it); at the loud target's 7.5 dB (v0.14.1, it was 10) about 7.5 (ODG -3.8521412, DI -3.4609980,
+            // gain -12.8745 dB at 10). Its soft clipper is a stage on libm, so ODG and DI agree between native and wasm only
             // to PEAQ's spread (docs/SESSION.md: ODG by 2.4e-4, DI by 1.9e-3 here), the reference's gain to the chains'
             // (1e-5 dB); the rest exactly.
             ok (d.grade == 1 && d.windows == 1 && d.audibleWindows == 1 && d.ungradedWindows == 0
                 && d.worstFromSeconds == 0.0 && d.audibleShare == 1.0
-                && std::fabs (odg - -3.8521412321891675) <= 5e-4 && std::fabs (d.worstDi.value_or (0.0) - -3.4609979630950791) <= 5e-3
-                && d.referenceGainDb && std::fabs (*d.referenceGainDb - -12.874484955323663) <= 1e-5
+                && std::fabs (odg - -3.8399599584809163) <= 5e-4 && std::fabs (d.worstDi.value_or (0.0) - -3.3669999975374258) <= 5e-3
+                && d.referenceGainDb && std::fabs (*d.referenceGainDb - -11.972735801256562) <= 1e-5
                 && d.sourceLraLu == 0.0 && d.masterLraLu == 0.0 && d.lraChangeLu == 0.0 && ! d.lraChangePercent
                 && d.lraReason == session::MeasurementReason::NoSignal && d.reason == session::MeasurementReason::None,
                 "the damage of this source, its reference the whole referenceBelowDb lower: "

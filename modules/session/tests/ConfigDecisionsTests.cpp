@@ -22,6 +22,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -68,7 +69,9 @@ constexpr Golden kGolden[] = {
     // ...and loudness as a request (owner, 04.10, v0.14.0): the level landed on the source's gate and the limiter's
     // budget by the target's loudness ([landing] onSourceGate, limiterBudget) — the masters of a dynamic mix and of a
     // target the limiter cannot reach within its budget move; it was fb0cedc4f4311049; updated in place, as above
-    { "2026-10", 0x14193babae5aa94cull },
+    // ...and the loud target's limiter budget 7.5 dB, was 10 (owner, 04.10, v0.14.1): a master louder than −8 LUFS that
+    // its limiter would cut past 7.5 dB moves; it was 14193babae5aa94c; updated in place, as above
+    { "2026-10", 0x406759a3436aec72ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -169,9 +172,10 @@ std::vector<std::string> departures (const config::Config& c)
     need (e.landing.truePeakAimDb == 0.05 && e.limiter.ceilingMarginDb == 0.15,
           "the true-peak aim and initial limiter margin are separate decisions");
     need (e.landing.onSourceGate, "the landing lands the level on the source's gate (owner, 04.10)");
-    need (e.landing.quietBudgetDb == 4 && e.landing.middleBudgetDb == 7 && e.landing.loudBudgetDb == 10
+    need (same (e.landing.quietBudgetDb, 4.0) && same (e.landing.middleBudgetDb, 7.0)
+          && same (e.landing.loudBudgetDb, 7.5)
           && same (e.landing.middleLufs.min, -10.0) && same (e.landing.middleLufs.max, -8.0),
-          "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 10 dB louder (owner, 04.10)");
+          "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 7.5 dB louder (owner, 04.10; 7.5 in v0.14.1)");
     need (same (e.hpf.machineTopHz, 50.0), "the machine's high-pass tops out at 50 Hz");
     need (same (e.hpf.hzMax, 80.0), "a person's high-pass knob travels to 80 Hz (owner, 01.10)");
     need (same (e.hpf.hzMin, 15.0), "the high-pass knob starts at 15 Hz");
@@ -246,6 +250,27 @@ void theConfigHoldsTheDecisions()
     ok (away.empty(), "no departure" + (away.empty() ? std::string{} : ": " + joined (away)));
 }
 
+// THE LIMITER'S BUDGET IN dB WITH A FRACTION: the schema takes 1 to 60 dB, a whole number or not, and refuses the rest.
+void theBudgetIsFractional()
+{
+    felitronics::test::group ("the limiter's budget is a number of dB on a quarter-dB step, from 1 to 60");
+    const auto bound = [] (std::string_view from, std::string_view to)
+    {
+        const Plant p = plant (g_engineText, from, to, to);
+        return p.planted ? std::optional<bool> (Config::bind (g_targetsText, p.text).ok()) : std::nullopt;
+    };
+    const auto shipped = Config::load();
+    ok (shipped.ok() && same (shipped.config.engine.landing.loudBudgetDb, 7.5), "the shipped 7.5 dB is taken");
+    ok (bound ("middleDb = 7,", "middleDb = 6.25,") == std::optional<bool> (true)
+        && bound ("loudDb = 7.5,", "loudDb = 7.25,") == std::optional<bool> (true), "6.25 and 7.25 dB are taken");
+    ok (bound ("loudDb = 7.5,", "loudDb = 7.3,") == std::optional<bool> (false)
+        && bound ("middleDb = 7,", "middleDb = 7.125,") == std::optional<bool> (false),
+        "7.3 and 7.125 dB are refused: the budget is a whole number of quarter dB, the landing's own resolution");
+    ok (bound ("quietDb = 4,", "quietDb = 0.5,") == std::optional<bool> (false), "0.5 dB is refused: under 1");
+    ok (bound ("loudDb = 7.5,", "loudDb = 61,") == std::optional<bool> (false), "61 dB is refused: over 60");
+    ok (bound ("middleDb = 7,", "middleDb = 3.5,") == std::optional<bool> (false), "a middle budget under the quiet one is refused");
+}
+
 void theSoundIsPinnedToTheDefaults()
 {
     felitronics::test::group ("the version of the sound is pinned to the name of the defaults");
@@ -274,9 +299,11 @@ void aDepartureIsNamed()
         { false, "slopes = [12, 24, 48]", "slopes = [12, 24, 36]", "the high-pass slopes are 12, 24 and 48 dB/oct" },
         { false, "passes = 12", "passes = 11", "the landing: one budget of 12 passes" },
         { false, "onSourceGate = true", "onSourceGate = false", "the landing lands the level on the source's gate (owner, 04.10)" },
-        { false, "quietDb = 4,", "quietDb = 5,", "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 10 dB louder (owner, 04.10)" },
+        { false, "quietDb = 4,", "quietDb = 5,", "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 7.5 dB louder (owner, 04.10; 7.5 in v0.14.1)" },
+        { false, "loudDb = 7.5,", "loudDb = 10,", "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 7.5 dB louder (owner, 04.10; 7.5 in v0.14.1)" },
+        { false, "loudDb = 7.5,", "loudDb = 7.75,", "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 7.5 dB louder (owner, 04.10; 7.5 in v0.14.1)" },
         { false, "middleLufs = [-10, -8]", "middleLufs = [-11, -8]",
-          "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 10 dB louder (owner, 04.10)" },
+          "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 7.5 dB louder (owner, 04.10; 7.5 in v0.14.1)" },
         { true, "noteLossDb = 0.3", "noteLossDb = 0.5", "targets.club.noteLossDb" },
         { true, "lufs = -7,", "lufs = -8,", "targets.youtubeMusic.lufs" },
         { true, "hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 0.3", "hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 0.3",
@@ -316,6 +343,7 @@ int main (int argc, char** argv)
         return 2;
     }
     theConfigHoldsTheDecisions();
+    theBudgetIsFractional();
     theSoundIsPinnedToTheDefaults();
     aDepartureIsNamed();
     return felitronics::test::report();

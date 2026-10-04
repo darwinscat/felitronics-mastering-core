@@ -1788,7 +1788,11 @@ are not whole hertz, land on the master's own gate. `limiterBudget`: the most th
 take, the P95 of its gain reduction over its ACTIVE windows (the windows whose input reached `[cost]
 limiterActiveInputDb`, so silence does not water it down) — the very number `MasterCost::limiterP95Db` prints —
 by the target's loudness, a person's edited number included: 4 dB below −10 LUFS, 7 dB from −10 to −8 (both ends),
-10 dB louder (`detail::limiterBudgetDb`). `LandingSearch` reads it as a budget, not a refusal: a render over it is no
+7.5 dB louder (owner, 04.10, v0.14.1: it was 10 — 1058 renders of 23 songs without a budget put the limiter's cost
+and the PEAQ damage breaking together near 4, 6.5 and 8 dB; asked for −6 LUFS the median song at 7.5 reaches −7.83 with
+an ODG of −1.46, 3 of 23 "annoying", where 10 gave −7.36, −2.30 and 11 of 23), a whole number or a fraction of a dB
+(`detail::limiterBudgetDb`), on a step of a quarter dB — the landing's own resolution of its proof — which the verdict
+prints whole: up to two decimals, the trailing zeros dropped (7, 7.5, 7.25). `LandingSearch` reads it as a budget, not a refusal: a render over it is no
 candidate and is marked in its pass record (`LimiterGainReduction`) and in the session's pass log
 (`LandingPass::overBudget`), and the next drive is held under the lowest drive that broke it. The landing ends
 `TargetUnreachable` with `LimiterGainReduction` bound only on proof — the render delivered stands within 0.25 dB of drive
