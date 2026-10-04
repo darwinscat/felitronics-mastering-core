@@ -9,12 +9,15 @@
   the mode's limiter budget (clean 3 dB, dense 7 dB of the active P95), and a budget that holds it is success. Before
   the file is delivered a PEAQ guard grades the render with the damage's machine: its worst window must stay above the
   mode's floor (clean ODG −0.5, dense −1.5), or the drive steps back 1 dB at a time, graded before it is rendered,
-  three steps at most; the gentlest graded is delivered where none passes, and says so. The guard's grade is the
-  master's damage: no damage job follows a max master. `LoudnessRequest::peakClipMeasured` renders a step back in one
-  pass with the peak the landing measured.
+  three steps at most; the gentlest graded is delivered where none passes, and says so. A render the guard could not
+  grade (no damage plan for the source's rate, a walk refused or unavailable) is said unchecked, never passed; nothing
+  heard is a pass. The guard's grade is the master's damage: no damage job follows a max master.
+  `LoudnessRequest::peakClipMeasured` renders a step back in one pass with the peak the landing measured, and that pass
+  proves the mode's budget itself: one that breaks it — or a landing no render of which kept it — is delivered as over
+  the budget, never as held by it.
 - **The report and the text**: `MasterReport.loudnessMode`, `maxStop` (`Budget`, `Guard`, `GuardUnmet`,
-  `SearchCeiling`, `Passes`, `TruePeak`) and `guardSteps`; facts 608–613 (ru/en) name the mode, the level and what
-  ended it, with no miss and no hint; the `loudnessMode` terms and the field term `FieldTargetLoudnessMode`.
+  `SearchCeiling`, `Passes`, `TruePeak`, `Unguarded`, `OverBudget`) and `guardSteps`; facts 608–615 (ru/en) name the
+  mode, the level and what ended it, with no miss and no hint; the `loudnessMode` terms and the field term `FieldTargetLoudnessMode`.
 - **`FC_SESSION_ABI_VERSION` 10**: the manifest appends the enums, facts, terms and codec fields; `SURFACE[10]` adds no
   entry point. Existing targets' sound does not move (the WAV contract's PCM is unchanged); the `2026-10` defaults'
   config and sound versions move with the two rows and the `[landing.max]` table, restated in place (no project of those

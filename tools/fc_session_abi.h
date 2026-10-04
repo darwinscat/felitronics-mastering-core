@@ -65,7 +65,7 @@
 //  10            v0.15.0: the maximum loudness modes — a target's loudnessMode (manual, maxClean, maxDense) on its row,
 //                in editTarget (TargetPatch.loudnessMode, null gives the row's back) and a project's target layer, the
 //                mode in effect in the snapshot (Snapshot.loudnessMode); a max master's report says its mode, what
-//                stopped it and the guard's steps back (MasterReport.loudnessMode, maxStop, guardSteps; facts 608-613,
+//                stopped it and the guard's steps back (MasterReport.loudnessMode, maxStop, guardSteps; facts 608-615,
 //                the loudnessMode terms, the field term FieldTargetLoudnessMode), and its damage is the guard's grading.
 #define FC_SESSION_ABI_VERSION 10u
 #define FC_SESSION_SIZES_V1_BYTES 12u

@@ -24,7 +24,9 @@
       "GuardUnmet",
       "SearchCeiling",
       "Passes",
-      "TruePeak"
+      "TruePeak",
+      "Unguarded",
+      "OverBudget"
     ],
     "SaturationType": [
       "Tanh",

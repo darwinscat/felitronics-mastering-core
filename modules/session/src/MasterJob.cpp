@@ -156,6 +156,20 @@ double limiterBudgetDb (toml::embedded::View engine, double targetLufs) noexcept
     return number (budget.find (targetLufs < low ? "quietDb" : targetLufs <= high ? "middleDb" : "loudDb"));
 }
 
+MaxStop maxStopOf (const MaxStopInputs& in) noexcept
+{
+    using mastering::MasteringSolveStatus; using mastering::MasteringConstraint;
+    if (in.peaksAboveCeiling) return MaxStop::TruePeak;
+    if (in.overBudget) return MaxStop::OverBudget;
+    if (! in.guardGraded) return MaxStop::Unguarded;
+    if (! in.guardPassed) return MaxStop::GuardUnmet;
+    if (in.guardTaken > 0) return MaxStop::Guard;
+    if (in.firstStatus == MasteringSolveStatus::Solved) return MaxStop::SearchCeiling;
+    if (in.firstStatus == MasteringSolveStatus::TargetUnreachable && in.firstBinding == MasteringConstraint::LimiterGainReduction)
+        return MaxStop::Budget;
+    return MaxStop::Passes;
+}
+
 double maxBudgetDb (toml::embedded::View engine, LoudnessMode mode) noexcept
 {
     if (mode == LoudnessMode::Manual) return std::numeric_limits<double>::quiet_NaN();
@@ -456,7 +470,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         const auto result = search.step (budget);
         if (result == StepResult::More) return result;
         const auto& first = search.result();
-        firstStatus = first.status; firstBinding = first.binding; firstAboveCeiling = first.peaksAboveCeiling;
+        firstStatus = first.status; firstBinding = first.binding;
         // A max mode grades the landing's render before the file is delivered.
         if (mode != LoudnessMode::Manual && result == StepResult::Done && first.deliverable && damagePlan.ok)
         {
@@ -483,11 +497,14 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         if (g.refused) { d.status = MeasurementStatus::Unavailable; d.reason = MeasurementReason::Unsupported; }
         else g.damage.publish (d);
         guardRan = true;
-        // THE GUARD'S VERDICT: the worst window above the mode's floor passes; a render PEAQ could not grade (no signal,
-        // an unprepared walk) has nothing heard to hold against it.
-        const bool passed = ! (d.status == MeasurementStatus::Ready && d.worstOdg) || *d.worstOdg > guardFloorOdg;
-        if (passed || guardTaken >= guardSteps)
+        // THE GUARD'S VERDICT: graded (Ready), the worst window above the mode's floor passes, and so does a render with
+        // nothing heard to hold against it (Ready, no window graded audible). A walk refused or unavailable did not grade
+        // the render: the guard stops there and the damage is said unchecked (MaxStop::Unguarded), never passed.
+        const bool graded = ! g.refused && d.status == MeasurementStatus::Ready;
+        const bool passed = graded && (! d.worstOdg || *d.worstOdg > guardFloorOdg);
+        if (passed || ! graded || guardTaken >= guardSteps)
         {
+            guardGraded = graded;
             guardPassed = passed;
             guardDamage = d;
             guard.reset();
@@ -869,8 +886,14 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     {
         report.cost = costResult;
         // The loudness range is the master's own; the damage is graded after it, by a job of its own: Pending until then.
-        // A max mode's damage is its guard's grade of the delivered render: no job follows.
-        if (guardRan) { report.damage = guardDamage; settleLra(); }
+        // A max mode's damage is its guard's grade of the delivered render — or, where the guard could not run, the
+        // reason it has none: no job follows a max master.
+        if (mode != LoudnessMode::Manual)
+        {
+            if (guardRan) report.damage = guardDamage;
+            else { report.damage.status = MeasurementStatus::Unavailable; report.damage.reason = damagePlan.reason; }
+            settleLra();
+        }
         else if (settleLra(), ! damagePlan.ok) report.damage.reason = damagePlan.reason;
         else
         {
@@ -955,13 +978,9 @@ mastering::StepResult MasterJob::settleLanding (mastering::StepResult result) no
     if (mode != LoudnessMode::Manual && solved.deliverable)
     {
         report.guardSteps = std::uint32_t (guardTaken);
-        report.maxStop = guardRan && ! guardPassed ? MaxStop::GuardUnmet
-            : guardRan && guardTaken > 0 ? MaxStop::Guard
-            : firstAboveCeiling ? MaxStop::TruePeak
-            : firstStatus == mastering::MasteringSolveStatus::Solved ? MaxStop::SearchCeiling
-            : firstStatus == mastering::MasteringSolveStatus::TargetUnreachable
-              && firstBinding == mastering::MasteringConstraint::LimiterGainReduction ? MaxStop::Budget
-            : MaxStop::Passes;
+        // The delivered render's own: above the ceiling, over the budget (the landing's or the step render's proof).
+        report.maxStop = maxStopOf ({ solved.peaksAboveCeiling, std::isfinite (search.overBudgetDb()),
+                                      guardRan && guardGraded, guardPassed, guardTaken, firstStatus, firstBinding });
     }
     if (result == StepResult::Failed || ! solved.deliverable)
     {
@@ -988,7 +1007,9 @@ void MasterJob::startGuard() noexcept
 }
 
 // The guard's step back rendered and delivered: one pass at the candidate's gain and ceiling, the needles set from the peak
-// the landing measured, no budget and no gate — the landing chose these settings.
+// the landing measured, no gate — the landing chose these settings. The mode's budget stays on: a lower drive can drop
+// windows near the limiter's activity threshold out of the active set and raise the P95 of the rest, so the delivered
+// pass proves the budget itself, and one that breaks it is delivered as over the budget (search.overBudgetDb()).
 bool MasterJob::beginStepRender() noexcept
 {
     auto params = ready.params;
@@ -998,9 +1019,6 @@ bool MasterJob::beginStepRender() noexcept
     request.maxPasses = 1;
     request.initialGainDb = candidateGainDb;
     request.ceilingMarginDb = std::max (0.0, request.maxTruePeakDbTp - candidateCeilingDb);
-    request.limiterGr = {};
-    request.limiterGr.statistic = mastering::GrStatistic::P95;
-    request.limiterGr.limitDb = std::numeric_limits<double>::infinity();
     request.landingOnSourceGate = false;
     request.peakClipMeasured = true;
     chain.setParams (params);

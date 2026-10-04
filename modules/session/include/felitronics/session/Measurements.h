@@ -37,8 +37,10 @@ enum class DamageVerdict : std::uint8_t { NotRun, Graded, Transparent, NoSignal,
 // the drive, proven (LandingSearch's proof); Guard — the PEAQ guard stepped the drive back to a render that passed;
 // GuardUnmet — no render the guard tried passed its floor, the gentlest is delivered; SearchCeiling — the landing reached
 // [landing.max] ceilingLufs inside the budget and the floor; Passes — the passes ran out first; TruePeak — no render kept
-// under the ceiling.
-enum class MaxStop : std::uint8_t { None, Budget, Guard, GuardUnmet, SearchCeiling, Passes, TruePeak };
+// under the ceiling; Unguarded — the budget holds but PEAQ could not grade the render (no damage plan for the source, a
+// walk refused or unavailable): the damage is unchecked; OverBudget — the render delivered breaks the mode's budget (no
+// render kept it, or the guard's step back broke it).
+enum class MaxStop : std::uint8_t { None, Budget, Guard, GuardUnmet, SearchCeiling, Passes, TruePeak, Unguarded, OverBudget };
 // A missing number always carries a reason. analyzerReason preserves the instrument's more specific code.
 struct MeasurementValue
 {

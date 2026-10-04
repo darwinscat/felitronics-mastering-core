@@ -25,6 +25,18 @@ namespace detail
 [[nodiscard]] double limiterBudgetDb (toml::embedded::View engine, double targetLufs) noexcept;
 // [landing.max]: a max mode's limiter budget, dB (NaN for the manual mode or where the config does not say it).
 [[nodiscard]] double maxBudgetDb (toml::embedded::View engine, LoudnessMode mode) noexcept;
+// WHAT ENDED A MAX MODE (MasterReport::maxStop), from what the delivered render and the guard said, in this order: a
+// render above the ceiling; a render over the mode's limiter budget (no render kept it, or the guard's step back broke
+// it); a render the guard could not grade (no damage plan, a walk refused or unavailable) — the damage unchecked, never
+// a guard's pass; the guard's own verdict (no step passed, or a step back did); then the first landing's status.
+struct MaxStopInputs
+{
+    bool peaksAboveCeiling = false, overBudget = false, guardGraded = false, guardPassed = false;
+    std::int32_t guardTaken = 0;
+    mastering::MasteringSolveStatus firstStatus = mastering::MasteringSolveStatus::NotPrepared;
+    mastering::MasteringConstraint firstBinding = mastering::MasteringConstraint::None;
+};
+[[nodiscard]] MaxStop maxStopOf (const MaxStopInputs& in) noexcept;
 
 struct MasterPlan
 {
@@ -165,12 +177,11 @@ struct MasterJob final
     std::int32_t guardSteps = 0, guardTaken = 0;
     std::unique_ptr<DamageJob> guard;
     double candidateGainDb = 0, candidateCeilingDb = 0;
-    bool candidateRendered = true, guardRan = false, guardPassed = false;
+    bool candidateRendered = true, guardRan = false, guardGraded = false, guardPassed = false;
     MasterDamage guardDamage {};
     mastering::LoudnessRequest landingRequest {};
     mastering::MasteringSolveStatus firstStatus = mastering::MasteringSolveStatus::NotPrepared;
     mastering::MasteringConstraint firstBinding = mastering::MasteringConstraint::None;
-    bool firstAboveCeiling = false;
     void startGuard() noexcept;
     bool beginStepRender() noexcept;
     mastering::StepResult settleLanding (mastering::StepResult result) noexcept;
