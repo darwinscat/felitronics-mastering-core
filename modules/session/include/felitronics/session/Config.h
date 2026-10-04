@@ -124,8 +124,8 @@ struct Landing
     double truePeakAimDb = 0.0;
     bool onSourceGate = false;
     // The limiter's budget by the target's loudness: below `middleLufs` quietDb, within it (both ends) middleDb, above
-    // it loudDb — the window p95 of its gain reduction, dB.
-    std::int32_t quietBudgetDb = 0, middleBudgetDb = 0, loudBudgetDb = 0;
+    // it loudDb — the window p95 of its gain reduction, dB, a whole number of quarter dB.
+    double quietBudgetDb = 0.0, middleBudgetDb = 0.0, loudBudgetDb = 0.0;
     Span middleLufs;
 };
 
@@ -572,7 +572,7 @@ enum class Refusal : std::uint8_t
     OutOfOrder,    // a minimum above its maximum, or a list that must ascend and does not
     Duplicate,     // named twice where once is the rule (a target in `main`, an EQ band given to two devices)
     Fixed,         // a value the session does not let change (the limiter is always on, the printed quantiles)
-    NotOnStep,     // analyzer hop is not a whole number of its required time quantum
+    NotOnStep,     // not a whole number of its step: an analyzer hop of its time quantum, the limiter's budget of 0.25 dB
     Mismatch,      // differs from the key it must equal
     WrittenDefault,// an optional flag written as its default: it is written only when it is true
     NotApplicable, // set where it cannot apply (a pass at the source's rate on a target that keeps the source's rate)

@@ -188,7 +188,7 @@ void theLandingsFacts()
 
     // The tolerance is the shipped engine's landing.toleranceLu (LandingPlanTests pins it).
     constexpr double kTolerance = 0.1;
-    // The verdict: held by the limiter's budget, the target, the level landed and the budget — 10 dB for a target louder
+    // The verdict: held by the limiter's budget, the target, the level landed and the budget — 7.5 dB for a target louder
     // than −8 LUFS (engine.toml [landing] limiterBudget), the level landed no louder than the target.
     const auto& summary = *kept (view.view(), made.id)->landing;
     const auto both = [] (const text::Fact& f) { return text::Text::text (f, text::Lang::Ru) + " / " + text::Text::text (f, text::Lang::En); };
@@ -204,7 +204,7 @@ void theLandingsFacts()
         "delivered");
     ok (summary.status == LandingStatus::TargetUnreachable && summary.binding == LandingConstraint::LimiterGainReduction
         && verdict && verdict->argCount == 3 && same (verdict->args[0].number, -5.0) && verdict->args[1].number <= -5.0
-        && same (verdict->args[2].number, 10.0) && verdict->args[2].unit == text::Unit::Db
+        && same (verdict->args[2].number, 7.5) && verdict->args[2].unit == text::Unit::Db && verdict->args[2].precision == 1
         && both (*verdict).find ('{') == std::string::npos,
         "the miss's verdict is published with the master, with its numbers: " + (verdict ? both (*verdict) : std::string {}));
 
@@ -271,6 +271,23 @@ void theLandingsFacts()
         apart.gateLufs = file + 0.05;
         ok (metReport.achievedLufs && both && ! MasterReportText::gate (metReport, apart, kTolerance),
             "the gate's level and the file's are both said when they part by more than the tolerance, the file louder or quieter");
+    }
+    // The limiter's budget printed whole: up to two decimals, the trailing zeros dropped.
+    {
+        LandingSummary held;
+        held.status = LandingStatus::TargetUnreachable; held.binding = LandingConstraint::LimiterGainReduction;
+        const auto said = [&] (double budget, text::Lang lang)
+        {
+            LandingMeasure m; m.limiterBudgetDb = budget;
+            const auto fact = MasterReportText::landing (metReport, held, kTolerance, m);
+            return fact && fact->id == text::FactId::MasterLandingBudget ? text::Text::text (*fact, lang) : std::string {};
+        };
+        const auto ru725 = said (7.25, text::Lang::Ru), en725 = said (7.25, text::Lang::En);
+        const auto ru75 = said (7.5, text::Lang::Ru), ru7 = said (7.0, text::Lang::Ru), en7 = said (7.0, text::Lang::En);
+        ok (ru725.find ("7,25") != std::string::npos && en725.find ("7.25") != std::string::npos
+            && ru75.find ("7,5") != std::string::npos && ru75.find ("7,50") == std::string::npos
+            && ru7.find ("7,0") == std::string::npos && en7.find ("7.0") == std::string::npos && ! ru7.empty(),
+            "the budget is printed whole — 7.25, 7.5, 7 — in ru and en: " + ru725 + " / " + en725);
     }
     const auto solved = MasterReportText::landing (metReport, *kept (metView.view(), landed.id)->landing, kTolerance);
     ok (solved && solved->id == text::FactId::MasterLandingSolved && metReport.achievedLufs

@@ -53,15 +53,18 @@ shortSeconds = 10
 # limiterBudget (owner decision, 04.10): the most the limiter may take, the P95 of its gain reduction over its ACTIVE
 #   windows (input above [cost] limiterActiveInputDb, so silence does not water it down) — the number the report's
 #   limiter line prints — by the loudness of the target, a person's edited number included: quietDb below middleLufs,
-#   middleDb within it (both ends), loudDb above it. A landing that would need more stops where the budget holds and is
-#   delivered short of the target, the budget named — named only where the render delivered stands within 0.25 dB of
-#   drive under one measured over the budget.
+#   middleDb within it (both ends), loudDb above it, in dB on a quarter-dB step (the proof's resolution). A landing that
+#   would need more stops where the budget holds and is delivered short of the target, the budget named — named only
+#   where the render delivered stands within 0.25 dB of drive under one measured over the budget.
+#   loudDb = 7.5 (owner decision, 04.10, v0.14.1; it was 10): 1058 renders of 23 songs without a budget put the
+#   limiter's cost and the PEAQ damage breaking together near 4, 6.5 and 8 dB of P95. Asked for −6 LUFS, the median song
+#   at 7.5 dB reaches −7.83 with an ODG of −1.46, 3 of 23 "annoying"; at 10 dB it reached −7.36, −2.30, 11 of 23.
 [landing]
 passes = 12 # Owner decision 28.09: one budget, stop on success; a miss is a normal result.
 toleranceLu = 0.1
 truePeakAimDb = 0.05
 onSourceGate = true
-limiterBudget = { quietDb = 4, middleDb = 7, loudDb = 10, middleLufs = [-10, -8] }
+limiterBudget = { quietDb = 4, middleDb = 7, loudDb = 7.5, middleLufs = [-10, -8] }
 
 # THE LIMITER — always on, with no tick; its setting is the target's ceiling. The ceiling is hard; its gain reduction is
 # held by [landing] limiterBudget, and no PLR and no other cost of the master limits how far it goes for the loudness.

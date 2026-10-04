@@ -4,6 +4,7 @@
 #include "../../../tests/DeclaredBudget.h"
 #include "Driver.h"
 #include "Damage.h"
+#include <felitronics/session/Config.h>
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/analysis/ReferenceTruePeakMeter.h>
 #include <felitronics_test.h>
@@ -490,17 +491,24 @@ int main()
     ok (s.masters().size() == 1, "demanding target publishes one retained result");
     if (s.masters().empty()) return felitronics::test::report();
     const auto& miss = s.masters().back();
+    // The loud target's budget, as the config states it: −5 LUFS is above the middle step's −8.
+    const auto rules = felitronics::session::config::Config::load();
+    const auto& landingRules = rules.config.engine.landing;
+    const double loudBudget = landingRules.middleLufs.max < -5.0 ? landingRules.loudBudgetDb : std::numeric_limits<double>::quiet_NaN();
+    char budgetSaid[64];
+    std::snprintf (budgetSaid, sizeof budgetSaid, "%g dB", loudBudget);
     ok (demanding.rejection == Rejection::None && missStart.rejection == Rejection::None
         && miss.landing && miss.landing->status == LandingStatus::TargetUnreachable
         && miss.landing->binding == LandingConstraint::LimiterGainReduction
         && miss.landing->deliverable && ! miss.landing->peaksAboveCeiling && miss.landing->passes < 12
         && budgetProven (*miss.landing)
-        && miss.report && miss.report->cost && miss.report->cost->limiterP95Db.value && *miss.report->cost->limiterP95Db.value <= 10.0
+        && miss.report && miss.report->cost && miss.report->cost->limiterP95Db.value && *miss.report->cost->limiterP95Db.value <= loudBudget
         && miss.report && ! miss.report->peaksAboveCeiling && ! MasterReportText::peaksAboveCeiling (*miss.report)
         && miss.landing->truePeakDbTp && *miss.landing->truePeakDbTp <= -6.0
         && s.pendingMaster().master == miss.id && s.masterWavPlan (s.pendingMaster()),
-        "an unreachable loudness goal stops at the limiter's budget of 10 dB, named on its proof — a render marked over it "
-        "within 0.25 dB above the one delivered — its delivered P95 inside it, and retains the best ceiling-safe PCM");
+        "an unreachable loudness goal stops at the loud target's limiter budget of " + std::string (budgetSaid) + ", named on its "
+        "proof — a render marked over it within 0.25 dB above the one delivered — its delivered P95 inside it, and retains "
+        "the best ceiling-safe PCM");
     {
         // −6 LUFS under −6 dBTP: the ceiling holds this landing, not the budget — whatever passes went over it.
         auto ceilingMade = Session::create();
@@ -512,8 +520,9 @@ int main()
         auto ceilingReady = ready; ceilingReady.id = 3; ceilingReady.source = c.source().hash; ceilingReady.revision = c.revision();
         const auto ceilingStart = c.apply (ceilingReady);
         for (unsigned i = 0; i < 40000 && c.job() != 0; ++i) (void) c.step (16);
-        const bool landed = ! c.masters().empty() && c.masters().back().landing;
-        const auto& l = *c.masters().back().landing;
+        const auto masters = c.masters();
+        const bool landed = ! masters.empty() && masters.back().landing;
+        const LandingSummary l = landed ? *masters.back().landing : LandingSummary {};
         std::printf ("    −6 LUFS under −6 dBTP: status %d binding %d, %.3f LUFS, %u passes\n", landed ? (int) l.status : -1,
                      landed ? (int) l.binding : -1, landed && l.achievedLufs ? *l.achievedLufs : 0.0, landed ? l.passes : 0u);
         ok (edited.rejection == Rejection::None && ceilingStart.rejection == Rejection::None && landed && l.deliverable

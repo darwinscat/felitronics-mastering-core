@@ -337,9 +337,12 @@ void pump()
     // The landing's two keys ([landing] onSourceGate, limiterBudget) and the damage's table ([cost.damage]) move the
     // master and nothing else: with the config's version they leave put back, every other job's events are the ones the
     // config without them gives (81133bf's).
-    const auto withoutKeys = [] (std::vector<Notification> events, bool landing, bool damage)
+    const auto withoutKeys = [] (std::vector<Notification> events, bool landing, bool damage, bool loudBudget = false)
     {
         auto engine = config::Config::text (config::Document::Engine);
+        // ...and the loud target's budget at the 10 dB it was before 7.5 (a number only, every master here quieter).
+        if (loudBudget)
+            if (const auto at = engine.find ("loudDb = 7.5,"); at != std::string::npos) engine.replace (at, 13, "loudDb = 10,");
         if (landing)
             for (const std::string_view key : { "\nonSourceGate = ", "\nlimiterBudget = " })
                 if (const auto at = engine.find (key); at != std::string::npos)
@@ -378,13 +381,13 @@ void pump()
         }
         return kept;
     };
-    ok (eventsHash (withoutDamage (withoutKeys (one, false, true).first)) == 0xc53142779e57820full
-        && eventsHash (withoutDamage (withoutKeys (cancelled, false, true).first)) == 0x4697be12cad5438eull,
+    ok (eventsHash (withoutDamage (withoutKeys (one, false, true, true).first)) == 0xc53142779e57820full
+        && eventsHash (withoutDamage (withoutKeys (cancelled, false, true, true).first)) == 0x4697be12cad5438eull,
         "the damage moves its own job's events, the master's two lines and the config's version alone: without them the "
         "landing fix's pins c53142779e57820f / 4697be12cad5438e hold");
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
-    ok (eventsHash (one) == 0xbb4ede0865b0da64ull && eventsHash (cancelled) == 0x3100698c70cf6bb2ull,
+    ok (eventsHash (one) == 0xda919916fda361b4ull && eventsHash (cancelled) == 0x6ad6ca4f979c36bfull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",

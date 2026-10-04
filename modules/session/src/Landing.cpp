@@ -65,6 +65,15 @@ std::optional<text::Fact> MasterReportText::landing (const MasterReport& report,
 {
     using text::Arg; using text::Fact; using text::FactId; using text::Term; using text::Unit;
     const auto tolerance = Arg::value (toleranceLu, Unit::Lu, 1);
+    // The limiter's budget as the config states it, a whole number of quarter dB: its digits up to two, the trailing
+    // zeros dropped — 7, 7.5, 7.25 — read off its hundredths as an integer. Asked only of a finite budget (a landing
+    // without one, NaN, says no budget's line), within the schema's 1…60 dB.
+    const auto budget = [&measure] () noexcept
+    {
+        const auto hundredths = (long long) std::floor (std::clamp (measure.limiterBudgetDb, 0.0, 1.0e6) * 100.0 + 0.5);
+        return Arg::value (measure.limiterBudgetDb, Unit::Db,
+            hundredths % 100 == 0 ? std::uint8_t (0) : hundredths % 10 == 0 ? std::uint8_t (1) : std::uint8_t (2));
+    };
     // The level landed: on the source's gate where the landing measured it there, else the file's.
     const std::optional<double> landed = std::isfinite (measure.landedLufs) ? std::optional<double> (measure.landedLufs)
                                                                             : report.achievedLufs;
@@ -92,10 +101,9 @@ std::optional<text::Fact> MasterReportText::landing (const MasterReport& report,
                 && report.status == MeasurementStatus::Ready && landed)
                 return std::isfinite (measure.overBudgetDb)
                     ? Fact::of (FactId::MasterLandingOverBudget, Arg::value (report.targetLufs, Unit::Lufs, 1),
-                                Arg::value (*landed, Unit::Lufs, 1), Arg::value (measure.limiterBudgetDb, Unit::Db, 0),
-                                Arg::value (measure.overBudgetDb, Unit::Db, 1))
+                                Arg::value (*landed, Unit::Lufs, 1), budget(), Arg::value (measure.overBudgetDb, Unit::Db, 1))
                     : Fact::of (FactId::MasterLandingBudget, Arg::value (report.targetLufs, Unit::Lufs, 1),
-                                Arg::value (*landed, Unit::Lufs, 1), Arg::value (measure.limiterBudgetDb, Unit::Db, 0));
+                                Arg::value (*landed, Unit::Lufs, 1), budget());
             return Fact::of (FactId::MasterLandingUnreachable, tolerance, Arg::term (limit (landing.binding)));
         case LandingStatus::PassLimit: return Fact::of (FactId::MasterLandingPassLimit, tolerance);
         case LandingStatus::TargetBetweenAchievable:
