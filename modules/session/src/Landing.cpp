@@ -65,6 +65,9 @@ std::optional<text::Fact> MasterReportText::landing (const MasterReport& report,
 {
     using text::Arg; using text::Fact; using text::FactId; using text::Term; using text::Unit;
     const auto tolerance = Arg::value (toleranceLu, Unit::Lu, 1);
+    // The limiter's budget as the config states it: a whole number of dB without a decimal, a fraction with one.
+    const auto budget = Arg::value (measure.limiterBudgetDb, Unit::Db,
+        core::exactlyEqual (std::floor (measure.limiterBudgetDb), measure.limiterBudgetDb) ? std::uint8_t (0) : std::uint8_t (1));
     // The level landed: on the source's gate where the landing measured it there, else the file's.
     const std::optional<double> landed = std::isfinite (measure.landedLufs) ? std::optional<double> (measure.landedLufs)
                                                                             : report.achievedLufs;
@@ -92,10 +95,9 @@ std::optional<text::Fact> MasterReportText::landing (const MasterReport& report,
                 && report.status == MeasurementStatus::Ready && landed)
                 return std::isfinite (measure.overBudgetDb)
                     ? Fact::of (FactId::MasterLandingOverBudget, Arg::value (report.targetLufs, Unit::Lufs, 1),
-                                Arg::value (*landed, Unit::Lufs, 1), Arg::value (measure.limiterBudgetDb, Unit::Db, 0),
-                                Arg::value (measure.overBudgetDb, Unit::Db, 1))
+                                Arg::value (*landed, Unit::Lufs, 1), budget, Arg::value (measure.overBudgetDb, Unit::Db, 1))
                     : Fact::of (FactId::MasterLandingBudget, Arg::value (report.targetLufs, Unit::Lufs, 1),
-                                Arg::value (*landed, Unit::Lufs, 1), Arg::value (measure.limiterBudgetDb, Unit::Db, 0));
+                                Arg::value (*landed, Unit::Lufs, 1), budget);
             return Fact::of (FactId::MasterLandingUnreachable, tolerance, Arg::term (limit (landing.binding)));
         case LandingStatus::PassLimit: return Fact::of (FactId::MasterLandingPassLimit, tolerance);
         case LandingStatus::TargetBetweenAchievable:

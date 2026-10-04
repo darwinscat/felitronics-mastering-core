@@ -125,7 +125,7 @@ struct Landing
     bool onSourceGate = false;
     // The limiter's budget by the target's loudness: below `middleLufs` quietDb, within it (both ends) middleDb, above
     // it loudDb — the window p95 of its gain reduction, dB.
-    std::int32_t quietBudgetDb = 0, middleBudgetDb = 0, loudBudgetDb = 0;
+    double quietBudgetDb = 0.0, middleBudgetDb = 0.0, loudBudgetDb = 0.0;
     Span middleLufs;
 };
 

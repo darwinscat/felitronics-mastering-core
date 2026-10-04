@@ -307,9 +307,9 @@ void readLanding (Doc& d, Reader& in, Landing& o)
     in.required ("onSourceGate", o.onSourceGate);
     in.table ("limiterBudget", Need::Required, [&] (Reader& t)
     {
-        const bool quiet = t.required ("quietDb", o.quietBudgetDb, I { 1, 60 });
-        const bool middle = t.required ("middleDb", o.middleBudgetDb, I { 1, 60 });
-        const bool loud = t.required ("loudDb", o.loudBudgetDb, I { 1, 60 });
+        const bool quiet = t.required ("quietDb", o.quietBudgetDb, R { 1.0, 60.0 });
+        const bool middle = t.required ("middleDb", o.middleBudgetDb, R { 1.0, 60.0 });
+        const bool loud = t.required ("loudDb", o.loudBudgetDb, R { 1.0, 60.0 });
         d.notAbove (t, quiet && middle, o.quietBudgetDb, o.middleBudgetDb, "middleDb");   // a louder target, no less budget
         d.notAbove (t, middle && loud, o.middleBudgetDb, o.loudBudgetDb, "loudDb");
         d.pair (t, "middleLufs", o.middleLufs, anyLufs());

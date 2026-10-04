@@ -2424,22 +2424,23 @@ void theMachineKeepsItsOwnNorm()
 }
 
 // THE LIMITER'S BUDGET BY THE TARGET'S LOUDNESS ([landing] limiterBudget): below −10 LUFS 4 dB, from −10 to −8 (both
-// ends) 7 dB, louder 10 dB — for every target row by its own loudness and for any loudness a person types.
+// ends) 7 dB, louder 7.5 dB — for every target row by its own loudness and for any loudness a person types.
 void theLimiterBudgetRule()
 {
     felitronics::test::group ("the limiter's budget follows the target's loudness, a person's edit included");
     const auto engine = detail::rules().engine;
     const auto at = [&] (double lufs) { return detail::limiterBudgetDb (engine, lufs); };
-    ok (at (-10.01) == 4.0 && at (-10.0) == 7.0 && at (-8.0) == 7.0 && at (-7.99) == 10.0,
-        "the borders: −10.01 LUFS 4 dB, −10 and −8 7 dB, −7.99 10 dB");
-    ok (at (-24.0) == 4.0 && at (-23.0) == 4.0 && at (-14.0) == 4.0 && at (-11.0) == 4.0 && at (-9.0) == 7.0 && at (-5.0) == 10.0,
-        "broadcast −24 and −23, streaming −14 and −11: 4 dB; −9: 7 dB; −5: 10 dB");
+    const auto is = [&] (double lufs, double budget) { return felitronics::core::exactlyEqual (at (lufs), budget); };
+    ok (is (-10.01, 4.0) && is (-10.0, 7.0) && is (-8.0, 7.0) && is (-7.99, 7.5),
+        "the borders: −10.01 LUFS 4 dB, −10 and −8 7 dB, −7.99 7.5 dB");
+    ok (is (-24.0, 4.0) && is (-23.0, 4.0) && is (-14.0, 4.0) && is (-11.0, 4.0) && is (-9.0, 7.0) && is (-5.0, 7.5),
+        "broadcast −24 and −23, streaming −14 and −11: 4 dB; −9: 7 dB; −5: 7.5 dB");
     const auto rules = detail::rules();
     bool rows = true;
     for (std::uint16_t i = 0; i < rules.rows; ++i)
     {
         const double lufs = rules.row (i).lufs.toDouble();
-        rows = rows && at (lufs) == (lufs < -10.0 ? 4.0 : lufs <= -8.0 ? 7.0 : 10.0);
+        rows = rows && is (lufs, lufs < -10.0 ? 4.0 : lufs <= -8.0 ? 7.0 : 7.5);
     }
     ok (rows, "every target row by its own loudness");
     ok (std::isnan (at (std::numeric_limits<double>::quiet_NaN())), "no loudness, no budget");

@@ -188,7 +188,7 @@ void theLandingsFacts()
 
     // The tolerance is the shipped engine's landing.toleranceLu (LandingPlanTests pins it).
     constexpr double kTolerance = 0.1;
-    // The verdict: held by the limiter's budget, the target, the level landed and the budget — 10 dB for a target louder
+    // The verdict: held by the limiter's budget, the target, the level landed and the budget — 7.5 dB for a target louder
     // than −8 LUFS (engine.toml [landing] limiterBudget), the level landed no louder than the target.
     const auto& summary = *kept (view.view(), made.id)->landing;
     const auto both = [] (const text::Fact& f) { return text::Text::text (f, text::Lang::Ru) + " / " + text::Text::text (f, text::Lang::En); };
@@ -204,7 +204,7 @@ void theLandingsFacts()
         "delivered");
     ok (summary.status == LandingStatus::TargetUnreachable && summary.binding == LandingConstraint::LimiterGainReduction
         && verdict && verdict->argCount == 3 && same (verdict->args[0].number, -5.0) && verdict->args[1].number <= -5.0
-        && same (verdict->args[2].number, 10.0) && verdict->args[2].unit == text::Unit::Db
+        && same (verdict->args[2].number, 7.5) && verdict->args[2].unit == text::Unit::Db && verdict->args[2].precision == 1
         && both (*verdict).find ('{') == std::string::npos,
         "the miss's verdict is published with the master, with its numbers: " + (verdict ? both (*verdict) : std::string {}));
 
