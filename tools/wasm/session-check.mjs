@@ -95,8 +95,8 @@ SURFACE[6] = SURFACE[5];
 SURFACE[7] = SURFACE[6];
 // Version 8 appends the saturation's shave of the peaks (QueryKind::SaturationShave), and no entry point.
 SURFACE[8] = SURFACE[7];
-// Version 9 (v0.14.0) appends a landing held short — facts 600 (the limiter's budget) and 601 (the level landed on the
-// source's gate beside the file's reading) — and no entry point.
+// Version 9 (v0.14.0) appends a landing held short — facts 600 (the limiter's budget), 601 (the level landed on the
+// source's gate beside the file's reading) and 602 (no render kept the budget) — and no entry point.
 SURFACE[9] = SURFACE[8];
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
@@ -890,7 +890,9 @@ for (let i = 0; i < 40000; ++i) {
     if (M._fc_session_step(masterSession, 16, resultSize) !== STATUS.OK) break;
 }
 const missLanding = missSnapshot?.masters?.at(-1)?.landing;
-// Held by the limiter's budget (engine.toml [landing] limiterBudget): TargetUnreachable (1), LimiterGainReduction (2).
+// Held by the limiter's budget, proven (engine.toml [landing] limiterBudget, on the limiter's active windows): the drive
+// that keeps it stands within a quarter dB of the one that breaks it, or the budget held the last drive chosen.
+// TargetUnreachable (1), LimiterGainReduction (2).
 ok(missLanding?.status === 1 && missLanding.binding === 2 && missLanding.deliverable && missLanding.passes <= 12
     && Number.isFinite(missLanding.missLu) && missLanding.truePeakDbTp <= -6,
    'safe miss stops at the limiter\'s budget and records its actual loudness miss and true-peak measurement');

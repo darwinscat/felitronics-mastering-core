@@ -6,6 +6,7 @@
 #include <felitronics_test.h>
 #include "../../../tests/DeclaredBudget.h"
 
+#include <algorithm>
 #include <cmath>
 #include <climits>
 #include <cstdio>
@@ -153,24 +154,30 @@ bool diagnose (MixFault fault, LoudnessSolution& answer)
     return run (rig, LLONG_MAX, 10.0, 12, answer);
 }
 
-// LOUDNESS AS A REQUEST: a mono programme landed through the limiter alone, TP -1, its source's momentary series kept so
-// the landing can read the source's gate.
+// LOUDNESS AS A REQUEST: a mono programme at `rate`, its momentary series as the session's loudness measurement keeps it
+// (a hop of ten lround (0.01 fs) frames, value i the 400 ms ending at (i + 1) hops), and its gating blocks.
 struct Programme
 {
     std::vector<float> source;
-    std::vector<double> momentary;   // the source's momentary loudness, LUFS, value i the 400 ms ending at (i + 1) * 100 ms
+    int rate = kRate;
+    long long hop = 0;
+    std::vector<double> momentary;
+    std::vector<double> blocks;   // the source's BS.1770 gating block energies, block j starting at j hops
 
-    explicit Programme (std::vector<float> pcm) : source (std::move (pcm))
+    Programme (std::vector<float> pcm, int sampleRate = kRate) : source (std::move (pcm)), rate (sampleRate)
     {
+        hop = 10LL * std::max (1L, std::lround (0.01 * rate));
         analysis::LoudnessMeter meter;
-        const int frames = (int) source.size(), hop = kRate / 10;
-        if (! meter.prepareForSamples (kRate, 1, frames)) return;
-        for (int at = 0; at + hop <= frames; at += hop)
+        const int frames = (int) source.size();
+        if (! meter.prepareForSamples (rate, 1, frames)) return;
+        for (long long at = 0; at + hop <= frames; at += hop)
         {
             const float* planes[1] { source.data() + at };
-            if (! meter.process (planes, 1, hop)) { momentary.clear(); return; }
+            if (! meter.process (planes, 1, (int) hop)) { momentary.clear(); return; }
             momentary.push_back (meter.momentaryLufs());
         }
+        const auto e = meter.gatingBlockEnergies();
+        blocks.assign (e.begin(), e.end());
     }
 };
 
@@ -183,49 +190,105 @@ struct Landed
     long long steps = 0;
 };
 
-// Lands `p` at `target`: on the source's gate or on the master's own, with a limiter budget (P95, dB) or none, `budget`
-// work units a step.
-Landed land (const Programme& p, double target, bool onSourceGate, double limiterBudgetDb, long long budget = LLONG_MAX)
+struct LandingSetup
+{
+    double target = -10.0, ceiling = -1.0;
+    bool onSourceGate = false;
+    double limiterBudgetDb = std::numeric_limits<double>::quiet_NaN();   // P95 on the active windows; NaN: none
+    long long stepBudget = LLONG_MAX;
+    int deliveryRate = 0;                                                 // 0: the programme's own
+    double highPassHz = 0.0;                                              // > 0: a 96 dB/oct high-pass before the limiter
+    double initialGainDb = std::numeric_limits<double>::quiet_NaN();
+    int maxPasses = 12;
+};
+
+// Lands `p` through the limiter alone (and the high-pass when asked), delivered at `deliveryRate`.
+Landed land (const Programme& p, const LandingSetup& w)
 {
     Landed r;
-    const int frames = (int) p.source.size();
+    const int rate = w.deliveryRate > 0 ? w.deliveryRate : p.rate;
+    const long long sourceFrames = (long long) p.source.size();
+    const bool convert = rate != p.rate;
+    const long long frames = convert ? DeliveryConverter::deliveredFrames (p.rate, rate, sourceFrames) : sourceFrames;
     MasteringChain chain; OfflineRenderer renderer; TargetLoudnessSolver solver; MasteringChainParams params;
+    DeliveryConverter converter;
     MasteringChainConfig config;
-    config.eq = false; config.monoBass = false; config.compressor = false;
+    config.eq = w.highPassHz > 0.0; config.monoBass = false; config.compressor = false;
     config.clipper = false; config.limiter = true; config.dither = true;
-    if (! chain.prepare (kRate, 1, config) || ! renderer.prepare (1, 257)
-        || ! solver.prepare (kRate, 1, 257, chain.internalBlock(), chain.tapOversampleFactor())) return r;
-    params.limiter.ceilingDbTp = -1.0;
+    if (frames <= 0 || ! chain.prepare (rate, 1, config) || ! renderer.prepare (1, 257)
+        || ! solver.prepare (rate, 1, 257, chain.internalBlock(), chain.tapOversampleFactor())
+        || (convert && ! converter.prepare (p.rate, rate, 1, 257))) return r;
+    params.limiter.ceilingDbTp = w.ceiling;
+    if (w.highPassHz > 0.0)
+    {
+        auto& hpf = params.eqBands[0];
+        hpf.on = true; hpf.type = eq::FilterType::HighPass;
+        hpf.lane (eq::Lane::Stereo).on = true;
+        hpf.lane (eq::Lane::Stereo).freq = w.highPassHz;
+        hpf.lane (eq::Lane::Stereo).slope = 96;
+    }
     r.out.assign ((std::size_t) frames, 0.0f);
     const float* in[1] { p.source.data() };
     float* out[1] { r.out.data() };
     LoudnessRequest req;
-    req.targetLufs = target; req.ceilingMarginDb = 0.15; req.maxTruePeakDbTp = -1.0; req.maxPasses = 12;
+    req.targetLufs = w.target; req.ceilingMarginDb = 0.15; req.maxTruePeakDbTp = w.ceiling; req.maxPasses = w.maxPasses;
+    req.initialGainDb = w.initialGainDb;
     req.productLanding = true;
-    req.landingOnSourceGate = onSourceGate;
-    if (onSourceGate) { req.sourceMomentaryLufs = p.momentary.data(); req.sourceMomentaryCount = (long long) p.momentary.size(); }
-    if (std::isfinite (limiterBudgetDb)) { req.limiterGr.limitDb = limiterBudgetDb; req.limiterGr.statistic = GrStatistic::P95; }
+    req.landingOnSourceGate = w.onSourceGate;
+    if (w.onSourceGate)
+    {
+        req.sourceMomentaryLufs = p.momentary.data(); req.sourceMomentaryCount = (long long) p.momentary.size();
+        req.sourceMomentaryHopFrames = p.hop;
+    }
+    if (std::isfinite (w.limiterBudgetDb)) { req.limiterGr.limitDb = w.limiterBudgetDb; req.limiterGr.statistic = GrStatistic::P95; }
     LandingSearch search (solver);
-    if (! search.begin (chain, renderer, params, in, frames, kRate, out, 1, frames, req)) { r.answer = search.result(); return r; }
+    if (! search.begin (chain, renderer, params, in, sourceFrames, p.rate, out, 1, (int) frames, req, {},
+                        convert ? &converter : nullptr)) { r.answer = search.result(); return r; }
     StepResult state = StepResult::More;
-    for (; state == StepResult::More && r.steps < 200000000LL; ++r.steps) state = search.step (budget);
+    for (; state == StepResult::More && r.steps < 200000000LL; ++r.steps) state = search.step (w.stepBudget);
     r.answer = search.result();
     r.landedLufs = search.landedLufs();
     r.done = state == StepResult::Done && r.answer.deliverable;
     return r;
 }
 
-double lufsOfMono (const float* x, int frames)
+// THE LEVEL ON THE SOURCE'S GATE, worked out apart from LandingSearch: the source's gate from its own gating blocks
+// (absolute −70 LUFS, then 10 LU under the mean of the absolutely gated), and each block of the master given the source
+// block whose start is nearest in time — found by scanning, not by a formula.
+double gateLevelOf (const Programme& p, const std::vector<float>& master, int masterRate)
 {
     analysis::LoudnessMeter meter;
-    if (! meter.prepareForSamples (kRate, 1, frames)) return std::numeric_limits<double>::quiet_NaN();
+    if (! meter.prepareForSamples (masterRate, 1, (double) master.size())) return std::numeric_limits<double>::quiet_NaN();
+    const float* planes[1] { master.data() };
+    if (! meter.process (planes, 1, (int) master.size())) return std::numeric_limits<double>::quiet_NaN();
+    const auto m = meter.gatingBlockEnergies();
+    const double absolute = std::pow (10.0, (-70.0 + 0.691) / 10.0);
+    double sum = 0.0; long long count = 0;
+    for (const double e : p.blocks) if (e > absolute) { sum += e; ++count; }
+    const double relative = count > 0 ? 0.1 * sum / (double) count : 0.0;
+    const double hopM = 10.0 * std::max (1L, std::lround (0.01 * masterRate));
+    double total = 0.0; long long taken = 0; std::size_t k = 0;
+    for (std::size_t j = 0; j < m.size(); ++j)
+    {
+        const double t = (double) j * hopM / masterRate;
+        while (k + 1 < p.blocks.size()
+               && std::fabs ((double) (k + 1) * (double) p.hop / p.rate - t) <= std::fabs ((double) k * (double) p.hop / p.rate - t)) ++k;
+        if (k < p.blocks.size() && p.blocks[k] > absolute && p.blocks[k] > relative && std::isfinite (m[j])) { total += m[j]; ++taken; }
+    }
+    return taken > 0 && total > 0.0 ? -0.691 + 10.0 * std::log10 (total / (double) taken) : std::numeric_limits<double>::quiet_NaN();
+}
+
+double lufsOfMono (const float* x, int frames, int rate = kRate)
+{
+    analysis::LoudnessMeter meter;
+    if (! meter.prepareForSamples (rate, 1, frames)) return std::numeric_limits<double>::quiet_NaN();
     const float* planes[1] { x };
     if (! meter.process (planes, 1, frames)) return std::numeric_limits<double>::quiet_NaN();
     return meter.integratedLufs();
 }
 
 // Music in code: a kick every half second, a held "voice" tone, a little white and some pink noise.
-void music (std::vector<float>& out, int from, int frames, std::uint32_t seed)
+void music (std::vector<float>& out, int from, int frames, std::uint32_t seed, int rate = kRate)
 {
     double b0 = 0.0, b1 = 0.0, b2 = 0.0;
     for (int i = 0; i < frames; ++i)
@@ -233,7 +296,7 @@ void music (std::vector<float>& out, int from, int frames, std::uint32_t seed)
         seed = seed * 1664525u + 1013904223u;
         const double white = (double) (seed >> 8) / 8388608.0 - 1.0;
         b0 = 0.99765 * b0 + white * 0.0990460; b1 = 0.96300 * b1 + white * 0.2965164; b2 = 0.57000 * b2 + white * 1.0526913;
-        const double t = (double) i / kRate, beat = std::fmod (t, 0.5);
+        const double t = (double) i / rate, beat = std::fmod (t, 0.5);
         const double kick = std::sin (6.283185307179586 * 55.0 * beat) * std::exp (-beat / 0.12);
         const double voice = 0.25 * std::sin (6.283185307179586 * 300.0 * t) * (0.6 + 0.4 * std::sin (6.283185307179586 * 0.5 * t));
         const double pink = 0.05 * (b0 + b1 + b2 + white * 0.1848);
@@ -241,9 +304,9 @@ void music (std::vector<float>& out, int from, int frames, std::uint32_t seed)
     }
 }
 
-void scaleTo (std::vector<float>& x, int from, int frames, double lufs)
+void scaleTo (std::vector<float>& x, int from, int frames, double lufs, int rate = kRate)
 {
-    const double gain = std::pow (10.0, (lufs - lufsOfMono (x.data() + from, frames)) / 20.0);
+    const double gain = std::pow (10.0, (lufs - lufsOfMono (x.data() + from, frames, rate)) / 20.0);
     for (int i = from; i < from + frames; ++i) x[(std::size_t) i] = (float) (x[(std::size_t) i] * gain);
 }
 } // namespace
@@ -628,14 +691,18 @@ int main()
         scaleTo (songPcm, half, half, -20.0);
         const Programme loud (loudPcm), song (songPcm);
         if (! test::run (! song.momentary.empty() && ! loud.momentary.empty())) return test::report();
-        const double target = -10.0, none = std::numeric_limits<double>::quiet_NaN();
-        const Landed alone = land (loud, target, false, none), own = land (song, target, false, none);
-        const Landed gate = land (song, target, true, none), sliced = land (song, target, true, none, 173);
+        const double target = -10.0;
+        LandingSetup onOwn; onOwn.target = target;
+        LandingSetup onGate = onOwn; onGate.onSourceGate = true;
+        LandingSetup onGateSliced = onGate; onGateSliced.stepBudget = 173;
+        const Landed alone = land (loud, onOwn), own = land (song, onOwn);
+        const Landed gate = land (song, onGate), sliced = land (song, onGateSliced);
         const double aloneLoud = lufsOfMono (alone.out.data(), half);
         const double ownLoud = lufsOfMono (own.out.data() + half, half), gateLoud = lufsOfMono (gate.out.data() + half, half);
+        const double reference = gateLevelOf (song, gate.out, kRate);
         std::printf ("        target %.0f: loud alone %.2f; on its own gate the loud half %.2f, file %.2f; on the source's gate "
-                     "the loud half %.2f, landed %.2f, file %.2f\n", target, aloneLoud, ownLoud, own.answer.achievedLufs,
-                     gateLoud, gate.landedLufs, gate.answer.achievedLufs);
+                     "the loud half %.2f, landed %.2f (worked out apart: %.2f), file %.2f\n", target, aloneLoud, ownLoud,
+                     own.answer.achievedLufs, gateLoud, gate.landedLufs, reference, gate.answer.achievedLufs);
         test::ok (alone.done && own.done && ownLoud - aloneLoud > 0.3 && std::isnan (own.landedLufs),
                   "PRECONDITION: on its own gate the song drives its loud half more than 0.3 LU past the loud half alone");
         test::ok (gate.done && gate.answer.status == MasteringSolveStatus::Solved && std::fabs (gateLoud - aloneLoud) <= 0.3
@@ -644,31 +711,82 @@ int main()
         test::ok (std::fabs (gate.landedLufs - target) <= 0.1 && gate.answer.achievedLufs < gate.landedLufs - 0.3
                   && gate.answer.achievedLufs == gate.answer.measured.integratedLufs,
                   "the level landed is on the target; the file's BS.1770 reading, certified as before, is said apart from it");
+        test::ok (std::fabs (gate.landedLufs - reference) <= 1.0e-6,
+                  "the level landed is the master's level on the blocks the source's gate admitted, block for block in time");
         test::ok (sliced.done && sliced.steps > gate.steps && sliced.answer.achievedLufs == gate.answer.achievedLufs
                   && sliced.landedLufs == gate.landedLufs && sliced.answer.passes == gate.answer.passes
                   && std::memcmp (sliced.out.data(), gate.out.data(), sliced.out.size() * sizeof (float)) == 0,
                   "the gate's level does not depend on how the work is sliced: the same master bit for bit");
 
+        // ...on two grids: a source at 11025 Hz reads its momentary loudness every 1100 frames, 99.77 ms; delivered at
+        // 44.1 kHz the master's blocks step 100 ms. Matched by index, a minute drifts more than a reading.
+        const int rate11 = 11025, half11 = 30 * rate11;
+        std::vector<float> song11 ((std::size_t) (2 * half11));
+        music (song11, 0, half11, 11u, rate11);
+        music (song11, half11, half11, 7u, rate11);
+        scaleTo (song11, 0, half11, -35.0, rate11);
+        scaleTo (song11, half11, half11, -20.0, rate11);
+        const Programme slow (song11, rate11);
+        LandingSetup converted = onGate; converted.deliveryRate = 44100;
+        const Landed delivered = land (slow, converted);
+        const double reference44 = gateLevelOf (slow, delivered.out, 44100);
+        std::printf ("        11025 Hz delivered at 44.1 kHz: landed %.3f (worked out apart: %.3f), file %.3f, status %d\n",
+                     delivered.landedLufs, reference44, delivered.answer.achievedLufs, (int) delivered.answer.status);
+        test::ok (delivered.done && reference44 > delivered.answer.achievedLufs + 0.3
+                  && std::fabs (delivered.landedLufs - reference44) <= 1.0e-6 && std::fabs (delivered.landedLufs - target) <= 0.1,
+                  "the source's readings at 11025 Hz reach the master's blocks at 44.1 kHz by time, not by index");
+
+        // 180 s at 11025 Hz, silent but for a 1 kHz tone in its last 0.4 s, for cd (−9 LUFS, −0.3 dBTP, 44.1 kHz): by
+        // index the tone's readings fall past the master's last block and no level was ever read.
+        std::vector<float> lateTone ((std::size_t) (180 * rate11), 0.0f);
+        for (std::size_t i = (std::size_t) (179.6 * rate11); i < lateTone.size(); ++i)
+            lateTone[i] = (float) (0.25 * std::sin (6.283185307179586 * 1000.0 * (double) i / rate11));
+        LandingSetup cd = onGate; cd.target = -9.0; cd.ceiling = -0.3; cd.deliveryRate = 44100;
+        const Landed late = land (Programme (lateTone, rate11), cd);
+        std::printf ("        a tone in the last 0.4 s of 180 s: status %d, file %.2f, landed %.2f, %d passes\n",
+                     (int) late.answer.status, late.answer.achievedLufs, late.landedLufs, late.answer.passes);
+        test::ok (late.done && late.answer.status != MasteringSolveStatus::Unavailable && std::isfinite (late.landedLufs),
+                  "a source whose loud readings end its series still lands and delivers its file");
+
+        // 18 s of a 30 Hz sine, then 2 s of 1 kHz, through a high-pass at 80 Hz, 96 dB/oct: the blocks the source's gate
+        // admitted are the sine's, and the high-pass empties them. Their level cannot hold the file's down.
+        std::vector<float> subPcm ((std::size_t) (20 * kRate));
+        for (std::size_t i = 0; i < subPcm.size(); ++i)
+        {
+            const double t = (double) i / kRate;
+            subPcm[i] = (float) (i < (std::size_t) (18 * kRate) ? 0.09 * std::sin (6.283185307179586 * 30.0 * t)
+                                                                : 0.03 * std::sin (6.283185307179586 * 1000.0 * t));
+        }
+        LandingSetup quiet = onGate; quiet.target = -23.0; quiet.highPassHz = 80.0;
+        const Landed emptied = land (Programme (subPcm), quiet);
+        std::printf ("        30 Hz under a high-pass at 80 Hz, target −23: status %d, landed %.3f, file %.3f\n",
+                     (int) emptied.answer.status, emptied.landedLufs, emptied.answer.achievedLufs);
+        test::ok (emptied.done && emptied.answer.achievedLufs <= quiet.target + 0.1 && emptied.landedLufs >= emptied.answer.achievedLufs
+                  && (emptied.answer.status != MasteringSolveStatus::Solved || std::fabs (emptied.answer.achievedLufs - quiet.target) <= 0.1),
+                  "the level landed is never quieter than the file: an emptied gate does not land a file above the target");
+
         test::group ("loudness as a request: the limiter's budget holds a landing short of the target, and names itself");
-        const double loudTarget = target;
         const Landed& free = gate;
-        const Landed held = land (song, loudTarget, true, 3.0), heldSliced = land (song, loudTarget, true, 3.0, 173);
-        const Landed loose = land (song, loudTarget, true, 30.0);
-        std::printf ("        target %.0f: no budget %s, p95 %.2f dB, landed %.2f; budget 3 dB: status %d binding %d, landed %.2f, "
-                     "p95 %.2f dB, %d passes\n", loudTarget, free.done ? "done" : "failed", free.answer.measured.limiter.p95Db,
-                     free.landedLufs, (int) held.answer.status, (int) held.answer.binding, held.landedLufs,
-                     held.answer.measured.limiter.p95Db, held.answer.passes);
-        test::ok (free.done && free.answer.status == MasteringSolveStatus::Solved && free.answer.measured.limiter.p95Db > 3.0,
-                  "PRECONDITION: without a budget the target is reached, the limiter's P95 above 3 dB");
+        LandingSetup budget3 = onGate; budget3.limiterBudgetDb = 3.0;
+        LandingSetup budget3Sliced = budget3; budget3Sliced.stepBudget = 173;
+        LandingSetup budget30 = onGate; budget30.limiterBudgetDb = 30.0;
+        const Landed held = land (song, budget3), heldSliced = land (song, budget3Sliced), loose = land (song, budget30);
+        const auto activeP95 = [] (const Landed& l) { return l.answer.limiterActive.stats.p95Db; };
+        std::printf ("        target %.0f: no budget %s, active P95 %.2f dB, landed %.2f; budget 3 dB: status %d binding %d, "
+                     "landed %.2f, active P95 %.2f dB, %d passes\n", target, free.done ? "done" : "failed", activeP95 (free),
+                     free.landedLufs, (int) held.answer.status, (int) held.answer.binding, held.landedLufs, activeP95 (held),
+                     held.answer.passes);
+        test::ok (free.done && free.answer.status == MasteringSolveStatus::Solved && activeP95 (free) > 3.0,
+                  "PRECONDITION: without a budget the target is reached, the limiter's active P95 above 3 dB");
         bool overMarked = false;
         for (int i = 0; i < held.answer.logCount; ++i)
             overMarked = overMarked || (held.answer.log[i].violated & constraintBit (MasteringConstraint::LimiterGainReduction)) != 0;
         test::ok (held.done && held.answer.status == MasteringSolveStatus::TargetUnreachable
                   && held.answer.binding == MasteringConstraint::LimiterGainReduction
-                  && held.landedLufs < loudTarget - 0.1 && held.answer.measured.limiter.p95Db <= 3.0
+                  && held.landedLufs < target - 0.1 && activeP95 (held) <= 3.0
                   && held.answer.measured.truePeakDbTp <= -1.0 && overMarked,
-                  "a budget of 3 dB: delivered short of the target with P95 inside it, TargetUnreachable with LimiterGainReduction "
-                  "named, a pass over it marked in the log");
+                  "a budget of 3 dB: delivered short of the target with the active P95 inside it, TargetUnreachable with "
+                  "LimiterGainReduction named, a pass over it marked in the log");
         test::ok (held.answer.mainReason == LandingReason::None && held.answer.secondReason == LandingReason::None,
                   "held by the budget, nothing in the mix is blamed");
         test::ok (heldSliced.done && heldSliced.answer.status == held.answer.status
@@ -678,9 +796,43 @@ int main()
         test::ok (loose.done && loose.answer.status == MasteringSolveStatus::Solved && loose.answer.passes == free.answer.passes
                   && std::memcmp (loose.out.data(), free.out.data(), free.out.size() * sizeof (float)) == 0,
                   "a budget the landing never meets leaves it as it was without one, bit for bit");
+
+        // A pass over the budget is no proof by itself: three passes — a low first, a second over the budget, the first
+        // restored — end where the search ends, with its own status.
+        LandingSetup brief = budget3; brief.maxPasses = 3; brief.initialGainDb = target + 18.0 - 12.0;
+        const Landed shortRun = land (song, brief);
+        bool shortOver = false;
+        for (int i = 0; i < shortRun.answer.logCount; ++i)
+            shortOver = shortOver || (shortRun.answer.log[i].violated & constraintBit (MasteringConstraint::LimiterGainReduction)) != 0;
+        std::printf ("        three passes, the second over the budget: status %d binding %d, %d passes\n",
+                     (int) shortRun.answer.status, (int) shortRun.answer.binding, shortRun.answer.passes);
+        test::ok (shortRun.done && shortOver && shortRun.answer.status != MasteringSolveStatus::TargetUnreachable
+                  && shortRun.answer.binding != MasteringConstraint::LimiterGainReduction,
+                  "a pass over the budget, far above a candidate the search never brought near it, does not name the budget");
+
+        // The budget reads the limiter's ACTIVE windows: 58 s of digital silence before the same 2 s does not water it down.
+        const int burst = 2 * kRate, lead = 58 * kRate;
+        std::vector<float> burstPcm ((std::size_t) burst), leadPcm ((std::size_t) (lead + burst), 0.0f);
+        music (burstPcm, 0, burst, 7u);
+        scaleTo (burstPcm, 0, burst, -20.0);
+        std::copy (burstPcm.begin(), burstPcm.end(), leadPcm.begin() + lead);
+        LandingSetup budget7; budget7.target = -10.0; budget7.limiterBudgetDb = 7.0;
+        const Landed bare = land (Programme (burstPcm), budget7), led = land (Programme (leadPcm), budget7);
+        std::printf ("        2 s at −10, budget 7: status %d, file %.2f, active P95 %.2f; after 58 s of silence: status %d, "
+                     "file %.2f, active P95 %.2f, all-window P95 %.2f\n", (int) bare.answer.status, bare.answer.achievedLufs,
+                     activeP95 (bare), (int) led.answer.status, led.answer.achievedLufs, activeP95 (led),
+                     led.answer.measured.limiter.p95Db);
+        test::ok (bare.done && bare.answer.status == MasteringSolveStatus::TargetUnreachable,
+                  "PRECONDITION: 2 s of music at −10 LUFS is held by a budget of 7 dB");
+        test::ok (led.done && led.answer.status == MasteringSolveStatus::TargetUnreachable
+                  && led.answer.binding == MasteringConstraint::LimiterGainReduction && activeP95 (led) <= 7.0
+                  && led.answer.achievedLufs < budget7.target - 0.1,
+                  "with 58 s of silence before it, held the same: silence is no window the limiter works in");
+
         Programme seriesless (loudPcm);
         seriesless.momentary.clear();
-        const Landed negative = land (song, loudTarget, true, -1.0), blind = land (seriesless, loudTarget, true, none);
+        LandingSetup negativeBudget = onGate; negativeBudget.limiterBudgetDb = -1.0;
+        const Landed negative = land (song, negativeBudget), blind = land (seriesless, onGate);
         test::ok (! negative.done && negative.answer.status == MasteringSolveStatus::InvalidRequest
                   && ! blind.done && blind.answer.status == MasteringSolveStatus::InvalidRequest,
                   "a negative budget is refused, and a landing on the source's gate without the source's series");

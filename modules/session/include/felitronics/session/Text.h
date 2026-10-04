@@ -329,6 +329,7 @@ enum class FactId : std::uint16_t
     // A landing held short (MasterReportText::landing, ::gate), published with the master.
     MasterLandingBudget = 600, // target {target}, landed {achieved}: further, the limiter would take more than {budget} (P95)
     MasterLandingGate = 601,   // by the loud part {landed}, by the file's BS.1770 reading {file}
+    MasterLandingOverBudget = 602, // target {target}, landed {achieved}: no render kept {budget} (P95); the gentlest takes {taken}
 
 };
 

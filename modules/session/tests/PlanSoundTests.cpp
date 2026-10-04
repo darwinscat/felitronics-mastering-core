@@ -2421,6 +2421,28 @@ void theMachineKeepsItsOwnNorm()
     ok (raised.empty(), "no plan of the machine's own says its choice is beyond the norm" + raised);
 }
 
+// THE LIMITER'S BUDGET BY THE TARGET'S LOUDNESS ([landing] limiterBudget): below −10 LUFS 4 dB, from −10 to −8 (both
+// ends) 7 dB, louder 10 dB — for every target row by its own loudness and for any loudness a person types.
+void theLimiterBudgetRule()
+{
+    felitronics::test::group ("the limiter's budget follows the target's loudness, a person's edit included");
+    const auto engine = detail::rules().engine;
+    const auto at = [&] (double lufs) { return detail::limiterBudgetDb (engine, lufs); };
+    ok (at (-10.01) == 4.0 && at (-10.0) == 7.0 && at (-8.0) == 7.0 && at (-7.99) == 10.0,
+        "the borders: −10.01 LUFS 4 dB, −10 and −8 7 dB, −7.99 10 dB");
+    ok (at (-24.0) == 4.0 && at (-23.0) == 4.0 && at (-14.0) == 4.0 && at (-11.0) == 4.0 && at (-9.0) == 7.0 && at (-5.0) == 10.0,
+        "broadcast −24 and −23, streaming −14 and −11: 4 dB; −9: 7 dB; −5: 10 dB");
+    const auto rules = detail::rules();
+    bool rows = true;
+    for (std::uint16_t i = 0; i < rules.rows; ++i)
+    {
+        const double lufs = rules.row (i).lufs.toDouble();
+        rows = rows && at (lufs) == (lufs < -10.0 ? 4.0 : lufs <= -8.0 ? 7.0 : 10.0);
+    }
+    ok (rows, "every target row by its own loudness");
+    ok (std::isnan (at (std::numeric_limits<double>::quiet_NaN())), "no loudness, no budget");
+}
+
 int main (int argc, char** argv)
 {
     // The guard over every target and input is its own ctest (felitronics_session_machine_norm_tests): a long enumeration
@@ -2444,6 +2466,7 @@ int main (int argc, char** argv)
     theTopologyFollowsTheTicks();
     aMasterThatWaited();
     theMemoryOfAMaster();
+    theLimiterBudgetRule();
     vinylAndQuietMastered();
     theDitherSounding();
     theObservations();

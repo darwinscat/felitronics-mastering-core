@@ -181,19 +181,20 @@ struct MasterReport
     bool peaksAboveCeiling = false;
 };
 // What a landing was given and what it put on the target, beside its report: the level it landed where it landed on the
-// source's gate (NaN on its own gate, where the level landed is the report's achievedLufs), and the limiter's budget it
-// was held to (NaN: none).
+// source's gate (NaN on its own gate, where the level landed is the report's achievedLufs), the limiter's budget it was
+// held to (NaN: none), and, where no render kept that budget, what the delivered one's limiter takes (NaN otherwise).
 struct LandingMeasure
 {
     double landedLufs = std::numeric_limits<double>::quiet_NaN();
     double limiterBudgetDb = std::numeric_limits<double>::quiet_NaN();
+    double overBudgetDb = std::numeric_limits<double>::quiet_NaN();
 };
 struct MasterReportText
 {
     [[nodiscard]] static std::optional<text::Fact> miss (const MasterReport& report) noexcept;
     // The landing's verdict: one fact per status — solved (the level landed against the target and the tolerance),
     // unreachable (against the tolerance, naming the summary's binding; held by the limiter's budget, the target, the
-    // level landed and the budget), pass limit (against the tolerance), between (the summary's two nearest levels),
+    // level landed and the budget — and what the limiter takes where no render kept it), pass limit (against the tolerance), between (the summary's two nearest levels),
     // technical failure. Nothing for an unavailable or cancelled landing, a solved one without a measured loudness, or a
     // between one without its two levels.
     [[nodiscard]] static std::optional<text::Fact> landing (const MasterReport& report, const LandingSummary& landing,

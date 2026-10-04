@@ -176,11 +176,12 @@ int main()
     ok (demanding.rejection == Rejection::None && missStart.rejection == Rejection::None
         && miss.landing && miss.landing->status == LandingStatus::TargetUnreachable
         && miss.landing->binding == LandingConstraint::LimiterGainReduction
-        && miss.landing->deliverable && ! miss.landing->peaksAboveCeiling && miss.landing->passes <= 12
+        && miss.landing->deliverable && ! miss.landing->peaksAboveCeiling && miss.landing->passes < 12
+        && miss.report && miss.report->cost && miss.report->cost->limiterP95Db.value && *miss.report->cost->limiterP95Db.value <= 10.0
         && miss.report && ! miss.report->peaksAboveCeiling && ! MasterReportText::peaksAboveCeiling (*miss.report)
         && miss.landing->truePeakDbTp && *miss.landing->truePeakDbTp <= -6.0
         && s.pendingMaster().master == miss.id && s.masterWavPlan (s.pendingMaster()),
-        "an unreachable loudness goal stops at the limiter's budget, named, and retains the best ceiling-safe PCM");
+        "an unreachable loudness goal stops at the limiter's budget of 10 dB, named, its delivered P95 inside it, and retains the best ceiling-safe PCM");
     const auto missToken = s.pendingMaster();
     const auto filePlan = s.masterWavPlan (missToken);
     std::vector<std::uint8_t> file (std::size_t (filePlan.bytes), 0u);
