@@ -484,7 +484,8 @@ Stepped Session::step (std::uint32_t budget) noexcept
                                                    masterJob_->search.overBudgetDb() };
                     // A max mode's verdict names the mode, what ended it and the loudness; the damage line below its grade.
                     const bool max = report.loudnessMode != LoudnessMode::Manual;
-                    if (const auto verdict = max ? MasterReportText::max (report, detail::maxBudgetDb (detail::rules().engine, report.loudnessMode))
+                    if (const auto verdict = max ? MasterReportText::max (report, detail::maxBudgetDb (detail::rules().engine, report.loudnessMode),
+                                                                          masterJob_->search.overBudgetDb())
                                                  : MasterReportText::landing (report, masterSummary_, toleranceLu, measure))
                     { (void) event.payload.fact.assign (*verdict); emit (event, masterProgress_); }
                     // Delivered above the ceiling (no render stayed under it): the mark, beside the verdict.

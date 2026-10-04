@@ -9,7 +9,7 @@
       "fc_session_abi 10"
     ],
     "configVersion": "900d943b4748a57f",
-    "codecSchemaSha256": "2221adedb858ab03d695ebd5872ea33b2c39ffd97c885e3c03943f9c3eff957c"
+    "codecSchemaSha256": "5d5cb4de6a203406e0239417181b03ee39fc75dc9d0c4b4beb3a854a4b8e2829"
   },
   "scenarios": {
     "cancel": {

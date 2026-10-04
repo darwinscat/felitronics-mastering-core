@@ -1820,16 +1820,24 @@ own machine (src/Damage.h: PEAQ Basic against the chain at rest, in windows): it
 (`clean.floorOdg` −0.5, `dense.floorOdg` −1.5) passes; one at or under it steps the drive back by `guardStepDb` (1 dB)
 at the same ceiling, graded again before anything is rendered, `guardSteps` (3) times at most. The passing render is
 delivered — a step back is rendered once at its drive, the clipper's peak given as the landing measured it
-(`LoudnessRequest::peakClipMeasured`, no pass spent probing it) — and where none passes, the gentlest graded is, and
-says so. A render PEAQ cannot grade (no signal) passes: nothing heard is held against it. The guard's grade IS the
+(`LoudnessRequest::peakClipMeasured`, no pass spent probing it), with the mode's budget on: a lower drive can drop
+windows near the limiter's activity threshold out of the active set and raise the P95 of the rest, so that pass proves
+the budget itself — and where none passes, the gentlest graded is, and says so. A render graded with nothing heard
+(Ready, no window audible) passes; one the guard could not grade — no damage plan for the source (a rate the
+resampler has no kernel for), a walk refused or unavailable — stops the guard there and is said unchecked, never
+passed. The guard's grade IS the
 master's damage (`MasterReport.damage`): no damage job follows a max master. Its walks are priced in the master's
 declaration as the damage's job is, and one lives at a time (a step's walk is freed before the next is made). The
 report says the mode, what ended it and the steps back (`MasterReport.loudnessMode`, `maxStop` — `Budget`, `Guard`,
-`GuardUnmet`, `SearchCeiling`, `Passes`, `TruePeak` — and `guardSteps`), and its verdict takes the landing's place, with
+`GuardUnmet`, `SearchCeiling`, `Passes`, `TruePeak`, `Unguarded`, `OverBudget` — and `guardSteps`), in that order of
+precedence from the delivered render (`detail::maxStopOf`): above the ceiling, then over the budget (no render kept
+it — the same status and binding as a budget that held, told apart by the delivered render's own excess — or the step
+back broke it), then unchecked, then the guard's verdict, then the first landing's status; its verdict takes the landing's place, with
 no miss and no hint (no number was asked): `MasterMaxBudget` (608, the mode, the level and its budget: «Максимум ·
 чисто: −9,9 LUFS — дальше лимитеру пришлось бы срезать больше 3 дБ (P95), это предел режима.»), `MasterMaxGuard` (609,
 the steps back), `MasterMaxGuardUnmet` (610), `MasterMaxCeiling` (611), `MasterMaxPasses` (612), `MasterMaxTruePeak`
-(613). A max row's `lufs` is where its manual mode starts (−10 clean, −8.6 dense): the planner reads it as before.
+(613), `MasterMaxUnguarded` (614, the damage unchecked, the budget holding) and `MasterMaxOverBudget` (615, the
+delivered render's P95 beside the mode's budget). A max row's `lufs` is where its manual mode starts (−10 clean, −8.6 dense): the planner reads it as before.
 
 `MasterCrest` stores five peak-amplitude/mean-square-power pairs per block, in Low, LowMid, HighMid, High,
 Full order, plus five source activity values per block as zero/one values. Version, sample rate, hop

@@ -90,7 +90,7 @@ enum class Plural : std::uint8_t { Zero, One, Two, Few, Many, Other };
 //   400 – 499   the measurements and the observations
 //   500 – 599   the plan's advice and the targets' notes
 //   600 – 699   the landing and the master's report, continued (1 – 99 is full): a landing held short (600 – 602), the
-//               damage the processing did and the loudness range (603 – 607), a max mode's verdict (608 – 613)
+//               damage the processing did and the loudness range (603 – 607), a max mode's verdict (608 – 615)
 // The arguments each fact takes, by name and kind, are src/TextFacts.h's, and the build holds the catalog to them.
 enum class FactId : std::uint16_t
 {
@@ -349,6 +349,8 @@ enum class FactId : std::uint16_t
     MasterMaxCeiling = 611,    // {mode}: {achieved} — the search ceiling reached within the budget and the promise
     MasterMaxPasses = 612,     // {mode}: {achieved} — the passes ran out first
     MasterMaxTruePeak = 613,   // {mode}: {achieved} — no render kept under the true-peak ceiling
+    MasterMaxUnguarded = 614,  // {mode}: {achieved} — the damage could not be checked; the limiter's budget holds
+    MasterMaxOverBudget = 615, // {mode}: {achieved} — the limiter takes {over} (P95), more than the mode's {budget}
 };
 
 // THE TERMS — words an argument of kind Term names: one value of a group of the catalog's [terms]. Printed as the

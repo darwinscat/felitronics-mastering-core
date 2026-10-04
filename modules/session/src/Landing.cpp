@@ -116,7 +116,7 @@ std::optional<text::Fact> MasterReportText::landing (const MasterReport& report,
     }
     return std::nullopt;
 }
-std::optional<text::Fact> MasterReportText::max (const MasterReport& report, double budgetDb) noexcept
+std::optional<text::Fact> MasterReportText::max (const MasterReport& report, double budgetDb, double overBudgetDb) noexcept
 {
     using text::Arg; using text::Fact; using text::FactId; using text::Term; using text::Unit;
     if (report.loudnessMode == LoudnessMode::Manual || report.status != MeasurementStatus::Ready || ! report.deliverable
@@ -124,16 +124,22 @@ std::optional<text::Fact> MasterReportText::max (const MasterReport& report, dou
     const auto mode = Arg::term (report.loudnessMode == LoudnessMode::MaxClean ? Term::LoudnessModeMaxClean : Term::LoudnessModeMaxDense);
     const auto achieved = Arg::value (*report.achievedLufs, Unit::Lufs, 1);
     const auto steps = Arg::count (std::int64_t (report.guardSteps));
+    // The budget printed whole: up to two decimals, the trailing zeros dropped, decided on its hundredths as an integer.
+    const auto budget = [budgetDb]
+    {
+        const auto hundredths = (long long) std::floor (std::clamp (budgetDb, 0.0, 1.0e6) * 100.0 + 0.5);
+        return Arg::value (budgetDb, Unit::Db,
+            hundredths % 100 == 0 ? std::uint8_t (0) : hundredths % 10 == 0 ? std::uint8_t (1) : std::uint8_t (2));
+    };
     switch (report.maxStop)
     {
         case MaxStop::Budget:
-        {
             if (! std::isfinite (budgetDb)) return std::nullopt;
-            const auto hundredths = (long long) std::floor (std::clamp (budgetDb, 0.0, 1.0e6) * 100.0 + 0.5);
-            const auto budget = Arg::value (budgetDb, Unit::Db,
-                hundredths % 100 == 0 ? std::uint8_t (0) : hundredths % 10 == 0 ? std::uint8_t (1) : std::uint8_t (2));
-            return Fact::of (FactId::MasterMaxBudget, mode, achieved, budget);
-        }
+            return Fact::of (FactId::MasterMaxBudget, mode, achieved, budget());
+        case MaxStop::OverBudget:
+            if (! std::isfinite (budgetDb) || ! std::isfinite (overBudgetDb)) return std::nullopt;
+            return Fact::of (FactId::MasterMaxOverBudget, mode, achieved, Arg::value (overBudgetDb, Unit::Db, 1), budget());
+        case MaxStop::Unguarded: return Fact::of (FactId::MasterMaxUnguarded, mode, achieved);
         case MaxStop::Guard: return Fact::of (FactId::MasterMaxGuard, mode, achieved, steps);
         case MaxStop::GuardUnmet: return Fact::of (FactId::MasterMaxGuardUnmet, mode, achieved, steps);
         case MaxStop::SearchCeiling: return Fact::of (FactId::MasterMaxCeiling, mode, achieved);

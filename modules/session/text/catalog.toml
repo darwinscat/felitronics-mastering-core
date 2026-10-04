@@ -1161,6 +1161,17 @@ en = "{mode}: {achieved} — the passes ran out before the search reached the mo
 ru = "{mode}: {achieved} — ни один вариант не удержался под потолком истинного пика."
 en = "{mode}: {achieved} — no render kept under the true-peak ceiling."
 
+# A max master whose render PEAQ could not grade (no damage plan for the source, a walk refused or unavailable): the
+# limiter's budget holds, the damage is unchecked — never said as the guard's pass.
+[messages.masterMaxUnguarded]
+ru = "{mode}: {achieved} — порчу проверить не удалось: PEAQ не оценил этот файл; бюджет лимитера соблюдён."
+en = "{mode}: {achieved} — the damage could not be checked: PEAQ did not grade this file; the limiter's budget holds."
+
+# A max master delivered over the mode's limiter budget: no render kept it, or the guard's step back broke it.
+[messages.masterMaxOverBudget]
+ru = "{mode}: {achieved} — лимитер в выданном варианте срезает {over} (P95), больше бюджета режима {budget}."
+en = "{mode}: {achieved} — the limiter takes off {over} (P95) in the render delivered, more than the mode's budget of {budget}."
+
 [messages.masterLandingPassLimit]
 ru = "Проходы кончились раньше, чем мастер подошёл к цели ближе допуска {tolerance}."
 en = "The passes ran out before the master came within {tolerance} of the target."

@@ -102,7 +102,7 @@ SURFACE[8] = SURFACE[7];
 // and fc_session_storage.releasedBytes — and no entry point.
 SURFACE[9] = SURFACE[8];
 // Version 10 (v0.15.0) appends the maximum loudness modes — a target's loudnessMode in editTarget, the project and the
-// snapshot, a max master's mode, stop and guard steps in its report, facts 608-613 and their terms — and no entry point.
+// snapshot, a max master's mode, stop and guard steps in its report, facts 608-615 and their terms — and no entry point.
 SURFACE[10] = SURFACE[9];
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).

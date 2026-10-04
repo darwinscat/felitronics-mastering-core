@@ -147,7 +147,9 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (MaxStop::SearchCeiling) == 4);
         static_assert (unsigned (MaxStop::Passes) == 5);
         static_assert (unsigned (MaxStop::TruePeak) == 6);
-        return 6;
+        static_assert (unsigned (MaxStop::Unguarded) == 7);
+        static_assert (unsigned (MaxStop::OverBudget) == 8);
+        return 8;
     }
     else if constexpr (std::is_same_v<T, MeasurementReason>)
     {
@@ -561,6 +563,8 @@ constexpr void checkEnum (MaxStop value) noexcept
         case MaxStop::SearchCeiling: break;
         case MaxStop::Passes: break;
         case MaxStop::TruePeak: break;
+        case MaxStop::Unguarded: break;
+        case MaxStop::OverBudget: break;
     }
 }
 

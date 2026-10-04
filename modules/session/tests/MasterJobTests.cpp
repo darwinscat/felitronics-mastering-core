@@ -4,6 +4,7 @@
 #include "../../../tests/DeclaredBudget.h"
 #include "Driver.h"
 #include "Damage.h"
+#include "MasterJob.h"
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/analysis/ReferenceTruePeakMeter.h>
@@ -37,6 +38,8 @@ struct Inspector
     // A walk that fails midway (a refusal of the chains, the meters or PEAQ — a contract fault no input reaches).
     static std::uint32_t windows (const Damage& d) noexcept { return d.windows_; }
     static void fail (Damage& d, MeasurementReason why) noexcept { d.fail (why); }
+    // The master's job, for a test that plants a guard's numbers or fails its walk midway.
+    static MasterJob* job (Session& s) noexcept { return s.masterJob_.get(); }
 };
 }
 
@@ -372,7 +375,7 @@ void maxMasterGuarded()
         const MasterReport& r = *kept;
         ok (edited && quoted.rejection == Rejection::None && taken.rejection == Rejection::None && ! damageSeen
                 && s.damageJob() == 0 && r.loudnessMode == mode && r.maxStop != MaxStop::None
-                && r.damage.status == MeasurementStatus::Ready && r.damage.grade >= 1u && (r.guardSteps > 0 || within),
+                && r.damage.status == MeasurementStatus::Ready && r.damage.grade >= 1u && within,
             name + ": the guard grades the render before the file, inside the master's declaration (" + std::to_string (demand.allocated)
             + " of " + std::to_string (quoted.bytes) + " bytes, " + std::to_string (r.guardSteps) + " steps back, stop "
             + std::to_string (unsigned (r.maxStop)) + "), and no damage job follows");
@@ -387,7 +390,7 @@ void maxMasterGuarded()
             + std::to_string (r.damage.worstOdg.value_or (0.0)) + ", " + std::to_string (r.guardSteps) + " steps)");
         stepsBack += r.guardSteps;
         // Its verdict names the mode and what ended it, whole, in both languages.
-        const auto said = MasterReportText::max (r, mode == LoudnessMode::MaxClean ? 3.0 : 7.0);
+        const auto said = MasterReportText::max (r, mode == LoudnessMode::MaxClean ? 3.0 : 7.0, std::numeric_limits<double>::quiet_NaN());
         const auto wanted = r.maxStop == MaxStop::Guard ? text::FactId::MasterMaxGuard
                           : r.maxStop == MaxStop::GuardUnmet ? text::FactId::MasterMaxGuardUnmet
                           : r.maxStop == MaxStop::Budget ? text::FactId::MasterMaxBudget : text::FactId::MasterMaxPasses;
@@ -401,22 +404,129 @@ void maxMasterGuarded()
     MasterReport held;
     held.status = MeasurementStatus::Ready; held.deliverable = true; held.achievedLufs = -9.94;
     held.loudnessMode = LoudnessMode::MaxClean; held.maxStop = MaxStop::Budget;
-    const auto budget = MasterReportText::max (held, 3.0);
+    const auto budget = MasterReportText::max (held, 3.0, std::numeric_limits<double>::quiet_NaN());
     MasterReport manual = held;
     manual.loudnessMode = LoudnessMode::Manual;
     ok (budget && text::Text::text (*budget, text::Lang::Ru)
                 == "Максимум · чисто: −9,9\u00A0LUFS — дальше лимитеру пришлось бы срезать больше 3\u00A0дБ (P95), это предел режима."
             && text::Text::text (*budget, text::Lang::En)
                 == "Maximum · clean: −9.9\u00A0LUFS — further, the limiter would have to take off more than 3\u00A0dB (P95), the mode's limit."
-            && ! MasterReportText::max (manual, 3.0),
+            && ! MasterReportText::max (manual, 3.0, std::numeric_limits<double>::quiet_NaN()),
         "a max master held by its budget says the mode, the level and the budget; a manual one has no max verdict: "
             + (budget ? text::Text::text (*budget, text::Lang::Ru) : std::string ("none")));
+}
+
+// A MAX MASTER, ITS JOB PLANTED OR ITS SOURCE ODD: each step, the report and its verdict, until the job ends.
+struct MaxRun
+{
+    std::optional<MasterReport> report;
+    std::optional<text::Fact> verdict;
+    bool damageJob = false;
+};
+template <typename Plant>
+MaxRun runMax (Session& s, LoudnessMode mode, Plant&& plant)
+{
+    MaxRun run;
+    command::EditTarget edit { 2, {} };
+    edit.fields.loudnessMode = mode;
+    if (s.apply (edit).rejection != Rejection::None || s.apply (readyMaster (s, 3)).rejection != Rejection::None) return run;
+    for (unsigned i = 0; i < 400000 && s.job() != 0; ++i)
+    {
+        if (auto* job = detail::Inspector::job (s)) plant (*job);
+        (void) s.step (1);
+        run.damageJob = run.damageJob || s.damageJob() != 0;
+    }
+    if (s.masters().empty()) return run;
+    run.report = s.masters().back().report;
+    if (run.report) run.verdict = MasterReportText::max (*run.report, mode == LoudnessMode::MaxClean ? 3.0 : 7.0, 4.25);
+    return run;
+}
+
+// THE DAMAGE THE GUARD COULD NOT GRADE is said unchecked, never passed (MaxStop::Unguarded, fact 614): a source whose
+// rate the damage's resampler has no kernel for (8001 Hz: no damage plan, no walk), and a walk that fails midway (its
+// grade Unavailable). Nothing heard — a render graded with no window audible — stays a pass; the budget still holds.
+void maxMasterUngraded()
+{
+    {
+        const auto pcm = struck (8001, 3.0);
+        auto sp = measuredSession (pcm, 8001);
+        const auto run = sp ? runMax (*sp, LoudnessMode::MaxClean, [] (detail::MasterJob&) {}) : MaxRun {};
+        ok (run.report && run.report->maxStop == MaxStop::Unguarded && run.report->guardSteps == 0u
+                && run.report->damage.status == MeasurementStatus::Unavailable && ! run.report->damage.worstOdg
+                && ! run.damageJob && run.verdict && run.verdict->id == text::FactId::MasterMaxUnguarded
+                && text::Text::text (*run.verdict, text::Lang::En).find ("could not be checked") != std::string::npos,
+            "at 8001 Hz, with no damage plan, a max master says its damage unchecked: stop "
+                + std::to_string (run.report ? unsigned (run.report->maxStop) : 99u));
+    }
+    {
+        const auto pcm = struck (48000, 3.0);
+        auto sp = measuredSession (pcm, 48000);
+        bool failed = false;
+        const auto run = sp ? runMax (*sp, LoudnessMode::MaxClean, [&failed] (detail::MasterJob& job)
+        {
+            if (! failed && job.stage == detail::MasterJob::Stage::Guard && job.guard && job.guard->begun && ! job.guard->refused)
+            { detail::Inspector::fail (job.guard->damage, MeasurementReason::NonFinite); failed = true; }
+        }) : MaxRun {};
+        ok (failed && run.report && run.report->maxStop == MaxStop::Unguarded && run.report->guardSteps == 0u
+                && run.report->damage.status == MeasurementStatus::Unavailable
+                && run.report->damage.reason == MeasurementReason::NonFinite && ! run.damageJob
+                && run.verdict && run.verdict->id == text::FactId::MasterMaxUnguarded,
+            "a guard's walk failed midway is no pass: the damage unchecked, stop "
+                + std::to_string (run.report ? unsigned (run.report->maxStop) : 99u));
+    }
+}
+
+// THE GUARD'S STEP RENDER PROVES THE MODE'S BUDGET: planted so every step goes LOUDER (a floor no render passes, a step
+// of −0.5 dB), the guard steps three times and the render delivered takes more than the 3 dB the mode allows — it is
+// delivered as over the budget (MaxStop::OverBudget, fact 615, the pass marked), never as the guard's verdict.
+void maxStepRenderKeepsTheBudget()
+{
+    const auto pcm = struck (48000, 3.0);
+    auto sp = measuredSession (pcm, 48000);
+    const auto run = sp ? runMax (*sp, LoudnessMode::MaxClean, [] (detail::MasterJob& job)
+    {
+        job.guardFloorOdg = 1.0;
+        job.guardStepDb = -0.5;
+    }) : MaxRun {};
+    const auto kept = sp && ! sp->masters().empty() ? sp->masters().back().landing : std::optional<LandingSummary> {};
+    const bool marked = kept && ! kept->log.empty() && kept->log.back().overBudget;
+    ok (run.report && run.report->maxStop == MaxStop::OverBudget && run.report->guardSteps == 3u && marked
+            && run.verdict && run.verdict->id == text::FactId::MasterMaxOverBudget,
+        "a step back that breaks the budget is delivered over the budget: stop "
+            + std::to_string (run.report ? unsigned (run.report->maxStop) : 99u) + ", steps "
+            + std::to_string (run.report ? run.report->guardSteps : 0u) + ", pass marked " + (marked ? "yes" : "no"));
+}
+
+// WHAT ENDED A MAX MODE, rule by rule (detail::maxStopOf): a landing that delivered its gentlest render over the budget
+// carries the same status and binding as one the budget held (TargetUnreachable, LimiterGainReduction) — it is told
+// apart by the delivered render's own excess, and said over the budget, never held by it.
+void maxStopRules()
+{
+    using felitronics::mastering::MasteringSolveStatus; using felitronics::mastering::MasteringConstraint;
+    detail::MaxStopInputs held;
+    held.guardGraded = true; held.guardPassed = true;
+    held.firstStatus = MasteringSolveStatus::TargetUnreachable; held.firstBinding = MasteringConstraint::LimiterGainReduction;
+    auto over = held; over.overBudget = true;
+    auto ungraded = held; ungraded.guardGraded = false; ungraded.guardPassed = false;
+    auto unmet = held; unmet.guardPassed = false; unmet.guardTaken = 3;
+    auto stepped = held; stepped.guardTaken = 1;
+    auto above = over; above.peaksAboveCeiling = true;
+    auto solved = held; solved.firstStatus = MasteringSolveStatus::Solved;
+    auto passes = held; passes.firstStatus = MasteringSolveStatus::PassLimit;
+    ok (detail::maxStopOf (held) == MaxStop::Budget && detail::maxStopOf (over) == MaxStop::OverBudget
+            && detail::maxStopOf (ungraded) == MaxStop::Unguarded && detail::maxStopOf (unmet) == MaxStop::GuardUnmet
+            && detail::maxStopOf (stepped) == MaxStop::Guard && detail::maxStopOf (above) == MaxStop::TruePeak
+            && detail::maxStopOf (solved) == MaxStop::SearchCeiling && detail::maxStopOf (passes) == MaxStop::Passes,
+        "a max mode's stop: over the budget is not held by it; ungraded is not a pass; the ceiling first");
 }
 
 int main()
 {
     damageResampler();
     maxMasterGuarded();
+    maxMasterUngraded();
+    maxStepRenderKeepsTheBudget();
+    maxStopRules();
     damageWithoutAnId();
     damageReferenceBelowTheKnob();
     damageFailedMidway();

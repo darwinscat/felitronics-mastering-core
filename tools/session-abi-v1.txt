@@ -1942,7 +1942,8 @@ offset fc_session_storage.releasedBytes=32
 # budget and a PEAQ guard allow (clean: 3 dB, worst ODG above -0.5; dense: 7 dB, above -1.5) — on its row, editable in
 # editTarget (TargetPatch.loudnessMode; null gives the row's mode back), saved in a project's target layer and said in
 # the snapshot as the mode in effect; a max master's report names its mode, what stopped it and the guard's steps back
-# (MasterReport.loudnessMode, maxStop, guardSteps), facts 608-613 say them, and its damage is the guard's grading.
+# (MasterReport.loudnessMode, maxStop, guardSteps), facts 608-615 say them — a render the guard could not grade is
+# said unchecked (Unguarded, 614), one over the mode's budget so (OverBudget, 615) — and its damage is the guard's grading.
 enum felitronics::session::LoudnessMode::Manual=0
 enum felitronics::session::LoudnessMode::MaxClean=1
 enum felitronics::session::LoudnessMode::MaxDense=2
@@ -1953,12 +1954,16 @@ enum felitronics::session::MaxStop::GuardUnmet=3
 enum felitronics::session::MaxStop::SearchCeiling=4
 enum felitronics::session::MaxStop::Passes=5
 enum felitronics::session::MaxStop::TruePeak=6
+enum felitronics::session::MaxStop::Unguarded=7
+enum felitronics::session::MaxStop::OverBudget=8
 enum felitronics::session::text::FactId::MasterMaxBudget=608
 enum felitronics::session::text::FactId::MasterMaxGuard=609
 enum felitronics::session::text::FactId::MasterMaxGuardUnmet=610
 enum felitronics::session::text::FactId::MasterMaxCeiling=611
 enum felitronics::session::text::FactId::MasterMaxPasses=612
 enum felitronics::session::text::FactId::MasterMaxTruePeak=613
+enum felitronics::session::text::FactId::MasterMaxUnguarded=614
+enum felitronics::session::text::FactId::MasterMaxOverBudget=615
 enum felitronics::session::text::Term::LoudnessModeManual=146
 enum felitronics::session::text::Term::LoudnessModeMaxClean=147
 enum felitronics::session::text::Term::LoudnessModeMaxDense=148
