@@ -168,8 +168,6 @@ void Session::dropJob (JobId job) noexcept
             needlesAfterDroppedMaster();
         }
     }
-    else if (job == damageJobId_)
-        endDamage (MeasurementReason::Cancelled, true);
     else
     {
         if (masterJob_) masterJob_->search.cancel();
@@ -212,12 +210,12 @@ void Session::startDamage (MasterId master, const detail::MasterJob& job) noexce
     {
         // No job id is left for it: the damage is not graded, and the master's damage line says so.
         report.status = MeasurementStatus::Unavailable;
-        report.reason = MeasurementReason::Capacity;
+        report.reason = MeasurementReason::NoJobId;
         return;
     }
     damageJob_.reset (new detail::DamageJob);
     damageJob_->master = master;
-    damageJob_->plan = job.damagePlanned();
+    damageJob_->plan = job.damagePlan;
     damageJob_->winning = job.winningParams();
     damageJobId_ = ++lastJob_;
     damageJobBytes_ = detail::DamageJob::bytes (damageJob_->plan);
@@ -460,7 +458,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 masters_[masterCount_ - 1].report = masterJob_->reportResult();
                 // The damage's job takes what it needs of this job before it goes (its walks allocate when it first steps),
                 // so the damage's line below says Pending — or why it is not graded.
-                if (masterJob_->damageFollows()) startDamage (completedJob, *masterJob_);
+                if (masterJob_->damageFollows) startDamage (completedJob, *masterJob_);
                 // A crest joined inside the job is complete: mask copied, five cost bands scanned. Marked so a later
                 // join (a cancelled or finished source measurement) passes over it instead of publishing it again.
                 if (masters_[masterCount_ - 1].report->crest.status == MeasurementStatus::Ready)

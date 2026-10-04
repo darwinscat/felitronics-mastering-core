@@ -747,15 +747,10 @@ const Observation& ObservationText::of (const Observations& all, ObservationKind
     detail::storageOverflow();
 }
 
-namespace
+// A reason's words: the terms are in the order of MeasurementReason (Observations.h).
+namespace detail
 {
-// The kind's name, and a reason's words: the terms are in the order of ObservationKind and of MeasurementReason.
-text::Term nameOf (ObservationKind kind) noexcept
-{
-    static_assert (unsigned (text::Term::ObservationHumWandered) - unsigned (text::Term::ObservationClipping) + 1u == kObservationKinds);
-    return text::Term (unsigned (text::Term::ObservationClipping) + unsigned (kind));
-}
-text::Term reasonOf (MeasurementReason reason) noexcept
+text::Term reasonTerm (MeasurementReason reason) noexcept
 {
     switch (reason)
     {
@@ -771,9 +766,20 @@ text::Term reasonOf (MeasurementReason reason) noexcept
         case MeasurementReason::NeedNotAbove3:  return text::Term::ReasonNeedNotAbove3;
         case MeasurementReason::Memory:         return text::Term::ReasonMemory;
         case MeasurementReason::Superseded:     return text::Term::ReasonSuperseded;
+        case MeasurementReason::NoJobId:        return text::Term::ReasonNoJobId;
     }
-    // Not measured always carries a reason (Observations.cpp's unmeasured()).
+    // Not measured always carries a reason (unmeasured() here; a master's damage and its loudness range's change).
     detail::storageOverflow();
+}
+} // namespace detail
+
+namespace
+{
+// The kind's name: the terms are in the order of ObservationKind.
+text::Term nameOf (ObservationKind kind) noexcept
+{
+    static_assert (unsigned (text::Term::ObservationHumWandered) - unsigned (text::Term::ObservationClipping) + 1u == kObservationKinds);
+    return text::Term (unsigned (text::Term::ObservationClipping) + unsigned (kind));
 }
 }
 
@@ -790,7 +796,7 @@ std::optional<text::Fact> ObservationText::fact (ObservationKind kind, const Obs
 {
     using text::Arg; using text::Fact; using text::FactId; using text::Unit;
     if (o.status == ObservationStatus::NotMeasured)
-        return Fact::of (FactId::ObservationUnmeasured, Arg::term (nameOf (kind)), Arg::term (reasonOf (o.reason)));
+        return Fact::of (FactId::ObservationUnmeasured, Arg::term (nameOf (kind)), Arg::term (detail::reasonTerm (o.reason)));
     if (o.status != ObservationStatus::Found) return std::nullopt;
     const auto at = [] (double s) { return Arg::value (s, Unit::S, 0); };
     const auto count = [] (double n) { return Arg::count (std::int64_t (n)); };

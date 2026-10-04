@@ -247,8 +247,8 @@ struct MasterReportText
     // the order fold, high-pass, ceiling, needles; nothing for a rule it keeps.
     [[nodiscard]] static std::array<std::optional<text::Fact>, 4> vinylDepartures (const MasterReport& report) noexcept;
     [[nodiscard]] static std::optional<text::Fact> quietInput (const MasterReport& report) noexcept;
-    // The damage's line: the worst window's grade, where it starts and the share heard — or that nothing was heard, or
-    // why nothing was graded. And the loudness range's: the input's, the master's and the change, or why not measured.
+    // The damage's line: the worst window's grade, where it starts and the share heard — or that nothing was heard — with
+    // the windows graded of all; or why nothing was graded. And the loudness range's: the input's, the master's and the change, or why not measured.
     [[nodiscard]] static text::Fact damage (const MasterDamage& damage) noexcept;
     [[nodiscard]] static text::Fact lra (const MasterDamage& damage) noexcept;
 };

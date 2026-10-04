@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 #include "BuildGuards.h"
+#include "BuildContract.h"
 #include "MasterJob.h"
 #include "Chain.h"
 #include "MeasurementPlan.h"
@@ -834,7 +835,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         {
             report.damage.status = MeasurementStatus::Pending;
             report.damage.reason = MeasurementReason::Pending;
-            damageFollows_ = true;
+            damageFollows = true;
         }
         stage = Stage::Done;
         return StepResult::Done;
@@ -862,7 +863,10 @@ void MasterJob::settleLra() noexcept
     d.masterLraLu = report.lraLu;
     std::optional<double> input;
     auto inputReason = MeasurementReason::Pending;
+    // The programme report has ended before any master is taken (the first measurement ends after it — the table's
+    // Measured columns): its reason here is final, never Pending.
     const auto& programme = session->measurementResults_[std::size_t (Analyzer::Programme)];
+    detail::debugBound (programme.status != MeasurementStatus::Pending);
     if (programme.status != MeasurementStatus::Ready) inputReason = programme.reason;
     else
     {

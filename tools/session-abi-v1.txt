@@ -1904,9 +1904,12 @@ codec MasterDamage.lraChangePercent double?
 codec MasterDamage.lraReason MeasurementReason
 # The master's damage graded after the master (04.10, v0.14.0): a job of its own, started when the master is delivered,
 # with its own phases and progress (Snapshot.damageJob, damageProgress); the Damage event announces it and ends it with
-# its master, status and reason (DamageChange); a new master stops it, MeasurementReason::Superseded with its term.
+# its master, status and reason (DamageChange); a new master stops it, MeasurementReason::Superseded with its term; with
+# no job id left it is not graded, MeasurementReason::NoJobId with its term.
 enum felitronics::session::MeasurementReason::Superseded=11
 enum felitronics::session::text::Term::ReasonSuperseded=144
+enum felitronics::session::MeasurementReason::NoJobId=12
+enum felitronics::session::text::Term::ReasonNoJobId=145
 codec Snapshot.damageJob uint32
 codec Snapshot.damageProgress Phase
 codec DamageChange.masterId uint32

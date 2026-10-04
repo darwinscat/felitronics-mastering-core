@@ -328,7 +328,8 @@ enum class FactId : std::uint16_t
     DeviceUnmeasured = 510,    // not measured yet: the machine sets it when {analyzer} ends
 
     // The damage the processing did, heard (MasterDamage): the worst window's {grade}, where it starts ({from}) and the
-    // {share} of the track heard below imperceptible; nothing heard anywhere; not graded, and why ({reason}).
+    // {share} of the windows graded heard below imperceptible; nothing heard in any window graded; each with how many
+    // windows were graded of all ({graded} of {windows}); not graded, and why ({reason}).
     MasterDamage = 600,
     MasterDamageInaudible = 601,
     MasterDamageUnmeasured = 602,
@@ -398,8 +399,9 @@ enum class Term : std::uint16_t
     // The BS.1116 impairment grades the damage's line names, 5 down to 1.
     DamageGradeImperceptible, DamageGradePerceptible, DamageGradeSlightlyAnnoying, DamageGradeAnnoying,
     DamageGradeVeryAnnoying,
-    // Why a master's damage was not graded: a new master was asked for while it was (MeasurementReason::Superseded).
-    ReasonSuperseded,
+    // Why a master's damage was not graded: a new master was asked for while it was (MeasurementReason::Superseded); no
+    // job id was left for it (NoJobId).
+    ReasonSuperseded, ReasonNoJobId,
 
 };
 

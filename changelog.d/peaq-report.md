@@ -5,9 +5,15 @@
   damage's job under a new id (`Session::damageJob()`, `Snapshot.damageJob` and `damageProgress`), announced by the new
   `damage` event (`DamageChange`: the master, the status, the reason) right after `Done`. It runs behind every other work,
   blocks no command, walks its phases `Reference` and `Damage`, and ends with its line and the `damage` event, `Ready` or
-  `Unavailable`. `cancel` of its id stops it (`Cancelled`), a new `master` stops it (`MeasurementReason::Superseded`, a
-  term of its own), `forget` of its master stops it without a line; `load` drops it with the masters. Its memory is
-  admitted with the master (`DamageJob::bytes`) and lives in the room the master's job leaves.
+  `Unavailable`. `cancel` of its id stops it (`Cancelled`; the cancel's fact first, the damage event last), a new
+  `master` stops it (`MeasurementReason::Superseded`, a term of its own; the master is priced with the damage's bytes
+  freed), `forget` of its master stops it without a line; `load` drops it with the masters; with no job id left it is not
+  graded (`MeasurementReason::NoJobId`). Its memory is admitted with the master (`DamageJob::bytes`) and lives in the room
+  the master's job leaves.
+- **The reference is the whole `referenceBelowDb` lower** wherever the master's input gain stands: where the input gain's
+  range (60 dB) stops short — any master with an input gain under 0 dB — a scale of the reference's input takes the rest.
+- **The damage's line names what was graded**: the windows graded of all (600, 601) and the share heard of the graded
+  ones, never the whole track.
 - **`MasterReport.damage`** (`MasterDamage`, `[cost.damage]` in engine.toml): PEAQ Basic of the master against the same
   chain with its dynamics at rest — the master's topology without the dither, the glue in its exact bypass, the chain
   fed `referenceBelowDb` (60 dB) lower so the saturation stays linear and the limiter and its needles never reach the

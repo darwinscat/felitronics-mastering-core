@@ -325,7 +325,9 @@ Checked Session::check (const Request& request) const noexcept
 {
     const auto priced = storageFor (request);
     if (priced.rejection != Rejection::None) return priced;
-    const auto checked = demand (priced);
+    // A master stops the damage still graded before it allocates anything (apply, below): what that job holds is free
+    // for it — counted here so, while nothing changes before the answer.
+    const auto checked = demand (priced, std::holds_alternative<command::Master> (request) ? damageJobBytes_ : 0u);
     if (checked.rejection != Rejection::None) return checked;
     if (const auto* load = std::get_if<command::Load> (&request))
     {
@@ -622,14 +624,16 @@ Answer Session::apply (const Request& request) noexcept
     {
         const auto progress = jobProgress (cancel->job);
         // The fact names the job that stopped: needles or a master cancelled while the measurement is stopped are
-        // cancelled, not a measurement stopped again.
-        const bool measurement = cancel->job == measurementJob_;
-        dropJob (cancel->job);
+        // cancelled, not a measurement stopped again. A damage's job says it before its own end, which the damage
+        // event closes.
+        const bool measurement = cancel->job == measurementJob_, damage = cancel->job == damageJobId_;
+        if (! damage) dropJob (cancel->job);
         Notification event;
         event.jobId = cancel->job;
         event.kind = EventKind::Fact;
         (void) event.payload.fact.assign (text::Fact::of (measurement ? text::FactId::MeasurementStopped : text::FactId::Cancelled));
         emit (event, progress);
+        if (damage) endDamage (MeasurementReason::Cancelled, true);
     }
     else if (const auto* forget = std::get_if<command::Forget> (&request))
     {

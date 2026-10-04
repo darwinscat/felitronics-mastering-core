@@ -28,7 +28,8 @@ enum class MeasurementStatus : std::uint8_t { Pending, Ready, Unavailable, Cance
 enum class MeasurementReason : std::uint8_t
 {
     None, Pending, Cancelled, Unsupported, TooShort, NonFinite, Capacity, NoSignal, NotImplemented, NeedNotAbove3, Memory,
-    Superseded                                 // a master's damage stopped by a new master (MasterDamage)
+    Superseded,                                // a master's damage stopped by a new master (MasterDamage)
+    NoJobId                                    // a master's damage with no job id left to grade it (MasterDamage)
 };
 // What PEAQ (analysis::Peaq, ITU-R BS.1387 Basic) said of a window of a master (MasterDamage): its PeaqVerdict, by number.
 enum class DamageVerdict : std::uint8_t { NotRun, Graded, Transparent, NoSignal, NonFinite, Undefined, OutOfRange };

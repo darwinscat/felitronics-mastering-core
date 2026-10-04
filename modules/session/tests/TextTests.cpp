@@ -855,8 +855,9 @@ void theObservationsHaveTheirWords()
             worded = worded && word && ! word->empty();
         }
     }
-    ok (worded && names == 17 && handling == 4 && reasons == 11,
-        "17 names, 4 handlings (nothing, HPF, mono bass, by hand) and 11 reasons (a master's damage superseded among them), "
+    ok (worded && names == 17 && handling == 4 && reasons == 12,
+        "17 names, 4 handlings (nothing, HPF, mono bass, by hand) and 12 reasons (a master's damage superseded or without a "
+        "job id among them), "
         "each worded in Russian and English");
 }
 
@@ -1222,7 +1223,7 @@ void theCorpusIsTheSameBytesOnEveryRow()
         for (std::int64_t m = -1; m <= 128; ++m) eat (arg (Arg::midi (m), l));
         eat (arg (Arg::term (text::Term::PlatformWeb), l));
     }
-    constexpr std::uint64_t kPinned = 0x8521a800fb1b7ebbull;   // …, the plan's advice and the targets' notes (500–508), the observations (52–80, 419–436), the target-change warning (81), what departs from vinyl (82–87), the clipper's cut off the peaks and an observation not measured (437), the landing's verdict (88–92), the clipper's cut as a cap, the cost's lines (93–97), the readings' names and the tempo's confidence (438), the owner's observation words and the clipper's "will take" (439–445, 52–54, 87, 424), the owner's wording 3b/3c — the master's outcome (88, 89 naming its limit, 91 its two levels), the advice beyond the norm (502, 503, 505, 509), the cap in words (52–54, 87), DC per channel (446, 447) and the core stamp's facts gone (10, 127; v0.6.0), a field's refusal with its numbers (180, 181), the master delivered above its ceiling (98), every fact complete — a term of its own group, the renderer refusing a hole (v0.7.1), a card not measured yet (510), PlanPending said of an export and an import too (135), the glue's tempo heard with low confidence (99), the master's damage and loudness range with the BS.1116 grades (600–604)
+    constexpr std::uint64_t kPinned = 0x2469509adcc83d45ull;   // …, the plan's advice and the targets' notes (500–508), the observations (52–80, 419–436), the target-change warning (81), what departs from vinyl (82–87), the clipper's cut off the peaks and an observation not measured (437), the landing's verdict (88–92), the clipper's cut as a cap, the cost's lines (93–97), the readings' names and the tempo's confidence (438), the owner's observation words and the clipper's "will take" (439–445, 52–54, 87, 424), the owner's wording 3b/3c — the master's outcome (88, 89 naming its limit, 91 its two levels), the advice beyond the norm (502, 503, 505, 509), the cap in words (52–54, 87), DC per channel (446, 447) and the core stamp's facts gone (10, 127; v0.6.0), a field's refusal with its numbers (180, 181), the master delivered above its ceiling (98), every fact complete — a term of its own group, the renderer refusing a hole (v0.7.1), a card not measured yet (510), PlanPending said of an export and an import too (135), the glue's tempo heard with low confidence (99), the master's damage and loudness range with the BS.1116 grades (600–604), the damage's line naming the windows graded (600, 601) and why a damage was not graded: superseded, no job id
     ok (whole, "every fact of the corpus is complete: each renders its message, none a hole");
     char hex[32];
     std::snprintf (hex, sizeof hex, "%016llx", (unsigned long long) h);

@@ -37,4 +37,7 @@ void observe (const ObservationInputs& in, Observations& out) noexcept;
 // Is the source clipped — confirmed clips at [limiter.peakClipper] clippedPerMinute a minute or more? The one rule the
 // limiter's needles and the observations share.
 [[nodiscard]] bool regularlyClipped (const Rules& rules, double clipsPerMinute) noexcept;
+
+// Why a number was not measured, as the term a fact names it by: every MeasurementReason but None.
+[[nodiscard]] text::Term reasonTerm (MeasurementReason reason) noexcept;
 } // namespace felitronics::session::detail

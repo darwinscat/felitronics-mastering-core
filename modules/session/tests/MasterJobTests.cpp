@@ -9,9 +9,11 @@
 #include <felitronics_test.h>
 #include <algorithm>
 #include <bit>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <limits>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -29,6 +31,7 @@ struct Inspector
             && ! s.damageJob_ && s.damageJobId_ == 0 && s.damageJobBytes_ == 0;
     }
     static void lastJob (Session& s, JobId last) noexcept { s.lastJob_ = last; }
+    static std::uint64_t damageBytes (const Session& s) noexcept { return s.damageJobBytes_; }
 };
 }
 
@@ -71,7 +74,7 @@ void damageResampler()
 }
 
 // THE DAMAGE'S JOB WITH NO ID LEFT: the master takes the last id there is; delivered as ever, its damage is not graded —
-// Unavailable, Capacity — and its line says so, with no job and no Damage event.
+// Unavailable, NoJobId — and its line says so, with no job and no Damage event.
 void damageWithoutAnId()
 {
     constexpr std::uint32_t rate = 48000;
@@ -101,20 +104,197 @@ void damageWithoutAnId()
         {
             damageEvent = damageEvent || e.kind == EventKind::Damage;
             if (e.kind == EventKind::Fact && e.payload.fact.view().id == text::FactId::MasterDamageUnmeasured)
-                line = e.payload.fact.view().args[0].termId == text::Term::ReasonCapacity;
+                line = e.payload.fact.view().args[0].termId == text::Term::ReasonNoJobId;
         }
     }
     const auto& d = s.masters().empty() ? MasterDamage {} : s.masters()[0].report->damage;
     ok (started.job == std::numeric_limits<JobId>::max() && s.masters().size() == 1 && s.pendingMaster().master == started.job
         && s.damageJob() == 0 && ! damageEvent && line
-        && d.status == MeasurementStatus::Unavailable && d.reason == MeasurementReason::Capacity,
-        "a master with the last job id is delivered; its damage has no job to grade it: Unavailable, Capacity, said so");
+        && d.status == MeasurementStatus::Unavailable && d.reason == MeasurementReason::NoJobId,
+        "a master with the last job id is delivered; its damage has no job to grade it: Unavailable, NoJobId, said so");
+}
+
+// A short programme of struck tones — band-limited, dynamic, its peaks a few dB under `level` · 2 — at `rate`, planar.
+std::vector<float> struck (std::uint32_t rate, double seconds, double level = 0.5)
+{
+    const std::size_t frames = std::size_t (double (rate) * seconds);
+    std::vector<float> out (2u * frames);
+    for (std::size_t i = 0; i < frames; ++i)
+    {
+        const double t = double (i) / double (rate), beat = t - 0.5 * std::floor (t / 0.5), env = std::exp (-6.0 * beat) * level;
+        const double w = 6.283185307179586 * t;
+        const double x = env * (std::sin (220.0 * w) + 0.5 * std::sin (1100.0 * w) + 0.3 * std::sin (3300.0 * w)
+                                + 0.2 * std::sin (9900.0 * w));
+        out[i] = float (x);
+        out[frames + i] = float (0.9 * x + 0.05 * std::sin (440.0 * w) * env);
+    }
+    return out;
+}
+std::unique_ptr<Session> measuredSession (const std::vector<float>& pcm, std::uint32_t rate)
+{
+    const std::size_t frames = pcm.size() / 2u;
+    const float* planes[] { pcm.data(), pcm.data() + frames };
+    auto made = Session::create();
+    if (made.status != Status::Ok
+        || made.session->apply (command::Load { 1, { planes, 2, frames, rate }, { "damage.wav", rate, true, 24 } }).rejection
+            != Rejection::None) return nullptr;
+    while (made.session->step (16).state == StepState::More) {}
+    return std::move (made.session);
+}
+command::Master readyMaster (const Session& s, CommandId id)
+{
+    command::Master m { id };
+    m.ready.version = 1;
+    m.ready.topology.eq = m.ready.topology.compressor = m.ready.topology.dither = false;
+    m.source = s.source().hash; m.revision = s.revision();
+    return m;
+}
+
+// THE REFERENCE IS THE WHOLE referenceBelowDb LOWER, WHEREVER THE MASTER'S INPUT GAIN STANDS. A limiter-only chain that
+// takes a few dB off the peaks of a hot programme (its peaks above full scale), once as input 0 dB and pre-limiter +1 dB,
+// once as input -59 dB and pre-limiter +60 dB: the same signal reaches the limiter. The second's reference cannot go
+// 60 dB below -59 dB by the input gain alone (its range stops at -60 dB): the rest is a scale of its input, so both
+// references stay clear of the ceiling and both masters grade alike — where the knob alone lowered it by 1 dB, its
+// limiter cut nearly the same peaks as the master's.
+void damageReferenceBelowTheKnob()
+{
+    using detail::Damage;
+    const auto pcm = struck (48000, 4.0, 1.5);
+    const std::uint64_t frames = pcm.size() / 2u;
+    const float* planes[] { pcm.data(), pcm.data() + frames };
+    felitronics::mastering::MasteringChainConfig topology;
+    topology.eq = topology.compressor = topology.clipper = topology.dither = false;
+    topology.limiter = true;
+    const auto grade = [&] (double input, double preLimiter)
+    {
+        auto plan = Damage::plan (48000, frames, 2, topology);
+        felitronics::mastering::MasteringChainParams winning;
+        winning.inputGainDb = input; winning.preLimiterGainDb = preLimiter;
+        felitronics::mastering::MasteringChain master;
+        Damage damage;
+        MasterDamage out;
+        if (! plan.ok || ! damage.begin (plan, master, winning, planes, frames, 2)) return out;
+        for (unsigned i = 0; i < 100000 && ! damage.step (1024); ++i) {}
+        damage.publish (out);
+        return out;
+    };
+    const auto near = grade (0.0, 1.0), far = grade (-59.0, 60.0);
+    const auto odg = [] (const MasterDamage& d) { return d.worstOdg.value_or (0.0); };
+    char said[96];
+    std::snprintf (said, sizeof said, "ODG %.3f and %.3f, grades %u and %u", odg (near), odg (far), near.grade, far.grade);
+    ok (near.status == MeasurementStatus::Ready && far.status == MeasurementStatus::Ready && near.grade < 5u
+        && far.grade == near.grade && std::fabs (odg (far) - odg (near)) < 0.1,
+        std::string ("a reference the input gain cannot take 60 dB down is lowered the rest by its input: the same grade (") + said + ")");
+}
+
+// THE DAMAGE'S JOB HOLDS NO MORE THAN IT DECLARED: every byte its job asks for — made in the unit that delivers the
+// master, its walks begun at its first step — within DamageJob::bytes, the bytes it adds to liveBytes(), at 48 kHz and
+// through the resampler from 44.1 kHz.
+void damageMemoryIsDeclared()
+{
+    for (const std::uint32_t rate : { 48000u, 44100u })
+    {
+        const auto pcm = struck (rate, 3.0);
+        auto sp = measuredSession (pcm, rate);
+        if (! sp) { ok (false, "a session for the damage's memory"); continue; }
+        auto& s = *sp;
+        if (s.apply (readyMaster (s, 2)).rejection != Rejection::None) { ok (false, "its master is taken"); continue; }
+        std::uint64_t declaredBytes = 0, asked = 0;
+        bool started = false;
+        for (unsigned i = 0; i < 400000 && (s.job() != 0 || s.damageJob() != 0); ++i)
+        {
+            const auto spent = declared::spend ([&] { (void) s.step (1); });
+            if (! started && s.damageJob() != 0) { started = true; declaredBytes = detail::Inspector::damageBytes (s); }
+            if (started) asked += std::uint64_t (std::max (0LL, spent.bytes));
+        }
+        ok (started && s.damageJob() == 0 && asked > 0 && asked <= declaredBytes,
+            "the damage's job at " + std::to_string (rate) + " Hz asks for " + std::to_string (asked) + " bytes of the "
+            + std::to_string (declaredBytes) + " it declared");
+    }
+}
+
+// A MASTER ASKED WHILE A DAMAGE IS GRADED is priced without it: the new master stops it before allocating, so the room
+// that job holds is the new master's. At the ceiling of exactly what the master needs then it is taken, and stays under
+// it; a byte lower it is refused, naming that need.
+void masterAtTheCeilingWithADamage()
+{
+    const auto pcm = struck (48000, 3.0);
+    auto sp = measuredSession (pcm, 48000);
+    if (! sp) { ok (false, "a session for the ceiling"); return; }
+    auto& s = *sp;
+    (void) s.apply (readyMaster (s, 2));
+    for (unsigned i = 0; i < 400000 && s.job() != 0; ++i) (void) s.step (1);
+    // Into the damage's first walk: its chains, meters and PEAQ allocated.
+    for (unsigned i = 0; i < 64 && s.damageJob() != 0; ++i) (void) s.step (1);
+    const bool released = s.releaseMaster (s.pendingMaster()) == MasterTransferStatus::Ok;
+    const auto request = readyMaster (s, 3);
+    const auto unlimited = s.check (request);
+    const auto damage = detail::Inspector::damageBytes (s);
+    const auto live = std::uint64_t (s.liveBytes());
+    const auto need = live - damage + unlimited.bytes;
+    (void) s.setCapacity ({ double (need - 1u), double (unlimited.largestBlockBytes) });
+    const auto under = s.check (request);
+    (void) s.setCapacity ({ double (need), double (unlimited.largestBlockBytes) });
+    const auto at = s.check (request);
+    Answer taken;
+    const auto spent = declared::spend ([&] { taken = s.apply (request); });
+    ok (released && s.damageJob() == 0 && damage > 0 && unlimited.rejection == Rejection::None
+        && under.rejection == Rejection::Memory && under.needBytes == double (need)
+        && at.rejection == Rejection::None && taken.rejection == Rejection::None
+        && declared::covers (unlimited.bytes, spent) && s.liveBytes() <= double (need),
+        "a master asked while a damage is graded is priced without that damage's job: taken at the ceiling of "
+        + std::to_string (need) + " bytes (the damage's " + std::to_string (damage) + " freed first), refused a byte under");
+    (void) s.setCapacity ({});
+}
+
+// THE PROGRAMME REPORT HAS ENDED WHENEVER A MASTER IS TAKEN: the master's loudness range reads the input's from it, so a
+// master that could be asked before it would leave its range's change Pending for good. The table never lets one: the
+// first measurement — which a master waits for — ends after the programme report, on a fresh load, after a measurement
+// stopped between the loudness and the report and continued, and after the same source loaded again.
+void programmeBeforeAnyMaster()
+{
+    const auto pcm = struck (48000, 1.0);
+    const std::size_t frames = pcm.size() / 2u;
+    const float* planes[] { pcm.data(), pcm.data() + frames };
+    for (const int path : { 0, 1, 2 })
+    {
+        auto made = Session::create();
+        auto& s = *made.session;
+        (void) s.apply (command::Load { 1, { planes, 2, frames, 48000 }, { "programme.wav", 48000, true, 24 } });
+        const auto status = [&] (Analyzer a) { return s.snapshot().view().measurements[std::size_t (a)].status; };
+        bool between = path == 0;
+        if (path != 0)
+        {
+            for (unsigned i = 0; i < 100000 && ! between && s.measurementJob() != 0; ++i)
+            {
+                (void) s.step (1);
+                between = status (Analyzer::Loudness) == MeasurementStatus::Ready && status (Analyzer::Programme) == MeasurementStatus::Pending;
+            }
+            (void) s.apply (command::Cancel { 2, s.measurementJob() });
+            if (path == 1) (void) s.apply (command::ContinueMeasurement { 3 });
+            else (void) s.apply (command::Load { 3, { planes, 2, frames, 48000 }, { "programme.wav", 48000, true, 24 } });
+        }
+        unsigned taken = 0, early = 0;
+        for (unsigned i = 0; i < 200000; ++i)
+        {
+            if (s.check (readyMaster (s, 9)).rejection == Rejection::None)
+            { ++taken; early += status (Analyzer::Programme) == MeasurementStatus::Pending ? 1u : 0u; }
+            if (s.step (1).state == StepState::Done) break;
+        }
+        ok (between && taken > 0 && early == 0,
+            "path " + std::to_string (path) + ": a master is taken " + std::to_string (taken) + " times and never before the "
+            "programme report has ended");
+    }
 }
 
 int main()
 {
     damageResampler();
     damageWithoutAnId();
+    damageReferenceBelowTheKnob();
+    damageMemoryIsDeclared();
+    masterAtTheCeilingWithADamage();
+    programmeBeforeAnyMaster();
     constexpr std::uint32_t rate = 48000;
     std::vector<float> left (2u * rate), right (2u * rate);
     for (std::size_t i = 0; i < left.size(); ++i)
