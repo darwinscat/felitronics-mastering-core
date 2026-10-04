@@ -327,24 +327,21 @@ void readLanding (Doc& d, Reader& in, Landing& o)
     });
     in.table ("max", Need::Required, [&] (Reader& t)
     {
-        t.required ("ceilingLufs", o.maxCeilingLufs, R { -20.0, 0.0 });
-        t.required ("guardStepDb", o.guardStepDb, R { 0.25, 12.0 });
-        d.onQuarterDb (t, "guardStepDb");
-        t.required ("guardSteps", o.guardSteps, I { 0, 8 });
-        const auto mode = [&] (std::string_view key, double& budget, double& floor)
+        const bool ceiling = t.required ("ceilingLufs", o.maxCeilingLufs, R { -20.0, 0.0 });
+        const bool floor = t.required ("floorLufs", o.maxFloorLufs, R { -30.0, 0.0 });
+        d.notAbove (t, floor && ceiling, o.maxFloorLufs, o.maxCeilingLufs, "ceilingLufs");   // the floor under the ceiling
+        const auto mode = [&] (std::string_view key, double& budget)
         {
             t.table (key, Need::Required, [&] (Reader& m)
             {
-                m.required ("budgetDb", budget, R { 1.0, 60.0 });
+                m.required ("budgetDb", budget, R { 0.25, 60.0 });
                 d.onQuarterDb (m, "budgetDb");
-                m.required ("floorOdg", floor, R { -3.9, 0.0 });
             });
         };
-        mode ("clean", o.cleanBudgetDb, o.cleanFloorOdg);
-        mode ("dense", o.denseBudgetDb, o.denseFloorOdg);
-        // the denser mode promises no less loudness and no better grade
+        mode ("clean", o.cleanBudgetDb);
+        mode ("dense", o.denseBudgetDb);
+        // the denser mode takes no less of the limiter
         d.notAbove (t, true, o.cleanBudgetDb, o.denseBudgetDb, "dense");
-        d.notAbove (t, true, o.denseFloorOdg, o.cleanFloorOdg, "dense");
     });
 }
 

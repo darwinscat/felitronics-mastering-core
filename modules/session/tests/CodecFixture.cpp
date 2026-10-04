@@ -58,6 +58,7 @@ int main()
         Fill fill { mode };
         SnapshotView view;
         Kept kept[1]; LandingPass pass[1]; ReadingPoint points[1]; ReadingRun runs[1]; MachineDifference differences[1]; EqPoint curve[1];
+        DamageJobEntry grades[1];
         LandingTraceBucket traceRow { 0.0, 1.5, 0.75, 4, 0 };
         double crestRows[10] { 0.5, 0.125, 0.4, 0.08, 0.3, 0.045, 0.2, 0.02, 0.6, 0.18 };
         double crestMask[5] { 1.0, 1.0, 0.0, 1.0, 1.0 };
@@ -118,7 +119,7 @@ int main()
         result.numbers = { &number, 1 }; result.arrays = { &array, 1 };
         view.measurements = { &result, 1 };
         view.sourceBytes = mode ? 9007199254740991.0 : 0.0;
-        if (mode) { view.masters = kept; view.momentary = points; view.shortTerm = points; view.runs = runs; view.machineDifferences = differences; view.eqCurve = curve; }
+        if (mode) { view.masters = kept; view.momentary = points; view.shortTerm = points; view.runs = runs; view.machineDifferences = differences; view.eqCurve = curve; view.damageJobs = grades; }
         const auto need = Codec::encodedBytes (view);
         if (need.status != CodecStatus::Ok) return 1;
         std::string json (std::size_t (need.bytes), '\0');

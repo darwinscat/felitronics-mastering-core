@@ -66,23 +66,22 @@ truePeakAimDb = 0.05
 onSourceGate = true
 limiterBudget = { quietDb = 4, middleDb = 7, loudDb = 7.5, middleLufs = [-10, -8] }
 
-# THE MAX MODES (owner decision, 04.10, v0.15.0): loudness by a promise of BS.1116 instead of a number. A target whose
-# loudnessMode names one (targets.toml, or a person's edit of it) lands as loud as the mode allows: up to ceilingLufs, its
-# limiter held to the mode's budget (the active-window P95, as limiterBudget) in place of the rule by the target's
-# loudness, and then, before the file is delivered, graded by PEAQ against the same chain at rest (the damage, [cost.damage])
-# — a worst window under the mode's floorOdg steps the drive back by guardStepDb, re-renders and grades again, at most
-# guardSteps times; the loudest render that passed is delivered, and that grade is the master's damage. The numbers, from
-# 1058 renders of wide home mixes and the Cambridge corpus (budget-curve): grade 5/4 at a median P95 of 3.1 dB, 4/3 at 6.9.
-#   clean   the damage not heard — grade 5, worst ODG above −0.5; budget 3 dB
-#   dense   heard, not annoying — grade 4 or better, worst ODG above −1.5; budget 7 dB
+# THE MAX MODES (owner decisions, 04.10: v0.15.0, and v0.16.0 by ear). A target whose loudnessMode names one (targets.toml,
+# or a person's edit of it) lands as loud as the mode's limiter budget allows — the active-window P95, as limiterBudget, in
+# place of the rule by the target's loudness — up to ceilingLufs: a landing and a delivery, as a manual master's. Its
+# damage is graded as any master's, when the shell asks (command::GradeDamage); v0.15.0's PEAQ guard before delivery is
+# out of the loop (owner: both modes went too far by ear while PEAQ heard nothing). The budgets, from the budget-curve
+# ladder (allStreaming, TP −1), medians of the home mixes / the Cambridge corpus:
+#   clean   budget 0.5 dB — −13.05 / −12.04 LUFS, a little above streaming
+#   dense   budget 1.75 dB — −11.22 / −10.53 LUFS
 # ceilingLufs: how high a max mode searches — no goal, a bound well above any landing a budget allows.
-# guardStepDb, guardSteps: the guard's step back, dB of drive, and the most steps it takes.
+# floorLufs: how low a max master ever lands, whichever target the mode sits on (owner, 04.10: "always pulled up to −14"):
+#   a mix so dense the budget holds it under is landed again there, with no budget, and delivered there.
 [landing.max]
 ceilingLufs = -5
-guardStepDb = 1
-guardSteps = 3
-clean = { budgetDb = 3, floorOdg = -0.5 }
-dense = { budgetDb = 7, floorOdg = -1.5 }
+floorLufs = -14
+clean = { budgetDb = 0.5 }
+dense = { budgetDb = 1.75 }
 
 # THE LIMITER — always on, with no tick; its setting is the target's ceiling. The ceiling is hard; its gain reduction is
 # held by [landing] limiterBudget, and no PLR and no other cost of the master limits how far it goes for the loudness.

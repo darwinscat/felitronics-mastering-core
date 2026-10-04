@@ -61,6 +61,19 @@ struct Capacity
     double largestFreeBlockBytes = 9007199254740991.0;
 };
 
+// THE DAMAGE GRADES, a job each (Session::damageJobs): a grade the shell asked for a master kept (command::GradeDamage),
+// graded one at a time in the order asked. Waiting — its turn has not come (a master job, the source's measurement or an
+// earlier grade runs) or a new master parked it; Running — its walks are being made. A grade ends with its result, or by
+// cancel of its job id, forget of its master or a new source; never by a new master.
+enum class DamageJobState : std::uint8_t { Waiting, Running };
+struct DamageJobEntry
+{
+    JobId job = 0;
+    MasterId masterId = 0;
+    DamageJobState state = DamageJobState::Waiting;
+    Phase progress {};
+};
+
 struct ProjectText
 {
     Rejection rejection = Rejection::None;
@@ -673,6 +686,8 @@ public:
     [[nodiscard]] JobId job() const noexcept;               // the master being made; 0 when none is
     // The damage being graded for a delivered master (MasterReport.damage Pending), a job of its own; 0 when none is.
     [[nodiscard]] JobId damageJob() const noexcept;
+    // Every grade not yet ended — the one graded first (Running) and those waiting their turn — in the order they run.
+    [[nodiscard]] std::span<const DamageJobEntry> damageJobs() const noexcept;
     [[nodiscard]] const Recipe& jobRecipe() const noexcept; // ...and its recipe (meaningless when job() is 0)
     [[nodiscard]] std::span<const Kept> masters() const noexcept;   // the masters kept, in the order they were made
     [[nodiscard]] MasterToken pendingMaster() const noexcept;
@@ -714,13 +729,21 @@ private:
     void clearMasters() noexcept;
     void settleMasterCrest (MeasurementReason reason) noexcept;
     void stepMasterCrestJoin() noexcept;
-    // THE DAMAGE'S JOB (src/Damage.h): started when its master is delivered, stepped behind every other work. It ends
-    // with its walks (`stopped` None: their result) or is stopped — by cancel (Cancelled), by a new master (Superseded),
-    // by forget of its master — and says so: its master's report settles, the damage's line (`line`) and the Damage
-    // event. A load and loadMeasured drop it with the masters, silently, as they drop a master being made.
-    void startDamage (MasterId master, const detail::MasterJob& job) noexcept;
+    // THE DAMAGE'S JOBS (src/Damage.h): asked by the shell (command::GradeDamage) for a master kept — a job id each,
+    // announced Pending — and graded one at a time, in the order asked, behind every other work: startDamage takes the
+    // first waiting grade when nothing runs — its walks' room checked against the capacity then (refused:
+    // MeasurementReason::Memory, said) — in the unit of its first step; a new master parks the running one (its walks
+    // freed before the master allocates; it starts again, first, when its turn comes back). A grade ends with its walks
+    // (`stopped` None: their result) or is stopped — by cancel of its job (Cancelled), by forget of its master or a new
+    // source (MasterForgotten, no line: the master is gone), by the room it lacked (Memory) — and says so: its master's
+    // report settles, the damage's line (`line`) and the Damage event, its last word.
+    [[nodiscard]] bool startDamage() noexcept;
     void stepDamage() noexcept;
-    void endDamage (MeasurementReason stopped, bool line) noexcept;
+    void parkDamage() noexcept;
+    void endDamage (std::size_t index, MeasurementReason stopped, bool line) noexcept;
+    void endAllDamage() noexcept;
+    [[nodiscard]] std::size_t damageIndex (JobId job) const noexcept;
+    [[nodiscard]] Phase damageWaitingProgress() const noexcept;
     [[nodiscard]] SnapshotView buildView() const noexcept;
     [[nodiscard]] SnapshotView buildSummary (std::span<MeasurementResult> results) const noexcept;
     [[nodiscard]] bool hasWork() const noexcept;
@@ -837,6 +860,12 @@ private:
     JobId damageJobId_ = 0;
     std::uint64_t damageJobBytes_ = 0;
     Phase damageProgress_ {};
+    // THE GRADES' QUEUE: an entry per grade asked and not yet ended, in the order they run (the running one first); what
+    // a grade's walks need to start is its master's (MasterRows), so an entry holds no walk buffer. Room for one per
+    // master kept (`damageRoom_` == masterRoom_), grown with the masters' room.
+    std::unique_ptr<DamageJobEntry[]> damageJobs_;
+    std::size_t damageRoom_ = 0, damageCount_ = 0;
+
 };
 
 } // namespace felitronics::session

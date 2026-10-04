@@ -90,7 +90,7 @@ enum class Plural : std::uint8_t { Zero, One, Two, Few, Many, Other };
 //   400 – 499   the measurements and the observations
 //   500 – 599   the plan's advice and the targets' notes
 //   600 – 699   the landing and the master's report, continued (1 – 99 is full): a landing held short (600 – 602), the
-//               damage the processing did and the loudness range (603 – 607), a max mode's verdict (608 – 615)
+//               damage the processing did and the loudness range (603 – 607), a max mode's verdict (608 – 617)
 // The arguments each fact takes, by name and kind, are src/TextFacts.h's, and the build holds the catalog to them.
 enum class FactId : std::uint16_t
 {
@@ -240,6 +240,8 @@ enum class FactId : std::uint16_t
     RejectedMandatoryUnavailable = 133,
     RejectedDeliveryFormat = 134,  // {bits} {rate}: the target's bit depth and delivery rate
     RejectedPlanPending = 135,
+    RejectedDamageSettled = 136,
+    RejectedDamageQueued = 137,
     // A field's rejection with its numbers, where the answer carries them (Answer::value, low, high): the refused value
     // against the domain the check read, and a value a knob does not take.
     RejectedOutOfDomainValue = 180, // {field} {value} {low} {high}
@@ -329,7 +331,7 @@ enum class FactId : std::uint16_t
     DeviceUnmeasured = 510,    // not measured yet: the machine sets it when {analyzer} ends
     // A landing held short (MasterReportText::landing, ::gate), published with the master.
     MasterLandingBudget = 600, // target {target}, landed {achieved}: further, the limiter would take more than {budget} (P95)
-    MasterLandingGate = 601,   // by the loud part {loud}, by the file's BS.1770 reading {file}
+    MasterLandingGate = 601,   // without the quiet parts {loud} (the source's gate), by the file's BS.1770 reading {file}
     MasterLandingOverBudget = 602, // target {target}, landed {achieved}: no render kept {budget} (P95); the gentlest takes {taken}
 
     // The damage the processing did, heard (MasterDamage): the worst window's {grade}, where it starts ({from}) and the
@@ -351,6 +353,8 @@ enum class FactId : std::uint16_t
     MasterMaxTruePeak = 613,   // {mode}: {achieved} — no render kept under the true-peak ceiling
     MasterMaxUnguarded = 614,  // {mode}: {achieved} — the damage could not be checked; the limiter's budget holds
     MasterMaxOverBudget = 615, // {mode}: {achieved} — the limiter takes {over} (P95), more than the mode's {budget}
+    MasterMaxFloor = 616,      // {mode}: {achieved} — pulled up to the floor; the mode and the level, nothing more
+    MasterMaxFloorDetail = 617, // for the log: {mode}'s budget {budget} held it under {floor}; brought up, the limiter took {over}
 };
 
 // THE TERMS — words an argument of kind Term names: one value of a group of the catalog's [terms]. Printed as the
@@ -420,6 +424,8 @@ enum class Term : std::uint16_t
     LoudnessModeManual, LoudnessModeMaxClean, LoudnessModeMaxDense,
     // The target's loudness mode as the field a refusal names (editTarget's third field, a project's target layer).
     FieldTargetLoudnessMode,
+    // Why a master's damage grade ended: its master is no longer kept (forgotten, or dropped with its source).
+    ReasonMasterForgotten,
 
 };
 

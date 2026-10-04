@@ -1,0 +1,18 @@
+create main 134217728
+load 1 measure
+drive 5000 work units
+command {"kind":"master","commandId":"2"}
+drive 100000 work units
+release master
+command {"kind":"master","commandId":"3"}
+drive 100000 work units
+command {"kind":"gradeDamage","commandId":"4","masterId":2}
+command {"kind":"gradeDamage","commandId":"5","masterId":3}
+command {"kind":"gradeDamage","commandId":"6","masterId":3}
+snapshot
+step 40 work units
+snapshot
+drive 200000 work units
+snapshot
+command {"kind":"gradeDamage","commandId":"7","masterId":2}
+summary

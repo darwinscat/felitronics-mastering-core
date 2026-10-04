@@ -175,6 +175,13 @@ public:
                     record ("place", a[0]); transfer (false); continue;
                 }
                 if (i.op == "summary") { summary(); continue; }
+                if (i.op == "release")
+                {
+                    // The shell takes the delivered PCM as it comes (fc_session_master_audio_release): the next master is
+                    // asked with none pending.
+                    require (session().releaseMaster (session().pendingMaster()) == MasterTransferStatus::Ok, "release refused");
+                    record ("release", "0"); continue;
+                }
                 if (i.op == "export")
                 {
                     const auto need = session().exportProjectBytes();

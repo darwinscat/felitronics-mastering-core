@@ -767,6 +767,7 @@ text::Term reasonTerm (MeasurementReason reason) noexcept
         case MeasurementReason::Memory:         return text::Term::ReasonMemory;
         case MeasurementReason::Superseded:     return text::Term::ReasonSuperseded;
         case MeasurementReason::NoJobId:        return text::Term::ReasonNoJobId;
+        case MeasurementReason::MasterForgotten: return text::Term::ReasonMasterForgotten;
     }
     // Not measured always carries a reason (unmeasured() here; a master's damage and its loudness range's change).
     detail::storageOverflow();

@@ -5,6 +5,7 @@
 #include "Driver.h"
 #include "Damage.h"
 #include "MasterJob.h"
+#include "Rules.h"
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/analysis/ReferenceTruePeakMeter.h>
@@ -38,8 +39,6 @@ struct Inspector
     // A walk that fails midway (a refusal of the chains, the meters or PEAQ — a contract fault no input reaches).
     static std::uint32_t windows (const Damage& d) noexcept { return d.windows_; }
     static void fail (Damage& d, MeasurementReason why) noexcept { d.fail (why); }
-    // The master's job, for a test that plants a guard's numbers or fails its walk midway.
-    static MasterJob* job (Session& s) noexcept { return s.masterJob_.get(); }
 };
 }
 
@@ -93,8 +92,9 @@ void damageResampler()
     }
 }
 
-// THE DAMAGE'S JOB WITH NO ID LEFT: the master takes the last id there is; delivered as ever, its damage is not graded —
-// Unavailable, NoJobId — and its line says so, with no job and no Damage event.
+// THE DAMAGE'S JOB WITH NO ID LEFT: the master takes the last id there is; delivered as ever, its damage is graded only
+// when the shell asks (no grade starts by itself: no Damage event, the report Pending), and a grade asked with no id left
+// is refused (NoJobId), the report left as it was.
 void damageWithoutAnId()
 {
     constexpr std::uint32_t rate = 48000;
@@ -115,23 +115,20 @@ void damageWithoutAnId()
     ready.ready.topology.eq = ready.ready.topology.compressor = ready.ready.topology.dither = false;
     ready.source = s.source().hash; ready.revision = s.revision();
     const auto started = s.apply (ready);
-    bool line = false, damageEvent = false;
+    bool damageEvent = false;
     bool more = true;
     for (unsigned i = 0; i < 40000 && more; ++i)
     {
         more = s.step (1).state == StepState::More;
-        for (const auto& e : s.events())
-        {
-            damageEvent = damageEvent || e.kind == EventKind::Damage;
-            if (e.kind == EventKind::Fact && e.payload.fact.view().id == text::FactId::MasterDamageUnmeasured)
-                line = e.payload.fact.view().args[0].termId == text::Term::ReasonNoJobId;
-        }
+        for (const auto& e : s.events()) damageEvent = damageEvent || e.kind == EventKind::Damage;
     }
     const auto& d = s.masters().empty() ? MasterDamage {} : s.masters()[0].report->damage;
+    const bool pending = d.status == MeasurementStatus::Pending;
+    const auto graded = s.masters().empty() ? Answer {} : s.apply (command::GradeDamage { 3, s.masters()[0].id });
     ok (started.job == std::numeric_limits<JobId>::max() && s.masters().size() == 1 && s.pendingMaster().master == started.job
-        && s.damageJob() == 0 && ! damageEvent && line
-        && d.status == MeasurementStatus::Unavailable && d.reason == MeasurementReason::NoJobId,
-        "a master with the last job id is delivered; its damage has no job to grade it: Unavailable, NoJobId, said so");
+        && s.damageJob() == 0 && s.damageJobs().empty() && ! damageEvent && pending
+        && graded.rejection == Rejection::NoJobId && s.masters()[0].report->damage.status == MeasurementStatus::Pending,
+        "a master with the last job id is delivered, no grade by itself; a grade asked with no id left is refused NoJobId");
 }
 
 // A short programme of struck tones — band-limited, dynamic, its peaks a few dB under `level` · 2 — at `rate`, planar.
@@ -252,9 +249,12 @@ void damageMemoryIsDeclared()
         if (! sp) { ok (false, "a session for the damage's memory"); continue; }
         auto& s = *sp;
         if (s.apply (readyMaster (s, 2)).rejection != Rejection::None) { ok (false, "its master is taken"); continue; }
+        for (unsigned i = 0; i < 400000 && s.job() != 0; ++i) (void) s.step (1);
+        if (s.masters().empty() || s.apply (command::GradeDamage { 3, s.masters()[0].id }).rejection != Rejection::None)
+        { ok (false, "its damage grade is asked"); continue; }
         std::uint64_t declaredBytes = 0, asked = 0;
         bool started = false;
-        for (unsigned i = 0; i < 400000 && (s.job() != 0 || s.damageJob() != 0); ++i)
+        for (unsigned i = 0; i < 400000 && ! s.damageJobs().empty(); ++i)
         {
             const auto spent = declared::spend ([&] { (void) s.step (1); });
             if (! started && s.damageJob() != 0) { started = true; declaredBytes = detail::Inspector::damageBytes (s); }
@@ -266,8 +266,8 @@ void damageMemoryIsDeclared()
     }
 }
 
-// A MASTER ASKED WHILE A DAMAGE IS GRADED is priced without it: the new master stops it before allocating, so the room
-// that job holds is the new master's. At the ceiling of exactly what the master needs then it is taken, and stays under
+// A MASTER ASKED WHILE A DAMAGE IS GRADED is priced without it: the new master parks it — its walks freed before the
+// master allocates, the grade waiting its turn again — so the room that job holds is the new master's. At the ceiling of exactly what the master needs then it is taken, and stays under
 // it; a byte lower it is refused, naming that need.
 void masterAtTheCeilingWithADamage()
 {
@@ -277,10 +277,11 @@ void masterAtTheCeilingWithADamage()
     auto& s = *sp;
     (void) s.apply (readyMaster (s, 2));
     for (unsigned i = 0; i < 400000 && s.job() != 0; ++i) (void) s.step (1);
+    (void) s.apply (command::GradeDamage { 3, s.masters()[0].id });
     // Into the damage's first walk: its chains, meters and PEAQ allocated.
-    for (unsigned i = 0; i < 64 && s.damageJob() != 0; ++i) (void) s.step (1);
+    for (unsigned i = 0; i < 64 && ! s.damageJobs().empty(); ++i) (void) s.step (1);
     const bool released = s.releaseMaster (s.pendingMaster()) == MasterTransferStatus::Ok;
-    const auto request = readyMaster (s, 3);
+    const auto request = readyMaster (s, 4);
     const auto unlimited = s.check (request);
     const auto damage = detail::Inspector::damageBytes (s);
     const auto live = std::uint64_t (s.liveBytes());
@@ -341,203 +342,402 @@ void programmeBeforeAnyMaster()
     }
 }
 
-// A MAX MASTER (v0.15.0) grades its landing's render with PEAQ before the file is delivered: that guard runs inside the
-// master's own declaration (its walks priced there as the damage's job, the master's buffers alive beside them), no
-// damage job follows the master, and the report carries the mode, what stopped it and the guard's grade. A step back
-// frees its walk before the next is made, so a guard that took none has asked for no more than the declaration.
-void maxMasterGuarded()
+// THE DAMAGE GRADES, ASKED BY THE SHELL (command::GradeDamage): no grade without the command; each its own job, its
+// damage events Pending then the result, a row of the snapshot's damageJobs; one at a time, in the order asked. A person
+// deleting a master (forget) ends its grade at once — running at any point of its walks, or waiting — with one last
+// event (MasterForgotten), its walks' bytes back, and nothing of it after; a cancel the same with Cancelled; a new source
+// ends them all; the queue moves on. Each case is recorded event by event.
+struct GradeRun
 {
-    std::uint32_t stepsBack = 0;
+    std::unique_ptr<Session> session;
+    std::vector<Notification> events;           // every event of every apply and step, in order
+};
+GradeRun gradeSession (double seconds)
+{
+    GradeRun r;
+    const auto pcm = struck (48000, seconds);
+    r.session = measuredSession (pcm, 48000);
+    return r;
+}
+void record (GradeRun& r) { for (const auto& e : r.session->events()) r.events.push_back (e); }
+Answer act (GradeRun& r, const Request& request) { const auto a = r.session->apply (request); record (r); return a; }
+// A master delivered, its PCM released (the next master is asked with none pending): its id.
+MasterId deliver (GradeRun& r, CommandId id)
+{
+    auto& s = *r.session;
+    if (s.pendingMaster().master != 0) (void) s.releaseMaster (s.pendingMaster());
+    if (act (r, readyMaster (s, id)).rejection != Rejection::None) return 0;
+    for (unsigned i = 0; i < 400000 && s.job() != 0; ++i) { (void) s.step (1); record (r); }
+    return s.masters().empty() ? 0u : s.masters().back().id;
+}
+// Steps one unit at a time until `until` holds (or nothing is left to do).
+template <typename Until> bool stepUntil (GradeRun& r, Until&& until)
+{
+    for (unsigned i = 0; i < 400000; ++i)
+    {
+        if (until()) return true;
+        if (r.session->step (1).state == StepState::Done) { record (r); return until(); }
+        record (r);
+    }
+    return false;
+}
+bool runOut (GradeRun& r) { return stepUntil (r, [] { return false; }), true; }
+// The point of a walk: the running grade's damage walk (PEAQ) past `fraction` of the programme; 0: its first unit.
+bool atPoint (GradeRun& r, double fraction)
+{
+    auto& s = *r.session;
+    if (fraction <= 0.0) return stepUntil (r, [&] { return s.damageJob() != 0; });
+    return stepUntil (r, [&] { return s.damageJob() != 0 && s.damageJobs()[0].progress.name == PhaseName::Damage
+                                      && s.damageJobs()[0].progress.stepFraction
+                                      && *s.damageJobs()[0].progress.stepFraction > fraction; });
+}
+std::size_t countOf (const std::vector<Notification>& events, JobId job, std::size_t from = 0)
+{
+    std::size_t n = 0;
+    for (std::size_t i = from; i < events.size(); ++i) n += events[i].jobId == job ? 1u : 0u;
+    return n;
+}
+const Notification* lastOf (const std::vector<Notification>& events, JobId job)
+{
+    for (std::size_t i = events.size(); i-- > 0;) if (events[i].jobId == job) return &events[i];
+    return nullptr;
+}
+
+void damageGrades()
+{
+    // NO GRADE WITHOUT THE COMMAND: a master delivered and the session run out — no damage event, no row, Pending.
+    {
+        auto r = gradeSession (3.0);
+        const auto master = r.session ? deliver (r, 2) : 0u;
+        (void) runOut (r);
+        bool damage = false;
+        for (const auto& e : r.events) damage = damage || e.kind == EventKind::Damage;
+        ok (master != 0 && ! damage && r.session->damageJobs().empty() && r.session->damageJob() == 0
+            && r.session->masters()[0].report->damage.status == MeasurementStatus::Pending,
+            "no grade without the command: the master delivered, no damage event, no row, its damage Pending");
+    }
+    // ASKED, GRADED: the answer's job; announced Pending; Waiting, then Running in the snapshot; to the end — its phases,
+    // its line, and its Damage event, Ready, the job's last word; then no row and nothing of it.
+    {
+        auto r = gradeSession (3.0);
+        auto& s = *r.session;
+        const auto master = deliver (r, 2);
+        const auto from = r.events.size();
+        const auto asked = act (r, command::GradeDamage { 3, master });
+        const auto job = asked.job;
+        const auto view = s.snapshot();
+        const bool waiting = view.view().damageJobs.size() == 1 && view.view().damageJobs[0].job == job
+            && view.view().damageJobs[0].masterId == master && view.view().damageJobs[0].state == DamageJobState::Waiting;
+        const bool announced = r.events.size() == from + 1 && r.events[from].kind == EventKind::Damage
+            && r.events[from].jobId == job && r.events[from].payload.damage.status == MeasurementStatus::Pending;
+        const bool running = atPoint (r, 0.0) && s.snapshot().view().damageJobs[0].state == DamageJobState::Running
+            && s.snapshot().view().damageJob == job;
+        (void) runOut (r);
+        const auto* last = lastOf (r.events, job);
+        ok (asked.rejection == Rejection::None && job > master && waiting && announced && running && last
+            && last->kind == EventKind::Damage && last->payload.damage.status == MeasurementStatus::Ready
+            && s.masters()[0].report->damage.status == MeasurementStatus::Ready && s.damageJobs().empty(),
+            "gradeDamage after a master: its own job, announced Pending, Waiting then Running in the snapshot, graded "
+            "Ready by its last event, then no row");
+        // THE ORDINARY REFUSALS: a settled grade, a master not kept, a grade asked twice, a cancel of a finished job.
+        const auto settled = act (r, command::GradeDamage { 4, master });
+        const auto unknown = act (r, command::GradeDamage { 5, master + 100u });
+        const auto other = deliver (r, 6);
+        const auto first = act (r, command::GradeDamage { 7, other });
+        const auto twice = act (r, command::GradeDamage { 8, other });
+        const auto finished = act (r, command::Cancel { 9, job });
+        ok (settled.rejection == Rejection::DamageSettled && unknown.rejection == Rejection::UnknownMaster
+            && first.rejection == Rejection::None && twice.rejection == Rejection::DamageQueued
+            && finished.rejection == Rejection::UnknownJob,
+            "gradeDamage is refused for a settled damage, a master not kept and a grade already asked; a finished grade's "
+            "job is no job to cancel");
+    }
+    // TWO GRADES QUEUED: run one at a time, in the order asked — the second waits, then runs; both Ready, in order.
+    {
+        auto r = gradeSession (3.0);
+        auto& s = *r.session;
+        const auto a = deliver (r, 2), b = deliver (r, 3);
+        const auto ja = act (r, command::GradeDamage { 4, a }).job, jb = act (r, command::GradeDamage { 5, b }).job;
+        const bool queued = s.damageJobs().size() == 2 && s.damageJobs()[0].job == ja && s.damageJobs()[1].job == jb
+            && s.damageJobs()[1].state == DamageJobState::Waiting;
+        const bool oneAtATime = atPoint (r, 0.5) && s.damageJob() == ja && s.damageJobs()[1].state == DamageJobState::Waiting
+            && countOf (r.events, jb) == 1u;
+        (void) runOut (r);
+        std::vector<JobId> ready;
+        for (const auto& e : r.events)
+            if (e.kind == EventKind::Damage && e.payload.damage.status == MeasurementStatus::Ready) ready.push_back (e.jobId);
+        ok (queued && oneAtATime && ready.size() == 2 && ready[0] == ja && ready[1] == jb
+            && s.masters()[0].report->damage.status == MeasurementStatus::Ready
+            && s.masters()[1].report->damage.status == MeasurementStatus::Ready,
+            "two grades queued run one at a time in the order asked: the second waits (its announcement alone), both Ready");
+    }
+    // FORGET OR CANCEL OF THE RUNNING GRADE, at its first unit, midway and in its last window: its walks go in the
+    // command — the command's releasedBytes are their bytes, and the live bytes are a twin's that never graded — one
+    // last event says why (forget: MasterForgotten, no line; cancel: its fact, its line, Cancelled), and nothing of it
+    // comes after; after a cancel the same master is graded again, cleanly, under a fresh job.
+    for (const bool forget : { true, false })
+        for (const double point : { 0.0, 0.5, 0.97 })
+        {
+            const std::string what = std::string (forget ? "forget" : "cancel") + " at " + std::to_string (point);
+            auto r = gradeSession (6.0), twin = gradeSession (6.0);
+            auto& s = *r.session;
+            const auto master = deliver (r, 2), twinMaster = deliver (twin, 2);
+            const auto job = act (r, command::GradeDamage { 3, master }).job;
+            if (! atPoint (r, point)) { ok (false, what + ": the walk reached its point"); continue; }
+            const auto held = detail::Inspector::damageBytes (s);
+            const Request stop = forget ? Request { command::Forget { 4, master } } : Request { command::Cancel { 4, job } };
+            const auto checked = s.check (stop);
+            const auto from = r.events.size();
+            const auto answer = act (r, stop);
+            const auto said = countOf (r.events, job, from);
+            const auto* last = lastOf (r.events, job);
+            const bool lastWord = last && last->kind == EventKind::Damage
+                && last->payload.damage.status == MeasurementStatus::Cancelled
+                && last->payload.damage.reason == (forget ? MeasurementReason::MasterForgotten : MeasurementReason::Cancelled);
+            const auto afterStop = r.events.size();
+            (void) runOut (r);
+            if (forget && twin.session) (void) act (twin, command::Forget { 4, twinMaster });
+            const bool baseline = ! forget || (twin.session && s.liveBytes() == twin.session->liveBytes());
+            ok (job != 0 && held > 0 && answer.rejection == Rejection::None && checked.releasedBytes == held
+                && said == (forget ? 1u : 3u) && lastWord && countOf (r.events, job, afterStop) == 0u
+                && s.damageJob() == 0 && s.damageJobs().empty() && baseline,
+                what + ": the running grade ends in the command, its " + std::to_string (held)
+                + " bytes released, one last event, nothing after" + (forget ? ", memory back to the baseline" : ""));
+            if (! forget)
+            {
+                const auto again = act (r, command::GradeDamage { 5, master });
+                (void) runOut (r);
+                ok (again.rejection == Rejection::None && again.job > job && s.masters()[0].report->damage.status == MeasurementStatus::Ready,
+                    what + ": after the cancel the same master is graded again, under a fresh job, Ready");
+            }
+        }
+    // FORGET OR CANCEL OF A WAITING GRADE: it leaves the queue with one last event and no work; the running one finishes.
+    for (const bool forget : { true, false })
+    {
+        auto r = gradeSession (3.0);
+        auto& s = *r.session;
+        const auto a = deliver (r, 2), b = deliver (r, 3);
+        const auto ja = act (r, command::GradeDamage { 4, a }).job, jb = act (r, command::GradeDamage { 5, b }).job;
+        (void) atPoint (r, 0.3);
+        const Request stop = forget ? Request { command::Forget { 6, b } } : Request { command::Cancel { 6, jb } };
+        const auto checked = s.check (stop);
+        const auto answer = act (r, stop);
+        const bool gone = s.damageJobs().size() == 1 && s.damageJobs()[0].job == ja;
+        (void) runOut (r);
+        bool worked = false;
+        for (const auto& e : r.events) worked = worked || (e.jobId == jb && e.kind == EventKind::Phase);
+        const auto* last = lastOf (r.events, jb);
+        ok (answer.rejection == Rejection::None && checked.releasedBytes == 0 && gone && ! worked && last
+            && last->kind == EventKind::Damage && last->payload.damage.status == MeasurementStatus::Cancelled
+            && countOf (r.events, jb) == (forget ? 2u : 4u) && s.masters()[0].report->damage.status == MeasurementStatus::Ready,
+            std::string (forget ? "forget" : "cancel") + " of a waiting grade: it leaves the queue with one last event and "
+            "no work; the running one finishes Ready");
+    }
+    // FORGET OF THE RUNNING GRADE WHILE ANOTHER WAITS: the waiting one then runs and finishes; a master with no grade
+    // forgotten meanwhile changes nothing for it; then a new master is graded cleanly under fresh ids.
+    {
+        auto r = gradeSession (3.0);
+        auto& s = *r.session;
+        const auto a = deliver (r, 2), b = deliver (r, 3), c = deliver (r, 4);
+        const auto ja = act (r, command::GradeDamage { 5, a }).job, jb = act (r, command::GradeDamage { 6, b }).job;
+        (void) atPoint (r, 0.5);
+        (void) act (r, command::Forget { 7, a });
+        const bool next = s.damageJobs().size() == 1 && s.damageJobs()[0].job == jb;
+        const auto beforeC = r.events.size();
+        (void) atPoint (r, 0.4);
+        (void) act (r, command::Forget { 8, c });
+        const bool untouched = countOf (r.events, jb, beforeC) > 0 && s.damageJob() == jb;
+        (void) runOut (r);
+        const auto* lastB = lastOf (r.events, jb);
+        const auto d = deliver (r, 9);
+        const auto jd = act (r, command::GradeDamage { 10, d }).job;
+        (void) runOut (r);
+        const auto* lastD = lastOf (r.events, jd);
+        ok (ja != 0 && next && untouched && lastB && lastB->payload.damage.status == MeasurementStatus::Ready
+            && countOf (r.events, ja, beforeC) == 0u && d > jb && jd > d && lastD
+            && lastD->payload.damage.status == MeasurementStatus::Ready && lastD->payload.damage.masterId == d,
+            "forget of the running grade while another waits: the next runs and finishes Ready, a master with no grade "
+            "forgotten meanwhile changes nothing, and a new master is graded cleanly under fresh ids");
+    }
+    // THE ROOM AT ITS TURN: a capacity with no room for the walks when the grade's turn comes — refused there, said
+    // (Memory, its line), Unavailable; with room again the same master may be asked once more, and is graded.
+    {
+        auto r = gradeSession (3.0);
+        auto& s = *r.session;
+        const auto master = deliver (r, 2);
+        const auto job = act (r, command::GradeDamage { 3, master }).job;
+        (void) s.setCapacity ({ s.liveBytes(), 9007199254740991.0 });
+        (void) stepUntil (r, [&] { return s.damageJobs().empty(); });
+        const auto* last = lastOf (r.events, job);
+        bool line = false;
+        for (const auto& e : r.events)
+            if (e.jobId == job && e.kind == EventKind::Fact && e.payload.fact.view().id == text::FactId::MasterDamageUnmeasured)
+                line = e.payload.fact.view().args[0].termId == text::Term::ReasonMemory;
+        const auto& d = s.masters()[0].report->damage;
+        const bool refused = last && last->kind == EventKind::Damage && last->payload.damage.status == MeasurementStatus::Unavailable
+            && last->payload.damage.reason == MeasurementReason::Memory && line && d.status == MeasurementStatus::Unavailable
+            && d.reason == MeasurementReason::Memory && countOf (r.events, job) == 3u;
+        (void) s.setCapacity ({});
+        const auto again = act (r, command::GradeDamage { 4, master });
+        (void) runOut (r);
+        ok (job != 0 && refused && again.rejection == Rejection::None && s.masters()[0].report->damage.status == MeasurementStatus::Ready,
+            "a grade whose turn finds no room is refused there, said with Memory and its line; with room again it is "
+            "asked once more and graded");
+    }
+    // A NEW SOURCE with a grade running and one waiting: each says it ends with its master (MasterForgotten), in the
+    // load's own answer, and nothing of them comes after.
+    {
+        auto r = gradeSession (3.0);
+        auto& s = *r.session;
+        const auto a = deliver (r, 2), b = deliver (r, 3);
+        const auto ja = act (r, command::GradeDamage { 4, a }).job, jb = act (r, command::GradeDamage { 5, b }).job;
+        (void) atPoint (r, 0.5);
+        const auto pcm = struck (48000, 2.0, 0.3);
+        const std::size_t frames = pcm.size() / 2u;
+        const float* planes[] { pcm.data(), pcm.data() + frames };
+        const auto from = r.events.size();
+        const auto loaded = act (r, command::Load { 6, { planes, 2, frames, 48000 }, { "next.wav", 48000, true, 24 } });
+        std::vector<JobId> ended;
+        for (std::size_t i = from; i < r.events.size(); ++i)
+            if (r.events[i].kind == EventKind::Damage && r.events[i].payload.damage.reason == MeasurementReason::MasterForgotten)
+                ended.push_back (r.events[i].jobId);
+        const auto afterLoad = r.events.size();
+        (void) runOut (r);
+        ok (loaded.rejection == Rejection::None && ended.size() == 2 && ended[0] == ja && ended[1] == jb
+            && countOf (r.events, ja, afterLoad) == 0u && countOf (r.events, jb, afterLoad) == 0u
+            && s.damageJobs().empty() && s.damageJob() == 0,
+            "a new source ends every grade, running and waiting, each with its last event (MasterForgotten), nothing after");
+    }
+}
+
+// A MAX MASTER IS A LANDING AND A DELIVERY (owner, 04.10: no guard in the loop): delivered with its damage Pending and no
+// grade of its own — no damage event, no row — until the shell asks one (command::GradeDamage), which grades it as any
+// master's; what ended it is the landing's alone (Budget, SearchCeiling, Passes, TruePeak, OverBudget; no step back);
+// and the budgets are the config's: clean 0.5 dB, dense 1.75 dB (owner, 04.10, by ear).
+void maxMasterLanding()
+{
+    const auto engine = detail::rules().engine;
+    ok (detail::maxBudgetDb (engine, LoudnessMode::MaxClean) == 0.5 && detail::maxBudgetDb (engine, LoudnessMode::MaxDense) == 1.75
+            && std::isnan (detail::maxBudgetDb (engine, LoudnessMode::Manual)),
+        "the max modes' budgets read from the config: clean 0.5 dB, dense 1.75 dB, none for the manual mode");
     for (const LoudnessMode mode : { LoudnessMode::MaxClean, LoudnessMode::MaxDense })
     {
         const std::string name = mode == LoudnessMode::MaxClean ? "maxClean" : "maxDense";
-        const auto pcm = struck (48000, 3.0);
-        auto sp = measuredSession (pcm, 48000);
-        if (! sp) { ok (false, "a session for " + name); continue; }
-        auto& s = *sp;
+        auto r = gradeSession (3.0);
+        if (! r.session) { ok (false, name + ": a session"); continue; }
+        auto& s = *r.session;
         command::EditTarget edit { 2, {} };
         edit.fields.loudnessMode = mode;
-        const bool edited = s.apply (edit).rejection == Rejection::None && s.snapshot().view().loudnessMode == mode;
-        const auto request = readyMaster (s, 3);
-        const auto quoted = s.check (request);
-        declared::LifecycleBudget demand { quoted.bytes, quoted.largestBlockBytes + 4096u };
-        Answer taken;
-        bool within = demand.charge (declared::spend ([&] { taken = s.apply (request); }));
-        bool damageSeen = false;
-        for (unsigned i = 0; i < 400000 && s.job() != 0; ++i)
+        (void) act (r, edit);
+        const auto master = deliver (r, 3);
+        (void) runOut (r);
+        bool damageEvent = false;
+        for (const auto& e : r.events) damageEvent = damageEvent || e.kind == EventKind::Damage;
+        const std::optional<MasterReport> report = s.masters().empty() ? std::optional<MasterReport> {} : s.masters().back().report;
+        const auto stop = report ? report->maxStop : MaxStop::None;
+        const bool landingStop = stop == MaxStop::Budget || stop == MaxStop::SearchCeiling || stop == MaxStop::Passes
+            || stop == MaxStop::TruePeak || stop == MaxStop::OverBudget;
+        const double budget = mode == LoudnessMode::MaxClean ? 0.5 : 1.75;
+        const bool kept = report && report->cost && report->cost->limiterP95Db.value
+            && (stop != MaxStop::Budget || *report->cost->limiterP95Db.value <= budget + 1e-9);
+        ok (master != 0 && report && report->loudnessMode == mode && landingStop && report->guardSteps == 0u && kept
+                && report->damage.status == MeasurementStatus::Pending && ! damageEvent && s.damageJobs().empty(),
+            name + ": a landing and a delivery — stop " + std::to_string (unsigned (stop)) + " from the landing, no step "
+            "back, the budget held, its damage Pending and no grade of its own (achieved "
+            + std::to_string (report ? report->achievedLufs.value_or (0.0) : 0.0) + " LUFS)");
+        const auto asked = act (r, command::GradeDamage { 4, master });
+        (void) runOut (r);
+        const auto* last = lastOf (r.events, asked.job);
+        ok (asked.rejection == Rejection::None && last && last->kind == EventKind::Damage
+                && last->payload.damage.status == MeasurementStatus::Ready
+                && s.masters().back().report->damage.status == MeasurementStatus::Ready,
+            name + ": its damage graded as any master's, when the shell asks");
+    }
+}
+
+// THE FLOOR (owner, 04.10: "always pulled up to −14"): a mix so dense a limiter budget of 0.5 dB holds its landing far
+// under −14 LUFS — clicks every 10 ms over a quiet bed — is landed again on [landing.max] floorLufs and delivered there,
+// on the maxClean target and with max clean by hand on appleMusic (−16): MaxStop::Floor, its verdict the mode and the
+// level alone (616), its numbers in a line for the log (617: the budget, the floor, the P95 it took, above the budget).
+// The struck programme, which the budget lands above −14, is not touched (maxMasterLanding: Budget).
+std::vector<float> clicks (std::uint32_t rate, double seconds)
+{
+    const std::size_t frames = std::size_t (double (rate) * seconds);
+    std::vector<float> out (2u * frames);
+    for (std::size_t i = 0; i < frames; ++i)
+    {
+        const double bed = 0.1 * std::sin (6.283185307179586 * 220.0 * double (i) / double (rate));
+        const double click = (i % (rate / 100u)) < 8u ? 0.9 : 0.0;
+        out[i] = float (bed + click);
+        out[frames + i] = float (0.9 * bed + click);
+    }
+    return out;
+}
+void maxFloor()
+{
+    for (const bool byHand : { false, true })
+    {
+        const std::string name = byHand ? "max clean by hand on appleMusic (−16)" : "the maxClean target";
+        GradeRun r;
+        const auto pcm = clicks (48000, 3.0);
+        r.session = measuredSession (pcm, 48000);
+        if (! r.session) { ok (false, name + ": a session"); continue; }
+        auto& s = *r.session;
+        if (byHand)
         {
-            within = demand.charge (declared::spend ([&] { (void) s.step (1); })) && within;
-            damageSeen = damageSeen || s.damageJob() != 0;
+            (void) act (r, command::SetTarget { 2, "appleMusic" });
+            command::EditTarget edit { 3, {} };
+            edit.fields.loudnessMode = LoudnessMode::MaxClean;
+            (void) act (r, edit);
         }
-        if (s.masters().empty()) { ok (false, name + ": a master is kept"); continue; }
-        const std::optional<MasterReport> kept = s.masters().back().report;
-        if (! kept) { ok (false, name + ": the master carries its report"); continue; }
-        const MasterReport& r = *kept;
-        ok (edited && quoted.rejection == Rejection::None && taken.rejection == Rejection::None && ! damageSeen
-                && s.damageJob() == 0 && r.loudnessMode == mode && r.maxStop != MaxStop::None
-                && r.damage.status == MeasurementStatus::Ready && r.damage.grade >= 1u && within,
-            name + ": the guard grades the render before the file, inside the master's declaration (" + std::to_string (demand.allocated)
-            + " of " + std::to_string (quoted.bytes) + " bytes, " + std::to_string (r.guardSteps) + " steps back, stop "
-            + std::to_string (unsigned (r.maxStop)) + "), and no damage job follows");
-        // THE GUARD'S VERDICT ([landing.max] floorOdg: clean -0.5, dense -1.5; guardSteps 3): a guard that stepped back
-        // and stopped delivers a render whose worst window is above the floor; one that ran out of steps delivers the
-        // gentlest it graded, under the floor, and says so.
-        const double floor = mode == LoudnessMode::MaxClean ? -0.5 : -1.5;
-        const bool verdict = r.maxStop == MaxStop::Guard ? r.guardSteps >= 1u && r.damage.worstOdg && *r.damage.worstOdg > floor
-                           : r.maxStop == MaxStop::GuardUnmet ? r.guardSteps == 3u && r.damage.worstOdg && *r.damage.worstOdg <= floor
-                           : r.guardSteps == 0u && (! r.damage.worstOdg || *r.damage.worstOdg > floor);
-        ok (verdict, name + ": the guard's stop agrees with its grade against the floor (worst ODG "
-            + std::to_string (r.damage.worstOdg.value_or (0.0)) + ", " + std::to_string (r.guardSteps) + " steps)");
-        stepsBack += r.guardSteps;
-        // Its verdict names the mode and what ended it, whole, in both languages.
-        const auto said = MasterReportText::max (r, mode == LoudnessMode::MaxClean ? 3.0 : 7.0, std::numeric_limits<double>::quiet_NaN());
-        const auto wanted = r.maxStop == MaxStop::Guard ? text::FactId::MasterMaxGuard
-                          : r.maxStop == MaxStop::GuardUnmet ? text::FactId::MasterMaxGuardUnmet
-                          : r.maxStop == MaxStop::Budget ? text::FactId::MasterMaxBudget : text::FactId::MasterMaxPasses;
-        ok (said && said->id == wanted && text::Text::complete (*said)
-                && text::Text::text (*said, text::Lang::En).starts_with (mode == LoudnessMode::MaxClean ? "Maximum · clean: " : "Maximum · dense: ")
-                && text::Text::text (*said, text::Lang::Ru).starts_with (mode == LoudnessMode::MaxClean ? "Максимум · чисто: " : "Максимум · плотно: "),
-            name + ": the verdict names the mode and its stop: " + (said ? text::Text::text (*said, text::Lang::En) : std::string ("none")));
-    }
-    ok (stepsBack > 0u, "PRECONDITION: the struck programme steps a guard back (the guard's path is exercised)");
-    // The budget's verdict, word for word: the mode, the file's level and the mode's budget, printed whole.
-    MasterReport held;
-    held.status = MeasurementStatus::Ready; held.deliverable = true; held.achievedLufs = -9.94;
-    held.loudnessMode = LoudnessMode::MaxClean; held.maxStop = MaxStop::Budget;
-    const auto budget = MasterReportText::max (held, 3.0, std::numeric_limits<double>::quiet_NaN());
-    MasterReport manual = held;
-    manual.loudnessMode = LoudnessMode::Manual;
-    ok (budget && text::Text::text (*budget, text::Lang::Ru)
-                == "Максимум · чисто: −9,9\u00A0LUFS — дальше лимитеру пришлось бы срезать больше 3\u00A0дБ (P95), это предел режима."
-            && text::Text::text (*budget, text::Lang::En)
-                == "Maximum · clean: −9.9\u00A0LUFS — further, the limiter would have to take off more than 3\u00A0dB (P95), the mode's limit."
-            && ! MasterReportText::max (manual, 3.0, std::numeric_limits<double>::quiet_NaN()),
-        "a max master held by its budget says the mode, the level and the budget; a manual one has no max verdict: "
-            + (budget ? text::Text::text (*budget, text::Lang::Ru) : std::string ("none")));
-    // Over the budget (fact 615): the delivered reduction reads above the budget, however close above it — rounded up to
-    // a tenth, at least a tenth above the budget's tenths: 3.01 over 3 prints 3.1, 7.26 over 7.25 prints 7.3.
-    MasterReport broke = held;
-    broke.maxStop = MaxStop::OverBudget;
-    const auto over301 = MasterReportText::max (broke, 3.0, 3.01), over726 = MasterReportText::max (broke, 7.25, 7.26);
-    const auto overEdge = MasterReportText::max (broke, 3.0, std::nextafter (3.0, 4.0));
-    const auto ru301 = over301 ? text::Text::text (*over301, text::Lang::Ru) : std::string {};
-    const auto en726 = over726 ? text::Text::text (*over726, text::Lang::En) : std::string {};
-    const auto ruEdge = overEdge ? text::Text::text (*overEdge, text::Lang::Ru) : std::string {};
-    ok (ru301.find ("срезает 3,1\u00A0дБ") != std::string::npos && en726.find ("takes off 7.3\u00A0dB") != std::string::npos
-            && en726.find ("budget of 7.25\u00A0dB") != std::string::npos && ruEdge.find ("срезает 3,1\u00A0дБ") != std::string::npos,
-        "a max master over its budget says a reduction above the budget: " + ru301 + " / " + en726 + " / " + ruEdge);
-}
-
-// A MAX MASTER, ITS JOB PLANTED OR ITS SOURCE ODD: each step, the report and its verdict, until the job ends.
-struct MaxRun
-{
-    std::optional<MasterReport> report;
-    std::optional<text::Fact> verdict;
-    bool damageJob = false;
-};
-template <typename Plant>
-MaxRun runMax (Session& s, LoudnessMode mode, Plant&& plant)
-{
-    MaxRun run;
-    command::EditTarget edit { 2, {} };
-    edit.fields.loudnessMode = mode;
-    if (s.apply (edit).rejection != Rejection::None || s.apply (readyMaster (s, 3)).rejection != Rejection::None) return run;
-    for (unsigned i = 0; i < 400000 && s.job() != 0; ++i)
-    {
-        if (auto* job = detail::Inspector::job (s)) plant (*job);
-        (void) s.step (1);
-        run.damageJob = run.damageJob || s.damageJob() != 0;
-    }
-    if (s.masters().empty()) return run;
-    run.report = s.masters().back().report;
-    if (run.report) run.verdict = MasterReportText::max (*run.report, mode == LoudnessMode::MaxClean ? 3.0 : 7.0, 4.25);
-    return run;
-}
-
-// THE DAMAGE THE GUARD COULD NOT GRADE is said unchecked, never passed (MaxStop::Unguarded, fact 614): a source whose
-// rate the damage's resampler has no kernel for (8001 Hz: no damage plan, no walk), and a walk that fails midway (its
-// grade Unavailable). Nothing heard — a render graded with no window audible — stays a pass; the budget still holds.
-void maxMasterUngraded()
-{
-    {
-        const auto pcm = struck (8001, 3.0);
-        auto sp = measuredSession (pcm, 8001);
-        const auto run = sp ? runMax (*sp, LoudnessMode::MaxClean, [] (detail::MasterJob&) {}) : MaxRun {};
-        ok (run.report && run.report->maxStop == MaxStop::Unguarded && run.report->guardSteps == 0u
-                && run.report->damage.status == MeasurementStatus::Unavailable && ! run.report->damage.worstOdg
-                && ! run.damageJob && run.verdict && run.verdict->id == text::FactId::MasterMaxUnguarded
-                && text::Text::text (*run.verdict, text::Lang::En).find ("could not be checked") != std::string::npos,
-            "at 8001 Hz, with no damage plan, a max master says its damage unchecked: stop "
-                + std::to_string (run.report ? unsigned (run.report->maxStop) : 99u));
-    }
-    {
-        const auto pcm = struck (48000, 3.0);
-        auto sp = measuredSession (pcm, 48000);
-        bool failed = false;
-        const auto run = sp ? runMax (*sp, LoudnessMode::MaxClean, [&failed] (detail::MasterJob& job)
-        {
-            if (! failed && job.stage == detail::MasterJob::Stage::Guard && job.guard && job.guard->begun && ! job.guard->refused)
-            { detail::Inspector::fail (job.guard->damage, MeasurementReason::NonFinite); failed = true; }
-        }) : MaxRun {};
-        ok (failed && run.report && run.report->maxStop == MaxStop::Unguarded && run.report->guardSteps == 0u
-                && run.report->damage.status == MeasurementStatus::Unavailable
-                && run.report->damage.reason == MeasurementReason::NonFinite && ! run.damageJob
-                && run.verdict && run.verdict->id == text::FactId::MasterMaxUnguarded,
-            "a guard's walk failed midway is no pass: the damage unchecked, stop "
-                + std::to_string (run.report ? unsigned (run.report->maxStop) : 99u));
+        else (void) act (r, command::SetTarget { 2, "maxClean" });
+        const auto from = r.events.size();
+        const auto master = deliver (r, 4);
+        const std::optional<MasterReport> report = s.masters().empty() ? std::optional<MasterReport> {} : s.masters().back().report;
+        const Notification* verdict = nullptr; const Notification* detail = nullptr;
+        for (std::size_t i = from; i < r.events.size(); ++i)
+            if (r.events[i].jobId == master && r.events[i].kind == EventKind::Fact)
+            {
+                const auto id = r.events[i].payload.fact.view().id;
+                if (id == text::FactId::MasterMaxFloor) verdict = &r.events[i];
+                if (id == text::FactId::MasterMaxFloorDetail) detail = &r.events[i];
+            }
+        const auto said = verdict ? text::Text::text (verdict->payload.fact.view(), text::Lang::En) : std::string {};
+        const auto logged = detail ? text::Text::text (detail->payload.fact.view(), text::Lang::En) : std::string {};
+        const bool atFloor = report && report->achievedLufs && *report->achievedLufs >= -14.0 - 0.2 && *report->achievedLufs <= -14.0 + 0.2;
+        const bool overBudget = detail && detail->payload.fact.view().args[3].number > 0.5;
+        ok (master != 0 && report && report->maxStop == MaxStop::Floor && atFloor && verdict && verdict->payload.fact.view().argCount == 2
+                && said.starts_with ("Maximum · clean: ") && said.find ("budget") == std::string::npos && detail && verdict < detail
+                && overBudget && logged.find ("0.5 dB") != std::string::npos && logged.find ("−14.0 LUFS") != std::string::npos,
+            name + ": a dense mix is pulled up to −14 LUFS (" + std::to_string (report ? report->achievedLufs.value_or (0.0) : 0.0)
+            + "), said as the mode and the level — \"" + said + "\" — its numbers for the log: \"" + logged + "\"");
     }
 }
 
-// THE GUARD'S STEP RENDER PROVES THE MODE'S BUDGET: planted so every step goes LOUDER (a floor no render passes, a step
-// of −0.5 dB), the guard steps three times and the render delivered takes more than the 3 dB the mode allows — it is
-// delivered as over the budget (MaxStop::OverBudget, fact 615, the pass marked), never as the guard's verdict.
-void maxStepRenderKeepsTheBudget()
-{
-    const auto pcm = struck (48000, 3.0);
-    auto sp = measuredSession (pcm, 48000);
-    const auto run = sp ? runMax (*sp, LoudnessMode::MaxClean, [] (detail::MasterJob& job)
-    {
-        job.guardFloorOdg = 1.0;
-        job.guardStepDb = -0.5;
-    }) : MaxRun {};
-    const auto kept = sp && ! sp->masters().empty() ? sp->masters().back().landing : std::optional<LandingSummary> {};
-    const bool marked = kept && ! kept->log.empty() && kept->log.back().overBudget;
-    ok (run.report && run.report->maxStop == MaxStop::OverBudget && run.report->guardSteps == 3u && marked
-            && run.verdict && run.verdict->id == text::FactId::MasterMaxOverBudget,
-        "a step back that breaks the budget is delivered over the budget: stop "
-            + std::to_string (run.report ? unsigned (run.report->maxStop) : 99u) + ", steps "
-            + std::to_string (run.report ? run.report->guardSteps : 0u) + ", pass marked " + (marked ? "yes" : "no"));
-}
-
-// WHAT ENDED A MAX MODE, rule by rule (detail::maxStopOf): a landing that delivered its gentlest render over the budget
-// carries the same status and binding as one the budget held (TargetUnreachable, LimiterGainReduction) — it is told
-// apart by the delivered render's own excess, and said over the budget, never held by it.
+// WHAT ENDED A MAX MODE, rule by rule (detail::maxStopOf), from the landing alone: above the ceiling first; a landing
+// that delivered its gentlest render over the budget carries the same status and binding as one the budget held — told
+// apart by the delivered render's own excess, said over the budget; then the search's ceiling, the budget, the passes.
 void maxStopRules()
 {
     using felitronics::mastering::MasteringSolveStatus; using felitronics::mastering::MasteringConstraint;
     detail::MaxStopInputs held;
-    held.guardGraded = true; held.guardPassed = true;
-    held.firstStatus = MasteringSolveStatus::TargetUnreachable; held.firstBinding = MasteringConstraint::LimiterGainReduction;
+    held.status = MasteringSolveStatus::TargetUnreachable; held.binding = MasteringConstraint::LimiterGainReduction;
     auto over = held; over.overBudget = true;
-    auto ungraded = held; ungraded.guardGraded = false; ungraded.guardPassed = false;
-    auto unmet = held; unmet.guardPassed = false; unmet.guardTaken = 3;
-    auto stepped = held; stepped.guardTaken = 1;
     auto above = over; above.peaksAboveCeiling = true;
-    auto solved = held; solved.firstStatus = MasteringSolveStatus::Solved;
-    auto passes = held; passes.firstStatus = MasteringSolveStatus::PassLimit;
+    auto solved = held; solved.status = MasteringSolveStatus::Solved;
+    auto passes = held; passes.status = MasteringSolveStatus::PassLimit;
     ok (detail::maxStopOf (held) == MaxStop::Budget && detail::maxStopOf (over) == MaxStop::OverBudget
-            && detail::maxStopOf (ungraded) == MaxStop::Unguarded && detail::maxStopOf (unmet) == MaxStop::GuardUnmet
-            && detail::maxStopOf (stepped) == MaxStop::Guard && detail::maxStopOf (above) == MaxStop::TruePeak
-            && detail::maxStopOf (solved) == MaxStop::SearchCeiling && detail::maxStopOf (passes) == MaxStop::Passes,
-        "a max mode's stop: over the budget is not held by it; ungraded is not a pass; the ceiling first");
+            && detail::maxStopOf (above) == MaxStop::TruePeak && detail::maxStopOf (solved) == MaxStop::SearchCeiling
+            && detail::maxStopOf (passes) == MaxStop::Passes,
+        "a max mode's stop, from the landing: over the budget is not held by it; the ceiling first");
 }
 
 int main()
 {
     damageResampler();
-    maxMasterGuarded();
-    maxMasterUngraded();
-    maxStepRenderKeepsTheBudget();
+    damageGrades();
+    maxMasterLanding();
+    maxFloor();
     maxStopRules();
     damageWithoutAnId();
     damageReferenceBelowTheKnob();
