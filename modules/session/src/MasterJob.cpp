@@ -2,6 +2,7 @@
 // Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 #include "BuildGuards.h"
+#include "BuildContract.h"
 #include "MasterJob.h"
 #include "Chain.h"
 #include "MeasurementPlan.h"
@@ -145,6 +146,16 @@ std::uint64_t MasterJob::fingerprint (const command::MasterReady& ready) noexcep
     return h.value;
 }
 
+double limiterBudgetDb (toml::embedded::View engine, double targetLufs) noexcept
+{
+    const auto budget = engine.find ("landing").find ("limiterBudget");
+    const auto middle = budget.find ("middleLufs");
+    const double low = number (middle[0]), high = number (middle[1]);
+    if (! std::isfinite (targetLufs) || ! std::isfinite (low) || ! std::isfinite (high))
+        return std::numeric_limits<double>::quiet_NaN();
+    return number (budget.find (targetLufs < low ? "quietDb" : targetLufs <= high ? "middleDb" : "loudDb"));
+}
+
 MasterPlan MasterJob::plan (const Session& s, const command::Master& input, const Project& project) noexcept
 {
     MasterPlan result;
@@ -264,6 +275,23 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
     result.request.productLanding = true;
     result.request.ceilingMarginDb = margin;
     result.request.grTraceBuckets = result.traceBuckets;
+    // LOUDNESS IS A REQUEST (owner, 04.10): the limiter's budget by the target's loudness, and the level landed on the
+    // source's gate — read on the source's momentary series. A source without the series whole (a sidecar's facts, rows
+    // refused for memory) lands on the master's own gate.
+    result.request.limiterGr.limitDb = limiterBudgetDb (engine, targetLufs);
+    result.request.limiterGr.statistic = mastering::GrStatistic::P95;
+    result.request.limiterActiveInputDb = number (engine.find ("cost").find ("limiterActiveInputDb"));
+    const auto onGate = engine.find ("landing").find ("onSourceGate").boolean();
+    if (! onGate || ! std::isfinite (result.request.limiterGr.limitDb) || ! std::isfinite (result.request.limiterActiveInputDb))
+    { result.rejection = Rejection::MandatoryUnavailable; return result; }
+    const auto* momentary = findArray (s.measurementResults_[std::size_t (Analyzer::Loudness)], "momentary");
+    if (*onGate && momentary && momentary->complete && momentary->stored != 0)
+    {
+        result.request.landingOnSourceGate = true;
+        result.request.sourceMomentaryLufs = momentary->values.data();
+        result.request.sourceMomentaryCount = (long long) momentary->stored;
+        result.request.sourceMomentaryHopFrames = (long long) momentary->grid.stepFrames;
+    }
     result.ready.params.limiter.ceilingDbTp = targetTp - margin;
     result.ready.deliveryBits = deliveryBits;
     result.ready.params.dither.bits = deliveryBits;
@@ -337,6 +365,15 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         || ! add (total, impactChainBytes) || ! add (total, impactScratchBytes)
         || ! add (total, 128u * 4096u))
     { result.rejection = Rejection::TooLong; return result; }
+    // THE DAMAGE'S WALKS (src/Damage.h): a job of their own after the master is delivered, priced here as that job and
+    // admitted with the master — it lives in the room this job leaves; a source they cannot run on still masters, and
+    // its report says why the damage has no grade.
+    result.damage = Damage::plan (s.source_.sampleRate, s.source_.frames, int (s.source_.channels), result.ready.topology);
+    if (result.damage.ok)
+    {
+        if (! add (total, DamageJob::bytes (result.damage))) { result.rejection = Rejection::TooLong; return result; }
+        result.largestBlock = std::max (result.largestBlock, result.damage.largestBlock);
+    }
     result.bytes = total;
     result.largestBlock += 4096u;
     result.rejection = Rejection::None;
@@ -349,6 +386,7 @@ bool MasterJob::begin (const Session& s, const MasterPlan& plan)
     crestParams = plan.crestParams;
     ready = plan.ready;
     medium = plan.medium;
+    damagePlan = plan.damage;
     sourceLufs = plan.sourceLufs;
     targetLufs = plan.request.targetLufs;
     targetTp = plan.request.maxTruePeakDbTp;
@@ -443,7 +481,10 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
             }
             return std::isfinite (h.evidence) ? std::optional<MasterHint> (h) : std::nullopt;
         };
-        if (! report.targetMet && report.missLu && std::fabs (*report.missLu) > 0.0)
+        // Held short by the limiter's budget: the verdict says so, and nothing in the mix is blamed for it.
+        const bool budgetHeld = solved.status == mastering::MasteringSolveStatus::TargetUnreachable
+                             && solved.binding == mastering::MasteringConstraint::LimiterGainReduction;
+        if (! report.targetMet && ! budgetHeld && report.missLu && std::fabs (*report.missLu) > 0.0)
         {
             report.firstHint = hint (solved.mainReason);
             report.secondHint = hint (solved.secondReason);
@@ -454,6 +495,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         {
             report.crest.status = MeasurementStatus::Unavailable;
             report.crest.reason = MeasurementReason::NotImplemented;
+            settleLra();
             stage = Stage::Done;
             return result;
         }
@@ -475,12 +517,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         {
             if (! chain.prepare (double (sourceRate), channels, ready.topology))
             { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Unsupported; stage = Stage::CostRead; return StepResult::More; }
-            auto winning = ready.params;
-            winning.inputGainDb += search.result().normalizationGainDb;
-            winning.preLimiterGainDb = search.result().preLimiterGainDb;
-            winning.limiter.ceilingDbTp = search.result().ceilingDbTp;
-            winning.peakClipPeakDb = search.peakClipPeakDb();   // the peak its first pass measured
-            chain.setParams (winning);
+            chain.setParams (winningParams());
             chain.reset();
             impactDelay = chain.latencySamples();
         }
@@ -652,11 +689,14 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         costResult.waveform = { rows.waveform.get(), rows.waveformCapacity };
         const auto& solution = search.result();
         double quantile = 0;
-        if (solution.grQuantile (mastering::GrStage::Limiter, .5, quantile))
-            costResult.limiterP50Db = { MeasurementReason::None, quantile, solution.measured.limiter.frames };
+        // The limiter's reduction over its ACTIVE windows (input above [cost] limiterActiveInputDb): the statistic the
+        // landing's budget holds, so silence does not water it down.
+        const auto& active = solution.limiterActive.stats;
+        if (active.valid && solution.limiterActiveGrWindows.quantile (.5, quantile))
+            costResult.limiterP50Db = { MeasurementReason::None, quantile, active.frames };
         else costResult.limiterP50Db.reason = MeasurementReason::Unsupported;
-        if (solution.grQuantile (mastering::GrStage::Limiter, .95, quantile))
-            costResult.limiterP95Db = { MeasurementReason::None, quantile, solution.measured.limiter.frames };
+        if (active.valid && solution.limiterActiveGrWindows.quantile (.95, quantile))
+            costResult.limiterP95Db = { MeasurementReason::None, quantile, active.frames };
         else costResult.limiterP95Db.reason = MeasurementReason::Unsupported;
         if (solution.limiterActive.stats.valid)
             costResult.limiterActiveShare = { MeasurementReason::None,
@@ -821,9 +861,78 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     if (stage == Stage::CostPublish)
     {
         report.cost = costResult;
+        // The loudness range is the master's own; the damage is graded after it, by a job of its own: Pending until then.
+        settleLra();
+        if (! damagePlan.ok) report.damage.reason = damagePlan.reason;
+        else
+        {
+            report.damage.status = MeasurementStatus::Pending;
+            report.damage.reason = MeasurementReason::Pending;
+            damageFollows = true;
+        }
         stage = Stage::Done;
         return StepResult::Done;
     }
     return StepResult::Failed;
+}
+
+// The parameters the delivered render ran with: the request's, with the landing's normalisation, gain and ceiling, and
+// the peak its first pass measured for the needles.
+mastering::MasteringChainParams MasterJob::winningParams() const noexcept
+{
+    auto winning = ready.params;
+    winning.inputGainDb += search.result().normalizationGainDb;
+    winning.preLimiterGainDb = search.result().preLimiterGainDb;
+    winning.limiter.ceilingDbTp = search.result().ceilingDbTp;
+    winning.peakClipPeakDb = search.peakClipPeakDb();
+    return winning;
+}
+
+// THE LOUDNESS RANGE, INPUT AGAINST MASTER: the source's programme report beside the report's own; the change in LU and
+// as a share of the input's. A number that is absent says why.
+void MasterJob::settleLra() noexcept
+{
+    auto& d = report.damage;
+    d.masterLraLu = report.lraLu;
+    std::optional<double> input;
+    auto inputReason = MeasurementReason::Pending;
+    // The programme report has ended before any master is taken (the first measurement ends after it — the table's
+    // Measured columns): its reason here is final, never Pending.
+    const auto& programme = session->measurementResults_[std::size_t (Analyzer::Programme)];
+    detail::debugBound (programme.status != MeasurementStatus::Pending);
+    if (programme.status != MeasurementStatus::Ready) inputReason = programme.reason;
+    else
+    {
+        inputReason = MeasurementReason::Unsupported;
+        for (const auto& value : programme.numbers)
+            if (value.name == "lraLu")
+            {
+                if (value.value && std::isfinite (*value.value)) { input = value.value; inputReason = MeasurementReason::None; }
+                else inputReason = value.reason == MeasurementReason::None ? MeasurementReason::NonFinite : value.reason;
+            }
+    }
+    d.sourceLraLu = input;
+    if (! report.lraLu) { d.lraReason = report.lraReason; return; }
+    if (! input) { d.lraReason = inputReason; return; }
+    d.lraChangeLu = *report.lraLu - *input;
+    if (! (*input > 0.0)) { d.lraReason = MeasurementReason::NoSignal; return; }   // no range to lose a share of
+    d.lraChangePercent = 100.0 * *d.lraChangeLu / *input;
+    d.lraReason = MeasurementReason::None;
+}
+
+std::optional<double> MasterJob::stepFraction() const noexcept
+{
+    if (stage == Stage::Search)
+    {
+        const double walked = search.walkFraction();
+        return walked >= 0.0 ? std::optional<double> (walked) : std::nullopt;
+    }
+    if (stage == Stage::Read)
+    {
+        const long long total = sourceRate != deliveryRate ? (long long) sourceFrames + impactDelay : (long long) frames;
+        return total > 0 ? std::optional<double> (double (crestCursor) / double (total)) : std::nullopt;
+    }
+    if (stage == Stage::CostRead) return frames > 0 ? std::optional<double> (double (costCursor) / double (frames)) : std::nullopt;
+    return std::nullopt;
 }
 } // namespace felitronics::session::detail

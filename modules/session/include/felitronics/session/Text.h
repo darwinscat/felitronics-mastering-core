@@ -89,6 +89,8 @@ enum class Plural : std::uint8_t { Zero, One, Two, Few, Many, Other };
 //   300 – 399   the session's errors
 //   400 – 499   the measurements and the observations
 //   500 – 599   the plan's advice and the targets' notes
+//   600 – 699   the landing and the master's report, continued (1 – 99 is full): a landing held short (600 – 602), the
+//               damage the processing did and the loudness range (603 – 607)
 // The arguments each fact takes, by name and kind, are src/TextFacts.h's, and the build holds the catalog to them.
 enum class FactId : std::uint16_t
 {
@@ -325,7 +327,21 @@ enum class FactId : std::uint16_t
     MonoBassBelowZones = 509,  // mono bass at {crossover}, below what a club ({clubFrom}) and vinyl ({vinylFrom}) ask for
     // A device's card while a field of its machine layer waits for a measurement (DevicePlan::pending): not measured yet.
     DeviceUnmeasured = 510,    // not measured yet: the machine sets it when {analyzer} ends
+    // A landing held short (MasterReportText::landing, ::gate), published with the master.
+    MasterLandingBudget = 600, // target {target}, landed {achieved}: further, the limiter would take more than {budget} (P95)
+    MasterLandingGate = 601,   // by the loud part {loud}, by the file's BS.1770 reading {file}
+    MasterLandingOverBudget = 602, // target {target}, landed {achieved}: no render kept {budget} (P95); the gentlest takes {taken}
 
+    // The damage the processing did, heard (MasterDamage): the worst window's {grade}, where it starts ({from}) and the
+    // {share} of the windows graded heard below imperceptible; nothing heard in any window graded; each with how many
+    // windows were graded of all ({graded} of {windows}); not graded, and why ({reason}).
+    MasterDamage = 603,
+    MasterDamageInaudible = 604,
+    MasterDamageUnmeasured = 605,
+    // The loudness range: the input's {source}, the master's {master}, the change as a share ({change}) and in LU
+    // ({changeLu}); or why it was not measured ({reason}).
+    MasterLraChange = 606,
+    MasterLraUnmeasured = 607,
 };
 
 // THE TERMS — words an argument of kind Term names: one value of a group of the catalog's [terms]. Printed as the
@@ -385,6 +401,12 @@ enum class Term : std::uint16_t
     LandingLimitNone, LandingLimitTruePeak, LandingLimitLimiter, LandingLimitPlr, LandingLimitLra, LandingLimitGain,
     // The EQ bands: the device, and its five gains as the fields a refusal names, in the order Project.h writes them.
     DeviceBands, FieldBandsBody, FieldBandsMud, FieldBandsForward, FieldBandsBrightness, FieldBandsAir,
+    // The BS.1116 impairment grades the damage's line names, 5 down to 1.
+    DamageGradeImperceptible, DamageGradePerceptible, DamageGradeSlightlyAnnoying, DamageGradeAnnoying,
+    DamageGradeVeryAnnoying,
+    // Why a master's damage was not graded: a new master was asked for while it was (MeasurementReason::Superseded); no
+    // job id was left for it (NoJobId).
+    ReasonSuperseded, ReasonNoJobId,
 
 };
 

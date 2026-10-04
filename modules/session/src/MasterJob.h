@@ -9,7 +9,9 @@
 #include <felitronics/analysis/BandCrest.h>
 #include <felitronics/analysis/StreamingLoudnessMeter.h>
 #include <felitronics/analysis/WaveformIndex.h>
+#include <felitronics/toml/Embedded.h>
 #include "Cost.h"
+#include "Damage.h"
 #include <memory>
 #include <optional>
 
@@ -18,6 +20,10 @@ namespace felitronics::session
 class Session;
 namespace detail
 {
+// [landing] limiterBudget: the P95 of the limiter's gain reduction a landing at `targetLufs` may take, dB — the
+// target's own number or a person's edit of it, by one rule. NaN where the config does not say it.
+[[nodiscard]] double limiterBudgetDb (toml::embedded::View engine, double targetLufs) noexcept;
+
 struct MasterPlan
 {
     Rejection rejection = Rejection::Contract;
@@ -37,6 +43,7 @@ struct MasterPlan
     bool glueTrace = false;                    // the glue compresses: its gain reduction is kept, a trace beside the limiter's
     bool saturationTrace = false;              // the soft clipper shapes: its shave of the peaks is kept, the same way
     std::optional<MasterMedium> medium;        // a version-0 master's medium and input, from the chain it will run
+    DamagePlan damage {};                      // the damage's walks, priced (as the job after it), or why they cannot run
 };
 
 struct MasterRows
@@ -89,6 +96,9 @@ struct MasterJob final
     std::size_t copiedCrestRows() const noexcept { return crestCopied; }
     const MasterReport& reportResult() const noexcept { return report; }
     std::unique_ptr<float[]> takeOutput() noexcept { return std::move (output); }
+    // What the Pump says of the step it is in: the current walk's share of the file — absent where the stage walks nothing.
+    std::optional<double> stepFraction() const noexcept;
+    mastering::MasteringChainParams winningParams() const noexcept;
 
     mastering::MasteringChain chain;
     mastering::OfflineRenderer renderer;
@@ -135,6 +145,11 @@ struct MasterJob final
     command::MasterReady ready {};
     std::optional<MasterMedium> medium;
     MasterReport report {};
+    DamagePlan damagePlan {};
+    // THE DAMAGE FOLLOWS THE MASTER (Session::startDamage): the job ended where its damage can be graded — the report
+    // says Pending, and the session starts the damage's own job with damagePlan and the delivered parameters.
+    bool damageFollows = false;
+    void settleLra() noexcept;
 };
 } // namespace detail
 } // namespace felitronics::session

@@ -9,6 +9,7 @@ src/Config.cpp
 src/Landing.cpp
 src/MasterJob.cpp
 src/Cost.cpp
+src/Damage.cpp
 src/Rules.cpp
 src/Devices.cpp
 src/Planner.cpp

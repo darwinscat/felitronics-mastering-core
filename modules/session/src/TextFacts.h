@@ -272,6 +272,23 @@ inline constexpr FactShape kFacts[] = {
     { FactId::TargetNoNormalisation, "targetNoNormalisation", {}, 0 },
     { FactId::MonoBassBelowZones, "monoBassBelowZones", { { { "crossover", ArgKind::Value, {} }, { "clubFrom", ArgKind::Value, {} }, { "vinylFrom", ArgKind::Value, {} } } }, 3 },
     { FactId::DeviceUnmeasured, "deviceUnmeasured", { { { "analyzer", ArgKind::Term, "analyzer" } } }, 1 },
+    { FactId::MasterLandingBudget, "masterLandingBudget",
+      { { { "target", ArgKind::Value, {} }, { "achieved", ArgKind::Value, {} }, { "budget", ArgKind::Value, {} } } }, 3 },
+    { FactId::MasterLandingGate, "masterLandingGate", { { { "loud", ArgKind::Value, {} }, { "file", ArgKind::Value, {} } } }, 2 },
+    { FactId::MasterLandingOverBudget, "masterLandingOverBudget",
+      { { { "target", ArgKind::Value, {} }, { "achieved", ArgKind::Value, {} }, { "budget", ArgKind::Value, {} },
+          { "taken", ArgKind::Value, {} } } }, 4 },
+    // The master's report, continued: the damage and the loudness range (MasterDamage).
+    { FactId::MasterDamage, "masterDamage",
+      { { { "grade", ArgKind::Term, "damageGrade" }, { "from", ArgKind::Value, {} }, { "share", ArgKind::Value, {} },
+          { "graded", ArgKind::Count, {} }, { "windows", ArgKind::Count, {} } } }, 5 },
+    { FactId::MasterDamageInaudible, "masterDamageInaudible",
+      { { { "graded", ArgKind::Count, {} }, { "windows", ArgKind::Count, {} } } }, 2 },
+    { FactId::MasterDamageUnmeasured, "masterDamageUnmeasured", { { { "reason", ArgKind::Term, "measurementReason" } } }, 1 },
+    { FactId::MasterLraChange, "masterLraChange",
+      { { { "source", ArgKind::Value, {} }, { "master", ArgKind::Value, {} }, { "change", ArgKind::Value, {} },
+          { "changeLu", ArgKind::Value, {} } } }, 4 },
+    { FactId::MasterLraUnmeasured, "masterLraUnmeasured", { { { "reason", ArgKind::Term, "measurementReason" } } }, 1 },
 
 };
 inline constexpr std::size_t kFactCount = sizeof (kFacts) / sizeof (kFacts[0]);
@@ -424,6 +441,13 @@ inline constexpr TermShape kTerms[] = {
     { Term::FieldBandsForward, "field", "bandsForward", "forward" },
     { Term::FieldBandsBrightness, "field", "bandsBrightness", "brightness" },
     { Term::FieldBandsAir, "field", "bandsAir", "air" },
+    { Term::DamageGradeImperceptible, "damageGrade", "imperceptible" },
+    { Term::DamageGradePerceptible, "damageGrade", "perceptible" },
+    { Term::DamageGradeSlightlyAnnoying, "damageGrade", "slightlyAnnoying" },
+    { Term::DamageGradeAnnoying, "damageGrade", "annoying" },
+    { Term::DamageGradeVeryAnnoying, "damageGrade", "veryAnnoying" },
+    { Term::ReasonSuperseded, "measurementReason", "superseded" },
+    { Term::ReasonNoJobId, "measurementReason", "noJobId" },
 };
 inline constexpr std::size_t kTermCount = sizeof (kTerms) / sizeof (kTerms[0]);
 

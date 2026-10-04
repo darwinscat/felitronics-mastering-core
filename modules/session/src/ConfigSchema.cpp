@@ -299,11 +299,21 @@ void readInput (Doc& d, Reader& in, Input& o)
     in.required ("shortSeconds", o.shortSeconds, R { 0.0, 600.0 });
 }
 
-void readLanding (Reader& in, Landing& o)
+void readLanding (Doc& d, Reader& in, Landing& o)
 {
     in.required ("passes", o.passes, I { 1, 12 });
     in.required ("toleranceLu", o.toleranceLu, R { 0.001, 1.0 });
     in.required ("truePeakAimDb", o.truePeakAimDb, R { 0.0, 1.0 });
+    in.required ("onSourceGate", o.onSourceGate);
+    in.table ("limiterBudget", Need::Required, [&] (Reader& t)
+    {
+        const bool quiet = t.required ("quietDb", o.quietBudgetDb, I { 1, 60 });
+        const bool middle = t.required ("middleDb", o.middleBudgetDb, I { 1, 60 });
+        const bool loud = t.required ("loudDb", o.loudBudgetDb, I { 1, 60 });
+        d.notAbove (t, quiet && middle, o.quietBudgetDb, o.middleBudgetDb, "middleDb");   // a louder target, no less budget
+        d.notAbove (t, middle && loud, o.middleBudgetDb, o.loudBudgetDb, "loudDb");
+        d.pair (t, "middleLufs", o.middleLufs, anyLufs());
+    });
 }
 
 R readDomain (Doc& d, Reader& in, std::string_view key, Span& out, const R& limits)
@@ -1014,6 +1024,28 @@ void readCost (Doc& d, Reader& in, Cost& o)
         const bool rate = t.required ("minTraceRateHz", o.pumping.minTraceRateHz, R { 1.0, 10000.0 });
         if (lp && rate && ! (o.pumping.lowPassHz < 0.5 * o.pumping.minTraceRateHz)) d.refuse (t, "lowPassHz", Refusal::AboveNyquist);
     });
+    in.table ("damage", Need::Required, [&] (Reader& t)
+    {
+        Damage& g = o.damage;
+        const bool window = t.required ("windowSeconds", g.windowSeconds, R { 1.0, 60.0 });
+        const bool hop = t.required ("hopSeconds", g.hopSeconds, R { 0.25, 60.0 });
+        // The window is a whole number of hops, one to four: each hop's worth of signal feeds that many windows at once.
+        if (window && hop)
+        {
+            const double k = g.windowSeconds / g.hopSeconds;
+            const double whole = std::floor (k + 0.5);
+            if (! (whole >= 1.0 && whole <= 4.0 && std::fabs (k - whole) <= 1e-9)) d.outOfRange (t, "hopSeconds");
+        }
+        if (t.required ("gradeFloorsOdg", g.gradeFloorsOdg, R { -4.0, 0.0 }))
+        {
+            bool falling = g.gradeFloorsOdg.size() == 4;
+            for (std::size_t i = 1; falling && i < g.gradeFloorsOdg.size(); ++i)
+                falling = g.gradeFloorsOdg[i] < g.gradeFloorsOdg[i - 1];
+            if (! falling) d.refuse (t, "gradeFloorsOdg", Refusal::OutOfOrder);
+        }
+        t.required ("referenceBelowDb", g.referenceBelowDb, R { 20.0, 120.0 });
+        t.required ("resamplerTaps", g.resamplerTaps, I { 8, 256 });
+    });
     in.table ("sections", Need::Required, [&] (Reader& t)
     {
         Sections& s = o.sections;
@@ -1082,7 +1114,7 @@ void readEngine (Doc& d, Reader& in, Engine& o, const std::vector<std::string>* 
     std::vector<std::int32_t> bands;   // the core's EQ bands the devices have taken, in reading order
     in.required ("defaults", o.defaults);
     in.table ("input", Need::Required, [&] (Reader& t) { readInput (d, t, o.input); });
-    in.table ("landing", Need::Required, [&] (Reader& t) { readLanding (t, o.landing); });
+    in.table ("landing", Need::Required, [&] (Reader& t) { readLanding (d, t, o.landing); });
     in.table ("limiter", Need::Required, [&] (Reader& t) { readLimiter (d, t, o.limiter); });
     in.table ("lowEnd", Need::Required, [&] (Reader& t) { readLowEnd (d, t, o.lowEnd); });
     in.table ("observations", Need::Required, [&] (Reader& t) { readObservations (d, t, o.observations); });

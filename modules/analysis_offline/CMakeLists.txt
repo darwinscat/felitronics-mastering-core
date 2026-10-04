@@ -12,6 +12,18 @@ target_link_libraries(felitronics_analysis_offline INTERFACE felitronics_storage
     felitronics::analysis felitronics::eq felitronics::stereo)
 target_compile_features(felitronics_analysis_offline INTERFACE cxx_std_20)
 
+# felitronics::peaq — PEAQ Basic (analysis/Peaq.h). Header-only like the rest, but its INTERFACE carries the flags its
+# bits depend on: a consumer that links it compiles WITH -ffp-contract=off -fno-fast-math (MSVC /fp:precise), and the
+# header refuses a unit without FELITRONICS_PEAQ_FLAGS. Note the flags apply to the consumer's whole target — the
+# mastering chain does not link this.
+add_library(felitronics_peaq INTERFACE)
+add_library(felitronics::peaq ALIAS felitronics_peaq)
+target_link_libraries(felitronics_peaq INTERFACE felitronics_analysis_offline)
+target_compile_definitions(felitronics_peaq INTERFACE FELITRONICS_PEAQ_FLAGS=1)
+target_compile_options(felitronics_peaq INTERFACE
+    "$<$<CXX_COMPILER_ID:MSVC>:/fp:precise>"
+    "$<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-ffp-contract=off;-fno-fast-math>")
+
 if(FELITRONICS_BUILD_TESTS)
     add_executable(felitronics_source_storage_parity_tests tests/SourceStorageParityTests.cpp)
     target_link_libraries(felitronics_source_storage_parity_tests PRIVATE felitronics::analysis_offline felitronics::test_support)
@@ -97,6 +109,13 @@ if(FELITRONICS_BUILD_TESTS)
     target_link_libraries(felitronics_source_forensics_tests PRIVATE felitronics::analysis_offline felitronics::test_support)
     target_compile_features(felitronics_source_forensics_tests PRIVATE cxx_std_20)
     add_test(NAME felitronics_source_forensics_tests COMMAND felitronics_source_forensics_tests)
+    # Peaq — PEAQ Basic (ITU-R BS.1387): the model's parts by hand, five synthetic pairs against GstPEAQ's numbers on
+    # the same files (`felitronics_peaq_tests --write <dir>` writes them), pins, verdicts and the analyzer contract.
+    # Contract-off (felitronics::peaq's INTERFACE) like the tool and the wasm module whose bits it pins.
+    add_executable(felitronics_peaq_tests tests/PeaqTests.cpp)
+    target_link_libraries(felitronics_peaq_tests PRIVATE felitronics::peaq felitronics::io felitronics::test_support)
+    target_compile_features(felitronics_peaq_tests PRIVATE cxx_std_20)
+    add_test(NAME felitronics_peaq_tests COMMAND felitronics_peaq_tests)
     # Split invariance across ALL of the above through ONE harness (tests/split_invariance.h, shared with the
     # mastering module's suite): one call against fixed blocks and ragged cuts with zero-length calls, a clock-only
     # gap where the contract has one, a second maxBlock, and a finish on a prefix — every published output compared

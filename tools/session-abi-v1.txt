@@ -1858,3 +1858,83 @@ codec GlueFinding.tempoUnsureBpm double?
 # LimiterGr's buckets.
 enum felitronics::session::QueryKind::SaturationShave=13
 row QuerySaturationShave element=f64 byteOrder=little columns=firstFrame,lastFrame,minDb,maxDb,meanDb,samples,nonFinite stride=7 bytes=56
+# A landing held short (04.10, loudness is a request): the limiter's budget that held it, and the level landed on the
+# source's gate beside the file's BS.1770 reading.
+enum felitronics::session::text::FactId::MasterLandingBudget=600
+enum felitronics::session::text::FactId::MasterLandingGate=601
+enum felitronics::session::text::FactId::MasterLandingOverBudget=602
+# ...and each render of the landing over the limiter's budget, marked in the pass log (appended plain).
+codec LandingPass.overBudget bool
+# The master's damage (03.10, v0.14.0): PEAQ of the master against the same chain with its dynamics at rest, in
+# windows, on the BS.1116 scale, and the loudness range input against master (MasterReport.damage, appended plain);
+# facts 603-607 say them, the grades are terms; the damage's two walks are phases of their own, and Phase.stepFraction
+# is the current walk over the file.
+enum felitronics::session::DamageVerdict::NotRun=0
+enum felitronics::session::DamageVerdict::Graded=1
+enum felitronics::session::DamageVerdict::Transparent=2
+enum felitronics::session::DamageVerdict::NoSignal=3
+enum felitronics::session::DamageVerdict::NonFinite=4
+enum felitronics::session::DamageVerdict::Undefined=5
+enum felitronics::session::DamageVerdict::OutOfRange=6
+enum felitronics::session::PhaseName::Reference=8
+enum felitronics::session::PhaseName::Damage=9
+enum felitronics::session::text::FactId::MasterDamage=603
+enum felitronics::session::text::FactId::MasterDamageInaudible=604
+enum felitronics::session::text::FactId::MasterDamageUnmeasured=605
+enum felitronics::session::text::FactId::MasterLraChange=606
+enum felitronics::session::text::FactId::MasterLraUnmeasured=607
+enum felitronics::session::text::Term::DamageGradeImperceptible=139
+enum felitronics::session::text::Term::DamageGradePerceptible=140
+enum felitronics::session::text::Term::DamageGradeSlightlyAnnoying=141
+enum felitronics::session::text::Term::DamageGradeAnnoying=142
+enum felitronics::session::text::Term::DamageGradeVeryAnnoying=143
+codec Phase.stepFraction double?
+codec MasterReport.damage MasterDamage
+codec MasterDamage.status MeasurementStatus
+codec MasterDamage.reason MeasurementReason
+codec MasterDamage.verdict DamageVerdict
+codec MasterDamage.grade uint32
+codec MasterDamage.worstOdg double?
+codec MasterDamage.worstDi double?
+codec MasterDamage.worstFromSeconds double?
+codec MasterDamage.windows uint32
+codec MasterDamage.audibleWindows uint32
+codec MasterDamage.ungradedWindows uint32
+codec MasterDamage.audibleShare double?
+codec MasterDamage.windowSeconds double
+codec MasterDamage.hopSeconds double
+codec MasterDamage.referenceGainDb double?
+codec MasterDamage.sourceLraLu double?
+codec MasterDamage.masterLraLu double?
+codec MasterDamage.lraChangeLu double?
+codec MasterDamage.lraChangePercent double?
+codec MasterDamage.lraReason MeasurementReason
+# The master's damage graded after the master (04.10, v0.14.0): a job of its own, started when the master is delivered,
+# with its own phases and progress (Snapshot.damageJob, damageProgress); the Damage event announces it and ends it with
+# its master, status and reason (DamageChange); a new master stops it, MeasurementReason::Superseded with its term; with
+# no job id left it is not graded, MeasurementReason::NoJobId with its term.
+enum felitronics::session::MeasurementReason::Superseded=11
+enum felitronics::session::text::Term::ReasonSuperseded=144
+enum felitronics::session::MeasurementReason::NoJobId=12
+enum felitronics::session::text::Term::ReasonNoJobId=145
+codec Snapshot.damageJob uint32
+codec Snapshot.damageProgress Phase
+codec DamageChange.masterId uint32
+codec DamageChange.status MeasurementStatus
+codec DamageChange.reason MeasurementReason
+wire DamageEvent.seq string
+wire DamageEvent.jobId number
+wire DamageEvent.kind "damage"
+wire DamageEvent.payload DamageChange
+wire DamageEvent.source string
+wire DamageEvent.revision string
+wire DamageEvent.phase PhaseName
+wire DamageEvent.completedWork string
+wire DamageEvent.totalWork string
+wire DamageEvent.state State
+wire union SessionEvent DamageEvent
+# The storage record's freed bytes (04.10, v0.14.0): a master stops the damage being graded before it allocates, and
+# fc_session_storage appends releasedBytes past its 32-byte base, so a shell's liveBytes - releasedBytes + bytes is the
+# command's own check (the base's sizeof line stands: a record grows past it).
+field fc_session_storage.releasedBytes double
+offset fc_session_storage.releasedBytes=32

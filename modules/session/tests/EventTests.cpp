@@ -180,10 +180,41 @@ std::uint64_t eventsHash (const std::vector<Notification>& events)
             }
         }
         if (e.kind == EventKind::Done) hash = digest (hash, e.payload.done.masterId);
+        if (e.kind == EventKind::Damage)
+        {
+            hash = digest (hash, e.payload.damage.masterId); hash = digest (hash, std::uint8_t (e.payload.damage.status));
+            hash = digest (hash, std::uint8_t (e.payload.damage.reason));
+        }
         if (e.kind == EventKind::Rejected) { hash = digest (hash, e.payload.rejected.commandId); hash = digest (hash, std::uint8_t (e.payload.rejected.code)); }
     }
     return hash;
 }
+// The events of every job but a master's, renumbered. A master's job is known by what it publishes: every phase of it —
+// the wait for the measurement included — counts the landing's passes (totalPasses), which no measurement's or
+// needles' phase does, and a finished master names itself. A master's damage, graded after it by a job of its own, is
+// the master's work too: that job is known by its damage event.
+std::vector<Notification> withoutMaster (const std::vector<Notification>& events)
+{
+    std::vector<std::uint64_t> masters;
+    for (const auto& e : events)
+    {
+        const bool landing = e.kind == EventKind::Phase && e.payload.phase.totalPasses != 0;
+        const bool finished = e.kind == EventKind::Done && e.payload.done.masterId != 0;
+        const bool damage = e.kind == EventKind::Damage;
+        if ((landing || finished || damage) && std::find (masters.begin(), masters.end(), e.jobId) == masters.end())
+            masters.push_back (e.jobId);
+    }
+    std::vector<Notification> kept;
+    std::uint64_t dropped = 0;
+    for (auto e : events)
+    {
+        if (std::find (masters.begin(), masters.end(), e.jobId) != masters.end()) { ++dropped; continue; }
+        e.seq -= dropped;
+        kept.push_back (e);
+    }
+    return kept;
+}
+
 std::vector<Notification> scenario (std::uint32_t chunk, bool cancel)
 {
     Audio audio; auto s = fresh(); std::vector<Notification> events;
@@ -226,31 +257,11 @@ void pump()
     ok (eventsHash (one) == eventsHash (bulk) && eventsHash (one) == eventsHash (again), "complete event sequence is invariant across runs and pump slicing");
     ok (eventsHash (cancelled) == eventsHash (cancelledAgain), "cancelled scenario sequence is invariant across runs and slicing");
     ok (one.size() > 22 && cancelled.size() > one.size(), "measurement publishes live work and cancellation adds events");
-    // The phases carry the config's version (weightsVersion): a new config moves these pins — and the master is rendered
-    // (a master the session decides runs its job: its passes, its cost and its facts are events of the scenario). The
-    // landing's verdict (MasterLandingSolved) moved them last: without it, the old pins 691c5c5e4b8a17c7 / 7923d108f8d47dbc.
-    // The cost's lines beside shape, impact and pumping (MasterCostSection … MasterCostBands, 93–97) moved them last:
-    // without those lines, the sequence renumbered, the events are the ones before them — the old pins. The targets' notes
-    // ([notes], targets.toml) moved the config's version and nothing else: every phase carries it, so with the previous
-    // version put back the events are the ones before the notes, bit for bit — the old pins, and without the cost's lines
-    // theirs. Every pin here hashes the master's measured numbers as printed (kMastersMeasurement): restated so, on the
-    // Mac where the raw-bit pins held, the raw ones were b5fbcdc6218fc72d / 25eeb7e1f596ed41 (the previous version),
-    // e2e6c8ac47d9417e / 3797697993fa2f96 (and without the cost's lines) and cadd3454090dbdba / 18b6d1ba59ebfabd.
-    // The first measurement ending at the loudness and the true peak (owner, 02.10) moved the stream itself, not a
-    // version: Measured1 and its needles come before the low-end runs, the master asked there waits for the low end its
-    // devices read, and the bar is weighted. No transform restates the stream before it; the three pairs were then
-    // 1360564337f13165 / d42f45d0b39fdc01, 2ddbf194be1a8c26 / fb06ff940f07c896 and baa032c003dd9298 / 8acd343b5c25ba11.
-    // The owner's observation table (01.10) moved the engine's [observations] — thresholds and styles that print findings
-    // and switch nothing — and with them the config's version alone: with its previous rows put back as well, the
-    // previous pins hold. The saturation's type moved to tape (01.10): the machine's drive is 0, so only the version moved; and so
-    // when the saturation's output left (v0.6.0): it was 0 dB, neutral; and the
-    // marks moved to E1, B0 and 28 Hz (01.10): labels on the plot. The high-pass knob's travel went to 80 Hz with the
-    // machine's top kept at 50 as its own key (01.10): no machine cutoff moved, only the version.
-    // felitronics-bands' bands.toml joined the config's versions as a third document (v0.13.0) and the filters of tilt,
-    // low and the bands left engine.toml for it, numbers unchanged: the walk itself moved, so no restatement of the
-    // documents gives the earlier versions back, and every pin below was restated with the version alone moved (the
-    // session contract's recordings: only the config version differs). They were e3fe0c1834432729 / 73daef62819ace2d,
-    // 72cb5738dfba2526 / be7e8b4fc0f9c662 and d31d41642d55ec9f / 3a855b6bfad8bc51.
+    // THE PINS. The phases carry the config's version (weightsVersion), so a new config moves the whole-stream pins below,
+    // and a master the session decides is rendered in the scenario, so its passes, cost and facts move with its sound. Of
+    // the master's facts, those of its measurement (kMastersMeasurement) are hashed as printed, every other argument bit
+    // for bit. Two pins hold everything else apart from both: with the config's version put back to the one
+    // previousVersion restates, and with the landing's two keys taken out, every job's events but a master's are pinned.
     const auto previousVersion = [] (std::vector<Notification> events)
     {
         // The canonical document without its [notes] table: the config before them.
@@ -287,6 +298,13 @@ void pump()
             { "manualMaxDb = 6\n", "manualMaxDb = 3\n" } };
         for (const auto& [now, then] : rows)
             if (const auto at = engine.find (now); at != std::string::npos) engine.replace (at, now.size(), then);
+        // ...and without the landing's level on the source's gate and the limiter's budget, and the damage's table
+        // ([cost.damage]), which came after (v0.14.0).
+        for (const std::string_view key : { "\nonSourceGate = ", "\nlimiterBudget = " })
+            if (const auto at = engine.find (key); at != std::string::npos)
+                engine.erase (at, engine.find ('\n', at + 1) - at);
+        if (const auto at = engine.find ("\n[cost.damage]\n"); at != std::string::npos)
+            engine.erase (at, engine.find ("\n[", at + 1) - at);
         // ...and without the EQ bands' tables, which came after.
         for (auto at = engine.find ("\n[bands"); at != std::string::npos; at = engine.find ("\n[bands"))
         {
@@ -299,38 +317,79 @@ void pump()
                 e.payload.phase.weightsVersion = before->all;
         return events;
     };
-    // The saturation's shave (03.10) is a fourth trace a render steps through, so a pass has more work units and the
-    // phases' units, fractions and count moved; every other event is as it was (checked with the phases left out).
-    ok (eventsHash (previousVersion (one)) == 0x1555a30af9dc5110ull && eventsHash (previousVersion (cancelled)) == 0x8d434eb2d9dff1ddull,
-        "the targets' notes move only the config's version the phases carry: with the previous one, the previous pins");
-    const auto withoutCostLines = [] (const std::vector<Notification>& events)
     {
+        // A master waiting for the measurement publishes the analyzers' phase, counting its passes: a master's job.
+        std::vector<Notification> waiting (2);
+        waiting[0].seq = 1; waiting[0].jobId = 7; waiting[0].kind = EventKind::Phase;
+        waiting[0].payload.phase.name = PhaseName::Analyzers; waiting[0].payload.phase.totalPasses = 12;
+        waiting[1].seq = 2; waiting[1].jobId = 1; waiting[1].kind = EventKind::Phase;
+        waiting[1].payload.phase.name = PhaseName::Analyzers;
+        const auto kept = withoutMaster (waiting);
+        ok (kept.size() == 1 && kept[0].jobId == 1 && kept[0].seq == 1,
+            "a master waiting for the measurement is known as a master's job; the measurement's own phase is kept");
+    }
+    // previousVersion takes out what moved the config's version alone — the targets' notes and the three broadcast
+    // targets, the engine rows it lists, the EQ bands' tables, the landing's two keys, the damage's table — and with that
+    // version put back every job's events but a master's (its damage's job among them) are the ones that config gives.
+    ok (eventsHash (withoutMaster (previousVersion (one))) == 0xacc7bec22e8a400full
+        && eventsHash (withoutMaster (previousVersion (cancelled))) == 0xacc7bec22e8a400full,
+        "with the config's version previousVersion restates, every job's events but a master's hold their pin");
+    // The landing's two keys ([landing] onSourceGate, limiterBudget) and the damage's table ([cost.damage]) move the
+    // master and nothing else: with the config's version they leave put back, every other job's events are the ones the
+    // config without them gives (81133bf's).
+    const auto withoutKeys = [] (std::vector<Notification> events, bool landing, bool damage)
+    {
+        auto engine = config::Config::text (config::Document::Engine);
+        if (landing)
+            for (const std::string_view key : { "\nonSourceGate = ", "\nlimiterBudget = " })
+                if (const auto at = engine.find (key); at != std::string::npos)
+                    engine.erase (at, engine.find ('\n', at + 1) - at);
+        if (damage)
+            if (const auto at = engine.find ("\n[cost.damage]\n"); at != std::string::npos)
+                engine.erase (at, engine.find ("\n[", at + 1) - at);
+        const auto before = config::Config::versionsOf (config::Config::text (config::Document::Targets), engine);
+        for (auto& e : events)
+            if (e.kind == EventKind::Phase && e.payload.phase.weightsVersion == config::Config::versions().all && before)
+                e.payload.phase.weightsVersion = before->all;
+        return std::pair { events, before ? before->all : std::uint64_t (0) };
+    };
+    const auto [oneBefore, versionBefore] = withoutKeys (one, true, true);
+    ok (versionBefore == 0x4d1ce39f8531727aull && eventsHash (withoutMaster (oneBefore)) == 0x229c3d9dc4eb6775ull
+        && eventsHash (withoutMaster (withoutKeys (cancelled, true, true).first)) == 0x229c3d9dc4eb6775ull,
+        "the landing's two keys and the damage's table move the master's events alone: without them the config's version "
+        "is 4d1ce39f8531727a, and every other job's events hold");
+    // THE DAMAGE (v0.14.0) is a job of its own after the master: its events carry its own id — its phases, its line and
+    // the damage events — and the master says two lines more (603-607). Without them, and with the config's version its
+    // table leaves put back, every event is the landing fix's alone (d406ca4's pins), bit for bit: the master's job ends
+    // where it did.
+    const auto withoutDamage = [] (const std::vector<Notification>& events)
+    {
+        std::vector<JobId> jobs;
+        for (const auto& e : events)
+            if (e.kind == EventKind::Damage) jobs.push_back (e.jobId);
         std::vector<Notification> kept;
         std::uint64_t dropped = 0;
         for (auto e : events)
         {
             const auto id = e.kind == EventKind::Fact ? unsigned (e.payload.fact.view().id) : 0u;
-            if (id >= 93u && id <= 97u) { ++dropped; continue; }
+            if (std::find (jobs.begin(), jobs.end(), e.jobId) != jobs.end() || (id >= 603u && id <= 607u)) { ++dropped; continue; }
             e.seq -= dropped;
             kept.push_back (e);
         }
         return kept;
     };
-    ok (eventsHash (withoutCostLines (previousVersion (one))) == 0xfd8d2c4110c6c94full
-        && eventsHash (withoutCostLines (previousVersion (cancelled))) == 0x002799982f8522aaull
-        && withoutCostLines (one).size() < one.size(),
-        "the cost's new lines are the only new events: without them the pins fd8d2c4110c6c94f / 002799982f8522aa hold");
+    ok (eventsHash (withoutDamage (withoutKeys (one, false, true).first)) == 0xc53142779e57820full
+        && eventsHash (withoutDamage (withoutKeys (cancelled, false, true).first)) == 0x4697be12cad5438eull,
+        "the damage moves its own job's events, the master's two lines and the config's version alone: without them the "
+        "landing fix's pins c53142779e57820f / 4697be12cad5438e hold");
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
-    // The three broadcast targets (v0.13.0) moved the config version the phases carry and nothing else (the previous
-    // version's pins above hold); these were 1fdc6e0971f677c0 / 19c7710590fbdf2d.
-    ok (eventsHash (one) == 0x9d7c29a5f4147512ull && eventsHash (cancelled) == 0x903fef3e11059149ull,
+    ok (eventsHash (one) == 0xbb4ede0865b0da64ull && eventsHash (cancelled) == 0x3100698c70cf6bb2ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
-    std::printf ("event fingerprints, previous version: %016llx %016llx; and without the cost's lines: %016llx %016llx\n",
-        (unsigned long long) eventsHash (previousVersion (one)), (unsigned long long) eventsHash (previousVersion (cancelled)),
-        (unsigned long long) eventsHash (withoutCostLines (previousVersion (one))),
-        (unsigned long long) eventsHash (withoutCostLines (previousVersion (cancelled))));
+    std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",
+        (unsigned long long) eventsHash (withoutMaster (previousVersion (one))),
+        (unsigned long long) eventsHash (withoutMaster (previousVersion (cancelled))));
     // The rule's controls, on the landing's achieved level (one digit): moved by its printed step it moves the pin; moved
     // below its precision it does not; the same argument on a fact outside the list is still hashed bit for bit.
     const auto solved = std::find_if (one.begin(), one.end(), [] (const Notification& e)

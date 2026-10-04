@@ -15,6 +15,7 @@ entry  tools/wasm/fc_probe.cpp   the wasm probe; CI diffs its stdout against the
 entry  tools/wasm/fc_master.cpp  the mastering ABI
 entry  tools/wasm/fc_tempo.cpp   the tempo-only wasm module; CI diffs its stdout against the native CLI's, as the probe's
 entry  tools/fcore_measure.cpp   the native CLI, the other side of every one of those diffs
+entry  tools/fcore_peaq.cpp      PEAQ Basic: the same source runs native and as fcpeaq.node.js, and CI diffs the two outputs
 
 # --- the analyzers whose output is diffed, one per parity harness ---
 zone  modules/analysis_offline/include/felitronics/analysis/ProgrammeReport.h  the programme report, diffed native vs wasm by report-parity.mjs
@@ -31,6 +32,7 @@ zone  modules/analysis_offline/include/felitronics/analysis/SpectrumFrames.h   t
 zone  modules/analysis_offline/include/felitronics/analysis/StereoBandBursts.h  band bursts on Mid and Side, diffed by stereobursts-parity.mjs
 zone  modules/analysis_offline/include/felitronics/analysis/PeakExcursions.h    runs over a ceiling, diffed by excursions-parity.mjs
 zone  modules/analysis_offline/include/felitronics/analysis/BandCrest.h         crest per block and band, and the paired loss, diffed by crest-parity.mjs
+zone  modules/analysis_offline/include/felitronics/analysis/Peaq.h              PEAQ Basic, fcore_peaq's output diffed native vs wasm (fcpeaq.node.js)
 # The tempo detector behind fc_probe_tempo_* and the page's BPM tool: every elementary function it calls is core::det's
 # and Math.hypot is reproduced from IEEE-exact operations, so the module and the native road answer the same bits — and
 # a system libm call in it would break that silently. Here it is red.
@@ -191,6 +193,9 @@ zone modules/session/include/felitronics/session/Kit.h the pure kit's public dec
 zone modules/session/src/MasterJob.h bounded product landing owner
 zone modules/session/src/MasterJob.cpp bounded product landing preflight and preparation
 entry modules/session/src/MasterJob.cpp bounded product landing preflight and preparation
+zone modules/session/src/Damage.h the damage of a master: PEAQ against the chain at rest, and the 48 kHz resampler
+zone modules/session/src/Damage.cpp the damage of a master: PEAQ against the chain at rest, and the 48 kHz resampler
+entry modules/session/src/Damage.cpp the damage of a master: PEAQ against the chain at rest, and the 48 kHz resampler
 zone modules/session/src/Cost.h measured post-master price declarations
 zone modules/session/src/Cost.cpp deterministic CVaR, shape and pumping measurements
 entry modules/session/src/Cost.cpp deterministic CVaR, shape and pumping measurements

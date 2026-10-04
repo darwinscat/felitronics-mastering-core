@@ -83,6 +83,19 @@ transformer.en = "Transformer"
 tape.ru = "Ленточная"
 tape.en = "Tape"
 
+# The BS.1116 impairment scale, as the damage's line names the worst window's grade (5 down to 1).
+[terms.damageGrade]
+imperceptible.ru = "не слышно"
+imperceptible.en = "imperceptible"
+perceptible.ru = "слышно, но не мешает"
+perceptible.en = "perceptible but not annoying"
+slightlyAnnoying.ru = "слегка мешает"
+slightlyAnnoying.en = "slightly annoying"
+annoying.ru = "мешает"
+annoying.en = "annoying"
+veryAnnoying.ru = "сильно мешает"
+veryAnnoying.en = "very annoying"
+
 # ── messages ──
 
 # A reading alone: the number with its unit, signs and bound, as the table writes it.
@@ -530,6 +543,29 @@ en = "Saturation cut peaks by up to {largest} (usually {usual})."
 [messages.planWaiting]
 ru = "Мастер ждёт замер «{analyzer}» для прибора «{device}»: {progress}"
 en = "The master is waiting for the {analyzer} measurement for {device}: {progress}"
+
+# The damage the processing did, heard: PEAQ of the master against the same chain with its dynamics at rest, in windows
+# — the worst window's grade, where it starts, the share of the graded windows heard and how many were graded of all;
+# and the loudness range, input against master.
+[messages.masterDamage]
+ru = "Порча: {grade} — худшее место с отметки {from}; слышна в {share} оценённых окон (оценено окон: {graded} из {windows})."
+en = "Damage: {grade} — the worst place starts at {from}; heard in {share} of the windows graded (windows graded: {graded} of {windows})."
+
+[messages.masterDamageInaudible]
+ru = "Порча не слышна ни в одном оценённом окне (оценено окон: {graded} из {windows})."
+en = "Damage: imperceptible in every window graded (windows graded: {graded} of {windows})."
+
+[messages.masterDamageUnmeasured]
+ru = "Порча не оценена: {reason}."
+en = "Damage not graded: {reason}."
+
+[messages.masterLraChange]
+ru = "LRA: у входа {source}, у мастера {master} — {change} ({changeLu})."
+en = "LRA: {source} at the input, {master} in the master — {change} ({changeLu})."
+
+[messages.masterLraUnmeasured]
+ru = "Изменение LRA не измерено: {reason}."
+en = "The LRA change was not measured: {reason}."
 
 [messages.deviceUnmeasured]
 ru = "Ещё не измерено: машина поставит значение, когда закончится замер «{analyzer}». Крутить можно уже сейчас — тронутое останется Вашим."
@@ -1047,6 +1083,10 @@ needNotAbove3.ru = "иглы не понадобились"
 needNotAbove3.en = "the needles were not needed"
 memory.ru = "недостаточно памяти"
 memory.en = "insufficient memory"
+superseded.ru = "заказан новый мастер"
+superseded.en = "a new master was asked for"
+noJobId.ru = "для этой задачи не осталось номера"
+noJobId.en = "no job id was left for it"
 
 # An observation whose measurement did not give its number: its name, and why.
 [messages.observationUnmeasured]
@@ -1074,6 +1114,24 @@ en.limiter = "The master runs into the limiter's gain-reduction limit: it cannot
 en.plr = "The master runs into the PLR floor: it cannot come within ±{tolerance} of the target."
 en.lra = "The master runs into the LRA loss limit: it cannot come within ±{tolerance} of the target."
 en.gain = "The master runs into the chain's gain bound: it cannot come within ±{tolerance} of the target."
+
+# Held short by the limiter's budget (owner, 04.10: loudness is a request, not an order): the target, the level landed
+# and the budget, the P95 the report's limiter line prints.
+[messages.masterLandingBudget]
+ru = "Цель {target}, сделано {achieved}: дальше лимитеру пришлось бы срезать больше {budget} (P95)."
+en = "Target {target}, reached {achieved}: going further, the limiter would have to take off more than {budget} (P95)."
+
+# No render kept the limiter's budget: the gentlest ceiling-safe one is delivered, and what its limiter takes is said
+# beside the budget it broke.
+[messages.masterLandingOverBudget]
+ru = "Цель {target}, сделано {achieved}: ни один вариант не уложился в бюджет лимитера {budget} (P95) — выдан самый мягкий из опробованных, лимитер в нём срезает {taken}."
+en = "Target {target}, reached {achieved}: no render kept within the limiter's budget of {budget} (P95) — the gentlest of those tried is delivered, its limiter takes off {taken}."
+
+# A landing on the source's gate: the level on the loud part, and the file's standard BS.1770 reading, where the two
+# part by more than the tolerance, either way round.
+[messages.masterLandingGate]
+ru = "По громкой части {loud}, по стандарту файла {file}."
+en = "{loud} by the loud part, {file} by the file's standard reading."
 
 [messages.masterLandingPassLimit]
 ru = "Проходы кончились раньше, чем мастер подошёл к цели ближе допуска {tolerance}."

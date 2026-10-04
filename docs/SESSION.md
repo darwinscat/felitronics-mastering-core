@@ -436,8 +436,9 @@ detector that never errs upward and a loss that tells centred, partial and inver
 the crossover not counting.
 
 **The limiter, its needles and the dither** (owner decisions 3.6, 3.7, 3.12; technical decision 3О11; `src/Limiter.h`).
-The limiter is always in the chain, with no tick; nothing — no gain reduction, no PLR, no cost — limits how far it goes
-for the loudness, and the ceiling (the target's, or a person's edit of it) alone is hard. Its one knob is the peak
+The limiter is always in the chain, with no tick; the ceiling (the target's, or a person's edit of it) is hard, and how
+far it goes for the loudness is held by its budget — the P95 of its gain reduction on its active windows, by the target's
+loudness (`[landing] limiterBudget`, below) — and by nothing else: no PLR, no other cost. Its one knob is the peak
 clipper's, inside its oversampler: `auto` — the machine classes the needles measured on the input at the ceiling the
 target's numbers give (the input's peak less the need, `(TPin − Iin) − (TPtarget − Itarget)`): short (p90 of the runs
 ≤ 2 ms, bass share of their dose ≤ 0.25, PLR ≥ 10) lose up to 3 dB off their peaks; not cut where p90 ≥ 8 ms, the bass
@@ -908,7 +909,8 @@ GR follows the audio receiving gain after lookahead; K13 reduction follows the d
 `Kept::landing` and the trace fields are nullable and always present in the generated session codec: a missing key
 is a decode error, and a snapshot is never persisted. `Snapshot` owns the pass rows and both trace row arrays.
 
-`Session::step(budget)` runs live loudness, source clipping, the programme report, waveform, source analyzers, needles, and mastering. The budget counts **work units**, never milliseconds. A call
+`Session::step(budget)` runs live loudness, source clipping, the programme report, waveform, source analyzers, needles,
+mastering, and a delivered master's damage — last, behind every other work. The budget counts **work units**, never milliseconds. A call
 consumes at most `min(budget, 16)` units, reports the number consumed, and returns `More` while any job remains or
 `Done` when none does. Zero units poll without progress. The shell measures its own speed and converts time to
 units. The library has no clock. A measurement unit prepares one instrument, reads at most 1024 source frames,
@@ -932,6 +934,11 @@ stereoBursts, tempo; so a 0.13 s stereo pass moves the bar a sliver and the 3 s 
 finishes at one. `weightsVersion` is the config's complete version, which includes progress weights. Fractions are
 estimates; the interface permits them to move backwards. The human pass label uses only `pass`; `totalPasses` belongs
 to the diagnostic journal. Completed and total work units are deterministic inputs for a shell's time estimate.
+`stepFraction` (v0.14.0) is the current walk over the file, 0..1, a new count for every walk: the measurement's stream;
+a master's source statistics, each landing pass (its own units), the delivered render's check, the crest's impact render
+and the cost's read (all `Pass`), and the damage job's two walks, `Reference` (both chains' loudness) and `Damage`
+(PEAQ). It is absent — not 0 — where the phase walks nothing: the report, the analyzers' and the needles' phases, a
+master's wait, the bookkeeping between walks and `Final`. The number of walks is not known ahead and is not promised.
 
 `events()` views the latest `apply()` or `step()` batch. The caller copies or consumes it before the next such call;
 queries leave it intact. Each `Notification` is an independent value with `seq`, `jobId`, source hash, revision, state, phase, deterministic work, `kind`, and the payload
@@ -1242,7 +1249,7 @@ still apply. Convert, Lra and Final are appended to `PhaseName` at 5, 6 and 7 an
 | `abi_version`, `config_version` | ABI number; config hash as low/high uint32 halves |
 | `create_bytes`, `create`, `destroy` | Pre-create demand; capability/config creation; generation-checked destruction |
 | `set_capacity` | Update heap ceiling and largest free block between calls |
-| `command_bytes`, `load_bytes`, `import_project_bytes` | Session allocation demand and live bytes before work |
+| `command_bytes`, `load_bytes`, `import_project_bytes` | Session allocation demand, live bytes and the live bytes freed first, before work |
 | `measurement_bytes` | Shape-only detailed measurement demand in an appended size-prefixed record |
 | `command` | Named-field JSON in; accepted/rejected JSON out |
 | `load` | Planar f32 pointers, channels, frames, rate and JSON metadata; owned PCM copy |
@@ -1310,7 +1317,7 @@ the capabilities struct at its current 40 bytes (`leanSummary` at 32) and the ve
 `tools/wasm/build.sh` builds `fcsession` from the facade and `modules/session/sources.txt`, audits the exact export list,
 compares node/web wasm bytes, checks for threads, and runs a node scenario through the ABI and generated types.
 Controls reject an extra export and verify a real allocation trap followed by permanent poison. The wire fixture
-checks all six event kinds and nonempty binary rows against the generated declarations. Full native/wasm scenario
+checks the base event kinds and nonempty binary rows against the generated declarations. Full native/wasm scenario
 parity is a separate contract suite.
 
 ### The pure kit — `fc_kit_*`
@@ -1386,8 +1393,12 @@ The C records `fc_session_capabilities`, `fc_session_sizes`, `fc_session_capacit
 bytes — the capabilities with `leanSummary` (a 32-byte record is too small, owner 2026-10-01), the measurement demand
 without the retired slots; fields may only be appended. Sizes below the base and beyond the current build have distinct
 statuses. A field appended later must define its absent-field meaning for callers of the base. Demand queries for commands, loads and imports use the session's own `storageFor`; capacity
-may be updated between calls as a heap ceiling and largest free block. Live bytes plus demand and the largest allocation
-are checked before work. Nonallocating commands remain available when capacity is reduced.
+may be updated between calls as a heap ceiling and largest free block. Live bytes, less what the command frees before
+its first allocation, plus demand — and the largest allocation — are checked before work: `fc_session_storage` appends
+`releasedBytes` (v0.14.0; `Checked::releasedBytes` in C++), the bytes a `master` frees by stopping the damage being
+graded, so a shell's `liveBytes - releasedBytes + bytes` is exactly what the command's own check holds to the ceiling.
+A caller of the 32-byte base gets no `releasedBytes` and its `liveBytes + bytes` is an upper bound, never short.
+Nonallocating commands remain available when capacity is reduced.
 
 C load frames are uint32 because the wasm heap is limited to 2 GiB; native C++ PCM frames are uint64. Binary rows are
 little-endian IEEE-754 f64, with unsupported byte-order builds refused at compile time. Executed encoder fixtures and
@@ -1684,6 +1695,56 @@ with the source completion and master-keyed join events and snapshots on both si
 
 ## Measured ready-master report
 
+THE DAMAGE IS GRADED AFTER THE MASTER, BY A JOB OF ITS OWN (v0.14.0). The master's job ends with its cost and
+delivers the master — its events, the PCM, `Done` — with `MasterReport.damage` `Pending` (reason
+`Pending`; its line, fact 605, says so) and the loudness range's line already settled. In the same unit the session
+starts the damage's job (`Session::damageJob()`, the snapshot's `damageJob` and `damageProgress`) under a new job id,
+announced by the `damage` event right after `Done`: `DamageChange { masterId, status Pending, reason Pending }`. It is
+stepped behind every other work (a master, a crest join, the needles, the source's measurement), never blocks a command
+(it is no overlay: the session's column is the measured one), and publishes its phases `Reference` and `Damage` with
+`stepFraction`, then `Final`, the damage's line (603, 604 or 605) and the `damage` event with the report's own status and
+reason: `Ready` or `Unavailable`. It is stopped, its report `Cancelled`, by `cancel` of its id (reason `Cancelled`), by a
+new `master` (reason `Superseded`; the master's demand counts the damage's bytes as freed, and the damage stops before the
+master allocates), and by `forget` of its master (no line: that master is gone); each says its line where its master
+stays, and the `damage` event closes the job — after the cancel's own `Cancelled` fact, which comes first. `load` and `loadMeasured` drop
+it silently with the masters. Its memory is the master's: `MasterJob::plan` prices the job (`DamageJob::bytes` — the
+object, its master chain and the walks' plan) beside the master's, it lives in the room the master's job leaves, and
+`liveBytes()` counts it while it runs. With no job id left for it, the damage is not graded: `Unavailable`, `NoJobId`,
+and the master's damage line says so.
+
+THE DAMAGE (`MasterReport.damage`, v0.14.0, `[cost.damage]` in engine.toml): PEAQ Basic (`analysis::Peaq`) of the
+master against the same chain with its dynamics at rest, graded in windows (10 s every 5 s; a programme shorter than a
+window is one window) on the BS.1116 scale by ODG (grade 5 from -0.5, 4 from -1.5, 3 from -2.5, 2 from -3.5, 1 below).
+The reference is the master's own topology without the dither, so the same stages, oversamplers, delays and order: the
+glue in its exact bypass (ratio 1), and the chain fed `referenceBelowDb` lower than the input gain the master's chain
+applies — by the input gain, and where its range (`MasteringChain::kMaxGainDb`, 60 dB) stops short, which is any
+master whose input gain is under 0 dB, by a scale of the reference's input for the rest — so the saturation runs in its
+small-signal line and the limiter and its needles never reach the ceiling. The master is rendered once more
+without its dither beside it, so a chain at rest leaves the two equal to a gain's rounding — PEAQ's Transparent, grade
+5. Both chains run at 48 kHz from the source (through a resampler of deterministic math where the source is not at
+48 kHz: native and wasm agree to the bit; core's delivery resampler designs its kernel with the platform's libm), and
+one gain, from both integrated loudnesses (the reference's measured lifted back, as the meter's absolute gate is not
+scale-free), brings the reference to the master's. Reported: the worst window's verdict, grade, ODG, DI and start, the
+windows graded, heard (below grade 5) and ungraded, the share heard, the gain; and the loudness range of the input
+(the source's programme report) against the master's, its change in LU and as a share of the input's, or the reason
+either is absent. Two facts say them (603-607). The damage's line names what was graded — the windows graded of all
+(603, 604), the share heard of the graded ones (603) — never the whole track: a window PEAQ cannot grade (silence,
+nothing it reads) is no part of the verdict. The programme report, the input's range, has always ended when a master
+is taken (the first measurement, which a master waits for, ends after it), so the range's change is settled with the
+master and never Pending.
+
+NATIVE AND WASM ON A MASTER WITH A STAGE ON LIBM. The damage's own arithmetic is deterministic (the resampler, PEAQ, the
+meters), but it reads the master's chain, and a stage that calls the platform's libm — the hand-picked saturation
+types outside the det-math zone since v0.6 — renders a last-bit difference between platforms. PEAQ's network amplifies
+it about fiftyfold: the damage's numbers of such a master agree across platforms to a few 1e-4 in ODG and a few 1e-3 in
+DI (DI by 5e-5 on the saturation-type scenario, by 1.9e-3 with ODG by 2.4e-4 on the master-report suite's processed
+master), not to the bit, and a grade whose ODG sits at a step's edge (-0.5, -1.5, -2.5, -3.5) may land on either side
+of it on two platforms. The session contract allows 1e-4 for the saturation-type scenario alone (tools/contract/run.mjs).
+
+THE DAMAGE'S COST, 60 s of 48 kHz stereo on an M-series Mac: the master is delivered after 1.3 s, as without the
+damage; its job then takes 3.6–3.7 s (both chains' loudness about 0.9 s, the graded walk 2.8 s, of which PEAQ's two
+windows in flight about 1.9 s).
+
 Each completed ready master carries an optional `MasterReport` beside its recipe and landing. Its LUFS,
 reference true peak, PLR and suitable LRA are the solver's completed measurement of the selected delivered
 PCM, including the drained tail and enabled dither. The report also gives the achieved-minus-source gain,
@@ -1712,6 +1773,34 @@ ceiling and not met, and a marked landing to a deliverable `TargetUnreachable` b
 cancelled landings say none. The crest's line
 (`MasterReportText::crest`) goes out once: with the report when the job settles the crest (joined inside the job, or
 unavailable), or from the late join when it was still pending.
+
+**Loudness is a request, not an order** (owner, 04.10): better to fall short of the target than to reach it and make the
+master unlistenable. Two parts of `engine.toml [landing]` say so, both in the sound version. `onSourceGate`: the level
+the landing puts on the target is the louder of the file's BS.1770 reading and the master's mean block energy over the
+400 ms blocks the source's BS.1770 gate admitted (absolute, then relative), not gated again — the quiet parts the drive
+lifts above the master's own relative gate do not join the average, so they no longer drive the loud part past what it
+needs alone, and a chain that empties those blocks (a steep high-pass under a sub-bass source) cannot land a file louder
+than the target. The gate is read on the source's momentary series (`Loudness` `momentary`, its own hop at its own
+rate) and the master's blocks take its readings by time through both grids (a hop is ten sub-hops of lround (0.01 fs)
+frames: 1100 frames at 11025 Hz are 99.77 ms, 4410 at 44.1 kHz 100 ms), a block past the series' last reading taking
+the last. A source without that series whole (a sidecar's facts, rows refused for memory), and a landing whose rates
+are not whole hertz, land on the master's own gate. `limiterBudget`: the most the limiter may
+take, the P95 of its gain reduction over its ACTIVE windows (the windows whose input reached `[cost]
+limiterActiveInputDb`, so silence does not water it down) — the very number `MasterCost::limiterP95Db` prints —
+by the target's loudness, a person's edited number included: 4 dB below −10 LUFS, 7 dB from −10 to −8 (both ends),
+10 dB louder (`detail::limiterBudgetDb`). `LandingSearch` reads it as a budget, not a refusal: a render over it is no
+candidate and is marked in its pass record (`LimiterGainReduction`) and in the session's pass log
+(`LandingPass::overBudget`), and the next drive is held under the lowest drive that broke it. The landing ends
+`TargetUnreachable` with `LimiterGainReduction` bound only on proof — the render delivered stands within 0.25 dB of drive
+under the lowest drive marked over the budget while the target is still above; otherwise its status is the search's
+own (a pass limit stays `PassLimit`, with its hints). Held so, the file is delivered short of the target: `MasterLandingBudget` (600) says the
+target, the level landed and the budget («Цель −9,0 LUFS, сделано −9,7 LUFS: дальше лимитеру пришлось бы срезать больше
+7 дБ (P95).»). Where no render kept the budget, the gentlest ceiling-safe one is delivered and `MasterLandingOverBudget`
+(602) says so with its own reduction («…ни один вариант не уложился в бюджет лимитера 7 дБ (P95) — выдан самый мягкий
+из опробованных, лимитер в нём срезает 8,4 дБ.»). Neither has a hint: nothing in the mix is blamed. The file is still certified by
+BS.1770 (`achievedLufs`, `missLu`); where the level on the source's gate and that reading part by more than the
+tolerance, either way round, `MasterLandingGate` (601) says both («По громкой части −9,0 LUFS, по стандарту файла −9,8 LUFS.») in the
+miss's place, and the solved verdict (88) names the level landed. `targetMet` follows the status, as before.
 
 `MasterCrest` stores five peak-amplitude/mean-square-power pairs per block, in Low, LowMid, HighMid, High,
 Full order, plus five source activity values per block as zero/one values. Version, sample rate, hop

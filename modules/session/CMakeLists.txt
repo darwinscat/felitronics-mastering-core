@@ -16,6 +16,11 @@ add_library(felitronics::session ALIAS felitronics_session)
 target_include_directories(felitronics_session PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_compile_features(felitronics_session PUBLIC cxx_std_20)
 target_link_libraries(felitronics_session PUBLIC felitronics::mastering)
+# PEAQ (the master's damage, src/Damage.h): its header asks for -ffp-contract=off -fno-fast-math, which are this library's
+# own flag group (build-flags.txt) — the compile-line gate below proves that group is the last word on every unit, and it
+# refuses felitronics::peaq's INTERFACE copy of the same flags after it. So the session states PEAQ's marker itself, as
+# tools/wasm/build.sh does for the module.
+target_compile_definitions(felitronics_session PRIVATE FELITRONICS_PEAQ_FLAGS=1)
 
 # THE CONFIG — config/targets.toml and config/engine.toml, compiled into the library as constexpr data by felitronics-toml's
 # felitronics_toml_embed: nothing reads a file at run time. A document that does not parse stops the build at its line and
@@ -345,7 +350,7 @@ if(FELITRONICS_BUILD_TESTS)
     # The limiter with its needles, the dither, vinyl, a quiet input — and the whole plan sounding: a master the session
     # decides against the previous path's master of the chain the suite composes itself.
     add_executable(felitronics_session_plan_sound_tests tests/PlanSoundTests.cpp)
-    target_link_libraries(felitronics_session_plan_sound_tests PRIVATE felitronics::session felitronics::toml felitronics::core felitronics::test_support felitronics::analysis_offline felitronics::tempo)
+    target_link_libraries(felitronics_session_plan_sound_tests PRIVATE felitronics::session felitronics::toml felitronics::core felitronics::test_support felitronics::analysis_offline felitronics::tempo felitronics::peaq)
     target_include_directories(felitronics_session_plan_sound_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_features(felitronics_session_plan_sound_tests PRIVATE cxx_std_20)
     if(NOT MSVC)
@@ -396,6 +401,7 @@ if(FELITRONICS_BUILD_TESTS)
     target_include_directories(felitronics_session_master_job_tests PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
     target_compile_features(felitronics_session_master_job_tests PRIVATE cxx_std_20)
     target_compile_options(felitronics_session_master_job_tests PRIVATE ${FELITRONICS_SESSION_COMPILE_OPTIONS})
+    target_compile_definitions(felitronics_session_master_job_tests PRIVATE FELITRONICS_PEAQ_FLAGS=1)   # src/Damage.h
     add_test(NAME felitronics_session_master_job_tests COMMAND felitronics_session_master_job_tests)
     add_executable(felitronics_session_wav_tests tests/WavTests.cpp)
     target_link_libraries(felitronics_session_wav_tests PRIVATE felitronics::session felitronics::io felitronics::test_support)
@@ -471,7 +477,8 @@ if(FELITRONICS_BUILD_TESTS)
             target_include_directories(fs_hostile_contract PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
             felitronics_session_config_inputs(fs_hostile_contract)
             target_compile_features(fs_hostile_contract PRIVATE cxx_std_20)
-            target_compile_definitions(fs_hostile_contract PRIVATE ${FELITRONICS_SESSION_VERSION_DEFINITIONS})
+            # PEAQ's marker alone, not felitronics::peaq: the flags under test are the session's own, last on the line.
+            target_compile_definitions(fs_hostile_contract PRIVATE ${FELITRONICS_SESSION_VERSION_DEFINITIONS} FELITRONICS_PEAQ_FLAGS=1)
             target_compile_options(fs_hostile_contract PRIVATE /fp:contract $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>)
             felitronics_session_must_fail(felitronics_session_hostile_contract_refused fs_hostile_contract
                                           "must be compiled without /fp:contract")
@@ -482,7 +489,9 @@ if(FELITRONICS_BUILD_TESTS)
         target_include_directories(felitronics_session_hostile_${licence} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
         felitronics_session_config_inputs(felitronics_session_hostile_${licence})
         target_compile_features(felitronics_session_hostile_${licence} PRIVATE cxx_std_20)
-        target_compile_definitions(felitronics_session_hostile_${licence} PRIVATE ${FELITRONICS_SESSION_VERSION_DEFINITIONS})
+        # PEAQ's marker alone, not felitronics::peaq: the flags under test are the session's own, last on the line.
+        target_compile_definitions(felitronics_session_hostile_${licence} PRIVATE ${FELITRONICS_SESSION_VERSION_DEFINITIONS}
+                                   FELITRONICS_PEAQ_FLAGS=1)
         target_compile_options(felitronics_session_hostile_${licence} PRIVATE
             "${FELITRONICS_SESSION_HOSTILE_${licence}}" $<TARGET_PROPERTY:felitronics_session,COMPILE_OPTIONS>
             ${FELITRONICS_SESSION_OPTIMISED})

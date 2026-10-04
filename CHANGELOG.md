@@ -2,6 +2,134 @@
 
 # Changelog
 
+## v0.14.0 — 2026-10-04
+
+### session · mastering — loudness is a request, not an order: the level landed on the source's gate, the limiter's budget (owner, 04.10)
+
+- **The level landed on the source's gate** (`engine.toml [landing] onSourceGate = true`). The product landing puts on
+  the target the louder of the file's BS.1770 reading and the master's mean block energy over the 400 ms blocks the
+  SOURCE's BS.1770 gate admitted (absolute, then relative), not gated again. On its own gate, the quiet parts the drive
+  lifts joined the master's relative gate and diluted the integrated loudness, so a dynamic song drove its loud part far
+  past what that part needed alone (Test Tubes at −9: 24.8 dB of drive). The louder of the two keeps a chain that empties
+  the gated blocks (a steep high-pass under a sub-bass source) from landing a file above the target. The gate is read on
+  the source's `Loudness` `momentary` series, and the master's blocks take its readings by time through both grids (a
+  hop is ten sub-hops of lround (0.01 fs) frames: 99.77 ms at 11025 Hz, 100 ms at 44.1 kHz), a block past the series'
+  last reading taking the last. Rates that are not whole hertz land on the master's own gate. `LoudnessRequest` appends
+  `landingOnSourceGate`, `sourceMomentaryLufs`, `sourceMomentaryCount`, `sourceMomentaryHopFrames`;
+  `LandingSearch::landedLufs()` gives the level landed. The gate and each pass's level on it are stepped work,
+  split-invariant. A source without the series whole (a sidecar's facts, rows refused for memory) lands on the master's
+  own gate.
+- **The limiter's budget by the target's loudness** (`[landing] limiterBudget = { quietDb = 4, middleDb = 7,
+  loudDb = 10, middleLufs = [-10, -8] }`): the P95 of the limiter's gain reduction over its ACTIVE windows (input above
+  `[cost] limiterActiveInputDb`, now passed to the request) may not pass 4 dB for a target below −10 LUFS, 7 dB from −10
+  to −8, 10 dB louder; a person's edited loudness follows the same rule (`detail::limiterBudgetDb`). `LandingSearch`
+  reads the request's `limiterGr` as a budget on `limiterActive`: a render over it is no candidate and is marked in its
+  pass record and in the session's pass log (`LandingPass::overBudget`, appended plain), and the next drive is held
+  under the lowest drive that broke it (by the secant of the excess). The landing is `TargetUnreachable` with
+  `LimiterGainReduction` bound only on proof — the render delivered stands within 0.25 dB of drive under the lowest
+  drive marked over the budget while the target is still above; otherwise the status is the search's own (a pass limit
+  stays `PassLimit`, with its hints). Nothing in the mix is blamed for a budget hold: no hint.
+- **The report's limiter line reads the active windows too** (`MasterCost::limiterP50Db`, `limiterP95Db`, from
+  `limiterActiveGrWindows`), as its words always said: silence no longer waters it down (2 s of music at −10 read a P95
+  of 7.0 dB; with 58 s of digital silence before them, 0).
+- **The report says it.** `MasterLandingBudget` (600): «Цель −9,0 LUFS, сделано −9,7 LUFS: дальше лимитеру пришлось бы
+  срезать больше 7 дБ (P95).» `MasterLandingOverBudget` (602), where no render kept the budget and the gentlest
+  ceiling-safe one is delivered: «Цель …, сделано …: ни один вариант не уложился в бюджет лимитера 7 дБ (P95) — выдан
+  самый мягкий из опробованных, лимитер в нём срезает 8,4 дБ.» `MasterLandingGate` (601), in the miss's place where the
+  level on the source's gate and the file's BS.1770 reading part by more than the tolerance, either way round: «По громкой части −9,0 LUFS, по стандарту файла −9,8 LUFS.»
+  The solved verdict (88) names the level landed. Ids 600–699 are the landing's, continued (1–99 is full).
+  `MasterReportText::landing` takes a `LandingMeasure` (the level landed, the budget, what the limiter takes over it);
+  `MasterReportText::gate` is new.
+- **`FC_SESSION_ABI_VERSION` 9**: the three facts, appended to the manifest; `SURFACE[9]` adds no entry point. No
+  report, snapshot or event field is added.
+- **Sound moves** for every master of a dynamic mix (its loud part lands where it would alone; the file reads quieter
+  than the target) and every master the budget holds short. The `2026-10` defaults' sound version moves, updated in
+  place as before (no project of those defaults has been saved). The contract recordings, the WAV contract and the
+  report's limiter numbers in them are re-recorded; the WAV contract's safe master keeps its bytes, and its demanding
+  miss (−5 LUFS under −6 dBTP) stays `PassLimit` with its twelve passes and hints: its passes over the budget stand far
+  above the render delivered, which proves nothing. The event pins hold every job's events but the master's at their v0.13.0 values. The declared
+  bytes of a master grow by the landing's state in `LandingSearch` (the request's four new fields, a handful of numbers,
+  the twelve passes' excess over the budget): 208 bytes on wasm32 (`safePrice`, `latePrice`), 216 natively.
+- With `onSourceGate = false` and a budget no render meets, a master is byte for byte the v0.13.0 one (WAV and
+  landing, checked against a build of 81133bf on two corpus songs).
+
+### session · mastering — the master's damage, heard (PEAQ in windows against the chain at rest), the loudness range's change, and each walk's own progress; ABI 9
+
+- **The damage is graded after the master, by a job of its own**: the master's job ends and delivers as before (the same
+  events, the PCM, `Done`), its report's damage `Pending` and its line saying so; in the same unit the session starts the
+  damage's job under a new id (`Session::damageJob()`, `Snapshot.damageJob` and `damageProgress`), announced by the new
+  `damage` event (`DamageChange`: the master, the status, the reason) right after `Done`. It runs behind every other work,
+  blocks no command, walks its phases `Reference` and `Damage`, and ends with its line and the `damage` event, `Ready` or
+  `Unavailable`. `cancel` of its id stops it (`Cancelled`; the cancel's fact first, the damage event last), a new
+  `master` stops it (`MeasurementReason::Superseded`, a term of its own; the master is priced with the damage's bytes
+  freed), `forget` of its master stops it without a line; `load` drops it with the masters; with no job id left it is not
+  graded (`MeasurementReason::NoJobId`). Its memory is admitted with the master (`DamageJob::bytes`) and lives in the room
+  the master's job leaves.
+- **The reference is the whole `referenceBelowDb` lower** wherever the master's input gain stands: where the input gain's
+  range (60 dB) stops short — any master with an input gain under 0 dB — a scale of the reference's input takes the rest.
+- **The damage's line names what was graded**: the windows graded of all (603, 604) and the share heard of the graded
+  ones, never the whole track.
+- **`MasterReport.damage`** (`MasterDamage`, `[cost.damage]` in engine.toml): PEAQ Basic of the master against the same
+  chain with its dynamics at rest — the master's topology without the dither, the glue in its exact bypass, the chain
+  fed `referenceBelowDb` (60 dB) lower so the saturation stays linear and the limiter and its needles never reach the
+  ceiling; the master rendered once more without its dither beside it. Same stages, oversamplers, delays and order: a
+  chain at rest is Transparent (grade 5), not PEAQ's -2 on a structural difference. Both at 48 kHz from the source,
+  through this core's own resampler of deterministic math where the source is not at 48 kHz (core's delivery resampler
+  designs its kernel with the platform's libm), matched by one gain on the two integrated loudnesses. Graded in windows
+  (10 s every 5 s): the worst window's verdict, BS.1116 grade (edges -0.5, -1.5, -2.5, -3.5 in engine.toml), ODG, DI
+  and start, the windows graded, heard and ungraded, the share heard. A source the walks cannot run on still masters;
+  the report says why there is no grade.
+- **The loudness range's change**: the input's LRA (the programme report) against the master's, in LU and as a share of
+  the input's — or the reason one is absent (a programme too short, an input still measured, an input with no range).
+- **Facts 603-607** (the master's report continued, after the landing's 600-602): the damage's line (`MasterDamage` —
+  grade, where the worst place starts, the share heard; `MasterDamageInaudible`; `MasterDamageUnmeasured` with its
+  reason), the loudness range's (`MasterLraChange`, `MasterLraUnmeasured`); the BS.1116 grades are the `damageGrade`
+  terms. ru and en.
+- **`Phase.stepFraction`**: the current walk over the file, 0..1, a new count for every walk — every landing pass, the
+  check, the crest's and the cost's reads, the measurement's stream, and the damage's two walks, which are phases of
+  their own (`PhaseName::Reference`, `PhaseName::Damage`). Absent where a phase walks nothing.
+- **Cost**: 60 s of 48 kHz stereo, natively on an M-series Mac — the master is delivered after 1.3 s, as in v0.13.0;
+  the damage's job takes 3.6–3.7 s after it (the two chains' loudness 0.9 s, the graded walk 2.8 s, PEAQ's two windows
+  in flight about 1.9 s of it).
+- **ABI 9**: `FC_SESSION_ABI_VERSION` 9, the manifest appends the records (`MasterDamage`, `DamageChange`), the
+  `damage` event, the snapshot's `damageJob` and `damageProgress`, the enums, the facts and terms, and
+  `fc_session_storage.releasedBytes` (the record grows from its 32-byte base to 40: the bytes a `master` frees first, so
+  a shell's `liveBytes - releasedBytes + bytes` is the command's own check). A shell sends size 40 only to a module whose
+  abi is 9 or more — an older one refuses it as too large; at size 32 nothing is written past it. No entry point.
+- **`tools/wasm/build.sh`**: BUILD-INFO names the felitronics-bands checkout beside the other three.
+
+### analysis_offline · tools — PEAQ Basic (ITU-R BS.1387): `analysis::Peaq` and `fcore_peaq`
+
+- **`analysis::Peaq`** (`modules/analysis_offline/include/felitronics/analysis/Peaq.h`, target `felitronics::peaq`) —
+  the Basic version of ITU-R BS.1387-2, written from the text of the Recommendation, with P. Kabal's examination for
+  the unclear places: the FFT ear model (2048/1024, Hann, 92 dB SPL for a full-scale sine), the 109 bands of Table 6,
+  internal noise, level-dependent spreading, forward masking, level and pattern adaptation, modulation, loudness, the
+  eleven MOVs, the data boundary and the other frame selections of 5.2.4, stereo per channel with the binaural MFPD
+  and ADB, and the 11-3-1 network. Out come the MOVs, the Distortion Index and the ODG.
+- **Where the text decides, the text wins**: |INT(e)| steps (eq. 78), RelDistFrames at >= 1.5 dB, the bandwidth of a
+  frame whose test is digitally silent (-inf levels compared as IEEE does), the loudness threshold as two marks per
+  channel, the delayed averaging from the start of the measurement. **Where it leaves a choice, GstPEAQ decided** (run
+  as a black box; its source neither copied nor read): the tail frame completed with zeros, EHS from line 1 at lags
+  0..255 with the mean removed before the window (window-first gives EHS ~100x outside Table 13's range). On the 158
+  pairs GstPEAQ grades (48 drum loops at graded damage, 99 masters of this core at nine loudness targets, 11 synthetic
+  pairs) the ODG agrees to 0.0015 on average and 0.032 at worst; it differs where the text and GstPEAQ part: frames in
+  which both programmes are silent, and a pair whose loud passages never overlap (GstPEAQ: nan).
+- **Verdicts.** `Graded`; `Transparent` (ODG 0, the network's answer kept in `modelOdg`) when every channel's Total
+  NMR is under -90 dB and its waveform error under -40 dB — on a master that left the programme alone GstPEAQ and this
+  model both read EHS 52-67 and grade -2.1; `Undefined` (checked first) when a MOV averaged over no frame, which is
+  then NaN; `NoSignal`, `NonFinite`, and `OutOfRange` for a sample past +18 dBFS, where the spreading stops being
+  defined.
+- **Determinism.** core::det, the core FFT (one transform per programme, so a test identical to its reference reads
+  an error of exactly zero), fixed sums. `felitronics::peaq` carries -ffp-contract=off -fno-fast-math (MSVC
+  /fp:precise) as INTERFACE options and the header refuses a unit built without them. prepare() allocates exactly
+  `storageFor()`, process()/finish() nothing, any slicing gives the same bits.
+- **Conformance (7.4) is not proven**: the 16 ITU test items are not openly available.
+- **`fcore_peaq <ref.wav> <test.wav>`** (or `--f32le <rate> <channels> <ref> <test>`) prints the verdict, ODG, the
+  network's ODG and DI, and the eleven MOVs. Other rates go to 48 kHz through `core::DeliveryResampler`, the same plan
+  for both (its kernel uses the system libm, so only 48 kHz input is bit-identical across rows). Programmes of
+  different lengths, and programmes past 2 GiB of working memory, are refused. `tools/wasm/build.sh` builds the same
+  source as `fcpeaq.node.js`; CI diffs the two at 48 kHz. About 1.0 s per minute of stereo natively, 1.2 s in wasm.
+
 ## v0.13.0 — 2026-10-03
 
 ### session — the seven EQ knobs' geometry and names come from felitronics-bands

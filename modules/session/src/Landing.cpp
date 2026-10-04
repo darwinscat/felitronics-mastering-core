@@ -3,6 +3,7 @@
 
 #include "BuildGuards.h"
 #include <felitronics/session/Landing.h>
+#include "Observations.h"
 #include <felitronics/analysis/BandCrestResult.h>
 
 #include <cmath>
@@ -50,11 +51,23 @@ std::optional<text::Fact> MasterReportText::miss (const MasterReport& report) no
         text::Arg::value (report.targetLufs, text::Unit::Lufs, 1),
         text::Arg::value (std::fabs (*report.missLu), text::Unit::Lu, 1));
 }
+std::optional<text::Fact> MasterReportText::gate (const MasterReport& report, const LandingMeasure& measure,
+                                                  double toleranceLu) noexcept
+{
+    if (report.status != MeasurementStatus::Ready || ! report.deliverable || ! report.achievedLufs
+        || ! std::isfinite (measure.gateLufs) || ! (std::fabs (measure.gateLufs - *report.achievedLufs) > toleranceLu))
+        return std::nullopt;
+    return text::Fact::of (text::FactId::MasterLandingGate, text::Arg::value (measure.gateLufs, text::Unit::Lufs, 1),
+                           text::Arg::value (*report.achievedLufs, text::Unit::Lufs, 1));
+}
 std::optional<text::Fact> MasterReportText::landing (const MasterReport& report, const LandingSummary& landing,
-                                                     double toleranceLu) noexcept
+                                                     double toleranceLu, const LandingMeasure& measure) noexcept
 {
     using text::Arg; using text::Fact; using text::FactId; using text::Term; using text::Unit;
     const auto tolerance = Arg::value (toleranceLu, Unit::Lu, 1);
+    // The level landed: on the source's gate where the landing measured it there, else the file's.
+    const std::optional<double> landed = std::isfinite (measure.landedLufs) ? std::optional<double> (measure.landedLufs)
+                                                                            : report.achievedLufs;
     const auto limit = [] (LandingConstraint c) noexcept
     {
         switch (c)
@@ -71,10 +84,18 @@ std::optional<text::Fact> MasterReportText::landing (const MasterReport& report,
     switch (landing.status)
     {
         case LandingStatus::Solved:
-            if (report.status != MeasurementStatus::Ready || ! report.achievedLufs) return std::nullopt;
-            return Fact::of (FactId::MasterLandingSolved, Arg::value (*report.achievedLufs, Unit::Lufs, 1),
+            if (report.status != MeasurementStatus::Ready || ! landed) return std::nullopt;
+            return Fact::of (FactId::MasterLandingSolved, Arg::value (*landed, Unit::Lufs, 1),
                              Arg::value (report.targetLufs, Unit::Lufs, 1), tolerance);
         case LandingStatus::TargetUnreachable:
+            if (landing.binding == LandingConstraint::LimiterGainReduction && std::isfinite (measure.limiterBudgetDb)
+                && report.status == MeasurementStatus::Ready && landed)
+                return std::isfinite (measure.overBudgetDb)
+                    ? Fact::of (FactId::MasterLandingOverBudget, Arg::value (report.targetLufs, Unit::Lufs, 1),
+                                Arg::value (*landed, Unit::Lufs, 1), Arg::value (measure.limiterBudgetDb, Unit::Db, 0),
+                                Arg::value (measure.overBudgetDb, Unit::Db, 1))
+                    : Fact::of (FactId::MasterLandingBudget, Arg::value (report.targetLufs, Unit::Lufs, 1),
+                                Arg::value (*landed, Unit::Lufs, 1), Arg::value (measure.limiterBudgetDb, Unit::Db, 0));
             return Fact::of (FactId::MasterLandingUnreachable, tolerance, Arg::term (limit (landing.binding)));
         case LandingStatus::PassLimit: return Fact::of (FactId::MasterLandingPassLimit, tolerance);
         case LandingStatus::TargetBetweenAchievable:
@@ -212,6 +233,27 @@ std::optional<text::Fact> MasterReportText::saturation (const MasterCost& cost) 
     if (! cost.saturationCutMaxDb.value || ! cost.saturationCutUsualDb.value) return std::nullopt;
     return text::Fact::of (text::FactId::MasterSaturation, text::Arg::value (*cost.saturationCutMaxDb.value, text::Unit::Db, 1),
         text::Arg::value (*cost.saturationCutUsualDb.value, text::Unit::Db, 1));
+}
+text::Fact MasterReportText::damage (const MasterDamage& d) noexcept
+{
+    if (d.status != MeasurementStatus::Ready || d.grade < 1 || d.grade > 5 || ! d.worstFromSeconds || ! d.audibleShare)
+        return text::Fact::of (text::FactId::MasterDamageUnmeasured, text::Arg::term (detail::reasonTerm (d.reason)));
+    // What was graded, of all the windows: those PEAQ could not grade (no signal, undefined) are no part of the verdict.
+    const auto graded = text::Arg::count (d.windows), windows = text::Arg::count (std::int64_t (d.windows) + d.ungradedWindows);
+    if (d.grade == 5) return text::Fact::of (text::FactId::MasterDamageInaudible, graded, windows);
+    const auto grade = text::Term (unsigned (text::Term::DamageGradeImperceptible) + (5u - d.grade));
+    return text::Fact::of (text::FactId::MasterDamage, text::Arg::term (grade),
+        text::Arg::value (*d.worstFromSeconds, text::Unit::S, 0), text::Arg::value (100.0 * *d.audibleShare, text::Unit::Percent, 0),
+        graded, windows);
+}
+text::Fact MasterReportText::lra (const MasterDamage& d) noexcept
+{
+    if (! d.sourceLraLu || ! d.masterLraLu || ! d.lraChangeLu || ! d.lraChangePercent)
+        return text::Fact::of (text::FactId::MasterLraUnmeasured, text::Arg::term (detail::reasonTerm (d.lraReason)));
+    return text::Fact::of (text::FactId::MasterLraChange, text::Arg::value (*d.sourceLraLu, text::Unit::Lu, 1),
+        text::Arg::value (*d.masterLraLu, text::Unit::Lu, 1),
+        text::Arg::value (*d.lraChangePercent, text::Unit::Percent, 0, text::Sign::Always),
+        text::Arg::value (*d.lraChangeLu, text::Unit::Lu, 1, text::Sign::Always));
 }
 std::optional<text::Fact> MasterReportText::vinyl (const MasterReport& report) noexcept
 {
@@ -399,6 +441,7 @@ bool LandingOps::summarize (const mastering::LoudnessSolution& solution,
         row.achievedLufs = source.integratedLufs; row.truePeakDbTp = source.truePeakDbTp;
         row.limiterMaxReductionDb = source.limiterMaxGrDb;
         row.ceilingSafe = (source.violated & mastering::constraintBit (mastering::MasteringConstraint::TruePeakCeiling)) == 0;
+        row.overBudget = (source.violated & mastering::constraintBit (mastering::MasteringConstraint::LimiterGainReduction)) != 0;
     }
     next.log = { rows.data(), (std::size_t) solution.logCount };
     if (haveTraces && limiter.buckets > 0)

@@ -54,7 +54,15 @@
 //                delivered when none keeps the ceiling, marked (LandingSummary/MasterReport.peaksAboveCeiling, fact 98).
 //                Not on this surface, in the same release: the C++ Answer's value, low and high, and the hum
 //                detector's LineOnlyWithMusic (11), which the session answers as the hum not found.
-#define FC_SESSION_ABI_VERSION 8u
+//   9            v0.14.0: a landing held short says so — facts 600 (the limiter's budget that held it), 601 (the level
+//                landed on the source's gate beside the file's BS.1770 reading) and 602 (no render kept the budget), and
+//                each render over the limiter's budget marked in the pass log (LandingPass.overBudget); the master's
+//                damage (MasterReport.damage — PEAQ in windows against the chain at rest, the loudness range's change;
+//                facts 603-607, the damageGrade terms), graded after the master by a job of its own (the damage event,
+//                DamageChange; Snapshot.damageJob and damageProgress; the phases Reference and Damage; MeasurementReason
+//                Superseded and NoJobId); Phase.stepFraction; fc_session_storage appends releasedBytes past its 32-byte
+//                base — a shell sends size 40 only to a module whose abi is 9 or more.
+#define FC_SESSION_ABI_VERSION 9u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u
 #define FC_SESSION_STORAGE_V1_BYTES 32u
@@ -171,8 +179,9 @@ typedef struct fc_session_sizes
 // Set size to the caller's sizeof before EVERY call, including output queries. It is preserved.
 // Fields are append-only. A build accepts every size from a record's base size up to its own, writes only that prefix,
 // and documents the default of each absent later field. A new field never changes the meaning of a base prefix;
-// appended reserved fields default to zero and are ignored. Today every record is its base size:
-// size < the base size is STRUCT_TOO_SMALL; size > this build's size is STRUCT_TOO_LARGE.
+// appended reserved fields default to zero and are ignored. Today one record has grown past its base: the storage
+// record, 40 bytes since 9 (releasedBytes; a 32-byte caller is not written past its size); every other record is its
+// base size. size < the base size is STRUCT_TOO_SMALL; size > this build's size is STRUCT_TOO_LARGE.
 // No C++ implementation records or binary row structs cross this C boundary.
 typedef struct fc_session_capacity
 {
@@ -187,7 +196,11 @@ typedef struct fc_session_storage
     uint32_t rejection;             // session Rejection; zero when priced, no mutation or events
     double bytes;                   // allocating demand, independent of current capacity
     double largestBlockBytes;       // largest allocation; import uses a conservative bound
-    double liveBytes;               // current declared bytes; caller can assess live + bytes
+    double liveBytes;               // current declared bytes; caller can assess live - released + bytes
+    // Appended (v0.14.0): live bytes the command frees before its first allocation — a master stops the damage being
+    // graded. The heap must hold liveBytes - releasedBytes + bytes, as the command's own check counts it. Written where
+    // the record's size reaches it.
+    double releasedBytes;
 } fc_session_storage;
 
 // Detailed source measurement demand. Counts include one retained result copy and its codec buffers.

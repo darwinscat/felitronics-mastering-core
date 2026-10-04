@@ -739,9 +739,10 @@ public:
     static constexpr std::uint64_t constructBytes() noexcept
     {
         return 3u * core::DryAligner::constructBytes()
-        // Compressor: 1; Saturator: 6 buffers + delay bank + oversampler (6 + 1);
-        // limiter: oversampler (6 + 1), three banks, three two-vector windows; aligners: 2 each.
-                     + (1u + 14u + 16u + 3u * 2u) * storage::kVectorProxyBytes;
+        // Compressor: 1; Saturator: 7 buffers (os, wet, their two pointer rows, the DC filter's two states, the
+        // shape's model state) + delay bank + oversampler (6 + 1); limiter: oversampler (6 + 1), three banks, three
+        // two-vector windows; aligners: 2 each.
+                     + (1u + 15u + 16u + 3u * 2u) * storage::kVectorProxyBytes;
     }
 
     // WHAT RE-PREPARING THIS CHAIN ASKS FOR. When the geometry fits, only core's temporary

@@ -43,13 +43,28 @@ shortSeconds = 10
 # toleranceLu: a master within ±toleranceLu of the target has landed. The ceiling has no positive tolerance.
 # truePeakAimDb: how far below the promised peak the feedback loop aims; distinct from the limiter's initial margin.
 # The first gain uses the measured input's normalization to referenceLufs and the target's difference from it.
+# LOUDNESS IS A REQUEST, NOT AN ORDER (owner decision, 04.10): better to fall short of the target than to reach it and
+#   make the master unlistenable. A landing held short says so, with both numbers.
+# onSourceGate (owner decision, 04.10): the level landed on the target is the louder of the file's BS.1770 reading and
+#   the master's level over the 400 ms blocks the SOURCE's BS.1770 gate admitted, not gated again — the quiet parts the
+#   drive lifts do not join the average, so they do not make the loud part pay for them, and the file never reads louder
+#   than the level landed. The master's blocks take the source's readings by time; rates that are not whole hertz land
+#   on the master's own gate. Where the two part by more than toleranceLu, either way round, the report says both.
+# limiterBudget (owner decision, 04.10): the most the limiter may take, the P95 of its gain reduction over its ACTIVE
+#   windows (input above [cost] limiterActiveInputDb, so silence does not water it down) — the number the report's
+#   limiter line prints — by the loudness of the target, a person's edited number included: quietDb below middleLufs,
+#   middleDb within it (both ends), loudDb above it. A landing that would need more stops where the budget holds and is
+#   delivered short of the target, the budget named — named only where the render delivered stands within 0.25 dB of
+#   drive under one measured over the budget.
 [landing]
 passes = 12 # Owner decision 28.09: one budget, stop on success; a miss is a normal result.
 toleranceLu = 0.1
 truePeakAimDb = 0.05
+onSourceGate = true
+limiterBudget = { quietDb = 4, middleDb = 7, loudDb = 10, middleLufs = [-10, -8] }
 
-# THE LIMITER — always on, with no tick; its setting is the target's ceiling. No gain reduction, no PLR and no cost of
-# the master limits how far it goes for the loudness: the ceiling alone is hard.
+# THE LIMITER — always on, with no tick; its setting is the target's ceiling. The ceiling is hard; its gain reduction is
+# held by [landing] limiterBudget, and no PLR and no other cost of the master limits how far it goes for the loudness.
 # ceilingMarginDb: the limiter is first given a ceiling this much below the promised one; the solver moves it from
 #   there.
 # releaseMs: the limiter's release — chosen, not yet calibrated by ear.
@@ -682,9 +697,10 @@ noProgrammeDb = -200
 #   so on a programme under −70 LUFS a pure gain moves the range (measured: +6 dB at −59.4 LUFS gave −7 LU).
 # THE LIMITER'S GAIN REDUCTION: its quantiles over grWindowSeconds windows, the core's; the trace's bucket count follows
 #   the duration, clamp(ceil(seconds / grWindowSeconds), grTraceBucketsMin, grTraceBucketsMax) — 4 ms up to about 4.4
-#   minutes, wider after, and then the real window is printed with the numbers. printedQuantiles: p50 and p95, both —
-#   silence lowers the median by half and the p95 by hundredths. The numbers are in the fields' names (p50Db, p95Db), so
-#   this list is a checked claim, not a knob.
+#   minutes, wider after, and then the real window is printed with the numbers. printedQuantiles: p50 and p95, both, over
+#   the ACTIVE windows (limiterActiveInputDb) — the windows the limiter has something to work on, so silence moves
+#   neither; the landing's budget reads the same p95. The numbers are in the fields' names (p50Db, p95Db), so this list
+#   is a checked claim, not a knob.
 # pumping: the limiter's pumping, from its gain-reduction trace through two 2nd-order Butterworth filters, a high-pass at
 #   highPassHz and a low-pass at lowPassHz; the first settleSeconds excluded; not measured when the trace runs slower than
 #   minTraceRateHz (five samples per period of 8 Hz — a hypothesis).
@@ -721,6 +737,28 @@ masterShorterByAtMost = 0.1
 minComparedShare = 0.5
 worstNamedAbove = 2
 quantile = 0.95
+
+# THE DAMAGE THE PROCESSING DID, HEARD: PEAQ Basic (ITU-R BS.1387, analysis::Peaq) of the master against a reference —
+# the same chain on the same path (the same stages, oversamplers, delays and order, the EQ, high-pass, mono bass, tilt,
+# shelf and bands as the master has them) with its dynamics at rest: the glue in its exact bypass (ratio 1, the lookahead
+# kept), and the whole chain fed referenceBelowDb lower (the input gain, within its own range), so the saturation runs in
+# its small-signal line and the limiter and its needles never reach the ceiling. Both before the dither: the master is
+# rendered once more without it, so a stage at rest leaves the two the same to the bit. One gain brings the reference to
+# the master's integrated loudness, both measured here. Both chains run at 48 kHz, PEAQ's rate, from the source — at
+# 48 kHz itself, or through a resampler of this core's own (a windowed sinc, resamplerTaps per phase, built from
+# deterministic math) — as the crest's impact check runs at the source's rate.
+# windowSeconds, hopSeconds: graded in windows, so a damaged chorus does not dissolve in six minutes — every hopSeconds a
+#   window of windowSeconds, the last ones cut by the end (a programme shorter than one window is one window); the window
+#   is a whole number of hops, at most four.
+# gradeFloorsOdg: the BS.1116 impairment scale by ODG, the lower edge of grades 5, 4, 3 and 2 — the midpoints between the
+#   scale's anchors 0 (5, imperceptible), -1 (4, perceptible but not annoying), -2 (3, slightly annoying), -3 (2, annoying)
+#   and -4 (1, very annoying). The share of the track where the damage is heard is the share of its windows graded below 5.
+[cost.damage]
+windowSeconds = 10
+hopSeconds = 5
+gradeFloorsOdg = [-0.5, -1.5, -2.5, -3.5]
+referenceBelowDb = 60
+resamplerTaps = 32
 
 # PROGRESS — an estimate, not a report: it may be wrong, and it may go back.
 # analysis: the steps of the file's measurement, weighed by the milliseconds each took on a 240-second 48 kHz stereo
