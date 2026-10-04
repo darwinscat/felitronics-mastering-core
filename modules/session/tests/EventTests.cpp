@@ -184,15 +184,15 @@ std::uint64_t eventsHash (const std::vector<Notification>& events)
     }
     return hash;
 }
-// The events of every job but a master's, renumbered. A master's job is known by what it publishes: a phase of the
-// landing (its passes, the remeasure, the conversion, the range, the final render) or a finished master.
+// The events of every job but a master's, renumbered. A master's job is known by what it publishes: every phase of it —
+// the wait for the measurement included — counts the landing's passes (totalPasses), which no measurement's or
+// needles' phase does, and a finished master names itself.
 std::vector<Notification> withoutMaster (const std::vector<Notification>& events)
 {
     std::vector<std::uint64_t> masters;
     for (const auto& e : events)
     {
-        const bool landing = e.kind == EventKind::Phase && e.payload.phase.name != PhaseName::Stream
-            && e.payload.phase.name != PhaseName::Report && e.payload.phase.name != PhaseName::Analyzers;
+        const bool landing = e.kind == EventKind::Phase && e.payload.phase.totalPasses != 0;
         const bool finished = e.kind == EventKind::Done && e.payload.done.masterId != 0;
         if ((landing || finished) && std::find (masters.begin(), masters.end(), e.jobId) == masters.end())
             masters.push_back (e.jobId);
@@ -307,6 +307,17 @@ void pump()
                 e.payload.phase.weightsVersion = before->all;
         return events;
     };
+    {
+        // A master waiting for the measurement publishes the analyzers' phase, counting its passes: a master's job.
+        std::vector<Notification> waiting (2);
+        waiting[0].seq = 1; waiting[0].jobId = 7; waiting[0].kind = EventKind::Phase;
+        waiting[0].payload.phase.name = PhaseName::Analyzers; waiting[0].payload.phase.totalPasses = 12;
+        waiting[1].seq = 2; waiting[1].jobId = 1; waiting[1].kind = EventKind::Phase;
+        waiting[1].payload.phase.name = PhaseName::Analyzers;
+        const auto kept = withoutMaster (waiting);
+        ok (kept.size() == 1 && kept[0].jobId == 1 && kept[0].seq == 1,
+            "a master waiting for the measurement is known as a master's job; the measurement's own phase is kept");
+    }
     // previousVersion takes out what moved the config's version alone — the targets' notes and the three broadcast
     // targets, the engine rows it lists, the EQ bands' tables, the landing's two keys — and with that version put back
     // every job's events but a master's are the ones that config gives.

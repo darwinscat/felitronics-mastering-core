@@ -195,15 +195,13 @@ void theLandingsFacts()
     std::optional<text::Fact> verdict;
     for (const auto& e : made.facts)
         if (e.jobId == made.id && e.payload.fact.view().id == text::FactId::MasterLandingBudget) verdict = e.payload.fact.view();
-    bool marked = false;
-    if (! summary.log.empty())
-        for (const auto& pass : summary.log)
-        {
-            const double drive = pass.gainDb - pass.ceilingDbTp;
-            const double delivered = summary.log.back().gainDb - summary.log.back().ceilingDbTp;
-            marked = marked || (pass.overBudget && drive > delivered && drive - delivered <= 0.25);
-        }
-    ok (marked, "the budget is named on its proof: the pass log marks a render over it within 0.25 dB above the one delivered");
+    double lowestOver = std::numeric_limits<double>::infinity();
+    for (const auto& pass : summary.log)
+        if (pass.overBudget) lowestOver = std::fmin (lowestOver, pass.gainDb - pass.ceilingDbTp);
+    const double delivered = summary.log.empty() ? 0.0 : summary.log.back().gainDb - summary.log.back().ceilingDbTp;
+    ok (! summary.log.empty() && lowestOver > delivered && lowestOver - delivered <= 0.25,
+        "the budget is named on its proof: the lowest render the pass log marks over it stands within 0.25 dB above the one "
+        "delivered");
     ok (summary.status == LandingStatus::TargetUnreachable && summary.binding == LandingConstraint::LimiterGainReduction
         && verdict && verdict->argCount == 3 && same (verdict->args[0].number, -5.0) && verdict->args[1].number <= -5.0
         && same (verdict->args[2].number, 10.0) && verdict->args[2].unit == text::Unit::Db

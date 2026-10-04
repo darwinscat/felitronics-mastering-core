@@ -457,7 +457,6 @@ private:
 
     bool inSourceGate (long long reading) const noexcept
     {
-        if (reading >= request_.sourceMomentaryCount) return false;
         const double v = request_.sourceMomentaryLufs[reading];
         if (! std::isfinite (v)) return false;
         const double e = energyOf (v);
@@ -483,6 +482,10 @@ private:
                 || ! core::exactlyEqual (measurement_.truePeakDbTp, best_.measured.truePeakDbTp)
                 || (haveBest_ && measurement_.truePeakDbTp > request_.maxTruePeakDbTp))
                 return fail (MasteringSolveStatus::Unavailable);
+            // The restored render is the candidate's own: its mark over the budget and its excess are the candidate's.
+            const auto restored = (std::size_t) (bestPass_ - 1);
+            rec.violated |= records_[restored].violated & constraintBit (MasteringConstraint::LimiterGainReduction);
+            budgetExcess_[(std::size_t) (passes_ - 1)] = budgetExcess_[restored];
             restoring_ = false; bestPass_ = passes_;
             return finishSearch();
         }
@@ -747,11 +750,12 @@ private:
     }
 
     // THE BUDGET'S PROOF: the candidate — the render to be delivered — stands within kBudgetResolutionDb under the lowest
-    // drive measured over the budget, short of the target.
+    // drive measured over the budget, short of the target, and no render within the budget has reached past the target
+    // (one that did proves the target reachable inside it).
     bool budgetSettled() const noexcept
     {
         const int over = lowestOverBudget();
-        if (! haveBest_ || over < 0 || bestLevel_ >= request_.targetLufs - request_.toleranceLu) return false;
+        if (! haveBest_ || haveAbove_ || over < 0 || bestLevel_ >= request_.targetLufs - request_.toleranceLu) return false;
         const double delivered = bestGain_ - bestCeiling_;
         return delivered < driveOf (over) && delivered >= driveOf (over) - kBudgetResolutionDb;
     }
