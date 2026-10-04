@@ -34,8 +34,9 @@
 - **Fixed — a landing pass's loudness is the same bits on every row** (mastering): the solver's pass meter (every pass,
   the verify, the product landing's search and report) reads the integrated loudness on `core::DetMath`, not the
   system libm's log10, whose result on gcc + glibc stood an ulp apart from Apple's and emscripten's on some energies
-  (two passes of the `max-mode` scenario's pass log on CI's gcc row). Apple and wasm read the same bits as before: no
-  trace, recording or PCM moves there.
+  (two passes of the `max-mode` scenario's pass log on CI's gcc row). The pass meter now gives the same bits on every
+  row; a stored loudness reading may move by an ulp on any row (the WAV contract's manual master reads −8.999992927225106
+  LUFS where it read −8.999992927225104, its PLR with it), and the WAV contract's PCM is unchanged (9a601c4c5e044b00).
 - **`FC_SESSION_ABI_VERSION` 10**: the manifest appends the enums, facts, terms and codec fields; `SURFACE[10]` adds no
   entry point. Existing targets' sound does not move (the WAV contract's PCM is unchanged); the `2026-10` defaults'
   config and sound versions move with the two rows and the `[landing.max]` table, restated in place (no project of those
