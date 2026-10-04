@@ -696,8 +696,8 @@ private:
 
     Session() noexcept = default;
     Capabilities capabilities_ {};
-    // `released`: live bytes the command frees before its first allocation (a master stops the damage being graded).
-    [[nodiscard]] Checked demand (const Checked& storage, std::uint64_t released = 0) const noexcept;
+    // Against the heap as it is, less what the command frees first (Checked::releasedBytes).
+    [[nodiscard]] Checked demand (const Checked& storage) const noexcept;
     [[nodiscard]] Answer reject (Answer answer) noexcept;
 
     // Are the devices placed — the machine's layer written for this source and target, and every measurement the

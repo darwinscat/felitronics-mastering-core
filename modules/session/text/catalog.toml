@@ -545,7 +545,8 @@ ru = "Мастер ждёт замер «{analyzer}» для прибора «{d
 en = "The master is waiting for the {analyzer} measurement for {device}: {progress}"
 
 # The damage the processing did, heard: PEAQ of the master against the same chain with its dynamics at rest, in windows
-# — the worst window's grade, where it starts, the share of the track heard; and the loudness range, input against master.
+# — the worst window's grade, where it starts, the share of the graded windows heard and how many were graded of all;
+# and the loudness range, input against master.
 [messages.masterDamage]
 ru = "Порча: {grade} — худшее место с отметки {from}; слышна в {share} оценённых окон (оценено окон: {graded} из {windows})."
 en = "Damage: {grade} — the worst place starts at {from}; heard in {share} of the windows graded (windows graded: {graded} of {windows})."

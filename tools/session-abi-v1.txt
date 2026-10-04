@@ -1926,3 +1926,8 @@ wire DamageEvent.completedWork string
 wire DamageEvent.totalWork string
 wire DamageEvent.state State
 wire union SessionEvent DamageEvent
+# The storage record's freed bytes (04.10, v0.14.0): a master stops the damage being graded before it allocates, and
+# fc_session_storage appends releasedBytes past its 32-byte base, so a shell's liveBytes - releasedBytes + bytes is the
+# command's own check (the base's sizeof line stands: a record grows past it).
+field fc_session_storage.releasedBytes double
+offset fc_session_storage.releasedBytes=32

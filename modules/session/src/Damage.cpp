@@ -406,17 +406,18 @@ void Damage::publish (MasterDamage& out) const noexcept
 {
     out.windowSeconds = plan_.rules.windowSeconds;
     out.hopSeconds = plan_.rules.hopSeconds;
-    out.windows = windows_;
-    out.audibleWindows = audible_;
-    out.ungradedWindows = ungraded_;
-    if (std::isfinite (masterLufs_) && std::isfinite (referenceLufs_) && stage_ == Stage::Done && reason_ == MeasurementReason::None)
-        out.referenceGainDb = masterLufs_ - referenceLufs_;   // against the reference lifted back (lift_)
-    // A walk that failed grades nothing, whatever windows closed before it failed.
+    // A walk that failed grades nothing, whatever windows closed before it failed: no count, no grade, no gain.
     if (reason_ != MeasurementReason::None)
     {
         out.status = MeasurementStatus::Unavailable; out.reason = reason_; out.verdict = DamageVerdict::NotRun;
+        out.windows = out.audibleWindows = out.ungradedWindows = 0;
         return;
     }
+    out.windows = windows_;
+    out.audibleWindows = audible_;
+    out.ungradedWindows = ungraded_;
+    if (std::isfinite (masterLufs_) && std::isfinite (referenceLufs_) && stage_ == Stage::Done)
+        out.referenceGainDb = masterLufs_ - referenceLufs_;   // against the reference lifted back (lift_)
     if (windows_ > 0)
     {
         const auto& f = plan_.rules.floors;

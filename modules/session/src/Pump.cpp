@@ -133,6 +133,8 @@ void Session::preferTempo (std::uint32_t waiting) noexcept
 }
 void Session::dropJob (JobId job) noexcept
 {
+    // The damage's job ends as its own (cancel says its fact first and ends it itself); never as the master's below.
+    if (job == damageJobId_ && job != 0) { endDamage (MeasurementReason::Cancelled, true); return; }
     if (job == needlesJob_ && job != 0)
     {
         clearNeedles();

@@ -187,7 +187,11 @@ typedef struct fc_session_storage
     uint32_t rejection;             // session Rejection; zero when priced, no mutation or events
     double bytes;                   // allocating demand, independent of current capacity
     double largestBlockBytes;       // largest allocation; import uses a conservative bound
-    double liveBytes;               // current declared bytes; caller can assess live + bytes
+    double liveBytes;               // current declared bytes; caller can assess live - released + bytes
+    // Appended (v0.14.0): live bytes the command frees before its first allocation — a master stops the damage being
+    // graded. The heap must hold liveBytes - releasedBytes + bytes, as the command's own check counts it. Written where
+    // the record's size reaches it.
+    double releasedBytes;
 } fc_session_storage;
 
 // Detailed source measurement demand. Counts include one retained result copy and its codec buffers.

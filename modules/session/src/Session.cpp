@@ -247,11 +247,11 @@ Status Session::setCapacity (const Capacity& capacity) noexcept
     capabilities_.largestFreeBlockBytes = capacity.largestFreeBlockBytes;
     return Status::Ok;
 }
-Checked Session::demand (const Checked& storage, std::uint64_t released) const noexcept
+Checked Session::demand (const Checked& storage) const noexcept
 {
     const auto bytes = storage.bytes;
     if (bytes == 0) return storage;
-    const auto live = std::uint64_t (liveBytes()) - std::min (released, std::uint64_t (liveBytes()));
+    const auto live = std::uint64_t (liveBytes()) - std::min (storage.releasedBytes, std::uint64_t (liveBytes()));
     if (bytes > 9007199254740991ull - live) return { Rejection::TooLong, kNoField, 0 };
     const double need = double (live + bytes);
     if (need > capabilities_.heapCeilingBytes || double (storage.largestBlockBytes) > capabilities_.largestFreeBlockBytes)
