@@ -48,7 +48,7 @@ writable   coff    ^__isa_available_default$        MSVC 14.5x's default for the
 # --- the config (src/Config.cpp, src/ConfigSchema.cpp) holds strings and containers, and asks three analyzers what they
 # --- admit: what the standard library compiles out of line for those, per library, and the exact libm calls of storageFor
 undefined  all     ^(memchr|wmemchr|strlen)$        std::find and char_traits over chars and 4-byte integers: a search of memory
-undefined  all     ^(__imp_)?(floor|ceil|lround|llround)$    rounding to an integer is exact — one answer from every libm (the det-math lint governs the inexact calls); the analyzers' storageFor rounds a hop to whole samples, its argument bounded first
+undefined  all     ^(__imp_)?(floor|ceil|trunc|lround|llround)$    rounding to an integer is exact — one answer from every libm (the det-math lint governs the inexact calls); the analyzers' storageFor rounds a hop to whole samples, its argument bounded first; PEAQ's noise quantiser truncates (UCRT keeps trunc a call)
 undefined  all     ^(__imp_)?fmin$               PeakExcursions ceiling-density bounds: exact selection of finite nonnegative histogram widths
 undefined  all     ^(__imp_)?(sqrt|fabs)$          the EQ response's nonnegative square roots and absolute values: correctly rounded IEEE sqrt and exact sign clearing; compilers may emit library entries
 undefined  all     ^_ZNK?St3__[12]12basic_stringIcNS_11char_traitsIcEENS_9allocatorIcEEE    std::string's members, which libc++ compiles once in its own library (an extern template): copies, appends, growth

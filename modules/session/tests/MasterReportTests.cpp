@@ -16,7 +16,9 @@
 #include <cstdio>
 #include <limits>
 #include <string>
+#include <span>
 #include <tuple>
+#include <utility>
 #include <vector>
 
 using namespace felitronics;
@@ -36,7 +38,9 @@ struct Case
 };
 bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool processed,
           bool waitForCrest = true, bool demanding = false, unsigned seconds = 4,
-          unsigned silentSeconds = 0, const char* target = nullptr, float divisor = 4096.0f)
+          unsigned silentSeconds = 0, const char* target = nullptr, float divisor = 4096.0f,
+          std::vector<session::Notification>* events = nullptr, bool fine = false, bool tones = false,
+          bool idleLimiter = false, bool grade = true)
 {
     c.rate = sourceRate; c.delivery = deliveryRate;
     const std::size_t frames = std::size_t (sourceRate) * seconds;
@@ -45,6 +49,18 @@ bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool pr
     {
         c.left[i] = float (int ((i * 17u) % 251u) - 125) / divisor;
         c.right[i] = float (int ((i * 19u + 7u) % 251u) - 125) / divisor;
+        if (tones)
+        {
+            // Band-limited and dynamic, for PEAQ: four partials up to 9.9 kHz (its bandwidth reads above 8.1 kHz, and
+            // nothing reaches 21.6 kHz), struck every half second and decaying — the glue and the limiter have work.
+            const double t = double (i) / double (sourceRate), beat = t - 0.5 * std::floor (t / 0.5);
+            const double env = std::exp (-6.0 * beat) * 0.5;
+            const double tw = 6.283185307179586 * t;
+            const double x = env * (std::sin (220.0 * tw) + 0.5 * std::sin (1100.0 * tw) + 0.3 * std::sin (3300.0 * tw)
+                                    + 0.2 * std::sin (9900.0 * tw));
+            c.left[i] = float (x);
+            c.right[i] = float (0.9 * x + 0.05 * std::sin (440.0 * tw) * env);
+        }
         if (i < std::size_t (sourceRate) * silentSeconds) c.left[i] = c.right[i] = 0.0f;
     }
     if (! demanding) c.right.back() -= 0.15f;
@@ -63,6 +79,9 @@ bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool pr
             != session::MeasurementStatus::Ready)) return false;
     if (demanding && s.apply (session::command::EditTarget { 9, { -5.0, -6.0 } }).rejection
         != session::Rejection::None) return false;
+    // A target well under the programme: the landing lowers it, and the limiter never reaches its ceiling.
+    if (idleLimiter && s.apply (session::command::EditTarget { 9, { -24.0, -1.0 } }).rejection
+        != session::Rejection::None) return false;
     // The delivery rate is the target's: a changed rate names a target that delivers it (youtube at 48 kHz with the
     // allStreaming numbers, cdDynamic at 44.1 kHz), and the request restates that rate.
     if (! target && deliveryRate != 0 && deliveryRate != sourceRate)
@@ -76,7 +95,7 @@ bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool pr
     c.request.ready.topology.eq = processed;
     c.request.ready.topology.compressor = processed;
     c.request.ready.topology.clipper = processed;
-    c.request.ready.topology.limiter = processed || demanding;
+    c.request.ready.topology.limiter = processed || demanding || idleLimiter;
     c.request.ready.topology.dither = false;
     if (processed)
     {
@@ -96,11 +115,20 @@ bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool pr
     std::uint64_t largestStep = 0;
     for (unsigned i = 0; i < 400000 && s.job() != 0; ++i)
     {
-        const auto stepSpent = declared::spend ([&] { (void) s.step (i % 3u == 0 ? 1u : i % 3u == 1 ? 7u : 73u); });
+        const auto stepSpent = declared::spend ([&] { (void) s.step (fine ? 1u : i % 3u == 0 ? 1u : i % 3u == 1 ? 7u : 73u); });
         largestStep = std::max (largestStep, std::uint64_t (stepSpent.bytes));
+        if (events) for (const auto& e : s.events()) events->push_back (e);
     }
-    if (s.job() != 0 || largestStep > checked.bytes || s.masters().size() != 1
-        || ! s.masters()[0].report || ! s.masters()[0].landing) return false;
+    if (s.job() != 0 || s.masters().size() != 1 || ! s.masters()[0].report || ! s.masters()[0].landing) return false;
+    // The damage's own job, after the master and behind the source's measurement: graded here where that has ended
+    // (a case that leaves the measurement running keeps its state), inside the master's admitted demand too.
+    for (unsigned i = 0; grade && i < 400000 && s.damageJob() != 0 && s.measurementJob() == 0; ++i)
+    {
+        const auto stepSpent = declared::spend ([&] { (void) s.step (fine ? 1u : i % 3u == 0 ? 1u : i % 3u == 1 ? 7u : 73u); });
+        largestStep = std::max (largestStep, std::uint64_t (stepSpent.bytes));
+        if (events) for (const auto& e : s.events()) events->push_back (e);
+    }
+    if ((grade && s.damageJob() != 0 && s.measurementJob() == 0) || largestStep > checked.bytes) return false;
     c.token = s.pendingMaster();
     const auto shape = s.masterAudioShape (c.token);
     if (c.token.master == 0 || (deliveryRate != 0 && shape.sampleRate != deliveryRate)) return false;
@@ -239,6 +267,9 @@ bool joinedOnce (std::string& why)
     const auto k1 = s.masters()[0].report->cost ? s.masters()[0].report->cost->crestFullDb.value : std::nullopt;
     if (s.apply (session::command::Cancel { 3, measuring }).rejection != session::Rejection::None)
     { why = "cancel"; return false; }
+    // The master's damage, graded by its own job after it, is no join: it stops here, so what follows is the join alone.
+    if (s.damageJob() == 0 || s.apply (session::command::Cancel { 4, s.damageJob() }).rejection != session::Rejection::None)
+    { why = "cancel the damage"; return false; }
     const auto revision = s.revision();
     unsigned facts = 0;
     for (unsigned i = 0; i < 1000 && s.step (1).state == session::StepState::More; ++i)
@@ -341,6 +372,10 @@ bool memoryLifecycle (Case& c)
     const auto exercise = [&] (const char* target, session::CommandId id, bool cancel,
                                bool testRefusal) -> bool
     {
+        // The previous master's damage ends first: this lifecycle is the master's own (a master priced while a damage
+        // runs is MasterJobTests' masterAtTheCeilingWithADamage).
+        for (unsigned i = 0; i < 400000 && s.damageJob() != 0; ++i) (void) s.step (73);
+        if (s.damageJob() != 0) return false;
         if (s.apply (session::command::SetTarget { id + 200u, target }).rejection != session::Rejection::None)
             return false;
         auto request = c.request;
@@ -472,8 +507,369 @@ void costLinesAndReadings()
     }
 }
 
+// THE DAMAGE (MasterReport.damage): PEAQ of the master against the same chain with its dynamics at rest, in windows; the
+// loudness range input against master; and the current walk's share of the file in every master phase that walks.
+std::vector<session::text::FactId> factsOf (const std::vector<session::Notification>& events)
+{
+    std::vector<session::text::FactId> out;
+    for (const auto& e : events)
+        if (e.kind == session::EventKind::Fact) out.push_back (e.payload.fact.view().id);
+    return out;
+}
+bool has (const std::vector<session::text::FactId>& facts, session::text::FactId id)
+{ return std::find (facts.begin(), facts.end(), id) != facts.end(); }
+void damage()
+{
+    using session::text::FactId;
+    // A master whose chain does nothing (no EQ, glue, saturation, limiter or dither): the reference is the master to the
+    // rounding of a gain — PEAQ's Transparent, grade 5, nothing heard; the line says so.
+    {
+        Case c; std::vector<session::Notification> events;
+        const bool made = run (c, 48000, 48000, false, true, false, 4, 0, nullptr, 4096.0f, &events, false, true);
+        ok (made, "a master of a chain that does nothing is delivered");
+        if (made)
+        {
+            const auto& d = c.session->masters()[0].report->damage;
+            ok (d.status == session::MeasurementStatus::Ready && d.verdict == session::DamageVerdict::Transparent
+                && d.grade == 5 && d.worstOdg && *d.worstOdg == 0.0 && d.windows == 1 && d.audibleWindows == 0
+                && d.audibleShare && *d.audibleShare == 0.0 && d.worstFromSeconds && *d.worstFromSeconds == 0.0
+                && d.windowSeconds == 10.0 && d.hopSeconds == 5.0,
+                "a chain at rest is Transparent: grade 5, ODG 0, no window heard (one 10 s window over 4 s)");
+            ok (has (factsOf (events), FactId::MasterDamageInaudible) && ! has (factsOf (events), FactId::MasterDamage),
+                "a damage nobody hears is said as such");
+        }
+    }
+    // The limiter in the chain (its oversampled true-peak path, its lookahead) at rest: a target far under the programme.
+    // The reference takes the same path, so the two are equal to a gain's rounding — Transparent, not PEAQ's -2 on the
+    // structure a path of other filters and delays would leave.
+    {
+        Case c; std::vector<session::Notification> events;
+        const bool made = run (c, 48000, 48000, false, true, false, 4, 0, nullptr, 4096.0f, &events, false, true, true);
+        ok (made, "a master with its limiter at rest is delivered");
+        if (made)
+        {
+            const auto& d = c.session->masters()[0].report->damage;
+            ok (d.status == session::MeasurementStatus::Ready && d.verdict == session::DamageVerdict::Transparent && d.grade == 5,
+                "a limiter that never reaches its ceiling leaves the master Transparent against its reference");
+        }
+    }
+    // A master that works — glue at -30 dB 2.5:1, the soft clipper half wet, the limiter landing it: graded, the worst
+    // window named with its grade on the BS.1116 scale. The numbers are this source's, pinned (native and wasm alike).
+    {
+        Case c; std::vector<session::Notification> events;
+        const bool made = run (c, 48000, 48000, true, true, true, 4, 0, nullptr, 4096.0f, &events, false, true);
+        ok (made, "a processed master is delivered");
+        if (made)
+        {
+            const auto& d = c.session->masters()[0].report->damage;
+            ok (d.status == session::MeasurementStatus::Ready && d.verdict == session::DamageVerdict::Graded && d.worstOdg
+                && *d.worstOdg < 0.0 && d.grade >= 1 && d.grade <= 5 && d.worstDi && d.windows == 1,
+                "a master whose dynamics work is graded");
+            const double odg = d.worstOdg.value_or (0.0);
+            const unsigned grade = odg >= -0.5 ? 5u : odg >= -1.5 ? 4u : odg >= -2.5 ? 3u : odg >= -3.5 ? 2u : 1u;
+            ok (d.grade == grade && d.audibleWindows == (grade < 5u ? 1u : 0u),
+                "the grade is the BS.1116 scale's for the worst window's ODG (edges -0.5, -1.5, -2.5, -3.5)");
+            const auto facts = factsOf (events);
+            ok (grade < 5u ? has (facts, FactId::MasterDamage) : has (facts, FactId::MasterDamageInaudible),
+                "the damage's line comes after the master, from the damage's own job");
+            // THE GRADE OF THIS SOURCE, pinned. The walks gave the same inside the master's job (186f9c5) until the
+            // reference went the whole referenceBelowDb lower where the input gain's range stops short: this master's
+            // input gain is under 0 dB, so 186f9c5 lowered its reference by less (ODG -3.8489970, DI -3.4359317, gain
+            // -50.0476 dB there). The limiter's budget (v0.14.0's landing) then holds this demanding master short of its
+            // target: its limiter takes about 13 dB, no longer 52 (ODG -3.8374910, DI -3.3489147, gain -52.5884 dB
+            // before it). Its soft clipper is a stage on libm, so ODG and DI agree between native and wasm only
+            // to PEAQ's spread (docs/SESSION.md: ODG by 2.4e-4, DI by 1.9e-3 here), the reference's gain to the chains'
+            // (1e-5 dB); the rest exactly.
+            ok (d.grade == 1 && d.windows == 1 && d.audibleWindows == 1 && d.ungradedWindows == 0
+                && d.worstFromSeconds == 0.0 && d.audibleShare == 1.0
+                && std::fabs (odg - -3.8521412321891675) <= 5e-4 && std::fabs (d.worstDi.value_or (0.0) - -3.4609979630950791) <= 5e-3
+                && d.referenceGainDb && std::fabs (*d.referenceGainDb - -12.874484955323663) <= 1e-5
+                && d.sourceLraLu == 0.0 && d.masterLraLu == 0.0 && d.lraChangeLu == 0.0 && ! d.lraChangePercent
+                && d.lraReason == session::MeasurementReason::NoSignal && d.reason == session::MeasurementReason::None,
+                "the damage of this source, its reference the whole referenceBelowDb lower: "
+                "ODG " + std::to_string (odg) + ", DI " + std::to_string (d.worstDi.value_or (0.0)) + ", gain "
+                + std::to_string (d.referenceGainDb.value_or (0.0)) + " dB");
+        }
+    }
+    // THE LINE SAYS WHAT WAS GRADED: windows PEAQ could not grade (silence, nothing it reads) are no part of the verdict,
+    // so a line never stretches it to the whole track — 30 s, five windows, two of them silent: "nothing heard" is said
+    // of the three graded, and both languages name the three of five; a heard grade names its share of the graded ones.
+    {
+        using session::text::Lang;
+        session::MasterDamage d;
+        d.status = session::MeasurementStatus::Ready; d.reason = session::MeasurementReason::None;
+        d.verdict = session::DamageVerdict::Transparent; d.grade = 5; d.worstOdg = 0.0; d.worstFromSeconds = 0.0;
+        d.windows = 3; d.audibleWindows = 0; d.ungradedWindows = 2; d.audibleShare = 0.0;
+        const auto quiet = session::MasterReportText::damage (d);
+        const auto ru = session::text::Text::text (quiet, Lang::Ru), en = session::text::Text::text (quiet, Lang::En);
+        d.verdict = session::DamageVerdict::Graded; d.grade = 3; d.worstOdg = -2.0; d.worstFromSeconds = 15.0;
+        d.audibleWindows = 1; d.audibleShare = 1.0 / 3.0;
+        const auto heard = session::MasterReportText::damage (d);
+        const auto heardRu = session::text::Text::text (heard, Lang::Ru), heardEn = session::text::Text::text (heard, Lang::En);
+        ok (quiet.id == FactId::MasterDamageInaudible && ru.find ("3 из 5") != std::string::npos && en.find ("3 of 5") != std::string::npos
+            && ru.find ("трек") == std::string::npos && en.find ("track") == std::string::npos
+            && heard.id == FactId::MasterDamage && heardRu.find ("3 из 5") != std::string::npos
+            && heardEn.find ("3 of 5") != std::string::npos && heardRu.find ("с отметки 15") != std::string::npos,
+            "the damage's line names the windows graded of all and never the whole track: «" + ru + "» / «" + en + "»; «"
+            + heardRu + "» / «" + heardEn + "»");
+    }
+    // The loudness range of a programme too short to have one: the line says why, and no number is made up.
+    {
+        Case c; std::vector<session::Notification> events;
+        const bool made = run (c, 48000, 48000, true, false, false, 2, 0, nullptr, 4096.0f, &events);
+        ok (made, "a 2 s master is delivered");
+        if (made)
+        {
+            const auto& d = c.session->masters()[0].report->damage;
+            ok (! d.masterLraLu && ! d.lraChangeLu && ! d.lraChangePercent && d.lraReason == session::MeasurementReason::TooShort,
+                "a programme too short for a loudness range: its change is absent, the reason TooShort");
+            ok (has (factsOf (events), FactId::MasterLraUnmeasured), "the loudness range's line says why it was not measured");
+            const auto said = session::MasterReportText::lra (d);
+            ok (said.id == FactId::MasterLraUnmeasured && said.args[0].termId == session::text::Term::ReasonTooShort,
+                "...with the reason as its term");
+        }
+    }
+    // The current walk's share of the file, in every phase of a master that walks: 0..1, counting up within a walk; the
+    // bookkeeping between two walks has none, so a new walk follows a step without one and starts from near 0; the
+    // damage's two walks are phases of their own; the end and the waits have none.
+    {
+        Case c; std::vector<session::Notification> events;
+        const bool made = run (c, 48000, 48000, true, true, false, 4, 0, nullptr, 4096.0f, &events, true);
+        ok (made, "a master stepped one unit at a time is delivered");
+        bool inRange = true, rising = true, reference = false, graded = false, finalHasNone = true, passes = false;
+        double last = -1.0;
+        for (const auto& e : events)
+        {
+            if (e.kind != session::EventKind::Phase) continue;
+            const auto& p = e.payload.phase;
+            // The master's phases: the measurement's and the needles' (Stream, Report, Analyzers) are not walked here.
+            if (p.name == session::PhaseName::Stream || p.name == session::PhaseName::Report
+                || p.name == session::PhaseName::Analyzers) continue;
+            if (p.name == session::PhaseName::Final) { finalHasNone = finalHasNone && ! p.stepFraction; last = -1.0; continue; }
+            if (! p.stepFraction) { last = -1.0; continue; }
+            const double f = *p.stepFraction;
+            inRange = inRange && f >= 0.0 && f <= 1.0;
+            // Within a walk it never goes back; a new walk comes after a step that walks nothing, from its beginning.
+            rising = rising && (last < 0.0 ? f < 0.05 : f >= last);
+            last = f;
+            reference = reference || (p.name == session::PhaseName::Reference && f > 0.9);
+            graded = graded || (p.name == session::PhaseName::Damage && f > 0.9);
+            passes = passes || (p.name == session::PhaseName::Pass && f > 0.9);
+        }
+        ok (made && inRange && rising && reference && graded && passes && finalHasNone,
+            "stepFraction walks 0..1 within each walk, Reference and Damage are phases with their own walk, Final has none");
+    }
+}
+
+// THE DAMAGE AFTER THE MASTER: the master is delivered when its own work ends, its report says the damage is Pending, and
+// a job of its own grades it — announced by the Damage event right after Done, ended by it with the result. During its
+// walks a new master is taken (the damage stops, Superseded), a cancel stops the damage alone, a forget stops it with
+// its master; each says so.
+std::size_t firstWalk (const std::vector<session::Notification>& events, session::PhaseName name)
+{
+    for (std::size_t i = 0; i < events.size(); ++i)
+        if (events[i].kind == session::EventKind::Phase && events[i].payload.phase.name == name) return i;
+    return events.size();
+}
+// Steps one unit at a time until the damage's second walk (PEAQ) has fed `past` of the programme: on a 16 s programme
+// 0.7 is 11.2 s in, past the end of the first 10 s window, closed and graded — the walk midway, a window behind it.
+session::JobId stepIntoGrading (session::Session& s, std::vector<session::Notification>& events, double past = 0.7)
+{
+    for (unsigned i = 0; i < 400000; ++i)
+    {
+        if (s.step (1).state == session::StepState::Done) return 0;
+        for (const auto& e : s.events())
+        {
+            events.push_back (e);
+            if (e.kind == session::EventKind::Phase && e.payload.phase.name == session::PhaseName::Damage
+                && e.payload.phase.stepFraction && *e.payload.phase.stepFraction > past) return e.jobId;
+        }
+    }
+    return 0;
+}
+// The damage job's events in a batch, in order: its kinds and, for a fact, its id.
+std::vector<std::pair<session::EventKind, unsigned>> jobEvents (std::span<const session::Notification> batch, session::JobId job)
+{
+    std::vector<std::pair<session::EventKind, unsigned>> out;
+    for (const auto& e : batch)
+        if (e.jobId == job)
+            out.emplace_back (e.kind, e.kind == session::EventKind::Fact ? unsigned (e.payload.fact.view().id) : 0u);
+    return out;
+}
+void damageAfterMaster()
+{
+    using session::text::FactId;
+    using session::EventKind;
+    using session::MeasurementReason;
+    using session::MeasurementStatus;
+    // Delivered first: at the master's Done the report says Pending, the master's PCM is there, and no walk of the damage
+    // has run; then its job announces itself, walks, and ends with the grade.
+    {
+        Case c; std::vector<session::Notification> events;
+        const bool made = run (c, 48000, 48000, true, true, true, 4, 0, nullptr, 4096.0f, &events, false, true, false, false);
+        ok (made, "a processed master is delivered with its damage still to grade");
+        if (made)
+        {
+            auto& s = *c.session;
+            const auto master = s.masters()[0].id;
+            const auto& d = s.masters()[0].report->damage;
+            std::size_t done = events.size();
+            for (std::size_t i = 0; i < events.size(); ++i)
+                if (events[i].kind == EventKind::Done) done = i;
+            ok (done < events.size() && d.status == MeasurementStatus::Pending && d.reason == MeasurementReason::Pending
+                && firstWalk (events, session::PhaseName::Reference) == events.size()
+                && firstWalk (events, session::PhaseName::Damage) == events.size() && ! c.delivered.empty(),
+                "the master is delivered before its damage is graded: Done, the PCM, the report Pending, no walk of it yet");
+            bool pendingLine = false;
+            for (const auto& e : events)
+                if (e.kind == EventKind::Fact && e.jobId == master && e.payload.fact.view().id == FactId::MasterDamageUnmeasured)
+                    pendingLine = e.payload.fact.view().args[0].termId == session::text::Term::ReasonPending;
+            const auto job = s.damageJob();
+            ok (pendingLine && job != 0 && job != master && done + 1 < events.size()
+                && events[done + 1].kind == EventKind::Damage && events[done + 1].jobId == job
+                && events[done + 1].payload.damage.masterId == master
+                && events[done + 1].payload.damage.status == MeasurementStatus::Pending
+                && s.snapshot().view().damageJob == job && s.snapshot().view().masters[0].report->damage.status == MeasurementStatus::Pending,
+                "the master's damage line says Pending, and the Damage event right after Done names the damage's own job");
+            // The needles the demanding target asked for run first: the damage waits behind every other work.
+            std::vector<session::Notification> after;
+            bool behind = true;
+            for (unsigned i = 0; i < 400000 && s.damageJob() != 0; ++i)
+            {
+                (void) s.step (7);
+                for (const auto& e : s.events())
+                {
+                    if (e.jobId == job) after.push_back (e);
+                    else behind = behind && after.size() <= 1u;
+                }
+            }
+            bool walked = false, graded = false;
+            for (const auto& e : after)
+                if (e.kind == EventKind::Phase && e.payload.phase.stepFraction)
+                {
+                    walked = walked || e.payload.phase.name == session::PhaseName::Reference;
+                    graded = graded || e.payload.phase.name == session::PhaseName::Damage;
+                }
+            const auto n = after.size();
+            ok (s.damageJob() == 0 && behind && walked && graded && n >= 3 && after[n - 1].kind == EventKind::Damage
+                && after[n - 1].payload.damage.masterId == master && after[n - 1].payload.damage.status == MeasurementStatus::Ready
+                && after[n - 2].kind == EventKind::Fact && after[n - 2].payload.fact.view().id == FactId::MasterDamage
+                && after[n - 3].kind == EventKind::Phase && after[n - 3].payload.phase.name == session::PhaseName::Final
+                && d.status == MeasurementStatus::Ready && d.grade == 1 && s.step (1).state == session::StepState::Done,
+                "the damage's job walks its two phases, then says the grade and ends with the Damage event, Ready");
+        }
+    }
+    // A new master asked midway through the damage's PEAQ walk, a window graded behind it: taken at once; the old damage
+    // stops, Superseded, saying so — its line, then the damage event last.
+    {
+        Case c;
+        const bool made = run (c, 48000, 48000, true, true, true, 16, 0, nullptr, 4096.0f, nullptr, false, true, false, false);
+        ok (made, "a master is delivered, its damage pending");
+        if (made)
+        {
+            auto& s = *c.session;
+            std::vector<session::Notification> events;
+            const auto grading = stepIntoGrading (s, events);
+            const auto first = s.masters()[0].id;
+            // The shell takes the PCM as it comes: the next master is asked with none pending.
+            const bool released = s.releaseMaster (c.token) == session::MasterTransferStatus::Ok;
+            auto request = c.request;
+            request.id = 30; request.source = s.source().hash; request.revision = s.revision();
+            const auto checked = s.check (request);
+            session::Answer answer;
+            const auto spent = declared::spend ([&] { answer = s.apply (request); });
+            bool line = false, said = false;
+            for (const auto& e : s.events())
+            {
+                if (e.kind == EventKind::Fact && e.jobId == grading && e.payload.fact.view().id == FactId::MasterDamageUnmeasured)
+                    line = e.payload.fact.view().args[0].termId == session::text::Term::ReasonSuperseded;
+                if (e.kind == EventKind::Damage && e.jobId == grading)
+                    said = e.payload.damage.masterId == first && e.payload.damage.status == MeasurementStatus::Cancelled
+                        && e.payload.damage.reason == MeasurementReason::Superseded;
+            }
+            const auto order = jobEvents (s.events(), grading);
+            const bool closed = order.size() == 2 && order[0].second == unsigned (FactId::MasterDamageUnmeasured)
+                && order[1].first == EventKind::Damage;
+            const auto& old = s.masters()[0].report->damage;
+            ok (grading != 0 && released && answer.rejection == session::Rejection::None && line && said && closed && s.damageJob() == 0
+                && old.status == MeasurementStatus::Cancelled && old.reason == MeasurementReason::Superseded
+                && declared::covers (checked.bytes, spent),
+                "a master asked during the damage's walks is taken; that damage stops as Superseded, its line and event say so");
+            for (unsigned i = 0; i < 400000 && (s.job() != 0 || s.damageJob() != 0); ++i) (void) s.step (73);
+            ok (s.masters().size() == 2 && s.masters()[1].report->damage.status == MeasurementStatus::Ready
+                && s.masters()[0].report->damage.status == MeasurementStatus::Cancelled,
+                "the new master's damage is graded by a job of its own; the old one stays as it stopped");
+        }
+    }
+    // Cancelled by its id midway through its PEAQ walk: the master stays whole, its PCM still there; the damage says
+    // Cancelled — the cancel's fact, its line, then the damage event, which closes the job.
+    {
+        Case c;
+        const bool made = run (c, 48000, 48000, true, true, true, 16, 0, nullptr, 4096.0f, nullptr, false, true, false, false);
+        if (made)
+        {
+            auto& s = *c.session;
+            std::vector<session::Notification> events;
+            const auto grading = stepIntoGrading (s, events);
+            const auto answer = s.apply (session::command::Cancel { 31, grading });
+            bool said = false;
+            for (const auto& e : s.events())
+                if (e.kind == EventKind::Damage)
+                    said = e.payload.damage.status == MeasurementStatus::Cancelled && e.payload.damage.reason == MeasurementReason::Cancelled;
+            const auto order = jobEvents (s.events(), grading);
+            const bool closed = order.size() == 3 && order[0].second == unsigned (FactId::Cancelled)
+                && order[1].second == unsigned (FactId::MasterDamageUnmeasured) && order[2].first == EventKind::Damage;
+            std::vector<float> copy (c.delivered.size());
+            bool quiet = true, more = true;
+            for (unsigned i = 0; i < 400000 && more; ++i)
+            {
+                more = s.step (73).state == session::StepState::More;
+                for (const auto& e : s.events()) quiet = quiet && e.jobId != grading;
+            }
+            ok (grading != 0 && answer.rejection == session::Rejection::None && said && closed && s.damageJob() == 0
+                && s.masters().size() == 1 && s.masters()[0].report->damage.status == MeasurementStatus::Cancelled
+                && s.copyMaster (c.token, copy) == session::MasterTransferStatus::Ok && copy == c.delivered && quiet,
+                "cancelling the damage's job midway stops the damage alone: the master and its PCM stay, the report says "
+                "Cancelled, and the damage event is the job's last word");
+        }
+        else ok (false, "a master is delivered for the cancel");
+    }
+    // Forgotten midway through its damage's PEAQ walk: the job stops with it, without a line for a master no longer kept.
+    {
+        Case c;
+        const bool made = run (c, 48000, 48000, true, true, true, 16, 0, nullptr, 4096.0f, nullptr, false, true, false, false);
+        if (made)
+        {
+            auto& s = *c.session;
+            std::vector<session::Notification> events;
+            const auto grading = stepIntoGrading (s, events);
+            const auto master = s.masters()[0].id, job = s.damageJob();
+            const auto answer = s.apply (session::command::Forget { 32, master });
+            bool line = false, said = false;
+            for (const auto& e : s.events())
+            {
+                line = line || e.kind == EventKind::Fact;
+                said = said || (e.kind == EventKind::Damage && e.jobId == job && e.payload.damage.masterId == master
+                                && e.payload.damage.status == MeasurementStatus::Cancelled);
+            }
+            bool quiet = true, more = true;
+            for (unsigned i = 0; i < 400000 && more; ++i)
+            {
+                more = s.step (73).state == session::StepState::More;
+                for (const auto& e : s.events()) quiet = quiet && e.jobId != job;
+            }
+            ok (job != 0 && grading == job && answer.rejection == session::Rejection::None && said && ! line && s.damageJob() == 0
+                && s.masters().empty() && quiet,
+                "forgetting a master whose damage is graded stops that job, with its event and no line");
+        }
+        else ok (false, "a master is delivered for the forget");
+    }
+}
+
 int main()
 {
+    damage();
+    damageAfterMaster();
     Case normalFirst, normalLate, fractionalFirst, fractionalLate;
     ok (run (normalFirst, 48000, 48000, false, true, false, 4, 0, nullptr, 512.0f)
         && referenceCrest (normalFirst) && crestK1Ready (normalFirst),

@@ -144,5 +144,10 @@ int main()
     std::string measuredJson (std::size_t (measuredCounter.size), '\0');
     detail::Writer measuredWriter; measuredWriter.output = measuredJson.data(); measuredWriter.value (measured);
     std::puts (measuredJson.c_str());
+    DamageChange damage { 7, MeasurementStatus::Cancelled, MeasurementReason::Superseded };
+    detail::Writer damageCounter; damageCounter.value (damage);
+    std::string damageJson (std::size_t (damageCounter.size), '\0');
+    detail::Writer damageWriter; damageWriter.output = damageJson.data(); damageWriter.value (damage);
+    std::puts (damageJson.c_str());
     return 0;
 }

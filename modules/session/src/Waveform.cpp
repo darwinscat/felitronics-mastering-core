@@ -54,7 +54,8 @@ void Session::stepWaveform() noexcept
     const auto frames = run.index.framesSeen();
     measurementProgress_ = { PhaseName::Stream, 0.05 * double (frames) / double (source_.frames),
         config::Config::versions().all, 0, 0, std::uint32_t (std::min<std::uint64_t> (frames / 1024u + 1u, 4294967295u)),
-        std::uint32_t (std::min<std::uint64_t> ((source_.frames + 1023u) / 1024u + 1u, 4294967295u)) };
+        std::uint32_t (std::min<std::uint64_t> ((source_.frames + 1023u) / 1024u + 1u, 4294967295u)),
+        std::optional<double> (double (frames) / double (source_.frames)) };
     Notification event; event.jobId = measurementJob_;
     if (run.finished)
     {

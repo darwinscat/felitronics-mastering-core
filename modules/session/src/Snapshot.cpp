@@ -275,6 +275,8 @@ SnapshotView Session::buildView() const noexcept
     v.machineDifferences = { differences_, differenceCount_ };
     v.measurementProgress = measurementProgress_;
     v.masterProgress = masterProgress_;
+    v.damageJob = damageJobId_;
+    v.damageProgress = damageProgress_;
     v.integratedLufs = std::numeric_limits<double>::quiet_NaN();
     for (const auto& value : measurementResults_[0].numbers)
         if (value.name == "integratedLufs" && value.value) v.integratedLufs = *value.value;

@@ -74,7 +74,9 @@ export function compare(name, native, wasm) {
 // trace still has ONE shape: the same records, sessions and kinds in the same order, the same keys, every string, every
 // boolean and every integer-valued pair identical (counts, ids, revisions, iterations), a project text byte for byte;
 // only a pair of numbers that is not two integers may differ, by at most t·max(1, |a|, |b|) — JSON numbers and the
-// owned f64 rows alike. The platform budgets are masked as compare() masks them.
+// owned f64 rows alike. The platform budgets are masked as compare() masks them. A master's damage (PEAQ, v0.14.0) reads
+// that PCM through the model's network, which carries a last-bit difference about fiftyfold (its DI by 5e-5 on
+// saturation-type): that scenario's tolerance is 1e-4.
 export function compareWithin(name, native, wasm, tolerance) {
     const left = records(platformBudgets(native)), right = records(platformBudgets(wasm));
     const fail = (where, a, b) => { throw new Error(`${name}: ${where} differs beyond ${tolerance}\nnative: ${a}\nwasm:   ${b}`); };

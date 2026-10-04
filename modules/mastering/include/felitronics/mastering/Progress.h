@@ -42,6 +42,12 @@ public:
     explicit ProgressClock (const ProgressCallback& callback) noexcept : cb_ (callback) {}
 
     bool stopped() const noexcept { return stopped_; }
+    // How far the walk begun last has come, 0..1: the units consumed against the units it began with. It counts with
+    // or without a callback, so a stepped caller with none reads its pass's own progress here; begin() starts it at 0.
+    double walked() const noexcept
+    {
+        return units_ > 0 ? std::min (1.0, (double) done_ / (double) units_) : 0.0;
+    }
 
     [[nodiscard]] bool begin (ProgressStage stage, int pass, int maxPasses, long long units, long long frames) noexcept
     {

@@ -2,7 +2,7 @@
 # Copyright (c) 2026 Darwin's Cat — Oleh Tsymaienko & Alisa Lafoks. Part of felitronics-mastering-core — see LICENSE.
 
 cmake_minimum_required(VERSION 3.22)
-project(felitronics_mastering_core VERSION 0.13.0 LANGUAGES CXX)
+project(felitronics_mastering_core VERSION 0.14.0 LANGUAGES CXX)
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 

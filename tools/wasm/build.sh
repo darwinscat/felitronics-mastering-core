@@ -16,6 +16,7 @@
 #                 first module with a COMPILED library behind it: the sources modules/session/sources.txt lists, with the
 #                 flags modules/session/build-flags.txt states and the library's releases, and its config embedded as
 #                 the CMake build embeds it. See the fc_session section.
+#   fcpeaq.*    — never shipped: tools/fcore_peaq.cpp for node, so CI can diff PEAQ's output against the native CLI's.
 #   tierup/     — never shipped: fctempo, fcprobe and fcsession linked again with their function names, so the build
 #                 proves the tempo detector's hot loops survived the optimiser (tools/wasm/tierup-check.mjs).
 #
@@ -371,6 +372,15 @@ echo
 echo "=== size (fc_tempo, and what it saves a page that wants only a tempo)"
 sizes fctempo.web.wasm fctempo.web.mjs fcprobe.web.wasm
 
+# fcpeaq.node.js — tools/fcore_peaq.cpp, the PEAQ CLI itself, compiled for wasm and run by node on the host's files
+# (NODERAWFS). Never shipped: it exists so CI can diff its stdout against the native fcore_peaq's — analysis::Peaq
+# promises the same bits on both rows, and this is where the promise is checked. The probe's front flags (contract off,
+# no fast math, SIMD128), plus core's io for the WAV reader.
+echo
+echo "--- fc_peaq node (the PEAQ CLI, diffed against native fcore_peaq)"
+em++ "${FRONT[@]}" -DFELITRONICS_PEAQ_FLAGS=1 -I"$CORE/modules/io/include" -O3 -sNODERAWFS=1 -sALLOW_MEMORY_GROWTH=1 -sEXIT_RUNTIME=1 \
+     "$ROOT/tools/fcore_peaq.cpp" -o "$OUT/fcpeaq.node.js"
+
 #==================================================================================================
 # THE FIRST ANALYSIS — the tempo detector's hot loops must be functions of their own in every module that carries it
 # (RELEASE above says why, TempoDetector.h "WHERE THE TIME IS SPENT" says which). Losing one changes no answer, only
@@ -627,7 +637,7 @@ done
 cmake -DBANDS="$BANDS" -DOUTPUT="$SGEN/embedded/band-texts.h" -P "$ROOT/modules/session/band-texts.cmake"
 # The analyzers' include roots too (INC): the schema asks them what they admit (their storageFor). The gate compiles the
 # library's schema with this front end as well — src/BuildGuards.h, its first include, refuses any other.
-SFRONT=(-std=c++20 "${SESSION_FLAGS[@]}"
+SFRONT=(-std=c++20 "${SESSION_FLAGS[@]}" -DFELITRONICS_PEAQ_FLAGS=1
         -I"$ROOT/tools" -I"$ROOT/modules/session/include" -I"$ROOT/modules/session/src" -I"$TOML/include" -I"$SGEN" "${INC[@]}" "${MASTER_INC[@]}" -msimd128
         -DFELITRONICS_SESSION_VERSION_MAJOR="$SV_MAJOR" -DFELITRONICS_SESSION_VERSION_MINOR="$SV_MINOR"
         -DFELITRONICS_SESSION_VERSION_PATCH="$SV_PATCH"
@@ -798,14 +808,18 @@ sizes fcsession.web.wasm fcsession.web.mjs
 # WHAT THIS WAS BUILT FROM, beside what it built. A consumer that installs these modules records which engine
 # it ships, and a checkout's own `git describe` cannot say which core the modules were compiled against: the
 # two repositories move separately, and a local build may use a sibling core that is not the pinned one.
-# felitronics-toml is recorded too: the config and the text fcsession carries were embedded and gated with it.
+# felitronics-toml and felitronics-bands are recorded too: the config, the text and the named bands fcsession carries
+# were embedded and gated with them. felitronics-bands states no version of its own outside git.
 describe() { git -C "$1" describe --tags --always --dirty 2>/dev/null || echo unknown; }
 TOML_DESCRIBED="$(describe "$TOML")"
 [ "$TOML_DESCRIBED" != unknown ] || TOML_DESCRIBED="v$TV_MAJOR.$TV_MINOR.$TV_PATCH (no git checkout)"
+BANDS_DESCRIBED="$(describe "$BANDS")"
+[ "$BANDS_DESCRIBED" != unknown ] || BANDS_DESCRIBED="unknown (no git checkout)"
 {
     echo "felitronics-mastering-core $(describe "$ROOT")"
     echo "felitronics-core $(describe "$CORE")"
     echo "felitronics-toml $TOML_DESCRIBED"
+    echo "felitronics-bands $BANDS_DESCRIBED"
 } > "$OUT/BUILD-INFO"
 echo
 echo "=== built from"

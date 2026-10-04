@@ -10,6 +10,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <numeric>
 #include <utility>
 
 namespace felitronics::mastering
@@ -17,6 +18,20 @@ namespace felitronics::mastering
 
 // One landing owns one solver while it is active. The caller owns source and output
 // planar buffers. A saved candidate is restored by a counted render when needed.
+//
+// LOUDNESS IS A REQUEST, NOT AN ORDER (owner, 04.10): better to fall short of the target than to reach it and make the
+// master unlistenable. Two parts of the request say so.
+//   * THE LEVEL LANDED (LoudnessRequest::landingOnSourceGate): the louder of the master's level over the blocks the
+//     SOURCE's gate admitted and its own BS.1770 reading — the quiet parts the drive lifts do not dilute the level and
+//     drive the loud part past what it needs, and a file never reads louder than the level landed. The source's readings
+//     are matched to the master's blocks by time, through both grids.
+//   * THE LIMITER'S BUDGET (LoudnessRequest::limiterGr, read on the limiter's ACTIVE windows): a render whose statistic is
+//     above it is no candidate. The lowest drive measured to break it is the limit; the next drive is held under it, by
+//     the secant of the excess between the loudest render that kept the budget and that one. The landing is
+//     TargetUnreachable with LimiterGainReduction named only on proof: the delivered render's drive stands within
+//     kBudgetResolutionDb under the lowest drive measured over the budget while the target is still above; with no render
+//     that kept it, the gentlest ceiling-safe one is delivered, said the same (`overBudgetDb`). Otherwise the status is
+//     the search's own.
 class LandingSearch final
 {
 public:
@@ -133,6 +148,12 @@ public:
         working_.activityThresholdDb = best_.activityThresholdDb = request.activityThresholdDb;
         haveBest_ = havePrevious_ = haveBelow_ = haveAbove_ = haveUnsafe_ = peakProbe_ = false;
         passes_ = 0; sourceCursor_ = 0; verifyCursor_ = 0; bestPass_ = 0; restoring_ = false;
+        gateOn_ = request.landingOnSourceGate && gateGrid (request, sourceRate, chain.sampleRate());
+        budgetOn_ = ! request.limiterGr.off();
+        haveOverBudget_ = false;
+        scanCursor_ = scanCount_ = 0; scanSum_ = gateThreshold_ = level_ = bestLevel_ = 0.0;
+        gateLevel_ = bestGate_ = std::numeric_limits<double>::quiet_NaN();
+        budgetExcess_.fill (std::numeric_limits<double>::quiet_NaN());
         work_ = 0; bestError_ = std::numeric_limits<double>::infinity();
         lowState_.fill (0.0); low2State_.fill (0.0); low8State_.fill (0.0);
         totalEnergy_ = bassEnergy_ = presenceEnergy_ = sourcePeak_ = 0.0;
@@ -183,7 +204,11 @@ public:
             || ! storageForProgramme (sourceFrames, channels, chain.sampleRate(), frames,
                                       request.grTraceBuckets, kBandGrStride,
                                       solver.compHist_.binWidth()).ok
-            || ! planesUsable (source, out, channels, sourceFrames, frames))
+            || ! planesUsable (source, out, channels, sourceFrames, frames)
+            || (request.landingOnSourceGate
+                && (request.sourceMomentaryLufs == nullptr || request.sourceMomentaryCount <= 0
+                    || request.sourceMomentaryHopFrames <= 0))
+            || (! request.limiterGr.off() && ! (request.limiterGr.limitDb >= 0.0 && std::isfinite (request.limiterGr.limitDb))))
         {
             if (why == MasteringSolveStatus::Solved) why = MasteringSolveStatus::InvalidRequest;
             return false;
@@ -217,7 +242,29 @@ public:
                     presenceEnergy_ += band * band;
                 }
             sourceCursor_ += n; work_ += (std::uint64_t) n;
-            if (sourceCursor_ == sourceFrames_) phase_ = Phase::PassBegin;
+            if (sourceCursor_ == sourceFrames_) phase_ = gateOn_ ? Phase::SourceGate : Phase::PassBegin;
+            return StepResult::More;
+        }
+        if (phase_ == Phase::SourceGate)
+        {
+            // THE SOURCE'S GATE, once per landing: BS.1770's absolute gate, then its relative gate 10 LU under the mean
+            // energy of the blocks above the absolute one. A source with no block above the absolute gate has no gate to
+            // land on: the landing lands the master's own.
+            const double absolute = energyOf (kAbsoluteGateLufs);
+            const long long n = std::min (budget, request_.sourceMomentaryCount - scanCursor_);
+            for (long long i = 0; i < n; ++i, ++scanCursor_)
+            {
+                const double v = scanCursor_ >= kFirstBlockReading ? request_.sourceMomentaryLufs[scanCursor_]
+                                                                   : std::numeric_limits<double>::quiet_NaN();
+                const double e = std::isfinite (v) ? energyOf (v) : 0.0;
+                if (e > absolute) { scanSum_ += e; ++scanCount_; }
+            }
+            work_ += (std::uint64_t) n;
+            if (! clock_.checkpoint()) return fail (MasteringSolveStatus::Cancelled);
+            if (scanCursor_ < request_.sourceMomentaryCount) return StepResult::More;
+            gateOn_ = scanCount_ > 0;
+            gateThreshold_ = gateOn_ ? 0.1 * (scanSum_ / (double) scanCount_) : 0.0;
+            phase_ = Phase::PassBegin;
             return StepResult::More;
         }
         if (phase_ == Phase::PassBegin)
@@ -249,6 +296,26 @@ public:
             if (r == StepResult::Failed)
                 return fail (clock_.stopped() ? MasteringSolveStatus::Cancelled : MasteringSolveStatus::RenderFailed);
             if (r == StepResult::More) return r;
+            if (! gateOn_ || restoring_) { gateLevel_ = std::numeric_limits<double>::quiet_NaN(); return completedPass(); }
+            scanCursor_ = scanCount_ = 0; scanSum_ = 0.0;
+            phase_ = Phase::PassGate;
+            return StepResult::More;
+        }
+        if (phase_ == Phase::PassGate)
+        {
+            // THIS PASS'S LEVEL ON THE SOURCE'S GATE: the mean energy of its gating blocks whose time the source's gate
+            // admitted, not gated again. No such block with energy — the chain took all of it out — is no level here.
+            const auto blocks = solver_.pass_->lm.gatingBlockEnergies();
+            const long long total = (long long) blocks.size();
+            const long long n = std::min (budget, total - scanCursor_);
+            for (long long i = 0; i < n; ++i, ++scanCursor_)
+                if (std::isfinite (blocks[(std::size_t) scanCursor_]) && inSourceGate (readingOf (scanCursor_)))
+                { scanSum_ += blocks[(std::size_t) scanCursor_]; ++scanCount_; }
+            work_ += (std::uint64_t) n;
+            if (! clock_.checkpoint()) return fail (MasteringSolveStatus::Cancelled);
+            if (scanCursor_ < total) return StepResult::More;
+            gateLevel_ = scanCount_ > 0 && scanSum_ > 0.0 ? lufsOf (scanSum_ / (double) scanCount_)
+                                                          : std::numeric_limits<double>::quiet_NaN();
             return completedPass();
         }
         if (phase_ == Phase::VerifySetup)
@@ -327,17 +394,92 @@ public:
     // The peak at the limiter's input, at a gain of 0, the delivered render's clipper was set from: the one the first
     // pass measured where the clipper rides it, else the caller's (MasteringChainParams::peakClipPeakDb).
     double peakClipPeakDb() const noexcept { return params_.peakClipPeakDb; }
+    // A finished landing on the source's gate: the level landed of the delivered render — the louder of its level on that
+    // gate and its BS.1770 reading. NaN on any other landing, whose level landed is the result's `achievedLufs`.
+    double landedLufs() const noexcept
+    {
+        return phase_ == Phase::Done && gateOn_ ? bestLevel_ : std::numeric_limits<double>::quiet_NaN();
+    }
+    // ...and the delivered render's level on that gate alone, louder or quieter than its BS.1770 reading. NaN on any
+    // other landing, and where the gate's blocks carried no energy.
+    double gateLufs() const noexcept
+    {
+        return phase_ == Phase::Done && gateOn_ ? bestGate_ : std::numeric_limits<double>::quiet_NaN();
+    }
+    // A finished landing that no render kept within the limiter's budget: the delivered render's statistic, above the
+    // budget. NaN on any other landing.
+    double overBudgetDb() const noexcept
+    {
+        return phase_ == Phase::Done && haveOverBudget_ && ! haveBest_ ? budgetStatistic (best_)
+                                                                       : std::numeric_limits<double>::quiet_NaN();
+    }
     int startedPasses() const noexcept { return passes_; }
+    // THE CURRENT WALK OVER THE FILE, 0..1, a new count for each: the source's statistics, every landing pass (its clock's
+    // units), the delivered render's check. Negative outside a walk: idle, done, failed, and the bookkeeping between walks.
+    double walkFraction() const noexcept
+    {
+        if (phase_ == Phase::SourceStats)
+            return sourceFrames_ > 0 ? (double) sourceCursor_ / (double) sourceFrames_ : 0.0;
+        if (phase_ == Phase::PassRun || phase_ == Phase::VerifyMeter) return clock_.walked();
+        return -1.0;
+    }
     std::uint64_t completedWork() const noexcept { return work_; }
     bool active() const noexcept { return phase_ != Phase::Idle && phase_ != Phase::Done && phase_ != Phase::Failed; }
 
 private:
-    enum class Phase { Idle, SourceStats, PassBegin, PassRun, VerifySetup,
+    enum class Phase { Idle, SourceStats, SourceGate, PassBegin, PassRun, PassGate, VerifySetup,
                        VerifyMeter, VerifyDrain, VerifyGate, VerifyFinish, Done, Failed };
+
+    // The source's momentary reading i is the 400 ms ending at (i + 1) of its hops: the first three readings are no block.
+    static constexpr long long kFirstBlockReading = 3;
+    static constexpr double kAbsoluteGateLufs = -70.0;
+    static constexpr double kBudgetResolutionDb = 0.25;
+
+    static double energyOf (double lufs) noexcept { return core::det::pow10 ((lufs + 0.691) / 10.0); }
+    static double lufsOf (double energy) noexcept { return -0.691 + 10.0 * core::det::log10 (energy); }
+
+    // THE TWO GRIDS: the source's readings on its hop at its rate, the master's gating blocks on the meter's hop (ten
+    // sub-hops of lround (0.01 fs) frames) at the chain's. Both hops are 100 ms only near enough — 1100 frames at 11025 Hz
+    // are 99.77 ms — so block j, which starts at j·hopM / fsM s, takes the reading whose 400 ms starts nearest to it:
+    // round (j · hopM·fsS / (hopS·fsM)) + 3, kept as the reduced fraction gateNum_ / gateDen_. Rates that are not whole
+    // numbers of hertz have no such fraction: the landing lands the master's own gate.
+    bool gateGrid (const LoudnessRequest& r, double sourceRate, double chainRate) noexcept
+    {
+        if (! (sourceRate >= 1.0 && sourceRate <= 1.0e7 && chainRate >= 1.0 && chainRate <= 1.0e7)
+            || ! core::exactlyEqual (std::floor (sourceRate), sourceRate)
+            || ! core::exactlyEqual (std::floor (chainRate), chainRate)
+            || r.sourceMomentaryHopFrames <= 0 || r.sourceMomentaryHopFrames > 100000000LL) return false;
+        const auto fsS = (std::uint64_t) sourceRate, fsM = (std::uint64_t) chainRate;
+        const auto hopM = (std::uint64_t) (10 * std::max (1L, std::lround (0.01 * chainRate)));
+        const std::uint64_t num = hopM * fsS, den = (std::uint64_t) r.sourceMomentaryHopFrames * fsM;
+        const std::uint64_t g = std::gcd (num, den);
+        gateNum_ = num / g; gateDen_ = den / g;
+        return true;
+    }
+
+    // ...the nearest reading the series has: a block past its last reading in time takes the last one.
+    long long readingOf (long long block) const noexcept
+    {
+        const auto j = (std::uint64_t) block;
+        const long long reading = (long long) ((2u * j * gateNum_ + gateDen_) / (2u * gateDen_)) + kFirstBlockReading;
+        return std::min (reading, request_.sourceMomentaryCount - 1);
+    }
+
+    bool inSourceGate (long long reading) const noexcept
+    {
+        const double v = request_.sourceMomentaryLufs[reading];
+        if (! std::isfinite (v)) return false;
+        const double e = energyOf (v);
+        return e > energyOf (kAbsoluteGateLufs) && e > gateThreshold_;
+    }
 
     StepResult completedPass()
     {
         SolvePassRecord& rec = records_[(std::size_t) (passes_ - 1)];
+        // THE LEVEL LANDED: on the source's gate, never quieter than the file's own reading — an EQ that empties the
+        // blocks the source's gate admitted would otherwise land a file far louder than the target.
+        level_ = gateOn_ && std::isfinite (gateLevel_) && std::isfinite (measurement_.integratedLufs)
+            ? std::fmax (gateLevel_, measurement_.integratedLufs) : measurement_.integratedLufs;
         rec.integratedLufs = measurement_.integratedLufs; rec.truePeakDbTp = measurement_.truePeakDbTp;
         rec.plrDb = measurement_.plrDb; rec.limiterMaxGrDb = measurement_.limiter.maxDb;
         rec.loudnessRangeLu = measurement_.loudnessRangeLu;
@@ -350,6 +492,10 @@ private:
                 || ! core::exactlyEqual (measurement_.truePeakDbTp, best_.measured.truePeakDbTp)
                 || (haveBest_ && measurement_.truePeakDbTp > request_.maxTruePeakDbTp))
                 return fail (MasteringSolveStatus::Unavailable);
+            // The restored render is the candidate's own: its mark over the budget and its excess are the candidate's.
+            const auto restored = (std::size_t) (bestPass_ - 1);
+            rec.violated |= records_[restored].violated & constraintBit (MasteringConstraint::LimiterGainReduction);
+            budgetExcess_[(std::size_t) (passes_ - 1)] = budgetExcess_[restored];
             restoring_ = false; bestPass_ = passes_;
             return finishSearch();
         }
@@ -374,12 +520,24 @@ private:
             return StepResult::More;
         }
         const bool safe = valid && measurement_.truePeakDbTp <= request_.maxTruePeakDbTp;
-        const double err = valid ? std::fabs (measurement_.integratedLufs - request_.targetLufs)
+        const double err = valid ? std::fabs (level_ - request_.targetLufs)
                                  : std::numeric_limits<double>::infinity();
+        const bool keeps = ! budgetOn_ || ! valid || keepsBudget (rec);
+        // THE GENTLEST CEILING-SAFE RENDER OVER THE BUDGET, held in `best_` while no render keeps both: the least drive.
+        if (budgetOn_ && ! haveBest_ && safe && ! keeps
+            && (! haveOverBudget_ || gain_ - ceiling_ < bestGain_ - bestCeiling_))
+        {
+            working_.measured = measurement_;
+            working_.preLimiterGainDb = gain_; working_.ceilingDbTp = ceiling_;
+            std::swap (working_, best_);
+            bestError_ = err; bestPass_ = passes_;
+            bestGain_ = gain_; bestCeiling_ = ceiling_; bestLevel_ = level_; bestGate_ = gateLevel_;
+            haveOverBudget_ = true;
+        }
         // THE GENTLEST RENDER ABOVE THE CEILING, held in `best_` while no render is under it (owner, 01.10: the file is
         // delivered even then, marked): the smallest overshoot of the ceiling, the nearer loudness on an equal one. The
         // first ceiling-safe render replaces it below (`nearer` holds for any render while `haveBest_` is false).
-        if (! haveBest_ && valid && ! safe
+        if (! haveBest_ && ! haveOverBudget_ && valid && ! safe
             && (! haveUnsafe_ || measurement_.truePeakDbTp < best_.measured.truePeakDbTp
                 || (core::exactlyEqual (measurement_.truePeakDbTp, best_.measured.truePeakDbTp) && err < bestError_)))
         {
@@ -387,11 +545,11 @@ private:
             working_.preLimiterGainDb = gain_; working_.ceilingDbTp = ceiling_;
             std::swap (working_, best_);
             bestError_ = err; bestPass_ = passes_;
-            bestGain_ = gain_; bestCeiling_ = ceiling_;
+            bestGain_ = gain_; bestCeiling_ = ceiling_; bestLevel_ = level_; bestGate_ = gateLevel_;
             haveUnsafe_ = true;
         }
-        const double level = measurement_.integratedLufs;
-        const double previousLevel = best_.measured.integratedLufs;
+        const double level = level_;
+        const double previousLevel = bestLevel_;
         const bool bothBelow = haveBest_ && level <= request_.targetLufs && previousLevel <= request_.targetLufs;
         const bool bothAbove = haveBest_ && level >= request_.targetLufs && previousLevel >= request_.targetLufs;
         const bool nearer = ! haveBest_ || (bothBelow && level > previousLevel)
@@ -399,33 +557,34 @@ private:
                           || (! bothBelow && ! bothAbove && err < bestError_);
         const bool sameDistance = haveBest_ && core::exactlyEqual (err, bestError_)
                                && core::exactlyEqual (level, previousLevel);
-        if (safe && (nearer || (sameDistance && measurement_.limiter.meanDb < best_.measured.limiter.meanDb)))
+        if (safe && keeps && (nearer || (sameDistance && measurement_.limiter.meanDb < best_.measured.limiter.meanDb)))
         {
             working_.measured = measurement_;
             working_.preLimiterGainDb = gain_; working_.ceilingDbTp = ceiling_;
             std::swap (working_, best_);
             haveBest_ = true; bestError_ = err; bestPass_ = passes_;
-            bestGain_ = gain_; bestCeiling_ = ceiling_;
+            bestGain_ = gain_; bestCeiling_ = ceiling_; bestLevel_ = level_; bestGate_ = gateLevel_;
         }
-        if (safe)
+        if (safe && keeps)
         {
-            if (measurement_.integratedLufs <= request_.targetLufs)
+            if (level_ <= request_.targetLufs)
             {
-                if (! haveBelow_ || measurement_.integratedLufs > belowLufs_)
-                    { haveBelow_ = true; belowLufs_ = measurement_.integratedLufs;
+                if (! haveBelow_ || level_ > belowLufs_)
+                    { haveBelow_ = true; belowLufs_ = level_;
                       belowGain_ = gain_; belowCeiling_ = ceiling_; }
             }
-            else if (! haveAbove_ || measurement_.integratedLufs < aboveLufs_)
-                { haveAbove_ = true; aboveLufs_ = measurement_.integratedLufs;
+            else if (! haveAbove_ || level_ < aboveLufs_)
+                { haveAbove_ = true; aboveLufs_ = level_;
                   aboveGain_ = gain_; aboveCeiling_ = ceiling_; }
         }
-        const bool success = safe && err <= request_.toleranceLu;
+        const bool success = safe && keeps && err <= request_.toleranceLu;
         const bool exhausted = passes_ >= request_.maxPasses;
         if (success || exhausted) return finishSearch();
-        // Reserve the last pass for restoration once a candidate exists — a safe one, or else the gentlest above the
-        // ceiling. It is a real render and is logged within the caller's one pass budget.
-        // When this pass IS that candidate, `out` already holds it: finish without rendering it twice.
-        if ((haveBest_ || haveUnsafe_) && passes_ == request_.maxPasses - 1)
+        if (budgetOn_ && budgetSettled()) return finishSearch();
+        // Reserve the last pass for restoration once a candidate exists — a safe one, or else the gentlest over the
+        // budget, or else the gentlest above the ceiling. It is a real render and is logged within the caller's one pass
+        // budget. When this pass IS that candidate, `out` already holds it: finish without rendering it twice.
+        if ((haveBest_ || haveOverBudget_ || haveUnsafe_) && passes_ == request_.maxPasses - 1)
         {
             if (bestPass_ == passes_) return finishSearch();
             gain_ = bestGain_; ceiling_ = bestCeiling_;
@@ -446,7 +605,7 @@ private:
             return;
         }
         const double currentDrive = gain_ - ceiling_;
-        const double shape = measurement_.integratedLufs - ceiling_;
+        const double shape = level_ - ceiling_;
         const double aim = request_.maxTruePeakDbTp - request_.truePeakAimDb;
         const double tpError = std::clamp (aim - measurement_.truePeakDbTp, -24.0, 24.0);
         double nextCeiling = std::clamp (ceiling_ + tpError, -60.0,
@@ -467,6 +626,7 @@ private:
             && core::exactlyEqual (belowCeiling_, ceiling_) && core::exactlyEqual (aboveCeiling_, ceiling_)
             && core::exactlyEqual (nextCeiling, ceiling_))
             nextDrive = std::clamp (nextDrive, belowGain_ - ceiling_ + 0.001, aboveGain_ - ceiling_ - 0.001);
+        if (budgetOn_) nextDrive = budgetClamp (nextDrive);
         previousDrive_ = currentDrive; previousShape_ = shape; havePrevious_ = true;
         gain_ = std::clamp (nextDrive + nextCeiling, -60.0, 60.0);
         ceiling_ = nextCeiling;
@@ -475,10 +635,17 @@ private:
     StepResult finishSearch()
     {
         // Renders that could not be measured at all prove nothing about the target: Unavailable.
-        if (! haveBest_ && ! haveUnsafe_) return fail (MasteringSolveStatus::Unavailable);
+        if (! haveBest_ && ! haveOverBudget_ && ! haveUnsafe_) return fail (MasteringSolveStatus::Unavailable);
         best_.passes = passes_; best_.logCount = passes_;
         for (int i = 0; i < passes_; ++i) best_.log[i] = records_[(std::size_t) i];
-        if (! haveBest_)
+        if (! haveBest_ && haveOverBudget_)
+        {
+            // NO RENDER KEPT THE LIMITER'S BUDGET: the gentlest ceiling-safe one measured, the budget named as broken.
+            best_.status = MasteringSolveStatus::TargetUnreachable;
+            best_.binding = MasteringConstraint::LimiterGainReduction;
+            best_.alsoViolated = constraintBit (MasteringConstraint::LimiterGainReduction);
+        }
+        else if (! haveBest_)
         {
             // MEASURED RENDERS, NONE UNDER THE CEILING: the target is out of reach and the true-peak ceiling is what
             // holds it — said as such, with its binding. The file is still delivered (owner, 01.10): the gentlest render
@@ -498,6 +665,14 @@ private:
             best_.achievedBelowLufs = belowLufs_; best_.achievedAboveLufs = aboveLufs_;
             best_.gainBelowDb = belowGain_; best_.gainAboveDb = aboveGain_;
         }
+        // THE LIMITER'S BUDGET HELD THE LANDING below the target, proven: said as such, not as a pass limit or a bracket.
+        if (budgetOn_ && haveBest_ && best_.status != MasteringSolveStatus::Solved && bestLevel_ < request_.targetLufs
+            && budgetSettled())
+        {
+            best_.status = MasteringSolveStatus::TargetUnreachable;
+            best_.binding = MasteringConstraint::LimiterGainReduction;
+            best_.alsoViolated = constraintBit (MasteringConstraint::LimiterGainReduction);
+        }
         // An exhausted budget is not proof that the target is outside the reachable range.
         if (bestPass_ != passes_)
         {
@@ -515,6 +690,9 @@ private:
     void classify() noexcept
     {
         if (best_.status == MasteringSolveStatus::Solved) return;
+        // The limiter's budget held the landing: that is the reason, and nothing in the mix is blamed for it.
+        if (best_.status == MasteringSolveStatus::TargetUnreachable
+            && best_.binding == MasteringConstraint::LimiterGainReduction) return;
         const bool bass = best_.sourceSubBassShare >= 0.35 && best_.limiterMeanReductionDb >= 0.5;
         const double sourceRms = totalEnergy_ > 0.0
             ? std::sqrt (totalEnergy_ / ((double) sourceFrames_ * channels_)) : 0.0;
@@ -525,6 +703,71 @@ private:
                            : dark ? LandingReason::DarkMix : LandingReason::LoudnessDemand;
         best_.secondReason = bass && peaks ? LandingReason::SharpPeaks
                              : (bass || peaks) && dark ? LandingReason::DarkMix : LandingReason::None;
+    }
+
+    double driveOf (int pass) const noexcept
+    {
+        return records_[(std::size_t) pass].gainDb - records_[(std::size_t) pass].ceilingDb;
+    }
+
+    // The budget's statistic of a render: on the limiter's ACTIVE windows (LoudnessRequest::limiterActiveInputDb), so
+    // the silence of a programme does not water it down. NaN where those windows cannot answer it.
+    double budgetStatistic (const LoudnessSolution& render) const noexcept
+    {
+        return render.limiterActive.stats.valid ? grStatisticValue (render.limiterActive.stats, request_.limiterGr)
+                                                : std::numeric_limits<double>::quiet_NaN();
+    }
+
+    // Reads this (valid) pass — its render is `working_` — against the limiter's budget: its excess is kept, a pass over
+    // it is marked in its record. A statistic the windows cannot answer is no reading, and so no breach.
+    bool keepsBudget (SolvePassRecord& rec) noexcept
+    {
+        const double excess = budgetStatistic (working_) - request_.limiterGr.limitDb;
+        budgetExcess_[(std::size_t) (passes_ - 1)] = excess;
+        if (! (excess > 0.0)) return true;
+        rec.violated |= constraintBit (MasteringConstraint::LimiterGainReduction);
+        return false;
+    }
+
+    // The lowest drive measured over the budget, -1 when none.
+    int lowestOverBudget() const noexcept
+    {
+        int over = -1;
+        for (int k = 0; k < passes_; ++k)
+            if (budgetExcess_[(std::size_t) k] > 0.0 && (over < 0 || driveOf (k) < driveOf (over))) over = k;
+        return over;
+    }
+
+    // The next drive, held under the budget's limit: between the loudest render that kept the budget below the lowest
+    // that broke it and that one, by the secant of their excess (kept within the middle three fifths); with no render
+    // under it, a step back of three times the excess, a dB at least.
+    double budgetClamp (double next) noexcept
+    {
+        const int over = lowestOverBudget();
+        if (over < 0) return next;
+        const double dOver = driveOf (over), eOver = budgetExcess_[(std::size_t) over];
+        int kept = -1;
+        for (int k = 0; k < passes_; ++k)
+            if (std::isfinite (budgetExcess_[(std::size_t) k]) && ! (budgetExcess_[(std::size_t) k] > 0.0)
+                && driveOf (k) < dOver && (kept < 0 || driveOf (k) > driveOf (kept))) kept = k;
+        double limit = dOver - std::fmax (1.0, 3.0 * eOver);
+        if (kept >= 0)
+        {
+            const double dKept = driveOf (kept), eKept = budgetExcess_[(std::size_t) kept];
+            limit = dKept + std::clamp (-eKept / (eOver - eKept), 0.2, 0.8) * (dOver - dKept);
+        }
+        return std::fmin (next, limit);
+    }
+
+    // THE BUDGET'S PROOF: the candidate — the render to be delivered — stands within kBudgetResolutionDb under the lowest
+    // drive measured over the budget, short of the target, and no render within the budget has reached past the target
+    // (one that did proves the target reachable inside it).
+    bool budgetSettled() const noexcept
+    {
+        const int over = lowestOverBudget();
+        if (! haveBest_ || haveAbove_ || over < 0 || bestLevel_ >= request_.targetLufs - request_.toleranceLu) return false;
+        const double delivered = bestGain_ - bestCeiling_;
+        return delivered < driveOf (over) && delivered >= driveOf (over) - kBudgetResolutionDb;
     }
 
     StepResult fail (MasteringSolveStatus status) noexcept
@@ -578,7 +821,17 @@ private:
     bool haveUnsafe_ = false;   // `best_` holds the gentlest measured render above the ceiling (while `haveBest_` is not)
     bool restoring_ = false;
     bool peakProbe_ = false;   // the first pass measured the peak the clipper's threshold is worked out from
+    bool gateOn_ = false;      // the level landed is read on the source's gate
+    bool budgetOn_ = false;
+    bool haveOverBudget_ = false;   // `best_` holds the gentlest ceiling-safe render over the budget (while `haveBest_` is not)
     Phase phase_ = Phase::Idle;
+    // The level landed (`level_`, the pass's; `bestLevel_`, best_'s) and the source's gate. `scan*` serve the source's
+    // gate once, then each pass's level on it.
+    double gateThreshold_ = 0.0, level_ = 0.0, bestLevel_ = 0.0, gateLevel_ = 0.0, bestGate_ = 0.0, scanSum_ = 0.0;
+    long long scanCursor_ = 0, scanCount_ = 0;
+    std::uint64_t gateNum_ = 1, gateDen_ = 1;   // block j of the master takes the source's reading round (j·num/den) + 3
+    // The limiter's budget: each pass's excess over it (NaN: no reading), indexed as `records_`.
+    std::array<double, 12> budgetExcess_ {};
 };
 
 inline LoudnessSolution solveProductLanding (TargetLoudnessSolver& solver, MasteringChain& chain,

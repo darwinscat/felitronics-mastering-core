@@ -122,6 +122,11 @@ struct Landing
     std::int32_t passes = 0;
     double toleranceLu = 0.0;
     double truePeakAimDb = 0.0;
+    bool onSourceGate = false;
+    // The limiter's budget by the target's loudness: below `middleLufs` quietDb, within it (both ends) middleDb, above
+    // it loudDb — the window p95 of its gain reduction, dB.
+    std::int32_t quietBudgetDb = 0, middleBudgetDb = 0, loudBudgetDb = 0;
+    Span middleLufs;
 };
 
 struct PeakClipper
@@ -462,6 +467,15 @@ struct Pumping
     double highPassHz = 0.0, lowPassHz = 0.0, settleSeconds = 0.0, minTraceRateHz = 0.0;
 };
 
+// [cost.damage]: PEAQ of the master against its chain at rest — windows, the BS.1116 grades, the reference's level.
+struct Damage
+{
+    double windowSeconds = 0.0, hopSeconds = 0.0;
+    std::vector<double> gradeFloorsOdg;
+    double referenceBelowDb = 0.0;
+    std::int32_t resamplerTaps = 0;
+};
+
 struct Cost
 {
     double activityBelowIntegratedLu = 0.0, activityFloorLufs = 0.0;
@@ -474,6 +488,7 @@ struct Cost
     std::vector<double> printedQuantiles;
     Pumping pumping;
     Sections sections;
+    Damage damage;
 };
 
 // [progress.analysis.weights]: milliseconds of work per step of the measurement.
