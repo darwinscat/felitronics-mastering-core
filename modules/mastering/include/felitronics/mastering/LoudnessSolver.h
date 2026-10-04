@@ -777,6 +777,8 @@ struct LoudnessRequest
     unsigned pcmBits = 0;                // 0: legacy float; 16/20/24: measure the PCM grid; 32: float WAV
 
     // Constraints. A target that needs one of these broken is REFUSED with the name, not forced through.
+    // `productLanding` reads `limiterGr` as a BUDGET instead (LandingSearch): the loudest render that keeps it is
+    // delivered below the target, TargetUnreachable with LimiterGainReduction named.
     GainReductionLimit limiterGr    {};                                              // off by default
     GainReductionLimit compressorGr {};                                              // UPSTREAM — see above
     // NB with `MasteringChainParams::compressorMix < 1` this limits the COMPRESSED path's gain reduction,
@@ -850,6 +852,18 @@ struct LoudnessRequest
     // the MEAN SQUARE of the limiter's input, the construction `BandCrest::programmeMeanSquareDb` uses — not
     // `limiterMaxReconstructedPeakDb`, which is one sample and cannot say where a population sits.
     double limiterActiveInputDb = -60.0;
+
+    // THE LEVEL THE LANDING LANDS, `productLanding` only. Off, the master's integrated loudness (BS.1770 on its own
+    // gate). On, the master's mean block energy over the 400 ms blocks the SOURCE's BS.1770 gate admitted — absolute
+    // and relative, as the source's own integrated loudness averages them — not gated a second time: the quiet parts
+    // the drive lifts above the master's own relative gate do not join the average, so a quiet part does not make the
+    // loud part pay for it. `sourceMomentaryLufs` is the source's momentary loudness on a 100 ms hop, value i the
+    // 400 ms ending at (i + 1) hops, so value i + 3 is the master's gating block i; a value that is not finite is no
+    // reading. It is the caller's for the whole landing; on without a series is InvalidRequest. The delivered file is
+    // still certified by BS.1770 (`achievedLufs`, `missLu`); `LandingSearch::landedLufs` is the level landed.
+    bool landingOnSourceGate = false;
+    const double* sourceMomentaryLufs = nullptr;
+    long long sourceMomentaryCount = 0;
 };
 
 // One render the search made. The whole trace is returned, not just the winner: a caller that has to

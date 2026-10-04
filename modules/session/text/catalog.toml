@@ -1075,6 +1075,18 @@ en.plr = "The master runs into the PLR floor: it cannot come within ±{tolerance
 en.lra = "The master runs into the LRA loss limit: it cannot come within ±{tolerance} of the target."
 en.gain = "The master runs into the chain's gain bound: it cannot come within ±{tolerance} of the target."
 
+# Held short by the limiter's budget (owner, 04.10: loudness is a request, not an order): the target, the level landed
+# and the budget, the P95 the report's limiter line prints.
+[messages.masterLandingBudget]
+ru = "Цель {target}, сделано {achieved}: дальше лимитеру пришлось бы срезать больше {budget} (P95)."
+en = "Target {target}, reached {achieved}: going further, the limiter would have to take off more than {budget} (P95)."
+
+# A landing on the source's gate: the level landed on the loud part, and the file's standard BS.1770 reading, where the
+# two part by more than the tolerance.
+[messages.masterLandingGate]
+ru = "По громкой части {landed}, по стандарту файла {file}."
+en = "{landed} by the loud part, {file} by the file's standard reading."
+
 [messages.masterLandingPassLimit]
 ru = "Проходы кончились раньше, чем мастер подошёл к цели ближе допуска {tolerance}."
 en = "The passes ran out before the master came within {tolerance} of the target."

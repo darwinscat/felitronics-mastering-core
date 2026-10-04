@@ -9,6 +9,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <span>
 
@@ -179,15 +180,28 @@ struct MasterReport
     // ceiling — peakSafe false, truePeakDbTp above ceilingDbTp — because no render stayed under it.
     bool peaksAboveCeiling = false;
 };
+// What a landing was given and what it put on the target, beside its report: the level it landed where it landed on the
+// source's gate (NaN on its own gate, where the level landed is the report's achievedLufs), and the limiter's budget it
+// was held to (NaN: none).
+struct LandingMeasure
+{
+    double landedLufs = std::numeric_limits<double>::quiet_NaN();
+    double limiterBudgetDb = std::numeric_limits<double>::quiet_NaN();
+};
 struct MasterReportText
 {
     [[nodiscard]] static std::optional<text::Fact> miss (const MasterReport& report) noexcept;
-    // The landing's verdict: one fact per status — solved (the achieved number against the target and the tolerance),
-    // unreachable (against the tolerance, naming the summary's binding), pass limit (against the tolerance), between
-    // (the summary's two nearest levels), technical failure. Nothing for an unavailable or cancelled landing, a solved
-    // one without a measured loudness, or a between one without its two levels.
+    // The landing's verdict: one fact per status — solved (the level landed against the target and the tolerance),
+    // unreachable (against the tolerance, naming the summary's binding; held by the limiter's budget, the target, the
+    // level landed and the budget), pass limit (against the tolerance), between (the summary's two nearest levels),
+    // technical failure. Nothing for an unavailable or cancelled landing, a solved one without a measured loudness, or a
+    // between one without its two levels.
     [[nodiscard]] static std::optional<text::Fact> landing (const MasterReport& report, const LandingSummary& landing,
-                                                            double toleranceLu) noexcept;
+                                                            double toleranceLu, const LandingMeasure& measure = {}) noexcept;
+    // A landing on the source's gate whose level and the file's BS.1770 reading part by more than the tolerance: both.
+    // Said in place of the miss's line. Nothing otherwise.
+    [[nodiscard]] static std::optional<text::Fact> gate (const MasterReport& report, const LandingMeasure& measure,
+                                                         double toleranceLu) noexcept;
     [[nodiscard]] static std::optional<text::Fact> hint (const MasterHint& hint) noexcept;
     // A master delivered above its ceiling (peaksAboveCeiling): its true peak and the ceiling. Nothing otherwise.
     [[nodiscard]] static std::optional<text::Fact> peaksAboveCeiling (const MasterReport& report) noexcept;

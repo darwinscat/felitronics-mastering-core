@@ -43,13 +43,25 @@ shortSeconds = 10
 # toleranceLu: a master within ±toleranceLu of the target has landed. The ceiling has no positive tolerance.
 # truePeakAimDb: how far below the promised peak the feedback loop aims; distinct from the limiter's initial margin.
 # The first gain uses the measured input's normalization to referenceLufs and the target's difference from it.
+# LOUDNESS IS A REQUEST, NOT AN ORDER (owner decision, 04.10): better to fall short of the target than to reach it and
+#   make the master unlistenable. A landing held short says so, with both numbers.
+# onSourceGate (owner decision, 04.10): the level landed on the target is the master's over the 400 ms blocks the
+#   SOURCE's BS.1770 gate admitted, not over the master's own gate — the quiet parts the drive lifts do not join the
+#   average, so they do not make the loud part pay for them. The file is still measured by BS.1770, and where that
+#   reading and the level landed part by more than toleranceLu the report says both.
+# limiterBudget (owner decision, 04.10): the most the limiter may take, the P95 of its gain reduction over the
+#   programme's windows — the number the report's limiter line prints — by the loudness of the target, a person's
+#   edited number included: quietDb below middleLufs, middleDb within it (both ends), loudDb above it. A landing that
+#   would need more stops where the budget holds and is delivered short of the target, the budget named.
 [landing]
 passes = 12 # Owner decision 28.09: one budget, stop on success; a miss is a normal result.
 toleranceLu = 0.1
 truePeakAimDb = 0.05
+onSourceGate = true
+limiterBudget = { quietDb = 4, middleDb = 7, loudDb = 10, middleLufs = [-10, -8] }
 
-# THE LIMITER — always on, with no tick; its setting is the target's ceiling. No gain reduction, no PLR and no cost of
-# the master limits how far it goes for the loudness: the ceiling alone is hard.
+# THE LIMITER — always on, with no tick; its setting is the target's ceiling. The ceiling is hard; its gain reduction is
+# held by [landing] limiterBudget, and no PLR and no other cost of the master limits how far it goes for the loudness.
 # ceilingMarginDb: the limiter is first given a ceiling this much below the promised one; the solver moves it from
 #   there.
 # releaseMs: the limiter's release — chosen, not yet calibrated by ear.

@@ -140,8 +140,10 @@ for (const item of scenarios.formatRefusals) {
 assert.equal(scenarios.refusal.answer.kind, 'rejected');
 assert.equal(scenarios.cancel.answer.kind, 'accepted');
 assert.equal(scenarios.unavailable.answer.kind, 'rejected');
-assert.equal(scenarios.miss.measurements.status, 2);
-assert.equal(scenarios.miss.measurements.passes, 12);
+// Held short by the limiter's budget: TargetUnreachable (1) with LimiterGainReduction (2) bound, within the twelve passes.
+assert.equal(scenarios.miss.measurements.status, 1);
+assert.equal(scenarios.miss.measurements.binding, 2);
+assert.ok(scenarios.miss.measurements.passes <= 12);
 assert.ok(Number.isFinite(scenarios.miss.measurements.missLu));
 // No render under the ceiling still delivers the file, marked (owner, 01.10).
 assert.equal(scenarios.unsafe.measurements.deliverable, true);

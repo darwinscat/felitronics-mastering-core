@@ -89,6 +89,7 @@ enum class Plural : std::uint8_t { Zero, One, Two, Few, Many, Other };
 //   300 – 399   the session's errors
 //   400 – 499   the measurements and the observations
 //   500 – 599   the plan's advice and the targets' notes
+//   600 – 699   the landing, continued (1 – 99 is full)
 // The arguments each fact takes, by name and kind, are src/TextFacts.h's, and the build holds the catalog to them.
 enum class FactId : std::uint16_t
 {
@@ -325,6 +326,9 @@ enum class FactId : std::uint16_t
     MonoBassBelowZones = 509,  // mono bass at {crossover}, below what a club ({clubFrom}) and vinyl ({vinylFrom}) ask for
     // A device's card while a field of its machine layer waits for a measurement (DevicePlan::pending): not measured yet.
     DeviceUnmeasured = 510,    // not measured yet: the machine sets it when {analyzer} ends
+    // A landing held short (MasterReportText::landing, ::gate), published with the master.
+    MasterLandingBudget = 600, // target {target}, landed {achieved}: further, the limiter would take more than {budget} (P95)
+    MasterLandingGate = 601,   // by the loud part {landed}, by the file's BS.1770 reading {file}
 
 };
 

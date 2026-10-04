@@ -122,6 +122,11 @@ struct Landing
     std::int32_t passes = 0;
     double toleranceLu = 0.0;
     double truePeakAimDb = 0.0;
+    bool onSourceGate = false;
+    // The limiter's budget by the target's loudness: below `middleLufs` quietDb, within it (both ends) middleDb, above
+    // it loudDb — the window p95 of its gain reduction, dB.
+    std::int32_t quietBudgetDb = 0, middleBudgetDb = 0, loudBudgetDb = 0;
+    Span middleLufs;
 };
 
 struct PeakClipper
