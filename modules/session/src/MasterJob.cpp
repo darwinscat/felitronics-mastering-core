@@ -145,6 +145,16 @@ std::uint64_t MasterJob::fingerprint (const command::MasterReady& ready) noexcep
     return h.value;
 }
 
+double limiterBudgetDb (toml::embedded::View engine, double targetLufs) noexcept
+{
+    const auto budget = engine.find ("landing").find ("limiterBudget");
+    const auto middle = budget.find ("middleLufs");
+    const double low = number (middle[0]), high = number (middle[1]);
+    if (! std::isfinite (targetLufs) || ! std::isfinite (low) || ! std::isfinite (high))
+        return std::numeric_limits<double>::quiet_NaN();
+    return number (budget.find (targetLufs < low ? "quietDb" : targetLufs <= high ? "middleDb" : "loudDb"));
+}
+
 MasterPlan MasterJob::plan (const Session& s, const command::Master& input, const Project& project) noexcept
 {
     MasterPlan result;
@@ -264,6 +274,21 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
     result.request.productLanding = true;
     result.request.ceilingMarginDb = margin;
     result.request.grTraceBuckets = result.traceBuckets;
+    // LOUDNESS IS A REQUEST (owner, 04.10): the limiter's budget by the target's loudness, and the level landed on the
+    // source's gate — read on the source's momentary series. A source without the series whole (a sidecar's facts, rows
+    // refused for memory) lands on the master's own gate.
+    result.request.limiterGr.limitDb = limiterBudgetDb (engine, targetLufs);
+    result.request.limiterGr.statistic = mastering::GrStatistic::P95;
+    const auto onGate = engine.find ("landing").find ("onSourceGate").boolean();
+    if (! onGate || ! std::isfinite (result.request.limiterGr.limitDb))
+    { result.rejection = Rejection::MandatoryUnavailable; return result; }
+    const auto* momentary = findArray (s.measurementResults_[std::size_t (Analyzer::Loudness)], "momentary");
+    if (*onGate && momentary && momentary->complete && momentary->stored != 0)
+    {
+        result.request.landingOnSourceGate = true;
+        result.request.sourceMomentaryLufs = momentary->values.data();
+        result.request.sourceMomentaryCount = (long long) momentary->stored;
+    }
     result.ready.params.limiter.ceilingDbTp = targetTp - margin;
     result.ready.deliveryBits = deliveryBits;
     result.ready.params.dither.bits = deliveryBits;
@@ -443,7 +468,10 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
             }
             return std::isfinite (h.evidence) ? std::optional<MasterHint> (h) : std::nullopt;
         };
-        if (! report.targetMet && report.missLu && std::fabs (*report.missLu) > 0.0)
+        // Held short by the limiter's budget: the verdict says so, and nothing in the mix is blamed for it.
+        const bool budgetHeld = solved.status == mastering::MasteringSolveStatus::TargetUnreachable
+                             && solved.binding == mastering::MasteringConstraint::LimiterGainReduction;
+        if (! report.targetMet && ! budgetHeld && report.missLu && std::fabs (*report.missLu) > 0.0)
         {
             report.firstHint = hint (solved.mainReason);
             report.secondHint = hint (solved.secondReason);

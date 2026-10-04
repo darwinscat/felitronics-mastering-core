@@ -1858,3 +1858,7 @@ codec GlueFinding.tempoUnsureBpm double?
 # LimiterGr's buckets.
 enum felitronics::session::QueryKind::SaturationShave=13
 row QuerySaturationShave element=f64 byteOrder=little columns=firstFrame,lastFrame,minDb,maxDb,meanDb,samples,nonFinite stride=7 bytes=56
+# A landing held short (04.10, loudness is a request): the limiter's budget that held it, and the level landed on the
+# source's gate beside the file's BS.1770 reading.
+enum felitronics::session::text::FactId::MasterLandingBudget=600
+enum felitronics::session::text::FactId::MasterLandingGate=601

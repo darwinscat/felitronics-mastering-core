@@ -65,7 +65,10 @@ constexpr Golden kGolden[] = {
     // 71b944c40d573c58; updated in place, as above
     // ...and three broadcast targets beside ebu (v0.13.0): atsc, arib, op59 — new rows, no existing target's master
     // moves; it was 485f7b6eeac75749; updated in place, as above
-    { "2026-10", 0xfb0cedc4f4311049ull },
+    // ...and loudness as a request (owner, 04.10, v0.14.0): the level landed on the source's gate and the limiter's
+    // budget by the target's loudness ([landing] onSourceGate, limiterBudget) — the masters of a dynamic mix and of a
+    // target the limiter cannot reach within its budget move; it was fb0cedc4f4311049; updated in place, as above
+    { "2026-10", 0x14193babae5aa94cull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -165,6 +168,10 @@ std::vector<std::string> departures (const config::Config& c)
     need (e.landing.passes == 12, "the landing: one budget of 12 passes");
     need (e.landing.truePeakAimDb == 0.05 && e.limiter.ceilingMarginDb == 0.15,
           "the true-peak aim and initial limiter margin are separate decisions");
+    need (e.landing.onSourceGate, "the landing lands the level on the source's gate (owner, 04.10)");
+    need (e.landing.quietBudgetDb == 4 && e.landing.middleBudgetDb == 7 && e.landing.loudBudgetDb == 10
+          && same (e.landing.middleLufs.min, -10.0) && same (e.landing.middleLufs.max, -8.0),
+          "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 10 dB louder (owner, 04.10)");
     need (same (e.hpf.machineTopHz, 50.0), "the machine's high-pass tops out at 50 Hz");
     need (same (e.hpf.hzMax, 80.0), "a person's high-pass knob travels to 80 Hz (owner, 01.10)");
     need (same (e.hpf.hzMin, 15.0), "the high-pass knob starts at 15 Hz");
@@ -266,6 +273,10 @@ void aDepartureIsNamed()
         { false, "hzMax = 80", "hzMax = 81", "a person's high-pass knob travels to 80 Hz (owner, 01.10)" },
         { false, "slopes = [12, 24, 48]", "slopes = [12, 24, 36]", "the high-pass slopes are 12, 24 and 48 dB/oct" },
         { false, "passes = 12", "passes = 11", "the landing: one budget of 12 passes" },
+        { false, "onSourceGate = true", "onSourceGate = false", "the landing lands the level on the source's gate (owner, 04.10)" },
+        { false, "quietDb = 4,", "quietDb = 5,", "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 10 dB louder (owner, 04.10)" },
+        { false, "middleLufs = [-10, -8]", "middleLufs = [-11, -8]",
+          "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 10 dB louder (owner, 04.10)" },
         { true, "noteLossDb = 0.3", "noteLossDb = 0.5", "targets.club.noteLossDb" },
         { true, "lufs = -7,", "lufs = -8,", "targets.youtubeMusic.lufs" },
         { true, "hpfFloor = 32, hpfSlopeDbPerOct = 24, noteLossDb = 0.3", "hpfFloor = 24, hpfSlopeDbPerOct = 24, noteLossDb = 0.3",

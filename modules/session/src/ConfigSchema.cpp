@@ -299,11 +299,21 @@ void readInput (Doc& d, Reader& in, Input& o)
     in.required ("shortSeconds", o.shortSeconds, R { 0.0, 600.0 });
 }
 
-void readLanding (Reader& in, Landing& o)
+void readLanding (Doc& d, Reader& in, Landing& o)
 {
     in.required ("passes", o.passes, I { 1, 12 });
     in.required ("toleranceLu", o.toleranceLu, R { 0.001, 1.0 });
     in.required ("truePeakAimDb", o.truePeakAimDb, R { 0.0, 1.0 });
+    in.required ("onSourceGate", o.onSourceGate);
+    in.table ("limiterBudget", Need::Required, [&] (Reader& t)
+    {
+        const bool quiet = t.required ("quietDb", o.quietBudgetDb, I { 1, 60 });
+        const bool middle = t.required ("middleDb", o.middleBudgetDb, I { 1, 60 });
+        const bool loud = t.required ("loudDb", o.loudBudgetDb, I { 1, 60 });
+        d.notAbove (t, quiet && middle, o.quietBudgetDb, o.middleBudgetDb, "middleDb");   // a louder target, no less budget
+        d.notAbove (t, middle && loud, o.middleBudgetDb, o.loudBudgetDb, "loudDb");
+        d.pair (t, "middleLufs", o.middleLufs, anyLufs());
+    });
 }
 
 R readDomain (Doc& d, Reader& in, std::string_view key, Span& out, const R& limits)
@@ -1082,7 +1092,7 @@ void readEngine (Doc& d, Reader& in, Engine& o, const std::vector<std::string>* 
     std::vector<std::int32_t> bands;   // the core's EQ bands the devices have taken, in reading order
     in.required ("defaults", o.defaults);
     in.table ("input", Need::Required, [&] (Reader& t) { readInput (d, t, o.input); });
-    in.table ("landing", Need::Required, [&] (Reader& t) { readLanding (t, o.landing); });
+    in.table ("landing", Need::Required, [&] (Reader& t) { readLanding (d, t, o.landing); });
     in.table ("limiter", Need::Required, [&] (Reader& t) { readLimiter (d, t, o.limiter); });
     in.table ("lowEnd", Need::Required, [&] (Reader& t) { readLowEnd (d, t, o.lowEnd); });
     in.table ("observations", Need::Required, [&] (Reader& t) { readObservations (d, t, o.observations); });

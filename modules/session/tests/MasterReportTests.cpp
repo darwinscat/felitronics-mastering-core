@@ -894,12 +894,13 @@ int main()
         const auto& kept = missed.session->masters()[0];
         const auto& report = *kept.report;
         const auto missFact = session::MasterReportText::miss (report);
-        ok (kept.landing->status == session::LandingStatus::PassLimit && ! report.targetMet
-            && report.peakSafe && report.firstHint && missFact
+        // Held by the limiter's budget (owner, 04.10): the miss says its numbers, and no hint blames the mix for it.
+        ok (kept.landing->status == session::LandingStatus::TargetUnreachable
+            && kept.landing->binding == session::LandingConstraint::LimiterGainReduction && ! report.targetMet
+            && report.peakSafe && ! report.firstHint && ! report.secondHint && missFact
             && ! session::text::Text::text (*missFact, session::text::Lang::Ru).empty()
-            && ! session::text::Text::text (*missFact, session::text::Lang::En).empty()
-            && session::MasterReportText::hint (*report.firstHint),
-            "ordinary loudness miss carries a number and a measured mix hint in ru and en");
+            && ! session::text::Text::text (*missFact, session::text::Lang::En).empty(),
+            "a loudness miss held by the limiter's budget carries its numbers in ru and en, and no mix hint");
     }
     std::vector<float> mono (48000u);
     for (std::size_t i = 0; i < mono.size(); ++i)

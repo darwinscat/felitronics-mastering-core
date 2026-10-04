@@ -145,7 +145,7 @@ QueryResult answered (Session& s, const MeasurementQuery& q, bool& covered)
 
 void theLandingsFacts()
 {
-    felitronics::test::group ("(c) the landing's miss and its hints are facts the core publishes, keyed to the master");
+    felitronics::test::group ("(c) the landing's miss and its verdict are facts the core publishes, keyed to the master");
     const Audio audio (5);
     auto sp = loaded (audio.planes, 2, audio.frames, audio.rate); auto& s = *sp;
     ok (s.apply (command::EditTarget { 3, { -5.0, -6.0 } }).rejection == Rejection::None, "PRECONDITION: a target this mix cannot reach: −5 LUFS under −6 dBTP");
@@ -153,7 +153,7 @@ void theLandingsFacts()
     const auto view = s.snapshot();
     const auto& report = *kept (view.view(), made.id)->report;
     const auto miss = MasterReportText::miss (report);
-    ok (miss && report.firstHint, "PRECONDITION: the master missed, with a reason");
+    ok (miss.has_value(), "PRECONDITION: the master missed");
     const auto published = [&] (const text::Fact& fact)
     {
         for (const auto& e : made.facts)
@@ -169,15 +169,14 @@ void theLandingsFacts()
     const auto said = miss ? text::Text::text (*miss, text::Lang::Ru) + " / " + text::Text::text (*miss, text::Lang::En) : std::string {};
     ok (miss && published (*miss) && (miss->id == text::FactId::MasterLandingMiss || miss->id == text::FactId::MasterLandingAbove)
         && said.find ('{') == std::string::npos, "the miss is published with the master's id, ru and en: " + said);
-    bool hints = true; std::string hinted;
-    for (const auto* hint : { &report.firstHint, &report.secondHint })
-        if (*hint)
-        {
-            const auto fact = MasterReportText::hint (**hint);
-            hints = hints && fact && published (*fact);
-            if (fact) hinted += text::Text::text (*fact, text::Lang::Ru) + " ";
-        }
-    ok (hints && ! hinted.empty(), "and each hint: " + hinted);
+    // Held by the limiter's budget (owner, 04.10): nothing in the mix is blamed — no hint is stated or published.
+    bool hinted = report.firstHint || report.secondHint;
+    for (const auto& e : made.facts)
+    {
+        const auto id = std::uint16_t (e.payload.fact.view().id);
+        hinted = hinted || (e.jobId == made.id && id >= 12 && id <= 17);
+    }
+    ok (! hinted, "and no hint blames the mix");
     std::size_t before = 0, first = made.facts.size();
     for (std::size_t i = 0; i < made.facts.size(); ++i)
     {
@@ -187,19 +186,19 @@ void theLandingsFacts()
     }
     ok (before == 0, "the landing's line comes ahead of the cost's");
 
-    // The verdict: the miss's status said against the tolerance, beside the miss's numbers. The tolerance is the shipped
-    // engine's landing.toleranceLu (LandingPlanTests pins it).
+    // The tolerance is the shipped engine's landing.toleranceLu (LandingPlanTests pins it).
     constexpr double kTolerance = 0.1;
+    // The verdict: held by the limiter's budget, the target, the level landed and the budget — 10 dB for a target louder
+    // than −8 LUFS (engine.toml [landing] limiterBudget), the level landed no louder than the target.
     const auto& summary = *kept (view.view(), made.id)->landing;
-    const auto status = summary.status;
-    const auto verdict = MasterReportText::landing (report, summary, kTolerance);
     const auto both = [] (const text::Fact& f) { return text::Text::text (f, text::Lang::Ru) + " / " + text::Text::text (f, text::Lang::En); };
-    // A between verdict names its two levels (the summary's, from the solver); the others stand against the tolerance.
-    const bool numbers = status == LandingStatus::TargetBetweenAchievable
-        ? verdict && verdict->argCount == 2 && summary.belowLufs && summary.aboveLufs && same (verdict->args[0].number, *summary.belowLufs)
-            && same (verdict->args[1].number, *summary.aboveLufs) && verdict->args[0].unit == text::Unit::Lufs
-        : verdict && verdict->argCount >= 1 && same (verdict->args[0].number, kTolerance) && verdict->args[0].unit == text::Unit::Lu;
-    ok (status != LandingStatus::Solved && verdict && published (*verdict) && numbers,
+    std::optional<text::Fact> verdict;
+    for (const auto& e : made.facts)
+        if (e.jobId == made.id && e.payload.fact.view().id == text::FactId::MasterLandingBudget) verdict = e.payload.fact.view();
+    ok (summary.status == LandingStatus::TargetUnreachable && summary.binding == LandingConstraint::LimiterGainReduction
+        && verdict && verdict->argCount == 3 && same (verdict->args[0].number, -5.0) && verdict->args[1].number <= -5.0
+        && same (verdict->args[2].number, 10.0) && verdict->args[2].unit == text::Unit::Db
+        && both (*verdict).find ('{') == std::string::npos,
         "the miss's verdict is published with the master, with its numbers: " + (verdict ? both (*verdict) : std::string {}));
 
     auto met = loaded (audio.planes, 2, audio.frames, audio.rate);

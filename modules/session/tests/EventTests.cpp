@@ -301,7 +301,10 @@ void pump()
     };
     // The saturation's shave (03.10) is a fourth trace a render steps through, so a pass has more work units and the
     // phases' units, fractions and count moved; every other event is as it was (checked with the phases left out).
-    ok (eventsHash (previousVersion (one)) == 0x1555a30af9dc5110ull && eventsHash (previousVersion (cancelled)) == 0x8d434eb2d9dff1ddull,
+    // Loudness as a request (v0.14.0, 04.10) moved the master's sound — its landing, its report's numbers and lines, a
+    // pass's work — so these three pins were re-recorded on it; they were 1555a30af9dc5110 / 8d434eb2d9dff1dd,
+    // fd8d2c4110c6c94f / 002799982f8522aa and 9d7c29a5f4147512 / 903fef3e11059149.
+    ok (eventsHash (previousVersion (one)) == 0x10f3fe02f5f04e2aull && eventsHash (previousVersion (cancelled)) == 0xab92d89ae4fe61baull,
         "the targets' notes move only the config's version the phases carry: with the previous one, the previous pins");
     const auto withoutCostLines = [] (const std::vector<Notification>& events)
     {
@@ -316,15 +319,15 @@ void pump()
         }
         return kept;
     };
-    ok (eventsHash (withoutCostLines (previousVersion (one))) == 0xfd8d2c4110c6c94full
-        && eventsHash (withoutCostLines (previousVersion (cancelled))) == 0x002799982f8522aaull
+    ok (eventsHash (withoutCostLines (previousVersion (one))) == 0x5764cd8694a78715ull
+        && eventsHash (withoutCostLines (previousVersion (cancelled))) == 0x9326c8b1abce8875ull
         && withoutCostLines (one).size() < one.size(),
-        "the cost's new lines are the only new events: without them the pins fd8d2c4110c6c94f / 002799982f8522aa hold");
+        "the cost's new lines are the only new events: without them the pins 5764cd8694a78715 / 9326c8b1abce8875 hold");
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     // The three broadcast targets (v0.13.0) moved the config version the phases carry and nothing else (the previous
     // version's pins above hold); these were 1fdc6e0971f677c0 / 19c7710590fbdf2d.
-    ok (eventsHash (one) == 0x9d7c29a5f4147512ull && eventsHash (cancelled) == 0x903fef3e11059149ull,
+    ok (eventsHash (one) == 0xc53142779e57820full && eventsHash (cancelled) == 0x4697be12cad5438eull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, previous version: %016llx %016llx; and without the cost's lines: %016llx %016llx\n",

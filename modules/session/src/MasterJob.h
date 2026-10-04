@@ -9,6 +9,7 @@
 #include <felitronics/analysis/BandCrest.h>
 #include <felitronics/analysis/StreamingLoudnessMeter.h>
 #include <felitronics/analysis/WaveformIndex.h>
+#include <felitronics/toml/Embedded.h>
 #include "Cost.h"
 #include <memory>
 #include <optional>
@@ -18,6 +19,10 @@ namespace felitronics::session
 class Session;
 namespace detail
 {
+// [landing] limiterBudget: the P95 of the limiter's gain reduction a landing at `targetLufs` may take, dB — the
+// target's own number or a person's edit of it, by one rule. NaN where the config does not say it.
+[[nodiscard]] double limiterBudgetDb (toml::embedded::View engine, double targetLufs) noexcept;
+
 struct MasterPlan
 {
     Rejection rejection = Rejection::Contract;
