@@ -255,7 +255,7 @@ void abiQueries()
         for (unsigned repetition = 0; repetition < 2; ++repetition)
         {
             fc_session_sizes size { sizeof (size), 0, 0 }, actual { sizeof (actual), 777, 888 };
-            fc_session_storage demand { sizeof (demand), 0, 0, 0, 0 };
+            fc_session_storage demand { sizeof (demand), 0, 0, 0, 0, 0 };
             ok (fc_session_query_bytes (handle, request.data(), std::uint32_t (request.size()), &demand) == FC_SESSION_OK && demand.rejection == 0, "C query demand");
             ok (fc_session_query_size (handle, request.data(), std::uint32_t (request.size()), &size) == FC_SESSION_OK, "C query buffer bounds");
             std::vector<char> text (size.jsonBytes, '!'); std::vector<double> rows (size.rowBytes / 8u, -777);
@@ -304,7 +304,7 @@ void abiQueries()
     ok (std::string_view (text.data(), text.size()).find ("\"measurementRowsIncluded\":false") != std::string_view::npos, "summary advertises omitted rows");
     MeasurementQuery outside; outside.audioId = native.session->source().hash; outside.toFrame = frames + 1u;
     const auto outOfRange = json (outside);
-    fc_session_storage semanticDemand { sizeof (semanticDemand), 0, 0, 0, 0 };
+    fc_session_storage semanticDemand { sizeof (semanticDemand), 0, 0, 0, 0, 0 };
     fc_session_sizes semanticSize { sizeof (semanticSize), 0, 0 }, semanticWritten { sizeof (semanticWritten), 0, 0 };
     ok (fc_session_query_bytes (handle, outOfRange.data(), std::uint32_t (outOfRange.size()), &semanticDemand) == FC_SESSION_OK
         && semanticDemand.rejection == 0 && same (semanticDemand.bytes, 0.0), "invalid range has an allocation-free C preflight");
@@ -329,7 +329,7 @@ struct CQuery
 CQuery queryC (fc_session handle, const MeasurementQuery& q)
 {
     const auto request = json (q);
-    fc_session_storage demand { sizeof (demand), 0, 0, 0, 0 };
+    fc_session_storage demand { sizeof (demand), 0, 0, 0, 0, 0 };
     fc_session_sizes size { sizeof (size), 0, 0 }, actual { sizeof (actual), 0, 0 };
     ok (fc_session_query_bytes (handle, request.data(), std::uint32_t (request.size()), &demand) == FC_SESSION_OK, "regression C demand");
     ok (fc_session_query_size (handle, request.data(), std::uint32_t (request.size()), &size) == FC_SESSION_OK, "regression C size");

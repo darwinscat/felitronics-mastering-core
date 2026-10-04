@@ -204,6 +204,9 @@ struct Checked
     std::uint64_t bytes = 0;                   // preflight passed: demand of apply(), including import refusals; otherwise 0
     double needBytes = 0.0;                    // Memory: total declared live bytes and demand
     std::uint64_t largestBlockBytes = 0;       // largest single allocation (import: conservative bound)
+    // Live bytes the command frees before its first allocation: a master stops the damage being graded (its job's
+    // bytes). The heap must hold liveBytes() − releasedBytes + bytes; check() and needBytes count it so.
+    std::uint64_t releasedBytes = 0;
 };
 
 // A session's situation: measurement state, master overlay and device placement. The measured columns stand for devices

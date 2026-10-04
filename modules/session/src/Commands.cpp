@@ -300,13 +300,18 @@ Checked Session::storageFor (const Request& request) const noexcept
         const auto roomBytes = (room ? 0u : std::uint64_t (masterCount_ + 1) * sizeof (Kept) * (capabilities_.leanSummary ? 2u : 1u))
             + std::uint64_t (std::max (masterRoom_, masterCount_ + 1)) * sizeof (detail::MasterRows) + 4096u;
         if (roomBytes > 9007199254740991ull - plan.bytes) return rejected (Rejection::TooLong);
-        return storage (plan.bytes + roomBytes, std::max (plan.largestBlock, roomBytes));
+        // The damage still graded for an earlier master stops before anything is allocated (apply): its job's bytes are
+        // free for this one.
+        auto priced = storage (plan.bytes + roomBytes, std::max (plan.largestBlock, roomBytes));
+        priced.releasedBytes = damageJobBytes_;
+        return priced;
     }
     if (std::holds_alternative<command::ContinueMeasurement> (request))
         return lastJob_ == std::numeric_limits<JobId>::max() ? rejected (Rejection::NoJobId) : Checked {};
     if (const auto* cancel = std::get_if<command::Cancel> (&request))
-        return job_ == 0 && measurementJob_ == 0 && needlesJob_ == 0 ? rejected (Rejection::NoJob)
-             : cancel->job != 0 && (cancel->job == job_ || cancel->job == measurementJob_ || cancel->job == needlesJob_)
+        return job_ == 0 && measurementJob_ == 0 && needlesJob_ == 0 && damageJobId_ == 0 ? rejected (Rejection::NoJob)
+             : cancel->job != 0 && (cancel->job == job_ || cancel->job == measurementJob_ || cancel->job == needlesJob_
+                                    || cancel->job == damageJobId_)
                  ? Checked {} : rejected (Rejection::UnknownJob);
     if (const auto* forget = std::get_if<command::Forget> (&request))
     {
@@ -490,7 +495,7 @@ Answer Session::apply (const Request& request) noexcept
         state_ = State::Loaded;
         measurementJob_ = ++lastJob_;
         measurementUnit_ = masterUnit_ = 0;
-        measurementProgress_ = { PhaseName::Stream, 0.0, config::Config::versions().all, 0, 0, 0, 10 };
+        measurementProgress_ = { PhaseName::Stream, 0.0, config::Config::versions().all, 0, 0, 0, 10, std::nullopt };
         masterProgress_ = {};
         if (cached)
         {
@@ -572,6 +577,8 @@ Answer Session::apply (const Request& request) noexcept
     }
     else if (const auto* master = std::get_if<command::Master> (&request))
     {
+        // The damage still graded for an earlier master stops first, and says why: a new master was asked for.
+        if (damageJobId_ != 0) endDamage (MeasurementReason::Superseded, true);
         const auto plan = detail::MasterJob::plan (*this, *master, project_);
         if (masterRoom_ == masterCount_)                            // the room check() counted, as one exact array
         {
@@ -603,7 +610,7 @@ Answer Session::apply (const Request& request) noexcept
             const auto passes = std::uint32_t (*rules.engine.find ("progress").find ("master").find ("expectedPasses").integer());
             const auto chunks = (source_.frames + 1023u) / 1024u;
             const auto waitUnits = std::uint32_t (std::min<std::uint64_t> (3u * chunks + 64u, 4294967295u));
-            masterProgress_ = { PhaseName::Analyzers, 0.0, config::Config::versions().all, 0, passes, 0, waitUnits };
+            masterProgress_ = { PhaseName::Analyzers, 0.0, config::Config::versions().all, 0, passes, 0, waitUnits, std::nullopt };
         }
         else startMaster (plan);
         answer.job = job_;
@@ -619,19 +626,23 @@ Answer Session::apply (const Request& request) noexcept
     {
         const auto progress = jobProgress (cancel->job);
         // The fact names the job that stopped: needles or a master cancelled while the measurement is stopped are
-        // cancelled, not a measurement stopped again.
-        const bool measurement = cancel->job == measurementJob_;
-        dropJob (cancel->job);
+        // cancelled, not a measurement stopped again. A damage's job says it before its own end, which the damage
+        // event closes.
+        const bool measurement = cancel->job == measurementJob_, damage = cancel->job == damageJobId_;
+        if (! damage) dropJob (cancel->job);
         Notification event;
         event.jobId = cancel->job;
         event.kind = EventKind::Fact;
         (void) event.payload.fact.assign (text::Fact::of (measurement ? text::FactId::MeasurementStopped : text::FactId::Cancelled));
         emit (event, progress);
+        if (damage) endDamage (MeasurementReason::Cancelled, true);
     }
     else if (const auto* forget = std::get_if<command::Forget> (&request))
     {
         if (pendingMaster_.master == forget->master)
         { masterAudio_ = {}; masterAudioBits_ = 0; pendingMaster_ = {}; }
+        // A master forgotten while its damage is graded: the job stops with it — no line for a master no longer kept.
+        if (damageJob_ && damageJob_->master == forget->master) endDamage (MeasurementReason::Cancelled, false);
         Kept* const first = masters_.get();
         Kept* const last = first + masterCount_;
         Kept* const it = std::find_if (first, last, [&] (const Kept& k) { return k.id == forget->master; });
@@ -731,7 +742,7 @@ void Session::startMaster (const detail::MasterPlan& plan) noexcept
     rows.crestParams = plan.crestParams;
     masterUnit_ = 0;
     masterSummary_ = {}; masterTraceCursor_ = 0; masterTraceActive_ = false;
-    masterProgress_ = { PhaseName::Pass, 0.0, config::Config::versions().all, 0, 12, 0, 12 };
+    masterProgress_ = { PhaseName::Pass, 0.0, config::Config::versions().all, 0, 12, 0, 12, std::nullopt };
 }
 
 //==============================================================================
@@ -811,6 +822,11 @@ bool Driver::measured2 (Session& session, JobId job, std::uint64_t source) noexc
     // result ended; a fixture's seam may not have run an analyzer at all, and a result that can no longer end would be
     // one a plan waits for for ever.
     for (const auto analyzer : detail::SourceMeasurements::order)
+        if (auto& r = session.measurementResults_[std::size_t (analyzer)]; r.status == MeasurementStatus::Pending)
+        { r.status = MeasurementStatus::Unavailable; r.reason = MeasurementReason::NotImplemented; }
+    // ...and the live ones, which end before the first measurement does: the programme report among them, which a
+    // master's loudness range reads as ended.
+    for (const auto analyzer : { Analyzer::Loudness, Analyzer::Clipping, Analyzer::Programme })
         if (auto& r = session.measurementResults_[std::size_t (analyzer)]; r.status == MeasurementStatus::Pending)
         { r.status = MeasurementStatus::Unavailable; r.reason = MeasurementReason::NotImplemented; }
     session.replan();

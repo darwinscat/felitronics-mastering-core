@@ -524,7 +524,7 @@ struct Source
     std::string_view name;
 };
 
-namespace detail { struct Driver; struct Inspector; struct PlanInputs; struct MasterPlan; struct MeasurementWorkspace; struct LiveMeasurements; struct SourceMeasurements; struct NeedlesWork; struct NeedlesResult; struct WaveformState; struct QueryCache; struct MasterJob; struct MasterRows; }
+namespace detail { struct Driver; struct Inspector; struct PlanInputs; struct MasterPlan; struct MeasurementWorkspace; struct LiveMeasurements; struct SourceMeasurements; struct NeedlesWork; struct NeedlesResult; struct WaveformState; struct QueryCache; struct MasterJob; struct MasterRows; struct DamageJob; }
 
 struct MasterToken
 {
@@ -671,6 +671,8 @@ public:
     [[nodiscard]] std::string_view targetName() const noexcept;   // the key of the project's target row
     [[nodiscard]] Source source() const noexcept;
     [[nodiscard]] JobId job() const noexcept;               // the master being made; 0 when none is
+    // The damage being graded for a delivered master (MasterReport.damage Pending), a job of its own; 0 when none is.
+    [[nodiscard]] JobId damageJob() const noexcept;
     [[nodiscard]] const Recipe& jobRecipe() const noexcept; // ...and its recipe (meaningless when job() is 0)
     [[nodiscard]] std::span<const Kept> masters() const noexcept;   // the masters kept, in the order they were made
     [[nodiscard]] MasterToken pendingMaster() const noexcept;
@@ -694,6 +696,7 @@ private:
 
     Session() noexcept = default;
     Capabilities capabilities_ {};
+    // Against the heap as it is, less what the command frees first (Checked::releasedBytes).
     [[nodiscard]] Checked demand (const Checked& storage) const noexcept;
     [[nodiscard]] Answer reject (Answer answer) noexcept;
 
@@ -711,6 +714,13 @@ private:
     void clearMasters() noexcept;
     void settleMasterCrest (MeasurementReason reason) noexcept;
     void stepMasterCrestJoin() noexcept;
+    // THE DAMAGE'S JOB (src/Damage.h): started when its master is delivered, stepped behind every other work. It ends
+    // with its walks (`stopped` None: their result) or is stopped — by cancel (Cancelled), by a new master (Superseded),
+    // by forget of its master — and says so: its master's report settles, the damage's line (`line`) and the Damage
+    // event. A load and loadMeasured drop it with the masters, silently, as they drop a master being made.
+    void startDamage (MasterId master, const detail::MasterJob& job) noexcept;
+    void stepDamage() noexcept;
+    void endDamage (MeasurementReason stopped, bool line) noexcept;
     [[nodiscard]] SnapshotView buildView() const noexcept;
     [[nodiscard]] SnapshotView buildSummary (std::span<MeasurementResult> results) const noexcept;
     [[nodiscard]] bool hasWork() const noexcept;
@@ -822,6 +832,11 @@ private:
     std::size_t crestJoinIndex_ = 0;
     bool crestJoin_ = false;
     MeasurementReason crestJoinReason_ = MeasurementReason::None;
+    // The damage being graded: its job, the bytes it holds (inside the master's admitted demand) and its progress.
+    std::unique_ptr<detail::DamageJob> damageJob_;
+    JobId damageJobId_ = 0;
+    std::uint64_t damageJobBytes_ = 0;
+    Phase damageProgress_ {};
 };
 
 } // namespace felitronics::session

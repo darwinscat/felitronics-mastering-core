@@ -7,6 +7,7 @@
 #include <felitronics/session/Measurements.h>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 
 namespace felitronics::session
 {
@@ -24,7 +25,7 @@ private:
     char text_[kTextCapacity] {};
     std::size_t lengths_[text::Fact::kMaxArgs] {};
 };
-enum class PhaseName : std::uint8_t { Stream, Report, Analyzers, Pass, Remeasure, Convert, Lra, Final };
+enum class PhaseName : std::uint8_t { Stream, Report, Analyzers, Pass, Remeasure, Convert, Lra, Final, Reference, Damage };
 struct Phase
 {
     PhaseName name = PhaseName::Stream;
@@ -34,6 +35,11 @@ struct Phase
     std::uint32_t totalPasses = 0;          // diagnostic journal only
     std::uint32_t completedUnits = 0;
     std::uint32_t totalUnits = 0;
+    // THE CURRENT WALK OVER THE FILE, 0..1, a new count for every walk: the measurement's stream; a master's source
+    // statistics, every landing pass, the delivered render's check, the crest's and the cost's reads, the reference's
+    // loudness and the damage's. Absent where the phase has no walk of its own (the report, the waits, the bookkeeping
+    // between walks, the end).
+    std::optional<double> stepFraction;
 };
 struct ReadingPoint { std::uint64_t index = 0; double value = 0.0; };
 struct ReadingRun { std::uint64_t first = 0; std::uint64_t count = 0; double value = 0.0; };
@@ -72,7 +78,16 @@ struct MeasurementChange
     std::uint64_t key = 0, source = 0, revision = 0, framesRead = 0, total = 0, stored = 0;
     bool complete = false;
 };
-enum class EventKind : std::uint8_t { Phase, Fact, Reading, Done, Rejected, Error, Measurement };
+// THE DAMAGE OF A MASTER, graded after it (MasterReport.damage): a job of its own, started when the master is delivered.
+// Pending when it starts (the master's report says Pending), then once more when it ends — Ready or Unavailable with
+// the report's own status and reason, or Cancelled: by cancel (Cancelled), by a new master (Superseded), by forget.
+struct DamageChange
+{
+    MasterId masterId = 0;
+    MeasurementStatus status = MeasurementStatus::Pending;
+    MeasurementReason reason = MeasurementReason::Pending;
+};
+enum class EventKind : std::uint8_t { Phase, Fact, Reading, Done, Rejected, Error, Measurement, Damage };
 struct EventPayload
 {
     // Only the member named by kind is meaningful. All payloads are self-contained values.
@@ -83,6 +98,7 @@ struct EventPayload
     Rejected rejected {};
     Error error {};
     MeasurementChange measurement {};
+    DamageChange damage {};
 };
 struct Notification
 {
@@ -104,7 +120,8 @@ struct Stepped
 };
 inline constexpr std::uint32_t kStepUnits = 16;
 // One master completion may emit a phase, a pass, the landing's miss and its two hints, six cost facts (the glue's and
-// the saturation's among them), four of its medium and input (vinyl's three, a very quiet input's), Ready and Done in
-// the same unit. The other units retain their three-event bound.
-inline constexpr std::size_t kEventBatch = 3 * kStepUnits + 14;
+// the saturation's among them), four of its medium and input (vinyl's three, a very quiet input's), the damage's and the
+// loudness range's lines, Ready, Done and the damage job's start in the same unit. The other units retain their
+// three-event bound.
+inline constexpr std::size_t kEventBatch = 3 * kStepUnits + 17;
 } // namespace felitronics::session

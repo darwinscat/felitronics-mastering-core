@@ -30,7 +30,18 @@
       "Remeasure",
       "Convert",
       "Lra",
-      "Final"
+      "Final",
+      "Reference",
+      "Damage"
+    ],
+    "DamageVerdict": [
+      "NotRun",
+      "Graded",
+      "Transparent",
+      "NoSignal",
+      "NonFinite",
+      "Undefined",
+      "OutOfRange"
     ],
     "Device": [
       "Hpf",
@@ -76,7 +87,9 @@
       "NoSignal",
       "NotImplemented",
       "NeedNotAbove3",
-      "Memory"
+      "Memory",
+      "Superseded",
+      "NoJobId"
     ],
     "LandingStatus": [
       "Solved",
@@ -625,6 +638,30 @@
         "saturationCutUsualDb": "MasterCostValue"
       }
     },
+    "MasterDamage": {
+      "cpp": "MasterDamage",
+      "fields": {
+        "status": "MeasurementStatus",
+        "reason": "MeasurementReason",
+        "verdict": "DamageVerdict",
+        "grade": "uint32",
+        "worstOdg": "double?",
+        "worstDi": "double?",
+        "worstFromSeconds": "double?",
+        "windows": "uint32",
+        "audibleWindows": "uint32",
+        "ungradedWindows": "uint32",
+        "audibleShare": "double?",
+        "windowSeconds": "double",
+        "hopSeconds": "double",
+        "referenceGainDb": "double?",
+        "sourceLraLu": "double?",
+        "masterLraLu": "double?",
+        "lraChangeLu": "double?",
+        "lraChangePercent": "double?",
+        "lraReason": "MeasurementReason"
+      }
+    },
     "MasterReport": {
       "cpp": "MasterReport",
       "fields": {
@@ -650,7 +687,8 @@
         "cost": "MasterCost?",
         "medium": "MasterMedium?",
         "readings": "ReadingFact[<=9]",
-        "peaksAboveCeiling": "bool"
+        "peaksAboveCeiling": "bool",
+        "damage": "MasterDamage"
       }
     },
     "LandingPass": {
@@ -736,7 +774,8 @@
         "pass": "uint32",
         "totalPasses": "uint32",
         "completedUnits": "uint32",
-        "totalUnits": "uint32"
+        "totalUnits": "uint32",
+        "stepFraction": "double?"
       }
     },
     "ReadingPoint": {
@@ -805,7 +844,9 @@
         "observationFacts": "ObservationFact[<=17]",
         "readings": "ReadingFact[<=26]",
         "targetNote": "Fact?",
-        "eqOnlyCurve": "EqPoint[]"
+        "eqOnlyCurve": "EqPoint[]",
+        "damageJob": "uint32",
+        "damageProgress": "Phase"
       }
     },
     "MasterToken": {
@@ -915,6 +956,14 @@
         "total": "uint64",
         "stored": "uint64",
         "complete": "bool"
+      }
+    },
+    "DamageChange": {
+      "cpp": "DamageChange",
+      "fields": {
+        "masterId": "uint32",
+        "status": "MeasurementStatus",
+        "reason": "MeasurementReason"
       }
     },
     "MeasuredSource": {
@@ -1205,7 +1254,7 @@
   },
   "wireAliases": {
     "CommandAnswer": "AcceptedAnswer | RejectedAnswer | ContractAnswer",
-    "SessionEvent": "PhaseEvent | FactEvent | ReadingEvent | DoneEvent | RejectedEvent | ErrorEvent | MeasurementEvent",
+    "SessionEvent": "PhaseEvent | FactEvent | ReadingEvent | DoneEvent | RejectedEvent | ErrorEvent | MeasurementEvent | DamageEvent",
     "SessionCommand": "SetTargetCommand | SetManualCommand | EditTargetCommand | EditDeviceCommand | RevertEditsCommand | MasterCommand | CancelCommand | ForgetCommand | ContinueMeasurementCommand | AdoptMachineCommand",
     "EditDeviceCommand": "EditDeviceHpfCommand | EditDeviceMonoBassCommand | EditDeviceGlueCommand | EditDeviceSaturationCommand | EditDeviceTiltCommand | EditDeviceLimiterCommand | EditDeviceDitherCommand | EditDeviceLowCommand | EditDeviceBandsCommand",
     "RevertEditsCommand": "RevertEditsHpfCommand | RevertEditsMonoBassCommand | RevertEditsGlueCommand | RevertEditsSaturationCommand | RevertEditsTiltCommand | RevertEditsLimiterCommand | RevertEditsDitherCommand | RevertEditsLowCommand | RevertEditsBandsCommand",
@@ -1610,6 +1659,18 @@
       "jobId": "number",
       "kind": "\"measurement\"",
       "payload": "MeasurementChange",
+      "source": "string",
+      "revision": "string",
+      "phase": "PhaseName",
+      "completedWork": "string",
+      "totalWork": "string",
+      "state": "State"
+    },
+    "DamageEvent": {
+      "seq": "string",
+      "jobId": "number",
+      "kind": "\"damage\"",
+      "payload": "DamageChange",
       "source": "string",
       "revision": "string",
       "phase": "PhaseName",

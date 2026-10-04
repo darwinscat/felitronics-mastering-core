@@ -17,6 +17,14 @@ target_link_libraries(fcore_measure PRIVATE felitronics::analysis_offline felitr
 target_compile_features(fcore_measure PRIVATE cxx_std_20)
 target_compile_options(fcore_measure PRIVATE ${FCORE_NO_FP_CONTRACT})
 
+# PEAQ Basic (ITU-R BS.1387) of a test against its reference: analysis::Peaq, plus the delivery converter for inputs
+# that are not 48 kHz. Built contract-off like fcore_measure: tools/wasm/build.sh compiles this same file for wasm and
+# CI diffs the two outputs.
+add_executable(fcore_peaq fcore_peaq.cpp)
+target_link_libraries(fcore_peaq PRIVATE felitronics::peaq felitronics::io)
+target_compile_features(fcore_peaq PRIVATE cxx_std_20)
+target_compile_options(fcore_peaq PRIVATE ${FCORE_NO_FP_CONTRACT})
+
 if(FELITRONICS_BUILD_TESTS)
     # fcore::Probe is a body shared verbatim with the wasm shim, so it is one of the two pieces of tools/ that
     # carry a correctness claim rather than convenience — and it gets a real suite. (The other is
