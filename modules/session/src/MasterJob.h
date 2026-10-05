@@ -175,7 +175,8 @@ struct MasterJob final
     bool damageFollows = false;
     void settleLra() noexcept;
     // The loudness mode the job lands in (a max mode's verdict and stop). A max mode's floor ([landing.max] floorLufs) and
-    // the landing again on it, with no budget, where the mode's budget held the first one under it (floorPass).
+    // the landing again on it, with no budget, where the first one's file stood under it — whatever held it there: the
+    // budget, the passes (floorPass); floorFirstLufs, where that first file stood.
     LoudnessMode mode = LoudnessMode::Manual;
     double floorLufs = std::numeric_limits<double>::quiet_NaN(), floorFirstLufs = std::numeric_limits<double>::quiet_NaN();
     bool floorPass = false;
