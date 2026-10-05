@@ -781,6 +781,11 @@ void stateWaiting (PlanView& plan) noexcept
 
 void Session::replan() noexcept
 {
+    // The pump gives source measurement priority over grades. State the current hold after every command and step;
+    // cancelling or continuing that measurement changes the reason even before the grade gets another unit.
+    for (std::size_t i = 0; i < damageCount_; ++i)
+        damageJobs_[i].waitReason = damageJobs_[i].state == DamageJobState::Running ? std::nullopt
+            : std::optional { measurementJob_ != 0 ? DamageWaitReason::SourceMeasurement : DamageWaitReason::Queue };
     const auto in = planInputs (project_);
     Key key;
     key.u64 (source_.hash); key.u64 (measurementKey_); key.u64 (config::Config::versions().all);

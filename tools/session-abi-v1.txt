@@ -2017,6 +2017,9 @@ codec GlueFinding.mix double
 codec AnalyzerProgress.analyzer Analyzer
 codec AnalyzerProgress.fraction double?
 codec Phase.analyzers AnalyzerProgress[<=3]?
+enum felitronics::session::DamageWaitReason::Queue=0
+enum felitronics::session::DamageWaitReason::SourceMeasurement=1
+codec DamageJobEntry.waitReason DamageWaitReason?
 wire EditDeviceGlueFields.mix? WireNumber | null
 wire RevertEditsGlueFields.mix? boolean
 enum felitronics::session::text::Term::FieldGlueMix=151

@@ -1745,6 +1745,10 @@ still prices one grade's room (`MasterJob::plan`), which a grade asked right aft
 not an edit: a project's journal does not hold it, and an import grades nothing. With no job id left, `gradeDamage` is
 refused (`NoJobId`).
 
+`DamageJobEntry.waitReason` (ABI 13) is `SourceMeasurement` (1) while the pump holds a waiting grade for the source's
+measurement, otherwise `Queue` (0) while it waits its turn; null while Running. Cancel and continue refresh it at once.
+The master-report suite exercises both waits and the transition to Running.
+
 THE DAMAGE (`MasterReport.damage`, v0.14.0, `[cost.damage]` in engine.toml): PEAQ Basic (`analysis::Peaq`) of the
 master against the same chain with its dynamics at rest, graded in windows (10 s every 5 s; a programme shorter than a
 window is one window) on the BS.1116 scale by ODG (grade 5 from -0.5, 4 from -1.5, 3 from -2.5, 2 from -3.5, 1 below).

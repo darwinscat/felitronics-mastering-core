@@ -316,6 +316,10 @@
       "Gain",
       "Passes",
       "CheckPasses"
+    ],
+    "DamageWaitReason": [
+      "Queue",
+      "SourceMeasurement"
     ]
   },
   "records": {
@@ -895,7 +899,8 @@
         "job": "uint32",
         "masterId": "uint32",
         "state": "DamageJobState",
-        "progress": "Phase"
+        "progress": "Phase",
+        "waitReason": "DamageWaitReason?"
       }
     },
     "MachineDifference": {

@@ -46,6 +46,12 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (DamageVerdict::OutOfRange) == 6);
         return 6;
     }
+    else if constexpr (std::is_same_v<T, DamageWaitReason>)
+    {
+        static_assert (unsigned (DamageWaitReason::Queue) == 0);
+        static_assert (unsigned (DamageWaitReason::SourceMeasurement) == 1);
+        return 1;
+    }
     else if constexpr (std::is_same_v<T, Device>)
     {
         static_assert (unsigned (Device::Hpf) == 0);
@@ -438,6 +444,15 @@ constexpr void checkEnum (DamageVerdict value) noexcept
         case DamageVerdict::NonFinite: break;
         case DamageVerdict::Undefined: break;
         case DamageVerdict::OutOfRange: break;
+    }
+}
+
+constexpr void checkEnum (DamageWaitReason value) noexcept
+{
+    switch (value)
+    {
+        case DamageWaitReason::Queue: break;
+        case DamageWaitReason::SourceMeasurement: break;
     }
 }
 
@@ -942,7 +957,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, DamageJobEntry>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.job)>, std::uint32_t>);
         v.field ("job", x.job);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.masterId)>, std::uint32_t>);
@@ -951,6 +966,8 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("progress", x.progress);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.state)>, DamageJobState>);
         v.field ("state", x.state);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.waitReason)>, std::optional<DamageWaitReason>>);
+        v.field ("waitReason", x.waitReason);
     }
     else if constexpr (std::is_same_v<U, DevicePlan>)
     {
