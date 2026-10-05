@@ -13,16 +13,19 @@
   `AimAtTarget`, `PeakProbe`, `StepBackBySlope`, `InsideBracket`, `ProveEdge`, `Excerpt` or `DeliverWinner`. Excerpt rows
   append their source-frame range; live `Phase` appends the current excerpt range. The codec, wire manifest and ABI 13
   append the fields; the full render count remains separate from the ordered log.
-- **Max modes search the loudest source excerpt first**, by the existing momentary series: 30 seconds, with two seconds
-  of limiter pre-roll excluded from P95, a bounded 0.25 dB Brent bracket and a first full render 1 dB above its edge.
-  The full bracket uses safeguarded Brent interpolation without v0.17.0's five-percent chord guard and keeps the same
-  0.25 dB full-file proof. `[landing.max] excerptSearch` defaults on; missing/failed excerpt measurement and switch off
-  take the v0.17.0 path bit for bit. Manual PCM remains pinned at `9a601c4c5e044b00`.
+- **Max modes search a measured source excerpt first**, by the existing momentary series: the 20-second window at the
+  90th percentile of window loudness, with two seconds of limiter pre-roll excluded from P95, a bounded 0.25 dB Brent
+  bracket and a first full render 0.5 dB above its edge. The file then uses v0.17.0's slope-back, guarded Illinois chord
+  and proof; a kept opening advances in bounded 0.5 dB steps until an over-budget render exists. Brent runs only on the
+  excerpt. `[landing.max] budgetResolutionDb` defaults the full proof to 0.25 dB; `MasterCommand.budgetResolutionDb`
+  lets the page pass 0.05…1 dB, with absent taking the default. `[landing.max] excerptSearch` defaults on;
+  missing/failed/too-short excerpt input, allocation failure and switch off take the v0.17.0 path bit for bit. The peak
+  forecast is measured on the excerpt, not by another full render. Manual PCM remains pinned at `9a601c4c5e044b00`.
 - **The empty tonal-change fact is no longer emitted.** The retained `k2Reason=NotImplemented` datum and append-only
   fact/catalog ids remain for compatibility.
-- Max PCM moves when the switch is on because the excerpt chooses the first full drive and the full bracket no longer
-  has the five-percent guard; the full file still supplies the final proof, ceiling and delivered winner. Config/sound
-  versions are `45aceb65cd17064a` / `b9001a1853f525a3`; native/wasm PCM pins are restated by the release contracts.
+- Max PCM moves when the switch is on because the measured excerpt replaces the old opening full renders; the full file
+  still supplies the v0.17 proof, ceiling and delivered winner. Config/sound versions are
+  `2f4e4367b7f0cf81` / `6ee5bb40a36f1ea4`; native/wasm PCM pins are restated by the release contracts.
 
 ### mastering · session — the manual limiter wall, already-mastered delivery and its record (owner, 05.10)
 
@@ -52,9 +55,9 @@
   the recipe control. Removing the unused key moves config/sound hashes without moving PCM.
 - **ABI 13** appends the delivery fields, `masterAnyway`, source facts 454–457, the as-worked entry points and
   `UNKNOWN_MASTER`; the ABI number is not bumped again within v0.18.0. The package version is unchanged pending review.
-  Config is now `45aceb65cd17064a`, sound `b9001a1853f525a3`: the target classes, delivery ceilings and excerpt-search
-  defaults participate in the
-  sound decisions. Recognition remains at its existing three thresholds; the as-is branch is held by reachable fixtures.
+  At this commit config was `b2ad32d4f400fb52`, sound `0aea937888c4b21f`: the target classes and delivery ceilings
+  participate in the sound decisions. Recognition remains at its existing three thresholds; the as-is branch is held
+  by reachable fixtures.
 
 ## v0.17.0 — 2026-10-05
 

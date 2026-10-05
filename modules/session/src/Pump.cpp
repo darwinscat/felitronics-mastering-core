@@ -166,6 +166,7 @@ void Session::dropJob (JobId job) noexcept
             (void) event.payload.fact.assign (text::Fact::of (text::FactId::Cancelled));
             const auto progress = masterProgress_;
             mastering_ = false; job_ = 0; jobRecipe_ = {}; jobWaiting_ = false; jobMasterAnyway_ = false;
+            jobBudgetResolutionDb_.reset();
             masterUnit_ = 0; masterProgress_ = {};
             emit (event, progress);
             needlesAfterDroppedMaster();
@@ -182,6 +183,7 @@ void Session::dropJob (JobId job) noexcept
         jobRecipe_ = {};
         jobWaiting_ = false;
         jobMasterAnyway_ = false;
+        jobBudgetResolutionDb_.reset();
         masterUnit_ = 0;
         masterProgress_ = {};
         needlesAfterDroppedMaster();
@@ -460,6 +462,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 const auto masterJob = job_;
                 command::Master waitingRequest;
                 waitingRequest.masterAnyway = jobMasterAnyway_;
+                waitingRequest.budgetResolutionDb = jobBudgetResolutionDb_;
                 const auto plan = jobWaiting_ ? detail::MasterJob::plan (*this, waitingRequest, jobRecipe_.project)
                                               : detail::MasterPlan {};
                 if (plan.rejection != Rejection::None) { contract (masterJob); ++units; continue; }

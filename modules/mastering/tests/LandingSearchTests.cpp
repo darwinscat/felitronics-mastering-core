@@ -205,6 +205,7 @@ struct LandingSetup
     double slopeBelow = 0.0;
     bool maxMode = false;
     bool excerptSearch = false;
+    double budgetResolutionDb = 0.25;
 };
 
 // Lands `p` through the limiter alone (and the high-pass when asked), delivered at `deliveryRate`.
@@ -247,6 +248,7 @@ Landed land (const Programme& p, const LandingSetup& w)
     req.limiterSlopeBelow = w.slopeBelow;
     req.budgetAimsAtCrossing = w.maxMode;
     req.maxExcerptSearch = w.excerptSearch;
+    req.budgetResolutionDb = w.budgetResolutionDb;
     req.landingOnSourceGate = w.onSourceGate;
     if (w.onSourceGate || w.excerptSearch)
     {
@@ -375,38 +377,61 @@ int main()
                          max.answer.passes, excerpt.answer.passes, excerpt.answer.logCount);
             if (limit == .5)
             {
-                bool prefix = true, sawFull = false, p95Whole = true, reasonsWhole = true;
-                double lowestOver = std::numeric_limits<double>::infinity();
-                for (int i = 0; i < excerpt.answer.logCount; ++i)
-                {
-                    const auto& pass = excerpt.answer.log[i];
-                    if (! pass.excerpt) sawFull = true;
-                    prefix = prefix && (! pass.excerpt || ! sawFull || i == 0);
-                    p95Whole = p95Whole && std::isfinite (pass.limiterP95Db);
-                    reasonsWhole = reasonsWhole && unsigned (pass.reason)
-                        <= unsigned (SolvePassRecord::Reason::DeliverWinner);
-                    if (pass.excerpt)
-                        prefix = prefix && pass.reason == SolvePassRecord::Reason::Excerpt
-                            && pass.excerptFrames > 0 && pass.excerptFrames <= 30LL * kRate
-                            && pass.excerptFromFrame >= 0
-                            && pass.excerptFromFrame + pass.excerptFrames <= (long long) dense.source.size();
-                    else if ((pass.violated & constraintBit (MasteringConstraint::LimiterGainReduction)) != 0)
-                        lowestOver = std::min (lowestOver, pass.gainDb - pass.ceilingDb);
-                }
-                const double deliveredDrive = excerpt.answer.preLimiterGainDb - excerpt.answer.ceilingDbTp;
-                test::ok (excerpt.done && excerpt.answer.passes < max.answer.passes
-                          && excerpt.answer.passes <= 12 && excerpt.answer.logCount > excerpt.answer.passes
-                          && prefix && sawFull && p95Whole && reasonsWhole,
-                    "the excerpt search drops full renders on the dense fixture and logs its excerpt prefix, active P95, range and reason");
-                test::ok (std::isfinite (lowestOver) && deliveredDrive < lowestOver
-                          && deliveredDrive >= lowestOver - .25 - 1.0e-9,
-                    "the full-programme proof delivers under the lowest measured over-budget drive within 0.25 dB");
+                test::ok (excerpt.done && excerpt.out == max.out && excerpt.answer.passes == max.answer.passes
+                          && excerpt.answer.logCount == excerpt.answer.passes,
+                    "a programme too short for 20 seconds plus pre-roll falls back to v0.17 bit for bit");
                 test::ok (pcmHash (max.out) == 0x2f19e56fbc919f58ull,
                     "with excerptSearch off, the v0.17 max-mode PCM stays pinned bit for bit");
             }
             test::ok (max.done && ! max.answer.limiterWall && max.out == maxBefore.out,
                 "max budgets are below the knee: their PCM stays unchanged");
         }
+        std::vector<float> longPcm ((std::size_t) (22 * kRate));
+        for (std::size_t i = 0; i < longPcm.size(); ++i) longPcm[i] = pcm[i % pcm.size()];
+        const Programme longDense (longPcm);
+        LandingSetup longOld; longOld.target = -5; longOld.limiterBudgetDb = .5; longOld.maxMode = true;
+        auto longExcerptSetup = longOld; longExcerptSetup.excerptSearch = true;
+        auto longCoarseSetup = longExcerptSetup; longCoarseSetup.budgetResolutionDb = .5;
+        const auto longOldResult = land (longDense, longOld), longExcerpt = land (longDense, longExcerptSetup),
+                   longCoarse = land (longDense, longCoarseSetup);
+        std::printf ("  long dense: old %d full, excerpt %d full, 0.5 proof %d full\n",
+                     longOldResult.answer.passes, longExcerpt.answer.passes, longCoarse.answer.passes);
+        bool longPrefix = true, longSawFull = false, longP95 = true, longReasons = true;
+        double longLowestOver = std::numeric_limits<double>::infinity();
+        double longCoarseLowestOver = std::numeric_limits<double>::infinity();
+        for (int i = 0; i < longExcerpt.answer.logCount; ++i)
+        {
+            const auto& pass = longExcerpt.answer.log[i];
+            if (! pass.excerpt) longSawFull = true;
+            longPrefix = longPrefix && (! pass.excerpt || ! longSawFull || i == 0);
+            longP95 = longP95 && std::isfinite (pass.limiterP95Db);
+            longReasons = longReasons && unsigned (pass.reason) <= unsigned (SolvePassRecord::Reason::DeliverWinner);
+            if (pass.excerpt)
+                longPrefix = longPrefix && pass.reason == SolvePassRecord::Reason::Excerpt
+                    && pass.excerptFrames == 20LL * kRate && pass.excerptFromFrame == 2LL * kRate;
+            else if ((pass.violated & constraintBit (MasteringConstraint::LimiterGainReduction)) != 0)
+                longLowestOver = std::min (longLowestOver, pass.gainDb - pass.ceilingDb);
+        }
+        for (int i = 0; i < longCoarse.answer.logCount; ++i)
+            if (! longCoarse.answer.log[i].excerpt
+                && (longCoarse.answer.log[i].violated
+                    & constraintBit (MasteringConstraint::LimiterGainReduction)) != 0)
+                longCoarseLowestOver = std::min (longCoarseLowestOver,
+                    longCoarse.answer.log[i].gainDb - longCoarse.answer.log[i].ceilingDb);
+        const double longDelivered = longExcerpt.answer.preLimiterGainDb - longExcerpt.answer.ceilingDbTp;
+        const double longCoarseDelivered = longCoarse.answer.preLimiterGainDb - longCoarse.answer.ceilingDbTp;
+        test::ok (longOldResult.done && longExcerpt.done
+                  && longExcerpt.answer.passes < longOldResult.answer.passes
+                  && longExcerpt.answer.logCount > longExcerpt.answer.passes
+                  && longPrefix && longSawFull && longP95 && longReasons,
+            "the 20-second P90 excerpt enters v0.17's file search with fewer full renders and a complete excerpt prefix");
+        test::ok (std::isfinite (longLowestOver) && longDelivered < longLowestOver
+                  && longDelivered >= longLowestOver - .25 - 1.0e-9,
+            "the excerpt-started v0.17 file search proves the dense fixture to 0.25 dB");
+        test::ok (longCoarse.done && longCoarse.answer.passes < longExcerpt.answer.passes
+                  && std::isfinite (longCoarseLowestOver) && longCoarseDelivered < longCoarseLowestOver
+                  && longCoarseDelivered >= longCoarseLowestOver - .5 - 1.0e-9,
+            "a frontend's 0.5 dB proof uses fewer full renders and delivers within 0.5 dB of the edge");
         Programme missing (dense); missing.momentary.clear();
         Programme failed (dense); std::fill (failed.momentary.begin(), failed.momentary.end(),
                                              std::numeric_limits<double>::quiet_NaN());
@@ -466,7 +491,7 @@ int main()
         kRate, 1, kFrames, wrappedRequest.grTraceBuckets, 0);
     const std::uint64_t searchLong = LandingSearch::storageFor (
         kRate, 1, 2 * kFrames, wrappedRequest.grTraceBuckets, 0);
-    test::ok (searchLong - search == 2u * (plainLong - plain) + (std::uint64_t) kFrames * sizeof (float)
+    test::ok (searchLong - search == 2u * (plainLong - plain) + (std::uint64_t) kFrames * sizeof (float) + 16u
               && declared == TargetLoudnessSolver::solveCallBytes (
                   kRate, 1, kFrames, wrappedRequest)
               && declared == DeliveredMastering::solveCallBytes (
@@ -853,25 +878,41 @@ int main()
 
         LandingSetup oldMax; oldMax.target = -5.0; oldMax.limiterBudgetDb = 0.5; oldMax.maxMode = true;
         auto excerptMax = oldMax; excerptMax.excerptSearch = true;
-        const Landed normalOld = land (loud, oldMax), normalExcerpt = land (loud, excerptMax);
-        std::printf ("        normal max clean: old %d full, excerpt %d full / %d log\n",
-                     normalOld.answer.passes, normalExcerpt.answer.passes, normalExcerpt.answer.logCount);
+        auto coarseMax = excerptMax; coarseMax.budgetResolutionDb = 0.5;
+        const Landed normalOld = land (loud, oldMax), normalExcerpt = land (loud, excerptMax),
+                     normalCoarse = land (loud, coarseMax);
+        std::printf ("        normal max clean: old %d full, excerpt %d full / %d log, 0.5 proof %d full\n",
+                     normalOld.answer.passes, normalExcerpt.answer.passes, normalExcerpt.answer.logCount,
+                     normalCoarse.answer.passes);
         double normalLowestOver = std::numeric_limits<double>::infinity();
+        double coarseLowestOver = std::numeric_limits<double>::infinity();
         for (int i = 0; i < normalExcerpt.answer.logCount; ++i)
             if (! normalExcerpt.answer.log[i].excerpt
                 && (normalExcerpt.answer.log[i].violated
                     & constraintBit (MasteringConstraint::LimiterGainReduction)) != 0)
                 normalLowestOver = std::min (normalLowestOver,
                     normalExcerpt.answer.log[i].gainDb - normalExcerpt.answer.log[i].ceilingDb);
+        for (int i = 0; i < normalCoarse.answer.logCount; ++i)
+            if (! normalCoarse.answer.log[i].excerpt
+                && (normalCoarse.answer.log[i].violated
+                    & constraintBit (MasteringConstraint::LimiterGainReduction)) != 0)
+                coarseLowestOver = std::min (coarseLowestOver,
+                    normalCoarse.answer.log[i].gainDb - normalCoarse.answer.log[i].ceilingDb);
         const double normalDeliveredDrive = normalExcerpt.answer.preLimiterGainDb
                                           - normalExcerpt.answer.ceilingDbTp;
+        const double coarseDeliveredDrive = normalCoarse.answer.preLimiterGainDb
+                                          - normalCoarse.answer.ceilingDbTp;
         test::ok (normalOld.done && normalExcerpt.done
                   && normalExcerpt.answer.passes < normalOld.answer.passes
                   && normalExcerpt.answer.passes <= 12
                   && normalExcerpt.answer.logCount > normalExcerpt.answer.passes
                   && std::isfinite (normalLowestOver) && normalDeliveredDrive < normalLowestOver
                   && normalDeliveredDrive >= normalLowestOver - .25 - 1.0e-9,
-                  "the normal 30-second fixture also drops full renders and keeps the 0.25 dB proof");
+                  "the normal fixture also drops full renders and keeps the 0.25 dB proof");
+        test::ok (normalCoarse.done && normalCoarse.answer.passes <= normalExcerpt.answer.passes
+                  && std::isfinite (coarseLowestOver) && coarseDeliveredDrive < coarseLowestOver
+                  && coarseDeliveredDrive >= coarseLowestOver - .5 - 1.0e-9,
+                  "the coarser frontend proof never adds a full render and still delivers within 0.5 dB of the edge");
 
         // ...on two grids: a source at 11025 Hz reads its momentary loudness every 1100 frames, 99.77 ms; delivered at
         // 44.1 kHz the master's blocks step 100 ms. Matched by index, a minute drifts more than a reading.

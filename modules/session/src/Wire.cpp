@@ -413,6 +413,15 @@ template <class F> auto parseCommand (std::string_view json, F&& finish) noexcep
             reader.space();
             if (! reader.good || reader.pos != flag.size()) p.set ("invalid", "masterAnyway");
         }
+        if (const auto value = root.take ("budgetResolutionDb", false); ! value.empty())
+        {
+            double resolution = 0.0;
+            Reader reader { value, root.storage, 0, true, {}, 0, 0, false };
+            reader.value (resolution);
+            reader.space();
+            if (! reader.good || reader.pos != value.size()) p.set ("invalid", "budgetResolutionDb");
+            else r.budgetResolutionDb = resolution;
+        }
         request = r;
     }
     else p.set ("invalid", "kind");

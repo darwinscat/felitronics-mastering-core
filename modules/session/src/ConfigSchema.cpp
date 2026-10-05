@@ -248,8 +248,8 @@ struct Doc
                 refuseItem (in, key, i, Refusal::Duplicate);
     }
 
-    // The limiter's budget is a whole number of quarter dB, as written: the drive the landing resolves its proof to
-    // (LandingSearch kBudgetResolutionDb, 0.25 dB), and two decimals print it whole.
+    // The limiter's budget is a whole number of quarter dB, as written; two decimals print it whole. The max proof's
+    // independently configurable drive resolution defaults to the same 0.25 dB but is not what quantises this budget.
     void onQuarterDb (Reader& in, std::string_view key)
     {
         const auto x = decimalAt (in, key);
@@ -338,8 +338,10 @@ void readLanding (Doc& d, Reader& in, Landing& o)
         t.required ("excerptSearch", o.maxExcerptSearch);
         t.required ("excerptSeconds", o.maxExcerptSeconds, R { 1.0, 600.0 });
         t.required ("excerptPreRollSeconds", o.maxExcerptPreRollSeconds, R { 0.0, 30.0 });
+        t.required ("excerptPercentile", o.maxExcerptPercentile, R { 0.0, 100.0 });
         t.required ("excerptToleranceDb", o.maxExcerptToleranceDb, R { 0.01, 6.0 });
         t.required ("excerptOffsetDb", o.maxExcerptOffsetDb, R { -24.0, 24.0 });
+        t.required ("budgetResolutionDb", o.maxBudgetResolutionDb, R { 0.05, 1.0 });
         const auto mode = [&] (std::string_view key, double& budget)
         {
             t.table (key, Need::Required, [&] (Reader& m)

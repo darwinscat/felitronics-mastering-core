@@ -660,6 +660,7 @@ Answer Session::apply (const Request& request) noexcept
         // it open the command was refused); a ready one renders at once.
         jobWaiting_ = master->ready.version == 0 && plan_.waiting != 0;
         jobMasterAnyway_ = master->masterAnyway;
+        jobBudgetResolutionDb_ = master->budgetResolutionDb;
         jobMachineFromFile_ = machineFromFile_;
         jobRecipe_ = Recipe { project_, source_.hash, config::Config::versions().sound };
         jobRecipe_.readyVersion = plan.ready.version;
@@ -816,6 +817,7 @@ void Session::startMaster (const detail::MasterPlan& plan) noexcept
     masterJobBytes_ = plan.bytes - plan.retainedRowBytes;
     jobWaiting_ = false;
     jobMasterAnyway_ = false;
+    jobBudgetResolutionDb_.reset();
     jobRecipe_.readyHash = detail::MasterJob::fingerprint (plan.ready);
     jobRecipe_.deliveryRateHz = plan.deliveryRate;
     jobRecipe_.deliveryBits = plan.ready.deliveryBits;
@@ -935,6 +937,7 @@ bool Driver::mastered (Session& session, JobId job) noexcept
     session.jobRecipe_ = {};
     session.jobWaiting_ = false;
     session.jobMasterAnyway_ = false;
+    session.jobBudgetResolutionDb_.reset();
     session.replan();
     ++session.revision_;
     return true;

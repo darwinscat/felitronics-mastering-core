@@ -85,13 +85,16 @@ limiterSlopeSpacingDb = 0.5
 [landing.max]
 ceilingLufs = -5
 floorLufs = -14
-# Find the budget edge on the source's loudest excerpt first. The pre-roll warms the chain but is not part of the
-# limiter statistic; the full-file search starts this far above the excerpt edge and proves its own edge as before.
+# Find the budget edge on the source window at this percentile of the windows' loudness. The pre-roll warms the chain
+# but is not part of the limiter statistic; the full-file search starts this far above the excerpt edge, then uses the
+# v0.17 slope/chord search and proves its edge at budgetResolutionDb. A master command may ask for 0.05…1 dB instead.
 excerptSearch = true
-excerptSeconds = 30
+excerptSeconds = 20
 excerptPreRollSeconds = 2
+excerptPercentile = 90
 excerptToleranceDb = 0.25
-excerptOffsetDb = 1
+excerptOffsetDb = 0.5
+budgetResolutionDb = 0.25
 clean = { budgetDb = 0.5 }
 dense = { budgetDb = 1.75 }
 
