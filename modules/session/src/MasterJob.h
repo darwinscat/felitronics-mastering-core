@@ -143,6 +143,7 @@ struct MasterJob final
     std::unique_ptr<float[]> impactScratch;
     const float* sourcePlanes[2] {};
     float* outputPlanes[2] {};
+    const float* deliveryPlanes[2] {};
     int frames = 0, channels = 0;
     std::uint32_t deliveryRate = 0, sourceRate = 0;
     std::uint64_t sourceFrames = 0;
