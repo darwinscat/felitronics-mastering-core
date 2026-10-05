@@ -2,6 +2,27 @@
 
 # Changelog
 
+## Unreleased
+
+### mastering · session — the manual limiter wall and the source before mastering (owner, 05.10)
+
+- **A manual landing stops at the limiter's wall**: less than 0.2 LU gained per dB of active P95 cut between existing
+  passes at least 0.5 dB apart. No extra pass; the limiter budgets still hold, max modes stay as before. The landing
+  carries `limiterWall`, `limiterSlope`, `limiterWallP95Db`; fact 618 is the plain verdict, 619 its log-only numbers.
+  `[landing] limiterSlopeBelow` and `limiterSlopeSpacingDb` own the rule and move the sound version.
+- **The source report starts with clipping** (`Snapshot.sourceReport.facts`): confirmed flat tops ask for a new export
+  with −6…−3 dBFS peaks; inter-sample overs are distinguished from that distortion. A clipped source cannot silently
+  gain loudness: `Master.allowClippedGain=true` is the explicit choice, otherwise `ClippedGain` (39, fact 139).
+  `SourceAlreadyMastered` (453) follows only when LUFS > −12, true peak > −1.5 dBTP and PLR < 11 dB, all three;
+  `[observations.alreadyMastered]` owns the thresholds. These source findings do not alter the chain. Peaks-only
+  delivery remains a proposal, not an implemented command.
+- **The Analyzers phase names its running analyzer**, with its own fraction (`Phase.analyzers`, a bounded list, null
+  outside that phase). A waiting damage grade says whether it waits for the source measurement or its queue turn
+  (`DamageJobEntry.waitReason`, null while running).
+- **The unread `[compressor] mix` is removed**, including its schema and typed member; the glue device's mix stays
+  the recipe control. Removing the unused key moves config/sound hashes without moving PCM.
+- **ABI 13** appends these fields and reasons; no new C entry point. The package version is unchanged pending review.
+
 ## v0.17.0 — 2026-10-05
 
 ### session — the glue is a parallel compressor: its mix, 40 % by default, a knob 0…100 % (owner, 05.10)
