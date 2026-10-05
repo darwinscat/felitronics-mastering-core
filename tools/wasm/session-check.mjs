@@ -110,7 +110,8 @@ SURFACE[11] = SURFACE[10];
 // Version 12 (v0.17.0) appends the glue's mix — a field of the glue device, the plan's share, its term — and no entry
 // point.
 SURFACE[12] = SURFACE[11];
-SURFACE[13] = [...SURFACE[12], '_fc_session_worked_report_size', '_fc_session_worked_report_copy'];
+SURFACE[13] = [...SURFACE[12], '_fc_session_worked_report_size', '_fc_session_worked_report_copy',
+    '_fc_session_source_snapshot_size', '_fc_session_source_snapshot_copy'];
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
 const RUNTIME = ['_malloc', '_free', 'HEAPU32'];
@@ -1299,6 +1300,7 @@ for (const p of growth) M._free(p);
         if (masterCompleted(leanSession)) break;
     }
     const whole = transfer('snapshot', leanSession), light = transfer('summary', leanSession);
+    const sourceSnapshot = transfer('source_snapshot', leanSession);
     const kept = whole.value?.masters?.at(-1), lightKept = light.value?.masters?.at(-1);
     ok(kept?.landing?.limiterTrace?.rows?.length > 0 && kept.report.cost.waveform.length > 0 && whole.value.masterRowsIncluded === true
         && accepts(whole.value, 'SessionSnapshot'), 'its snapshot carries the master whole');
@@ -1310,6 +1312,10 @@ for (const p of growth) M._free(p);
         && lightKept.report.achievedLufs === kept.report.achievedLufs && lightKept.landing.status === kept.landing.status
         && light.jsonBytes * 10 < whole.jsonBytes,
        `its summary keeps the master's scalars, pass log and sections, and no heavy row: ${light.jsonBytes} B of JSON against the snapshot's ${whole.jsonBytes}`);
+    ok(sourceSnapshot.value?.masterRowsIncluded === false && sourceSnapshot.value?.measurementRowsIncluded === true
+        && accepts(sourceSnapshot.value, 'SessionSnapshot') && sourceSnapshot.rowBytes > light.rowBytes
+        && sourceSnapshot.rowBytes < whole.rowBytes,
+       'the appended source snapshot carries source rows and omits the master rows');
     const base = {audioId:whole.value.source.hash, requestId:'41', masterId:kept.id};
     const report = ask(leanSession, {...base, kind:11, fromFrame:'0', toFrame:'0', columns:0});
     ok(report && accepts(report.response, 'QueryResponse') && report.response.status === 0 && report.wroteJson <= report.boundJson

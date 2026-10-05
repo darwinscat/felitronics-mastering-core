@@ -315,7 +315,7 @@ Checked Session::storageFor (const Request& request) const noexcept
         const auto plan = detail::MasterJob::plan (*this, *master, project_);
         if (plan.rejection != Rejection::None) return rejected (plan.rejection);
         const bool room = masterRoom_ > masterCount_;
-        const auto roomBytes = (room ? 0u : std::uint64_t (masterCount_ + 1) * sizeof (Kept) * (capabilities_.leanSummary ? 2u : 1u))
+        const auto roomBytes = (room ? 0u : std::uint64_t (masterCount_ + 1) * sizeof (Kept) * 2u)
             + std::uint64_t (std::max (masterRoom_, masterCount_ + 1)) * sizeof (detail::MasterRows) + 4096u;
         if (roomBytes > 9007199254740991ull - plan.bytes) return rejected (Rejection::TooLong);
         // The damage graded for an earlier master is parked before anything is allocated (apply): its walks are freed,
@@ -643,7 +643,7 @@ Answer Session::apply (const Request& request) noexcept
             std::copy (masters_.get(), masters_.get() + masterCount_, room.get());
             masters_ = std::move (room);
             masterRoom_ = masterCount_ + 1;
-            if (capabilities_.leanSummary) { leanMasters_.reset(); leanMasters_.reset (new Kept[masterRoom_]); }
+            leanMasters_.reset(); leanMasters_.reset (new Kept[masterRoom_]);
         }
         {
             std::unique_ptr<detail::MasterRows[]> rowRoom (new detail::MasterRows[masterRoom_]);

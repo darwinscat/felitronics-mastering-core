@@ -229,6 +229,9 @@ CodecStatus Wire::summary (const Session& s, std::span<char> j, std::span<double
 {
     MeasurementResult results[kAnalyzers]; return snapshot (s.buildSummary (results), j, r);
 }
+TransferNeed Wire::sourceSnapshotBytes (const Session& s) noexcept { return snapshotBytes (s.buildSourceSnapshot()); }
+CodecStatus Wire::sourceSnapshot (const Session& s, std::span<char> j, std::span<double> r) noexcept
+{ return snapshot (s.buildSourceSnapshot(), j, r); }
 CodecStatus Wire::queryRequest (std::string_view json, MeasurementQuery& out) noexcept
 {
     if (Session::checkFloatingPointEnvironment() != Status::Ok) return CodecStatus::FloatingPointEnvironment;

@@ -322,6 +322,10 @@ fc_session_status fc_session_events_copy (fc_session session, char* json, uint32
 fc_session_status fc_session_snapshot_size (fc_session session, fc_session_sizes* out);
 fc_session_status fc_session_snapshot_copy (fc_session session, char* json, uint32_t json_capacity,
                                             double* rows, uint32_t row_capacity);
+// Full source evidence with masters' heavy rows/traces omitted. The ordinary snapshot is unchanged.
+fc_session_status fc_session_source_snapshot_size (fc_session session, fc_session_sizes* out);
+fc_session_status fc_session_source_snapshot_copy (fc_session session, char* json, uint32_t json_capacity,
+                                                   double* rows, uint32_t row_capacity);
 // row_capacity is BYTES, divisible by 8. JSON descriptors {byteOffset,length,stride} address the
 // separate LITTLE-ENDIAN IEEE-754 f64 buffer (big-endian builds are refused at compile time): points [index,value], runs [first,count,value], machine differences
 // [device,field,fileValue,coreValue]. The page reads Float64Array. Binary non-finite values keep
