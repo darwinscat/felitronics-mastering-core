@@ -323,14 +323,18 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         {
             mastering::OfflineRenderer::Storage renderStorage;
             if (! mastering::OfflineRenderer::storageFor (int (s.source_.channels), block, renderStorage)) return result;
+            const auto peakStorage = analysis::ReferenceTruePeakMeter::storageFor (
+                rate, block, int (s.source_.channels));
             const auto chainBytes = mastering::MasteringChain::prepareBytes (rate, int (s.source_.channels), result.ready.topology);
             const auto converterBytes = convert ? mastering::DeliveryConverter::prepareBytes (
                 double (s.source_.sampleRate), rate, int (s.source_.channels), block) : 0u;
-            if (chainBytes == 0 || (convert && converterBytes == 0))
+            if (chainBytes == 0 || ! peakStorage.ok || (convert && converterBytes == 0))
             { result.rejection = Rejection::OutOfDomain; return result; }
-            if (! add (total, chainBytes) || ! add (total, converterBytes) || ! add (total, renderStorage.bytes()))
+            if (! add (total, chainBytes) || ! add (total, converterBytes) || ! add (total, renderStorage.bytes())
+                || ! add (total, peakStorage.bytes()))
             { result.rejection = Rejection::TooLong; return result; }
-            result.largestBlock = std::max ({ result.largestBlock, chainBytes, converterBytes, renderStorage.bytes() });
+            result.largestBlock = std::max ({ result.largestBlock, chainBytes, converterBytes,
+                renderStorage.bytes(), peakStorage.bytes() });
         }
         result.bytes = total;
         result.largestBlock += 4096u;
@@ -552,20 +556,11 @@ bool MasterJob::begin (const Session& s, const MasterPlan& plan)
         }
         if (deliveryMode == DeliveryMode::AsIs) { stage = Stage::DeliveryCopy; return true; }
         if (! chain.prepare (double (deliveryRate), channels, plan.ready.topology)
-            || ! renderer.prepare (channels, block)) return false;
-        chain.setParams (plan.ready.params);
-        if (deliveryRate != s.source_.sampleRate)
-        {
-            if (! converter.prepare (double (s.source_.sampleRate), double (deliveryRate), channels, block)
-                || ! converter.begin (sourcePlanes, channels, (long long) s.source_.frames, outputPlanes, frames)) return false;
-            stage = Stage::DeliveryConvert;
-        }
-        else
-        {
-            if (! renderer.begin (chain, sourcePlanes, outputPlanes, channels, frames, deliveryTaps)) return false;
-            stage = Stage::DeliveryRender;
-        }
-        return true;
+            || ! renderer.prepare (channels, block)
+            || ! deliveryPeakMeter.prepare (double (deliveryRate), block, channels)) return false;
+        if (deliveryRate != s.source_.sampleRate
+            && ! converter.prepare (double (s.source_.sampleRate), double (deliveryRate), channels, block)) return false;
+        return beginDeliveryRender();
     }
     if (! chain.prepare (double (deliveryRate), channels, plan.ready.topology)
         || ! renderer.prepare (channels, block)
@@ -587,6 +582,22 @@ bool MasterJob::begin (const Session& s, const MasterPlan& plan)
     return search.begin (chain, renderer, plan.ready.params, sourcePlanes,
         (long long) s.source_.frames, double (s.source_.sampleRate), outputPlanes,
         channels, frames, plan.request, {}, convert ? &converter : nullptr);
+}
+
+bool MasterJob::beginDeliveryRender() noexcept
+{
+    chain.setParams (ready.params);
+    deliveryMeasureCursor = 0;
+    deliveryPeakMeter.reset();
+    if (deliveryRate != sourceRate)
+    {
+        if (! converter.begin (sourcePlanes, channels, (long long) sourceFrames, outputPlanes, frames)) return false;
+        stage = Stage::DeliveryConvert;
+        return true;
+    }
+    if (! renderer.begin (chain, sourcePlanes, outputPlanes, channels, frames, deliveryTaps)) return false;
+    stage = Stage::DeliveryRender;
+    return true;
 }
 
 mastering::StepResult MasterJob::step (long long budget) noexcept
@@ -632,14 +643,43 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         if (rendered == StepResult::Failed) { stage = Stage::Failed; return rendered; }
         if (rendered == StepResult::More) return rendered;
         if (! renderer.finish()) { stage = Stage::Failed; return StepResult::Failed; }
+        deliveryMeasureCursor = 0;
+        deliveryPeakMeter.reset();
+        stage = Stage::DeliveryMeasure;
+        return StepResult::More;
+    }
+    if (stage == Stage::DeliveryMeasure)
+    {
+        constexpr int block = 1024;
+        const int count = int (std::min<long long> ({ budget, block, frames - deliveryMeasureCursor }));
+        const float* planes[2] { outputPlanes[0] + deliveryMeasureCursor,
+            channels == 2 ? outputPlanes[1] + deliveryMeasureCursor : nullptr };
+        if (! deliveryPeakMeter.process (planes, channels, count))
+        { stage = Stage::Failed; return StepResult::Failed; }
+        deliveryMeasureCursor += count;
+        if (deliveryMeasureCursor != frames) return StepResult::More;
+        deliveryPeakMeter.drain();
+        const double truePeak = deliveryPeakMeter.truePeakDb();
+        if (std::isnan (truePeak)) { stage = Stage::Failed; return StepResult::Failed; }
+        if (truePeak > deliveryCeilingDbTp && ! deliveryCorrected)
+        {
+            // One bounded correction render. The small guard covers integer-format dither and rounding while remaining
+            // far below an audible gain step; the second measured render is the certificate, whatever it reads.
+            deliveryGainDb -= truePeak - deliveryCeilingDbTp + 0.01;
+            ready.params.inputGainDb = deliveryGainDb;
+            deliveryCorrected = true;
+            if (! beginDeliveryRender()) { stage = Stage::Failed; return StepResult::Failed; }
+            return StepResult::More;
+        }
         report.status = MeasurementStatus::Ready; report.reason = MeasurementReason::None;
         report.targetLufs = targetLufs; report.ceilingDbTp = deliveryCeilingDbTp;
         report.achievedLufs = sourceLufs + deliveryGainDb; report.gainFromSourceDb = deliveryGainDb;
         report.deliveryMode = deliveryMode; report.deliveryGainDb = deliveryGainDb;
-        report.deliveryDithered = deliveryDithered; report.deliverable = report.peakSafe = true;
-        for (const auto& value : session->measurementResults_[std::size_t (Analyzer::Loudness)].numbers)
-            if (value.name == "truePeakDb" && value.value) report.truePeakDbTp = deliveryCeilingDbTp;
-        if (report.truePeakDbTp) { report.plrDb = *report.truePeakDbTp - *report.achievedLufs; report.plrReason = MeasurementReason::None; }
+        report.deliveryDithered = deliveryDithered;
+        report.truePeakDbTp = truePeak;
+        report.peakSafe = truePeak <= deliveryCeilingDbTp;
+        report.deliverable = report.peakSafe;
+        report.plrDb = truePeak - *report.achievedLufs; report.plrReason = MeasurementReason::None;
         stage = Stage::Done; return StepResult::Done;
     }
     if (stage == Stage::Search)
@@ -1143,6 +1183,7 @@ bool MasterJob::beginFloor() noexcept
 // the peak its first pass measured for the needles.
 mastering::MasteringChainParams MasterJob::winningParams() const noexcept
 {
+    if (deliveryMode != DeliveryMode::Mastered) return ready.params;
     auto winning = ready.params;
     winning.inputGainDb += search.result().normalizationGainDb;
     winning.preLimiterGainDb = search.result().preLimiterGainDb;

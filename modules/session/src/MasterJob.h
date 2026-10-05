@@ -7,6 +7,7 @@
 #include <felitronics/session/Landing.h>
 #include <felitronics/mastering/LandingSearch.h>
 #include <felitronics/analysis/BandCrest.h>
+#include <felitronics/analysis/ReferenceTruePeakMeter.h>
 #include <felitronics/analysis/StreamingLoudnessMeter.h>
 #include <felitronics/analysis/WaveformIndex.h>
 #include <felitronics/toml/Embedded.h>
@@ -136,6 +137,7 @@ struct MasterJob final
     mastering::MasteringChainTaps deliveryTaps {};
     mastering::LandingSearch search { solver };
     analysis::BandCrest crest;
+    analysis::ReferenceTruePeakMeter deliveryPeakMeter;
     analysis::StreamingLoudnessMeter costMeter;
     analysis::WaveformStream costAxes;
     bool costAxesReady = false;
@@ -153,7 +155,7 @@ struct MasterJob final
     std::uint64_t costCursor = 0, costHop = 0, costStored = 0;
     std::uint64_t initializedWaveBuckets = 0;
     bool costMeterReady = false;
-    enum class Stage : std::uint8_t { Search, DeliveryCopy, DeliveryConvert, DeliveryRender, Prepare, Read, Finish, Copy, CostRead, CostFinish,
+    enum class Stage : std::uint8_t { Search, DeliveryCopy, DeliveryConvert, DeliveryRender, DeliveryMeasure, Prepare, Read, Finish, Copy, CostRead, CostFinish,
         CostWave, CostPump, CostActive, CostShape, CostWorst, CostCrest, CostPublish, Done, Failed };
     Stage stage = Stage::Search;
     CrestScan costCrestScan;
@@ -179,8 +181,8 @@ struct MasterJob final
     DamagePlan damagePlan {};
     DeliveryMode deliveryMode = DeliveryMode::Mastered;
     double deliveryGainDb = 0.0, deliveryCeilingDbTp = 0.0;
-    bool deliveryDithered = false;
-    long long deliveryCursor = 0;
+    bool deliveryDithered = false, deliveryCorrected = false;
+    long long deliveryCursor = 0, deliveryMeasureCursor = 0;
     // THE DAMAGE CAN BE GRADED (command::GradeDamage): the job ended where its damage can be graded — the report says
     // Pending, and the session keeps damagePlan and the delivered parameters with the master for a grade the shell asks.
     bool damageFollows = false;
@@ -193,6 +195,7 @@ struct MasterJob final
     bool floorPass = false;
     mastering::LoudnessRequest floorRequest {};
     [[nodiscard]] bool beginFloor() noexcept;
+    [[nodiscard]] bool beginDeliveryRender() noexcept;
     mastering::StepResult settleLanding (mastering::StepResult result) noexcept;
 };
 } // namespace detail
