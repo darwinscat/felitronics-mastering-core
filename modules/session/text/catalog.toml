@@ -281,6 +281,10 @@ en = "This master's damage is already graded or cannot be graded — grading it 
 ru = "Порча этого мастера уже оценивается или ждёт своей очереди."
 en = "This master's damage is already being graded or waits its turn."
 
+[messages.rejectedDamageQueueFull]
+ru = "Очередь оценок порчи заполнена — попросите снова, когда какие-то закончатся."
+en = "The queue of damage grades is full — ask again once some have ended."
+
 [messages.hpfNote]
 ru = "ФВЧ {cutoff}: по нижней ноте {note} ({hz}), на ней срезается {loss}."
 en = "HPF {cutoff}: from the lowest note {note} ({hz}), which loses {loss}."
@@ -1152,6 +1156,8 @@ en = "{loud} without the quiet parts, {file} by the file's standard reading."
 ru = "{mode}: {achieved} — дальше лимитеру пришлось бы срезать больше {budget} (P95), это предел режима."
 en = "{mode}: {achieved} — further, the limiter would have to take off more than {budget} (P95), the mode's limit."
 
+# v0.15.0's PEAQ guard stepping the drive back, and running out of steps: no longer said (v0.16.0: no guard in the loop),
+# kept for the facts' numbers.
 [messages.masterMaxGuard]
 ru = "{mode}: {achieved} — страж PEAQ отступил по громкости (шагов назад: {steps}), чтобы порча осталась в обещании режима."
 en = "{mode}: {achieved} — the PEAQ guard stepped the loudness back ({steps} steps) to keep the damage within the mode's promise."
@@ -1172,8 +1178,8 @@ en = "{mode}: {achieved} — the passes ran out before the search reached the mo
 ru = "{mode}: {achieved} — ни один вариант не удержался под потолком истинного пика."
 en = "{mode}: {achieved} — no render kept under the true-peak ceiling."
 
-# A max master whose render PEAQ could not grade (no damage plan for the source, a walk refused or unavailable): the
-# limiter's budget holds, the damage is unchecked — never said as the guard's pass.
+# A max master whose render v0.15.0's PEAQ guard could not grade: the limiter's budget held, the damage unchecked. No longer
+# said (v0.16.0: no guard in the loop), kept for the fact's number.
 [messages.masterMaxUnguarded]
 ru = "{mode}: {achieved} — порчу проверить не удалось: PEAQ не оценил этот файл; бюджет лимитера соблюдён."
 en = "{mode}: {achieved} — the damage could not be checked: PEAQ did not grade this file; the limiter's budget holds."

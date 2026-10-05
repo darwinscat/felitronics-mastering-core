@@ -4,8 +4,8 @@
   then the result, its progress, a row of the snapshot's new `damageJobs` (job, master, `Waiting` or `Running`,
   progress). **No grade starts by itself** after a master any more: the shell asks, and decides when and which. Refused
   for a master not kept (`UnknownMaster`), a grade already asked (`DamageQueued`, fact 137) or a settled damage
-  (`DamageSettled`, fact 136: graded, or no plan for the source); a grade a cancel stopped, or a turn refused for room,
-  may be asked again. A grade is a measurement, not an edit: a project's journal does not hold it.
+  (`DamageSettled`, fact 136: graded, or no plan for the source), or past the queue's room of 32 (`DamageQueueFull`, fact
+  138); a grade a cancel stopped, or a turn refused for room, may be asked again. A grade is a measurement, not an edit: a project's journal does not hold it.
 - **One at a time, in the order asked; a new master never ends a grade** (owner: "it is a process of its own"). A master
   job has the pump first; a new master parks the running grade — its walks freed before the master allocates, so the
   master's price is as before — and the grade waits first, to start again from its beginning when its turn comes back.
@@ -16,8 +16,8 @@
   `damage` event; a running grade's walks freed — the cancel's `releasedBytes`) and `forget` of its master (new
   `MeasurementReason::MasterForgotten`, "the master was deleted", no line; the forget's `releasedBytes` are a running
   grade's walks), each with one last `damage` event and nothing of it after; the queue moves on. A new source ends every
-  grade too (`MasterForgotten`): the running one's walks are freed in the load, and each grade's last word follows in the
-  next steps, one a unit, before any other work — so no event batch outgrows its bound, however many grades there were.
+  grade too (`MasterForgotten`): each grade's last word in the load's own batch, in queue order, stamped with the source
+  it belonged to and ahead of anything of the new one — the queue's fixed room (32) keeps them within the batch.
 - **The max modes by ear** (owner: both went too far while PEAQ heard nothing): the PEAQ guard is out of the master's
   loop — a max master is a landing and a delivery, its damage graded as any master's when the shell asks — and out of the
   config (`floorOdg`, `guardStepDb`, `guardSteps`); `MaxStop` `Guard`, `GuardUnmet`, `Unguarded` and facts 609, 610, 614

@@ -99,6 +99,7 @@ enum class Rejection : std::uint8_t
     DamageSettled,              // gradeDamage: the master's damage is settled — graded, or not gradable (no plan for its
                                 // source); its result does not change
     DamageQueued,               // gradeDamage: a grade of this master is being made or waits its turn
+    DamageQueueFull,            // gradeDamage: kMaxDamageGrades grades wait or run already
 };
 
 using CommandId = std::uint64_t;   // the shell's own number for a request, given back in its answer

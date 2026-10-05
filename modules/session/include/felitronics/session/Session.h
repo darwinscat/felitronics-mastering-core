@@ -73,6 +73,11 @@ struct DamageJobEntry
     DamageJobState state = DamageJobState::Waiting;
     Phase progress {};
 };
+// THE QUEUE'S ROOM: a grade asked past it is refused (Rejection::DamageQueueFull). Bounded so a new source can say every
+// grade's last word in its own batch — beside the load's own events (a measured load's one per analyzer, and a few) —
+// within kEventBatch.
+inline constexpr std::size_t kMaxDamageGrades = 32;
+static_assert (kMaxDamageGrades + kAnalyzers + 8 <= kEventBatch, "a new source's last words of every grade fit its batch");
 
 struct ProjectText
 {
@@ -736,8 +741,8 @@ private:
     // freed before the master allocates; it starts again, first, when its turn comes back). A grade ends with its walks
     // (`stopped` None: their result) or is stopped — by cancel of its job (Cancelled), by forget of its master
     // (MasterForgotten, no line: the master is gone), by the room it lacked (Memory) — and says so: its master's report
-    // settles, the damage's line (`line`) and the Damage event, its last word. A new source ends them all (endAllDamage):
-    // their last words, MasterForgotten, follow in the next steps, one a unit, before any other work.
+    // settles, the damage's line (`line`) and the Damage event, its last word. A new source ends them all (endAllDamage),
+    // each with its last word, MasterForgotten, in the load's own batch, stamped with the source they belonged to.
     [[nodiscard]] bool startDamage() noexcept;
     void stepDamage() noexcept;
     void parkDamage() noexcept;
@@ -862,14 +867,10 @@ private:
     std::uint64_t damageJobBytes_ = 0;
     Phase damageProgress_ {};
     // THE GRADES' QUEUE: an entry per grade asked and not yet ended, in the order they run (the running one first); what
-    // a grade's walks need to start is its master's (MasterRows), so an entry holds no walk buffer. Room for one per
-    // master kept (`damageRoom_` == masterRoom_), grown with the masters' room.
-    std::unique_ptr<DamageJobEntry[]> damageJobs_;
-    std::size_t damageRoom_ = 0, damageCount_ = 0;
-    // THE GRADES A NEW SOURCE ENDED, still to say their last word (endAllDamage): the queue's array as the source left it,
-    // said from `farewellCursor_`, one a pump unit, and freed when the last is said.
-    std::unique_ptr<DamageJobEntry[]> damageFarewell_;
-    std::size_t farewellRoom_ = 0, farewellCount_ = 0, farewellCursor_ = 0;
+    // a grade's walks need to start is its master's (MasterRows), so an entry holds no walk buffer. Room for
+    // kMaxDamageGrades, in the session object itself: a new source's last words for all of them fit one event batch.
+    std::array<DamageJobEntry, kMaxDamageGrades> damageJobs_ {};
+    std::size_t damageCount_ = 0;
 
 };
 

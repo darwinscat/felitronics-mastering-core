@@ -98,7 +98,6 @@ double Session::liveBytes() const noexcept
     return double (createBytes (capabilities_) + (samples_ ? source_.frames * source_.channels * sizeof (float) : 0)
                    + source_.name.size() + masterRoom_ * (sizeof (Kept) + sizeof (detail::MasterRows))
                    + (leanMasters_ ? masterRoom_ * sizeof (Kept) : 0)
-                   + (damageRoom_ + farewellRoom_) * sizeof (DamageJobEntry)
                    + rows + masterJobBytes_ + damageJobBytes_ + (masterAudio_.samples ? masterAudio_.frames * masterAudio_.channels * sizeof (float) : 0)
                    + measurementOwnedBytes_
                    + (sourceMeasurements_ ? sizeof (detail::SourceMeasurements) + sourceMeasurements_->bytes : 0)
@@ -133,8 +132,8 @@ void Session::clearMasters() noexcept
     damageJobId_ = 0;
     damageJobBytes_ = 0;
     damageProgress_ = {};
-    damageJobs_.reset();
-    damageRoom_ = damageCount_ = 0;
+    damageJobs_ = {};
+    damageCount_ = 0;
 }
 void Session::settleMasterCrest (MeasurementReason reason) noexcept
 {
@@ -289,7 +288,7 @@ const Project& Session::project() const noexcept { return project_; }
 Source Session::source() const noexcept { return source_; }
 JobId Session::job() const noexcept { return job_; }
 JobId Session::damageJob() const noexcept { return damageJobId_; }
-std::span<const DamageJobEntry> Session::damageJobs() const noexcept { return { damageJobs_.get(), damageCount_ }; }
+std::span<const DamageJobEntry> Session::damageJobs() const noexcept { return { damageJobs_.data(), damageCount_ }; }
 const Recipe& Session::jobRecipe() const noexcept { return jobRecipe_; }
 std::span<const Kept> Session::masters() const noexcept { return { masters_.get(), masterCount_ }; }
 MasterToken Session::pendingMaster() const noexcept { return pendingMaster_; }

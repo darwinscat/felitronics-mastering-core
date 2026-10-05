@@ -132,6 +132,7 @@ const char* nameOf (felitronics::session::Rejection r)
         case Rejection::PlanPending: return "PlanPending";
         case Rejection::DamageSettled: return "DamageSettled";
         case Rejection::DamageQueued: return "DamageQueued";
+        case Rejection::DamageQueueFull: return "DamageQueueFull";
     }
     return "?";
 }

@@ -300,9 +300,7 @@ Checked Session::storageFor (const Request& request) const noexcept
         const auto plan = detail::MasterJob::plan (*this, *master, project_);
         if (plan.rejection != Rejection::None) return rejected (plan.rejection);
         const bool room = masterRoom_ > masterCount_;
-        // ...and the grades' queue, an entry per master kept, grown with the masters' room.
-        const auto roomBytes = (room ? 0u : std::uint64_t (masterCount_ + 1)
-                                             * (sizeof (Kept) * (capabilities_.leanSummary ? 2u : 1u) + sizeof (DamageJobEntry)))
+        const auto roomBytes = (room ? 0u : std::uint64_t (masterCount_ + 1) * sizeof (Kept) * (capabilities_.leanSummary ? 2u : 1u))
             + std::uint64_t (std::max (masterRoom_, masterCount_ + 1)) * sizeof (detail::MasterRows) + 4096u;
         if (roomBytes > 9007199254740991ull - plan.bytes) return rejected (Rejection::TooLong);
         // The damage graded for an earlier master is parked before anything is allocated (apply): its walks are freed,
@@ -344,6 +342,7 @@ Checked Session::storageFor (const Request& request) const noexcept
         if (kept == first + masterCount_) return rejected (Rejection::UnknownMaster);
         for (std::size_t i = 0; i < damageCount_; ++i)
             if (damageJobs_[i].masterId == grade->master) return rejected (Rejection::DamageQueued);
+        if (damageCount_ == kMaxDamageGrades) return rejected (Rejection::DamageQueueFull);
         // Settled: graded, or not gradable — a result asking again would only repeat. Not settled: never graded, stopped
         // by a cancel, or refused for the room its turn lacked (the capacity may be another now).
         const auto& damage = kept->report ? kept->report->damage : MasterDamage {};
@@ -629,11 +628,6 @@ Answer Session::apply (const Request& request) noexcept
             masters_ = std::move (room);
             masterRoom_ = masterCount_ + 1;
             if (capabilities_.leanSummary) { leanMasters_.reset(); leanMasters_.reset (new Kept[masterRoom_]); }
-            // The grades' queue in the same room: an entry per master kept.
-            std::unique_ptr<DamageJobEntry[]> entries (new DamageJobEntry[masterRoom_]);
-            std::copy (damageJobs_.get(), damageJobs_.get() + damageCount_, entries.get());
-            damageJobs_ = std::move (entries);
-            damageRoom_ = masterRoom_;
         }
         {
             std::unique_ptr<detail::MasterRows[]> rowRoom (new detail::MasterRows[masterRoom_]);
@@ -714,7 +708,7 @@ Answer Session::apply (const Request& request) noexcept
         // Queued last, Pending in its master's report and announced so under its own job; its turn starts it.
         Kept* const kept = std::find_if (masters_.get(), masters_.get() + masterCount_,
                                          [&] (const Kept& k) { return k.id == grade->master; });
-        detail::debugBound (damageCount_ < damageRoom_);
+        detail::debugBound (damageCount_ < kMaxDamageGrades);
         const JobId id = ++lastJob_;
         damageJobs_[damageCount_++] = { id, grade->master, DamageJobState::Waiting, damageWaitingProgress() };
         kept->report->damage.status = MeasurementStatus::Pending;

@@ -72,8 +72,7 @@ text::Fact OwnedFact::view() const noexcept
 std::uint64_t Session::stepBytes() noexcept { return 0; }
 JobId Session::measurementJob() const noexcept { return measurementJob_; }
 bool Session::hasWork() const noexcept
-{ return measurementJob_ != 0 || job_ != 0 || needlesJob_ != 0 || crestJoin_ || damageCount_ != 0
-         || farewellCursor_ < farewellCount_; }
+{ return measurementJob_ != 0 || job_ != 0 || needlesJob_ != 0 || crestJoin_ || damageCount_ != 0; }
 std::span<const Notification> Session::events() const noexcept { return { events_->data(), eventCount_ }; }
 void Session::emit (Notification event) noexcept
 {
@@ -354,24 +353,13 @@ void Session::endDamage (std::size_t index, MeasurementReason stopped, bool line
     --damageCount_;
     damageJobs_[damageCount_] = {};
 }
-// EVERY GRADE ENDS with its masters gone (a new source: the walks re-render from the old one). The running one's walks
-// are freed here, in the command; the queue, as it stands, becomes the grades' farewells — each grade's last word, its
-// damage event (Cancelled, MasterForgotten), said in the steps that follow, one a unit, before any other work — so no
-// event batch holds more than its bound however many grades there were, and nothing else of them comes after. A second
-// new source finds the farewells said: a grade needs a master kept, and a master needs units the farewells take first.
+// EVERY GRADE ENDS with its masters gone (a new source: the walks re-render from the old one): each says so — its last
+// word, MasterForgotten — in the load's own batch, in queue order, before the source is replaced, so each is stamped with
+// the source, state and revision it belonged to and comes before anything of the new one; the queue's room
+// (kMaxDamageGrades) keeps them all within the batch beside the load's own events.
 void Session::endAllDamage() noexcept
 {
-    if (damageCount_ == 0) return;
-    detail::debugBound (farewellCursor_ == farewellCount_);
-    damageJob_.reset();
-    damageJobId_ = 0;
-    damageJobBytes_ = 0;
-    damageProgress_ = {};
-    damageFarewell_ = std::move (damageJobs_);
-    farewellRoom_ = damageRoom_;
-    farewellCount_ = damageCount_;
-    farewellCursor_ = 0;
-    damageRoom_ = damageCount_ = 0;
+    while (damageCount_ != 0) endDamage (0, MeasurementReason::MasterForgotten, false);
 }
 
 Stepped Session::step (std::uint32_t budget) noexcept
@@ -413,18 +401,6 @@ Stepped Session::step (std::uint32_t budget) noexcept
     {
         Notification event;
         event.kind = EventKind::Phase;
-        // The grades a new source ended say their last word first, one a unit (endAllDamage): within any unit's bound.
-        if (farewellCursor_ < farewellCount_)
-        {
-            const auto entry = damageFarewell_[farewellCursor_++];
-            event.jobId = entry.job;
-            event.kind = EventKind::Damage;
-            event.payload.damage = { entry.masterId, MeasurementStatus::Cancelled, MeasurementReason::MasterForgotten };
-            emit (event, entry.progress);
-            if (farewellCursor_ == farewellCount_) { damageFarewell_.reset(); farewellRoom_ = farewellCount_ = farewellCursor_ = 0; }
-            ++units;
-            continue;
-        }
         if (job_ != 0)
         {
             event.jobId = job_;
