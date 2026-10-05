@@ -211,6 +211,13 @@ void parseReadsTheField()
     ok (accepted ("0.325", Lang::En, Term::FieldMonoBassWidth, 0.35) && accepted ("0.33", Lang::En, Term::FieldMonoBassWidth, 0.35),
         "the width moves to its 0.05 grid");
     ok (refused ("1.2", Lang::En, Term::FieldMonoBassWidth, KitRefusal::OutOfDomain), "a width above 1 is refused");
+    ok (accepted ("0.3", Lang::En, Term::FieldGlueMix, 0.4) && accepted ("0,5", Lang::Ru, Term::FieldGlueMix, 0.6) && accepted ("1", Lang::En, Term::FieldGlueMix, 1.0),
+        "the glue's mix moves to its 0.2 grid, halfway away from zero");
+    ok (refused ("1.2", Lang::En, Term::FieldGlueMix, KitRefusal::OutOfDomain), "a glue mix above 1 is refused");
+    {
+        const auto t = Kit::travel (Term::FieldGlueMix);
+        ok (t.status == CodecStatus::Ok && sameBits (t.from, 0.0) && sameBits (t.to, 1.0) && sameBits (t.step, 0.2), "the glue's mix travels 0 … 1 by 0.2: 0, 20, … 100 %");
+    }
     ok (accepted ("1,5", Lang::De, Term::FieldTiltDb, 1.5) && accepted ("-2.25", Lang::En, Term::FieldTiltDb, -2.3), "tilt, signed both ways");
     ok (accepted ("24", Lang::En, Term::FieldHpfSlope, 24.0) && accepted ("18", Lang::En, Term::FieldHpfSlope, 18.0),
         "a slope is a whole number of dB/oct as written, 18 included");

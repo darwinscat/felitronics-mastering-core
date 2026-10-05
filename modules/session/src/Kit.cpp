@@ -62,13 +62,14 @@ bool bandsAccepted (const BandsFields<Value>& bands, const Rules& r) noexcept
 // The knob a field turns — the one the commands check that field with — or null.
 const Knob* knobOf (const Rules& r, Term field) noexcept
 {
-    // An if-chain, not a switch: Term names every word of the catalogue, and the kit answers for seventeen of them.
+    // An if-chain, not a switch: Term names every word of the catalogue, and the kit answers for eighteen of them.
     if (field == Term::FieldTargetLufs) return &r.lufs;
     if (field == Term::FieldTargetTp) return &r.tp;
     if (field == Term::FieldHpfFq) return &r.hpfFq;
     if (field == Term::FieldMonoBassFq) return &r.monoBassFq;
     if (field == Term::FieldMonoBassWidth) return &r.monoBassWidth;
     if (field == Term::FieldGlueUpToDb) return &r.glue;
+    if (field == Term::FieldGlueMix) return &r.glueMix;
     if (field == Term::FieldSaturationDrive) return &r.drive;
     if (field == Term::FieldSaturationMix) return &r.mix;
     if (field == Term::FieldTiltDb) return &r.tilt;

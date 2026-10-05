@@ -74,7 +74,10 @@
 //                DamageJobState); a max master without a guard (its damage graded as any master's; MaxStop Guard,
 //                GuardUnmet and Unguarded and facts 609, 610 and 614 no longer said) and pulled up to the modes' floor
 //                (MaxStop::Floor, facts 616 and 617). No entry point.
-#define FC_SESSION_ABI_VERSION 11u
+//  12            v0.17.0: the glue in parallel — the glue device's mix (GlueFieldsValue/Touched.mix, in editDevice and
+//                revertEdits), the plan's share as it sounds (GlueFinding.mix), the field term FieldGlueMix. No entry
+//                point.
+#define FC_SESSION_ABI_VERSION 12u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u
 #define FC_SESSION_STORAGE_V1_BYTES 32u
