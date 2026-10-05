@@ -1663,6 +1663,38 @@ void theSourceReport()
         for (unsigned i = 0; valid && s.job() != 0 && i < 100000; ++i) (void) s.step (16);
         return valid && s.job() == 0 && ! s.masters().empty();
     };
+    const auto wavMatches = [&] (const MasterToken& identity, const std::vector<float>& audio,
+                                 unsigned expectedBits)
+    {
+        const auto wavPlan = s.masterWavPlan (identity);
+        const auto audioShape = s.masterAudioShape (identity);
+        std::vector<std::uint8_t> bytes (std::size_t (wavPlan.bytes));
+        bool copied = bool (wavPlan) && wavPlan.bits == expectedBits;
+        for (std::size_t at = 0; copied && at < bytes.size(); at += 65536u)
+            copied = s.copyMasterWav (identity, at,
+                { bytes.data() + at, std::min<std::size_t> (65536u, bytes.size() - at) }) == MasterTransferStatus::Ok;
+        const std::size_t bytesPerSample = expectedBits / 8u;
+        const std::size_t payload = audio.size() * bytesPerSample;
+        if (! copied || bytes.size() < payload || audioShape.frames * audioShape.channels != audio.size()) return false;
+        const std::size_t data = bytes.size() - payload;
+        for (std::size_t frame = 0; frame < std::size_t (audioShape.frames); ++frame)
+            for (std::size_t channel = 0; channel < audioShape.channels; ++channel)
+            {
+                const std::size_t sample = frame * audioShape.channels + channel;
+                const std::size_t at = data + sample * bytesPerSample;
+                std::int32_t code = std::int32_t (std::uint32_t (bytes[at]) | (std::uint32_t (bytes[at + 1]) << 8));
+                if (expectedBits == 24)
+                {
+                    code |= std::int32_t (std::uint32_t (bytes[at + 2]) << 16);
+                    if ((code & 0x800000) != 0) code |= ~0xffffff;
+                }
+                else code = std::int16_t (code);
+                const float decoded = float (double (code) / double (std::uint32_t (1) << (expectedBits - 1u)));
+                if (std::bit_cast<std::uint32_t> (decoded)
+                    != std::bit_cast<std::uint32_t> (audio[channel * std::size_t (audioShape.frames) + frame])) return false;
+            }
+        return true;
+    };
     bool peaksRendered = deliver (safe);
     auto token = s.pendingMaster();
     auto shape = s.masterAudioShape (token);
@@ -1673,11 +1705,17 @@ void theSourceReport()
     for (std::size_t i = 0; peaksRendered && i < pcm.size(); ++i)
         peaksRendered = near (delivered[i], double (pcm[i]) * gain, 0.000001);
     const auto peaksText = s.exportWorked (token.master);
+    bool peaksGrid = peaksRendered;
+    for (const float sample : delivered)
+        peaksGrid = peaksGrid && same (double (sample) * 8388608.0,
+                                      std::nearbyint (double (sample) * 8388608.0));
     ok (peaksRendered && s.masters().back().report->deliveryMode == DeliveryMode::PeaksOnly
         && peaksText.view().find ("mode = \"peaksOnly\"") != std::string_view::npos
         && peaksText.view().find ("chain = false") != std::string_view::npos
         && peaksText.view().find ("dither = false") != std::string_view::npos,
         "the real peaks-only job delivers only the scalar gain, with its own immutable no-chain report");
+    ok (peaksGrid && wavMatches (token, delivered, 24),
+        "peaks-only 24-bit session PCM is on its delivery grid and equals the exported WAV samples");
     (void) s.releaseMaster (token);
     const auto codecRoundTrip = [&]
     {
@@ -1721,7 +1759,7 @@ void theSourceReport()
     bool quantized = ! delivered.empty();
     for (float sample : delivered)
         quantized = quantized && same (double (sample) * 32768.0, std::floor (double (sample) * 32768.0));
-    ok (dithered && quantized && shape.sampleRate == 44100
+    ok (dithered && quantized && wavMatches (token, delivered, 16) && shape.sampleRate == 44100
         && s.masters().back().report->deliveryDithered
         && ditherText.view().find ("bitDepth = 16") != std::string_view::npos
         && ditherText.view().find ("dither = true") != std::string_view::npos,

@@ -10,6 +10,7 @@
 #include "Limiter.h"
 #include "Observations.h"
 #include <felitronics/analysis/BandCrestResult.h>
+#include <felitronics/mastering/PcmQuantizer.h>
 #include "Rules.h"
 #include <felitronics/session/Session.h>
 #include <felitronics/core/DetMath.h>
@@ -652,6 +653,10 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     {
         constexpr int block = 1024;
         const int count = int (std::min<long long> ({ budget, block, frames - deliveryMeasureCursor }));
+        for (int c = 0; c < channels; ++c)
+            for (int i = 0; i < count; ++i)
+                outputPlanes[c][deliveryMeasureCursor + i] = mastering::pcmSample (
+                    outputPlanes[c][deliveryMeasureCursor + i], ready.deliveryBits);
         const float* planes[2] { outputPlanes[0] + deliveryMeasureCursor,
             channels == 2 ? outputPlanes[1] + deliveryMeasureCursor : nullptr };
         if (! deliveryPeakMeter.process (planes, channels, count))
