@@ -100,6 +100,7 @@ inline constexpr std::string_view kEnginePresentation[] = {
     "observations.edgeSilence", "observations.hum", "observations.humWandered", "observations.spectralWall",
     "observations.infraLow", "observations.wideBass", "observations.polarity", "observations.alreadyLimited", "observations.vinylTop", "observations.kinds",
     "observations.sibilance",
+    "observations.alreadyMastered",                    // a source-report finding, no device setting
     "crest",                                           // measured after the master
     "cost",                                            // measured after the master
     "progress",                                        // the progress bar's weights

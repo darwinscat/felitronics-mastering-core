@@ -33,6 +33,7 @@
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/session/Text.h>
+#include <felitronics/session/Wire.h>
 #include <felitronics/mastering/MasteringChain.h>
 #include <felitronics/core/DetMath.h>
 #include <felitronics_test.h>
@@ -1482,6 +1483,70 @@ struct Seen
     Observations seen() const { Observations o; detail::observe (in, o); return o; }
 };
 
+void theSourceReport()
+{
+    const auto report = [] (double lufs, double peak, double runs, double samples)
+    {
+        Seen x;
+        x.loudness[0] = { "integratedLufs", lufs, MeasurementReason::None, 0 };
+        x.loudness[1] = { "truePeakDb", peak, MeasurementReason::None, 0 };
+        x.clipping[0] = { "runCount", runs, MeasurementReason::None, 0 };
+        x.clipping[1] = { "samplePeak", samples, MeasurementReason::None, 0 };
+        x.ready (Analyzer::Loudness, x.loudness);
+        x.ready (Analyzer::Clipping, { x.clipping, 2 });
+        return detail::sourceReport (x.in);
+    };
+    const auto mastered = report (-9, -.5, 0, .9);
+    ok (mastered.alreadyMastered.value_or (false) && mastered.facts.count == 2
+        && mastered.facts.items[0].id == text::FactId::SourceNoClipping
+        && mastered.facts.items[1].id == text::FactId::SourceAlreadyMastered,
+        "an already-mastered file says so after the clipping verdict, with loudness and true peak");
+    bool boundaries = true;
+    for (const auto pair : { std::pair { -14.0, -.5 }, { -13.0, -.5 }, { -12.0, -.5 }, { -9.0, -1.5 }, { -9.0, 2.0 } })
+        boundaries = boundaries && report (pair.first, pair.second, 0, .9).alreadyMastered == false;
+    ok (boundaries && report (-11.999, -1.499, 0, .8).alreadyMastered == true,
+        "all three strict boundaries hold; loud mixes at −15…−13 LUFS are not called mastered");
+    const auto clipped = report (-9, .2, 1, 1), overs = report (-9, .2, 0, .99);
+    ok (clipped.clipping == SourceClipStatus::Clipped && clipped.facts.count == 2
+        && clipped.facts.items[0].id == text::FactId::SourceRealClipping
+        && overs.clipping == SourceClipStatus::InterSampleOvers && overs.facts.count == 2
+        && overs.facts.items[0].id == text::FactId::SourceInterSampleOvers,
+        "confirmed flat tops are real clipping; true-peak overs below full-scale samples are gain-fixable");
+    Seen missing;
+    const auto unknown = detail::sourceReport (missing.in);
+    ok (! unknown.alreadyMastered && unknown.clipping == SourceClipStatus::NotMeasured && unknown.facts.count == 1,
+        "missing readings are not a clean clipping verdict or a mastered verdict");
+    bool words = true;
+    for (const auto& row : { mastered, clipped, overs, unknown })
+        for (unsigned i = 0; i < row.facts.count; ++i) words = words && whole (row.facts.items[i]);
+    ok (words, "every source-report line renders complete Russian and English");
+
+    std::vector<float> pcm (48000);
+    for (std::size_t i = 0; i < pcm.size(); ++i) pcm[i] = float (std::clamp (2 * felitronics::core::det::sin (.03 * double (i)), -1.0, 1.0));
+    const float* planes[] { pcm.data() };
+    auto made = Session::create(); auto& s = *made.session;
+    (void) s.apply (command::Load { 1, { planes, 1, pcm.size(), 48000 }, {} });
+    while (s.step (16).state == StepState::More) {}
+    const auto snapshot = s.snapshot();
+    ok (snapshot.view().sourceReport && snapshot.view().sourceReport->clipping == SourceClipStatus::Clipped,
+        "the clipping analyzer's actual verdict reaches the source report");
+    std::string json (std::size_t (Codec::encodedBytes (snapshot.view()).bytes), '\0');
+    Snapshot restored;
+    ok (Codec::encode (snapshot.view(), json) == CodecStatus::Ok && Codec::decode (json, restored) == CodecStatus::Ok
+        && restored.view().sourceReport && restored.view().sourceReport->facts.items[0].id == text::FactId::SourceRealClipping,
+        "the source report survives the snapshot codec with clipping first");
+    (void) s.apply (command::EditTarget { 2, { 2.0, -1.0 } });
+    command::Master request { 3 };
+    ok (s.check (request).rejection == Rejection::ClippedGain,
+        "a clipped source cannot silently receive more loudness");
+    request.allowClippedGain = true;
+    ok (s.check (request).rejection == Rejection::None, "mastering a clipped source anyway remains an explicit choice");
+    ok (Wire::commandStorage (s, R"({"kind":"master","commandId":"4","allowClippedGain":true})").rejection == Rejection::None
+        && Wire::commandStorage (s, R"({"kind":"master","commandId":"4","allowClippedGain":false})").rejection == Rejection::ClippedGain
+        && Wire::commandStorage (s, R"({"kind":"master","commandId":"4","allowClippedGain":"true"})").rejection == Rejection::Contract,
+        "the wire accepts an explicit boolean choice and rejects an accidental string");
+}
+
 void theObservations()
 {
     felitronics::test::group ("the observations: facts with their numbers — found, not found and not measured apart; thresholds strict where the owner said so");
@@ -2473,6 +2538,7 @@ int main (int argc, char** argv)
     vinylAndQuietMastered();
     theDitherSounding();
     theObservations();
+    theSourceReport();
     theOwnersTable();
     theObservationsSpeakForThemselves();
     theReadingsAreFacts();

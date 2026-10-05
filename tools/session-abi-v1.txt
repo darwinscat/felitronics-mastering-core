@@ -2028,3 +2028,25 @@ codec LandingSummary.limiterWallP95Db double?
 wire EditDeviceGlueFields.mix? WireNumber | null
 wire RevertEditsGlueFields.mix? boolean
 enum felitronics::session::text::Term::FieldGlueMix=151
+enum felitronics::session::SourceClipStatus::NotMeasured=0
+enum felitronics::session::SourceClipStatus::Clean=1
+enum felitronics::session::SourceClipStatus::Clipped=2
+enum felitronics::session::SourceClipStatus::InterSampleOvers=3
+enum felitronics::session::SourceClipStatus::SampleOvers=4
+enum felitronics::session::Rejection::ClippedGain=39
+enum felitronics::session::text::FactId::RejectedClippedGain=139
+enum felitronics::session::text::FactId::SourceNoClipping=448
+enum felitronics::session::text::FactId::SourceClippingUnmeasured=449
+enum felitronics::session::text::FactId::SourceRealClipping=450
+enum felitronics::session::text::FactId::SourceInterSampleOvers=451
+enum felitronics::session::text::FactId::SourceSampleOvers=452
+enum felitronics::session::text::FactId::SourceAlreadyMastered=453
+codec SourceReport.clipping SourceClipStatus
+codec SourceReport.clippingReason MeasurementReason
+codec SourceReport.alreadyMastered bool?
+codec SourceReport.loudnessLufs double?
+codec SourceReport.truePeakDbTp double?
+codec SourceReport.plrDb double?
+codec SourceReport.facts Fact[<=2]
+codec Snapshot.sourceReport SourceReport?
+wire MasterCommand.allowClippedGain? boolean

@@ -639,6 +639,9 @@ infraLow = { low = 0.02, high = 0.05, warningFrom = 0.05 }
 wideBass = { sideFractionAtLeast = 0.06, fullAt = 0.3 }
 polarity = { correlationBelow = 0, rawSideFractionAbove = 0.5, fullAtLowCorrelation = -0.5 }
 alreadyLimited = { plrBelowDb = 10.5, fullAtPlrDb = 7 }
+# Already mastered (owner, 05.10, v1's 20.6k uploads): ALL three strict tests. Loud mixes around −15…−13 LUFS must
+# still be mastered normally; loudness alone is no verdict. These thresholds report a finding, not a device setting.
+alreadyMastered = { aboveLufs = -12, peakAboveDbTp = -1.5, plrBelowDb = 11 }
 vinylTop = { aboveHz = 16000 }
 
 # The kind of a finding is its nature (owner decision 01.10, row by row): clipping and bass in opposite polarity are errors

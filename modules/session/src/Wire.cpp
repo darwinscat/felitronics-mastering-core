@@ -396,7 +396,19 @@ template <class F> auto parseCommand (std::string_view json, F&& finish) noexcep
         }
         fields.finish();
     }
-    else if (kind != "master") p.set ("invalid", "kind");
+    else if (kind == "master")
+    {
+        command::Master r { id };
+        if (const auto flag = root.take ("allowClippedGain", false); ! flag.empty())
+        {
+            Reader reader { flag, root.storage, 0, true, {}, 0, 0, false };
+            reader.value (r.allowClippedGain);
+            reader.space();
+            if (! reader.good || reader.pos != flag.size()) p.set ("invalid", "allowClippedGain");
+        }
+        request = r;
+    }
+    else p.set ("invalid", "kind");
     root.finish(); return finish (id, request, p);
 }
 template <class F> auto parseLoad (CommandId id, const Pcm& pcm, std::string_view meta, F&& finish) noexcept

@@ -1441,3 +1441,31 @@ en = "Made at {achieved}. Going louder would take much more limiting for very li
 [messages.masterLandingWallDetail]
 ru = "Стена лимитера: {slope} LU на дБ среза, P95 {p95}."
 en = "Limiter wall: {slope} LU per dB of cut, P95 {p95}."
+
+[messages.rejectedClippedGain]
+ru = "Микс клипует. Добавлять громкость можно только по вашему явному выбору: всё равно мастерить. Лучше экспортировать микс с запасом по пикам."
+en = "The mix clips. Adding loudness needs your explicit choice to master it anyway. Exporting the mix with peak headroom is better."
+
+[messages.sourceNoClipping]
+ru = "Клиппинг не обнаружен."
+en = "No clipping detected."
+
+[messages.sourceClippingUnmeasured]
+ru = "Клиппинг не проверен: {reason}."
+en = "Clipping has not been checked: {reason}."
+
+[messages.sourceRealClipping]
+ru = "Микс клипует: искажения уже в файле, мастеринг их не уберёт. Экспортируйте микс с запасом, пики от −6 до −3 dBFS."
+en = "The mix clips: the distortion is already in the file and mastering cannot undo it. Export the mix with headroom, peaks between −6 and −3 dBFS."
+
+[messages.sourceInterSampleOvers]
+ru = "Между отсчётами пики достигают {peak}, сами отсчёты не клипуют. Эти пики можно убрать простым понижением уровня."
+en = "Peaks between samples reach {peak}; the samples themselves do not clip. A simple gain reduction can bring these peaks down."
+
+[messages.sourceSampleOvers]
+ru = "Есть отсчёты на полном уровне или выше. Проверьте запас по пикам; плоские вершины не обнаружены."
+en = "Some samples reach or exceed full scale. Check the peak headroom; no flat tops were detected."
+
+[messages.sourceAlreadyMastered]
+ru = "Файл уже мастерен: громкость {loudness}, true peak {peak}. Для стриминга опускать громкость не нужно — платформа сделает это сама."
+en = "This file is already mastered: loudness {loudness}, true peak {peak}. There is no need to turn it down for streaming — the platform does that."

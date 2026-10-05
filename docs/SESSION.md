@@ -492,6 +492,18 @@ master, sample for sample, to the PREVIOUS path's master of the chain it compose
 allStreaming, on cd (44.1 kHz, 16 bits, the glue on the measured tempo) and on lp, and under a person's edits of every
 kind with the panel hidden — and a master that waited to the one asked for after.
 
+**The source report** (owner, 05.10; `snapshot().view().sourceReport`, null without a source) puts its clipping verdict
+first in `facts`, even while the reading is pending. `clipping` distinguishes confirmed flat tops (`Clipped`, fact 450),
+inter-sample overs with samples below full scale (`InterSampleOvers`, 451), full-scale samples without confirmed runs
+(`SampleOvers`, 452), a clean reading (448) and an unavailable reading (449, `clippingReason`). Real clipping asks for a
+new export with peaks at −6…−3 dBFS: gain cannot undo the distortion. A master asked to add loudness to that source is
+refused with `ClippedGain` (39, fact 139), unless the request explicitly sets `allowClippedGain=true` (C++ and wire).
+The second fact, where found, is `SourceAlreadyMastered` (453), with source loudness and true peak. ALL three strict
+tests must hold: LUFS > −12, true peak > −1.5 dBTP, PLR < 11 dB; `[observations.alreadyMastered]` owns the thresholds.
+`alreadyMastered` is null without the loudness/peak readings, otherwise a boolean; `loudnessLufs`, `truePeakDbTp` and
+`plrDb` carry the evidence. These findings do not change the chain or the target. A peaks-only delivery is not yet a
+session command; a page must not describe an ordinary master as that delivery.
+
 **The observations** (owner decision 3.13; `snapshot().view().observations`, `src/Observations.h`). What the
 measurements found in the file, as facts with numbers and never a verdict of taste, in the order of the analysis — the
 file (clipping, DC offset, unused low bits, dual mono, silence at the edges, a quiet input, a short one, an input already

@@ -197,6 +197,7 @@ inline constexpr FactShape kFacts[] = {
     { FactId::RejectedDamageSettled, "rejectedDamageSettled", {}, 0 },
     { FactId::RejectedDamageQueued, "rejectedDamageQueued", {}, 0 },
     { FactId::RejectedDamageQueueFull, "rejectedDamageQueueFull", {}, 0 },
+    { FactId::RejectedClippedGain, "rejectedClippedGain", {}, 0 },
     { FactId::RejectedOutOfDomainValue, "rejectedOutOfDomainValue", { { { "field", ArgKind::Term, "field" },
       { "value", ArgKind::Value, {} }, { "low", ArgKind::Value, {} }, { "high", ArgKind::Value, {} } } }, 4 },
     { FactId::RejectedNotOneOfValue, "rejectedNotOneOfValue",
@@ -264,6 +265,12 @@ inline constexpr FactShape kFacts[] = {
     { FactId::SourceDcNoteStereo, "sourceDcNoteStereo", { { { "left", ArgKind::Value, {} }, { "right", ArgKind::Value, {} } } }, 2 },
     { FactId::SourceDcStereo, "sourceDcStereo", { { { "left", ArgKind::Value, {} }, { "right", ArgKind::Value, {} } } }, 2 },
     // The plan's advice and the targets' notes.
+    { FactId::SourceNoClipping, "sourceNoClipping", {}, 0 },
+    { FactId::SourceClippingUnmeasured, "sourceClippingUnmeasured", { { { "reason", ArgKind::Term, "measurementReason" } } }, 1 },
+    { FactId::SourceRealClipping, "sourceRealClipping", {}, 0 },
+    { FactId::SourceInterSampleOvers, "sourceInterSampleOvers", { { { "peak", ArgKind::Value, {} } } }, 1 },
+    { FactId::SourceSampleOvers, "sourceSampleOvers", {}, 0 },
+    { FactId::SourceAlreadyMastered, "sourceAlreadyMastered", { { { "loudness", ArgKind::Value, {} }, { "peak", ArgKind::Value, {} } } }, 2 },
     { FactId::HpfBelowComfort, "hpfBelowComfort", { { { "cutoff", ArgKind::Value, {} }, { "low", ArgKind::Value, {} }, { "high", ArgKind::Value, {} } } }, 3 },
     { FactId::HpfAboveComfort, "hpfAboveComfort", { { { "cutoff", ArgKind::Value, {} }, { "low", ArgKind::Value, {} }, { "high", ArgKind::Value, {} } } }, 3 },
     { FactId::HpfSlopeGentle, "hpfSlopeGentle", { { { "slope", ArgKind::Count, {} }, { "gentlest", ArgKind::Count, {} } } }, 2 },
@@ -572,6 +579,7 @@ static_assert (tablesInOrder(), "kFacts and kTerms ascend by id");
         case Rejection::DamageSettled: return FactId::RejectedDamageSettled;
         case Rejection::DamageQueued: return FactId::RejectedDamageQueued;
         case Rejection::DamageQueueFull: return FactId::RejectedDamageQueueFull;
+        case Rejection::ClippedGain: return FactId::RejectedClippedGain;
         case Rejection::Memory: return FactId::RejectedMemory;
         case Rejection::NewerDefaults: return FactId::RejectedNewerDefaults;
     }

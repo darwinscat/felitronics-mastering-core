@@ -992,6 +992,12 @@ void readObservations (Doc& d, Reader& in, Observations& o)
     {
         t.required ("aboveHz", o.vinylTopAboveHz, R { 1000.0, 192000.0 });
     });
+    in.table ("alreadyMastered", Need::Required, [&] (Reader& t)
+    {
+        t.required ("aboveLufs", o.masteredAboveLufs, anyLufs());
+        t.required ("peakAboveDbTp", o.masteredPeakAboveDbTp, R { -60.0, 24.0 });
+        t.required ("plrBelowDb", o.masteredPlrBelowDb, R { 0.0, 60.0 });
+    });
     in.table ("kinds", Need::Required, [&] (Reader& t) { readKinds (d, t, o.kinds); });
     in.table ("sibilance", Need::Required, [&] (Reader& t) { readSibilance (d, t, o.sibilance); });
 }

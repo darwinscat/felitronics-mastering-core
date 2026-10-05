@@ -715,6 +715,51 @@ void observe (const ObservationInputs& in, Observations& out) noexcept
     out.hum = hum (in, false);
     out.humWandered = hum (in, true);
 }
+SourceReport sourceReport (const ObservationInputs& in) noexcept
+{
+    using text::Fact; using text::FactId; using text::Arg; using text::Unit;
+    SourceReport out;
+    const auto* loudness = resultOf (in, Analyzer::Loudness);
+    const auto lufs = read (loudness, "integratedLufs"), peak = read (loudness, "truePeakDb");
+    out.loudnessLufs = lufs.value; out.truePeakDbTp = peak.value;
+    if (lufs.value && peak.value)
+    {
+        out.plrDb = *peak.value - *lufs.value;
+        const auto config = in.rules.engine.find ("observations").find ("alreadyMastered");
+        out.alreadyMastered = *lufs.value > number (config.find ("aboveLufs"))
+            && *peak.value > number (config.find ("peakAboveDbTp")) && *out.plrDb < number (config.find ("plrBelowDb"));
+    }
+    const auto* detector = resultOf (in, Analyzer::Clipping);
+    const auto runs = read (detector, "runCount"), samples = read (detector, "samplePeak");
+    Fact first;
+    if (runs.value && *runs.value > 0)
+    {
+        out.clipping = SourceClipStatus::Clipped;
+        first = Fact::of (FactId::SourceRealClipping);
+    }
+    else if (runs.value && samples.value && *samples.value >= 1)
+    {
+        out.clipping = SourceClipStatus::SampleOvers;
+        first = Fact::of (FactId::SourceSampleOvers);
+    }
+    else if (runs.value && samples.value && peak.value)
+    {
+        out.clipping = *peak.value > 0 ? SourceClipStatus::InterSampleOvers : SourceClipStatus::Clean;
+        first = *peak.value > 0 ? Fact::of (FactId::SourceInterSampleOvers, Arg::value (*peak.value, Unit::DbTp, 1))
+                                : Fact::of (FactId::SourceNoClipping);
+    }
+    if (out.clipping == SourceClipStatus::NotMeasured)
+    {
+        out.clippingReason = ! runs.value ? runs.reason : ! samples.value ? samples.reason : peak.reason;
+        first = Fact::of (FactId::SourceClippingUnmeasured, Arg::term (reasonTerm (out.clippingReason)));
+    }
+    else out.clippingReason = MeasurementReason::None;
+    out.facts.items[out.facts.count++] = first;
+    if (out.alreadyMastered.value_or (false))
+        out.facts.items[out.facts.count++] = Fact::of (FactId::SourceAlreadyMastered,
+            Arg::value (*lufs.value, Unit::Lufs, 1), Arg::value (*peak.value, Unit::DbTp, 1));
+    return out;
+}
 } // namespace felitronics::session::detail
 
 //==============================================================================
