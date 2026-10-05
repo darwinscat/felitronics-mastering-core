@@ -830,7 +830,7 @@ void maxStopRules()
 void maxSearchPasses()
 {
     std::string seen;
-    bool fewEnough = true;
+    bool fewEnough = true, logsWhole = true, progressWhole = true;
     for (const bool dense : { false, true })
         for (const LoudnessMode mode : { LoudnessMode::MaxClean, LoudnessMode::MaxDense })
         {
@@ -849,9 +849,35 @@ void maxSearchPasses()
             seen += std::string (dense ? "clicks " : "struck ") + (mode == LoudnessMode::MaxClean ? "clean " : "dense ")
                   + std::to_string (passes) + " (stop " + std::to_string (unsigned (stop)) + "); ";
             fewEnough = fewEnough && passes <= 6u && (stop == MaxStop::Budget || stop == MaxStop::Floor);
+            bool sawExcerptRow = false;
+            bool rowValues = true;
+            if (! kept.landing) logsWhole = false;
+            else for (const auto& pass : kept.landing->log)
+            {
+                rowValues = rowValues && pass.limiterP95Db.has_value()
+                    && unsigned (pass.reason) <= unsigned (LandingPassReason::DeliverWinner);
+                if (pass.excerpt)
+                {
+                    sawExcerptRow = true;
+                    rowValues = rowValues && pass.reason == LandingPassReason::Excerpt
+                        && pass.excerptFrames > 0 && pass.excerptFromFrame + pass.excerptFrames <= pcm.size();
+                }
+            }
+            logsWhole = logsWhole && rowValues;
+            if (stop == MaxStop::Budget)
+                logsWhole = logsWhole && sawExcerptRow && kept.landing->log.size() > kept.landing->passes;
+            bool sawExcerptProgress = false;
+            for (const auto& event : r.events)
+                if (event.kind == EventKind::Phase && event.payload.phase.excerpt)
+                    sawExcerptProgress = sawExcerptProgress || (event.payload.phase.name == PhaseName::Pass
+                        && event.payload.phase.excerptFrames > 0
+                        && event.payload.phase.excerptFromFrame + event.payload.phase.excerptFrames <= pcm.size());
+            progressWhole = progressWhole && sawExcerptProgress;
         }
     std::printf ("        max search passes: %s\n", seen.c_str());
     ok (fewEnough, "a max master's budget settles in six passes at most, proven: " + seen);
+    ok (logsWhole && progressWhole,
+        "max progress and every retained pass say which renders are excerpts, their source range, active P95 and reason");
 }
 
 // THE GLUE AT MIX 1 IS v0.16.0's DOWNWARD GLUE, TO THE BIT (v0.17.0). The pinned digest is v0.16.0's master on cd of the

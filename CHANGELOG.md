@@ -4,6 +4,26 @@
 
 ## Unreleased
 
+### mastering · session — retained winners, explanatory pass logs and excerpt-first max search (owner, 05.10)
+
+- **The winning render is retained as PCM** and restored without a duplicate render. Its optional nothrow allocation
+  falls back to the previous counted delivery render on failure. Fresh and retained memory declarations name the third
+  full PCM buffer, and the session memory gate includes it.
+- **Every landing log row says what was measured and why it exists**: active-window limiter P95 plus
+  `AimAtTarget`, `PeakProbe`, `StepBackBySlope`, `InsideBracket`, `ProveEdge`, `Excerpt` or `DeliverWinner`. Excerpt rows
+  append their source-frame range; live `Phase` appends the current excerpt range. The codec, wire manifest and ABI 13
+  append the fields; the full render count remains separate from the ordered log.
+- **Max modes search the loudest source excerpt first**, by the existing momentary series: 30 seconds, with two seconds
+  of limiter pre-roll excluded from P95, a bounded 0.25 dB Brent bracket and a first full render 1 dB above its edge.
+  The full bracket uses safeguarded Brent interpolation without v0.17.0's five-percent chord guard and keeps the same
+  0.25 dB full-file proof. `[landing.max] excerptSearch` defaults on; missing/failed excerpt measurement and switch off
+  take the v0.17.0 path bit for bit. Manual PCM remains pinned at `9a601c4c5e044b00`.
+- **The empty tonal-change fact is no longer emitted.** The retained `k2Reason=NotImplemented` datum and append-only
+  fact/catalog ids remain for compatibility.
+- Max PCM moves when the switch is on because the excerpt chooses the first full drive and the full bracket no longer
+  has the five-percent guard; the full file still supplies the final proof, ceiling and delivered winner. Config/sound
+  versions are `45aceb65cd17064a` / `b9001a1853f525a3`; native/wasm PCM pins are restated by the release contracts.
+
 ### mastering · session — the manual limiter wall, already-mastered delivery and its record (owner, 05.10)
 
 - **A manual landing stops at the limiter's wall**: less than 0.2 LU gained per dB of active P95 cut between existing
@@ -32,7 +52,8 @@
   the recipe control. Removing the unused key moves config/sound hashes without moving PCM.
 - **ABI 13** appends the delivery fields, `masterAnyway`, source facts 454–457, the as-worked entry points and
   `UNKNOWN_MASTER`; the ABI number is not bumped again within v0.18.0. The package version is unchanged pending review.
-  Config is `b2ad32d4f400fb52`, sound `0aea937888c4b21f`: the target classes and delivery ceilings now participate in the
+  Config is now `45aceb65cd17064a`, sound `b9001a1853f525a3`: the target classes, delivery ceilings and excerpt-search
+  defaults participate in the
   sound decisions. Recognition remains at its existing three thresholds; the as-is branch is held by reachable fixtures.
 
 ## v0.17.0 — 2026-10-05

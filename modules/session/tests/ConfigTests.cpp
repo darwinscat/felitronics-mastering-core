@@ -144,6 +144,14 @@ void theSchemaRefuses()
     const auto T = Document::Targets;
     mustRefuse (E, "limiterSlopeBelow = 0.2", "limiterSlopeBelow = 0", "0", Fault::OutOfRange, "landing.limiterSlopeBelow");
     mustRefuse (E, "limiterSlopeSpacingDb = 0.5", "limiterSlopeSpacingDb = 0", "0", Fault::OutOfRange, "landing.limiterSlopeSpacingDb");
+    mustRefuse (E, "excerptSearch = true", "excerptSearch = 1", "1", Fault::WrongType, "landing.max.excerptSearch");
+    mustRefuse (E, "excerptSeconds = 30", "excerptSeconds = 0", "0", Fault::OutOfRange, "landing.max.excerptSeconds");
+    mustRefuse (E, "excerptPreRollSeconds = 2", "excerptPreRollSeconds = -1", "-1", Fault::OutOfRange,
+                "landing.max.excerptPreRollSeconds");
+    mustRefuse (E, "excerptToleranceDb = 0.25", "excerptToleranceDb = 0", "0", Fault::OutOfRange,
+                "landing.max.excerptToleranceDb");
+    mustRefuse (E, "excerptOffsetDb = 1", "excerptOffsetDb = 25", "25", Fault::OutOfRange,
+                "landing.max.excerptOffsetDb");
 
     // Unknown keys — a typo is an error, never a setting silently ignored — in a table and inside an inline row, and the
     // key the typo stood for is missing, pointed at the table that lacks it.
