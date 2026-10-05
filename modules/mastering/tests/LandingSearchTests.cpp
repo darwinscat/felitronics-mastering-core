@@ -202,6 +202,8 @@ struct LandingSetup
     int maxPasses = 12;
     double peakClipPeakDb = std::numeric_limits<double>::quiet_NaN();    // finite: the limiter's peak clip on, cut 3 dB
     bool peakClipMeasured = false;
+    double slopeBelow = 0.0;
+    bool maxMode = false;
 };
 
 // Lands `p` through the limiter alone (and the high-pass when asked), delivered at `deliveryRate`.
@@ -241,6 +243,8 @@ Landed land (const Programme& p, const LandingSetup& w)
     req.initialGainDb = w.initialGainDb;
     req.productLanding = true;
     req.peakClipMeasured = w.peakClipMeasured;
+    req.limiterSlopeBelow = w.slopeBelow;
+    req.budgetAimsAtCrossing = w.maxMode;
     req.landingOnSourceGate = w.onSourceGate;
     if (w.onSourceGate)
     {
@@ -320,6 +324,40 @@ void scaleTo (std::vector<float>& x, int from, int frames, double lufs, int rate
 
 int main()
 {
+    {
+        std::vector<float> pcm (std::size_t (kRate * 4));
+        for (std::size_t i = 0; i < pcm.size(); ++i)
+            pcm[i] = float (.09 * core::det::sin (.1 * double (i)) + .07 * core::det::sin (.37 * double (i))
+                + .05 * core::det::sin (.72 * double (i)));
+        scaleTo (pcm, 0, int (pcm.size()), -18.0);
+        const Programme dense (pcm);
+        LandingSetup loud; loud.target = -5; loud.limiterBudgetDb = 7.5; loud.slopeBelow = .2;
+        const auto wall = land (dense, loud);
+        auto before = loud; before.slopeBelow = 0;
+        const auto budget = land (dense, before);
+        std::printf ("wall proof: wall %d P95 %.4f LUFS %.4f passes %d; budget %.4f LUFS %.4f passes %d\n",
+            wall.answer.limiterWall, wall.answer.limiterActive.stats.p95Db, wall.answer.achievedLufs, wall.answer.passes,
+            budget.answer.limiterActive.stats.p95Db, budget.answer.achievedLufs, budget.answer.passes);
+        for (int i = 0; i < wall.answer.logCount; ++i)
+            std::printf ("  pass %d: %.5f LUFS, P95 %.5f\n", i, wall.answer.log[i].integratedLufs, wall.answer.log[i].limiterP95Db);
+        test::ok (wall.done && wall.answer.limiterWall && wall.answer.limiterSlope < .2
+            && wall.answer.limiterWallP95Db < 7.5, "a dense mix reaches the wall before the manual limiter budget");
+        loud.target = -14;
+        const auto normal = land (dense, loud);
+        before.target = -14;
+        const auto normalBefore = land (dense, before);
+        test::ok (normal.done && ! normal.answer.limiterWall && normal.out == normalBefore.out,
+            "a normal streaming landing does not reach the wall and keeps its PCM");
+        for (const double limit : { .5, 1.75 })
+        {
+            loud.target = -5; loud.limiterBudgetDb = limit;
+            loud.maxMode = true;
+            before = loud; before.slopeBelow = 0;
+            const auto max = land (dense, loud), maxBefore = land (dense, before);
+            test::ok (max.done && ! max.answer.limiterWall && max.out == maxBefore.out,
+                "max budgets are below the knee: their PCM stays unchanged");
+        }
+    }
     test::group ("landing search: one budget, saved output, and split invariant");
     Rig whole, sliced;
     if (! test::run (whole.prepare() && sliced.prepare())) return test::report();

@@ -27,6 +27,10 @@ bool valid (const SnapshotView& v) noexcept
         if (master.landing)
         {
             const LandingSummary& landing = *master.landing;
+            if (landing.limiterWall != (landing.limiterSlope.has_value() && landing.limiterWallP95Db.has_value())
+                || (! landing.limiterWall && (landing.limiterSlope || landing.limiterWallP95Db))
+                || (landing.limiterWall && (! landing.deliverable || landing.status != LandingStatus::TargetUnreachable
+                    || ! std::isfinite (*landing.limiterSlope) || ! std::isfinite (*landing.limiterWallP95Db)))) return false;
             if (landing.passes > 12 || landing.log.size() != landing.passes
                 || (landing.deliverable && (! landing.achievedLufs || ! landing.missLu
                     || ! landing.distanceLu || ! landing.truePeakDbTp))

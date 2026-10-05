@@ -314,6 +314,11 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
     // rule by the target's loudness, starting from the target's own number — a landing and a delivery, as a manual
     // master's; its damage is graded as any master's, when the shell asks (owner, 04.10: no guard in the loop).
     result.loudnessMode = loudnessModeOf (ruleset, project);
+    if (result.loudnessMode == LoudnessMode::Manual)
+    {
+        result.request.limiterSlopeBelow = number (engine.find ("landing").find ("limiterSlopeBelow"));
+        result.request.limiterSlopeSpacingDb = number (engine.find ("landing").find ("limiterSlopeSpacingDb"));
+    }
     if (result.loudnessMode != LoudnessMode::Manual)
     {
         const auto max = engine.find ("landing").find ("max");

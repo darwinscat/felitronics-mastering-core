@@ -108,6 +108,8 @@ std::optional<text::Fact> MasterReportText::landing (const MasterReport& report,
             return Fact::of (FactId::MasterLandingSolved, Arg::value (*landed, Unit::Lufs, 1),
                              Arg::value (report.targetLufs, Unit::Lufs, 1), tolerance);
         case LandingStatus::TargetUnreachable:
+            if (landing.limiterWall && landed)
+                return Fact::of (FactId::MasterLandingWall, Arg::value (*landed, Unit::Lufs, 1));
             if (landing.binding == LandingConstraint::LimiterGainReduction && std::isfinite (measure.limiterBudgetDb)
                 && report.status == MeasurementStatus::Ready && landed)
                 return std::isfinite (measure.overBudgetDb)
@@ -487,6 +489,12 @@ bool LandingOps::summarize (const mastering::LoudnessSolution& solution,
         next.aboveLufs = std::fmax (solution.achievedBelowLufs, solution.achievedAboveLufs);
     }
     next.deliverable = solution.deliverable;
+    next.limiterWall = solution.limiterWall;
+    if (solution.limiterWall)
+    {
+        next.limiterSlope = solution.limiterSlope;
+        next.limiterWallP95Db = solution.limiterWallP95Db;
+    }
     next.passes = (std::uint32_t) solution.passes;
     next.workUnits = solution.workUnits;
     if (solution.deliverable)

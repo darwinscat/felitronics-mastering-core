@@ -68,6 +68,9 @@ struct LandingSummary
     // No render under the ceiling: the delivered master is the gentlest measured, its true peak above the ceiling
     // (deliverable, TargetUnreachable, binding TruePeakCeiling). False on every other landing.
     bool peaksAboveCeiling = false;
+    // The manual limiter wall: no useful loudness left for the cut. Its proof is for the log, not the person's verdict.
+    bool limiterWall = false;
+    std::optional<double> limiterSlope, limiterWallP95Db;
 };
 
 // The delivered meter and the source-rate crest check answer different questions. Rows are linear
