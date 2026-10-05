@@ -320,6 +320,7 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         result.floorLufs = number (max.find ("floorLufs"));
         result.request.targetLufs = number (max.find ("ceilingLufs"));
         result.request.limiterGr.limitDb = maxBudgetDb (engine, result.loudnessMode);
+        result.request.budgetAimsAtCrossing = true;   // v0.17.0: a manual landing keeps the previous search, to the bit
         if (! std::isfinite (result.request.targetLufs) || ! std::isfinite (result.request.limiterGr.limitDb)
             || ! std::isfinite (result.floorLufs))
         { result.rejection = Rejection::MandatoryUnavailable; return result; }

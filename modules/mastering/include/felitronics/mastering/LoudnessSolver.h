@@ -870,6 +870,11 @@ struct LoudnessRequest
     const double* sourceMomentaryLufs = nullptr;
     long long sourceMomentaryCount = 0;
     long long sourceMomentaryHopFrames = 0;
+    // `productLanding` only: the limiter budget's search aims at where its statistic crosses the budget (v0.17.0,
+    // LandingSearch::budgetClamp) — the max modes' tight budget, which the step back of three times the excess sent
+    // 20 dB down. Off, the search steps back as it did before v0.17.0, to the bit: a manual landing's budget moves
+    // nothing. Last, so a positional initialiser written against the older layout still means what it meant.
+    bool budgetAimsAtCrossing = false;
 };
 
 // One render the search made. The whole trace is returned, not just the winner: a caller that has to
