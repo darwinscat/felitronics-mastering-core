@@ -785,7 +785,8 @@ void Session::replan() noexcept
     // cancelling or continuing that measurement changes the reason even before the grade gets another unit.
     for (std::size_t i = 0; i < damageCount_; ++i)
         damageJobs_[i].waitReason = damageJobs_[i].state == DamageJobState::Running ? std::nullopt
-            : std::optional { measurementJob_ != 0 ? DamageWaitReason::SourceMeasurement : DamageWaitReason::Queue };
+            : std::optional { measurementJob_ != 0 || needlesJob_ != 0
+                ? DamageWaitReason::SourceMeasurement : DamageWaitReason::Queue };
     const auto in = planInputs (project_);
     Key key;
     key.u64 (source_.hash); key.u64 (measurementKey_); key.u64 (config::Config::versions().all);
