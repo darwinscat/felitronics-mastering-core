@@ -569,6 +569,8 @@ FC_EXPORT fc_session_status fc_session_worked_report_size (fc_session session, s
     if (call.refused()) return FC_SESSION_ERR_POISONED;
     if (const auto st = pointer (out, sizeof (*out), alignof (std::uint32_t)); st != FC_SESSION_OK) return st;
     const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    const auto retained = slot->session->viewMaster (slot->session->pendingMaster());
+    if (overlap (out, sizeof (*out), retained.data(), retained.size_bytes())) return FC_SESSION_ERR_OVERLAP;
     const auto need = slot->session->exportWorkedBytes (master_id);
     if (const auto st = rejection (need.rejection); st != FC_SESSION_OK) return st;
     *out = std::uint32_t (need.bytes); return FC_SESSION_OK;
@@ -581,6 +583,9 @@ FC_EXPORT fc_session_status fc_session_worked_report_copy (fc_session session, s
     if (const auto st = answerOut (output, capacity, written); st != FC_SESSION_OK) return st;
     const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
     if (overlap (output, capacity, written, sizeof (*written))) return FC_SESSION_ERR_OVERLAP;
+    const auto retained = slot->session->viewMaster (slot->session->pendingMaster());
+    if (overlap (output, capacity, retained.data(), retained.size_bytes())
+        || overlap (written, sizeof (*written), retained.data(), retained.size_bytes())) return FC_SESSION_ERR_OVERLAP;
     const auto need = slot->session->exportWorkedBytes (master_id);
     if (const auto st = rejection (need.rejection); st != FC_SESSION_OK) return st;
     if (capacity < need.bytes) return FC_SESSION_ERR_TOO_SMALL;

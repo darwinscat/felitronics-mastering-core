@@ -564,6 +564,19 @@ int main()
             // EVERY OTHER OUTPUT IS FENCED AGAINST THE RETAINED PCM TOO: a copy onto itself, a shape, a view and a
             // waveform chunk written into the samples they describe.
             auto* retained = const_cast<float*> (view);
+            const auto reportSizeAlias = fc_session_worked_report_size (
+                handle, reportId, reinterpret_cast<std::uint32_t*> (retained));
+            const bool reportSizePreserved = std::memcmp (view, copied.data(), bytes) == 0;
+            if (! reportSizePreserved) std::memcpy (retained, copied.data(), sizeof (std::uint32_t));
+            ok (reportSizeAlias == FC_SESSION_ERR_OVERLAP && reportSizePreserved,
+                "worked-report size cannot write its byte count into retained PCM");
+            std::uint32_t reportAliasWritten = 77;
+            const auto reportCopyAlias = fc_session_worked_report_copy (handle, reportId,
+                reinterpret_cast<char*> (retained), reportSize, &reportAliasWritten);
+            const bool reportCopyPreserved = std::memcmp (view, copied.data(), bytes) == 0;
+            if (! reportCopyPreserved) std::memcpy (retained, copied.data(), std::min<std::size_t> (reportSize, bytes));
+            ok (reportCopyAlias == FC_SESSION_ERR_OVERLAP && reportAliasWritten == 77 && reportCopyPreserved,
+                "worked-report copy cannot overwrite retained PCM");
             ok (fc_session_master_audio_copy (handle, &t, retained, samples) == FC_SESSION_ERR_OVERLAP
                 && fc_session_master_audio_copy (handle, &t, retained + 3, samples - 3u) == FC_SESSION_ERR_OVERLAP
                 && std::memcmp (view, copied.data(), bytes) == 0,
