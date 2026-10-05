@@ -26,6 +26,11 @@ private:
     std::size_t lengths_[text::Fact::kMaxArgs] {};
 };
 enum class PhaseName : std::uint8_t { Stream, Report, Analyzers, Pass, Remeasure, Convert, Lra, Final, Reference, Damage };
+struct AnalyzerProgress
+{
+    Analyzer analyzer = Analyzer::Loudness;
+    std::optional<double> fraction;
+};
 struct Phase
 {
     PhaseName name = PhaseName::Stream;
@@ -40,6 +45,9 @@ struct Phase
     // loudness and the damage's. Absent where the phase has no walk of its own (the report, the waits, the bookkeeping
     // between walks, the end).
     std::optional<double> stepFraction;
+    // The instruments this unit advances, each with its own read fraction. Null outside Analyzers; an empty list
+    // while that phase only joins results. Held inline so events own their rows without an allocation.
+    std::optional<BoundedList<AnalyzerProgress, 3>> analyzers = std::nullopt;
 };
 struct ReadingPoint { std::uint64_t index = 0; double value = 0.0; };
 struct ReadingRun { std::uint64_t first = 0; std::uint64_t count = 0; double value = 0.0; };

@@ -2012,6 +2012,11 @@ wire union SessionCommand GradeDamageCommand
 codec GlueFieldsValue.mix double
 codec GlueFieldsTouched.mix double?
 codec GlueFinding.mix double
+
+# v0.18.0: the analyzers this unit advances, each with its own fraction; null outside the phase.
+codec AnalyzerProgress.analyzer Analyzer
+codec AnalyzerProgress.fraction double?
+codec Phase.analyzers AnalyzerProgress[<=3]?
 wire EditDeviceGlueFields.mix? WireNumber | null
 wire RevertEditsGlueFields.mix? boolean
 enum felitronics::session::text::Term::FieldGlueMix=151

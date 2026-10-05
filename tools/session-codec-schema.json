@@ -803,7 +803,8 @@
         "totalPasses": "uint32",
         "completedUnits": "uint32",
         "totalUnits": "uint32",
-        "stepFraction": "double?"
+        "stepFraction": "double?",
+        "analyzers": "AnalyzerProgress[<=3]?"
       }
     },
     "ReadingPoint": {
@@ -1289,6 +1290,13 @@
         "sibilance": "Observation",
         "hum": "Observation",
         "humWandered": "Observation"
+      }
+    },
+    "AnalyzerProgress": {
+      "cpp": "AnalyzerProgress",
+      "fields": {
+        "analyzer": "Analyzer",
+        "fraction": "double?"
       }
     }
   },
@@ -1810,19 +1818,29 @@
   "transportRecordViews": {
     "SessionMasterCrest": {
       "from": "MasterCrest",
-      "fields": { "rows": "ScalarRow", "sourceMask": "ScalarRow" }
+      "fields": {
+        "rows": "ScalarRow",
+        "sourceMask": "ScalarRow"
+      }
     },
     "SessionMasterReport": {
       "from": "MasterReport",
-      "fields": { "crest": "SessionMasterCrest" }
+      "fields": {
+        "crest": "SessionMasterCrest"
+      }
     },
     "SessionKept": {
       "from": "Kept",
-      "fields": { "report": "SessionMasterReport | null" }
+      "fields": {
+        "report": "SessionMasterReport | null"
+      }
     },
     "SessionQueryView": {
       "from": "QueryView",
-      "fields": { "values": "ScalarRow", "master": "SessionKept | null" }
+      "fields": {
+        "values": "ScalarRow",
+        "master": "SessionKept | null"
+      }
     }
   },
   "optionalFields": {

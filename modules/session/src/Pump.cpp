@@ -434,6 +434,14 @@ Stepped Session::step (std::uint32_t budget) noexcept
                     {
                         auto& p = masterProgress_;
                         p.name = PhaseName::Analyzers; p.pass = 0; p.totalPasses = passes;
+                        p.analyzers.emplace();
+                        if ((waits & detail::bitOf (Analyzer::Excursions)) != 0)
+                        {
+                            p.analyzers->count = 1;
+                            p.analyzers->items[0] = { Analyzer::Excursions, needlesProgress_.fraction };
+                        }
+                        else if (measurementProgress_.name == PhaseName::Analyzers)
+                            p.analyzers = measurementProgress_.analyzers;
                         if (p.completedUnits < 4294967294u) ++p.completedUnits;
                         p.totalUnits = std::max (p.totalUnits, p.completedUnits + 1u);
                         p.fraction = measureWeight * double (p.completedUnits) /
@@ -687,6 +695,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
         {
             measurementJob_ = 0;
             measurementProgress_ = { PhaseName::Analyzers, 1.0, config::Config::versions().all, 0, 0, 1, 1, std::nullopt };
+            measurementProgress_.analyzers.emplace();
             ++revision_;
         }
         else contract (measurementJob_);
