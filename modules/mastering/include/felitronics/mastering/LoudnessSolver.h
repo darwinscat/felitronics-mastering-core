@@ -867,9 +867,6 @@ struct LoudnessRequest
     // that chose these settings), so no pass is spent probing it — with `maxPasses` 1, one render at the given gain and
     // ceiling, delivered (a max mode's guard re-renders a step back so).
     bool peakClipMeasured = false;
-    // Optional product-report snapshot of the clipper's loudest input quanta. LandingSearch takes it whenever the
-    // winning render changes, because restoring retained PCM does not re-run the chain whose counters produced it.
-    double clipperLoudShare = std::numeric_limits<double>::quiet_NaN();
     const double* sourceMomentaryLufs = nullptr;
     long long sourceMomentaryCount = 0;
     long long sourceMomentaryHopFrames = 0;
@@ -892,6 +889,10 @@ struct LoudnessRequest
     double maxExcerptOffsetDb = 0.5;
     double budgetResolutionDb = 0.25;
     long long limiterStatisticSkipFrames = 0;
+    // Optional product-report snapshot of the clipper's loudest input quanta. LandingSearch takes it whenever the
+    // winning render changes, because restoring retained PCM does not re-run the chain whose counters produced it.
+    // Appended so positional initialisers written against the older public aggregate retain their meaning.
+    double clipperLoudShare = std::numeric_limits<double>::quiet_NaN();
 };
 
 // One render the search made. The whole trace is returned, not just the winner: a caller that has to
@@ -902,13 +903,13 @@ struct SolvePassRecord
     double gainDb = 0.0, ceilingDb = 0.0;
     double integratedLufs = 0.0, truePeakDbTp = 0.0, plrDb = 0.0;
     double limiterMaxGrDb = 0.0, loudnessRangeLu = 0.0;
-    double limiterP95Db = std::numeric_limits<double>::quiet_NaN(); // active windows, product landing only
     // Why this render exists. Appended so old aggregate initialisers retain their meaning.
     enum class Reason : std::uint8_t
     {
         AimAtTarget, PeakProbe, StepBackBySlope, InsideBracket, ProveEdge, Excerpt, DeliverWinner
     };
     std::uint32_t violated = 0;
+    double limiterP95Db = std::numeric_limits<double>::quiet_NaN(); // active windows, product landing only
     Reason reason = Reason::AimAtTarget;
     bool excerpt = false;
     long long excerptFromFrame = 0, excerptFrames = 0;

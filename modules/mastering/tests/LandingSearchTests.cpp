@@ -7,6 +7,7 @@
 #include "../../../tests/DeclaredBudget.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cmath>
 #include <climits>
 #include <cstdio>
@@ -341,6 +342,15 @@ void scaleTo (std::vector<float>& x, int from, int frames, double lufs, int rate
 
 int main()
 {
+    {
+        constexpr std::uint32_t oldMask = 0x5a5a5a5au;
+        const SolvePassRecord oldStyle { 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, oldMask };
+        test::ok (oldStyle.violated == oldMask && std::isnan (oldStyle.limiterP95Db),
+            "the pre-v0.18 positional pass record still initializes its violation mask");
+        test::ok (offsetof (LoudnessRequest, clipperLoudShare)
+                     > offsetof (LoudnessRequest, limiterStatisticSkipFrames),
+            "release-added request fields remain after the older aggregate layout");
+    }
     {
         std::vector<float> pcm (std::size_t (kRate * 4));
         for (std::size_t i = 0; i < pcm.size(); ++i)
