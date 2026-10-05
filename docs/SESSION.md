@@ -925,16 +925,19 @@ The mastering render's source-rate conversion, chain latency, drain, and prepara
 
 `LandingSearch` keeps one search across calls. It first surveys source spectrum and crest in bounded units, then
 renders and measures within one budget of up to twelve passes. A measured hit stops immediately. Every render is
-logged; an exhausted budget returns the closest ceiling-safe PCM and its measured miss. When measured renders exist and
-none is safe it returns the gentlest — the smallest overshoot of the ceiling — as `TargetUnreachable` bound by the
-ceiling and marked `peaksAboveCeiling`; `Unavailable` only when no render could be measured. Source and output are the
-only full PCM buffers. If a previous candidate wins, a counted pass restores it; the last pass is reserved for that
-render once a candidate exists (a safe one, or else the gentlest above the ceiling). The search can pause during SRC, rendering,
+logged; an exhausted budget returns the closest ceiling-safe PCM and its measured miss. A retained full-programme PCM
+buffer follows the winning candidate, so a winner from an earlier pass is copied back without another render. Its
+non-throwing allocation is optional: failure silently takes the counted delivery re-render path used before v0.18.0.
+When measured renders exist and none is safe it returns the gentlest — the smallest overshoot of the ceiling — as
+`TargetUnreachable` bound by the ceiling and marked `peaksAboveCeiling`; `Unavailable` only when no render could be
+measured. Source, output and the optional winning candidate are the full PCM buffers. Without that candidate buffer,
+the last pass is reserved for its counted delivery render once a candidate exists (a safe one, or else the gentlest
+above the ceiling). The search can pause during SRC, rendering,
 metering, band statistics, integrated gates, the LRA scan, restoration and independent remeasurement.
 `TargetLoudnessSolver::solve()` drives this same path when `LoudnessRequest::productLanding` is set. Its older
 request policy remains available for existing callers. The request-aware `TargetLoudnessSolver::solveCallBytes(req)`
 and `DeliveredMastering::solveCallBytes(req)` include the product search workspace; the integer-bucket overloads
-keep the legacy solve quote. `LandingSearch::storageForProgramme()` quotes source, output, workspace and the largest
+keep the legacy solve quote. `LandingSearch::storageForProgramme()` quotes source, output, candidate, workspace and the largest
 block, including capacity retained on reuse through `storageForJob()`. Chain and converter preparations are separate.
 `LandingOps::plan()`
 sets the source normalization toward −18 LUFS separately from the adjustable pre-limiter gain; a delivery-rate
@@ -946,7 +949,10 @@ source and limiter hints, work units and the ordered pass log — and, where the
 (the two levels a between landing's target fell between, quieter first; were a solver's side not a number, the verdict
 stands without them and the master is still delivered — a target that cannot be hit always returns the file). The decoder refuses a limit on another status
 and levels out of order or on another status; the keys are always present, null where the status has none, and a
-missing one is a decode error. Its limiter and K13 clipper traces share
+missing one is a decode error. Every log row appends the active-window limiter P95 it was judged on and its reason
+(`AimAtTarget`, `PeakProbe`, `StepBackBySlope`, `InsideBracket`, `ProveEdge`, `Excerpt` or `DeliverWinner`). Excerpt rows
+precede the full rows, carry their source-frame range and do not increment `LandingSummary::passes`; `Phase.excerpt` and
+its range say that the current progress walk is an excerpt. Its limiter and K13 clipper traces share
 the delivered-frame grid and carry min/max/mean reduction, finite counts, validity and completion. Limiter
 GR follows the audio receiving gain after lookahead; K13 reduction follows the detector's input time.
 `Kept::landing` and the trace fields are nullable and always present in the generated session codec: a missing key
@@ -1941,8 +1947,8 @@ refusal settles Pending crest and all five crest cost bands with the same reason
 ## Measured master cost
 
 `MasterReport.cost` exists only after a delivered master. It is descriptive evidence, never a delivery
-gate. Every number has an optional value and a reason; `k2Reason=NotImplemented` means tonal change has
-not been measured. A gain-only render has no shape or crest penalty. The source-rate check supplies the
+gate. Every number has an optional value and a reason; `k2Reason=NotImplemented` still records that tonal change has
+not been measured, but the empty “not measured yet” tonal fact is no longer emitted. A gain-only render has no shape or crest penalty. The source-rate check supplies the
 crest rows when delivery rate differs, and `sourceRateCheck` marks that provenance.
 
 For each of Low, LowMid, HighMid, High and Full, K1 compares only blocks whose source mask is one and

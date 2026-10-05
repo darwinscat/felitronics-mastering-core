@@ -78,7 +78,8 @@
 //                revertEdits), the plan's share as it sounds (GlueFinding.mix), the field term FieldGlueMix. No entry
 //                point.
 //  13            v0.18.0: analyzer progress, damage wait reasons, delivery modes for already-mastered sources and the
-//                read-only as-worked TOML (`fc_session_worked_report_*`) appended.
+//                read-only as-worked TOML (`fc_session_worked_report_*`); the landing pass's active P95, reason and
+//                excerpt range, and the current excerpt range in Phase. All appended.
 #define FC_SESSION_ABI_VERSION 13u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u

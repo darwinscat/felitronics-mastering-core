@@ -144,6 +144,15 @@
       "LoudnessRange",
       "GainRange"
     ],
+    "LandingPassReason": [
+      "AimAtTarget",
+      "PeakProbe",
+      "StepBackBySlope",
+      "InsideBracket",
+      "ProveEdge",
+      "Excerpt",
+      "DeliverWinner"
+    ],
     "QueryKind": [
       "Waveform",
       "LowSpectrum",
@@ -748,7 +757,12 @@
         "truePeakDbTp": "double",
         "limiterMaxReductionDb": "double",
         "ceilingSafe": "bool",
-        "overBudget": "bool"
+        "overBudget": "bool",
+        "limiterP95Db": "double?",
+        "reason": "LandingPassReason",
+        "excerpt": "bool",
+        "excerptFromFrame": "uint64",
+        "excerptFrames": "uint64"
       }
     },
     "LandingTraceBucket": {
@@ -827,7 +841,10 @@
         "completedUnits": "uint32",
         "totalUnits": "uint32",
         "stepFraction": "double?",
-        "analyzers": "AnalyzerProgress[<=3]?"
+        "analyzers": "AnalyzerProgress[<=3]?",
+        "excerpt": "bool",
+        "excerptFromFrame": "uint64",
+        "excerptFrames": "uint64"
       }
     },
     "ReadingPoint": {

@@ -789,7 +789,7 @@ void Session::startMaster (const detail::MasterPlan& plan) noexcept
     rows.workedReady = plan.ready;
     if (plan.deliveryMode == DeliveryMode::Mastered)
     {
-        rows.passes.reset (new LandingPass[12]);
+        rows.passes.reset (new LandingPass[mastering::TargetLoudnessSolverLimits::kMaxPasses]);
         rows.traces.reset (new LandingTraceBucket[std::size_t (2 * plan.traceBuckets)]);
         rows.traceCapacity = std::uint32_t (plan.traceBuckets);
         if (plan.glueTrace) rows.glueRows.reset (new LandingTraceBucket[std::size_t (plan.traceBuckets)]);

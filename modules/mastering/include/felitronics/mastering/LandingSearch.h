@@ -10,6 +10,8 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <memory>
+#include <new>
 #include <numeric>
 #include <utility>
 
@@ -17,7 +19,8 @@ namespace felitronics::mastering
 {
 
 // One landing owns one solver while it is active. The caller owns source and output
-// planar buffers. A saved candidate is restored by a counted render when needed.
+// planar buffers. A saved candidate is restored directly when available; allocation failure falls back to the
+// counted delivery render used before v0.18.
 //
 // LOUDNESS IS A REQUEST, NOT AN ORDER (owner, 04.10): better to fall short of the target than to reach it and make the
 // master unlistenable. Two parts of the request say so.
@@ -43,12 +46,14 @@ public:
     struct Storage
     {
         bool ok = false;
-        std::uint64_t sourceBytes = 0, outputBytes = 0, workspaceBytes = 0;
+        std::uint64_t sourceBytes = 0, outputBytes = 0, candidateBytes = 0, workspaceBytes = 0;
         std::uint64_t maxLiveBytes = 0, largestBlockBytes = 0;
     };
 
-    // A conservative fresh-call declaration, without another full PCM buffer,
-    // both retained result workspaces, armed band distributions, and MSVC Debug container proxies.
+    // A conservative fresh-call declaration of the workspace. The programme declaration below also names the
+    // best-pass PCM buffer which lets delivery avoid a counted re-render; failure to obtain that optional buffer is
+    // harmless and falls back to the counted render. It includes both retained result workspaces, armed band
+    // distributions, and MSVC Debug container proxies.
     // The chain, renderer, converter and solver's prepare() storage are separate preparations.
     static std::uint64_t storageFor (double sampleRate, int channels, int frames,
                                      int traceBuckets, int armedPairs = kBandGrStride,
@@ -67,18 +72,21 @@ public:
             || deliveryFrames <= 0
             || (std::uint64_t) sourceFrames > std::numeric_limits<std::uint64_t>::max()
                                               / ((std::uint64_t) sourceChannels * sizeof (float))) return st;
-        st.workspaceBytes = storageFor (deliveryRate, sourceChannels, deliveryFrames,
-                                        traceBuckets, armedPairs, binDb);
-        if (st.workspaceBytes == 0u) return st;
         st.sourceBytes = (std::uint64_t) sourceFrames * (std::uint64_t) sourceChannels * sizeof (float);
         st.outputBytes = (std::uint64_t) deliveryFrames * (std::uint64_t) sourceChannels * sizeof (float);
+        st.candidateBytes = st.outputBytes;
+        const std::uint64_t callBytes = storageFor (deliveryRate, sourceChannels, deliveryFrames,
+                                                    traceBuckets, armedPairs, binDb);
+        if (callBytes <= st.candidateBytes) return st;
+        st.workspaceBytes = callBytes - st.candidateBytes;
         constexpr auto max = std::numeric_limits<std::uint64_t>::max();
         if (st.sourceBytes > max - st.outputBytes
-            || st.sourceBytes + st.outputBytes > max - st.workspaceBytes) return Storage {};
-        st.maxLiveBytes = st.sourceBytes + st.outputBytes + st.workspaceBytes;
+            || st.sourceBytes + st.outputBytes > max - st.candidateBytes
+            || st.sourceBytes + st.outputBytes + st.candidateBytes > max - st.workspaceBytes) return Storage {};
+        st.maxLiveBytes = st.sourceBytes + st.outputBytes + st.candidateBytes + st.workspaceBytes;
         // The workspace figure is a conservative bound on any one of its
         // components, including MSVC Debug proxy allocations.
-        st.largestBlockBytes = std::max ({ st.sourceBytes, st.outputBytes, st.workspaceBytes });
+        st.largestBlockBytes = std::max ({ st.sourceBytes, st.outputBytes, st.candidateBytes, st.workspaceBytes });
         st.ok = true;
         return st;
     }
@@ -94,13 +102,16 @@ public:
         {
             st.sourceBytes = std::max (st.sourceBytes, retainedSourceUpper_);
             st.outputBytes = std::max (st.outputBytes, retainedOutputUpper_);
+            st.candidateBytes = std::max (st.candidateBytes, retainedOutputUpper_);
             constexpr auto max = std::numeric_limits<std::uint64_t>::max();
             const std::uint64_t pcm = st.sourceBytes > max - st.outputBytes
-                ? max : st.sourceBytes + st.outputBytes;
+                || st.sourceBytes + st.outputBytes > max - st.candidateBytes
+                ? max : st.sourceBytes + st.outputBytes + st.candidateBytes;
             st.maxLiveBytes = pcm > max - st.workspaceBytes ? max : pcm + st.workspaceBytes;
             st.maxLiveBytes = retainedWorkspaceUpper_ > max - st.maxLiveBytes
                 ? max : st.maxLiveBytes + retainedWorkspaceUpper_;
-            st.largestBlockBytes = std::max ({ st.largestBlockBytes, st.sourceBytes, st.outputBytes });
+            st.largestBlockBytes = std::max ({ st.largestBlockBytes, st.sourceBytes, st.outputBytes,
+                                               st.candidateBytes });
             st.largestBlockBytes = std::max (st.largestBlockBytes, retainedLargestBlockUpper_);
         }
         return st;
@@ -137,17 +148,30 @@ public:
         retainedFramesUpper_ = std::max (retainedFramesUpper_, frames);
         retainedChannelsUpper_ = std::max (retainedChannelsUpper_, channels);
         retainedBucketsUpper_ = std::max (retainedBucketsUpper_, request.grTraceBuckets);
-        retainedWorkspaceUpper_ = storageFor (retainedRateFloor_, retainedChannelsUpper_,
+        const std::uint64_t retainedCall = storageFor (retainedRateFloor_, retainedChannelsUpper_,
             retainedFramesUpper_, retainedBucketsUpper_, kBandGrStride,
             solver_.compHist_.binWidth());
+        const std::uint64_t retainedCandidate = (std::uint64_t) retainedFramesUpper_
+            * (std::uint64_t) retainedChannelsUpper_ * sizeof (float);
+        retainedWorkspaceUpper_ = retainedCall > retainedCandidate ? retainedCall - retainedCandidate : 0u;
         retainedLargestBlockUpper_ = std::max (retainedLargestBlockUpper_, demand.largestBlockBytes);
+        const std::size_t candidateSamples = (std::size_t) channels * (std::size_t) frames;
+        if (candidateSamples > savedCapacity_)
+        {
+            saved_.reset(); savedCapacity_ = 0;
+            std::unique_ptr<float[]> fresh (new (std::nothrow) float[candidateSamples]);
+            if (fresh) { saved_ = std::move (fresh); savedCapacity_ = candidateSamples; }
+        }
         chain_ = &chain; renderer_ = &renderer; source_ = source; out_ = out;
         channels_ = channels; frames_ = frames; sourceFrames_ = sourceFrames; sourceRate_ = sourceRate;
         params_ = params; params_.inputGainDb += request.normalizationGainDb;
+        initialParams_ = params_;
         request_ = request; clock_ = ProgressClock (progress);
         working_.activityThresholdDb = best_.activityThresholdDb = request.activityThresholdDb;
         haveBest_ = havePrevious_ = haveBelow_ = haveAbove_ = haveUnsafe_ = peakProbe_ = false;
+        bestClipperPeaksValid_ = false;
         passes_ = 0; sourceCursor_ = 0; verifyCursor_ = 0; bestPass_ = 0; restoring_ = false;
+        nextReason_ = SolvePassRecord::Reason::AimAtTarget;
         peakProbe_ = request.peakClipMeasured;
         gateOn_ = request.landingOnSourceGate && gateGrid (request, sourceRate, chain.sampleRate());
         budgetOn_ = ! request.limiterGr.off();
@@ -286,6 +310,9 @@ public:
             SolvePassRecord& rec = records_[(std::size_t) passes_];
             rec = SolvePassRecord {};
             rec.gainDb = gain_; rec.ceilingDb = ceiling_;
+            rec.reason = restoring_ ? SolvePassRecord::Reason::DeliverWinner
+                                    : (! peakProbe_ && params_.limiter.peakClip
+                                       ? SolvePassRecord::Reason::PeakProbe : nextReason_);
             rec.violated = constraintBit (MasteringConstraint::TruePeakCeiling); // incomplete passes are never certified
             ++passes_;
             phase_ = Phase::PassRun;
@@ -395,6 +422,12 @@ public:
 
     void cancel() noexcept { (void) fail (MasteringSolveStatus::Cancelled); }
     const LoudnessSolution& result() const noexcept { return best_; }
+    [[nodiscard]] bool clipperPeaks (ClipperPeaks& out) const noexcept
+    {
+        if (! bestClipperPeaksValid_) return false;
+        out = bestClipperPeaks_;
+        return true;
+    }
     // The peak at the limiter's input, at a gain of 0, the delivered render's clipper was set from: the one the first
     // pass measured where the clipper rides it, else the caller's (MasteringChainParams::peakClipPeakDb).
     double peakClipPeakDb() const noexcept { return params_.peakClipPeakDb; }
@@ -438,6 +471,7 @@ private:
     static constexpr long long kFirstBlockReading = 3;
     static constexpr double kAbsoluteGateLufs = -70.0;
     static constexpr double kBudgetResolutionDb = 0.25;
+    static constexpr int kMaxExcerptPasses = 12;
 
     static double energyOf (double lufs) noexcept { return core::det::pow10 ((lufs + 0.691) / 10.0); }
     static double lufsOf (double energy) noexcept { return -0.691 + 10.0 * core::det::log10 (energy); }
@@ -487,6 +521,8 @@ private:
         rec.integratedLufs = measurement_.integratedLufs; rec.truePeakDbTp = measurement_.truePeakDbTp;
         rec.plrDb = measurement_.plrDb; rec.limiterMaxGrDb = measurement_.limiter.maxDb;
         rec.loudnessRangeLu = measurement_.loudnessRangeLu;
+        rec.limiterP95Db = working_.limiterActive.stats.valid ? working_.limiterActive.stats.p95Db
+            : std::numeric_limits<double>::quiet_NaN();
         rec.violated = measurement_.truePeakDbTp > request_.maxTruePeakDbTp
             ? constraintBit (MasteringConstraint::TruePeakCeiling) : 0u;
         if (! clock_.finish (&rec)) return fail (MasteringSolveStatus::Cancelled);
@@ -524,8 +560,6 @@ private:
             return StepResult::More;
         }
         const bool safe = valid && measurement_.truePeakDbTp <= request_.maxTruePeakDbTp;
-        rec.limiterP95Db = working_.limiterActive.stats.valid ? working_.limiterActive.stats.p95Db
-            : std::numeric_limits<double>::quiet_NaN();
         const double err = valid ? std::fabs (level_ - request_.targetLufs)
                                  : std::numeric_limits<double>::infinity();
         const bool keeps = ! budgetOn_ || ! valid || keepsBudget (rec);
@@ -559,6 +593,7 @@ private:
             bestError_ = err; bestPass_ = passes_;
             bestGain_ = gain_; bestCeiling_ = ceiling_; bestLevel_ = level_; bestGate_ = gateLevel_;
             haveOverBudget_ = true;
+            saveBestAudio();
         }
         // THE GENTLEST RENDER ABOVE THE CEILING, held in `best_` while no render is under it (owner, 01.10: the file is
         // delivered even then, marked): the smallest overshoot of the ceiling, the nearer loudness on an equal one. The
@@ -573,6 +608,7 @@ private:
             bestError_ = err; bestPass_ = passes_;
             bestGain_ = gain_; bestCeiling_ = ceiling_; bestLevel_ = level_; bestGate_ = gateLevel_;
             haveUnsafe_ = true;
+            saveBestAudio();
         }
         const double level = level_;
         const double previousLevel = bestLevel_;
@@ -590,6 +626,7 @@ private:
             std::swap (working_, best_);
             haveBest_ = true; bestError_ = err; bestPass_ = passes_;
             bestGain_ = gain_; bestCeiling_ = ceiling_; bestLevel_ = level_; bestGate_ = gateLevel_;
+            saveBestAudio();
         }
         if (safe && keeps)
         {
@@ -613,8 +650,9 @@ private:
         if ((haveBest_ || haveOverBudget_ || haveUnsafe_) && passes_ == request_.maxPasses - 1)
         {
             if (bestPass_ == passes_) return finishSearch();
+            if (saved_) return finishSearch();
             gain_ = bestGain_; ceiling_ = bestCeiling_;
-            restoring_ = true;
+            restoring_ = true; nextReason_ = SolvePassRecord::Reason::DeliverWinner;
             phase_ = Phase::PassBegin;
             return StepResult::More;
         }
@@ -653,6 +691,8 @@ private:
             && core::exactlyEqual (nextCeiling, ceiling_))
             nextDrive = std::clamp (nextDrive, belowGain_ - ceiling_ + 0.001, aboveGain_ - ceiling_ - 0.001);
         if (budgetOn_) nextDrive = budgetClamp (nextDrive);
+        else nextReason_ = haveBelow_ && haveAbove_ ? SolvePassRecord::Reason::InsideBracket
+                                                    : SolvePassRecord::Reason::AimAtTarget;
         previousDrive_ = currentDrive; previousShape_ = shape; havePrevious_ = true;
         gain_ = std::clamp (nextDrive + nextCeiling, -60.0, 60.0);
         ceiling_ = nextCeiling;
@@ -710,8 +750,16 @@ private:
         }
         if (bestPass_ != passes_)
         {
+            if (restoreBestAudio())
+            {
+                phase_ = Phase::VerifySetup;
+                if (! clock_.begin (ProgressStage::FinalRender, passes_, request_.maxPasses,
+                                    frames_ + 2, frames_)) return fail (MasteringSolveStatus::Cancelled);
+                return StepResult::More;
+            }
             if (passes_ >= request_.maxPasses) return fail (MasteringSolveStatus::Unavailable);
             gain_ = bestGain_; ceiling_ = bestCeiling_; restoring_ = true;
+            nextReason_ = SolvePassRecord::Reason::DeliverWinner;
             phase_ = Phase::PassBegin;
             return StepResult::More;
         }
@@ -812,11 +860,14 @@ private:
             const double eLean = eOver / double (1u << std::min (chordStale_, 8));
             const double chord = dKept + (-eKept) / (eLean - eKept) * width;
             limit = chord - dKept <= kBudgetResolutionDb ? dKept + kBudgetResolutionDb - 0.01 : chord;
+            nextReason_ = chord - dKept <= kBudgetResolutionDb ? SolvePassRecord::Reason::ProveEdge
+                                                                : SolvePassRecord::Reason::InsideBracket;
             limit = std::clamp (limit, dKept + 0.05 * width, dOver - 0.05 * width);
             ++chordStale_;
         }
         else
         {
+            nextReason_ = SolvePassRecord::Reason::StepBackBySlope;
             double slope = 0.75, dNext = std::numeric_limits<double>::quiet_NaN(), eNext = 0.0;
             for (int k = 0; k < passes_; ++k)
             {
@@ -873,6 +924,32 @@ private:
         return StepResult::Failed;
     }
 
+    void publishLog() noexcept
+    {
+        best_.passes = passes_;
+        best_.logCount = std::min (TargetLoudnessSolverLimits::kMaxPasses, excerptCount_ + passes_);
+        int at = 0;
+        for (int i = 0; i < excerptCount_ && at < best_.logCount; ++i) best_.log[at++] = excerptRecords_[(std::size_t) i];
+        for (int i = 0; i < passes_ && at < best_.logCount; ++i) best_.log[at++] = records_[(std::size_t) i];
+    }
+
+    void saveBestAudio() noexcept
+    {
+        bestClipperPeaksValid_ = chain_ != nullptr && std::isfinite (request_.clipperLoudShare)
+            && chain_->clipperPeaks (request_.clipperLoudShare, bestClipperPeaks_);
+        if (! saved_ || savedCapacity_ < (std::size_t) channels_ * (std::size_t) frames_) return;
+        for (int c = 0; c < channels_; ++c)
+            std::copy_n (out_[c], frames_, saved_.get() + (std::size_t) c * (std::size_t) frames_);
+    }
+
+    bool restoreBestAudio() noexcept
+    {
+        if (! saved_ || savedCapacity_ < (std::size_t) channels_ * (std::size_t) frames_) return false;
+        for (int c = 0; c < channels_; ++c)
+            std::copy_n (saved_.get() + (std::size_t) c * (std::size_t) frames_, frames_, out_[c]);
+        return true;
+    }
+
     void releaseDelivery() noexcept
     {
         if (converter_ != nullptr)
@@ -892,11 +969,17 @@ private:
     long long sourceFrames_ = 0, sourceCursor_ = 0;
     double sourceRate_ = 0.0;
     MasteringChainParams params_ {};
+    MasteringChainParams initialParams_ {};
     LoudnessRequest request_ {};
     ProgressClock clock_ { ProgressCallback {} };
     LoudnessSolution working_ {}, best_ {};
     MasterMeasurement measurement_ {};
     std::array<SolvePassRecord, 12> records_ {};
+    std::array<SolvePassRecord, kMaxExcerptPasses> excerptRecords_ {};
+    std::array<double, kMaxExcerptPasses> excerptDrive_ {}, excerptExcess_ {};
+    std::unique_ptr<float[]> saved_;
+    std::size_t savedCapacity_ = 0;
+    ClipperPeaks bestClipperPeaks_ {};
     std::array<double, core::kMaxChannels> lowState_ {}, low2State_ {}, low8State_ {};
     double lowK_ = 0.0, low2K_ = 0.0, low8K_ = 0.0;
     double totalEnergy_ = 0.0, bassEnergy_ = 0.0, presenceEnergy_ = 0.0, sourcePeak_ = 0.0;
@@ -911,8 +994,10 @@ private:
     double retainedRateFloor_ = 0.0;
     int retainedFramesUpper_ = 0, retainedChannelsUpper_ = 0, retainedBucketsUpper_ = 0;
     bool haveBest_ = false, havePrevious_ = false, haveBelow_ = false, haveAbove_ = false;
+    bool bestClipperPeaksValid_ = false;
     bool haveUnsafe_ = false;   // `best_` holds the gentlest measured render above the ceiling (while `haveBest_` is not)
     bool restoring_ = false;
+    SolvePassRecord::Reason nextReason_ = SolvePassRecord::Reason::AimAtTarget;
     bool peakProbe_ = false;   // the first pass measured the peak the clipper's threshold is worked out from
     bool gateOn_ = false;      // the level landed is read on the source's gate
     bool budgetOn_ = false;
@@ -929,6 +1014,11 @@ private:
     std::array<double, 12> budgetExcess_ {};
     double chordOverDrive_ = std::numeric_limits<double>::quiet_NaN();
     int chordStale_ = 0;
+    const float* excerptSource_[core::kMaxChannels] {};
+    long long excerptSourceFrom_ = 0, excerptStatisticFrom_ = 0;
+    long long excerptSourceFrames_ = 0, excerptStatisticFrames_ = 0, excerptSkipFrames_ = 0;
+    int excerptFrames_ = 0, excerptCount_ = 0, excerptLow_ = -1, excerptHigh_ = -1;
+    double excerptEdgeDrive_ = std::numeric_limits<double>::quiet_NaN();
 };
 
 inline LoudnessSolution solveProductLanding (TargetLoudnessSolver& solver, MasteringChain& chain,

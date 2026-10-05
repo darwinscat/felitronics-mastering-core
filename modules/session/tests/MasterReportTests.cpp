@@ -973,9 +973,12 @@ int main()
     damage();
     damageAfterMaster();
     Case normalFirst, normalLate, fractionalFirst, fractionalLate;
-    ok (run (normalFirst, 48000, 48000, false, true, false, 4, 0, nullptr, 512.0f)
+    std::vector<session::Notification> normalEvents;
+    ok (run (normalFirst, 48000, 48000, false, true, false, 4, 0, nullptr, 512.0f, &normalEvents)
         && referenceCrest (normalFirst) && crestK1Ready (normalFirst),
         "normal-level source-first crest retains the configured floor and K1 comparison");
+    ok (! has (factsOf (normalEvents), session::text::FactId::MasterCostK2Deferred),
+        "a completed report no longer emits the empty tonal-change fact");
     if (normalFirst.session && ! normalFirst.session->masters().empty())
     {
         const auto snapshot = normalFirst.session->snapshot();

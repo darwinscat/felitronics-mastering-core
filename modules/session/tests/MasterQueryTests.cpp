@@ -806,7 +806,8 @@ void theLeanSummary()
                 && l.report->crest.rows.empty() && l.report->crest.sourceMask.empty() && l.report->cost->waveform.empty()
                 && w.landing->limiterTrace && ! w.report->cost->waveform.empty() && ! w.landing->limiterTrace->rows.empty();
             scalars = scalars && l.id == w.id && l.landing->status == w.landing->status && l.landing->passes == w.landing->passes
-                && l.landing->deliverable == w.landing->deliverable && l.landing->log.size() == w.landing->log.size() && l.landing->log.size() == l.landing->passes
+                && l.landing->deliverable == w.landing->deliverable && l.landing->log.size() == w.landing->log.size()
+                && l.landing->log.size() >= l.landing->passes
                 && same (*l.report->achievedLufs, *w.report->achievedLufs) && same (*l.report->truePeakDbTp, *w.report->truePeakDbTp)
                 && l.report->crest.blocks == w.report->crest.blocks && l.report->crest.status == w.report->crest.status
                 && l.report->cost->sections.size() == w.report->cost->sections.size() && l.report->cost->masterFrames == w.report->cost->masterFrames
