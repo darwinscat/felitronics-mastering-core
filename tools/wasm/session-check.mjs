@@ -927,9 +927,11 @@ for (let i = 0; i < 40000; ++i) {
     if (M._fc_session_step(masterSession, 16, resultSize) !== STATUS.OK) break;
 }
 const missLanding = missSnapshot?.masters?.at(-1)?.landing;
-ok(missLanding?.status === 2 && missLanding.deliverable && missLanding.passes === 12
+ok(missLanding?.status === 1 && missLanding.deliverable && missLanding.passes === 2
+    && missLanding.limiterWall && missLanding.binding === 0
+    && missLanding.limiterSlope < 0.2 && missLanding.limiterWallP95Db < 7.5
     && Number.isFinite(missLanding.missLu) && missLanding.truePeakDbTp <= -6,
-   'safe miss records its actual loudness miss and true-peak measurement');
+   'safe miss at the limiter wall records its slope, loudness miss and true-peak measurement');
 const missWire = masterWire('snapshot'), missEvents = masterWire('events');
 let missExport = null;
 if (missSnapshot?.pendingMaster?.master) {
