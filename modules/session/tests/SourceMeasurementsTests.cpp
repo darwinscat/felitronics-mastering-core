@@ -819,8 +819,45 @@ void wholeFileWall()
     for (const auto& [name, expected] : fields) all = all && value (result, name).value && same (*value (result, name).value, expected);
     ok (all, "every field of the whole file's wall is the analyzer's, bit for bit");
 }
+void analyzerProgress()
+{
+    std::vector<float> samples (48000);
+    for (std::size_t i = 0; i < samples.size(); ++i)
+        samples[i] = float (.1 * felitronics::core::det::sin (double (i) * .03));
+    const float* planes[] { samples.data() };
+    auto made = Session::create(); auto& s = *made.session;
+    (void) s.apply (command::Load { 1, { planes, 1, samples.size(), 48000 }, {} });
+    double previous[kAnalyzers] {};
+    unsigned seen[kAnalyzers] {};
+    bool named = true, monotone = true, outside = true;
+    while (s.measurementJob() || s.needlesJob())
+    {
+        const auto& run = detail::Inspector::run (s);
+        const bool active = detail::Inspector::live (s) == 9 && run.cursor < run.order.size();
+        const auto expected = active ? run.order[run.cursor] : Analyzer::Loudness;
+        (void) s.step (1);
+        const auto snap = s.snapshot();
+        const auto& p = snap.view().measurementProgress;
+        if (p.name != PhaseName::Analyzers) { outside = outside && ! p.analyzers; continue; }
+        if (! active || run.finished || s.needlesJob() != 0) continue;
+        named = named && p.analyzers && p.analyzers->count == 1;
+        if (! p.analyzers || p.analyzers->count != 1) continue;
+        const auto& row = p.analyzers->items[0];
+        named = named && row.analyzer == expected;
+        const auto index = std::size_t (row.analyzer);
+        monotone = monotone && row.fraction && *row.fraction >= previous[index] && *row.fraction <= 1;
+        if (row.fraction) previous[index] = *row.fraction;
+        ++seen[index];
+    }
+    ok (named, "Analyzers names the instrument the pump advances, including its finish and copy");
+    bool every = true;
+    for (const auto id : detail::SourceMeasurements::order) every = every && seen[std::size_t (id)] > 1;
+    ok (every && monotone, "each analyzer has its own monotone fraction in 0..1");
+    ok (outside, "the analyzer list is null outside Analyzers");
+}
 int main()
 {
+    analyzerProgress();
     fixture (2, 48000, 192000, 317, true);
     fixture (1, 48000, 192000, 1024, false);
     fixture (2, 8000, 800, 1, false);

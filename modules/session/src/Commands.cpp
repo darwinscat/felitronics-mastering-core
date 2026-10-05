@@ -653,6 +653,7 @@ Answer Session::apply (const Request& request) noexcept
             const auto chunks = (source_.frames + 1023u) / 1024u;
             const auto waitUnits = std::uint32_t (std::min<std::uint64_t> (3u * chunks + 64u, 4294967295u));
             masterProgress_ = { PhaseName::Analyzers, 0.0, config::Config::versions().all, 0, passes, 0, waitUnits, std::nullopt };
+            masterProgress_.analyzers.emplace();
         }
         else startMaster (plan);
         answer.job = job_;

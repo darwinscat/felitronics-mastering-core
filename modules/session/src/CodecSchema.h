@@ -882,7 +882,15 @@ constexpr void checkEnum (TickFrom value) noexcept
 template <class V, class T> void describe (V& v, T& x) noexcept
 {
     using U = std::remove_cv_t<T>;
-    if constexpr (std::is_same_v<U, Layers<BandsFields>>)
+    if constexpr (std::is_same_v<U, AnalyzerProgress>)
+    {
+        [[maybe_unused]] auto& [f0, f1] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.analyzer)>, Analyzer>);
+        v.field ("analyzer", x.analyzer);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.fraction)>, std::optional<double>>);
+        v.field ("fraction", x.fraction);
+    }
+    else if constexpr (std::is_same_v<U, Layers<BandsFields>>)
     {
         [[maybe_unused]] auto& [f0, f1] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.hand)>, BandsFields<Touched>>);
@@ -1976,7 +1984,9 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, Phase>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.analyzers)>, std::optional<BoundedList<AnalyzerProgress, 3>>>);
+        v.field ("analyzers", x.analyzers);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.completedUnits)>, std::uint32_t>);
         v.field ("completedUnits", x.completedUnits);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.fraction)>, double>);
