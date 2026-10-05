@@ -379,6 +379,25 @@ int main()
         }
         test::ok (manualBudgetResult.done && sawRetreat && sawBracket,
             "manual budget passes name the slope retreat and the following bracket decision");
+        std::vector<float> clipPcm (std::size_t (30 * kRate));
+        for (std::size_t i = 0; i < clipPcm.size(); ++i)
+            clipPcm[i] = float (.09 * core::det::sin (.1 * double (i)) + .07 * core::det::sin (.37 * double (i))
+                + .05 * core::det::sin (.72 * double (i)));
+        clipPcm[500] = .95f;
+        const Programme clipProgramme (clipPcm);
+        LandingSetup clipExcerpt; clipExcerpt.target = -5; clipExcerpt.limiterBudgetDb = .5;
+        clipExcerpt.maxMode = true; clipExcerpt.excerptSearch = true;
+        clipExcerpt.peakClipPeakDb = 20.0 * std::log10 (.95); clipExcerpt.peakClipCutDb = 1.0;
+        const auto clipExcerptResult = land (clipProgramme, clipExcerpt);
+        bool fullPeakProbe = false;
+        for (int i = 0; i < clipExcerptResult.answer.logCount; ++i)
+            fullPeakProbe = fullPeakProbe || (! clipExcerptResult.answer.log[i].excerpt
+                && clipExcerptResult.answer.log[i].reason == SolvePassRecord::Reason::PeakProbe);
+        std::printf ("  out-of-excerpt clip peak: %d full, %.3f dB maximum reduction\n",
+            clipExcerptResult.answer.passes, clipExcerptResult.answer.measured.peakClipReductionMaxDb);
+        test::ok (clipExcerptResult.done && fullPeakProbe
+                  && clipExcerptResult.answer.measured.peakClipReductionMaxDb <= 1.001,
+            "clipper calibration measures the whole file and respects its one-decibel cut");
         LandingSetup peakWall; peakWall.target = -5; peakWall.slopeBelow = .2;
         peakWall.peakClipCutDb = 1.0;
         peakWall.peakClipPeakDb = 20.0 * std::log10 (*std::max_element (pcm.begin(), pcm.end(),
