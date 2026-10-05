@@ -155,6 +155,7 @@ public:
         scanCursor_ = scanCount_ = 0; scanSum_ = gateThreshold_ = level_ = bestLevel_ = 0.0;
         gateLevel_ = bestGate_ = std::numeric_limits<double>::quiet_NaN();
         budgetExcess_.fill (std::numeric_limits<double>::quiet_NaN());
+        chordOverDrive_ = std::numeric_limits<double>::quiet_NaN(); chordStale_ = 0;
         work_ = 0; bestError_ = std::numeric_limits<double>::infinity();
         lowState_.fill (0.0); low2State_.fill (0.0); low8State_.fill (0.0);
         totalEnergy_ = bassEnergy_ = presenceEnergy_ = sourcePeak_ = 0.0;
@@ -739,23 +740,57 @@ private:
         return over;
     }
 
-    // The next drive, held under the budget's limit: between the loudest render that kept the budget below the lowest
-    // that broke it and that one, by the secant of their excess (kept within the middle three fifths); with no render
-    // under it, a step back of three times the excess, a dB at least.
+    // The next drive, held under the budget's limit, aimed at where the budget's statistic crosses it (v0.16.1; a step back
+    // of three times the excess, and a secant held within the middle three fifths, sent a tight budget — a max mode's
+    // 0.5 dB — 20 dB down and climbed back over as many passes). With a render that kept the budget below the lowest drive
+    // that broke it: the chord of their excess — the statistic is convex in drive (none under the limiter's knee, then
+    // rising), so the chord crosses at or under the true crossing, a render there keeps the budget — and, once the chord
+    // is within the proof's resolution of the kept drive, just under that resolution above it, so a render over the
+    // budget there proves the budget at once; always a twentieth of the bracket from either end, so it shrinks. The peak
+    // probe's render (its clipper's threshold a forecast) steers this as a kept or broken drive, never in the proof. With
+    // no render under it: back from the drive that broke it by its excess over the statistic's slope — about a dB per dB
+    // of drive above the knee, measured between the two lowest drives over it where there are two (kept within 0.5 … 2)
+    // — and half the proof's resolution more.
     double budgetClamp (double next) noexcept
     {
         const int over = lowestOverBudget();
         if (over < 0) return next;
         const double dOver = driveOf (over), eOver = budgetExcess_[(std::size_t) over];
+        // The over drive the chord leaned on last time, and how many times running a render landed inside the budget
+        // against it: each such time its excess counts half (the Illinois rule), so a far, steep over end stops holding
+        // the chord down.
+        if (! core::exactlyEqual (dOver, chordOverDrive_)) { chordOverDrive_ = dOver; chordStale_ = 0; }
+        // The kept end: the loudest drive under it whose render kept both the budget and the ceiling (an unsafe render
+        // proves nothing the delivered one could stand on).
         int kept = -1;
         for (int k = 0; k < passes_; ++k)
-            if (std::isfinite (budgetExcess_[(std::size_t) k]) && ! (budgetExcess_[(std::size_t) k] > 0.0)
+        {
+            const double e = budgetExcess_[(std::size_t) k];
+            if (std::isfinite (e) && ! (e > 0.0) && records_[(std::size_t) k].truePeakDbTp <= request_.maxTruePeakDbTp
                 && driveOf (k) < dOver && (kept < 0 || driveOf (k) > driveOf (kept))) kept = k;
-        double limit = dOver - std::fmax (1.0, 3.0 * eOver);
+        }
+        double limit = 0.0;
         if (kept >= 0)
         {
-            const double dKept = driveOf (kept), eKept = budgetExcess_[(std::size_t) kept];
-            limit = dKept + std::clamp (-eKept / (eOver - eKept), 0.2, 0.8) * (dOver - dKept);
+            const double dKept = driveOf (kept), width = dOver - dKept;
+            const double eKept = budgetExcess_[(std::size_t) kept];
+            const double eLean = eOver / double (1u << std::min (chordStale_, 8));
+            const double chord = dKept + (-eKept) / (eLean - eKept) * width;
+            limit = chord - dKept <= kBudgetResolutionDb ? dKept + kBudgetResolutionDb - 0.01 : chord;
+            limit = std::clamp (limit, dKept + 0.05 * width, dOver - 0.05 * width);
+            ++chordStale_;
+        }
+        else
+        {
+            double slope = 0.75, dNext = std::numeric_limits<double>::quiet_NaN(), eNext = 0.0;
+            for (int k = 0; k < passes_; ++k)
+            {
+                const double e = budgetExcess_[(std::size_t) k], d = driveOf (k);
+                if (e > 0.0 && d > dOver + 1.0e-6 && (! std::isfinite (dNext) || d < dNext)) { dNext = d; eNext = e; }
+            }
+            if (std::isfinite (dNext))
+                if (const double s = (eNext - eOver) / (dNext - dOver); std::isfinite (s)) slope = std::clamp (s, 0.5, 2.0);
+            limit = std::fmin (dOver - eOver / slope - 0.5 * kBudgetResolutionDb, dOver - kBudgetResolutionDb);
         }
         return std::fmin (next, limit);
     }
@@ -833,6 +868,8 @@ private:
     std::uint64_t gateNum_ = 1, gateDen_ = 1;   // block j of the master takes the source's reading round (j·num/den) + 3
     // The limiter's budget: each pass's excess over it (NaN: no reading), indexed as `records_`.
     std::array<double, 12> budgetExcess_ {};
+    double chordOverDrive_ = std::numeric_limits<double>::quiet_NaN();
+    int chordStale_ = 0;
 };
 
 inline LoudnessSolution solveProductLanding (TargetLoudnessSolver& solver, MasteringChain& chain,
