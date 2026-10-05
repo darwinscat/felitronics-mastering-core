@@ -66,12 +66,14 @@ struct Capacity
 // earlier grade runs) or a new master parked it; Running — its walks are being made. A grade ends with its result, or by
 // cancel of its job id, forget of its master or a new source; never by a new master.
 enum class DamageJobState : std::uint8_t { Waiting, Running };
+enum class DamageWaitReason : std::uint8_t { Queue, SourceMeasurement };
 struct DamageJobEntry
 {
     JobId job = 0;
     MasterId masterId = 0;
     DamageJobState state = DamageJobState::Waiting;
     Phase progress {};
+    std::optional<DamageWaitReason> waitReason = std::nullopt;
 };
 // THE QUEUE'S ROOM: a grade asked past it is refused (Rejection::DamageQueueFull). Bounded so a new source can say every
 // grade's last word in its own batch — beside the load's own events (a measured load's one per analyzer, and a few) —

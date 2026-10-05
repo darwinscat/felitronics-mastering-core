@@ -710,6 +710,25 @@ void damageAfterMaster()
     using session::EventKind;
     using session::MeasurementReason;
     using session::MeasurementStatus;
+    // A master can finish while its source's optional analyzers still run. The grade then waits for those measurements,
+    // and changes to waiting for its turn when they end (or are cancelled), before its first walk starts.
+    {
+        Case c;
+        const bool made = run (c, 48000, 48000, false, false, false, 4, 0, nullptr, 4096.0f, nullptr, false, true, false, false);
+        ok (made, "a master is available before its source analyzers finish");
+        if (made)
+        {
+            auto& s = *c.session;
+            ok (! s.damageJobs().empty() && s.measurementJob() != 0
+                && s.damageJobs()[0].waitReason == session::DamageWaitReason::SourceMeasurement,
+                "a grade held by source measurement says why it waits");
+            (void) s.apply (session::command::Cancel { 81, s.measurementJob() });
+            ok (s.damageJobs()[0].waitReason == session::DamageWaitReason::Queue,
+                "after source measurement stops the grade waits only for its queue turn");
+            for (unsigned i = 0; i < 400000 && s.damageJob() == 0; ++i) (void) s.step (1);
+            ok (s.damageJob() != 0 && ! s.damageJobs()[0].waitReason, "a running grade has no wait reason");
+        }
+    }
     // Delivered first: at the master's Done the report says Pending, the master's PCM is there, and no walk of the damage
     // has run; then its job announces itself, walks, and ends with the grade.
     {
