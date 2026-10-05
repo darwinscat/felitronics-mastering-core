@@ -247,6 +247,7 @@ struct Compressor
     double rangeDb = 0.0;
     double makeupDb = 0.0;
     bool autoMakeup = false;
+    double mix = 0.0;
     double lookaheadMs = 0.0;
     double sidechainHpfHz = 0.0;               // 0: self-keyed
     ThresholdFrom thresholdFrom = ThresholdFrom::ShortTermP95;

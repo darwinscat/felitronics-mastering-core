@@ -288,6 +288,7 @@ mode = "downCompress"
 rangeDb = 60
 makeupDb = 0
 autoMakeup = false
+mix = 1
 lookaheadMs = 1
 sidechainHpfHz = 0
 thresholdFrom = "shortTermP95"

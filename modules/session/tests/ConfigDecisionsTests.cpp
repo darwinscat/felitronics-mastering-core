@@ -77,9 +77,8 @@ constexpr Golden kGolden[] = {
     // of the config, the rows' manual starts −13 and −11 — only a max master moves, every target of manual loudness sounds
     // as before; it was 15b627f7db3ad5dc; updated in place, as above
     // ...and the glue in parallel by default (owner, 05.10, v0.17.0: [glue] mix 0.4 on a knob by 0.2) — every master whose
-    // glue engages moves (a target that glues, cd, or a person's glue), and [compressor] mix, which wrote the old 1, goes;
-    // it was 7fb7cae3c8dc411b; updated in place, as above
-    { "2026-10", 0xa154dca562da8da3ull },
+    // glue engages moves (a target that glues, cd, or a person's glue); it was 7fb7cae3c8dc411b; updated in place, as above
+    { "2026-10", 0x02ed0efc37c02b67ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
