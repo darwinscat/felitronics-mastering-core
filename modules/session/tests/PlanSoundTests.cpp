@@ -1701,7 +1701,8 @@ void theSourceReport()
     peaksRendered = peaksRendered && shape.frames != 0;
     std::vector<float> delivered (std::size_t (shape.frames * shape.channels));
     peaksRendered = peaksRendered && s.copyMaster (token, delivered) == MasterTransferStatus::Ok;
-    const double gain = felitronics::core::det::pow (10.0, peaksPlan.deliveryGainDb / 20.0);
+    const double gain = felitronics::core::det::pow (10.0,
+        s.masters().back().report->deliveryGainDb / 20.0);
     for (std::size_t i = 0; peaksRendered && i < pcm.size(); ++i)
         peaksRendered = near (delivered[i], double (pcm[i]) * gain, 0.000001);
     const auto peaksText = s.exportWorked (token.master);

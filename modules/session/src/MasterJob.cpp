@@ -666,11 +666,14 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         deliveryPeakMeter.drain();
         const double truePeak = deliveryPeakMeter.truePeakDb();
         if (std::isnan (truePeak)) { stage = Stage::Failed; return StepResult::Failed; }
-        if (truePeak > deliveryCeilingDbTp && ! deliveryCorrected)
+        constexpr double correctionGuardDb = 0.01;
+        if (truePeak > deliveryCeilingDbTp - correctionGuardDb && ! deliveryCorrected)
         {
             // One bounded correction render. The small guard covers integer-format dither and rounding while remaining
-            // far below an audible gain step; the second measured render is the certificate, whatever it reads.
-            deliveryGainDb -= truePeak - deliveryCeilingDbTp + 0.01;
+            // far below an audible gain step; it also makes a reading on the ceiling take the same branch on every
+            // floating-point tier. The second measured render is the certificate, whatever it reads.
+            deliveryGainDb -= std::fmax (correctionGuardDb,
+                                         truePeak - deliveryCeilingDbTp + correctionGuardDb);
             ready.params.inputGainDb = deliveryGainDb;
             deliveryCorrected = true;
             if (! beginDeliveryRender()) { stage = Stage::Failed; return StepResult::Failed; }
