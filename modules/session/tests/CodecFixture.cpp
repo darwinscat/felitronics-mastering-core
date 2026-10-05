@@ -72,6 +72,8 @@ int main()
             kept[0].landing->passes = 1;
             kept[0].landing->log = pass;
             kept[0].landing->deliverable = false; kept[0].landing->peaksAboveCeiling = false;
+            kept[0].landing->limiterWall = false;
+            kept[0].landing->limiterSlope.reset(); kept[0].landing->limiterWallP95Db.reset();
             LandingTrace trace;
             trace.toFrame = 1; trace.sampleRateHz = 48000; trace.columns = 1;
             trace.samples = 4; trace.complete = trace.valid = true; trace.rows = { &traceRow, 1 };

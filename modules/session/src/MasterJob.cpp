@@ -923,10 +923,11 @@ mastering::StepResult MasterJob::settleLanding (mastering::StepResult result) no
         }
         return std::isfinite (h.evidence) ? std::optional<MasterHint> (h) : std::nullopt;
     };
-    // Held short by the limiter's budget: the verdict says so, and nothing in the mix is blamed for it.
+    // Held short by the limiter's budget or wall: the verdict says so, and nothing in the mix is blamed for it.
     const bool budgetHeld = solved.status == mastering::MasteringSolveStatus::TargetUnreachable
                          && solved.binding == mastering::MasteringConstraint::LimiterGainReduction;
-    if (mode == LoudnessMode::Manual && ! report.targetMet && ! budgetHeld && report.missLu && std::fabs (*report.missLu) > 0.0)
+    if (mode == LoudnessMode::Manual && ! report.targetMet && ! budgetHeld && ! solved.limiterWall
+        && report.missLu && std::fabs (*report.missLu) > 0.0)
     {
         report.firstHint = hint (solved.mainReason);
         report.secondHint = hint (solved.secondReason);
