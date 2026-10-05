@@ -508,6 +508,21 @@ public:
                                                                        : std::numeric_limits<double>::quiet_NaN();
     }
     int startedPasses() const noexcept { return passes_; }
+    // Progress counts excerpt and whole-programme renders on the same axis. The excerpt currently being rendered is
+    // included although its retained record is not appended until it finishes.
+    int startedRenders() const noexcept
+    {
+        return excerptCount_ + passes_ + (renderingExcerpt() ? 1 : 0);
+    }
+    int startedExcerptRenders() const noexcept { return excerptCount_ + (renderingExcerpt() ? 1 : 0); }
+    double renderProgress() const noexcept
+    {
+        const double walked = std::clamp (walkFraction(), 0.0, 1.0);
+        if (phase_ == Phase::ExcerptBegin || phase_ == Phase::ExcerptRun) return double (excerptCount_) + walked;
+        if (phase_ == Phase::PassBegin || phase_ == Phase::PassRun || phase_ == Phase::PassGate)
+            return double (excerptCount_ + std::max (0, passes_ - 1)) + walked;
+        return double (excerptCount_ + passes_);
+    }
     // THE CURRENT WALK OVER THE FILE, 0..1, a new count for each: the source's statistics, every landing pass (its clock's
     // units), the delivered render's check. Negative outside a walk: idle, done, failed, and the bookkeeping between walks.
     double walkFraction() const noexcept
