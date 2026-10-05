@@ -708,6 +708,10 @@ public:
     [[nodiscard]] Snapshot snapshot() const noexcept;
     [[nodiscard]] std::uint64_t summaryBytes() const noexcept;
     [[nodiscard]] Snapshot summary() const noexcept;
+    // A page transfer with every source measurement row and no master's heavy rows or traces. The ordinary full
+    // snapshot and the frequent rowless-source summary keep their existing shapes.
+    [[nodiscard]] std::uint64_t sourceSnapshotBytes() const noexcept;
+    [[nodiscard]] Snapshot sourceSnapshot() const noexcept;
 
     //==========================================================================
     // WHAT THE SESSION HOLDS — read between calls; a reference stays valid until the next call that changes the session.
@@ -783,6 +787,8 @@ private:
     [[nodiscard]] Phase damageWaitingProgress() const noexcept;
     [[nodiscard]] SnapshotView buildView() const noexcept;
     [[nodiscard]] SnapshotView buildSummary (std::span<MeasurementResult> results) const noexcept;
+    [[nodiscard]] SnapshotView buildSourceSnapshot() const noexcept;
+    void stripMasterRows (SnapshotView& view) const noexcept;
     [[nodiscard]] bool hasWork() const noexcept;
     void requestNeedles() noexcept;
     void stepNeedles() noexcept;
@@ -880,8 +886,7 @@ private:
     JobId lastJob_ = 0;
     Recipe jobRecipe_ {};
     std::unique_ptr<Kept[]> masters_;
-    // Room for the lean summary's masters (Capabilities::leanSummary): as many as masters_ has, written whole by every
-    // summary — a view's scratch, never state; absent without the capability.
+    // Scratch for any master-rowless transfer: as many as masters_ has, written afresh by each view, never state.
     std::unique_ptr<Kept[]> leanMasters_;
     std::unique_ptr<detail::MasterRows[]> masterRows_;
     std::unique_ptr<detail::MasterJob> masterJob_;

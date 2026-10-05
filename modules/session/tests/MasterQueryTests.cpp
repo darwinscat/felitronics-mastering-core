@@ -767,6 +767,13 @@ Transfer summaryOf (const Session& s)
     felitronics::test::run (Wire::summary (s, out.json, out.rows) == CodecStatus::Ok);
     return out;
 }
+Transfer sourceSnapshotOf (const Session& s)
+{
+    Transfer out; out.need = Wire::sourceSnapshotBytes (s);
+    out.json.resize (out.need.jsonBytes); out.rows.resize (out.need.rowBytes / sizeof (double));
+    felitronics::test::run (Wire::sourceSnapshot (s, out.json, out.rows) == CodecStatus::Ok);
+    return out;
+}
 bool sameBytes (const Transfer& a, const Transfer& b)
 {
     return a.json == b.json && a.rows.size() == b.rows.size()
@@ -780,13 +787,15 @@ void theLeanSummary()
     auto full = loaded (audio.planes, 2, audio.frames, audio.rate, false);
     auto lean = loaded (audio.planes, 2, audio.frames, audio.rate, true);
     std::uint32_t sizes[2][2][2] {};   // [masters 1 or 7][default or lean][json, rows]
+    std::uint32_t sourceSizes[2][2] {}; // [masters 1 or 7][json, rows]
     bool declared = true, identical = true, stripped = true, scalars = true, noHeap = true;
     std::vector<MasterId> ids;
     for (unsigned n = 1; n <= 7; ++n)
     {
         const auto a = master (*full, 10 + n), b = master (*lean, 10 + n);
         ids.push_back (b.id);
-        declared = declared && declared::covers (a.declared.bytes, a.spent) && declared::covers (b.declared.bytes, b.spent) && b.spent.bytes > a.spent.bytes;
+        declared = declared && declared::covers (a.declared.bytes, a.spent) && declared::covers (b.declared.bytes, b.spent)
+            && b.spent.bytes == a.spent.bytes;
         const auto before = previousSummary (*full), now = summaryOf (*full);
         identical = identical && sameBytes (before, now);
         const auto spent = declared::spend ([&] { (void) Wire::summaryBytes (*lean); });
@@ -796,6 +805,8 @@ void theLeanSummary()
         {
             sizes[n == 7][0][0] = now.need.jsonBytes; sizes[n == 7][0][1] = now.need.rowBytes;
             sizes[n == 7][1][0] = light.need.jsonBytes; sizes[n == 7][1][1] = light.need.rowBytes;
+            const auto sourceOnly = sourceSnapshotOf (*full);
+            sourceSizes[n == 7][0] = sourceOnly.need.jsonBytes; sourceSizes[n == 7][1] = sourceOnly.need.rowBytes;
         }
         const auto summary = lean->summary(); const auto whole = lean->snapshot();
         stripped = stripped && ! summary.view().masterRowsIncluded && whole.view().masterRowsIncluded && summary.view().masters.size() == n;
@@ -830,11 +841,11 @@ void theLeanSummary()
         Answer started;
         const auto asked = declared::spend ([&] { (void) plain->apply (command::Master { 5 }); });
         const auto spent = declared::spend ([&] { started = thin->apply (command::Master { 5 }); });
-        ok (a.rejection == Rejection::None && b.rejection == Rejection::None && b.bytes == a.bytes + sizeof (Kept) && a.bytes >= sizeof (Kept)
+        ok (a.rejection == Rejection::None && b.rejection == Rejection::None && b.bytes == a.bytes && a.bytes >= 2 * sizeof (Kept)
             && started.rejection == Rejection::None && declared::covers (a.bytes, asked) && declared::covers (b.bytes, spent)
-            && spent.bytes == asked.bytes + (long long) sizeof (Kept),
-            "a lean session declares a second kept record for its summary — " + std::to_string (b.bytes) + " B against "
-            + std::to_string (a.bytes) + " — asks for it, and stays inside the declaration");
+            && spent.bytes == asked.bytes,
+            "every session declares the rowless-master scratch used by the appended source snapshot — "
+            + std::to_string (b.bytes) + " B — and stays inside the declaration");
     }
     std::printf ("    one summary, JSON + rows: 1 master %u + %u B by default, %u + %u B lean; 7 masters %u + %u B by default, %u + %u B lean\n",
         sizes[0][0][0], sizes[0][0][1], sizes[0][1][0], sizes[0][1][1], sizes[1][0][0], sizes[1][0][1], sizes[1][1][0], sizes[1][1][1]);
@@ -842,6 +853,29 @@ void theLeanSummary()
     ok (sizes[0][1][0] < sizes[0][0][0] / 10u && sizes[1][1][0] < sizes[1][0][0] / 10u && sizes[1][1][1] == sizes[0][1][1]
         && sizes[1][0][1] > sizes[0][0][1] && perMaster < 16384u,
         "the lean summary is under a tenth of the default at 1 and at 7 masters, and grows by " + std::to_string (perMaster) + " B a master");
+
+    // The appended source snapshot keeps every source row, strips every master's rows and traces, and its binary size
+    // therefore does not grow when six more masters are retained. It is also an ordinary decodable snapshot.
+    {
+        const auto sourceOnly = full->sourceSnapshot(), whole = full->snapshot();
+        bool sourceRows = ! sourceOnly.view().masterRowsIncluded && sourceOnly.view().measurementRowsIncluded
+            && sourceOnly.view().measurements.size() == whole.view().measurements.size();
+        for (std::size_t i = 0; sourceRows && i < whole.view().measurements.size(); ++i)
+        {
+            const auto& a = sourceOnly.view().measurements[i]; const auto& b = whole.view().measurements[i];
+            sourceRows = a.arrays.size() == b.arrays.size();
+            for (std::size_t j = 0; sourceRows && j < a.arrays.size(); ++j)
+                sourceRows = a.arrays[j].values.size() == b.arrays[j].values.size()
+                    && (a.arrays[j].values.empty() || std::memcmp (a.arrays[j].values.data(), b.arrays[j].values.data(),
+                        a.arrays[j].values.size_bytes()) == 0);
+        }
+        const auto need = Codec::encodedBytes (sourceOnly.view()); std::vector<char> json (std::size_t (need.bytes)); Snapshot decoded;
+        const bool decodes = need.status == CodecStatus::Ok && Codec::encode (sourceOnly.view(), json) == CodecStatus::Ok
+            && Codec::decode ({ json.data(), json.size() }, decoded) == CodecStatus::Ok
+            && ! decoded.view().masterRowsIncluded && decoded.view().measurementRowsIncluded;
+        ok (sourceRows && decodes && sourceSizes[0][1] == sourceSizes[1][1],
+            "the source snapshot decodes, keeps every source row bit-for-bit, omits master rows, and its binary size is master-independent");
+    }
 
     // A lean summary is a valid snapshot: it encodes and decodes.
     {

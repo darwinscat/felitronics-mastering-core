@@ -28,6 +28,8 @@ public:
     [[nodiscard]] static CodecStatus snapshot (const Session& session, std::span<char> json, std::span<double> rows) noexcept;
     [[nodiscard]] static TransferNeed summaryBytes (const Session& session) noexcept;
     [[nodiscard]] static CodecStatus summary (const Session& session, std::span<char> json, std::span<double> rows) noexcept;
+    [[nodiscard]] static TransferNeed sourceSnapshotBytes (const Session& session) noexcept;
+    [[nodiscard]] static CodecStatus sourceSnapshot (const Session& session, std::span<char> json, std::span<double> rows) noexcept;
     [[nodiscard]] static CodecStatus queryRequest (std::string_view json, MeasurementQuery& out) noexcept;
     [[nodiscard]] static Checked queryStorage (const Session& session, std::string_view json) noexcept;
     // Bounds before execution, then actual written sizes. Refusals precede query/cache mutation.

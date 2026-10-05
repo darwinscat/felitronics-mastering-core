@@ -277,7 +277,7 @@ bool run (unsigned sourceRate, unsigned deliveryRate, unsigned channels, unsigne
         // damage grade's inputs in it, the parameters it was delivered with and the walks' plan, under 1 KiB beside them —
         // its exact render state for the worked report, and its entry in the grades' queue), kept after the forget;
         // every later cycle reuses that slot and grows nothing.
-        auto warmLive = std::uint64_t (s.liveBytes()) + sizeof (Kept) + sizeof (DamageJobEntry)
+        auto warmLive = std::uint64_t (s.liveBytes()) + 2u * sizeof (Kept) + sizeof (DamageJobEntry)
                       + sizeof (felitronics::mastering::MasteringChainParams) + sizeof (command::MasterReady) + 2048u;
         for (unsigned cycle = 0; cycle < 3; ++cycle)
         {
