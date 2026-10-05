@@ -29,6 +29,7 @@ bool same (double a, double b);
 struct felitronics::session::detail::Inspector
 {
     static bool waveformFinished (const Session& s) { return s.waveform_->finished; }
+    static bool waveformPrepared (const Session& s) { return s.waveform_->prepared; }
     static unsigned liveStage (const Session& s) { return s.liveMeasurements_->stage; }
     static void eventJobs (Session& s)
     {
@@ -47,6 +48,23 @@ struct felitronics::session::detail::Inspector
     }
 };
 
+void readingsBeforeWaveform()
+{
+    std::vector<float> pcm (2u * 48000u, 0.25f);
+    const float* channels[] { pcm.data(), pcm.data() };
+    auto made = Session::create(); auto& s = *made.session;
+    ok (s.apply (command::Load { 1, { channels, 2, pcm.size(), 48000 }, {} }).rejection == Rejection::None,
+        "the ordering fixture loads");
+    (void) s.step (1);
+    ok (detail::Inspector::liveStage (s) == 1 && ! detail::Inspector::waveformPrepared (s),
+        "the first loudness/true-peak preparation starts before waveform preparation");
+    while (detail::Inspector::liveStage (s) < 9) (void) s.step (1);
+    ok (! detail::Inspector::waveformPrepared (s),
+        "the loudness and true-peak walk finishes before waveform work starts");
+    (void) s.step (1);
+    ok (detail::Inspector::waveformPrepared (s), "waveform preparation follows the first measurement");
+}
+
 void capacityBoundary()
 {
     std::vector<float> pcm (60u * 48000u, 0.25f);
@@ -54,7 +72,6 @@ void capacityBoundary()
     const Pcm audio { channels, 2, pcm.size(), 48000 };
     auto measured = Session::create();
     (void) measured.session->apply (command::Load { 1, audio, {} });
-    while (! detail::Inspector::waveformFinished (*measured.session)) (void) measured.session->step (1);
     for (unsigned stage = 0; stage < 3; ++stage)
     {
         const auto before = measured.session->liveBytes();
@@ -65,7 +82,6 @@ void capacityBoundary()
     }
     auto made = Session::create(); auto& s = *made.session;
     (void) s.apply (command::Load { 1, audio, {} });
-    while (! detail::Inspector::waveformFinished (s)) (void) s.step (1);
     const auto plan = detail::MeasurementPlan::storageFor (audio, detail::MeasurementPlan::parametersFor (audio));
     // Each instrument in turn: a capacity without its allocator allowance refuses it before any allocation, and the
     // refusal is its outcome — Unavailable for memory — while the job moves on to the next preparation.
@@ -99,7 +115,6 @@ void meterRefusedReportKept()
     const Pcm audio { channels, 2, pcm.size(), 48000 };
     auto made = Session::create(); auto& s = *made.session;
     ok (s.apply (command::Load { 1, audio, {} }).rejection == Rejection::None, "load admitted at full capacity");
-    while (! detail::Inspector::waveformFinished (s)) (void) s.step (1);
     const auto plan = detail::MeasurementPlan::storageFor (audio, detail::MeasurementPlan::parametersFor (audio));
     const auto& meter = plan.analyzers[std::size_t (Analyzer::Loudness)];
     const auto raw = meter.workspace + meter.rowValues * sizeof (double);
@@ -146,7 +161,6 @@ void shrunkCapacityEnds()
     const float* channels[] { pcm.data(), pcm.data() };
     auto made = Session::create(); auto& s = *made.session;
     ok (s.apply (command::Load { 1, { channels, 2, pcm.size(), 48000 }, {} }).rejection == Rejection::None, "load admitted at full capacity");
-    while (! detail::Inspector::waveformFinished (s)) (void) s.step (1);
     (void) s.setCapacity ({ s.liveBytes(), s.liveBytes() });
     unsigned memoryErrors = 0, units = 0;
     for (; units < 100000 && s.measurementJob() != 0; ++units)
@@ -457,7 +471,7 @@ int main (int argc, char** argv)
         run (8000, 2, 1000000, 0, 1);
         return felitronics::test::report();
     }
-    capacityBoundary(); meterRefusedReportKept(); shrunkCapacityEnds(); eventMetadata(); initialization(); streamingKernel();
+    readingsBeforeWaveform(); capacityBoundary(); meterRefusedReportKept(); shrunkCapacityEnds(); eventMetadata(); initialization(); streamingKernel();
     run (8000, 1, 8000 * 4 + 7, 0);
     run (48000, 2, 48000 * 4 + 1, 0);
     run (44100, 2, 44100 * 4 + 4410, 0);

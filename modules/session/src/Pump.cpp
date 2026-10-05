@@ -725,13 +725,13 @@ Stepped Session::step (std::uint32_t budget) noexcept
         {
             if (damageJobId_ != 0 || startDamage()) stepDamage();
         }
-        else if (waveform_ && ! waveform_->finished)
-        {
-            stepWaveform();
-        }
         else if (liveMeasurements_ && liveMeasurements_->stage < 9 && measurementUnit_ < 2)
         {
             stepMeasurements();
+        }
+        else if (waveform_ && ! waveform_->finished)
+        {
+            stepWaveform();
         }
         else if (sourceMeasurements_)
         {
