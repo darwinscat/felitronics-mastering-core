@@ -725,6 +725,10 @@ void damageAfterMaster()
             (void) s.apply (session::command::Cancel { 81, s.measurementJob() });
             ok (s.damageJobs()[0].waitReason == session::DamageWaitReason::Queue,
                 "after source measurement stops the grade waits only for its queue turn");
+            (void) s.apply (session::command::EditTarget { 82, { -5.0, -6.0 } });
+            ok (s.needlesJob() != 0 && s.damageJobs()[0].waitReason == session::DamageWaitReason::SourceMeasurement,
+                "a fresh peak-excursion measurement also explains a grade's wait");
+            if (s.needlesJob() != 0) (void) s.apply (session::command::Cancel { 83, s.needlesJob() });
             for (unsigned i = 0; i < 400000 && s.damageJob() == 0; ++i) (void) s.step (1);
             ok (s.damageJob() != 0 && ! s.damageJobs()[0].waitReason, "a running grade has no wait reason");
         }
