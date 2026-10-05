@@ -656,18 +656,6 @@ private:
             : std::numeric_limits<double>::quiet_NaN();
         rec.reason = SolvePassRecord::Reason::Excerpt;
         rec.excerpt = true; rec.excerptFromFrame = excerptStatisticFrom_; rec.excerptFrames = excerptStatisticFrames_;
-        if (! peakProbe_ && params_.limiter.peakClip && std::isfinite (params_.peakClipCutDb)
-            && std::isfinite (params_.peakClipPeakDb) && std::isfinite (measurement_.limiterMaxReconstructedPeakDb)
-            && measurement_.limiterMaxReconstructedPeakDb > -180.0)
-        {
-            rec.reason = SolvePassRecord::Reason::PeakProbe;
-            if (! clock_.finish (&rec)) return fail (MasteringSolveStatus::Cancelled);
-            params_.peakClipPeakDb = measurement_.limiterMaxReconstructedPeakDb - params_.preLimiterGainDb;
-            peakProbe_ = true;
-            excerptRecords_[(std::size_t) excerptCount_++] = rec;
-            phase_ = Phase::ExcerptBegin;
-            return StepResult::More;
-        }
         const double excess = rec.limiterP95Db - request_.limiterGr.limitDb;
         if (! std::isfinite (excess))
         {
