@@ -399,10 +399,11 @@ std::size_t countOf (const std::vector<Notification>& events, JobId job, std::si
     for (std::size_t i = from; i < events.size(); ++i) n += events[i].jobId == job ? 1u : 0u;
     return n;
 }
-const Notification* lastOf (const std::vector<Notification>& events, JobId job)
+// A job's last event, a copy: the record grows (and moves) with every apply and step after it.
+std::optional<Notification> lastOf (const std::vector<Notification>& events, JobId job)
 {
-    for (std::size_t i = events.size(); i-- > 0;) if (events[i].jobId == job) return &events[i];
-    return nullptr;
+    for (std::size_t i = events.size(); i-- > 0;) if (events[i].jobId == job) return events[i];
+    return std::nullopt;
 }
 
 void damageGrades()
@@ -435,7 +436,7 @@ void damageGrades()
         const bool running = atPoint (r, 0.0) && s.snapshot().view().damageJobs[0].state == DamageJobState::Running
             && s.snapshot().view().damageJob == job;
         (void) runOut (r);
-        const auto* last = lastOf (r.events, job);
+        const auto last = lastOf (r.events, job);
         ok (asked.rejection == Rejection::None && job > master && waiting && announced && running && last
             && last->kind == EventKind::Damage && last->payload.damage.status == MeasurementStatus::Ready
             && s.masters()[0].report->damage.status == MeasurementStatus::Ready && s.damageJobs().empty(),
@@ -492,7 +493,7 @@ void damageGrades()
             const auto from = r.events.size();
             const auto answer = act (r, stop);
             const auto said = countOf (r.events, job, from);
-            const auto* last = lastOf (r.events, job);
+            const auto last = lastOf (r.events, job);
             const bool lastWord = last && last->kind == EventKind::Damage
                 && last->payload.damage.status == MeasurementStatus::Cancelled
                 && last->payload.damage.reason == (forget ? MeasurementReason::MasterForgotten : MeasurementReason::Cancelled);
@@ -528,7 +529,7 @@ void damageGrades()
         (void) runOut (r);
         bool worked = false;
         for (const auto& e : r.events) worked = worked || (e.jobId == jb && e.kind == EventKind::Phase);
-        const auto* last = lastOf (r.events, jb);
+        const auto last = lastOf (r.events, jb);
         ok (answer.rejection == Rejection::None && checked.releasedBytes == 0 && gone && ! worked && last
             && last->kind == EventKind::Damage && last->payload.damage.status == MeasurementStatus::Cancelled
             && countOf (r.events, jb) == (forget ? 2u : 4u) && s.masters()[0].report->damage.status == MeasurementStatus::Ready,
@@ -550,11 +551,11 @@ void damageGrades()
         (void) act (r, command::Forget { 8, c });
         const bool untouched = countOf (r.events, jb, beforeC) > 0 && s.damageJob() == jb;
         (void) runOut (r);
-        const auto* lastB = lastOf (r.events, jb);
+        const auto lastB = lastOf (r.events, jb);
         const auto d = deliver (r, 9);
         const auto jd = act (r, command::GradeDamage { 10, d }).job;
         (void) runOut (r);
-        const auto* lastD = lastOf (r.events, jd);
+        const auto lastD = lastOf (r.events, jd);
         ok (ja != 0 && next && untouched && lastB && lastB->payload.damage.status == MeasurementStatus::Ready
             && countOf (r.events, ja, beforeC) == 0u && d > jb && jd > d && lastD
             && lastD->payload.damage.status == MeasurementStatus::Ready && lastD->payload.damage.masterId == d,
@@ -570,7 +571,7 @@ void damageGrades()
         const auto job = act (r, command::GradeDamage { 3, master }).job;
         (void) s.setCapacity ({ s.liveBytes(), 9007199254740991.0 });
         (void) stepUntil (r, [&] { return s.damageJobs().empty(); });
-        const auto* last = lastOf (r.events, job);
+        const auto last = lastOf (r.events, job);
         bool line = false;
         for (const auto& e : r.events)
             if (e.jobId == job && e.kind == EventKind::Fact && e.payload.fact.view().id == text::FactId::MasterDamageUnmeasured)
@@ -689,7 +690,7 @@ void maxMasterLanding()
             + std::to_string (report ? report->achievedLufs.value_or (0.0) : 0.0) + " LUFS)");
         const auto asked = act (r, command::GradeDamage { 4, master });
         (void) runOut (r);
-        const auto* last = lastOf (r.events, asked.job);
+        const auto last = lastOf (r.events, asked.job);
         ok (asked.rejection == Rejection::None && last && last->kind == EventKind::Damage
                 && last->payload.damage.status == MeasurementStatus::Ready
                 && s.masters().back().report->damage.status == MeasurementStatus::Ready,
@@ -736,13 +737,15 @@ void maxFloor()
         const auto from = r.events.size();
         const auto master = deliver (r, 4);
         const std::optional<MasterReport> report = s.masters().empty() ? std::optional<MasterReport> {} : s.masters().back().report;
-        const Notification* verdict = nullptr; const Notification* detail = nullptr;
+        // Copies, and where they stood: the record moves as it grows.
+        std::optional<Notification> verdict, detail;
+        std::size_t verdictAt = 0, detailAt = 0;
         for (std::size_t i = from; i < r.events.size(); ++i)
             if (r.events[i].jobId == master && r.events[i].kind == EventKind::Fact)
             {
                 const auto id = r.events[i].payload.fact.view().id;
-                if (id == text::FactId::MasterMaxFloor) verdict = &r.events[i];
-                if (id == text::FactId::MasterMaxFloorDetail) detail = &r.events[i];
+                if (id == text::FactId::MasterMaxFloor) { verdict = r.events[i]; verdictAt = i; }
+                if (id == text::FactId::MasterMaxFloorDetail) { detail = r.events[i]; detailAt = i; }
             }
         const auto said = verdict ? text::Text::text (verdict->payload.fact.view(), text::Lang::En) : std::string {};
         const auto logged = detail ? text::Text::text (detail->payload.fact.view(), text::Lang::En) : std::string {};
@@ -752,7 +755,7 @@ void maxFloor()
         const bool overBudget = detail && detail->payload.fact.view().args[3].number > 0.5
             && detail->payload.fact.view().args[1].number < -14.0 - tolerance;
         ok (master != 0 && report && report->maxStop == MaxStop::Floor && atFloor && verdict && verdict->payload.fact.view().argCount == 2
-                && said.starts_with ("Maximum · clean: ") && said.find ("budget") == std::string::npos && detail && verdict < detail
+                && said.starts_with ("Maximum · clean: ") && said.find ("budget") == std::string::npos && detail && verdictAt < detailAt
                 && overBudget && logged.find ("0.5 dB") != std::string::npos && logged.find ("−14.0 LUFS") != std::string::npos
                 && logged.find ("held") == std::string::npos,
             name + ": a dense mix is pulled up to −14 LUFS (" + std::to_string (report ? report->achievedLufs.value_or (0.0) : 0.0)
