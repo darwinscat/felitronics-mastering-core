@@ -1012,24 +1012,10 @@ void outStatesItsNumbers()
 
 // THE GLUE'S MIX (v0.17.0): the glue is a parallel compressor, 40 % of the compressed signal under 60 % of the dry one,
 // wherever it is on — the machine's cd glue and a person's tick alike. A person moves the share 0 … 1 (the page's slider
-// by 0.2, the core takes any share in its domain); the project keeps it. At 1 the glue is the downward compressor it was.
-std::uint64_t masterDigest (Session& s, CommandId id)
-{
-    ok (s.apply (command::Master { id }).rejection == Rejection::None, "PRECONDITION: the master is taken");
-    (void) finish (s);
-    const auto token = s.pendingMaster();
-    const auto shape = s.masterAudioShape (token);
-    std::vector<float> out (std::size_t (shape.frames * shape.channels));
-    ok (s.job() == 0 && ! out.empty() && s.copyMaster (token, out) == MasterTransferStatus::Ok, "PRECONDITION: the master's audio is copied");
-    std::uint64_t h = 0xCBF29CE484222325ull;
-    for (const float v : out)
-        for (unsigned k = 0; k < 4; ++k) h = (h ^ ((std::bit_cast<std::uint32_t> (v) >> (8u * k)) & 0xFFu)) * 0x100000001B3ull;
-    return h;
-}
-
+// by 0.2, the core takes any share in its domain); the project keeps it.
 void theMix()
 {
-    felitronics::test::group ("the glue's mix: 40 % by default wherever the glue is on; 0 … 1 by hand, kept; at 100 % the old downward glue to the bit");
+    felitronics::test::group ("the glue's mix: 40 % by default wherever the glue is on; 0 … 1 by hand, kept");
     const auto r = detail::rules();
     const auto engine = config::Config::load().config.engine;
     ok (same (engine.glue.mix, 0.4) && same (engine.glue.mixStep, 0.2) && same (engine.glue.mixRange.min, 0.0) && same (engine.glue.mixRange.max, 1.0)
@@ -1078,20 +1064,8 @@ void theMix()
         ok (s.apply (command::SetTarget { 9, "cd" }).rejection == Rejection::None && ! s.project().devices.glue.hand.mix
             && same (s.snapshot().view().plan.glue.mix, 0.4), "a change of target resets it: 40 % again");
     }
-    // The pinned digest is v0.16.0's master of this mix on cd, untouched — the machine's 2.6 dB glue, written at the old
-    // [compressor] mix = 1. The same master now, its mix set to 1, must give it to the bit; at the default 0.4 it differs.
-    constexpr std::uint64_t kDownwardGlue = 0x80741a2cc3a4130aull;
-    auto full = measured (mix, "cd");
-    GlueFields<Touched> all; all.mix = 1.0;
-    ok (full->apply (command::EditDevice { 3, all }).rejection == Rejection::None && full->snapshot().view().plan.glue.state == GlueState::Active
-        && same (full->snapshot().view().plan.glue.upToDb, 2.6), "PRECONDITION: cd's glue in, 2.6 dB, its mix set to 1");
-    const auto downward = masterDigest (*full, 4);
-    char digest[17];
-    std::snprintf (digest, sizeof digest, "%016llx", (unsigned long long) downward);
-    ok (downward == kDownwardGlue, std::string ("at mix 1 the master is v0.16.0's downward glue to the bit: ") + digest);
-    auto parallel = measured (mix, "cd");
-    ok (same (parallel->snapshot().view().plan.glue.mix, 0.4), "PRECONDITION: untouched, cd's glue is at 40 %");
-    ok (masterDigest (*parallel, 3) != kDownwardGlue, "and at the default 40 % the master is another");
+    // At mix 1 the glue is v0.16.0's downward glue to the bit: felitronics_session_master_job_tests pins it, natively and
+    // as wasm.
 }
 
 int main()
