@@ -56,7 +56,8 @@ text::FactId MeasurementText::fact (MeasurementReason reason) noexcept
         case MeasurementReason::NeedNotAbove3: return text::FactId::NeedlesSkipped;
         case MeasurementReason::Memory: return text::FactId::SessionMemory;
         case MeasurementReason::Superseded:
-        case MeasurementReason::NoJobId: break;             // a master's damage's, never a measurement's
+        case MeasurementReason::NoJobId:
+        case MeasurementReason::MasterForgotten: break;     // a master's damage's, never a measurement's
     }
     detail::storageOverflow();
 }

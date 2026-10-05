@@ -354,6 +354,7 @@ template <class F> auto parseCommand (std::string_view json, F&& finish) noexcep
     else if (kind == "adoptMachine") request = command::AdoptMachine { id };
     else if (kind == "cancel") { command::Cancel r { id }; root.get ("jobId", r.job); request = r; }
     else if (kind == "forget") { command::Forget r { id }; root.get ("masterId", r.master); request = r; }
+    else if (kind == "gradeDamage") { command::GradeDamage r { id }; root.get ("masterId", r.master); request = r; }
     else if (kind == "editTarget" || kind == "editDevice" || kind == "revertEdits")
     {
         Object fields (root.take ("fields"), p);

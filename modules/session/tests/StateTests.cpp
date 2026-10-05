@@ -104,7 +104,8 @@ namespace config = felitronics::session::config;
 namespace
 {
 constexpr const char* kCommandNames[] = { "load", "setTarget", "editTarget", "editDevice", "revertEdits", "setManual",
-                                          "master", "cancel", "forget", "importProject", "continueMeasurement", "adoptMachine" };
+                                          "master", "cancel", "forget", "importProject", "continueMeasurement", "adoptMachine",
+                                          "gradeDamage" };
 static_assert (std::size (kCommandNames) == kCommands, "a name for every command");
 constexpr const char* kColumnNames[] = { "Empty", "Loaded", "Measured1", "Measured2", "Mastering1", "Mastering2", "Stopped", "StoppedMeasured", "MasteringStopped",
     "Measured1Unplaced", "Measured2Unplaced", "Mastering1Unplaced", "Mastering2Unplaced", "StoppedMeasuredUnplaced", "MasteringStoppedUnplaced" };
@@ -343,6 +344,7 @@ Request validRequest (Command c, const Situation& x, CommandId id)
         case Command::ContinueMeasurement: return command::ContinueMeasurement { id };
         case Command::ImportProject: return command::ImportProject { id, x.projectText.view() };
         case Command::AdoptMachine: return command::AdoptMachine { id };
+        case Command::GradeDamage: return command::GradeDamage { id, x.kept };
     }
     return command::Master { id };
 }
@@ -410,7 +412,10 @@ void everyCellOfTheTable()
                 || Column (col) == Column::Measured2Unplaced || Column (col) == Column::StoppedMeasuredUnplaced)
                 ? Rejection::NoJob : Table::commands[c].cell[col];
             const std::string what = std::string (kCommandNames[c]) + " in " + kColumnNames[col];
-            if (cell == Rejection::None)
+            // A master this fixture keeps was not delivered by a job: past the table, its damage is not gradable.
+            if (cell == Rejection::None && Command (c) == Command::GradeDamage)
+                rejectedWhole (s, r, Rejection::DamageSettled, kNoField, what);
+            else if (cell == Rejection::None)
             {
                 // adoptMachine with no difference to take is accepted as an empty edit is: without a revision.
                 const std::uint64_t moves = Command (c) == Command::AdoptMachine && s.snapshot().view().machineDifferences.empty() ? 0 : 1;

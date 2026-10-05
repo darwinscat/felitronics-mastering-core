@@ -174,5 +174,9 @@
   {
     "script": "place phase 3",
     "valid": false
+  },
+  {
+    "script": "create a 0\nuse a\nrelease master\nsnapshot",
+    "valid": true
   }
 ]

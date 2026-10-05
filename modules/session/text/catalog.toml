@@ -273,6 +273,18 @@ en = "The target sets the delivery format: its master is written only as {bits}-
 ru = "Замеры, от которых зависят числа приборов, ещё идут — это станет доступно, когда они закончатся."
 en = "The measurements the devices' numbers depend on are still running — this becomes available once they end."
 
+[messages.rejectedDamageSettled]
+ru = "Порча этого мастера уже оценена или не может быть оценена — повторная оценка дала бы то же."
+en = "This master's damage is already graded or cannot be graded — grading it again would give the same."
+
+[messages.rejectedDamageQueued]
+ru = "Порча этого мастера уже оценивается или ждёт своей очереди."
+en = "This master's damage is already being graded or waits its turn."
+
+[messages.rejectedDamageQueueFull]
+ru = "Очередь оценок порчи заполнена — попросите снова, когда какие-то закончатся."
+en = "The queue of damage grades is full — ask again once some have ended."
+
 [messages.hpfNote]
 ru = "ФВЧ {cutoff}: по нижней ноте {note} ({hz}), на ней срезается {loss}."
 en = "HPF {cutoff}: from the lowest note {note} ({hz}), which loses {loss}."
@@ -1089,6 +1101,8 @@ superseded.ru = "заказан новый мастер"
 superseded.en = "a new master was asked for"
 noJobId.ru = "для этой задачи не осталось номера"
 noJobId.en = "no job id was left for it"
+masterForgotten.ru = "мастер удалён"
+masterForgotten.en = "the master was deleted"
 
 # An observation whose measurement did not give its number: its name, and why.
 [messages.observationUnmeasured]
@@ -1129,11 +1143,12 @@ en = "Target {target}, reached {achieved}: going further, the limiter would have
 ru = "Цель {target}, сделано {achieved}: ни один вариант не уложился в бюджет лимитера {budget} (P95) — выдан самый мягкий из опробованных, лимитер в нём срезает {taken}."
 en = "Target {target}, reached {achieved}: no render kept within the limiter's budget of {budget} (P95) — the gentlest of those tried is delivered, its limiter takes off {taken}."
 
-# A landing on the source's gate: the level on the loud part, and the file's standard BS.1770 reading, where the two
-# part by more than the tolerance, either way round.
+# A landing on the source's gate: the master's mean level over the blocks the source's gate admits — the programme without
+# its quiet parts, not its loudest place — and the file's standard BS.1770 reading, where the two part by more than the
+# tolerance, either way round.
 [messages.masterLandingGate]
-ru = "По громкой части {loud}, по стандарту файла {file}."
-en = "{loud} by the loud part, {file} by the file's standard reading."
+ru = "Без тихих мест {loud}, по стандарту файла {file}."
+en = "{loud} without the quiet parts, {file} by the file's standard reading."
 
 # A max mode's verdict (owner, 04.10: loudness by a promise of BS.1116): the mode, the file's loudness and what ended the
 # mode. The damage's own line says the grade.
@@ -1141,6 +1156,8 @@ en = "{loud} by the loud part, {file} by the file's standard reading."
 ru = "{mode}: {achieved} — дальше лимитеру пришлось бы срезать больше {budget} (P95), это предел режима."
 en = "{mode}: {achieved} — further, the limiter would have to take off more than {budget} (P95), the mode's limit."
 
+# v0.15.0's PEAQ guard stepping the drive back, and running out of steps: no longer said (v0.16.0: no guard in the loop),
+# kept for the facts' numbers.
 [messages.masterMaxGuard]
 ru = "{mode}: {achieved} — страж PEAQ отступил по громкости (шагов назад: {steps}), чтобы порча осталась в обещании режима."
 en = "{mode}: {achieved} — the PEAQ guard stepped the loudness back ({steps} steps) to keep the damage within the mode's promise."
@@ -1161,16 +1178,28 @@ en = "{mode}: {achieved} — the passes ran out before the search reached the mo
 ru = "{mode}: {achieved} — ни один вариант не удержался под потолком истинного пика."
 en = "{mode}: {achieved} — no render kept under the true-peak ceiling."
 
-# A max master whose render PEAQ could not grade (no damage plan for the source, a walk refused or unavailable): the
-# limiter's budget holds, the damage is unchecked — never said as the guard's pass.
+# A max master whose render v0.15.0's PEAQ guard could not grade: the limiter's budget held, the damage unchecked. No longer
+# said (v0.16.0: no guard in the loop), kept for the fact's number.
 [messages.masterMaxUnguarded]
 ru = "{mode}: {achieved} — порчу проверить не удалось: PEAQ не оценил этот файл; бюджет лимитера соблюдён."
 en = "{mode}: {achieved} — the damage could not be checked: PEAQ did not grade this file; the limiter's budget holds."
 
-# A max master delivered over the mode's limiter budget: no render kept it, or the guard's step back broke it.
+# A max master delivered over the mode's limiter budget: no render kept it.
 [messages.masterMaxOverBudget]
 ru = "{mode}: {achieved} — лимитер в выданном варианте срезает {over} (P95), больше бюджета режима {budget}."
 en = "{mode}: {achieved} — the limiter takes off {over} (P95) in the render delivered, more than the mode's budget of {budget}."
+
+# A max master pulled up to [landing.max] floorLufs (owner, 04.10: "always pulled up to −14"): the mode and the level, as a
+# person sees any max result — nothing of a budget.
+[messages.masterMaxFloor]
+ru = "{mode}: {achieved}."
+en = "{mode}: {achieved}."
+
+# ...and its numbers, a line for the log only ("only we read it"): where the first landing stopped (whatever held it), the
+# floor, and what the limiter took (P95) to reach it beside the mode's budget.
+[messages.masterMaxFloorDetail]
+ru = "{mode}: первая посадка остановилась на {first}, ниже {floor}; поднято до {floor}, лимитер срезает {taken} (P95) при бюджете режима {budget}."
+en = "{mode}: the first landing stopped at {first}, under {floor}; brought up to {floor}, the limiter takes off {taken} (P95) against the mode's budget of {budget}."
 
 [messages.masterLandingPassLimit]
 ru = "Проходы кончились раньше, чем мастер подошёл к цели ближе допуска {tolerance}."

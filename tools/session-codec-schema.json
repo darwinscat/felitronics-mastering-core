@@ -17,6 +17,10 @@
       "MaxClean",
       "MaxDense"
     ],
+    "DamageJobState": [
+      "Waiting",
+      "Running"
+    ],
     "MaxStop": [
       "None",
       "Budget",
@@ -26,7 +30,8 @@
       "Passes",
       "TruePeak",
       "Unguarded",
-      "OverBudget"
+      "OverBudget",
+      "Floor"
     ],
     "SaturationType": [
       "Tanh",
@@ -105,7 +110,8 @@
       "NeedNotAbove3",
       "Memory",
       "Superseded",
-      "NoJobId"
+      "NoJobId",
+      "MasterForgotten"
     ],
     "LandingStatus": [
       "Solved",
@@ -867,7 +873,8 @@
         "eqOnlyCurve": "EqPoint[]",
         "damageJob": "uint32",
         "damageProgress": "Phase",
-        "loudnessMode": "LoudnessMode"
+        "loudnessMode": "LoudnessMode",
+        "damageJobs": "DamageJobEntry[]"
       }
     },
     "MasterToken": {
@@ -877,6 +884,15 @@
         "revision": "uint64",
         "job": "uint32",
         "master": "uint32"
+      }
+    },
+    "DamageJobEntry": {
+      "cpp": "DamageJobEntry",
+      "fields": {
+        "job": "uint32",
+        "masterId": "uint32",
+        "state": "DamageJobState",
+        "progress": "Phase"
       }
     },
     "MachineDifference": {
@@ -1276,7 +1292,7 @@
   "wireAliases": {
     "CommandAnswer": "AcceptedAnswer | RejectedAnswer | ContractAnswer",
     "SessionEvent": "PhaseEvent | FactEvent | ReadingEvent | DoneEvent | RejectedEvent | ErrorEvent | MeasurementEvent | DamageEvent",
-    "SessionCommand": "SetTargetCommand | SetManualCommand | EditTargetCommand | EditDeviceCommand | RevertEditsCommand | MasterCommand | CancelCommand | ForgetCommand | ContinueMeasurementCommand | AdoptMachineCommand",
+    "SessionCommand": "SetTargetCommand | SetManualCommand | EditTargetCommand | EditDeviceCommand | RevertEditsCommand | MasterCommand | CancelCommand | ForgetCommand | ContinueMeasurementCommand | AdoptMachineCommand | GradeDamageCommand",
     "EditDeviceCommand": "EditDeviceHpfCommand | EditDeviceMonoBassCommand | EditDeviceGlueCommand | EditDeviceSaturationCommand | EditDeviceTiltCommand | EditDeviceLimiterCommand | EditDeviceDitherCommand | EditDeviceLowCommand | EditDeviceBandsCommand",
     "RevertEditsCommand": "RevertEditsHpfCommand | RevertEditsMonoBassCommand | RevertEditsGlueCommand | RevertEditsSaturationCommand | RevertEditsTiltCommand | RevertEditsLimiterCommand | RevertEditsDitherCommand | RevertEditsLowCommand | RevertEditsBandsCommand",
     "SessionMeasurementArray": "Omit<MeasurementArray, \"values\"> & { readonly values: ScalarRow }",
@@ -1400,6 +1416,11 @@
     },
     "ForgetCommand": {
       "kind": "\"forget\"",
+      "commandId": "string",
+      "masterId": "number"
+    },
+    "GradeDamageCommand": {
+      "kind": "\"gradeDamage\"",
       "commandId": "string",
       "masterId": "number"
     },
@@ -1754,7 +1775,10 @@
       "OutputPending",
       "MandatoryUnavailable",
       "DeliveryFormat",
-      "PlanPending"
+      "PlanPending",
+      "DamageSettled",
+      "DamageQueued",
+      "DamageQueueFull"
     ],
     "ErrorCode": [
       "Trap",

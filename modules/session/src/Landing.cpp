@@ -128,6 +128,20 @@ std::optional<text::Fact> MasterReportText::landing (const MasterReport& report,
     }
     return std::nullopt;
 }
+std::optional<text::Fact> MasterReportText::maxFloorDetail (const MasterReport& report, double budgetDb, double p95Db,
+                                                            double floorLufs, double firstLufs) noexcept
+{
+    using text::Arg; using text::Fact; using text::FactId; using text::Term; using text::Unit;
+    if (report.maxStop != MaxStop::Floor || ! report.deliverable || ! std::isfinite (budgetDb) || ! std::isfinite (p95Db)
+        || ! std::isfinite (floorLufs) || ! std::isfinite (firstLufs)) return std::nullopt;
+    const auto mode = Arg::term (report.loudnessMode == LoudnessMode::MaxClean ? Term::LoudnessModeMaxClean : Term::LoudnessModeMaxDense);
+    const auto hundredths = (long long) std::floor (std::clamp (budgetDb, 0.0, 1.0e6) * 100.0 + 0.5);
+    const auto budget = Arg::value (budgetDb, Unit::Db,
+        hundredths % 100 == 0 ? std::uint8_t (0) : hundredths % 10 == 0 ? std::uint8_t (1) : std::uint8_t (2));
+    return Fact::of (FactId::MasterMaxFloorDetail, mode, Arg::value (firstLufs, Unit::Lufs, 1), Arg::value (floorLufs, Unit::Lufs, 1),
+                     Arg::value (p95Db > budgetDb ? overBudgetShown (p95Db, budgetDb) : p95Db, Unit::Db, 1), budget);
+}
+
 std::optional<text::Fact> MasterReportText::max (const MasterReport& report, double budgetDb, double overBudgetDb) noexcept
 {
     using text::Arg; using text::Fact; using text::FactId; using text::Term; using text::Unit;
@@ -152,6 +166,7 @@ std::optional<text::Fact> MasterReportText::max (const MasterReport& report, dou
             if (! std::isfinite (budgetDb) || ! std::isfinite (overBudgetDb)) return std::nullopt;
             return Fact::of (FactId::MasterMaxOverBudget, mode, achieved,
                              Arg::value (overBudgetShown (overBudgetDb, budgetDb), Unit::Db, 1), budget());
+        case MaxStop::Floor: return Fact::of (FactId::MasterMaxFloor, mode, achieved);
         case MaxStop::Unguarded: return Fact::of (FactId::MasterMaxUnguarded, mode, achieved);
         case MaxStop::Guard: return Fact::of (FactId::MasterMaxGuard, mode, achieved, steps);
         case MaxStop::GuardUnmet: return Fact::of (FactId::MasterMaxGuardUnmet, mode, achieved, steps);

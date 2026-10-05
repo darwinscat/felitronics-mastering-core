@@ -303,8 +303,8 @@ Checked Session::storageFor (const Request& request) const noexcept
         const auto roomBytes = (room ? 0u : std::uint64_t (masterCount_ + 1) * sizeof (Kept) * (capabilities_.leanSummary ? 2u : 1u))
             + std::uint64_t (std::max (masterRoom_, masterCount_ + 1)) * sizeof (detail::MasterRows) + 4096u;
         if (roomBytes > 9007199254740991ull - plan.bytes) return rejected (Rejection::TooLong);
-        // The damage still graded for an earlier master stops before anything is allocated (apply): its job's bytes are
-        // free for this one.
+        // The damage graded for an earlier master is parked before anything is allocated (apply): its walks are freed,
+        // its job's bytes are free for this one, and it waits its turn again.
         auto priced = storage (plan.bytes + roomBytes, std::max (plan.largestBlock, roomBytes));
         priced.releasedBytes = damageJobBytes_;
         return priced;
@@ -312,15 +312,47 @@ Checked Session::storageFor (const Request& request) const noexcept
     if (std::holds_alternative<command::ContinueMeasurement> (request))
         return lastJob_ == std::numeric_limits<JobId>::max() ? rejected (Rejection::NoJobId) : Checked {};
     if (const auto* cancel = std::get_if<command::Cancel> (&request))
-        return job_ == 0 && measurementJob_ == 0 && needlesJob_ == 0 && damageJobId_ == 0 ? rejected (Rejection::NoJob)
-             : cancel->job != 0 && (cancel->job == job_ || cancel->job == measurementJob_ || cancel->job == needlesJob_
-                                    || cancel->job == damageJobId_)
-                 ? Checked {} : rejected (Rejection::UnknownJob);
+    {
+        if (job_ == 0 && measurementJob_ == 0 && needlesJob_ == 0 && damageCount_ == 0) return rejected (Rejection::NoJob);
+        if (cancel->job == 0 || (cancel->job != job_ && cancel->job != measurementJob_ && cancel->job != needlesJob_
+                                 && damageIndex (cancel->job) == damageCount_)) return rejected (Rejection::UnknownJob);
+        // The running grade cancelled frees its walks.
+        Checked freed {};
+        if (cancel->job == damageJobId_) freed.releasedBytes = damageJobBytes_;
+        return freed;
+    }
     if (const auto* forget = std::get_if<command::Forget> (&request))
     {
+        // A master forgotten while its damage is graded frees that grade's walks with it.
         for (const Kept& k : masters())
-            if (k.id == forget->master) return {};
+            if (k.id == forget->master)
+            {
+                Checked freed {};
+                if (damageJobId_ != 0 && damageJob_->master == forget->master) freed.releasedBytes = damageJobBytes_;
+                return freed;
+            }
         return rejected (Rejection::UnknownMaster);
+    }
+    if (const auto* grade = std::get_if<command::GradeDamage> (&request))
+    {
+        // 3. NAMES: a master kept; a grade of it not already asked; its damage not settled; an id for the job. The entry
+        // is the queue's room, made with the master's: nothing is allocated before its turn.
+        const Kept* const first = masters_.get();
+        const Kept* const kept = std::find_if (first, first + masterCount_, [&] (const Kept& k) { return k.id == grade->master; });
+        if (kept == first + masterCount_) return rejected (Rejection::UnknownMaster);
+        for (std::size_t i = 0; i < damageCount_; ++i)
+            if (damageJobs_[i].masterId == grade->master) return rejected (Rejection::DamageQueued);
+        // Settled: graded, or not gradable — a result asking again would only repeat. Not settled: never graded, stopped
+        // by a cancel, or refused for the room its turn lacked (the capacity may be another now).
+        const auto& damage = kept->report ? kept->report->damage : MasterDamage {};
+        const bool again = damage.status == MeasurementStatus::Pending || damage.status == MeasurementStatus::Cancelled
+            || (damage.status == MeasurementStatus::Unavailable && damage.reason == MeasurementReason::Memory);
+        if (! kept->report || ! masterRows_ || ! masterRows_[std::size_t (kept - first)].damageGradable || ! again)
+            return rejected (Rejection::DamageSettled);
+        if (lastJob_ == std::numeric_limits<JobId>::max()) return rejected (Rejection::NoJobId);
+        // Last: the one refusal that passes — a full queue has room again once some grades end.
+        if (damageCount_ == kMaxDamageGrades) return rejected (Rejection::DamageQueueFull);
+        return {};
     }
     return {};   // SetManual: nothing past the table
 }
@@ -357,7 +389,7 @@ Answer Session::rejectProtocol (CommandId id) noexcept
 }
 Answer Session::reject (Answer answer) noexcept
 {
-    eventCount_ = 0;
+    eventCount_ = 0; oldWorldEvents_ = 0;
     answer.revision = revision_;
     if (answer.rejection == Rejection::Memory)
     {
@@ -386,7 +418,7 @@ Answer Session::reject (Answer answer) noexcept
 
 Answer Session::apply (const Request& request) noexcept
 {
-    eventCount_ = 0;
+    eventCount_ = 0; oldWorldEvents_ = 0;
     Answer answer;
     answer.command = idOf (request);
     const Checked checked = check (request);
@@ -448,7 +480,9 @@ Answer Session::apply (const Request& request) noexcept
         std::unique_ptr<char[]> name (given.empty() ? nullptr : new char[given.size()]);
         std::copy (given.begin(), given.end(), name.get());
         // End mastering and source-specific edits. A matching measurement key keeps PCM and results;
-        // otherwise release the previous measurement before allocating the new source.
+        // otherwise release the previous measurement before allocating the new source. Every damage grade says it ends
+        // with its master first (MasterForgotten): its walks re-render from the source that goes.
+        endAllDamage();
         clearMasters();
         clearNeedles();
         needlesSource_ = 0; needlesKey_ = 0; needlesNeedDb_.reset(); needlesCeilingDb_.reset();
@@ -584,8 +618,9 @@ Answer Session::apply (const Request& request) noexcept
     }
     else if (const auto* master = std::get_if<command::Master> (&request))
     {
-        // The damage still graded for an earlier master stops first, and says why: a new master was asked for.
-        if (damageJobId_ != 0) endDamage (MeasurementReason::Superseded, true);
+        // The damage graded for an earlier master is parked first — its walks freed before this master allocates — and
+        // waits its turn again; it is never ended by a new master.
+        parkDamage();
         const auto plan = detail::MasterJob::plan (*this, *master, project_);
         if (masterRoom_ == masterCount_)                            // the room check() counted, as one exact array
         {
@@ -635,21 +670,24 @@ Answer Session::apply (const Request& request) noexcept
         // The fact names the job that stopped: needles or a master cancelled while the measurement is stopped are
         // cancelled, not a measurement stopped again. A damage's job says it before its own end, which the damage
         // event closes.
-        const bool measurement = cancel->job == measurementJob_, damage = cancel->job == damageJobId_;
+        const auto damageAt = damageIndex (cancel->job);
+        const bool measurement = cancel->job == measurementJob_, damage = damageAt < damageCount_;
         if (! damage) dropJob (cancel->job);
         Notification event;
         event.jobId = cancel->job;
         event.kind = EventKind::Fact;
         (void) event.payload.fact.assign (text::Fact::of (measurement ? text::FactId::MeasurementStopped : text::FactId::Cancelled));
         emit (event, progress);
-        if (damage) endDamage (MeasurementReason::Cancelled, true);
+        if (damage) endDamage (damageAt, MeasurementReason::Cancelled, true);
     }
     else if (const auto* forget = std::get_if<command::Forget> (&request))
     {
         if (pendingMaster_.master == forget->master)
         { masterAudio_ = {}; masterAudioBits_ = 0; pendingMaster_ = {}; }
-        // A master forgotten while its damage is graded: the job stops with it — no line for a master no longer kept.
-        if (damageJob_ && damageJob_->master == forget->master) endDamage (MeasurementReason::Cancelled, false);
+        // A master forgotten while its damage is graded or waits: the job stops with it — no line for a master no longer
+        // kept.
+        for (std::size_t i = 0; i < damageCount_; ++i)
+            if (damageJobs_[i].masterId == forget->master) { endDamage (i, MeasurementReason::MasterForgotten, false); break; }
         Kept* const first = masters_.get();
         Kept* const last = first + masterCount_;
         Kept* const it = std::find_if (first, last, [&] (const Kept& k) { return k.id == forget->master; });
@@ -665,6 +703,23 @@ Answer Session::apply (const Request& request) noexcept
         }
         --masterCount_;
         if (crestJoin_ && index < crestJoinIndex_) --crestJoinIndex_;
+    }
+    else if (const auto* grade = std::get_if<command::GradeDamage> (&request))
+    {
+        // Queued last, Pending in its master's report and announced so under its own job; its turn starts it.
+        Kept* const kept = std::find_if (masters_.get(), masters_.get() + masterCount_,
+                                         [&] (const Kept& k) { return k.id == grade->master; });
+        detail::debugBound (damageCount_ < kMaxDamageGrades);
+        const JobId id = ++lastJob_;
+        damageJobs_[damageCount_++] = { id, grade->master, DamageJobState::Waiting, damageWaitingProgress() };
+        kept->report->damage.status = MeasurementStatus::Pending;
+        kept->report->damage.reason = MeasurementReason::Pending;
+        Notification event;
+        event.jobId = id;
+        event.kind = EventKind::Damage;
+        event.payload.damage = { grade->master, MeasurementStatus::Pending, MeasurementReason::Pending };
+        emit (event, damageJobs_[damageCount_ - 1].progress);
+        answer.job = id;
     }
     else if (std::holds_alternative<command::AdoptMachine> (request))
     {
@@ -695,7 +750,9 @@ Answer Session::apply (const Request& request) noexcept
     replan();
     refreshEqCurve();
     answer.revision = ++revision_;
-    for (std::size_t i = 0; i < eventCount_; ++i)
+    // The command's revision on its own events — not on those of the world it replaced (a new source's farewells to the
+    // old one's grades, endAllDamage), which keep the revision they were said under.
+    for (std::size_t i = oldWorldEvents_; i < eventCount_; ++i)
     {
         auto& e = (*events_)[i];
         e.revision = revision_;

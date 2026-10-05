@@ -25,16 +25,16 @@ namespace detail
 [[nodiscard]] double limiterBudgetDb (toml::embedded::View engine, double targetLufs) noexcept;
 // [landing.max]: a max mode's limiter budget, dB (NaN for the manual mode or where the config does not say it).
 [[nodiscard]] double maxBudgetDb (toml::embedded::View engine, LoudnessMode mode) noexcept;
-// WHAT ENDED A MAX MODE (MasterReport::maxStop), from what the delivered render and the guard said, in this order: a
-// render above the ceiling; a render over the mode's limiter budget (no render kept it, or the guard's step back broke
-// it); a render the guard could not grade (no damage plan, a walk refused or unavailable) — the damage unchecked, never
-// a guard's pass; the guard's own verdict (no step passed, or a step back did); then the first landing's status.
+// WHAT ENDED A MAX MODE (MasterReport::maxStop), from the landing alone (v0.16.0: no guard in the loop), in this order: a
+// render above the ceiling; a render over the mode's limiter budget (no render kept it — the same status and binding as
+// a budget that held, told apart by the delivered render's own excess); landed again on [landing.max] floorLufs, which
+// the budget held it under (Floor); the search's ceiling reached; the budget that held it; the passes. Guard, GuardUnmet
+// and Unguarded are no longer said.
 struct MaxStopInputs
 {
-    bool peaksAboveCeiling = false, overBudget = false, guardGraded = false, guardPassed = false;
-    std::int32_t guardTaken = 0;
-    mastering::MasteringSolveStatus firstStatus = mastering::MasteringSolveStatus::NotPrepared;
-    mastering::MasteringConstraint firstBinding = mastering::MasteringConstraint::None;
+    bool peaksAboveCeiling = false, overBudget = false, floor = false;
+    mastering::MasteringSolveStatus status = mastering::MasteringSolveStatus::NotPrepared;
+    mastering::MasteringConstraint binding = mastering::MasteringConstraint::None;
 };
 [[nodiscard]] MaxStop maxStopOf (const MaxStopInputs& in) noexcept;
 
@@ -58,14 +58,20 @@ struct MasterPlan
     bool saturationTrace = false;              // the soft clipper shapes: its shave of the peaks is kept, the same way
     std::optional<MasterMedium> medium;        // a version-0 master's medium and input, from the chain it will run
     DamagePlan damage {};                      // the damage's walks, priced (as the job after it), or why they cannot run
-    // A max mode ([landing.max]): the mode, its PEAQ floor (worst ODG) and the guard's step back and most steps.
+    // A max mode ([landing.max]): the mode, its search ceiling and budget in the request, and the floor no max master
+    // lands under (floorLufs).
     LoudnessMode loudnessMode = LoudnessMode::Manual;
-    double guardFloorOdg = 0, guardStepDb = 0;
-    std::int32_t guardSteps = 0;
+    double floorLufs = std::numeric_limits<double>::quiet_NaN();
 };
 
 struct MasterRows
 {
+    // WHAT THE MASTER'S DAMAGE GRADE NEEDS TO START (command::GradeDamage, Session::startDamage), kept with the master from
+    // its delivery: the walks' plan and the parameters it was delivered with — no walk buffer. `damageGradable` false: a
+    // master whose damage cannot be graded (no plan could be made for its source).
+    bool damageGradable = false;
+    DamagePlan damagePlan {};
+    mastering::MasteringChainParams damageWinning {};
     MasterId crestMasterId = 0;
     std::uint64_t crestSource = 0, crestSourceKey = 0, crestReadyHash = 0, crestSound = 0;
     std::uint32_t crestDeliveryRate = 0;
@@ -140,7 +146,7 @@ struct MasterJob final
     std::uint64_t costCursor = 0, costHop = 0, costStored = 0;
     std::uint64_t initializedWaveBuckets = 0;
     bool costMeterReady = false;
-    enum class Stage : std::uint8_t { Search, Guard, GuardRender, Prepare, Read, Finish, Copy, CostRead, CostFinish,
+    enum class Stage : std::uint8_t { Search, Prepare, Read, Finish, Copy, CostRead, CostFinish,
         CostWave, CostPump, CostActive, CostShape, CostWorst, CostCrest, CostPublish, Done, Failed };
     Stage stage = Stage::Search;
     CrestScan costCrestScan;
@@ -164,26 +170,18 @@ struct MasterJob final
     std::optional<MasterMedium> medium;
     MasterReport report {};
     DamagePlan damagePlan {};
-    // THE DAMAGE FOLLOWS THE MASTER (Session::startDamage): the job ended where its damage can be graded — the report
-    // says Pending, and the session starts the damage's own job with damagePlan and the delivered parameters.
+    // THE DAMAGE CAN BE GRADED (command::GradeDamage): the job ended where its damage can be graded — the report says
+    // Pending, and the session keeps damagePlan and the delivered parameters with the master for a grade the shell asks.
     bool damageFollows = false;
     void settleLra() noexcept;
-    // THE MAX MODE'S GUARD: the mode, its floor and steps; the damage walk that grades a candidate before the file is
-    // delivered — owned while the master's job runs, the very objects a manual master's damage job owns after it, and
-    // priced so (MasterJob::plan); the candidate's gain and ceiling, the steps taken, whether the delivered render is
-    // the candidate, and its grade. The first landing's verdict, for what ended the mode.
+    // The loudness mode the job lands in (a max mode's verdict and stop). A max mode's floor ([landing.max] floorLufs) and
+    // the landing again on it, with no budget, where the first one's file stood under it — whatever held it there: the
+    // budget, the passes (floorPass); floorFirstLufs, where that first file stood.
     LoudnessMode mode = LoudnessMode::Manual;
-    double guardFloorOdg = 0, guardStepDb = 0;
-    std::int32_t guardSteps = 0, guardTaken = 0;
-    std::unique_ptr<DamageJob> guard;
-    double candidateGainDb = 0, candidateCeilingDb = 0;
-    bool candidateRendered = true, guardRan = false, guardGraded = false, guardPassed = false;
-    MasterDamage guardDamage {};
-    mastering::LoudnessRequest landingRequest {};
-    mastering::MasteringSolveStatus firstStatus = mastering::MasteringSolveStatus::NotPrepared;
-    mastering::MasteringConstraint firstBinding = mastering::MasteringConstraint::None;
-    void startGuard() noexcept;
-    bool beginStepRender() noexcept;
+    double floorLufs = std::numeric_limits<double>::quiet_NaN(), floorFirstLufs = std::numeric_limits<double>::quiet_NaN();
+    bool floorPass = false;
+    mastering::LoudnessRequest floorRequest {};
+    [[nodiscard]] bool beginFloor() noexcept;
     mastering::StepResult settleLanding (mastering::StepResult result) noexcept;
 };
 } // namespace detail

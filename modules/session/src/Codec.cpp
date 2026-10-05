@@ -185,6 +185,7 @@ CodecStatus Codec::decode (std::string_view json, Snapshot& output) noexcept
     if (sizes.points) out.points_.reset (new ReadingPoint[sizes.points]);
     if (sizes.runs) out.runs_.reset (new ReadingRun[sizes.runs]);
     if (sizes.differences) out.differences_.reset (new MachineDifference[sizes.differences]);
+    if (sizes.damageJobs) out.damageJobs_.reset (new DamageJobEntry[sizes.damageJobs]);
     if (sizes.eqPoints) out.eqCurve_.reset (new EqPoint[sizes.eqPoints]);
     if (sizes.measurementResults) out.measurements_.results_.reset (new MeasurementResult[sizes.measurementResults]);
     if (sizes.measurementNumbers) out.measurements_.numbers_.reset (new MeasurementValue[sizes.measurementNumbers]);
@@ -201,6 +202,7 @@ CodecStatus Codec::decode (std::string_view json, Snapshot& output) noexcept
     storage.masterCrestRow = out.masterCrestRows_.get();
     storage.masterSection = out.masterSections_.get();
     storage.masterWaveformRow = out.masterWaveform_.get();
+    storage.damageJob = out.damageJobs_.get();
     const bool filled = read (json, storage, out.view_);
     detail::debugBound (filled);
     output = std::move (out);
