@@ -385,6 +385,46 @@ template <typename Until> bool stepUntil (GradeRun& r, Until&& until)
     return false;
 }
 bool runOut (GradeRun& r) { return stepUntil (r, [] { return false; }), true; }
+
+void manualBudgetResolution()
+{
+    constexpr std::uint32_t rate = 48000;
+    constexpr std::size_t frames = 4u * rate;
+    std::vector<float> pcm (2u * frames);
+    for (std::size_t i = 0; i < frames; ++i)
+    {
+        double x = .16 * felitronics::core::det::sin (6.283185307179586 * 117.0 * double (i) / rate)
+                 + .03 * felitronics::core::det::sin (6.283185307179586 * 3061.0 * double (i) / rate);
+        if (i % 4096u == 0) x += .7;
+        pcm[i] = pcm[frames + i] = float (x);
+    }
+    GradeRun r; r.session = measuredSession (pcm, rate);
+    if (! r.session) { ok (false, "a session for the manual budget-resolution regression"); return; }
+    command::EditTarget edit { 2, { -10.0, -1.0 } };
+    if (act (r, edit).rejection != Rejection::None)
+    { ok (false, "the manual target for the budget-resolution regression"); return; }
+    auto request = readyMaster (*r.session, 3);
+    request.budgetResolutionDb = .05;
+    if (act (r, request).rejection != Rejection::None)
+    { ok (false, "the manual master accepts its budget resolution"); return; }
+    for (unsigned i = 0; i < 400000 && r.session->job() != 0; ++i) { (void) r.session->step (1); record (r); }
+    const auto& masters = r.session->masters();
+    const LandingSummary* landing = masters.empty() || ! masters.back().landing ? nullptr : &*masters.back().landing;
+    double lowestOver = std::numeric_limits<double>::infinity();
+    double delivered = std::numeric_limits<double>::quiet_NaN();
+    if (landing && ! landing->log.empty())
+    {
+        delivered = -std::numeric_limits<double>::infinity();
+        for (const auto& pass : landing->log)
+            if (pass.overBudget) lowestOver = std::fmin (lowestOver, pass.gainDb - pass.ceilingDbTp);
+            else if (pass.ceilingSafe) delivered = std::fmax (delivered, pass.gainDb - pass.ceilingDbTp);
+    }
+    std::printf ("        manual 0.05 proof: over %.5f, delivered %.5f, passes %u\n",
+        lowestOver, delivered, landing ? landing->passes : 0u);
+    ok (landing && landing->deliverable && std::isfinite (lowestOver) && lowestOver > delivered
+        && lowestOver - delivered <= .05 + 1.0e-9,
+        "a manual master proves its limiter budget to the requested 0.05 dB");
+}
 // The point of a walk: the running grade's damage walk (PEAQ) past `fraction` of the programme; 0: its first unit.
 bool atPoint (GradeRun& r, double fraction)
 {
@@ -936,6 +976,7 @@ void glueAtFullMix()
 int main()
 {
     damageResampler();
+    manualBudgetResolution();
     glueAtFullMix();
     maxSearchPasses();
     damageGrades();

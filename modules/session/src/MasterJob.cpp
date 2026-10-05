@@ -389,6 +389,11 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
     // rule by the target's loudness, starting from the target's own number — a landing and a delivery, as a manual
     // master's; its damage is graded as any master's, when the shell asks (owner, 04.10: no guard in the loop).
     result.loudnessMode = loudnessModeOf (ruleset, project);
+    const auto max = engine.find ("landing").find ("max");
+    const double configuredResolution = number (max.find ("budgetResolutionDb"));
+    result.request.budgetResolutionDb = input.budgetResolutionDb.value_or (configuredResolution);
+    if (! std::isfinite (result.request.budgetResolutionDb))
+    { result.rejection = Rejection::MandatoryUnavailable; return result; }
     if (result.loudnessMode == LoudnessMode::Manual)
     {
         result.request.limiterSlopeBelow = number (engine.find ("landing").find ("limiterSlopeBelow"));
@@ -396,7 +401,6 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
     }
     if (result.loudnessMode != LoudnessMode::Manual)
     {
-        const auto max = engine.find ("landing").find ("max");
         result.floorLufs = number (max.find ("floorLufs"));
         result.request.targetLufs = number (max.find ("ceilingLufs"));
         result.request.limiterGr.limitDb = maxBudgetDb (engine, result.loudnessMode);
@@ -408,16 +412,13 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         result.request.maxExcerptPercentile = number (max.find ("excerptPercentile"));
         result.request.maxExcerptToleranceDb = number (max.find ("excerptToleranceDb"));
         result.request.maxExcerptOffsetDb = number (max.find ("excerptOffsetDb"));
-        const double configuredResolution = number (max.find ("budgetResolutionDb"));
-        result.request.budgetResolutionDb = input.budgetResolutionDb.value_or (configuredResolution);
         if (! std::isfinite (result.request.targetLufs) || ! std::isfinite (result.request.limiterGr.limitDb)
             || ! std::isfinite (result.floorLufs) || ! excerpt
             || ! std::isfinite (result.request.maxExcerptSeconds)
             || ! std::isfinite (result.request.maxExcerptPreRollSeconds)
             || ! std::isfinite (result.request.maxExcerptPercentile)
             || ! std::isfinite (result.request.maxExcerptToleranceDb)
-            || ! std::isfinite (result.request.maxExcerptOffsetDb)
-            || ! std::isfinite (result.request.budgetResolutionDb))
+            || ! std::isfinite (result.request.maxExcerptOffsetDb))
         { result.rejection = Rejection::MandatoryUnavailable; return result; }
     }
     result.ready.params.limiter.ceilingDbTp = targetTp - margin;
