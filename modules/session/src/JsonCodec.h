@@ -448,8 +448,8 @@ struct Reader
             }
             else if constexpr (std::is_same_v<T, LandingSummary>)
             {
-                if (storage.landingPasses - beforePasses > 12
-                    || x.passes != storage.landingPasses - beforePasses) good = false;
+                const auto logRows = storage.landingPasses - beforePasses;
+                if (x.passes > 12 || logRows < x.passes || logRows > 32) good = false;
                 // A named limit belongs to an unreachable landing; the two levels to a between one, both, in order.
                 if (x.binding != LandingConstraint::None && x.status != LandingStatus::TargetUnreachable) good = false;
                 // Peaks above the ceiling mark a delivered landing that no render under the ceiling held.

@@ -366,8 +366,12 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
     result.request.limiterGr.limitDb = limiterBudgetDb (engine, targetLufs);
     result.request.limiterGr.statistic = mastering::GrStatistic::P95;
     result.request.limiterActiveInputDb = number (engine.find ("cost").find ("limiterActiveInputDb"));
+    result.request.clipperLoudShare = number (engine.find ("saturation").find ("cut").find ("loudShare"));
     const auto onGate = engine.find ("landing").find ("onSourceGate").boolean();
-    if (! onGate || ! std::isfinite (result.request.limiterGr.limitDb) || ! std::isfinite (result.request.limiterActiveInputDb))
+    if (! onGate || ! std::isfinite (result.request.limiterGr.limitDb)
+        || ! std::isfinite (result.request.limiterActiveInputDb)
+        || ! std::isfinite (result.request.clipperLoudShare)
+        || result.request.clipperLoudShare <= 0.0 || result.request.clipperLoudShare > 1.0)
     { result.rejection = Rejection::MandatoryUnavailable; return result; }
     const auto* momentary = findArray (s.measurementResults_[std::size_t (Analyzer::Loudness)], "momentary");
     if (*onGate && momentary && momentary->complete && momentary->stored != 0)
@@ -439,7 +443,7 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
     result.glueTrace = result.ready.topology.compressor && ! result.ready.params.bypassCompressor;
     // And the saturation's shave where the soft clipper shapes (the report's own test for its cut).
     result.saturationTrace = result.ready.topology.clipper && ! result.ready.params.bypassClipper;
-    result.retainedRowBytes = 12u * sizeof (LandingPass)
+    result.retainedRowBytes = std::uint64_t (mastering::TargetLoudnessSolverLimits::kMaxPasses) * sizeof (LandingPass)
         + (2u + (result.glueTrace ? 1u : 0u) + (result.saturationTrace ? 1u : 0u)) * std::uint64_t (result.traceBuckets)
             * sizeof (LandingTraceBucket) + crestRows + costRows;
     const auto impactChainBytes = convert ? mastering::MasteringChain::prepareBytes (
@@ -448,7 +452,7 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
     if (chainBytes == 0 || solverBytes == 0 || (convert && converterBytes == 0) || ! search.ok)
     { result.rejection = Rejection::OutOfDomain; return result; }
     const auto outputBytes = search.outputBytes;
-    result.largestBlock = std::max ({ outputBytes, chainBytes, solverBytes, converterBytes,
+    result.largestBlock = std::max ({ outputBytes, search.candidateBytes, chainBytes, solverBytes, converterBytes,
         renderStorage.bytes(), search.workspaceBytes, std::uint64_t (sizeof (MasterJob)),
         crestRows, costMeterBytes, std::uint64_t (result.costCapacity) * sizeof (MasterSection),
         std::uint64_t (result.waveformCapacity) * sizeof (MasterWaveformBucket), axesRows,
@@ -457,7 +461,7 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
     std::uint64_t total = 0;
     // Include constructors, all retained search work, two compact traces, and an allocator margin
     // for every tier's vector growth and Debug proxies.
-    if (! add (total, sizeof (MasterJob)) || ! add (total, outputBytes)
+    if (! add (total, sizeof (MasterJob)) || ! add (total, outputBytes) || ! add (total, search.candidateBytes)
         || ! add (total, chainBytes) || ! add (total, solverBytes)
         || ! add (total, converterBytes) || ! add (total, renderStorage.bytes())
         || ! add (total, search.workspaceBytes)
@@ -1020,7 +1024,7 @@ mastering::StepResult MasterJob::settleLanding (mastering::StepResult result) no
     using mastering::StepResult;
     const auto& solved = search.result();
     clipCounted = result == StepResult::Done && ready.topology.clipper && ! ready.params.bypassClipper
-        && chain.clipperPeaks (number (rules().engine.find ("saturation").find ("cut").find ("loudShare")), clipPeaks);
+        && search.clipperPeaks (clipPeaks);
     report.targetLufs = targetLufs;
     report.ceilingDbTp = targetTp;
     report.deliveryMode = DeliveryMode::Mastered;

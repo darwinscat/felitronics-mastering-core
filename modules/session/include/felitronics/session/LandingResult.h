@@ -34,12 +34,20 @@ enum class LandingConstraint : std::uint8_t
 {
     None, TruePeakCeiling, LimiterGainReduction, PeakToLoudness, LoudnessRange, GainRange
 };
+enum class LandingPassReason : std::uint8_t
+{
+    AimAtTarget, PeakProbe, StepBackBySlope, InsideBracket, ProveEdge, Excerpt, DeliverWinner
+};
 struct LandingPass
 {
     double gainDb = 0.0, ceilingDbTp = 0.0, achievedLufs = 0.0, truePeakDbTp = 0.0;
     double limiterMaxReductionDb = 0.0;
     bool ceilingSafe = false;
     bool overBudget = false;   // the limiter took more than the landing's budget on this render: no candidate
+    std::optional<double> limiterP95Db;
+    LandingPassReason reason = LandingPassReason::AimAtTarget;
+    bool excerpt = false;
+    std::uint64_t excerptFromFrame = 0, excerptFrames = 0;
 };
 struct LandingTraceBucket
 {

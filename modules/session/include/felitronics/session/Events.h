@@ -48,6 +48,9 @@ struct Phase
     // The instruments this unit advances, each with its own read fraction. Null outside Analyzers; an empty list
     // while that phase only joins results. Held inline so events own their rows without an allocation.
     std::optional<BoundedList<AnalyzerProgress, 3>> analyzers = std::nullopt;
+    // A max-mode pre-search render: not a full pass. Source-frame bounds exclude the chain's warm-up pre-roll.
+    bool excerpt = false;
+    std::uint64_t excerptFromFrame = 0, excerptFrames = 0;
 };
 struct ReadingPoint { std::uint64_t index = 0; double value = 0.0; };
 struct ReadingRun { std::uint64_t first = 0; std::uint64_t count = 0; double value = 0.0; };

@@ -83,7 +83,7 @@ double Session::liveBytes() const noexcept
     for (std::size_t i = 0; masterRows_ && i < masterRoom_; ++i)
     {
         if (masterRows_[i].passes)
-            rows += 12u * sizeof (LandingPass)
+            rows += std::uint64_t (mastering::TargetLoudnessSolverLimits::kMaxPasses) * sizeof (LandingPass)
                   + std::uint64_t (2u * masterRows_[i].traceCapacity) * sizeof (LandingTraceBucket);
         if (masterRows_[i].crest)
             rows += std::uint64_t (masterRows_[i].crestCapacity) * 15u * sizeof (double);

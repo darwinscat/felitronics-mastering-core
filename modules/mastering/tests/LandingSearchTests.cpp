@@ -402,20 +402,21 @@ int main()
         kRate, 1, kFrames, wrappedRequest.grTraceBuckets, 0);
     const std::uint64_t searchLong = LandingSearch::storageFor (
         kRate, 1, 2 * kFrames, wrappedRequest.grTraceBuckets, 0);
-    test::ok (searchLong - search == 2u * (plainLong - plain)
+    test::ok (searchLong - search == 2u * (plainLong - plain) + (std::uint64_t) kFrames * sizeof (float)
               && declared == TargetLoudnessSolver::solveCallBytes (
                   kRate, 1, kFrames, wrappedRequest)
               && declared == DeliveredMastering::solveCallBytes (
                   kRate, kRate, 1, kFrames, wrappedRequest),
-              "the landing declaration retains no third full programme");
+              "the landing workspace and its separately declared best-pass PCM cover the call");
     const auto fourMinutes = LandingSearch::storageForProgramme (
         4LL * 60 * kRate, 2, kRate, 4 * 60 * kRate, wrappedRequest.grTraceBuckets);
     const std::uint64_t pcmBytes = 4u * 60u * kRate * 2u * sizeof (float);
     test::ok (fourMinutes.ok && fourMinutes.sourceBytes == pcmBytes
               && fourMinutes.outputBytes == pcmBytes
-              && fourMinutes.maxLiveBytes == 2u * pcmBytes + fourMinutes.workspaceBytes
+              && fourMinutes.candidateBytes == pcmBytes
+              && fourMinutes.maxLiveBytes == 3u * pcmBytes + fourMinutes.workspaceBytes
               && fourMinutes.largestBlockBytes >= pcmBytes,
-              "a four-minute stereo quote names source and output PCM only, with a bounded largest block");
+              "a four-minute stereo quote names source, output and best-pass PCM, with a bounded largest block");
     LoudnessRequest invalid = wrappedRequest;
     invalid.normalizationGainDb = std::numeric_limits<double>::quiet_NaN();
     const long long refusalBytes = alloc::bytes.load();
@@ -531,7 +532,7 @@ int main()
         if (cycle == 3) lifecycleBudget = lifecycleBudget && quote.maxLiveBytes == repeatedQuote;
     }
     test::ok (lifecycleBudget,
-              "DeclaredBudget covers cancel, grow and shrink with retained two-buffer capacity"
+              "DeclaredBudget covers cancel, grow and shrink with retained best-pass capacity"
               + lifecycleDetail);
 
     Rig one;
@@ -557,34 +558,57 @@ int main()
             && (over.log[i].violated & constraintBit (MasteringConstraint::TruePeakCeiling)) != 0;
         gentlest = gentlest && over.measured.truePeakDbTp <= over.log[i].truePeakDbTp;
     }
-    // Here the gentlest is the first render, so the reserved last pass restores it (a real, logged render).
-    bool restored = false;
-    for (int i = 0; i + 1 < over.logCount; ++i)
-        restored = restored || core::exactlyEqual (over.log[i].truePeakDbTp, over.measured.truePeakDbTp);
-    restored = restored && over.logCount == 12
-        && core::exactlyEqual (over.log[over.logCount - 1].truePeakDbTp, over.measured.truePeakDbTp);
+    // Here the gentlest is the first render. Its saved PCM is delivered without a duplicate render in the log.
+    bool savedWinner = false, deliveryRender = false;
+    for (int i = 0; i < over.logCount; ++i)
+    {
+        savedWinner = savedWinner || core::exactlyEqual (over.log[i].truePeakDbTp, over.measured.truePeakDbTp);
+        deliveryRender = deliveryRender || over.log[i].reason == SolvePassRecord::Reason::DeliverWinner;
+    }
     test::ok (overEnded && over.deliverable && over.peaksAboveCeiling
               && over.status == MasteringSolveStatus::TargetUnreachable
               && over.binding == MasteringConstraint::TruePeakCeiling && over.measured.truePeakDbTp > -1.0
-              && everyAbove && gentlest && restored && std::isfinite (over.achievedLufs) && over.passes <= 12,
-              "no render under the ceiling: the gentlest measured render is delivered, marked above the ceiling");
+              && everyAbove && gentlest && savedWinner && ! deliveryRender
+              && std::isfinite (over.achievedLufs) && over.passes < 12,
+              "no render under the ceiling: the saved gentlest render is delivered without a duplicate pass and marked");
+    Rig allocationFallback;
+    if (! test::run (allocationFallback.prepare (false))) return test::report();
+    LoudnessRequest fallbackRequest;
+    fallbackRequest.ceilingMarginDb = 0.15; fallbackRequest.targetLufs = -3.0;
+    fallbackRequest.maxTruePeakDbTp = -1.0; fallbackRequest.maxPasses = 12;
+    LandingSearch fallbackSearch (allocationFallback.solver);
+    alloc::failNext.store (true);
+    StepResult fallbackState = fallbackSearch.begin (allocationFallback.chain, allocationFallback.renderer,
+        allocationFallback.params, allocationFallback.input, kFrames, kRate, allocationFallback.out, 1, kFrames,
+        fallbackRequest) ? StepResult::More : StepResult::Failed;
+    for (int guard = 0; fallbackState == StepResult::More && guard < 2000000; ++guard)
+        fallbackState = fallbackSearch.step (LLONG_MAX);
+    bool fallbackRender = false;
+    for (int i = 0; i < fallbackSearch.result().logCount; ++i)
+        fallbackRender = fallbackRender
+            || fallbackSearch.result().log[i].reason == SolvePassRecord::Reason::DeliverWinner;
+    test::ok (fallbackState == StepResult::Done && fallbackSearch.result().deliverable && fallbackRender
+              && fallbackSearch.result().passes == over.passes + 1
+              && allocationFallback.output == open.output,
+              "if the optional winner buffer allocation fails, the counted delivery render restores identical PCM");
 
     Rig miss;
     if (! test::run (miss.prepare())) return test::report();
     LoudnessSolution high;
     const bool highEnded = run (miss, 409, 10.0, 12, high);
-    test::ok (highEnded && high.deliverable && ! high.peaksAboveCeiling && high.passes == 12 && high.logCount == 12
+    test::ok (highEnded && high.deliverable && ! high.peaksAboveCeiling && high.passes < 12 && high.logCount == high.passes
               && high.status != MasteringSolveStatus::Solved && high.measured.truePeakDbTp <= -1.0,
-              "an over-loud target spends the full budget and keeps its best safe miss");
-    bool restoredInBudget = false;
-    for (int i = 0; i + 1 < high.logCount; ++i)
-        restoredInBudget = restoredInBudget
-            || (high.log[i].gainDb == high.log[high.logCount - 1].gainDb
-                && high.log[i].ceilingDb == high.log[high.logCount - 1].ceilingDb);
-    test::ok (restoredInBudget && high.preLimiterGainDb == high.log[11].gainDb
-              && high.ceilingDbTp == high.log[11].ceilingDb
-              && high.measured.integratedLufs == high.log[11].integratedLufs,
-              "the final pass restores the chosen safe miss and remains inside the twelve logged renders");
+              "an over-loud target keeps its best safe miss without spending a pass to render it again");
+    bool savedInBudget = false, duplicatedInBudget = false;
+    for (int i = 0; i < high.logCount; ++i)
+    {
+        savedInBudget = savedInBudget || (high.preLimiterGainDb == high.log[i].gainDb
+            && high.ceilingDbTp == high.log[i].ceilingDb
+            && high.measured.integratedLufs == high.log[i].integratedLufs);
+        duplicatedInBudget = duplicatedInBudget || high.log[i].reason == SolvePassRecord::Reason::DeliverWinner;
+    }
+    test::ok (savedInBudget && ! duplicatedInBudget,
+              "the chosen safe miss's saved audio is delivered and no delivery-of-winner render is logged");
     Rig finiteExtreme;
     if (! test::run (finiteExtreme.prepare())) return test::report();
     LoudnessSolution extremeResult;

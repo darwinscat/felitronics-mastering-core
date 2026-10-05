@@ -2067,3 +2067,20 @@ codec SourceReport.deliveryCeilingDbTp double?
 codec SourceReport.deliveryGainDb double?
 codec SourceReport.advice Fact[<=2]
 wire MasterCommand.masterAnyway? boolean
+# The max search's excerpt and every render's explanation (05.10, v0.18.0). The full-pass count remains LandingSummary.passes;
+# excerpt rows precede those full passes in LandingSummary.log. Phase says when its current walk is over the excerpt.
+enum felitronics::session::LandingPassReason::AimAtTarget=0
+enum felitronics::session::LandingPassReason::PeakProbe=1
+enum felitronics::session::LandingPassReason::StepBackBySlope=2
+enum felitronics::session::LandingPassReason::InsideBracket=3
+enum felitronics::session::LandingPassReason::ProveEdge=4
+enum felitronics::session::LandingPassReason::Excerpt=5
+enum felitronics::session::LandingPassReason::DeliverWinner=6
+codec LandingPass.limiterP95Db double?
+codec LandingPass.reason LandingPassReason
+codec LandingPass.excerpt bool
+codec LandingPass.excerptFromFrame uint64
+codec LandingPass.excerptFrames uint64
+codec Phase.excerpt bool
+codec Phase.excerptFromFrame uint64
+codec Phase.excerptFrames uint64

@@ -14,7 +14,7 @@ const header = clean(read('tools/fc_session_abi.h'));
 // A struct's fields, one per declarator: `uint32_t source_low, source_high;` is two fields of type uint32_t.
 const structFields = body => [...body.matchAll(/([^;]+?)\s+(\w+(?:\s*,\s*\w+)*)\s*;/g)]
     .flatMap(f => f[2].split(',').map(name => ({ type: normalize(f[1]), name: name.trim() })));
-const publicHeaders = ['Commands', 'Project', 'Events', 'Snapshot', 'Session', 'Text', 'Measurements', 'Queries'];
+const publicHeaders = ['Commands', 'Project', 'Events', 'LandingResult', 'Snapshot', 'Session', 'Text', 'Measurements', 'Queries'];
 // EVERY ENTRY POINT, whatever it returns: each `fc_session_*(` and `fc_kit_*(` (the pure kit's) the header declares must
 // be read as a declaration, or the generator refuses — an entry point the probe skipped would never be frozen.
 function entryPoints(text) {

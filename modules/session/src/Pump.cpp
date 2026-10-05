@@ -547,7 +547,8 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 const auto clip = std::span<LandingTraceBucket> (rows.traces.get() + rows.traceCapacity, rows.traceCapacity);
                 if (! masterTraceActive_)
                 {
-                    if (! LandingOps::summarize (solution, { rows.passes.get(), 12 }, masterSummary_))
+                    if (! LandingOps::summarize (solution,
+                            { rows.passes.get(), mastering::TargetLoudnessSolverLimits::kMaxPasses }, masterSummary_))
                     { contract (event.jobId); ++units; continue; }
                     masterTraceCursor_ = 0; masterTraceActive_ = true;
                 }
@@ -654,7 +655,6 @@ Stepped Session::step (std::uint32_t budget) noexcept
                     { (void) event.payload.fact.assign (MasterReportText::pumping (*cost)); emit (event, masterProgress_); }
                     say (MasterReportText::limiter (*cost));
                     say (MasterReportText::active (*cost));
-                    (void) event.payload.fact.assign (MasterReportText::tonal()); emit (event, masterProgress_);
                     if (const auto glue = MasterReportText::glue (*cost))
                     { (void) event.payload.fact.assign (*glue); emit (event, masterProgress_); }
                     if (const auto saturation = MasterReportText::saturation (*cost))
