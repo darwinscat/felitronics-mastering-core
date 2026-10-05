@@ -359,6 +359,26 @@ int main()
                 + .05 * core::det::sin (.72 * double (i)));
         scaleTo (pcm, 0, int (pcm.size()), -18.0);
         const Programme dense (pcm);
+        std::vector<float> transientPcm (std::size_t (4 * kRate));
+        for (std::size_t i = 0; i < transientPcm.size(); ++i)
+        {
+            transientPcm[i] = float (.16 * core::det::sin (6.283185307179586 * 117.0 * double (i) / kRate)
+                + .03 * core::det::sin (6.283185307179586 * 3061.0 * double (i) / kRate));
+            if (i % 4096u == 0) transientPcm[i] += .7f;
+        }
+        const Programme transient (transientPcm);
+        LandingSetup manualBudget; manualBudget.target = -10; manualBudget.limiterBudgetDb = 3.0;
+        const auto manualBudgetResult = land (transient, manualBudget);
+        bool sawRetreat = false, sawBracket = false;
+        for (int i = 1; i < manualBudgetResult.answer.logCount; ++i)
+        {
+            sawRetreat = sawRetreat
+                || manualBudgetResult.answer.log[i].reason == SolvePassRecord::Reason::StepBackBySlope;
+            sawBracket = sawBracket
+                || manualBudgetResult.answer.log[i].reason == SolvePassRecord::Reason::InsideBracket;
+        }
+        test::ok (manualBudgetResult.done && sawRetreat && sawBracket,
+            "manual budget passes name the slope retreat and the following bracket decision");
         LandingSetup peakWall; peakWall.target = -5; peakWall.slopeBelow = .2;
         peakWall.peakClipCutDb = 1.0;
         peakWall.peakClipPeakDb = 20.0 * std::log10 (*std::max_element (pcm.begin(), pcm.end(),
