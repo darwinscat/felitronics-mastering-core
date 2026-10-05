@@ -211,6 +211,7 @@ struct GlueFinding
 {
     GlueState state = GlueState::Out;
     double upToDb = 0.0;                       // the knob as it sounds ([glue] whenTicked when ticked on untouched)
+    double mix = 0.0;                          // the parallel share as it sounds (a person's, or the machine's [glue] mix)
     // The knob's numbers — Active, and Out as well (unticked, at 0 dB: what the compressor would get from the knob as it
     // stands, which no compressor gets); none where Unavailable. The ratio, knee and attack always; the threshold, in the
     // normalised input's dB, where the input has a short-term P95.

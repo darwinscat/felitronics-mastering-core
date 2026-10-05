@@ -169,6 +169,7 @@ GlueFinding glueFinding (const PlanInputs& in, const Devices& devices) noexcept
     GlueFinding f;
     const bool offeredByShell = (in.offered & (1u << unsigned (Device::Glue))) != 0;
     f.upToDb = glueKnob (in.rules, devices.glue);
+    f.mix = settingsOf (in.rules, devices.glue).mix;
     const bool ticked = offeredByShell && settingsOf (in.rules, devices.glue).on && f.upToDb > 0.0;
     const auto levels = inputLevels (in);
     if (ticked && ! levels.p95Db) { f.state = GlueState::Unavailable; return f; }
@@ -256,8 +257,12 @@ void writeDynamics (const PlanInputs& in, const Devices& devices, mastering::Mas
     c.makeupDb = number (compressor.find ("makeupDb"));
     c.autoMakeup = compressor.find ("autoMakeup").boolean().value_or (false);
     c.lookaheadMs = 0.0;
-    params.compressorMix = number (compressor.find ("mix"));
     const bool compressing = glue.state == GlueState::Active && glue.releaseMs.has_value();
+    // The glue's own mix (v0.17.0): the compressed share of its output, a person's or the machine's. A glue out of the
+    // chain leaves the stage at 1, as before: its warm bypass passes the input at a gain of exactly 1, and the input
+    // blended with itself at another share is rounded (0.6 x + 0.4 x is not x in binary), so a master without a glue
+    // would move by a mix it never hears.
+    params.compressorMix = compressing ? glue.mix : 1.0;
     params.bypassCompressor = ! compressing;
     if (compressing)
     {

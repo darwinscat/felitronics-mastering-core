@@ -76,7 +76,9 @@ constexpr Golden kGolden[] = {
     // ...and the max modes by ear (owner, 04.10, v0.16.0): budgets 0.5 and 1.75 dB, the floor at −14 LUFS, the guard out
     // of the config, the rows' manual starts −13 and −11 — only a max master moves, every target of manual loudness sounds
     // as before; it was 15b627f7db3ad5dc; updated in place, as above
-    { "2026-10", 0x7fb7cae3c8dc411bull },
+    // ...and the glue in parallel by default (owner, 05.10, v0.17.0: [glue] mix 0.4 on a knob by 0.2) — every master whose
+    // glue engages moves (a target that glues, cd, or a person's glue); it was 7fb7cae3c8dc411b; updated in place, as above
+    { "2026-10", 0x02ed0efc37c02b67ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -217,6 +219,9 @@ std::vector<std::string> departures (const config::Config& c)
           "the glue knob runs 0…3 dB in steps of 0.1");
     need (same (e.glue.defaultUpToDb, 0.0), "no glue by default: a target without its own takes the compressor out");
     need (same (e.glue.whenTickedUpToDb, 0.5), "ticked on untouched, the glue is up to 0.5 dB");
+    need (same (e.glue.mix, 0.4) && same (e.glue.mixStep, 0.2) && same (e.glue.mixRange.min, 0.0) && same (e.glue.mixRange.max, 1.0)
+          && same (e.glue.mixDomain.min, 0.0) && same (e.glue.mixDomain.max, 1.0),
+          "the glue in parallel by default: mix 40 %, a knob 0…100 % by 20 % (owner, 05.10)");
     need (same (e.glue.detectorOverP95Db, 1.5), "the glue's threshold is calibrated 1.5 dB over the P95: the knob is the reduction the loud places really get");
     const config::MonoBass& m = e.monoBass;
     need (same (m.lowWidth, 0.0), "mono bass is full mono below its crossover");
@@ -340,6 +345,8 @@ void aDepartureIsNamed()
           "targets.youtube.sampleRate" },
         { false, "default = 0\nwhenTicked", "default = 0.3\nwhenTicked", "no glue by default: a target without its own takes the compressor out" },
         { false, "whenTicked = 0.5", "whenTicked = 0.6", "ticked on untouched, the glue is up to 0.5 dB" },
+        { false, "mix = 0.4\nmixRange", "mix = 1\nmixRange", "the glue in parallel by default: mix 40 %, a knob 0…100 % by 20 % (owner, 05.10)" },
+        { false, "mixStep = 0.2", "mixStep = 0.05", "the glue in parallel by default: mix 40 %, a knob 0…100 % by 20 % (owner, 05.10)" },
         { false, "byTarget = { cd = 2.6 }", "byTarget = { cd = 2.5 }", "the machine glues on cd alone, up to 2.6 dB" },
         { false, "lowWidth = 0\n", "lowWidth = 0.2\n", "mono bass is full mono below its crossover" },
         { false, "hzMin = 15", "hzMin = 16", "the high-pass knob starts at 15 Hz" },

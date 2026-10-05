@@ -578,6 +578,13 @@ void readGlue (Doc& d, Reader& in, Glue& o, const std::vector<std::string>* targ
     d.below (in, lo && hi, o.knobMinDb, o.knobMaxDb, "knobMaxDb");
     in.required ("knobStepDb", o.knobStepDb, R { 0.01, 3.0 });
     in.required ("detectorOverP95Db", o.detectorOverP95Db, R { -12.0, 12.0 });
+    // The parallel share: a share of the domain, its travel inside it, the machine's on the travel.
+    {
+        const R share = readDomain (d, in, "mixDomain", o.mixDomain, R { 0.0, 1.0 });
+        const bool travel = d.pair (in, "mixRange", o.mixRange, share);
+        in.required ("mixStep", o.mixStep, R { 0.01, 1.0 });
+        in.required ("mix", o.mix, travel ? R { o.mixRange.min, o.mixRange.max } : share);
+    }
     // WHAT THE MACHINE SETS stays on the slider's travel (owner decision 3.8: never above knobMaxDb); a person's value
     // and a project's take the whole domain.
     const R machine = hi ? R { knob.min, o.knobMaxDb } : knob;
