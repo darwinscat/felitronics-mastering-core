@@ -186,6 +186,9 @@ public:
         excerptExcess_.fill (std::numeric_limits<double>::quiet_NaN());
         excerptCount_ = 0; excerptLow_ = excerptHigh_ = -1; excerptReady_ = false;
         excerptEdgeDrive_ = std::numeric_limits<double>::quiet_NaN();
+        peakCandidates_ = {}; peakCandidateCount_ = peakForecastIndex_ = 0;
+        peakForecastValid_ = false; peakForecastDb_ = std::numeric_limits<double>::quiet_NaN();
+        peakForecastFrames_ = 0;
         chordOverDrive_ = std::numeric_limits<double>::quiet_NaN(); chordStale_ = 0;
         work_ = 0; bestError_ = std::numeric_limits<double>::infinity();
         lowState_.fill (0.0); low2State_.fill (0.0); low8State_.fill (0.0);
@@ -277,6 +280,8 @@ public:
         {
             const long long n = std::min (budget, sourceFrames_ - sourceCursor_);
             for (long long i = 0; i < n; ++i)
+            {
+                double framePeak = 0.0;
                 for (int c = 0; c < channels_; ++c)
                 {
                     double x = (double) source_[c][sourceCursor_ + i];
@@ -290,10 +295,71 @@ public:
                     totalEnergy_ += x * x;
                     bassEnergy_ += lowState_[(std::size_t) c] * lowState_[(std::size_t) c];
                     presenceEnergy_ += band * band;
+                    framePeak = std::fmax (framePeak, std::fabs (x));
                 }
+                observePeak (sourceCursor_ + i, framePeak);
+            }
             sourceCursor_ += n; work_ += (std::uint64_t) n;
             if (sourceCursor_ == sourceFrames_)
+                phase_ = wantsPeakForecast() ? Phase::PeakForecastBegin
+                    : gateOn_ ? Phase::SourceGate : excerptReady_ ? Phase::ExcerptBegin : Phase::PassBegin;
+            return StepResult::More;
+        }
+        if (phase_ == Phase::PeakForecastBegin)
+        {
+            if (peakForecastIndex_ >= peakCandidateCount_)
+            {
+                if (std::isfinite (peakForecastDb_))
+                { params_.peakClipPeakDb = peakForecastDb_; peakForecastValid_ = true; }
                 phase_ = gateOn_ ? Phase::SourceGate : excerptReady_ ? Phase::ExcerptBegin : Phase::PassBegin;
+                return StepResult::More;
+            }
+            const long long wanted = std::max (1LL, (long long) std::llround (sourceRate_));
+            peakForecastFrames_ = std::min (sourceFrames_, wanted);
+            const long long half = peakForecastFrames_ / 2;
+            peakForecastFrom_ = std::clamp (peakCandidates_[(std::size_t) peakForecastIndex_].frame - half,
+                                             0LL, sourceFrames_ - peakForecastFrames_);
+            for (int c = 0; c < channels_; ++c) peakForecastSource_[c] = source_[c] + peakForecastFrom_;
+            if (! clock_.begin (ProgressStage::SearchPass, 0, 0,
+                                2LL * peakForecastFrames_ + chain_->latencySamples() + kBandGrStride + 6,
+                                peakForecastFrames_))
+                return fail (MasteringSolveStatus::Cancelled);
+            params_.preLimiterGainDb = gain_; params_.limiter.ceilingDbTp = ceiling_;
+            chain_->setParams (params_);
+            measurement_ = MasterMeasurement {};
+            // The peak windows and the loudness excerpt never run together. Reuse the excerpt request's stable
+            // storage while the resumable pass keeps a pointer to it, instead of making every search carry a third
+            // full request record.
+            excerptRequest_ = request_;
+            excerptRequest_.landingOnSourceGate = false;
+            if (! solver_.beginPass (*chain_, *renderer_, params_, peakForecastSource_, out_, channels_,
+                                     (int) peakForecastFrames_, excerptRequest_, measurement_, working_, clock_, true))
+            {
+                peakForecastIndex_ = peakCandidateCount_;
+                phase_ = Phase::PeakForecastBegin;
+                return StepResult::More;
+            }
+            phase_ = Phase::PeakForecastRun;
+            --budget; ++work_;
+            if (budget == 0) return StepResult::More;
+        }
+        if (phase_ == Phase::PeakForecastRun)
+        {
+            const long long before = solver_.pass_->work;
+            const StepResult r = solver_.stepPass (budget);
+            work_ += (std::uint64_t) std::max (0LL, solver_.pass_->work - before);
+            if (r == StepResult::Failed)
+            {
+                peakForecastIndex_ = peakCandidateCount_;
+                phase_ = Phase::PeakForecastBegin;
+                return StepResult::More;
+            }
+            if (r == StepResult::More) return r;
+            const double peak = measurement_.limiterMaxReconstructedPeakDb - params_.preLimiterGainDb;
+            if (std::isfinite (peak) && peak > -180.0)
+                peakForecastDb_ = std::isfinite (peakForecastDb_) ? std::fmax (peakForecastDb_, peak) : peak;
+            ++peakForecastIndex_;
+            phase_ = Phase::PeakForecastBegin;
             return StepResult::More;
         }
         if (phase_ == Phase::SourceGate)
@@ -368,7 +434,7 @@ public:
             rec = SolvePassRecord {};
             rec.gainDb = gain_; rec.ceilingDb = ceiling_;
             rec.reason = restoring_ ? SolvePassRecord::Reason::DeliverWinner
-                                    : (! peakProbe_ && params_.limiter.peakClip
+                                    : (! peakProbe_ && ! peakForecastValid_ && params_.limiter.peakClip
                                        ? SolvePassRecord::Reason::PeakProbe : nextReason_);
             rec.violated = constraintBit (MasteringConstraint::TruePeakCeiling); // incomplete passes are never certified
             ++passes_;
@@ -529,7 +595,8 @@ public:
     {
         if (phase_ == Phase::SourceStats)
             return sourceFrames_ > 0 ? (double) sourceCursor_ / (double) sourceFrames_ : 0.0;
-        if (phase_ == Phase::ExcerptRun || phase_ == Phase::PassRun || phase_ == Phase::VerifyMeter) return clock_.walked();
+        if (phase_ == Phase::PeakForecastRun || phase_ == Phase::ExcerptRun
+            || phase_ == Phase::PassRun || phase_ == Phase::VerifyMeter) return clock_.walked();
         return -1.0;
     }
     bool renderingExcerpt() const noexcept { return phase_ == Phase::ExcerptBegin || phase_ == Phase::ExcerptRun; }
@@ -541,8 +608,9 @@ public:
     bool active() const noexcept { return phase_ != Phase::Idle && phase_ != Phase::Done && phase_ != Phase::Failed; }
 
 private:
-    enum class Phase { Idle, SourceStats, SourceGate, ExcerptBegin, ExcerptRun, PassBegin, PassRun, PassGate, VerifySetup,
-                       VerifyMeter, VerifyDrain, VerifyGate, VerifyFinish, Done, Failed };
+    enum class Phase { Idle, SourceStats, PeakForecastBegin, PeakForecastRun, SourceGate, ExcerptBegin, ExcerptRun,
+                       PassBegin, PassRun, PassGate, VerifySetup, VerifyMeter, VerifyDrain, VerifyGate, VerifyFinish,
+                       Done, Failed };
 
     // The source's momentary reading i is the 400 ms ending at (i + 1) of its hops: the first three readings are no block.
     static constexpr long long kFirstBlockReading = 3;
@@ -554,6 +622,38 @@ private:
 
     static double energyOf (double lufs) noexcept { return core::det::pow10 ((lufs + 0.691) / 10.0); }
     static double lufsOf (double energy) noexcept { return -0.691 + 10.0 * core::det::log10 (energy); }
+    static constexpr double kPeakForecastEpsilonDb = 0.10;
+
+    struct PeakCandidate { double peak = 0.0; long long frame = 0; };
+
+    bool wantsPeakForecast() const noexcept
+    {
+        return ! peakProbe_ && converter_ == nullptr && peakCandidateCount_ > 0
+            && params_.limiter.peakClip && std::isfinite (params_.peakClipCutDb)
+            && std::isfinite (params_.peakClipPeakDb);
+    }
+
+    void observePeak (long long frame, double peak) noexcept
+    {
+        constexpr std::size_t count = 3;
+        const long long separation = std::max (1LL, (long long) std::llround (0.5 * sourceRate_));
+        for (int i = 0; i < peakCandidateCount_; ++i)
+            if (std::llabs (peakCandidates_[(std::size_t) i].frame - frame) <= separation)
+            {
+                if (peak > peakCandidates_[(std::size_t) i].peak) peakCandidates_[(std::size_t) i] = { peak, frame };
+                return;
+            }
+        std::size_t at = (std::size_t) peakCandidateCount_;
+        if (peakCandidateCount_ == (int) count)
+        {
+            at = 0;
+            for (std::size_t i = 1; i < count; ++i)
+                if (peakCandidates_[i].peak < peakCandidates_[at].peak) at = i;
+            if (! (peak > peakCandidates_[at].peak)) return;
+        }
+        else ++peakCandidateCount_;
+        peakCandidates_[at] = { peak, frame };
+    }
 
     // THE TWO GRIDS: the source's readings on its hop at its rate, the master's gating blocks on the meter's hop (ten
     // sub-hops of lround (0.01 fs) frames) at the chain's. Both hops are 100 ms only near enough — 1100 frames at 11025 Hz
@@ -757,6 +857,7 @@ private:
     {
         restoreFullProgramme();
         params_ = initialParams_;
+        if (peakForecastValid_) params_.peakClipPeakDb = peakForecastDb_;
         peakProbe_ = request_.peakClipMeasured;
         const double start = std::isfinite (request_.initialGainDb) ? request_.initialGainDb : request_.targetLufs + 18.0;
         gain_ = std::clamp (start, -TargetLoudnessSolver::kMaxGainDb, TargetLoudnessSolver::kMaxGainDb);
@@ -804,12 +905,22 @@ private:
             && std::isfinite (params_.peakClipPeakDb) && std::isfinite (measurement_.limiterMaxReconstructedPeakDb)
             && measurement_.limiterMaxReconstructedPeakDb > -180.0)
         {
+            const double measuredPeak = measurement_.limiterMaxReconstructedPeakDb - params_.preLimiterGainDb;
             peakProbe_ = true;
-            params_.peakClipPeakDb = measurement_.limiterMaxReconstructedPeakDb - params_.preLimiterGainDb;
-            if (passes_ >= request_.maxPasses) return fail (MasteringSolveStatus::Unavailable);
-            chooseNext (valid);
-            phase_ = Phase::PassBegin;
-            return StepResult::More;
+            if (peakForecastValid_ && std::fabs (measuredPeak - peakForecastDb_) <= kPeakForecastEpsilonDb)
+            {
+                // This full render used the confirmed whole-programme forecast and is a candidate. Keep the threshold
+                // that render used in the winning parameters: changing it afterward would describe another sound.
+            }
+            else
+            {
+                rec.reason = SolvePassRecord::Reason::PeakProbe;
+                params_.peakClipPeakDb = measuredPeak;
+                if (passes_ >= request_.maxPasses) return fail (MasteringSolveStatus::Unavailable);
+                chooseNext (valid);
+                phase_ = Phase::PassBegin;
+                return StepResult::More;
+            }
         }
         const bool safe = valid && measurement_.truePeakDbTp <= request_.maxTruePeakDbTp;
         const double err = valid ? std::fabs (level_ - request_.targetLufs)
@@ -1247,6 +1358,7 @@ private:
     std::array<SolvePassRecord, 12> records_ {};
     std::array<SolvePassRecord, kMaxExcerptPasses> excerptRecords_ {};
     std::array<double, kMaxExcerptPasses> excerptDrive_ {}, excerptExcess_ {};
+    std::array<PeakCandidate, 3> peakCandidates_ {};
     std::unique_ptr<float[]> saved_;
     std::size_t savedCapacity_ = 0;
     ClipperPeaks bestClipperPeaks_ {};
@@ -1269,6 +1381,7 @@ private:
     bool restoring_ = false;
     SolvePassRecord::Reason nextReason_ = SolvePassRecord::Reason::AimAtTarget;
     bool peakProbe_ = false;   // the first pass measured the peak the clipper's threshold is worked out from
+    bool peakForecastValid_ = false;
     bool gateOn_ = false;      // the level landed is read on the source's gate
     bool budgetOn_ = false;
     bool excerptReady_ = false;
@@ -1290,6 +1403,10 @@ private:
     long long excerptSourceFrames_ = 0, excerptStatisticFrames_ = 0, excerptSkipFrames_ = 0;
     int excerptFrames_ = 0, excerptCount_ = 0, excerptLow_ = -1, excerptHigh_ = -1;
     double excerptEdgeDrive_ = std::numeric_limits<double>::quiet_NaN();
+    const float* peakForecastSource_[core::kMaxChannels] {};
+    long long peakForecastFrom_ = 0, peakForecastFrames_ = 0;
+    int peakCandidateCount_ = 0, peakForecastIndex_ = 0;
+    double peakForecastDb_ = std::numeric_limits<double>::quiet_NaN();
 };
 
 inline LoudnessSolution solveProductLanding (TargetLoudnessSolver& solver, MasteringChain& chain,
