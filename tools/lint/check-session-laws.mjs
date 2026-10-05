@@ -168,6 +168,7 @@ const FELITRONICS_ALLOWED = new Set([
     'felitronics/analysis/LowEnd.h',
     'felitronics/analysis/BandCrest.h',
     'felitronics/analysis/BandCrestResult.h', // read-only spans and scalar geometry, no preparation or state
+    'felitronics/analysis/ReferenceTruePeakMeter.h', // per-job deterministic delivered true-peak certifier
     'felitronics/analysis/StreamingLoudnessMeter.h', // per-job deterministic meter; owned buffers and no ambient FPU state
     'felitronics/analysis/StereoBandBursts.h',
 ]);
