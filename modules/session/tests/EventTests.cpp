@@ -432,8 +432,9 @@ void pump()
     // carries no damage job — the pin without the damage above holds, and this one moves by that job alone; the max modes
     // by ear (v0.16.0) move the config's version alone (withoutMax restates it).
     // The glue's mix (v0.17.0) and v0.18's target classes / mastered-delivery ceilings move the config's version alone
-    // here (withoutMax restates them too).
-    ok (eventsHash (one) == 0x4c0913c1f9d5e8beull && eventsHash (cancelled) == 0xaa97a89f9b57aeeaull,
+    // here (withoutMax restates them too). The optional max-search proof resolution is an active master-command payload,
+    // so v0.18's corrected excerpt search moves these complete-stream pins while the controls above continue to hold.
+    ok (eventsHash (one) == 0xfe825866ce575f25ull && eventsHash (cancelled) == 0x712739a97d9605beull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",
