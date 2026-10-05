@@ -266,6 +266,15 @@ void pump()
     // table. Each restatement takes them out first; a manual master (the scenario's) never reads them.
     const auto withoutMax = [] (std::string& targets, std::string& engine)
     {
+        // ...and the glue's mix (v0.17.0): [glue] mixDomain, mix, mixRange, mixStep go — the saturation's keys of the same
+        // names stay — and [compressor] mix = 1, the share the glue was written at before, comes back.
+        if (const auto glue = engine.find ("\n[glue]\n"); glue != std::string::npos)
+            for (auto at = engine.find ("\nmix", glue); at != std::string::npos && at < engine.find ("\n[", glue + 1);
+                 at = engine.find ("\nmix", glue))
+                engine.erase (at, engine.find ('\n', at + 1) - at);
+        if (const auto compressor = engine.find ("\n[compressor]\n"); compressor != std::string::npos)
+            if (const auto at = engine.find ("\nautoMakeup = false\n", compressor); at != std::string::npos)
+                engine.insert (at + std::string_view ("\nautoMakeup = false\n").size(), "mix = 1\n");
         for (const std::string_view key : { "\nmaxClean ", "\nmaxDense " })
             if (const auto at = targets.find (key); at != std::string::npos)
                 targets.erase (at, targets.find ('\n', at + 1) - at);
@@ -407,7 +416,8 @@ void pump()
     // The damage's grade is the shell's to ask (command::GradeDamage, v0.16.0): the scenario asks none, so its stream
     // carries no damage job — the pin without the damage above holds, and this one moves by that job alone; the max modes
     // by ear (v0.16.0) move the config's version alone (withoutMax restates it).
-    ok (eventsHash (one) == 0xfbc63d0c0c9d3aceull && eventsHash (cancelled) == 0xbbae73dd84474cfeull,
+    // The glue's mix (v0.17.0) moves the config's version alone here (withoutMax restates it too).
+    ok (eventsHash (one) == 0x77f4fbb6f2509a75ull && eventsHash (cancelled) == 0x615875f5c00c6712ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",

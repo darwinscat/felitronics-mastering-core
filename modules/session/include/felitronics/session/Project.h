@@ -84,11 +84,13 @@ template <template <class> class F> struct MonoBassFields
     F<double> width {};
 };
 
-// [glue]: the glue knob, "up to N dB" — 0 takes the compressor out of the chain.
+// [glue]: the glue knob, "up to N dB" — 0 takes the compressor out of the chain — and its mix (v0.17.0): the compressed
+// share of its output, the rest dry (1: the downward glue).
 template <template <class> class F> struct GlueFields
 {
     F<bool> on {};
     F<double> upToDb {};
+    F<double> mix {};
 };
 
 // The saturation's type: the shaper's curve, in felitronics-core's WaveShaper::Shape order and values. The machine's layer
@@ -183,7 +185,7 @@ struct MachineDifference
     std::uint8_t field = 0;
     double fileValue = 0.0, coreValue = 0.0;
 };
-inline constexpr std::size_t kDeviceFields = 25;
+inline constexpr std::size_t kDeviceFields = 26;
 
 struct Project
 {

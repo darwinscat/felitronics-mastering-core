@@ -2006,3 +2006,12 @@ wire GradeDamageCommand.kind "gradeDamage"
 wire GradeDamageCommand.commandId string
 wire GradeDamageCommand.masterId number
 wire union SessionCommand GradeDamageCommand
+# The glue in parallel (05.10, v0.17.0): the glue's mix, the compressed share of its output — a field of the glue device
+# (GlueFieldsValue/Touched.mix, a person's edit and revert of it), [glue] mix 0.4 wherever the glue is on, 0…1; the plan
+# says the share as it sounds (GlueFinding.mix); the field's term names it (Term::FieldGlueMix).
+codec GlueFieldsValue.mix double
+codec GlueFieldsTouched.mix double?
+codec GlueFinding.mix double
+wire EditDeviceGlueFields.mix? WireNumber | null
+wire RevertEditsGlueFields.mix? boolean
+enum felitronics::session::text::Term::FieldGlueMix=151

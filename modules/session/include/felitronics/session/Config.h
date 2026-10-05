@@ -247,7 +247,6 @@ struct Compressor
     double rangeDb = 0.0;
     double makeupDb = 0.0;
     bool autoMakeup = false;
-    double mix = 0.0;
     double lookaheadMs = 0.0;
     double sidechainHpfHz = 0.0;               // 0: self-keyed
     ThresholdFrom thresholdFrom = ThresholdFrom::ShortTermP95;
@@ -282,6 +281,10 @@ struct Glue
     GlueRamp ratio, threshOffset, attack, knee, divisor;
     double knobMinDb = 0.0, knobMaxDb = 0.0, knobStepDb = 0.0;
     double detectorOverP95Db = 0.0;            // the threshold's calibration: dB above P95 + threshOffset
+    // The glue in parallel (v0.17.0): the compressed share of its output — `mix`, the machine's, on `mixRange` by
+    // `mixStep` inside `mixDomain`.
+    Span mixDomain, mixRange;
+    double mix = 0.0, mixStep = 0.0;
 };
 
 // felitronics-core's WaveShaper::Shape, in its order and values (Tube … Tape since v0.57.0). The machine's type; a person

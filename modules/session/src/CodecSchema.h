@@ -1060,7 +1060,9 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, GlueFields<Touched>>)
     {
-        [[maybe_unused]] auto& [f0, f1] = x;
+        [[maybe_unused]] auto& [f0, f1, f2] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.mix)>, std::optional<double>>);
+        v.field ("mix", x.mix);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.on)>, std::optional<bool>>);
         v.field ("on", x.on);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.upToDb)>, std::optional<double>>);
@@ -1068,7 +1070,9 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, GlueFields<Value>>)
     {
-        [[maybe_unused]] auto& [f0, f1] = x;
+        [[maybe_unused]] auto& [f0, f1, f2] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.mix)>, double>);
+        v.field ("mix", x.mix);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.on)>, bool>);
         v.field ("on", x.on);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.upToDb)>, double>);
@@ -1076,13 +1080,15 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, GlueFinding>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.attackMs)>, std::optional<double>>);
         v.field ("attackMs", x.attackMs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.bpm)>, std::optional<double>>);
         v.field ("bpm", x.bpm);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.kneeDb)>, std::optional<double>>);
         v.field ("kneeDb", x.kneeDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.mix)>, double>);
+        v.field ("mix", x.mix);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.p95DetectorDb)>, std::optional<double>>);
         v.field ("p95DetectorDb", x.p95DetectorDb);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ratio)>, std::optional<double>>);

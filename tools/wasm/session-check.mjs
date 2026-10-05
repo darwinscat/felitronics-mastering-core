@@ -107,6 +107,9 @@ SURFACE[10] = SURFACE[9];
 // Version 11 (v0.16.0) appends the damage grade the shell asks (gradeDamage, the snapshot's damageJobs, its refusals and
 // MasterForgotten), a max master graded as any master (no guard) — and no entry point.
 SURFACE[11] = SURFACE[10];
+// Version 12 (v0.17.0) appends the glue's mix — a field of the glue device, the plan's share, its term — and no entry
+// point.
+SURFACE[12] = SURFACE[11];
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
 const RUNTIME = ['_malloc', '_free', 'HEAPU32'];

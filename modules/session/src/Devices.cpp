@@ -55,6 +55,7 @@ void placeDefaults (const Rules& rules, std::uint16_t row, std::uint32_t channel
     auto& glue = devices.glue.machine;
     glue.on = rules.compressor && target.glue.has_value();
     glue.upToDb = number (target.glue ? *target.glue : rules.glueDefault);
+    glue.mix = number (rules.glueMixDefault);
 
     auto& sat = devices.saturation.machine;
     sat.on = rules.clipper;
