@@ -1467,5 +1467,21 @@ ru = "Есть отсчёты на полном уровне или выше. П
 en = "Some samples reach or exceed full scale. Check the peak headroom; no flat tops were detected."
 
 [messages.sourceAlreadyMastered]
-ru = "Файл уже мастерен: громкость {loudness}, true peak {peak}. Для стриминга опускать громкость не нужно — платформа сделает это сама."
-en = "This file is already mastered: loudness {loudness}, true peak {peak}. There is no need to turn it down for streaming — the platform does that."
+ru = "Файл уже мастерен: громкость {loudness}, true peak {peak}. Ему уже не нужна ещё одна обработка без веской причины."
+en = "This file is already mastered: loudness {loudness}, true peak {peak}. It needs no more processing without a good reason."
+
+[messages.sourceFormerLossy]
+ru = "Похоже, файл раньше был сжат с потерями. Для мастеринга лучше взять исходный lossless-микс."
+en = "This file appears to have been lossy-compressed before. The original lossless mix is a better source for mastering."
+
+[messages.sourceMasterLouder]
+ru = "Цель громче исходника: это сильнее сплющит уже мастеренный файл. Лучше попросить исходный микс, но по Вашему выбору мы всё равно сделаем мастер."
+en = "The target is louder than this already-mastered source, which means squashing it harder. Please ask for the original mix if possible; we can still master it at your request."
+
+[messages.sourceDeliveryAsIs]
+ru = "Ваш файл так прекрасен, что мы ослеплены блеском этого совершенства. Отдаём оригинал без единого изменения."
+en = "Your file is so splendid that we are dazzled by its perfection. We will deliver the original without changing a single bit."
+
+[messages.sourceDeliveryPeaksOnly]
+ru = "Для стриминга снижать громкость не нужно — платформа сделает это сама. Оставляем мастеринг в покое и только даём пикам запас до {ceiling}: простой gain {gain}."
+en = "There is no need to turn it down for streaming—the platform does that. We leave the mastering alone and only give the peaks headroom to {ceiling}, with a plain {gain} gain."

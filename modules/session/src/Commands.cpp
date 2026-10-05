@@ -291,13 +291,15 @@ Checked Session::storageFor (const Request& request) const noexcept
         if (! master->allowClippedGain)
         {
             const auto report = detail::sourceReport ({ rules, measurementResults_, source_.channels, source_.sampleRate,
-                                                        source_.frames, source_.bitDepth });
+                                                        source_.frames, source_.bitDepth }, &project_);
             const auto row = rules.row (project_.target);
             const auto mode = detail::loudnessModeOf (rules, project_);
             const auto ceiling = rules.engine.find ("landing").find ("max").find ("ceilingLufs");
             const double target = mode == LoudnessMode::Manual ? project_.targetEdit.lufs.value_or (row.lufs.toDouble())
                 : ceiling.decimal() ? ceiling.decimal()->toDouble() : double (ceiling.integer().value_or (0));
-            if (report.clipping == SourceClipStatus::Clipped && report.loudnessLufs && target > *report.loudnessLufs)
+            if ((master->masterAnyway || report.deliveryMode == DeliveryMode::Mastered)
+                && report.clipping == SourceClipStatus::Clipped
+                && report.loudnessLufs && target > *report.loudnessLufs)
                 return rejected (Rejection::ClippedGain);
         }
         // With the panel open a master the session decides waits until what its devices read has ended; with the panel
@@ -657,6 +659,7 @@ Answer Session::apply (const Request& request) noexcept
         // the measurements its devices read end. A master the session decides waits for them (the panel hidden: with
         // it open the command was refused); a ready one renders at once.
         jobWaiting_ = master->ready.version == 0 && plan_.waiting != 0;
+        jobMasterAnyway_ = master->masterAnyway;
         jobMachineFromFile_ = machineFromFile_;
         jobRecipe_ = Recipe { project_, source_.hash, config::Config::versions().sound };
         jobRecipe_.readyVersion = plan.ready.version;
@@ -783,22 +786,26 @@ void Session::startMaster (const detail::MasterPlan& plan) noexcept
 {
     auto& rows = masterRows_[masterCount_];
     rows = {};
-    rows.passes.reset (new LandingPass[12]);
-    rows.traces.reset (new LandingTraceBucket[std::size_t (2 * plan.traceBuckets)]);
-    rows.traceCapacity = std::uint32_t (plan.traceBuckets);
-    if (plan.glueTrace) rows.glueRows.reset (new LandingTraceBucket[std::size_t (plan.traceBuckets)]);
-    if (plan.saturationTrace) rows.saturationRows.reset (new LandingTraceBucket[std::size_t (plan.traceBuckets)]);
-    if (plan.crestCapacity != 0) rows.crest.reset (new double[plan.crestCapacity * 15u]);
-    rows.crestCapacity = plan.crestCapacity;
-    if (plan.costCapacity != 0)
+    rows.workedReady = plan.ready;
+    if (plan.deliveryMode == DeliveryMode::Mastered)
     {
-        rows.costSeries.reset (new double[plan.costCapacity]);
-        rows.sections.reset (new MasterSection[plan.costCapacity]);
+        rows.passes.reset (new LandingPass[12]);
+        rows.traces.reset (new LandingTraceBucket[std::size_t (2 * plan.traceBuckets)]);
+        rows.traceCapacity = std::uint32_t (plan.traceBuckets);
+        if (plan.glueTrace) rows.glueRows.reset (new LandingTraceBucket[std::size_t (plan.traceBuckets)]);
+        if (plan.saturationTrace) rows.saturationRows.reset (new LandingTraceBucket[std::size_t (plan.traceBuckets)]);
+        if (plan.crestCapacity != 0) rows.crest.reset (new double[plan.crestCapacity * 15u]);
+        rows.crestCapacity = plan.crestCapacity;
+        if (plan.costCapacity != 0)
+        {
+            rows.costSeries.reset (new double[plan.costCapacity]);
+            rows.sections.reset (new MasterSection[plan.costCapacity]);
+        }
+        if (plan.costScratchCapacity != 0) rows.costScratch.reset (new double[plan.costScratchCapacity]);
+        if (plan.waveformCapacity != 0) rows.waveform.reset (new MasterWaveformBucket[plan.waveformCapacity]);
+        if (plan.costCapacity != 0) rows.costMomentary.reset (new double[plan.costCapacity]);
+        if (plan.axesCapacity != 0) rows.axes.reset (new analysis::WaveformColumn[plan.axesCapacity]);
     }
-    if (plan.costScratchCapacity != 0) rows.costScratch.reset (new double[plan.costScratchCapacity]);
-    if (plan.waveformCapacity != 0) rows.waveform.reset (new MasterWaveformBucket[plan.waveformCapacity]);
-    if (plan.costCapacity != 0) rows.costMomentary.reset (new double[plan.costCapacity]);
-    if (plan.axesCapacity != 0) rows.axes.reset (new analysis::WaveformColumn[plan.axesCapacity]);
     rows.axesCapacity = plan.axesCapacity;
     rows.costCapacity = plan.costCapacity;
     rows.costScratchCapacity = plan.costScratchCapacity;
@@ -808,8 +815,10 @@ void Session::startMaster (const detail::MasterPlan& plan) noexcept
     // liveBytes() counts the installed row owners separately while this job is active.
     masterJobBytes_ = plan.bytes - plan.retainedRowBytes;
     jobWaiting_ = false;
+    jobMasterAnyway_ = false;
     jobRecipe_.readyHash = detail::MasterJob::fingerprint (plan.ready);
     jobRecipe_.deliveryRateHz = plan.deliveryRate;
+    jobRecipe_.deliveryBits = plan.ready.deliveryBits;
     jobRecipe_.readyVersion = plan.ready.version;
     rows.crestMasterId = job_;
     rows.crestSource = jobRecipe_.source;
@@ -925,6 +934,7 @@ bool Driver::mastered (Session& session, JobId job) noexcept
     session.job_ = 0;
     session.jobRecipe_ = {};
     session.jobWaiting_ = false;
+    session.jobMasterAnyway_ = false;
     session.replan();
     ++session.revision_;
     return true;

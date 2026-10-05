@@ -86,6 +86,10 @@ void readRow (View rowView, View byTarget, TargetRow& out) noexcept
 {
     Reading r;
     out.key = rowView.key();
+    const auto targetClass = rowView.find ("class").string();
+    if (! targetClass) storageOverflow();
+    out.targetClass = *targetClass == "specification" ? TargetClass::Specification
+                    : *targetClass == "streaming" ? TargetClass::Streaming : TargetClass::Other;
     r.read (rowView.find ("lufs"), out.lufs);
     r.read (rowView.find ("tp"), out.tp);
     r.read (rowView.find ("monoBass"), out.monoBass);

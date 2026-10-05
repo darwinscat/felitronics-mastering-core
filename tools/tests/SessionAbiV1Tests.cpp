@@ -265,7 +265,15 @@ void guards()
         && fc_session_export_project_copy (0, nullptr, 1, nullptr) == FC_SESSION_ERR_NULL
         && fc_session_export_project_copy (0, bytes, 1, odd32) == FC_SESSION_ERR_ALIGNMENT
         && fc_session_export_project_copy (0, bytes, 1, &out) == FC_SESSION_ERR_HANDLE
-        && fc_session_export_project_copy (h, bytes, 1, &out) == FC_SESSION_ERR_NO_SOURCE;
+        && fc_session_export_project_copy (h, bytes, 1, &out) == FC_SESSION_ERR_NO_SOURCE
+        && fc_session_worked_report_size (0, 1, nullptr) == FC_SESSION_ERR_NULL
+        && fc_session_worked_report_size (0, 1, odd32) == FC_SESSION_ERR_ALIGNMENT
+        && fc_session_worked_report_size (0, 1, &out) == FC_SESSION_ERR_HANDLE
+        && fc_session_worked_report_size (h, 1, &out) == FC_SESSION_ERR_UNKNOWN_MASTER
+        && fc_session_worked_report_copy (0, 1, nullptr, 1, nullptr) == FC_SESSION_ERR_NULL
+        && fc_session_worked_report_copy (0, 1, bytes, 1, odd32) == FC_SESSION_ERR_ALIGNMENT
+        && fc_session_worked_report_copy (0, 1, bytes, 1, &out) == FC_SESSION_ERR_HANDLE
+        && fc_session_worked_report_copy (h, 1, bytes, 1, &out) == FC_SESSION_ERR_UNKNOWN_MASTER;
     for (int mode = 0; mode < 3; ++mode)
     {
         const auto call = [&] (fc_session handle, const char* input, char* output, std::uint32_t capacity, std::uint32_t* n)
@@ -685,6 +693,8 @@ void poison()
         && fc_session_import_project (0, 0, 0, nullptr, 0, nullptr, 0, nullptr) == FC_SESSION_ERR_POISONED
         && fc_session_export_project_size (0, nullptr) == FC_SESSION_ERR_POISONED
         && fc_session_export_project_copy (0, nullptr, 0, nullptr) == FC_SESSION_ERR_POISONED
+        && fc_session_worked_report_size (0, 1, nullptr) == FC_SESSION_ERR_POISONED
+        && fc_session_worked_report_copy (0, 1, nullptr, 0, nullptr) == FC_SESSION_ERR_POISONED
         && fc_session_step (0, 0, nullptr) == FC_SESSION_ERR_POISONED
         && fc_session_events_size (0, nullptr) == FC_SESSION_ERR_POISONED
         && fc_session_snapshot_size (0, nullptr) == FC_SESSION_ERR_POISONED

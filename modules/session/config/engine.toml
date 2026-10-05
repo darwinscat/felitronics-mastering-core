@@ -532,6 +532,14 @@ seed = "853c49e6748fea9b"
 autoBlank = true
 autoBlankSamples = 4096
 
+# DELIVERY OF A SOURCE THAT IS ALREADY MASTERED (owner, 05.10): a normalising or quieter non-spec target keeps the
+# source loudness. Above −14 LUFS its peaks get 2 dB of codec headroom; otherwise 1 dB. The recognition thresholds are
+# independent under [observations.alreadyMastered].
+[masteredDelivery]
+loudAboveLufs = -14
+loudCeilingDbTp = -2
+regularCeilingDbTp = -1
+
 # THE DE-ESSER — manual, off, depth −6 dB (an owner decision, after six blind pairs at matched loudness: five of six told
 # apart, none harmed, hats included). offered = false: no shell offers it. Its automatic mode is off until it is
 # calibrated by ear. The sibilance observation is published all the same (owner decision 3.13: shown before any de-esser).

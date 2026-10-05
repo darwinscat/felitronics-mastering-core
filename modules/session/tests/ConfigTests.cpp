@@ -192,7 +192,7 @@ void theSchemaRefuses()
     mustAccept (E, "hzMin = 15", "hzMin = 15.5");
 
     // Refusals across keys: names — the one a row goes by among them, which an empty key cannot be.
-    mustRefuse (T, "ebu          = {", "\"\"           = {", "{ group = \"streaming\", lufs = -23", Fault::Refused, "targets.\"\"",
+    mustRefuse (T, "ebu          = {", "\"\"           = {", "{ group = \"streaming\", class = \"specification\", lufs = -23", Fault::Refused, "targets.\"\"",
                 Refusal::EmptyKey);
     mustRefuse (E, "byTarget = { cd = 2.6 }", "byTarget = { cdd = 2.6 }", "2.6", Fault::Refused, "glue.byTarget.cdd", Refusal::NotATarget);
     mustRefuse (T, "default = \"allStreaming\"", "default = \"allStreamin\"", "\"allStreamin\"", Fault::Refused, "default",
@@ -268,7 +268,7 @@ void theSchemaRefuses()
                 Refusal::AnalyzerRefuses);
     mustRefuse (E, "enterDb = 6", "enterDb = 0", "[stereoBursts]", Fault::Refused, "stereoBursts", Refusal::AnalyzerRefuses);
     // ...a value off its knob's step.
-    mustAccept (T, "appleMusic   = { group = \"streaming\", lufs = -16, tp = -1,", "appleMusic   = { group = \"streaming\", lufs = -16, tp = -1.05,");
+    mustAccept (T, "appleMusic   = { group = \"streaming\", class = \"streaming\", lufs = -16, tp = -1,", "appleMusic   = { group = \"streaming\", class = \"streaming\", lufs = -16, tp = -1.05,");
     mustAccept (T, "lowDb = 0.5", "lowDb = 0.55");
     mustAccept (E, "betweenCutDb = 1.5", "betweenCutDb = 1.25");
     mustAccept (E, "lowWidth = 0\n", "lowWidth = 0.03\n");
@@ -476,9 +476,9 @@ void theSoundIsWhatCanChangeAMaster()
     felitronics::test::group ("sound: what can change a master; what only shows or prints moves all alone");
     const config::Versions v = Config::versions();
     struct Case { config::Document document; std::string_view from, to, what; bool soundMoves; };
-    const std::string spotifyRow = "spotify      = { group = \"streaming\", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 32, "
+    const std::string spotifyRow = "spotify      = { group = \"streaming\", class = \"streaming\", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 32, "
                                    "hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }\n";
-    const std::string loudRow = "spotifyLoud  = { group = \"streaming\", lufs = -11, tp = -2, monoBass = 120, hpfFloor = 32, "
+    const std::string loudRow = "spotifyLoud  = { group = \"streaming\", class = \"streaming\", lufs = -11, tp = -2, monoBass = 120, hpfFloor = 32, "
                                 "hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }\n";
     const std::string rows = spotifyRow + loudRow, swapped = loudRow + spotifyRow;
     const Case cases[] = {

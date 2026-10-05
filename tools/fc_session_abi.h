@@ -77,7 +77,8 @@
 //  12            v0.17.0: the glue in parallel — the glue device's mix (GlueFieldsValue/Touched.mix, in editDevice and
 //                revertEdits), the plan's share as it sounds (GlueFinding.mix), the field term FieldGlueMix. No entry
 //                point.
-//  13            v0.18.0: analyzer progress, damage wait reasons and source/landing facts appended. No entry point.
+//  13            v0.18.0: analyzer progress, damage wait reasons, delivery modes for already-mastered sources and the
+//                read-only as-worked TOML (`fc_session_worked_report_*`) appended.
 #define FC_SESSION_ABI_VERSION 13u
 #define FC_SESSION_SIZES_V1_BYTES 12u
 #define FC_SESSION_CAPACITY_V1_BYTES 24u
@@ -146,7 +147,8 @@ typedef enum fc_session_status
     FC_SESSION_ERR_STRUCT_TOO_LARGE = 16, // size exceeds the record this build understands
     FC_SESSION_ERR_NO_SOURCE = 17,        // export: the session has no source
     FC_SESSION_ERR_NOT_PLACED = 18,       // export: the first measurement has not placed devices
-    FC_SESSION_ERR_STALE = 19             // transfer identity no longer names pending audio
+    FC_SESSION_ERR_STALE = 19,            // transfer identity no longer names pending audio
+    FC_SESSION_ERR_UNKNOWN_MASTER = 20    // no completed master is kept under this id
 } fc_session_status;
 
 // ====================================================================================
@@ -306,6 +308,10 @@ fc_session_status fc_session_import_project (fc_session session, uint32_t comman
                                              char* answer, uint32_t capacity, uint32_t* written);
 fc_session_status fc_session_export_project_size (fc_session session, uint32_t* out);
 fc_session_status fc_session_export_project_copy (fc_session session, char* output, uint32_t capacity, uint32_t* written);
+// The immutable flattened TOML for a completed master: target, delivery and every device's final value and origin.
+fc_session_status fc_session_worked_report_size (fc_session session, uint32_t master_id, uint32_t* out);
+fc_session_status fc_session_worked_report_copy (fc_session session, uint32_t master_id,
+                                                 char* output, uint32_t capacity, uint32_t* written);
 
 // Work units, never milliseconds. Zero polls; one call takes at most the session's kStepUnits.
 fc_session_status fc_session_step (fc_session session, uint32_t budget, uint32_t* out);

@@ -4,7 +4,7 @@
 
 ## Unreleased
 
-### mastering · session — the manual limiter wall and the source before mastering (owner, 05.10)
+### mastering · session — the manual limiter wall, already-mastered delivery and its record (owner, 05.10)
 
 - **A manual landing stops at the limiter's wall**: less than 0.2 LU gained per dB of active P95 cut between existing
   passes at least 0.5 dB apart. No extra pass; the limiter budgets still hold, max modes stay as before. The landing
@@ -14,14 +14,26 @@
   with −6…−3 dBFS peaks; inter-sample overs are distinguished from that distortion. A clipped source cannot silently
   gain loudness: `Master.allowClippedGain=true` is the explicit choice, otherwise `ClippedGain` (39, fact 139).
   `SourceAlreadyMastered` (453) follows only when LUFS > −12, true peak > −1.5 dBTP and PLR < 11 dB, all three;
-  `[observations.alreadyMastered]` owns the thresholds. These source findings do not alter the chain. Peaks-only
-  delivery remains a proposal, not an implemented command.
+  `[observations.alreadyMastered]` owns the thresholds. A detected former-lossy source also asks for the original
+  lossless mix (fact 454), after the clipping verdict.
+- **An already-mastered source is not mastered again by default** for streaming and other quieter targets. Within the
+  configured ceiling it is delivered `AsIs`, bit-exact at the source rate/depth, with no gain or dither (fact 456);
+  above it, `PeaksOnly` applies the exact gain down to −2 dBTP when louder than −14 LUFS, otherwise −1 dBTP, with only
+  delivery-format dither (fact 457). Specification targets still master normally. A louder target, max modes included,
+  warns and masters normally (fact 455). `Master.masterAnyway=true` explicitly chooses the normal chain.
+- **Every completed master has an immutable as-worked TOML**: `Session::exportWorked*` and
+  `fc_session_worked_report_size/copy` export its captured target, delivery, mode/gain/dither and every device's final
+  value, each marked `# default`, `# machine`, `# hand` or `# target`. It is keyed by `masterId`, independent of later
+  edits, and remains separate from the replayable project file.
 - **The Analyzers phase names its running analyzer**, with its own fraction (`Phase.analyzers`, a bounded list, null
   outside that phase). A waiting damage grade says whether it waits for the source measurement or its queue turn
   (`DamageJobEntry.waitReason`, null while running).
 - **The unread `[compressor] mix` is removed**, including its schema and typed member; the glue device's mix stays
   the recipe control. Removing the unused key moves config/sound hashes without moving PCM.
-- **ABI 13** appends these fields and reasons; no new C entry point. The package version is unchanged pending review.
+- **ABI 13** appends the delivery fields, `masterAnyway`, source facts 454–457, the as-worked entry points and
+  `UNKNOWN_MASTER`; the ABI number is not bumped again within v0.18.0. The package version is unchanged pending review.
+  Config is `b2ad32d4f400fb52`, sound `0aea937888c4b21f`: the target classes and delivery ceilings now participate in the
+  sound decisions. Recognition remains at its existing three thresholds; the as-is branch is held by reachable fixtures.
 
 ## v0.17.0 — 2026-10-05
 

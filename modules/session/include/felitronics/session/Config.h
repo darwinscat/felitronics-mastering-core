@@ -44,6 +44,9 @@ namespace felitronics::session::config
 // targets.toml
 
 enum class Group : std::uint8_t { Streaming, Delivery, Aggregator };
+// How an already-mastered source is delivered. A specification is a requirement and is met normally; a normalising
+// platform is never turned down; Other is a medium/preset whose quieter target likewise does not justify more work.
+enum class TargetClass : std::uint8_t { Specification, Streaming, Other };
 
 struct Album
 {
@@ -56,6 +59,7 @@ struct Target
 {
     std::string key;
     Group group = Group::Streaming;
+    TargetClass targetClass = TargetClass::Other;
     double lufs = 0.0;
     double tp = 0.0;
     double monoBass = 0.0;
@@ -376,6 +380,13 @@ struct Dither
     std::int32_t autoBlankSamples = 0;
 };
 
+struct MasteredDelivery
+{
+    double loudAboveLufs = 0.0;
+    double loudCeilingDbTp = 0.0;
+    double regularCeilingDbTp = 0.0;
+};
+
 // [chain]: the chain's fixed geometry — the internal quantum and the oversampling of the saturation and the limiter.
 struct Chain
 {
@@ -550,6 +561,7 @@ struct Engine
     Chain chain;
     Stages stages;
     Dither dither;
+    MasteredDelivery masteredDelivery;
     DeEsser deEsser;
     StereoBursts stereoBursts;
     Observations observations;

@@ -17,6 +17,9 @@ namespace felitronics::analysis { struct BandCrestParams; }
 
 namespace felitronics::session
 {
+// How the delivered file was made. AsIs is the original source unchanged; PeaksOnly is delivery conversion with a
+// plain non-positive gain and format dither, and no mastering devices; Mastered is the ordinary chain and landing.
+enum class DeliveryMode : std::uint8_t { Mastered, AsIs, PeaksOnly };
 enum class LandingStatus : std::uint8_t
 {
     Solved, TargetUnreachable, PassLimit, TargetBetweenAchievable, Unavailable, Cancelled, TechnicalFailure
@@ -214,6 +217,9 @@ struct MasterReport
     LoudnessMode loudnessMode = LoudnessMode::Manual;
     MaxStop maxStop = MaxStop::None;
     std::uint32_t guardSteps = 0;
+    DeliveryMode deliveryMode = DeliveryMode::Mastered;
+    double deliveryGainDb = 0.0;
+    bool deliveryDithered = false;
 };
 // What a landing was given and what it put on the target, beside its report: the level it landed where it landed on the
 // source's gate (NaN on its own gate, where the level landed is the report's achievedLufs), the limiter's budget it was
@@ -300,6 +306,7 @@ struct Recipe
     std::uint64_t readyHash = 0;              // exact ready topology, parameters and delivery choice
     std::uint32_t deliveryRateHz = 0;
     std::uint32_t readyVersion = 0;
+    std::uint8_t deliveryBits = 0;
 };
 
 // A master kept: its id and its recipe.

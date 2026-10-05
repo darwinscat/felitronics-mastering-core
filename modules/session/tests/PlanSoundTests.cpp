@@ -66,6 +66,11 @@ struct felitronics::session::detail::Inspector
         auto& r = s.measurementResults_[std::size_t (Analyzer::Loudness)];
         r.numbers = numbers;
     }
+    static void deliveryFixture (Session& s, const MasterPlan& plan)
+    {
+        s.masterJob_.reset();
+        s.startMaster (plan);
+    }
     static void request (Session& s) { s.requestNeedles(); s.replan(); }
     static bool current (const Session& s) { return s.planInputs (s.project_).needlesCurrent; }
     static std::optional<double> ceiling (const Session& s) { return s.needlesCeilingDb_; }
@@ -1521,6 +1526,53 @@ void theSourceReport()
         for (unsigned i = 0; i < row.facts.count; ++i) words = words && whole (row.facts.items[i]);
     ok (words, "every source-report line renders complete Russian and English");
 
+    const auto rules = detail::rules();
+    const auto delivery = [&] (std::string_view target, double lufs, double peak, bool already = true)
+    {
+        SourceReport r; r.alreadyMastered = already; r.loudnessLufs = lufs; r.truePeakDbTp = peak;
+        Project p; p.target = rules.find (target).value();
+        detail::masteredDelivery (r, rules, p);
+        return r;
+    };
+    const auto asIs = delivery ("allStreaming", -9.0, -2.5);
+    const auto peaks = delivery ("spotify", -9.0, -0.5);
+    const auto regular = delivery ("appleMusic", -14.0, -0.5);
+    const auto spec = delivery ("ebu", -9.0, -0.5);
+    const auto other = delivery ("cd", -9.0, -0.5);
+    const auto louder = delivery ("maxDense", -13.0, -0.5);
+    const auto ordinary = delivery ("spotify", -9.0, -0.5, false);
+    ok (asIs.deliveryMode == DeliveryMode::AsIs && same (asIs.deliveryGainDb.value_or (1.0), 0.0)
+        && same (asIs.deliveryCeilingDbTp.value_or (0.0), -2.0) && asIs.facts.items[0].id == text::FactId::SourceDeliveryAsIs,
+        "the policy's reachable fixture passes an already-mastered source within the −2 dBTP ceiling bit-exact");
+    ok (peaks.deliveryMode == DeliveryMode::PeaksOnly && same (peaks.deliveryGainDb.value_or (0.0), -1.5)
+        && same (peaks.deliveryCeilingDbTp.value_or (0.0), -2.0) && other.deliveryMode == DeliveryMode::PeaksOnly
+        && same (regular.deliveryCeilingDbTp.value_or (0.0), -1.0),
+        "streaming and other quieter targets use only the plain peak gain and configured loud ceiling");
+    ok (spec.deliveryMode == DeliveryMode::Mastered && ! spec.deliveryGainDb
+        && louder.deliveryMode == DeliveryMode::Mastered && louder.facts.count == 1
+        && louder.facts.items[0].id == text::FactId::SourceMasterLouder
+        && ordinary.deliveryMode == DeliveryMode::Mastered,
+        "specification and louder/max targets master normally, the louder one warns, and a normal mix is unaffected");
+    {
+        Seen x;
+        x.loudness[0] = { "integratedLufs", -9.0, MeasurementReason::None, 0 };
+        x.loudness[1] = { "truePeakDb", -0.5, MeasurementReason::None, 0 };
+        x.clipping[0] = { "runCount", 0.0, MeasurementReason::None, 0 };
+        x.clipping[1] = { "samplePeak", 0.9, MeasurementReason::None, 0 };
+        x.forensics[0] = { "wall.valid", 1.0, MeasurementReason::None, 0 };
+        x.forensics[1] = { "wall.cutoffHz", 16000.0, MeasurementReason::None, 0 };
+        x.forensics[2] = { "wall.dropDb", 40.0, MeasurementReason::None, 0 };
+        x.forensics[3] = { "wall.cutoffFractionOfNyquist", 2.0 / 3.0, MeasurementReason::None, 0 };
+        x.ready (Analyzer::Loudness, x.loudness);
+        x.ready (Analyzer::Clipping, { x.clipping, 2 });
+        x.ready (Analyzer::Forensics, { x.forensics, 4 });
+        const auto lossy = detail::sourceReport (x.in);
+        ok (lossy.facts.count == 2 && lossy.facts.items[0].id == text::FactId::SourceNoClipping
+            && lossy.facts.items[1].id == text::FactId::SourceFormerLossy
+            && lossy.advice.count == 1 && lossy.advice.items[0].id == text::FactId::SourceAlreadyMastered,
+            "a former-lossy source asks for the lossless original immediately after the clipping verdict");
+    }
+
     std::vector<float> pcm (48000);
     for (std::size_t i = 0; i < pcm.size(); ++i) pcm[i] = float (std::clamp (2 * felitronics::core::det::sin (.03 * double (i)), -1.0, 1.0));
     const float* planes[] { pcm.data() };
@@ -1530,21 +1582,147 @@ void theSourceReport()
     const auto snapshot = s.snapshot();
     ok (snapshot.view().sourceReport && snapshot.view().sourceReport->clipping == SourceClipStatus::Clipped,
         "the clipping analyzer's actual verdict reaches the source report");
+    detail::MasterPlan asIsPlan;
+    asIsPlan.deliveryMode = DeliveryMode::AsIs;
+    asIsPlan.deliveryRate = s.source().sampleRate;
+    asIsPlan.frames = int (s.source().frames);
+    asIsPlan.ready.deliveryBits = s.source().bitDepth;
+    asIsPlan.request.targetLufs = snapshot.view().sourceReport->loudnessLufs.value_or (0.0);
+    asIsPlan.sourceLufs = asIsPlan.request.targetLufs;
+    asIsPlan.deliveryCeilingDbTp = -2.0;
+    detail::MasterJob asIsJob;
+    bool copied = asIsJob.begin (s, asIsPlan);
+    while (copied && asIsJob.step (1024) == mastering::StepResult::More) {}
+    const auto exact = asIsJob.takeOutput();
+    copied = copied && exact && asIsJob.reportResult().deliveryMode == DeliveryMode::AsIs;
+    for (std::size_t i = 0; copied && i < pcm.size(); ++i)
+        copied = std::bit_cast<std::uint32_t> (exact[i]) == std::bit_cast<std::uint32_t> (pcm[i]);
+    ok (copied, "the reachable as-is delivery fixture copies every source float bit for bit, with no resample or dither");
     std::string json (std::size_t (Codec::encodedBytes (snapshot.view()).bytes), '\0');
     Snapshot restored;
     ok (Codec::encode (snapshot.view(), json) == CodecStatus::Ok && Codec::decode (json, restored) == CodecStatus::Ok
         && restored.view().sourceReport && restored.view().sourceReport->facts.items[0].id == text::FactId::SourceRealClipping,
         "the source report survives the snapshot codec with clipping first");
+    command::Master safe { 2 };
+    const auto peaksPlan = detail::MasterJob::plan (s, safe, s.project());
+    auto forced = safe; forced.masterAnyway = true;
+    const auto forcedPlan = detail::MasterJob::plan (s, forced, s.project());
+    auto sixteen = s.project(); sixteen.target = detail::rules().find ("cdDynamic").value();
+    const auto sixteenPlan = detail::MasterJob::plan (s, safe, sixteen);
+    ok (snapshot.view().sourceReport->alreadyMastered.value_or (false)
+        && s.check (safe).rejection == Rejection::None
+        && peaksPlan.deliveryMode == DeliveryMode::PeaksOnly && ! peaksPlan.ready.topology.eq
+        && ! peaksPlan.ready.topology.compressor && ! peaksPlan.ready.topology.clipper && ! peaksPlan.ready.topology.limiter
+        && forcedPlan.deliveryMode == DeliveryMode::Mastered
+        && sixteenPlan.deliveryMode == DeliveryMode::PeaksOnly && sixteenPlan.deliveryDithered
+        && sixteenPlan.ready.topology.dither && sixteenPlan.ready.deliveryBits == 16,
+        "peaks-only uses gain and format dither with no mastering chain or clipped-gain choice; masterAnyway restores the chain");
+    const auto deliver = [&] (command::Master command, const detail::MasterPlan* fixture = nullptr)
+    {
+        const auto checked = s.check (command);
+        Answer answer;
+        const auto spent = declared::spend ([&] { answer = s.apply (command); });
+        bool valid = answer.rejection == Rejection::None && declared::covers (checked.bytes, spent);
+        if (valid && fixture) detail::Inspector::deliveryFixture (s, *fixture);
+        for (unsigned i = 0; valid && s.job() != 0 && i < 100000; ++i) (void) s.step (16);
+        return valid && s.job() == 0 && ! s.masters().empty();
+    };
+    bool peaksRendered = deliver (safe);
+    auto token = s.pendingMaster();
+    auto shape = s.masterAudioShape (token);
+    peaksRendered = peaksRendered && shape.frames != 0;
+    std::vector<float> delivered (std::size_t (shape.frames * shape.channels));
+    peaksRendered = peaksRendered && s.copyMaster (token, delivered) == MasterTransferStatus::Ok;
+    const double gain = felitronics::core::det::pow (10.0, peaksPlan.deliveryGainDb / 20.0);
+    for (std::size_t i = 0; peaksRendered && i < pcm.size(); ++i)
+        peaksRendered = near (delivered[i], double (pcm[i]) * gain, 0.000001);
+    const auto peaksText = s.exportWorked (token.master);
+    ok (peaksRendered && s.masters().back().report->deliveryMode == DeliveryMode::PeaksOnly
+        && peaksText.view().find ("mode = \"peaksOnly\"") != std::string_view::npos
+        && peaksText.view().find ("chain = false") != std::string_view::npos
+        && peaksText.view().find ("dither = false") != std::string_view::npos,
+        "the real peaks-only job delivers only the scalar gain, with its own immutable no-chain report");
+    (void) s.releaseMaster (token);
+    const auto codecRoundTrip = [&]
+    {
+        const auto captured = s.snapshot();
+        const auto size = Codec::encodedBytes (captured.view());
+        std::string encoded (std::size_t (size.bytes), '\0');
+        Snapshot decoded;
+        return size.status == CodecStatus::Ok && Codec::encode (captured.view(), encoded) == CodecStatus::Ok
+            && Codec::decode (encoded, decoded) == CodecStatus::Ok;
+    };
+    ok (codecRoundTrip(), "a peaks-only master survives the snapshot codec without a fictitious limiter landing");
+    MeasurementValue asIsLoudness[] { { "integratedLufs", -9.0, MeasurementReason::None, 0 },
+                                      { "truePeakDb", -2.5, MeasurementReason::None, 0 } };
+    detail::Inspector::loudness (s, asIsLoudness);
+    asIsPlan.sourceLufs = -9.0;
+    command::Master exactRequest { 20 };
+    bool exactRendered = deliver (exactRequest, &asIsPlan);
+    token = s.pendingMaster();
+    shape = s.masterAudioShape (token);
+    exactRendered = exactRendered && shape.frames != 0;
+    delivered.resize (std::size_t (shape.frames * shape.channels));
+    exactRendered = exactRendered && s.copyMaster (token, delivered) == MasterTransferStatus::Ok;
+    for (std::size_t i = 0; exactRendered && i < pcm.size(); ++i)
+        exactRendered = std::bit_cast<std::uint32_t> (delivered[i]) == std::bit_cast<std::uint32_t> (pcm[i]);
+    const auto exactText = s.exportWorked (token.master);
+    ok (exactRendered && exactText.view().find ("mode = \"asIs\"") != std::string_view::npos
+        && exactText.view().find ("fileFormat = \"original\"") != std::string_view::npos
+        && exactText.view().find ("dither = false") != std::string_view::npos,
+        "the reachable as-is fixture completes the session transfer and reports the original without dither");
+    (void) s.releaseMaster (token);
+    ok (codecRoundTrip(), "an as-is master survives the snapshot codec without a fictitious limiter landing");
+    detail::Inspector::loudness (s, snapshot.view().measurements[std::size_t (Analyzer::Loudness)].numbers);
+    (void) s.apply (command::SetTarget { 21, "cdDynamic" });
+    bool dithered = deliver (command::Master { 22 });
+    token = s.pendingMaster();
+    const auto ditherText = s.exportWorked (token.master);
+    shape = s.masterAudioShape (token);
+    dithered = dithered && shape.frames != 0;
+    delivered.resize (std::size_t (shape.frames * shape.channels));
+    dithered = dithered && s.copyMaster (token, delivered) == MasterTransferStatus::Ok;
+    bool quantized = ! delivered.empty();
+    for (float sample : delivered)
+        quantized = quantized && same (double (sample) * 32768.0, std::floor (double (sample) * 32768.0));
+    ok (dithered && quantized && shape.sampleRate == 44100
+        && s.masters().back().report->deliveryDithered
+        && ditherText.view().find ("bitDepth = 16") != std::string_view::npos
+        && ditherText.view().find ("dither = true") != std::string_view::npos,
+        "the peaks-only CD delivery converts rate and applies the actual 16-bit dither");
+    (void) s.releaseMaster (token);
+    (void) s.apply (command::SetTarget { 23, "ebu" });
+    bool specified = deliver (command::Master { 24 });
+    token = s.pendingMaster();
+    ok (specified && s.masters().back().report->deliveryMode == DeliveryMode::Mastered
+        && s.masters().back().report->achievedLufs.value_or (0.0) < -22.0,
+        "an already-mastered source is actually turned down to the EBU requirement");
+    (void) s.releaseMaster (token);
+    (void) s.apply (command::SetTarget { 25, "allStreaming" });
+    forced.id = 26;
+    const bool masteredAnyway = deliver (forced);
+    token = s.pendingMaster();
+    ok (masteredAnyway && s.masters().back().report->deliveryMode == DeliveryMode::Mastered
+        && s.masters().back().landing && s.masters().back().landing->passes > 0,
+        "masterAnyway actually runs the normal chain and landing");
+    (void) s.releaseMaster (token);
     (void) s.apply (command::EditTarget { 2, { 2.0, -1.0 } });
     command::Master request { 3 };
     ok (s.check (request).rejection == Rejection::ClippedGain,
         "a clipped source cannot silently receive more loudness");
     request.allowClippedGain = true;
     ok (s.check (request).rejection == Rejection::None, "mastering a clipped source anyway remains an explicit choice");
-    ok (Wire::commandStorage (s, R"({"kind":"master","commandId":"4","allowClippedGain":true})").rejection == Rejection::None
+    ok (Wire::commandStorage (s, R"({"kind":"master","commandId":"4","allowClippedGain":true,"masterAnyway":true})").rejection == Rejection::None
         && Wire::commandStorage (s, R"({"kind":"master","commandId":"4","allowClippedGain":false})").rejection == Rejection::ClippedGain
+        && Wire::commandStorage (s, R"({"kind":"master","commandId":"4","masterAnyway":"true"})").rejection == Rejection::Contract
         && Wire::commandStorage (s, R"({"kind":"master","commandId":"4","allowClippedGain":"true"})").rejection == Rejection::Contract,
-        "the wire accepts an explicit boolean choice and rejects an accidental string");
+        "the wire accepts both explicit boolean choices and rejects accidental strings");
+    request.id = 30;
+    const bool louderRendered = deliver (request);
+    ok (louderRendered && s.masters().back().report->deliveryMode == DeliveryMode::Mastered
+        && s.masters().back().landing && s.masters().back().landing->passes > 0,
+        "the louder target still renders normally after explicit clipped-gain consent");
+    (void) s.releaseMaster (s.pendingMaster());
 }
 
 void theObservations()

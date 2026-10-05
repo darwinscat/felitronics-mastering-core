@@ -424,6 +424,18 @@ int main()
     if (session->pendingMaster().master != 0)
     {
         auto t = token (session->pendingMaster());
+        const auto reportId = session->pendingMaster().master;
+        std::uint32_t reportSize = 0;
+        const auto expectedReport = session->exportWorked (reportId);
+        ok (fc_session_worked_report_size (handle, reportId, &reportSize) == FC_SESSION_OK
+            && reportSize == expectedReport.size, "worked report C size is the captured C++ report size");
+        std::string worked (reportSize, '?');
+        std::uint32_t count = 777;
+        ok (fc_session_worked_report_copy (handle, reportId, worked.data(), reportSize - 1u, &count)
+                == FC_SESSION_ERR_TOO_SMALL && count == 777 && worked.front() == '?',
+            "a short worked-report buffer is refused without writes");
+        ok (fc_session_worked_report_copy (handle, reportId, worked.data(), reportSize, &count) == FC_SESSION_OK
+            && count == reportSize && worked == expectedReport.view(), "worked report C copy equals the immutable C++ text");
         double bytes = 0; std::uint32_t outFrames = 0, channels = 0, outRate = 0;
         ok (fc_session_master_audio_size (handle, &t, &bytes, &outFrames, &channels, &outRate) == FC_SESSION_OK
             && bytes == double (frames * 2u * sizeof (float)) && outFrames == frames

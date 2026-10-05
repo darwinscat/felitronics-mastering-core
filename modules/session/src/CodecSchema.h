@@ -52,6 +52,13 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (DamageWaitReason::SourceMeasurement) == 1);
         return 1;
     }
+    else if constexpr (std::is_same_v<T, DeliveryMode>)
+    {
+        static_assert (unsigned (DeliveryMode::Mastered) == 0);
+        static_assert (unsigned (DeliveryMode::AsIs) == 1);
+        static_assert (unsigned (DeliveryMode::PeaksOnly) == 2);
+        return 2;
+    }
     else if constexpr (std::is_same_v<T, Device>)
     {
         static_assert (unsigned (Device::Hpf) == 0);
@@ -462,6 +469,16 @@ constexpr void checkEnum (DamageWaitReason value) noexcept
     {
         case DamageWaitReason::Queue: break;
         case DamageWaitReason::SourceMeasurement: break;
+    }
+}
+
+constexpr void checkEnum (DeliveryMode value) noexcept
+{
+    switch (value)
+    {
+        case DeliveryMode::Mastered: break;
+        case DeliveryMode::AsIs: break;
+        case DeliveryMode::PeaksOnly: break;
     }
 }
 
@@ -1628,7 +1645,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, MasterReport>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22, f23, f24, f25, f26, f27, f28, f29] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.achievedLufs)>, std::optional<double>>);
         v.field ("achievedLufs", x.achievedLufs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ceilingDbTp)>, double>);
@@ -1643,6 +1660,12 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("damage", x.damage);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.deliverable)>, bool>);
         v.field ("deliverable", x.deliverable);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.deliveryDithered)>, bool>);
+        v.field ("deliveryDithered", x.deliveryDithered);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.deliveryGainDb)>, double>);
+        v.field ("deliveryGainDb", x.deliveryGainDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.deliveryMode)>, DeliveryMode>);
+        v.field ("deliveryMode", x.deliveryMode);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.firstHint)>, std::optional<MasterHint>>);
         v.field ("firstHint", x.firstHint);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.gainFromSourceDb)>, std::optional<double>>);
@@ -2172,7 +2195,9 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, Recipe>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.deliveryBits)>, std::uint8_t>);
+        v.field ("deliveryBits", x.deliveryBits);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.deliveryRateHz)>, std::uint32_t>);
         v.field ("deliveryRateHz", x.deliveryRateHz);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.project)>, Project>);
@@ -2364,13 +2389,21 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, SourceReport>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10] = x;
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.advice)>, BoundedList<text::Fact, 2>>);
+        v.field ("advice", x.advice);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.alreadyMastered)>, std::optional<bool>>);
         v.field ("alreadyMastered", x.alreadyMastered);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.clipping)>, SourceClipStatus>);
         v.field ("clipping", x.clipping);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.clippingReason)>, MeasurementReason>);
         v.field ("clippingReason", x.clippingReason);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.deliveryCeilingDbTp)>, std::optional<double>>);
+        v.field ("deliveryCeilingDbTp", x.deliveryCeilingDbTp);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.deliveryGainDb)>, std::optional<double>>);
+        v.field ("deliveryGainDb", x.deliveryGainDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.deliveryMode)>, DeliveryMode>);
+        v.field ("deliveryMode", x.deliveryMode);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.facts)>, BoundedList<text::Fact, 2>>);
         v.field ("facts", x.facts);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.loudnessLufs)>, std::optional<double>>);

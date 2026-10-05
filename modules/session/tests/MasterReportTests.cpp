@@ -7,6 +7,7 @@
 #include <felitronics/analysis/BandCrestResult.h>
 #include <felitronics/analysis/ProgrammeReport.h>
 #include <felitronics/mastering/OfflineRenderer.h>
+#include <felitronics/toml/Toml.h>
 #include <felitronics_test.h>
 #include <algorithm>
 #include <bit>
@@ -142,6 +143,46 @@ bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool pr
     c.delivery = shape.sampleRate;   // a request of 0 takes the target's rate
     c.delivered.resize (std::size_t (shape.frames * shape.channels));
     return s.copyMaster (c.token, c.delivered) == session::MasterTransferStatus::Ok;
+}
+void asWorkedReport()
+{
+    Case c;
+    const bool ran = run (c, 48000, 48000, false);
+    if (! ran) { ok (false, "as-worked fixture completes"); return; }
+    auto& s = *c.session;
+    const auto firstId = s.masters()[0].id;
+    const auto need = s.exportWorkedBytes (firstId);
+    const auto first = s.exportWorked (firstId);
+    const auto parsed = felitronics::toml::parse (first.view());
+    bool devices = true;
+    for (const std::string_view name : { "hpf", "monoBass", "glue", "saturation", "tilt", "limiter", "dither", "low", "bands" })
+        devices = devices && first.view().find ("\n[" + std::string (name) + "]\n") != std::string_view::npos;
+    ok (need.rejection == session::Rejection::None && need.bytes == first.size
+        && std::holds_alternative<felitronics::toml::Table> (parsed) && devices
+        && first.view().find ("# default") != std::string_view::npos
+        && first.view().find ("# machine") != std::string_view::npos
+        && first.view().find ("# target") != std::string_view::npos
+        && first.view().find ("[limiter]\non = false # hand") != std::string_view::npos,
+        "as-worked TOML parses and names every device with default, machine and target origins");
+    const std::string frozen (first.view());
+    ok (s.exportWorkedBytes (firstId + 1000u).rejection == session::Rejection::UnknownMaster,
+        "an as-worked report names a completed master");
+    const bool released = s.releaseMaster (c.token) == session::MasterTransferStatus::Ok;
+    const auto edited = s.importProject (800,
+        "defaults = \"2026-10\"\nmanual = true\n[target]\nname = \"allStreaming\"\n"
+        "[hpf]\nfq.machine = 44\n[tilt]\ndb.hand = 1\n");
+    auto next = c.request; next.ready = {}; next.id = 801; next.source = s.source().hash; next.revision = s.revision();
+    const auto started = s.apply (next);
+    for (unsigned i = 0; i < 400000 && s.job() != 0; ++i) (void) s.step (16);
+    const auto second = s.masters().size() == 2 ? s.exportWorked (s.masters()[1].id) : session::WorkedText {};
+    const auto firstAgain = s.exportWorked (firstId);
+    ok (released && edited.rejection == session::Rejection::None && started.rejection == session::Rejection::None
+        && s.masters().size() == 2 && second.rejection == session::Rejection::None
+        && second.view().find ("db = 1 # hand") != std::string_view::npos
+        && second.view().find ("fq = 44 # machine") != std::string_view::npos
+        && second.view().find ("slope = 24 # default") != std::string_view::npos
+        && firstAgain.view() == frozen,
+        "a hand field is attributed to hand, and later edits and masters do not change the earlier report");
 }
 bool referenceCrest (const Case& c)
 {
@@ -928,6 +969,7 @@ void damageAfterMaster()
 
 int main()
 {
+    asWorkedReport();
     damage();
     damageAfterMaster();
     Case normalFirst, normalLate, fractionalFirst, fractionalLate;

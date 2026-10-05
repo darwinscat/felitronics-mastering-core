@@ -190,6 +190,15 @@ public:
                     require (session().exportProject (text) == Rejection::None, "project copy refused");
                     projects[a[0]] = text; record ("project", hex (text)); continue;
                 }
+                if (i.op == "worked")
+                {
+                    const auto master = MasterId (std::stoul (a[0]));
+                    const auto need = session().exportWorkedBytes (master);
+                    require (need.rejection == Rejection::None, "worked report size refused");
+                    std::string text (std::size_t (need.bytes), '\0');
+                    require (session().exportWorked (master, text) == Rejection::None, "worked report copy refused");
+                    record ("worked", hex (text)); continue;
+                }
                 if (i.op == "capacity")
                 {
                     require (session().setCapacity ({ double (std::stoull (a[0])), double (std::stoull (a[1])) }) == Status::Ok,

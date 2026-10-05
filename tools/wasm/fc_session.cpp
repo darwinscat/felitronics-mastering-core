@@ -189,6 +189,7 @@ fc_session_status rejection (Rejection r) noexcept
     if (r == Rejection::FloatingPointEnvironment) return FC_SESSION_ERR_FP_ENVIRONMENT;
     if (r == Rejection::NoSource) return FC_SESSION_ERR_NO_SOURCE;
     if (r == Rejection::NotPlaced) return FC_SESSION_ERR_NOT_PLACED;
+    if (r == Rejection::UnknownMaster) return FC_SESSION_ERR_UNKNOWN_MASTER;
     return r == Rejection::None ? FC_SESSION_OK : FC_SESSION_ERR_CONTRACT;
 }
 bool overlap (const void* a, std::uint64_t an, const void* b, std::uint64_t bn) noexcept
@@ -561,6 +562,30 @@ FC_EXPORT fc_session_status fc_session_export_project_copy (fc_session session, 
     if (const auto st = rejection (need.rejection); st != FC_SESSION_OK) return st;
     if (capacity < need.bytes) return FC_SESSION_ERR_TOO_SMALL;
     (void) slot->session->exportProject ({ output, capacity }); *written = std::uint32_t (need.bytes); return FC_SESSION_OK;
+}
+FC_EXPORT fc_session_status fc_session_worked_report_size (fc_session session, std::uint32_t master_id, std::uint32_t* out)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = pointer (out, sizeof (*out), alignof (std::uint32_t)); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    const auto need = slot->session->exportWorkedBytes (master_id);
+    if (const auto st = rejection (need.rejection); st != FC_SESSION_OK) return st;
+    *out = std::uint32_t (need.bytes); return FC_SESSION_OK;
+}
+FC_EXPORT fc_session_status fc_session_worked_report_copy (fc_session session, std::uint32_t master_id,
+                                                           char* output, std::uint32_t capacity, std::uint32_t* written)
+{
+    const CallGuard call;
+    if (call.refused()) return FC_SESSION_ERR_POISONED;
+    if (const auto st = answerOut (output, capacity, written); st != FC_SESSION_OK) return st;
+    const auto* slot = lookup (session); if (! slot) return FC_SESSION_ERR_HANDLE;
+    if (overlap (output, capacity, written, sizeof (*written))) return FC_SESSION_ERR_OVERLAP;
+    const auto need = slot->session->exportWorkedBytes (master_id);
+    if (const auto st = rejection (need.rejection); st != FC_SESSION_OK) return st;
+    if (capacity < need.bytes) return FC_SESSION_ERR_TOO_SMALL;
+    (void) slot->session->exportWorked (master_id, { output, capacity });
+    *written = std::uint32_t (need.bytes); return FC_SESSION_OK;
 }
 FC_EXPORT fc_session_status fc_session_step (fc_session session, std::uint32_t budget, std::uint32_t* out)
 {

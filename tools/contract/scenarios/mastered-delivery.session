@@ -1,0 +1,31 @@
+create main 134217728
+load 1 mastered
+drive 5000 work units
+snapshot
+command {"kind":"master","commandId":"2"}
+drive 100000 work units
+export worked report 2
+snapshot
+release master
+command {"kind":"setTarget","commandId":"3","target":"cdDynamic"}
+command {"kind":"master","commandId":"4"}
+drive 100000 work units
+export worked report 3
+snapshot
+release master
+command {"kind":"setTarget","commandId":"5","target":"ebu"}
+command {"kind":"master","commandId":"6"}
+drive 100000 work units
+snapshot
+release master
+command {"kind":"setTarget","commandId":"7","target":"allStreaming"}
+command {"kind":"master","commandId":"8","masterAnyway":true}
+drive 100000 work units
+snapshot
+release master
+command {"kind":"setTarget","commandId":"9","target":"maxDense"}
+snapshot
+command {"kind":"master","commandId":"10"}
+drive 100000 work units
+snapshot
+export worked report 2

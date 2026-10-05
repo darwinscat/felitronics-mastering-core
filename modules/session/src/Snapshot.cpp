@@ -263,7 +263,7 @@ SnapshotView Session::buildView() const noexcept
     v.observations = observations_;
     if (source_.channels != 0)
         v.sourceReport = detail::sourceReport ({ rules, measurementResults_, source_.channels, source_.sampleRate,
-                                                source_.frames, source_.bitDepth });
+                                                source_.frames, source_.bitDepth }, &project_);
     if (source_.channels != 0) v.observationFacts = ObservationText::facts (observations_);
     v.target = targetName();
     v.targetNote = SnapshotText::targetNote (v.target);

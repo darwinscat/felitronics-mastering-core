@@ -498,7 +498,8 @@ struct Reader
                 if (! std::isfinite (x.targetLufs) || ! std::isfinite (x.ceilingDbTp)
                     || x.checkPasses > 1
                     || (x.status == MeasurementStatus::Ready
-                        && (! x.achievedLufs || ! x.truePeakDbTp || ! x.missLu || ! x.gainFromSourceDb))
+                        && (! x.achievedLufs || ! x.truePeakDbTp
+                            || (x.deliveryMode == DeliveryMode::Mastered && ! x.missLu) || ! x.gainFromSourceDb))
                     // Delivered: under the ceiling, or above it and marked (no render stayed under it).
                     || (x.deliverable && (x.status != MeasurementStatus::Ready || ! (x.peakSafe || x.peaksAboveCeiling)))
                     || (x.peakSafe && (! x.truePeakDbTp || *x.truePeakDbTp > x.ceilingDbTp))
@@ -579,9 +580,17 @@ struct Reader
             }
             else if constexpr (std::is_same_v<T, Kept>)
             {
-                if (x.report && (! x.landing || x.report->deliverable != x.landing->deliverable
-                    || x.report->peaksAboveCeiling != x.landing->peaksAboveCeiling
-                    || x.report->targetMet != (x.landing->status == LandingStatus::Solved))) good = false;
+                if (x.report)
+                {
+                    const auto& r = *x.report;
+                    const bool delivery = r.deliveryMode != DeliveryMode::Mastered;
+                    if (! std::isfinite (r.deliveryGainDb)
+                        || (delivery ? x.landing.has_value() || r.targetMet || r.deliveryGainDb > 0.0
+                            || (r.deliveryMode == DeliveryMode::AsIs && (r.deliveryDithered || std::abs (r.deliveryGainDb) > 0.0))
+                            : ! x.landing || r.deliverable != x.landing->deliverable
+                              || r.peaksAboveCeiling != x.landing->peaksAboveCeiling
+                              || r.targetMet != (x.landing->status == LandingStatus::Solved))) good = false;
+                }
             }
             else if constexpr (std::is_same_v<T, SnapshotView>)
             {

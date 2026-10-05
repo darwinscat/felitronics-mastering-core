@@ -1,45 +1,50 @@
 {
   "rebuild": "node tools/contract/fixtures.mjs --rebuild",
-  "inputHash": "3f699d828ca865b6babecc66e5991062feac6e2dbc02ecb26f4cab7e6bb11ed2",
+  "inputHash": "fab3283fcd3459220874a5cbb6e86377773012e260ae4e4ec14d087e4424c39e",
   "files": {
     "mono.pcm": {
-      "inputHash": "3f699d828ca865b6babecc66e5991062feac6e2dbc02ecb26f4cab7e6bb11ed2",
+      "inputHash": "fab3283fcd3459220874a5cbb6e86377773012e260ae4e4ec14d087e4424c39e",
       "sha256": "246f129686834b8e707e1ea48640f71726b21dcfde54abe02108f6c3f924ce84",
       "rebuild": "node tools/contract/fixtures.mjs --rebuild"
     },
     "stereo.pcm": {
-      "inputHash": "3f699d828ca865b6babecc66e5991062feac6e2dbc02ecb26f4cab7e6bb11ed2",
+      "inputHash": "fab3283fcd3459220874a5cbb6e86377773012e260ae4e4ec14d087e4424c39e",
       "sha256": "35be5697bb18d26784b6afd5e1aa0b6d50b1ed4f77c64ca65d908dd8122f155f",
       "rebuild": "node tools/contract/fixtures.mjs --rebuild"
     },
     "measure.pcm": {
-      "inputHash": "3f699d828ca865b6babecc66e5991062feac6e2dbc02ecb26f4cab7e6bb11ed2",
+      "inputHash": "fab3283fcd3459220874a5cbb6e86377773012e260ae4e4ec14d087e4424c39e",
       "sha256": "39c5350b5e29c0d5b6deb187159c3c6c5efbb65706a36503b989e6c00d1101c1",
       "rebuild": "node tools/contract/fixtures.mjs --rebuild"
     },
     "measure-stereo.pcm": {
-      "inputHash": "3f699d828ca865b6babecc66e5991062feac6e2dbc02ecb26f4cab7e6bb11ed2",
+      "inputHash": "fab3283fcd3459220874a5cbb6e86377773012e260ae4e4ec14d087e4424c39e",
       "sha256": "2da76419f8af317d87e00b2a9f37fe8a059d8b1bb8604b345768945d9c417699",
       "rebuild": "node tools/contract/fixtures.mjs --rebuild"
     },
     "silence.pcm": {
-      "inputHash": "3f699d828ca865b6babecc66e5991062feac6e2dbc02ecb26f4cab7e6bb11ed2",
+      "inputHash": "fab3283fcd3459220874a5cbb6e86377773012e260ae4e4ec14d087e4424c39e",
       "sha256": "351cbc14147da1098cf23cf0d464997add6ba99a9773a923febcd612cff7985d",
       "rebuild": "node tools/contract/fixtures.mjs --rebuild"
     },
     "nonfinite.pcm": {
-      "inputHash": "3f699d828ca865b6babecc66e5991062feac6e2dbc02ecb26f4cab7e6bb11ed2",
+      "inputHash": "fab3283fcd3459220874a5cbb6e86377773012e260ae4e4ec14d087e4424c39e",
       "sha256": "ac78ecde31dc08bc2c543f668f3883948aca3336a793d0817796ab3303359484",
       "rebuild": "node tools/contract/fixtures.mjs --rebuild"
     },
     "measure-sidecar.json": {
-      "inputHash": "3f699d828ca865b6babecc66e5991062feac6e2dbc02ecb26f4cab7e6bb11ed2",
+      "inputHash": "fab3283fcd3459220874a5cbb6e86377773012e260ae4e4ec14d087e4424c39e",
       "sha256": "da0b08b4bfc4ed8d8b0beb4848377456be00de5bb94364d2b7c228fc53294433",
       "rebuild": "node tools/contract/fixtures.mjs --rebuild"
     },
     "saved-machine.toml": {
-      "inputHash": "3f699d828ca865b6babecc66e5991062feac6e2dbc02ecb26f4cab7e6bb11ed2",
+      "inputHash": "fab3283fcd3459220874a5cbb6e86377773012e260ae4e4ec14d087e4424c39e",
       "sha256": "ac51f3395bb58c69de5ef3a5f803347a483f861578a703b645c57e91fcb52334",
+      "rebuild": "node tools/contract/fixtures.mjs --rebuild"
+    },
+    "mastered.pcm": {
+      "inputHash": "fab3283fcd3459220874a5cbb6e86377773012e260ae4e4ec14d087e4424c39e",
+      "sha256": "4e987a4ddecf64984d55a4b1f51c122a45aca3520c5f04f31b35374a89572a5e",
       "rebuild": "node tools/contract/fixtures.mjs --rebuild"
     }
   }

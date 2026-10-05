@@ -1,0 +1,137 @@
+{
+  "checks": [
+    {
+      "kind": "snapshot",
+      "session": "main",
+      "index": 0,
+      "path": "sourceReport.alreadyMastered",
+      "value": true
+    },
+    {
+      "kind": "snapshot",
+      "session": "main",
+      "index": 0,
+      "path": "sourceReport.deliveryMode",
+      "value": 2
+    },
+    {
+      "kind": "snapshot",
+      "session": "main",
+      "index": 0,
+      "path": "sourceReport.deliveryCeilingDbTp",
+      "value": -2
+    },
+    {
+      "kind": "snapshot",
+      "session": "main",
+      "index": 1,
+      "path": "masters.0.report.deliveryMode",
+      "value": 2
+    },
+    {
+      "kind": "snapshot",
+      "session": "main",
+      "index": 1,
+      "path": "masters.0.landing",
+      "value": null
+    },
+    {
+      "kind": "snapshot",
+      "session": "main",
+      "index": 1,
+      "path": "masters.0.report.deliveryDithered",
+      "value": false
+    },
+    {
+      "kind": "snapshot",
+      "session": "main",
+      "index": 2,
+      "path": "masters.1.report.deliveryMode",
+      "value": 2
+    },
+    {
+      "kind": "snapshot",
+      "session": "main",
+      "index": 2,
+      "path": "masters.1.recipe.deliveryRateHz",
+      "value": 44100
+    },
+    {
+      "kind": "snapshot",
+      "session": "main",
+      "index": 2,
+      "path": "masters.1.report.deliveryDithered",
+      "value": true
+    },
+    {
+      "kind": "snapshot",
+      "session": "main",
+      "index": 3,
+      "path": "masters.2.report.deliveryMode",
+      "value": 0
+    },
+    {
+      "kind": "snapshot",
+      "session": "main",
+      "index": 3,
+      "path": "masters.2.report.targetLufs",
+      "value": -23
+    },
+    {
+      "kind": "snapshot",
+      "session": "main",
+      "index": 4,
+      "path": "masters.3.report.deliveryMode",
+      "value": 0
+    },
+    {
+      "kind": "snapshot",
+      "session": "main",
+      "index": 5,
+      "path": "sourceReport.deliveryMode",
+      "value": 0
+    },
+    {
+      "kind": "snapshot",
+      "session": "main",
+      "index": 5,
+      "path": "sourceReport.advice.0.FactId",
+      "value": 455
+    },
+    {
+      "kind": "snapshot",
+      "session": "main",
+      "index": 6,
+      "path": "masters.4.report.deliveryMode",
+      "value": 0
+    },
+    {
+      "kind": "snapshot",
+      "session": "main",
+      "index": 6,
+      "path": "masters.4.report.loudnessMode",
+      "value": 2
+    }
+  ],
+  "equal": [
+    [
+      {
+        "kind": "worked",
+        "session": "main",
+        "index": 0
+      },
+      {
+        "kind": "worked",
+        "session": "main",
+        "index": 2
+      }
+    ]
+  ],
+  "minEvents": 50,
+  "eventKinds": [
+    "phase",
+    "fact",
+    "done"
+  ],
+  "rejections": 0
+}

@@ -498,11 +498,22 @@ inter-sample overs with samples below full scale (`InterSampleOvers`, 451), full
 (`SampleOvers`, 452), a clean reading (448) and an unavailable reading (449, `clippingReason`). Real clipping asks for a
 new export with peaks at −6…−3 dBFS: gain cannot undo the distortion. A master asked to add loudness to that source is
 refused with `ClippedGain` (39, fact 139), unless the request explicitly sets `allowClippedGain=true` (C++ and wire).
-The second fact, where found, is `SourceAlreadyMastered` (453), with source loudness and true peak. ALL three strict
+The next fact, where found, is `SourceFormerLossy` (454): a spectral encoder wall asks for the original lossless mix.
+`SourceAlreadyMastered` (453), with source loudness and true peak, follows in `facts` or the appended `advice` list. ALL three strict
 tests must hold: LUFS > −12, true peak > −1.5 dBTP, PLR < 11 dB; `[observations.alreadyMastered]` owns the thresholds.
 `alreadyMastered` is null without the loudness/peak readings, otherwise a boolean; `loudnessLufs`, `truePeakDbTp` and
-`plrDb` carry the evidence. These findings do not change the chain or the target. A peaks-only delivery is not yet a
-session command; a page must not describe an ordinary master as that delivery.
+`plrDb` carry the evidence. For a specification target the normal chain still meets its requirement. For streaming and
+other targets no louder than the detected source, the default master is `deliveryMode`: `AsIs` within the configured
+ceiling (source-rate/depth float bits copied exactly, no gain, resample or dither), or `PeaksOnly` above it (plain gain
+down by the excess, no EQ/glue/saturation/limiter; format dither only). `[masteredDelivery]` owns −2 dBTP for a source
+louder than −14 LUFS and −1 dBTP otherwise. A louder target, including max mode, uses the normal chain and fact 455 asks
+for the original mix; `masterAnyway=true` also explicitly selects that chain. `MasterReport.deliveryMode`,
+`deliveryGainDb` and `deliveryDithered` tell the page which file it received. Peaks-only adds no loudness and therefore
+does not require `allowClippedGain`. The page concatenates `facts` and `advice` in that order (the original two-fact
+ABI row remains bounded). `AsIs` means the shell should hand over its original file: the core preserves decoded PCM
+bits and source rate/depth, but does not retain the original container bytes. Its worked format is `original`.
+Recognition thresholds remain unchanged, so the present −1.5 dBTP recognition test makes `AsIs` unreachable with the
+production −2 dBTP ceiling; policy and complete transfer fixtures hold that path independently of recognition.
 
 **The observations** (owner decision 3.13; `snapshot().view().observations`, `src/Observations.h`). What the
 measurements found in the file, as facts with numbers and never a verdict of taste, in the order of the analysis — the
@@ -664,6 +675,17 @@ exact allocation demand without allocating; the returned `ProjectText` owns exac
 An Empty or Loaded session refuses export (`NoSource` or `NotPlaced`): its unplaced zeros are not machine decisions. A
 placed project is exportable while what its devices read still ends: its machine layer is written.
 Files and browser storage belong to the shell. The writer reads no filesystem and the session reads no file itself.
+
+`exportWorked(masterId)` is the separate read-only account of a completed master. Its canonical TOML is generated from
+that master's captured recipe, report and render state, so later edits and later masters do not change it. It flattens default →
+machine → hand to each final device value, includes every device on or off, target and delivery format, and marks every
+field with the English origin comment `# default`, `# machine`, `# hand` or `# target`. `AsIs` and `PeaksOnly` state that
+there was no mastering chain, their gain and whether delivery dither ran. `exportWorkedBytes()` sizes without allocating;
+the C/Wasm facade exposes `fc_session_worked_report_size/copy` and returns `FC_SESSION_ERR_UNKNOWN_MASTER` for an id it
+does not keep. The `renderState` appendix records the exact winning topology and physical parameters (including an
+explicit ready caller's chain), while device tables name the flattened controls and actual on/off states. Derived
+physical parameters are marked `machine`, explicitly supplied ready parameters `hand`; the device controls retain
+individual provenance. `delivery.ceilingDbTp` is the effective delivery ceiling, separate from the target's request.
 
 ```toml
 defaults = "2026-10"
@@ -1675,6 +1697,8 @@ value restates it; any other value, from the C facade's `fc_master_config.delive
 ({bits} {rate}), emitted with the rejection, name the target's format. The resolved depth also sets the chain's
 dither bits, whether or not the dither stage is on. A target whose rate is not the source's (cd, cdDynamic, youtube
 on a 44.1 kHz file) takes the one extra source-rate pass for the crest comparison (decision 2.3).
+An `AsIs` delivery instead preserves the source rate and known 16/24-bit depth because it represents the original;
+its delivery mode tells a shell it may hand the original file over rather than encode the copied PCM.
 
 Ready preflight requires retained PCM and finite completed integrated loudness and true peak. It prices
 the chain, renderer, converter when needed, solver, search workspace, output PCM, compact rows, and
