@@ -17,7 +17,8 @@ assert.match(output, /ALL TESTS PASSED/);
 const native = {
     input: 'source=f58fa8f9570118b5 frames=480000 rate=48000',
     // facts moved with a landing held short and the master's damage — its lines, its own job and its line naming the
-    // windows graded (v0.14.0); plan did not.
+    // windows graded (v0.14.0); plan did not. The limiter budget's search aimed at its crossing (v0.17.0) is the max
+    // modes' alone: this manual master keeps the previous search, and these digests, to the bit.
     parity: 'plan=8043eff22be0264c facts=858432a3f917b4ad pcm=d73c61caca166b05 wav=5d07cbcd5294c4f0',
 };
 for (const [name, want] of Object.entries(native)) {

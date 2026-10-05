@@ -9,6 +9,7 @@
 #include <felitronics/session/Config.h>
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/analysis/ReferenceTruePeakMeter.h>
+#include <felitronics/core/DetMath.h>
 #include <felitronics_test.h>
 #include <algorithm>
 #include <bit>
@@ -823,9 +824,93 @@ void maxStopRules()
         "a max mode's stop, from the landing: over the budget is not held by it; the ceiling first");
 }
 
+// THE BUDGET'S SEARCH SETTLES IN FEW PASSES (v0.16.1): a max master's tight budget (clean 0.5 dB, dense 1.75 dB) found
+// by aiming at where the limiter's statistic crosses it — not by a step back of three times the excess and a climb back —
+// on a struck programme and on clicks over a bed; each still stopped by its budget, proven.
+void maxSearchPasses()
+{
+    std::string seen;
+    bool fewEnough = true;
+    for (const bool dense : { false, true })
+        for (const LoudnessMode mode : { LoudnessMode::MaxClean, LoudnessMode::MaxDense })
+        {
+            GradeRun r;
+            const auto pcm = dense ? clicks (48000, 3.0) : struck (48000, 3.0);
+            r.session = measuredSession (pcm, 48000);
+            if (! r.session) { fewEnough = false; continue; }
+            command::EditTarget edit { 2, {} };
+            edit.fields.loudnessMode = mode;
+            (void) act (r, edit);
+            (void) deliver (r, 3);
+            const auto& s = *r.session;
+            const auto& kept = s.masters().back();
+            const auto passes = kept.landing ? kept.landing->passes : 99u;
+            const auto stop = kept.report ? kept.report->maxStop : MaxStop::None;
+            seen += std::string (dense ? "clicks " : "struck ") + (mode == LoudnessMode::MaxClean ? "clean " : "dense ")
+                  + std::to_string (passes) + " (stop " + std::to_string (unsigned (stop)) + "); ";
+            fewEnough = fewEnough && passes <= 6u && (stop == MaxStop::Budget || stop == MaxStop::Floor);
+        }
+    std::printf ("        max search passes: %s\n", seen.c_str());
+    ok (fewEnough, "a max master's budget settles in six passes at most, proven: " + seen);
+}
+
+// THE GLUE AT MIX 1 IS v0.16.0's DOWNWARD GLUE, TO THE BIT (v0.17.0). The pinned digest is v0.16.0's master on cd of the
+// glue tests' mix (GlueSaturationTests.cpp's Mix: a 12 s, 48 kHz kick with a needle and a pad that swells at 6 s, on the
+// core's det::sin/det::exp2), untouched: the machine's 2.6 dB glue, written at [compressor] mix = 1. The same master now,
+// its glue's mix set to 1, must give it, natively and as wasm; at the default 0.4 it is another.
+std::uint64_t glueMasterDigest (bool fullMix)
+{
+    namespace det = felitronics::core::det;
+    constexpr double kPi = 3.141592653589793;
+    constexpr unsigned rate = 48000, frames = rate * 12;
+    std::vector<float> left (frames), right (frames);
+    for (unsigned i = 0; i < frames; ++i)
+    {
+        const double t = double (i) / rate, beat = double (i % (rate / 2)) / rate;
+        const double kick = 0.30 * det::exp2 (-beat / 0.04) * det::sin (2 * kPi * 60.0 * beat)
+                          + (beat < 0.004 ? 0.10 * (double ((i * 2654435761u) >> 16 & 0xffffu) / 32768.0 - 1.0) : 0.0);
+        const double swell = t < 6.0 ? 0.6 : 1.0;
+        const double pad = swell * (0.05 * det::sin (2 * kPi * 220.0 * t) + 0.04 * det::sin (2 * kPi * 331.0 * t));
+        left[i] = float (kick + pad);
+        right[i] = float (kick + swell * (0.05 * det::sin (2 * kPi * 220.0 * t + 0.4) + 0.04 * det::sin (2 * kPi * 331.0 * t + 1.1)));
+    }
+    const float* planes[] { left.data(), right.data() };
+    auto made = Session::create();
+    if (made.status != Status::Ok) return 0;
+    auto& s = *made.session;
+    if (s.apply (command::SetTarget { 1, "cd" }).rejection != Rejection::None
+        || s.apply (command::Load { 2, { planes, 2, frames, rate }, { "mix.wav", rate, true, 24 } }).rejection != Rejection::None) return 0;
+    for (unsigned i = 0; i < 4000000 && (s.measurementJob() || s.needlesJob()); ++i) (void) s.step (16);
+    GlueFields<Touched> all; all.mix = 1.0;
+    if (fullMix && s.apply (command::EditDevice { 3, all }).rejection != Rejection::None) return 0;
+    const auto view = s.snapshot();
+    if (view.view().plan.glue.state != GlueState::Active || s.apply (command::Master { 4 }).rejection != Rejection::None) return 0;
+    for (unsigned i = 0; i < 4000000 && s.job() != 0; ++i) (void) s.step (16);
+    const auto token = s.pendingMaster();
+    const auto shape = s.masterAudioShape (token);
+    std::vector<float> out (std::size_t (shape.frames * shape.channels));
+    if (out.empty() || s.copyMaster (token, out) != MasterTransferStatus::Ok) return 0;
+    std::uint64_t h = 0xCBF29CE484222325ull;
+    for (const float v : out)
+        for (unsigned k = 0; k < 4; ++k) h = (h ^ ((std::bit_cast<std::uint32_t> (v) >> (8u * k)) & 0xFFu)) * 0x100000001B3ull;
+    return h;
+}
+
+void glueAtFullMix()
+{
+    constexpr std::uint64_t kDownwardGlue = 0x80741a2cc3a4130aull;
+    const std::uint64_t full = glueMasterDigest (true), parallel = glueMasterDigest (false);
+    char digest[17];
+    std::snprintf (digest, sizeof digest, "%016llx", (unsigned long long) full);
+    ok (full == kDownwardGlue, std::string ("the glue at mix 1: v0.16.0's downward glue to the bit, ") + digest);
+    ok (parallel != 0 && parallel != kDownwardGlue, "the glue at its default 0.4: another master");
+}
+
 int main()
 {
     damageResampler();
+    glueAtFullMix();
+    maxSearchPasses();
     damageGrades();
     maxMasterLanding();
     maxFloor();

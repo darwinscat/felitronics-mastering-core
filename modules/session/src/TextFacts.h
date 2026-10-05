@@ -473,6 +473,7 @@ inline constexpr TermShape kTerms[] = {
     { Term::LoudnessModeMaxDense, "loudnessMode", "maxDense" },
     { Term::FieldTargetLoudnessMode, "field", "targetLoudnessMode" },
     { Term::ReasonMasterForgotten, "measurementReason", "masterForgotten" },
+    { Term::FieldGlueMix, "field", "glueMix" },
 };
 inline constexpr std::size_t kTermCount = sizeof (kTerms) / sizeof (kTerms[0]);
 
@@ -592,7 +593,7 @@ static_assert (tablesInOrder(), "kFacts and kTerms ascend by id");
     if (field == Term::FieldTargetTp) return Unit::DbTp;
     if (field == Term::FieldHpfFq || field == Term::FieldMonoBassFq) return Unit::Hz;
     if (field == Term::FieldMonoBassWidth || field == Term::FieldSaturationMix || field == Term::FieldHpfSlope
-        || field == Term::FieldTargetLoudnessMode)
+        || field == Term::FieldTargetLoudnessMode || field == Term::FieldGlueMix)
         return Unit::None;
     return Unit::Db;
 }
@@ -609,7 +610,7 @@ static_assert (tablesInOrder(), "kFacts and kTerms ascend by id");
     {
         case Device::Hpf: return at ({ Term {}, Term::FieldHpfFq, Term::FieldHpfSlope });
         case Device::MonoBass: return at ({ Term {}, Term::FieldMonoBassFq, Term::FieldMonoBassWidth });
-        case Device::Glue: return at ({ Term {}, Term::FieldGlueUpToDb });
+        case Device::Glue: return at ({ Term {}, Term::FieldGlueUpToDb, Term::FieldGlueMix });
         case Device::Saturation: return at ({ Term {}, Term::FieldSaturationDrive, Term::FieldSaturationMix, Term {},
                                               Term::FieldSaturationType });
         case Device::Tilt: return at ({ Term {}, Term::FieldTiltDb });

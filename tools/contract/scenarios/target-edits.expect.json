@@ -157,6 +157,7 @@
       "index": 1,
       "path": "project.devices.glue.hand",
       "value": {
+        "mix": null,
         "on": null,
         "upToDb": null
       },

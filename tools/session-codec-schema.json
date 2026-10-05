@@ -377,14 +377,16 @@
       "cpp": "GlueFields<Value>",
       "fields": {
         "on": "bool",
-        "upToDb": "double"
+        "upToDb": "double",
+        "mix": "double"
       }
     },
     "GlueFieldsTouched": {
       "cpp": "GlueFields<Touched>",
       "fields": {
         "on": "bool?",
-        "upToDb": "double?"
+        "upToDb": "double?",
+        "mix": "double?"
       }
     },
     "GlueFieldsLayers": {
@@ -1096,7 +1098,8 @@
         "releaseClamped": "bool",
         "tempoMeasured": "bool",
         "p95DetectorDb": "double?",
-        "tempoUnsureBpm": "double?"
+        "tempoUnsureBpm": "double?",
+        "mix": "double"
       }
     },
     "SaturationFinding": {
@@ -1526,7 +1529,8 @@
     },
     "EditDeviceGlueFields": {
       "on?": "boolean | null",
-      "upToDb?": "WireNumber | null"
+      "upToDb?": "WireNumber | null",
+      "mix?": "WireNumber | null"
     },
     "EditDeviceSaturationCommand": {
       "kind": "\"editDevice\"",
@@ -1623,7 +1627,8 @@
     },
     "RevertEditsGlueFields": {
       "on?": "boolean",
-      "upToDb?": "boolean"
+      "upToDb?": "boolean",
+      "mix?": "boolean"
     },
     "RevertEditsSaturationCommand": {
       "kind": "\"revertEdits\"",

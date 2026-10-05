@@ -259,7 +259,7 @@ a device's fields are written once, as a template over the form a field takes, a
 field a value), a person's layer (a field a value only where touched — a touched field is the person's even where its
 number is the machine's) and a revert's mask (a field yes or no). Commands name fields through typed structs: an edit is the
 device's struct, a variant whose alternative is the device. TOML keys are bound at the serialization boundary. The devices are the high-pass, mono bass, the glue (its
-knob, "up to N dB", as the config writes every glue number),
+knob, "up to N dB", as the config writes every glue number, and its mix, the compressed share),
 saturation, tilt, the limiter's needles, dither, low and the EQ bands. Tilt and low are separate devices on every target.
 The machine enables low only for a target with `lowDb` (today `lp`, +0.5 dB); otherwise low starts off at 0 dB.
 The EQ bands (device 8, `[bands]`) are five static bands of the EQ stage — body (bell, 160 Hz), mud (bell, 300 Hz, a cut
@@ -561,6 +561,14 @@ chain, and the search, moving only the gain before the limiter, recalibrates nei
 peak are read plus that gain, so one mix exported louder or quieter gets the same compressor and the same shaper (the
 true peak to the bit for a level that is a power of two; the P95 within the programme report's own 0.1 LU bin, since
 that report reads its percentiles off bins of the file's level).
+THE GLUE IS A PARALLEL COMPRESSOR (owner, 05.10; v0.17.0): its `mix` is the compressed share of its output, the dry
+signal under it — `[glue] mix` 0.4 wherever the glue is on, the machine's cd glue and a person's tick alike, so a
+glue of N dB takes less than N dB off the loud places of the master. A person moves it 0…1 (`[glue] mixDomain`); the
+page's slider runs 0…1 by 0.2 (0, 20, … 100 %; `mixRange`, `mixStep` — the owner: a finer step is placebo), the core
+takes any share in the domain as written, the project keeps it (`[glue] mix.hand`), a change of target resets it. At 1 the
+glue is the downward compressor it was before, to the bit (`felitronics_session_glue_saturation_tests` pins v0.16.0's
+cd master); `[compressor] mix`, which wrote that 1, is no longer read (kept until its removal is decided). The knob below, and every number of it, is the compressor's
+own: the mix scales none of them, and the glue's trace (`GlueGr`) is the compressor's detector, before the mix.
 The glue's knob, "up to N dB", is the loss on the loud places: the travel `g` at which the core's own static curve
 (`dynamics::GainComputer`, soft knee included) takes exactly N dB at the loud places (the P95 and the calibration over it, below), found on that curve by bisection — one
 smooth formula over 0…6 dB (`[glue]`: the ratio by depth, the threshold offset, knee and attack linear, the release's
@@ -1379,6 +1387,7 @@ a file's machine layer is retained, and any defaults label but the current one i
 | HPF slope | Multiples of 6, 6 through 96 dB/oct | Device, orders 1–16 |
 | Mono-bass frequency / width | 60–300 Hz / 0–1 | Product / device |
 | Glue | 0–6 dB | Product |
+| Glue mix | 0–1 | Product |
 | Saturation drive / mix | 0–12 dB / 0–1 | Product / device |
 | Saturation type (by hand) | tanh, tube, transistor, transformer, tape | Product |
 | Tilt / low | −6–6 dB | Product |

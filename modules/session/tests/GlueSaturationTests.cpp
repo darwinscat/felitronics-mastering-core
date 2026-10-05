@@ -564,7 +564,7 @@ void theSaturation()
     const auto glue = detail::glueFinding (cd.in, cd.machine());
     ok (! full.bypassCompressor && full.bypassClipper && full.compressor.detector == dynamics::Detector::Rms && full.compressor.link == dynamics::LinkMode::Max
         && full.compressor.mode == dynamics::Mode::DownCompress && same (full.compressor.rmsWindowMs, 5.0) && same (full.compressor.rangeDb, 60.0)
-        && same (full.compressor.makeupDb, 0.0) && ! full.compressor.autoMakeup && same (full.compressor.lookaheadMs, 0.0) && same (full.compressorMix, 1.0)
+        && same (full.compressor.makeupDb, 0.0) && ! full.compressor.autoMakeup && same (full.compressor.lookaheadMs, 0.0) && same (full.compressorMix, 0.4) && same (glue.mix, 0.4)
         && same (full.compressor.thresholdDb, *glue.thresholdDb) && same (full.compressor.ratio, *glue.ratio) && same (full.compressor.kneeDb, *glue.kneeDb)
         && same (full.compressor.attackMs, *glue.attackMs) && same (full.compressor.releaseMs, *glue.releaseMs)
         && sameF (full.clipper.autoComp, 0.0f) && sameF (full.clipper.dcBlockHz, 0.0f),
@@ -1010,6 +1010,64 @@ void outStatesItsNumbers()
         "a glue in the chain whose tempo is pending still waits for it: no fallback release");
 }
 
+// THE GLUE'S MIX (v0.17.0): the glue is a parallel compressor, 40 % of the compressed signal under 60 % of the dry one,
+// wherever it is on — the machine's cd glue and a person's tick alike. A person moves the share 0 … 1 (the page's slider
+// by 0.2, the core takes any share in its domain); the project keeps it.
+void theMix()
+{
+    felitronics::test::group ("the glue's mix: 40 % by default wherever the glue is on; 0 … 1 by hand, kept");
+    const auto r = detail::rules();
+    const auto engine = config::Config::load().config.engine;
+    ok (same (engine.glue.mix, 0.4) && same (engine.glue.mixStep, 0.2) && same (engine.glue.mixRange.min, 0.0) && same (engine.glue.mixRange.max, 1.0)
+        && same (engine.glue.mixDomain.min, 0.0) && same (engine.glue.mixDomain.max, 1.0), "[glue] mix 0.4, the slider 0 … 1 by 0.2, the domain 0 … 1");
+    bool machine = true;
+    for (std::uint16_t row = 0; row < r.rows; ++row)
+    {
+        const auto target = r.row (row);
+        const Faked f (target.key, -14.0, -1.0, -10.0, Tempo::High, 96.0);
+        Devices d; DevicePlans plans; detail::PlanFindings found;
+        detail::propose (f.in, d, plans, found);
+        mastering::MasteringChainParams params;
+        params.compressorMix = 0.25;
+        detail::writeDynamics (f.in, d, params);
+        const auto glue = detail::glueFinding (f.in, d);
+        const bool cd = target.key == "cd";
+        machine = machine && same (d.glue.machine.mix, 0.4) && same (glue.mix, 0.4) && (glue.state == GlueState::Active) == cd
+            && params.bypassCompressor == ! cd && same (params.compressorMix, cd ? 0.4 : 1.0);
+    }
+    ok (machine, "every target's machine sets the mix at 0.4 — cd's glue, the one the auto plan turns on, compresses at 40 %, and a "
+        "glue out of the chain leaves the stage at 1, as before");
+
+    const Mix mix;
+    {
+        auto sp = measured (mix, "allStreaming"); auto& s = *sp;
+        (void) s.apply (command::SetManual { 3, true });
+        GlueFields<Touched> tick; tick.on = true;
+        ok (s.apply (command::EditDevice { 4, tick }).rejection == Rejection::None && s.snapshot().view().plan.glue.state == GlueState::Active
+            && same (s.snapshot().view().plan.glue.mix, 0.4) && ! s.project().devices.glue.hand.mix, "a tick in the manual mode: the glue in at 40 %, the project's mix untouched");
+        bool taken = true;
+        for (const double n : { 0.6, 0.0, 1.0, 0.5, 0.2 })
+        {
+            GlueFields<Touched> knob; knob.mix = n;
+            taken = taken && s.apply (command::EditDevice { 5, knob }).rejection == Rejection::None && same (*s.project().devices.glue.hand.mix, n)
+                && same (s.snapshot().view().plan.glue.mix, n);
+        }
+        ok (taken, "0.6, 0, 1, 0.5 and 0.2 are each taken as written, and sound so");
+        GlueFields<Touched> over; over.mix = 1.01;
+        GlueFields<Touched> under; under.mix = -0.01;
+        ok (s.apply (command::EditDevice { 6, over }).rejection == Rejection::OutOfDomain && s.apply (command::EditDevice { 7, under }).rejection == Rejection::OutOfDomain
+            && same (*s.project().devices.glue.hand.mix, 0.2), "1.01 and −0.01 are refused, the value kept");
+        const auto saved = s.exportProject();
+        auto copy = measured (mix, "allStreaming");
+        ok (copy->apply (command::ImportProject { 8, saved.view() }).rejection == Rejection::None && copy->project().devices.glue.hand.mix
+            && same (*copy->project().devices.glue.hand.mix, 0.2) && same (copy->snapshot().view().plan.glue.mix, 0.2), "a saved project keeps the mix, and sounds at it");
+        ok (s.apply (command::SetTarget { 9, "cd" }).rejection == Rejection::None && ! s.project().devices.glue.hand.mix
+            && same (s.snapshot().view().plan.glue.mix, 0.4), "a change of target resets it: 40 % again");
+    }
+    // At mix 1 the glue is v0.16.0's downward glue to the bit: felitronics_session_master_job_tests pins it, natively and
+    // as wasm.
+}
+
 int main()
 {
     std::printf ("felitronics::session — glue and saturation from the normalised input\n");
@@ -1026,5 +1084,6 @@ int main()
     theType();
     outStatesItsNumbers();
     limiterAndDitherAsTheChainGetsThem();
+    theMix();
     return felitronics::test::report();
 }

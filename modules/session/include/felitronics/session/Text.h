@@ -428,6 +428,8 @@ enum class Term : std::uint16_t
     FieldTargetLoudnessMode,
     // Why a master's damage grade ended: its master is no longer kept (forgotten, or dropped with its source).
     ReasonMasterForgotten,
+    // The glue's mix (v0.17.0) as the field a refusal names: its third field, in the order Project.h writes them.
+    FieldGlueMix,
 
 };
 
