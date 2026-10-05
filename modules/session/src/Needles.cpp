@@ -121,6 +121,9 @@ void Session::requestNeedles() noexcept
             // One preparation, ceil(frames / chunk) reads and one finish. Load already bounds frames.
             const auto chunks = (source_.frames + Excursions::kChunk - 1u) / Excursions::kChunk;
             needlesProgress_ = { PhaseName::Analyzers, 0, config::Config::versions().all, 0, 0, 0, std::uint32_t (chunks + 2u), std::nullopt };
+            auto& current = needlesProgress_.analyzers.emplace();
+            current.count = 1;
+            current.items[0] = { Analyzer::Excursions, 0.0 };
         }
     }
     // No event here: a transition in the main pump already uses its three-event allowance.
@@ -179,6 +182,7 @@ void Session::stepNeedles() noexcept
     }
     ++needlesProgress_.completedUnits;
     needlesProgress_.fraction = double (needlesProgress_.completedUnits) / double (needlesProgress_.totalUnits);
+    needlesProgress_.analyzers->items[0].fraction = needlesProgress_.fraction;
     Notification event; event.jobId = needlesJob_; event.kind = EventKind::Phase; event.payload.phase = needlesProgress_;
     emit (event);
     if (needlesProgress_.completedUnits == needlesProgress_.totalUnits)
