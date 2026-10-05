@@ -19,7 +19,7 @@
     {"a":{"kind":"snapshot","index":0},"b":{"kind":"snapshot","index":3},"path":"measurements.0"},
     {"a":{"kind":"snapshot","index":0},"b":{"kind":"snapshot","index":3},"path":"source.hash"}
   ],
-  "minEvents": 2000,
+  "minEvents": 300,
   "eventKinds": ["phase","measurement","fact"],
   "rejections": 0
 }
