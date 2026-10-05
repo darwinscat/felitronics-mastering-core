@@ -45,6 +45,7 @@ struct SourceMeasurements
     text::Fact warnings[8] {};
     unsigned warningCount = 0, warningRead = 0;
     bool initialWarnings = false, firstReady = false, firstPublished = false, finished = false;
+    bool lowEndsReady = false;
     analysis::StereoSums stereo {};
     std::uint64_t stereoFinite = 0, stereoNonFinite = 0;
     bool dualMono = true;

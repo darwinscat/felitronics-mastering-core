@@ -15,7 +15,7 @@ template<class T, class Prepare> bool start (std::unique_ptr<T>& owner, Prepare&
     owner.reset(); return false;
 }
 }
-bool MeasurementWorkspace::prepare (Analyzer analyzer, const Pcm& pcm, const MeasurementPlan& plan) noexcept
+bool MeasurementWorkspace::prepare (Analyzer analyzer, const Pcm& pcm, const MeasurementPlan& plan, bool spectrum) noexcept
 {
     const auto index = std::size_t (analyzer);
     if (index >= kAnalyzers || ! plan.analyzers[index].available) return false;
@@ -32,9 +32,12 @@ bool MeasurementWorkspace::prepare (Analyzer analyzer, const Pcm& pcm, const Mea
         case Analyzer::Loudness: return start (loudness, [&] (auto& a) { return a.prepare (sampleRate, channelCount, p.programme.maxDurationSec); });
         case Analyzer::Clipping: return start (clipping, [&] (auto& a) { a.setParams ({ p.clipRuns }); return a.prepare (sampleRate, p.maxBlock, channelCount); });
         case Analyzer::Programme: return start (programme, [&] (auto& a) { a.setParams (p.programme); return a.prepare (sampleRate, p.maxBlock, channelCount); });
-        case Analyzer::LowEnd: return start (lowEnd, [&] (auto& a) { a.setParams (p.lowEnd); return a.prepare (sampleRate, p.maxBlock, channelCount); });
-        case Analyzer::LowEnd150: return start (lowEnd150, [&] (auto& a) { a.setParams (p.lowEnd150); return a.prepare (sampleRate, p.maxBlock, channelCount); });
-        case Analyzer::InfraLow: return start (infraLow, [&] (auto& a) { a.setParams (p.infraLow); return a.prepare (sampleRate, p.maxBlock, channelCount); });
+        case Analyzer::LowEnd: return start (lowEnd, [&] (auto& a) { a.setParams (p.lowEnd); return spectrum
+            ? a.prepare (sampleRate, p.maxBlock, channelCount) : a.prepareWithoutSpectrum (sampleRate, p.maxBlock, channelCount); });
+        case Analyzer::LowEnd150: return start (lowEnd150, [&] (auto& a) { a.setParams (p.lowEnd150); return spectrum
+            ? a.prepare (sampleRate, p.maxBlock, channelCount) : a.prepareWithoutSpectrum (sampleRate, p.maxBlock, channelCount); });
+        case Analyzer::InfraLow: return start (infraLow, [&] (auto& a) { a.setParams (p.infraLow); return spectrum
+            ? a.prepare (sampleRate, p.maxBlock, channelCount) : a.prepareWithoutSpectrum (sampleRate, p.maxBlock, channelCount); });
         case Analyzer::Forensics: return start (forensics, [&] (auto& a) { a.setParams (p.forensics); return a.prepare (sampleRate, p.maxBlock, channelCount); });
         case Analyzer::Stereo: return start (stereo, [&] (auto& a) { return a.prepare (channelCount, pcm.frames, p.columns); });
         case Analyzer::Waveform: return start (waveform, [&] (auto& a) { return a.prepare (pcm.sampleRate, pcm.channelCount, pcm.frames); });

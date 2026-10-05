@@ -826,8 +826,10 @@ estimateFromSeconds = 1
 [progress.analysis.weights]
 loudness = 449.51
 report = 895.895
-lowEnd120 = 2410.615
-lowEnd150 = 2410.615
+# The three crossover reports share one 5:22 FFT walk (1 712 ms total); one third is assigned to each result so
+# publication of the already-finished companions does not make the bar jump.
+lowEnd120 = 570.597
+lowEnd150 = 570.597
 forensics = 927.09
 stereo = 108.662
 lowEndSweep = 0.038

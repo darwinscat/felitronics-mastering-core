@@ -27,7 +27,8 @@ struct MeasurementWorkspace
     std::unique_ptr<analysis::BandCrest> crest;
     std::unique_ptr<analysis::HumDetector> hum;
     std::unique_ptr<tempo::TempoDetector> tempo;
-    [[nodiscard]] bool prepare (Analyzer analyzer, const Pcm& pcm, const MeasurementPlan& plan) noexcept;
+    [[nodiscard]] bool prepare (Analyzer analyzer, const Pcm& pcm, const MeasurementPlan& plan,
+                                bool spectrum = true) noexcept;
     void release (Analyzer analyzer) noexcept;
 };
 }

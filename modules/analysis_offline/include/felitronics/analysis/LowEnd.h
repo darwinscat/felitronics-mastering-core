@@ -417,6 +417,16 @@ public:
     void setTrace (TraceFn fn, void* user) noexcept { trace_ = fn; traceUser_ = user; }
 
     [[nodiscard]] bool prepare (double sampleRate, int /*maxBlock: nothing is sized by it*/, int maxChannels) noexcept
+    { return prepareImpl (sampleRate, maxChannels, true); }
+
+    // A companion in a shared spectral walk owns only its crossover/time-domain state and published rows. The primary
+    // supplies the identical raw-spectrum result in finishWithSpectrum(), so allocating another FFT ring and scratch
+    // here would save CPU but retain almost all of the old memory cost.
+    [[nodiscard]] bool prepareWithoutSpectrum (double sampleRate, int /*maxBlock*/, int maxChannels) noexcept
+    { return prepareImpl (sampleRate, maxChannels, false); }
+
+private:
+    [[nodiscard]] bool prepareImpl (double sampleRate, int maxChannels, bool spectrum) noexcept
     {
         // Law 11b: disarm, validate, write — AND DISARM MEANS THE REPORT TOO, the way SourceForensics
         // already spells it. A refused prepare() after a finished measurement used to leave isFinished()
@@ -424,19 +434,23 @@ public:
         // arguments kept certifying the programme before it. Found by the release round; the work that exposed
         // ClipDetector had already named the same shape a defect.
         prepared_ = false;
+        spectrumPrepared_ = false;
         finished_ = false;
         channels_ = 0;
         const Storage st = storageFor (sampleRate, maxChannels, params_);
         if (! st.ok) return false;
 
-        frames_.setParams (framesParams (params_));
-        if (! frames_.prepare (sampleRate, 0, kAxes)) return false;
+        if (spectrum)
+        {
+            frames_.setParams (framesParams (params_));
+            if (! frames_.prepare (sampleRate, 0, kAxes)) return false;
+        }
 
         sampleRate_   = sampleRate;
         channels_     = maxChannels;
         blockSamples_ = st.blockSamples;
         bandCount_    = st.bandCount;
-        binHz_        = frames_.binHz();
+        binHz_        = sampleRate / double ((std::uint64_t) 1u << params_.fftOrder);
         midiLo_       = 0;
         {
             int lo = 0, hi = 0;
@@ -446,14 +460,14 @@ public:
 
         blocks_.resizeForOverwrite (st.blockRecords);
         bands_.assign (st.bands, LowEndBand {});
-        weights_.assign (st.binWeights, BinWeight {});
-        traceMid_.assign (st.bands, 0.0);
-        traceSide_.assign (st.bands, 0.0);
-        sort_.assign (st.sortDoubles, 0.0);
-        bandCountBins_.assign (st.bandBinCounts, 0);
-        accMid_.assign (st.bands, 0.0);
-        accSide_.assign (st.bands, 0.0);
-        accMoment_.assign (st.bands, 0.0);
+        weights_.assign (spectrum ? st.binWeights : 0u, BinWeight {});
+        traceMid_.assign (spectrum ? st.bands : 0u, 0.0);
+        traceSide_.assign (spectrum ? st.bands : 0u, 0.0);
+        sort_.assign (spectrum ? st.sortDoubles : 0u, 0.0);
+        bandCountBins_.assign (spectrum ? st.bandBinCounts : 0u, 0);
+        accMid_.assign (spectrum ? st.bands : 0u, 0.0);
+        accSide_.assign (spectrum ? st.bands : 0u, 0.0);
+        accMoment_.assign (spectrum ? st.bands : 0u, 0.0);
         dutyCount_.assign (st.dutyCounts, 0);
         dutyRatio_.assign (st.dutyRatios, 0.0);
         // The threshold becomes a linear ratio HERE and never again: a decision taken per frame per band
@@ -461,15 +475,18 @@ public:
         dutyShare_  = core::det::pow10 (-params_.dutyThresholdDb / 10.0);
         dutyFrames_ = 0;
 
-        if (! buildBands()) return false;      // law 11b: prepared_ is still false here
+        if (! buildBands (spectrum)) return false;      // law 11b: prepared_ is still false here
 
         xover_.prepare (sampleRate, kAxes);                           // two axes: Mid and Side
         xover_.setFrequency ((float) params_.crossoverHz);
 
         prepared_ = true;
+        spectrumPrepared_ = spectrum;
         reset();
         return true;
     }
+
+public:
 
     void reset() noexcept
     {
@@ -494,6 +511,7 @@ public:
         peakSide_ = -1.0; peakSideBlock_ = -1;
         peakSideAmp_ = 0.0; peakSideAmpAt_ = -1;
         usedFrames_ = 0; holedFrames_ = 0;
+        sharedTail_ = -1;
         accFrameEnergy_ = 0.0; frameEnergy_ = 0.0; bandRangeShare_ = 0.0; frameTotal_ = 0.0;
         for (std::size_t i = 0; i < accMid_.size(); ++i) { accMid_[i] = 0.0; accSide_[i] = 0.0; accMoment_[i] = 0.0; }
         for (auto& b : bands_) { b.midEnergy = 0.0; b.sideEnergy = 0.0; b.energy = 0.0; b.density = 0.0; b.centroidHz = 0.0; b.centsOffset = 0.0; }
@@ -513,10 +531,19 @@ public:
     // A legal call longer than any maxBlock is consumed WHOLE (nothing here is sized by a block length);
     // a refused call consumes nothing.
     [[nodiscard]] bool process (const float* const* in, int numChannels, int n) noexcept
+    { return processImpl (in, numChannels, n, true); }
+
+    // A companion with identical spectral geometry can own the one FFT walk. This instance still performs its complete
+    // crossover/time-domain measurement; finishWithSpectrum() supplies the shared raw Mid/Side spectrum afterwards.
+    [[nodiscard]] bool processWithoutSpectrum (const float* const* in, int numChannels, int n) noexcept
+    { return processImpl (in, numChannels, n, false); }
+
+private:
+    [[nodiscard]] bool processImpl (const float* const* in, int numChannels, int n, bool spectrum) noexcept
     {
         if (numChannels < 0 || n < 0) return false;
         if (numChannels > 0 && in == nullptr) return false;            // malformed, before anything else
-        if (! prepared_ || finished_) return false;
+        if (! prepared_ || finished_ || (spectrum && ! spectrumPrepared_)) return false;
         if (numChannels > channels_) return false;
         if (n == 0) return true;
 
@@ -586,8 +613,11 @@ public:
 
             // --- the spectral axes see the RAW, UNFILTERED Mid and Side. The note range reaches 300 Hz,
             // 1.3 octaves above the crossover, so filtering here would erase most of it. ---
-            frames_.push (0, m, ! hole);
-            frames_.push (1, s, ! hole);
+            if (spectrum)
+            {
+                frames_.push (0, m, ! hole);
+                frames_.push (1, s, ! hole);
+            }
 
             // --- maintenance on the AUDIO clock, after the sample is complete. Never at the end of a
             // process() call: that boundary is the caller's, not the audio's (StateGrid.h:30). ---
@@ -598,23 +628,55 @@ public:
             // A frame closes on the sample that completes it; the block closes on the sample that ends
             // it. When both land on the same sample the FRAME is emitted first — fixed, so a trace is
             // orderable.
-            if (frames_.tick()) consumeFrame();
+            if (spectrum && frames_.tick()) consumeFrame();
             if (totalSamples_ == nextBlockEnd_) { closeBlock (blockSamples_); nextBlockEnd_ += blockSamples_; }
         }
         return true;
     }
+
+public:
 
     // End of stream. Closes the one partial block at [floor(T/B)*B, T) and normalises it by its ACTUAL
     // length; emits NO spectral frame (the tail contract) and publishes tailUncoveredSamples() instead;
     // reduces the band table once and freezes. Idempotent.
     [[nodiscard]] bool finish() noexcept
     {
-        if (! prepared_) return false;
+        if (! prepared_ || ! spectrumPrepared_) return false;
         if (finished_) return true;                                    // idempotent, and not an error
         const std::int64_t openStart = blockIndex_ * blockSamples_;
         if (totalSamples_ > openStart) closeBlock (totalSamples_ - openStart);   // never a zero-length block
         frames_.finish();
         reduceBands();
+        widthReason_ = finiteSamples_ == 0 ? LowEndReason::NoFiniteSamples
+                     : (sum (0) + sum (1)) > 0.0 ? LowEndReason::Ok
+                     : LowEndReason::NoEnergy;
+        finished_ = true;
+        return true;
+    }
+
+    [[nodiscard]] bool finishWithSpectrum (const LowEnd& source) noexcept
+    {
+        if (! prepared_ || spectrumPrepared_ || finished_ || ! source.finished_ || ! source.spectrumPrepared_ || this == &source
+            || channels_ != source.channels_ || ! core::exactlyEqual (sampleRate_, source.sampleRate_)
+            || bandCount_ != source.bandCount_ || windowSamples() != source.windowSamples()
+            || hopSamples() != source.hopSamples() || ! core::exactlyEqual (binHz_, source.binHz_)) return false;
+        for (int b = 0; b < bandCount_; ++b)
+            if (bands_[(std::size_t) b].midi != source.bands_[(std::size_t) b].midi
+                || ! core::exactlyEqual (bands_[(std::size_t) b].centreHz, source.bands_[(std::size_t) b].centreHz)
+                || ! core::exactlyEqual (bands_[(std::size_t) b].widthHz, source.bands_[(std::size_t) b].widthHz)) return false;
+        const std::int64_t openStart = blockIndex_ * blockSamples_;
+        if (totalSamples_ > openStart) closeBlock (totalSamples_ - openStart);
+        for (int b = 0; b < bandCount_; ++b) bands_[(std::size_t) b] = source.bands_[(std::size_t) b];
+        std::copy (source.dutyCount_.begin(), source.dutyCount_.end(), dutyCount_.begin());
+        std::copy (source.dutyRatio_.begin(), source.dutyRatio_.end(), dutyRatio_.begin());
+        dutyFrames_ = source.dutyFrames_;
+        usedFrames_ = source.usedFrames_; holedFrames_ = source.holedFrames_;
+        accFrameEnergy_ = source.accFrameEnergy_; frameEnergy_ = source.frameEnergy_;
+        bandRangeShare_ = source.bandRangeShare_; frameTotal_ = source.frameTotal_;
+        peakBand_ = source.peakBand_; peakDensityBand_ = source.peakDensityBand_; secondBand_ = source.secondBand_;
+        backgroundDensity_ = source.backgroundDensity_; peakShare_ = source.peakShare_;
+        totalBandEnergy_ = source.totalBandEnergy_; noteReason_ = source.noteReason_;
+        sharedTail_ = source.tailUncoveredSamples();
         widthReason_ = finiteSamples_ == 0 ? LowEndReason::NoFiniteSamples
                      : (sum (0) + sum (1)) > 0.0 ? LowEndReason::Ok
                      : LowEndReason::NoEnergy;
@@ -993,9 +1055,15 @@ public:
 
     std::int64_t usedFrames()  const noexcept { return usedFrames_; }
     std::int64_t holedFrames() const noexcept { return holedFrames_; }
-    std::int64_t tailUncoveredSamples() const noexcept { return frames_.tailUncoveredSamples(); }
-    std::int64_t windowSamples() const noexcept { return frames_.windowSamples(); }
-    std::int64_t hopSamples()    const noexcept { return frames_.hopSamples(); }
+    std::int64_t tailUncoveredSamples() const noexcept
+    { return sharedTail_ >= 0 ? sharedTail_ : frames_.tailUncoveredSamples(); }
+    std::int64_t windowSamples() const noexcept
+    { return spectrumPrepared_ ? frames_.windowSamples() : (std::int64_t (1) << params_.fftOrder); }
+    std::int64_t hopSamples() const noexcept
+    {
+        const auto window = std::int64_t (1) << params_.fftOrder;
+        return spectrumPrepared_ ? frames_.hopSamples() : params_.hop == 0 ? window / 2 : params_.hop;
+    }
     double binHz() const noexcept { return binHz_; }
 
     // The 12 pitch classes and the octave, so a caller prints "E2" without this header owning a string.
@@ -1066,9 +1134,9 @@ private:
         first = a; count = b - a + 1;
     }
 
-    [[nodiscard]] bool buildBands() noexcept
+    [[nodiscard]] bool buildBands (bool spectrum) noexcept
     {
-        const int bins = frames_.bins();
+        const int bins = int (((std::uint64_t) 1u << params_.fftOrder) / 2u + 1u);
         std::size_t at = 0;
         for (int b = 0; b < bandCount_; ++b)
         {
@@ -1077,31 +1145,34 @@ private:
             const double lo = c * kSemiDown, hi = c * kSemiUp;
             int first = 0, count = 0;
             bandBins (c, binHz_, bins, first, count);
-            bandCountBins_[(std::size_t) b] = count;
-            if (at + (std::size_t) count > weights_.size()) return false;   // storageFor() and this must agree
-            for (int j = 0; j < count; ++j)
+            if (spectrum)
             {
-                const int k = first + j;
-                double cellLo = ((double) k - 0.5) * binHz_;
-                double cellHi = ((double) k + 0.5) * binHz_;
-                if (cellLo < 0.0) cellLo = 0.0;                        // bin 0 is a half cell
-                const double nyq = 0.5 * sampleRate_;
-                if (cellHi > nyq) cellHi = nyq;                        // and so is Nyquist
-                const double ovLo = std::max (cellLo, lo), ovHi = std::min (cellHi, hi);
-                const double cell = cellHi - cellLo;
-                const double ov = ovHi > ovLo ? ovHi - ovLo : 0.0;
-                // FOLD: a real tone's power splits between bin k and bin N-k, and only k is exposed, so
-                // an interior bin counts twice. DC and Nyquist have no mirror and count once. With this
-                // a band holding a full-scale sine of amplitude A reads A^2/2 — a true mean square.
-                const double fold = (k == 0 || k == bins - 1) ? 1.0 : 2.0;
-                BinWeight& w = weights_[at + (std::size_t) j];
-                w.bin = k;
-                w.weight = cell > 0.0 ? fold * ov / cell : 0.0;
-                // the FIRST MOMENT of a partial cell sits at the midpoint of the OVERLAP, not at the
-                // bin's centre — the correction that keeps a centroid inside its own band
-                w.momentHz = ov > 0.0 ? 0.5 * (ovLo + ovHi) : 0.0;
+                bandCountBins_[(std::size_t) b] = count;
+                if (at + (std::size_t) count > weights_.size()) return false;   // storageFor() and this must agree
+                for (int j = 0; j < count; ++j)
+                {
+                    const int k = first + j;
+                    double cellLo = ((double) k - 0.5) * binHz_;
+                    double cellHi = ((double) k + 0.5) * binHz_;
+                    if (cellLo < 0.0) cellLo = 0.0;                    // bin 0 is a half cell
+                    const double nyq = 0.5 * sampleRate_;
+                    if (cellHi > nyq) cellHi = nyq;                    // and so is Nyquist
+                    const double ovLo = std::max (cellLo, lo), ovHi = std::min (cellHi, hi);
+                    const double cell = cellHi - cellLo;
+                    const double ov = ovHi > ovLo ? ovHi - ovLo : 0.0;
+                    // FOLD: a real tone's power splits between bin k and bin N-k, and only k is exposed, so
+                    // an interior bin counts twice. DC and Nyquist have no mirror and count once. With this
+                    // a band holding a full-scale sine of amplitude A reads A^2/2 — a true mean square.
+                    const double fold = (k == 0 || k == bins - 1) ? 1.0 : 2.0;
+                    BinWeight& w = weights_[at + (std::size_t) j];
+                    w.bin = k;
+                    w.weight = cell > 0.0 ? fold * ov / cell : 0.0;
+                    // the FIRST MOMENT of a partial cell sits at the midpoint of the OVERLAP, not at the
+                    // bin's centre — the correction that keeps a centroid inside its own band
+                    w.momentHz = ov > 0.0 ? 0.5 * (ovLo + ovHi) : 0.0;
+                }
+                at += (std::size_t) count;
             }
-            at += (std::size_t) count;
 
             LowEndBand& row = bands_[(std::size_t) b];
             row.midi = midi;
@@ -1109,7 +1180,7 @@ private:
             row.widthHz = hi - lo;
             row.binsPerBand = binHz_ > 0.0 ? (hi - lo) / binHz_ : 0.0;
         }
-        return at == weights_.size();
+        return ! spectrum || at == weights_.size();
     }
 
     // Neumaier: two constant scalars per quantity, which law 7 permits explicitly and which
@@ -1355,7 +1426,7 @@ private:
     }
 
     LowEndParams params_ {};
-    bool prepared_ = false, finished_ = false;
+    bool prepared_ = false, spectrumPrepared_ = false, finished_ = false;
     double sampleRate_ = 48000.0, binHz_ = 0.0;
     int channels_ = 0, bandCount_ = 0, midiLo_ = 0;
     std::int64_t blockSamples_ = 0;
@@ -1406,6 +1477,7 @@ private:
     storage::Buffer<double>      dutyRatio_;    // …and the sum of its share of the frame max over those
     double                   dutyShare_ = 0.0;   // the threshold as a linear ratio, made once
     std::int64_t             dutyFrames_ = 0;    // frames that cleared the note floor and were counted
+    std::int64_t             sharedTail_ = -1;   // set only when a compatible companion supplied the spectral walk
 };
 
 } // namespace felitronics::analysis
