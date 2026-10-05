@@ -9,8 +9,9 @@
   «Смешивание» / "Mix"), and parsed, snapped and travelled by the kit (`Kit::parse`, `travel`: 0…1 by 0.2).
 - **At 100 % the glue is the downward compressor it was**, to the bit: `felitronics_session_glue_saturation_tests`
   pins v0.16.0's cd master of its test mix and gets it back with the mix set to 1. `[compressor] mix`, the 1 the glue
-  was written at, is gone from `engine.toml` and `config::Compressor`.
+  was written at, is no longer read; it stays in `engine.toml` and `config::Compressor` until its removal is decided.
 - **What moves**: every master whose glue engages — cd's (the machine glues there) and any master where a person
   ticks the glue — now compresses 40 % in parallel, so the glue takes less off the loud places; no other master
-  moves. The config's sound version moves (the config golden and the event pins are restated in place).
+  moves: a glue out of the chain leaves the stage at 1, as before (a blend of the input with itself at another share
+  would round it). The config's sound version moves (the config golden and the event pins are restated in place).
 - **ABI 12** (`FC_SESSION_ABI_VERSION`): the glue's mix in the codec and the wire, the field term; no entry point.

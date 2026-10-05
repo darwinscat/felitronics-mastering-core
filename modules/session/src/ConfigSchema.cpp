@@ -550,6 +550,7 @@ void readCompressor (Doc& d, Reader& in, Compressor& o)
     in.required ("rangeDb", o.rangeDb, R { 0.0, 120.0 });
     in.required ("makeupDb", o.makeupDb, R { -24.0, 24.0 });
     in.required ("autoMakeup", o.autoMakeup);
+    in.required ("mix", o.mix, share());
     in.required ("lookaheadMs", o.lookaheadMs, R { 0.0, 20.0 });
     in.required ("sidechainHpfHz", o.sidechainHpfHz, R { 0.0, 1000.0 });
     d.name (in, "thresholdFrom", o.thresholdFrom, kThresholdFrom);
