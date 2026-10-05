@@ -1215,7 +1215,7 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, LandingSummary>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11, f12, f13, f14, f15, f16, f17, f18, f19, f20, f21, f22] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.aboveLufs)>, std::optional<double>>);
         v.field ("aboveLufs", x.aboveLufs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.achievedLufs)>, std::optional<double>>);
@@ -1230,8 +1230,14 @@ template <class V, class T> void describe (V& v, T& x) noexcept
         v.field ("distanceLu", x.distanceLu);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.limiterMeanReductionDb)>, std::optional<double>>);
         v.field ("limiterMeanReductionDb", x.limiterMeanReductionDb);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.limiterSlope)>, std::optional<double>>);
+        v.field ("limiterSlope", x.limiterSlope);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.limiterTrace)>, std::optional<LandingTrace>>);
         v.field ("limiterTrace", x.limiterTrace);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.limiterWall)>, bool>);
+        v.field ("limiterWall", x.limiterWall);
+        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.limiterWallP95Db)>, std::optional<double>>);
+        v.field ("limiterWallP95Db", x.limiterWallP95Db);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.log)>, std::span<const LandingPass>>);
         v.field ("log", x.log);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.mainReason)>, LandingReason>);

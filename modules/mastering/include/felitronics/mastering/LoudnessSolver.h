@@ -875,6 +875,9 @@ struct LoudnessRequest
     // 20 dB down. Off, the search steps back as it did before v0.17.0, to the bit: a manual landing's budget moves
     // nothing. Last, so a positional initialiser written against the older layout still means what it meant.
     bool budgetAimsAtCrossing = false;
+    // The manual landing's wall: LU bought per dB of active P95 cut, measured between existing passes. Zero disables it.
+    double limiterSlopeBelow = 0.0;
+    double limiterSlopeSpacingDb = 0.5;
 };
 
 // One render the search made. The whole trace is returned, not just the winner: a caller that has to
@@ -885,6 +888,7 @@ struct SolvePassRecord
     double gainDb = 0.0, ceilingDb = 0.0;
     double integratedLufs = 0.0, truePeakDbTp = 0.0, plrDb = 0.0;
     double limiterMaxGrDb = 0.0, loudnessRangeLu = 0.0;
+    double limiterP95Db = std::numeric_limits<double>::quiet_NaN(); // active windows, product landing only
     std::uint32_t violated = 0;
 };
 
@@ -963,6 +967,9 @@ struct LoudnessSolution
     // level nobody measured would be a guess wearing a number's clothes.
     dynamics::offline::QuantileHistogram limiterActiveGrWindows {};
     ActiveGainReductionStats             limiterActive {};
+    bool limiterWall = false;
+    double limiterSlope = std::numeric_limits<double>::quiet_NaN();
+    double limiterWallP95Db = std::numeric_limits<double>::quiet_NaN();
 
     // The q-quantile of a stage's |GR|, by the one definition (GainReductionSummariser): a reading here and a
     // `GrStatistic::Percentile` limit at the same `q` are the same number. False, and `outDb` untouched, for a
@@ -1089,6 +1096,8 @@ public:
         if (! chain.isPrepared() || numChannels != chain.numChannels() || numChannels > nch_ || frames <= 0) return false;
         if (! std::isfinite (req.targetLufs) || ! std::isfinite (req.maxTruePeakDbTp)
             || ! std::isfinite (req.toleranceLu) || req.toleranceLu < 0.0
+            || ! std::isfinite (req.limiterSlopeBelow) || req.limiterSlopeBelow < 0.0
+            || ! std::isfinite (req.limiterSlopeSpacingDb) || req.limiterSlopeSpacingDb <= 0.0
             || ! std::isfinite (req.activityThresholdDb) || req.activityThresholdDb < 0.0
             || req.maxPasses < 1 || req.maxPasses > kMaxPasses
             || req.limiterGr.malformed() || req.compressorGr.malformed()

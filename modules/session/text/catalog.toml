@@ -1432,3 +1432,12 @@ en = "The platform does not normalise loudness: a delivery preset, not a platfor
 [messages.monoBassBelowZones]
 ru = "Моно-бас на {crossover} ниже, чем просят и клуб (от {clubFrom}), и винил (от {vinylFrom})."
 en = "Mono bass at {crossover} is lower than both a club (from {clubFrom}) and vinyl (from {vinylFrom}) ask for."
+
+[messages.masterLandingWall]
+ru = "Сделано {achieved}. Дальше лимитеру пришлось бы срезать намного больше ради совсем небольшой прибавки громкости."
+en = "Made at {achieved}. Going louder would take much more limiting for very little loudness."
+
+# Diagnostic line only; the page shows masterLandingWall as the verdict.
+[messages.masterLandingWallDetail]
+ru = "Стена лимитера: {slope} LU на дБ среза, P95 {p95}."
+en = "Limiter wall: {slope} LU per dB of cut, P95 {p95}."

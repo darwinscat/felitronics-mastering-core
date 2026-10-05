@@ -2020,6 +2020,11 @@ codec Phase.analyzers AnalyzerProgress[<=3]?
 enum felitronics::session::DamageWaitReason::Queue=0
 enum felitronics::session::DamageWaitReason::SourceMeasurement=1
 codec DamageJobEntry.waitReason DamageWaitReason?
+enum felitronics::session::text::FactId::MasterLandingWall=618
+enum felitronics::session::text::FactId::MasterLandingWallDetail=619
+codec LandingSummary.limiterWall bool
+codec LandingSummary.limiterSlope double?
+codec LandingSummary.limiterWallP95Db double?
 wire EditDeviceGlueFields.mix? WireNumber | null
 wire RevertEditsGlueFields.mix? boolean
 enum felitronics::session::text::Term::FieldGlueMix=151

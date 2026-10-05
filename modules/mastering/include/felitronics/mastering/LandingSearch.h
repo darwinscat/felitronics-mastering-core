@@ -152,6 +152,8 @@ public:
         gateOn_ = request.landingOnSourceGate && gateGrid (request, sourceRate, chain.sampleRate());
         budgetOn_ = ! request.limiterGr.off();
         haveOverBudget_ = false;
+        wall_ = false; wallSlope_ = std::numeric_limits<double>::quiet_NaN();
+        records_ = {};
         scanCursor_ = scanCount_ = 0; scanSum_ = gateThreshold_ = level_ = bestLevel_ = 0.0;
         gateLevel_ = bestGate_ = std::numeric_limits<double>::quiet_NaN();
         budgetExcess_.fill (std::numeric_limits<double>::quiet_NaN());
@@ -522,9 +524,31 @@ private:
             return StepResult::More;
         }
         const bool safe = valid && measurement_.truePeakDbTp <= request_.maxTruePeakDbTp;
+        rec.limiterP95Db = working_.limiterActive.stats.valid ? working_.limiterActive.stats.p95Db
+            : std::numeric_limits<double>::quiet_NaN();
         const double err = valid ? std::fabs (level_ - request_.targetLufs)
                                  : std::numeric_limits<double>::infinity();
         const bool keeps = ! budgetOn_ || ! valid || keepsBudget (rec);
+        // The existing log supplies both readings. No probe is requested to find a slope: at least the configured P95
+        // spacing, the nearest such pass, with both renders under the ceiling. A forecast of the peak clipper's peak
+        // returned above and left no P95 reading: its different curve cannot prove a wall on this one.
+        if (safe && keeps && level_ < request_.targetLufs - request_.toleranceLu
+            && request_.limiterSlopeBelow > 0 && ! request_.budgetAimsAtCrossing)
+        {
+            double spacing = std::numeric_limits<double>::infinity();
+            for (int i = 0; i + 1 < passes_; ++i)
+            {
+                const auto& prior = records_[(std::size_t) i];
+                const double cut = rec.limiterP95Db - prior.limiterP95Db;
+                if (! std::isfinite (cut) || std::fabs (cut) < request_.limiterSlopeSpacingDb
+                    || std::fabs (cut) >= spacing || prior.truePeakDbTp > request_.maxTruePeakDbTp
+                    || ! std::isfinite (prior.integratedLufs)
+                    || cut * (gain_ - ceiling_ - driveOf (i)) <= 0) continue;
+                spacing = std::fabs (cut);
+                wallSlope_ = (rec.integratedLufs - prior.integratedLufs) / cut;
+            }
+            wall_ = std::isfinite (spacing) && wallSlope_ < request_.limiterSlopeBelow;
+        }
         // THE GENTLEST CEILING-SAFE RENDER OVER THE BUDGET, held in `best_` while no render keeps both: the least drive.
         if (budgetOn_ && ! haveBest_ && safe && ! keeps
             && (! haveOverBudget_ || gain_ - ceiling_ < bestGain_ - bestCeiling_))
@@ -559,7 +583,7 @@ private:
                           || (! bothBelow && ! bothAbove && err < bestError_);
         const bool sameDistance = haveBest_ && core::exactlyEqual (err, bestError_)
                                && core::exactlyEqual (level, previousLevel);
-        if (safe && keeps && (nearer || (sameDistance && measurement_.limiter.meanDb < best_.measured.limiter.meanDb)))
+        if (safe && keeps && (wall_ || nearer || (sameDistance && measurement_.limiter.meanDb < best_.measured.limiter.meanDb)))
         {
             working_.measured = measurement_;
             working_.preLimiterGainDb = gain_; working_.ceilingDbTp = ceiling_;
@@ -581,7 +605,7 @@ private:
         }
         const bool success = safe && keeps && err <= request_.toleranceLu;
         const bool exhausted = passes_ >= request_.maxPasses;
-        if (success || exhausted) return finishSearch();
+        if (wall_ || success || exhausted) return finishSearch();
         if (budgetOn_ && budgetSettled()) return finishSearch();
         // Reserve the last pass for restoration once a candidate exists — a safe one, or else the gentlest over the
         // budget, or else the gentlest above the ceiling. It is a real render and is logged within the caller's one pass
@@ -676,6 +700,14 @@ private:
             best_.alsoViolated = constraintBit (MasteringConstraint::LimiterGainReduction);
         }
         // An exhausted budget is not proof that the target is outside the reachable range.
+        if (wall_)
+        {
+            best_.status = MasteringSolveStatus::TargetUnreachable;
+            best_.binding = MasteringConstraint::None;
+            best_.limiterWall = true;
+            best_.limiterSlope = wallSlope_;
+            best_.limiterWallP95Db = records_[(std::size_t) (bestPass_ - 1)].limiterP95Db;
+        }
         if (bestPass_ != passes_)
         {
             if (passes_ >= request_.maxPasses) return fail (MasteringSolveStatus::Unavailable);
@@ -691,6 +723,7 @@ private:
 
     void classify() noexcept
     {
+        if (wall_) return;
         if (best_.status == MasteringSolveStatus::Solved) return;
         // The limiter's budget held the landing: that is the reason, and nothing in the mix is blamed for it.
         if (best_.status == MasteringSolveStatus::TargetUnreachable
@@ -883,6 +916,8 @@ private:
     bool peakProbe_ = false;   // the first pass measured the peak the clipper's threshold is worked out from
     bool gateOn_ = false;      // the level landed is read on the source's gate
     bool budgetOn_ = false;
+    bool wall_ = false;
+    double wallSlope_ = std::numeric_limits<double>::quiet_NaN();
     bool haveOverBudget_ = false;   // `best_` holds the gentlest ceiling-safe render over the budget (while `haveBest_` is not)
     Phase phase_ = Phase::Idle;
     // The level landed (`level_`, the pass's; `bestLevel_`, best_'s) and the source's gate. `scan*` serve the source's

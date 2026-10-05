@@ -1843,6 +1843,15 @@ BS.1770 (`achievedLufs`, `missLu`); where the level on the source's gate and tha
 tolerance, either way round, `MasterLandingGate` (601) says both («Без тихих мест −9,0 LUFS, по стандарту файла −9,8 LUFS.») in the
 miss's place, and the solved verdict (88) names the level landed. `targetMet` follows the status, as before.
 
+The manual landing also stops at the limiter's wall (owner, 05.10): `[landing] limiterSlopeBelow` 0.2 LU per dB of
+active P95 cut, measured between existing passes at least `limiterSlopeSpacingDb` 0.5 dB apart. The nearest qualifying
+pass supplies the other reading; both renders must be ceiling-safe, on the measured peak-clip curve, and increased cut
+must follow increased drive. A safe render within the budget, still below the target, stops and is delivered when the
+slope is smaller. No probe is added. `LandingSummary.limiterWall` names that stop (`TargetUnreachable`), with its
+`limiterSlope` and `limiterWallP95Db`; fact 618 says plainly why it stopped, and 619 carries the numbers for the log alone.
+There is no miss or mix hint for that stop. Max modes do not enable the wall. The landing-search suite holds a dense
+fixture's wall, a normal streaming landing's unchanged PCM and both max budgets' unchanged PCM.
+
 THE MAXIMUM LOUDNESS MODES (owner, 04.10, v0.15.0; by ear, v0.16.0). A target's loudness mode is `manual`, `maxClean` or
 `maxDense`: a row of `targets.toml` may name it (`loudnessMode`; absent, manual), the two max targets appended last name
 theirs (`maxClean` «Максимум · чисто», `maxDense` «Максимум · плотно», the streaming group's medium), and any target takes

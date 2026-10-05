@@ -80,7 +80,9 @@ constexpr Golden kGolden[] = {
     // glue engages moves (a target that glues, cd, or a person's glue); it was 7fb7cae3c8dc411b; updated in place, as above
     // ...and the unread [compressor] mix removed (owner, 05.10): the walk moves, no master does; it was
     // 02ed0efc37c02b67; updated in place, as above
-    { "2026-10", 0xa154dca562da8da3ull },
+    // ...and the manual limiter wall (owner, 05.10): slope 0.2, P95 spacing 0.5 dB; masters that meet the wall move.
+    // It was a154dca562da8da3; updated in place, as above.
+    { "2026-10", 0x3ca74d45e21253d9ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -188,6 +190,8 @@ std::vector<std::string> departures (const config::Config& c)
     need (e.landing.truePeakAimDb == 0.05 && e.limiter.ceilingMarginDb == 0.15,
           "the true-peak aim and initial limiter margin are separate decisions");
     need (e.landing.onSourceGate, "the landing lands the level on the source's gate (owner, 04.10)");
+    need (same (e.landing.limiterSlopeBelow, 0.2) && same (e.landing.limiterSlopeSpacingDb, 0.5),
+          "manual landings stop below 0.2 LU per dB of P95 cut, spaced by at least 0.5 dB (owner, 05.10)");
     need (same (e.landing.cleanBudgetDb, 0.5),
           "max clean: the limiter's budget 0.5 dB, about −13 LUFS, a little above streaming (owner, 04.10, by ear)");
     need (same (e.landing.denseBudgetDb, 1.75), "max dense: the limiter's budget 1.75 dB, about −11 LUFS (owner, 04.10, by ear)");
@@ -347,6 +351,10 @@ void aDepartureIsNamed()
           "targets.youtube.sampleRate" },
         { false, "default = 0\nwhenTicked", "default = 0.3\nwhenTicked", "no glue by default: a target without its own takes the compressor out" },
         { false, "whenTicked = 0.5", "whenTicked = 0.6", "ticked on untouched, the glue is up to 0.5 dB" },
+        { false, "limiterSlopeBelow = 0.2", "limiterSlopeBelow = 0.3",
+          "manual landings stop below 0.2 LU per dB of P95 cut, spaced by at least 0.5 dB (owner, 05.10)" },
+        { false, "limiterSlopeSpacingDb = 0.5", "limiterSlopeSpacingDb = 0.4",
+          "manual landings stop below 0.2 LU per dB of P95 cut, spaced by at least 0.5 dB (owner, 05.10)" },
         { false, "mix = 0.4\nmixRange", "mix = 1\nmixRange", "the glue in parallel by default: mix 40 %, a knob 0…100 % by 20 % (owner, 05.10)" },
         { false, "mixStep = 0.2", "mixStep = 0.05", "the glue in parallel by default: mix 40 %, a knob 0…100 % by 20 % (owner, 05.10)" },
         { false, "byTarget = { cd = 2.6 }", "byTarget = { cd = 2.5 }", "the machine glues on cd alone, up to 2.6 dB" },

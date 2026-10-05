@@ -568,6 +568,13 @@ Stepped Session::step (std::uint32_t budget) noexcept
                                                  : MasterReportText::landing (report, masterSummary_, toleranceLu, measure))
                     { (void) event.payload.fact.assign (*verdict); emit (event, masterProgress_); }
                     // Pulled up to the floor: the numbers behind the plain verdict, a line of its own for the log (617).
+                    if (masterSummary_.limiterWall && masterSummary_.limiterSlope && masterSummary_.limiterWallP95Db)
+                    {
+                        (void) event.payload.fact.assign (text::Fact::of (text::FactId::MasterLandingWallDetail,
+                            text::Arg::value (*masterSummary_.limiterSlope, text::Unit::None, 3),
+                            text::Arg::value (*masterSummary_.limiterWallP95Db, text::Unit::Db, 2)));
+                        emit (event, masterProgress_);
+                    }
                     if (const auto detail = MasterReportText::maxFloorDetail (report,
                             detail::maxBudgetDb (detail::rules().engine, report.loudnessMode),
                             masterJob_->search.result().limiterActive.stats.p95Db, masterJob_->floorLufs,
@@ -579,7 +586,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
                     // Landed on the source's gate and read apart from it by BS.1770: both numbers, in the miss's place.
                     if (const auto gate = MasterReportText::gate (report, measure, toleranceLu))
                     { (void) event.payload.fact.assign (*gate); emit (event, masterProgress_); }
-                    else if (const auto miss = max ? std::optional<text::Fact> {} : MasterReportText::miss (report))
+                    else if (const auto miss = max || masterSummary_.limiterWall ? std::optional<text::Fact> {} : MasterReportText::miss (report))
                     { (void) event.payload.fact.assign (*miss); emit (event, masterProgress_); }
                     for (const auto* hint : { &report.firstHint, &report.secondHint })
                         if (*hint)

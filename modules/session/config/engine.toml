@@ -65,6 +65,11 @@ toleranceLu = 0.1
 truePeakAimDb = 0.05
 onSourceGate = true
 limiterBudget = { quietDb = 4, middleDb = 7, loudDb = 7.5, middleLufs = [-10, -8] }
+# The wall (owner, 05.10): stop a manual landing when a dB more of active P95 cut buys less than 0.2 LU.
+# Compare existing passes at least 0.5 dB of P95 apart; no extra pass. The 23-song ladder puts this near 7.7 dB P95,
+# around −8 LUFS: better a little quieter than broken. Max modes keep their own budgets below the knee.
+limiterSlopeBelow = 0.2
+limiterSlopeSpacingDb = 0.5
 
 # THE MAX MODES (owner decisions, 04.10: v0.15.0, and v0.16.0 by ear). A target whose loudnessMode names one (targets.toml,
 # or a person's edit of it) lands as loud as the mode's limiter budget allows — the active-window P95, as limiterBudget, in

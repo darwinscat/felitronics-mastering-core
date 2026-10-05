@@ -356,6 +356,8 @@ enum class FactId : std::uint16_t
     MasterMaxOverBudget = 615, // {mode}: {achieved} — the limiter takes {over} (P95), more than the mode's {budget}
     MasterMaxFloor = 616,      // {mode}: {achieved} — pulled up to the floor; the mode and the level, nothing more
     MasterMaxFloorDetail = 617, // for the log: the first landing at {first} under {floor}; brought up, the limiter takes {taken}
+    MasterLandingWall = 618,   // the achieved level; louder would cost a lot of limiting for little gain
+    MasterLandingWallDetail = 619, // log only: slope in LU per dB and active-window P95 cut
 };
 
 // THE TERMS — words an argument of kind Term names: one value of a group of the catalog's [terms]. Printed as the

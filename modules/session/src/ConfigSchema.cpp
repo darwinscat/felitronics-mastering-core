@@ -315,6 +315,8 @@ void readLanding (Doc& d, Reader& in, Landing& o)
     in.required ("toleranceLu", o.toleranceLu, R { 0.001, 1.0 });
     in.required ("truePeakAimDb", o.truePeakAimDb, R { 0.0, 1.0 });
     in.required ("onSourceGate", o.onSourceGate);
+    in.required ("limiterSlopeBelow", o.limiterSlopeBelow, R { 0.001, 1.0 });
+    in.required ("limiterSlopeSpacingDb", o.limiterSlopeSpacingDb, R { 0.01, 60.0 });
     in.table ("limiterBudget", Need::Required, [&] (Reader& t)
     {
         const bool quiet = t.required ("quietDb", o.quietBudgetDb, R { 1.0, 60.0 });

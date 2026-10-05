@@ -134,6 +134,7 @@ struct Landing
     // active-window P95, a whole number of quarter dB).
     double maxCeilingLufs = 0.0, maxFloorLufs = 0.0;
     double cleanBudgetDb = 0.0, denseBudgetDb = 0.0;
+    double limiterSlopeBelow = 0.0, limiterSlopeSpacingDb = 0.0;
 };
 
 struct PeakClipper
