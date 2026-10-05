@@ -257,13 +257,14 @@ bool run (unsigned sourceRate, unsigned deliveryRate, unsigned channels, unsigne
         if (price.rejection != Rejection::None || price.bytes == 0 || price.largestBlockBytes == 0) return false;
         Answer rejected;
         const auto before = std::uint64_t (s.liveBytes());
-        if (s.setCapacity ({ double (before + price.bytes - 1u), double (price.largestBlockBytes) }) != Status::Ok) return false;
+        const auto netBefore = before - std::min (before, price.releasedBytes);
+        if (s.setCapacity ({ double (netBefore + price.bytes - 1u), double (price.largestBlockBytes) }) != Status::Ok) return false;
         const auto heapSpent = declared::spend ([&] { rejected = s.apply (small); });
         if (rejected.rejection != Rejection::Memory || heapSpent.requests != 0) return false;
-        if (s.setCapacity ({ double (before + price.bytes), double (price.largestBlockBytes - 1u) }) != Status::Ok) return false;
+        if (s.setCapacity ({ double (netBefore + price.bytes), double (price.largestBlockBytes - 1u) }) != Status::Ok) return false;
         const auto blockSpent = declared::spend ([&] { rejected = s.apply (small); });
         if (rejected.rejection != Rejection::Memory || blockSpent.requests != 0) return false;
-        if (s.setCapacity ({ double (before + price.bytes), double (price.largestBlockBytes) }) != Status::Ok
+        if (s.setCapacity ({ double (netBefore + price.bytes), double (price.largestBlockBytes) }) != Status::Ok
             || ! master (s, small, f, external, false)) return false;
         if (s.setCapacity ({}) != Status::Ok || ! select (deliveryRate, 18)) return false;
         large.id = 15;

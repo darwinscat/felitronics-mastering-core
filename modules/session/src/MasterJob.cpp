@@ -473,7 +473,9 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
             * sizeof (LandingTraceBucket) + crestRows + costRows;
     const auto impactChainBytes = convert ? mastering::MasteringChain::prepareBytes (
         double (s.source_.sampleRate), int (s.source_.channels), result.ready.topology) : 0u;
-    const auto impactScratchBytes = convert ? std::uint64_t (s.source_.channels) * 1024u * sizeof (float) : 0u;
+    // The impact joins after delivery and therefore cannot borrow the transferable master buffer. It re-renders in
+    // bounded blocks from the retained source, at the source rate used by the impact contract.
+    const auto impactScratchBytes = std::uint64_t (s.source_.channels) * 1024u * sizeof (float);
     if (chainBytes == 0 || solverBytes == 0 || (convert && converterBytes == 0) || ! search.ok)
     { result.rejection = Rejection::OutOfDomain; return result; }
     const auto outputBytes = search.outputBytes;
@@ -517,6 +519,7 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
 bool MasterJob::begin (const Session& s, const MasterPlan& plan)
 {
     session = &s;
+    rowIndex = s.masterCount_;
     crestParams = plan.crestParams;
     ready = plan.ready;
     medium = plan.medium;
@@ -572,7 +575,7 @@ bool MasterJob::begin (const Session& s, const MasterPlan& plan)
     costAxesReady = costAxes.prepare (deliveryRate, unsigned (channels));
     const bool convert = deliveryRate != s.source_.sampleRate;
     if (convert && ! converter.prepare (double (s.source_.sampleRate), double (deliveryRate), channels, block)) return false;
-    if (convert) impactScratch.reset (new float[std::size_t (channels) * block]);
+    impactScratch.reset (new float[std::size_t (channels) * block]);
     output.reset (new float[std::size_t (frames) * std::size_t (channels)]);
     for (int c = 0; c < channels; ++c)
     {
@@ -606,6 +609,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     using mastering::StepResult;
     if (budget < 0 || stage == Stage::Failed) return StepResult::Failed;
     if (stage == Stage::Done) return StepResult::Done;
+    if (stage == Stage::Ready) return StepResult::Done;
     if (budget == 0) return StepResult::More;
     if (stage == Stage::DeliveryCopy)
     {
@@ -716,25 +720,21 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     if (stage == Stage::Prepare)
     {
         auto& c = report.crest;
-        const bool impact = sourceRate != deliveryRate;
-        const auto rate = impact ? sourceRate : deliveryRate;
-        c.sampleRateHz = rate; c.frames = impact ? sourceFrames : std::uint64_t (frames);
+        const auto rate = sourceRate;
+        c.sampleRateHz = rate; c.frames = sourceFrames;
         c.blockHops = std::uint32_t (crestParams.blockHops);
         c.edgeLowHz = crestParams.bandEdgeHz[0]; c.edgeMidHz = crestParams.bandEdgeHz[1];
-        c.edgeHighHz = crestParams.bandEdgeHz[2]; c.sourceRateCheck = impact;
-        if (session->masterRows_[session->masterCount_].crestCapacity == 0)
-        { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::TooShort; stage = Stage::CostRead; return StepResult::More; }
-        if (impact)
-        {
-            if (! chain.prepare (double (sourceRate), channels, ready.topology))
-            { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Unsupported; stage = Stage::CostRead; return StepResult::More; }
-            chain.setParams (winningParams());
-            chain.reset();
-            impactDelay = chain.latencySamples();
-        }
+        c.edgeHighHz = crestParams.bandEdgeHz[2]; c.sourceRateCheck = sourceRate != deliveryRate;
+        if (session->masterRows_[rowIndex].crestCapacity == 0)
+        { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::TooShort; stage = Stage::Done; return StepResult::More; }
+        if (! chain.prepare (double (sourceRate), channels, ready.topology))
+        { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Unsupported; stage = Stage::Done; return StepResult::More; }
+        chain.setParams (winningParams());
+        chain.reset();
+        impactDelay = chain.latencySamples();
         crest.setParams (crestParams);
         if (! crest.prepare (double (rate), channels, (long long) c.frames))
-        { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Unsupported; stage = Stage::CostRead; return StepResult::More; }
+        { c.status = MeasurementStatus::Unavailable; c.reason = MeasurementReason::Unsupported; stage = Stage::Done; return StepResult::More; }
         c.hopFrames = std::uint32_t (crest.hopSamples());
         stage = Stage::Read;
         return StepResult::More;
@@ -742,40 +742,37 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     if (stage == Stage::Read)
     {
         constexpr int block = 1024;
-        const bool impact = sourceRate != deliveryRate;
-        if (impact)
+        const long long total = (long long) sourceFrames + impactDelay;
+        const int n = int (std::min<long long> ({ budget, block, total - crestCursor }));
+        float* planes[2] { impactScratch.get(), channels == 2 ? impactScratch.get() + block : nullptr };
+        for (int ch = 0; ch < channels; ++ch)
+            for (int i = 0; i < n; ++i)
+            {
+                const auto frame = crestCursor + i;
+                planes[ch][i] = frame < (long long) sourceFrames ? sourcePlanes[ch][frame] : 0.0f;
+            }
+        if (! chain.process (planes, channels, n))
         {
-            const long long total = (long long) sourceFrames + impactDelay;
-            const int n = int (std::min<long long> ({ budget, block, total - crestCursor }));
-            float* planes[2] { impactScratch.get(), channels == 2 ? impactScratch.get() + block : nullptr };
-            for (int ch = 0; ch < channels; ++ch)
-                for (int i = 0; i < n; ++i)
-                {
-                    const auto frame = crestCursor + i;
-                    planes[ch][i] = frame < (long long) sourceFrames ? sourcePlanes[ch][frame] : 0.0f;
-                }
-            if (! chain.process (planes, channels, n))
-            { report.crest.status = MeasurementStatus::Unavailable; report.crest.reason = MeasurementReason::NonFinite;
-              stage = Stage::CostRead; return StepResult::More; }
-            const int skip = int (std::min<long long> (n, std::max (0LL, impactDelay - crestCursor)));
-            const int kept = int (std::max (0LL, std::min<long long> (n, total - crestCursor) - skip));
-            const float* produced[2] { planes[0] + skip, channels == 2 ? planes[1] + skip : nullptr };
-            if (kept != 0 && ! crest.process (produced, channels, kept))
-            { report.crest.status = MeasurementStatus::Unavailable; report.crest.reason = MeasurementReason::NonFinite;
-              stage = Stage::CostRead; return StepResult::More; }
-            crestCursor += n;
-            if (crestCursor == total) { report.checkPasses = 1; stage = Stage::Finish; }
+            report.crest.status = MeasurementStatus::Unavailable; report.crest.reason = MeasurementReason::NonFinite;
+            stage = Stage::Done; return StepResult::More;
         }
-        else
+        const int skip = int (std::min<long long> (n, std::max (0LL, impactDelay - crestCursor)));
+        const int kept = int (std::max (0LL, std::min<long long> (n, total - crestCursor) - skip));
+        float* produced[2] { planes[0] + skip, channels == 2 ? planes[1] + skip : nullptr };
+        // At the delivery rate the former foreground walk read the already quantized transferable PCM. Reproduce
+        // exactly that input to the crest without retaining or borrowing the transferable owner.
+        if (sourceRate == deliveryRate && (ready.deliveryBits == 16 || ready.deliveryBits == 20 || ready.deliveryBits == 24))
+            for (int ch = 0; ch < channels; ++ch)
+                for (int i = 0; i < kept; ++i) produced[ch][i] = mastering::pcmSample (produced[ch][i], ready.deliveryBits);
+        const float* measured[2] { produced[0], produced[1] };
+        if (kept != 0 && ! crest.process (measured, channels, kept))
+        { report.crest.status = MeasurementStatus::Unavailable; report.crest.reason = MeasurementReason::NonFinite;
+          stage = Stage::Done; return StepResult::More; }
+        crestCursor += n;
+        if (crestCursor == total)
         {
-            const int n = int (std::min<long long> ({ budget, block, frames - crestCursor }));
-            const float* planes[2] { outputPlanes[0] + crestCursor,
-                channels == 2 ? outputPlanes[1] + crestCursor : nullptr };
-            if (! crest.process (planes, channels, n))
-            { report.crest.status = MeasurementStatus::Unavailable; report.crest.reason = MeasurementReason::NonFinite;
-              stage = Stage::CostRead; return StepResult::More; }
-            crestCursor += n;
-            if (crestCursor == frames) stage = Stage::Finish;
+            report.checkPasses = sourceRate != deliveryRate ? 1u : 0u;
+            stage = Stage::Finish;
         }
         return StepResult::More;
     }
@@ -785,12 +782,12 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         auto& c = report.crest;
         c.blocks = std::uint64_t (crest.blockCount());
         c.complete = crest.droppedHops() == 0 && crest.samplesProcessed() == (long long) c.frames;
-        if (! crest.valid() || ! c.complete || c.blocks > session->masterRows_[session->masterCount_].crestCapacity)
+        if (! crest.valid() || ! c.complete || c.blocks > session->masterRows_[rowIndex].crestCapacity)
         {
             c.status = MeasurementStatus::Unavailable;
             c.reason = crest.invalidReason() == analysis::BandCrestInvalid::NoBlock
                 ? MeasurementReason::TooShort : MeasurementReason::NonFinite;
-            stage = Stage::CostRead; return StepResult::More;
+            stage = Stage::Done; return StepResult::More;
         }
         const auto& source = session->measurementResults_[std::size_t (Analyzer::Crest)];
         if (source.status == MeasurementStatus::Pending)
@@ -811,7 +808,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     if (stage == Stage::Copy)
     {
         const auto limit = std::min<std::size_t> (std::size_t (report.crest.blocks), crestCopied + 128u);
-        auto& rows = session->masterRows_[session->masterCount_];
+        auto& rows = session->masterRows_[rowIndex];
         auto* data = rows.crest.get();
         auto* mask = data + rows.crestCapacity * 10u;
         for (; crestCopied < limit; ++crestCopied)
@@ -827,7 +824,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         {
             report.crest.rows = { data, crestCopied * 10u };
             if (! sourceMask.empty()) report.crest.sourceMask = { mask, crestCopied * 5u };
-            stage = Stage::CostRead;
+            stage = Stage::Done;
             return StepResult::More;
         }
         return StepResult::More;
@@ -842,7 +839,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         const float* planes[2] { outputPlanes[0] + costCursor,
             channels == 2 ? outputPlanes[1] + costCursor : nullptr };
         if (costMeterReady && ! costMeter.process (planes, channels, int (n))) costMeterReady = false;
-        auto& rows = session->masterRows_[session->masterCount_];
+        auto& rows = session->masterRows_[rowIndex];
         const std::uint64_t bucketCount = rows.waveformCapacity / std::size_t (channels);
         for (std::uint64_t i = 0; i < n; ++i)
         {
@@ -892,7 +889,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     }
     if (stage == Stage::CostFinish)
     {
-        auto& rows = session->masterRows_[session->masterCount_];
+        auto& rows = session->masterRows_[rowIndex];
         costResult = {};
         costRules = configuredCost();
         costResult.sourceRateHz = sourceRate; costResult.masterRateHz = deliveryRate;
@@ -939,7 +936,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     }
     if (stage == Stage::CostWave)
     {
-        auto& rows = session->masterRows_[session->masterCount_];
+        auto& rows = session->masterRows_[rowIndex];
         const auto limit = std::min<std::uint64_t> (rows.waveformCapacity,
             costFinishCursor + std::uint64_t (std::min<long long> (budget, 1024)));
         while (costFinishCursor < limit)
@@ -992,7 +989,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     }
     if (stage == Stage::CostShape)
     {
-        auto& rows = session->masterRows_[session->masterCount_];
+        auto& rows = session->masterRows_[rowIndex];
         const auto* sourceShort = findArray (
             session->measurementResults_[std::size_t (Analyzer::Loudness)], "shortTerm");
         if (! costMeterReady || ! sourceShort || sourceShort->grid.stepFrames == 0 || ! rows.costSeries)
@@ -1018,7 +1015,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     }
     if (stage == Stage::CostWorst)
     {
-        const auto& rows = session->masterRows_[session->masterCount_];
+        const auto& rows = session->masterRows_[rowIndex];
         const auto limit = std::min<std::uint64_t> (costShapeScan.sectionCount,
             costFinishCursor + std::uint64_t (std::min<long long> (budget, 1024)));
         while (costFinishCursor < limit)
@@ -1055,7 +1052,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
             for (auto* band : bands) band->reason = report.crest.reason;
             stage = Stage::CostPublish; return StepResult::More;
         }
-        auto& rows = session->masterRows_[session->masterCount_];
+        auto& rows = session->masterRows_[rowIndex];
         const auto view = MeasurementCrest::view (session->measurementResults_[std::size_t (Analyzer::Crest)]);
         const std::span<double> scratch { rows.costScratch.get(), rows.costScratchCapacity };
         if (! costCrestStarted)
@@ -1081,7 +1078,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
             report.damage.reason = MeasurementReason::Pending;
             damageFollows = true;
         }
-        stage = Stage::Done;
+        stage = Stage::Ready;
         return StepResult::Done;
     }
     return StepResult::Failed;
@@ -1171,8 +1168,23 @@ mastering::StepResult MasterJob::settleLanding (mastering::StepResult result) no
         stage = Stage::Done;
         return result;
     }
-    stage = Stage::Prepare;
+    auto& c = report.crest;
+    c.status = MeasurementStatus::Pending; c.reason = MeasurementReason::Pending;
+    c.sampleRateHz = sourceRate; c.frames = sourceFrames;
+    c.blockHops = std::uint32_t (crestParams.blockHops);
+    c.edgeLowHz = crestParams.bandEdgeHz[0]; c.edgeMidHz = crestParams.bandEdgeHz[1];
+    c.edgeHighHz = crestParams.bandEdgeHz[2]; c.sourceRateCheck = sourceRate != deliveryRate;
+    report.checkPasses = c.sourceRateCheck ? 1u : 0u;
+    stage = Stage::CostRead;
     return StepResult::More;
+}
+
+bool MasterJob::beginLateCrest() noexcept
+{
+    if (stage != Stage::Ready) return false;
+    crestCursor = 0; crestCopied = 0; impactDelay = 0; sourceMask = {};
+    stage = Stage::Prepare;
+    return true;
 }
 
 // THE LANDING AGAIN, ON THE FLOOR: the ready parameters, the request on the target's own loudness with no budget, from

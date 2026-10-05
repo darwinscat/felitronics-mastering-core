@@ -121,6 +121,18 @@ bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool pr
         if (events) for (const auto& e : s.events()) events->push_back (e);
     }
     if (s.job() != 0 || s.masters().size() != 1 || ! s.masters()[0].report || ! s.masters()[0].landing) return false;
+    // Most report fixtures ask for the settled report. The master is deliberately transferable before its crest now;
+    // finish that low-priority join here only when the fixture also waited for the source crest. The late-source cases
+    // below leave it pending and exercise transfer, cancellation and joining explicitly.
+    if (waitForCrest)
+        for (unsigned i = 0; i < 400000; ++i)
+        {
+            session::Stepped stepped;
+            const auto stepSpent = declared::spend ([&] { stepped = s.step (fine ? 1u : 73u); });
+            largestStep = std::max (largestStep, std::uint64_t (stepSpent.bytes));
+            if (events) for (const auto& e : s.events()) events->push_back (e);
+            if (stepped.state == session::StepState::Done) break;
+        }
     // The damage's own job, asked as a shell asks it once the master is delivered (command::GradeDamage) and behind the
     // source's measurement: graded here where that has ended (a case that leaves the measurement running keeps its
     // state, and `grade` false leaves it to the case), inside the master's admitted demand too.
@@ -136,7 +148,8 @@ bool run (Case& c, std::uint32_t sourceRate, std::uint32_t deliveryRate, bool pr
         largestStep = std::max (largestStep, std::uint64_t (stepSpent.bytes));
         if (events) for (const auto& e : s.events()) events->push_back (e);
     }
-    if ((grade && ! s.damageJobs().empty() && s.measurementJob() == 0) || largestStep > checked.bytes) return false;
+    if ((grade && ! s.damageJobs().empty() && s.measurementJob() == 0) || largestStep > checked.bytes
+        || (waitForCrest && s.masters()[0].report->crest.status == session::MeasurementStatus::Pending)) return false;
     c.token = s.pendingMaster();
     const auto shape = s.masterAudioShape (c.token);
     if (c.token.master == 0 || (deliveryRate != 0 && shape.sampleRate != deliveryRate)) return false;
@@ -309,8 +322,15 @@ bool joinedOnce (std::string& why)
     if (s.apply (request).rejection != session::Rejection::None) { why = "master"; return false; }
     for (unsigned i = 0; i < 400000 && s.job() != 0; ++i) (void) s.step (73);
     if (s.job() != 0 || s.masters().size() != 1 || ! s.masters()[0].report
+        || s.masters()[0].report->crest.status != session::MeasurementStatus::Pending
+        || s.measurementJob() != measuring)
+    { why = "PRECONDITION: the master becomes ready with its crest deferred"; return false; }
+    for (unsigned i = 0; i < 400000 && (s.masters()[0].report->crest.status == session::MeasurementStatus::Pending
+         || ! s.masters()[0].report->cost || ! s.masters()[0].report->cost->crestFullDb.value); ++i)
+        (void) s.step (73);
+    if (s.job() != 0 || s.masters().size() != 1 || ! s.masters()[0].report
         || s.masters()[0].report->crest.status != session::MeasurementStatus::Ready || s.measurementJob() != measuring)
-    { why = "PRECONDITION: the crest joined inside the job while the source measurement still runs"; return false; }
+    { why = "PRECONDITION: the deferred crest joined while the source measurement still runs"; return false; }
     const auto master = s.masters()[0].id;
     const auto k1 = s.masters()[0].report->cost ? s.masters()[0].report->cost->crestFullDb.value : std::nullopt;
     if (s.apply (session::command::Cancel { 3, measuring }).rejection != session::Rejection::None)
@@ -435,7 +455,8 @@ bool memoryLifecycle (Case& c)
         if (declared.rejection != session::Rejection::None || declared.bytes == 0
             || declared.largestBlockBytes == 0) return false;
         const auto initial = std::uint64_t (s.liveBytes());
-        const auto ceiling = initial + declared.bytes;
+        const auto netInitial = initial - std::min (initial, declared.releasedBytes);
+        const auto ceiling = netInitial + declared.bytes;
         if (testRefusal)
         {
             const auto before = s.revision();
@@ -451,7 +472,7 @@ bool memoryLifecycle (Case& c)
                 || s.revision() != before) return false;
             if (s.setCapacity ({}) != session::Status::Ok) return false;
         }
-        std::uint64_t peakLive = initial;
+        std::uint64_t peakLive = netInitial;
         declared::LifecycleBudget allocation { declared.bytes, declared.largestBlockBytes };
         bool covered = true;
         const auto charge = [&] (auto&& work)
@@ -460,7 +481,8 @@ bool memoryLifecycle (Case& c)
             const auto spent = declared::spend (work);
             const auto after = std::uint64_t (s.liveBytes());
             if (spent.bytes < 0) { covered = false; return; }
-            peakLive = std::max ({ peakLive, before, after });
+            (void) before; // apply may first release the previous deferred crest named by Checked::releasedBytes.
+            peakLive = std::max (peakLive, after);
             covered = covered && allocation.charge (spent) && peakLive <= ceiling;
         };
         session::Answer started;
@@ -1188,13 +1210,13 @@ int main()
         const auto measuring = late.session->measurementJob();
         if (measuring != 0) (void) late.session->apply (session::command::Cancel { 3, measuring });
         bool unavailableEvent = false;
-        for (unsigned i = 0; i < 8 && ! unavailableEvent; ++i)
+        for (unsigned i = 0; i < 400000 && ! unavailableEvent; ++i)
         {
             for (const auto& event : late.session->events())
                 if (event.jobId == masterId && event.kind == session::EventKind::Fact
                     && event.payload.fact.view().id == session::text::FactId::MasterCrestUnavailable)
                     unavailableEvent = true;
-            if (! unavailableEvent) (void) late.session->step (1);
+            if (! unavailableEvent) (void) late.session->step (16);
         }
         ok (late.session->masters()[0].report->crest.status == session::MeasurementStatus::Unavailable
             && late.session->masters()[0].report->crest.reason == session::MeasurementReason::Cancelled
@@ -1287,9 +1309,10 @@ int main()
         for (unsigned i = 0; i < 400000 && s.job() != 0; ++i) (void) s.step (73);
         ok (released == session::MasterTransferStatus::Ok
             && second.rejection == session::Rejection::None && s.masters().size() == 2
-            && s.masters()[0].report->crest.status == session::MeasurementStatus::Pending
+            && s.masters()[0].report->crest.status == session::MeasurementStatus::Cancelled
+            && s.masters()[0].report->crest.reason == session::MeasurementReason::Cancelled
             && s.masters()[1].report->crest.status == session::MeasurementStatus::Pending,
-            "both masters retain independent rows while the source crest is pending");
+            "a new master cancels the older deferred crest and leaves its own source comparison pending");
         bool published = false;
         for (unsigned i = 0; i < 200000 && ! published; ++i)
         {
@@ -1338,6 +1361,7 @@ int main()
         request.id = 81; request.source = s.source().hash; request.revision = s.revision();
         const auto next = s.apply (request);
         for (unsigned i = 0; i < 400000 && s.job() != 0; ++i) (void) s.step (73);
+        for (unsigned i = 0; i < 400000 && s.step (73).state == session::StepState::More; ++i) {}
         ok (released == session::MasterTransferStatus::Ok && changed.rejection == session::Rejection::None
             && edited.rejection == session::Rejection::None
             && next.rejection == session::Rejection::None && s.masters().size() == 2

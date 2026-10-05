@@ -1193,7 +1193,8 @@ void theMemoryOfAMaster()
     // master asked while one runs is priced with its bytes freed (MasterJobTests' masterAtTheCeilingWithADamage).
     for (unsigned i = 0; i < 4000000 && s.damageJob() != 0; ++i) (void) s.step (16);
     const auto need = s.check (command::Master { 8 });
-    ok (s.setCapacity ({ s.liveBytes() + double (need.bytes) - 1.0, 9007199254740991.0 }) == Status::Ok, "PRECONDITION: a heap one byte short");
+    const auto netLive = s.liveBytes() - double (std::min (need.releasedBytes, std::uint64_t (s.liveBytes())));
+    ok (s.setCapacity ({ netLive + double (need.bytes) - 1.0, 9007199254740991.0 }) == Status::Ok, "PRECONDITION: a heap one byte short");
     const auto spentShort = declared::spend ([&] { refused = s.apply (command::Master { 8 }); });
     ok (refused.rejection == Rejection::Memory && spentShort.requests == 0 && s.job() == 0 && s.masters().size() == 1,
         "one byte short of its demand: refused with Memory before the first allocation");

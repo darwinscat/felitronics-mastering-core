@@ -1144,8 +1144,8 @@ for (let i = 0; i < 12 && M.HEAPU32.buffer === lateHeapBefore; ++i)
     lateGrowth.push(M._malloc(16 * 1024 * 1024));
 const lateGrew = M.HEAPU32.buffer !== lateHeapBefore;
 let lateSourceEvent = null, lateJoinEvent = null;
-for (let i = 0; i < 20000 && !lateJoinEvent; ++i) {
-    if (M._fc_session_step(lateSession, 1, resultSize) !== STATUS.OK) break;
+for (let i = 0; i < 400000 && (!lateSourceEvent || !lateJoinEvent); ++i) {
+    if (M._fc_session_step(lateSession, 16, resultSize) !== STATUS.OK) break;
     const eventWire = masterWire('events', lateSession);
     if (!eventWire) break;
     const events = wireValue(eventWire);
@@ -1314,7 +1314,7 @@ for (const p of growth) M._free(p);
        `its summary keeps the master's scalars, pass log and sections, and no heavy row: ${light.jsonBytes} B of JSON against the snapshot's ${whole.jsonBytes}`);
     ok(sourceSnapshot.value?.masterRowsIncluded === false && sourceSnapshot.value?.measurementRowsIncluded === true
         && accepts(sourceSnapshot.value, 'SessionSnapshot') && sourceSnapshot.rowBytes > light.rowBytes
-        && sourceSnapshot.rowBytes < whole.rowBytes,
+        && sourceSnapshot.jsonBytes < whole.jsonBytes,
        'the appended source snapshot carries source rows and omits the master rows');
     const base = {audioId:whole.value.source.hash, requestId:'41', masterId:kept.id};
     const report = ask(leanSession, {...base, kind:11, fromFrame:'0', toFrame:'0', columns:0});
