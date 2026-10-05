@@ -105,6 +105,23 @@ void Session::emit (Notification event, const Phase& progress) noexcept
         invalidateQueryCache (Analyzer::Loudness);
         invalidateQueryCache (Analyzer::Clipping);
     }
+    if (event.kind == EventKind::Phase)
+        for (std::size_t i = 0; i < eventCount_; ++i)
+            if ((*events_)[i].kind == EventKind::Phase && (*events_)[i].jobId == event.jobId)
+            {
+                // A phase describes state, not a transition. Keep its latest state at the point it became latest while
+                // every reading, fact, result and terminal event retains its order. This batch owns the tail of the
+                // global sequence, so close the removed number as well.
+                for (std::size_t j = i + 1; j < eventCount_; ++j)
+                {
+                    (*events_)[j - 1] = (*events_)[j];
+                    --(*events_)[j - 1].seq;
+                }
+                --eventCount_;
+                --sequence_;
+                if (oldWorldEvents_ > i) --oldWorldEvents_;
+                break;
+            }
     detail::debugBound (eventCount_ < kEventBatch);
     event.seq = ++sequence_;
     event.source = source_.hash;

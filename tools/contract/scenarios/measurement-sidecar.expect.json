@@ -29,7 +29,7 @@
     {"a":{"kind":"snapshot","session":"side","index":4},"b":{"kind":"snapshot","session":"direct","index":0},"path":"measurements.0.numbers.0.value"},
     {"a":{"kind":"snapshot","session":"side","index":4},"b":{"kind":"snapshot","session":"direct","index":0},"path":"measurements.0.numbers.1.value"}
   ],
-  "minEvents": 4000,
+  "minEvents": 800,
   "eventKinds": ["phase","measurement","fact","rejected"],
   "rejections": 2
 }
