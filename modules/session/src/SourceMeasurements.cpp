@@ -33,7 +33,11 @@ double configured (toml::embedded::View v) noexcept
 void process (Workspace& w, Analyzer id, const float* const* planes, int channels, int count) noexcept
 {
     bool ok = false;
-    if (isLowEnd (id)) ok = lowEnd (w, id)->process (planes, channels, count);
+    if (id == Analyzer::LowEnd)
+        ok = w.lowEnd->process (planes, channels, count)
+            && w.lowEnd150->processWithoutSpectrum (planes, channels, count)
+            && w.infraLow->processWithoutSpectrum (planes, channels, count);
+    else if (isLowEnd (id)) ok = lowEnd (w, id)->process (planes, channels, count);
     else switch (id)
     {
         case Analyzer::Forensics: ok = w.forensics->process (planes, channels, count); break;
@@ -52,9 +56,21 @@ bool finish (Workspace& w, Analyzer id, Store& out, detail::SourceMeasurements& 
 {
     if (isLowEnd (id))
     {
-        auto& a = *lowEnd (w, id); (void) a.finish();
         const auto config = detail::rules().engine.find ("lowEnd");
-        detail::SourceResults::lowEnd (out, a, configured (config.find ("occupiedFromDuty")), configured (config.find ("occupiedMarginWhenOnDb")));
+        const auto retain = [&] (Analyzer analyzer)
+        {
+            auto& a = *lowEnd (w, analyzer); auto& store = *run.results[std::size_t (analyzer)];
+            detail::SourceResults::lowEnd (store, a, configured (config.find ("occupiedFromDuty")),
+                                           configured (config.find ("occupiedMarginWhenOnDb")));
+        };
+        if (id == Analyzer::LowEnd)
+        {
+            if (! w.lowEnd->finish() || ! w.lowEnd150->finishWithSpectrum (*w.lowEnd)
+                || ! w.infraLow->finishWithSpectrum (*w.lowEnd)) detail::storageOverflow();
+            retain (Analyzer::LowEnd); retain (Analyzer::LowEnd150); retain (Analyzer::InfraLow);
+            run.lowEndsReady = true;
+        }
+        else detail::storageOverflow();
     }
     else if (id == Analyzer::Forensics) { (void) w.forensics->finish(); detail::SourceResults::forensics (out, *w.forensics, source.bitDepth); }
     else if (id == Analyzer::Hum) { (void) w.hum->finish(); detail::SourceResults::hum (out, *w.hum); }
@@ -285,7 +301,7 @@ void Session::stepSourceMeasurements() noexcept
         {
             const auto& out = *run.results[index];
             result.numbers = { out.numbers, out.numberCount }; result.arrays = { out.arrays, out.arrayCount };
-            result.framesRead = run.frames; result.complete = true;
+            result.framesRead = isLowEnd (id) && run.lowEndsReady ? source_.frames : run.frames; result.complete = true;
             for (const auto& a : result.arrays) { result.total += a.total; result.stored += a.stored; result.complete = result.complete && a.complete; }
         }
         event.kind = EventKind::Measurement;
@@ -340,26 +356,70 @@ void Session::stepSourceMeasurements() noexcept
         const auto w = weightOf (a); weightTotal += w;
         const auto status = measurementResults_[std::size_t (a)].status;
         if (status != MeasurementStatus::Pending && status != MeasurementStatus::Cancelled) weighed += w;
+        else if (run.lowEndsReady && isLowEnd (a)) weighed += w;
     }
-    if (source_.frames != 0 && measurementResults_[index].status == MeasurementStatus::Pending)
-        weighed += weightOf (id) * double (run.frames) / double (source_.frames);
+    if (source_.frames != 0 && measurementResults_[index].status == MeasurementStatus::Pending && ! run.lowEndsReady)
+    {
+        const double fraction = double (run.frames) / double (source_.frames);
+        if (id == Analyzer::LowEnd)
+            weighed += (weightOf (Analyzer::LowEnd) + weightOf (Analyzer::LowEnd150) + weightOf (Analyzer::InfraLow)) * fraction;
+        else weighed += weightOf (id) * fraction;
+    }
     measurementProgress_ = { PhaseName::Analyzers, weightTotal > 0 ? weighed / weightTotal : 0,
         config::Config::versions().all, 0, 0, std::uint32_t (std::min<std::uint64_t> (done, 4294967295u)),
         std::uint32_t (std::min<std::uint64_t> (total, 4294967295u)), std::nullopt };
     auto& current = measurementProgress_.analyzers.emplace();
-    current.count = 1;
-    current.items[0] = { id, source_.frames == 0 ? 0.0 : double (run.frames) / double (source_.frames) };
+    const bool sharedLowWalk = id == Analyzer::LowEnd && ! run.lowEndsReady;
+    current.count = sharedLowWalk ? 3u : 1u;
+    const auto sharedFraction = run.lowEndsReady && isLowEnd (id) ? 1.0
+        : source_.frames == 0 ? 0.0 : double (run.frames) / double (source_.frames);
+    current.items[0] = { id, sharedFraction };
+    if (sharedLowWalk)
+    {
+        current.items[1] = { Analyzer::LowEnd150, sharedFraction };
+        current.items[2] = { Analyzer::InfraLow, sharedFraction };
+    }
     if (run.stage == 0)
     {
         const auto plan = detail::MeasurementPlan::storageFor (pcm, params); const auto& price = plan.analyzers[index];
+        if (isLowEnd (id) && run.lowEndsReady)
+        {
+            if (! run.results[index]) { publish(); return; }
+            run.stage = 3; event.kind = EventKind::Phase; event.payload.phase = measurementProgress_; emit (event); return;
+        }
         if (! price.available) { result.status = MeasurementStatus::Unavailable; result.reason = MeasurementReason::Unsupported; publish(); return; }
-        const auto retained = sizeof (Store) + price.rowValues * sizeof (double) + detail::MeasurementPlan::rowAllowance;
-        const auto scratch = price.workspace + detail::MeasurementPlan::workspaceAllowance;
+        std::uint64_t retained = sizeof (Store) + price.rowValues * sizeof (double) + detail::MeasurementPlan::rowAllowance;
+        std::uint64_t scratch = price.workspace + detail::MeasurementPlan::workspaceAllowance;
+        if (id == Analyzer::LowEnd)
+            for (const auto companion : { Analyzer::LowEnd150, Analyzer::InfraLow })
+            {
+                const auto& extra = plan.analyzers[std::size_t (companion)];
+                retained += sizeof (Store) + extra.rowValues * sizeof (double) + detail::MeasurementPlan::rowAllowance;
+                scratch += extra.workspace + detail::MeasurementPlan::workspaceAllowance;
+            }
         Checked request; request.bytes = retained + scratch; request.largestBlockBytes = std::max (retained, scratch);
         if (demand (request).rejection != Rejection::None)
-        { result.status = MeasurementStatus::Unavailable; result.reason = MeasurementReason::Memory; publish(); return; }
+        {
+            if (id == Analyzer::LowEnd)
+                for (const auto companion : { Analyzer::LowEnd, Analyzer::LowEnd150, Analyzer::InfraLow })
+                {
+                    auto& refused = measurementResults_[std::size_t (companion)];
+                    refused.status = MeasurementStatus::Unavailable; refused.reason = MeasurementReason::Memory;
+                }
+            else { result.status = MeasurementStatus::Unavailable; result.reason = MeasurementReason::Memory; }
+            run.lowEndsReady = id == Analyzer::LowEnd;
+            publish(); return;
+        }
         run.results[index].reset (new Store); auto& out = *run.results[index]; out.capacity = price.rowValues;
         if (out.capacity != 0) out.rows.reset (new double[std::size_t (out.capacity)]);
+        if (id == Analyzer::LowEnd)
+            for (const auto companion : { Analyzer::LowEnd150, Analyzer::InfraLow })
+            {
+                const auto ci = std::size_t (companion); const auto& extra = plan.analyzers[ci];
+                run.results[ci].reset (new Store); run.results[ci]->capacity = extra.rowValues;
+                if (extra.rowValues != 0) run.results[ci]->rows.reset (new double[std::size_t (extra.rowValues)]);
+                if (! workspace.prepare (companion, pcm, plan, false)) detail::storageOverflow();
+            }
         run.bytes += retained;
         if (! workspace.prepare (id, pcm, plan)) detail::storageOverflow();
         ++run.stage;

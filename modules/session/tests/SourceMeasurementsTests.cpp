@@ -840,24 +840,52 @@ void analyzerProgress()
         const auto& p = snap.view().measurementProgress;
         if (p.name != PhaseName::Analyzers) { outside = outside && ! p.analyzers; continue; }
         if (! active || run.finished || s.needlesJob() != 0) continue;
-        named = named && p.analyzers && p.analyzers->count == 1;
-        if (! p.analyzers || p.analyzers->count != 1) continue;
-        const auto& row = p.analyzers->items[0];
-        named = named && row.analyzer == expected;
-        const auto index = std::size_t (row.analyzer);
-        monotone = monotone && row.fraction && *row.fraction >= previous[index] && *row.fraction <= 1;
-        if (row.fraction) previous[index] = *row.fraction;
-        ++seen[index];
+        const bool grouped = p.analyzers && p.analyzers->count == 3;
+        named = named && p.analyzers && (p.analyzers->count == 1 || p.analyzers->count == 3)
+            && (! grouped || (p.analyzers->items[0].analyzer == Analyzer::LowEnd
+                && p.analyzers->items[1].analyzer == Analyzer::LowEnd150
+                && p.analyzers->items[2].analyzer == Analyzer::InfraLow));
+        if (! p.analyzers) continue;
+        for (unsigned i = 0; i < p.analyzers->count; ++i)
+        {
+            const auto& row = p.analyzers->items[i];
+            named = named && (grouped || row.analyzer == expected);
+            const auto index = std::size_t (row.analyzer);
+            monotone = monotone && row.fraction && *row.fraction >= previous[index] && *row.fraction <= 1;
+            if (row.fraction) previous[index] = *row.fraction;
+            ++seen[index];
+        }
     }
-    ok (named, "Analyzers names the instrument the pump advances, including its finish and copy");
+    ok (named, "Analyzers names the instrument the pump advances and lists all three low-end analyzers during their shared walk");
     bool every = true;
     for (const auto id : detail::SourceMeasurements::order) every = every && seen[std::size_t (id)] > 1;
     ok (every && monotone, "each analyzer has its own monotone fraction in 0..1");
     ok (outside, "the analyzer list is null outside Analyzers");
 }
+void cancelSharedLowEnds()
+{
+    std::vector<float> samples (4u * 48000u, 0.1f); const float* planes[] { samples.data() };
+    auto made = Session::create(); auto& s = *made.session;
+    (void) s.apply (command::Load { 1, { planes, 1, samples.size(), 48000 }, {} });
+    bool walkingTogether = false;
+    for (unsigned i = 0; i < 10000 && s.measurementJob() != 0; ++i)
+    {
+        (void) s.step (1);
+        const auto& p = s.snapshot().view().measurementProgress;
+        walkingTogether = p.analyzers && p.analyzers->count == 3 && p.analyzers->items[0].fraction
+            && *p.analyzers->items[0].fraction > 0.0;
+        if (walkingTogether) break;
+    }
+    const auto job = s.measurementJob();
+    const auto stopped = job != 0 ? s.apply (command::Cancel { 2, job }) : Answer {};
+    const auto view = s.snapshot(); bool all = walkingTogether && stopped.rejection == Rejection::None;
+    for (const auto id : { Analyzer::LowEnd, Analyzer::LowEnd150, Analyzer::InfraLow })
+        all = all && view.view().measurements[std::size_t (id)].status == MeasurementStatus::Cancelled;
+    ok (all && s.measurementJob() == 0, "cancelling the shared low-end walk ends all three analyzer results together");
+}
 int main()
 {
-    analyzerProgress();
+    analyzerProgress(); cancelSharedLowEnds();
     fixture (2, 48000, 192000, 317, true);
     fixture (1, 48000, 192000, 1024, false);
     fixture (2, 8000, 800, 1, false);
