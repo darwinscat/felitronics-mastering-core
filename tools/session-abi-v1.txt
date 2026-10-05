@@ -1981,9 +1981,9 @@ wire TargetPatch.loudnessMode? LoudnessMode | null
 # one, never ends it; forget of its master or a new source ends it (MeasurementReason::MasterForgotten, its term). The
 # snapshot lists every grade not yet ended (Snapshot.damageJobs: job, master, Waiting or Running, progress). A max
 # master is a landing and a delivery (no guard): its damage is graded as any master's, and MaxStop's Guard, GuardUnmet
-# and Unguarded, with facts 609, 610 and 614, are no longer said; a max master the budget holds under [landing.max]
-# floorLufs is pulled up to it (MaxStop::Floor), said as the mode and the level (616), its numbers in a line for the
-# log (617).
+# and Unguarded, with facts 609, 610 and 614, are no longer said; a max master whose first landing's file stands under
+# [landing.max] floorLufs — whatever held it there: the budget, the passes — is pulled up to it (MaxStop::Floor), said as
+# the mode and the level (616), its numbers in a line for the log (617).
 enum felitronics::session::Rejection::DamageSettled=36
 enum felitronics::session::Rejection::DamageQueued=37
 enum felitronics::session::Rejection::DamageQueueFull=38

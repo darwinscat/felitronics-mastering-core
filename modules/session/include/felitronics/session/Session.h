@@ -871,6 +871,9 @@ private:
     // kMaxDamageGrades, in the session object itself: a new source's last words for all of them fit one event batch.
     std::array<DamageJobEntry, kMaxDamageGrades> damageJobs_ {};
     std::size_t damageCount_ = 0;
+    // The batch's leading events of the world a command replaced (a new source's farewells, endAllDamage): they keep the
+    // revision they were said under where the command stamps its own on the rest.
+    std::size_t oldWorldEvents_ = 0;
 
 };
 

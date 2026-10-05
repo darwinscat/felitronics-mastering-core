@@ -360,11 +360,12 @@ void Session::endDamage (std::size_t index, MeasurementReason stopped, bool line
 void Session::endAllDamage() noexcept
 {
     while (damageCount_ != 0) endDamage (0, MeasurementReason::MasterForgotten, false);
+    oldWorldEvents_ = eventCount_;    // the command's revision is not theirs (Session::apply)
 }
 
 Stepped Session::step (std::uint32_t budget) noexcept
 {
-    eventCount_ = 0;
+    eventCount_ = 0; oldWorldEvents_ = 0;
     // With no work there is no arithmetic to refuse and no publication to number.
     if (! hasWork()) return { StepState::Done, 0, false };
     if (checkFloatingPointEnvironment() != Status::Ok)

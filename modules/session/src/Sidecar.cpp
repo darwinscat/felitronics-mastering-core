@@ -54,7 +54,7 @@ Answer Session::loadMeasured (CommandId id, const MeasuredSource& facts) noexcep
     // Copy the potentially aliased name before releasing the old source.
     std::unique_ptr<char[]> name (facts.name.empty() ? nullptr : new char[facts.name.size()]);
     std::copy (facts.name.begin(), facts.name.end(), name.get());
-    eventCount_ = 0;
+    eventCount_ = 0; oldWorldEvents_ = 0;
     // The masters first, the damage's grades among them — each says it ends with its master (MasterForgotten): they
     // read the source the next line frees.
     endAllDamage();
@@ -148,7 +148,7 @@ Answer Session::attachAudio (CommandId id, const Pcm& pcm) noexcept
     measurementProgress_ = { PhaseName::Stream, 0.0, config::Config::versions().all, 0, 0, 0,
         std::uint32_t (std::min<std::uint64_t> ((pcm.frames + 1023u) / 1024u + 1u, 4294967295u)), std::nullopt };
     ++revision_;
-    eventCount_ = 0;
+    eventCount_ = 0; oldWorldEvents_ = 0;
     Notification event; event.kind = EventKind::Phase; event.jobId = measurementJob_; event.payload.phase = measurementProgress_; emit (event);
     answer.revision = revision_; answer.job = measurementJob_;
     requestNeedles();

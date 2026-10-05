@@ -342,7 +342,6 @@ Checked Session::storageFor (const Request& request) const noexcept
         if (kept == first + masterCount_) return rejected (Rejection::UnknownMaster);
         for (std::size_t i = 0; i < damageCount_; ++i)
             if (damageJobs_[i].masterId == grade->master) return rejected (Rejection::DamageQueued);
-        if (damageCount_ == kMaxDamageGrades) return rejected (Rejection::DamageQueueFull);
         // Settled: graded, or not gradable — a result asking again would only repeat. Not settled: never graded, stopped
         // by a cancel, or refused for the room its turn lacked (the capacity may be another now).
         const auto& damage = kept->report ? kept->report->damage : MasterDamage {};
@@ -351,6 +350,8 @@ Checked Session::storageFor (const Request& request) const noexcept
         if (! kept->report || ! masterRows_ || ! masterRows_[std::size_t (kept - first)].damageGradable || ! again)
             return rejected (Rejection::DamageSettled);
         if (lastJob_ == std::numeric_limits<JobId>::max()) return rejected (Rejection::NoJobId);
+        // Last: the one refusal that passes — a full queue has room again once some grades end.
+        if (damageCount_ == kMaxDamageGrades) return rejected (Rejection::DamageQueueFull);
         return {};
     }
     return {};   // SetManual: nothing past the table
@@ -388,7 +389,7 @@ Answer Session::rejectProtocol (CommandId id) noexcept
 }
 Answer Session::reject (Answer answer) noexcept
 {
-    eventCount_ = 0;
+    eventCount_ = 0; oldWorldEvents_ = 0;
     answer.revision = revision_;
     if (answer.rejection == Rejection::Memory)
     {
@@ -417,7 +418,7 @@ Answer Session::reject (Answer answer) noexcept
 
 Answer Session::apply (const Request& request) noexcept
 {
-    eventCount_ = 0;
+    eventCount_ = 0; oldWorldEvents_ = 0;
     Answer answer;
     answer.command = idOf (request);
     const Checked checked = check (request);
@@ -749,7 +750,9 @@ Answer Session::apply (const Request& request) noexcept
     replan();
     refreshEqCurve();
     answer.revision = ++revision_;
-    for (std::size_t i = 0; i < eventCount_; ++i)
+    // The command's revision on its own events — not on those of the world it replaced (a new source's farewells to the
+    // old one's grades, endAllDamage), which keep the revision they were said under.
+    for (std::size_t i = oldWorldEvents_; i < eventCount_; ++i)
     {
         auto& e = (*events_)[i];
         e.revision = revision_;

@@ -596,6 +596,10 @@ void damageGrades()
             const std::string name = std::to_string (many) + " grades, then " + (next == 0 ? "steps" : next == 1 ? "a cancel" : "another load");
             auto r = gradeSession (many > 2 ? 1.0 : 3.0);
             auto& s = *r.session;
+            // A master graded to its end first: its damage settled.
+            const auto settledMaster = deliver (r, 50);
+            (void) act (r, command::GradeDamage { 51, settledMaster });
+            (void) stepUntil (r, [&] { return s.damageJobs().empty(); });
             std::vector<JobId> asked;
             for (std::size_t k = 0; k < many; ++k)
             {
@@ -603,8 +607,14 @@ void damageGrades()
                 asked.push_back (act (r, command::GradeDamage { CommandId (101 + 2 * k), master }).job);
             }
             const auto full = many == kMaxDamageGrades ? act (r, command::GradeDamage { 999, deliver (r, 998) }).rejection : Rejection::DamageQueueFull;
+            // With the queue full, the permanent refusals still come first: a settled damage, a master not kept, a grade
+            // already asked — DamageQueueFull, the one that passes, last.
+            const bool order = many != kMaxDamageGrades
+                || (act (r, command::GradeDamage { 997, settledMaster }).rejection == Rejection::DamageSettled
+                    && act (r, command::GradeDamage { 996, settledMaster + 10000u }).rejection == Rejection::UnknownMaster
+                    && act (r, command::GradeDamage { 995, s.damageJobs()[1].masterId }).rejection == Rejection::DamageQueued);
             (void) atPoint (r, many > 2 ? 0.0 : 0.5);
-            const auto oldSource = s.source().hash;
+            const auto oldSource = s.source().hash, oldRevision = s.revision();
             const auto pcm = struck (48000, 2.0, 0.3), other = struck (48000, 2.5, 0.2);
             const float* planes[] { pcm.data(), pcm.data() + pcm.size() / 2u };
             const float* otherPlanes[] { other.data(), other.data() + other.size() / 2u };
@@ -631,13 +641,13 @@ void damageGrades()
                 if (e.kind == EventKind::Damage && e.payload.damage.reason == MeasurementReason::MasterForgotten
                     && e.payload.damage.status == MeasurementStatus::Cancelled) ended.push_back (e.jobId);
                 else quiet = false;
-                stamped = stamped && e.source == oldSource && i < loadBatchEnd;
+                stamped = stamped && e.source == oldSource && e.revision == oldRevision && i < loadBatchEnd;
                 first = first && ! seenNew;
             }
-            ok (loaded.rejection == Rejection::None && full == Rejection::DamageQueueFull && newSource != oldSource
+            ok (loaded.rejection == Rejection::None && full == Rejection::DamageQueueFull && order && newSource != oldSource
                     && ended == asked && quiet && stamped && first && largest <= kEventBatch && s.damageJobs().empty(),
                 name + ": each grade's last word in the load's own batch, in queue order, stamped with its own source and "
-                "ahead of the new one, nothing else of them after, no batch past its bound (largest "
+                "revision and ahead of the new one, nothing else of them after, no batch past its bound (largest "
                 + std::to_string (largest) + " of " + std::to_string (kEventBatch) + ")");
         }
 }
