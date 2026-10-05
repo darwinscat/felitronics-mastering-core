@@ -266,6 +266,9 @@ void pump()
     // table. Each restatement takes them out first; a manual master (the scenario's) never reads them.
     const auto withoutMax = [] (std::string& targets, std::string& engine)
     {
+        // The unread compressor mix was removed (owner, 05.10); restore it for the older config fingerprints alone.
+        if (const auto at = engine.find ("\n[compressor]\n"); at != std::string::npos)
+            engine.insert (at + 14, "mix = 1\n");
         // ...and the glue's mix (v0.17.0): [glue] mixDomain, mix, mixRange, mixStep — the saturation's keys of the same
         // names stay.
         if (const auto glue = engine.find ("\n[glue]\n"); glue != std::string::npos)
@@ -414,7 +417,7 @@ void pump()
     // carries no damage job — the pin without the damage above holds, and this one moves by that job alone; the max modes
     // by ear (v0.16.0) move the config's version alone (withoutMax restates it).
     // The glue's mix (v0.17.0) moves the config's version alone here (withoutMax restates it too).
-    ok (eventsHash (one) == 0x967f1f8dd1966261ull && eventsHash (cancelled) == 0x150f9b065e8e1022ull,
+    ok (eventsHash (one) == 0x77f4fbb6f2509a75ull && eventsHash (cancelled) == 0x615875f5c00c6712ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",

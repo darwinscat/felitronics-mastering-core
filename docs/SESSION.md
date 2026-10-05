@@ -567,7 +567,7 @@ glue of N dB takes less than N dB off the loud places of the master. A person mo
 page's slider runs 0…1 by 0.2 (0, 20, … 100 %; `mixRange`, `mixStep` — the owner: a finer step is placebo), the core
 takes any share in the domain as written, the project keeps it (`[glue] mix.hand`), a change of target resets it. At 1 the
 glue is the downward compressor it was before, to the bit (`felitronics_session_glue_saturation_tests` pins v0.16.0's
-cd master); `[compressor] mix`, which wrote that 1, is no longer read (kept until its removal is decided). The knob below, and every number of it, is the compressor's
+cd master); `[compressor] mix`, which wrote that 1, is removed (owner, 05.10). The knob below, and every number of it, is the compressor's
 own: the mix scales none of them, and the glue's trace (`GlueGr`) is the compressor's detector, before the mix.
 The glue's knob, "up to N dB", is the loss on the loud places: the travel `g` at which the core's own static curve
 (`dynamics::GainComputer`, soft knee included) takes exactly N dB at the loud places (the P95 and the calibration over it, below), found on that curve by bisection — one
