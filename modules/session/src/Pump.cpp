@@ -495,12 +495,26 @@ Stepped Session::step (std::uint32_t budget) noexcept
             const auto outcome = masterTraceActive_ ? mastering::StepResult::Done : masterJob_->step (1024);
             ++masterUnit_;
             const bool end = outcome != mastering::StepResult::More;
+            const auto expectedRenders = delivery ? 0u : masterJob_->mode == LoudnessMode::Manual ? passes
+                : std::uint32_t (masterJob_->search.startedExcerptRenders() + 3);
             const auto total = std::uint32_t (std::min<std::uint64_t> (
-                4294967295u, (source_.frames / 1024u + 2u * std::uint64_t (masterJob_->frames) / 1024u + 64u) * 12u));
+                4294967295u, (source_.frames / 1024u + 2u * std::uint64_t (masterJob_->frames) / 1024u + 64u)
+                    * std::max (1u, expectedRenders)));
+            double fraction = masterProgress_.fraction;
+            if (! delivery && ! end)
+            {
+                const double expected = double (std::max (1u, expectedRenders));
+                const double rendered = std::max (0.0, masterJob_->search.renderProgress());
+                const double scaled = rendered <= expected ? 0.8 * rendered / expected
+                    : 1.0 - 0.2 * expected / rendered;
+                fraction = std::max (fraction, scaled);
+                // Once the search and its certificate have ended, leave only the fixed 20% completion reserve.
+                if (! masterJob_->search.active()) fraction = std::max (fraction, 0.8);
+            }
             // The master's passes, and how far its current walk over the file has come — a new count for each walk.
             masterProgress_ = { end ? PhaseName::Final : PhaseName::Pass,
-                end ? 1.0 : std::min (0.99, double (masterUnit_) / double (std::max (1u, total))),
-                config::Config::versions().all, delivery ? 0u : std::uint32_t (masterJob_->search.startedPasses()), delivery ? 0u : 12u,
+                end ? 1.0 : std::min (0.999999, fraction),
+                config::Config::versions().all, delivery ? 0u : std::uint32_t (masterJob_->search.startedRenders()), expectedRenders,
                 masterUnit_, total, end ? std::nullopt : masterJob_->stepFraction() };
             if (! delivery && ! end && masterJob_->search.renderingExcerpt())
             {
