@@ -9,7 +9,7 @@
       "fc_session_abi 11"
     ],
     "configVersion": "35113d4fab3fdc60",
-    "codecSchemaSha256": "0f1bec617bdffee6e9697539c8901c0d98eb2f14124270c51221d70e1e5eea16"
+    "codecSchemaSha256": "bb49e39c68b254a316ab4c2aa969ee3b559a3682ce9d4becae0dc515bc66fa25"
   },
   "scenarios": {
     "cancel": {
@@ -49,7 +49,7 @@
     },
     "measurement": {
       "scriptSha256": "bcde2dcc70541554c86691bbf5fa4b85cad78afc3d22cee5f3881dd6bc991c25",
-      "sha256": "ed891c20a73da958283decd9e5ebb3abafc8bd7ad1073046d76b4ae8ed03a047",
+      "sha256": "aaf850fa1012817cfc1cdb394243958c5b3f0b056cddd242fbf0308a5e481904",
       "bytes": 1858656
     },
     "measurement-needles": {
@@ -74,7 +74,7 @@
     },
     "measurement-sidecar": {
       "scriptSha256": "5404c1c7d1eda5106be368cc003c641215bc908145b9adceb28264a7d82ebc7d",
-      "sha256": "64383d8437b77485a9d82b4bd2503dc857dd509ae545da78a3ce0eedebcf4c1b",
+      "sha256": "887eec67b18f86c36b1d45dae71635bedd2b12a29af0e2d3b6d6feeee44847a2",
       "bytes": 4224571
     },
     "measurement-silence": {
