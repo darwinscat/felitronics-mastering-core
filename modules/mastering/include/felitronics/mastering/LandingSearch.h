@@ -1149,7 +1149,7 @@ private:
     // target's): between the loudest render that kept the budget below the lowest that broke it and that one, by the
     // secant of their excess (kept within the middle three fifths); with no render under it, a step back of three times
     // the excess, a dB at least.
-    double previousBudgetClamp (double next) const noexcept
+    double previousBudgetClamp (double next) noexcept
     {
         const int over = lowestOverBudget();
         if (over < 0) return next;
@@ -1164,6 +1164,9 @@ private:
             const double dKept = driveOf (kept), eKept = budgetExcess_[(std::size_t) kept];
             limit = dKept + std::clamp (-eKept / (eOver - eKept), 0.2, 0.8) * (dOver - dKept);
         }
+        if (limit < next)
+            nextReason_ = kept >= 0 ? SolvePassRecord::Reason::InsideBracket
+                                    : SolvePassRecord::Reason::StepBackBySlope;
         return std::fmin (next, limit);
     }
 
