@@ -136,12 +136,13 @@ private:
     bool nonFinite_ = false, undefined_ = false, outOfRange_ = false;
 };
 
-// THE DAMAGE AS A JOB OF ITS OWN (Session::damageJob): started when its master is delivered, so the master reaches the
-// shell when its own work ends and the grade follows. It owns what the walks need — the master's chain, prepared again
-// by begin() at 48 kHz, and the parameters the master was delivered with. It is made in the unit that delivers the
-// master, while the master's job still stands, and that job goes in the same unit; MasterJob::plan prices both together,
-// so the moment they coexist is inside the master's demand, and the walks then allocate in the room the master's job
-// left. bytes() is all it holds: the object, its master chain's construction and the walks' plan.
+// THE DAMAGE AS A JOB OF ITS OWN (Session::damageJob, the running grade): made when a grade the shell asked
+// (command::GradeDamage) takes its turn in the queue — no master job and no source measurement running, its room checked
+// against the capacity then (Session::startDamage) — from what its master kept (MasterRows: the walks' plan and the
+// parameters it was delivered with). It owns what the walks need: the master's chain, prepared again by begin() at
+// 48 kHz, and those parameters. A new master frees it (the grade parked, to be made again at its turn); cancel, forget of
+// its master and a new source free it with the grade. bytes() is all it holds: the object, its master chain's
+// construction and the walks' plan.
 struct DamageJob
 {
     static std::uint64_t bytes (const DamagePlan& plan) noexcept

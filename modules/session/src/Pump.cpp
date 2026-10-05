@@ -72,7 +72,7 @@ text::Fact OwnedFact::view() const noexcept
 std::uint64_t Session::stepBytes() noexcept { return 0; }
 JobId Session::measurementJob() const noexcept { return measurementJob_; }
 bool Session::hasWork() const noexcept
-{ return measurementJob_ != 0 || job_ != 0 || needlesJob_ != 0 || crestJoin_ || damageJobId_ != 0; }
+{ return measurementJob_ != 0 || job_ != 0 || needlesJob_ != 0 || crestJoin_ || damageCount_ != 0; }
 std::span<const Notification> Session::events() const noexcept { return { events_->data(), eventCount_ }; }
 void Session::emit (Notification event) noexcept
 {
@@ -85,6 +85,7 @@ Phase Session::jobProgress (JobId job) const noexcept
     if (job == needlesJob_) return needlesProgress_;
     if (job == measurementJob_) return measurementProgress_;
     if (job == damageJobId_) return damageProgress_;
+    if (const auto at = damageIndex (job); at < damageCount_) return damageJobs_[at].progress;
     return {};
 }
 void Session::emit (Notification event, const Phase& progress) noexcept
@@ -134,7 +135,7 @@ void Session::preferTempo (std::uint32_t waiting) noexcept
 void Session::dropJob (JobId job) noexcept
 {
     // The damage's job ends as its own (cancel says its fact first and ends it itself); never as the master's below.
-    if (job == damageJobId_ && job != 0) { endDamage (MeasurementReason::Cancelled, true); return; }
+    if (const auto at = damageIndex (job); job != 0 && at < damageCount_) { endDamage (at, MeasurementReason::Cancelled, true); return; }
     if (job == needlesJob_ && job != 0)
     {
         clearNeedles();
@@ -203,28 +204,68 @@ void Session::needlesAfterDroppedMaster() noexcept
     if (source_.channels != 0 && ! planInputs (project_).needlesCurrent) requestNeedles();
 }
 
-// THE DAMAGE'S JOB. Started in the unit that delivers its master, with an id of its own; its walks are begun by its
-// first unit (src/Damage.h: the chains at 48 kHz, PEAQ, the meters), inside the room the master's job left.
-void Session::startDamage (MasterId master, const detail::MasterJob& job) noexcept
+// THE DAMAGE'S JOBS. Asked by the shell (command::GradeDamage) for a master kept; what its walks need to start — the
+// master's winning parameters and the walks' plan — is the master's own (MasterRows), and the walks are begun when its
+// turn comes.
+// A grade's progress before its walks: two walks of the source a block a unit, each with the chains' latency after it,
+// and the gate between them.
+Phase Session::damageWaitingProgress() const noexcept
 {
-    auto& report = masters_[masterCount_ - 1].report->damage;
-    if (lastJob_ == std::numeric_limits<JobId>::max())
-    {
-        // No job id is left for it: the damage is not graded, and the master's damage line says so.
-        report.status = MeasurementStatus::Unavailable;
-        report.reason = MeasurementReason::NoJobId;
-        return;
-    }
-    damageJob_.reset (new detail::DamageJob);
-    damageJob_->master = master;
-    damageJob_->plan = job.damagePlan;
-    damageJob_->winning = job.winningParams();
-    damageJobId_ = ++lastJob_;
-    damageJobBytes_ = detail::DamageJob::bytes (damageJob_->plan);
-    // Two walks of the source a block a unit, each with the chains' latency after it, and the gate between them.
     const auto walk = (source_.frames + 1023u) / 1024u + 2u;
     const auto total = std::uint32_t (std::min<std::uint64_t> (4294967295u, 2u * walk + 16u));
-    damageProgress_ = { PhaseName::Reference, 0.0, config::Config::versions().all, 0, 0, 0, total, std::nullopt };
+    return { PhaseName::Reference, 0.0, config::Config::versions().all, 0, 0, 0, total, std::nullopt };
+}
+std::size_t Session::damageIndex (JobId job) const noexcept
+{
+    for (std::size_t i = 0; i < damageCount_; ++i)
+        if (damageJobs_[i].job == job) return i;
+    return damageCount_;
+}
+// THE FIRST WAITING GRADE TAKES ITS TURN: its walks' room checked against the capacity as it stands now — a master kept
+// since, a smaller capacity set — and refused, said with MeasurementReason::Memory, where it is not there; else its job
+// is made (src/Damage.h: the chains at 48 kHz, PEAQ, the meters are begun by its first step, in the same unit).
+bool Session::startDamage() noexcept
+{
+    const Kept* const first = masters_.get();
+    const auto index = std::size_t (std::find_if (first, first + masterCount_,
+        [&] (const Kept& k) { return k.id == damageJobs_[0].masterId; }) - first);
+    detail::debugBound (index < masterCount_ && masterRows_[index].damageGradable);
+    const auto& rows = masterRows_[index];
+    const auto bytes = detail::DamageJob::bytes (rows.damagePlan);
+    const Checked room = demand ({ Rejection::None, kNoField, bytes, 0, rows.damagePlan.largestBlock });
+    if (room.rejection != Rejection::None)
+    {
+        endDamage (0, MeasurementReason::Memory, true);
+        return false;
+    }
+    damageJob_.reset (new detail::DamageJob);
+    damageJob_->master = damageJobs_[0].masterId;
+    damageJob_->plan = rows.damagePlan;
+    damageJob_->winning = rows.damageWinning;
+    damageJobId_ = damageJobs_[0].job;
+    damageJobBytes_ = bytes;
+    damageProgress_ = damageWaitingProgress();
+    damageJobs_[0].state = DamageJobState::Running;
+    damageJobs_[0].progress = damageProgress_;
+    return true;
+}
+// A NEW MASTER PARKS THE RUNNING GRADE before it allocates: its walks are freed (the master's check counted them as
+// released), and it waits first in the queue, to start again from its beginning when its turn comes back — its grade is
+// never lost to a new master. Its progress says so (a phase at its start).
+void Session::parkDamage() noexcept
+{
+    if (damageJobId_ == 0) return;
+    damageJob_.reset();
+    damageJobBytes_ = 0;
+    damageProgress_ = {};
+    damageJobs_[0].state = DamageJobState::Waiting;
+    damageJobs_[0].progress = damageWaitingProgress();
+    Notification event;
+    event.jobId = damageJobId_;
+    event.kind = EventKind::Phase;
+    event.payload.phase = damageJobs_[0].progress;
+    damageJobId_ = 0;
+    emit (event);
 }
 void Session::stepDamage() noexcept
 {
@@ -247,6 +288,7 @@ void Session::stepDamage() noexcept
     p.fraction = std::min (0.99, double (job.units) / double (p.totalUnits));
     p.name = job.damage.phase();
     p.stepFraction = job.damage.walk();
+    damageJobs_[0].progress = p;
     if (! done)
     {
         Notification event;
@@ -257,49 +299,73 @@ void Session::stepDamage() noexcept
         return;
     }
     p = { PhaseName::Final, 1.0, config::Config::versions().all, 0, 0, job.units, job.units, std::nullopt };
+    damageJobs_[0].progress = p;
     Notification event;
     event.jobId = damageJobId_;
     event.kind = EventKind::Phase;
     event.payload.phase = p;
     ++revision_;
     emit (event);
-    endDamage (MeasurementReason::None, true);
+    endDamage (0, MeasurementReason::None, true);
 }
-void Session::endDamage (MeasurementReason stopped, bool line) noexcept
+// THE GRADE AT `index` ENDS: the running one with its walks' result (`stopped` None) or stopped, a waiting one stopped —
+// by cancel (Cancelled), by its master gone (MasterForgotten: forget, a new source) or by the room its turn lacked
+// (Memory, Unavailable). The running one's walks go at once, in this call: nothing of them is stepped or said after it.
+// Its master's report settles, its line where `line`, its Damage event — the job's last word; its entry leaves the
+// queue, the order of the rest kept.
+void Session::endDamage (std::size_t index, MeasurementReason stopped, bool line) noexcept
 {
-    const auto& job = *damageJob_;
+    const auto entry = damageJobs_[index];
+    const bool running = entry.state == DamageJobState::Running && entry.job == damageJobId_;
+    const Phase progress = running ? damageProgress_ : entry.progress;
     Kept* const first = masters_.get();
     Kept* const last = first + masterCount_;
-    Kept* const kept = std::find_if (first, last, [&] (const Kept& k) { return k.id == job.master; });
+    Kept* const kept = std::find_if (first, last, [&] (const Kept& k) { return k.id == entry.masterId; });
     Notification event;
-    event.jobId = damageJobId_;
-    event.payload.damage = { job.master, MeasurementStatus::Cancelled, stopped };
+    event.jobId = entry.job;
+    event.payload.damage = { entry.masterId, MeasurementStatus::Cancelled, stopped };
     if (kept != last && kept->report)
     {
         auto& d = kept->report->damage;
-        if (stopped != MeasurementReason::None) { d.status = MeasurementStatus::Cancelled; d.reason = stopped; }
-        else if (job.refused) { d.status = MeasurementStatus::Unavailable; d.reason = MeasurementReason::Unsupported; }
-        else job.damage.publish (d);
+        if (stopped == MeasurementReason::Memory) { d.status = MeasurementStatus::Unavailable; d.reason = stopped; }
+        else if (stopped != MeasurementReason::None) { d.status = MeasurementStatus::Cancelled; d.reason = stopped; }
+        else if (damageJob_->refused) { d.status = MeasurementStatus::Unavailable; d.reason = MeasurementReason::Unsupported; }
+        else damageJob_->damage.publish (d);
         event.payload.damage.status = d.status;
         event.payload.damage.reason = d.reason;
         if (line)
         {
             event.kind = EventKind::Fact;
             (void) event.payload.fact.assign (MasterReportText::damage (d));
-            emit (event, damageProgress_);
+            emit (event, progress);
         }
     }
     event.kind = EventKind::Damage;
-    emit (event, damageProgress_);
-    damageJob_.reset();
-    damageJobId_ = 0;
-    damageJobBytes_ = 0;
-    damageProgress_ = {};
+    emit (event, progress);
+    if (running)
+    {
+        damageJob_.reset();
+        damageJobId_ = 0;
+        damageJobBytes_ = 0;
+        damageProgress_ = {};
+    }
+    for (std::size_t i = index; i + 1 < damageCount_; ++i) damageJobs_[i] = damageJobs_[i + 1];
+    --damageCount_;
+    damageJobs_[damageCount_] = {};
+}
+// EVERY GRADE ENDS with its masters gone (a new source: the walks re-render from the old one): each says so — its last
+// word, MasterForgotten — in the load's own batch, in queue order, before the source is replaced, so each is stamped with
+// the source, state and revision it belonged to and comes before anything of the new one; the queue's room
+// (kMaxDamageGrades) keeps them all within the batch beside the load's own events.
+void Session::endAllDamage() noexcept
+{
+    while (damageCount_ != 0) endDamage (0, MeasurementReason::MasterForgotten, false);
+    oldWorldEvents_ = eventCount_;    // the command's revision is not theirs (Session::apply)
 }
 
 Stepped Session::step (std::uint32_t budget) noexcept
 {
-    eventCount_ = 0;
+    eventCount_ = 0; oldWorldEvents_ = 0;
     // With no work there is no arithmetic to refuse and no publication to number.
     if (! hasWork()) return { StepState::Done, 0, false };
     if (checkFloatingPointEnvironment() != Status::Ok)
@@ -458,9 +524,14 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 const auto completedJob = job_;
                 if (! detail::Driver::mastered (*this, completedJob)) { contract (completedJob); ++units; continue; }
                 masters_[masterCount_ - 1].report = masterJob_->reportResult();
-                // The damage's job takes what it needs of this job before it goes (its walks allocate when it first steps),
-                // so the damage's line below says Pending — or why it is not graded.
-                if (masterJob_->damageFollows) startDamage (completedJob, *masterJob_);
+                // What its damage grade needs, kept with the master for a grade the shell asks (command::GradeDamage):
+                // the damage's line below says Pending — or why it cannot be graded.
+                if (masterJob_->damageFollows)
+                {
+                    rows.damageGradable = true;
+                    rows.damagePlan = masterJob_->damagePlan;
+                    rows.damageWinning = masterJob_->winningParams();
+                }
                 // A crest joined inside the job is complete: mask copied, five cost bands scanned. Marked so a later
                 // join (a cancelled or finished source measurement) passes over it instead of publishing it again.
                 if (masters_[masterCount_ - 1].report->crest.status == MeasurementStatus::Ready)
@@ -488,6 +559,12 @@ Stepped Session::step (std::uint32_t budget) noexcept
                                                                           masterJob_->search.overBudgetDb())
                                                  : MasterReportText::landing (report, masterSummary_, toleranceLu, measure))
                     { (void) event.payload.fact.assign (*verdict); emit (event, masterProgress_); }
+                    // Pulled up to the floor: the numbers behind the plain verdict, a line of its own for the log (617).
+                    if (const auto detail = MasterReportText::maxFloorDetail (report,
+                            detail::maxBudgetDb (detail::rules().engine, report.loudnessMode),
+                            masterJob_->search.result().limiterActive.stats.p95Db, masterJob_->floorLufs,
+                            masterJob_->floorFirstLufs))
+                    { (void) event.payload.fact.assign (*detail); emit (event, masterProgress_); }
                     // Delivered above the ceiling (no render stayed under it): the mark, beside the verdict.
                     if (const auto above = MasterReportText::peaksAboveCeiling (report))
                     { (void) event.payload.fact.assign (*above); emit (event, masterProgress_); }
@@ -531,7 +608,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
                     if (const auto saturation = MasterReportText::saturation (*cost))
                     { (void) event.payload.fact.assign (*saturation); emit (event, masterProgress_); }
                 }
-                // The damage the processing did, heard — Pending here, graded by the damage's own job after the master —
+                // The damage the processing did, heard — Pending here, graded by its own job when the shell asks —
                 // and the loudness range's change: two lines, each its own or why not.
                 {
                     const auto& damage = masters_[masterCount_ - 1].report->damage;
@@ -569,15 +646,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 event.kind = EventKind::Done;
                 event.payload.done.masterId = completedJob;
                 emit (event, masterProgress_);
-                // The master is delivered; its damage is announced under its own job, which grades it from here.
-                if (damageJobId_ != 0)
-                {
-                    Notification started;
-                    started.jobId = damageJobId_;
-                    started.kind = EventKind::Damage;
-                    started.payload.damage = { completedJob, MeasurementStatus::Pending, MeasurementReason::Pending };
-                    emit (started, damageProgress_);
-                }
+
             }
         }
         else if (crestJoin_)
@@ -589,10 +658,11 @@ Stepped Session::step (std::uint32_t budget) noexcept
             stepNeedles();
         }
         // The damage of a delivered master: behind every other work — a master, its crest, the needles, the source's
-        // measurement — and it never holds one of them up.
-        else if (damageJobId_ != 0 && measurementJob_ == 0)
+        // measurement — and it never holds one of them up. The first waiting grade starts in the unit of its first step,
+        // or is refused there for the room it lacks.
+        else if (damageCount_ != 0 && measurementJob_ == 0)
         {
-            stepDamage();
+            if (damageJobId_ != 0 || startDamage()) stepDamage();
         }
         else if (waveform_ && ! waveform_->finished)
         {

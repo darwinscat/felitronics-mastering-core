@@ -277,6 +277,12 @@ void ceilingThroughFacade()
     (void) master (2);
     std::uint32_t step = 0;
     for (unsigned i = 0; i < 40000 && s->job() != 0; ++i) (void) fc_session_step (handle, 16, &step);
+    // The shell asks for the master's damage grade, and its walks begin.
+    const std::string grade = "{\"kind\":\"gradeDamage\",\"commandId\":\"9\",\"masterId\":"
+        + std::to_string (s->masters().empty() ? 0u : s->masters()[0].id) + "}";
+    (void) fc_session_command (handle, grade.data(), std::uint32_t (grade.size()), answer, sizeof (answer), &written);
+    // Its turn comes when nothing else runs (the source's measurement may still): then into its first walk.
+    for (unsigned i = 0; i < 40000 && s->damageJob() == 0 && ! s->damageJobs().empty(); ++i) (void) fc_session_step (handle, 1, &step);
     for (unsigned i = 0; i < 64 && s->damageJob() != 0; ++i) (void) fc_session_step (handle, 1, &step);
     (void) s->releaseMaster (s->pendingMaster());
     fc_session_storage storage { sizeof (fc_session_storage) };

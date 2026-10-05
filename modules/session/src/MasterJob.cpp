@@ -161,11 +161,9 @@ MaxStop maxStopOf (const MaxStopInputs& in) noexcept
     using mastering::MasteringSolveStatus; using mastering::MasteringConstraint;
     if (in.peaksAboveCeiling) return MaxStop::TruePeak;
     if (in.overBudget) return MaxStop::OverBudget;
-    if (! in.guardGraded) return MaxStop::Unguarded;
-    if (! in.guardPassed) return MaxStop::GuardUnmet;
-    if (in.guardTaken > 0) return MaxStop::Guard;
-    if (in.firstStatus == MasteringSolveStatus::Solved) return MaxStop::SearchCeiling;
-    if (in.firstStatus == MasteringSolveStatus::TargetUnreachable && in.firstBinding == MasteringConstraint::LimiterGainReduction)
+    if (in.floor) return MaxStop::Floor;
+    if (in.status == MasteringSolveStatus::Solved) return MaxStop::SearchCeiling;
+    if (in.status == MasteringSolveStatus::TargetUnreachable && in.binding == MasteringConstraint::LimiterGainReduction)
         return MaxStop::Budget;
     return MaxStop::Passes;
 }
@@ -313,21 +311,18 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         result.request.sourceMomentaryHopFrames = (long long) momentary->grid.stepFrames;
     }
     // A MAX MODE ([landing.max]): the landing aims at the modes' search ceiling with the mode's budget in place of the
-    // rule by the target's loudness, starting from the target's own number; the PEAQ guard grades before delivery.
+    // rule by the target's loudness, starting from the target's own number — a landing and a delivery, as a manual
+    // master's; its damage is graded as any master's, when the shell asks (owner, 04.10: no guard in the loop).
     result.loudnessMode = loudnessModeOf (ruleset, project);
     if (result.loudnessMode != LoudnessMode::Manual)
     {
         const auto max = engine.find ("landing").find ("max");
-        const auto modeRules = max.find (result.loudnessMode == LoudnessMode::MaxClean ? "clean" : "dense");
+        result.floorLufs = number (max.find ("floorLufs"));
         result.request.targetLufs = number (max.find ("ceilingLufs"));
         result.request.limiterGr.limitDb = maxBudgetDb (engine, result.loudnessMode);
-        result.guardFloorOdg = number (modeRules.find ("floorOdg"));
-        result.guardStepDb = number (max.find ("guardStepDb"));
-        const auto steps = max.find ("guardSteps").integer();
-        if (! steps || ! std::isfinite (result.request.targetLufs) || ! std::isfinite (result.request.limiterGr.limitDb)
-            || ! std::isfinite (result.guardFloorOdg) || ! std::isfinite (result.guardStepDb))
+        if (! std::isfinite (result.request.targetLufs) || ! std::isfinite (result.request.limiterGr.limitDb)
+            || ! std::isfinite (result.floorLufs))
         { result.rejection = Rejection::MandatoryUnavailable; return result; }
-        result.guardSteps = std::int32_t (*steps);
     }
     result.ready.params.limiter.ceilingDbTp = targetTp - margin;
     result.ready.deliveryBits = deliveryBits;
@@ -402,9 +397,9 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         || ! add (total, impactChainBytes) || ! add (total, impactScratchBytes)
         || ! add (total, 128u * 4096u))
     { result.rejection = Rejection::TooLong; return result; }
-    // THE DAMAGE'S WALKS (src/Damage.h): a job of their own after the master is delivered, priced here as that job and
-    // admitted with the master — it lives in the room this job leaves; a source they cannot run on still masters, and
-    // its report says why the damage has no grade.
+    // THE DAMAGE'S WALKS (src/Damage.h): a job of their own when the shell asks (command::GradeDamage), priced here as
+    // that job and admitted with the master, so a grade asked right after it finds the room this job leaves (its turn
+    // checks the capacity again); a source they cannot run on still masters, and its report says why it has no grade.
     result.damage = Damage::plan (s.source_.sampleRate, s.source_.frames, int (s.source_.channels), result.ready.topology);
     if (result.damage.ok)
     {
@@ -425,8 +420,12 @@ bool MasterJob::begin (const Session& s, const MasterPlan& plan)
     medium = plan.medium;
     damagePlan = plan.damage;
     mode = plan.loudnessMode;
-    guardFloorOdg = plan.guardFloorOdg; guardStepDb = plan.guardStepDb; guardSteps = plan.guardSteps;
-    landingRequest = plan.request;
+    floorLufs = plan.floorLufs;
+    floorRequest = plan.request;
+    floorRequest.targetLufs = plan.floorLufs;
+    floorRequest.limiterGr = {};
+    floorRequest.landingOnSourceGate = false;
+    floorPass = false;
     sourceLufs = plan.sourceLufs;
     targetLufs = plan.request.targetLufs;
     targetTp = plan.request.maxTruePeakDbTp;
@@ -469,61 +468,23 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     {
         const auto result = search.step (budget);
         if (result == StepResult::More) return result;
-        const auto& first = search.result();
-        firstStatus = first.status; firstBinding = first.binding;
-        // A max mode grades the landing's render before the file is delivered.
-        if (mode != LoudnessMode::Manual && result == StepResult::Done && first.deliverable && damagePlan.ok)
+        // A MAX MODE NEVER DELIVERS A FILE QUIETER THAN [landing.max] floorLufs (owner, 04.10: "always pulled up to −14"),
+        // whichever target it sits on: a first landing whose file — by its BS.1770 reading, the number a person reads —
+        // stands under that floor by more than the landing's own tolerance ([landing] toleranceLu: a file within it of a
+        // level is on that level, as every landing counts it) is landed again on the floor, by that reading, with no
+        // budget. Whatever held the first landing there (the budget, the passes) does not matter; what the floor pass
+        // delivers is said as what really ended it (settleLanding).
+        if (mode != LoudnessMode::Manual && ! floorPass && result == StepResult::Done && search.result().deliverable)
         {
-            candidateGainDb = first.preLimiterGainDb; candidateCeilingDb = first.ceilingDbTp;
-            candidateRendered = true;
-            startGuard();
-            return StepResult::More;
+            const double file = search.result().achievedLufs;
+            if (std::isfinite (floorLufs) && std::isfinite (file) && file < floorLufs - floorRequest.toleranceLu)
+            {
+                floorPass = true;
+                floorFirstLufs = file;
+                if (! beginFloor()) { stage = Stage::Failed; return StepResult::Failed; }
+                return StepResult::More;
+            }
         }
-        return settleLanding (result);
-    }
-    if (stage == Stage::Guard)
-    {
-        auto& g = *guard;
-        bool done = false;
-        if (! g.begun)
-        {
-            g.begun = true;
-            g.refused = ! g.damage.begin (g.plan, g.chain, g.winning, sourcePlanes, sourceFrames, channels);
-            done = g.refused;
-        }
-        else done = g.damage.step (budget);
-        if (! done) return StepResult::More;
-        MasterDamage d {};
-        if (g.refused) { d.status = MeasurementStatus::Unavailable; d.reason = MeasurementReason::Unsupported; }
-        else g.damage.publish (d);
-        guardRan = true;
-        // THE GUARD'S VERDICT: graded (Ready), the worst window above the mode's floor passes, and so does a render with
-        // nothing heard to hold against it (Ready, no window graded audible). A walk refused or unavailable did not grade
-        // the render: the guard stops there and the damage is said unchecked (MaxStop::Unguarded), never passed.
-        const bool graded = ! g.refused && d.status == MeasurementStatus::Ready;
-        const bool passed = graded && (! d.worstOdg || *d.worstOdg > guardFloorOdg);
-        if (passed || ! graded || guardTaken >= guardSteps)
-        {
-            guardGraded = graded;
-            guardPassed = passed;
-            guardDamage = d;
-            guard.reset();
-            if (candidateRendered) return settleLanding (StepResult::Done);
-            if (! beginStepRender()) { stage = Stage::Failed; return StepResult::Failed; }
-            stage = Stage::GuardRender;
-            return StepResult::More;
-        }
-        // A step back: the drive less guardStepDb at the same ceiling, graded before it is rendered.
-        ++guardTaken;
-        candidateGainDb -= guardStepDb;
-        candidateRendered = false;
-        startGuard();
-        return StepResult::More;
-    }
-    if (stage == Stage::GuardRender)
-    {
-        const auto result = search.step (budget);
-        if (result == StepResult::More) return result;
         return settleLanding (result);
     }
     if (stage == Stage::Prepare)
@@ -885,16 +846,9 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     if (stage == Stage::CostPublish)
     {
         report.cost = costResult;
-        // The loudness range is the master's own; the damage is graded after it, by a job of its own: Pending until then.
-        // A max mode's damage is its guard's grade of the delivered render — or, where the guard could not run, the
-        // reason it has none: no job follows a max master.
-        if (mode != LoudnessMode::Manual)
-        {
-            if (guardRan) report.damage = guardDamage;
-            else { report.damage.status = MeasurementStatus::Unavailable; report.damage.reason = damagePlan.reason; }
-            settleLra();
-        }
-        else if (settleLra(), ! damagePlan.ok) report.damage.reason = damagePlan.reason;
+        // The loudness range is the master's own; the damage is graded by a job of its own when the shell asks
+        // (command::GradeDamage): Pending until then.
+        if (settleLra(), ! damagePlan.ok) report.damage.reason = damagePlan.reason;
         else
         {
             report.damage.status = MeasurementStatus::Pending;
@@ -907,8 +861,7 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
     return StepResult::Failed;
 }
 
-// THE LANDING SETTLED — the search's render, or in a max mode the one its guard chose: the report's numbers, the hints of a
-// manual miss, and what ended a max mode.
+// THE LANDING SETTLED — the search's render: the report's numbers, the hints of a manual miss, and what ended a max mode.
 mastering::StepResult MasterJob::settleLanding (mastering::StepResult result) noexcept
 {
     using mastering::StepResult;
@@ -976,12 +929,11 @@ mastering::StepResult MasterJob::settleLanding (mastering::StepResult result) no
     }
     report.loudnessMode = mode;
     if (mode != LoudnessMode::Manual && solved.deliverable)
-    {
-        report.guardSteps = std::uint32_t (guardTaken);
-        // The delivered render's own: above the ceiling, over the budget (the landing's or the step render's proof).
+        // Floor only where the floor pass delivered on the floor (Solved: within the tolerance); a floor out of reach
+        // says what held it there (the true peak, the passes).
         report.maxStop = maxStopOf ({ solved.peaksAboveCeiling, std::isfinite (search.overBudgetDb()),
-                                      guardRan && guardGraded, guardPassed, guardTaken, firstStatus, firstBinding });
-    }
+                                      floorPass && solved.status == mastering::MasteringSolveStatus::Solved, solved.status,
+                                      solved.binding });
     if (result == StepResult::Failed || ! solved.deliverable)
     {
         report.crest.status = MeasurementStatus::Unavailable;
@@ -994,36 +946,15 @@ mastering::StepResult MasterJob::settleLanding (mastering::StepResult result) no
     return StepResult::More;
 }
 
-// A max mode's guard: a damage walk of the candidate's settings — the delivered parameters with its gain and ceiling.
-void MasterJob::startGuard() noexcept
+// THE LANDING AGAIN, ON THE FLOOR: the ready parameters, the request on the target's own loudness with no budget, from
+// the drive the first landing ended at; the same chain, buffers and source.
+bool MasterJob::beginFloor() noexcept
 {
-    guard.reset();
-    guard.reset (new DamageJob);
-    guard->plan = damagePlan;
-    guard->winning = winningParams();
-    guard->winning.preLimiterGainDb = candidateGainDb;
-    guard->winning.limiter.ceilingDbTp = candidateCeilingDb;
-    stage = Stage::Guard;
-}
-
-// The guard's step back rendered and delivered: one pass at the candidate's gain and ceiling, the needles set from the peak
-// the landing measured, no gate — the landing chose these settings. The mode's budget stays on: a lower drive can drop
-// windows near the limiter's activity threshold out of the active set and raise the P95 of the rest, so the delivered
-// pass proves the budget itself, and one that breaks it is delivered as over the budget (search.overBudgetDb()).
-bool MasterJob::beginStepRender() noexcept
-{
-    auto params = ready.params;
-    params.limiter.ceilingDbTp = candidateCeilingDb;
-    params.peakClipPeakDb = search.peakClipPeakDb();
-    auto request = landingRequest;
-    request.maxPasses = 1;
-    request.initialGainDb = candidateGainDb;
-    request.ceilingMarginDb = std::max (0.0, request.maxTruePeakDbTp - candidateCeilingDb);
-    request.landingOnSourceGate = false;
-    request.peakClipMeasured = true;
-    chain.setParams (params);
+    auto request = floorRequest;
+    request.initialGainDb = search.result().preLimiterGainDb;
+    chain.setParams (ready.params);
     const bool convert = deliveryRate != sourceRate;
-    return search.begin (chain, renderer, params, sourcePlanes, (long long) sourceFrames, double (sourceRate), outputPlanes,
+    return search.begin (chain, renderer, ready.params, sourcePlanes, (long long) sourceFrames, double (sourceRate), outputPlanes,
                          channels, frames, request, {}, convert ? &converter : nullptr);
 }
 

@@ -139,6 +139,18 @@ export async function runWasm(modulePath, scriptPath, {reorder = false, corruptR
                     record('place', a[0]); await transfer('events'); continue;
                 }
                 if (op === 'snapshot' || op === 'summary') { await transfer(op); continue; }
+                if (op === 'release') {
+                    // The pending master's token from the snapshot, released as a shell releases the PCM it took.
+                    await scoped(alloc => {
+                        const pending = JSON.parse(copy('snapshot', alloc).json).pendingMaster;
+                        const t = alloc(28), source = BigInt(pending.source), revision = BigInt(pending.revision);
+                        write(t, 28);
+                        write(t + 4, Number(source & 0xffffffffn)); write(t + 8, Number(source >> 32n));
+                        write(t + 12, Number(revision & 0xffffffffn)); write(t + 16, Number(revision >> 32n));
+                        write(t + 20, pending.job); write(t + 24, pending.master);
+                        ok('master_audio_release', handle(), t); record('release', '0');
+                    }); continue;
+                }
                 if (op === 'poison') {
                     handle();
                     await scoped(alloc => {

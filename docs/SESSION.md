@@ -232,6 +232,7 @@ from the code, and ctest holds the text between the markers below to that output
 | importProject | NoSource | NotPlaced | yes | yes | yes | yes | NotPlaced | yes | yes | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced |
 | continueMeasurement | NoJob | NoJob | NoJob | NoJob | NoJob | NoJob | yes | yes | yes | NoJob | NoJob | NoJob | NoJob | yes | yes |
 | adoptMachine | NoSource | NotPlaced | yes | yes | yes | yes | NotPlaced | yes | yes | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced | NotPlaced |
+| gradeDamage | NoSource | NoMaster | yes | yes | yes | yes | NoMaster | yes | yes | yes | yes | yes | yes | yes | yes |
 
 | the session's own transition | Empty | Loaded | Measured1 | Measured2 | Mastering1 | Mastering2 | Stopped | StoppedMeasured | MasteringStopped | Measured1Unplaced | Measured2Unplaced | Mastering1Unplaced | Mastering2Unplaced | StoppedMeasuredUnplaced | MasteringStoppedUnplaced |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
@@ -1395,8 +1396,9 @@ without the retired slots; fields may only be appended. Sizes below the base and
 statuses. A field appended later must define its absent-field meaning for callers of the base. Demand queries for commands, loads and imports use the session's own `storageFor`; capacity
 may be updated between calls as a heap ceiling and largest free block. Live bytes, less what the command frees before
 its first allocation, plus demand — and the largest allocation — are checked before work: `fc_session_storage` appends
-`releasedBytes` (v0.14.0; `Checked::releasedBytes` in C++), the bytes a `master` frees by stopping the damage being
-graded, so a shell's `liveBytes - releasedBytes + bytes` is exactly what the command's own check holds to the ceiling.
+`releasedBytes` (v0.14.0; `Checked::releasedBytes` in C++), the bytes the command frees first — the running damage
+grade's walks, which a `master` parks and a `cancel` of its job or `forget` of its master ends (v0.16.0) — so a shell's
+`liveBytes - releasedBytes + bytes` is exactly what the command's own check holds to the ceiling.
 A caller of the 32-byte base gets no `releasedBytes` and its `liveBytes + bytes` is an upper bound, never short.
 Nonallocating commands remain available when capacity is reduced.
 
@@ -1695,22 +1697,37 @@ with the source completion and master-keyed join events and snapshots on both si
 
 ## Measured ready-master report
 
-THE DAMAGE IS GRADED AFTER THE MASTER, BY A JOB OF ITS OWN (v0.14.0). The master's job ends with its cost and
-delivers the master — its events, the PCM, `Done` — with `MasterReport.damage` `Pending` (reason
-`Pending`; its line, fact 605, says so) and the loudness range's line already settled. In the same unit the session
-starts the damage's job (`Session::damageJob()`, the snapshot's `damageJob` and `damageProgress`) under a new job id,
-announced by the `damage` event right after `Done`: `DamageChange { masterId, status Pending, reason Pending }`. It is
-stepped behind every other work (a master, a crest join, the needles, the source's measurement), never blocks a command
-(it is no overlay: the session's column is the measured one), and publishes its phases `Reference` and `Damage` with
+THE DAMAGE IS GRADED WHEN THE SHELL ASKS, BY A JOB OF ITS OWN (v0.14.0; asked, queued, v0.16.0 — owner, 04.10: "it is a
+process of its own; let the UI start it"). The master's job ends with its cost and delivers the master — its events, the
+PCM, `Done` — with `MasterReport.damage` `Pending` (reason `Pending`; its line, fact 605, says so) and the loudness range's
+line already settled, and keeps with the master what a grade needs to start: the walks' plan and the parameters it was
+delivered with (`MasterRows`, no walk buffer). No grade starts by itself. `gradeDamage { masterId }` asks one: accepted
+with a job id of its own and announced by the `damage` event `DamageChange { masterId, Pending, Pending }`; refused for a
+master not kept (`UnknownMaster`), a grade of it already asked (`DamageQueued`, 137), or a damage settled
+(`DamageSettled`, 136: graded, or not gradable — no plan for the source), or past the queue's room of 32 grades waiting
+or running (`DamageQueueFull`, 138); a damage a
+cancel stopped, or a turn refused for the room it lacked, may be asked again. Grades run one at a time, in the order
+asked (the snapshot's `damageJobs`: job, master, `Waiting` or `Running`, progress — the running one first; `damageJob`
+and `damageProgress` are the running one's), stepped behind every other work (a master, a crest join, the needles, the
+source's measurement), never blocking a command (they are no overlay). A grade's turn checks its walks' room against the
+capacity as it stands (`DamageJob::bytes`: the object, its master chain, the walks' plan) and is refused there, said, where
+it is not: `Unavailable`, `Memory`, its line. Running, it publishes its phases `Reference` and `Damage` with
 `stepFraction`, then `Final`, the damage's line (603, 604 or 605) and the `damage` event with the report's own status and
-reason: `Ready` or `Unavailable`. It is stopped, its report `Cancelled`, by `cancel` of its id (reason `Cancelled`), by a
-new `master` (reason `Superseded`; the master's demand counts the damage's bytes as freed, and the damage stops before the
-master allocates), and by `forget` of its master (no line: that master is gone); each says its line where its master
-stays, and the `damage` event closes the job — after the cancel's own `Cancelled` fact, which comes first. `load` and `loadMeasured` drop
-it silently with the masters. Its memory is the master's: `MasterJob::plan` prices the job (`DamageJob::bytes` — the
-object, its master chain and the walks' plan) beside the master's, it lives in the room the master's job leaves, and
-`liveBytes()` counts it while it runs. With no job id left for it, the damage is not graded: `Unavailable`, `NoJobId`,
-and the master's damage line says so.
+reason: `Ready` or `Unavailable`. A new `master` parks the running grade — its walks freed before the master allocates
+(the master's check counts them as released), its progress back at its start, no line, no `damage` event — and it waits
+first, to start again when its turn comes back: a new master never ends a grade (`Superseded` is no longer said). A grade
+ends early only by its master's own cause, at once, in the command: `cancel` of its job id (its report `Cancelled`, the
+cancel's own fact, its line, the `damage` event; the running one's walks freed — the cancel's `releasedBytes`), `forget`
+of its master (`MasterForgotten`, no line: the master is gone; the running one's walks freed — the forget's
+`releasedBytes`) and a new source (`load`, `loadMeasured`: every grade, running and waiting, ends `MasterForgotten`, its
+last word in the load's own batch, in queue order, stamped with the source it belonged to and ahead of anything of the new
+one — the queue's room keeps them within the batch). The `damage` event is the job's last word:
+nothing of it comes after. Waiting, a
+grade holds its entry alone (`DamageJobEntry`, in the queue's fixed room of `kMaxDamageGrades`, 32, in the session
+object itself); the master's admitted demand
+still prices one grade's room (`MasterJob::plan`), which a grade asked right after it finds free. A grade is a measurement,
+not an edit: a project's journal does not hold it, and an import grades nothing. With no job id left, `gradeDamage` is
+refused (`NoJobId`).
 
 THE DAMAGE (`MasterReport.damage`, v0.14.0, `[cost.damage]` in engine.toml): PEAQ Basic (`analysis::Peaq`) of the
 master against the same chain with its dynamics at rest, graded in windows (10 s every 5 s; a programme shorter than a
@@ -1803,41 +1820,40 @@ target, the level landed and the budget («Цель −9,0 LUFS, сделано 
 (602) says so with its own reduction («…ни один вариант не уложился в бюджет лимитера 7 дБ (P95) — выдан самый мягкий
 из опробованных, лимитер в нём срезает 8,4 дБ.»). Neither has a hint: nothing in the mix is blamed. The file is still certified by
 BS.1770 (`achievedLufs`, `missLu`); where the level on the source's gate and that reading part by more than the
-tolerance, either way round, `MasterLandingGate` (601) says both («По громкой части −9,0 LUFS, по стандарту файла −9,8 LUFS.») in the
+tolerance, either way round, `MasterLandingGate` (601) says both («Без тихих мест −9,0 LUFS, по стандарту файла −9,8 LUFS.») in the
 miss's place, and the solved verdict (88) names the level landed. `targetMet` follows the status, as before.
 
-THE MAXIMUM LOUDNESS MODES (owner, 04.10, v0.15.0). A target's loudness mode is `manual`, `maxClean` or `maxDense`: a
-row of `targets.toml` may name it (`loudnessMode`; absent, manual), the two max targets appended last name theirs
-(`maxClean` «Максимум · чисто», `maxDense` «Максимум · плотно», the streaming group's medium), and any target takes one
-by hand — `editTarget` `loudnessMode` (0 manual, 1 maxClean, 2 maxDense; null gives the row's back; set and cleared at
-once is `Contract`, a fourth is `NotOneOf`, both naming the field `FieldTargetLoudnessMode`), kept in the project's
-target layer as `loudnessMode.hand = "<name>"` and said in the snapshot as the mode in effect (`Snapshot.loudnessMode`).
-Manual is the landing above, unchanged. A max mode asks for no number: it asks for the loudest master the limiter's
-budget and a PEAQ guard allow. Its landing aims at `[landing.max] ceilingLufs` (−5 LUFS) with the mode's budget —
-`clean.budgetDb` 3 dB, `dense.budgetDb` 7 dB, the same active P95 and the same proof — and a budget that holds it is
-the mode's success, not a miss. Before the file is delivered the guard grades the landing's render with the damage's
-own machine (src/Damage.h: PEAQ Basic against the chain at rest, in windows): its worst window above the mode's floor
-(`clean.floorOdg` −0.5, `dense.floorOdg` −1.5) passes; one at or under it steps the drive back by `guardStepDb` (1 dB)
-at the same ceiling, graded again before anything is rendered, `guardSteps` (3) times at most. The passing render is
-delivered — a step back is rendered once at its drive, the clipper's peak given as the landing measured it
-(`LoudnessRequest::peakClipMeasured`, no pass spent probing it), with the mode's budget on: a lower drive can drop
-windows near the limiter's activity threshold out of the active set and raise the P95 of the rest, so that pass proves
-the budget itself — and where none passes, the gentlest graded is, and says so. A render graded with nothing heard
-(Ready, no window audible) passes; one the guard could not grade — no damage plan for the source (a rate the
-resampler has no kernel for), a walk refused or unavailable — stops the guard there and is said unchecked, never
-passed. The guard's grade IS the
-master's damage (`MasterReport.damage`): no damage job follows a max master. Its walks are priced in the master's
-declaration as the damage's job is, and one lives at a time (a step's walk is freed before the next is made). The
-report says the mode, what ended it and the steps back (`MasterReport.loudnessMode`, `maxStop` — `Budget`, `Guard`,
-`GuardUnmet`, `SearchCeiling`, `Passes`, `TruePeak`, `Unguarded`, `OverBudget` — and `guardSteps`), in that order of
-precedence from the delivered render (`detail::maxStopOf`): above the ceiling, then over the budget (no render kept
-it — the same status and binding as a budget that held, told apart by the delivered render's own excess — or the step
-back broke it), then unchecked, then the guard's verdict, then the first landing's status; its verdict takes the landing's place, with
-no miss and no hint (no number was asked): `MasterMaxBudget` (608, the mode, the level and its budget: «Максимум ·
-чисто: −9,9 LUFS — дальше лимитеру пришлось бы срезать больше 3 дБ (P95), это предел режима.»), `MasterMaxGuard` (609,
-the steps back), `MasterMaxGuardUnmet` (610), `MasterMaxCeiling` (611), `MasterMaxPasses` (612), `MasterMaxTruePeak`
-(613), `MasterMaxUnguarded` (614, the damage unchecked, the budget holding) and `MasterMaxOverBudget` (615, the
-delivered render's P95 beside the mode's budget). A max row's `lufs` is where its manual mode starts (−10 clean, −8.6 dense): the planner reads it as before.
+THE MAXIMUM LOUDNESS MODES (owner, 04.10, v0.15.0; by ear, v0.16.0). A target's loudness mode is `manual`, `maxClean` or
+`maxDense`: a row of `targets.toml` may name it (`loudnessMode`; absent, manual), the two max targets appended last name
+theirs (`maxClean` «Максимум · чисто», `maxDense` «Максимум · плотно», the streaming group's medium), and any target takes
+one by hand — `editTarget` `loudnessMode` (0 manual, 1 maxClean, 2 maxDense; null gives the row's back; set and cleared at
+once is `Contract`, a fourth is `NotOneOf`, both naming the field `FieldTargetLoudnessMode`), kept in the project's target
+layer as `loudnessMode.hand = "<name>"` and said in the snapshot as the mode in effect (`Snapshot.loudnessMode`). Manual is
+the landing above, unchanged. A max mode asks for no number: it asks for the loudest master the mode's limiter budget
+allows. Its landing aims at `[landing.max] ceilingLufs` (−5 LUFS) with the mode's budget — `clean.budgetDb` 0.5 dB,
+`dense.budgetDb` 1.75 dB (owner, 04.10, by ear: the budget-curve ladder's medians land them near −13 and −11 LUFS), the
+same active P95 and the same proof — and a budget that holds it is the mode's success, not a miss. It never delivers a file
+quieter than `[landing.max] floorLufs` (−14 LUFS, whichever target the mode sits on; owner: "always pulled up to −14"): a
+mix so dense the budget held its file — by its BS.1770 reading — under the floor is landed again on the floor by that
+reading, with no budget, and delivered there — under it, that is, by more than the landing's own tolerance (`[landing]
+toleranceLu`: a file within it of a level is on that level, as every landing counts it), whatever held the first
+landing there (the budget, the passes). A max master is then a landing and a delivery, as a manual one: its damage
+is graded as any master's, when the shell asks (`gradeDamage`). v0.15.0 graded the render with a PEAQ guard before
+delivery and stepped the drive back by its floor; by ear both modes went too far while PEAQ heard nothing (owner: "out of
+the loop, let it measure in the background"), so since v0.16.0 the guard is out of the loop and out of the config
+(`floorOdg`, `guardStepDb`, `guardSteps`), and its stops (`Guard`, `GuardUnmet`, `Unguarded`) and facts (609, 610, 614)
+stay in the ABI, append-only, no longer said. The report says the mode and what ended it (`MasterReport.loudnessMode`,
+`maxStop` — from the landing alone, in this order (`detail::maxStopOf`): `TruePeak` (no render under the ceiling),
+`OverBudget` (no render kept the budget — the same status and binding as a budget that held, told apart by the delivered
+render's own excess), `Floor` (pulled up to the floor), `SearchCeiling`, `Budget`, `Passes`; `guardSteps` is 0), and its
+verdict takes the landing's place, with no miss and no hint: `MasterMaxBudget` (608, the mode, the level and its budget),
+`MasterMaxCeiling` (611), `MasterMaxPasses` (612), `MasterMaxTruePeak` (613), `MasterMaxOverBudget` (615, the delivered
+render's P95 beside the budget) and, delivered on the floor, `MasterMaxFloor` (616: the mode and the level alone — a
+person is told of no budget) followed by `MasterMaxFloorDetail` (617), the numbers for the log only: where the first
+landing's file stopped, the floor, and the P95 the limiter took to reach it beside the mode's budget (above it printed
+above it, as 615's; within it as it is) — no claim of what held the first landing. A floor pass that cannot reach the
+floor (the true peak, the passes) says what held it instead (`TruePeak`, `Passes`), never `Floor`. A max row's `lufs` is where its
+manual mode starts (−13 clean, −11 dense): the planner reads it as before.
 
 `MasterCrest` stores five peak-amplitude/mean-square-power pairs per block, in Low, LowMid, HighMid, High,
 Full order, plus five source activity values per block as zero/one values. Version, sample rate, hop

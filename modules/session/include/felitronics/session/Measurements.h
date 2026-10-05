@@ -28,19 +28,22 @@ enum class MeasurementStatus : std::uint8_t { Pending, Ready, Unavailable, Cance
 enum class MeasurementReason : std::uint8_t
 {
     None, Pending, Cancelled, Unsupported, TooShort, NonFinite, Capacity, NoSignal, NotImplemented, NeedNotAbove3, Memory,
-    Superseded,                                // a master's damage stopped by a new master (MasterDamage)
-    NoJobId                                    // a master's damage with no job id left to grade it (MasterDamage)
+    Superseded,                                // no longer said (v0.16.0: a new master parks a grade, never ends it)
+    NoJobId,                                   // a master's damage with no job id left to grade it (MasterDamage)
+    MasterForgotten                            // a master's damage grade ended with its master gone: forgotten, or
+                                               // dropped with its source by a new one (MasterDamage)
 };
 // What PEAQ (analysis::Peaq, ITU-R BS.1387 Basic) said of a window of a master (MasterDamage): its PeaqVerdict, by number.
 enum class DamageVerdict : std::uint8_t { NotRun, Graded, Transparent, NoSignal, NonFinite, Undefined, OutOfRange };
 // WHAT ENDED A MAX MODE'S LANDING (MasterReport::maxStop): None for a manual one. Budget — the mode's limiter budget held
-// the drive, proven (LandingSearch's proof); Guard — the PEAQ guard stepped the drive back to a render that passed;
-// GuardUnmet — no render the guard tried passed its floor, the gentlest is delivered; SearchCeiling — the landing reached
-// [landing.max] ceilingLufs inside the budget and the floor; Passes — the passes ran out first; TruePeak — no render kept
-// under the ceiling; Unguarded — the budget holds but PEAQ could not grade the render (no damage plan for the source, a
-// walk refused or unavailable): the damage is unchecked; OverBudget — the render delivered breaks the mode's budget (no
-// render kept it, or the guard's step back broke it).
-enum class MaxStop : std::uint8_t { None, Budget, Guard, GuardUnmet, SearchCeiling, Passes, TruePeak, Unguarded, OverBudget };
+// the drive, proven (LandingSearch's proof); SearchCeiling — the landing reached [landing.max] ceilingLufs inside the
+// budget; Passes — the passes ran out first; TruePeak — no render kept under the ceiling; OverBudget — no render kept the
+// mode's budget, the gentlest is delivered; Floor (v0.16.0) — the first landing's file stood under [landing.max]
+// floorLufs (−14 LUFS, whichever target) by more than the landing's tolerance, whatever held it there (the budget, the
+// passes): landed again on the floor, with no budget, and delivered on it (a floor pass that cannot reach it says what
+// held it instead). Guard, GuardUnmet and Unguarded were the v0.15.0 PEAQ guard's, out of the loop since v0.16.0: no
+// longer said.
+enum class MaxStop : std::uint8_t { None, Budget, Guard, GuardUnmet, SearchCeiling, Passes, TruePeak, Unguarded, OverBudget, Floor };
 // A missing number always carries a reason. analyzerReason preserves the instrument's more specific code.
 struct MeasurementValue
 {

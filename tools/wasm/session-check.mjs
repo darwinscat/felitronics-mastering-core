@@ -104,6 +104,9 @@ SURFACE[9] = SURFACE[8];
 // Version 10 (v0.15.0) appends the maximum loudness modes — a target's loudnessMode in editTarget, the project and the
 // snapshot, a max master's mode, stop and guard steps in its report, facts 608-615 and their terms — and no entry point.
 SURFACE[10] = SURFACE[9];
+// Version 11 (v0.16.0) appends the damage grade the shell asks (gradeDamage, the snapshot's damageJobs, its refusals and
+// MasterForgotten), a max master graded as any master (no guard) — and no entry point.
+SURFACE[11] = SURFACE[10];
 // ...and what the RUNTIME adds, and nothing else may: the heap's allocator for the page's buffers, and the one view of
 // the heap the page reads handles through (build.sh's -sEXPORTED_RUNTIME_METHODS).
 const RUNTIME = ['_malloc', '_free', 'HEAPU32'];
@@ -647,7 +650,12 @@ ok(staleSizeStatus === STATUS.ERR_STALE
 const releasedWire = masterWire('snapshot'), releasedEvents = masterWire('events');
 // THE STORAGE RECORD PAST ITS BASE (ABI 9): the PCM released, the delivered master's damage still graded, a 40-byte record
 // reads the bytes the next master frees first (releasedBytes, at 32), and a 32-byte record is not written past its size.
+// The grade is the shell's to ask (ABI 11): asked here, and stepped into its walks.
 {
+    const asked = cmd(masterSession, {kind: 'gradeDamage', commandId: '90', masterId: masterSnapshot().masters.at(-1).id});
+    ok(asked.kind === 'accepted' && asked.jobId > 0, 'gradeDamage of the delivered master is taken, a job of its own');
+    for (let i = 0; i < 4000 && masterSnapshot().damageJob === 0; i++)
+        if (M._fc_session_step(masterSession, 1, resultSize) !== STATUS.OK) break;
     const grading = masterSnapshot(), record = M._malloc(48), now = BigInt(grading.revision);
     const price = size => {
         M.HEAPU32[record >>> 2] = size;

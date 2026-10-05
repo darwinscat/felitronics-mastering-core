@@ -132,6 +132,8 @@ void Session::clearMasters() noexcept
     damageJobId_ = 0;
     damageJobBytes_ = 0;
     damageProgress_ = {};
+    damageJobs_ = {};
+    damageCount_ = 0;
 }
 void Session::settleMasterCrest (MeasurementReason reason) noexcept
 {
@@ -286,6 +288,7 @@ const Project& Session::project() const noexcept { return project_; }
 Source Session::source() const noexcept { return source_; }
 JobId Session::job() const noexcept { return job_; }
 JobId Session::damageJob() const noexcept { return damageJobId_; }
+std::span<const DamageJobEntry> Session::damageJobs() const noexcept { return { damageJobs_.data(), damageCount_ }; }
 const Recipe& Session::jobRecipe() const noexcept { return jobRecipe_; }
 std::span<const Kept> Session::masters() const noexcept { return { masters_.get(), masterCount_ }; }
 MasterToken Session::pendingMaster() const noexcept { return pendingMaster_; }
