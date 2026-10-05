@@ -17,8 +17,10 @@ assert.match(output, /ALL TESTS PASSED/);
 const native = {
     input: 'source=f58fa8f9570118b5 frames=480000 rate=48000',
     // facts moved with a landing held short and the master's damage — its lines, its own job and its line naming the
-    // windows graded (v0.14.0); plan did not.
-    parity: 'plan=8043eff22be0264c facts=858432a3f917b4ad pcm=d73c61caca166b05 wav=5d07cbcd5294c4f0',
+    // windows graded (v0.14.0); plan did not. Facts, PCM and WAV moved with the limiter budget's search aimed at its
+    // crossing (v0.17.0): the scenario's master, held short by the budget, settles in 6 passes instead of 7, at
+    // −14.81 LUFS instead of −14.71 — another drive inside the budget's proof; plan did not.
+    parity: 'plan=8043eff22be0264c facts=0fe3cd30c384424b pcm=854bddc314cb31ab wav=c24f6bf2b225f5de',
 };
 for (const [name, want] of Object.entries(native)) {
     const lines = [...output.matchAll(new RegExp(`^scenario-${name} (.+)$`, 'gm'))];
