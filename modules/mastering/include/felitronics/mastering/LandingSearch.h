@@ -32,7 +32,8 @@ namespace felitronics::mastering
 //     above it is no candidate. The lowest drive measured to break it is the limit; the next drive is held under it, by
 //     the secant of the excess between the loudest render that kept the budget and that one. The landing is
 //     TargetUnreachable with LimiterGainReduction named only on proof: the delivered render's drive stands within
-//     kBudgetResolutionDb under the lowest drive measured over the budget while the target is still above; with no render
+//     `LoudnessRequest::budgetResolutionDb` under the lowest drive measured over the budget while the target is still
+//     above; with no render
 //     that kept it, the gentlest ceiling-safe one is delivered, said the same (`overBudgetDb`). Otherwise the status is
 //     the search's own.
 class LandingSearch final
@@ -244,11 +245,15 @@ public:
                     || request.sourceMomentaryHopFrames <= 0))
             || (! request.limiterGr.off() && ! (request.limiterGr.limitDb >= 0.0 && std::isfinite (request.limiterGr.limitDb)))
             || request.limiterStatisticSkipFrames < 0
+            || ! std::isfinite (request.budgetResolutionDb)
+            || request.budgetResolutionDb < 0.05 || request.budgetResolutionDb > 1.0
             || (request.maxExcerptSearch && (! std::isfinite (request.maxExcerptSeconds)
                 || ! std::isfinite (request.maxExcerptPreRollSeconds)
+                || ! std::isfinite (request.maxExcerptPercentile)
                 || ! std::isfinite (request.maxExcerptToleranceDb)
                 || ! std::isfinite (request.maxExcerptOffsetDb)
                 || request.maxExcerptSeconds <= 0.0 || request.maxExcerptPreRollSeconds < 0.0
+                || request.maxExcerptPercentile < 0.0 || request.maxExcerptPercentile > 100.0
                 || request.maxExcerptToleranceDb <= 0.0 || request.maxExcerptToleranceDb > 6.0
                 || std::fabs (request.maxExcerptOffsetDb) > 24.0))
             || (! std::isnan (request.clipperLoudShare)
@@ -527,8 +532,10 @@ private:
     // The source's momentary reading i is the 400 ms ending at (i + 1) of its hops: the first three readings are no block.
     static constexpr long long kFirstBlockReading = 3;
     static constexpr double kAbsoluteGateLufs = -70.0;
-    static constexpr double kBudgetResolutionDb = 0.25;
     static constexpr int kMaxExcerptPasses = 12;
+
+    struct ExcerptWindow { double score = 0.0; long long from = 0; };
+    static_assert (sizeof (ExcerptWindow) == 16u);   // TargetLoudnessSolver::productSearchCallBytes declares these rows
 
     static double energyOf (double lufs) noexcept { return core::det::pow10 ((lufs + 0.691) / 10.0); }
     static double lufsOf (double energy) noexcept { return -0.691 + 10.0 * core::det::log10 (energy); }
@@ -570,38 +577,57 @@ private:
 
     bool selectExcerpt() noexcept
     {
-        if (request_.sourceMomentaryLufs == nullptr || request_.sourceMomentaryCount <= kFirstBlockReading
-            || request_.sourceMomentaryHopFrames <= 0 || sourceFrames_ <= 0) return false;
-        const long long available = request_.sourceMomentaryCount - kFirstBlockReading;
-        const double wantedReadings = request_.maxExcerptSeconds * sourceRate_
-                                    / (double) request_.sourceMomentaryHopFrames;
-        if (! std::isfinite (wantedReadings) || wantedReadings < 1.0
-            || wantedReadings >= (double) LLONG_MAX) return false;
-        const long long width = std::min (available, std::max (1LL, (long long) std::floor (wantedReadings + 0.5)));
-        double sum = 0.0, best = -1.0;
-        long long valid = 0, bestAt = -1;
-        for (long long i = 0; i < available; ++i)
-        {
-            const double add = request_.sourceMomentaryLufs[kFirstBlockReading + i];
-            if (std::isfinite (add)) { sum += energyOf (add); ++valid; }
-            if (i >= width)
-            {
-                const double drop = request_.sourceMomentaryLufs[kFirstBlockReading + i - width];
-                if (std::isfinite (drop)) { sum -= energyOf (drop); --valid; }
-            }
-            if (i + 1 >= width && valid == width && sum > best) { best = sum; bestAt = i + 1 - width; }
-        }
-        if (bestAt < 0) return false;
         const double wantedFrames = request_.maxExcerptSeconds * sourceRate_;
         const double preRollFrames = request_.maxExcerptPreRollSeconds * sourceRate_;
         if (! std::isfinite (wantedFrames) || ! std::isfinite (preRollFrames)
-            || wantedFrames >= (double) LLONG_MAX || preRollFrames >= (double) LLONG_MAX) return false;
-        const long long loudFrom = bestAt > (sourceFrames_ - 1) / request_.sourceMomentaryHopFrames
-            ? sourceFrames_ - 1 : bestAt * request_.sourceMomentaryHopFrames;
-        const long long loudFrames = std::min (sourceFrames_ - loudFrom,
-            std::max (1LL, (long long) std::floor (wantedFrames + 0.5)));
-        const long long pre = std::min (loudFrom,
-            std::max (0LL, (long long) std::floor (preRollFrames + 0.5)));
+            || wantedFrames >= (double) LLONG_MAX || preRollFrames >= (double) LLONG_MAX
+            || ! core::exactlyEqual (std::floor (sourceRate_), sourceRate_)
+            || request_.sourceMomentaryLufs == nullptr || request_.sourceMomentaryCount <= 0
+            || request_.sourceMomentaryHopFrames <= 0 || sourceFrames_ <= 0) return false;
+        const long long loudFrames = std::max (1LL, (long long) std::floor (wantedFrames + 0.5));
+        const long long requestedPre = std::max (0LL, (long long) std::floor (preRollFrames + 0.5));
+        const long long step = (long long) sourceRate_;   // chooseSegments: one candidate window per source second
+        if (loudFrames > sourceFrames_ || requestedPre > sourceFrames_ - loudFrames || step <= 0) return false;
+        const long long candidates = 1 + (sourceFrames_ - loudFrames - requestedPre) / step;
+        if (candidates <= 0 || (std::uint64_t) candidates > std::numeric_limits<std::size_t>::max()
+            || (std::size_t) candidates > std::numeric_limits<std::size_t>::max() / sizeof (ExcerptWindow)) return false;
+        std::unique_ptr<ExcerptWindow[]> windows (new (std::nothrow) ExcerptWindow[(std::size_t) candidates]);
+        if (! windows) return false;
+        long long count = 0;
+        for (long long candidate = 0; candidate < candidates; ++candidate)
+        {
+            const long long from = requestedPre + candidate * step;
+            const long long to = from + loudFrames;
+            double sum = 0.0;
+            long long valid = 0;
+            for (long long i = 0; i < request_.sourceMomentaryCount; ++i)
+            {
+                if (i >= LLONG_MAX / request_.sourceMomentaryHopFrames - 1) return false;
+                const long long frame = (i + 1) * request_.sourceMomentaryHopFrames;
+                if (frame < from) continue;
+                if (frame >= to) break;
+                const double lufs = request_.sourceMomentaryLufs[i];
+                if (! std::isfinite (lufs)) continue;
+                const double energy = energyOf (lufs);
+                if (! std::isfinite (energy) || energy < 0.0 || sum > std::numeric_limits<double>::max() - energy)
+                    return false;
+                sum += energy; ++valid;
+            }
+            if (valid > 0)
+            {
+                const double score = sum / (double) valid;
+                if (! std::isfinite (score)) return false;
+                windows[(std::size_t) count++] = { score, from };
+            }
+        }
+        if (count <= 0) return false;
+        std::sort (windows.get(), windows.get() + count, [] (const ExcerptWindow& a, const ExcerptWindow& b) noexcept
+        {
+            return a.score < b.score || (core::exactlyEqual (a.score, b.score) && a.from < b.from);
+        });
+        const long long pick = (long long) std::floor ((request_.maxExcerptPercentile / 100.0) * (double) (count - 1));
+        const long long loudFrom = windows[(std::size_t) std::clamp (pick, 0LL, count - 1)].from;
+        const long long pre = std::min (loudFrom, requestedPre);
         excerptSourceFrom_ = loudFrom - pre;
         excerptStatisticFrom_ = loudFrom;
         excerptStatisticFrames_ = loudFrames;
@@ -1043,68 +1069,30 @@ private:
         return over;
     }
 
-    // The next drive, held under the budget's limit, aimed at where the budget's statistic crosses it (v0.17.0, asked by
-    // LoudnessRequest::budgetAimsAtCrossing — the max modes; a manual landing keeps previousBudgetClamp below. A step back
-    // of three times the excess, and a secant held within the middle three fifths, sent a tight budget — a max mode's
-    // 0.5 dB — 20 dB down and climbed back over as many passes). With a render that kept the budget below the lowest drive
-    // that broke it: the chord of their excess — the statistic is convex in drive (none under the limiter's knee, then
-    // rising), so the chord crosses at or under the true crossing, a render there keeps the budget — and, once the chord
-    // is within the proof's resolution of the kept drive, just under that resolution above it, so a render over the
-    // budget there proves the budget at once; always a twentieth of the bracket from either end, so it shrinks. The peak
-    // probe's render (its clipper's threshold a forecast) steers this as a kept or broken drive, never in the proof. With
-    // no render under it: back from the drive that broke it by its excess over the statistic's slope — about a dB per dB
-    // of drive above the knee, measured between the two lowest drives over it where there are two (kept within 0.5 … 2)
-    // — and half the proof's resolution more.
+    // The next full-file drive uses v0.17.0's slope-back, guarded Illinois chord and proof. An excerpt edge changes only
+    // the opening: its edge plus the configured offset is the first full render, replacing the old probe and target aim.
+    // If that render keeps the budget, bounded 0.5 dB steps establish an over-budget end; once one exists, v0.17.0 takes
+    // over unchanged except that the proof resolution is the request's. Brent belongs to the excerpt only.
     double budgetClamp (double next) noexcept
     {
         if (! request_.budgetAimsAtCrossing) return previousBudgetClamp (next);
-        // A configured search that could not produce an excerpt edge is today's full-programme path, to the bit.
-        if (! std::isfinite (excerptEdgeDrive_)) return v017BudgetClamp (next);
-        const int over = lowestOverBudget();
-        if (over < 0) { nextReason_ = SolvePassRecord::Reason::AimAtTarget; return next; }
-        const double dOver = driveOf (over), eOver = budgetExcess_[(std::size_t) over];
-        int kept = -1;
-        for (int k = 0; k < passes_; ++k)
+        if (std::isfinite (excerptEdgeDrive_) && lowestOverBudget() < 0)
         {
-            const double e = budgetExcess_[(std::size_t) k];
-            if (std::isfinite (e) && ! (e > 0.0) && records_[(std::size_t) k].truePeakDbTp <= request_.maxTruePeakDbTp
-                && driveOf (k) < dOver && (kept < 0 || driveOf (k) > driveOf (kept))) kept = k;
-        }
-        double limit = 0.0;
-        if (kept >= 0)
-        {
-            const double dKept = driveOf (kept), width = dOver - dKept;
-            std::array<double, 12> drives {};
-            for (int k = 0; k < passes_; ++k) drives[(std::size_t) k] = driveOf (k);
-            const double root = brentCandidate (dKept, budgetExcess_[(std::size_t) kept], dOver, eOver,
-                                                drives, budgetExcess_, passes_);
-            if (width <= kBudgetResolutionDb || root - dKept <= kBudgetResolutionDb)
-            {
-                nextReason_ = SolvePassRecord::Reason::ProveEdge;
-                limit = dKept + kBudgetResolutionDb - 0.01;
-            }
-            else
-            {
-                nextReason_ = SolvePassRecord::Reason::InsideBracket;
-                limit = root;
-            }
-        }
-        else
-        {
-            nextReason_ = SolvePassRecord::Reason::StepBackBySlope;
-            double slope = 0.75, dNext = std::numeric_limits<double>::quiet_NaN(), eNext = 0.0;
+            int kept = -1;
             for (int k = 0; k < passes_; ++k)
             {
-                const double e = budgetExcess_[(std::size_t) k], d = driveOf (k);
-                if (e > 0.0 && d > dOver + 1.0e-6 && (! std::isfinite (dNext) || d < dNext)) { dNext = d; eNext = e; }
+                const double e = budgetExcess_[(std::size_t) k];
+                if (std::isfinite (e) && ! (e > 0.0)
+                    && records_[(std::size_t) k].truePeakDbTp <= request_.maxTruePeakDbTp
+                    && (kept < 0 || driveOf (k) > driveOf (kept))) kept = k;
             }
-            if (std::isfinite (dNext))
-                if (const double s = (eNext - eOver) / (dNext - dOver); std::isfinite (s)) slope = std::clamp (s, 0.5, 2.0);
-            limit = std::fmin (dOver - eOver / slope - 0.5 * kBudgetResolutionDb, dOver - kBudgetResolutionDb);
-            if (passes_ == 1 && std::isfinite (excerptEdgeDrive_) && excerptEdgeDrive_ < dOver)
-                limit = excerptEdgeDrive_;
+            if (kept >= 0)
+            {
+                nextReason_ = SolvePassRecord::Reason::ProveEdge;
+                return std::fmin (next, driveOf (kept) + 0.5);
+            }
         }
-        return std::fmin (next, limit);
+        return v017BudgetClamp (next);
     }
 
     double v017BudgetClamp (double next) noexcept
@@ -1132,9 +1120,10 @@ private:
             const double eKept = budgetExcess_[(std::size_t) kept];
             const double eLean = eOver / double (1u << std::min (chordStale_, 8));
             const double chord = dKept + (-eKept) / (eLean - eKept) * width;
-            limit = chord - dKept <= kBudgetResolutionDb ? dKept + kBudgetResolutionDb - 0.01 : chord;
-            nextReason_ = chord - dKept <= kBudgetResolutionDb ? SolvePassRecord::Reason::ProveEdge
-                                                                : SolvePassRecord::Reason::InsideBracket;
+            limit = chord - dKept <= request_.budgetResolutionDb
+                ? dKept + request_.budgetResolutionDb - 0.01 : chord;
+            nextReason_ = chord - dKept <= request_.budgetResolutionDb ? SolvePassRecord::Reason::ProveEdge
+                                                                        : SolvePassRecord::Reason::InsideBracket;
             limit = std::clamp (limit, dKept + 0.05 * width, dOver - 0.05 * width);
             ++chordStale_;
         }
@@ -1149,7 +1138,8 @@ private:
             }
             if (std::isfinite (dNext))
                 if (const double s = (eNext - eOver) / (dNext - dOver); std::isfinite (s)) slope = std::clamp (s, 0.5, 2.0);
-            limit = std::fmin (dOver - eOver / slope - 0.5 * kBudgetResolutionDb, dOver - kBudgetResolutionDb);
+            limit = std::fmin (dOver - eOver / slope - 0.5 * request_.budgetResolutionDb,
+                               dOver - request_.budgetResolutionDb);
         }
         return std::fmin (next, limit);
     }
@@ -1176,15 +1166,15 @@ private:
         return std::fmin (next, limit);
     }
 
-    // THE BUDGET'S PROOF: the candidate — the render to be delivered — stands within kBudgetResolutionDb under the lowest
-    // drive measured over the budget, short of the target, and no render within the budget has reached past the target
-    // (one that did proves the target reachable inside it).
+    // THE BUDGET'S PROOF: the candidate — the render to be delivered — stands within the requested resolution under the
+    // lowest drive measured over the budget, short of the target, and no render within the budget has reached past the
+    // target (one that did proves the target reachable inside it).
     bool budgetSettled() const noexcept
     {
         const int over = lowestOverBudget();
         if (! haveBest_ || haveAbove_ || over < 0 || bestLevel_ >= request_.targetLufs - request_.toleranceLu) return false;
         const double delivered = bestGain_ - bestCeiling_;
-        return delivered < driveOf (over) && delivered >= driveOf (over) - kBudgetResolutionDb;
+        return delivered < driveOf (over) && delivered >= driveOf (over) - request_.budgetResolutionDb;
     }
 
     StepResult fail (MasteringSolveStatus status) noexcept

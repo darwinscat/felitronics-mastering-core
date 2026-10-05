@@ -835,7 +835,8 @@ void maxSearchPasses()
         for (const LoudnessMode mode : { LoudnessMode::MaxClean, LoudnessMode::MaxDense })
         {
             GradeRun r;
-            const auto pcm = dense ? clicks (48000, 3.0) : struck (48000, 3.0);
+            const bool excerptEligible = ! dense && mode == LoudnessMode::MaxClean;
+            const auto pcm = dense ? clicks (48000, 3.0) : struck (48000, excerptEligible ? 22.0 : 3.0);
             r.session = measuredSession (pcm, 48000);
             if (! r.session) { fewEnough = false; continue; }
             command::EditTarget edit { 2, {} };
@@ -864,7 +865,7 @@ void maxSearchPasses()
                 }
             }
             logsWhole = logsWhole && rowValues;
-            if (stop == MaxStop::Budget)
+            if (stop == MaxStop::Budget && excerptEligible)
                 logsWhole = logsWhole && sawExcerptRow && kept.landing->log.size() > kept.landing->passes;
             bool sawExcerptProgress = false;
             for (const auto& event : r.events)
@@ -872,7 +873,7 @@ void maxSearchPasses()
                     sawExcerptProgress = sawExcerptProgress || (event.payload.phase.name == PhaseName::Pass
                         && event.payload.phase.excerptFrames > 0
                         && event.payload.phase.excerptFromFrame + event.payload.phase.excerptFrames <= pcm.size());
-            progressWhole = progressWhole && sawExcerptProgress;
+            progressWhole = progressWhole && (! excerptEligible || sawExcerptProgress);
         }
     std::printf ("        max search passes: %s\n", seen.c_str());
     ok (fewEnough, "a max master's budget settles in six passes at most, proven: " + seen);

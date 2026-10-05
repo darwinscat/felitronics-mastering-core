@@ -881,13 +881,16 @@ struct LoudnessRequest
     // The manual landing's wall: LU bought per dB of active P95 cut, measured between existing passes. Zero disables it.
     double limiterSlopeBelow = 0.0;
     double limiterSlopeSpacingDb = 0.5;
-    // A max landing may first bracket its limiter budget on the loudest source excerpt. Off preserves v0.17.0's max
-    // search to the bit. The pre-roll warms the chain but is excluded from the excerpt's budget statistic.
+    // A max landing may first bracket its limiter budget on a percentile of the source's excerpt-window loudness. Off
+    // preserves v0.17.0's max search to the bit. The pre-roll warms the chain but is excluded from the excerpt's budget
+    // statistic. `budgetResolutionDb` is the full-file proof's drive resolution, independently chosen by the caller.
     bool maxExcerptSearch = false;
-    double maxExcerptSeconds = 30.0;
+    double maxExcerptSeconds = 20.0;
     double maxExcerptPreRollSeconds = 2.0;
+    double maxExcerptPercentile = 90.0;
     double maxExcerptToleranceDb = 0.25;
-    double maxExcerptOffsetDb = 1.0;
+    double maxExcerptOffsetDb = 0.5;
+    double budgetResolutionDb = 0.25;
     long long limiterStatisticSkipFrames = 0;
 };
 
@@ -1202,7 +1205,16 @@ public:
             (4u * bandHist + 3u * bandTrace + 3u * sizeof (BandGrResult)
              + 16u * storage::kVectorProxyBytes + 1024u);
         const std::uint64_t candidate = (std::uint64_t) frames * (std::uint64_t) numChannels * sizeof (float);
-        return workspace > std::numeric_limits<std::uint64_t>::max() - candidate ? 0u : workspace + candidate;
+        // LandingSearch chooses an excerpt percentile from one score per source second. Its local row is two 64-bit
+        // words (score and source frame); two guard rows cover delivery/source duration rounding. The allocation is
+        // optional — failure falls back to v0.17 — but, like the retained winner PCM, the declaration still counts it.
+        if (! std::isfinite (sampleRate) || sampleRate <= 0.0) return 0u;
+        const double seconds = std::ceil (double (frames) / sampleRate) + 2.0;
+        if (! std::isfinite (seconds) || seconds > double (std::numeric_limits<std::uint64_t>::max() / 16u)) return 0u;
+        const std::uint64_t excerpt = (std::uint64_t) seconds * 16u;
+        if (workspace > std::numeric_limits<std::uint64_t>::max() - candidate
+            || workspace + candidate > std::numeric_limits<std::uint64_t>::max() - excerpt) return 0u;
+        return workspace + candidate + excerpt;
     }
 
     static std::uint64_t solveBytes (double sampleRate, int numChannels, int frames, int grTraceBuckets,
