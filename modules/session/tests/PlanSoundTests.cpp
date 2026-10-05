@@ -35,6 +35,7 @@
 #include <felitronics/session/Text.h>
 #include <felitronics/session/Wire.h>
 #include <felitronics/mastering/MasteringChain.h>
+#include <felitronics/analysis/ReferenceTruePeakMeter.h>
 #include <felitronics/core/DetMath.h>
 #include <felitronics_test.h>
 #include <algorithm>
@@ -1553,6 +1554,41 @@ void theSourceReport()
         && louder.facts.items[0].id == text::FactId::SourceMasterLouder
         && ordinary.deliveryMode == DeliveryMode::Mastered,
         "specification and louder/max targets master normally, the louder one warns, and a normal mix is unaffected");
+    {
+        constexpr std::uint32_t hotRate = 44100;
+        std::vector<float> hot (hotRate);
+        for (std::size_t i = 0; i < hot.size(); ++i)
+            hot[i] = float (.9 * felitronics::core::det::sin (
+                6.283185307179586 * 18000.0 * double (i) / hotRate));
+        const float* hotPlanes[] { hot.data() };
+        auto hs = Session::create().session;
+        (void) hs->apply (command::SetTarget { 1, "youtube" });
+        const bool loaded = hs->apply (command::Load { 2, { hotPlanes, 1, hot.size(), hotRate },
+            { "18k.wav", hotRate, true, 24 } }).rejection == Rejection::None;
+        drive (*hs);
+        const auto initial = detail::MasterJob::plan (*hs, command::Master { 3 }, hs->project());
+        const bool started = loaded && initial.deliveryMode == DeliveryMode::PeaksOnly
+            && hs->apply (command::Master { 3 }).rejection == Rejection::None;
+        const Done deliveredHot = started ? finish (*hs) : Done {};
+        felitronics::analysis::ReferenceTruePeakMeter meter;
+        bool measured = deliveredHot.made && meter.prepare (deliveredHot.shape.sampleRate, 1024,
+                                                            int (deliveredHot.shape.channels));
+        for (std::uint64_t at = 0; measured && at < deliveredHot.shape.frames; at += 1024u)
+        {
+            const int n = int (std::min<std::uint64_t> (1024u, deliveredHot.shape.frames - at));
+            const float* block[] { deliveredHot.audio.data() + at };
+            measured = meter.process (block, 1, n);
+        }
+        if (measured) meter.drain();
+        const auto* hotReport = deliveredHot.kept.report ? &*deliveredHot.kept.report : nullptr;
+        ok (measured && hotReport && hotReport->deliveryMode == DeliveryMode::PeaksOnly
+            && hotReport->truePeakDbTp
+            && std::bit_cast<std::uint64_t> (*hotReport->truePeakDbTp)
+                == std::bit_cast<std::uint64_t> (meter.truePeakDb())
+            && meter.truePeakDb() <= hotReport->ceilingDbTp && hotReport->peakSafe
+            && hotReport->deliveryGainDb < initial.deliveryGainDb,
+            "peaks-only measures the resampled 18 kHz delivery and corrects it under the true-peak ceiling");
+    }
     {
         Seen x;
         x.loudness[0] = { "integratedLufs", -9.0, MeasurementReason::None, 0 };
