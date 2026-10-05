@@ -72,7 +72,7 @@ text::Fact OwnedFact::view() const noexcept
 std::uint64_t Session::stepBytes() noexcept { return 0; }
 JobId Session::measurementJob() const noexcept { return measurementJob_; }
 bool Session::hasWork() const noexcept
-{ return measurementJob_ != 0 || job_ != 0 || needlesJob_ != 0 || crestJoin_ || damageCount_ != 0; }
+{ return measurementJob_ != 0 || job_ != 0 || needlesJob_ != 0 || lateMasterJob_ || crestJoin_ || damageCount_ != 0; }
 std::span<const Notification> Session::events() const noexcept { return { events_->data(), eventCount_ }; }
 void Session::emit (Notification event) noexcept
 {
@@ -151,6 +151,8 @@ void Session::preferTempo (std::uint32_t waiting) noexcept
 }
 void Session::dropJob (JobId job) noexcept
 {
+    if (job != 0 && job == lateMasterId_)
+    { cancelLateMasterCrest (MeasurementReason::Cancelled, false); return; }
     // The damage's job ends as its own (cancel says its fact first and ends it itself); never as the master's below.
     if (const auto at = damageIndex (job); job != 0 && at < damageCount_) { endDamage (at, MeasurementReason::Cancelled, true); return; }
     if (job == needlesJob_ && job != 0)
@@ -727,7 +729,18 @@ Stepped Session::step (std::uint32_t budget) noexcept
                         std::uint32_t (masterJob_->channels), masterJob_->deliveryRate };
                     pendingMaster_ = { source_.hash, revision_, completedJob, completedJob };
                 }
-                masterJob_.reset(); masterJobBytes_ = 0;
+                const bool lateCrest = outcome == mastering::StepResult::Done
+                    && masterJob_->readyForLateCrest() && masterJob_->beginLateCrest();
+                if (lateCrest)
+                {
+                    const auto audioBytes = std::uint64_t (masterJob_->frames) * std::uint64_t (masterJob_->channels)
+                        * sizeof (float);
+                    lateMasterJobBytes_ = masterJobBytes_ > audioBytes ? masterJobBytes_ - audioBytes : 0;
+                    lateMasterId_ = completedJob;
+                    lateMasterJob_ = std::move (masterJob_);
+                    masterJobBytes_ = 0;
+                }
+                else { masterJob_.reset(); masterJobBytes_ = 0; }
                 masterSummary_ = {}; masterTraceCursor_ = 0; masterTraceActive_ = false;
                 if (masters_[masterCount_ - 1].landing->deliverable)
                 {
@@ -740,6 +753,10 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 emit (event, masterProgress_);
 
             }
+        }
+        else if (lateMasterJob_)
+        {
+            stepLateMasterCrest();
         }
         else if (crestJoin_)
         {

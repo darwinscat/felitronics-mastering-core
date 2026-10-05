@@ -126,6 +126,8 @@ struct MasterJob final
     std::size_t copiedCrestRows() const noexcept { return crestCopied; }
     const MasterReport& reportResult() const noexcept { return report; }
     std::unique_ptr<float[]> takeOutput() noexcept { return std::move (output); }
+    bool readyForLateCrest() const noexcept { return stage == Stage::Ready; }
+    bool beginLateCrest() noexcept;
     // What the Pump says of the step it is in: the current walk's share of the file — absent where the stage walks nothing.
     std::optional<double> stepFraction() const noexcept;
     mastering::MasteringChainParams winningParams() const noexcept;
@@ -156,8 +158,9 @@ struct MasterJob final
     std::uint64_t initializedWaveBuckets = 0;
     bool costMeterReady = false;
     enum class Stage : std::uint8_t { Search, DeliveryCopy, DeliveryConvert, DeliveryRender, DeliveryMeasure, Prepare, Read, Finish, Copy, CostRead, CostFinish,
-        CostWave, CostPump, CostActive, CostShape, CostWorst, CostCrest, CostPublish, Done, Failed };
+        CostWave, CostPump, CostActive, CostShape, CostWorst, CostCrest, CostPublish, Ready, Done, Failed };
     Stage stage = Stage::Search;
+    std::size_t rowIndex = 0;
     CrestScan costCrestScan;
     ShapeScan costShapeScan;
     PumpScan costPumpScan;

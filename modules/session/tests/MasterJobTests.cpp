@@ -33,6 +33,7 @@ struct Inspector
     {
         return ! s.masterJob_ && ! s.masterAudio_.samples && ! s.masterRows_ && ! s.masters_
             && s.masterRoom_ == 0 && s.masterCount_ == 0 && s.masterJobBytes_ == 0
+            && ! s.lateMasterJob_ && s.lateMasterId_ == 0 && s.lateMasterJobBytes_ == 0
             && ! s.damageJob_ && s.damageJobId_ == 0 && s.damageJobBytes_ == 0;
     }
     static void lastJob (Session& s, JobId last) noexcept { s.lastJob_ = last; }
@@ -281,8 +282,8 @@ void masterAtTheCeilingWithADamage()
     (void) s.apply (readyMaster (s, 2));
     for (unsigned i = 0; i < 400000 && s.job() != 0; ++i) (void) s.step (1);
     (void) s.apply (command::GradeDamage { 3, s.masters()[0].id });
-    // Into the damage's first walk: its chains, meters and PEAQ allocated.
-    for (unsigned i = 0; i < 64 && ! s.damageJobs().empty(); ++i) (void) s.step (1);
+    // The late impact joins first; then the damage enters its first walk and owns its admitted room.
+    for (unsigned i = 0; i < 400000 && s.damageJob() == 0; ++i) (void) s.step (1);
     const bool released = s.releaseMaster (s.pendingMaster()) == MasterTransferStatus::Ok;
     const auto request = readyMaster (s, 4);
     const auto unlimited = s.check (request);
@@ -385,6 +386,65 @@ template <typename Until> bool stepUntil (GradeRun& r, Until&& until)
     return false;
 }
 bool runOut (GradeRun& r) { return stepUntil (r, [] { return false; }), true; }
+
+// DELIVERY ENDS BEFORE ITS IMPACT JOIN. PCM is transferable while the report says Pending; the later crest fact follows
+// MasterReady. A cancel addresses that join by the delivered job id, a new master settles it Cancelled, and forgetting
+// its master releases it without leaving work behind.
+void lateMasterCrestLifecycle()
+{
+    {
+        auto r = gradeSession (1.5);
+        auto& s = *r.session;
+        const auto master = deliver (r, 2);
+        const auto token = s.pendingMaster();
+        const auto shape = s.masterAudioShape (token);
+        std::vector<float> pcm (std::size_t (shape.frames * shape.channels));
+        const bool readyPending = master != 0 && token.master == master && ! pcm.empty()
+            && s.copyMaster (token, pcm) == MasterTransferStatus::Ok && s.masters().back().report
+            && s.masters().back().report->crest.status == MeasurementStatus::Pending;
+        (void) runOut (r);
+        std::size_t readyAt = r.events.size(), crestAt = r.events.size();
+        for (std::size_t i = 0; i < r.events.size(); ++i)
+            if (r.events[i].jobId == master && r.events[i].kind == EventKind::Fact)
+            {
+                const auto fact = r.events[i].payload.fact.view().id;
+                if (fact == text::FactId::MasterReady) readyAt = std::min (readyAt, i);
+                if (fact == text::FactId::MasterCrestDelivered || fact == text::FactId::MasterCrestSourceRate)
+                    crestAt = std::min (crestAt, i);
+            }
+        ok (readyPending && s.masters().back().report->crest.status == MeasurementStatus::Ready
+            && readyAt < crestAt && s.masterAudioBytes (token) == pcm.size() * sizeof (float),
+            "master PCM and report are ready with crest Pending; its impact joins later, after MasterReady");
+    }
+    {
+        auto r = gradeSession (1.5); auto& s = *r.session;
+        const auto master = deliver (r, 2);
+        const auto stopped = act (r, command::Cancel { 3, master });
+        ok (stopped.rejection == Rejection::None && s.masters().back().report->crest.status == MeasurementStatus::Cancelled
+            && s.pendingMaster().master == master,
+            "cancel by the delivered job id stops only its pending impact and leaves its PCM transferable");
+    }
+    {
+        auto r = gradeSession (1.5); auto& s = *r.session;
+        const auto first = deliver (r, 2);
+        const bool released = s.releaseMaster (s.pendingMaster()) == MasterTransferStatus::Ok;
+        const auto next = act (r, readyMaster (s, 3));
+        ok (released && next.rejection == Rejection::None && s.masters().front().id == first
+            && s.masters().front().report->crest.status == MeasurementStatus::Cancelled && s.job() == next.job,
+            "a new master settles the older pending impact Cancelled and starts independently (rejection "
+            + std::to_string (unsigned (next.rejection)) + ", status "
+            + std::to_string (unsigned (s.masters().front().report->crest.status)) + ", job "
+            + std::to_string (s.job()) + "/" + std::to_string (next.job) + ")");
+        (void) act (r, command::Cancel { 4, next.job });
+    }
+    {
+        auto r = gradeSession (1.5); auto& s = *r.session;
+        const auto master = deliver (r, 2);
+        const auto forgotten = act (r, command::Forget { 3, master });
+        ok (forgotten.rejection == Rejection::None && s.masters().empty() && s.step (1).state == StepState::Done,
+            "forget releases a pending impact with its retained master and leaves no orphan work");
+    }
+}
 
 void manualBudgetResolution()
 {
@@ -610,6 +670,10 @@ void damageGrades()
         auto& s = *r.session;
         const auto master = deliver (r, 2);
         const auto job = act (r, command::GradeDamage { 3, master }).job;
+        // Delivery now leaves only its impact join. Let that release its workspace while this grade is still Waiting,
+        // so the deliberately exact ceiling below tests the damage's own turn rather than the earlier join.
+        const auto withImpact = s.liveBytes();
+        for (unsigned i = 0; i < 400000 && s.damageJob() == 0 && s.liveBytes() >= withImpact; ++i) (void) s.step (1);
         (void) s.setCapacity ({ s.liveBytes(), 9007199254740991.0 });
         (void) stepUntil (r, [&] { return s.damageJobs().empty(); });
         const auto last = lastOf (r.events, job);
@@ -992,6 +1056,7 @@ int main()
     glueAtFullMix();
     maxSearchPasses();
     damageGrades();
+    lateMasterCrestLifecycle();
     maxMasterLanding();
     maxFloor();
     maxStopRules();

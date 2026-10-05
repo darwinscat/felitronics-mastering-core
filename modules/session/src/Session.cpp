@@ -98,7 +98,8 @@ double Session::liveBytes() const noexcept
     return double (createBytes (capabilities_) + (samples_ ? source_.frames * source_.channels * sizeof (float) : 0)
                    + source_.name.size() + masterRoom_ * (sizeof (Kept) + sizeof (detail::MasterRows))
                    + (leanMasters_ ? masterRoom_ * sizeof (Kept) : 0)
-                   + rows + masterJobBytes_ + damageJobBytes_ + (masterAudio_.samples ? masterAudio_.frames * masterAudio_.channels * sizeof (float) : 0)
+                   + rows + masterJobBytes_ + lateMasterJobBytes_ + damageJobBytes_
+                   + (masterAudio_.samples ? masterAudio_.frames * masterAudio_.channels * sizeof (float) : 0)
                    + measurementOwnedBytes_
                    + (sourceMeasurements_ ? sizeof (detail::SourceMeasurements) + sourceMeasurements_->bytes : 0)
                    + (liveMeasurements_ ? sizeof (detail::LiveMeasurements) + liveMeasurements_->bytes : 0)
@@ -117,6 +118,9 @@ void Session::clearMasters() noexcept
     jobBudgetResolutionDb_.reset();
     masterJob_.reset();
     masterJobBytes_ = 0;
+    lateMasterJob_.reset();
+    lateMasterId_ = 0;
+    lateMasterJobBytes_ = 0;
     masterSummary_ = {}; masterTraceCursor_ = 0; masterTraceActive_ = false;
     masterAudio_ = {};
     masterAudioBits_ = 0;
@@ -136,6 +140,75 @@ void Session::clearMasters() noexcept
     damageProgress_ = {};
     damageJobs_ = {};
     damageCount_ = 0;
+}
+void Session::cancelLateMasterCrest (MeasurementReason reason, bool publish) noexcept
+{
+    if (! lateMasterJob_) return;
+    const auto id = lateMasterId_;
+    auto* kept = std::find_if (masters_.get(), masters_.get() + masterCount_,
+        [id] (const Kept& k) noexcept { return k.id == id; });
+    if (kept != masters_.get() + masterCount_ && kept->report)
+    {
+        auto& crest = kept->report->crest;
+        crest.status = reason == MeasurementReason::Cancelled ? MeasurementStatus::Cancelled
+                                                               : MeasurementStatus::Unavailable;
+        crest.reason = reason;
+        if (kept->report->cost)
+        {
+            MasterCostValue* bands[] { &kept->report->cost->crestLowDb, &kept->report->cost->crestLowMidDb,
+                &kept->report->cost->crestHighMidDb, &kept->report->cost->crestHighDb,
+                &kept->report->cost->crestFullDb };
+            for (auto* band : bands) { *band = {}; band->reason = reason; }
+        }
+        if (publish)
+        {
+            Notification event; event.jobId = id; event.kind = EventKind::Fact;
+            (void) event.payload.fact.assign (MasterReportText::crest (crest));
+            emit (event);
+        }
+    }
+    lateMasterJob_.reset(); lateMasterId_ = 0; lateMasterJobBytes_ = 0;
+}
+void Session::stepLateMasterCrest() noexcept
+{
+    if (! lateMasterJob_) return;
+    const auto id = lateMasterId_;
+    auto* kept = std::find_if (masters_.get(), masters_.get() + masterCount_,
+        [id] (const Kept& k) noexcept { return k.id == id; });
+    if (kept == masters_.get() + masterCount_ || ! kept->report)
+    { lateMasterJob_.reset(); lateMasterId_ = 0; lateMasterJobBytes_ = 0; return; }
+    const auto result = lateMasterJob_->step (1024);
+    if (result == mastering::StepResult::More) return;
+    const auto index = std::size_t (kept - masters_.get());
+    if (result == mastering::StepResult::Failed)
+    {
+        cancelLateMasterCrest (MeasurementReason::NonFinite, true);
+        return;
+    }
+    kept->report->crest = lateMasterJob_->reportResult().crest;
+    kept->report->checkPasses = lateMasterJob_->reportResult().checkPasses;
+    kept->report->readings = MasterReportText::readings (*kept->report, kept->landing ? kept->landing->passes : 0u);
+    auto& rows = masterRows_[index];
+    if (kept->report->crest.status == MeasurementStatus::Ready)
+        rows.crestMaskCopied = std::size_t (kept->report->crest.blocks);
+    lateMasterJob_.reset(); lateMasterId_ = 0; lateMasterJobBytes_ = 0;
+    if (kept->report->crest.status == MeasurementStatus::Ready
+        || kept->report->crest.status == MeasurementStatus::Pending)
+    { crestJoin_ = true; crestJoinIndex_ = index; }
+    else
+    {
+        if (kept->report->cost)
+        {
+            MasterCostValue* bands[] { &kept->report->cost->crestLowDb, &kept->report->cost->crestLowMidDb,
+                &kept->report->cost->crestHighMidDb, &kept->report->cost->crestHighDb,
+                &kept->report->cost->crestFullDb };
+            for (auto* band : bands) { *band = {}; band->reason = kept->report->crest.reason; }
+        }
+        ++revision_;
+        Notification event; event.jobId = id; event.kind = EventKind::Fact;
+        (void) event.payload.fact.assign (MasterReportText::crest (kept->report->crest));
+        emit (event);
+    }
 }
 void Session::settleMasterCrest (MeasurementReason reason) noexcept
 {

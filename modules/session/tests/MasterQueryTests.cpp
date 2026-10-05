@@ -113,6 +113,14 @@ Mastered master (Session& s, CommandId id, bool glue = false, const ShaperParams
         (void) s.step (16);
         for (const auto& e : s.events()) if (e.kind == EventKind::Fact) out.facts.push_back (e);
     }
+    // These query fixtures inspect complete retained rows. The audio is already ready here; pump the deferred crest
+    // and its bounded source comparison before taking the full/lean snapshots.
+    for (unsigned i = 0; i < 4000000; ++i)
+    {
+        const auto stepped = s.step (16);
+        for (const auto& e : s.events()) if (e.kind == EventKind::Fact) out.facts.push_back (e);
+        if (stepped.state == StepState::Done) break;
+    }
     const auto token = s.pendingMaster();
     out.id = token.master;
     out.shape = s.masterAudioShape (token);
@@ -308,8 +316,8 @@ void theLandingsFacts()
         && same (solved->args[2].number, kTolerance) && in (landed, *solved) == 1,
         "a master that lands says so with its numbers — achieved, target, tolerance: " + (solved ? both (*solved) : std::string {}));
 
-    // The crest joined inside the job (the source measured whole before the master): its line comes with the report,
-    // once, from MasterReportText::crest.
+    // The retained report exposes Pending while the deferred crest runs; the event stream publishes its settled line
+    // once, when the late join ends.
     unsigned crestLines = 0;
     for (const auto& e : landed.facts)
     {
@@ -319,7 +327,7 @@ void theLandingsFacts()
     }
     const auto crestLine = MasterReportText::crest (metReport.crest);
     ok (metReport.crest.status == MeasurementStatus::Ready && crestLines == 1 && in (landed, crestLine) == 1,
-        "a crest ready before the master ends: its line comes with the report, once — " + both (crestLine));
+        "a deferred crest settles in one published line — " + both (crestLine));
 }
 
 void theVerdictPerStatus()

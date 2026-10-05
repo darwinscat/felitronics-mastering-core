@@ -243,8 +243,13 @@ Checked Session::storageFor (const Request& request) const noexcept
         // Resident name, detached snapshot name, and its worst-case JSON escaping coexist.
         if (name > 9007199254740991ull / 8u
             || footprint.peakBytes + double (8u * name) >= 9007199254740992.0) return rejected (Rejection::TooLong);
-        const auto extra = std::uint64_t (footprint.peakBytes) - std::uint64_t (liveBytes());
-        return storage (extra + 8u * name, std::uint64_t (footprint.largestBlockBytes) + 6u * name);
+        const auto live = std::uint64_t (liveBytes());
+        const auto released = lateMasterJobBytes_ + damageJobBytes_;
+        const auto netLive = live - std::min (live, released);
+        const auto extra = std::uint64_t (footprint.peakBytes) - netLive;
+        auto priced = storage (extra + 8u * name, std::uint64_t (footprint.largestBlockBytes) + 6u * name);
+        priced.releasedBytes = released;
+        return priced;
     }
     if (const auto* set = std::get_if<command::SetTarget> (&request))
     {
@@ -321,19 +326,22 @@ Checked Session::storageFor (const Request& request) const noexcept
         // The damage graded for an earlier master is parked before anything is allocated (apply): its walks are freed,
         // its job's bytes are free for this one, and it waits its turn again.
         auto priced = storage (plan.bytes + roomBytes, std::max (plan.largestBlock, roomBytes));
-        priced.releasedBytes = damageJobBytes_;
+        priced.releasedBytes = damageJobBytes_ + lateMasterJobBytes_;
         return priced;
     }
     if (std::holds_alternative<command::ContinueMeasurement> (request))
         return lastJob_ == std::numeric_limits<JobId>::max() ? rejected (Rejection::NoJobId) : Checked {};
     if (const auto* cancel = std::get_if<command::Cancel> (&request))
     {
-        if (job_ == 0 && measurementJob_ == 0 && needlesJob_ == 0 && damageCount_ == 0) return rejected (Rejection::NoJob);
+        if (job_ == 0 && measurementJob_ == 0 && needlesJob_ == 0 && lateMasterId_ == 0 && damageCount_ == 0)
+            return rejected (Rejection::NoJob);
         if (cancel->job == 0 || (cancel->job != job_ && cancel->job != measurementJob_ && cancel->job != needlesJob_
-                                 && damageIndex (cancel->job) == damageCount_)) return rejected (Rejection::UnknownJob);
+                                 && cancel->job != lateMasterId_ && damageIndex (cancel->job) == damageCount_))
+            return rejected (Rejection::UnknownJob);
         // The running grade cancelled frees its walks.
         Checked freed {};
         if (cancel->job == damageJobId_) freed.releasedBytes = damageJobBytes_;
+        if (cancel->job == lateMasterId_) freed.releasedBytes = lateMasterJobBytes_;
         return freed;
     }
     if (const auto* forget = std::get_if<command::Forget> (&request))
@@ -344,6 +352,7 @@ Checked Session::storageFor (const Request& request) const noexcept
             {
                 Checked freed {};
                 if (damageJobId_ != 0 && damageJob_->master == forget->master) freed.releasedBytes = damageJobBytes_;
+                if (lateMasterId_ == forget->master) freed.releasedBytes += lateMasterJobBytes_;
                 return freed;
             }
         return rejected (Rejection::UnknownMaster);
@@ -636,6 +645,9 @@ Answer Session::apply (const Request& request) noexcept
         // The damage graded for an earlier master is parked first — its walks freed before this master allocates — and
         // waits its turn again; it is never ended by a new master.
         parkDamage();
+        // A new delivery supersedes only the previous delivery's optional impact join. Its ready PCM and retained
+        // report stay; the old report records why that one field will not arrive.
+        cancelLateMasterCrest (MeasurementReason::Cancelled, true);
         const auto plan = detail::MasterJob::plan (*this, *master, project_);
         if (masterRoom_ == masterCount_)                            // the room check() counted, as one exact array
         {
@@ -700,6 +712,8 @@ Answer Session::apply (const Request& request) noexcept
     }
     else if (const auto* forget = std::get_if<command::Forget> (&request))
     {
+        if (lateMasterId_ == forget->master)
+            cancelLateMasterCrest (MeasurementReason::MasterForgotten, false);
         if (pendingMaster_.master == forget->master)
         { masterAudio_ = {}; masterAudioBits_ = 0; pendingMaster_ = {}; }
         // A master forgotten while its damage is graded or waits: the job stops with it — no line for a master no longer
@@ -720,6 +734,14 @@ Answer Session::apply (const Request& request) noexcept
                 masterRows_[masterCount_ - 1] = {};
         }
         --masterCount_;
+        if (masterJob_) masterJob_->rowIndex = masterCount_;
+        if (lateMasterJob_)
+        {
+            const auto* target = std::find_if (masters_.get(), masters_.get() + masterCount_,
+                [this] (const Kept& k) noexcept { return k.id == lateMasterId_; });
+            if (target != masters_.get() + masterCount_)
+                lateMasterJob_->rowIndex = std::size_t (target - masters_.get());
+        }
         if (crestJoin_ && index < crestJoinIndex_) --crestJoinIndex_;
     }
     else if (const auto* grade = std::get_if<command::GradeDamage> (&request))

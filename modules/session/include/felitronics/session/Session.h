@@ -767,6 +767,8 @@ private:
     void needlesAfterDroppedMaster() noexcept;
     void startMaster (const detail::MasterPlan& plan) noexcept;
     void clearMasters() noexcept;
+    void cancelLateMasterCrest (MeasurementReason reason, bool publish) noexcept;
+    void stepLateMasterCrest() noexcept;
     void settleMasterCrest (MeasurementReason reason) noexcept;
     void stepMasterCrestJoin() noexcept;
     // THE DAMAGE'S JOBS (src/Damage.h): asked by the shell (command::GradeDamage) for a master kept — a job id each,
@@ -891,6 +893,11 @@ private:
     std::unique_ptr<detail::MasterRows[]> masterRows_;
     std::unique_ptr<detail::MasterJob> masterJob_;
     std::uint64_t masterJobBytes_ = 0;
+    // Delivery has ended, but its impact is a low-priority late join. It re-renders from the retained source, so the
+    // transferable PCM may be copied, taken or released as soon as MasterReady is published.
+    std::unique_ptr<detail::MasterJob> lateMasterJob_;
+    JobId lateMasterId_ = 0;
+    std::uint64_t lateMasterJobBytes_ = 0;
     MasterToken pendingMaster_ {};
     MasterAudio masterAudio_ {};
     std::uint32_t masterAudioBits_ = 0;
