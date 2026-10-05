@@ -881,6 +881,14 @@ struct LoudnessRequest
     // The manual landing's wall: LU bought per dB of active P95 cut, measured between existing passes. Zero disables it.
     double limiterSlopeBelow = 0.0;
     double limiterSlopeSpacingDb = 0.5;
+    // A max landing may first bracket its limiter budget on the loudest source excerpt. Off preserves v0.17.0's max
+    // search to the bit. The pre-roll warms the chain but is excluded from the excerpt's budget statistic.
+    bool maxExcerptSearch = false;
+    double maxExcerptSeconds = 30.0;
+    double maxExcerptPreRollSeconds = 2.0;
+    double maxExcerptToleranceDb = 0.25;
+    double maxExcerptOffsetDb = 1.0;
+    long long limiterStatisticSkipFrames = 0;
 };
 
 // One render the search made. The whole trace is returned, not just the winner: a caller that has to
@@ -2404,6 +2412,8 @@ private:
             }
             if (s >= satFrom && s < satTo) p.satTrace->add ((std::uint64_t) (s - satFrom), (double) shaveTap_[(std::size_t) j]);
             const bool detector = s >= limDetectorFrom && s < limDetectorTo;
+            const bool statisticDetector = detector
+                && s - limDetectorFrom >= p.req->limiterStatisticSkipFrames;
             const bool applied = s >= limAppliedFrom && s < limAppliedTo;
             if (detector || applied)
                 for (int k = 0; k < p.chain->tapOversampleFactor(); ++k)
@@ -2412,9 +2422,12 @@ private:
                     const double a = std::fabs ((double) limTap_[idx]);
                     if (detector)
                     {
-                        p.limSum->add (a);
                         const float pk = limPeak_[idx];
-                        p.limActive->add (a, (double) pk);
+                        if (statisticDetector)
+                        {
+                            p.limSum->add (a);
+                            p.limActive->add (a, (double) pk);
+                        }
                         if (pk > maxReconLin_) maxReconLin_ = pk;
                         p.clipTrace->add ((std::uint64_t) (s - limDetectorFrom), (double) clipTap_[idx]);
                     }
