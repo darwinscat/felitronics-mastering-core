@@ -38,9 +38,11 @@ enum class DamageVerdict : std::uint8_t { NotRun, Graded, Transparent, NoSignal,
 // WHAT ENDED A MAX MODE'S LANDING (MasterReport::maxStop): None for a manual one. Budget — the mode's limiter budget held
 // the drive, proven (LandingSearch's proof); SearchCeiling — the landing reached [landing.max] ceilingLufs inside the
 // budget; Passes — the passes ran out first; TruePeak — no render kept under the ceiling; OverBudget — no render kept the
-// mode's budget, the gentlest is delivered; Floor (v0.16.0) — the budget held the landing under the target's own loudness,
-// so it was landed again on that floor, with no budget, and delivered there. Guard, GuardUnmet and Unguarded were the
-// v0.15.0 PEAQ guard's, out of the loop since v0.16.0: no longer said.
+// mode's budget, the gentlest is delivered; Floor (v0.16.0) — the first landing's file stood under [landing.max]
+// floorLufs (−14 LUFS, whichever target) by more than the landing's tolerance, whatever held it there (the budget, the
+// passes): landed again on the floor, with no budget, and delivered on it (a floor pass that cannot reach it says what
+// held it instead). Guard, GuardUnmet and Unguarded were the v0.15.0 PEAQ guard's, out of the loop since v0.16.0: no
+// longer said.
 enum class MaxStop : std::uint8_t { None, Budget, Guard, GuardUnmet, SearchCeiling, Passes, TruePeak, Unguarded, OverBudget, Floor };
 // A missing number always carries a reason. analyzerReason preserves the instrument's more specific code.
 struct MeasurementValue

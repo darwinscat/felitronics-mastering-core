@@ -1704,7 +1704,8 @@ line already settled, and keeps with the master what a grade needs to start: the
 delivered with (`MasterRows`, no walk buffer). No grade starts by itself. `gradeDamage { masterId }` asks one: accepted
 with a job id of its own and announced by the `damage` event `DamageChange { masterId, Pending, Pending }`; refused for a
 master not kept (`UnknownMaster`), a grade of it already asked (`DamageQueued`, 137), or a damage settled
-(`DamageSettled`, 136: graded, or not gradable — a max master's guard graded it, no plan for the source); a damage a
+(`DamageSettled`, 136: graded, or not gradable — no plan for the source), or past the queue's room of 32 grades waiting
+or running (`DamageQueueFull`, 138); a damage a
 cancel stopped, or a turn refused for the room it lacked, may be asked again. Grades run one at a time, in the order
 asked (the snapshot's `damageJobs`: job, master, `Waiting` or `Running`, progress — the running one first; `damageJob`
 and `damageProgress` are the running one's), stepped behind every other work (a master, a crest join, the needles, the
@@ -1718,11 +1719,12 @@ first, to start again when its turn comes back: a new master never ends a grade 
 ends early only by its master's own cause, at once, in the command: `cancel` of its job id (its report `Cancelled`, the
 cancel's own fact, its line, the `damage` event; the running one's walks freed — the cancel's `releasedBytes`), `forget`
 of its master (`MasterForgotten`, no line: the master is gone; the running one's walks freed — the forget's
-`releasedBytes`) and a new source (`load`, `loadMeasured`: every grade, running and waiting, ends `MasterForgotten` — the
-running one's walks freed in the load, each grade's last word said in the steps that follow, one a unit, before any other
-work, so no event batch outgrows its bound however many grades there were). The `damage` event is the job's last word:
+`releasedBytes`) and a new source (`load`, `loadMeasured`: every grade, running and waiting, ends `MasterForgotten`, its
+last word in the load's own batch, in queue order, stamped with the source it belonged to and ahead of anything of the new
+one — the queue's room keeps them within the batch). The `damage` event is the job's last word:
 nothing of it comes after. Waiting, a
-grade holds its entry alone (`DamageJobEntry`, the queue's room grown with the masters'); the master's admitted demand
+grade holds its entry alone (`DamageJobEntry`, in the queue's fixed room of `kMaxDamageGrades`, 32, in the session
+object itself); the master's admitted demand
 still prices one grade's room (`MasterJob::plan`), which a grade asked right after it finds free. A grade is a measurement,
 not an edit: a project's journal does not hold it, and an import grades nothing. With no job id left, `gradeDamage` is
 refused (`NoJobId`).

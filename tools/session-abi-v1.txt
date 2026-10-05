@@ -1976,7 +1976,8 @@ codec MasterReport.guardSteps uint32
 wire TargetPatch.loudnessMode? LoudnessMode | null
 # The damage grade asked by the shell (04.10, v0.16.0): command::GradeDamage { masterId } grades a master kept as a job of
 # its own — its damage events Pending, then the result; refused when its damage is settled (DamageSettled, fact 136) or
-# a grade of it is already asked (DamageQueued, 137) — one at a time in the order asked; a new master parks the running
+# a grade of it is already asked (DamageQueued, 137) or 32 already wait or run (DamageQueueFull, 138) — one at a time
+# in the order asked; a new master parks the running
 # one, never ends it; forget of its master or a new source ends it (MeasurementReason::MasterForgotten, its term). The
 # snapshot lists every grade not yet ended (Snapshot.damageJobs: job, master, Waiting or Running, progress). A max
 # master is a landing and a delivery (no guard): its damage is graded as any master's, and MaxStop's Guard, GuardUnmet
@@ -1985,11 +1986,13 @@ wire TargetPatch.loudnessMode? LoudnessMode | null
 # log (617).
 enum felitronics::session::Rejection::DamageSettled=36
 enum felitronics::session::Rejection::DamageQueued=37
+enum felitronics::session::Rejection::DamageQueueFull=38
 enum felitronics::session::MeasurementReason::MasterForgotten=13
 enum felitronics::session::DamageJobState::Waiting=0
 enum felitronics::session::DamageJobState::Running=1
 enum felitronics::session::text::FactId::RejectedDamageSettled=136
 enum felitronics::session::text::FactId::RejectedDamageQueued=137
+enum felitronics::session::text::FactId::RejectedDamageQueueFull=138
 enum felitronics::session::text::Term::ReasonMasterForgotten=150
 enum felitronics::session::MaxStop::Floor=9
 enum felitronics::session::text::FactId::MasterMaxFloor=616

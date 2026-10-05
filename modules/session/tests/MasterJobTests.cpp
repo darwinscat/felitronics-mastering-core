@@ -586,49 +586,60 @@ void damageGrades()
             "a grade whose turn finds no room is refused there, said with Memory and its line; with room again it is "
             "asked once more and graded");
     }
-    // A NEW SOURCE ends every grade (MasterForgotten): the running one's walks freed in the load, each grade's last word
-    // said in the steps that follow, one a unit, before any other work — in queue order, once each, nothing of them after;
-    // and with more grades than an event batch holds (seventy), no batch — the load's own, any step's — outgrows its bound.
-    for (const std::size_t many : { std::size_t (2), std::size_t (70) })
-    {
-        const std::string name = std::to_string (many) + " grades";
-        auto r = gradeSession (many > 2 ? 1.0 : 3.0);
-        auto& s = *r.session;
-        std::vector<JobId> asked;
-        for (std::size_t k = 0; k < many; ++k)
+    // A NEW SOURCE ends every grade (MasterForgotten): each grade's last word in the load's own batch, in queue order,
+    // stamped with the source it belonged to and ahead of anything of the new one — whatever comes next before a step: a
+    // cancel of the new source's measurement, another source. With the queue full (kMaxDamageGrades; one grade more is
+    // refused DamageQueueFull) no batch outgrows its bound, and nothing of those grades comes after.
+    for (const int next : { 0, 1, 2 })   // after the load: steps; a cancel of its measurement, then steps; another load
+        for (const std::size_t many : { std::size_t (2), kMaxDamageGrades })
         {
-            const auto master = deliver (r, CommandId (100 + 2 * k));
-            asked.push_back (act (r, command::GradeDamage { CommandId (101 + 2 * k), master }).job);
-        }
-        (void) atPoint (r, many > 2 ? 0.0 : 0.5);
-        const auto pcm = struck (48000, 2.0, 0.3);
-        const std::size_t frames = pcm.size() / 2u;
-        const float* planes[] { pcm.data(), pcm.data() + frames };
-        const auto from = r.events.size();
-        const auto loaded = s.apply (command::Load { 9000, { planes, 2, frames, 48000 }, { "next.wav", 48000, true, 24 } });
-        std::size_t largest = s.events().size();
-        record (r);
-        const bool freed = s.damageJob() == 0 && s.damageJobs().empty();
-        for (unsigned i = 0; i < 400000 && s.step (1).state == StepState::More; ++i)
-        {
-            largest = std::max (largest, s.events().size());
-            record (r);
-        }
-        largest = std::max (largest, s.events().size());
-        record (r);
-        std::vector<JobId> ended;
-        bool quiet = true;
-        for (std::size_t i = from; i < r.events.size(); ++i)
-            if (std::find (asked.begin(), asked.end(), r.events[i].jobId) != asked.end())
+            const std::string name = std::to_string (many) + " grades, then " + (next == 0 ? "steps" : next == 1 ? "a cancel" : "another load");
+            auto r = gradeSession (many > 2 ? 1.0 : 3.0);
+            auto& s = *r.session;
+            std::vector<JobId> asked;
+            for (std::size_t k = 0; k < many; ++k)
             {
-                if (r.events[i].kind == EventKind::Damage && r.events[i].payload.damage.reason == MeasurementReason::MasterForgotten
-                    && r.events[i].payload.damage.status == MeasurementStatus::Cancelled) ended.push_back (r.events[i].jobId);
-                else quiet = false;
+                const auto master = deliver (r, CommandId (100 + 2 * k));
+                asked.push_back (act (r, command::GradeDamage { CommandId (101 + 2 * k), master }).job);
             }
-        ok (loaded.rejection == Rejection::None && freed && ended == asked && quiet && largest <= kEventBatch,
-            name + ": a new source ends every grade, its last word once each in queue order, nothing else of them after, no "
-            "batch past its bound (largest " + std::to_string (largest) + " of " + std::to_string (kEventBatch) + ")");
-    }
+            const auto full = many == kMaxDamageGrades ? act (r, command::GradeDamage { 999, deliver (r, 998) }).rejection : Rejection::DamageQueueFull;
+            (void) atPoint (r, many > 2 ? 0.0 : 0.5);
+            const auto oldSource = s.source().hash;
+            const auto pcm = struck (48000, 2.0, 0.3), other = struck (48000, 2.5, 0.2);
+            const float* planes[] { pcm.data(), pcm.data() + pcm.size() / 2u };
+            const float* otherPlanes[] { other.data(), other.data() + other.size() / 2u };
+            const auto from = r.events.size();
+            std::size_t largest = 0;
+            const auto take = [&] (const Answer& a) { largest = std::max (largest, s.events().size()); record (r); return a; };
+            const auto loaded = take (s.apply (command::Load { 9000, { planes, 2, pcm.size() / 2u, 48000 }, { "b.wav", 48000, true, 24 } }));
+            const auto loadBatchEnd = r.events.size();
+            const auto newSource = s.source().hash;
+            if (next == 1) (void) take (s.apply (command::Cancel { 9001, s.measurementJob() }));
+            if (next == 2) (void) take (s.apply (command::Load { 9002, { otherPlanes, 2, other.size() / 2u, 48000 }, { "c.wav", 48000, true, 24 } }));
+            for (unsigned i = 0; i < 400000 && s.step (1).state == StepState::More; ++i)
+            {
+                largest = std::max (largest, s.events().size());
+                record (r);
+            }
+            std::vector<JobId> ended;
+            bool stamped = true, quiet = true, first = true, seenNew = false;
+            for (std::size_t i = from; i < r.events.size(); ++i)
+            {
+                const auto& e = r.events[i];
+                const bool old = std::find (asked.begin(), asked.end(), e.jobId) != asked.end();
+                if (! old) { seenNew = seenNew || e.source != oldSource; continue; }
+                if (e.kind == EventKind::Damage && e.payload.damage.reason == MeasurementReason::MasterForgotten
+                    && e.payload.damage.status == MeasurementStatus::Cancelled) ended.push_back (e.jobId);
+                else quiet = false;
+                stamped = stamped && e.source == oldSource && i < loadBatchEnd;
+                first = first && ! seenNew;
+            }
+            ok (loaded.rejection == Rejection::None && full == Rejection::DamageQueueFull && newSource != oldSource
+                    && ended == asked && quiet && stamped && first && largest <= kEventBatch && s.damageJobs().empty(),
+                name + ": each grade's last word in the load's own batch, in queue order, stamped with its own source and "
+                "ahead of the new one, nothing else of them after, no batch past its bound (largest "
+                + std::to_string (largest) + " of " + std::to_string (kEventBatch) + ")");
+        }
 }
 
 // A MAX MASTER IS A LANDING AND A DELIVERY (owner, 04.10: no guard in the loop): delivered with its damage Pending and no

@@ -1777,7 +1777,8 @@
       "DeliveryFormat",
       "PlanPending",
       "DamageSettled",
-      "DamageQueued"
+      "DamageQueued",
+      "DamageQueueFull"
     ],
     "ErrorCode": [
       "Trap",

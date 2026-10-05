@@ -196,6 +196,7 @@ inline constexpr FactShape kFacts[] = {
     { FactId::RejectedPlanPending, "rejectedPlanPending", {}, 0 },
     { FactId::RejectedDamageSettled, "rejectedDamageSettled", {}, 0 },
     { FactId::RejectedDamageQueued, "rejectedDamageQueued", {}, 0 },
+    { FactId::RejectedDamageQueueFull, "rejectedDamageQueueFull", {}, 0 },
     { FactId::RejectedOutOfDomainValue, "rejectedOutOfDomainValue", { { { "field", ArgKind::Term, "field" },
       { "value", ArgKind::Value, {} }, { "low", ArgKind::Value, {} }, { "high", ArgKind::Value, {} } } }, 4 },
     { FactId::RejectedNotOneOfValue, "rejectedNotOneOfValue",
@@ -566,6 +567,7 @@ static_assert (tablesInOrder(), "kFacts and kTerms ascend by id");
         case Rejection::PlanPending: return FactId::RejectedPlanPending;
         case Rejection::DamageSettled: return FactId::RejectedDamageSettled;
         case Rejection::DamageQueued: return FactId::RejectedDamageQueued;
+        case Rejection::DamageQueueFull: return FactId::RejectedDamageQueueFull;
         case Rejection::Memory: return FactId::RejectedMemory;
         case Rejection::NewerDefaults: return FactId::RejectedNewerDefaults;
     }

@@ -242,6 +242,7 @@ enum class FactId : std::uint16_t
     RejectedPlanPending = 135,
     RejectedDamageSettled = 136,
     RejectedDamageQueued = 137,
+    RejectedDamageQueueFull = 138,
     // A field's rejection with its numbers, where the answer carries them (Answer::value, low, high): the refused value
     // against the domain the check read, and a value a knob does not take.
     RejectedOutOfDomainValue = 180, // {field} {value} {low} {high}
