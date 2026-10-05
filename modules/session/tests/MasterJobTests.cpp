@@ -823,9 +823,40 @@ void maxStopRules()
         "a max mode's stop, from the landing: over the budget is not held by it; the ceiling first");
 }
 
+// THE BUDGET'S SEARCH SETTLES IN FEW PASSES (v0.16.1): a max master's tight budget (clean 0.5 dB, dense 1.75 dB) found
+// by aiming at where the limiter's statistic crosses it — not by a step back of three times the excess and a climb back —
+// on a struck programme and on clicks over a bed; each still stopped by its budget, proven.
+void maxSearchPasses()
+{
+    std::string seen;
+    bool fewEnough = true;
+    for (const bool dense : { false, true })
+        for (const LoudnessMode mode : { LoudnessMode::MaxClean, LoudnessMode::MaxDense })
+        {
+            GradeRun r;
+            const auto pcm = dense ? clicks (48000, 3.0) : struck (48000, 3.0);
+            r.session = measuredSession (pcm, 48000);
+            if (! r.session) { fewEnough = false; continue; }
+            command::EditTarget edit { 2, {} };
+            edit.fields.loudnessMode = mode;
+            (void) act (r, edit);
+            (void) deliver (r, 3);
+            const auto& s = *r.session;
+            const auto& kept = s.masters().back();
+            const auto passes = kept.landing ? kept.landing->passes : 99u;
+            const auto stop = kept.report ? kept.report->maxStop : MaxStop::None;
+            seen += std::string (dense ? "clicks " : "struck ") + (mode == LoudnessMode::MaxClean ? "clean " : "dense ")
+                  + std::to_string (passes) + " (stop " + std::to_string (unsigned (stop)) + "); ";
+            fewEnough = fewEnough && passes <= 6u && (stop == MaxStop::Budget || stop == MaxStop::Floor);
+        }
+    std::printf ("        max search passes: %s\n", seen.c_str());
+    ok (fewEnough, "a max master's budget settles in six passes at most, proven: " + seen);
+}
+
 int main()
 {
     damageResampler();
+    maxSearchPasses();
     damageGrades();
     maxMasterLanding();
     maxFloor();
