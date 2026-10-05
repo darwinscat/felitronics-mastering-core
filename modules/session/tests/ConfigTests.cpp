@@ -49,6 +49,26 @@ namespace
 {
 std::string g_targetsText, g_engineText, g_bandsText;   // the source documents (bands.toml: felitronics-bands'), read in main()
 
+template<class T> constexpr bool hasMix = requires (T value) { value.mix; };
+
+void theCompressorHasNoUnusedMix()
+{
+    felitronics::test::group ("the glue owns the mix; the compressor has no unused setting");
+    ok (! hasMix<config::Compressor>, "config::Compressor has no mix member");
+    auto engine = g_engineText;
+    const auto start = engine.find ("[compressor]\n");
+    const auto mix = engine.find ("\nmix = 1\n", start);
+    if (mix != std::string::npos && mix < engine.find ("[compressor.limits]", start))
+        engine.erase (mix + 1, std::string_view ("mix = 1\n").size());
+    ok (Config::bind (g_targetsText, engine).ok(), "the compressor binds without a mix");
+    engine.insert (start + std::string_view ("[compressor]\n").size(), "mix = 1\n");
+    const auto loaded = Config::bind (g_targetsText, engine);
+    bool unknown = false;
+    for (const auto& problem : loaded.problems)
+        unknown = unknown || (problem.fault == config::Fault::UnknownKey && problem.path == "compressor.mix");
+    ok (unknown, "the retired compressor.mix is refused as an unknown key");
+}
+
 void mustAccept (config::Document doc, std::string_view from, std::string_view to)
 {
     const auto changed = plant (doc == config::Document::Engine ? g_engineText : g_targetsText, from, to, to);
@@ -609,6 +629,7 @@ int main (int argc, char** argv)
         return 2;
     }
     theEmbeddedConfigIsTheSource();
+    theCompressorHasNoUnusedMix();
     theBandsAreFelitronicsBands();
     theSchemaRefuses();
     theSchemaAdmitsWhatTheAnalyzersAdmit();

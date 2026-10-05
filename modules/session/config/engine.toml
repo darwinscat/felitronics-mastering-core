@@ -272,7 +272,7 @@ vinyl = { fromHz = 120, toHz = 200 }
 # THE COMPRESSOR — the chain stage the glue drives ([glue]).
 # detector: rms, where the core's default is peak — every threshold offset of the glue is calibrated for RMS detection
 #   (with RMS a positive offset cuts almost nothing); peak with the same numbers would be another glue.
-# rmsWindowMs, link, mode, rangeDb, makeupDb, autoMakeup, mix: every field named, the neutral ones too, so the sound
+# rmsWindowMs, link, mode, rangeDb, makeupDb, autoMakeup: every field named, the neutral ones too, so the sound
 #   depends on no default of the core's.
 # lookaheadMs, sidechainHpfHz: the stage's lookahead and its key filter (0: self-keyed) — topology of the chain, stated
 #   for the same reason.
@@ -288,7 +288,6 @@ mode = "downCompress"
 rangeDb = 60
 makeupDb = 0
 autoMakeup = false
-mix = 1
 lookaheadMs = 1
 sidechainHpfHz = 0
 thresholdFrom = "shortTermP95"
