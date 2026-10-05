@@ -201,7 +201,8 @@ struct LandingSetup
     double highPassHz = 0.0;                                              // > 0: a 96 dB/oct high-pass before the limiter
     double initialGainDb = std::numeric_limits<double>::quiet_NaN();
     int maxPasses = 12;
-    double peakClipPeakDb = std::numeric_limits<double>::quiet_NaN();    // finite: the limiter's peak clip on, cut 3 dB
+    double peakClipPeakDb = std::numeric_limits<double>::quiet_NaN();    // finite: the limiter's peak clip is on
+    double peakClipCutDb = 3.0;
     bool peakClipMeasured = false;
     double slopeBelow = 0.0;
     bool maxMode = false;
@@ -228,7 +229,7 @@ Landed land (const Programme& p, const LandingSetup& w)
     params.limiter.ceilingDbTp = w.ceiling;
     if (std::isfinite (w.peakClipPeakDb))
     {
-        params.limiter.peakClip = true; params.peakClipCutDb = 3.0; params.peakClipPeakDb = w.peakClipPeakDb;
+        params.limiter.peakClip = true; params.peakClipCutDb = w.peakClipCutDb; params.peakClipPeakDb = w.peakClipPeakDb;
     }
     if (w.highPassHz > 0.0)
     {
@@ -358,6 +359,15 @@ int main()
                 + .05 * core::det::sin (.72 * double (i)));
         scaleTo (pcm, 0, int (pcm.size()), -18.0);
         const Programme dense (pcm);
+        LandingSetup peakWall; peakWall.target = -5; peakWall.slopeBelow = .2;
+        peakWall.peakClipCutDb = 1.0;
+        peakWall.peakClipPeakDb = 20.0 * std::log10 (*std::max_element (pcm.begin(), pcm.end(),
+            [] (float a, float b) noexcept { return std::fabs (a) < std::fabs (b); }));
+        const auto peakWallResult = land (dense, peakWall);
+        test::ok (peakWallResult.done && peakWallResult.answer.logCount > 2
+                  && peakWallResult.answer.log[0].reason == SolvePassRecord::Reason::PeakProbe
+                  && (! peakWallResult.answer.limiterWall || peakWallResult.answer.limiterSlope > 0.0),
+            "the uncalibrated peak probe cannot establish the limiter wall");
         LandingSetup loud; loud.target = -5; loud.limiterBudgetDb = 7.5; loud.slopeBelow = .2;
         const auto wall = land (dense, loud);
         auto before = loud; before.slopeBelow = 0;
