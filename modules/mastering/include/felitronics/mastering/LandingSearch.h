@@ -740,7 +740,8 @@ private:
         return over;
     }
 
-    // The next drive, held under the budget's limit, aimed at where the budget's statistic crosses it (v0.16.1; a step back
+    // The next drive, held under the budget's limit, aimed at where the budget's statistic crosses it (v0.17.0, asked by
+    // LoudnessRequest::budgetAimsAtCrossing — the max modes; a manual landing keeps previousBudgetClamp below. A step back
     // of three times the excess, and a secant held within the middle three fifths, sent a tight budget — a max mode's
     // 0.5 dB — 20 dB down and climbed back over as many passes). With a render that kept the budget below the lowest drive
     // that broke it: the chord of their excess — the statistic is convex in drive (none under the limiter's knee, then
@@ -753,6 +754,7 @@ private:
     // — and half the proof's resolution more.
     double budgetClamp (double next) noexcept
     {
+        if (! request_.budgetAimsAtCrossing) return previousBudgetClamp (next);
         const int over = lowestOverBudget();
         if (over < 0) return next;
         const double dOver = driveOf (over), eOver = budgetExcess_[(std::size_t) over];
@@ -791,6 +793,28 @@ private:
             if (std::isfinite (dNext))
                 if (const double s = (eNext - eOver) / (dNext - dOver); std::isfinite (s)) slope = std::clamp (s, 0.5, 2.0);
             limit = std::fmin (dOver - eOver / slope - 0.5 * kBudgetResolutionDb, dOver - kBudgetResolutionDb);
+        }
+        return std::fmin (next, limit);
+    }
+
+    // The clamp as it was before v0.17.0, kept for a landing that does not ask to aim at the crossing (a manual
+    // target's): between the loudest render that kept the budget below the lowest that broke it and that one, by the
+    // secant of their excess (kept within the middle three fifths); with no render under it, a step back of three times
+    // the excess, a dB at least.
+    double previousBudgetClamp (double next) const noexcept
+    {
+        const int over = lowestOverBudget();
+        if (over < 0) return next;
+        const double dOver = driveOf (over), eOver = budgetExcess_[(std::size_t) over];
+        int kept = -1;
+        for (int k = 0; k < passes_; ++k)
+            if (std::isfinite (budgetExcess_[(std::size_t) k]) && ! (budgetExcess_[(std::size_t) k] > 0.0)
+                && driveOf (k) < dOver && (kept < 0 || driveOf (k) > driveOf (kept))) kept = k;
+        double limit = dOver - std::fmax (1.0, 3.0 * eOver);
+        if (kept >= 0)
+        {
+            const double dKept = driveOf (kept), eKept = budgetExcess_[(std::size_t) kept];
+            limit = dKept + std::clamp (-eKept / (eOver - eKept), 0.2, 0.8) * (dOver - dKept);
         }
         return std::fmin (next, limit);
     }
