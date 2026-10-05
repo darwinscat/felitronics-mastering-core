@@ -6,6 +6,7 @@
 #include "Devices.h"
 #include "EqCurve.h"
 #include "Needles.h"
+#include "Observations.h"
 #include <felitronics/session/Snapshot.h>
 #include <algorithm>
 #include <limits>
@@ -260,6 +261,9 @@ SnapshotView Session::buildView() const noexcept
     if (devicesPlaced_) { v.eqCurve = eqCurve_; v.eqOnlyCurve = eqOnlyCurve_; }
     v.plan = plan_;
     v.observations = observations_;
+    if (source_.channels != 0)
+        v.sourceReport = detail::sourceReport ({ rules, measurementResults_, source_.channels, source_.sampleRate,
+                                                source_.frames, source_.bitDepth });
     if (source_.channels != 0) v.observationFacts = ObservationText::facts (observations_);
     v.target = targetName();
     v.targetNote = SnapshotText::targetNote (v.target);

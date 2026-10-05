@@ -33,6 +33,7 @@ struct ObservationInputs
 
 // Every kind's observation for the inputs.
 void observe (const ObservationInputs& in, Observations& out) noexcept;
+[[nodiscard]] SourceReport sourceReport (const ObservationInputs& in) noexcept;
 
 // Is the source clipped — confirmed clips at [limiter.peakClipper] clippedPerMinute a minute or more? The one rule the
 // limiter's needles and the observations share.

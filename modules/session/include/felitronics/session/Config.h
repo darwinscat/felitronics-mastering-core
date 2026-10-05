@@ -452,6 +452,7 @@ struct Observations
     double polarityCorrelationBelow = 0.0, polarityRawSideFractionAbove = 0.0;    // polarity
     double polarityFullAtLowCorrelation = 0.0;
     double alreadyLimitedPlrBelowDb = 0.0, alreadyLimitedFullAtPlrDb = 0.0;       // alreadyLimited
+    double masteredAboveLufs = 0.0, masteredPeakAboveDbTp = 0.0, masteredPlrBelowDb = 0.0;
     double vinylTopAboveHz = 0.0;                                                 // vinylTop
     Kinds kinds;
     Sibilance sibilance;

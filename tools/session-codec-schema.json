@@ -320,6 +320,13 @@
     "DamageWaitReason": [
       "Queue",
       "SourceMeasurement"
+    ],
+    "SourceClipStatus": [
+      "NotMeasured",
+      "Clean",
+      "Clipped",
+      "InterSampleOvers",
+      "SampleOvers"
     ]
   },
   "records": {
@@ -884,7 +891,8 @@
         "damageJob": "uint32",
         "damageProgress": "Phase",
         "loudnessMode": "LoudnessMode",
-        "damageJobs": "DamageJobEntry[]"
+        "damageJobs": "DamageJobEntry[]",
+        "sourceReport": "SourceReport?"
       }
     },
     "MasterToken": {
@@ -1306,6 +1314,18 @@
         "analyzer": "Analyzer",
         "fraction": "double?"
       }
+    },
+    "SourceReport": {
+      "cpp": "SourceReport",
+      "fields": {
+        "clipping": "SourceClipStatus",
+        "clippingReason": "MeasurementReason",
+        "alreadyMastered": "bool?",
+        "loudnessLufs": "double?",
+        "truePeakDbTp": "double?",
+        "plrDb": "double?",
+        "facts": "Fact[<=2]"
+      }
     }
   },
   "wireAliases": {
@@ -1426,7 +1446,8 @@
     },
     "MasterCommand": {
       "kind": "\"master\"",
-      "commandId": "string"
+      "commandId": "string",
+      "allowClippedGain?": "boolean"
     },
     "CancelCommand": {
       "kind": "\"cancel\"",
@@ -1799,7 +1820,8 @@
       "PlanPending",
       "DamageSettled",
       "DamageQueued",
-      "DamageQueueFull"
+      "DamageQueueFull",
+      "ClippedGain"
     ],
     "ErrorCode": [
       "Trap",

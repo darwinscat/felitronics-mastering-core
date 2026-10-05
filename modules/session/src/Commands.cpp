@@ -21,6 +21,7 @@
 #include "SourceMeasurements.h"
 #include "QueryState.h"
 #include "MasterJob.h"
+#include "Observations.h"
 #include "Utf8.h"
 
 #include <felitronics/session/Commands.h>
@@ -287,6 +288,18 @@ Checked Session::storageFor (const Request& request) const noexcept
         // 3. NAMES: the source's audio (a sidecar source has none before attachAudio), then an id for the job, never 0
         // and never one issued before.
         if (! samples_) return rejected (Rejection::NoAudio);
+        if (! master->allowClippedGain)
+        {
+            const auto report = detail::sourceReport ({ rules, measurementResults_, source_.channels, source_.sampleRate,
+                                                        source_.frames, source_.bitDepth });
+            const auto row = rules.row (project_.target);
+            const auto mode = detail::loudnessModeOf (rules, project_);
+            const auto ceiling = rules.engine.find ("landing").find ("max").find ("ceilingLufs");
+            const double target = mode == LoudnessMode::Manual ? project_.targetEdit.lufs.value_or (row.lufs.toDouble())
+                : ceiling.decimal() ? ceiling.decimal()->toDouble() : double (ceiling.integer().value_or (0));
+            if (report.clipping == SourceClipStatus::Clipped && report.loudnessLufs && target > *report.loudnessLufs)
+                return rejected (Rejection::ClippedGain);
+        }
         // With the panel open a master the session decides waits until what its devices read has ended; with the panel
         // hidden it is taken, and waits for it itself — resuming a stopped measurement takes a job id of its own.
         const bool decided = master->ready.version == 0;

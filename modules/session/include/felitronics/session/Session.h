@@ -464,6 +464,17 @@ struct Observations
     Observation spectralWall, loudestLowNote, lowestLowBand, infraLow, wideBass, polarity, sibilance;
     Observation hum, humWandered;
 };
+// The source report opens with the clipping detector's verdict. A true peak over zero with samples below full scale
+// is an inter-sample over, not evidence of a flattened waveform. Unknown remains unknown when a reading is absent.
+enum class SourceClipStatus : std::uint8_t { NotMeasured, Clean, Clipped, InterSampleOvers, SampleOvers };
+struct SourceReport
+{
+    SourceClipStatus clipping = SourceClipStatus::NotMeasured;
+    MeasurementReason clippingReason = MeasurementReason::Pending;
+    std::optional<bool> alreadyMastered;
+    std::optional<double> loudnessLufs, truePeakDbTp, plrDb;
+    BoundedList<text::Fact, 2> facts {};
+};
 // ONE OBSERVATION'S LINE: the fact ObservationText states, and the kind it is said of.
 struct ObservationFact
 {

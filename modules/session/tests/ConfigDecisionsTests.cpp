@@ -190,6 +190,9 @@ std::vector<std::string> departures (const config::Config& c)
     need (e.landing.truePeakAimDb == 0.05 && e.limiter.ceilingMarginDb == 0.15,
           "the true-peak aim and initial limiter margin are separate decisions");
     need (e.landing.onSourceGate, "the landing lands the level on the source's gate (owner, 04.10)");
+    need (same (e.observations.masteredAboveLufs, -12) && same (e.observations.masteredPeakAboveDbTp, -1.5)
+          && same (e.observations.masteredPlrBelowDb, 11),
+          "already mastered requires louder than −12 LUFS, true peak above −1.5 dBTP and PLR below 11 (owner, 05.10)");
     need (same (e.landing.limiterSlopeBelow, 0.2) && same (e.landing.limiterSlopeSpacingDb, 0.5),
           "manual landings stop below 0.2 LU per dB of P95 cut, spaced by at least 0.5 dB (owner, 05.10)");
     need (same (e.landing.cleanBudgetDb, 0.5),
@@ -351,6 +354,12 @@ void aDepartureIsNamed()
           "targets.youtube.sampleRate" },
         { false, "default = 0\nwhenTicked", "default = 0.3\nwhenTicked", "no glue by default: a target without its own takes the compressor out" },
         { false, "whenTicked = 0.5", "whenTicked = 0.6", "ticked on untouched, the glue is up to 0.5 dB" },
+        { false, "aboveLufs = -12", "aboveLufs = -13",
+          "already mastered requires louder than −12 LUFS, true peak above −1.5 dBTP and PLR below 11 (owner, 05.10)" },
+        { false, "peakAboveDbTp = -1.5", "peakAboveDbTp = -2",
+          "already mastered requires louder than −12 LUFS, true peak above −1.5 dBTP and PLR below 11 (owner, 05.10)" },
+        { false, "plrBelowDb = 11", "plrBelowDb = 12",
+          "already mastered requires louder than −12 LUFS, true peak above −1.5 dBTP and PLR below 11 (owner, 05.10)" },
         { false, "limiterSlopeBelow = 0.2", "limiterSlopeBelow = 0.3",
           "manual landings stop below 0.2 LU per dB of P95 cut, spaced by at least 0.5 dB (owner, 05.10)" },
         { false, "limiterSlopeSpacingDb = 0.5", "limiterSlopeSpacingDb = 0.4",
