@@ -266,6 +266,15 @@ void pump()
     // table. Each restatement takes them out first; a manual master (the scenario's) never reads them.
     const auto withoutMax = [] (std::string& targets, std::string& engine)
     {
+        // v0.18.0: target classes and already-mastered delivery ceilings. Remove them when restating the older pins.
+        for (const std::string_view classification : { ", class = \"specification\"", ", class = \"streaming\"", ", class = \"other\"" })
+            for (auto at = targets.find (classification); at != std::string::npos; at = targets.find (classification))
+                targets.erase (at, classification.size());
+        if (const auto at = engine.find ("\n[masteredDelivery]\n"); at != std::string::npos)
+        {
+            const auto next = engine.find ("\n[", at + 1);
+            engine.erase (at, (next == std::string::npos ? engine.size() : next) - at);
+        }
         for (const std::string_view key : { "\nlimiterSlopeBelow = ", "\nlimiterSlopeSpacingDb = ", "\nalreadyMastered = " })
             if (const auto at = engine.find (key); at != std::string::npos)
                 engine.erase (at, engine.find ('\n', at + 1) - at);
@@ -419,8 +428,9 @@ void pump()
     // The damage's grade is the shell's to ask (command::GradeDamage, v0.16.0): the scenario asks none, so its stream
     // carries no damage job — the pin without the damage above holds, and this one moves by that job alone; the max modes
     // by ear (v0.16.0) move the config's version alone (withoutMax restates it).
-    // The glue's mix (v0.17.0) moves the config's version alone here (withoutMax restates it too).
-    ok (eventsHash (one) == 0x18ee186960f5dd15ull && eventsHash (cancelled) == 0x198cca66ad321abaull,
+    // The glue's mix (v0.17.0) and v0.18's target classes / mastered-delivery ceilings move the config's version alone
+    // here (withoutMax restates them too).
+    ok (eventsHash (one) == 0x0cabd371bfd4cd298ull && eventsHash (cancelled) == 0x6002c0e2faa0c9d2ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",

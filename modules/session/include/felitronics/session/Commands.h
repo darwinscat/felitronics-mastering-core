@@ -164,7 +164,8 @@ struct MasterReady
     std::uint32_t deliveryRateHz = 0; // 0 or the target's rate (the source's when the target keeps it); else refused
     std::uint8_t deliveryBits = 0;    // 0 or the target's bit depth; any other value is refused
 };
-struct Master      { CommandId id = 0; MasterReady ready {}; std::uint64_t source = 0, revision = 0; bool allowClippedGain = false; };
+struct Master      { CommandId id = 0; MasterReady ready {}; std::uint64_t source = 0, revision = 0;
+                     bool allowClippedGain = false, masterAnyway = false; };
 struct Cancel      { CommandId id = 0; JobId job = 0; };
 struct Forget      { CommandId id = 0; MasterId master = 0; };
 struct ContinueMeasurement { CommandId id = 0; };

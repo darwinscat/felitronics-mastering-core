@@ -406,6 +406,13 @@ template <class F> auto parseCommand (std::string_view json, F&& finish) noexcep
             reader.space();
             if (! reader.good || reader.pos != flag.size()) p.set ("invalid", "allowClippedGain");
         }
+        if (const auto flag = root.take ("masterAnyway", false); ! flag.empty())
+        {
+            Reader reader { flag, root.storage, 0, true, {}, 0, 0, false };
+            reader.value (r.masterAnyway);
+            reader.space();
+            if (! reader.good || reader.pos != flag.size()) p.set ("invalid", "masterAnyway");
+        }
         request = r;
     }
     else p.set ("invalid", "kind");

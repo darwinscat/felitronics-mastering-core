@@ -82,7 +82,10 @@ constexpr Golden kGolden[] = {
     // 02ed0efc37c02b67; updated in place, as above
     // ...and the manual limiter wall (owner, 05.10): slope 0.2, P95 spacing 0.5 dB; masters that meet the wall move.
     // It was a154dca562da8da3; updated in place, as above.
-    { "2026-10", 0x3ca74d45e21253d9ull },
+    // ...and every target's mastered-delivery class plus the two configured peak ceilings (owner, 05.10, v0.18.0):
+    // already-mastered streaming/other deliveries may now bypass the normal chain; specification targets do not.
+    // It was 3ca74d45e21253d9; updated in place before the release.
+    { "2026-10", 0x0aea937888c4b21full },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -161,6 +164,10 @@ std::vector<std::string> departures (const config::Config& c)
         const std::string at = "targets." + std::string (r.key);
         need (x.key == r.key, "row " + std::to_string (i) + " is " + std::string (r.key));
         need (x.group == r.group, at + ".group");
+        const auto expectedClass = r.key == "ebu" || r.key == "atsc" || r.key == "arib" || r.key == "op59"
+            ? config::TargetClass::Specification
+            : r.group == config::Group::Delivery ? config::TargetClass::Other : config::TargetClass::Streaming;
+        need (x.targetClass == expectedClass, at + ".class");
         need (same (x.lufs, r.lufs), at + ".lufs");
         need (same (x.tp, r.tp), at + ".tp");
         need (same (x.monoBass, r.monoBass), at + ".monoBass");
@@ -193,6 +200,9 @@ std::vector<std::string> departures (const config::Config& c)
     need (same (e.observations.masteredAboveLufs, -12) && same (e.observations.masteredPeakAboveDbTp, -1.5)
           && same (e.observations.masteredPlrBelowDb, 11),
           "already mastered requires louder than −12 LUFS, true peak above −1.5 dBTP and PLR below 11 (owner, 05.10)");
+    need (same (e.masteredDelivery.loudAboveLufs, -14) && same (e.masteredDelivery.loudCeilingDbTp, -2)
+          && same (e.masteredDelivery.regularCeilingDbTp, -1),
+          "an already-mastered delivery uses −2 dBTP above −14 LUFS and −1 dBTP otherwise (owner, 05.10)");
     need (same (e.landing.limiterSlopeBelow, 0.2) && same (e.landing.limiterSlopeSpacingDb, 0.5),
           "manual landings stop below 0.2 LU per dB of P95 cut, spaced by at least 0.5 dB (owner, 05.10)");
     need (same (e.landing.cleanBudgetDb, 0.5),
@@ -323,6 +333,14 @@ void aDepartureIsNamed()
     ok (departures (Config::load().config).empty(), "PRECONDITION: the embedded config departs from nothing");
     struct Departure { bool inTargets; std::string_view from, to, decision; };
     const Departure plants[] = {
+        { true, "allStreaming = { group = \"streaming\", class = \"streaming\"", "allStreaming = { group = \"streaming\", class = \"other\"", "targets.allStreaming.class" },
+        { true, "class = \"specification\", lufs = -23", "class = \"streaming\", lufs = -23", "targets.ebu.class" },
+        { false, "loudAboveLufs = -14", "loudAboveLufs = -13",
+          "an already-mastered delivery uses −2 dBTP above −14 LUFS and −1 dBTP otherwise (owner, 05.10)" },
+        { false, "loudCeilingDbTp = -2", "loudCeilingDbTp = -3",
+          "an already-mastered delivery uses −2 dBTP above −14 LUFS and −1 dBTP otherwise (owner, 05.10)" },
+        { false, "regularCeilingDbTp = -1", "regularCeilingDbTp = -2",
+          "an already-mastered delivery uses −2 dBTP above −14 LUFS and −1 dBTP otherwise (owner, 05.10)" },
         { false, "machineTopHz = 50", "machineTopHz = 51", "the machine's high-pass tops out at 50 Hz" },
         { false, "machineTopHz = 50", "machineTopHz = 80", "the machine's high-pass tops out at 50 Hz" },
         { false, "hzMax = 80", "hzMax = 50", "a person's high-pass knob travels to 80 Hz (owner, 01.10)" },

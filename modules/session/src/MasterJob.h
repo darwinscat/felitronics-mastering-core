@@ -62,10 +62,15 @@ struct MasterPlan
     // lands under (floorLufs).
     LoudnessMode loudnessMode = LoudnessMode::Manual;
     double floorLufs = std::numeric_limits<double>::quiet_NaN();
+    DeliveryMode deliveryMode = DeliveryMode::Mastered;
+    double deliveryGainDb = 0.0, deliveryCeilingDbTp = 0.0;
+    bool deliveryDithered = false;
 };
 
 struct MasterRows
 {
+    // Captured at render time, never reconstructed from the current project.
+    command::MasterReady workedReady {};
     // WHAT THE MASTER'S DAMAGE GRADE NEEDS TO START (command::GradeDamage, Session::startDamage), kept with the master from
     // its delivery: the walks' plan and the parameters it was delivered with — no walk buffer. `damageGradable` false: a
     // master whose damage cannot be graded (no plan could be made for its source).
@@ -128,6 +133,7 @@ struct MasterJob final
     mastering::OfflineRenderer renderer;
     mastering::TargetLoudnessSolver solver;
     mastering::DeliveryConverter converter;
+    mastering::MasteringChainTaps deliveryTaps {};
     mastering::LandingSearch search { solver };
     analysis::BandCrest crest;
     analysis::StreamingLoudnessMeter costMeter;
@@ -146,7 +152,7 @@ struct MasterJob final
     std::uint64_t costCursor = 0, costHop = 0, costStored = 0;
     std::uint64_t initializedWaveBuckets = 0;
     bool costMeterReady = false;
-    enum class Stage : std::uint8_t { Search, Prepare, Read, Finish, Copy, CostRead, CostFinish,
+    enum class Stage : std::uint8_t { Search, DeliveryCopy, DeliveryConvert, DeliveryRender, Prepare, Read, Finish, Copy, CostRead, CostFinish,
         CostWave, CostPump, CostActive, CostShape, CostWorst, CostCrest, CostPublish, Done, Failed };
     Stage stage = Stage::Search;
     CrestScan costCrestScan;
@@ -170,6 +176,10 @@ struct MasterJob final
     std::optional<MasterMedium> medium;
     MasterReport report {};
     DamagePlan damagePlan {};
+    DeliveryMode deliveryMode = DeliveryMode::Mastered;
+    double deliveryGainDb = 0.0, deliveryCeilingDbTp = 0.0;
+    bool deliveryDithered = false;
+    long long deliveryCursor = 0;
     // THE DAMAGE CAN BE GRADED (command::GradeDamage): the job ended where its damage can be graded — the report says
     // Pending, and the session keeps damagePlan and the delivered parameters with the master for a grade the shell asks.
     bool damageFollows = false;

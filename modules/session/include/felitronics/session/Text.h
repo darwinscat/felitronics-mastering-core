@@ -321,6 +321,10 @@ enum class FactId : std::uint16_t
     SourceInterSampleOvers = 451,
     SourceSampleOvers = 452,
     SourceAlreadyMastered = 453,
+    SourceFormerLossy = 454,
+    SourceMasterLouder = 455,
+    SourceDeliveryAsIs = 456,
+    SourceDeliveryPeaksOnly = 457, // {gain}, {ceiling}
     // The plan's advice (PlanText): a device's value as it sounds, against the norm the config draws on its knob.
     HpfBelowComfort = 500,     // the high-pass at {cutoff} is below the comfort window {low}–{high}
     HpfAboveComfort = 501,     // the high-pass at {cutoff} is above the comfort window {low}–{high}

@@ -165,7 +165,7 @@ void Session::dropJob (JobId job) noexcept
             event.kind = EventKind::Fact;
             (void) event.payload.fact.assign (text::Fact::of (text::FactId::Cancelled));
             const auto progress = masterProgress_;
-            mastering_ = false; job_ = 0; jobRecipe_ = {}; jobWaiting_ = false;
+            mastering_ = false; job_ = 0; jobRecipe_ = {}; jobWaiting_ = false; jobMasterAnyway_ = false;
             masterUnit_ = 0; masterProgress_ = {};
             emit (event, progress);
             needlesAfterDroppedMaster();
@@ -181,6 +181,7 @@ void Session::dropJob (JobId job) noexcept
         job_ = 0;
         jobRecipe_ = {};
         jobWaiting_ = false;
+        jobMasterAnyway_ = false;
         masterUnit_ = 0;
         masterProgress_ = {};
         needlesAfterDroppedMaster();
@@ -457,7 +458,9 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 // the heap as it is now, and its job starts. Then the needles go back to the project's own ceiling,
                 // where it is another than the recipe's (a cancelled job at the same ceiling is not built again).
                 const auto masterJob = job_;
-                const auto plan = jobWaiting_ ? detail::MasterJob::plan (*this, command::Master {}, jobRecipe_.project)
+                command::Master waitingRequest;
+                waitingRequest.masterAnyway = jobMasterAnyway_;
+                const auto plan = jobWaiting_ ? detail::MasterJob::plan (*this, waitingRequest, jobRecipe_.project)
                                               : detail::MasterPlan {};
                 if (plan.rejection != Rejection::None) { contract (masterJob); ++units; continue; }
                 const auto roomed = demand ({ Rejection::None, kNoField, plan.bytes, 0, plan.largestBlock });
@@ -484,7 +487,8 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 ++units;
                 continue;
             }
-            const auto beforePass = masterJob_->search.startedPasses();
+            const bool delivery = masterJob_->deliveryMode != DeliveryMode::Mastered;
+            const int beforePass = delivery ? 0 : masterJob_->search.startedPasses();
             const auto outcome = masterTraceActive_ ? mastering::StepResult::Done : masterJob_->step (1024);
             ++masterUnit_;
             const bool end = outcome != mastering::StepResult::More;
@@ -493,11 +497,11 @@ Stepped Session::step (std::uint32_t budget) noexcept
             // The master's passes, and how far its current walk over the file has come — a new count for each walk.
             masterProgress_ = { end ? PhaseName::Final : PhaseName::Pass,
                 end ? 1.0 : std::min (0.99, double (masterUnit_) / double (std::max (1u, total))),
-                config::Config::versions().all, std::uint32_t (masterJob_->search.startedPasses()), 12,
+                config::Config::versions().all, delivery ? 0u : std::uint32_t (masterJob_->search.startedPasses()), delivery ? 0u : 12u,
                 masterUnit_, total, end ? std::nullopt : masterJob_->stepFraction() };
             event.payload.phase = masterProgress_;
             emit (event);
-            if (masterJob_->search.startedPasses() != beforePass)
+            if (! delivery && masterJob_->search.startedPasses() != beforePass)
             {
                 event.kind = EventKind::Fact;
                 (void) event.payload.fact.assign (text::Fact::of (text::FactId::MasterPass,
@@ -506,6 +510,37 @@ Stepped Session::step (std::uint32_t budget) noexcept
             }
             if (end)
             {
+                if (delivery)
+                {
+                    if (outcome != mastering::StepResult::Done)
+                    { contract (event.jobId); ++units; continue; }
+                    const auto completedJob = job_;
+                    masterTraceActive_ = true; // keep the job until its report and PCM have been moved below
+                    if (! detail::Driver::mastered (*this, completedJob)) { contract (completedJob); ++units; continue; }
+                    auto& kept = masters_[masterCount_ - 1];
+                    kept.report = masterJob_->reportResult();
+                    kept.report->readings = MasterReportText::readings (*kept.report, 0);
+                    event.kind = EventKind::Fact;
+                    const auto said = kept.report->deliveryMode == DeliveryMode::AsIs
+                        ? text::Fact::of (text::FactId::SourceDeliveryAsIs)
+                        : text::Fact::of (text::FactId::SourceDeliveryPeaksOnly,
+                            text::Arg::value (kept.report->deliveryGainDb, text::Unit::Db, 1),
+                            text::Arg::value (kept.report->ceilingDbTp, text::Unit::DbTp, 1));
+                    (void) event.payload.fact.assign (said); emit (event, masterProgress_);
+                    masterAudioBits_ = masterJob_->ready.deliveryBits;
+                    masterAudio_ = { masterJob_->takeOutput(), std::uint64_t (masterJob_->frames),
+                        std::uint32_t (masterJob_->channels), masterJob_->deliveryRate };
+                    pendingMaster_ = { source_.hash, revision_, completedJob, completedJob };
+                    masterJob_.reset(); masterJobBytes_ = 0;
+                    masterSummary_ = {}; masterTraceCursor_ = 0; masterTraceActive_ = false;
+                    event.kind = EventKind::Fact;
+                    (void) event.payload.fact.assign (text::Fact::of (text::FactId::MasterReady));
+                    emit (event, masterProgress_);
+                    event.kind = EventKind::Done; event.payload.done.masterId = completedJob;
+                    emit (event, masterProgress_);
+                    ++units;
+                    continue;
+                }
                 auto& rows = masterRows_[masterCount_];
                 const auto& solution = masterJob_->result();
                 const auto trace = std::span<LandingTraceBucket> (rows.traces.get(), rows.traceCapacity);
@@ -532,6 +567,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
                 const auto completedJob = job_;
                 if (! detail::Driver::mastered (*this, completedJob)) { contract (completedJob); ++units; continue; }
                 masters_[masterCount_ - 1].report = masterJob_->reportResult();
+                rows.workedReady.params = masterJob_->winningParams();
                 // What its damage grade needs, kept with the master for a grade the shell asks (command::GradeDamage):
                 // the damage's line below says Pending — or why it cannot be graded.
                 if (masterJob_->damageFollows)

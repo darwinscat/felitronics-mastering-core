@@ -17,6 +17,11 @@
       "MaxClean",
       "MaxDense"
     ],
+    "DeliveryMode": [
+      "Mastered",
+      "AsIs",
+      "PeaksOnly"
+    ],
     "DamageJobState": [
       "Waiting",
       "Running"
@@ -574,7 +579,8 @@
         "sound": "uint64",
         "readyHash": "uint64",
         "deliveryRateHz": "uint32",
-        "readyVersion": "uint32"
+        "readyVersion": "uint32",
+        "deliveryBits": "uint8"
       }
     },
     "Kept": {
@@ -727,7 +733,10 @@
         "damage": "MasterDamage",
         "loudnessMode": "LoudnessMode",
         "maxStop": "MaxStop",
-        "guardSteps": "uint32"
+        "guardSteps": "uint32",
+        "deliveryMode": "DeliveryMode",
+        "deliveryGainDb": "double",
+        "deliveryDithered": "bool"
       }
     },
     "LandingPass": {
@@ -1324,7 +1333,11 @@
         "loudnessLufs": "double?",
         "truePeakDbTp": "double?",
         "plrDb": "double?",
-        "facts": "Fact[<=2]"
+        "deliveryMode": "DeliveryMode",
+        "deliveryCeilingDbTp": "double?",
+        "deliveryGainDb": "double?",
+        "facts": "Fact[<=2]",
+        "advice": "Fact[<=2]"
       }
     }
   },
@@ -1447,7 +1460,8 @@
     "MasterCommand": {
       "kind": "\"master\"",
       "commandId": "string",
-      "allowClippedGain?": "boolean"
+      "allowClippedGain?": "boolean",
+      "masterAnyway?": "boolean"
     },
     "CancelCommand": {
       "kind": "\"cancel\"",

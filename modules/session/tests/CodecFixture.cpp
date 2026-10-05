@@ -84,6 +84,7 @@ int main()
         {
             auto& report = *kept[0].report;
             report.status = MeasurementStatus::Ready; report.reason = MeasurementReason::None;
+            report.deliveryMode = DeliveryMode::Mastered; report.deliveryGainDb = 0.0;
             report.targetLufs = -14.0; report.ceilingDbTp = -1.0;
             report.achievedLufs = -14.0; report.truePeakDbTp = -2.0;
             report.lraLu = 2.0; report.lraReason = MeasurementReason::None;

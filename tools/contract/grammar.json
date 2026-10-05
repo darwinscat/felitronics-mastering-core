@@ -14,6 +14,7 @@
   "summary": "summary",
   "release": "release master",
   "export": "export project ([a-z][a-z0-9_-]*)",
+  "worked": "export worked report ([0-9]{1,9})",
   "import": "import project ([0-9]{1,9}) ([a-z][a-z0-9_-]*)",
   "poison": "poison",
   "new": "new instance",

@@ -2050,3 +2050,20 @@ codec SourceReport.plrDb double?
 codec SourceReport.facts Fact[<=2]
 codec Snapshot.sourceReport SourceReport?
 wire MasterCommand.allowClippedGain? boolean
+function fc_session_worked_report_size fc_session_status(fc_session,uint32_t,uint32_t*)
+function fc_session_worked_report_copy fc_session_status(fc_session,uint32_t,char*,uint32_t,uint32_t*)
+enum FC_SESSION_ERR_UNKNOWN_MASTER=20
+wire union SessionStatus 20
+enum felitronics::session::text::FactId::SourceFormerLossy=454
+enum felitronics::session::text::FactId::SourceMasterLouder=455
+enum felitronics::session::text::FactId::SourceDeliveryAsIs=456
+enum felitronics::session::text::FactId::SourceDeliveryPeaksOnly=457
+codec Recipe.deliveryBits uint8
+codec MasterReport.deliveryMode DeliveryMode
+codec MasterReport.deliveryGainDb double
+codec MasterReport.deliveryDithered bool
+codec SourceReport.deliveryMode DeliveryMode
+codec SourceReport.deliveryCeilingDbTp double?
+codec SourceReport.deliveryGainDb double?
+codec SourceReport.advice Fact[<=2]
+wire MasterCommand.masterAnyway? boolean

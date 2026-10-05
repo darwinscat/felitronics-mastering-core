@@ -88,6 +88,15 @@ struct ProjectText
     std::size_t size = 0;
     [[nodiscard]] std::string_view view() const noexcept;
 };
+// A canonical, read-only TOML account of one completed master. Unlike the project file, it is flattened to the values
+// that sounded and belongs to the master's captured recipe, so later project edits cannot change it.
+struct WorkedText
+{
+    Rejection rejection = Rejection::None;
+    std::unique_ptr<char[]> data;
+    std::size_t size = 0;
+    [[nodiscard]] std::string_view view() const noexcept;
+};
 
 // Summed high-pass + tilt + low response, in Hz and dB.
 struct EqPoint { double hz = 0.0, db = 0.0; };
@@ -473,7 +482,12 @@ struct SourceReport
     MeasurementReason clippingReason = MeasurementReason::Pending;
     std::optional<bool> alreadyMastered;
     std::optional<double> loudnessLufs, truePeakDbTp, plrDb;
+    // The mode a default version-0 master would take for the selected target. Mastered while recognition is absent,
+    // the target is a specification, or the target asks for more loudness.
+    DeliveryMode deliveryMode = DeliveryMode::Mastered;
+    std::optional<double> deliveryCeilingDbTp, deliveryGainDb;
     BoundedList<text::Fact, 2> facts {};
+    BoundedList<text::Fact, 2> advice {};      // later lines, past the frozen v13 room of `facts`
 };
 // ONE OBSERVATION'S LINE: the fact ObservationText states, and the kind it is said of.
 struct ObservationFact
@@ -674,6 +688,9 @@ public:
     [[nodiscard]] ProjectText exportProject() const noexcept;
     [[nodiscard]] Rejection exportProject (std::span<char> output) const noexcept;
     [[nodiscard]] Answer importProject (CommandId id, std::string_view bytes) noexcept;
+    [[nodiscard]] Checked exportWorkedBytes (MasterId master) const noexcept;
+    [[nodiscard]] WorkedText exportWorked (MasterId master) const noexcept;
+    [[nodiscard]] Rejection exportWorked (MasterId master, std::span<char> output) const noexcept;
 
     // Each live measurement unit prepares one analyzer, reads at most 1024 source frames, drains new rows,
     // or advances finalization. A call takes at most kStepUnits units;
@@ -831,6 +848,7 @@ private:
     // ended by a load or loadMeasured, which clear it with every other master state. When the wait ends the master's
     // chain is taken from that project's devices (src/Chain.h) and its job starts.
     bool jobWaiting_ = false;
+    bool jobMasterAnyway_ = false;
     bool jobMachineFromFile_ = false;          // the waiting master's recipe kept a file's machine layer: never placed again
     // Derived at placement and after accepted commands; owned snapshots copy these points.
     void refreshEqCurve() noexcept;

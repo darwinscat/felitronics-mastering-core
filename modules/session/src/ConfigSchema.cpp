@@ -82,6 +82,9 @@ template <class E> struct Name
 };
 constexpr Name<Group> kGroups[] = { { "streaming", Group::Streaming }, { "delivery", Group::Delivery },
                                     { "aggregator", Group::Aggregator } };
+constexpr Name<TargetClass> kTargetClasses[] = { { "specification", TargetClass::Specification },
+                                                  { "streaming", TargetClass::Streaming },
+                                                  { "other", TargetClass::Other } };
 constexpr Name<LoudnessMode> kLoudnessModes[] = { { "manual", LoudnessMode::Manual }, { "maxClean", LoudnessMode::MaxClean },
                                                   { "maxDense", LoudnessMode::MaxDense } };
 constexpr Name<TargetNote> kTargetNotes[] = { { "measured", TargetNote::Measured }, { "practice", TargetNote::Practice },
@@ -753,6 +756,13 @@ void readDither (Doc& d, Reader& in, Dither& o)
     in.required ("autoBlankSamples", o.autoBlankSamples, I { 1, 1 << 20 });
 }
 
+void readMasteredDelivery (Doc&, Reader& in, MasteredDelivery& o)
+{
+    in.required ("loudAboveLufs", o.loudAboveLufs, anyLufs());
+    in.required ("loudCeilingDbTp", o.loudCeilingDbTp, R { -12.0, 0.0 });
+    in.required ("regularCeilingDbTp", o.regularCeilingDbTp, R { -12.0, 0.0 });
+}
+
 // The chain's fixed geometry: types and signs here; whether a chain of every stage can be built with it — and with the
 // two lookaheads and the key filter, read before it — is MasteringChain::admits' to say, at the rates a master is
 // delivered at.
@@ -1192,6 +1202,7 @@ void readEngine (Doc& d, Reader& in, Engine& o, const std::vector<std::string>* 
     if (chain && ! chainAdmits (o)) d.refuse (in, "chain", Refusal::AnalyzerRefuses);
     in.table ("stages", Need::Required, [&] (Reader& t) { readStages (d, t, o.stages); });
     in.table ("dither", Need::Required, [&] (Reader& t) { readDither (d, t, o.dither); });
+    in.table ("masteredDelivery", Need::Required, [&] (Reader& t) { readMasteredDelivery (d, t, o.masteredDelivery); });
     in.table ("deEsser", Need::Required, [&] (Reader& t) { readDeEsser (d, t, o.deEsser, bands); });
     bool bursts = false, crest = false;
     in.table ("stereoBursts", Need::Required, [&] (Reader& t) { bursts = readStereoBursts (t, o.stereoBursts); });
@@ -1237,6 +1248,7 @@ void readEdit (Doc& d, Reader& in, std::string_view key, Edit& o, R& domain)
 void readTarget (Doc& d, Reader& row, Target& x, const RowDomains& b)
 {
     d.name (row, "group", x.group, kGroups);
+    d.name (row, "class", x.targetClass, kTargetClasses);
     row.required ("lufs", x.lufs, b.lufs);
     row.required ("tp", x.tp, b.tp);
     row.required ("monoBass", x.monoBass, b.monoBass);

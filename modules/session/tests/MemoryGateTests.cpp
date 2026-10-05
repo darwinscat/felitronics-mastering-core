@@ -275,9 +275,10 @@ bool run (unsigned sourceRate, unsigned deliveryRate, unsigned channels, unsigne
             || ! external[0].samples || ! external[1].samples || ! select (deliveryRate, 19)) return false;
         // The load emptied the masters' room: the first master grows it by one slot (a Kept, its rows' record — the
         // damage grade's inputs in it, the parameters it was delivered with and the walks' plan, under 1 KiB beside them —
-        // and its entry in the grades' queue), kept after the forget; every later cycle reuses that slot and grows nothing.
+        // its exact render state for the worked report, and its entry in the grades' queue), kept after the forget;
+        // every later cycle reuses that slot and grows nothing.
         auto warmLive = std::uint64_t (s.liveBytes()) + sizeof (Kept) + sizeof (DamageJobEntry)
-                      + sizeof (felitronics::mastering::MasteringChainParams) + 2048u;
+                      + sizeof (felitronics::mastering::MasteringChainParams) + sizeof (command::MasterReady) + 2048u;
         for (unsigned cycle = 0; cycle < 3; ++cycle)
         {
             auto warm = request; warm.id = 30u + cycle * 2u;
