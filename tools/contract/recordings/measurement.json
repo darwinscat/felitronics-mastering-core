@@ -197,13 +197,13 @@
     {
       "session": "main",
       "kind": "answer",
-      "raw": "{\"kind\":\"rejected\",\"commandId\":\"3\",\"revision\":\"17\",\"code\":30,\"needBytes\":29187332,\"field\":255,\"device\":-1,\"line\":0,\"column\":0,\"fact\":{\"FactId\":130,\"args\":[]}}",
+      "raw": "{\"kind\":\"rejected\",\"commandId\":\"3\",\"revision\":\"17\",\"code\":30,\"needBytes\":29189612,\"field\":255,\"device\":-1,\"line\":0,\"column\":0,\"fact\":{\"FactId\":130,\"args\":[]}}",
       "rows": ""
     },
     {
       "session": "main",
       "kind": "events",
-      "raw": "[{\"seq\":\"4716\",\"jobId\":0,\"source\":\"9971066954854033860\",\"revision\":\"17\",\"state\":3,\"phase\":0,\"completedWork\":\"0\",\"totalWork\":\"0\",\"kind\":\"error\",\"payload\":{\"code\":3,\"recover\":0,\"needBytes\":29187332,\"fact\":{\"FactId\":303,\"args\":[]}}},{\"seq\":\"4717\",\"jobId\":0,\"source\":\"9971066954854033860\",\"revision\":\"17\",\"state\":3,\"phase\":0,\"completedWork\":\"0\",\"totalWork\":\"0\",\"kind\":\"rejected\",\"payload\":{\"commandId\":\"3\",\"code\":30}}]",
+      "raw": "[{\"seq\":\"4716\",\"jobId\":0,\"source\":\"9971066954854033860\",\"revision\":\"17\",\"state\":3,\"phase\":0,\"completedWork\":\"0\",\"totalWork\":\"0\",\"kind\":\"error\",\"payload\":{\"code\":3,\"recover\":0,\"needBytes\":29189612,\"fact\":{\"FactId\":303,\"args\":[]}}},{\"seq\":\"4717\",\"jobId\":0,\"source\":\"9971066954854033860\",\"revision\":\"17\",\"state\":3,\"phase\":0,\"completedWork\":\"0\",\"totalWork\":\"0\",\"kind\":\"rejected\",\"payload\":{\"commandId\":\"3\",\"code\":30}}]",
       "rows": ""
     },
     {
