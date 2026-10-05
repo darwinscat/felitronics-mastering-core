@@ -11,6 +11,17 @@ Status: **HELD** means a test asserts the check. **PARTIAL** means pieces are he
 is not. **GAP** means nothing asserts it; the label (A1…, B1…) points to the gap list below. **BEHAVIOUR** marks a gap
 that needs new core behaviour, not only a test. **OBSOLETE** means an owner decision has replaced the check.
 
+## The five changes of 05.10 (next release)
+
+| Owner decision | Holder | Status |
+|---|---|---|
+| Manual slope < 0.2 LU per dB stops on existing passes ≥ 0.5 dB apart; normal streaming and max PCM stay | `LandingSearchTests.cpp`: dense wall before budget, normal −14, both max budgets; `ConfigDecisionsTests.cpp`: slope/spacing pins and mutation plants | HELD |
+| Analyzers names each running instrument with its own monotone fraction; null outside | `SourceMeasurementsTests.cpp:analyzerProgress`; `NeedlesTests.cpp:lifecycle` | HELD |
+| Damage waits for source measurement or its queue turn; no wait reason while running | `MasterReportTests.cpp:damageAfterMaster` | HELD |
+| Source clipping comes first, flat tops and inter-sample overs apart; three strict mastered thresholds; explicit gain on clipped input | `PlanSoundTests.cpp:theSourceReport`: boundary, actual analyzer, codec and wire controls; `ConfigDecisionsTests.cpp`: three threshold plants | HELD |
+| Unused compressor mix is absent from config, schema and typed struct | `ConfigTests.cpp:theCompressorHasNoUnusedMix` | HELD |
+| Peaks-only delivery for an already-mastered source | Deferred as the brief allows: decide whether a louder edited target itself requests mastering or still needs an explicit mode choice | OPEN |
+
 ## Table A: the checks of task 06
 
 Items 1–3 of the task and every bullet of its checks section, one check per row.

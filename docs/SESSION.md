@@ -962,11 +962,13 @@ and the cost's read (all `Pass`), and the damage job's two walks, `Reference` (b
 master's wait, the bookkeeping between walks and `Final`. The number of walks is not known ahead and is not promised.
 
 `Phase.analyzers` (ABI 13) names the instruments the Analyzers unit advances: a list of `{analyzer, fraction}`,
-held inline with room for three together. Each fraction is that instrument's source frames read divided by the file's
-frames, 0…1; it stays at 1 during finishing and copying. A fraction is nullable for an instrument without a measurable
+held inline with room for three together. A source run's fraction is its frames read divided by the file's
+frames, 0…1; it stays at 1 during finishing and copying. The needles use their own preparation, read and finish units.
+A fraction is nullable for an instrument without a measurable
 walk. The list is null outside Analyzers and empty while that phase only joins results. A master waiting on a source
 run carries that run's list; while it advances the needles it names `Excursions` with their own fraction.
-`felitronics_session_source_tests` checks all nine source runs, their identities, monotone fractions and the null outside.
+`felitronics_session_source_tests` checks all nine source runs, their identities, monotone fractions and the null outside;
+`felitronics_session_needles_tests` checks the peak-excursion job's own list and fraction.
 
 `events()` views the latest `apply()` or `step()` batch. The caller copies or consumes it before the next such call;
 queries leave it intact. Each `Notification` is an independent value with `seq`, `jobId`, source hash, revision, state, phase, deterministic work, `kind`, and the payload
