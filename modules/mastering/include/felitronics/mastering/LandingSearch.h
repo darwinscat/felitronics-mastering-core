@@ -917,6 +917,9 @@ private:
                 rec.reason = SolvePassRecord::Reason::PeakProbe;
                 params_.peakClipPeakDb = measuredPeak;
                 if (passes_ >= request_.maxPasses) return fail (MasteringSolveStatus::Unavailable);
+                // The forecast probe did not enter either side of a full-programme bracket. The next render is the
+                // ordinary target aim, even when the excerpt left an InsideBracket reason behind for this probe.
+                nextReason_ = SolvePassRecord::Reason::AimAtTarget;
                 chooseNext (valid);
                 phase_ = Phase::PassBegin;
                 return StepResult::More;

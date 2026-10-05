@@ -408,7 +408,7 @@ int main()
                   && peakWallResult.answer.log[0].reason != SolvePassRecord::Reason::PeakProbe
                   && (! peakWallResult.answer.limiterWall || peakWallResult.answer.limiterSlope > 0.0),
             "a confirmed peak forecast makes the first full render eligible for the limiter wall");
-        std::vector<float> missedPcm (std::size_t (8 * kRate));
+        std::vector<float> missedPcm (std::size_t (30 * kRate));
         for (std::size_t i = 0; i < missedPcm.size(); ++i)
         {
             const double t = double (i) / kRate;
@@ -417,13 +417,20 @@ int main()
         }
         LandingSetup missed; missed.target = -10; missed.highPassHz = 1000.0;
         missed.peakClipPeakDb = 20.0 * std::log10 (.9); missed.peakClipCutDb = 1.0;
+        missed.limiterBudgetDb = .5; missed.maxMode = true; missed.excerptSearch = true;
         const auto missedResult = land (Programme (missedPcm), missed);
-        bool fellBack = false;
+        bool fellBack = false, targetAfterProbe = false;
         for (int i = 0; i < missedResult.answer.logCount; ++i)
-            fellBack = fellBack || missedResult.answer.log[i].reason == SolvePassRecord::Reason::PeakProbe;
-        test::ok (missedResult.done && fellBack && missedResult.answer.measured.peakClipReductionMaxDb <= 1.001,
+        {
+            const bool probe = missedResult.answer.log[i].reason == SolvePassRecord::Reason::PeakProbe;
+            fellBack = fellBack || probe;
+            if (probe && i + 1 < missedResult.answer.logCount)
+                targetAfterProbe = missedResult.answer.log[i + 1].reason == SolvePassRecord::Reason::AimAtTarget;
+        }
+        test::ok (missedResult.done && fellBack && targetAfterProbe
+                  && missedResult.answer.measured.peakClipReductionMaxDb <= 1.001,
             "a short-window forecast that misses the filtered programme maximum falls back to the full probe and keeps "
-            "the clipper bound");
+            "the clipper bound; the next full render is labelled as the target aim, not the excerpt's stale bracket");
         LandingSetup loud; loud.target = -5; loud.limiterBudgetDb = 7.5; loud.slopeBelow = .2;
         const auto wall = land (dense, loud);
         auto before = loud; before.slopeBelow = 0;
