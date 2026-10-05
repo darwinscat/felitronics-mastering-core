@@ -610,8 +610,8 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
         const auto converted = converter.step (budget);
         if (converted == StepResult::Failed) { stage = Stage::Failed; return converted; }
         if (converted == StepResult::More) return converted;
-        const float* convertedPlanes[2] { outputPlanes[0], channels == 2 ? outputPlanes[1] : nullptr };
-        if (! converter.finish () || ! renderer.begin (chain, convertedPlanes,
+        for (int c = 0; c < channels; ++c) deliveryPlanes[c] = outputPlanes[c];
+        if (! converter.finish () || ! renderer.begin (chain, deliveryPlanes,
                                                         outputPlanes, channels, frames, deliveryTaps))
         { stage = Stage::Failed; return StepResult::Failed; }
         stage = Stage::DeliveryRender; return StepResult::More;

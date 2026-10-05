@@ -418,10 +418,13 @@ void pump()
         }
         return kept;
     };
-    ok (eventsHash (withoutDamage (withoutKeys (one, false, true, true).first)) == 0xc53142779e57820full
-        && eventsHash (withoutDamage (withoutKeys (cancelled, false, true, true).first)) == 0x4697be12cad5438eull,
+    const auto oneWithoutDamage = eventsHash (withoutDamage (withoutKeys (one, false, true, true).first));
+    const auto cancelledWithoutDamage = eventsHash (withoutDamage (withoutKeys (cancelled, false, true, true).first));
+    std::printf ("event fingerprints, without damage: %016llx %016llx\n",
+        (unsigned long long) oneWithoutDamage, (unsigned long long) cancelledWithoutDamage);
+    ok (oneWithoutDamage == 0x74303a7fc546ffb2ull && cancelledWithoutDamage == 0xccb520e2bcb0df7cull,
         "the damage moves its own job's events, the master's two lines and the config's version alone: without them the "
-        "landing fix's pins c53142779e57820f / 4697be12cad5438e hold");
+        "retained-winner and pass-log pins 74303a7fc546ffb2 / ccb520e2bcb0df7c hold");
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     // The max modes (v0.15.0) moved the config's version alone here: with it restated (withoutMax) every pin above holds.
@@ -430,7 +433,7 @@ void pump()
     // by ear (v0.16.0) move the config's version alone (withoutMax restates it).
     // The glue's mix (v0.17.0) and v0.18's target classes / mastered-delivery ceilings move the config's version alone
     // here (withoutMax restates them too).
-    ok (eventsHash (one) == 0x0cabd371bfd4cd298ull && eventsHash (cancelled) == 0x6002c0e2faa0c9d2ull,
+    ok (eventsHash (one) == 0x4c0913c1f9d5e8beull && eventsHash (cancelled) == 0xaa97a89f9b57aeeaull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",

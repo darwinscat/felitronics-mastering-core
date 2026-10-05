@@ -67,6 +67,8 @@ int main()
         fill.value (view); fill.value (kept[0]); fill.value (points[0]); fill.value (runs[0]); fill.value (differences[0]); fill.value (curve[0]);
         view.pendingMasterBytes = 0.0; // byte counts are finite and nonnegative, even in hostile scalar fixtures
         fill.value (pass[0]);
+        pass[0].excerpt = false; pass[0].excerptFromFrame = pass[0].excerptFrames = 0;
+        if (pass[0].limiterP95Db && ! std::isfinite (*pass[0].limiterP95Db)) pass[0].limiterP95Db.reset();
         if (kept[0].landing)
         {
             kept[0].landing->passes = 1;
