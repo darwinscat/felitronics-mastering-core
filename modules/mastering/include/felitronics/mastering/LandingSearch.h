@@ -813,8 +813,8 @@ private:
                                  : std::numeric_limits<double>::infinity();
         const bool keeps = ! budgetOn_ || ! valid || keepsBudget (rec);
         // The existing log supplies both readings. No probe is requested to find a slope: at least the configured P95
-        // spacing, the nearest such pass, with both renders under the ceiling. A forecast of the peak clipper's peak
-        // returned above and left no P95 reading: its different curve cannot prove a wall on this one.
+        // spacing, the nearest such pass, with both renders under the ceiling. A peak-probe render used the forecast
+        // clip threshold rather than the calibrated curve and therefore cannot contribute either endpoint.
         if (safe && keeps && level_ < request_.targetLufs - request_.toleranceLu
             && request_.limiterSlopeBelow > 0 && ! request_.budgetAimsAtCrossing)
         {
@@ -823,14 +823,15 @@ private:
             {
                 const auto& prior = records_[(std::size_t) i];
                 const double cut = rec.limiterP95Db - prior.limiterP95Db;
-                if (! std::isfinite (cut) || std::fabs (cut) < request_.limiterSlopeSpacingDb
+                if (prior.reason == SolvePassRecord::Reason::PeakProbe
+                    || ! std::isfinite (cut) || std::fabs (cut) < request_.limiterSlopeSpacingDb
                     || std::fabs (cut) >= spacing || prior.truePeakDbTp > request_.maxTruePeakDbTp
                     || ! std::isfinite (prior.integratedLufs)
                     || cut * (gain_ - ceiling_ - driveOf (i)) <= 0) continue;
                 spacing = std::fabs (cut);
                 wallSlope_ = (rec.integratedLufs - prior.integratedLufs) / cut;
             }
-            wall_ = std::isfinite (spacing) && wallSlope_ < request_.limiterSlopeBelow;
+            wall_ = std::isfinite (spacing) && wallSlope_ > 0.0 && wallSlope_ < request_.limiterSlopeBelow;
         }
         // THE GENTLEST CEILING-SAFE RENDER OVER THE BUDGET, held in `best_` while no render keeps both: the least drive.
         if (budgetOn_ && ! haveBest_ && safe && ! keeps
