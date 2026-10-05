@@ -567,7 +567,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
                                                                           masterJob_->search.overBudgetDb())
                                                  : MasterReportText::landing (report, masterSummary_, toleranceLu, measure))
                     { (void) event.payload.fact.assign (*verdict); emit (event, masterProgress_); }
-                    // Pulled up to the floor: the numbers behind the plain verdict, a line of its own for the log (617).
+                    // The limiter wall's numbers follow its plain verdict as a line for the log alone (619).
                     if (masterSummary_.limiterWall && masterSummary_.limiterSlope && masterSummary_.limiterWallP95Db)
                     {
                         (void) event.payload.fact.assign (text::Fact::of (text::FactId::MasterLandingWallDetail,
@@ -575,6 +575,7 @@ Stepped Session::step (std::uint32_t budget) noexcept
                             text::Arg::value (*masterSummary_.limiterWallP95Db, text::Unit::Db, 2)));
                         emit (event, masterProgress_);
                     }
+                    // Pulled up to the floor: the numbers behind the plain verdict, a line of its own for the log (617).
                     if (const auto detail = MasterReportText::maxFloorDetail (report,
                             detail::maxBudgetDb (detail::rules().engine, report.loudnessMode),
                             masterJob_->search.result().limiterActive.stats.p95Db, masterJob_->floorLufs,

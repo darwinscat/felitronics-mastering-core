@@ -1339,19 +1339,32 @@ int main()
             up.session->masters()[0].report->crest.rows.size_bytes()) == 0,
         "a second session repeats the delivered PCM and source-rate crest exactly");
     Case missed;
-    ok (run (missed, 48000, 48000, false, true, true),
-        "a demanding target retains a checked ceiling-safe result after the pass budget");
+    std::vector<session::Notification> wallEvents;
+    ok (run (missed, 48000, 48000, false, true, true, 4, 0, nullptr, 4096.0f, &wallEvents),
+        "a demanding target retains a checked ceiling-safe result at the limiter wall");
     if (missed.session && ! missed.session->masters().empty())
     {
         const auto& kept = missed.session->masters()[0];
         const auto& report = *kept.report;
-        const auto missFact = session::MasterReportText::miss (report);
-        ok (kept.landing->status == session::LandingStatus::PassLimit && ! report.targetMet
-            && report.peakSafe && report.firstHint && missFact
-            && ! session::text::Text::text (*missFact, session::text::Lang::Ru).empty()
-            && ! session::text::Text::text (*missFact, session::text::Lang::En).empty()
-            && session::MasterReportText::hint (*report.firstHint),
-            "ordinary loudness miss carries a number and a measured mix hint in ru and en");
+        const auto verdict = session::MasterReportText::landing (report, *kept.landing, .1);
+        bool plain = false, detail = false, mixHint = false;
+        for (const auto& event : wallEvents) if (event.kind == session::EventKind::Fact)
+        {
+            const auto fact = event.payload.fact.view();
+            plain = plain || fact.id == session::text::FactId::MasterLandingWall;
+            detail = detail || fact.id == session::text::FactId::MasterLandingWallDetail;
+            mixHint = mixHint || fact.id == session::text::FactId::MasterLandingMiss;
+        }
+        std::printf ("    wall report: status %u, wall %d, target %d, safe %d, hints %d/%d, verdict %u, events %d/%d/%d\n",
+            unsigned (kept.landing->status), kept.landing->limiterWall, report.targetMet, report.peakSafe,
+            bool (report.firstHint), bool (report.secondHint), verdict ? unsigned (verdict->id) : 0, plain, detail, mixHint);
+        ok (kept.landing->status == session::LandingStatus::TargetUnreachable && kept.landing->limiterWall
+            && ! report.targetMet && report.peakSafe && ! report.firstHint && ! report.secondHint
+            && verdict && verdict->id == session::text::FactId::MasterLandingWall
+            && ! session::text::Text::text (*verdict, session::text::Lang::Ru).empty()
+            && ! session::text::Text::text (*verdict, session::text::Lang::En).empty()
+            && plain && detail && ! mixHint,
+            "the limiter wall says why in ru/en, logs its numbers and blames no mix problem");
     }
     std::vector<float> mono (48000u);
     for (std::size_t i = 0; i < mono.size(); ++i)

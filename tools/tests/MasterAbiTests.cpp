@@ -93,7 +93,8 @@ const std::uint64_t kGrWindowBytes =
 // two spellings are stated rather than absorbed into an inequality, because an inequality is not a pin.
 constexpr auto kSolutionReturnBytes = felitronics::mastering::TargetLoudnessSolver::solutionReturnBytes();
 
-constexpr std::uint64_t kSolutionRecordRest = sizeof (void*) == 8 ? 2544u : 2540u;
+// The manual limiter wall adds 32 P95 readings (256 B) and its result flag and two numbers (24 B), on both tiers.
+constexpr std::uint64_t kSolutionRecordRest = sizeof (void*) == 8 ? 2824u : 2820u;
 
 // The topology axis of the memory-exhaustion (law 11d) create/configure matrix — see the switch that reads it.
 constexpr int kTopologies = 9;
