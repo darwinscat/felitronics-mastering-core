@@ -98,7 +98,6 @@ excerptOffsetDb = 0.5
 # P90 rule above and its offset; on uses its own offset, calibrated on the 37-song native study.
 excerptPeakP95 = true
 excerptPeakOffsetDb = 0
-excerptSurvivesForecastMiss = true
 budgetResolutionDb = 0.25
 clean = { budgetDb = 0.5 }
 dense = { budgetDb = 1.75 }

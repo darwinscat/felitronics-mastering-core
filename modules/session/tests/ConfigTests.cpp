@@ -158,8 +158,6 @@ void theSchemaRefuses()
                 "landing.max.excerptPeakP95");
     mustRefuse (E, "excerptPeakOffsetDb = 0", "excerptPeakOffsetDb = 25", "25", Fault::OutOfRange,
                 "landing.max.excerptPeakOffsetDb");
-    mustRefuse (E, "excerptSurvivesForecastMiss = true", "excerptSurvivesForecastMiss = 1", "1", Fault::WrongType,
-                "landing.max.excerptSurvivesForecastMiss");
     mustRefuse (E, "budgetResolutionDb = 0.25", "budgetResolutionDb = 0.01", "0.01", Fault::OutOfRange,
                 "landing.max.budgetResolutionDb");
 

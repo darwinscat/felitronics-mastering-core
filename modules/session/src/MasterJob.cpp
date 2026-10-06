@@ -420,10 +420,8 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         const auto peakP95 = max.find ("excerptPeakP95").boolean();
         result.request.maxExcerptPeakP95 = peakP95 && *peakP95;
         result.request.maxExcerptPeakOffsetDb = number (max.find ("excerptPeakOffsetDb"));
-        const auto survive = max.find ("excerptSurvivesForecastMiss").boolean();
-        result.request.maxExcerptSurvivesForecastMiss = survive && *survive;
         if (! std::isfinite (result.request.targetLufs) || ! std::isfinite (result.request.limiterGr.limitDb)
-            || ! std::isfinite (result.floorLufs) || ! excerpt || ! peakP95 || ! survive
+            || ! std::isfinite (result.floorLufs) || ! excerpt || ! peakP95
             || ! std::isfinite (result.request.maxExcerptSeconds)
             || ! std::isfinite (result.request.maxExcerptPreRollSeconds)
             || ! std::isfinite (result.request.maxExcerptPercentile)

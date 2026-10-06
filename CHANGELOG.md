@@ -11,9 +11,6 @@
   the file's. Deterministic core logarithms make the decision identical native/wasm, and the histogram work is counted.
   Its separately measured `excerptPeakOffsetDb` is 0 dB. Switching it off restores the loudness-P90 selector and its
   +0.5 dB offset.
-- **A peak-forecast miss keeps the excerpt estimate** when `[landing.max] excerptSurvivesForecastMiss = true`: the
-  non-candidate full probe calibrates the clipper, then the first eligible full render repeats the excerpt-derived drive.
-  The file continues with the v0.17 slope, chord, bounded +0.5-dB steps and proof instead of aiming at −5 LUFS.
 - **The winning render is retained as PCM** and restored without a duplicate render. Its optional nothrow allocation
   falls back to the previous counted delivery render on failure. Fresh and retained memory declarations name the third
   full PCM buffer, and the session memory gate includes it.
