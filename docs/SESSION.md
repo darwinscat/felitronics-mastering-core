@@ -386,7 +386,7 @@ machine's own value — proposed now, or kept from a file's machine layer — is
 never advised against; each piece of advice is said only where a person set the value it judges (500/501 the cutoff,
 502/503 the slope, 505/509 the crossover, 504 a shelf of tilt or low), so a slope by hand says nothing of the machine's
 cutoff beside it. The high-pass's cutoff below or above
-`[hpf] comfort` (24–42 Hz, strictly, the window named in the fact) and its slope gentler or steeper than `slopesNormal`
+`[hpf] comfort` (27–42 Hz, strictly, the window named in the fact) and its slope gentler or steeper than `slopesNormal`
 (a slope between two normal ones is inside; `plan.hpf.soundingSlope` carries the slope that sounds); mono bass's
 crossover outside every zone of `[monoBass.zones]` (ends inside) — above them `MonoBassOutsideZones` (505, against the
 club's and vinyl's upper ends), below them `MonoBassBelowZones` (509, against their lower ends); the EQ curve of the shelves as they sound (tilt and

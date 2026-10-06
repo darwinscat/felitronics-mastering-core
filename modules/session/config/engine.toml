@@ -217,13 +217,15 @@ skipBlocks = 0
 #   default, named as a number so that the order of the list cannot change the sound.
 # comfort: the knob's field is neutral from lowHz to highHz and shades through a warning towards warningLowHz below and
 #   warningHighHz above, red past them (50 to 80 Hz of the travel is red) — one window, a hint to the knob, changing
-#   neither the machine nor the travel. Below 20 Hz there is nothing to cut; above 42 Hz the cutoff takes music, not
-#   rubbish (at 50 Hz and 24 dB/oct, 8.4 dB at 40 Hz).
+#   neither the machine nor the travel. Below 27 Hz the field yellows (owner, 06.10), red from 23 — the ramp as long as
+#   before; above 42 Hz the cutoff takes music, not rubbish (at 50 Hz and 24 dB/oct, 8.4 dB at 40 Hz).
 # curveTopDb, curveBottomDb, curveStepDb, curveHeadroomDb: the scale of the high-pass curve, dB — a filter's slope goes
 #   down by definition, so it is not judged by the ±2 dB of the other curves.
 # marks: labels on the frequency axis of the curve, where the low end of instruments lives; behind the curve the spectrum
 #   of THIS mix is drawn. What a cutoff costs there: at 32 Hz and 24 dB/oct, 0.5 dB at 41.2 Hz (E1), 3.7 dB at 30.87 Hz
-#   (B0), 5.9 dB at 28 Hz (the 808's mark, there so its label fits on the plot).
+#   (B0), 6.4 dB at 27.5 Hz (A0, the piano's lowest key). The guitar's low E (E2, 82.41 Hz) and speech (70 Hz) stand
+#   above the machine's 50 Hz top: where a person's knob would start taking a voice with a guitar (owner, 06.10, which
+#   also took the 808's mark out).
 [hpf]
 frequencyDomain = "sourceNyquist"
 slopeDomain = [6, 96]
@@ -237,7 +239,7 @@ slopes = [12, 24, 48]
 slopesNormal = [12, 24]
 slopeDefault = 24
 note = { aboveHz = 20, soundingAtLeastS = 3 }
-comfort = { lowHz = 24, highHz = 42, warningLowHz = 20, warningHighHz = 50 }
+comfort = { lowHz = 30, highHz = 42, warningLowHz = 26, warningHighHz = 50 }
 curveTopDb = 0
 curveBottomDb = -36
 curveStepDb = 6
@@ -246,7 +248,9 @@ marks = [
     { key = "kick", hz = 50 },
     { key = "bass4", hz = 41.2 },
     { key = "bass5", hz = 30.87 },
-    { key = "sub808", hz = 28 },
+    { key = "piano", hz = 27.5 },
+    { key = "guitar", hz = 82.41 },
+    { key = "speech", hz = 70 },
 ]
 
 # MONO BASS (owner decisions 3.5) — always placed, at the target's crossover (targets.toml): it is there for subwoofers and
