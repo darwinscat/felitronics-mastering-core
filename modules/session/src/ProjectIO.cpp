@@ -24,6 +24,14 @@ namespace
 using toml::Need;
 using detail::Rules;
 
+// A device field's truth exactly as `bool (x)` gives it — a number's is "not zero": NaN true, −0 false — spelled for a
+// number without the float `!=` gcc's -Wfloat-equal refuses.
+template <class T> bool truthOf (const T& x) noexcept
+{
+    if constexpr (std::is_floating_point_v<T>) return ! core::exactlyEqual (x, T (0));
+    else return bool (x);
+}
+
 bool defaultsLabel (std::string_view text) noexcept
 {
     if (text.size() != 7 || text[4] != '-') return false;
@@ -283,7 +291,7 @@ struct Writer
                 else if (! detail::same (double (machine), double (defaultValue))) origin = "machine";
                 if (isOn && chain)
                 {
-                    bool active = bool (sounded);
+                    bool active = truthOf (sounded);
                     const auto& t = rendered.topology;
                     const auto& v = rendered.params;
                     switch (device)
@@ -298,7 +306,7 @@ struct Writer
                         case Device::Bands: active = active && t.eq && ! v.bypassEq; break;
                         case Device::Limiter: break;
                     }
-                    if (active != bool (sounded)) origin = master.recipe.readyVersion == 1 ? "hand" : "machine";
+                    if (active != truthOf (sounded)) origin = master.recipe.readyVersion == 1 ? "hand" : "machine";
                     workedLine (Of::fields[field], active, origin);
                 }
                 else workedLine (Of::fields[field], sounded, origin);
