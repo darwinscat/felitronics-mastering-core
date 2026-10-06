@@ -179,10 +179,6 @@ double maxBudgetDb (toml::embedded::View engine, LoudnessMode mode) noexcept
 MasterPlan MasterJob::plan (const Session& s, const command::Master& input, const Project& project) noexcept
 {
     MasterPlan result;
-    if (input.budgetResolutionDb && ! std::isfinite (*input.budgetResolutionDb))
-    { result.rejection = Rejection::NotFinite; return result; }
-    if (input.budgetResolutionDb && (*input.budgetResolutionDb < 0.05 || *input.budgetResolutionDb > 1.0))
-    { result.rejection = Rejection::OutOfDomain; return result; }
     if (input.source != 0 && input.source != s.source_.hash) return result;
     if (input.revision != 0 && input.revision != s.revision_) return result;
     if (input.ready.version > 1u) return result;
@@ -414,14 +410,12 @@ MasterPlan MasterJob::plan (const Session& s, const command::Master& input, cons
         result.request.maxExcerptSearch = excerpt && *excerpt;
         result.request.maxExcerptSeconds = number (max.find ("excerptSeconds"));
         result.request.maxExcerptPreRollSeconds = number (max.find ("excerptPreRollSeconds"));
-        result.request.maxExcerptPercentile = number (max.find ("excerptPercentile"));
         result.request.maxExcerptToleranceDb = number (max.find ("excerptToleranceDb"));
         result.request.maxExcerptOffsetDb = number (max.find ("excerptOffsetDb"));
         if (! std::isfinite (result.request.targetLufs) || ! std::isfinite (result.request.limiterGr.limitDb)
             || ! std::isfinite (result.floorLufs) || ! excerpt
             || ! std::isfinite (result.request.maxExcerptSeconds)
             || ! std::isfinite (result.request.maxExcerptPreRollSeconds)
-            || ! std::isfinite (result.request.maxExcerptPercentile)
             || ! std::isfinite (result.request.maxExcerptToleranceDb)
             || ! std::isfinite (result.request.maxExcerptOffsetDb))
         { result.rejection = Rejection::MandatoryUnavailable; return result; }

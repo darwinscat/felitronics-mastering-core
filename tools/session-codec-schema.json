@@ -1478,8 +1478,7 @@
       "kind": "\"master\"",
       "commandId": "string",
       "allowClippedGain?": "boolean",
-      "masterAnyway?": "boolean",
-      "budgetResolutionDb?": "WireNumber"
+      "masterAnyway?": "boolean"
     },
     "CancelCommand": {
       "kind": "\"cancel\"",

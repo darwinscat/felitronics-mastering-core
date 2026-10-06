@@ -198,12 +198,10 @@ LowEnd and PeakExcursions tests are cited nowhere in this table as proof of a de
 - **B5. HELD.** A landing retains its winning PCM and avoids a duplicate render; allocation fault injection proves the
   old counted delivery render restores identical PCM when that optional buffer is unavailable. `LandingSearchTests.cpp`
   also holds the third full PCM buffer in fresh and retained law-11d declarations.
-- **B6. HELD.** Max modes bracket the active-P95 edge on the 20-second P90 excerpt, then enter v0.17's slope/chord file
-  search at +0.5 dB. Dense and normal music fixtures require fewer full renders than switch-off and never more; the
-  default full proof stays within 0.25 dB. A frontend's 0.5 dB proof uses fewer full renders on the dense fixture and
-  stays within 0.5 dB; out-of-domain values are refused. Missing/invalid momentary data, short programmes and switch-off
-  preserve v0.17 PCM, and manual PCM stays under the WAV contract. `LandingSearchTests.cpp`, `MasterJobTests.cpp`,
-  `LandingPlanTests.cpp`, `SessionAbiV1Tests.cpp` and the native/wasm session contract hold pass reasons, P95, excerpt
+- **B6. HELD.** Max modes bracket the active-P95 edge on the loudest excerpt before full renders. Dense and normal music
+  fixtures require fewer full renders than switch-off, the full proof stays within 0.25 dB, missing/invalid momentary
+  data and switch-off preserve v0.17 PCM, and manual PCM stays under the WAV contract. `LandingSearchTests.cpp`,
+  `MasterJobTests.cpp`, `LandingPlanTests.cpp` and the native/wasm session contract hold pass reasons, P95, excerpt
   ranges, progress and wire fields.
 - Knob boundaries: no gap (A41–A45 are held).
 

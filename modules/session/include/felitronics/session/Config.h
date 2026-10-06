@@ -140,8 +140,7 @@ struct Landing
     double cleanBudgetDb = 0.0, denseBudgetDb = 0.0;
     bool maxExcerptSearch = false;
     double maxExcerptSeconds = 0.0, maxExcerptPreRollSeconds = 0.0;
-    double maxExcerptPercentile = 0.0, maxExcerptToleranceDb = 0.0, maxExcerptOffsetDb = 0.0;
-    double maxBudgetResolutionDb = 0.0;
+    double maxExcerptToleranceDb = 0.0, maxExcerptOffsetDb = 0.0;
     double limiterSlopeBelow = 0.0, limiterSlopeSpacingDb = 0.0;
 };
 
