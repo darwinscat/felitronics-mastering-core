@@ -532,6 +532,17 @@ void readMonoBass (Doc& d, Reader& in, MonoBass& o)
         t.required ("soundingAtLeastS", o.lossSoundingAtLeastS, R { 0.0, 600.0 });
     });
     const R travel = range ? R { o.frequencyRange.min, o.frequencyRange.max } : R { 20.0, 1000.0 };
+    in.table ("comfort", Need::Required, [&] (Reader& t)
+    {
+        HpfComfort& c = o.comfort;
+        const bool wl = t.required ("warningLowHz", c.warningLowHz, travel);
+        const bool l = t.required ("lowHz", c.lowHz, travel);
+        const bool h = t.required ("highHz", c.highHz, travel);
+        const bool wh = t.required ("warningHighHz", c.warningHighHz, travel);
+        d.notAbove (t, wl && l, c.warningLowHz, c.lowHz, "lowHz");
+        d.below (t, l && h, c.lowHz, c.highHz, "highHz");
+        d.notAbove (t, h && wh, c.highHz, c.warningHighHz, "warningHighHz");
+    });
     in.table ("zones", Need::Required, [&] (Reader& z)
     {
         auto zone = [&] (std::string_view key, Zone& out)
@@ -575,6 +586,21 @@ void readCompressor (Doc& d, Reader& in, Compressor& o)
 }
 
 // `targets`: the row keys of the targets document, or null when it did not parse (nothing to check a name against).
+// A knob's coloured window inside its domain: warningLow <= low < high <= warningHigh.
+void readComfort (Doc& d, Reader& in, std::string_view key, Comfort& c, const R& domain)
+{
+    in.table (key, Need::Required, [&] (Reader& t)
+    {
+        const bool wl = t.required ("warningLow", c.warningLow, domain);
+        const bool l = t.required ("low", c.low, domain);
+        const bool h = t.required ("high", c.high, domain);
+        const bool wh = t.required ("warningHigh", c.warningHigh, domain);
+        d.notAbove (t, wl && l, c.warningLow, c.low, "low");
+        d.below (t, l && h, c.low, c.high, "high");
+        d.notAbove (t, h && wh, c.high, c.warningHigh, "warningHigh");
+    });
+}
+
 void readGlue (Doc& d, Reader& in, Glue& o, const std::vector<std::string>* targets)
 {
     // THE KNOB, "up to N dB", first: every glue number of the document is written on it.
@@ -583,6 +609,7 @@ void readGlue (Doc& d, Reader& in, Glue& o, const std::vector<std::string>* targ
     const bool hi = in.required ("knobMaxDb", o.knobMaxDb, knob);
     d.below (in, lo && hi, o.knobMinDb, o.knobMaxDb, "knobMaxDb");
     in.required ("knobStepDb", o.knobStepDb, R { 0.0, 3.0 });   // 0: no step
+    readComfort (d, in, "comfort", o.comfort, knob);
     in.required ("detectorOverP95Db", o.detectorOverP95Db, R { -12.0, 12.0 });
     // The parallel share: a share of the domain, its travel inside it, the machine's on the travel.
     {
@@ -590,6 +617,7 @@ void readGlue (Doc& d, Reader& in, Glue& o, const std::vector<std::string>* targ
         const bool travel = d.pair (in, "mixRange", o.mixRange, share);
         in.required ("mixStep", o.mixStep, R { 0.0, 1.0 });   // 0: no step
         in.required ("mix", o.mix, travel ? R { o.mixRange.min, o.mixRange.max } : share);
+        readComfort (d, in, "mixComfort", o.mixComfort, share);
     }
     // WHAT THE MACHINE SETS stays on the slider's travel (owner decision 3.8: never above knobMaxDb); a person's value
     // and a project's take the whole domain.
@@ -634,6 +662,7 @@ void readSaturation (Doc& d, Reader& in, Saturation& o)
     d.name (in, "shape", o.shape, kShapes);
     in.required ("driveStep", o.driveStep, R { 0.0, 12.0 });   // 0: no step
     const R drive = readDomain (d, in, "driveDomain", o.driveDomain, R { 0.0, 12.0 });
+    readComfort (d, in, "driveComfort", o.driveComfort, drive);
     d.pair (in, "driveRange", o.driveRange, drive);
     in.required ("driveDb", o.driveDb, drive);
     in.required ("bias", o.bias, R { -0.95, 0.95 });   // the core's domain

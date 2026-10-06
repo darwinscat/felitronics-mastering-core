@@ -89,6 +89,9 @@ inline constexpr std::string_view kEnginePresentation[] = {
     "hpf.curveTopDb", "hpf.curveBottomDb", "hpf.curveStepDb", "hpf.curveHeadroomDb",
     "hpf.marks",
     "monoBass.zones",                                  // the knob scale's regions
+    "monoBass.comfort",                                // the crossover knob field's colours
+    "glue.comfort", "glue.mixComfort",                 // the glue knobs' fields' colours
+    "saturation.driveComfort",                         // the drive knob field's colours
     "saturation.cut",                                  // measured after the master
     "tilt.normal",                                     // where a knob's value turns red
     "low.normal",
