@@ -531,6 +531,8 @@ struct Progress
     double masterPassWeight = 0.0;             // [progress.master] passWeight
     double masterMeasureWeight = 0.0;          // [progress.master] measureWeight
     std::int32_t masterExpectedPasses = 0;     // [progress.master] expectedPasses
+    std::int32_t masterExpectedPassesMaxClean = 0;   // [progress.master] expectedPassesMaxClean
+    std::int32_t masterExpectedPassesMaxDense = 0;   // [progress.master] expectedPassesMaxDense
 };
 
 // The blind test's protocol. Its variants — the chains a pair compares — are not here: they are defined with the test.

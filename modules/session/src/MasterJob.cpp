@@ -170,6 +170,14 @@ MaxStop maxStopOf (const MaxStopInputs& in) noexcept
     return MaxStop::Passes;
 }
 
+std::uint32_t expectedPasses (toml::embedded::View engine, LoudnessMode mode) noexcept
+{
+    const auto master = engine.find ("progress").find ("master");
+    const auto key = mode == LoudnessMode::MaxClean ? "expectedPassesMaxClean"
+                   : mode == LoudnessMode::MaxDense ? "expectedPassesMaxDense" : "expectedPasses";
+    return std::uint32_t (*master.find (key).integer());
+}
+
 double maxBudgetDb (toml::embedded::View engine, LoudnessMode mode) noexcept
 {
     if (mode == LoudnessMode::Manual) return std::numeric_limits<double>::quiet_NaN();
@@ -522,7 +530,7 @@ bool MasterJob::begin (const Session& s, const MasterPlan& plan)
     floorRequest.targetLufs = plan.floorLufs;
     floorRequest.limiterGr = {};
     floorRequest.landingOnSourceGate = false;
-    floorPass = false;
+    floorPass = false; floorFirstPasses = 0; floorFirstWork = 0;
     sourceLufs = plan.sourceLufs;
     targetLufs = plan.request.targetLufs;
     targetTp = plan.request.maxTruePeakDbTp;
@@ -698,7 +706,12 @@ mastering::StepResult MasterJob::step (long long budget) noexcept
             {
                 floorPass = true;
                 floorFirstLufs = file;
-                if (! beginFloor()) { stage = Stage::Failed; return StepResult::Failed; }
+                floorFirstPasses = std::uint32_t (search.result().logCount);
+                floorFirstWork = search.result().workUnits;
+                auto& rows = session->masterRows_[rowIndex];
+                if (! LandingOps::passRows (search.result(),
+                        { rows.passes.get(), rows.passes ? std::size_t (mastering::TargetLoudnessSolverLimits::kMaxPasses) : 0u })
+                    || ! beginFloor()) { stage = Stage::Failed; return StepResult::Failed; }
                 return StepResult::More;
             }
         }
@@ -1245,5 +1258,25 @@ std::optional<double> MasterJob::stepFraction() const noexcept
     }
     if (stage == Stage::CostRead) return frames > 0 ? std::optional<double> (double (costCursor) / double (frames)) : std::nullopt;
     return std::nullopt;
+}
+
+// A DELIVERY'S BAR, from its own walks. As-is copies the file once: the copy is the bar. Peaks-only walks each render — the
+// rate conversion where the rates differ, the gain, the check — and whether the one correction render follows is known
+// only at the check: as the mastered landing counts a pass nobody expected, the first render fills 80% of the bar and the
+// correction the next 10, so the bar never falls and stays below one until the job ends.
+double MasterJob::deliveryFraction() const noexcept
+{
+    const auto share = [] (long long done, long long total)
+    { return total > 0 ? std::clamp (double (done) / double (total), 0.0, 1.0) : 0.0; };
+    if (deliveryMode == DeliveryMode::AsIs)
+        return stage == Stage::DeliveryCopy ? share (deliveryCursor, (long long) sourceFrames) : 0.0;
+    const double walks = deliveryRate != sourceRate ? 3.0 : 2.0;
+    double walked = 0.0;
+    if (stage == Stage::DeliveryConvert) walked = share (converter.readFrames(), (long long) sourceFrames);
+    else if (stage == Stage::DeliveryRender) walked = walks - 2.0 + share (renderer.processedFrames(), frames);
+    else if (stage == Stage::DeliveryMeasure) walked = walks - 1.0 + share (deliveryMeasureCursor, frames);
+    else return 0.0;
+    const double rendered = (deliveryCorrected ? 1.0 : 0.0) + walked / walks;
+    return rendered <= 1.0 ? 0.8 * rendered : 1.0 - 0.2 / rendered;
 }
 } // namespace felitronics::session::detail

@@ -945,14 +945,23 @@ void maxSearchPasses()
             command::EditTarget edit { 2, {} };
             edit.fields.loudnessMode = mode;
             (void) act (r, edit);
-            (void) deliver (r, 3);
+            // The budget's passes are the first landing's: a master pulled up to its floor records both landings.
+            std::uint32_t budgetPasses = 0;
+            if (act (r, readyMaster (*r.session, 3)).rejection == Rejection::None)
+                for (unsigned i = 0; i < 400000 && r.session->job() != 0; ++i)
+                {
+                    if (const auto* j = detail::Inspector::job (*r.session); j && j->floorPass) budgetPasses = j->floorFirstPasses;
+                    (void) r.session->step (1); record (r);
+                }
             const auto& s = *r.session;
             const auto& kept = s.masters().back();
             const auto passes = kept.landing ? kept.landing->passes : 99u;
             const auto stop = kept.report ? kept.report->maxStop : MaxStop::None;
+            if (stop != MaxStop::Floor) budgetPasses = passes;
             seen += std::string (dense ? "clicks " : "struck ") + (mode == LoudnessMode::MaxClean ? "clean " : "dense ")
-                  + std::to_string (passes) + " (stop " + std::to_string (unsigned (stop)) + "); ";
-            fewEnough = fewEnough && passes <= 6u && (stop == MaxStop::Budget || stop == MaxStop::Floor);
+                  + std::to_string (budgetPasses) + " of " + std::to_string (passes) + " (stop " + std::to_string (unsigned (stop)) + "); ";
+            fewEnough = fewEnough && budgetPasses <= 6u && (stop == MaxStop::Budget || stop == MaxStop::Floor)
+                && (stop != MaxStop::Floor || (budgetPasses > 0 && passes > budgetPasses));
             bool rowValues = true;
             if (! kept.landing) logsWhole = false;
             else for (const auto& pass : kept.landing->log)
@@ -1033,6 +1042,59 @@ void glueAtFullMix()
     ok (parallel != 0 && parallel != kDownwardGlue, "the glue at its default 0.4: another master");
 }
 
+// THE FLOOR LANDING CONTINUES THE MASTER'S RECORD: the first landing's passes stay in the master's pass log ahead of the
+// floor landing's, with their reasons; the pass number never starts again and the bar keeps moving through the floor.
+void maxFloorRecord()
+{
+    GradeRun r;
+    const auto pcm = clicks (48000, 3.0);
+    r.session = measuredSession (pcm, 48000);
+    if (! r.session) { ok (false, "the floor record: a session"); return; }
+    auto& s = *r.session;
+    (void) act (r, command::SetTarget { 2, "maxClean" });
+    const auto job = act (r, readyMaster (s, 3)).job;
+    std::uint32_t lastPass = 0, passFacts = 0, floorFacts = 0;
+    double lastFraction = 0.0, atSwitch = -1.0, floorSecond = -1.0;
+    bool monotone = true, switched = false;
+    for (unsigned i = 0; i < 400000 && s.job() != 0; ++i)
+    {
+        (void) s.step (1);
+        const auto* j = detail::Inspector::job (s);
+        const bool floorNow = j && j->floorPass;
+        if (floorNow && ! switched) { switched = true; atSwitch = lastFraction; }
+        for (const auto& e : s.events())
+        {
+            if (e.jobId != job) continue;
+            if (e.kind == EventKind::Phase && (e.payload.phase.name == PhaseName::Pass || e.payload.phase.name == PhaseName::Final))
+            {
+                monotone = monotone && e.payload.phase.pass >= lastPass && e.payload.phase.fraction >= lastFraction;
+                lastPass = e.payload.phase.pass; lastFraction = e.payload.phase.fraction;
+            }
+            if (e.kind == EventKind::Fact && e.payload.fact.view().id == text::FactId::MasterPass)
+            {
+                ++passFacts;
+                // The floor landing's second pass begins: its first has rendered, and the bar has moved with it.
+                if (floorNow && ++floorFacts == 2) floorSecond = lastFraction;
+            }
+        }
+        record (r);
+    }
+    const auto first = passFacts - floorFacts;
+    const auto masters = s.masters();
+    const std::optional<LandingSummary> kept = masters.empty() ? std::optional<LandingSummary> {} : masters.back().landing;
+    const auto* landing = kept ? &*kept : nullptr;
+    bool underFloor = false;
+    for (std::size_t i = 0; landing && i < first && i < landing->log.size(); ++i)
+        underFloor = underFloor || landing->log[i].achievedLufs < -14.1;
+    ok (switched && first > 0 && floorFacts > 0 && landing && landing->passes == passFacts && landing->log.size() == passFacts
+            && landing->log[0].reason == LandingPassReason::AimAtTarget && underFloor
+            && landing->log[first].reason == LandingPassReason::AimAtTarget,
+        "a max master pulled up to its floor keeps both landings in its record: " + std::to_string (first) + " + "
+            + std::to_string (floorFacts) + " passes, recorded " + std::to_string (landing ? landing->passes : 0u));
+    ok (monotone, "its pass number and its bar never go back across the floor landing");
+    ok (switched && floorSecond > atSwitch, "its bar moves with the floor landing's first render ("
+        + std::to_string (atSwitch) + " -> " + std::to_string (floorSecond) + ")");
+}
 int main()
 {
     damageResampler();
@@ -1042,7 +1104,7 @@ int main()
     damageGrades();
     lateMasterCrestLifecycle();
     maxMasterLanding();
-    maxFloor();
+    maxFloor(); maxFloorRecord();
     maxStopRules();
     damageWithoutAnId();
     damageReferenceBelowTheKnob();

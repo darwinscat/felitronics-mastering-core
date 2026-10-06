@@ -59,6 +59,8 @@ struct LandingTrace
     bool complete = false, valid = false;
     std::span<const LandingTraceBucket> rows;
 };
+// A landing measures at most twelve passes; a max master pulled up to its floor lands twice, and its record holds both.
+inline constexpr std::uint32_t kLandingRecordPasses = 24;
 struct LandingSummary
 {
     LandingStatus status = LandingStatus::Unavailable;

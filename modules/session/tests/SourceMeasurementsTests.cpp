@@ -5,6 +5,7 @@
 #include "MeasurementWorkspace.h"
 #include "LiveMeasurements.h"
 #include "Driver.h"
+#include <felitronics/session/Config.h>
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/session/Wire.h>
 #include <felitronics/analysis/BandCrestResult.h>
@@ -571,6 +572,31 @@ void tempoFinishCanStopAndContinue()
             ok (same (x.values[j], y.values[j]), "resumed tempo curve and candidates match bit for bit");
     }
 }
+// A WAITING MAX MASTER EXPECTS ITS MODE'S RENDERS, as the rendering one does ([progress.master]
+// expectedPassesMaxClean): the CD target waits for tempo, here with its loudness mode edited to max clean.
+void waitingMaxMasterExpects()
+{
+    constexpr unsigned rate = 48000, frames = rate * 12;
+    std::vector<float> pcm (frames);
+    for (unsigned i = 0; i < frames; ++i) pcm[i] = i % 24000 < 300 ? .2f : 0.0f;
+    const float* planes[] { pcm.data() };
+    auto made = Session::create(); auto& s = *made.session;
+    (void) s.apply (command::Load { 1, { planes, 1, frames, rate }, {} });
+    (void) s.apply (command::SetTarget { 2, "cd" });
+    command::EditTarget edit { 3, {} };
+    edit.fields.loudnessMode = LoudnessMode::MaxClean;
+    const bool edited = s.apply (edit).rejection == Rejection::None;
+    while (s.state() == State::Loaded) (void) s.step (16);
+    const auto wanted = std::uint32_t (felitronics::session::config::Config::load().config.engine.progress.masterExpectedPassesMaxClean);
+    const auto job = s.apply (command::Master { 4 }).job;
+    const auto asked = s.snapshot().view().masterProgress;
+    (void) s.step (1);
+    const auto stepped = s.snapshot().view().masterProgress;
+    ok (edited && job != 0 && s.job() == job && s.masters().empty() && asked.name == PhaseName::Analyzers
+            && stepped.name == PhaseName::Analyzers && asked.totalPasses == wanted && stepped.totalPasses == wanted,
+        "a max clean master waiting for tempo expects " + std::to_string (wanted) + " renders ("
+            + std::to_string (asked.totalPasses) + " asked, " + std::to_string (stepped.totalPasses) + " waiting)");
+}
 void masterWaitsForTempo()
 {
     constexpr unsigned rate = 48000, frames = rate * 12;
@@ -862,6 +888,37 @@ void analyzerProgress()
     ok (every && monotone, "each analyzer has its own monotone fraction in 0..1");
     ok (outside, "the analyzer list is null outside Analyzers");
 }
+// THE WHOLE BAR MOVES WITH EVERY ANALYZER: after the shared low-end walk each next analyzer adds its read share too. On a
+// four-second source the bar once stood still at the low ends' weight while Forensics read the whole file.
+void overallAnalyzerFraction()
+{
+    std::vector<float> samples (4u * 48000u);
+    for (std::size_t i = 0; i < samples.size(); ++i)
+        samples[i] = float (.1 * felitronics::core::det::sin (double (i) * .03));
+    const float* planes[] { samples.data() };
+    auto made = Session::create(); auto& s = *made.session;
+    (void) s.apply (command::Load { 1, { planes, 1, samples.size(), 48000 }, {} });
+    double previous = 0, last = -1, forensicsFirst = -1, forensicsLast = -1;
+    bool monotone = true;
+    for (unsigned i = 0; i < 100000 && s.measurementJob() != 0; ++i)
+    {
+        const auto& run = detail::Inspector::run (s);
+        const bool forensics = detail::Inspector::live (s) == 9 && run.cursor < run.order.size()
+            && run.order[run.cursor] == Analyzer::Forensics && run.frames != 0;
+        (void) s.step (1);
+        const auto& p = s.snapshot().view().measurementProgress;
+        if (p.name != PhaseName::Analyzers) continue;
+        monotone = monotone && p.fraction >= previous && p.fraction <= 1;
+        previous = last = p.fraction;
+        if (! forensics) continue;
+        if (forensicsFirst < 0) forensicsFirst = p.fraction;
+        forensicsLast = p.fraction;
+    }
+    ok (monotone && same (last, 1.0), "the overall analysis fraction never falls and ends at one");
+    ok (forensicsFirst >= 0 && forensicsLast > forensicsFirst,
+        "the overall analysis fraction rises while Forensics reads the file after the shared low-end walk ("
+            + std::to_string (forensicsFirst) + " -> " + std::to_string (forensicsLast) + ")");
+}
 void cancelSharedLowEnds()
 {
     std::vector<float> samples (4u * 48000u, 0.1f); const float* planes[] { samples.data() };
@@ -885,13 +942,13 @@ void cancelSharedLowEnds()
 }
 int main()
 {
-    analyzerProgress(); cancelSharedLowEnds();
+    analyzerProgress(); overallAnalyzerFraction(); cancelSharedLowEnds();
     fixture (2, 48000, 192000, 317, true);
     fixture (1, 48000, 192000, 1024, false);
     fixture (2, 8000, 800, 1, false);
     fixture (2, 8000, 8000, 319, false);
     optionalFailure(); missingMandatory(); driftingHum(); truncatedLists(); finiteSourceOverflow(); cachedSourceAndCommands(); unplacedCommandsDuringWork();
-    tempoFinishCanStopAndContinue(); masterWaitsForTempo(); masterTempoDependencyPolicy(); longTempoParity(); deviceTempoPolicy();
+    tempoFinishCanStopAndContinue(); masterWaitsForTempo(); waitingMaxMasterExpects(); masterTempoDependencyPolicy(); longTempoParity(); deviceTempoPolicy();
     wholeFileWall();
     ok (! detail::SourceWarnings::wideBass (.059999999) && detail::SourceWarnings::wideBass (.06), "wide bass includes exactly six percent");
     ok (detail::SourceWarnings::quiet (-40) == text::FactId::Value && detail::SourceWarnings::quiet (-40.0001) == text::FactId::SourceQuiet

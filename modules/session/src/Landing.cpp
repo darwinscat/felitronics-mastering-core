@@ -414,10 +414,43 @@ LandingPlan LandingOps::plan (const config::Engine& engine, bool sourceLoudnessV
     return plan;
 }
 
+namespace
+{
+LandingPass passRow (const mastering::SolvePassRecord& source) noexcept
+{
+    const auto passReason = [] (mastering::SolvePassRecord::Reason value) noexcept
+    {
+        using Source = mastering::SolvePassRecord::Reason;
+        switch (value)
+        {
+            case Source::AimAtTarget: return LandingPassReason::AimAtTarget;
+            case Source::PeakProbe: return LandingPassReason::PeakProbe;
+            case Source::StepBackBySlope: return LandingPassReason::StepBackBySlope;
+            case Source::InsideBracket: return LandingPassReason::InsideBracket;
+            case Source::ProveEdge: return LandingPassReason::ProveEdge;
+            case Source::DeliverWinner: return LandingPassReason::DeliverWinner;
+        }
+        return LandingPassReason::AimAtTarget;
+    };
+    LandingPass row;
+    row.gainDb = source.gainDb; row.ceilingDbTp = source.ceilingDb;
+    row.achievedLufs = source.integratedLufs; row.truePeakDbTp = source.truePeakDbTp;
+    row.limiterMaxReductionDb = source.limiterMaxGrDb;
+    if (std::isfinite (source.limiterP95Db)) row.limiterP95Db = source.limiterP95Db;
+    row.reason = passReason (source.reason);
+    row.ceilingSafe = (source.violated & mastering::constraintBit (mastering::MasteringConstraint::TruePeakCeiling)) == 0;
+    row.overBudget = (source.violated & mastering::constraintBit (mastering::MasteringConstraint::LimiterGainReduction)) != 0;
+    return row;
+}
+bool summaryOf (const mastering::LoudnessSolution& solution, std::uint32_t earlier, std::uint64_t earlierWork,
+                std::span<LandingPass> rows, std::span<LandingTraceBucket> limiterRows,
+                std::span<LandingTraceBucket> peakClipRows, std::uint32_t deliveryRateHz, LandingSummary& out) noexcept;
+} // namespace
+
 bool LandingOps::summarize (const mastering::LoudnessSolution& solution,
                        std::span<LandingPass> rows, LandingSummary& out) noexcept
 {
-    return summarize (solution, rows, {}, {}, 0, out);
+    return summaryOf (solution, 0, 0, rows, {}, {}, 0, out);
 }
 
 bool LandingOps::summarize (const mastering::LoudnessSolution& solution,
@@ -425,9 +458,33 @@ bool LandingOps::summarize (const mastering::LoudnessSolution& solution,
                        std::span<LandingTraceBucket> peakClipRows, std::uint32_t deliveryRateHz,
                        LandingSummary& out) noexcept
 {
+    return summaryOf (solution, 0, 0, rows, limiterRows, peakClipRows, deliveryRateHz, out);
+}
+
+bool LandingOps::summarize (const mastering::LoudnessSolution& solution, std::uint32_t earlier, std::uint64_t earlierWork,
+                       std::span<LandingPass> rows, LandingSummary& out) noexcept
+{
+    return summaryOf (solution, earlier, earlierWork, rows, {}, {}, 0, out);
+}
+
+bool LandingOps::passRows (const mastering::LoudnessSolution& solution, std::span<LandingPass> rows) noexcept
+{
+    if (solution.logCount < 0 || solution.logCount > 12 || rows.size() < (std::size_t) solution.logCount) return false;
+    for (int i = 0; i < solution.logCount; ++i) rows[(std::size_t) i] = passRow (solution.log[i]);
+    return true;
+}
+
+namespace
+{
+bool summaryOf (const mastering::LoudnessSolution& solution, std::uint32_t earlier, std::uint64_t earlierWork,
+                std::span<LandingPass> rows, std::span<LandingTraceBucket> limiterRows,
+                std::span<LandingTraceBucket> peakClipRows, std::uint32_t deliveryRateHz, LandingSummary& out) noexcept
+{
+    // One landing measures at most twelve passes; a max master pulled up to its floor has the first landing's `earlier`
+    // rows ahead of its own (passRows wrote them when the floor landing began): one record, one count, one work.
     if (solution.passes < 0 || solution.passes > 12 || solution.logCount < solution.passes
-        || solution.logCount > mastering::TargetLoudnessSolverLimits::kMaxPasses
-        || rows.size() < (std::size_t) solution.logCount) return false;
+        || solution.logCount > mastering::TargetLoudnessSolverLimits::kMaxPasses || earlier > 12
+        || rows.size() < std::size_t (earlier) + (std::size_t) solution.logCount) return false;
     const auto& limiter = solution.limiterTrace;
     const auto& clipper = solution.peakClipTrace;
     const bool haveTraces = deliveryRateHz > 0;
@@ -496,8 +553,8 @@ bool LandingOps::summarize (const mastering::LoudnessSolution& solution,
         next.limiterSlope = solution.limiterSlope;
         next.limiterWallP95Db = solution.limiterWallP95Db;
     }
-    next.passes = (std::uint32_t) solution.passes;
-    next.workUnits = solution.workUnits;
+    next.passes = earlier + (std::uint32_t) solution.passes;
+    next.workUnits = earlierWork + solution.workUnits;
     if (solution.deliverable)
     {
         if (! std::isfinite (solution.achievedLufs) || ! std::isfinite (solution.missLu)
@@ -511,33 +568,8 @@ bool LandingOps::summarize (const mastering::LoudnessSolution& solution,
     if (std::isfinite (solution.sourceSubBassShare)) next.sourceSubBassShare = solution.sourceSubBassShare;
     if (std::isfinite (solution.sourcePresenceShare)) next.sourcePresenceShare = solution.sourcePresenceShare;
     if (std::isfinite (solution.limiterMeanReductionDb)) next.limiterMeanReductionDb = solution.limiterMeanReductionDb;
-    const auto passReason = [] (mastering::SolvePassRecord::Reason value) noexcept
-    {
-        using Source = mastering::SolvePassRecord::Reason;
-        switch (value)
-        {
-            case Source::AimAtTarget: return LandingPassReason::AimAtTarget;
-            case Source::PeakProbe: return LandingPassReason::PeakProbe;
-            case Source::StepBackBySlope: return LandingPassReason::StepBackBySlope;
-            case Source::InsideBracket: return LandingPassReason::InsideBracket;
-            case Source::ProveEdge: return LandingPassReason::ProveEdge;
-            case Source::DeliverWinner: return LandingPassReason::DeliverWinner;
-        }
-        return LandingPassReason::AimAtTarget;
-    };
-    for (int i = 0; i < solution.logCount; ++i)
-    {
-        const mastering::SolvePassRecord& source = solution.log[i];
-        LandingPass& row = rows[(std::size_t) i];
-        row.gainDb = source.gainDb; row.ceilingDbTp = source.ceilingDb;
-        row.achievedLufs = source.integratedLufs; row.truePeakDbTp = source.truePeakDbTp;
-        row.limiterMaxReductionDb = source.limiterMaxGrDb;
-        if (std::isfinite (source.limiterP95Db)) row.limiterP95Db = source.limiterP95Db;
-        row.reason = passReason (source.reason);
-        row.ceilingSafe = (source.violated & mastering::constraintBit (mastering::MasteringConstraint::TruePeakCeiling)) == 0;
-        row.overBudget = (source.violated & mastering::constraintBit (mastering::MasteringConstraint::LimiterGainReduction)) != 0;
-    }
-    next.log = { rows.data(), (std::size_t) solution.logCount };
+    for (int i = 0; i < solution.logCount; ++i) rows[std::size_t (earlier) + (std::size_t) i] = passRow (solution.log[i]);
+    next.log = { rows.data(), std::size_t (earlier) + (std::size_t) solution.logCount };
     if (haveTraces && limiter.buckets > 0)
     {
         const auto copyTrace = [deliveryRateHz] (const mastering::GainReductionTrace& source,
@@ -568,6 +600,7 @@ bool LandingOps::summarize (const mastering::LoudnessSolution& solution,
     out = next;
     return true;
 }
+} // namespace
 
 bool LandingOps::stepTraces (const mastering::LoudnessSolution& solution,
                             std::span<LandingTraceBucket> limiterRows,

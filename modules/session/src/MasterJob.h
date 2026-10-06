@@ -26,6 +26,9 @@ namespace detail
 [[nodiscard]] double limiterBudgetDb (toml::embedded::View engine, double targetLufs) noexcept;
 // [landing.max]: a max mode's limiter budget, dB (NaN for the manual mode or where the config does not say it).
 [[nodiscard]] double maxBudgetDb (toml::embedded::View engine, LoudnessMode mode) noexcept;
+// [progress.master]: the renders a master's bar expects in its loudness mode — expectedPasses by hand,
+// expectedPassesMaxClean / expectedPassesMaxDense for the max modes; a waiting master's and a rendering one's alike.
+[[nodiscard]] std::uint32_t expectedPasses (toml::embedded::View engine, LoudnessMode mode) noexcept;
 // WHAT ENDED A MAX MODE (MasterReport::maxStop), from the landing alone (v0.16.0: no guard in the loop), in this order: a
 // render above the ceiling; a render over the mode's limiter budget (no render kept it — the same status and binding as
 // a budget that held, told apart by the delivered render's own excess); landed again on [landing.max] floorLufs, which
@@ -130,6 +133,8 @@ struct MasterJob final
     bool beginLateCrest() noexcept;
     // What the Pump says of the step it is in: the current walk's share of the file — absent where the stage walks nothing.
     std::optional<double> stepFraction() const noexcept;
+    // A delivery's whole bar, 0..1 and below 1 until it ends (as-is or peaks-only; a mastered job's bar is its search's).
+    double deliveryFraction() const noexcept;
     mastering::MasteringChainParams winningParams() const noexcept;
 
     mastering::MasteringChain chain;
@@ -196,6 +201,13 @@ struct MasterJob final
     LoudnessMode mode = LoudnessMode::Manual;
     double floorLufs = std::numeric_limits<double>::quiet_NaN(), floorFirstLufs = std::numeric_limits<double>::quiet_NaN();
     bool floorPass = false;
+    // ...and the first landing's passes and work, which the master's record, pass number and bar keep across the floor
+    // landing: its rows stay ahead of the floor landing's (LandingOps::passRows), the count never starts again.
+    std::uint32_t floorFirstPasses = 0;
+    std::uint64_t floorFirstWork = 0;
+    int startedPasses() const noexcept { return int (floorFirstPasses) + search.startedPasses(); }
+    int startedRenders() const noexcept { return int (floorFirstPasses) + search.startedRenders(); }
+    double renderProgress() const noexcept { return double (floorFirstPasses) + std::max (0.0, search.renderProgress()); }
     mastering::LoudnessRequest floorRequest {};
     [[nodiscard]] bool beginFloor() noexcept;
     [[nodiscard]] bool beginDeliveryRender() noexcept;
