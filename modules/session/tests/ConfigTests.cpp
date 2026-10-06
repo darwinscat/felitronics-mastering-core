@@ -162,6 +162,11 @@ void theSchemaRefuses()
                 "[tilt]\ndomain = [1, 6]\nband = 1\nnormal = [1, 2]\nhard = [1, 3]",
                 "[1, 6", Fault::OutOfRange, "tilt.domain");
     mustAccept (E, "aboveHz = 20,", "aboveHz = 20.25,");
+    // Where the lowest note is sought from (owner, 06.10): a band centre in hertz, 0 the whole table, under the table's top.
+    mustRefuse (E, "lowestNoteFromHz = 25\n", "", "[lowEnd]", Fault::Missing, "lowEnd.lowestNoteFromHz");
+    mustRefuse (E, "lowestNoteFromHz = 25", "lowestNoteFromHz = 200.5", "200.5", Fault::OutOfRange, "lowEnd.lowestNoteFromHz");
+    mustRefuse (E, "lowestNoteFromHz = 25", "lowestNoteFromHz = -1", "-1", Fault::OutOfRange, "lowEnd.lowestNoteFromHz");
+    mustAccept (E, "lowestNoteFromHz = 25", "lowestNoteFromHz = 0");
     mustAccept (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 2.75 }");
     // The machine's glue stays on the slider's travel (owner decision 3.8): above knobMaxDb is a person's alone.
     mustRefuse (E, "byTarget = { cd = 2.6 }", "byTarget = { cd = 3.25 }", "3.25", Fault::OutOfRange, "glue.byTarget.cd");
@@ -258,7 +263,7 @@ void theSchemaRefuses()
     // over the analyzer's 65 536 hops, no enter level, a band whose corners are one float.
     mustRefuse (E, "hopMs = 100", "hopMs = 1", "[crest]", Fault::Refused, "crest", Refusal::AnalyzerRefuses);
     mustRefuse (E, "blockHops = 4", "blockHops = 65", "[crest]", Fault::Refused, "crest", Refusal::AnalyzerRefuses);
-    mustRefuse (E, "lowNoteHz = 20\nhighNoteHz = 300", "lowNoteHz = 20\nhighNoteHz = 20", "[lowEnd.run]", Fault::Refused,
+    mustRefuse (E, "lowNoteHz = 10\nhighNoteHz = 300", "lowNoteHz = 10\nhighNoteHz = 10", "[lowEnd.run]", Fault::Refused,
                 "lowEnd.run", Refusal::AnalyzerRefuses);
     mustRefuse (E, "highNoteHz = 300", "highNoteHz = 3900", "[lowEnd.run]", Fault::Refused, "lowEnd.run", Refusal::AnalyzerRefuses);
     mustRefuse (E, "bandLowHz = 5000\nbandHighHz = 9000", "bandLowHz = 5000\nbandHighHz = 5000", "[stereoBursts]", Fault::Refused,
@@ -324,7 +329,7 @@ void theSchemaAdmitsWhatTheAnalyzersAdmit()
     using config::Refusal;
     // A two-note range just two hertz wide: LowEnd::storageFor admits it (MIDI 16 and 17 fall inside 20…22 Hz), and a
     // hand-written semitone rule refused it.
-    const auto twoNotes = bindWith ({ { Document::Engine, "highNoteHz = 300", "highNoteHz = 22" } });
+    const auto twoNotes = bindWith ({ { Document::Engine, "lowNoteHz = 10\nhighNoteHz = 300", "lowNoteHz = 20\nhighNoteHz = 22" } });
     ok (twoNotes && twoNotes->ok(), "lowEnd.run 20…22 Hz: two notes, admitted by the analyzer, passes the schema");
     // The grid is counted from the travel's start: a mono-bass travel from 60.5 Hz puts 120 Hz half a step off.
     std::string targets;

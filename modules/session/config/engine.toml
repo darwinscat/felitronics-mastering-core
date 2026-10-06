@@ -164,6 +164,9 @@ manualStepDb = 0.1
 #   band be occupied in at least occupiedFromDuty of the frames (10 %). Without a band that passes, or a valid note, there
 #   is no note: the target's floor, never the loudest band in its place, and never a higher band — a note above the true
 #   one would cut music.
+# lowestNoteFromHz (owner, 06.10: «the spectrum from 10 Hz, the lowest note from 25 Hz — not 20, 25»): the lowest note is
+#   sought from the first band whose centre lies at or above it, G#0 at 25.96 Hz. The run measures from 10 Hz for the
+#   spectrum, and a band under this one is skipped — it is never the note and never stands in the way of the bands above.
 # infraLowCrossoverHz: the infra-low LowEnd run, for the infra-low share (a hypothesis, and also where "below the table"
 #   ends). The share is LR4-weighted — content AT the crossover counts a quarter — not "energy below 30 Hz". The main run
 #   at 120 Hz cannot answer it: its share is the bass, not the infra-low (0.2274 against 0.0056 on the same mix). The
@@ -171,18 +174,21 @@ manualStepDb = 0.1
 [lowEnd]
 occupiedFromDuty = 0.10
 occupiedMarginWhenOnDb = 2
+lowestNoteFromHz = 25
 infraLowCrossoverHz = 30
 
 # THE GEOMETRY OF THE MAIN RUN — the core's LowEnd defaults written out as numbers, so that nothing depends on a default
-# that may move. With these the table is 47 semitone bands, MIDI 16…62 (20.60…293.66 Hz). fftOrder 17: a 2.73 s window
-# and a 1.365 s hop at 48 kHz (18 would take 12.6 MB instead of 7.1 on 48 kHz stereo). skipBlocks 0 is a named
+# that may move. With these the table is 59 semitone bands, MIDI 4…62 (10.30…293.66 Hz): from 10 Hz since 06.10 (owner: the
+# rubbish under 20 Hz is of interest), the lowest note from [lowEnd] lowestNoteFromHz. fftOrder 17: a 2.73 s window and a
+# 1.365 s hop at 48 kHz (18 would take 12.6 MB instead of 7.1 on 48 kHz stereo); its bands are four bins wide — a Hann
+# main lobe — from 25.36 Hz at 48 kHz (23.30 at 44.1, 50.71 at 96), and the bands under that are published as unresolved. skipBlocks 0 is a named
 # impossibility rather than a choice: the settling count the core derives from the filter is not on its interface, and
 # skipBlocks moves only the histogram, which is not read. The schema hands this block — and the infra-low run, the same
 # geometry split at infraLowCrossoverHz — to LowEnd::storageFor at every source rate the product accepts (8, 44.1, 48 and
 # 96 kHz): the analyzer says what it admits, and the block is refused whole where it refuses.
 [lowEnd.run]
 crossoverHz = 120
-lowNoteHz = 20
+lowNoteHz = 10
 highNoteHz = 300
 fftOrder = 17
 dutyThresholdDb = 20
@@ -197,7 +203,8 @@ skipBlocks = 0
 # source's rate — takes exactly the target's noteLossDb at the note. It is found on that response, not on the analogue formula, and
 # it is not rounded to the hertz (technical decision 3О4). A floor above it takes more of the note, and the report says
 # how much; "the cutoff hit 50 Hz: the lowest note is higher" when machineTopHz stops it.
-# note (owner decision 3.2): the lowest note is sure when its band is occupied ([lowEnd] occupiedFromDuty, 10 %), stands
+# note (owner decision 3.2): the lowest note — the lowest band on at all from [lowEnd] lowestNoteFromHz up — is sure when its
+#   band is occupied ([lowEnd] occupiedFromDuty, 10 %), stands
 #   [lowEnd] occupiedMarginWhenOnDb (2 dB) above the duty line, lies above aboveHz (not DC, not rumble) and sounds at least
 #   soundingAtLeastS in all — its frames times the analyzer's hop. A programme shorter than [input] shortSeconds is not
 #   searched. A note that is not sure gives the floor.

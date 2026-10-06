@@ -1008,11 +1008,16 @@ public:
         return (std::isfinite (num) && std::isfinite (den) && den > 0.0) ? num / den : 0.0;
     }
 
-    LowestOccupied lowestOccupiedBand (double dutyMin) const noexcept
+    //
+    // `fromHz`: the search starts at the first band whose CENTRE lies at or above it — a band under it is skipped, never
+    // returned and never standing in the way of the bands above. 0, the default, searches the whole table; a non-finite
+    // fromHz fails every comparison and returns none.
+    LowestOccupied lowestOccupiedBand (double dutyMin, double fromHz = 0.0) const noexcept
     {
         LowestOccupied r;
         for (int b = 0; b < bandCount_; ++b)
         {
+            if (! (bands_[(std::size_t) b].centreHz >= fromHz)) continue;
             if (! (dutyCount_[(std::size_t) b] > 0) || ! (duty (b) >= dutyMin)) continue;
             r.band = b;
             r.midi = bands_[(std::size_t) b].midi;

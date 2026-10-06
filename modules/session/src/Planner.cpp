@@ -100,7 +100,8 @@ const MeasurementArray* arrayOf (const MeasurementResult& r, std::string_view na
 bool quiet (const PlanInputs& in) noexcept { return quietInput (in); }
 
 // THE SURE LOWEST NOTE (owner decision 3.2, as written), from the first phase's low-end run: the LOWEST BAND THAT WAS ON
-// AT ALL decides, and that band alone. It is a sure note when it is on in at least [lowEnd] occupiedFromDuty of the
+// AT ALL from [lowEnd] lowestNoteFromHz up decides, and that band alone — a band under it, which the table measures from
+// 10 Hz for the spectrum, is skipped (owner, 06.10). It is a sure note when it is on in at least [lowEnd] occupiedFromDuty of the
 // frames, is resolved, carries a valid note reading, stands [lowEnd] occupiedMarginWhenOnDb above the duty line, lies
 // above [hpf] note.aboveHz and sounds [hpf] note.soundingAtLeastS in all (its frames times the hop). A lowest band that
 // fails any of it — a rare 808, one thump — is no note, and the cutoff is the target's floor: the detector never takes
@@ -114,13 +115,14 @@ std::optional<Note> sureLowestNote (const PlanInputs& in, const MeasurementResul
     const auto low = in.rules.engine.find ("lowEnd");
     const auto note = in.rules.engine.find ("hpf").find ("note");
     const double dutyFrom = configured (low.find ("occupiedFromDuty")), margin = configured (low.find ("occupiedMarginWhenOnDb"));
+    const double fromHz = configured (low.find ("lowestNoteFromHz"));
     const double aboveHz = configured (note.find ("aboveHz")), sounding = configured (note.find ("soundingAtLeastS"));
     const auto rows = std::size_t (bands->stored);
     for (std::size_t b = 0; b < rows && (b + 1) * 16 <= bands->values.size(); ++b)
     {
         const double* row = bands->values.data() + b * 16;
         const double count = row[11], duty = row[12];
-        if (! (count > 0)) continue;
+        if (! (row[1] >= fromHz) || ! (count > 0)) continue;
         const bool sure = duty >= dutyFrom && row[15] > 0.5 && row[14] >= margin && row[1] > aboveHz && count * *hop / *rate >= sounding;
         if (! sure) return {};
         return Note { std::int32_t (row[0]), row[1] };

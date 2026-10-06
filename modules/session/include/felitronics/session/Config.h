@@ -180,6 +180,7 @@ struct LowEnd
 {
     double occupiedFromDuty = 0.0;
     double occupiedMarginWhenOnDb = 0.0;
+    double lowestNoteFromHz = 0.0;             // the lowest note is sought from this band centre up
     double infraLowCrossoverHz = 0.0;
     LowEndRun run;
 };
