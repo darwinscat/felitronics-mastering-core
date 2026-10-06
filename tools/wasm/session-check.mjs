@@ -645,6 +645,43 @@ ok(M._fc_session_master_audio_view(masterSession, masterToken, pcmAddress, sampl
        'the retained PCM stays a valid waveform chunk input');
     for (const ptr of [fenceRequest, fenceSizes, fenceWritten, fenceTable, fenceJson, fenceRows]) M._free(ptr);
 }
+{
+    // EVERY ENTRY THAT WRITES A CALLER BUFFER: the source snapshot's JSON, the summary's and a kit answer aimed at the
+    // retained PCM are refused, and the audio and the revision stay.
+    const revisionBefore = masterSnapshot().revision;
+    const sizes = M._malloc(12);
+    M.HEAPU32[sizes >>> 2] = 12;
+    const sourceSized = M._fc_session_source_snapshot_size(masterSession, sizes) === STATUS.OK;
+    const sourceJson = M.HEAPU32[(sizes >>> 2) + 1], sourceRows = M.HEAPU32[(sizes >>> 2) + 2];
+    const sourceRowsAt = M._malloc(Math.max(8, sourceRows));
+    ok(sourceSized && sourceJson <= sampleCount * 4
+        && M._fc_session_source_snapshot_copy(masterSession, pcmAddress, sourceJson, sourceRowsAt, sourceRows) === STATUS.ERR_OVERLAP
+        && retainedSame() && masterSnapshot().revision === revisionBefore,
+       'the source snapshot refuses JSON inside the retained PCM');
+    M.HEAPU32[sizes >>> 2] = 12;
+    const summarySized = M._fc_session_summary_size(masterSession, sizes) === STATUS.OK;
+    const summaryJson = M.HEAPU32[(sizes >>> 2) + 1], summaryRows = M.HEAPU32[(sizes >>> 2) + 2];
+    const summaryRowsAt = M._malloc(Math.max(8, summaryRows));
+    const summaryStatus = M._fc_session_summary_copy(masterSession, pcmAddress, Math.min(summaryJson, sampleCount * 4),
+        summaryRowsAt, summaryRows);
+    const kitStatus = M._fc_kit_mono_zones_at(80, pcmAddress + 4);
+    ok(summarySized && summaryStatus === STATUS.ERR_OVERLAP && kitStatus === STATUS.ERR_OVERLAP
+        && retainedSame() && masterSnapshot().revision === revisionBefore,
+       `the summary and the kit refuse outputs inside the retained PCM (${summaryStatus}, ${kitStatus})`);
+    // NOR AN INPUT OF A CALL THAT MAY FREE IT: a load handed the retained PCM as its audio (it ends the masters before it
+    // copies) and a command whose JSON lies there are refused, nothing freed.
+    const planes = M._malloc(8), loadAnswer = M._malloc(macro('FC_SESSION_ANSWER_BYTES')), loadWritten = M._malloc(4);
+    M.HEAPU32[planes >>> 2] = pcmAddress; M.HEAPU32[(planes >>> 2) + 1] = pcmAddress + masterFrames * 4;
+    M.HEAPU32[loadWritten >>> 2] = 77;
+    const loadStatus = M._fc_session_load(masterSession, 93, 0, planes, 2, masterFrames, 48000, 0, 0, loadAnswer,
+        macro('FC_SESSION_ANSWER_BYTES'), loadWritten);
+    const commandStatus = M._fc_session_command(masterSession, pcmAddress, 64, loadAnswer, macro('FC_SESSION_ANSWER_BYTES'),
+        loadWritten);
+    ok(loadStatus === STATUS.ERR_OVERLAP && commandStatus === STATUS.ERR_OVERLAP && M.HEAPU32[loadWritten >>> 2] === 77
+        && retainedSame() && masterSnapshot().revision === revisionBefore,
+       `a load and a command refuse inputs inside the retained PCM they may free (${loadStatus}, ${commandStatus})`);
+    for (const ptr of [sizes, sourceRowsAt, summaryRowsAt, planes, loadAnswer, loadWritten]) M._free(ptr);
+}
 const releaseStatus = M._fc_session_master_audio_release(masterSession, masterToken);
 const repeatReleaseStatus = M._fc_session_master_audio_release(masterSession, masterToken);
 ok(releaseStatus === STATUS.OK && repeatReleaseStatus === STATUS.ERR_STALE,
