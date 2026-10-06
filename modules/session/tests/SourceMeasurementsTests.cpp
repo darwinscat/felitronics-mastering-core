@@ -906,7 +906,7 @@ void overallAnalyzerFraction()
         const bool forensics = detail::Inspector::live (s) == 9 && run.cursor < run.order.size()
             && run.order[run.cursor] == Analyzer::Forensics && run.frames != 0;
         (void) s.step (1);
-        const auto& p = s.snapshot().view().measurementProgress;
+        const auto snapshot = s.snapshot(); const auto& p = snapshot.view().measurementProgress;
         if (p.name != PhaseName::Analyzers) continue;
         monotone = monotone && p.fraction >= previous && p.fraction <= 1;
         previous = last = p.fraction;
@@ -928,7 +928,7 @@ void cancelSharedLowEnds()
     for (unsigned i = 0; i < 10000 && s.measurementJob() != 0; ++i)
     {
         (void) s.step (1);
-        const auto& p = s.snapshot().view().measurementProgress;
+        const auto snapshot = s.snapshot(); const auto& p = snapshot.view().measurementProgress;
         walkingTogether = p.analyzers && p.analyzers->count == 3 && p.analyzers->items[0].fraction
             && *p.analyzers->items[0].fraction > 0.0;
         if (walkingTogether) break;
