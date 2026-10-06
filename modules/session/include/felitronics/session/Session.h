@@ -857,6 +857,7 @@ private:
     // chain is taken from that project's devices (src/Chain.h) and its job starts.
     bool jobWaiting_ = false;
     bool jobMasterAnyway_ = false;
+    std::optional<double> jobBudgetResolutionDb_;
     bool jobMachineFromFile_ = false;          // the waiting master's recipe kept a file's machine layer: never placed again
     // Derived at placement and after accepted commands; owned snapshots copy these points.
     void refreshEqCurve() noexcept;

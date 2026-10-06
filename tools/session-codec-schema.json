@@ -150,7 +150,6 @@
       "StepBackBySlope",
       "InsideBracket",
       "ProveEdge",
-      "Excerpt",
       "DeliverWinner"
     ],
     "QueryKind": [
@@ -759,10 +758,7 @@
         "ceilingSafe": "bool",
         "overBudget": "bool",
         "limiterP95Db": "double?",
-        "reason": "LandingPassReason",
-        "excerpt": "bool",
-        "excerptFromFrame": "uint64",
-        "excerptFrames": "uint64"
+        "reason": "LandingPassReason"
       }
     },
     "LandingTraceBucket": {
@@ -841,10 +837,7 @@
         "completedUnits": "uint32",
         "totalUnits": "uint32",
         "stepFraction": "double?",
-        "analyzers": "AnalyzerProgress[<=3]?",
-        "excerpt": "bool",
-        "excerptFromFrame": "uint64",
-        "excerptFrames": "uint64"
+        "analyzers": "AnalyzerProgress[<=3]?"
       }
     },
     "ReadingPoint": {
@@ -1478,7 +1471,8 @@
       "kind": "\"master\"",
       "commandId": "string",
       "allowClippedGain?": "boolean",
-      "masterAnyway?": "boolean"
+      "masterAnyway?": "boolean",
+      "budgetResolutionDb?": "WireNumber"
     },
     "CancelCommand": {
       "kind": "\"cancel\"",

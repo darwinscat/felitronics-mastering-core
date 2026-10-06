@@ -135,9 +135,8 @@ template <class T> constexpr unsigned enumLast() noexcept
         static_assert (unsigned (LandingPassReason::StepBackBySlope) == 2);
         static_assert (unsigned (LandingPassReason::InsideBracket) == 3);
         static_assert (unsigned (LandingPassReason::ProveEdge) == 4);
-        static_assert (unsigned (LandingPassReason::Excerpt) == 5);
-        static_assert (unsigned (LandingPassReason::DeliverWinner) == 6);
-        return 6;
+        static_assert (unsigned (LandingPassReason::DeliverWinner) == 5);
+        return 5;
     }
     else if constexpr (std::is_same_v<T, LandingReason>)
     {
@@ -592,7 +591,6 @@ constexpr void checkEnum (LandingPassReason value) noexcept
         case LandingPassReason::StepBackBySlope: break;
         case LandingPassReason::InsideBracket: break;
         case LandingPassReason::ProveEdge: break;
-        case LandingPassReason::Excerpt: break;
         case LandingPassReason::DeliverWinner: break;
     }
 }
@@ -1260,19 +1258,13 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, LandingPass>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.achievedLufs)>, double>);
         v.field ("achievedLufs", x.achievedLufs);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ceilingDbTp)>, double>);
         v.field ("ceilingDbTp", x.ceilingDbTp);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.ceilingSafe)>, bool>);
         v.field ("ceilingSafe", x.ceilingSafe);
-        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.excerpt)>, bool>);
-        v.field ("excerpt", x.excerpt);
-        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.excerptFrames)>, std::uint64_t>);
-        v.field ("excerptFrames", x.excerptFrames);
-        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.excerptFromFrame)>, std::uint64_t>);
-        v.field ("excerptFromFrame", x.excerptFromFrame);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.gainDb)>, double>);
         v.field ("gainDb", x.gainDb);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.limiterMaxReductionDb)>, double>);
@@ -2086,17 +2078,11 @@ template <class V, class T> void describe (V& v, T& x) noexcept
     }
     else if constexpr (std::is_same_v<U, Phase>)
     {
-        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8, f9, f10, f11] = x;
+        [[maybe_unused]] auto& [f0, f1, f2, f3, f4, f5, f6, f7, f8] = x;
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.analyzers)>, std::optional<BoundedList<AnalyzerProgress, 3>>>);
         v.field ("analyzers", x.analyzers);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.completedUnits)>, std::uint32_t>);
         v.field ("completedUnits", x.completedUnits);
-        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.excerpt)>, bool>);
-        v.field ("excerpt", x.excerpt);
-        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.excerptFrames)>, std::uint64_t>);
-        v.field ("excerptFrames", x.excerptFrames);
-        static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.excerptFromFrame)>, std::uint64_t>);
-        v.field ("excerptFromFrame", x.excerptFromFrame);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.fraction)>, double>);
         v.field ("fraction", x.fraction);
         static_assert (std::is_same_v<std::remove_cvref_t<decltype (x.name)>, PhaseName>);

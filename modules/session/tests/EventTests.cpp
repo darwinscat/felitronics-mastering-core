@@ -480,7 +480,7 @@ void pump()
     // by ear (v0.16.0) move the config's version alone (withoutMax restates it).
     // The glue's mix (v0.17.0) and v0.18's target classes / mastered-delivery ceilings move the config's version alone
     // here (withoutMax restates them too). The optional max-search proof resolution is an active master-command payload,
-    // so v0.18's corrected excerpt search moves these complete-stream pins while the controls above continue to hold.
+    // so v0.18's retained-winner search moves these complete-stream pins while the controls above continue to hold.
     ok (eventsHash (one) == 0xcf91aa948ee5328cull && eventsHash (cancelled) == 0xfaa77dd1ffa5753cull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));

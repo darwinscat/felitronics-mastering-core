@@ -949,10 +949,9 @@ source and limiter hints, work units and the ordered pass log — and, where the
 (the two levels a between landing's target fell between, quieter first; were a solver's side not a number, the verdict
 stands without them and the master is still delivered — a target that cannot be hit always returns the file). The decoder refuses a limit on another status
 and levels out of order or on another status; the keys are always present, null where the status has none, and a
-missing one is a decode error. Every log row appends the active-window limiter P95 it was judged on and its reason
-(`AimAtTarget`, `PeakProbe`, `StepBackBySlope`, `InsideBracket`, `ProveEdge`, `Excerpt` or `DeliverWinner`). Excerpt rows
-precede the full rows, carry their source-frame range and do not increment `LandingSummary::passes`; `Phase.excerpt` and
-its range say that the current progress walk is an excerpt. Its limiter and K13 clipper traces share
+missing one is a decode error. Every full-file log row appends the active-window limiter P95 it was judged on and its
+reason (`AimAtTarget`, `PeakProbe`, `StepBackBySlope`, `InsideBracket`, `ProveEdge` or `DeliverWinner`). Its limiter and
+K13 clipper traces share
 the delivered-frame grid and carry min/max/mean reduction, finite counts, validity and completion. Limiter
 GR follows the audio receiving gain after lookahead; K13 reduction follows the detector's input time.
 `Kept::landing` and the trace fields are nullable and always present in the generated session codec: a missing key
@@ -1872,13 +1871,15 @@ by the target's loudness, a person's edited number included: 4 dB below −10 LU
 7.5 dB louder (owner, 04.10, v0.14.1: it was 10 — 1058 renders of 23 songs without a budget put the limiter's cost
 and the PEAQ damage breaking together near 4, 6.5 and 8 dB; asked for −6 LUFS the median song at 7.5 reaches −7.83 with
 an ODG of −1.46, 3 of 23 "annoying", where 10 gave −7.36, −2.30 and 11 of 23), a whole number or a fraction of a dB
-(`detail::limiterBudgetDb`), on a step of a quarter dB — the landing's own resolution of its proof — which the verdict
+(`detail::limiterBudgetDb`), on a step of a quarter dB, which the verdict
 prints whole: up to two decimals, the trailing zeros dropped (7, 7.5, 7.25). `LandingSearch` reads it as a budget, not a refusal: a render over it is no
 candidate and is marked in its pass record (`LimiterGainReduction`) and in the session's pass log
 (`LandingPass::overBudget`), and the next drive is held under the lowest drive that broke it. The landing ends
-`TargetUnreachable` with `LimiterGainReduction` bound only on proof — the render delivered stands within 0.25 dB of drive
-under the lowest drive marked over the budget while the target is still above; otherwise its status is the search's
-own (a pass limit stays `PassLimit`, with its hints). Held so, the file is delivered short of the target: `MasterLandingBudget` (600) says the
+`TargetUnreachable` with `LimiterGainReduction` bound only on proof — the render delivered stands within the requested
+drive resolution under the lowest drive marked over the budget while the target is still above. The optional
+`MasterCommand.budgetResolutionDb` accepts 0.05…1 dB; absent takes `[landing.max] budgetResolutionDb = 0.25`. Otherwise
+the status is the search's own (a pass limit stays `PassLimit`, with its hints). Held so, the file is delivered short of
+the target: `MasterLandingBudget` (600) says the
 target, the level landed and the budget («Цель −9,0 LUFS, сделано −9,7 LUFS: дальше лимитеру пришлось бы срезать больше
 7 дБ (P95).»). Where no render kept the budget, the gentlest ceiling-safe one is delivered and `MasterLandingOverBudget`
 (602) says so with its own reduction («…ни один вариант не уложился в бюджет лимитера 7 дБ (P95) — выдан самый мягкий

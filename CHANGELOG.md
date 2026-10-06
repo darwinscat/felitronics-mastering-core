@@ -6,6 +6,11 @@
 
 ### mastering · session — the manual limiter wall, already-mastered delivery and its record (owner, 05.10)
 
+- **A landing keeps its winning full-file render in an optional PCM buffer**, so a non-final winner is delivered without
+  a repeated render; allocation failure retains the former counted re-render path. Every pass reports its active-window
+  limiter P95 and one of `AimAtTarget`, `PeakProbe`, `StepBackBySlope`, `InsideBracket`, `ProveEdge` or `DeliverWinner`.
+  `MasterCommand.budgetResolutionDb` optionally chooses the limiter-budget proof resolution from 0.05…1 dB; absent takes
+  `[landing.max] budgetResolutionDb = 0.25`.
 - **A manual landing stops at the limiter's wall**: less than 0.2 LU gained per dB of active P95 cut between existing
   passes at least 0.5 dB apart. No extra pass; the limiter budgets still hold, max modes stay as before. The landing
   carries `limiterWall`, `limiterSlope`, `limiterWallP95Db`; fact 618 is the plain verdict, 619 its log-only numbers.
@@ -30,7 +35,8 @@
   (`DamageJobEntry.waitReason`, null while running).
 - **The unread `[compressor] mix` is removed**, including its schema and typed member; the glue device's mix stays
   the recipe control. Removing the unused key moves config/sound hashes without moving PCM.
-- **ABI 13** appends the delivery fields, `masterAnyway`, source facts 454–457, the as-worked entry points and
+- **ABI 13** appends the delivery fields, `masterAnyway`, `budgetResolutionDb`, landing pass P95/reason, source facts
+  454–457, the as-worked entry points and
   `UNKNOWN_MASTER`; the ABI number is not bumped again within v0.18.0. The package version is unchanged pending review.
   Config is `b2ad32d4f400fb52`, sound `0aea937888c4b21f`: the target classes and delivery ceilings now participate in the
   sound decisions. Recognition remains at its existing three thresholds; the as-is branch is held by reachable fixtures.

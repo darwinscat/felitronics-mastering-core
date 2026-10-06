@@ -31,30 +31,13 @@ bool valid (const SnapshotView& v) noexcept
                 || (! landing.limiterWall && (landing.limiterSlope || landing.limiterWallP95Db))
                 || (landing.limiterWall && (! landing.deliverable || landing.status != LandingStatus::TargetUnreachable
                     || ! std::isfinite (*landing.limiterSlope) || ! std::isfinite (*landing.limiterWallP95Db)))) return false;
-            if (landing.passes > 12 || landing.log.size() < landing.passes
-                || landing.log.size() > 32u   // twelve full renders plus at most twelve excerpt renders; retained capacity is 32
+            if (landing.passes > 12 || landing.log.size() != landing.passes
                 || (landing.deliverable && (! landing.achievedLufs || ! landing.missLu
                     || ! landing.distanceLu || ! landing.truePeakDbTp))
                 || (landing.peaksAboveCeiling && (! landing.deliverable || landing.status != LandingStatus::TargetUnreachable
                     || landing.binding != LandingConstraint::TruePeakCeiling))) return false;
-            std::size_t fullPasses = 0;
-            bool fullStarted = false;
             for (const auto& pass : landing.log)
-            {
                 if (pass.limiterP95Db && ! std::isfinite (*pass.limiterP95Db)) return false;
-                if (pass.excerpt)
-                {
-                    if (fullStarted || pass.excerptFrames == 0
-                        || pass.excerptFromFrame > std::numeric_limits<std::uint64_t>::max() - pass.excerptFrames)
-                        return false;
-                }
-                else
-                {
-                    fullStarted = true; ++fullPasses;
-                    if (pass.excerptFromFrame != 0 || pass.excerptFrames != 0) return false;
-                }
-            }
-            if (fullPasses != landing.passes) return false;
             for (const auto& trace : { landing.limiterTrace, landing.peakClipTrace })
                 if (trace)
                 {

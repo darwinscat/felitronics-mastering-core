@@ -195,6 +195,13 @@ LowEnd and PeakExcursions tests are cited nowhere in this table as proof of a de
 - **B4. HELD.** All eight descriptors in one placed snapshot: `PlanTests.cpp:aTouchedDeviceSounds` encodes and decodes
   it and asserts that `plan.devices` carries hpf, monoBass, glue, saturation, tilt, limiter, dither and low with on, tick
   and needs. A pin of existing behaviour.
+- **B5. HELD.** A landing retains its winning PCM and avoids a duplicate render; allocation fault injection proves the
+  old counted delivery render restores identical PCM when that optional buffer is unavailable. `LandingSearchTests.cpp`
+  also holds the third full PCM buffer in fresh and retained law-11d declarations.
+- **B6. HELD.** Max modes retain v0.17's full-file slope/chord/Illinois/proof search. Every full render carries its active
+  P95 and one of the six reasons; `[landing.max] budgetResolutionDb = 0.25` is the default proof, and the optional master
+  command accepts 0.05…1 dB. `LandingSearchTests.cpp`, `MasterJobTests.cpp`, `LandingPlanTests.cpp`,
+  `SessionAbiV1Tests.cpp` and the native/wasm contract hold the winner, pass diagnostics, progress and wire field.
 - Knob boundaries: no gap (A41–A45 are held).
 
 ## Open questions

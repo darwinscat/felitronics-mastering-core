@@ -87,26 +87,22 @@ int main()
     test::ok (! ready.sourceRateImpactPass && converted.sourceRateImpactPass && converted.request.maxPasses == 12,
               "a rate change schedules an unconditional source-rate impact pass outside the twelve-render landing budget");
 
-    test::group ("a kept landing result owns its full and excerpt pass log");
-    LandingPass rows[3] {};
+    test::group ("a kept landing result owns its explained full-pass log");
+    LandingPass rows[2] {};
     rows[0].gainDb = 3.0; rows[0].ceilingDbTp = -1.15; rows[0].achievedLufs = -15.0;
     rows[0].truePeakDbTp = -1.2; rows[0].ceilingSafe = true; rows[0].limiterP95Db = 0.45;
-    rows[0].reason = LandingPassReason::Excerpt; rows[0].excerpt = true;
-    rows[0].excerptFromFrame = 96000; rows[0].excerptFrames = 1440000;
+    rows[0].reason = LandingPassReason::ProveEdge;
     rows[1].gainDb = 3.0; rows[1].ceilingDbTp = -1.15; rows[1].achievedLufs = -15.0;
     rows[1].truePeakDbTp = -1.2; rows[1].ceilingSafe = true;
-    rows[2].gainDb = 4.0; rows[2].ceilingDbTp = -1.16; rows[2].achievedLufs = -14.5;
-    rows[2].truePeakDbTp = -1.1; rows[2].ceilingSafe = true;
+    rows[1].reason = LandingPassReason::DeliverWinner;
     LandingSummary landing;
     landing.status = LandingStatus::PassLimit; landing.deliverable = true;
     landing.achievedLufs = -14.5; landing.missLu = -0.5; landing.distanceLu = 0.5;
     landing.truePeakDbTp = -1.1; landing.passes = 2; landing.workUnits = 123456;
-    landing.log = { rows, 3 };
+    landing.log = { rows, 2 };
     Kept kept; kept.id = 7; kept.landing = landing;
     SnapshotView view; view.masters = { &kept, 1 };
     view.masterProgress = { PhaseName::Pass, 0.25, 17, 0, 12, 3, 99, 0.5 };
-    view.masterProgress.excerpt = true; view.masterProgress.excerptFromFrame = 96000;
-    view.masterProgress.excerptFrames = 1440000;
     const Snapshot owned = Snapshot::copy (view);
     rows[0].gainDb = 99.0;
     test::ok (owned.view().masters.size() == 1 && owned.view().masters[0].landing
@@ -119,16 +115,11 @@ int main()
     const CodecStatus read = Codec::decode (json, decoded);
     test::ok (need.status == CodecStatus::Ok && written == CodecStatus::Ok && read == CodecStatus::Ok
               && decoded.view().masters[0].landing && decoded.view().masters[0].landing->passes == 2
-              && decoded.view().masters[0].landing->log[2].achievedLufs == -14.5
+              && decoded.view().masters[0].landing->log[1].achievedLufs == -15.0
               && decoded.view().masters[0].landing->log[0].limiterP95Db == 0.45
-              && decoded.view().masters[0].landing->log[0].reason == LandingPassReason::Excerpt
-              && decoded.view().masters[0].landing->log[0].excerpt
-              && decoded.view().masters[0].landing->log[0].excerptFromFrame == 96000
-              && decoded.view().masters[0].landing->log[0].excerptFrames == 1440000
-              && decoded.view().masterProgress.excerpt
-              && decoded.view().masterProgress.excerptFromFrame == 96000
-              && decoded.view().masterProgress.excerptFrames == 1440000,
-              "the generated codec carries pass P95/reason/range and live excerpt progress on the wire");
+              && decoded.view().masters[0].landing->log[0].reason == LandingPassReason::ProveEdge
+              && decoded.view().masters[0].landing->log[1].reason == LandingPassReason::DeliverWinner,
+              "the generated codec carries every full pass's P95 and reason on the wire");
 
     test::group ("K13 and limiter rows are owned and share an explicit delivered grid");
     LandingTraceBucket limiterRows[2] { { 0.0, 3.0, 1.5, 4, 0 }, { 0.0, 1.0, 0.25, 4, 0 } };

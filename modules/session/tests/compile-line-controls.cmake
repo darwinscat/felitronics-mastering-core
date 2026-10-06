@@ -86,7 +86,7 @@ expect_red("per-source joined -include<path>" "${COMPILE_COMMANDS}" "${PERINCLUD
            "`-include${PERINCLUDE_HEADER}`")
 
 # The edits are made on the entries that build into TARGETS alone — the rest of the file is other targets', and editing
-# a few hundred entries of JSON one call at a time is slow for nothing. That excerpt must itself pass with the same count.
+# a few hundred entries of JSON one call at a time is slow for nothing. That fragment must itself pass with the same count.
 file(READ "${COMPILE_COMMANDS}" full)
 string(JSON nfull LENGTH "${full}")
 math(EXPR lastfull "${nfull} - 1")
@@ -107,8 +107,8 @@ foreach(i RANGE ${lastfull})
     endforeach()
 endforeach()
 set(json "[${json}]")
-planted(excerpt "${json}")
-expect_green("the excerpt as written" "${PLANTED}" "${TARGETS}" "${SOURCES}" ${real_count})
+planted(fragment "${json}")
+expect_green("the fragment as written" "${PLANTED}" "${TARGETS}" "${SOURCES}" ${real_count})
 string(JSON n LENGTH "${json}")
 math(EXPR last "${n} - 1")
 string(REPLACE "|" ";" source_list "${SOURCES}")

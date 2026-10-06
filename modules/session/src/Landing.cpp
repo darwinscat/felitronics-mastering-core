@@ -521,7 +521,6 @@ bool LandingOps::summarize (const mastering::LoudnessSolution& solution,
             case Source::StepBackBySlope: return LandingPassReason::StepBackBySlope;
             case Source::InsideBracket: return LandingPassReason::InsideBracket;
             case Source::ProveEdge: return LandingPassReason::ProveEdge;
-            case Source::Excerpt: return LandingPassReason::Excerpt;
             case Source::DeliverWinner: return LandingPassReason::DeliverWinner;
         }
         return LandingPassReason::AimAtTarget;
@@ -535,9 +534,6 @@ bool LandingOps::summarize (const mastering::LoudnessSolution& solution,
         row.limiterMaxReductionDb = source.limiterMaxGrDb;
         if (std::isfinite (source.limiterP95Db)) row.limiterP95Db = source.limiterP95Db;
         row.reason = passReason (source.reason);
-        row.excerpt = source.excerpt;
-        row.excerptFromFrame = source.excerptFromFrame > 0 ? (std::uint64_t) source.excerptFromFrame : 0u;
-        row.excerptFrames = source.excerptFrames > 0 ? (std::uint64_t) source.excerptFrames : 0u;
         row.ceilingSafe = (source.violated & mastering::constraintBit (mastering::MasteringConstraint::TruePeakCeiling)) == 0;
         row.overBudget = (source.violated & mastering::constraintBit (mastering::MasteringConstraint::LimiterGainReduction)) != 0;
     }

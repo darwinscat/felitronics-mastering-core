@@ -32,7 +32,8 @@ namespace felitronics::mastering
 //     above it is no candidate. The lowest drive measured to break it is the limit; the next drive is held under it, by
 //     the secant of the excess between the loudest render that kept the budget and that one. The landing is
 //     TargetUnreachable with LimiterGainReduction named only on proof: the delivered render's drive stands within
-//     kBudgetResolutionDb under the lowest drive measured over the budget while the target is still above; with no render
+//     `LoudnessRequest::budgetResolutionDb` under the lowest drive measured over the budget while the target is still
+//     above; with no render
 //     that kept it, the gentlest ceiling-safe one is delivered, said the same (`overBudgetDb`). Otherwise the status is
 //     the search's own.
 class LandingSearch final
