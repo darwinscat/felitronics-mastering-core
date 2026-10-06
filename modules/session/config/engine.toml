@@ -133,7 +133,8 @@ lookaheadMs = 1
 #   a minute; bassBelowHz and the density are hypotheses.
 # kneeDb: 0 — a hard clip.
 # manualMinDb…manualMaxDb, manualStepDb: the manual cut's travel — 0 to 6 dB, the whole domain — and step, 0.1 dB (owner,
-#   02.10). The manual cut starts at betweenCutDb, the "between" class, inside manualDomain.
+#   02.10); 0 since 07.10 — no step, a typed cut is kept as typed (owner: «все ручки недискретные»). The manual cut
+#   starts at betweenCutDb, the "between" class, inside manualDomain.
 [limiter.peakClipper]
 manualDomain = [0, 6]
 littleNeedDb = 3
@@ -152,7 +153,7 @@ densityWithinDb = 0.3
 kneeDb = 0
 manualMinDb = 0
 manualMaxDb = 6
-manualStepDb = 0.1
+manualStepDb = 0
 
 # THE LOW END (analysis::LowEnd), first phase. The file is measured once, for every target at once — the bass width at
 # 120 and at 150 Hz, the crossovers of the targets — and a change of target measures nothing again.
@@ -209,6 +210,7 @@ skipBlocks = 0
 #   soundingAtLeastS in all — its frames times the analyzer's hop. A programme shorter than [input] shortSeconds is not
 #   searched. A note that is not sure gives the floor.
 # band: the core's EQ band the high-pass writes.
+# hzStep: 0 — the cutoff knob has no step (owner, 06.10): a typed value is kept as typed, and the travel is continuous.
 # hzMin…hzMax: slider travel — to 80 Hz for a person (owner, 01.10: a voice with a guitar from a microphone takes a cut
 #   that high); frequencyDomain checks the actual source Nyquist limit.
 # machineTopHz: the machine's top — the machine's cutoff never goes above it, whatever the note; at most hzMax.
@@ -230,7 +232,7 @@ skipBlocks = 0
 frequencyDomain = "sourceNyquist"
 slopeDomain = [6, 96]
 slopeMultiple = 6
-hzStep = 1
+hzStep = 0
 band = 0
 hzMin = 15
 hzMax = 80
@@ -267,7 +269,8 @@ marks = [
 #   when it sounds at least soundingAtLeastS in all. Less than that, or a low end that could not be measured, is its own
 #   reason, and the machine leaves mono bass out: it does not fold what it could not weigh.
 # lowWidth: the width below the crossover — 0, full mono; lowWidthRange, lowWidthStep: its knob's travel and step.
-# frequencyRange, frequencyStep: the crossover knob's travel and step — 5 Hz (owner, 02.10).
+# frequencyRange, frequencyStep: the crossover knob's travel and its step — 0, no step (owner, 07.10: as the high-pass's
+#   cutoff; it was 5 Hz from 02.10): a typed value is kept as typed, the travel is continuous.
 [monoBass]
 frequencyDomain = [60, 300]
 lowWidthDomain = [0, 1]
@@ -275,7 +278,7 @@ lowWidth = 0
 lowWidthRange = [0, 1]
 lowWidthStep = 0.05
 frequencyRange = [60, 300]
-frequencyStep = 5
+frequencyStep = 0
 loss = { warnFromDb = 1, offAboveDb = 3, soundingWithinDb = 20, soundingAtLeastS = 3 }
 
 # The knob's scale shows two regions, each with a physical reason rather than a taste; the map is static — it follows
@@ -363,6 +366,8 @@ trustedConfidence = "high"
 #   1.25, 1.52 for 2.6 and 1.54 for 3 (1.86 for 0.5, 1.74 for 6); with 1.5 the median is 1.27, 2.61 and 3.02 dB, the
 #   single mixes 1.02…1.55, 2.19…3.04 and 2.56…3.48 (at 0 it was 1.68, 3.24 and 3.70). The report states what each
 #   master's compressor really took.
+# STEPLESS (owner, 07.10, as the high-pass, mono bass and the EQ): knobStepDb and mixStep 0 — a typed value is kept as
+# typed.
 [glue]
 domain = [0, 6]
 default = 0
@@ -376,7 +381,7 @@ knee = { from = 8, to = 4, law = "linear" }
 divisor = { from = 2, to = 8, law = "geometric" }
 knobMinDb = 0
 knobMaxDb = 3
-knobStepDb = 0.1
+knobStepDb = 0
 # THE GLUE IN PARALLEL (owner decision, 05.10, v0.17.0: «делай ручку 40% по дефолту»): the compressed signal's share of the
 # glue's output — the rest the dry signal (the chain's compressorMix), 1 the downward glue as it always was. mix: what the
 # machine's layer takes, the auto plan and a manual glue alike; the overnight study (parallel variants at the same share)
@@ -386,7 +391,7 @@ knobStepDb = 0.1
 mixDomain = [0, 1]
 mix = 0.4
 mixRange = [0, 1]
-mixStep = 0.2
+mixStep = 0
 
 # SATURATION — the peak-normalised saturator, the chain's clipper stage. A taste of the manual mode: the machine never
 # sets it, and it does not shorten needles (the peak clipper inside the limiter does).
@@ -413,13 +418,14 @@ mixStep = 0.2
 #   so the ratio alone is a gain: a peak was cut by how much less it got than a sound too quiet to bend gets (the mix is
 #   in both). The report gives the largest cut and the usual one over the
 #   loud places — the loudShare of the quanta with the highest input peaks: their largest, and their median.
+# STEPLESS (owner, 07.10): driveStep 0 — a typed value is kept as typed.
 [saturation]
 driveDomain = [0, 12]
 mixDomain = [0, 1]
 shape = "tape"
 driveDb = 0
 driveRange = [0, 12]
-driveStep = 0.5
+driveStep = 0
 bias = 0
 mix = 1
 mixRange = [0, 1]
@@ -435,13 +441,14 @@ cut = { loudShare = 0.05 }
 # bands (type, hz, q), is felitronics-bands' bands.toml, keyed tilt, low, body, mud, forward, brightness, air — never
 # written here (the config's schema refuses it). domain: what a command and a project accept (±6 dB);
 # band: the core's EQ band it writes; normal: where the value turns red; hard: the ends of the slider's travel; step: the
-# knob's step — travel and step are hints, a value between steps or past the travel is taken as written.
+# knob's step — travel and step are hints, a value between steps or past the travel is taken as written. step 0: no step
+# (owner, 07.10: every EQ knob — tilt, low and the five bands — as the high-pass's cutoff): a typed value is kept as typed.
 [tilt]
 domain = [-6, 6]
 band = 1
 normal = [-1.5, 1.5]
 hard = [-3, 3]
-step = 0.1
+step = 0
 
 # LOW — a separate device on every target, with one dB knob and an on tick. The machine enables it only
 # when the target carries lowDb, its correction for the medium (today lp, +0.5 dB) — and not on an input too quiet to
@@ -454,7 +461,7 @@ domain = [-6, 6]
 band = 2
 normal = [-1.5, 1.5]
 hard = [-3, 3]
-step = 0.1
+step = 0
 
 # THE EQ BANDS — one device of five static bands, a person's only (the owner's decision of 01.10): the machine leaves
 # every band at 0 dB, since it does not touch timbre in this release. A band at 0 dB is neutral and out of the stage, and a
@@ -468,35 +475,35 @@ band = 3
 domain = [-6, 6]
 normal = [-1.5, 1.5]
 hard = [-3, 3]
-step = 0.1
+step = 0
 
 [bands.mud]
 band = 4
 domain = [-6, 0]
 normal = [-1.5, 0.0]
 hard = [-3, 0]
-step = 0.1
+step = 0
 
 [bands.forward]
 band = 5
 domain = [-6, 6]
 normal = [-1.5, 1.5]
 hard = [-3, 3]
-step = 0.1
+step = 0
 
 [bands.brightness]
 band = 6
 domain = [-6, 6]
 normal = [-1.5, 1.5]
 hard = [-3, 3]
-step = 0.1
+step = 0
 
 [bands.air]
 band = 7
 domain = [-6, 6]
 normal = [-1.5, 1.5]
 hard = [-3, 3]
-step = 0.1
+step = 0
 
 # THE EQ STAGE — one stage of the core that several devices write (the high-pass, tilt, low, the bands): a device is not a
 # stage. curve: where the summed curve the core computes leaves ±warnDb it is filled red and labelled; scaleDb is the

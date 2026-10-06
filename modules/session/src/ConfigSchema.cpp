@@ -383,7 +383,7 @@ void readPeakClipper (Doc& d, Reader& in, PeakClipper& o)
     const bool lo = in.required ("manualMinDb", o.manualMinDb, domain);
     const bool hi = in.required ("manualMaxDb", o.manualMaxDb, domain);
     d.below (in, lo && hi, o.manualMinDb, o.manualMaxDb, "manualMaxDb");
-    in.required ("manualStepDb", o.manualStepDb, R { 0.01, 3.0 });
+    in.required ("manualStepDb", o.manualStepDb, R { 0.0, 3.0 });   // 0: no step
     // The cuts off the peaks: the manual cut starts at the "between" class, inside the accepted domain, and the cautious
     // class cuts less than the short one.
     const bool between = in.required ("betweenCutDb", o.betweenCutDb, domain);
@@ -451,7 +451,7 @@ void readHpf (Doc& d, Reader& in, Hpf& o, std::vector<std::int32_t>& bands)
     readDomain (d, in, "slopeDomain", o.slopeDomain, R { 6.0, 96.0 });
     if (! same (o.slopeDomain.min, 6) || ! same (o.slopeDomain.max, 96)) d.refuse (in, "slopeDomain", Refusal::Fixed);
     if (in.required ("slopeMultiple", o.slopeMultiple) && o.slopeMultiple != 6) d.refuse (in, "slopeMultiple", Refusal::Fixed);
-    in.required ("hzStep", o.hzStep, R { std::numeric_limits<double>::min(), 4000.0 });
+    in.required ("hzStep", o.hzStep, R { 0.0, 4000.0 });   // 0: no step, the knob is continuous
     d.band (in, o.band, bands);
     // Frequency travel is a slider hint within the domain at the lowest supported rate.
     const bool lo = in.required ("hzMin", o.hzMin, hpfDomain());
@@ -522,7 +522,7 @@ void readMonoBass (Doc& d, Reader& in, MonoBass& o)
     in.required ("lowWidth", o.lowWidth, width);
     const R frequency = readDomain (d, in, "frequencyDomain", o.frequencyDomain, R { 60.0, 300.0 });
     const bool range = d.pair (in, "frequencyRange", o.frequencyRange, frequency);
-    in.required ("frequencyStep", o.frequencyStep, R { 0.1, 50.0 });
+    in.required ("frequencyStep", o.frequencyStep, R { 0.0, 50.0 });   // 0: no step, the knob is continuous
     in.table ("loss", Need::Required, [&] (Reader& t)
     {
         const bool warn = t.required ("warnFromDb", o.lossWarnFromDb, R { 0.0, 40.0 });
@@ -582,13 +582,13 @@ void readGlue (Doc& d, Reader& in, Glue& o, const std::vector<std::string>* targ
     const bool lo = in.required ("knobMinDb", o.knobMinDb, knob);
     const bool hi = in.required ("knobMaxDb", o.knobMaxDb, knob);
     d.below (in, lo && hi, o.knobMinDb, o.knobMaxDb, "knobMaxDb");
-    in.required ("knobStepDb", o.knobStepDb, R { 0.01, 3.0 });
+    in.required ("knobStepDb", o.knobStepDb, R { 0.0, 3.0 });   // 0: no step
     in.required ("detectorOverP95Db", o.detectorOverP95Db, R { -12.0, 12.0 });
     // The parallel share: a share of the domain, its travel inside it, the machine's on the travel.
     {
         const R share = readDomain (d, in, "mixDomain", o.mixDomain, R { 0.0, 1.0 });
         const bool travel = d.pair (in, "mixRange", o.mixRange, share);
-        in.required ("mixStep", o.mixStep, R { 0.01, 1.0 });
+        in.required ("mixStep", o.mixStep, R { 0.0, 1.0 });   // 0: no step
         in.required ("mix", o.mix, travel ? R { o.mixRange.min, o.mixRange.max } : share);
     }
     // WHAT THE MACHINE SETS stays on the slider's travel (owner decision 3.8: never above knobMaxDb); a person's value
@@ -632,7 +632,7 @@ void readGlue (Doc& d, Reader& in, Glue& o, const std::vector<std::string>* targ
 void readSaturation (Doc& d, Reader& in, Saturation& o)
 {
     d.name (in, "shape", o.shape, kShapes);
-    in.required ("driveStep", o.driveStep, R { 0.01, 12.0 });
+    in.required ("driveStep", o.driveStep, R { 0.0, 12.0 });   // 0: no step
     const R drive = readDomain (d, in, "driveDomain", o.driveDomain, R { 0.0, 12.0 });
     d.pair (in, "driveRange", o.driveRange, drive);
     in.required ("driveDb", o.driveDb, drive);
@@ -664,14 +664,14 @@ void readTilt (Doc& d, Reader& in, Tilt& o, std::vector<std::int32_t>& bands)
 {
     d.band (in, o.band, bands);
     readMoveTravel (d, in, o.normal, o.hard, o.domain);
-    in.required ("step", o.step, R { 0.01, 3.0 });
+    in.required ("step", o.step, R { 0.0, 3.0 });   // 0: no step, the knob is continuous
 }
 
 void readLow (Doc& d, Reader& in, Low& o, std::vector<std::int32_t>& bands)
 {
     d.band (in, o.band, bands);
     readMoveTravel (d, in, o.normal, o.hard, o.domain);
-    in.required ("step", o.step, R { 0.01, 3.0 });
+    in.required ("step", o.step, R { 0.0, 3.0 });   // 0: no step, the knob is continuous
 }
 
 // One of [bands]: its own band of the stage and a knob whose travel lies within its domain, which holds the neutral 0.
@@ -679,7 +679,7 @@ void readEqMove (Doc& d, Reader& in, EqMove& o, std::vector<std::int32_t>& bands
 {
     d.band (in, o.band, bands);
     readMoveTravel (d, in, o.normal, o.hard, o.domain);
-    in.required ("step", o.step, R { 0.01, 3.0 });
+    in.required ("step", o.step, R { 0.0, 3.0 });   // 0: no step, the knob is continuous
 }
 
 void readBands (Doc& d, Reader& in, Bands& o, std::vector<std::int32_t>& bands)
@@ -1245,7 +1245,7 @@ void readEdit (Doc& d, Reader& in, std::string_view key, Edit& o, R& domain)
         const bool to = t.required ("to", o.to, domain);
         d.below (t, from && to, o.from, o.to, "to");
         d.pair (t, "green", o.green, from && to && o.from < o.to ? R { o.from, o.to } : domain);
-        t.required ("step", o.step, R { 0.001, 1.0 });
+        t.required ("step", o.step, R { 0.0, 1.0 });   // 0: no step
     });
 }
 
