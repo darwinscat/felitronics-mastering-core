@@ -897,6 +897,8 @@ struct LoudnessRequest
     // the loudness-percentile selector and its offset. Appended so older positional initialisers keep their meaning.
     bool maxExcerptPeakP95 = false;
     double maxExcerptPeakOffsetDb = 0.0;
+    // Re-render the excerpt's opening drive with the calibrated whole-programme clipper after a forecast miss.
+    bool maxExcerptSurvivesForecastMiss = false;
 };
 
 // One render the search made. The whole trace is returned, not just the winner: a caller that has to

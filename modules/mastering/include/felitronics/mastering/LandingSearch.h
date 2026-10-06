@@ -186,6 +186,7 @@ public:
         excerptExcess_.fill (std::numeric_limits<double>::quiet_NaN());
         excerptCount_ = 0; excerptLow_ = excerptHigh_ = -1; excerptReady_ = false;
         excerptEdgeDrive_ = std::numeric_limits<double>::quiet_NaN();
+        excerptStartDrive_ = std::numeric_limits<double>::quiet_NaN();
         peakExcerptPending_ = false; peakExcerptCandidates_ = 0; peakExcerptBlocks_ = 0; peakExcerptUpdates_ = 0;
         peakBlockFrames_ = peakBlockFill_ = 0; peakBlockPeak_ = 0.0;
         wholePeakHistogram_.fill (0u);
@@ -919,7 +920,8 @@ private:
                 excerptEdgeDrive_ = edge;
                 const double offset = request_.maxExcerptPeakP95 ? request_.maxExcerptPeakOffsetDb
                                                                  : request_.maxExcerptOffsetDb;
-                gain_ = std::clamp (edge + offset + ceiling_, -60.0, 60.0);
+                excerptStartDrive_ = edge + offset;
+                gain_ = std::clamp (excerptStartDrive_ + ceiling_, -60.0, 60.0);
                 nextReason_ = SolvePassRecord::Reason::InsideBracket;
                 phase_ = Phase::PassBegin;
                 return StepResult::More;
@@ -1035,8 +1037,15 @@ private:
                 rec.reason = SolvePassRecord::Reason::PeakProbe;
                 params_.peakClipPeakDb = measuredPeak;
                 if (passes_ >= request_.maxPasses) return fail (MasteringSolveStatus::Unavailable);
-                // The forecast probe did not enter either side of a full-programme bracket. The next render is the
-                // ordinary target aim, even when the excerpt left an InsideBracket reason behind for this probe.
+                if (request_.maxExcerptSurvivesForecastMiss && std::isfinite (excerptStartDrive_))
+                {
+                    gain_ = std::clamp (excerptStartDrive_ + ceiling_, -60.0, 60.0);
+                    nextReason_ = SolvePassRecord::Reason::InsideBracket;
+                    phase_ = Phase::PassBegin;
+                    return StepResult::More;
+                }
+                // With no retained excerpt opening, the forecast probe did not enter either side of a full-programme
+                // bracket. The next render is the ordinary target aim.
                 nextReason_ = SolvePassRecord::Reason::AimAtTarget;
                 chooseNext (valid);
                 phase_ = Phase::PassBegin;
@@ -1525,6 +1534,7 @@ private:
     long long excerptSourceFrames_ = 0, excerptStatisticFrames_ = 0, excerptSkipFrames_ = 0;
     int excerptFrames_ = 0, excerptCount_ = 0, excerptLow_ = -1, excerptHigh_ = -1;
     double excerptEdgeDrive_ = std::numeric_limits<double>::quiet_NaN();
+    double excerptStartDrive_ = std::numeric_limits<double>::quiet_NaN();
     long long peakExcerptCandidates_ = 0, peakExcerptBlocks_ = 0, peakExcerptFrames_ = 0;
     std::uint64_t peakExcerptUpdates_ = 0;
     long long peakExcerptPre_ = 0, peakExcerptStep_ = 0, peakBlockFrames_ = 0, peakBlockFill_ = 0;

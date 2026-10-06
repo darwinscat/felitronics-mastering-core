@@ -343,6 +343,7 @@ void readLanding (Doc& d, Reader& in, Landing& o)
         t.required ("excerptOffsetDb", o.maxExcerptOffsetDb, R { -24.0, 24.0 });
         t.required ("excerptPeakP95", o.maxExcerptPeakP95);
         t.required ("excerptPeakOffsetDb", o.maxExcerptPeakOffsetDb, R { -24.0, 24.0 });
+        t.required ("excerptSurvivesForecastMiss", o.maxExcerptSurvivesForecastMiss);
         t.required ("budgetResolutionDb", o.maxBudgetResolutionDb, R { 0.05, 1.0 });
         const auto mode = [&] (std::string_view key, double& budget)
         {
