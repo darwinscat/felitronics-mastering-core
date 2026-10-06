@@ -280,9 +280,12 @@ void travelAndHeat()
     ok (heat (Term::FieldTargetLufs, -20, 0.5, -1) && heat (Term::FieldTargetLufs, -25, 1, -1) && heat (Term::FieldTargetLufs, -40, 1, -1)
         && heat (Term::FieldTargetLufs, -9, 0.5, 1), "outside it, the share of the way to the travel's end");
     ok (heat (Term::FieldTargetTp, -1.5, 0, 0) && heat (Term::FieldTargetTp, -3, 0.5, -1), "the ceiling's green window");
-    ok (heat (Term::FieldHpfFq, 30, 0, 0) && heat (Term::FieldHpfFq, 22, 0.5, -1) && heat (Term::FieldHpfFq, 46, 0.5, 1) && heat (Term::FieldHpfFq, 60, 1, 1)
+    ok (heat (Term::FieldHpfFq, 30, 0, 0) && heat (Term::FieldHpfFq, 46, 0.5, 1) && heat (Term::FieldHpfFq, 60, 1, 1)
         && heat (Term::FieldHpfFq, 50, 1, 1) && heat (Term::FieldHpfFq, 70, 1, 1) && heat (Term::FieldHpfFq, 80, 1, 1),
         "the high-pass's comfort window, out to its warnings; red from 50 Hz to the travel's 80 (owner, 01.10)");
+    ok (heat (Term::FieldHpfFq, 27, 0, 0) && heat (Term::FieldHpfFq, 25, 0.5, -1) && heat (Term::FieldHpfFq, 23, 1, -1)
+        && heat (Term::FieldHpfFq, 15, 1, -1),
+        "it yellows from 27 Hz down, half way at 25, red from 23 (owner, 06.10: the ramp as long as before)");
     ok (heat (Term::FieldTiltDb, 0, 0, 0) && heat (Term::FieldTiltDb, 2.25, 0.5, 1) && heat (Term::FieldLowDb, -3, 1, -1), "tilt and low: normal, out to hard");
     // The five EQ bands are coloured as tilt and low are (owner, 02.10): ±1.5 dB normal, out to their travel's ends.
     ok (heat (Term::FieldBandsBody, 0, 0, 0) && heat (Term::FieldBandsBody, 2.25, 0.5, 1) && heat (Term::FieldBandsBody, -3, 1, -1)
@@ -584,7 +587,8 @@ void theCorpusIsTheWasmModulesBytes()
 {
     felitronics::test::group ("native == wasm: the corpus session-check.mjs gives the module hashes to one value");
     // tools/wasm/session-check.mjs, "the pure kit", holds the wasm module to this same value.
-    constexpr std::uint64_t kPinned = 0x6343e0c5c05c0bb1ull;
+    // The high-pass's comfort window from 27 Hz, red from 23 (owner, 06.10), moves the heats: it was 6343e0c5c05c0bb1.
+    constexpr std::uint64_t kPinned = 0xa14d9679add39021ull;
     const auto h = corpusHash();
     std::printf ("    kit corpus: %016llx\n", static_cast<unsigned long long> (h));
     ok (h == kPinned, "the kit corpus hashes to the pinned value");

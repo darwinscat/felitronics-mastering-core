@@ -331,6 +331,16 @@ void pump()
         if (const auto at = engine.find ("\nlowNoteHz = 10\n"); at != std::string::npos) engine.replace (at, 16, "\nlowNoteHz = 20\n");
         if (const auto at = engine.find ("\nlowestNoteFromHz = "); at != std::string::npos)
             engine.erase (at, engine.find ('\n', at + 1) - at);
+        // The high-pass curve's marks (owner, 06.10): the piano's back to the 808's, the guitar's and speech's out.
+        if (const auto at = engine.find ("{ key = \"piano\", hz = 27.5 }"); at != std::string::npos)
+            engine.replace (at, std::string_view ("{ key = \"piano\", hz = 27.5 }").size(), "{ key = \"sub808\", hz = 28 }");
+        for (const std::string_view mark : { "\n    { key = \"guitar\", ", "\n    { key = \"speech\", " })
+            if (const auto at = engine.find (mark); at != std::string::npos)
+                engine.erase (at, engine.find ('\n', at + 1) - at);
+        // The high-pass's comfort window from 27 Hz, red from 23 (owner, 06.10): back to 24 and 20.
+        constexpr std::string_view comfortNow = "comfort = { lowHz = 27, highHz = 42, warningLowHz = 23,";
+        if (const auto at = engine.find (comfortNow); at != std::string::npos)
+            engine.replace (at, comfortNow.size(), "comfort = { lowHz = 24, highHz = 42, warningLowHz = 20,");
         // The unread compressor mix was removed (owner, 05.10); restore it for the older config fingerprints alone.
         if (const auto at = engine.find ("\n[compressor]\n"); at != std::string::npos)
             engine.insert (at + 14, "mix = 1\n");
@@ -380,6 +390,7 @@ void pump()
             { "{ key = \"bass4\", hz = 41.2 }", "{ key = \"bass4\", hz = 41 }" },
             { "{ key = \"bass5\", hz = 30.87 }", "{ key = \"bass5\", hz = 31 }" },
             { "{ key = \"sub808\", hz = 28 }", "{ key = \"sub808\", hz = 23 }" },
+            { "{ key = \"piano\", hz = 27.5 }", "{ key = \"sub808\", hz = 23 }" },   // the marks of 06.10, before withoutMax
             { "hzMax = 80\nmachineTopHz = 50\n", "hzMax = 50\n" },
             { "frequencyStep = 5\n", "frequencyStep = 1\n" }, { "manualStepDb = 0.1\n", "manualStepDb = 0.5\n" },
             { "manualMaxDb = 6\n", "manualMaxDb = 3\n" } };
@@ -498,7 +509,11 @@ void pump()
     // before them).
     // The low end from 10 Hz and the lowest note from 25 Hz (owner, 06.10) move the config's version alone here: withoutMax
     // restates it above, and these complete-stream pins move by it (504d1630b0dda1a5 / a68792578ab9b2f5 before them).
-    ok (eventsHash (one) == 0xda345d2043dfce62ull && eventsHash (cancelled) == 0x0e28ca0cc1999975ull,
+    // The high-pass's comfort window from 27 Hz (owner, 06.10) moves the config's version alone, restated above as well
+    // (da345d2043dfce62 / 0e28ca0cc1999975 before it).
+    // The high-pass curve's marks of 06.10 move the config's version alone, restated above (0f27cc1f12a70335 /
+    // 68ca2efc7cbe6d1d before them).
+    ok (eventsHash (one) == 0x6be3d618efebc6d8ull && eventsHash (cancelled) == 0x4c09489f3d62dc95ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",

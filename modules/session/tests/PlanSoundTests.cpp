@@ -2589,14 +2589,14 @@ void theAdviceIsAFact()
         ok (handSpeaks, "the same values set by a person: 501, 502 and 505");
     }
     // THE HIGH-PASS: the cutoff against the comfort window (strictly), the slope against the normal ones.
-    ok (hpfAt (20.0, 24), "PRECONDITION: a hand high-pass at 20 Hz");
+    ok (hpfAt (25.0, 24), "PRECONDITION: a hand high-pass at 25 Hz");
     const auto below = advice (500);
-    ok (below && below->device == Device::Hpf && at (below, 0) == 20.0 && at (below, 1) == 24.0 && at (below, 2) == 42.0
-        && ru (below->fact).find ("24–42") != std::string::npos && ! advice (501) && ! advice (502) && ! advice (503),
+    ok (below && below->device == Device::Hpf && at (below, 0) == 25.0 && at (below, 1) == 27.0 && at (below, 2) == 42.0
+        && ru (below->fact).find ("27–42") != std::string::npos && ! advice (501) && ! advice (502) && ! advice (503),
         "below the window: its why, with the window — " + (below ? ru (below->fact) + " / " + en (below->fact) : std::string ("none")));
     ok (hpfAt (45.0, 24) && advice (501) && at (advice (501), 0) == 45.0 && ! advice (500),
         "above the window: its why — " + (advice (501) ? ru (advice (501)->fact) : std::string ("none")));
-    ok (hpfAt (24.0, 24) && noAdvice() && hpfAt (42.0, 24) && noAdvice() && hpfAt (30.0, 12) && noAdvice(),
+    ok (hpfAt (27.0, 24) && noAdvice() && hpfAt (42.0, 24) && noAdvice() && hpfAt (30.0, 12) && noAdvice(),
         "inside the window, both edges included, at a normal slope: none");
     const auto gentle = (hpfAt (30.0, 6), advice (502));
     ok (gentle && gentle->fact.args[0].integer == 6 && gentle->fact.args[1].integer == 12 && ! advice (500) && ! advice (501),
