@@ -2084,6 +2084,3 @@ codec LandingPass.excerptFrames uint64
 codec Phase.excerpt bool
 codec Phase.excerptFromFrame uint64
 codec Phase.excerptFrames uint64
-# The max budget proof resolution a frontend may ask for on a master (05.10 correction, v0.18.0): absent takes
-# [landing.max] budgetResolutionDb; the wire domain is 0.05…1 dB.
-wire MasterCommand.budgetResolutionDb? WireNumber

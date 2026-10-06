@@ -939,8 +939,7 @@ void maxSearchPasses()
         for (const LoudnessMode mode : { LoudnessMode::MaxClean, LoudnessMode::MaxDense })
         {
             GradeRun r;
-            const bool excerptEligible = ! dense && mode == LoudnessMode::MaxClean;
-            const auto pcm = dense ? clicks (48000, 3.0) : struck (48000, excerptEligible ? 22.0 : 3.0);
+            const auto pcm = dense ? clicks (48000, 3.0) : struck (48000, 3.0);
             r.session = measuredSession (pcm, 48000);
             if (! r.session) { fewEnough = false; continue; }
             command::EditTarget edit { 2, {} };
@@ -969,7 +968,7 @@ void maxSearchPasses()
                 }
             }
             logsWhole = logsWhole && rowValues;
-            if (stop == MaxStop::Budget && excerptEligible)
+            if (stop == MaxStop::Budget)
                 logsWhole = logsWhole && sawExcerptRow && kept.landing->log.size() > kept.landing->passes;
             bool sawExcerptProgress = false;
             double previous = 0.0, beforeFinal = 0.0;

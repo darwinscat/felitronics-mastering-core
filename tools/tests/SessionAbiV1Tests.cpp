@@ -435,10 +435,7 @@ void scenario()
         ok (contains (contract, "\"code\":\"contract\"") && contains (contract, "\"fact\":{\"FactId\":131,\"args\":[]}"),
             "a malformed command: the contract's fact — " + contract);
     }
-    const auto wideResolution = command (h, R"({"kind":"master","commandId":"41","budgetResolutionDb":1.01})");
-    ok (contains (wideResolution, "\"code\":14"), "a master proof resolution outside 0.05…1 dB is refused");
-    ok (contains (command (h, R"({"kind":"master","commandId":"4","budgetResolutionDb":0.5})"), "accepted"),
-        "the wire accepts a 0.5 dB master proof resolution");
+    ok (contains (command (h, R"({"kind":"master","commandId":"4"})"), "accepted"), "usable LUFS and true peak permit Master");
     bool done = false;
     do { (void) fc_session_step (h, 1, &more); done = done || contains (events (h), "\"kind\":\"done\""); } while (more == FC_SESSION_MORE);
     ok (done, "master completion crosses the event transport");
@@ -643,8 +640,7 @@ void freezeRegressions()
         "the measurement demand record carries no retired slots: 88 bytes, workspaceBytes right after resultBytes");
     ok (fc_session_export_project_size (h, &written) == FC_SESSION_ERR_NOT_PLACED
         && fc_session_export_project_copy (h, json, sizeof (json), &written) == FC_SESSION_ERR_NOT_PLACED, "export retains NotPlaced");
-    for (const auto malformed : { "{", R"({"kind":"master"})", R"({"kind":"master","commandId":"5","unknown":1})",
-                                  R"({"kind":"master","commandId":"5","budgetResolutionDb":"wide"})" })
+    for (const auto malformed : { "{", R"({"kind":"master"})", R"({"kind":"master","commandId":"5","unknown":1})" })
     {
         ok (fc_session_step (h, 1, &written) == FC_SESSION_OK, "step before malformed command");
         const auto phase = events (h); const auto seqAt = phase.rfind ("\"seq\":\"");
