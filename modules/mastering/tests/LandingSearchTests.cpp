@@ -209,6 +209,7 @@ struct LandingSetup
     bool excerptSearch = false;
     bool excerptPeakP95 = false;
     double excerptPeakOffsetDb = 0.0;
+    bool excerptSurvivesForecastMiss = false;
     double budgetResolutionDb = 0.25;
 };
 
@@ -254,6 +255,7 @@ Landed land (const Programme& p, const LandingSetup& w)
     req.maxExcerptSearch = w.excerptSearch;
     req.maxExcerptPeakP95 = w.excerptPeakP95;
     req.maxExcerptPeakOffsetDb = w.excerptPeakOffsetDb;
+    req.maxExcerptSurvivesForecastMiss = w.excerptSurvivesForecastMiss;
     req.budgetResolutionDb = w.budgetResolutionDb;
     req.landingOnSourceGate = w.onSourceGate;
     if (w.onSourceGate || w.excerptSearch)
@@ -435,6 +437,23 @@ int main()
                   && missedResult.answer.measured.peakClipReductionMaxDb <= 1.001,
             "a short-window forecast that misses the filtered programme maximum falls back to the full probe and keeps "
             "the clipper bound; the next full render is labelled as the target aim, not the excerpt's stale bracket");
+        auto survived = missed; survived.excerptSurvivesForecastMiss = true;
+        const auto survivedResult = land (Programme (missedPcm), survived);
+        bool rerenderedExcerptDrive = false;
+        for (int i = 0; i + 1 < survivedResult.answer.logCount; ++i)
+        {
+            const auto& probe = survivedResult.answer.log[i];
+            const auto& next = survivedResult.answer.log[i + 1];
+            rerenderedExcerptDrive = rerenderedExcerptDrive
+                || (probe.reason == SolvePassRecord::Reason::PeakProbe
+                    && next.reason == SolvePassRecord::Reason::InsideBracket
+                    && core::exactlyEqual (probe.gainDb - probe.ceilingDb,
+                                           next.gainDb - next.ceilingDb));
+        }
+        test::ok (survivedResult.done && rerenderedExcerptDrive
+                  && survivedResult.answer.measured.peakClipReductionMaxDb <= 1.001,
+            "after a forecast miss the calibrated clipper re-renders the excerpt opening as the first eligible full "
+            "point instead of aiming at the max target");
         std::vector<float> peakWindowPcm (std::size_t (30 * kRate));
         for (std::size_t i = 0; i < peakWindowPcm.size(); ++i)
         {

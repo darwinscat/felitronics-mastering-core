@@ -1941,7 +1941,10 @@ to `excerptToleranceDb` (0.25 dB), then the first full render starts at that edg
 replaces the old first two full renders. From there the
 file uses v0.17.0's bounded search unchanged: a kept opening advances in 0.5 dB steps until an over-budget render exists,
 an over opening steps back by the measured slope, and the guarded Illinois chord closes the same proof. There is no
-Brent interpolation on the file. The proof resolution defaults to `[landing.max] budgetResolutionDb = 0.25`; a wire
+Brent interpolation on the file. If the one-second peak forecast misses, `excerptSurvivesForecastMiss = true` makes its
+non-candidate full probe calibrate the clipper and then re-renders that same excerpt-derived opening as the first eligible
+point; it never discards the excerpt to aim at −5 LUFS. The proof resolution defaults to
+`[landing.max] budgetResolutionDb = 0.25`; a wire
 master command may append `budgetResolutionDb` in the bounded 0.05…1 dB domain (absent takes the config default), so a
 page may trade full renders for a coarser edge. Missing or unusable selector input, a programme too short for the window
 and pre-roll, allocation failure, or an excerpt render that cannot measure P95 fall back to the v0.17.0 full-programme

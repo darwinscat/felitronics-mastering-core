@@ -85,7 +85,7 @@ constexpr Golden kGolden[] = {
     // ...and every target's mastered-delivery class plus the two configured peak ceilings (owner, 05.10, v0.18.0):
     // already-mastered streaming/other deliveries may now bypass the normal chain; specification targets do not.
     // It was 3ca74d45e21253d9; updated in place before the release.
-    { "2026-10", 0xa45fbb28a46a91d6ull }, // v0.18: measured excerpt-first max search defaults
+    { "2026-10", 0xeb1d2d0ec34c8d84ull }, // v0.18: measured excerpt-first max search defaults
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -215,6 +215,7 @@ std::vector<std::string> departures (const config::Config& c)
           && same (e.landing.maxExcerptPercentile, 90.0)
           && same (e.landing.maxExcerptToleranceDb, 0.25) && same (e.landing.maxExcerptOffsetDb, 0.5)
           && e.landing.maxExcerptPeakP95 && same (e.landing.maxExcerptPeakOffsetDb, 0.0)
+          && e.landing.maxExcerptSurvivesForecastMiss
           && same (e.landing.maxBudgetResolutionDb, 0.25),
           "max modes match a 20 s window's 4 ms peak P95 to the file, start at that edge and prove to 0.25 dB");
     need (same (e.landing.quietBudgetDb, 4.0) && same (e.landing.middleBudgetDb, 7.0)
@@ -376,6 +377,8 @@ void aDepartureIsNamed()
         { false, "excerptPeakP95 = true", "excerptPeakP95 = false",
           "max modes match a 20 s window's 4 ms peak P95 to the file, start at that edge and prove to 0.25 dB" },
         { false, "excerptPeakOffsetDb = 0", "excerptPeakOffsetDb = 1",
+          "max modes match a 20 s window's 4 ms peak P95 to the file, start at that edge and prove to 0.25 dB" },
+        { false, "excerptSurvivesForecastMiss = true", "excerptSurvivesForecastMiss = false",
           "max modes match a 20 s window's 4 ms peak P95 to the file, start at that edge and prove to 0.25 dB" },
         { false, "budgetResolutionDb = 0.25", "budgetResolutionDb = 0.5",
           "max modes match a 20 s window's 4 ms peak P95 to the file, start at that edge and prove to 0.25 dB" },
