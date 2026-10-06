@@ -210,6 +210,7 @@ struct LandingSetup
     bool excerptPeakP95 = false;
     double excerptPeakOffsetDb = 0.0;
     bool excerptSurvivesForecastMiss = false;
+    double peakForecastPreRollSeconds = 0.0;
     double budgetResolutionDb = 0.25;
 };
 
@@ -256,6 +257,7 @@ Landed land (const Programme& p, const LandingSetup& w)
     req.maxExcerptPeakP95 = w.excerptPeakP95;
     req.maxExcerptPeakOffsetDb = w.excerptPeakOffsetDb;
     req.maxExcerptSurvivesForecastMiss = w.excerptSurvivesForecastMiss;
+    req.peakForecastPreRollSeconds = w.peakForecastPreRollSeconds;
     req.budgetResolutionDb = w.budgetResolutionDb;
     req.landingOnSourceGate = w.onSourceGate;
     if (w.onSourceGate || w.excerptSearch)
@@ -454,6 +456,15 @@ int main()
                   && survivedResult.answer.measured.peakClipReductionMaxDb <= 1.001,
             "after a forecast miss the calibrated clipper re-renders the excerpt opening as the first eligible full "
             "point instead of aiming at the max target");
+        auto warmed = missed; warmed.peakForecastPreRollSeconds = 2.0;
+        const auto warmedResult = land (Programme (missedPcm), warmed);
+        bool warmedProbe = false;
+        for (int i = 0; i < warmedResult.answer.logCount; ++i)
+            warmedProbe = warmedProbe || warmedResult.answer.log[i].reason == SolvePassRecord::Reason::PeakProbe;
+        std::printf ("  two-second peak-forecast run-up: %s\n", warmedProbe ? "missed" : "confirmed");
+        test::ok (warmedResult.done && warmedProbe
+                  && warmedResult.answer.measured.peakClipReductionMaxDb <= 1.001,
+            "a wrong peak forecast remains a non-candidate full probe even with a two-second run-up");
         std::vector<float> peakWindowPcm (std::size_t (30 * kRate));
         for (std::size_t i = 0; i < peakWindowPcm.size(); ++i)
         {

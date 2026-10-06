@@ -14,6 +14,9 @@
 - **A peak-forecast miss keeps the excerpt estimate** when `[landing.max] excerptSurvivesForecastMiss = true`: the
   non-candidate full probe calibrates the clipper, then the first eligible full render repeats the excerpt-derived drive.
   The file continues with the v0.17 slope, chord, bounded +0.5-dB steps and proof instead of aiming at −5 LUFS.
+- **Peak forecasts can warm the chain**: `[landing.max] peakForecastPreRollSeconds` adds source run-up to each
+  one-second peak window while excluding it from the forecast statistic and reconstructed peak. The existing 0.10-dB
+  full-render confirmation remains the authority; a forecast outside it is still only a non-candidate probe.
 - **The winning render is retained as PCM** and restored without a duplicate render. Its optional nothrow allocation
   falls back to the previous counted delivery render on failure. Fresh and retained memory declarations name the third
   full PCM buffer, and the session memory gate includes it.
