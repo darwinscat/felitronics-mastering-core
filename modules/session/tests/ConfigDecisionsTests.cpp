@@ -78,7 +78,14 @@ constexpr Golden kGolden[] = {
     // as before; it was 15b627f7db3ad5dc; updated in place, as above
     // ...and the glue in parallel by default (owner, 05.10, v0.17.0: [glue] mix 0.4 on a knob by 0.2) — every master whose
     // glue engages moves (a target that glues, cd, or a person's glue); it was 7fb7cae3c8dc411b; updated in place, as above
-    { "2026-10", 0x02ed0efc37c02b67ull },
+    // ...and the unread [compressor] mix removed (owner, 05.10): the walk moves, no master does; it was
+    // 02ed0efc37c02b67; updated in place, as above
+    // ...and the manual limiter wall (owner, 05.10): slope 0.2, P95 spacing 0.5 dB; masters that meet the wall move.
+    // It was a154dca562da8da3; updated in place, as above.
+    // ...and every target's mastered-delivery class plus the two configured peak ceilings (owner, 05.10, v0.18.0):
+    // already-mastered streaming/other deliveries may now bypass the normal chain; specification targets do not.
+    // It was 3ca74d45e21253d9; updated in place before the release.
+    { "2026-10", 0x086fda481af08315ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -157,6 +164,10 @@ std::vector<std::string> departures (const config::Config& c)
         const std::string at = "targets." + std::string (r.key);
         need (x.key == r.key, "row " + std::to_string (i) + " is " + std::string (r.key));
         need (x.group == r.group, at + ".group");
+        const auto expectedClass = r.key == "ebu" || r.key == "atsc" || r.key == "arib" || r.key == "op59"
+            ? config::TargetClass::Specification
+            : r.group == config::Group::Delivery ? config::TargetClass::Other : config::TargetClass::Streaming;
+        need (x.targetClass == expectedClass, at + ".class");
         need (same (x.lufs, r.lufs), at + ".lufs");
         need (same (x.tp, r.tp), at + ".tp");
         need (same (x.monoBass, r.monoBass), at + ".monoBass");
@@ -183,14 +194,27 @@ std::vector<std::string> departures (const config::Config& c)
     need (same (e.input.quietWarningLufs, -40.0) && same (e.input.quietGainOnlyLufs, -55.0),
           "a quiet input: a warning below −40 LUFS, gain and ceiling only below −55");
     need (e.landing.passes == 12, "the landing: one budget of 12 passes");
+    need (e.progress.masterExpectedPasses == 3 && e.progress.masterExpectedPassesMaxClean == 7
+          && e.progress.masterExpectedPassesMaxDense == 6,
+          "the bar expects 3 renders of a manual master, 7 of max clean, 6 of max dense (owner, 06.10)");
     need (e.landing.truePeakAimDb == 0.05 && e.limiter.ceilingMarginDb == 0.15,
           "the true-peak aim and initial limiter margin are separate decisions");
     need (e.landing.onSourceGate, "the landing lands the level on the source's gate (owner, 04.10)");
+    need (same (e.observations.masteredAboveLufs, -12) && same (e.observations.masteredPeakAboveDbTp, -1.5)
+          && same (e.observations.masteredPlrBelowDb, 11),
+          "already mastered requires louder than −12 LUFS, true peak above −1.5 dBTP and PLR below 11 (owner, 05.10)");
+    need (same (e.masteredDelivery.loudAboveLufs, -14) && same (e.masteredDelivery.loudCeilingDbTp, -2)
+          && same (e.masteredDelivery.regularCeilingDbTp, -1),
+          "an already-mastered delivery uses −2 dBTP above −14 LUFS and −1 dBTP otherwise (owner, 05.10)");
+    need (same (e.landing.limiterSlopeBelow, 0.2) && same (e.landing.limiterSlopeSpacingDb, 0.5),
+          "manual landings stop below 0.2 LU per dB of P95 cut, spaced by at least 0.5 dB (owner, 05.10)");
     need (same (e.landing.cleanBudgetDb, 0.5),
           "max clean: the limiter's budget 0.5 dB, about −13 LUFS, a little above streaming (owner, 04.10, by ear)");
     need (same (e.landing.denseBudgetDb, 1.75), "max dense: the limiter's budget 1.75 dB, about −11 LUFS (owner, 04.10, by ear)");
     need (same (e.landing.maxCeilingLufs, -5.0), "the max modes search up to −5 LUFS");
     need (same (e.landing.maxFloorLufs, -14.0), "a max master never lands under −14 LUFS, whichever target (owner, 04.10)");
+    need (same (e.landing.maxBudgetResolutionDb, 0.25),
+          "the limiter-budget edge is proved to 0.25 dB unless a master asks for 0.05…1 dB");
     need (same (e.landing.quietBudgetDb, 4.0) && same (e.landing.middleBudgetDb, 7.0)
           && same (e.landing.loudBudgetDb, 7.5)
           && same (e.landing.middleLufs.min, -10.0) && same (e.landing.middleLufs.max, -8.0),
@@ -314,12 +338,25 @@ void aDepartureIsNamed()
     ok (departures (Config::load().config).empty(), "PRECONDITION: the embedded config departs from nothing");
     struct Departure { bool inTargets; std::string_view from, to, decision; };
     const Departure plants[] = {
+        { true, "allStreaming = { group = \"streaming\", class = \"streaming\"", "allStreaming = { group = \"streaming\", class = \"other\"", "targets.allStreaming.class" },
+        { true, "class = \"specification\", lufs = -23", "class = \"streaming\", lufs = -23", "targets.ebu.class" },
+        { false, "loudAboveLufs = -14", "loudAboveLufs = -13",
+          "an already-mastered delivery uses −2 dBTP above −14 LUFS and −1 dBTP otherwise (owner, 05.10)" },
+        { false, "loudCeilingDbTp = -2", "loudCeilingDbTp = -3",
+          "an already-mastered delivery uses −2 dBTP above −14 LUFS and −1 dBTP otherwise (owner, 05.10)" },
+        { false, "regularCeilingDbTp = -1", "regularCeilingDbTp = -2",
+          "an already-mastered delivery uses −2 dBTP above −14 LUFS and −1 dBTP otherwise (owner, 05.10)" },
         { false, "machineTopHz = 50", "machineTopHz = 51", "the machine's high-pass tops out at 50 Hz" },
         { false, "machineTopHz = 50", "machineTopHz = 80", "the machine's high-pass tops out at 50 Hz" },
         { false, "hzMax = 80", "hzMax = 50", "a person's high-pass knob travels to 80 Hz (owner, 01.10)" },
         { false, "hzMax = 80", "hzMax = 81", "a person's high-pass knob travels to 80 Hz (owner, 01.10)" },
         { false, "slopes = [12, 24, 48]", "slopes = [12, 24, 36]", "the high-pass slopes are 12, 24 and 48 dB/oct" },
         { false, "passes = 12", "passes = 11", "the landing: one budget of 12 passes" },
+        { false, "expectedPasses = 3", "expectedPasses = 4", "the bar expects 3 renders of a manual master, 7 of max clean, 6 of max dense (owner, 06.10)" },
+        { false, "expectedPassesMaxClean = 7", "expectedPassesMaxClean = 6",
+          "the bar expects 3 renders of a manual master, 7 of max clean, 6 of max dense (owner, 06.10)" },
+        { false, "expectedPassesMaxDense = 6", "expectedPassesMaxDense = 7",
+          "the bar expects 3 renders of a manual master, 7 of max clean, 6 of max dense (owner, 06.10)" },
         { false, "onSourceGate = true", "onSourceGate = false", "the landing lands the level on the source's gate (owner, 04.10)" },
         { false, "clean = { budgetDb = 0.5 }", "clean = { budgetDb = 0.75 }",
           "max clean: the limiter's budget 0.5 dB, about −13 LUFS, a little above streaming (owner, 04.10, by ear)" },
@@ -327,6 +364,8 @@ void aDepartureIsNamed()
           "max dense: the limiter's budget 1.75 dB, about −11 LUFS (owner, 04.10, by ear)" },
         { false, "ceilingLufs = -5", "ceilingLufs = -6", "the max modes search up to −5 LUFS" },
         { false, "floorLufs = -14", "floorLufs = -13", "a max master never lands under −14 LUFS, whichever target (owner, 04.10)" },
+        { false, "budgetResolutionDb = 0.25", "budgetResolutionDb = 0.5",
+          "the limiter-budget edge is proved to 0.25 dB unless a master asks for 0.05…1 dB" },
         { true, "loudnessMode = \"maxDense\" }", "loudnessMode = \"maxClean\" }", "targets.maxDense.loudnessMode" },
         { false, "quietDb = 4,", "quietDb = 5,", "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 7.5 dB louder (owner, 04.10; 7.5 in v0.14.1)" },
         { false, "loudDb = 7.5,", "loudDb = 10,", "the limiter's budget: P95 4 dB below −10 LUFS, 7 dB from −10 to −8, 7.5 dB louder (owner, 04.10; 7.5 in v0.14.1)" },
@@ -345,6 +384,16 @@ void aDepartureIsNamed()
           "targets.youtube.sampleRate" },
         { false, "default = 0\nwhenTicked", "default = 0.3\nwhenTicked", "no glue by default: a target without its own takes the compressor out" },
         { false, "whenTicked = 0.5", "whenTicked = 0.6", "ticked on untouched, the glue is up to 0.5 dB" },
+        { false, "aboveLufs = -12", "aboveLufs = -13",
+          "already mastered requires louder than −12 LUFS, true peak above −1.5 dBTP and PLR below 11 (owner, 05.10)" },
+        { false, "peakAboveDbTp = -1.5", "peakAboveDbTp = -2",
+          "already mastered requires louder than −12 LUFS, true peak above −1.5 dBTP and PLR below 11 (owner, 05.10)" },
+        { false, "plrBelowDb = 11", "plrBelowDb = 12",
+          "already mastered requires louder than −12 LUFS, true peak above −1.5 dBTP and PLR below 11 (owner, 05.10)" },
+        { false, "limiterSlopeBelow = 0.2", "limiterSlopeBelow = 0.3",
+          "manual landings stop below 0.2 LU per dB of P95 cut, spaced by at least 0.5 dB (owner, 05.10)" },
+        { false, "limiterSlopeSpacingDb = 0.5", "limiterSlopeSpacingDb = 0.4",
+          "manual landings stop below 0.2 LU per dB of P95 cut, spaced by at least 0.5 dB (owner, 05.10)" },
         { false, "mix = 0.4\nmixRange", "mix = 1\nmixRange", "the glue in parallel by default: mix 40 %, a knob 0…100 % by 20 % (owner, 05.10)" },
         { false, "mixStep = 0.2", "mixStep = 0.05", "the glue in parallel by default: mix 40 %, a knob 0…100 % by 20 % (owner, 05.10)" },
         { false, "byTarget = { cd = 2.6 }", "byTarget = { cd = 2.5 }", "the machine glues on cd alone, up to 2.6 dB" },

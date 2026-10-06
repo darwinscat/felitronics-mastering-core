@@ -26,9 +26,11 @@ global     facade  g_callState    the poison flag: it must outlive the call that
 
 # --- what compiled C++ calls without the code asking for it
 undefined  all     ^_Zn[wa][jmy]                    operator new / new[] — the session allocates (law 2 does not apply; law 11d does)
+undefined  all     ^_ZSt7nothrow$                   std::nothrow's read-only tag, used by the optional retained-winner allocation
 undefined  all     ^_Zd[la]Pv                       operator delete / delete[], every form
 undefined  coff    ^\?\?[23]@                       operator new / delete, MSVC's decoration
 undefined  coff    ^\?\?_[UV]@                      operator new[] / delete[], MSVC's decoration
+undefined  coff    ^\?nothrow@std@@3Unothrow_t@1@B$ std::nothrow's read-only tag, the same optional allocation on MSVC
 undefined  all     ^(memcpy|memmove|memset|memcmp|bcmp|bzero)$    what the compiler emits for a copy, a clear or a comparison (clang turns an equality memcmp into bcmp)
 undefined  elf     ^__(memcpy|memmove|memset)_chk$  the same under _FORTIFY_SOURCE, which distributions turn on by default
 undefined  all     ^__stack_chk_(fail|guard)$       the stack protector, which distributions turn on by default

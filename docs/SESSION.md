@@ -492,6 +492,29 @@ master, sample for sample, to the PREVIOUS path's master of the chain it compose
 allStreaming, on cd (44.1 kHz, 16 bits, the glue on the measured tempo) and on lp, and under a person's edits of every
 kind with the panel hidden — and a master that waited to the one asked for after.
 
+**The source report** (owner, 05.10; `snapshot().view().sourceReport`, null without a source) puts its clipping verdict
+first in `facts`, even while the reading is pending. `clipping` distinguishes confirmed flat tops (`Clipped`, fact 450),
+inter-sample overs with samples below full scale (`InterSampleOvers`, 451), full-scale samples without confirmed runs
+(`SampleOvers`, 452), a clean reading (448) and an unavailable reading (449, `clippingReason`). Real clipping asks for a
+new export with peaks at −6…−3 dBFS: gain cannot undo the distortion. A master asked to add loudness to that source is
+refused with `ClippedGain` (39, fact 139), unless the request explicitly sets `allowClippedGain=true` (C++ and wire).
+The next fact, where found, is `SourceFormerLossy` (454): a spectral encoder wall asks for the original lossless mix.
+`SourceAlreadyMastered` (453), with source loudness and true peak, follows in `facts` or the appended `advice` list. ALL three strict
+tests must hold: LUFS > −12, true peak > −1.5 dBTP, PLR < 11 dB; `[observations.alreadyMastered]` owns the thresholds.
+`alreadyMastered` is null without the loudness/peak readings, otherwise a boolean; `loudnessLufs`, `truePeakDbTp` and
+`plrDb` carry the evidence. For a specification target the normal chain still meets its requirement. For streaming and
+other targets no louder than the detected source, the default master is `deliveryMode`: `AsIs` within the configured
+ceiling (source-rate/depth float bits copied exactly, no gain, resample or dither), or `PeaksOnly` above it (plain gain
+down by the excess, no EQ/glue/saturation/limiter; format dither only). `[masteredDelivery]` owns −2 dBTP for a source
+louder than −14 LUFS and −1 dBTP otherwise. A louder target, including max mode, uses the normal chain and fact 455 asks
+for the original mix; `masterAnyway=true` also explicitly selects that chain. `MasterReport.deliveryMode`,
+`deliveryGainDb` and `deliveryDithered` tell the page which file it received. Peaks-only adds no loudness and therefore
+does not require `allowClippedGain`. The page concatenates `facts` and `advice` in that order (the original two-fact
+ABI row remains bounded). `AsIs` means the shell should hand over its original file: the core preserves decoded PCM
+bits and source rate/depth, but does not retain the original container bytes. Its worked format is `original`.
+Recognition thresholds remain unchanged, so the present −1.5 dBTP recognition test makes `AsIs` unreachable with the
+production −2 dBTP ceiling; policy and complete transfer fixtures hold that path independently of recognition.
+
 **The observations** (owner decision 3.13; `snapshot().view().observations`, `src/Observations.h`). What the
 measurements found in the file, as facts with numbers and never a verdict of taste, in the order of the analysis — the
 file (clipping, DC offset, unused low bits, dual mono, silence at the edges, a quiet input, a short one, an input already
@@ -567,7 +590,7 @@ glue of N dB takes less than N dB off the loud places of the master. A person mo
 page's slider runs 0…1 by 0.2 (0, 20, … 100 %; `mixRange`, `mixStep` — the owner: a finer step is placebo), the core
 takes any share in the domain as written, the project keeps it (`[glue] mix.hand`), a change of target resets it. At 1 the
 glue is the downward compressor it was before, to the bit (`felitronics_session_glue_saturation_tests` pins v0.16.0's
-cd master); `[compressor] mix`, which wrote that 1, is no longer read (kept until its removal is decided). The knob below, and every number of it, is the compressor's
+cd master); `[compressor] mix`, which wrote that 1, is removed (owner, 05.10). The knob below, and every number of it, is the compressor's
 own: the mix scales none of them, and the glue's trace (`GlueGr`) is the compressor's detector, before the mix.
 The glue's knob, "up to N dB", is the loss on the loud places: the travel `g` at which the core's own static curve
 (`dynamics::GainComputer`, soft knee included) takes exactly N dB at the loud places (the P95 and the calibration over it, below), found on that curve by bisection — one
@@ -652,6 +675,17 @@ exact allocation demand without allocating; the returned `ProjectText` owns exac
 An Empty or Loaded session refuses export (`NoSource` or `NotPlaced`): its unplaced zeros are not machine decisions. A
 placed project is exportable while what its devices read still ends: its machine layer is written.
 Files and browser storage belong to the shell. The writer reads no filesystem and the session reads no file itself.
+
+`exportWorked(masterId)` is the separate read-only account of a completed master. Its canonical TOML is generated from
+that master's captured recipe, report and render state, so later edits and later masters do not change it. It flattens default →
+machine → hand to each final device value, includes every device on or off, target and delivery format, and marks every
+field with the English origin comment `# default`, `# machine`, `# hand` or `# target`. `AsIs` and `PeaksOnly` state that
+there was no mastering chain, their gain and whether delivery dither ran. `exportWorkedBytes()` sizes without allocating;
+the C/Wasm facade exposes `fc_session_worked_report_size/copy` and returns `FC_SESSION_ERR_UNKNOWN_MASTER` for an id it
+does not keep. The `renderState` appendix records the exact winning topology and physical parameters (including an
+explicit ready caller's chain), while device tables name the flattened controls and actual on/off states. Derived
+physical parameters are marked `machine`, explicitly supplied ready parameters `hand`; the device controls retain
+individual provenance. `delivery.ceilingDbTp` is the effective delivery ceiling, separate from the target's request.
 
 ```toml
 defaults = "2026-10"
@@ -891,16 +925,19 @@ The mastering render's source-rate conversion, chain latency, drain, and prepara
 
 `LandingSearch` keeps one search across calls. It first surveys source spectrum and crest in bounded units, then
 renders and measures within one budget of up to twelve passes. A measured hit stops immediately. Every render is
-logged; an exhausted budget returns the closest ceiling-safe PCM and its measured miss. When measured renders exist and
-none is safe it returns the gentlest — the smallest overshoot of the ceiling — as `TargetUnreachable` bound by the
-ceiling and marked `peaksAboveCeiling`; `Unavailable` only when no render could be measured. Source and output are the
-only full PCM buffers. If a previous candidate wins, a counted pass restores it; the last pass is reserved for that
-render once a candidate exists (a safe one, or else the gentlest above the ceiling). The search can pause during SRC, rendering,
+logged; an exhausted budget returns the closest ceiling-safe PCM and its measured miss. A retained full-programme PCM
+buffer follows the winning candidate, so a winner from an earlier pass is copied back without another render. Its
+non-throwing allocation is optional: failure silently takes the counted delivery re-render path used before v0.18.0.
+When measured renders exist and none is safe it returns the gentlest — the smallest overshoot of the ceiling — as
+`TargetUnreachable` bound by the ceiling and marked `peaksAboveCeiling`; `Unavailable` only when no render could be
+measured. Source, output and the optional winning candidate are the full PCM buffers. Without that candidate buffer,
+the last pass is reserved for its counted delivery render once a candidate exists (a safe one, or else the gentlest
+above the ceiling). The search can pause during SRC, rendering,
 metering, band statistics, integrated gates, the LRA scan, restoration and independent remeasurement.
 `TargetLoudnessSolver::solve()` drives this same path when `LoudnessRequest::productLanding` is set. Its older
 request policy remains available for existing callers. The request-aware `TargetLoudnessSolver::solveCallBytes(req)`
 and `DeliveredMastering::solveCallBytes(req)` include the product search workspace; the integer-bucket overloads
-keep the legacy solve quote. `LandingSearch::storageForProgramme()` quotes source, output, workspace and the largest
+keep the legacy solve quote. `LandingSearch::storageForProgramme()` quotes source, output, candidate, workspace and the largest
 block, including capacity retained on reuse through `storageForJob()`. Chain and converter preparations are separate.
 `LandingOps::plan()`
 sets the source normalization toward −18 LUFS separately from the adjustable pre-limiter gain; a delivery-rate
@@ -912,7 +949,9 @@ source and limiter hints, work units and the ordered pass log — and, where the
 (the two levels a between landing's target fell between, quieter first; were a solver's side not a number, the verdict
 stands without them and the master is still delivered — a target that cannot be hit always returns the file). The decoder refuses a limit on another status
 and levels out of order or on another status; the keys are always present, null where the status has none, and a
-missing one is a decode error. Its limiter and K13 clipper traces share
+missing one is a decode error. Every full-file log row appends the active-window limiter P95 it was judged on and its
+reason (`AimAtTarget`, `PeakProbe`, `StepBackBySlope`, `InsideBracket`, `ProveEdge` or `DeliverWinner`). Its limiter and
+K13 clipper traces share
 the delivered-frame grid and carry min/max/mean reduction, finite counts, validity and completion. Limiter
 GR follows the audio receiving gain after lookahead; K13 reduction follows the detector's input time.
 `Kept::landing` and the trace fields are nullable and always present in the generated session codec: a missing key
@@ -940,7 +979,11 @@ weights of the analyzers that ended and the read share of the current one, again
 120 Hz run, and the infra-low run, the same geometry at another crossover), lowEnd150, forensics, stereo, crest, hum,
 stereoBursts, tempo; so a 0.13 s stereo pass moves the bar a sliver and the 3 s crest a long stretch. The live
 `Stream`/`Report` phases keep their own fractions. Master passes use `passWeight` against `expectedPasses * passWeight + measureWeight`; remeasurement
-finishes at one. `weightsVersion` is the config's complete version, which includes progress weights. Fractions are
+finishes at one. A max master's bar expects its mode's renders, `expectedPassesMaxClean` / `expectedPassesMaxDense`
+(`[progress.master]`). A max master pulled up to its floor keeps one record across both landings: the first landing's
+passes stay in its pass log ahead of the floor landing's, and its pass number, render count and bar run on across the
+switch. An as-is or peaks-only delivery moves by its own walks: the copy; each render (the rate conversion, the gain,
+the check), the first render to 0.8 and a correction render to 0.9. `weightsVersion` is the config's complete version, which includes progress weights. Fractions are
 estimates; the interface permits them to move backwards. The human pass label uses only `pass`; `totalPasses` belongs
 to the diagnostic journal. Completed and total work units are deterministic inputs for a shell's time estimate.
 `stepFraction` (v0.14.0) is the current walk over the file, 0..1, a new count for every walk: the measurement's stream;
@@ -948,6 +991,15 @@ a master's source statistics, each landing pass (its own units), the delivered r
 and the cost's read (all `Pass`), and the damage job's two walks, `Reference` (both chains' loudness) and `Damage`
 (PEAQ). It is absent — not 0 — where the phase walks nothing: the report, the analyzers' and the needles' phases, a
 master's wait, the bookkeeping between walks and `Final`. The number of walks is not known ahead and is not promised.
+
+`Phase.analyzers` (ABI 13) names the instruments the Analyzers unit advances: a list of `{analyzer, fraction}`,
+held inline with room for three together. A source run's fraction is its frames read divided by the file's
+frames, 0…1; it stays at 1 during finishing and copying. The needles use their own preparation, read and finish units.
+A fraction is nullable for an instrument without a measurable
+walk. The list is null outside Analyzers and empty while that phase only joins results. A master waiting on a source
+run carries that run's list; while it advances the needles it names `Excursions` with their own fraction.
+`felitronics_session_source_tests` checks all nine source runs, their identities, monotone fractions and the null outside;
+`felitronics_session_needles_tests` checks the peak-excursion job's own list and fraction.
 
 `events()` views the latest `apply()` or `step()` batch. The caller copies or consumes it before the next such call;
 queries leave it intact. Each `Notification` is an independent value with `seq`, `jobId`, source hash, revision, state, phase, deterministic work, `kind`, and the payload
@@ -1286,6 +1338,10 @@ codec remains available for owned C++ fixtures; `Wire` supplies the transferable
 
 The header fixes the check order: poison; outputs in signature order (null, alignment, span); handle; inputs;
 overlap; session checks. A non-OK status leaves every output untouched. Buffers are disjoint and caller-owned.
+No output may lie in a live session's retained master PCM: one facade helper refuses it, `ERR_OVERLAP`, in every entry
+that writes a caller buffer, the kit's included (`felitronics_session_master_abi_tests`). A call that may free that PCM —
+load, measured load, attached audio, a command (Forget) — refuses an input inside it the same way, before anything is
+freed; no copy is made first. A waveform chunk, which frees nothing, still reads it.
 Size/copy pairs require no intervening mutation. Calls use one thread; callbacks must not reenter the facade.
 
 The only mutable globals are the handle table and poison latch. Eight slots each issue 24-bit generations and retire
@@ -1654,6 +1710,8 @@ value restates it; any other value, from the C facade's `fc_master_config.delive
 ({bits} {rate}), emitted with the rejection, name the target's format. The resolved depth also sets the chain's
 dither bits, whether or not the dither stage is on. A target whose rate is not the source's (cd, cdDynamic, youtube
 on a 44.1 kHz file) takes the one extra source-rate pass for the crest comparison (decision 2.3).
+An `AsIs` delivery instead preserves the source rate and known 16/24-bit depth because it represents the original;
+its delivery mode tells a shell it may hand the original file over rather than encode the copied PCM.
 
 Ready preflight requires retained PCM and finite completed integrated loudness and true peak. It prices
 the chain, renderer, converter when needed, solver, search workspace, output PCM, compact rows, and
@@ -1738,6 +1796,10 @@ still prices one grade's room (`MasterJob::plan`), which a grade asked right aft
 not an edit: a project's journal does not hold it, and an import grades nothing. With no job id left, `gradeDamage` is
 refused (`NoJobId`).
 
+`DamageJobEntry.waitReason` (ABI 13) is `SourceMeasurement` (1) while the pump holds a waiting grade for the source's
+measurement, otherwise `Queue` (0) while it waits its turn; null while Running. Cancel and continue refresh it at once.
+The master-report suite exercises both waits and the transition to Running.
+
 THE DAMAGE (`MasterReport.damage`, v0.14.0, `[cost.damage]` in engine.toml): PEAQ Basic (`analysis::Peaq`) of the
 master against the same chain with its dynamics at rest, graded in windows (10 s every 5 s; a programme shorter than a
 window is one window) on the BS.1116 scale by ODG (grade 5 from -0.5, 4 from -1.5, 3 from -2.5, 2 from -3.5, 1 below).
@@ -1817,13 +1879,15 @@ by the target's loudness, a person's edited number included: 4 dB below −10 LU
 7.5 dB louder (owner, 04.10, v0.14.1: it was 10 — 1058 renders of 23 songs without a budget put the limiter's cost
 and the PEAQ damage breaking together near 4, 6.5 and 8 dB; asked for −6 LUFS the median song at 7.5 reaches −7.83 with
 an ODG of −1.46, 3 of 23 "annoying", where 10 gave −7.36, −2.30 and 11 of 23), a whole number or a fraction of a dB
-(`detail::limiterBudgetDb`), on a step of a quarter dB — the landing's own resolution of its proof — which the verdict
+(`detail::limiterBudgetDb`), on a step of a quarter dB, which the verdict
 prints whole: up to two decimals, the trailing zeros dropped (7, 7.5, 7.25). `LandingSearch` reads it as a budget, not a refusal: a render over it is no
 candidate and is marked in its pass record (`LimiterGainReduction`) and in the session's pass log
 (`LandingPass::overBudget`), and the next drive is held under the lowest drive that broke it. The landing ends
-`TargetUnreachable` with `LimiterGainReduction` bound only on proof — the render delivered stands within 0.25 dB of drive
-under the lowest drive marked over the budget while the target is still above; otherwise its status is the search's
-own (a pass limit stays `PassLimit`, with its hints). Held so, the file is delivered short of the target: `MasterLandingBudget` (600) says the
+`TargetUnreachable` with `LimiterGainReduction` bound only on proof — the render delivered stands within the requested
+drive resolution under the lowest drive marked over the budget while the target is still above. The optional
+`MasterCommand.budgetResolutionDb` accepts 0.05…1 dB; absent takes `[landing.max] budgetResolutionDb = 0.25`. Otherwise
+the status is the search's own (a pass limit stays `PassLimit`, with its hints). Held so, the file is delivered short of
+the target: `MasterLandingBudget` (600) says the
 target, the level landed and the budget («Цель −9,0 LUFS, сделано −9,7 LUFS: дальше лимитеру пришлось бы срезать больше
 7 дБ (P95).»). Where no render kept the budget, the gentlest ceiling-safe one is delivered and `MasterLandingOverBudget`
 (602) says so with its own reduction («…ни один вариант не уложился в бюджет лимитера 7 дБ (P95) — выдан самый мягкий
@@ -1831,6 +1895,15 @@ target, the level landed and the budget («Цель −9,0 LUFS, сделано 
 BS.1770 (`achievedLufs`, `missLu`); where the level on the source's gate and that reading part by more than the
 tolerance, either way round, `MasterLandingGate` (601) says both («Без тихих мест −9,0 LUFS, по стандарту файла −9,8 LUFS.») in the
 miss's place, and the solved verdict (88) names the level landed. `targetMet` follows the status, as before.
+
+The manual landing also stops at the limiter's wall (owner, 05.10): `[landing] limiterSlopeBelow` 0.2 LU per dB of
+active P95 cut, measured between existing passes at least `limiterSlopeSpacingDb` 0.5 dB apart. The nearest qualifying
+pass supplies the other reading; both renders must be ceiling-safe, on the measured peak-clip curve, and increased cut
+must follow increased drive. A safe render within the budget, still below the target, stops and is delivered when the
+slope is smaller. No probe is added. `LandingSummary.limiterWall` names that stop (`TargetUnreachable`), with its
+`limiterSlope` and `limiterWallP95Db`; fact 618 says plainly why it stopped, and 619 carries the numbers for the log alone.
+There is no miss or mix hint for that stop. Max modes do not enable the wall. The landing-search suite holds a dense
+fixture's wall, a normal streaming landing's unchanged PCM and both max budgets' unchanged PCM.
 
 THE MAXIMUM LOUDNESS MODES (owner, 04.10, v0.15.0; by ear, v0.16.0). A target's loudness mode is `manual`, `maxClean` or
 `maxDense`: a row of `targets.toml` may name it (`loudnessMode`; absent, manual), the two max targets appended last name
@@ -1883,8 +1956,8 @@ refusal settles Pending crest and all five crest cost bands with the same reason
 ## Measured master cost
 
 `MasterReport.cost` exists only after a delivered master. It is descriptive evidence, never a delivery
-gate. Every number has an optional value and a reason; `k2Reason=NotImplemented` means tonal change has
-not been measured. A gain-only render has no shape or crest penalty. The source-rate check supplies the
+gate. Every number has an optional value and a reason; `k2Reason=NotImplemented` still records that tonal change has
+not been measured, but the empty “not measured yet” tonal fact is no longer emitted. A gain-only render has no shape or crest penalty. The source-rate check supplies the
 crest rows when delivery rate differs, and `sourceRateCheck` marks that provenance.
 
 For each of Low, LowMid, HighMid, High and Full, K1 compares only blocks whose source mask is one and

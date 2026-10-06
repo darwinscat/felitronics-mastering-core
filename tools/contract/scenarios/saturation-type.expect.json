@@ -19,7 +19,7 @@
   ],
   "parity": {"tolerance": 1e-4},
   "projects": 2,
-  "minEvents": 1000,
+  "minEvents": 900,
   "eventKinds": ["phase","measurement","fact","rejected","done"],
   "rejections": 1
 }

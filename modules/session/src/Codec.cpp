@@ -27,11 +27,17 @@ bool valid (const SnapshotView& v) noexcept
         if (master.landing)
         {
             const LandingSummary& landing = *master.landing;
-            if (landing.passes > 12 || landing.log.size() != landing.passes
+            if (landing.limiterWall != (landing.limiterSlope.has_value() && landing.limiterWallP95Db.has_value())
+                || (! landing.limiterWall && (landing.limiterSlope || landing.limiterWallP95Db))
+                || (landing.limiterWall && (! landing.deliverable || landing.status != LandingStatus::TargetUnreachable
+                    || ! std::isfinite (*landing.limiterSlope) || ! std::isfinite (*landing.limiterWallP95Db)))) return false;
+            if (landing.passes > kLandingRecordPasses || landing.log.size() != landing.passes
                 || (landing.deliverable && (! landing.achievedLufs || ! landing.missLu
                     || ! landing.distanceLu || ! landing.truePeakDbTp))
                 || (landing.peaksAboveCeiling && (! landing.deliverable || landing.status != LandingStatus::TargetUnreachable
                     || landing.binding != LandingConstraint::TruePeakCeiling))) return false;
+            for (const auto& pass : landing.log)
+                if (pass.limiterP95Db && ! std::isfinite (*pass.limiterP95Db)) return false;
             for (const auto& trace : { landing.limiterTrace, landing.peakClipTrace })
                 if (trace)
                 {
@@ -56,13 +62,17 @@ bool valid (const SnapshotView& v) noexcept
     {
         const auto& r = *master.report;
         const auto& c = r.crest;
-        if (! master.landing || r.deliverable != master.landing->deliverable
-            || r.peaksAboveCeiling != master.landing->peaksAboveCeiling
-            || r.targetMet != (master.landing->status == LandingStatus::Solved)
+        const bool delivery = r.deliveryMode != DeliveryMode::Mastered;
+        if ((delivery ? master.landing.has_value() || r.targetMet || r.deliveryGainDb > 0.0
+                || (r.deliveryMode == DeliveryMode::AsIs && (r.deliveryDithered || std::abs (r.deliveryGainDb) > 0.0))
+                : ! master.landing || r.deliverable != master.landing->deliverable
+                  || r.peaksAboveCeiling != master.landing->peaksAboveCeiling
+                  || r.targetMet != (master.landing->status == LandingStatus::Solved))
+            || ! std::isfinite (r.deliveryGainDb)
             || ! std::isfinite (r.targetLufs) || ! std::isfinite (r.ceilingDbTp)
             || r.checkPasses > 1
             || (r.status == MeasurementStatus::Ready
-                && (! r.achievedLufs || ! r.truePeakDbTp || ! r.missLu || ! r.gainFromSourceDb))
+                && (! r.achievedLufs || ! r.truePeakDbTp || (! delivery && ! r.missLu) || ! r.gainFromSourceDb))
             // Delivered: under the ceiling, or above it and marked (no render stayed under it, owner 01.10).
             || (r.deliverable && (r.status != MeasurementStatus::Ready || ! (r.peakSafe || r.peaksAboveCeiling)))
             || (r.peakSafe && (! r.truePeakDbTp || *r.truePeakDbTp > r.ceilingDbTp))
@@ -82,7 +92,8 @@ bool valid (const SnapshotView& v) noexcept
             || (v.masterRowsIncluded
                 ? c.blocks > c.rows.size() / 10u || c.rows.size() != c.blocks * 10u
                   || c.sourceMask.size() != (c.status == MeasurementStatus::Ready ? c.blocks * 5u : 0u)
-                : ! c.rows.empty() || ! c.sourceMask.empty() || master.landing->limiterTrace || master.landing->peakClipTrace
+                : ! c.rows.empty() || ! c.sourceMask.empty()
+                  || (master.landing && (master.landing->limiterTrace || master.landing->peakClipTrace))
                   || (r.cost && ! r.cost->waveform.empty()))
             || (c.status == MeasurementStatus::Ready ? c.reason != MeasurementReason::None || ! c.complete
                 : c.reason == MeasurementReason::None)) return false;

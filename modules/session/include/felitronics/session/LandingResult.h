@@ -17,6 +17,9 @@ namespace felitronics::analysis { struct BandCrestParams; }
 
 namespace felitronics::session
 {
+// How the delivered file was made. AsIs is the original source unchanged; PeaksOnly is delivery conversion with a
+// plain non-positive gain and format dither, and no mastering devices; Mastered is the ordinary chain and landing.
+enum class DeliveryMode : std::uint8_t { Mastered, AsIs, PeaksOnly };
 enum class LandingStatus : std::uint8_t
 {
     Solved, TargetUnreachable, PassLimit, TargetBetweenAchievable, Unavailable, Cancelled, TechnicalFailure
@@ -31,12 +34,18 @@ enum class LandingConstraint : std::uint8_t
 {
     None, TruePeakCeiling, LimiterGainReduction, PeakToLoudness, LoudnessRange, GainRange
 };
+enum class LandingPassReason : std::uint8_t
+{
+    AimAtTarget, PeakProbe, StepBackBySlope, InsideBracket, ProveEdge, DeliverWinner
+};
 struct LandingPass
 {
     double gainDb = 0.0, ceilingDbTp = 0.0, achievedLufs = 0.0, truePeakDbTp = 0.0;
     double limiterMaxReductionDb = 0.0;
     bool ceilingSafe = false;
     bool overBudget = false;   // the limiter took more than the landing's budget on this render: no candidate
+    std::optional<double> limiterP95Db;
+    LandingPassReason reason = LandingPassReason::AimAtTarget;
 };
 struct LandingTraceBucket
 {
@@ -50,6 +59,8 @@ struct LandingTrace
     bool complete = false, valid = false;
     std::span<const LandingTraceBucket> rows;
 };
+// A landing measures at most twelve passes; a max master pulled up to its floor lands twice, and its record holds both.
+inline constexpr std::uint32_t kLandingRecordPasses = 24;
 struct LandingSummary
 {
     LandingStatus status = LandingStatus::Unavailable;
@@ -68,6 +79,9 @@ struct LandingSummary
     // No render under the ceiling: the delivered master is the gentlest measured, its true peak above the ceiling
     // (deliverable, TargetUnreachable, binding TruePeakCeiling). False on every other landing.
     bool peaksAboveCeiling = false;
+    // The manual limiter wall: no useful loudness left for the cut. Its proof is for the log, not the person's verdict.
+    bool limiterWall = false;
+    std::optional<double> limiterSlope, limiterWallP95Db;
 };
 
 // The delivered meter and the source-rate crest check answer different questions. Rows are linear
@@ -211,6 +225,9 @@ struct MasterReport
     LoudnessMode loudnessMode = LoudnessMode::Manual;
     MaxStop maxStop = MaxStop::None;
     std::uint32_t guardSteps = 0;
+    DeliveryMode deliveryMode = DeliveryMode::Mastered;
+    double deliveryGainDb = 0.0;
+    bool deliveryDithered = false;
 };
 // What a landing was given and what it put on the target, beside its report: the level it landed where it landed on the
 // source's gate (NaN on its own gate, where the level landed is the report's achievedLufs), the limiter's budget it was
@@ -297,6 +314,7 @@ struct Recipe
     std::uint64_t readyHash = 0;              // exact ready topology, parameters and delivery choice
     std::uint32_t deliveryRateHz = 0;
     std::uint32_t readyVersion = 0;
+    std::uint8_t deliveryBits = 0;
 };
 
 // A master kept: its id and its recipe.

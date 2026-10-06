@@ -424,6 +424,18 @@ int main()
     if (session->pendingMaster().master != 0)
     {
         auto t = token (session->pendingMaster());
+        const auto reportId = session->pendingMaster().master;
+        std::uint32_t reportSize = 0;
+        const auto expectedReport = session->exportWorked (reportId);
+        ok (fc_session_worked_report_size (handle, reportId, &reportSize) == FC_SESSION_OK
+            && reportSize == expectedReport.size, "worked report C size is the captured C++ report size");
+        std::string worked (reportSize, '?');
+        std::uint32_t count = 777;
+        ok (fc_session_worked_report_copy (handle, reportId, worked.data(), reportSize - 1u, &count)
+                == FC_SESSION_ERR_TOO_SMALL && count == 777 && worked.front() == '?',
+            "a short worked-report buffer is refused without writes");
+        ok (fc_session_worked_report_copy (handle, reportId, worked.data(), reportSize, &count) == FC_SESSION_OK
+            && count == reportSize && worked == expectedReport.view(), "worked report C copy equals the immutable C++ text");
         double bytes = 0; std::uint32_t outFrames = 0, channels = 0, outRate = 0;
         ok (fc_session_master_audio_size (handle, &t, &bytes, &outFrames, &channels, &outRate) == FC_SESSION_OK
             && bytes == double (frames * 2u * sizeof (float)) && outFrames == frames
@@ -552,6 +564,19 @@ int main()
             // EVERY OTHER OUTPUT IS FENCED AGAINST THE RETAINED PCM TOO: a copy onto itself, a shape, a view and a
             // waveform chunk written into the samples they describe.
             auto* retained = const_cast<float*> (view);
+            const auto reportSizeAlias = fc_session_worked_report_size (
+                handle, reportId, reinterpret_cast<std::uint32_t*> (retained));
+            const bool reportSizePreserved = std::memcmp (view, copied.data(), bytes) == 0;
+            if (! reportSizePreserved) std::memcpy (retained, copied.data(), sizeof (std::uint32_t));
+            ok (reportSizeAlias == FC_SESSION_ERR_OVERLAP && reportSizePreserved,
+                "worked-report size cannot write its byte count into retained PCM");
+            std::uint32_t reportAliasWritten = 77;
+            const auto reportCopyAlias = fc_session_worked_report_copy (handle, reportId,
+                reinterpret_cast<char*> (retained), reportSize, &reportAliasWritten);
+            const bool reportCopyPreserved = std::memcmp (view, copied.data(), bytes) == 0;
+            if (! reportCopyPreserved) std::memcpy (retained, copied.data(), std::min<std::size_t> (reportSize, bytes));
+            ok (reportCopyAlias == FC_SESSION_ERR_OVERLAP && reportAliasWritten == 77 && reportCopyPreserved,
+                "worked-report copy cannot overwrite retained PCM");
             ok (fc_session_master_audio_copy (handle, &t, retained, samples) == FC_SESSION_ERR_OVERLAP
                 && fc_session_master_audio_copy (handle, &t, retained + 3, samples - 3u) == FC_SESSION_ERR_OVERLAP
                 && std::memcmp (view, copied.data(), bytes) == 0,
@@ -605,6 +630,61 @@ int main()
                     rate, waveJson.data(), waveSizes.jsonBytes, waveRows.data(), waveSizes.rowBytes, &waveWritten)
                     == FC_SESSION_OK,
                 "the retained PCM stays a valid waveform chunk INPUT");
+            // AND EVERY ENTRY THAT WRITES A CALLER BUFFER: the source snapshot, the snapshot, the summary, the project and
+            // the step's state, each aimed at the retained PCM, are refused whole — the audio and the revision stay.
+            const auto revisionBefore = session->revision();
+            const auto pcmBytes = std::size_t (bytes);
+            const auto fenced = [&] (fc_session_status st)
+            {
+                const bool kept = std::memcmp (view, copied.data(), pcmBytes) == 0;
+                if (! kept) std::memcpy (retained, copied.data(), pcmBytes);
+                return st == FC_SESSION_ERR_OVERLAP && kept && session->revision() == revisionBefore;
+            };
+            fc_session_sizes sourceSizes { sizeof (fc_session_sizes) }, snapSizes { sizeof (fc_session_sizes) },
+                summarySizes { sizeof (fc_session_sizes) };
+            std::uint32_t projectBytes = 0, aliasWritten = 77;
+            const bool sized = fc_session_source_snapshot_size (handle, &sourceSizes) == FC_SESSION_OK
+                && fc_session_snapshot_size (handle, &snapSizes) == FC_SESSION_OK
+                && fc_session_summary_size (handle, &summarySizes) == FC_SESSION_OK
+                && fc_session_export_project_size (handle, &projectBytes) == FC_SESSION_OK
+                && sourceSizes.jsonBytes <= pcmBytes && projectBytes <= pcmBytes;
+            // The snapshot's and the summary's JSON outgrow these two seconds: their destination is the PCM alone.
+            const auto inside = [&] (std::uint32_t n) { return std::uint32_t (std::min<std::size_t> (n, pcmBytes)); };
+            std::vector<double> aliasRows ((std::max ({ sourceSizes.rowBytes, snapSizes.rowBytes, summarySizes.rowBytes })
+                                            / sizeof (double)) + 1u);
+            ok (sized && fenced (fc_session_source_snapshot_copy (handle, reinterpret_cast<char*> (retained),
+                    sourceSizes.jsonBytes, aliasRows.data(), sourceSizes.rowBytes)),
+                "the source snapshot cannot write its JSON into the retained PCM");
+            ok (sized && fenced (fc_session_snapshot_copy (handle, reinterpret_cast<char*> (retained),
+                    inside (snapSizes.jsonBytes), aliasRows.data(), snapSizes.rowBytes)),
+                "the snapshot cannot write its JSON into the retained PCM");
+            ok (sized && fenced (fc_session_summary_copy (handle, reinterpret_cast<char*> (retained),
+                    inside (summarySizes.jsonBytes), aliasRows.data(), summarySizes.rowBytes)),
+                "the summary cannot write its JSON into the retained PCM");
+            ok (sized && fenced (fc_session_export_project_copy (handle, reinterpret_cast<char*> (retained),
+                    projectBytes, &aliasWritten)) && aliasWritten == 77,
+                "the project export cannot write its text into the retained PCM");
+            ok (fenced (fc_session_step (handle, 0, reinterpret_cast<std::uint32_t*> (retained + 5))),
+                "a step cannot write its state into the retained PCM");
+            // NOR READ AN INPUT FROM IT WHERE THE CALL MAY FREE IT: a command (Forget), a measured load, attached audio and
+            // a load — which ends the masters before it copies the audio it was handed — are refused whole, nothing freed.
+            const auto pendingBefore = session->pendingMaster();
+            const auto stillPending = [&] { return session->pendingMaster().master == pendingBefore.master
+                && session->viewMaster (pendingBefore).data() == view; };
+            char inputAnswer[FC_SESSION_ANSWER_BYTES]; std::uint32_t inputWritten = 77;
+            ok (fenced (fc_session_command (handle, reinterpret_cast<const char*> (view), 64, inputAnswer, sizeof (inputAnswer),
+                    &inputWritten)) && inputWritten == 77 && stillPending(),
+                "a command cannot read its JSON from the retained PCM");
+            ok (fenced (fc_session_load_measured (handle, 90, 0, reinterpret_cast<const char*> (view), 64, inputAnswer,
+                    sizeof (inputAnswer), &inputWritten)) && inputWritten == 77 && stillPending(),
+                "a measured load cannot read its facts from the retained PCM");
+            const float* retainedPlanes[2] { view, view + frames };
+            ok (fenced (fc_session_attach_audio (handle, 91, 0, retainedPlanes, 2, frames, rate, inputAnswer,
+                    sizeof (inputAnswer), &inputWritten)) && inputWritten == 77 && stillPending(),
+                "attached audio cannot be read from the retained PCM");
+            ok (fenced (fc_session_load (handle, 92, 0, retainedPlanes, 2, frames, rate, nullptr, 0, inputAnswer,
+                    sizeof (inputAnswer), &inputWritten)) && inputWritten == 77 && stillPending(),
+                "a load cannot read its audio from the retained PCM it would free first");
         }
         t.job += 1;
         ok (fc_session_master_audio_copy (handle, &t, copied.data(), std::uint32_t (copied.size())) == FC_SESSION_ERR_STALE,

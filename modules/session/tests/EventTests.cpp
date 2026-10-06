@@ -53,11 +53,42 @@ struct felitronics::session::detail::Inspector
     }
     static std::uint64_t sequence (const Session& s) { return s.sequence_; }
     static void fillBatch (Session& s, std::size_t count) { for (std::size_t i = 0; i < count; ++i) s.emit ({}); }
+    static void coalescingBatch (Session& s)
+    {
+        s.eventCount_ = 0; s.oldWorldEvents_ = 0;
+        const auto publish = [&] (JobId job, EventKind kind, double fraction = 0.0)
+        {
+            Notification event; event.jobId = job; event.kind = kind;
+            if (kind == EventKind::Phase) { event.payload.phase.name = PhaseName::Pass; event.payload.phase.fraction = fraction; }
+            s.emit (event);
+        };
+        publish (7, EventKind::Phase, 0.1);
+        publish (7, EventKind::Fact);
+        publish (8, EventKind::Phase, 0.2);
+        publish (7, EventKind::Reading);
+        publish (7, EventKind::Phase, 0.8);
+        publish (8, EventKind::Phase, 0.9);
+    }
 };
 namespace budget = felitronics::session::testing;
 namespace declared = felitronics::declared;
 namespace
 {
+std::unique_ptr<Session> fresh();
+void phaseCoalescing()
+{
+    auto s = fresh();
+    detail::Inspector::coalescingBatch (*s);
+    const auto events = s->events();
+    const bool shaped = events.size() == 4
+        && events[0].kind == EventKind::Fact && events[1].kind == EventKind::Reading
+        && events[2].kind == EventKind::Phase && events[2].jobId == 7 && events[2].payload.phase.fraction == 0.8
+        && events[3].kind == EventKind::Phase && events[3].jobId == 8 && events[3].payload.phase.fraction == 0.9;
+    bool numbered = true;
+    for (std::size_t i = 0; i < events.size(); ++i) numbered = numbered && events[i].seq + events.size() - i == s->events().back().seq + 1;
+    ok (shaped && numbered, "one latest phase per job remains in a batch; non-phase events keep their order and sequence is contiguous");
+}
+
 void measureReady (Session& session, bool firstOnly = false)
 {
     budget::measure (session, firstOnly);
@@ -215,6 +246,19 @@ std::vector<Notification> withoutMaster (const std::vector<Notification>& events
     return kept;
 }
 
+std::vector<Notification> withoutPhases (const std::vector<Notification>& events)
+{
+    std::vector<Notification> kept;
+    std::uint64_t dropped = 0;
+    for (auto event : events)
+    {
+        if (event.kind == EventKind::Phase) { ++dropped; continue; }
+        event.seq -= dropped;
+        kept.push_back (event);
+    }
+    return kept;
+}
+
 std::vector<Notification> scenario (std::uint32_t chunk, bool cancel)
 {
     Audio audio; auto s = fresh(); std::vector<Notification> events;
@@ -254,8 +298,11 @@ void pump()
 {
     const auto one = scenario (1, false), bulk = scenario (16, false), again = scenario (1, false);
     const auto cancelled = scenario (1, true), cancelledAgain = scenario (16, true);
-    ok (eventsHash (one) == eventsHash (bulk) && eventsHash (one) == eventsHash (again), "complete event sequence is invariant across runs and pump slicing");
-    ok (eventsHash (cancelled) == eventsHash (cancelledAgain), "cancelled scenario sequence is invariant across runs and slicing");
+    ok (eventsHash (one) == eventsHash (again), "complete event sequence is invariant across equal runs and slicing");
+    ok (eventsHash (withoutPhases (one)) == eventsHash (withoutPhases (bulk)),
+        "pump slicing changes only the sampled phase states; every other event stays in order");
+    ok (eventsHash (withoutPhases (cancelled)) == eventsHash (withoutPhases (cancelledAgain)),
+        "cancelled scenario keeps every non-phase event invariant across slicing");
     ok (one.size() > 22 && cancelled.size() > one.size(), "measurement publishes live work and cancellation adds events");
     // THE PINS. The phases carry the config's version (weightsVersion), so a new config moves the whole-stream pins below,
     // and a master the session decides is rendered in the scenario, so its passes, cost and facts move with its sound. Of
@@ -266,6 +313,22 @@ void pump()
     // table. Each restatement takes them out first; a manual master (the scenario's) never reads them.
     const auto withoutMax = [] (std::string& targets, std::string& engine)
     {
+        // v0.18.0: target classes and already-mastered delivery ceilings. Remove them when restating the older pins.
+        for (const std::string_view classification : { ", class = \"specification\"", ", class = \"streaming\"", ", class = \"other\"" })
+            for (auto at = targets.find (classification); at != std::string::npos; at = targets.find (classification))
+                targets.erase (at, classification.size());
+        if (const auto at = engine.find ("\n[masteredDelivery]\n"); at != std::string::npos)
+        {
+            const auto next = engine.find ("\n[", at + 1);
+            engine.erase (at, (next == std::string::npos ? engine.size() : next) - at);
+        }
+        for (const std::string_view key : { "\nlimiterSlopeBelow = ", "\nlimiterSlopeSpacingDb = ", "\nalreadyMastered = ",
+                                            "\nexpectedPassesMaxClean = ", "\nexpectedPassesMaxDense = " })
+            if (const auto at = engine.find (key); at != std::string::npos)
+                engine.erase (at, engine.find ('\n', at + 1) - at);
+        // The unread compressor mix was removed (owner, 05.10); restore it for the older config fingerprints alone.
+        if (const auto at = engine.find ("\n[compressor]\n"); at != std::string::npos)
+            engine.insert (at + 14, "mix = 1\n");
         // ...and the glue's mix (v0.17.0): [glue] mixDomain, mix, mixRange, mixStep — the saturation's keys of the same
         // names stay.
         if (const auto glue = engine.find ("\n[glue]\n"); glue != std::string::npos)
@@ -351,8 +414,11 @@ void pump()
     // previousVersion takes out what moved the config's version alone — the targets' notes and the three broadcast
     // targets, the engine rows it lists, the EQ bands' tables, the landing's two keys, the damage's table — and with that
     // version put back every job's events but a master's (its damage's job among them) are the ones that config gives.
-    ok (eventsHash (withoutMaster (previousVersion (one))) == 0xacc7bec22e8a400full
-        && eventsHash (withoutMaster (previousVersion (cancelled))) == 0xacc7bec22e8a400full,
+    // The overall Analyzers fraction rising with every analyzer after the shared low-end walk (v0.18.0) moves the
+    // measurement's phases, and a waiting master's, in every pin below: their fractions alone (edae06e3e510d9bd,
+    // 3206715474e65370, c545b584467677c4 / de94ace97b284a86, e04fb0798d827192 / f39321f26e038670 before it).
+    ok (eventsHash (withoutMaster (previousVersion (one))) == 0x6a6f689b37e99d64ull
+        && eventsHash (withoutMaster (previousVersion (cancelled))) == 0x6a6f689b37e99d64ull,
         "with the config's version previousVersion restates, every job's events but a master's hold their pin");
     // The landing's two keys ([landing] onSourceGate, limiterBudget) and the damage's table ([cost.damage]) move the
     // master and nothing else: with the config's version they leave put back, every other job's events are the ones the
@@ -379,10 +445,12 @@ void pump()
         return std::pair { events, before ? before->all : std::uint64_t (0) };
     };
     const auto [oneBefore, versionBefore] = withoutKeys (one, true, true);
-    ok (versionBefore == 0x4d1ce39f8531727aull && eventsHash (withoutMaster (oneBefore)) == 0x229c3d9dc4eb6775ull
-        && eventsHash (withoutMaster (withoutKeys (cancelled, true, true).first)) == 0x229c3d9dc4eb6775ull,
+    std::printf ("event fingerprints, every job but the master's, without the landing's keys and the damage's table: %016llx\n",
+        (unsigned long long) eventsHash (withoutMaster (oneBefore)));
+    ok (versionBefore == 0x9ae64bc77f749e4cull && eventsHash (withoutMaster (oneBefore)) == 0xea1228f7b7ec10e1ull
+        && eventsHash (withoutMaster (withoutKeys (cancelled, true, true).first)) == 0xea1228f7b7ec10e1ull,
         "the landing's two keys and the damage's table move the master's events alone: without them the config's version "
-        "is 4d1ce39f8531727a, and every other job's events hold");
+        "is 9ae64bc77f749e4c, and every other job's events hold");
     // THE DAMAGE (v0.14.0) is a job of its own after the master: its events carry its own id — its phases, its line and
     // the damage events — and the master says two lines more (603-607). Without them, and with the config's version its
     // table leaves put back, every event is the landing fix's alone (d406ca4's pins), bit for bit: the master's job ends
@@ -403,18 +471,27 @@ void pump()
         }
         return kept;
     };
-    ok (eventsHash (withoutDamage (withoutKeys (one, false, true, true).first)) == 0xc53142779e57820full
-        && eventsHash (withoutDamage (withoutKeys (cancelled, false, true, true).first)) == 0x4697be12cad5438eull,
+    const auto oneWithoutDamage = eventsHash (withoutDamage (withoutKeys (one, false, true, true).first));
+    const auto cancelledWithoutDamage = eventsHash (withoutDamage (withoutKeys (cancelled, false, true, true).first));
+    std::printf ("event fingerprints, without damage: %016llx %016llx\n",
+        (unsigned long long) oneWithoutDamage, (unsigned long long) cancelledWithoutDamage);
+    ok (oneWithoutDamage == 0x62e8614384dd5419ull && cancelledWithoutDamage == 0x1804ac8904cb82c3ull,
         "the damage moves its own job's events, the master's two lines and the config's version alone: without them the "
-        "landing fix's pins c53142779e57820f / 4697be12cad5438e hold");
+        "retained-winner and pass-log pins 62e8614384dd5419 / 1804ac8904cb82c3 hold");
     char hashes[48];
     std::snprintf (hashes, sizeof hashes, "%016llx / %016llx", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     // The max modes (v0.15.0) moved the config's version alone here: with it restated (withoutMax) every pin above holds.
     // The damage's grade is the shell's to ask (command::GradeDamage, v0.16.0): the scenario asks none, so its stream
     // carries no damage job — the pin without the damage above holds, and this one moves by that job alone; the max modes
     // by ear (v0.16.0) move the config's version alone (withoutMax restates it).
-    // The glue's mix (v0.17.0) moves the config's version alone here (withoutMax restates it too).
-    ok (eventsHash (one) == 0x967f1f8dd1966261ull && eventsHash (cancelled) == 0x150f9b065e8e1022ull,
+    // The glue's mix (v0.17.0) and v0.18's target classes / mastered-delivery ceilings move the config's version alone
+    // here (withoutMax restates them too). The optional max-search proof resolution is an active master-command payload,
+    // so v0.18's retained-winner search moves these complete-stream pins while the controls above continue to hold.
+    // Removing the unreleased Phase fields moves only these complete-stream pins once more.
+    // [progress.master] expectedPassesMaxClean / expectedPassesMaxDense (v0.18.0, 7 and 6) move the config's version alone
+    // here: withoutMax restates it above, and these complete-stream pins move by it (fd634188f514143f / c169bfca96d5c915
+    // before them).
+    ok (eventsHash (one) == 0x504d1630b0dda1a5ull && eventsHash (cancelled) == 0xa68792578ab9b2f5ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",
@@ -824,6 +901,11 @@ void environment()
 }
 int main (int argc, char** argv)
 {
+    if (argc == 2 && std::string_view (argv[1]) == "--coalescing")
+    {
+        phaseCoalescing();
+        return felitronics::test::report();
+    }
     if (argc == 2 && std::string_view (argv[1]) == "--snapshot-limit")
     {
         const auto bytes = detail::snapshotTextBytes (UINT32_MAX, std::uint32_t (1));
@@ -850,6 +932,6 @@ int main (int argc, char** argv)
         "snapshot demand widens all six 32-bit terms before adding");
     ok (detail::snapshotAllocationSize<std::uint32_t> (max) == max,
         "the largest representable allocation size is accepted without allocating");
-    pump(); tableBetweenSteps(); codec(); numbers(); eqSnapshot(); environment(); contracts();
+    phaseCoalescing(); pump(); tableBetweenSteps(); codec(); numbers(); eqSnapshot(); environment(); contracts();
     return felitronics::test::report();
 }

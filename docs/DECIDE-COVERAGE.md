@@ -11,6 +11,17 @@ Status: **HELD** means a test asserts the check. **PARTIAL** means pieces are he
 is not. **GAP** means nothing asserts it; the label (A1…, B1…) points to the gap list below. **BEHAVIOUR** marks a gap
 that needs new core behaviour, not only a test. **OBSOLETE** means an owner decision has replaced the check.
 
+## The five changes of 05.10 (next release)
+
+| Owner decision | Holder | Status |
+|---|---|---|
+| Manual slope < 0.2 LU per dB stops on existing passes ≥ 0.5 dB apart; normal streaming and max PCM stay | `LandingSearchTests.cpp`: dense wall before budget, normal −14, both max budgets; `ConfigDecisionsTests.cpp`: slope/spacing pins and mutation plants | HELD |
+| Analyzers names each running instrument with its own monotone fraction; null outside | `SourceMeasurementsTests.cpp:analyzerProgress`; `NeedlesTests.cpp:lifecycle` | HELD |
+| Damage waits for source measurement or its queue turn; no wait reason while running | `MasterReportTests.cpp:damageAfterMaster` | HELD |
+| Source clipping comes first, flat tops and inter-sample overs apart; three strict mastered thresholds; explicit gain on clipped input | `PlanSoundTests.cpp:theSourceReport`: boundary, actual analyzer, codec and wire controls; `ConfigDecisionsTests.cpp`: three threshold plants | HELD |
+| Unused compressor mix is absent from config, schema and typed struct | `ConfigTests.cpp:theCompressorHasNoUnusedMix` | HELD |
+| Peaks-only delivery for an already-mastered source | Deferred as the brief allows: decide whether a louder edited target itself requests mastering or still needs an explicit mode choice | OPEN |
+
 ## Table A: the checks of task 06
 
 Items 1–3 of the task and every bullet of its checks section, one check per row.
@@ -161,9 +172,9 @@ LowEnd and PeakExcursions tests are cited nowhere in this table as proof of a de
     `ctest --test-dir build -R '^felitronics_session_scenario_tests$' --output-on-failure`.
   - Wasm: `tools/wasm/build.sh` (with `FELITRONICS_CORE_DIR` and `FELITRONICS_TOML_DIR` set), which runs
     `node tools/wasm/scenario-parity.mjs <out>/session-scenario.txt`.
-  - What the run prints (release 0.17.0, felitronics-core 0.59.0, defaults `2026-10`): the input
-    `source=f58fa8f9570118b5 frames=480000 rate=48000`, the sound version `02ed0efc37c02b67`, the config version
-    `8d63bad8e125b35e`, and `plan=8043eff22be0264c facts=858432a3f917b4ad pcm=d73c61caca166b05 wav=5d07cbcd5294c4f0`.
+  - What the run prints (release 0.18.0, felitronics-core 0.59.0, defaults `2026-10`): the input
+    `source=f58fa8f9570118b5 frames=480000 rate=48000`, the sound version `086fda481af08315`, the config version
+    `3b84f25acb565a44`, and `plan=8043eff22be0264c facts=be4ff10ec942c73a pcm=d73c61caca166b05 wav=5d07cbcd5294c4f0`.
 - **A5. HELD, private.** The replay of the 11 finished measurements is private and held outside this repository.
 
 ### B. Behaviour
@@ -184,6 +195,13 @@ LowEnd and PeakExcursions tests are cited nowhere in this table as proof of a de
 - **B4. HELD.** All eight descriptors in one placed snapshot: `PlanTests.cpp:aTouchedDeviceSounds` encodes and decodes
   it and asserts that `plan.devices` carries hpf, monoBass, glue, saturation, tilt, limiter, dither and low with on, tick
   and needs. A pin of existing behaviour.
+- **B5. HELD.** A landing retains its winning PCM and avoids a duplicate render; allocation fault injection proves the
+  old counted delivery render restores identical PCM when that optional buffer is unavailable. `LandingSearchTests.cpp`
+  also holds the third full PCM buffer in fresh and retained law-11d declarations.
+- **B6. HELD.** Max modes retain v0.17's full-file slope/chord/Illinois/proof search. Every full render carries its active
+  P95 and one of the six reasons; `[landing.max] budgetResolutionDb = 0.25` is the default proof, and the optional master
+  command accepts 0.05…1 dB. `LandingSearchTests.cpp`, `MasterJobTests.cpp`, `LandingPlanTests.cpp`,
+  `SessionAbiV1Tests.cpp` and the native/wasm contract hold the winner, pass diagnostics, progress and wire field.
 - Knob boundaries: no gap (A41–A45 are held).
 
 ## Open questions

@@ -8,6 +8,7 @@
 #include "Grid.h"
 #include "JsonCodec.h"
 #include "BuildContract.h"
+#include "MasterJob.h"
 #include <felitronics/toml/Schema.h>
 #include <algorithm>
 #include <charconv>
@@ -22,6 +23,14 @@ namespace
 
 using toml::Need;
 using detail::Rules;
+
+// A device field's truth exactly as `bool (x)` gives it — a number's is "not zero": NaN true, −0 false — spelled for a
+// number without the float `!=` gcc's -Wfloat-equal refuses.
+template <class T> bool truthOf (const T& x) noexcept
+{
+    if constexpr (std::is_floating_point_v<T>) return ! core::exactlyEqual (x, T (0));
+    else return bool (x);
+}
 
 bool defaultsLabel (std::string_view text) noexcept
 {
@@ -51,6 +60,7 @@ struct Writer
         put ('"');
     }
     void value (bool b) noexcept { text (b ? "true" : "false"); }
+    void value (std::string_view s) noexcept { string (s); }
     void value (Needles n) noexcept
     {
         switch (n)
@@ -85,6 +95,10 @@ struct Writer
     {
         text (field); put ('.'); text (author); text (" = "); value (n); put ('\n');
     }
+    template <class T> void workedLine (std::string_view field, const T& n, std::string_view origin) noexcept
+    {
+        text (field); text (" = "); value (n); text (" # "); text (origin); put ('\n');
+    }
     void project (const Project& p, const Rules& rules, std::uint32_t channels) noexcept
     {
         text ("defaults = "); string (*rules.engine.find ("defaults").string());
@@ -115,6 +129,190 @@ struct Writer
                 if (hand) line (Of::fields[field], "hand", *hand);
             }, layers.machine, layers.hand, Of::layers (defaults).machine);
         });
+    }
+    void stringInteger (std::uint64_t n) noexcept
+    {
+        char buffer[32];
+        const auto end = std::to_chars (buffer, buffer + sizeof (buffer), n);
+        string ({ buffer, std::size_t (end.ptr - buffer) });
+    }
+    void renderState (const command::MasterReady& ready) noexcept
+    {
+        // Physical parameters are derived by the machine, or supplied explicitly by a ready caller.
+        // The device tables above retain the individual default/machine/hand provenance of its controls.
+        const std::string_view origin = ready.version == 1 ? "hand" : "machine";
+        const auto& t = ready.topology;
+        const auto& p = ready.params;
+        text ("\n[renderState]\n");
+        workedLine ("topology.internalBlock", t.internalBlock, origin);
+        workedLine ("topology.eq", t.eq, origin);
+        workedLine ("topology.monoBass", t.monoBass, origin);
+        workedLine ("topology.stereoAir", t.stereoAir, origin);
+        workedLine ("topology.compressor", t.compressor, origin);
+        workedLine ("topology.clipper", t.clipper, origin);
+        workedLine ("topology.limiter", t.limiter, origin);
+        workedLine ("topology.dither", t.dither, origin);
+        workedLine ("topology.compressorLookaheadMs", t.compressorLookaheadMs, origin);
+        workedLine ("topology.limiterLookaheadMs", t.limiterLookaheadMs, origin);
+        workedLine ("topology.oversampleFactor", t.oversampleFactor, origin);
+        workedLine ("topology.tapsPerPhase", t.tapsPerPhase, origin);
+        workedLine ("topology.sidechainHpfHz", t.sidechainHpfHz, origin);
+        workedLine ("params.inputGainDb", p.inputGainDb, "machine");
+        workedLine ("params.preLimiterGainDb", p.preLimiterGainDb, "machine");
+        workedLine ("params.monoBass.enabled", p.monoBass.enabled, origin);
+        workedLine ("params.monoBass.frequencyHz", double (p.monoBass.frequencyHz), origin);
+        workedLine ("params.monoBass.lowWidth", double (p.monoBass.lowWidth), origin);
+        workedLine ("params.stereoAir.enabled", p.stereoAir.enabled, origin);
+        workedLine ("params.stereoAir.frequencyHz", double (p.stereoAir.frequencyHz), origin);
+        workedLine ("params.stereoAir.gainDb", double (p.stereoAir.gainDb), origin);
+        workedLine ("params.compressor.detector", int (p.compressor.detector), origin);
+        workedLine ("params.compressor.link", int (p.compressor.link), origin);
+        workedLine ("params.compressor.rmsWindowMs", p.compressor.rmsWindowMs, origin);
+        workedLine ("params.compressor.mode", int (p.compressor.mode), origin);
+        workedLine ("params.compressor.thresholdDb", p.compressor.thresholdDb, origin);
+        workedLine ("params.compressor.ratio", p.compressor.ratio, origin);
+        workedLine ("params.compressor.kneeDb", p.compressor.kneeDb, origin);
+        workedLine ("params.compressor.rangeDb", p.compressor.rangeDb, origin);
+        workedLine ("params.compressor.attackMs", p.compressor.attackMs, origin);
+        workedLine ("params.compressor.releaseMs", p.compressor.releaseMs, origin);
+        workedLine ("params.compressor.makeupDb", p.compressor.makeupDb, origin);
+        workedLine ("params.compressor.autoMakeup", p.compressor.autoMakeup, origin);
+        workedLine ("params.compressor.lookaheadMs", p.compressor.lookaheadMs, origin);
+        workedLine ("params.clipper.shape", int (p.clipper.shape), origin);
+        workedLine ("params.clipper.driveDb", double (p.clipper.driveDb), origin);
+        workedLine ("params.clipper.bias", double (p.clipper.bias), origin);
+        workedLine ("params.clipper.mix", double (p.clipper.mix), origin);
+        workedLine ("params.clipper.outputDb", double (p.clipper.outputDb), origin);
+        workedLine ("params.clipper.autoComp", double (p.clipper.autoComp), origin);
+        workedLine ("params.clipper.dcBlockHz", double (p.clipper.dcBlockHz), origin);
+        workedLine ("params.limiter.ceilingDbTp", p.limiter.ceilingDbTp, "target");
+        workedLine ("params.limiter.releaseMs", p.limiter.releaseMs, origin);
+        workedLine ("params.limiter.dualRelease", p.limiter.dualRelease, origin);
+        workedLine ("params.limiter.slowReleaseMs", p.limiter.slowReleaseMs, origin);
+        workedLine ("params.limiter.peakClip", p.limiter.peakClip, origin);
+        workedLine ("params.limiter.overCeilingDb", p.limiter.overCeilingDb, origin);
+        workedLine ("params.limiter.kneeDb", p.limiter.kneeDb, origin);
+        workedLine ("params.peakClipCutDb", p.peakClipCutDb, origin);
+        workedLine ("params.peakClipPeakDb", p.peakClipPeakDb, "machine");
+        workedLine ("params.dither.bits", p.dither.bits, "target");
+        workedLine ("params.dither.shaping", int (p.dither.shaping), origin);
+        text ("params.dither.seed = "); stringInteger (p.dither.seed); text (" # "); text (origin); put ('\n');
+        workedLine ("params.dither.autoBlank", p.dither.autoBlank, origin);
+        workedLine ("params.dither.autoBlankSamples", p.dither.autoBlankSamples, origin);
+        workedLine ("params.bypassEq", p.bypassEq, origin);
+        workedLine ("params.bypassMonoBass", p.bypassMonoBass, origin);
+        workedLine ("params.bypassCompressor", p.bypassCompressor, origin);
+        workedLine ("params.bypassClipper", p.bypassClipper, origin);
+        workedLine ("params.bypassLimiter", p.bypassLimiter, origin);
+        workedLine ("params.bypassDither", p.bypassDither, origin);
+        workedLine ("params.compressorMix", p.compressorMix, origin);
+        for (const auto& band : p.eqBands)
+        {
+            text ("\n[[renderState.eqBands]]\n");
+            workedLine ("on", band.on, origin);
+            workedLine ("type", int (band.type), origin);
+            workedLine ("swept", band.swept, origin);
+            workedLine ("bypass", band.bypass, origin);
+            workedLine ("dyn.on", band.dyn.on, origin);
+            workedLine ("dyn.rangeDb", band.dyn.rangeDb, origin);
+            workedLine ("dyn.thrDb", band.dyn.thrDb, origin);
+            workedLine ("dyn.thrAuto", band.dyn.thrAuto, origin);
+            workedLine ("dyn.atk", band.dyn.atk, origin);
+            workedLine ("dyn.rel", band.dyn.rel, origin);
+            for (const auto& lane : band.lanes)
+            {
+                text ("\n[[renderState.eqBands.lanes]]\n");
+                workedLine ("on", lane.on, origin);
+                workedLine ("freq", lane.freq, origin);
+                workedLine ("Q", lane.Q, origin);
+                workedLine ("gainDb", lane.gainDb, origin);
+                workedLine ("slope", lane.slope, origin);
+                workedLine ("bypass", lane.bypass, origin);
+            }
+        }
+    }
+    void worked (MasterId id, const Kept& master, const command::MasterReady& rendered, const Rules& rules, std::uint32_t channels) noexcept
+    {
+        const auto& p = master.recipe.project;
+        const auto row = rules.row (p.target);
+        const auto mode = master.report ? master.report->deliveryMode : DeliveryMode::Mastered;
+        const bool chain = mode == DeliveryMode::Mastered;
+        const auto deliveryMode = mode == DeliveryMode::AsIs ? std::string_view ("asIs")
+            : mode == DeliveryMode::PeaksOnly ? std::string_view ("peaksOnly") : std::string_view ("mastered");
+        workedLine ("masterId", id, "target");
+        workedLine ("mode", deliveryMode, "target");
+        workedLine ("chain", chain, "target");
+        workedLine ("gainDb", chain ? master.report->gainFromSourceDb.value_or (0.0) : master.report->deliveryGainDb, "target");
+
+        text ("\n[target]\n");
+        workedLine ("name", row.key, "target");
+        workedLine ("lufs", p.targetEdit.lufs.value_or (row.lufs.toDouble()), p.targetEdit.lufs ? "hand" : "target");
+        workedLine ("ceilingDbTp", p.targetEdit.tp.value_or (row.tp.toDouble()), p.targetEdit.tp ? "hand" : "target");
+        const auto loudnessMode = detail::loudnessModeOf (rules, p);
+        workedLine ("loudnessMode", loudnessMode == LoudnessMode::MaxClean ? std::string_view ("maxClean")
+            : loudnessMode == LoudnessMode::MaxDense ? std::string_view ("maxDense") : std::string_view ("manual"),
+            p.targetEdit.loudnessMode ? "hand" : "target");
+
+        text ("\n[delivery]\n");
+        workedLine ("sampleRate", master.recipe.deliveryRateHz, "target");
+        workedLine ("bitDepth", master.recipe.deliveryBits, "target");
+        workedLine ("dither", master.report && master.report->deliveryDithered, "target");
+        workedLine ("fileFormat", mode == DeliveryMode::AsIs ? std::string_view ("original") : std::string_view ("wav"), "target");
+        workedLine ("ceilingDbTp", master.report->ceilingDbTp, "target");
+        text ("\n[render]\n");
+        workedLine ("inputGainDb", chain ? rendered.params.inputGainDb : master.report->deliveryGainDb, chain ? "machine" : "target");
+        workedLine ("preLimiterGainDb", chain ? rendered.params.preLimiterGainDb : 0.0, chain ? "machine" : "target");
+
+        Devices defaults;
+        detail::placeDefaults (rules, p.target, channels, defaults);
+        detail::eachDevice (p.devices, [&] (Device device, const auto& layers)
+        {
+            using Of = detail::DeviceOf<std::remove_cvref_t<decltype (layers.machine)>>;
+            const auto settings = detail::settingsOf (rules, layers);
+            const auto& def = Of::layers (defaults).machine;
+            text ("\n["); text (Of::name); text ("]\n");
+            if (device == Device::Limiter)
+                workedLine ("on", chain && rendered.topology.limiter && ! rendered.params.bypassLimiter,
+                    ! chain ? "target" : master.recipe.readyVersion == 1 ? "hand" : "default");
+            Of::each (rules, [&] (std::uint8_t field, const detail::FieldRule&, const auto& sounded,
+                                  const auto& machine, const auto& hand, const auto& defaultValue)
+            {
+                const bool isOn = Of::fields[field] == std::string_view ("on");
+                if (isOn && ! chain)
+                {
+                    const bool on = mode == DeliveryMode::PeaksOnly && device == Device::Dither
+                        && master.report && master.report->deliveryDithered;
+                    workedLine (Of::fields[field], on, "target");
+                    return;
+                }
+                std::string_view origin = "default";
+                if (hand) origin = "hand";
+                else if (isOn && detail::tickFrom (rules, layers) == TickFrom::Touched) origin = "hand";
+                else if (! detail::same (double (machine), double (defaultValue))) origin = "machine";
+                if (isOn && chain)
+                {
+                    bool active = truthOf (sounded);
+                    const auto& t = rendered.topology;
+                    const auto& v = rendered.params;
+                    switch (device)
+                    {
+                        case Device::Hpf: active = t.eq && ! v.bypassEq && v.eqBands[0].on; break;
+                        case Device::MonoBass: active = t.monoBass && ! v.bypassMonoBass; break;
+                        case Device::Glue: active = t.compressor && ! v.bypassCompressor; break;
+                        case Device::Saturation: active = t.clipper && ! v.bypassClipper; break;
+                        case Device::Dither: active = t.dither && ! v.bypassDither; break;
+                        case Device::Tilt: active = t.eq && ! v.bypassEq && v.eqBands[1].on; break;
+                        case Device::Low: active = t.eq && ! v.bypassEq && v.eqBands[2].on; break;
+                        case Device::Bands: active = active && t.eq && ! v.bypassEq; break;
+                        case Device::Limiter: break;
+                    }
+                    if (active != truthOf (sounded)) origin = master.recipe.readyVersion == 1 ? "hand" : "machine";
+                    workedLine (Of::fields[field], active, origin);
+                }
+                else workedLine (Of::fields[field], sounded, origin);
+            }, settings, layers.machine, layers.hand, def);
+        });
+        if (chain) renderState (rendered);
     }
 };
 
@@ -201,6 +399,7 @@ void identifyField (Answer& answer, std::string_view path, const Rules& rules) n
 }
 
 std::string_view ProjectText::view() const noexcept { return { data.get(), size }; }
+std::string_view WorkedText::view() const noexcept { return { data.get(), size }; }
 Checked Session::exportProjectBytes() const noexcept
 {
     if (checkFloatingPointEnvironment() != Status::Ok) return { Rejection::FloatingPointEnvironment, kNoField, 0 };
@@ -228,6 +427,38 @@ ProjectText Session::exportProject() const noexcept
     out.size = std::size_t (need.bytes);
     out.data.reset (new char[out.size]);
     Writer w { out.data.get() }; w.project (project_, detail::rules(), source_.channels);
+    return out;
+}
+Checked Session::exportWorkedBytes (MasterId id) const noexcept
+{
+    if (checkFloatingPointEnvironment() != Status::Ok) return { Rejection::FloatingPointEnvironment, kNoField, 0 };
+    if (masterCount_ == 0) return { Rejection::UnknownMaster, kNoField, 0 };
+    const Kept* const first = masters_.get();
+    const Kept* const last = first + masterCount_;
+    const Kept* const master = std::find_if (first, last, [id] (const Kept& k) { return k.id == id; });
+    if (master == last || ! master->report) return { Rejection::UnknownMaster, kNoField, 0 };
+    Writer w; w.worked (id, *master, masterRows_[std::size_t (master - masters_.get())].workedReady, detail::rules(), source_.channels);
+    return { Rejection::None, kNoField, w.size };
+}
+Rejection Session::exportWorked (MasterId id, std::span<char> output) const noexcept
+{
+    const auto need = exportWorkedBytes (id);
+    if (need.rejection != Rejection::None) return need.rejection;
+    if (output.size() < need.bytes) return Rejection::TooLong;
+    const Kept* const master = std::find_if (masters_.get(), masters_.get() + masterCount_,
+        [id] (const Kept& k) { return k.id == id; });
+    Writer w { output.data() }; w.worked (id, *master, masterRows_[std::size_t (master - masters_.get())].workedReady, detail::rules(), source_.channels);
+    return Rejection::None;
+}
+WorkedText Session::exportWorked (MasterId id) const noexcept
+{
+    WorkedText out;
+    const auto need = exportWorkedBytes (id);
+    out.rejection = need.rejection;
+    if (need.rejection != Rejection::None) return out;
+    out.size = std::size_t (need.bytes);
+    out.data.reset (new char[out.size]);
+    (void) exportWorked (id, { out.data.get(), out.size });
     return out;
 }
 Answer Session::importProject (CommandId id, std::string_view bytes) noexcept

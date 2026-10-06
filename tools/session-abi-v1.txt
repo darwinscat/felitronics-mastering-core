@@ -2012,6 +2012,70 @@ wire union SessionCommand GradeDamageCommand
 codec GlueFieldsValue.mix double
 codec GlueFieldsTouched.mix double?
 codec GlueFinding.mix double
+
+# v0.18.0: the analyzers this unit advances, each with its own fraction; null outside the phase.
+codec AnalyzerProgress.analyzer Analyzer
+codec AnalyzerProgress.fraction double?
+codec Phase.analyzers AnalyzerProgress[<=3]?
+enum felitronics::session::DamageWaitReason::Queue=0
+enum felitronics::session::DamageWaitReason::SourceMeasurement=1
+codec DamageJobEntry.waitReason DamageWaitReason?
+enum felitronics::session::text::FactId::MasterLandingWall=618
+enum felitronics::session::text::FactId::MasterLandingWallDetail=619
+codec LandingSummary.limiterWall bool
+codec LandingSummary.limiterSlope double?
+codec LandingSummary.limiterWallP95Db double?
 wire EditDeviceGlueFields.mix? WireNumber | null
 wire RevertEditsGlueFields.mix? boolean
 enum felitronics::session::text::Term::FieldGlueMix=151
+enum felitronics::session::SourceClipStatus::NotMeasured=0
+enum felitronics::session::SourceClipStatus::Clean=1
+enum felitronics::session::SourceClipStatus::Clipped=2
+enum felitronics::session::SourceClipStatus::InterSampleOvers=3
+enum felitronics::session::SourceClipStatus::SampleOvers=4
+enum felitronics::session::Rejection::ClippedGain=39
+enum felitronics::session::text::FactId::RejectedClippedGain=139
+enum felitronics::session::text::FactId::SourceNoClipping=448
+enum felitronics::session::text::FactId::SourceClippingUnmeasured=449
+enum felitronics::session::text::FactId::SourceRealClipping=450
+enum felitronics::session::text::FactId::SourceInterSampleOvers=451
+enum felitronics::session::text::FactId::SourceSampleOvers=452
+enum felitronics::session::text::FactId::SourceAlreadyMastered=453
+codec SourceReport.clipping SourceClipStatus
+codec SourceReport.clippingReason MeasurementReason
+codec SourceReport.alreadyMastered bool?
+codec SourceReport.loudnessLufs double?
+codec SourceReport.truePeakDbTp double?
+codec SourceReport.plrDb double?
+codec SourceReport.facts Fact[<=2]
+codec Snapshot.sourceReport SourceReport?
+wire MasterCommand.allowClippedGain? boolean
+function fc_session_worked_report_size fc_session_status(fc_session,uint32_t,uint32_t*)
+function fc_session_worked_report_copy fc_session_status(fc_session,uint32_t,char*,uint32_t,uint32_t*)
+enum FC_SESSION_ERR_UNKNOWN_MASTER=20
+wire union SessionStatus 20
+enum felitronics::session::text::FactId::SourceFormerLossy=454
+enum felitronics::session::text::FactId::SourceMasterLouder=455
+enum felitronics::session::text::FactId::SourceDeliveryAsIs=456
+enum felitronics::session::text::FactId::SourceDeliveryPeaksOnly=457
+codec Recipe.deliveryBits uint8
+codec MasterReport.deliveryMode DeliveryMode
+codec MasterReport.deliveryGainDb double
+codec MasterReport.deliveryDithered bool
+codec SourceReport.deliveryMode DeliveryMode
+codec SourceReport.deliveryCeilingDbTp double?
+codec SourceReport.deliveryGainDb double?
+codec SourceReport.advice Fact[<=2]
+wire MasterCommand.masterAnyway? boolean
+# Every landing render's explanation (05.10, v0.18.0). The full-pass count remains LandingSummary.passes.
+enum felitronics::session::LandingPassReason::AimAtTarget=0
+enum felitronics::session::LandingPassReason::PeakProbe=1
+enum felitronics::session::LandingPassReason::StepBackBySlope=2
+enum felitronics::session::LandingPassReason::InsideBracket=3
+enum felitronics::session::LandingPassReason::ProveEdge=4
+enum felitronics::session::LandingPassReason::DeliverWinner=5
+codec LandingPass.limiterP95Db double?
+codec LandingPass.reason LandingPassReason
+# The max budget proof resolution a frontend may ask for on a master (05.10 correction, v0.18.0): absent takes
+# [landing.max] budgetResolutionDb; the wire domain is 0.05…1 dB.
+wire MasterCommand.budgetResolutionDb? WireNumber

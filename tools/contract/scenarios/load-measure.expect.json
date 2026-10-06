@@ -39,7 +39,7 @@
       "kind": "snapshot",
       "index": 1,
       "path": "measurementProgress.completedUnits",
-      "value": 0,
+      "value": 1,
       "session": "main"
     }
   ],

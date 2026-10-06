@@ -5,6 +5,7 @@
 #include "MeasurementWorkspace.h"
 #include "LiveMeasurements.h"
 #include "Driver.h"
+#include <felitronics/session/Config.h>
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/session/Wire.h>
 #include <felitronics/analysis/BandCrestResult.h>
@@ -571,6 +572,31 @@ void tempoFinishCanStopAndContinue()
             ok (same (x.values[j], y.values[j]), "resumed tempo curve and candidates match bit for bit");
     }
 }
+// A WAITING MAX MASTER EXPECTS ITS MODE'S RENDERS, as the rendering one does ([progress.master]
+// expectedPassesMaxClean): the CD target waits for tempo, here with its loudness mode edited to max clean.
+void waitingMaxMasterExpects()
+{
+    constexpr unsigned rate = 48000, frames = rate * 12;
+    std::vector<float> pcm (frames);
+    for (unsigned i = 0; i < frames; ++i) pcm[i] = i % 24000 < 300 ? .2f : 0.0f;
+    const float* planes[] { pcm.data() };
+    auto made = Session::create(); auto& s = *made.session;
+    (void) s.apply (command::Load { 1, { planes, 1, frames, rate }, {} });
+    (void) s.apply (command::SetTarget { 2, "cd" });
+    command::EditTarget edit { 3, {} };
+    edit.fields.loudnessMode = LoudnessMode::MaxClean;
+    const bool edited = s.apply (edit).rejection == Rejection::None;
+    while (s.state() == State::Loaded) (void) s.step (16);
+    const auto wanted = std::uint32_t (felitronics::session::config::Config::load().config.engine.progress.masterExpectedPassesMaxClean);
+    const auto job = s.apply (command::Master { 4 }).job;
+    const auto asked = s.snapshot().view().masterProgress;
+    (void) s.step (1);
+    const auto stepped = s.snapshot().view().masterProgress;
+    ok (edited && job != 0 && s.job() == job && s.masters().empty() && asked.name == PhaseName::Analyzers
+            && stepped.name == PhaseName::Analyzers && asked.totalPasses == wanted && stepped.totalPasses == wanted,
+        "a max clean master waiting for tempo expects " + std::to_string (wanted) + " renders ("
+            + std::to_string (asked.totalPasses) + " asked, " + std::to_string (stepped.totalPasses) + " waiting)");
+}
 void masterWaitsForTempo()
 {
     constexpr unsigned rate = 48000, frames = rate * 12;
@@ -819,14 +845,110 @@ void wholeFileWall()
     for (const auto& [name, expected] : fields) all = all && value (result, name).value && same (*value (result, name).value, expected);
     ok (all, "every field of the whole file's wall is the analyzer's, bit for bit");
 }
+void analyzerProgress()
+{
+    std::vector<float> samples (48000);
+    for (std::size_t i = 0; i < samples.size(); ++i)
+        samples[i] = float (.1 * felitronics::core::det::sin (double (i) * .03));
+    const float* planes[] { samples.data() };
+    auto made = Session::create(); auto& s = *made.session;
+    (void) s.apply (command::Load { 1, { planes, 1, samples.size(), 48000 }, {} });
+    double previous[kAnalyzers] {};
+    unsigned seen[kAnalyzers] {};
+    bool named = true, monotone = true, outside = true;
+    while (s.measurementJob() || s.needlesJob())
+    {
+        const auto& run = detail::Inspector::run (s);
+        const bool active = detail::Inspector::live (s) == 9 && run.cursor < run.order.size();
+        const auto expected = active ? run.order[run.cursor] : Analyzer::Loudness;
+        (void) s.step (1);
+        const auto snap = s.snapshot();
+        const auto& p = snap.view().measurementProgress;
+        if (p.name != PhaseName::Analyzers) { outside = outside && ! p.analyzers; continue; }
+        if (! active || run.finished || s.needlesJob() != 0) continue;
+        const bool grouped = p.analyzers && p.analyzers->count == 3;
+        named = named && p.analyzers && (p.analyzers->count == 1 || p.analyzers->count == 3)
+            && (! grouped || (p.analyzers->items[0].analyzer == Analyzer::LowEnd
+                && p.analyzers->items[1].analyzer == Analyzer::LowEnd150
+                && p.analyzers->items[2].analyzer == Analyzer::InfraLow));
+        if (! p.analyzers) continue;
+        for (unsigned i = 0; i < p.analyzers->count; ++i)
+        {
+            const auto& row = p.analyzers->items[i];
+            named = named && (grouped || row.analyzer == expected);
+            const auto index = std::size_t (row.analyzer);
+            monotone = monotone && row.fraction && *row.fraction >= previous[index] && *row.fraction <= 1;
+            if (row.fraction) previous[index] = *row.fraction;
+            ++seen[index];
+        }
+    }
+    ok (named, "Analyzers names the instrument the pump advances and lists all three low-end analyzers during their shared walk");
+    bool every = true;
+    for (const auto id : detail::SourceMeasurements::order) every = every && seen[std::size_t (id)] > 1;
+    ok (every && monotone, "each analyzer has its own monotone fraction in 0..1");
+    ok (outside, "the analyzer list is null outside Analyzers");
+}
+// THE WHOLE BAR MOVES WITH EVERY ANALYZER: after the shared low-end walk each next analyzer adds its read share too. On a
+// four-second source the bar once stood still at the low ends' weight while Forensics read the whole file.
+void overallAnalyzerFraction()
+{
+    std::vector<float> samples (4u * 48000u);
+    for (std::size_t i = 0; i < samples.size(); ++i)
+        samples[i] = float (.1 * felitronics::core::det::sin (double (i) * .03));
+    const float* planes[] { samples.data() };
+    auto made = Session::create(); auto& s = *made.session;
+    (void) s.apply (command::Load { 1, { planes, 1, samples.size(), 48000 }, {} });
+    double previous = 0, last = -1, forensicsFirst = -1, forensicsLast = -1;
+    bool monotone = true;
+    for (unsigned i = 0; i < 100000 && s.measurementJob() != 0; ++i)
+    {
+        const auto& run = detail::Inspector::run (s);
+        const bool forensics = detail::Inspector::live (s) == 9 && run.cursor < run.order.size()
+            && run.order[run.cursor] == Analyzer::Forensics && run.frames != 0;
+        (void) s.step (1);
+        const auto snapshot = s.snapshot(); const auto& p = snapshot.view().measurementProgress;
+        if (p.name != PhaseName::Analyzers) continue;
+        monotone = monotone && p.fraction >= previous && p.fraction <= 1;
+        previous = last = p.fraction;
+        if (! forensics) continue;
+        if (forensicsFirst < 0) forensicsFirst = p.fraction;
+        forensicsLast = p.fraction;
+    }
+    ok (monotone && same (last, 1.0), "the overall analysis fraction never falls and ends at one");
+    ok (forensicsFirst >= 0 && forensicsLast > forensicsFirst,
+        "the overall analysis fraction rises while Forensics reads the file after the shared low-end walk ("
+            + std::to_string (forensicsFirst) + " -> " + std::to_string (forensicsLast) + ")");
+}
+void cancelSharedLowEnds()
+{
+    std::vector<float> samples (4u * 48000u, 0.1f); const float* planes[] { samples.data() };
+    auto made = Session::create(); auto& s = *made.session;
+    (void) s.apply (command::Load { 1, { planes, 1, samples.size(), 48000 }, {} });
+    bool walkingTogether = false;
+    for (unsigned i = 0; i < 10000 && s.measurementJob() != 0; ++i)
+    {
+        (void) s.step (1);
+        const auto snapshot = s.snapshot(); const auto& p = snapshot.view().measurementProgress;
+        walkingTogether = p.analyzers && p.analyzers->count == 3 && p.analyzers->items[0].fraction
+            && *p.analyzers->items[0].fraction > 0.0;
+        if (walkingTogether) break;
+    }
+    const auto job = s.measurementJob();
+    const auto stopped = job != 0 ? s.apply (command::Cancel { 2, job }) : Answer {};
+    const auto view = s.snapshot(); bool all = walkingTogether && stopped.rejection == Rejection::None;
+    for (const auto id : { Analyzer::LowEnd, Analyzer::LowEnd150, Analyzer::InfraLow })
+        all = all && view.view().measurements[std::size_t (id)].status == MeasurementStatus::Cancelled;
+    ok (all && s.measurementJob() == 0, "cancelling the shared low-end walk ends all three analyzer results together");
+}
 int main()
 {
+    analyzerProgress(); overallAnalyzerFraction(); cancelSharedLowEnds();
     fixture (2, 48000, 192000, 317, true);
     fixture (1, 48000, 192000, 1024, false);
     fixture (2, 8000, 800, 1, false);
     fixture (2, 8000, 8000, 319, false);
     optionalFailure(); missingMandatory(); driftingHum(); truncatedLists(); finiteSourceOverflow(); cachedSourceAndCommands(); unplacedCommandsDuringWork();
-    tempoFinishCanStopAndContinue(); masterWaitsForTempo(); masterTempoDependencyPolicy(); longTempoParity(); deviceTempoPolicy();
+    tempoFinishCanStopAndContinue(); masterWaitsForTempo(); waitingMaxMasterExpects(); masterTempoDependencyPolicy(); longTempoParity(); deviceTempoPolicy();
     wholeFileWall();
     ok (! detail::SourceWarnings::wideBass (.059999999) && detail::SourceWarnings::wideBass (.06), "wide bass includes exactly six percent");
     ok (detail::SourceWarnings::quiet (-40) == text::FactId::Value && detail::SourceWarnings::quiet (-40.0001) == text::FactId::SourceQuiet

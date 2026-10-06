@@ -56,5 +56,12 @@
       "hpfFrequency": 41.125,
       "lowDb": 2.375
     }
+  },
+  "mastered": {
+    "rate": 48000,
+    "channels": 1,
+    "frames": 48000,
+    "period": 128,
+    "scale": 450
   }
 }

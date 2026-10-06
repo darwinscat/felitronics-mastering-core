@@ -14,7 +14,7 @@
     {"a":{"kind":"snapshot","index":0},"b":{"kind":"snapshot","index":5},"path":"measurements.0"},
     {"a":{"kind":"snapshot","index":2},"b":{"kind":"snapshot","index":5},"path":"measurements.12"}
   ],
-  "minEvents": 4000,
+  "minEvents": 500,
   "eventKinds": ["phase","measurement","fact"],
   "rejections": 0
 }

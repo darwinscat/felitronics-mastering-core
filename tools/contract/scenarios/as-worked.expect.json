@@ -1,0 +1,13 @@
+{
+  "checks": [
+    {
+      "kind": "snapshot",
+      "session": "main",
+      "path": "masters.0.id",
+      "value": 2
+    }
+  ],
+  "minEvents": 10,
+  "eventKinds": ["phase", "fact"],
+  "rejections": 0
+}

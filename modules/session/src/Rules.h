@@ -35,6 +35,7 @@ struct Knob
 };
 
 // One row of [targets] (targets.toml), as far as the commands read it.
+enum class TargetClass : std::uint8_t { Specification, Streaming, Other };
 struct TargetRow
 {
     std::string_view key;
@@ -45,6 +46,7 @@ struct TargetRow
     std::int32_t sampleRate = 0;               // delivery rate, Hz; 0 keeps the source's
     bool noClipper = false;
     bool vinyl = false;                        // the master goes to a cutting lathe: its tp is the medium's ceiling
+    TargetClass targetClass = TargetClass::Other;
     LoudnessMode loudnessMode = LoudnessMode::Manual;   // loudnessMode: a max row's mode
     std::optional<Decimal> lowDb;
     std::optional<Decimal> glue;               // [glue] byTarget, on the knob, when it names this target

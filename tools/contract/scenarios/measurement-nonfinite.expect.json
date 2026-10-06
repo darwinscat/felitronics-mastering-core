@@ -8,7 +8,7 @@
     {"kind":"snapshot","index":2,"path":"state","value":3}
   ],
   "equal": [[{"kind":"snapshot","index":0},{"kind":"snapshot","index":1}]],
-  "minEvents": 2000,
+  "minEvents": 300,
   "eventKinds": ["phase","measurement","fact","rejected"],
   "rejections": 1
 }

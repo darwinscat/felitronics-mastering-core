@@ -49,6 +49,26 @@ namespace
 {
 std::string g_targetsText, g_engineText, g_bandsText;   // the source documents (bands.toml: felitronics-bands'), read in main()
 
+template<class T> constexpr bool hasMix = requires (T value) { value.mix; };
+
+void theCompressorHasNoUnusedMix()
+{
+    felitronics::test::group ("the glue owns the mix; the compressor has no unused setting");
+    ok (! hasMix<config::Compressor>, "config::Compressor has no mix member");
+    auto engine = g_engineText;
+    const auto start = engine.find ("[compressor]\n");
+    const auto mix = engine.find ("\nmix = 1\n", start);
+    if (mix != std::string::npos && mix < engine.find ("[compressor.limits]", start))
+        engine.erase (mix + 1, std::string_view ("mix = 1\n").size());
+    ok (Config::bind (g_targetsText, engine).ok(), "the compressor binds without a mix");
+    engine.insert (start + std::string_view ("[compressor]\n").size(), "mix = 1\n");
+    const auto loaded = Config::bind (g_targetsText, engine);
+    bool unknown = false;
+    for (const auto& problem : loaded.problems)
+        unknown = unknown || (problem.fault == config::Fault::UnknownKey && problem.path == "compressor.mix");
+    ok (unknown, "the retired compressor.mix is refused as an unknown key");
+}
+
 void mustAccept (config::Document doc, std::string_view from, std::string_view to)
 {
     const auto changed = plant (doc == config::Document::Engine ? g_engineText : g_targetsText, from, to, to);
@@ -122,6 +142,10 @@ void theSchemaRefuses()
     using config::Refusal;
     const auto E = Document::Engine;
     const auto T = Document::Targets;
+    mustRefuse (E, "limiterSlopeBelow = 0.2", "limiterSlopeBelow = 0", "0", Fault::OutOfRange, "landing.limiterSlopeBelow");
+    mustRefuse (E, "limiterSlopeSpacingDb = 0.5", "limiterSlopeSpacingDb = 0", "0", Fault::OutOfRange, "landing.limiterSlopeSpacingDb");
+    mustRefuse (E, "budgetResolutionDb = 0.25", "budgetResolutionDb = 0.01", "0.01", Fault::OutOfRange,
+                "landing.max.budgetResolutionDb");
 
     // Unknown keys — a typo is an error, never a setting silently ignored — in a table and inside an inline row, and the
     // key the typo stood for is missing, pointed at the table that lacks it.
@@ -170,7 +194,7 @@ void theSchemaRefuses()
     mustAccept (E, "hzMin = 15", "hzMin = 15.5");
 
     // Refusals across keys: names — the one a row goes by among them, which an empty key cannot be.
-    mustRefuse (T, "ebu          = {", "\"\"           = {", "{ group = \"streaming\", lufs = -23", Fault::Refused, "targets.\"\"",
+    mustRefuse (T, "ebu          = {", "\"\"           = {", "{ group = \"streaming\", class = \"specification\", lufs = -23", Fault::Refused, "targets.\"\"",
                 Refusal::EmptyKey);
     mustRefuse (E, "byTarget = { cd = 2.6 }", "byTarget = { cdd = 2.6 }", "2.6", Fault::Refused, "glue.byTarget.cdd", Refusal::NotATarget);
     mustRefuse (T, "default = \"allStreaming\"", "default = \"allStreamin\"", "\"allStreamin\"", Fault::Refused, "default",
@@ -246,7 +270,7 @@ void theSchemaRefuses()
                 Refusal::AnalyzerRefuses);
     mustRefuse (E, "enterDb = 6", "enterDb = 0", "[stereoBursts]", Fault::Refused, "stereoBursts", Refusal::AnalyzerRefuses);
     // ...a value off its knob's step.
-    mustAccept (T, "appleMusic   = { group = \"streaming\", lufs = -16, tp = -1,", "appleMusic   = { group = \"streaming\", lufs = -16, tp = -1.05,");
+    mustAccept (T, "appleMusic   = { group = \"streaming\", class = \"streaming\", lufs = -16, tp = -1,", "appleMusic   = { group = \"streaming\", class = \"streaming\", lufs = -16, tp = -1.05,");
     mustAccept (T, "lowDb = 0.5", "lowDb = 0.55");
     mustAccept (E, "betweenCutDb = 1.5", "betweenCutDb = 1.25");
     mustAccept (E, "lowWidth = 0\n", "lowWidth = 0.03\n");
@@ -454,9 +478,9 @@ void theSoundIsWhatCanChangeAMaster()
     felitronics::test::group ("sound: what can change a master; what only shows or prints moves all alone");
     const config::Versions v = Config::versions();
     struct Case { config::Document document; std::string_view from, to, what; bool soundMoves; };
-    const std::string spotifyRow = "spotify      = { group = \"streaming\", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 32, "
+    const std::string spotifyRow = "spotify      = { group = \"streaming\", class = \"streaming\", lufs = -14, tp = -1, monoBass = 120, hpfFloor = 32, "
                                    "hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }\n";
-    const std::string loudRow = "spotifyLoud  = { group = \"streaming\", lufs = -11, tp = -2, monoBass = 120, hpfFloor = 32, "
+    const std::string loudRow = "spotifyLoud  = { group = \"streaming\", class = \"streaming\", lufs = -11, tp = -2, monoBass = 120, hpfFloor = 32, "
                                 "hpfSlopeDbPerOct = 24, noteLossDb = 1, sampleRate = 0, bitDepth = 24 }\n";
     const std::string rows = spotifyRow + loudRow, swapped = loudRow + spotifyRow;
     const Case cases[] = {
@@ -609,6 +633,7 @@ int main (int argc, char** argv)
         return 2;
     }
     theEmbeddedConfigIsTheSource();
+    theCompressorHasNoUnusedMix();
     theBandsAreFelitronicsBands();
     theSchemaRefuses();
     theSchemaAdmitsWhatTheAnalyzersAdmit();

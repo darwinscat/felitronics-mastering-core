@@ -33,6 +33,7 @@ struct Inspector
     {
         return ! s.masterJob_ && ! s.masterAudio_.samples && ! s.masterRows_ && ! s.masters_
             && s.masterRoom_ == 0 && s.masterCount_ == 0 && s.masterJobBytes_ == 0
+            && ! s.lateMasterJob_ && s.lateMasterId_ == 0 && s.lateMasterJobBytes_ == 0
             && ! s.damageJob_ && s.damageJobId_ == 0 && s.damageJobBytes_ == 0;
     }
     static void lastJob (Session& s, JobId last) noexcept { s.lastJob_ = last; }
@@ -281,8 +282,8 @@ void masterAtTheCeilingWithADamage()
     (void) s.apply (readyMaster (s, 2));
     for (unsigned i = 0; i < 400000 && s.job() != 0; ++i) (void) s.step (1);
     (void) s.apply (command::GradeDamage { 3, s.masters()[0].id });
-    // Into the damage's first walk: its chains, meters and PEAQ allocated.
-    for (unsigned i = 0; i < 64 && ! s.damageJobs().empty(); ++i) (void) s.step (1);
+    // The late impact joins first; then the damage enters its first walk and owns its admitted room.
+    for (unsigned i = 0; i < 400000 && s.damageJob() == 0; ++i) (void) s.step (1);
     const bool released = s.releaseMaster (s.pendingMaster()) == MasterTransferStatus::Ok;
     const auto request = readyMaster (s, 4);
     const auto unlimited = s.check (request);
@@ -385,6 +386,105 @@ template <typename Until> bool stepUntil (GradeRun& r, Until&& until)
     return false;
 }
 bool runOut (GradeRun& r) { return stepUntil (r, [] { return false; }), true; }
+
+// DELIVERY ENDS BEFORE ITS IMPACT JOIN. PCM is transferable while the report says Pending; the later crest fact follows
+// MasterReady. A cancel addresses that join by the delivered job id, a new master settles it Cancelled, and forgetting
+// its master releases it without leaving work behind.
+void lateMasterCrestLifecycle()
+{
+    {
+        auto r = gradeSession (1.5);
+        auto& s = *r.session;
+        const auto master = deliver (r, 2);
+        const auto token = s.pendingMaster();
+        const auto shape = s.masterAudioShape (token);
+        std::vector<float> pcm (std::size_t (shape.frames * shape.channels));
+        const bool readyPending = master != 0 && token.master == master && ! pcm.empty()
+            && s.copyMaster (token, pcm) == MasterTransferStatus::Ok && s.masters().back().report
+            && s.masters().back().report->crest.status == MeasurementStatus::Pending;
+        (void) runOut (r);
+        std::size_t readyAt = r.events.size(), crestAt = r.events.size();
+        for (std::size_t i = 0; i < r.events.size(); ++i)
+            if (r.events[i].jobId == master && r.events[i].kind == EventKind::Fact)
+            {
+                const auto fact = r.events[i].payload.fact.view().id;
+                if (fact == text::FactId::MasterReady) readyAt = std::min (readyAt, i);
+                if (fact == text::FactId::MasterCrestDelivered || fact == text::FactId::MasterCrestSourceRate)
+                    crestAt = std::min (crestAt, i);
+            }
+        ok (readyPending && s.masters().back().report->crest.status == MeasurementStatus::Ready
+            && readyAt < crestAt && s.masterAudioBytes (token) == pcm.size() * sizeof (float),
+            "master PCM and report are ready with crest Pending; its impact joins later, after MasterReady");
+    }
+    {
+        auto r = gradeSession (1.5); auto& s = *r.session;
+        const auto master = deliver (r, 2);
+        const auto stopped = act (r, command::Cancel { 3, master });
+        ok (stopped.rejection == Rejection::None && s.masters().back().report->crest.status == MeasurementStatus::Cancelled
+            && s.pendingMaster().master == master,
+            "cancel by the delivered job id stops only its pending impact and leaves its PCM transferable");
+    }
+    {
+        auto r = gradeSession (1.5); auto& s = *r.session;
+        const auto first = deliver (r, 2);
+        const bool released = s.releaseMaster (s.pendingMaster()) == MasterTransferStatus::Ok;
+        const auto next = act (r, readyMaster (s, 3));
+        ok (released && next.rejection == Rejection::None && s.masters().front().id == first
+            && s.masters().front().report->crest.status == MeasurementStatus::Cancelled && s.job() == next.job,
+            "a new master settles the older pending impact Cancelled and starts independently (rejection "
+            + std::to_string (unsigned (next.rejection)) + ", status "
+            + std::to_string (unsigned (s.masters().front().report->crest.status)) + ", job "
+            + std::to_string (s.job()) + "/" + std::to_string (next.job) + ")");
+        (void) act (r, command::Cancel { 4, next.job });
+    }
+    {
+        auto r = gradeSession (1.5); auto& s = *r.session;
+        const auto master = deliver (r, 2);
+        const auto forgotten = act (r, command::Forget { 3, master });
+        ok (forgotten.rejection == Rejection::None && s.masters().empty() && s.step (1).state == StepState::Done,
+            "forget releases a pending impact with its retained master and leaves no orphan work");
+    }
+}
+
+void manualBudgetResolution()
+{
+    constexpr std::uint32_t rate = 48000;
+    constexpr std::size_t frames = 4u * rate;
+    std::vector<float> pcm (2u * frames);
+    for (std::size_t i = 0; i < frames; ++i)
+    {
+        double x = .16 * felitronics::core::det::sin (6.283185307179586 * 117.0 * double (i) / rate)
+                 + .03 * felitronics::core::det::sin (6.283185307179586 * 3061.0 * double (i) / rate);
+        if (i % 4096u == 0) x += .7;
+        pcm[i] = pcm[frames + i] = float (x);
+    }
+    GradeRun r; r.session = measuredSession (pcm, rate);
+    if (! r.session) { ok (false, "a session for the manual budget-resolution regression"); return; }
+    command::EditTarget edit { 2, { -10.0, -1.0 } };
+    if (act (r, edit).rejection != Rejection::None)
+    { ok (false, "the manual target for the budget-resolution regression"); return; }
+    auto request = readyMaster (*r.session, 3);
+    request.budgetResolutionDb = .05;
+    if (act (r, request).rejection != Rejection::None)
+    { ok (false, "the manual master accepts its budget resolution"); return; }
+    for (unsigned i = 0; i < 400000 && r.session->job() != 0; ++i) { (void) r.session->step (1); record (r); }
+    const auto& masters = r.session->masters();
+    const LandingSummary* landing = masters.empty() || ! masters.back().landing ? nullptr : &*masters.back().landing;
+    double lowestOver = std::numeric_limits<double>::infinity();
+    double delivered = std::numeric_limits<double>::quiet_NaN();
+    if (landing && ! landing->log.empty())
+    {
+        delivered = -std::numeric_limits<double>::infinity();
+        for (const auto& pass : landing->log)
+            if (pass.overBudget) lowestOver = std::fmin (lowestOver, pass.gainDb - pass.ceilingDbTp);
+            else if (pass.ceilingSafe) delivered = std::fmax (delivered, pass.gainDb - pass.ceilingDbTp);
+    }
+    std::printf ("        manual 0.05 proof: over %.5f, delivered %.5f, passes %u\n",
+        lowestOver, delivered, landing ? landing->passes : 0u);
+    ok (landing && landing->deliverable && std::isfinite (lowestOver) && lowestOver > delivered
+        && lowestOver - delivered <= .05 + 1.0e-9,
+        "a manual master proves its limiter budget to the requested 0.05 dB");
+}
 // The point of a walk: the running grade's damage walk (PEAQ) past `fraction` of the programme; 0: its first unit.
 bool atPoint (GradeRun& r, double fraction)
 {
@@ -570,6 +670,10 @@ void damageGrades()
         auto& s = *r.session;
         const auto master = deliver (r, 2);
         const auto job = act (r, command::GradeDamage { 3, master }).job;
+        // Delivery now leaves only its impact join. Let that release its workspace while this grade is still Waiting,
+        // so the deliberately exact ceiling below tests the damage's own turn rather than the earlier join.
+        const auto withImpact = s.liveBytes();
+        for (unsigned i = 0; i < 400000 && s.damageJob() == 0 && s.liveBytes() >= withImpact; ++i) (void) s.step (1);
         (void) s.setCapacity ({ s.liveBytes(), 9007199254740991.0 });
         (void) stepUntil (r, [&] { return s.damageJobs().empty(); });
         const auto last = lastOf (r.events, job);
@@ -830,7 +934,7 @@ void maxStopRules()
 void maxSearchPasses()
 {
     std::string seen;
-    bool fewEnough = true;
+    bool fewEnough = true, logsWhole = true, progressScaled = true;
     for (const bool dense : { false, true })
         for (const LoudnessMode mode : { LoudnessMode::MaxClean, LoudnessMode::MaxDense })
         {
@@ -841,17 +945,49 @@ void maxSearchPasses()
             command::EditTarget edit { 2, {} };
             edit.fields.loudnessMode = mode;
             (void) act (r, edit);
-            (void) deliver (r, 3);
+            // The budget's passes are the first landing's: a master pulled up to its floor records both landings.
+            std::uint32_t budgetPasses = 0;
+            if (act (r, readyMaster (*r.session, 3)).rejection == Rejection::None)
+                for (unsigned i = 0; i < 400000 && r.session->job() != 0; ++i)
+                {
+                    if (const auto* j = detail::Inspector::job (*r.session); j && j->floorPass) budgetPasses = j->floorFirstPasses;
+                    (void) r.session->step (1); record (r);
+                }
             const auto& s = *r.session;
             const auto& kept = s.masters().back();
             const auto passes = kept.landing ? kept.landing->passes : 99u;
             const auto stop = kept.report ? kept.report->maxStop : MaxStop::None;
+            if (stop != MaxStop::Floor) budgetPasses = passes;
             seen += std::string (dense ? "clicks " : "struck ") + (mode == LoudnessMode::MaxClean ? "clean " : "dense ")
-                  + std::to_string (passes) + " (stop " + std::to_string (unsigned (stop)) + "); ";
-            fewEnough = fewEnough && passes <= 6u && (stop == MaxStop::Budget || stop == MaxStop::Floor);
+                  + std::to_string (budgetPasses) + " of " + std::to_string (passes) + " (stop " + std::to_string (unsigned (stop)) + "); ";
+            fewEnough = fewEnough && budgetPasses <= 6u && (stop == MaxStop::Budget || stop == MaxStop::Floor)
+                && (stop != MaxStop::Floor || (budgetPasses > 0 && passes > budgetPasses));
+            bool rowValues = true;
+            if (! kept.landing) logsWhole = false;
+            else for (const auto& pass : kept.landing->log)
+            {
+                rowValues = rowValues && pass.limiterP95Db.has_value()
+                    && unsigned (pass.reason) <= unsigned (LandingPassReason::DeliverWinner);
+            }
+            logsWhole = logsWhole && rowValues;
+            double previous = 0.0, beforeFinal = 0.0;
+            for (const auto& event : r.events)
+                if (event.kind == EventKind::Phase)
+                {
+                    const auto& phase = event.payload.phase;
+                    if (phase.name == PhaseName::Pass)
+                    {
+                        progressScaled = progressScaled && phase.fraction >= previous && phase.fraction < 1.0;
+                        previous = beforeFinal = phase.fraction;
+                    }
+                    if (phase.name == PhaseName::Final)
+                        progressScaled = progressScaled && phase.fraction == 1.0 && 1.0 - beforeFinal <= 0.2000000001;
+                }
         }
     std::printf ("        max search passes: %s\n", seen.c_str());
     ok (fewEnough, "a max master's budget settles in six passes at most, proven: " + seen);
+    ok (logsWhole, "every retained full-file pass says its active P95 and reason");
+    ok (progressScaled, "max progress follows its expected full renders monotonically and jumps at most 0.2 at done");
 }
 
 // THE GLUE AT MIX 1 IS v0.16.0's DOWNWARD GLUE, TO THE BIT (v0.17.0). The pinned digest is v0.16.0's master on cd of the
@@ -906,14 +1042,69 @@ void glueAtFullMix()
     ok (parallel != 0 && parallel != kDownwardGlue, "the glue at its default 0.4: another master");
 }
 
+// THE FLOOR LANDING CONTINUES THE MASTER'S RECORD: the first landing's passes stay in the master's pass log ahead of the
+// floor landing's, with their reasons; the pass number never starts again and the bar keeps moving through the floor.
+void maxFloorRecord()
+{
+    GradeRun r;
+    const auto pcm = clicks (48000, 3.0);
+    r.session = measuredSession (pcm, 48000);
+    if (! r.session) { ok (false, "the floor record: a session"); return; }
+    auto& s = *r.session;
+    (void) act (r, command::SetTarget { 2, "maxClean" });
+    const auto job = act (r, readyMaster (s, 3)).job;
+    std::uint32_t lastPass = 0, passFacts = 0, floorFacts = 0;
+    double lastFraction = 0.0, atSwitch = -1.0, floorSecond = -1.0;
+    bool monotone = true, switched = false;
+    for (unsigned i = 0; i < 400000 && s.job() != 0; ++i)
+    {
+        (void) s.step (1);
+        const auto* j = detail::Inspector::job (s);
+        const bool floorNow = j && j->floorPass;
+        if (floorNow && ! switched) { switched = true; atSwitch = lastFraction; }
+        for (const auto& e : s.events())
+        {
+            if (e.jobId != job) continue;
+            if (e.kind == EventKind::Phase && (e.payload.phase.name == PhaseName::Pass || e.payload.phase.name == PhaseName::Final))
+            {
+                monotone = monotone && e.payload.phase.pass >= lastPass && e.payload.phase.fraction >= lastFraction;
+                lastPass = e.payload.phase.pass; lastFraction = e.payload.phase.fraction;
+            }
+            if (e.kind == EventKind::Fact && e.payload.fact.view().id == text::FactId::MasterPass)
+            {
+                ++passFacts;
+                // The floor landing's second pass begins: its first has rendered, and the bar has moved with it.
+                if (floorNow && ++floorFacts == 2) floorSecond = lastFraction;
+            }
+        }
+        record (r);
+    }
+    const auto first = passFacts - floorFacts;
+    const auto masters = s.masters();
+    const std::optional<LandingSummary> kept = masters.empty() ? std::optional<LandingSummary> {} : masters.back().landing;
+    const auto* landing = kept ? &*kept : nullptr;
+    bool underFloor = false;
+    for (std::size_t i = 0; landing && i < first && i < landing->log.size(); ++i)
+        underFloor = underFloor || landing->log[i].achievedLufs < -14.1;
+    ok (switched && first > 0 && floorFacts > 0 && landing && landing->passes == passFacts && landing->log.size() == passFacts
+            && landing->log[0].reason == LandingPassReason::AimAtTarget && underFloor
+            && landing->log[first].reason == LandingPassReason::AimAtTarget,
+        "a max master pulled up to its floor keeps both landings in its record: " + std::to_string (first) + " + "
+            + std::to_string (floorFacts) + " passes, recorded " + std::to_string (landing ? landing->passes : 0u));
+    ok (monotone, "its pass number and its bar never go back across the floor landing");
+    ok (switched && floorSecond > atSwitch, "its bar moves with the floor landing's first render ("
+        + std::to_string (atSwitch) + " -> " + std::to_string (floorSecond) + ")");
+}
 int main()
 {
     damageResampler();
+    manualBudgetResolution();
     glueAtFullMix();
     maxSearchPasses();
     damageGrades();
+    lateMasterCrestLifecycle();
     maxMasterLanding();
-    maxFloor();
+    maxFloor(); maxFloorRecord();
     maxStopRules();
     damageWithoutAnId();
     damageReferenceBelowTheKnob();
@@ -1069,22 +1260,18 @@ int main()
     const auto rules = felitronics::session::config::Config::load();
     const auto& landingRules = rules.config.engine.landing;
     const double loudBudget = landingRules.middleLufs.max < -5.0 ? landingRules.loudBudgetDb : std::numeric_limits<double>::quiet_NaN();
-    char budgetSaid[64];
-    std::snprintf (budgetSaid, sizeof budgetSaid, "%g dB", loudBudget);
     ok (demanding.rejection == Rejection::None && missStart.rejection == Rejection::None
         && miss.landing && miss.landing->status == LandingStatus::TargetUnreachable
-        && miss.landing->binding == LandingConstraint::LimiterGainReduction
+        && miss.landing->binding == LandingConstraint::None && miss.landing->limiterWall
+        && miss.landing->limiterSlope && *miss.landing->limiterSlope < .2
         && miss.landing->deliverable && ! miss.landing->peaksAboveCeiling && miss.landing->passes < 12
-        && budgetProven (*miss.landing)
         && miss.report && miss.report->cost && miss.report->cost->limiterP95Db.value && *miss.report->cost->limiterP95Db.value <= loudBudget
         && miss.report && ! miss.report->peaksAboveCeiling && ! MasterReportText::peaksAboveCeiling (*miss.report)
         && miss.landing->truePeakDbTp && *miss.landing->truePeakDbTp <= -6.0
         && s.pendingMaster().master == miss.id && s.masterWavPlan (s.pendingMaster()),
-        "an unreachable loudness goal stops at the loud target's limiter budget of " + std::string (budgetSaid) + ", named on its "
-        "proof — a render marked over it within 0.25 dB above the one delivered — its delivered P95 inside it, and retains "
-        "the best ceiling-safe PCM");
+        "an unreachable loudness goal stops at the limiter wall inside the 7.5 dB budget, and retains ceiling-safe PCM");
     {
-        // −6 LUFS under −6 dBTP: the ceiling holds this landing, not the budget — whatever passes went over it.
+        // −6 LUFS under −6 dBTP: the slope stops this landing before the old pass limit; the budget is not its cause.
         auto ceilingMade = Session::create();
         auto& c = *ceilingMade.session;
         (void) c.apply (command::Load { 1, { planes, 2, left.size(), rate }, { "test.wav", rate, true, 24 } });
@@ -1100,9 +1287,9 @@ int main()
         std::printf ("    −6 LUFS under −6 dBTP: status %d binding %d, %.3f LUFS, %u passes\n", landed ? (int) l.status : -1,
                      landed ? (int) l.binding : -1, landed && l.achievedLufs ? *l.achievedLufs : 0.0, landed ? l.passes : 0u);
         ok (edited.rejection == Rejection::None && ceilingStart.rejection == Rejection::None && landed && l.deliverable
-            && l.status == LandingStatus::PassLimit && l.binding != LandingConstraint::LimiterGainReduction && ! budgetProven (l),
-            "−6 LUFS under −6 dBTP is held by the ceiling: no render over the budget stands just above the one delivered, "
-            "and the budget is not named");
+            && l.status == LandingStatus::TargetUnreachable && l.limiterWall
+            && l.binding == LandingConstraint::None && ! budgetProven (l),
+            "−6 LUFS under −6 dBTP reaches the limiter wall without naming the budget");
     }
     const auto missToken = s.pendingMaster();
     const auto filePlan = s.masterWavPlan (missToken);

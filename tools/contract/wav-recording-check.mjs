@@ -106,8 +106,11 @@ for (const item of scenarios.formats) {
 const miss = wire(scenarios.miss.snapshot).masters.at(-1).landing;
 assert.equal(sha(Buffer.from(JSON.stringify(scenarios.miss.target))), scenarios.miss.targetSha256);
 assert.equal(sha(Buffer.from(JSON.stringify(scenarios.unsafe.target))), scenarios.unsafe.targetSha256);
-assert.equal(miss.status, 2);
-assert.equal(miss.passes, 12);
+assert.equal(miss.status, 1);
+assert.equal(miss.passes, 2);
+assert.equal(miss.limiterWall, true);
+assert.ok(miss.limiterSlope < 0.2);
+assert.ok(miss.limiterWallP95Db < 7.5);
 assert.equal(miss.deliverable, true);
 assert.ok(Number.isFinite(miss.missLu) && miss.truePeakDbTp <= -6);
 assert.equal(scenarios.miss.export.repeatStatus, 0);

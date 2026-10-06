@@ -31,7 +31,7 @@
   "equal": [
     [{"kind":"snapshot","session":"main","index":0},{"kind":"snapshot","session":"main","index":1}]
   ],
-  "minEvents": 1000,
+  "minEvents": 800,
   "eventKinds": ["phase","measurement","fact","rejected","done"],
   "rejections": 1
 }

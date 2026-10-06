@@ -150,6 +150,11 @@ void lifecycle()
     load(s,pcm,48000,2); readings(s); target(s,-6); (void)detail::Driver::measured1(s,s.measurementJob(),s.source().hash);
     const auto first=s.needlesJob(); (void)s.step(3); const auto progress=s.snapshot().view().needlesProgress;
     ok(progress.completedUnits==3,"preparation and two chunks report progress");
+    ok (progress.analyzers && progress.analyzers->count == 1
+        && progress.analyzers->items[0].analyzer == Analyzer::Excursions
+        && progress.analyzers->items[0].fraction
+        && same (*progress.analyzers->items[0].fraction, progress.fraction),
+        "the peak-excursion job names its analyzer with its own fraction");
     const auto source=s.source().hash;
     ok(s.apply(command::Cancel{3,first}).rejection==Rejection::None,"cancel needles mid-job");
     ok(s.source().hash==source && s.state()==State::Measured1 && s.needlesJob()==0

@@ -214,6 +214,16 @@ export async function runWasm(modulePath, scriptPath, {reorder = false, corruptR
                         record('project', text.toString('hex'));
                     }); continue;
                 }
+                if (op === 'worked') {
+                    await scoped(alloc => {
+                        const master = Number(a[0]), size = alloc(4);
+                        ok('worked_report_size', handle(), master, size);
+                        const n = read(size), p = alloc(n);
+                        ok('worked_report_copy', handle(), master, p, n, size);
+                        assert.equal(read(size), n);
+                        record('worked', Buffer.from(heap().subarray(p, p + n)).toString('hex'));
+                    }); continue;
+                }
                 await answer((alloc, input, out, written) => {
                     if (op === 'command' || op === 'cancel') {
                         const json = op === 'command' ? a[0] : `{"kind":"cancel","commandId":"${a[0]}","jobId":${a[1]}}`;

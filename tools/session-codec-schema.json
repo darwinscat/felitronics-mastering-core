@@ -17,6 +17,11 @@
       "MaxClean",
       "MaxDense"
     ],
+    "DeliveryMode": [
+      "Mastered",
+      "AsIs",
+      "PeaksOnly"
+    ],
     "DamageJobState": [
       "Waiting",
       "Running"
@@ -138,6 +143,14 @@
       "PeakToLoudness",
       "LoudnessRange",
       "GainRange"
+    ],
+    "LandingPassReason": [
+      "AimAtTarget",
+      "PeakProbe",
+      "StepBackBySlope",
+      "InsideBracket",
+      "ProveEdge",
+      "DeliverWinner"
     ],
     "QueryKind": [
       "Waveform",
@@ -316,6 +329,17 @@
       "Gain",
       "Passes",
       "CheckPasses"
+    ],
+    "DamageWaitReason": [
+      "Queue",
+      "SourceMeasurement"
+    ],
+    "SourceClipStatus": [
+      "NotMeasured",
+      "Clean",
+      "Clipped",
+      "InterSampleOvers",
+      "SampleOvers"
     ]
   },
   "records": {
@@ -563,7 +587,8 @@
         "sound": "uint64",
         "readyHash": "uint64",
         "deliveryRateHz": "uint32",
-        "readyVersion": "uint32"
+        "readyVersion": "uint32",
+        "deliveryBits": "uint8"
       }
     },
     "Kept": {
@@ -716,7 +741,10 @@
         "damage": "MasterDamage",
         "loudnessMode": "LoudnessMode",
         "maxStop": "MaxStop",
-        "guardSteps": "uint32"
+        "guardSteps": "uint32",
+        "deliveryMode": "DeliveryMode",
+        "deliveryGainDb": "double",
+        "deliveryDithered": "bool"
       }
     },
     "LandingPass": {
@@ -728,7 +756,9 @@
         "truePeakDbTp": "double",
         "limiterMaxReductionDb": "double",
         "ceilingSafe": "bool",
-        "overBudget": "bool"
+        "overBudget": "bool",
+        "limiterP95Db": "double?",
+        "reason": "LandingPassReason"
       }
     },
     "LandingTraceBucket": {
@@ -777,7 +807,10 @@
         "log": "LandingPass[]",
         "limiterTrace": "LandingTrace?",
         "peakClipTrace": "LandingTrace?",
-        "peaksAboveCeiling": "bool"
+        "peaksAboveCeiling": "bool",
+        "limiterWall": "bool",
+        "limiterSlope": "double?",
+        "limiterWallP95Db": "double?"
       }
     },
     "Source": {
@@ -803,7 +836,8 @@
         "totalPasses": "uint32",
         "completedUnits": "uint32",
         "totalUnits": "uint32",
-        "stepFraction": "double?"
+        "stepFraction": "double?",
+        "analyzers": "AnalyzerProgress[<=3]?"
       }
     },
     "ReadingPoint": {
@@ -876,7 +910,8 @@
         "damageJob": "uint32",
         "damageProgress": "Phase",
         "loudnessMode": "LoudnessMode",
-        "damageJobs": "DamageJobEntry[]"
+        "damageJobs": "DamageJobEntry[]",
+        "sourceReport": "SourceReport?"
       }
     },
     "MasterToken": {
@@ -894,7 +929,8 @@
         "job": "uint32",
         "masterId": "uint32",
         "state": "DamageJobState",
-        "progress": "Phase"
+        "progress": "Phase",
+        "waitReason": "DamageWaitReason?"
       }
     },
     "MachineDifference": {
@@ -1290,6 +1326,29 @@
         "hum": "Observation",
         "humWandered": "Observation"
       }
+    },
+    "AnalyzerProgress": {
+      "cpp": "AnalyzerProgress",
+      "fields": {
+        "analyzer": "Analyzer",
+        "fraction": "double?"
+      }
+    },
+    "SourceReport": {
+      "cpp": "SourceReport",
+      "fields": {
+        "clipping": "SourceClipStatus",
+        "clippingReason": "MeasurementReason",
+        "alreadyMastered": "bool?",
+        "loudnessLufs": "double?",
+        "truePeakDbTp": "double?",
+        "plrDb": "double?",
+        "deliveryMode": "DeliveryMode",
+        "deliveryCeilingDbTp": "double?",
+        "deliveryGainDb": "double?",
+        "facts": "Fact[<=2]",
+        "advice": "Fact[<=2]"
+      }
     }
   },
   "wireAliases": {
@@ -1410,7 +1469,10 @@
     },
     "MasterCommand": {
       "kind": "\"master\"",
-      "commandId": "string"
+      "commandId": "string",
+      "allowClippedGain?": "boolean",
+      "masterAnyway?": "boolean",
+      "budgetResolutionDb?": "WireNumber"
     },
     "CancelCommand": {
       "kind": "\"cancel\"",
@@ -1783,7 +1845,8 @@
       "PlanPending",
       "DamageSettled",
       "DamageQueued",
-      "DamageQueueFull"
+      "DamageQueueFull",
+      "ClippedGain"
     ],
     "ErrorCode": [
       "Trap",
@@ -1810,19 +1873,29 @@
   "transportRecordViews": {
     "SessionMasterCrest": {
       "from": "MasterCrest",
-      "fields": { "rows": "ScalarRow", "sourceMask": "ScalarRow" }
+      "fields": {
+        "rows": "ScalarRow",
+        "sourceMask": "ScalarRow"
+      }
     },
     "SessionMasterReport": {
       "from": "MasterReport",
-      "fields": { "crest": "SessionMasterCrest" }
+      "fields": {
+        "crest": "SessionMasterCrest"
+      }
     },
     "SessionKept": {
       "from": "Kept",
-      "fields": { "report": "SessionMasterReport | null" }
+      "fields": {
+        "report": "SessionMasterReport | null"
+      }
     },
     "SessionQueryView": {
       "from": "QueryView",
-      "fields": { "values": "ScalarRow", "master": "SessionKept | null" }
+      "fields": {
+        "values": "ScalarRow",
+        "master": "SessionKept | null"
+      }
     }
   },
   "optionalFields": {

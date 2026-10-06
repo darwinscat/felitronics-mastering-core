@@ -84,17 +84,20 @@ void nativeQueries()
     MeasurementQuery q; q.audioId = s.source().hash; q.toFrame = frames; q.columns = 17; q.requestId = 9007199254740993ull;
     ok (s.queryStorage (q).bytes == 0, "unbuilt waveform demand is allocation free");
     auto pending = ask (s, q); ok (pending.view().status == QueryStatus::Pending && pending.view().values.empty(), "overview explicitly pending before construction");
-    (void) s.step (4);
+    // Readings now precede waveform construction. Advance to the first indexed block without assuming how many
+    // measurement units came before it.
+    for (unsigned calls = 0; detail::Inspector::frames (s) == 0 && calls < 20000; ++calls) (void) s.step (1);
     const auto prefix = detail::Inspector::frames (s);
     q.toFrame = prefix;
     auto prefixAnswer = ask (s, q);
-    ok (prefixAnswer.view().status == QueryStatus::Ready && prefixAnswer.view().stored == 68, "ready prefix is queryable between pump steps");
+    ok (prefixAnswer.view().status == QueryStatus::Ready && prefixAnswer.view().stored > 0
+        && prefixAnswer.view().stored <= 68, "ready prefix is queryable between pump steps");
     const auto id = s.measurementJob();
     ok (s.apply (command::Cancel { 2, id }).rejection == Rejection::None, "cancel retains index");
     q.toFrame = frames;
     auto stopped = ask (s, q); ok (stopped.view().status == QueryStatus::Cancelled, "unfinished range names cancellation");
     ok (s.apply (command::ContinueMeasurement { 3 }).rejection == Rejection::None, "continue index");
-    (void) s.step (1);
+    for (unsigned calls = 0; detail::Inspector::frames (s) == prefix && calls < 20000; ++calls) (void) s.step (1);
     ok (detail::Inspector::frames (s) == prefix + 1024u, "continue reads only unfinished frames");
     while (detail::Inspector::frames (s) != frames) (void) s.step (1);
     ok (s.state() == State::Loaded, "overview completes before later measurements");
