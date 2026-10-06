@@ -25,8 +25,20 @@ inline constexpr std::uint64_t kQueryValues = std::uint64_t (kQueryColumns) * 4u
 //                           the delivered audio, asked and named in the SOURCE's frames (the frame of the same moment
 //                           its window ends at) — the source's own request plus a masterId; without one, the source's
 //   MasterReport            the master whole — the record a full snapshot carries for it, rows included (QueryView::master)
+// WHAT A SOURCE ALSO ANSWERS WITHOUT A MEASUREMENT (masterId 0, the whole source's frames, as LowSpectrum asks):
+//   DitherFloor             the noise floor the current delivery leaves (owner, 07.10): [hz,dbPerBin,reason] on a LOG grid
+//                           of `columns` points from fromHz (> 0) to toHz. The delivery is the plan's (plan.dither: its
+//                           bit depth, on, shaping) at the target's rate (the source's where the target keeps it). The
+//                           total added noise is white — TPDF dither of ±1 LSB with its quantiser, LSB²/4; plain
+//                           rounding where no dither runs, LSB²/12; LSB = 2^-(bits-1) of full scale 1.0 — shaped by the
+//                           dither's NTF = 1 − H (Weighted, Psychoacoustic: felitronics-core Dither.h; flat with none).
+//                           The value is in the forensics `meanPower` convention, so it lies on the song's spectrum on
+//                           one axis: 10·log10 of the power a Hann window of N = 2^SourceForensicsParams::fftOrder (16384)
+//                           reads in ONE bin at the SOURCE's rate, |X_k|² / (N·Σw²), one-sided, not folded —
+//                           variance · |NTF(f)|² · sourceRate / (deliveryRate · N). Above the delivery's Nyquist:
+//                           reason Unsupported; a delivery of 32 bits and more (no quantiser): reason NoSignal.
 enum class QueryKind : std::uint8_t { Waveform, LowSpectrum, LowSide, Momentary, ShortTerm, Clipping, Stereo, LimiterGr, PeakClipGr, MasterWaveform,
-                                      MasterAxes, MasterReport, GlueGr, SaturationShave };
+                                      MasterAxes, MasterReport, GlueGr, SaturationShave, DitherFloor };
 // WHAT LowSpectrum ANSWERS per band of the retained low-end measurement, interpolated between the bands' centres:
 //   Density   the band's energy per hertz (its energy over its width in Hz) — the tilt-free quantity: level across
 //             bands that widen with frequency; the default, and what LowSpectrum answered before this field existed

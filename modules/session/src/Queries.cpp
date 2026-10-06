@@ -4,9 +4,13 @@
 #include "BuildContract.h"
 #include "QueryState.h"
 #include "MasterJob.h"
+#include "Rules.h"
 #include <felitronics/session/Session.h>
 #include <felitronics/session/Snapshot.h>
 #include <felitronics/session/Landing.h>
+#include <felitronics/analysis/SourceForensics.h>
+#include <felitronics/core/DetMath.h>
+#include <felitronics/core/Math.h>
 #include <algorithm>
 #include <bit>
 #include <cmath>
@@ -99,7 +103,7 @@ const LandingTrace* masterTrace (const Kept& master, const detail::MasterRows* r
 }
 QueryStatus validate (const MeasurementQuery& q, const Source& source) noexcept
 {
-    if (unsigned (q.kind) > unsigned (QueryKind::SaturationShave) || unsigned (q.spectrum) > unsigned (SpectrumQuantity::Energy)
+    if (unsigned (q.kind) > unsigned (QueryKind::DitherFloor) || unsigned (q.spectrum) > unsigned (SpectrumQuantity::Energy)
         || ! std::isfinite (q.crossoverHz)
         || (! sameNumber (q.crossoverHz, 120) && ! sameNumber (q.crossoverHz, 150)) || ! std::isfinite (q.fromHz) || ! std::isfinite (q.toHz)) return QueryStatus::Contract;
     if (ofMaster (q))
@@ -119,6 +123,9 @@ QueryStatus validate (const MeasurementQuery& q, const Source& source) noexcept
         if (q.fromFrame != 0 || q.toFrame != source.frames || q.fromHz < 0 || q.fromHz > q.toHz
             || q.toHz > double (source.sampleRate) * 0.5) return QueryStatus::InvalidRange;
     }
+    // The dither's floor: a log grid needs a first point above 0; the delivery's Nyquist is the builder's (per column).
+    if (q.kind == QueryKind::DitherFloor && (q.fromFrame != 0 || q.toFrame != source.frames || ! (q.fromHz > 0) || q.fromHz > q.toHz))
+        return QueryStatus::InvalidRange;
     return QueryStatus::Ready;
 }
 Analyzer analyzer (const MeasurementQuery& q) noexcept
@@ -132,7 +139,7 @@ Analyzer analyzer (const MeasurementQuery& q) noexcept
         case QueryKind::Stereo: return Analyzer::Stereo;
         case QueryKind::LimiterGr: case QueryKind::PeakClipGr: case QueryKind::MasterWaveform:
         case QueryKind::MasterAxes: case QueryKind::MasterReport: case QueryKind::GlueGr:
-        case QueryKind::SaturationShave: break;
+        case QueryKind::SaturationShave: case QueryKind::DitherFloor: break;
     }
     detail::storageOverflow();
 }
@@ -146,7 +153,7 @@ std::uint32_t stride (QueryKind kind) noexcept
     switch (kind)
     {
         case QueryKind::Waveform: return kWaveformStride;
-        case QueryKind::LowSpectrum: case QueryKind::LowSide: return 3;
+        case QueryKind::LowSpectrum: case QueryKind::LowSide: case QueryKind::DitherFloor: return 3;
         case QueryKind::Momentary: case QueryKind::ShortTerm: return 3;
         case QueryKind::Clipping: return 6;
         case QueryKind::Stereo: return 6;
@@ -180,6 +187,48 @@ QueryView header (const MeasurementQuery& q, const Source& source, std::uint64_t
     QueryView v; v.request = q; v.audioId = source.hash; v.revision = revision; v.measurementKey = key;
     v.sampleRate = source.sampleRate; v.channels = source.channels; v.stride = stride (q.kind);
     return v;
+}
+// THE DITHER'S FLOOR (Queries.h, DitherFloor): what the delivery's quantiser adds, white, through the dither's noise
+// transfer function, in the forensics meanPower convention at the source's rate. The shaping filters are the core's
+// (felitronics-core Dither.h: H = Σ h_k z^-(k+1), NTF = 1 − H); the numbers are restated here, read once per column.
+void ditherFloor (QueryView& v, double* rows, const DitherFinding& dither, std::uint32_t sourceRate, std::uint32_t deliveryRate) noexcept
+{
+    constexpr double weighted[] { 1.5, -0.5 };
+    constexpr double psychoacoustic[] { 2.412, -3.370, 3.937, -4.174, 3.353, -2.205, 1.281, -0.569, 0.0847 };
+    const auto& q = v.request;
+    const bool quantised = dither.bits > 0 && dither.bits < 32;
+    const double lsb = quantised ? std::ldexp (1.0, -(dither.bits - 1)) : 0.0;
+    const double variance = dither.on ? lsb * lsb / 4.0 : lsb * lsb / 12.0;   // TPDF ±1 LSB with its quantiser; rounding alone
+    const auto shaping = dither.on ? dither.shaping : DitherShaping::None;
+    const double* h = shaping == DitherShaping::Weighted ? weighted : shaping == DitherShaping::Psychoacoustic ? psychoacoustic : nullptr;
+    const int order = shaping == DitherShaping::Weighted ? 2 : shaping == DitherShaping::Psychoacoustic ? 9 : 0;
+    const double n = double (std::uint64_t (1) << analysis::SourceForensicsParams {}.fftOrder);
+    const double perBin = deliveryRate > 0 ? variance * double (sourceRate) / (double (deliveryRate) * n) : 0.0;
+    const double span = q.columns > 1 ? core::det::log2 (q.toHz / q.fromHz) : 0.0;
+    for (std::uint32_t i = 0; i < q.columns; ++i)
+    {
+        const double hz = q.columns == 1 ? q.fromHz : q.fromHz * core::det::exp2 (span * double (i) / double (q.columns - 1u));
+        double value = missing; auto reason = MeasurementReason::None;
+        if (! quantised) reason = MeasurementReason::NoSignal;
+        else if (! (deliveryRate > 0) || hz > 0.5 * double (deliveryRate)) reason = MeasurementReason::Unsupported;
+        else
+        {
+            const double w = 2.0 * core::kPi * hz / double (deliveryRate);
+            double re = 1.0, im = 0.0;
+            for (int k = 0; k < order; ++k)
+            {
+                re -= h[k] * core::det::cos (w * double (k + 1));
+                im += h[k] * core::det::sin (w * double (k + 1));
+            }
+            const double power = perBin * (re * re + im * im);
+            if (power > 0) value = 10.0 * core::det::log10 (power);
+            else reason = MeasurementReason::NoSignal;   // the shaping's zero at DC
+        }
+        const double row[] { hz, value, double (reason) };
+        std::copy_n (row, 3, rows + std::size_t (3u * i));
+    }
+    v.total = v.stored = q.columns; v.complete = true;
+    v.reason = MeasurementReason::None; v.status = QueryStatus::Ready;
 }
 void curve (QueryView& v, double* rows, const MeasurementResult& result) noexcept
 {
@@ -396,6 +445,11 @@ QueryDemand Session::queryStorage (const MeasurementQuery& q) const noexcept
         const std::uint64_t block = rowBytes + 128u;
         return { QueryStatus::Ready, 2u * block, block, rowBytes };
     }
+    if (q.kind == QueryKind::DitherFloor)
+    {
+        const auto bytes = std::uint64_t (q.columns) * 3u * sizeof (double) + 128u;
+        return { QueryStatus::Ready, 2u * bytes, bytes, bytes - 128u };
+    }
     const auto& r = measurementResults_[std::size_t (analyzer (q))];
     if (q.kind == QueryKind::Waveform)
     {
@@ -417,7 +471,7 @@ QueryResult Session::query (const MeasurementQuery& q) noexcept
     if (checkFloatingPointEnvironment() != Status::Ok)
     { QueryView v; v.request = q; v.status = QueryStatus::FloatingPointEnvironment; v.reason = MeasurementReason::Unsupported; return QueryResult::copy (v); }
     // Invalid enum cannot reach stride/analyzer dispatch.
-    if (unsigned (q.kind) > unsigned (QueryKind::SaturationShave))
+    if (unsigned (q.kind) > unsigned (QueryKind::DitherFloor))
     { QueryView v; v.request = q; v.status = QueryStatus::Contract; v.reason = MeasurementReason::Unsupported; return QueryResult::copy (v); }
     if (ofMaster (q))
     {
@@ -557,6 +611,15 @@ QueryResult Session::query (const MeasurementQuery& q) noexcept
     Checked request; request.bytes = need.bytes; request.largestBlockBytes = need.largestBlockBytes;
     if (demand (request).rejection != Rejection::None)
     { v.status = QueryStatus::Memory; v.reason = MeasurementReason::Memory; return QueryResult::copy (v); }
+    if (q.kind == QueryKind::DitherFloor)
+    {
+        const auto row = detail::rules().row (project_.target);
+        const auto deliveryRate = row.sampleRate == 0 ? source_.sampleRate : std::uint32_t (row.sampleRate);
+        std::unique_ptr<double[]> rows (new double[std::size_t (q.columns) * 3u]);
+        ditherFloor (v, rows.get(), plan_.dither, source_.sampleRate, deliveryRate);
+        v.values = { rows.get(), std::size_t (v.stored * v.stride) };
+        return QueryResult::copy (v);
+    }
     const auto& result = measurementResults_[std::size_t (analyzer (q))];
     const auto key = freshness (result);
     if (queryCache_) for (const auto& e : queryCache_->entries)
@@ -599,7 +662,7 @@ QueryResult Session::query (const MeasurementQuery& q) noexcept
         case QueryKind::Waveform: break;
         case QueryKind::LimiterGr: case QueryKind::PeakClipGr: case QueryKind::MasterWaveform:
         case QueryKind::MasterAxes: case QueryKind::MasterReport: case QueryKind::GlueGr:
-        case QueryKind::SaturationShave: break;
+        case QueryKind::SaturationShave: case QueryKind::DitherFloor: break;
     }
     v.values = { rows.get(), std::size_t (v.stored * v.stride) };
     if (! queryCache_) queryCache_.reset (new detail::QueryCache);
