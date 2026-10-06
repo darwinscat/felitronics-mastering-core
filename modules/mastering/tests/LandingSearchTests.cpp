@@ -206,7 +206,6 @@ struct LandingSetup
     bool peakClipMeasured = false;
     double slopeBelow = 0.0;
     bool maxMode = false;
-    bool excerptSearch = false;
 };
 
 // Lands `p` through the limiter alone (and the high-pass when asked), delivered at `deliveryRate`.
@@ -248,9 +247,8 @@ Landed land (const Programme& p, const LandingSetup& w)
     req.peakClipMeasured = w.peakClipMeasured;
     req.limiterSlopeBelow = w.slopeBelow;
     req.budgetAimsAtCrossing = w.maxMode;
-    req.maxExcerptSearch = w.excerptSearch;
     req.landingOnSourceGate = w.onSourceGate;
-    if (w.onSourceGate || w.excerptSearch)
+    if (w.onSourceGate)
     {
         req.sourceMomentaryLufs = p.momentary.data(); req.sourceMomentaryCount = (long long) p.momentary.size();
         req.sourceMomentaryHopFrames = p.hop;
@@ -300,19 +298,6 @@ double lufsOfMono (const float* x, int frames, int rate = kRate)
     const float* planes[1] { x };
     if (! meter.process (planes, 1, frames)) return std::numeric_limits<double>::quiet_NaN();
     return meter.integratedLufs();
-}
-
-std::uint64_t pcmHash (const std::vector<float>& pcm)
-{
-    std::uint64_t h = 0xcbf29ce484222325ull;
-    for (const float sample : pcm)
-    {
-        std::uint32_t bits = 0;
-        std::memcpy (&bits, &sample, sizeof bits);
-        for (unsigned byte = 0; byte < 4; ++byte)
-            h = (h ^ ((bits >> (8u * byte)) & 0xffu)) * 0x100000001b3ull;
-    }
-    return h;
 }
 
 // Music in code: a kick every half second, a held "voice" tone, a little white and some pink noise.
@@ -427,59 +412,10 @@ int main()
             loud.target = -5; loud.limiterBudgetDb = limit;
             loud.maxMode = true;
             before = loud; before.slopeBelow = 0;
-            auto excerptSetup = loud; excerptSetup.excerptSearch = true;
             const auto max = land (dense, loud), maxBefore = land (dense, before);
-            const auto excerpt = land (dense, excerptSetup);
-            std::printf ("  max %.2f: old %d full, excerpt %d full / %d log\n", limit,
-                         max.answer.passes, excerpt.answer.passes, excerpt.answer.logCount);
-            if (limit == .5)
-            {
-                bool prefix = true, sawFull = false, p95Whole = true, reasonsWhole = true;
-                double lowestOver = std::numeric_limits<double>::infinity();
-                for (int i = 0; i < excerpt.answer.logCount; ++i)
-                {
-                    const auto& pass = excerpt.answer.log[i];
-                    if (! pass.excerpt) sawFull = true;
-                    prefix = prefix && (! pass.excerpt || ! sawFull || i == 0);
-                    p95Whole = p95Whole && std::isfinite (pass.limiterP95Db);
-                    reasonsWhole = reasonsWhole && unsigned (pass.reason)
-                        <= unsigned (SolvePassRecord::Reason::DeliverWinner);
-                    if (pass.excerpt)
-                        prefix = prefix && pass.reason == SolvePassRecord::Reason::Excerpt
-                            && pass.excerptFrames > 0 && pass.excerptFrames <= 30LL * kRate
-                            && pass.excerptFromFrame >= 0
-                            && pass.excerptFromFrame + pass.excerptFrames <= (long long) dense.source.size();
-                    else if ((pass.violated & constraintBit (MasteringConstraint::LimiterGainReduction)) != 0)
-                        lowestOver = std::min (lowestOver, pass.gainDb - pass.ceilingDb);
-                }
-                const double deliveredDrive = excerpt.answer.preLimiterGainDb - excerpt.answer.ceilingDbTp;
-                test::ok (excerpt.done && excerpt.answer.passes < max.answer.passes
-                          && excerpt.answer.passes <= 12 && excerpt.answer.logCount > excerpt.answer.passes
-                          && prefix && sawFull && p95Whole && reasonsWhole,
-                    "the excerpt search drops full renders on the dense fixture and logs its excerpt prefix, active P95, range and reason");
-                test::ok (std::isfinite (lowestOver) && deliveredDrive < lowestOver
-                          && deliveredDrive >= lowestOver - .25 - 1.0e-9,
-                    "the full-programme proof delivers under the lowest measured over-budget drive within 0.25 dB");
-                test::ok (pcmHash (max.out) == 0x2f19e56fbc919f58ull,
-                    "with excerptSearch off, the v0.17 max-mode PCM stays pinned bit for bit");
-            }
             test::ok (max.done && ! max.answer.limiterWall && max.out == maxBefore.out,
                 "max budgets are below the knee: their PCM stays unchanged");
         }
-        Programme missing (dense); missing.momentary.clear();
-        Programme failed (dense); std::fill (failed.momentary.begin(), failed.momentary.end(),
-                                             std::numeric_limits<double>::quiet_NaN());
-        LandingSetup oldFallback; oldFallback.target = -5; oldFallback.limiterBudgetDb = .5; oldFallback.maxMode = true;
-        auto excerptFallback = oldFallback; excerptFallback.excerptSearch = true;
-        const auto missingOld = land (missing, oldFallback), missingExcerpt = land (missing, excerptFallback);
-        const auto failedOld = land (failed, oldFallback), failedExcerpt = land (failed, excerptFallback);
-        test::ok (missingOld.done && failedOld.done && missingExcerpt.done && failedExcerpt.done
-                  && missingExcerpt.out == missingOld.out && failedExcerpt.out == failedOld.out
-                  && missingExcerpt.answer.passes == missingOld.answer.passes
-                  && failedExcerpt.answer.passes == failedOld.answer.passes
-                  && missingExcerpt.answer.logCount == missingExcerpt.answer.passes
-                  && failedExcerpt.answer.logCount == failedExcerpt.answer.passes,
-            "missing or unusable excerpt measurements fall back to the full-programme v0.17 search");
     }
     test::group ("landing search: one budget, saved output, and split invariant");
     Rig whole, sliced;
@@ -909,28 +845,6 @@ int main()
                   && sliced.landedLufs == gate.landedLufs && sliced.answer.passes == gate.answer.passes
                   && std::memcmp (sliced.out.data(), gate.out.data(), sliced.out.size() * sizeof (float)) == 0,
                   "the gate's level does not depend on how the work is sliced: the same master bit for bit");
-
-        LandingSetup oldMax; oldMax.target = -5.0; oldMax.limiterBudgetDb = 0.5; oldMax.maxMode = true;
-        auto excerptMax = oldMax; excerptMax.excerptSearch = true;
-        const Landed normalOld = land (loud, oldMax), normalExcerpt = land (loud, excerptMax);
-        std::printf ("        normal max clean: old %d full, excerpt %d full / %d log\n",
-                     normalOld.answer.passes, normalExcerpt.answer.passes, normalExcerpt.answer.logCount);
-        double normalLowestOver = std::numeric_limits<double>::infinity();
-        for (int i = 0; i < normalExcerpt.answer.logCount; ++i)
-            if (! normalExcerpt.answer.log[i].excerpt
-                && (normalExcerpt.answer.log[i].violated
-                    & constraintBit (MasteringConstraint::LimiterGainReduction)) != 0)
-                normalLowestOver = std::min (normalLowestOver,
-                    normalExcerpt.answer.log[i].gainDb - normalExcerpt.answer.log[i].ceilingDb);
-        const double normalDeliveredDrive = normalExcerpt.answer.preLimiterGainDb
-                                          - normalExcerpt.answer.ceilingDbTp;
-        test::ok (normalOld.done && normalExcerpt.done
-                  && normalExcerpt.answer.passes < normalOld.answer.passes
-                  && normalExcerpt.answer.passes <= 12
-                  && normalExcerpt.answer.logCount > normalExcerpt.answer.passes
-                  && std::isfinite (normalLowestOver) && normalDeliveredDrive < normalLowestOver
-                  && normalDeliveredDrive >= normalLowestOver - .25 - 1.0e-9,
-                  "the normal 30-second fixture also drops full renders and keeps the 0.25 dB proof");
 
         // ...on two grids: a source at 11025 Hz reads its momentary loudness every 1100 frames, 99.77 ms; delivered at
         // 44.1 kHz the master's blocks step 100 ms. Matched by index, a minute drifts more than a reading.

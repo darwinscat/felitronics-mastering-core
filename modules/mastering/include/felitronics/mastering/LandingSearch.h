@@ -165,7 +165,6 @@ public:
         chain_ = &chain; renderer_ = &renderer; source_ = source; out_ = out;
         channels_ = channels; frames_ = frames; sourceFrames_ = sourceFrames; sourceRate_ = sourceRate;
         params_ = params; params_.inputGainDb += request.normalizationGainDb;
-        initialParams_ = params_;
         request_ = request; clock_ = ProgressClock (progress);
         working_.activityThresholdDb = best_.activityThresholdDb = request.activityThresholdDb;
         haveBest_ = havePrevious_ = haveBelow_ = haveAbove_ = haveUnsafe_ = peakProbe_ = false;
@@ -181,10 +180,6 @@ public:
         scanCursor_ = scanCount_ = 0; scanSum_ = gateThreshold_ = level_ = bestLevel_ = 0.0;
         gateLevel_ = bestGate_ = std::numeric_limits<double>::quiet_NaN();
         budgetExcess_.fill (std::numeric_limits<double>::quiet_NaN());
-        excerptDrive_.fill (std::numeric_limits<double>::quiet_NaN());
-        excerptExcess_.fill (std::numeric_limits<double>::quiet_NaN());
-        excerptCount_ = 0; excerptLow_ = excerptHigh_ = -1; excerptReady_ = false;
-        excerptEdgeDrive_ = std::numeric_limits<double>::quiet_NaN();
         chordOverDrive_ = std::numeric_limits<double>::quiet_NaN(); chordStale_ = 0;
         work_ = 0; bestError_ = std::numeric_limits<double>::infinity();
         lowState_.fill (0.0); low2State_.fill (0.0); low8State_.fill (0.0);
@@ -205,8 +200,6 @@ public:
             solver_.deliveryConverter_ = converter_; solver_.deliverySource_ = source_;
             solver_.deliveryFrames_ = sourceFrames_;
         }
-        excerptReady_ = budgetOn_ && request_.budgetAimsAtCrossing && request_.maxExcerptSearch
-            && selectExcerpt();
         phase_ = Phase::SourceStats;
         return true;
     }
@@ -243,17 +236,8 @@ public:
                 && (request.sourceMomentaryLufs == nullptr || request.sourceMomentaryCount <= 0
                     || request.sourceMomentaryHopFrames <= 0))
             || (! request.limiterGr.off() && ! (request.limiterGr.limitDb >= 0.0 && std::isfinite (request.limiterGr.limitDb)))
-            || request.limiterStatisticSkipFrames < 0
-            || (request.maxExcerptSearch && (! std::isfinite (request.maxExcerptSeconds)
-                || ! std::isfinite (request.maxExcerptPreRollSeconds)
-                || ! std::isfinite (request.maxExcerptToleranceDb)
-                || ! std::isfinite (request.maxExcerptOffsetDb)
-                || request.maxExcerptSeconds <= 0.0 || request.maxExcerptPreRollSeconds < 0.0
-                || request.maxExcerptToleranceDb <= 0.0 || request.maxExcerptToleranceDb > 6.0
-                || std::fabs (request.maxExcerptOffsetDb) > 24.0))
-            || (! std::isnan (request.clipperLoudShare)
-                && (! std::isfinite (request.clipperLoudShare)
-                    || request.clipperLoudShare <= 0.0 || request.clipperLoudShare > 1.0)))
+            || ! std::isfinite (request.budgetResolutionDb)
+            || request.budgetResolutionDb < 0.05 || request.budgetResolutionDb > 1.0)
         {
             if (why == MasteringSolveStatus::Solved) why = MasteringSolveStatus::InvalidRequest;
             return false;
@@ -287,8 +271,7 @@ public:
                     presenceEnergy_ += band * band;
                 }
             sourceCursor_ += n; work_ += (std::uint64_t) n;
-            if (sourceCursor_ == sourceFrames_)
-                phase_ = gateOn_ ? Phase::SourceGate : excerptReady_ ? Phase::ExcerptBegin : Phase::PassBegin;
+            if (sourceCursor_ == sourceFrames_) phase_ = gateOn_ ? Phase::SourceGate : Phase::PassBegin;
             return StepResult::More;
         }
         if (phase_ == Phase::SourceGate)
@@ -310,42 +293,8 @@ public:
             if (scanCursor_ < request_.sourceMomentaryCount) return StepResult::More;
             gateOn_ = scanCount_ > 0;
             gateThreshold_ = gateOn_ ? 0.1 * (scanSum_ / (double) scanCount_) : 0.0;
-            phase_ = excerptReady_ ? Phase::ExcerptBegin : Phase::PassBegin;
+            phase_ = Phase::PassBegin;
             return StepResult::More;
-        }
-        if (phase_ == Phase::ExcerptBegin)
-        {
-            if (excerptCount_ >= kMaxExcerptPasses) { fallBackFromExcerpt(); return StepResult::More; }
-            if (! clock_.begin (ProgressStage::SearchPass, 0, 0,
-                                (converter_ == nullptr ? 0LL : excerptSourceFrames_) + 2LL * excerptFrames_
-                                + chain_->latencySamples() + kBandGrStride + 6, excerptFrames_))
-                return fail (MasteringSolveStatus::Cancelled);
-            params_.preLimiterGainDb = gain_; params_.limiter.ceilingDbTp = ceiling_;
-            chain_->setParams (params_);
-            measurement_ = MasterMeasurement {};
-            excerptRequest_ = request_;
-            excerptRequest_.landingOnSourceGate = false;
-            excerptRequest_.limiterStatisticSkipFrames = excerptSkipFrames_;
-            if (converter_ != nullptr)
-            {
-                solver_.deliverySource_ = excerptSource_;
-                solver_.deliveryFrames_ = excerptSourceFrames_;
-            }
-            if (! solver_.beginPass (*chain_, *renderer_, params_, excerptSource_, out_, channels_, excerptFrames_,
-                                     excerptRequest_, measurement_, working_, clock_, true))
-            { fallBackFromExcerpt(); return StepResult::More; }
-            phase_ = Phase::ExcerptRun;
-            --budget; ++work_;
-            if (budget == 0) return StepResult::More;
-        }
-        if (phase_ == Phase::ExcerptRun)
-        {
-            const long long before = solver_.pass_->work;
-            const StepResult r = solver_.stepPass (budget);
-            work_ += (std::uint64_t) std::max (0LL, solver_.pass_->work - before);
-            if (r == StepResult::Failed) { fallBackFromExcerpt(); return StepResult::More; }
-            if (r == StepResult::More) return r;
-            return completedExcerpt();
         }
         if (phase_ == Phase::PassBegin)
         {
@@ -503,20 +452,13 @@ public:
                                                                        : std::numeric_limits<double>::quiet_NaN();
     }
     int startedPasses() const noexcept { return passes_; }
-    // Progress counts excerpt and whole-programme renders on the same axis. The excerpt currently being rendered is
-    // included although its retained record is not appended until it finishes.
-    int startedRenders() const noexcept
-    {
-        return excerptCount_ + passes_ + (renderingExcerpt() ? 1 : 0);
-    }
-    int startedExcerptRenders() const noexcept { return excerptCount_ + (renderingExcerpt() ? 1 : 0); }
+    int startedRenders() const noexcept { return passes_; }
     double renderProgress() const noexcept
     {
         const double walked = std::clamp (walkFraction(), 0.0, 1.0);
-        if (phase_ == Phase::ExcerptBegin || phase_ == Phase::ExcerptRun) return double (excerptCount_) + walked;
         if (phase_ == Phase::PassBegin || phase_ == Phase::PassRun || phase_ == Phase::PassGate)
-            return double (excerptCount_ + std::max (0, passes_ - 1)) + walked;
-        return double (excerptCount_ + passes_);
+            return double (std::max (0, passes_ - 1)) + walked;
+        return double (passes_);
     }
     // THE CURRENT WALK OVER THE FILE, 0..1, a new count for each: the source's statistics, every landing pass (its clock's
     // units), the delivered render's check. Negative outside a walk: idle, done, failed, and the bookkeeping between walks.
@@ -524,26 +466,19 @@ public:
     {
         if (phase_ == Phase::SourceStats)
             return sourceFrames_ > 0 ? (double) sourceCursor_ / (double) sourceFrames_ : 0.0;
-        if (phase_ == Phase::ExcerptRun || phase_ == Phase::PassRun || phase_ == Phase::VerifyMeter) return clock_.walked();
+        if (phase_ == Phase::PassRun || phase_ == Phase::VerifyMeter) return clock_.walked();
         return -1.0;
     }
-    bool renderingExcerpt() const noexcept { return phase_ == Phase::ExcerptBegin || phase_ == Phase::ExcerptRun; }
-    std::uint64_t excerptFromFrame() const noexcept
-    { return excerptStatisticFrom_ > 0 ? (std::uint64_t) excerptStatisticFrom_ : 0u; }
-    std::uint64_t excerptFrames() const noexcept
-    { return excerptStatisticFrames_ > 0 ? (std::uint64_t) excerptStatisticFrames_ : 0u; }
     std::uint64_t completedWork() const noexcept { return work_; }
     bool active() const noexcept { return phase_ != Phase::Idle && phase_ != Phase::Done && phase_ != Phase::Failed; }
 
 private:
-    enum class Phase { Idle, SourceStats, SourceGate, ExcerptBegin, ExcerptRun, PassBegin, PassRun, PassGate, VerifySetup,
+    enum class Phase { Idle, SourceStats, SourceGate, PassBegin, PassRun, PassGate, VerifySetup,
                        VerifyMeter, VerifyDrain, VerifyGate, VerifyFinish, Done, Failed };
 
     // The source's momentary reading i is the 400 ms ending at (i + 1) of its hops: the first three readings are no block.
     static constexpr long long kFirstBlockReading = 3;
     static constexpr double kAbsoluteGateLufs = -70.0;
-    static constexpr double kBudgetResolutionDb = 0.25;
-    static constexpr int kMaxExcerptPasses = 12;
 
     static double energyOf (double lufs) noexcept { return core::det::pow10 ((lufs + 0.691) / 10.0); }
     static double lufsOf (double energy) noexcept { return -0.691 + 10.0 * core::det::log10 (energy); }
@@ -581,160 +516,6 @@ private:
         if (! std::isfinite (v)) return false;
         const double e = energyOf (v);
         return e > energyOf (kAbsoluteGateLufs) && e > gateThreshold_;
-    }
-
-    bool selectExcerpt() noexcept
-    {
-        if (request_.sourceMomentaryLufs == nullptr || request_.sourceMomentaryCount <= kFirstBlockReading
-            || request_.sourceMomentaryHopFrames <= 0 || sourceFrames_ <= 0) return false;
-        const long long available = request_.sourceMomentaryCount - kFirstBlockReading;
-        const double wantedReadings = request_.maxExcerptSeconds * sourceRate_
-                                    / (double) request_.sourceMomentaryHopFrames;
-        if (! std::isfinite (wantedReadings) || wantedReadings < 1.0
-            || wantedReadings >= (double) LLONG_MAX) return false;
-        const long long width = std::min (available, std::max (1LL, (long long) std::floor (wantedReadings + 0.5)));
-        double sum = 0.0, best = -1.0;
-        long long valid = 0, bestAt = -1;
-        for (long long i = 0; i < available; ++i)
-        {
-            const double add = request_.sourceMomentaryLufs[kFirstBlockReading + i];
-            if (std::isfinite (add)) { sum += energyOf (add); ++valid; }
-            if (i >= width)
-            {
-                const double drop = request_.sourceMomentaryLufs[kFirstBlockReading + i - width];
-                if (std::isfinite (drop)) { sum -= energyOf (drop); --valid; }
-            }
-            if (i + 1 >= width && valid == width && sum > best) { best = sum; bestAt = i + 1 - width; }
-        }
-        if (bestAt < 0) return false;
-        const double wantedFrames = request_.maxExcerptSeconds * sourceRate_;
-        const double preRollFrames = request_.maxExcerptPreRollSeconds * sourceRate_;
-        if (! std::isfinite (wantedFrames) || ! std::isfinite (preRollFrames)
-            || wantedFrames >= (double) LLONG_MAX || preRollFrames >= (double) LLONG_MAX) return false;
-        const long long loudFrom = bestAt > (sourceFrames_ - 1) / request_.sourceMomentaryHopFrames
-            ? sourceFrames_ - 1 : bestAt * request_.sourceMomentaryHopFrames;
-        const long long loudFrames = std::min (sourceFrames_ - loudFrom,
-            std::max (1LL, (long long) std::floor (wantedFrames + 0.5)));
-        const long long pre = std::min (loudFrom,
-            std::max (0LL, (long long) std::floor (preRollFrames + 0.5)));
-        excerptSourceFrom_ = loudFrom - pre;
-        excerptStatisticFrom_ = loudFrom;
-        excerptStatisticFrames_ = loudFrames;
-        excerptSourceFrames_ = pre + loudFrames;
-        const long long deliveredExcerpt = converter_ == nullptr ? excerptSourceFrames_
-            : DeliveryConverter::deliveredFrames (sourceRate_, chain_->sampleRate(), excerptSourceFrames_);
-        const long long deliveredPre = converter_ == nullptr ? pre
-            : DeliveryConverter::deliveredFrames (sourceRate_, chain_->sampleRate(), pre);
-        if (deliveredExcerpt <= 0 || deliveredExcerpt > frames_
-            || deliveredExcerpt > std::numeric_limits<int>::max()
-            || deliveredPre < 0 || deliveredPre > deliveredExcerpt) return false;
-        excerptFrames_ = (int) deliveredExcerpt;
-        excerptSkipFrames_ = deliveredPre;
-        for (int c = 0; c < channels_; ++c) excerptSource_[c] = source_[c] + excerptSourceFrom_;
-        return true;
-    }
-
-    StepResult completedExcerpt()
-    {
-        SolvePassRecord rec;
-        rec.gainDb = gain_; rec.ceilingDb = ceiling_;
-        rec.integratedLufs = measurement_.integratedLufs; rec.truePeakDbTp = measurement_.truePeakDbTp;
-        rec.plrDb = measurement_.plrDb; rec.limiterMaxGrDb = measurement_.limiter.maxDb;
-        rec.loudnessRangeLu = measurement_.loudnessRangeLu;
-        rec.limiterP95Db = working_.limiterActive.stats.valid ? working_.limiterActive.stats.p95Db
-            : std::numeric_limits<double>::quiet_NaN();
-        rec.reason = SolvePassRecord::Reason::Excerpt;
-        rec.excerpt = true; rec.excerptFromFrame = excerptStatisticFrom_; rec.excerptFrames = excerptStatisticFrames_;
-        const double excess = rec.limiterP95Db - request_.limiterGr.limitDb;
-        if (! std::isfinite (excess))
-        {
-            if (! clock_.finish (&rec)) return fail (MasteringSolveStatus::Cancelled);
-            excerptRecords_[(std::size_t) excerptCount_++] = rec;
-            fallBackFromExcerpt(); return StepResult::More;
-        }
-        if (excess > 0.0) rec.violated |= constraintBit (MasteringConstraint::LimiterGainReduction);
-        if (! clock_.finish (&rec)) return fail (MasteringSolveStatus::Cancelled);
-        const double drive = gain_ - ceiling_;
-        excerptRecords_[(std::size_t) excerptCount_] = rec;
-        excerptDrive_[(std::size_t) excerptCount_] = drive;
-        excerptExcess_[(std::size_t) excerptCount_] = excess;
-        const int here = excerptCount_++;
-        if (excess > 0.0)
-        {
-            if (excerptHigh_ < 0 || drive < excerptDrive_[(std::size_t) excerptHigh_]) excerptHigh_ = here;
-        }
-        else if (excerptLow_ < 0 || drive > excerptDrive_[(std::size_t) excerptLow_]) excerptLow_ = here;
-        if (excerptLow_ >= 0 && excerptHigh_ >= 0)
-        {
-            const double lo = excerptDrive_[(std::size_t) excerptLow_];
-            const double hi = excerptDrive_[(std::size_t) excerptHigh_];
-            if (! (lo < hi)) { fallBackFromExcerpt(); return StepResult::More; }
-            const double edge = brentCandidate (lo, excerptExcess_[(std::size_t) excerptLow_],
-                hi, excerptExcess_[(std::size_t) excerptHigh_], excerptDrive_, excerptExcess_, excerptCount_);
-            if (hi - lo <= request_.maxExcerptToleranceDb)
-            {
-                restoreFullProgramme();
-                excerptEdgeDrive_ = edge;
-                gain_ = std::clamp (edge + request_.maxExcerptOffsetDb + ceiling_, -60.0, 60.0);
-                nextReason_ = SolvePassRecord::Reason::InsideBracket;
-                phase_ = Phase::PassBegin;
-                return StepResult::More;
-            }
-            gain_ = std::clamp (edge + ceiling_, -60.0, 60.0);
-        }
-        else
-        {
-            const double next = drive + (excerptLow_ >= 0 ? 4.0 : -4.0);
-            if (! std::isfinite (next) || next <= -60.0 - ceiling_ || next >= 60.0 - ceiling_)
-            { fallBackFromExcerpt(); return StepResult::More; }
-            gain_ = next + ceiling_;
-        }
-        phase_ = Phase::ExcerptBegin;
-        return StepResult::More;
-    }
-
-    template <std::size_t N>
-    static double brentCandidate (double lo, double flo, double hi, double fhi,
-                                  const std::array<double, N>& drives,
-                                  const std::array<double, N>& values, int count) noexcept
-    {
-        double candidate = lo - flo * (hi - lo) / (fhi - flo);
-        int third = -1;
-        for (int i = count - 1; i >= 0; --i)
-            if (drives[(std::size_t) i] > lo && drives[(std::size_t) i] < hi
-                && ! core::exactlyEqual (values[(std::size_t) i], flo)
-                && ! core::exactlyEqual (values[(std::size_t) i], fhi)) { third = i; break; }
-        if (third >= 0)
-        {
-            const double x = drives[(std::size_t) third], fx = values[(std::size_t) third];
-            const double q = lo * fx * fhi / ((flo - fx) * (flo - fhi))
-                           + x * flo * fhi / ((fx - flo) * (fx - fhi))
-                           + hi * flo * fx / ((fhi - flo) * (fhi - fx));
-            if (std::isfinite (q)) candidate = q;
-        }
-        const double margin = std::fmin (1.0e-6, 0.25 * (hi - lo));
-        if (! std::isfinite (candidate) || candidate <= lo + margin || candidate >= hi - margin)
-            candidate = 0.5 * (lo + hi);
-        return std::clamp (candidate, lo + margin, hi - margin);
-    }
-
-    void restoreFullProgramme() noexcept
-    {
-        if (converter_ != nullptr)
-        {
-            solver_.deliverySource_ = source_;
-            solver_.deliveryFrames_ = sourceFrames_;
-        }
-    }
-
-    void fallBackFromExcerpt() noexcept
-    {
-        restoreFullProgramme();
-        params_ = initialParams_;
-        peakProbe_ = request_.peakClipMeasured;
-        const double start = std::isfinite (request_.initialGainDb) ? request_.initialGainDb : request_.targetLufs + 18.0;
-        gain_ = std::clamp (start, -TargetLoudnessSolver::kMaxGainDb, TargetLoudnessSolver::kMaxGainDb);
-        excerptReady_ = false; phase_ = Phase::PassBegin;
     }
 
     StepResult completedPass()
@@ -929,7 +710,8 @@ private:
     {
         // Renders that could not be measured at all prove nothing about the target: Unavailable.
         if (! haveBest_ && ! haveOverBudget_ && ! haveUnsafe_) return fail (MasteringSolveStatus::Unavailable);
-        publishLog();
+        best_.passes = passes_; best_.logCount = passes_;
+        for (int i = 0; i < passes_; ++i) best_.log[i] = records_[(std::size_t) i];
         if (! haveBest_ && haveOverBudget_)
         {
             // NO RENDER KEPT THE LIMITER'S BUDGET: the gentlest ceiling-safe one measured, the budget named as broken.
@@ -1062,57 +844,6 @@ private:
     double budgetClamp (double next) noexcept
     {
         if (! request_.budgetAimsAtCrossing) return previousBudgetClamp (next);
-        // A configured search that could not produce an excerpt edge is today's full-programme path, to the bit.
-        if (! std::isfinite (excerptEdgeDrive_)) return v017BudgetClamp (next);
-        const int over = lowestOverBudget();
-        if (over < 0) { nextReason_ = SolvePassRecord::Reason::AimAtTarget; return next; }
-        const double dOver = driveOf (over), eOver = budgetExcess_[(std::size_t) over];
-        int kept = -1;
-        for (int k = 0; k < passes_; ++k)
-        {
-            const double e = budgetExcess_[(std::size_t) k];
-            if (std::isfinite (e) && ! (e > 0.0) && records_[(std::size_t) k].truePeakDbTp <= request_.maxTruePeakDbTp
-                && driveOf (k) < dOver && (kept < 0 || driveOf (k) > driveOf (kept))) kept = k;
-        }
-        double limit = 0.0;
-        if (kept >= 0)
-        {
-            const double dKept = driveOf (kept), width = dOver - dKept;
-            std::array<double, 12> drives {};
-            for (int k = 0; k < passes_; ++k) drives[(std::size_t) k] = driveOf (k);
-            const double root = brentCandidate (dKept, budgetExcess_[(std::size_t) kept], dOver, eOver,
-                                                drives, budgetExcess_, passes_);
-            if (width <= kBudgetResolutionDb || root - dKept <= kBudgetResolutionDb)
-            {
-                nextReason_ = SolvePassRecord::Reason::ProveEdge;
-                limit = dKept + kBudgetResolutionDb - 0.01;
-            }
-            else
-            {
-                nextReason_ = SolvePassRecord::Reason::InsideBracket;
-                limit = root;
-            }
-        }
-        else
-        {
-            nextReason_ = SolvePassRecord::Reason::StepBackBySlope;
-            double slope = 0.75, dNext = std::numeric_limits<double>::quiet_NaN(), eNext = 0.0;
-            for (int k = 0; k < passes_; ++k)
-            {
-                const double e = budgetExcess_[(std::size_t) k], d = driveOf (k);
-                if (e > 0.0 && d > dOver + 1.0e-6 && (! std::isfinite (dNext) || d < dNext)) { dNext = d; eNext = e; }
-            }
-            if (std::isfinite (dNext))
-                if (const double s = (eNext - eOver) / (dNext - dOver); std::isfinite (s)) slope = std::clamp (s, 0.5, 2.0);
-            limit = std::fmin (dOver - eOver / slope - 0.5 * kBudgetResolutionDb, dOver - kBudgetResolutionDb);
-            if (passes_ == 1 && std::isfinite (excerptEdgeDrive_) && excerptEdgeDrive_ < dOver)
-                limit = excerptEdgeDrive_;
-        }
-        return std::fmin (next, limit);
-    }
-
-    double v017BudgetClamp (double next) noexcept
-    {
         const int over = lowestOverBudget();
         if (over < 0) return next;
         const double dOver = driveOf (over), eOver = budgetExcess_[(std::size_t) over];
@@ -1136,9 +867,10 @@ private:
             const double eKept = budgetExcess_[(std::size_t) kept];
             const double eLean = eOver / double (1u << std::min (chordStale_, 8));
             const double chord = dKept + (-eKept) / (eLean - eKept) * width;
-            limit = chord - dKept <= kBudgetResolutionDb ? dKept + kBudgetResolutionDb - 0.01 : chord;
-            nextReason_ = chord - dKept <= kBudgetResolutionDb ? SolvePassRecord::Reason::ProveEdge
-                                                                : SolvePassRecord::Reason::InsideBracket;
+            limit = chord - dKept <= request_.budgetResolutionDb
+                ? dKept + request_.budgetResolutionDb - 0.01 : chord;
+            nextReason_ = chord - dKept <= request_.budgetResolutionDb ? SolvePassRecord::Reason::ProveEdge
+                                                                        : SolvePassRecord::Reason::InsideBracket;
             limit = std::clamp (limit, dKept + 0.05 * width, dOver - 0.05 * width);
             ++chordStale_;
         }
@@ -1153,7 +885,8 @@ private:
             }
             if (std::isfinite (dNext))
                 if (const double s = (eNext - eOver) / (dNext - dOver); std::isfinite (s)) slope = std::clamp (s, 0.5, 2.0);
-            limit = std::fmin (dOver - eOver / slope - 0.5 * kBudgetResolutionDb, dOver - kBudgetResolutionDb);
+            limit = std::fmin (dOver - eOver / slope - 0.5 * request_.budgetResolutionDb,
+                               dOver - request_.budgetResolutionDb);
         }
         return std::fmin (next, limit);
     }
@@ -1183,7 +916,8 @@ private:
         return std::fmin (next, limit);
     }
 
-    // THE BUDGET'S PROOF: the candidate — the render to be delivered — stands within kBudgetResolutionDb under the lowest
+    // THE BUDGET'S PROOF: the candidate — the render to be delivered — stands within the requested resolution under the
+    // lowest
     // drive measured over the budget, short of the target, and no render within the budget has reached past the target
     // (one that did proves the target reachable inside it).
     bool budgetSettled() const noexcept
@@ -1191,13 +925,14 @@ private:
         const int over = lowestOverBudget();
         if (! haveBest_ || haveAbove_ || over < 0 || bestLevel_ >= request_.targetLufs - request_.toleranceLu) return false;
         const double delivered = bestGain_ - bestCeiling_;
-        return delivered < driveOf (over) && delivered >= driveOf (over) - kBudgetResolutionDb;
+        return delivered < driveOf (over) && delivered >= driveOf (over) - request_.budgetResolutionDb;
     }
 
     StepResult fail (MasteringSolveStatus status) noexcept
     {
         best_.status = status; best_.deliverable = false; best_.peaksAboveCeiling = false;
-        publishLog();
+        best_.passes = passes_; best_.logCount = passes_;
+        for (int i = 0; i < passes_; ++i) best_.log[i] = records_[(std::size_t) i];
         best_.workUnits = work_;
         phase_ = Phase::Failed; releaseDelivery();
         return StepResult::Failed;
@@ -1206,10 +941,8 @@ private:
     void publishLog() noexcept
     {
         best_.passes = passes_;
-        best_.logCount = std::min (TargetLoudnessSolverLimits::kMaxPasses, excerptCount_ + passes_);
-        int at = 0;
-        for (int i = 0; i < excerptCount_ && at < best_.logCount; ++i) best_.log[at++] = excerptRecords_[(std::size_t) i];
-        for (int i = 0; i < passes_ && at < best_.logCount; ++i) best_.log[at++] = records_[(std::size_t) i];
+        best_.logCount = passes_;
+        for (int i = 0; i < passes_; ++i) best_.log[i] = records_[(std::size_t) i];
     }
 
     void saveBestAudio() noexcept
@@ -1248,15 +981,11 @@ private:
     long long sourceFrames_ = 0, sourceCursor_ = 0;
     double sourceRate_ = 0.0;
     MasteringChainParams params_ {};
-    MasteringChainParams initialParams_ {};
     LoudnessRequest request_ {};
-    LoudnessRequest excerptRequest_ {};
     ProgressClock clock_ { ProgressCallback {} };
     LoudnessSolution working_ {}, best_ {};
     MasterMeasurement measurement_ {};
     std::array<SolvePassRecord, 12> records_ {};
-    std::array<SolvePassRecord, kMaxExcerptPasses> excerptRecords_ {};
-    std::array<double, kMaxExcerptPasses> excerptDrive_ {}, excerptExcess_ {};
     std::unique_ptr<float[]> saved_;
     std::size_t savedCapacity_ = 0;
     ClipperPeaks bestClipperPeaks_ {};
@@ -1281,7 +1010,6 @@ private:
     bool peakProbe_ = false;   // the first pass measured the peak the clipper's threshold is worked out from
     bool gateOn_ = false;      // the level landed is read on the source's gate
     bool budgetOn_ = false;
-    bool excerptReady_ = false;
     bool wall_ = false;
     double wallSlope_ = std::numeric_limits<double>::quiet_NaN();
     bool haveOverBudget_ = false;   // `best_` holds the gentlest ceiling-safe render over the budget (while `haveBest_` is not)
@@ -1295,11 +1023,6 @@ private:
     std::array<double, 12> budgetExcess_ {};
     double chordOverDrive_ = std::numeric_limits<double>::quiet_NaN();
     int chordStale_ = 0;
-    const float* excerptSource_[core::kMaxChannels] {};
-    long long excerptSourceFrom_ = 0, excerptStatisticFrom_ = 0;
-    long long excerptSourceFrames_ = 0, excerptStatisticFrames_ = 0, excerptSkipFrames_ = 0;
-    int excerptFrames_ = 0, excerptCount_ = 0, excerptLow_ = -1, excerptHigh_ = -1;
-    double excerptEdgeDrive_ = std::numeric_limits<double>::quiet_NaN();
 };
 
 inline LoudnessSolution solveProductLanding (TargetLoudnessSolver& solver, MasteringChain& chain,
