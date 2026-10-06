@@ -99,7 +99,6 @@ excerptOffsetDb = 0.5
 excerptPeakP95 = true
 excerptPeakOffsetDb = 0
 excerptSurvivesForecastMiss = true
-peakForecastPreRollSeconds = 1
 budgetResolutionDb = 0.25
 clean = { budgetDb = 0.5 }
 dense = { budgetDb = 1.75 }

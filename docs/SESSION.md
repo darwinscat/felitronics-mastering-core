@@ -1949,10 +1949,7 @@ master command may append `budgetResolutionDb` in the bounded 0.05…1 dB domain
 page may trade full renders for a coarser edge. Missing or unusable selector input, a programme too short for the window
 and pre-roll, allocation failure, or an excerpt render that cannot measure P95 fall back to the v0.17.0 full-programme
 path bit for bit. The switch off does the same. Manual landings never enter the excerpt path. The peak-clip threshold
-forecast tests three one-second windows around the source's largest separated peaks. Each gets
-`peakForecastPreRollSeconds` of source run-up to warm the chain; only the original second contributes limiter statistics
-or its reconstructed-peak forecast. A forecast is confirmed only when the first full render is within 0.10 dB, as
-before, so a miss cannot calibrate the clipper.
+forecast is measured on the excerpt when it is needed, so it does not reintroduce a full-file probe.
 
 `MasterCrest` stores five peak-amplitude/mean-square-power pairs per block, in Low, LowMid, HighMid, High,
 Full order, plus five source activity values per block as zero/one values. Version, sample rate, hop
