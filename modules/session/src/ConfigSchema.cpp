@@ -410,6 +410,7 @@ bool lowEndAdmits (const LowEndRun& r, double crossoverHz)
     p.crossoverHz = crossoverHz;
     p.lowNoteHz = r.lowNoteHz;
     p.highNoteHz = r.highNoteHz;
+    p.noteTopHz = r.noteTopHz;
     p.fftOrder = r.fftOrder;
     p.dutyThresholdDb = r.dutyThresholdDb;
     p.skipBlocks = r.skipBlocks;
@@ -430,6 +431,7 @@ void readLowEnd (Doc& d, Reader& in, LowEnd& o)
         const bool read[] = { t.required ("crossoverHz", r.crossoverHz, R { 0.0, 1.0e6 }),
                               t.required ("lowNoteHz", r.lowNoteHz, R { 0.0, 1.0e6 }),
                               t.required ("highNoteHz", r.highNoteHz, R { 0.0, 1.0e6 }),
+                              t.required ("noteTopHz", r.noteTopHz, R { 0.0, 1.0e6 }),
                               t.required ("fftOrder", r.fftOrder, I { 0, 30 }),
                               t.required ("dutyThresholdDb", r.dutyThresholdDb, R { -1.0e6, 1.0e6 }),
                               t.required ("skipBlocks", r.skipBlocks) };

@@ -195,8 +195,9 @@ void curve (QueryView& v, double* rows, const MeasurementResult& result) noexcep
             const auto* a = bands->values.data() + std::size_t (16u * j);
             const auto* b = j + 1u < bands->stored ? a + 16 : a;
             if (hz < a[1] || hz > b[1]) continue;
-            if (a[15] <= 0 || b[15] <= 0) reason = MeasurementReason::TooShort;
-            else
+            // A band narrower than the window's main lobe (column 15: unresolved) gives its value as measured to both
+            // drawings, the spectrum and the side share (owner, 06.10 and 07.10). The flag stays on the bands array; no
+            // decision reads these queries.
             {
                 const double t = a == b ? 0 : (hz - a[1]) / (b[1] - a[1]);
                 const double mid = a[4] + t * (b[4] - a[4]), side = a[5] + t * (b[5] - a[5]);

@@ -178,6 +178,7 @@ struct LowEndRun
     double crossoverHz = 0.0;
     double lowNoteHz = 0.0;
     double highNoteHz = 0.0;
+    double noteTopHz = 0.0;                    // the note's readings see the bands up to here; above, drawings alone
     std::int32_t fftOrder = 0;
     double dutyThresholdDb = 0.0;
     std::int32_t skipBlocks = 0;
