@@ -326,6 +326,11 @@ void pump()
                                             "\nexpectedPassesMaxClean = ", "\nexpectedPassesMaxDense = " })
             if (const auto at = engine.find (key); at != std::string::npos)
                 engine.erase (at, engine.find ('\n', at + 1) - at);
+        // The low end from 10 Hz, the lowest note from 25 Hz (owner, 06.10): [lowEnd.run] lowNoteHz back to 20, and
+        // [lowEnd] lowestNoteFromHz out.
+        if (const auto at = engine.find ("\nlowNoteHz = 10\n"); at != std::string::npos) engine.replace (at, 16, "\nlowNoteHz = 20\n");
+        if (const auto at = engine.find ("\nlowestNoteFromHz = "); at != std::string::npos)
+            engine.erase (at, engine.find ('\n', at + 1) - at);
         // The unread compressor mix was removed (owner, 05.10); restore it for the older config fingerprints alone.
         if (const auto at = engine.find ("\n[compressor]\n"); at != std::string::npos)
             engine.insert (at + 14, "mix = 1\n");
@@ -491,7 +496,9 @@ void pump()
     // [progress.master] expectedPassesMaxClean / expectedPassesMaxDense (v0.18.0, 7 and 6) move the config's version alone
     // here: withoutMax restates it above, and these complete-stream pins move by it (fd634188f514143f / c169bfca96d5c915
     // before them).
-    ok (eventsHash (one) == 0x504d1630b0dda1a5ull && eventsHash (cancelled) == 0xa68792578ab9b2f5ull,
+    // The low end from 10 Hz and the lowest note from 25 Hz (owner, 06.10) move the config's version alone here: withoutMax
+    // restates it above, and these complete-stream pins move by it (504d1630b0dda1a5 / a68792578ab9b2f5 before them).
+    ok (eventsHash (one) == 0xda345d2043dfce62ull && eventsHash (cancelled) == 0x0e28ca0cc1999975ull,
         "event fixtures pin every active payload field: " + std::string (hashes));
     std::printf ("event fingerprints: %016llx %016llx\n", (unsigned long long) eventsHash (one), (unsigned long long) eventsHash (cancelled));
     std::printf ("event fingerprints, every job but the master's, previous version: %016llx %016llx\n",

@@ -421,6 +421,7 @@ void readLowEnd (Doc& d, Reader& in, LowEnd& o)
 {
     in.required ("occupiedFromDuty", o.occupiedFromDuty, share());
     in.required ("occupiedMarginWhenOnDb", o.occupiedMarginWhenOnDb, R { 0.0, 40.0 });
+    in.required ("lowestNoteFromHz", o.lowestNoteFromHz, R { 0.0, 200.0 });
     bool run = false;
     in.table ("run", Need::Required, [&] (Reader& t)
     {

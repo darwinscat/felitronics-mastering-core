@@ -85,7 +85,10 @@ constexpr Golden kGolden[] = {
     // ...and every target's mastered-delivery class plus the two configured peak ceilings (owner, 05.10, v0.18.0):
     // already-mastered streaming/other deliveries may now bypass the normal chain; specification targets do not.
     // It was 3ca74d45e21253d9; updated in place before the release.
-    { "2026-10", 0x086fda481af08315ull },
+    // ...and the low end measured from 10 Hz, the lowest note sought from 25 Hz (owner, 06.10: [lowEnd.run] lowNoteHz 10,
+    // [lowEnd] lowestNoteFromHz 25): a master whose lowest band on lay between 20 and 25 Hz takes its note from the bands
+    // above; it was 086fda481af08315; updated in place, as above (no 2026-10 project is saved).
+    { "2026-10", 0xe16b73aead43a728ull },
 };
 
 // One target row, every field (owner decisions): the loudness and ceiling, mono bass 120 Hz (vinyl 150), the high-pass
@@ -235,6 +238,8 @@ std::vector<std::string> departures (const config::Config& c)
     need (same (e.observations.wideBassSideFractionAtLeast, 0.06) && e.observations.kinds.wideBass == config::Kind::Warning,
           "wide bass: one threshold, 6 % of side, and it is a warning");
     need (same (e.lowEnd.run.crossoverHz, 120.0), "the low end is measured at 120 Hz");
+    need (same (e.lowEnd.run.lowNoteHz, 10.0) && same (e.lowEnd.run.highNoteHz, 300.0) && same (e.lowEnd.lowestNoteFromHz, 25.0),
+          "the low end's table measures from 10 Hz to 300 Hz, and the lowest note is sought from 25 Hz — not 20 (owner, 06.10)");
     need (e.compressor.thresholdFrom == config::ThresholdFrom::ShortTermP95, "the compressor's threshold is from the short-term P95");
     need (same (e.compressor.limitRelease.min, 50.0), "the compressor's release floor is 50 ms");
     need (e.glue.byTarget.size() == 1 && e.glue.byTarget[0].target == "cd" && same (e.glue.byTarget[0].upToDb, 2.6),
@@ -378,6 +383,10 @@ void aDepartureIsNamed()
           "targets.club.hpfFloor" },
         { false, "note = { aboveHz = 20, soundingAtLeastS = 3 }", "note = { aboveHz = 20, soundingAtLeastS = 2 }",
           "a sure lowest note: 2 dB over the occupancy line, 10 % of the frames, above 20 Hz, 3 s in all; not sought under 10 s" },
+        { false, "lowNoteHz = 10", "lowNoteHz = 20",
+          "the low end's table measures from 10 Hz to 300 Hz, and the lowest note is sought from 25 Hz — not 20 (owner, 06.10)" },
+        { false, "lowestNoteFromHz = 25", "lowestNoteFromHz = 20",
+          "the low end's table measures from 10 Hz to 300 Hz, and the lowest note is sought from 25 Hz — not 20 (owner, 06.10)" },
         { false, "offAboveDb = 3,", "offAboveDb = 4,", "mono bass by its loss: placed under 1 dB, with a warning from 1 to 3 dB, left out above 3 dB" },
         { false, "eq = true\nmonoBass = false", "eq = true\nmonoBass = true", "mono bass is placed by its weighed loss, never before it" },
         { true, "sampleRate = 48000, bitDepth = 24 }\n# YouTube Music", "sampleRate = 22050, bitDepth = 24 }\n# YouTube Music",
